@@ -45,6 +45,8 @@
 #include "kudu/common/types.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
+#include "kudu/fs/data_dirs.h"
+#include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/fs/fs_report.h"
 #include "kudu/gutil/gscoped_ptr.h"
@@ -73,6 +75,7 @@
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
+DECLARE_bool(force);
 DECLARE_bool(print_meta);
 DECLARE_string(columns);
 
@@ -104,6 +107,7 @@ using cfile::CFileIterator;
 using cfile::CFileReader;
 using cfile::ReaderOptions;
 using fs::BlockDeletionTransaction;
+using fs::ConsistencyCheckBehavior;
 using fs::FsReport;
 using fs::ReadableBlock;
 using std::cout;
@@ -314,10 +318,49 @@ Status DumpFsTree(const RunnerContext& /*context*/) {
   return Status::OK();
 }
 
+Status CheckForTabletsThatWillFailWithUpdate() {
+  FsManagerOpts opts;
+  opts.read_only = true;
+  opts.consistency_check = ConsistencyCheckBehavior::IGNORE_INCONSISTENCY;
+  FsManager fs(Env::Default(), std::move(opts));
+  RETURN_NOT_OK(fs.Open());
+
+  vector<string> tablet_ids;
+  RETURN_NOT_OK(fs.ListTabletIds(&tablet_ids));
+  for (const auto& t : tablet_ids) {
+    scoped_refptr<TabletMetadata> meta;
+    RETURN_NOT_OK(TabletMetadata::Load(&fs, t, &meta));
+    DataDirGroupPB group;
+    RETURN_NOT_OK_PREPEND(
+        fs.dd_manager()->GetDataDirGroupPB(t, &group),
+        "at least one tablet is configured to use removed data directory. "
+        "Retry with --force to override this");
+  }
+  return Status::OK();
+}
+
 Status Update(const RunnerContext& /*context*/) {
   Env* env = Env::Default();
+
+  // First, ensure that if we're removing a data directory, no existing tablets
+  // are configured to use it. We approximate this by creating an FsManager
+  // that reflects the new data directory configuration, loading all tablet
+  // metadata, and retrieving all tablets' data dir groups. If a data dir group
+  // cannot be retrieved, it is assumed that it's because the tablet is
+  // configured to use a data directory that's now missing.
+  //
+  // If the user specifies --force, we assume they know what they're doing and
+  // skip this check.
+  Status s = CheckForTabletsThatWillFailWithUpdate();
+  if (FLAGS_force) {
+    WARN_NOT_OK(s, "continuing due to --force");
+  } else {
+    RETURN_NOT_OK_PREPEND(s, "cannot update data directories");
+  }
+
+  // Now perform the update.
   FsManagerOpts opts;
-  opts.update_on_disk = true;
+  opts.consistency_check = ConsistencyCheckBehavior::UPDATE_ON_DISK;
   FsManager fs(env, std::move(opts));
   return fs.Open();
 }
@@ -824,7 +867,12 @@ unique_ptr<Mode> BuildFsMode() {
   unique_ptr<Action> update =
       ActionBuilder("update_dirs", &Update)
       .Description("Updates the set of data directories in an existing Kudu filesystem")
-      .ExtraDescription("Cannot currently be used to remove data directories")
+      .ExtraDescription("If a data directory is in use by a tablet and is "
+          "removed, the operation will fail unless --force is also used")
+      .AddOptionalParameter("force", boost::none, string("If true, permits "
+          "the removal of a data directory that is configured for use by "
+          "existing tablets. Those tablets will fail the next time the server "
+          "is started"))
       .AddOptionalParameter("fs_data_dirs")
       .AddOptionalParameter("fs_metadata_dir")
       .AddOptionalParameter("fs_wal_dir")
@@ -861,10 +909,10 @@ unique_ptr<Mode> BuildFsMode() {
   return ModeBuilder("fs")
       .Description("Operate on a local Kudu filesystem")
       .AddMode(BuildFsDumpMode())
-      .AddAction(std::move(update))
       .AddAction(std::move(check))
       .AddAction(std::move(format))
       .AddAction(std::move(list))
+      .AddAction(std::move(update))
       .Build();
 }
 

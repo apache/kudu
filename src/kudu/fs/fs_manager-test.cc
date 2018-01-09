@@ -21,6 +21,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
+#include <iterator>
 #include <memory>
 #include <set>
 #include <string>
@@ -47,11 +48,13 @@
 #include "kudu/util/flags.h"
 #include "kudu/util/oid_generator.h"
 #include "kudu/util/path_util.h"
+#include "kudu/util/random.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+using kudu::fs::ConsistencyCheckBehavior;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
@@ -299,7 +302,7 @@ TEST_F(FsManagerTestBase, TestMetadataDirInDataRoot) {
   // Adding a data dir to the front of the FS root list (i.e. such that the
   // metadata root is no longer at the front) will prevent Kudu from starting.
   opts.data_roots = { GetTestPath("data2"), GetTestPath("data1") };
-  opts.update_on_disk = true;
+  opts.consistency_check = ConsistencyCheckBehavior::UPDATE_ON_DISK;
   ReinitFsManagerWithOpts(opts);
   Status s = fs_manager()->Open();
   ASSERT_STR_CONTAINS(s.ToString(), "could not verify required directory");
@@ -533,7 +536,7 @@ TEST_F(FsManagerTestBase, TestOpenFailsWhenMissingImportantDir) {
 }
 
 
-TEST_F(FsManagerTestBase, TestAddDataDirs) {
+TEST_F(FsManagerTestBase, TestAddRemoveDataDirs) {
   if (FLAGS_block_manager == "file") {
     LOG(INFO) << "Skipping test, file block manager not supported";
     return;
@@ -550,24 +553,31 @@ TEST_F(FsManagerTestBase, TestAddDataDirs) {
   ASSERT_STR_CONTAINS(s.ToString(), fs_manager()->GetInstanceMetadataPath(new_path1));
 
   // This time allow new data directories to be created.
-  opts.update_on_disk = true;
+  opts.consistency_check = ConsistencyCheckBehavior::UPDATE_ON_DISK;
   ReinitFsManagerWithOpts(opts);
   ASSERT_OK(fs_manager()->Open());
   ASSERT_EQ(2, fs_manager()->dd_manager()->GetDataDirs().size());
 
   // Try to open with a data dir removed; this should fail.
   opts.data_roots = { fs_root_ };
+  opts.consistency_check = ConsistencyCheckBehavior::ENFORCE_CONSISTENCY;
   ReinitFsManagerWithOpts(opts);
   s = fs_manager()->Open();
   ASSERT_TRUE(s.IsIOError());
   ASSERT_STR_CONTAINS(s.ToString(), "could not verify integrity of files");
 
-  // We should be able to add new directories anywhere in the list.
-  const string new_path2 = GetTestPath("new_path2");
-  opts.data_roots = { new_path2, fs_root_, new_path1 };
+  // This time allow data directories to be removed.
+  opts.consistency_check = ConsistencyCheckBehavior::UPDATE_ON_DISK;
   ReinitFsManagerWithOpts(opts);
   ASSERT_OK(fs_manager()->Open());
-  ASSERT_EQ(3, fs_manager()->dd_manager()->GetDataDirs().size());
+  ASSERT_EQ(1, fs_manager()->dd_manager()->GetDataDirs().size());
+
+  // We should be able to add new directories anywhere in the list.
+  const string new_path2 = GetTestPath("new_path2");
+  opts.data_roots = { new_path2, fs_root_ };
+  ReinitFsManagerWithOpts(opts);
+  ASSERT_OK(fs_manager()->Open());
+  ASSERT_EQ(2, fs_manager()->dd_manager()->GetDataDirs().size());
 
   // Try to open with a new data dir although an existing data dir has failed;
   // this should fail.
@@ -578,7 +588,7 @@ TEST_F(FsManagerTestBase, TestAddDataDirs) {
     FLAGS_env_inject_eio_globs = JoinPathSegments(new_path2, "**");
 
     const string new_path3 = GetTestPath("new_path3");
-    opts.data_roots = { fs_root_, new_path2, new_path1, new_path3 };
+    opts.data_roots = { fs_root_, new_path2, new_path3 };
     ReinitFsManagerWithOpts(opts);
     Status s = fs_manager()->Open();
     ASSERT_TRUE(s.IsIOError());
@@ -586,7 +596,121 @@ TEST_F(FsManagerTestBase, TestAddDataDirs) {
   }
 }
 
-TEST_F(FsManagerTestBase, TestAddDataDirsFuzz) {
+TEST_F(FsManagerTestBase, TestReAddRemovedDataDir) {
+  if (FLAGS_block_manager == "file") {
+    LOG(INFO) << "Skipping test, file block manager not supported";
+    return;
+  }
+
+  // Add a new data directory, remove it, and add it back.
+  const string new_path1 = GetTestPath("new_path1");
+  for (const auto& data_roots : vector<vector<string>>({{ fs_root_, new_path1 },
+                                                        { fs_root_ },
+                                                        { fs_root_, new_path1 }})) {
+    FsManagerOpts opts;
+    opts.wal_root = fs_root_;
+    opts.data_roots = data_roots;
+    opts.consistency_check = ConsistencyCheckBehavior::UPDATE_ON_DISK;
+    ReinitFsManagerWithOpts(std::move(opts));
+    ASSERT_OK(fs_manager()->Open());
+    ASSERT_EQ(data_roots.size(), fs_manager()->dd_manager()->GetDataDirs().size());
+  }
+}
+
+TEST_F(FsManagerTestBase, TestCannotRemoveDataDirServingAsMetadataDir) {
+  if (FLAGS_block_manager == "file") {
+    LOG(INFO) << "Skipping test, file block manager not supported";
+    return;
+  }
+
+  // Create a new fs layout with a metadata root explicitly set to the first
+  // data root.
+  ASSERT_OK(env_->DeleteRecursively(fs_root_));
+  ASSERT_OK(env_->CreateDir(fs_root_));
+
+  FsManagerOpts opts;
+  opts.data_roots = { JoinPathSegments(fs_root_, "data1"),
+                      JoinPathSegments(fs_root_, "data2") };
+  opts.metadata_root = opts.data_roots[0];
+  opts.wal_root = JoinPathSegments(fs_root_, "wal");
+  ReinitFsManagerWithOpts(opts);
+  ASSERT_OK(fs_manager()->CreateInitialFileSystemLayout());
+  ASSERT_OK(fs_manager()->Open());
+
+  // Stop specifying the metadata root. The FsManager will automatically look
+  // for and find it in the first data root.
+  opts.metadata_root.clear();
+  ReinitFsManagerWithOpts(opts);
+  ASSERT_OK(fs_manager()->Open());
+
+  // Now try to remove the first data root. This should fail because in the
+  // absence of a defined metadata root, the FsManager will try looking for it
+  // in the wal root (not found), and the first data dir (not found).
+  opts.data_roots = { opts.data_roots[1] };
+  opts.consistency_check = ConsistencyCheckBehavior::UPDATE_ON_DISK;
+  ReinitFsManagerWithOpts(opts);
+  Status s = fs_manager()->Open();
+  ASSERT_TRUE(s.IsNotFound());
+  ASSERT_STR_CONTAINS(s.ToString(), "could not verify required directory");
+}
+
+TEST_F(FsManagerTestBase, TestAddRemoveSpeculative) {
+  if (FLAGS_block_manager == "file") {
+    LOG(INFO) << "Skipping test, file block manager not supported";
+    return;
+  }
+
+  // Add a second data directory.
+  const string new_path1 = GetTestPath("new_path1");
+  FsManagerOpts opts;
+  opts.wal_root = fs_root_;
+  opts.data_roots = { fs_root_, new_path1 };
+  opts.consistency_check = ConsistencyCheckBehavior::UPDATE_ON_DISK;
+  ReinitFsManagerWithOpts(opts);
+  ASSERT_OK(fs_manager()->Open());
+  ASSERT_EQ(2, fs_manager()->dd_manager()->GetDataDirs().size());
+
+  // Create a 'speculative' FsManager with the second data directory removed.
+  opts.data_roots = { fs_root_ };
+  opts.consistency_check = ConsistencyCheckBehavior::IGNORE_INCONSISTENCY;
+  ReinitFsManagerWithOpts(opts);
+  ASSERT_OK(fs_manager()->Open());
+  ASSERT_EQ(1, fs_manager()->dd_manager()->GetDataDirs().size());
+
+  // Do the same thing, but with a new data directory added.
+  const string new_path2 = GetTestPath("new_path2");
+  opts.data_roots = { fs_root_, new_path1, new_path2 };
+  ReinitFsManagerWithOpts(opts);
+  ASSERT_OK(fs_manager()->Open());
+  ASSERT_EQ(3, fs_manager()->dd_manager()->GetDataDirs().size());
+
+  // Neither of those attempts should have changed the on-disk state. Verify
+  // this by retrying all three combinations with consistency checking
+  // re-enabled. Only the two-directory case should pass.
+  opts.consistency_check = ConsistencyCheckBehavior::ENFORCE_CONSISTENCY;
+  for (const auto& data_roots : vector<vector<string>>({{ fs_root_ },
+                                                        { fs_root_, new_path1 },
+                                                        { fs_root_, new_path1, new_path2 }})) {
+    opts.data_roots = data_roots;
+    ReinitFsManagerWithOpts(opts);
+    Status s = fs_manager()->Open();
+    if (data_roots.size() == 1) {
+      // The first data directory's path set refers to a data directory that
+      // wasn't in data_roots.
+      ASSERT_TRUE(s.IsIOError()) << s.ToString();
+      ASSERT_STR_CONTAINS(s.ToString(), "could not verify integrity of files");
+    } else if (data_roots.size() == 2) {
+      ASSERT_OK(s);
+      ASSERT_EQ(2, fs_manager()->dd_manager()->GetDataDirs().size());
+    } else {
+      // The third data directory has no instance file.
+      ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+      ASSERT_STR_CONTAINS(s.ToString(), "No such file or directory");
+    }
+  }
+}
+
+TEST_F(FsManagerTestBase, TestAddRemoveDataDirsFuzz) {
   const int kNumAttempts = AllowSlowTests() ? 1000 : 100;
 
   if (FLAGS_block_manager == "file") {
@@ -594,16 +718,36 @@ TEST_F(FsManagerTestBase, TestAddDataDirsFuzz) {
     return;
   }
 
+  Random rng_(SeedRandom());
+
   FsManagerOpts fs_opts;
   fs_opts.wal_root = fs_root_;
   fs_opts.data_roots = { fs_root_ };
   for (int i = 0; i < kNumAttempts; i++) {
-    // Create a new fs root.
-    string new_data_root = GetTestPath(Substitute("new_data_$0", i));
-    fs_opts.data_roots.emplace_back(new_data_root);
+    // Randomly create a directory to add, or choose an existing one to remove.
+    //
+    // Note: we skip removing the last data directory because the FsManager
+    // treats that as a signal to use the wal root as the sole data root.
+    vector<string> old_data_roots = fs_opts.data_roots;
+    bool action_was_add;
+    string fs_root;
+    if (rng_.Uniform(2) == 0 || fs_opts.data_roots.size() == 1) {
+      action_was_add = true;
+      fs_root = GetTestPath(Substitute("new_data_$0", i));
+      fs_opts.data_roots.emplace_back(fs_root);
+    } else {
+      action_was_add = false;
+      DCHECK_GT(fs_opts.data_roots.size(), 1);
+      int removed_idx = rng_.Uniform(fs_opts.data_roots.size());
+      fs_root = fs_opts.data_roots[removed_idx];
+      auto iter = fs_opts.data_roots.begin();
+      std::advance(iter, removed_idx);
+      fs_opts.data_roots.erase(iter);
+    }
 
-    // Try to add it with failure injection enabled.
-    bool add_succeeded;
+    // Try to add or remove it with failure injection enabled.
+    LOG(INFO) << Substitute("$0ing $1", action_was_add ? "Add" : "Remov", fs_root);
+    bool update_succeeded;
     {
       google::FlagSaver saver;
       FLAGS_crash_on_eio = false;
@@ -611,35 +755,36 @@ TEST_F(FsManagerTestBase, TestAddDataDirsFuzz) {
       // This value isn't arbitrary: most attempts fail and only some succeed.
       FLAGS_env_inject_eio = 0.01;
 
-      fs_opts.update_on_disk = true;
+      fs_opts.consistency_check = ConsistencyCheckBehavior::UPDATE_ON_DISK;
       ReinitFsManagerWithOpts(fs_opts);
-      add_succeeded = fs_manager()->Open().ok();
+      update_succeeded = fs_manager()->Open().ok();
     }
 
     // Reopen regardless, to ensure that failures didn't corrupt anything.
-    fs_opts.update_on_disk = false;
+    fs_opts.consistency_check = ConsistencyCheckBehavior::ENFORCE_CONSISTENCY;
     ReinitFsManagerWithOpts(fs_opts);
     Status open_status = fs_manager()->Open();
-    if (add_succeeded) {
+    if (update_succeeded) {
       ASSERT_OK(open_status);
     }
 
-    // The rollback logic built into the add fs root operation isn't robust
-    // enough to handle every possible sequence of injected failures. Let's see
-    // if we need to apply a "workaround" in order to fix the filesystem.
+    // The rollback logic built into the update operation isn't robust enough
+    // to handle every possible sequence of injected failures. Let's see if we
+    // need to apply a "workaround" in order to fix the filesystem.
+
     if (!open_status.ok()) {
-      // Failed? Perhaps the new fs root and data directory were created, but
-      // there was an injected failure later on, which led to a rollback and
-      // the removal of the new fs instance file.
+      // Perhaps a new fs root and data directory were created, but there was
+      // an injected failure later on, which led to a rollback and the removal
+      // of the new fs instance file.
       //
       // Fix this as a user might (by copying the original fs instance file
       // into the new fs root) then retry.
       string source_instance = fs_manager()->GetInstanceMetadataPath(fs_root_);
       bool is_dir;
-      Status s = env_->IsDirectory(new_data_root, &is_dir);
+      Status s = env_->IsDirectory(fs_root, &is_dir);
       if (s.ok()) {
         ASSERT_TRUE(is_dir);
-        string new_instance = fs_manager()->GetInstanceMetadataPath(new_data_root);
+        string new_instance = fs_manager()->GetInstanceMetadataPath(fs_root);
         if (!env_->FileExists(new_instance)) {
           WritableFileOptions wr_opts;
           wr_opts.mode = Env::CREATE_NON_EXISTING;
@@ -651,11 +796,11 @@ TEST_F(FsManagerTestBase, TestAddDataDirsFuzz) {
     }
     if (!open_status.ok()) {
       // Still failing? Unfortunately, there's not enough information to know
-      // whether the injected failure occurred during creation of the new data
-      // directory or just afterwards, when the DataDirManager reopened itself.
-      // If the former, the add itself failed and the failure should resolve if
-      // we drop the new fs root and retry.
-      fs_opts.data_roots.pop_back();
+      // whether the injected failure occurred during the update or just
+      // afterwards, when the DataDirManager reloaded the data directory
+      // instance files. If the former, the failure should resolve itself if we
+      // restore the old data roots.
+      fs_opts.data_roots = old_data_roots;
       ReinitFsManagerWithOpts(fs_opts);
       open_status = fs_manager()->Open();
     }

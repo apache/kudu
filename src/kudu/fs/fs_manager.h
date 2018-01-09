@@ -73,14 +73,16 @@ struct FsManagerOpts {
   // Should only be used in unit tests.
   explicit FsManagerOpts(const std::string& root);
 
-  // The entity under which all metrics should be grouped. If NULL, metrics
+  // The entity under which all metrics should be grouped. If null, metrics
   // will not be produced.
   //
-  // Defaults to NULL.
+  // Defaults to null.
   scoped_refptr<MetricEntity> metric_entity;
 
   // The memory tracker under which all new memory trackers will be parented.
-  // If NULL, new memory trackers will be parented to the root tracker.
+  // If null, new memory trackers will be parented to the root tracker.
+  //
+  // Defaults to null.
   std::shared_ptr<MemTracker> parent_mem_tracker;
 
   // The directory root where WALs will be stored. Cannot be empty.
@@ -97,20 +99,19 @@ struct FsManagerOpts {
   std::string metadata_root;
 
   // The block manager type. Must be either "file" or "log".
+  //
   // Defaults to the value of FLAGS_block_manager.
   std::string block_manager_type;
 
-  // Whether or not read-write operations should be allowed. Defaults to false.
+  // Whether or not read-write operations should be allowed.
+  //
+  // Defaults to false.
   bool read_only;
 
-  // Whether or not the contents of 'data_roots' should be considered the new
-  // canonical set. If true, on-disk data structures will be updated
-  // accordingly when the FsManager is opened.
+  // The behavior to use when comparing 'data_roots' to the on-disk path sets.
   //
-  // If true, 'read_only' must be false.
-  //
-  // TODO(KUDU-2202): only supports adding new data directories.
-  bool update_on_disk;
+  // Defaults to ENFORCE_CONSISTENCY.
+  fs::ConsistencyCheckBehavior consistency_check;
 };
 
 // FsManager provides helpers to read data and metadata files,
@@ -138,7 +139,7 @@ class FsManager {
   // inconsistencies. If found, and if the FsManager was not constructed in
   // read-only mode, an attempt will be made to repair them.
   //
-  // If 'report' is not nullptr, it will be populated with the results of the
+  // If 'report' is not null, it will be populated with the results of the
   // check (and repair, if applicable); otherwise, the results of the check
   // will be logged and the presence of fatal inconsistencies will manifest as
   // a returned error.

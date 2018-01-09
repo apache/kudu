@@ -98,6 +98,7 @@ DEFINE_string(fs_metadata_dir, "",
 TAG_FLAG(fs_metadata_dir, stable);
 
 using kudu::fs::BlockManagerOptions;
+using kudu::fs::ConsistencyCheckBehavior;
 using kudu::fs::CreateBlockOptions;
 using kudu::fs::DataDirManager;
 using kudu::fs::DataDirManagerOptions;
@@ -137,7 +138,7 @@ FsManagerOpts::FsManagerOpts()
     metadata_root(FLAGS_fs_metadata_dir),
     block_manager_type(FLAGS_block_manager),
     read_only(false),
-    update_on_disk(false) {
+    consistency_check(ConsistencyCheckBehavior::ENFORCE_CONSISTENCY) {
   data_roots = strings::Split(FLAGS_fs_data_dirs, ",", strings::SkipEmpty());
 }
 
@@ -146,21 +147,21 @@ FsManagerOpts::FsManagerOpts(const string& root)
     data_roots({ root }),
     block_manager_type(FLAGS_block_manager),
     read_only(false),
-    update_on_disk(false) {}
+    consistency_check(ConsistencyCheckBehavior::ENFORCE_CONSISTENCY) {}
 
 FsManager::FsManager(Env* env, const string& root_path)
   : env_(DCHECK_NOTNULL(env)),
     opts_(FsManagerOpts(root_path)),
     error_manager_(new FsErrorManager()),
-    initted_(false) {
-}
+    initted_(false) {}
 
 FsManager::FsManager(Env* env, FsManagerOpts opts)
   : env_(DCHECK_NOTNULL(env)),
     opts_(std::move(opts)),
     error_manager_(new FsErrorManager()),
     initted_(false) {
-  DCHECK(!opts_.update_on_disk || !opts_.read_only);
+  DCHECK(opts_.consistency_check != ConsistencyCheckBehavior::UPDATE_ON_DISK ||
+         !opts_.read_only);
 }
 
 FsManager::~FsManager() {}
@@ -325,7 +326,8 @@ Status FsManager::Open(FsReport* report) {
     Status s = pb_util::ReadPBContainerFromPath(env_, GetInstanceMetadataPath(root.path),
                                                 pb.get());
     if (PREDICT_FALSE(!s.ok())) {
-      if (s.IsNotFound() && opts_.update_on_disk) {
+      if (s.IsNotFound() &&
+          opts_.consistency_check != ConsistencyCheckBehavior::ENFORCE_CONSISTENCY) {
         missing_roots.emplace_back(root);
         continue;
       }
@@ -379,8 +381,8 @@ Status FsManager::Open(FsReport* report) {
     }
   });
 
-  // Create any missing roots.
-  if (!missing_roots.empty()) {
+  // Create any missing roots, if desired.
+  if (opts_.consistency_check == ConsistencyCheckBehavior::UPDATE_ON_DISK) {
     RETURN_NOT_OK_PREPEND(CreateFileSystemRoots(
         missing_roots, *metadata_, &created_dirs, &created_files),
                           "unable to create missing filesystem roots");
@@ -401,7 +403,7 @@ Status FsManager::Open(FsReport* report) {
     dm_opts.metric_entity = opts_.metric_entity;
     dm_opts.block_manager_type = opts_.block_manager_type;
     dm_opts.read_only = opts_.read_only;
-    dm_opts.update_on_disk = opts_.update_on_disk;
+    dm_opts.consistency_check = opts_.consistency_check;
     LOG_TIMING(INFO, "opening directory manager") {
       RETURN_NOT_OK(DataDirManager::OpenExisting(env_,
           canonicalized_data_fs_roots_, std::move(dm_opts), &dd_manager_));

@@ -338,7 +338,7 @@ Status DataDirGroup::CopyToPB(const UuidByUuidIndexMap& uuid_by_uuid_idx,
 DataDirManagerOptions::DataDirManagerOptions()
     : block_manager_type(FLAGS_block_manager),
       read_only(false),
-      update_on_disk(false) {
+      consistency_check(ConsistencyCheckBehavior::ENFORCE_CONSISTENCY) {
 }
 
 ////////////////////////////////////////////////////////////
@@ -360,7 +360,8 @@ DataDirManager::DataDirManager(Env* env,
       canonicalized_data_fs_roots_(std::move(canonicalized_data_roots)),
       rng_(GetRandomSeed32()) {
   DCHECK_GT(canonicalized_data_fs_roots_.size(), 0);
-  DCHECK(!opts_.update_on_disk || !opts_.read_only);
+  DCHECK(opts_.consistency_check != ConsistencyCheckBehavior::UPDATE_ON_DISK ||
+         !opts_.read_only);
 
   if (opts_.metric_entity) {
     metrics_.reset(new DataDirMetrics(opts_.metric_entity));
@@ -591,9 +592,10 @@ Status DataDirManager::LoadInstances(
     } else {
       // This may return OK and mark 'instance' as failed.
       Status s = instance->LoadFromDisk();
-      if (s.IsNotFound() && opts_.update_on_disk) {
-        // A missing instance is only tolerated if we've been asked to add new
-        // data directories.
+      if (s.IsNotFound() &&
+          opts_.consistency_check != ConsistencyCheckBehavior::ENFORCE_CONSISTENCY) {
+        // A missing instance is not tolerated if we've been asked to enforce
+        // consistency checks.
         missing_roots_tmp.emplace_back(root.path);
         continue;
       }
@@ -645,17 +647,11 @@ Status DataDirManager::Open() {
   vector<unique_ptr<PathInstanceMetadataFile>> loaded_instances;
   RETURN_NOT_OK(LoadInstances(&missing_roots, &loaded_instances));
 
-  // Check the integrity of all loaded instances.
-  RETURN_NOT_OK_PREPEND(
-      PathInstanceMetadataFile::CheckIntegrity(loaded_instances),
-      Substitute("could not verify integrity of files: $0",
-                 JoinStrings(GetDataDirs(), ",")));
-
-  // Create any missing data directories, if desired.
-  if (!missing_roots.empty()) {
+  // Add new or remove existing data directories, if desired.
+  if (opts_.consistency_check == ConsistencyCheckBehavior::UPDATE_ON_DISK) {
     if (opts_.block_manager_type == "file") {
       return Status::InvalidArgument(
-          "file block manager may not add new data directories");
+          "file block manager may not add or remove data directories");
     }
 
     // Prepare to create new directories and update existing instances. We
@@ -686,11 +682,20 @@ Status DataDirManager::Open() {
 
     // Now that we've created the missing directories, try loading the
     // directories again.
+    //
     // Note: 'loaded_instances' must be cleared to unlock the instance files.
     loaded_instances.clear();
     missing_roots.clear();
     RETURN_NOT_OK(LoadInstances(&missing_roots, &loaded_instances));
     DCHECK(missing_roots.empty());
+  }
+
+  // Check the integrity of all loaded instances.
+  if (opts_.consistency_check != ConsistencyCheckBehavior::IGNORE_INCONSISTENCY) {
+    RETURN_NOT_OK_PREPEND(
+        PathInstanceMetadataFile::CheckIntegrity(loaded_instances),
+        Substitute("could not verify integrity of files: $0",
+                   JoinStrings(GetDataDirs(), ",")));
   }
 
   // All instances are present and accounted for. Time to create the in-memory
@@ -778,7 +783,11 @@ Status DataDirManager::Open() {
         break;
       }
     }
-    DCHECK_NE(idx, -1); // Guaranteed by CheckIntegrity().
+    if (idx == -1) {
+      return Status::IOError(Substitute(
+          "corrupt path set for data directory $0: uuid $1 not found in path set",
+          dd->dir(), path_set.uuid()));
+    }
     if (idx > kMaxDataDirs) {
       return Status::NotSupported(
           Substitute("block manager supports a maximum of $0 paths", kMaxDataDirs));
@@ -794,7 +803,22 @@ Status DataDirManager::Open() {
   for (int uuid_idx = 0; uuid_idx < path_set.all_uuids_size(); uuid_idx++) {
     if (!ContainsKey(uuid_by_idx, uuid_idx)) {
       const string& unassigned_uuid = path_set.all_uuids(uuid_idx);
-      DCHECK_LT(failed_dir_idx, unassigned_dirs.size());
+      if (failed_dir_idx == unassigned_dirs.size()) {
+        // This uuid's data directory is missing outright, which can only
+        // happen when opts_.consistency_check is IGNORE_INCONSISTENCY (i.e. if
+        // this DataDirManager is trialing a new data dir configuration that
+        // removes an existing data dir). In such a case, we don't bother
+        // tracking the missing directory at all.
+        //
+        // If opts_.consistency_check is UPDATE_ON_DISK, the on-disk instances
+        // were updated and reloaded above, ensuring that the list of data
+        // directories now excludes the missing directory.
+        //
+        // If opts_.consistency_check is ENFORCE_CONSISTENCY, the
+        // CheckIntegrity call above requires that on-disk instances and the
+        // list of data directories match, so there cannot be a missing data directory.
+        continue;
+      }
       insert_to_maps(uuid_idx, unassigned_uuid, unassigned_dirs[failed_dir_idx]);
 
       // Record the directory as failed.

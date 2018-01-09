@@ -181,10 +181,10 @@ class ToolTest : public KuduTest {
   }
 
   Status RunTool(const string& arg_str,
-                 string* stdout,
-                 string* stderr,
-                 vector<string>* stdout_lines,
-                 vector<string>* stderr_lines) const {
+                 string* stdout = nullptr,
+                 string* stderr = nullptr,
+                 vector<string>* stdout_lines = nullptr,
+                 vector<string>* stderr_lines = nullptr) const {
     string out;
     string err;
     Status s = RunKuduTool(strings::Split(arg_str, " ", strings::SkipEmpty()),
@@ -228,6 +228,10 @@ class ToolTest : public KuduTest {
     SCOPED_TRACE(*stdout);
     SCOPED_TRACE(stderr);
     ASSERT_OK(s);
+  }
+
+  Status RunActionStderrString(const string& arg_str, string* stderr) const {
+    return RunTool(arg_str, nullptr, stderr, nullptr, nullptr);
   }
 
   void RunActionStdoutLines(const string& arg_str, vector<string>* stdout_lines) const {
@@ -2129,7 +2133,7 @@ TEST_P(ControlShellToolTest, TestControlShell) {
 }
 
 static void CreateTableWithFlushedData(const string& table_name,
-                                        InternalMiniCluster* cluster) {
+                                       InternalMiniCluster* cluster) {
   // Use a schema with a high number of columns to encourage the creation of
   // many data blocks.
   KuduSchemaBuilder schema_builder;
@@ -2169,7 +2173,10 @@ static void CreateTableWithFlushedData(const string& table_name,
   }
 }
 
-TEST_F(ToolTest, TestFsAddDataDirEndToEnd) {
+TEST_F(ToolTest, TestFsAddRemoveDataDirEndToEnd) {
+  const string kTableFoo = "foo";
+  const string kTableBar = "bar";
+
   if (FLAGS_block_manager == "file") {
     LOG(INFO) << "Skipping test, only log block manager is supported";
     return;
@@ -2181,7 +2188,7 @@ TEST_F(ToolTest, TestFsAddDataDirEndToEnd) {
   NO_FATALS(StartMiniCluster(std::move(opts)));
 
   // Create a table and flush some test data to it.
-  NO_FATALS(CreateTableWithFlushedData("foo", mini_cluster_.get()));
+  NO_FATALS(CreateTableWithFlushedData(kTableFoo, mini_cluster_.get()));
 
   // Add a new data directory.
   MiniTabletServer* mts = mini_cluster_->mini_tablet_server(0);
@@ -2195,6 +2202,8 @@ TEST_F(ToolTest, TestFsAddDataDirEndToEnd) {
       wal_root, JoinStrings(data_roots, ","))));
 
   // Reconfigure the tserver to use the newly added data directory and restart it.
+  //
+  // Note: WaitStarted() will return a bad status if any tablets fail to bootstrap.
   mts->options()->fs_opts.data_roots = data_roots;
   ASSERT_OK(mts->Start());
   ASSERT_OK(mts->WaitStarted());
@@ -2203,10 +2212,115 @@ TEST_F(ToolTest, TestFsAddDataDirEndToEnd) {
   // data to the newly added data directory.
   uint64_t disk_space_used_before;
   ASSERT_OK(env_->GetFileSizeOnDiskRecursively(to_add, &disk_space_used_before));
-  NO_FATALS(CreateTableWithFlushedData("bar", mini_cluster_.get()));
+  NO_FATALS(CreateTableWithFlushedData(kTableBar, mini_cluster_.get()));
   uint64_t disk_space_used_after;
   ASSERT_OK(env_->GetFileSizeOnDiskRecursively(to_add, &disk_space_used_after));
   ASSERT_GT(disk_space_used_after, disk_space_used_before);
+
+  // Try to remove the newly added data directory. This will fail because
+  // tablets from the second table are configured to use it.
+  mts->Shutdown();
+  data_roots.pop_back();
+  string stderr;
+  ASSERT_TRUE(RunActionStderrString(Substitute(
+      "fs update_dirs --fs_wal_dir=$0 --fs_data_dirs=$1",
+      wal_root, JoinStrings(data_roots, ",")), &stderr).IsRuntimeError());
+  ASSERT_STR_CONTAINS(
+      stderr, "Not found: cannot update data directories: at least one "
+      "tablet is configured to use removed data directory. Retry with --force "
+      "to override this");
+
+  // Make sure the failure really had no effect.
+  ASSERT_OK(mts->Start());
+  ASSERT_OK(mts->WaitStarted());
+  mts->Shutdown();
+
+  // If we force the removal it'll succeed, but the tserver will fail to
+  // bootstrap some tablets when restarted.
+  NO_FATALS(RunActionStdoutNone(Substitute(
+      "fs update_dirs --fs_wal_dir=$0 --fs_data_dirs=$1 --force",
+      wal_root, JoinStrings(data_roots, ","))));
+  mts->options()->fs_opts.data_roots = data_roots;
+  ASSERT_OK(mts->Start());
+  Status s = mts->WaitStarted();
+  ASSERT_TRUE(s.IsNotFound());
+  ASSERT_STR_CONTAINS(s.ToString(), "one or more data dirs may have been removed");
+
+  // Tablets belonging to the first table should still be OK, but those in the
+  // second table should have all failed.
+  {
+    vector<scoped_refptr<TabletReplica>> replicas;
+    mts->server()->tablet_manager()->GetTabletReplicas(&replicas);
+    ASSERT_GT(replicas.size(), 0);
+    for (const auto& r : replicas) {
+      const string& table_name = r->tablet_metadata()->table_name();
+      if (table_name == kTableFoo) {
+        ASSERT_EQ(tablet::RUNNING, r->state());
+      } else {
+        ASSERT_EQ(kTableBar, table_name);
+        ASSERT_EQ(tablet::FAILED, r->state());
+      }
+    }
+  }
+
+  // Add the removed data directory back. All tablets should successfully
+  // bootstrap.
+  mts->Shutdown();
+  data_roots.emplace_back(to_add);
+  NO_FATALS(RunActionStdoutNone(Substitute(
+      "fs update_dirs --fs_wal_dir=$0 --fs_data_dirs=$1",
+      wal_root, JoinStrings(data_roots, ","))));
+  mts->options()->fs_opts.data_roots = data_roots;
+  ASSERT_OK(mts->Start());
+  ASSERT_OK(mts->WaitStarted());
+  mts->Shutdown();
+
+  // Remove it again so that the second table's tablets fail once again.
+  data_roots.pop_back();
+  NO_FATALS(RunActionStdoutNone(Substitute(
+      "fs update_dirs --fs_wal_dir=$0 --fs_data_dirs=$1 --force",
+      wal_root, JoinStrings(data_roots, ","))));
+  mts->options()->fs_opts.data_roots = data_roots;
+  ASSERT_OK(mts->Start());
+  s = mts->WaitStarted();
+  ASSERT_TRUE(s.IsNotFound());
+  ASSERT_STR_CONTAINS(s.ToString(), "one or more data dirs may have been removed");
+
+  // Delete the second table and wait for all of its tablets to be deleted.
+  shared_ptr<client::KuduClient> client;
+  ASSERT_OK(mini_cluster_->CreateClient(nullptr, &client));
+  ASSERT_OK(client->DeleteTable(kTableBar));
+  ASSERT_EVENTUALLY([&]{
+    vector<scoped_refptr<TabletReplica>> replicas;
+    mts->server()->tablet_manager()->GetTabletReplicas(&replicas);
+    for (const auto& r : replicas) {
+      ASSERT_NE(kTableBar, r->tablet_metadata()->table_name());
+    }
+  });
+
+  // Shut down the tserver, add a new data directory, and restart it. There
+  // should be no bootstrapping errors because the second table (whose tablets
+  // were configured to use the removed data directory) is gone.
+  mts->Shutdown();
+  data_roots.emplace_back(JoinPathSegments(DirName(data_roots.back()), "data-new2"));
+  NO_FATALS(RunActionStdoutNone(Substitute(
+      "fs update_dirs --fs_wal_dir=$0 --fs_data_dirs=$1",
+      wal_root, JoinStrings(data_roots, ","))));
+  mts->options()->fs_opts.data_roots = data_roots;
+  ASSERT_OK(mts->Start());
+  ASSERT_OK(mts->WaitStarted());
+
+  // Shut down again, delete the newly added data directory, and restart. No
+  // errors, because the first table's tablets were never configured to use the
+  // new data directory.
+  mts->Shutdown();
+  data_roots.pop_back();
+  NO_FATALS(RunActionStdoutNone(Substitute(
+      "fs update_dirs --fs_wal_dir=$0 --fs_data_dirs=$1",
+      wal_root, JoinStrings(data_roots, ","))));
+  mts->options()->fs_opts.data_roots = data_roots;
+  ASSERT_OK(mts->Start());
+  ASSERT_OK(mts->WaitStarted());
 }
 
 TEST_F(ToolTest, TestDumpFSWithNonDefaultMetadataDir) {

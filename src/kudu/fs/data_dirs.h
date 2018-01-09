@@ -115,6 +115,21 @@ enum class DataDirFsType {
   OTHER
 };
 
+// Defines the behavior of the consistency checks performed when the directory
+// manager is opened.
+enum class ConsistencyCheckBehavior {
+  // If the data directories don't match the on-disk path sets, fail.
+  ENFORCE_CONSISTENCY,
+
+  // If the data directories don't match the on-disk path sets, update the
+  // on-disk data to match. The directory manager must not be read-only.
+  UPDATE_ON_DISK,
+
+  // If the data directories don't match the on-disk path sets, continue
+  // without updating the on-disk data.
+  IGNORE_INCONSISTENCY
+};
+
 struct DataDirMetrics {
   explicit DataDirMetrics(const scoped_refptr<MetricEntity>& entity);
 
@@ -213,14 +228,11 @@ struct DataDirManagerOptions {
   // Defaults to false.
   bool read_only;
 
-  // Whether or not the provided directories should be considered the new
-  // canonical set. If true, on-disk data structures will be updated
-  // accordingly when the DataDirManager is opened.
+  // The behavior to use when comparing the provided data directories to the
+  // on-disk path sets.
   //
-  // Defaults to false. If true, 'read_only' must be false.
-  //
-  // Currently only supports adding new data directories.
-  bool update_on_disk;
+  // Defaults to ENFORCE_CONSISTENCY.
+  ConsistencyCheckBehavior consistency_check;
 };
 
 // Encapsulates knowledge of data directory management on behalf of block
@@ -363,8 +375,7 @@ class DataDirManager {
   // Representation Conversion
   // ==========================================================================
 
-  // Finds a data directory by uuid index, returning nullptr if it can't be
-  // found.
+  // Finds a data directory by uuid index, returning null if it can't be found.
   //
   // More information on uuid indexes and their relation to data directories
   // can be found next to PathSetPB in fs.proto.
@@ -407,11 +418,15 @@ class DataDirManager {
   // metadata directory (i.e. the first one) fails to load.
   Status Open();
 
-  // Loads the instance files for each directory, populating 'missing_roots'
-  // with the data roots that are missing instance files, and
-  // 'loaded_instances' with successfully loaded instances.
+  // Loads the instance files for each data directory.
   //
-  // Returns an error if the metadata directory fails to load.
+  // If consistency checking is disabled, missing instance files are tolerated
+  // and will be written to 'missing_roots' on success.
+  //
+  // On success, 'loaded_instances' contains all successfully loaded instance files.
+  //
+  // Returns an error if an instance file fails to load or if all instance
+  // files are unhealthy.
   Status LoadInstances(std::vector<std::string>* missing_roots,
       std::vector<std::unique_ptr<PathInstanceMetadataFile>>* loaded_instances);
 
