@@ -56,7 +56,7 @@ void DoMaybeFault(const char* fault_str, double fraction) {
   }
   LOG(ERROR) << "Injecting fault: " << fault_str << " (process will exit)";
   // _exit will exit the program without running atexit handlers. This more
-  // accurately simiulates a crash.
+  // accurately simulates a crash.
   _exit(kExitStatus);
 }
 

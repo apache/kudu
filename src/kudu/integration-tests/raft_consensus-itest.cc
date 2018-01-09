@@ -115,6 +115,7 @@ using kudu::itest::StartElection;
 using kudu::itest::TServerDetails;
 using kudu::itest::TabletServerMap;
 using kudu::itest::WAIT_FOR_LEADER;
+using kudu::itest::WaitForNumTabletsOnTS;
 using kudu::itest::WaitForOpFromCurrentTerm;
 using kudu::itest::WaitForReplicasReportedToMaster;
 using kudu::itest::WaitForServersToAgree;
@@ -2396,62 +2397,127 @@ TEST_F(RaftConsensusITest, TestChangeConfigRejectedUnlessNoopReplicated) {
   ASSERT_STR_CONTAINS(s.ToString(), "Leader has not yet committed an operation in its own term");
 }
 
+class RaftConsensusParamReplicationModesITest :
+    public RaftConsensusITest,
+    public ::testing::WithParamInterface<bool> {
+};
+INSTANTIATE_TEST_CASE_P(, RaftConsensusParamReplicationModesITest,
+                        ::testing::Bool());
+
 // Regression test for KUDU-1735, a crash in the case where a pending
 // config change operation is aborted during tablet deletion when that config change
 // was in fact already persisted to disk.
-TEST_F(RaftConsensusITest, Test_KUDU_1735) {
+TEST_P(RaftConsensusParamReplicationModesITest, Test_KUDU_1735) {
   const MonoDelta kTimeout = MonoDelta::FromSeconds(10);
+  const bool is_3_4_3 = GetParam();
   const vector<string> kTsFlags = {
     // This scenario uses 'manual election' mode and assumes no leader change.
     "--enable_leader_failure_detection=false",
-    // This test is specific for the 3-2-3 replica management scheme.
-    "--raft_prepare_replacement_before_eviction=false",
+    // The test runs in both 3-2-3 and 3-4-3 replication modes.
+    Substitute("--raft_prepare_replacement_before_eviction=$0", is_3_4_3),
   };
   const vector<string> kMasterFlags = {
-    // This scenario uses 'manual election' mode and assumes no leader change.
+    // This scenario uses 'manual election' mode.
     "--catalog_manager_wait_for_new_tablets_to_elect_leader=false",
-    // This test is specific for the 3-2-3 replica management scheme.
-    "--raft_prepare_replacement_before_eviction=false",
+    // The test runs in both 3-2-3 and 3-4-3 replication modes.
+    Substitute("--raft_prepare_replacement_before_eviction=$0", is_3_4_3),
   };
 
   NO_FATALS(BuildAndStart(kTsFlags, kMasterFlags));
 
-  vector<TServerDetails*> tservers;
-  vector<ExternalTabletServer*> external_tservers;
-  AppendValuesFromMap(tablet_servers_, &tservers);
-  for (TServerDetails* ts : tservers) {
-    external_tservers.push_back(cluster_->tablet_server_by_uuid(ts->uuid()));
-  }
-
-  // Elect server 0 as leader and wait for log index 1 to propagate to all servers.
-  TServerDetails* leader_tserver = tservers[0];
+  TServerDetails* leader_tserver =
+      tablet_servers_[cluster_->tablet_server(0)->uuid()];
+  TServerDetails* evicted_tserver =
+      tablet_servers_[cluster_->tablet_server(1)->uuid()];
+  // Elect leader replica.
   ASSERT_OK(StartElection(leader_tserver, tablet_id_, kTimeout));
   ASSERT_OK(WaitUntilLeader(leader_tserver, tablet_id_, kTimeout));
+
+  // Wait for log index 1 to propagate to all involved tablet servers.
   ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10), tablet_servers_,
                                   tablet_id_, 1));
 
   // Make follower tablet servers crash before writing a commit message.
-  for (int i = 1; i < cluster_->num_tablet_servers(); i++) {
-    ASSERT_OK(cluster_->SetFlag(external_tservers[i], "fault_crash_before_append_commit", "1.0"));
+  for (const auto& e : tablet_servers_) {
+    const auto& server_uuid = e.first;
+    if (server_uuid == leader_tserver->uuid()) {
+      continue;
+    }
+    auto* ts = cluster_->tablet_server_by_uuid(server_uuid);
+    ASSERT_OK(cluster_->SetFlag(ts, "fault_crash_before_append_commit", "1.0"));
   }
 
   // Run a config change. This will cause the other servers to crash with pending config
   // change operations due to the above fault injection.
-  ASSERT_OK(RemoveServer(leader_tserver, tablet_id_, tservers[1], kTimeout));
-  for (int i = 1; i < cluster_->num_tablet_servers(); i++) {
-    ASSERT_OK(external_tservers[i]->WaitForInjectedCrash(kTimeout));
+  auto affected_servers = 0;
+  ASSERT_OK(RemoveServer(leader_tserver, tablet_id_, evicted_tserver, kTimeout));
+  for (const auto& e : tablet_servers_) {
+    const auto& server_uuid = e.first;
+    if (server_uuid == leader_tserver->uuid()) {
+      // The tablet server with the leader replica will not crash.
+      continue;
+    }
+    if (server_uuid == evicted_tserver->uuid() && is_3_4_3) {
+      // The removed server with follower replica will not receive any
+      // eviction-related configuration requests since it's not a part of the
+      // resulting Raft configuration. However, the server will receive config
+      // change request when a new voter replica is added to replace the removed
+      // one, and the behavior is different between 3-2-3 and 3-4-3 schemes.
+      //
+      // In case of the 3-2-3 scheme, the gone-and-back server will crash while
+      // trying to add the COMMIT entry into the WAL.  That change corresponds
+      // to the transaction which adds the server as a voting member of the
+      // resulting Raft configuration. Two out of three voting replicas are
+      // present, so that transaction is committed by the leader.
+      //
+      // In case of the 3-4-3 scheme, the replica is added back as a non-voter.
+      // Only one (out of two required) voting replica is available:
+      // the other replica crashes on an attempt to add a log entry about
+      // committing the configuration change on this server's eviction.
+      // So, since the configuration change on adding the server back as
+      // a non-voter replica cannot be committed, there isn't an attempt to add
+      // a commit entry into this server's WAL, so it should not crash.
+      continue;
+    }
+
+    // The remaining follower will crash while trying to commit the config
+    // change evicting the other follower.
+    auto* ts = cluster_->tablet_server_by_uuid(server_uuid);
+    ASSERT_OK(ts->WaitForInjectedCrash(kTimeout));
+    ++affected_servers;
+  }
+  ASSERT_GE(affected_servers, 1);
+
+  if (is_3_4_3) {
+    // In case of the 3-4-3 scheme, make sure the configuration change to
+    // add the removed server back as a non-voter hasn't been committed.
+    ASSERT_EVENTUALLY([&] {
+      for (auto* srv : { leader_tserver, evicted_tserver }) {
+        consensus::ConsensusStatePB cstate;
+        ASSERT_OK(itest::GetConsensusState(srv, tablet_id_, kTimeout, &cstate));
+        ASSERT_TRUE(cstate.has_pending_config());
+      }
+    });
   }
 
   // Delete the table, so that when we restart the crashed servers, they'll get RPCs to
   // delete tablets while config changes are pending.
   ASSERT_OK(client_->DeleteTable(kTableId));
 
-  // Restart the crashed tservers and wait for them to delete their replicas.
-  for (int i = 1; i < cluster_->num_tablet_servers(); i++) {
-    auto* ts = external_tservers[i];
+  // Restart tablet servers with follower replicas and wait for them to delete
+  // their replicas.
+  for (const auto& e : tablet_servers_) {
+    const auto& server_uuid = e.first;
+    if (server_uuid == leader_tserver->uuid()) {
+      // The leader should not crash, no need to restart it.
+      continue;
+    }
+    auto* ts = cluster_->tablet_server_by_uuid(server_uuid);
     ts->Shutdown();
     ASSERT_OK(ts->Restart());
-    ASSERT_OK(WaitForNumTabletsOnTS(tservers[i], 0, kTimeout, nullptr));
+  }
+  for (const auto& e : tablet_servers_) {
+    ASSERT_OK(WaitForNumTabletsOnTS(e.second, 0, kTimeout, nullptr));
   }
 }
 
