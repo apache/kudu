@@ -385,6 +385,39 @@ TEST_F(TabletServerTest, TestFailedTabletsOnWebUI) {
   ASSERT_STR_CONTAINS(buf.ToString(), "Tombstoned Tablets");
 }
 
+// Test that tombstoned tablets are displayed correctly in the web ui:
+// - After restart, status message of "Tombstoned" instead of "Tablet initializing...".
+// - No consensus configuration.
+TEST_F(TabletServerTest, TestTombstonedTabletOnWebUI) {
+  TSTabletManager* tablet_manager = mini_server_->server()->tablet_manager();
+  TabletServerErrorPB::Code error_code;
+  ASSERT_OK(tablet_manager->DeleteTablet(kTabletId,
+                                         tablet::TABLET_DATA_TOMBSTONED, boost::none, &error_code));
+
+  // Restart the server. We drop the tablet_replica_ reference since it becomes
+  // invalid when the server shuts down.
+  tablet_replica_.reset();
+  mini_server_->Shutdown();
+  ASSERT_OK(mini_server_->Restart());
+  ASSERT_OK(mini_server_->WaitStarted());
+
+  EasyCurl c;
+  faststring buf;
+  const string addr = mini_server_->bound_http_addr().ToString();
+  ASSERT_OK(c.FetchURL(Substitute("http://$0/tablets", addr), &buf));
+
+  // Ensure the html contains the "Tombstoned Tablets" header and
+  // a table entry with the proper status message.
+  string s = buf.ToString();
+  ASSERT_STR_CONTAINS(s, "Tombstoned Tablets");
+  ASSERT_STR_CONTAINS(s, "<td>Tombstoned</td>");
+  ASSERT_STR_NOT_CONTAINS(s, "<td>Tablet initializing...</td>");
+
+  // Since the consensus config shouldn't be displayed, the html should not
+  // contain the server's RPC address.
+  ASSERT_STR_NOT_CONTAINS(s, mini_server_->bound_rpc_addr().ToString());
+}
+
 class TabletServerDiskFailureTest : public TabletServerTestBase {
  public:
   virtual void SetUp() override {

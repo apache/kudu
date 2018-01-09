@@ -1256,6 +1256,7 @@ Status TSTabletManager::HandleNonReadyTabletOnStartup(const scoped_refptr<Tablet
   if (data_state == TABLET_DATA_TOMBSTONED) {
     scoped_refptr<TabletReplica> dummy;
     RETURN_NOT_OK(CreateAndRegisterTabletReplica(meta, NEW_REPLICA, &dummy));
+    dummy->SetStatusMessage("Tombstoned");
   }
 
   return Status::OK();

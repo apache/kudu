@@ -187,6 +187,11 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
 
   std::string StateName() const;
 
+  const TabletDataState data_state() const {
+    std::lock_guard<simple_spinlock> lock(lock_);
+    return meta_->tablet_data_state();
+  }
+
   // Returns the current Raft configuration.
   const consensus::RaftConfigPB RaftConfig() const;
 
