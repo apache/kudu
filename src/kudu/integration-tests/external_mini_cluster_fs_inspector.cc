@@ -100,8 +100,8 @@ vector<string> ExternalMiniClusterFsInspector::ListTablets() {
 }
 
 vector<string> ExternalMiniClusterFsInspector::ListTabletsOnTS(int index) {
-  string data_dir = cluster_->tablet_server(index)->data_dirs()[0];
-  string meta_dir = JoinPathSegments(data_dir, FsManager::kTabletMetadataDirName);
+  string wal_dir = cluster_->tablet_server(index)->wal_dir();
+  string meta_dir = JoinPathSegments(wal_dir, FsManager::kTabletMetadataDirName);
   vector<string> tablets;
   CHECK_OK(ListFilesInDir(meta_dir, &tablets));
   return tablets;
@@ -142,22 +142,22 @@ int ExternalMiniClusterFsInspector::CountReplicasInMetadataDirs() {
   // tablet servers isn't easy.
   int count = 0;
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-    string data_dir = cluster_->tablet_server(i)->data_dirs()[0];
-    count += CountFilesInDir(JoinPathSegments(data_dir, FsManager::kTabletMetadataDirName));
+    string wal_dir = cluster_->tablet_server(i)->wal_dir();
+    count += CountFilesInDir(JoinPathSegments(wal_dir, FsManager::kTabletMetadataDirName));
   }
   return count;
 }
 
 Status ExternalMiniClusterFsInspector::CheckNoDataOnTS(int index) {
-  string data_dir = cluster_->tablet_server(index)->data_dir();
-  if (CountFilesInDir(JoinPathSegments(data_dir, FsManager::kTabletMetadataDirName)) > 0) {
-    return Status::IllegalState("tablet metadata blocks still exist", data_dir);
+  const string& wal_dir = cluster_->tablet_server(index)->wal_dir();
+  if (CountFilesInDir(JoinPathSegments(wal_dir, FsManager::kTabletMetadataDirName)) > 0) {
+    return Status::IllegalState("tablet metadata blocks still exist", wal_dir);
   }
   if (CountWALFilesOnTS(index) > 0) {
-    return Status::IllegalState("wals still exist", data_dir);
+    return Status::IllegalState("wals still exist", wal_dir);
   }
-  if (CountFilesInDir(JoinPathSegments(data_dir, FsManager::kConsensusMetadataDirName)) > 0) {
-    return Status::IllegalState("consensus metadata still exists", data_dir);
+  if (CountFilesInDir(JoinPathSegments(wal_dir, FsManager::kConsensusMetadataDirName)) > 0) {
+    return Status::IllegalState("consensus metadata still exists", wal_dir);
   }
   return Status::OK();;
 }
@@ -171,8 +171,8 @@ Status ExternalMiniClusterFsInspector::CheckNoData() {
 
 string ExternalMiniClusterFsInspector::GetTabletSuperBlockPathOnTS(int ts_index,
                                                                    const string& tablet_id) const {
-  string data_dir = cluster_->tablet_server(ts_index)->data_dirs()[0];
-  string meta_dir = JoinPathSegments(data_dir, FsManager::kTabletMetadataDirName);
+  string wal_dir = cluster_->tablet_server(ts_index)->wal_dir();
+  string meta_dir = JoinPathSegments(wal_dir, FsManager::kTabletMetadataDirName);
   return JoinPathSegments(meta_dir, tablet_id);
 }
 
@@ -192,8 +192,8 @@ int64_t ExternalMiniClusterFsInspector::GetTabletSuperBlockMTimeOrDie(int ts_ind
 
 string ExternalMiniClusterFsInspector::GetConsensusMetadataPathOnTS(int index,
                                                                     const string& tablet_id) const {
-  string data_dir = cluster_->tablet_server(index)->data_dirs()[0];
-  string cmeta_dir = JoinPathSegments(data_dir, FsManager::kConsensusMetadataDirName);
+  string wal_dir = cluster_->tablet_server(index)->wal_dir();
+  string cmeta_dir = JoinPathSegments(wal_dir, FsManager::kConsensusMetadataDirName);
   return JoinPathSegments(cmeta_dir, tablet_id);
 }
 

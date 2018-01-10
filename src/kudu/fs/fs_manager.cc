@@ -20,7 +20,6 @@
 #include <cinttypes>
 #include <ctime>
 #include <iostream>
-#include <set>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -90,6 +89,13 @@ DEFINE_string(fs_data_dirs, "",
               "is not specified, fs_wal_dir will be used as the sole data "
               "block directory.");
 TAG_FLAG(fs_data_dirs, stable);
+DEFINE_string(fs_metadata_dir, "",
+              "Directory with metadata. If this is not specified, for "
+              "compatibility with Kudu 1.6 and below, Kudu will check the "
+              "first entry of fs_data_dirs for metadata and use it as the "
+              "metadata directory if any exists. If none exists, fs_wal_dir "
+              "will be used as the metadata directory.");
+TAG_FLAG(fs_metadata_dir, stable);
 
 using kudu::fs::BlockManagerOptions;
 using kudu::fs::CreateBlockOptions;
@@ -128,6 +134,7 @@ const char *FsManager::kConsensusMetadataDirName = "consensus-meta";
 
 FsManagerOpts::FsManagerOpts()
   : wal_root(FLAGS_fs_wal_dir),
+    metadata_root(FLAGS_fs_metadata_dir),
     block_manager_type(FLAGS_block_manager),
     read_only(false),
     update_on_disk(false) {
@@ -180,6 +187,12 @@ Status FsManager::Init() {
   unordered_set<string> all_roots = { opts_.wal_root };
   all_roots.insert(opts_.data_roots.begin(), opts_.data_roots.end());
 
+  // If the metadata root not set, Kudu will either use the wal root or the
+  // first data root, in which case we needn't canonicalize additional roots.
+  if (!opts_.metadata_root.empty()) {
+    all_roots.insert(opts_.metadata_root);
+  }
+
   // Build a map of original root --> canonicalized root, sanitizing each
   // root as we go and storing the canonicalization status.
   typedef unordered_map<string, CanonicalizedRootAndStatus> RootMap;
@@ -219,8 +232,8 @@ Status FsManager::Init() {
   // All done, use the map to set the canonicalized state.
 
   canonicalized_wal_fs_root_ = FindOrDie(canonicalized_roots, opts_.wal_root);
+  unordered_set<string> unique_roots;
   if (!opts_.data_roots.empty()) {
-    unordered_set<string> unique_roots;
     for (const string& data_fs_root : opts_.data_roots) {
       const auto& root = FindOrDie(canonicalized_roots, data_fs_root);
       if (InsertIfNotPresent(&unique_roots, root.path)) {
@@ -228,16 +241,36 @@ Status FsManager::Init() {
         canonicalized_all_fs_roots_.emplace_back(root);
       }
     }
-    canonicalized_metadata_fs_root_ = FindOrDie(canonicalized_roots, opts_.data_roots[0]);
-    if (!ContainsKey(unique_roots, canonicalized_wal_fs_root_.path)) {
-      canonicalized_all_fs_roots_.emplace_back(canonicalized_wal_fs_root_);
-    }
   } else {
     LOG(INFO) << "Data directories (fs_data_dirs) not provided";
     LOG(INFO) << "Using write-ahead log directory (fs_wal_dir) as data directory";
-    canonicalized_metadata_fs_root_ = canonicalized_wal_fs_root_;
     canonicalized_data_fs_roots_.emplace_back(canonicalized_wal_fs_root_);
+  }
+  if (InsertIfNotPresent(&unique_roots, canonicalized_wal_fs_root_.path)) {
     canonicalized_all_fs_roots_.emplace_back(canonicalized_wal_fs_root_);
+  }
+
+  // Decide on a metadata root to use.
+  if (opts_.metadata_root.empty()) {
+    // Check the first data root for metadata.
+    const string meta_dir_in_data_root = JoinPathSegments(canonicalized_data_fs_roots_[0].path,
+                                                          kTabletMetadataDirName);
+    // If there is already metadata in the first data root, use it. Otherwise,
+    // use the WAL root.
+    LOG(INFO) << "Metadata directory not provided";
+    if (env_->FileExists(meta_dir_in_data_root)) {
+      canonicalized_metadata_fs_root_ = canonicalized_data_fs_roots_[0];
+      LOG(INFO) << "Using existing metadata directory in first data directory";
+    } else {
+      canonicalized_metadata_fs_root_ = canonicalized_wal_fs_root_;
+      LOG(INFO) << "Using write-ahead log directory (fs_wal_dir) as metadata directory";
+    }
+  } else {
+    // Keep track of the explicitly-defined metadata root.
+    canonicalized_metadata_fs_root_ = FindOrDie(canonicalized_roots, opts_.metadata_root);
+    if (InsertIfNotPresent(&unique_roots, canonicalized_metadata_fs_root_.path)) {
+      canonicalized_all_fs_roots_.emplace_back(canonicalized_metadata_fs_root_);
+    }
   }
 
   // The server cannot start if the WAL root or metadata root failed to
@@ -383,15 +416,6 @@ Status FsManager::Open(FsReport* report) {
   InitBlockManager();
   LOG_TIMING(INFO, "opening block manager") {
     RETURN_NOT_OK(block_manager_->Open(report));
-  }
-
-  // Before returning, ensure the metadata directory has not failed.
-  // TODO(awong): avoid this single point of failure by spreading metadata
-  // across directories.
-  int metadata_idx;
-  CHECK(dd_manager_->FindUuidIndexByRoot(canonicalized_metadata_fs_root_.path, &metadata_idx));
-  if (ContainsKey(dd_manager_->GetFailedDataDirs(), metadata_idx)) {
-    return Status::IOError("Cannot open the FS layout; metadata directory failed");
   }
 
   if (FLAGS_enable_data_block_fsync) {

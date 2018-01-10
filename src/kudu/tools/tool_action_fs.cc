@@ -759,8 +759,9 @@ static unique_ptr<Mode> BuildFsDumpMode() {
       .ExtraDescription("This interprets the contents of a CFile-formatted block "
                         "and outputs the decoded row data.")
       .AddRequiredParameter({ "block_id", "block identifier" })
-      .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("fs_data_dirs")
+      .AddOptionalParameter("fs_metadata_dir")
+      .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("print_meta")
       .AddOptionalParameter("print_rows")
       .Build();
@@ -771,22 +772,25 @@ static unique_ptr<Mode> BuildFsDumpMode() {
       .ExtraDescription("This performs no parsing or interpretation of the data stored "
                         "in the block but rather outputs its binary contents directly.")
       .AddRequiredParameter({ "block_id", "block identifier" })
-      .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("fs_data_dirs")
+      .AddOptionalParameter("fs_metadata_dir")
+      .AddOptionalParameter("fs_wal_dir")
       .Build();
 
   unique_ptr<Action> dump_tree =
       ActionBuilder("tree", &DumpFsTree)
       .Description("Dump the tree of a Kudu filesystem")
-      .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("fs_data_dirs")
+      .AddOptionalParameter("fs_metadata_dir")
+      .AddOptionalParameter("fs_wal_dir")
       .Build();
 
   unique_ptr<Action> dump_uuid =
       ActionBuilder("uuid", &DumpUuid)
       .Description("Dump the UUID of a Kudu filesystem")
-      .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("fs_data_dirs")
+      .AddOptionalParameter("fs_metadata_dir")
+      .AddOptionalParameter("fs_wal_dir")
       .Build();
 
   return ModeBuilder("dump")
@@ -802,16 +806,18 @@ unique_ptr<Mode> BuildFsMode() {
   unique_ptr<Action> check =
       ActionBuilder("check", &Check)
       .Description("Check a Kudu filesystem for inconsistencies")
-      .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("fs_data_dirs")
+      .AddOptionalParameter("fs_metadata_dir")
+      .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("repair")
       .Build();
 
   unique_ptr<Action> format =
       ActionBuilder("format", &Format)
       .Description("Format a new Kudu filesystem")
-      .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("fs_data_dirs")
+      .AddOptionalParameter("fs_metadata_dir")
+      .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("uuid")
       .Build();
 
@@ -819,8 +825,9 @@ unique_ptr<Mode> BuildFsMode() {
       ActionBuilder("update_dirs", &Update)
       .Description("Updates the set of data directories in an existing Kudu filesystem")
       .ExtraDescription("Cannot currently be used to remove data directories")
-      .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("fs_data_dirs")
+      .AddOptionalParameter("fs_metadata_dir")
+      .AddOptionalParameter("fs_wal_dir")
       .Build();
 
   unique_ptr<Action> list =
@@ -833,8 +840,9 @@ unique_ptr<Mode> BuildFsMode() {
                         "Note: adding any of the 'cfile' fields to --columns will cause "
                         "the tool to read on-disk metadata for each CFile in the result set, "
                         "which could require large amounts of I/O when many results are returned.")
-      .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("fs_data_dirs")
+      .AddOptionalParameter("fs_metadata_dir")
+      .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("table_id")
       .AddOptionalParameter("tablet_id")
       .AddOptionalParameter("rowset_id")

@@ -166,16 +166,24 @@ Status PathInstanceMetadataFile::CheckIntegrity(
   // files, the (user-facing) error messages are reported in terms of data
   // directories, because UUIDs and instance files are internal details.
 
+  int first_healthy = -1;
+  for (int i = 0; i < instances.size(); i++) {
+    if (instances[i]->healthy()) {
+      first_healthy = i;
+      break;
+    }
+  }
+  if (first_healthy == -1) {
+    return Status::IOError("All data directories are unhealthy");
+  }
+
   // Map of instance UUID to path instance structure. Tracks duplicate UUIDs.
   unordered_map<string, PathInstanceMetadataFile*> uuids;
 
-  // Set of UUIDs specified in the path set of the first instance. All instances
-  // will be compared against this one to make sure all path sets match.
-  //
-  // Note that the first instance must be healthy, as it is the instance within
-  // the metadata root.
-  set<string> all_uuids(instances[0]->metadata()->path_set().all_uuids().begin(),
-                        instances[0]->metadata()->path_set().all_uuids().end());
+  // Set of UUIDs specified in the path set of the first healthy instance. All
+  // instances will be compared against it to make sure all path sets match.
+  set<string> all_uuids(instances[first_healthy]->metadata()->path_set().all_uuids().begin(),
+                        instances[first_healthy]->metadata()->path_set().all_uuids().end());
 
   if (all_uuids.size() != instances.size()) {
     return Status::IOError(

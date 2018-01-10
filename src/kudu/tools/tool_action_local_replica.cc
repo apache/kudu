@@ -883,16 +883,18 @@ unique_ptr<Mode> BuildDumpMode() {
       ActionBuilder("block_ids", &DumpBlockIdsForLocalReplica)
       .Description("Dump the IDs of all blocks belonging to a local replica")
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
-      .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("fs_data_dirs")
+      .AddOptionalParameter("fs_metadata_dir")
+      .AddOptionalParameter("fs_wal_dir")
       .Build();
 
   unique_ptr<Action> dump_meta =
       ActionBuilder("meta", &DumpMeta)
       .Description("Dump the metadata of a local replica")
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
-      .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("fs_data_dirs")
+      .AddOptionalParameter("fs_metadata_dir")
+      .AddOptionalParameter("fs_wal_dir")
       .Build();
 
   unique_ptr<Action> dump_rowset =
@@ -900,8 +902,9 @@ unique_ptr<Mode> BuildDumpMode() {
       .Description("Dump the rowset contents of a local replica")
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddOptionalParameter("dump_data")
-      .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("fs_data_dirs")
+      .AddOptionalParameter("fs_metadata_dir")
+      .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("metadata_only")
       .AddOptionalParameter("nrows")
       .AddOptionalParameter("rowset_index")
@@ -912,8 +915,9 @@ unique_ptr<Mode> BuildDumpMode() {
       .Description("Dump all WAL (write-ahead log) segments of "
         "a local replica")
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
-      .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("fs_data_dirs")
+      .AddOptionalParameter("fs_metadata_dir")
+      .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("print_entries")
       .AddOptionalParameter("print_meta")
       .AddOptionalParameter("truncate_data")
@@ -936,8 +940,9 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
       .Description("Print all tablet replica peer UUIDs found in a "
         "tablet's Raft configuration")
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
-      .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("fs_data_dirs")
+      .AddOptionalParameter("fs_metadata_dir")
+      .AddOptionalParameter("fs_wal_dir")
       .Build();
 
   unique_ptr<Action> rewrite_raft_config =
@@ -947,8 +952,9 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
       .AddRequiredVariadicParameter({
         "peers", "List of peers where each peer is of "
         "form 'uuid:hostname:port'" })
-      .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("fs_data_dirs")
+      .AddOptionalParameter("fs_metadata_dir")
+      .AddOptionalParameter("fs_wal_dir")
       .Build();
 
   unique_ptr<Action> set_term =
@@ -957,8 +963,9 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddRequiredParameter({ kTermArg, "the new raft term (must be greater "
         "than the current term)" })
-      .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("fs_data_dirs")
+      .AddOptionalParameter("fs_metadata_dir")
+      .AddOptionalParameter("fs_wal_dir")
       .Build();
 
   unique_ptr<Mode> cmeta =
@@ -976,15 +983,17 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddRequiredParameter({ "source", "Source RPC address of "
         "form hostname:port" })
-      .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("fs_data_dirs")
+      .AddOptionalParameter("fs_metadata_dir")
+      .AddOptionalParameter("fs_wal_dir")
       .Build();
 
   unique_ptr<Action> list =
       ActionBuilder("list", &ListLocalReplicas)
       .Description("Show list of tablet replicas in the local filesystem")
-      .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("fs_data_dirs")
+      .AddOptionalParameter("fs_metadata_dir")
+      .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("list_detail")
       .Build();
 
@@ -993,8 +1002,9 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
       .Description("Delete a tablet replica from the local filesystem. "
           "By default, leaves a tombstone record.")
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
-      .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("fs_data_dirs")
+      .AddOptionalParameter("fs_metadata_dir")
+      .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("clean_unsafe")
       .Build();
 
@@ -1002,8 +1012,9 @@ unique_ptr<Mode> BuildLocalReplicaMode() {
       ActionBuilder("data_size", &SummarizeDataSize)
       .Description("Summarize the data size/space usage of the given local replica(s).")
       .AddRequiredParameter({ kTabletIdGlobArg, kTabletIdGlobArgDesc })
-      .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("fs_data_dirs")
+      .AddOptionalParameter("fs_metadata_dir")
+      .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("format")
       .Build();
 

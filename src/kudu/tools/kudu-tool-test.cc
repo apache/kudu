@@ -2209,5 +2209,38 @@ TEST_F(ToolTest, TestFsAddDataDirEndToEnd) {
   ASSERT_GT(disk_space_used_after, disk_space_used_before);
 }
 
+TEST_F(ToolTest, TestDumpFSWithNonDefaultMetadataDir) {
+  const string kTestDir = GetTestPath("test");
+  ASSERT_OK(env_->CreateDir(kTestDir));
+  string uuid;
+  FsManagerOpts opts;
+  {
+    opts.wal_root = JoinPathSegments(kTestDir, "wal");
+    opts.metadata_root = JoinPathSegments(kTestDir, "meta");
+    FsManager fs(env_, opts);
+    ASSERT_OK(fs.CreateInitialFileSystemLayout());
+    ASSERT_OK(fs.Open());
+    uuid = fs.uuid();
+  }
+  // Because a non-default metadata directory was specified, users must provide
+  // enough arguments to open the FsManager, or else FS tools will not work.
+  // The tool will fail in its own process. Catch its output.
+  string stderr;
+  Status s = RunTool(Substitute("fs dump uuid --fs_wal_dir=$0", opts.wal_root),
+                    nullptr, &stderr, {}, {});
+  ASSERT_TRUE(s.IsRuntimeError());
+  ASSERT_STR_CONTAINS(s.ToString(), "process exited with non-zero status");
+  SCOPED_TRACE(stderr);
+  ASSERT_STR_CONTAINS(stderr, "could not verify required directory");
+
+  // Providing the necessary arguments, the tool should work.
+  string stdout;
+  NO_FATALS(RunActionStdoutString(Substitute(
+      "fs dump uuid --fs_wal_dir=$0 --fs_metadata_dir=$1",
+      opts.wal_root, opts.metadata_root), &stdout));
+  SCOPED_TRACE(stdout);
+  ASSERT_EQ(uuid, stdout);
+}
+
 } // namespace tools
 } // namespace kudu

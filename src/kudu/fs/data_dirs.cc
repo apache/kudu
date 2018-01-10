@@ -527,15 +527,13 @@ Status DataDirManager::LoadInstances(
     unique_ptr<PathInstanceMetadataFile> instance(
         new PathInstanceMetadataFile(env_, opts_.block_manager_type, instance_filename));
     if (PREDICT_FALSE(!root.status.ok())) {
-      DCHECK_GT(i, 0);  // Guaranteed by FsManager::Init().
       instance->SetInstanceFailed(root.status);
     } else {
       // This may return OK and mark 'instance' as failed.
       Status s = instance->LoadFromDisk();
-      if (s.IsNotFound() && opts_.update_on_disk && i > 0) {
+      if (s.IsNotFound() && opts_.update_on_disk) {
         // A missing instance is only tolerated if we've been asked to add new
-        // data directories and this isn't the first one (i.e. the data
-        // directory used for metadata).
+        // data directories.
         missing_roots_tmp.emplace_back(root.path);
         continue;
       }
@@ -562,12 +560,17 @@ Status DataDirManager::LoadInstances(
     loaded_instances_tmp.emplace_back(std::move(instance));
   }
 
-  // Check that the first data directory (used for metadata) exists and is healthy.
+  // Check that at least a single data directory exists and is healthy.
   CHECK(!loaded_instances_tmp.empty());  // enforced above
-  if (!loaded_instances_tmp[0]->healthy()) {
-    return Status::IOError(Substitute(
-        "could not open directory manager; metadata directory failed: $0",
-        loaded_instances_tmp[0]->health_status().ToString()));
+  int num_healthy_instances = 0;
+  for (const auto& instance : loaded_instances_tmp) {
+    if (instance->healthy()) {
+      num_healthy_instances++;
+    }
+  }
+  if (num_healthy_instances == 0) {
+    return Status::IOError("could not open directory manager; all data "
+                           "directories failed");
   }
   missing_roots->swap(missing_roots_tmp);
   loaded_instances->swap(loaded_instances_tmp);
@@ -695,12 +698,17 @@ Status DataDirManager::Open() {
   };
 
   vector<DataDir*> unassigned_dirs;
+  int first_healthy = -1;
   // Assign a uuid index to each healthy instance.
-  for (const auto& dd : dds) {
+  for (int dir = 0; dir < dds.size(); dir++) {
+    const auto& dd = dds[dir];
     if (PREDICT_FALSE(!dd->instance()->healthy())) {
       // Keep track of failed directories so we can assign them UUIDs later.
       unassigned_dirs.push_back(dd.get());
       continue;
+    }
+    if (first_healthy == -1) {
+      first_healthy = dir;
     }
     const PathSetPB& path_set = dd->instance()->metadata()->path_set();
     int idx = -1;
@@ -717,11 +725,11 @@ Status DataDirManager::Open() {
     }
     insert_to_maps(idx, path_set.uuid(), dd.get());
   }
+  CHECK_NE(first_healthy, -1); // Guaranteed by LoadInstances().
 
   // If the uuid index was not assigned, assign it to a failed directory. Use
-  // the 'all_uuids' of the first data directory, as it is guaranteed to be
-  // healthy.
-  PathSetPB path_set = dds[0]->instance()->metadata()->path_set();
+  // the path set from the first healthy instance.
+  PathSetPB path_set = dds[first_healthy]->instance()->metadata()->path_set();
   int failed_dir_idx = 0;
   for (int uuid_idx = 0; uuid_idx < path_set.all_uuids_size(); uuid_idx++) {
     if (!ContainsKey(uuid_by_idx, uuid_idx)) {

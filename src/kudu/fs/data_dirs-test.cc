@@ -397,29 +397,26 @@ TEST_F(DataDirManagerTest, TestOpenWithFailedDirs) {
   ASSERT_OK(DataDirManager::CreateNewForTests(
       env_, test_roots_, DataDirManagerOptions(), &dd_manager_));
 
-  // Kill the first non-metadata directory.
+  // Kill the first directory.
   FLAGS_crash_on_eio = false;
   FLAGS_env_inject_eio = 1.0;
-  FLAGS_env_inject_eio_globs = JoinPathSegments(test_roots_[1], "**");
+  FLAGS_env_inject_eio_globs = JoinPathSegments(test_roots_[0], "**");
 
   // The directory manager will successfully open with the single failed directory.
   ASSERT_OK(OpenDataDirManager());
   set<int> failed_dirs;
   ASSERT_EQ(1, dd_manager_->GetFailedDataDirs().size());
 
-  // Now fail almost all of the other directories, leaving the first intact.
-  for (int i = 2; i < kNumDirs; i++) {
-    // Completely change the failed directory and reopen the directory manager.
-    // The previously failed disks should durably failed.
+  // Now fail almost all of the other directories, leaving the last intact.
+  for (int i = 1; i < kNumDirs - 1; i++) {
     FLAGS_env_inject_eio_globs = Substitute("$0,$1", FLAGS_env_inject_eio_globs,
                                             JoinPathSegments(test_roots_[i], "**"));
   }
-  // The directory manager should still be aware of the previously failed
-  // disk(s), as well as the newly failed on.
+  // The directory manager should be aware of the new failures.
   ASSERT_OK(OpenDataDirManager());
   ASSERT_EQ(kNumDirs - 1, dd_manager_->GetFailedDataDirs().size());
 
-  // Ensure that when all data directories have failed, the server will crash.
+  // Ensure that when all data directories fail, the server will crash.
   FLAGS_env_inject_eio_globs = JoinStrings(JoinPathSegmentsV(test_roots_, "**"), ",");
   Status s = DataDirManager::OpenExistingForTests(env_, test_roots_,
       DataDirManagerOptions(), &dd_manager_);

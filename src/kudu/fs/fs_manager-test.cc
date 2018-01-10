@@ -237,6 +237,109 @@ TEST_F(FsManagerTestBase, TestFormatWithSpecificUUID) {
   ASSERT_EQ(uuid, fs_manager()->uuid());
 }
 
+TEST_F(FsManagerTestBase, TestMetadataDirInWALRoot) {
+  // By default, the FsManager should put metadata in the wal root.
+  FsManagerOpts opts;
+  opts.wal_root = GetTestPath("wal");
+  opts.data_roots = { GetTestPath("data") };
+  ReinitFsManagerWithOpts(opts);
+  ASSERT_OK(fs_manager()->CreateInitialFileSystemLayout());
+  ASSERT_OK(fs_manager()->Open());
+  ASSERT_STR_CONTAINS(fs_manager()->GetTabletMetadataDir(),
+                      JoinPathSegments("wal", FsManager::kTabletMetadataDirName));
+
+  // Reinitializing the FS layout with any other configured metadata root
+  // should fail, as a non-empty metadata root will be used verbatim.
+  opts.metadata_root = GetTestPath("asdf");
+  ReinitFsManagerWithOpts(opts);
+  Status s = fs_manager()->Open();
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+
+  // The above comment also applies to the default value before Kudu 1.6: the
+  // first configured data directory. Let's check that too.
+  opts.metadata_root = opts.data_roots[0];
+  ReinitFsManagerWithOpts(opts);
+  s = fs_manager()->Open();
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+
+  // We should be able to verify that the metadata is in the WAL root.
+  opts.metadata_root = opts.wal_root;
+  ReinitFsManagerWithOpts(opts);
+  ASSERT_OK(fs_manager()->Open());
+}
+
+TEST_F(FsManagerTestBase, TestMetadataDirInDataRoot) {
+  FsManagerOpts opts;
+  opts.wal_root = GetTestPath("wal");
+  opts.data_roots = { GetTestPath("data1") };
+
+  // Creating a brand new FS layout configured with metadata in the first data
+  // directory emulates the default behavior in Kudu 1.6 and below.
+  opts.metadata_root = opts.data_roots[0];
+  ReinitFsManagerWithOpts(opts);
+  ASSERT_OK(fs_manager()->CreateInitialFileSystemLayout());
+  ASSERT_OK(fs_manager()->Open());
+  const string& meta_root_suffix = JoinPathSegments("data1", FsManager::kTabletMetadataDirName);
+  ASSERT_STR_CONTAINS(fs_manager()->GetTabletMetadataDir(), meta_root_suffix);
+
+  // Opening the FsManager with an empty fs_metadata_dir flag should account
+  // for the old default and use the first data directory for metadata.
+  opts.metadata_root.clear();
+  ReinitFsManagerWithOpts(opts);
+  ASSERT_OK(fs_manager()->Open());
+  ASSERT_STR_CONTAINS(fs_manager()->GetTabletMetadataDir(), meta_root_suffix);
+
+  // Now let's test adding data directories with metadata in the data root.
+  // Adding data directories is not supported by the file block manager.
+  if (FLAGS_block_manager == "file") {
+    LOG(INFO) << "Skipping the rest of test, file block manager not supported";
+    return;
+  }
+
+  // Adding a data dir to the front of the FS root list (i.e. such that the
+  // metadata root is no longer at the front) will prevent Kudu from starting.
+  opts.data_roots = { GetTestPath("data2"), GetTestPath("data1") };
+  opts.update_on_disk = true;
+  ReinitFsManagerWithOpts(opts);
+  Status s = fs_manager()->Open();
+  ASSERT_STR_CONTAINS(s.ToString(), "could not verify required directory");
+  ASSERT_TRUE(s.IsNotFound());
+  ASSERT_FALSE(env_->FileExists(opts.data_roots[0]));
+  ASSERT_TRUE(env_->FileExists(opts.data_roots[1]));
+
+  // Now allow the reordering by specifying the expected metadata root.
+  opts.metadata_root = opts.data_roots[1];
+  ReinitFsManagerWithOpts(opts);
+  ASSERT_OK(fs_manager()->Open());
+  ASSERT_STR_CONTAINS(fs_manager()->GetTabletMetadataDir(), meta_root_suffix);
+}
+
+TEST_F(FsManagerTestBase, TestIsolatedMetadataDir) {
+  FsManagerOpts opts;
+  opts.wal_root = GetTestPath("wal");
+  opts.data_roots = { GetTestPath("data") };
+
+  // Creating a brand new FS layout configured to a directory outside the WAL
+  // or data directories is supported.
+  opts.metadata_root = GetTestPath("asdf");
+  ReinitFsManagerWithOpts(opts);
+  ASSERT_OK(fs_manager()->CreateInitialFileSystemLayout());
+  ASSERT_OK(fs_manager()->Open());
+  ASSERT_STR_CONTAINS(fs_manager()->GetTabletMetadataDir(),
+                      JoinPathSegments("asdf", FsManager::kTabletMetadataDirName));
+  ASSERT_NE(DirName(fs_manager()->GetTabletMetadataDir()),
+            DirName(fs_manager()->GetWalsRootDir()));
+  ASSERT_NE(DirName(fs_manager()->GetTabletMetadataDir()),
+            DirName(fs_manager()->GetDataRootDirs()[0]));
+
+  // If the user henceforth forgets to specify the metadata root, the FsManager
+  // will fail to open.
+  opts.metadata_root.clear();
+  ReinitFsManagerWithOpts(opts);
+  Status s = fs_manager()->Open();
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+}
+
 Status CountTmpFiles(Env* env, const string& path, const vector<string>& children,
                      unordered_set<string>* checked_dirs, size_t* count) {
   vector<string> sub_objects;
@@ -459,16 +562,9 @@ TEST_F(FsManagerTestBase, TestAddDataDirs) {
   ASSERT_TRUE(s.IsIOError());
   ASSERT_STR_CONTAINS(s.ToString(), "could not verify integrity of files");
 
-  // Try to open with a new data dir at the front of the list; this should fail.
+  // We should be able to add new directories anywhere in the list.
   const string new_path2 = GetTestPath("new_path2");
   opts.data_roots = { new_path2, fs_root_, new_path1 };
-  ReinitFsManagerWithOpts(opts);
-  s = fs_manager()->Open();
-  ASSERT_TRUE(s.IsNotFound());
-  ASSERT_STR_CONTAINS(s.ToString(), "could not verify required directory");
-
-  // But adding a new data dir elsewhere in the list is OK.
-  opts.data_roots = { fs_root_, new_path2, new_path1 };
   ReinitFsManagerWithOpts(opts);
   ASSERT_OK(fs_manager()->Open());
   ASSERT_EQ(3, fs_manager()->dd_manager()->GetDataDirs().size());

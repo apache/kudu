@@ -59,6 +59,10 @@ namespace itest {
 class ExternalMiniClusterFsInspector;
 } // namespace itest
 
+namespace tserver {
+class MiniTabletServerTest_TestFsLayoutEndToEnd_Test;
+} // namespace tserver
+
 struct FsManagerOpts {
   // Creates a new FsManagerOpts with default values.
   FsManagerOpts();
@@ -82,8 +86,15 @@ struct FsManagerOpts {
   // The directory root where WALs will be stored. Cannot be empty.
   std::string wal_root;
 
-  // The directory root where data blocks will be stored. Cannot be empty.
+  // The directory root where data blocks will be stored. If empty, Kudu will
+  // use the WAL root.
   std::vector<std::string> data_roots;
+
+  // The directory root where metadata will be stored. If empty, Kudu will use
+  // the WAL root, or the first configured data root if metadata already exists
+  // in it from a previous deployment (the only option in Kudu 1.6 and below
+  // was to use the first data root).
+  std::string metadata_root;
 
   // The block manager type. Must be either "file" or "log".
   // Defaults to the value of FLAGS_block_manager.
@@ -248,9 +259,14 @@ class FsManager {
 
  private:
   FRIEND_TEST(FsManagerTestBase, TestDuplicatePaths);
+  FRIEND_TEST(FsManagerTestBase, TestMetadataDirInWALRoot);
+  FRIEND_TEST(FsManagerTestBase, TestMetadataDirInDataRoot);
+  FRIEND_TEST(FsManagerTestBase, TestIsolatedMetadataDir);
+  FRIEND_TEST(tserver::MiniTabletServerTest, TestFsLayoutEndToEnd);
   friend class itest::ExternalMiniClusterFsInspector; // for access to directory names
 
   // Initializes, sanitizes, and canonicalizes the filesystem roots.
+  // Determines the correct filesystem root for tablet-specific metadata.
   Status Init();
 
   // Select and create an instance of the appropriate block manager.
