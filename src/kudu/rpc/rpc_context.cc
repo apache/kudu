@@ -139,6 +139,10 @@ const rpc::RequestIdPB* RpcContext::request_id() const {
   return call_->header().has_request_id() ? &call_->header().request_id() : nullptr;
 }
 
+size_t RpcContext::GetTransferSize() const {
+  return call_->GetTransferSize();
+}
+
 Status RpcContext::AddOutboundSidecar(unique_ptr<RpcSidecar> car, int* idx) {
   return call_->AddOutboundSidecar(std::move(car), idx);
 }

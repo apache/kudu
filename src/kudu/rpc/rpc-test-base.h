@@ -248,6 +248,7 @@ class CalculatorService : public CalculatorServiceIf {
   }
 
   void Add(const AddRequestPB *req, AddResponsePB *resp, RpcContext *context) override {
+    CHECK_GT(context->GetTransferSize(), 0);
     resp->set_result(req->x() + req->y());
     context->RespondSuccess();
   }
