@@ -62,16 +62,17 @@
 #include "kudu/util/test_util_prod.h"
 #include "kudu/util/threadpool.h"
 
-DEFINE_int32(fs_target_data_dirs_per_tablet, 0,
-              "Indicates the target number of data dirs to spread each "
-              "tablet's data across. If greater than the number of data dirs "
-              "available, data will be striped across those available. The "
-              "default value 0 indicates striping should occur across all "
-              "healthy data directories.");
+DEFINE_int32(fs_target_data_dirs_per_tablet, 3,
+             "Indicates the target number of data dirs to spread each "
+             "tablet's data across. If greater than the number of data dirs "
+             "available, data will be striped across those available. A "
+             "value of 0 indicates striping should occur across all healthy "
+             "data dirs. Using fewer data dirs per tablet means a single "
+             "drive failure will be less likely to affect a given tablet.");
 DEFINE_validator(fs_target_data_dirs_per_tablet,
     [](const char* /*n*/, int32_t v) { return v >= 0; });
 TAG_FLAG(fs_target_data_dirs_per_tablet, advanced);
-TAG_FLAG(fs_target_data_dirs_per_tablet, experimental);
+TAG_FLAG(fs_target_data_dirs_per_tablet, evolving);
 
 DEFINE_int64(fs_data_dirs_reserved_bytes, -1,
              "Number of bytes to reserve on each data directory filesystem for "

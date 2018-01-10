@@ -63,6 +63,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/escaping.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
@@ -501,10 +502,11 @@ TEST_F(TabletServerDiskFailureTest, TestRandomOpSequence) {
   const int kMaxKey = 100000;
 
   // Set these way up-front so we can change a single value to actually start
-  // injecting errors.
+  // injecting errors. Inject errors into all data dirs but one.
   FLAGS_crash_on_eio = false;
-  FLAGS_env_inject_eio_globs =
-    JoinPathSegments(mini_server_->options()->fs_opts.data_roots[1], "**");
+  const vector<string> failed_dirs = { mini_server_->options()->fs_opts.data_roots.begin() + 1,
+                                       mini_server_->options()->fs_opts.data_roots.end() };
+  FLAGS_env_inject_eio_globs = JoinStrings(JoinPathSegmentsV(failed_dirs, "**"), ",");
 
   set<int> keys;
   const auto GetRandomString = [] {
