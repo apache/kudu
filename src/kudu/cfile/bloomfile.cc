@@ -104,7 +104,10 @@ BloomFileWriter::BloomFileWriter(unique_ptr<WritableBlock> block,
   // bloom filters are high-entropy data structures by their nature.
   opts.storage_attributes.encoding  = PLAIN_ENCODING;
   opts.storage_attributes.compression = NO_COMPRESSION;
-  writer_.reset(new cfile::CFileWriter(opts, GetTypeInfo(BINARY), false, std::move(block)));
+  writer_.reset(new cfile::CFileWriter(std::move(opts),
+                                       GetTypeInfo(BINARY),
+                                       false,
+                                       std::move(block)));
 }
 
 Status BloomFileWriter::Start() {

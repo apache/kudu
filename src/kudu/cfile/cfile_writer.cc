@@ -17,10 +17,12 @@
 
 #include "kudu/cfile/cfile_writer.h"
 
+#include <functional>
 #include <numeric>
 #include <ostream>
 #include <utility>
 
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -83,33 +85,20 @@ static CompressionType GetDefaultCompressionCodec() {
 }
 
 ////////////////////////////////////////////////////////////
-// Options
-////////////////////////////////////////////////////////////
-WriterOptions::WriterOptions()
-  : index_block_size(32*1024),
-    block_restart_interval(16),
-    write_posidx(false),
-    write_validx(false),
-    optimize_index_keys(true) {
-}
-
-
-////////////////////////////////////////////////////////////
 // CFileWriter
 ////////////////////////////////////////////////////////////
 
 
-CFileWriter::CFileWriter(const WriterOptions &options,
+CFileWriter::CFileWriter(WriterOptions options,
                          const TypeInfo* typeinfo,
                          bool is_nullable,
                          unique_ptr<WritableBlock> block)
   : block_(std::move(block)),
     off_(0),
     value_count_(0),
-    options_(options),
+    options_(std::move(options)),
     is_nullable_(is_nullable),
     typeinfo_(typeinfo),
-    key_encoder_(nullptr),
     state_(kWriterInitialized) {
   EncodingType encoding = options_.storage_attributes.encoding;
   Status s = TypeEncodingInfo::Get(typeinfo_, encoding, &type_encoding_info_);
@@ -138,12 +127,18 @@ CFileWriter::CFileWriter(const WriterOptions &options,
     options_.storage_attributes.cfile_block_size = kMinBlockSize;
   }
 
-  if (options.write_posidx) {
+  if (options_.write_posidx) {
     posidx_builder_.reset(new IndexTreeBuilder(&options_, this));
   }
 
-  if (options.write_validx) {
-    key_encoder_ = &GetKeyEncoder<faststring>(typeinfo_);
+  if (options_.write_validx) {
+    if (!options_.validx_key_encoder) {
+      auto key_encoder = &GetKeyEncoder<faststring>(typeinfo_);
+      options_.validx_key_encoder = [key_encoder] (const void* value, faststring* buffer) {
+        key_encoder->ResetAndEncode(value, buffer);
+      };
+    }
+
     validx_builder_.reset(new IndexTreeBuilder(&options_, this));
   }
 }
@@ -415,17 +410,17 @@ Status CFileWriter::FinishCurDataBlock() {
 
   if (validx_builder_ != nullptr) {
     RETURN_NOT_OK(data_block_->GetLastKey(key_tmp_space));
-    key_encoder_->ResetAndEncode(key_tmp_space, &last_key_);
+    (*options_.validx_key_encoder)(key_tmp_space, &last_key_);
   }
   data_block_->Reset();
 
   return s;
 }
 
-Status CFileWriter::AppendRawBlock(const vector<Slice> &data_slices,
+Status CFileWriter::AppendRawBlock(const vector<Slice>& data_slices,
                                    size_t ordinal_pos,
                                    const void *validx_curr,
-                                   const Slice &validx_prev,
+                                   const Slice& validx_prev,
                                    const char *name_for_log) {
   CHECK_EQ(state_, kWriterWriting);
 
@@ -447,7 +442,7 @@ Status CFileWriter::AppendRawBlock(const vector<Slice> &data_slices,
     CHECK(validx_curr != nullptr) <<
       "must pass a key for raw block if validx is configured";
 
-    key_encoder_->ResetAndEncode(validx_curr, &tmp_buf_);
+    (*options_.validx_key_encoder)(validx_curr, &tmp_buf_);
     Slice idx_key = Slice(tmp_buf_);
     if (options_.optimize_index_keys) {
       GetSeparatingKey(validx_prev, &idx_key);

@@ -22,6 +22,7 @@
 #include <string>
 #include <utility>
 
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
 
@@ -101,13 +102,34 @@ DeltaFileWriter::DeltaFileWriter(unique_ptr<WritableBlock> block)
   opts.write_validx = true;
   opts.storage_attributes.cfile_block_size = FLAGS_deltafile_default_block_size;
   opts.storage_attributes.encoding = PLAIN_ENCODING;
-  opts.storage_attributes.compression = GetCompressionCodecType(
-      FLAGS_deltafile_default_compression_codec);
-  // No optimization for deltafiles because a deltafile index key must decode into a DeltaKey
-  opts.optimize_index_keys = false;
-  writer_.reset(new cfile::CFileWriter(opts, GetTypeInfo(BINARY), false, std::move(block)));
-}
+  opts.storage_attributes.compression =
+      GetCompressionCodecType(FLAGS_deltafile_default_compression_codec);
 
+  // The CFile value index is 'compressed' by truncating delta values to only
+  // contain the delta key. The entire deltakey is required in order to support
+  // efficient seeks without deserializing the entire cblock. The generic value
+  // index optimization is disabled, since it could truncate portions of the
+  // deltakey.
+  //
+  // Note: The deltafile usage of the CFile value index is irregular, since it
+  // inserts values in non-sorted order (the timestamp portion of the deltakey
+  // in UNDO files is sorted in descending order). This doesn't appear to cause
+  // problems in practice.
+  opts.optimize_index_keys = false;
+  opts.validx_key_encoder = [] (const void* value, faststring* buffer) {
+    buffer->clear();
+    const Slice* s1 = static_cast<const Slice*>(value);
+    Slice s2(*s1);
+    DeltaKey key;
+    CHECK_OK(key.DecodeFrom(&s2));
+    key.EncodeTo(buffer);
+  };
+
+  writer_.reset(new cfile::CFileWriter(std::move(opts),
+                                       GetTypeInfo(BINARY),
+                                       false,
+                                       std::move(block)));
+}
 
 Status DeltaFileWriter::Start() {
   return writer_->Start();

@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <string>
 
+#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
 #include "kudu/cfile/cfile_reader.h"
@@ -39,6 +40,15 @@ namespace cfile {
 using std::string;
 
 static const int kBufSize = 1024*1024;
+
+WriterOptions::WriterOptions()
+  : index_block_size(32*1024),
+    block_restart_interval(16),
+    write_posidx(false),
+    write_validx(false),
+    optimize_index_keys(true),
+    validx_key_encoder(boost::none) {
+}
 
 Status DumpIterator(const CFileReader& reader,
                     CFileIterator* it,

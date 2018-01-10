@@ -103,10 +103,11 @@ class NullBitmapBuilder {
 // Main class used to write a CFile.
 class CFileWriter {
  public:
-  explicit CFileWriter(const WriterOptions &options,
+  explicit CFileWriter(WriterOptions options,
                        const TypeInfo* typeinfo,
                        bool is_nullable,
                        std::unique_ptr<fs::WritableBlock> block);
+
   ~CFileWriter();
 
   Status Start();
@@ -221,10 +222,6 @@ class CFileWriter {
   CompressionType compression_;
   const TypeInfo* typeinfo_;
   const TypeEncodingInfo* type_encoding_info_;
-
-  // The key-encoder. Only set if the writer is writing an embedded
-  // value index.
-  const KeyEncoder<faststring>* key_encoder_;
 
   // The last key written to the block.
   // Only set if the writer is writing an embedded value index.

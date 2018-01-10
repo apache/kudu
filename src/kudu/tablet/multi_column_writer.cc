@@ -90,7 +90,7 @@ Status MultiColumnWriter::Open() {
 
     // Create the CFile writer itself.
     gscoped_ptr<CFileWriter> writer(new CFileWriter(
-        opts,
+        std::move(opts),
         col.type_info(),
         col.is_nullable(),
         std::move(block)));
