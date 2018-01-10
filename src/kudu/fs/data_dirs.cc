@@ -824,10 +824,14 @@ Status DataDirManager::CreateDataDirGroup(const string& tablet_id,
       return Status::IOError("All healthy data directories are full", "", ENOSPC);
     }
     if (PREDICT_FALSE(group_indices.size() < FLAGS_fs_target_data_dirs_per_tablet)) {
-      LOG(WARNING) << Substitute("Could only allocate $0 dirs of requested $1 for tablet $2 ($3 "
-                                 "dirs total, $4 full, $5 failed).", group_indices.size(),
-                                 FLAGS_fs_target_data_dirs_per_tablet, tablet_id, data_dirs_.size(),
-                                 metrics_->data_dirs_full.get(), metrics_->data_dirs_failed.get());
+      string msg = Substitute("Could only allocate $0 dirs of requested $1 for tablet "
+                              "$2. $3 dirs total", group_indices.size(),
+                              FLAGS_fs_target_data_dirs_per_tablet, tablet_id, data_dirs_.size());
+      if (metrics_) {
+        msg = Substitute("$0, $1 dirs full, $2 dirs failed", msg,
+                         metrics_->data_dirs_full.get(), metrics_->data_dirs_failed.get());
+      }
+      LOG(INFO) << Substitute(msg);
     }
   }
   InsertOrDie(&group_by_tablet_map_, tablet_id, DataDirGroup(group_indices));
