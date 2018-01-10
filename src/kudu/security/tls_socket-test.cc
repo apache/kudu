@@ -20,7 +20,6 @@
 #include <algorithm>
 #include <pthread.h>
 #include <sched.h>
-#include <sys/socket.h>
 #include <sys/uio.h>
 
 #include <atomic>
@@ -281,9 +280,6 @@ TEST_F(TlsSocketTest, TestNonBlockingWritev) {
 
   unique_ptr<Socket> client_sock;
   NO_FATALS(ConnectClient(server.listen_addr(), &client_sock));
-
-  int sndbuf = 16 * 1024;
-  CHECK_ERR(setsockopt(client_sock->GetFd(), SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf)));
 
   unique_ptr<uint8_t[]> buf(new uint8_t[kEchoChunkSize]);
   unique_ptr<uint8_t[]> rbuf(new uint8_t[kEchoChunkSize]);
