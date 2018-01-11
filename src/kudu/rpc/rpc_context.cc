@@ -24,6 +24,7 @@
 #include <glog/logging.h>
 #include <google/protobuf/message.h>
 
+#include "kudu/rpc/connection.h"
 #include "kudu/rpc/inbound_call.h"
 #include "kudu/rpc/remote_method.h"
 #include "kudu/rpc/remote_user.h"
@@ -153,6 +154,10 @@ Status RpcContext::GetInboundSidecar(int idx, Slice* slice) {
 
 const RemoteUser& RpcContext::remote_user() const {
   return call_->remote_user();
+}
+
+bool RpcContext::is_confidential() const {
+  return call_->connection()->is_confidential();
 }
 
 void RpcContext::DiscardTransfer() {

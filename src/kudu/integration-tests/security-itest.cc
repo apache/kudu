@@ -22,11 +22,13 @@
 #include <string>
 #include <vector>
 
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
+#include "kudu/client/client.pb.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
 #include "kudu/client/write_op.h"
@@ -37,9 +39,11 @@
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
+#include "kudu/mini-cluster/mini_cluster.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/security/test/mini_kdc.h"
+#include "kudu/security/token.pb.h"
 #include "kudu/server/server_base.pb.h"
 #include "kudu/server/server_base.proxy.h"
 #include "kudu/tablet/key_value_test_schema.h"
@@ -51,6 +55,8 @@
 #include "kudu/util/subprocess.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+
+DECLARE_string(local_ip_for_outbound_sockets);
 
 using kudu::client::KuduClient;
 using kudu::client::KuduInsert;
@@ -302,6 +308,105 @@ TEST_F(SecurityITest, TestWorldReadablePrivateKey) {
   ASSERT_STR_CONTAINS(stderr, Substitute(
       "cannot use private key file with world-readable permissions: $0",
       credentials_name));
+}
+
+struct AuthTokenIssuingTestParams {
+  const ExternalMiniCluster::BindMode bind_mode;
+  const string rpc_authentication;
+  const string rpc_encryption;
+  const bool rpc_encrypt_loopback_connections;
+  const bool authn_token_present;
+};
+class AuthTokenIssuingTest :
+    public SecurityITest,
+    public ::testing::WithParamInterface<AuthTokenIssuingTestParams> {
+};
+INSTANTIATE_TEST_CASE_P(, AuthTokenIssuingTest, ::testing::ValuesIn(
+    vector<AuthTokenIssuingTestParams>{
+      { ExternalMiniCluster::BindMode::LOOPBACK, "required", "required", true,  true,  },
+      { ExternalMiniCluster::BindMode::LOOPBACK, "required", "required", false, true,  },
+      //ExternalMiniCluster::BindMode::LOOPBACK, "required", "disabled": non-acceptable
+      //ExternalMiniCluster::BindMode::LOOPBACK, "required", "disabled": non-acceptable
+      { ExternalMiniCluster::BindMode::LOOPBACK, "disabled", "required", true,  true,  },
+      { ExternalMiniCluster::BindMode::LOOPBACK, "disabled", "required", false, true,  },
+      { ExternalMiniCluster::BindMode::LOOPBACK, "disabled", "disabled", true,  false, },
+      { ExternalMiniCluster::BindMode::LOOPBACK, "disabled", "disabled", false, true,  },
+#if defined(__linux__)
+      { ExternalMiniCluster::BindMode::UNIQUE_LOOPBACK, "required", "required", true,  true,  },
+      { ExternalMiniCluster::BindMode::UNIQUE_LOOPBACK, "required", "required", false, true,  },
+      //ExternalMiniCluster::BindMode::UNIQUE_LOOPBACK, "required", "disabled": non-acceptable
+      //ExternalMiniCluster::BindMode::UNIQUE_LOOPBACK, "required", "disabled": non-acceptable
+      { ExternalMiniCluster::BindMode::UNIQUE_LOOPBACK, "disabled", "required", true,  true,  },
+      { ExternalMiniCluster::BindMode::UNIQUE_LOOPBACK, "disabled", "required", false, true,  },
+      { ExternalMiniCluster::BindMode::UNIQUE_LOOPBACK, "disabled", "disabled", true,  false, },
+      { ExternalMiniCluster::BindMode::UNIQUE_LOOPBACK, "disabled", "disabled", false, false, },
+#endif
+    }
+));
+
+// Verify how master issues authn tokens to clients. Master sends authn tokens
+// to clients upon call of the ConnectToMaster() RPC. The master's behavior
+// must depend on whether the connection to the client is confidential or not.
+TEST_P(AuthTokenIssuingTest, ChannelConfidentiality) {
+  cluster_opts_.num_masters = 1;
+  cluster_opts_.num_tablet_servers = 0;
+  // --user-acl: just restoring back the default setting.
+  cluster_opts_.extra_master_flags.emplace_back("--user-acl=*");
+
+  const auto& params = GetParam();
+  cluster_opts_.bind_mode = params.bind_mode;
+  cluster_opts_.extra_master_flags.emplace_back(
+      Substitute("--rpc-authentication=$0", params.rpc_authentication));
+  cluster_opts_.extra_master_flags.emplace_back(
+      Substitute("--rpc-encryption=$0", params.rpc_encryption));
+  cluster_opts_.extra_master_flags.emplace_back(
+      Substitute("--rpc_encrypt_loopback_connections=$0",
+                 params.rpc_encrypt_loopback_connections));
+  ASSERT_OK(StartCluster());
+
+  // Make sure the client always connects from the standard loopback address.
+  // This is crucial when the master is running with UNIQUE_LOOPBACK mode: the
+  // test scenario expects the client connects from other than 127.0.0.1 address
+  // so the connection is not considered a 'loopback' one.
+  FLAGS_local_ip_for_outbound_sockets = "127.0.0.1";
+
+  // Current implementation of MasterServiceImpl::ConnectToMaster() allows to
+  // get a success response without proper security information in case if the
+  // master hasn't been established as a leader yet. As a temporary workaround,
+  // make sure the master is sending back the necessary info before going any
+  // further with the scenario which is sensitive to that issue.
+  //
+  // TODO(aserbin): fix the issue with MasterServiceImpl::ConnectToMaster()
+  //                and remove this ASSERT_EVENTUALLY() block.
+  ASSERT_EVENTUALLY([&] {
+    client::sp::shared_ptr<KuduClient> client;
+    ASSERT_OK(cluster_->CreateClient(nullptr, &client));
+
+    string authn_creds;
+    ASSERT_OK(client->ExportAuthenticationCredentials(&authn_creds));
+    client::AuthenticationCredentialsPB pb;
+    ASSERT_TRUE(pb.ParseFromString(authn_creds));
+    ASSERT_GE(pb.ca_cert_ders_size(), 1);
+  });
+
+  // In current implementation, KuduClientBuilder calls ConnectToCluster() on
+  // the newly created instance of the KuduClient.
+  client::sp::shared_ptr<KuduClient> client;
+  ASSERT_OK(cluster_->CreateClient(nullptr, &client));
+
+  string authn_creds;
+  ASSERT_OK(client->ExportAuthenticationCredentials(&authn_creds));
+  client::AuthenticationCredentialsPB pb;
+  ASSERT_TRUE(pb.ParseFromString(authn_creds));
+  ASSERT_EQ(params.authn_token_present, pb.has_authn_token());
+
+  if (pb.has_authn_token()) {
+    // If authn token is present, then check it for consistency.
+    const auto& t = pb.authn_token();
+    EXPECT_TRUE(t.has_token_data());
+    EXPECT_TRUE(t.has_signature());
+    EXPECT_TRUE(t.has_signing_key_seq_num());
+  }
 }
 
 } // namespace kudu

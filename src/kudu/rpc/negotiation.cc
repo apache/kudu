@@ -220,6 +220,8 @@ static Status DoClientNegotiation(Connection* conn,
   // Transfer the negotiated socket and state back to the connection.
   conn->adopt_socket(client_negotiation.release_socket());
   conn->set_remote_features(client_negotiation.take_server_features());
+  conn->set_confidential(client_negotiation.tls_negotiated() ||
+      (conn->socket()->IsLoopbackConnection() && !FLAGS_rpc_encrypt_loopback_connections));
 
   // Sanity check: if no authn token was supplied as user credentials,
   // the negotiated authentication type cannot be AuthenticationType::TOKEN.
@@ -274,6 +276,8 @@ static Status DoServerNegotiation(Connection* conn,
   conn->adopt_socket(server_negotiation.release_socket());
   conn->set_remote_features(server_negotiation.take_client_features());
   conn->set_remote_user(server_negotiation.take_authenticated_user());
+  conn->set_confidential(server_negotiation.tls_negotiated() ||
+      (conn->socket()->IsLoopbackConnection() && !FLAGS_rpc_encrypt_loopback_connections));
 
   return Status::OK();
 }

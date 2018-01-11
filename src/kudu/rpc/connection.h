@@ -149,6 +149,13 @@ class Connection : public RefCountedThreadSafe<Connection> {
     return *outbound_connection_id_;
   }
 
+  bool is_confidential() const {
+    return is_confidential_;
+  }
+
+  // Set/unset the 'confidentiality' property for this connection.
+  void set_confidential(bool is_confidential);
+
   // Credentials policy to start connection negotiation.
   CredentialsPolicy credentials_policy() const { return credentials_policy_; }
 
@@ -363,6 +370,11 @@ class Connection : public RefCountedThreadSafe<Connection> {
 
   // Whether we completed connection negotiation.
   bool negotiation_complete_;
+
+  // Whether it's OK to pass confidential information over the connection.
+  // For example, an encrypted (but not necessarily authenticated) connection
+  // is considered confidential.
+  bool is_confidential_;
 
   // Whether the connection is scheduled for shutdown.
   bool scheduled_for_shutdown_;

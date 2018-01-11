@@ -480,8 +480,11 @@ void MasterServiceImpl::ConnectToMaster(const ConnectToMasterRequestPB* /*req*/,
     resp->add_ca_cert_der(server_->cert_authority()->ca_cert_der());
 
     // Issue an authentication token for the caller, unless they are
-    // already using a token to authenticate.
-    if (rpc->remote_user().authenticated_by() != rpc::RemoteUser::AUTHN_TOKEN) {
+    // already using a token to authenticate or haven't been authenticated
+    // by other means. Don't issue a token if it's about to travel back to the
+    // client over a non-confidential channel.
+    if (rpc->is_confidential() &&
+        rpc->remote_user().authenticated_by() != rpc::RemoteUser::AUTHN_TOKEN) {
       SignedTokenPB authn_token;
       Status s = server_->token_signer()->GenerateAuthnToken(
           rpc->remote_user().username(),

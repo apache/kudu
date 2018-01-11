@@ -78,6 +78,7 @@ Connection::Connection(ReactorThread *reactor_thread,
       next_call_id_(1),
       credentials_policy_(policy),
       negotiation_complete_(false),
+      is_confidential_(false),
       scheduled_for_shutdown_(false) {
 }
 
@@ -476,6 +477,10 @@ void Connection::QueueResponseForCall(gscoped_ptr<InboundCall> call) {
 
   QueueTransferTask *task = new QueueTransferTask(std::move(t), this);
   reactor_thread_->reactor()->ScheduleReactorTask(task);
+}
+
+void Connection::set_confidential(bool is_confidential) {
+  is_confidential_ = is_confidential;
 }
 
 bool Connection::SatisfiesCredentialsPolicy(CredentialsPolicy policy) const {
