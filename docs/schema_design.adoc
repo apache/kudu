@@ -442,11 +442,6 @@ You can alter a table's schema in the following ways:
 
 Multiple alteration steps can be combined in a single transactional operation.
 
-[IMPORTANT]
-.Renaming Primary Key Columns
-https://issues.apache.org/jira/browse/KUDU-1626[KUDU-1626]: Kudu does not yet
-support renaming primary key columns.
-
 [[known-limitations]]
 == Known Limitations
 
