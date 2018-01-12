@@ -30,7 +30,6 @@
 #include <limits>
 #include <ostream>
 #include <string>
-#include <type_traits>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -45,6 +44,7 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
+#include "kudu/util/os-util.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/slice.h"
@@ -60,14 +60,6 @@ DEFINE_bool(socket_inject_short_recvs, false,
             "requested");
 TAG_FLAG(socket_inject_short_recvs, hidden);
 TAG_FLAG(socket_inject_short_recvs, unsafe);
-
-// TODO(todd) consolidate with other copies of this!
-// Retry on EINTR for functions like read() that return -1 on error.
-#define RETRY_ON_EINTR(err, expr) do { \
-  static_assert(std::is_signed<decltype(err)>::value == true, \
-                #err " must be a signed integer"); \
-  (err) = (expr); \
-} while ((err) == -1 && errno == EINTR)
 
 namespace kudu {
 

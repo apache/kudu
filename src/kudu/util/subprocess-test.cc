@@ -17,13 +17,19 @@
 
 #include "kudu/util/subprocess.h"
 
+#include <errno.h>
+#include <pthread.h>
+#include <string.h>
 #include <unistd.h>
 
+#include <atomic>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
+#include <ostream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <glog/logging.h>
@@ -31,11 +37,16 @@
 
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/env.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/path_util.h"
+#include "kudu/util/scoped_cleanup.h"
+#include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+using std::atomic;
 using std::string;
+using std::thread;
 using std::vector;
 using strings::Substitute;
 
@@ -128,6 +139,9 @@ TEST_F(SubprocessTest, TestReadFromStdoutAndStderr) {
     "dd if=/dev/urandom of=/dev/stderr bs=512 count=2048 &"
     "wait"
   }, "", &stdout, &stderr));
+
+  // Reset the alarm when the test is done
+  SCOPED_CLEANUP({ alarm(0); })
 }
 
 // Test that environment variables can be passed to the subprocess.
@@ -286,6 +300,51 @@ TEST_F(SubprocessTest, TestSubprocessDestroyWithCustomSignal) {
 
   // The subprocess was killed with SIGTERM, giving it a chance to delete kTestFile.
   ASSERT_FALSE(env_->FileExists(kTestFile));
+}
+
+// TEST KUDU-2208: Test subprocess interruption handling
+void handler(int /* signal */) {
+}
+
+TEST_F(SubprocessTest, TestSubprocessInterruptionHandling) {
+  // Create Subprocess thread
+  pthread_t t;
+  Subprocess p({ "/bin/sleep", "1" });
+  atomic<bool> t_started(false);
+  atomic<bool> t_finished(false);
+  thread subprocess_thread([&]() {
+    t = pthread_self();
+    t_started = true;
+    SleepFor(MonoDelta::FromMilliseconds(50));
+    CHECK_OK(p.Start());
+    CHECK_OK(p.Wait());
+    t_finished = true;
+  });
+
+  // Set up a no-op signal handler for SIGUSR2.
+  struct sigaction sa, sa_old;
+  memset(&sa, 0, sizeof(sa));
+  sa.sa_handler = &handler;
+  sigaction(SIGUSR2, &sa, &sa_old);
+
+  SCOPED_CLEANUP({ sigaction(SIGUSR2, &sa_old, nullptr); });
+  SCOPED_CLEANUP({ subprocess_thread.join(); });
+
+  // Send kill signals to Subprocess thread
+  LOG(INFO) << "Start sending kill signals to Subprocess thread";
+  while (!t_finished) {
+    if (t_started) {
+      int err = pthread_kill(t, SIGUSR2);
+      ASSERT_TRUE(err == 0 || err == ESRCH);
+      if (err == ESRCH) {
+        LOG(INFO) << "Async kill signal failed with err=" << err <<
+            " because it tried to kill vanished subprocess_thread";
+        ASSERT_TRUE(t_finished);
+      }
+      // Add microseconds delay to make the unit test runs faster and more reliable
+      SleepFor(MonoDelta::FromMicroseconds(rand() % 1));
+    }
+  }
 }
 
 #ifdef __linux__

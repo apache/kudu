@@ -50,14 +50,11 @@
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/errno.h"
+#include "kudu/util/os-util.h"
 
 using std::string;
 using std::vector;
 using strings::Substitute;
-
-#define RETRY_ON_EINTR(ret, expr) do {          \
-    (ret) = (expr);                             \
-  } while (((ret) == -1) && (errno == EINTR));
 
 namespace kudu {
 namespace log {

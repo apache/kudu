@@ -51,6 +51,7 @@
 #include "kudu/util/errno.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/os-util.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/signal.h"
 #include "kudu/util/status.h"
@@ -358,7 +359,8 @@ Status Subprocess::Start() {
   RETURN_NOT_OK_PREPEND(OpenProcFdDir(&fd_dir), "Unable to open fd dir");
   unique_ptr<DIR, std::function<void(DIR*)>> fd_dir_closer(fd_dir,
                                                            CloseProcFdDir);
-  int ret = fork();
+  int ret;
+  RETRY_ON_EINTR(ret, fork());
   if (ret == -1) {
     return Status::RuntimeError("Unable to fork", ErrnoToString(errno), errno);
   }
@@ -732,7 +734,8 @@ Status Subprocess::DoWait(int* wait_status, WaitMode mode) {
 
   const int options = (mode == NON_BLOCKING) ? WNOHANG : 0;
   int status;
-  const int rc = waitpid(child_pid_, &status, options);
+  int rc;
+  RETRY_ON_EINTR(rc, waitpid(child_pid_, &status, options));
   if (rc == -1) {
     return Status::RuntimeError("Unable to wait on child",
                                 ErrnoToString(errno), errno);

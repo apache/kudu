@@ -56,6 +56,7 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/malloc.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/os-util.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/slice.h"
@@ -121,13 +122,6 @@ typedef struct xfs_flock64 {
 #ifndef fread_unlocked
 #define fread_unlocked fread
 #endif
-
-// Retry on EINTR for functions like read() that return -1 on error.
-#define RETRY_ON_EINTR(err, expr) do { \
-  static_assert(std::is_signed<decltype(err)>::value == true, \
-                #err " must be a signed integer"); \
-  (err) = (expr); \
-} while ((err) == -1 && errno == EINTR)
 
 // Same as the above, but for stream API calls like fread() and fwrite().
 #define STREAM_RETRY_ON_EINTR(nread, stream, expr) do { \
