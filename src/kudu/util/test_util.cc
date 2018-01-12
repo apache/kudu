@@ -234,7 +234,8 @@ string GetTestDataDirectory() {
 }
 
 void AssertEventually(const std::function<void(void)>& f,
-                      const MonoDelta& timeout) {
+                      const MonoDelta& timeout,
+                      AssertBackoff backoff) {
   const MonoTime deadline = MonoTime::Now() + timeout;
   {
     // Disable --gtest_break_on_failure, or else the assertion failures
@@ -265,7 +266,17 @@ void AssertEventually(const std::function<void(void)>& f,
       }
 
       // If they had failures, sleep and try again.
-      int sleep_ms = (attempts < 10) ? (1 << attempts) : 1000;
+      int sleep_ms;
+      switch (backoff) {
+        case AssertBackoff::EXPONENTIAL:
+          sleep_ms = (attempts < 10) ? (1 << attempts) : 1000;
+          break;
+        case AssertBackoff::NONE:
+          sleep_ms = 1;
+          break;
+        default:
+          LOG(FATAL) << "Unknown backoff type";
+      }
       SleepFor(MonoDelta::FromMilliseconds(sleep_ms));
     }
   }

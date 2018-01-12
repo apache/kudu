@@ -35,6 +35,7 @@
 #include "kudu/gutil/sysinfo.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/trace.h"
 #include "kudu/util/trace_metrics.h"
@@ -315,7 +316,6 @@ ThreadPool::ThreadPool(const ThreadPoolBuilder& builder)
     pool_status_(Status::Uninitialized("The pool was not initialized.")),
     idle_cond_(&lock_),
     no_threads_cond_(&lock_),
-    not_empty_(&lock_),
     num_threads_(0),
     num_threads_pending_start_(0),
     active_threads_(0),
@@ -400,7 +400,10 @@ void ThreadPool::Shutdown() {
   // of them to exit. Some worker threads will exit immediately upon waking,
   // while others will exit after they finish executing an outstanding task.
   total_queued_tasks_ = 0;
-  not_empty_.Broadcast();
+  while (!idle_threads_.empty()) {
+    idle_threads_.front().not_empty.Signal();
+    idle_threads_.pop_front();
+  }
   while (num_threads_ + num_threads_pending_start_ > 0) {
     no_threads_cond_.Wait();
   }
@@ -528,9 +531,17 @@ Status ThreadPool::DoSubmit(shared_ptr<Runnable> r, ThreadPoolToken* token) {
   }
   int length_at_submit = total_queued_tasks_++;
 
+  // Wake up an idle thread for this task. Choosing the thread at the front of
+  // the list ensures LIFO semantics as idling threads are also added to the front.
+  //
+  // If there are no idle threads, the new task remains on the queue and is
+  // processed by an active thread (or a thread we're about to create) at some
+  // point in the future.
+  if (!idle_threads_.empty()) {
+    idle_threads_.front().not_empty.Signal();
+    idle_threads_.pop_front();
+  }
   guard.Unlock();
-
-  not_empty_.Signal();
 
   if (metrics_.queue_length_histogram) {
     metrics_.queue_length_histogram->Increment(length_at_submit);
@@ -592,6 +603,9 @@ void ThreadPool::DispatchThread() {
   // a "permanent" thread.
   bool permanent = num_threads_ <= min_threads_;
 
+  // Owned by this worker thread and added/removed from idle_threads_ as needed.
+  IdleThread me(&lock_);
+
   while (true) {
     // Note: Status::Aborted() is used to indicate normal shutdown.
     if (!pool_status_.ok()) {
@@ -600,10 +614,22 @@ void ThreadPool::DispatchThread() {
     }
 
     if (queue_.empty()) {
+      // There's no work to do, let's go idle.
+      //
+      // Note: if FIFO behavior is desired, it's as simple as changing this to push_back().
+      idle_threads_.push_front(me);
+      SCOPED_CLEANUP({
+        // For some wake ups (i.e. Shutdown or DoSubmit) this thread is
+        // guaranteed to be unlinked after being awakened. In others (i.e.
+        // spurious wake-up or TimedWait timeout), it'll still be linked.
+        if (me.is_linked()) {
+          idle_threads_.erase(idle_threads_.iterator_to(me));
+        }
+      });
       if (permanent) {
-        not_empty_.Wait();
+        me.not_empty.Wait();
       } else {
-        if (!not_empty_.TimedWait(idle_timeout_)) {
+        if (!me.not_empty.TimedWait(idle_timeout_)) {
           // After much investigation, it appears that pthread condition variables have
           // a weird behavior in which they can return ETIMEDOUT from timed_wait even if
           // another thread did in fact signal. Apparently after a timeout there is some

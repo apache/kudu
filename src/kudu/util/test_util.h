@@ -103,14 +103,21 @@ std::string GetTestDataDirectory();
 //     ASSERT_GT(ReadValueOfMetric(), 10);
 //   });
 //
-// The function is run in a loop with exponential backoff, capped at once
-// a second.
+// The function is run in a loop with optional back-off.
 //
 // To check whether AssertEventually() eventually succeeded, call
 // NO_PENDING_FATALS() afterward, or use ASSERT_EVENTUALLY() which performs
 // this check automatically.
+enum class AssertBackoff {
+  // Use exponential back-off while looping, capped at one second.
+  EXPONENTIAL,
+
+  // Sleep for a millisecond while looping.
+  NONE,
+};
 void AssertEventually(const std::function<void(void)>& f,
-                      const MonoDelta& timeout = MonoDelta::FromSeconds(30));
+                      const MonoDelta& timeout = MonoDelta::FromSeconds(30),
+                      AssertBackoff backoff = AssertBackoff::EXPONENTIAL);
 
 // Count the number of open file descriptors in use by this process.
 int CountOpenFds(Env* env);

@@ -23,6 +23,8 @@
 #include <string>
 #include <unordered_set>
 
+#include <boost/intrusive/list.hpp>
+#include <boost/intrusive/list_hook.hpp>
 #include <gtest/gtest_prod.h>
 
 #include "kudu/gutil/callback.h"
@@ -297,10 +299,6 @@ class ThreadPool {
   // num_threads_ and num_pending_threads_ are both 0.
   ConditionVariable no_threads_cond_;
 
-  // Condition variable for "queue is not empty". Waiters wake up when
-  // a new task is queued.
-  ConditionVariable not_empty_;
-
   // Number of threads currently running.
   //
   // Protected by lock_.
@@ -340,6 +338,26 @@ class ThreadPool {
   //
   // Protected by lock_.
   std::unordered_set<Thread*> threads_;
+
+  // List of all threads currently waiting for work.
+  //
+  // A thread is added to the front of the list when it goes idle and is
+  // removed from the front and signaled when new work arrives. This produces a
+  // LIFO usage pattern that is more efficient than idling on a single
+  // ConditionVariable (which yields FIFO semantics).
+  //
+  // Protected by lock_.
+  struct IdleThread : public boost::intrusive::list_base_hook<> {
+    explicit IdleThread(Mutex* m)
+        : not_empty(m) {}
+
+    // Condition variable for "queue is not empty". Waiters wake up when a new
+    // task is queued.
+    ConditionVariable not_empty;
+
+    DISALLOW_COPY_AND_ASSIGN(IdleThread);
+  };
+  boost::intrusive::list<IdleThread> idle_threads_; // NOLINT(build/include_what_you_use)
 
   // ExecutionMode::CONCURRENT token used by the pool for tokenless submission.
   std::unique_ptr<ThreadPoolToken> tokenless_;

@@ -901,4 +901,41 @@ TEST_F(ThreadPoolTest, TestTokenConcurrency) {
                           kSubmitThreads, total_num_tokens_submitted.load());
 }
 
+TEST_F(ThreadPoolTest, TestLIFOThreadWakeUps) {
+  const int kNumThreads = 10;
+
+  // Test with a pool that allows for kNumThreads concurrent threads.
+  ASSERT_OK(RebuildPoolWithBuilder(ThreadPoolBuilder(kDefaultPoolName)
+                                   .set_max_threads(kNumThreads)));
+
+  // Submit kNumThreads slow tasks and unblock them, in order to produce
+  // kNumThreads worker threads.
+  CountDownLatch latch(1);
+  SCOPED_CLEANUP({
+    latch.CountDown();
+  });
+  for (int i = 0; i < kNumThreads; i++) {
+    ASSERT_OK(pool_->Submit(SlowTask::NewSlowTask(&latch)));
+  }
+  ASSERT_EQ(kNumThreads, pool_->num_threads());
+  latch.CountDown();
+  pool_->Wait();
+
+  // The kNumThreads threads are idle and waiting for the idle timeout.
+
+  // Submit a slow trickle of lightning fast tasks.
+  //
+  // If the threads are woken up in FIFO order, this trickle is enough to
+  // prevent all of them from idling and the AssertEventually will time out.
+  //
+  // If LIFO order is used, the same thread will be reused for each task and
+  // the other threads will eventually time out.
+  AssertEventually([&]() {
+    ASSERT_OK(pool_->SubmitFunc([](){}));
+    SleepFor(MonoDelta::FromMilliseconds(10));
+    ASSERT_EQ(1, pool_->num_threads());
+  }, MonoDelta::FromSeconds(10), AssertBackoff::NONE);
+  NO_PENDING_FATALS();
+}
+
 } // namespace kudu
