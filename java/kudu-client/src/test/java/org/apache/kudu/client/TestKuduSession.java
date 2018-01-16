@@ -275,6 +275,37 @@ public class TestKuduSession extends BaseKuduTest {
   }
 
   @Test(timeout = 10000)
+  public void testInsertManualFlushResponseOrder() throws Exception {
+    String tableName = name.getMethodName();
+    CreateTableOptions createOptions = getBasicTableOptionsWithNonCoveredRange();
+    createOptions.setNumReplicas(1);
+    syncClient.createTable(tableName, basicSchema, createOptions);
+    KuduTable table = syncClient.openTable(tableName);
+
+    KuduSession session = syncClient.newSession();
+    session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
+
+    // Insert a batch of some valid and some invalid.
+    for (int i = 0; i < 10; i++) {
+      assertNull(session.apply(createBasicSchemaInsert(table, 100 + i * 10)));
+      assertNull(session.apply(createBasicSchemaInsert(table, 200 + i * 10)));
+    }
+    List<OperationResponse> results = session.flush();
+
+    assertEquals(20, results.size());
+
+    for (int i = 0; i < 20; i++) {
+      OperationResponse result = results.get(i);
+      if (i % 2 == 0) {
+        assertTrue(result.hasRowError());
+        assertTrue(result.getRowError().getErrorStatus().isNotFound());
+      } else {
+        assertTrue(!result.hasRowError());
+      }
+    }
+  }
+
+  @Test(timeout = 10000)
   public void testInsertAutoFlushSyncNonCoveredRange() throws Exception {
     String tableName = name.getMethodName();
     CreateTableOptions createOptions = getBasicTableOptionsWithNonCoveredRange();

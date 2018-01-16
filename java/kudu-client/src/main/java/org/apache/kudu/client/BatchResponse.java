@@ -36,6 +36,7 @@ public class BatchResponse extends KuduRpcResponse {
   private final long writeTimestamp;
   private final List<RowError> rowErrors;
   private final List<OperationResponse> individualResponses;
+  private final List<Integer> responsesIndexes;
 
   /**
    * Package-private constructor to be used by the RPCs.
@@ -43,13 +44,15 @@ public class BatchResponse extends KuduRpcResponse {
    * @param writeTimestamp HT's write timestamp
    * @param errorsPB a list of row errors, can be empty
    * @param operations the list of operations which created this response
+   * @param indexes the list of operations' order index
    */
   BatchResponse(long elapsedMillis, String tsUUID, long writeTimestamp,
                 List<Tserver.WriteResponsePB.PerRowErrorPB> errorsPB,
-                List<Operation> operations) {
+                List<Operation> operations, List<Integer> indexes) {
     super(elapsedMillis, tsUUID);
     this.writeTimestamp = writeTimestamp;
     individualResponses = new ArrayList<>(operations.size());
+    this.responsesIndexes = indexes;
     if (errorsPB.isEmpty()) {
       rowErrors = Collections.emptyList();
     } else {
@@ -77,13 +80,15 @@ public class BatchResponse extends KuduRpcResponse {
     }
     assert (rowErrors.size() == errorsPB.size());
     assert (individualResponses.size() == operations.size());
+    assert (individualResponses.size() == responsesIndexes.size());
   }
 
-  BatchResponse(List<OperationResponse> individualResponses) {
+  BatchResponse(List<OperationResponse> individualResponses, List<Integer> indexes) {
     super(0, null);
     writeTimestamp = 0;
     rowErrors = ImmutableList.of();
     this.individualResponses = individualResponses;
+    this.responsesIndexes = indexes;
   }
 
   /**
@@ -101,6 +106,14 @@ public class BatchResponse extends KuduRpcResponse {
    */
   List<OperationResponse> getIndividualResponses() {
     return individualResponses;
+  }
+
+  /**
+   * Package-private method to get the responses' order index.
+   * @return a list of indexes
+   */
+  List<Integer> getResponseIndexes() {
+    return responsesIndexes;
   }
 
 }

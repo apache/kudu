@@ -20,6 +20,7 @@ package org.apache.kudu.client;
 import static org.apache.kudu.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -342,7 +343,9 @@ public class AsyncKuduSession implements SessionConfiguration {
       // Group the operations by tablet.
       Map<Slice, Batch> batches = new HashMap<>();
       List<OperationResponse> opsFailedInLookup = new ArrayList<>();
+      List<Integer> opsFailedIndexesList = new ArrayList<>();
 
+      int currentIndex = 0;
       for (BufferedOperation bufferedOp : buffer.getOperations()) {
         Operation operation = bufferedOp.getOperation();
         if (bufferedOp.tabletLookupFailed()) {
@@ -366,6 +369,7 @@ public class AsyncKuduSession implements SessionConfiguration {
           }
           operation.callback(response);
           opsFailedInLookup.add(response);
+          opsFailedIndexesList.add(currentIndex++);
           continue;
         }
         LocatedTablet tablet = bufferedOp.getTablet();
@@ -376,12 +380,13 @@ public class AsyncKuduSession implements SessionConfiguration {
           batch = new Batch(operation.getTable(), tablet, ignoreAllDuplicateRows);
           batches.put(tabletId, batch);
         }
-        batch.add(operation);
+        batch.add(operation, currentIndex++);
       }
 
       List<Deferred<BatchResponse>> batchResponses = new ArrayList<>(batches.size() + 1);
       if (!opsFailedInLookup.isEmpty()) {
-        batchResponses.add(Deferred.fromResult(new BatchResponse(opsFailedInLookup)));
+        batchResponses.add(
+            Deferred.fromResult(new BatchResponse(opsFailedInLookup, opsFailedIndexesList)));
       }
 
       for (Batch batch : batches.values()) {
@@ -479,12 +484,18 @@ public class AsyncKuduSession implements SessionConfiguration {
         size += batchResponse.getIndividualResponses().size();
       }
 
-      ArrayList<OperationResponse> responses = new ArrayList<>(size);
+      OperationResponse[] responses = new OperationResponse[size];
       for (BatchResponse batchResponse : batchResponses) {
-        responses.addAll(batchResponse.getIndividualResponses());
+        List<OperationResponse> responseList = batchResponse.getIndividualResponses();
+        List<Integer> indexList = batchResponse.getResponseIndexes();
+        for (int i = 0; i < indexList.size(); i++) {
+          int index = indexList.get(i);
+          assert responses[index] == null;
+          responses[index] = responseList.get(i);
+        }
       }
 
-      return responses;
+      return Arrays.asList(responses);
     }
 
     @Override
@@ -690,6 +701,7 @@ public class AsyncKuduSession implements SessionConfiguration {
    */
   private void addBatchCallbacks(final Batch request) {
     final class BatchCallback implements Callback<BatchResponse, BatchResponse> {
+      @Override
       public BatchResponse call(final BatchResponse response) {
         LOG.trace("Got a Batch response for {} rows", request.operations.size());
         if (response.getWriteTimestamp() != 0) {
@@ -746,7 +758,7 @@ public class AsyncKuduSession implements SessionConfiguration {
         // Note that returning an object that's not an exception will make us leave the
         // errback chain. Effectively, the BatchResponse below will end up as part of the list
         // passed to ConvertBatchToListOfResponsesCB.
-        return handleKuduException ? new BatchResponse(responses) : e;
+        return handleKuduException ? new BatchResponse(responses, request.operationIndexes) : e;
       }
 
       @Override
@@ -786,6 +798,7 @@ public class AsyncKuduSession implements SessionConfiguration {
    * {@link FlushMode#AUTO_FLUSH_BACKGROUND}.
    */
   private final class FlusherTask implements TimerTask {
+    @Override
     public void run(final Timeout timeout) {
       Buffer buffer = null;
       synchronized (monitor) {
