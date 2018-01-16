@@ -105,7 +105,7 @@ void TabletServerIntegrationTestBase::AddExtraFlags(
 }
 
 void TabletServerIntegrationTestBase::CreateCluster(
-    const string& data_root_path,
+    const string& cluster_root_path,
     const vector<string>& non_default_ts_flags,
     const vector<string>& non_default_master_flags,
     uint32_t num_data_dirs) {
@@ -118,7 +118,7 @@ void TabletServerIntegrationTestBase::CreateCluster(
 
   cluster::ExternalMiniClusterOptions opts;
   opts.num_tablet_servers = FLAGS_num_tablet_servers;
-  opts.data_root = GetTestPath(data_root_path);
+  opts.cluster_root = GetTestPath(cluster_root_path);
   opts.num_data_dirs = num_data_dirs;
 
   // Enable exactly once semantics for tests.

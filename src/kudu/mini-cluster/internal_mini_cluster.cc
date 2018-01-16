@@ -73,8 +73,8 @@ InternalMiniCluster::InternalMiniCluster(Env* env, InternalMiniClusterOptions op
   : env_(env),
     opts_(std::move(options)),
     running_(false) {
-  if (opts_.data_root.empty()) {
-    opts_.data_root = JoinPathSegments(GetTestDataDirectory(), "minicluster-data");
+  if (opts_.cluster_root.empty()) {
+    opts_.cluster_root = JoinPathSegments(GetTestDataDirectory(), "minicluster-data");
   }
 }
 
@@ -83,15 +83,15 @@ InternalMiniCluster::~InternalMiniCluster() {
 }
 
 Status InternalMiniCluster::Start() {
-  CHECK(!opts_.data_root.empty()) << "No Fs root was provided";
+  CHECK(!opts_.cluster_root.empty()) << "No cluster root was provided";
   CHECK(!running_);
 
   if (opts_.num_masters > 1) {
     CHECK_GE(opts_.master_rpc_ports.size(), opts_.num_masters);
   }
 
-  if (!env_->FileExists(opts_.data_root)) {
-    RETURN_NOT_OK(env_->CreateDir(opts_.data_root));
+  if (!env_->FileExists(opts_.cluster_root)) {
+    RETURN_NOT_OK(env_->CreateDir(opts_.cluster_root));
   }
 
   // start the masters
@@ -264,11 +264,11 @@ vector<HostPort> InternalMiniCluster::master_rpc_addrs() const {
 }
 
 string InternalMiniCluster::GetMasterFsRoot(int idx) const {
-  return JoinPathSegments(opts_.data_root, Substitute("master-$0-root", idx));
+  return JoinPathSegments(opts_.cluster_root, Substitute("master-$0-root", idx));
 }
 
 string InternalMiniCluster::GetTabletServerFsRoot(int idx) const {
-  return JoinPathSegments(opts_.data_root, Substitute("ts-$0-root", idx));
+  return JoinPathSegments(opts_.cluster_root, Substitute("ts-$0-root", idx));
 }
 
 Status InternalMiniCluster::WaitForTabletServerCount(int count) const {

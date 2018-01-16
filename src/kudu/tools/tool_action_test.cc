@@ -68,8 +68,8 @@ using strings::Substitute;
 
 namespace {
 
-Status MakeDataRoot(string* data_root) {
-  // The ExternalMiniCluster can't generate the data root on our behalf because
+Status MakeClusterRoot(string* cluster_root) {
+  // The ExternalMiniCluster can't generate the cluster root on our behalf because
   // we're not running inside a gtest. So we'll use this approach instead,
   // which is what the Java external mini cluster used for a long time.
   const char* tmpdir = getenv("TEST_TMPDIR");
@@ -77,7 +77,7 @@ Status MakeDataRoot(string* data_root) {
   string root = JoinPathSegments(tmpdir_str, "minicluster-data");
   RETURN_NOT_OK(env_util::CreateDirsRecursively(Env::Default(), root));
 
-  *data_root = root;
+  *cluster_root = root;
   return Status::OK();
 }
 
@@ -158,10 +158,10 @@ Status ProcessRequest(const ControlShellRequestPB& req,
       }
       opts.enable_kerberos = cc.enable_kerberos();
       opts.enable_hive_metastore = cc.enable_hive_metastore();
-      if (cc.has_data_root()) {
-        opts.data_root = cc.data_root();
+      if (cc.has_cluster_root()) {
+        opts.cluster_root = cc.cluster_root();
       } else {
-        RETURN_NOT_OK(MakeDataRoot(&opts.data_root));
+        RETURN_NOT_OK(MakeClusterRoot(&opts.cluster_root));
       }
       opts.extra_master_flags.assign(cc.extra_master_flags().begin(),
                                      cc.extra_master_flags().end());
@@ -171,7 +171,7 @@ Status ProcessRequest(const ControlShellRequestPB& req,
         opts.master_rpc_ports = { 11030, 11031, 11032 };
       }
       if (opts.enable_kerberos) {
-        opts.mini_kdc_options.data_root = JoinPathSegments(opts.data_root, "krb5kdc");
+        opts.mini_kdc_options.data_root = JoinPathSegments(opts.cluster_root, "krb5kdc");
       }
 
       cluster->reset(new ExternalMiniCluster(std::move(opts)));
@@ -344,11 +344,11 @@ Status RunControlShell(const RunnerContext& /*context*/) {
     RETURN_NOT_OK(s);
   }
 
-  // Normal exit, clean up data root.
+  // Normal exit, clean up cluster root.
   if (cluster) {
     cluster->Shutdown();
-    WARN_NOT_OK(Env::Default()->DeleteRecursively(cluster->data_root()),
-                "Could not delete data root");
+    WARN_NOT_OK(Env::Default()->DeleteRecursively(cluster->cluster_root()),
+                "Could not delete cluster root");
   }
   return Status::OK();
 }

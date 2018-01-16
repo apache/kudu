@@ -87,10 +87,10 @@ struct ExternalMiniClusterOptions {
   // Default: 1.
   int num_tablet_servers;
 
-  // Directory in which to store data.
+  // Directory in which to store the cluster's data.
   //
   // Default: "", which auto-generates a unique path for this cluster.
-  std::string data_root;
+  std::string cluster_root;
 
   // Block manager type. Must be either "file" or "log".
   //
@@ -247,8 +247,8 @@ class ExternalMiniCluster : public MiniCluster {
     return hms_.get();
   }
 
-  const std::string& data_root() const {
-    return opts_.data_root;
+  const std::string& cluster_root() const {
+    return opts_.cluster_root;
   }
 
   int num_tablet_servers() const override {
@@ -322,7 +322,7 @@ class ExternalMiniCluster : public MiniCluster {
   std::string GetBinaryPath(const std::string& binary) const;
 
   // Returns the path where 'daemon_id' is expected to store its data, based on
-  // ExternalMiniClusterOptions.data_root if it was provided, or on the
+  // ExternalMiniClusterOptions.cluster_root if it was provided, or on the
   // standard Kudu test directory otherwise.
   // 'dir_index' is an optional numeric suffix to be added to the default path.
   // If it is not specified, the cluster must be configured to use a single data dir.

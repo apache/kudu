@@ -194,7 +194,7 @@ Status TpchRealWorld::Init() {
 
     ExternalMiniClusterOptions opts;
     opts.num_tablet_servers = 1;
-    opts.data_root = FLAGS_tpch_mini_cluster_base_dir;
+    opts.cluster_root = FLAGS_tpch_mini_cluster_base_dir;
     if (!FLAGS_tpch_path_to_ts_flags_file.empty()) {
       opts.extra_tserver_flags.push_back("--flagfile=" + FLAGS_tpch_path_to_ts_flags_file);
     }

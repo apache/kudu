@@ -261,7 +261,7 @@ int main(int argc, char **argv) {
     kudu::Status s = env->CreateDir(FLAGS_mini_cluster_base_dir);
     CHECK(s.IsAlreadyPresent() || s.ok()) << s.ToString();
     kudu::cluster::InternalMiniClusterOptions options;
-    options.data_root = FLAGS_mini_cluster_base_dir;
+    options.cluster_root = FLAGS_mini_cluster_base_dir;
     cluster.reset(new kudu::cluster::InternalMiniCluster(env, options));
     CHECK_OK(cluster->StartSync());
     master_address = cluster->mini_master()->bound_rpc_addr_str();

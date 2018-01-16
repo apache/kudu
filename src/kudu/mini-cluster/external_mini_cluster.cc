@@ -132,9 +132,9 @@ Status ExternalMiniCluster::HandleOptions() {
     RETURN_NOT_OK(DeduceBinRoot(&opts_.daemon_bin_path));
   }
 
-  if (opts_.data_root.empty()) {
-    // If they don't specify a data root, use the current gtest directory.
-    opts_.data_root = JoinPathSegments(GetTestDataDirectory(), "minicluster-data");
+  if (opts_.cluster_root.empty()) {
+    // If they don't specify a cluster root, use the current gtest directory.
+    opts_.cluster_root = JoinPathSegments(GetTestDataDirectory(), "minicluster-data");
   }
 
   if (opts_.block_manager_type.empty()) {
@@ -157,9 +157,9 @@ Status ExternalMiniCluster::Start() {
                         .Build(&messenger_),
                         "Failed to start Messenger for minicluster");
 
-  Status s = Env::Default()->CreateDir(opts_.data_root);
+  Status s = Env::Default()->CreateDir(opts_.cluster_root);
   if (!s.ok() && !s.IsAlreadyPresent()) {
-    RETURN_NOT_OK_PREPEND(s, "Could not create root dir " + opts_.data_root);
+    RETURN_NOT_OK_PREPEND(s, "Could not create root dir " + opts_.cluster_root);
   }
 
   if (opts_.enable_kerberos) {
@@ -258,13 +258,13 @@ string ExternalMiniCluster::GetBinaryPath(const string& binary) const {
 }
 
 string ExternalMiniCluster::GetLogPath(const string& daemon_id) const {
-  CHECK(!opts_.data_root.empty());
-  return JoinPathSegments(JoinPathSegments(opts_.data_root, daemon_id), "logs");
+  CHECK(!opts_.cluster_root.empty());
+  return JoinPathSegments(JoinPathSegments(opts_.cluster_root, daemon_id), "logs");
 }
 
 string ExternalMiniCluster::GetDataPath(const string& daemon_id,
                                         boost::optional<uint32_t> dir_index) const {
-  CHECK(!opts_.data_root.empty());
+  CHECK(!opts_.cluster_root.empty());
   string data_path = "data";
   if (dir_index) {
     CHECK_LT(*dir_index, opts_.num_data_dirs);
@@ -272,7 +272,7 @@ string ExternalMiniCluster::GetDataPath(const string& daemon_id,
   } else {
     CHECK_EQ(1, opts_.num_data_dirs);
   }
-  return JoinPathSegments(JoinPathSegments(opts_.data_root, daemon_id), data_path);
+  return JoinPathSegments(JoinPathSegments(opts_.cluster_root, daemon_id), data_path);
 }
 
 vector<string> ExternalMiniCluster::GetDataPaths(const string& daemon_id) const {
@@ -287,8 +287,8 @@ vector<string> ExternalMiniCluster::GetDataPaths(const string& daemon_id) const 
 }
 
 string ExternalMiniCluster::GetWalPath(const string& daemon_id) const {
-  CHECK(!opts_.data_root.empty());
-  return JoinPathSegments(JoinPathSegments(opts_.data_root, daemon_id), "wal");
+  CHECK(!opts_.cluster_root.empty());
+  return JoinPathSegments(JoinPathSegments(opts_.cluster_root, daemon_id), "wal");
 }
 
 namespace {

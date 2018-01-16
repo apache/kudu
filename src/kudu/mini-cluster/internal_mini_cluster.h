@@ -70,10 +70,10 @@ struct InternalMiniClusterOptions {
   // Default: 1 (this will place the wals in the same dir)
   int num_data_dirs;
 
-  // Directory in which to store data.
+  // Directory in which to store the cluster's data.
   // Default: "", which auto-generates a unique path for this cluster.
   // The default may only be used from a gtest unit test.
-  std::string data_root;
+  std::string cluster_root;
 
   MiniCluster::BindMode bind_mode;
 

@@ -1910,7 +1910,7 @@ TEST_P(ControlShellToolTest, TestControlShell) {
   {
     ControlShellRequestPB req;
     ControlShellResponsePB resp;
-    req.mutable_create_cluster()->set_data_root(JoinPathSegments(
+    req.mutable_create_cluster()->set_cluster_root(JoinPathSegments(
         test_dir_, "minicluster-data"));
     req.mutable_create_cluster()->set_num_masters(kNumMasters);
     req.mutable_create_cluster()->set_num_tservers(kNumTservers);
@@ -1922,7 +1922,7 @@ TEST_P(ControlShellToolTest, TestControlShell) {
   {
     ControlShellRequestPB req;
     ControlShellResponsePB resp;
-    req.mutable_create_cluster()->set_data_root(JoinPathSegments(
+    req.mutable_create_cluster()->set_cluster_root(JoinPathSegments(
         test_dir_, "minicluster-data"));
     ASSERT_OK(proto_->SendMessage(req));
     ASSERT_OK(proto_->ReceiveMessage(&resp));
