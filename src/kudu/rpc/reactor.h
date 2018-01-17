@@ -20,7 +20,6 @@
 #include <cstdint>
 #include <list>
 #include <memory>
-#include <set>
 #include <string>
 #include <unordered_map>
 
@@ -287,7 +286,7 @@ class ReactorThread {
   //
   // Each task owns its own memory and must be freed by its TaskRun and
   // Abort members, provided it was allocated on the heap.
-  std::set<DelayedTask*> scheduled_tasks_;
+  boost::intrusive::list<DelayedTask> scheduled_tasks_;
 
   // The current monotonic time.  Updated every coarse_timer_granularity_secs_.
   MonoTime cur_time_;

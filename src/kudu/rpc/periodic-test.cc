@@ -18,19 +18,25 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <ostream>
 #include <string>
 #include <utility>
+#include <vector>
 
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/periodic.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/scoped_cleanup.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using std::atomic;
 using std::shared_ptr;
+using std::vector;
 
 namespace kudu {
 namespace rpc {
@@ -253,6 +259,36 @@ TEST_F(PeriodicTimerTest, TestCallbackRestartsOneShotTimer) {
   // Ensure that the reactor threads are fully quiesced (and thus no timer
   // callbacks are running) by the time 'counter' is destroyed.
   messenger->Shutdown();
+}
+
+TEST_F(PeriodicTimerTest, TestPerformance) {
+  const int kNumTimers = 1000;
+  shared_ptr<Messenger> messenger;
+  ASSERT_OK(MessengerBuilder("test")
+            .set_num_reactors(1)
+            .Build(&messenger));
+  SCOPED_CLEANUP({ messenger->Shutdown(); });
+
+  vector<shared_ptr<PeriodicTimer>> timers;
+  for (int i = 0; i < kNumTimers; i++) {
+    timers.emplace_back(PeriodicTimer::Create(
+        messenger,
+        [&] {}, // No-op.
+        MonoDelta::FromMilliseconds(10)));
+    timers.back()->Start();
+  }
+
+  Stopwatch sw(Stopwatch::ALL_THREADS);
+  sw.start();
+  SleepFor(MonoDelta::FromSeconds(1));
+  sw.stop();
+  LOG(INFO) << "User CPU for running " << kNumTimers << " timers for 1 second: "
+            << sw.elapsed().user_cpu_seconds() << "s";
+
+  for (auto& t : timers) {
+    t->Stop();
+  }
+
 }
 
 } // namespace rpc
