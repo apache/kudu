@@ -23,7 +23,6 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import java.nio.ByteBuffer;
-import java.security.AccessController;
 import java.security.KeyStore;
 import java.security.cert.Certificate;
 import java.util.List;
@@ -33,7 +32,6 @@ import javax.net.ssl.SSLEngine;
 import javax.net.ssl.SSLEngineResult;
 import javax.net.ssl.SSLEngineResult.HandshakeStatus;
 import javax.net.ssl.SSLException;
-import javax.security.auth.Subject;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
@@ -97,8 +95,7 @@ public class TestNegotiator {
   public void setup() {
     serverEngine = createServerEngine();
     serverEngine.setUseClientMode(false);
-    secContext = new SecurityContext(Subject.getSubject(
-        AccessController.getContext()));
+    secContext = new SecurityContext();
   }
 
   private void startNegotiation(boolean fakeLoopback) {

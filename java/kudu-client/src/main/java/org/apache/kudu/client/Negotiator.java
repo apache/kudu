@@ -158,7 +158,8 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
   private static enum AuthnTokenNotUsedReason {
     NONE_AVAILABLE("no token is available"),
     NO_TRUSTED_CERTS("no TLS certificates are trusted by the client"),
-    FORBIDDEN_BY_POLICY("this connection does not allow authentication by tokens"),
+    FORBIDDEN_BY_POLICY("this connection will be used to acquire a new token and " +
+                        "therefore requires primary credentials"),
     NOT_CHOSEN_BY_SERVER("the server chose not to accept token authentication");
 
     AuthnTokenNotUsedReason(String msg) {
@@ -393,6 +394,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
   }
 
   private void chooseAndInitializeSaslMech(NegotiatePB response) throws KuduException {
+    securityContext.refreshSubject();
     // Gather the set of server-supported mechanisms.
     Map<String, String> errorsByMech = Maps.newHashMap();
     Set<SaslMechanism> serverMechs = Sets.newHashSet();
@@ -416,11 +418,17 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     // choose that mech.
     for (SaslMechanism clientMech : SaslMechanism.values()) {
 
-      if (clientMech.equals(SaslMechanism.GSSAPI) &&
-          (securityContext.getSubject() == null ||
-           securityContext.getSubject().getPrivateCredentials(KerberosTicket.class).isEmpty())) {
-        errorsByMech.put(clientMech.name(), "client does not have Kerberos credentials (tgt)");
-        continue;
+      if (clientMech.equals(SaslMechanism.GSSAPI)) {
+        Subject s = securityContext.getSubject();
+        if (s == null ||
+            s.getPrivateCredentials(KerberosTicket.class).isEmpty()) {
+          errorsByMech.put(clientMech.name(), "client does not have Kerberos credentials (tgt)");
+          continue;
+        }
+        if (SecurityUtil.isTgtExpired(s)) {
+          errorsByMech.put(clientMech.name(), "client Kerberos credentials (TGT) have expired");
+          continue;
+        }
       }
 
       if (!serverMechs.contains(clientMech)) {
@@ -754,6 +762,8 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     chan.getPipeline().remove(this);
 
     Channels.write(chan, makeConnectionContext());
+    LOG.debug("Authenticated connection {} using {}/{}",
+        chan, chosenAuthnType, chosenMech);
     Channels.fireMessageReceived(chan, new Success(serverFeatures));
   }
 
@@ -808,7 +818,8 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
           ((GSSException) cause).getMajor() == GSSException.NO_CRED) {
         throw new NonRecoverableException(
             Status.ConfigurationError(
-                "Server requires Kerberos, but this client is not authenticated (kinit)"),
+                "Server requires Kerberos, but this client is not authenticated " +
+                "(missing or expired TGT)"),
             saslException);
       }
       throw saslException;

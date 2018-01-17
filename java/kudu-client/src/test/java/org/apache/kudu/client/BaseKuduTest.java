@@ -300,7 +300,7 @@ public class BaseKuduTest {
     return option;
   }
 
-  protected Insert createBasicSchemaInsert(KuduTable table, int key) {
+  protected static Insert createBasicSchemaInsert(KuduTable table, int key) {
     Insert insert = table.newInsert();
     PartialRow row = insert.getRow();
     row.addInt(0, key);

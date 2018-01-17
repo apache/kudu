@@ -47,7 +47,6 @@ import java.util.concurrent.Semaphore;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import javax.annotation.concurrent.GuardedBy;
-import javax.security.auth.Subject;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Joiner;
@@ -78,41 +77,177 @@ import org.apache.kudu.master.Master.TableIdentifierPB;
 import org.apache.kudu.util.AsyncUtil;
 import org.apache.kudu.util.NetUtil;
 import org.apache.kudu.util.Pair;
-import org.apache.kudu.util.SecurityUtil;
 
 /**
  * A fully asynchronous and thread-safe client for Kudu.
  * <p>
- * This client should be
- * instantiated only once. You can use it with any number of tables at the
- * same time. The only case where you should have multiple instances is when
- * you want to use multiple different clusters at the same time.
+ * A single Kudu client instance corresponds to a single remote Kudu cluster.
+ * and can be used to read or write any number of tables within that cluster.
+ * Separate client instances should be used in the case that a single
+ * application needs to access multiple distinct Kudu clusters.
+ *
+ * <h1>Creating a client instance</h1> An {@link AsyncKuduClient} instance may
+ * be created using the {@link AsyncKuduClient.AsyncKuduClientBuilder} class. If
+ * a synchronous API is preferred, {@link KuduClient.KuduClientBuilder} may be
+ * used instead. See the documentation on these classes for more details on
+ * client configuration options.
+ *
+ * <h1>Authenticating to a secure cluster</h1> A Kudu cluster may be configured
+ * such that it requires clients to connect using strong authentication. Clients
+ * can authenticate to such clusters using either of two methods:
+ * <ol>
+ * <li><em>Kerberos credentials</em></li>
+ * <li><em>Authentication tokens</em></li>
+ * </ol>
+ *
+ * In a typical environment, Kerberos credentials are used for non-distributed
+ * client applications and for applications which <em>spawn</em> distributed
+ * jobs. Tokens are used for the <em>tasks</em> of distributed jobs, since those
+ * tasks do not have access to the user's Kerberos credentials.
+ *
+ * <h2>Authenticating using Kerberos credentials</h2>
+ *
+ * In order to integrate with Kerberos, Kudu uses the standard <em>Java
+ * Authentication and Authorization Service</em> (JAAS) API provided by the JDK.
+ * JAAS provides a common way for applications to initialize Kerberos
+ * credentials, store these credentials in a {@link javax.security.auth.Subject}
+ * instance, and associate the Subject the current thread of execution. The Kudu
+ * client then accesses the Kerberos credentials in the
+ * {@link javax.security.auth.Subject} and uses them to authenticate to the
+ * remote cluster as necessary.
  * <p>
- * If you play by the rules, this client is completely
- * thread-safe. Read the documentation carefully to know what the requirements
- * are for this guarantee to apply.
+ * Kerberos credentials are typically obtained in one of two ways:
+ * <ol>
+ * <li>The <em>Kerberos ticket cache</em></li>
+ * <li>A <em>keytab</em> file</li>
+ * </ol>
+ *
+ * <h3>Authenticating from the Kerberos ticket cache</h3>
+ *
+ * The Kerberos <em>ticket cache</em> is a file stored on the local file system
+ * which is automatically initialized when a user runs <em>kinit</em> at the
+ * command line. This is the predominant method for authenticating users in
+ * interactive applications: the user is expected to have run <em>kinit</em>
+ * recently, and the application will find the appropriate credentials in the
+ * ticket cache.
  * <p>
+ * In the case of the Kudu client, Kudu will automatically look for credentials
+ * in the standard system-configured ticket cache location. No additional code
+ * needs to be written to enable this behavior.
+ * <p>
+ * Kudu will automatically detect if the ticket it has obtained from the ticket
+ * cache is about to expire. When that is the case, it will attempt to re-read
+ * the ticket cache to obtain a new ticket with a later expiration time. So, if
+ * an application needs to run for longer than the lifetime of a single ticket,
+ * the user must ensure that the ticket cache is periodically refreshed, for
+ * example by re-running 'kinit' once each day.
+ *
+ * <h3>Authenticating from a keytab</h3>
+ *
+ * Long-running applications typically obtain Kerberos credentials from a
+ * Kerberos <em>keytab</em> file. A keytab is essentially a saved password, and
+ * allows the application to obtain new Kerberos tickets whenever the prior
+ * ticket is about to expire.
+ * <p>
+ * The Kudu client does not provide any utility code to facilitate logging in
+ * from a keytab. Instead, applications should invoke the JAAS APIs directly,
+ * and then ensure that the resulting {@link javax.security.auth.Subject}
+ * instance is associated with the current thread's
+ * {@link java.security.AccessControlContext} when instantiating the Kudu client
+ * instance for the first time. The {@link javax.security.auth.Subject} instance
+ * will be stored and used whenever Kerberos authentication is required.
+ * <p>
+ * <b>Note</b>: if the Kudu client is instantiated with a
+ * {@link javax.security.auth.Subject} as described above, it will <em>not</em>
+ * make any attempt to re-login from the keytab. Instead, the application should
+ * arrange to periodically re-initiate the login process and update the
+ * credentials stored in the same Subject instance as was provided when the
+ * client was instantiated.
+ * <p>
+ * In the context of the Hadoop ecosystem, the {@code UserGroupInformation}
+ * class provides utility methods to login from a keytab and then run code as
+ * the resulting {@link javax.security.auth.Subject}: <code><pre>
+ *   UserGroupInformation.loginUserFromKeytab("my-app", "/path/to/app.keytab");
+ *   KuduClient c = UserGroupInformation.getLoginUser().doAs(
+ *     new PrivilegedExceptionAction<KuduClient>() {
+ *       &#64;Override
+ *       public KuduClient run() throws Exception {
+ *         return myClientBuilder.build();
+ *       }
+ *     }
+ *   );
+ * </pre></code> The {@code UserGroupInformation} class will also automatically
+ * start a thread to periodically re-login from the keytab.
+ *
+ * <h3>Debugging Kudu's usage of Kerberos credentials</h3>
+ *
+ * The Kudu client emits DEBUG-level logs under the
+ * {@code org.apache.kudu.client.SecurityContext} slf4j category. Enabling DEBUG
+ * logging for this class may help you understand which credentials are being
+ * obtained by the Kudu client when it is instantiated. Additionally, if the
+ * Java system property {@code kudu.jaas.debug} is set to {@code true}, Kudu
+ * will enable the {@code debug} option when configuring {@code Krb5LoginModule}
+ * when it attempts to log in from a ticket cache. JDK-specific system properties
+ * such as {@code sun.security.krb5.debug} may also be useful in troubleshooting
+ * Kerberos authentication failures.
+ *
+ * <h2>Authenticating using tokens</h2>
+ *
+ * In the case of distributed applications, the worker tasks often do not have
+ * access to Kerberos credentials such as ticket caches or keytabs.
+ * Additionally, there may be hundreds or thousands of workers with relatively
+ * short life-times, and if each task attempted to authenticate using Kerberos,
+ * the amount of load on the Kerberos infrastructure could be substantial enough
+ * to cause instability. To solve this issue, Kudu provides support for
+ * <em>authentication tokens</em>.
+ * <p>
+ * An authentication token is a time-limited credential which can be obtained by
+ * an application which has already authenticated via Kerberos. The token is
+ * represented by an opaque byte string, and it can be passed from one client to
+ * another to transfer credentials.
+ * <p>
+ * A token may be generated using the
+ * {@link AsyncKuduClient#exportAuthenticationCredentials()} API, and then
+ * imported to another client using
+ * {@link AsyncKuduClient#importAuthenticationCredentials(byte[])}.
+ *
+ * <h2>Authentication in Spark jobs</h2>
+ *
+ * Note that the Spark integration provided by the <em>kudu-spark</em> package
+ * automatically handles the interaction with Kerberos and the passing of tokens
+ * from the Spark driver to tasks. Refer to the Kudu documentation for details
+ * on how to submit a Spark job on a secure cluster.
+ *
+ * <h1>API Compatibility</h1>
+ *
+ * Note that some methods in the Kudu client implementation are public but
+ * annotated with the {@link InterfaceAudience.Private} annotation. This
+ * annotation indicates that, despite having {@code public} visibility, the
+ * method is not part of the public API and there is no guarantee that its
+ * existence or behavior will be maintained in subsequent versions of the Kudu
+ * client library.
+ *
+ * Other APIs are annotated with the {@link InterfaceStability.Unstable} annotation.
+ * These APIs are meant for public consumption but may change between minor releases.
+ * Note that the asynchronous client is currently considered unstable.
+ *
+ * <h1>Thread Safety</h1>
+ *
+ * The Kudu client instance itself is thread-safe; however, not all associated
+ * classes are themselves thread-safe. For example, neither
+ * {@link AsyncKuduSession} nor its synchronous wrapper {@link KuduSession} is
+ * thread-safe. Refer to the documentation for each individual class for more
+ * details.
+ *
+ * <h1>Asynchronous usage</h1>
+ *
  * This client is fully non-blocking, any blocking operation will return a
  * {@link Deferred} instance to which you can attach a {@link Callback} chain
  * that will execute when the asynchronous operation completes.
- *
- * <h1>Note regarding {@code KuduRpc} instances passed to this class</h1>
- * Every {@link KuduRpc} passed to a method of this class should not be
- * changed or re-used until the {@code Deferred} returned by that method
- * calls you back.  <strong>Changing or re-using any {@link KuduRpc} for
- * an RPC in flight will lead to <em>unpredictable</em> results and voids
- * your warranty</strong>.
- *
- * <h1>{@code throws} clauses</h1>
- * None of the asynchronous methods in this API are expected to throw an
- * exception.  But the {@link Deferred} object they return to you can carry an
- * exception that you should handle (using "errbacks", see the javadoc of
- * {@link Deferred}).  In order to be able to do proper asynchronous error
- * handling, you need to know what types of exceptions you're expected to face
- * in your errbacks.  In order to document that, the methods of this API use
- * javadoc's {@code @throws} to spell out the exception types you should
- * handle in your errback.  Asynchronous exceptions will be indicated as such
- * in the javadoc with "(deferred)".
+ * <p>
+ * The asynchronous calls themselves typically do not throw exceptions. Instead,
+ * an {@code errback} should be attached which will be called with the Exception
+ * that occurred.
  */
 @InterfaceAudience.Public
 @InterfaceStability.Unstable
@@ -193,7 +328,8 @@ public class AsyncKuduClient implements AutoCloseable {
 
   private final RequestTracker requestTracker;
 
-  private final SecurityContext securityContext;
+  @VisibleForTesting
+  final SecurityContext securityContext;
 
   /** A helper to facilitate re-acquiring of authentication token if current one expires. */
   private final AuthnTokenReacquirer tokenReacquirer;
@@ -213,7 +349,7 @@ public class AsyncKuduClient implements AutoCloseable {
     this.timer = b.timer;
     this.requestTracker = new RequestTracker(UUID.randomUUID().toString().replace("-", ""));
 
-    this.securityContext = new SecurityContext(b.subject);
+    this.securityContext = new SecurityContext();
     this.connectionCache = new ConnectionCache(
         securityContext, defaultSocketReadTimeoutMs, timer, channelFactory);
     this.tokenReacquirer = new AuthnTokenReacquirer(this);
@@ -1986,7 +2122,6 @@ public class AsyncKuduClient implements AutoCloseable {
     private int bossCount = DEFAULT_BOSS_COUNT;
     private int workerCount = DEFAULT_WORKER_COUNT;
     private boolean statisticsDisabled = false;
-    private Subject subject;
 
     /**
      * Creates a new builder for a client that will connect to the specified masters.
@@ -2143,7 +2278,6 @@ public class AsyncKuduClient implements AutoCloseable {
      * @return a new asynchronous Kudu client
      */
     public AsyncKuduClient build() {
-      subject = SecurityUtil.getSubjectOrLogin();
       return new AsyncKuduClient(this);
     }
   }

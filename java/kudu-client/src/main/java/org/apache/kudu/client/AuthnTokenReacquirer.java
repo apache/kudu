@@ -23,7 +23,6 @@ import java.util.ArrayList;
 import java.util.List;
 import javax.annotation.concurrent.GuardedBy;
 
-import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import com.stumbleupon.async.Callback;
 import org.apache.yetus.audience.InterfaceAudience;
@@ -156,16 +155,19 @@ final class AuthnTokenReacquirer {
           return null;
         }
 
-        failQueuedRpcs();
+        Exception reason = new NonRecoverableException(Status.NotAuthorized(String.format(
+            "cannot re-acquire authentication token after %d attempts (%s)",
+            MAX_ATTEMPTS,
+            e.getMessage())));
+        failQueuedRpcs(reason);
         return null;
       }
 
-      /** Handle the affected RPCs if authn token re-acquisition fails. */
-      void failQueuedRpcs() {
+      /** Handle the affected RPCs if authn token re-acquisition fails.
+       */
+      void failQueuedRpcs(Exception reason) {
         List<KuduRpc<?>> rpcList = swapQueuedRpcs();
         for (KuduRpc<?> rpc : rpcList) {
-          Exception reason = new NonRecoverableException(Status.NotAuthorized(String.format(
-              "cannot re-acquire authentication token after %d attempts", MAX_ATTEMPTS)));
           rpc.errback(reason);
         }
       }

@@ -50,6 +50,14 @@ message CreateClusterRequestPB {
   // a format that's expected by gflag (i.e. "--foo=bar").
   repeated string extra_master_flags = 5;
   repeated string extra_tserver_flags = 6;
+
+  message MiniKdcOptionsPB {
+    // The default lifetime for initial ticket requests.
+    optional string ticket_lifetime = 1;
+    // The default renewable lifetime for initial ticket requests.
+    optional string renew_lifetime = 2;
+  }
+  optional MiniKdcOptionsPB mini_kdc_options = 8;
 }
 
 // Destroys a cluster created via 'create_cluster'.
@@ -143,6 +151,12 @@ message GetKDCEnvVarsRequestPB {}
 // Removes all credentials for all principals from the KDC credential cache.
 message KdestroyRequestPB {};
 
+// Establishes a new Kerberos ticket cache (equivalent to running 'kinit').
+message KinitRequestPB {
+  optional string username = 1 [ default = "test-admin" ];
+};
+
+
 // Sent by the control shell in response to a control shell command request.
 message ControlShellResponsePB {
 
@@ -176,5 +190,6 @@ message ControlShellRequestPB {
     GetTServersRequestPB get_tservers = 8;
     GetKDCEnvVarsRequestPB get_kdc_env_vars = 9;
     KdestroyRequestPB kdestroy = 10;
+    KinitRequestPB kinit = 11;
   }
 }

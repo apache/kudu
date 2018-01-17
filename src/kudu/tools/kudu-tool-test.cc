@@ -2131,6 +2131,18 @@ TEST_P(ControlShellToolTest, TestControlShell) {
       req.mutable_start_daemon()->mutable_id()->set_type(KDC);
       ASSERT_OK(SendReceive(req, &resp));
     }
+    // Test kinit by deleting the ticket cache, kinitting, and
+    // ensuring it is recreated.
+    {
+      char* ccache_path = getenv("KRB5CCNAME");
+      ASSERT_TRUE(ccache_path);
+      ASSERT_OK(env_->DeleteFile(ccache_path));
+      ControlShellRequestPB req;
+      ControlShellResponsePB resp;
+      req.mutable_kinit()->set_username("test-user");
+      ASSERT_OK(SendReceive(req, &resp));
+      ASSERT_TRUE(env_->FileExists(ccache_path));
+    }
   }
 
   // Destroy the cluster.

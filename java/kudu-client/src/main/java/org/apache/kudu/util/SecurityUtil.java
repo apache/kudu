@@ -17,15 +17,17 @@
 
 package org.apache.kudu.util;
 
-import java.security.AccessControlContext;
-import java.security.AccessController;
 import java.security.MessageDigest;
 import java.security.cert.Certificate;
 import java.security.cert.X509Certificate;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
+
+import javax.annotation.Nullable;
 import javax.security.auth.Subject;
 import javax.security.auth.kerberos.KerberosPrincipal;
+import javax.security.auth.kerberos.KerberosTicket;
 import javax.security.auth.login.AppConfigurationEntry;
 import javax.security.auth.login.Configuration;
 import javax.security.auth.login.LoginContext;
@@ -65,20 +67,19 @@ public abstract class SecurityUtil {
       .build();
 
   /**
+   * If we have Kerberos credentials that are within this specified window
+   * of expiration, then refresh them.
+   */
+  private static final long REFRESH_BEFORE_EXPIRATION_SECS = 10;
+
+  /**
    * Return the Subject associated with the current thread's AccessController,
    * if that subject has Kerberos credentials. If there is no such subject, or
-   * the subject has no Kerberos credentials, logins in a new subject from the
-   * currently configured TicketCache.
+   * the subject has no Kerberos credentials, a new subject is logged in from
+   * the currently configured TicketCache.
    */
-  public static Subject getSubjectOrLogin() {
-    AccessControlContext context = AccessController.getContext();
-    Subject subject = Subject.getSubject(context);
-    if (subject != null &&
-        !subject.getPrincipals(KerberosPrincipal.class).isEmpty()) {
-      LOG.debug("Using existing subject with Kerberos credentials: {}",
-          subject.toString());
-      return subject;
-    }
+  @Nullable
+  public static Subject getSubjectFromTicketCacheOrNull() {
     // If there isn't any current subject with krb5 principals, try to login
     // using the ticket cache.
     Configuration conf = new Configuration() {
@@ -115,7 +116,7 @@ public abstract class SecurityUtil {
     try {
       LoginContext loginContext = new LoginContext("kudu", new Subject(), null, conf);
       loginContext.login();
-      subject = loginContext.getSubject();
+      Subject subject = loginContext.getSubject();
       LOG.debug("Logged in as subject: {}", Joiner.on(",").join(subject.getPrincipals()));
       return subject;
     } catch (LoginException e) {
@@ -156,5 +157,86 @@ public abstract class SecurityUtil {
     } catch (Exception e) {
       throw Throwables.propagate(e);
     }
+  }
+
+  /**
+   * @return true if 'subject' contains a Kerberos TGT that is about to expire, or
+   * if it contains no TGT at all.
+   */
+  public static boolean needsRefresh(Subject subject) {
+    long deadline = System.currentTimeMillis() + REFRESH_BEFORE_EXPIRATION_SECS * 1000;
+    return tgtExpiresBefore(subject, deadline);
+  }
+
+  /**
+   * @return true if 'subject' contains a Kerberos TGT that is expired, or if it contains
+   * no TGT at all.
+   */
+  public static boolean isTgtExpired(Subject subject) {
+    return tgtExpiresBefore(subject, System.currentTimeMillis());
+  }
+
+  private static boolean tgtExpiresBefore(Subject subject, long deadlineMillis) {
+    KerberosTicket tgt = findTgt(subject);
+    if (tgt != null) {
+      return tgt.getEndTime().getTime() < deadlineMillis;
+    }
+    // We didn't find any TGT. This likely means that it expired and got
+    // removed during a connection attempt. So, we need to get a new one.
+    return true;
+  }
+
+  private static KerberosTicket findTgt(Subject subject) {
+    Set<KerberosTicket> tickets = subject.getPrivateCredentials(KerberosTicket.class);
+    // tickets is a Collections.synchronizedSet() wrapper, so we need to synchronize
+    // on it to iterate it.
+    synchronized (tickets) {
+      for (KerberosTicket ticket : tickets) {
+        if (SecurityUtil.isTGSPrincipal(ticket.getServer())) {
+          return ticket;
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * @return true if 'principal' matches the expected pattern for a TGT
+   */
+  private static boolean isTGSPrincipal(KerberosPrincipal principal) {
+    // When a principal foo@BAR authenticates to realm BAR, it will get a service
+    // ticket with the service principal 'krbtgt/BAR@BAR'. Note that this is the
+    // case even when the credentials will be used to authenticate to a remote
+    // realm using cross-realm trust.
+    //
+    // For example, if the user alice@AD.CORP is connecting to a Kudu service
+    // kudu/host@CLUSTER.LOCAL, the ticket cache will contain the following
+    // tickets:
+    //
+    //   krbtgt/AD.CORP@AD.CORP
+    //   krbtgt/CLUSTER.LOCAL@AD.CORP   (cross-realm trust ticket)
+    //   kudu/host@CLUSTER.LOCAL        (service in remote realm)
+    //
+    // Here we are simply trying to identify the first of those tickets.
+    return principal != null && principal.getName().equals(
+        "krbtgt/" + principal.getRealm() + "@" + principal.getRealm());
+  }
+
+  /**
+   * @return the KerberosPrincipal object associated with the given Subject.
+   * If there is no Principal, returns null. If there is more than one principal
+   * (not expected), logs a warning and also returns null.
+   */
+  public static KerberosPrincipal getKerberosPrincipalOrNull(Subject newSubject) {
+    Set<KerberosPrincipal> principals = newSubject.getPrincipals(KerberosPrincipal.class);
+    if (principals.size() > 1) {
+      LOG.warn("JAAS Subject unexpectedly includes more than one principal: {}",
+          Joiner.on(", ").join(principals));
+      return null;
+    } else if (principals.isEmpty()) {
+      return null;
+    }
+
+    return principals.iterator().next();
   }
 }

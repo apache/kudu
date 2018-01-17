@@ -27,6 +27,7 @@
 package org.apache.kudu.client;
 
 import java.io.IOException;
+import java.util.Arrays;
 
 import com.stumbleupon.async.DeferredGroupException;
 import com.stumbleupon.async.TimeoutException;
@@ -84,6 +85,9 @@ public abstract class KuduException extends IOException {
     // The message may be null.
     String message =  e.getMessage() == null ? "" : e.getMessage();
     if (e instanceof KuduException) {
+      // TODO(KUDU-2330) this can lead to methods of the synchronous client
+      // throwing exceptions without the stack trace indicating where
+      // the method was called!
       return (KuduException) e;
     } else if (e instanceof DeferredGroupException) {
       // The cause of a DeferredGroupException is the first exception it sees, we're just going to

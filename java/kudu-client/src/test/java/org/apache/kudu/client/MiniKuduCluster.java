@@ -34,6 +34,7 @@ import com.google.common.net.HostAndPort;
 import org.apache.kudu.Common.HostPortPB;
 import org.apache.kudu.tools.Tool.ControlShellRequestPB;
 import org.apache.kudu.tools.Tool.ControlShellResponsePB;
+import org.apache.kudu.tools.Tool.CreateClusterRequestPB.MiniKdcOptionsPB;
 import org.apache.kudu.tools.Tool.CreateClusterRequestPB;
 import org.apache.kudu.tools.Tool.DaemonIdentifierPB;
 import org.apache.kudu.tools.Tool.DaemonInfoPB;
@@ -41,6 +42,7 @@ import org.apache.kudu.tools.Tool.GetKDCEnvVarsRequestPB;
 import org.apache.kudu.tools.Tool.GetMastersRequestPB;
 import org.apache.kudu.tools.Tool.GetTServersRequestPB;
 import org.apache.kudu.tools.Tool.KdestroyRequestPB;
+import org.apache.kudu.tools.Tool.KinitRequestPB;
 import org.apache.kudu.tools.Tool.StartClusterRequestPB;
 import org.apache.kudu.tools.Tool.StartDaemonRequestPB;
 import org.apache.kudu.tools.Tool.StopDaemonRequestPB;
@@ -87,16 +89,20 @@ public class MiniKuduCluster implements AutoCloseable {
   private final ImmutableList<String> extraTserverFlags;
   private final ImmutableList<String> extraMasterFlags;
 
+  private MiniKdcOptionsPB kdcOptionsPb;
+
   private MiniKuduCluster(boolean enableKerberos,
       int numMasters,
       int numTservers,
       List<String> extraTserverFlags,
-      List<String> extraMasterFlags) {
+      List<String> extraMasterFlags,
+      MiniKdcOptionsPB kdcOptionsPb) {
     this.enableKerberos = enableKerberos;
     this.numMasters = numMasters;
     this.numTservers = numTservers;
     this.extraTserverFlags = ImmutableList.copyOf(extraTserverFlags);
     this.extraMasterFlags = ImmutableList.copyOf(extraMasterFlags);
+    this.kdcOptionsPb = kdcOptionsPb;
   }
 
   /**
@@ -167,6 +173,7 @@ public class MiniKuduCluster implements AutoCloseable {
             .setEnableKerberos(enableKerberos)
             .addAllExtraMasterFlags(extraMasterFlags)
             .addAllExtraTserverFlags(extraTserverFlags)
+            .setMiniKdcOptions(kdcOptionsPb)
             .build())
         .build());
     sendRequestToCluster(
@@ -356,13 +363,25 @@ public class MiniKuduCluster implements AutoCloseable {
   }
 
   /**
-   * Removes all credentials for all principals from the KDC credential cache.
+   * Removes all credentials for all principals from the Kerberos credential cache.
    */
   public void kdestroy() throws IOException {
     sendRequestToCluster(ControlShellRequestPB.newBuilder()
                                               .setKdestroy(KdestroyRequestPB.getDefaultInstance())
                                               .build());
   }
+
+  /**
+   * Re-initialize Kerberos credentials for the given username, writing them
+   * into the Kerberos credential cache.
+   * @param username the username to kinit as
+   */
+  public void kinit(String username) throws IOException {
+    sendRequestToCluster(ControlShellRequestPB.newBuilder()
+        .setKinit(KinitRequestPB.newBuilder().setUsername(username).build())
+        .build());
+  }
+
 
   /** {@override} */
   @Override
@@ -474,6 +493,9 @@ public class MiniKuduCluster implements AutoCloseable {
     private final List<String> extraTserverFlags = new ArrayList<>();
     private final List<String> extraMasterFlags = new ArrayList<>();
 
+    private MiniKdcOptionsPB.Builder kdcOptionsPb =
+        MiniKdcOptionsPB.newBuilder();
+
     public MiniKuduClusterBuilder numMasters(int numMasters) {
       this.numMasters = numMasters;
       return this;
@@ -511,6 +533,16 @@ public class MiniKuduCluster implements AutoCloseable {
       return this;
     }
 
+    public MiniKuduClusterBuilder kdcTicketLifetime(String lifetime) {
+      this.kdcOptionsPb.setTicketLifetime(lifetime);
+      return this;
+    }
+
+    public MiniKuduClusterBuilder kdcRenewLifetime(String lifetime) {
+      this.kdcOptionsPb.setRenewLifetime(lifetime);
+      return this;
+    }
+
     /**
      * Builds and starts a new {@link MiniKuduCluster} using builder state.
      * @return the newly started {@link MiniKuduCluster}
@@ -520,7 +552,8 @@ public class MiniKuduCluster implements AutoCloseable {
       MiniKuduCluster cluster =
           new MiniKuduCluster(enableKerberos,
               numMasters, numTservers,
-              extraTserverFlags, extraMasterFlags);
+              extraTserverFlags, extraMasterFlags,
+              kdcOptionsPb.build());
       try {
         cluster.start();
       } catch (IOException e) {

@@ -172,6 +172,8 @@ Status ProcessRequest(const ControlShellRequestPB& req,
       }
       if (opts.enable_kerberos) {
         opts.mini_kdc_options.data_root = JoinPathSegments(opts.cluster_root, "krb5kdc");
+        opts.mini_kdc_options.ticket_lifetime = cc.mini_kdc_options().ticket_lifetime();
+        opts.mini_kdc_options.renew_lifetime = cc.mini_kdc_options().renew_lifetime();
       }
 
       cluster->reset(new ExternalMiniCluster(std::move(opts)));
@@ -276,6 +278,14 @@ Status ProcessRequest(const ControlShellRequestPB& req,
         RETURN_NOT_OK(Status::NotFound("kdc not found"));
       }
       RETURN_NOT_OK((*cluster)->kdc()->Kdestroy());
+      break;
+    }
+    case ControlShellRequestPB::kKinit:
+    {
+      if (!(*cluster)->kdc()) {
+        RETURN_NOT_OK(Status::NotFound("kdc not found"));
+      }
+      RETURN_NOT_OK((*cluster)->kdc()->Kinit(req.kinit().username()));
       break;
     }
     default:

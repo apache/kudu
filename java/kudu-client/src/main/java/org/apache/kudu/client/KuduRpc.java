@@ -64,6 +64,14 @@ import org.apache.kudu.util.Slice;
  * familiar with the term "defensive copy", we don't do it in order to avoid
  * unnecessary memory copies when you know you won't be changing (or event
  * holding a reference to) the byte array, which is frequently the case.
+ *
+ *
+ * <h1>Note regarding {@code KuduRpc} instances passed into {@link AsyncKuduSession}</h1>
+ * Every {@link KuduRpc} passed to a method of AsyncKuduSession should not be
+ * changed or re-used until the {@code Deferred} returned by that method
+ * calls you back.  <strong>Changing or re-using any {@link KuduRpc} for
+ * an RPC in flight will lead to <em>unpredictable</em> results and voids
+ * your warranty</strong>.
  */
 @InterfaceAudience.Private
 public abstract class KuduRpc<R> {
