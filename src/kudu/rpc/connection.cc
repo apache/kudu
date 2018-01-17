@@ -309,7 +309,7 @@ struct CallTransferCallbacks : public TransferCallbacks {
   Connection* conn_;
 };
 
-void Connection::QueueOutboundCall(const shared_ptr<OutboundCall> &call) {
+void Connection::QueueOutboundCall(shared_ptr<OutboundCall> call) {
   DCHECK(call);
   DCHECK_EQ(direction_, CLIENT);
   DCHECK(reactor_thread_->IsCurrentThread());
@@ -390,7 +390,7 @@ void Connection::QueueOutboundCall(const shared_ptr<OutboundCall> &call) {
     car->timeout_timer.start();
   }
 
-  TransferCallbacks *cb = new CallTransferCallbacks(call, this);
+  TransferCallbacks *cb = new CallTransferCallbacks(std::move(call), this);
   awaiting_response_[call_id] = car.release();
   QueueOutbound(gscoped_ptr<OutboundTransfer>(
       OutboundTransfer::CreateForCallRequest(call_id, tmp_slices, n_slices, cb)));

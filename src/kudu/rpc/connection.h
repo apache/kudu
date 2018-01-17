@@ -121,7 +121,7 @@ class Connection : public RefCountedThreadSafe<Connection> {
   // marked failed. The caller is expected to check if 'call' has been cancelled
   // before making the call.
   // Takes ownership of the 'call' object regardless of whether it succeeds or fails.
-  void QueueOutboundCall(const std::shared_ptr<OutboundCall> &call);
+  void QueueOutboundCall(std::shared_ptr<OutboundCall> call);
 
   // Queue a call response back to the client on the server side.
   //

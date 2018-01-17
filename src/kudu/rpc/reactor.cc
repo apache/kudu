@@ -323,7 +323,7 @@ void ReactorThread::RegisterConnection(scoped_refptr<Connection> conn) {
   server_conns_.emplace_back(std::move(conn));
 }
 
-void ReactorThread::AssignOutboundCall(const shared_ptr<OutboundCall>& call) {
+void ReactorThread::AssignOutboundCall(shared_ptr<OutboundCall> call) {
   DCHECK(IsCurrentThread());
 
   // Skip if the outbound has been cancelled already.
@@ -340,7 +340,7 @@ void ReactorThread::AssignOutboundCall(const shared_ptr<OutboundCall>& call) {
     return;
   }
 
-  conn->QueueOutboundCall(call);
+  conn->QueueOutboundCall(std::move(call));
 }
 
 void ReactorThread::CancelOutboundCall(const shared_ptr<OutboundCall>& call) {
@@ -835,7 +835,7 @@ class AssignOutboundCallTask : public ReactorTask {
       : call_(std::move(call)) {}
 
   void Run(ReactorThread* reactor) override {
-    reactor->AssignOutboundCall(call_);
+    reactor->AssignOutboundCall(std::move(call_));
     delete this;
   }
 

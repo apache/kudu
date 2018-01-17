@@ -256,7 +256,7 @@ class ReactorThread {
 
   // Assign a new outbound call to the appropriate connection object.
   // If this fails, the call is marked failed and completed.
-  void AssignOutboundCall(const std::shared_ptr<OutboundCall> &call);
+  void AssignOutboundCall(std::shared_ptr<OutboundCall> call);
 
   // Cancel the outbound call. May update corresponding connection
   // object to remove call from the CallAwaitingResponse object.
