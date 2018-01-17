@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <memory>
 #include <ostream>
 #include <string>
 #include <type_traits>
@@ -26,6 +27,7 @@
 
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/move.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -206,8 +208,10 @@ void RpcServer::Shutdown() {
 }
 
 Status RpcServer::GetBoundAddresses(vector<Sockaddr>* addresses) const {
-  CHECK(server_state_ == BOUND ||
-        server_state_ == STARTED) << "bad state: " << server_state_;
+  if (server_state_ != BOUND &&
+      server_state_ != STARTED) {
+    return Status::ServiceUnavailable(Substitute("bad state: $0", server_state_));
+  }
   for (const shared_ptr<AcceptorPool>& pool : acceptor_pools_) {
     Sockaddr bound_addr;
     RETURN_NOT_OK_PREPEND(pool->GetBoundAddress(&bound_addr),
@@ -218,8 +222,10 @@ Status RpcServer::GetBoundAddresses(vector<Sockaddr>* addresses) const {
 }
 
 Status RpcServer::GetAdvertisedAddresses(vector<Sockaddr>* addresses) const {
-  CHECK(server_state_ == BOUND ||
-        server_state_ == STARTED) << "bad state: " << server_state_;
+  if (server_state_ != BOUND &&
+      server_state_ != STARTED) {
+    return Status::ServiceUnavailable(Substitute("bad state: $0", server_state_));
+  }
   if (rpc_advertised_addresses_.empty()) {
     return GetBoundAddresses(addresses);
   }

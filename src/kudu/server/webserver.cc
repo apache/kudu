@@ -321,7 +321,7 @@ void Webserver::Stop() {
 
 Status Webserver::GetBoundAddresses(std::vector<Sockaddr>* addrs) const {
   if (!context_) {
-    return Status::IllegalState("Not started");
+    return Status::ServiceUnavailable("Not started");
   }
 
   struct sockaddr_in** sockaddrs;
@@ -344,7 +344,7 @@ Status Webserver::GetBoundAddresses(std::vector<Sockaddr>* addrs) const {
 
 Status Webserver::GetAdvertisedAddresses(vector<Sockaddr>* addresses) const {
   if (!context_) {
-    return Status::IllegalState("Not started");
+    return Status::ServiceUnavailable("Not started");
   }
   if (webserver_advertised_addresses_.empty()) {
     return GetBoundAddresses(addresses);

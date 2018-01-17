@@ -30,6 +30,7 @@
 #include "kudu/clock/mock_ntp.h"
 #include "kudu/clock/time_service.h"
 #include "kudu/common/timestamp.h"
+#include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/rpc/rpc_context.h"
@@ -38,6 +39,7 @@
 #include "kudu/util/debug-util.h"
 #include "kudu/util/debug/leak_annotations.h" // IWYU pragma: keep
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/status.h"
 
 DECLARE_string(time_source);
 DECLARE_bool(use_hybrid_clock);
@@ -195,10 +197,15 @@ void GenericServiceImpl::SetServerWallClockForTests(const SetServerWallClockForT
   context->RespondSuccess();
 }
 
-void GenericServiceImpl::GetStatus(const GetStatusRequestPB* req,
+void GenericServiceImpl::GetStatus(const GetStatusRequestPB* /*req*/,
                                    GetStatusResponsePB* resp,
                                    rpc::RpcContext* rpc) {
-  server_->GetStatusPB(resp->mutable_status());
+  // Note: we must ensure that resp->has_status() is true in all cases to
+  // preserve backwards compatibility because it is defined as a required field.
+  Status s = server_->GetStatusPB(resp->mutable_status());
+  if (!s.ok()) {
+    StatusToPB(s, resp->mutable_error());
+  }
   rpc->RespondSuccess();
 }
 

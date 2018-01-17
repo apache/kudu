@@ -507,35 +507,42 @@ Status ServerBase::InitAcls() {
   return Status::OK();
 }
 
-void ServerBase::GetStatusPB(ServerStatusPB* status) const {
+Status ServerBase::GetStatusPB(ServerStatusPB* status) const {
   // Node instance
   status->mutable_node_instance()->CopyFrom(*instance_pb_);
 
   // RPC ports
   {
     vector<Sockaddr> addrs;
-    CHECK_OK(rpc_server_->GetBoundAddresses(&addrs));
+    RETURN_NOT_OK_PREPEND(rpc_server_->GetBoundAddresses(&addrs),
+                          "could not get bound RPC addresses");
     for (const Sockaddr& addr : addrs) {
       HostPort hp;
-      CHECK_OK(HostPortFromSockaddrReplaceWildcard(addr, &hp));
+      RETURN_NOT_OK_PREPEND(HostPortFromSockaddrReplaceWildcard(addr, &hp),
+                            "could not get RPC hostport");
       HostPortPB* pb = status->add_bound_rpc_addresses();
-      CHECK_OK(HostPortToPB(hp, pb));
+      RETURN_NOT_OK_PREPEND(HostPortToPB(hp, pb),
+                            "could not convert RPC hostport");
     }
   }
 
   // HTTP ports
   if (web_server_) {
     vector<Sockaddr> addrs;
-    CHECK_OK(web_server_->GetBoundAddresses(&addrs));
+    RETURN_NOT_OK_PREPEND(web_server_->GetBoundAddresses(&addrs),
+                          "could not get bound web addresses");
     for (const Sockaddr& addr : addrs) {
       HostPort hp;
-      CHECK_OK(HostPortFromSockaddrReplaceWildcard(addr, &hp));
+      RETURN_NOT_OK_PREPEND(HostPortFromSockaddrReplaceWildcard(addr, &hp),
+                            "could not get web hostport");
       HostPortPB* pb = status->add_bound_http_addresses();
-      CHECK_OK(HostPortToPB(hp, pb));
+      RETURN_NOT_OK_PREPEND(HostPortToPB(hp, pb),
+                            "could not convert web hostport");
     }
   }
 
   VersionInfo::GetVersionInfoPB(status->mutable_version_info());
+  return Status::OK();
 }
 
 void ServerBase::LogUnauthorizedAccess(rpc::RpcContext* rpc) const {
@@ -569,7 +576,7 @@ bool ServerBase::Authorize(rpc::RpcContext* rpc, uint32_t allowed_roles) {
 Status ServerBase::DumpServerInfo(const string& path,
                                   const string& format) const {
   ServerStatusPB status;
-  GetStatusPB(&status);
+  RETURN_NOT_OK_PREPEND(GetStatusPB(&status), "could not get server status");
 
   if (boost::iequals(format, "json")) {
     string json = JsonWriter::ToJson(status, JsonWriter::PRETTY);

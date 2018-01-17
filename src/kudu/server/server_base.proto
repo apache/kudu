@@ -107,6 +107,7 @@ message GetStatusRequestPB {
 }
 message GetStatusResponsePB {
   required ServerStatusPB status = 1;
+  optional AppStatusPB error = 2;
 }
 
 // Makes the HybridClock of the server use these values for wall clock time and error,

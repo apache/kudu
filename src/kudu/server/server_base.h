@@ -103,7 +103,7 @@ class ServerBase {
   clock::Clock* clock() { return clock_.get(); }
 
   // Return a PB describing the status of the server (version info, bound ports, etc)
-  void GetStatusPB(ServerStatusPB* status) const;
+  Status GetStatusPB(ServerStatusPB* status) const;
 
   enum {
     SUPER_USER = 1,

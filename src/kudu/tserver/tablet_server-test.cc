@@ -25,6 +25,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -96,6 +97,7 @@
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
@@ -120,6 +122,7 @@ using kudu::tablet::TabletSuperBlockPB;
 using std::set;
 using std::shared_ptr;
 using std::string;
+using std::thread;
 using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
@@ -185,6 +188,55 @@ TEST_F(TabletServerTest, TestPingServer) {
   PingResponsePB resp;
   RpcController controller;
   ASSERT_OK(proxy_->Ping(req, &resp, &controller));
+}
+
+TEST_F(TabletServerTest, TestStatus) {
+  // Get the server's status.
+  server::GetStatusRequestPB req;
+  server::GetStatusResponsePB resp;
+  RpcController controller;
+  ASSERT_OK(generic_proxy_->GetStatus(req, &resp, &controller));
+  ASSERT_TRUE(resp.has_status());
+  ASSERT_TRUE(resp.status().has_node_instance());
+  ASSERT_EQ(mini_server_->uuid(), resp.status().node_instance().permanent_uuid());
+
+  // Regression test for KUDU-2148: try to get the status as the server is
+  // starting. To surface this more frequently, we restart the server a number
+  // of times.
+  CountDownLatch latch(1);
+  thread status_thread([&](){
+    server::GetStatusRequestPB req;
+    server::GetStatusResponsePB resp;
+    RpcController controller;
+    while (latch.count() > 0) {
+      controller.Reset();
+      resp.Clear();
+      Status s = generic_proxy_->GetStatus(req, &resp, &controller);
+      if (s.ok()) {
+        // These two fields are guaranteed even if the request yielded an error.
+        CHECK(resp.has_status());
+        CHECK(resp.status().has_node_instance());
+        if (resp.has_error()) {
+          // But this one isn't set if the request yielded an error.
+          CHECK(!resp.status().has_version_info());
+        }
+      }
+    }
+  });
+  SCOPED_CLEANUP({
+    status_thread.join();
+  });
+
+  // Can't safely restart unless we allow the replica to be destroyed.
+  tablet_replica_.reset();
+
+  for (int i = 0; i < (AllowSlowTests() ? 100 : 10); i++) {
+    mini_server_->Shutdown();
+    ASSERT_OK(mini_server_->Restart());
+  }
+
+  // All done, stop the test thread.
+  latch.CountDown();
 }
 
 TEST_F(TabletServerTest, TestServerClock) {
