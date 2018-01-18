@@ -814,7 +814,7 @@ releases.
 | Node Type | Kudu Directory Type | Kudu Releases that Crash on Disk Failure
 | Master | All | All
 | Tablet Server | Directory containing WALs | All
-| Tablet Server | Directory containing data blocks and tablet metadata | All
+| Tablet Server | Directory containing tablet metadata | All
 | Tablet Server | Directory containing data blocks only | Pre-1.6.0
 |===
 
