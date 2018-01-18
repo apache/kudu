@@ -141,7 +141,7 @@ Status TlsContext::Init() {
     if (max_supported_tls_version < TLS1_2_VERSION) {
       return Status::InvalidArgument(
           "invalid minimum TLS protocol version (--rpc_tls_min_protocol): "
-          "this platform does no support TLSv1.2");
+          "this platform does not support TLSv1.2");
     }
 
     options |= SSL_OP_NO_TLSv1 | SSL_OP_NO_TLSv1_1;
@@ -149,7 +149,7 @@ Status TlsContext::Init() {
     if (max_supported_tls_version < TLS1_1_VERSION) {
       return Status::InvalidArgument(
           "invalid minimum TLS protocol version (--rpc_tls_min_protocol): "
-          "this platform does no support TLSv1.1");
+          "this platform does not support TLSv1.1");
     }
 
     options |= SSL_OP_NO_TLSv1;
