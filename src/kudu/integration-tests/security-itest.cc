@@ -370,25 +370,6 @@ TEST_P(AuthTokenIssuingTest, ChannelConfidentiality) {
   // so the connection is not considered a 'loopback' one.
   FLAGS_local_ip_for_outbound_sockets = "127.0.0.1";
 
-  // Current implementation of MasterServiceImpl::ConnectToMaster() allows to
-  // get a success response without proper security information in case if the
-  // master hasn't been established as a leader yet. As a temporary workaround,
-  // make sure the master is sending back the necessary info before going any
-  // further with the scenario which is sensitive to that issue.
-  //
-  // TODO(aserbin): fix the issue with MasterServiceImpl::ConnectToMaster()
-  //                and remove this ASSERT_EVENTUALLY() block.
-  ASSERT_EVENTUALLY([&] {
-    client::sp::shared_ptr<KuduClient> client;
-    ASSERT_OK(cluster_->CreateClient(nullptr, &client));
-
-    string authn_creds;
-    ASSERT_OK(client->ExportAuthenticationCredentials(&authn_creds));
-    client::AuthenticationCredentialsPB pb;
-    ASSERT_TRUE(pb.ParseFromString(authn_creds));
-    ASSERT_GE(pb.ca_cert_ders_size(), 1);
-  });
-
   // In current implementation, KuduClientBuilder calls ConnectToCluster() on
   // the newly created instance of the KuduClient.
   client::sp::shared_ptr<KuduClient> client;

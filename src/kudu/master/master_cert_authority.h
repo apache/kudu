@@ -53,15 +53,12 @@ class MasterCertAuthorityTest;
 // This class is thread-safe after initialization.
 class MasterCertAuthority {
  public:
+  // Generate a private key and corresponding self-signed root CA certificate
+  // bound to the aggregated server UUID.
+  static Status Generate(security::PrivateKey* key, security::Cert* cert);
+
   explicit MasterCertAuthority(std::string server_uuid);
   virtual ~MasterCertAuthority();
-
-  // Generate a private key and corresponding self-signed root CA certificate
-  // bound to the aggregated server UUID. Does not require Init() to be called.
-  // Calling this method does not have side-effects on the instance, i.e.
-  // even this method has been called on object, it's still necessary
-  // to call Init() prior to calling SignServerCSR() method.
-  Status Generate(security::PrivateKey* key, security::Cert* cert) const;
 
   // Initializes the MasterCertAuthority with the given private key
   // and CA certificate. This method is called when the master server

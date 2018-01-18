@@ -30,6 +30,7 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/replica_management.pb.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/catalog_manager.h"
@@ -455,8 +456,6 @@ void MasterServiceImpl::ConnectToMaster(const ConnectToMasterRequestPB* /*req*/,
   if (!l.CheckIsInitializedOrRespond(resp, rpc)) {
     return;
   }
-  auto role = server_->catalog_manager()->Role();
-  resp->set_role(role);
 
   // Set the info about the other masters, so that the client can verify
   // it has the full set of info.
@@ -470,13 +469,8 @@ void MasterServiceImpl::ConnectToMaster(const ConnectToMasterRequestPB* /*req*/,
     }
   }
 
-  if (l.leader_status().ok()) {
-    // TODO(KUDU-1924): it seems there is some window when 'role' is LEADER but
-    // in fact we aren't done initializing (and we don't have a CA cert).
-    // In that case, if we respond with the 'LEADER' role to a client, but
-    // don't pass back the CA cert, then the client won't be able to trust
-    // anyone... seems like a potential race bug for clients who connect
-    // exactly as the leader is changing.
+  const bool is_leader = l.leader_status().ok();
+  if (is_leader) {
     resp->add_ca_cert_der(server_->cert_authority()->ca_cert_der());
 
     // Issue an authentication token for the caller, unless they are
@@ -485,20 +479,35 @@ void MasterServiceImpl::ConnectToMaster(const ConnectToMasterRequestPB* /*req*/,
     // client over a non-confidential channel.
     if (rpc->is_confidential() &&
         rpc->remote_user().authenticated_by() != rpc::RemoteUser::AUTHN_TOKEN) {
-      SignedTokenPB authn_token;
-      Status s = server_->token_signer()->GenerateAuthnToken(
-          rpc->remote_user().username(),
-          &authn_token);
-      if (!s.ok()) {
-        KLOG_EVERY_N_SECS(WARNING, 1)
-            << "Unable to generate signed token for " << rpc->requestor_string()
-            << ": " << s.ToString();
-      } else {
-        // TODO(todd): this might be a good spot for some auditing code?
-        resp->mutable_authn_token()->Swap(&authn_token);
+      string username = rpc->remote_user().username();
+      if (username.empty()) {
+        static const char* const kErrMsg = "missing name of the remote user";
+        StatusToPB(Status::InvalidArgument(kErrMsg),
+                   resp->mutable_error()->mutable_status());
+        resp->mutable_error()->set_code(MasterErrorPB::UNKNOWN_ERROR);
+        rpc->RespondSuccess();
+        KLOG_EVERY_N_SECS(WARNING, 60) << Substitute("invalid request from $0: $1",
+                                                     rpc->requestor_string(), kErrMsg);
+        return;
       }
+
+      SignedTokenPB authn_token;
+      Status s = server_->token_signer()->GenerateAuthnToken(username, &authn_token);
+      if (!s.ok()) {
+        LOG(FATAL) << Substitute("unable to generate signed token for $0: $1",
+                                 rpc->requestor_string(), s.ToString());
+      }
+
+      // TODO(todd): this might be a good spot for some auditing code?
+      resp->mutable_authn_token()->Swap(&authn_token);
     }
   }
+
+  // Rather than consulting the current consensus role, instead base it
+  // on the catalog manager's view. This prevents us from advertising LEADER
+  // until we have taken over all the associated responsibilities.
+  resp->set_role(is_leader ? consensus::RaftPeerPB::LEADER
+                           : consensus::RaftPeerPB::FOLLOWER);
   rpc->RespondSuccess();
 }
 

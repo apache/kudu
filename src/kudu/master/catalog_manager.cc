@@ -219,6 +219,14 @@ DEFINE_bool(catalog_manager_fail_ts_rpcs, false,
 TAG_FLAG(catalog_manager_fail_ts_rpcs, hidden);
 TAG_FLAG(catalog_manager_fail_ts_rpcs, runtime);
 
+DEFINE_int32(catalog_manager_inject_latency_load_ca_info_ms, 0,
+             "Injects a random sleep between 0 and this many milliseconds "
+             "while reading CA info from the system table. "
+             "This is a test-only flag, do not use in production.");
+TAG_FLAG(catalog_manager_inject_latency_load_ca_info_ms, hidden);
+TAG_FLAG(catalog_manager_inject_latency_load_ca_info_ms, runtime);
+TAG_FLAG(catalog_manager_inject_latency_load_ca_info_ms, unsafe);
+
 DEFINE_int32(catalog_manager_inject_latency_prior_tsk_write_ms, 0,
              "Injects a random sleep between 0 and this many milliseconds "
              "prior to writing newly generated TSK into the system table. "
@@ -780,7 +788,7 @@ Status CatalogManager::InitCertAuthority() {
     unique_ptr<Cert> cert(new Cert);
 
     // Generate new private key and corresponding CA certificate.
-    RETURN_NOT_OK(master_->cert_authority()->Generate(key.get(), cert.get()));
+    RETURN_NOT_OK(MasterCertAuthority::Generate(key.get(), cert.get()));
     // If the leadership was lost, writing into the system table fails.
     RETURN_NOT_OK(StoreCertAuthorityInfo(*key, *cert));
     // Once the CA information is persisted, it's necessary to initialize
@@ -796,6 +804,7 @@ Status CatalogManager::InitCertAuthority() {
 // private key and certificate.
 Status CatalogManager::InitCertAuthorityWith(
     unique_ptr<PrivateKey> key, unique_ptr<Cert> cert) {
+
   leader_lock_.AssertAcquired();
 
   auto* ca = master_->cert_authority();
@@ -819,6 +828,8 @@ Status CatalogManager::InitCertAuthorityWith(
 Status CatalogManager::LoadCertAuthorityInfo(unique_ptr<PrivateKey>* key,
                                              unique_ptr<Cert>* cert) {
   leader_lock_.AssertAcquired();
+
+  MAYBE_INJECT_RANDOM_LATENCY(FLAGS_catalog_manager_inject_latency_load_ca_info_ms);
 
   SysCertAuthorityEntryPB info;
   RETURN_NOT_OK(sys_catalog_->GetCertAuthorityEntry(&info));

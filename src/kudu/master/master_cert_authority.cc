@@ -63,16 +63,8 @@ TAG_FLAG(ipki_server_cert_expiration_seconds, experimental);
 namespace kudu {
 namespace master {
 
-MasterCertAuthority::MasterCertAuthority(string server_uuid)
-    : server_uuid_(std::move(server_uuid)) {
-}
-
-MasterCertAuthority::~MasterCertAuthority() {
-}
-
-// Generate
 Status MasterCertAuthority::Generate(security::PrivateKey* key,
-                                     security::Cert* cert) const {
+                                     security::Cert* cert) {
   CHECK(key);
   CHECK(cert);
   // Create a key and cert for the self-signed CA.
@@ -82,6 +74,13 @@ Status MasterCertAuthority::Generate(security::PrivateKey* key,
                                 config,
                                 FLAGS_ipki_ca_cert_expiration_seconds,
                                 cert);
+}
+
+MasterCertAuthority::MasterCertAuthority(string server_uuid)
+    : server_uuid_(std::move(server_uuid)) {
+}
+
+MasterCertAuthority::~MasterCertAuthority() {
 }
 
 Status MasterCertAuthority::Init(unique_ptr<PrivateKey> key,

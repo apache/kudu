@@ -527,6 +527,7 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   friend class internal::RemoteTablet;
   friend class internal::RemoteTabletServer;
   friend class internal::WriteRpc;
+  friend class ConnectToClusterBaseTest;
   friend class ClientTest;
   friend class KuduClientBuilder;
   friend class KuduPartitionerBuilder;
