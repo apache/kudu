@@ -362,7 +362,7 @@ inline size_t RleDecoder<T>::Skip(size_t to_skip) {
       size_t nskip = (literal_count_ < to_skip) ? literal_count_ : to_skip;
       literal_count_ -= nskip;
       to_skip -= nskip;
-      while (nskip--) {
+      for (; nskip > 0; nskip--) {
         T value = 0;
         bool result = bit_reader_.GetValue(bit_width_, &value);
         DCHECK(result);
@@ -382,7 +382,7 @@ inline void RleEncoder<T>::Put(T value, size_t run_length) {
   DCHECK(bit_width_ == 64 || value < (1LL << bit_width_));
 
   // TODO(perf): remove the loop and use the repeat_count_
-  while (run_length--) {
+  for (; run_length > 0; run_length--) {
     if (PREDICT_TRUE(current_value_ == value)) {
       ++repeat_count_;
       if (repeat_count_ > 8) {

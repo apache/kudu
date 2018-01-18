@@ -23,6 +23,7 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/hash/city.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/util/bitmap.h"
 #include "kudu/util/slice.h"
 
@@ -72,6 +73,7 @@ class BloomKeyProbe {
   // Mix the given hash function with the second calculated hash
   // value. A sequence of independent hashes can be calculated
   // by repeatedly calling MixHash() on its previous result.
+  ATTRIBUTE_NO_SANITIZE_INTEGER
   uint32_t MixHash(uint32_t h) const {
     return h + h_2_;
   }

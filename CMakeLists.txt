@@ -342,17 +342,20 @@ endif()
 set(CMAKE_C_FLAGS "${CMAKE_CXX_FLAGS}")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 
-# Flag to enable clang undefined behavior sanitizer
-# We explicitly don't enable all of the sanitizer flags:
-# - disable 'vptr' because it currently crashes somewhere in boost::intrusive::list code
-# - disable 'alignment' because unaligned access is really OK on Nehalem and we do it
-#   all over the place.
+# Enable the Clang undefined behavior (UB) sanitizer.
 if (${KUDU_USE_UBSAN})
   if(NOT (("${COMPILER_FAMILY}" STREQUAL "clang") OR
           ("${COMPILER_FAMILY}" STREQUAL "gcc" AND "${COMPILER_VERSION}" VERSION_GREATER "4.9")))
     message(SEND_ERROR "Cannot use UBSAN without clang or gcc >= 4.9")
   endif()
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=undefined -fno-sanitize=alignment,vptr -fno-sanitize-recover")
+  # Enable UB and unsigned integer overflow detection.
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=undefined,integer")
+  # Disable 'vptr' because it currently crashes somewhere in boost::intrusive::list code
+  # Disable 'alignment' because unaligned access is really OK on Nehalem and we do it all over the place.
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-sanitize=alignment,vptr")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize-blacklist=${CMAKE_CURRENT_SOURCE_DIR}/build-support/ubsan-blacklist.txt")
+  # Stop execution after UB or overflow is detected.
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-sanitize-recover")
 endif ()
 
 # Flag to enable thread sanitizer (clang or gcc 4.8)

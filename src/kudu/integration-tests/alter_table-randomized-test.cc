@@ -32,12 +32,13 @@
 
 #include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
-#include "kudu/client/shared_ptr.h"
 #include "kudu/client/schema.h"
+#include "kudu/client/shared_ptr.h"
 #include "kudu/client/value.h"
 #include "kudu/client/write_op.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -403,6 +404,7 @@ struct MirrorTable {
     ts_.Delete(row_key);
   }
 
+  ATTRIBUTE_NO_SANITIZE_INTEGER
   void UpdateRandomRow(uint32_t rand) {
     if (ts_.rows_.empty()) return;
     int32_t row_key = ts_.GetRandomExistingRowKey();
@@ -410,6 +412,7 @@ struct MirrorTable {
     vector<pair<string, int32_t>> update;
     update.push_back(make_pair(ts_.col_names_[0], row_key));
     for (int i = 1; i < num_columns(); i++) {
+      // This is expected to overflow.
       int32_t val = rand * i;
       if (val == RowState::kNullValue) val++;
       if (val == RowState::kDefaultValue) val++;

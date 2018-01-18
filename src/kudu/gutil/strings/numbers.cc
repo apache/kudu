@@ -1014,10 +1014,7 @@ char* FastInt32ToBufferLeft(int32 i, char* buffer) {
   uint32 u = i;
   if (i < 0) {
     *buffer++ = '-';
-    // We need to do the negation in modular (i.e., "unsigned")
-    // arithmetic; MSVC++ apprently warns for plain "-u", so
-    // we write the equivalent expression "0 - u" instead.
-    u = 0 - u;
+    u = ~u + 1;
   }
   return FastUInt32ToBufferLeft(u, buffer);
 }
@@ -1068,7 +1065,7 @@ char* FastInt64ToBufferLeft(int64 i, char* buffer) {
   uint64 u = i;
   if (i < 0) {
     *buffer++ = '-';
-    u = 0 - u;
+    u = ~u + 1;
   }
   return FastUInt64ToBufferLeft(u, buffer);
 }
@@ -1097,7 +1094,7 @@ char* FastInt128ToBufferLeft(__int128 i, char* buffer) {
   unsigned __int128 u = i;
   if (i < 0) {
     *buffer++ = '-';
-    u = static_cast<unsigned __int128>(0) - u;
+    u = ~u + 1;
   }
   return FastUInt128ToBufferLeft(u, buffer);
 }

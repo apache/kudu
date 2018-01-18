@@ -15,20 +15,27 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstddef>
+#include <memory>
+#include <ostream>
 #include <string>
 #include <vector>
-#include <ostream>
 
 #include <glog/logging.h>
 
+#include "kudu/cfile/block_handle.h"
+#include "kudu/cfile/block_pointer.h"
 #include "kudu/cfile/cfile.pb.h"
 #include "kudu/cfile/cfile_reader.h"
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/cfile/cfile_writer.h"
+#include "kudu/cfile/index_block.h"
 #include "kudu/cfile/index_btree.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug-util.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
 
 using std::vector;
 
@@ -186,8 +193,8 @@ Status IndexTreeIterator::SeekToFirst() {
 }
 
 bool IndexTreeIterator::HasNext() {
-  for (int i = seeked_indexes_.size() - 1; i >= 0; i--) {
-    if (seeked_indexes_[i]->iter.HasNext())
+  for (int i = seeked_indexes_.size(); i > 0; i--) {
+    if (seeked_indexes_[i - 1]->iter.HasNext())
       return true;
   }
   return false;

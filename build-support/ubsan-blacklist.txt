@@ -1,0 +1,50 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# Normally we ignore sanitizer false positives via suppressions lists, but UBSan
+# suppressions can only be applied to recoverable checks, and we force all checks
+# to be non-recoverable so that the process aborts and the test fails.  Blacklists,
+# which are applied at compile time, do correctly ignore non-recoverable errors.
+#
+# The syntax of this file is described in the UBSan documentation:
+# https://clang.llvm.org/docs/SanitizerSpecialCaseList.html
+#
+# Note: when adding entries to this list, cmake will not recognize that it
+# needs to completely rebuild everything, so a 'make clean' or equivalent is
+# necessary.
+
+# libstdc++'s mersenne twister implementation has an unsigned-integer overflow:
+# include/c++/4.9.2/bits/random.tcc:416:33: runtime error: unsigned integer overflow: 397 - 624 cannot be represented in type 'unsigned long'
+fun:*mersenne_twister_engine*
+
+# Boost has multiple unsigned-integer overflows:
+# include/boost/uuid/sha1.hpp:171:43: runtime error: unsigned integer overflow: 3903086636 + 2562383102 cannot be represented in type 'unsigned int'
+src:*/boost/uuid/sha1.hpp
+# include/boost/container/detail/copy_move_algo.hpp:949:11: runtime error: unsigned integer overflow: 0 - 1 cannot be represented in type 'unsigned long'
+src:*/boost/container/detail/copy_move_algo.hpp
+# include/boost/functional/hash/hash.hpp:212:52: runtime error: unsigned integer overflow: 18389307270159922987 + 1512985112272252029 cannot be represented in type 'unsigned long'
+src:*/boost/functional/hash/hash.hpp
+
+# Protobuf's coded output stream and hash implementations have unsigned-integer overflows:
+# include/google/protobuf/io/coded_stream.h:925:61: runtime error: unsigned integer overflow: 0 - 1 cannot be represented in type 'unsigned int'
+# include/google/protobuf/stubs/hash.h:353:18: runtime error: unsigned integer overflow: 5 * 5697019175939388048 cannot be represented in type 'unsigned long'
+src:*/google/protobuf/io/coded_stream.h
+src:*/google/protobuf/stubs/hash.h
+
+# Sparsepp has an unsigned-integer negation overflow:
+# /include/sparsepp/spp.h:1196:20: runtime error: negation of 8192 cannot be represented in type 'group_bm_type' (aka 'unsigned int')
+src:*/sparsepp/spp.h

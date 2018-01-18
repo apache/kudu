@@ -157,6 +157,7 @@ void Schema::swap(Schema& other) {
   name_to_index_.swap(other.name_to_index_);
   id_to_index_.swap(other.id_to_index_);
   std::swap(has_nullables_, other.has_nullables_);
+  std::swap(name_to_index_bytes_, other.name_to_index_bytes_);
 }
 
 Status Schema::Reset(const vector<ColumnSchema>& cols,

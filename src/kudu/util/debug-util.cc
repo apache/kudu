@@ -363,7 +363,7 @@ void StackTrace::StringifyToHex(char* buf, size_t size, int flags) const {
     }
     // See note in Symbolize() below about why we subtract 1 from each address here.
     uintptr_t addr = reinterpret_cast<uintptr_t>(frames_[i]);
-    if (!(flags & NO_FIX_CALLER_ADDRESSES)) {
+    if (addr > 0 && !(flags & NO_FIX_CALLER_ADDRESSES)) {
       addr--;
     }
     FastHex64ToBuffer(addr, dst);

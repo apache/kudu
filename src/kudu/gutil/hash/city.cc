@@ -25,9 +25,9 @@
 #include <glog/logging.h>
 
 #include "kudu/gutil/endian.h"
+#include "kudu/gutil/hash/hash128to64.h"
 #include "kudu/gutil/int128.h"
 #include "kudu/gutil/integral_types.h"
-#include "kudu/gutil/hash/hash128to64.h"
 #include "kudu/gutil/port.h"
 
 using std::copy;
@@ -73,6 +73,7 @@ static uint64 HashLen16(uint64 u, uint64 v) {
   return Hash128to64(uint128(u, v));
 }
 
+ATTRIBUTE_NO_SANITIZE_INTEGER
 static uint64 HashLen0to16(const char *s, size_t len) {
   DCHECK_GE(len, 0);
   DCHECK_LE(len, 16);
@@ -98,6 +99,7 @@ static uint64 HashLen0to16(const char *s, size_t len) {
 
 // This probably works well for 16-byte strings as well, but it may be overkill
 // in that case.
+ATTRIBUTE_NO_SANITIZE_INTEGER
 static uint64 HashLen17to32(const char *s, size_t len) {
   DCHECK_GE(len, 17);
   DCHECK_LE(len, 32);
@@ -112,6 +114,7 @@ static uint64 HashLen17to32(const char *s, size_t len) {
 // Return a 16-byte hash for 48 bytes.  Quick and dirty.
 // Callers do best to use "random-looking" values for a and b.
 // (For more, see the code review discussion of CL 18799087.)
+ATTRIBUTE_NO_SANITIZE_INTEGER
 static pair<uint64, uint64> WeakHashLen32WithSeeds(
     uint64 w, uint64 x, uint64 y, uint64 z, uint64 a, uint64 b) {
   a += w;
@@ -135,6 +138,7 @@ static pair<uint64, uint64> WeakHashLen32WithSeeds(
 }
 
 // Return an 8-byte hash for 33 to 64 bytes.
+ATTRIBUTE_NO_SANITIZE_INTEGER
 static uint64 HashLen33to64(const char *s, size_t len) {
   uint64 z = LittleEndian::Load64(s + 24);
   uint64 a = LittleEndian::Load64(s) +
@@ -159,6 +163,7 @@ static uint64 HashLen33to64(const char *s, size_t len) {
   return ShiftMix(r * k0 + vs) * k2;
 }
 
+ATTRIBUTE_NO_SANITIZE_INTEGER
 uint64 CityHash64(const char *s, size_t len) {
   if (len <= 32) {
     if (len <= 16) {

@@ -29,13 +29,12 @@ void OverwriteWithPattern(char* p, size_t len, StringPiece pattern) {
   size_t rem = len;
   const char *pat_ptr = pattern.data();
 
-  while (rem >= pat_len) {
+  for (; rem >= pat_len; rem -= pat_len) {
     memcpy(p, pat_ptr, pat_len);
     p += pat_len;
-    rem -= pat_len;
   }
 
-  while (rem-- > 0) {
+  for (; rem > 0; rem--) {
     *p++ = *pat_ptr++;
   }
 }

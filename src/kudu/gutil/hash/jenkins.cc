@@ -20,8 +20,9 @@
 
 #include <glog/logging.h>
 
-#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/hash/jenkins_lookup2.h"
+#include "kudu/gutil/integral_types.h"
+#include "kudu/gutil/port.h"
 
 static inline uint32 char2unsigned(char c) {
   return static_cast<uint32>(static_cast<unsigned char>(c));
@@ -31,6 +32,7 @@ static inline uint64 char2unsigned64(char c) {
   return static_cast<uint64>(static_cast<unsigned char>(c));
 }
 
+ATTRIBUTE_NO_SANITIZE_INTEGER
 uint32 Hash32StringWithSeedReferenceImplementation(const char *s, uint32 len,
                                                    uint32 c) {
   uint32 a, b;
@@ -67,6 +69,7 @@ uint32 Hash32StringWithSeedReferenceImplementation(const char *s, uint32 len,
 }
 
 
+ATTRIBUTE_NO_SANITIZE_INTEGER
 uint32 Hash32StringWithSeed(const char *s, uint32 len, uint32 c) {
   uint32 a, b;
   uint32 keylen;
@@ -141,6 +144,7 @@ uint32 Hash32StringWithSeed(const char *s, uint32 len, uint32 c) {
   return c;
 }
 
+ATTRIBUTE_NO_SANITIZE_INTEGER
 uint64 Hash64StringWithSeed(const char *s, uint32 len, uint64 c) {
   uint64 a, b;
   uint32 keylen;
@@ -148,7 +152,7 @@ uint64 Hash64StringWithSeed(const char *s, uint32 len, uint64 c) {
   a = b = GG_ULONGLONG(0xe08c1d668b756f82);   // the golden ratio; an arbitrary value
 
   for ( keylen = len;  keylen >= 3 * sizeof(a);
-	keylen -= 3 * static_cast<uint32>(sizeof(a)), s += 3 * sizeof(a) ) {
+        keylen -= 3 * static_cast<uint32>(sizeof(a)), s += 3 * sizeof(a) ) {
     a += Word64At(s);
     b += Word64At(s + sizeof(a));
     c += Word64At(s + sizeof(a) * 2);

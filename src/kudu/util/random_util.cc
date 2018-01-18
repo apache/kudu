@@ -23,6 +23,7 @@
 #include <cstring>
 #include <string>
 
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
@@ -53,6 +54,7 @@ string RandomString(size_t n, Random* rng) {
   return s.ToString();
 }
 
+ATTRIBUTE_NO_SANITIZE_INTEGER
 uint32_t GetRandomSeed32() {
   uint32_t seed = static_cast<uint32_t>(GetCurrentTimeMicros());
   seed *= getpid();

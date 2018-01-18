@@ -28,6 +28,7 @@
 //    if you're lucky.
 // ----------------------------------------------------------------------
 
+ATTRIBUTE_NO_SANITIZE_INTEGER
 static inline void mix(uint32& a, uint32& b, uint32& c) {     // 32bit version
   a -= b; a -= c; a ^= (c>>13);
   b -= c; b -= a; b ^= (a<<8);
@@ -40,6 +41,7 @@ static inline void mix(uint32& a, uint32& b, uint32& c) {     // 32bit version
   c -= a; c -= b; c ^= (b>>15);
 }
 
+ATTRIBUTE_NO_SANITIZE_INTEGER
 static inline void mix(uint64& a, uint64& b, uint64& c) {     // 64bit version
   a -= b; a -= c; a ^= (c>>43);
   b -= c; b -= a; b ^= (a<<9);

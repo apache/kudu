@@ -85,7 +85,7 @@ TEST(MockHybridClockTest, TestMockedSystemClock) {
   clock->NowWithError(&timestamp, &max_error_usec);
   ASSERT_EQ(timestamp.ToUint64(), 1);
   // Now set an arbitrary time and check that is the time returned by the clock.
-  uint64_t time = 1234;
+  uint64_t time = 1234 * 1000;
   uint64_t error = 100 * 1000;
   mock_ntp(clock)->SetMockClockWallTimeForTests(time);
   mock_ntp(clock)->SetMockMaxClockErrorForTests(error);
@@ -191,7 +191,7 @@ TEST_F(HybridClockTest, TestWaitUntilAfter_TestCase1) {
   // make the event 3 * the max. possible error in the past
   Timestamp past_ts_changed = HybridClock::AddPhysicalTimeToTimestamp(
       past_ts,
-      MonoDelta::FromMicroseconds(-3 * max_error));
+      MonoDelta::FromMicroseconds(-3 * static_cast<int64_t>(max_error)));
 
   Status s = clock_->WaitUntilAfter(past_ts_changed, no_deadline);
 

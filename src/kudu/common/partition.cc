@@ -431,7 +431,7 @@ Status PartitionSchema::CreatePartitions(const vector<KuduPartialRow>& split_row
   // see PartitionTest::TestCreatePartitions.
   for (Partition& partition : *partitions) {
     if (partition.range_key_start().empty()) {
-      for (int i = partition.hash_buckets().size() - 1; i >= 0; i--) {
+      for (int i = static_cast<int>(partition.hash_buckets().size()) - 1; i >= 0; i--) {
         if (partition.hash_buckets()[i] != 0) {
           break;
         }
@@ -439,7 +439,7 @@ Status PartitionSchema::CreatePartitions(const vector<KuduPartialRow>& split_row
       }
     }
     if (partition.range_key_end().empty()) {
-      for (int i = partition.hash_buckets().size() - 1; i >= 0; i--) {
+      for (int i = static_cast<int>(partition.hash_buckets().size()) - 1; i >= 0; i--) {
         partition.partition_key_end_.erase(kEncodedBucketSize * i);
         int32_t hash_bucket = partition.hash_buckets()[i] + 1;
         if (hash_bucket != hash_bucket_schemas_[i].num_buckets) {

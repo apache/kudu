@@ -116,7 +116,7 @@ Status WaitUntilLeaderForTests(RaftConsensus* raft) {
 class RaftConsensusQuorumTest : public KuduTest {
  public:
   RaftConsensusQuorumTest()
-    : clock_(clock::LogicalClock::CreateStartingAt(Timestamp(0))),
+    : clock_(clock::LogicalClock::CreateStartingAt(Timestamp(1))),
       metric_entity_(METRIC_ENTITY_tablet.Instantiate(&metric_registry_, "raft-test")),
       schema_(GetSimpleTestSchema()) {
     options_.tablet_id = kTestTablet;

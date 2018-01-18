@@ -25,17 +25,18 @@
 #include <string>
 #include <vector>
 
+#include "kudu/cfile/cfile.pb.h"
 #include "kudu/cfile/cfile_reader.h"
 #include "kudu/cfile/cfile_writer.h"
-#include "kudu/cfile/cfile.pb.h"
 #include "kudu/common/columnblock.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/util/int128.h"
+#include "kudu/util/status.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
-#include "kudu/util/stopwatch.h"
-#include "kudu/util/status.h"
 
 DEFINE_int32(cfile_test_block_size, 1024,
              "Block size to use for testing cfiles. "
@@ -160,6 +161,7 @@ template<bool HAS_NULLS>
 class UInt8DataGenerator : public DataGenerator<UINT8, HAS_NULLS> {
  public:
   UInt8DataGenerator() {}
+  ATTRIBUTE_NO_SANITIZE_INTEGER
   uint8_t BuildTestValue(size_t block_index, size_t value) OVERRIDE {
     return (value * 10) % 256;
   }
@@ -169,6 +171,7 @@ template<bool HAS_NULLS>
 class Int8DataGenerator : public DataGenerator<INT8, HAS_NULLS> {
  public:
   Int8DataGenerator() {}
+  ATTRIBUTE_NO_SANITIZE_INTEGER
   int8_t BuildTestValue(size_t block_index, size_t value) OVERRIDE {
     return ((value * 10) % 128) * (value % 2 == 0 ? -1 : 1);
   }
@@ -178,6 +181,7 @@ template<bool HAS_NULLS>
 class UInt16DataGenerator : public DataGenerator<UINT16, HAS_NULLS> {
  public:
   UInt16DataGenerator() {}
+  ATTRIBUTE_NO_SANITIZE_INTEGER
   uint16_t BuildTestValue(size_t block_index, size_t value) OVERRIDE {
     return (value * 10) % 65536;
   }
@@ -187,6 +191,7 @@ template<bool HAS_NULLS>
 class Int16DataGenerator : public DataGenerator<INT16, HAS_NULLS> {
  public:
   Int16DataGenerator() {}
+  ATTRIBUTE_NO_SANITIZE_INTEGER
   int16_t BuildTestValue(size_t block_index, size_t value) OVERRIDE {
     return ((value * 10) % 32768) * (value % 2 == 0 ? -1 : 1);
   }
@@ -196,6 +201,7 @@ template<bool HAS_NULLS>
 class UInt32DataGenerator : public DataGenerator<UINT32, HAS_NULLS> {
  public:
   UInt32DataGenerator() {}
+  ATTRIBUTE_NO_SANITIZE_INTEGER
   uint32_t BuildTestValue(size_t block_index, size_t value) OVERRIDE {
     return value * 10;
   }
@@ -205,6 +211,7 @@ template<bool HAS_NULLS>
 class Int32DataGenerator : public DataGenerator<INT32, HAS_NULLS> {
  public:
   Int32DataGenerator() {}
+  ATTRIBUTE_NO_SANITIZE_INTEGER
   int32_t BuildTestValue(size_t block_index, size_t value) OVERRIDE {
     return (value * 10) *(value % 2 == 0 ? -1 : 1);
   }
@@ -214,6 +221,7 @@ template<bool HAS_NULLS>
 class UInt64DataGenerator : public DataGenerator<UINT64, HAS_NULLS> {
  public:
   UInt64DataGenerator() {}
+  ATTRIBUTE_NO_SANITIZE_INTEGER
   uint64_t BuildTestValue(size_t /*block_index*/, size_t value) OVERRIDE {
     return value * 0x123456789abcdefULL;
   }
@@ -223,6 +231,7 @@ template<bool HAS_NULLS>
 class Int64DataGenerator : public DataGenerator<INT64, HAS_NULLS> {
  public:
   Int64DataGenerator() {}
+  ATTRIBUTE_NO_SANITIZE_INTEGER
   int64_t BuildTestValue(size_t /*block_index*/, size_t value) OVERRIDE {
     int64_t r = (value * 0x123456789abcdefULL) & 0x7fffffffffffffffULL;
     return value % 2 == 0 ? r : -r;
@@ -233,6 +242,7 @@ template<bool HAS_NULLS>
 class Int128DataGenerator : public DataGenerator<INT128, HAS_NULLS> {
 public:
   Int128DataGenerator() {}
+  ATTRIBUTE_NO_SANITIZE_INTEGER
   int128_t BuildTestValue(size_t /*block_index*/, size_t value) OVERRIDE {
     int128_t r = (value * 0x123456789abcdefULL) & 0x7fffffffffffffffULL;
     return value % 2 == 0 ? r : -r;
@@ -409,21 +419,20 @@ class CFileTestBase : public KuduTest {
 // enough guarantees on alignment and it can't seem to decode the
 // constant stride.
 template<class Indexable, typename SumType>
+ATTRIBUTE_NO_SANITIZE_INTEGER
 SumType FastSum(const Indexable &data, size_t n) {
   SumType sums[4] = {0, 0, 0, 0};
-  int rem = n;
+  size_t rem = n;
   int i = 0;
-  while (rem >= 4) {
+  for (; rem >= 4; rem -= 4) {
     sums[0] += data[i];
     sums[1] += data[i+1];
     sums[2] += data[i+2];
     sums[3] += data[i+3];
     i += 4;
-    rem -= 4;
   }
-  while (rem > 0) {
+  for (; rem > 0; rem--) {
     sums[3] += data[i++];
-    rem--;
   }
   return sums[0] + sums[1] + sums[2] + sums[3];
 }
@@ -456,8 +465,10 @@ void ReadBinaryFile(CFileIterator* iter, int* count) {
   while (iter->HasNext()) {
     size_t n = cb.nrows();
     ASSERT_OK_FAST(iter->CopyNextValues(&n, &ctx));
-    for (int i = 0; i < n; i++) {
-      sum_lens += cb[i].size();
+    for (size_t i = 0; i < n; i++) {
+      if (!cb.is_null(i)) {
+        sum_lens += cb[i].size();
+      }
     }
     *count += n;
     cb.arena()->Reset();
@@ -488,7 +499,7 @@ void TimeReadFile(FsManager* fs_manager, const BlockId& block_id, size_t *count_
     }
     case INT8:
     {
-      TimeReadFileForDataType<INT8, uint64_t>(iter, count);
+      TimeReadFileForDataType<INT8, int64_t>(iter, count);
       break;
     }
     case UINT16:
@@ -498,7 +509,7 @@ void TimeReadFile(FsManager* fs_manager, const BlockId& block_id, size_t *count_
     }
     case INT16:
     {
-      TimeReadFileForDataType<INT16, uint64_t>(iter, count);
+      TimeReadFileForDataType<INT16, int64_t>(iter, count);
       break;
     }
     case UINT32:
@@ -518,7 +529,7 @@ void TimeReadFile(FsManager* fs_manager, const BlockId& block_id, size_t *count_
     }
     case INT64:
     {
-      TimeReadFileForDataType<INT64, uint64_t>(iter, count);
+      TimeReadFileForDataType<INT64, int64_t>(iter, count);
       break;
     }
     case INT128:

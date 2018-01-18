@@ -2160,6 +2160,7 @@ TraceEvent* TraceLog::GetEventByHandleInternal(TraceEventHandle handle,
   return logged_events_->GetEventByHandle(handle);
 }
 
+ATTRIBUTE_NO_SANITIZE_INTEGER
 void TraceLog::SetProcessID(int process_id) {
   process_id_ = process_id;
   // Create a FNV hash from the process ID for XORing.

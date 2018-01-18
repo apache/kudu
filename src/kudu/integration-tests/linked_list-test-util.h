@@ -25,12 +25,13 @@
 
 #include <glog/logging.h>
 
-#include "kudu/clock/hybrid_clock.h"
 #include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
 #include "kudu/client/row_result.h"
 #include "kudu/client/value.h"
 #include "kudu/client/write_op.h"
+#include "kudu/clock/hybrid_clock.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/split.h"
@@ -206,6 +207,7 @@ class LinkedListChainGenerator {
   // 'chain_idx' is a unique ID for this chain. Chains with different indexes
   // will always generate distinct sets of keys (thus avoiding the possibility of
   // a collision even in a longer run).
+  ATTRIBUTE_NO_SANITIZE_INTEGER
   explicit LinkedListChainGenerator(int chain_idx)
     : chain_idx_(chain_idx),
       rand_(chain_idx * 0xDEADBEEF),

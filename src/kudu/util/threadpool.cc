@@ -500,7 +500,9 @@ Status ThreadPool::DoSubmit(shared_ptr<Runnable> r, ThreadPoolToken* token) {
   int threads_from_this_submit =
       token->IsActive() && token->mode() == ExecutionMode::SERIAL ? 0 : 1;
   int inactive_threads = num_threads_ + num_threads_pending_start_ - active_threads_;
-  int additional_threads = (queue_.size() + threads_from_this_submit) - inactive_threads;
+  int additional_threads = static_cast<int>(queue_.size())
+                         + threads_from_this_submit
+                         - inactive_threads;
   bool need_a_thread = false;
   if (additional_threads > 0 && num_threads_ + num_threads_pending_start_ < max_threads_) {
     need_a_thread = true;

@@ -251,7 +251,8 @@ bool HybridClock::HasPhysicalComponent() const {
 }
 
 MonoDelta HybridClock::GetPhysicalComponentDifference(Timestamp lhs, Timestamp rhs) const {
-  return MonoDelta::FromMicroseconds(GetPhysicalValueMicros(lhs) - GetPhysicalValueMicros(rhs));
+  return MonoDelta::FromMicroseconds(static_cast<int64_t>(GetPhysicalValueMicros(lhs)) -
+                                     static_cast<int64_t>(GetPhysicalValueMicros(rhs)));
 }
 
 Status HybridClock::WaitUntilAfter(const Timestamp& then,
@@ -459,8 +460,9 @@ Timestamp HybridClock::TimestampFromMicrosecondsAndLogicalValue(
 
 Timestamp HybridClock::AddPhysicalTimeToTimestamp(const Timestamp& original,
                                                   const MonoDelta& to_add) {
-  uint64_t new_physical = GetPhysicalValueMicros(original) + to_add.ToMicroseconds();
-  uint64_t old_logical = GetLogicalValue(original);
+  int64_t new_physical = static_cast<int64_t>(GetPhysicalValueMicros(original))
+                       + to_add.ToMicroseconds();
+  int64_t old_logical = GetLogicalValue(original);
   return TimestampFromMicrosecondsAndLogicalValue(new_physical, old_logical);
 }
 

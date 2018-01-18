@@ -252,7 +252,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
 
     uint64_t count_since_report = 0;
 
-    uint64_t sum = 0;
+    int64_t sum = 0;
 
     gscoped_ptr<RowwiseIterator> iter;
     CHECK_OK(tablet()->NewRowIterator(valcol_projection_, &iter));

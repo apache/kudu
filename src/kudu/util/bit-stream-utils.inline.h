@@ -150,7 +150,7 @@ inline void BitReader::Rewind(int num_bits) {
 inline void BitReader::SeekToBit(uint stream_position) {
   DCHECK_LE(stream_position, max_bytes_ * 8);
 
-  int delta = stream_position - position();
+  int delta = static_cast<int>(stream_position) - position();
   if (delta == 0) {
     return;
   } else if (delta < 0) {

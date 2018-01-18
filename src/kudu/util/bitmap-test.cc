@@ -175,7 +175,7 @@ TEST(TestBitMap, TestFindBit) {
     BitmapChange(bm, i, i & 3);
   }
 
-  while (num_bits--) {
+  for (; num_bits > 0; num_bits--) {
     for (size_t offset = 0; offset < num_bits; ++offset) {
       size_t idx;
 

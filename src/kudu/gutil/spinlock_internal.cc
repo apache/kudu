@@ -43,6 +43,8 @@
 
 #include "kudu/gutil/spinlock_internal.h"
 
+#include "kudu/gutil/port.h"
+
 // forward declaration for use by spinlock_*-inl.h
 namespace base { namespace internal { static int SuggestedDelayNS(int loop); }}
 
@@ -78,6 +80,7 @@ int32 SpinLockWait(volatile Atomic32 *w, int n,
 }
 
 // Return a suggested delay in nanoseconds for iteration number "loop"
+ATTRIBUTE_NO_SANITIZE_INTEGER
 static int SuggestedDelayNS(int loop) {
   // Weak pseudo-random number generator to get some spread between threads
   // when many are spinning.

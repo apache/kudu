@@ -15,10 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <stdint.h>
-
 #ifndef KUDU_UTIL_HASH_UTIL_H
 #define KUDU_UTIL_HASH_UTIL_H
+
+#include <stdint.h>
+
+#include "kudu/gutil/port.h"
 
 namespace kudu {
 
@@ -30,6 +32,7 @@ class HashUtil {
   static const int MURMUR_R = 47;
 
   /// Murmur2 hash implementation returning 64-bit hashes.
+  ATTRIBUTE_NO_SANITIZE_INTEGER
   static uint64_t MurmurHash2_64(const void* input, int len, uint64_t seed) {
     uint64_t h = seed ^ (len * MURMUR_PRIME);
 

@@ -91,7 +91,7 @@ inline int fastmemcmp_inlined(const void *a_void, const void *b_void, size_t n) 
     b += sizeof_uint32;
   }
   while (a < a_limit) {
-    int d = static_cast<uint32>(*a++) - static_cast<uint32>(*b++);
+    int d = static_cast<int>(*a++) - static_cast<int>(*b++);
     if (d) return d;
   }
   return 0;

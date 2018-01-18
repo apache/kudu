@@ -123,7 +123,7 @@ namespace kudu {
 
 class Stopwatch;
 
-typedef uint64_t nanosecond_type;
+typedef int64_t nanosecond_type;
 
 // Structure which contains an elapsed amount of wall/user/sys time.
 struct CpuTimes {

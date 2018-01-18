@@ -38,6 +38,7 @@
 #include "kudu/common/types.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/mathlimits.h"
+#include "kudu/gutil/port.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/slice.h"
 
@@ -77,6 +78,7 @@ bool DecrementBoolCell(void* cell_ptr) {
 }
 
 template<DataType type>
+ATTRIBUTE_NO_SANITIZE_INTEGER
 bool IncrementIntCell(void* cell_ptr) {
   typedef DataTypeTraits<type> traits;
   typedef typename traits::cpp_type cpp_type;
@@ -101,6 +103,7 @@ bool IncrementIntCell(void* cell_ptr) {
 }
 
 template<DataType type>
+ATTRIBUTE_NO_SANITIZE_INTEGER
 bool DecrementIntCell(void* cell_ptr) {
   typedef DataTypeTraits<type> traits;
   typedef typename traits::cpp_type cpp_type;

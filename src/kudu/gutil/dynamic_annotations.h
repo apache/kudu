@@ -763,7 +763,6 @@ void __asan_set_death_callback(void (*callback)(void));
 
 #endif  /* CLANG_ANNOTALYSIS_ONLY */
 
-
 /* Undefine the macros intended only in this file. */
 #undef ANNOTALYSIS_STATIC_INLINE
 #undef ANNOTALYSIS_SEMICOLON_OR_EMPTY_BODY
