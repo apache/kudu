@@ -158,8 +158,7 @@ static GoogleOnceType once = GOOGLE_ONCE_INIT;
 class ThreadMgr {
  public:
   ThreadMgr()
-      : metrics_enabled_(false),
-        threads_started_metric_(0),
+      : threads_started_metric_(0),
         threads_running_metric_(0) {
   }
 
@@ -211,14 +210,11 @@ class ThreadMgr {
   // All thread categorys, keyed on the category name.
   typedef map<string, ThreadCategory> ThreadCategoryMap;
 
-  // Protects thread_categories_ and metrics_enabled_
+  // Protects thread_categories_ and thread metrics.
   Mutex lock_;
 
   // All thread categorys that ever contained a thread, even if empty
   ThreadCategoryMap thread_categories_;
-
-  // True after StartInstrumentation(..) returns
-  bool metrics_enabled_;
 
   // Counters to track all-time total number of threads, and the
   // current number of running threads.
@@ -263,7 +259,6 @@ void ThreadMgr::SetThreadName(const string& name, int64_t tid) {
 Status ThreadMgr::StartInstrumentation(const scoped_refptr<MetricEntity>& metrics,
                                        WebCallbackRegistry* web) {
   MutexLock l(lock_);
-  metrics_enabled_ = true;
 
   // Use function gauges here so that we can register a unique copy of these metrics in
   // multiple tservers, even though the ThreadMgr is itself a singleton.
@@ -325,10 +320,8 @@ void ThreadMgr::AddThread(const pthread_t& pthread_id, const string& name,
   {
     MutexLock l(lock_);
     thread_categories_[category][pthread_id] = ThreadDescriptor(category, name, tid);
-    if (metrics_enabled_) {
-      threads_running_metric_++;
-      threads_started_metric_++;
-    }
+    threads_running_metric_++;
+    threads_started_metric_++;
   }
   ANNOTATE_IGNORE_SYNC_END();
   ANNOTATE_IGNORE_READS_AND_WRITES_END();
@@ -342,9 +335,7 @@ void ThreadMgr::RemoveThread(const pthread_t& pthread_id, const string& category
     auto category_it = thread_categories_.find(category);
     DCHECK(category_it != thread_categories_.end());
     category_it->second.erase(pthread_id);
-    if (metrics_enabled_) {
-      threads_running_metric_--;
-    }
+    threads_running_metric_--;
   }
   ANNOTATE_IGNORE_SYNC_END();
   ANNOTATE_IGNORE_READS_AND_WRITES_END();
@@ -403,9 +394,7 @@ void ThreadMgr::ThreadPathHandler(const WebCallbackRegistry::WebRequest& req,
     (*output) << "</tbody></table>";
   } else {
     (*output) << "<h2>Thread Groups</h2>";
-    if (metrics_enabled_) {
-      (*output) << "<h4>" << threads_running_metric_ << " thread(s) running";
-    }
+    (*output) << "<h4>" << threads_running_metric_ << " thread(s) running";
     (*output) << "<a href='/threadz?group=all'><h3>All Threads</h3>";
 
     for (const ThreadCategoryMap::value_type& category : thread_categories_) {
