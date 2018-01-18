@@ -33,6 +33,7 @@ import javax.net.ssl.TrustManagerFactory;
 import javax.net.ssl.X509TrustManager;
 import javax.security.auth.Subject;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
@@ -75,7 +76,8 @@ class SecurityContext {
   /**
    * The currently trusted CA certs, in DER format.
    */
-  private List<ByteString> trustedCertDers = Collections.emptyList();
+  @VisibleForTesting
+  List<ByteString> trustedCertDers = Collections.emptyList();
 
   /**
    * Construct SecurityContext object with the specified JAAS subject.
