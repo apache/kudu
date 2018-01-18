@@ -91,6 +91,15 @@ class HeavyUpdateCompactionITest : public KuduTest {
 
   HeavyUpdateCompactionITest()
       : rand_(SeedRandom()) {
+
+#ifdef THREAD_SANITIZER
+    // The test is very slow with TSAN enabled due to the amount of data
+    // written and compacted, so turn down the volume a bit.
+    if (gflags::GetCommandLineFlagInfoOrDie("rows").is_default) {
+      FLAGS_rows = 20;
+    }
+#endif
+
     KuduSchemaBuilder b;
     b.AddColumn("key")->Type(KuduColumnSchema::INT64)->NotNull()->PrimaryKey();
 
