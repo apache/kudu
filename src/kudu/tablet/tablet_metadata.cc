@@ -290,6 +290,7 @@ TabletMetadata::TabletMetadata(FsManager* fs_manager, string tablet_id,
       tombstone_last_logged_opid_(std::move(tombstone_last_logged_opid)),
       num_flush_pins_(0),
       needs_flush_(false),
+      flush_count_for_tests_(0),
       pre_flush_callback_(Bind(DoNothingStatusClosure)) {
   CHECK(schema_->has_column_ids());
   CHECK_GT(schema_->num_key_columns(), 0);
@@ -308,6 +309,7 @@ TabletMetadata::TabletMetadata(FsManager* fs_manager, string tablet_id)
       schema_(nullptr),
       num_flush_pins_(0),
       needs_flush_(false),
+      flush_count_for_tests_(0),
       pre_flush_callback_(Bind(DoNothingStatusClosure)) {}
 
 Status TabletMetadata::LoadFromDisk() {
@@ -615,6 +617,7 @@ Status TabletMetadata::ReplaceSuperBlockUnlocked(const TabletSuperBlockPB &pb) {
                             fs_manager_->env(), path, pb,
                             pb_util::OVERWRITE, pb_util::SYNC),
                         Substitute("Failed to write tablet metadata $0", tablet_id_));
+  flush_count_for_tests_++;
   RETURN_NOT_OK(UpdateOnDiskSize());
 
   return Status::OK();

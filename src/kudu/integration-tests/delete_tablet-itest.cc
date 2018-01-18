@@ -35,6 +35,7 @@
 #include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet.h"
+#include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
@@ -47,6 +48,7 @@
 DECLARE_int64(fs_wal_dir_reserved_bytes);
 
 using kudu::tablet::TABLET_DATA_DELETED;
+using kudu::tablet::TABLET_DATA_TOMBSTONED;
 using kudu::tablet::TabletReplica;
 using kudu::itest::DeleteTablet;
 using std::atomic;
@@ -162,6 +164,57 @@ TEST_F(DeleteTabletITest, TestLeaderElectionDuringDeleteTablet) {
   for (auto& t : threads) {
     t.join();
   }
+}
+
+// Regression test for KUDU-2126 : Ensure that a DeleteTablet() RPC
+// on a tombstoned tablet does not cause any fsyncs.
+TEST_F(DeleteTabletITest, TestNoOpDeleteTabletRPC) {
+  // Setup the Mini Cluster
+  NO_FATALS(StartCluster(/*num_tablet_servers=*/ 1));
+
+  // Determine the Mini Cluster Cluster workload
+  TestWorkload workload(cluster_.get());
+  workload.set_num_replicas(1);
+  workload.Setup();
+  workload.Start();
+  workload.StopAndJoin();
+
+  auto* mts = cluster_->mini_tablet_server(0);
+  auto* ts = ts_map_[mts->uuid()];
+
+  // Verify number of tablets in the cluster
+  vector<string> tablet_ids = mts->ListTablets();
+  ASSERT_EQ(1, tablet_ids.size());
+  const string& tablet_id = tablet_ids[0];
+
+  // Get the Tablet Replica
+  scoped_refptr<TabletReplica> tablet_replica;
+  vector<scoped_refptr<TabletReplica>> tablet_replicas;
+  mts->server()->tablet_manager()->GetTabletReplicas(&tablet_replicas);
+  ASSERT_EQ(1, tablet_replicas.size());
+  tablet_replica = tablet_replicas[0];
+  auto flush_count = [&]() {
+    return tablet_replica->tablet_metadata()->flush_count_for_tests();
+  };
+
+  // Kill the master, so we can send the DeleteTablet RPC
+  // without any interference
+  cluster_->mini_master()->Shutdown();
+
+  // Send the first DeleteTablet RPC
+  int flush_count_before = flush_count();
+  MonoDelta timeout = MonoDelta::FromSeconds(30);
+  ASSERT_OK(DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
+  int flush_count_after = flush_count();
+
+  ASSERT_EQ(2, flush_count_after - flush_count_before);
+
+  // Send the second DeleteTablet RPC
+  flush_count_before = flush_count();
+  ASSERT_OK(DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
+  flush_count_after = flush_count();
+
+  ASSERT_EQ(0, flush_count_after - flush_count_before);
 }
 
 } // namespace kudu

@@ -794,6 +794,12 @@ Status TSTabletManager::DeleteTablet(
   bool tablet_already_deleted = (data_state == TABLET_DATA_DELETED ||
                                  data_state == TABLET_DATA_TOMBSTONED);
 
+  // If a tablet is already tombstoned, then a request to tombstone
+  // the same tablet should become a no-op.
+  if (delete_type == TABLET_DATA_TOMBSTONED && data_state == TABLET_DATA_TOMBSTONED) {
+    return Status::OK();
+  }
+
   // They specified an "atomic" delete. Check the committed config's opid_index.
   // TODO(mpercy): There's actually a race here between the check and shutdown,
   // but it's tricky to fix. We could try checking again after the shutdown and

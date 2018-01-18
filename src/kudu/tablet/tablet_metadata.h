@@ -253,6 +253,10 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // Return standard "T xxx P yyy" log prefix.
   std::string LogPrefix() const;
 
+  int flush_count_for_tests() const {
+    return flush_count_for_tests_;
+  }
+
  private:
   friend class RefCountedThreadSafe<TabletMetadata>;
   friend class MetadataTest;
@@ -370,6 +374,9 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // then next UnPinFlush will call Flush() again to ensure the
   // metadata is persisted.
   bool needs_flush_;
+
+  // The number of times metadata has been flushed to disk
+  int flush_count_for_tests_;
 
   // A callback that, if set, is called before this metadata is flushed
   // to disk. Protected by the 'flush_lock_'.
