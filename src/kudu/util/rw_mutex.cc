@@ -140,6 +140,12 @@ bool RWMutex::TryWriteLock() {
 
 #ifndef NDEBUG
 
+void RWMutex::AssertAcquired() const {
+  lock_guard<simple_spinlock> l(tid_lock_);
+  CHECK(ContainsKey(reader_tids_, Env::Default()->gettid()) ||
+        Env::Default()->gettid() == writer_tid_);
+}
+
 void RWMutex::AssertAcquiredForReading() const {
   lock_guard<simple_spinlock> l(tid_lock_);
   CHECK(ContainsKey(reader_tids_, Env::Default()->gettid()));

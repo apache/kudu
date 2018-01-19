@@ -394,15 +394,15 @@ Status TlsContext::AdoptSignedCert(const Cert& cert) {
   SCOPED_OPENSSL_NO_PENDING_ERRORS;
   unique_lock<RWMutex> lock(lock_);
 
-  // Verify that the appropriate CA certs have been loaded into the context
-  // before we adopt a cert. Otherwise, client connections without the CA cert
-  // available would fail.
-  RETURN_NOT_OK(VerifyCertChainUnlocked(cert));
-
   if (!csr_) {
     // A signed cert has already been adopted.
     return Status::OK();
   }
+
+  // Verify that the appropriate CA certs have been loaded into the context
+  // before we adopt a cert. Otherwise, client connections without the CA cert
+  // available would fail.
+  RETURN_NOT_OK(VerifyCertChainUnlocked(cert));
 
   PublicKey csr_key;
   RETURN_NOT_OK(csr_->GetPublicKey(&csr_key));

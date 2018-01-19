@@ -412,11 +412,18 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   //
   class ScopedLeaderSharedLock {
    public:
-    // Creates a new shared lock, acquiring the catalog manager's leader_lock_
-    // for reading in the process. The lock is released when this object is
-    // destroyed.
+    // Creates a new shared lock, trying to acquire the catalog manager's
+    // leader_lock_ for reading in the process. If acquired, the lock is
+    // released when this object is destroyed.
     //
-    // 'catalog' must outlive this object.
+    // In most common use cases, where write lock semantics is assumed, call
+    // CheckIsInitializedAndIsLeaderOrRespond() to verify that the leader_lock_
+    // has been acquired (as shown in the class-wide comment above). In rare
+    // cases, where both read and write semantics are applicable, use the
+    // combination of CheckIsInitializedOrRespond() and owns_lock() methods
+    // to verify that the leader_lock_ is acquired.
+    //
+    // The object pointed by the 'catalog' parameter must outlive this object.
     explicit ScopedLeaderSharedLock(CatalogManager* catalog);
 
     // General status of the catalog manager. If not OK (e.g. the catalog
@@ -438,6 +445,11 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
         return catalog_status_;
       }
       return leader_status_;
+    }
+
+    // Whether the underlying leader lock of the system catalog is acquired.
+    bool owns_lock() const {
+      return leader_shared_lock_.owns_lock();
     }
 
     // Check whether the consensus configuration term has changed from the term
@@ -659,6 +671,16 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // reload table/tablet metadata into memory and do other work to update the
   // internal state of this object upon becoming the leader.
   void PrepareForLeadershipTask();
+
+  // Whether this catalog manager needs to prepare for running in the follower
+  // role.
+  bool NeedToPrepareFollower();
+
+  // Perform necessary work to prepare for running in the follower role.
+  // Currently, this includes reading the CA information from the system table,
+  // creating TLS server certificate request, signing it with the CA key,
+  // and installing the certificate TLS server certificates.
+  Status PrepareFollower();
 
   // Clears out the existing metadata ('table_names_map_', 'table_ids_map_',
   // and 'tablet_map_'), loads tables metadata into memory and if successful

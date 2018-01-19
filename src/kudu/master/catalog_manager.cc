@@ -536,6 +536,14 @@ void CatalogManagerBgTasks::Run() {
             LOG(FATAL) << err_msg;
           }
         }
+      } else if (catalog_manager_->NeedToPrepareFollower() && l.owns_lock()) {
+        // This is the case of a non-leader catalog manager that has some work
+        // to do in a preparation to run in its current role.
+        Status s = catalog_manager_->PrepareFollower();
+        if (!s.ok()) {
+          LOG(WARNING) << s.ToString()
+                       << ": failed to prepare follower catalog manager, will retry";
+        }
       }
     }
     // Wait for a notification or a timeout expiration.
@@ -788,17 +796,16 @@ Status CatalogManager::InitCertAuthority() {
 // private key and certificate.
 Status CatalogManager::InitCertAuthorityWith(
     unique_ptr<PrivateKey> key, unique_ptr<Cert> cert) {
-  leader_lock_.AssertAcquiredForWriting();
+  leader_lock_.AssertAcquired();
+
   auto* ca = master_->cert_authority();
   RETURN_NOT_OK_PREPEND(ca->Init(std::move(key), std::move(cert)),
                         "could not init master CA");
-
   auto* tls = master_->mutable_tls_context();
   RETURN_NOT_OK_PREPEND(tls->AddTrustedCertificate(ca->ca_cert()),
                         "could not trust master CA cert");
   // If we haven't signed our own server cert yet, do so.
-  boost::optional<security::CertSignRequest> csr =
-      tls->GetCsrIfNecessary();
+  boost::optional<security::CertSignRequest> csr = tls->GetCsrIfNecessary();
   if (csr) {
     Cert cert;
     RETURN_NOT_OK_PREPEND(ca->SignServerCSR(*csr, &cert),
@@ -811,7 +818,7 @@ Status CatalogManager::InitCertAuthorityWith(
 
 Status CatalogManager::LoadCertAuthorityInfo(unique_ptr<PrivateKey>* key,
                                              unique_ptr<Cert>* cert) {
-  leader_lock_.AssertAcquiredForWriting();
+  leader_lock_.AssertAcquired();
 
   SysCertAuthorityEntryPB info;
   RETURN_NOT_OK(sys_catalog_->GetCertAuthorityEntry(&info));
@@ -975,6 +982,29 @@ void CatalogManager::PrepareForLeadershipTask() {
   leader_ready_term_ = term;
 }
 
+bool CatalogManager::NeedToPrepareFollower() {
+  return !master_->tls_context().has_signed_cert();
+}
+
+Status CatalogManager::PrepareFollower() {
+  static const char* const kDescription =
+      "acquiring CA information for follower catalog manager";
+
+  leader_lock_.AssertAcquiredForReading();
+
+  unique_ptr<PrivateKey> key;
+  unique_ptr<Cert> cert;
+  Status s = LoadCertAuthorityInfo(&key, &cert).AndThen([&] {
+    return InitCertAuthorityWith(std::move(key), std::move(cert));
+  });
+  if (s.ok()) {
+    LOG_WITH_PREFIX(INFO) << kDescription << ": success";
+  } else {
+    LOG_WITH_PREFIX(WARNING) << kDescription << ": " << s.ToString();
+  }
+  return s;
+}
+
 Status CatalogManager::VisitTablesAndTabletsUnlocked() {
   leader_lock_.AssertAcquiredForWriting();
 
@@ -1013,10 +1043,8 @@ Status CatalogManager::VisitTablesAndTablets() {
 
 Status CatalogManager::InitSysCatalogAsync(bool is_first_run) {
   std::lock_guard<LockType> l(lock_);
-  unique_ptr<SysCatalogTable> new_catalog(
-      new SysCatalogTable(master_,
-                          Bind(&CatalogManager::ElectedAsLeaderCb,
-                               Unretained(this))));
+  unique_ptr<SysCatalogTable> new_catalog(new SysCatalogTable(
+      master_, Bind(&CatalogManager::ElectedAsLeaderCb, Unretained(this))));
   if (is_first_run) {
     RETURN_NOT_OK(new_catalog->CreateNew(master_->fs_manager()));
   } else {

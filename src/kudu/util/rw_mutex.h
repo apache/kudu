@@ -65,9 +65,11 @@ class RWMutex {
   bool TryWriteLock();
 
 #ifndef NDEBUG
+  void AssertAcquired() const;
   void AssertAcquiredForReading() const;
   void AssertAcquiredForWriting() const;
 #else
+  void AssertAcquired() const {}
   void AssertAcquiredForReading() const {}
   void AssertAcquiredForWriting() const {}
 #endif
