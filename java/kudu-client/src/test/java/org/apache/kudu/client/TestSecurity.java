@@ -13,13 +13,16 @@
  */
 package org.apache.kudu.client;
 
+import static org.apache.kudu.util.AssertHelpers.assertEventuallyTrue;
 import static org.junit.Assert.assertNotNull;
 
+import java.util.List;
+
+import org.apache.kudu.util.AssertHelpers.BooleanExpression;
+import org.apache.kudu.util.SecurityUtil;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
-
-import org.apache.kudu.util.SecurityUtil;
 
 public class TestSecurity extends BaseKuduTest {
 
@@ -68,6 +71,39 @@ public class TestSecurity extends BaseKuduTest {
       session.flush();
     } finally {
       // Restore ticket cache for other test cases.
+      System.setProperty(SecurityUtil.KUDU_TICKETCACHE_PROPERTY, oldTicketCache);
+    }
+  }
+
+  /**
+   * Regression test for KUDU-2267, client with valid token but without valid
+   * Kerberos credentials should be able to connect to all the masters.
+   */
+  @Test
+  public void testKudu2267() throws Exception {
+    byte[] authnData = client.exportAuthenticationCredentials().join();
+    assertNotNull(authnData);
+    String oldTicketCache = System.getProperty(SecurityUtil.KUDU_TICKETCACHE_PROPERTY);
+    System.clearProperty(SecurityUtil.KUDU_TICKETCACHE_PROPERTY);
+    try {
+      final KuduClient newClient = new KuduClient.KuduClientBuilder(masterAddresses).build();
+      newClient.importAuthenticationCredentials(authnData);
+
+      // Try to connect to all the masters and assert there is no
+      // authentication failures.
+      assertEventuallyTrue("Not able to connect to all the masters",
+          new BooleanExpression() {
+            @Override
+            public boolean get() throws Exception {
+              ConnectToCluster connector = new ConnectToCluster(masterHostPorts);
+              connector.connectToMasters(newClient.asyncClient.getMasterTable(), null,
+                      DEFAULT_SLEEP, Connection.CredentialsPolicy.ANY_CREDENTIALS);
+              connector.getDeferred().join();
+              List<Exception> s = connector.getExceptionsReceived();
+              return s.size() == 0;
+            }
+      }, DEFAULT_SLEEP);
+    } finally {
       System.setProperty(SecurityUtil.KUDU_TICKETCACHE_PROPERTY, oldTicketCache);
     }
   }

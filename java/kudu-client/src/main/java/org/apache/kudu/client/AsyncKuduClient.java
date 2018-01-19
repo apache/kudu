@@ -745,6 +745,11 @@ public class AsyncKuduClient implements AutoCloseable {
     return requestTracker;
   }
 
+  @VisibleForTesting
+  KuduTable getMasterTable() {
+    return masterTable;
+  }
+
   /**
    * Creates a new {@link AsyncKuduScanner.AsyncKuduScannerBuilder} for a particular table.
    * @param table the name of the table you intend to scan.
