@@ -345,7 +345,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     }
   }
 
-  private void chooseAndInitializeSaslMech(NegotiatePB response) throws NonRecoverableException {
+  private void chooseAndInitializeSaslMech(NegotiatePB response) throws KuduException {
     // Gather the set of server-supported mechanisms.
     Map<String, String> errorsByMech = Maps.newHashMap();
     Set<SaslMechanism> serverMechs = Sets.newHashSet();
@@ -419,7 +419,18 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
       message = "client/server supported SASL mechanism mismatch: [" +
                 Joiner.on(", ").withKeyValueSeparator(": ").join(errorsByMech) + "]";
     }
-    throw new NonRecoverableException(Status.NotAuthorized(message));
+
+    // If client has valid secondary authn credentials (such as authn token),
+    // but it does not have primary authn credentials (such as Kerberos creds),
+    // throw a recoverable exception. So that the request can be retried as long
+    // as the original call hasn't timed out, for cases documented in KUDU-2267,
+    // e.g. masters are in the process of the very first leader election after
+    // started up and does not have CA signed cert.
+    if (authnToken != null) {
+      throw new RecoverableException(Status.NotAuthorized(message));
+    } else {
+      throw new NonRecoverableException(Status.NotAuthorized(message));
+    }
   }
 
   private AuthenticationTypePB.TypeCase chooseAuthenticationType(NegotiatePB response) {

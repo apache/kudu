@@ -28,6 +28,7 @@ public class TestSecurity extends BaseKuduTest {
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
     miniClusterBuilder.enableKerberos()
+    .addMasterFlag("--leader_failure_max_missed_heartbeat_periods=10.0")
     .addMasterFlag("--rpc_trace_negotiation");
 
     BaseKuduTest.setUpBeforeClass();
@@ -67,6 +68,30 @@ public class TestSecurity extends BaseKuduTest {
       session.flush();
     } finally {
       // Restore ticket cache for other test cases.
+      System.setProperty(SecurityUtil.KUDU_TICKETCACHE_PROPERTY, oldTicketCache);
+    }
+  }
+
+  /**
+   * Test that a client is able to connect to masters using valid tokens
+   * after all masters were killed and restarted, and before a leader is
+   * elected. Leader election time is configured to be long enough using
+   * '--leader_failure_max_missed_heartbeat_periods'.
+   */
+  @Test
+  public void testConnectToNonLeaderMasters() throws Exception {
+    byte[] authnData = client.exportAuthenticationCredentials().join();
+    assertNotNull(authnData);
+    String oldTicketCache = System.getProperty(SecurityUtil.KUDU_TICKETCACHE_PROPERTY);
+    System.clearProperty(SecurityUtil.KUDU_TICKETCACHE_PROPERTY);
+    try {
+      KuduClient newClient = new KuduClient.KuduClientBuilder(masterAddresses).build();
+      newClient.importAuthenticationCredentials(authnData);
+
+      miniCluster.killMasters();
+      miniCluster.restartDeadMasters();
+      newClient.listTabletServers();
+    } finally {
       System.setProperty(SecurityUtil.KUDU_TICKETCACHE_PROPERTY, oldTicketCache);
     }
   }
