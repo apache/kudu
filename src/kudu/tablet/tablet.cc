@@ -1890,7 +1890,6 @@ shared_ptr<RowSet> Tablet::FindBestDMSToFlush(const ReplaySizeMap& replay_size_m
   scoped_refptr<TabletComponents> comps;
   GetComponents(&comps);
   int64_t mem_size = 0;
-  int64_t retention_size = 0;
   double max_score = 0;
   double mem_weight = 0;
   // If system is under memory pressure, we use the percentage of the hard limit consumed
@@ -1911,7 +1910,6 @@ shared_ptr<RowSet> Tablet::FindBestDMSToFlush(const ReplaySizeMap& replay_size_m
     if ((score > max_score) ||
         (score > max_score - 1 && mem > mem_size)) {
       max_score = score;
-      retention_size = size;
       mem_size = mem;
       best_dms = rowset;
     }
