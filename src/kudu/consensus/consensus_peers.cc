@@ -167,6 +167,12 @@ Status Peer::SignalRequest(bool even_if_queue_empty) {
     return Status::IllegalState("Peer was closed.");
   }
 
+  // Only allow one request at a time. No sense waking up the
+  // raft thread pool if the task will just abort anyway.
+  if (request_pending_) {
+    return Status::OK();
+  }
+
   // Capture a weak_ptr reference into the submitted functor so that we can
   // safely handle the functor outliving its peer.
   weak_ptr<Peer> w_this = shared_from_this();
