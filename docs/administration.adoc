@@ -211,10 +211,13 @@ For high availability and to avoid a single point of failure, Kudu clusters shou
 multiple masters. Many Kudu clusters were created with just a single master, either for simplicity
 or because Kudu multi-master support was still experimental at the time. This workflow demonstrates
 how to migrate to a multi-master configuration. It can also be used to migrate from two masters to
-three, with straightforward modifications.
+three, with straightforward modifications. Note that the number of masters must be odd.
 
 WARNING: The workflow is unsafe for adding new masters to an existing configuration that already has
 three or more masters. Do not use it for that purpose.
+
+WARNING: An even number of masters doesn't provide any benefit over having one fewer masters.  This
+guide should always be used for migrating to three masters.
 
 WARNING: All of the command line steps below should be executed as the Kudu UNIX user. The example
 commands assume the Kudu Unix user is `kudu`, which is typical.

@@ -41,10 +41,14 @@ To upgrade Kudu from a previous version, see <<upgrade>>.
 
 == Prerequisites and Requirements
 .Hardware
-- One or more hosts to run Kudu masters. It is recommended to have either one master
-(no fault tolerance), three masters (can tolerate one failure), or five masters (two failures).
-- One or more hosts to run Kudu tablet servers. When using replication, a minimum of
-three tablet servers is necessary.
+- One or more hosts to run Kudu masters. It is recommended to have either one master (no fault
+tolerance), or three masters (can tolerate one failure). The number of masters must be odd.
+- One or more hosts to run Kudu tablet servers. When using replication, a minimum of three tablet
+servers is necessary.
+
+WARNING: A deployment with an even number of masters provides the same level of fault tolerance as a
+deployment with one fewer master. For example, both four-master and three-master deployments can
+only tolerate a single failure; two-master deployments cannot tolerate any failures.
 
 .Operating System Requirements
 Linux::
