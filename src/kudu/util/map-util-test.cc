@@ -103,4 +103,14 @@ TEST(EraseKeyReturnValuePtrTest, TestRawAndSmartSmartPointers) {
   ASSERT_EQ(*value, "hello_world");
 }
 
+TEST(EmplaceTest, TestEmplace) {
+  // Map with move-only value type.
+  map<string, unique_ptr<string>> my_map;
+  unique_ptr<string> val(new string("foo"));
+  ASSERT_TRUE(EmplaceIfNotPresent(&my_map, "k", std::move(val)));
+  ASSERT_TRUE(ContainsKey(my_map, "k"));
+  ASSERT_FALSE(EmplaceIfNotPresent(&my_map, "k", nullptr))
+      << "Should return false for already-present";
+}
+
 } // namespace kudu

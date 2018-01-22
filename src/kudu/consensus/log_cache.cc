@@ -109,7 +109,7 @@ LogCache::LogCache(const scoped_refptr<MetricEntity>& metric_entity,
   // code paths elsewhere.
   auto zero_op = new ReplicateMsg();
   *zero_op->mutable_id() = MinimumOpId();
-  InsertOrDie(&cache_, 0, make_scoped_refptr_replicate(zero_op));
+  InsertOrDie(&cache_, 0, { make_scoped_refptr_replicate(zero_op), zero_op->SpaceUsed() });
 }
 
 LogCache::~LogCache() {
@@ -138,9 +138,10 @@ void LogCache::TruncateOpsAfterUnlocked(int64_t index) {
 
   // Now remove the overwritten operations.
   for (int64_t i = first_to_truncate; i < next_sequential_op_index_; ++i) {
-    ReplicateRefPtr msg = EraseKeyReturnValuePtr(&cache_, i);
-    if (msg != nullptr) {
-      AccountForMessageRemovalUnlocked(msg);
+    auto it = cache_.find(i);
+    if (it != cache_.end()) {
+      AccountForMessageRemovalUnlocked(it->second);
+      cache_.erase(it);
     }
   }
   next_sequential_op_index_ = index + 1;
@@ -148,24 +149,27 @@ void LogCache::TruncateOpsAfterUnlocked(int64_t index) {
 
 Status LogCache::AppendOperations(const vector<ReplicateRefPtr>& msgs,
                                   const StatusCallback& callback) {
-  std::unique_lock<simple_spinlock> l(lock_);
+  CHECK_GT(msgs.size(), 0);
 
-  int size = msgs.size();
-  CHECK_GT(size, 0);
+  // SpaceUsed is relatively expensive, so do calculations outside the lock
+  // and cache the result with each message.
+  int64_t mem_required = 0;
+  vector<CacheEntry> entries_to_insert;
+  entries_to_insert.reserve(msgs.size());
+  for (const auto& msg : msgs) {
+    CacheEntry e = { msg, static_cast<int64_t>(msg->get()->SpaceUsedLong()) };
+    mem_required += e.mem_usage;
+    entries_to_insert.emplace_back(std::move(e));
+  }
 
-  // If we're not appending a consecutive op we're likely overwriting and
-  // need to replace operations in the cache.
   int64_t first_idx_in_batch = msgs.front()->get()->id().index();
   int64_t last_idx_in_batch = msgs.back()->get()->id().index();
 
+  std::unique_lock<simple_spinlock> l(lock_);
+  // If we're not appending a consecutive op we're likely overwriting and
+  // need to replace operations in the cache.
   if (first_idx_in_batch != next_sequential_op_index_) {
     TruncateOpsAfterUnlocked(first_idx_in_batch - 1);
-  }
-
-
-  int64_t mem_required = 0;
-  for (const auto& msg : msgs) {
-    mem_required += msg->get()->SpaceUsed();
   }
 
   // Try to consume the memory. If it can't be consumed, we may need to evict.
@@ -192,9 +196,9 @@ Status LogCache::AppendOperations(const vector<ReplicateRefPtr>& msgs,
     borrowed_memory = parent_tracker_->LimitExceeded();
   }
 
-  for (const auto& msg : msgs) {
-    auto index = msg->get()->id().index();
-    InsertOrDie(&cache_, index, msg);
+  for (auto& e : entries_to_insert) {
+    auto index = e.msg->get()->id().index();
+    EmplaceOrDie(&cache_, index, std::move(e));
     next_sequential_op_index_ = index + 1;
   }
 
@@ -267,7 +271,7 @@ Status LogCache::LookupOpId(int64_t op_index, OpId* op_id) const {
     }
     auto iter = cache_.find(op_index);
     if (iter != cache_.end()) {
-      *op_id = iter->second->get()->id();
+      *op_id = iter->second.msg->get()->id();
       return Status::OK();
     }
   }
@@ -343,7 +347,7 @@ Status LogCache::ReadOps(int64_t after_op_index,
     } else {
       // Pull contiguous messages from the cache until the size limit is achieved.
       for (; iter != cache_.end(); ++iter) {
-        const ReplicateRefPtr& msg = iter->second;
+        const ReplicateRefPtr& msg = iter->second.msg;
         int64_t index = msg->get()->id().index();
         if (index != next_index) {
           continue;
@@ -378,7 +382,8 @@ void LogCache::EvictSomeUnlocked(int64_t stop_after_index, int64_t bytes_to_evic
 
   int64_t bytes_evicted = 0;
   for (auto iter = cache_.begin(); iter != cache_.end();) {
-    const ReplicateRefPtr& msg = (*iter).second;
+    const CacheEntry& entry = (*iter).second;
+    const ReplicateRefPtr& msg = entry.msg;
     VLOG_WITH_PREFIX_UNLOCKED(2) << "considering for eviction: " << msg->get()->id();
     int64_t msg_index = msg->get()->id().index();
     if (msg_index == 0) {
@@ -399,8 +404,8 @@ void LogCache::EvictSomeUnlocked(int64_t stop_after_index, int64_t bytes_to_evic
     }
 
     VLOG_WITH_PREFIX_UNLOCKED(2) << "Evicting cache. Removing: " << msg->get()->id();
-    AccountForMessageRemovalUnlocked(msg);
-    bytes_evicted += msg->get()->SpaceUsed();
+    AccountForMessageRemovalUnlocked(entry);
+    bytes_evicted += entry.mem_usage;
     cache_.erase(iter++);
 
     if (bytes_evicted >= bytes_to_evict) {
@@ -410,9 +415,9 @@ void LogCache::EvictSomeUnlocked(int64_t stop_after_index, int64_t bytes_to_evic
   VLOG_WITH_PREFIX_UNLOCKED(1) << "Evicting log cache: after state: " << ToStringUnlocked();
 }
 
-void LogCache::AccountForMessageRemovalUnlocked(const ReplicateRefPtr& msg) {
-  tracker_->Release(msg->get()->SpaceUsed());
-  metrics_.log_cache_size->DecrementBy(msg->get()->SpaceUsed());
+void LogCache::AccountForMessageRemovalUnlocked(const LogCache::CacheEntry& entry) {
+  tracker_->Release(entry.mem_usage);
+  metrics_.log_cache_size->DecrementBy(entry.mem_usage);
   metrics_.log_cache_num_ops->Decrement();
 }
 
@@ -461,8 +466,8 @@ void LogCache::DumpToStrings(vector<string>* lines) const {
   int counter = 0;
   lines->push_back(ToStringUnlocked());
   lines->push_back("Messages:");
-  for (const MessageCache::value_type& entry : cache_) {
-    const ReplicateMsg* msg = entry.second->get();
+  for (const auto& entry : cache_) {
+    const ReplicateMsg* msg = entry.second.msg->get();
     lines->push_back(
       Substitute("Message[$0] $1.$2 : REPLICATE. Type: $3, Size: $4",
                  counter++, msg->id().term(), msg->id().index(),
@@ -480,8 +485,8 @@ void LogCache::DumpToHtml(std::ostream& out) const {
   out << "<tr><th>Entry</th><th>OpId</th><th>Type</th><th>Size</th><th>Status</th></tr>" << endl;
 
   int counter = 0;
-  for (const MessageCache::value_type& entry : cache_) {
-    const ReplicateMsg* msg = entry.second->get();
+  for (const auto& entry : cache_) {
+    const ReplicateMsg* msg = entry.second.msg->get();
     out << Substitute("<tr><th>$0</th><th>$1.$2</th><td>REPLICATE $3</td>"
                       "<td>$4</td><td>$5</td></tr>",
                       counter++, msg->id().term(), msg->id().index(),

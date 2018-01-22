@@ -63,6 +63,8 @@
 #define UTIL_GTL_MAP_UTIL_H_
 
 #include <stddef.h>
+
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -434,6 +436,22 @@ typename Collection::mapped_type& InsertKeyOrDie(
       collection->insert(value_type(key, typename Collection::mapped_type()));
   CHECK(res.second) << "duplicate key: " << key;
   return res.first->second;
+}
+
+//
+// Emplace*()
+//
+template <class Collection, class... Args>
+bool EmplaceIfNotPresent(Collection* const collection,
+                         Args&&... args) {
+  return collection->emplace(std::forward<Args>(args)...).second;
+}
+
+template <class Collection, class... Args>
+void EmplaceOrDie(Collection* const collection,
+                  Args&&... args) {
+  CHECK(EmplaceIfNotPresent(collection, std::forward<Args>(args)...))
+      << "duplicate value";
 }
 
 //
