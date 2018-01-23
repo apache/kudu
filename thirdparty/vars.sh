@@ -200,11 +200,7 @@ SPARSEPP_VERSION=824860bb76893d163efbcff330734b9f62eecb17
 SPARSEPP_NAME=sparsepp-$SPARSEPP_VERSION
 SPARSEPP_SOURCE=$TP_SOURCE_DIR/$SPARSEPP_NAME
 
-# TODO(dan): bump to 0.11 when it's released. We chose to use a bleeding edge
-# version instead of 0.10 in order to get the API and header inclusion
-# simplifications introduced in THRIFT-2221 (Thrift's previous use of tr1
-# conflicted with gtest's use of tuples).
-THRIFT_VERSION=8b8a8efea13d1c97f856053af0a5c0e6a8a76354
+THRIFT_VERSION=0.11.0
 THRIFT_NAME=thrift-$THRIFT_VERSION
 THRIFT_SOURCE=$TP_SOURCE_DIR/$THRIFT_NAME
 
