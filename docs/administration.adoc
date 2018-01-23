@@ -706,7 +706,6 @@ $ sudo -u kudu kudu cluster ksck --checksum_scan --tables IntegrationTestBigLink
 ----
 
 [[change_dir_config]]
-// TODO(awong): revise this when KUDU-2202 is fixed.
 === Changing Directory Configurations
 
 For higher read parallelism and larger volumes of storage per server, users may
@@ -714,24 +713,26 @@ want to configure servers to store data in multiple directories on different
 devices. Once a server is started, users must go through the following steps
 to change the directory configuration.
 
-==== Adding a Data Directory
+Users can add or remove data directories to an existing master or tablet server
+via the `kudu fs update_dirs` tool. Data is striped across data directories,
+and when a new data directory is added, new data will be striped across the
+union of the old and new directories.
 
-Users can add data directories to an existing master or tablet server via the
-`kudu fs update_dirs` tool. Data is striped across data directories, and when
-a new data directory is added, new data will be striped across the union of the
-old and new directories.
+NOTE: Unless the `--force` flag is specified, Kudu will not allow for the
+removal of a directory across which tablets are configured to spread data. If
+`--force` is specified, all tablets configured to use that directory will fail
+upon starting up and be replicated elsewhere.
+
+NOTE: If the link:configuration.html$directory_configuration[metadata
+directory] overlaps with a data directory, as was the default prior to Kudu
+1.7, or if a non-default metadata directory is configured, the
+`--fs_metadata_dir` configuration must be specified when running the `kudu fs
+update_dirs` tool.
 
 NOTE: Only new tablet replicas (i.e. brand new tablets' replicas and replicas
 that are copied to the server for high availability) will use the new
 directory. Existing tablet replicas on the server will not be rebalanced across
 the new directory.
-
-// TODO(awong): revise when KUDU-2117 is fixed.
-WARNING: The first configured data directory on a server contains the metadata
-files for all tablets on that server. Kudu will not permit reordering of this
-"metadata directory". For example if a cluster is configured with `/data/1` as
-the first entry in `--fs_data_dirs`, all further configurations must be
-formatted as `/data/1,<new directories>`.
 
 WARNING: All of the command line steps below should be executed as the Kudu
 UNIX user, typically `kudu`.
@@ -745,20 +746,20 @@ UNIX user, typically `kudu`.
   bring the entire cluster offline while performing the update.
 
 . Run the tool with the desired directory configuration flags. For example, if a
-  cluster was set up with `--fs_wal_dir=/wals` and
-  `--fs_data_dirs=/data/1,/data2` and a new `/data/3` is desired, run the
-  command:
+  cluster was set up with `--fs_wal_dir=/wals`, `--fs_metadata_dir=/meta`, and
+  `--fs_data_dirs=/data/1,/data/2,/data/3`, and `/data/3` is to be removed (e.g.
+  due to a disk error), run the command:
 
 +
 [source,bash]
 ----
-$ sudo -u kudu kudu fs update_dirs --fs_wal_dir=/wals --fs_data_dirs=/data/1,/data/2,/data/3
+$ sudo -u kudu kudu fs update_dirs --force --fs_wal_dir=/wals --fs_metadata_dir=/meta --fs_data_dirs=/data/1,/data/2
 ----
 +
 
-. Modify the values of the `fs_wal_dir` and `fs_data_dirs` flags for the updated
-  sever. If using CM, make sure to only update the configurations of the updated
-  server, rather than of the entire Kudu service.
+. Modify the values of the `fs_data_dirs` flags for the updated sever. If using
+  CM, make sure to only update the configurations of the updated server, rather
+  than of the entire Kudu service.
 
 . Once complete, the server process can be started. When Kudu is installed using
   system packages, `service` is typically used:
@@ -771,52 +772,7 @@ $ sudo service kudu-tserver start
 +
 
 
-[[rebuilding_kudu]]
-==== Rebuilding a Kudu Filesystem Layout
-
-Kudu does not allow for the removal of directories, or for any changes to the
-write-ahead-log (WAL) directory or metadata directory. In order to start a
-server with such directory configuration changes, the WAL and data directories
-on the server must be deleted and rebuilt, destroying the copy of the data for
-each tablet replica hosted on the local server. Kudu will automatically
-re-replicate tablet replicas removed in this way, provided the replication
-factor is at least three and all other servers are online and healthy.
-
-NOTE: These steps use a tablet server as an example, but the steps are the same
-for Kudu master servers.
-
-WARNING: If multiple nodes need their FS layouts rebuilt, wait until all
-replicas previously hosted on each node have finished automatically
-re-replicating elsewhere before continuing. Failure to do so can result in
-permanent data loss.
-
-WARNING: Before proceeding, ensure the contents of the directories are backed
-up, either as a copy or in the form of other tablet replicas.
-
-. The first step to rebuilding a server with a new directory configuration is
-  emptying all of the server's existing directories. For example, if a tablet
-  server is configured with `--fs_wal_dir=/data/0/kudu-tserver-wal` and
-  `--fs_data_dirs=/data/1/kudu-tserver,/data/2/kudu-tserver`, the following
-  commands will remove the WAL directory's and data directories' contents:
-
-+
-[source,bash]
-----
-# Note: this will delete all of the data from the local tablet server.
-$ rm -rf /data/0/kudu-tserver-wal/* /data/1/kudu-tserver/* /data/2/kudu-tserver/*
-----
-+
-
-. If using CM, update the configurations for the rebuilt server to include only
-  the desired directories. Make sure to only update the configurations of servers
-  to which changes were applied, rather than of the entire Kudu service.
-
-. After the WAL and data directories are deleted, the server process can be
-  started with the new directory configuration. The appropriate sub-directories
-  will be created by Kudu upon starting up.
-
 [[disk_failure_recovery]]
-// TODO(awong): revise this when KUDU-616 is complete.
 === Recovering from Disk Failure
 Kudu nodes can only survive failures of disks on which certain Kudu directories
 are mounted. For more information about the different Kudu directory types, see
@@ -835,11 +791,6 @@ releases.
 | Tablet Server | Directory containing data blocks only | Pre-1.6.0
 |===
 
-If a node crashes due to a disk failure, the node must be emptied and rebuilt,
-replacing or removing the failed disk from Kudu's configuration. See the
-section on <<rebuilding_kudu,Rebuilding a Kudu Filesystem Layout>> for
-instructions on how to do so.
-
 When a disk failure occurs that does not lead to a crash, Kudu will stop using
 the affected directory, shut down tablets with blocks on the affected
 directories, and automatically re-replicate the affected tablets to other
@@ -853,10 +804,9 @@ E1205 19:06:33.564638 27220 ts_tablet_manager.cc:946] T 4957808439314e0d97795c13
 ----
 
 While in this state, the affected node will avoid using the failed disk,
-leading to lower storage volume and reduced read parallelism. Since removing
-data directories is not currently supported in Kudu, the administrator should
-schedule a window to bring the node down for maintenance and
-<<rebuilding_kudu,rebuild the node>> at their convenience.
+leading to lower storage volume and reduced read parallelism. The administrator
+should schedule a brief window to <<change_dir_config,update the node's
+directory configuration>> to exclude the failed disk.
 
 [[tablet_majority_down_recovery]]
 === Bringing a tablet that has lost a majority of replicas back online
@@ -922,3 +872,46 @@ re-replicate until the proper replication factor is restored. The unhealthy
 replicas will be tombstoned by the master, causing their remaining data to be
 deleted.
 
+[[rebuilding_kudu]]
+==== Rebuilding a Kudu Filesystem Layout
+
+In the event that critical files are lost, i.e. WALs or tablet-specific
+metadata, all Kudu directories on the server must be deleted and rebuilt to
+ensure correctness. Doing so will destroy the copy of the data for each tablet
+replica hosted on the local server. Kudu will automatically re-replicate tablet
+replicas removed in this way, provided the replication factor is at least three
+and all other servers are online and healthy.
+
+NOTE: These steps use a tablet server as an example, but the steps are the same
+for Kudu master servers.
+
+WARNING: If multiple nodes need their FS layouts rebuilt, wait until all
+replicas previously hosted on each node have finished automatically
+re-replicating elsewhere before continuing. Failure to do so can result in
+permanent data loss.
+
+WARNING: Before proceeding, ensure the contents of the directories are backed
+up, either as a copy or in the form of other tablet replicas.
+
+. The first step to rebuilding a server with a new directory configuration is
+  emptying all of the server's existing directories. For example, if a tablet
+  server is configured with `--fs_wal_dir=/data/0/kudu-tserver-wal`,
+  `--fs_metadata_dir=/data/0/kudu-tserver-meta`, and
+  `--fs_data_dirs=/data/1/kudu-tserver,/data/2/kudu-tserver`, the following
+  commands will remove the WAL directory's and data directories' contents:
+
++
+[source,bash]
+----
+# Note: this will delete all of the data from the local tablet server.
+$ rm -rf /data/0/kudu-tserver-wal/* /data/0/kudu-tserver-meta/* /data/1/kudu-tserver/* /data/2/kudu-tserver/*
+----
++
+
+. If using CM, update the configurations for the rebuilt server to include only
+  the desired directories. Make sure to only update the configurations of servers
+  to which changes were applied, rather than of the entire Kudu service.
+
+. After directories are deleted, the server process can be started with the new
+  directory configuration. The appropriate sub-directories will be created by
+  Kudu upon starting up.

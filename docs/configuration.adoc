@@ -76,10 +76,9 @@ Additionally, `--fs_wal_dir` and `--fs_metadata_dir` may be the same as _one
 of_ the directories listed in `--fs_data_dirs`, but must not be sub-directories
 of any of them.
 
-WARNING: Once `--fs_data_dirs` is set, it is difficult to change, requiring
-extra tooling, or in some cases, the entire node to be rebuilt. For more
-details, see the link:administration.html#change_dir_config[Kudu Administration
-docs].
+WARNING: Once `--fs_data_dirs` is set, extra tooling is required to change it.
+For more details, see the link:administration.html#change_dir_config[Kudu
+Administration docs].
 
 NOTE: The `--fs_wal_dir` and `--fs_metadata_dir` configurations can be changed,
 provided the contents of the directories are also moved to match the flags.
