@@ -124,15 +124,13 @@ if [ ! -d $GFLAGS_SOURCE ]; then
   fetch_and_expand gflags-${GFLAGS_VERSION}.tar.gz
 fi
 
-GPERFTOOLS_PATCHLEVEL=3
+GPERFTOOLS_PATCHLEVEL=1
 delete_if_wrong_patchlevel $GPERFTOOLS_SOURCE $GPERFTOOLS_PATCHLEVEL
 if [ ! -d $GPERFTOOLS_SOURCE ]; then
   fetch_and_expand gperftools-${GPERFTOOLS_VERSION}.tar.gz
 
   pushd $GPERFTOOLS_SOURCE
-  patch -p1 < $TP_DIR/patches/gperftools-Change-default-TCMALLOC_TRANSFER_NUM_OBJ-to-40.patch
-  patch -p1 < $TP_DIR/patches/gperftools-hook-mi_force_unlock-on-OSX-instead-of-pthread_atfork.patch
-  patch -p1 < $TP_DIR/patches/gperftools-issue-827-add_get_default_zone_to_osx_libc_override.patch
+  patch -p1 < $TP_DIR/patches/gperftools-Replace-namespace-base-with-namespace-tcmalloc.patch
   touch patchlevel-$GPERFTOOLS_PATCHLEVEL
   autoreconf -fvi
   popd

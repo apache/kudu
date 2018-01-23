@@ -21,7 +21,9 @@
 #include <ostream>
 
 #include <glog/logging.h>
+#ifdef TCMALLOC_ENABLED
 #include <gperftools/malloc_extension.h>
+#endif
 
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"

@@ -25,8 +25,6 @@
 #include <memory>
 #include <ostream>
 
-#include <gperftools/malloc_extension.h>  // IWYU pragma: keep
-
 #include "kudu/gutil/once.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"

@@ -505,10 +505,6 @@ if [ -n "$F_TSAN" -o -n "$F_GLOG" ]; then
   build_glog
 fi
 
-if [ -n "$F_TSAN" -o -n "$F_GPERFTOOLS" ]; then
-  build_gperftools
-fi
-
 if [ -n "$F_TSAN" -o -n "$F_GMOCK" ]; then
   build_gmock
 fi

@@ -34,7 +34,9 @@
 #include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
+#ifdef TCMALLOC_ENABLED
 #include <gperftools/malloc_extension.h>
+#endif
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"

@@ -609,6 +609,13 @@ endif()
   # Exported variants may not use tcmalloc.
   set(EXPORTED_FLAGS "${EXPORTED_FLAGS} -UTCMALLOC_ENABLED")
 
+  # Exported variants should conform to the C++03 ABI, which doesn't
+  # include sized deallocation (new in C++14). This reverses the setting from
+  # non-exported (default) flags.
+  if(COMPILER_SUPPORTS_SIZED_DEALLOCATION)
+    set(EXPORTED_FLAGS "${EXPORTED_FLAGS} -fno-sized-deallocation")
+  endif()
+
   set_target_properties(${EXPORTED_LIB_NAME}
     PROPERTIES COMPILE_FLAGS "${ARG_COMPILE_FLAGS} ${EXPORTED_FLAGS}")
 
@@ -1070,6 +1077,22 @@ include_directories(SYSTEM ${BOOST_INCLUDE_DIR})
 ADD_THIRDPARTY_LIB(boost_date_time
     STATIC_LIB "${BOOST_DATE_TIME_STATIC_LIB}"
     SHARED_LIB "${BOOST_DATE_TIME_SHARED_LIB}")
+
+############################################################
+# Enable sized deallocation where supported.
+# This happens down here instead of up with the rest of the
+# compiler options since we only do this when tcmalloc was
+# found and enabled.
+############################################################
+if (KUDU_TCMALLOC_AVAILABLE AND
+    (("${COMPILER_FAMILY}" STREQUAL "clang" AND
+      "${COMPILER_VERSION}" VERSION_GREATER "3.7") OR
+     ("${COMPILER_FAMILY}" STREQUAL "gcc" AND
+      "${COMPILER_VERSION}" VERSION_GREATER "5.0")))
+  set(COMPILER_SUPPORTS_SIZED_DEALLOCATION TRUE)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsized-deallocation")
+  message("Enabling sized-deallocation")
+endif()
 
 ############################################################
 # Linker setup

@@ -29,9 +29,11 @@
 
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
+#ifdef TCMALLOC_ENABLED
 #include <gperftools/heap-profiler.h>
 #include <gperftools/malloc_extension.h>
 #include <gperftools/profiler.h>
+#endif
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/numbers.h"

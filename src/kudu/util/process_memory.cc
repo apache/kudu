@@ -21,7 +21,9 @@
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+#ifdef TCMALLOC_ENABLED
 #include <gperftools/malloc_extension.h>  // IWYU pragma: keep
+#endif
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/macros.h"

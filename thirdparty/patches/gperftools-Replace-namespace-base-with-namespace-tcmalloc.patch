@@ -1,0 +1,1670 @@
+From c63fd16547503fb9d9b0a3e35e16a1a66fbfeaa0 Mon Sep 17 00:00:00 2001
+From: Todd Lipcon <todd@cloudera.com>
+Date: Tue, 23 Jan 2018 11:25:50 -0800
+Subject: [PATCH 1/1] Replace namespace base with namespace tcmalloc
+
+---
+ src/base/atomicops-internals-arm-generic.h |  6 +-
+ src/base/atomicops-internals-arm-v6plus.h  |  4 +-
+ src/base/atomicops-internals-gcc.h         |  6 +-
+ src/base/atomicops-internals-linuxppc.h    |  6 +-
+ src/base/atomicops-internals-macosx.h      |  8 +--
+ src/base/atomicops-internals-mips.h        |  6 +-
+ src/base/atomicops-internals-windows.h     | 14 ++---
+ src/base/atomicops-internals-x86.h         |  6 +-
+ src/base/atomicops.h                       | 92 +++++++++++++++---------------
+ src/base/basictypes.h                      |  8 +--
+ src/base/elf_mem_image.cc                  |  4 +-
+ src/base/elf_mem_image.h                   |  4 +-
+ src/base/spinlock.cc                       | 16 +++---
+ src/base/spinlock.h                        | 14 ++---
+ src/base/spinlock_internal.cc              | 18 +++---
+ src/base/spinlock_internal.h               |  4 +-
+ src/base/spinlock_linux-inl.h              |  6 +-
+ src/base/spinlock_posix-inl.h              |  6 +-
+ src/base/spinlock_win32-inl.h              |  6 +-
+ src/base/vdso_support.cc                   |  4 +-
+ src/base/vdso_support.h                    |  4 +-
+ src/central_freelist.h                     |  2 +-
+ src/emergency_malloc.cc                    |  2 +-
+ src/gperftools/malloc_extension.h          |  8 +--
+ src/heap-profile-table.cc                  |  2 +-
+ src/internal_logging.cc                    |  2 +-
+ src/malloc_hook-inl.h                      | 44 +++++++-------
+ src/malloc_hook.cc                         | 60 +++++++++----------
+ src/page_heap.cc                           | 10 ++--
+ src/page_heap.h                            |  4 +-
+ src/raw_printer.cc                         |  2 +-
+ src/raw_printer.h                          |  2 +-
+ src/stacktrace_powerpc-linux-inl.h         |  4 +-
+ src/stacktrace_x86-inl.h                   |  6 +-
+ src/tcmalloc.cc                            | 10 ++--
+ src/tests/atomicops_unittest.cc            | 36 ++++++------
+ src/tests/malloc_hook_test.cc              |  4 +-
+ src/tests/raw_printer_test.cc              |  8 +--
+ src/tests/tcmalloc_unittest.cc             | 28 ++++-----
+ 39 files changed, 238 insertions(+), 238 deletions(-)
+
+diff --git a/src/base/atomicops-internals-arm-generic.h b/src/base/atomicops-internals-arm-generic.h
+index d0f9413..c81f1e6 100644
+--- a/src/base/atomicops-internals-arm-generic.h
++++ b/src/base/atomicops-internals-arm-generic.h
+@@ -44,7 +44,7 @@
+ 
+ typedef int32_t Atomic32;
+ 
+-namespace base {
++namespace tcmalloc {
+ namespace subtle {
+ 
+ typedef int64_t Atomic64;
+@@ -222,7 +222,7 @@ inline Atomic64 Release_CompareAndSwap(volatile Atomic64* ptr,
+   return 0;
+ }
+ 
+-}  // namespace base::subtle
+-}  // namespace base
++}  // namespace tcmalloc::subtle
++}  // namespace tcmalloc
+ 
+ #endif  // BASE_ATOMICOPS_INTERNALS_ARM_GENERIC_H_
+diff --git a/src/base/atomicops-internals-arm-v6plus.h b/src/base/atomicops-internals-arm-v6plus.h
+index 35f1048..c61ef24 100644
+--- a/src/base/atomicops-internals-arm-v6plus.h
++++ b/src/base/atomicops-internals-arm-v6plus.h
+@@ -52,7 +52,7 @@
+ 
+ typedef int32_t Atomic32;
+ 
+-namespace base {
++namespace tcmalloc {
+ namespace subtle {
+ 
+ typedef int64_t Atomic64;
+@@ -325,6 +325,6 @@ inline Atomic64 Release_CompareAndSwap(volatile Atomic64* ptr,
+ }
+ 
+ }  // namespace subtle ends
+-}  // namespace base ends
++}  // namespace tcmalloc ends
+ 
+ #endif  // BASE_ATOMICOPS_INTERNALS_ARM_V6PLUS_H_
+diff --git a/src/base/atomicops-internals-gcc.h b/src/base/atomicops-internals-gcc.h
+index f8d2786..d633579 100644
+--- a/src/base/atomicops-internals-gcc.h
++++ b/src/base/atomicops-internals-gcc.h
+@@ -44,7 +44,7 @@
+ 
+ typedef int32_t Atomic32;
+ 
+-namespace base {
++namespace tcmalloc {
+ namespace subtle {
+ 
+ typedef int64_t Atomic64;
+@@ -197,7 +197,7 @@ inline Atomic64 Release_Load(volatile const Atomic64* ptr) {
+   return *ptr;
+ }
+ 
+-}  // namespace base::subtle
+-}  // namespace base
++}  // namespace tcmalloc::subtle
++}  // namespace tcmalloc
+ 
+ #endif  // BASE_ATOMICOPS_INTERNALS_GCC_GENERIC_H_
+diff --git a/src/base/atomicops-internals-linuxppc.h b/src/base/atomicops-internals-linuxppc.h
+index b52fdf0..f174bf4 100644
+--- a/src/base/atomicops-internals-linuxppc.h
++++ b/src/base/atomicops-internals-linuxppc.h
+@@ -44,7 +44,7 @@ typedef int32_t Atomic32;
+ #define BASE_HAS_ATOMIC64 1
+ #endif
+ 
+-namespace base {
++namespace tcmalloc {
+ namespace subtle {
+ 
+ static inline void _sync(void) {
+@@ -431,7 +431,7 @@ inline Atomic64 Release_Load(volatile const Atomic64 *ptr) {
+ 
+ #endif
+ 
+-}   // namespace base::subtle
+-}   // namespace base
++}   // namespace tcmalloc::subtle
++}   // namespace tcmalloc
+ 
+ #endif  // BASE_ATOMICOPS_INTERNALS_LINUXPPC_H_
+diff --git a/src/base/atomicops-internals-macosx.h b/src/base/atomicops-internals-macosx.h
+index b5130d4..2c53646 100644
+--- a/src/base/atomicops-internals-macosx.h
++++ b/src/base/atomicops-internals-macosx.h
+@@ -43,7 +43,7 @@ typedef int32_t Atomic32;
+ // AtomicWord and Atomic64 are always different.  Thus, we need explicit
+ // casting.
+ #ifdef __LP64__
+-#define AtomicWordCastType base::subtle::Atomic64
++#define AtomicWordCastType tcmalloc::subtle::Atomic64
+ #else
+ #define AtomicWordCastType Atomic32
+ #endif
+@@ -54,7 +54,7 @@ typedef int32_t Atomic32;
+ 
+ #include <libkern/OSAtomic.h>
+ 
+-namespace base {
++namespace tcmalloc {
+ namespace subtle {
+ 
+ #if !defined(__LP64__) && defined(__ppc__)
+@@ -364,7 +364,7 @@ inline Atomic64 Release_Load(volatile const Atomic64 *ptr) {
+ }
+ #endif  // __LP64__
+ 
+-}   // namespace base::subtle
+-}   // namespace base
++}   // namespace tcmalloc::subtle
++}   // namespace tcmalloc
+ 
+ #endif  // BASE_ATOMICOPS_INTERNALS_MACOSX_H_
+diff --git a/src/base/atomicops-internals-mips.h b/src/base/atomicops-internals-mips.h
+index 4bfd7f6..612abb4 100644
+--- a/src/base/atomicops-internals-mips.h
++++ b/src/base/atomicops-internals-mips.h
+@@ -45,7 +45,7 @@
+ 
+ typedef int32_t Atomic32;
+ 
+-namespace base {
++namespace tcmalloc {
+ namespace subtle {
+ 
+ // Atomically execute:
+@@ -317,7 +317,7 @@ inline Atomic64 Release_Load(volatile const Atomic64* ptr)
+ 
+ #endif
+ 
+-}   // namespace base::subtle
+-}   // namespace base
++}   // namespace tcmalloc::subtle
++}   // namespace tcmalloc
+ 
+ #endif  // BASE_ATOMICOPS_INTERNALS_MIPS_H_
+diff --git a/src/base/atomicops-internals-windows.h b/src/base/atomicops-internals-windows.h
+index 93ced87..4331b71 100644
+--- a/src/base/atomicops-internals-windows.h
++++ b/src/base/atomicops-internals-windows.h
+@@ -49,7 +49,7 @@ typedef int32 Atomic32;
+ #define BASE_HAS_ATOMIC64 1  // Use only in tests and base/atomic*
+ #endif
+ 
+-namespace base {
++namespace tcmalloc {
+ namespace subtle {
+ 
+ typedef int64 Atomic64;
+@@ -150,8 +150,8 @@ inline Atomic32 Release_AtomicExchange(volatile Atomic32* ptr,
+   return NoBarrier_AtomicExchange(ptr, new_value);
+ }
+ 
+-}  // namespace base::subtle
+-}  // namespace base
++}  // namespace tcmalloc::subtle
++}  // namespace tcmalloc
+ 
+ 
+ // In msvc8/vs2005, winnt.h already contains a definition for
+@@ -160,12 +160,12 @@ inline Atomic32 Release_AtomicExchange(volatile Atomic32* ptr,
+ #if !(defined(_MSC_VER) && _MSC_VER >= 1400)
+ inline void MemoryBarrier() {
+   Atomic32 value = 0;
+-  base::subtle::NoBarrier_AtomicExchange(&value, 0);
++  tcmalloc::subtle::NoBarrier_AtomicExchange(&value, 0);
+                         // actually acts as a barrier in thisd implementation
+ }
+ #endif
+ 
+-namespace base {
++namespace tcmalloc {
+ namespace subtle {
+ 
+ inline void MemoryBarrier() {
+@@ -451,7 +451,7 @@ inline Atomic64 Release_CompareAndSwap(volatile Atomic64* ptr,
+   return NoBarrier_CompareAndSwap(ptr, old_value, new_value);
+ }
+ 
+-}  // namespace base::subtle
+-}  // namespace base
++}  // namespace tcmalloc::subtle
++}  // namespace tcmalloc
+ 
+ #endif  // BASE_ATOMICOPS_INTERNALS_WINDOWS_H_
+diff --git a/src/base/atomicops-internals-x86.h b/src/base/atomicops-internals-x86.h
+index e441ac7..32751dc 100644
+--- a/src/base/atomicops-internals-x86.h
++++ b/src/base/atomicops-internals-x86.h
+@@ -64,7 +64,7 @@ extern struct AtomicOps_x86CPUFeatureStruct AtomicOps_Internalx86CPUFeatures;
+ #define ATOMICOPS_COMPILER_BARRIER() __asm__ __volatile__("" : : : "memory")
+ 
+ 
+-namespace base {
++namespace tcmalloc {
+ namespace subtle {
+ 
+ typedef int64_t Atomic64;
+@@ -383,8 +383,8 @@ inline Atomic64 Release_CompareAndSwap(volatile Atomic64* ptr,
+   return NoBarrier_CompareAndSwap(ptr, old_value, new_value);
+ }
+ 
+-} // namespace base::subtle
+-} // namespace base
++} // namespace tcmalloc::subtle
++} // namespace tcmalloc
+ 
+ #undef ATOMICOPS_COMPILER_BARRIER
+ 
+diff --git a/src/base/atomicops.h b/src/base/atomicops.h
+index dac95be..069a495 100644
+--- a/src/base/atomicops.h
++++ b/src/base/atomicops.h
+@@ -67,12 +67,12 @@
+ //   NoBarrier_Store()
+ //   NoBarrier_Load()
+ // Although there are currently no compiler enforcement, you are encouraged
+-// to use these.  Moreover, if you choose to use base::subtle::Atomic64 type,
++// to use these.  Moreover, if you choose to use tcmalloc::subtle::Atomic64 type,
+ // you MUST use one of the Load or Store routines to get correct behavior
+ // on 32-bit platforms.
+ //
+ // The intent is eventually to put all of these routines in namespace
+-// base::subtle
++// tcmalloc::subtle
+ 
+ #ifndef THREAD_ATOMICOPS_H_
+ #define THREAD_ATOMICOPS_H_
+@@ -90,7 +90,7 @@
+ // should define the macro, AtomicWordCastType in a clause similar to the
+ // following:
+ // #if ...pointers are 64 bits...
+-// # define AtomicWordCastType base::subtle::Atomic64
++// # define AtomicWordCastType tcmalloc::subtle::Atomic64
+ // #else
+ // # define AtomicWordCastType Atomic32
+ // #endif
+@@ -143,7 +143,7 @@ typedef intptr_t AtomicWord;
+ // It also serves to document the AtomicWord interface.
+ // ------------------------------------------------------------------------
+ 
+-namespace base {
++namespace tcmalloc {
+ namespace subtle {
+ 
+ // Atomically execute:
+@@ -187,7 +187,7 @@ inline AtomicWord Release_AtomicExchange(volatile AtomicWord* ptr,
+ inline AtomicWord Acquire_CompareAndSwap(volatile AtomicWord* ptr,
+                                          AtomicWord old_value,
+                                          AtomicWord new_value) {
+-  return base::subtle::Acquire_CompareAndSwap(
++  return tcmalloc::subtle::Acquire_CompareAndSwap(
+       reinterpret_cast<volatile AtomicWordCastType*>(ptr),
+       old_value, new_value);
+ }
+@@ -195,7 +195,7 @@ inline AtomicWord Acquire_CompareAndSwap(volatile AtomicWord* ptr,
+ inline AtomicWord Release_CompareAndSwap(volatile AtomicWord* ptr,
+                                          AtomicWord old_value,
+                                          AtomicWord new_value) {
+-  return base::subtle::Release_CompareAndSwap(
++  return tcmalloc::subtle::Release_CompareAndSwap(
+       reinterpret_cast<volatile AtomicWordCastType*>(ptr),
+       old_value, new_value);
+ }
+@@ -206,12 +206,12 @@ inline void NoBarrier_Store(volatile AtomicWord *ptr, AtomicWord value) {
+ }
+ 
+ inline void Acquire_Store(volatile AtomicWord* ptr, AtomicWord value) {
+-  return base::subtle::Acquire_Store(
++  return tcmalloc::subtle::Acquire_Store(
+       reinterpret_cast<volatile AtomicWordCastType*>(ptr), value);
+ }
+ 
+ inline void Release_Store(volatile AtomicWord* ptr, AtomicWord value) {
+-  return base::subtle::Release_Store(
++  return tcmalloc::subtle::Release_Store(
+       reinterpret_cast<volatile AtomicWordCastType*>(ptr), value);
+ }
+ 
+@@ -221,17 +221,17 @@ inline AtomicWord NoBarrier_Load(volatile const AtomicWord *ptr) {
+ }
+ 
+ inline AtomicWord Acquire_Load(volatile const AtomicWord* ptr) {
+-  return base::subtle::Acquire_Load(
++  return tcmalloc::subtle::Acquire_Load(
+       reinterpret_cast<volatile const AtomicWordCastType*>(ptr));
+ }
+ 
+ inline AtomicWord Release_Load(volatile const AtomicWord* ptr) {
+-  return base::subtle::Release_Load(
++  return tcmalloc::subtle::Release_Load(
+       reinterpret_cast<volatile const AtomicWordCastType*>(ptr));
+ }
+ 
+-}  // namespace base::subtle
+-}  // namespace base
++}  // namespace tcmalloc::subtle
++}  // namespace tcmalloc
+ #endif  // AtomicWordCastType
+ 
+ // ------------------------------------------------------------------------
+@@ -247,7 +247,7 @@ inline AtomicWord Release_Load(volatile const AtomicWord* ptr) {
+ typedef int32_t Atomic32;
+ 
+ // Corresponding operations on Atomic32
+-namespace base {
++namespace tcmalloc {
+ namespace subtle {
+ 
+ // Signed 64-bit type that supports the atomic ops below, as well as atomic
+@@ -294,8 +294,8 @@ void Release_Store(volatile Atomic64* ptr, Atomic64 value);
+ Atomic64 NoBarrier_Load(volatile const Atomic64* ptr);
+ Atomic64 Acquire_Load(volatile const Atomic64* ptr);
+ Atomic64 Release_Load(volatile const Atomic64* ptr);
+-}  // namespace base::subtle
+-}  // namespace base
++}  // namespace tcmalloc::subtle
++}  // namespace tcmalloc
+ 
+ void MemoryBarrier();
+ 
+@@ -304,7 +304,7 @@ void MemoryBarrier();
+ 
+ // ------------------------------------------------------------------------
+ // The following are to be deprecated when all uses have been changed to
+-// use the base::subtle namespace.
++// use the tcmalloc::subtle namespace.
+ // ------------------------------------------------------------------------
+ 
+ #ifdef AtomicWordCastType
+@@ -312,29 +312,29 @@ void MemoryBarrier();
+ inline AtomicWord Acquire_CompareAndSwap(volatile AtomicWord* ptr,
+                                          AtomicWord old_value,
+                                          AtomicWord new_value) {
+-  return base::subtle::Acquire_CompareAndSwap(ptr, old_value, new_value);
++  return tcmalloc::subtle::Acquire_CompareAndSwap(ptr, old_value, new_value);
+ }
+ 
+ inline AtomicWord Release_CompareAndSwap(volatile AtomicWord* ptr,
+                                          AtomicWord old_value,
+                                          AtomicWord new_value) {
+-  return base::subtle::Release_CompareAndSwap(ptr, old_value, new_value);
++  return tcmalloc::subtle::Release_CompareAndSwap(ptr, old_value, new_value);
+ }
+ 
+ inline void Acquire_Store(volatile AtomicWord* ptr, AtomicWord value) {
+-  return base::subtle::Acquire_Store(ptr, value);
++  return tcmalloc::subtle::Acquire_Store(ptr, value);
+ }
+ 
+ inline void Release_Store(volatile AtomicWord* ptr, AtomicWord value) {
+-  return base::subtle::Release_Store(ptr, value);
++  return tcmalloc::subtle::Release_Store(ptr, value);
+ }
+ 
+ inline AtomicWord Acquire_Load(volatile const AtomicWord* ptr) {
+-  return base::subtle::Acquire_Load(ptr);
++  return tcmalloc::subtle::Acquire_Load(ptr);
+ }
+ 
+ inline AtomicWord Release_Load(volatile const AtomicWord* ptr) {
+-  return base::subtle::Release_Load(ptr);
++  return tcmalloc::subtle::Release_Load(ptr);
+ }
+ #endif  // AtomicWordCastType
+ 
+@@ -343,55 +343,55 @@ inline AtomicWord Release_Load(volatile const AtomicWord* ptr) {
+ inline Atomic32 Acquire_CompareAndSwap(volatile Atomic32* ptr,
+                                        Atomic32 old_value,
+                                        Atomic32 new_value) {
+-  return base::subtle::Acquire_CompareAndSwap(ptr, old_value, new_value);
++  return tcmalloc::subtle::Acquire_CompareAndSwap(ptr, old_value, new_value);
+ }
+ inline Atomic32 Release_CompareAndSwap(volatile Atomic32* ptr,
+                                        Atomic32 old_value,
+                                        Atomic32 new_value) {
+-  return base::subtle::Release_CompareAndSwap(ptr, old_value, new_value);
++  return tcmalloc::subtle::Release_CompareAndSwap(ptr, old_value, new_value);
+ }
+ inline void Acquire_Store(volatile Atomic32* ptr, Atomic32 value) {
+-  base::subtle::Acquire_Store(ptr, value);
++  tcmalloc::subtle::Acquire_Store(ptr, value);
+ }
+ inline void Release_Store(volatile Atomic32* ptr, Atomic32 value) {
+-  return base::subtle::Release_Store(ptr, value);
++  return tcmalloc::subtle::Release_Store(ptr, value);
+ }
+ inline Atomic32 Acquire_Load(volatile const Atomic32* ptr) {
+-  return base::subtle::Acquire_Load(ptr);
++  return tcmalloc::subtle::Acquire_Load(ptr);
+ }
+ inline Atomic32 Release_Load(volatile const Atomic32* ptr) {
+-  return base::subtle::Release_Load(ptr);
++  return tcmalloc::subtle::Release_Load(ptr);
+ }
+ 
+ #ifdef BASE_HAS_ATOMIC64
+ 
+ // 64-bit Acquire/Release operations to be deprecated.
+ 
+-inline base::subtle::Atomic64 Acquire_CompareAndSwap(
+-    volatile base::subtle::Atomic64* ptr,
+-    base::subtle::Atomic64 old_value, base::subtle::Atomic64 new_value) {
+-  return base::subtle::Acquire_CompareAndSwap(ptr, old_value, new_value);
++inline tcmalloc::subtle::Atomic64 Acquire_CompareAndSwap(
++    volatile tcmalloc::subtle::Atomic64* ptr,
++    tcmalloc::subtle::Atomic64 old_value, tcmalloc::subtle::Atomic64 new_value) {
++  return tcmalloc::subtle::Acquire_CompareAndSwap(ptr, old_value, new_value);
+ }
+-inline base::subtle::Atomic64 Release_CompareAndSwap(
+-    volatile base::subtle::Atomic64* ptr,
+-    base::subtle::Atomic64 old_value, base::subtle::Atomic64 new_value) {
+-  return base::subtle::Release_CompareAndSwap(ptr, old_value, new_value);
++inline tcmalloc::subtle::Atomic64 Release_CompareAndSwap(
++    volatile tcmalloc::subtle::Atomic64* ptr,
++    tcmalloc::subtle::Atomic64 old_value, tcmalloc::subtle::Atomic64 new_value) {
++  return tcmalloc::subtle::Release_CompareAndSwap(ptr, old_value, new_value);
+ }
+ inline void Acquire_Store(
+-    volatile base::subtle::Atomic64* ptr, base::subtle::Atomic64 value) {
+-  base::subtle::Acquire_Store(ptr, value);
++    volatile tcmalloc::subtle::Atomic64* ptr, tcmalloc::subtle::Atomic64 value) {
++  tcmalloc::subtle::Acquire_Store(ptr, value);
+ }
+ inline void Release_Store(
+-    volatile base::subtle::Atomic64* ptr, base::subtle::Atomic64 value) {
+-  return base::subtle::Release_Store(ptr, value);
++    volatile tcmalloc::subtle::Atomic64* ptr, tcmalloc::subtle::Atomic64 value) {
++  return tcmalloc::subtle::Release_Store(ptr, value);
+ }
+-inline base::subtle::Atomic64 Acquire_Load(
+-    volatile const base::subtle::Atomic64* ptr) {
+-  return base::subtle::Acquire_Load(ptr);
++inline tcmalloc::subtle::Atomic64 Acquire_Load(
++    volatile const tcmalloc::subtle::Atomic64* ptr) {
++  return tcmalloc::subtle::Acquire_Load(ptr);
+ }
+-inline base::subtle::Atomic64 Release_Load(
+-    volatile const base::subtle::Atomic64* ptr) {
+-  return base::subtle::Release_Load(ptr);
++inline tcmalloc::subtle::Atomic64 Release_Load(
++    volatile const tcmalloc::subtle::Atomic64* ptr) {
++  return tcmalloc::subtle::Release_Load(ptr);
+ }
+ 
+ #endif  // BASE_HAS_ATOMIC64
+diff --git a/src/base/basictypes.h b/src/base/basictypes.h
+index 42dbe5c..b825290 100644
+--- a/src/base/basictypes.h
++++ b/src/base/basictypes.h
+@@ -421,15 +421,15 @@ union MemoryAligner {
+ // that the variable has static storage class, and that the constructor should
+ // do nothing to its state.  It indicates to the reader that it is legal to
+ // declare a static nistance of the class, provided the constructor is given
+-// the base::LINKER_INITIALIZED argument.  Normally, it is unsafe to declare a
++// the tcmalloc::LINKER_INITIALIZED argument.  Normally, it is unsafe to declare a
+ // static variable that has a constructor or a destructor because invocation
+ // order is undefined.  However, IF the type can be initialized by filling with
+ // zeroes (which the loader does for static variables), AND the destructor also
+ // does nothing to the storage, then a constructor declared as
+-//       explicit MyClass(base::LinkerInitialized x) {}
++//       explicit MyClass(tcmalloc::LinkerInitialized x) {}
+ // and invoked as
+-//       static MyClass my_variable_name(base::LINKER_INITIALIZED);
+-namespace base {
++//       static MyClass my_variable_name(tcmalloc::LINKER_INITIALIZED);
++namespace tcmalloc {
+ enum LinkerInitialized { LINKER_INITIALIZED };
+ }
+ 
+diff --git a/src/base/elf_mem_image.cc b/src/base/elf_mem_image.cc
+index d2ca1a5..fdfab4c 100644
+--- a/src/base/elf_mem_image.cc
++++ b/src/base/elf_mem_image.cc
+@@ -54,7 +54,7 @@
+ 
+ #define VERSYM_VERSION 0x7fff
+ 
+-namespace base {
++namespace tcmalloc {
+ 
+ namespace {
+ template <int N> class ElfClass {
+@@ -429,6 +429,6 @@ void ElfMemImage::SymbolIterator::Update(int increment) {
+   info_.symbol  = symbol;
+ }
+ 
+-}  // namespace base
++}  // namespace tcmalloc
+ 
+ #endif  // HAVE_ELF_MEM_IMAGE
+diff --git a/src/base/elf_mem_image.h b/src/base/elf_mem_image.h
+index 5fb00ff..4fef045 100644
+--- a/src/base/elf_mem_image.h
++++ b/src/base/elf_mem_image.h
+@@ -50,7 +50,7 @@
+ #include <stdlib.h>
+ #include <link.h>  // for ElfW
+ 
+-namespace base {
++namespace tcmalloc {
+ 
+ // An in-memory ELF image (may not exist on disk).
+ class ElfMemImage {
+@@ -128,7 +128,7 @@ class ElfMemImage {
+   ElfW(Addr) link_base_;     // Link-time base (p_vaddr of first PT_LOAD).
+ };
+ 
+-}  // namespace base
++}  // namespace tcmalloc
+ 
+ #endif  // __ELF__ and __GLIBC__ and !__native_client__
+ 
+diff --git a/src/base/spinlock.cc b/src/base/spinlock.cc
+index 85ff21e..6fbf226 100644
+--- a/src/base/spinlock.cc
++++ b/src/base/spinlock.cc
+@@ -45,8 +45,8 @@
+ 
+ static int adaptive_spin_count = 0;
+ 
+-const base::LinkerInitialized SpinLock::LINKER_INITIALIZED =
+-    base::LINKER_INITIALIZED;
++const tcmalloc::LinkerInitialized SpinLock::LINKER_INITIALIZED =
++    tcmalloc::LINKER_INITIALIZED;
+ 
+ namespace {
+ struct SpinLock_InitHelper {
+@@ -77,10 +77,10 @@ inline void SpinlockPause(void) {
+ // from the lock is returned from the method.
+ Atomic32 SpinLock::SpinLoop() {
+   int c = adaptive_spin_count;
+-  while (base::subtle::NoBarrier_Load(&lockword_) != kSpinLockFree && --c > 0) {
++  while (tcmalloc::subtle::NoBarrier_Load(&lockword_) != kSpinLockFree && --c > 0) {
+     SpinlockPause();
+   }
+-  return base::subtle::Acquire_CompareAndSwap(&lockword_, kSpinLockFree,
++  return tcmalloc::subtle::Acquire_CompareAndSwap(&lockword_, kSpinLockFree,
+                                               kSpinLockSleeper);
+ }
+ 
+@@ -95,7 +95,7 @@ void SpinLock::SlowLock() {
+       // Here, just "mark" that the thread is going to sleep.  Don't store the
+       // lock wait time in the lock as that will cause the current lock
+       // owner to think it experienced contention.
+-      lock_value = base::subtle::Acquire_CompareAndSwap(&lockword_,
++      lock_value = tcmalloc::subtle::Acquire_CompareAndSwap(&lockword_,
+                                                         kSpinLockHeld,
+                                                         kSpinLockSleeper);
+       if (lock_value == kSpinLockHeld) {
+@@ -107,7 +107,7 @@ void SpinLock::SlowLock() {
+         // Lock is free again, so try and acquire it before sleeping.  The
+         // new lock state will be the number of cycles this thread waited if
+         // this thread obtains the lock.
+-        lock_value = base::subtle::Acquire_CompareAndSwap(&lockword_,
++        lock_value = tcmalloc::subtle::Acquire_CompareAndSwap(&lockword_,
+                                                           kSpinLockFree,
+                                                           kSpinLockSleeper);
+         continue;  // skip the delay at the end of the loop
+@@ -115,7 +115,7 @@ void SpinLock::SlowLock() {
+     }
+ 
+     // Wait for an OS specific delay.
+-    base::internal::SpinLockDelay(&lockword_, lock_value,
++    tcmalloc::internal::SpinLockDelay(&lockword_, lock_value,
+                                   ++lock_wait_call_count);
+     // Spin again after returning from the wait routine to give this thread
+     // some chance of obtaining the lock.
+@@ -125,5 +125,5 @@ void SpinLock::SlowLock() {
+ 
+ void SpinLock::SlowUnlock() {
+   // wake waiter if necessary
+-  base::internal::SpinLockWake(&lockword_, false);
++  tcmalloc::internal::SpinLockWake(&lockword_, false);
+ }
+diff --git a/src/base/spinlock.h b/src/base/spinlock.h
+index 7243aea..3bf3ad9 100644
+--- a/src/base/spinlock.h
++++ b/src/base/spinlock.h
+@@ -51,14 +51,14 @@ class LOCKABLE SpinLock {
+ 
+   // Special constructor for use with static SpinLock objects.  E.g.,
+   //
+-  //    static SpinLock lock(base::LINKER_INITIALIZED);
++  //    static SpinLock lock(tcmalloc::LINKER_INITIALIZED);
+   //
+   // When intialized using this constructor, we depend on the fact
+   // that the linker has already initialized the memory appropriately.
+   // A SpinLock constructed like this can be freely used from global
+   // initializers without worrying about the order in which global
+   // initializers run.
+-  explicit SpinLock(base::LinkerInitialized /*x*/) {
++  explicit SpinLock(tcmalloc::LinkerInitialized /*x*/) {
+     // Does nothing; lockword_ is already initialized
+   }
+ 
+@@ -66,7 +66,7 @@ class LOCKABLE SpinLock {
+   // TODO(csilvers): uncomment the annotation when we figure out how to
+   //                 support this macro with 0 args (see thread_annotations.h)
+   inline void Lock() /*EXCLUSIVE_LOCK_FUNCTION()*/ {
+-    if (base::subtle::Acquire_CompareAndSwap(&lockword_, kSpinLockFree,
++    if (tcmalloc::subtle::Acquire_CompareAndSwap(&lockword_, kSpinLockFree,
+                                              kSpinLockHeld) != kSpinLockFree) {
+       SlowLock();
+     }
+@@ -79,7 +79,7 @@ class LOCKABLE SpinLock {
+   // will return true with high probability.
+   inline bool TryLock() EXCLUSIVE_TRYLOCK_FUNCTION(true) {
+     bool res =
+-        (base::subtle::Acquire_CompareAndSwap(&lockword_, kSpinLockFree,
++        (tcmalloc::subtle::Acquire_CompareAndSwap(&lockword_, kSpinLockFree,
+                                               kSpinLockHeld) == kSpinLockFree);
+     if (res) {
+       ANNOTATE_RWLOCK_ACQUIRED(this, 1);
+@@ -93,7 +93,7 @@ class LOCKABLE SpinLock {
+   inline void Unlock() /*UNLOCK_FUNCTION()*/ {
+     ANNOTATE_RWLOCK_RELEASED(this, 1);
+     uint64 prev_value = static_cast<uint64>(
+-        base::subtle::Release_AtomicExchange(&lockword_, kSpinLockFree));
++        tcmalloc::subtle::Release_AtomicExchange(&lockword_, kSpinLockFree));
+     if (prev_value != kSpinLockHeld) {
+       // Speed the wakeup of any waiter.
+       SlowUnlock();
+@@ -104,10 +104,10 @@ class LOCKABLE SpinLock {
+   // thread, true will always be returned. Intended to be used as
+   // CHECK(lock.IsHeld()).
+   inline bool IsHeld() const {
+-    return base::subtle::NoBarrier_Load(&lockword_) != kSpinLockFree;
++    return tcmalloc::subtle::NoBarrier_Load(&lockword_) != kSpinLockFree;
+   }
+ 
+-  static const base::LinkerInitialized LINKER_INITIALIZED;  // backwards compat
++  static const tcmalloc::LinkerInitialized LINKER_INITIALIZED;  // backwards compat
+  private:
+   enum { kSpinLockFree = 0 };
+   enum { kSpinLockHeld = 1 };
+diff --git a/src/base/spinlock_internal.cc b/src/base/spinlock_internal.cc
+index d962971..af6015d 100644
+--- a/src/base/spinlock_internal.cc
++++ b/src/base/spinlock_internal.cc
+@@ -30,7 +30,7 @@
+  */
+ 
+ // The OS-specific header included below must provide two calls:
+-// base::internal::SpinLockDelay() and base::internal::SpinLockWake().
++// tcmalloc::internal::SpinLockDelay() and tcmalloc::internal::SpinLockWake().
+ // See spinlock_internal.h for the spec of SpinLockWake().
+ 
+ // void SpinLockDelay(volatile Atomic32 *w, int32 value, int loop)
+@@ -44,7 +44,7 @@
+ #include "base/spinlock_internal.h"
+ 
+ // forward declaration for use by spinlock_*-inl.h
+-namespace base { namespace internal { static int SuggestedDelayNS(int loop); }}
++namespace tcmalloc { namespace internal { static int SuggestedDelayNS(int loop); }}
+ 
+ #if defined(_WIN32)
+ #include "base/spinlock_win32-inl.h"
+@@ -54,7 +54,7 @@ namespace base { namespace internal { static int SuggestedDelayNS(int loop); }}
+ #include "base/spinlock_posix-inl.h"
+ #endif
+ 
+-namespace base {
++namespace tcmalloc {
+ namespace internal {
+ 
+ // Return a suggested delay in nanoseconds for iteration number "loop"
+@@ -62,10 +62,10 @@ static int SuggestedDelayNS(int loop) {
+   // Weak pseudo-random number generator to get some spread between threads
+   // when many are spinning.
+ #ifdef BASE_HAS_ATOMIC64
+-  static base::subtle::Atomic64 rand;
+-  uint64 r = base::subtle::NoBarrier_Load(&rand);
++  static tcmalloc::subtle::Atomic64 rand;
++  uint64 r = tcmalloc::subtle::NoBarrier_Load(&rand);
+   r = 0x5deece66dLL * r + 0xb;   // numbers from nrand48()
+-  base::subtle::NoBarrier_Store(&rand, r);
++  tcmalloc::subtle::NoBarrier_Store(&rand, r);
+ 
+   r <<= 16;   // 48-bit random number now in top 48-bits.
+   if (loop < 0 || loop > 32) {   // limit loop to 0..32
+@@ -80,9 +80,9 @@ static int SuggestedDelayNS(int loop) {
+   return r >> (44 - (loop >> 3));
+ #else
+   static Atomic32 rand;
+-  uint32 r = base::subtle::NoBarrier_Load(&rand);
++  uint32 r = tcmalloc::subtle::NoBarrier_Load(&rand);
+   r = 0x343fd * r + 0x269ec3;   // numbers from MSVC++
+-  base::subtle::NoBarrier_Store(&rand, r);
++  tcmalloc::subtle::NoBarrier_Store(&rand, r);
+ 
+   r <<= 1;   // 31-bit random number now in top 31-bits.
+   if (loop < 0 || loop > 32) {   // limit loop to 0..32
+@@ -99,4 +99,4 @@ static int SuggestedDelayNS(int loop) {
+ }
+ 
+ } // namespace internal
+-} // namespace base
++} // namespace tcmalloc
+diff --git a/src/base/spinlock_internal.h b/src/base/spinlock_internal.h
+index aa47e67..657b7ca 100644
+--- a/src/base/spinlock_internal.h
++++ b/src/base/spinlock_internal.h
+@@ -40,12 +40,12 @@
+ #include "base/basictypes.h"
+ #include "base/atomicops.h"
+ 
+-namespace base {
++namespace tcmalloc {
+ namespace internal {
+ 
+ void SpinLockWake(volatile Atomic32 *w, bool all);
+ void SpinLockDelay(volatile Atomic32 *w, int32 value, int loop);
+ 
+ } // namespace internal
+-} // namespace base
++} // namespace tcmalloc
+ #endif
+diff --git a/src/base/spinlock_linux-inl.h b/src/base/spinlock_linux-inl.h
+index aadf62a..ffd0e72 100644
+--- a/src/base/spinlock_linux-inl.h
++++ b/src/base/spinlock_linux-inl.h
+@@ -63,7 +63,7 @@ static struct InitModule {
+ }  // anonymous namespace
+ 
+ 
+-namespace base {
++namespace tcmalloc {
+ namespace internal {
+ 
+ void SpinLockDelay(volatile Atomic32 *w, int32 value, int loop) {
+@@ -72,7 +72,7 @@ void SpinLockDelay(volatile Atomic32 *w, int32 value, int loop) {
+     struct timespec tm;
+     tm.tv_sec = 0;
+     if (have_futex) {
+-      tm.tv_nsec = base::internal::SuggestedDelayNS(loop);
++      tm.tv_nsec = tcmalloc::internal::SuggestedDelayNS(loop);
+     } else {
+       tm.tv_nsec = 2000001;   // above 2ms so linux 2.4 doesn't spin
+     }
+@@ -98,4 +98,4 @@ void SpinLockWake(volatile Atomic32 *w, bool all) {
+ }
+ 
+ } // namespace internal
+-} // namespace base
++} // namespace tcmalloc
+diff --git a/src/base/spinlock_posix-inl.h b/src/base/spinlock_posix-inl.h
+index e73a30f..2507ae2 100644
+--- a/src/base/spinlock_posix-inl.h
++++ b/src/base/spinlock_posix-inl.h
+@@ -39,7 +39,7 @@
+ #endif
+ #include <time.h>       /* For nanosleep() */
+ 
+-namespace base {
++namespace tcmalloc {
+ namespace internal {
+ 
+ void SpinLockDelay(volatile Atomic32 *w, int32 value, int loop) {
+@@ -50,7 +50,7 @@ void SpinLockDelay(volatile Atomic32 *w, int32 value, int loop) {
+   } else {
+     struct timespec tm;
+     tm.tv_sec = 0;
+-    tm.tv_nsec = base::internal::SuggestedDelayNS(loop);
++    tm.tv_nsec = tcmalloc::internal::SuggestedDelayNS(loop);
+     nanosleep(&tm, NULL);
+   }
+   errno = save_errno;
+@@ -60,4 +60,4 @@ void SpinLockWake(volatile Atomic32 *w, bool all) {
+ }
+ 
+ } // namespace internal
+-} // namespace base
++} // namespace tcmalloc
+diff --git a/src/base/spinlock_win32-inl.h b/src/base/spinlock_win32-inl.h
+index 956b965..bbf630b 100644
+--- a/src/base/spinlock_win32-inl.h
++++ b/src/base/spinlock_win32-inl.h
+@@ -35,7 +35,7 @@
+ 
+ #include <windows.h>
+ 
+-namespace base {
++namespace tcmalloc {
+ namespace internal {
+ 
+ void SpinLockDelay(volatile Atomic32 *w, int32 value, int loop) {
+@@ -43,7 +43,7 @@ void SpinLockDelay(volatile Atomic32 *w, int32 value, int loop) {
+   } else if (loop == 1) {
+     Sleep(0);
+   } else {
+-    Sleep(base::internal::SuggestedDelayNS(loop) / 1000000);
++    Sleep(tcmalloc::internal::SuggestedDelayNS(loop) / 1000000);
+   }
+ }
+ 
+@@ -51,4 +51,4 @@ void SpinLockWake(volatile Atomic32 *w, bool all) {
+ }
+ 
+ } // namespace internal
+-} // namespace base
++} // namespace tcmalloc
+diff --git a/src/base/vdso_support.cc b/src/base/vdso_support.cc
+index 730df30..70aaef5 100644
+--- a/src/base/vdso_support.cc
++++ b/src/base/vdso_support.cc
+@@ -48,13 +48,13 @@
+ #include "base/dynamic_annotations.h"
+ #include "base/basictypes.h"  // for COMPILE_ASSERT
+ 
+-using base::subtle::MemoryBarrier;
++using tcmalloc::subtle::MemoryBarrier;
+ 
+ #ifndef AT_SYSINFO_EHDR
+ #define AT_SYSINFO_EHDR 33
+ #endif
+ 
+-namespace base {
++namespace tcmalloc {
+ 
+ const void *VDSOSupport::vdso_base_ = ElfMemImage::kInvalidBase;
+ VDSOSupport::VDSOSupport()
+diff --git a/src/base/vdso_support.h b/src/base/vdso_support.h
+index c1209a4..97545a2 100644
+--- a/src/base/vdso_support.h
++++ b/src/base/vdso_support.h
+@@ -65,7 +65,7 @@
+ 
+ #include <stdlib.h>     // for NULL
+ 
+-namespace base {
++namespace tcmalloc {
+ 
+ // NOTE: this class may be used from within tcmalloc, and can not
+ // use any memory allocation routines.
+@@ -125,7 +125,7 @@ class VDSOSupport {
+   DISALLOW_COPY_AND_ASSIGN(VDSOSupport);
+ };
+ 
+-}  // namespace base
++}  // namespace tcmalloc
+ 
+ #endif  // HAVE_ELF_MEM_IMAGE
+ 
+diff --git a/src/central_freelist.h b/src/central_freelist.h
+index 4148680..02bbaa0 100644
+--- a/src/central_freelist.h
++++ b/src/central_freelist.h
+@@ -52,7 +52,7 @@ class CentralFreeList {
+   // A CentralFreeList may be used before its constructor runs.
+   // So we prevent lock_'s constructor from doing anything to the
+   // lock_ state.
+-  CentralFreeList() : lock_(base::LINKER_INITIALIZED) { }
++  CentralFreeList() : lock_(tcmalloc::LINKER_INITIALIZED) { }
+ 
+   void Init(size_t cl);
+ 
+diff --git a/src/emergency_malloc.cc b/src/emergency_malloc.cc
+index 81c5554..0860c85 100644
+--- a/src/emergency_malloc.cc
++++ b/src/emergency_malloc.cc
+@@ -47,7 +47,7 @@ namespace tcmalloc {
+   __attribute__ ((visibility("internal"))) char *emergency_arena_start;
+   __attribute__ ((visibility("internal"))) uintptr_t emergency_arena_start_shifted;
+ 
+-  static CACHELINE_ALIGNED SpinLock emergency_malloc_lock(base::LINKER_INITIALIZED);
++  static CACHELINE_ALIGNED SpinLock emergency_malloc_lock(tcmalloc::LINKER_INITIALIZED);
+   static char *emergency_arena_end;
+   static LowLevelAlloc::Arena *emergency_arena;
+ 
+diff --git a/src/gperftools/malloc_extension.h b/src/gperftools/malloc_extension.h
+index 689b5f1..ec45fbd 100644
+--- a/src/gperftools/malloc_extension.h
++++ b/src/gperftools/malloc_extension.h
+@@ -67,7 +67,7 @@ static const int kMallocHistogramSize = 64;
+ // One day, we could support other types of writers (perhaps for C?)
+ typedef std::string MallocExtensionWriter;
+ 
+-namespace base {
++namespace tcmalloc {
+ struct MallocRange;
+ }
+ 
+@@ -144,7 +144,7 @@ class PERFTOOLS_DLL_DECL MallocExtension {
+   //
+   // This is a best-effort interface useful only for performance
+   // analysis.  The implementation may not call func at all.
+-  typedef void (RangeFunction)(void*, const base::MallocRange*);
++  typedef void (RangeFunction)(void*, const tcmalloc::MallocRange*);
+   virtual void Ranges(void* arg, RangeFunction func);
+ 
+   // -------------------------------------------------------------------
+@@ -406,7 +406,7 @@ class PERFTOOLS_DLL_DECL MallocExtension {
+   virtual void MarkThreadTemporarilyIdle();
+ };
+ 
+-namespace base {
++namespace tcmalloc {
+ 
+ // Information passed per range.  More fields may be added later.
+ struct MallocRange {
+@@ -429,6 +429,6 @@ struct MallocRange {
+   // - age when allocated (for inuse) or freed (if not in use)
+ };
+ 
+-} // namespace base
++} // namespace tcmalloc
+ 
+ #endif  // BASE_MALLOC_EXTENSION_H_
+diff --git a/src/heap-profile-table.cc b/src/heap-profile-table.cc
+index 7486468..6f6a1ee 100644
+--- a/src/heap-profile-table.cc
++++ b/src/heap-profile-table.cc
+@@ -593,7 +593,7 @@ void HeapProfileTable::Snapshot::ReportLeaks(const char* checker_name,
+     symbolization_table.Symbolize();
+   for (int i = 0; i < to_report; i++) {
+     const Entry& e = entries[i];
+-    base::RawPrinter printer(buffer, kBufSize);
++    tcmalloc::RawPrinter printer(buffer, kBufSize);
+     printer.Printf("Leak of %d bytes in %d objects allocated from:\n",
+                    e.bytes, e.count);
+     for (int j = 0; j < e.bucket->depth; j++) {
+diff --git a/src/internal_logging.cc b/src/internal_logging.cc
+index 708fa65..0f3a7be 100644
+--- a/src/internal_logging.cc
++++ b/src/internal_logging.cc
+@@ -47,7 +47,7 @@
+ 
+ // Variables for storing crash output.  Allocated statically since we
+ // may not be able to heap-allocate while crashing.
+-static SpinLock crash_lock(base::LINKER_INITIALIZED);
++static SpinLock crash_lock(tcmalloc::LINKER_INITIALIZED);
+ static bool crashed = false;
+ static const int kStatsBufferSize = 16 << 10;
+ static char stats_buffer[kStatsBufferSize] = { 0 };
+diff --git a/src/malloc_hook-inl.h b/src/malloc_hook-inl.h
+index 30375d6..1468566 100644
+--- a/src/malloc_hook-inl.h
++++ b/src/malloc_hook-inl.h
+@@ -46,7 +46,7 @@
+ 
+ #include "common.h" // for UNLIKELY
+ 
+-namespace base { namespace internal {
++namespace tcmalloc { namespace internal {
+ 
+ // Capacity of 8 means that HookList is 9 words.
+ static const int kHookListCapacity = 8;
+@@ -80,13 +80,13 @@ struct PERFTOOLS_DLL_DECL HookList {
+ 
+   // Fast inline implementation for fast path of Invoke*Hook.
+   bool empty() const {
+-    return base::subtle::NoBarrier_Load(&priv_end) == 0;
++    return tcmalloc::subtle::NoBarrier_Load(&priv_end) == 0;
+   }
+ 
+   // Used purely to handle deprecated singular hooks
+   T GetSingular() const {
+     const AtomicWord *place = &priv_data[kHookListSingularIdx];
+-    return bit_cast<T>(base::subtle::NoBarrier_Load(place));
++    return bit_cast<T>(tcmalloc::subtle::NoBarrier_Load(place));
+   }
+ 
+   T ExchangeSingular(T new_val);
+@@ -115,33 +115,33 @@ ATTRIBUTE_VISIBILITY_HIDDEN extern HookList<MallocHook::MremapHook> mremap_hooks
+ ATTRIBUTE_VISIBILITY_HIDDEN extern HookList<MallocHook::PreSbrkHook> presbrk_hooks_;
+ ATTRIBUTE_VISIBILITY_HIDDEN extern HookList<MallocHook::SbrkHook> sbrk_hooks_;
+ 
+-} }  // namespace base::internal
++} }  // namespace tcmalloc::internal
+ 
+ // The following method is DEPRECATED
+ inline MallocHook::NewHook MallocHook::GetNewHook() {
+-  return base::internal::new_hooks_.GetSingular();
++  return tcmalloc::internal::new_hooks_.GetSingular();
+ }
+ 
+ inline void MallocHook::InvokeNewHook(const void* p, size_t s) {
+-  if (PREDICT_FALSE(!base::internal::new_hooks_.empty())) {
++  if (PREDICT_FALSE(!tcmalloc::internal::new_hooks_.empty())) {
+     InvokeNewHookSlow(p, s);
+   }
+ }
+ 
+ // The following method is DEPRECATED
+ inline MallocHook::DeleteHook MallocHook::GetDeleteHook() {
+-  return base::internal::delete_hooks_.GetSingular();
++  return tcmalloc::internal::delete_hooks_.GetSingular();
+ }
+ 
+ inline void MallocHook::InvokeDeleteHook(const void* p) {
+-  if (PREDICT_FALSE(!base::internal::delete_hooks_.empty())) {
++  if (PREDICT_FALSE(!tcmalloc::internal::delete_hooks_.empty())) {
+     InvokeDeleteHookSlow(p);
+   }
+ }
+ 
+ // The following method is DEPRECATED
+ inline MallocHook::PreMmapHook MallocHook::GetPreMmapHook() {
+-  return base::internal::premmap_hooks_.GetSingular();
++  return tcmalloc::internal::premmap_hooks_.GetSingular();
+ }
+ 
+ inline void MallocHook::InvokePreMmapHook(const void* start,
+@@ -150,14 +150,14 @@ inline void MallocHook::InvokePreMmapHook(const void* start,
+                                           int flags,
+                                           int fd,
+                                           off_t offset) {
+-  if (!base::internal::premmap_hooks_.empty()) {
++  if (!tcmalloc::internal::premmap_hooks_.empty()) {
+     InvokePreMmapHookSlow(start, size, protection, flags, fd, offset);
+   }
+ }
+ 
+ // The following method is DEPRECATED
+ inline MallocHook::MmapHook MallocHook::GetMmapHook() {
+-  return base::internal::mmap_hooks_.GetSingular();
++  return tcmalloc::internal::mmap_hooks_.GetSingular();
+ }
+ 
+ inline void MallocHook::InvokeMmapHook(const void* result,
+@@ -167,7 +167,7 @@ inline void MallocHook::InvokeMmapHook(const void* result,
+                                        int flags,
+                                        int fd,
+                                        off_t offset) {
+-  if (!base::internal::mmap_hooks_.empty()) {
++  if (!tcmalloc::internal::mmap_hooks_.empty()) {
+     InvokeMmapHookSlow(result, start, size, protection, flags, fd, offset);
+   }
+ }
+@@ -179,7 +179,7 @@ inline bool MallocHook::InvokeMmapReplacement(const void* start,
+                                               int fd,
+                                               off_t offset,
+                                               void** result) {
+-  if (!base::internal::mmap_replacement_.empty()) {
++  if (!tcmalloc::internal::mmap_replacement_.empty()) {
+     return InvokeMmapReplacementSlow(start, size,
+                                      protection, flags,
+                                      fd, offset,
+@@ -190,18 +190,18 @@ inline bool MallocHook::InvokeMmapReplacement(const void* start,
+ 
+ // The following method is DEPRECATED
+ inline MallocHook::MunmapHook MallocHook::GetMunmapHook() {
+-  return base::internal::munmap_hooks_.GetSingular();
++  return tcmalloc::internal::munmap_hooks_.GetSingular();
+ }
+ 
+ inline void MallocHook::InvokeMunmapHook(const void* p, size_t size) {
+-  if (!base::internal::munmap_hooks_.empty()) {
++  if (!tcmalloc::internal::munmap_hooks_.empty()) {
+     InvokeMunmapHookSlow(p, size);
+   }
+ }
+ 
+ inline bool MallocHook::InvokeMunmapReplacement(
+     const void* p, size_t size, int* result) {
+-  if (!base::internal::mmap_replacement_.empty()) {
++  if (!tcmalloc::internal::mmap_replacement_.empty()) {
+     return InvokeMunmapReplacementSlow(p, size, result);
+   }
+   return false;
+@@ -209,7 +209,7 @@ inline bool MallocHook::InvokeMunmapReplacement(
+ 
+ // The following method is DEPRECATED
+ inline MallocHook::MremapHook MallocHook::GetMremapHook() {
+-  return base::internal::mremap_hooks_.GetSingular();
++  return tcmalloc::internal::mremap_hooks_.GetSingular();
+ }
+ 
+ inline void MallocHook::InvokeMremapHook(const void* result,
+@@ -218,30 +218,30 @@ inline void MallocHook::InvokeMremapHook(const void* result,
+                                          size_t new_size,
+                                          int flags,
+                                          const void* new_addr) {
+-  if (!base::internal::mremap_hooks_.empty()) {
++  if (!tcmalloc::internal::mremap_hooks_.empty()) {
+     InvokeMremapHookSlow(result, old_addr, old_size, new_size, flags, new_addr);
+   }
+ }
+ 
+ // The following method is DEPRECATED
+ inline MallocHook::PreSbrkHook MallocHook::GetPreSbrkHook() {
+-  return base::internal::presbrk_hooks_.GetSingular();
++  return tcmalloc::internal::presbrk_hooks_.GetSingular();
+ }
+ 
+ inline void MallocHook::InvokePreSbrkHook(ptrdiff_t increment) {
+-  if (!base::internal::presbrk_hooks_.empty() && increment != 0) {
++  if (!tcmalloc::internal::presbrk_hooks_.empty() && increment != 0) {
+     InvokePreSbrkHookSlow(increment);
+   }
+ }
+ 
+ // The following method is DEPRECATED
+ inline MallocHook::SbrkHook MallocHook::GetSbrkHook() {
+-  return base::internal::sbrk_hooks_.GetSingular();
++  return tcmalloc::internal::sbrk_hooks_.GetSingular();
+ }
+ 
+ inline void MallocHook::InvokeSbrkHook(const void* result,
+                                        ptrdiff_t increment) {
+-  if (!base::internal::sbrk_hooks_.empty() && increment != 0) {
++  if (!tcmalloc::internal::sbrk_hooks_.empty() && increment != 0) {
+     InvokeSbrkHookSlow(result, increment);
+   }
+ }
+diff --git a/src/malloc_hook.cc b/src/malloc_hook.cc
+index 64c2165..1b0dcd0 100644
+--- a/src/malloc_hook.cc
++++ b/src/malloc_hook.cc
+@@ -157,13 +157,13 @@ extern "C" void MallocHook_InitAtFirstAllocation_HeapLeakChecker() {
+   // Do nothing.
+ }
+ 
+-namespace base { namespace internal {
++namespace tcmalloc { namespace internal {
+ 
+ // This lock is shared between all implementations of HookList::Add & Remove.
+ // The potential for contention is very small.  This needs to be a SpinLock and
+ // not a Mutex since it's possible for Mutex locking to allocate memory (e.g.,
+ // per-thread allocation in debug builds), which could cause infinite recursion.
+-static SpinLock hooklist_spinlock(base::LINKER_INITIALIZED);
++static SpinLock hooklist_spinlock(tcmalloc::LINKER_INITIALIZED);
+ 
+ template <typename T>
+ bool HookList<T>::Add(T value_as_t) {
+@@ -175,28 +175,28 @@ bool HookList<T>::Add(T value_as_t) {
+   // Find the first slot in data that is 0.
+   int index = 0;
+   while ((index < kHookListMaxValues) &&
+-         (base::subtle::NoBarrier_Load(&priv_data[index]) != 0)) {
++         (tcmalloc::subtle::NoBarrier_Load(&priv_data[index]) != 0)) {
+     ++index;
+   }
+   if (index == kHookListMaxValues) {
+     return false;
+   }
+-  AtomicWord prev_num_hooks = base::subtle::Acquire_Load(&priv_end);
+-  base::subtle::NoBarrier_Store(&priv_data[index], value);
++  AtomicWord prev_num_hooks = tcmalloc::subtle::Acquire_Load(&priv_end);
++  tcmalloc::subtle::NoBarrier_Store(&priv_data[index], value);
+   if (prev_num_hooks <= index) {
+-    base::subtle::NoBarrier_Store(&priv_end, index + 1);
++    tcmalloc::subtle::NoBarrier_Store(&priv_end, index + 1);
+   }
+   return true;
+ }
+ 
+ template <typename T>
+ void HookList<T>::FixupPrivEndLocked() {
+-  AtomicWord hooks_end = base::subtle::NoBarrier_Load(&priv_end);
++  AtomicWord hooks_end = tcmalloc::subtle::NoBarrier_Load(&priv_end);
+   while ((hooks_end > 0) &&
+-         (base::subtle::NoBarrier_Load(&priv_data[hooks_end - 1]) == 0)) {
++         (tcmalloc::subtle::NoBarrier_Load(&priv_data[hooks_end - 1]) == 0)) {
+     --hooks_end;
+   }
+-  base::subtle::NoBarrier_Store(&priv_end, hooks_end);
++  tcmalloc::subtle::NoBarrier_Store(&priv_end, hooks_end);
+ }
+ 
+ template <typename T>
+@@ -205,26 +205,26 @@ bool HookList<T>::Remove(T value_as_t) {
+     return false;
+   }
+   SpinLockHolder l(&hooklist_spinlock);
+-  AtomicWord hooks_end = base::subtle::NoBarrier_Load(&priv_end);
++  AtomicWord hooks_end = tcmalloc::subtle::NoBarrier_Load(&priv_end);
+   int index = 0;
+   while (index < hooks_end && value_as_t != bit_cast<T>(
+-             base::subtle::NoBarrier_Load(&priv_data[index]))) {
++             tcmalloc::subtle::NoBarrier_Load(&priv_data[index]))) {
+     ++index;
+   }
+   if (index == hooks_end) {
+     return false;
+   }
+-  base::subtle::NoBarrier_Store(&priv_data[index], 0);
++  tcmalloc::subtle::NoBarrier_Store(&priv_data[index], 0);
+   FixupPrivEndLocked();
+   return true;
+ }
+ 
+ template <typename T>
+ int HookList<T>::Traverse(T* output_array, int n) const {
+-  AtomicWord hooks_end = base::subtle::Acquire_Load(&priv_end);
++  AtomicWord hooks_end = tcmalloc::subtle::Acquire_Load(&priv_end);
+   int actual_hooks_end = 0;
+   for (int i = 0; i < hooks_end && n > 0; ++i) {
+-    AtomicWord data = base::subtle::Acquire_Load(&priv_data[i]);
++    AtomicWord data = tcmalloc::subtle::Acquire_Load(&priv_data[i]);
+     if (data != 0) {
+       *output_array++ = bit_cast<T>(data);
+       ++actual_hooks_end;
+@@ -239,10 +239,10 @@ T HookList<T>::ExchangeSingular(T value_as_t) {
+   AtomicWord value = bit_cast<AtomicWord>(value_as_t);
+   AtomicWord old_value;
+   SpinLockHolder l(&hooklist_spinlock);
+-  old_value = base::subtle::NoBarrier_Load(&priv_data[kHookListSingularIdx]);
+-  base::subtle::NoBarrier_Store(&priv_data[kHookListSingularIdx], value);
++  old_value = tcmalloc::subtle::NoBarrier_Load(&priv_data[kHookListSingularIdx]);
++  tcmalloc::subtle::NoBarrier_Store(&priv_data[kHookListSingularIdx], value);
+   if (value != 0) {
+-    base::subtle::NoBarrier_Store(&priv_end, kHookListSingularIdx + 1);
++    tcmalloc::subtle::NoBarrier_Store(&priv_end, kHookListSingularIdx + 1);
+   } else {
+     FixupPrivEndLocked();
+   }
+@@ -277,19 +277,19 @@ HookList<MallocHook::MunmapReplacement> munmap_replacement_ = { 0 };
+ #undef INIT_HOOK_LIST_WITH_VALUE
+ #undef INIT_HOOK_LIST
+ 
+-} }  // namespace base::internal
+-
+-using base::internal::kHookListMaxValues;
+-using base::internal::new_hooks_;
+-using base::internal::delete_hooks_;
+-using base::internal::premmap_hooks_;
+-using base::internal::mmap_hooks_;
+-using base::internal::mmap_replacement_;
+-using base::internal::munmap_hooks_;
+-using base::internal::munmap_replacement_;
+-using base::internal::mremap_hooks_;
+-using base::internal::presbrk_hooks_;
+-using base::internal::sbrk_hooks_;
++} }  // namespace tcmalloc::internal
++
++using tcmalloc::internal::kHookListMaxValues;
++using tcmalloc::internal::new_hooks_;
++using tcmalloc::internal::delete_hooks_;
++using tcmalloc::internal::premmap_hooks_;
++using tcmalloc::internal::mmap_hooks_;
++using tcmalloc::internal::mmap_replacement_;
++using tcmalloc::internal::munmap_hooks_;
++using tcmalloc::internal::munmap_replacement_;
++using tcmalloc::internal::mremap_hooks_;
++using tcmalloc::internal::presbrk_hooks_;
++using tcmalloc::internal::sbrk_hooks_;
+ 
+ // These are available as C bindings as well as C++, hence their
+ // definition outside the MallocHook class.
+diff --git a/src/page_heap.cc b/src/page_heap.cc
+index 0dda58f..fa16001 100644
+--- a/src/page_heap.cc
++++ b/src/page_heap.cc
+@@ -554,7 +554,7 @@ void PageHeap::GetLargeSpanStats(LargeSpanStats* result) {
+   }
+ }
+ 
+-bool PageHeap::GetNextRange(PageID start, base::MallocRange* r) {
++bool PageHeap::GetNextRange(PageID start, tcmalloc::MallocRange* r) {
+   Span* span = reinterpret_cast<Span*>(pagemap_.Next(start));
+   if (span == NULL) {
+     return false;
+@@ -564,7 +564,7 @@ bool PageHeap::GetNextRange(PageID start, base::MallocRange* r) {
+   r->fraction = 0;
+   switch (span->location) {
+     case Span::IN_USE:
+-      r->type = base::MallocRange::INUSE;
++      r->type = tcmalloc::MallocRange::INUSE;
+       r->fraction = 1;
+       if (span->sizeclass > 0) {
+         // Only some of the objects in this span may be in use.
+@@ -573,13 +573,13 @@ bool PageHeap::GetNextRange(PageID start, base::MallocRange* r) {
+       }
+       break;
+     case Span::ON_NORMAL_FREELIST:
+-      r->type = base::MallocRange::FREE;
++      r->type = tcmalloc::MallocRange::FREE;
+       break;
+     case Span::ON_RETURNED_FREELIST:
+-      r->type = base::MallocRange::UNMAPPED;
++      r->type = tcmalloc::MallocRange::UNMAPPED;
+       break;
+     default:
+-      r->type = base::MallocRange::UNKNOWN;
++      r->type = tcmalloc::MallocRange::UNKNOWN;
+       break;
+   }
+   return true;
+diff --git a/src/page_heap.h b/src/page_heap.h
+index b688512..91b7587 100644
+--- a/src/page_heap.h
++++ b/src/page_heap.h
+@@ -65,7 +65,7 @@
+ # include <gperftools/stacktrace.h>
+ #endif
+ 
+-namespace base {
++namespace tcmalloc {
+ struct MallocRange;
+ }
+ 
+@@ -150,7 +150,7 @@ class PERFTOOLS_DLL_DECL PageHeap {
+ 
+   // If this page heap is managing a range with starting page # >= start,
+   // store info about the range in *r and return true.  Else return false.
+-  bool GetNextRange(PageID start, base::MallocRange* r);
++  bool GetNextRange(PageID start, tcmalloc::MallocRange* r);
+ 
+   // Page heap statistics
+   struct Stats {
+diff --git a/src/raw_printer.cc b/src/raw_printer.cc
+index 3cf028e..cdcf8a1 100644
+--- a/src/raw_printer.cc
++++ b/src/raw_printer.cc
+@@ -37,7 +37,7 @@
+ #include "raw_printer.h"
+ #include "base/logging.h"
+ 
+-namespace base {
++namespace tcmalloc {
+ 
+ RawPrinter::RawPrinter(char* buf, int length)
+     : base_(buf),
+diff --git a/src/raw_printer.h b/src/raw_printer.h
+index 9288bb5..b40c013 100644
+--- a/src/raw_printer.h
++++ b/src/raw_printer.h
+@@ -46,7 +46,7 @@
+ #include <config.h>
+ #include "base/basictypes.h"
+ 
+-namespace base {
++namespace tcmalloc {
+ 
+ class RawPrinter {
+  public:
+diff --git a/src/stacktrace_powerpc-linux-inl.h b/src/stacktrace_powerpc-linux-inl.h
+index a301a46..617fc05 100644
+--- a/src/stacktrace_powerpc-linux-inl.h
++++ b/src/stacktrace_powerpc-linux-inl.h
+@@ -149,8 +149,8 @@ static int GET_STACK_TRACE_OR_FRAMES {
+   skip_count++; // skip parent's frame due to indirection in
+                 // stacktrace.cc
+ 
+-  base::VDSOSupport vdso;
+-  base::ElfMemImage::SymbolInfo rt_sigreturn_symbol_info;
++  tcmalloc::VDSOSupport vdso;
++  tcmalloc::ElfMemImage::SymbolInfo rt_sigreturn_symbol_info;
+ #ifdef __PPC64__
+   const void *sigtramp64_vdso = 0;
+   if (vdso.LookupSymbol("__kernel_sigtramp_rt64", "LINUX_2.6.15", STT_NOTYPE,
+diff --git a/src/stacktrace_x86-inl.h b/src/stacktrace_x86-inl.h
+index 46eb5d8..ae3287b 100644
+--- a/src/stacktrace_x86-inl.h
++++ b/src/stacktrace_x86-inl.h
+@@ -154,10 +154,10 @@ static void **NextStackFrame(void **old_sp, const void *uc) {
+     static const unsigned char *kernel_rt_sigreturn_address = NULL;
+     static const unsigned char *kernel_vsyscall_address = NULL;
+     if (num_push_instructions == -1) {
+-      base::VDSOSupport vdso;
++      tcmalloc::VDSOSupport vdso;
+       if (vdso.IsPresent()) {
+-        base::VDSOSupport::SymbolInfo rt_sigreturn_symbol_info;
+-        base::VDSOSupport::SymbolInfo vsyscall_symbol_info;
++        tcmalloc::VDSOSupport::SymbolInfo rt_sigreturn_symbol_info;
++        tcmalloc::VDSOSupport::SymbolInfo vsyscall_symbol_info;
+         if (!vdso.LookupSymbol("__kernel_rt_sigreturn", "LINUX_2.5",
+                                STT_FUNC, &rt_sigreturn_symbol_info) ||
+             !vdso.LookupSymbol("__kernel_vsyscall", "LINUX_2.5",
+diff --git a/src/tcmalloc.cc b/src/tcmalloc.cc
+index be0a6ee..e506bd3 100644
+--- a/src/tcmalloc.cc
++++ b/src/tcmalloc.cc
+@@ -589,7 +589,7 @@ static void IterateOverRanges(void* arg, MallocExtension::RangeFunction func) {
+   while (!done) {
+     // Accumulate a small number of ranges in a local buffer
+     static const int kNumRanges = 16;
+-    static base::MallocRange ranges[kNumRanges];
++    static tcmalloc::MallocRange ranges[kNumRanges];
+     int n = 0;
+     {
+       SpinLockHolder h(Static::pageheap_lock());
+@@ -1823,7 +1823,7 @@ void* memalign_pages(size_t align, size_t size,
+ template <void* OOMHandler(size_t)>
+ ATTRIBUTE_ALWAYS_INLINE inline
+ static void * malloc_fast_path(size_t size) {
+-  if (PREDICT_FALSE(!base::internal::new_hooks_.empty())) {
++  if (PREDICT_FALSE(!tcmalloc::internal::new_hooks_.empty())) {
+     return tcmalloc::dispatch_allocate_full<OOMHandler>(size);
+   }
+ 
+@@ -1874,7 +1874,7 @@ void* tc_malloc(size_t size) PERFTOOLS_NOTHROW {
+ 
+ static ATTRIBUTE_ALWAYS_INLINE inline
+ void free_fast_path(void *ptr) {
+-  if (PREDICT_FALSE(!base::internal::delete_hooks_.empty())) {
++  if (PREDICT_FALSE(!tcmalloc::internal::delete_hooks_.empty())) {
+     tcmalloc::invoke_hooks_and_free(ptr);
+     return;
+   }
+@@ -1888,7 +1888,7 @@ void tc_free(void* ptr) PERFTOOLS_NOTHROW {
+ 
+ extern "C" PERFTOOLS_DLL_DECL CACHELINE_ALIGNED_FN
+ void tc_free_sized(void *ptr, size_t size) PERFTOOLS_NOTHROW {
+-  if (PREDICT_FALSE(!base::internal::delete_hooks_.empty())) {
++  if (PREDICT_FALSE(!tcmalloc::internal::delete_hooks_.empty())) {
+     tcmalloc::invoke_hooks_and_free(ptr);
+     return;
+   }
+@@ -1990,7 +1990,7 @@ extern "C" PERFTOOLS_DLL_DECL void tc_delete_nothrow(void* p, const std::nothrow
+ TC_ALIAS(tc_free);
+ #else
+ {
+-  if (PREDICT_FALSE(!base::internal::delete_hooks_.empty())) {
++  if (PREDICT_FALSE(!tcmalloc::internal::delete_hooks_.empty())) {
+     tcmalloc::invoke_hooks_and_free(p);
+     return;
+   }
+diff --git a/src/tests/atomicops_unittest.cc b/src/tests/atomicops_unittest.cc
+index aa82a6b..3caa9f2 100644
+--- a/src/tests/atomicops_unittest.cc
++++ b/src/tests/atomicops_unittest.cc
+@@ -99,19 +99,19 @@ static void TestStore() {
+ 
+   AtomicType value;
+ 
+-  base::subtle::NoBarrier_Store(&value, kVal1);
++  tcmalloc::subtle::NoBarrier_Store(&value, kVal1);
+   ASSERT_EQ(kVal1, value);
+-  base::subtle::NoBarrier_Store(&value, kVal2);
++  tcmalloc::subtle::NoBarrier_Store(&value, kVal2);
+   ASSERT_EQ(kVal2, value);
+ 
+-  base::subtle::Acquire_Store(&value, kVal1);
++  tcmalloc::subtle::Acquire_Store(&value, kVal1);
+   ASSERT_EQ(kVal1, value);
+-  base::subtle::Acquire_Store(&value, kVal2);
++  tcmalloc::subtle::Acquire_Store(&value, kVal2);
+   ASSERT_EQ(kVal2, value);
+ 
+-  base::subtle::Release_Store(&value, kVal1);
++  tcmalloc::subtle::Release_Store(&value, kVal1);
+   ASSERT_EQ(kVal1, value);
+-  base::subtle::Release_Store(&value, kVal2);
++  tcmalloc::subtle::Release_Store(&value, kVal2);
+   ASSERT_EQ(kVal2, value);
+ }
+ 
+@@ -125,30 +125,30 @@ static void TestLoad() {
+   AtomicType value;
+ 
+   value = kVal1;
+-  ASSERT_EQ(kVal1, base::subtle::NoBarrier_Load(&value));
++  ASSERT_EQ(kVal1, tcmalloc::subtle::NoBarrier_Load(&value));
+   value = kVal2;
+-  ASSERT_EQ(kVal2, base::subtle::NoBarrier_Load(&value));
++  ASSERT_EQ(kVal2, tcmalloc::subtle::NoBarrier_Load(&value));
+ 
+   value = kVal1;
+-  ASSERT_EQ(kVal1, base::subtle::Acquire_Load(&value));
++  ASSERT_EQ(kVal1, tcmalloc::subtle::Acquire_Load(&value));
+   value = kVal2;
+-  ASSERT_EQ(kVal2, base::subtle::Acquire_Load(&value));
++  ASSERT_EQ(kVal2, tcmalloc::subtle::Acquire_Load(&value));
+ 
+   value = kVal1;
+-  ASSERT_EQ(kVal1, base::subtle::Release_Load(&value));
++  ASSERT_EQ(kVal1, tcmalloc::subtle::Release_Load(&value));
+   value = kVal2;
+-  ASSERT_EQ(kVal2, base::subtle::Release_Load(&value));
++  ASSERT_EQ(kVal2, tcmalloc::subtle::Release_Load(&value));
+ }
+ 
+ template <class AtomicType>
+ static void TestAtomicOps() {
+-  TestCompareAndSwap<AtomicType>(base::subtle::NoBarrier_CompareAndSwap);
+-  TestCompareAndSwap<AtomicType>(base::subtle::Acquire_CompareAndSwap);
+-  TestCompareAndSwap<AtomicType>(base::subtle::Release_CompareAndSwap);
++  TestCompareAndSwap<AtomicType>(tcmalloc::subtle::NoBarrier_CompareAndSwap);
++  TestCompareAndSwap<AtomicType>(tcmalloc::subtle::Acquire_CompareAndSwap);
++  TestCompareAndSwap<AtomicType>(tcmalloc::subtle::Release_CompareAndSwap);
+ 
+-  TestAtomicExchange<AtomicType>(base::subtle::NoBarrier_AtomicExchange);
+-  TestAtomicExchange<AtomicType>(base::subtle::Acquire_AtomicExchange);
+-  TestAtomicExchange<AtomicType>(base::subtle::Release_AtomicExchange);
++  TestAtomicExchange<AtomicType>(tcmalloc::subtle::NoBarrier_AtomicExchange);
++  TestAtomicExchange<AtomicType>(tcmalloc::subtle::Acquire_AtomicExchange);
++  TestAtomicExchange<AtomicType>(tcmalloc::subtle::Release_AtomicExchange);
+ 
+   TestStore<AtomicType>();
+   TestLoad<AtomicType>();
+diff --git a/src/tests/malloc_hook_test.cc b/src/tests/malloc_hook_test.cc
+index a5cd860..84fecca 100644
+--- a/src/tests/malloc_hook_test.cc
++++ b/src/tests/malloc_hook_test.cc
+@@ -91,12 +91,12 @@ void Sleep(int seconds) {
+ }
+ 
+ using std::min;
+-using base::internal::kHookListMaxValues;
++using tcmalloc::internal::kHookListMaxValues;
+ 
+ // Since HookList is a template and is defined in malloc_hook.cc, we can only
+ // use an instantiation of it from malloc_hook.cc.  We then reinterpret those
+ // values as integers for testing.
+-typedef base::internal::HookList<MallocHook::NewHook> TestHookList;
++typedef tcmalloc::internal::HookList<MallocHook::NewHook> TestHookList;
+ 
+ int TestHookList_Traverse(const TestHookList& list, uintptr_t* output_array, int n) {
+   MallocHook::NewHook values_as_hooks[kHookListMaxValues];
+diff --git a/src/tests/raw_printer_test.cc b/src/tests/raw_printer_test.cc
+index 2c7be6a..99a2f13 100644
+--- a/src/tests/raw_printer_test.cc
++++ b/src/tests/raw_printer_test.cc
+@@ -17,7 +17,7 @@ using std::string;
+ 
+ TEST(RawPrinter, Empty) {
+   char buffer[1];
+-  base::RawPrinter printer(buffer, arraysize(buffer));
++  tcmalloc::RawPrinter printer(buffer, arraysize(buffer));
+   CHECK_EQ(0, printer.length());
+   CHECK_EQ(string(""), buffer);
+   CHECK_EQ(0, printer.space_left());
+@@ -29,7 +29,7 @@ TEST(RawPrinter, Empty) {
+ 
+ TEST(RawPrinter, PartiallyFilled) {
+   char buffer[100];
+-  base::RawPrinter printer(buffer, arraysize(buffer));
++  tcmalloc::RawPrinter printer(buffer, arraysize(buffer));
+   printer.Printf("%s %s", "hello", "world");
+   CHECK_EQ(string("hello world"), string(buffer));
+   CHECK_EQ(11, printer.length());
+@@ -38,7 +38,7 @@ TEST(RawPrinter, PartiallyFilled) {
+ 
+ TEST(RawPrinter, Truncated) {
+   char buffer[3];
+-  base::RawPrinter printer(buffer, arraysize(buffer));
++  tcmalloc::RawPrinter printer(buffer, arraysize(buffer));
+   printer.Printf("%d", 12345678);
+   CHECK_EQ(string("12"), string(buffer));
+   CHECK_EQ(2, printer.length());
+@@ -47,7 +47,7 @@ TEST(RawPrinter, Truncated) {
+ 
+ TEST(RawPrinter, ExactlyFilled) {
+   char buffer[12];
+-  base::RawPrinter printer(buffer, arraysize(buffer));
++  tcmalloc::RawPrinter printer(buffer, arraysize(buffer));
+   printer.Printf("%s %s", "hello", "world");
+   CHECK_EQ(string("hello world"), string(buffer));
+   CHECK_EQ(11, printer.length());
+diff --git a/src/tests/tcmalloc_unittest.cc b/src/tests/tcmalloc_unittest.cc
+index 25b2e41..5b0a906 100644
+--- a/src/tests/tcmalloc_unittest.cc
++++ b/src/tests/tcmalloc_unittest.cc
+@@ -853,21 +853,21 @@ namespace {
+ 
+ struct RangeCallbackState {
+   uintptr_t ptr;
+-  base::MallocRange::Type expected_type;
++  tcmalloc::MallocRange::Type expected_type;
+   size_t min_size;
+   bool matched;
+ };
+ 
+-static void RangeCallback(void* arg, const base::MallocRange* r) {
++static void RangeCallback(void* arg, const tcmalloc::MallocRange* r) {
+   RangeCallbackState* state = reinterpret_cast<RangeCallbackState*>(arg);
+   if (state->ptr >= r->address &&
+       state->ptr < r->address + r->length) {
+-    if (state->expected_type == base::MallocRange::FREE) {
++    if (state->expected_type == tcmalloc::MallocRange::FREE) {
+       // We are expecting r->type == FREE, but ReleaseMemory
+       // may have already moved us to UNMAPPED state instead (this happens in
+       // approximately 0.1% of executions). Accept either state.
+-      CHECK(r->type == base::MallocRange::FREE ||
+-            r->type == base::MallocRange::UNMAPPED);
++      CHECK(r->type == tcmalloc::MallocRange::FREE ||
++            r->type == tcmalloc::MallocRange::UNMAPPED);
+     } else {
+       CHECK_EQ(r->type, state->expected_type);
+     }
+@@ -879,7 +879,7 @@ static void RangeCallback(void* arg, const base::MallocRange* r) {
+ // Check that at least one of the callbacks from Ranges() contains
+ // the specified address with the specified type, and has size
+ // >= min_size.
+-static void CheckRangeCallback(void* ptr, base::MallocRange::Type type,
++static void CheckRangeCallback(void* ptr, tcmalloc::MallocRange::Type type,
+                                size_t min_size) {
+   RangeCallbackState state;
+   state.ptr = reinterpret_cast<uintptr_t>(ptr);
+@@ -899,20 +899,20 @@ static void TestRanges() {
+   static const int MB = 1048576;
+   void* a = malloc(MB);
+   void* b = malloc(MB);
+-  base::MallocRange::Type releasedType =
+-      HaveSystemRelease ? base::MallocRange::UNMAPPED : base::MallocRange::FREE;
++  tcmalloc::MallocRange::Type releasedType =
++      HaveSystemRelease ? tcmalloc::MallocRange::UNMAPPED : tcmalloc::MallocRange::FREE;
+ 
+-  CheckRangeCallback(a, base::MallocRange::INUSE, MB);
+-  CheckRangeCallback(b, base::MallocRange::INUSE, MB);
++  CheckRangeCallback(a, tcmalloc::MallocRange::INUSE, MB);
++  CheckRangeCallback(b, tcmalloc::MallocRange::INUSE, MB);
+   free(a);
+-  CheckRangeCallback(a, base::MallocRange::FREE, MB);
+-  CheckRangeCallback(b, base::MallocRange::INUSE, MB);
++  CheckRangeCallback(a, tcmalloc::MallocRange::FREE, MB);
++  CheckRangeCallback(b, tcmalloc::MallocRange::INUSE, MB);
+   MallocExtension::instance()->ReleaseFreeMemory();
+   CheckRangeCallback(a, releasedType, MB);
+-  CheckRangeCallback(b, base::MallocRange::INUSE, MB);
++  CheckRangeCallback(b, tcmalloc::MallocRange::INUSE, MB);
+   free(b);
+   CheckRangeCallback(a, releasedType, MB);
+-  CheckRangeCallback(b, base::MallocRange::FREE, MB);
++  CheckRangeCallback(b, tcmalloc::MallocRange::FREE, MB);
+ }
+ 
+ #ifndef DEBUGALLOCATION
+-- 
+1.8.3.1
+
