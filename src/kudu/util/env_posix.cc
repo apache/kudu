@@ -113,13 +113,9 @@ typedef struct xfs_flock64 {
 #define XFS_IOC_UNRESVSP64      _IOW ('X', 43, struct xfs_flock64)
 #endif
 
-// For platforms without fdatasync (like OS X)
-#ifndef fdatasync
+// OSX does not have fdatasync or fread_unlocked.
+#ifdef __APPLE__
 #define fdatasync fsync
-#endif
-
-// For platforms without unlocked_stdio (like OS X)
-#ifndef fread_unlocked
 #define fread_unlocked fread
 #endif
 
