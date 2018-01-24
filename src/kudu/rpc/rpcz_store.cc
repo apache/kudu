@@ -49,6 +49,13 @@ DEFINE_bool(rpc_dump_all_traces, false,
 TAG_FLAG(rpc_dump_all_traces, advanced);
 TAG_FLAG(rpc_dump_all_traces, runtime);
 
+DEFINE_int32(rpc_duration_too_long_ms, 1000,
+             "Threshold (in milliseconds) above which a RPC is considered too long and its "
+             "duration and method name are logged at INFO level. The time measured is between "
+             "when a RPC is accepted and when its call handler completes.");
+TAG_FLAG(rpc_duration_too_long_ms, advanced);
+TAG_FLAG(rpc_duration_too_long_ms, runtime);
+
 using std::pair;
 using std::string;
 using std::vector;
@@ -254,7 +261,7 @@ void RpczStore::LogTrace(InboundCall* call) {
   if (PREDICT_FALSE(FLAGS_rpc_dump_all_traces)) {
     LOG(INFO) << call->ToString() << " took " << duration_ms << "ms. Trace:";
     call->trace()->Dump(&LOG(INFO), true);
-  } else if (duration_ms > 1000) {
+  } else if (duration_ms > FLAGS_rpc_duration_too_long_ms) {
     LOG(INFO) << call->ToString() << " took " << duration_ms << "ms. "
               << "Request Metrics: " << call->trace()->MetricsAsJSON();
   }

@@ -71,6 +71,7 @@ METRIC_DECLARE_histogram(rpc_incoming_queue_time);
 
 DECLARE_bool(rpc_reopen_outbound_connections);
 DECLARE_int32(rpc_negotiation_inject_delay_ms);
+DECLARE_int32(rpc_duration_too_long_ms);
 
 using std::shared_ptr;
 using std::string;
