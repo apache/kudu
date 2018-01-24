@@ -468,6 +468,9 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   // Modifying these flags will only take effect on the next restart.
   std::vector<std::string>* mutable_flags() { return &opts_.extra_flags; }
 
+  // Return the options used to create the daemon.
+  ExternalDaemonOptions opts() const { return opts_; }
+
  protected:
   friend class RefCountedThreadSafe<ExternalDaemon>;
   virtual ~ExternalDaemon();
