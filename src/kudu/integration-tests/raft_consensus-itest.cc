@@ -70,8 +70,12 @@
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/countdown_latch.h"
+#include "kudu/util/env.h"
+#include "kudu/util/env_util.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
+#include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/random.h"
 #include "kudu/util/status.h"
@@ -94,7 +98,10 @@ using kudu::client::KuduInsert;
 using kudu::client::KuduSession;
 using kudu::client::KuduTable;
 using kudu::client::sp::shared_ptr;
+using kudu::cluster::ExternalDaemonOptions;
 using kudu::cluster::ExternalTabletServer;
+using kudu::cluster::ExternalMiniCluster;
+using kudu::cluster::ExternalMiniClusterOptions;
 using kudu::consensus::ConsensusRequestPB;
 using kudu::consensus::ConsensusResponsePB;
 using kudu::consensus::ConsensusServiceProxy;
@@ -119,6 +126,7 @@ using kudu::itest::WaitUntilLeader;
 using kudu::itest::WriteSimpleTestRow;
 using kudu::master::TabletLocationsPB;
 using kudu::master::VOTER_REPLICA;
+using kudu::env_util::ListFilesInDir;
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
 using kudu::rpc::RpcController;
@@ -2577,5 +2585,69 @@ TEST_F(RaftConsensusITest, TestLogIOErrorIsFatal) {
   ASSERT_OK(ext_tservers[0]->WaitForFatal(MonoDelta::FromSeconds(10)));
 }
 
+// KUDU-1613: Test that when we reset and restart a tablet server, with a new
+// uuid but with the same host and port, replicas that were hosted by the
+// previous incarnation are correctly detected as failed and eventually
+// re-replicated.
+TEST_F(RaftConsensusITest, TestRestartWithDifferentUUID) {
+  // Start a cluster and insert data.
+  ExternalMiniClusterOptions opts;
+  opts.num_tablet_servers = 5;
+  opts.extra_tserver_flags = {
+    // Set a low timeout. If we can't re-replicate in a reasonable amount of
+    // time, it means we're not evicting at all.
+    "--follower_unavailable_considered_failed_sec=10",
+  };
+  cluster_.reset(new ExternalMiniCluster(std::move(opts)));
+  ASSERT_OK(cluster_->Start());
+
+  // Write some data. In writing many tablets, we're making it more likely that
+  // all tablet servers will have some tablets on them.
+  TestWorkload writes(cluster_.get());
+  writes.set_num_tablets(25);
+  writes.set_timeout_allowed(true);
+  writes.Setup();
+  writes.Start();
+  const auto wait_for_some_inserts = [&] {
+    const auto rows_init = writes.rows_inserted();
+    ASSERT_EVENTUALLY([&] {
+      ASSERT_GT(writes.rows_inserted() - rows_init, 1000);
+    });
+  };
+  wait_for_some_inserts();
+
+  // Completely shut down one of the tablet servers, keeping its ports so we
+  // can take over with another tablet server.
+  ExternalTabletServer* ts = cluster_->tablet_server(0);
+  vector<HostPort> master_hostports;
+  for (int i = 0; i < cluster_->num_masters(); i++) {
+    master_hostports.push_back(cluster_->master(i)->bound_rpc_hostport());
+  }
+  ExternalDaemonOptions ts_opts = ts->opts();
+  LOG(INFO) << Substitute("Storing port $0 for use by new tablet server",
+                          ts->bound_rpc_hostport().ToString());
+  ts_opts.rpc_bind_address = ts->bound_rpc_hostport();
+  ts->Shutdown();
+
+  // With one server down, we should be able to accept writes.
+  wait_for_some_inserts();
+  writes.StopAndJoin();
+
+  // Start up a new server with a new UUID bound to the old RPC port.
+  ts_opts.wal_dir = Substitute("$0-new", ts_opts.wal_dir);
+  ts_opts.data_dirs = { Substitute("$0-new", ts_opts.data_dirs[0]) };
+  ASSERT_OK(env_->CreateDir(ts_opts.wal_dir));
+  ASSERT_OK(env_->CreateDir(ts_opts.data_dirs[0]));
+  scoped_refptr<ExternalTabletServer> new_ts =
+    new ExternalTabletServer(ts_opts, master_hostports);
+  ASSERT_OK(new_ts->Start());
+
+  // Eventually the new server should be copied to.
+  ASSERT_EVENTUALLY([&] {
+    vector<string> files_in_wal_dir;
+    ASSERT_OK(ListFilesInDir(env_, JoinPathSegments(ts_opts.wal_dir, "wals"), &files_in_wal_dir));
+    ASSERT_FALSE(files_in_wal_dir.empty());
+  });
+}
 }  // namespace tserver
 }  // namespace kudu
