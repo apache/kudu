@@ -24,6 +24,7 @@
 
 #include "kudu/client/client.h"
 #include "kudu/common/wire_protocol.pb.h"
+#include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/catalog_manager.h"
@@ -394,6 +395,14 @@ std::shared_ptr<MasterServiceProxy> InternalMiniCluster::master_proxy() const {
 std::shared_ptr<MasterServiceProxy> InternalMiniCluster::master_proxy(int idx) const {
   const auto& addr = CHECK_NOTNULL(mini_master(idx))->bound_rpc_addr();
   return std::make_shared<MasterServiceProxy>(messenger_, addr, addr.host());
+}
+
+string InternalMiniCluster::WalRootForTS(int ts_idx) const {
+  return mini_tablet_server(ts_idx)->options()->fs_opts.wal_root;
+}
+
+string InternalMiniCluster::UuidForTS(int ts_idx) const {
+  return mini_tablet_server(ts_idx)->uuid();
 }
 
 } // namespace cluster

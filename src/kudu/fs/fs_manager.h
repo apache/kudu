@@ -56,7 +56,7 @@ struct CreateBlockOptions;
 } // namespace fs
 
 namespace itest {
-class ExternalMiniClusterFsInspector;
+class MiniClusterFsInspector;
 } // namespace itest
 
 namespace tserver {
@@ -264,7 +264,7 @@ class FsManager {
   FRIEND_TEST(FsManagerTestBase, TestMetadataDirInDataRoot);
   FRIEND_TEST(FsManagerTestBase, TestIsolatedMetadataDir);
   FRIEND_TEST(tserver::MiniTabletServerTest, TestFsLayoutEndToEnd);
-  friend class itest::ExternalMiniClusterFsInspector; // for access to directory names
+  friend class itest::MiniClusterFsInspector; // for access to directory names
 
   // Initializes, sanitizes, and canonicalizes the filesystem roots.
   // Determines the correct filesystem root for tablet-specific metadata.

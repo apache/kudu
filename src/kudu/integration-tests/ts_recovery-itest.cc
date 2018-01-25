@@ -58,7 +58,7 @@
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
-#include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
+#include "kudu/integration-tests/mini_cluster_fs_inspector.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/tablet/metadata.pb.h"
@@ -101,7 +101,7 @@ using consensus::ConsensusMetadataManager;
 using consensus::OpId;
 using consensus::RECEIVED_OPID;
 using fs::BlockManager;
-using itest::ExternalMiniClusterFsInspector;
+using itest::MiniClusterFsInspector;
 using log::AppendNoOpsToLogSync;
 using log::Log;
 using log::LogOptions;
@@ -164,8 +164,8 @@ TEST_P(TsRecoveryITest, TestNoBlockIDReuseIfMissingBlocks) {
   };
 
   unique_ptr<TestWorkload> write_workload(StartSingleTabletWorkload("foo"));
-  unique_ptr<ExternalMiniClusterFsInspector> inspect(
-      new ExternalMiniClusterFsInspector(cluster_.get()));
+  unique_ptr<MiniClusterFsInspector> inspect(
+      new MiniClusterFsInspector(cluster_.get()));
   vector<string> tablets = inspect->ListTabletsOnTS(0);
   ASSERT_EQ(1, tablets.size());
   const string tablet_id = tablets[0];

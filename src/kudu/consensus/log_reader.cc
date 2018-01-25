@@ -74,44 +74,36 @@ struct LogSegmentSeqnoComparator {
 
 const int64_t LogReader::kNoSizeLimit = -1;
 
-Status LogReader::Open(FsManager* fs_manager,
+Status LogReader::Open(Env* env,
+                       const string& tablet_wal_dir,
                        const scoped_refptr<LogIndex>& index,
                        const string& tablet_id,
                        const scoped_refptr<MetricEntity>& metric_entity,
                        shared_ptr<LogReader>* reader) {
   auto log_reader = std::make_shared<LogReader>(
-      fs_manager, index, tablet_id, metric_entity);
+      env, index, tablet_id, metric_entity);
 
-  string tablet_wal_path = fs_manager->GetTabletWalDir(tablet_id);
-
-  RETURN_NOT_OK(log_reader->Init(tablet_wal_path))
+  RETURN_NOT_OK_PREPEND(log_reader->Init(tablet_wal_dir),
+                        "Unable to initialize log reader")
   *reader = log_reader;
   return Status::OK();
 }
 
-Status LogReader::OpenFromRecoveryDir(FsManager* fs_manager,
-                                      const string& tablet_id,
-                                      const scoped_refptr<MetricEntity>& metric_entity,
-                                      shared_ptr<LogReader>* reader) {
-  string recovery_path = fs_manager->GetTabletWalRecoveryDir(tablet_id);
-
-  // When recovering, we don't want to have any log index -- since it isn't fsynced()
-  // during writing, its contents are useless to us.
-  scoped_refptr<LogIndex> index(nullptr);
-  auto log_reader = std::make_shared<LogReader>(
-      fs_manager, index, tablet_id, metric_entity);
-  RETURN_NOT_OK_PREPEND(log_reader->Init(recovery_path),
-                        "Unable to initialize log reader");
-  *reader = log_reader;
-  return Status::OK();
+Status LogReader::Open(FsManager* fs_manager,
+                       const scoped_refptr<LogIndex>& index,
+                       const std::string& tablet_id,
+                       const scoped_refptr<MetricEntity>& metric_entity,
+                       std::shared_ptr<LogReader>* reader) {
+  return LogReader::Open(fs_manager->env(), fs_manager->GetTabletWalDir(tablet_id),
+                         index, tablet_id, metric_entity, reader);
 }
 
-LogReader::LogReader(FsManager* fs_manager,
-                     const scoped_refptr<LogIndex>& index,
+LogReader::LogReader(Env* env,
+                     scoped_refptr<LogIndex> index,
                      string tablet_id,
                      const scoped_refptr<MetricEntity>& metric_entity)
-    : fs_manager_(fs_manager),
-      log_index_(index),
+    : env_(env),
+      log_index_(std::move(index)),
       tablet_id_(std::move(tablet_id)),
       state_(kLogReaderInitialized) {
   if (metric_entity) {
@@ -131,9 +123,7 @@ Status LogReader::Init(const string& tablet_wal_path) {
   }
   VLOG(1) << "Reading wal from path:" << tablet_wal_path;
 
-  Env* env = fs_manager_->env();
-
-  if (!fs_manager_->Exists(tablet_wal_path)) {
+  if (!env_->FileExists(tablet_wal_path)) {
     return Status::IllegalState("Cannot find wal location at", tablet_wal_path);
   }
 
@@ -141,7 +131,7 @@ Status LogReader::Init(const string& tablet_wal_path) {
   // list existing segment files
   vector<string> log_files;
 
-  RETURN_NOT_OK_PREPEND(env->GetChildren(tablet_wal_path, &log_files),
+  RETURN_NOT_OK_PREPEND(env_->GetChildren(tablet_wal_path, &log_files),
                         "Unable to read children from path");
 
   SegmentSequence read_segments;
@@ -151,7 +141,7 @@ Status LogReader::Init(const string& tablet_wal_path) {
     if (HasPrefixString(log_file, FsManager::kWalFileNamePrefix)) {
       string fqp = JoinPathSegments(tablet_wal_path, log_file);
       scoped_refptr<ReadableLogSegment> segment;
-      Status s = ReadableLogSegment::Open(env, fqp, &segment);
+      Status s = ReadableLogSegment::Open(env_, fqp, &segment);
       if (s.IsUninitialized()) {
         // This indicates that the segment was created but the writer
         // crashed before the header was successfully written. In this

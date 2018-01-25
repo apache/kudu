@@ -24,9 +24,9 @@ set(INTEGRATION_TESTS_SRCS
   cluster_itest_util.cc
   cluster_verifier.cc
   external_mini_cluster-itest-base.cc
-  external_mini_cluster_fs_inspector.cc
   internal_mini_cluster-itest-base.cc
   log_verifier.cc
+  mini_cluster_fs_inspector.cc
   raft_consensus-itest-base.cc
   test_workload.cc
   ts_itest-base.cc

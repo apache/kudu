@@ -43,6 +43,7 @@
 
 namespace kudu {
 
+class Env;
 class NodeInstancePB;
 class Sockaddr;
 class Subprocess;
@@ -258,6 +259,15 @@ class ExternalMiniCluster : public MiniCluster {
   int num_masters() const override {
     return masters_.size();
   }
+
+  // Returns the WALs root directory for the tablet server 'ts_idx'.
+  virtual std::string WalRootForTS(int ts_idx) const override;
+
+  // Returns the UUID for the tablet server 'ts_idx'.
+  virtual std::string UuidForTS(int ts_idx) const override;
+
+  // Returns the Env on which the cluster operates.
+  virtual Env* env() const override;
 
   BindMode bind_mode() const override {
     return opts_.bind_mode;

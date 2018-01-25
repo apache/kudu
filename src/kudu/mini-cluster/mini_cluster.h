@@ -26,6 +26,7 @@
 
 namespace kudu {
 
+class Env;
 class HostPort;
 
 namespace client {
@@ -149,6 +150,15 @@ class MiniCluster {
   // Returns an RPC proxy to the master at 'idx'. Requires that the
   // master at 'idx' is running.
   virtual std::shared_ptr<master::MasterServiceProxy> master_proxy(int idx) const = 0;
+
+  // Returns the UUID for the tablet server 'ts_idx'
+  virtual std::string UuidForTS(int ts_idx) const = 0;
+
+  // Returns the WALs root directory for the tablet server 'ts_idx'.
+  virtual std::string WalRootForTS(int ts_idx) const = 0;
+
+  // Returns the Env on which the cluster operates.
+  virtual Env* env() const = 0;
 
  protected:
   // Return the IP address that the daemon with the given index will bind to.

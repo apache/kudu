@@ -23,7 +23,7 @@
 #include <vector>
 
 #include "kudu/client/shared_ptr.h"
-#include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
+#include "kudu/integration-tests/mini_cluster_fs_inspector.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/util/test_util.h"
 
@@ -53,7 +53,7 @@ class ExternalMiniClusterITestBase : public KuduTest {
   void StopCluster();
 
   std::unique_ptr<cluster::ExternalMiniCluster> cluster_;
-  std::unique_ptr<itest::ExternalMiniClusterFsInspector> inspect_;
+  std::unique_ptr<itest::MiniClusterFsInspector> inspect_;
   client::sp::shared_ptr<client::KuduClient> client_;
   std::unordered_map<std::string, itest::TServerDetails*> ts_map_;
 };

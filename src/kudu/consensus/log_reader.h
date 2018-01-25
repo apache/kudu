@@ -35,6 +35,7 @@
 namespace kudu {
 
 class Counter;
+class Env;
 class FsManager;
 class Histogram;
 class MetricEntity;
@@ -57,23 +58,25 @@ class LogReader {
  public:
   ~LogReader();
 
-  // Opens a LogReader on the default tablet log directory, and sets
-  // 'reader' to the newly created LogReader.
+  // Opens a LogReader on the tablet log directory specified by
+  // 'tablet_wal_dir', and sets 'reader' to the newly created LogReader.
   //
   // 'index' may be NULL, but if it is, ReadReplicatesInRange() may not
   // be used.
-  static Status Open(FsManager* fs_manager,
+  static Status Open(Env* env,
+                     const std::string& tablet_wal_dir,
                      const scoped_refptr<LogIndex>& index,
                      const std::string& tablet_id,
                      const scoped_refptr<MetricEntity>& metric_entity,
                      std::shared_ptr<LogReader>* reader);
 
-  // Opens a LogReader on a specific tablet log recovery directory, and sets
-  // 'reader' to the newly created LogReader.
-  static Status OpenFromRecoveryDir(FsManager* fs_manager,
-                                    const std::string& tablet_id,
-                                    const scoped_refptr<MetricEntity>& metric_entity,
-                                    std::shared_ptr<LogReader>* reader);
+  // Same as above, but will use `fs_manager` to determine the default WAL dir
+  // for the tablet.
+  static Status Open(FsManager* fs_manager,
+                     const scoped_refptr<LogIndex>& index,
+                     const std::string& tablet_id,
+                     const scoped_refptr<MetricEntity>& metric_entity,
+                     std::shared_ptr<LogReader>* reader);
 
   // Return the minimum replicate index that is retained in the currently available
   // logs. May return -1 if no replicates have been logged.
@@ -165,8 +168,7 @@ class LogReader {
                                   faststring* tmp_buf,
                                   gscoped_ptr<LogEntryBatchPB>* batch) const;
 
-  LogReader(FsManager* fs_manager, const scoped_refptr<LogIndex>& index,
-            std::string tablet_id,
+  LogReader(Env* env, scoped_refptr<LogIndex> index, std::string tablet_id,
             const scoped_refptr<MetricEntity>& metric_entity);
 
   // Reads the headers of all segments in 'tablet_wal_path'.
@@ -175,7 +177,7 @@ class LogReader {
   // Initializes an 'empty' reader for tests, i.e. does not scan a path looking for segments.
   Status InitEmptyReaderForTests();
 
-  FsManager *fs_manager_;
+  Env* env_;
   const scoped_refptr<LogIndex> log_index_;
   const std::string tablet_id_;
 

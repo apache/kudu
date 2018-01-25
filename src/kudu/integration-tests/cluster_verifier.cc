@@ -29,7 +29,6 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/log_verifier.h"
-#include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/mini-cluster/mini_cluster.h"
 #include "kudu/tools/ksck.h"
 #include "kudu/tools/ksck_remote.h"
@@ -44,7 +43,6 @@ using std::vector;
 
 namespace kudu {
 
-using cluster::ExternalMiniCluster;
 using cluster::MiniCluster;
 using strings::Substitute;
 using tools::Ksck;
@@ -89,17 +87,14 @@ void ClusterVerifier::CheckCluster() {
   }
   ASSERT_OK(s);
 
-  // TODO(todd): we should support LogVerifier on internal clusters!
-  if (ExternalMiniCluster* emc = dynamic_cast<ExternalMiniCluster*>(cluster_)) {
-    // Verify that the committed op indexes match up across the servers.
-    // We have to use "AssertEventually" here because many tests verify clusters
-    // while they are still running, and the verification can fail spuriously in
-    // the case that
-    LogVerifier lv(emc);
-    AssertEventually([&]() {
-        ASSERT_OK(lv.VerifyCommittedOpIdsMatch());
-      });
-  }
+  LogVerifier lv(cluster_);
+  // Verify that the committed op indexes match up across the servers.  We have
+  // to use "AssertEventually" here because many tests verify clusters while
+  // they are still running, and the verification can fail spuriously in the
+  // case that
+  AssertEventually([&]() {
+    ASSERT_OK(lv.VerifyCommittedOpIdsMatch());
+  });
 }
 
 Status ClusterVerifier::DoKsck() {

@@ -778,7 +778,7 @@ TEST_P(LogTestOptionalCompression, TestWriteManyBatches) {
 // seg003: 0.20 through 0.29
 // seg004: 0.30 through 0.39
 TEST_P(LogTestOptionalCompression, TestLogReader) {
-  LogReader reader(fs_manager_.get(),
+  LogReader reader(env_,
                    scoped_refptr<LogIndex>(),
                    kTestTablet,
                    nullptr);

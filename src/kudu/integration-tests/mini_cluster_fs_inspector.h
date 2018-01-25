@@ -20,7 +20,6 @@
 #include <string>
 #include <vector>
 
-#include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/util/monotime.h"
@@ -31,7 +30,7 @@ class Env;
 class Status;
 
 namespace cluster {
-class ExternalMiniCluster;
+class MiniCluster;
 } // namespace cluster
 
 namespace consensus {
@@ -40,14 +39,17 @@ class ConsensusMetadataPB;
 
 namespace itest {
 
-// Utility class that digs around in a tablet server's data directory and
-// provides methods useful for integration testing. This class must outlive
-// the Env and ExternalMiniCluster objects that are passed into it.
-class ExternalMiniClusterFsInspector {
+// Utility class that digs around in a tablet server's FS layout and provides
+// methods useful for integration testing. This class must outlive the Env and
+// MiniCluster objects that are passed into it.
+class MiniClusterFsInspector {
  public:
-  // Does not take ownership of the ExternalMiniCluster pointer.
-  explicit ExternalMiniClusterFsInspector(cluster::ExternalMiniCluster* cluster);
-  ~ExternalMiniClusterFsInspector();
+  explicit MiniClusterFsInspector(cluster::MiniCluster* cluster);
+
+  ~MiniClusterFsInspector() {}
+
+  // Returns the WALs FS subdirectory created for TS 'ts_idx'.
+  std::string WalDirForTS(int ts_idx) const;
 
   // If provided, files are filtered by the glob-style pattern 'pattern'.
   int CountFilesInDir(const std::string& path, StringPiece pattern = StringPiece());
@@ -55,51 +57,51 @@ class ExternalMiniClusterFsInspector {
   // List all of the tablets with tablet metadata in the cluster.
   std::vector<std::string> ListTablets();
 
-  // List all of the tablets with tablet metadata on the given tablet server index.
-  // This may include tablets that are tombstoned and not running.
-  std::vector<std::string> ListTabletsOnTS(int index);
+  // List all of the tablets with tablet metadata on the given tablet server
+  // 'ts_idx'.  This may include tablets that are tombstoned and not running.
+  std::vector<std::string> ListTabletsOnTS(int ts_idx);
 
   // List the tablet IDs on the given tablet which actually have data (as
   // evidenced by their having a WAL). This excludes those that are tombstoned.
-  std::vector<std::string> ListTabletsWithDataOnTS(int index);
+  std::vector<std::string> ListTabletsWithDataOnTS(int ts_idx);
 
-  // Return the number of files in the WAL directory for the given 'tablet_id' on TS 'index'.
-  // If provided, files are filtered by the glob-style pattern 'pattern'.
-  int CountFilesInWALDirForTS(int index,
+  // Returns the number of files in the WAL directory for 'tablet_id' on TS
+  // 'ts_idx'. If provided, files are filtered by the glob string 'pattern'.
+  int CountFilesInWALDirForTS(int ts_idx,
                               const std::string& tablet_id,
                               StringPiece pattern = StringPiece());
 
-  bool DoesConsensusMetaExistForTabletOnTS(int index, const std::string& tablet_id);
+  bool DoesConsensusMetaExistForTabletOnTS(int ts_idx, const std::string& tablet_id);
 
   int CountReplicasInMetadataDirs();
-  Status CheckNoDataOnTS(int index);
+  Status CheckNoDataOnTS(int ts_idx);
   Status CheckNoData();
 
-  Status ReadTabletSuperBlockOnTS(int index, const std::string& tablet_id,
+  Status ReadTabletSuperBlockOnTS(int ts_idx, const std::string& tablet_id,
                                   tablet::TabletSuperBlockPB* sb);
 
-  // Get the modification time (in micros) of the tablet superblock for the given tablet
-  // server index and tablet ID.
-  int64_t GetTabletSuperBlockMTimeOrDie(int ts_index, const std::string& tablet_id);
+  // Get the modification time (in micros) of the tablet superblock for the
+  // given tablet server ts_idx and tablet ID.
+  int64_t GetTabletSuperBlockMTimeOrDie(int ts_idx, const std::string& tablet_id);
 
-  Status ReadConsensusMetadataOnTS(int index, const std::string& tablet_id,
+  Status ReadConsensusMetadataOnTS(int ts_idx, const std::string& tablet_id,
                                    consensus::ConsensusMetadataPB* cmeta_pb);
-  Status WriteConsensusMetadataOnTS(int index,
+  Status WriteConsensusMetadataOnTS(int ts_idx,
                                     const std::string& tablet_id,
                                     const consensus::ConsensusMetadataPB& cmeta_pb);
 
-  Status CheckTabletDataStateOnTS(int index,
+  Status CheckTabletDataStateOnTS(int ts_idx,
                                   const std::string& tablet_id,
-                                  const std::vector<tablet::TabletDataState>& expected_states);
+                                  const std::vector<tablet::TabletDataState>& allowed_states);
 
   Status WaitForNoData(const MonoDelta& timeout = MonoDelta::FromSeconds(30));
-  Status WaitForNoDataOnTS(int index, const MonoDelta& timeout = MonoDelta::FromSeconds(30));
-  Status WaitForMinFilesInTabletWalDirOnTS(int index,
+  Status WaitForNoDataOnTS(int ts_idx, const MonoDelta& timeout = MonoDelta::FromSeconds(30));
+  Status WaitForMinFilesInTabletWalDirOnTS(int ts_idx,
                                            const std::string& tablet_id,
                                            int count,
                                            const MonoDelta& timeout = MonoDelta::FromSeconds(60));
   Status WaitForReplicaCount(int expected, const MonoDelta& timeout = MonoDelta::FromSeconds(30));
-  Status WaitForTabletDataStateOnTS(int index,
+  Status WaitForTabletDataStateOnTS(int ts_idx,
                                     const std::string& tablet_id,
                                     const std::vector<tablet::TabletDataState>& expected_states,
                                     const MonoDelta& timeout = MonoDelta::FromSeconds(30));
@@ -112,27 +114,26 @@ class ExternalMiniClusterFsInspector {
   //   contains that string, even if the file also matches a string in the
   //   'substrings_required'.
   Status WaitForFilePatternInTabletWalDirOnTs(
-      int ts_index,
+      int ts_idx,
       const std::string& tablet_id,
       const std::vector<std::string>& substrings_required,
       const std::vector<std::string>& substrings_disallowed,
       const MonoDelta& timeout = MonoDelta::FromSeconds(30));
 
  private:
-  // Return the number of files in WAL directories on the given tablet server.
-  // This includes log index files (not just segments).
-  int CountWALFilesOnTS(int index);
+  const cluster::MiniCluster* const cluster_;
+  Env* const env_;
 
-  std::string GetConsensusMetadataPathOnTS(int index,
+  // Return the number of files in WAL directories on the given tablet server.
+  // This includes log ts_idx files (not just segments).
+  int CountWALFilesOnTS(int ts_idx);
+
+  std::string GetConsensusMetadataPathOnTS(int ts_idx,
                                            const std::string& tablet_id) const;
 
-  std::string GetTabletSuperBlockPathOnTS(int ts_index,
+  std::string GetTabletSuperBlockPathOnTS(int ts_idx,
                                           const std::string& tablet_id) const;
 
-  Env* const env_;
-  cluster::ExternalMiniCluster* const cluster_;
-
-  DISALLOW_COPY_AND_ASSIGN(ExternalMiniClusterFsInspector);
 };
 
 } // namespace itest

@@ -73,7 +73,7 @@
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
-#include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
+#include "kudu/integration-tests/mini_cluster_fs_inspector.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
@@ -140,7 +140,7 @@ using consensus::ReplicateMsg;
 using fs::BlockDeletionTransaction;
 using fs::FsReport;
 using fs::WritableBlock;
-using itest::ExternalMiniClusterFsInspector;
+using itest::MiniClusterFsInspector;
 using itest::TServerDetails;
 using log::Log;
 using log::LogOptions;
@@ -329,7 +329,7 @@ class ToolTest : public KuduTest {
   void StartExternalMiniCluster(ExternalMiniClusterOptions opts = {});
   void StartMiniCluster(InternalMiniClusterOptions opts = {});
   unique_ptr<ExternalMiniCluster> cluster_;
-  unique_ptr<ExternalMiniClusterFsInspector> inspect_;
+  unique_ptr<MiniClusterFsInspector> inspect_;
   unordered_map<string, TServerDetails*> ts_map_;
   unique_ptr<InternalMiniCluster> mini_cluster_;
 };
@@ -337,7 +337,7 @@ class ToolTest : public KuduTest {
 void ToolTest::StartExternalMiniCluster(ExternalMiniClusterOptions opts) {
   cluster_.reset(new ExternalMiniCluster(std::move(opts)));
   ASSERT_OK(cluster_->Start());
-  inspect_.reset(new ExternalMiniClusterFsInspector(cluster_.get()));
+  inspect_.reset(new MiniClusterFsInspector(cluster_.get()));
   ASSERT_OK(CreateTabletServerMap(cluster_->master_proxy(),
                                   cluster_->messenger(), &ts_map_));
 }

@@ -120,9 +120,13 @@ ExternalMiniCluster::~ExternalMiniCluster() {
   Shutdown();
 }
 
+Env* ExternalMiniCluster::env() const {
+  return Env::Default();
+}
+
 Status ExternalMiniCluster::DeduceBinRoot(std::string* ret) {
   string exe;
-  RETURN_NOT_OK(Env::Default()->GetExecutablePath(&exe));
+  RETURN_NOT_OK(env()->GetExecutablePath(&exe));
   *ret = DirName(exe);
   return Status::OK();
 }
@@ -157,7 +161,7 @@ Status ExternalMiniCluster::Start() {
                         .Build(&messenger_),
                         "Failed to start Messenger for minicluster");
 
-  Status s = Env::Default()->CreateDir(opts_.cluster_root);
+  Status s = env()->CreateDir(opts_.cluster_root);
   if (!s.ok() && !s.IsAlreadyPresent()) {
     RETURN_NOT_OK_PREPEND(s, "Could not create root dir " + opts_.cluster_root);
   }
@@ -671,6 +675,14 @@ Status ExternalMiniCluster::SetFlag(ExternalDaemon* daemon,
                                SecureShortDebugString(resp));
   }
   return Status::OK();
+}
+
+string ExternalMiniCluster::WalRootForTS(int ts_idx) const {
+  return tablet_server(ts_idx)->wal_dir();
+}
+
+string ExternalMiniCluster::UuidForTS(int ts_idx) const {
+  return tablet_server(ts_idx)->uuid();
 }
 
 //------------------------------------------------------------

@@ -26,21 +26,24 @@
 
 namespace kudu {
 
-namespace cluster {
-class ExternalMiniCluster;
-class ExternalTabletServer;
-} // namespace cluster
+class Env;
 
-class FsManager;
+namespace cluster {
+class MiniCluster;
+} // namespace cluster
 
 namespace consensus {
 class OpId;
 } // namespace consensus
 
+namespace itest {
+class MiniClusterFsInspector;
+}
+
 // Verifies correctness of the logs in an external mini-cluster.
 class LogVerifier {
  public:
-  explicit LogVerifier(cluster::ExternalMiniCluster* cluster);
+  explicit LogVerifier(cluster::MiniCluster* cluster);
   ~LogVerifier();
 
   // Verify that, for every tablet in the cluster, the logs of each of that tablet's replicas
@@ -58,21 +61,19 @@ class LogVerifier {
 
   // Scans the WAL on the given tablet server to find the COMMIT message with the highest
   // index.
-  Status ScanForHighestCommittedOpIdInLog(cluster::ExternalTabletServer* ets,
+  Status ScanForHighestCommittedOpIdInLog(int ts_idx,
                                           const std::string& tablet_id,
                                           consensus::OpId* commit_id);
 
  private:
-  // Open an FsManager for the given tablet server.
-  Status OpenFsManager(cluster::ExternalTabletServer* ets,
-                       std::unique_ptr<FsManager>* fs);
-
-  // Scan the WALs for tablet 'tablet_id' on the given 'fs'. Sets entries
-  // in '*index_to_term' for each COMMIT entry found in the WALs.
-  Status ScanForCommittedOpIds(FsManager* fs, const std::string& tablet_id,
+  // Scan the WALs for tablet 'tablet_id' on the server specified by 'ts_idx'.
+  // Sets entries in '*index_to_term' for each COMMIT entry found in the WALs.
+  Status ScanForCommittedOpIds(int ts_idx, const std::string& tablet_id,
                                std::map<int64_t, int64_t>* index_to_term);
 
-  cluster::ExternalMiniCluster* const cluster_;
+  cluster::MiniCluster* const cluster_;
+  Env* const env_;
+  std::unique_ptr<itest::MiniClusterFsInspector> inspector_;
 
   DISALLOW_COPY_AND_ASSIGN(LogVerifier);
 };

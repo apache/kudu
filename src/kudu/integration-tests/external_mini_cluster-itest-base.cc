@@ -28,7 +28,7 @@
 
 #include "kudu/gutil/stl_util.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
-#include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
+#include "kudu/integration-tests/mini_cluster_fs_inspector.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/util/pstack_watcher.h"
 #include "kudu/util/status.h"
@@ -64,7 +64,7 @@ void ExternalMiniClusterITestBase::StartClusterWithOpts(
     ExternalMiniClusterOptions opts) {
   cluster_.reset(new ExternalMiniCluster(std::move(opts)));
   ASSERT_OK(cluster_->Start());
-  inspect_.reset(new itest::ExternalMiniClusterFsInspector(cluster_.get()));
+  inspect_.reset(new itest::MiniClusterFsInspector(cluster_.get()));
   ASSERT_OK(itest::CreateTabletServerMap(cluster_->master_proxy(),
                                          cluster_->messenger(),
                                          &ts_map_));

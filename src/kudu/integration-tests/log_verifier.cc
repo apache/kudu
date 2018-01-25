@@ -36,14 +36,14 @@
 #include "kudu/consensus/log_reader.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid.pb.h"
-#include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
-#include "kudu/mini-cluster/external_mini_cluster.h"
+#include "kudu/integration-tests/mini_cluster_fs_inspector.h"
+#include "kudu/mini-cluster/mini_cluster.h"
 #include "kudu/util/env.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
 
 using std::map;
@@ -56,39 +56,26 @@ using strings::Substitute;
 
 namespace kudu {
 
-using cluster::ExternalMiniCluster;
-using cluster::ExternalTabletServer;
+using cluster::MiniCluster;
 using consensus::OpId;
+using itest::MiniClusterFsInspector;
 using log::LogReader;
-using itest::ExternalMiniClusterFsInspector;
 
-LogVerifier::LogVerifier(ExternalMiniCluster* cluster)
-    : cluster_(cluster) {
+LogVerifier::LogVerifier(cluster::MiniCluster* cluster)
+    : cluster_(cluster),
+      env_(cluster->env()) {
+  inspector_.reset(new MiniClusterFsInspector(cluster));
+  CHECK(inspector_);
 }
 
-LogVerifier::~LogVerifier() {
-}
+LogVerifier::~LogVerifier() {}
 
-Status LogVerifier::OpenFsManager(ExternalTabletServer* ets,
-                                  unique_ptr<FsManager>* fs) {
-  FsManagerOpts fs_opts;
-  fs_opts.read_only = true;
-  fs_opts.wal_root = ets->wal_dir();
-  fs_opts.data_roots = ets->data_dirs();
-  fs_opts.block_manager_type = cluster_->block_manager_type();
-
-  unique_ptr<FsManager> ret(new FsManager(Env::Default(), fs_opts));
-  RETURN_NOT_OK_PREPEND(ret->Open(),
-                        Substitute("Couldn't initialize FS Manager for $0", ets->wal_dir()));
-  fs->swap(ret);
-  return Status::OK();
-}
-
-Status LogVerifier::ScanForCommittedOpIds(FsManager* fs, const string& tablet_id,
+Status LogVerifier::ScanForCommittedOpIds(int ts_idx, const string& tablet_id,
                                           map<int64_t, int64_t>* index_to_term) {
 
   shared_ptr<LogReader> reader;
-  RETURN_NOT_OK(LogReader::Open(fs, scoped_refptr<log::LogIndex>(), tablet_id,
+  const string wal_dir = JoinPathSegments(inspector_->WalDirForTS(ts_idx), tablet_id);
+  RETURN_NOT_OK(LogReader::Open(env_, wal_dir, scoped_refptr<log::LogIndex>(), tablet_id,
                                 scoped_refptr<MetricEntity>(), &reader));
   log::SegmentSequence segs;
   RETURN_NOT_OK(reader->GetSegmentsSnapshot(&segs));
@@ -113,14 +100,13 @@ Status LogVerifier::ScanForCommittedOpIds(FsManager* fs, const string& tablet_id
   return Status::OK();
 }
 
-Status LogVerifier::ScanForHighestCommittedOpIdInLog(ExternalTabletServer* ets,
+Status LogVerifier::ScanForHighestCommittedOpIdInLog(int ts_idx,
                                                      const string& tablet_id,
                                                      OpId* commit_id) {
-  unique_ptr<FsManager> fs;
-  RETURN_NOT_OK(OpenFsManager(ets, &fs));
-  const string& wal_dir = fs->GetTabletWalDir(tablet_id);
+  const string& wal_dir = inspector_->WalDirForTS(ts_idx);
   map<int64_t, int64_t> index_to_term;
-  RETURN_NOT_OK_PREPEND(ScanForCommittedOpIds(fs.get(), tablet_id, &index_to_term),
+
+  RETURN_NOT_OK_PREPEND(ScanForCommittedOpIds(ts_idx, tablet_id, &index_to_term),
                         Substitute("Couldn't scan log in dir $0", wal_dir));
   if (index_to_term.empty()) {
     return Status::NotFound("no COMMITs in log");
@@ -131,10 +117,7 @@ Status LogVerifier::ScanForHighestCommittedOpIdInLog(ExternalTabletServer* ets,
 }
 
 Status LogVerifier::VerifyCommittedOpIdsMatch() {
-  ExternalMiniClusterFsInspector inspect(cluster_);
-  Env* env = Env::Default();
-
-  for (const string& tablet_id : inspect.ListTablets()) {
+  for (const string& tablet_id : inspector_->ListTablets()) {
     LOG(INFO) << "Checking tablet " << tablet_id;
 
     // Union set of the op indexes seen on any server.
@@ -145,12 +128,10 @@ Status LogVerifier::VerifyCommittedOpIdsMatch() {
     // Gather the [index->term] map for each of the tablet servers
     // hosting this tablet.
     for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-      unique_ptr<FsManager> fs;
-      RETURN_NOT_OK(OpenFsManager(cluster_->tablet_server(i), &fs));
-      const string& wal_dir = fs->GetTabletWalDir(tablet_id);
-      if (!env->FileExists(wal_dir)) continue;
+      const string& wal_dir = JoinPathSegments(inspector_->WalDirForTS(i), tablet_id);
+      if (!env_->FileExists(wal_dir)) continue;
       map<int64_t, int64_t> index_to_term;
-      RETURN_NOT_OK_PREPEND(ScanForCommittedOpIds(fs.get(), tablet_id, &index_to_term),
+      RETURN_NOT_OK_PREPEND(ScanForCommittedOpIds(i, tablet_id, &index_to_term),
                             Substitute("Couldn't scan log for TS $0", i));
       for (const auto& index_term : index_to_term) {
         all_op_indexes.insert(index_term.first);
@@ -179,7 +160,7 @@ Status LogVerifier::VerifyCommittedOpIdsMatch() {
           for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
             if (i != 0) err += ", ";
             strings::SubstituteAndAppend(&err, "T $0=$1",
-                                         cluster_->tablet_server(i)->uuid(),
+                                         cluster_->UuidForTS(i),
                                          committed_terms[i]);
           }
           err += "]";

@@ -43,6 +43,7 @@
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log.pb.h"
 #include "kudu/consensus/log_anchor_registry.h"
+#include "kudu/consensus/log_index.h"
 #include "kudu/consensus/log_reader.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/metadata.pb.h"
@@ -127,6 +128,7 @@ using consensus::WRITE_OP;
 using log::Log;
 using log::LogAnchorRegistry;
 using log::LogEntryPB;
+using log::LogIndex;
 using log::LogOptions;
 using log::LogReader;
 using log::ReadableLogSegment;
@@ -646,7 +648,7 @@ Status TabletBootstrap::PrepareRecoveryDir(bool* needs_recovery) {
     // Since we have a recovery directory, clear out the log_dir by recursively
     // deleting it and creating a new one so that we don't end up with remnants
     // of old WAL segments or indexes after replay.
-    if (fs_manager->env()->FileExists(log_dir)) {
+    if (fs_manager->Exists(log_dir)) {
       LOG_WITH_PREFIX(INFO) << "Deleting old log files from previous recovery attempt in "
                             << log_dir;
       RETURN_NOT_OK_PREPEND(fs_manager->env()->DeleteRecursively(log_dir),
@@ -696,13 +698,18 @@ Status TabletBootstrap::PrepareRecoveryDir(bool* needs_recovery) {
 }
 
 Status TabletBootstrap::OpenLogReaderInRecoveryDir() {
+  const string& tablet_id = tablet_->tablet_id();
+  FsManager* fs_manager = tablet_meta_->fs_manager();
   VLOG_WITH_PREFIX(1) << "Opening log reader in log recovery dir "
-                      << tablet_meta_->fs_manager()->GetTabletWalRecoveryDir(tablet_->tablet_id());
+                      << fs_manager->GetTabletWalRecoveryDir(tablet_id);
   // Open the reader.
-  RETURN_NOT_OK_PREPEND(LogReader::OpenFromRecoveryDir(tablet_->metadata()->fs_manager(),
-                                                       tablet_->metadata()->tablet_id(),
-                                                       tablet_->GetMetricEntity().get(),
-                                                       &log_reader_),
+  // Since we're recovering, we don't want to have any log index -- since it
+  // isn't fsynced() during writing, its contents are useless to us.
+  scoped_refptr<LogIndex> log_index(nullptr);
+  const string recovery_dir = fs_manager->GetTabletWalRecoveryDir(tablet_id);
+  RETURN_NOT_OK_PREPEND(LogReader::Open(fs_manager->env(), recovery_dir, log_index, tablet_id,
+                                        tablet_->GetMetricEntity().get(),
+                                        &log_reader_),
                         "Could not open LogReader. Reason");
   return Status::OK();
 }

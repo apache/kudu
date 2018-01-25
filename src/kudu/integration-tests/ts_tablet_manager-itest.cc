@@ -39,6 +39,7 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
+#include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
@@ -86,6 +87,7 @@ using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::tablet::TabletReplica;
 using kudu::tserver::MiniTabletServer;
+using kudu::ClusterVerifier;
 using std::map;
 using std::shared_ptr;
 using std::string;
@@ -213,28 +215,11 @@ TEST_P(FailedTabletsAreReplacedITest, OneReplica) {
     ASSERT_EQ(1, tablet_ids.size());
     tablet_id = tablet_ids[0];
   });
+  work.StopAndJoin();
 
   // Wait until all the replicas are running before failing one arbitrarily.
-  const auto wait_until_running = [&]() {
-    AssertEventually([&]{
-      auto num_replicas_running = 0;
-      for (auto idx = 0; idx < cluster_->num_tablet_servers(); ++idx) {
-        MiniTabletServer* ts = cluster_->mini_tablet_server(idx);
-        scoped_refptr<TabletReplica> replica;
-        Status s = ts->server()->tablet_manager()->GetTabletReplica(tablet_id, &replica);
-        if (s.IsNotFound()) {
-          continue;
-        }
-        ASSERT_OK(s);
-        if (tablet::RUNNING == replica->state()) {
-          ++num_replicas_running;
-        }
-      }
-      ASSERT_EQ(kNumReplicas, num_replicas_running);
-    }, MonoDelta::FromSeconds(60));
-    NO_PENDING_FATALS();
-  };
-  NO_FATALS(wait_until_running());
+  ClusterVerifier v(cluster_.get());
+  NO_FATALS(v.CheckCluster());
 
   {
     // Inject an error into one of replicas. Shutting it down will leave it in
@@ -251,8 +236,7 @@ TEST_P(FailedTabletsAreReplacedITest, OneReplica) {
   }
 
   // Ensure the tablet eventually is replicated.
-  NO_FATALS(wait_until_running());
-  work.StopAndJoin();
+  NO_FATALS(v.CheckCluster());
 }
 INSTANTIATE_TEST_CASE_P(,
                         FailedTabletsAreReplacedITest,
