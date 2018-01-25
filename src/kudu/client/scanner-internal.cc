@@ -430,7 +430,7 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
     ts_ = CHECK_NOTNULL(ts);
     proxy_ = ts_->proxy();
 
-    bool allow_time_for_failover = static_cast<int>(candidates.size()) - blacklist->size() > 1;
+    bool allow_time_for_failover = candidates.size() > blacklist->size() + 1;
     ScanRpcStatus scan_status = SendScanRpc(deadline, allow_time_for_failover);
     if (scan_status.result == ScanRpcStatus::OK) {
       last_error_ = Status::OK();
