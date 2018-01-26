@@ -23,22 +23,22 @@ ad-hoc index will be stored in a separate CFile.
 Despite the name, a CFile does not necessarily correspond one-to-one with a file
 in the filesystem. The mapping of CFiles to the filesystem is determined by the
 [BlockManager](../../src/kudu/fs/block_manager.h) abstraction. A CFile is
-written to a single BlockManager Block (not to be confused with cblocks, which
-are internal to CFiles, discussed below).
+written to a single BlockManager Block (not to be confused with CFile blocks,
+which are internal to CFiles, and discussed for the remainder of this document).
 
-A CFile is composed of a header, a variable number of cblocks, and a footer.
-There are a few different types of cblocks, each with a different format: data
-cblocks, nullable data cblocks, index cblocks, and dictionary cblocks.
+A CFile is composed of a header, a variable number of blocks, and a footer.
+There are a few different types of blocks, each with a different format: data
+blocks, nullable data blocks, index blocks, and dictionary blocks.
 
-Data cblocks consist of a sequence of consecutive values. Each value is assigned
-an ordinal index, or offset, which is unique within the CFile. Thus, a cblock
-can be identified within a CFile by the range of ordinal indexes it contains;
-for instance, the first three cblocks of a CFile might have the ordinal index
-ranges `[0, 55]`, `[56, 132]`, and `[133, 511]`.
+Data blocks consist of a sequence of consecutive values. Each value is assigned
+an ordinal index, or offset, which is unique within the CFile. Thus, a block can
+be identified within a CFile by the range of ordinal indexes it contains; for
+instance, the first three blocks of a CFile might have the ordinal index ranges
+`[0, 55]`, `[56, 132]`, and `[133, 511]`.
 
 In order to support efficient seeks to an arbitrary ordinal index within the
 CFile, a positional index may be included which contains a mapping of starting
-ordinal index to data cblock. See [CFile Index](#cfile-index) for more details.
+ordinal index to data block. See [CFile Index](#cfile-index) for more details.
 
 For CFiles which contain data in sorted order (for example, a CFile containing
 the Primary Key column), a value index may be created. The value index supports
@@ -47,7 +47,7 @@ efficiently seeking to an arbitrary value in the CFile. See
 
 ## File Format
 
-The CFile header, cblocks, and footer are written consecutively to the file
+The CFile header, blocks, and footer are written consecutively to the file
 without padding.
 
 ### Header Layout
@@ -83,7 +83,7 @@ CFile format. At the same time, two sets of feature flags were introduced to the
 footer in order to make more granular forwards compatibility possible in the
 future. See commit [`f82cf6918c`] for details.
 
-### Data cblock Layout
+### Data Block Layout
 
 | field | width (bytes) | notes |
 | --- | --- | --- |
@@ -93,9 +93,9 @@ future. See commit [`f82cf6918c`] for details.
 If the CFile is configured to use compression then the encoded data is
 compressed before the checksum is appended.
 
-### Nullable Data cblock Layout
+### Nullable Data Block Layout
 
-Columns marked as nullable in the schema are stored in a nullable cblock, which
+Columns marked as nullable in the schema are stored in a nullable block, which
 includes a bitmap which tracks which rows (ordinal offsets) are null and not
 null.
 
@@ -125,11 +125,11 @@ exist, the reader can optionally validate them against the read data.
 
 ## Data Encodings
 
-cblock data is encoded before being stored. If compression is enabled, then the
-cblock is encoded first, and then compressed.
+Block data is encoded before being stored. If compression is enabled, then the
+block is encoded first, and then compressed.
 
-Data cblocks are best-effort size limited to `--cfile-default-block-size` bytes, at
-which point a new cblock will be added to the CFile.
+Data blocks are best-effort size limited to `--cfile-default-block-size` bytes, at
+which point a new block will be added to the CFile.
 
 ### Plain Encoding
 
@@ -138,7 +138,7 @@ natural representation.
 
 Plain encoding for fixed-width (integer) types consists of the little-endian
 values, followed by a trailer containing two little-endian `uint32`s: the count
-of values, and the ordinal position of the cblock.
+of values, and the ordinal position of the block.
 
 Plain encoding for BINARY or STRING (variable-width) columns is laid out as
 follows:
@@ -153,15 +153,14 @@ follows:
 ### Dictionary Encoding
 
 [Dictionary encoding](dictionary-encoding) may be used for BINARY or STRING
-columns. All dictionary encoded cblocks in a CFile share the same dictionary.
-If the dictionary becomes full, subsequent cblocks in the CFile switch to plain
-encoding. The dictionary is stored as a plain encoded binary cblock, and the
-data codewords are stored as [bitshuffle encoded](#bitshuffle-encoding)
-`uint32`s.
+columns. All dictionary encoded blocks in a CFile share the same dictionary. If
+the dictionary becomes full, subsequent blocks in the CFile switch to plain
+encoding. The dictionary is stored as a plain encoded binary block, and the data
+codewords are stored as [bitshuffle encoded](#bitshuffle-encoding) `uint32`s.
 
 ### Prefix Encoding
 
-Currently used for `BINARY` and `STRING` data cblocks. This is based on the
+Currently used for `BINARY` and `STRING` data blocks. This is based on the
 encoding used by LevelDB for its data blocks, more or less.
 
 Starts with a header of four [Group Varint] encoded `uint32`s:
@@ -186,20 +185,20 @@ Periodically there will be a "restart point" which is necessary for faster
 binary searching. At a "restart point", `shared_bytes` is 0 but otherwise the
 encoding is the same.
 
-At the end of the cblock is a trailer with the offsets of the restart points:
+At the end of the block is a trailer with the offsets of the restart points:
 
 | field | type |
 | --- | --- |
 | `restart_points` | `uint32[num_restarts]` |
 | `num_restarts` | `uint32` |
 
-The restart points are offsets relative to the start of the cblock, including
-the header.
+The restart points are offsets relative to the start of the block, including the
+header.
 
 ### Run-length Encoding
 
 Integer and bool types may be [run-length encoded](RLE), which has a simply
-layout: the number of values and ordinal position of the cblock as little-endian
+layout: the number of values and ordinal position of the block as little-endian
 `uint32`s, followed by the run-length encoded data. The encoder will
 automatically fall back to a bit-packed (literal) encoding if the data is not
 conducive to run-length encoding.
@@ -207,7 +206,7 @@ conducive to run-length encoding.
 ### Bitshuffle Encoding
 
 Integer types may be [bitshuffle](bitshuffle) encoded. Bitshuffle-encoded
-cblocks are automatically LZ4 compressed, so additional compression is not
+blocks are automatically LZ4 compressed, so additional compression is not
 recommended.
 
 ### Group Varint Frame-of-Reference Encoding
@@ -225,8 +224,8 @@ Starts with a header of four [group-varint](group-varint) encoded `uint32`s:
 | unused |
 
 The ordinal position is the ordinal position of the first item in the file. For
-example, the first data cblock in the file has ordinal position 0. If that cblock
-had 400 values, then the second data cblock would have ordinal position
+example, the first data block in the file has ordinal position 0. If that block
+had 400 values, then the second data block would have ordinal position
 400.
 
 Followed by the actual data, each set of 4 integers using group-varint. The last
@@ -236,18 +235,18 @@ header.
 ## CFile Index
 
 CFiles may optionally include a positional (ordinal) index and value index.
-Positional indexes are used to satisfy queries such as: "seek to the data cblock
+Positional indexes are used to satisfy queries such as: "seek to the data block
 containing the Nth entry in this CFile". Value indexes are used to satisfy
-queries such as: "seek to the data cblock containing `123` in this CFile". Value
+queries such as: "seek to the data block containing `123` in this CFile". Value
 indexes are only present in CFiles which contain data stored in sorted order
 (e.g. the primary key column).
 
-Ordinal and value indices are organized as a [B-Tree] of index cblocks. As data
-cblocks are written, entries are appended to the end of a leaf index cblock.
-When a leaf index cblock reaches the configured index cblock size, it is added
-to another index cblock higher up the tree, and a new leaf is started.  If the
-intermediate index cblock fills, it will start a new intermediate cblock and
-spill into an even higher-layer internal cblock.
+Ordinal and value indices are organized as a [B-Tree] of index blocks. As data
+blocks are written, entries are appended to the end of a leaf index block.
+When a leaf index block reaches the configured index block size, it is added
+to another index block higher up the tree, and a new leaf is started.  If the
+intermediate index block fills, it will start a new intermediate block and
+spill into an even higher-layer internal block.
 
 For example:
 
@@ -271,32 +270,32 @@ Note that this strategy doesn't result in a fully balanced B-tree, but instead
 results in a 100% "fill factor" on all nodes in each level except for the last
 one written.
 
-An index cblock is encoded similarly for both types of indexes:
+An index block is encoded similarly for both types of indexes:
 
 ```
-<key> <cblock offset> <cblock size>
-<key> <cblock offset> <cblock size>
+<key> <block offset> <block size>
+<key> <block offset> <block size>
 ...
    key: vint64 for positional, otherwise varint-length-prefixed string
    offset: vint64
-   cblock size: vint32
+   block size: vint32
 
 <offset to first key>   (fixed32)
 <offset to second key>  (fixed32)
 ...
-   These offsets are relative to the start of the cblock.
+   These offsets are relative to the start of the block.
 
 <trailer>
    A IndexBlockTrailerPB protobuf
 <trailer length>
 ```
 
-Index cblocks are written using a [post-order traversal], and the index cblocks
-may intersperse with the data cblocks.
+Index blocks are written using a [post-order traversal], and the index blocks
+may intersperse with the data blocks.
 
-The trailer protobuf includes a field which designates whether the cblock is a
+The trailer protobuf includes a field which designates whether the block is a
 leaf node or internal node of the B-Tree, allowing a reader to know whether the
-pointer is to another index cblock or to a data cblock.
+pointer is to another index block or to a data block.
 
 ## DeltaFile
 

@@ -725,12 +725,12 @@ static void CopyColumn(const RowBlock& block, int col_idx, int dst_col_idx, uint
                        faststring* indirect_data, const Schema* dst_schema, size_t row_stride,
                        size_t schema_byte_size, size_t column_offset) {
   DCHECK(dst_schema);
-  ColumnBlock cblock = block.column_block(col_idx);
+  ColumnBlock column_block = block.column_block(col_idx);
   uint8_t* dst = dst_base + column_offset;
   size_t offset_to_null_bitmap = schema_byte_size - column_offset;
 
-  size_t cell_size = cblock.stride();
-  const uint8_t* src = cblock.cell_ptr(0);
+  size_t cell_size = column_block.stride();
+  const uint8_t* src = column_block.cell_ptr(0);
 
   BitmapIterator selected_row_iter(block.selection_vector()->bitmap(), block.nrows());
   int run_size;
@@ -743,7 +743,7 @@ static void CopyColumn(const RowBlock& block, int col_idx, int dst_col_idx, uint
       continue;
     }
     for (int i = 0; i < run_size; i++) {
-      if (IS_NULLABLE && cblock.is_null(row_idx)) {
+      if (IS_NULLABLE && column_block.is_null(row_idx)) {
         BitmapChange(dst + offset_to_null_bitmap, dst_col_idx, true);
       } else if (IS_VARLEN) {
         const Slice *slice = reinterpret_cast<const Slice *>(src);

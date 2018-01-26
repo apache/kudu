@@ -107,7 +107,7 @@ DeltaFileWriter::DeltaFileWriter(unique_ptr<WritableBlock> block)
 
   // The CFile value index is 'compressed' by truncating delta values to only
   // contain the delta key. The entire deltakey is required in order to support
-  // efficient seeks without deserializing the entire cblock. The generic value
+  // efficient seeks without deserializing the entire block. The generic value
   // index optimization is disabled, since it could truncate portions of the
   // deltakey.
   //

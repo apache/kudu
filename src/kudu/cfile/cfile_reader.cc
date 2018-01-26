@@ -685,7 +685,7 @@ Status CFileIterator::SeekToOrdinal(rowid_t ord_idx) {
 
     prepared_blocks_.push_back(b);
   } else {
-    // Otherwise, prepare a new cblock to scan.
+    // Otherwise, prepare a new block to scan.
     RETURN_NOT_OK(PrepareForNewSeek());
     if (PREDICT_FALSE(posidx_iter_ == nullptr)) {
       return Status::NotSupported("no positional index in file");
@@ -940,7 +940,7 @@ Status CFileIterator::ReadCurrentDataBlock(const IndexTreeIterator &idx_iter,
   }
 
   io_stats_.cells_read += num_rows_in_block;
-  io_stats_.cblocks_read++;
+  io_stats_.blocks_read++;
   io_stats_.bytes_read += data_block.size();
 
   prep_block->idx_in_block_ = 0;

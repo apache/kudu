@@ -35,7 +35,7 @@ struct IteratorStats {
   int64_t bytes_read;
 
   // The number of CFile data blocks read from disk (or cache) by the iterator.
-  int64_t cblocks_read;
+  int64_t blocks_read;
 
   // Add statistics contained 'other' to this object (for each field
   // in this object, increment it by the value of the equivalent field

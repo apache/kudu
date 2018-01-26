@@ -160,7 +160,7 @@ class TabletPushdownTest : public KuduTabletTest,
       vector<IteratorStats> stats;
       iter->GetIteratorStats(&stats);
       for (const IteratorStats& col_stats : stats) {
-        EXPECT_EQ(expected_blocks_from_disk, col_stats.cblocks_read);
+        EXPECT_EQ(expected_blocks_from_disk, col_stats.blocks_read);
         EXPECT_EQ(expected_rows_from_disk, col_stats.cells_read);
       }
     }
@@ -257,7 +257,7 @@ class TabletSparsePushdownTest : public KuduTabletTest {
 };
 
 // The is a regression test for KUDU-2231, which fixed a CFileReader bug causing
-// cblocks to be repeatedly materialized when a scan had predicates on other
+// blocks to be repeatedly materialized when a scan had predicates on other
 // columns which caused sections of a column to be skipped. The setup for this
 // test creates a dataset and predicate which only match every-other batch of
 // 100 rows of the 'val' column.
@@ -283,8 +283,8 @@ TEST_F(TabletSparsePushdownTest, Kudu2231) {
   iter->GetIteratorStats(&stats);
 
   ASSERT_EQ(2, stats.size());
-  EXPECT_EQ(1, stats[0].cblocks_read);
-  EXPECT_EQ(1, stats[1].cblocks_read);
+  EXPECT_EQ(1, stats[0].blocks_read);
+  EXPECT_EQ(1, stats[1].blocks_read);
 
   EXPECT_EQ(400, stats[0].cells_read);
   EXPECT_EQ(400, stats[1].cells_read);

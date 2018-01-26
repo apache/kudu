@@ -555,11 +555,11 @@ void IteratorStatsToJson(const ScanDescriptor& scan, EasyJson* json) {
 
     row["bytes_read"] = HumanReadableNumBytes::ToString(stats.bytes_read);
     row["cells_read"] = HumanReadableInt::ToString(stats.cells_read);
-    row["cblocks_read"] = HumanReadableInt::ToString(stats.cblocks_read);
+    row["blocks_read"] = HumanReadableInt::ToString(stats.blocks_read);
 
     row["bytes_read_title"] = stats.bytes_read;
     row["cells_read_title"] = stats.cells_read;
-    row["cblocks_read_title"] = stats.cblocks_read;
+    row["blocks_read_title"] = stats.blocks_read;
   };
 
   IteratorStats total_stats;
