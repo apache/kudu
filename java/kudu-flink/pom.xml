@@ -17,7 +17,7 @@
     <properties>
         <flink.version>1.4.0</flink.version>
         <scala.version>2.11</scala.version>
-        <datatype.version>0.1-SNAPSHOT</datatype.version>
+        <datatype.version>0.1</datatype.version>
         <junit.version>4.12</junit.version>
     </properties>
 
