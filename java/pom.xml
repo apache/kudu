@@ -111,6 +111,7 @@
         <module>kudu-mapreduce</module>
         <module>kudu-spark-tools</module>
         <module>kudu-spark</module>
+        <module>kudu-flink</module>
     </modules>
 
     <build>
