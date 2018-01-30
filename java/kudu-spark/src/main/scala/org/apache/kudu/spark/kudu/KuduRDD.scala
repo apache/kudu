@@ -62,8 +62,16 @@ class KuduRDD private[kudu] (val kuduContext: KuduContext,
     val tokens = builder.build().asScala
     tokens.zipWithIndex.map {
       case (token, index) =>
-        new KuduPartition(index, token.serialize(),
-                          token.getTablet.getReplicas.asScala.map(_.getRpcHost).toArray)
+        // Only list the leader replica as the preferred location if
+        // replica selection policy is leader only, to take advantage
+        // of scan locality.
+        var locations: Array[String] = null
+        if (scanLocality == ReplicaSelection.LEADER_ONLY) {
+          locations = Array(token.getTablet.getLeaderReplica.getRpcHost)
+        } else {
+          locations = token.getTablet.getReplicas.asScala.map(_.getRpcHost).toArray
+        }
+        new KuduPartition(index, token.serialize(), locations)
     }.toArray
   }
 

@@ -71,7 +71,7 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider
     val operationType = getOperationType(parameters.getOrElse(OPERATION, "upsert"))
     val faultTolerantScanner = Try(parameters.getOrElse(FAULT_TOLERANT_SCANNER, "false").toBoolean)
       .getOrElse(false)
-    val scanLocality = getScanLocalityType(parameters.getOrElse(SCAN_LOCALITY, "leader_only"))
+    val scanLocality = getScanLocalityType(parameters.getOrElse(SCAN_LOCALITY, "closest_replica"))
 
     new KuduRelation(tableName, kuduMaster, faultTolerantScanner,
       scanLocality, operationType, None)(sqlContext)
@@ -107,7 +107,7 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider
     val operationType = getOperationType(parameters.getOrElse(OPERATION, "upsert"))
     val faultTolerantScanner = Try(parameters.getOrElse(FAULT_TOLERANT_SCANNER, "false").toBoolean)
       .getOrElse(false)
-    val scanLocality = getScanLocalityType(parameters.getOrElse(SCAN_LOCALITY, "leader_only"))
+    val scanLocality = getScanLocalityType(parameters.getOrElse(SCAN_LOCALITY, "closest_replica"))
 
     new KuduRelation(tableName, kuduMaster, faultTolerantScanner,
       scanLocality, operationType, Some(schema))(sqlContext)
