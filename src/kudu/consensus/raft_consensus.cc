@@ -789,15 +789,11 @@ void RaftConsensus::NotifyFailedFollower(const string& uuid,
               LogPrefixThreadSafe() + "Unable to start TryRemoveFollowerTask");
 }
 
-void RaftConsensus::NotifyPeerToPromote(const std::string& peer_uuid,
-                                        int64_t term,
-                                        int64_t committed_config_opid_index) {
+void RaftConsensus::NotifyPeerToPromote(const std::string& peer_uuid) {
   // Run the config change on the raft thread pool.
   WARN_NOT_OK(raft_pool_token_->SubmitFunc(std::bind(&RaftConsensus::TryPromoteNonVoterTask,
                                                      shared_from_this(),
-                                                     peer_uuid,
-                                                     term,
-                                                     committed_config_opid_index)),
+                                                     peer_uuid)),
               LogPrefixThreadSafe() + "Unable to start TryPromoteNonVoterTask");
 
 }
@@ -821,38 +817,40 @@ void RaftConsensus::TryRemoveFollowerTask(const string& uuid,
               LogPrefixThreadSafe() + "Unable to remove follower " + uuid);
 }
 
-void RaftConsensus::TryPromoteNonVoterTask(const std::string& peer_uuid,
-                                           int64_t term,
-                                           int64_t committed_config_opid_index) {
+void RaftConsensus::TryPromoteNonVoterTask(const std::string& peer_uuid) {
   string msg = Substitute("attempt to promote peer $0: ", peer_uuid);
+  int64_t current_committed_config_index;
   {
     ThreadRestrictions::AssertWaitAllowed();
     LockGuard l(lock_);
-    int64_t current_term = CurrentTermUnlocked();
-    if (term != current_term) {
-      LOG_WITH_PREFIX_UNLOCKED(INFO) << msg << "requested in "
-                                     << "previous term " << term
-                                     << ", but a leader election "
-                                     << "likely occurred since then. Doing nothing.";
+
+    if (cmeta_->has_pending_config()) {
+     LOG_WITH_PREFIX_UNLOCKED(INFO) << msg << "there is already a config change operation "
+                                     << "in progress. Unable to promote follower until it "
+                                     << "completes. Doing nothing.";
       return;
     }
 
-    int64_t current_committed_config_opid_index =
-        cmeta_->GetConfigOpIdIndex(COMMITTED_CONFIG);
-    if (committed_config_opid_index != current_committed_config_opid_index) {
-      LOG_WITH_PREFIX_UNLOCKED(INFO) << msg << "notified when "
-                                     << "committed config had opid index "
-                                     << committed_config_opid_index << ", but now "
-                                     << "the committed config has opid index "
-                                     << current_committed_config_opid_index
+    // Check if the peer is still part of the current committed config.
+    RaftConfigPB committed_config = cmeta_->CommittedConfig();
+    current_committed_config_index = committed_config.opid_index();
+
+    RaftPeerPB* peer_pb;
+    Status s = GetRaftConfigMember(&committed_config, peer_uuid, &peer_pb);
+    if (!s.ok()) {
+      LOG_WITH_PREFIX_UNLOCKED(INFO) << msg << "can't find peer in the "
+                                     << "current committed config: "
+                                     << committed_config.ShortDebugString()
                                      << ". Doing nothing.";
       return;
     }
 
-    if (cmeta_->has_pending_config()) {
-      LOG_WITH_PREFIX_UNLOCKED(INFO) << msg << "there is already a config change operation "
-                                     << "in progress. Unable to promote follower until it "
-                                     << "completes. Doing nothing.";
+    // Also check if the peer it still a NON_VOTER waiting for promotion.
+    if (peer_pb->member_type() != RaftPeerPB::NON_VOTER || !peer_pb->attrs().promote()) {
+      LOG_WITH_PREFIX_UNLOCKED(INFO) << msg << "peer is either no longer a NON_VOTER "
+                                     << "or not marked for promotion anymore. Current "
+                                     << "config: " << committed_config.ShortDebugString()
+                                     << ". Doing nothing.";
       return;
     }
   }
@@ -863,7 +861,7 @@ void RaftConsensus::TryPromoteNonVoterTask(const std::string& peer_uuid,
   req.mutable_server()->set_permanent_uuid(peer_uuid);
   req.mutable_server()->set_member_type(RaftPeerPB::VOTER);
   req.mutable_server()->mutable_attrs()->set_promote(false);
-  req.set_cas_config_opid_index(committed_config_opid_index);
+  req.set_cas_config_opid_index(current_committed_config_index);
   LOG(INFO) << LogPrefixThreadSafe() << "attempting to promote NON_VOTER "
             << peer_uuid << " to VOTER";
   boost::optional<TabletServerErrorPB::Code> error_code;

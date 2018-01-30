@@ -972,14 +972,7 @@ void PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
           //
           // TODO(mpercy): Should we introduce a function SafeToPromote() that
           // does the same calculation as SafeToEvict() but for adding a VOTER?
-          //
-          // Note: we can pass in the active config's 'opid_index' as the
-          // committed config's opid_index because if we're in the middle of a
-          // config change, this requested config change will be rejected
-          // anyway.
-          NotifyObserversOfPeerToPromote(peer->uuid(),
-                                         queue_state_.current_term,
-                                         queue_state_.active_config->opid_index());
+          NotifyObserversOfPeerToPromote(peer->uuid());
         }
       }
 
@@ -1303,13 +1296,11 @@ void PeerMessageQueue::NotifyObserversOfFailedFollower(const string& uuid,
       LogPrefixUnlocked() + "Unable to notify RaftConsensus of abandoned follower.");
 }
 
-void PeerMessageQueue::NotifyObserversOfPeerToPromote(const string& peer_uuid,
-                                                      int64_t term,
-                                                      int64_t committed_config_opid_index) {
+void PeerMessageQueue::NotifyObserversOfPeerToPromote(const string& peer_uuid) {
   WARN_NOT_OK(raft_pool_observers_token_->SubmitClosure(
       Bind(&PeerMessageQueue::NotifyObserversTask, Unretained(this),
            [=](PeerMessageQueueObserver* observer) {
-             observer->NotifyPeerToPromote(peer_uuid, term, committed_config_opid_index);
+             observer->NotifyPeerToPromote(peer_uuid);
            })),
       LogPrefixUnlocked() + "Unable to notify RaftConsensus of peer to promote.");
 }
