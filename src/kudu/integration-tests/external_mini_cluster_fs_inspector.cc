@@ -29,6 +29,7 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/util/env.h"
+#include "kudu/util/env_util.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
@@ -42,6 +43,7 @@ using std::string;
 using std::vector;
 using cluster::ExternalMiniCluster;
 using consensus::ConsensusMetadataPB;
+using env_util::ListFilesInDir;
 using strings::Substitute;
 using tablet::TabletDataState;
 using tablet::TabletSuperBlockPB;
@@ -53,24 +55,10 @@ ExternalMiniClusterFsInspector::ExternalMiniClusterFsInspector(ExternalMiniClust
 
 ExternalMiniClusterFsInspector::~ExternalMiniClusterFsInspector() {}
 
-Status ExternalMiniClusterFsInspector::ListFilesInDir(const string& path,
-                                                      vector<string>* entries) {
-  RETURN_NOT_OK(env_->GetChildren(path, entries));
-  auto iter = entries->begin();
-  while (iter != entries->end()) {
-    if (*iter == "." || *iter == ".." || iter->find(kTmpInfix) != string::npos) {
-      iter = entries->erase(iter);
-      continue;
-    }
-    ++iter;
-  }
-  return Status::OK();
-}
-
 int ExternalMiniClusterFsInspector::CountFilesInDir(const string& path,
                                                     StringPiece pattern) {
   vector<string> entries;
-  Status s = ListFilesInDir(path, &entries);
+  Status s = ListFilesInDir(env_, path, &entries);
   if (!s.ok()) return 0;
   return std::count_if(entries.begin(), entries.end(), [&](const string& s) {
       return pattern.empty() || MatchPattern(s, pattern);
@@ -81,7 +69,7 @@ int ExternalMiniClusterFsInspector::CountWALFilesOnTS(int index) {
   string ts_wal_dir = JoinPathSegments(cluster_->tablet_server(index)->wal_dir(),
                                        FsManager::kWalDirName);
   vector<string> tablets;
-  CHECK_OK(ListFilesInDir(ts_wal_dir, &tablets));
+  CHECK_OK(ListFilesInDir(env_, ts_wal_dir, &tablets));
   int total_segments = 0;
   for (const string& tablet : tablets) {
     string tablet_wal_dir = JoinPathSegments(ts_wal_dir, tablet);
@@ -103,7 +91,7 @@ vector<string> ExternalMiniClusterFsInspector::ListTabletsOnTS(int index) {
   string data_dir = cluster_->tablet_server(index)->data_dirs()[0];
   string meta_dir = JoinPathSegments(data_dir, FsManager::kTabletMetadataDirName);
   vector<string> tablets;
-  CHECK_OK(ListFilesInDir(meta_dir, &tablets));
+  CHECK_OK(ListFilesInDir(env_, meta_dir, &tablets));
   return tablets;
 }
 
@@ -111,7 +99,7 @@ vector<string> ExternalMiniClusterFsInspector::ListTabletsWithDataOnTS(int index
   string wal_dir = JoinPathSegments(cluster_->tablet_server(index)->wal_dir(),
                                     FsManager::kWalDirName);
   vector<string> tablets;
-  CHECK_OK(ListFilesInDir(wal_dir, &tablets));
+  CHECK_OK(ListFilesInDir(env_, wal_dir, &tablets));
   return tablets;
 }
 
@@ -342,7 +330,7 @@ Status ExternalMiniClusterFsInspector::WaitForFilePatternInTabletWalDirOnTs(
   string error_msg;
   vector<string> entries;
   while (true) {
-    Status s = ListFilesInDir(tablet_wal_dir, &entries);
+    Status s = ListFilesInDir(env_, tablet_wal_dir, &entries);
     std::sort(entries.begin(), entries.end());
 
     error_msg = "";

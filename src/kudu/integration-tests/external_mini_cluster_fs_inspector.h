@@ -49,8 +49,6 @@ class ExternalMiniClusterFsInspector {
   explicit ExternalMiniClusterFsInspector(cluster::ExternalMiniCluster* cluster);
   ~ExternalMiniClusterFsInspector();
 
-  Status ListFilesInDir(const std::string& path, std::vector<std::string>* entries);
-
   // If provided, files are filtered by the glob-style pattern 'pattern'.
   int CountFilesInDir(const std::string& path, StringPiece pattern = StringPiece());
 
