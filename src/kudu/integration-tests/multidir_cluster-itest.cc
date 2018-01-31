@@ -26,11 +26,10 @@
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
-#include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
+#include "kudu/util/env_util.h"
 #include "kudu/util/path_util.h"
-#include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
@@ -38,6 +37,7 @@ namespace kudu {
 
 using cluster::ExternalMiniClusterOptions;
 using cluster::ExternalTabletServer;
+using env_util::ListFilesInDir;
 using std::map;
 using std::string;
 using std::vector;
@@ -74,7 +74,7 @@ TEST_F(MultiDirClusterITest, TestBasicMultiDirCluster) {
   for (const string& data_dir : ts->data_dirs()) {
     string data_path = JoinPathSegments(data_dir, "data");
     vector<string> files;
-    ASSERT_OK(inspect_->ListFilesInDir(data_path, &files));
+    ASSERT_OK(ListFilesInDir(env_, data_path, &files));
     InsertOrDie(&num_files_in_each_dir, data_dir, files.size());
   }
 
@@ -85,7 +85,7 @@ TEST_F(MultiDirClusterITest, TestBasicMultiDirCluster) {
     for (const string& data_dir : ts->data_dirs()) {
       string data_path = JoinPathSegments(data_dir, "data");
       vector<string> files;
-      inspect_->ListFilesInDir(data_path, &files);
+      ListFilesInDir(env_, data_path, &files);
       int* num_files_before_insert = FindOrNull(num_files_in_each_dir, data_dir);
       ASSERT_NE(nullptr, num_files_before_insert);
       if (*num_files_before_insert < files.size()) {
@@ -96,7 +96,7 @@ TEST_F(MultiDirClusterITest, TestBasicMultiDirCluster) {
     // data written to it.
     ASSERT_GT(num_dirs_added_to, 1);
     vector<string> wal_files;
-    ASSERT_OK(inspect_->ListFilesInDir(JoinPathSegments(ts->wal_dir(), "wals"), &wal_files));
+    ASSERT_OK(ListFilesInDir(env_, JoinPathSegments(ts->wal_dir(), "wals"), &wal_files));
     ASSERT_FALSE(wal_files.empty());
   });
   work.StopAndJoin();

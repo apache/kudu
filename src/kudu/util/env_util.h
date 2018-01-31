@@ -101,6 +101,11 @@ Status SyncAllParentDirs(Env* env,
                          const std::vector<std::string>& dirs,
                          const std::vector<std::string>& files);
 
+// Return a list of files within the given 'path'.
+Status ListFilesInDir(Env* env,
+                      const std::string& path,
+                      std::vector<std::string>* entries);
+
 } // namespace env_util
 } // namespace kudu
 

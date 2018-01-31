@@ -301,5 +301,20 @@ Status SyncAllParentDirs(Env* env,
   return Status::OK();
 }
 
+Status ListFilesInDir(Env* env,
+                      const string& path,
+                      vector<string>* entries) {
+  RETURN_NOT_OK(env->GetChildren(path, entries));
+  auto iter = entries->begin();
+  while (iter != entries->end()) {
+    if (*iter == "." || *iter == ".." || iter->find(kTmpInfix) != string::npos) {
+      iter = entries->erase(iter);
+      continue;
+    }
+    ++iter;
+  }
+  return Status::OK();
+}
+
 } // namespace env_util
 } // namespace kudu
