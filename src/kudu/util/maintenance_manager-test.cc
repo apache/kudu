@@ -21,6 +21,7 @@
 #include <mutex>
 #include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <boost/bind.hpp> // IWYU pragma: keep
@@ -284,22 +285,30 @@ TEST_F(MaintenanceManagerTest, TestLogRetentionPrioritization) {
   manager_->RegisterOp(&op3);
 
   // We want to do the low IO op first since it clears up some log retention.
-  ASSERT_EQ(&op1, manager_->FindBestOp());
+  auto op_and_why = manager_->FindBestOp();
+  ASSERT_EQ(&op1, op_and_why.first);
+  EXPECT_EQ(op_and_why.second, "free 104857600 bytes of WAL");
 
   manager_->UnregisterOp(&op1);
 
   // Low IO is taken care of, now we find the op that clears the most log retention and ram.
   // However, with the default settings, we won't bother running any of these operations
   // which only retain 100MB of logs.
-  ASSERT_EQ(nullptr, manager_->FindBestOp());
+  op_and_why = manager_->FindBestOp();
+  ASSERT_EQ(nullptr, op_and_why.first);
+  EXPECT_EQ(op_and_why.second, "no ops with positive improvement");
 
   // If we change the target WAL size, we will select these ops.
   FLAGS_log_target_replay_size_mb = 50;
-  ASSERT_EQ(&op3, manager_->FindBestOp());
+  op_and_why = manager_->FindBestOp();
+  ASSERT_EQ(&op3, op_and_why.first);
+  EXPECT_EQ(op_and_why.second, "104857600 bytes log retention");
 
   manager_->UnregisterOp(&op3);
 
-  ASSERT_EQ(&op2, manager_->FindBestOp());
+  op_and_why = manager_->FindBestOp();
+  ASSERT_EQ(&op2, op_and_why.first);
+  EXPECT_EQ(op_and_why.second, "104857600 bytes log retention");
 
   manager_->UnregisterOp(&op2);
 }

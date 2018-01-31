@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 //
-// This header defines the following macro:
+// This header defines the following macros:
 //
 // VLOG_AND_TRACE(category, vlevel)
 //
@@ -39,6 +39,12 @@
 //   either trace recording or VLOG(n) is enabled. In the case that both are enabled,
 //   the arguments are only evaluated once.
 //
+//
+// LOG_AND_TRACE(category, severity)
+//
+//   Same as the above, but always logs at the given severity level in addition
+//   to writing to the trace buffer.
+
 #ifndef KUDU_DEBUG_TRACE_LOGGING_H
 #define KUDU_DEBUG_TRACE_LOGGING_H
 
@@ -56,23 +62,31 @@
 //   of the ternary expression and the log stream on the other. This technique is
 //   cribbed from glog/logging.h.
 #define VLOG_AND_TRACE_INTERNAL(category, vlevel) \
-  kudu::debug::TraceVLog(__FILE__, __LINE__, category, VLOG_IS_ON(vlevel)).stream()
+  kudu::debug::TraceGLog(__FILE__, __LINE__, category, google::GLOG_INFO, \
+                         /* send_to_log= */VLOG_IS_ON(vlevel)).stream()
+
 #define VLOG_AND_TRACE(category, vlevel)                              \
   !( {                                                                \
       bool enabled;                                                   \
       TRACE_EVENT_CATEGORY_GROUP_ENABLED(category, &enabled);         \
       enabled || VLOG_IS_ON(vlevel);                                  \
     } ) ? static_cast<void>(0) :                                      \
-          google::LogMessageVoidify() & VLOG_AND_TRACE_INTERNAL(category, vlevel)
+          google::LogMessageVoidify() & VLOG_AND_TRACE_INTERNAL(category, vlevel) // NOLINT(*)
+
+
+#define LOG_AND_TRACE(category, severity) \
+  kudu::debug::TraceGLog(__FILE__, __LINE__, category, \
+                        google::GLOG_ ## severity, /* send_to_log= */true).stream()
 
 namespace kudu {
 namespace debug {
 
-class TraceVLog {
+class TraceGLog {
  public:
-  TraceVLog(const char* file, int line, const char* category, bool do_vlog)
+  TraceGLog(const char* file, int line, const char* category,
+           google::LogSeverity severity, bool send_to_log)
     : sink_(category),
-      google_msg_(file, line, google::GLOG_INFO, &sink_, do_vlog) {
+      google_msg_(file, line, severity, &sink_, send_to_log) {
   }
 
   std::ostream& stream() {

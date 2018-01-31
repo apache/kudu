@@ -17,12 +17,14 @@
 
 #include "kudu/util/maintenance_manager.h"
 
+#include <cinttypes>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <type_traits>
 #include <utility>
 
 #include <boost/bind.hpp>
@@ -47,7 +49,7 @@
 #include "kudu/util/trace.h"
 
 using std::pair;
-using std::shared_ptr;
+using std::string;
 using strings::Substitute;
 
 DEFINE_int32(maintenance_manager_num_threads, 1,
@@ -269,7 +271,10 @@ void MaintenanceManager::RunSchedulerThread() {
     }
 
     // Find the best op.
-    MaintenanceOp* op = FindBestOp();
+    pair<MaintenanceOp*, string> op_and_note = FindBestOp();
+    auto* op = op_and_note.first;
+    const auto& note = op_and_note.second;
+
     // If we found no work to do, then we should sleep before trying again to schedule.
     // Otherwise, we can go right into trying to find the next op.
     prev_iter_found_no_work = (op == nullptr);
@@ -294,9 +299,11 @@ void MaintenanceManager::RunSchedulerThread() {
       continue;
     }
 
+    LOG_AND_TRACE("maintenance", INFO) << LogPrefix() << "Scheduling "
+                                       << op->name() << ": " << note;
     // Run the maintenance operation.
     Status s = thread_pool_->SubmitFunc(boost::bind(
-          &MaintenanceManager::LaunchOp, this, op));
+        &MaintenanceManager::LaunchOp, this, op));
     CHECK(s.ok());
   }
 }
@@ -321,14 +328,12 @@ void MaintenanceManager::RunSchedulerThread() {
 // sliding priority between log retention and RAM usage. For example, is an Op that frees
 // 128MB of log retention and 12MB of RAM always better than an op that frees 12MB of log retention
 // and 128MB of RAM? Maybe a more holistic approach would be better.
-MaintenanceOp* MaintenanceManager::FindBestOp() {
+pair<MaintenanceOp*, string> MaintenanceManager::FindBestOp() {
   TRACE_EVENT0("maintenance", "MaintenanceManager::FindBestOp");
 
   size_t free_threads = num_threads_ - running_ops_;
   if (free_threads == 0) {
-    VLOG_AND_TRACE("maintenance", 1) << LogPrefix()
-                                     << "There are no free threads, so we can't run anything.";
-    return nullptr;
+    return {nullptr, "no free threads"};
   }
 
   int64_t low_io_most_logs_retained_bytes = 0;
@@ -396,12 +401,8 @@ MaintenanceOp* MaintenanceManager::FindBestOp() {
   // Look at ops that we can run quickly that free up log retention.
   if (low_io_most_logs_retained_bytes_op) {
     if (low_io_most_logs_retained_bytes > 0) {
-      VLOG_AND_TRACE("maintenance", 1) << LogPrefix()
-                    << "Performing " << low_io_most_logs_retained_bytes_op->name() << ", "
-                    << "because it can free up more logs "
-                    << "at " << low_io_most_logs_retained_bytes
-                    << " bytes with a low IO cost";
-      return low_io_most_logs_retained_bytes_op;
+      string notes = Substitute("free $0 bytes of WAL", low_io_most_logs_retained_bytes);
+      return {low_io_most_logs_retained_bytes_op, std::move(notes)};
     }
   }
 
@@ -410,25 +411,22 @@ MaintenanceOp* MaintenanceManager::FindBestOp() {
   double capacity_pct;
   if (memory_pressure_func_(&capacity_pct)) {
     if (!most_mem_anchored_op) {
-      std::string msg = StringPrintf("we have exceeded our soft memory limit "
-          "(current capacity is %.2f%%).  However, there are no ops currently "
+      std::string msg = StringPrintf("System under memory pressure "
+          "(%.2f%% of limit used). However, there are no ops currently "
           "runnable which would free memory.", capacity_pct);
       LOG_WITH_PREFIX(INFO) << msg;
-      return nullptr;
+      return {nullptr, msg};
     }
-    VLOG_AND_TRACE("maintenance", 1) << LogPrefix() << "We have exceeded our soft memory limit "
-            << "(current capacity is " << capacity_pct << "%).  Running the op "
-            << "which anchors the most memory: " << most_mem_anchored_op->name();
-    return most_mem_anchored_op;
+    string note = StringPrintf("under memory pressure (%.2f%% used, "
+                               "can flush %" PRIu64 " bytes)",
+                               capacity_pct, most_mem_anchored);
+    return {most_mem_anchored_op, std::move(note)};
   }
 
   if (most_logs_retained_bytes_op &&
       most_logs_retained_bytes / 1024 / 1024 >= FLAGS_log_target_replay_size_mb) {
-    VLOG_AND_TRACE("maintenance", 1) << LogPrefix()
-            << "Performing " << most_logs_retained_bytes_op->name() << ", "
-            << "because it can free up more logs (" << most_logs_retained_bytes
-            << " bytes)";
-    return most_logs_retained_bytes_op;
+    string note = Substitute("$0 bytes log retention", most_logs_retained_bytes);
+    return {most_logs_retained_bytes_op, std::move(note)};
   }
 
   // Look at ops that we can run quickly that free up data on disk.
@@ -436,23 +434,17 @@ MaintenanceOp* MaintenanceManager::FindBestOp() {
       most_data_retained_bytes > FLAGS_data_gc_min_size_mb * 1024 * 1024) {
     if (!best_perf_improvement_op || best_perf_improvement <= 0 ||
         rand_.NextDoubleFraction() <= FLAGS_data_gc_prioritization_prob) {
-      VLOG_AND_TRACE("maintenance", 1) << LogPrefix()
-                    << "Performing " << most_data_retained_bytes_op->name() << ", "
-                    << "because it can free up more data "
-                    << "at " << most_data_retained_bytes << " bytes";
-      return most_data_retained_bytes_op;
+      string note = Substitute("$0 bytes on disk", most_data_retained_bytes);
+      return {most_data_retained_bytes_op, std::move(note)};
     }
     VLOG(1) << "Skipping data GC due to prioritizing perf improvement";
   }
 
   if (best_perf_improvement_op && best_perf_improvement > 0) {
-    VLOG_AND_TRACE("maintenance", 1) << LogPrefix() << "Performing "
-                << best_perf_improvement_op->name() << ", "
-                << "because it had the best perf_improvement score, "
-                << "at " << best_perf_improvement;
-    return best_perf_improvement_op;
+    string note = StringPrintf("perf score=%.6f", best_perf_improvement);
+    return {best_perf_improvement_op, std::move(note)};
   }
-  return nullptr;
+  return {nullptr, "no ops with positive improvement"};
 }
 
 void MaintenanceManager::LaunchOp(MaintenanceOp* op) {
@@ -488,19 +480,26 @@ void MaintenanceManager::LaunchOp(MaintenanceOp* op) {
   });
 
   scoped_refptr<Trace> trace(new Trace);
-  LOG_TIMING(INFO, Substitute("running $0", op->name())) {
+  Stopwatch sw;
+  sw.start();
+  {
     ADOPT_TRACE(trace.get());
     TRACE_EVENT1("maintenance", "MaintenanceManager::LaunchOp",
                  "name", op->name());
     op->Perform();
+    sw.stop();
   }
-  LOG_WITH_PREFIX(INFO) << op->name() << " metrics: " << trace->MetricsAsJSON();
+  LOG_WITH_PREFIX(INFO) << op->name() << " complete. "
+                        << "Timing: " << sw.elapsed().ToString()
+                        << " Metrics: " << trace->MetricsAsJSON();
 }
 
 void MaintenanceManager::GetMaintenanceManagerStatusDump(MaintenanceManagerStatusPB* out_pb) {
   DCHECK(out_pb != nullptr);
   std::lock_guard<Mutex> guard(lock_);
-  MaintenanceOp* best_op = FindBestOp();
+  pair<MaintenanceOp*, string> best_op_and_why = FindBestOp();
+  auto* best_op = best_op_and_why.first;
+
   for (MaintenanceManager::OpMapTy::value_type& val : ops_) {
     MaintenanceManagerStatusPB_MaintenanceOpPB* op_pb = out_pb->add_registered_operations();
     MaintenanceOp* op(val.first);

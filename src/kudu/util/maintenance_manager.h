@@ -308,8 +308,11 @@ class MaintenanceManager : public std::enable_shared_from_this<MaintenanceManage
 
   void RunSchedulerThread();
 
-  // find the best op, or null if there is nothing we want to run
-  MaintenanceOp* FindBestOp();
+  // Find the best op, or null if there is nothing we want to run.
+  //
+  // Returns the op, as well as a string explanation of why that op was chosen,
+  // suitable for logging.
+  std::pair<MaintenanceOp*, std::string> FindBestOp();
 
   void LaunchOp(MaintenanceOp* op);
 
