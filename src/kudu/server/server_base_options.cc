@@ -34,7 +34,7 @@ DEFINE_string(server_dump_info_format, "json",
 TAG_FLAG(server_dump_info_path, hidden);
 TAG_FLAG(server_dump_info_format, hidden);
 
-DEFINE_int32(metrics_log_interval_ms, 0,
+DEFINE_int32(metrics_log_interval_ms, 60000,
              "Interval (in milliseconds) at which the server will dump its "
              "metrics to a local log file. The log files are located in the same "
              "directory as specified by the -log_dir flag. If this is not a positive "
