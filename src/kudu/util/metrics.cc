@@ -249,8 +249,12 @@ Status MetricEntity::WriteAsJson(JsonWriter* writer,
   writer->String("metrics");
   writer->StartArray();
   for (OrderedMetricMap::value_type& val : metrics) {
-    if (val.second->ModifiedInOrAfterEpoch(opts.only_modified_in_or_after_epoch)) {
-      WARN_NOT_OK(val.second->WriteAsJson(writer, opts),
+    const auto& m = val.second;
+    if (m->ModifiedInOrAfterEpoch(opts.only_modified_in_or_after_epoch)) {
+      if (!opts.include_untouched_metrics && m->IsUntouched()) {
+        continue;
+      }
+      WARN_NOT_OK(m->WriteAsJson(writer, opts),
                   strings::Substitute("Failed to write $0 as JSON", val.first));
     }
   }

@@ -616,6 +616,11 @@ void ServerBase::MetricsLoggingThread() {
   MetricJsonOptions opts;
   opts.include_raw_histograms = true;
 
+  // We don't output any metrics which have never been incremented. Though
+  // this seems redundant with the "only include changed metrics" above, it
+  // also ensures that we don't dump a bunch of zero data on startup.
+  opts.include_untouched_metrics = false;
+
   MonoTime next_log = MonoTime::Now();
   while (!stop_background_threads_latch_.WaitUntil(next_log)) {
     next_log = MonoTime::Now() +

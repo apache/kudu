@@ -429,6 +429,12 @@ struct MetricJsonOptions {
   //
   // Note that this is an inclusive bound.
   int64_t only_modified_in_or_after_epoch = 0;
+
+  // Whether to include metrics which have had no data recorded and thus have
+  // a value of 0. Note that some metrics with the value 0 may still be included:
+  // notably, gauges may be non-zero and then reset to zero, so seeing that
+  // they are currently zero does not indicate they are "untouched".
+  bool include_untouched_metrics = true;
 };
 
 class MetricEntityPrototype {
@@ -563,6 +569,9 @@ class Metric : public RefCountedThreadSafe<Metric> {
                              const MetricJsonOptions& opts) const = 0;
 
   const MetricPrototype* prototype() const { return prototype_; }
+
+  // Return true if this metric has never been touched.
+  virtual bool IsUntouched() const = 0;
 
   // Return true if this metric has changed in or after the given metrics epoch.
   bool ModifiedInOrAfterEpoch(int64_t epoch) {
@@ -806,6 +815,7 @@ class Gauge : public Metric {
   virtual ~Gauge() {}
   virtual Status WriteAsJson(JsonWriter* w,
                              const MetricJsonOptions& opts) const OVERRIDE;
+
  protected:
   virtual void WriteValue(JsonWriter* writer) const = 0;
  private:
@@ -819,6 +829,10 @@ class StringGauge : public Gauge {
               std::string initial_value);
   std::string value() const;
   void set_value(const std::string& value);
+  virtual bool IsUntouched() const override {
+    return false;
+  }
+
  protected:
   virtual void WriteValue(JsonWriter* writer) const OVERRIDE;
  private:
@@ -855,7 +869,9 @@ class AtomicGauge : public Gauge {
   void DecrementBy(int64_t amount) {
     IncrementBy(-amount);
   }
-
+  virtual bool IsUntouched() const override {
+    return false;
+  }
  protected:
   virtual void WriteValue(JsonWriter* writer) const OVERRIDE {
     writer->Value(value());
@@ -971,6 +987,10 @@ class FunctionGauge : public Gauge {
                                 this));
   }
 
+  virtual bool IsUntouched() const override {
+    return false;
+  }
+
  private:
   friend class MetricEntity;
 
@@ -1017,6 +1037,10 @@ class Counter : public Metric {
   void IncrementBy(int64_t amount);
   virtual Status WriteAsJson(JsonWriter* w,
                              const MetricJsonOptions& opts) const OVERRIDE;
+
+  virtual bool IsUntouched() const override {
+    return value() == 0;
+  }
 
  private:
   FRIEND_TEST(MetricsTest, SimpleCounterTest);
@@ -1072,6 +1096,10 @@ class Histogram : public Metric {
   double MeanValueForTests() const;
 
   const HdrHistogram* histogram_for_tests() const { return histogram_.get(); }
+
+  virtual bool IsUntouched() const override {
+    return TotalCount() == 0;
+  }
 
  private:
   FRIEND_TEST(MetricsTest, SimpleHistogramTest);
