@@ -238,13 +238,15 @@ Status MetricEntity::WriteAsJson(JsonWriter* writer,
   writer->String("id");
   writer->String(id_);
 
-  writer->String("attributes");
-  writer->StartObject();
-  for (const AttributeMap::value_type& val : attrs) {
-    writer->String(val.first);
-    writer->String(val.second);
+  if (opts.include_entity_attributes) {
+    writer->String("attributes");
+    writer->StartObject();
+    for (const AttributeMap::value_type& val : attrs) {
+      writer->String(val.first);
+      writer->String(val.second);
+    }
+    writer->EndObject();
   }
-  writer->EndObject();
 
   writer->String("metrics");
   writer->StartArray();

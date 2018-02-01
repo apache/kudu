@@ -621,6 +621,10 @@ void ServerBase::MetricsLoggingThread() {
   // also ensures that we don't dump a bunch of zero data on startup.
   opts.include_untouched_metrics = false;
 
+  // Entity attributes aren't that useful in the context of this log. We can
+  // always grab the entity attributes separately if necessary.
+  opts.include_entity_attributes = false;
+
   MonoTime next_log = MonoTime::Now();
   while (!stop_background_threads_latch_.WaitUntil(next_log)) {
     next_log = MonoTime::Now() +

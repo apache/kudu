@@ -435,6 +435,9 @@ struct MetricJsonOptions {
   // notably, gauges may be non-zero and then reset to zero, so seeing that
   // they are currently zero does not indicate they are "untouched".
   bool include_untouched_metrics = true;
+
+  // Whether to include the attributes of each entity.
+  bool include_entity_attributes = true;
 };
 
 class MetricEntityPrototype {
