@@ -627,34 +627,50 @@ Status Histogram::WriteAsJson(JsonWriter* writer,
 
 Status Histogram::GetHistogramSnapshotPB(HistogramSnapshotPB* snapshot_pb,
                                          const MetricJsonOptions& opts) const {
-  HdrHistogram snapshot(*histogram_);
   snapshot_pb->set_name(prototype_->name());
   if (opts.include_schema_info) {
     snapshot_pb->set_type(MetricType::Name(prototype_->type()));
     snapshot_pb->set_label(prototype_->label());
     snapshot_pb->set_unit(MetricUnit::Name(prototype_->unit()));
     snapshot_pb->set_description(prototype_->description());
-    snapshot_pb->set_max_trackable_value(snapshot.highest_trackable_value());
-    snapshot_pb->set_num_significant_digits(snapshot.num_significant_digits());
+    snapshot_pb->set_max_trackable_value(histogram_->highest_trackable_value());
+    snapshot_pb->set_num_significant_digits(histogram_->num_significant_digits());
   }
-  snapshot_pb->set_total_count(snapshot.TotalCount());
-  snapshot_pb->set_total_sum(snapshot.TotalSum());
-  snapshot_pb->set_min(snapshot.MinValue());
-  snapshot_pb->set_mean(snapshot.MeanValue());
-  snapshot_pb->set_percentile_75(snapshot.ValueAtPercentile(75));
-  snapshot_pb->set_percentile_95(snapshot.ValueAtPercentile(95));
-  snapshot_pb->set_percentile_99(snapshot.ValueAtPercentile(99));
-  snapshot_pb->set_percentile_99_9(snapshot.ValueAtPercentile(99.9));
-  snapshot_pb->set_percentile_99_99(snapshot.ValueAtPercentile(99.99));
-  snapshot_pb->set_max(snapshot.MaxValue());
+  // Fast-path for a reasonably common case of an empty histogram. This occurs
+  // when a histogram is tracking some information about a feature not in
+  // use, for example.
+  if (histogram_->TotalCount() == 0) {
+    snapshot_pb->set_total_count(0);
+    snapshot_pb->set_total_sum(0);
+    snapshot_pb->set_min(0);
+    snapshot_pb->set_mean(0);
+    snapshot_pb->set_percentile_75(0);
+    snapshot_pb->set_percentile_95(0);
+    snapshot_pb->set_percentile_99(0);
+    snapshot_pb->set_percentile_99_9(0);
+    snapshot_pb->set_percentile_99_99(0);
+    snapshot_pb->set_max(0);
+  } else {
+    HdrHistogram snapshot(*histogram_);
+    snapshot_pb->set_total_count(snapshot.TotalCount());
+    snapshot_pb->set_total_sum(snapshot.TotalSum());
+    snapshot_pb->set_min(snapshot.MinValue());
+    snapshot_pb->set_mean(snapshot.MeanValue());
+    snapshot_pb->set_percentile_75(snapshot.ValueAtPercentile(75));
+    snapshot_pb->set_percentile_95(snapshot.ValueAtPercentile(95));
+    snapshot_pb->set_percentile_99(snapshot.ValueAtPercentile(99));
+    snapshot_pb->set_percentile_99_9(snapshot.ValueAtPercentile(99.9));
+    snapshot_pb->set_percentile_99_99(snapshot.ValueAtPercentile(99.99));
+    snapshot_pb->set_max(snapshot.MaxValue());
 
-  if (opts.include_raw_histograms) {
-    RecordedValuesIterator iter(&snapshot);
-    while (iter.HasNext()) {
-      HistogramIterationValue value;
-      RETURN_NOT_OK(iter.Next(&value));
-      snapshot_pb->add_values(value.value_iterated_to);
-      snapshot_pb->add_counts(value.count_at_value_iterated_to);
+    if (opts.include_raw_histograms) {
+      RecordedValuesIterator iter(&snapshot);
+      while (iter.HasNext()) {
+        HistogramIterationValue value;
+        RETURN_NOT_OK(iter.Next(&value));
+        snapshot_pb->add_values(value.value_iterated_to);
+        snapshot_pb->add_counts(value.count_at_value_iterated_to);
+      }
     }
   }
   return Status::OK();

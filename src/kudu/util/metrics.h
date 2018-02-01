@@ -1009,7 +1009,7 @@ class Histogram : public Metric {
                              const MetricJsonOptions& opts) const OVERRIDE;
 
   // Returns a snapshot of this histogram including the bucketed values and counts.
-  Status GetHistogramSnapshotPB(HistogramSnapshotPB* snapshot,
+  Status GetHistogramSnapshotPB(HistogramSnapshotPB* snapshot_pb,
                                 const MetricJsonOptions& opts) const;
 
   uint64_t CountInBucketForValueForTests(uint64_t value) const;
