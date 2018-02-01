@@ -223,8 +223,10 @@
 //
 /////////////////////////////////////////////////////
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -420,6 +422,13 @@ struct MetricJsonOptions {
   // unit, etc).
   // Default: false
   bool include_schema_info;
+
+  // Try to skip any metrics which have not been modified since before
+  // the given epoch. The current epoch can be fetched using
+  // Metric::current_epoch() and incremented using Metric::IncrementEpoch().
+  //
+  // Note that this is an inclusive bound.
+  int64_t only_modified_in_or_after_epoch = 0;
 };
 
 class MetricEntityPrototype {
@@ -555,13 +564,49 @@ class Metric : public RefCountedThreadSafe<Metric> {
 
   const MetricPrototype* prototype() const { return prototype_; }
 
+  // Return true if this metric has changed in or after the given metrics epoch.
+  bool ModifiedInOrAfterEpoch(int64_t epoch) {
+    return m_epoch_ >= epoch;
+  }
+
+  // Return the current epoch for tracking modification of metrics.
+  // This can be passed as 'MetricJsonOptions::only_modified_since_epoch' to
+  // get a diff of metrics between two points in time.
+  static int64_t current_epoch() {
+    return g_epoch_;
+  }
+
+  // Advance to the next epoch for metrics.
+  // This is cheap for the calling thread but causes some extra work on the paths
+  // of hot metric updaters, so should only be done rarely (eg before dumping
+  // metrics).
+  static void IncrementEpoch();
+
  protected:
   explicit Metric(const MetricPrototype* prototype);
   virtual ~Metric();
 
   const MetricPrototype* const prototype_;
 
+  void UpdateModificationEpoch() {
+    // If we have some upper bound, we need to invalidate it. We use a 'test-and-set'
+    // here to avoid contending on writes to this cacheline.
+    if (m_epoch_ < current_epoch()) {
+      // Out-of-line the uncommon case which requires a bit more code.
+      UpdateModificationEpochSlowPath();
+    }
+  }
+
+  // The last metrics epoch in which this metric was modified.
+  // We use epochs instead of timestamps since we can ensure that epochs
+  // only change rarely. Thus this member is read-mostly and doesn't cause
+  // cacheline bouncing between metrics writers. We also don't need to read
+  // the system clock, which is more expensive compared to reading 'g_epoch_'.
+  std::atomic<int64_t> m_epoch_;
+
  private:
+  void UpdateModificationEpochSlowPath();
+
   friend class MetricEntity;
   friend class RefCountedThreadSafe<Metric>;
 
@@ -569,6 +614,9 @@ class Metric : public RefCountedThreadSafe<Metric> {
   // of the metrics subsystem. If this metric is not due for retirement, this member is
   // uninitialized.
   MonoTime retire_time_;
+
+  // See 'current_epoch()'.
+  static std::atomic<int64_t> g_epoch_;
 
   DISALLOW_COPY_AND_ASSIGN(Metric);
 };
@@ -794,9 +842,11 @@ class AtomicGauge : public Gauge {
     value_.Store(static_cast<int64_t>(value), kMemOrderNoBarrier);
   }
   void Increment() {
+    UpdateModificationEpoch();
     value_.IncrementBy(1, kMemOrderNoBarrier);
   }
   virtual void IncrementBy(int64_t amount) {
+    UpdateModificationEpoch();
     value_.IncrementBy(amount, kMemOrderNoBarrier);
   }
   void Decrement() {
@@ -925,7 +975,11 @@ class FunctionGauge : public Gauge {
   friend class MetricEntity;
 
   FunctionGauge(const GaugePrototype<T>* proto, Callback<T()> function)
-      : Gauge(proto), function_(std::move(function)) {}
+      : Gauge(proto), function_(std::move(function)) {
+    // Override the modification epoch to the maximum, since we don't have any idea
+    // when the bound function changes value.
+    m_epoch_ = std::numeric_limits<decltype(m_epoch_.load())>::max();
+  }
 
   static T Return(T v) {
     return v;

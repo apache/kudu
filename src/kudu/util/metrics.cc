@@ -249,9 +249,10 @@ Status MetricEntity::WriteAsJson(JsonWriter* writer,
   writer->String("metrics");
   writer->StartArray();
   for (OrderedMetricMap::value_type& val : metrics) {
-    WARN_NOT_OK(val.second->WriteAsJson(writer, opts),
-                strings::Substitute("Failed to write $0 as JSON", val.first));
-
+    if (val.second->ModifiedInOrAfterEpoch(opts.only_modified_in_or_after_epoch)) {
+      WARN_NOT_OK(val.second->WriteAsJson(writer, opts),
+                  strings::Substitute("Failed to write $0 as JSON", val.first));
+    }
   }
   writer->EndArray();
 
@@ -493,11 +494,30 @@ scoped_refptr<MetricEntity> MetricRegistry::FindOrCreateEntity(
 //
 // Metric
 //
+
+std::atomic<int64_t> Metric::g_epoch_;
+
 Metric::Metric(const MetricPrototype* prototype)
-  : prototype_(prototype) {
+    : prototype_(prototype),
+      m_epoch_(current_epoch()) {
 }
 
 Metric::~Metric() {
+}
+
+void Metric::IncrementEpoch() {
+  g_epoch_++;
+}
+
+void Metric::UpdateModificationEpochSlowPath() {
+  int64_t new_epoch, old_epoch;
+  // CAS loop to ensure that we never transition a metric's epoch backwards
+  // even if multiple threads race to update it.
+  do {
+    old_epoch = m_epoch_;
+    new_epoch = g_epoch_;
+  } while (old_epoch < new_epoch &&
+           !m_epoch_.compare_exchange_weak(old_epoch, new_epoch));
 }
 
 //
@@ -531,6 +551,7 @@ std::string StringGauge::value() const {
 }
 
 void StringGauge::set_value(const std::string& value) {
+  UpdateModificationEpoch();
   std::lock_guard<simple_spinlock> l(lock_);
   value_ = value;
 }
@@ -560,6 +581,7 @@ void Counter::Increment() {
 }
 
 void Counter::IncrementBy(int64_t amount) {
+  UpdateModificationEpoch();
   value_.IncrementBy(amount);
 }
 
@@ -609,10 +631,12 @@ Histogram::Histogram(const HistogramPrototype* proto)
 }
 
 void Histogram::Increment(int64_t value) {
+  UpdateModificationEpoch();
   histogram_->Increment(value);
 }
 
 void Histogram::IncrementBy(int64_t value, int64_t amount) {
+  UpdateModificationEpoch();
   histogram_->IncrementBy(value, amount);
 }
 

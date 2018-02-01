@@ -613,6 +613,8 @@ void ServerBase::MetricsLoggingThread() {
   // logging metrics.
   const MonoDelta kWaitBetweenFailures = MonoDelta::FromSeconds(60);
 
+  MetricJsonOptions opts;
+  opts.include_raw_histograms = true;
 
   MonoTime next_log = MonoTime::Now();
   while (!stop_background_threads_latch_.WaitUntil(next_log)) {
@@ -623,13 +625,10 @@ void ServerBase::MetricsLoggingThread() {
     buf << "metrics " << GetCurrentTimeMicros() << " ";
 
     // Collect the metrics JSON string.
-    vector<string> metrics;
-    metrics.emplace_back("*");
-    MetricJsonOptions opts;
-    opts.include_raw_histograms = true;
-
+    int64_t this_log_epoch = Metric::current_epoch();
+    Metric::IncrementEpoch();
     JsonWriter writer(&buf, JsonWriter::COMPACT);
-    Status s = metric_registry_->WriteAsJson(&writer, metrics, opts);
+    Status s = metric_registry_->WriteAsJson(&writer, {"*"}, opts);
     if (!s.ok()) {
       WARN_NOT_OK(s, "Unable to collect metrics to log");
       next_log += kWaitBetweenFailures;
@@ -644,6 +643,13 @@ void ServerBase::MetricsLoggingThread() {
       next_log += kWaitBetweenFailures;
       continue;
     }
+
+    // Next time we fetch, only show those that changed after the epoch
+    // we just logged.
+    //
+    // NOTE: we only bump this in the successful log case so that if we failed to
+    // write above, we wouldn't skip any changes.
+    opts.only_modified_in_or_after_epoch = this_log_epoch + 1;
   }
 
   WARN_NOT_OK(log.Close(), "Unable to close metric log");
