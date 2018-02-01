@@ -31,6 +31,7 @@
 #include <rapidjson/rapidjson.h>
 
 #include "kudu/gutil/port.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/pb_util.pb.h"
 
@@ -49,8 +50,13 @@ namespace kudu {
 class UTF8StringStreamBuffer {
  public:
   explicit UTF8StringStreamBuffer(std::ostringstream* out);
+  ~UTF8StringStreamBuffer();
   void Put(rapidjson::UTF8<>::Ch c);
+
+  void Flush();
+
  private:
+  faststring buf_;
   std::ostringstream* out_;
 };
 
@@ -285,9 +291,17 @@ string JsonWriter::ToJson(const Message& pb, Mode mode) {
 UTF8StringStreamBuffer::UTF8StringStreamBuffer(std::ostringstream* out)
   : out_(DCHECK_NOTNULL(out)) {
 }
+UTF8StringStreamBuffer::~UTF8StringStreamBuffer() {
+  DCHECK_EQ(buf_.size(), 0) << "Forgot to flush!";
+}
 
 void UTF8StringStreamBuffer::Put(rapidjson::UTF8<>::Ch c) {
-  out_->put(c);
+  buf_.push_back(c);
+}
+
+void UTF8StringStreamBuffer::Flush() {
+  out_->write(reinterpret_cast<char*>(buf_.data()), buf_.size());
+  buf_.clear();
 }
 
 //
@@ -322,10 +336,16 @@ void JsonWriterImpl<T>::String(const string& str) { writer_.String(str.c_str(), 
 template<class T>
 void JsonWriterImpl<T>::StartObject() { writer_.StartObject(); }
 template<class T>
-void JsonWriterImpl<T>::EndObject() { writer_.EndObject(); }
+void JsonWriterImpl<T>::EndObject() {
+  writer_.EndObject();
+  stream_.Flush();
+}
 template<class T>
 void JsonWriterImpl<T>::StartArray() { writer_.StartArray(); }
 template<class T>
-void JsonWriterImpl<T>::EndArray() { writer_.EndArray(); }
+void JsonWriterImpl<T>::EndArray() {
+  writer_.EndArray();
+  stream_.Flush();
+}
 
 } // namespace kudu
