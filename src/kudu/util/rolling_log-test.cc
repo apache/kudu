@@ -125,4 +125,19 @@ TEST_F(RollingLogTest, TestCompression) {
   ASSERT_GT(size, 0);
 }
 
+TEST_F(RollingLogTest, TestFileCountLimit) {
+  RollingLog log(env_, log_dir_, "mylog");
+  ASSERT_OK(log.Open());
+  log.SetSizeLimitBytes(100);
+  log.SetMaxNumSegments(3);
+
+  for (int i = 0; i < 100; i++) {
+    ASSERT_OK(log.Append("hello world\n"));
+  }
+  ASSERT_OK(log.Close());
+
+  vector<string> children;
+  NO_FATALS(AssertLogCount(3, &children));
+}
+
 } // namespace kudu

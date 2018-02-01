@@ -63,11 +63,13 @@ class RollingLog {
   // the log as necessary if it is not open.
   Status Open();
 
-  // Set the size limit for the current and any future log files.
-  //
-  // There is no limit on the total number of previous log segments. We rely
-  // on system utilities to clean up old logs to maintain some size limit.
-  void SetSizeLimitBytes(int64_t bytes);
+  // Set the pre-compression size limit for the current and any future log files.
+  // Note that this is the limit on a single segment of the log, not the total.
+  void SetSizeLimitBytes(int64_t size);
+
+  // Set the total number of log segments to be retained. When the log is rolled,
+  // old segments are removed to achieve the targeted number of segments.
+  void SetMaxNumSegments(int num_segments);
 
   // If compression is enabled, log files are compressed.
   // NOTE: this requires that the passed-in Env instance is the local file system.
@@ -89,6 +91,9 @@ class RollingLog {
  private:
   std::string GetLogFileName(int sequence) const;
 
+  // Get a glob pattern matching all log files written by this instance.
+  std::string GetLogFilePattern() const;
+
   // Compress the given path, writing a new file '<path>.gz'.
   Status CompressFile(const std::string& path) const;
 
@@ -97,6 +102,7 @@ class RollingLog {
   const std::string log_name_;
 
   int64_t size_limit_bytes_;
+  int max_num_segments_;
 
   std::unique_ptr<WritableFile> file_;
   bool compress_after_close_;

@@ -27,6 +27,7 @@
 #include <utility>
 
 #include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <zlib.h>
 
@@ -34,6 +35,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/env.h"
+#include "kudu/util/env_util.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/slice.h"
@@ -47,6 +49,8 @@ using strings::Substitute;
 
 static const int kDefaultSizeLimitBytes = 64 * 1024 * 1024; // 64MB
 
+DECLARE_int32(max_log_files);
+
 namespace kudu {
 
 RollingLog::RollingLog(Env* env, string log_dir, string log_name)
@@ -54,6 +58,7 @@ RollingLog::RollingLog(Env* env, string log_dir, string log_name)
       log_dir_(std::move(log_dir)),
       log_name_(std::move(log_name)),
       size_limit_bytes_(kDefaultSizeLimitBytes),
+      max_num_segments_(FLAGS_max_log_files),
       compress_after_close_(true) {}
 
 RollingLog::~RollingLog() {
@@ -65,42 +70,42 @@ void RollingLog::SetSizeLimitBytes(int64_t size) {
   size_limit_bytes_ = size;
 }
 
+void RollingLog::SetMaxNumSegments(int num_segments) {
+  CHECK_GT(num_segments, 0);
+  max_num_segments_ = num_segments;
+}
+
 void RollingLog::SetCompressionEnabled(bool compress) {
   compress_after_close_ = compress;
 }
 
-string RollingLog::GetLogFileName(int sequence) const {
-  ostringstream str;
+namespace {
 
-  // 1. Program name.
-  str << google::ProgramInvocationShortName();
-
-  // 2. Host name.
+string HostnameOrUnknown() {
   string hostname;
   Status s = GetHostname(&hostname);
   if (!s.ok()) {
-    hostname = "unknown_host";
+    return "unknown_host";
   }
-  str << "." << hostname;
+  return hostname;
+}
 
-  // 3. User name.
+string UsernameOrUnknown() {
   string user_name;
-  s = GetLoggedInUser(&user_name);
+  Status s = GetLoggedInUser(&user_name);
   if (!s.ok()) {
-    user_name = "unknown_user";
+    return "unknown_user";
   }
-  str << "." << user_name;
+  return user_name;
+}
 
-  // 4. Log name.
-  str << "." << log_name_;
-
-  // 5. Timestamp.
+string FormattedTimestamp() {
   // Implementation cribbed from glog/logging.cc
   time_t time = static_cast<time_t>(WallTime_Now());
   struct ::tm tm_time;
   localtime_r(&time, &tm_time);
 
-  str << ".";
+  ostringstream str;
   str.fill('0');
   str << 1900+tm_time.tm_year
       << setw(2) << 1+tm_time.tm_mon
@@ -109,15 +114,31 @@ string RollingLog::GetLogFileName(int sequence) const {
       << setw(2) << tm_time.tm_hour
       << setw(2) << tm_time.tm_min
       << setw(2) << tm_time.tm_sec;
-  str.clear(); // resets formatting flags
-
-  // 6. Sequence number.
-  str << "." << sequence;
-
-  // 7. Pid.
-  str << "." << getpid();
-
   return str.str();
+}
+
+} // anonymous namespace
+
+string RollingLog::GetLogFileName(int sequence) const {
+  return Substitute("$0.$1.$2.$3.$4.$5.$6",
+                    google::ProgramInvocationShortName(),
+                    HostnameOrUnknown(),
+                    UsernameOrUnknown(),
+                    log_name_,
+                    FormattedTimestamp(),
+                    sequence,
+                    getpid());
+}
+
+string RollingLog::GetLogFilePattern() const {
+  return Substitute("$0.$1.$2.$3.$4.$5.$6",
+                    google::ProgramInvocationShortName(),
+                    HostnameOrUnknown(),
+                    UsernameOrUnknown(),
+                    log_name_,
+                    /* any timestamp */'*',
+                    /* any sequence number */'*',
+                    /* any pid */'*');
 }
 
 Status RollingLog::Open() {
@@ -125,21 +146,20 @@ Status RollingLog::Open() {
 
   for (int sequence = 0; ; sequence++) {
 
-    string path = JoinPathSegments(log_dir_,
-                                   GetLogFileName(sequence));
+    string path = JoinPathSegments(log_dir_, GetLogFileName(sequence));
+    // Don't reuse an existing path if there is already a log
+    // or a compressed log with the same name.
+    if (env_->FileExists(path) ||
+        env_->FileExists(path + ".gz")) {
+      continue;
+    }
 
     WritableFileOptions opts;
     // Logs aren't worth the performance cost of durability.
     opts.sync_on_close = false;
     opts.mode = Env::CREATE_NON_EXISTING;
 
-    Status s = env_->NewWritableFile(opts, path, &file_);
-    if (s.IsAlreadyPresent()) {
-      // We already rolled once at this same timestamp.
-      // Try again with a new sequence number.
-      continue;
-    }
-    RETURN_NOT_OK(s);
+    RETURN_NOT_OK(env_->NewWritableFile(opts, path, &file_));
 
     VLOG(1) << "Rolled " << log_name_ << " log to new file: " << path;
     break;
@@ -158,6 +178,9 @@ Status RollingLog::Close() {
   if (compress_after_close_) {
     WARN_NOT_OK(CompressFile(path), "Unable to compress old log file");
   }
+  auto glob = JoinPathSegments(log_dir_, GetLogFilePattern());
+  WARN_NOT_OK(env_util::DeleteExcessFilesByPattern(env_, glob, max_num_segments_),
+              Substitute("failed to delete old $0 log files", log_name_));
   return Status::OK();
 }
 
