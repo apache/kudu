@@ -188,19 +188,20 @@ void JsonWriter::Protobuf(const Message& pb) {
     String(field->name());
     if (field->is_repeated()) {
       StartArray();
-      for (int i = 0; i < reflection->FieldSize(pb, field); i++) {
-        ProtobufRepeatedField(pb, field, i);
+      int size = reflection->FieldSize(pb, field);
+      for (int i = 0; i < size; i++) {
+        ProtobufRepeatedField(pb, reflection, field, i);
       }
       EndArray();
     } else {
-      ProtobufField(pb, field);
+      ProtobufField(pb, reflection, field);
     }
   }
   EndObject();
 }
 
-void JsonWriter::ProtobufField(const Message& pb, const FieldDescriptor* field) {
-  const Reflection* reflection = pb.GetReflection();
+void JsonWriter::ProtobufField(const Message& pb, const Reflection* reflection,
+                               const FieldDescriptor* field) {
   switch (field->cpp_type()) {
     case FieldDescriptor::CPPTYPE_INT32:
       Int(reflection->GetInt32(pb, field));
@@ -238,8 +239,8 @@ void JsonWriter::ProtobufField(const Message& pb, const FieldDescriptor* field) 
   }
 }
 
-void JsonWriter::ProtobufRepeatedField(const Message& pb, const FieldDescriptor* field, int index) {
-  const Reflection* reflection = pb.GetReflection();
+void JsonWriter::ProtobufRepeatedField(const Message& pb, const Reflection* reflection,
+                                       const FieldDescriptor* field, int index) {
   switch (field->cpp_type()) {
     case FieldDescriptor::CPPTYPE_INT32:
       Int(reflection->GetRepeatedInt32(pb, field, index));

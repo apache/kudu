@@ -29,12 +29,17 @@
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
 
+namespace google { namespace protobuf { class Message; } }
+
+using google::protobuf::Message;
 using jsonwriter_test::TestAllTypes;
 
 namespace kudu {
 
 class TestJsonWriter : public KuduTest {
  protected:
+  void DoBenchmark(const Message& pb);
+
   TestAllTypes MakeAllTypesPB() {
     TestAllTypes pb;
     pb.set_optional_int32(1);
@@ -170,9 +175,7 @@ TEST_F(TestJsonWriter, TestPBNestedMessage) {
             JsonWriter::ToJson(pb, JsonWriter::COMPACT));
 }
 
-TEST_F(TestJsonWriter, Benchmark) {
-  TestAllTypes pb = MakeAllTypesPB();
-
+void TestJsonWriter::DoBenchmark(const Message& pb) {
   int64_t total_len = 0;
   Stopwatch sw;
   sw.start();
@@ -191,5 +194,23 @@ TEST_F(TestJsonWriter, Benchmark) {
   LOG(INFO) << "Throughput: " << mbps << "MB/sec";
 }
 
+TEST_F(TestJsonWriter, BenchmarkAllTypes) {
+  DoBenchmark(MakeAllTypesPB());
+}
+
+TEST_F(TestJsonWriter, BenchmarkNestedMessage) {
+  TestAllTypes pb;
+  pb.add_repeated_nested_message()->set_int_field(12345);
+  pb.mutable_optional_nested_message()->set_int_field(54321);
+  DoBenchmark(pb);
+}
+
+TEST_F(TestJsonWriter, BenchmarkRepeatedInt64) {
+  TestAllTypes pb;
+  for (int i = 0; i < 10000; i++) {
+    pb.add_repeated_int64(i);
+  }
+  DoBenchmark(pb);
+}
 
 } // namespace kudu
