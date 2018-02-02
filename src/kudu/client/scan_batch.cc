@@ -260,6 +260,9 @@ template
 Status KuduScanBatch::RowPtr::Get<TypeTraits<INT64> >(const Slice& col_name, int64_t* val) const;
 
 template
+Status KuduScanBatch::RowPtr::Get<TypeTraits<INT128> >(const Slice& col_name, int128_t* val) const;
+
+template
 Status KuduScanBatch::RowPtr::Get<TypeTraits<UNIXTIME_MICROS> >(
     const Slice& col_name, int64_t* val) const;
 
@@ -289,6 +292,9 @@ Status KuduScanBatch::RowPtr::Get<TypeTraits<INT32> >(int col_idx, int32_t* val)
 
 template
 Status KuduScanBatch::RowPtr::Get<TypeTraits<INT64> >(int col_idx, int64_t* val) const;
+
+template
+Status KuduScanBatch::RowPtr::Get<TypeTraits<INT128> >(int col_idx, int128_t* val) const;
 
 template
 Status KuduScanBatch::RowPtr::Get<TypeTraits<UNIXTIME_MICROS> >(int col_idx, int64_t* val) const;

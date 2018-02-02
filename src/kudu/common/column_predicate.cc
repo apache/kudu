@@ -599,6 +599,7 @@ bool ColumnPredicate::EvaluateCell(DataType type, const void* cell) const {
     case INT16: return EvaluateCell<INT16>(cell);
     case INT32: return EvaluateCell<INT32>(cell);
     case INT64: return EvaluateCell<INT64>(cell);
+    case INT128: return EvaluateCell<INT128>(cell);
     case UINT8: return EvaluateCell<UINT8>(cell);
     case UINT16: return EvaluateCell<UINT16>(cell);
     case UINT32: return EvaluateCell<UINT32>(cell);
@@ -618,6 +619,7 @@ void ColumnPredicate::Evaluate(const ColumnBlock& block, SelectionVector* sel) c
     case INT16: return EvaluateForPhysicalType<INT16>(block, sel);
     case INT32: return EvaluateForPhysicalType<INT32>(block, sel);
     case INT64: return EvaluateForPhysicalType<INT64>(block, sel);
+    case INT128: return EvaluateForPhysicalType<INT128>(block, sel);
     case UINT8: return EvaluateForPhysicalType<UINT8>(block, sel);
     case UINT16: return EvaluateForPhysicalType<UINT16>(block, sel);
     case UINT32: return EvaluateForPhysicalType<UINT32>(block, sel);

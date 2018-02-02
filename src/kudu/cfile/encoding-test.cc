@@ -48,6 +48,7 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/int128.h"
 #include "kudu/util/group_varint-inl.h"
 #include "kudu/util/hexdump.h"
 #include "kudu/util/memory/arena.h"
@@ -690,8 +691,8 @@ TEST_F(TestEncoding, TestPlainBlockEncoder) {
                                     PlainBlockDecoder<INT32> >(ints.get(), kSize);
 }
 
-// Test for bitshuffle block, for INT32, FLOAT, DOUBLE
-TEST_F(TestEncoding, TestBShufIntBlockEncoder) {
+// Test for bitshuffle block, for INT32, INT64, INT128, FLOAT, DOUBLE
+TEST_F(TestEncoding, TestBShufInt32BlockEncoder) {
   const uint32_t kSize = 10000;
 
   gscoped_ptr<int32_t[]> ints(new int32_t[kSize]);
@@ -701,6 +702,30 @@ TEST_F(TestEncoding, TestBShufIntBlockEncoder) {
 
   TestEncodeDecodeTemplateBlockEncoder<INT32, BShufBlockBuilder<INT32>,
                                     BShufBlockDecoder<INT32> >(ints.get(), kSize);
+}
+
+TEST_F(TestEncoding, TestBShufInt64BlockEncoder) {
+  const uint32_t kSize = 10000;
+
+  gscoped_ptr<int64_t[]> ints(new int64_t[kSize]);
+  for (int i = 0; i < kSize; i++) {
+    ints.get()[i] = random();
+  }
+
+  TestEncodeDecodeTemplateBlockEncoder<INT64, BShufBlockBuilder<INT64>,
+      BShufBlockDecoder<INT64> >(ints.get(), kSize);
+}
+
+TEST_F(TestEncoding, TestBShufInt128BlockEncoder) {
+  const uint32_t kSize = 10000;
+
+  gscoped_ptr<int128_t[]> ints(new int128_t[kSize]);
+  for (int i = 0; i < kSize; i++) {
+    ints.get()[i] = random();
+  }
+
+  TestEncodeDecodeTemplateBlockEncoder<INT128, BShufBlockBuilder<INT128>,
+      BShufBlockDecoder<INT128> >(ints.get(), kSize);
 }
 
 TEST_F(TestEncoding, TestBShufFloatBlockEncoder) {
@@ -877,7 +902,7 @@ TYPED_TEST(IntEncodingTest, TestSeekAllTypes) {
   this->template DoIntSeekTest<INT32>(10000, 1000, true);
   this->template DoIntSeekTest<UINT64>(10000, 1000, true);
   this->template DoIntSeekTest<INT64>(10000, 1000, true);
-  // TODO: Uncomment when adding 128 bit support to RLE
+  // TODO: Uncomment when adding 128 bit support to RLE (KUDU-2284)
   // this->template DoIntSeekTest<INT128>();
 }
 
@@ -890,7 +915,7 @@ TYPED_TEST(IntEncodingTest, IntSeekTestTinyBlockAllTypes) {
   this->template DoIntSeekTestTinyBlock<INT32>();
   this->template DoIntSeekTestTinyBlock<UINT64>();
   this->template DoIntSeekTestTinyBlock<INT64>();
-  // TODO: Uncomment when adding 128 bit support to RLE
+  // TODO: Uncomment when adding 128 bit support to RLE (KUDU-2284)
   // this->template DoIntSeekTestTinyBlock<INT128>();
 }
 
@@ -903,7 +928,7 @@ TYPED_TEST(IntEncodingTest, TestRoundTrip) {
   this->template DoIntRoundTripTest<INT32>();
   this->template DoIntRoundTripTest<UINT64>();
   this->template DoIntRoundTripTest<INT64>();
-  // TODO: Uncomment when adding 128 bit support to RLE
+  // TODO: Uncomment when adding 128 bit support to RLE (KUDU-2284)
   // this->template DoIntRoundTripTest<INT128>();
 }
 

@@ -461,6 +461,11 @@ Status KuduPartialRow::Set<TypeTraits<INT64> >(int col_idx,
                                                bool owned);
 
 template
+Status KuduPartialRow::Set<TypeTraits<INT128> >(int col_idx,
+                                               const TypeTraits<INT128>::cpp_type& val,
+                                               bool owned);
+
+template
 Status KuduPartialRow::Set<TypeTraits<UNIXTIME_MICROS> >(
     int col_idx,
     const TypeTraits<UNIXTIME_MICROS>::cpp_type& val,
@@ -510,6 +515,11 @@ template
 Status KuduPartialRow::Set<TypeTraits<INT64> >(const Slice& col_name,
                                                const TypeTraits<INT64>::cpp_type& val,
                                                bool owned);
+
+template
+Status KuduPartialRow::Set<TypeTraits<INT128> >(const Slice& col_name,
+                                                const TypeTraits<INT128>::cpp_type& val,
+                                                bool owned);
 
 template
 Status KuduPartialRow::Set<TypeTraits<UNIXTIME_MICROS> >(
