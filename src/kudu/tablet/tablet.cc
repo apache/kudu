@@ -1662,7 +1662,7 @@ Status Tablet::Compact(CompactFlags flags) {
   RETURN_NOT_OK_PREPEND(PickRowSetsToCompact(&input, flags),
                         "Failed to pick rowsets to compact");
   LOG_WITH_PREFIX(INFO) << "Compaction: stage 1 complete, picked "
-                        << input.num_rowsets() << " rowsets to compact";
+                        << input.num_rowsets() << " rowsets to compact or flush";
   if (compaction_hooks_) {
     RETURN_NOT_OK_PREPEND(compaction_hooks_->PostSelectIterators(),
                           "PostSelectIterators hook failed");

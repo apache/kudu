@@ -665,9 +665,9 @@ Status DeltaTracker::FlushDMS(DeltaMemStore* dms,
   gscoped_ptr<DeltaStats> stats;
   RETURN_NOT_OK(dms->FlushToFile(&dfw, &stats));
   RETURN_NOT_OK(dfw.Finish());
-  LOG_WITH_PREFIX(INFO) << "Flushed delta block: " << block_id.ToString()
-                        << " ts range: [" << stats->min_timestamp()
-                        << ", " << stats->max_timestamp() << "]";
+  LOG_WITH_PREFIX(INFO) << "Flushed delta block " << block_id.ToString()
+                        << " (" << dfw.written_size() << " bytes on disk) "
+                        << "stats: " << stats->ToString();
 
   // Now re-open for read
   unique_ptr<ReadableBlock> readable_block;
@@ -678,7 +678,7 @@ Status DeltaTracker::FlushDMS(DeltaMemStore* dms,
                                             REDO,
                                             std::move(options),
                                             dfr));
-  LOG_WITH_PREFIX(INFO) << "Reopened delta block for read: " << block_id.ToString();
+  VLOG_WITH_PREFIX(1) << "Opened new delta block " << block_id.ToString() << " for read";
 
   RETURN_NOT_OK(rowset_metadata_->CommitRedoDeltaDataBlock(dms->id(), block_id));
   if (flush_type == FLUSH_METADATA) {
@@ -724,7 +724,8 @@ Status DeltaTracker::Flush(MetadataFlushType flush_type) {
     redo_delta_stores_.push_back(old_dms);
   }
 
-  LOG_WITH_PREFIX(INFO) << "Flushing " << count << " deltas from DMS " << old_dms->id() << "...";
+  LOG_WITH_PREFIX(INFO) << "Flushing " << count << " deltas (" << old_dms->EstimateSize()
+                        << " bytes in memory) from DMS " << old_dms->id();
 
   // Now, actually flush the contents of the old DMS.
   //

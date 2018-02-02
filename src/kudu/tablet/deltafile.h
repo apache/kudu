@@ -108,6 +108,10 @@ class DeltaFileWriter {
 
   void WriteDeltaStats(const DeltaStats& stats);
 
+  size_t written_size() const {
+    return writer_->written_size();
+  }
+
  private:
   Status DoAppendDelta(const DeltaKey &key, const RowChangeList &delta);
 
