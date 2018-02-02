@@ -155,33 +155,79 @@ recommended to apply additional compression on top of this encoding.
 [[primary-keys]]
 == Primary Key Design
 
-Every Kudu table must declare a primary key index comprised of one or more
-columns. Primary key columns must be non-nullable, and may not be a boolean or
-floating-point type. Once set during table creation, the set of columns in the
-primary key may not be altered. Like an RDBMS primary key, the Kudu primary key
-enforces a uniqueness constraint; attempting to insert a row with the same
-primary key values as an existing row will result in a duplicate key error.
+Every Kudu table must declare a primary key comprised of one or more columns.
+Like an RDBMS primary key, the Kudu primary key enforces a uniqueness constraint.
+Attempting to insert a row with the same primary key values as an existing row
+will result in a duplicate key error.
 
-Unlike an RDBMS, Kudu does not provide an auto-incrementing column feature, so
-the application must always provide the full primary key during insert. Row
-delete and update operations must also specify the full primary key of the row
-to be changed; Kudu does not natively support range deletes or updates. The
-primary key values of a column may not be updated after the row is inserted;
-however, the row may be deleted and re-inserted with the updated value.
+Primary key columns must be non-nullable, and may not be a boolean or floating-
+point type.
+
+Once set during table creation, the set of columns in the primary key may not
+be altered.
+
+Unlike an RDBMS, Kudu does not provide an auto-incrementing column feature,
+so the application must always provide the full primary key during insert.
+
+Row delete and update operations must also specify the full primary key of the
+row to be changed. Kudu does not natively support range deletes or updates.
+
+The primary key values of a column may not be updated after the row is inserted.
+However, the row may be deleted and re-inserted with the updated value.
+
 
 [[indexing]]
 === Primary Key Index
 
-As with many traditional relational databases, Kudu's primary key is a clustered
-index. All rows within a tablet are kept in primary key sorted order. Kudu scans
-which specify equality or range constraints on the primary key will
-automatically skip rows which can not satisfy the predicate. This allows
-individual rows to be efficiently found by specifying equality constraints on
-the primary key columns.
+As with many traditional relational databases, Kudu’s primary key is in a
+clustered index. All rows within a tablet are sorted by its primary key.
+
+When scanning Kudu rows, use equality or range predicates on primary key
+columns to efficiently find the rows.
 
 NOTE: Primary key indexing optimizations apply to scans on individual tablets.
 See the <<partition-pruning>> section for details on how scans can use
 predicates to skip entire tablets.
+
+[[Backfilling]]
+=== Considerations for Backfill Inserts
+
+This section discuss a primary key design consideration for timeseries use
+cases where the primary key is a timestamp, or the first column of the primary
+key is a timestamp.
+
+Each time a row is inserted into a Kudu table, Kudu looks up the primary key in
+the primary key index storage to check whether that primary key is already
+present in the table. If the primary key exists in the table, a "duplicate key"
+error is returned.  In the typical case where data is being inserted at
+the current time as it arrives from the data source, only a small range of
+primary keys are "hot". So, each of these "check for presence" operations is
+very fast. It hits the cached primary key storage in memory and doesn't require
+going to disk.
+
+In the case when you load historical data, which is called "backfilling", from
+an offline data source, each row that is inserted is likely to hit a cold area
+of the primary key index which is not resident in memory and will cause one or
+more HDD disk seeks. For example, in a normal ingestion case where Kudu sustains
+a few million inserts per second, the "backfill" use case might sustain only
+a few thousand inserts per second.
+
+To alleviate the performance issue during backfilling, consider the following
+options:
+
+* Make the primary keys more compressible.
++
+For example, with the first column of a primary key being a random ID of 32-bytes,
+caching one billion primary keys would require at least 32 GB of RAM to stay in
+cache. If caching backfill primary keys from several days ago, you need to have
+several times 32 GB of memory. By changing the primary key to be more compressible,
+you increase the likelihood that the primary keys can fit in cache and thus
+reducing the amount of random disk I/Os.
++
+
+* Use SSDs for storage as random seeks are orders of magnitude faster than spinning disks.
+
+* Change the primary key structure such that the backfill writes hit a continuous range of primary keys.
 
 [[partitioning]]
 == Partitioning
