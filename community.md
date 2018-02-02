@@ -109,7 +109,7 @@ correct or improve error messages, log messages, or API docs.
 
 If you'd like to translate the Kudu documentation into a different language or
 you'd like to help in some other way, please [let us know](mailto:dev@kudu.apache.org).
-It's best to review the [documentation guidelines](docs/style_guide.html)
+It's best to review the [documentation guidelines](docs/contributing.html#_documentation)
 before you get started.
 
 #### Request and review examples.
