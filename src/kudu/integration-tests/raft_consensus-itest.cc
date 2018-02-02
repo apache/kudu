@@ -2753,19 +2753,19 @@ TEST_F(RaftConsensusITest, TestLogIOErrorIsFatal) {
 // re-replicated.
 TEST_P(RaftConsensusParamReplicationModesITest, TestRestartWithDifferentUUID) {
   // Start a cluster and insert data.
-  const bool prepare_replacement_before_eviction = GetParam();
+  const bool kPrepareReplacementBeforeEviction = GetParam();
   ExternalMiniClusterOptions opts;
-  opts.num_tablet_servers = 5;
+  opts.num_tablet_servers = kPrepareReplacementBeforeEviction ? 4 : 3;
   opts.extra_tserver_flags = {
     // Set a low timeout. If we can't re-replicate in a reasonable amount of
     // time, it means we're not evicting at all.
     "--follower_unavailable_considered_failed_sec=10",
     Substitute("--raft_prepare_replacement_before_eviction=$0",
-               prepare_replacement_before_eviction),
+               kPrepareReplacementBeforeEviction),
   };
   opts.extra_master_flags = {
     Substitute("--raft_prepare_replacement_before_eviction=$0",
-               prepare_replacement_before_eviction),
+               kPrepareReplacementBeforeEviction),
   };
   cluster_.reset(new ExternalMiniCluster(std::move(opts)));
   ASSERT_OK(cluster_->Start());
@@ -2773,7 +2773,7 @@ TEST_P(RaftConsensusParamReplicationModesITest, TestRestartWithDifferentUUID) {
   // Write some data. In writing many tablets, we're making it more likely that
   // all tablet servers will have some tablets on them.
   TestWorkload writes(cluster_.get());
-  writes.set_num_tablets(25);
+  writes.set_num_tablets(5);
   writes.set_timeout_allowed(true);
   writes.Setup();
   writes.Start();
