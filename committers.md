@@ -14,9 +14,12 @@ Following is a list of current Kudu committers and members of the Kudu PMC.
 | --- | --- | --- |
 | adar | Adar Dembo | PMC |
 | alexey | Alexey Serbin | PMC |
+| awong | Andrew Wong | PMC |
 | bchang | Binglin Chang | PMC |
 | danburkert | Dan Burkert | PMC |
 | dralves | David Alves | PMC |
+| granthenke | Grant Henke | PMC |
+| hahao | Hao Hao | PMC |
 | jarcec | Jarek Jarcec Cecho | PMC |
 | jdcryans | Jean-Daniel Cryans | PMC |
 | jfarrell | Jake Farrell | PMC |
