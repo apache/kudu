@@ -126,6 +126,7 @@ using std::unordered_map;
 using std::unordered_set;
 using std::vector;
 using strings::Substitute;
+using strings::SubstituteAndAppend;
 
 
 namespace {
@@ -924,10 +925,10 @@ Status DataDirManager::CreateDataDirGroup(const string& tablet_id,
                               "$2. $3 dirs total", group_indices.size(),
                               FLAGS_fs_target_data_dirs_per_tablet, tablet_id, data_dirs_.size());
       if (metrics_) {
-        msg = Substitute("$0, $1 dirs full, $2 dirs failed", msg,
-                         metrics_->data_dirs_full.get(), metrics_->data_dirs_failed.get());
+        SubstituteAndAppend(&msg, ", $0 dirs full, $1 dirs failed",
+                            metrics_->data_dirs_full->value(), metrics_->data_dirs_failed->value());
       }
-      LOG(INFO) << Substitute(msg);
+      LOG(INFO) << msg;
     }
   }
   InsertOrDie(&group_by_tablet_map_, tablet_id, DataDirGroup(group_indices));
