@@ -1722,21 +1722,23 @@ Status Tablet::DebugDump(vector<string> *lines) {
 }
 
 Status Tablet::CaptureConsistentIterators(
-  const Schema *projection,
-  const MvccSnapshot &snap,
-  const ScanSpec *spec,
-  OrderMode order,
-  vector<shared_ptr<RowwiseIterator> > *iters) const {
+    const Schema* projection,
+    const MvccSnapshot& snap,
+    const ScanSpec* spec,
+    OrderMode order,
+    vector<shared_ptr<RowwiseIterator>>* iters) const {
+
   shared_lock<rw_spinlock> l(component_lock_);
+  RETURN_IF_STOPPED_OR_CHECK_STATE(kOpen);
 
   // Construct all the iterators locally first, so that if we fail
   // in the middle, we don't modify the output arguments.
-  vector<shared_ptr<RowwiseIterator> > ret;
+  vector<shared_ptr<RowwiseIterator>> ret;
 
   // Grab the memrowset iterator.
   gscoped_ptr<RowwiseIterator> ms_iter;
   RETURN_NOT_OK(components_->memrowset->NewRowIterator(projection, snap, order, &ms_iter));
-  ret.push_back(shared_ptr<RowwiseIterator>(ms_iter.release()));
+  ret.emplace_back(ms_iter.release());
 
   // Cull row-sets in the case of key-range queries.
   if (spec != nullptr && spec->lower_bound_key() && spec->exclusive_upper_bound_key()) {
@@ -1754,7 +1756,7 @@ Status Tablet::CaptureConsistentIterators(
       RETURN_NOT_OK_PREPEND(rs->NewRowIterator(projection, snap, order, &row_it),
                             Substitute("Could not create iterator for rowset $0",
                                        rs->ToString()));
-      ret.push_back(shared_ptr<RowwiseIterator>(row_it.release()));
+      ret.emplace_back(row_it.release());
     }
     ret.swap(*iters);
     return Status::OK();
@@ -1767,7 +1769,7 @@ Status Tablet::CaptureConsistentIterators(
     RETURN_NOT_OK_PREPEND(rs->NewRowIterator(projection, snap, order, &row_it),
                           Substitute("Could not create iterator for rowset $0",
                                      rs->ToString()));
-    ret.push_back(shared_ptr<RowwiseIterator>(row_it.release()));
+    ret.emplace_back(row_it.release());
   }
 
   // Swap results into the parameters.
