@@ -231,6 +231,9 @@ class KUDU_EXPORT KuduColumnSchema {
   bool is_nullable() const;
   ///@}
 
+  /// @return Type attributes of the column schema.
+  KuduColumnTypeAttributes type_attributes() const;
+
  private:
   friend class KuduColumnSpec;
   friend class KuduSchema;

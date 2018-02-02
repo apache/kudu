@@ -28,6 +28,7 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/strings/substitute.h" // IWYU pragma: keep
 #include "kudu/util/faststring.h"
+#include "kudu/util/int128.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
@@ -170,6 +171,18 @@ TEST_F(EncodedKeyTest, TestDecodeSimpleKeys) {
     int64_t val = -1234567891011121314;
     EXPECT_DECODED_KEY_EQ(INT64, "(int64 key=-1234567891011121314)",
                           "\x6e\xdd\xef\x0b\x4d\x2d\xcf\x5e", &val);
+  }
+
+  {
+    int128_t val = INT128_MAX;
+    EXPECT_DECODED_KEY_EQ(INT128, "(int128 key=170141183460469231731687303715884105727)",
+                          "\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff", &val);
+  }
+
+  {
+    int128_t val = -1234567891011121314;
+    EXPECT_DECODED_KEY_EQ(INT128, "(int128 key=-1234567891011121314)",
+                          "\x7f\xff\xff\xff\xff\xff\xff\xff\xee\xdd\xef\x0b\x4d\x2d\xcf\x5e", &val);
   }
 
   {

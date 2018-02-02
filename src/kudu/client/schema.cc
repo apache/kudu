@@ -623,6 +623,10 @@ KuduColumnSchema::DataType KuduColumnSchema::type() const {
   return FromInternalDataType(DCHECK_NOTNULL(col_)->type_info()->type());
 }
 
+KuduColumnTypeAttributes KuduColumnSchema::type_attributes() const {
+  ColumnTypeAttributes type_attributes = DCHECK_NOTNULL(col_)->type_attributes();
+  return KuduColumnTypeAttributes(type_attributes.precision, type_attributes.scale);
+}
 
 ////////////////////////////////////////////////////////////
 // KuduSchema

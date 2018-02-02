@@ -37,6 +37,7 @@
 #include "kudu/gutil/strings/escaping.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
+#include "kudu/util/decimal_util.h"
 #include "kudu/util/int128.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -980,7 +981,8 @@ TEST_F(PredicateTest, TestDecimalPredicates) {
   {
     KuduSchemaBuilder builder;
     builder.AddColumn("key")->NotNull()->Type(KuduColumnSchema::INT64)->PrimaryKey();
-    builder.AddColumn("value")->Type(KuduColumnSchema::DECIMAL)->Precision(4)->Scale(2);
+    builder.AddColumn("value")->Type(KuduColumnSchema::DECIMAL)
+        ->Precision(kMaxDecimal128Precision)->Scale(2);
     CHECK_OK(builder.Build(&schema));
   }
   unique_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());

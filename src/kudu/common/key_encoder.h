@@ -73,6 +73,7 @@ struct KeyEncoderTraits<Type,
       case 2: return BigEndian::FromHost16(x);
       case 4: return BigEndian::FromHost32(x);
       case 8: return BigEndian::FromHost64(x);
+      case 16: return BigEndian::FromHost128(x);
       default: LOG(FATAL) << "bad type: " << x;
     }
     return 0;
@@ -89,7 +90,7 @@ struct KeyEncoderTraits<Type,
 
     // To encode signed integers, swap the MSB.
     if (MathLimits<cpp_type>::kIsSigned) {
-      key_unsigned ^= 1UL << (sizeof(key_unsigned) * CHAR_BIT - 1);
+      key_unsigned ^= static_cast<unsigned_cpp_type>(1) << (sizeof(key_unsigned) * CHAR_BIT - 1);
     }
     key_unsigned = SwapEndian(key_unsigned);
     dst->append(reinterpret_cast<const char*>(&key_unsigned), sizeof(key_unsigned));
@@ -111,7 +112,7 @@ struct KeyEncoderTraits<Type,
     memcpy(&val,  encoded_key->data(), sizeof(cpp_type));
     val = SwapEndian(val);
     if (MathLimits<cpp_type>::kIsSigned) {
-      val ^= 1UL << (sizeof(val) * CHAR_BIT - 1);
+      val ^= static_cast<unsigned_cpp_type>(1) << (sizeof(val) * CHAR_BIT - 1);
     }
     memcpy(cell_ptr, &val, sizeof(val));
     encoded_key->remove_prefix(sizeof(cpp_type));

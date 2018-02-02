@@ -54,6 +54,7 @@ class EncoderResolver {
     AddMapping<UINT64>();
     AddMapping<INT64>();
     AddMapping<BINARY>();
+    AddMapping<INT128>();
   }
 
   template<DataType Type> void AddMapping() {

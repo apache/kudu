@@ -45,6 +45,7 @@
 #include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/util/bitmap.h"
+#include "kudu/util/decimal_util.h"
 #include "kudu/util/int128.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
@@ -77,8 +78,16 @@ struct SliceKeysTestSetup {
   }
 
   void AddKeyColumnsToSchema(KuduSchemaBuilder* builder) const {
-    builder->AddColumn("key")->Type(
-        client::FromInternalDataType(KeyTypeWrapper::kType))->NotNull()->PrimaryKey();
+    auto column_spec = builder->AddColumn("key");
+    column_spec->Type(client::FromInternalDataType(KeyTypeWrapper::kType))
+        ->NotNull()->PrimaryKey();
+    if (KeyTypeWrapper::kType == DECIMAL32) {
+      column_spec->Precision(kMaxDecimal32Precision);
+    } else if (KeyTypeWrapper::kType == DECIMAL64) {
+      column_spec->Precision(kMaxDecimal64Precision);
+    } else if (KeyTypeWrapper::kType == DECIMAL128) {
+      column_spec->Precision(kMaxDecimal128Precision);
+    }
   }
 
   // Split points are calculated by equally partitioning the int64_t key space and then
@@ -166,8 +175,16 @@ struct IntKeysTestSetup {
   }
 
   void AddKeyColumnsToSchema(KuduSchemaBuilder* builder) const {
-    builder->AddColumn("key")->Type(
-        client::FromInternalDataType(KeyTypeWrapper::kType))->NotNull()->PrimaryKey();
+    auto column_spec = builder->AddColumn("key");
+    column_spec->Type(client::FromInternalDataType(KeyTypeWrapper::kType))
+        ->NotNull()->PrimaryKey();
+    if (KeyTypeWrapper::kType == DECIMAL32) {
+      column_spec->Precision(kMaxDecimal32Precision);
+    } else if (KeyTypeWrapper::kType == DECIMAL64) {
+      column_spec->Precision(kMaxDecimal64Precision);
+    } else if (KeyTypeWrapper::kType == DECIMAL128) {
+      column_spec->Precision(kMaxDecimal128Precision);
+    }
   }
 
   vector<const KuduPartialRow*> GenerateSplitRows(const KuduSchema& schema) const {
@@ -271,7 +288,12 @@ class AllTypesItest : public KuduTest {
     builder.AddColumn("float_val")->Type(KuduColumnSchema::FLOAT);
     builder.AddColumn("double_val")->Type(KuduColumnSchema::DOUBLE);
     builder.AddColumn("binary_val")->Type(KuduColumnSchema::BINARY);
-    builder.AddColumn("decimal_val")->Type(KuduColumnSchema::DECIMAL)->Precision(18)->Scale(8);
+    builder.AddColumn("decimal32_val")->Type(KuduColumnSchema::DECIMAL)
+        ->Precision(kMaxDecimal32Precision);
+    builder.AddColumn("decimal64_val")->Type(KuduColumnSchema::DECIMAL)
+        ->Precision(kMaxDecimal64Precision);
+    builder.AddColumn("decimal128_val")->Type(KuduColumnSchema::DECIMAL)
+        ->Precision(kMaxDecimal128Precision);
     CHECK_OK(builder.Build(&schema_));
   }
 
@@ -339,7 +361,9 @@ class AllTypesItest : public KuduTest {
     RETURN_NOT_OK(row->SetDouble("double_val", double_val));
     RETURN_NOT_OK(row->SetFloat("float_val", double_val));
     RETURN_NOT_OK(row->SetBool("bool_val", int_val % 2));
-    RETURN_NOT_OK(row->SetUnscaledDecimal("decimal_val", int_val));
+    RETURN_NOT_OK(row->SetUnscaledDecimal("decimal32_val", int_val));
+    RETURN_NOT_OK(row->SetUnscaledDecimal("decimal64_val", int_val));
+    RETURN_NOT_OK(row->SetUnscaledDecimal("decimal128_val", int_val));
     VLOG(1) << "Inserting row[" << split_idx << "," << row_idx << "]" << insert->ToString();
     RETURN_NOT_OK(session->Apply(insert));
     return Status::OK();
@@ -376,7 +400,9 @@ class AllTypesItest : public KuduTest {
     projection->push_back("double_val");
     projection->push_back("float_val");
     projection->push_back("bool_val");
-    projection->push_back("decimal_val");
+    projection->push_back("decimal32_val");
+    projection->push_back("decimal64_val");
+    projection->push_back("decimal128_val");
   }
 
   ExpectedVals GetExpectedValsForRow(int split_idx, int row_idx) {
@@ -432,9 +458,15 @@ class AllTypesItest : public KuduTest {
     float float_val;
     ASSERT_OK(row.GetFloat("float_val", &float_val));
     ASSERT_EQ(float_val, vals.expected_float_val);
-    int128_t decimal_val;
-    ASSERT_OK(row.GetUnscaledDecimal("decimal_val", &decimal_val));
-    ASSERT_EQ(decimal_val, vals.expected_decimal_val);
+    int128_t decimal32_val;
+    ASSERT_OK(row.GetUnscaledDecimal("decimal32_val", &decimal32_val));
+    ASSERT_EQ(decimal32_val, vals.expected_decimal_val);
+    int128_t decimal64_val;
+    ASSERT_OK(row.GetUnscaledDecimal("decimal64_val", &decimal64_val));
+    ASSERT_EQ(decimal64_val, vals.expected_decimal_val);
+    int128_t decimal128_val;
+    ASSERT_OK(row.GetUnscaledDecimal("decimal128_val", &decimal128_val));
+    ASSERT_EQ(decimal128_val, vals.expected_decimal_val);
   }
 
   typedef std::function<Status (KuduScanner* scanner)> ScannerSetup;
@@ -519,6 +551,9 @@ typedef ::testing::Types<IntKeysTestSetup<KeyTypeWrapper<INT8> >,
                          IntKeysTestSetup<KeyTypeWrapper<INT16> >,
                          IntKeysTestSetup<KeyTypeWrapper<INT32> >,
                          IntKeysTestSetup<KeyTypeWrapper<INT64> >,
+                         IntKeysTestSetup<KeyTypeWrapper<DECIMAL32> >,
+                         IntKeysTestSetup<KeyTypeWrapper<DECIMAL64> >,
+                         IntKeysTestSetup<KeyTypeWrapper<DECIMAL128> >,
                          IntKeysTestSetup<KeyTypeWrapper<UNIXTIME_MICROS> >,
                          SliceKeysTestSetup<KeyTypeWrapper<STRING> >,
                          SliceKeysTestSetup<KeyTypeWrapper<BINARY> >
@@ -575,7 +610,7 @@ TYPED_TEST(AllTypesItest, TestTimestampPadding) {
           break;
         default:
           int col_size = GetTypeInfo(ToInternalDataType(col_schema.type(),
-                                                        KuduColumnTypeAttributes(18, 8)))->size();
+                                                        col_schema.type_attributes()))->size();
           projection_offsets.push_back(col_size);
           row_stride += col_size;
       }
@@ -594,10 +629,12 @@ TYPED_TEST(AllTypesItest, TestTimestampPadding) {
       for (int j = 0; j < schema->num_columns(); j++) {
         KuduColumnSchema col_schema = schema->Column(j);
 
-        if (schema->Column(j).name() == "key") {
+        if (col_schema.name() == "key") {
           ASSERT_OK(this->setup_.VerifyRowKeyRaw(row_data, num_tablet, *total_rows_in_tablet + i));
         } else {
           ExpectedVals vals = this->GetExpectedValsForRow(num_tablet, *total_rows_in_tablet + i);
+          DataType internal_type = ToInternalDataType(col_schema.type(),
+                                                      col_schema.type_attributes());
           switch (col_schema.type()) {
             case KuduColumnSchema::INT8:
               ASSERT_EQ(*reinterpret_cast<const int8_t*>(row_data), vals.expected_int8_val);
@@ -630,7 +667,22 @@ TYPED_TEST(AllTypesItest, TestTimestampPadding) {
               ASSERT_EQ(*reinterpret_cast<const double*>(row_data), vals.expected_double_val);
               break;
             case KuduColumnSchema::DECIMAL:
-              ASSERT_EQ(*reinterpret_cast<const int64_t*>(row_data), vals.expected_decimal_val);
+              switch (internal_type) {
+                case DECIMAL32:
+                  ASSERT_EQ(*reinterpret_cast<const int32_t*>(row_data),
+                            vals.expected_decimal_val);
+                  break;
+                case DECIMAL64:
+                  ASSERT_EQ(*reinterpret_cast<const int64_t*>(row_data),
+                            vals.expected_decimal_val);
+                  break;
+                case DECIMAL128:
+                  ASSERT_EQ(*reinterpret_cast<const int128_t*>(row_data),
+                            vals.expected_decimal_val);
+                  break;
+                default:
+                  LOG(FATAL) << "Unexpected internal decimal type: " << internal_type;
+              }
               break;
             default:
               LOG(FATAL) << "Unexpected type: " << col_schema.type();
