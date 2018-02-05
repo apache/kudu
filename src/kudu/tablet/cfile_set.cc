@@ -14,15 +14,20 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+#include "kudu/tablet/cfile_set.h"
 
 #include <algorithm>
 #include <memory>
 #include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
 
+#include <boost/container/flat_map.hpp>
+#include <boost/container/vector.hpp>
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/cfile/bloomfile.h"
@@ -40,11 +45,12 @@
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/dynamic_annotations.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/tablet/cfile_set.h"
 #include "kudu/tablet/diskrowset.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/rowset_metadata.h"
@@ -55,6 +61,8 @@
 
 DEFINE_bool(consult_bloom_filters, true, "Whether to consult bloom filters on row presence checks");
 TAG_FLAG(consult_bloom_filters, hidden);
+
+DECLARE_bool(rowset_metadata_store_keys);
 
 namespace kudu {
 
@@ -145,12 +153,21 @@ Status CFileSet::DoOpen() {
                              &ad_hoc_idx_reader_));
   }
 
-  // However, the key reader should always be fully opened, so that we
-  // can figure out where in the rowset tree we belong.
-  RETURN_NOT_OK(key_index_reader()->Init());
-
-  // Determine the upper and lower key bounds for this CFileSet.
-  RETURN_NOT_OK(LoadMinMaxKeys());
+  // If the user specified to store the min/max keys in the rowset metadata,
+  // fetch them. Otherwise, load the min and max keys from the key reader.
+  if (FLAGS_rowset_metadata_store_keys && rowset_metadata_->has_encoded_keys()) {
+    min_encoded_key_ = rowset_metadata_->min_encoded_key();
+    max_encoded_key_ = rowset_metadata_->max_encoded_key();
+  } else {
+    RETURN_NOT_OK(LoadMinMaxKeys());
+  }
+  // Verify the loaded keys are valid.
+  if (Slice(min_encoded_key_).compare(max_encoded_key_) > 0) {
+    return Status::Corruption(Substitute("Min key $0 > max key $1",
+                                         KUDU_REDACT(Slice(min_encoded_key_).ToDebugString()),
+                                         KUDU_REDACT(Slice(max_encoded_key_).ToDebugString())),
+                              ToString());
+  }
 
   return Status::OK();
 }
@@ -175,20 +192,14 @@ Status CFileSet::OpenBloomReader() {
 }
 
 Status CFileSet::LoadMinMaxKeys() {
-  CFileReader *key_reader = key_index_reader();
+  CFileReader* key_reader = key_index_reader();
+  RETURN_NOT_OK(key_index_reader()->Init());
   if (!key_reader->GetMetadataEntry(DiskRowSet::kMinKeyMetaEntryName, &min_encoded_key_)) {
     return Status::Corruption("No min key found", ToString());
   }
   if (!key_reader->GetMetadataEntry(DiskRowSet::kMaxKeyMetaEntryName, &max_encoded_key_)) {
     return Status::Corruption("No max key found", ToString());
   }
-  if (Slice(min_encoded_key_).compare(max_encoded_key_) > 0) {
-    return Status::Corruption(Substitute("Min key $0 > max key $1",
-                                         KUDU_REDACT(Slice(min_encoded_key_).ToDebugString()),
-                                         KUDU_REDACT(Slice(max_encoded_key_).ToDebugString())),
-                              ToString());
-  }
-
   return Status::OK();
 }
 
@@ -213,6 +224,7 @@ CFileSet::Iterator *CFileSet::NewIterator(const Schema *projection) const {
 }
 
 Status CFileSet::CountRows(rowid_t *count) const {
+  RETURN_NOT_OK(key_index_reader()->Init());
   return key_index_reader()->CountRows(count);
 }
 
@@ -300,6 +312,7 @@ Status CFileSet::CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
 }
 
 Status CFileSet::NewKeyIterator(CFileIterator **key_iter) const {
+  RETURN_NOT_OK(key_index_reader()->Init());
   return key_index_reader()->NewIterator(key_iter, CFileReader::CACHE_BLOCK);
 }
 
@@ -350,6 +363,8 @@ Status CFileSet::Iterator::CreateColumnIterators(const ScanSpec* spec) {
 
 Status CFileSet::Iterator::Init(ScanSpec *spec) {
   CHECK(!initted_);
+
+  RETURN_NOT_OK(base_data_->CountRows(&row_count_));
 
   // Setup Key Iterator
   CFileIterator *tmp;

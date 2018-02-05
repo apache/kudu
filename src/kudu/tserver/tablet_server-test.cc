@@ -145,6 +145,7 @@ DEFINE_int32(delete_tablet_bench_num_flushes, 200,
 DECLARE_bool(crash_on_eio);
 DECLARE_bool(enable_maintenance_manager);
 DECLARE_bool(fail_dns_resolution);
+DECLARE_bool(rowset_metadata_store_keys);
 DECLARE_double(env_inject_eio);
 DECLARE_int32(flush_threshold_mb);
 DECLARE_int32(flush_threshold_secs);
@@ -157,6 +158,7 @@ DECLARE_string(block_manager);
 DECLARE_string(env_inject_eio_globs);
 
 // Declare these metrics prototypes for simpler unit testing of their behavior.
+METRIC_DECLARE_counter(block_manager_total_bytes_read);
 METRIC_DECLARE_counter(rows_inserted);
 METRIC_DECLARE_counter(rows_updated);
 METRIC_DECLARE_counter(rows_deleted);
@@ -3222,6 +3224,47 @@ TEST_F(TabletServerTest, TestNoMetricsForTombstonedTablet) {
       ASSERT_STR_NOT_CONTAINS(buf.ToString(), "\"type\": \"tablet\"");
     }
   }
+}
+
+// Test ensuring that when rowset min/max keys are stored with and read from
+// the rowset metadata, the tablet server doesn't read any blocks when
+// bootstrapping.
+TEST_F(TabletServerTest, TestKeysInRowsetMetadataPreventStartupSeeks) {
+  // Write the min/max keys to the rowset metadata. This gives us the option to
+  // read from the CFile vs from the rowset metadata.
+  FLAGS_rowset_metadata_store_keys = true;
+  InsertTestRowsDirect(0, 100);
+  ASSERT_OK(tablet_replica_->tablet()->Flush());
+  // Disable the maintenance manager so we don't get any seeks from
+  // maintenance operations when we restart.
+  FLAGS_enable_maintenance_manager = false;
+
+  const auto restart_server_and_check_bytes_read = [&] (bool keys_in_rowset_meta) {
+    FLAGS_rowset_metadata_store_keys = keys_in_rowset_meta;
+    // Reset the replica to avoid any lingering references.
+    // Restart the server and wait for the tablet to bootstrap.
+    tablet_replica_.reset();
+    mini_server_->Shutdown();
+
+    ASSERT_OK(mini_server_->Restart());
+    ASSERT_OK(mini_server_->WaitStarted());
+
+    scoped_refptr<Counter> bytes_read_metric =
+        METRIC_block_manager_total_bytes_read.Instantiate(
+            mini_server_->server()->metric_entity());
+    int64_t bm_bytes_read = bytes_read_metric->value();
+    if (keys_in_rowset_meta) {
+      ASSERT_EQ(0, bm_bytes_read);
+    } else {
+      ASSERT_LT(0, bm_bytes_read);
+    }
+  };
+
+  // Test both reading and not reading the keys from the rowset metadata,
+  // making sure we read bytes in the block manager only when expected (no
+  // bytes should be read by the BM if storing keys in the rowset metadata).
+  restart_server_and_check_bytes_read(/*keys_in_rowset_meta=*/ false);
+  restart_server_and_check_bytes_read(/*keys_in_rowset_meta=*/ true);
 }
 
 } // namespace tserver

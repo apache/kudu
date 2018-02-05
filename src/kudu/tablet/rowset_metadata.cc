@@ -77,6 +77,15 @@ void RowSetMetadata::LoadFromPB(const RowSetDataPB& pb) {
   std::lock_guard<LockType> l(lock_);
   id_ = pb.id();
 
+  // Load the min/max keys.
+  min_encoded_key_ = boost::none;
+  max_encoded_key_ = boost::none;
+  DCHECK_EQ(pb.has_min_encoded_key(), pb.has_max_encoded_key());
+  if (pb.has_min_encoded_key() && pb.has_max_encoded_key()) {
+    min_encoded_key_ = pb.min_encoded_key();
+    max_encoded_key_ = pb.max_encoded_key();
+  }
+
   // Load Bloom File.
   bloom_block_ = BlockId();
   if (pb.has_bloom_block()) {
@@ -147,6 +156,12 @@ void RowSetMetadata::ToProtobuf(RowSetDataPB *pb) {
   // Write AdHoc Index
   if (!adhoc_index_block_.IsNull()) {
     adhoc_index_block_.CopyToPB(pb->mutable_adhoc_index_block());
+  }
+
+  // Write the min/max keys.
+  if (has_encoded_keys_unlocked()) {
+    pb->set_min_encoded_key(*min_encoded_key_);
+    pb->set_max_encoded_key(*max_encoded_key_);
   }
 }
 

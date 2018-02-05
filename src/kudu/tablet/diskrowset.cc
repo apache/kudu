@@ -74,6 +74,11 @@ DEFINE_int32(default_composite_key_index_block_size_bytes, 4096,
              "Block size used for composite key indexes.");
 TAG_FLAG(default_composite_key_index_block_size_bytes, experimental);
 
+DEFINE_bool(rowset_metadata_store_keys, false,
+            "Whether to store the min/max encoded keys in the rowset "
+            "metadata. If false, keys will be read from the data blocks.");
+TAG_FLAG(rowset_metadata_store_keys, experimental);
+
 namespace kudu {
 
 class Mutex;
@@ -185,6 +190,9 @@ Status DiskRowSetWriter::AppendBlock(const RowBlock &block) {
   if (written_count_ == 0) {
     Slice enc_key = schema_->EncodeComparableKey(block.row(0), &last_encoded_key_);
     key_index_writer()->AddMetadataPair(DiskRowSet::kMinKeyMetaEntryName, enc_key);
+    if (FLAGS_rowset_metadata_store_keys) {
+      rowset_metadata_->set_min_encoded_key(enc_key.ToString());
+    }
     last_encoded_key_.clear();
   }
 
@@ -252,6 +260,9 @@ Status DiskRowSetWriter::FinishAndReleaseBlocks(BlockCreationTransaction* transa
       << "First Key not <= Last key: first_key=" << KUDU_REDACT(first_enc_slice.ToDebugString())
       << "   last_key=" << KUDU_REDACT(last_enc_slice.ToDebugString());
   key_index_writer()->AddMetadataPair(DiskRowSet::kMaxKeyMetaEntryName, last_enc_slice);
+  if (FLAGS_rowset_metadata_store_keys) {
+    rowset_metadata_->set_max_encoded_key(last_enc_slice.ToString());
+  }
 
   // Finish writing the columns themselves.
   RETURN_NOT_OK(col_writer_->FinishAndReleaseBlocks(transaction));

@@ -215,9 +215,7 @@ class CFileSet::Iterator : public ColumnwiseIterator {
         projection_(projection),
         initted_(false),
         cur_idx_(0),
-        prepared_count_(0) {
-    CHECK_OK(base_data_->CountRows(&row_count_));
-  }
+        prepared_count_(0) {}
 
   // Fill in col_iters_ for each of the requested columns.
   Status CreateColumnIterators(const ScanSpec* spec);
