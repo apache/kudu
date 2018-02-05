@@ -361,8 +361,9 @@ class DiskRowSet : public RowSet {
                                     const MvccSnapshot &snap,
                                     gscoped_ptr<CompactionInput>* out) const override;
 
-  // Count the number of rows in this rowset.
-  Status CountRows(rowid_t *count) const override;
+  // Gets the number of rows in this rowset, checking 'num_rows_' first. If not
+  // yet set, consults the base data and stores the result in 'num_rows_'.
+  Status CountRows(rowid_t *count) const final override;
 
   // See RowSet::GetBounds(...)
   virtual Status GetBounds(std::string* min_encoded_key,
@@ -469,6 +470,10 @@ class DiskRowSet : public RowSet {
   mutable rw_spinlock component_lock_;
   std::shared_ptr<CFileSet> base_data_;
   gscoped_ptr<DeltaTracker> delta_tracker_;
+
+  // Number of rows in the rowset. This may be unset (-1) if the rows in the
+  // underlying cfile set have not been counted yet.
+  mutable std::atomic<int64_t> num_rows_;
 
   // Lock governing this rowset's inclusion in a compact/flush. If locked,
   // no other compactor will attempt to include this rowset.

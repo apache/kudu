@@ -519,6 +519,7 @@ DiskRowSet::DiskRowSet(shared_ptr<RowSetMetadata> rowset_metadata,
       open_(false),
       log_anchor_registry_(log_anchor_registry),
       mem_trackers_(std::move(mem_trackers)),
+      num_rows_(-1),
       has_been_compacted_(false) {}
 
 Status DiskRowSet::Open() {
@@ -527,9 +528,7 @@ Status DiskRowSet::Open() {
                                mem_trackers_.tablet_tracker,
                                &base_data_));
 
-  rowid_t num_rows;
-  RETURN_NOT_OK(base_data_->CountRows(&num_rows));
-  RETURN_NOT_OK(DeltaTracker::Open(rowset_metadata_, num_rows,
+  RETURN_NOT_OK(DeltaTracker::Open(rowset_metadata_,
                                    log_anchor_registry_,
                                    mem_trackers_,
                                    &delta_tracker_));
@@ -670,6 +669,10 @@ Status DiskRowSet::MutateRow(Timestamp timestamp,
                              ProbeStats* stats,
                              OperationResultPB* result) {
   DCHECK(open_);
+#ifndef NDEBUG
+  rowid_t num_rows;
+  RETURN_NOT_OK(CountRows(&num_rows));
+#endif
   shared_lock<rw_spinlock> l(component_lock_);
 
   boost::optional<rowid_t> row_idx;
@@ -677,6 +680,9 @@ Status DiskRowSet::MutateRow(Timestamp timestamp,
   if (PREDICT_FALSE(row_idx == boost::none)) {
     return Status::NotFound("row not found");
   }
+#ifndef NDEBUG
+  CHECK_LT(*row_idx, num_rows);
+#endif
 
   // It's possible that the row key exists in this DiskRowSet, but it has
   // in fact been Deleted already. Check with the delta tracker to be sure.
@@ -695,6 +701,10 @@ Status DiskRowSet::CheckRowPresent(const RowSetKeyProbe &probe,
                                    bool* present,
                                    ProbeStats* stats) const {
   DCHECK(open_);
+#ifndef NDEBUG
+  rowid_t num_rows;
+  RETURN_NOT_OK(CountRows(&num_rows));
+#endif
   shared_lock<rw_spinlock> l(component_lock_);
 
   rowid_t row_idx;
@@ -703,6 +713,9 @@ Status DiskRowSet::CheckRowPresent(const RowSetKeyProbe &probe,
     // If it wasn't in the base data, then it's definitely not in the rowset.
     return Status::OK();
   }
+#ifndef NDEBUG
+  CHECK_LT(row_idx, num_rows);
+#endif
 
   // Otherwise it might be in the base data but deleted.
   bool deleted = false;
@@ -713,9 +726,15 @@ Status DiskRowSet::CheckRowPresent(const RowSetKeyProbe &probe,
 
 Status DiskRowSet::CountRows(rowid_t *count) const {
   DCHECK(open_);
-  shared_lock<rw_spinlock> l(component_lock_);
-
-  return base_data_->CountRows(count);
+  rowid_t num_rows = num_rows_.load();
+  if (PREDICT_TRUE(num_rows != -1)) {
+    *count = num_rows;
+  } else {
+    shared_lock<rw_spinlock> l(component_lock_);
+    RETURN_NOT_OK(base_data_->CountRows(count));
+    num_rows_.store(*count);
+  }
+  return Status::OK();
 }
 
 Status DiskRowSet::GetBounds(std::string* min_encoded_key,

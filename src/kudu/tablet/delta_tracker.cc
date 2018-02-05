@@ -74,12 +74,11 @@ using std::vector;
 using strings::Substitute;
 
 Status DeltaTracker::Open(const shared_ptr<RowSetMetadata>& rowset_metadata,
-                          rowid_t num_rows,
                           LogAnchorRegistry* log_anchor_registry,
                           const TabletMemTrackers& mem_trackers,
                           gscoped_ptr<DeltaTracker>* delta_tracker) {
   gscoped_ptr<DeltaTracker> local_dt(
-      new DeltaTracker(rowset_metadata, num_rows, log_anchor_registry,
+      new DeltaTracker(rowset_metadata, log_anchor_registry,
                        mem_trackers));
   RETURN_NOT_OK(local_dt->DoOpen());
 
@@ -88,11 +87,9 @@ Status DeltaTracker::Open(const shared_ptr<RowSetMetadata>& rowset_metadata,
 }
 
 DeltaTracker::DeltaTracker(shared_ptr<RowSetMetadata> rowset_metadata,
-                           rowid_t num_rows,
                            LogAnchorRegistry* log_anchor_registry,
                            TabletMemTrackers mem_trackers)
     : rowset_metadata_(std::move(rowset_metadata)),
-      num_rows_(num_rows),
       open_(false),
       read_only_(false),
       log_anchor_registry_(log_anchor_registry),
@@ -606,9 +603,8 @@ Status DeltaTracker::Update(Timestamp timestamp,
                             const RowChangeList &update,
                             const consensus::OpId& op_id,
                             OperationResultPB* result) {
-  // TODO: can probably lock this more fine-grained.
+  // TODO(todd): can probably lock this more fine-grained.
   shared_lock<rw_spinlock> lock(component_lock_);
-  DCHECK_LT(row_idx, num_rows_);
 
   Status s = dms_->Update(timestamp, row_idx, update, op_id);
   if (s.ok()) {
@@ -625,7 +621,6 @@ Status DeltaTracker::CheckRowDeleted(rowid_t row_idx, bool *deleted,
                                      ProbeStats* stats) const {
   shared_lock<rw_spinlock> lock(component_lock_);
 
-  DCHECK_LT(row_idx, num_rows_);
 
   *deleted = false;
   // Check if the row has a deletion in DeltaMemStore.

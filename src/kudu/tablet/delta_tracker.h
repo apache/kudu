@@ -83,7 +83,6 @@ class DeltaTracker {
   };
 
   static Status Open(const std::shared_ptr<RowSetMetadata>& rowset_metadata,
-                     rowid_t num_rows,
                      log::LogAnchorRegistry* log_anchor_registry,
                      const TabletMemTrackers& mem_trackers,
                      gscoped_ptr<DeltaTracker>* delta_tracker);
@@ -223,12 +222,6 @@ class DeltaTracker {
                           const SharedDeltaStoreVector& new_stores,
                           DeltaType type);
 
-  // Return the number of rows encompassed by this DeltaTracker. Note that
-  // this is _not_ the number of updated rows, but rather the number of rows
-  // in the associated CFileSet base data. All updates must have a rowid
-  // strictly less than num_rows().
-  int64_t num_rows() const { return num_rows_; }
-
   // Get the delta MemStore's size in bytes, including pre-allocation.
   size_t DeltaMemStoreSize() const;
 
@@ -276,7 +269,7 @@ class DeltaTracker {
   FRIEND_TEST(TestMajorDeltaCompaction, TestCompact);
 
   DeltaTracker(std::shared_ptr<RowSetMetadata> rowset_metadata,
-               rowid_t num_rows, log::LogAnchorRegistry* log_anchor_registry,
+               log::LogAnchorRegistry* log_anchor_registry,
                TabletMemTrackers mem_trackers);
 
   Status DoOpen();
@@ -319,11 +312,6 @@ class DeltaTracker {
   std::string LogPrefix() const;
 
   std::shared_ptr<RowSetMetadata> rowset_metadata_;
-
-  // The number of rows in the DiskRowSet that this tracker is associated with.
-  // This is just used for assertions to make sure that we don't update a row
-  // which doesn't exist.
-  rowid_t num_rows_;
 
   bool open_;
 

@@ -1188,10 +1188,10 @@ Status ReupdateMissedDeltas(const string &tablet_name,
   VLOG(1) << "Reupdating missed deltas between snapshot " <<
     snap_to_exclude.ToString() << " and " << snap_to_include.ToString();
 
-  // Collect the delta trackers that we'll push the updates into.
-  deque<DeltaTracker *> delta_trackers;
+  // Collect the disk rowsets that we'll push the updates into.
+  deque<DiskRowSet *> diskrowsets;
   for (const shared_ptr<RowSet> &rs : output_rowsets) {
-    delta_trackers.push_back(down_cast<DiskRowSet *>(rs.get())->delta_tracker());
+    diskrowsets.push_back(down_cast<DiskRowSet *>(rs.get()));
   }
 
   // The set of updated delta trackers.
@@ -1285,25 +1285,30 @@ Status ReupdateMissedDeltas(const string &tablet_name,
         DVLOG(3) << "Flushing missed delta for row " << output_row_offset
                  << " @" << mut->timestamp() << ": " << mut->changelist().ToString(*schema);
 
-        DeltaTracker *cur_tracker = delta_trackers.front();
+        rowid_t num_rows;
+        DiskRowSet* cur_drs = diskrowsets.front();
+        RETURN_NOT_OK(cur_drs->CountRows(&num_rows));
 
         // The index on the input side isn't necessarily the index on the output side:
         // we may have output several small DiskRowSets, so we need to find the index
         // relative to the current one.
         int64_t idx_in_delta_tracker = output_row_offset - delta_tracker_base_row;
-        while (idx_in_delta_tracker >= cur_tracker->num_rows()) {
+        while (idx_in_delta_tracker >= num_rows) {
           // If the current index is higher than the total number of rows in the current
           // DeltaTracker, that means we're now processing the next one in the list.
           // Pop the current front tracker, and make the indexes relative to the next
           // in the list.
-          delta_tracker_base_row += cur_tracker->num_rows();
-          idx_in_delta_tracker -= cur_tracker->num_rows();
+          delta_tracker_base_row += num_rows;
+          idx_in_delta_tracker -= num_rows;
           DCHECK_GE(idx_in_delta_tracker, 0);
-          delta_trackers.pop_front();
-          cur_tracker = delta_trackers.front();
+          diskrowsets.pop_front();
+          cur_drs = diskrowsets.front();
+          RETURN_NOT_OK(cur_drs->CountRows(&num_rows));
         }
 
+        DeltaTracker* cur_tracker = cur_drs->delta_tracker();
         gscoped_ptr<OperationResultPB> result(new OperationResultPB);
+        DCHECK_LT(idx_in_delta_tracker, num_rows);
         Status s = cur_tracker->Update(mut->timestamp(),
                                        idx_in_delta_tracker,
                                        mut->changelist(),
