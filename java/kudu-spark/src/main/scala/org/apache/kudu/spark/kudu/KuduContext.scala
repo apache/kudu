@@ -26,9 +26,10 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable
 
 import org.apache.hadoop.util.ShutdownHookManager
+import org.apache.kudu.ColumnTypeAttributes.ColumnTypeAttributesBuilder
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.types.{DataType, DataTypes, StructType}
+import org.apache.spark.sql.types.{DataType, DataTypes, DecimalType, StructField, StructType}
 import org.apache.spark.sql.{DataFrame, Row}
 import org.apache.spark.util.AccumulatorV2
 import org.apache.yetus.audience.InterfaceStability
@@ -161,15 +162,30 @@ class KuduContext(val kuduMaster: String,
     val kuduCols = new util.ArrayList[ColumnSchema]()
     // add the key columns first, in the order specified
     for (key <- keys) {
-      val f = schema.fields(schema.fieldIndex(key))
-      kuduCols.add(new ColumnSchema.ColumnSchemaBuilder(f.name, kuduType(f.dataType)).key(true).build())
+      val field = schema.fields(schema.fieldIndex(key))
+      val col = createColumn(field, isKey = true)
+      kuduCols.add(col)
     }
     // now add the non-key columns
-    for (f <- schema.fields.filter(field=> !keys.contains(field.name))) {
-      kuduCols.add(new ColumnSchema.ColumnSchemaBuilder(f.name, kuduType(f.dataType)).nullable(f.nullable).key(false).build())
+    for (field <- schema.fields.filter(field => !keys.contains(field.name))) {
+      val col = createColumn(field, isKey = false)
+      kuduCols.add(col)
     }
 
     syncClient.createTable(tableName, new Schema(kuduCols), options)
+  }
+
+  private def createColumn(field: StructField, isKey: Boolean): ColumnSchema = {
+    val kt = kuduType(field.dataType)
+    val col = new ColumnSchema.ColumnSchemaBuilder(field.name, kt).key(isKey).nullable(field.nullable)
+    // Add ColumnTypeAttributesBuilder to DECIMAL columns
+    if (kt == Type.DECIMAL) {
+      val dt = field.dataType.asInstanceOf[DecimalType]
+      col.typeAttributes(
+        new ColumnTypeAttributesBuilder().precision(dt.precision).scale(dt.scale).build()
+      )
+    }
+    col.build()
   }
 
   /** Map Spark SQL type to Kudu type */
@@ -184,6 +200,7 @@ class KuduContext(val kuduMaster: String,
     case DataTypes.LongType => Type.INT64
     case DataTypes.FloatType => Type.FLOAT
     case DataTypes.DoubleType => Type.DOUBLE
+    case DecimalType() => Type.DECIMAL
     case _ => throw new IllegalArgumentException(s"No support for Spark SQL type $dt")
   }
 
@@ -276,18 +293,21 @@ class KuduContext(val kuduMaster: String,
         for ((sparkIdx, kuduIdx) <- indices) {
           if (row.isNullAt(sparkIdx)) {
             operation.getRow.setNull(kuduIdx)
-          } else schema.fields(sparkIdx).dataType match {
-            case DataTypes.StringType => operation.getRow.addString(kuduIdx, row.getString(sparkIdx))
-            case DataTypes.BinaryType => operation.getRow.addBinary(kuduIdx, row.getAs[Array[Byte]](sparkIdx))
-            case DataTypes.BooleanType => operation.getRow.addBoolean(kuduIdx, row.getBoolean(sparkIdx))
-            case DataTypes.ByteType => operation.getRow.addByte(kuduIdx, row.getByte(sparkIdx))
-            case DataTypes.ShortType => operation.getRow.addShort(kuduIdx, row.getShort(sparkIdx))
-            case DataTypes.IntegerType => operation.getRow.addInt(kuduIdx, row.getInt(sparkIdx))
-            case DataTypes.LongType => operation.getRow.addLong(kuduIdx, row.getLong(sparkIdx))
-            case DataTypes.FloatType => operation.getRow.addFloat(kuduIdx, row.getFloat(sparkIdx))
-            case DataTypes.DoubleType => operation.getRow.addDouble(kuduIdx, row.getDouble(sparkIdx))
-            case DataTypes.TimestampType => operation.getRow.addLong(kuduIdx, KuduRelation.timestampToMicros(row.getTimestamp(sparkIdx)))
-            case t => throw new IllegalArgumentException(s"No support for Spark SQL type $t")
+          } else {
+            schema.fields(sparkIdx).dataType match {
+              case DataTypes.StringType => operation.getRow.addString(kuduIdx, row.getString(sparkIdx))
+              case DataTypes.BinaryType => operation.getRow.addBinary(kuduIdx, row.getAs[Array[Byte]](sparkIdx))
+              case DataTypes.BooleanType => operation.getRow.addBoolean(kuduIdx, row.getBoolean(sparkIdx))
+              case DataTypes.ByteType => operation.getRow.addByte(kuduIdx, row.getByte(sparkIdx))
+              case DataTypes.ShortType => operation.getRow.addShort(kuduIdx, row.getShort(sparkIdx))
+              case DataTypes.IntegerType => operation.getRow.addInt(kuduIdx, row.getInt(sparkIdx))
+              case DataTypes.LongType => operation.getRow.addLong(kuduIdx, row.getLong(sparkIdx))
+              case DataTypes.FloatType => operation.getRow.addFloat(kuduIdx, row.getFloat(sparkIdx))
+              case DataTypes.DoubleType => operation.getRow.addDouble(kuduIdx, row.getDouble(sparkIdx))
+              case DataTypes.TimestampType => operation.getRow.addLong(kuduIdx, KuduRelation.timestampToMicros(row.getTimestamp(sparkIdx)))
+              case DecimalType() => operation.getRow.addDecimal(kuduIdx, row.getDecimal(sparkIdx))
+              case t => throw new IllegalArgumentException(s"No support for Spark SQL type $t")
+            }
           }
         }
         session.apply(operation)

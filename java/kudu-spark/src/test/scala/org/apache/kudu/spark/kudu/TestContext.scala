@@ -16,6 +16,7 @@
  */
 package org.apache.kudu.spark.kudu
 
+import java.math.BigDecimal
 import java.util.Date
 
 import scala.collection.JavaConverters._
@@ -26,10 +27,12 @@ import org.apache.spark.SparkConf
 import org.scalatest.{BeforeAndAfterAll, Suite}
 
 import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder
+import org.apache.kudu.ColumnTypeAttributes.ColumnTypeAttributesBuilder
 import org.apache.kudu.client.KuduClient.KuduClientBuilder
 import org.apache.kudu.client.MiniKuduCluster.MiniKuduClusterBuilder
 import org.apache.kudu.client.{CreateTableOptions, KuduClient, KuduTable, MiniKuduCluster}
 import org.apache.kudu.{Schema, Type}
+import org.apache.kudu.util.DecimalUtil
 import org.apache.spark.sql.SparkSession
 
 trait TestContext extends BeforeAndAfterAll { self: Suite =>
@@ -54,8 +57,20 @@ trait TestContext extends BeforeAndAfterAll { self: Suite =>
       new ColumnSchemaBuilder("c7_float", Type.FLOAT).build(),
       new ColumnSchemaBuilder("c8_binary", Type.BINARY).build(),
       new ColumnSchemaBuilder("c9_unixtime_micros", Type.UNIXTIME_MICROS).build(),
-      new ColumnSchemaBuilder("c10_byte", Type.INT8).build())
-    new Schema(columns)
+      new ColumnSchemaBuilder("c10_byte", Type.INT8).build(),
+      new ColumnSchemaBuilder("c11_decimal32", Type.DECIMAL)
+        .typeAttributes(
+          new ColumnTypeAttributesBuilder().precision(DecimalUtil.MAX_DECIMAL32_PRECISION).build()
+        ).build(),
+      new ColumnSchemaBuilder("c12_decimal64", Type.DECIMAL)
+        .typeAttributes(
+          new ColumnTypeAttributesBuilder().precision(DecimalUtil.MAX_DECIMAL64_PRECISION).build()
+        ).build(),
+      new ColumnSchemaBuilder("c13_decimal128", Type.DECIMAL)
+        .typeAttributes(
+          new ColumnTypeAttributesBuilder().precision(DecimalUtil.MAX_DECIMAL128_PRECISION).build()
+        ).build())
+      new Schema(columns)
   }
 
   val appID: String = new Date().toString + math.floor(math.random * 10E4).toLong.toString
@@ -113,6 +128,9 @@ trait TestContext extends BeforeAndAfterAll { self: Suite =>
       val ts = System.currentTimeMillis() * 1000
       row.addLong(9, ts)
       row.addByte(10, i.toByte)
+      row.addDecimal(11, BigDecimal.valueOf(i))
+      row.addDecimal(12, BigDecimal.valueOf(i))
+      row.addDecimal(13, BigDecimal.valueOf(i))
 
       // Sprinkling some nulls so that queries see them.
       val s = if (i % 2 == 0) {

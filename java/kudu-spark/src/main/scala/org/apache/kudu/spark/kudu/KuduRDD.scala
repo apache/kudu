@@ -123,6 +123,7 @@ private class RowIterator(private val scanner: KuduScanner,
       case Type.DOUBLE => rowResult.getDouble(i)
       case Type.STRING => rowResult.getString(i)
       case Type.BINARY => rowResult.getBinaryCopy(i)
+      case Type.DECIMAL => rowResult.getDecimal(i)
     }
   }
 

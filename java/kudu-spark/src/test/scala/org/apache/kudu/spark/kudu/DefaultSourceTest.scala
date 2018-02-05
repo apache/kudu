@@ -249,7 +249,18 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter wi
                  sqlContext.sql(s"""SELECT key, c7_float FROM $tableName where c7_float > 5""").count())
 
   }
-
+  test("table scan with projection and predicate decimal32") {
+    assertEquals(rows.count { case (key, i, s, ts) => i > 5},
+      sqlContext.sql(s"""SELECT key, c11_decimal32 FROM $tableName where c11_decimal32 > 5""").count())
+  }
+  test("table scan with projection and predicate decimal64") {
+    assertEquals(rows.count { case (key, i, s, ts) => i > 5},
+      sqlContext.sql(s"""SELECT key, c12_decimal64 FROM $tableName where c12_decimal64 > 5""").count())
+  }
+  test("table scan with projection and predicate decimal128") {
+    assertEquals(rows.count { case (key, i, s, ts) => i > 5},
+      sqlContext.sql(s"""SELECT key, c13_decimal128 FROM $tableName where c13_decimal128 > 5""").count())
+  }
   test("table scan with projection and predicate ") {
     assertEquals(rows.count { case (key, i, s, ts) => s != null && s > "5" },
       sqlContext.sql(s"""SELECT key FROM $tableName where c2_s > "5"""").count())
@@ -474,7 +485,7 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter wi
     ))
 
     val dfDefaultSchema = sqlContext.read.options(kuduOptions).kudu
-    assertEquals(11, dfDefaultSchema.schema.fields.length)
+    assertEquals(14, dfDefaultSchema.schema.fields.length)
 
     val dfWithUserSchema = sqlContext.read.options(kuduOptions).schema(userSchema).kudu
     assertEquals(2, dfWithUserSchema.schema.fields.length)
