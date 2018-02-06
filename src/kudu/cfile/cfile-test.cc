@@ -65,6 +65,7 @@
 #include "kudu/util/compression/compression.pb.h"
 #include "kudu/util/env.h"
 #include "kudu/util/int128.h"
+#include "kudu/util/int128_util.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/metrics.h"

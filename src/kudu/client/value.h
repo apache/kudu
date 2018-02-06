@@ -52,6 +52,7 @@ class KUDU_EXPORT KuduValue {
   static KuduValue* FromBool(bool b);
   ///@}
 
+#if KUDU_INT128_SUPPORTED
   /// Construct a decimal KuduValue from the raw value and scale.
   ///
   /// The validity of the decimal value is not checked until the
@@ -65,6 +66,7 @@ class KUDU_EXPORT KuduValue {
   ///@{
   static KuduValue* FromDecimal(int128_t dv, int8_t scale);
 ///@}
+#endif
 
   /// Construct a KuduValue by copying the value of the given Slice.
   ///

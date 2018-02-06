@@ -20,8 +20,16 @@
 // as choices and standards around int128 change.
 #pragma once
 
-#include <iostream>
+// __int128 is not supported before gcc 4.6
+#if defined(__clang__) || \
+  (defined(__GNUC__) && \
+  (__GNUC__ * 10000 + __GNUC_MINOR__ * 100) >= 40600)
+#define KUDU_INT128_SUPPORTED 1
+#else
+#define KUDU_INT128_SUPPORTED 0
+#endif
 
+#if KUDU_INT128_SUPPORTED
 namespace kudu {
 
 typedef unsigned __int128 uint128_t;
@@ -35,12 +43,4 @@ static const int128_t INT128_MAX = ((int128_t)(UINT128_MAX >> 1));
 static const int128_t INT128_MIN = (-INT128_MAX - 1);
 
 } // namespace kudu
-
-namespace std {
-
-  // Support the << operator on int128_t and uint128_t types.
-  // We use __int128 here because these are not in the Kudu namespace.
-  std::ostream& operator<<(std::ostream& os, const __int128& val);
-  std::ostream& operator<<(std::ostream& os, const unsigned __int128& val);
-
-} // namespace std
+#endif

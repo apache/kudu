@@ -146,7 +146,6 @@ set(UTIL_SRCS
   hdr_histogram.cc
   hexdump.cc
   init.cc
-  int128.cc
   jsonreader.cc
   jsonwriter.cc
   kernel_stack_watchdog.cc

@@ -24,6 +24,7 @@
 
 #include "kudu/gutil/macros.h"
 #include "kudu/util/int128.h"
+#include "kudu/util/int128_util.h"
 
 using std::string;
 

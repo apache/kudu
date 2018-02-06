@@ -74,7 +74,7 @@ struct KeyEncoderTraits<Type,
       case 4: return BigEndian::FromHost32(x);
       case 8: return BigEndian::FromHost64(x);
       case 16: return BigEndian::FromHost128(x);
-      default: LOG(FATAL) << "bad type: " << x;
+      default: LOG(FATAL) << "bad type size of: " << sizeof(x);
     }
     return 0;
   }

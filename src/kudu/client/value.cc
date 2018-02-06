@@ -257,7 +257,6 @@ const Slice KuduValue::Data::GetSlice() {
     case DECIMAL:
       return Slice(reinterpret_cast<uint8_t*>(&decimal_val_),
                    sizeof(int128_t));
-
     case SLICE:
       return slice_val_;
   }

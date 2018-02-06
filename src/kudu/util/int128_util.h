@@ -17,20 +17,23 @@
 
 #include "kudu/util/int128.h"
 
+#include <iostream>
 #include <string>
 
 #include "kudu/gutil/strings/numbers.h"
 
 namespace std {
 
-std::ostream& operator<<(std::ostream& os, const __int128& val) {
+// Support the << operator on int128_t and uint128_t types.
+//
+inline std::ostream& operator<<(std::ostream& os, const __int128& val) {
   os << SimpleItoa(val);
   return os;
 }
-
-std::ostream& operator<<(std::ostream& os, const unsigned __int128& val) {
+inline std::ostream& operator<<(std::ostream& os, const unsigned __int128& val) {
   os << SimpleItoa(val);
   return os;
 }
 
 } // namespace std
+
