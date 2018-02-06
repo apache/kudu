@@ -601,6 +601,10 @@ Status ServerBase::StartMetricsLogging() {
   if (options_.metrics_log_interval_ms <= 0) {
     return Status::OK();
   }
+  if (FLAGS_log_dir.empty()) {
+    LOG(INFO) << "Not starting metrics log since no log directory was specified.";
+    return Status::OK();
+  }
 
   return Thread::Create("server", "metrics-logger", &ServerBase::MetricsLoggingThread,
                         this, &metrics_logging_thread_);
