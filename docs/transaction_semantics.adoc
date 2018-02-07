@@ -56,9 +56,9 @@ Writes are not  "committed" explicitly by the user. Instead, they are committed 
 by the system, after completion.
 
 * *Scans* are read operations that can traverse multiple tablets and read information
-with some consistency or correctness guarantees. Scans can perform time-travel reads, i.e.
-the user is able to set a scan timestamp in the past and get back results that reflect
-the state of the storage engine at that point in time.
+with different levels of consistency or correctness guarantees. Scans can perform
+time-travel reads, i.e. the user is able to set a scan timestamp in the past and
+get back results that reflect the state of the storage engine at that point in time.
 
 [NOTE]
 .Before We Begin
@@ -115,7 +115,7 @@ the option to impose some constraints on the assigned timestamps and on how writ
 different tablets can be observed by clients.
 
 Kudu, like Spanner, was designed to be externally consistent <<5>>, preserving consistency
-even when operations span multiple tablets and even multiple data centers. In practice this
+when operations span multiple tablets and even multiple data centers. In practice this
 means that, if a write operation changes item _x_ at tablet _A_, and a following write
 operation changes item _y_ at tablet _B_, you might want to enforce that if
 the change to _y_ is observed, the change to _x_ must also be observed. There
@@ -173,7 +173,7 @@ one or more tablets. When a server receives a scan request, it takes a snapshot 
 state and then proceeds in one of two ways depending on the read mode selected by
 the user. The mode may be selected as follows:
 
-Java Client:: Call `KuduScannerBuilder#setReadMode(...)`
+Java Client:: Call `KuduScannerBuilder#readMode(...)`
 {cpp} Client:: Call `KuduScanner::SetReadMode()`
 
 The following modes are available in both clients:
@@ -200,7 +200,20 @@ up-to-date view of the database. In that case, you might choose `READ_AT_SNAPSHO
 and select a timestamp that is a few seconds in the past when the scan starts. On
 the other hand, a machine learning workload that is not ingesting the whole data
 set and is already statistical in nature might not require the scan to be repeatable,
-so you might choose `READ_LATEST` instead.
+so you might choose `READ_LATEST` instead for better scan performance.
+
+[NOTE]
+====
+Kudu also provides replica selection API for users to choose at which replica the
+scan should be performed:
+
+Java Client:: Call `KuduScannerBuilder#replicaSelection(...)`
+{cpp} Client:: Call `KuduScanner::SetSelection(...)`
+
+This API is a means to control locality and, in some cases, latency. The replica
+selection API has no effect on the consistency guarantees, which will hold no matter
+which replica is selected.
+====
 
 [[known_issues]]
 == Known Issues and Limitations
@@ -209,13 +222,13 @@ There are several gaps and corner cases that prevent Kudu from being fully stric
 in some situations, at the moment. Below are the details and next, some recommendations.
 
 [[known_issues_scans]]
-=== Reads (Scans)
+=== Writes
 
 * Support for `COMMIT_WAIT` is experimental and requires careful tuning of the
   time-synchronization protocol, such as NTP (Network Time Protocol). Its use
   is discouraged in production environments.
 
-=== Writes
+=== Reads (Scans)
 
 * On a leader change, `READ_AT_SNAPSHOT` scans at a snapshot whose timestamp is beyond the last
   write may also yield non-repeatable reads (see
