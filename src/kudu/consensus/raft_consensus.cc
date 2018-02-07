@@ -225,7 +225,7 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
   txn_factory_ = DCHECK_NOTNULL(txn_factory);
   mark_dirty_clbk_ = std::move(mark_dirty_clbk);
 
-  term_metric_ = metric_entity->FindOrCreateGauge(&METRIC_raft_term, cmeta_->current_term());
+  term_metric_ = metric_entity->FindOrCreateGauge(&METRIC_raft_term, CurrentTerm());
   follower_memory_pressure_rejections_ =
       metric_entity->FindOrCreateCounter(&METRIC_follower_memory_pressure_rejections);
 
