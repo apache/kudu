@@ -1084,12 +1084,14 @@ ADD_THIRDPARTY_LIB(boost_date_time
 # compiler options since we only do this when tcmalloc was
 # found and enabled.
 ############################################################
+get_filename_component(SIZED_DEALLOCATION_TEST_TCMALLOC_LIBDIR
+  ${TCMALLOC_STATIC_LIB} DIRECTORY)
 execute_process(
   COMMAND printf
     "#include <new>\nint main(){(::operator delete)(0,256);return 0;}\n"
   COMMAND ${CMAKE_CXX_COMPILER}
     -x c++ -fsized-deallocation -O0 -fno-builtin
-    -l:${TCMALLOC_SHARED_LIB} -o /dev/null -
+    -L${SIZED_DEALLOCATION_TEST_TCMALLOC_LIBDIR} -ltcmalloc -o /dev/null -
   RESULT_VARIABLE SIZED_DEALLOCATION_TEST_RESULT OUTPUT_QUIET ERROR_QUIET)
 if (${SIZED_DEALLOCATION_TEST_RESULT} EQUAL 0)
   set(COMPILER_SUPPORTS_SIZED_DEALLOCATION TRUE)
