@@ -5,10 +5,11 @@
 #ifndef BASE_THREADING_THREAD_COLLISION_WARNER_H_
 #define BASE_THREADING_THREAD_COLLISION_WARNER_H_
 
+#include <cstdint>
+
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/port.h"
- 
+
 #ifndef BASE_EXPORT
 #define BASE_EXPORT
 #endif
@@ -135,12 +136,12 @@ namespace base {
 // in case of collision (check thread_collision_warner_unittests.cc)
 struct BASE_EXPORT AsserterBase {
   virtual ~AsserterBase() {}
-  virtual void warn() = 0;
+  virtual void warn(int64_t previous_thread_id, int64_t current_thread_id) = 0;
 };
 
 struct BASE_EXPORT DCheckAsserter : public AsserterBase {
   virtual ~DCheckAsserter() {}
-  virtual void warn() OVERRIDE;
+  void warn(int64_t previous_thread_id, int64_t current_thread_id) override;
 };
 
 class BASE_EXPORT ThreadCollisionWarner {
