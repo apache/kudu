@@ -2309,7 +2309,7 @@ Status RaftConsensus::ReplicateConfigChangeUnlocked(
 Status RaftConsensus::RefreshConsensusQueueAndPeersUnlocked() {
   DCHECK(lock_.is_locked());
   DCHECK_EQ(RaftPeerPB::LEADER, cmeta_->active_role());
-  RaftConfigPB active_config = cmeta_->ActiveConfig();
+  const RaftConfigPB& active_config = cmeta_->ActiveConfig();
 
   // Change the peers so that we're able to replicate messages remotely and
   // locally. The peer manager must be closed before updating the active config
@@ -2914,7 +2914,7 @@ Status RaftConsensus::SetVotedForCurrentTermUnlocked(const std::string& uuid) {
   return Status::OK();
 }
 
-std::string RaftConsensus::GetVotedForCurrentTermUnlocked() const {
+const std::string& RaftConsensus::GetVotedForCurrentTermUnlocked() const {
   DCHECK(lock_.is_locked());
   DCHECK(cmeta_->has_voted_for());
   return cmeta_->voted_for();

@@ -570,6 +570,9 @@ void TSTabletManager::RunTabletCopy(
                                                                     last_logged_opid->term()),
                                             TabletServerErrorPB::INVALID_CONFIG);
         }
+        // Shut down the old TabletReplica so that it is no longer allowed to
+        // mutate the ConsensusMetadata.
+        old_replica->Shutdown();
         break;
       }
       case TABLET_DATA_READY: {
@@ -959,7 +962,7 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletReplica>& replica,
     // with a partially created tablet here?
     replica->SetBootstrapping();
     s = BootstrapTablet(replica->tablet_metadata(),
-                        cmeta->CommittedConfig(),
+                        replica->consensus()->CommittedConfig(),
                         scoped_refptr<clock::Clock>(server_->clock()),
                         server_->mem_tracker(),
                         server_->result_tracker(),

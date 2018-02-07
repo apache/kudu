@@ -744,7 +744,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
 
   // Return replica's vote for the current term.
   // The vote must be set; use HasVotedCurrentTermUnlocked() to check.
-  std::string GetVotedForCurrentTermUnlocked() const;
+  const std::string& GetVotedForCurrentTermUnlocked() const;
 
   const ConsensusOptions& GetOptions() const;
 

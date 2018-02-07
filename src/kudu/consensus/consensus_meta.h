@@ -26,7 +26,7 @@
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/util/mutex.h"
+#include "kudu/gutil/threading/thread_collision_warner.h"
 
 namespace kudu {
 
@@ -65,7 +65,7 @@ enum class ConsensusMetadataCreateMode {
 // the pending configuration if a pending configuration is set, otherwise the committed
 // configuration.
 //
-// This class is thread-safe.
+// This class is not thread-safe and requires external synchronization.
 class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
  public:
 
@@ -81,7 +81,7 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
 
   // Accessors for voted_for.
   bool has_voted_for() const;
-  std::string voted_for() const;
+  const std::string& voted_for() const;
   void clear_voted_for();
   void set_voted_for(const std::string& uuid);
 
@@ -101,14 +101,14 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
   int64_t GetConfigOpIdIndex(RaftConfigState type);
 
   // Accessors for committed configuration.
-  RaftConfigPB CommittedConfig() const;
+  const RaftConfigPB& CommittedConfig() const;
   void set_committed_config(const RaftConfigPB& config);
 
   // Returns whether a pending configuration is set.
   bool has_pending_config() const;
 
   // Returns the pending configuration if one is set. Otherwise, fires a DCHECK.
-  RaftConfigPB PendingConfig() const;
+  const RaftConfigPB& PendingConfig() const;
 
   // Set & clear the pending configuration.
   void clear_pending_config();
@@ -116,12 +116,11 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
 
   // If a pending configuration is set, return it.
   // Otherwise, return the committed configuration.
-  RaftConfigPB ActiveConfig() const;
-  const RaftConfigPB& active_config_unlocked() const;
+  const RaftConfigPB& ActiveConfig() const;
 
   // Accessors for setting the active leader.
-  std::string leader_uuid() const;
-  void set_leader_uuid(const std::string& uuid);
+  const std::string& leader_uuid() const;
+  void set_leader_uuid(std::string uuid);
 
   // Returns the currently active role of the current node.
   RaftPeerPB::Role active_role() const;
@@ -135,7 +134,7 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
   ConsensusStatePB ToConsensusStatePB() const;
 
   // Merge the committed portion of the consensus state from the source node
-  // during remote bootstrap.
+  // during tablet copy.
   //
   // This method will clear any pending config change, replace the committed
   // consensus config with the one in 'cstate', and clear the currently
@@ -205,26 +204,12 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
   static Status DeleteOnDiskData(FsManager* fs_manager, const std::string& tablet_id);
 
   // Return the specified config.
-  const RaftConfigPB& config_unlocked(RaftConfigState type) const;
-
-  const RaftConfigPB& committed_config_unlocked() const;
-  void set_committed_config_unlocked(const RaftConfigPB& config);
-
-  int64_t current_term_unlocked() const;
-  void set_current_term_unlocked(int64_t term);
-  void clear_voted_for_unlocked();
-  const RaftConfigPB& pending_config_unlocked() const;
-  bool has_pending_config_unlocked() const;
-  void clear_pending_config_unlocked();
-  void set_leader_uuid_unlocked(const std::string& uuid);
-
-  ConsensusStatePB ToConsensusStatePBUnlocked() const;
+  const RaftConfigPB& GetConfig(RaftConfigState type) const;
 
   std::string LogPrefix() const;
 
   // Updates the cached active role.
   void UpdateActiveRole();
-  void UpdateActiveRoleUnlocked();
 
   // Updates the cached on-disk size of the consensus metadata.
   Status UpdateOnDiskSize();
@@ -233,8 +218,9 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
   const std::string tablet_id_;
   const std::string peer_uuid_;
 
-  // Protects all of the mutable fields below.
-  mutable Mutex lock_;
+  // This fake mutex helps ensure that this ConsensusMetadata object stays
+  // externally synchronized.
+  DFAKE_MUTEX(fake_lock_);
 
   std::string leader_uuid_; // Leader of the current term (term == pb_.current_term).
   bool has_pending_config_; // Indicates whether there is an as-yet uncommitted

@@ -132,9 +132,8 @@ TabletReplica::TabletReplica(
 }
 
 TabletReplica::~TabletReplica() {
-  // We should either have called Shutdown(), or we should have never called
-  // Init().
-  CHECK(!tablet_)
+  // We are required to call Shutdown() before destroying a TabletReplica.
+  CHECK(state_ == SHUTDOWN || state_ == FAILED)
       << "TabletReplica not fully shut down. State: "
       << TabletStatePB_Name(state_);
 }
