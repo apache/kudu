@@ -94,8 +94,8 @@ or
 Sep 17, 8:32:31.135 PM FATAL tablet_server_main.cc:38 Check failed: _s.ok() Bad status: Service unavailable: Cannot initialize clock: Cannot initialize HybridClock. Clock synchronized but error was too high (11711000 us).
 ----
 
-TIP: If NTP is installed the user can monitor the synchronization status by running
-`ntptime`. The relevant value is what is reported for `maximum error`.
+==== Installing NTP
+
 
 To install NTP, use the appropriate command for your operating system:
 [cols="1,1", options="header"]
@@ -113,14 +113,149 @@ If NTP is installed but not running, start it using one of these commands:
 | RHEL/CentOS | `sudo /etc/init.d/ntpd restart`
 |===
 
-TIP: NTP requires a network connection and may take a few minutes to synchronize the clock.
-In some cases a spotty network connection may make NTP report the clock as unsynchronized.
+====  Monitoring NTP Status
+
+When NTP is installed, you can monitor the synchronization status by running
+`ntptime`. For example, a healthy system may report:
+
+----
+ntp_gettime() returns code 0 (OK)
+  time de24c0cf.8d5da274  Tue, Feb  6 2018 16:03:27.552, (.552210980),
+  maximum error 224455 us, estimated error 383 us, TAI offset 0
+ntp_adjtime() returns code 0 (OK)
+  modes 0x0 (),
+  offset 1279.543 us, frequency 2.500 ppm, interval 1 s,
+  maximum error 224455 us, estimated error 383 us,
+  status 0x2001 (PLL,NANO),
+  time constant 10, precision 0.001 us, tolerance 500 ppm,
+----
+
+In particular, note the following most important pieces of output:
+
+- `maximum error 22455 us`: this value is well under the 10-second maximum error required
+  by Kudu.
+- `status 0x2001 (PLL,NANO)`: this indicates a healthy synchronization status.
+
+In contrast, a system without NTP properly configured and running will output
+something like the following:
+
+----
+ntp_gettime() returns code 5 (ERROR)
+  time de24c240.0c006000  Tue, Feb  6 2018 16:09:36.046, (.046881),
+  maximum error 16000000 us, estimated error 16000000 us, TAI offset 0
+ntp_adjtime() returns code 5 (ERROR)
+  modes 0x0 (),
+  offset 0.000 us, frequency 2.500 ppm, interval 1 s,
+  maximum error 16000000 us, estimated error 16000000 us,
+  status 0x40 (UNSYNC),
+  time constant 10, precision 1.000 us, tolerance 500 ppm,
+----
+
+Note the `UNSYNC` status and the 16-second maximum error.
+
+If more detailed information is needed, the `ntpq` or `ntpdc` tools
+can be used to dump further information about which network time servers
+are currently acting as sources:
+
+----
+$ ntpq -n -c opeers
+     remote           local      st t when poll reach   delay   offset    disp
+==============================================================================
+ 0.0.0.0         0.0.0.0         16 p    -   64    0    0.000    0.000 16000.0
+ 0.0.0.0         0.0.0.0         16 p    -   64    0    0.000    0.000 16000.0
+ 0.0.0.0         0.0.0.0         16 p    -   64    0    0.000    0.000 16000.0
+ 0.0.0.0         0.0.0.0         16 p    -   64    0    0.000    0.000 16000.0
+ 0.0.0.0         0.0.0.0         16 p    -   64    0    0.000    0.000 16000.0
+-108.59.2.24     10.16.2.89       2 u    3   64    3   74.380    0.321  62.992
+-208.82.104.205  10.16.2.89       2 u    5   64    3   52.654   -4.054  62.965
+#192.96.202.120  10.16.2.89       2 u    1   64    3   74.737    6.538  62.988
+#69.10.161.7     10.16.2.89       3 u    5   64    3   28.353   -1.967  62.960
+-173.255.206.154 10.16.2.89       3 u    -   64    3   42.906   -3.127  62.996
+-69.195.159.158  10.16.2.89       2 u    1   64    3   52.543   -4.788  62.987
+*216.218.254.202 10.16.2.89       1 u    5   64    3    2.567    0.053  62.974
+-129.250.35.250  10.16.2.89       2 u    3   64    3    2.603    0.256  62.985
++45.76.244.193   10.16.2.89       2 u    5   64    3   19.522    0.188  62.969
+-69.89.207.199   10.16.2.89       2 u    5   64    3   66.687   -0.395  62.967
+-171.66.97.126   10.16.2.89       1 u    1   64    3   12.627   -3.572  62.963
+#66.228.42.59    10.16.2.89       4 u    1   64    3   72.143    4.034  62.971
+ 91.189.89.198   10.16.2.89       2 u    5   64    3  135.329    3.069 3937.74
+#162.210.111.4   10.16.2.89       2 u    -   64    3   29.572    6.849  62.966
++199.102.46.80   10.16.2.89       1 u    3   64    3   57.022    0.111  63.386
+ 91.189.89.199   10.16.2.89       2 u    4   64    3  138.269    3.228 3937.98
+----
+
+TIP: Depending on the specific version of NTP, the correct command may be either
+`ntpq -n -c opeers` or `ntpq -n -c lpeers`.
+
+
+[NOTE]
+****
+.Using `chrony` for time synchronization
+
+Some operating systems offer `chrony` as an alternative to `ntpd` for network time
+synchronization. Kudu has been tested most thoroughly using `ntpd` and use of
+`chrony` is considered experimental.
+
+In order to use `chrony` for synchronization, `chrony.conf` must be configured
+with the `rtcsync` option.
+****
+
+==== NTP Configuration Best Practices
+
+In order to provide stable time synchronization with low maximum error, follow
+these best NTP configuration best practices.
+
+*Always configure at least four time sources for NTP.* In addition to providing
+redundancy in case one or more time sources becomes unavailable, The NTP protocol is
+designed to increase its accuracy with a diversity of sources. Even if your organization
+provides one or more local time servers, configuring additional remote servers is highly
+recommended for a robust setup.
+
+*Pick servers in your server's local geography.* For example, if your servers are located
+in Europe, pick servers from the European NTP pool. If your servers are running in a public
+cloud environment, consult the cloud provider's documentation for a recommended NTP setup.
+Many cloud providers offer highly accurate clock synchronization as a service.
+
+*Use the `iburst` option for faster synchronization at startup*. The `iburst` option
+instructs `ntpd` to send an initial "burst" of time queries at startup. This typically
+results in a faster time synchronization when a machine restarts.
+
+An example NTP server list may appear as follows:
+
+----
+# Use my organization's internal NTP servers.
+server ntp1.myorg.internal iburst
+server ntp2.myorg.internal iburst
+# Provide several public pool servers from the US pool for
+# redundancy and robustness.
+server 0.pool.us.ntp.org iburst
+server 1.pool.us.ntp.org iburst
+server 2.pool.us.ntp.org iburst
+server 3.pool.us.ntp.org iburst
+----
+
+TIP: After configuring NTP, use the `ntpq` tool described above to verify that `ntpd` was
+able to connect to a variety of peers. If no public peers appear, it is possiblbe that
+the NTP protocol is being blocked by a firewall or other network connectivity issue.
+
+==== Troubleshooting NTP Stability Problems
+
+As of Kudu 1.6.0, Kudu daemons are able to continue to operate during a brief loss of
+NTP synchronization. If NTP synchronization is lost for several hours, however, daemons
+may crash. If a daemon crashes due to NTP synchronization issues, consult the `ERROR` log
+for a dump of related information which may help to diagnose the issue.
+
+TIP: Kudu 1.5.0 and earlier versions were less resilient to brief NTP outages. In
+addition, they contained a link:https://issues.apache.org/jira/browse/KUDU-2209[bug]
+which could cause Kudu to incorrectly measure the maximum error, resulting in
+crashes. If you experience crashes related to clock synchronization on these
+earlier versions of Kudu and it appears that the system's NTP configuration is correct,
+consider upgrading to Kudu 1.6.0 or later.
+
+TIP: NTP requires a network connection and may take a few minutes to synchronize the clock
+at startup. In some cases a spotty network connection may make NTP report the clock as unsynchronized.
 A common, though temporary, workaround for this is to restart NTP with one of the commands above.
 
-If the clock is being reported as synchronized by NTP, but the maximum error is too high,
-the user can increase the threshold to a higher value by setting the above
-mentioned flag. For example to increase the possible maximum error to
-20 seconds the flag should be set like: `--max_clock_sync_error_usec=20000000`
 
 [[crash_reporting]]
 == Reporting Kudu Crashes
