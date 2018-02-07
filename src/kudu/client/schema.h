@@ -189,6 +189,11 @@ class KUDU_EXPORT KuduColumnSchema {
     TIMESTAMP = UNIXTIME_MICROS //!< deprecated, use UNIXTIME_MICROS
   };
 
+  /// @param [in] type
+  ///   Column data type.
+  /// @return String representation of the column data type.
+  static std::string DataTypeToString(DataType type);
+
   /// Construct KuduColumnSchema object as a copy of another object.
   ///
   /// @param [in] other

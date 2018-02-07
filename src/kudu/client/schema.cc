@@ -558,6 +558,34 @@ Status KuduSchemaBuilder::Build(KuduSchema* schema) {
 // KuduColumnSchema
 ////////////////////////////////////////////////////////////
 
+std::string KuduColumnSchema::DataTypeToString(DataType type) {
+  switch (type) {
+    case INT8:
+      return "INT8";
+    case INT16:
+      return "INT16";
+    case INT32:
+      return "INT32";
+    case INT64:
+      return "INT64";
+    case STRING:
+      return "STRING";
+    case BOOL:
+      return "BOOL";
+    case FLOAT:
+      return "FLOAT";
+    case DOUBLE:
+      return "DOUBLE";
+    case BINARY:
+      return "BINARY";
+    case UNIXTIME_MICROS:
+      return "UNIXTIME_MICROS";
+    case DECIMAL:
+      return "DECIMAL";
+  }
+  LOG(FATAL) << "Unhandled type " << type;
+}
+
 KuduColumnSchema::KuduColumnSchema(const std::string &name,
                                    DataType type,
                                    bool is_nullable,
