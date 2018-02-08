@@ -18,7 +18,9 @@
 #include "kudu/util/debug-util.h"
 
 #include <dirent.h>
+#ifndef __linux__
 #include <sched.h>
+#endif
 #ifdef __linux__
 #include <syscall.h>
 #else
@@ -31,12 +33,13 @@
 #include <climits>
 #include <csignal>
 #include <ctime>
+#include <memory>
 #include <ostream>
 #include <string>
 
 #include <glog/logging.h>
 
-#include "kudu/gutil/atomicops.h"
+#include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/hash/city.h"
 #include "kudu/gutil/linux_syscall_support.h"
 #include "kudu/gutil/macros.h"
@@ -44,6 +47,7 @@
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/debug/leak_annotations.h"
 #include "kudu/util/debug/sanitizer_scopes.h"
 #include "kudu/util/debug/unwind_safeness.h"
 #include "kudu/util/errno.h"
@@ -51,6 +55,7 @@
 #include "kudu/util/thread.h"
 
 using std::string;
+using std::unique_ptr;
 using std::vector;
 
 #if defined(__APPLE__)
@@ -97,11 +102,9 @@ static const int kPrintfPointerFieldWidth = 2 + 2 * sizeof(void*);
 // This can't be in used by other libraries in the process.
 static int g_stack_trace_signum = SIGUSR2;
 
-// We only allow a single dumper thread to run at a time. This simplifies the synchronization
-// between the dumper and the target thread.
-//
-// This lock also protects changes to the signal handler.
-static base::SpinLock g_dumper_thread_lock(base::LINKER_INITIALIZED);
+// Protects g_stack_trace_signum and the installation of the signal
+// handler.
+static base::SpinLock g_signal_handler_lock(base::LINKER_INITIALIZED);
 
 namespace kudu {
 
@@ -123,8 +126,7 @@ void TryFlushCoverage() {
 }
 
 
-
-namespace {
+namespace stack_trace_internal {
 
 // Simple notification mechanism based on futex.
 //
@@ -136,6 +138,8 @@ namespace {
 // need strict timeouts here.
 class CompletionFlag {
  public:
+
+  // Mark the flag as complete, waking all waiters.
   void Signal() {
     complete_ = true;
 #ifndef __APPLE__
@@ -146,11 +150,12 @@ class CompletionFlag {
 #endif
   }
 
-  bool TimedWait(MonoDelta timeout) {
+  // Wait for the flag to be marked as complete, up until the given deadline.
+  // Returns true if the flag was marked complete before the deadline.
+  bool WaitUntil(MonoTime deadline) {
     if (complete_) return true;
 
     MonoTime now = MonoTime::Now();
-    MonoTime deadline = now + timeout;
     while (now < deadline) {
 #ifndef __APPLE__
       MonoDelta rem = deadline - now;
@@ -182,61 +187,53 @@ class CompletionFlag {
   std::atomic<int32_t> complete_ { 0 };
 };
 
-// Global structure used to communicate between the signal handler
-// and a dumping thread.
-struct SignalCommunication {
-  // The actual stack trace collected from the target thread.
-  StackTrace stack;
 
-  // The current target. Signals can be delivered asynchronously, so the
-  // dumper thread sets this variable first before sending a signal. If
-  // a signal is received on a thread that doesn't match 'target_tid', it is
-  // ignored.
-  pid_t target_tid;
+// A pointer to this structure is passed as signal data to a thread when
+// a stack trace is being remotely requested.
+struct SignalData {
+  // The actual destination for the stack trace collected from the target thread.
+  StackTrace* stack;
+
+  static const int kNotInUse = 0;
+  static const int kDumpInProgress = -1;
+  // Either one of the above constants, or if the dumper thread
+  // is waiting on a response, the tid that it is waiting on.
+  std::atomic<int64_t> queued_to_tid { kNotInUse };
 
   // Signaled when the target thread has successfully collected its stack.
   // The dumper thread waits for this to become true.
   CompletionFlag result_ready;
-
-  // Lock protecting the other members. We use a bare atomic here and a custom
-  // lock guard below instead of existing spinlock implementaitons because futex()
-  // is not signal-safe.
-  Atomic32 lock;
-
-  struct Lock;
 };
-SignalCommunication g_comm;
 
-// Pared-down SpinLock for SignalCommunication::lock. This doesn't rely on futex
-// so it is async-signal safe.
-struct SignalCommunication::Lock {
-  Lock() {
-    while (base::subtle::Acquire_CompareAndSwap(&g_comm.lock, 0, 1) != 0) {
-      sched_yield();
-    }
-  }
-  ~Lock() {
-    base::subtle::Release_Store(&g_comm.lock, 0);
-  }
-};
+} // namespace stack_trace_internal
+
+using stack_trace_internal::SignalData;
+
+namespace {
 
 // Signal handler for our stack trace signal.
 // We expect that the signal is only sent from DumpThreadStack() -- not by a user.
-void HandleStackTraceSignal(int signum) {
-  SignalCommunication::Lock l;
-
-  // Check that the dumper thread is still interested in our stack trace.
-  // It's possible for signal delivery to be artificially delayed, in which
-  // case the dumper thread would have already timed out and moved on with
-  // its life. In that case, we don't want to race with some other thread's
-  // dump.
-  int64_t my_tid = Thread::CurrentThreadId();
-  if (g_comm.target_tid != my_tid) {
+void HandleStackTraceSignal(int /*signum*/, siginfo_t* info, void* /*ucontext*/) {
+  auto* sig_data = reinterpret_cast<SignalData*>(info->si_ptr);
+  DCHECK(sig_data);
+  if (!sig_data) {
+    // Maybe the signal was sent by a user instead of by ourself, ignore it.
     return;
   }
+  ANNOTATE_HAPPENS_AFTER(sig_data);
+  int64_t my_tid = Thread::CurrentThreadId();
 
-  g_comm.stack.Collect(2);
-  g_comm.result_ready.Signal();
+  // If we were slow to process the signal, the sender may have given up and
+  // no longer wants our stack trace. In that case, the 'sig' object will
+  // no longer contain our thread.
+  if (!sig_data->queued_to_tid.compare_exchange_strong(my_tid, SignalData::kDumpInProgress)) {
+    return;
+  }
+  // Marking it as kDumpInProgress ensures that the caller thread must now wait
+  // for our response, since we are writing directly into their StackTrace object.
+  sig_data->stack->Collect(/*skip_frames=*/2);
+  sig_data->queued_to_tid = SignalData::kNotInUse;
+  sig_data->result_ready.Signal();
 }
 
 bool InitSignalHandlerUnlocked(int signum) {
@@ -252,7 +249,7 @@ bool InitSignalHandlerUnlocked(int signum) {
   if (signum != g_stack_trace_signum && state == INITIALIZED) {
     struct sigaction old_act;
     PCHECK(sigaction(g_stack_trace_signum, nullptr, &old_act) == 0);
-    if (old_act.sa_handler == &HandleStackTraceSignal) {
+    if (old_act.sa_sigaction == &HandleStackTraceSignal) {
       signal(g_stack_trace_signum, SIG_DFL);
     }
   }
@@ -277,7 +274,13 @@ bool InitSignalHandlerUnlocked(int signum) {
     } else {
       // No one appears to be using the signal. This is racy, but there is no
       // atomic swap capability.
-      sighandler_t old_handler = signal(g_stack_trace_signum, HandleStackTraceSignal);
+      struct sigaction act;
+      memset(&act, 0, sizeof(act));
+      act.sa_sigaction = &HandleStackTraceSignal;
+      act.sa_flags = SA_SIGINFO | SA_RESTART;
+      struct sigaction old_act;
+      CHECK_ERR(sigaction(g_stack_trace_signum, &act, &old_act));
+      sighandler_t old_handler = old_act.sa_handler;
       if (old_handler != SIG_IGN &&
           old_handler != SIG_DFL) {
         LOG(FATAL) << "raced against another thread installing a signal handler";
@@ -288,45 +291,128 @@ bool InitSignalHandlerUnlocked(int signum) {
   return state == INITIALIZED;
 }
 
-
 } // anonymous namespace
 
 Status SetStackTraceSignal(int signum) {
-  base::SpinLockHolder h(&g_dumper_thread_lock);
+  base::SpinLockHolder h(&g_signal_handler_lock);
   if (!InitSignalHandlerUnlocked(signum)) {
     return Status::InvalidArgument("unable to install signal handler");
   }
   return Status::OK();
 }
 
-Status GetThreadStack(int64_t tid, StackTrace* stack) {
-#if defined(__linux__)
-  base::SpinLockHolder h(&g_dumper_thread_lock);
+StackTraceCollector::StackTraceCollector(StackTraceCollector&& other) noexcept
+    : tid_(other.tid_),
+      sig_data_(other.sig_data_) {
+  other.tid_ = 0;
+  other.sig_data_ = nullptr;
+}
 
-  // Ensure that our signal handler is installed. We don't need any fancy GoogleOnce here
-  // because of the mutex above.
-  if (!InitSignalHandlerUnlocked(g_stack_trace_signum)) {
-    return Status::NotSupported("unable to take thread stack: signal handler unavailable");
+StackTraceCollector::~StackTraceCollector() {
+  if (sig_data_) {
+    RevokeSigData();
+  }
+}
+
+#ifdef __linux__
+void StackTraceCollector::RevokeSigData() {
+  // We have several cases to consider. Though it involves some simple code
+  // duplication, each case is handled separately for clarity.
+
+  // 1) We have sent the signal, and the thread has completed the stack trace.
+  //    This this is the "happy path".
+  if (sig_data_->result_ready.complete()) {
+    delete sig_data_;
+    sig_data_ = nullptr;
+    return;
   }
 
+  // 2) Timed out, but signal still pending and signal handler not yet invoked.
+  //    In this case, we need to make sure that when it does later get the signal,
+  //    it doesn't attempt to read 'sig_data_' after we've freed it. However
+  //    we can still safely free the stack trace object itself.
+  //
+  // 3) Timed out, but signal has been delivered and the stack tracing is in
+  //    progress. In this case we have to wait for it to finish. This case should
+  //    be very rare, since the trace collection itself is typically fast.
+  //
+  // We can distinguish between case (2) and (3) using the 'queued_to_tid' member:
+  int64_t old_val = sig_data_->queued_to_tid.exchange(SignalData::kNotInUse);
+
+  // In case (2), the signal handler hasn't started collecting a stack trace, so we
+  // were able to exchange it out and see that it was still "queued". In this case,
+  // if the signal later gets delivered, we can't free the sig_data_ struct itself.
+  // We intentionally leak it. Note, however, that when it does run, it will
+  // see that we exchanged out its tid from 'queued_to_tid' and therefore won't
+  // attempt to write into the stack_ structure.
+  //
+  // TODO(todd) instead of leaking, we can insert these lost structs into a
+  // global free-list, and then reuse them the next time we want to send a
+  // signal. The re-use is safe since access is limited to a specific tid.
+  if (old_val == tid_) {
+    DLOG(WARNING) << "Leaking SignalData structure " << sig_data_ << " after lost signal "
+                  << "to thread " << tid_;
+    ANNOTATE_LEAKING_OBJECT_PTR(sig_data_);
+    sig_data_ = nullptr;
+    return;
+  }
+
+  // In case (3), the signal handler started running but isn't complete yet.
+  // We have no choice but to await completion
+  CHECK(old_val == SignalData::kDumpInProgress);
+  CHECK(sig_data_->result_ready.WaitUntil(MonoTime::Max()));
+
+  delete sig_data_;
+  sig_data_ = nullptr;
+}
+
+
+Status StackTraceCollector::TriggerAsync(int64_t tid, StackTrace* stack) {
+  CHECK(!sig_data_ && tid_ == 0) << "TriggerAsync() must not be called more than once per instance";
+
+  // Ensure that our signal handler is installed.
+  {
+    base::SpinLockHolder h(&g_signal_handler_lock);
+    if (!InitSignalHandlerUnlocked(g_stack_trace_signum)) {
+      return Status::NotSupported("unable to take thread stack: signal handler unavailable");
+    }
+  }
+
+  std::unique_ptr<SignalData> data(new SignalData());
   // Set the target TID in our communication structure, so if we end up with any
   // delayed signal reaching some other thread, it will know to ignore it.
-  {
-    SignalCommunication::Lock l;
-    CHECK_EQ(0, g_comm.target_tid);
-    g_comm.target_tid = tid;
-  }
+  data->queued_to_tid = tid;
+  data->stack = CHECK_NOTNULL(stack);
 
   // We use the raw syscall here instead of kill() to ensure that we don't accidentally
   // send a signal to some other process in the case that the thread has exited and
   // the TID been recycled.
-  if (syscall(SYS_tgkill, getpid(), tid, g_stack_trace_signum) != 0) {
-    {
-      SignalCommunication::Lock l;
-      g_comm.target_tid = 0;
-    }
+  siginfo_t info;
+  memset(&info, 0, sizeof(info));
+  info.si_signo = g_stack_trace_signum;
+  info.si_code = SI_QUEUE;
+  info.si_pid = getpid();
+  info.si_uid = getuid();
+  info.si_value.sival_ptr = data.get();
+  // Since we're using a signal to pass information between the two threads,
+  // we need to help TSAN out and explicitly tell it about the happens-before
+  // relationship here.
+  ANNOTATE_HAPPENS_BEFORE(data.get());
+  if (syscall(SYS_rt_tgsigqueueinfo, getpid(), tid, g_stack_trace_signum, &info) != 0) {
     return Status::NotFound("unable to deliver signal: process may have exited");
   }
+
+  // The signal is now pending to the target thread. We don't store it in a unique_ptr
+  // inside the class since we need to be careful to destruct it safely in case the
+  // target thread hasn't yet received the signal when this instance gets destroyed.
+  sig_data_ = data.release();
+  tid_ = tid;
+
+  return Status::OK();
+}
+
+Status StackTraceCollector::AwaitCollection(MonoTime deadline) {
+  CHECK(sig_data_) << "Must successfully call TriggerAsync() first";
 
   // We give the thread ~1s to respond. In testing, threads typically respond within
   // a few milliseconds, so this timeout is very conservative.
@@ -334,23 +420,31 @@ Status GetThreadStack(int64_t tid, StackTrace* stack) {
   // The main reason that a thread would not respond is that it has blocked signals. For
   // example, glibc's timer_thread doesn't respond to our signal, so we always time out
   // on that one.
-  string ret;
-
-  g_comm.result_ready.TimedWait(MonoDelta::FromSeconds(1));
-  {
-    SignalCommunication::Lock l;
-    CHECK_EQ(tid, g_comm.target_tid);
-    g_comm.target_tid = 0;
-    if (!g_comm.result_ready.complete()) {
-      return Status::TimedOut("(thread did not respond: maybe it is blocking signals)");
-    }
-    stack->CopyFrom(g_comm.stack);
-    g_comm.result_ready.Reset();
+  bool got_result = sig_data_->result_ready.WaitUntil(deadline);
+  RevokeSigData();
+  if (!got_result) {
+    return Status::TimedOut("thread did not respond: maybe it is blocking signals");
   }
+
   return Status::OK();
-#else // defined(__linux__)
+}
+
+#else  // __linux__
+Status StackTraceCollector::TriggerAsync(int64_t tid_, StackTrace* stack) {
   return Status::NotSupported("unsupported platform");
-#endif
+}
+Status StackTraceCollector::AwaitCollection() {
+  return Status::NotSupported("unsupported platform");
+}
+void StackTraceCollector::RevokeSigData() {
+}
+#endif // __linux__
+
+Status GetThreadStack(int64_t tid, StackTrace* stack) {
+  StackTraceCollector c;
+  RETURN_NOT_OK(c.TriggerAsync(tid, stack));
+  RETURN_NOT_OK(c.AwaitCollection(MonoTime::Now() + MonoDelta::FromSeconds(1)));
+  return Status::OK();
 }
 
 string DumpThreadStack(int64_t tid) {
@@ -361,8 +455,6 @@ string DumpThreadStack(int64_t tid) {
   }
   return strings::Substitute("<$0>", s.ToString());
 }
-
-
 
 Status ListThreads(vector<pid_t> *tids) {
 #ifndef __linux__

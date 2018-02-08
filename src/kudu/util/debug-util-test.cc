@@ -23,6 +23,7 @@
 
 #include <csignal>
 #include <cstddef>
+#include <memory>
 #include <ostream>
 #include <string>
 #include <vector>
@@ -149,10 +150,49 @@ TEST_F(DebugUtilTest, TestSignalStackTrace) {
 // We don't validate the results in any way -- but this verifies that we can
 // dump library threads such as the libc timer_thread and properly time out.
 TEST_F(DebugUtilTest, TestDumpAllThreads) {
+  // Start a bunch of sleeping threads.
+  const int kNumThreads = 30;
+  CountDownLatch l(1);
+  vector<scoped_refptr<Thread>> threads(kNumThreads);
+  for (int i = 0; i < kNumThreads; i++) {
+    ASSERT_OK(Thread::Create("test", "test thread", &SleeperThread, &l, &threads[i]));
+  }
+
+  SCOPED_CLEANUP({
+      // Allow the thread to finish.
+      l.CountDown();
+      for (auto& t : threads) {
+        t->Join();
+      }
+    });
+
+  // Trigger all of the stack traces.
   vector<pid_t> tids;
   ASSERT_OK(ListThreads(&tids));
-  for (pid_t tid : tids) {
-    LOG(INFO) << DumpThreadStack(tid);
+  vector<StackTraceCollector> collectors(tids.size());
+  vector<StackTrace> traces(tids.size());
+  vector<Status> status(tids.size());
+
+  for (int i = 0; i < tids.size(); i++) {
+    status[i] = collectors[i].TriggerAsync(tids[i], &traces[i]);
+  }
+
+  // Collect them all.
+  MonoTime deadline;
+  #ifdef THREAD_SANITIZER
+  // TSAN runs its own separate background thread which blocks all signals and
+  // thus will cause a timeout here.
+  deadline = MonoTime::Now() + MonoDelta::FromSeconds(3);
+  #else
+  // In normal builds we can expect to get a response from all threads.
+  deadline = MonoTime::Max();
+  #endif
+  for (int i = 0; i < tids.size(); i++) {
+    status[i] = status[i].AndThen([&] {
+        return collectors[i].AwaitCollection(deadline);
+      });
+    LOG(INFO) << "Thread " << tids[i] << ": " << status[i].ToString()
+              << ": " << traces[i].ToHexString();
   }
 }
 
@@ -294,6 +334,27 @@ TEST_P(RaceTest, TestStackTraceRaces) {
   while (MonoTime::Now() < end_time) {
     StackTrace trace;
     GetThreadStack(t->tid(), &trace);
+  }
+}
+
+void BlockSignalsThread() {
+  sigset_t set;
+  sigemptyset(&set);
+  sigaddset(&set, SIGUSR2);
+  for (int i = 0; i < 3; i++) {
+    CHECK_ERR(pthread_sigmask((i % 2) ? SIG_UNBLOCK : SIG_BLOCK, &set, nullptr));
+    SleepFor(MonoDelta::FromSeconds(1));
+  }
+}
+
+TEST_F(DebugUtilTest, TestThreadBlockingSignals) {
+  scoped_refptr<Thread> t;
+  ASSERT_OK(Thread::Create("test", "test thread", &BlockSignalsThread, &t));
+  SCOPED_CLEANUP({ t->Join(); });
+  string ret;
+  while (ret.find("unable to deliver signal") == string::npos) {
+    ret = DumpThreadStack(t->tid());
+    LOG(INFO) << ret;
   }
 }
 

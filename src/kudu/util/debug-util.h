@@ -24,12 +24,18 @@
 #include <string>
 #include <vector>
 
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/fastmem.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
 
+class MonoTime;
 class StackTrace;
+
+namespace stack_trace_internal {
+struct SignalData;
+}
 
 // Return true if coverage is enabled.
 bool IsCoverageBuild();
@@ -174,6 +180,45 @@ class StackTrace {
 
   int num_frames_;
   void* frames_[kMaxFrames];
+};
+
+
+// Class to collect the stack trace of another thread within this process.
+// This allows for more advanced use cases than 'DumpThreadStack(tid)' above.
+// Namely, this provides an asynchronous trigger/collect API so that many
+// stack traces can be collected from many different threads in parallel using
+// different instances of this object.
+class StackTraceCollector {
+ public:
+  StackTraceCollector() = default;
+  StackTraceCollector(StackTraceCollector&& other) noexcept;
+  ~StackTraceCollector();
+
+  // Send the asynchronous request to the the thread with TID 'tid'
+  // to collect its stack trace into '*stack'.
+  //
+  // NOTE: 'stack' must remain a valid pointer until AwaitCollection() has
+  // completed.
+  //
+  // Returns OK if the signal was sent successfully.
+  Status TriggerAsync(int64_t tid, StackTrace* stack);
+
+  // Wait for the stack trace to be collected from the target thread.
+  //
+  // REQUIRES: TriggerAsync() has returned successfully.
+  Status AwaitCollection(MonoTime deadline);
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(StackTraceCollector);
+
+  // Safely sets 'sig_data_' back to nullptr after having sent an asynchronous
+  // stack trace request. See implementation for details.
+  //
+  // POSTCONDITION: sig_data_ == nullptr
+  void RevokeSigData();
+
+  int64_t tid_ = 0;
+  stack_trace_internal::SignalData* sig_data_ = nullptr;
 };
 
 } // namespace kudu

@@ -157,6 +157,7 @@ static void FlagsHandler(const Webserver::WebRequest& req,
 // Prints out the current stack trace of all threads in the process.
 static void StacksHandler(const Webserver::WebRequest& /*req*/,
                           Webserver::PrerenderedWebResponse* resp) {
+  MonoTime start = MonoTime::Now();
   std::ostringstream* output = resp->output;
   vector<pid_t> tids;
   Status s = ListThreads(&tids);
@@ -168,22 +169,19 @@ static void StacksHandler(const Webserver::WebRequest& /*req*/,
     pid_t tid;
     Status status;
     string thread_name;
+    StackTraceCollector stc;
     StackTrace stack;
   };
-  std::multimap<string, Info> grouped_infos;
-  vector<Info> failed;
 
-  // Capture all the stacks without symbolization initially so that
-  // the stack traces come from as close together in time as possible.
-  //
-  // TODO(todd): would be good to actually send the dump signal to all
-  // threads and then wait for them all to collect their traces, to get
-  // an even tighter snapshot.
-  MonoTime start = MonoTime::Now();
+  // Initially trigger all the stack traces.
+  vector<Info> infos(tids.size());
   for (int i = 0; i < tids.size(); i++) {
-    Info info;
-    info.tid = tids[i];
+    infos[i].tid = tids[i];
+    infos[i].status = infos[i].stc.TriggerAsync(tids[i], &infos[i].stack);
+  }
 
+  // Now collect the thread names while we are waiting on stack trace collection.
+  for (auto& info : infos) {
     // Get the thread's name by reading proc.
     // TODO(todd): should we have the dumped thread fill in its own name using
     // prctl to avoid having to open and read /proc? Or maybe we should use the
@@ -199,26 +197,38 @@ static void StacksHandler(const Webserver::WebRequest& /*req*/,
       info.thread_name = buf.ToString();
       StripTrailingNewline(&info.thread_name);
     }
+  }
 
-    info.status = GetThreadStack(info.tid, &info.stack);
+  // Now actually collect all the stacks.
+  MonoTime deadline = MonoTime::Now() + MonoDelta::FromSeconds(1);
+  for (auto& info : infos) {
+    info.status = info.status.AndThen([&] {
+        return info.stc.AwaitCollection(deadline);
+      });
+  }
+
+  // And group the threads by their stack trace.
+  std::multimap<string, Info*> grouped_infos;
+  int num_failed = 0;
+  for (auto& info : infos) {
     if (info.status.ok()) {
-      grouped_infos.emplace(info.stack.ToHexString(), std::move(info));
+      grouped_infos.emplace(info.stack.ToHexString(), &info);
     } else {
-      failed.emplace_back(std::move(info));
+      num_failed++;
     }
   }
   MonoDelta dur = MonoTime::Now() - start;
 
   *output << "Collected stacks from " << grouped_infos.size() << " threads in "
           << dur.ToString() << "\n";
-  if (!failed.empty()) {
-    *output << "Failed to collect stacks from " << failed.size() << " threads "
+  if (num_failed) {
+    *output << "Failed to collect stacks from " << num_failed << " threads "
             << "(they may have exited while we were iterating over the threads)\n";
   }
   *output << "\n";
   for (auto it = grouped_infos.begin(); it != grouped_infos.end();) {
     auto end_group = grouped_infos.equal_range(it->first).second;
-    const auto& stack = it->second.stack;
+    const auto& stack = it->second->stack;
     int num_in_group = std::distance(it, end_group);
     if (num_in_group > 1) {
       *output << num_in_group << " threads with same stack:\n";
@@ -226,7 +236,7 @@ static void StacksHandler(const Webserver::WebRequest& /*req*/,
 
     while (it != end_group) {
       const auto& info = it->second;
-      *output << "TID " << info.tid << "(" << info.thread_name << "):\n";
+      *output << "TID " << info->tid << "(" << info->thread_name << "):\n";
       ++it;
     }
     *output << stack.Symbolize() << "\n\n";
