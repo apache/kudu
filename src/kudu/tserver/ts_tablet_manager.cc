@@ -1280,8 +1280,10 @@ Status TSTabletManager::DeleteTabletData(
   RETURN_NOT_OK(meta->DeleteTabletData(delete_type, last_logged_opid));
   last_logged_opid = meta->tombstone_last_logged_opid();
   LOG(INFO) << LogPrefix(tablet_id, meta->fs_manager())
-            << "tablet deleted: last-logged OpId: "
-            << (last_logged_opid ? OpIdToString(*last_logged_opid) : "(unknown)");
+            << "tablet deleted with delete type "
+            << TabletDataState_Name(delete_type) << ": "
+            << "last-logged OpId "
+            << (last_logged_opid ? OpIdToString(*last_logged_opid) : "unknown");
   MAYBE_FAULT(FLAGS_fault_crash_after_blocks_deleted);
 
   CHECK_OK(Log::DeleteOnDiskData(meta->fs_manager(), tablet_id));
