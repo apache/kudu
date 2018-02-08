@@ -29,6 +29,8 @@
 
 namespace kudu {
 
+class StackTrace;
+
 // Return true if coverage is enabled.
 bool IsCoverageBuild();
 
@@ -58,6 +60,8 @@ Status SetStackTraceSignal(int signum);
 // This function is thread-safe but coarsely synchronized: only one "dumper" thread
 // may be active at a time.
 std::string DumpThreadStack(int64_t tid);
+
+Status GetThreadStack(int64_t tid, StackTrace* stack);
 
 // Return the current stack trace, stringified.
 std::string GetStackTrace();

@@ -39,6 +39,7 @@
 #include "kudu/gutil/spinlock.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/numbers.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug/sanitizer_scopes.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/monotime.h"
@@ -236,14 +237,14 @@ Status SetStackTraceSignal(int signum) {
   return Status::OK();
 }
 
-std::string DumpThreadStack(int64_t tid) {
+Status GetThreadStack(int64_t tid, StackTrace* stack) {
 #if defined(__linux__)
   base::SpinLockHolder h(&g_dumper_thread_lock);
 
   // Ensure that our signal handler is installed. We don't need any fancy GoogleOnce here
   // because of the mutex above.
   if (!InitSignalHandlerUnlocked(g_stack_trace_signum)) {
-    return "<unable to take thread stack: signal handler unavailable>";
+    return Status::NotSupported("unable to take thread stack: signal handler unavailable");
   }
 
   // Set the target TID in our communication structure, so if we end up with any
@@ -262,7 +263,7 @@ std::string DumpThreadStack(int64_t tid) {
       SignalCommunication::Lock l;
       g_comm.target_tid = 0;
     }
-    return "(unable to deliver signal: process may have exited)";
+    return Status::NotFound("unable to deliver signal: process may have exited");
   }
 
   // We give the thread ~1s to respond. In testing, threads typically respond within
@@ -282,20 +283,31 @@ std::string DumpThreadStack(int64_t tid) {
     SignalCommunication::Lock l;
     CHECK_EQ(tid, g_comm.target_tid);
 
+    g_comm.target_tid = 0;
     if (!g_comm.result_ready) {
-      ret = "(thread did not respond: maybe it is blocking signals)";
-    } else {
-      ret = g_comm.stack.Symbolize();
+      return Status::TimedOut("(thread did not respond: maybe it is blocking signals)");
     }
 
-    g_comm.target_tid = 0;
+    stack->CopyFrom(g_comm.stack);
+
     g_comm.result_ready = 0;
   }
-  return ret;
+  return Status::OK();
 #else // defined(__linux__)
-  return "(unsupported platform)";
+  return Status::NotSupported("unsupported platform");
 #endif
 }
+
+string DumpThreadStack(int64_t tid) {
+  StackTrace trace;
+  Status s = GetThreadStack(tid, &trace);
+  if (s.ok()) {
+    return trace.Symbolize();
+  }
+  return strings::Substitute("<$0>", s.ToString());
+}
+
+
 
 Status ListThreads(vector<pid_t> *tids) {
 #if defined(__linux__)

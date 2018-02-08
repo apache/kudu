@@ -18,6 +18,7 @@
 #include <unistd.h>
 
 #include <csignal>
+#include <ostream>
 #include <string>
 #include <vector>
 
@@ -147,6 +148,32 @@ TEST_F(DebugUtilTest, TestDumpAllThreads) {
   ASSERT_OK(ListThreads(&tids));
   for (pid_t tid : tids) {
     LOG(INFO) << DumpThreadStack(tid);
+  }
+}
+
+TEST_F(DebugUtilTest, Benchmark) {
+  CountDownLatch l(1);
+  scoped_refptr<Thread> t;
+  ASSERT_OK(Thread::Create("test", "test thread", &SleeperThread, &l, &t));
+  SCOPED_CLEANUP({
+      // Allow the thread to finish.
+      l.CountDown();
+      t->Join();
+    });
+
+  for (bool symbolize : {false, true}) {
+    MonoTime end_time = MonoTime::Now() + MonoDelta::FromSeconds(1);
+    int count = 0;
+    volatile int prevent_optimize = 0;
+    while (MonoTime::Now() < end_time) {
+      StackTrace trace;
+      GetThreadStack(t->tid(), &trace);
+      if (symbolize) {
+        prevent_optimize += trace.Symbolize().size();
+      }
+      count++;
+    }
+    LOG(INFO) << "Throughput: " << count << " dumps/second (symbolize=" << symbolize << ")";
   }
 }
 #endif
