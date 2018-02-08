@@ -314,10 +314,10 @@ std::string ConsensusMetadata::LogPrefix() const {
 
 void ConsensusMetadata::UpdateActiveRole() {
   DFAKE_SCOPED_RECURSIVE_LOCK(fake_lock_);
-  ConsensusStatePB cstate = ToConsensusStatePB();
-  active_role_ = GetConsensusRole(peer_uuid_, cstate);
+  active_role_ = GetConsensusRole(peer_uuid_, leader_uuid_, ActiveConfig());
   VLOG_WITH_PREFIX(1) << "Updating active role to " << RaftPeerPB::Role_Name(active_role_)
-                      << ". Consensus state: " << pb_util::SecureShortDebugString(cstate);
+                      << ". Consensus state: "
+                      << pb_util::SecureShortDebugString(ToConsensusStatePB());
 }
 
 Status ConsensusMetadata::UpdateOnDiskSize() {
