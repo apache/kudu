@@ -30,6 +30,7 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 
+using std::pair;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -97,6 +98,16 @@ static void AddPeer(RaftConfigPB* config,
     }
     peer->set_allocated_attrs(attrs_pb.release());
   }
+}
+
+using RaftMemberSpec = pair<string, RaftPeerPB::MemberType>;
+
+static RaftConfigPB CreateConfig(const vector<RaftMemberSpec>& specs) {
+  RaftConfigPB config;
+  for (const auto& spec : specs) {
+    AddPeer(&config, spec.first, spec.second);
+  }
+  return config;
 }
 
 static void PromotePeer(RaftConfigPB* config, const string& peer_uuid) {
@@ -243,6 +254,39 @@ TEST(QuorumUtilTest, TestDiffConsensusStates) {
     EXPECT_EQ("pending config changed, A (A.example.com) changed from VOTER to NON_VOTER",
               DiffConsensusStates(before_cs, after_cs));
   }
+}
+
+// Unit test for the variants of GetConsensusRole().
+TEST(QuorumUtilTest, TestGetConsensusRole) {
+  const auto LEADER = RaftPeerPB::LEADER;
+  const auto FOLLOWER = RaftPeerPB::FOLLOWER;
+  const auto LEARNER = RaftPeerPB::LEARNER;
+  const auto NON_PARTICIPANT = RaftPeerPB::NON_PARTICIPANT;
+
+  // 3-argument variant of GetConsensusRole().
+  const auto config1 = CreateConfig({ {"A", V}, {"B", V}, {"C", N} });
+  ASSERT_EQ(LEADER, GetConsensusRole("A", "A", config1));
+  ASSERT_EQ(FOLLOWER, GetConsensusRole("B", "A", config1));
+  ASSERT_EQ(FOLLOWER, GetConsensusRole("A", "", config1));
+  ASSERT_EQ(LEARNER, GetConsensusRole("C", "A", config1));
+  ASSERT_EQ(LEARNER, GetConsensusRole("C", "C", config1)); // Illegal.
+  ASSERT_EQ(NON_PARTICIPANT, GetConsensusRole("D", "A", config1));
+  ASSERT_EQ(NON_PARTICIPANT, GetConsensusRole("D", "D", config1)); // Illegal.
+  ASSERT_EQ(NON_PARTICIPANT, GetConsensusRole("", "A", config1)); // Illegal.
+  ASSERT_EQ(NON_PARTICIPANT, GetConsensusRole("", "", config1)); // Illegal.
+
+  // 2-argument variant of GetConsensusRole().
+  const auto config2 = CreateConfig({ {"A", V}, {"B", V}, {"C", V} });
+  ConsensusStatePB cstate;
+  *cstate.mutable_committed_config() = config1;
+  *cstate.mutable_pending_config() = config2;
+  cstate.set_leader_uuid("A");
+  ASSERT_EQ(LEADER, GetConsensusRole("A", cstate));
+  ASSERT_EQ(FOLLOWER, GetConsensusRole("B", cstate));
+  ASSERT_EQ(FOLLOWER, GetConsensusRole("C", cstate));
+  ASSERT_EQ(NON_PARTICIPANT, GetConsensusRole("D", cstate));
+  cstate.set_leader_uuid("D");
+  ASSERT_EQ(NON_PARTICIPANT, GetConsensusRole("D", cstate)); // Illegal.
 }
 
 TEST(QuorumUtilTest, TestIsRaftConfigVoter) {

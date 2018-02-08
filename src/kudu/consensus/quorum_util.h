@@ -79,10 +79,20 @@ int CountVoters(const RaftConfigPB& config);
 // Calculates size of a configuration majority based on # of voters.
 int MajoritySize(int num_voters);
 
-// Determines the role that the peer with uuid 'uuid' plays in the cluster.
-// If the peer uuid is not a voter in the configuration, this function will return
-// NON_PARTICIPANT, regardless of whether it is listed as leader in cstate.
-RaftPeerPB::Role GetConsensusRole(const std::string& uuid,
+// Determines the role that the peer with uuid 'peer_uuid' plays in the
+// cluster. If 'peer_uuid' is empty or is not a member of the configuration,
+// this function will return NON_PARTICIPANT, regardless of whether it is
+// specified as the leader in 'leader_uuid'. Likewise, if 'peer_uuid' is a
+// NON_VOTER in the config, this function will return LEARNER, regardless of
+// whether it is specified as the leader in 'leader_uuid' (although that
+// situation is illegal in practice).
+RaftPeerPB::Role GetConsensusRole(const std::string& peer_uuid,
+                                  const std::string& leader_uuid,
+                                  const RaftConfigPB& config);
+
+// Same as above, but uses the leader and active role from the given
+// ConsensusStatePB.
+RaftPeerPB::Role GetConsensusRole(const std::string& peer_uuid,
                                   const ConsensusStatePB& cstate);
 
 // Verifies that the provided configuration is well formed.

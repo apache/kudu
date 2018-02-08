@@ -122,22 +122,20 @@ int MajoritySize(int num_voters) {
   return (num_voters / 2) + 1;
 }
 
-RaftPeerPB::Role GetConsensusRole(const std::string& uuid, const ConsensusStatePB& cstate) {
-  // The active config is the pending config if there is one, else it's the committed config.
-  const RaftConfigPB& config = cstate.has_pending_config() ?
-                               cstate.pending_config() :
-                               cstate.committed_config();
-  if (cstate.leader_uuid() == uuid) {
-    if (IsRaftConfigVoter(uuid, config)) {
-      return RaftPeerPB::LEADER;
-    }
+RaftPeerPB::Role GetConsensusRole(const std::string& peer_uuid,
+                                  const std::string& leader_uuid,
+                                  const RaftConfigPB& config) {
+  if (peer_uuid.empty()) {
     return RaftPeerPB::NON_PARTICIPANT;
   }
 
   for (const RaftPeerPB& peer : config.peers()) {
-    if (peer.permanent_uuid() == uuid) {
+    if (peer.permanent_uuid() == peer_uuid) {
       switch (peer.member_type()) {
         case RaftPeerPB::VOTER:
+          if (peer_uuid == leader_uuid) {
+            return RaftPeerPB::LEADER;
+          }
           return RaftPeerPB::FOLLOWER;
         default:
           return RaftPeerPB::LEARNER;
@@ -145,6 +143,15 @@ RaftPeerPB::Role GetConsensusRole(const std::string& uuid, const ConsensusStateP
     }
   }
   return RaftPeerPB::NON_PARTICIPANT;
+}
+
+RaftPeerPB::Role GetConsensusRole(const std::string& peer_uuid,
+                                  const ConsensusStatePB& cstate) {
+  // The active config is the pending config if there is one, else it's the committed config.
+  const RaftConfigPB& config = cstate.has_pending_config() ?
+                               cstate.pending_config() :
+                               cstate.committed_config();
+  return GetConsensusRole(peer_uuid, cstate.leader_uuid(), config);
 }
 
 Status VerifyRaftConfig(const RaftConfigPB& config) {
