@@ -18,13 +18,17 @@
 #include "kudu/server/default_path_handlers.h"
 
 #include <sys/stat.h>
+#include <sys/types.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
+#include <iterator>
+#include <map>
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <boost/algorithm/string/predicate.hpp>
@@ -44,10 +48,13 @@
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
+#include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/server/pprof_path_handlers.h"
 #include "kudu/server/webserver.h"
+#include "kudu/util/debug-util.h"
 #include "kudu/util/easy_json.h"
+#include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/flags.h"
@@ -55,6 +62,7 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/process_memory.h"
 #include "kudu/util/status.h"
 #include "kudu/util/web_callback_registry.h"
@@ -142,6 +150,87 @@ static void FlagsHandler(const Webserver::WebRequest& req,
   (*output) << tags.pre_tag
             << CommandlineFlagsIntoString(as_text ? EscapeMode::NONE : EscapeMode::HTML)
             << tags.end_pre_tag;
+}
+
+// Registered to handle "/stacks".
+//
+// Prints out the current stack trace of all threads in the process.
+static void StacksHandler(const Webserver::WebRequest& /*req*/,
+                          Webserver::PrerenderedWebResponse* resp) {
+  std::ostringstream* output = resp->output;
+  vector<pid_t> tids;
+  Status s = ListThreads(&tids);
+  if (!s.ok()) {
+    *output << "Failed to list threads: " << s.ToString();
+    return;
+  }
+  struct Info {
+    pid_t tid;
+    Status status;
+    string thread_name;
+    StackTrace stack;
+  };
+  std::multimap<string, Info> grouped_infos;
+  vector<Info> failed;
+
+  // Capture all the stacks without symbolization initially so that
+  // the stack traces come from as close together in time as possible.
+  //
+  // TODO(todd): would be good to actually send the dump signal to all
+  // threads and then wait for them all to collect their traces, to get
+  // an even tighter snapshot.
+  MonoTime start = MonoTime::Now();
+  for (int i = 0; i < tids.size(); i++) {
+    Info info;
+    info.tid = tids[i];
+
+    // Get the thread's name by reading proc.
+    // TODO(todd): should we have the dumped thread fill in its own name using
+    // prctl to avoid having to open and read /proc? Or maybe we should use the
+    // Kudu ThreadMgr to get the thread names for the cases where we are using
+    // the kudu::Thread wrapper at least.
+    faststring buf;
+    Status s = ReadFileToString(Env::Default(),
+                                Substitute("/proc/self/task/$0/comm", info.tid),
+                                &buf);
+    if (!s.ok()) {
+      info.thread_name = "<unknown name>";
+    }  else {
+      info.thread_name = buf.ToString();
+      StripTrailingNewline(&info.thread_name);
+    }
+
+    info.status = GetThreadStack(info.tid, &info.stack);
+    if (info.status.ok()) {
+      grouped_infos.emplace(info.stack.ToHexString(), std::move(info));
+    } else {
+      failed.emplace_back(std::move(info));
+    }
+  }
+  MonoDelta dur = MonoTime::Now() - start;
+
+  *output << "Collected stacks from " << grouped_infos.size() << " threads in "
+          << dur.ToString() << "\n";
+  if (!failed.empty()) {
+    *output << "Failed to collect stacks from " << failed.size() << " threads "
+            << "(they may have exited while we were iterating over the threads)\n";
+  }
+  *output << "\n";
+  for (auto it = grouped_infos.begin(); it != grouped_infos.end();) {
+    auto end_group = grouped_infos.equal_range(it->first).second;
+    const auto& stack = it->second.stack;
+    int num_in_group = std::distance(it, end_group);
+    if (num_in_group > 1) {
+      *output << num_in_group << " threads with same stack:\n";
+    }
+
+    while (it != end_group) {
+      const auto& info = it->second;
+      *output << "TID " << info.tid << "(" << info.thread_name << "):\n";
+      ++it;
+    }
+    *output << stack.Symbolize() << "\n\n";
+  }
 }
 
 // Registered to handle "/memz", and prints out memory allocation statistics.
@@ -262,6 +351,10 @@ void AddDefaultPathHandlers(Webserver* webserver) {
                                             styled, on_nav_bar);
   webserver->RegisterPathHandler("/config", "Configuration", ConfigurationHandler,
                                   styled, on_nav_bar);
+
+  webserver->RegisterPrerenderedPathHandler("/stacks", "Stacks", StacksHandler,
+                                            /*is_styled=*/false,
+                                            /*is_on_nav_bar=*/false);
 
   AddPprofPathHandlers(webserver);
 }

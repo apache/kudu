@@ -310,7 +310,9 @@ string DumpThreadStack(int64_t tid) {
 
 
 Status ListThreads(vector<pid_t> *tids) {
-#if defined(__linux__)
+#ifndef __linux__
+  return Status::NotSupported("unable to list threads on this platform");
+#else
   DIR *dir = opendir("/proc/self/task/");
   if (dir == NULL) {
     return Status::IOError("failed to open task dir", ErrnoToString(errno), errno);
@@ -327,8 +329,8 @@ Status ListThreads(vector<pid_t> *tids) {
     }
   }
   closedir(dir);
-#endif // defined(__linux__)
   return Status::OK();
+#endif // __linux__
 }
 
 string GetStackTrace() {
