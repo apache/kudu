@@ -75,8 +75,6 @@ std::string GetStackTrace();
 // Note that this is much more useful in the context of a static binary,
 // since addr2line wouldn't know where shared libraries were mapped at
 // runtime.
-//
-// NOTE: This inherits the same async-safety issue as HexStackTraceToString()
 std::string GetStackTraceHex();
 
 // This is the same as GetStackTraceHex(), except multi-line in a format that
@@ -91,8 +89,7 @@ std::string GetLogFormatStackTraceHex();
 // The resulting trace just includes the hex addresses, space-separated. This is suitable
 // for later stringification by pasting into 'addr2line' for example.
 //
-// This function is not async-safe, since it uses the libc backtrace() function which
-// may invoke the dynamic loader.
+// This function is async-safe.
 void HexStackTraceToString(char* buf, size_t size);
 
 // Efficient class for collecting and later stringifying a stack trace.
@@ -132,12 +129,7 @@ class StackTrace {
   // from the stack. For example, a value of '1' will skip the 'Collect()' function
   // call itself.
   //
-  // This function is technically not async-safe. However, according to
-  // http://lists.nongnu.org/archive/html/libunwind-devel/2011-08/msg00054.html it is "largely
-  // async safe" and it would only deadlock in the case that you call it while a dynamic library
-  // load is in progress. We assume that dynamic library loads would almost always be completed
-  // very early in the application lifecycle, so for now, this is considered "async safe" until
-  // it proves to be a problem.
+  // This function is async-safe.
   void Collect(int skip_frames = 1);
 
 
@@ -151,6 +143,8 @@ class StackTrace {
   // Stringify the trace into the given buffer.
   // The resulting output is hex addresses suitable for passing into 'addr2line'
   // later.
+  //
+  // Async-safe.
   void StringifyToHex(char* buf, size_t size, int flags = 0) const;
 
   // Same as above, but returning a std::string.

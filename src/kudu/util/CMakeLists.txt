@@ -132,6 +132,7 @@ set(UTIL_SRCS
   debug/trace_event_impl.cc
   debug/trace_event_impl_constants.cc
   debug/trace_event_synthetic_delay.cc
+  debug/unwind_safeness.cc
   easy_json.cc
   env.cc env_posix.cc env_util.cc
   errno.cc

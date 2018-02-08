@@ -45,6 +45,7 @@
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug/sanitizer_scopes.h"
+#include "kudu/util/debug/unwind_safeness.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/thread.h"
@@ -411,7 +412,22 @@ string GetLogFormatStackTraceHex() {
   return trace.ToLogFormatHexString();
 }
 
+// Bogus empty function which we use below to fill in the stack trace with
+// something readable to indicate that stack trace collection was unavailable.
+void CouldNotCollectStackTraceBecauseInsideLibDl() {
+}
+
 void StackTrace::Collect(int skip_frames) {
+  if (!debug::SafeToUnwindStack()) {
+    // Build a fake stack so that the user sees an appropriate message upon symbolizing
+    // rather than seeing an empty stack.
+    uintptr_t f_ptr = reinterpret_cast<uintptr_t>(&CouldNotCollectStackTraceBecauseInsideLibDl);
+    // Increase the pointer by one byte since the return address from a function call
+    // would not be the beginning of the function itself.
+    frames_[0] = reinterpret_cast<void*>(f_ptr + 1);
+    num_frames_ = 1;
+    return;
+  }
   // google::GetStackTrace has a data race. This is called frequently, so better
   // to ignore it with an annotation rather than use a suppression.
   debug::ScopedTSANIgnoreReadsAndWrites ignore_tsan;

@@ -15,9 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <dlfcn.h>
+#ifdef __linux__
+#include <link.h>
+#endif
 #include <unistd.h>
 
 #include <csignal>
+#include <cstddef>
 #include <ostream>
 #include <string>
 #include <vector>
@@ -176,6 +181,121 @@ TEST_F(DebugUtilTest, Benchmark) {
     LOG(INFO) << "Throughput: " << count << " dumps/second (symbolize=" << symbolize << ")";
   }
 }
+
+int TakeStackTrace(struct dl_phdr_info* /*info*/, size_t /*size*/, void* data) {
+  StackTrace* s = reinterpret_cast<StackTrace*>(data);
+  s->Collect(0);
+  return 0;
+}
+
+// Test that if we try to collect a stack trace while inside a libdl function
+// call that we properly return the bogus stack indicating the issue.
+//
+// This doesn't work in ThreadSanitizer since we don't intercept dl_iterate_phdr
+// in those builds (see note in unwind_safeness.cc).
+#ifndef THREAD_SANITIZER
+TEST_F(DebugUtilTest, TestUnwindWhileUnsafe) {
+  StackTrace s;
+  dl_iterate_phdr(&TakeStackTrace, &s);
+  ASSERT_STR_CONTAINS(s.Symbolize(), "CouldNotCollectStackTraceBecauseInsideLibDl");
+}
 #endif
 
+int DoNothingDlCallback(struct dl_phdr_info* /*info*/, size_t /*size*/, void* /*data*/) {
+  return 0;
+}
+
+// Parameterized test which performs various operations which might be dangerous to
+// collect a stack trace while the main thread tries to take stack traces.  These
+// operations are all possibly executed on normal application threads, so we need to
+// ensure that if we happen to gather the stack from a thread in the middle of the
+// function that we don't crash or deadlock.
+//
+// Example self-deadlock if we didn't have the appropriate workarounds in place:
+//  #0  __lll_lock_wait ()
+//  #1  0x00007ffff6f16e42 in __GI___pthread_mutex_lock
+//  #2  0x00007ffff6c8601f in __GI___dl_iterate_phdr
+//  #3  0x0000000000695b02 in dl_iterate_phdr
+//  #4  0x000000000056d013 in _ULx86_64_dwarf_find_proc_info
+//  #5  0x000000000056d1d5 in fetch_proc_info (c=c@ent
+//  #6  0x000000000056e2e7 in _ULx86_64_dwarf_find_save_
+//  #7  0x000000000056c1b9 in _ULx86_64_dwarf_step (c=c@
+//  #8  0x000000000056be21 in _ULx86_64_step
+//  #9  0x0000000000566b1d in google::GetStackTrace
+//  #10 0x00000000004dc4d1 in kudu::StackTrace::Collect
+//  #11 kudu::(anonymous namespace)::HandleStackTraceSignal
+//  #12 <signal handler called>
+//  #13 0x00007ffff6f16e31 in __GI___pthread_mutex_lock
+//  #14 0x00007ffff6c8601f in __GI___dl_iterate_phdr
+//  #15 0x0000000000695b02 in dl_iterate_phdr
+enum DangerousOp {
+  DLOPEN_AND_CLOSE,
+  DL_ITERATE_PHDR,
+  GET_STACK_TRACE,
+  MALLOC_AND_FREE
+};
+class RaceTest : public DebugUtilTest, public ::testing::WithParamInterface<DangerousOp> {};
+INSTANTIATE_TEST_CASE_P(DifferentRaces, RaceTest,
+                        ::testing::Values(DLOPEN_AND_CLOSE,
+                                          DL_ITERATE_PHDR,
+                                          GET_STACK_TRACE,
+                                          MALLOC_AND_FREE));
+
+void DangerousOperationThread(DangerousOp op, CountDownLatch* l) {
+  while (l->count()) {
+    switch (op) {
+      case DLOPEN_AND_CLOSE: {
+        // Check races against dlopen/dlclose.
+        void* v = dlopen("libc.so.6", RTLD_LAZY);
+        CHECK(v);
+        dlclose(v);
+        break;
+      }
+
+      case DL_ITERATE_PHDR: {
+        // Check for races against dl_iterate_phdr.
+        dl_iterate_phdr(&DoNothingDlCallback, nullptr);
+        break;
+      }
+
+      case GET_STACK_TRACE: {
+        // Check for reentrancy issues
+        GetStackTrace();
+        break;
+      }
+
+      case MALLOC_AND_FREE: {
+        // Check large allocations in tcmalloc.
+        volatile char* x = new char[1024 * 1024 * 2];
+        delete[] x;
+        break;
+      }
+      default:
+        LOG(FATAL) << "unknown op";
+    }
+  }
+}
+
+// Starts a thread performing dangerous operations and then gathers
+// its stack trace in a loop trying to trigger races.
+TEST_P(RaceTest, TestStackTraceRaces) {
+  DangerousOp op = GetParam();
+  CountDownLatch l(1);
+  scoped_refptr<Thread> t;
+  ASSERT_OK(Thread::Create("test", "test thread", &DangerousOperationThread, op, &l, &t));
+  SCOPED_CLEANUP({
+      // Allow the thread to finish.
+      l.CountDown();
+      // Crash if we can't join the thread after a reasonable amount of time.
+      // That probably indicates a deadlock.
+      CHECK_OK(ThreadJoiner(t.get()).give_up_after_ms(10000).Join());
+    });
+  MonoTime end_time = MonoTime::Now() + MonoDelta::FromSeconds(1);
+  while (MonoTime::Now() < end_time) {
+    StackTrace trace;
+    GetThreadStack(t->tid(), &trace);
+  }
+}
+
+#endif
 } // namespace kudu
