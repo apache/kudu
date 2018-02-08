@@ -36,7 +36,6 @@ ASAN_ERROR_RE = re.compile('ERROR: AddressSanitizer')
 TSAN_ERROR_RE = re.compile('WARNING: ThreadSanitizer.*')
 END_TSAN_ERROR_RE = re.compile('SUMMARY: ThreadSanitizer.*')
 FATAL_LOG_RE = re.compile(r'^F\d\d\d\d \d\d:\d\d:\d\d\.\d\d\d\d\d\d\s+\d+ (.*)')
-LEAK_CHECK_SUMMARY_RE = re.compile('Leak check.*detected leaks')
 LINE_RE = re.compile(r"^.*$", re.MULTILINE)
 STACKTRACE_ELEM_RE = re.compile(r'^    @')
 IGNORED_STACKTRACE_ELEM_RE = re.compile(
@@ -127,18 +126,6 @@ def extract_failures(log_text):
                          and not IGNORED_STACKTRACE_ELEM_RE.search(l)]
       error_signature += "\n".join(remaining_lines)
       record_error(errors_by_test, cur_test_case, error_signature)
-
-    # Look for leak check summary (comes at the end of a log, not part of a single test)
-    m = LEAK_CHECK_SUMMARY_RE.search(line)
-    if m:
-      heapcheck_test_case = "tcmalloc.heapcheck"
-      if heapcheck_test_case not in tests_seen:
-        tests_seen.add(heapcheck_test_case)
-        tests_seen_in_order.append(heapcheck_test_case)
-      error_signature = "Memory leak\n"
-      error_signature += line + "\n"
-      error_signature += "\n".join(consume_rest(line_iter))
-      record_error(errors_by_test, heapcheck_test_case, error_signature)
 
   # Sometimes we see crashes that the script doesn't know how to parse.
   # When that happens, we leave a generic message to be picked up by Jenkins.

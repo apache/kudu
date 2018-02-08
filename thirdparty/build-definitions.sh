@@ -312,7 +312,6 @@ build_gperftools() {
     LIBS="$EXTRA_LIBS" \
     $GPERFTOOLS_SOURCE/configure \
     --enable-frame-pointers \
-    --enable-heap-checker \
     --with-pic \
     --prefix=$PREFIX
   fixup_libtool
