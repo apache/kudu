@@ -26,8 +26,11 @@
 #endif
 #include <unistd.h>
 
+#include <atomic>
 #include <cerrno>
+#include <climits>
 #include <csignal>
+#include <ctime>
 #include <ostream>
 #include <string>
 
@@ -35,6 +38,7 @@
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/hash/city.h"
+#include "kudu/gutil/linux_syscall_support.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/spinlock.h"
 #include "kudu/gutil/stringprintf.h"
@@ -121,6 +125,62 @@ void TryFlushCoverage() {
 
 namespace {
 
+// Simple notification mechanism based on futex.
+//
+// We use this instead of a mutex and condvar because we need
+// to signal it from a signal handler, and mutexes are not async-safe.
+//
+// pthread semaphores are async-signal-safe but their timedwait function
+// only supports wall clock waiting, which is a bit dangerous since we
+// need strict timeouts here.
+class CompletionFlag {
+ public:
+  void Signal() {
+    complete_ = true;
+#ifndef __APPLE__
+    sys_futex(reinterpret_cast<int32_t*>(&complete_),
+              FUTEX_WAKE | FUTEX_PRIVATE_FLAG,
+              INT_MAX, // wake all
+              0 /* ignored */);
+#endif
+  }
+
+  bool TimedWait(MonoDelta timeout) {
+    if (complete_) return true;
+
+    MonoTime now = MonoTime::Now();
+    MonoTime deadline = now + timeout;
+    while (now < deadline) {
+#ifndef __APPLE__
+      MonoDelta rem = deadline - now;
+      struct timespec ts;
+      rem.ToTimeSpec(&ts);
+      sys_futex(reinterpret_cast<int32_t*>(&complete_),
+                FUTEX_WAIT | FUTEX_PRIVATE_FLAG,
+                0, // wait if value is still 0
+                reinterpret_cast<struct kernel_timespec *>(&ts));
+#else
+      sched_yield();
+#endif
+      if (complete_) {
+        return true;
+      }
+      now = MonoTime::Now();
+    }
+    return complete_;
+  }
+
+  void Reset() {
+    complete_ = false;
+  }
+
+  bool complete() const {
+    return complete_;
+  }
+ private:
+  std::atomic<int32_t> complete_ { 0 };
+};
+
 // Global structure used to communicate between the signal handler
 // and a dumping thread.
 struct SignalCommunication {
@@ -133,9 +193,9 @@ struct SignalCommunication {
   // ignored.
   pid_t target_tid;
 
-  // Set to 1 when the target thread has successfully collected its stack.
-  // The dumper thread spins waiting for this to become true.
-  Atomic32 result_ready;
+  // Signaled when the target thread has successfully collected its stack.
+  // The dumper thread waits for this to become true.
+  CompletionFlag result_ready;
 
   // Lock protecting the other members. We use a bare atomic here and a custom
   // lock guard below instead of existing spinlock implementaitons because futex()
@@ -175,7 +235,7 @@ void HandleStackTraceSignal(int signum) {
   }
 
   g_comm.stack.Collect(2);
-  base::subtle::Release_Store(&g_comm.result_ready, 1);
+  g_comm.result_ready.Signal();
 }
 
 bool InitSignalHandlerUnlocked(int signum) {
@@ -227,7 +287,8 @@ bool InitSignalHandlerUnlocked(int signum) {
   return state == INITIALIZED;
 }
 
-} // namespace
+
+} // anonymous namespace
 
 Status SetStackTraceSignal(int signum) {
   base::SpinLockHolder h(&g_dumper_thread_lock);
@@ -267,30 +328,23 @@ Status GetThreadStack(int64_t tid, StackTrace* stack) {
   }
 
   // We give the thread ~1s to respond. In testing, threads typically respond within
-  // a few iterations of the loop, so this timeout is very conservative.
+  // a few milliseconds, so this timeout is very conservative.
   //
   // The main reason that a thread would not respond is that it has blocked signals. For
   // example, glibc's timer_thread doesn't respond to our signal, so we always time out
   // on that one.
   string ret;
-  int i = 0;
-  while (!base::subtle::Acquire_Load(&g_comm.result_ready) &&
-         i++ < 100) {
-    SleepFor(MonoDelta::FromMilliseconds(10));
-  }
 
+  g_comm.result_ready.TimedWait(MonoDelta::FromSeconds(1));
   {
     SignalCommunication::Lock l;
     CHECK_EQ(tid, g_comm.target_tid);
-
     g_comm.target_tid = 0;
-    if (!g_comm.result_ready) {
+    if (!g_comm.result_ready.complete()) {
       return Status::TimedOut("(thread did not respond: maybe it is blocking signals)");
     }
-
     stack->CopyFrom(g_comm.stack);
-
-    g_comm.result_ready = 0;
+    g_comm.result_ready.Reset();
   }
   return Status::OK();
 #else // defined(__linux__)
