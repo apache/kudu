@@ -17,7 +17,6 @@
 
 #include "kudu/util/flags.h"
 
-#include <unistd.h>
 
 #include <cstdlib>
 #include <functional>
@@ -28,6 +27,7 @@
 #include <vector>
 
 #include <sys/stat.h>
+#include <unistd.h> // IWYU pragma: keep
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <gflags/gflags.h>
@@ -73,10 +73,10 @@ DEFINE_bool(dump_metrics_json, false,
             "by this binary.");
 TAG_FLAG(dump_metrics_json, hidden);
 
+#ifdef TCMALLOC_ENABLED
 DEFINE_bool(enable_process_lifetime_heap_profiling, false, "Enables heap "
     "profiling for the lifetime of the process. Profile output will be stored in the "
-    "directory specified by -heap_profile_path. Enabling this option will disable the "
-    "on-demand/remote server profile handlers.");
+    "directory specified by -heap_profile_path.");
 TAG_FLAG(enable_process_lifetime_heap_profiling, stable);
 TAG_FLAG(enable_process_lifetime_heap_profiling, advanced);
 
@@ -84,6 +84,16 @@ DEFINE_string(heap_profile_path, "", "Output path to store heap profiles. If not
     "profiles are stored in /tmp/<process-name>.<pid>.<n>.heap.");
 TAG_FLAG(heap_profile_path, stable);
 TAG_FLAG(heap_profile_path, advanced);
+
+DEFINE_int64(heap_sample_every_n_bytes, 0,
+             "Enable heap occupancy sampling. If this flag is set to some positive "
+             "value N, a memory allocation will be sampled approximately every N bytes. "
+             "Lower values of N incur larger overhead but give more accurate results. "
+             "A value such as 524288 (512KB) is a reasonable choice with relatively "
+             "low overhead.");
+TAG_FLAG(heap_sample_every_n_bytes, advanced);
+TAG_FLAG(heap_sample_every_n_bytes, experimental);
+#endif
 
 DEFINE_bool(disable_core_dumps, false, "Disable core dumps when this process crashes.");
 TAG_FLAG(disable_core_dumps, advanced);
@@ -319,6 +329,16 @@ TAG_FLAG(helpxml, advanced);
 DECLARE_bool(version);
 TAG_FLAG(version, stable);
 
+//------------------------------------------------------------
+// TCMalloc flags.
+// These are tricky because tcmalloc doesn't use gflags. So we have to
+// reach into its internal namespace.
+//------------------------------------------------------------
+#define TCM_NAMESPACE FLAG__namespace_do_not_use_directly_use_DECLARE_int64_instead
+namespace TCM_NAMESPACE {
+extern int64_t FLAGS_tcmalloc_sample_parameter;
+} // namespace TCM_NAMESPACE
+
 namespace kudu {
 
 // After flags have been parsed, the umask value is filled in here.
@@ -486,11 +506,6 @@ void HandleCommonFlags() {
     google::HandleCommandLineHelpFlags();
   }
 
-  if (FLAGS_heap_profile_path.empty()) {
-    FLAGS_heap_profile_path = strings::Substitute(
-        "/tmp/$0.$1", google::ProgramInvocationShortName(), getpid());
-  }
-
   if (FLAGS_disable_core_dumps) {
     DisableCoreDumps();
   }
@@ -498,8 +513,22 @@ void HandleCommonFlags() {
   SetUmask();
 
 #ifdef TCMALLOC_ENABLED
+  if (FLAGS_heap_profile_path.empty()) {
+    FLAGS_heap_profile_path = strings::Substitute(
+        "/tmp/$0.$1", google::ProgramInvocationShortName(), getpid());
+  }
+
   if (FLAGS_enable_process_lifetime_heap_profiling) {
     HeapProfilerStart(FLAGS_heap_profile_path.c_str());
+  }
+  // Set the internal tcmalloc flag unless it was already set using the built-in
+  // environment-variable-based method. It doesn't appear that this is settable
+  // in any less hacky fashion.
+  if (!getenv("TCMALLOC_SAMPLE_PARAMETER")) {
+    TCM_NAMESPACE::FLAGS_tcmalloc_sample_parameter = FLAGS_heap_sample_every_n_bytes;
+  } else if (!google::GetCommandLineFlagInfoOrDie("heap_sample_every_n_bytes").is_default) {
+    LOG(ERROR) << "Heap sampling configured using both --heap-sample-every-n-bytes and "
+               << "TCMALLOC_SAMPLE_PARAMETER. Ignoring command line flag.";
   }
 #endif
 }

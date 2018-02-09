@@ -90,27 +90,33 @@ static void PprofHeapHandler(const Webserver::WebRequest& req,
                              Webserver::PrerenderedWebResponse* resp) {
   ostringstream* output = resp->output;
 #ifndef TCMALLOC_ENABLED
-  *output << "Heap profiling is not available without tcmalloc.";
+  *output << "%warn Heap profiling is not available without tcmalloc.\n";
 #else
-  // Remote (on-demand) profiling is disabled if the process is already being profiled.
-  if (FLAGS_enable_process_lifetime_heap_profiling) {
-    *output << "Heap profiling is running for the process lifetime.";
+  // If we've started the process with heap profiling then dump the full profile.
+  if (IsHeapProfilerRunning()) {
+    char* profile = GetHeapProfile();
+    *output << profile;
+    free(profile);
     return;
   }
 
-  auto it = req.parsed_args.find("seconds");
-  int seconds = kPprofDefaultSampleSecs;
-  if (it != req.parsed_args.end()) {
-    seconds = atoi(it->second.c_str());
+  // Otherwise dump the sample.
+  string buf;
+  MallocExtension::instance()->GetHeapSample(&buf);
+  if (buf.find("This heap profile does not have any data") != string::npos) {
+    // If sampling is disabled, tcmalloc prints a nice message with instructions
+    // how to enable it. However, it only describes the environment variable method
+    // and not our own gflag-based method, so we'll replace it with our own message.
+    buf = "%warn\n"
+        "%warn This heap profile does not have any data in it, because\n"
+        "%warn the application was run with heap sampling turned off.\n"
+        "%warn To obtain a heap sample, you must set the environment\n"
+        "%warn variable TCMALLOC_SAMPLE_PARAMETER or the flag\n"
+        "%warn --heap-sample-every-n-bytes to a positive sampling period,\n"
+        "%warn such as 524288.\n"
+        "%warn\n";
   }
-
-  HeapProfilerStart(FLAGS_heap_profile_path.c_str());
-  // Sleep to allow for some samples to be collected.
-  SleepFor(MonoDelta::FromSeconds(seconds));
-  const char* profile = GetHeapProfile();
-  HeapProfilerStop();
-  *output << profile;
-  delete profile;
+  *output << buf;
 #endif
 }
 
@@ -121,7 +127,7 @@ static void PprofCpuProfileHandler(const Webserver::WebRequest& req,
                                    Webserver::PrerenderedWebResponse* resp) {
   ostringstream* output = resp->output;
 #ifndef TCMALLOC_ENABLED
-  *output << "CPU profiling is not available without tcmalloc.";
+  *output << "%warn CPU profiling is not available without tcmalloc.\n";
 #else
   auto it = req.parsed_args.find("seconds");
   int seconds = kPprofDefaultSampleSecs;
@@ -149,7 +155,7 @@ static void PprofCpuProfileHandler(const Webserver::WebRequest& req,
 static void PprofGrowthHandler(const Webserver::WebRequest& /*req*/,
                                Webserver::PrerenderedWebResponse* resp) {
 #ifndef TCMALLOC_ENABLED
-  *resp->output << "Growth profiling is not available without tcmalloc.";
+  *resp->output << "%warn Growth profiling is not available without tcmalloc.\n";
 #else
   string heap_growth_stack;
   MallocExtension::instance()->GetHeapGrowthStacks(&heap_growth_stack);

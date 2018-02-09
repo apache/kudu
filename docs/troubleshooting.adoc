@@ -449,6 +449,40 @@ are several ways to relieve the memory pressure on Kudu:
   Generally, the recommended ratio of maintenance manager threads to data directories is 1:3.
 - Reduce the volume of writes flowing to Kudu on the application side.
 
+[[heap_sampling]]
+=== Heap Sampling
+
+For advanced debugging of memory usage, administrators may enable heap sampling on Kudu daemons.
+This allows Kudu developers to associate memory usage with the specific lines of code and data
+structures responsible. When reporting a bug related to memory usage or an apparent memory leak,
+heap profiling can give quantitative data to pinpoint the issue.
+
+WARNING: Heap sampling is an advanced troubleshooting technique and may cause performance
+degradation or instability of the Kudu service. Currently it is not recommended to enable this
+in a production environment unless specifically requested by the Kudu development team.
+
+To enable heap sampling on a Kudu daemon, pass the flag `--heap-sample-every-n-bytes=524588`.
+If heap sampling is enabled, the current sampled heap occupancy can be retrieved over HTTP
+by visiting `http://tablet-server.example.com:8050/pprof/heap` or
+`http://master.example.com:8051/pprof/heap`. The output is a machine-readable dump of the
+stack traces with their associated heap usage.
+
+Rather than visiting the heap profile page directly in a web browser, it is typically
+more useful to use the `pprof` tool that is distributed as part of the `gperftools`
+open source project. For example, a developer with a local build tree can use the
+following command to collect the sampled heap usage and output an SVG diagram:
+
+----
+thirdparty/installed/uninstrumented/bin/pprof -svg  'http://localhost:8051/pprof/heap' > /tmp/heap.svg
+----
+
+The resulting SVG may be visualized in a web browser or sent to the Kudu community to help
+troubleshoot memory occupancy issues.
+
+TIP: Heap samples contain only summary information about allocations and do not contain any
+_data_ from the heap. It is safe to share heap samples in public without fear of exposing
+confidential or sensitive data.
+
 [[disk_issues]]
 === Disk Issues
 
