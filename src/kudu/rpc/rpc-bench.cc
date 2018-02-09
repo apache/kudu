@@ -104,9 +104,9 @@ class RpcBench : public RpcTestBase {
     float csw_per_req = static_cast<float>(elapsed.context_switches) / total_reqs;
 
     HdrHistogram reactor_load(*METRIC_reactor_load_percent.Instantiate(
-        server_messenger_->metric_entity())->histogram_for_tests());
+        server_messenger_->metric_entity())->histogram());
     HdrHistogram reactor_latency(*METRIC_reactor_active_latency_us.Instantiate(
-        server_messenger_->metric_entity())->histogram_for_tests());
+        server_messenger_->metric_entity())->histogram());
 
     LOG(INFO) << "Mode:            " << (sync ? "Sync" : "Async");
     if (sync) {

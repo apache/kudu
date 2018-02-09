@@ -139,6 +139,10 @@ Status AcceptorPool::GetBoundAddress(Sockaddr* addr) const {
   return socket_.GetSocketAddress(addr);
 }
 
+int64_t AcceptorPool::num_rpc_connections_accepted() const {
+  return rpc_connections_accepted_->value();
+}
+
 void AcceptorPool::RunThread() {
   while (true) {
     Socket new_sock;

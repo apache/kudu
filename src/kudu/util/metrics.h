@@ -1093,12 +1093,14 @@ class Histogram : public Metric {
   Status GetHistogramSnapshotPB(HistogramSnapshotPB* snapshot_pb,
                                 const MetricJsonOptions& opts) const;
 
+  // Returns a pointer to the underlying histogram. The implementation of HdrHistogram
+  // is thread safe.
+  const HdrHistogram* histogram() const { return histogram_.get(); }
+
   uint64_t CountInBucketForValueForTests(uint64_t value) const;
   uint64_t MinValueForTests() const;
   uint64_t MaxValueForTests() const;
   double MeanValueForTests() const;
-
-  const HdrHistogram* histogram_for_tests() const { return histogram_.get(); }
 
   virtual bool IsUntouched() const override {
     return TotalCount() == 0;

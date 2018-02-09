@@ -18,6 +18,7 @@
 #ifndef KUDU_RPC_ACCEPTOR_POOL_H
 #define KUDU_RPC_ACCEPTOR_POOL_H
 
+#include <stdint.h>
 #include <vector>
 
 #include "kudu/gutil/atomicops.h"
@@ -59,6 +60,9 @@ class AcceptorPool {
   // socket is open, and if the specified port is 0 then this will return the
   // actual port that was bound.
   Status GetBoundAddress(Sockaddr* addr) const;
+
+  // Return the number of connections accepted by this messenger. Thread-safe.
+  int64_t num_rpc_connections_accepted() const;
 
  private:
   void RunThread();
