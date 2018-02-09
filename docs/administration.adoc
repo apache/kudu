@@ -777,6 +777,11 @@ factor is at least three and all other servers are online and healthy.
 NOTE: These steps use a tablet server as an example, but the steps are the same
 for Kudu master servers.
 
+WARNING: If multiple nodes need their FS layouts rebuilt, wait until all
+replicas previously hosted on each node have finished automatically
+re-replicating elsewhere before continuing. Failure to do so can result in
+permanent data loss.
+
 WARNING: Before proceeding, ensure the contents of the directories are backed
 up, either as a copy or in the form of other tablet replicas.
 
