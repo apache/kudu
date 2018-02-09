@@ -434,9 +434,13 @@ unique_ptr<Mode> BuildRemoteReplicaMode() {
   unique_ptr<Action> unsafe_change_config =
       ActionBuilder("unsafe_change_config", &UnsafeChangeConfig)
       .Description("Force the specified replica to adopt a new Raft config")
-      .ExtraDescription("The members of the new Raft config must be a subset "
+      .ExtraDescription("This tool is useful when a config change is "
+                        "necessary because a tablet cannot make progress with "
+                        "its current Raft configuration (e.g. to evict "
+                        "followers when a majority is unavailable).\n\nNote: "
+                        "The members of the new Raft config must be a subset "
                         "of (or the same as) the members of the existing "
-                        "committed Raft config on that replica.")
+                        "committed Raft config.")
       .AddRequiredParameter({ kTServerAddressArg, kTServerAddressDesc })
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddRequiredVariadicParameter({ kPeerUUIDsArg, kPeerUUIDsArgDesc })
