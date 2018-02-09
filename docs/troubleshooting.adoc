@@ -490,7 +490,7 @@ When Kudu starts, it checks each configured data directory, expecting either for
 initialized or for all to be empty. If a server fails to start with a log message like
 
 ----
-Check failed: _s.ok() Bad status: Already present: Could not create new FS layout: FSManager root is not empty: /data0/kudu/data
+Check failed: _s.ok() Bad status: Already present: FS layout already exists; not overwriting existing layout: FSManager roots already exist: /data0/kudu/data
 ----
 
 then this precondition has failed. This could be because Kudu was configured with non-empty data

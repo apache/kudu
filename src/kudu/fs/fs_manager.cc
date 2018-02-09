@@ -57,7 +57,6 @@
 #include "kudu/util/pb_util.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/stopwatch.h"
-#include "kudu/util/website_util.h"
 
 DEFINE_bool(enable_data_block_fsync, true,
             "Whether to enable fsync() of data blocks, metadata, and their parent directories. "
@@ -520,6 +519,7 @@ Status FsManager::CreateFileSystemRoots(
   CHECK(!opts_.read_only);
 
   // It's OK if a root already exists as long as there's nothing in it.
+  vector<string> non_empty_roots;
   for (const auto& root : canonicalized_roots) {
     if (!root.status.ok()) {
       return Status::IOError("cannot create FS layout; at least one directory "
@@ -533,10 +533,13 @@ Status FsManager::CreateFileSystemRoots(
     RETURN_NOT_OK_PREPEND(env_util::IsDirectoryEmpty(env_, root.path, &is_empty),
                           "unable to check if FSManager root is empty");
     if (!is_empty) {
-      return Status::AlreadyPresent(
-          Substitute("FSManager root is not empty. See $0", KuduDocsTroubleshootingUrl()),
-          root.path);
+      non_empty_roots.emplace_back(root.path);
     }
+  }
+
+  if (!non_empty_roots.empty()) {
+    return Status::AlreadyPresent(
+        Substitute("FSManager roots already exist: $0", JoinStrings(non_empty_roots, ",")));
   }
 
   // All roots are either empty or non-existent. Create missing roots and all

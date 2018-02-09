@@ -79,6 +79,7 @@
 #include "kudu/util/thread.h"
 #include "kudu/util/user.h"
 #include "kudu/util/version_info.h"
+#include "kudu/util/website_util.h"
 
 DEFINE_int32(num_reactor_threads, 4, "Number of libev reactor threads to start.");
 TAG_FLAG(num_reactor_threads, advanced);
@@ -428,10 +429,19 @@ Status ServerBase::Init() {
   Status s = fs_manager_->Open(&report);
   if (s.IsNotFound()) {
     LOG(INFO) << "Could not load existing FS layout: " << s.ToString();
-    LOG(INFO) << "Creating new FS layout";
+    LOG(INFO) << "Attempting to create new FS layout instead";
     is_first_run_ = true;
-    RETURN_NOT_OK_PREPEND(fs_manager_->CreateInitialFileSystemLayout(),
-                          "Could not create new FS layout");
+    s = fs_manager_->CreateInitialFileSystemLayout();
+    if (s.IsAlreadyPresent()) {
+      // The operator is likely trying to start up with an extra entry in their
+      // `fs_data_dirs` configuration.
+      LOG(INFO) << "To start Kudu with a different FS layout, the `kudu fs "
+                   "update_dirs` tool must be run first";
+      return s.CloneAndPrepend(
+          strings::Substitute("FS layout already exists; not overwriting existing layout. See $0",
+                              KuduDocsTroubleshootingUrl()));
+    }
+    RETURN_NOT_OK_PREPEND(s, "Could not create new FS layout");
     s = fs_manager_->Open(&report);
   }
   RETURN_NOT_OK_PREPEND(s, "Failed to load FS layout");
