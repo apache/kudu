@@ -407,11 +407,16 @@ TEST_F(TsTabletManagerITest, ReportOnReplicaHealthStatus) {
     string leader_uuid;
     for (const auto& replica : tablet_replicas) {
       RaftConsensus* consensus = CHECK_NOTNULL(replica->consensus());
-      ConsensusStatePB cs(consensus->ConsensusState(RaftConsensus::INCLUDE_HEALTH_REPORT));
+      ConsensusStatePB cs;
+      Status s = consensus->ConsensusState(&cs, RaftConsensus::INCLUDE_HEALTH_REPORT);
+      if (!s.ok()) {
+        ASSERT_TRUE(s.IsIllegalState()) << s.ToString(); // Replica is shut down.
+        continue;
+      }
       if (consensus->peer_uuid() == cs.leader_uuid()) {
         // Only the leader replica has the up-to-date health report.
         leader_uuid = cs.leader_uuid();
-        cstate.Swap(&cs);
+        cstate = std::move(cs);
         break;
       }
     }

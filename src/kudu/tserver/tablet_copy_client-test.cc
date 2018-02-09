@@ -118,7 +118,8 @@ class TabletCopyClientTest : public TabletCopyTest {
                                        messenger_,
                                        nullptr /* no metrics */));
     RaftPeerPB* cstate_leader;
-    ConsensusStatePB cstate = tablet_replica_->consensus()->ConsensusState();
+    ConsensusStatePB cstate;
+    ASSERT_OK(tablet_replica_->consensus()->ConsensusState(&cstate));
     ASSERT_OK(GetRaftConfigLeader(&cstate, &cstate_leader));
     leader_ = *cstate_leader;
 

@@ -29,7 +29,6 @@
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log.pb.h"
 #include "kudu/consensus/log_reader.h"
-#include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/raft_consensus.h"
@@ -189,7 +188,8 @@ Status TabletCopySourceSession::InitOnce() {
         "Raft Consensus is not available. Tablet state: $1 ($2)",
         tablet_id, tablet::TabletStatePB_Name(tablet_state), tablet_state));
   }
-  initial_cstate_ = consensus->ConsensusState();
+  RETURN_NOT_OK_PREPEND(consensus->ConsensusState(&initial_cstate_),
+                        "Consensus state not available");
 
   // Re-anchor on the highest OpId that was in the log right before we
   // snapshotted the log segments. This helps ensure that we don't end up in a

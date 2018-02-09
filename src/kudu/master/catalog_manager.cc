@@ -693,7 +693,8 @@ Status CatalogManager::ElectedAsLeaderCb() {
 }
 
 Status CatalogManager::WaitUntilCaughtUpAsLeader(const MonoDelta& timeout) {
-  ConsensusStatePB cstate = sys_catalog_->tablet_replica()->consensus()->ConsensusState();
+  ConsensusStatePB cstate;
+  RETURN_NOT_OK(sys_catalog_->tablet_replica()->consensus()->ConsensusState(&cstate));
   const string& uuid = master_->fs_manager()->uuid();
   if (cstate.leader_uuid() != uuid) {
     return Status::IllegalState(
@@ -878,7 +879,7 @@ void CatalogManager::PrepareForLeadershipTask() {
     shared_lock<LockType> l(lock_);
   }
   const RaftConsensus* consensus = sys_catalog_->tablet_replica()->consensus();
-  const int64_t term_before_wait = consensus->ConsensusState().current_term();
+  const int64_t term_before_wait = consensus->CurrentTerm();
   {
     std::lock_guard<simple_spinlock> l(state_lock_);
     if (leader_ready_term_ == term_before_wait) {
@@ -903,7 +904,7 @@ void CatalogManager::PrepareForLeadershipTask() {
     return;
   }
 
-  const int64_t term = consensus->ConsensusState().current_term();
+  const int64_t term = consensus->CurrentTerm();
   if (term_before_wait != term) {
     // If we got elected leader again while waiting to catch up then we will
     // get another callback to visit the tables and tablets, so bail.
@@ -941,7 +942,7 @@ void CatalogManager::PrepareForLeadershipTask() {
         }
       }
 
-      const int64_t term = consensus.ConsensusState().current_term();
+      const int64_t term = consensus.CurrentTerm();
       if (term != start_term) {
         // If the term has changed we assume the new leader catalog is about
         // to do the necessary work in its leadership preparation task.
@@ -4357,11 +4358,18 @@ CatalogManager::ScopedLeaderSharedLock::ScopedLeaderSharedLock(
                    catalog_->state_));
     return;
   }
+
+  ConsensusStatePB cstate;
+  Status s = catalog_->sys_catalog_->tablet_replica()->consensus()->ConsensusState(&cstate);
+  if (PREDICT_FALSE(!s.ok())) {
+    DCHECK(s.IsIllegalState()) << s.ToString();
+    catalog_status_ = s.CloneAndPrepend("ConsensusState is not available");
+    return;
+  }
+
   catalog_status_ = Status::OK();
 
   // Check if the catalog manager is the leader.
-  const ConsensusStatePB cstate = catalog_->sys_catalog_->tablet_replica()->
-      consensus()->ConsensusState();
   initial_term_ = cstate.current_term();
   const string& uuid = catalog_->master_->fs_manager()->uuid();
   if (PREDICT_FALSE(cstate.leader_uuid() != uuid)) {
@@ -4381,9 +4389,8 @@ CatalogManager::ScopedLeaderSharedLock::ScopedLeaderSharedLock(
 
 bool CatalogManager::ScopedLeaderSharedLock::has_term_changed() const {
   DCHECK(leader_status().ok());
-  const ConsensusStatePB cstate = catalog_->sys_catalog_->tablet_replica()->
-      consensus()->ConsensusState();
-  return cstate.current_term() != initial_term_;
+  const auto current_term = catalog_->sys_catalog_->tablet_replica()->consensus()->CurrentTerm();
+  return current_term != initial_term_;
 }
 
 template<typename RespClass>

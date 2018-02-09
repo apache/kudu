@@ -52,6 +52,7 @@
 #include "kudu/consensus/log-test-base.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/metadata.pb.h"
+#include "kudu/consensus/raft_consensus.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/fs-test-util.h"
 #include "kudu/fs/fs.pb.h"
@@ -110,6 +111,7 @@
 using google::protobuf::util::MessageDifferencer;
 using kudu::clock::Clock;
 using kudu::clock::HybridClock;
+using kudu::consensus::ConsensusStatePB;
 using kudu::fs::CreateCorruptBlock;
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
@@ -410,6 +412,24 @@ TEST_F(TabletServerTest, TestWebPages) {
   // only exists on Linux.
   ASSERT_STR_CONTAINS(buf.ToString(), "tablet_server-test");
 #endif
+}
+
+// Ensure that when a replica is in a failed / shutdown state, it returns an
+// error for ConsensusState() requests.
+TEST_F(TabletServerTest, TestFailedTabletsRejectConsensusState) {
+  scoped_refptr<TabletReplica> replica;
+  TSTabletManager* tablet_manager = mini_server_->server()->tablet_manager();
+  ASSERT_TRUE(tablet_manager->LookupTablet(kTabletId, &replica));
+  replica->SetError(Status::IOError("This error will leave the replica FAILED state at shutdown"));
+  replica->Shutdown();
+  ASSERT_EQ(tablet::FAILED, replica->state());
+
+  auto consensus = replica->shared_consensus();
+  ASSERT_TRUE(consensus);
+  ConsensusStatePB cstate;
+  Status s = consensus->ConsensusState(&cstate);
+  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "Tablet replica is shutdown");
 }
 
 // Test that tablets that get failed and deleted will eventually show up as

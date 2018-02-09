@@ -172,6 +172,7 @@ namespace kudu {
 using consensus::ConsensusMetadata;
 using consensus::ConsensusMetadataCreateMode;
 using consensus::ConsensusMetadataManager;
+using consensus::ConsensusStatePB;
 using consensus::OpId;
 using consensus::OpIdToString;
 using consensus::RECEIVED_OPID;
@@ -1157,7 +1158,11 @@ void TSTabletManager::CreateReportedTabletPB(const scoped_refptr<TabletReplica>&
     auto include_health = FLAGS_raft_prepare_replacement_before_eviction ?
                           RaftConsensus::INCLUDE_HEALTH_REPORT :
                           RaftConsensus::EXCLUDE_HEALTH_REPORT;
-    *reported_tablet->mutable_consensus_state() = consensus->ConsensusState(include_health);
+    ConsensusStatePB cstate;
+    Status s = consensus->ConsensusState(&cstate, include_health);
+    if (PREDICT_TRUE(s.ok())) {
+      *reported_tablet->mutable_consensus_state() = std::move(cstate);
+    }
   }
 }
 

@@ -287,10 +287,14 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& /*
                                                        replica->tablet_metadata()->schema());
 
       // We don't show the config if it's a tombstone because it's misleading.
+      string consensus_state_html;
       shared_ptr<consensus::RaftConsensus> consensus = replica->shared_consensus();
-      string consensus_state_html =
-          consensus && !IsTombstoned(replica) ? ConsensusStatePBToHtml(consensus->ConsensusState())
-                                              : "";
+      if (!IsTombstoned(replica) && consensus) {
+        ConsensusStatePB cstate;
+        if (consensus->ConsensusState(&cstate).ok()) {
+          consensus_state_html = ConsensusStatePBToHtml(cstate);
+        }
+      }
 
       *output << Substitute(
           // Table name, tablet id, partition
