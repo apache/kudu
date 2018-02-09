@@ -517,6 +517,8 @@ Status RaftConsensus::StepDown(LeaderStepDownResponsePB* resp) {
   TRACE_EVENT0("consensus", "RaftConsensus::StepDown");
   ThreadRestrictions::AssertWaitAllowed();
   LockGuard l(lock_);
+  DCHECK((queue_->IsInLeaderMode() && cmeta_->active_role() == RaftPeerPB::LEADER) ||
+         (!queue_->IsInLeaderMode() && cmeta_->active_role() != RaftPeerPB::LEADER));
   RETURN_NOT_OK(CheckRunningUnlocked());
   if (cmeta_->active_role() != RaftPeerPB::LEADER) {
     LOG_WITH_PREFIX_UNLOCKED(INFO) << "Rejecting request to step down while not leader";
@@ -2772,8 +2774,15 @@ Status RaftConsensus::CheckActiveLeaderUnlocked() const {
   RaftPeerPB::Role role = cmeta_->active_role();
   switch (role) {
     case RaftPeerPB::LEADER:
+      // Check for the consistency of the information in the consensus metadata
+      // and the state of the consensus queue.
+      DCHECK(queue_->IsInLeaderMode());
       return Status::OK();
+
     default:
+      // Check for the consistency of the information in the consensus metadata
+      // and the state of the consensus queue.
+      DCHECK(!queue_->IsInLeaderMode());
       return Status::IllegalState(Substitute("Replica $0 is not leader of this config. Role: $1. "
                                              "Consensus state: $2",
                                              peer_uuid(),

@@ -328,6 +328,9 @@ class PeerMessageQueue {
   // Return true if the committed index falls within the current term.
   bool IsCommittedIndexInCurrentTerm() const;
 
+  // Whether the queue run in the leader mode.
+  bool IsInLeaderMode() const;
+
   // Returns the current majority replicated index, for tests.
   int64_t GetMajorityReplicatedIndexForTests() const;
 

@@ -1143,6 +1143,11 @@ bool PeerMessageQueue::IsCommittedIndexInCurrentTerm() const {
       queue_state_.committed_index >= *queue_state_.first_index_in_current_term;
 }
 
+bool PeerMessageQueue::IsInLeaderMode() const {
+  std::lock_guard<simple_spinlock> lock(queue_lock_);
+  return queue_state_.mode == Mode::LEADER;
+}
+
 int64_t PeerMessageQueue::GetMajorityReplicatedIndexForTests() const {
   std::lock_guard<simple_spinlock> lock(queue_lock_);
   return queue_state_.majority_replicated_index;
