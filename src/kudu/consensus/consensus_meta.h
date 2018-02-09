@@ -156,7 +156,7 @@ class ConsensusMetadata : public RefCountedThreadSafe<ConsensusMetadata> {
   }
 
   // The on-disk size of the consensus metadata, as of the last call to
-  // Load() or Flush().
+  // Load() or Flush(). This method is thread-safe.
   int64_t on_disk_size() const {
     return on_disk_size_.load(std::memory_order_relaxed);
   }

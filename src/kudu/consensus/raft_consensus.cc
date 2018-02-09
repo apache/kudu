@@ -2374,6 +2374,7 @@ RaftConfigPB RaftConsensus::CommittedConfig() const {
 void RaftConsensus::DumpStatusHtml(std::ostream& out) const {
   RaftPeerPB::Role role;
   {
+    ThreadRestrictions::AssertWaitAllowed();
     LockGuard l(lock_);
     if (state_ != kRunning) {
       out << "Tablet " << EscapeForHtmlToString(tablet_id()) << " not running" << std::endl;
@@ -2415,42 +2416,6 @@ void RaftConsensus::DoElectionCallback(ElectionReason reason, const ElectionResu
   const bool was_pre_election = result.vote_request.is_pre_election();
   const char* election_type = was_pre_election ? "pre-election" : "election";
 
-  // Snooze to avoid the election timer firing again as much as possible.
-  {
-    ThreadRestrictions::AssertWaitAllowed();
-    LockGuard l(lock_);
-    // We need to snooze when we win and when we lose:
-    // - When we win because we're about to disable the timer and become leader.
-    // - When we lose or otherwise we can fall into a cycle, where everyone keeps
-    //   triggering elections but no election ever completes because by the time they
-    //   finish another one is triggered already.
-    SnoozeFailureDetector(string("election complete"), LeaderElectionExpBackoffDeltaUnlocked());
-
-    if (result.decision == VOTE_DENIED) {
-      failed_elections_since_stable_leader_++;
-
-      // If we called an election and one of the voters had a higher term than we did,
-      // we should bump our term before we potentially try again. This is particularly
-      // important with pre-elections to avoid getting "stuck" in a case like:
-      //    Peer A: has ops through 1.10, term = 2, voted in term 2 for peer C
-      //    Peer B: has ops through 1.15, term = 1
-      // In this case, Peer B will reject peer A's pre-elections for term 3 because
-      // the local log is longer. Peer A will reject B's pre-elections for term 2
-      // because it already voted in term 2. The check below ensures that peer B
-      // will bump to term 2 when it gets the vote rejection, such that its
-      // next pre-election (for term 3) would succeed.
-      if (result.highest_voter_term > CurrentTermUnlocked()) {
-        HandleTermAdvanceUnlocked(result.highest_voter_term);
-      }
-
-      LOG_WITH_PREFIX_UNLOCKED(INFO)
-          << "Leader " << election_type << " lost for term " << election_term
-          << ". Reason: "
-          << (!result.message.empty() ? result.message : "None given");
-      return;
-    }
-  }
-
   // The vote was granted, become leader.
   ThreadRestrictions::AssertWaitAllowed();
   UniqueLock lock(lock_);
@@ -2459,6 +2424,38 @@ void RaftConsensus::DoElectionCallback(ElectionReason reason, const ElectionResu
     LOG_WITH_PREFIX_UNLOCKED(INFO) << "Received " << election_type << " callback for term "
                                    << election_term << " while not running: "
                                    << s.ToString();
+    return;
+  }
+
+  // Snooze to avoid the election timer firing again as much as possible.
+  // We need to snooze when we win and when we lose:
+  // - When we win because we're about to disable the timer and become leader.
+  // - When we lose or otherwise we can fall into a cycle, where everyone keeps
+  //   triggering elections but no election ever completes because by the time they
+  //   finish another one is triggered already.
+  SnoozeFailureDetector(string("election complete"), LeaderElectionExpBackoffDeltaUnlocked());
+
+  if (result.decision == VOTE_DENIED) {
+    failed_elections_since_stable_leader_++;
+
+    // If we called an election and one of the voters had a higher term than we did,
+    // we should bump our term before we potentially try again. This is particularly
+    // important with pre-elections to avoid getting "stuck" in a case like:
+    //    Peer A: has ops through 1.10, term = 2, voted in term 2 for peer C
+    //    Peer B: has ops through 1.15, term = 1
+    // In this case, Peer B will reject peer A's pre-elections for term 3 because
+    // the local log is longer. Peer A will reject B's pre-elections for term 2
+    // because it already voted in term 2. The check below ensures that peer B
+    // will bump to term 2 when it gets the vote rejection, such that its
+    // next pre-election (for term 3) would succeed.
+    if (result.highest_voter_term > CurrentTermUnlocked()) {
+      HandleTermAdvanceUnlocked(result.highest_voter_term);
+    }
+
+    LOG_WITH_PREFIX_UNLOCKED(INFO)
+        << "Leader " << election_type << " lost for term " << election_term
+        << ". Reason: "
+        << (!result.message.empty() ? result.message : "None given");
     return;
   }
 
@@ -2683,6 +2680,7 @@ void RaftConsensus::DisableFailureDetector() {
 }
 
 void RaftConsensus::UpdateFailureDetectorState(boost::optional<MonoDelta> delta) {
+  DCHECK(lock_.is_locked());
   const auto& uuid = peer_uuid();
   if (uuid != cmeta_->leader_uuid() &&
       cmeta_->IsVoterInConfig(uuid, ACTIVE_CONFIG)) {
