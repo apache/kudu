@@ -211,6 +211,10 @@ string TabletLink(const string& id) {
                     EscapeForHtmlToString(id));
 }
 
+bool IsTombstoned(const scoped_refptr<TabletReplica>& replica) {
+  return replica->data_state() == tablet::TABLET_DATA_TOMBSTONED;
+}
+
 } // anonymous namespace
 
 void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& /*req*/,
@@ -286,7 +290,16 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& /*
                                  .PartitionDebugString(replica->tablet_metadata()->partition(),
                                                        replica->tablet_metadata()->schema());
 
+      // We don't show the config if it's a tombstone because it's misleading.
+      string consensus_state_html;
       shared_ptr<consensus::RaftConsensus> consensus = replica->shared_consensus();
+      if (!IsTombstoned(replica) && consensus) {
+        ConsensusStatePB cstate;
+        if (consensus->ConsensusState(&cstate).ok()) {
+          consensus_state_html = ConsensusStatePBToHtml(cstate);
+        }
+      }
+
       *output << Substitute(
           // Table name, tablet id, partition
           "<tr><td>$0</td><td>$1</td><td>$2</td>"
@@ -296,7 +309,7 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& /*
           tablet_id_or_link, // $1
           EscapeForHtmlToString(partition), // $2
           EscapeForHtmlToString(replica->HumanReadableState()), mem_bytes, n_bytes, // $3, $4, $5
-          consensus ? ConsensusStatePBToHtml(consensus->ConsensusState()) : "", // $6
+          consensus_state_html, // $6
           EscapeForHtmlToString(status.last_status())); // $7
     }
     *output << "<tbody></table>\n</div>\n";

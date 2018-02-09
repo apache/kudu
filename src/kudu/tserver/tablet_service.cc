@@ -49,7 +49,6 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
-#include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/consensus/time_manager.h"
@@ -1212,9 +1211,14 @@ void ConsensusServiceImpl::GetConsensusState(const consensus::GetConsensusStateR
       continue;
     }
 
-    auto* tablet_info = resp->add_tablets();
-    tablet_info->set_tablet_id(replica->tablet_id());
-    *tablet_info->mutable_cstate() = consensus->ConsensusState();
+    consensus::GetConsensusStateResponsePB_TabletConsensusInfoPB tablet_info;
+    Status s = consensus->ConsensusState(tablet_info.mutable_cstate());
+    if (!s.ok()) {
+      DCHECK(s.IsIllegalState()) << s.ToString();
+      continue;
+    }
+    tablet_info.set_tablet_id(replica->tablet_id());
+    *resp->add_tablets() = std::move(tablet_info);
   }
 
   context->RespondSuccess();

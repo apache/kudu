@@ -296,7 +296,10 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // If 'report_health' is set to 'INCLUDE_HEALTH_REPORT', and if the
   // local replica believes it is the leader of the config, it will include a
   // health report about each active peer in the committed config.
-  ConsensusStatePB ConsensusState(IncludeHealthReport report_health = EXCLUDE_HEALTH_REPORT) const;
+  // If RaftConsensus has been shut down, returns Status::IllegalState.
+  // Does not modify the out-param 'cstate' unless an OK status is returned.
+  Status ConsensusState(ConsensusStatePB* cstate,
+                        IncludeHealthReport report_health = EXCLUDE_HEALTH_REPORT) const;
 
   // Returns a copy of the current committed Raft configuration.
   RaftConfigPB CommittedConfig() const;

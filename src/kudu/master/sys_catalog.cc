@@ -60,6 +60,7 @@
 #include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/move.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/catalog_manager.h"
@@ -325,7 +326,12 @@ void SysCatalogTable::SysCatalogStateChanged(const string& tablet_id, const stri
                              << tablet_id << ". Reason: " << reason;
     return;
   }
-  consensus::ConsensusStatePB cstate = consensus->ConsensusState();
+  consensus::ConsensusStatePB cstate;
+  Status s = consensus->ConsensusState(&cstate);
+  if (PREDICT_FALSE(!s.ok())) {
+    LOG_WITH_PREFIX(WARNING) << s.ToString();
+    return;
+  }
   LOG_WITH_PREFIX(INFO) << "SysCatalogTable state changed. Reason: " << reason << ". "
                         << "Latest consensus state: " << SecureShortDebugString(cstate);
   RaftPeerPB::Role new_role = GetConsensusRole(tablet_replica_->permanent_uuid(), cstate);

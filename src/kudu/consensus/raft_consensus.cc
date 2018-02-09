@@ -2326,10 +2326,14 @@ const string& RaftConsensus::tablet_id() const {
   return options_.tablet_id;
 }
 
-ConsensusStatePB RaftConsensus::ConsensusState(IncludeHealthReport report_health) const {
+Status RaftConsensus::ConsensusState(ConsensusStatePB* cstate,
+                                     IncludeHealthReport report_health) const {
   ThreadRestrictions::AssertWaitAllowed();
   UniqueLock l(lock_);
-  ConsensusStatePB cstate = cmeta_->ToConsensusStatePB();
+  if (state_ == kShutdown) {
+    return Status::IllegalState("Tablet replica is shutdown");
+  }
+  ConsensusStatePB cstate_tmp = cmeta_->ToConsensusStatePB();
 
   // If we need to include the health report, merge it into the committed
   // config iff we believe we are the current leader of the config.
@@ -2342,7 +2346,7 @@ ConsensusStatePB RaftConsensus::ConsensusState(IncludeHealthReport report_health
 
     // Iterate through each peer in the committed config and attach the health
     // report to it.
-    RaftConfigPB* committed_raft_config = cstate.mutable_committed_config();
+    RaftConfigPB* committed_raft_config = cstate_tmp.mutable_committed_config();
     for (int i = 0; i < committed_raft_config->peers_size(); i++) {
       RaftPeerPB* peer = committed_raft_config->mutable_peers(i);
       const HealthReportPB* report = FindOrNull(reports, peer->permanent_uuid());
@@ -2350,7 +2354,8 @@ ConsensusStatePB RaftConsensus::ConsensusState(IncludeHealthReport report_health
       *peer->mutable_health_report() = *report;
     }
   }
-  return cstate;
+  *cstate = std::move(cstate_tmp);
+  return Status::OK();
 }
 
 RaftConfigPB RaftConsensus::CommittedConfig() const {
