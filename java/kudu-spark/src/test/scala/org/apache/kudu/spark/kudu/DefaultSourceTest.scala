@@ -101,6 +101,41 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter wi
     assertFalse(kuduContext.tableExists(tableName))
   }
 
+  test("table creation with partitioning") {
+    val tableName = "testcreatepartitionedtable"
+    if (kuduContext.tableExists(tableName)) {
+      kuduContext.deleteTable(tableName)
+    }
+    val df = sqlContext.read.options(kuduOptions).kudu
+
+    val kuduSchema = kuduContext.createSchema(df.schema, Seq("key"))
+    val lower = kuduSchema.newPartialRow()
+    lower.addInt("key", 0)
+    val upper = kuduSchema.newPartialRow()
+    upper.addInt("key", Integer.MAX_VALUE)
+
+    kuduContext.createTable(tableName, kuduSchema,
+      new CreateTableOptions()
+        .addHashPartitions(List("key").asJava, 2)
+        .setRangePartitionColumns(List("key").asJava)
+        .addRangePartition(lower, upper)
+        .setNumReplicas(1))
+    kuduContext.insertRows(df, tableName)
+
+    // now use new options to refer to the new table name
+    val newOptions: Map[String, String] = Map(
+      "kudu.table" -> tableName,
+      "kudu.master" -> miniCluster.getMasterAddresses)
+    val checkDf = sqlContext.read.options(newOptions).kudu
+
+    assert(checkDf.schema === df.schema)
+    assertTrue(kuduContext.tableExists(tableName))
+    assert(checkDf.count == 10)
+
+    kuduContext.deleteTable(tableName)
+    assertFalse(kuduContext.tableExists(tableName))
+  }
+
   test("insertion") {
     val df = sqlContext.read.options(kuduOptions).kudu
     val changedDF = df.limit(1).withColumn("key", df("key").plus(100)).withColumn("c2_s", lit("abc"))

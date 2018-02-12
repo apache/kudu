@@ -154,11 +154,38 @@ class KuduContext(val kuduMaster: String,
     * @param schema struct schema of table
     * @param keys primary keys of the table
     * @param options replication and partitioning options for the table
+    * @return the KuduTable that was created
     */
   def createTable(tableName: String,
                   schema: StructType,
                   keys: Seq[String],
                   options: CreateTableOptions): KuduTable = {
+    val kuduSchema = createSchema(schema, keys)
+    createTable(tableName, kuduSchema, options)
+  }
+
+  /**
+    * Creates a kudu table for the given schema. Partitioning can be specified through options.
+    *
+    * @param tableName table to create
+    * @param schema schema of table
+    * @param options replication and partitioning options for the table
+    * @return the KuduTable that was created
+    */
+  def createTable(tableName: String,
+                  schema: Schema,
+                  options: CreateTableOptions): KuduTable = {
+    syncClient.createTable(tableName, schema, options)
+  }
+
+  /**
+    * Creates a kudu schema for the given struct schema.
+    *
+    * @param schema struct schema of table
+    * @param keys primary keys of the table
+    * @return the Kudu schema
+    */
+  def createSchema(schema: StructType, keys: Seq[String]): Schema = {
     val kuduCols = new util.ArrayList[ColumnSchema]()
     // add the key columns first, in the order specified
     for (key <- keys) {
@@ -171,8 +198,7 @@ class KuduContext(val kuduMaster: String,
       val col = createColumn(field, isKey = false)
       kuduCols.add(col)
     }
-
-    syncClient.createTable(tableName, new Schema(kuduCols), options)
+    new Schema(kuduCols)
   }
 
   private def createColumn(field: StructField, isKey: Boolean): ColumnSchema = {
