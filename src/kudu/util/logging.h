@@ -340,7 +340,7 @@ class LogThrottler {
   }
  private:
   Atomic32 num_suppressed_;
-  uint64_t last_ts_;
+  MicrosecondsInt64 last_ts_;
   const char* last_tag_;
 };
 } // namespace logging
