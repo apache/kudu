@@ -19,8 +19,6 @@
 
 #include <algorithm>
 #include <cerrno>
-#include <cstddef>
-#include <functional>
 #include <iostream>
 #include <memory>
 #include <set>
@@ -49,7 +47,6 @@
 #include "kudu/util/net/socket.h"
 #include "kudu/util/status.h"
 
-using std::function;
 using std::includes;
 using std::set;
 using std::shared_ptr;
@@ -749,6 +746,8 @@ Status Connection::DumpPB(const DumpRunningRpcsRequestPB& req,
         c->call->DumpPB(req, resp->add_calls_in_flight());
       }
     }
+
+    resp->set_outbound_queue_size(num_queued_outbound_transfers());
   } else if (direction_ == SERVER) {
     if (negotiation_complete_) {
       // It's racy to dump credentials while negotiating, since the Connection

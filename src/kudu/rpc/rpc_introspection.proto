@@ -62,6 +62,7 @@ message RpcConnectionPB {
   // TODO: swap out for separate fields
   optional string remote_user_credentials = 3;
   repeated RpcCallInProgressPB calls_in_flight = 4;
+  optional int64 outbound_queue_size = 5;
 }
 
 message DumpRunningRpcsRequestPB {
