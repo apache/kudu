@@ -88,11 +88,14 @@ DEPS_FOR_ALL = \
 # since it's only worth doing when a test has lots of separate cases and
 # more than one of them runs relatively long.
 NUM_SHARDS_BY_TEST = {
+  'all_types-itest': 8,
+  'all_types-scan-correctness-test': 8,
   'cfile-test': 4,
   'client-test': 8,
   'delete_table-itest': 4,
   'delete_table-test': 8,
   'flex_partitioning-itest': 8,
+  'kudu-tool-test': 4,
   'mt-tablet-test': 4,
   'raft_consensus-itest': 6,
   'rowset_tree-test': 6,
