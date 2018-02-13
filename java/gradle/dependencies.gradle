@@ -46,7 +46,9 @@ versions += [
     netty          : "3.10.6.Final",
     parquet        : "1.9.0",
     pmd            : "5.8.1",
-    protobuf       : "3.5.1",
+    // Upgrading protobuf breaks el6 compatibility
+    // https://github.com/google/protobuf/issues/4109
+    protobuf       : "3.4.0",
     scala          : "2.11.12",
     scalatest      : "3.0.5",
     slf4j          : "1.7.25",
