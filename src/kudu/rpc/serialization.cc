@@ -119,6 +119,10 @@ Status ParseMessage(const Slice& buf,
     << "Got mis-sized buffer: " << KUDU_REDACT(buf.ToDebugString());
 
   CodedInputStream in(buf.data(), buf.size());
+  // Protobuf enforces a 64MB total bytes limit on CodedInputStream by default.
+  // Override this default with the actual size of the buffer to allow messages
+  // larger than 64MB.
+  in.SetTotalBytesLimit(buf.size(), -1);
   in.Skip(kMsgLengthPrefixLength);
 
   uint32_t header_len;
