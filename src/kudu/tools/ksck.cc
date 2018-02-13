@@ -199,24 +199,24 @@ Status Ksck::FetchInfoFromTabletServers() {
   }
   Warn() << Substitute("Fetched info from $0 Tablet Servers, $1 weren't reachable",
                        servers_count - bad_servers.Load(), bad_servers.Load()) << endl;
-  return Status::NetworkError("Not all Tablet Servers are reachable");
+  return Status::NetworkError("Could not gather complete information from all tablet servers");
 }
 
 Status Ksck::ConnectToTabletServer(const shared_ptr<KsckTabletServer>& ts) {
   VLOG(1) << "Going to connect to Tablet Server: " << ts->uuid();
   Status s = ts->FetchInfo();
-  if (s.ok()) {
-    VLOG(1) << "Connected to Tablet Server: " << ts->uuid();
-    if (FLAGS_consensus) {
-      Status t = ts->FetchConsensusState();
-      if (!t.ok()) {
-        Warn() << Substitute("Errors gathering consensus info for Tablet Server $0: $1",
-                             ts->ToString(), t.ToString()) << endl;
-      }
-    }
-  } else {
+  if (!s.ok()) {
     Warn() << Substitute("Unable to connect to Tablet Server $0: $1",
                          ts->ToString(), s.ToString()) << endl;
+    return s;
+  }
+  VLOG(1) << "Connected to Tablet Server: " << ts->uuid();
+  if (FLAGS_consensus) {
+    s = ts->FetchConsensusState();
+    if (!s.ok()) {
+      Warn() << Substitute("Errors gathering consensus info for Tablet Server $0: $1",
+                           ts->ToString(), s.ToString()) << endl;
+    }
   }
   return s;
 }
