@@ -75,7 +75,7 @@ void ClusterVerifier::CheckCluster() {
   Status s;
   double sleep_time = 0.1;
   while (MonoTime::Now() < deadline) {
-    s = DoKsck();
+    s = RunKsck();
     if (s.ok()) {
       break;
     }
@@ -97,7 +97,7 @@ void ClusterVerifier::CheckCluster() {
   });
 }
 
-Status ClusterVerifier::DoKsck() {
+Status ClusterVerifier::RunKsck() {
   vector<string> hp_strs;
   for (const auto& hp : cluster_->master_rpc_addrs()) {
     hp_strs.emplace_back(hp.ToString());

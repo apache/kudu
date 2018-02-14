@@ -76,9 +76,10 @@ class ClusterVerifier {
                                 int expected_row_count,
                                 const MonoDelta& timeout);
 
- private:
-  Status DoKsck();
+  // Run the ksck utility against the cluster.
+  Status RunKsck();
 
+ private:
   // Implementation for CheckRowCount -- returns a Status instead of firing
   // gtest assertions.
   Status DoCheckRowCount(const std::string& table_name,
