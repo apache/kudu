@@ -60,6 +60,7 @@ class TokenVerifier;
 } // namespace security
 
 namespace server {
+class DiagnosticsLog;
 class ServerStatusPB;
 
 // Base class for tablet server and master.
@@ -200,7 +201,7 @@ class ServerBase {
 
   ServerBaseOptions options_;
 
-  scoped_refptr<Thread> metrics_logging_thread_;
+  std::unique_ptr<DiagnosticsLog> diag_log_;
   scoped_refptr<Thread> excess_log_deleter_thread_;
   CountDownLatch stop_background_threads_latch_;
 

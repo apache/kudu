@@ -40,6 +40,7 @@ target_link_libraries(server_base_proto
 
 set(SERVER_PROCESS_SRCS
   default_path_handlers.cc
+  diagnostics_log.cc
   generic_service.cc
   glog_metrics.cc
   pprof_path_handlers.cc

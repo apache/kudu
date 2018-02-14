@@ -42,7 +42,6 @@
 #include "kudu/gutil/move.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/gutil/walltime.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/remote_user.h"
 #include "kudu/rpc/result_tracker.h"
@@ -51,6 +50,7 @@
 #include "kudu/security/init.h"
 #include "kudu/security/security_flags.h"
 #include "kudu/server/default_path_handlers.h"
+#include "kudu/server/diagnostics_log.h"
 #include "kudu/server/generic_service.h"
 #include "kudu/server/glog_metrics.h"
 #include "kudu/server/rpc_server.h"
@@ -74,7 +74,6 @@
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
-#include "kudu/util/rolling_log.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/spinlock_profiling.h"
 #include "kudu/util/thread.h"
@@ -210,6 +209,7 @@ using kudu::security::RpcEncryption;
 using std::ostringstream;
 using std::shared_ptr;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
@@ -605,68 +605,13 @@ Status ServerBase::StartMetricsLogging() {
     LOG(INFO) << "Not starting metrics log since no log directory was specified.";
     return Status::OK();
   }
-
-  return Thread::Create("server", "metrics-logger", &ServerBase::MetricsLoggingThread,
-                        this, &metrics_logging_thread_);
+  unique_ptr<DiagnosticsLog> l(new DiagnosticsLog(FLAGS_log_dir, metric_registry_.get()));
+  l->SetMetricsLogInterval(MonoDelta::FromMilliseconds(options_.metrics_log_interval_ms));
+  RETURN_NOT_OK(l->Start());
+  diag_log_ = std::move(l);
+  return Status::OK();
 }
 
-void ServerBase::MetricsLoggingThread() {
-  RollingLog log(Env::Default(), FLAGS_log_dir, "metrics");
-
-  // How long to wait before trying again if we experience a failure
-  // logging metrics.
-  const MonoDelta kWaitBetweenFailures = MonoDelta::FromSeconds(60);
-
-  MetricJsonOptions opts;
-  opts.include_raw_histograms = true;
-
-  // We don't output any metrics which have never been incremented. Though
-  // this seems redundant with the "only include changed metrics" above, it
-  // also ensures that we don't dump a bunch of zero data on startup.
-  opts.include_untouched_metrics = false;
-
-  // Entity attributes aren't that useful in the context of this log. We can
-  // always grab the entity attributes separately if necessary.
-  opts.include_entity_attributes = false;
-
-  MonoTime next_log = MonoTime::Now();
-  while (!stop_background_threads_latch_.WaitUntil(next_log)) {
-    next_log = MonoTime::Now() +
-        MonoDelta::FromMilliseconds(options_.metrics_log_interval_ms);
-
-    std::ostringstream buf;
-    buf << "metrics " << GetCurrentTimeMicros() << " ";
-
-    // Collect the metrics JSON string.
-    int64_t this_log_epoch = Metric::current_epoch();
-    Metric::IncrementEpoch();
-    JsonWriter writer(&buf, JsonWriter::COMPACT);
-    Status s = metric_registry_->WriteAsJson(&writer, {"*"}, opts);
-    if (!s.ok()) {
-      WARN_NOT_OK(s, "Unable to collect metrics to log");
-      next_log += kWaitBetweenFailures;
-      continue;
-    }
-
-    buf << "\n";
-
-    s = log.Append(buf.str());
-    if (!s.ok()) {
-      WARN_NOT_OK(s, "Unable to write metrics to log");
-      next_log += kWaitBetweenFailures;
-      continue;
-    }
-
-    // Next time we fetch, only show those that changed after the epoch
-    // we just logged.
-    //
-    // NOTE: we only bump this in the successful log case so that if we failed to
-    // write above, we wouldn't skip any changes.
-    opts.only_modified_in_or_after_epoch = this_log_epoch + 1;
-  }
-
-  WARN_NOT_OK(log.Close(), "Unable to close metric log");
-}
 
 Status ServerBase::StartExcessLogFileDeleterThread() {
   // Try synchronously deleting excess log files once at startup to make sure it
@@ -739,8 +684,8 @@ void ServerBase::Shutdown() {
 
   // Next, shut down remaining server components.
   stop_background_threads_latch_.CountDown();
-  if (metrics_logging_thread_) {
-    metrics_logging_thread_->Join();
+  if (diag_log_) {
+    diag_log_->Stop();
   }
   if (excess_log_deleter_thread_) {
     excess_log_deleter_thread_->Join();

@@ -182,21 +182,17 @@ NOTE: All histograms and counters are measured since the server start time, and 
 
 Kudu may be configured to periodically dump all of its metrics to a local log file using the
 `--metrics_log_interval_ms` flag. Set this flag to the interval at which metrics should be written
-to a log file.
+to a `diagnostics` log file.
 
-The metrics log will be written to the same directory as the other Kudu log files, with the same
-naming format. After any metrics log file reaches 64MB uncompressed, the log will be rolled and
+The diagnostics log will be written to the same directory as the other Kudu log files, with a
+similar naming format, substituting `diagnostics` instead of a log level like `INFO`.
+After any diagnostics log file reaches 64MB uncompressed, the log will be rolled and
 the previous file will be gzip-compressed.
 
 The log file generated has three space-separated fields. The first field is the word
 `metrics`. The second field is the current timestamp in microseconds since the Unix epoch.
 The third is the current value of all metrics on the server, using a compact JSON encoding.
 The encoding is the same as the metrics fetched via HTTP described above.
-
-WARNING: Although metrics logging automatically rolls and compresses previous log files, it does
-not remove old ones. Since metrics logging can use significant amounts of disk space,
-consider setting up a system utility to monitor space in the log directory and archive or
-delete old segments.
 
 == Common Kudu workflows
 
