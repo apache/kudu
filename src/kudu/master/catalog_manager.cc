@@ -1240,7 +1240,6 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
 
   leader_lock_.AssertAcquiredForReading();
   RETURN_NOT_OK(CheckOnline());
-  Status s;
 
   // Copy the request, so we can fill in some defaults.
   CreateTableRequestPB req = *orig_req;
@@ -1263,7 +1262,8 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   // a. Validate the user request.
   Schema client_schema;
   RETURN_NOT_OK(SchemaFromPB(req.schema(), &client_schema));
-  s = ValidateClientSchema(req.name(), client_schema);
+  const string& table_name = req.name();
+  Status s = ValidateClientSchema(table_name, client_schema);
   if (s.ok() && client_schema.has_column_ids()) {
     s = Status::InvalidArgument("User requests should not have Column IDs");
   }
@@ -1334,26 +1334,27 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
     req.set_num_replicas(FLAGS_default_num_replicas);
   }
 
+  const auto num_replicas = req.num_replicas();
   // Reject create table with even replication factors, unless master flag
   // allow_unsafe_replication_factor is on.
-  if (req.num_replicas() % 2 == 0 && !FLAGS_allow_unsafe_replication_factor) {
+  if (num_replicas % 2 == 0 && !FLAGS_allow_unsafe_replication_factor) {
     s = Status::InvalidArgument(Substitute("illegal replication factor $0 (replication "
-                                           "factor must be odd)", req.num_replicas()));
+                                           "factor must be odd)", num_replicas));
     return SetError(MasterErrorPB::EVEN_REPLICATION_FACTOR, s);
   }
 
-  if (req.num_replicas() > FLAGS_max_num_replicas) {
+  if (num_replicas > FLAGS_max_num_replicas) {
     s = Status::InvalidArgument(Substitute("illegal replication factor $0 (max replication "
                                            "factor is $1)",
-                                           req.num_replicas(),
+                                           num_replicas,
                                            FLAGS_max_num_replicas));
     return SetError(MasterErrorPB::REPLICATION_FACTOR_TOO_HIGH, s);
 
   }
-  if (req.num_replicas() <= 0) {
+  if (num_replicas <= 0) {
     s = Status::InvalidArgument(Substitute("illegal replication factor $0 (replication factor "
                                            "must be positive)",
-                                           req.num_replicas(),
+                                           num_replicas,
                                            FLAGS_max_num_replicas));
     return SetError(MasterErrorPB::ILLEGAL_REPLICATION_FACTOR, s);
   }
@@ -1364,7 +1365,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   master_->ts_manager()->GetAllLiveDescriptors(&ts_descs);
   int num_live_tservers = ts_descs.size();
   int max_tablets = FLAGS_max_create_tablets_per_ts * num_live_tservers;
-  if (req.num_replicas() > 1 && max_tablets > 0 && partitions.size() > max_tablets) {
+  if (num_replicas > 1 && max_tablets > 0 && partitions.size() > max_tablets) {
     s = Status::InvalidArgument(Substitute("The requested number of tablets is over the "
                                            "maximum permitted at creation time ($0). Additional "
                                            "tablets may be added by adding range partitions to the "
@@ -1375,11 +1376,30 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   // Verify that the number of replicas isn't larger than the number of live tablet
   // servers.
   if (FLAGS_catalog_manager_check_ts_count_for_create_table &&
-      req.num_replicas() > num_live_tservers) {
+      num_replicas > num_live_tservers) {
     s = Status::InvalidArgument(Substitute(
         "Not enough live tablet servers to create a table with the requested replication "
         "factor $0. $1 tablet servers are alive.", req.num_replicas(), num_live_tservers));
     return SetError(MasterErrorPB::REPLICATION_FACTOR_TOO_HIGH, s);
+  }
+
+  // Warn if the number of live tablet servers is not enough to re-replicate
+  // a failed replica of the tablet.
+  const auto num_ts_needed_for_rereplication =
+      num_replicas + (FLAGS_raft_prepare_replacement_before_eviction ? 1 : 0);
+  if (num_replicas > 1 && num_ts_needed_for_rereplication > num_live_tservers) {
+    const bool is_off_by_one = FLAGS_raft_prepare_replacement_before_eviction &&
+        num_ts_needed_for_rereplication == num_live_tservers + 1;
+    const string msg = Substitute(
+        "The number of live tablet servers is not enough to re-replicate a "
+        "tablet replica of the newly created table $0 in case of a replica "
+        "failure: $1 tablet servers are needed, $2 are alive. "
+        "Consider bringing up additional tablet server(s)$3",
+        table_name, num_ts_needed_for_rereplication, num_live_tservers,
+        is_off_by_one ? " or running both the masters and all tablet servers"
+                        " with --raft_prepare_replacement_before_eviction=false"
+                        " flag (not recommended)." : ".");
+    LOG(WARNING) << msg;
   }
 
   scoped_refptr<TableInfo> table;
@@ -1388,22 +1408,22 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
     TRACE("Acquired catalog manager lock");
 
     // b. Verify that the table does not exist.
-    table = FindPtrOrNull(table_names_map_, req.name());
+    table = FindPtrOrNull(table_names_map_, table_name);
     if (table != nullptr) {
       s = Status::AlreadyPresent(Substitute("Table $0 already exists with id $1",
-                                 req.name(), table->id()));
+                                 table_name, table->id()));
       return SetError(MasterErrorPB::TABLE_ALREADY_PRESENT, s);
     }
 
     // c. Reserve the table name if possible.
-    if (!InsertIfNotPresent(&reserved_table_names_, req.name())) {
+    if (!InsertIfNotPresent(&reserved_table_names_, table_name)) {
       // ServiceUnavailable will cause the client to retry the create table
       // request. We don't want to outright fail the request with
       // 'AlreadyPresent', because a table name reservation can be rolled back
       // in the case of an error. Instead, we force the client to retry at a
       // later time.
       s = Status::ServiceUnavailable(Substitute(
-          "New table name $0 is already reserved", req.name()));
+          "New table name $0 is already reserved", table_name));
       return SetError(MasterErrorPB::TABLE_ALREADY_PRESENT, s);
     }
   }
@@ -1411,7 +1431,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   // Ensure that we drop the name reservation upon return.
   SCOPED_CLEANUP({
     std::lock_guard<LockType> l(lock_);
-    CHECK_EQ(1, reserved_table_names_.erase(req.name()));
+    CHECK_EQ(1, reserved_table_names_.erase(table_name));
   });
 
   // d. Create the in-memory representation of the new table and its tablets.
@@ -1480,7 +1500,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
     std::lock_guard<LockType> l(lock_);
 
     table_ids_map_[table->id()] = table;
-    table_names_map_[req.name()] = table;
+    table_names_map_[table_name] = table;
     for (const auto& tablet : tablets) {
       InsertOrDie(&tablet_map_, tablet->id(), tablet);
     }
