@@ -937,8 +937,6 @@ void ConsensusServiceImpl::UpdateConsensus(const ConsensusRequestPB* req,
     return;
   }
 
-  replica->permanent_uuid();
-
   // Submit the update directly to the TabletReplica's RaftConsensus instance.
   shared_ptr<RaftConsensus> consensus;
   if (!GetConsensusOrRespond(replica, resp, context, &consensus)) return;
