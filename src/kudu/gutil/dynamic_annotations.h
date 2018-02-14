@@ -121,8 +121,10 @@
     AnnotateCondVarSignalAll(__FILE__, __LINE__, cv)
 
   /* Annotations for user-defined synchronization mechanisms. */
-  #define ANNOTATE_HAPPENS_BEFORE(obj) ANNOTATE_CONDVAR_SIGNAL(obj)
-  #define ANNOTATE_HAPPENS_AFTER(obj)  ANNOTATE_CONDVAR_WAIT(obj)
+  #define ANNOTATE_HAPPENS_BEFORE(obj) \
+    AnnotateHappensBefore(__FILE__, __LINE__, obj)
+  #define ANNOTATE_HAPPENS_AFTER(obj) \
+    AnnotateHappensAfter(__FILE__, __LINE__, obj)
 
   /* Report that the bytes in the range [pointer, pointer+size) are about
      to be published safely. The race checker will create a happens-before
@@ -490,9 +492,13 @@ void AnnotateCondVarSignal(const char *file, int line,
                            const volatile void *cv);
 void AnnotateCondVarSignalAll(const char *file, int line,
                               const volatile void *cv);
+void AnnotateHappensBefore(const char *file, int line,
+                           const volatile void *obj);
+void AnnotateHappensAfter(const char *file, int line,
+                          const volatile void *obj);
 void AnnotatePublishMemoryRange(const char *file, int line,
                                 const volatile void *address,
-                                long size);
+                                long size); // NOLINT
 void AnnotateUnpublishMemoryRange(const char *file, int line,
                                   const volatile void *address,
                                   long size);

@@ -25,7 +25,6 @@
 #define BASE_ONCE_H_
 
 #include "kudu/gutil/atomicops.h"
-#include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/type_traits.h"
@@ -53,7 +52,6 @@ inline void GoogleOnceInit(GoogleOnceType* state, void (*func)()) {
   if (PREDICT_FALSE(s != GOOGLE_ONCE_INTERNAL_DONE)) {
     GoogleOnceInternalInit(&state->state, func, 0, 0);
   }
-  ANNOTATE_HAPPENS_AFTER(&state->state);
 }
 
 // A version of GoogleOnceInit where the function argument takes a pointer
@@ -69,7 +67,6 @@ inline void GoogleOnceInitArg(GoogleOnceType* state,
                            reinterpret_cast<void(*)(void*)>(func_with_arg),
                            const_cast<mutable_T*>(arg));
   }
-  ANNOTATE_HAPPENS_AFTER(&state->state);
 }
 
 // GoogleOnceDynamic is like GoogleOnceType, but is dynamically
@@ -108,7 +105,6 @@ class GoogleOnceDynamic {
                              reinterpret_cast<void (*)(void*)>(func_with_arg),
                              const_cast<mutable_T*>(arg));
     }
-    ANNOTATE_HAPPENS_AFTER(&this->state_);
   }
  private:
   Atomic32 state_;

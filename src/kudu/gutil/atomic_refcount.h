@@ -32,9 +32,6 @@
 // initialization you should use the word only via the routines below; the
 // "volatile" in the signatures below is for backwards compatibility.
 //
-// The implementation includes annotations to avoid some false alarms 
-// when using Helgrind (the data race detector).
-//
 // If you need to do something very different from this, use a Mutex.
 
 #include <glog/logging.h>
@@ -42,7 +39,6 @@
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/logging-inl.h"
-#include "kudu/gutil/dynamic_annotations.h"
 
 namespace base {
 
@@ -65,11 +61,7 @@ inline void RefCountIncN(volatile Atomic32 *ptr, Atomic32 increment) {
 // became zero will be visible to a thread that has just made the count zero.
 inline bool RefCountDecN(volatile Atomic32 *ptr, Atomic32 decrement) {
   DCHECK_GT(decrement, 0);
-  ANNOTATE_HAPPENS_BEFORE(ptr);
   bool res = base::subtle::Barrier_AtomicIncrement(ptr, -decrement) != 0;
-  if (!res) {
-    ANNOTATE_HAPPENS_AFTER(ptr);
-  }
   return res;
 }
 
@@ -94,22 +86,14 @@ inline bool RefCountDec(volatile Atomic32 *ptr) {
 // to act on the object, knowing that it has exclusive access to the
 // object.
 inline bool RefCountIsOne(const volatile Atomic32 *ptr) {
-  bool res = base::subtle::Acquire_Load(ptr) == 1;
-  if (res) {
-    ANNOTATE_HAPPENS_AFTER(ptr);
-  }
-  return res;
+  return base::subtle::Acquire_Load(ptr) == 1;
 }
 
 // Return whether the reference count is zero.  With conventional object
 // referencing counting, the object will be destroyed, so the reference count
 // should never be zero.  Hence this is generally used for a debug check.
 inline bool RefCountIsZero(const volatile Atomic32 *ptr) {
-  bool res = (subtle::Acquire_Load(ptr) == 0);
-  if (res) {
-    ANNOTATE_HAPPENS_AFTER(ptr);
-  }
-  return res;
+  return subtle::Acquire_Load(ptr) == 0;
 }
 
 #if BASE_HAS_ATOMIC64
@@ -122,12 +106,7 @@ inline void RefCountIncN(volatile base::subtle::Atomic64 *ptr,
 inline bool RefCountDecN(volatile base::subtle::Atomic64 *ptr,
                          base::subtle::Atomic64 decrement) {
   DCHECK_GT(decrement, 0);
-  ANNOTATE_HAPPENS_BEFORE(ptr);
-  bool res = base::subtle::Barrier_AtomicIncrement(ptr, -decrement) != 0;
-  if (!res) {
-    ANNOTATE_HAPPENS_AFTER(ptr);
-  }
-  return res;
+  return base::subtle::Barrier_AtomicIncrement(ptr, -decrement) != 0;
 }
 inline void RefCountInc(volatile base::subtle::Atomic64 *ptr) {
   base::RefCountIncN(ptr, 1);
@@ -136,18 +115,10 @@ inline bool RefCountDec(volatile base::subtle::Atomic64 *ptr) {
   return base::RefCountDecN(ptr, 1);
 }
 inline bool RefCountIsOne(const volatile base::subtle::Atomic64 *ptr) {
-  bool res = base::subtle::Acquire_Load(ptr) == 1;
-  if (res) {
-    ANNOTATE_HAPPENS_AFTER(ptr);
-  }
-  return res;
+  return base::subtle::Acquire_Load(ptr) == 1;
 }
 inline bool RefCountIsZero(const volatile base::subtle::Atomic64 *ptr) {
-  bool res = (base::subtle::Acquire_Load(ptr) == 0);
-  if (res) {
-    ANNOTATE_HAPPENS_AFTER(ptr);
-  }
-  return res;
+  return base::subtle::Acquire_Load(ptr) == 0;
 }
 #endif
 
@@ -158,13 +129,8 @@ inline void RefCountIncN(volatile AtomicWord *ptr, AtomicWord increment) {
       reinterpret_cast<volatile AtomicWordCastType *>(ptr), increment);
 }
 inline bool RefCountDecN(volatile AtomicWord *ptr, AtomicWord decrement) {
-  ANNOTATE_HAPPENS_BEFORE(ptr);
-  bool res = base::RefCountDecN(
+  return base::RefCountDecN(
       reinterpret_cast<volatile AtomicWordCastType *>(ptr), decrement);
-  if (!res) {
-    ANNOTATE_HAPPENS_AFTER(ptr);
-  }
-  return res;
 }
 inline void RefCountInc(volatile AtomicWord *ptr) {
   base::RefCountIncN(ptr, 1);
@@ -173,20 +139,12 @@ inline bool RefCountDec(volatile AtomicWord *ptr) {
   return base::RefCountDecN(ptr, 1);
 }
 inline bool RefCountIsOne(const volatile AtomicWord *ptr) {
-  bool res = base::subtle::Acquire_Load(
+  return base::subtle::Acquire_Load(
       reinterpret_cast<const volatile AtomicWordCastType *>(ptr)) == 1;
-  if (res) {
-    ANNOTATE_HAPPENS_AFTER(ptr);
-  }
-  return res;
 }
 inline bool RefCountIsZero(const volatile AtomicWord *ptr) {
-  bool res = base::subtle::Acquire_Load(
+  return base::subtle::Acquire_Load(
       reinterpret_cast<const volatile AtomicWordCastType *>(ptr)) == 0;
-  if (res) {
-    ANNOTATE_HAPPENS_AFTER(ptr);
-  }
-  return res;
 }
 #endif
 

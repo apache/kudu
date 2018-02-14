@@ -84,6 +84,10 @@ void AnnotateCondVarSignal(const char *file, int line,
                            const volatile void *cv){}
 void AnnotateCondVarSignalAll(const char *file, int line,
                               const volatile void *cv){}
+void AnnotateHappensBefore(const char *file, int line,
+                           const volatile void *obj);
+void AnnotateHappensAfter(const char *file, int line,
+                          const volatile void *obj);
 void AnnotatePublishMemoryRange(const char *file, int line,
                                 const volatile void *address,
                                 long size){}
