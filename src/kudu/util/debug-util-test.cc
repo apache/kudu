@@ -51,7 +51,7 @@ class DebugUtilTest : public KuduTest {
 
 TEST_F(DebugUtilTest, TestStackTrace) {
   StackTrace t;
-  t.Collect(1);
+  t.Collect(0);
   string trace = t.Symbolize();
   ASSERT_STR_CONTAINS(trace, "kudu::DebugUtilTest_TestStackTrace_Test::TestBody");
 }

@@ -38,6 +38,11 @@
 #include <string>
 
 #include <glog/logging.h>
+#include <glog/raw_logging.h>
+#ifdef __linux__
+#define UNW_LOCAL_ONLY
+#include <libunwind.h>
+#endif
 
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/hash/city.h"
@@ -48,10 +53,13 @@
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug/leak_annotations.h"
+#ifndef __linux__
 #include "kudu/util/debug/sanitizer_scopes.h"
+#endif
 #include "kudu/util/debug/unwind_safeness.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/thread.h"
 
 using std::string;
@@ -214,6 +222,12 @@ namespace {
 // Signal handler for our stack trace signal.
 // We expect that the signal is only sent from DumpThreadStack() -- not by a user.
 void HandleStackTraceSignal(int /*signum*/, siginfo_t* info, void* /*ucontext*/) {
+  // Signal handlers may be invoked at any point, so it's important to preserve
+  // errno.
+  int save_errno = errno;
+  SCOPED_CLEANUP({
+      errno = save_errno;
+    });
   auto* sig_data = reinterpret_cast<SignalData*>(info->si_ptr);
   DCHECK(sig_data);
   if (!sig_data) {
@@ -231,7 +245,7 @@ void HandleStackTraceSignal(int /*signum*/, siginfo_t* info, void* /*ucontext*/)
   }
   // Marking it as kDumpInProgress ensures that the caller thread must now wait
   // for our response, since we are writing directly into their StackTrace object.
-  sig_data->stack->Collect(/*skip_frames=*/2);
+  sig_data->stack->Collect(/*skip_frames=*/1);
   sig_data->queued_to_tid = SignalData::kNotInUse;
   sig_data->result_ready.Signal();
 }
@@ -520,10 +534,43 @@ void StackTrace::Collect(int skip_frames) {
     num_frames_ = 1;
     return;
   }
+  const int kMaxDepth = arraysize(frames_);
+
+#ifdef __linux__
+  unw_cursor_t cursor;
+  unw_context_t uc;
+  unw_getcontext(&uc);
+  RAW_CHECK(unw_init_local(&cursor, &uc) >= 0, "unw_init_local failed");
+  skip_frames++;         // Do not include the "Collect" frame
+
+  num_frames_ = 0;
+  while (num_frames_ < kMaxDepth) {
+    void *ip;
+    int ret = unw_get_reg(&cursor, UNW_REG_IP, reinterpret_cast<unw_word_t *>(&ip));
+    if (ret < 0) {
+      break;
+    }
+    if (skip_frames > 0) {
+      skip_frames--;
+    } else {
+      frames_[num_frames_++] = ip;
+    }
+    ret = unw_step(&cursor);
+    if (ret <= 0) {
+      break;
+    }
+  }
+#else
+  // On OSX, use the unwinder from glog. However, that unwinder has an issue where
+  // concurrent invocations will return no frames. See:
+  // https://github.com/google/glog/issues/298
+  // The worst result here is an empty result.
+
   // google::GetStackTrace has a data race. This is called frequently, so better
   // to ignore it with an annotation rather than use a suppression.
   debug::ScopedTSANIgnoreReadsAndWrites ignore_tsan;
-  num_frames_ = google::GetStackTrace(frames_, arraysize(frames_), skip_frames);
+  num_frames_ = google::GetStackTrace(frames_, kMaxDepth, skip_frames + 1);
+#endif
 }
 
 void StackTrace::StringifyToHex(char* buf, size_t size, int flags) const {

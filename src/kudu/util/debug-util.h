@@ -132,11 +132,11 @@ class StackTrace {
   }
 
   // Collect and store the current stack trace. Skips the top 'skip_frames' frames
-  // from the stack. For example, a value of '1' will skip the 'Collect()' function
-  // call itself.
+  // from the stack. For example, a value of '1' will skip whichever function
+  // called the 'Collect()' function. The 'Collect' function itself is always skipped.
   //
   // This function is async-safe.
-  void Collect(int skip_frames = 1);
+  void Collect(int skip_frames = 0);
 
 
   enum Flags {

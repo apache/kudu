@@ -44,18 +44,12 @@ for p in $file_list_tmp; do
   IWYU_FILE_LIST="$IWYU_FILE_LIST $ROOT/$p"
 done
 
+IWYU_ARGS="--max_line_length=256"
+
 IWYU_MAPPINGS_PATH="$ROOT/build-support/iwyu/mappings"
-IWYU_ARGS="\
-    --max_line_length=256 \
-    --mapping_file=$IWYU_MAPPINGS_PATH/boost-all.imp \
-    --mapping_file=$IWYU_MAPPINGS_PATH/boost-all-private.imp \
-    --mapping_file=$IWYU_MAPPINGS_PATH/boost-extra.imp \
-    --mapping_file=$IWYU_MAPPINGS_PATH/gflags.imp \
-    --mapping_file=$IWYU_MAPPINGS_PATH/glog.imp \
-    --mapping_file=$IWYU_MAPPINGS_PATH/gtest.imp \
-    --mapping_file=$IWYU_MAPPINGS_PATH/kudu.imp \
-    --mapping_file=$IWYU_MAPPINGS_PATH/libstdcpp.imp\
-    --mapping_file=$IWYU_MAPPINGS_PATH/system-linux.imp"
+for path in $IWYU_MAPPINGS_PATH/*.imp ; do
+    IWYU_ARGS="$IWYU_ARGS --mapping_file=$path"
+done
 
 if ! PATH="$PATH:$PWD/../../thirdparty/clang-toolchain/bin" \
     python $ROOT/build-support/iwyu/iwyu_tool.py -p . $IWYU_FILE_LIST -- \
