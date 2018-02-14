@@ -178,21 +178,29 @@ $ curl -s 'http://example-ts:8050/metrics?metrics=log_append_latency'
 
 NOTE: All histograms and counters are measured since the server start time, and are not reset upon collection.
 
-=== Collecting metrics to a log
+=== Diagnostics Logging
 
-Kudu may be configured to periodically dump all of its metrics to a local log file using the
-`--metrics_log_interval_ms` flag. Set this flag to the interval at which metrics should be written
-to a `diagnostics` log file.
-
+Kudu may be configured to dump various diagnostics information to a local log file.
 The diagnostics log will be written to the same directory as the other Kudu log files, with a
 similar naming format, substituting `diagnostics` instead of a log level like `INFO`.
 After any diagnostics log file reaches 64MB uncompressed, the log will be rolled and
 the previous file will be gzip-compressed.
 
-The log file generated has three space-separated fields. The first field is the word
-`metrics`. The second field is the current timestamp in microseconds since the Unix epoch.
-The third is the current value of all metrics on the server, using a compact JSON encoding.
-The encoding is the same as the metrics fetched via HTTP described above.
+Each line in the diagnostics log consists of the following components:
+
+* A human-readable timestamp formatted in the same fashion as the other Kudu log files.
+* The type of record. For example, a metrics record consists of the word `metrics`.
+* A machine-readable timestamp, in microseconds since the Unix epoch.
+* The record itself.
+
+Currently, the only type of diagnostics record is a periodic dump of the server metrics.
+Each record is encoded in compact JSON format, and the server attempts to elide any metrics
+which have not changed since the previous record. In addition, counters which have never
+been incremented are elided. Otherwise, the format of the JSON record is identical to the
+format exposed by the HTTP endpoint above.
+
+The frequency with which metrics are dumped to the diagnostics log is configured using the
+`--metrics_log_interval_ms` flag. By default, Kudu logs metrics every 60 seconds.
 
 == Common Kudu workflows
 

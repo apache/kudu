@@ -17,7 +17,6 @@
 #ifndef KUDU_UTIL_LOGGING_H
 #define KUDU_UTIL_LOGGING_H
 
-#include <cstdint>
 #include <iosfwd>
 #include <string>
 
@@ -292,6 +291,9 @@ void UnregisterLoggingCallback();
 // Returns the full pathname of the symlink to the most recent log
 // file corresponding to this severity
 void GetFullLogFilename(google::LogSeverity severity, std::string* filename);
+
+// Format a timestamp in the same format as used by GLog.
+std::string FormatTimestampForLog(MicrosecondsInt64 micros_since_epoch);
 
 // Shuts down the google logging library. Call before exit to ensure that log files are
 // flushed.

@@ -30,6 +30,7 @@
 #include "kudu/util/condition_variable.h"
 #include "kudu/util/env.h"
 #include "kudu/util/jsonwriter.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/mutex.h"
@@ -130,7 +131,9 @@ Status DiagnosticsLog::LogMetrics() {
   opts.include_entity_attributes = false;
 
   std::ostringstream buf;
-  buf << "metrics " << GetCurrentTimeMicros() << " ";
+  MicrosecondsInt64 now = GetCurrentTimeMicros();
+  buf << "I" << FormatTimestampForLog(now)
+      << " metrics " << now << " ";
 
   // Collect the metrics JSON string.
   int64_t this_log_epoch = Metric::current_epoch();

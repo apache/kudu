@@ -18,8 +18,10 @@
 
 #include <unistd.h>
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <fstream>
 #include <mutex>
 #include <utility>
@@ -32,6 +34,7 @@
 #include "kudu/gutil/callback.h"  // IWYU pragma: keep
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/spinlock.h"
+#include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/async_logger.h"
 #include "kudu/util/debug-util.h"
@@ -42,8 +45,6 @@
 #include "kudu/util/minidump.h"
 #include "kudu/util/signal.h"
 #include "kudu/util/status.h"
-
-struct tm;
 
 DEFINE_string(log_filename, "",
     "Prefix of log filename - "
@@ -340,6 +341,21 @@ void GetFullLogFilename(google::LogSeverity severity, string* filename) {
   ss << FLAGS_log_dir << "/" << FLAGS_log_filename << "."
      << google::GetLogSeverityName(severity);
   *filename = ss.str();
+}
+
+std::string FormatTimestampForLog(MicrosecondsInt64 micros_since_epoch) {
+  time_t secs_since_epoch = micros_since_epoch / 1000000;
+  int usecs = micros_since_epoch % 1000000;
+  struct tm tm_time;
+  localtime_r(&secs_since_epoch, &tm_time);
+
+  return StringPrintf("%02d%02d %02d:%02d:%02d.%06d",
+                      1 + tm_time.tm_mon,
+                      tm_time.tm_mday,
+                      tm_time.tm_hour,
+                      tm_time.tm_min,
+                      tm_time.tm_sec,
+                      usecs);
 }
 
 void ShutdownLoggingSafe() {

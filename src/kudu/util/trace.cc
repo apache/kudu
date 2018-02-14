@@ -19,7 +19,6 @@
 
 #include <cstdint>
 #include <cstring>
-#include <ctime>
 #include <iomanip>
 #include <iostream>
 #include <map>
@@ -32,8 +31,9 @@
 
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
-#include "kudu/util/memory/arena.h"
 #include "kudu/util/jsonwriter.h"
+#include "kudu/util/logging.h"
+#include "kudu/util/memory/arena.h"
 
 using std::pair;
 using std::string;
@@ -153,11 +153,6 @@ void Trace::Dump(std::ostream* out, int flags) const {
   int64_t prev_usecs = 0;
   for (TraceEntry* e : entries) {
     // Log format borrowed from glog/logging.cc
-    time_t secs_since_epoch = e->timestamp_micros / 1000000;
-    int usecs = e->timestamp_micros % 1000000;
-    struct tm tm_time;
-    localtime_r(&secs_since_epoch, &tm_time);
-
     int64_t usecs_since_prev = 0;
     if (prev_usecs != 0) {
       usecs_since_prev = e->timestamp_micros - prev_usecs;
@@ -165,15 +160,8 @@ void Trace::Dump(std::ostream* out, int flags) const {
     prev_usecs = e->timestamp_micros;
 
     using std::setw;
-    out->fill('0');
-
-    *out << setw(2) << (1 + tm_time.tm_mon)
-         << setw(2) << tm_time.tm_mday
-         << ' '
-         << setw(2) << tm_time.tm_hour  << ':'
-         << setw(2) << tm_time.tm_min   << ':'
-         << setw(2) << tm_time.tm_sec   << '.'
-         << setw(6) << usecs << ' ';
+    *out << FormatTimestampForLog(e->timestamp_micros);
+    *out << ' ';
     if (flags & INCLUDE_TIME_DELTAS) {
       out->fill(' ');
       *out << "(+" << setw(6) << usecs_since_prev << "us) ";
