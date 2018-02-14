@@ -17,14 +17,18 @@
 #ifndef KUDU_UTIL_RW_SEMAPHORE_H
 #define KUDU_UTIL_RW_SEMAPHORE_H
 
+// Uncomment for extra debugging information. See below for details.
+//   #define RW_SEMAPHORE_TRACK_HOLDER 1
+
 #include <boost/smart_ptr/detail/yield_k.hpp>
 #include <glog/logging.h>
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
+#ifdef RW_SEMAPHORE_TRACK_HOLDER
 #include "kudu/util/debug-util.h"
-
+#endif
 #include "kudu/util/thread.h"
 
 namespace kudu {
@@ -53,10 +57,9 @@ namespace kudu {
 //
 // In order to support easier debugging of leaked locks, this class can track
 // the stack trace of the last thread to lock it in write mode. To do so,
-// uncomment the following define:
-//   #define RW_SEMAPHORE_TRACK_HOLDER 1
-// ... and then in gdb, print the contents of the semaphore, and you should
-// see the collected stack trace.
+// uncomment the definition of RW_SEMAPHORE_TRACK_HOLDER at the top of this
+// file. Then, in gdb, print the contents of the semaphore, and you should see
+// the collected stack trace.
 class rw_semaphore {
  public:
   rw_semaphore() : state_(0) {
