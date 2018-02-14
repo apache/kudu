@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/server/diagnostics_log.h"
+
 #include <cstdint>
 #include <memory>
 #include <ostream>
@@ -26,7 +28,6 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
-#include "kudu/server/diagnostics_log.h"
 #include "kudu/util/condition_variable.h"
 #include "kudu/util/env.h"
 #include "kudu/util/jsonwriter.h"
@@ -37,7 +38,6 @@
 #include "kudu/util/rolling_log.h"
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
-
 
 using std::string;
 using std::unique_ptr;

@@ -21,6 +21,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -30,8 +31,10 @@
 
 namespace kudu {
 
+template <typename T> class ArrayView;
 class MonoTime;
 class StackTrace;
+class StackTraceCollector;
 
 namespace stack_trace_internal {
 struct SignalData;
@@ -131,6 +134,9 @@ class StackTrace {
                      num_frames_ * sizeof(frames_[0]));
   }
 
+  // Comparison operator for use in sorting.
+  bool LessThan(const StackTrace& s) const;
+
   // Collect and store the current stack trace. Skips the top 'skip_frames' frames
   // from the stack. For example, a value of '1' will skip whichever function
   // called the 'Collect()' function. The 'Collect' function itself is always skipped.
@@ -180,6 +186,59 @@ class StackTrace {
 
   int num_frames_;
   void* frames_[kMaxFrames];
+};
+
+// Utility class for gathering a process-wide snapshot of the stack traces
+// of all threads.
+class StackTraceSnapshot {
+ public:
+  // The information about each thread will be gathered in a struct.
+  struct ThreadInfo {
+    // The TID of the thread.
+    int64_t tid;
+
+    // The status of collection. If a thread exits during collection or
+    // was blocking signals, it's possible to have an error here.
+    Status status;
+
+    // The name of the thread.
+    // May be missing if 'status' is not OK.
+    std::string thread_name;
+
+    // The current stack trace of the thread.
+    // Always missing if 'status' is not OK.
+    StackTrace stack;
+  };
+  using VisitorFunc = std::function<void(ArrayView<ThreadInfo> group)>;
+
+  // Snapshot the stack traces of all threads in the process.
+  //
+  // NOTE: this may take some time and should not be called in a latency-sensitive
+  // context.
+  Status SnapshotAllStacks();
+
+  // After having collected stacks, visit them, grouped by shared
+  // stack trace. The visitor function will be called once per group.
+  // Each group is guaranteed to be non-empty.
+  //
+  // Any threads which failed to collect traces are returned as a single group
+  // having empty stack traces.
+  //
+  // REQUIRES: a previous successful call to SnapshotAllStacks().
+  void VisitGroups(const VisitorFunc& visitor);
+
+  // Return the number of threads which were interrogated for a stack trace.
+  //
+  // NOTE: this includes threads which failed to collect.
+  int num_threads() const { return infos_.size(); }
+
+  // Return the number of threads which failed to collect a stack trace.
+  int num_failed() const { return num_failed_; }
+
+ private:
+  std::vector<StackTraceSnapshot::ThreadInfo> infos_;
+  std::vector<StackTraceCollector> collectors_;
+  int num_failed_ = 0;
 };
 
 

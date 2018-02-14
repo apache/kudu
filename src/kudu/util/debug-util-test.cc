@@ -23,7 +23,6 @@
 
 #include <csignal>
 #include <cstddef>
-#include <memory>
 #include <ostream>
 #include <string>
 #include <vector>
@@ -32,6 +31,7 @@
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/util/array_view.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/debug-util.h"
 #include "kudu/util/monotime.h"
@@ -149,7 +149,17 @@ TEST_F(DebugUtilTest, TestSignalStackTrace) {
 // Test which dumps all known threads within this process.
 // We don't validate the results in any way -- but this verifies that we can
 // dump library threads such as the libc timer_thread and properly time out.
-TEST_F(DebugUtilTest, TestDumpAllThreads) {
+TEST_F(DebugUtilTest, TestSnapshot) {
+  // The test and runtime environment runs various utility threads (for example,
+  // the kernel stack watchdog, the TSAN runtime thread, the test timeout thread, etc).
+  // Count them before we start any additional threads for this test.
+  int initial_thread_count;
+  {
+    vector<pid_t> threads;
+    ASSERT_OK(ListThreads(&threads));
+    initial_thread_count = threads.size();
+  }
+
   // Start a bunch of sleeping threads.
   const int kNumThreads = 30;
   CountDownLatch l(1);
@@ -166,34 +176,29 @@ TEST_F(DebugUtilTest, TestDumpAllThreads) {
       }
     });
 
-  // Trigger all of the stack traces.
-  vector<pid_t> tids;
-  ASSERT_OK(ListThreads(&tids));
-  vector<StackTraceCollector> collectors(tids.size());
-  vector<StackTrace> traces(tids.size());
-  vector<Status> status(tids.size());
-
-  for (int i = 0; i < tids.size(); i++) {
-    status[i] = collectors[i].TriggerAsync(tids[i], &traces[i]);
-  }
-
-  // Collect them all.
-  MonoTime deadline;
-  #ifdef THREAD_SANITIZER
-  // TSAN runs its own separate background thread which blocks all signals and
-  // thus will cause a timeout here.
-  deadline = MonoTime::Now() + MonoDelta::FromSeconds(3);
-  #else
-  // In normal builds we can expect to get a response from all threads.
-  deadline = MonoTime::Max();
-  #endif
-  for (int i = 0; i < tids.size(); i++) {
-    status[i] = status[i].AndThen([&] {
-        return collectors[i].AwaitCollection(deadline);
-      });
-    LOG(INFO) << "Thread " << tids[i] << ": " << status[i].ToString()
-              << ": " << traces[i].ToHexString();
-  }
+  StackTraceSnapshot snap;
+  ASSERT_OK(snap.SnapshotAllStacks());
+  int count = 0;
+  int groups = 0;
+  snap.VisitGroups([&](ArrayView<StackTraceSnapshot::ThreadInfo> group) {
+      groups++;
+      for (auto& info : group) {
+        count++;
+        LOG(INFO) << info.tid << " " << info.thread_name;
+      }
+      LOG(INFO) << group[0].stack.ToHexString();
+    });
+  int tsan_threads = 0;
+#ifdef THREAD_SANITIZER
+  // TSAN starts an extra thread of its own.
+  tsan_threads++;
+#endif
+  ASSERT_EQ(kNumThreads + initial_thread_count, count);
+  // The threads might not have exactly identical stacks, but
+  // we should have far fewer groups than the total number
+  // of threads.
+  ASSERT_LE(groups, kNumThreads / 2);
+  ASSERT_EQ(tsan_threads, snap.num_failed());
 }
 
 TEST_F(DebugUtilTest, Benchmark) {

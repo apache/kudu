@@ -28,11 +28,13 @@
 #endif
 #include <unistd.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cerrno>
 #include <climits>
 #include <csignal>
 #include <ctime>
+#include <iterator>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -53,13 +55,17 @@
 #include "kudu/gutil/spinlock.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/numbers.h"
+#include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/array_view.h"
 #include "kudu/util/debug/leak_annotations.h"
 #ifndef __linux__
 #include "kudu/util/debug/sanitizer_scopes.h"
 #endif
 #include "kudu/util/debug/unwind_safeness.h"
+#include "kudu/util/env.h"
 #include "kudu/util/errno.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/thread.h"
@@ -692,6 +698,75 @@ string StackTrace::ToLogFormatHexString() const {
 uint64_t StackTrace::HashCode() const {
   return util_hash::CityHash64(reinterpret_cast<const char*>(frames_),
                                sizeof(frames_[0]) * num_frames_);
+}
+
+bool StackTrace::LessThan(const StackTrace& s) const {
+  return std::lexicographical_compare(frames_, &frames_[num_frames_],
+                                      s.frames_, &s.frames_[num_frames_]);
+}
+
+Status StackTraceSnapshot::SnapshotAllStacks() {
+  vector<pid_t> tids;
+  RETURN_NOT_OK_PREPEND(ListThreads(&tids), "could not list threads");
+
+  collectors_.clear();
+  collectors_.resize(tids.size());
+  infos_.clear();
+  infos_.resize(tids.size());
+  for (int i = 0; i < tids.size(); i++) {
+    infos_[i].tid = tids[i];
+    infos_[i].status = collectors_[i].TriggerAsync(tids[i], &infos_[i].stack);
+  }
+
+  // Now collect the thread names while we are waiting on stack trace collection.
+  for (auto& info : infos_) {
+    if (!info.status.ok()) continue;
+
+    // Get the thread's name by reading proc.
+    // TODO(todd): should we have the dumped thread fill in its own name using
+    // prctl to avoid having to open and read /proc? Or maybe we should use the
+    // Kudu ThreadMgr to get the thread names for the cases where we are using
+    // the kudu::Thread wrapper at least.
+    faststring buf;
+    Status s = ReadFileToString(Env::Default(),
+                                strings::Substitute("/proc/self/task/$0/comm", info.tid),
+                                &buf);
+    if (!s.ok()) {
+      info.thread_name = "<unknown name>";
+    }  else {
+      info.thread_name = buf.ToString();
+      StripTrailingNewline(&info.thread_name);
+    }
+  }
+  num_failed_ = 0;
+  MonoTime deadline = MonoTime::Now() + MonoDelta::FromSeconds(1);
+  for (int i = 0; i < infos_.size(); i++) {
+    infos_[i].status = infos_[i].status.AndThen([&] {
+        return collectors_[i].AwaitCollection(deadline);
+      });
+    if (!infos_[i].status.ok()) {
+      num_failed_++;
+      CHECK(!infos_[i].stack.HasCollected()) << infos_[i].status.ToString();
+    }
+  }
+  collectors_.clear();
+
+  std::sort(infos_.begin(), infos_.end(), [](const ThreadInfo& a, const ThreadInfo& b) {
+      return a.stack.LessThan(b.stack);
+    });
+  return Status::OK();
+}
+
+void StackTraceSnapshot::VisitGroups(const StackTraceSnapshot::VisitorFunc& visitor) {
+  auto group_start = infos_.begin();
+  auto group_end = group_start;
+  while (group_end != infos_.end()) {
+    do {
+      ++group_end;
+    } while (group_end != infos_.end() && group_end->stack.Equals(group_start->stack));
+    visitor(ArrayView<ThreadInfo>(&*group_start, std::distance(group_start, group_end)));
+    group_start = group_end;
+  }
 }
 
 }  // namespace kudu
