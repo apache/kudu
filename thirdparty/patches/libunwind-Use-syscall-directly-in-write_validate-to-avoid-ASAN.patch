@@ -1,0 +1,43 @@
+From 7d6cc6696ab8a808da3dbe23ca2493ddf2799b56 Mon Sep 17 00:00:00 2001
+From: Dave Watson <davejwatson@fb.com>
+Date: Wed, 17 Jan 2018 08:04:05 -0800
+Subject: [PATCH 1/1] Use syscall directly in write_validate to avoid ASAN
+ errors
+
+ASAN will complain about this write call with the following error:
+
+ERROR: AddressSanitizer: stack-buffer-underflow on address
+HINT: this may be a false positive if your program uses some custom stack unwind mechanism or swapcontext
+
+This is similar to what google's abseil does to work around the issue.
+
+Reported-by: qiwang@fb.com
+---
+ src/x86_64/Ginit.c | 4 +++-
+ 2 files changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/src/x86_64/Ginit.c b/src/x86_64/Ginit.c
+index 6281b76..2a84a1e 100644
+--- a/src/x86_64/Ginit.c
++++ b/src/x86_64/Ginit.c
+@@ -34,6 +34,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.  */
+ #include <stdlib.h>
+ #include <string.h>
+ #include <sys/mman.h>
++#include <sys/syscall.h>
+ 
+ #include "unwind_i.h"
+ 
+@@ -107,7 +108,8 @@ write_validate (void *addr)
+ 
+   do
+     {
+-      ret = write (mem_validate_pipe[1], addr, 1);
++      /* use syscall insteadof write() so that ASAN does not complain */
++      ret = syscall (SYS_write, mem_validate_pipe[1], addr, 1);
+     }
+   while ( errno == EINTR );
+ 
+-- 
+2.7.4
+

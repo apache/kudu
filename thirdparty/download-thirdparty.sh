@@ -244,8 +244,15 @@ if [ ! -d $CRCUTIL_SOURCE ]; then
   echo
 fi
 
+LIBUNWIND_PATCHLEVEL=1
+delete_if_wrong_patchlevel $LIBUNWIND_SOURCE $LIBUNWIND_PATCHLEVEL
 if [ ! -d $LIBUNWIND_SOURCE ]; then
   fetch_and_expand libunwind-${LIBUNWIND_VERSION}.tar.gz
+  pushd $LIBUNWIND_SOURCE
+  patch -p1 < $TP_DIR/patches/libunwind-Use-syscall-directly-in-write_validate-to-avoid-ASAN.patch
+  touch patchlevel-$LIBUNWIND_PATCHLEVEL
+  popd
+  echo
 fi
 
 if [ ! -d $PYTHON_SOURCE ]; then

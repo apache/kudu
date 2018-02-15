@@ -29,8 +29,10 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/cache.h"
+#include "kudu/util/debug-util.h"
 #include "kudu/util/env.h"
 #include "kudu/util/metrics.h"  // IWYU pragma: keep
 #include "kudu/util/random.h"
@@ -55,13 +57,18 @@ template <class FileType>
 class FileCacheTest : public KuduTest {
  public:
   FileCacheTest()
-      : rand_(SeedRandom()),
-        initial_open_fds_(CountOpenFds(env_)) {
+      : rand_(SeedRandom()) {
     // Simplify testing of the actual cache capacity.
     FLAGS_cache_force_single_shard = true;
 
     // Speed up tests that check the number of descriptors.
     FLAGS_file_cache_expiry_period_ms = 1;
+
+    // libunwind internally uses two file descriptors as a pipe.
+    // Make sure it gets initialized early so that our fd count
+    // doesn't get affected by it.
+    ignore_result(GetStackTraceHex());
+    initial_open_fds_ = CountOpenFds(env_);
   }
 
   void SetUp() override {
@@ -96,7 +103,7 @@ class FileCacheTest : public KuduTest {
   }
 
   Random rand_;
-  const int initial_open_fds_;
+  int initial_open_fds_;
   unique_ptr<FileCache<FileType>> cache_;
 };
 
