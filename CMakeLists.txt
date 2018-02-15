@@ -1084,17 +1084,33 @@ ADD_THIRDPARTY_LIB(boost_date_time
 # compiler options since we only do this when tcmalloc was
 # found and enabled.
 ############################################################
-get_filename_component(SIZED_DEALLOCATION_TEST_TCMALLOC_LIBDIR
-  ${TCMALLOC_STATIC_LIB} DIRECTORY)
-execute_process(
-  COMMAND printf
-    "#include <new>\nint main(){(::operator delete)(0,256);return 0;}\n"
-  COMMAND ${CMAKE_CXX_COMPILER}
-    -x c++ -fsized-deallocation -O0 -fno-builtin
-    -L${SIZED_DEALLOCATION_TEST_TCMALLOC_LIBDIR} -ltcmalloc -o /dev/null -
-  RESULT_VARIABLE SIZED_DEALLOCATION_TEST_RESULT OUTPUT_QUIET ERROR_QUIET)
-if (${SIZED_DEALLOCATION_TEST_RESULT} EQUAL 0)
-  set(COMPILER_SUPPORTS_SIZED_DEALLOCATION TRUE)
+
+# On OS X 10.12 (El Capitan), sized-deallocation symbols are missing
+# in the libc++ library for some reason.
+if (APPLE)
+  get_filename_component(SIZED_DEALLOCATION_TEST_TCMALLOC_LIBDIR
+    ${TCMALLOC_STATIC_LIB} DIRECTORY)
+  execute_process(
+    COMMAND printf
+      "#include <new>\nint main(){(::operator delete)(0,256);return 0;}\n"
+    COMMAND ${CMAKE_CXX_COMPILER}
+      -x c++ -fsized-deallocation -O0 -fno-builtin
+      -L${SIZED_DEALLOCATION_TEST_TCMALLOC_LIBDIR} -ltcmalloc -o /dev/null -
+    RESULT_VARIABLE SIZED_DEALLOCATION_TEST_RESULT OUTPUT_QUIET ERROR_QUIET)
+  if (${SIZED_DEALLOCATION_TEST_RESULT} EQUAL 0)
+    set(COMPILER_SUPPORTS_SIZED_DEALLOCATION TRUE)
+  endif()
+else()
+  if (KUDU_TCMALLOC_AVAILABLE AND
+      (("${COMPILER_FAMILY}" STREQUAL "clang" AND
+        "${COMPILER_VERSION}" VERSION_GREATER "3.7") OR
+       ("${COMPILER_FAMILY}" STREQUAL "gcc" AND
+        "${COMPILER_VERSION}" VERSION_GREATER "5.0")))
+    set(COMPILER_SUPPORTS_SIZED_DEALLOCATION TRUE)
+  endif()
+endif()
+
+if(COMPILER_SUPPORTS_SIZED_DEALLOCATION)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsized-deallocation")
   message("sized-deallocation is ENABLED")
 else()
