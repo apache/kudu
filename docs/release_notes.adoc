@@ -16,7 +16,7 @@
 // under the License.
 
 [[release_notes]]
-= Apache Kudu 1.6.0 Release Notes
+= Apache Kudu 1.7.0 Release Notes
 
 :author: Kudu Team
 :imagesdir: ./images
@@ -28,195 +28,85 @@
 :sectlinks:
 :experimental:
 
-[[rn_1.6.0_upgrade_notes]]
+[[rn_1.7.0_upgrade_notes]]
 == Upgrade Notes
 
-* Upgrading directly from Kudu 1.5.0 is supported and no special upgrade steps
+* Upgrading directly from Kudu 1.6.0 is supported and no special upgrade steps
   are required. A rolling upgrade may work, however it has not been tested.
   When upgrading Kudu, it is recommended to first shut down all Kudu processes
   across the cluster, then upgrade the software on all servers, then restart
   the Kudu processes on all servers in the cluster.
 
-[[rn_1.6.0_obsoletions]]
+[[rn_1.7.0_obsoletions]]
 == Obsoletions
 
-* Support for Spark 1 (kudu-spark_2.10) has been **removed** in Kudu 1.6.0 and
-  now only Spark 2 is supported. Spark 1 support was deprecated in Kudu 1.5.0.
 
-[[rn_1.6.0_deprecations]]
+[[rn_1.7.0_deprecations]]
 == Deprecations
 
 * Support for Java 7 has been deprecated since Kudu 1.5.0 and may be removed in
   the next major release.
 
-[[rn_1.6.0_new_features]]
+[[rn_1.7.0_new_features]]
 == New features
 
-* Tablet servers' tolerance of disk failures is now enabled by default and has
-  been extended to handle data directory failures at runtime. In the event of
-  a disk failure at runtime, any tablets with data on a failed disk will be
-  shut down and restarted on another tablet server. There is a configurable
-  tradeoff between a newly added tablet's tolerance to disk failures and its
-  ability to parallelize reads via the experimental
-  `--fs_target_data_dirs_per_tablet` flag. Tablets that are spread across fewer
-  disks are less likely to be affected by a disk failure, at the cost of
-  reduced parallelism. By default, tablets are striped across all available
-  disks. Note that the first configured data directory and the WAL directory
-  cannot currently tolerate disk failures. This will be further improved in
-  future Kudu releases.
-
-* Kudu servers can now adopt new data directories via the new
-  `kudu fs update_dirs` tool. The new directory will be used by new tablet
-  replicas only. Note that removing directories is not yet supported
-  (see link:https://issues.apache.org/jira/browse/KUDU-2202[KUDU-2202]).
-
-* Kudu servers have two new flags to control webui TLS/HTTPS
-  settings: `--webserver_tls_ciphers` and `--webserver_tls_min_protocol`.
-  These flags allow the advertised TLS ciphers and TLS protocol versions to be
-  configured. Additionally, the webserver now excludes insecure legacy ciphers
-  by default
-  (see link:https://issues.apache.org/jira/browse/KUDU-2190[KUDU-2190]).
 
 == Optimizations and improvements
 
-* Kudu servers can now tolerate short interruptions in NTP clock
-  synchronization. NTP synchronization is still required when any Kudu daemon
-  starts up. If NTP synchronization is not available, diagnostic information
-  is now logged to help pinpoint the issue
-  (see link:https://issues.apache.org/jira/browse/KUDU-1578[KUDU-1578]).
 
-* Tablet server startup time has been improved significantly on servers
-  containing large numbers of blocks.
-
-* The log block manager now performs disk data deletion in batches. This
-  optimization can significantly reduce the time taken to delete data on a tablet.
-
-* The usage of sensitive data redaction flag has been slightly changed. By
-  setting `--redact=log` flag, redaction will be disabled in the web UI but
-  retained for server logs. Alternatively, `--redact=none` can be used to
-  disable redaction completely.
-
-* The Spark DataSource integration now can take advantage of scan locality
-  for better scan performance, the scan will take place at the closest replica
-  instead of going to the leader.
-
-* Various optimizations were made to reduce the 99th percentile latency of
-  writes on the tablet server. This can also improve throughput on certain
-  write workloads, particularly on larger clusters.
-
-* Kudu may now be configured to ignore system-wide auth_to_local mappings
-  configured in /etc/krb5.conf by setting the configuration flag
-  `--use_system_auth_to_local=false`
-  (see link:https://issues.apache.org/jira/browse/KUDU-2198[KUDU-2198]).
-
-* The performance of the compaction scheduler has been improved. In
-  previous versions, certain types of time series workloads were found to
-  cause compaction scheduling to take tens of seconds. These workloads now
-  schedule compactions an order of magnitude more efficiently.
-
-* The compaction scheduler has been improved to avoid running a compaction
-  when the benefit of that compaction is extremely small.
-
-* Tablet servers now consider the health of all replicas of a tablet before
-  deciding to evict one. This can improve stability of the Kudu cluster after
-  experiencing multiple simultaneous daemon failures
-  (see link:https://issues.apache.org/jira/browse/KUDU-2048[KUDU-2048]).
-
-* Several performance improvements have been made to the Kudu master,
-  particularly in concurrency of clients opening tables. This should improve
-  performance in highly concurrent workloads.
-
-* The on-disk size metric for a tablet now includes all data and metadata.
-  Previously, it excluded WAL segments and consensus metadata
-  (see link:https://issues.apache.org/jira/browse/KUDU-1755[KUDU-1755]).
-
-* Added verbose mode for the 'kudu cluster ksck' command to enable output
-  of detailed information on the cluster's metadata, even when no errors are
-  detected.
-
-[[rn_1.6.0_fixed_issues]]
+[[rn_1.7.0_fixed_issues]]
 == Fixed Issues
 
-* HybridTime timestamp propagation now works in the Java client when using scan
-  tokens (see link:https://issues.apache.org/jira/browse/KUDU-1411[KUDU-1411]).
 
-* Fixed an error message commonly found in tablet server logs indicating that
-  operations were being read "from the future"
-  (see link:https://issues.apache.org/jira/browse/KUDU-1078[KUDU-1078]).
-
-* Tombstoned tablets no longer report metrics
-  (see link:https://issues.apache.org/jira/browse/KUDU-2044[KUDU-2044]).
-
-* Fixed a bug in the C++ client which could cause tablets to be erroneously
-  pruned, or skipped, during certain scans, resulting in fewer results than
-  expected being returned from queries. The bug only affected tables whose range
-  partition columns are a proper prefix of the primary key
-  (see link:https://issues.apache.org/jira/browse/KUDU-2173[KUDU-2173]).
-
-* Published Kudu Java artifacts are now fully compatible with JRE 7 and JRE 8.
-  There was previously a bug in the release process which made them compatible
-  only with JRE 8
-  (see link:https://issues.apache.org/jira/browse/KUDU-2188[KUDU-2188]).
-
-* Fixed a typo in the list of default TLS ciphers used by Kudu servers. As a
-  result, two additional cipher suites are now available:
-** ECDHE-RSA-AES128-SHA256 TLSv1.2 Kx=ECDH Au=RSA Enc=AES(128)  Mac=SHA256
-** AES256-GCM-SHA384       TLSv1.2 Kx=RSA  Au=RSA Enc=AESGCM(256) Mac=AEAD
-
-[[rn_1.6.0_wire_compatibility]]
+[[rn_1.7.0_wire_compatibility]]
 == Wire Protocol compatibility
 
-Kudu 1.6.0 is wire-compatible with previous versions of Kudu:
+Kudu 1.7.0 is wire-compatible with previous versions of Kudu:
 
-* Kudu 1.6 clients may connect to servers running Kudu 1.0 or later. If the client uses
+* Kudu 1.7 clients may connect to servers running Kudu 1.0 or later. If the client uses
   features that are not available on the target server, an error will be returned.
-* Rolling upgrade between Kudu 1.5 and Kudu 1.6 servers is believed to be possible
+* Rolling upgrade between Kudu 1.6 and Kudu 1.7 servers is believed to be possible
   though has not been sufficiently tested. Users are encouraged to shut down all nodes
   in the cluster, upgrade the software, and then restart the daemons on the new version.
-* Kudu 1.0 clients may connect to servers running Kudu 1.6 with the exception of the
+* Kudu 1.0 clients may connect to servers running Kudu 1.7 with the exception of the
   below-mentioned restrictions regarding secure clusters.
 
 The authentication features introduced in Kudu 1.3 place the following limitations
-on wire compatibility between Kudu 1.6 and versions earlier than 1.3:
+on wire compatibility between Kudu 1.7 and versions earlier than 1.3:
 
-* If a Kudu 1.6 cluster is configured with authentication or encryption set to "required",
+* If a Kudu 1.7 cluster is configured with authentication or encryption set to "required",
   clients older than Kudu 1.3 will be unable to connect.
-* If a Kudu 1.6 cluster is configured with authentication and encryption set to "optional"
+* If a Kudu 1.7 cluster is configured with authentication and encryption set to "optional"
   or "disabled", older clients will still be able to connect.
 
-[[rn_1.6.0_incompatible_changes]]
-== Incompatible Changes in Kudu 1.6.0
+[[rn_1.7.0_incompatible_changes]]
+== Incompatible Changes in Kudu 1.7.0
 
-[[rn_1.6.0_client_compatibility]]
+[[rn_1.7.0_client_compatibility]]
 === Client Library Compatibility
 
-* The Kudu 1.6 Java client library is API- and ABI-compatible with Kudu 1.5. Applications
-  written against Kudu 1.5 will compile and run against the Kudu 1.6 client library and
+* The Kudu 1.7 Java client library is API- and ABI-compatible with Kudu 1.6. Applications
+  written against Kudu 1.6 will compile and run against the Kudu 1.7 client library and
   vice-versa.
 
-* The Kudu 1.6 {cpp} client is API- and ABI-forward-compatible with Kudu 1.5.
-  Applications written and compiled against the Kudu 1.5 client library will run without
-  modification against the Kudu 1.6 client library. Applications written and compiled
-  against the Kudu 1.6 client library will run without modification against the Kudu 1.5
+* The Kudu 1.7 {cpp} client is API- and ABI-forward-compatible with Kudu 1.6.
+  Applications written and compiled against the Kudu 1.6 client library will run without
+  modification against the Kudu 1.7 client library. Applications written and compiled
+  against the Kudu 1.7 client library will run without modification against the Kudu 1.6
   client library.
 
-* The Kudu 1.6 Python client is API-compatible with Kudu 1.5. Applications
-  written against Kudu 1.5 will continue to run against the Kudu 1.6 client
+* The Kudu 1.7 Python client is API-compatible with Kudu 1.6. Applications
+  written against Kudu 1.6 will continue to run against the Kudu 1.7 client
   and vice-versa.
 
-[[rn_1.6.0_known_issues]]
+[[rn_1.7.0_known_issues]]
 == Known Issues and Limitations
 
 Please refer to the link:known_issues.html[Known Issues and Limitations] section of the
 documentation.
 
-[[rn_1.6.0_contributors]]
+[[rn_1.7.0_contributors]]
 == Contributors
-
-Kudu 1.6 includes contributions from 14 people, including one
-first-time contributor, Hector Camarena.
-
-Thanks for helping to make Kudu even better!
 
 [[resources_and_next_steps]]
 == Resources
