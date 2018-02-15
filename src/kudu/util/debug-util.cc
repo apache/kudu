@@ -719,23 +719,25 @@ Status StackTraceSnapshot::SnapshotAllStacks() {
   }
 
   // Now collect the thread names while we are waiting on stack trace collection.
-  for (auto& info : infos_) {
-    if (!info.status.ok()) continue;
+  if (capture_thread_names_) {
+    for (auto& info : infos_) {
+      if (!info.status.ok()) continue;
 
-    // Get the thread's name by reading proc.
-    // TODO(todd): should we have the dumped thread fill in its own name using
-    // prctl to avoid having to open and read /proc? Or maybe we should use the
-    // Kudu ThreadMgr to get the thread names for the cases where we are using
-    // the kudu::Thread wrapper at least.
-    faststring buf;
-    Status s = ReadFileToString(Env::Default(),
-                                strings::Substitute("/proc/self/task/$0/comm", info.tid),
-                                &buf);
-    if (!s.ok()) {
-      info.thread_name = "<unknown name>";
-    }  else {
-      info.thread_name = buf.ToString();
-      StripTrailingNewline(&info.thread_name);
+      // Get the thread's name by reading proc.
+      // TODO(todd): should we have the dumped thread fill in its own name using
+      // prctl to avoid having to open and read /proc? Or maybe we should use the
+      // Kudu ThreadMgr to get the thread names for the cases where we are using
+      // the kudu::Thread wrapper at least.
+      faststring buf;
+      Status s = ReadFileToString(Env::Default(),
+                                  strings::Substitute("/proc/self/task/$0/comm", info.tid),
+                                  &buf);
+      if (!s.ok()) {
+        info.thread_name = "<unknown name>";
+      }  else {
+        info.thread_name = buf.ToString();
+        StripTrailingNewline(&info.thread_name);
+      }
     }
   }
   num_failed_ = 0;

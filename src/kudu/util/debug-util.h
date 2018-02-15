@@ -25,6 +25,8 @@
 #include <string>
 #include <vector>
 
+#include <glog/logging.h>
+
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/fastmem.h"
 #include "kudu/util/status.h"
@@ -144,6 +146,14 @@ class StackTrace {
   // This function is async-safe.
   void Collect(int skip_frames = 0);
 
+  int num_frames() const {
+    return num_frames_;
+  }
+
+  void* frame(int i) const {
+    DCHECK_LE(i, num_frames_);
+    return frames_[i];
+  }
 
   enum Flags {
     // Do not fix up the addresses on the stack to try to point to the 'call'
@@ -202,7 +212,8 @@ class StackTraceSnapshot {
     Status status;
 
     // The name of the thread.
-    // May be missing if 'status' is not OK.
+    // May be missing if 'status' is not OK or if thread name collection was
+    // disabled.
     std::string thread_name;
 
     // The current stack trace of the thread.
@@ -210,6 +221,10 @@ class StackTraceSnapshot {
     StackTrace stack;
   };
   using VisitorFunc = std::function<void(ArrayView<ThreadInfo> group)>;
+
+  void set_capture_thread_names(bool c) {
+    capture_thread_names_ = c;
+  }
 
   // Snapshot the stack traces of all threads in the process.
   //
@@ -239,6 +254,8 @@ class StackTraceSnapshot {
   std::vector<StackTraceSnapshot::ThreadInfo> infos_;
   std::vector<StackTraceCollector> collectors_;
   int num_failed_ = 0;
+
+  bool capture_thread_names_ = true;
 };
 
 

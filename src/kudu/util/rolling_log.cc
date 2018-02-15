@@ -47,7 +47,7 @@ using std::string;
 using std::unique_ptr;
 using strings::Substitute;
 
-static const int kDefaultSizeLimitBytes = 64 * 1024 * 1024; // 64MB
+static const int kDefaultRollThresholdBytes = 64 * 1024 * 1024; // 64MB
 
 DECLARE_int32(max_log_files);
 
@@ -57,7 +57,7 @@ RollingLog::RollingLog(Env* env, string log_dir, string log_name)
     : env_(env),
       log_dir_(std::move(log_dir)),
       log_name_(std::move(log_name)),
-      size_limit_bytes_(kDefaultSizeLimitBytes),
+      roll_threshold_bytes_(kDefaultRollThresholdBytes),
       max_num_segments_(FLAGS_max_log_files),
       compress_after_close_(true) {}
 
@@ -65,9 +65,9 @@ RollingLog::~RollingLog() {
   WARN_NOT_OK(Close(), "Unable to close RollingLog");
 }
 
-void RollingLog::SetSizeLimitBytes(int64_t size) {
+void RollingLog::SetRollThresholdBytes(int64_t size) {
   CHECK_GT(size, 0);
-  size_limit_bytes_ = size;
+  roll_threshold_bytes_ = size;
 }
 
 void RollingLog::SetMaxNumSegments(int num_segments) {
@@ -189,11 +189,12 @@ Status RollingLog::Append(StringPiece s) {
     RETURN_NOT_OK_PREPEND(Open(), "Unable to open log");
   }
 
-  if (file_->Size() + s.size() > size_limit_bytes_) {
+  RETURN_NOT_OK(file_->Append(s));
+  if (file_->Size() > roll_threshold_bytes_) {
     RETURN_NOT_OK_PREPEND(Close(), "Unable to roll log");
+    roll_count_++;
     RETURN_NOT_OK_PREPEND(Open(), "Unable to roll log");
   }
-  RETURN_NOT_OK(file_->Append(s));
   return Status::OK();
 }
 

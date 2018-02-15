@@ -46,8 +46,11 @@ class DiagnosticsLog {
   void Stop();
 
  private:
+  class SymbolSet;
+
   void RunThread();
   Status LogMetrics();
+  Status LogStacks();
 
   const std::string log_dir_;
   const MetricRegistry* metric_registry_;
@@ -62,6 +65,9 @@ class DiagnosticsLog {
   MonoDelta metrics_log_interval_;
 
   int64_t metrics_epoch_ = 0;
+
+  // Out-of-line this internal data to keep the header smaller.
+  std::unique_ptr<SymbolSet> symbols_;
 
   DISALLOW_COPY_AND_ASSIGN(DiagnosticsLog);
 };

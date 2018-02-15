@@ -19,6 +19,7 @@
 
 #include <unistd.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -68,6 +69,7 @@ class RollingLogTest : public KuduTest {
       ASSERT_TRUE(HasSuffixString(child, pid_suffix) ||
                   HasSuffixString(child, pid_suffix + ".gz")) << "bad child: " << child;
     }
+    std::sort(children->begin(), children->end());
     ASSERT_EQ(children->size(), expected_count) << *children;
   }
 
@@ -78,27 +80,29 @@ class RollingLogTest : public KuduTest {
 TEST_F(RollingLogTest, TestLog) {
   RollingLog log(env_, log_dir_, "mylog");
   log.SetCompressionEnabled(false);
-  log.SetSizeLimitBytes(100);
+  log.SetRollThresholdBytes(100);
 
   // Before writing anything, we shouldn't open a log file.
   vector<string> children;
   NO_FATALS(AssertLogCount(0, &children));
 
   // Appending some data should write a new segment.
-  ASSERT_OK(log.Append("Hello world\n"));
+  const string kTestString = "Hello world\n";
+  ASSERT_OK(log.Append(kTestString));
   NO_FATALS(AssertLogCount(1, &children));
 
   for (int i = 0; i < 10; i++) {
-    ASSERT_OK(log.Append("Hello world\n"));
+    ASSERT_OK(log.Append(kTestString));
   }
   NO_FATALS(AssertLogCount(2, &children));
 
   faststring data;
   string path = JoinPathSegments(log_dir_, children[0]);
   ASSERT_OK(ReadFileToString(env_, path, &data));
-  ASSERT_TRUE(HasPrefixString(data.ToString(), "Hello world\n"))
+  ASSERT_TRUE(HasPrefixString(data.ToString(), kTestString))
     << "Data missing";
-  ASSERT_LE(data.size(), 100) << "Size limit not respected";
+  ASSERT_LE(data.size(), 100 + kTestString.length())
+      << "Roll threshold not respected";
 }
 
 // Test with compression on.
@@ -128,7 +132,7 @@ TEST_F(RollingLogTest, TestCompression) {
 TEST_F(RollingLogTest, TestFileCountLimit) {
   RollingLog log(env_, log_dir_, "mylog");
   ASSERT_OK(log.Open());
-  log.SetSizeLimitBytes(100);
+  log.SetRollThresholdBytes(100);
   log.SetMaxNumSegments(3);
 
   for (int i = 0; i < 100; i++) {
