@@ -124,7 +124,7 @@
   This function should be called in the context of already established SSH
   session at the node."
   [test node]
-  (try (c/exec (kudu-cli test node) :table :list node)
+  (try (c/exec :sudo :-u kudu-uname (kudu-cli test node) :table :list node)
        true
        (catch RuntimeException _ false)))
 
@@ -134,7 +134,8 @@
   [test node tservers-count]
   (let [pattern (str "Fetched info from all "
                      (str tservers-count)" Tablet Servers")]
-    (try (c/exec (kudu-cli test node) :cluster :ksck node | :grep pattern)
+    (try (c/exec :sudo :-u kudu-uname (kudu-cli test node) :cluster :ksck node |
+                 :grep pattern)
          true
          (catch RuntimeException _ false))))
 
@@ -144,7 +145,7 @@
   This function should be called in the context of already established SSH
   session at the node."
   [test node]
-  (try (c/exec (kudu-cli test node) :tserver :status node)
+  (try (c/exec :sudo :-u kudu-uname (kudu-cli test node) :tserver :status node)
        true
        (catch RuntimeException _ false)))
 
