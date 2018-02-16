@@ -308,7 +308,7 @@ class Messenger {
     return closing_;
   }
 
-  scoped_refptr<MetricEntity> metric_entity() const { return metric_entity_.get(); }
+  scoped_refptr<MetricEntity> metric_entity() const { return metric_entity_; }
 
   const int64_t rpc_negotiation_timeout_ms() const { return rpc_negotiation_timeout_ms_; }
 
