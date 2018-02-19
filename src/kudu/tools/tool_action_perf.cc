@@ -137,6 +137,8 @@
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tools/tool_action_common.h"
+#include "kudu/util/decimal_util.h"
+#include "kudu/util/int128.h"
 #include "kudu/util/oid_generator.h"
 #include "kudu/util/random.h"
 #include "kudu/util/status.h"
@@ -349,6 +351,18 @@ Status GenerateRowData(Generator* gen, KuduPartialRow* row,
         break;
       case DOUBLE:
         RETURN_NOT_OK(row->SetDouble(idx, gen->Next<double>()));
+        break;
+      case DECIMAL32:
+        RETURN_NOT_OK(row->SetUnscaledDecimal(idx, std::min(gen->Next<int32_t>(),
+                                                              kMaxUnscaledDecimal32)));
+        break;
+      case DECIMAL64:
+        RETURN_NOT_OK(row->SetUnscaledDecimal(idx, std::min(gen->Next<int64_t>(),
+                                                            kMaxUnscaledDecimal64)));
+        break;
+      case DECIMAL128:
+        RETURN_NOT_OK(row->SetUnscaledDecimal(idx, std::min(gen->Next<int128_t>(),
+                                                            kMaxUnscaledDecimal128)));
         break;
       case BINARY:
         if (fixed_string.empty()) {
