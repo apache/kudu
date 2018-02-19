@@ -50,6 +50,13 @@
 [[rn_1.7.0_new_features]]
 == New features
 
+* Kudu now supports the decimal column type. The decimal type is a numeric data type
+  with fixed scale and precision suitable for financial and other arithmetic
+  calculations where the imprecise representation and rounding behavior of float and
+  double make those types impractical. The decimal type is also useful for integers
+  larger than int64 and cases with fractional values in a primary key.
+  See link:schema_design.html#decimal[Decimal Type] for more details.
+
 * The `kudu fs update_dirs` tool now supports removing directories. Unless the
   `--force` flag is specified, Kudu will not allow the removal of a directory
   across which tablets are configured to spread data. If specified, all tablet
@@ -121,6 +128,12 @@ on wire compatibility between Kudu 1.7 and versions earlier than 1.3:
 * The Kudu 1.7 Python client is API-compatible with Kudu 1.6. Applications
   written against Kudu 1.6 will continue to run against the Kudu 1.7 client
   and vice-versa.
+
+* Kudu 1.7 clients that attempt to create a table with a decimal column on a
+  target server running Kudu 1.6 or earlier will receive an error response.
+  Similarly Kudu clients running Kudu 1.6 or earlier will result in an error
+  when attempting to access any table containing containing a decimal
+  column.
 
 [[rn_1.7.0_known_issues]]
 == Known Issues and Limitations

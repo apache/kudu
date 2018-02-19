@@ -735,8 +735,7 @@ The examples above have only explored a fraction of what you can do with Impala 
   to work around this issue.
 - When creating a Kudu table, the `CREATE TABLE` statement must include the
   primary key columns before other columns, in primary key order.
-- Impala can not create Kudu tables with `DECIMAL`, `VARCHAR`,
-  or nested-typed columns.
+- Impala can not create Kudu tables with `VARCHAR` or nested-typed columns.
 - Impala cannot update values in primary key columns.
 - `!=` and `LIKE` predicates are not pushed to Kudu, and
   instead will be evaluated by the Impala scan node. This may decrease performance

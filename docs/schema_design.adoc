@@ -73,6 +73,7 @@ column types include:
 * unixtime_micros (64-bit microseconds since the Unix epoch)
 * single-precision (32-bit) IEEE-754 floating-point number
 * double-precision (64-bit) IEEE-754 floating-point number
+* decimal (see <<decimal>> for details)
 * UTF-8 encoded string (up to 64KB uncompressed)
 * binary (up to 64KB uncompressed)
 
@@ -90,6 +91,48 @@ Unlike HBase, Kudu does not provide a version or timestamp column to track chang
 to a row. If version or timestamp information is needed, the schema should include
 an explicit version or timestamp column.
 
+[[decimal]]
+=== Decimal Type
+
+The `decimal` type is a numeric data type with fixed scale and precision suitable for
+financial and other arithmetic calculations where the imprecise representation and
+rounding behavior of `float` and `double` make those types impractical. The `decimal`
+type is also useful for integers larger than int64 and cases with fractional values
+in a primary key.
+
+The `decimal` type is a parameterized type that takes precision and scale type
+attributes.
+
+*Precision* represents the total number of digits that can be represented by the
+column, regardless of the location of the decimal point. This value must be between
+1 and 38 and has no default. For example, a precision of 4 is required to represent
+integer values up to 9999, or to represent values up to 99.99 with two fractional
+digits. You can also represent corresponding negative values, without any
+change in the precision. For example, the range -9999 to 9999 still only requires
+a precision of 4.
+
+*Scale* represents the number of fractional digits. This value must be between 0
+and the precision. A scale of 0 produces integral values, with no fractional part.
+If precision and scale are equal, all of the digits come after the decimal point.
+For example, a decimal with precision and scale equal to 3 can represent values
+between -0.999 and 0.999.
+
+*Performance considerations:*
+
+Kudu stores each value in as few bytes as possible depending on the precision
+specified for the decimal column. For that reason it is not advised to just use
+the highest precision possible for convenience. Doing so could negatively impact
+performance, memory and storage.
+
+Before encoding and compression:
+
+* Decimal values with precision of 9 or less are stored in 4 bytes.
+* Decimal values with precision of 10 through 18 are stored in 8 bytes.
+* Decimal values with precision greater than 18 are stored in 16 bytes.
+
+NOTE: The precision and scale of `decimal` columns cannot be changed by altering
+the table.
+
 [[encoding]]
 === Column Encoding
 
@@ -102,7 +145,7 @@ of the column.
 | Column Type             | Encoding                       | Default
 | int8, int16, int32      | plain, bitshuffle, run length  | bitshuffle
 | int64, unixtime_micros  | plain, bitshuffle, run length  | bitshuffle
-| float, double           | plain, bitshuffle              | bitshuffle
+| float, double, decimal  | plain, bitshuffle              | bitshuffle
 | bool                    | plain, run length              | run length
 | string, binary          | plain, prefix, dictionary      | dictionary
 |===
@@ -160,8 +203,8 @@ Like an RDBMS primary key, the Kudu primary key enforces a uniqueness constraint
 Attempting to insert a row with the same primary key values as an existing row
 will result in a duplicate key error.
 
-Primary key columns must be non-nullable, and may not be a boolean or floating-
-point type.
+Primary key columns must be non-nullable, and may not be a boolean, float
+or double type.
 
 Once set during table creation, the set of columns in the primary key may not
 be altered.
