@@ -33,6 +33,14 @@ TEST(TestDecimalUtil, TestMaxUnscaledDecimal) {
   ASSERT_EQ(kMaxUnscaledDecimal128, MaxUnscaledDecimal(kMaxDecimal128Precision));
 }
 
+TEST(TestDecimalUtil, TestMinUnscaledDecimal) {
+  ASSERT_EQ(-9, MinUnscaledDecimal(1));
+  ASSERT_EQ(-99999, MinUnscaledDecimal(5));
+  ASSERT_EQ(kMinUnscaledDecimal32, MinUnscaledDecimal(kMaxDecimal32Precision));
+  ASSERT_EQ(kMinUnscaledDecimal64, MinUnscaledDecimal(kMaxDecimal64Precision));
+  ASSERT_EQ(kMinUnscaledDecimal128, MinUnscaledDecimal(kMaxDecimal128Precision));
+}
+
 TEST(TestDecimalUtil, TestToString) {
   ASSERT_EQ("999999999",
             DecimalToString(kMaxUnscaledDecimal32, kDefaultDecimalScale));

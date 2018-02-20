@@ -57,8 +57,12 @@ namespace kudu {
   // The maximum scale is the Decimal's precision.
 
   // Returns the maximum unscaled decimal value that can be stored
-  // based on the precision
+  // based on the precision.
   int128_t MaxUnscaledDecimal(int8_t precision);
+
+  // Returns the maximum unscaled decimal value that can be stored
+  // based on the precision.
+  int128_t MinUnscaledDecimal(int8_t precision);
 
   std::string DecimalToString(int128_t value, int8_t scale);
 

@@ -1611,27 +1611,135 @@ TEST_F(ClientTest, TestExclusiveInclusiveUnixTimeMicrosRangeBounds) {
   // Create test table with range partition using non-default bound types.
   // KUDU-1722
   KuduSchemaBuilder builder;
-  KuduSchema u_schema_;
+  KuduSchema schema;
   builder.AddColumn("key")->Type(KuduColumnSchema::UNIXTIME_MICROS)->NotNull()->PrimaryKey();
   builder.AddColumn("value")->Type(KuduColumnSchema::INT32)->NotNull();
-  CHECK_OK(builder.Build(&u_schema_));
-  const string table_name = "TestExclusiveInclusiveUnixTimeMicrosRangeBounds";
-  shared_ptr<KuduTable> table;
+  ASSERT_OK(builder.Build(&schema));
 
-  unique_ptr<KuduPartialRow> lower_bound(u_schema_.NewRow());
+  unique_ptr<KuduPartialRow> lower_bound(schema.NewRow());
   ASSERT_OK(lower_bound->SetUnixTimeMicros("key", -1));
-  unique_ptr<KuduPartialRow> upper_bound(u_schema_.NewRow());
+  unique_ptr<KuduPartialRow> upper_bound(schema.NewRow());
   ASSERT_OK(upper_bound->SetUnixTimeMicros("key", 99));
 
   unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
   table_creator->add_range_partition(lower_bound.release(), upper_bound.release(),
                                       KuduTableCreator::EXCLUSIVE_BOUND,
                                       KuduTableCreator::INCLUSIVE_BOUND);
+
+  const string table_name = "TestExclusiveInclusiveUnixTimeMicrosRangeBounds";
   ASSERT_OK(table_creator->table_name(table_name)
-                          .schema(&u_schema_)
+                          .schema(&schema)
                           .num_replicas(1)
                           .set_range_partition_columns({ "key" })
                           .Create());
+}
+
+TEST_F(ClientTest, TestExclusiveInclusiveDecimalRangeBounds) {
+  KuduSchemaBuilder builder;
+  KuduSchema schema;
+  builder.AddColumn("key")->Type(KuduColumnSchema::DECIMAL)->NotNull()->PrimaryKey()
+      ->Precision(9)->Scale(2);
+  builder.AddColumn("value")->Type(KuduColumnSchema::INT32)->NotNull();
+  ASSERT_OK(builder.Build(&schema));
+
+  unique_ptr<KuduPartialRow> lower_bound(schema.NewRow());
+  ASSERT_OK(lower_bound->SetUnscaledDecimal("key", -1));
+  unique_ptr<KuduPartialRow> upper_bound(schema.NewRow());
+  ASSERT_OK(upper_bound->SetUnscaledDecimal("key", 99));
+
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  table_creator->add_range_partition(lower_bound.release(), upper_bound.release(),
+                                     KuduTableCreator::EXCLUSIVE_BOUND,
+                                     KuduTableCreator::INCLUSIVE_BOUND);
+
+  ASSERT_OK(table_creator->table_name("TestExclusiveInclusiveDecimalRangeBounds")
+                .schema(&schema)
+                .num_replicas(1)
+                .set_range_partition_columns({ "key" })
+                .Create());
+}
+
+TEST_F(ClientTest, TestSwappedRangeBounds) {
+  KuduSchemaBuilder builder;
+  KuduSchema schema;
+  builder.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+  builder.AddColumn("value")->Type(KuduColumnSchema::INT32)->NotNull();
+  ASSERT_OK(builder.Build(&schema));
+
+  unique_ptr<KuduPartialRow> lower_bound(schema.NewRow());
+  ASSERT_OK(lower_bound->SetInt32("key", 90));
+  unique_ptr<KuduPartialRow> upper_bound(schema.NewRow());
+  ASSERT_OK(upper_bound->SetInt32("key", -1));
+
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  table_creator->add_range_partition(lower_bound.release(), upper_bound.release(),
+                                     KuduTableCreator::EXCLUSIVE_BOUND,
+                                     KuduTableCreator::INCLUSIVE_BOUND);
+
+  Status s = table_creator->table_name("TestSwappedRangeBounds")
+                .schema(&schema)
+                .num_replicas(1)
+                .set_range_partition_columns({ "key" })
+                .Create();
+
+  ASSERT_TRUE(s.IsInvalidArgument());
+  ASSERT_STR_CONTAINS(s.ToString(),
+                      "Error creating table TestSwappedRangeBounds on the master: "
+                          "range partition lower bound must be less than the upper bound");
+}
+
+
+TEST_F(ClientTest, TestEqualRangeBounds) {
+  KuduSchemaBuilder builder;
+  KuduSchema schema;
+  builder.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+  builder.AddColumn("value")->Type(KuduColumnSchema::INT32)->NotNull();
+  ASSERT_OK(builder.Build(&schema));
+
+  unique_ptr<KuduPartialRow> lower_bound(schema.NewRow());
+  ASSERT_OK(lower_bound->SetInt32("key", 10));
+  unique_ptr<KuduPartialRow> upper_bound(schema.NewRow());
+  ASSERT_OK(upper_bound->SetInt32("key", 10));
+
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  table_creator->add_range_partition(lower_bound.release(), upper_bound.release(),
+                                     KuduTableCreator::EXCLUSIVE_BOUND,
+                                     KuduTableCreator::INCLUSIVE_BOUND);
+
+  Status s = table_creator->table_name("TestEqualRangeBounds")
+      .schema(&schema)
+      .num_replicas(1)
+      .set_range_partition_columns({ "key" })
+      .Create();
+
+  ASSERT_TRUE(s.IsInvalidArgument());
+  ASSERT_STR_CONTAINS(s.ToString(),
+                      "Error creating table TestEqualRangeBounds on the master: "
+                          "range partition lower bound must be less than the upper bound");
+}
+
+TEST_F(ClientTest, TestMinMaxRangeBounds) {
+  KuduSchemaBuilder builder;
+  KuduSchema schema;
+  builder.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+  builder.AddColumn("value")->Type(KuduColumnSchema::INT32)->NotNull();
+  ASSERT_OK(builder.Build(&schema));
+
+  unique_ptr<KuduPartialRow> lower_bound(schema.NewRow());
+  ASSERT_OK(lower_bound->SetInt32("key", INT32_MIN));
+  unique_ptr<KuduPartialRow> upper_bound(schema.NewRow());
+  ASSERT_OK(upper_bound->SetInt32("key", INT32_MAX));
+
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  table_creator->add_range_partition(lower_bound.release(), upper_bound.release(),
+                                     KuduTableCreator::EXCLUSIVE_BOUND,
+                                     KuduTableCreator::INCLUSIVE_BOUND);
+
+  ASSERT_OK(table_creator->table_name("TestMinMaxRangeBounds")
+      .schema(&schema)
+      .num_replicas(1)
+      .set_range_partition_columns({ "key" })
+      .Create());
 }
 
 TEST_F(ClientTest, TestMetaCacheExpiry) {

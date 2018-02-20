@@ -38,6 +38,10 @@ int128_t MaxUnscaledDecimal(int8_t precision) {
   return result - 1;
 }
 
+int128_t MinUnscaledDecimal(int8_t precision) {
+  return -MaxUnscaledDecimal(precision);
+}
+
 // Workaround for an ASAN build issue documented here:
 // https://bugs.llvm.org/show_bug.cgi?id=16404
 __attribute__((no_sanitize("undefined")))

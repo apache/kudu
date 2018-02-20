@@ -38,7 +38,9 @@
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/bitmap.h"
+#include "kudu/util/decimal_util.h"
 #include "kudu/util/hash_util.h"
+#include "kudu/util/int128.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/pb_util.h"
@@ -1000,7 +1002,8 @@ namespace {
   // Increments an unset column in the row.
   Status IncrementUnsetColumn(KuduPartialRow* row, int32_t idx) {
     DCHECK(!row->IsColumnSet(idx));
-    switch (row->schema()->column(idx).type_info()->type()) {
+    const ColumnSchema& col = row->schema()->column(idx);
+    switch (col.type_info()->type()) {
       case INT8:
         RETURN_NOT_OK(row->SetInt8(idx, INT8_MIN + 1));
         break;
@@ -1020,6 +1023,12 @@ namespace {
       case BINARY:
         RETURN_NOT_OK(row->SetBinaryCopy(idx, Slice("\0", 1)));
         break;
+      case DECIMAL32:
+      case DECIMAL64:
+      case DECIMAL128:
+        RETURN_NOT_OK(row->SetUnscaledDecimal(idx,
+            MinUnscaledDecimal(col.type_attributes().precision) + 1));
+        break;
       default:
         return Status::InvalidArgument("Invalid column type in range partition",
                                        row->schema()->column(idx).ToString());
@@ -1031,8 +1040,9 @@ namespace {
   // succeeds, or false if the column is already the maximum value.
   Status IncrementColumn(KuduPartialRow* row, int32_t idx, bool* success) {
     DCHECK(row->IsColumnSet(idx));
+    const ColumnSchema& col = row->schema()->column(idx);
     *success = true;
-    switch (row->schema()->column(idx).type_info()->type()) {
+    switch (col.type_info()->type()) {
       case INT8: {
         int8_t value;
         RETURN_NOT_OK(row->GetInt8(idx, &value));
@@ -1078,6 +1088,18 @@ namespace {
         RETURN_NOT_OK(row->GetUnixTimeMicros(idx, &value));
         if (value < INT64_MAX) {
           RETURN_NOT_OK(row->SetUnixTimeMicros(idx, value + 1));
+        } else {
+          *success = false;
+        }
+        break;
+      }
+      case DECIMAL32:
+      case DECIMAL64:
+      case DECIMAL128: {
+        int128_t value;
+        RETURN_NOT_OK(row->GetUnscaledDecimal(idx, &value));
+        if (value < MaxUnscaledDecimal(col.type_attributes().precision)) {
+          RETURN_NOT_OK(row->SetUnscaledDecimal(idx, value + 1));
         } else {
           *success = false;
         }
