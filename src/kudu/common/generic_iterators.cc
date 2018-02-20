@@ -23,7 +23,6 @@
 #include <memory>
 #include <mutex>
 #include <string>
-#include <tuple>
 #include <unordered_map>
 #include <utility>
 
@@ -44,14 +43,13 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/memory/arena.h"
 
-using std::all_of;
 using std::get;
 using std::move;
+using std::pair;
 using std::remove_if;
 using std::shared_ptr;
 using std::sort;
 using std::string;
-using std::tuple;
 using std::unique_ptr;
 using std::vector;
 
@@ -491,11 +489,13 @@ Status MaterializingIterator::Init(ScanSpec *spec) {
     }
   }
 
-  // Sort the predicates by selectivity so that the most selective are evaluated earlier.
+  // Sort the predicates by selectivity so that the most selective are evaluated
+  // earlier, with ties broken by the column index.
   sort(col_idx_predicates_.begin(), col_idx_predicates_.end(),
-       [] (const tuple<int32_t, ColumnPredicate>& left,
-           const tuple<int32_t, ColumnPredicate>& right) {
-         return SelectivityComparator(get<1>(left), get<1>(right));
+       [] (const pair<int32_t, ColumnPredicate>& left,
+           const pair<int32_t, ColumnPredicate>& right) {
+          int comp = SelectivityComparator(left.second, right.second);
+          return comp ? comp < 0 : left.first < right.first;
        });
 
   return Status::OK();
@@ -588,6 +588,7 @@ PredicateEvaluatingIterator::PredicateEvaluatingIterator(shared_ptr<RowwiseItera
 Status PredicateEvaluatingIterator::InitAndMaybeWrap(
   shared_ptr<RowwiseIterator> *base_iter, ScanSpec *spec) {
   RETURN_NOT_OK((*base_iter)->Init(spec));
+
   if (spec != nullptr && !spec->predicates().empty()) {
     // Underlying iterator did not accept all predicates. Wrap it.
     shared_ptr<RowwiseIterator> wrapper(new PredicateEvaluatingIterator(*base_iter));
@@ -603,15 +604,22 @@ Status PredicateEvaluatingIterator::Init(ScanSpec *spec) {
 
   // Gather any predicates that the base iterator did not pushdown, and remove
   // the predicates from the spec.
-  col_idx_predicates_.clear();
-  col_idx_predicates_.reserve(spec->predicates().size());
+  col_predicates_.clear();
+  col_predicates_.reserve(spec->predicates().size());
   for (auto& predicate : spec->predicates()) {
-    col_idx_predicates_.emplace_back(predicate.second);
+    col_predicates_.emplace_back(predicate.second);
   }
   spec->RemovePredicates();
 
-  // Sort the predicates by selectivity so that the most selective are evaluated earlier.
-  sort(col_idx_predicates_.begin(), col_idx_predicates_.end(), SelectivityComparator);
+  // Sort the predicates by selectivity so that the most selective are evaluated
+  // earlier, with ties broken by the column index.
+  sort(col_predicates_.begin(), col_predicates_.end(),
+       [&] (const ColumnPredicate& left, const ColumnPredicate& right) {
+          int comp = SelectivityComparator(left, right);
+          if (comp != 0) return comp < 0;
+          return schema().find_column(left.column().name())
+               < schema().find_column(right.column().name());
+       });
 
   return Status::OK();
 }
@@ -623,7 +631,7 @@ bool PredicateEvaluatingIterator::HasNext() const {
 Status PredicateEvaluatingIterator::NextBlock(RowBlock *dst) {
   RETURN_NOT_OK(base_iter_->NextBlock(dst));
 
-  for (const auto& predicate : col_idx_predicates_) {
+  for (const auto& predicate : col_predicates_) {
     int32_t col_idx = dst->schema().find_column(predicate.column().name());
     if (col_idx == Schema::kColumnNotFound) {
       return Status::InvalidArgument("Unknown column in predicate", predicate.ToString());

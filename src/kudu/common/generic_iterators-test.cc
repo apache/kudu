@@ -51,6 +51,7 @@ DEFINE_int32(num_lists, 3, "Number of lists to merge");
 DEFINE_int32(num_rows, 1000, "Number of entries per list");
 DEFINE_int32(num_iters, 1, "Number of times to run merge");
 
+using std::make_shared;
 using std::shared_ptr;
 using std::string;
 using std::vector;
@@ -309,7 +310,7 @@ TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluation) {
 
   ASSERT_EQ(0, spec.predicates().size())
     << "Iterator tree should have accepted predicate";
-  ASSERT_EQ(1, pred_eval->col_idx_predicates_.size())
+  ASSERT_EQ(1, pred_eval->col_predicates_.size())
     << "Predicate should be evaluated by the outer iterator";
 
   Arena arena(1024);
@@ -336,6 +337,85 @@ TEST(TestPredicateEvaluatingIterator, TestDontWrapWhenNoPredicates) {
   shared_ptr<RowwiseIterator> outer_iter(materializing);
   ASSERT_OK(PredicateEvaluatingIterator::InitAndMaybeWrap(&outer_iter, &spec));
   ASSERT_EQ(outer_iter, materializing) << "InitAndMaybeWrap should not have wrapped iter";
+}
+
+// Test row-wise iterator which does nothing.
+class DummyIterator : public RowwiseIterator {
+ public:
+
+  explicit DummyIterator(Schema schema)
+      : schema_(std::move(schema)) {
+  }
+
+  Status Init(ScanSpec* /*spec*/) override {
+    return Status::OK();
+  }
+
+  virtual Status NextBlock(RowBlock* /*dst*/) override {
+    LOG(FATAL) << "unimplemented!";
+    return Status::OK();
+  }
+
+  virtual bool HasNext() const override {
+    LOG(FATAL) << "unimplemented!";
+    return false;
+  }
+
+  virtual string ToString() const override {
+    return "DummyIterator";
+  }
+
+  virtual const Schema& schema() const override {
+    return schema_;
+  }
+
+  virtual void GetIteratorStats(vector<IteratorStats>* stats) const override {
+    stats->resize(schema().num_columns());
+  }
+
+ private:
+  Schema schema_;
+};
+
+TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluationOrder) {
+  Schema schema({ ColumnSchema("a_int64", INT64),
+                  ColumnSchema("b_int64", INT64),
+                  ColumnSchema("c_int32", INT32) }, 3);
+
+  int64_t zero = 0;
+  int64_t two = 2;
+  auto a_equality = ColumnPredicate::Equality(schema.column(0), &zero);
+  auto b_equality = ColumnPredicate::Equality(schema.column(1), &zero);
+  auto c_equality = ColumnPredicate::Equality(schema.column(2), &zero);
+  auto a_range = ColumnPredicate::Range(schema.column(0), &zero, &two);
+
+  { // Test that more selective predicates come before others.
+    ScanSpec spec;
+    spec.AddPredicate(a_range);
+    spec.AddPredicate(b_equality);
+    spec.AddPredicate(c_equality);
+
+    shared_ptr<RowwiseIterator> iter = make_shared<DummyIterator>(schema);
+    ASSERT_OK(PredicateEvaluatingIterator::InitAndMaybeWrap(&iter, &spec));
+
+    PredicateEvaluatingIterator* pred_eval = down_cast<PredicateEvaluatingIterator*>(iter.get());
+    ASSERT_TRUE(pred_eval->col_predicates_ ==
+                vector<ColumnPredicate>({ c_equality, b_equality, a_range }));
+  }
+
+  { // Test that smaller columns come before larger ones, and ties are broken by idx.
+    ScanSpec spec;
+    spec.AddPredicate(b_equality);
+    spec.AddPredicate(a_equality);
+    spec.AddPredicate(c_equality);
+
+    shared_ptr<RowwiseIterator> iter = make_shared<DummyIterator>(schema);
+    ASSERT_OK(PredicateEvaluatingIterator::InitAndMaybeWrap(&iter, &spec));
+
+    PredicateEvaluatingIterator* pred_eval = down_cast<PredicateEvaluatingIterator*>(iter.get());
+    ASSERT_TRUE(pred_eval->col_predicates_ ==
+                vector<ColumnPredicate>({ c_equality, a_equality, b_equality }));
+  }
 }
 
 } // namespace kudu
