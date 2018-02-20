@@ -32,6 +32,7 @@ import static org.junit.Assert.assertEquals;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -55,6 +56,7 @@ import org.apache.flume.Transaction;
 import org.apache.flume.channel.MemoryChannel;
 import org.apache.flume.conf.Configurables;
 import org.apache.flume.event.EventBuilder;
+import org.apache.kudu.util.DecimalUtil;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -148,6 +150,8 @@ public class AvroKuduOperationsProducerTest extends BaseKuduTest {
     columns.add(new ColumnSchema.ColumnSchemaBuilder("doubleField", Type.DOUBLE).build());
     columns.add(new ColumnSchema.ColumnSchemaBuilder("nullableField", Type.STRING).nullable(true).build());
     columns.add(new ColumnSchema.ColumnSchemaBuilder("stringField", Type.STRING).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("decimalField", Type.DECIMAL)
+        .typeAttributes(DecimalUtil.typeAttributes(9, 1)).build());
     CreateTableOptions createOptions =
         new CreateTableOptions().setRangePartitionColumns(ImmutableList.of("key"))
             .setNumReplicas(1);
@@ -176,6 +180,7 @@ public class AvroKuduOperationsProducerTest extends BaseKuduTest {
       record.setDoubleField(2.71828 * i);
       record.setNullableField(i % 2 == 0 ? null : "taco");
       record.setStringField(String.format("hello %d", i));
+      record.setDecimalField(BigDecimal.valueOf(i, 1));
       ByteArrayOutputStream out = new ByteArrayOutputStream();
       Encoder encoder = EncoderFactory.get().binaryEncoder(out, null);
       DatumWriter<AvroKuduOperationsProducerTestRecord> writer =
@@ -198,12 +203,14 @@ public class AvroKuduOperationsProducerTest extends BaseKuduTest {
     for (int i = 0; i < eventCount; i++) {
       answers.add(String.format(
           "INT32 key=%s, INT64 longField=%s, DOUBLE doubleField=%s, " +
-              "STRING nullableField=%s, STRING stringField=hello %s",
+              "STRING nullableField=%s, STRING stringField=hello %s, " +
+              "DECIMAL decimalField(9, 1)=%s",
           10 * i,
           2 * i,
           2.71828 * i,
           i % 2 == 0 ? "NULL" : "taco",
-          i));
+          i,
+          BigDecimal.valueOf(i, 1)));
     }
     Collections.sort(answers);
     return answers;

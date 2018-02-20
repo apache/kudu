@@ -21,8 +21,11 @@ package org.apache.kudu.flume.sink;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.net.URI;
 import java.net.URL;
+import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
@@ -34,6 +37,8 @@ import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
 import com.google.common.util.concurrent.UncheckedExecutionException;
+import org.apache.avro.LogicalType;
+import org.apache.avro.LogicalTypes;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericDatumReader;
 import org.apache.avro.generic.GenericRecord;
@@ -46,6 +51,7 @@ import org.apache.flume.FlumeException;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.kudu.Type;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 
@@ -175,7 +181,8 @@ public class AvroKuduOperationsProducer implements KuduOperationsProducer {
 
   @Override
   public List<Operation> getOperations(Event event) throws FlumeException {
-    DatumReader<GenericRecord> reader = readers.getUnchecked(getSchema(event));
+    Schema schema = getSchema(event);
+    DatumReader<GenericRecord> reader = readers.getUnchecked(schema);
     decoder = DecoderFactory.get().binaryDecoder(event.getBody(), decoder);
     try {
       reuse = reader.read(reuse, decoder);
@@ -193,11 +200,11 @@ public class AvroKuduOperationsProducer implements KuduOperationsProducer {
       default:
         throw new FlumeException(String.format("Unexpected operation %s", operation));
     }
-    setupOp(op, reuse);
+    setupOp(op, schema, reuse);
     return Collections.singletonList(op);
   }
 
-  private void setupOp(Operation op, GenericRecord record) {
+  private void setupOp(Operation op, Schema schema, GenericRecord record) {
     PartialRow row = op.getRow();
     for (ColumnSchema col : table.getSchema().getColumns()) {
       String name = col.getName();
@@ -235,6 +242,9 @@ public class AvroKuduOperationsProducer implements KuduOperationsProducer {
             case DOUBLE:
               row.addDouble(name, (double) value);
               break;
+            case DECIMAL:
+              row.addDecimal(name, getAvroBigDecimal(schema, name, value));
+              break;
             case STRING:
               row.addString(name, value.toString());
               break;
@@ -249,10 +259,23 @@ public class AvroKuduOperationsProducer implements KuduOperationsProducer {
           throw new FlumeException(
               String.format("Failed to coerce value for column '%s' to type %s",
               col.getName(),
-              col.getType()));
+              col.getType()), e);
         }
       }
     }
+  }
+
+  private BigDecimal getAvroBigDecimal(Schema schema, String name, Object value) {
+    LogicalType logicalType = schema.getField(name).schema().getLogicalType();
+    if (!(logicalType instanceof LogicalTypes.Decimal)) {
+      throw new FlumeException(String.format(
+          "Failed to coerce value for column '%s' to type %s",
+          name,
+          Type.DECIMAL));
+    }
+    int scale = ((LogicalTypes.Decimal) logicalType).getScale();
+    BigInteger unscaledValue = new BigInteger(((ByteBuffer) value).array());
+    return new BigDecimal(unscaledValue, scale);
   }
 
   private Schema getSchema(Event event) throws FlumeException {
