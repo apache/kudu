@@ -107,6 +107,7 @@
 #include "kudu/security/token.pb.h"
 #include "kudu/security/token_signer.h"
 #include "kudu/security/token_signing_key.h"
+#include "kudu/security/token_verifier.h"
 #include "kudu/server/monitored_task.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet_replica.h"
@@ -242,6 +243,7 @@ TAG_FLAG(catalog_manager_evict_excess_replicas, runtime);
 
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 DECLARE_bool(raft_attempt_to_replace_replica_without_majority);
+DECLARE_int64(tsk_rotation_seconds);
 
 using base::subtle::NoBarrier_CompareAndSwap;
 using base::subtle::NoBarrier_Load;
@@ -265,6 +267,7 @@ using kudu::security::PrivateKey;
 using kudu::security::TokenSigner;
 using kudu::security::TokenSigningPrivateKey;
 using kudu::security::TokenSigningPrivateKeyPB;
+using kudu::security::TokenSigningPublicKeyPB;
 using kudu::tablet::TABLET_DATA_DELETED;
 using kudu::tablet::TABLET_DATA_TOMBSTONED;
 using kudu::tablet::TabletDataState;
@@ -490,6 +493,7 @@ void CatalogManagerBgTasks::Shutdown() {
 }
 
 void CatalogManagerBgTasks::Run() {
+  MonoTime last_tspk_run;
   while (!NoBarrier_Load(&closing_)) {
     {
       CatalogManager::ScopedLeaderSharedLock l(catalog_manager_);
@@ -544,10 +548,14 @@ void CatalogManagerBgTasks::Run() {
             LOG(FATAL) << err_msg;
           }
         }
-      } else if (catalog_manager_->NeedToPrepareFollower() && l.owns_lock()) {
-        // This is the case of a non-leader catalog manager that has some work
-        // to do in a preparation to run in its current role.
-        Status s = catalog_manager_->PrepareFollower();
+      } else if (l.owns_lock()) {
+        // This is the case of a follower catalog manager running as a part
+        // of master process. To be able to authenticate connecting clients
+        // using their authn tokens, a follower master needs:
+        //  * CA-signed server certificate to authenticate itself to a
+        //    connecting client (otherwise the client wont try to use its token)
+        //  * public parts of active TSK keys to verify token signature
+        Status s = catalog_manager_->PrepareFollower(&last_tspk_run);
         if (!s.ok()) {
           LOG(WARNING) << s.ToString()
                        << ": failed to prepare follower catalog manager, will retry";
@@ -994,16 +1002,11 @@ void CatalogManager::PrepareForLeadershipTask() {
   leader_ready_term_ = term;
 }
 
-bool CatalogManager::NeedToPrepareFollower() {
-  return !master_->tls_context().has_signed_cert();
-}
-
-Status CatalogManager::PrepareFollower() {
+Status CatalogManager::PrepareFollowerCaInfo() {
   static const char* const kDescription =
       "acquiring CA information for follower catalog manager";
 
-  leader_lock_.AssertAcquiredForReading();
-
+  // Load the CA certificate and CA private key.
   unique_ptr<PrivateKey> key;
   unique_ptr<Cert> cert;
   Status s = LoadCertAuthorityInfo(&key, &cert).AndThen([&] {
@@ -1015,6 +1018,51 @@ Status CatalogManager::PrepareFollower() {
     LOG_WITH_PREFIX(WARNING) << kDescription << ": " << s.ToString();
   }
   return s;
+}
+
+Status CatalogManager::PrepareFollowerTokenVerifier() {
+  static const char* const kDescription =
+      "importing token verification keys for follower catalog manager";
+
+  // Load public parts of the existing TSKs.
+  vector<TokenSigningPublicKeyPB> keys;
+  const Status s = LoadTspkEntries(&keys).AndThen([&] {
+    return master_->messenger()->shared_token_verifier()->ImportKeys(keys);
+  });
+  if (!s.ok()) {
+    LOG_WITH_PREFIX(WARNING) << kDescription << ": " << s.ToString();
+    return s;
+  }
+
+  if (keys.empty()) {
+    // In case if no keys are found in the system table it's necessary to retry.
+    // Returning non-OK will lead the upper-level logic to call this method
+    // again as soon as possible.
+    return Status::NotFound("no TSK found in the system table");
+  }
+
+  LOG_WITH_PREFIX(INFO) << kDescription
+                        << ": success; most recent TSK sequence number "
+                        << keys.back().key_seq_num();
+  return Status::OK();
+}
+
+Status CatalogManager::PrepareFollower(MonoTime* last_tspk_run) {
+  leader_lock_.AssertAcquiredForReading();
+  // Load the CA certificate and CA private key.
+  if (!master_->tls_context().has_signed_cert()) {
+    RETURN_NOT_OK(PrepareFollowerCaInfo());
+  }
+  // Import keys for authn token verification. A new TSK appear every
+  // tsk_rotation_seconds, so using 1/2 of that interval to avoid edge cases.
+  const auto tsk_rotation_interval =
+      MonoDelta::FromSeconds(FLAGS_tsk_rotation_seconds / 2);
+  const auto now = MonoTime::Now();
+  if (!last_tspk_run->Initialized() || *last_tspk_run + tsk_rotation_interval < now) {
+    RETURN_NOT_OK(PrepareFollowerTokenVerifier());
+    *last_tspk_run = now;
+  }
+  return Status::OK();
 }
 
 Status CatalogManager::VisitTablesAndTabletsUnlocked() {
@@ -3824,6 +3872,21 @@ Status CatalogManager::LoadTskEntries(set<string>* expired_entry_ids) {
     expired_entry_ids->swap(ref);
   }
   return master_->token_signer()->ImportKeys(loader.entries());
+}
+
+Status CatalogManager::LoadTspkEntries(vector<TokenSigningPublicKeyPB>* keys) {
+  TskEntryLoader loader;
+  RETURN_NOT_OK(sys_catalog_->VisitTskEntries(&loader));
+  for (const auto& private_key : loader.entries()) {
+    // Extract public parts of the loaded keys for the verifier.
+    TokenSigningPrivateKey tsk(private_key);
+    TokenSigningPublicKeyPB key;
+    tsk.ExportPublicKeyPB(&key);
+    auto key_seq_num = key.key_seq_num();
+    keys->emplace_back(std::move(key));
+    VLOG(2) << "read public part of TSK " << key_seq_num;
+  }
+  return Status::OK();
 }
 
 Status CatalogManager::DeleteTskEntries(const set<string>& entry_ids) {

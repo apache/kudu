@@ -73,6 +73,7 @@ class RpcContext;
 namespace security {
 class Cert;
 class PrivateKey;
+class TokenSigningPublicKeyPB;
 } // namespace security
 
 namespace consensus {
@@ -672,15 +673,20 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // internal state of this object upon becoming the leader.
   void PrepareForLeadershipTask();
 
-  // Whether this catalog manager needs to prepare for running in the follower
-  // role.
-  bool NeedToPrepareFollower();
-
   // Perform necessary work to prepare for running in the follower role.
-  // Currently, this includes reading the CA information from the system table,
-  // creating TLS server certificate request, signing it with the CA key,
-  // and installing the certificate TLS server certificates.
-  Status PrepareFollower();
+  // Currently, it's about having a means to authenticate clients by authn tokens.
+  Status PrepareFollower(MonoTime* last_tspk_run);
+
+  // Prepare CA-related information for the follower catalog manager. Currently,
+  // this includes reading the CA information from the system table, creating
+  // TLS server certificate request, signing it with the CA key, and installing
+  // the certificate TLS server certificates.
+  Status PrepareFollowerCaInfo();
+
+  // Read currently active TSK keys from the system table and import their
+  // public parts into the token verifier, so it's possible to verify signatures
+  // of authn tokens.
+  Status PrepareFollowerTokenVerifier();
 
   // Clears out the existing metadata ('table_names_map_', 'table_ids_map_',
   // and 'tablet_map_'), loads tables metadata into memory and if successful
@@ -766,6 +772,10 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // Load non-expired TSK entries from the system table.
   // Once done, initialize TokenSigner with the loaded entries.
   Status LoadTskEntries(std::set<std::string>* expired_entry_ids);
+
+  // Load non-expired TSK entries from the system table, extract the public
+  // part from those, and return them with the 'key' output parameter.
+  Status LoadTspkEntries(std::vector<security::TokenSigningPublicKeyPB>* keys);
 
   // Delete TSK entries with the specified entry identifiers
   // (identifiers correspond to the 'entry_id' column).

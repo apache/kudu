@@ -28,7 +28,9 @@
 #include "kudu/master/mini_master.h"
 #include "kudu/master/sys_catalog.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
+#include "kudu/rpc/messenger.h"
 #include "kudu/security/tls_context.h"
+#include "kudu/security/token_verifier.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -45,7 +47,7 @@ using std::unique_ptr;
 
 namespace kudu {
 
-class SecurityMasterCertsTest : public KuduTest {
+class SecurityMasterAuthTest : public KuduTest {
  public:
   void SetUp() override {
     KuduTest::SetUp();
@@ -73,7 +75,7 @@ class SecurityMasterCertsTest : public KuduTest {
 // even if they haven't run in the leader role yet. In this particular scenario,
 // only one of the masters has ever become a leader and the rest have always
 // been followers. This is a test to cover regressions of KUDU-2265, if any.
-TEST_F(SecurityMasterCertsTest, FollowerCertificates) {
+TEST_F(SecurityMasterAuthTest, FollowerCertificates) {
   for (auto i = 0; i < cluster_->num_masters(); ++i) {
     const auto& tls = cluster_->mini_master(i)->master()->tls_context();
     // Initially, all master servers have self-signed certs,
@@ -88,11 +90,33 @@ TEST_F(SecurityMasterCertsTest, FollowerCertificates) {
       RaftConsensus::ELECT_EVEN_IF_LEADER_IS_ALIVE,
       RaftConsensus::EXTERNAL_REQUEST));
 
-  // After some time, all master servers should have CA-signed certs.
+  // After some time, all masters should have CA-signed certs.
   ASSERT_EVENTUALLY([&] {
     for (auto i = 0; i < cluster_->num_masters(); ++i) {
       const auto& tls = cluster_->mini_master(i)->master()->tls_context();
       ASSERT_TRUE(tls.has_signed_cert());
+    }
+  });
+}
+
+// This scenario verifies that follower masters get keys for authn token
+// verification even if they haven't run in the leader role yet. In this
+// particular scenario, only one of the masters has ever become a leader and
+// the rest have always been followers. This is a test to cover regressions of
+// KUDU-2319, if any.
+TEST_F(SecurityMasterAuthTest, FollowerTokenVerificationKeys) {
+  auto* consensus = cluster_->mini_master(0)->master()->catalog_manager()->
+      sys_catalog()->tablet_replica()->consensus();
+  ASSERT_OK(consensus->StartElection(
+      RaftConsensus::ELECT_EVEN_IF_LEADER_IS_ALIVE,
+      RaftConsensus::EXTERNAL_REQUEST));
+
+  // After some time, all masters should have keys for token verification.
+  ASSERT_EVENTUALLY([&] {
+    for (auto i = 0; i < cluster_->num_masters(); ++i) {
+      const auto& verifier = cluster_->mini_master(i)->master()->messenger()->
+          token_verifier();
+      ASSERT_LE(0, verifier.GetMaxKnownKeySequenceNumber());
     }
   });
 }

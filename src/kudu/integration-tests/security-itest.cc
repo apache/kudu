@@ -34,10 +34,13 @@
 #include "kudu/client/write_op.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/wire_protocol.pb.h"
+#include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/consensus.proxy.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
+#include "kudu/master/sys_catalog.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/mini-cluster/mini_cluster.h"
 #include "kudu/rpc/messenger.h"
@@ -59,6 +62,7 @@
 DECLARE_string(local_ip_for_outbound_sockets);
 
 using kudu::client::KuduClient;
+using kudu::client::KuduClientBuilder;
 using kudu::client::KuduInsert;
 using kudu::client::KuduSchema;
 using kudu::client::KuduSession;
@@ -387,6 +391,114 @@ TEST_P(AuthTokenIssuingTest, ChannelConfidentiality) {
     EXPECT_TRUE(t.has_token_data());
     EXPECT_TRUE(t.has_signature());
     EXPECT_TRUE(t.has_signing_key_seq_num());
+  }
+}
+
+struct ConnectToFollowerMasterTestParams {
+  const string rpc_authentication;
+  const string rpc_encryption;
+};
+class ConnectToFollowerMasterTest :
+    public SecurityITest,
+    public ::testing::WithParamInterface<ConnectToFollowerMasterTestParams> {
+};
+INSTANTIATE_TEST_CASE_P(, ConnectToFollowerMasterTest, ::testing::ValuesIn(
+    vector<ConnectToFollowerMasterTestParams>{
+      { "required", "optional", },
+      { "required", "required", },
+    }
+));
+
+// Test that a client can authenticate against a follower master using
+// authn token. For that, the token verifier at follower masters should have
+// appropriate keys for authn token signature verification.
+TEST_P(ConnectToFollowerMasterTest, AuthnTokenVerifierHaveKeys) {
+  // Want to have control over the master leadership.
+  cluster_opts_.extra_master_flags.emplace_back(
+      "--enable_leader_failure_detection=false");
+  cluster_opts_.num_masters = 3;
+  cluster_opts_.master_rpc_ports = { 11010, 11011, 11012, };
+  const auto& params = GetParam();
+  cluster_opts_.extra_master_flags.emplace_back(
+      Substitute("--rpc_authentication=$0", params.rpc_authentication));
+  cluster_opts_.extra_tserver_flags.emplace_back(
+      Substitute("--rpc_authentication=$0", params.rpc_authentication));
+  cluster_opts_.extra_master_flags.emplace_back(
+      Substitute("--rpc_encryption=$0", params.rpc_encryption));
+  cluster_opts_.extra_tserver_flags.emplace_back(
+      Substitute("--rpc_encryption=$0", params.rpc_encryption));
+  ASSERT_OK(StartCluster());
+
+  const auto& master_host = cluster_->master(0)->bound_rpc_addr().host();
+  {
+    consensus::ConsensusServiceProxy proxy(
+        cluster_->messenger(), cluster_->master(0)->bound_rpc_addr(), master_host);
+    consensus::RunLeaderElectionRequestPB req;
+    consensus::RunLeaderElectionResponsePB resp;
+    rpc::RpcController rpc;
+    req.set_tablet_id(master::SysCatalogTable::kSysCatalogTabletId);
+    req.set_dest_uuid(cluster_->master(0)->uuid());
+    rpc.set_timeout(MonoDelta::FromSeconds(10));
+    ASSERT_OK(proxy.RunLeaderElection(req, &resp, &rpc));
+  }
+
+  // Get authentication credentials.
+  string authn_creds;
+  {
+    client::sp::shared_ptr<KuduClient> client;
+    ASSERT_OK(cluster_->CreateClient(nullptr, &client));
+    ASSERT_OK(client->ExportAuthenticationCredentials(&authn_creds));
+  }
+
+  ASSERT_OK(cluster_->kdc()->Kdestroy());
+  // At this point the primary credentials (i.e. Kerberos) are not available.
+
+  // Make sure it's not possible to connect without authn token at this point:
+  // the server side is configured to require authentication.
+  {
+    client::sp::shared_ptr<KuduClient> client;
+    KuduClientBuilder builder;
+    for (auto i = 0; i < cluster_->num_masters(); ++i) {
+      builder.add_master_server_addr(cluster_->master(i)->bound_rpc_addr().ToString());
+    }
+    const auto s = builder.Build(&client);
+    ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
+  }
+
+  // Try to connect to every available follower master, authenticating using
+  // only the authn token. This scenario uses some sort of 'negative' criterion
+  // based on the fact that it's not possible to receive 'configuration error'
+  // status without being sucessfully authenticated first. The configuration
+  // error is returned because the client uses only a single master in its list
+  // of masters' endpoints while trying to connect to a multi-master Kudu cluster.
+  ASSERT_EVENTUALLY([&] {
+    for (auto i = 1; i < cluster_->num_masters(); ++i) {
+      client::sp::shared_ptr<KuduClient> client;
+      const auto s = KuduClientBuilder()
+          .add_master_server_addr(cluster_->master(i)->bound_rpc_addr().ToString())
+          .import_authentication_credentials(authn_creds)
+          .Build(&client);
+      ASSERT_TRUE(s.IsConfigurationError()) << s.ToString();
+      ASSERT_STR_MATCHES(s.ToString(),
+                         ".* Client configured with 1 master.* "
+                         "but cluster indicates it expects 3 master.*");
+    }
+  });
+
+  // Although it's not in the exact scope of this test, make sure it's possible
+  // to connect and perform basic operations (like listing tables) when using
+  // secondary credentials only (i.e. authn token).
+  {
+    client::sp::shared_ptr<KuduClient> client;
+    KuduClientBuilder builder;
+    for (auto i = 0; i < cluster_->num_masters(); ++i) {
+      builder.add_master_server_addr(cluster_->master(i)->bound_rpc_addr().ToString());
+    }
+    builder.import_authentication_credentials(authn_creds);
+    ASSERT_OK(builder.Build(&client));
+
+    vector<string> tables;
+    ASSERT_OK(client->ListTables(&tables));
   }
 }
 
