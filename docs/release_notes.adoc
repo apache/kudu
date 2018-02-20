@@ -57,6 +57,12 @@
 [[rn_1.7.0_fixed_issues]]
 == Fixed Issues
 
+* KUDU-2312: The evaluation order of predicates in scans with multiple
+  predicates has been made deterministic. Due to a bug, this was not necessarily
+  the case previously. Predicates are applied in most to least selective order,
+  with ties broken by column index. The evaluation order may change in the
+  future, particularly when better column statistics are made available
+  internally.
 
 [[rn_1.7.0_wire_compatibility]]
 == Wire Protocol compatibility

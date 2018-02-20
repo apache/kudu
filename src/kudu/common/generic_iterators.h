@@ -23,7 +23,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
-#include <tuple>
+#include <utility>
 #include <vector>
 
 #include <glog/logging.h>
@@ -203,8 +203,9 @@ class MaterializingIterator : public RowwiseIterator {
 
   std::shared_ptr<ColumnwiseIterator> iter_;
 
-  // List of (column index, predicate) in order of most to least selective.
-  std::vector<std::tuple<int32_t, ColumnPredicate>> col_idx_predicates_;
+  // List of (column index, predicate) in order of most to least selective, with
+  // ties broken by the index.
+  std::vector<std::pair<int32_t, ColumnPredicate>> col_idx_predicates_;
 
   // List of column indexes without predicates to materialize.
   std::vector<int32_t> non_predicate_column_indexes_;
@@ -248,17 +249,20 @@ class PredicateEvaluatingIterator : public RowwiseIterator {
   }
 
  private:
+
   // Construct the evaluating iterator.
   // This is only called from ::InitAndMaybeWrap()
   // REQUIRES: base_iter is already Init()ed.
   explicit PredicateEvaluatingIterator(std::shared_ptr<RowwiseIterator> base_iter);
 
   FRIEND_TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluation);
+  FRIEND_TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluationOrder);
 
   std::shared_ptr<RowwiseIterator> base_iter_;
 
-  // List of (column index, predicate) in order of most to least selective.
-  std::vector<ColumnPredicate> col_idx_predicates_;
+  // List of predicates in order of most to least selective, with
+  // ties broken by the column index.
+  std::vector<ColumnPredicate> col_predicates_;
 };
 
 } // namespace kudu

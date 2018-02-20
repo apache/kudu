@@ -120,7 +120,6 @@ class CFileSet : public std::enable_shared_from_this<CFileSet> {
 
  private:
   friend class Iterator;
-  friend class CFileSetIteratorProjector;
 
   DISALLOW_COPY_AND_ASSIGN(CFileSet);
 
