@@ -1701,6 +1701,11 @@ TEST_F(RaftConsensusNonVoterITest, RestartClusterWithNonVoter) {
                                             ANY_REPLICA,
                                             &has_leader,
                                             &tablet_locations));
+  // The newly added replica needs to be registered in the internal
+  // tablet_replicas_: this is necessary for the future calls like
+  // GetLeaderReplicaWithRetries() when the replica becomes a leader.
+  NO_FATALS(WaitForReplicasAndUpdateLocations(table_->name()));
+
   consensus::ConsensusStatePB cstate;
   ASSERT_EVENTUALLY([&] {
     TServerDetails* leader = nullptr;
