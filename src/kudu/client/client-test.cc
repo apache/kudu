@@ -44,6 +44,7 @@
 #include "kudu/client/client-internal.h"
 #include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
+#include "kudu/client/client.pb.h"
 #include "kudu/client/error_collector.h"
 #include "kudu/client/meta_cache.h"
 #include "kudu/client/resource_metrics.h"
@@ -112,6 +113,7 @@ DECLARE_bool(allow_unsafe_replication_factor);
 DECLARE_bool(fail_dns_resolution);
 DECLARE_bool(log_inject_latency);
 DECLARE_bool(master_support_connect_to_master_rpc);
+DECLARE_bool(rpc_trace_negotiation);
 DECLARE_int32(heartbeat_interval_ms);
 DECLARE_int32(leader_failure_exp_backoff_max_delta_ms);
 DECLARE_int32(log_inject_latency_ms_mean);
@@ -124,6 +126,8 @@ DECLARE_int32(scanner_inject_latency_on_each_batch_ms);
 DECLARE_int32(scanner_max_batch_size_bytes);
 DECLARE_int32(scanner_ttl_ms);
 DECLARE_int32(table_locations_ttl_ms);
+DECLARE_string(superuser_acl);
+DECLARE_string(user_acl);
 DEFINE_int32(test_scan_num_rows, 1000, "Number of rows to insert and scan");
 
 METRIC_DECLARE_counter(rpcs_queue_overflow);
@@ -5497,5 +5501,37 @@ TEST_F(ClientTest, TestSubsequentScanRequestReturnsNoData) {
   ASSERT_EQ(0, count);
 }
 
+// Test that the 'real user' included in AuthenticationCredentialsPB is used
+// when the client connects to remote servers with SASL PLAIN.
+TEST_F(ClientTest, TestAuthenticationCredentialsRealUser) {
+  // Scope down the user ACLs and restart the cluster to have it take effect.
+  FLAGS_user_acl = "token-user";
+  FLAGS_superuser_acl = "token-user";
+  FLAGS_rpc_trace_negotiation = true;
+  cluster_->ShutdownNodes(cluster::ClusterNodes::ALL);
+  ASSERT_OK(cluster_->StartSync());
+
+  // Try to connect without setting the user, which should fail
+  // TODO(KUDU-2344): This should fail with NotAuthorized.
+  ASSERT_TRUE(cluster_->CreateClient(nullptr, &client_).IsRemoteError());
+
+  // Create a new client with the imported user name and smoke test it.
+  KuduClientBuilder client_builder;
+  string authn_creds;
+  AuthenticationCredentialsPB pb;
+  pb.set_real_user("token-user");
+  ASSERT_TRUE(pb.SerializeToString(&authn_creds));
+  client_builder.import_authentication_credentials(authn_creds);
+
+  // Recreate the client and open the table.
+  ASSERT_OK(cluster_->CreateClient(&client_builder, &client_));
+  ASSERT_OK(client_->OpenTable(client_table_->name(), &client_table_));
+
+  // Insert some rows and do a scan to force a new connection to the tablet servers.
+  NO_FATALS(InsertTestRows(client_table_.get(), FLAGS_test_scan_num_rows));
+  vector<string> rows;
+  KuduScanner scanner(client_table_.get());
+  ASSERT_OK(ScanToStrings(&scanner, &rows));
+}
 } // namespace client
 } // namespace kudu

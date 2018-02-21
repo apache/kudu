@@ -78,6 +78,7 @@
 #include "kudu/rpc/request_tracker.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/sasl_common.h"
+#include "kudu/rpc/user_credentials.h"
 #include "kudu/security/cert.h"
 #include "kudu/security/openssl_util.h"
 #include "kudu/security/tls_context.h"
@@ -112,14 +113,14 @@ using kudu::master::ListTabletServersRequestPB;
 using kudu::master::ListTabletServersResponsePB;
 using kudu::master::ListTabletServersResponsePB_Entry;
 using kudu::master::MasterServiceProxy;
+using kudu::master::TSInfoPB;
 using kudu::master::TableIdentifierPB;
 using kudu::master::TabletLocationsPB;
-using kudu::master::TSInfoPB;
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
+using kudu::rpc::UserCredentials;
 using kudu::tserver::ScanResponsePB;
-using std::pair;
 using std::set;
 using std::string;
 using std::unique_ptr;
@@ -285,8 +286,9 @@ KuduClientBuilder& KuduClientBuilder::import_authentication_credentials(string a
 }
 
 namespace {
-Status ImportAuthnCredsToMessenger(const string& authn_creds,
-                                   Messenger* messenger) {
+Status ImportAuthnCreds(const string& authn_creds,
+                        Messenger* messenger,
+                        UserCredentials* user_credentials) {
   AuthenticationCredentialsPB pb;
   if (!pb.ParseFromString(authn_creds)) {
     return Status::InvalidArgument("invalid authentication data");
@@ -299,6 +301,9 @@ Status ImportAuthnCredsToMessenger(const string& authn_creds,
       return Status::InvalidArgument("invalid authentication token");
     }
     messenger->set_authn_token(tok);
+  }
+  if (pb.has_real_user()) {
+    user_credentials->set_real_user(pb.real_user());
   }
   for (const string& cert_der : pb.ca_cert_ders()) {
     security::Cert cert;
@@ -318,14 +323,21 @@ Status KuduClientBuilder::Build(shared_ptr<KuduClient>* client) {
   MessengerBuilder builder("client");
   std::shared_ptr<Messenger> messenger;
   RETURN_NOT_OK(builder.Build(&messenger));
+  UserCredentials user_credentials;
 
   // Parse and import the provided authn data, if any.
   if (!data_->authn_creds_.empty()) {
-    RETURN_NOT_OK(ImportAuthnCredsToMessenger(data_->authn_creds_, messenger.get()));
+    RETURN_NOT_OK(ImportAuthnCreds(data_->authn_creds_, messenger.get(), &user_credentials));
+  }
+  if (!user_credentials.has_real_user()) {
+    // If there are no authentication credentials, then set the real user to the
+    // currently logged-in user.
+    RETURN_NOT_OK(user_credentials.SetLoggedInRealUser());
   }
 
   shared_ptr<KuduClient> c(new KuduClient);
   c->data_->messenger_ = std::move(messenger);
+  c->data_->user_credentials_ = std::move(user_credentials);
   c->data_->master_server_addrs_ = data_->master_server_addrs_;
   c->data_->default_admin_operation_timeout_ = data_->default_admin_operation_timeout_;
   c->data_->default_rpc_timeout_ = data_->default_rpc_timeout_;
@@ -593,6 +605,7 @@ Status KuduClient::ExportAuthenticationCredentials(string* authn_creds) const {
   if (tok) {
     pb.mutable_authn_token()->CopyFrom(*tok);
   }
+  pb.set_real_user(data_->user_credentials_.real_user());
 
   vector<string> cert_ders;
   RETURN_NOT_OK_PREPEND(data_->messenger_->tls_context().DumpTrustedCerts(&cert_ders),

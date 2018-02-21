@@ -118,6 +118,7 @@ void RemoteTabletServer::DnsResolutionFinished(const HostPort& hp,
   {
     std::lock_guard<simple_spinlock> l(lock_);
     proxy_.reset(new TabletServerServiceProxy(client->data_->messenger_, (*addrs)[0], hp.host()));
+    proxy_->set_user_credentials(client->data_->user_credentials_);
   }
   user_callback.Run(s);
 }

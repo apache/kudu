@@ -103,11 +103,16 @@ message ScanTokenPB {
   optional ReplicaSelection replica_selection = 16 [default = LEADER_ONLY];
 }
 
-
 // All of the data necessary to authenticate to a cluster from a client with
 // no Kerberos credentials.
 message AuthenticationCredentialsPB {
+
+  // A signed token with user credentials issued by the master.
   optional security.SignedTokenPB authn_token = 1;
 
+  // The real user name, used for SASL PLAIN authentication.
+  optional string real_user = 3;
+
+  // Trusted root CA certificates.
   repeated bytes ca_cert_ders = 2;
 }

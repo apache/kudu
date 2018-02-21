@@ -82,6 +82,7 @@ class ConnectToMasterRpc : public rpc::Rpc {
                      pair<Sockaddr, string> addr_with_name,
                      const MonoTime& deadline,
                      std::shared_ptr<rpc::Messenger> messenger,
+                     rpc::UserCredentials user_credentials,
                      CredentialsPolicy creds_policy,
                      ConnectToMasterResponsePB* out);
 
@@ -99,6 +100,9 @@ class ConnectToMasterRpc : public rpc::Rpc {
   // The resolved address to try to connect to, along with its original specified hostname.
   const pair<Sockaddr, string> addr_with_name_;
 
+  // The client user credentials.
+  const rpc::UserCredentials user_credentials_;
+
   // Owned by the caller of this RPC, not this instance.
   ConnectToMasterResponsePB* out_;
 
@@ -115,11 +119,13 @@ ConnectToMasterRpc::ConnectToMasterRpc(StatusCallback user_cb,
     pair<Sockaddr, string> addr_with_name,
     const MonoTime& deadline,
     shared_ptr<Messenger> messenger,
+    rpc::UserCredentials user_credentials,
     rpc::CredentialsPolicy creds_policy,
     ConnectToMasterResponsePB* out)
       : Rpc(deadline, std::move(messenger)),
         user_cb_(std::move(user_cb)),
         addr_with_name_(std::move(addr_with_name)),
+        user_credentials_(std::move(user_credentials)),
         out_(DCHECK_NOTNULL(out)) {
   mutable_retrier()->mutable_controller()->set_credentials_policy(creds_policy);
 }
@@ -129,6 +135,7 @@ ConnectToMasterRpc::~ConnectToMasterRpc() {
 
 void ConnectToMasterRpc::SendRpc() {
   MasterServiceProxy proxy(retrier().messenger(), addr_with_name_.first, addr_with_name_.second);
+  proxy.set_user_credentials(user_credentials_);
   rpc::RpcController* controller = mutable_retrier()->mutable_controller();
   // TODO(todd): should this be setting an RPC call deadline based on 'deadline'?
   // it doesn't seem to be.
@@ -215,10 +222,12 @@ ConnectToClusterRpc::ConnectToClusterRpc(LeaderCallback user_cb,
                                          MonoTime deadline,
                                          MonoDelta rpc_timeout,
                                          shared_ptr<Messenger> messenger,
+                                         rpc::UserCredentials user_credentials,
                                          rpc::CredentialsPolicy creds_policy)
     : Rpc(deadline, std::move(messenger)),
       user_cb_(std::move(user_cb)),
       addrs_with_names_(std::move(addrs_with_names)),
+      user_credentials_(std::move(user_credentials)),
       rpc_timeout_(rpc_timeout),
       pending_responses_(0),
       completed_(false) {
@@ -255,6 +264,7 @@ void ConnectToClusterRpc::SendRpc() {
         addrs_with_names_[i],
         actual_deadline,
         retrier().messenger(),
+        user_credentials_,
         retrier().controller().credentials_policy(),
         &responses_[i]);
     rpc->SendRpc();

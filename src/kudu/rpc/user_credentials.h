@@ -19,6 +19,8 @@
 #include <cstddef>
 #include <string>
 
+#include "kudu/util/status.h"
+
 namespace kudu {
 namespace rpc {
 
@@ -32,6 +34,9 @@ class UserCredentials {
   bool has_real_user() const;
   void set_real_user(std::string real_user);
   const std::string& real_user() const { return real_user_; }
+
+  // Sets the real user to the currently logged in user.
+  Status SetLoggedInRealUser();
 
   // Returns a string representation of the object.
   std::string ToString() const;

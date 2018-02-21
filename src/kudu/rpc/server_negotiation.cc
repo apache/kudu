@@ -949,11 +949,11 @@ int ServerNegotiation::GetOptionCb(const char* plugin_name,
 }
 
 int ServerNegotiation::PlainAuthCb(sasl_conn_t* /*conn*/,
-                                   const char*  /*user*/,
-                                   const char*  /*pass*/,
+                                   const char* user,
+                                   const char* /*pass*/,
                                    unsigned /*passlen*/,
                                    struct propctx*  /*propctx*/) {
-  TRACE("Received PLAIN auth.");
+  TRACE("Received PLAIN auth, user=$0", user);
   if (PREDICT_FALSE(!helper_.IsPlainEnabled())) {
     LOG(DFATAL) << "Password authentication callback called while PLAIN auth disabled";
     return SASL_BADPARAM;
