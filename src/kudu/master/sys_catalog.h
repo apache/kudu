@@ -198,7 +198,7 @@ class SysCatalogTable {
   // NOTE: This is the "server-side" schema, so it must have the column IDs.
   Schema BuildTableSchema();
 
-  // Returns 'Status::OK()' if the WriteTranasction completed
+  // Returns 'Status::OK()' if the WriteTransaction completed
   Status SyncWrite(const tserver::WriteRequestPB *req, tserver::WriteResponsePB *resp);
 
   void SysCatalogStateChanged(const std::string& tablet_id, const std::string& reason);

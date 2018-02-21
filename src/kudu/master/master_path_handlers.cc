@@ -389,13 +389,19 @@ void MasterPathHandlers::HandleMasters(const Webserver::WebRequest& /*req*/,
   }
   output->Set("even_masters", masters.size() % 2 == 0);
   output->Set("masters", EasyJson::kArray);
+  output->Set("errors", EasyJson::kArray);
+  output->Set("has_no_errors", true);
   for (const ServerEntryPB& master : masters) {
-    EasyJson master_json = (*output)["masters"].PushBack(EasyJson::kObject);
     if (master.has_error()) {
+      output->Set("has_no_errors", false);
+      EasyJson error_json = (*output)["errors"].PushBack(EasyJson::kObject);
       Status error = StatusFromPB(master.error());
-      master_json["error"] = error.ToString();
+      error_json["uuid"] = master.has_instance_id() ?
+                           master.instance_id().permanent_uuid() : "Unavailable";
+      error_json["error"] = error.ToString();
       continue;
     }
+    EasyJson master_json = (*output)["masters"].PushBack(EasyJson::kObject);
     const ServerRegistrationPB& reg = master.registration();
     master_json["uuid"] = master.instance_id().permanent_uuid();
     if (!reg.http_addresses().empty()) {

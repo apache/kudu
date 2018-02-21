@@ -27,7 +27,7 @@ under the License.
   </div>
 {{/even_masters}}
 {{^error}}
-  <h2>Masters</h2>
+  <h2>Live Masters</h2>
   <table class='table table-striped'>
     <thead><tr>
       <th>UUID</th>
@@ -37,16 +37,28 @@ under the License.
     <tbody>
     {{#masters}}
       <tr>
-        {{#error}}
-          <td colspan=2><b style="color:red">{{error}}</b></td>
-        {{/error}}
-        {{^error}}
           <td>{{#target}}<a href="{{.}}">{{/target}}{{uuid}}{{#target}}</a>{{/target}}</td>
           <td>{{role}}</td>
           <td><pre><code>{{registration}}</code></pre></td>
-        {{/error}}
       </tr>
     {{/masters}}
     </tbody>
   </table>
+  {{^has_no_errors}}
+  <h2>Errors</h2>
+  <table class='table table-striped'>
+    <thead><tr>
+      <th>UUID</th>
+      <th>Error</th>
+    </tr></thead>
+    <tbody>
+    {{#errors}}
+      <tr>
+        <td>{{uuid}}</td>
+        <td><pre><code>{{error}}</code></pre></td>
+      </tr>
+    {{/errors}}
+    </tbody>
+  </table>
+  {{/has_no_errors}}
 {{/error}}

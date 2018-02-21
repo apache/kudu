@@ -18,10 +18,8 @@
 #include "kudu/master/master.h"
 
 #include <algorithm>
-#include <iterator>
 #include <memory>
 #include <ostream>
-#include <set>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -38,7 +36,6 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"
-#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/move.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -308,34 +305,46 @@ Status Master::ListMasters(std::vector<ServerEntryPB>* masters) const {
     local_entry.mutable_instance_id()->CopyFrom(catalog_manager_->NodeInstance());
     RETURN_NOT_OK(GetMasterRegistration(local_entry.mutable_registration()));
     local_entry.set_role(RaftPeerPB::LEADER);
-    masters->push_back(local_entry);
+    masters->emplace_back(std::move(local_entry));
     return Status::OK();
   }
 
-  // Since --master_addresses may contain duplicates, including different names
-  // for the same server, we deduplicate the masters by UUID here.
-  auto uuid_cmp = [](const ServerEntryPB& left, const ServerEntryPB& right) {
-    return left.instance_id().permanent_uuid() < right.instance_id().permanent_uuid();
-  };
-  std::set<ServerEntryPB, decltype(uuid_cmp)> masters_by_uuid(uuid_cmp);
-  for (const HostPort& peer_addr : opts_.master_addresses) {
+  RETURN_NOT_OK(catalog_manager_->CheckOnline());
+  auto consensus = catalog_manager_->sys_catalog()->tablet_replica()->shared_consensus();
+  if (!consensus) {
+    return Status::IllegalState("consensus not running");
+  }
+  const auto config = consensus->CommittedConfig();
+
+  masters->clear();
+  for (const auto& peer : config.peers()) {
     ServerEntryPB peer_entry;
-    Status s = GetMasterEntryForHost(messenger_, peer_addr, &peer_entry);
+    HostPort hp;
+    Status s = HostPortFromPB(peer.last_known_addr(), &hp).AndThen([&] {
+      return GetMasterEntryForHost(messenger_, hp, &peer_entry);
+    });
     if (!s.ok()) {
       s = s.CloneAndPrepend(
-          Substitute("Unable to get registration information for peer ($0)",
-                     peer_addr.ToString()));
+          Substitute("Unable to get registration information for peer $0 ($1)",
+                     peer.permanent_uuid(),
+                     hp.ToString()));
       LOG(WARNING) << s.ToString();
       StatusToPB(s, peer_entry.mutable_error());
+    } else if (peer_entry.instance_id().permanent_uuid() != peer.permanent_uuid()) {
+      StatusToPB(Status::IllegalState(
+          Substitute("mismatched UUIDs: expected UUID $0 from master at $1, but got UUID $2",
+                     peer.permanent_uuid(),
+                     hp.ToString(),
+                     peer_entry.instance_id().permanent_uuid())),
+                 peer_entry.mutable_error());
     }
-    InsertIfNotPresent(&masters_by_uuid, peer_entry);
+    masters->emplace_back(std::move(peer_entry));
   }
-
-  std::copy(masters_by_uuid.begin(), masters_by_uuid.end(), std::back_inserter(*masters));
   return Status::OK();
 }
 
 Status Master::GetMasterHostPorts(std::vector<HostPortPB>* hostports) const {
+  RETURN_NOT_OK(catalog_manager_->CheckOnline());
   auto consensus = catalog_manager_->sys_catalog()->tablet_replica()->shared_consensus();
   if (!consensus) {
     return Status::IllegalState("consensus not running");
@@ -359,7 +368,6 @@ Status Master::GetMasterHostPorts(std::vector<HostPortPB>* hostports) const {
   }
   return Status::OK();
 }
-
 
 } // namespace master
 } // namespace kudu
