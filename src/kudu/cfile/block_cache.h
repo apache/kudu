@@ -81,7 +81,7 @@ class BlockCache {
     PendingEntry(Cache* cache, Cache::PendingHandle* handle)
         : cache_(cache), handle_(handle) {
     }
-    PendingEntry(PendingEntry&& other) : PendingEntry() {
+    PendingEntry(PendingEntry&& other) noexcept : PendingEntry() {
       *this = std::move(other);
     }
 
@@ -89,7 +89,7 @@ class BlockCache {
       reset();
     }
 
-    PendingEntry& operator=(PendingEntry&& other);
+    PendingEntry& operator=(PendingEntry&& other) noexcept;
     PendingEntry& operator=(const PendingEntry& other) = delete;
 
     // Free the pending entry back to the block cache.
@@ -224,7 +224,7 @@ class BlockCacheHandle {
 
 
 inline BlockCache::PendingEntry& BlockCache::PendingEntry::operator=(
-    BlockCache::PendingEntry&& other) {
+    BlockCache::PendingEntry&& other) noexcept {
   reset();
   cache_ = other.cache_;
   handle_ = other.handle_;

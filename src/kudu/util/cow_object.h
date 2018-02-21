@@ -205,13 +205,13 @@ class CowLock {
   CowLock& operator=(const CowLock&) = delete;
 
   // Allow moving.
-  CowLock(CowLock&& other)
+  CowLock(CowLock&& other) noexcept
     : cow_(other.cow_),
       mode_(other.mode_) {
     other.cow_ = nullptr;
     other.mode_ = LockMode::RELEASED;
   }
-  CowLock& operator=(CowLock&& other) {
+  CowLock& operator=(CowLock&& other) noexcept {
     cow_ = other.cow_;
     mode_ = other.mode_;
     other.cow_ = nullptr;

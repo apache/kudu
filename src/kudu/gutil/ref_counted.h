@@ -251,13 +251,13 @@ class scoped_refptr {
 
   // Move constructor. This is required in addition to the conversion
   // constructor below in order for clang to warn about pessimizing moves.
-  scoped_refptr(scoped_refptr&& r) : ptr_(r.get()) {
+  scoped_refptr(scoped_refptr&& r) noexcept : ptr_(r.get()) { // NOLINT
     r.ptr_ = nullptr;
   }
 
   // Move conversion constructor.
   template <typename U>
-  scoped_refptr(scoped_refptr<U>&& r) : ptr_(r.get()) {
+  scoped_refptr(scoped_refptr<U>&& r) noexcept : ptr_(r.get()) { // NOLINT
     r.ptr_ = nullptr;
   }
 

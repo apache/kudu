@@ -43,10 +43,10 @@ class BlockHandle {
     : is_data_owner_(false) { }
 
   // Move constructor and assignment
-  BlockHandle(BlockHandle&& other) {
+  BlockHandle(BlockHandle&& other) noexcept {
     TakeState(&other);
   }
-  BlockHandle& operator=(BlockHandle&& other) {
+  BlockHandle& operator=(BlockHandle&& other) noexcept {
     TakeState(&other);
     return *this;
   }

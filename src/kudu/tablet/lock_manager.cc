@@ -289,11 +289,11 @@ ScopedRowLock::ScopedRowLock(LockManager *manager,
   }
 }
 
-ScopedRowLock::ScopedRowLock(ScopedRowLock&& other) {
+ScopedRowLock::ScopedRowLock(ScopedRowLock&& other) noexcept {
   TakeState(&other);
 }
 
-ScopedRowLock& ScopedRowLock::operator=(ScopedRowLock&& other) {
+ScopedRowLock& ScopedRowLock::operator=(ScopedRowLock&& other) noexcept {
   TakeState(&other);
   return *this;
 }

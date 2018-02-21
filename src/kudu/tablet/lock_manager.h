@@ -104,8 +104,8 @@ class ScopedRowLock {
                 const Slice &key, LockManager::LockMode mode);
 
   // Move constructor and assignment.
-  ScopedRowLock(ScopedRowLock&& other);
-  ScopedRowLock& operator=(ScopedRowLock&& other);
+  ScopedRowLock(ScopedRowLock&& other) noexcept;
+  ScopedRowLock& operator=(ScopedRowLock&& other) noexcept;
 
   void Release();
 

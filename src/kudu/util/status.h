@@ -167,14 +167,14 @@ class KUDU_EXPORT Status {
   ///
   /// @param [in] s
   ///   rvalue reference to a Status object.
-  Status(Status&& s);
+  Status(Status&& s) noexcept;
 
   /// Assign the specified status using move semantics (C++11).
   ///
   /// @param [in] s
   ///   rvalue reference to a Status object.
   /// @return The reference to the modified object.
-  Status& operator=(Status&& s);
+  Status& operator=(Status&& s) noexcept;
 
   /// If this status is OK, calls 'op' and returns the result, otherwise returns
   /// this status.
@@ -474,11 +474,11 @@ inline Status& Status::operator=(const Status& s) {
 }
 
 #if __cplusplus >= 201103L
-inline Status::Status(Status&& s) : state_(s.state_) {
+inline Status::Status(Status&& s) noexcept : state_(s.state_) {
   s.state_ = nullptr;
 }
 
-inline Status& Status::operator=(Status&& s) {
+inline Status& Status::operator=(Status&& s) noexcept {
   if (state_ != s.state_) {
     delete[] state_;
     state_ = s.state_;
