@@ -689,6 +689,7 @@ void KuduClient::Data::ConnectedToClusterCb(
     if (status.ok()) {
       leader_master_hostport_ = HostPort(leader_hostname, leader_addr.port());
       master_proxy_.reset(new MasterServiceProxy(messenger_, leader_addr, leader_hostname));
+      master_proxy_->set_user_credentials(user_credentials_);
     }
   }
 
@@ -785,6 +786,7 @@ void KuduClient::Data::ConnectToClusterAsync(KuduClient* client,
         deadline,
         client->default_rpc_timeout(),
         messenger_,
+        user_credentials_,
         creds_policy));
 
     if (creds_policy == CredentialsPolicy::PRIMARY_CREDENTIALS) {

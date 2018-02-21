@@ -45,6 +45,7 @@
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/sasl_common.h"
+#include "kudu/rpc/user_credentials.h"
 #include "kudu/security/test/mini_kdc.h"
 #include "kudu/server/server_base.pb.h"
 #include "kudu/server/server_base.proxy.h"
@@ -569,11 +570,14 @@ Status ExternalMiniCluster::GetLeaderMasterIndex(int* idx) {
     }
     sync.StatusCB(status);
   };
+  rpc::UserCredentials user_credentials;
+  RETURN_NOT_OK(user_credentials.SetLoggedInRealUser());
   rpc.reset(new ConnectToClusterRpc(cb,
                                     std::move(addrs_with_names),
                                     deadline,
                                     MonoDelta::FromSeconds(5),
-                                    messenger_));
+                                    messenger_,
+                                    user_credentials));
   rpc->SendRpc();
   RETURN_NOT_OK(sync.Wait());
   bool found = false;

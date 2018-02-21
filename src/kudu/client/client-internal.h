@@ -33,6 +33,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/rpc/user_credentials.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
@@ -227,6 +228,10 @@ class KuduClient::Data {
 
   // The unique id of this client.
   std::string client_id_;
+
+  // The user credentials of the client. This field is constant after the client
+  // is built.
+  rpc::UserCredentials user_credentials_;
 
   // The request tracker for this client.
   scoped_refptr<rpc::RequestTracker> request_tracker_;

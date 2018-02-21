@@ -29,6 +29,7 @@
 #include "kudu/master/master.pb.h"
 #include "kudu/rpc/rpc.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/rpc/user_credentials.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 
@@ -85,6 +86,7 @@ class ConnectToClusterRpc : public rpc::Rpc,
                       MonoTime deadline,
                       MonoDelta rpc_timeout,
                       std::shared_ptr<rpc::Messenger> messenger,
+                      rpc::UserCredentials user_credentials,
                       rpc::CredentialsPolicy creds_policy =
       rpc::CredentialsPolicy::ANY_CREDENTIALS);
 
@@ -109,6 +111,9 @@ class ConnectToClusterRpc : public rpc::Rpc,
 
   // The addresses of the masters, along with their original specified names.
   const std::vector<std::pair<Sockaddr, std::string>> addrs_with_names_;
+
+  // The user credentials of the client.
+  const rpc::UserCredentials user_credentials_;
 
   // The amount of time alloted to each GetMasterRegistration RPC.
   const MonoDelta rpc_timeout_;

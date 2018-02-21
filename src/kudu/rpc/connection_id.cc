@@ -42,6 +42,7 @@ ConnectionId::ConnectionId(const Sockaddr& remote,
 }
 
 void ConnectionId::set_user_credentials(UserCredentials user_credentials) {
+  DCHECK(user_credentials.has_real_user());
   user_credentials_ = std::move(user_credentials);
 }
 

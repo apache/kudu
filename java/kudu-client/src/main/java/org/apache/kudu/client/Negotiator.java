@@ -92,7 +92,7 @@ import org.apache.kudu.util.SecurityUtil;
 public class Negotiator extends SimpleChannelUpstreamHandler {
   private static final Logger LOG = LoggerFactory.getLogger(Negotiator.class);
 
-  private static final SaslClientCallbackHandler SASL_CALLBACK = new SaslClientCallbackHandler();
+  private final SaslClientCallbackHandler SASL_CALLBACK = new SaslClientCallbackHandler();
   private static final Set<RpcHeader.RpcFeatureFlag> SUPPORTED_RPC_FEATURES =
       ImmutableSet.of(
           RpcHeader.RpcFeatureFlag.APPLICATION_FEATURE_FLAGS,
@@ -772,7 +772,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
 
     // The UserInformationPB is deprecated, but used by servers prior to Kudu 1.1.
     RpcHeader.UserInformationPB.Builder userBuilder = RpcHeader.UserInformationPB.newBuilder();
-    String user = System.getProperty("user.name");
+    String user = securityContext.getRealUser();
     userBuilder.setEffectiveUser(user);
     userBuilder.setRealUser(user);
     builder.setDEPRECATEDUserInfo(userBuilder.build());
@@ -826,11 +826,11 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
     }
   }
 
-  private static class SaslClientCallbackHandler implements CallbackHandler {
+  private class SaslClientCallbackHandler implements CallbackHandler {
     public void handle(Callback[] callbacks) throws UnsupportedCallbackException {
       for (Callback callback : callbacks) {
         if (callback instanceof NameCallback) {
-          ((NameCallback) callback).setName(System.getProperty("user.name"));
+          ((NameCallback) callback).setName(securityContext.getRealUser());
         } else if (callback instanceof PasswordCallback) {
           ((PasswordCallback) callback).setPassword(new char[0]);
         } else {

@@ -71,6 +71,9 @@ class SecurityContext {
   @Nullable
   private SignedTokenPB authnToken;
 
+  @GuardedBy("this")
+  private String realUser;
+
   private final DelegatedTrustManager trustManager = new DelegatedTrustManager();
 
   /**
@@ -107,7 +110,7 @@ class SecurityContext {
      * caller did not provide a Subject with appropriate credentials).
      */
     NONE
-  };
+  }
 
   @Nonnull
   private final SubjectType subjectType;
@@ -116,6 +119,7 @@ class SecurityContext {
    * The currently trusted CA certs, in DER format.
    */
   @VisibleForTesting
+  @GuardedBy("this")
   List<ByteString> trustedCertDers = Collections.emptyList();
 
   @GuardedBy("subjectLock")
@@ -129,6 +133,8 @@ class SecurityContext {
       Pair<SubjectType, Subject> p = setupSubject();
       this.subjectType = p.getFirst();
       this.subject = p.getSecond();
+
+      this.realUser = System.getProperty("user.name");
 
       this.sslContextWithCert = SSLContext.getInstance("TLS");
       sslContextWithCert.init(null, new TrustManager[] { trustManager }, null);
@@ -257,16 +263,19 @@ class SecurityContext {
     }
   }
 
+  public synchronized String getRealUser() {
+    return realUser;
+  }
+
   @Nullable
   public synchronized byte[] exportAuthenticationCredentials() {
-    if (authnToken == null || !hasTrustedCerts()) {
-      return null;
+    AuthenticationCredentialsPB.Builder pb = AuthenticationCredentialsPB.newBuilder();
+    pb.setRealUser(realUser);
+    if (authnToken != null) {
+      pb.setAuthnToken(authnToken);
     }
-
-    return AuthenticationCredentialsPB.newBuilder()
-        .setAuthnToken(authnToken)
-        .addAllCaCertDers(trustedCertDers)
-        .build().toByteArray();
+    pb.addAllCaCertDers(trustedCertDers);
+    return pb.build().toByteArray();
   }
 
   private static String getUserFromToken(SignedTokenPB token)
@@ -290,19 +299,23 @@ class SecurityContext {
   public synchronized void importAuthenticationCredentials(byte[] authnData) {
     try {
       AuthenticationCredentialsPB pb = AuthenticationCredentialsPB.parseFrom(authnData);
-      if (authnToken != null) {
+      if (pb.hasAuthnToken() && authnToken != null) {
+        // TODO(todd): also check that, if there is a JAAS subject, that
+        // the subject in the imported authn token matches the Kerberos
+        // principal in the JAAS subject. Alternatively, this could
+        // completely disable the JAAS authentication path (assumedly if
+        // we import a token, we want to _only_ act as the user in that
+        // token, and would rather have a connection failure than flip
+        // back to GSSAPI transparently).
         checkUserMatches(authnToken, pb.getAuthnToken());
       }
-      // TODO(todd): also check that, if there is a JAAS subject, that
-      // the subject in the imported authn token matces the Kerberos
-      // principal in the JAAS subject. Alternatively, this could
-      // completely disable the JAAS authentication path (assumedly if
-      // we import a token, we want to _only_ act as the user in that
-      // token, and would rather have a connection failure than flip
-      // back to GSSAPI transparently.
-      trustCertificates(pb.getCaCertDersList());
-      authnToken = pb.getAuthnToken();
 
+      authnToken = pb.getAuthnToken();
+      trustCertificates(pb.getCaCertDersList());
+
+      if (pb.hasRealUser()) {
+        realUser = pb.getRealUser();
+      }
     } catch (InvalidProtocolBufferException | CertificateException e) {
       throw new IllegalArgumentException(e);
     }
