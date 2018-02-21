@@ -132,6 +132,10 @@ void ServicePool::RejectTooBusy(InboundCall* c) {
                     Status::ServiceUnavailable(err_msg));
   DLOG(INFO) << err_msg << " Contents of service queue:\n"
              << service_queue_.ToString();
+
+  if (too_busy_hook_) {
+    too_busy_hook_();
+  }
 }
 
 RpcMethodInfo* ServicePool::LookupMethod(const RemoteMethod& method) {

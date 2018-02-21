@@ -44,6 +44,7 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/rolling_log.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
 
@@ -113,6 +114,12 @@ void DiagnosticsLog::SetMetricsLogInterval(MonoDelta interval) {
   metrics_log_interval_ = interval;
 }
 
+void DiagnosticsLog::DumpStacksNow(std::string reason) {
+  MutexLock l(lock_);
+  dump_stacks_now_reason_ = std::move(reason);
+  wake_.Signal();
+}
+
 
 Status DiagnosticsLog::Start() {
   unique_ptr<RollingLog> l(new RollingLog(Env::Default(), log_dir_, "diagnostics"));
@@ -152,8 +159,18 @@ void DiagnosticsLog::RunThread() {
   MonoTime next_log = MonoTime::Now();
   while (!stop_) {
     wake_.TimedWait(next_log - MonoTime::Now());
-    if (MonoTime::Now() > next_log) {
-      Status s = LogMetrics();
+    bool reached_time = MonoTime::Now() > next_log;
+
+    if (reached_time) {
+      Status s;
+      {
+        // Unlock the mutex while actually logging metrics since it's somewhat
+        // slow and we don't want to block threads trying to signal us.
+        l.Unlock();
+        SCOPED_CLEANUP({ l.Lock(); });
+        s = LogMetrics();
+      }
+
       if (!s.ok()) {
         WARN_NOT_OK(s, Substitute(
             "Unable to collect metrics to diagnostics log. Will try again in $0",
@@ -162,21 +179,31 @@ void DiagnosticsLog::RunThread() {
       } else {
         next_log = MonoTime::Now() + metrics_log_interval_;
       }
+    }
 
-      if (FLAGS_diagnostics_log_stack_traces) {
-        s = LogStacks();
-        if (!s.ok()) {
-          WARN_NOT_OK(s, "Unable to collect stacks to diagnostics log");
-          next_log = MonoTime::Now() + kWaitBetweenFailures;
-        } else {
-          next_log = MonoTime::Now() + metrics_log_interval_;
-        }
+    if ((reached_time && FLAGS_diagnostics_log_stack_traces) ||
+        dump_stacks_now_reason_) {
+      string reason = dump_stacks_now_reason_.value_or("periodic");
+      Status s;
+      {
+        // Unlock the mutex while actually logging stacks since it's somewhat
+        // slow and we don't want to block threads trying to signal us.
+        l.Unlock();
+        SCOPED_CLEANUP({ l.Lock(); });
+        s = LogStacks(reason);
       }
+      if (!s.ok()) {
+        WARN_NOT_OK(s, "Unable to collect stacks to diagnostics log");
+        next_log = MonoTime::Now() + kWaitBetweenFailures;
+      } else {
+        next_log = MonoTime::Now() + metrics_log_interval_;
+      }
+      dump_stacks_now_reason_ = boost::none;
     }
   }
 }
 
-Status DiagnosticsLog::LogStacks() {
+Status DiagnosticsLog::LogStacks(const string& reason) {
   StackTraceSnapshot snap;
   snap.set_capture_thread_names(false);
   RETURN_NOT_OK(snap.SnapshotAllStacks());
@@ -228,7 +255,7 @@ Status DiagnosticsLog::LogStacks() {
   JsonWriter jw(&buf, JsonWriter::COMPACT);
   jw.StartObject();
   jw.String("reason");
-  jw.String("periodic");
+  jw.String(reason);
   jw.String("groups");
   jw.StartArray();
   snap.VisitGroups([&](ArrayView<StackTraceSnapshot::ThreadInfo> group) {

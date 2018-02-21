@@ -66,6 +66,10 @@ class MiniMaster {
 
   std::string bound_rpc_addr_str() const;
 
+  MasterOptions* mutable_options() {
+    return &opts_;
+  }
+
  private:
   const std::string fs_root_;
   const HostPort rpc_bind_addr_;

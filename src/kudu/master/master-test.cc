@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <algorithm>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -27,6 +28,7 @@
 #include <utility>
 #include <vector>
 
+#include <boost/bind.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -45,11 +47,14 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/strings/util.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
+#include "kudu/master/master_options.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/master/sys_catalog.h"
 #include "kudu/master/ts_descriptor.h"
@@ -59,9 +64,11 @@
 #include "kudu/security/tls_context.h"
 #include "kudu/security/token.pb.h"
 #include "kudu/security/token_verifier.h"
+#include "kudu/server/rpc_server.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/curl_util.h"
+#include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
@@ -93,6 +100,7 @@ using strings::Substitute;
 DECLARE_bool(catalog_manager_check_ts_count_for_create_table);
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 DECLARE_double(sys_catalog_fail_during_write);
+DECLARE_int32(master_inject_latency_on_tablet_lookups_ms);
 
 namespace kudu {
 namespace master {
@@ -788,6 +796,48 @@ TEST_F(MasterTest, TestInvalidGetTableLocations) {
               SecureShortDebugString(resp.error().status()));
   }
 }
+
+// Test that, if the master's RPC service queue overflows, thread stack traces
+// are dumped to the diagnostics log.
+TEST_F(MasterTest, TestDumpStacksOnRpcQueueOverflow) {
+  mini_master_->mutable_options()->rpc_opts.num_service_threads = 1;
+  mini_master_->mutable_options()->rpc_opts.service_queue_length = 1;
+  FLAGS_master_inject_latency_on_tablet_lookups_ms = 1000;
+  FLAGS_log_dir = GetTestDataDirectory();
+  mini_master_->Shutdown();
+  ASSERT_OK(mini_master_->Restart());
+  ASSERT_OK(mini_master_->master()->
+      WaitUntilCatalogManagerIsLeaderAndReadyForTests(MonoDelta::FromSeconds(5)));
+
+  // Send a bunch of RPCs which will cause the service queue to overflow. We can send a
+  // bogus request since the latency will be injected even if the table doesn't exist.
+  GetTableLocationsRequestPB req;
+  req.mutable_table()->set_table_name("abc");
+  const int kNumRpcs = 20;
+  GetTableLocationsResponsePB resps[kNumRpcs];
+  RpcController rpcs[kNumRpcs];
+  CountDownLatch latch(kNumRpcs);
+  for (int i = 0; i < kNumRpcs; i++) {
+    proxy_->GetTableLocationsAsync(req, &resps[i], &rpcs[i],
+                                   boost::bind(&CountDownLatch::CountDown, &latch));
+  }
+  latch.Wait();
+
+  // Ensure that the metrics log contains a single trace dump for the overflowed service
+  // queue. Even though we may have overflowed the queue many times, we throttle the dumping
+  // so there should only be one.
+  vector<string> log_paths;
+  ASSERT_OK(env_->Glob(FLAGS_log_dir + "/*diagnostics*", &log_paths));
+  ASSERT_EQ(1, log_paths.size());
+  faststring log_contents;
+  ASSERT_OK(ReadFileToString(env_, log_paths[0], &log_contents));
+  vector<string> lines = strings::Split(log_contents.ToString(), "\n");
+  int dump_count = std::count_if(lines.begin(), lines.end(), [](const string& line) {
+      return MatchPattern(line, "*service queue overflowed for kudu.master.MasterService*");
+    });
+  ASSERT_EQ(dump_count, 1) << log_contents.ToString();
+}
+
 
 // Tests that if the master is shutdown while a table visitor is active, the
 // shutdown waits for the visitor to finish, avoiding racing and crashing.

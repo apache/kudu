@@ -20,6 +20,8 @@
 #include <memory>
 #include <string>
 
+#include <boost/optional/optional.hpp>
+
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/condition_variable.h"
@@ -45,12 +47,18 @@ class DiagnosticsLog {
   Status Start();
   void Stop();
 
+  // Dump the stacks of the whole process immediately.
+  //
+  // NOTE: the actual stack-dumping is asynchronously performed on another thread. Thus,
+  // this is suitable for running in a performance-sensitive context.
+  void DumpStacksNow(std::string reason);
+
  private:
   class SymbolSet;
 
   void RunThread();
   Status LogMetrics();
-  Status LogStacks();
+  Status LogStacks(const std::string& reason);
 
   const std::string log_dir_;
   const MetricRegistry* metric_registry_;
@@ -61,6 +69,11 @@ class DiagnosticsLog {
   Mutex lock_;
   ConditionVariable wake_;
   bool stop_ = false;
+
+  // If a stack dump is triggered externally, holds the reason why.
+  // Otherwise, unset.
+  // Protected by 'lock_'.
+  boost::optional<std::string> dump_stacks_now_reason_;
 
   MonoDelta metrics_log_interval_;
 

@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <functional>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -150,6 +151,12 @@ Status RpcServer::RegisterService(gscoped_ptr<rpc::ServiceIf> service) {
     new rpc::ServicePool(std::move(service), messenger_->metric_entity(),
                          options_.service_queue_length);
   RETURN_NOT_OK(service_pool->Init(options_.num_service_threads));
+  auto* service_pool_raw_ptr = service_pool.get();
+  service_pool->set_too_busy_hook([this, service_pool_raw_ptr]() {
+      if (too_busy_hook_) {
+        too_busy_hook_(service_pool_raw_ptr);
+      }
+    });
   RETURN_NOT_OK(messenger_->RegisterService(service_name, service_pool));
   return Status::OK();
 }

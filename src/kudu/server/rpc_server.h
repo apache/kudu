@@ -14,20 +14,25 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_RPC_SERVER_H
-#define KUDU_RPC_SERVER_H
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
+
+#include <glog/logging.h>
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
+
+template <class T> class scoped_refptr;
 
 namespace kudu {
 
@@ -54,6 +59,16 @@ class RpcServer {
   explicit RpcServer(RpcServerOptions opts);
   ~RpcServer();
 
+  // Set a hook which will be called by any registered service when
+  // its queue overflows. The service pool itself will be passed
+  // as a parameter.
+  //
+  // REQUIRES: must be set before the server is started.
+  void set_too_busy_hook(std::function<void(rpc::ServicePool*)> hook) {
+    CHECK_NE(server_state_, STARTED);
+    too_busy_hook_ = std::move(hook);
+  }
+
   Status Init(const std::shared_ptr<rpc::Messenger>& messenger) WARN_UNUSED_RESULT;
   // Services need to be registered after Init'ing, but before Start'ing.
   // The service's ownership will be given to a ServicePool.
@@ -73,6 +88,11 @@ class RpcServer {
   Status GetAdvertisedAddresses(std::vector<Sockaddr>* addresses) const WARN_UNUSED_RESULT;
 
   const rpc::ServicePool* service_pool(const std::string& service_name) const;
+
+  // Return all of the currently-registered service pools.
+  //
+  // This is not thread-safe against concurrent calls to RegisterService().
+  std::vector<scoped_refptr<rpc::ServicePool>> service_pools() const;
 
  private:
   enum ServerState {
@@ -99,9 +119,10 @@ class RpcServer {
 
   std::vector<std::shared_ptr<rpc::AcceptorPool> > acceptor_pools_;
 
+  // Function called when one of this server's pools rejects an RPC due to queue overflow.
+  std::function<void(rpc::ServicePool*)> too_busy_hook_;
+
   DISALLOW_COPY_AND_ASSIGN(RpcServer);
 };
 
 } // namespace kudu
-
-#endif

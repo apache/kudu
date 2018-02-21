@@ -18,6 +18,7 @@
 #include "kudu/server/server_base.h"
 
 #include <cstdint>
+#include <functional>
 #include <sstream>
 #include <string>
 #include <type_traits>
@@ -40,6 +41,7 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/fs/fs_report.h"
 #include "kudu/gutil/move.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
@@ -47,6 +49,7 @@
 #include "kudu/rpc/result_tracker.h"
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/rpc/service_if.h"
+#include "kudu/rpc/service_pool.h"
 #include "kudu/security/init.h"
 #include "kudu/security/security_flags.h"
 #include "kudu/server/default_path_handlers.h"
@@ -469,6 +472,8 @@ Status ServerBase::Init() {
          .enable_inbound_tls();
 
   RETURN_NOT_OK(builder.Build(&messenger_));
+  rpc_server_->set_too_busy_hook(std::bind(
+      &ServerBase::ServiceQueueOverflowed, this, std::placeholders::_1));
 
   RETURN_NOT_OK(rpc_server_->Init(messenger_));
   RETURN_NOT_OK(rpc_server_->Bind());
@@ -658,7 +663,6 @@ Status ServerBase::Start() {
 
   RETURN_NOT_OK(RegisterService(make_gscoped_ptr<rpc::ServiceIf>(
                                   new GenericServiceImpl(this))));
-
   RETURN_NOT_OK(rpc_server_->Start());
 
   if (web_server_) {
@@ -704,6 +708,23 @@ void ServerBase::Shutdown() {
 
 void ServerBase::UnregisterAllServices() {
   messenger_->UnregisterAllServices();
+}
+
+void ServerBase::ServiceQueueOverflowed(rpc::ServicePool* service) {
+  if (!diag_log_) return;
+
+  // Logging all of the stacks is relatively heavy-weight, so if we are in a persistent
+  // state of overload, it's probably not a good idea to start compounding the issue with
+  // a lot of stack-logging activity. So, we limit the frequency of stack-dumping.
+  static logging::LogThrottler throttler;
+  const int kStackDumpFrequencySecs = 5;
+  int suppressed = 0;
+  if (PREDICT_TRUE(!throttler.ShouldLog(kStackDumpFrequencySecs, "", &suppressed))) {
+    return;
+  }
+
+  diag_log_->DumpStacksNow(Substitute("service queue overflowed for $0",
+                                      service->service_name()));
 }
 
 } // namespace server

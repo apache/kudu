@@ -52,6 +52,7 @@ namespace rpc {
 class ResultTracker;
 class RpcContext;
 class ServiceIf;
+class ServicePool;
 } // namespace rpc
 
 namespace security {
@@ -194,6 +195,9 @@ class ServerBase {
   Status StartMetricsLogging();
   void MetricsLoggingThread();
   std::string FooterHtml() const;
+
+  // Callback from the RPC system when a service queue has overflowed.
+  void ServiceQueueOverflowed(rpc::ServicePool* service);
 
   // Start thread to remove excess glog and minidump files.
   Status StartExcessLogFileDeleterThread();
