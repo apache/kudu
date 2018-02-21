@@ -297,11 +297,12 @@ void Peer::ProcessResponse() {
   MAYBE_FAULT(FLAGS_fault_crash_after_leader_request_fraction);
 
   // Process RpcController errors.
-  if (!controller_.status().ok()) {
-    auto ps = controller_.status().IsRemoteError() ?
+  const auto controller_status = controller_.status();
+  if (!controller_status.ok()) {
+    auto ps = controller_status.IsRemoteError() ?
         PeerStatus::REMOTE_ERROR : PeerStatus::RPC_LAYER_ERROR;
-    queue_->UpdatePeerStatus(peer_pb_.permanent_uuid(), ps, controller_.status());
-    ProcessResponseError(controller_.status());
+    queue_->UpdatePeerStatus(peer_pb_.permanent_uuid(), ps, controller_status);
+    ProcessResponseError(controller_status);
     return;
   }
 
@@ -404,8 +405,9 @@ void Peer::ProcessTabletCopyResponse() {
   request_pending_ = false;
 
   // If the response is OK, or ALREADY_INPROGRESS, then consider the RPC successful.
+  const auto controller_status = controller_.status();
   bool success =
-    controller_.status().ok() &&
+    controller_status.ok() &&
     (!tc_response_.has_error() ||
      tc_response_.error().code() == TabletServerErrorPB::TabletServerErrorPB::ALREADY_INPROGRESS);
 
@@ -417,9 +419,9 @@ void Peer::ProcessTabletCopyResponse() {
     // THROTTLED is a common response after a tserver with many replicas fails;
     // logging it would generate a great deal of log spam.
     LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Unable to begin Tablet Copy on peer: "
-                                      << (controller_.status().ok() ?
+                                      << (controller_status.ok() ?
                                           SecureShortDebugString(tc_response_) :
-                                          controller_.status().ToString());
+                                          controller_status.ToString());
   }
 }
 
