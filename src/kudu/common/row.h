@@ -343,8 +343,27 @@ class DeltaProjector {
 template <class RowType, class ArenaType>
 inline Status RelocateIndirectDataToArena(RowType *row, ArenaType *dst_arena) {
   const Schema* schema = row->schema();
-  // For any Slice columns, copy the sliced data into the arena
-  // and update the pointers
+  // First calculate the total size we'll need to allocate in the arena.
+  int size = 0;
+  for (int i = 0; i < schema->num_columns(); i++) {
+    typename RowType::Cell cell = row->cell(i);
+    if (cell.typeinfo()->physical_type() == BINARY) {
+      if (cell.is_nullable() && cell.is_null()) {
+        continue;
+      }
+
+      const Slice *slice = reinterpret_cast<const Slice *>(cell.ptr());
+      size += slice->size();
+    }
+  }
+  if (size == 0) return Status::OK();
+
+  // Then allocate it in one shot and copy the actual data.
+  // Even though Arena allocation is cheap, a row may have hundreds of
+  // small string columns and each operation is at least one CAS. With
+  // many concurrent threads copying into a single arena, this avoids
+  // a lot of contention.
+  uint8_t* dst = static_cast<uint8_t*>(dst_arena->AllocateBytes(size));
   for (int i = 0; i < schema->num_columns(); i++) {
     typename RowType::Cell cell = row->cell(i);
     if (cell.typeinfo()->physical_type() == BINARY) {
@@ -353,9 +372,8 @@ inline Status RelocateIndirectDataToArena(RowType *row, ArenaType *dst_arena) {
       }
 
       Slice *slice = reinterpret_cast<Slice *>(cell.mutable_ptr());
-      if (!dst_arena->RelocateSlice(*slice, slice)) {
-        return Status::IOError("Unable to relocate slice");
-      }
+      slice->relocate(dst);
+      dst += slice->size();
     }
   }
   return Status::OK();
