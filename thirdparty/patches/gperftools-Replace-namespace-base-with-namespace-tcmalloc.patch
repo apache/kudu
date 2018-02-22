@@ -1,49 +1,52 @@
-From c63fd16547503fb9d9b0a3e35e16a1a66fbfeaa0 Mon Sep 17 00:00:00 2001
+From 181843b0ecddcc8c8be912cf3c035e27e2f63842 Mon Sep 17 00:00:00 2001
 From: Todd Lipcon <todd@cloudera.com>
-Date: Tue, 23 Jan 2018 11:25:50 -0800
-Subject: [PATCH 1/1] Replace namespace base with namespace tcmalloc
+Date: Mon, 5 Feb 2018 21:19:54 -0800
+Subject: [PATCH 3/3] Substitute namespaces
 
+perl -p -i -e 's,base::,tcmalloc::,g' $(find . -name *.h -o -name \*.cc)
+perl -p -i -e 's,namespace base,namespace tcmalloc,g' $(find . -name *.h -o -name \*.cc)
 ---
- src/base/atomicops-internals-arm-generic.h |  6 +-
- src/base/atomicops-internals-arm-v6plus.h  |  4 +-
- src/base/atomicops-internals-gcc.h         |  6 +-
- src/base/atomicops-internals-linuxppc.h    |  6 +-
- src/base/atomicops-internals-macosx.h      |  8 +--
- src/base/atomicops-internals-mips.h        |  6 +-
- src/base/atomicops-internals-windows.h     | 14 ++---
- src/base/atomicops-internals-x86.h         |  6 +-
- src/base/atomicops.h                       | 92 +++++++++++++++---------------
- src/base/basictypes.h                      |  8 +--
- src/base/elf_mem_image.cc                  |  4 +-
- src/base/elf_mem_image.h                   |  4 +-
- src/base/spinlock.cc                       | 16 +++---
- src/base/spinlock.h                        | 14 ++---
- src/base/spinlock_internal.cc              | 18 +++---
- src/base/spinlock_internal.h               |  4 +-
- src/base/spinlock_linux-inl.h              |  6 +-
- src/base/spinlock_posix-inl.h              |  6 +-
- src/base/spinlock_win32-inl.h              |  6 +-
- src/base/vdso_support.cc                   |  4 +-
- src/base/vdso_support.h                    |  4 +-
- src/central_freelist.h                     |  2 +-
- src/emergency_malloc.cc                    |  2 +-
- src/gperftools/malloc_extension.h          |  8 +--
- src/heap-profile-table.cc                  |  2 +-
- src/internal_logging.cc                    |  2 +-
- src/malloc_hook-inl.h                      | 44 +++++++-------
- src/malloc_hook.cc                         | 60 +++++++++----------
- src/page_heap.cc                           | 10 ++--
- src/page_heap.h                            |  4 +-
- src/raw_printer.cc                         |  2 +-
- src/raw_printer.h                          |  2 +-
- src/stacktrace_powerpc-linux-inl.h         |  4 +-
- src/stacktrace_x86-inl.h                   |  6 +-
- src/tcmalloc.cc                            | 10 ++--
- src/tests/atomicops_unittest.cc            | 36 ++++++------
- src/tests/malloc_hook_test.cc              |  4 +-
- src/tests/raw_printer_test.cc              |  8 +--
- src/tests/tcmalloc_unittest.cc             | 28 ++++-----
- 39 files changed, 238 insertions(+), 238 deletions(-)
+ src/base/atomicops-internals-arm-generic.h |    6 +-
+ src/base/atomicops-internals-arm-v6plus.h  |    4 +-
+ src/base/atomicops-internals-gcc.h         |    6 +-
+ src/base/atomicops-internals-linuxppc.h    |    6 +-
+ src/base/atomicops-internals-macosx.h      |    8 +-
+ src/base/atomicops-internals-mips.h        |    6 +-
+ src/base/atomicops-internals-windows.h     |   14 ++--
+ src/base/atomicops-internals-x86.h         |    6 +-
+ src/base/atomicops.h                       |   92 ++++++++++++++--------------
+ src/base/basictypes.h                      |    8 +-
+ src/base/elf_mem_image.cc                  |    4 +-
+ src/base/elf_mem_image.h                   |    4 +-
+ src/base/spinlock.cc                       |   16 +++---
+ src/base/spinlock.h                        |   14 ++--
+ src/base/spinlock_internal.cc              |   18 +++---
+ src/base/spinlock_internal.h               |    4 +-
+ src/base/spinlock_linux-inl.h              |    6 +-
+ src/base/spinlock_posix-inl.h              |    6 +-
+ src/base/spinlock_win32-inl.h              |    6 +-
+ src/base/vdso_support.cc                   |    4 +-
+ src/base/vdso_support.h                    |    4 +-
+ src/central_freelist.h                     |    2 +-
+ src/emergency_malloc.cc                    |    2 +-
+ src/gperftools/malloc_extension.h          |    8 +-
+ src/heap-profile-table.cc                  |    2 +-
+ src/internal_logging.cc                    |    2 +-
+ src/malloc_hook-inl.h                      |   44 +++++++-------
+ src/malloc_hook.cc                         |   60 +++++++++---------
+ src/page_heap.cc                           |   10 ++--
+ src/page_heap.h                            |    4 +-
+ src/page_heap_allocator.h                  |    4 +-
+ src/raw_printer.cc                         |    2 +-
+ src/raw_printer.h                          |    2 +-
+ src/stacktrace_powerpc-linux-inl.h         |    4 +-
+ src/stacktrace_x86-inl.h                   |    6 +-
+ src/tcmalloc.cc                            |   10 ++--
+ src/tests/atomicops_unittest.cc            |   36 ++++++------
+ src/tests/malloc_hook_test.cc              |    4 +-
+ src/tests/raw_printer_test.cc              |    8 +-
+ src/tests/tcmalloc_unittest.cc             |   28 ++++----
+ 40 files changed, 240 insertions(+), 240 deletions(-)
 
 diff --git a/src/base/atomicops-internals-arm-generic.h b/src/base/atomicops-internals-arm-generic.h
 index d0f9413..c81f1e6 100644
@@ -1296,10 +1299,10 @@ index 64c2165..1b0dcd0 100644
  // These are available as C bindings as well as C++, hence their
  // definition outside the MallocHook class.
 diff --git a/src/page_heap.cc b/src/page_heap.cc
-index 0dda58f..fa16001 100644
+index 712732a..c1c7ed3 100644
 --- a/src/page_heap.cc
 +++ b/src/page_heap.cc
-@@ -554,7 +554,7 @@ void PageHeap::GetLargeSpanStats(LargeSpanStats* result) {
+@@ -582,7 +582,7 @@ void PageHeap::GetLargeSpanStats(LargeSpanStats* result) {
    }
  }
  
@@ -1308,7 +1311,7 @@ index 0dda58f..fa16001 100644
    Span* span = reinterpret_cast<Span*>(pagemap_.Next(start));
    if (span == NULL) {
      return false;
-@@ -564,7 +564,7 @@ bool PageHeap::GetNextRange(PageID start, base::MallocRange* r) {
+@@ -592,7 +592,7 @@ bool PageHeap::GetNextRange(PageID start, base::MallocRange* r) {
    r->fraction = 0;
    switch (span->location) {
      case Span::IN_USE:
@@ -1317,7 +1320,7 @@ index 0dda58f..fa16001 100644
        r->fraction = 1;
        if (span->sizeclass > 0) {
          // Only some of the objects in this span may be in use.
-@@ -573,13 +573,13 @@ bool PageHeap::GetNextRange(PageID start, base::MallocRange* r) {
+@@ -601,13 +601,13 @@ bool PageHeap::GetNextRange(PageID start, base::MallocRange* r) {
        }
        break;
      case Span::ON_NORMAL_FREELIST:
@@ -1335,7 +1338,7 @@ index 0dda58f..fa16001 100644
    }
    return true;
 diff --git a/src/page_heap.h b/src/page_heap.h
-index b688512..91b7587 100644
+index 34f18bb..c040b2d 100644
 --- a/src/page_heap.h
 +++ b/src/page_heap.h
 @@ -65,7 +65,7 @@
@@ -1356,6 +1359,28 @@ index b688512..91b7587 100644
  
    // Page heap statistics
    struct Stats {
+diff --git a/src/page_heap_allocator.h b/src/page_heap_allocator.h
+index 440b8ad..bc60a21 100644
+--- a/src/page_heap_allocator.h
++++ b/src/page_heap_allocator.h
+@@ -163,7 +163,7 @@ class STLPageHeapAllocator {
+ 
+  private:
+   struct Storage {
+-    explicit Storage(base::LinkerInitialized x) {}
++    explicit Storage(tcmalloc::LinkerInitialized x) {}
+     PageHeapAllocator<T> allocator;
+     bool initialized;
+   };
+@@ -171,7 +171,7 @@ class STLPageHeapAllocator {
+ };
+ 
+ template<typename T, class LockingTag>
+-typename STLPageHeapAllocator<T, LockingTag>::Storage STLPageHeapAllocator<T, LockingTag>::underlying_(base::LINKER_INITIALIZED);
++typename STLPageHeapAllocator<T, LockingTag>::Storage STLPageHeapAllocator<T, LockingTag>::underlying_(tcmalloc::LINKER_INITIALIZED);
+ 
+ }  // namespace tcmalloc
+ 
 diff --git a/src/raw_printer.cc b/src/raw_printer.cc
 index 3cf028e..cdcf8a1 100644
 --- a/src/raw_printer.cc
@@ -1597,7 +1622,7 @@ index 2c7be6a..99a2f13 100644
    CHECK_EQ(string("hello world"), string(buffer));
    CHECK_EQ(11, printer.length());
 diff --git a/src/tests/tcmalloc_unittest.cc b/src/tests/tcmalloc_unittest.cc
-index 25b2e41..5b0a906 100644
+index a9c6429..9149fde 100644
 --- a/src/tests/tcmalloc_unittest.cc
 +++ b/src/tests/tcmalloc_unittest.cc
 @@ -853,21 +853,21 @@ namespace {
@@ -1666,5 +1691,5 @@ index 25b2e41..5b0a906 100644
  
  #ifndef DEBUGALLOCATION
 -- 
-1.8.3.1
+1.7.1
 
