@@ -18,10 +18,14 @@ import static org.junit.Assert.assertNotNull;
 
 import java.util.List;
 
+import com.stumbleupon.async.Deferred;
+
+import org.apache.kudu.master.Master.ConnectToMasterResponsePB;
 import org.apache.kudu.util.AssertHelpers.BooleanExpression;
 import org.apache.kudu.util.SecurityUtil;
 import org.junit.Assert;
 import org.junit.BeforeClass;
+import org.junit.Ignore;
 import org.junit.Test;
 
 public class TestSecurity extends BaseKuduTest {
@@ -76,8 +80,10 @@ public class TestSecurity extends BaseKuduTest {
   }
 
   /**
-   * Regression test for KUDU-2267, client with valid token but without valid
-   * Kerberos credentials should be able to connect to all the masters.
+   * Regression test for KUDU-2267 and KUDU-2319.
+   *
+   * A client with valid token but without valid Kerberos credentials
+   * should be able to connect to all the masters.
    */
   @Test
   public void testKudu2267() throws Exception {
@@ -96,9 +102,13 @@ public class TestSecurity extends BaseKuduTest {
             @Override
             public boolean get() throws Exception {
               ConnectToCluster connector = new ConnectToCluster(masterHostPorts);
-              connector.connectToMasters(newClient.asyncClient.getMasterTable(), null,
+              List<Deferred<ConnectToMasterResponsePB>> deferreds =
+                      connector.connectToMasters(newClient.asyncClient.getMasterTable(), null,
                       DEFAULT_SLEEP, Connection.CredentialsPolicy.ANY_CREDENTIALS);
-              connector.getDeferred().join();
+              // Wait for all Deferreds are called back.
+              for (Deferred<ConnectToMasterResponsePB> deferred : deferreds) {
+                deferred.join();
+              }
               List<Exception> s = connector.getExceptionsReceived();
               return s.size() == 0;
             }

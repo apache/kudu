@@ -159,13 +159,15 @@ final class ConnectToCluster {
   }
 
   @VisibleForTesting
-  void connectToMasters(KuduTable masterTable,
-                        KuduRpc<?> parentRpc,
-                        long defaultTimeoutMs,
-                        Connection.CredentialsPolicy credentialsPolicy) {
+  List<Deferred<ConnectToMasterResponsePB>> connectToMasters(
+      KuduTable masterTable,
+      KuduRpc<?> parentRpc,
+      long defaultTimeoutMs,
+      Connection.CredentialsPolicy credentialsPolicy) {
     // Try to connect to each master. The ConnectToCluster instance
     // waits until it gets a good response before firing the returned
     // deferred.
+    List<Deferred<ConnectToMasterResponsePB>> deferreds = new ArrayList<>();
     for (HostAndPort hostAndPort : masterAddrs) {
       Deferred<ConnectToMasterResponsePB> d;
       RpcProxy proxy = masterTable.getAsyncClient().newMasterRpcProxy(
@@ -179,7 +181,9 @@ final class ConnectToCluster {
         d = Deferred.fromError(new NonRecoverableException(statusIOE));
       }
       d.addCallbacks(callbackForNode(hostAndPort), errbackForNode(hostAndPort));
+      deferreds.add(d);
     }
+    return deferreds;
   }
 
   /**
