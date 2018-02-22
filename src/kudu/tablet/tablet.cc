@@ -1675,6 +1675,13 @@ Status Tablet::Compact(CompactFlags flags) {
 
 void Tablet::UpdateCompactionStats(MaintenanceOpStats* stats) {
 
+  if (mvcc_.GetCleanTimestamp() == Timestamp::kInitialTimestamp) {
+    KLOG_EVERY_N_SECS(WARNING, 30) << LogPrefix() <<  "Can't schedule compaction. Clean time has "
+                                   << "not been advanced past its initial value.";
+    stats->set_runnable(false);
+    return;
+  }
+
   // TODO: use workload statistics here to find out how "hot" the tablet has
   // been in the last 5 minutes, and somehow scale the compaction quality
   // based on that, so we favor hot tablets.
