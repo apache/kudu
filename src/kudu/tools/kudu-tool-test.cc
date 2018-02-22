@@ -73,6 +73,7 @@
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
+#include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/mini_cluster_fs_inspector.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
@@ -106,6 +107,7 @@
 #include "kudu/util/oid_generator.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/random.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/subprocess.h"
@@ -2408,6 +2410,75 @@ TEST_F(ToolTest, TestDumpFSWithNonDefaultMetadataDir) {
       opts.wal_root, opts.metadata_root), &stdout));
   SCOPED_TRACE(stdout);
   ASSERT_EQ(uuid, stdout);
+}
+
+TEST_F(ToolTest, TestReplaceTablet) {
+  constexpr int kNumTservers = 3;
+  constexpr int kNumTablets = 3;
+  constexpr int kNumRows = 1000;
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  ExternalMiniClusterOptions opts;
+  opts.num_tablet_servers = kNumTservers;
+  NO_FATALS(StartExternalMiniCluster(std::move(opts)));
+
+  // Setup a table using TestWorkload.
+  TestWorkload workload(cluster_.get());
+  workload.set_num_tablets(kNumTablets);
+  workload.set_num_replicas(kNumTservers);
+  workload.Setup();
+
+  // Insert some rows.
+  workload.Start();
+  while (workload.rows_inserted() < kNumRows) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  workload.StopAndJoin();
+
+  // Pick a tablet to break.
+  vector<string> tablet_ids;
+  TServerDetails* ts = ts_map_[cluster_->tablet_server(0)->uuid()];
+  ASSERT_OK(ListRunningTabletIds(ts, kTimeout, &tablet_ids));
+  const string old_tablet_id = tablet_ids[Random(SeedRandom()).Uniform(tablet_ids.size())];
+
+  // Break the tablet by doing the following:
+  // 1. Tombstone two replicas.
+  // 2. Stop the tablet server hosting the third.
+  for (int i = 0; i < 2; i ++) {
+    ASSERT_OK(DeleteTablet(ts_map_[cluster_->tablet_server(i)->uuid()], old_tablet_id,
+                           TabletDataState::TABLET_DATA_TOMBSTONED, kTimeout));
+  }
+  cluster_->tablet_server(2)->Shutdown();
+
+  // Replace the tablet.
+  const string cmd = Substitute("tablet unsafe_replace_tablet $0 $1",
+                                cluster_->master()->bound_rpc_addr().ToString(),
+                                old_tablet_id);
+  string stderr;
+  NO_FATALS(RunActionStderrString(cmd, &stderr));
+  ASSERT_STR_CONTAINS(stderr, old_tablet_id);
+
+  // Restart the down tablet server.
+  ASSERT_OK(cluster_->tablet_server(2)->Restart());
+
+  // After replacement and a short delay, the new tablet should be present
+  // and the old tablet should be gone, leaving overall the same number of tablets.
+  ASSERT_EVENTUALLY([&]() {
+    for (int i = 0; i < kNumTservers; i++) {
+      ts = ts_map_[cluster_->tablet_server(i)->uuid()];
+      ASSERT_OK(ListRunningTabletIds(ts, kTimeout, &tablet_ids));
+      ASSERT_TRUE(std::none_of(tablet_ids.begin(), tablet_ids.end(),
+            [&](const string& tablet_id) -> bool { return tablet_id == old_tablet_id; }));
+    }
+  });
+
+  // The replaced tablet can self-heal because of tombstoned voting.
+  NO_FATALS(ClusterVerifier(cluster_.get()).CheckCluster());
+
+  // Sanity check: there should be no more rows than we inserted before the replace.
+  // TODO(wdberkeley): Should also be possible to keep inserting through a replace.
+  client::sp::shared_ptr<client::KuduTable> workload_table;
+  ASSERT_OK(workload.client()->OpenTable(workload.table_name(), &workload_table));
+  ASSERT_GE(workload.rows_inserted(), CountTableRows(workload_table.get()));
 }
 
 } // namespace tools

@@ -207,7 +207,7 @@ Status WaitForReplicasReportedToMaster(
     bool* has_leader,
     master::TabletLocationsPB* tablet_locations);
 
-// Wait until the last commited OpId has index exactly 'opid_index'.
+// Wait until the last committed OpId has index exactly 'opid_index'.
 Status WaitUntilCommittedOpIdIndexIs(int64_t opid_index,
                                      TServerDetails* replica,
                                      const std::string& tablet_id,

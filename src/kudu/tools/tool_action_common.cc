@@ -106,21 +106,26 @@ class ListMastersRequestPB;
 class ListMastersResponsePB;
 class ListTabletServersRequestPB;
 class ListTabletServersResponsePB;
+class ReplaceTabletRequestPB;
+class ReplaceTabletResponsePB;
 } // namespace master
 
 namespace tools {
 
+using client::KuduClient;
 using client::KuduClientBuilder;
 using consensus::ConsensusServiceProxy;
 using consensus::ReplicateMsg;
 using log::LogEntryPB;
 using log::LogEntryReader;
 using log::ReadableLogSegment;
-using master::ListTabletServersRequestPB;
-using master::ListTabletServersResponsePB;
 using master::ListMastersRequestPB;
 using master::ListMastersResponsePB;
+using master::ListTabletServersRequestPB;
+using master::ListTabletServersResponsePB;
 using master::MasterServiceProxy;
+using master::ReplaceTabletRequestPB;
+using master::ReplaceTabletResponsePB;
 using pb_util::SecureDebugString;
 using pb_util::SecureShortDebugString;
 using rpc::Messenger;
@@ -546,15 +551,20 @@ Status DataTable::PrintTo(ostream& out) const {
   return Status::OK();
 }
 
-Status LeaderMasterProxy::Init(const RunnerContext& context) {
-  const string& master_addrs_str = FindOrDie(context.required_args, kMasterAddressesArg);
-  auto master_addrs = strings::Split(master_addrs_str, ",");
-  auto timeout = MonoDelta::FromMilliseconds(FLAGS_timeout_ms);
+LeaderMasterProxy::LeaderMasterProxy(client::sp::shared_ptr<KuduClient> client) :
+  client_(std::move(client)) {
+}
 
+Status LeaderMasterProxy::Init(const vector<string>& master_addrs, const MonoDelta& timeout) {
   return KuduClientBuilder().master_server_addrs(master_addrs)
                             .default_rpc_timeout(timeout)
                             .default_admin_operation_timeout(timeout)
                             .Build(&client_);
+}
+
+Status LeaderMasterProxy::Init(const RunnerContext& context) {
+  const string& master_addrs = FindOrDie(context.required_args, kMasterAddressesArg);
+  return Init(strings::Split(master_addrs, ","), MonoDelta::FromMilliseconds(FLAGS_timeout_ms));
 }
 
 template<typename Req, typename Resp>
@@ -569,7 +579,7 @@ Status LeaderMasterProxy::SyncRpc(const Req& req,
                                              func_name, func, {});
 }
 
-// Explicit specialization for callers outside this compilation unit.
+// Explicit specializations for callers outside this compilation unit.
 template
 Status LeaderMasterProxy::SyncRpc(const ListTabletServersRequestPB& req,
                                   ListTabletServersResponsePB* resp,
@@ -585,6 +595,14 @@ Status LeaderMasterProxy::SyncRpc(const ListMastersRequestPB& req,
                                   const boost::function<Status(MasterServiceProxy*,
                                                                const ListMastersRequestPB&,
                                                                ListMastersResponsePB*,
+                                                               RpcController*)>& func);
+template
+Status LeaderMasterProxy::SyncRpc(const ReplaceTabletRequestPB& req,
+                                  ReplaceTabletResponsePB* resp,
+                                  const char* func_name,
+                                  const boost::function<Status(MasterServiceProxy*,
+                                                               const ReplaceTabletRequestPB&,
+                                                               ReplaceTabletResponsePB*,
                                                                RpcController*)>& func);
 
 const int ControlShellProtocol::kMaxMessageBytes = 1024 * 1024;

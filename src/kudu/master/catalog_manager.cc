@@ -4418,6 +4418,90 @@ Status CatalogManager::GetTabletLocations(const string& tablet_id,
   return BuildLocationsForTablet(tablet_info, filter, locs_pb);
 }
 
+Status CatalogManager::ReplaceTablet(const std::string& tablet_id, ReplaceTabletResponsePB* resp) {
+  leader_lock_.AssertAcquiredForReading();
+  RETURN_NOT_OK(CheckOnline());
+
+  // Lookup the tablet-to-be-replaced and get its table.
+  scoped_refptr<TabletInfo> old_tablet;
+  {
+    shared_lock<LockType> l(lock_);
+    if (!FindCopy(tablet_map_, tablet_id, &old_tablet)) {
+      return Status::NotFound(Substitute("Unknown tablet $0", tablet_id));
+    }
+  }
+  scoped_refptr<TableInfo> table = old_tablet->table();
+
+  // Lock the tablet-to-be-replaced (the "old" tablet).
+  // We don't need to lock the table because we are not modifying its TableInfo.
+  TabletMetadataLock l_old_tablet(old_tablet.get(), LockMode::WRITE);
+
+  // It's possible that between when we looked up the old tablet and when we
+  // acquired its lock that the old tablet was deleted.
+  if (old_tablet->metadata().state().is_deleted()) {
+    return Status::NotFound(Substitute("Tablet $0 already deleted", tablet_id));
+  }
+
+  // Create the TabletInfo for the replacement tablet.
+  const SysTabletsEntryPB& replaced_pb = l_old_tablet.data().pb;
+  scoped_refptr<TabletInfo> new_tablet(new TabletInfo(table, GenerateId()));
+  TabletMetadataLock l_new_tablet(new_tablet.get(), LockMode::WRITE);
+  SysTabletsEntryPB* new_metadata = &new_tablet->mutable_metadata()->mutable_dirty()->pb;
+  new_metadata->set_state(SysTabletsEntryPB::PREPARING);
+  new_metadata->mutable_partition()->CopyFrom(replaced_pb.partition());
+  new_metadata->set_table_id(table->id());
+
+  const string replace_msg = Substitute("replaced by tablet $0", new_tablet->id());
+  old_tablet->mutable_metadata()->mutable_dirty()->set_state(SysTabletsEntryPB::DELETED,
+                                                             replace_msg);
+
+  // Persist the changes to the syscatalog table.
+  SysCatalogTable::Actions actions;
+  actions.tablets_to_add.push_back(new_tablet);
+  actions.tablets_to_update.push_back(old_tablet);
+  Status s = sys_catalog_->Write(actions);
+  if (!s.ok()) {
+    s = s.CloneAndPrepend("an error occurred while writing to the sys-catalog");
+    LOG(WARNING) << s.ToString();
+    CheckIfNoLongerLeaderAndSetupError(s, resp);
+    return s;
+  }
+
+  // Now commit the in-memory state and modify the global tablet map.
+  // The order of operations here is based on AlterTable.
+
+  // Commit the in-memory state of the new tablet. This doesn't require the global
+  // lock because the new tablet is not visible yet.
+  l_new_tablet.Commit();
+
+  // Add the new tablet to the global tablet map.
+  {
+    std::lock_guard<LockType> l(lock_);
+    InsertOrDie(&tablet_map_, new_tablet->id(), new_tablet);
+  }
+
+  // Next, add the new tablet and remove the old tablet from the table.
+  {
+    TabletMetadataLock l_new_tablet(new_tablet.get(), LockMode::READ);
+    table->AddRemoveTablets({new_tablet}, {old_tablet});
+  }
+
+  // Commit state changes for the old tablet.
+  l_old_tablet.Commit();
+
+  // Finish up by kicking off the delete of the old tablet.
+  {
+    TabletMetadataLock l_old_tablet(old_tablet.get(), LockMode::READ);
+    SendDeleteTabletRequest(old_tablet, l_old_tablet, replace_msg);
+    background_tasks_->Wake();
+  }
+
+  LOG(INFO) << "ReplaceTablet: tablet " << old_tablet->id()
+            << " deleted and replaced by tablet " << new_tablet->id();
+  resp->set_replacement_tablet_id(new_tablet->id());
+  return Status::OK();
+}
+
 Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
                                          GetTableLocationsResponsePB* resp) {
   // If start-key is > end-key report an error instead of swap the two
@@ -4661,6 +4745,7 @@ INITTED_AND_LEADER_OR_RESPOND(ListTablesResponsePB);
 INITTED_AND_LEADER_OR_RESPOND(GetTableLocationsResponsePB);
 INITTED_AND_LEADER_OR_RESPOND(GetTableSchemaResponsePB);
 INITTED_AND_LEADER_OR_RESPOND(GetTabletLocationsResponsePB);
+INITTED_AND_LEADER_OR_RESPOND(ReplaceTabletResponsePB);
 
 #undef INITTED_OR_RESPOND
 #undef INITTED_AND_LEADER_OR_RESPOND

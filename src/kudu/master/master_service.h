@@ -66,6 +66,8 @@ class ListTabletServersResponsePB;
 class Master;
 class PingRequestPB;
 class PingResponsePB;
+class ReplaceTabletRequestPB;
+class ReplaceTabletResponsePB;
 class TSHeartbeatRequestPB;
 class TSHeartbeatResponsePB;
 
@@ -88,6 +90,10 @@ class MasterServiceImpl : public MasterServiceIf {
   bool AuthorizeClientOrService(const google::protobuf::Message* req,
                                 google::protobuf::Message* resp,
                                 rpc::RpcContext *context) override;
+
+  bool AuthorizeSuperUser(const google::protobuf::Message* req,
+                          google::protobuf::Message* resp,
+                          rpc::RpcContext* context) override;
 
   virtual void Ping(const PingRequestPB* req,
                     PingResponsePB* resp,
@@ -140,6 +146,10 @@ class MasterServiceImpl : public MasterServiceIf {
   virtual void ConnectToMaster(const ConnectToMasterRequestPB* req,
                                ConnectToMasterResponsePB* resp,
                                rpc::RpcContext* rpc) OVERRIDE;
+
+  virtual void ReplaceTablet(const ReplaceTabletRequestPB* req,
+                             ReplaceTabletResponsePB* resp,
+                             rpc::RpcContext* rpc) OVERRIDE;
 
   bool SupportsFeature(uint32_t feature) const override;
 

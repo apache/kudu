@@ -705,6 +705,20 @@ message ListMastersResponsePB {
   optional MasterErrorPB error = 3;
 }
 
+// ReplaceTabletRequest/Response: replace a tablet with a new, empty one.
+// The replaced tablet is deleted.
+message ReplaceTabletRequestPB {
+  optional bytes tablet_id = 1;
+}
+
+message ReplaceTabletResponsePB {
+  // Set if there is an error replacing the tablet.
+  optional MasterErrorPB error = 1;
+
+  // The tablet id of the replacement tablet.
+  optional bytes replacement_tablet_id = 2;
+}
+
 enum MasterFeatures {
   UNKNOWN_FEATURE = 0;
   // The master supports creating tables with non-covering range partitions.
@@ -781,6 +795,9 @@ service MasterService {
   }
   rpc Ping(PingRequestPB) returns (PingResponsePB) {
     option (kudu.rpc.authz_method) = "AuthorizeClientOrService";
+  }
+  rpc ReplaceTablet(ReplaceTabletRequestPB) returns (ReplaceTabletResponsePB) {
+    option (kudu.rpc.authz_method) = "AuthorizeSuperUser";
   }
 
   // Master->Master RPCs

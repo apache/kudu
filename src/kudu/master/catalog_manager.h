@@ -577,6 +577,10 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
                             master::ReplicaTypeFilter filter,
                             TabletLocationsPB* locs_pb);
 
+  // Replace the given tablet with a new, empty one. The replaced tablet is
+  // deleted and its data is permanently lost.
+  Status ReplaceTablet(const std::string& tablet_id, master::ReplaceTabletResponsePB* resp);
+
   // Handle a tablet report from the given tablet server.
   //
   // The RPC context is provided for logging/tracing purposes,

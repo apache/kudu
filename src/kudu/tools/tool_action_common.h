@@ -37,6 +37,7 @@ class function;
 namespace kudu {
 
 class faststring;
+class MonoDelta;
 
 namespace client {
 class KuduClient;
@@ -151,6 +152,12 @@ class DataTable {
 // master.
 class LeaderMasterProxy {
  public:
+  LeaderMasterProxy() = default;
+  explicit LeaderMasterProxy(client::sp::shared_ptr<client::KuduClient> client);
+
+  // Initializes the leader master proxy with the given master addresses and timeout.
+  Status Init(const std::vector<std::string>& master_addrs, const MonoDelta& timeout);
+
   // Initialize the leader master proxy given the provided tool context.
   //
   // Uses the required 'master_addresses' option for the master addresses, and

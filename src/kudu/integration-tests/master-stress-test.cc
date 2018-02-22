@@ -21,6 +21,7 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -32,13 +33,18 @@
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
+#include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/tablet/tablet.pb.h"
+#include "kudu/tools/tool_action_common.h"
+#include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/condition_variable.h"
 #include "kudu/util/countdown_latch.h"
@@ -57,6 +63,8 @@ DEFINE_int32(num_alter_table_threads, 2,
             "Number of threads that should alter tables");
 DEFINE_int32(num_delete_table_threads, 2,
             "Number of threads that should delete tables");
+DEFINE_int32(num_replace_tablet_threads, 2,
+            "Number of threads that should replace tablets");
 DEFINE_int32(num_seconds_to_run, 5,
              "Number of seconds that the test should run");
 
@@ -84,6 +92,7 @@ using std::thread;
 using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
+using tools::LeaderMasterProxy;
 
 static const MonoDelta kDefaultAdminTimeout = MonoDelta::FromSeconds(300);
 
@@ -94,9 +103,14 @@ class MasterStressTest : public KuduTest {
       num_tables_created_(0),
       num_tables_altered_(0),
       num_tables_deleted_(0),
+      num_tablets_replaced_(0),
       num_masters_restarted_(0),
       table_names_condvar_(&table_names_lock_),
       rand_(SeedRandom()) {
+  }
+
+  ~MasterStressTest() {
+    STLDeleteValues(&ts_map_);
   }
 
   void SetUp() override {
@@ -147,6 +161,12 @@ class MasterStressTest : public KuduTest {
     builder.default_rpc_timeout(MonoDelta::FromSeconds(1));
 
     ASSERT_OK(cluster_->CreateClient(&builder, &client_));
+
+    // Populate the ts_map_ for the ReplaceTablet thread.
+    const auto& addr = cluster_->master(0)->bound_rpc_addr();
+    shared_ptr<MasterServiceProxy> m_proxy(
+        new MasterServiceProxy(cluster_->messenger(), addr, addr.host()));
+    ASSERT_OK(CreateTabletServerMap(m_proxy, cluster_->messenger(), &ts_map_));
   }
 
   void TearDown() override {
@@ -256,7 +276,35 @@ class MasterStressTest : public KuduTest {
 
       done_.WaitFor(MonoDelta::FromMilliseconds(200));
     }
+  }
 
+  void ReplaceTabletThread() {
+    LeaderMasterProxy lm_proxy(client_);
+
+    // Since there are three tablet servers and 3 replicas per tablet, it doesn't
+    // matter which tablet server we list tablets from.
+    auto* ts = ts_map_.begin()->second;
+    vector<tserver::ListTabletsResponsePB_StatusAndSchemaPB> tablet_ids;
+    while (done_.count()) {
+      tablet_ids.clear();
+      CHECK_OK(ListTablets(ts, kDefaultAdminTimeout, &tablet_ids));
+      if (tablet_ids.empty()) {
+        continue;
+      }
+      int idx = rand_.Uniform(tablet_ids.size());
+      const string& tablet_id = tablet_ids[idx].tablet_status().tablet_id();
+      master::ReplaceTabletRequestPB req;
+      master::ReplaceTabletResponsePB resp;
+      req.set_tablet_id(tablet_id);
+      Status s = lm_proxy.SyncRpc<master::ReplaceTabletRequestPB, master::ReplaceTabletResponsePB>(
+          req, &resp, "ReplaceTablet", &MasterServiceProxy::ReplaceTablet);
+      // NotFound is OK because it means the tablet was already replaced or deleted.
+      if (!s.IsNotFound()) {
+        CHECK_OK(s);
+        num_tablets_replaced_.Increment();
+      }
+      done_.WaitFor(MonoDelta::FromMilliseconds(200));
+    }
   }
 
   Status WaitForMasterUpAndRunning(const shared_ptr<Messenger>& messenger,
@@ -332,6 +380,7 @@ class MasterStressTest : public KuduTest {
   AtomicInt<uint64_t> num_tables_created_;
   AtomicInt<uint64_t> num_tables_altered_;
   AtomicInt<uint64_t> num_tables_deleted_;
+  AtomicInt<uint64_t> num_tablets_replaced_;
   AtomicInt<uint64_t> num_masters_restarted_;
 
   Mutex table_names_lock_;
@@ -374,12 +423,18 @@ class MasterStressTest : public KuduTest {
   ObjectIdGenerator oid_generator_;
   unique_ptr<ExternalMiniCluster> cluster_;
   client::sp::shared_ptr<KuduClient> client_;
+
+  // Used to ListTablets in the ReplaceTablet thread.
+  // This member is not protected by a lock but it is
+  // only read by the ReplaceTablet threads.
+  std::unordered_map<string, itest::TServerDetails*> ts_map_;
 };
 
 TEST_F(MasterStressTest, Test) {
   OverrideFlagForSlowTests("num_create_table_threads", "10");
   OverrideFlagForSlowTests("num_alter_table_threads", "5");
   OverrideFlagForSlowTests("num_delete_table_threads", "5");
+  OverrideFlagForSlowTests("num_replace_tablet_threads", "5");
   OverrideFlagForSlowTests("num_seconds_to_run", "30");
 
   // Start all of the threads.
@@ -392,6 +447,9 @@ TEST_F(MasterStressTest, Test) {
   }
   for (int i = 0; i < FLAGS_num_delete_table_threads; i++) {
     threads.emplace_back(&MasterStressTest::DeleteTableThread, this);
+  }
+  for (int i = 0; i < FLAGS_num_replace_tablet_threads; i++) {
+    threads.emplace_back(&MasterStressTest::ReplaceTabletThread, this);
   }
 
   // Let the test run. The main thread will periodically restart masters.
@@ -413,6 +471,7 @@ TEST_F(MasterStressTest, Test) {
   LOG(INFO) << "Tables created: " << num_tables_created_.Load();
   LOG(INFO) << "Tables altered: " << num_tables_altered_.Load();
   LOG(INFO) << "Tables deleted: " << num_tables_deleted_.Load();
+  LOG(INFO) << "Tablets replaced: " << num_tablets_replaced_.Load();
   LOG(INFO) << "Masters restarted: " << num_masters_restarted_.Load();
 }
 

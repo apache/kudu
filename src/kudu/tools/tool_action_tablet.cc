@@ -44,6 +44,8 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/master/master.pb.h"
+#include "kudu/master/master.proxy.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/tools/ksck.h"
 #include "kudu/tools/ksck_remote.h"
@@ -76,7 +78,11 @@ using kudu::consensus::MODIFY_PEER;
 using kudu::consensus::OpId;
 using kudu::consensus::RaftPeerPB;
 using kudu::consensus::ReplicaManagementInfoPB;
+using kudu::master::MasterServiceProxy;
+using kudu::master::ReplaceTabletRequestPB;
+using kudu::master::ReplaceTabletResponsePB;
 using kudu::rpc::RpcController;
+using std::cerr;
 using std::cout;
 using std::endl;
 using std::shared_ptr;
@@ -523,6 +529,27 @@ Status MoveReplica(const RunnerContext &context) {
                                      (MonoTime::Now() - start).ToString()));
 }
 
+Status ReplaceTablet(const RunnerContext& context) {
+  const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
+
+  LeaderMasterProxy proxy;
+  RETURN_NOT_OK(proxy.Init(context));
+
+  ReplaceTabletRequestPB req;
+  ReplaceTabletResponsePB resp;
+  req.set_tablet_id(tablet_id);
+  Status s = proxy.SyncRpc<ReplaceTabletRequestPB, ReplaceTabletResponsePB>(
+      req, &resp, "ReplaceTablet", &MasterServiceProxy::ReplaceTablet);
+  RETURN_NOT_OK(s);
+
+  if (resp.has_error()) {
+    s = StatusFromPB(resp.error().status());
+    return s.CloneAndPrepend(Substitute("unable to replace tablet $0", tablet_id));
+  }
+  cerr << "Replaced tablet " << tablet_id << " with tablet ";
+  cout << resp.replacement_tablet_id() << endl;
+  return Status::OK();
+}
 } // anonymous namespace
 
 unique_ptr<Mode> BuildTabletMode() {
@@ -594,10 +621,26 @@ unique_ptr<Mode> BuildTabletMode() {
       .AddAction(std::move(remove_replica))
       .Build();
 
+  unique_ptr<Action> replace_tablet =
+      ActionBuilder("unsafe_replace_tablet", &ReplaceTablet)
+      .Description("Replace a tablet with an empty one, moving the previous tablet to a new table")
+      .ExtraDescription("Use this tool to repair a table when one of its tablets has permanently "
+                        "lost all of its replicas. It replaces the unrecoverable tablet with a new "
+                        "empty one representing the same partition. Its primary use is to jettison "
+                        "an unrecoverable tablet in order to make the rest of the table "
+                        "available.\n\n"
+                        "NOTE: The original tablet will be deleted. Its data will be permanently "
+                        "lost. Additionally, clients should be restarted before attempting to "
+                        "use the repaired table (see KUDU-2376).")
+      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
+      .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
+      .Build();
+
   return ModeBuilder("tablet")
       .Description("Operate on remote Kudu tablets")
       .AddMode(std::move(change_config))
       .AddAction(std::move(leader_step_down))
+      .AddAction(std::move(replace_tablet))
       .Build();
 }
 

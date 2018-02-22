@@ -128,6 +128,12 @@ bool MasterServiceImpl::AuthorizeClientOrService(const Message* /*req*/,
                             ServerBase::SERVICE_USER);
 }
 
+bool MasterServiceImpl::AuthorizeSuperUser(const Message* /*req*/,
+                                           Message* /*resp*/,
+                                           rpc::RpcContext* context) {
+  return server_->Authorize(context, ServerBase::SUPER_USER);
+}
+
 void MasterServiceImpl::Ping(const PingRequestPB* /*req*/,
                              PingResponsePB* /*resp*/,
                              rpc::RpcContext* rpc) {
@@ -508,6 +514,22 @@ void MasterServiceImpl::ConnectToMaster(const ConnectToMasterRequestPB* /*req*/,
   // until we have taken over all the associated responsibilities.
   resp->set_role(is_leader ? consensus::RaftPeerPB::LEADER
                            : consensus::RaftPeerPB::FOLLOWER);
+  rpc->RespondSuccess();
+}
+
+void MasterServiceImpl::ReplaceTablet(const ReplaceTabletRequestPB* req,
+                                      ReplaceTabletResponsePB* resp,
+                                      rpc::RpcContext* rpc) {
+  LOG(INFO) << "ReplaceTablet: received request to replace tablet " << req->tablet_id()
+            << " from " << rpc->requestor_string();
+
+  CatalogManager::ScopedLeaderSharedLock l(server_->catalog_manager());
+  if (!l.CheckIsInitializedAndIsLeaderOrRespond(resp, rpc)) {
+    return;
+  }
+
+  Status s = server_->catalog_manager()->ReplaceTablet(req->tablet_id(), resp);
+  CheckRespErrorOrSetUnknown(s, resp);
   rpc->RespondSuccess();
 }
 
