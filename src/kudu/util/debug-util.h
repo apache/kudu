@@ -214,8 +214,11 @@ class StackTraceCollector {
   // Safely sets 'sig_data_' back to nullptr after having sent an asynchronous
   // stack trace request. See implementation for details.
   //
+  // Returns true if the stack trace was collected before revocation
+  // and false if it was not.
+  //
   // POSTCONDITION: sig_data_ == nullptr
-  void RevokeSigData();
+  bool RevokeSigData();
 
   int64_t tid_ = 0;
   stack_trace_internal::SignalData* sig_data_ = nullptr;

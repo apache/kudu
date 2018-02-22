@@ -329,7 +329,7 @@ StackTraceCollector::~StackTraceCollector() {
 }
 
 #ifdef __linux__
-void StackTraceCollector::RevokeSigData() {
+bool StackTraceCollector::RevokeSigData() {
   // We have several cases to consider. Though it involves some simple code
   // duplication, each case is handled separately for clarity.
 
@@ -338,7 +338,7 @@ void StackTraceCollector::RevokeSigData() {
   if (sig_data_->result_ready.complete()) {
     delete sig_data_;
     sig_data_ = nullptr;
-    return;
+    return true;
   }
 
   // 2) Timed out, but signal still pending and signal handler not yet invoked.
@@ -368,7 +368,7 @@ void StackTraceCollector::RevokeSigData() {
                   << "to thread " << tid_;
     ANNOTATE_LEAKING_OBJECT_PTR(sig_data_);
     sig_data_ = nullptr;
-    return;
+    return false;
   }
 
   // In case (3), the signal handler started running but isn't complete yet.
@@ -378,6 +378,7 @@ void StackTraceCollector::RevokeSigData() {
 
   delete sig_data_;
   sig_data_ = nullptr;
+  return true;
 }
 
 
@@ -434,9 +435,15 @@ Status StackTraceCollector::AwaitCollection(MonoTime deadline) {
   // The main reason that a thread would not respond is that it has blocked signals. For
   // example, glibc's timer_thread doesn't respond to our signal, so we always time out
   // on that one.
-  bool got_result = sig_data_->result_ready.WaitUntil(deadline);
-  RevokeSigData();
-  if (!got_result) {
+  ignore_result(sig_data_->result_ready.WaitUntil(deadline));
+
+  // Whether or not we timed out above, revoke the signal data structure.
+  // It's possible that the above 'Wait' times out but it succeeds exactly
+  // after that timeout. In that case, RevokeSigData() will return true
+  // and we can return a successful result, because the destination stack trace
+  // has in fact been populated.
+  bool completed = RevokeSigData();
+  if (!completed) {
     return Status::TimedOut("thread did not respond: maybe it is blocking signals");
   }
 
@@ -450,7 +457,8 @@ Status StackTraceCollector::TriggerAsync(int64_t tid_, StackTrace* stack) {
 Status StackTraceCollector::AwaitCollection() {
   return Status::NotSupported("unsupported platform");
 }
-void StackTraceCollector::RevokeSigData() {
+bool StackTraceCollector::RevokeSigData() {
+  return false;
 }
 #endif // __linux__
 
