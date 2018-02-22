@@ -141,6 +141,7 @@ TabletReplica::~TabletReplica() {
 Status TabletReplica::Init(ThreadPool* raft_pool) {
   CHECK_EQ(NOT_INITIALIZED, state_);
   TRACE("Creating consensus instance");
+  SetStatusMessage("Initializing consensus...");
   ConsensusOptions options;
   options.tablet_id = meta_->tablet_id();
   shared_ptr<RaftConsensus> consensus;
@@ -151,6 +152,7 @@ Status TabletReplica::Init(ThreadPool* raft_pool) {
                                       &consensus));
   consensus_ = std::move(consensus);
   set_state(INITIALIZED);
+  SetStatusMessage("Initialized. Waiting to start...");
   return Status::OK();
 }
 
