@@ -111,6 +111,30 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
   static final int CONNECTION_CTX_CALL_ID = -3;
   static final int SASL_CALL_ID = -33;
 
+  /**
+   * The cipher suites, in order of our preference.
+   * This list is based on the kDefaultTlsCiphers list in security_flags.cc,
+   * See that file for details on how it was derived.
+   */
+  static final String[] PREFERRED_CIPHER_SUITES = new String[] {
+      "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384", // Java 8
+      "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",   // Java 8
+      "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256", // Java 8
+      "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",   // Java 8
+      "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384", // Java 7 (TLS 1.2+ only)
+      "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384",   // Java 7 (TLS 1.2+ only)
+      "TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256", // Java 7 (TLS 1.2+ only)
+      "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256",   // Java 7 (TLS 1.2+ only)
+      "TLS_RSA_WITH_AES_256_GCM_SHA384",         // Java 8
+      "TLS_RSA_WITH_AES_128_GCM_SHA256",         // Java 8
+      "TLS_RSA_WITH_AES_256_CBC_SHA256",         // Java 7 (TLS 1.2+ only)
+      "TLS_RSA_WITH_AES_128_CBC_SHA256",         // Java 7 (TLS 1.2+ only)
+      // The following two are critical to allow the client to connect to
+      // servers running versions of OpenSSL that don't support TLS 1.2.
+      "TLS_RSA_WITH_AES_256_CBC_SHA",            // All Java versions
+      "TLS_RSA_WITH_AES_128_CBC_SHA"             // All Java versions
+  };
+
   private enum State {
     INITIAL,
     AWAIT_NEGOTIATE,
@@ -486,6 +510,21 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
         throw new AssertionError("unreachable");
     }
     engine.setUseClientMode(true);
+    Set<String> supported = Sets.newHashSet(engine.getSupportedCipherSuites());
+    List<String> toEnable = Lists.newArrayList();
+    for (String cipher : PREFERRED_CIPHER_SUITES) {
+      if (supported.contains(cipher)) {
+        toEnable.add(cipher);
+      }
+    }
+    if (toEnable.isEmpty()) {
+      // This should never be the case given the cipher suites we picked are
+      // supported by the standard JDK, but just in case, better to have a clear
+      // exception.
+      throw new RuntimeException("No preferred cipher suites were supported. " +
+          "Supported suites: " + Joiner.on(',').join(supported));
+    }
+    engine.setEnabledCipherSuites(toEnable.toArray(new String[0]));
     SslHandler handler = new SslHandler(engine);
     handler.setEnableRenegotiation(false);
     sslEmbedder = new DecoderEmbedder<>(handler);
