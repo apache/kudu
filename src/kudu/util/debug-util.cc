@@ -44,10 +44,12 @@
 #include <libunwind.h>
 #endif
 
+#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/hash/city.h"
 #include "kudu/gutil/linux_syscall_support.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/once.h"
 #include "kudu/gutil/spinlock.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/numbers.h"
@@ -305,6 +307,19 @@ bool InitSignalHandlerUnlocked(int signum) {
   return state == INITIALIZED;
 }
 
+#ifdef __linux__
+GoogleOnceType g_prime_libunwind_once;
+
+void PrimeLibunwind() {
+  // The first call into libunwind does some unsafe double-checked locking
+  // for initialization. So, we make sure that the first call is not concurrent
+  // with any other call.
+  unw_cursor_t cursor;
+  unw_context_t uc;
+  unw_getcontext(&uc);
+  RAW_CHECK(unw_init_local(&cursor, &uc) >= 0, "unw_init_local failed");
+}
+#endif
 } // anonymous namespace
 
 Status SetStackTraceSignal(int signum) {
@@ -392,6 +407,15 @@ Status StackTraceCollector::TriggerAsync(int64_t tid, StackTrace* stack) {
       return Status::NotSupported("unable to take thread stack: signal handler unavailable");
     }
   }
+  // Ensure that libunwind is primed for use before we send any signals. Otherwise
+  // we can hit a deadlock with the following stack:
+  //   GoogleOnceInit()   [waits on the 'once' to finish, but will never finish]
+  //   StackTrace::Collect()
+  //   <signal handler>
+  //   PrimeLibUnwind
+  //   GoogleOnceInit()   [not yet initted, so starts initializing]
+  //   StackTrace::Collect()
+  GoogleOnceInit(&g_prime_libunwind_once, &PrimeLibunwind);
 
   std::unique_ptr<SignalData> data(new SignalData());
   // Set the target TID in our communication structure, so if we end up with any
@@ -545,6 +569,8 @@ void StackTrace::Collect(int skip_frames) {
   const int kMaxDepth = arraysize(frames_);
 
 #ifdef __linux__
+  GoogleOnceInit(&g_prime_libunwind_once, &PrimeLibunwind);
+
   unw_cursor_t cursor;
   unw_context_t uc;
   unw_getcontext(&uc);

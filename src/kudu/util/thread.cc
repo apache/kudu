@@ -41,7 +41,6 @@
 #include <glog/logging.h>
 
 #include "kudu/gutil/atomicops.h"
-#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/dynamic_annotations.h"
@@ -49,7 +48,6 @@
 #include "kudu/gutil/once.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/debug-util.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/kernel_stack_watchdog.h"
 #include "kudu/util/logging.h"
@@ -407,9 +405,6 @@ void ThreadMgr::ThreadPathHandler(const WebCallbackRegistry::WebRequest& req,
 }
 
 static void InitThreading() {
-  // Warm up the stack trace library. This avoids a race in libunwind initialization
-  // by making sure we initialize it before we start any other threads.
-  ignore_result(GetStackTraceHex());
   thread_manager.reset(new ThreadMgr());
 }
 
