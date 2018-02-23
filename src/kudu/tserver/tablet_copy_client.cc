@@ -64,6 +64,8 @@
 #include "kudu/util/pb_util.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
+#include "kudu/util/scoped_cleanup.h"
+#include "kudu/util/status.h"
 
 DEFINE_int32(tablet_copy_begin_session_timeout_ms, 3000,
              "Tablet server RPC client timeout for BeginTabletCopySession calls. "
@@ -318,8 +320,11 @@ Status TabletCopyClient::Start(const HostPort& copy_source_addr,
       *superblock_->mutable_tombstone_last_logged_opid() = *last_logged_opid;
     }
 
-    // Remove any existing orphaned blocks and WALs from the tablet, and
-    // set the data state to 'COPYING'.
+    // We are about to persist things to disk. Update the tablet copy state
+    // machine so we know there is state to clean up in case we fail.
+    state_ = kStarting;
+    // Set the data state to 'COPYING' and remove any existing orphaned blocks
+    // and WALs from the tablet.
     RETURN_NOT_OK_PREPEND(
         TSTabletManager::DeleteTabletData(meta_, cmeta_manager_,
                                           tablet::TABLET_DATA_COPYING,
@@ -349,6 +354,9 @@ Status TabletCopyClient::Start(const HostPort& copy_source_addr,
                                             superblock_->tablet_data_state(),
                                             superblock_->tombstone_last_logged_opid(),
                                             &meta_));
+    // We have begun persisting things to disk. Update the tablet copy state
+    // machine so we know there is state to clean up in case we fail.
+    state_ = kStarting;
   }
   CHECK_OK(fs_manager_->dd_manager()->GetDataDirGroupPB(
       tablet_id_, superblock_->mutable_data_dir_group()));
@@ -389,15 +397,26 @@ Status TabletCopyClient::Finish() {
   //     so the fsync() operations could be cheaper.
   //  3) Downloaded blocks should be made durable before replacing superblock.
   RETURN_NOT_OK(transaction_->CommitCreatedBlocks());
-  state_ = kFinished;
 
   // Replace tablet metadata superblock. This will set the tablet metadata state
   // to TABLET_DATA_READY, since we checked above that the response
   // superblock is in a valid state to bootstrap from.
   LOG_WITH_PREFIX(INFO) << "Tablet Copy complete. Replacing tablet superblock.";
   SetStatusMessage("Replacing tablet superblock");
-  superblock_->set_tablet_data_state(tablet::TABLET_DATA_READY);
+
+  boost::optional<OpId> last_logged_opid = superblock_->tombstone_last_logged_opid();
+  auto revert_activate_superblock = MakeScopedCleanup([&] {
+    // If we fail below, revert the updated state so further calls to Abort()
+    // can clean up appropriately.
+    if (last_logged_opid) {
+      *superblock_->mutable_tombstone_last_logged_opid() = *last_logged_opid;
+    }
+    superblock_->set_tablet_data_state(TabletDataState::TABLET_DATA_COPYING);
+  });
+
   superblock_->clear_tombstone_last_logged_opid();
+  superblock_->set_tablet_data_state(tablet::TABLET_DATA_READY);
+
   RETURN_NOT_OK(meta_->ReplaceSuperBlock(*superblock_));
 
   if (FLAGS_tablet_copy_save_downloaded_metadata) {
@@ -408,22 +427,39 @@ Status TabletCopyClient::Finish() {
                           "Unable to make copy of tablet metadata");
   }
 
+  // Now that we've finished everything, complete.
+  revert_activate_superblock.cancel();
+  state_ = kFinished;
   return Status::OK();
 }
 
 Status TabletCopyClient::Abort() {
-  if (state_ != kStarted) {
+  // If we have not begun doing anything or have already finished, there is
+  // nothing left to do.
+  if (state_ == kInitialized || state_ == kFinished) {
     return Status::OK();
   }
-  state_ = kFinished;
-  CHECK(meta_);
 
-  // Write the in-progress superblock to disk so that when we delete the tablet
-  // data all the partial blocks we have persisted will be deleted.
   DCHECK_EQ(tablet::TABLET_DATA_COPYING, superblock_->tablet_data_state());
-  RETURN_NOT_OK(meta_->ReplaceSuperBlock(*superblock_));
+  // Ensure upon exiting that the copy is finished and that the tablet is left
+  // tombstoned. This is guaranteed because we always call DeleteTabletData(),
+  // which leaves the metadata in this state, even on failure.
+  SCOPED_CLEANUP({
+    DCHECK_EQ(tablet::TABLET_DATA_TOMBSTONED, meta_->tablet_data_state());
+    state_ = kFinished;
+  });
 
-  // Delete all of the tablet data, including blocks and WALs.
+  // Load the in-progress superblock in-memory so that when we delete the
+  // tablet, all the partial blocks we persisted will be deleted.
+  //
+  // Note: We warn instead of returning early here upon failure because even if
+  // the superblock protobuf was somehow corrupted, we still want to attempt to
+  // delete the tablet's data dir group, WAL segments, etc.
+  WARN_NOT_OK(meta_->LoadFromSuperBlock(*superblock_),
+      "Failed to load the new superblock");
+
+  // Finally, tombstone the tablet metadata and try deleting all of the tablet
+  // data on disk, including blocks and WALs.
   RETURN_NOT_OK_PREPEND(
       TSTabletManager::DeleteTabletData(meta_, cmeta_manager_,
                                         tablet::TABLET_DATA_TOMBSTONED,

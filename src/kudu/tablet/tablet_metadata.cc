@@ -215,22 +215,15 @@ Status TabletMetadata::DeleteTabletData(TabletDataState delete_type,
     }
   }
 
-  // Keep a copy of the old data dir group in case of flush failure.
-  DataDirGroupPB pb;
-  bool old_group_exists = fs_manager_->dd_manager()->GetDataDirGroupPB(tablet_id_, &pb).ok();
-
-  // Remove the tablet's data dir group tracked by the DataDirManager.
+  // Unregister the tablet's data dir group in memory (it is stored on disk in
+  // the superblock). Even if we fail to flush below, the expectation is that
+  // we will no longer be writing to the tablet, and therefore don't need its
+  // data dir group.
   fs_manager_->dd_manager()->DeleteDataDirGroup(tablet_id_);
-  auto revert_group_cleanup = MakeScopedCleanup([&]() {
-    if (old_group_exists) {
-      fs_manager_->dd_manager()->LoadDataDirGroupFromPB(tablet_id_, pb);
-    }
-  });
 
   // Flushing will sync the new tablet_data_state_ to disk and will now also
   // delete all the data.
   RETURN_NOT_OK(Flush());
-  revert_group_cleanup.cancel();
 
   // Re-sync to disk one more time.
   // This call will typically re-sync with an empty orphaned blocks list

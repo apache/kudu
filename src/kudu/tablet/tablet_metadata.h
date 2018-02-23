@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TABLET_TABLET_METADATA_H
-#define KUDU_TABLET_TABLET_METADATA_H
+#pragma once
 
 #include <atomic>
 #include <cstdint>
@@ -198,6 +197,9 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // partially-tombstoned tablets during crash recovery.
   //
   // Returns only once all data has been removed.
+  //
+  // Note: this will always update the in-memory state, but upon failure,
+  // may not update the on-disk state.
   Status DeleteTabletData(TabletDataState delete_type,
                           const boost::optional<consensus::OpId>& last_logged_opid);
 
@@ -237,8 +239,11 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // Sets *super_block to the serialized form of the current metadata.
   Status ToSuperBlock(TabletSuperBlockPB* super_block) const;
 
-  // Fully replace a superblock (used for bootstrap).
+  // Replace the superblock (used for bootstrap) both in memory and on disk.
   Status ReplaceSuperBlock(const TabletSuperBlockPB &pb);
+
+  // Update the in-memory state of metadata to that of the given superblock PB.
+  Status LoadFromSuperBlock(const TabletSuperBlockPB& superblock);
 
   int64_t on_disk_size() const {
     return on_disk_size_.load(std::memory_order_relaxed);
@@ -285,9 +290,6 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
 
   // Updates the cached on-disk size of the tablet superblock.
   Status UpdateOnDiskSize();
-
-  // Update state of metadata to that of the given superblock PB.
-  Status LoadFromSuperBlock(const TabletSuperBlockPB& superblock);
 
   Status ReadSuperBlock(TabletSuperBlockPB *pb);
 
@@ -392,5 +394,3 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
 
 } // namespace tablet
 } // namespace kudu
-
-#endif /* KUDU_TABLET_TABLET_METADATA_H */

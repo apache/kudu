@@ -14,12 +14,11 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TSERVER_TABLET_COPY_CLIENT_H
-#define KUDU_TSERVER_TABLET_COPY_CLIENT_H
+#pragma once
 
 #include <cstdint>
-#include <string>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include <gtest/gtest_prod.h>
@@ -132,14 +131,35 @@ class TabletCopyClient {
   FRIEND_TEST(TabletCopyClientTest, TestNoBlocksAtStart);
   FRIEND_TEST(TabletCopyClientTest, TestBeginEndSession);
   FRIEND_TEST(TabletCopyClientTest, TestDownloadBlock);
+  FRIEND_TEST(TabletCopyClientTest, TestLifeCycle);
   FRIEND_TEST(TabletCopyClientTest, TestVerifyData);
   FRIEND_TEST(TabletCopyClientTest, TestDownloadWalSegment);
   FRIEND_TEST(TabletCopyClientTest, TestDownloadAllBlocks);
   FRIEND_TEST(TabletCopyClientAbortTest, TestAbort);
 
+  // State machine that guides the progression of a single tablet copy.
+  // A tablet copy will go through the states:
+  //
+  //   kInitialized --> kStarting --> kStarted --> kFinished
+  //        |               |             |          ^^^
+  //        |               |             +----------+||
+  //        |               +-------------------------+|
+  //        +------------------------------------------+
   enum State {
+    // The copy has yet to do anything and no changes have been made on disk.
     kInitialized,
+
+    // The copy has begun updating metadata on disk, but has not begun
+    // receiving WAL segments or blocks from the tablet copy source. Being in
+    // this state or beyond implies that 'meta_' is non-null.
+    kStarting,
+
+    // The metadata has been updated on disk to indicate the start of a new
+    // copy. Blocks, metadata, and WAL segments may be received from the tablet
+    // copy source in this state.
     kStarted,
+
+    // The copy is finished and needs no cleanup.
     kFinished,
   };
 
@@ -261,4 +281,3 @@ class TabletCopyClient {
 
 } // namespace tserver
 } // namespace kudu
-#endif /* KUDU_TSERVER_TABLET_COPY_CLIENT_H */
