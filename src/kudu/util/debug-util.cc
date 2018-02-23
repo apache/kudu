@@ -230,7 +230,7 @@ void HandleStackTraceSignal(int /*signum*/, siginfo_t* info, void* /*ucontext*/)
   SCOPED_CLEANUP({
       errno = save_errno;
     });
-  auto* sig_data = reinterpret_cast<SignalData*>(info->si_ptr);
+  auto* sig_data = reinterpret_cast<SignalData*>(info->si_value.sival_ptr);
   DCHECK(sig_data);
   if (!sig_data) {
     // Maybe the signal was sent by a user instead of by ourself, ignore it.
@@ -474,17 +474,17 @@ Status StackTraceCollector::AwaitCollection(MonoTime deadline) {
   return Status::OK();
 }
 
-#else  // __linux__
+#else  // #ifdef __linux__ ...
 Status StackTraceCollector::TriggerAsync(int64_t tid_, StackTrace* stack) {
   return Status::NotSupported("unsupported platform");
 }
-Status StackTraceCollector::AwaitCollection() {
+Status StackTraceCollector::AwaitCollection(MonoTime deadline) {
   return Status::NotSupported("unsupported platform");
 }
 bool StackTraceCollector::RevokeSigData() {
   return false;
 }
-#endif // __linux__
+#endif // #ifdef __linux__ ... #else ...
 
 Status GetThreadStack(int64_t tid, StackTrace* stack) {
   StackTraceCollector c;
