@@ -21,8 +21,11 @@
 #endif
 #include <unistd.h>
 
+#include <algorithm>
 #include <csignal>
 #include <cstddef>
+#include <cstdint>
+#include <memory>
 #include <ostream>
 #include <string>
 #include <vector>
@@ -31,6 +34,7 @@
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/walltime.h"
 #include "kudu/util/array_view.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/debug-util.h"
@@ -361,6 +365,68 @@ TEST_F(DebugUtilTest, TestThreadBlockingSignals) {
     ret = DumpThreadStack(t->tid());
     LOG(INFO) << ret;
   }
+}
+
+// Test stack traces which time out despite the destination thread not blocking
+// signals.
+TEST_F(DebugUtilTest, TestTimeouts) {
+  const int kRunTimeSecs = AllowSlowTests() ? 5 : 1;
+
+  CountDownLatch l(1);
+  scoped_refptr<Thread> t;
+  ASSERT_OK(Thread::Create("test", "test thread", &SleeperThread, &l, &t));
+  auto cleanup_thr = MakeScopedCleanup([&]() {
+      // Allow the thread to finish.
+      l.CountDown();
+      t->Join();
+    });
+
+  // First, time a few stack traces to determine how long a non-timed-out stack
+  // trace takes.
+  vector<MicrosecondsInt64> durations;
+  for (int i = 0; i < 20; i++) {
+    StackTrace stack;
+    auto st = GetMonoTimeMicros();
+    ASSERT_OK(GetThreadStack(t->tid(), &stack));
+    auto dur = GetMonoTimeMicros() - st;
+    durations.push_back(dur);
+  }
+
+  // Compute the median to throw out outliers.
+  std::sort(durations.begin(), durations.end());
+  auto median_duration = durations[durations.size() / 2];
+  LOG(INFO) << "Median duration: " << median_duration << "us";
+
+  // Now take a bunch of stack traces with timeouts clustered around
+  // the expected time. When we time out, we adjust the timeout to be
+  // higher so the next attempt is less likely to time out. Conversely,
+  // when we succeed, we adjust the timeout to be shorter so the next
+  // attempt is more likely to time out. This has the effect of triggering
+  // all the interesting cases: (a) success, (b) timeout, (c) timeout
+  // exactly as the signal finishes.
+  int num_timeouts = 0;
+  int num_successes = 0;
+  auto end_time = MonoTime::Now() + MonoDelta::FromSeconds(kRunTimeSecs);
+  int64_t timeout_us = median_duration;
+  while (MonoTime::Now() < end_time) {
+    StackTraceCollector stc;
+    // Allocate Stack on the heap so that if we get a use-after-free it
+    // will be caught more easily by ASAN.
+    std::unique_ptr<StackTrace> stack(new StackTrace());
+    ASSERT_OK(stc.TriggerAsync(t->tid(), stack.get()));
+    Status s = stc.AwaitCollection(MonoTime::Now() + MonoDelta::FromMicroseconds(timeout_us));
+    if (s.ok()) {
+      num_successes++;
+      timeout_us--;
+    } else if (s.IsTimedOut()) {
+      num_timeouts++;
+      timeout_us++;
+    } else {
+      FAIL() << "Unexpected status: " << s.ToString();
+    }
+  }
+  LOG(INFO) << "Timed out " << num_timeouts << " times";
+  LOG(INFO) << "Succeeded " << num_successes << " times";
 }
 
 #endif

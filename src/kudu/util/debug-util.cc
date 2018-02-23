@@ -206,12 +206,36 @@ class CompletionFlag {
 
 // A pointer to this structure is passed as signal data to a thread when
 // a stack trace is being remotely requested.
+//
+// The state machine is as follows (each state is a tuple of 'queued_to_tid'
+// and 'result_ready' status):
+//
+//   [ kNotInUse, false ]
+//           |
+//           | (A)
+//           v                (D)
+//   [ <target tid>, false ]  --->  [ kNotInUse, false ] (leaked)
+//           |
+//           | (B)
+//           v                (E)
+//   [ kDumpStarted, false ]  --->  [ kNotInUse, false ] (tracer waits for 'result_ready')
+//           |                                 |
+//           | (C)                             | (G)
+//           v                (F)              v
+//   [ kDumpStarted, true ]   --->  [ kNotInUse, true ] (already complete)
+//
+// Transitions:
+//    (A): tracer thread sets target_tid before sending a singla
+//    (B): target thread CAS target_tid to kDumpStarted (and aborts on CAS failure)
+//    (C,G): target thread finishes collecting stacks and signals 'result_ready'
+//    (D,E,F): tracer thread exchanges 'kNotInUse' back into queued_to_tid in
+//             RevokeSigData().
 struct SignalData {
   // The actual destination for the stack trace collected from the target thread.
   StackTrace* stack;
 
   static const int kNotInUse = 0;
-  static const int kDumpInProgress = -1;
+  static const int kDumpStarted = -1;
   // Either one of the above constants, or if the dumper thread
   // is waiting on a response, the tid that it is waiting on.
   std::atomic<int64_t> queued_to_tid { kNotInUse };
@@ -248,13 +272,12 @@ void HandleStackTraceSignal(int /*signum*/, siginfo_t* info, void* /*ucontext*/)
   // If we were slow to process the signal, the sender may have given up and
   // no longer wants our stack trace. In that case, the 'sig' object will
   // no longer contain our thread.
-  if (!sig_data->queued_to_tid.compare_exchange_strong(my_tid, SignalData::kDumpInProgress)) {
+  if (!sig_data->queued_to_tid.compare_exchange_strong(my_tid, SignalData::kDumpStarted)) {
     return;
   }
-  // Marking it as kDumpInProgress ensures that the caller thread must now wait
+  // Marking it as kDumpStarted ensures that the caller thread must now wait
   // for our response, since we are writing directly into their StackTrace object.
   sig_data->stack->Collect(/*skip_frames=*/1);
-  sig_data->queued_to_tid = SignalData::kNotInUse;
   sig_data->result_ready.Signal();
 }
 
@@ -351,40 +374,25 @@ StackTraceCollector::~StackTraceCollector() {
 
 #ifdef __linux__
 bool StackTraceCollector::RevokeSigData() {
-  // We have several cases to consider. Though it involves some simple code
-  // duplication, each case is handled separately for clarity.
-
-  // 1) We have sent the signal, and the thread has completed the stack trace.
-  //    This this is the "happy path".
-  if (sig_data_->result_ready.complete()) {
-    delete sig_data_;
-    sig_data_ = nullptr;
-    return true;
-  }
-
-  // 2) Timed out, but signal still pending and signal handler not yet invoked.
-  //    In this case, we need to make sure that when it does later get the signal,
-  //    it doesn't attempt to read 'sig_data_' after we've freed it. However
-  //    we can still safely free the stack trace object itself.
-  //
-  // 3) Timed out, but signal has been delivered and the stack tracing is in
-  //    progress. In this case we have to wait for it to finish. This case should
-  //    be very rare, since the trace collection itself is typically fast.
-  //
-  // We can distinguish between case (2) and (3) using the 'queued_to_tid' member:
+  // First, exchange the atomic variable back to 'not in use'. This ensures
+  // that, if the signalled thread hasn't started filling in the trace yet,
+  // it will see the 'kNotInUse' value and abort.
   int64_t old_val = sig_data_->queued_to_tid.exchange(SignalData::kNotInUse);
 
-  // In case (2), the signal handler hasn't started collecting a stack trace, so we
-  // were able to exchange it out and see that it was still "queued". In this case,
-  // if the signal later gets delivered, we can't free the sig_data_ struct itself.
-  // We intentionally leak it. Note, however, that when it does run, it will
-  // see that we exchanged out its tid from 'queued_to_tid' and therefore won't
-  // attempt to write into the stack_ structure.
+  // We now have two cases to consider.
+
+  // 1) Timed out, but signal still pending and signal handler not yet invoked.
   //
-  // TODO(todd) instead of leaking, we can insert these lost structs into a
-  // global free-list, and then reuse them the next time we want to send a
-  // signal. The re-use is safe since access is limited to a specific tid.
+  //    In this case, the signal handler hasn't started collecting a stack trace, so when
+  //    we exchange 'queued_to_tid', we see that it is still "queued". In case the signal
+  //    later gets delivered, we can't free the 'sig_data_' struct itself. We intentionally
+  //    leak it. Note, however, that if the signal handler later runs, it will see that we
+  //    exchanged out its tid from 'queued_to_tid' and therefore won't attempt to write
+  //    into the 'stack' structure.
   if (old_val == tid_) {
+    // TODO(todd) instead of leaking, we can insert these lost structs into a global
+    // free-list, and then reuse them the next time we want to send a signal. The re-use
+    // is safe since access is limited to a specific tid.
     DLOG(WARNING) << "Leaking SignalData structure " << sig_data_ << " after lost signal "
                   << "to thread " << tid_;
     ANNOTATE_LEAKING_OBJECT_PTR(sig_data_);
@@ -392,11 +400,11 @@ bool StackTraceCollector::RevokeSigData() {
     return false;
   }
 
-  // In case (3), the signal handler started running but isn't complete yet.
-  // We have no choice but to await completion
-  CHECK(old_val == SignalData::kDumpInProgress);
+  // 2) The signal was delivered. Either the thread is currently collecting its stack
+  //    trace (in which case we have to wait for it to finish), or it has already completed
+  //    (in which case waiting is a no-op).
+  CHECK_EQ(old_val, SignalData::kDumpStarted);
   CHECK(sig_data_->result_ready.WaitUntil(MonoTime::Max()));
-
   delete sig_data_;
   sig_data_ = nullptr;
   return true;
