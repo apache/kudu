@@ -819,6 +819,14 @@ class Schema {
     return true;
   }
 
+  bool operator==(const Schema& other) const {
+    return this->Equals(other);
+  }
+
+  bool operator!=(const Schema& other) const {
+    return !(*this == other);
+  }
+
   // Return true if the key projection schemas have exactly the same set of
   // columns and respective types.
   bool KeyEquals(const Schema& other,

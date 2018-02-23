@@ -305,7 +305,7 @@ class TableInfo : public RefCountedThreadSafe<TableInfo> {
   void GetTabletsInRange(const GetTableLocationsRequestPB* req,
                          std::vector<scoped_refptr<TabletInfo>>* ret) const;
 
-  // Adds all tablets to the vector in partition key sorted order.
+  // Fills the vector with all tablets in partition key sorted order.
   void GetAllTablets(std::vector<scoped_refptr<TabletInfo>>* ret) const;
 
   // Access the persistent metadata. Typically you should use
@@ -992,7 +992,7 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
                                              const boost::optional<std::string>& dimension_label);
 
   // Builds the TabletLocationsPB for a tablet based on the provided TabletInfo
-  // and the replica type fiter specified. Populates locs_pb and returns
+  // and the replica type filter specified. Populates locs_pb and returns
   // Status::OK on success.
   //
   // If 'ts_infos_dict' is not null, the returned locations use it as a dictionary

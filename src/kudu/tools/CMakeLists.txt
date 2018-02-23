@@ -102,6 +102,7 @@ target_link_libraries(kudu_tools_rebalance
 #######################################
 
 add_executable(kudu
+  master_rebuilder.cc
   tool_action_cluster.cc
   tool_action_diagnose.cc
   tool_action_fs.cc

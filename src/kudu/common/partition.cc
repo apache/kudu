@@ -1174,10 +1174,6 @@ bool PartitionSchema::operator==(const PartitionSchema& rhs) const {
   return true;
 }
 
-bool PartitionSchema::operator!=(const PartitionSchema& rhs) const {
-  return !(*this == rhs);
-}
-
 // Encodes the specified primary key columns of the supplied row into the buffer.
 void PartitionSchema::EncodeColumns(const ConstContiguousRow& row,
                                     const vector<ColumnId>& column_ids,

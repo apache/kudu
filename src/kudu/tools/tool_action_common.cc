@@ -215,6 +215,8 @@ using kudu::server::ServerClockResponsePB;
 using kudu::server::ServerStatusPB;
 using kudu::server::SetFlagRequestPB;
 using kudu::server::SetFlagResponsePB;
+using kudu::tserver::ListTabletsRequestPB;
+using kudu::tserver::ListTabletsResponsePB;
 using kudu::tserver::TabletServerAdminServiceProxy; // NOLINT
 using kudu::tserver::TabletServerServiceProxy; // NOLINT
 using kudu::tserver::WriteRequestPB;
@@ -500,6 +502,23 @@ Status GetServerStatus(const string& address, uint16_t default_port,
                               proxy->ToString());
   }
   *status = resp.status();
+  return Status::OK();
+}
+
+Status GetReplicas(TabletServerServiceProxy* proxy,
+                   vector<ListTabletsResponsePB::StatusAndSchemaPB>* replicas) {
+  ListTabletsRequestPB req;
+  ListTabletsResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(MonoDelta::FromMilliseconds(FLAGS_timeout_ms));
+
+  RETURN_NOT_OK(proxy->ListTablets(req, &resp, &rpc));
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+
+  replicas->assign(resp.status_and_schema().begin(),
+                   resp.status_and_schema().end());
   return Status::OK();
 }
 

@@ -75,6 +75,9 @@ class Partition {
 
   // Returns true iff the given partition 'rhs' is equivalent to this one.
   bool operator==(const Partition& rhs) const;
+  bool operator!=(const Partition& rhs) const {
+    return !(*this == rhs);
+  }
 
   // Serializes a partition into a protobuf message.
   void ToPB(PartitionPB* pb) const;
@@ -300,7 +303,9 @@ class PartitionSchema {
   bool operator==(const PartitionSchema& rhs) const;
 
   // Returns 'true' iff the partition schema 'rhs' is not equivalent to this one.
-  bool operator!=(const PartitionSchema& rhs) const;
+  bool operator!=(const PartitionSchema& rhs) const {
+    return !(*this == rhs);
+  }
 
   // Transforms an exclusive lower bound range partition key into an inclusive
   // lower bound range partition key.

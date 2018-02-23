@@ -26,6 +26,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -52,6 +53,7 @@
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/tools/ksck.h"
 #include "kudu/tools/ksck_remote.h"
+#include "kudu/tools/master_rebuilder.h"
 #include "kudu/tools/tool_action.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/util/env.h"
@@ -100,6 +102,7 @@ using kudu::master::RemoveMasterResponsePB;
 using kudu::consensus::RaftPeerPB;
 using kudu::rpc::RpcController;
 using std::cout;
+using std::endl;
 using std::map;
 using std::set;
 using std::string;
@@ -111,6 +114,10 @@ namespace kudu {
 namespace tools {
 namespace {
 
+const char* const kTabletServerAddressArg = "tserver_address";
+const char* const kTabletServerAddressDesc = "Address of a Kudu tablet server "
+    "of form 'hostname:port'. Port may be omitted if the tablet server is "
+    "bound to the default port.";
 const char* const kFlagArg = "flag";
 const char* const kValueArg = "value";
 
@@ -659,6 +666,38 @@ Status VerifyMasterAddressList(const vector<string>& master_addresses) {
   return Status::OK();
 }
 
+Status PrintRebuildReport(const RebuildReport& rebuild_report) {
+  cout << "Rebuild Report" << endl;
+  cout << "Tablet Servers" << endl;
+  DataTable tserver_table({ "address", "status" });
+  int bad_tservers = 0;
+  for (const auto& pair : rebuild_report.tservers) {
+    const Status& s = pair.second;
+    tserver_table.AddRow({ pair.first, s.ToString() });
+    if (!s.ok()) bad_tservers++;
+  }
+  RETURN_NOT_OK(tserver_table.PrintTo(cout));
+  cout << Substitute("Rebuilt from $0 tablet servers, of which $1 had errors",
+                     rebuild_report.tservers.size(), bad_tservers)
+       << endl << endl;
+
+  cout << "Replicas" << endl;
+  DataTable replica_table({ "table", "tablet", "tablet server", "status" });
+  int bad_replicas = 0;
+  for (const auto& entry : rebuild_report.replicas) {
+    const auto& key = entry.first;
+    const Status& s = entry.second;
+    replica_table.AddRow({ std::get<0>(key), std::get<1>(key), std::get<2>(key), s.ToString() });
+    if (!s.ok()) bad_replicas++;
+  }
+  RETURN_NOT_OK(replica_table.PrintTo(cout));
+  cout << Substitute("Rebuilt from $0 replicas, of which $1 had errors",
+                     rebuild_report.replicas.size(), bad_replicas)
+       << endl;
+
+  return Status::OK();
+}
+
 Status RefreshAuthzCacheAtMaster(const string& master_address) {
   unique_ptr<MasterServiceProxy> proxy;
   RETURN_NOT_OK(BuildProxy(master_address, Master::kDefaultPort, &proxy));
@@ -709,6 +748,14 @@ Status RefreshAuthzCache(const RunnerContext& context) {
   }
   return Status::Incomplete(err_str);
 }
+
+Status RebuildMaster(const RunnerContext& context) {
+  MasterRebuilder master_rebuilder(context.variadic_args);
+  RETURN_NOT_OK(master_rebuilder.RebuildMaster());
+  PrintRebuildReport(master_rebuilder.GetRebuildReport());
+  return Status::OK();
+}
+
 } // anonymous namespace
 
 unique_ptr<Mode> BuildMasterMode() {
@@ -859,6 +906,44 @@ unique_ptr<Mode> BuildMasterMode() {
         .AddOptionalParameter("master_uuid")
         .Build();
     builder.AddAction(std::move(remove_master));
+  }
+
+  {
+    const char* rebuild_extra_description = "Attempts to create on-disk metadata\n"
+        "that can be used by a non-replicated master to recover a Kudu cluster\n"
+        "that has permanently lost its masters. It has a number of limitations:\n"
+        " - Security metadata like cryptographic keys are not rebuilt. Tablet servers\n"
+        "   and clients must be restarted before starting the new master in order to\n"
+        "   communicate with the new master.\n"
+        " - Table IDs are known only by the masters. Reconstructed tables will have\n"
+        "   new IDs.\n"
+        " - If a create, delete, or alter table was in progress when the masters were lost,\n"
+        "   it may not be possible to restore the table.\n"
+        " - If all replicas of a tablet are missing, it may not be able to recover the\n"
+        "   table fully. Moreover, the rebuild tool cannot detect that a tablet is\n"
+        "   missing.\n"
+        " - It's not possible to determine the replication factor of a table from tablet\n"
+        "   server metadata. The rebuild tool sets the replication factor of each\n"
+        "   table to --default_num_replicas instead.\n"
+        " - It's not possible to determine the next column id for a table from tablet\n"
+        "   server metadata. Instead, the rebuilt tool sets the next column id to\n"
+        "   a very large number.\n"
+        " - Table metadata like comments, owners, and configurations are not stored on\n"
+        "   tablet servers and are thus not restored.\n"
+        "WARNING: This tool is potentially unsafe. Only use it when there is no\n"
+        "possibility of recovering the original masters, and you know what you\n"
+        "are doing.";
+    unique_ptr<Action> unsafe_rebuild =
+        ActionBuilder("unsafe_rebuild", &RebuildMaster)
+        .Description("Rebuild a Kudu master from tablet server metadata")
+        .ExtraDescription(rebuild_extra_description)
+        .AddRequiredVariadicParameter({ kTabletServerAddressArg, kTabletServerAddressDesc })
+        .AddOptionalParameter("fs_data_dirs")
+        .AddOptionalParameter("fs_metadata_dir")
+        .AddOptionalParameter("fs_wal_dir")
+        .AddOptionalParameter("default_num_replicas")
+        .Build();
+    builder.AddAction(std::move(unsafe_rebuild));
   }
 
   return builder.Build();

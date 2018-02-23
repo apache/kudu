@@ -53,6 +53,7 @@
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -83,6 +84,7 @@ class ListTabletsResponsePB;
 
 DECLARE_int32(num_replicas);
 DECLARE_int32(num_tablet_servers);
+DECLARE_string(sasl_protocol_name);
 
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
@@ -95,6 +97,7 @@ using kudu::client::KuduTable;
 using kudu::client::KuduTableCreator;
 using kudu::client::KuduValue;
 using kudu::client::sp::shared_ptr;
+using kudu::cluster::ExternalMiniCluster;
 using kudu::cluster::ExternalTabletServer;
 using kudu::cluster::ExternalMiniCluster;
 using kudu::cluster::ExternalMiniClusterOptions;
@@ -2897,17 +2900,247 @@ TEST_F(AdminCliTest, TestAddAndDropRangePartitionForMultipleRangeColumnsTable) {
   });
 }
 
-TEST_F(AdminCliTest, TestNonDefaultPrincipal) {
-  ExternalMiniClusterOptions opts;
-  opts.enable_kerberos = true;
-  opts.principal = "oryx";
-  cluster_.reset(new ExternalMiniCluster(std::move(opts)));
-  ASSERT_OK(cluster_->Start());
+namespace {
+constexpr const char* kPrincipal = "oryx";
+
+vector<string> RebuildMasterCmd(const ExternalMiniCluster& cluster,
+                                bool is_secure, bool log_to_stderr = false) {
+  vector<string> command = {
+    "master",
+    "unsafe_rebuild",
+    "-fs_data_dirs",
+    JoinStrings(cluster.master()->data_dirs(), ","),
+    "-fs_wal_dir",
+    cluster.master()->wal_dir(),
+  };
+  if (log_to_stderr) {
+    command.emplace_back("--logtostderr");
+  }
+  if (is_secure) {
+    command.emplace_back(Substitute("--sasl_protocol_name=$0", kPrincipal));
+  }
+  for (int i = 0; i < cluster.num_tablet_servers(); i++) {
+    auto* ts = cluster.tablet_server(i);
+    command.emplace_back(ts->bound_rpc_hostport().ToString());
+  }
+  return command;
+}
+
+void MakeTestTable(const string& table_name,
+                   int num_rows,
+                   int num_replicas,
+                   ExternalMiniCluster* cluster) {
+  TestWorkload workload(cluster);
+  workload.set_table_name(table_name);
+  workload.set_num_replicas(num_replicas);
+  workload.Setup();
+  workload.Start();
+  while (workload.rows_inserted() < num_rows) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  workload.StopAndJoin();
+}
+} // anonymous namespace
+
+// Test failing to run the CLI because the master is non-empty.
+TEST_F(AdminCliTest, TestRebuildMasterWhenNonEmpty) {
+  FLAGS_num_tablet_servers = 3;
+  NO_FATALS(BuildAndStart({}, {}, {}, /*create_table*/false));
+
+  constexpr const char* kTable = "default.foo";
+  NO_FATALS(MakeTestTable(kTable, /*num_rows*/10, /*num_replicas*/1, cluster_.get()));
+  NO_FATALS(cluster_->master()->Shutdown());
+  string stdout;
+  string stderr;
+  Status s = RunKuduTool(RebuildMasterCmd(*cluster_, /*is_secure*/false, /*log_to_stderr*/true),
+                         &stdout, &stderr);
+  ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
+  ASSERT_STR_CONTAINS(stderr, "must be empty");
+
+  // Delete the contents of the old master from disk. This should allow the
+  // tool to run.
+  ASSERT_OK(cluster_->master()->DeleteFromDisk());
+  ASSERT_OK(RunKuduTool(RebuildMasterCmd(*cluster_, /*is_secure*/false, /*log_to_stderr*/true),
+                        &stdout, &stderr));
+  ASSERT_STR_NOT_CONTAINS(stderr, "must be empty");
+  ASSERT_STR_CONTAINS(stdout,
+                      "Rebuilt from 3 tablet servers, of which 0 had errors");
+  ASSERT_STR_CONTAINS(stdout, "Rebuilt from 1 replicas, of which 0 had errors");
+}
+
+// Test that the master rebuilder ignores tombstones.
+TEST_F(AdminCliTest, TestRebuildMasterWithTombstones) {
+  FLAGS_num_tablet_servers = 3;
+  NO_FATALS(BuildAndStart({}, {}, {}, /*create_table*/false));
+
+  constexpr const char* kTable = "default.foo";
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(10);
+  NO_FATALS(MakeTestTable(kTable, /*num_rows*/10, /*num_replicas*/1, cluster_.get()));
+  TabletServerMap ts_map;
+  ASSERT_OK(CreateTabletServerMap(cluster_->master_proxy(),
+                                  cluster_->messenger(),
+                                  &ts_map));
+  ValueDeleter deleter(&ts_map);
+  // Find the single tablet replica and tombstone it.
+  string tablet_id;
+  TServerDetails* ts_details;
+  for (const auto& id_and_details : ts_map) {
+    vector<string> tablet_ids;
+    ts_details = id_and_details.second;
+    ASSERT_OK(ListRunningTabletIds(ts_details, kTimeout, &tablet_ids));
+    if (!tablet_ids.empty()) {
+      tablet_id = tablet_ids[0];
+      break;
+    }
+  }
+  ASSERT_FALSE(tablet_id.empty());
+  ASSERT_OK(itest::DeleteTablet(ts_details, tablet_id, tablet::TABLET_DATA_TOMBSTONED, kTimeout));
+  ASSERT_OK(itest::WaitUntilTabletInState(
+      ts_details, tablet_id, tablet::TabletStatePB::STOPPED, kTimeout));
+
+  // Rebuild the master. The tombstone shouldn't be rebuilt.
+  NO_FATALS(cluster_->master()->Shutdown());
+  ASSERT_OK(cluster_->master()->DeleteFromDisk());
+  string stdout;
+  string stderr;
+  ASSERT_OK(RunKuduTool(RebuildMasterCmd(*cluster_, /*is_secure*/false, /*log_to_stderr*/true),
+                                         &stdout, &stderr));
+  ASSERT_STR_CONTAINS(stderr, Substitute("Skipping replica of tablet $0 of table $1",
+                                         tablet_id, kTable));
+  ASSERT_STR_CONTAINS(stdout,
+                      "Rebuilt from 3 tablet servers, of which 0 had errors");
+  ASSERT_STR_CONTAINS(stdout, "Rebuilt from 0 replicas, of which 0 had errors");
+
+
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    cluster_->tablet_server(i)->Shutdown();
+  }
+  ASSERT_OK(cluster_->Restart());
+
+  // Clients shouldn't be able to access the table -- it wasn't rebuilt.
+  KuduClientBuilder builder;
+  ASSERT_OK(cluster_->CreateClient(&builder, &client_));
+  client::sp::shared_ptr<KuduTable> table;
+  Status s = client_->OpenTable(kTable, &table);
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+
+  // We should still be able to create a table of the same name though.
+  NO_FATALS(MakeTestTable(kTable, /*num_rows*/10, /*num_replicas*/1, cluster_.get()));
+  ASSERT_OK(client_->OpenTable(kTable, &table));
+
+  ClusterVerifier cv(cluster_.get());
+  NO_FATALS(cv.CheckCluster());
+}
+
+class SecureClusterAdminCliTest : public KuduTest {
+ public:
+  void SetUpCluster(bool is_secure) {
+    ExternalMiniClusterOptions opts;
+    opts.num_tablet_servers = 3;
+    if (is_secure) {
+      opts.enable_kerberos = true;
+      opts.principal = "oryx";
+    }
+    cluster_.reset(new ExternalMiniCluster(std::move(opts)));
+    ASSERT_OK(cluster_->Start());
+    KuduClientBuilder builder;
+    builder.sasl_protocol_name(kPrincipal);
+    ASSERT_OK(cluster_->CreateClient(&builder, &client_));
+  }
+
+  void SetUp() override {
+    NO_FATALS(SetUpCluster(/*is_secure*/true));
+  }
+ protected:
+  unique_ptr<ExternalMiniCluster> cluster_;
+  client::sp::shared_ptr<KuduClient> client_;
+};
+
+TEST_F(SecureClusterAdminCliTest, TestNonDefaultPrincipal) {
   ASSERT_OK(RunKuduTool({"master",
                          "list",
-                         "--sasl_protocol_name=oryx",
+                         Substitute("--sasl_protocol_name=$0", kPrincipal),
                          HostPort::ToCommaSeparatedString(cluster_->master_rpc_addrs())}));
 }
+
+class SecureClusterAdminCliParamTest : public SecureClusterAdminCliTest,
+                                       public ::testing::WithParamInterface<bool> {
+ public:
+  void SetUp() override {
+    SetUpCluster(/*is_secure*/GetParam());
+  }
+};
+
+// Basic test that the master rebuilder works in the happy case.
+TEST_P(SecureClusterAdminCliParamTest, TestRebuildMaster) {
+  bool is_secure = GetParam();
+  constexpr const char* kPreRebuildTableName = "pre_rebuild";
+  constexpr const char* kPostRebuildTableName = "post_rebuild";
+  constexpr int kNumRows = 10000;
+
+  FLAGS_num_tablet_servers = 3;
+  FLAGS_num_replicas = 3;
+
+  // Create a table and insert some rows
+  NO_FATALS(MakeTestTable(kPreRebuildTableName, kNumRows, 3, cluster_.get()));
+
+  // Scan the table to strings so we can check it isn't corrupted post-rebuild.
+  vector<string> rows;
+  {
+    client::sp::shared_ptr<KuduTable> table;
+    ASSERT_OK(client_->OpenTable(kPreRebuildTableName, &table));
+    ScanTableToStrings(table.get(), &rows);
+  }
+
+  // Shut down the master and wipe out its data.
+  NO_FATALS(cluster_->master()->Shutdown());
+  ASSERT_OK(cluster_->master()->DeleteFromDisk());
+
+  // Rebuild the master with the tool.
+  string stdout;
+  ASSERT_OK(RunKuduTool(RebuildMasterCmd(*cluster_, is_secure), &stdout));
+  ASSERT_STR_CONTAINS(stdout,
+                      "Rebuilt from 3 tablet servers, of which 0 had errors");
+  ASSERT_STR_CONTAINS(stdout, "Rebuilt from 3 replicas, of which 0 had errors");
+
+  // Restart the master and the tablet servers.
+  // The tablet servers must be restarted so they accept the new master's certs.
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    cluster_->tablet_server(i)->Shutdown();
+  }
+  ASSERT_OK(cluster_->Restart());
+
+  // Verify we can read back exactly what we read before the rebuild.
+  // The client has to be rebuilt since there's a new master.
+  KuduClientBuilder builder;
+  ASSERT_OK(cluster_->CreateClient(&builder, &client_));
+  vector<string> postrebuild_rows;
+  {
+    client::sp::shared_ptr<KuduTable> table;
+    ASSERT_OK(client_->OpenTable(kPreRebuildTableName, &table));
+    ScanTableToStrings(table.get(), &postrebuild_rows);
+  }
+  ASSERT_EQ(rows.size(), postrebuild_rows.size());
+  for (int i = 0; i < rows.size(); i++) {
+    ASSERT_EQ(rows[i], postrebuild_rows[i]) << "Mismatch at row " << i
+                                            << " of " << rows.size();
+  }
+  // The cluster should still be considered healthy.
+  FLAGS_sasl_protocol_name = kPrincipal;
+  ClusterVerifier cv(cluster_.get());
+  NO_FATALS(cv.CheckCluster());
+
+  // Make sure we can delete the table we created before the rebuild.
+  ASSERT_OK(client_->DeleteTable(kPreRebuildTableName));
+
+  // Make sure we can create a table and write to it.
+  NO_FATALS(MakeTestTable(kPostRebuildTableName, kNumRows, 3, cluster_.get()));
+  NO_FATALS(cv.CheckCluster());
+}
+
+INSTANTIATE_TEST_SUITE_P(IsSecure, SecureClusterAdminCliParamTest,
+                         ::testing::Bool());
+
 
 } // namespace tools
 } // namespace kudu

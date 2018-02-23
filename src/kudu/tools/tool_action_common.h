@@ -29,6 +29,7 @@
 #include "kudu/rpc/response_callback.h"
 #include "kudu/tools/tool_action.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -55,6 +56,10 @@ class ReadableLogSegment;
 namespace server {
 class ServerStatusPB;
 } // namespace server
+
+namespace tserver {
+class TabletServerServiceProxy;
+} // namespace tserver
 
 namespace tools {
 
@@ -123,6 +128,10 @@ Status BuildProxy(const std::string& address,
 // If 'address' does not contain a port, 'default_port' is used instead.
 Status GetServerStatus(const std::string& address, uint16_t default_port,
                        server::ServerStatusPB* status);
+
+
+Status GetReplicas(tserver::TabletServerServiceProxy* proxy,
+                   std::vector<tserver::ListTabletsResponsePB::StatusAndSchemaPB>* replicas);
 
 // Prints the contents of a WAL segment to stdout.
 //

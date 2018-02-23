@@ -175,6 +175,7 @@ constexpr const char* const kPeerUUIDsArg = "peer uuids";
 constexpr const char* const kPeerUUIDsArgDesc =
     "List of peer uuids to be part of new config, separated by whitespace";
 
+
 Status GetReplicas(TabletServerServiceProxy* proxy,
                    vector<ListTabletsResponsePB::StatusAndSchemaPB>* replicas) {
   ListTabletsRequestPB req;
