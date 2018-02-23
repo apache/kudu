@@ -94,7 +94,11 @@ Status EasyCurl::DoRequest(const std::string& url,
   }
 
   RETURN_NOT_OK(TranslateError(curl_easy_setopt(curl_, CURLOPT_HTTPAUTH, CURLAUTH_ANY)));
-
+  if (timeout_.Initialized()) {
+    RETURN_NOT_OK(TranslateError(curl_easy_setopt(curl_, CURLOPT_NOSIGNAL, 1)));
+    RETURN_NOT_OK(TranslateError(curl_easy_setopt(curl_, CURLOPT_TIMEOUT_MS,
+        timeout_.ToMilliseconds())));
+  }
   RETURN_NOT_OK(TranslateError(curl_easy_perform(curl_)));
   long rc; // NOLINT(runtime/int) curl wants a long
   RETURN_NOT_OK(TranslateError(curl_easy_getinfo(curl_, CURLINFO_RESPONSE_CODE, &rc)));

@@ -20,6 +20,7 @@
 #include <string>
 
 #include "kudu/gutil/macros.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 
 typedef void CURL;
@@ -58,6 +59,10 @@ class EasyCurl {
     return_headers_ = v;
   }
 
+  void set_timeout(MonoDelta t) {
+    timeout_ = t;
+  }
+
  private:
   // Do a request. If 'post_data' is non-NULL, does a POST.
   // Otherwise, does a GET.
@@ -71,6 +76,8 @@ class EasyCurl {
 
   // Whether to return the HTTP headers with the response.
   bool return_headers_ = false;
+
+  MonoDelta timeout_;
 
   DISALLOW_COPY_AND_ASSIGN(EasyCurl);
 };

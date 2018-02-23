@@ -363,6 +363,8 @@ class PeriodicWebUIChecker {
  private:
   void CheckThread() {
     EasyCurl curl;
+    // Set some timeout so that if the page deadlocks, we fail the test.
+    curl.set_timeout(MonoDelta::FromSeconds(120));
     faststring dst;
     LOG(INFO) << "Curl thread will poll the following URLs every " << period_.ToMilliseconds()
         << " ms: ";
@@ -373,9 +375,11 @@ class PeriodicWebUIChecker {
       // Poll all of the URLs.
       const MonoTime start = MonoTime::Now();
       for (const auto& url : urls_) {
-        if (curl.FetchURL(url, &dst).ok()) {
+        Status s = curl.FetchURL(url, &dst);
+        if (s.ok()) {
           CHECK_GT(dst.length(), 0);
         }
+        CHECK(!s.IsTimedOut()) << "timed out fetching url " << url;
       }
       // Sleep until the next period
       const MonoDelta elapsed = MonoTime::Now() - start;
