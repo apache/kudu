@@ -2640,9 +2640,12 @@ Status RetryingTSRpcTask::Run() {
   rpc_.Reset();
   rpc_.set_deadline(deadline);
 
+  // Increment the counter of the attempts to run the task.
+  ++attempt_;
+
   Status s = ResetTSProxy();
   if (s.ok()) {
-    if (SendRequest(++attempt_)) {
+    if (SendRequest(attempt_)) {
       return Status::OK();
     }
   } else {
