@@ -416,7 +416,7 @@ index 83feda1..4e343ba 100644
 +  Span* span;
 +  Length length;
 +};
-+typedef std::set<SpanPtrWithLength, SpanBestFitLess, STLPageHeapAllocator<Span*, void> > SpanSet;
++typedef std::set<SpanPtrWithLength, SpanBestFitLess, STLPageHeapAllocator<SpanPtrWithLength, void> > SpanSet;
 +
 +// Comparator for best-fit search, with address order as a tie-breaker.
 +struct SpanBestFitLess {
