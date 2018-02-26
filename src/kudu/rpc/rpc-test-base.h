@@ -413,10 +413,6 @@ class RpcTestBase : public KuduTest {
       metric_entity_(METRIC_ENTITY_server.Instantiate(&metric_registry_, "test.rpc_test")) {
   }
 
-  void SetUp() override {
-    KuduTest::SetUp();
-  }
-
   void TearDown() override {
     if (service_pool_) {
       server_messenger_->UnregisterService(service_name_);
@@ -429,13 +425,14 @@ class RpcTestBase : public KuduTest {
   }
 
  protected:
-  std::shared_ptr<Messenger> CreateMessenger(const std::string &name,
-                                             int n_reactors = 1,
-                                             bool enable_ssl = false,
-                                             const std::string& rpc_certificate_file = "",
-                                             const std::string& rpc_private_key_file = "",
-                                             const std::string& rpc_ca_certificate_file = "",
-                                             const std::string& rpc_private_key_password_cmd = "") {
+  Status CreateMessenger(const std::string& name,
+                         std::shared_ptr<Messenger>* messenger,
+                         int n_reactors = 1,
+                         bool enable_ssl = false,
+                         const std::string& rpc_certificate_file = "",
+                         const std::string& rpc_private_key_file = "",
+                         const std::string& rpc_ca_certificate_file = "",
+                         const std::string& rpc_private_key_password_cmd = "") {
     MessengerBuilder bld(name);
 
     if (enable_ssl) {
@@ -455,9 +452,7 @@ class RpcTestBase : public KuduTest {
           MonoDelta::FromMilliseconds(std::min(keepalive_time_ms_ / 5, 100)));
     }
     bld.set_metric_entity(metric_entity_);
-    std::shared_ptr<Messenger> messenger;
-    CHECK_OK(bld.Build(&messenger));
-    return messenger;
+    return bld.Build(messenger);
   }
 
   Status DoTestSyncCall(const Proxy &p, const char *method,
@@ -563,23 +558,25 @@ class RpcTestBase : public KuduTest {
     LOG(INFO) << "status: " << s.ToString() << ", seconds elapsed: " << sw.elapsed().wall_seconds();
   }
 
-  void StartTestServer(Sockaddr *server_addr,
-                       bool enable_ssl = false,
-                       const std::string& rpc_certificate_file = "",
-                       const std::string& rpc_private_key_file = "",
-                       const std::string& rpc_ca_certificate_file = "",
-                       const std::string& rpc_private_key_password_cmd = "") {
-    DoStartTestServer<GenericCalculatorService>(server_addr, enable_ssl, rpc_certificate_file,
-        rpc_private_key_file, rpc_ca_certificate_file, rpc_private_key_password_cmd);
+  Status StartTestServer(Sockaddr *server_addr,
+                         bool enable_ssl = false,
+                         const std::string& rpc_certificate_file = "",
+                         const std::string& rpc_private_key_file = "",
+                         const std::string& rpc_ca_certificate_file = "",
+                         const std::string& rpc_private_key_password_cmd = "") {
+    return DoStartTestServer<GenericCalculatorService>(
+        server_addr, enable_ssl, rpc_certificate_file, rpc_private_key_file,
+        rpc_ca_certificate_file, rpc_private_key_password_cmd);
   }
 
-  void StartTestServerWithGeneratedCode(Sockaddr *server_addr, bool enable_ssl = false) {
-    DoStartTestServer<CalculatorService>(server_addr, enable_ssl);
+  Status StartTestServerWithGeneratedCode(Sockaddr *server_addr, bool enable_ssl = false) {
+    return DoStartTestServer<CalculatorService>(server_addr, enable_ssl);
   }
 
-  void StartTestServerWithCustomMessenger(Sockaddr *server_addr,
+  Status StartTestServerWithCustomMessenger(Sockaddr *server_addr,
       const std::shared_ptr<Messenger>& messenger, bool enable_ssl = false) {
-    DoStartTestServer<GenericCalculatorService>(server_addr, enable_ssl, "", "", "", "", messenger);
+    return DoStartTestServer<GenericCalculatorService>(
+        server_addr, enable_ssl, "", "", "", "", messenger);
   }
 
   // Start a simple socket listening on a local port, returning the address.
@@ -605,23 +602,24 @@ class RpcTestBase : public KuduTest {
   }
 
   template<class ServiceClass>
-  void DoStartTestServer(Sockaddr *server_addr,
-                         bool enable_ssl = false,
-                         const std::string& rpc_certificate_file = "",
-                         const std::string& rpc_private_key_file = "",
-                         const std::string& rpc_ca_certificate_file = "",
-                         const std::string& rpc_private_key_password_cmd = "",
-                         const std::shared_ptr<Messenger>& messenger = nullptr) {
+  Status DoStartTestServer(Sockaddr *server_addr,
+                           bool enable_ssl = false,
+                           const std::string& rpc_certificate_file = "",
+                           const std::string& rpc_private_key_file = "",
+                           const std::string& rpc_ca_certificate_file = "",
+                           const std::string& rpc_private_key_password_cmd = "",
+                           const std::shared_ptr<Messenger>& messenger = nullptr) {
     if (!messenger) {
-      server_messenger_ =
-          CreateMessenger("TestServer", n_server_reactor_threads_, enable_ssl, rpc_certificate_file,
-              rpc_private_key_file, rpc_ca_certificate_file, rpc_private_key_password_cmd);
+      RETURN_NOT_OK(CreateMessenger(
+          "TestServer", &server_messenger_, n_server_reactor_threads_, enable_ssl,
+          rpc_certificate_file, rpc_private_key_file, rpc_ca_certificate_file,
+          rpc_private_key_password_cmd));
     } else {
       server_messenger_ = messenger;
     }
     std::shared_ptr<AcceptorPool> pool;
-    ASSERT_OK(server_messenger_->AddAcceptorPool(Sockaddr(), &pool));
-    ASSERT_OK(pool->Start(2));
+    RETURN_NOT_OK(server_messenger_->AddAcceptorPool(Sockaddr(), &pool));
+    RETURN_NOT_OK(pool->Start(2));
     *server_addr = pool->bind_address();
     mem_tracker_ = MemTracker::CreateTracker(-1, "result_tracker");
     result_tracker_.reset(new ResultTracker(mem_tracker_));
@@ -631,7 +629,9 @@ class RpcTestBase : public KuduTest {
     scoped_refptr<MetricEntity> metric_entity = server_messenger_->metric_entity();
     service_pool_ = new ServicePool(std::move(service), metric_entity, service_queue_length_);
     server_messenger_->RegisterService(service_name_, service_pool_);
-    ASSERT_OK(service_pool_->Init(n_worker_threads_));
+    RETURN_NOT_OK(service_pool_->Init(n_worker_threads_));
+
+    return Status::OK();
   }
 
  protected:

@@ -43,6 +43,7 @@
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using std::bind;
@@ -87,6 +88,7 @@ class RpcBench : public RpcTestBase {
   {}
 
   void SetUp() override {
+    RpcTestBase::SetUp();
     OverrideFlagForSlowTests("run_seconds", "10");
 
     n_worker_threads_ = FLAGS_worker_threads;
@@ -94,7 +96,7 @@ class RpcBench : public RpcTestBase {
 
     // Set up server.
     FLAGS_rpc_encrypt_loopback_connections = FLAGS_enable_encryption;
-    StartTestServerWithGeneratedCode(&server_addr_, FLAGS_enable_encryption);
+    ASSERT_OK(StartTestServerWithGeneratedCode(&server_addr_, FLAGS_enable_encryption));
   }
 
   void SummarizePerf(CpuTimes elapsed, int total_reqs, bool sync) {
@@ -160,7 +162,8 @@ class ClientThread {
   }
 
   void Run() {
-    shared_ptr<Messenger> client_messenger = bench_->CreateMessenger("Client");
+    shared_ptr<Messenger> client_messenger;
+    CHECK_OK(bench_->CreateMessenger("Client", &client_messenger));
 
     CalculatorServiceProxy p(client_messenger, bench_->server_addr_, "localhost");
 
@@ -256,7 +259,9 @@ TEST_F(RpcBench, BenchmarkCallsAsync) {
 
   vector<shared_ptr<Messenger>> messengers;
   for (int i = 0; i < threads; i++) {
-    messengers.push_back(CreateMessenger("Client"));
+    shared_ptr<Messenger> m;
+    ASSERT_OK(CreateMessenger("Client", &m));
+    messengers.emplace_back(std::move(m));
   }
 
   vector<unique_ptr<ClientAsyncWorkload>> workloads;

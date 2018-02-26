@@ -39,7 +39,6 @@
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/rpc/messenger.h"
@@ -81,13 +80,13 @@ namespace rpc {
 
 class RpcStubTest : public RpcTestBase {
  public:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     RpcTestBase::SetUp();
     // Use a shorter queue length since some tests below need to start enough
     // threads to saturate the queue.
     service_queue_length_ = 10;
-    StartTestServerWithGeneratedCode(&server_addr_);
-    client_messenger_ = CreateMessenger("Client");
+    ASSERT_OK(StartTestServerWithGeneratedCode(&server_addr_));
+    ASSERT_OK(CreateMessenger("Client", &client_messenger_));
   }
  protected:
   void SendSimpleCall() {

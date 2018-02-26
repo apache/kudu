@@ -67,7 +67,8 @@ class MultiThreadedRpcTest : public RpcTestBase {
   void SingleCall(Sockaddr server_addr, const char* method_name,
                   Status* result, CountDownLatch* latch) {
     LOG(INFO) << "Connecting to " << server_addr.ToString();
-    shared_ptr<Messenger> client_messenger(CreateMessenger("ClientSC"));
+    shared_ptr<Messenger> client_messenger;
+    CHECK_OK(CreateMessenger("ClientSC", &client_messenger));
     Proxy p(client_messenger, server_addr, server_addr.host(),
             GenericCalculatorService::static_service_name());
     *result = DoTestSyncCall(p, method_name);
@@ -77,7 +78,8 @@ class MultiThreadedRpcTest : public RpcTestBase {
   // Make RPC calls until we see a failure.
   void HammerServer(Sockaddr server_addr, const char* method_name,
                     Status* last_result) {
-    shared_ptr<Messenger> client_messenger(CreateMessenger("ClientHS"));
+    shared_ptr<Messenger> client_messenger;
+    CHECK_OK(CreateMessenger("ClientHS", &client_messenger));
     HammerServerWithMessenger(server_addr, method_name, last_result, client_messenger);
   }
 
@@ -116,7 +118,7 @@ static void AssertShutdown(kudu::Thread* thread, const Status* status) {
 TEST_F(MultiThreadedRpcTest, TestShutdownDuringService) {
   // Set up server.
   Sockaddr server_addr;
-  StartTestServer(&server_addr);
+  ASSERT_OK(StartTestServer(&server_addr));
 
   const int kNumThreads = 4;
   scoped_refptr<kudu::Thread> threads[kNumThreads];
@@ -144,9 +146,10 @@ TEST_F(MultiThreadedRpcTest, TestShutdownDuringService) {
 TEST_F(MultiThreadedRpcTest, TestShutdownClientWhileCallsPending) {
   // Set up server.
   Sockaddr server_addr;
-  StartTestServer(&server_addr);
+  ASSERT_OK(StartTestServer(&server_addr));
 
-  shared_ptr<Messenger> client_messenger(CreateMessenger("Client"));
+  shared_ptr<Messenger> client_messenger;
+  ASSERT_OK(CreateMessenger("Client", &client_messenger));
 
   scoped_refptr<kudu::Thread> thread;
   Status status;
@@ -282,7 +285,7 @@ static void HammerServerWithTCPConns(const Sockaddr& addr) {
 TEST_F(MultiThreadedRpcTest, TestShutdownWithIncomingConnections) {
   // Set up server.
   Sockaddr server_addr;
-  StartTestServer(&server_addr);
+  ASSERT_OK(StartTestServer(&server_addr));
 
   // Start a number of threads which just hammer the server with TCP connections.
   vector<scoped_refptr<kudu::Thread> > threads;
