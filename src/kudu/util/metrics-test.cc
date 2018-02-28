@@ -206,10 +206,20 @@ TEST_F(MetricsTest, JsonPrintTest) {
   ASSERT_OK(reader.ExtractString(attributes, "test_attr", &attr_value));
   ASSERT_EQ("attr_val", attr_value);
 
+  // Verify that metric filtering matches on substrings.
+  out.str("");
+  ASSERT_OK(entity_->WriteAsJson(&writer, { "test count" }, MetricJsonOptions()));
+  ASSERT_STR_CONTAINS(METRIC_test_counter.name(), out.str());
+
   // Verify that, if we filter for a metric that isn't in this entity, we get no result.
   out.str("");
   ASSERT_OK(entity_->WriteAsJson(&writer, { "not_a_matching_metric" }, MetricJsonOptions()));
   ASSERT_EQ("", out.str());
+
+  // Verify that filtering is case-insensitive.
+  out.str("");
+  ASSERT_OK(entity_->WriteAsJson(&writer, { "mY teST coUNteR" }, MetricJsonOptions()));
+  ASSERT_STR_CONTAINS(METRIC_test_counter.name(), out.str());
 }
 
 // Test that metrics are retired when they are no longer referenced.
