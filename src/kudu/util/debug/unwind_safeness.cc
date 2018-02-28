@@ -32,8 +32,6 @@
 
 #include <glog/logging.h>
 
-#include "kudu/gutil/port.h"
-
 #define CALL_ORIG(func_name, ...) \
   ((decltype(&func_name))g_orig_ ## func_name)(__VA_ARGS__)
 
@@ -41,6 +39,10 @@ typedef int (*dl_iterate_phdr_cbtype)(struct dl_phdr_info *, size_t, void *);
 
 namespace {
 
+// Whether InitializeIfNecessary() has been called.
+bool g_initted;
+
+// The original versions of our wrapped functions.
 void* g_orig_dlopen;
 void* g_orig_dlclose;
 #ifndef __APPLE__
@@ -68,13 +70,32 @@ void *dlsym_or_die(const char *sym) {
   return ret;
 }
 
+// Initialize the global variables which store the original references. This is
+// set up as a constructor so that we're guaranteed to call this before main()
+// while we are still single-threaded.
+//
+// NOTE: We _also_ call explicitly this from each of the wrappers, because
+// there are some cases where the constructors of dynamic libraries may call
+// dlopen, and there is no guarantee that our own constructor runs before
+// the constructor of other libraries.
+//
+// A couple examples of the above:
+//
+// 1) In ASAN builds, the sanitizer runtime ends up calling dl_iterate_phdr from its
+//    initialization.
+// 2) OpenSSL in FIPS mode calls dlopen() within its constructor.
 __attribute__((constructor))
-void Init(void) {
+void InitIfNecessary() {
+  // Dynamic library initialization is always single-threaded, so there's no
+  // need for any synchronization here.
+  if (g_initted) return;
+
   g_orig_dlopen = dlsym_or_die("dlopen");
   g_orig_dlclose = dlsym_or_die("dlclose");
 #ifndef __APPLE__ // This function doesn't exist on macOS.
   g_orig_dl_iterate_phdr = dlsym_or_die("dl_iterate_phdr");
 #endif
+  g_initted = true;
 }
 
 } // anonymous namespace
@@ -92,11 +113,13 @@ bool SafeToUnwindStack() {
 extern "C" {
 
 void *dlopen(const char *filename, int flag) { // NOLINT
+  InitIfNecessary();
   ScopedBumpDepth d;
   return CALL_ORIG(dlopen, filename, flag);
 }
 
 int dlclose(void *handle) { // NOLINT
+  InitIfNecessary();
   ScopedBumpDepth d;
   return CALL_ORIG(dlclose, handle);
 }
@@ -105,14 +128,7 @@ int dlclose(void *handle) { // NOLINT
 // function and blocks signals while calling it.
 #if !defined(THREAD_SANITIZER) && !defined(__APPLE__)
 int dl_iterate_phdr(dl_iterate_phdr_cbtype callback, void *data) { // NOLINT
-  // In ASAN builds, the sanitizer runtime ends up calling dl_iterate_phdr from its
-  // initialization, which runs before our own constructor functions. In that case, we
-  // need to call Init() from here rather than via the normal path. There's no need to
-  // worry about thread-safety since this all happens single-threaded during startup.
-  if (PREDICT_FALSE(!g_orig_dl_iterate_phdr)) {
-    Init();
-  }
-
+  InitIfNecessary();
   ScopedBumpDepth d;
   return CALL_ORIG(dl_iterate_phdr, callback, data);
 }
