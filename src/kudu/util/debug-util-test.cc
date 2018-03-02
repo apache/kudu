@@ -186,9 +186,10 @@ TEST_F(DebugUtilTest, TestSnapshot) {
   int groups = 0;
   snap.VisitGroups([&](ArrayView<StackTraceSnapshot::ThreadInfo> group) {
       groups++;
-      for (auto& info : group) {
+      for (const auto& info : group) {
         count++;
-        LOG(INFO) << info.tid << " " << info.thread_name;
+        LOG(INFO) << info.tid << " " << info.thread_name
+                  << " (" << info.status.ToString() << ")";
       }
       LOG(INFO) << group[0].stack.ToHexString();
     });
