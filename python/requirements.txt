@@ -3,3 +3,11 @@ cython == 0.26.1
 six
 unittest2
 pytz
+
+# This is a dependency of pytest, but if we don't list it here, python 2.6
+# virtualenvs will fail in build_ext with this exception:
+#
+#   pkg_resources.DistributionNotFound: The 'setuptools_scm>=1.15.0' distribution was not found and is required by the application
+#
+# See https://github.com/pypa/setuptools_scm/issues/209 for more details.
+setuptools_scm
