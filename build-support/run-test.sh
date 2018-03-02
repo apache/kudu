@@ -52,14 +52,20 @@ TEST_DIRNAME=$(cd $(dirname $TEST_PATH); pwd)
 TEST_FILENAME=$(basename $TEST_PATH)
 ABS_TEST_PATH=$TEST_DIRNAME/$TEST_FILENAME
 shift
-TEST_NAME=$(echo $TEST_FILENAME | perl -pe 's/\..+?$//') # Remove path and extension (if any).
+# Remove path and extension (if any).
+
+# The "short" test name doesn't include the shard number.
+SHORT_TEST_NAME=$(echo $TEST_FILENAME | perl -pe 's/\..+?$//')
+
+# The full test name does include the shard number.
+TEST_NAME=${SHORT_TEST_NAME}.${GTEST_SHARD_INDEX:-0}
 
 # Determine whether the test is a known flaky by comparing against the user-specified
 # list.
 TEST_EXECUTION_ATTEMPTS=1
 if [ -n "$KUDU_FLAKY_TEST_LIST" ]; then
   if [ -f "$KUDU_FLAKY_TEST_LIST" ]; then
-    IS_KNOWN_FLAKY=$(grep --count --line-regexp "$TEST_NAME" "$KUDU_FLAKY_TEST_LIST")
+    IS_KNOWN_FLAKY=$(grep --count --line-regexp "$SHORT_TEST_NAME" "$KUDU_FLAKY_TEST_LIST")
   else
     echo "Flaky test list file $KUDU_FLAKY_TEST_LIST missing"
     IS_KNOWN_FLAKY=0
@@ -82,6 +88,7 @@ set -o pipefail
 
 LOGFILE=$TEST_LOGDIR/$TEST_NAME.txt
 XMLFILE=$TEST_LOGDIR/$TEST_NAME.xml
+export GTEST_OUTPUT="xml:$XMLFILE" # Enable JUnit-compatible XML output.
 
 # Remove both the compressed and uncompressed output, so the developer
 # doesn't accidentally get confused and read output from a prior test

@@ -261,7 +261,7 @@ set(KUDU_TEST_LINK_LIBS
   kudu_client
   mini_cluster
   ${KUDU_MIN_TEST_LIBS})
-ADD_KUDU_TEST(client-test)
+ADD_KUDU_TEST(client-test NUM_SHARDS 8)
 ADD_KUDU_TEST(client-unittest)
 ADD_KUDU_TEST(predicate-test)
 ADD_KUDU_TEST(scan_token-test)

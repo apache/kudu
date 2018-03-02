@@ -292,7 +292,6 @@ make -j$NUM_PROCS 2>&1 | tee build.log
 set +e
 
 # Run tests
-export GTEST_OUTPUT="xml:$TEST_LOGDIR/" # Enable JUnit-compatible XML output.
 if [ "$RUN_FLAKY_ONLY" == "1" ] ; then
   if [ -z "$TEST_RESULT_SERVER" ]; then
     echo Must set TEST_RESULT_SERVER to use RUN_FLAKY_ONLY
@@ -335,7 +334,7 @@ if [ "$ENABLE_DIST_TEST" == "1" ]; then
   echo ------------------------------------------------------------
   export DIST_TEST_JOB_PATH=$BUILD_ROOT/dist-test-job-id
   rm -f $DIST_TEST_JOB_PATH
-  if ! $SOURCE_ROOT/build-support/dist_test.py --no-wait run-all ; then
+  if ! $SOURCE_ROOT/build-support/dist_test.py --no-wait run ; then
     EXIT_STATUS=1
     FAILURES="$FAILURES"$'Could not submit distributed test job\n'
   fi
@@ -536,19 +535,7 @@ if [ "$ENABLE_DIST_TEST" == "1" ]; then
   # Move them back into the main log directory
   rm -f $DT_DIR/*zip
   for arch_dir in $DT_DIR/* ; do
-    # In the case of sharded tests, we'll have multiple subdirs
-    # which contain files of the same name. We need to disambiguate
-    # when we move back. We can grab the shard index from the task name
-    # which is in the archive directory name.
-    shard_idx=$(echo $arch_dir | perl -ne '
-      if (/(\d+)$/) {
-        print $1;
-      } else {
-        print "unknown_shard";
-      }')
-    for log_file in $arch_dir/build/$BUILD_TYPE_LOWER/test-logs/* ; do
-      mv $log_file $TEST_LOGDIR/${shard_idx}_$(basename $log_file)
-    done
+    mv $arch_dir/build/$BUILD_TYPE_LOWER/test-logs/* $TEST_LOGDIR
     rm -Rf $arch_dir
   done
 fi

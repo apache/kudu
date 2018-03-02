@@ -677,13 +677,27 @@ endfunction()
 #       Jenkins builds typically execute tests using dist-test, and that
 #       does not respect these timeouts. If a test suite is long enough
 #       to require a bumped timeout, consider enabling sharding of the
-#       test by adding it to the NUM_SHARDS_BY_TEST dictionary in dist_test.py.
+#       test (see below).
+#
+#   NUM_SHARDS <num shards>
+#       Sets the number of shards used for running this test.
+#
+#       This configuration splits up the test cases within the binary
+#       into several separate shards. Each shard becomes a separate
+#       test case when run by ctest or when submitted for distributed testing.
+#       This should be used whenever a test binary is long-running and
+#       consists of many separate test cases.
+#
+#       NOTE: sharding is still recommended even for tests with RUN_SERIAL
+#       or RESOURCE_LOCK properties. Even though the shards cannot run in
+#       parallel on a single machine using ctest, they will still run in
+#       parallel across separate machines using dist-test.
 #
 # Any other arguments will be passed to set_tests_properties().
 function(ADD_KUDU_TEST REL_TEST_NAME)
   # Parse out properties for which we have special handling.
   set(options)
-  set(one_value_args TIMEOUT)
+  set(one_value_args TIMEOUT NUM_SHARDS)
   set(multi_value_args)
   cmake_parse_arguments(ARG "${options}" "${one_value_args}" "${multi_value_args}" ${ARGN})
   if(NOT ARG_TIMEOUT)
@@ -692,6 +706,10 @@ function(ADD_KUDU_TEST REL_TEST_NAME)
     # in build-support/run-test.sh
     set(ARG_TIMEOUT 900)
   endif()
+  if(NOT ARG_NUM_SHARDS)
+    set(ARG_NUM_SHARDS 1)
+  endif()
+
   # Any unrecognized arguments go into ${ARG_UNPARSED_ARGUMENTS}, which we forward
   # along as properties down below.
 
@@ -719,25 +737,32 @@ function(ADD_KUDU_TEST REL_TEST_NAME)
     message(FATAL_ERROR "Neither ${REL_TEST_NAME} nor ${REL_TEST_NAME}.cc were found in ${CMAKE_CURRENT_SOURCE_DIR}/")
   endif()
 
-  add_test(${TEST_NAME}
-    ${BUILD_SUPPORT_DIR}/run-test.sh ${TEST_PATH})
-  if(ARG_UNPARSED_ARGUMENTS)
-    set_tests_properties(${TEST_NAME} PROPERTIES ${ARG_UNPARSED_ARGUMENTS})
-  endif()
-  # Set the ctest timeout to be a bit longer than the timeout we pass to
-  # our test wrapper. This gives the test wrapper some opportunity to do
-  # things like dump stacks, compress the log, etc.
-  math(EXPR EXTENDED_TIMEOUT "${ARG_TIMEOUT} + 30")
+  math(EXPR MAX_SHARD "${ARG_NUM_SHARDS} - 1")
+  foreach(SHARD_NUM RANGE ${MAX_SHARD})
+    set(TARGET ${TEST_NAME}.${SHARD_NUM})
 
-  # Add the configured timeout to the environment for the test wrapper.
-  get_test_property(${TEST_NAME} ENVIRONMENT CUR_TEST_ENV)
-  if(NOT CUR_TEST_ENV)
-    set(CUR_TEST_ENV "")
-  endif()
-  list(APPEND CUR_TEST_ENV "KUDU_TEST_TIMEOUT=${ARG_TIMEOUT}")
-  set_tests_properties(${TEST_NAME} PROPERTIES
-    TIMEOUT ${EXTENDED_TIMEOUT}
-    ENVIRONMENT "${CUR_TEST_ENV}")
+    add_test(${TARGET}
+      ${BUILD_SUPPORT_DIR}/run-test.sh ${TEST_PATH})
+    if(ARG_UNPARSED_ARGUMENTS)
+      set_tests_properties(${TARGET} PROPERTIES ${ARG_UNPARSED_ARGUMENTS})
+    endif()
+    # Set the ctest timeout to be a bit longer than the timeout we pass to
+    # our test wrapper. This gives the test wrapper some opportunity to do
+    # things like dump stacks, compress the log, etc.
+    math(EXPR EXTENDED_TIMEOUT "${ARG_TIMEOUT} + 30")
+
+    # Add the configured timeout to the environment for the test wrapper.
+    get_test_property(${TARGET} ENVIRONMENT CUR_TEST_ENV)
+    if(NOT CUR_TEST_ENV)
+      set(CUR_TEST_ENV "")
+    endif()
+    list(APPEND CUR_TEST_ENV "KUDU_TEST_TIMEOUT=${ARG_TIMEOUT}")
+    list(APPEND CUR_TEST_ENV "GTEST_TOTAL_SHARDS=${ARG_NUM_SHARDS}")
+    list(APPEND CUR_TEST_ENV "GTEST_SHARD_INDEX=${SHARD_NUM}")
+    set_tests_properties(${TARGET} PROPERTIES
+      TIMEOUT ${EXTENDED_TIMEOUT}
+      ENVIRONMENT "${CUR_TEST_ENV}")
+  endforeach(SHARD_NUM)
 endfunction()
 
 # A wrapper for add_dependencies() that is compatible with NO_TESTS.

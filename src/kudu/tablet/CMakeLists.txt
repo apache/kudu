@@ -87,7 +87,7 @@ target_link_libraries(tablet
 set(KUDU_TEST_LINK_LIBS tablet ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(tablet-test)
 ADD_KUDU_TEST(tablet_metadata-test)
-ADD_KUDU_TEST(mt-tablet-test RUN_SERIAL true)
+ADD_KUDU_TEST(mt-tablet-test RUN_SERIAL true NUM_SHARDS 4)
 
 # Copy data file needed for compaction_policy-test.
 execute_process(COMMAND ln -sf ${CMAKE_CURRENT_SOURCE_DIR}/ycsb-test-rowsets.tsv
@@ -96,7 +96,7 @@ ADD_KUDU_TEST(compaction_policy-test
   # Can't use dist-test because it relies on a data file.
   LABELS no_dist_test)
 
-ADD_KUDU_TEST(all_types-scan-correctness-test)
+ADD_KUDU_TEST(all_types-scan-correctness-test NUM_SHARDS 8)
 ADD_KUDU_TEST(diskrowset-test)
 ADD_KUDU_TEST(mt-diskrowset-test RUN_SERIAL true)
 ADD_KUDU_TEST(memrowset-test)
@@ -111,7 +111,7 @@ ADD_KUDU_TEST(metadata-test)
 ADD_KUDU_TEST(mvcc-test)
 ADD_KUDU_TEST(compaction-test)
 ADD_KUDU_TEST(lock_manager-test)
-ADD_KUDU_TEST(rowset_tree-test)
+ADD_KUDU_TEST(rowset_tree-test NUM_SHARDS 6)
 ADD_KUDU_TEST(composite-pushdown-test)
 ADD_KUDU_TEST(delta_compaction-test)
 ADD_KUDU_TEST(mt-rowset_delta_compaction-test)

@@ -133,11 +133,6 @@ def main():
     [os.path.join(ROOT, "build/dist-test-system-libs/"),
      os.path.abspath(os.path.join(test_dir, "..", "lib"))])
 
-  # GTEST_OUTPUT must be canonicalized and have a trailing slash for gtest to
-  # properly interpret it as a directory.
-  env['GTEST_OUTPUT'] = 'xml:' + os.path.abspath(
-    os.path.join(test_dir, "..", "test-logs")) + '/'
-
   # Don't pollute /tmp in dist-test setting. If a test crashes, the dist-test slave
   # will clear up our working directory but won't be able to find and clean up things
   # left in /tmp.

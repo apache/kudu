@@ -80,5 +80,5 @@ if (NOT NO_TESTS)
 
   # This test has to run serially since otherwise starting the HMS can take a very
   # long time.
-  ADD_KUDU_TEST(hms_client-test RUN_SERIAL true)
+  ADD_KUDU_TEST(hms_client-test RUN_SERIAL true NUM_SHARDS 4)
 endif()

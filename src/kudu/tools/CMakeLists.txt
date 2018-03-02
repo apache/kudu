@@ -145,7 +145,7 @@ ADD_KUDU_TEST(ksck_remote-test RESOURCE_LOCK "master-rpc-ports")
 ADD_KUDU_TEST(kudu-admin-test)
 ADD_KUDU_TEST_DEPENDENCIES(kudu-admin-test
   kudu)
-ADD_KUDU_TEST(kudu-tool-test)
+ADD_KUDU_TEST(kudu-tool-test NUM_SHARDS 4)
 ADD_KUDU_TEST_DEPENDENCIES(kudu-tool-test
   kudu)
 ADD_KUDU_TEST(kudu-ts-cli-test)
