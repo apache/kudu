@@ -236,7 +236,7 @@ def copy_system_library(lib):
     shutil.copy2(rel_to_abs(lib), dst)
   return dst
 
-
+LDD_CACHE={}
 def ldd_deps(exe):
   """
   Runs 'ldd' on the provided 'exe' path, returning a list of
@@ -253,9 +253,12 @@ def ldd_deps(exe):
       exe.endswith(".txt") or
       os.path.isdir(exe)):
     return []
-  p = subprocess.Popen(["ldd", exe], stdout=subprocess.PIPE)
-  out, err = p.communicate()
-  if p.returncode != 0:
+  if exe not in LDD_CACHE:
+    p = subprocess.Popen(["ldd", exe], stdout=subprocess.PIPE)
+    out, err = p.communicate()
+    LDD_CACHE[exe] = (out, err, p.returncode)
+  out, err, rc = LDD_CACHE[exe]
+  if rc != 0:
     print >>sys.stderr, "failed to run ldd on ", exe
     return []
   ret = []
