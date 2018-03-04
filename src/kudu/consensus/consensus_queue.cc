@@ -500,6 +500,7 @@ bool PeerMessageQueue::SafeToEvictUnlocked(const string& evict_uuid) const {
 
 void PeerMessageQueue::UpdatePeerHealthUnlocked(TrackedPeer* peer) {
   DCHECK(queue_lock_.is_locked());
+  DCHECK_EQ(LEADER, queue_state_.mode);
 
   auto overall_health_status = PeerHealthStatus(*peer);
 
@@ -611,7 +612,11 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
   SCOPED_CLEANUP({
       std::lock_guard<simple_spinlock> lock(queue_lock_);
       TrackedPeer* peer = FindPtrOrNull(peers_map_, uuid);
-      if (!peer) return;
+      if (PREDICT_FALSE(peer == nullptr || queue_state_.mode == NON_LEADER)) {
+        VLOG(1) << LogPrefixUnlocked() << "peer " << uuid
+                << " is no longer tracked or queue is not in leader mode";
+        return;
+      }
       if (wal_catchup_progress) peer->wal_catchup_possible = true;
       if (wal_catchup_failure) peer->wal_catchup_possible = false;
       UpdatePeerHealthUnlocked(peer);
@@ -843,7 +848,11 @@ void PeerMessageQueue::UpdatePeerStatus(const string& peer_uuid,
                                         const Status& status) {
   std::unique_lock<simple_spinlock> l(queue_lock_);
   TrackedPeer* peer = FindPtrOrNull(peers_map_, peer_uuid);
-  if (!peer) return;
+  if (PREDICT_FALSE(peer == nullptr || queue_state_.mode == NON_LEADER)) {
+    VLOG(1) << LogPrefixUnlocked() << "peer " << peer_uuid
+            << " is no longer tracked or queue is not in leader mode";
+    return;
+  }
   peer->last_exchange_status = ps;
 
   if (ps != PeerStatus::RPC_LAYER_ERROR) {
