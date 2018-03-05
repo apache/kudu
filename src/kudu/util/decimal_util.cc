@@ -21,13 +21,15 @@
 
 #include <glog/logging.h>
 
+#include "kudu/gutil/port.h"
+
 namespace kudu {
 
 using std::string;
 
 // Workaround for an ASAN build issue documented here:
 // https://bugs.llvm.org/show_bug.cgi?id=16404
-__attribute__((no_sanitize("undefined")))
+ATTRIBUTE_NO_SANITIZE_UNDEFINED
 int128_t MaxUnscaledDecimal(int8_t precision) {
   DCHECK_GE(precision, kMinDecimalPrecision);
   DCHECK_LE(precision, kMaxDecimalPrecision);
@@ -44,7 +46,7 @@ int128_t MinUnscaledDecimal(int8_t precision) {
 
 // Workaround for an ASAN build issue documented here:
 // https://bugs.llvm.org/show_bug.cgi?id=16404
-__attribute__((no_sanitize("undefined")))
+ATTRIBUTE_NO_SANITIZE_UNDEFINED
 string DecimalToString(int128_t d, int8_t scale) {
   // 38 digits, 1 extra leading zero, decimal point,
   // and sign are good for 128-bit or smaller decimals.
