@@ -24,15 +24,16 @@ import static org.junit.Assert.fail;
 
 import java.util.List;
 
+import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
 import com.google.common.net.HostAndPort;
 import com.stumbleupon.async.Callback;
 
 import org.junit.Assert;
 import org.junit.Test;
-
 import org.apache.kudu.consensus.Metadata;
 import org.apache.kudu.master.Master.ConnectToMasterResponsePB;
+import org.hamcrest.CoreMatchers;
 
 public class TestConnectToCluster {
 
@@ -97,6 +98,8 @@ public class TestConnectToCluster {
                   ".*Client configured with 1 master\\(s\\) " +
                   "\\(.+?\\) but cluster indicates it expects 3 master\\(s\\) " +
                   "\\(.+?,.+?,.+?\\).*"));
+          Assert.assertThat(Joiner.on("\n").join(e.getStackTrace()),
+              CoreMatchers.containsString("testConnectToOneOfManyMasters"));
         } finally {
           if (c != null) {
             c.close();
