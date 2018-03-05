@@ -120,7 +120,7 @@ def rev_parse(rev):
 
 def rev_list(arg):
   """Run git rev-list, returning an array of SHA1 commit hashes."""
-  return check_output(['git', 'rev-list', arg]).splitlines()
+  return check_output(['git', 'rev-list', arg]).decode('utf-8').splitlines()
 
 
 def describe_commit(rev):

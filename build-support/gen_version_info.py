@@ -67,7 +67,7 @@ def main():
 
   output_path = args[0]
 
-  hostname = check_output(["hostname", "-f"]).strip()
+  hostname = check_output(["hostname", "-f"]).strip().decode('utf-8')
   build_time = "%s %s" % (strftime("%d %b %Y %H:%M:%S", localtime()), time.tzname[0])
   username = os.getenv("USER")
 
@@ -78,7 +78,7 @@ def main():
   else:
     try:
       # No command line git hash, find it in the local git repository.
-      git_hash = check_output(["git", "rev-parse", "HEAD"]).strip()
+      git_hash = check_output(["git", "rev-parse", "HEAD"]).strip().decode('utf-8')
       clean_repo = subprocess.call("git diff --quiet && git diff --cached --quiet", shell=True) == 0
       clean_repo = str(clean_repo).lower()
     except Exception:
