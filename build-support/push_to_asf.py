@@ -43,6 +43,7 @@ import sys
 from kudu_util import check_output, confirm_prompt, Colors, get_my_email
 
 APACHE_REPO = "https://git-wip-us.apache.org/repos/asf/kudu.git"
+GERRIT_URL = "ssh://<username>@gerrit.cloudera.org:29418/kudu"
 GERRIT_URL_RE = re.compile(r"ssh://.+@gerrit.cloudera.org:29418/kudu")
 
 # ANSI color codes.
@@ -82,12 +83,12 @@ def check_gerrit_remote():
     url = check_output(['git', 'config', '--local', '--get', 'remote.gerrit.url']).strip().decode('utf-8')
   except subprocess.CalledProcessError:
     print("No remote named 'gerrit'. Please set one up following ", file=sys.stderr)
-    print("the contributor guide.", file=sys.stderr)
+    print("the contributor guide (git remote add gerrit %s)." % GERRIT_URL, file=sys.stderr)
     sys.exit(1)
   if not GERRIT_URL_RE.match(url):
     print("Unexpected URL for remote 'gerrit'.", file=sys.stderr)
     print("  Got:     ", url, file=sys.stderr)
-    print("  Expected to find host '%s' in the URL" % GERRIT_HOST, file=sys.stderr)
+    print("  Expected to find URL like '%s'" % GERRIT_URL, file=sys.stderr)
     sys.exit(1)
 
 
