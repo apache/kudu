@@ -24,6 +24,12 @@ import os
 import subprocess
 import sys
 
+# Alias raw_input() to input() in Python 2.
+try:
+  input = raw_input
+except NameError:
+  pass
+
 class Colors(object):
   """ ANSI color codes. """
 
@@ -63,14 +69,14 @@ def confirm_prompt(prompt):
   if the user confirms.
   """
   while True:
-    print prompt, "[Y/n]:",
+    print(prompt + "[Y/n]:"),
 
     if not os.isatty(sys.stdout.fileno()):
-      print "Not running interactively. Assuming 'N'."
+      print("Not running interactively. Assuming 'N'.")
       return False
       pass
 
-    r = raw_input().strip().lower()
+    r = input().strip().lower()
     if r in ['y', 'yes', '']:
       return True
     elif r in ['n', 'no']:
@@ -79,4 +85,5 @@ def confirm_prompt(prompt):
 
 def get_my_email():
   """ Return the email address in the user's git config. """
-  return check_output(['git', 'config', '--get', 'user.email']).strip()
+  return check_output(['git', 'config', '--get',
+      'user.email']).strip().decode('utf-8')
