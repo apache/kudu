@@ -27,7 +27,6 @@
 package org.apache.kudu.client;
 
 import java.io.IOException;
-import java.util.Arrays;
 
 import com.stumbleupon.async.DeferredGroupException;
 import com.stumbleupon.async.TimeoutException;
@@ -45,7 +44,6 @@ import org.apache.yetus.audience.InterfaceStability;
 @InterfaceStability.Evolving
 @SuppressWarnings("serial")
 public abstract class KuduException extends IOException {
-
   private final Status status;
 
   /**
@@ -77,6 +75,24 @@ public abstract class KuduException extends IOException {
   }
 
   /**
+   * When exceptions are thrown by the asynchronous Kudu client, the stack trace is
+   * typically deep within the internals of the Kudu client and/or Netty.
+   * Thus, when the synchronous Kudu client wraps and throws the exception,
+   * we suppress that stack trace and replace it with the stack trace of the user's
+   * calling thread. The original stack trace is added to the {@link KuduException}
+   * as a suppressed exception ({@see Throwable#addSuppressed(Throwable)}) of
+   * this
+   */
+  @InterfaceAudience.Public
+  @InterfaceStability.Evolving
+  public static class OriginalException extends Throwable {
+    private OriginalException(Throwable e) {
+      super("Original asynchronous stack trace");
+      setStackTrace(e.getStackTrace());
+    }
+  }
+
+  /**
    * Inspects the given exception and transforms it into a KuduException.
    * @param e generic exception we want to transform
    * @return a KuduException that's easier to handle
@@ -85,9 +101,14 @@ public abstract class KuduException extends IOException {
     // The message may be null.
     String message =  e.getMessage() == null ? "" : e.getMessage();
     if (e instanceof KuduException) {
-      // TODO(KUDU-2330) this can lead to methods of the synchronous client
-      // throwing exceptions without the stack trace indicating where
-      // the method was called!
+      // The exception thrown inside the async code has a stack trace
+      // that doesn't correspond to where the user actually called
+      // some synchronous method. This can be very confusing for
+      // users, so we'll reset the stack trace back the call frame
+      // where we are transforming it.
+      e.addSuppressed(new OriginalException(e));
+      StackTraceElement[] stack = new Exception().getStackTrace();
+      e.setStackTrace(stack);
       return (KuduException) e;
     } else if (e instanceof DeferredGroupException) {
       // The cause of a DeferredGroupException is the first exception it sees, we're just going to
