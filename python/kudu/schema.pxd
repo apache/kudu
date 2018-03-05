@@ -26,6 +26,14 @@ cdef class KuduType(object):
         DataType type
 
 
+cdef class ColumnTypeAttributes:
+    """
+    Wraps a Kudu client ColumnTypeAttributes object
+    """
+    cdef:
+        KuduColumnTypeAttributes* type_attributes
+
+
 cdef class ColumnSchema:
     """
     Wraps a Kudu client ColumnSchema object

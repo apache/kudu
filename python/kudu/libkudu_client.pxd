@@ -62,6 +62,8 @@ cdef extern from "kudu/util/status.h" namespace "kudu" nogil:
         c_bool IsNotAuthorized()
         c_bool IsAborted()
 
+cdef extern from "kudu/util/int128.h" namespace "kudu":
+    ctypedef int int128_t
 
 cdef extern from "kudu/util/monotime.h" namespace "kudu" nogil:
 
@@ -119,6 +121,7 @@ cdef extern from "kudu/client/schema.h" namespace "kudu::client" nogil:
         KUDU_DOUBLE " kudu::client::KuduColumnSchema::DOUBLE"
         KUDU_BINARY " kudu::client::KuduColumnSchema::BINARY"
         KUDU_UNIXTIME_MICROS " kudu::client::KuduColumnSchema::UNIXTIME_MICROS"
+        KUDU_DECIMAL " kudu::client::KuduColumnSchema::DECIMAL"
 
     enum EncodingType" kudu::client::KuduColumnStorageAttributes::EncodingType":
         EncodingType_AUTO " kudu::client::KuduColumnStorageAttributes::AUTO_ENCODING"
@@ -142,6 +145,17 @@ cdef extern from "kudu/client/schema.h" namespace "kudu::client" nogil:
         CompressionType compression
         string ToString()
 
+    cdef cppclass KuduColumnTypeAttributes:
+        KuduColumnTypeAttributes()
+        KuduColumnTypeAttributes(const KuduColumnTypeAttributes& other)
+        KuduColumnTypeAttributes(int8_t precision, int8_t scale)
+
+        int8_t precision()
+        int8_t scale()
+
+        c_bool Equals(KuduColumnTypeAttributes& other)
+        void CopyFrom(KuduColumnTypeAttributes& other)
+
     cdef cppclass KuduColumnSchema:
         KuduColumnSchema(const KuduColumnSchema& other)
         KuduColumnSchema(const string& name, DataType type)
@@ -152,6 +166,7 @@ cdef extern from "kudu/client/schema.h" namespace "kudu::client" nogil:
         string& name()
         c_bool is_nullable()
         DataType type()
+        KuduColumnTypeAttributes type_attributes()
 
         c_bool Equals(KuduColumnSchema& other)
         void CopyFrom(KuduColumnSchema& other)
@@ -182,6 +197,9 @@ cdef extern from "kudu/client/schema.h" namespace "kudu::client" nogil:
          KuduColumnSpec* NotNull()
          KuduColumnSpec* Nullable()
          KuduColumnSpec* Type(DataType type_)
+
+         KuduColumnSpec* Precision(int8_t precision);
+         KuduColumnSpec* Scale(int8_t scale);
 
          KuduColumnSpec* RenameTo(const string& new_name)
 
@@ -227,14 +245,18 @@ cdef extern from "kudu/client/scan_batch.h" namespace "kudu::client" nogil:
         Status GetUnixTimeMicros(int col_idx,
                             int64_t* micros_since_utc_epoch)
 
-        Status GetString(Slice& col_name, Slice* val)
-        Status GetString(int col_idx, Slice* val)
 
         Status GetFloat(Slice& col_name, float* val)
         Status GetFloat(int col_idx, float* val)
 
         Status GetDouble(Slice& col_name, double* val)
         Status GetDouble(int col_idx, double* val)
+
+        Status GetUnscaledDecimal(Slice& col_name, int128_t* val)
+        Status GetUnscaledDecimal(int col_idx, int128_t* val)
+
+        Status GetString(Slice& col_name, Slice* val)
+        Status GetString(int col_idx, Slice* val)
 
         Status GetBinary(const Slice& col_name, Slice* val)
         Status GetBinary(int col_idx, Slice* val)
@@ -306,6 +328,8 @@ cdef extern from "kudu/common/partial_row.h" namespace "kudu" nogil:
         Status SetDouble(Slice& col_name, double val)
         Status SetFloat(Slice& col_name, float val)
 
+        Status SetUnscaledDecimal(const Slice& col_name, int128_t val)
+
         # Integer setters
         Status SetBool(int col_idx, c_bool val)
 
@@ -316,6 +340,8 @@ cdef extern from "kudu/common/partial_row.h" namespace "kudu" nogil:
 
         Status SetDouble(int col_idx, double val)
         Status SetFloat(int col_idx, float val)
+
+        Status SetUnscaledDecimal(int col_idx, int128_t val)
 
         # Set, but does not copy string
         Status SetString(Slice& col_name, Slice& val)
@@ -369,6 +395,9 @@ cdef extern from "kudu/common/partial_row.h" namespace "kudu" nogil:
 
         Status GetFloat(Slice& col_name, float* val)
         Status GetFloat(int col_idx, float* val)
+
+        Status GetUnscaledDecimal(Slice& col_name, int128_t* val)
+        Status GetUnscaledDecimal(int col_idx, int128_t* val)
 
         # Gets the string but does not copy the value. Callers should
         # copy the resulting Slice if necessary.
@@ -449,6 +478,9 @@ cdef extern from "kudu/client/value.h" namespace "kudu::client" nogil:
 
         @staticmethod
         C_KuduValue* FromBool(c_bool val);
+
+        @staticmethod
+        C_KuduValue* FromDecimal(int128_t val, int8_t scale);
 
         @staticmethod
         C_KuduValue* CopyString(const Slice& s);

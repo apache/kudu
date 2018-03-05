@@ -242,6 +242,10 @@ class TestScanToken(TestScanBase):
         # Test unixtime_micros value predicate
         self._test_unixtime_micros_pred()
 
+    def test_decimal_pred(self):
+        # Test decimal value predicate
+        self._test_decimal_pred()
+
     def test_bool_pred(self):
         # Test a boolean value predicate
         self._test_bool_pred()

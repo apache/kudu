@@ -29,7 +29,8 @@ from libkudu_client cimport *
 from kudu.compat import tobytes, frombytes, dict_iter
 from kudu.schema cimport Schema, ColumnSchema, ColumnSpec, KuduValue, KuduType
 from kudu.errors cimport check_status
-from kudu.util import to_unixtime_micros, from_unixtime_micros, from_hybridtime
+from kudu.util import to_unixtime_micros, from_unixtime_micros, \
+    from_hybridtime, to_unscaled_decimal, from_unscaled_decimal
 from errors import KuduException
 
 import six
@@ -64,7 +65,8 @@ cdef dict _type_names = {
     KUDU_FLOAT : "KUDU_FLOAT",
     KUDU_DOUBLE : "KUDU_DOUBLE",
     KUDU_BINARY : "KUDU_BINARY",
-    KUDU_UNIXTIME_MICROS : "KUDU_UNIXTIME_MICROS"
+    KUDU_UNIXTIME_MICROS : "KUDU_UNIXTIME_MICROS",
+    KUDU_DECIMAL : "KUDU_DECIMAL"
 }
 
 # Range Partition Bound Type enums
@@ -1314,6 +1316,15 @@ cdef class Row:
         check_status(self.row.GetUnixTimeMicros(i, &val))
         return val
 
+    cdef inline __get_unscaled_decimal(self, int i):
+        cdef int128_t val
+        check_status(self.row.GetUnscaledDecimal(i, &val))
+        return val
+
+    cdef inline get_decimal(self, int i):
+        scale = self.parent.batch.projection_schema().Column(i).type_attributes().scale()
+        return from_unscaled_decimal(self.__get_unscaled_decimal(i), scale)
+
     cdef inline get_slot(self, int i):
         cdef:
             Status s
@@ -1339,6 +1350,8 @@ cdef class Row:
             return self.get_binary(i)
         elif t == KUDU_UNIXTIME_MICROS:
             return from_unixtime_micros(self.get_unixtime_micros(i))
+        elif t == KUDU_DECIMAL:
+            return self.get_decimal(i)
         else:
             raise TypeError("Cannot get kudu type <{0}>"
                                 .format(_type_names[t]))
@@ -2451,6 +2464,9 @@ cdef class PartialRow:
         elif t == KUDU_UNIXTIME_MICROS:
             check_status(self.row.SetUnixTimeMicros(i, <int64_t>
                 to_unixtime_micros(value)))
+        elif t == KUDU_DECIMAL:
+            check_status(self.row.SetUnscaledDecimal(i, <int128_t>
+                to_unscaled_decimal(value)))
         else:
             raise TypeError("Cannot set kudu type <{0}>.".format(_type_names[t]))
 

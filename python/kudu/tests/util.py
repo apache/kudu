@@ -17,6 +17,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from decimal import Decimal
 from kudu.compat import unittest
 from kudu.client import Partitioning
 from kudu.tests.common import KuduTestBase
@@ -71,6 +72,7 @@ class TestScanBase(KuduTestBase, unittest.TestCase):
         builder = kudu.schema_builder()
         builder.add_column('key').type(kudu.int64).nullable(False)
         builder.add_column('unixtime_micros_val', type_=kudu.unixtime_micros, nullable=False)
+        builder.add_column('decimal_val', type_=kudu.decimal, precision=5, scale=2)
         builder.add_column('string_val', type_=kudu.string, compression=kudu.COMPRESSION_LZ4, encoding='prefix')
         builder.add_column('bool_val', type_=kudu.bool)
         builder.add_column('double_val', type_=kudu.double)
@@ -103,11 +105,11 @@ class TestScanBase(KuduTestBase, unittest.TestCase):
 
         # Insert new rows
         self.type_test_rows = [
-            (1, datetime.datetime(2016, 1, 1).replace(tzinfo=pytz.utc),
+            (1, datetime.datetime(2016, 1, 1).replace(tzinfo=pytz.utc), Decimal('111.11'),
              "Test One", True, 1.7976931348623157 * (10^308), 127,
              b'\xce\x99\xce\xbf\xcf\x81\xce\xb4\xce\xb1\xce\xbd\xce\xaf\xce\xb1',
              3.402823 * (10^38)),
-            (2, datetime.datetime.utcnow().replace(tzinfo=pytz.utc),
+            (2, datetime.datetime.utcnow().replace(tzinfo=pytz.utc), Decimal('0.99'),
              "测试二", False, 200.1, -1,
              b'\xd0\x98\xd0\xbe\xd1\x80\xd0\xb4\xd0\xb0\xd0\xbd\xd0\xb8\xd1\x8f',
              -150.2)
@@ -229,6 +231,14 @@ class TestScanBase(KuduTestBase, unittest.TestCase):
             ],
             row_indexes=slice(0, 1),
             count_only=True
+        )
+
+    def _test_decimal_pred(self):
+        self.verify_pred_type_scans(
+            preds=[
+                self.type_table['decimal_val'] == Decimal('111.11')
+            ],
+            row_indexes=slice(0, 1),
         )
 
     def _test_binary_pred(self):

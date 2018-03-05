@@ -24,7 +24,7 @@ from kudu.compat import tobytes, frombytes
 from kudu.schema cimport *
 from kudu.errors cimport check_status
 from kudu.client cimport PartialRow
-from kudu.util import to_unixtime_micros
+from kudu.util import get_decimal_scale, to_unixtime_micros, to_unscaled_decimal
 
 import six
 
@@ -44,6 +44,7 @@ DOUBLE = KUDU_DOUBLE
 UNIXTIME_MICROS = KUDU_UNIXTIME_MICROS
 BINARY = KUDU_BINARY
 
+DECIMAL = KUDU_DECIMAL
 
 cdef dict _reverse_dict(d):
     return dict((v, k) for k, v in d.items())
@@ -118,6 +119,7 @@ float_ = KuduType(KUDU_FLOAT)
 double_ = KuduType(KUDU_DOUBLE)
 binary = KuduType(KUDU_BINARY)
 unixtime_micros = KuduType(KUDU_UNIXTIME_MICROS)
+decimal = KuduType(KUDU_DECIMAL)
 
 
 cdef dict _type_names = {
@@ -130,7 +132,8 @@ cdef dict _type_names = {
     FLOAT: 'float',
     DOUBLE: 'double',
     BINARY: 'binary',
-    UNIXTIME_MICROS: 'unixtime_micros'
+    UNIXTIME_MICROS: 'unixtime_micros',
+    DECIMAL: 'decimal'
 }
 
 
@@ -146,7 +149,8 @@ cdef dict _type_to_obj = {
     FLOAT: float_,
     DOUBLE: double_,
     BINARY: binary,
-    UNIXTIME_MICROS: unixtime_micros
+    UNIXTIME_MICROS: unixtime_micros,
+    DECIMAL: decimal
 }
 
 
@@ -160,6 +164,40 @@ cdef KuduType to_data_type(object obj):
     else:
         raise ValueError('Invalid type: {0}'.format(obj))
 
+cdef cppclass KuduColumnTypeAttributes:
+        KuduColumnTypeAttributes()
+        KuduColumnTypeAttributes(const KuduColumnTypeAttributes& other)
+        KuduColumnTypeAttributes(int8_t precision, int8_t scale)
+
+        int8_t precision()
+        int8_t scale()
+
+        c_bool Equals(KuduColumnTypeAttributes& other)
+        void CopyFrom(KuduColumnTypeAttributes& other)
+
+cdef class ColumnTypeAttributes:
+    """
+    Wraps a Kudu client ColumnTypeAttributes object.
+    """
+    def __cinit__(self):
+        self.type_attributes = NULL
+
+    def __dealloc__(self):
+        if self.type_attributes is not NULL:
+            del self.type_attributes
+
+    property precision:
+        def __get__(self):
+            return self.type_attributes.precision()
+
+    property scale:
+        def __get__(self):
+            return self.type_attributes.scale()
+
+    def __repr__(self):
+        return ('ColumnTypeAttributes(precision=%s, scale=%s)'
+                % (self.type_attributes.precision(),
+                   self.type_attributes.scale()))
 
 cdef class ColumnSchema:
     """
@@ -188,6 +226,12 @@ cdef class ColumnSchema:
     property nullable:
         def __get__(self):
             return self.schema.is_nullable()
+
+    property type_attributes:
+        def __get__(self):
+            cdef ColumnTypeAttributes result = ColumnTypeAttributes()
+            result.type_attributes = new KuduColumnTypeAttributes(self.schema.type_attributes())
+            return result
 
     def equals(self, other):
         if not isinstance(other, ColumnSchema):
@@ -295,6 +339,46 @@ cdef class ColumnSpec:
         self.spec.Encoding(type)
         return self
 
+    def precision(self, precision):
+        """
+        Set the precision for the column.
+
+        Clients must specify a precision for decimal columns. Precision is the total
+        number of digits that can be represented by the column, regardless of the
+        location of the decimal point. For example, representing integer values up to 9999,
+        and fractional values up to 99.99, both require a precision of 4. You can also
+        represent corresponding negative values, without any change in the precision.
+        For example, the range -9999 to 9999 still only requires a precision of 4.
+
+        The precision must be between 1 and 38.
+
+        Returns
+        -------
+        self
+        """
+        self.spec.Precision(precision)
+        return self
+
+    def scale(self, scale):
+        """
+        Set the scale for the column.
+
+        Clients can specify a scale for decimal columns. Scale represents the number
+        of fractional digits. This value must be less than or equal to precision.
+        A scale of 0 produces integral values, with no fractional part. If precision
+        and scale are equal, all the digits come after the decimal point, making all
+        the values between 0.9999 and -0.9999.
+
+        The scale must be greater than 0 and less than the column's precision.
+        If no scale is provided a default scale of 0 is used.
+
+        Returns
+        -------
+        self
+        """
+        self.spec.Scale(scale)
+        return self
+
     def primary_key(self):
         """
         Make this column a primary key. If you use this method, it will be the
@@ -386,7 +470,7 @@ cdef class SchemaBuilder:
 
     def add_column(self, name, type_=None, nullable=None, compression=None,
                    encoding=None, primary_key=False, block_size=None,
-                   default= None):
+                   default=None, precision=None, scale=None):
         """
         Add a new column to the schema. Returns a ColumnSpec object for further
         configuration and use in a fluid programming style.
@@ -411,6 +495,10 @@ cdef class SchemaBuilder:
           Block size (in bytes) to use for the target column.
         default : obj
           Use this to set the column default value
+        precision : int
+          Use this precision for the decimal column
+        scale : int
+          Use this scale for the decimal column
 
         Examples
         --------
@@ -439,6 +527,12 @@ cdef class SchemaBuilder:
 
         if encoding is not None:
             result.encoding(encoding)
+
+        if precision is not None:
+            result.precision(precision)
+
+        if scale is not None:
+            result.scale(scale)
 
         if primary_key:
             result.primary_key()
@@ -667,6 +761,10 @@ cdef class KuduValue:
         elif (type_.name == 'unixtime_micros'):
             value = to_unixtime_micros(value)
             self._value = C_KuduValue.FromInt(value)
+        elif (type_.name == 'decimal'):
+            scale = get_decimal_scale(value)
+            value = to_unscaled_decimal(value)
+            self._value = C_KuduValue.FromDecimal(value, scale)
         else:
             raise TypeError("Cannot initialize KuduValue for kudu type <{0}>"
                             .format(type_.name))

@@ -17,6 +17,7 @@
 
 import datetime
 import six
+from decimal import Decimal, getcontext
 from pytz import utc
 
 
@@ -82,6 +83,7 @@ def to_unixtime_micros(timestamp, format = "%Y-%m-%dT%H:%M:%S.%f"):
     td_micros = td.microseconds + (td.seconds + td.days * 24 * 3600) * 10**6
     return int(td_micros)
 
+
 def from_unixtime_micros(unixtime_micros):
     """
     Convert the input unixtime_micros value to a datetime in UTC.
@@ -101,6 +103,7 @@ def from_unixtime_micros(unixtime_micros):
         raise ValueError("Invalid unixtime_micros value." +
                          "You must provide an integer value.")
 
+
 def from_hybridtime(hybridtime):
     """
     Convert a raw HybridTime value to a datetime in UTC.
@@ -115,3 +118,65 @@ def from_hybridtime(hybridtime):
     """
     # Add 1 so the value is usable for snapshot scans
     return from_unixtime_micros(int(hybridtime >> 12) + 1)
+
+
+def to_unscaled_decimal(decimal, context=None):
+    """
+    Convert incoming decimal value to a int representing
+    the unscaled decimal value.
+
+    Parameters
+    ---------
+    decimal : Decimal
+      The decimal value to convert to an unscaled int
+    context :  Context
+      The optional context to use
+
+    Returns
+    -------
+    int : The unscaled decimal int
+    """
+    if context is None:
+        context = getcontext()
+
+    scale = get_decimal_scale(decimal)
+    return decimal.scaleb(scale, context).to_integral_exact(None, context)
+
+
+def from_unscaled_decimal(unscaled_decimal, scale, context=None):
+    """
+    Convert the input unscaled_decimal value to a Decimal instance.
+
+    Parameters
+    ----------
+    unscaled_decimal : int
+      The unscaled int value of a decimal
+    scale : int
+      The scale that should be used when converting
+    context :  Context
+      The optional context to use
+
+    Returns
+    -------
+    decimal : The scaled Decimal
+    """
+    if context is None:
+        context = getcontext()
+
+    return Decimal(unscaled_decimal, context).scaleb(-scale, context)
+
+
+def get_decimal_scale(decimal):
+    """
+       Get the scale of the decimal.
+
+       Parameters
+       ---------
+       decimal : Decimal
+         The decimal value
+
+       Returns
+       -------
+       int : The calculated scale
+       """
+    return max(0, -decimal.as_tuple().exponent)
