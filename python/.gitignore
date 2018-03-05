@@ -28,6 +28,7 @@ __pycache__
 .eggs
 *.egg
 MANIFEST
+.pytest_cache/
 
 # Generated sources
 *.c
@@ -44,6 +45,15 @@ dist
 # coverage
 .coverage
 coverage.xml
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
 
 # other distribution/packaging directories
 env/
