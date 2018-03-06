@@ -147,7 +147,11 @@ Status DoKsckForTablet(const vector<string>& master_addresses, const string& tab
   ksck.set_tablet_id_filters({ tablet_id });
   RETURN_NOT_OK(ksck.CheckMasterRunning());
   RETURN_NOT_OK(ksck.FetchTableAndTabletInfo());
-  RETURN_NOT_OK(ksck.FetchInfoFromTabletServers());
+  // The return Status is ignored since a tserver that is not the destination
+  // nor a host of a replica might be down, and in that case the move should
+  // succeed. Problems with the destination tserver or the tablet will still
+  // be detected by ksck or other commands.
+  ignore_result(ksck.FetchInfoFromTabletServers());
   return ksck.CheckTablesConsistency();
 }
 
