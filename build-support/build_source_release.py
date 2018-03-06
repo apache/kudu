@@ -78,7 +78,7 @@ def create_tarball():
                            "--prefix=%s/" % artifact_name,
                            "--output=%s" % tarball_path,
                            "HEAD"])
-  print(Colors.GREEN + "Generated tarball:\t" + Colors.RESET, tarball_path)
+  print(Colors.GREEN + "Generated tarball:\t" + Colors.RESET + tarball_path)
   return tarball_path
 
 
@@ -118,21 +118,18 @@ def checksum_file(summer, path):
   return summer.hexdigest()
 
 
-def gen_checksum_files(tarball_path):
+def gen_sha_file(tarball_path):
   """
-  Create md5 and sha files of the tarball.
+  Create a sha checksum file of the tarball.
 
-  The output format is compatible with command line tools like 'sha1sum'
-  and 'md5sum' so they may be used to verify the checksums.
+  The output format is compatible with command line tools like 'sha1sum' so it
+  can be used to verify the checksum.
   """
-  hashes = [(hashlib.sha1, "sha"),
-            (hashlib.md5, "md5")]
-  for hash_func, extension in hashes:
-    digest = checksum_file(hash_func(), tarball_path)
-    path = tarball_path + "." + extension
-    with open(path, "w") as f:
-      f.write("%s\t%s\n" % (digest, os.path.basename(tarball_path)))
-    print(Colors.GREEN + ("Generated %s:\t" % extension) + Colors.RESET, path)
+  digest = checksum_file(hashlib.sha1(), tarball_path)
+  path = tarball_path + ".sha"
+  with open(path, "w") as f:
+    f.write("%s\t%s\n" % (digest, os.path.basename(tarball_path)))
+  print(Colors.GREEN + "Generated sha:\t\t" + Colors.RESET + path)
 
 
 def run_rat(tarball_path):
@@ -182,7 +179,7 @@ def main():
   check_repo_not_dirty()
   check_no_local_commits()
   tarball_path = create_tarball()
-  gen_checksum_files(tarball_path)
+  gen_sha_file(tarball_path)
   sign_tarball(tarball_path)
   run_rat(tarball_path)
 
