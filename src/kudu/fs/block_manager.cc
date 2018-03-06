@@ -83,19 +83,20 @@ int64_t GetFileCacheCapacityForBlockManager(Env* env) {
   // Maximize this process' open file limit first, if possible.
   static std::once_flag once;
   std::call_once(once, [&]() {
-    env->IncreaseOpenFileLimit();
+    env->IncreaseResourceLimit(Env::ResourceLimitType::OPEN_FILES_PER_PROCESS);
   });
 
+  int64_t rlimit =
+      env->GetResourceLimit(Env::ResourceLimitType::OPEN_FILES_PER_PROCESS);
   // See block_manager_max_open_files.
   if (FLAGS_block_manager_max_open_files == -1) {
-    return (2 * env->GetOpenFileLimit()) / 5;
+    return (2 * rlimit) / 5;
   }
-  int64_t file_limit = env->GetOpenFileLimit();
-  LOG_IF(FATAL, FLAGS_block_manager_max_open_files > file_limit) <<
+  LOG_IF(FATAL, FLAGS_block_manager_max_open_files > rlimit) <<
       Substitute(
           "Configured open file limit (block_manager_max_open_files) $0 "
-          "exceeds process fd limit (ulimit) $1",
-          FLAGS_block_manager_max_open_files, file_limit);
+          "exceeds process open file limit (ulimit) $1",
+          FLAGS_block_manager_max_open_files, rlimit);
   return FLAGS_block_manager_max_open_files;
 }
 

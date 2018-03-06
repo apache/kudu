@@ -348,7 +348,7 @@ TEST_P(TestRpc, TestHighFDs) {
   // This test can only run if ulimit is set high.
   const int kNumFakeFiles = 3500;
   const int kMinUlimit = kNumFakeFiles + 100;
-  if (env_->GetOpenFileLimit() < kMinUlimit) {
+  if (env_->GetResourceLimit(Env::ResourceLimitType::OPEN_FILES_PER_PROCESS) < kMinUlimit) {
     LOG(INFO) << "Test skipped: must increase ulimit -n to at least " << kMinUlimit;
     return;
   }

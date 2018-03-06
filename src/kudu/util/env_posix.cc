@@ -501,6 +501,36 @@ Status DoIsOnXfsFilesystem(const string& path, bool* result) {
   return Status::OK();
 }
 
+const char* ResourceLimitTypeToString(Env::ResourceLimitType t) {
+  switch (t) {
+    case Env::ResourceLimitType::OPEN_FILES_PER_PROCESS:
+      return "open files per process";
+    case Env::ResourceLimitType::RUNNING_THREADS_PER_EUID:
+      return "running threads per effective uid";
+    default: LOG(FATAL) << "Unknown resource limit type";
+  }
+}
+
+int ResourceLimitTypeToUnixRlimit(Env::ResourceLimitType t) {
+  switch (t) {
+    case Env::ResourceLimitType::OPEN_FILES_PER_PROCESS: return RLIMIT_NOFILE;
+    case Env::ResourceLimitType::RUNNING_THREADS_PER_EUID: return RLIMIT_NPROC;
+    default: LOG(FATAL) << "Unknown resource limit type: " << t;
+  }
+}
+
+#ifdef __APPLE__
+const char* ResourceLimitTypeToMacosRlimit(Env::ResourceLimitType t) {
+  switch (t) {
+    case Env::ResourceLimitType::OPEN_FILES_PER_PROCESS:
+      return "kern.maxfilesperproc";
+    case Env::ResourceLimitType::RUNNING_THREADS_PER_EUID:
+      return "kern.maxprocperuid";
+    default: LOG(FATAL) << "Unknown resource limit type: " << t;
+  }
+}
+#endif
+
 class PosixSequentialFile: public SequentialFile {
  private:
   std::string filename_;
@@ -1545,46 +1575,50 @@ class PosixEnv : public Env {
     return Status::OK();
   }
 
-  virtual int64_t GetOpenFileLimit() OVERRIDE {
+  virtual int64_t GetResourceLimit(ResourceLimitType t) OVERRIDE {
     // There's no reason for this to ever fail.
     struct rlimit l;
-    PCHECK(getrlimit(RLIMIT_NOFILE, &l) == 0);
+    PCHECK(getrlimit(ResourceLimitTypeToUnixRlimit(t), &l) == 0);
     return l.rlim_cur;
   }
 
-  virtual void IncreaseOpenFileLimit() OVERRIDE {
+  virtual void IncreaseResourceLimit(ResourceLimitType t) OVERRIDE {
     // There's no reason for this to ever fail; any process should have
     // sufficient privilege to increase its soft limit up to the hard limit.
     //
     // This change is logged because it is process-wide.
+
+    int rlimit_type = ResourceLimitTypeToUnixRlimit(t);
     struct rlimit l;
-    PCHECK(getrlimit(RLIMIT_NOFILE, &l) == 0);
+    PCHECK(getrlimit(rlimit_type, &l) == 0);
 #if defined(__APPLE__)
     // OS X 10.11 can return RLIM_INFINITY from getrlimit, but allows rlim_cur and
     // rlim_max to be raised only as high as the value of the maxfilesperproc
-    // kernel variable. Emperically, this value is 10240 across all tested macOS
+    // kernel variable. Empirically, this value is 10240 across all tested macOS
     // versions. Testing on OS X 10.10 and macOS 10.12 revealed that getrlimit
     // returns the true limits (not RLIM_INFINITY), rlim_max can *not* be raised
     // (when running as non-root), and rlim_cur can only be raised as high as
     // rlim_max (this is consistent with Linux).
-    // TLDR; OS X 10.11 is wack.
+    // TLDR; OS X 10.11 is whack.
     if (l.rlim_max == RLIM_INFINITY) {
       uint32_t limit;
       size_t len = sizeof(limit);
-      PCHECK(sysctlbyname("kern.maxfilesperproc", &limit, &len, nullptr, 0) == 0);
+      PCHECK(sysctlbyname(ResourceLimitTypeToMacosRlimit(t), &limit, &len,
+                          nullptr, 0) == 0);
       // Make sure no uninitialized bits are present in the result.
       DCHECK_EQ(sizeof(limit), len);
       l.rlim_max = limit;
     }
 #endif
+    const char* rlimit_str = ResourceLimitTypeToString(t);
     if (l.rlim_cur < l.rlim_max) {
-      LOG(INFO) << Substitute("Raising process file limit from $0 to $1",
-                              l.rlim_cur, l.rlim_max);
+      LOG(INFO) << Substitute("Raising this process' $0 limit from $1 to $2",
+                              rlimit_str, l.rlim_cur, l.rlim_max);
       l.rlim_cur = l.rlim_max;
-      PCHECK(setrlimit(RLIMIT_NOFILE, &l) == 0);
+      PCHECK(setrlimit(rlimit_type, &l) == 0);
     } else {
-      LOG(INFO) << Substitute("Not raising process file limit of $0; it is "
-          "already as high as it can go", l.rlim_cur);
+      LOG(INFO) << Substitute("Not raising this process' $0 limit of $1; it "
+          "is already as high as it can go", rlimit_str, l.rlim_cur);
     }
   }
 
@@ -1749,6 +1783,10 @@ static void InitDefaultEnv() { default_env = new PosixEnv; }
 Env* Env::Default() {
   pthread_once(&once, InitDefaultEnv);
   return default_env;
+}
+
+std::ostream& operator<<(std::ostream& o, Env::ResourceLimitType t) {
+  return o << ResourceLimitTypeToString(t);
 }
 
 }  // namespace kudu

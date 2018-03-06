@@ -664,12 +664,27 @@ TEST_F(TestEnv, TestIsDirectory) {
   ASSERT_FALSE(is_dir);
 }
 
-// Regression test for KUDU-1776.
-TEST_F(TestEnv, TestIncreaseOpenFileLimit) {
-  int64_t limit_before = env_->GetOpenFileLimit();
-  env_->IncreaseOpenFileLimit();
-  int64_t limit_after = env_->GetOpenFileLimit();
-  ASSERT_GE(limit_after, limit_before) << "Failed to retain/increase open file limit";
+class ResourceLimitTypeTest : public TestEnv,
+                              public ::testing::WithParamInterface<Env::ResourceLimitType> {};
+
+INSTANTIATE_TEST_CASE_P(ResourceLimitTypes,
+                        ResourceLimitTypeTest,
+                        ::testing::Values(Env::ResourceLimitType::OPEN_FILES_PER_PROCESS,
+                                          Env::ResourceLimitType::RUNNING_THREADS_PER_EUID));
+
+// Regression test for KUDU-1798.
+TEST_P(ResourceLimitTypeTest, TestIncreaseLimit) {
+  // Increase the resource limit. It should either increase or remain the same.
+  Env::ResourceLimitType t = GetParam();
+  int64_t limit_before = env_->GetResourceLimit(t);
+  env_->IncreaseResourceLimit(t);
+  int64_t limit_after = env_->GetResourceLimit(t);
+  ASSERT_GE(limit_after, limit_before);
+
+  // Try again. It should definitely be the same now.
+  env_->IncreaseResourceLimit(t);
+  int64_t limit_after_again = env_->GetResourceLimit(t);
+  ASSERT_EQ(limit_after, limit_after_again);
 }
 
 static Status TestWalkCb(unordered_set<string>* actual,

@@ -302,17 +302,33 @@ class Env {
   // All directory entries in 'path' must exist on the filesystem.
   virtual Status Canonicalize(const std::string& path, std::string* result) = 0;
 
-  // Get the total amount of RAM installed on this machine.
+  // Gets the total amount of RAM installed on this machine.
   virtual Status GetTotalRAMBytes(int64_t* ram) = 0;
 
-  // Get the max number of file descriptors that this process can open.
-  virtual int64_t GetOpenFileLimit() = 0;
+  enum class ResourceLimitType {
+    // The maximum number of file descriptors that this process can have open
+    // at any given time.
+    //
+    // Corresponds to RLIMIT_NOFILE on UNIX platforms.
+    OPEN_FILES_PER_PROCESS,
 
-  // Increase the max number of file descriptors that this process can open as
-  // much as possible. On UNIX platforms, this means increasing the
-  // RLIMIT_NOFILE resource soft limit (the limit actually enforced by the
-  // kernel) to be equal to the hard limit.
-  virtual void IncreaseOpenFileLimit() = 0;
+    // The maximum number of threads (or processes) that this process's
+    // effective user ID may have spawned and running at any given time.
+    //
+    // Corresponds to RLIMIT_NPROC on UNIX platforms.
+    RUNNING_THREADS_PER_EUID,
+  };
+
+  // Gets the process' current limit for the given resource type.
+  //
+  // On UNIX platforms, this is equivalent to the resource's soft limit.
+  virtual int64_t GetResourceLimit(ResourceLimitType t) = 0;
+
+  // Increases the resource limit by as much as possible.
+  //
+  // On UNIX platforms, this means increasing the resource's soft limit (the
+  // limit actually enforced by the kernel) to be equal to the hard limit.
+  virtual void IncreaseResourceLimit(ResourceLimitType t) = 0;
 
   // Checks whether the given path resides on an ext2, ext3, or ext4
   // filesystem.
@@ -655,6 +671,9 @@ extern Status WriteStringToFile(Env* env, const Slice& data,
 // A utility routine: read contents of named file into *data
 extern Status ReadFileToString(Env* env, const std::string& fname,
                                faststring* data);
+
+// Overloaded operator for printing Env::ResourceLimitType.
+std::ostream& operator<<(std::ostream& o, Env::ResourceLimitType t);
 
 }  // namespace kudu
 
