@@ -446,6 +446,8 @@ def run_tests(parser, options):
   """
   executions = get_test_executions(options)
   if options.extra_args:
+    if options.extra_args[0] == '--':
+      del options.extra_args[0]
     for e in executions:
       e.argv.extend(options.extra_args)
   staging = StagingDir.new()
