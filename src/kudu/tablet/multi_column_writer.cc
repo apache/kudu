@@ -63,11 +63,6 @@ Status MultiColumnWriter::Open() {
   for (int i = 0; i < schema_->num_columns(); i++) {
     const ColumnSchema &col = schema_->column(i);
 
-    // TODO: allow options to be configured, perhaps on a per-column
-    // basis as part of the schema. For now use defaults.
-    //
-    // Also would be able to set encoding here, or do something smart
-    // to figure out the encoding on the fly.
     cfile::WriterOptions opts;
 
     // Index all columns by ordinal position, so we can match up

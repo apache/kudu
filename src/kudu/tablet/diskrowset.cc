@@ -154,11 +154,6 @@ Status DiskRowSetWriter::InitAdHocIndexWriter() {
 
   rowset_metadata_->set_adhoc_index_block(block->id());
 
-  // TODO: allow options to be configured, perhaps on a per-column
-  // basis as part of the schema. For now use defaults.
-  //
-  // Also would be able to set encoding here, or do something smart
-  // to figure out the encoding on the fly.
   cfile::WriterOptions opts;
 
   // Index the composite key by value
