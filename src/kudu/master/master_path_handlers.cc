@@ -387,6 +387,7 @@ void MasterPathHandlers::HandleMasters(const Webserver::WebRequest& /*req*/,
     (*output)["error"] = msg;
     return;
   }
+  output->Set("even_masters", masters.size() % 2 == 0);
   output->Set("masters", EasyJson::kArray);
   for (const ServerEntryPB& master : masters) {
     EasyJson master_json = (*output)["masters"].PushBack(EasyJson::kObject);

@@ -19,6 +19,13 @@ under the License.
 {{#error}}
   <div class="text-error">{{.}}</div>
 {{/error}}
+{{#even_masters}}
+  {{! TODO(wdberkeley): Un-actionable warning. Link to add/remove master docs once they exist. }}
+  <div class="alert alert-danger" role="alert">WARNING: There are an even number of master peers.
+    This provides no more fault tolerance than having one less master.
+    In particular, 2 masters cannot tolerate the failure of a single master.
+  </div>
+{{/even_masters}}
 {{^error}}
   <h2>Masters</h2>
   <table class='table table-striped'>

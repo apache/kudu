@@ -53,6 +53,7 @@ MasterOptions::MasterOptions() {
           "master_addresses flag ('" << FLAGS_master_addresses << "') only specifies "
                  << master_addresses.size() << " masters.";
     }
+    // TODO(wdberkeley): Un-actionable warning. Link to docs, once they exist.
     if (master_addresses.size() == 2) {
       LOG(WARNING) << "Only 2 masters are specified by master_addresses_flag ('" <<
           FLAGS_master_addresses << "'), but minimum of 3 are required to tolerate failures"
