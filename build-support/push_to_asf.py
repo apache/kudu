@@ -223,7 +223,7 @@ def main():
   apache_branches = get_branches('apache')
   for branch, apache_sha in sorted(apache_branches.items()):
     gerrit_sha = rev_parse("remotes/gerrit/" + branch)
-    print("Branch '%s':\t" % branch)
+    print("Branch '%s':" % branch, end='\t')
     if gerrit_sha is None:
       print(Colors.YELLOW, "found on Apache but not in gerrit", Colors.RESET)
       continue

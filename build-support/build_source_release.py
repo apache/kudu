@@ -17,6 +17,8 @@
 # specific language governing permissions and limitations
 # under the License.
 
+from __future__ import print_function
+
 import hashlib
 import logging
 import os
@@ -91,7 +93,7 @@ def sign_tarball(tarball_path):
   if not email.endswith("@apache.org"):
     print(Colors.YELLOW, "Your email address for the repository is not an @apache.org address.")
     print("Release signatures should typically be signed by committers with @apache.org GPG keys.")
-    print(Colors.RESET)
+    print(end=Colors.RESET)
     if not confirm_prompt("Continue?"):
       return
 

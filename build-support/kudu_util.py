@@ -20,6 +20,8 @@
 # This script generates a header file which contains definitions
 # for the current Kudu build (eg timestamp, git hash, etc)
 
+from __future__ import print_function
+
 import os
 import subprocess
 import sys
@@ -69,7 +71,7 @@ def confirm_prompt(prompt):
   if the user confirms.
   """
   while True:
-    print(prompt + "[Y/n]:"),
+    print(prompt, end=' [Y/n]: ')
 
     if not os.isatty(sys.stdout.fileno()):
       print("Not running interactively. Assuming 'N'.")
