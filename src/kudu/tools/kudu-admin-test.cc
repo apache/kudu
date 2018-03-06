@@ -97,13 +97,6 @@ namespace kudu {
 namespace tools {
 
 class AdminCliTest : public tserver::TabletServerIntegrationTestBase {
- protected:
-  enum EnableKudu1097 {
-    kDisableKudu1097,
-    kEnableKudu1097
-  };
-
-  void DoTestMoveTablet(EnableKudu1097 enable_kudu_1097);
 };
 
 // Test config change while running a workload.
@@ -225,20 +218,32 @@ TEST_F(AdminCliTest, TestChangeConfig) {
                                                 MonoDelta::FromSeconds(10)));
 }
 
-// Test relocating replicas while running a workload.
-// 1. Instantiate external mini cluster with 5 TS.
-// 2. Create a table with 3 replicas.
-// 3. Start a workload.
-// 4. Using the CLI, move the 3 replicas around the 5 TS.
-// 5. Profit!
-void AdminCliTest::DoTestMoveTablet(EnableKudu1097 enable_kudu_1097) {
+enum class Kudu1097 {
+  Disable,
+  Enable,
+};
+enum class DownTS {
+  None,
+  TabletPeer,
+  // Regression case for KUDU-2331.
+  UninvolvedTS,
+};
+class MoveTabletParamTest :
+    public AdminCliTest,
+    public ::testing::WithParamInterface<std::tuple<Kudu1097, DownTS>> {
+};
+
+TEST_P(MoveTabletParamTest, Test) {
+  const auto& param = GetParam();
+  const auto enable_kudu_1097 = std::get<0>(param);
+  const auto downTS = std::get<1>(param);
+
   FLAGS_num_tablet_servers = 5;
   FLAGS_num_replicas = 3;
 
   vector<string> ts_flags, master_flags;
-  if (enable_kudu_1097) {
-    ts_flags = master_flags = { "--raft_prepare_replacement_before_eviction=true" };
-  }
+  ts_flags = master_flags = { Substitute("--raft_prepare_replacement_before_eviction=$0",
+                                         enable_kudu_1097 == Kudu1097::Enable) };
   NO_FATALS(BuildAndStart(ts_flags, master_flags));
 
   vector<string> tservers;
@@ -269,8 +274,19 @@ void AdminCliTest::DoTestMoveTablet(EnableKudu1097 enable_kudu_1097) {
   workload.Setup();
   workload.Start();
 
-  // Assuming no ad hoc leadership changes, 3 guarantees the leader is move at least once.
-  int num_moves = AllowSlowTests() ? 3 : 1;
+  if (downTS == DownTS::TabletPeer) {
+    // To test that the move fails if any peer is down, when downTS is
+    // 'TabletPeer', shut down a server besides 'add' that hosts a replica.
+    NO_FATALS(cluster_->tablet_server_by_uuid(active_tservers.back())->Shutdown());
+  } else if (downTS == DownTS::UninvolvedTS) {
+    // Regression case for KUDU-2331, where move_replica would fail if any tablet
+    // server is down, even if that tablet server was not involved in the move.
+    NO_FATALS(cluster_->tablet_server_by_uuid(inactive_tservers.back())->Shutdown());
+  }
+
+  // If we're not bringing down a tablet server, do 3 moves.
+  // Assuming no ad hoc leadership changes, 3 guarantees the leader is moved at least once.
+  int num_moves = AllowSlowTests() && (downTS == DownTS::None) ? 3 : 1;
   for (int i = 0; i < num_moves; i++) {
     const string remove = active_tservers.front();
     const string add = inactive_tservers.front();
@@ -278,16 +294,20 @@ void AdminCliTest::DoTestMoveTablet(EnableKudu1097 enable_kudu_1097) {
       "tablet",
       "change_config",
       "move_replica",
-    };
-    vector<string> tool_args = {
       cluster_->master()->bound_rpc_addr().ToString(),
       tablet_id_,
       remove,
       add,
     };
-    tool_command.insert(tool_command.end(), tool_args.begin(), tool_args.end());
 
-    ASSERT_OK(RunKuduTool(tool_command));
+    Status s = RunKuduTool(tool_command);
+    if (downTS == DownTS::TabletPeer) {
+      ASSERT_TRUE(s.IsRuntimeError());
+      workload.StopAndJoin();
+      return;
+    }
+    ASSERT_OK(s);
+
     active_tservers.pop_front();
     active_tservers.push_back(add);
     inactive_tservers.pop_front();
@@ -308,18 +328,21 @@ void AdminCliTest::DoTestMoveTablet(EnableKudu1097 enable_kudu_1097) {
 
   }
   workload.StopAndJoin();
+  NO_FATALS(cluster_->AssertNoCrashes());
 
-  ClusterVerifier v(cluster_.get());
-  NO_FATALS(v.CheckCluster());
+  // If a tablet server is down, we need to skip the ClusterVerifier.
+  if (downTS == DownTS::None) {
+    ClusterVerifier v(cluster_.get());
+    NO_FATALS(v.CheckCluster());
+  }
 }
 
-TEST_F(AdminCliTest, TestMoveTablet_pre_KUDU_1097) {
-  DoTestMoveTablet(kDisableKudu1097);
-}
-
-TEST_F(AdminCliTest, TestMoveTablet_KUDU_1097) {
-  DoTestMoveTablet(kEnableKudu1097);
-}
+INSTANTIATE_TEST_CASE_P(EnableKudu2097AndDownTS, MoveTabletParamTest,
+                        ::testing::Combine(::testing::Values(Kudu1097::Disable,
+                                                             Kudu1097::Enable),
+                                           ::testing::Values(DownTS::None,
+                                                             DownTS::TabletPeer,
+                                                             DownTS::UninvolvedTS)));
 
 Status RunUnsafeChangeConfig(const string& tablet_id,
                              const string& dst_host,
