@@ -33,5 +33,5 @@ target_link_libraries(clock
 
 set(KUDU_TEST_LINK_LIBS ${KUDU_MIN_TEST_LIBS}
   clock)
-ADD_KUDU_TEST(hybrid_clock-test)
+ADD_KUDU_TEST(hybrid_clock-test PROCESSORS 3)
 ADD_KUDU_TEST(logical_clock-test)

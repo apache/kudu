@@ -126,7 +126,7 @@ set(KUDU_TEST_LINK_LIBS
   rtest_krpc
   security_test_util
   ${KUDU_MIN_TEST_LIBS})
-ADD_KUDU_TEST(exactly_once_rpc-test)
+ADD_KUDU_TEST(exactly_once_rpc-test PROCESSORS 10)
 ADD_KUDU_TEST(mt-rpc-test RUN_SERIAL true)
 ADD_KUDU_TEST(negotiation-test)
 ADD_KUDU_TEST(periodic-test)
@@ -135,4 +135,4 @@ ADD_KUDU_TEST(request_tracker-test)
 ADD_KUDU_TEST(rpc-bench RUN_SERIAL true)
 ADD_KUDU_TEST(rpc-test)
 ADD_KUDU_TEST(rpc_stub-test)
-ADD_KUDU_TEST(service_queue-test)
+ADD_KUDU_TEST(service_queue-test RUN_SERIAL true)

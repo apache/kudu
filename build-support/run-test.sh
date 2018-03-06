@@ -31,6 +31,12 @@
 #
 # If KUDU_REPORT_TEST_RESULTS is non-zero, then tests are reported to the
 # central test server.
+#
+# If KUDU_MEASURE_TEST_CPU_CONSUMPTION is non-zero, then tests will be wrapped
+# in a 'perf stat' command which measures the CPU consumption on a periodic
+# basis, writing the output into '<test>.<shard>.perf.txt' logs in the test log
+# directory. This is handy in order to determine an appropriate value for the
+# 'PROCESSORS' property passed to 'ADD_KUDU_TEST' in CMakeLists.txt.
 
 # Path to the test executable or script to be run.
 # May be relative or absolute.
@@ -162,8 +168,14 @@ for ATTEMPT_NUMBER in $(seq 1 $TEST_EXECUTION_ATTEMPTS) ; do
     addr2line_filter="$SOURCE_ROOT/build-support/stacktrace_addr2line.pl $ABS_TEST_PATH"
   fi
   echo "Running $TEST_NAME, redirecting output into $LOGFILE" \
-    "(attempt ${ATTEMPT_NUMBER}/$TEST_EXECUTION_ATTEMPTS)"
-  $ABS_TEST_PATH "$@" --test_timeout_after $KUDU_TEST_TIMEOUT 2>&1 \
+       "(attempt ${ATTEMPT_NUMBER}/$TEST_EXECUTION_ATTEMPTS)"
+  test_command=$ABS_TEST_PATH
+  if [ -n "$KUDU_MEASURE_TEST_CPU_CONSUMPTION" ] && [ "$KUDU_MEASURE_TEST_CPU_CONSUMPTION" -ne 0 ] ; then
+    perf_file=$TEST_LOGDIR/$TEST_NAME.perf.txt
+    echo "Will wrap test in perf-stat, output to ${perf_file}..."
+    test_command="perf stat -I1000 -e task-clock -o $perf_file $test_command"
+  fi
+  $test_command "$@" --test_timeout_after $KUDU_TEST_TIMEOUT 2>&1 \
     | $addr2line_filter \
     | $pipe_cmd > $LOGFILE
   STATUS=$?
@@ -202,7 +214,7 @@ for ATTEMPT_NUMBER in $(seq 1 $TEST_EXECUTION_ATTEMPTS) ; do
     done
   fi
 
-  if [ -n "$KUDU_REPORT_TEST_RESULTS" ]; then
+  if [ -n "$KUDU_REPORT_TEST_RESULTS" ] && [ "$KUDU_REPORT_TEST_RESULTS" -ne 0 ]; then
     echo Reporting results
     $SOURCE_ROOT/build-support/report-test.sh "$ABS_TEST_PATH" "$LOGFILE" "$STATUS" &
 

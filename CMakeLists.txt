@@ -693,6 +693,24 @@ endfunction()
 #       parallel on a single machine using ctest, they will still run in
 #       parallel across separate machines using dist-test.
 #
+#   PROCESSORS <num processors>
+#   RUN_SERIAL true
+#       These built-in CMake properties should be used when a test is
+#       a heavy consumer of CPU.
+#
+#       The PROCESSORS flag allows ctest to ensure that tests are only
+#       scheduled in parallel when an appropriate number of cores are
+#       available. The default is to assume that a test uses a single core
+#       (i.e. equivalent to PROCESSORS 1).
+#
+#       RUN_SERIAL ensures that the test does not run in parallel with any
+#       other test. This should be used for stress tests which start many
+#       threads and attempt to monopolize the machine.
+#
+#       In order to determine an appropriate setting, you can run the test
+#       with the KUDU_MEASURE_TEST_CPU_CONSUMPTION environment variable
+#       set. See build-support/run-test.sh for more details.
+#
 # Any other arguments will be passed to set_tests_properties().
 function(ADD_KUDU_TEST REL_TEST_NAME)
   # Parse out properties for which we have special handling.

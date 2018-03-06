@@ -96,7 +96,7 @@ ADD_KUDU_TEST(compaction_policy-test
   # Can't use dist-test because it relies on a data file.
   LABELS no_dist_test)
 
-ADD_KUDU_TEST(all_types-scan-correctness-test NUM_SHARDS 8)
+ADD_KUDU_TEST(all_types-scan-correctness-test NUM_SHARDS 8 PROCESSORS 2)
 ADD_KUDU_TEST(diskrowset-test)
 ADD_KUDU_TEST(mt-diskrowset-test RUN_SERIAL true)
 ADD_KUDU_TEST(memrowset-test)
@@ -114,7 +114,7 @@ ADD_KUDU_TEST(lock_manager-test)
 ADD_KUDU_TEST(rowset_tree-test NUM_SHARDS 6)
 ADD_KUDU_TEST(composite-pushdown-test)
 ADD_KUDU_TEST(delta_compaction-test)
-ADD_KUDU_TEST(mt-rowset_delta_compaction-test)
+ADD_KUDU_TEST(mt-rowset_delta_compaction-test PROCESSORS 2)
 ADD_KUDU_TEST(major_delta_compaction-test)
 ADD_KUDU_TEST(transactions/transaction_tracker-test)
 ADD_KUDU_TEST(tablet_history_gc-test)
