@@ -37,7 +37,6 @@
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/move.h"
-#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.pb.h"
@@ -45,7 +44,6 @@
 #include "kudu/master/master_cert_authority.h"
 #include "kudu/master/master_path_handlers.h"
 #include "kudu/master/master_service.h"
-#include "kudu/master/sys_catalog.h"
 #include "kudu/master/ts_manager.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
@@ -53,7 +51,6 @@
 #include "kudu/security/token_signer.h"
 #include "kudu/server/rpc_server.h"
 #include "kudu/server/webserver.h"
-#include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/tablet_copy_service.h"
 #include "kudu/tserver/tablet_service.h"
 #include "kudu/util/flag_tags.h"
@@ -309,8 +306,7 @@ Status Master::ListMasters(std::vector<ServerEntryPB>* masters) const {
     return Status::OK();
   }
 
-  RETURN_NOT_OK(catalog_manager_->CheckOnline());
-  auto consensus = catalog_manager_->sys_catalog()->tablet_replica()->shared_consensus();
+  auto consensus = catalog_manager_->master_consensus();
   if (!consensus) {
     return Status::IllegalState("consensus not running");
   }
@@ -344,8 +340,7 @@ Status Master::ListMasters(std::vector<ServerEntryPB>* masters) const {
 }
 
 Status Master::GetMasterHostPorts(std::vector<HostPortPB>* hostports) const {
-  RETURN_NOT_OK(catalog_manager_->CheckOnline());
-  auto consensus = catalog_manager_->sys_catalog()->tablet_replica()->shared_consensus();
+  auto consensus = catalog_manager_->master_consensus();
   if (!consensus) {
     return Status::IllegalState("consensus not running");
   }

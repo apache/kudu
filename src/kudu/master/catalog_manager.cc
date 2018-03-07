@@ -3755,6 +3755,17 @@ Status CatalogManager::ProcessTabletReport(
   return Status::OK();
 }
 
+std::shared_ptr<RaftConsensus> CatalogManager::master_consensus() const {
+  // CatalogManager::InitSysCatalogAsync takes lock_ in exclusive mode in order
+  // to initialize sys_catalog_, so it's sufficient to take lock_ in shared mode
+  // here to protect access to sys_catalog_.
+  shared_lock<LockType> l(lock_);
+  if (!sys_catalog_) {
+    return nullptr;
+  }
+  return sys_catalog_->tablet_replica()->shared_consensus();
+}
+
 void CatalogManager::SendAlterTableRequest(const scoped_refptr<TableInfo>& table) {
   vector<scoped_refptr<TabletInfo>> tablets;
   table->GetAllTablets(&tablets);

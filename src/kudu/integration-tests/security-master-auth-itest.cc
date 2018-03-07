@@ -22,16 +22,13 @@
 #include <gtest/gtest.h>
 
 #include "kudu/consensus/raft_consensus.h"
-#include "kudu/gutil/ref_counted.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
 #include "kudu/master/mini_master.h"
-#include "kudu/master/sys_catalog.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/security/tls_context.h"
 #include "kudu/security/token_verifier.h"
-#include "kudu/tablet/tablet_replica.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -84,8 +81,7 @@ TEST_F(SecurityMasterAuthTest, FollowerCertificates) {
     ASSERT_TRUE(tls.has_cert());
   }
 
-  auto* consensus = cluster_->mini_master(0)->master()->catalog_manager()->
-      sys_catalog()->tablet_replica()->consensus();
+  auto consensus = cluster_->mini_master(0)->master()->catalog_manager()->master_consensus();
   ASSERT_OK(consensus->StartElection(
       RaftConsensus::ELECT_EVEN_IF_LEADER_IS_ALIVE,
       RaftConsensus::EXTERNAL_REQUEST));
@@ -105,8 +101,7 @@ TEST_F(SecurityMasterAuthTest, FollowerCertificates) {
 // the rest have always been followers. This is a test to cover regressions of
 // KUDU-2319, if any.
 TEST_F(SecurityMasterAuthTest, FollowerTokenVerificationKeys) {
-  auto* consensus = cluster_->mini_master(0)->master()->catalog_manager()->
-      sys_catalog()->tablet_replica()->consensus();
+  auto consensus = cluster_->mini_master(0)->master()->catalog_manager()->master_consensus();
   ASSERT_OK(consensus->StartElection(
       RaftConsensus::ELECT_EVEN_IF_LEADER_IS_ALIVE,
       RaftConsensus::EXTERNAL_REQUEST));

@@ -77,6 +77,7 @@ class TokenSigningPublicKeyPB;
 } // namespace security
 
 namespace consensus {
+class RaftConsensus;
 class StartTabletCopyRequestPB;
 }
 
@@ -585,6 +586,10 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
                              rpc::RpcContext* rpc);
 
   SysCatalogTable* sys_catalog() { return sys_catalog_.get(); }
+
+  // Returns the Master tablet's RaftConsensus instance if it is initialized, or
+  // else a nullptr.
+  std::shared_ptr<consensus::RaftConsensus> master_consensus() const;
 
   // Dump all of the current state about tables and tablets to the
   // given output stream. This is verbose, meant for debugging.
