@@ -805,16 +805,18 @@ void TabletServiceAdminImpl::DeleteTablet(const DeleteTabletRequestPB* req,
   if (req->has_cas_config_opid_index_less_or_equal()) {
     cas_config_opid_index_less_or_equal = req->cas_config_opid_index_less_or_equal();
   }
-  TabletServerErrorPB::Code error_code;
-  Status s = server_->tablet_manager()->DeleteTablet(req->tablet_id(),
-                                                     delete_type,
-                                                     cas_config_opid_index_less_or_equal,
-                                                     &error_code);
-  if (PREDICT_FALSE(!s.ok())) {
-    HandleErrorResponse(req, resp, context, error_code, s);
-    return;
-  }
-  context->RespondSuccess();
+
+  auto response_callback = [context, req, resp](const Status& s, TabletServerErrorPB::Code code) {
+    if (PREDICT_FALSE(!s.ok())) {
+      HandleErrorResponse(req, resp, context, code, s);
+      return;
+    }
+    context->RespondSuccess();
+  };
+  server_->tablet_manager()->DeleteTabletAsync(req->tablet_id(),
+                                               delete_type,
+                                               cas_config_opid_index_less_or_equal,
+                                               response_callback);
 }
 
 void TabletServiceImpl::Write(const WriteRequestPB* req,

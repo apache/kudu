@@ -122,14 +122,22 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
                          consensus::RaftConfigPB config,
                          scoped_refptr<tablet::TabletReplica>* replica);
 
-  // Delete the specified tablet.
-  // 'delete_type' must be one of TABLET_DATA_DELETED or TABLET_DATA_TOMBSTONED
-  // or else returns Status::IllegalArgument.
-  // 'cas_config_index' is optionally specified to enable an
-  // atomic DeleteTablet operation that only occurs if the latest committed
-  // Raft config change op has an opid_index equal to or less than the specified
-  // value. If not, 'error_code' is set to CAS_FAILED and a non-OK Status is
-  // returned.
+  // Delete the specified tablet asynchronously with callback 'cb'.
+  // - If the async task cannot be started, 'cb' will be called with
+  //   Status::ServiceUnavailable and TabletServerErrorPB::THROTTLED.
+  // - 'delete_type' must be one of TABLET_DATA_DELETED or TABLET_DATA_TOMBSTONED.
+  // - 'cas_config_index' is optionally specified to enable an
+  //   atomic DeleteTablet operation that only occurs if the latest committed
+  //   Raft config change op has an opid_index equal to or less than the specified
+  //   value. If not, the callback is called with a non-OK Status and error code
+  //   CAS_FAILED.
+  void DeleteTabletAsync(const std::string& tablet_id,
+                         tablet::TabletDataState delete_type,
+                         const boost::optional<int64_t>& cas_config_index,
+                         std::function<void(const Status&, TabletServerErrorPB::Code)> cb);
+
+  // Delete the specified tablet synchronously.
+  // See DeleteTabletAsync() for more information.
   Status DeleteTablet(const std::string& tablet_id,
                       tablet::TabletDataState delete_type,
                       const boost::optional<int64_t>& cas_config_index,
@@ -360,6 +368,9 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
 
   // Thread pool used to open the tablets async, whether bootstrap is required or not.
   gscoped_ptr<ThreadPool> open_tablet_pool_;
+
+  // Thread pool used to delete tablets asynchronously.
+  gscoped_ptr<ThreadPool> delete_tablet_pool_;
 
   FunctionGaugeDetacher metric_detacher_;
 

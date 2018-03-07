@@ -88,7 +88,7 @@ struct ThreadPoolMetrics {
 //    The TraceMetrics implementation relies on the number of distinct counter
 //    names being small. Thus, if the thread pool name itself is dynamically
 //    generated, the default behavior described above would result in an
-//    unbounded number of distinct cunter names. The 'trace_metric_prefix'
+//    unbounded number of distinct counter names. The 'trace_metric_prefix'
 //    setting can be used to override the prefix used in generating the trace
 //    metric names.
 //

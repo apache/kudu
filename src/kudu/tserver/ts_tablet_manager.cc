@@ -84,6 +84,13 @@ DEFINE_int32(num_tablets_to_open_simultaneously, 0,
              "may make sense to manually tune this.");
 TAG_FLAG(num_tablets_to_open_simultaneously, advanced);
 
+DEFINE_int32(num_tablets_to_delete_simultaneously, 0,
+             "Number of threads available to delete tablets. If this is set to 0 (the "
+             "default), then the number of delete threads will be set based on the number "
+             "of data directories. If the data directories are on some very fast storage "
+             "device such as SSD or a RAID array, it may make sense to manually tune this.");
+TAG_FLAG(num_tablets_to_delete_simultaneously, advanced);
+
 DEFINE_int32(tablet_start_warn_threshold_ms, 500,
              "If a tablet takes more than this number of millis to start, issue "
              "a warning with a trace.");
@@ -118,6 +125,10 @@ DEFINE_int32(tablet_state_walk_min_period_ms, 1000,
              "Minimum amount of time in milliseconds between walks of the "
              "tablet map to update tablet state counts.");
 TAG_FLAG(tablet_state_walk_min_period_ms, advanced);
+
+DEFINE_int32(delete_tablet_inject_latency_ms, 0,
+             "Amount of delay in milliseconds to inject into delete tablet operations.");
+TAG_FLAG(delete_tablet_inject_latency_ms, unsafe);
 
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 
@@ -247,6 +258,41 @@ TSTabletManager::TSTabletManager(TabletServer* server)
       ->AutoDetach(&metric_detacher_);
 }
 
+// Base class for Runnables submitted against TSTabletManager threadpools whose
+// whose callback must fire, for example if the callback responds to an RPC.
+class TabletManagerRunnable : public Runnable {
+public:
+  TabletManagerRunnable(TSTabletManager* ts_tablet_manager,
+                        std::function<void(const Status&, TabletServerErrorPB::Code)> cb)
+      : ts_tablet_manager_(ts_tablet_manager),
+        cb_(std::move(cb)) {
+  }
+
+  virtual ~TabletManagerRunnable() {
+    // If the Runnable is destroyed without the Run() method being invoked, we
+    // must invoke the user callback ourselves in order to free request
+    // resources. This may happen when the ThreadPool is shut down while the
+    // Runnable is enqueued.
+    if (!cb_invoked_) {
+      cb_(Status::ServiceUnavailable("Tablet server shutting down"),
+          TabletServerErrorPB::THROTTLED);
+    }
+  }
+
+  // Disable automatic invocation of the callback by the destructor.
+  // Does not disable invocation of the callback by Run().
+  void DisableCallback() {
+    cb_invoked_ = true;
+  }
+
+protected:
+  TSTabletManager* const ts_tablet_manager_;
+  const std::function<void(const Status&, TabletServerErrorPB::Code)> cb_;
+  bool cb_invoked_ = false;
+
+  DISALLOW_COPY_AND_ASSIGN(TabletManagerRunnable);
+};
+
 TSTabletManager::~TSTabletManager() {
 }
 
@@ -261,7 +307,7 @@ Status TSTabletManager::Init() {
                 .set_max_threads(FLAGS_num_tablets_to_copy_simultaneously)
                 .Build(&tablet_copy_pool_));
 
-  // Start the threadpool we'll use to open tablets.
+  // Start the threadpools we'll use to open and delete tablets.
   // This has to be done in Init() instead of the constructor, since the
   // FsManager isn't initialized until this point.
   int max_open_threads = FLAGS_num_tablets_to_open_simultaneously;
@@ -272,6 +318,14 @@ Status TSTabletManager::Init() {
   RETURN_NOT_OK(ThreadPoolBuilder("tablet-open")
                 .set_max_threads(max_open_threads)
                 .Build(&open_tablet_pool_));
+  int max_delete_threads = FLAGS_num_tablets_to_delete_simultaneously;
+  if (max_delete_threads == 0) {
+    // Default to the number of disks.
+    max_delete_threads = fs_manager_->GetDataRootDirs().size();
+  }
+  RETURN_NOT_OK(ThreadPoolBuilder("tablet-delete")
+                .set_max_threads(max_delete_threads)
+                .Build(&delete_tablet_pool_));
 
   // Search for tablets in the metadata dir.
   vector<string> tablet_ids;
@@ -417,42 +471,22 @@ Status TSTabletManager::CheckLeaderTermNotLower(const string& tablet_id,
 }
 
 // Tablet Copy runnable that will run on a ThreadPool.
-class TabletCopyRunnable : public Runnable {
+class TabletCopyRunnable : public TabletManagerRunnable {
  public:
   TabletCopyRunnable(TSTabletManager* ts_tablet_manager,
                      const StartTabletCopyRequestPB* req,
                      std::function<void(const Status&, TabletServerErrorPB::Code)> cb)
-      : ts_tablet_manager_(ts_tablet_manager),
-        req_(req),
-        cb_(std::move(cb)) {
+      : TabletManagerRunnable(ts_tablet_manager, cb),
+        req_(req) {
   }
 
-  virtual ~TabletCopyRunnable() {
-    // If the Runnable is destroyed without the Run() method being invoked, we
-    // must invoke the user callback ourselves in order to free request
-    // resources. This may happen when the ThreadPool is shut down while the
-    // Runnable is enqueued.
-    if (!cb_invoked_) {
-      cb_(Status::ServiceUnavailable("Tablet server shutting down"),
-          TabletServerErrorPB::THROTTLED);
-    }
-  }
-
-  virtual void Run() override {
+  void Run() override {
     ts_tablet_manager_->RunTabletCopy(req_, cb_);
     cb_invoked_ = true;
   }
 
-  // Disable automatic invocation of the callback by the destructor.
-  void DisableCallback() {
-    cb_invoked_ = true;
-  }
-
  private:
-  TSTabletManager* const ts_tablet_manager_;
   const StartTabletCopyRequestPB* const req_;
-  const std::function<void(const Status&, TabletServerErrorPB::Code)> cb_;
-  bool cb_invoked_ = false;
 
   DISALLOW_COPY_AND_ASSIGN(TabletCopyRunnable);
 };
@@ -774,6 +808,53 @@ Status TSTabletManager::BeginReplicaStateTransition(
   return Status::OK();
 }
 
+// Delete Tablet runnable that will run on a ThreadPool.
+class DeleteTabletRunnable : public TabletManagerRunnable {
+public:
+  DeleteTabletRunnable(TSTabletManager* ts_tablet_manager,
+                       const std::string& tablet_id,
+                       tablet::TabletDataState delete_type,
+                       const boost::optional<int64_t>& cas_config_index,
+                       std::function<void(const Status&, TabletServerErrorPB::Code)> cb)
+      : TabletManagerRunnable(ts_tablet_manager, cb),
+        tablet_id_(tablet_id),
+        delete_type_(delete_type),
+        cas_config_index_(cas_config_index) {
+  }
+
+  void Run() override {
+    TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+    Status s = ts_tablet_manager_->DeleteTablet(tablet_id_, delete_type_, cas_config_index_, &code);
+    cb_(s, code);
+    cb_invoked_ = true;
+  }
+
+private:
+  const string tablet_id_;
+  const tablet::TabletDataState delete_type_;
+  const boost::optional<int64_t> cas_config_index_;
+
+  DISALLOW_COPY_AND_ASSIGN(DeleteTabletRunnable);
+};
+
+void TSTabletManager::DeleteTabletAsync(
+    const std::string& tablet_id,
+    tablet::TabletDataState delete_type,
+    const boost::optional<int64_t>& cas_config_index,
+    std::function<void(const Status&, TabletServerErrorPB::Code)> cb) {
+  auto runnable = std::make_shared<DeleteTabletRunnable>(this, tablet_id, delete_type,
+                                                         cas_config_index, cb);
+  Status s = delete_tablet_pool_->Submit(runnable);
+  if (PREDICT_TRUE(s.ok())) {
+    return;
+  }
+
+  // Threadpool submission failed, so we'll invoke the callback ourselves.
+  runnable->DisableCallback();
+  cb(s, s.IsServiceUnavailable() ? TabletServerErrorPB::THROTTLED :
+                                   TabletServerErrorPB::UNKNOWN_ERROR);
+}
+
 Status TSTabletManager::DeleteTablet(
     const string& tablet_id,
     TabletDataState delete_type,
@@ -788,6 +869,12 @@ Status TSTabletManager::DeleteTablet(
   }
 
   TRACE("Deleting tablet $0", tablet_id);
+
+  if (PREDICT_FALSE(FLAGS_delete_tablet_inject_latency_ms > 0)) {
+    LOG(WARNING) << "Injecting " << FLAGS_delete_tablet_inject_latency_ms
+                 << "ms of latency into DeleteTablet";
+    SleepFor(MonoDelta::FromMilliseconds(FLAGS_delete_tablet_inject_latency_ms));
+  }
 
   scoped_refptr<TabletReplica> replica;
   scoped_refptr<TransitionInProgressDeleter> deleter;
@@ -1043,6 +1130,9 @@ void TSTabletManager::Shutdown() {
 
   // Shut down the bootstrap pool, so no new tablets are registered after this point.
   open_tablet_pool_->Shutdown();
+
+  // Shut down the delete pool, so no new tablets are deleted after this point.
+  delete_tablet_pool_->Shutdown();
 
   // Take a snapshot of the replicas list -- that way we don't have to hold
   // on to the lock while shutting them down, which might cause a lock
