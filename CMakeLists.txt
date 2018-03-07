@@ -757,7 +757,12 @@ function(ADD_KUDU_TEST REL_TEST_NAME)
 
   math(EXPR MAX_SHARD "${ARG_NUM_SHARDS} - 1")
   foreach(SHARD_NUM RANGE ${MAX_SHARD})
-    set(TARGET ${TEST_NAME}.${SHARD_NUM})
+    # Only name the targets with a '.<shard>' if the test is sharded.
+    if(${ARG_NUM_SHARDS} EQUAL 1)
+      set(TARGET ${TEST_NAME})
+    else()
+      set(TARGET ${TEST_NAME}.${SHARD_NUM})
+    endif()
 
     add_test(${TARGET}
       ${BUILD_SUPPORT_DIR}/run-test.sh ${TEST_PATH})

@@ -63,8 +63,12 @@ shift
 # The "short" test name doesn't include the shard number.
 SHORT_TEST_NAME=$(echo $TEST_FILENAME | perl -pe 's/\..+?$//')
 
-# The full test name does include the shard number.
-TEST_NAME=${SHORT_TEST_NAME}.${GTEST_SHARD_INDEX:-0}
+# The full test name does include the shard number if the test is sharded.
+if [ "$GTEST_TOTAL_SHARDS" -gt 1 ]; then
+  TEST_NAME=${SHORT_TEST_NAME}.${GTEST_SHARD_INDEX:?}
+else
+  TEST_NAME=${SHORT_TEST_NAME}
+fi
 
 # Determine whether the test is a known flaky by comparing against the user-specified
 # list.
