@@ -32,12 +32,13 @@
 #include "kudu/tools/ksck.h"
 #include "kudu/tools/ksck_remote.h"
 #include "kudu/tools/tool_action_common.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
 #define PUSH_PREPEND_NOT_OK(s, statuses, msg) do { \
   ::kudu::Status _s = (s); \
   if (PREDICT_FALSE(!_s.ok())) { \
-    statuses.push_back(string(msg) + ": " + _s.ToString()); \
+    statuses.push_back(string(msg) + ": " + _s.message().ToString()); \
   } \
 } while (0);
 

@@ -221,6 +221,34 @@ Status Ksck::ConnectToTabletServer(const shared_ptr<KsckTabletServer>& ts) {
   return s;
 }
 
+Status Ksck::PrintTableSummaries(const vector<TableSummary>& table_summaries, ostream& out) {
+  out << "Table Summary" << endl;
+  DataTable table({ "Name", "Status", "Total Tablets",
+                    "Healthy", "Recovering", "Under-replicated", "Unavailable"});
+  for (const TableSummary& ts : table_summaries) {
+    string status;
+    switch (ts.TableStatus()) {
+      case CheckResult::HEALTHY:
+        status = "HEALTHY";
+        break;
+      case CheckResult::RECOVERING:
+        status = "RECOVERING";
+        break;
+      case CheckResult::UNDER_REPLICATED:
+        status = "UNDER-REPLICATED";
+        break;
+      default:
+        status = "UNAVAILABLE";
+        break;
+    }
+    table.AddRow({ ts.name, status, to_string(ts.TotalTablets()),
+                   to_string(ts.healthy_tablets), to_string(ts.recovering_tablets),
+                   to_string(ts.underreplicated_tablets),
+                   to_string(ts.consensus_mismatch_tablets + ts.unavailable_tablets) });
+  }
+  return table.PrintTo(out);
+}
+
 Status Ksck::CheckTablesConsistency() {
   int bad_tables_count = 0;
   vector<TableSummary> table_summaries;
@@ -247,36 +275,16 @@ Status Ksck::CheckTablesConsistency() {
   // otherwise sort alphabetically.
   std::sort(table_summaries.begin(), table_summaries.end(),
             [](const TableSummary& left, const TableSummary& right) {
-              return std::make_pair(left.TableStatus() != CheckResult::OK, left.name) <
-                     std::make_pair(right.TableStatus() != CheckResult::OK, right.name);
+              return std::make_pair(left.TableStatus() != CheckResult::HEALTHY, left.name) <
+                     std::make_pair(right.TableStatus() != CheckResult::HEALTHY, right.name);
             });
-  Out() << "Table Summary" << endl;
-  DataTable table({ "Name", "Status", "Total Tablets",
-                    "Healthy", "Under-replicated", "Unavailable"});
-  for (const TableSummary& ts : table_summaries) {
-    string status;
-    switch (ts.TableStatus()) {
-      case CheckResult::OK:
-        status = "HEALTHY";
-        break;
-      case CheckResult::UNDER_REPLICATED:
-        status = "UNDER-REPLICATED";
-        break;
-      default:
-        status = "UNAVAILABLE";
-        break;
-    }
-    table.AddRow({ ts.name, status, to_string(ts.TotalTablets()),
-                   to_string(ts.healthy_tablets), to_string(ts.underreplicated_tablets),
-                   to_string(ts.consensus_mismatch_tablets + ts.unavailable_tablets) });
-  }
-  CHECK_OK(table.PrintTo(Out()));
+  CHECK_OK(PrintTableSummaries(table_summaries, Out()));
 
   if (bad_tables_count == 0) {
     Out() << Substitute("The metadata for $0 table(s) is HEALTHY", table_summaries.size()) << endl;
     return Status::OK();
   }
-  return Status::Corruption(Substitute("$0 out of $1 table(s) are bad",
+  return Status::Corruption(Substitute("$0 out of $1 table(s) are not healthy",
                                        bad_tables_count, table_summaries.size()));
 }
 
@@ -601,8 +609,11 @@ bool Ksck::VerifyTable(const shared_ptr<KsckTable>& table, TableSummary* ts) {
   for (const auto& tablet : tablets) {
     auto tablet_result = VerifyTablet(tablet, table_num_replicas);
     switch (tablet_result) {
-      case CheckResult::OK:
+      case CheckResult::HEALTHY:
         ts->healthy_tablets++;
+        break;
+      case CheckResult::RECOVERING:
+        ts->recovering_tablets++;
         break;
       case CheckResult::UNDER_REPLICATED:
         ts->underreplicated_tablets++;
@@ -621,6 +632,12 @@ bool Ksck::VerifyTable(const shared_ptr<KsckTable>& table, TableSummary* ts) {
                         Color(AnsiCode::GREEN, "HEALTHY"),
                         tablets.size()) << endl;
     return true;
+  }
+  if (ts->recovering_tablets > 0) {
+    Out() << Substitute("Table $0 has $1 $2 tablet(s)",
+                      table->name(),
+                      ts->recovering_tablets,
+                      Color(AnsiCode::YELLOW, "recovering")) << endl;
   }
   if (ts->underreplicated_tablets > 0) {
     Out() << Substitute("Table $0 has $1 $2 tablet(s)",
@@ -767,12 +784,15 @@ Ksck::CheckResult Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int t
   // Summarize the states.
   int leaders_count = 0;
   int running_voters_count = 0;
+  int copying_replicas_count = 0;
   for (const auto& r : replica_infos) {
     if (r.replica->is_leader()) {
       leaders_count++;
     }
     if (r.state == tablet::RUNNING && r.replica->is_voter()) {
       running_voters_count++;
+    } else if (r.status_pb && r.status_pb->tablet_data_state() == tablet::TABLET_DATA_COPYING) {
+      copying_replicas_count++;
     }
   }
 
@@ -793,13 +813,19 @@ Ksck::CheckResult Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int t
             });
 
   // Determine the overall health state of the tablet.
-  CheckResult result = CheckResult::OK;
+  CheckResult result = CheckResult::HEALTHY;
   int num_voters = std::accumulate(replica_infos.begin(), replica_infos.end(),
                                    0, [](int sum, const ReplicaInfo& info) {
       return sum + (info.replica->is_voter() ? 1 : 0);
     });
   int majority_size = consensus::MajoritySize(num_voters);
-  if (running_voters_count < majority_size) {
+  if (copying_replicas_count > 0) {
+    Out() << Substitute("$0 is $1: $2 on-going tablet copies",
+                        tablet_str,
+                        Color(AnsiCode::YELLOW, "recovering"),
+                        copying_replicas_count) << endl;
+    result = CheckResult::RECOVERING;
+  } else if (running_voters_count < majority_size) {
     Out() << Substitute("$0 is $1: $2 replica(s) not RUNNING",
                         tablet_str,
                         Color(AnsiCode::RED, "unavailable"),
@@ -832,7 +858,7 @@ Ksck::CheckResult Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int t
 
   // In the case that we found something wrong, dump info on all the replicas
   // to make it easy to debug. Also, do that if verbose output is requested.
-  if (result != CheckResult::OK || FLAGS_verbose) {
+  if (result != CheckResult::HEALTHY || FLAGS_verbose) {
     for (const ReplicaInfo& r : replica_infos) {
       string ts_str = r.ts ? r.ts->ToString() : r.replica->ts_uuid();
       const char* spec_str = r.replica->is_leader()
@@ -852,7 +878,7 @@ Ksck::CheckResult Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int t
         continue;
       }
 
-      Out() << Color(AnsiCode::YELLOW, "bad state") << spec_str << endl;
+      Out() << Color(AnsiCode::YELLOW, "not running") << spec_str << endl;
       Out() << Substitute(
           "    State:       $0\n"
           "    Data state:  $1\n"

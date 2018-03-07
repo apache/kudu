@@ -308,6 +308,7 @@ class KsckTabletServer {
   FRIEND_TEST(KsckTest, TestConsensusConflictMissingPeer);
   FRIEND_TEST(KsckTest, TestMasterNotReportingTabletServerWithConsensusConflict);
   FRIEND_TEST(KsckTest, TestMismatchedAssignments);
+  FRIEND_TEST(KsckTest, TestTabletCopying);
 
   enum State {
     kUninitialized,
@@ -394,6 +395,7 @@ class KsckCluster {
   DISALLOW_COPY_AND_ASSIGN(KsckCluster);
 };
 
+
 // Externally facing class to run checks against the provided cluster.
 class Ksck {
  public:
@@ -453,10 +455,24 @@ class Ksck {
   Status ChecksumData(const ChecksumOptions& options);
 
  private:
+  friend class KsckTest;
+
   enum class CheckResult {
-    OK,
+    // The tablet is healthy.
+    HEALTHY,
+
+    // The tablet has on-going tablet copies.
+    RECOVERING,
+
+    // The tablet has fewer replicas than its table's replication factor and
+    // has no on-going tablet copies.
     UNDER_REPLICATED,
+
+    // The tablet is missing a majority of its replicas and is unavailable for
+    // writes. If a majority cannot be brought back online, then the tablet
+    // requires manual intervention to recover.
     UNAVAILABLE,
+
     // There was a discrepancy among the tablets' consensus configs and the master's.
     CONSENSUS_MISMATCH,
   };
@@ -465,12 +481,13 @@ class Ksck {
   struct TableSummary {
     std::string name;
     int healthy_tablets = 0;
+    int recovering_tablets = 0;
     int underreplicated_tablets = 0;
     int consensus_mismatch_tablets = 0;
     int unavailable_tablets = 0;
 
     int TotalTablets() const {
-      return healthy_tablets + underreplicated_tablets +
+      return healthy_tablets + recovering_tablets + underreplicated_tablets +
           consensus_mismatch_tablets + unavailable_tablets;
     }
 
@@ -486,9 +503,15 @@ class Ksck {
       if (underreplicated_tablets > 0) {
         return CheckResult::UNDER_REPLICATED;
       }
-      return CheckResult::OK;
+      if (recovering_tablets > 0) {
+        return CheckResult::RECOVERING;
+      }
+      return CheckResult::HEALTHY;
     }
   };
+
+  static Status PrintTableSummaries(const std::vector<TableSummary>& table_summaries,
+                                    std::ostream& out);
 
   bool VerifyTable(const std::shared_ptr<KsckTable>& table, TableSummary* ts);
   bool VerifyTableWithTimeout(const std::shared_ptr<KsckTable>& table,
