@@ -18,8 +18,10 @@
 #include "kudu/server/diagnostics_log.h"
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <ostream>
+#include <queue>
 #include <string>
 #include <utility>
 #include <vector>
@@ -43,11 +45,15 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/mutex.h"
+#include "kudu/util/random.h"
+#include "kudu/util/random_util.h"
 #include "kudu/util/rolling_log.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
 
+using std::pair;
+using std::priority_queue;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -62,13 +68,14 @@ namespace google {
 bool Symbolize(void *pc, char *out, int out_size);
 }
 
-
-// TODO(todd): this is a placeholder flag. This should actually be an interval.
-// Tagging as experimental and disabling by default while this work is in flux.
-DEFINE_bool(diagnostics_log_stack_traces, false,
-            "Whether to periodically log stack traces to the diagnostics log.");
-TAG_FLAG(diagnostics_log_stack_traces, runtime);
-TAG_FLAG(diagnostics_log_stack_traces, experimental);
+DEFINE_uint32(diagnostics_log_stack_traces_interval_ms, 60000,
+             "The interval at which the server will a snapshot of its thread stacks to the "
+             "diagnostics log. In fact, the server will log at a random interval betweeen "
+             "zero and twice the configured value to avoid biasing samples towards periodic "
+             "processes which happen exactly on some particular schedule. If this is set to "
+             "0, stack traces will be not be periodically logged.");
+TAG_FLAG(diagnostics_log_stack_traces_interval_ms, runtime);
+TAG_FLAG(diagnostics_log_stack_traces_interval_ms, experimental);
 
 namespace kudu {
 namespace server {
@@ -149,56 +156,70 @@ void DiagnosticsLog::Stop() {
   WARN_NOT_OK(log_->Close(), "Unable to close diagnostics log");
 }
 
-void DiagnosticsLog::RunThread() {
-  // How long to wait before trying again if we experience a failure
-  // logging metrics.
-  const MonoDelta kWaitBetweenFailures = MonoDelta::FromSeconds(60);
+MonoTime DiagnosticsLog::ComputeNextWakeup(DiagnosticsLog::WakeupType type) const {
+  switch (type) {
+    case WakeupType::STACKS:
+      if (FLAGS_diagnostics_log_stack_traces_interval_ms > 0) {
+        // Instead of directly using the configured interval, we use a uniform random
+        // interval whose mean is the configured value. This prevents biasing our stack
+        // samples. For example, if there is some background process which happens once a
+        // minute, and the user also configured the stacks to once a minute, an operator
+        // might incorrectly surmise that the background task was _always_ running.
+        // Randomizing the samples avoids such correlations.
+        Random rng(GetRandomSeed32());
+        int64_t ms = rng.Uniform(FLAGS_diagnostics_log_stack_traces_interval_ms * 2);
+        return MonoTime::Now() + MonoDelta::FromMilliseconds(ms);
+      } else {
+        // Stack tracing is disabled. However we still wake up periodically because the
+        // flag is runtime-modifiable, and we need to wake up to notice that it might have
+        // changed.
+        return MonoTime::Now() + MonoDelta::FromSeconds(5);
+      }
+      break;
+    case WakeupType::METRICS:
+      return MonoTime::Now() + metrics_log_interval_;
+  }
+  __builtin_unreachable();
+}
 
+void DiagnosticsLog::RunThread() {
   MutexLock l(lock_);
 
-  MonoTime next_log = MonoTime::Now();
+  // Set up a priority queue which tracks our future scheduled wake-ups.
+  typedef pair<MonoTime, WakeupType> QueueElem;
+  priority_queue<QueueElem, vector<QueueElem>, std::greater<QueueElem>> wakeups;
+  wakeups.emplace(ComputeNextWakeup(WakeupType::METRICS), WakeupType::METRICS);
+  wakeups.emplace(ComputeNextWakeup(WakeupType::STACKS), WakeupType::STACKS);
+
   while (!stop_) {
+    MonoTime next_log = wakeups.top().first;
     wake_.TimedWait(next_log - MonoTime::Now());
-    bool reached_time = MonoTime::Now() > next_log;
 
-    if (reached_time) {
-      Status s;
-      {
-        // Unlock the mutex while actually logging metrics since it's somewhat
-        // slow and we don't want to block threads trying to signal us.
-        l.Unlock();
-        SCOPED_CLEANUP({ l.Lock(); });
-        s = LogMetrics();
-      }
-
-      if (!s.ok()) {
-        WARN_NOT_OK(s, Substitute(
-            "Unable to collect metrics to diagnostics log. Will try again in $0",
-            kWaitBetweenFailures.ToString()));
-        next_log = MonoTime::Now() + kWaitBetweenFailures;
-      } else {
-        next_log = MonoTime::Now() + metrics_log_interval_;
-      }
+    string reason;
+    WakeupType what;
+    if (dump_stacks_now_reason_) {
+      what = WakeupType::STACKS;
+      reason = std::move(*dump_stacks_now_reason_);
+      dump_stacks_now_reason_ = boost::none;
+    } else if (MonoTime::Now() >= next_log) {
+      what = wakeups.top().second;
+      reason = "periodic";
+      wakeups.pop();
+      wakeups.emplace(ComputeNextWakeup(what), what);
+    } else {
+      // Spurious wakeup, or a stop trigger.
+      continue;
     }
 
-    if ((reached_time && FLAGS_diagnostics_log_stack_traces) ||
-        dump_stacks_now_reason_) {
-      string reason = dump_stacks_now_reason_.value_or("periodic");
-      Status s;
-      {
-        // Unlock the mutex while actually logging stacks since it's somewhat
-        // slow and we don't want to block threads trying to signal us.
-        l.Unlock();
-        SCOPED_CLEANUP({ l.Lock(); });
-        s = LogStacks(reason);
-      }
-      if (!s.ok()) {
-        WARN_NOT_OK(s, "Unable to collect stacks to diagnostics log");
-        next_log = MonoTime::Now() + kWaitBetweenFailures;
-      } else {
-        next_log = MonoTime::Now() + metrics_log_interval_;
-      }
-      dump_stacks_now_reason_ = boost::none;
+    // Unlock the mutex while actually logging metrics or stacks since it's somewhat
+    // slow and we don't want to block threads trying to signal us.
+    l.Unlock();
+    SCOPED_CLEANUP({ l.Lock(); });
+    Status s;
+    if (what == WakeupType::METRICS) {
+      WARN_NOT_OK(LogMetrics(), "Unable to collect metrics to diagnostics log");
+    } else if (what == WakeupType::STACKS && FLAGS_diagnostics_log_stack_traces_interval_ms > 0) {
+      WARN_NOT_OK(LogStacks(reason), "Unable to collect stacks to diagnostics log");
     }
   }
 }

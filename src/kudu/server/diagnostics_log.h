@@ -56,9 +56,16 @@ class DiagnosticsLog {
  private:
   class SymbolSet;
 
+  enum class WakeupType {
+    METRICS,
+    STACKS
+  };
+
   void RunThread();
   Status LogMetrics();
   Status LogStacks(const std::string& reason);
+
+  MonoTime ComputeNextWakeup(DiagnosticsLog::WakeupType type) const;
 
   const std::string log_dir_;
   const MetricRegistry* metric_registry_;
