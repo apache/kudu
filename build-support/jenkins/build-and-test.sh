@@ -307,7 +307,7 @@ if [ "$RUN_FLAKY_ONLY" == "1" ] ; then
   fi
   test_regex=$(perl -e '
     chomp(my @lines = <>);
-    print join("|", map { "^" . quotemeta($_) . "\$" } @lines);
+    print join("|", map { "^" . quotemeta($_) } @lines);
    ' $BUILD_ROOT/flaky-tests.txt)
   if [ -z "$test_regex" ]; then
     echo No tests are flaky.
