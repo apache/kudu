@@ -89,6 +89,7 @@
   future releases.
 
 == Optimizations and improvements
+
 * Reporting for the `kudu cluster ksck` tool has been updated so tablets and
   tables with on-going tablet copies are shown as "recovering". Additional
   reporting changes have been made to make various common scenarios,
@@ -103,6 +104,13 @@
   then returns back shortly after 5 minutes or so. To switch back to the old
   scheme, set the `--raft_prepare_replacement_before_eviction` run-time flag to
   `false` for *all* tablet servers and masters in Kudu 1.7 cluster.
+
+* KUDU-1913: the number of OS threads used in the steady state and during bursts
+  of activity (such as in Raft leader elections triggered by a node failure)
+  has been drastically reduced and should no longer exceed the value of
+  `ulimit -u`. As such, it should no longer be necessary to increase the value
+  of `ulimit -u` (or of /proc/sys/kernel/threads-max) in order to run a Kudu
+  tablet server in most cases.
 
 [[rn_1.7.0_fixed_issues]]
 == Fixed Issues
