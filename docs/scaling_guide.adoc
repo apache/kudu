@@ -183,17 +183,11 @@ If a Kudu tablet server's thread count exceeds the OS limit, it will crash, usua
 in the logs like "pthread_create failed: Resource temporarily unavailable". If the system thread
 count limit is exceeded, other processes on the same node may also crash.
 
-The table below summarizes thread usage by a Kudu tablet server:
+Threads and threadpools are used all over Kudu for various purposes, but the number of threads found
+in nearly all of these does not scale with load or data/tablet size; instead, the number of threads
+is either a hardcoded constant, a constant defined by a configuration parameter, or based on a
+static dimension (such as the number of CPU cores).
 
-.Tablet Server Thread Usage
-|===
-| Consumer | Multiplier
-
-| Hot replica | 5 threads per hot replica
-| Cold replica | 2 threads per cold replica
-| Replica at startup | 5 threads per replica
-|===
-
-As indicated in the table, all replicas may be considered "hot" when the tablet server starts, so,
-for our example load, thread usage should peak around 5 threads / replica * (200 hot replicas + 1600
-cold replicas) = 18000 threads at startup time.
+The only exception to this is the WAL append thread, one of which exists for every "hot" replica.
+Note that all replicas may be considered hot at startup, so tablet servers' thread usage will
+generally peak when started and settle down thereafter.
