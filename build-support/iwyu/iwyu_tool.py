@@ -6,6 +6,11 @@
 # and corresponding license has been added:
 #   https://github.com/include-what-you-use/include-what-you-use/blob/master/LICENSE.TXT
 #
+# ------------------------------------------------------------------------------
+# NOTE: some local Kudu modifications have been made. Before
+# "upgrading" this to a new version from upstream, check the git log.
+# ------------------------------------------------------------------------------
+#
 # ==============================================================================
 # LLVM Release License
 # ==============================================================================
@@ -78,6 +83,7 @@ import os
 import re
 import subprocess
 import sys
+import unittest
 
 
 def iwyu_formatter(output):
@@ -167,7 +173,42 @@ def run_iwyu(cwd, compile_command, iwyu_args, verbose):
     return get_output(cwd, cmd_args)
 
 
+def workaround_parent_dir_relative_includes(cwd, command):
+    """
+    Replace any relative include paths in the compilation command
+    'command' with the appropriate absolute paths.
 
+    This works around an apparent bug in IWYU in which passing relative
+    paths like -I../../src/ result in IWYU not reporting issues that it
+    otherwise would report when the corresponding absolute path is
+    passed.
+
+    Oddly enough, this is only relevant when using the Ninja generator
+    for CMake, which results in relative paths in the -I directives. The
+    Makefile generator always produces absolute paths to begin with.
+    See https://gitlab.kitware.com/cmake/cmake/issues/17450
+    """
+    def subber(m):
+        return m.group(1) + os.path.abspath(os.path.join(cwd, m.group(2)))
+    return re.sub(r'(-isystem |-I\s*)([^/\s]\S+)', subber, command)
+
+
+class RelativeIncludeTest(unittest.TestCase):
+    def test(self):
+        f = workaround_parent_dir_relative_includes
+        self.assertEquals(f('/foo/bar', 'gcc -isystem relative/dir'),
+                          'gcc -isystem /foo/bar/relative/dir')
+        self.assertEquals(f('/foo/bar', 'gcc -I relative/dir'),
+                          'gcc -I /foo/bar/relative/dir')
+        self.assertEquals(f('/foo/bar', 'gcc -Irelative/dir'),
+                          'gcc -I/foo/bar/relative/dir')
+
+        self.assertEquals(f('/foo/bar', 'gcc -isystem /abs/dir'),
+                          'gcc -isystem /abs/dir')
+        self.assertEquals(f('/foo/bar', 'gcc -I /abs/dir'),
+                          'gcc -I /abs/dir')
+        self.assertEquals(f('/foo/bar', 'gcc -I/abs/dir'),
+                          'gcc -I/abs/dir')
 
 
 def main(compilation_db_path, source_files, verbose, formatter, iwyu_args):
@@ -210,6 +251,8 @@ def main(compilation_db_path, source_files, verbose, formatter, iwyu_args):
     # Run analysis
     def run_iwyu_task(entry):
         cwd, compile_command = entry['directory'], entry['command']
+        compile_command = workaround_parent_dir_relative_includes(
+            cwd, compile_command)
         return run_iwyu(cwd, compile_command, iwyu_args, verbose)
     pool = ThreadPool(multiprocessing.cpu_count())
     try:
