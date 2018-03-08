@@ -196,6 +196,11 @@ public abstract class AbstractKuduScannerBuilder
   /**
    * Sets a limit on the number of rows that will be returned by the scanner. There's no limit
    * by default.
+   *
+   * WARNING: Currently setting the limit has no effect.
+   * See <a href="https://issues.apache.org/jira/browse/KUDU-16">KUDU-16</a> for more
+   * information.
+   *
    * @param limit a positive long
    * @return this instance
    */
