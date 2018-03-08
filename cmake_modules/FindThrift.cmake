@@ -108,6 +108,7 @@ function(THRIFT_GENERATE_CPP SRCS HDRS TGTS)
 
     add_custom_command(
       OUTPUT ${THRIFT_CC_OUT} ${THRIFT_H_OUT}
+      DEPENDS ${ABS_FIL}
       COMMAND  ${THRIFT_EXECUTABLE}
       ARGS
         --gen cpp:moveable_types

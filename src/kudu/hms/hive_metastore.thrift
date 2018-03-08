@@ -23,6 +23,9 @@
 # With backports:
 #   - HIVE-16993
 #
+# With edits:
+#   - Change cpp namespace to 'hive' to match the Kudu codebase style.
+#
 # Before updating to a new version, consider that Kudu must remain compatible
 # with a range of Hive Metastore versions.
 
@@ -34,7 +37,7 @@ include "share/fb303/if/fb303.thrift"
 
 namespace java org.apache.hadoop.hive.metastore.api
 namespace php metastore
-namespace cpp Apache.Hadoop.Hive
+namespace cpp hive
 
 const string DDL_TIME = "transient_lastDdlTime"
 

@@ -28,8 +28,6 @@
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
-namespace hive = Apache::Hadoop::Hive;
-
 namespace kudu {
 
 class HostPort;
