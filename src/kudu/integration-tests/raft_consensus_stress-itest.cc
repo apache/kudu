@@ -65,7 +65,7 @@ DEFINE_int32(test_follower_unavailable_considered_failed_sec,
 DEFINE_int32(test_heartbeat_interval_ms,
              250 * kBuildCfgFactor,
              "Interval at which the TS heartbeats to the master.");
-DEFINE_int32(test_max_ksck_failures, 30,
+DEFINE_int32(test_max_ksck_failures, 50,
              "Maximum number of ksck failures in a row to tolerate before "
              "considering the test as failed.");
 // GLOG_FATAL:    3
@@ -257,6 +257,7 @@ TEST_F(RaftConsensusStressITest, RemoveReplaceInCycle) {
       if (ksck_failures_in_a_row > FLAGS_test_max_ksck_failures) {
         break;
       }
+      SleepFor(MonoDelta::FromMilliseconds(FLAGS_test_raft_heartbeat_interval_ms));
       continue;
     }
     ksck_failures_in_a_row = 0;
