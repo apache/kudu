@@ -176,7 +176,7 @@ void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
 
       auto* error = resp->mutable_error();
       StatusToPB(s, error->mutable_status());
-      error->set_code(MasterErrorPB::INCOMPATIBILITY);
+      error->set_code(MasterErrorPB::INCOMPATIBLE_REPLICA_MANAGEMENT);
 
       // Yes, this is confusing: the RPC result is success, but the response
       // contains an application-level error.
@@ -513,11 +513,14 @@ void MasterServiceImpl::ConnectToMaster(const ConnectToMasterRequestPB* /*req*/,
 
 bool MasterServiceImpl::SupportsFeature(uint32_t feature) const {
   switch (feature) {
-    case MasterFeatures::RANGE_PARTITION_BOUNDS:
-    case MasterFeatures::ADD_DROP_RANGE_PARTITIONS: return true;
+    case MasterFeatures::RANGE_PARTITION_BOUNDS:    FALLTHROUGH_INTENDED;
+    case MasterFeatures::ADD_DROP_RANGE_PARTITIONS: FALLTHROUGH_INTENDED;
+    case MasterFeatures::REPLICA_MANAGEMENT:
+      return true;
     case MasterFeatures::CONNECT_TO_MASTER:
       return FLAGS_master_support_connect_to_master_rpc;
-    default: return false;
+    default:
+      return false;
   }
 }
 

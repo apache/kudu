@@ -1841,17 +1841,19 @@ TEST_F(RaftConsensusNonVoterITest, NonVoterReplicasInConsensusQueue) {
 // Also, it makes sure the tablet server crashes to signal the misconfiguration.
 class IncompatibleReplicaReplacementSchemesITest :
     public RaftConsensusNonVoterITest,
-    public ::testing::WithParamInterface<bool> {
+    public ::testing::WithParamInterface<std::tuple<bool, bool>> {
 };
 INSTANTIATE_TEST_CASE_P(, IncompatibleReplicaReplacementSchemesITest,
-                        ::testing::Bool());
+                        ::testing::Combine(::testing::Bool(),
+                                           ::testing::Bool()));
 TEST_P(IncompatibleReplicaReplacementSchemesITest, MasterAndTserverMisconfig) {
   FLAGS_num_tablet_servers = 1;
   FLAGS_num_replicas = 1;
   const MonoDelta kTimeout = MonoDelta::FromSeconds(60);
   const int64_t heartbeat_interval_ms = 500;
 
-  const bool is_3_4_3 = GetParam();
+  const bool is_incompatible_replica_management_fatal = std::get<0>(GetParam());
+  const bool is_3_4_3 = std::get<1>(GetParam());
 
   // The easiest way to have everything setup is to start the cluster with
   // compatible parameters.
@@ -1859,6 +1861,8 @@ TEST_P(IncompatibleReplicaReplacementSchemesITest, MasterAndTserverMisconfig) {
     Substitute("--raft_prepare_replacement_before_eviction=$0", is_3_4_3),
   };
   const vector<string> kTsFlags = {
+    Substitute("--heartbeat_incompatible_replica_management_is_fatal=$0",
+        is_incompatible_replica_management_fatal),
     Substitute("--heartbeat_interval_ms=$0", heartbeat_interval_ms),
     Substitute("--raft_prepare_replacement_before_eviction=$0", is_3_4_3),
   };
@@ -1883,14 +1887,33 @@ TEST_P(IncompatibleReplicaReplacementSchemesITest, MasterAndTserverMisconfig) {
   ts->mutable_flags()->push_back(
       Substitute("--raft_prepare_replacement_before_eviction=$0", !is_3_4_3));
   ASSERT_OK(ts->Restart());
-
-  ASSERT_OK(ts->WaitForFatal(kTimeout));
-
+  if (is_incompatible_replica_management_fatal) {
+    ASSERT_OK(ts->WaitForFatal(kTimeout));
+  }
   SleepFor(MonoDelta::FromMilliseconds(heartbeat_interval_ms * 3));
 
   // The tablet server should not be registered with the master.
   ASSERT_OK(itest::ListTabletServers(cluster_->master_proxy(), kTimeout, &tservers));
   ASSERT_EQ(0, tservers.size());
+
+  // Inject feature flag not supported by the master and make sure the tablet
+  // server will not be registered with incompatible master.
+  ts->mutable_flags()->pop_back();
+  ts->mutable_flags()->push_back("--heartbeat_inject_required_feature_flag=999");
+  ts->Shutdown();
+  ASSERT_OK(ts->Restart());
+  if (is_incompatible_replica_management_fatal) {
+    ASSERT_OK(ts->WaitForFatal(kTimeout));
+  }
+  SleepFor(MonoDelta::FromMilliseconds(heartbeat_interval_ms * 3));
+
+  // The tablet server should not be registered with the master.
+  ASSERT_OK(itest::ListTabletServers(cluster_->master_proxy(), kTimeout, &tservers));
+  ASSERT_EQ(0, tservers.size());
+
+  if (!is_incompatible_replica_management_fatal) {
+    NO_FATALS(cluster_->AssertNoCrashes());
+  }
 }
 
 }  // namespace tserver

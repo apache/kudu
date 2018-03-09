@@ -27,11 +27,12 @@ message ReplicaManagementInfoPB {
     UNKNOWN = 999;
 
     // The leader replica evicts the failed replica first, and then the new
-    // voter replica is added.
+    // voter replica is added (a.k.a. '3-2-3' replica management scheme).
     EVICT_FIRST = 0;
 
     // Add a new non-voter replica, promote the replica to voter once it
-    // caught up with the leader, and only after that evict the failed replica.
+    // caught up with the leader, and only after that evict the failed replica
+    // (a.k.a. '3-4-3' replica managment scheme).
     PREPARE_REPLACEMENT_BEFORE_EVICTION = 1;
   }
 

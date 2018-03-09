@@ -75,9 +75,9 @@ message MasterErrorPB {
     // The number of replicas requested is illegal (eg non-positive).
     ILLEGAL_REPLICATION_FACTOR = 11;
 
-    // The caller detected an application-level incompatibility with the callee.
-    // This might be caused by a misconfiguration, incompatible features, etc.
-    INCOMPATIBILITY = 12;
+    // The callee detected that its replica management scheme is incompatible
+    // with the caller's scheme.
+    INCOMPATIBLE_REPLICA_MANAGEMENT = 12;
   }
 
   // The error code.
@@ -710,6 +710,11 @@ enum MasterFeatures {
   ADD_DROP_RANGE_PARTITIONS = 2;
   // The master supports the 'ConnectToMaster' RPC.
   CONNECT_TO_MASTER = 3;
+  // The catalog manager supports different replica management schemes
+  // (see "kudu/consensus/replica_management.proto"). At least, both the
+  // EVICT_FIRST (a.k.a. 3-2-3) and the PREPARE_REPLACEMENT_BEFORE_EVICTION
+  // (a.k.a. 3-4-3) schemes.
+  REPLICA_MANAGEMENT = 4;
 }
 
 service MasterService {

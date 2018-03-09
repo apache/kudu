@@ -43,6 +43,7 @@
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/security/cert.h"
 #include "kudu/security/openssl_util.h"
 #include "kudu/security/tls_context.h"
@@ -56,6 +57,7 @@
 #include "kudu/util/condition_variable.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/net/net_util.h"
@@ -86,12 +88,27 @@ DEFINE_int32(heartbeat_inject_latency_before_heartbeat_ms, 0,
 TAG_FLAG(heartbeat_inject_latency_before_heartbeat_ms, runtime);
 TAG_FLAG(heartbeat_inject_latency_before_heartbeat_ms, unsafe);
 
+DEFINE_bool(heartbeat_incompatible_replica_management_is_fatal, true,
+            "Whether incompatible replica management schemes or unsupported "
+            "PREPARE_REPLACEMENT_BEFORE_EVICTION feature flag by master are fatal");
+TAG_FLAG(heartbeat_incompatible_replica_management_is_fatal, advanced);
+TAG_FLAG(heartbeat_incompatible_replica_management_is_fatal, runtime);
+
+DEFINE_uint32(heartbeat_inject_required_feature_flag, 0,
+              "Feature flag to inject while sending heartbeat to master "
+              "(for testing only)");
+TAG_FLAG(heartbeat_inject_required_feature_flag, runtime);
+TAG_FLAG(heartbeat_inject_required_feature_flag, unsafe);
+
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 
+using kudu::consensus::ReplicaManagementInfoPB;
 using kudu::master::MasterErrorPB;
+using kudu::master::MasterFeatures;
 using kudu::master::MasterServiceProxy;
 using kudu::master::TabletReportPB;
 using kudu::pb_util::SecureDebugString;
+using kudu::rpc::ErrorStatusPB;
 using kudu::rpc::RpcController;
 using std::shared_ptr;
 using std::string;
@@ -150,7 +167,7 @@ class Heartbeater::Thread {
   Status ConnectToMaster();
   int GetMinimumHeartbeatMillis() const;
   int GetMillisUntilNextHeartbeat() const;
-  Status DoHeartbeat(MasterErrorPB* error = nullptr);
+  Status DoHeartbeat(MasterErrorPB* error, ErrorStatusPB* error_status);
   Status SetupRegistration(ServerRegistrationPB* reg);
   void SetupCommonField(master::TSToMasterCommonPB* common);
   bool IsCurrentThread() const;
@@ -379,7 +396,8 @@ int Heartbeater::Thread::GetMillisUntilNextHeartbeat() const {
   return FLAGS_heartbeat_interval_ms;
 }
 
-Status Heartbeater::Thread::DoHeartbeat(MasterErrorPB* error) {
+Status Heartbeater::Thread::DoHeartbeat(MasterErrorPB* error,
+                                        ErrorStatusPB* error_status) {
   if (PREDICT_FALSE(server_->fail_heartbeats_for_tests())) {
     return Status::IOError("failing all heartbeats for tests");
   }
@@ -399,8 +417,10 @@ Status Heartbeater::Thread::DoHeartbeat(MasterErrorPB* error) {
     DCHECK(proxy_);
   }
 
-  master::TSHeartbeatRequestPB req;
+  RpcController rpc;
+  rpc.set_timeout(MonoDelta::FromMilliseconds(FLAGS_heartbeat_rpc_timeout_ms));
 
+  master::TSHeartbeatRequestPB req;
   SetupCommonField(req.mutable_common());
   if (last_hb_response_.needs_reregister()) {
     LOG(INFO) << "Registering TS with master...";
@@ -410,8 +430,24 @@ Status Heartbeater::Thread::DoHeartbeat(MasterErrorPB* error) {
     // scheme the tablet server is running with.
     auto* info = req.mutable_replica_management_info();
     info->set_replacement_scheme(FLAGS_raft_prepare_replacement_before_eviction
-        ? consensus::ReplicaManagementInfoPB::PREPARE_REPLACEMENT_BEFORE_EVICTION
-        : consensus::ReplicaManagementInfoPB::EVICT_FIRST);
+        ? ReplicaManagementInfoPB::PREPARE_REPLACEMENT_BEFORE_EVICTION
+        : ReplicaManagementInfoPB::EVICT_FIRST);
+    if (info->replacement_scheme() != ReplicaManagementInfoPB::EVICT_FIRST) {
+      // It's necessary to have both the tablet server and the masters to run
+      // with the same replica replacement scheme. Otherwise the system cannot
+      // re-create tablet replicas consistently. If this tablet server is running
+      // with the newer PREPARE_REPLACEMENT_BEFORE_EVICTION (a.k.a. 3-4-3) scheme,
+      // a master of an older version might not recognise the mismatch because
+      // it doesn't know about the 'replica_management_info' field (otherwise it
+      // would respond with the INCOMPATIBLE_REPLICA_MANAGEMENT error code
+      // when mismatch detected). To address that, tablet servers rely on the
+      // dedicated feature flag to enforce the consistency of replica management
+      // schemes.
+      rpc.RequireServerFeature(MasterFeatures::REPLICA_MANAGEMENT);
+    }
+    if (PREDICT_FALSE(FLAGS_heartbeat_inject_required_feature_flag != 0)) {
+      rpc.RequireServerFeature(FLAGS_heartbeat_inject_required_feature_flag);
+    }
   }
 
   // Check with the TS cert manager if it has a cert that needs signing.
@@ -447,18 +483,18 @@ Status Heartbeater::Thread::DoHeartbeat(MasterErrorPB* error) {
   }
   req.set_num_live_tablets(server_->tablet_manager()->GetNumLiveTablets());
 
-  RpcController rpc;
-  rpc.set_timeout(MonoDelta::FromMilliseconds(FLAGS_heartbeat_rpc_timeout_ms));
-
   VLOG(2) << "Sending heartbeat:\n" << SecureDebugString(req);
   master::TSHeartbeatResponsePB resp;
-  RETURN_NOT_OK_PREPEND(proxy_->TSHeartbeat(req, &resp, &rpc),
-                        "Failed to send heartbeat to master");
-  if (resp.has_error()) {
-    if (error) {
-      error->Swap(resp.mutable_error());
+  const auto& s = proxy_->TSHeartbeat(req, &resp, &rpc);
+  if (!s.ok()) {
+    if (rpc.error_response()) {
+      error_status->CopyFrom(*rpc.error_response());
     }
-    return StatusFromPB(error ? error->status() : resp.error().status());
+    RETURN_NOT_OK_PREPEND(s, "Failed to send heartbeat to master");
+  }
+  if (resp.has_error()) {
+    error->Swap(resp.mutable_error());
+    return StatusFromPB(error->status());
   }
 
   VLOG(2) << Substitute("Received heartbeat response from $0:\n$1",
@@ -548,7 +584,8 @@ void Heartbeater::Thread::RunThread() {
     }
 
     MasterErrorPB error;
-    const auto& s = DoHeartbeat(&error);
+    ErrorStatusPB error_status;
+    const auto& s = DoHeartbeat(&error, &error_status);
     if (!s.ok()) {
       const auto& err_msg = s.ToString();
       LOG(WARNING) << Substitute("Failed to heartbeat to $0: $1",
@@ -560,8 +597,19 @@ void Heartbeater::Thread::RunThread() {
           consecutive_failed_heartbeats_ >= FLAGS_heartbeat_max_failures_before_backoff) {
         proxy_.reset();
       }
-      if (error.has_code() && error.code() == MasterErrorPB::INCOMPATIBILITY) {
-        LOG(FATAL) << "master detected incompatibility: " << err_msg;
+      string msg;
+      if (error.has_code() &&
+          error.code() == MasterErrorPB::INCOMPATIBLE_REPLICA_MANAGEMENT) {
+        msg = Substitute("master detected incompatibility: $0", err_msg);
+      }
+      if (s.IsRemoteError() && error_status.unsupported_feature_flags_size() > 0) {
+        msg = Substitute("master does not support required feature flags: $0", err_msg);
+      }
+      if (!msg.empty()) {
+        if (FLAGS_heartbeat_incompatible_replica_management_is_fatal) {
+          LOG(FATAL) << msg;
+        }
+        KLOG_EVERY_N_SECS(ERROR, 60) << msg;
       }
       continue;
     }
