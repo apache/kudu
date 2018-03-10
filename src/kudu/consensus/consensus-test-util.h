@@ -27,16 +27,17 @@
 #include <boost/bind.hpp>
 #include <gmock/gmock.h>
 
+#include "kudu/clock/clock.h"
 #include "kudu/common/timestamp.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/consensus_queue.h"
 #include "kudu/consensus/log.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
-#include "kudu/clock/clock.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/pb_util.h"

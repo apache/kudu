@@ -227,8 +227,7 @@ void Peer::SendNextRequest(bool even_if_queue_empty) {
       request_.committed_index() : kMinimumOpIdIndex;
 
   if (PREDICT_FALSE(!s.ok())) {
-    LOG_WITH_PREFIX_UNLOCKED(INFO) << "Could not obtain request from queue for peer: "
-        << peer_pb_.permanent_uuid() << ". Status: " << s.ToString();
+    VLOG_WITH_PREFIX_UNLOCKED(1) << s.ToString();
     return;
   }
 

@@ -155,7 +155,7 @@ class ScopedDisableRedaction {
 
 #define KLOG_EVERY_N_SECS_THROTTLER(severity, n_secs, throttler, tag) \
   int VARNAME_LINENUM(num_suppressed) = 0;                            \
-  if (throttler.ShouldLog(n_secs, tag, &VARNAME_LINENUM(num_suppressed)))  \
+  if ((throttler).ShouldLog(n_secs, tag, &VARNAME_LINENUM(num_suppressed)))  \
     google::LogMessage( \
       __FILE__, __LINE__, google::GLOG_ ## severity, VARNAME_LINENUM(num_suppressed), \
       &google::LogMessage::SendToLog).stream()

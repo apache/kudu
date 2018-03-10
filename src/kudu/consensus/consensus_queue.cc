@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <functional>
 #include <iostream>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <unordered_set>
@@ -120,6 +121,19 @@ const char* PeerStatusToString(PeerStatus p) {
   }
   DCHECK(false);
   return "<unknown>";
+}
+
+PeerMessageQueue::TrackedPeer::TrackedPeer(RaftPeerPB peer_pb)
+    : peer_pb(std::move(peer_pb)),
+      next_index(kInvalidOpIdIndex),
+      last_received(MinimumOpId()),
+      last_known_committed_index(MinimumOpId().index()),
+      last_exchange_status(PeerStatus::NEW),
+      last_communication_time(MonoTime::Now()),
+      wal_catchup_possible(true),
+      last_overall_health_status(HealthReportPB::UNKNOWN),
+      status_log_throttler(std::make_shared<logging::LogThrottler>()),
+      last_seen_term_(0) {
 }
 
 std::string PeerMessageQueue::TrackedPeer::ToString() const {
@@ -587,7 +601,8 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
 
     TrackedPeer* peer = FindPtrOrNull(peers_map_, uuid);
     if (PREDICT_FALSE(peer == nullptr || queue_state_.mode == NON_LEADER)) {
-      return Status::NotFound("Peer not tracked or queue not in leader mode.");
+      return Status::NotFound(Substitute("peer $0 is no longer tracked or "
+                                         "queue is not in leader mode", uuid));
     }
     peer_copy = *peer;
 
@@ -645,17 +660,20 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
                                   &preceding_id);
     if (PREDICT_FALSE(!s.ok())) {
       // It's normal to have a NotFound() here if a follower falls behind where
-      // the leader has GCed its logs.
+      // the leader has GCed its logs. The follower replica will hang around
+      // for a while until it's evicted.
       if (PREDICT_TRUE(s.IsNotFound())) {
-        string msg = Substitute("The logs necessary to catch up peer $0 have been "
-                                "garbage collected. The follower will never be able "
-                                "to catch up ($1)", uuid, s.ToString());
+        KLOG_EVERY_N_SECS_THROTTLER(INFO, 60, *peer_copy.status_log_throttler, "logs_gced")
+            << LogPrefixUnlocked()
+            << Substitute("The logs necessary to catch up peer $0 have been "
+                          "garbage collected. The follower will never be able "
+                          "to catch up ($1)", uuid, s.ToString());
         wal_catchup_failure = true;
         return s;
-      // IsIncomplete() means that we tried to read beyond the head of the log
-      // (in the future). See KUDU-1078.
       }
       if (s.IsIncomplete()) {
+        // IsIncomplete() means that we tried to read beyond the head of the log
+        // (in the future). See KUDU-1078.
         LOG_WITH_PREFIX_UNLOCKED(ERROR) << "Error trying to read ahead of the log "
                                         << "while preparing peer request: "
                                         << s.ToString() << ". Destination peer: "
@@ -690,7 +708,7 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
   if (request->ops_size() > 0) {
     int64_t last_op_sent = request->ops(request->ops_size() - 1).id().index();
     if (last_op_sent < request->committed_index()) {
-      KLOG_EVERY_N_SECS_THROTTLER(INFO, 3, peer_copy.status_log_throttler, "lagging")
+      KLOG_EVERY_N_SECS_THROTTLER(INFO, 3, *peer_copy.status_log_throttler, "lagging")
           << LogPrefixUnlocked() << "Peer " << uuid << " is lagging by at least "
           << (request->committed_index() - last_op_sent)
           << " ops behind the committed index " << THROTTLE_MSG;
