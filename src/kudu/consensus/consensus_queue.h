@@ -24,7 +24,6 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
-#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
@@ -34,13 +33,11 @@
 #include "kudu/consensus/log_cache.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid.pb.h"
-#include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/ref_counted_replicate.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/threading/thread_collision_warner.h"
 #include "kudu/util/locks.h"
-#include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
@@ -51,6 +48,10 @@ class ThreadPoolToken;
 
 namespace log {
 class Log;
+}
+
+namespace logging {
+class LogThrottler;
 }
 
 namespace consensus {
@@ -114,16 +115,7 @@ const char* PeerStatusToString(PeerStatus p);
 class PeerMessageQueue {
  public:
   struct TrackedPeer {
-    explicit TrackedPeer(RaftPeerPB peer_pb)
-        : peer_pb(std::move(peer_pb)),
-          next_index(kInvalidOpIdIndex),
-          last_received(MinimumOpId()),
-          last_known_committed_index(MinimumOpId().index()),
-          last_exchange_status(PeerStatus::NEW),
-          last_communication_time(MonoTime::Now()),
-          wal_catchup_possible(true),
-          last_overall_health_status(HealthReportPB::UNKNOWN),
-          last_seen_term_(0) {}
+    explicit TrackedPeer(RaftPeerPB peer_pb);
 
     TrackedPeer() = default;
 
@@ -180,7 +172,7 @@ class PeerMessageQueue {
 
     // Throttler for how often we will log status messages pertaining to this
     // peer (eg when it is lagging, etc).
-    logging::LogThrottler status_log_throttler;
+    std::shared_ptr<logging::LogThrottler> status_log_throttler;
 
    private:
     // The last term we saw from a given peer.
