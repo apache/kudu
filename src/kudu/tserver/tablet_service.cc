@@ -149,13 +149,12 @@ using kudu::consensus::GetNodeInstanceResponsePB;
 using kudu::consensus::LeaderStepDownRequestPB;
 using kudu::consensus::LeaderStepDownResponsePB;
 using kudu::consensus::OpId;
-using kudu::consensus::UnsafeChangeConfigRequestPB;
-using kudu::consensus::UnsafeChangeConfigResponsePB;
 using kudu::consensus::RaftConsensus;
 using kudu::consensus::RunLeaderElectionRequestPB;
 using kudu::consensus::RunLeaderElectionResponsePB;
 using kudu::consensus::StartTabletCopyRequestPB;
 using kudu::consensus::StartTabletCopyResponsePB;
+using kudu::consensus::TimeManager;
 using kudu::consensus::UnsafeChangeConfigRequestPB;
 using kudu::consensus::UnsafeChangeConfigResponsePB;
 using kudu::consensus::VoteRequestPB;
@@ -1738,6 +1737,8 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
   // Preset the error code for when creating the iterator on the tablet fails
   TabletServerErrorPB::Code tmp_error_code = TabletServerErrorPB::MISMATCHED_SCHEMA;
 
+  // It's important to keep the reference to the tablet for the case when the
+  // tablet replica's shutdown is run concurrently with the code below.
   shared_ptr<Tablet> tablet;
   RETURN_NOT_OK(GetTabletRef(replica, &tablet, error_code));
   {
@@ -1756,21 +1757,21 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
       }
       case READ_YOUR_WRITES: // Fallthrough intended
       case READ_AT_SNAPSHOT: {
-        s = HandleScanAtSnapshot(scan_pb, rpc_context, projection, replica,
-                                 &iter, snap_timestamp);
+        scoped_refptr<consensus::TimeManager> time_manager = replica->time_manager();
+        s = HandleScanAtSnapshot(scan_pb, rpc_context, projection, tablet.get(),
+                                 time_manager.get(), &iter, snap_timestamp);
         // If we got a Status::ServiceUnavailable() from HandleScanAtSnapshot() it might
         // mean we're just behind so let the client try again.
         if (s.IsServiceUnavailable()) {
           *error_code = TabletServerErrorPB::THROTTLED;
           return s;
         }
-
         if (!s.ok()) {
           tmp_error_code = TabletServerErrorPB::INVALID_SNAPSHOT;
         }
         break;
       }
-        TRACE("Iterator created");
+      TRACE("Iterator created");
     }
   }
 
@@ -2035,7 +2036,8 @@ MonoTime ClampScanDeadlineForWait(const MonoTime& deadline, bool* was_clamped) {
 Status TabletServiceImpl::HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
                                                const RpcContext* rpc_context,
                                                const Schema& projection,
-                                               TabletReplica* tablet_replica,
+                                               Tablet* tablet,
+                                               consensus::TimeManager* time_manager,
                                                gscoped_ptr<RowwiseIterator>* iter,
                                                Timestamp* snap_timestamp) {
   switch (scan_pb.read_mode()) {
@@ -2048,12 +2050,7 @@ Status TabletServiceImpl::HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
 
   // Based on the read mode, pick a timestamp and verify it.
   Timestamp tmp_snap_timestamp;
-  RETURN_NOT_OK(PickAndVerifyTimestamp(scan_pb, tablet_replica->tablet(), &tmp_snap_timestamp));
-
-  tablet::MvccSnapshot snap;
-  Tablet* tablet = tablet_replica->tablet();
-  scoped_refptr<consensus::TimeManager> time_manager = tablet_replica->time_manager();
-  tablet::MvccManager* mvcc_manager = tablet->mvcc_manager();
+  RETURN_NOT_OK(PickAndVerifyTimestamp(scan_pb, tablet, &tmp_snap_timestamp));
 
   // Reduce the client's deadline by a few msecs to allow for overhead.
   MonoTime client_deadline = rpc_context->GetClientDeadline() - MonoDelta::FromMilliseconds(10);
@@ -2075,6 +2072,8 @@ Status TabletServiceImpl::HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
   MonoTime before = MonoTime::Now();
   Status s = time_manager->WaitUntilSafe(tmp_snap_timestamp, final_deadline);
 
+  tablet::MvccSnapshot snap;
+  tablet::MvccManager* mvcc_manager = tablet->mvcc_manager();
   if (s.ok()) {
     // Wait for the in-flights in the snapshot to be finished.
     TRACE("Waiting for operations to commit");
