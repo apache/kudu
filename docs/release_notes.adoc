@@ -32,8 +32,13 @@
 == Upgrade Notes
 
 * Upgrading directly from Kudu 1.6.0 is supported and no special upgrade steps
-  are required. A rolling upgrade may work, however it has not been tested.
-  When upgrading Kudu, it is recommended to first shut down all Kudu processes
+  are required. A rolling upgrade of the server side will _not_ work because
+  the default replica management scheme changed, and running masters and tablet
+  servers with different replica management schemes is not supported, see
+  <<rn_1.7.0_incompatible_changes>> for details. However, mixing client and
+  server sides of different versions is not a problem, i.e. you can still
+  update your clients before your servers or vice versa.
+  When upgrading to Kudu 1.7, it is required to first shut down all Kudu processes
   across the cluster, then upgrade the software on all servers, then restart
   the Kudu processes on all servers in the cluster.
 
@@ -89,6 +94,16 @@
   reporting changes have been made to make various common scenarios,
   particularly tablet copies, less alarming.
 
+* KUDU-1097: a new replica management scheme is implemented and enabled by
+  default. With the new replica management scheme, the system first adds a
+  replacement tablet replica before evicting the failed one. With the previous
+  replica management scheme, the system first evicts the failed replica and
+  then adds a replacement. The new replica management scheme allows for much
+  faster recovery of tablets in scenarios where one tablet server goes down and
+  then returns back shortly after 5 minutes or so. To switch back to the old
+  scheme, set the `--raft_prepare_replacement_before_eviction` run-time flag to
+  `false` for *all* tablet servers and masters in Kudu 1.7 cluster.
+
 [[rn_1.7.0_fixed_issues]]
 == Fixed Issues
 
@@ -122,6 +137,27 @@ on wire compatibility between Kudu 1.7 and versions earlier than 1.3:
 
 [[rn_1.7.0_incompatible_changes]]
 == Incompatible Changes in Kudu 1.7.0
+
+* The newly introduced replica management scheme is not compatible with the
+  old scheme, so it's not possible to run pre-1.7 Kudu masters with
+  1.7 Kudu tablet servers and vice versa, unless setting the run-time flag
+  `--raft_prepare_replacement_before_eviction` to `false` for 1.7 masters
+  and tablet servers. In essence, tablet servers cannot register with masters
+  running with different replica management scheme. This is the server-side
+  incompatibility only and it does not affect the client side. In other words,
+  Kudu clients of prior versions are compatible with the Kudu server side
+  running with either scheme, assuming the same replica management scheme
+  is used by all masters and tablet servers in the Kudu cluster.
+**  Kudu masters of 1.7 version will not register Kudu tablet servers of 1.6
+    and prior revisions. To run 1.7 masters with the old scheme, set the
+    `--raft_prepare_replacement_before_eviction` to `false`.
+**  Kudu tablet servers of 1.7 version will not work with Kudu masters of 1.6
+    and prior versions. To make the case of such misconfiguration easily
+    detectable, Kudu tablet servers of 1.7 version crash when they detect their
+    masters running with different replica management scheme. The crashing of
+    tablet servers in such scenarios can be disabled by setting their
+    `--heartbeat_incompatible_replica_management_is_fatal` run-time flag to
+    `false`.
 
 [[rn_1.7.0_client_compatibility]]
 === Client Library Compatibility
