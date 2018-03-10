@@ -223,6 +223,11 @@ std::string MonoTime::ToString() const {
   return StringPrintf("%.3fs", ToSeconds());
 }
 
+void MonoTime::ToTimeSpec(struct timespec* ts) const {
+  DCHECK(Initialized());
+  MonoDelta::NanosToTimeSpec(nanos_, ts);
+}
+
 bool MonoTime::Equals(const MonoTime& other) const {
   return nanos_ == other.nanos_;
 }

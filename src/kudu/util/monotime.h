@@ -35,8 +35,6 @@
 
 #include "kudu/util/kudu_export.h"
 
-struct timeval;   // IWYU pragma: keep
-
 namespace kudu {
 
 /// @brief A representation of a time interval.
@@ -212,6 +210,13 @@ class KUDU_EXPORT MonoTime {
 
   /// @return String representation of the object (in seconds).
   std::string ToString() const;
+
+  /// Represent this point in time as a timespec structure, with nanosecond
+  /// accuracy.
+  ///
+  /// @param [out] ts
+  ///   Placeholder for the result value.
+  void ToTimeSpec(struct timespec* ts) const;
 
   /// Check whether this object represents the same point in time as the other.
   ///

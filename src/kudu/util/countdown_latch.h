@@ -79,20 +79,19 @@ class CountDownLatch {
   // Returns true if the count became zero, false otherwise.
   bool WaitUntil(const MonoTime& when) const {
     ThreadRestrictions::AssertWaitAllowed();
-    return WaitFor(when - MonoTime::Now());
+    MutexLock lock(lock_);
+    while (count_ > 0) {
+      if (!cond_.WaitUntil(when)) {
+        return false;
+      }
+    }
+    return true;
   }
 
   // Waits for the count on the latch to reach zero, or until 'delta' time elapses.
   // Returns true if the count became zero, false otherwise.
   bool WaitFor(const MonoDelta& delta) const {
-    ThreadRestrictions::AssertWaitAllowed();
-    MutexLock lock(lock_);
-    while (count_ > 0) {
-      if (!cond_.TimedWait(delta)) {
-        return false;
-      }
-    }
-    return true;
+    return WaitUntil(MonoTime::Now() + delta);
   }
 
   // Reset the latch with the given count. This is equivalent to reconstructing

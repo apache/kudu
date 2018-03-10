@@ -119,7 +119,7 @@ void ScannerManager::RunRemovalThread() {
       if (shutdown_) {
         return;
       }
-      shutdown_cv_.TimedWait(MonoDelta::FromMicroseconds(FLAGS_scanner_gc_check_interval_us));
+      shutdown_cv_.WaitFor(MonoDelta::FromMicroseconds(FLAGS_scanner_gc_check_interval_us));
     }
     RemoveExpiredScanners();
   }

@@ -26,6 +26,7 @@
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/util/condition_variable.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/status.h"
 
@@ -131,7 +132,7 @@ class BlockingQueue {
       }
       if (!deadline.Initialized()) {
         not_empty_.Wait();
-      } else if (PREDICT_FALSE(!not_empty_.TimedWait(deadline - MonoTime::Now()))) {
+      } else if (PREDICT_FALSE(!not_empty_.WaitUntil(deadline))) {
         return Status::TimedOut("");
       }
     }

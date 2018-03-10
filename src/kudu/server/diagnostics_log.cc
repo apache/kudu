@@ -193,7 +193,7 @@ void DiagnosticsLog::RunThread() {
 
   while (!stop_) {
     MonoTime next_log = wakeups.top().first;
-    wake_.TimedWait(next_log - MonoTime::Now());
+    wake_.WaitUntil(next_log);
 
     string reason;
     WakeupType what;

@@ -262,7 +262,7 @@ void MaintenanceManager::RunSchedulerThread() {
     // However, if it's time to shut down, we want to do so immediately.
     while ((running_ops_ >= num_threads_ || prev_iter_found_no_work || disabled_for_tests()) &&
            !shutdown_) {
-      cond_.TimedWait(polling_interval);
+      cond_.WaitFor(polling_interval);
       prev_iter_found_no_work = false;
     }
     if (shutdown_) {

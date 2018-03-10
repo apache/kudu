@@ -26,39 +26,23 @@ ConditionVariable::ConditionVariable(Mutex* user_lock)
 #endif
 {
   int rv = 0;
-  // http://crbug.com/293736
-  // NaCl doesn't support monotonic clock based absolute deadlines.
-  // On older Android platform versions, it's supported through the
-  // non-standard pthread_cond_timedwait_monotonic_np. Newer platform
-  // versions have pthread_condattr_setclock.
-  // Mac can use relative time deadlines.
-#if !defined(__APPLE__) && !defined(OS_NACL) && \
-      !(defined(OS_ANDROID) && defined(HAVE_PTHREAD_COND_TIMEDWAIT_MONOTONIC))
+#if defined(__APPLE__)
+  rv = pthread_cond_init(&condition_, nullptr);
+#else
+  // On Linux we can't use relative times like on macOS; reconfiguring the
+  // condition variable to use the monotonic clock means we can use support
+  // WaitFor with our MonoTime implementation.
   pthread_condattr_t attrs;
   rv = pthread_condattr_init(&attrs);
   DCHECK_EQ(0, rv);
   pthread_condattr_setclock(&attrs, CLOCK_MONOTONIC);
   rv = pthread_cond_init(&condition_, &attrs);
   pthread_condattr_destroy(&attrs);
-#else
-  rv = pthread_cond_init(&condition_, nullptr);
 #endif
   DCHECK_EQ(0, rv);
 }
 
 ConditionVariable::~ConditionVariable() {
-#if defined(OS_MACOSX)
-  // This hack is necessary to avoid a fatal pthreads subsystem bug in the
-  // Darwin kernel. https://codereview.chromium.org/1323293005/
-  {
-    Mutex lock;
-    MutexLock l(lock);
-    struct timespec ts;
-    ts.tv_sec = 0;
-    ts.tv_nsec = 1;
-    pthread_cond_timedwait_relative_np(&condition_, lock.native_handle, &ts);
-  }
-#endif
   int rv = pthread_cond_destroy(&condition_);
   DCHECK_EQ(0, rv);
 }
@@ -75,54 +59,55 @@ void ConditionVariable::Wait() const {
 #endif
 }
 
-bool ConditionVariable::TimedWait(const MonoDelta& max_time) const {
+bool ConditionVariable::WaitUntil(const MonoTime& until) const {
   ThreadRestrictions::AssertWaitAllowed();
 
-  // Negative delta means we've already timed out.
-  int64_t nsecs = max_time.ToNanoseconds();
-  if (nsecs < 0) {
+  // Have we already timed out?
+  if (MonoTime::Now() > until) {
     return false;
   }
 
-  struct timespec relative_time;
-  max_time.ToTimeSpec(&relative_time);
+#if !defined(NDEBUG)
+  user_lock_->CheckHeldAndUnmark();
+#endif
+
+  struct timespec absolute_time;
+  until.ToTimeSpec(&absolute_time);
+  int rv = pthread_cond_timedwait(&condition_, user_mutex_, &absolute_time);
+  DCHECK(rv == 0 || rv == ETIMEDOUT)
+    << "unexpected pthread_cond_timedwait return value: " << rv;
+
+#if !defined(NDEBUG)
+  user_lock_->CheckUnheldAndMark();
+#endif
+  return rv == 0;
+}
+
+bool ConditionVariable::WaitFor(const MonoDelta& delta) const {
+  ThreadRestrictions::AssertWaitAllowed();
+
+  // Negative delta means we've already timed out.
+  int64_t nsecs = delta.ToNanoseconds();
+  if (nsecs < 0) {
+    return false;
+  }
 
 #if !defined(NDEBUG)
   user_lock_->CheckHeldAndUnmark();
 #endif
 
 #if defined(__APPLE__)
+  struct timespec relative_time;
+  delta.ToTimeSpec(&relative_time);
   int rv = pthread_cond_timedwait_relative_np(
       &condition_, user_mutex_, &relative_time);
 #else
   // The timeout argument to pthread_cond_timedwait is in absolute time.
   struct timespec absolute_time;
-#if defined(OS_NACL)
-  // See comment in constructor for why this is different in NaCl.
-  struct timeval now;
-  gettimeofday(&now, NULL);
-  absolute_time.tv_sec = now.tv_sec;
-  absolute_time.tv_nsec = now.tv_usec * MonoTime::kNanosecondsPerMicrosecond;
-#else
-  struct timespec now;
-  clock_gettime(CLOCK_MONOTONIC, &now);
-  absolute_time.tv_sec = now.tv_sec;
-  absolute_time.tv_nsec = now.tv_nsec;
-#endif
-
-  absolute_time.tv_sec += relative_time.tv_sec;
-  absolute_time.tv_nsec += relative_time.tv_nsec;
-  absolute_time.tv_sec += absolute_time.tv_nsec / MonoTime::kNanosecondsPerSecond;
-  absolute_time.tv_nsec %= MonoTime::kNanosecondsPerSecond;
-  DCHECK_GE(absolute_time.tv_sec, now.tv_sec);  // Overflow paranoia
-
-#if defined(OS_ANDROID) && defined(HAVE_PTHREAD_COND_TIMEDWAIT_MONOTONIC)
-  int rv = pthread_cond_timedwait_monotonic_np(
-      &condition_, user_mutex_, &absolute_time);
-#else
+  MonoTime deadline = MonoTime::Now() + delta;
+  deadline.ToTimeSpec(&absolute_time);
   int rv = pthread_cond_timedwait(&condition_, user_mutex_, &absolute_time);
-#endif  // OS_ANDROID && HAVE_PTHREAD_COND_TIMEDWAIT_MONOTONIC
-#endif  // __APPLE__
+#endif
 
   DCHECK(rv == 0 || rv == ETIMEDOUT)
     << "unexpected pthread_cond_timedwait return value: " << rv;

@@ -564,14 +564,10 @@ void Heartbeater::Thread::RunThread() {
     // or for the signal to shut down.
     {
       MutexLock l(mutex_);
-      while (true) {
-        MonoDelta remaining = next_heartbeat - MonoTime::Now();
-        if (remaining.ToMilliseconds() <= 0 ||
-            heartbeat_asap_ ||
-            !should_run_) {
-          break;
-        }
-        cond_.TimedWait(remaining);
+      while (next_heartbeat > MonoTime::Now() &&
+          !heartbeat_asap_ &&
+          should_run_) {
+        cond_.WaitUntil(next_heartbeat);
       }
 
       heartbeat_asap_ = false;

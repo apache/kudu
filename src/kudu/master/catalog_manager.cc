@@ -457,7 +457,7 @@ class CatalogManagerBgTasks {
     MutexLock lock(lock_);
     if (closing_) return;
     if (!pending_updates_) {
-      cond_.TimedWait(MonoDelta::FromMilliseconds(msec));
+      cond_.WaitFor(MonoDelta::FromMilliseconds(msec));
     }
     pending_updates_ = false;
   }

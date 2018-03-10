@@ -230,18 +230,18 @@ void ThreadPoolToken::Wait() {
 }
 
 bool ThreadPoolToken::WaitUntil(const MonoTime& until) {
-  return WaitFor(until - MonoTime::Now());
-}
-
-bool ThreadPoolToken::WaitFor(const MonoDelta& delta) {
   MutexLock unique_lock(pool_->lock_);
   pool_->CheckNotPoolThreadUnlocked();
   while (IsActive()) {
-    if (!not_running_cond_.TimedWait(delta)) {
+    if (!not_running_cond_.WaitUntil(until)) {
       return false;
     }
   }
   return true;
+}
+
+bool ThreadPoolToken::WaitFor(const MonoDelta& delta) {
+  return WaitUntil(MonoTime::Now() + delta);
 }
 
 void ThreadPoolToken::Transition(State new_state) {
@@ -581,18 +581,18 @@ void ThreadPool::Wait() {
 }
 
 bool ThreadPool::WaitUntil(const MonoTime& until) {
-  return WaitFor(until - MonoTime::Now());
-}
-
-bool ThreadPool::WaitFor(const MonoDelta& delta) {
   MutexLock unique_lock(lock_);
   CheckNotPoolThreadUnlocked();
   while (total_queued_tasks_ > 0 || active_threads_ > 0) {
-    if (!idle_cond_.TimedWait(delta)) {
+    if (!idle_cond_.WaitUntil(until)) {
       return false;
     }
   }
   return true;
+}
+
+bool ThreadPool::WaitFor(const MonoDelta& delta) {
+  return WaitUntil(MonoTime::Now() + delta);
 }
 
 void ThreadPool::DispatchThread() {
@@ -623,7 +623,7 @@ void ThreadPool::DispatchThread() {
       SCOPED_CLEANUP({
         // For some wake ups (i.e. Shutdown or DoSubmit) this thread is
         // guaranteed to be unlinked after being awakened. In others (i.e.
-        // spurious wake-up or TimedWait timeout), it'll still be linked.
+        // spurious wake-up or Wait timeout), it'll still be linked.
         if (me.is_linked()) {
           idle_threads_.erase(idle_threads_.iterator_to(me));
         }
@@ -631,7 +631,7 @@ void ThreadPool::DispatchThread() {
       if (permanent) {
         me.not_empty.Wait();
       } else {
-        if (!me.not_empty.TimedWait(idle_timeout_)) {
+        if (!me.not_empty.WaitFor(idle_timeout_)) {
           // After much investigation, it appears that pthread condition variables have
           // a weird behavior in which they can return ETIMEDOUT from timed_wait even if
           // another thread did in fact signal. Apparently after a timeout there is some
