@@ -221,7 +221,8 @@ class RpcController {
 
   // Adds a sidecar to the outbound request. The index of the sidecar is written to
   // 'idx'. Returns an error if TransferLimits::kMaxSidecars have already been added
-  // to this request.
+  // to this request. Also returns an error if the total size of all sidecars would
+  // exceed TransferLimits::kMaxTotalSidecarBytes.
   Status AddOutboundSidecar(std::unique_ptr<RpcSidecar> car, int* idx);
 
   // Cancel the call associated with the RpcController. This function should only be
@@ -268,6 +269,10 @@ class RpcController {
   std::shared_ptr<OutboundCall> call_;
 
   std::vector<std::unique_ptr<RpcSidecar>> outbound_sidecars_;
+
+  // Total size of sidecars in outbound_sidecars_. This is limited to a maximum
+  // of TransferLimits::kMaxTotalSidecarBytes.
+  int32_t outbound_sidecars_total_bytes_ = 0;
 
   DISALLOW_COPY_AND_ASSIGN(RpcController);
 };

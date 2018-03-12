@@ -152,7 +152,9 @@ void OutboundCall::SetRequestPayload(const Message& req,
   sidecar_byte_size_ = 0;
   for (const unique_ptr<RpcSidecar>& car: sidecars_) {
     header_.add_sidecar_offsets(sidecar_byte_size_ + message_size);
-    sidecar_byte_size_ += car->AsSlice().size();
+    int32_t sidecar_bytes = car->AsSlice().size();
+    DCHECK_LE(sidecar_byte_size_, TransferLimits::kMaxTotalSidecarBytes - sidecar_bytes);
+    sidecar_byte_size_ += sidecar_bytes;
   }
 
   serialization::SerializeMessage(req, &request_buf_, sidecar_byte_size_, true);

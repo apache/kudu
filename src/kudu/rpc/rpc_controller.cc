@@ -25,16 +25,18 @@
 #include <glog/logging.h>
 
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/outbound_call.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/rpc_sidecar.h"
 #include "kudu/rpc/transfer.h"
+#include "kudu/util/slice.h"
+
 
 using std::unique_ptr;
+using strings::Substitute;
 namespace kudu {
-
-class Slice;
 
 namespace rpc {
 
@@ -57,6 +59,7 @@ void RpcController::Swap(RpcController* other) {
   }
 
   std::swap(outbound_sidecars_, other->outbound_sidecars_);
+  std::swap(outbound_sidecars_total_bytes_, other->outbound_sidecars_total_bytes_);
   std::swap(timeout_, other->timeout_);
   std::swap(credentials_policy_, other->credentials_policy_);
   std::swap(call_, other->call_);
@@ -71,6 +74,7 @@ void RpcController::Reset() {
   required_server_features_.clear();
   credentials_policy_ = CredentialsPolicy::ANY_CREDENTIALS;
   messenger_ = nullptr;
+  outbound_sidecars_total_bytes_ = 0;
 }
 
 bool RpcController::finished() const {
@@ -143,7 +147,17 @@ Status RpcController::AddOutboundSidecar(unique_ptr<RpcSidecar> car, int* idx) {
   if (outbound_sidecars_.size() >= TransferLimits::kMaxSidecars) {
     return Status::RuntimeError("All available sidecars already used");
   }
+  int64_t sidecar_bytes = car->AsSlice().size();
+  if (outbound_sidecars_total_bytes_ >
+      TransferLimits::kMaxTotalSidecarBytes - sidecar_bytes) {
+    return Status::RuntimeError(Substitute("Total size of sidecars $0 would exceed limit $1",
+        static_cast<int64_t>(outbound_sidecars_total_bytes_) + sidecar_bytes,
+        TransferLimits::kMaxTotalSidecarBytes));
+  }
+
   outbound_sidecars_.emplace_back(std::move(car));
+  outbound_sidecars_total_bytes_ += sidecar_bytes;
+  DCHECK_GE(outbound_sidecars_total_bytes_, 0);
   *idx = outbound_sidecars_.size() - 1;
   return Status::OK();
 }

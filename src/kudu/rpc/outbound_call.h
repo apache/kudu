@@ -274,7 +274,8 @@ class OutboundCall {
   std::vector<std::unique_ptr<RpcSidecar>> sidecars_;
 
   // Total size in bytes of all sidecars in 'sidecars_'. Set in SetRequestPayload().
-  int64_t sidecar_byte_size_ = -1;
+  // This cannot exceed TransferLimits::kMaxTotalSidecarBytes.
+  int32_t sidecar_byte_size_ = -1;
 
   // True if cancellation was requested on this call.
   bool cancellation_requested_;

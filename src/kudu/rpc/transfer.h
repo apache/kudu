@@ -21,6 +21,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits.h>
 #include <string>
 
 #include <boost/intrusive/list_hook.hpp>
@@ -33,7 +34,7 @@
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
-DECLARE_int32(rpc_max_message_size);
+DECLARE_int64(rpc_max_message_size);
 
 namespace kudu {
 
@@ -47,7 +48,8 @@ class TransferLimits {
  public:
   enum {
     kMaxSidecars = 10,
-    kMaxPayloadSlices = kMaxSidecars + 2 // (header + msg)
+    kMaxPayloadSlices = kMaxSidecars + 2, // (header + msg)
+    kMaxTotalSidecarBytes = INT_MAX
   };
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(TransferLimits);

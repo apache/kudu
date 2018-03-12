@@ -19,8 +19,10 @@
 
 #include <sys/uio.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <iostream>
+#include <limits>
 #include <set>
 
 #include <gflags/gflags.h>
@@ -34,17 +36,22 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/net/socket.h"
 
-DEFINE_int32(rpc_max_message_size, (50 * 1024 * 1024),
+DEFINE_int64(rpc_max_message_size, (50 * 1024 * 1024),
              "The maximum size of a message that any RPC that the server will accept. "
              "Must be at least 1MB.");
 TAG_FLAG(rpc_max_message_size, advanced);
 TAG_FLAG(rpc_max_message_size, runtime);
 
-static bool ValidateMaxMessageSize(const char* flagname, int32_t value) {
+static bool ValidateMaxMessageSize(const char* flagname, int64_t value) {
   if (value < 1 * 1024 * 1024) {
     LOG(ERROR) << flagname << " must be at least 1MB.";
     return false;
   }
+  if (value > std::numeric_limits<int32_t>::max()) {
+    LOG(ERROR) << flagname << " must be less than "
+               << std::numeric_limits<int32_t>::max() << " bytes.";
+  }
+
   return true;
 }
 static bool dummy = google::RegisterFlagValidator(
@@ -117,9 +124,12 @@ Status InboundTransfer::ReceiveBuffer(Socket &socket) {
   // receive message body
   int32_t nread;
 
-  // If total_length_ > INT_MAX, then it would exceed the maximum rpc_max_message_size
-  // and exit above. Hence, it is safe to use int32_t here.
-  int32_t rem = total_length_ - cur_offset_;
+  // Socket::Recv() handles at most INT_MAX at a time, so cap the remainder at
+  // INT_MAX. The message will be split across multiple Recv() calls.
+  // Note that this is only needed when rpc_max_message_size > INT_MAX, which is
+  // currently only used for unit tests.
+  int32_t rem = std::min(total_length_ - cur_offset_,
+      static_cast<uint32_t>(std::numeric_limits<int32_t>::max()));
   Status status = socket.Recv(&buf_[cur_offset_], rem, &nread);
   RETURN_ON_ERROR_OR_SOCKET_NOT_READY(status);
   cur_offset_ += nread;
@@ -201,7 +211,7 @@ Status OutboundTransfer::SendBuffer(Socket &socket) {
     }
   }
 
-  int32_t written;
+  int64_t written;
   Status status = socket.Writev(iovec, n_iovecs, &written);
   RETURN_ON_ERROR_OR_SOCKET_NOT_READY(status);
 

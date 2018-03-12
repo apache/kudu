@@ -21,7 +21,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <limits.h>
+#include <limits>
 #include <memory>
 #include <ostream>
 #include <set>
@@ -705,8 +705,42 @@ TEST_P(TestRpc, TestRpcSidecarLimits) {
         RpcSidecar::FromSlice(Slice(s)), &idx).IsRuntimeError());
   }
 
+  // Construct a string to use as a maximal payload in following tests
+  string max_string(TransferLimits::kMaxTotalSidecarBytes, 'a');
+
   {
-    // Test that the payload may not exceed --rpc_max_message_size.
+    // Test that limit on the total size of sidecars is respected. The maximal payload
+    // reaches the limit exactly.
+    RpcController controller;
+    int idx;
+    ASSERT_OK(controller.AddOutboundSidecar(RpcSidecar::FromSlice(Slice(max_string)), &idx));
+
+    // Trying to add another byte will fail.
+    int dummy = 0;
+    string s2(1, 'b');
+    Status max_sidecar_status =
+        controller.AddOutboundSidecar(RpcSidecar::FromSlice(Slice(s2)), &dummy);
+    ASSERT_FALSE(max_sidecar_status.ok());
+    ASSERT_STR_MATCHES(max_sidecar_status.ToString(), "Total size of sidecars");
+  }
+
+  // Test two cases:
+  // 1) The RPC has maximal size and exceeds rpc_max_message_size. This tests the
+  //    functionality of rpc_max_message_size. The server will close the connection
+  //    immediately.
+  // 2) The RPC has maximal size, but rpc_max_message_size has been set to a higher
+  //    value. This tests the client's ability to send the maximal message.
+  //    The server will reject the message after it has been transferred.
+  //    This test is disabled for TSAN due to high memory requirements.
+  std::vector<int64_t> rpc_max_message_values;
+  rpc_max_message_values.push_back(FLAGS_rpc_max_message_size);
+#ifndef THREAD_SANITIZER
+  rpc_max_message_values.push_back(std::numeric_limits<int64_t>::max());
+#endif
+  for (int64_t rpc_max_message_size_val : rpc_max_message_values) {
+    // Set rpc_max_message_size
+    FLAGS_rpc_max_message_size = rpc_max_message_size_val;
+
     // Set up server.
     Sockaddr server_addr;
     bool enable_ssl = GetParam();
@@ -721,10 +755,8 @@ TEST_P(TestRpc, TestRpcSidecarLimits) {
     RpcController controller;
     // KUDU-2305: Test with a maximal payload to verify that the implementation
     // can handle the limits.
-    string s;
-    s.resize(INT_MAX, 'a');
     int idx;
-    CHECK_OK(controller.AddOutboundSidecar(RpcSidecar::FromSlice(Slice(s)), &idx));
+    ASSERT_OK(controller.AddOutboundSidecar(RpcSidecar::FromSlice(Slice(max_string)), &idx));
 
     PushTwoStringsRequestPB request;
     request.set_sidecar1_idx(idx);

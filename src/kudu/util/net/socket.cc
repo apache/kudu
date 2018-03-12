@@ -435,7 +435,7 @@ Status Socket::Write(const uint8_t *buf, int32_t amt, int32_t *nwritten) {
 }
 
 Status Socket::Writev(const struct ::iovec *iov, int iov_len,
-                      int32_t *nwritten) {
+                      int64_t *nwritten) {
   if (PREDICT_FALSE(iov_len <= 0)) {
     return Status::NetworkError(
                 StringPrintf("writev: invalid io vector length of %d",
@@ -448,7 +448,7 @@ Status Socket::Writev(const struct ::iovec *iov, int iov_len,
   memset(&msg, 0, sizeof(struct msghdr));
   msg.msg_iov = const_cast<iovec *>(iov);
   msg.msg_iovlen = iov_len;
-  int res = ::sendmsg(fd_, &msg, MSG_NOSIGNAL);
+  ssize_t res = ::sendmsg(fd_, &msg, MSG_NOSIGNAL);
   if (PREDICT_FALSE(res < 0)) {
     int err = errno;
     return Status::NetworkError(std::string("sendmsg error: ") +

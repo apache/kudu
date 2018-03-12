@@ -74,29 +74,29 @@ Status TlsSocket::Write(const uint8_t *buf, int32_t amt, int32_t *nwritten) {
   return Status::OK();
 }
 
-Status TlsSocket::Writev(const struct ::iovec *iov, int iov_len, int32_t *nwritten) {
+Status TlsSocket::Writev(const struct ::iovec *iov, int iov_len, int64_t *nwritten) {
   SCOPED_OPENSSL_NO_PENDING_ERRORS;
   CHECK(ssl_);
-  int32_t total_written = 0;
+  *nwritten = 0;
   // Allows packets to be aggresively be accumulated before sending.
   RETURN_NOT_OK(SetTcpCork(1));
   Status write_status = Status::OK();
   for (int i = 0; i < iov_len; ++i) {
     int32_t frame_size = iov[i].iov_len;
+    int32_t bytes_written;
     // Don't return before unsetting TCP_CORK.
-    write_status = Write(static_cast<uint8_t*>(iov[i].iov_base), frame_size, nwritten);
+    write_status = Write(static_cast<uint8_t*>(iov[i].iov_base), frame_size, &bytes_written);
     if (!write_status.ok()) break;
 
     // nwritten should have the correct amount written.
-    total_written += *nwritten;
-    if (*nwritten < frame_size) break;
+    *nwritten += bytes_written;
+    if (bytes_written < frame_size) break;
   }
   RETURN_NOT_OK(SetTcpCork(0));
-  *nwritten = total_written;
   // If we did manage to write something, but not everything, due to a temporary socket
   // error, then we should still return an OK status indicating a successful _partial_
   // write.
-  if (total_written > 0 && Socket::IsTemporarySocketError(write_status.posix_code())) {
+  if (*nwritten > 0 && Socket::IsTemporarySocketError(write_status.posix_code())) {
     return Status::OK();
   }
   return write_status;

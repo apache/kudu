@@ -132,7 +132,7 @@ class Socket {
   // If there is an error, that error needs to be resolved before calling again.
   // If there was no error, but not all the bytes were written, the unwritten
   // bytes must be retried. See writev(2) for more information.
-  virtual Status Writev(const struct ::iovec *iov, int iov_len, int32_t *nwritten);
+  virtual Status Writev(const struct ::iovec *iov, int iov_len, int64_t *nwritten);
 
   // Blocking Write call, returns IOError unless full buffer is sent.
   // Underlying Socket expected to be in blocking mode. Fails if any Write() sends 0 bytes.

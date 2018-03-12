@@ -177,16 +177,17 @@ void InboundCall::SerializeResponseBuffer(const MessageLite& response,
   ResponseHeader resp_hdr;
   resp_hdr.set_call_id(header_.call_id());
   resp_hdr.set_is_error(!is_success);
-  uint32_t absolute_sidecar_offset = protobuf_msg_size;
+  int32_t sidecar_byte_size = 0;
   for (const unique_ptr<RpcSidecar>& car : outbound_sidecars_) {
-    resp_hdr.add_sidecar_offsets(absolute_sidecar_offset);
-    absolute_sidecar_offset += car->AsSlice().size();
+    resp_hdr.add_sidecar_offsets(sidecar_byte_size + protobuf_msg_size);
+    int32_t sidecar_bytes = car->AsSlice().size();
+    DCHECK_LE(sidecar_byte_size, TransferLimits::kMaxTotalSidecarBytes - sidecar_bytes);
+    sidecar_byte_size += sidecar_bytes;
   }
 
-  int additional_size = absolute_sidecar_offset - protobuf_msg_size;
   serialization::SerializeMessage(response, &response_msg_buf_,
-                                  additional_size, true);
-  int main_msg_size = additional_size + response_msg_buf_.size();
+                                  sidecar_byte_size, true);
+  int64_t main_msg_size = sidecar_byte_size + response_msg_buf_.size();
   serialization::SerializeHeader(resp_hdr, main_msg_size,
                                  &response_hdr_buf_);
 }
@@ -214,7 +215,17 @@ Status InboundCall::AddOutboundSidecar(unique_ptr<RpcSidecar> car, int* idx) {
   if (outbound_sidecars_.size() > TransferLimits::kMaxSidecars) {
     return Status::ServiceUnavailable("All available sidecars already used");
   }
+  int64_t sidecar_bytes = car->AsSlice().size();
+  if (outbound_sidecars_total_bytes_ >
+      TransferLimits::kMaxTotalSidecarBytes - sidecar_bytes) {
+    return Status::RuntimeError(Substitute("Total size of sidecars $0 would exceed limit $1",
+        static_cast<int64_t>(outbound_sidecars_total_bytes_) + sidecar_bytes,
+        TransferLimits::kMaxTotalSidecarBytes));
+  }
+
   outbound_sidecars_.emplace_back(std::move(car));
+  outbound_sidecars_total_bytes_ += sidecar_bytes;
+  DCHECK_GE(outbound_sidecars_total_bytes_, 0);
   *idx = outbound_sidecars_.size() - 1;
   return Status::OK();
 }

@@ -296,13 +296,14 @@ TEST_F(TlsSocketTest, TestNonBlockingWritev) {
     int rem = kEchoChunkSize;
     while (rem > 0) {
       CHECK(!iov.empty()) << rem;
-      int32_t n;
+      int64_t n;
       Status s = client_sock->Writev(&iov[0], iov.size(), &n);
       if (Socket::IsTemporarySocketError(s.posix_code())) {
         sched_yield();
         continue;
       }
       ASSERT_OK(s);
+      ASSERT_LE(n, rem);
       rem -= n;
       ASSERT_GE(n, 0);
       while (n > 0) {

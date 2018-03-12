@@ -248,6 +248,10 @@ class InboundCall {
   // after serialization of the protobuf. See rpc/rpc_sidecar.h for more info.
   std::vector<std::unique_ptr<RpcSidecar>> outbound_sidecars_;
 
+  // Total size of sidecars in outbound_sidecars_. This is limited to a maximum
+  // of TransferLimits::kMaxTotalSidecarBytes.
+  int32_t outbound_sidecars_total_bytes_ = 0;
+
   // Inbound sidecars from the request. The slices are views onto transfer_. There are as
   // many slices as header_.sidecar_offsets_size().
   Slice inbound_sidecar_slices_[TransferLimits::kMaxSidecars];
