@@ -66,7 +66,10 @@
   automatically move existing metadata based on this configuration.
 
 == Optimizations and improvements
-
+* Reporting for the `kudu cluster ksck` tool has been updated so tablets and
+  tables with on-going tablet copies are shown as "recovering". Additional
+  reporting changes have been made to make various common scenarios,
+  particularly tablet copies, less alarming.
 
 [[rn_1.7.0_fixed_issues]]
 == Fixed Issues
