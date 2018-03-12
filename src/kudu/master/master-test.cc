@@ -73,6 +73,7 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
+#include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/random.h"
 #include "kudu/util/status.h"
@@ -803,7 +804,11 @@ TEST_F(MasterTest, TestDumpStacksOnRpcQueueOverflow) {
   mini_master_->mutable_options()->rpc_opts.num_service_threads = 1;
   mini_master_->mutable_options()->rpc_opts.service_queue_length = 1;
   FLAGS_master_inject_latency_on_tablet_lookups_ms = 1000;
-  FLAGS_log_dir = GetTestDataDirectory();
+  // Use a new log directory so that the tserver and master don't share the
+  // same one. This allows us to isolate the diagnostics log from the master.
+  FLAGS_log_dir = JoinPathSegments(GetTestDataDirectory(), "master-logs");
+  Status s = env_->CreateDir(FLAGS_log_dir);
+  ASSERT_TRUE(s.ok() || s.IsAlreadyPresent()) << s.ToString();
   mini_master_->Shutdown();
   ASSERT_OK(mini_master_->Restart());
   ASSERT_OK(mini_master_->master()->

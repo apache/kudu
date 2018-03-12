@@ -101,6 +101,10 @@ KuduTest::KuduTest()
     // only apply to certain tests.
     google::SetCommandLineOptionWithMode(e.first, e.second, google::SET_FLAGS_DEFAULT);
   }
+  // If the TEST_TMPDIR variable has been set, then glog will automatically use that
+  // as its default log directory. We would prefer that the default log directory
+  // instead be the test-case-specific subdirectory.
+  FLAGS_log_dir = GetTestDataDirectory();
 }
 
 KuduTest::~KuduTest() {
