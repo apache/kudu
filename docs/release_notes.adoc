@@ -50,6 +50,20 @@
 [[rn_1.7.0_new_features]]
 == New features
 
+* The `kudu fs update_dirs` tool now supports removing directories. Unless the
+  `--force` flag is specified, Kudu will not allow the removal of a directory
+  across which tablets are configured to spread data. If specified, all tablet
+  replicas configured to use that directory will fail upon starting up and be
+  replicated elsewhere, provided a majority exists elsewhere.
+
+* Users can use the new `--fs_metadata_dir` to specify the directory in which
+  to place tablet-specific metadata. It is recommended, although not
+  necessary, that this be placed on a high-performance drive with high
+  bandwidth and low latency, e.g. a solid-state drive. If not specified,
+  metadata will be placed in the directory specified by `--fs_wal_dir`, or in
+  the directory specified by the first entry of `--fs_data_dirs` if metadata
+  already exists there from a pre-Kudu 1.7 deployment. Kudu will not
+  automatically move existing metadata based on this configuration.
 
 == Optimizations and improvements
 
