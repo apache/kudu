@@ -89,7 +89,10 @@ class DiagnosticsLog::SymbolSet {
 
   // Return true if the addr was added, false if it already existed.
   bool Add(void* addr) {
-    return InsertIfNotPresent(&set_, addr);
+    // We can't add nullptr since that's the 'empty' key. However this
+    // also will never have a real symbol, so we'll just pretend it's already
+    // present.
+    return addr && InsertIfNotPresent(&set_, addr);
   }
 
   void ResetIfLogRolled(int roll_count) {
