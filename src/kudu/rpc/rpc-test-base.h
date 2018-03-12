@@ -51,6 +51,8 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/trace.h"
 
+DECLARE_bool(rpc_encrypt_loopback_connections);
+
 namespace kudu {
 namespace rpc {
 
@@ -436,9 +438,11 @@ class RpcTestBase : public KuduTest {
     MessengerBuilder bld(name);
 
     if (enable_ssl) {
+      FLAGS_rpc_encrypt_loopback_connections = true;
       bld.set_epki_cert_key_files(rpc_certificate_file, rpc_private_key_file);
       bld.set_epki_certificate_authority_file(rpc_ca_certificate_file);
       bld.set_epki_private_password_key_cmd(rpc_private_key_password_cmd);
+      bld.set_rpc_encryption("required");
       bld.enable_inbound_tls();
     }
 

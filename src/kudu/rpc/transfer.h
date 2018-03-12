@@ -183,6 +183,11 @@ class OutboundTransfer : public boost::intrusive::list_base_hook<> {
   // In the case of call responses, kInvalidCallId
   int32_t call_id_;
 
+  // True if SendBuffer() has been called at least once. This can be true even if
+  // no bytes were sent successfully. This is needed as SSL_write() is stateful.
+  // Please see KUDU-2334 for details.
+  bool started_;
+
   bool aborted_;
 
   DISALLOW_COPY_AND_ASSIGN(OutboundTransfer);

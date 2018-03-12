@@ -737,6 +737,8 @@ TEST_P(TestRpc, TestRpcSidecarLimits) {
     ASSERT_STR_MATCHES(status.ToString(),
                        // Linux
                        "Connection reset by peer"
+                       // Linux, SSL enabled
+                       "|failed to read from TLS socket"
                        // macOS, while reading from socket.
                        "|got EOF from remote"
                        // macOS, while writing to socket.
@@ -1167,6 +1169,7 @@ static void SleepCallback(uint8_t* payload, CountDownLatch* latch) {
   latch->CountDown();
 }
 
+// Test to verify that sidecars aren't corrupted when cancelling an async RPC.
 TEST_P(TestRpc, TestCancellationAsync) {
   // Set up server.
   Sockaddr server_addr;
@@ -1213,6 +1216,75 @@ TEST_P(TestRpc, TestCancellationAsync) {
     latch.Wait();
     ASSERT_TRUE(controller.status().IsAborted() || controller.status().ok());
     controller.Reset();
+  }
+  client_messenger->Shutdown();
+}
+
+// This function loops for 40 iterations and for each iteration, sends an async RPC
+// and sleeps for some time between 1 to 100 microseconds before cancelling the RPC.
+// This serves as a helper function for TestCancellationMultiThreads() to exercise
+// cancellation when there are concurrent RPCs.
+static void SendAndCancelRpcs(Proxy* p, const Slice& slice) {
+  RpcController controller;
+
+  // Used to generate sleep time between invoking RPC and requesting cancellation.
+  Random rand(SeedRandom());
+
+  for (int i = 0; i < 40; ++i) {
+    controller.Reset();
+    PushTwoStringsRequestPB request;
+    PushTwoStringsResponsePB resp;
+    int idx;
+    CHECK_OK(controller.AddOutboundSidecar(RpcSidecar::FromSlice(slice), &idx));
+    request.set_sidecar1_idx(idx);
+    CHECK_OK(controller.AddOutboundSidecar(RpcSidecar::FromSlice(slice), &idx));
+    request.set_sidecar2_idx(idx);
+
+    CountDownLatch latch(1);
+    p->AsyncRequest(GenericCalculatorService::kPushTwoStringsMethodName,
+                    request, &resp, &controller,
+                    boost::bind(&CountDownLatch::CountDown, boost::ref(latch)));
+
+    if ((i % 8) != 0) {
+      // Sleep for a while before cancelling the RPC.
+      SleepFor(MonoDelta::FromMicroseconds(rand.Uniform64(100)));
+      controller.Cancel();
+    }
+    latch.Wait();
+    CHECK(controller.status().IsAborted() || controller.status().IsServiceUnavailable() ||
+          controller.status().ok()) << controller.status().ToString();
+  }
+}
+
+// Test to exercise cancellation when there are multiple concurrent RPCs from the
+// same client to the same server.
+TEST_P(TestRpc, TestCancellationMultiThreads) {
+  // Set up server.
+  Sockaddr server_addr;
+  bool enable_ssl = GetParam();
+  ASSERT_OK(StartTestServer(&server_addr, enable_ssl));
+
+  // Set up client.
+  LOG(INFO) << "Connecting to " << server_addr.ToString();
+  shared_ptr<Messenger> client_messenger;
+  ASSERT_OK(CreateMessenger("Client", &client_messenger, 1, enable_ssl));
+  Proxy p(client_messenger, server_addr, server_addr.host(),
+          GenericCalculatorService::static_service_name());
+
+  // Buffer used for sidecars by SendAndCancelRpcs().
+  string buf(16 * 1024 * 1024, 'a');
+  Slice slice(buf);
+
+  // Start a bunch of threads which invoke async RPC and cancellation.
+  std::vector<scoped_refptr<Thread>> threads;
+  for (int i = 0; i < 30; ++i) {
+    scoped_refptr<Thread> rpc_thread;
+    ASSERT_OK(Thread::Create("test", "rpc", SendAndCancelRpcs, &p, slice, &rpc_thread));
+    threads.push_back(rpc_thread);
+  }
+  // Wait for all threads to complete.
+  for (scoped_refptr<Thread>& rpc_thread : threads) {
+    rpc_thread->Join();
   }
   client_messenger->Shutdown();
 }
