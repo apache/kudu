@@ -1147,4 +1147,21 @@ public class TestKuduPredicate {
         binaryCol, ImmutableList.of(new byte[] { (byte) 0xAB, (byte) 0x01, (byte) 0xCD },
                                     new byte[] { (byte) 0x00 })).toString());
   }
+
+  @Test
+  public void TestDecimalCoercion() {
+    Assert.assertEquals(
+        KuduPredicate.newComparisonPredicate(decimal32Col, LESS, BigDecimal.valueOf(123)),
+        KuduPredicate.newComparisonPredicate(decimal32Col, LESS, BigDecimal.valueOf(12300, 2))
+    );
+    Assert.assertEquals(
+        KuduPredicate.newComparisonPredicate(decimal32Col, GREATER, BigDecimal.valueOf(123, 1)),
+        KuduPredicate.newComparisonPredicate(decimal32Col, GREATER, BigDecimal.valueOf(1230, 2))
+    );
+    Assert.assertEquals(
+        KuduPredicate.newComparisonPredicate(decimal32Col, EQUAL, BigDecimal.valueOf(1, 0)),
+        KuduPredicate.newComparisonPredicate(decimal32Col, EQUAL, BigDecimal.valueOf(100, 2))
+    );
+  }
+
 }

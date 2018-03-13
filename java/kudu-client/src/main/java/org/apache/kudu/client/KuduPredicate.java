@@ -244,6 +244,9 @@ public class KuduPredicate {
     int precision = typeAttributes.getPrecision();
     int scale = typeAttributes.getScale();
 
+    // Coerce the value to have the same precision and scale
+    value = DecimalUtil.coerce(value, precision, scale);
+
     BigDecimal minValue = DecimalUtil.minValue(precision, scale);
     BigDecimal maxValue = DecimalUtil.maxValue(precision, scale);
     Preconditions.checkArgument(value.compareTo(maxValue) <= 0 && value.compareTo(minValue) >= 0,
