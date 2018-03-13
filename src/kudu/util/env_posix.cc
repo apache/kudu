@@ -187,6 +187,12 @@ DEFINE_string(env_inject_eio_globs, "*",
               "I/O will fail. By default, all files may cause a failure.");
 TAG_FLAG(env_inject_eio_globs, hidden);
 
+DEFINE_string(env_inject_lock_failure_globs, "",
+              "Comma-separated list of glob patterns specifying files on which "
+              "attempts to obtain a file lock will fail. By default, no files "
+              "will fail.");
+TAG_FLAG(env_inject_lock_failure_globs, hidden);
+
 static __thread uint64_t thread_local_id;
 static Atomic64 cur_thread_local_id_;
 
@@ -1332,6 +1338,9 @@ class PosixEnv : public Env {
   virtual Status LockFile(const std::string& fname, FileLock** lock) OVERRIDE {
     TRACE_EVENT1("io", "PosixEnv::LockFile", "path", fname);
     MAYBE_RETURN_EIO(fname, IOError(Env::kInjectedFailureStatusMsg, EIO));
+    if (StringMatchesGlob(fname, FLAGS_env_inject_lock_failure_globs)) {
+      return IOError("lock " + fname, EAGAIN);
+    }
     ThreadRestrictions::AssertIOAllowed();
     *lock = nullptr;
     Status result;

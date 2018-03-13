@@ -49,11 +49,6 @@ DEFINE_string(block_manager_preflush_control, "finalize",
               "never be pre-flushed but still be flushed when closed.");
 TAG_FLAG(block_manager_preflush_control, experimental);
 
-DEFINE_bool(block_manager_lock_dirs, true,
-            "Lock the data block directories to prevent concurrent usage. "
-            "Note that read-only concurrent usage is still allowed.");
-TAG_FLAG(block_manager_lock_dirs, unsafe);
-
 DEFINE_int64(block_manager_max_open_files, -1,
              "Maximum number of open file descriptors to be used for data "
              "blocks. If -1, Kudu will use 40% of its resource limit as per "

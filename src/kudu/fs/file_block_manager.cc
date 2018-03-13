@@ -65,7 +65,6 @@ using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
-DECLARE_bool(block_manager_lock_dirs);
 DECLARE_bool(enable_data_block_fsync);
 DECLARE_string(block_manager_preflush_control);
 
