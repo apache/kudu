@@ -284,6 +284,7 @@ public class MiniKuduCluster implements AutoCloseable {
     if (!d.isRunning) {
       return;
     }
+    LOG.info("Killing tserver {}", hp);
     sendRequestToCluster(ControlShellRequestPB.newBuilder()
         .setStopDaemon(StopDaemonRequestPB.newBuilder().setId(d.id).build())
         .build());

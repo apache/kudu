@@ -270,7 +270,11 @@ public class AsyncKuduClient implements AutoCloseable {
       return null;
     }
     return newRpcProxy(
-        new ServerInfo("master-" + hostPort.toString(), hostPort, inetAddress), credentialsPolicy);
+        new ServerInfo(getFakeMasterUuid(hostPort), hostPort, inetAddress), credentialsPolicy);
+  }
+
+  static String getFakeMasterUuid(HostAndPort hostPort) {
+    return "master-" + hostPort.toString();
   }
 
   void reconnectToCluster(Callback<Void, Boolean> cb,
