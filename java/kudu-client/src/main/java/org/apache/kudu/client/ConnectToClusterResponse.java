@@ -61,6 +61,7 @@ class ConnectToClusterResponse {
    * if it were a tablet.
    */
   public GetTableLocationsResponsePB getAsTableLocations() {
+    String fakeUuid = AsyncKuduClient.getFakeMasterUuid(leaderHostAndPort);
     return GetTableLocationsResponsePB.newBuilder()
         .addTabletLocations(TabletLocationsPB.newBuilder()
             .setPartition(PartitionPB.newBuilder()
@@ -70,7 +71,7 @@ class ConnectToClusterResponse {
             .addReplicas(ReplicaPB.newBuilder()
                 .setTsInfo(TSInfoPB.newBuilder()
                     .addRpcAddresses(ProtobufHelper.hostAndPortToPB(leaderHostAndPort))
-                    .setPermanentUuid(ByteString.EMPTY)) // required field, but unused for master
+                    .setPermanentUuid(ByteString.copyFromUtf8(fakeUuid)))
                 .setRole(connectResponse.getRole()))).build();
   }
 }

@@ -68,6 +68,9 @@ class ConnectionCache {
    * Container mapping server UUID into the established connection from the client to the server.
    * It may be up to two connections per server: one established with secondary credentials
    * (e.g. authn token), another with primary ones (e.g. Kerberos credentials).
+   *
+   * TODO(todd) it would make more sense to key this by IP address rather than by UUID in
+   * case a server actually changes address and re-registers to the cluster.
    */
   @GuardedBy("uuid2connection")
   private final HashMultimap<String, Connection> uuid2connection = HashMultimap.create();

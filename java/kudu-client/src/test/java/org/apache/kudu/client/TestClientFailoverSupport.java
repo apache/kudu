@@ -22,15 +22,27 @@ import static org.junit.Assert.assertFalse;
 
 import java.util.List;
 import org.apache.kudu.util.AssertHelpers.BooleanExpression;
+import org.junit.After;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
 public class TestClientFailoverSupport extends BaseKuduTest {
 
+  enum MasterFailureType {
+    RESTART,
+    KILL
+  }
+
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
-    final int NUM_TABLET_SERVERS = 6;
+    final int NUM_TABLET_SERVERS = 3;
     BaseKuduTest.doSetup(3, NUM_TABLET_SERVERS);
+  }
+
+  @After
+  public void restartKilledMaster() throws Exception {
+    miniCluster.restartDeadMasters();
+    miniCluster.restartDeadTabletServers();
   }
 
   private void waitUntilRowCount(final KuduTable table, final int rowCount, long timeoutMs)
@@ -46,25 +58,35 @@ public class TestClientFailoverSupport extends BaseKuduTest {
         }, timeoutMs);
   }
 
+  @Test(timeout = 100000)
+  public void testRestartLeaderMaster() throws Exception {
+    doTestMasterFailover(MasterFailureType.RESTART);
+  }
+
+  @Test(timeout = 100000)
+  public void testKillLeaderMaster() throws Exception {
+    doTestMasterFailover(MasterFailureType.KILL);
+  }
+
   /**
    * Tests that the Java client will appropriately failover when a new master leader is elected.
-   * We force a metadata update by killing the active tablet servers.
-   * Then we kill the master leader.
-   * We write some more rows.
+   *
+   * We inject some failure on the master, based on 'failureType'. Then we force a tablet
+   * re-election by killing the leader replica. The client then needs to reconnect to the masters
+   * to find the new location information.
+   *
    * If we can successfully read back the rows written, that shows the client handled the failover
    * correctly.
    */
-  @Test(timeout = 100000)
-  public void testMultipleFailover() throws Exception {
-    final String TABLE_NAME = TestClientFailoverSupport.class.getName();
-
+  private void doTestMasterFailover(MasterFailureType failureType) throws Exception {
+    final String TABLE_NAME = TestClientFailoverSupport.class.getName()
+        + "-" + failureType;
     createTable(TABLE_NAME, basicSchema, getBasicCreateTableOptions());
 
     KuduTable table = openTable(TABLE_NAME);
     KuduSession session = syncClient.newSession();
 
     final int TOTAL_ROWS_TO_INSERT = 10;
-    final int TSERVER_LEADERS_TO_KILL = 3;
 
     for (int i = 0; i < TOTAL_ROWS_TO_INSERT; i++) {
       session.apply(createBasicSchemaInsert(table, i));
@@ -72,14 +94,26 @@ public class TestClientFailoverSupport extends BaseKuduTest {
 
     waitUntilRowCount(table, TOTAL_ROWS_TO_INSERT, DEFAULT_SLEEP);
 
-    for (int i = 0; i < TSERVER_LEADERS_TO_KILL; i++) {
-      List<LocatedTablet> tablets = table.getTabletsLocations(DEFAULT_SLEEP);
-      assertEquals(1, tablets.size());
-      final int leaderPort = findLeaderTabletServerPort(tablets.get(0));
-      miniCluster.killTabletServerOnPort(leaderPort);
+    // Kill or restart the leader master.
+    switch (failureType) {
+    case KILL:
+      killMasterLeader();
+      break;
+    case RESTART:
+      restartLeaderMaster();
+      break;
     }
-    killMasterLeader();
 
+    // Kill the tablet server leader. This will force us to go back to the
+    // master to find the new location. At that point, the client will
+    // notice that the old leader master is no longer current and fail over
+    // to the new one.
+    List<LocatedTablet> tablets = table.getTabletsLocations(DEFAULT_SLEEP);
+    assertEquals(1, tablets.size());
+    final int leaderPort = findLeaderTabletServerPort(tablets.get(0));
+    miniCluster.killTabletServerOnPort(leaderPort);
+
+    // Insert some more rows.
     for (int i = TOTAL_ROWS_TO_INSERT; i < 2*TOTAL_ROWS_TO_INSERT; i++) {
       session.apply(createBasicSchemaInsert(table, i));
     }
