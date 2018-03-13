@@ -63,7 +63,6 @@ RATE_METRICS = [
   #  ("server.voluntary_context_switches", "vol_cs"),
   #  ("tablet.rows_inserted", "inserts_per_sec"),
   #  ("tablet.rows_upserted", "upserts_per_sec"),
-  #  ("server.tcmalloc_contention_time", "tcmalloc_contention_time")
 ]
 
 # These metrics will be extracted as percentile metrics into the TSV.
