@@ -56,7 +56,7 @@ Linux::
     - ntp.
     - xfs or ext4 formatted drives.
 macOS::
-    - OS X 10.10 Yosemite, OS X 10.11 El Capitan, or macOS Sierra.
+    - OS X 10.10 Yosemite, OS X 10.11 El Capitan, macOS Sierra, or macOS High Sierra.
     - Prebuilt macOS packages are not provided.
 Windows::
     - Microsoft Windows is unsupported.
@@ -528,6 +528,13 @@ make -j4
 The link:https://developer.apple.com/xcode/[Xcode] package is necessary for
 compiling Kudu. Some of the instructions below use link:http://brew.sh/[Homebrew]
 to install dependencies, but manual dependency installation is possible.
+
+After installing Xcode, don't forget to accept the license and install command-line
+tools, if it's not done yet:
+----
+$ sudo xcodebuild -license
+$ sudo xcode-select --install
+----
 
 [WARNING]
 .macOS Known Issues
