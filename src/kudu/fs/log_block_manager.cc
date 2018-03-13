@@ -75,7 +75,6 @@
 #include "kudu/util/test_util_prod.h"
 #include "kudu/util/trace.h"
 
-DECLARE_bool(block_manager_lock_dirs);
 DECLARE_bool(enable_data_block_fsync);
 DECLARE_string(block_manager_preflush_control);
 

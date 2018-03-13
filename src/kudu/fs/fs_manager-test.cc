@@ -18,7 +18,6 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include <cstddef>
 #include <cstdint>
 #include <iostream>
 #include <iterator>
@@ -66,6 +65,7 @@ DECLARE_bool(crash_on_eio);
 DECLARE_double(env_inject_eio);
 DECLARE_string(block_manager);
 DECLARE_string(env_inject_eio_globs);
+DECLARE_string(env_inject_lock_failure_globs);
 DECLARE_string(umask);
 
 namespace kudu {
@@ -344,7 +344,8 @@ TEST_F(FsManagerTestBase, TestIsolatedMetadataDir) {
 }
 
 Status CountTmpFiles(Env* env, const string& path, const vector<string>& children,
-                     unordered_set<string>* checked_dirs, size_t* count) {
+                     unordered_set<string>* checked_dirs, int* count) {
+  int n = 0;
   vector<string> sub_objects;
   for (const string& name : children) {
     if (name == "." || name == "..") continue;
@@ -357,22 +358,29 @@ Status CountTmpFiles(Env* env, const string& path, const vector<string>& childre
       if (!ContainsKey(*checked_dirs, sub_path)) {
         checked_dirs->insert(sub_path);
         RETURN_NOT_OK(env->GetChildren(sub_path, &sub_objects));
-        RETURN_NOT_OK(CountTmpFiles(env, sub_path, sub_objects, checked_dirs, count));
+        int subdir_count = 0;
+        RETURN_NOT_OK(CountTmpFiles(env, sub_path, sub_objects, checked_dirs, &subdir_count));
+        n += subdir_count;
       }
     } else if (name.find(kTmpInfix) != string::npos) {
-      (*count)++;
+      n++;
     }
   }
+  *count = n;
   return Status::OK();
 }
 
-Status CountTmpFiles(Env* env, const vector<string>& roots, size_t* count) {
+Status CountTmpFiles(Env* env, const vector<string>& roots, int* count) {
   unordered_set<string> checked_dirs;
+  int n = 0;
   for (const string& root : roots) {
     vector<string> children;
     RETURN_NOT_OK(env->GetChildren(root, &children));
-    RETURN_NOT_OK(CountTmpFiles(env, root, children, &checked_dirs, count));
+    int dir_count;
+    RETURN_NOT_OK(CountTmpFiles(env, root, children, &checked_dirs, &dir_count));
+    n += dir_count;
   }
+  *count = n;
   return Status::OK();
 }
 
@@ -465,11 +473,25 @@ TEST_F(FsManagerTestBase, TestTmpFilesCleanup) {
   lookup_dirs.emplace_back(fs_manager()->GetConsensusMetadataDir());
   lookup_dirs.emplace_back(fs_manager()->GetTabletMetadataDir());
 
-  size_t n_tmp_files = 0;
+  int n_tmp_files = 0;
   ASSERT_OK(CountTmpFiles(fs_manager()->env(), lookup_dirs, &n_tmp_files));
   ASSERT_EQ(6, n_tmp_files);
 
-  // Opening fs_manager should remove tmp files
+  // The FsManager should not delete any tmp files if it fails to acquire
+  // a lock on the data dir.
+  string bm_instance = JoinPathSegments(fs_manager()->GetDataRootDirs()[1],
+                                        "block_manager_instance");
+  {
+    google::FlagSaver saver;
+    FLAGS_env_inject_lock_failure_globs = bm_instance;
+    ReinitFsManagerWithPaths(wal_path, data_paths);
+    Status s = fs_manager()->Open();
+    ASSERT_STR_MATCHES(s.ToString(), "Could not lock.*");
+    ASSERT_OK(CountTmpFiles(fs_manager()->env(), lookup_dirs, &n_tmp_files));
+    ASSERT_EQ(6, n_tmp_files);
+  }
+
+  // Now start up without the injected lock failure, and ensure that tmp files are deleted.
   ReinitFsManagerWithPaths(wal_path, data_paths);
   ASSERT_OK(fs_manager()->Open());
 

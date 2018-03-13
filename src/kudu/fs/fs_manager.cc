@@ -387,15 +387,6 @@ Status FsManager::Open(FsReport* report) {
                           "unable to create missing filesystem roots");
   }
 
-  // Remove leftover temporary files from the WAL root and fix permissions.
-  //
-  // Temporary files in the data directory roots will be removed by the block
-  // manager.
-  if (!opts_.read_only) {
-    CleanTmpFiles();
-    CheckAndFixPermissions();
-  }
-
   // Open the directory manager if it has not been opened already.
   if (!dd_manager_) {
     DataDirManagerOptions dm_opts;
@@ -407,6 +398,14 @@ Status FsManager::Open(FsReport* report) {
       RETURN_NOT_OK(DataDirManager::OpenExisting(env_,
           canonicalized_data_fs_roots_, std::move(dm_opts), &dd_manager_));
     }
+  }
+
+  // Only clean temporary files after the data dir manager successfully opened.
+  // This ensures that we were able to obtain the exclusive directory locks
+  // on the data directories before we start deleting files.
+  if (!opts_.read_only) {
+    CleanTmpFiles();
+    CheckAndFixPermissions();
   }
 
   // Set an initial error handler to mark data directories as failed.
@@ -671,6 +670,8 @@ string FsManager::GetWalSegmentFileName(const string& tablet_id,
 
 void FsManager::CleanTmpFiles() {
   DCHECK(!opts_.read_only);
+  // Temporary files in the Block Manager directories are cleaned during
+  // Block Manager startup.
   for (const auto& s : { GetWalsRootDir(),
                          GetTabletMetadataDir(),
                          GetConsensusMetadataDir() }) {
