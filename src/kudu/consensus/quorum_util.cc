@@ -27,6 +27,7 @@
 
 #include "kudu/common/common.pb.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/pb_util.h"
@@ -506,9 +507,18 @@ bool ShouldEvictReplica(const RaftConfigPB& config,
     switch (peer.member_type()) {
       case RaftPeerPB::VOTER:
         // A leader should always report itself as being healthy.
-        DCHECK(peer_uuid != leader_uuid || healthy) << Substitute(
-            "$0: leader reported as not healthy; config: $1",
-            peer_uuid, SecureShortDebugString(config));
+        if (PREDICT_FALSE(peer_uuid == leader_uuid && !healthy)) {
+          LOG(WARNING) << Substitute("leader peer $0 reported health as $1; config: $2",
+                                     peer_uuid,
+                                     HealthReportPB_HealthStatus_Name(
+                                        peer.health_report().overall_health()),
+                                     SecureShortDebugString(config));
+          DCHECK(false) << "Found non-HEALTHY LEADER"; // Crash in DEBUG builds.
+          // TODO(KUDU-2335): We have seen this assertion in rare circumstances
+          // in pre-commit builds, so until we fix this lifecycle issue we
+          // simply do not evict any nodes when the leader is not HEALTHY.
+          return false;
+        }
 
         ++num_voters_total;
         if (healthy) {
