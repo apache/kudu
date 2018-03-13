@@ -74,6 +74,15 @@
   already exists there from a pre-Kudu 1.7 deployment. Kudu will not
   automatically move existing metadata based on this configuration.
 
+* Kudu 1.7 introduces a new scan read mode READ_YOUR_WRITES. Users can specify
+  READ_YOUR_WRITES when creating a new scanner in both C++ and Java clients.
+  If this mode is used, the client will perform a read such that it follows all
+  previously known writes and reads from this client. Reads in this mode ensure
+  read-your-writes and read-your-reads session guarantees, while minimizing
+  latency caused by waiting for outstanding write transactions to complete.
+  Note that this is still an experimental feature which may be stabilized in
+  future releases.
+
 == Optimizations and improvements
 * Reporting for the `kudu cluster ksck` tool has been updated so tablets and
   tables with on-going tablet copies are shown as "recovering". Additional
