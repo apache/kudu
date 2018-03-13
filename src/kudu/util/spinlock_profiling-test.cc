@@ -43,10 +43,6 @@ namespace gutil {
 extern void SubmitSpinLockProfileData(const void *, int64);
 } // namespace gutil
 
-namespace base {
-extern void SubmitSpinLockProfileData(const void *, int64);
-} // namespace base
-
 namespace kudu {
 
 class SpinLockProfilingTest : public KuduTest {};
@@ -80,12 +76,6 @@ TEST_F(SpinLockProfilingTest, TestStackCollection) {
   std::string s = str.str();
   ASSERT_STR_CONTAINS(s, "12345\t1 @ ");
   ASSERT_EQ(0, dropped);
-}
-
-TEST_F(SpinLockProfilingTest, TestTcmallocContention) {
-  StartSynchronizationProfiling();
-  base::SubmitSpinLockProfileData(nullptr, 12345);
-  ASSERT_GE(GetTcmallocContentionMicros(), 0);
 }
 
 } // namespace kudu

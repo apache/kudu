@@ -38,10 +38,6 @@ void InitSpinLockContentionProfiling();
 // since the server started.
 uint64_t GetSpinLockContentionMicros();
 
-// Return the total number of microseconds spent in tcmalloc contention
-// since the server started.
-uint64_t GetTcmallocContentionMicros();
-
 // Register metrics in the given server entity which measure the amount of
 // spinlock contention.
 void RegisterSpinLockContentionMetrics(const scoped_refptr<MetricEntity>& entity);

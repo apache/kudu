@@ -38,7 +38,6 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/striped64.h"
 #include "kudu/util/trace.h"
-#include "kudu/util/trace_metrics.h"
 
 DEFINE_int32(lock_contention_trace_threshold_cycles,
              2000000, // 2M cycles should be about 1ms
@@ -50,12 +49,6 @@ TAG_FLAG(lock_contention_trace_threshold_cycles, hidden);
 METRIC_DEFINE_gauge_uint64(server, spinlock_contention_time,
     "Spinlock Contention Time", kudu::MetricUnit::kMicroseconds,
     "Amount of time consumed by contention on internal spinlocks since the server "
-    "started. If this increases rapidly, it may indicate a performance issue in Kudu "
-    "internals triggered by a particular workload and warrant investigation.",
-    kudu::EXPOSE_AS_COUNTER);
-METRIC_DEFINE_gauge_uint64(server, tcmalloc_contention_time,
-    "TCMalloc Contention Time", kudu::MetricUnit::kMicroseconds,
-    "Amount of time consumed by contention on tcmalloc's locks since the server "
     "started. If this increases rapidly, it may indicate a performance issue in Kudu "
     "internals triggered by a particular workload and warrant investigation.",
     kudu::EXPOSE_AS_COUNTER);
@@ -71,18 +64,6 @@ static const double kMicrosPerSecond = 1000000.0;
 static LongAdder* g_contended_cycles = nullptr;
 
 namespace {
-
-// We can't use LongAdder for tcmalloc contention, because its
-// implementation can allocate memory, and doing so is prohibited
-// in the tcmalloc contention callback.
-//
-// We pad and align this struct to two cachelines to avoid any false
-// sharing with the g_contended_cycles counter or any other globals.
-struct PaddedAtomic64 {
-  Atomic64 val;
-  char padding[CACHELINE_SIZE * 2 - sizeof(Atomic64)];
-} CACHELINE_ALIGNED;
-static PaddedAtomic64 g_tcmalloc_contention;
 
 // Implements a very simple linear-probing hashtable of stack traces with
 // a fixed number of entries.
@@ -291,21 +272,10 @@ void RegisterSpinLockContentionMetrics(const scoped_refptr<MetricEntity>& entity
   entity->NeverRetire(
       METRIC_spinlock_contention_time.InstantiateFunctionGauge(
           entity, Bind(&GetSpinLockContentionMicros)));
-  entity->NeverRetire(
-      METRIC_tcmalloc_contention_time.InstantiateFunctionGauge(
-          entity, Bind(&GetTcmallocContentionMicros)));
-
 }
 
 uint64_t GetSpinLockContentionMicros() {
   int64_t wait_cycles = DCHECK_NOTNULL(g_contended_cycles)->Value();
-  double micros = static_cast<double>(wait_cycles) / base::CyclesPerSecond()
-    * kMicrosPerSecond;
-  return implicit_cast<int64_t>(micros);
-}
-
-uint64_t GetTcmallocContentionMicros() {
-  int64_t wait_cycles = base::subtle::NoBarrier_Load(&g_tcmalloc_contention.val);
   double micros = static_cast<double>(wait_cycles) / base::CyclesPerSecond()
     * kMicrosPerSecond;
   return implicit_cast<int64_t>(micros);
@@ -335,20 +305,3 @@ void SubmitSpinLockProfileData(const void *contendedlock, int64_t wait_cycles) {
   kudu::SubmitSpinLockProfileData(contendedlock, wait_cycles);
 }
 } // namespace gutil
-
-// tcmalloc's internal spinlocks also support submitting contention metrics
-// using the base::SubmitSpinLockProfileData weak symbol. However, this function might be
-// called while tcmalloc's heap lock is held. Thus, we cannot allocate memory here or else
-// we risk a deadlock. So, this implementation just does the bare minimum to expose
-// tcmalloc contention.
-namespace base {
-void SubmitSpinLockProfileData(const void* /* contendedlock */, int64_t wait_cycles) {
-#if !defined(__APPLE__)
-  auto t = kudu::Trace::CurrentTrace();
-  if (t) {
-    t->metrics()->IncrementTcmallocContentionCycles(wait_cycles);
-  }
-#endif // !defined(__APPLE__)
-  base::subtle::NoBarrier_AtomicIncrement(&kudu::g_tcmalloc_contention.val, wait_cycles);
-}
-} // namespace base

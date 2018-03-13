@@ -40,6 +40,8 @@
 [[rn_1.7.0_obsoletions]]
 == Obsoletions
 
+* The `tcmalloc_contention_time` metric, which previously tracked the amount
+  of time spent in memory allocator lock contention, has been removed.
 
 [[rn_1.7.0_deprecations]]
 == Deprecations

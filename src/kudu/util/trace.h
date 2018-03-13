@@ -256,30 +256,10 @@ class ScopedAdoptTrace {
   }
 
   ~ScopedAdoptTrace() {
-    auto t = Trace::threadlocal_trace_;
-    Trace::threadlocal_trace_ = old_trace_;
-
-    // It's critical that we Release() the reference count on 't' only
-    // after we've unset the thread-local variable. Otherwise, we can hit
-    // a nasty interaction with tcmalloc contention profiling. Consider
-    // the following sequence:
-    //
-    //   1. threadlocal_trace_ has refcount = 1
-    //   2. we call threadlocal_trace_->Release() which decrements refcount to 0
-    //   3. this calls 'delete' on the Trace object
-    //   3a. this calls tcmalloc free() on the Trace and various sub-objects
-    //   3b. the free() calls may end up experiencing contention in tcmalloc
-    //   3c. we try to account the contention in threadlocal_trace_'s TraceMetrics,
-    //       but it has already been freed.
-    //
-    // In the best case, we just scribble into some free tcmalloc memory. In the
-    // worst case, tcmalloc would have already re-used this memory for a new
-    // allocation on another thread, and we end up overwriting someone else's memory.
-    //
-    // Waiting to Release() only after 'unpublishing' the trace solves this.
-    if (t) {
-      t->Release();
+    if (Trace::threadlocal_trace_) {
+      Trace::threadlocal_trace_->Release();
     }
+    Trace::threadlocal_trace_ = old_trace_;
     DFAKE_SCOPED_LOCK_THREAD_LOCKED(ctor_dtor_);
   }
 
