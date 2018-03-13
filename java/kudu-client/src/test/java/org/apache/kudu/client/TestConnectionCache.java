@@ -62,8 +62,10 @@ public class TestConnectionCache {
         pingConnection(h);
       }
 
-      // 1 tserver and 3 masters and 3 connections from the newRpcProxy() in the loop above.
-      assertEquals(1 + 3 + 3, client.getConnectionListCopy().size());
+      // 3 masters and 3 connections from the newRpcProxy() in the loop above.
+      // No tservers have been connected to by the client since we haven't accessed
+      // any data.
+      assertEquals(3 + 3, client.getConnectionListCopy().size());
       assertFalse(allConnectionsTerminated(client));
 
       final RpcProxy proxy = client.newRpcProxy(serverInfos.get(0));
