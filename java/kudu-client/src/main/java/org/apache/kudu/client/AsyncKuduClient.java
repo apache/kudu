@@ -1492,7 +1492,7 @@ public class AsyncKuduClient implements AutoCloseable {
    * We're in the context of decode() meaning we need to either callback or retry later.
    */
   <R> void handleTabletNotFound(final KuduRpc<R> rpc, KuduException ex, ServerInfo info) {
-    invalidateTabletCache(rpc.getTablet(), info);
+    invalidateTabletCache(rpc.getTablet(), info, ex.getMessage());
     handleRetryableError(rpc, ex);
   }
 
@@ -1581,9 +1581,11 @@ public class AsyncKuduClient implements AutoCloseable {
    * Remove the tablet server from the RemoteTablet's locations. Right now nothing is removing
    * the tablet itself from the caches.
    */
-  private void invalidateTabletCache(RemoteTablet tablet, ServerInfo info) {
+  private void invalidateTabletCache(RemoteTablet tablet, ServerInfo info,
+                                     String errorMessage) {
     final String uuid = info.getUuid();
-    LOG.info("Removing server {} from this tablet's cache {}", uuid, tablet.getTabletId());
+    LOG.info("Invalidating location {} for tablet {}: {}",
+             info, tablet.getTabletId(), errorMessage);
     tablet.removeTabletClient(uuid);
   }
 

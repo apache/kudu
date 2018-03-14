@@ -344,7 +344,7 @@ final class ConnectToCluster {
 
     @Override
     public Void call(Exception e) throws Exception {
-      LOG.warn("Error receiving response from {}", hostAndPort, e);
+      LOG.info("Unable to connect to master {}: {}", hostAndPort, e.getMessage());
       exceptionsReceived.add(e);
       incrementCountAndCheckExhausted();
       return null;

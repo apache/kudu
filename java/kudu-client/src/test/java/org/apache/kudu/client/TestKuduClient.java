@@ -842,6 +842,35 @@ public class TestKuduClient extends BaseKuduTest {
     assertFalse(cla.getAppendedText(), cla.getAppendedText().contains("Exception"));
   }
 
+  /**
+   * Test that, if the masters are down when we attempt to connect, we don't end up
+   * logging any nonsensical stack traces including Netty internals.
+   */
+  @Test(timeout = 100000)
+  public void testNoLogSpewOnConnectionRefused() throws Exception {
+    CapturingLogAppender cla = new CapturingLogAppender();
+    try (Closeable c = cla.attach()) {
+      miniCluster.killMasters();
+      try (KuduClient localClient = new KuduClient.KuduClientBuilder(masterAddresses).build()) {
+        // Force the client to connect to the masters.
+        localClient.exportAuthenticationCredentials();
+      } catch (NoLeaderFoundException e) {
+        assertTrue("Bad exception string: " + e.getMessage(),
+            e.getMessage().matches(".*Master config .+ has no leader. " +
+                "Exceptions received:.*Connection refused.*Connection refused" +
+                ".*Connection refused.*"));
+      }
+    } finally {
+      miniCluster.restartDeadMasters();
+    }
+    // Ensure there is no log spew due to an unexpected lost connection.
+    String logText = cla.getAppendedText();
+    assertFalse("Should not claim to have lost a connection in the log",
+               logText.contains("lost connection to peer"));
+    assertFalse("Should not have netty spew in log",
+                logText.contains("socket.nio.AbstractNioSelector"));
+  }
+
   @Test(timeout = 100000)
   public void testCustomNioExecutor() throws Exception {
     long startTime = System.nanoTime();
