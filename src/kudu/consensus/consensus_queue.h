@@ -57,6 +57,7 @@ class LogThrottler;
 namespace consensus {
 class ConsensusRequestPB;
 class ConsensusResponsePB;
+class ConsensusStatusPB;
 class PeerMessageQueueObserver;
 class TimeManager;
 class StartTabletCopyRequestPB;
@@ -286,7 +287,6 @@ class PeerMessageQueue {
                         PeerStatus ps,
                         const Status& status);
 
-
   // Updates the request queue with the latest response of a peer, returns
   // whether this peer has more requests pending.
   void ResponseFromPeer(const std::string& peer_uuid,
@@ -442,6 +442,16 @@ class PeerMessageQueue {
   // Update a peer's last_health_status field and trigger the appropriate
   // notifications.
   void UpdatePeerHealthUnlocked(TrackedPeer* peer);
+
+  // Update the peer's last exchange status, and other fields, based on the
+  // response.
+  void UpdateExchangeStatus(TrackedPeer* peer, const TrackedPeer& prev_peer_state,
+                            const ConsensusResponsePB& response, bool* lmp_mismatch);
+
+  // Check if the peer is a NON_VOTER candidate ready for promotion. If so,
+  // trigger promotion.
+  void PromoteIfNeeded(TrackedPeer* peer, const TrackedPeer& prev_peer_state,
+                       const ConsensusStatusPB& status);
 
   // Calculate a peer's up-to-date health status based on internal fields.
   static HealthReportPB::HealthStatus PeerHealthStatus(const TrackedPeer& peer);
