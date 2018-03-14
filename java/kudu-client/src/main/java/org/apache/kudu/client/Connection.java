@@ -17,6 +17,7 @@
 
 package org.apache.kudu.client;
 
+import java.net.ConnectException;
 import java.nio.channels.ClosedChannelException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -168,6 +169,11 @@ class Connection extends SimpleChannelUpstreamHandler {
   @GuardedBy("lock")
   private int nextCallId = 0;
 
+  @Nullable
+  @GuardedBy("lock")
+  /** The future for the connection attempt. Set only once connect() is called. */
+  private ChannelFuture connectFuture;
+
   /**
    * Create a new Connection object to the specified destination.
    *
@@ -249,9 +255,21 @@ class Connection extends SimpleChannelUpstreamHandler {
   /** {@inheritDoc} */
   @Override
   public void channelClosed(final ChannelHandlerContext ctx, final ChannelStateEvent e) {
+    String msg = "connection closed";
+    // Connection failures are reported as channelClosed() before exceptionCaught() is called.
+    // We can detect this case by looking at whether connectFuture has been marked complete
+    // and grabbing the exception from there.
+    lock.lock();
+    try {
+      if (connectFuture != null && connectFuture.getCause() != null) {
+        msg = connectFuture.getCause().getMessage();
+      }
+    } finally {
+      lock.unlock();
+    }
     // No need to call super.channelClosed(ctx, e) -- there should be nobody in the upstream
     // pipeline after Connection itself. So, just handle the close event ourselves.
-    cleanup(new RecoverableException(Status.NetworkError("connection closed")));
+    cleanup(new RecoverableException(Status.NetworkError(msg)));
   }
 
   /** {@inheritDoc} */
@@ -415,7 +433,11 @@ class Connection extends SimpleChannelUpstreamHandler {
           explicitlyDisconnected ? "%s disconnected from peer" : "%s lost connection to peer",
           getLogPrefix());
       error = new RecoverableException(Status.NetworkError(message), e);
-      LOG.info(message, e);
+      LOG.info(message);
+    } else if (e instanceof ConnectException) {
+      String message = "Failed to connect to peer " + serverInfo + ": " + e.getMessage();
+      error = new RecoverableException(Status.NetworkError(message), e);
+      LOG.info(message);
     } else if (e instanceof SSLException && explicitlyDisconnected) {
       // There's a race in Netty where, when we call Channel.close(), it tries
       // to send a TLS 'shutdown' message and enters a shutdown state. If another
@@ -703,7 +725,7 @@ class Connection extends SimpleChannelUpstreamHandler {
     Preconditions.checkState(lock.isHeldByCurrentThread());
     Preconditions.checkState(state == State.NEW);
     state = State.CONNECTING;
-    channel.connect(serverInfo.getResolvedAddress());
+    connectFuture = channel.connect(serverInfo.getResolvedAddress());
   }
 
   /** Enumeration to represent the internal state of the Connection object. */

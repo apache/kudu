@@ -20,16 +20,21 @@ import static org.apache.kudu.util.AssertHelpers.assertEventuallyTrue;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.util.List;
 import org.apache.kudu.util.AssertHelpers.BooleanExpression;
+import org.apache.kudu.util.CapturingLogAppender;
 import org.junit.After;
+import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
 import com.google.common.net.HostAndPort;
 
 public class TestClientFailoverSupport extends BaseKuduTest {
+  private CapturingLogAppender cla = new CapturingLogAppender();
+  private Closeable claAttach;
 
   enum MasterFailureType {
     RESTART,
@@ -42,10 +47,23 @@ public class TestClientFailoverSupport extends BaseKuduTest {
     BaseKuduTest.doSetup(3, NUM_TABLET_SERVERS);
   }
 
+  @Before
+  public void attachToLog() {
+    claAttach = cla.attach();
+  }
+
   @After
   public void restartKilledMaster() throws IOException {
     miniCluster.restartDeadMasters();
     miniCluster.restartDeadTservers();
+  }
+
+  @After
+  public void checkLogs() throws IOException {
+    claAttach.close();
+    String log = cla.getAppendedText();
+    assertFalse("Log should not contain Netty internals",
+        log.contains("socket.nio.AbstractNioSelector"));
   }
 
   private void waitUntilRowCount(final KuduTable table, final int rowCount, long timeoutMs)
