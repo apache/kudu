@@ -49,10 +49,12 @@ cdef dict _replica_selection_policies = {
 # Read mode enums
 READ_LATEST = ReadMode_Latest
 READ_AT_SNAPSHOT = ReadMode_Snapshot
+READ_YOUR_WRITES = ReadMode_ReadYourWrites
 
 cdef dict _read_modes = {
     'latest': ReadMode_Latest,
-    'snapshot': ReadMode_Snapshot
+    'snapshot': ReadMode_Snapshot,
+    'read_your_writes': ReadMode_ReadYourWrites
 }
 
 cdef dict _type_names = {
@@ -1557,8 +1559,9 @@ cdef class Scanner:
 
         Parameters
         ----------
-        read_mode : {'latest', 'snapshot'}
-          You can also use the constants READ_LATEST, READ_AT_SNAPSHOT
+        read_mode : {'latest', 'snapshot', 'read_your_writes'}
+          You can also use the constants READ_LATEST, READ_AT_SNAPSHOT,
+          READ_YOUR_WRITES
 
         Returns
         -------

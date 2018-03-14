@@ -193,8 +193,7 @@ class TestScanToken(TestScanBase):
 
     def test_read_mode(self):
         """
-        Test setting the read mode and scanning against a
-        snapshot and latest
+        Test scanning in latest, snapshot and read_your_writes read modes.
         """
         # Delete row
         self.delete_insert_row_for_read_test()
@@ -212,9 +211,21 @@ class TestScanToken(TestScanBase):
 
         self.assertEqual(sorted(self.tuples[1:]), sorted(tuples))
 
-        #Check scanner results after insterts
+        # Check scanner results after inserts with latest mode
         builder = self.table.scan_token_builder()
         tokens = builder.set_read_mode(kudu.READ_LATEST) \
+            .build()
+
+        tuples = []
+        for token in tokens:
+            scanner = self._subtest_open_and_confirm_leader_tserver(token)
+            tuples.extend(scanner.read_all_tuples())
+
+        self.assertEqual(sorted(self.tuples), sorted(tuples))
+
+        # Check scanner results after inserts with read_your_writes mode
+        builder = self.table.scan_token_builder()
+        tokens = builder.set_read_mode(kudu.READ_YOUR_WRITES)\
             .build()
 
         tuples = []

@@ -27,6 +27,7 @@ from kudu.client import (Client, Table, Scanner, Session,  # noqa
                          FLUSH_MANUAL,
                          READ_LATEST,
                          READ_AT_SNAPSHOT,
+                         READ_YOUR_WRITES,
                          EXCLUSIVE_BOUND,
                          INCLUSIVE_BOUND)
 

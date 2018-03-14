@@ -496,6 +496,7 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
     enum ReadMode" kudu::client::KuduScanner::ReadMode":
         ReadMode_Latest " kudu::client::KuduScanner::READ_LATEST"
         ReadMode_Snapshot " kudu::client::KuduScanner::READ_AT_SNAPSHOT"
+        ReadMode_ReadYourWrites " kudu::client::KuduScanner::READ_YOUR_WRITES"
 
     enum RangePartitionBound" kudu::client::KuduTableCreator::RangePartitionBound":
         PartitionType_Exclusive " kudu::client::KuduTableCreator::EXCLUSIVE_BOUND"
