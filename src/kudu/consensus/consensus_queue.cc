@@ -520,7 +520,8 @@ void PeerMessageQueue::UpdatePeerHealthUnlocked(TrackedPeer* peer) {
 
   // Prepare error messages for different conditions.
   string error_msg;
-  if (overall_health_status == HealthReportPB::FAILED) {
+  if (overall_health_status == HealthReportPB::FAILED ||
+      overall_health_status == HealthReportPB::FAILED_UNRECOVERABLE) {
     if (peer->last_exchange_status == PeerStatus::TABLET_FAILED) {
       error_msg = Substitute("The tablet replica hosted on peer $0 has failed", peer->uuid());
     } else if (!peer->wal_catchup_possible) {
@@ -541,7 +542,8 @@ void PeerMessageQueue::UpdatePeerHealthUnlocked(TrackedPeer* peer) {
 
   if (FLAGS_raft_prepare_replacement_before_eviction) {
     if (changed) {
-      if (overall_health_status == HealthReportPB::FAILED) {
+      if (overall_health_status == HealthReportPB::FAILED ||
+          overall_health_status == HealthReportPB::FAILED_UNRECOVERABLE) {
         // Only log when the status changes to FAILED.
         LOG_WITH_PREFIX_UNLOCKED(INFO) << error_msg;
       }
@@ -549,7 +551,8 @@ void PeerMessageQueue::UpdatePeerHealthUnlocked(TrackedPeer* peer) {
       NotifyObserversOfPeerHealthChange();
     }
   } else {
-    if (overall_health_status == HealthReportPB::FAILED &&
+    if ((overall_health_status == HealthReportPB::FAILED ||
+         overall_health_status == HealthReportPB::FAILED_UNRECOVERABLE) &&
         SafeToEvictUnlocked(peer->uuid())) {
       NotifyObserversOfFailedFollower(peer->uuid(), queue_state_.current_term, error_msg);
     }
@@ -563,14 +566,15 @@ HealthReportPB::HealthStatus PeerMessageQueue::PeerHealthStatus(const TrackedPee
     return HealthReportPB::FAILED;
   }
 
-  // Replicas that have fallen behind the leader's retained WAL are considered failed.
+  // Replicas that have fallen behind the leader's retained WAL are failed
+  // and have no chance to come back.
   if (!peer.wal_catchup_possible) {
-    return HealthReportPB::FAILED;
+    return HealthReportPB::FAILED_UNRECOVERABLE;
   }
 
   // Replicas returning TABLET_FAILED status are considered failed.
   if (peer.last_exchange_status == PeerStatus::TABLET_FAILED) {
-    return HealthReportPB::FAILED;
+    return HealthReportPB::FAILED_UNRECOVERABLE;
   }
 
   // The happy case: replicas returned OK during the recent exchange are considered healthy.

@@ -60,6 +60,7 @@
 #include "kudu/util/test_util.h"
 
 DECLARE_bool(allow_unsafe_replication_factor);
+DECLARE_bool(catalog_manager_evict_excess_replicas);
 DECLARE_bool(catalog_manager_wait_for_new_tablets_to_elect_leader);
 DECLARE_bool(enable_leader_failure_detection);
 DECLARE_bool(raft_prepare_replacement_before_eviction);
@@ -344,6 +345,7 @@ TEST_F(TsTabletManagerITest, ReportOnReplicaHealthStatus) {
 
   // This test is specific to the 3-4-3 replica management scheme.
   FLAGS_raft_prepare_replacement_before_eviction = true;
+  FLAGS_catalog_manager_evict_excess_replicas = false;
   {
     InternalMiniClusterOptions opts;
     opts.num_tablet_servers = kNumReplicas;
@@ -500,7 +502,7 @@ TEST_F(TsTabletManagerITest, ReportOnReplicaHealthStatus) {
       const auto& replica_uuid = e.first;
       SCOPED_TRACE("replica UUID: " + replica_uuid);
       if (replica_uuid == failed_replica_uuid) {
-        ASSERT_EQ(HealthReportPB::FAILED, e.second.overall_health());
+        ASSERT_EQ(HealthReportPB::FAILED_UNRECOVERABLE, e.second.overall_health());
       } else {
         ASSERT_EQ(HealthReportPB::HEALTHY, e.second.overall_health());
       }
@@ -522,7 +524,7 @@ TEST_F(TsTabletManagerITest, ReportOnReplicaHealthStatus) {
       ASSERT_TRUE(peer.has_health_report());
       const HealthReportPB& report(peer.health_report());
       if (uuid == failed_replica_uuid) {
-        EXPECT_EQ(HealthReportPB::FAILED, report.overall_health());
+        EXPECT_EQ(HealthReportPB::FAILED_UNRECOVERABLE, report.overall_health());
       } else {
         EXPECT_EQ(HealthReportPB::HEALTHY, report.overall_health());
       }

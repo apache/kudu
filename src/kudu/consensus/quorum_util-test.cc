@@ -48,7 +48,7 @@ constexpr auto MHP_H = MajorityHealthPolicy::HONOR; // NOLINT(readability-identi
 constexpr auto MHP_I = MajorityHealthPolicy::IGNORE;// NOLINT(readability-identifier-naming)
 
 // The various possible health statuses.
-constexpr auto kHealthStatuses = { '?', '-', '+' };
+constexpr auto kHealthStatuses = { '?', '-', 'x', '+' };
 
 typedef std::pair<string, bool> Attr;
 
@@ -60,6 +60,9 @@ static void SetOverallHealth(HealthReportPB* health_report,
       break;
     case '-':
       health_report->set_overall_health(HealthReportPB::FAILED);
+      break;
+    case 'x':
+      health_report->set_overall_health(HealthReportPB::FAILED_UNRECOVERABLE);
       break;
     case '?':
       health_report->set_overall_health(HealthReportPB::UNKNOWN);
@@ -362,6 +365,24 @@ TEST_P(QuorumUtilHealthPolicyParamTest, ShouldAddReplica) {
       EXPECT_TRUE(ShouldAddReplica(config, 4, policy));
     }
   }
+  for (auto health_status : { '-', 'x' }) {
+    SCOPED_TRACE(Substitute("health status '$0'", health_status));
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, health_status);
+    AddPeer(&config, "B", V, health_status);
+    AddPeer(&config, "C", V, health_status);
+    if (policy == MHP_H) {
+      // The configuration is under-replicated, but there are not enough healthy
+      // voters to commit the configuration change.
+      EXPECT_FALSE(ShouldAddReplica(config, 4, policy));
+      EXPECT_FALSE(ShouldAddReplica(config, 2, policy));
+      EXPECT_FALSE(ShouldAddReplica(config, 3, policy));
+    } else {
+      EXPECT_TRUE(ShouldAddReplica(config, 4, policy));
+      EXPECT_TRUE(ShouldAddReplica(config, 2, policy));
+      EXPECT_TRUE(ShouldAddReplica(config, 3, policy));
+    }
+  }
   {
     RaftConfigPB config;
     AddPeer(&config, "A", V, '?');
@@ -399,10 +420,11 @@ TEST_P(QuorumUtilHealthPolicyParamTest, ShouldAddReplica) {
       EXPECT_TRUE(ShouldAddReplica(config, 3, policy));
     }
   }
-  {
+  for (auto health_status : { '-', 'x' }) {
+    SCOPED_TRACE(Substitute("health status '$0'", health_status));
     RaftConfigPB config;
     AddPeer(&config, "A", V, '?');
-    AddPeer(&config, "B", V, '-');
+    AddPeer(&config, "B", V, health_status);
     AddPeer(&config, "C", N, '+');
     // The configuration is over-replicated already.
     EXPECT_FALSE(ShouldAddReplica(config, 1, policy));
@@ -415,10 +437,11 @@ TEST_P(QuorumUtilHealthPolicyParamTest, ShouldAddReplica) {
       EXPECT_TRUE(ShouldAddReplica(config, 3, policy));
     }
   }
-  {
+  for (auto health_status : { '-', 'x' }) {
+    SCOPED_TRACE(Substitute("health status '$0'", health_status));
     RaftConfigPB config;
     AddPeer(&config, "A", V, '?');
-    AddPeer(&config, "B", V, '-');
+    AddPeer(&config, "B", V, health_status);
     AddPeer(&config, "C", N, '+', {{"PROMOTE", true}});
     EXPECT_FALSE(ShouldAddReplica(config, 1, policy));
     EXPECT_FALSE(ShouldAddReplica(config, 2, policy));
@@ -430,11 +453,12 @@ TEST_P(QuorumUtilHealthPolicyParamTest, ShouldAddReplica) {
       EXPECT_TRUE(ShouldAddReplica(config, 3, policy));
     }
   }
-  {
+  for (auto health_status : { '-', 'x' }) {
+    SCOPED_TRACE(Substitute("health status '$0'", health_status));
     RaftConfigPB config;
     AddPeer(&config, "A", V, '?');
-    AddPeer(&config, "B", V, '-');
-    AddPeer(&config, "C", N, '-', {{"PROMOTE", true}});
+    AddPeer(&config, "B", V, health_status);
+    AddPeer(&config, "C", N, health_status, {{"PROMOTE", true}});
     EXPECT_FALSE(ShouldAddReplica(config, 1, policy));
     if (policy == MHP_H) {
       EXPECT_FALSE(ShouldAddReplica(config, 2, policy));
@@ -444,11 +468,12 @@ TEST_P(QuorumUtilHealthPolicyParamTest, ShouldAddReplica) {
       EXPECT_TRUE(ShouldAddReplica(config, 3, policy));
     }
   }
-  {
+  for (auto health_status : { '-', 'x' }) {
+    SCOPED_TRACE(Substitute("health status '$0'", health_status));
     RaftConfigPB config;
     AddPeer(&config, "A", V, '+');
     AddPeer(&config, "B", V, '+');
-    AddPeer(&config, "C", V, '-');
+    AddPeer(&config, "C", V, health_status);
     EXPECT_FALSE(ShouldAddReplica(config, 2, policy));
     EXPECT_TRUE(ShouldAddReplica(config, 3, policy));
   }
@@ -490,20 +515,22 @@ TEST_P(QuorumUtilHealthPolicyParamTest, ShouldAddReplica) {
     EXPECT_FALSE(ShouldAddReplica(config, 3, policy));
     EXPECT_FALSE(ShouldAddReplica(config, 2, policy));
   }
-  {
+  for (auto health_status : { '-', 'x' }) {
+    SCOPED_TRACE(Substitute("health status '$0'", health_status));
     RaftConfigPB config;
     AddPeer(&config, "A", V, '+');
     AddPeer(&config, "B", V, '+');
-    AddPeer(&config, "C", V, '-');
-    AddPeer(&config, "D", N, '-');
+    AddPeer(&config, "C", V, health_status);
+    AddPeer(&config, "D", N, health_status);
     EXPECT_FALSE(ShouldAddReplica(config, 2, policy));
     EXPECT_TRUE(ShouldAddReplica(config, 3, policy));
   }
-  {
+  for (auto health_status : { '-', 'x' }) {
+    SCOPED_TRACE(Substitute("health status '$0'", health_status));
     RaftConfigPB config;
     AddPeer(&config, "A", V, '+');
     AddPeer(&config, "B", V, '+');
-    AddPeer(&config, "C", V, '-');
+    AddPeer(&config, "C", V, health_status);
     AddPeer(&config, "D", N, '+');
     EXPECT_FALSE(ShouldAddReplica(config, 2, policy));
     // The non-voter replica does not have the PROMOTE attribute,
@@ -511,48 +538,53 @@ TEST_P(QuorumUtilHealthPolicyParamTest, ShouldAddReplica) {
     EXPECT_TRUE(ShouldAddReplica(config, 3, policy));
     EXPECT_TRUE(ShouldAddReplica(config, 4, policy));
   }
-  {
+  for (auto health_status : { '-', 'x' }) {
+    SCOPED_TRACE(Substitute("health status '$0'", health_status));
     RaftConfigPB config;
     AddPeer(&config, "A", V, '+');
     AddPeer(&config, "B", V, '+');
-    AddPeer(&config, "C", V, '-');
+    AddPeer(&config, "C", V, health_status);
     AddPeer(&config, "D", N, '+', {{"PROMOTE", true}});
     EXPECT_FALSE(ShouldAddReplica(config, 2, policy));
     EXPECT_FALSE(ShouldAddReplica(config, 3, policy));
     EXPECT_TRUE(ShouldAddReplica(config, 4, policy));
   }
-  {
+  for (auto health_status : { '-', 'x' }) {
+    SCOPED_TRACE(Substitute("health status '$0'", health_status));
     RaftConfigPB config;
     AddPeer(&config, "A", V, '+');
     AddPeer(&config, "B", V, '+');
-    AddPeer(&config, "C", V, '-');
-    AddPeer(&config, "D", N, '-', {{"PROMOTE", true}});
+    AddPeer(&config, "C", V, health_status);
+    AddPeer(&config, "D", N, health_status, {{"PROMOTE", true}});
     EXPECT_FALSE(ShouldAddReplica(config, 2, policy));
     EXPECT_TRUE(ShouldAddReplica(config, 3, policy));
   }
-  {
+  for (auto health_status : { '-', 'x' }) {
+    SCOPED_TRACE(Substitute("health status '$0'", health_status));
     RaftConfigPB config;
-    AddPeer(&config, "A", V, '-');
+    AddPeer(&config, "A", V, health_status);
     AddPeer(&config, "B", V, '+');
     AddPeer(&config, "C", V, '+');
-    AddPeer(&config, "D", N, '-', {{"PROMOTE", true}});
+    AddPeer(&config, "D", N, health_status, {{"PROMOTE", true}});
     AddPeer(&config, "E", N, '+', {{"PROMOTE", true}});
     EXPECT_FALSE(ShouldAddReplica(config, 3, policy));
   }
-  {
+  for (auto health_status : { '-', 'x' }) {
+    SCOPED_TRACE(Substitute("health status '$0'", health_status));
     RaftConfigPB config;
-    AddPeer(&config, "A", V, '-');
+    AddPeer(&config, "A", V, health_status);
     AddPeer(&config, "B", V, '+');
     AddPeer(&config, "C", V, '+');
-    AddPeer(&config, "D", N, '-', {{"PROMOTE", true}});
+    AddPeer(&config, "D", N, health_status, {{"PROMOTE", true}});
     AddPeer(&config, "E", N, '+', {{"PROMOTE", false}});
     EXPECT_TRUE(ShouldAddReplica(config, 3, policy));
   }
-  {
+  for (auto health_status : { '-', 'x' }) {
+    SCOPED_TRACE(Substitute("health status '$0'", health_status));
     RaftConfigPB config;
     AddPeer(&config, "A", V, '+');
-    AddPeer(&config, "B", V, '-');
-    AddPeer(&config, "C", V, '-');
+    AddPeer(&config, "B", V, health_status);
+    AddPeer(&config, "C", V, health_status);
     if (policy == MHP_H) {
       // If honoring the health of the replica's majority, the catalog manager
       // will not add a new non-voter replica until the situation is resolved.
@@ -561,12 +593,13 @@ TEST_P(QuorumUtilHealthPolicyParamTest, ShouldAddReplica) {
       EXPECT_TRUE(ShouldAddReplica(config, 3, policy));
     }
   }
-  {
+  for (auto health_status : { '-', 'x' }) {
+    SCOPED_TRACE(Substitute("health status '$0'", health_status));
     RaftConfigPB config;
     AddPeer(&config, "A", V, '+');
-    AddPeer(&config, "B", V, '-');
+    AddPeer(&config, "B", V, health_status);
     AddPeer(&config, "C", V, '+');
-    AddPeer(&config, "D", V, '-');
+    AddPeer(&config, "D", V, health_status);
     AddPeer(&config, "E", V, '+');
     EXPECT_FALSE(ShouldAddReplica(config, 3, policy));
     EXPECT_TRUE(ShouldAddReplica(config, 4, policy));
@@ -640,19 +673,26 @@ TEST(QuorumUtilTest, ShouldEvictReplicaVoters) {
     //   * failed & slated for replacement
     //   * failed
     //   * ...
-    if (health_status == '-') {
+    if (health_status == '-' || health_status == 'x') {
       EXPECT_EQ("D", to_evict);
     } else {
       EXPECT_EQ("C", to_evict);
     }
     ASSERT_TRUE(ShouldEvictReplica(config, "A", 3, MHP_H, &to_evict));
-    if (health_status == '-') {
+    if (health_status == '-' || health_status == 'x') {
       EXPECT_EQ("D", to_evict);
     } else {
       EXPECT_EQ("C", to_evict);
     }
-    // Since we are not over-replicated, we will not evict in this case.
-    EXPECT_FALSE(ShouldEvictReplica(config, "A", 4, MHP_H));
+    if (health_status == 'x') {
+      // Unrecoverably failed replica should be evicted even if the configuration
+      // is not over-replicated if it's safe to commit the configuration change.
+      ASSERT_TRUE(ShouldEvictReplica(config, "A", 4, MHP_H));
+      EXPECT_EQ("D", to_evict);
+    } else {
+      // Since we are not over-replicated, we will not evict in this case.
+      EXPECT_FALSE(ShouldEvictReplica(config, "A", 4, MHP_H));
+    }
   }
   {
     RaftConfigPB config;
@@ -684,6 +724,36 @@ TEST(QuorumUtilTest, ShouldEvictReplicaVoters) {
     ASSERT_TRUE(ShouldEvictReplica(config, "A", 3, MHP_H, &to_evict));
     EXPECT_EQ("B", to_evict);
   }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '+');
+    AddPeer(&config, "B", V, 'x');
+    AddPeer(&config, "C", V, '+');
+    string to_evict;
+    ASSERT_TRUE(ShouldEvictReplica(config, "A", 3, MHP_H, &to_evict));
+    EXPECT_EQ("B", to_evict);
+    ASSERT_TRUE(ShouldEvictReplica(config, "A", 2, MHP_H, &to_evict));
+    EXPECT_EQ("B", to_evict);
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '+');
+    AddPeer(&config, "B", V, '-');
+    AddPeer(&config, "C", V, 'x');
+
+    // No majority to commit the change.
+    EXPECT_FALSE(ShouldEvictReplica(config, "A", 3, MHP_H));
+    EXPECT_FALSE(ShouldEvictReplica(config, "A", 2, MHP_H));
+
+    // If ignoring the safety rules, it tries to evict even if the majority
+    // of replicas are not online. Among failed replicas, replicas failed
+    // irreverisbly are evicted first.
+    string to_evict;
+    ASSERT_TRUE(ShouldEvictReplica(config, "A", 3, MHP_I, &to_evict));
+    EXPECT_EQ("C", to_evict);
+    ASSERT_TRUE(ShouldEvictReplica(config, "A", 2, MHP_I, &to_evict));
+    EXPECT_EQ("C", to_evict);
+  }
 }
 
 // Verify logic of the kudu::consensus::ShouldEvictReplica(), anticipating
@@ -698,25 +768,32 @@ TEST_P(QuorumUtilHealthPolicyParamTest, ShouldEvictReplicaVoters) {
     EXPECT_FALSE(ShouldEvictReplica(config, "", 2, policy));
     EXPECT_FALSE(ShouldEvictReplica(config, "", 3, policy));
   }
-  {
+  for (auto health_status : { '-', 'x' }) {
+    SCOPED_TRACE(Substitute("health status '$0'", health_status));
     RaftConfigPB config;
     AddPeer(&config, "A", V, '?');
     AddPeer(&config, "B", V, '?');
-    AddPeer(&config, "C", V, '-');
+    AddPeer(&config, "C", V, health_status);
     EXPECT_FALSE(ShouldEvictReplica(config, "", 3, policy));
     EXPECT_FALSE(ShouldEvictReplica(config, "", 2, policy));
   }
-  {
+  for (auto health_status : { '-', 'x' }) {
+    SCOPED_TRACE(Substitute("health status '$0'", health_status));
     RaftConfigPB config;
     AddPeer(&config, "A", V, '+');
     AddPeer(&config, "B", V, '+');
-    AddPeer(&config, "C", V, '-');
+    AddPeer(&config, "C", V, health_status);
     string to_evict;
     ASSERT_TRUE(ShouldEvictReplica(config, "A", 1, policy, &to_evict));
     EXPECT_EQ("C", to_evict);
     ASSERT_TRUE(ShouldEvictReplica(config, "A", 2, policy));
     EXPECT_EQ("C", to_evict);
-    EXPECT_FALSE(ShouldEvictReplica(config, "A", 3, policy));
+    if (health_status == '-') {
+      EXPECT_FALSE(ShouldEvictReplica(config, "A", 3, policy));
+    } else {
+      ASSERT_TRUE(ShouldEvictReplica(config, "A", 3, policy, &to_evict));
+      EXPECT_EQ("C", to_evict);
+    }
   }
   {
     RaftConfigPB config;
@@ -724,6 +801,19 @@ TEST_P(QuorumUtilHealthPolicyParamTest, ShouldEvictReplicaVoters) {
     AddPeer(&config, "B", V, '-');
     AddPeer(&config, "C", V, '+');
     EXPECT_FALSE(ShouldEvictReplica(config, "C", 3, policy));
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '+');
+    AddPeer(&config, "B", V, '?');
+    AddPeer(&config, "C", V, 'x');
+    if (policy == MHP_H) {
+      EXPECT_FALSE(ShouldEvictReplica(config, "A", 3, policy));
+    } else {
+      string to_evict;
+      ASSERT_TRUE(ShouldEvictReplica(config, "A", 3, policy, &to_evict));
+      EXPECT_EQ("C", to_evict);
+    }
   }
 }
 
@@ -871,6 +961,42 @@ TEST_P(QuorumUtilHealthPolicyParamTest, ShouldEvictReplicaNonVoters) {
     EXPECT_FALSE(ShouldEvictReplica(config, "B", 3, policy));
     EXPECT_FALSE(ShouldEvictReplica(config, "B", 4, policy));
   }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '-');
+    AddPeer(&config, "B", V, '+');
+    AddPeer(&config, "C", V, '+');
+    AddPeer(&config, "D", N, 'x', {{"PROMOTE", true}});
+    string to_evict;
+    ASSERT_TRUE(ShouldEvictReplica(config, "B", 3, policy, &to_evict));
+    EXPECT_EQ("D", to_evict);
+    ASSERT_TRUE(ShouldEvictReplica(config, "B", 4, policy, &to_evict));
+    EXPECT_EQ("D", to_evict);
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, 'x');
+    AddPeer(&config, "B", V, '+');
+    AddPeer(&config, "C", V, '+');
+    AddPeer(&config, "D", N, 'x');
+    string to_evict;
+    ASSERT_TRUE(ShouldEvictReplica(config, "B", 3, policy, &to_evict));
+    EXPECT_EQ("D", to_evict);
+    ASSERT_TRUE(ShouldEvictReplica(config, "B", 4, policy, &to_evict));
+    EXPECT_EQ("D", to_evict);
+  }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, 'x');
+    AddPeer(&config, "B", V, '+');
+    AddPeer(&config, "C", V, '+');
+    AddPeer(&config, "D", N, '-');
+    string to_evict;
+    ASSERT_TRUE(ShouldEvictReplica(config, "B", 3, policy, &to_evict));
+    EXPECT_EQ("A", to_evict);
+    ASSERT_TRUE(ShouldEvictReplica(config, "B", 4, policy, &to_evict));
+    EXPECT_EQ("A", to_evict);
+  }
 }
 
 TEST_P(QuorumUtilHealthPolicyParamTest, DontEvictLeader) {
@@ -945,7 +1071,7 @@ TEST_P(QuorumUtilHealthPolicyParamTest, ReplaceAttributeBasic) {
     EXPECT_FALSE(ShouldEvictReplica(config, "A", 3, policy));
     EXPECT_FALSE(ShouldAddReplica(config, 3, policy));
   }
-  for (auto health_status : { '-', '?' }) {
+  for (auto health_status : { '-', '?', 'x' }) {
     RaftConfigPB config;
     AddPeer(&config, "A", V, health_status, {{"REPLACE", true}});
     AddPeer(&config, "B", V, '+');
@@ -995,7 +1121,7 @@ TEST_P(QuorumUtilHealthPolicyParamTest, ReplaceAttributeBasic) {
     }
     EXPECT_TRUE(ShouldAddReplica(config, 3, policy));
   }
-  for (auto health_status : { '?', '-' }) {
+  for (auto health_status : { '?', '-', 'x' }) {
     RaftConfigPB config;
     AddPeer(&config, "A", V, health_status, {{"REPLACE", true}});
     AddPeer(&config, "B", V, '+', {{"REPLACE", true}});
@@ -1030,7 +1156,7 @@ TEST_P(QuorumUtilHealthPolicyParamTest, ReplaceAttributeBasic) {
     EXPECT_FALSE(ShouldEvictReplica(config, "B", 3, policy));
     EXPECT_TRUE(ShouldAddReplica(config, 3, policy));
   }
-  for (auto health_status : { '?', '-' }) {
+  for (auto health_status : { '?', '-', 'x' }) {
     RaftConfigPB config;
     AddPeer(&config, "A", V, '+', {{"REPLACE", true}});
     AddPeer(&config, "B", V, '+', {{"REPLACE", true}});
@@ -1307,6 +1433,94 @@ TEST(QuorumUtilTest, ShouldEvictReplicaNonVoters) {
   // failed non-voter replica C.
   ASSERT_TRUE(ShouldEvictReplica(config, "A", 1, MHP_H, &to_evict));
   EXPECT_EQ("C", to_evict);
+}
+
+// A scenario of replica replacement where replicas fall behind the log segment
+// GC threshold and are replaced accordingly. This scenario is written to
+// address scenarios like of KUDU-2342.
+TEST(QuorumUtilTest, NewlyAddedNonVoterFallsBehindLogGC) {
+  constexpr auto kReplicationFactor = 3;
+  constexpr auto kPolicy = MajorityHealthPolicy::HONOR;
+
+  RaftConfigPB config;
+  AddPeer(&config, "A", V, '+');
+  AddPeer(&config, "B", V, '+');
+  AddPeer(&config, "C", V, '+');
+
+  EXPECT_FALSE(ShouldEvictReplica(config, "A", kReplicationFactor, kPolicy));
+  EXPECT_FALSE(ShouldAddReplica(config, kReplicationFactor, kPolicy));
+
+  // Replica B falls behind the log segment GC threshold. Since this is an
+  // irreverisble failure, system tries to evict the replica right away.
+  SetPeerHealth(&config, "B", 'x');
+  string to_evict;
+  ASSERT_TRUE(ShouldEvictReplica(config, "A", kReplicationFactor, kPolicy, &to_evict));
+  EXPECT_EQ("B", to_evict);
+
+  RemovePeer(&config, to_evict);
+  EXPECT_FALSE(ShouldEvictReplica(config, "A", kReplicationFactor, kPolicy));
+  EXPECT_TRUE(ShouldAddReplica(config, kReplicationFactor, kPolicy));
+
+  // Adding a non-voter to replace B.
+  AddPeer(&config, "D", N, '?', {{"PROMOTE", true}});
+  EXPECT_FALSE(ShouldEvictReplica(config, "A", kReplicationFactor, kPolicy));
+  EXPECT_FALSE(ShouldAddReplica(config, kReplicationFactor, kPolicy));
+
+  // The new non-voter replica becomes healthy.
+  SetPeerHealth(&config, "D", '+');
+  EXPECT_FALSE(ShouldEvictReplica(config, "A", kReplicationFactor, kPolicy));
+  EXPECT_FALSE(ShouldAddReplica(config, kReplicationFactor, kPolicy));
+
+  // The new non-voter replica falls behind the log segment GC threshold. The
+  // system should evict it before trying to add a replacement replica.
+  SetPeerHealth(&config, "D", 'x');
+  ASSERT_TRUE(ShouldEvictReplica(config, "A", kReplicationFactor, kPolicy, &to_evict));
+  EXPECT_EQ("D", to_evict);
+  RemovePeer(&config, to_evict);
+
+  // A new non-voter replica is needed.
+  EXPECT_FALSE(ShouldEvictReplica(config, "A", kReplicationFactor, kPolicy));
+  EXPECT_TRUE(ShouldAddReplica(config, kReplicationFactor, kPolicy));
+
+  // Adding a non-voter to replace D.
+  AddPeer(&config, "E", N, '?', {{"PROMOTE", true}});
+  EXPECT_FALSE(ShouldEvictReplica(config, "A", kReplicationFactor, kPolicy));
+  EXPECT_FALSE(ShouldAddReplica(config, kReplicationFactor, kPolicy));
+
+  // The new non-voter replica 'E' becomes healthy.
+  SetPeerHealth(&config, "E", '+');
+  EXPECT_FALSE(ShouldEvictReplica(config, "A", kReplicationFactor, kPolicy));
+  EXPECT_FALSE(ShouldAddReplica(config, kReplicationFactor, kPolicy));
+
+  // The newly added replica gets promoted to voter.
+  PromotePeer(&config, "E");
+  EXPECT_FALSE(ShouldEvictReplica(config, "A", kReplicationFactor, kPolicy));
+  EXPECT_FALSE(ShouldAddReplica(config, kReplicationFactor, kPolicy));
+
+  // The new voter replica E falls behind the log segment GC threshold. The
+  // replica should be evicted.
+  SetPeerHealth(&config, "E", 'x');
+  ASSERT_TRUE(ShouldEvictReplica(config, "A", kReplicationFactor, kPolicy, &to_evict));
+  EXPECT_EQ("E", to_evict);
+
+  RemovePeer(&config, to_evict);
+  EXPECT_FALSE(ShouldEvictReplica(config, "A", kReplicationFactor, kPolicy));
+  EXPECT_TRUE(ShouldAddReplica(config, kReplicationFactor, kPolicy));
+
+  // The system should add a replacement for the evicted replica.
+  AddPeer(&config, "F", N, '?', {{"PROMOTE", true}});
+  EXPECT_FALSE(ShouldEvictReplica(config, "A", kReplicationFactor, kPolicy));
+  EXPECT_FALSE(ShouldAddReplica(config, kReplicationFactor, kPolicy));
+
+  // The new non-voter replica 'F' becomes healthy.
+  SetPeerHealth(&config, "F", '+');
+  EXPECT_FALSE(ShouldEvictReplica(config, "A", kReplicationFactor, kPolicy));
+  EXPECT_FALSE(ShouldAddReplica(config, kReplicationFactor, kPolicy));
+
+  // The newly added replica 'F' gets promoted to voter, all is well now.
+  PromotePeer(&config, "F");
+  EXPECT_FALSE(ShouldEvictReplica(config, "A", kReplicationFactor, kPolicy));
+  EXPECT_FALSE(ShouldAddReplica(config, kReplicationFactor, kPolicy));
 }
 
 // A scenario of replica replacement where the replica added for replacement
