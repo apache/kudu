@@ -40,9 +40,20 @@ message RaftPeerAttrsPB {
 // Report on a replica's (peer's) health.
 message HealthReportPB {
   enum HealthStatus {
-    UNKNOWN = 999;  // No information on the health status.
-    FAILED = 0;     // Replica has failed and needs replacement.
-    HEALTHY = 1;    // Replica is functioning properly.
+    // No information on the health status.
+    UNKNOWN = 999;
+
+    // Replica has failed and needs replacement. The failure might be a
+    // transient one, so replica may return to a healthy state soon.
+    FAILED = 0;
+
+    // Replica is functioning properly.
+    HEALTHY = 1;
+
+    // Replica has failed in an irreversible and unrecoverable way and needs
+    // replacement. The failure is permanent and the replica definitely cannot
+    // return to a healthy state.
+    FAILED_UNRECOVERABLE = 2;
   }
 
   // Overall health status of a replica. Reflects at least the responsiveness
