@@ -182,8 +182,7 @@ class TestScanner(TestScanBase):
 
     def test_read_mode(self):
         """
-        Test setting the read mode and scanning against a
-        snapshot and latest
+        Test scanning in latest, snapshot and read_your_writes read modes.
         """
         # Delete row
         self.delete_insert_row_for_read_test()
@@ -196,7 +195,7 @@ class TestScanner(TestScanBase):
 
         self.assertEqual(sorted(self.tuples[1:]), sorted(scanner.read_all_tuples()))
 
-        #Check scanner results after delete
+        # Check scanner results after delete with latest mode
         timeout = time.time() + 10
         check_tuples = []
         while check_tuples != sorted(self.tuples):
@@ -210,6 +209,13 @@ class TestScanner(TestScanBase):
             check_tuples = sorted(scanner.read_all_tuples())
             # Avoid tight looping
             time.sleep(0.05)
+
+        # Check scanner results after delete with read_your_writes mode
+        scanner = self.table.scanner()
+        scanner.set_read_mode('read_your_writes')\
+            .open()
+
+        self.assertEqual(sorted(self.tuples), sorted(scanner.read_all_tuples()))
 
     def test_resource_metrics_and_cache_blocks(self):
         """
