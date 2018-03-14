@@ -18,6 +18,7 @@
 package org.apache.kudu.client;
 
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -34,7 +35,7 @@ import org.apache.kudu.util.NetUtil;
 public class ServerInfo {
   private final String uuid;
   private final HostAndPort hostPort;
-  private final InetAddress resolvedAddr;
+  private final InetSocketAddress resolvedAddr;
   private final boolean local;
   private static final ConcurrentHashMap<InetAddress, Boolean> isLocalAddressCache =
       new ConcurrentHashMap<>();
@@ -48,9 +49,10 @@ public class ServerInfo {
    */
   public ServerInfo(String uuid, HostAndPort hostPort, InetAddress resolvedAddr) {
     Preconditions.checkNotNull(uuid);
+    Preconditions.checkArgument(hostPort.getPort() > 0);
     this.uuid = uuid;
     this.hostPort = hostPort;
-    this.resolvedAddr = resolvedAddr;
+    this.resolvedAddr = new InetSocketAddress(resolvedAddr, hostPort.getPort());
     Boolean isLocal = isLocalAddressCache.get(resolvedAddr);
     if (isLocal == null) {
       isLocal = NetUtil.isLocalAddress(resolvedAddr);
@@ -98,7 +100,12 @@ public class ServerInfo {
   /**
    * @return the cached resolved address for this server
    */
-  public InetAddress getResolvedAddress() {
+  public InetSocketAddress getResolvedAddress() {
     return resolvedAddr;
+  }
+
+  @Override
+  public String toString() {
+    return uuid + "(" + hostPort + ")";
   }
 }

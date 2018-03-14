@@ -22,9 +22,6 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertTrue;
 
-import java.util.List;
-
-import com.google.common.collect.Lists;
 import com.google.common.net.HostAndPort;
 import com.stumbleupon.async.Deferred;
 import org.junit.Test;
@@ -41,34 +38,23 @@ public class TestConnectionCache {
 
       final AsyncKuduClient client =
           new AsyncKuduClient.AsyncKuduClientBuilder(cluster.getMasterAddresses()).build();
-      final List<HostAndPort> addresses = cluster.getMasterHostPorts();
-
       // Below we ping the masters directly using RpcProxy, so if they aren't ready to process
       // RPCs we'll get an error. Here by listing the tables we make sure this won't happen since
       // it won't return until a master leader is found.
       client.getTablesList().join();
 
-      final List<ServerInfo> serverInfos = Lists.newArrayList();
-      int i = 0;
-      for (HostAndPort hp : addresses) {
-        serverInfos.add(new ServerInfo("" + i, hp, NetUtil.getInetAddress(hp.getHost())));
-        ++i;
-      }
+      HostAndPort masterHostPort = cluster.getMasterHostPorts().get(0);
+      ServerInfo firstMaster = new ServerInfo("fake-uuid", masterHostPort,
+          NetUtil.getInetAddress(masterHostPort.getHost()));
 
-      // Ping the process so we go through the whole connection process.
-      for (ServerInfo si : serverInfos) {
-        final RpcProxy h = client.newRpcProxy(si);
-        assertNotNull(h.getConnection());
-        pingConnection(h);
-      }
-
-      // 3 masters and 3 connections from the newRpcProxy() in the loop above.
+      // 3 masters in the cluster. Connections should have been cached since we forced
+      // a cluster connection above.
       // No tservers have been connected to by the client since we haven't accessed
       // any data.
-      assertEquals(3 + 3, client.getConnectionListCopy().size());
+      assertEquals(3, client.getConnectionListCopy().size());
       assertFalse(allConnectionsTerminated(client));
 
-      final RpcProxy proxy = client.newRpcProxy(serverInfos.get(0));
+      final RpcProxy proxy = client.newRpcProxy(firstMaster);
 
       // Disconnect from the server.
       proxy.getConnection().disconnect().awaitUninterruptibly();
@@ -80,7 +66,7 @@ public class TestConnectionCache {
       assertFalse(allConnectionsTerminated(client));
 
       // For a new RpcProxy instance, a new connection to the same destination is established.
-      final RpcProxy newHelper = client.newRpcProxy(serverInfos.get(0));
+      final RpcProxy newHelper = client.newRpcProxy(firstMaster);
       final Connection newConnection = newHelper.getConnection();
       assertNotNull(newConnection);
       assertNotSame(proxy.getConnection(), newConnection);

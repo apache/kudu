@@ -29,8 +29,10 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import javax.annotation.concurrent.GuardedBy;
 import javax.annotation.concurrent.ThreadSafe;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.MoreObjects;
 import com.google.common.base.Preconditions;
+import com.google.common.base.Ticker;
 import com.google.common.primitives.UnsignedBytes;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.slf4j.Logger;
@@ -50,6 +52,9 @@ class TableLocationsCache {
 
   @GuardedBy("rwl")
   private final NavigableMap<byte[], Entry> entries = new TreeMap<>(COMPARATOR);
+
+  @VisibleForTesting
+  static Ticker ticker = Ticker.systemTicker();
 
   public Entry get(byte[] partitionKey) {
 
@@ -97,7 +102,7 @@ class TableLocationsCache {
                                    byte[] requestPartitionKey,
                                    int requestedBatchSize,
                                    long ttl) {
-    long deadline = System.nanoTime() + ttl * TimeUnit.MILLISECONDS.toNanos(1);
+    long deadline = ticker.read() + ttl * TimeUnit.MILLISECONDS.toNanos(1);
     if (requestPartitionKey == null) {
       // Master lookup.
       Preconditions.checkArgument(tablets.size() == 1);
@@ -290,7 +295,7 @@ class TableLocationsCache {
     }
 
     private long ttl() {
-      return TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime());
+      return TimeUnit.NANOSECONDS.toMillis(deadline - ticker.read());
     }
 
     public boolean isStale() {
@@ -299,20 +304,13 @@ class TableLocationsCache {
 
     @Override
     public String toString() {
-      if (isNonCoveredRange()) {
-        return MoreObjects.toStringHelper("NonCoveredRange")
-                          .add("lowerBoundPartitionKey", Bytes.hex(lowerBoundPartitionKey))
-                          .add("upperBoundPartitionKey", Bytes.hex(upperBoundPartitionKey))
-                          .add("ttl", ttl())
-                          .toString();
-      } else {
-        return MoreObjects.toStringHelper("Tablet")
-                          .add("lowerBoundPartitionKey", Bytes.hex(getLowerBoundPartitionKey()))
-                          .add("upperBoundPartitionKey", Bytes.hex(getUpperBoundPartitionKey()))
-                          .add("tablet-id", tablet.getTabletId())
-                          .add("ttl", ttl())
-                          .toString();
-      }
+      return MoreObjects.toStringHelper(isNonCoveredRange() ? "NonCoveredRange" : "Tablet")
+                        .omitNullValues()
+                        .add("lowerBoundPartitionKey", Bytes.hex(getLowerBoundPartitionKey()))
+                        .add("upperBoundPartitionKey", Bytes.hex(getUpperBoundPartitionKey()))
+                        .add("ttl", ttl())
+                        .add("tablet", tablet)
+                        .toString();
     }
   }
 }

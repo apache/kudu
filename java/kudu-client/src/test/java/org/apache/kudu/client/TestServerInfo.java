@@ -28,7 +28,7 @@ public class TestServerInfo {
   @Test(timeout = 500)
   public void testConstructorNotSlow() throws Exception {
     String uuid = "nevermind";
-    HostAndPort hap = HostAndPort.fromString("nevermind");
+    HostAndPort hap = HostAndPort.fromString("nevermind:12345");
     // ip to force NetworkInterface.getByInetAddress call
     InetAddress ia = InetAddress.getByName("8.8.8.8");
     for (int i = 0; i < 100; ++i) {
@@ -45,7 +45,7 @@ public class TestServerInfo {
 
     ServerInfo serverInfo = new ServerInfo(
         "nevermind",
-        HostAndPort.fromHost("master2.example.com"),
+        HostAndPort.fromParts("master2.example.com", 12345),
         InetAddress.getByName("10.1.2.3"));
 
     Assert.assertEquals("master2.example.com", serverInfo.getAndCanonicalizeHostname());
@@ -60,11 +60,12 @@ public class TestServerInfo {
     installFakeDNS("master1.example.com", "server123.example.com", "10.1.2.3");
 
     ServerInfo serverInfo = new ServerInfo(
-        "nevermind",
-        HostAndPort.fromHost("master1.example.com"),
+        "abcdef", // uuid
+        HostAndPort.fromParts("master1.example.com", 12345),
         InetAddress.getByName("10.1.2.3"));
 
     Assert.assertEquals("server123.example.com", serverInfo.getAndCanonicalizeHostname());
+    Assert.assertEquals("abcdef(master1.example.com:12345)",  serverInfo.toString());
   }
 
   /**
