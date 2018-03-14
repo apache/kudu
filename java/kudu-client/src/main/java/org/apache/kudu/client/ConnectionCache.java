@@ -17,6 +17,7 @@
 
 package org.apache.kudu.client;
 
+import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -40,7 +41,7 @@ import org.jboss.netty.util.HashedWheelTimer;
  * <p>
  * Disconnected instances of the {@link Connection} class are replaced in the cache with new ones
  * when {@link #getConnection(ServerInfo, Connection.CredentialsPolicy)} method is called with the
- * same destination and matching credentials policy. Since the map is keyed by the UUID of the
+ * same destination and matching credentials policy. Since the map is keyed by the address of the
  * target server, the theoretical maximum number of elements in the cache is twice the number of
  * all servers in the cluster (i.e. both masters and tablet servers). However, in practice it's
  * 2 * number of masters + number of tablet servers since tablet servers do not require connections
@@ -65,15 +66,13 @@ class ConnectionCache {
   private final ClientSocketChannelFactory channelFactory;
 
   /**
-   * Container mapping server UUID into the established connection from the client to the server.
-   * It may be up to two connections per server: one established with secondary credentials
-   * (e.g. authn token), another with primary ones (e.g. Kerberos credentials).
-   *
-   * TODO(todd) it would make more sense to key this by IP address rather than by UUID in
-   * case a server actually changes address and re-registers to the cluster.
+   * Container mapping server IP/port into the established connection from the client to the
+   * server. It may be up to two connections per server: one established with secondary
+   * credentials (e.g. authn token), another with primary ones (e.g. Kerberos credentials).
    */
-  @GuardedBy("uuid2connection")
-  private final HashMultimap<String, Connection> uuid2connection = HashMultimap.create();
+  @GuardedBy("connsByAddress")
+  private final HashMultimap<InetSocketAddress, Connection> connsByAddress =
+      HashMultimap.create();
 
   /** Create a new empty ConnectionCache given the specified parameters. */
   ConnectionCache(SecurityContext securityContext,
@@ -98,7 +97,7 @@ class ConnectionCache {
   public Connection getConnection(final ServerInfo serverInfo,
                                   Connection.CredentialsPolicy credentialsPolicy) {
     Connection result = null;
-    synchronized (uuid2connection) {
+    synchronized (connsByAddress) {
       // Create and register a new connection object into the cache if one of the following is true:
       //
       //  * There isn't a registered connection to the specified destination.
@@ -115,7 +114,7 @@ class ConnectionCache {
       //    special to the old connection to shut it down since it may be still in use. We rely
       //    on the server to close inactive connections in accordance with their TTL settings.
       //
-      final Set<Connection> connections = uuid2connection.get(serverInfo.getUuid());
+      final Set<Connection> connections = connsByAddress.get(serverInfo.getResolvedAddress());
       Iterator<Connection> it = connections.iterator();
       while (it.hasNext()) {
         Connection c = it.next();
@@ -147,9 +146,9 @@ class ConnectionCache {
 
   /** Asynchronously terminate every connection. This cancels all the pending and in-flight RPCs. */
   Deferred<ArrayList<Void>> disconnectEverything() {
-    synchronized (uuid2connection) {
-      List<Deferred<Void>> deferreds = new ArrayList<>(uuid2connection.size());
-      for (Connection c : uuid2connection.values()) {
+    synchronized (connsByAddress) {
+      List<Deferred<Void>> deferreds = new ArrayList<>(connsByAddress.size());
+      for (Connection c : connsByAddress.values()) {
         deferreds.add(c.shutdown());
       }
       return Deferred.group(deferreds);
@@ -165,8 +164,8 @@ class ConnectionCache {
    */
   @VisibleForTesting
   List<Connection> getConnectionListCopy() {
-    synchronized (uuid2connection) {
-      return ImmutableList.copyOf(uuid2connection.values());
+    synchronized (connsByAddress) {
+      return ImmutableList.copyOf(connsByAddress.values());
     }
   }
 }

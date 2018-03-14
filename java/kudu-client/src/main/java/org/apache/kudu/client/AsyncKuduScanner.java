@@ -473,7 +473,7 @@ public final class AsyncKuduScanner {
             sequenceId = 0;
             return nextRows();
           } else {
-            LOG.warn("Can not open scanner", e);
+            LOG.debug("Can not open scanner", e);
             // Don't let the scanner think it's opened on this tablet.
             return Deferred.fromError(e); // Let the error propogate.
           }

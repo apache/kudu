@@ -35,33 +35,34 @@ import org.apache.kudu.consensus.Metadata;
 import org.apache.kudu.master.Master;
 
 public class TestRemoteTablet {
+  private static final String[] kUuids = { "uuid-0", "uuid-1", "uuid-2" };
 
   @Test
   public void testLeaderLastRemovedLast() {
     RemoteTablet tablet = getTablet(2);
 
     // Demote the wrong leader, no-op.
-    assertEquals("2", tablet.getLeaderServerInfo().getUuid());
-    tablet.demoteLeader("1");
-    assertEquals("2", tablet.getLeaderServerInfo().getUuid());
+    assertEquals(kUuids[2], tablet.getLeaderServerInfo().getUuid());
+    tablet.demoteLeader(kUuids[1]);
+    assertEquals(kUuids[2], tablet.getLeaderServerInfo().getUuid());
 
     // Tablet at server 1 was deleted.
-    assertTrue(tablet.removeTabletClient("1"));
-    assertEquals("2", tablet.getLeaderServerInfo().getUuid());
+    assertTrue(tablet.removeTabletClient(kUuids[1]));
+    assertEquals(kUuids[2], tablet.getLeaderServerInfo().getUuid());
 
     // Simulate another thread trying to remove 1.
-    assertFalse(tablet.removeTabletClient("1"));
+    assertFalse(tablet.removeTabletClient(kUuids[1]));
 
     // Tablet at server 0 was deleted.
-    assertTrue(tablet.removeTabletClient("0"));
-    assertEquals("2", tablet.getLeaderServerInfo().getUuid());
+    assertTrue(tablet.removeTabletClient(kUuids[0]));
+    assertEquals(kUuids[2], tablet.getLeaderServerInfo().getUuid());
 
     // Leader was demoted.
-    tablet.demoteLeader("2");
+    tablet.demoteLeader(kUuids[2]);
     assertNull(tablet.getLeaderServerInfo());
 
     // Simulate another thread doing the same.
-    tablet.demoteLeader("2");
+    tablet.demoteLeader(kUuids[2]);
     assertNull(tablet.getLeaderServerInfo());
   }
 
@@ -70,11 +71,11 @@ public class TestRemoteTablet {
     RemoteTablet tablet = getTablet(2);
 
     // Test we can remove it.
-    assertTrue(tablet.removeTabletClient("2"));
+    assertTrue(tablet.removeTabletClient("uuid-2"));
     assertNull(tablet.getLeaderServerInfo());
 
     // Test demoting it doesn't break anything.
-    tablet.demoteLeader("2");
+    tablet.demoteLeader("uuid-2");
     assertNull(tablet.getLeaderServerInfo());
   }
 
@@ -83,22 +84,22 @@ public class TestRemoteTablet {
     RemoteTablet tablet = getTablet(0);
 
     // Test we can remove it.
-    assertTrue(tablet.removeTabletClient("0"));
+    assertTrue(tablet.removeTabletClient("uuid-0"));
     assertNull(tablet.getLeaderServerInfo());
 
     // Test demoting it doesn't break anything.
-    tablet.demoteLeader("0");
+    tablet.demoteLeader("uuid-0");
     assertNull(tablet.getLeaderServerInfo());
 
     // Test removing a server with no leader doesn't break.
-    assertTrue(tablet.removeTabletClient("2"));
+    assertTrue(tablet.removeTabletClient("uuid-2"));
   }
 
   @Test
   public void testLocalReplica() {
     RemoteTablet tablet = getTablet(0, 0);
 
-    assertEquals("0", tablet.getClosestServerInfo().getUuid());
+    assertEquals(kUuids[0], tablet.getClosestServerInfo().getUuid());
   }
 
   @Test
@@ -113,17 +114,24 @@ public class TestRemoteTablet {
   public void testReplicaSelection() {
     RemoteTablet tablet = getTablet(0, 1);
 
-    assertEquals("0",
+    assertEquals(kUuids[0],
         tablet.getReplicaSelectedServerInfo(ReplicaSelection.LEADER_ONLY).getUuid());
-    assertEquals("1",
+    assertEquals(kUuids[1],
         tablet.getReplicaSelectedServerInfo(ReplicaSelection.CLOSEST_REPLICA).getUuid());
+  }
+
+  @Test
+  public void testToString() {
+    RemoteTablet tablet = getTablet(0, 1);
+    assertEquals("fake tablet@[uuid-0(host:1000)[L],uuid-1(host:1001),uuid-2(host:1002)]",
+        tablet.toString());
   }
 
   private RemoteTablet getTablet(int leaderIndex) {
     return getTablet(leaderIndex, -1);
   }
 
-  private RemoteTablet getTablet(int leaderIndex, int localReplicaIndex) {
+  static RemoteTablet getTablet(int leaderIndex, int localReplicaIndex) {
     Master.TabletLocationsPB.Builder tabletPb = Master.TabletLocationsPB.newBuilder();
 
     tabletPb.setPartition(TestUtils.getFakePartitionPB());
@@ -141,9 +149,9 @@ public class TestRemoteTablet {
         throw new RuntimeException(e);
       }
 
-      String uuid = i + "";
+      String uuid = kUuids[i];
       servers.add(new ServerInfo(uuid,
-                                 HostAndPort.fromParts("host", i),
+                                 HostAndPort.fromParts("host", 1000 + i),
                                  addr));
       tabletPb.addReplicas(TestUtils.getFakeTabletReplicaPB(
           uuid, "host", i,
