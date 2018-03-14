@@ -71,13 +71,6 @@ DEFINE_int32(consensus_inject_latency_ms_in_notifications, 0,
 TAG_FLAG(consensus_inject_latency_ms_in_notifications, hidden);
 TAG_FLAG(consensus_inject_latency_ms_in_notifications, unsafe);
 
-DEFINE_int32(consensus_promotion_max_wal_entries_behind, 100,
-             "The number of WAL entries that a NON_VOTER with PROMOTE=true can "
-             "be behind the leader's committed index and be considered ready "
-             "for promotion to VOTER.");
-TAG_FLAG(consensus_promotion_max_wal_entries_behind, advanced);
-TAG_FLAG(consensus_promotion_max_wal_entries_behind, experimental);
-
 DECLARE_int32(consensus_rpc_timeout_ms);
 DECLARE_bool(safe_time_advancement_without_writes);
 DECLARE_bool(raft_prepare_replacement_before_eviction);
@@ -970,9 +963,8 @@ void PeerMessageQueue::UpdateExchangeStatus(TrackedPeer* peer,
 void PeerMessageQueue::PromoteIfNeeded(TrackedPeer* peer, const TrackedPeer& prev_peer_state,
                                        const ConsensusStatusPB& status) {
   DCHECK(queue_lock_.is_locked());
-  int64_t entries_behind = queue_state_.committed_index - peer->last_received.index();
   if (queue_state_.mode != PeerMessageQueue::LEADER ||
-      entries_behind > FLAGS_consensus_promotion_max_wal_entries_behind) {
+      peer->last_exchange_status != PeerStatus::OK) {
     return;
   }
 
@@ -982,13 +974,28 @@ void PeerMessageQueue::PromoteIfNeeded(TrackedPeer* peer, const TrackedPeer& pre
   Status s = GetRaftConfigMember(DCHECK_NOTNULL(queue_state_.active_config.get()),
                                  peer->uuid(), &peer_pb);
   if (s.ok() &&
-      peer_pb &&
       peer_pb->member_type() == RaftPeerPB::NON_VOTER &&
       peer_pb->attrs().promote()) {
-    // This peer is ready to promote.
-    //
-    // TODO(mpercy): Should we introduce a function SafeToPromote() that
-    // does the same calculation as SafeToEvict() but for adding a VOTER?
+
+    // Only promote the peer if it is within one round-trip of being fully
+    // caught-up with the current commit index, as measured by recent
+    // UpdateConsensus() operation batch sizes.
+
+    // If we had never previously contacted this peer, wait until the second
+    // time we contact them to try to promote them.
+    if (prev_peer_state.last_received.index() == 0) return;
+
+    int64_t last_batch_size =
+        std::max<int64_t>(0, peer->last_received.index() - prev_peer_state.last_received.index());
+    bool peer_caught_up =
+        !OpIdEquals(status.last_received_current_leader(), MinimumOpId()) &&
+        status.last_received_current_leader().index() + last_batch_size
+            >= queue_state_.committed_index;
+    if (!peer_caught_up) return;
+
+    // TODO(mpercy): Implement a SafeToPromote() check to ensure that we only
+    // try to promote a NON_VOTER to VOTER if we will be able to commit the
+    // resulting config change operation.
     NotifyObserversOfPeerToPromote(peer->uuid());
   }
 }
