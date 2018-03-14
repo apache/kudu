@@ -17,7 +17,6 @@
 
 package org.apache.kudu.client;
 
-import java.net.InetSocketAddress;
 import java.nio.channels.ClosedChannelException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -483,7 +482,7 @@ class Connection extends SimpleChannelUpstreamHandler {
 
   /** @return string representation of the peer information suitable for logging */
   String getLogPrefix() {
-    return "[peer " + serverInfo.getUuid() + "]";
+    return "[peer " + serverInfo + "]";
   }
 
   /**
@@ -704,7 +703,7 @@ class Connection extends SimpleChannelUpstreamHandler {
     Preconditions.checkState(lock.isHeldByCurrentThread());
     Preconditions.checkState(state == State.NEW);
     state = State.CONNECTING;
-    channel.connect(new InetSocketAddress(serverInfo.getResolvedAddress(), serverInfo.getPort()));
+    channel.connect(serverInfo.getResolvedAddress());
   }
 
   /** Enumeration to represent the internal state of the Connection object. */

@@ -17,6 +17,8 @@
 
 package org.apache.kudu.client;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -24,6 +26,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import javax.annotation.Nullable;
 import javax.annotation.concurrent.GuardedBy;
 
+import com.google.common.base.Joiner;
 import com.google.common.base.Objects;
 import com.google.common.collect.ComparisonChain;
 import com.google.common.collect.ImmutableList;
@@ -92,7 +95,22 @@ class RemoteTablet implements Comparable<RemoteTablet> {
 
   @Override
   public String toString() {
-    return getTabletId();
+    StringBuilder sb = new StringBuilder();
+    sb.append(tabletId).append("@[");
+    List<String> tsStrings;
+    synchronized (tabletServers) {
+      tsStrings = new ArrayList<>(tabletServers.size());
+      for (ServerInfo e : tabletServers.values()) {
+        String flag = e.getUuid().equals(leaderUuid) ? "[L]" : "";
+        tsStrings.add(e.toString() + flag);
+      }
+    }
+    // Sort so that we have a consistent iteration order regardless of
+    // HashSet ordering.
+    Collections.sort(tsStrings);
+    sb.append(Joiner.on(',').join(tsStrings));
+    sb.append(']');
+    return sb.toString();
   }
 
   /**
@@ -168,6 +186,9 @@ class RemoteTablet implements Comparable<RemoteTablet> {
           return e;
         }
       }
+      // TODO(KUDU-2348) this doesn't return a random server, but rather returns
+      // whichever one's hashcode places it last. That might be the same
+      // "random" choice across all clients, which is not so good.
       return last;
     }
   }
