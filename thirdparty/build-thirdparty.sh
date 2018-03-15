@@ -171,8 +171,7 @@ elif [[ "$OSTYPE" == "darwin"* ]]; then
 
   # Build against the Macports or Homebrew OpenSSL versions, in order to match
   # the Kudu build.
-  OPENSSL_CFLAGS=$(pkg-config --cflags openssl)
-  if [ -z $OPENSSL_CFLAGS ]; then
+  if ! OPENSSL_CFLAGS=$(pkg-config --cflags openssl); then
     # If OpenSSL is built via Homebrew, pkg-config does not report on cflags.
     homebrew_openssl_dir=/usr/local/opt/openssl
     if [ -d $homebrew_openssl_dir ]; then
