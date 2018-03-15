@@ -26,7 +26,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import urllib
+try:
+  import urllib.request as urllib
+except ImportError:
+  import urllib
 
 from kudu_util import check_output, confirm_prompt, Colors, get_my_email
 
@@ -157,7 +160,7 @@ def run_rat(tarball_path):
     print("> Running RAT...")
     xml = subprocess.check_output(["java", "-jar", rat_jar_dest, "-x", tarball_path])
     rat_report_dest = "%s/%s" % (tmpdir_path, "rat_report.xml")
-    with open(rat_report_dest, "w") as f:
+    with open(rat_report_dest, "wb") as f:
         f.write(xml)
 
     print("> Parsing RAT report...")
