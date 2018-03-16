@@ -221,5 +221,56 @@ TEST(ClientUnitTest, TestErrorCollector) {
   }
 }
 
+TEST(ClientUnitTest, TestKuduSchemaToString) {
+  // Test on unique PK.
+  KuduSchema s1;
+  KuduSchemaBuilder b1;
+  b1.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+  b1.AddColumn("int_val")->Type(KuduColumnSchema::INT32)->NotNull();
+  b1.AddColumn("string_val")->Type(KuduColumnSchema::STRING)->Nullable();
+  b1.AddColumn("non_null_with_default")->Type(KuduColumnSchema::INT32)->NotNull()
+    ->Default(KuduValue::FromInt(12345));
+  ASSERT_OK(b1.Build(&s1));
+
+  string schema_str_1 = "Schema [\n"
+                        "\tprimary key (key),\n"
+                        "\tkey[int32 NOT NULL],\n"
+                        "\tint_val[int32 NOT NULL],\n"
+                        "\tstring_val[string NULLABLE],\n"
+                        "\tnon_null_with_default[int32 NOT NULL]\n"
+                        "]";
+  EXPECT_EQ(schema_str_1, s1.ToString());
+
+  // Test empty schema.
+  KuduSchema s2;
+  EXPECT_EQ("Schema []", s2.ToString());
+
+  // Test on composite PK.
+  // Create a different schema with a multi-column PK.
+  KuduSchemaBuilder b2;
+  b2.AddColumn("k1")->Type(KuduColumnSchema::INT32)->NotNull();
+  b2.AddColumn("k2")->Type(KuduColumnSchema::UNIXTIME_MICROS)->NotNull();
+  b2.AddColumn("k3")->Type(KuduColumnSchema::INT8)->NotNull();
+  b2.AddColumn("dec_val")->Type(KuduColumnSchema::DECIMAL)->Nullable()->Precision(9)->Scale(2);
+  b2.AddColumn("int_val")->Type(KuduColumnSchema::INT32)->NotNull();
+  b2.AddColumn("string_val")->Type(KuduColumnSchema::STRING)->Nullable();
+  b2.AddColumn("non_null_with_default")->Type(KuduColumnSchema::INT32)->NotNull()
+    ->Default(KuduValue::FromInt(12345));
+  b2.SetPrimaryKey({"k1", "k2", "k3"});
+  ASSERT_OK(b2.Build(&s2));
+
+  string schema_str_2 = "Schema [\n"
+                        "\tprimary key (k1, k2, k3),\n"
+                        "\tk1[int32 NOT NULL],\n"
+                        "\tk2[unixtime_micros NOT NULL],\n"
+                        "\tk3[int8 NOT NULL],\n"
+                        "\tdec_val[decimal(9, 2) NULLABLE],\n"
+                        "\tint_val[int32 NOT NULL],\n"
+                        "\tstring_val[string NULLABLE],\n"
+                        "\tnon_null_with_default[int32 NOT NULL]\n"
+                        "]";
+  EXPECT_EQ(schema_str_2, s2.ToString());
+}
+
 } // namespace client
 } // namespace kudu

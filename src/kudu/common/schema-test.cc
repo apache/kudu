@@ -92,6 +92,7 @@ TEST_F(TestSchema, TestSchema) {
             empty_schema.memory_footprint_excluding_this());
 
   EXPECT_EQ("Schema [\n"
+            "\tprimary key (key),\n"
             "\tkey[string NOT NULL],\n"
             "\tuint32val[uint32 NULLABLE],\n"
             "\tint32val[int32 NOT NULL]\n"
@@ -122,6 +123,7 @@ TEST_F(TestSchema, TestSchemaWithDecimal) {
             schema.byte_size());
 
   EXPECT_EQ("Schema [\n"
+                "\tprimary key (key),\n"
                 "\tkey[string NOT NULL],\n"
                 "\tdecimal32val[decimal(9, 4) NOT NULL],\n"
                 "\tdecimal64val[decimal(18, 10) NULLABLE],\n"
@@ -479,6 +481,7 @@ TEST_F(TestSchema, TestCreateProjection) {
   // By names, without IDs
   ASSERT_OK(schema.CreateProjectionByNames({ "col1", "col2", "col4" }, &partial_schema));
   EXPECT_EQ("Schema [\n"
+            "\tprimary key (),\n"
             "\tcol1[string NOT NULL],\n"
             "\tcol2[string NOT NULL],\n"
             "\tcol4[string NOT NULL]\n"
@@ -488,6 +491,7 @@ TEST_F(TestSchema, TestCreateProjection) {
   // By names, with IDS
   ASSERT_OK(schema_with_ids.CreateProjectionByNames({ "col1", "col2", "col4" }, &partial_schema));
   EXPECT_EQ(Substitute("Schema [\n"
+                       "\tprimary key (),\n"
                        "\t$0:col1[string NOT NULL],\n"
                        "\t$1:col2[string NOT NULL],\n"
                        "\t$2:col4[string NOT NULL]\n"
@@ -508,6 +512,7 @@ TEST_F(TestSchema, TestCreateProjection) {
                                                                  schema_with_ids.column_id(3) },
                                                                &partial_schema));
   EXPECT_EQ(Substitute("Schema [\n"
+                       "\tprimary key (),\n"
                        "\t$0:col1[string NOT NULL],\n"
                        "\t$1:col2[string NOT NULL],\n"
                        "\t$2:col4[string NOT NULL]\n"

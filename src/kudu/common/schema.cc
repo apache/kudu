@@ -358,6 +358,13 @@ Status Schema::GetMappedReadProjection(const Schema& projection,
 }
 
 string Schema::ToString() const {
+  if (cols_.empty()) return "Schema []";
+
+  vector<string> pk_strs;
+  for (int i = 0; i < num_key_columns_; i++) {
+    pk_strs.push_back(cols_[i].name());
+  }
+
   vector<string> col_strs;
   if (has_column_ids()) {
     for (int i = 0; i < cols_.size(); ++i) {
@@ -369,7 +376,9 @@ string Schema::ToString() const {
     }
   }
 
-  return StrCat("Schema [\n\t",
+  return StrCat("Schema [\n\tprimary key (",
+                JoinStrings(pk_strs, ", "),
+                "),\n\t",
                 JoinStrings(col_strs, ",\n\t"),
                 "\n]");
 }

@@ -563,6 +563,11 @@ class KUDU_EXPORT KuduSchema {
   ///   of the created row.
   KuduPartialRow* NewRow() const;
 
+  /// Stringify this KuduSchema.
+  ///
+  /// @return A string describing this schema.
+  std::string ToString() const;
+
  private:
   friend class ClientTest;
   friend class KuduClient;
