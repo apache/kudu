@@ -63,6 +63,12 @@ class SelectionVector {
   // Ensures that all rows for indices < n_rows are unmodified.
   void Resize(size_t n_rows);
 
+  // Zeroes out the end of the selection vector such that it will be left with
+  // at most 'max_rows' selected.
+  //
+  // If 'max_rows' is greater than the allocated capacity, this does nothing.
+  void ClearToSelectAtMost(size_t max_rows);
+
   // Return the number of selected rows.
   size_t CountSelected() const;
 

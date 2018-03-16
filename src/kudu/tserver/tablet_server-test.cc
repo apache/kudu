@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <set>
@@ -2061,11 +2062,76 @@ TEST_F(TabletServerTest, TestScanWithStringPredicates) {
   ASSERT_EQ(R"((int32 key=59, int32 int_val=118, string string_val="hello 59"))", results[9]);
 }
 
-TEST_F(TabletServerTest, TestScanWithPredicates) {
-  // TODO: need to test adding a predicate on a column which isn't part of the
-  // projection! I don't think we implemented this at the tablet layer yet,
-  // but should do so.
+TEST_F(TabletServerTest, TestNonPositiveLimitsShortCircuit) {
+  InsertTestRowsDirect(0, 10);
+  for (int limit : { -1, 0 }) {
+    ScanRequestPB req;
+    ScanResponsePB resp;
+    RpcController rpc;
 
+    // Set up a new scan request with non-positive limits.
+    NewScanRequestPB* scan = req.mutable_new_scan_request();
+    scan->set_tablet_id(kTabletId);
+    scan->set_limit(limit);
+    ASSERT_OK(SchemaToColumnPBs(schema_, scan->mutable_projected_columns()));
+    {
+      // Send the request and make sure we get no rows back.
+      SCOPED_TRACE(SecureDebugString(req));
+      ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
+      SCOPED_TRACE(SecureDebugString(resp));
+      ASSERT_FALSE(resp.has_error());
+
+      // We're expecting the scan to have short circuited and for no scanner to
+      // exist for the scan, so we need to "drain" it a bit differently.
+      ASSERT_FALSE(resp.has_scanner_id());
+      unique_ptr<RowwiseRowBlockPB> data(resp.release_data());
+      ASSERT_EQ(0, data->num_rows());
+    }
+  }
+}
+
+// Randomized test that runs a few scans with varying limits.
+TEST_F(TabletServerTest, TestRandomizedScanLimits) {
+  // Set a relatively small batch size...
+  const int64_t kBatchSizeRows = rand() % 1000;
+  // ...and decent number of rows, such that we can get a good mix of
+  // multiple-batch and single-batch scans.
+  const int64_t kNumRows = rand() % 2000;
+  FLAGS_scanner_batch_size_rows = kBatchSizeRows;
+  InsertTestRowsDirect(0, kNumRows);
+  LOG(INFO) << Substitute("Rows inserted: $0, batch size: $1", kNumRows, kBatchSizeRows);
+
+  for (int64_t i = 1; i < 100; i++) {
+    // To broaden a range of coverage, gradiate the max limit that we can set.
+    const int64_t kMaxLimit = kNumRows * static_cast<double>(0.01 * i);
+
+    // Get a random limit, capped by the max, inclusive.
+    const int64_t kLimit = rand() % kMaxLimit + 1;
+    LOG(INFO) << "Scanning with a limit of " << kLimit;
+
+    ScanRequestPB req;
+    ScanResponsePB resp;
+    RpcController rpc;
+    NewScanRequestPB* scan = req.mutable_new_scan_request();
+    scan->set_tablet_id(kTabletId);
+    scan->set_limit(kLimit);
+    req.set_batch_size_bytes(0); // so it won't return data right away
+    ASSERT_OK(SchemaToColumnPBs(schema_, scan->mutable_projected_columns()));
+    // Send the scan.
+    {
+      SCOPED_TRACE(SecureDebugString(req));
+      ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
+      SCOPED_TRACE(SecureDebugString(resp));
+      ASSERT_FALSE(resp.has_error());
+    }
+    // Drain all the rows from the scanner.
+    vector<string> results;
+    NO_FATALS(DrainScannerToStrings(resp.scanner_id(), schema_, &results));
+    ASSERT_EQ(results.size(), std::min({ kLimit, kNumRows }));
+  }
+}
+
+TEST_F(TabletServerTest, TestScanWithPredicates) {
   int num_rows = AllowSlowTests() ? 10000 : 1000;
   InsertTestRowsDirect(0, num_rows);
 

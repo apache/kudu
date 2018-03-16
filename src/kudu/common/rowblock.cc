@@ -44,6 +44,30 @@ void SelectionVector::Resize(size_t n_rows) {
   }
 }
 
+void SelectionVector::ClearToSelectAtMost(size_t max_rows) {
+  if (max_rows < n_rows_) {
+    BitmapIterator iter(&bitmap_[0], n_rows_);
+    bool selected;
+    size_t run_size;
+    size_t end_idx = 0;
+    // Adjust the end index until we have selected 'max_rows' rows.
+    while ((run_size = iter.Next(&selected)) && max_rows > 0) {
+      if (selected) {
+        if (run_size >= max_rows) {
+          end_idx += max_rows;
+          break;
+        }
+        max_rows -= run_size;
+      }
+      end_idx += run_size;
+    }
+    // If the limit is reached, zero out the rest of the selection vector.
+    if (n_rows_ > end_idx) {
+      BitmapChangeBits(&bitmap_[0], end_idx, n_rows_ - end_idx, false);
+    }
+  }
+}
+
 size_t SelectionVector::CountSelected() const {
   return Bits::Count(&bitmap_[0], n_bytes_);
 }

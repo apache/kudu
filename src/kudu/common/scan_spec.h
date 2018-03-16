@@ -14,11 +14,14 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_COMMON_SCAN_SPEC_H
-#define KUDU_COMMON_SCAN_SPEC_H
+#pragma once
 
+#include <cstdint>
 #include <string>
 #include <unordered_map>
+
+#include <boost/optional/optional.hpp>
+#include <glog/logging.h>
 
 #include "kudu/common/column_predicate.h" // IWYU pragma: keep
 #include "kudu/util/slice.h"
@@ -33,12 +36,10 @@ class Schema;
 class ScanSpec {
  public:
   ScanSpec()
-    : predicates_(),
-      lower_bound_key_(nullptr),
+    : lower_bound_key_(nullptr),
       exclusive_upper_bound_key_(nullptr),
-      lower_bound_partition_key_(),
-      exclusive_upper_bound_partition_key_(),
-      cache_blocks_(true) {
+      cache_blocks_(true),
+      limit_(boost::none) {
   }
 
   // Add a predicate on the column.
@@ -119,7 +120,20 @@ class ScanSpec {
     cache_blocks_ = cache_blocks;
   }
 
-  std::string ToString(const Schema& s) const;
+  bool has_limit() const {
+    return limit_ != boost::none;
+  }
+
+  void set_limit(int64_t limit) {
+    limit_ = limit;
+  }
+
+  int64_t limit() const {
+    CHECK(has_limit());
+    return *limit_;
+  }
+
+  std::string ToString(const Schema& schema) const;
 
  private:
 
@@ -149,8 +163,7 @@ class ScanSpec {
   std::string lower_bound_partition_key_;
   std::string exclusive_upper_bound_partition_key_;
   bool cache_blocks_;
+  boost::optional<int64_t> limit_;
 };
 
 } // namespace kudu
-
-#endif

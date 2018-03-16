@@ -30,6 +30,7 @@
 #include <gtest/gtest_prod.h>
 
 #include "kudu/common/iterator_stats.h"
+#include "kudu/common/scan_spec.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
@@ -47,7 +48,6 @@
 namespace kudu {
 
 class RowwiseIterator;
-class ScanSpec;
 class Schema;
 class Status;
 class Thread;
@@ -293,6 +293,22 @@ class Scanner {
     return row_format_flags_;
   }
 
+  void add_num_rows_returned(int64_t num_rows_added) {
+    std::lock_guard<simple_spinlock> l(lock_);
+    num_rows_returned_ += num_rows_added;
+    DCHECK_LE(num_rows_added, num_rows_returned_);
+  }
+
+  int64_t num_rows_returned() const {
+    std::lock_guard<simple_spinlock> l(lock_);
+    return num_rows_returned_;
+  }
+
+  bool has_fulfilled_limit() const {
+    std::lock_guard<simple_spinlock> l(lock_);
+    return spec_ && spec_->has_limit() && num_rows_returned_ >= spec_->limit();
+  }
+
   ScanDescriptor descriptor() const;
 
  private:
@@ -316,7 +332,8 @@ class Scanner {
   // The current call sequence ID.
   uint32_t call_seq_id_;
 
-  // Protects last_access_time_ call_seq_id_, iter_, and spec_.
+  // Protects last_access_time_ call_seq_id_, iter_, spec_, and
+  // num_rows_returned_.
   mutable simple_spinlock lock_;
 
   // The time the scanner was started.
@@ -348,6 +365,10 @@ class Scanner {
 
   // The row format flags the client passed, if any.
   const uint64_t row_format_flags_;
+
+  // The number of rows that have been serialized and sent over the wire by
+  // this scanner.
+  int64_t num_rows_returned_;
 
   DISALLOW_COPY_AND_ASSIGN(Scanner);
 };

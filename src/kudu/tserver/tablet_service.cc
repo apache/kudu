@@ -418,7 +418,7 @@ class RpcTransactionCompletionCallback : public TransactionCompletionCallback {
 // Generic interface to handle scan results.
 class ScanResultCollector {
  public:
-  virtual void HandleRowBlock(const Schema* client_projection_schema,
+  virtual void HandleRowBlock(Scanner* scanner,
                               const RowBlock& row_block) = 0;
 
   // Returns number of bytes which will be returned in the response.
@@ -480,10 +480,11 @@ class ScanResultCopier : public ScanResultCollector {
         num_rows_returned_(0),
         pad_unixtime_micros_to_16_bytes_(false) {}
 
-  void HandleRowBlock(const Schema* client_projection_schema,
-                              const RowBlock& row_block) override {
-    num_rows_returned_ += row_block.selection_vector()->CountSelected();
-    SerializeRowBlock(row_block, rowblock_pb_, client_projection_schema,
+  void HandleRowBlock(Scanner* scanner, const RowBlock& row_block) override {
+    int64_t num_selected = row_block.selection_vector()->CountSelected();
+    num_rows_returned_ += num_selected;
+    scanner->add_num_rows_returned(num_selected);
+    SerializeRowBlock(row_block, rowblock_pb_, scanner->client_projection_schema(),
                       rows_data_, indirect_data_, pad_unixtime_micros_to_16_bytes_);
     SetLastRow(row_block, &last_primary_key_);
   }
@@ -527,8 +528,10 @@ class ScanResultChecksummer : public ScanResultCollector {
         rows_checksummed_(0) {
   }
 
-  virtual void HandleRowBlock(const Schema* client_projection_schema,
+  virtual void HandleRowBlock(Scanner* scanner,
                               const RowBlock& row_block) OVERRIDE {
+
+    const Schema* client_projection_schema = scanner->client_projection_schema();
     if (!client_projection_schema) {
       client_projection_schema = &row_block.schema();
     }
@@ -1618,6 +1621,11 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
   // Then any encoded key range predicates.
   RETURN_NOT_OK(DecodeEncodedKeyRange(scan_pb, tablet_schema, scanner, ret.get()));
 
+  // If the scanner has a limit, set it now.
+  if (scan_pb.has_limit()) {
+    ret->set_limit(scan_pb.limit());
+  }
+
   spec->swap(ret);
   return Status::OK();
 }
@@ -1834,7 +1842,7 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
     return s;
   }
 
-  *has_more_results = iter->HasNext();
+  *has_more_results = iter->HasNext() && !scanner->has_fulfilled_limit();
   TRACE("has_more: $0", *has_more_results);
   if (!*has_more_results) {
     // If there are no more rows, we can short circuit some work and respond immediately.
@@ -1927,7 +1935,7 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
   MonoTime deadline = MonoTime::Now() + MonoDelta::FromMilliseconds(budget_ms);
 
   int64_t rows_scanned = 0;
-  while (iter->HasNext()) {
+  while (iter->HasNext() && !scanner->has_fulfilled_limit()) {
     if (PREDICT_FALSE(FLAGS_scanner_inject_latency_on_each_batch_ms > 0)) {
       SleepFor(MonoDelta::FromMilliseconds(FLAGS_scanner_inject_latency_on_each_batch_ms));
     }
@@ -1945,7 +1953,12 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
       // The collector will separately count the number of rows actually returned to
       // the client.
       rows_scanned += block.nrows();
-      result_collector->HandleRowBlock(scanner->client_projection_schema(), block);
+      if (scanner->spec().has_limit()) {
+        int64_t rows_left = scanner->spec().limit() - scanner->num_rows_returned();
+        DCHECK_GT(rows_left, 0);  // Guaranteed by has_fulfilled_limit()
+        block.selection_vector()->ClearToSelectAtMost(static_cast<size_t>(rows_left));
+      }
+      result_collector->HandleRowBlock(scanner.get(), block);
     }
 
     int64_t response_size = result_collector->ResponseSize();
@@ -2010,7 +2023,8 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
   }
 
   scanner->UpdateAccessTime();
-  *has_more_results = !req->close_scanner() && iter->HasNext();
+  *has_more_results = !req->close_scanner() && iter->HasNext() &&
+      !scanner->has_fulfilled_limit();
   if (*has_more_results) {
     unreg_scanner.Cancel();
   } else {

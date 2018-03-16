@@ -220,9 +220,10 @@ message NewScanRequestPB {
   // The tablet to scan.
   required bytes tablet_id = 1;
 
-  // The maximum number of rows to scan.
-  // The scanner will automatically stop yielding results and close
-  // itself after reaching this number of result rows.
+  // The maximum number of rows to scan with the new scanner.
+  //
+  // The scanner will automatically stop yielding results and close itself
+  // after reaching this number of result rows.
   optional uint64 limit = 2;
 
   // DEPRECATED: use column_predicates field.

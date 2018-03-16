@@ -299,7 +299,8 @@ Scanner::Scanner(string id, const scoped_refptr<TabletReplica>& tablet_replica,
       start_time_(MonoTime::Now()),
       metrics_(metrics),
       arena_(256),
-      row_format_flags_(row_format_flags) {
+      row_format_flags_(row_format_flags),
+      num_rows_returned_(0) {
   if (tablet_replica_) {
     auto tablet = tablet_replica->shared_tablet();
     if (tablet && tablet->metrics()) {

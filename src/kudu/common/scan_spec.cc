@@ -18,7 +18,6 @@
 #include "kudu/common/scan_spec.h"
 
 #include <algorithm>
-#include <cstdint>
 #include <iterator>
 #include <ostream>
 #include <string>
@@ -37,6 +36,7 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/join.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/auto_release_pool.h"
 #include "kudu/util/memory/arena.h"
 
@@ -46,6 +46,7 @@ using std::move;
 using std::pair;
 using std::string;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 
@@ -68,6 +69,10 @@ void ScanSpec::RemovePredicates() {
 }
 
 bool ScanSpec::CanShortCircuit() const {
+  if (has_limit() && *limit_ <= 0) {
+    return true;
+  }
+
   if (lower_bound_key_ &&
       exclusive_upper_bound_key_ &&
       lower_bound_key_->encoded_key().compare(exclusive_upper_bound_key_->encoded_key()) >= 0) {
@@ -124,7 +129,8 @@ string ScanSpec::ToString(const Schema& schema) const {
     }
   }
 
-  return JoinStrings(preds, " AND ");
+  const string limit = has_limit() ? Substitute(" LIMIT $0", *limit_) : "";
+  return JoinStrings(preds, " AND ") + limit;
 }
 
 void ScanSpec::OptimizeScan(const Schema& schema,
