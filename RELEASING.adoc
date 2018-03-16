@@ -50,7 +50,7 @@ in `master`.
 ----
 
 . Push the branch to public remotes https://github.com/cloudera/kudu.git and
-http://git-wip-us.apache.org/repos/asf?p=kudu.git. The following example
+https://git-wip-us.apache.org/repos/asf/kudu.git. The following example
 assumes they are called `cloudera` and `apache`.
 +
 ----
@@ -67,15 +67,17 @@ branch with the same name and the previously-noted SHA1.
   have to perform this step because SSH access is behind a firewall. The steps
   are as follows:
   1. Ensure your public SSH key is in `~gerrit/.ssh/authorized_keys` on gerrit.cloudera.org
-  2. From behind the firewall, `ssh gerrit@gerrit.cloudera.org` to log in.
-  3. Back up the existing replication configuration file by executing
-     `cp etc/replication.config etc/replication.config.bak.\`date '+%Y%m%d.%H%M%S'\``
-  4. Edit `etc/replication.config` to add a line for the new branch, such as `branch-1.x.y`
-  5. Send email to the dev lists for Kudu and Impala (dev@kudu.apache.org and
+  2. From behind the firewall, `ssh gerrit.cloudera.org` to log in.
+  3. Change to the gerrit user, `sudo su gerrit`
+  4. Back up the existing replication configuration file by executing
+     `cp ~/etc/replication.config ~/etc/replication.config.bak.`date '+%Y%m%d.%H%M%S'``
+  5. Edit `etc/replication.config` to add a line for the new branch, such as `branch-1.x.y`
+  6. Send email to the dev lists for Kudu and Impala (dev@kudu.apache.org and
      dev@impala.apache.org) indicating that you are going to restart Gerrit
      (link:https://s.apache.org/2Wj7[example]). It is best to do the restart at
      some time of day when you don't expect many people to be using the system,
      since Gerrit can take a few minutes to restart.
+  7: Restart Gerrit, `~/bin/gerrit.sh restart`
 
 . As needed, patches can be cherry-picked to the new branch.
 
@@ -101,6 +103,10 @@ branch with the same name and the previously-noted SHA1.
 
 
 == Preparing A Release Candidate
+
+. Before building a release candidate, make sure you have followed the
+Apache committer guide for setting up your GPG keys
+(link:https://www.apache.org/dev/new-committers-guide.html#set-up-security-and-pgp-keys[here]).
 
 . When close to building a release candidate, try building a source tarball
 (on a supported platform):
@@ -154,8 +160,8 @@ you can link:http://maven.apache.org/guides/mini/guide-encryption.html[encrypt i
 . When ready, create a new lightweight tag and push it to the Apache Git repository.
 +
 ----
-  git tag 1.x.0-RC1
-  git push apache 1.x.0-RC1
+  git tag 1.x.y-RC1
+  git push apache 1.x.y-RC1
 ----
 
 . Build a source tarball against the RC branch.
@@ -164,8 +170,12 @@ you can link:http://maven.apache.org/guides/mini/guide-encryption.html[encrypt i
   Copy the artifacts to this folder and commit (it is Subversion).
 +
 ----
-  svn co --depth=immediates https://dist.apache.org/repos/dist/dev/kudu/
-  svn commit -m "Adding Kudu 1.x.0 RC1"
+  svn co --depth=immediates https://dist.apache.org/repos/dist/dev/kudu/ kudu-dev-release
+  cd kudu-dev-release
+  mkdir 1.x.y-RC1
+  cp <path_to_kudu>/build/apache-kudu-1.x.y.tar.* 1.x.y-RC1
+  svn add 1.x.y-RC1/*
+  svn commit -m "Adding Kudu 1.x.y RC1"
 ----
 
 . Create a Maven staging repository for the RC.
@@ -180,10 +190,10 @@ you can link:http://maven.apache.org/guides/mini/guide-encryption.html[encrypt i
 Go to the link:https://repository.apache.org/\#stagingRepositories[staging repository]
 and look for ‘orgapachekudu-####’ in the staging repositories list. You can
 check the ‘content’ tab at the bottom to make sure you have all of the expected
-stuff (client, various integrations, both versions of Spark) Hit the checkbox
-next to your new staging repo and hit “close”. Enter “Apache Kudu 1.1.0-RC1” or
-whatever into that box. Wait a minute or two and hit refresh, and your staging
-repo should now have a URL shown in its summary tab (eg
+stuff (client, various integrations, etc). Hit the checkbox next to your new
+staging repo and hit “close”. Enter something similar to “Apache Kudu 1.x.y-RC1”
+into the description box and confirm. Wait a minute or two and hit refresh, and
+your staging repo should now have a URL shown in its summary tab (eg
 `https://repository.apache.org/content/repositories/orgapachekudu-1005`)
 
 . Add your PGP key to the KEYS file:
@@ -218,11 +228,11 @@ svn commit -m "Adding my key to the KEYS file"
   copy the files from the release candidate’s folder in dist/dev/kudu/, then commit.
 +
 ----
-  cd kudu
+  cd kudu-dist-release
   mkdir 1.x.y
   cp <path_to_rc_artifacts>/* 1.x.y
   svn add 1.x.y
-  svn commit -m "Adding files for Kudu 1.x.y RC"
+  svn commit -m "Adding files for Kudu 1.x.y"
 ----
 
 . In the Kudu git repo, create a signed tag from the RC’s tag, and push it to the
@@ -238,7 +248,7 @@ Apache Git repository:
   and click 'Release'.
 
 . Generate the version-specific documentation from that branch following these
-  link:https://github.com/apache/kudu/#updating-the-documentation-on-the-kudu-web-site[instructions].
+  link:https://github.com/apache/kudu/#updating-the-kudu-web-site-documentation[instructions].
 
 . Replace the `apidocs` and `docs` folders in the `gh-pages` branch with the new documentation.
 
@@ -250,7 +260,8 @@ Apache Git repository:
 
 . Create a new review for all those new and updated files in `gh-pages`.
 
-. Once the review is finished and the commit is pushed, update the website.
+. Once the review is finished and the commit is pushed, update the website following
+  these link:https://github.com/apache/kudu/#deploying-changes-to-the-apache-kudu-web-site[instructions].
 
 . About 24 hours after the first step was completed, send an email to
   user@kudu.apache.org, dev@kudu.apache.org, and announce@apache.org
@@ -259,6 +270,7 @@ Apache Git repository:
 
 . About another 24 hours later, delete the previous minor version in the branch
   you released from, from SVN. For example, if you released 1.2.1, delete `1.2.0`.
+  Also delete any release candidates from the dev SVN.
 
 . Update the version number on the branch you released from back to a SNAPSHOT
   for the next patch release, such as `1.6.1-SNAPSHOT` after the `1.6.0` release.
