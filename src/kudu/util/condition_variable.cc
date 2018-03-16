@@ -63,7 +63,8 @@ bool ConditionVariable::WaitUntil(const MonoTime& until) const {
   ThreadRestrictions::AssertWaitAllowed();
 
   // Have we already timed out?
-  if (MonoTime::Now() > until) {
+  MonoTime now = MonoTime::Now();
+  if (now > until) {
     return false;
   }
 
@@ -71,9 +72,20 @@ bool ConditionVariable::WaitUntil(const MonoTime& until) const {
   user_lock_->CheckHeldAndUnmark();
 #endif
 
+#if defined(__APPLE__)
+  // macOS does not provide a way to configure pthread_cond_timedwait() to use
+  // monotonic clocks, so we must convert the deadline into a delta and perform
+  // a relative wait.
+  MonoDelta delta = until - now;
+  struct timespec relative_time;
+  delta.ToTimeSpec(&relative_time);
+  int rv = pthread_cond_timedwait_relative_np(
+      &condition_, user_mutex_, &relative_time);
+#else
   struct timespec absolute_time;
   until.ToTimeSpec(&absolute_time);
   int rv = pthread_cond_timedwait(&condition_, user_mutex_, &absolute_time);
+#endif
   DCHECK(rv == 0 || rv == ETIMEDOUT)
     << "unexpected pthread_cond_timedwait return value: " << rv;
 
