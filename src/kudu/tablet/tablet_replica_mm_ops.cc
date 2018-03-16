@@ -142,8 +142,8 @@ void FlushMRSOp::Perform() {
   Status s = tablet->FlushUnlocked();
   if (PREDICT_FALSE(!s.ok())) {
     LOG(WARNING) << tablet->LogPrefix() << "failed to flush MRS: " << s.ToString();
-    CHECK(tablet->HasBeenStopped()) << "FlushMRS failure is only allowed if the "
-                                       "tablet is stopped first";
+    CHECK(tablet->HasBeenStopped()) << "Unrecoverable flush failure caused by error: "
+                                    << s.ToString();
     return;
   }
 
@@ -197,8 +197,8 @@ void FlushDeltaMemStoresOp::Perform() {
   Status s = tablet->FlushBestDMS(max_idx_to_replay_size);
   if (PREDICT_FALSE(!s.ok())) {
     LOG(WARNING) << tablet->LogPrefix() << "failed to flush DMS: " << s.ToString();
-    CHECK(tablet->HasBeenStopped()) << "FlushDMS failure is only allowed if the "
-                                       "tablet is stopped first";
+    CHECK(tablet->HasBeenStopped()) << "Unrecoverable flush failure caused by error: "
+                                    << s.ToString();
     return;
   }
   {
