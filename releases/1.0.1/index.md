@@ -34,7 +34,6 @@ Downloads of Kudu 1.0.1 are available in the following formats:
 
 * [Kudu 1.0.1 source tarball](http://archive.apache.org/dist/kudu/1.0.1/apache-kudu-1.0.1.tar.gz)
   ([SHA1](https://archive.apache.org/dist/kudu/1.0.1/apache-kudu-1.0.1.tar.gz.sha),
-  [MD5](https://archive.apache.org/dist/kudu/1.0.1/apache-kudu-1.0.1.tar.gz.md5),
   [Signature](https://archive.apache.org/dist/kudu/1.0.1/apache-kudu-1.0.1.tar.gz.asc))
 
 You can use the [KEYS file](https://www.apache.org/dist/kudu/KEYS) to verify the included GPG signature.

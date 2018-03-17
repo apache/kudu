@@ -32,9 +32,8 @@ See the [Kudu 1.6.0 Release Notes](docs/release_notes.html).
 
 Downloads of Kudu 1.6.0 are available in the following formats:
 
-* [Kudu 1.6.0 source tarball](http://www.apache.org/closer.cgi?filename=kudu/1.6.0/apache-kudu-1.6.0.tar.gz&action=download)
+* [Kudu 1.6.0 source tarball](https://archive.apache.org/dist/kudu/1.6.0/apache-kudu-1.6.0.tar.gz)
   ([SHA1](https://www.apache.org/dist/kudu/1.6.0/apache-kudu-1.6.0.tar.gz.sha),
-  [MD5](https://www.apache.org/dist/kudu/1.6.0/apache-kudu-1.6.0.tar.gz.md5),
   [Signature](https://www.apache.org/dist/kudu/1.6.0/apache-kudu-1.6.0.tar.gz.asc))
 
 You can use the [KEYS file](https://www.apache.org/dist/kudu/KEYS) to verify the included GPG signature.
