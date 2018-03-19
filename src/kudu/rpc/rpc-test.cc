@@ -742,7 +742,9 @@ TEST_P(TestRpc, TestRpcSidecarLimits) {
                        // macOS, while reading from socket.
                        "|got EOF from remote"
                        // macOS, while writing to socket.
-                       "|Protocol wrong type for socket");
+                       "|Protocol wrong type for socket"
+                       // macOS, sendmsg(): the sum of the iov_len values overflows an ssize_t
+                       "|sendmsg error: Invalid argument");
   }
 }
 
