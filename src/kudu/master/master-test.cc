@@ -798,8 +798,11 @@ TEST_F(MasterTest, TestInvalidGetTableLocations) {
   }
 }
 
+#ifndef __APPLE__
 // Test that, if the master's RPC service queue overflows, thread stack traces
 // are dumped to the diagnostics log.
+//
+// This test is not relevant on OS X where stack trace dumping is not supported.
 TEST_F(MasterTest, TestDumpStacksOnRpcQueueOverflow) {
   mini_master_->mutable_options()->rpc_opts.num_service_threads = 1;
   mini_master_->mutable_options()->rpc_opts.service_queue_length = 1;
@@ -842,7 +845,7 @@ TEST_F(MasterTest, TestDumpStacksOnRpcQueueOverflow) {
     });
   ASSERT_EQ(dump_count, 1) << log_contents.ToString();
 }
-
+#endif // #ifndef __APPLE__
 
 // Tests that if the master is shutdown while a table visitor is active, the
 // shutdown waits for the visitor to finish, avoiding racing and crashing.
