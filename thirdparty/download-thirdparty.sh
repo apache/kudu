@@ -40,8 +40,21 @@ delete_if_wrong_patchlevel() {
   fi
 }
 
+unzip_to_source() {
+  local FILENAME=$1
+  local SOURCE=$2
+  unzip -q "$FILENAME"
+  # Parse out the unzipped top directory
+  DIR_NAME=`unzip -qql "$FILENAME" | awk 'NR==1 {print $4}' | sed -e 's|^[/]*\([^/]*\).*|\1|'`
+  # If the unzipped directory is the wrong name, move it.
+  if [ "$SOURCE" != "$TP_SOURCE_DIR/$DIR_NAME" ]; then
+    mv "$TP_SOURCE_DIR/$DIR_NAME" "$SOURCE"
+  fi
+}
+
 fetch_and_expand() {
   local FILENAME=$1
+  local SOURCE=$2
   if [ -z "$FILENAME" ]; then
     echo "Error: Must specify file to fetch"
     exit 1
@@ -63,9 +76,9 @@ fetch_and_expand() {
       curl -L -O "$FULL_URL"
     fi
 
-    echo "Unpacking $FILENAME"
+    echo "Unpacking $FILENAME to $SOURCE"
     if [[ "$FILENAME" =~ \.zip$ ]]; then
-      if ! unzip -q "$FILENAME"; then
+      if ! unzip_to_source "$FILENAME" "$SOURCE"; then
         echo "Error unzipping $FILENAME, removing file"
         rm "$FILENAME"
         continue
@@ -99,53 +112,65 @@ fetch_and_expand() {
   echo
 }
 
+fetch_and_patch() {
+    local FILENAME=$1
+    local SOURCE=$2
+    local PATCH_LEVEL=$3
+    # Remaining args are expected to be a list of patch commands
+
+    delete_if_wrong_patchlevel $SOURCE $PATCH_LEVEL
+    if [ ! -d $SOURCE ]; then
+        fetch_and_expand $FILENAME $SOURCE
+        pushd $SOURCE
+        shift 3
+        # Run the patch commands
+        for f in "$@"; do
+            eval "$f"
+        done
+        touch patchlevel-$PATCH_LEVEL
+        popd
+        echo
+    fi
+}
+
 mkdir -p $TP_SOURCE_DIR
 cd $TP_SOURCE_DIR
 
 GLOG_PATCHLEVEL=2
-delete_if_wrong_patchlevel $GLOG_SOURCE $GLOG_PATCHLEVEL
-if [ ! -d $GLOG_SOURCE ]; then
-  fetch_and_expand glog-${GLOG_VERSION}.tar.gz
+fetch_and_patch \
+ glog-${GLOG_VERSION}.tar.gz \
+ $GLOG_SOURCE \
+ $GLOG_PATCHLEVEL \
+ "patch -p0 < $TP_DIR/patches/glog-issue-198-fix-unused-warnings.patch" \
+ "patch -p0 < $TP_DIR/patches/glog-issue-54-dont-build-tests.patch" \
+ "autoreconf -fvi"
 
-  pushd $GLOG_SOURCE
-  patch -p0 < $TP_DIR/patches/glog-issue-198-fix-unused-warnings.patch
-  patch -p0 < $TP_DIR/patches/glog-issue-54-dont-build-tests.patch
-  touch patchlevel-$GLOG_PATCHLEVEL
-  autoreconf -fvi
-  popd
-  echo
-fi
+GMOCK_PATCHLEVEL=0
+fetch_and_patch \
+ googletest-release-${GMOCK_VERSION}.tar.gz \
+ $GMOCK_SOURCE \
+ $GMOCK_PATCHLEVEL
 
-if [ ! -d $GMOCK_SOURCE ]; then
-  fetch_and_expand googletest-release-${GMOCK_VERSION}.tar.gz
-fi
-
-if [ ! -d $GFLAGS_SOURCE ]; then
-  fetch_and_expand gflags-${GFLAGS_VERSION}.tar.gz
-fi
+GFLAGS_PATCHLEVEL=0
+fetch_and_patch \
+ gflags-${GFLAGS_VERSION}.tar.gz \
+ $GFLAGS_SOURCE \
+ $GFLAGS_PATCHLEVEL
 
 GPERFTOOLS_PATCHLEVEL=1
-delete_if_wrong_patchlevel $GPERFTOOLS_SOURCE $GPERFTOOLS_PATCHLEVEL
-if [ ! -d $GPERFTOOLS_SOURCE ]; then
-  fetch_and_expand gperftools-${GPERFTOOLS_VERSION}.tar.gz
-
-  pushd $GPERFTOOLS_SOURCE
-  patch -p1 < $TP_DIR/patches/gperftools-Replace-namespace-base-with-namespace-tcmalloc.patch
-  touch patchlevel-$GPERFTOOLS_PATCHLEVEL
-  autoreconf -fvi
-  popd
-  echo
-fi
+fetch_and_patch \
+ gperftools-${GPERFTOOLS_VERSION}.tar.gz \
+ $GPERFTOOLS_SOURCE \
+ $GPERFTOOLS_PATCHLEVEL \
+ "patch -p1 < $TP_DIR/patches/gperftools-Replace-namespace-base-with-namespace-tcmalloc.patch" \
+ "autoreconf -fvi"
 
 PROTOBUF_PATCHLEVEL=0
-delete_if_wrong_patchlevel $PROTOBUF_SOURCE $PROTOBUF_PATCHLEVEL
-if [ ! -d $PROTOBUF_SOURCE ]; then
-  fetch_and_expand protobuf-${PROTOBUF_VERSION}.tar.gz
-  pushd $PROTOBUF_SOURCE
-  touch patchlevel-$PROTOBUF_PATCHLEVEL
-  autoreconf -fvi
-  popd
-fi
+fetch_and_patch \
+ protobuf-${PROTOBUF_VERSION}.tar.gz \
+ $PROTOBUF_SOURCE \
+ $PROTOBUF_PATCHLEVEL \
+ "autoreconf -fvi"
 
 # Returns 0 if cmake should be patched to work around this bug [1].
 #
@@ -170,144 +195,135 @@ needs_patched_cmake() {
 }
 
 CMAKE_PATCHLEVEL=1
-delete_if_wrong_patchlevel $CMAKE_SOURCE $CMAKE_PATCHLEVEL
-if [ ! -d $CMAKE_SOURCE ]; then
-  fetch_and_expand cmake-${CMAKE_VERSION}.tar.gz
-  pushd $CMAKE_SOURCE
-  if needs_patched_cmake; then
-    patch -p1 < $TP_DIR/patches/cmake-issue-15873-dont-use-select.patch
-  fi
-  # Write the patchlevel file even if the patch was skipped, so as to simplify
-  # future patch numbering.
-  touch patchlevel-$CMAKE_PATCHLEVEL
-  popd
+CMAKE_PATCHES=""
+if needs_patched_cmake; then \
+ CMAKE_PATCHES="patch -p1 < $TP_DIR/patches/cmake-issue-15873-dont-use-select.patch"
 fi
 
-if [ ! -d $SNAPPY_SOURCE ]; then
-  fetch_and_expand snappy-${SNAPPY_VERSION}.tar.gz
-  pushd $SNAPPY_SOURCE
-  autoreconf -fvi
-  popd
-fi
+fetch_and_patch \
+ cmake-${CMAKE_VERSION}.tar.gz \
+ $CMAKE_SOURCE \
+ $CMAKE_PATCHLEVEL \
+ "$CMAKE_PATCHES"
 
-if [ ! -d $ZLIB_SOURCE ]; then
-  fetch_and_expand zlib-${ZLIB_VERSION}.tar.gz
-fi
+SNAPPY_PATCHLEVEL=0
+fetch_and_patch \
+ snappy-${SNAPPY_VERSION}.tar.gz \
+ $SNAPPY_SOURCE \
+ $SNAPPY_PATCHLEVEL \
+ "autoreconf -fvi"
 
-if [ ! -d $LIBEV_SOURCE ]; then
-  fetch_and_expand libev-${LIBEV_VERSION}.tar.gz
-fi
+ZLIB_PATCHLEVEL=0
+fetch_and_patch \
+ zlib-${ZLIB_VERSION}.tar.gz \
+ $ZLIB_SOURCE \
+ $ZLIB_PATCHLEVEL
 
-if [ ! -d $RAPIDJSON_SOURCE ]; then
-  fetch_and_expand rapidjson-${RAPIDJSON_VERSION}.zip
-  mv rapidjson ${RAPIDJSON_SOURCE}
-fi
+LIBEV_PATCHLEVEL=0
+fetch_and_patch \
+ libev-${LIBEV_VERSION}.tar.gz \
+ $LIBEV_SOURCE \
+ $LIBEV_PATCHLEVEL
 
-if [ ! -d $SQUEASEL_SOURCE ]; then
-  fetch_and_expand squeasel-${SQUEASEL_VERSION}.tar.gz
-fi
+RAPIDJSON_PATCHLEVEL=0
+fetch_and_patch \
+ rapidjson-${RAPIDJSON_VERSION}.zip \
+ $RAPIDJSON_SOURCE \
+ $RAPIDJSON_PATCHLEVEL
 
-if [ ! -d $MUSTACHE_SOURCE ]; then
-  fetch_and_expand mustache-${MUSTACHE_VERSION}.tar.gz
-fi
+SQUEASEL_PATCHLEVEL=0
+fetch_and_patch \
+ squeasel-${SQUEASEL_VERSION}.tar.gz \
+ $SQUEASEL_SOURCE \
+ $SQUEASEL_PATCHLEVEL
+
+MUSTACHE_PATCHLEVEL=0
+fetch_and_patch \
+ mustache-${MUSTACHE_VERSION}.tar.gz \
+ $MUSTACHE_SOURCE \
+ $MUSTACHE_PATCHLEVEL
 
 GSG_PATCHLEVEL=1
-delete_if_wrong_patchlevel $GSG_SOURCE $GSG_PATCHLEVEL
-if [ ! -d $GSG_SOURCE ]; then
-  fetch_and_expand google-styleguide-${GSG_VERSION}.tar.gz
+fetch_and_patch \
+ google-styleguide-${GSG_VERSION}.tar.gz \
+ $GSG_SOURCE \
+ $GSG_PATCHLEVEL \
+ "patch -p1 < $TP_DIR/patches/google-styleguide-cpplint.patch"
 
-  pushd $GSG_SOURCE
-  patch -p1 < $TP_DIR/patches/google-styleguide-cpplint.patch
-  touch patchlevel-$GSG_PATCHLEVEL
-  popd
-  echo
-fi
+GCOVR_PATCHLEVEL=0
+fetch_and_patch \
+ gcovr-${GCOVR_VERSION}.tar.gz \
+ $GCOVR_SOURCE \
+ $GCOVR_PATCHLEVEL
 
-if [ ! -d $GCOVR_SOURCE ]; then
-  fetch_and_expand gcovr-${GCOVR_VERSION}.tar.gz
-fi
-
-if [ ! -d $CURL_SOURCE ]; then
-  fetch_and_expand curl-${CURL_VERSION}.tar.gz
-fi
+CURL_PATCHLEVEL=0
+fetch_and_patch \
+ curl-${CURL_VERSION}.tar.gz \
+ $CURL_SOURCE \
+ $CURL_PATCHLEVEL
 
 CRCUTIL_PATCHLEVEL=1
-delete_if_wrong_patchlevel $CRCUTIL_SOURCE $CRCUTIL_PATCHLEVEL
-if [ ! -d $CRCUTIL_SOURCE ]; then
-  fetch_and_expand crcutil-${CRCUTIL_VERSION}.tar.gz
-
-  pushd $CRCUTIL_SOURCE
-  patch -p0 < $TP_DIR/patches/crcutil-fix-libtoolize-on-osx.patch
-  touch patchlevel-$CRCUTIL_PATCHLEVEL
-  popd
-  echo
-fi
+fetch_and_patch \
+ crcutil-${CRCUTIL_VERSION}.tar.gz \
+ $CRCUTIL_SOURCE \
+ $CRCUTIL_PATCHLEVEL \
+ "patch -p0 < $TP_DIR/patches/crcutil-fix-libtoolize-on-osx.patch"
 
 LIBUNWIND_PATCHLEVEL=1
-delete_if_wrong_patchlevel $LIBUNWIND_SOURCE $LIBUNWIND_PATCHLEVEL
-if [ ! -d $LIBUNWIND_SOURCE ]; then
-  fetch_and_expand libunwind-${LIBUNWIND_VERSION}.tar.gz
-  pushd $LIBUNWIND_SOURCE
-  patch -p1 < $TP_DIR/patches/libunwind-Use-syscall-directly-in-write_validate-to-avoid-ASAN.patch
-  touch patchlevel-$LIBUNWIND_PATCHLEVEL
-  popd
-  echo
-fi
+fetch_and_patch \
+ libunwind-${LIBUNWIND_VERSION}.tar.gz \
+ $LIBUNWIND_SOURCE \
+ $LIBUNWIND_PATCHLEVEL \
+ "patch -p1 < $TP_DIR/patches/libunwind-Use-syscall-directly-in-write_validate-to-avoid-ASAN.patch"
 
-if [ ! -d $PYTHON_SOURCE ]; then
-  fetch_and_expand python-${PYTHON_VERSION}.tar.gz
-fi
+PYTHON_PATCHLEVEL=0
+fetch_and_patch \
+ python-${PYTHON_VERSION}.tar.gz \
+ $PYTHON_SOURCE \
+ $PYTHON_PATCHLEVEL
 
 LLVM_PATCHLEVEL=6
-delete_if_wrong_patchlevel $LLVM_SOURCE $LLVM_PATCHLEVEL
-if [ ! -d $LLVM_SOURCE ]; then
-  fetch_and_expand llvm-${LLVM_VERSION}-iwyu-${IWYU_VERSION}.src.tar.gz
-
-  pushd $LLVM_SOURCE
-  patch -p1 < $TP_DIR/patches/llvm-fix-amazon-linux.patch
-  patch -p1 -d $LLVM_SOURCE/tools/clang/tools/extra \
-    < $TP_DIR/patches/llvm-fix-readability-redundant-declaration-false-positive.patch
-  patch -p1 < $TP_DIR/patches/llvm-add-iwyu.patch
-  patch -p1 < $TP_DIR/patches/llvm-iwyu-nocurses.patch
-  patch -p1 < $TP_DIR/patches/llvm-iwyu-include-picker.patch
-  touch patchlevel-$LLVM_PATCHLEVEL
-  popd
-  echo
-fi
+fetch_and_patch \
+ llvm-${LLVM_VERSION}-iwyu-${IWYU_VERSION}.src.tar.gz \
+ $LLVM_SOURCE \
+ $LLVM_PATCHLEVEL \
+ "patch -p1 < $TP_DIR/patches/llvm-fix-amazon-linux.patch" \
+ "patch -p1 -d $LLVM_SOURCE/tools/clang/tools/extra < $TP_DIR/patches/llvm-fix-readability-redundant-declaration-false-positive.patch" \
+ "patch -p1 < $TP_DIR/patches/llvm-add-iwyu.patch" \
+ "patch -p1 < $TP_DIR/patches/llvm-iwyu-nocurses.patch" \
+ "patch -p1 < $TP_DIR/patches/llvm-iwyu-include-picker.patch"
 
 LZ4_PATCHLEVEL=1
-delete_if_wrong_patchlevel $LZ4_SOURCE $LZ4_PATCHLEVEL
-if [ ! -d $LZ4_SOURCE ]; then
-  fetch_and_expand lz4-lz4-$LZ4_VERSION.tar.gz
-  pushd $LZ4_SOURCE
-  patch -p1 < $TP_DIR/patches/lz4-0001-Fix-cmake-build-to-use-gnu-flags-on-clang.patch
-  touch patchlevel-$LZ4_PATCHLEVEL
-  popd
-  echo
-fi
+fetch_and_patch \
+ lz4-lz4-$LZ4_VERSION.tar.gz \
+ $LZ4_SOURCE \
+ $LZ4_PATCHLEVEL \
+ "patch -p1 < $TP_DIR/patches/lz4-0001-Fix-cmake-build-to-use-gnu-flags-on-clang.patch"
 
-if [ ! -d $BITSHUFFLE_SOURCE ]; then
-  fetch_and_expand bitshuffle-${BITSHUFFLE_VERSION}.tar.gz
-fi
+BITSHUFFLE_PATCHLEVEL=0
+fetch_and_patch \
+ bitshuffle-${BITSHUFFLE_VERSION}.tar.gz \
+ $BITSHUFFLE_SOURCE \
+ $BITSHUFFLE_PATCHLEVEL
 
-if [ ! -d $TRACE_VIEWER_SOURCE ]; then
-  fetch_and_expand kudu-trace-viewer-${TRACE_VIEWER_VERSION}.tar.gz
-fi
+TRACE_VIEWER_PATCHLEVEL=0
+fetch_and_patch \
+ kudu-trace-viewer-${TRACE_VIEWER_VERSION}.tar.gz \
+ $TRACE_VIEWER_SOURCE \
+ $TRACE_VIEWER_PATCHLEVEL
 
-if [ -n "$OS_LINUX" -a ! -d $NVML_SOURCE ]; then
-  fetch_and_expand nvml-${NVML_VERSION}.tar.gz
-fi
+NVML_PATCHLEVEL=0
+fetch_and_patch \
+ nvml-${NVML_VERSION}.tar.gz \
+ $NVML_SOURCE \
+ $NVML_PATCHLEVEL
 
 BOOST_PATCHLEVEL=1
-delete_if_wrong_patchlevel $BOOST_SOURCE $BOOST_PATCHLEVEL
-if [ ! -d $BOOST_SOURCE ]; then
-  fetch_and_expand boost_${BOOST_VERSION}.tar.gz
-  pushd $BOOST_SOURCE
-  patch -p0 < $TP_DIR/patches/boost-issue-12179-fix-compilation-errors.patch
-  touch patchlevel-$BOOST_PATCHLEVEL
-  popd
-  echo
-fi
+fetch_and_patch \
+ boost_${BOOST_VERSION}.tar.gz \
+ $BOOST_SOURCE \
+ $BOOST_PATCHLEVEL \
+ "patch -p0 < $TP_DIR/patches/boost-issue-12179-fix-compilation-errors.patch"
 
 # Return 0 if the current system appears to be el6 (either CentOS or proper RHEL)
 needs_openssl_workaround() {
@@ -323,70 +339,53 @@ if needs_openssl_workaround && [ ! -d "$OPENSSL_WORKAROUND_DIR" ] ; then
 fi
 
 BREAKPAD_PATCHLEVEL=1
-delete_if_wrong_patchlevel $BREAKPAD_SOURCE $BREAKPAD_PATCHLEVEL
-if [ ! -d "$BREAKPAD_SOURCE" ]; then
-  fetch_and_expand breakpad-${BREAKPAD_VERSION}.tar.gz
-  pushd $BREAKPAD_SOURCE
-  patch -p1 < $TP_DIR/patches/breakpad-add-basic-support-for-dwz-dwarf-extension.patch
-  touch patchlevel-$BREAKPAD_PATCHLEVEL
-  popd
-fi
+fetch_and_patch \
+ breakpad-${BREAKPAD_VERSION}.tar.gz \
+ $BREAKPAD_SOURCE \
+ $BREAKPAD_PATCHLEVEL \
+ "patch -p1 < $TP_DIR/patches/breakpad-add-basic-support-for-dwz-dwarf-extension.patch"
 
 SPARSEHASH_PATCHLEVEL=2
-delete_if_wrong_patchlevel $SPARSEHASH_SOURCE $SPARSEHASH_PATCHLEVEL
-if [ ! -d "$SPARSEHASH_SOURCE" ]; then
-  fetch_and_expand sparsehash-c11-${SPARSEHASH_VERSION}.tar.gz
-  pushd $SPARSEHASH_SOURCE
-  patch -p1 < $TP_DIR/patches/sparsehash-0001-Add-compatibily-for-gcc-4.x-in-traits.patch
-  touch patchlevel-$SPARSEHASH_PATCHLEVEL
-  popd
-fi
+fetch_and_patch \
+ sparsehash-c11-${SPARSEHASH_VERSION}.tar.gz \
+ $SPARSEHASH_SOURCE \
+ $SPARSEHASH_PATCHLEVEL \
+ "patch -p1 < $TP_DIR/patches/sparsehash-0001-Add-compatibily-for-gcc-4.x-in-traits.patch"
 
 SPARSEPP_PATCHLEVEL=0
-delete_if_wrong_patchlevel $SPARSEPP_SOURCE $SPARSEPP_PATCHLEVEL
-if [ ! -d "$SPARSEPP_SOURCE" ]; then
-  fetch_and_expand sparsepp-${SPARSEPP_VERSION}.tar.gz
-  pushd $SPARSEPP_SOURCE
-  touch patchlevel-$SPARSEPP_PATCHLEVEL
-  popd
-fi
+fetch_and_patch \
+ sparsepp-${SPARSEPP_VERSION}.tar.gz \
+ $SPARSEPP_SOURCE \
+ $SPARSEPP_PATCHLEVEL
 
 THRIFT_PATCHLEVEL=0
-if [ ! -d "$THRIFT_SOURCE" ]; then
-  fetch_and_expand $THRIFT_NAME.tar.gz
-  pushd $THRIFT_SOURCE
-  touch patchlevel-$THRIFT_PATCHLEVEL
-  popd
-fi
+fetch_and_patch \
+ $THRIFT_NAME.tar.gz \
+ $THRIFT_SOURCE \
+ $THRIFT_PATCHLEVEL
 
 BISON_PATCHLEVEL=1
-if [ ! -d "$BISON_SOURCE" ]; then
-  fetch_and_expand $BISON_NAME.tar.gz
-  # This would normally call autoreconf, but it does not succeed with
-  # autoreconf 2.69 (RHEL 7): "autoreconf: 'configure.ac' or 'configure.in' is required".
-  pushd $BISON_SOURCE
-  # Fix compilation issue in macOS High Sierra
-  # See: https://github.com/spack/spack/issues/5521
-  patch -p0 < $TP_DIR/patches/bison-fix-high-sierra-compilation-issue.patch
-  touch patchlevel-$BISON_PATCHLEVEL
-  popd
-fi
+fetch_and_patch \
+ $BISON_NAME.tar.gz \
+ $BISON_SOURCE \
+ $BISON_PATCHLEVEL \
+ "patch -p0 < $TP_DIR/patches/bison-fix-high-sierra-compilation-issue.patch"
+ # Fix compilation issue in macOS High Sierra
+ # See: https://github.com/spack/spack/issues/5521
+ # This would normally call autoreconf, but it does not succeed with
+ # autoreconf 2.69 (RHEL 7): "autoreconf: 'configure.ac' or 'configure.in' is required".
 
 HIVE_PATCHLEVEL=0
-if [ ! -d "$HIVE_SOURCE" ]; then
-  fetch_and_expand $HIVE_NAME-stripped.tar.gz
-  pushd $HIVE_SOURCE
-  touch patchlevel-$HIVE_PATCHLEVEL
-  popd
-fi
+fetch_and_patch \
+ $HIVE_NAME-stripped.tar.gz \
+ $HIVE_SOURCE \
+ $HIVE_PATCHLEVEL
 
 HADOOP_PATCHLEVEL=0
-if [ ! -d "$HADOOP_SOURCE" ]; then
-  fetch_and_expand $HADOOP_NAME-stripped.tar.gz
-  pushd $HADOOP_SOURCE
-  touch patchlevel-$HADOOP_PATCHLEVEL
-  popd
-fi
+fetch_and_patch \
+ $HADOOP_NAME-stripped.tar.gz \
+ $HADOOP_SOURCE \
+ $HADOOP_PATCHLEVEL
 
 echo "---------------"
 echo "Thirdparty dependencies downloaded successfully"
