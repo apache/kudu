@@ -1093,10 +1093,32 @@ TEST_F(DeleteTableITest, TestWebPageForTombstonedTablet) {
 }
 
 TEST_F(DeleteTableITest, TestUnknownTabletsAreNotDeleted) {
-  // Speed up heartbeating so that the unknown tablet is detected faster.
-  vector<string> extra_ts_flags = { "--heartbeat_interval_ms=10" };
+  //
+  // NOTE on disabled RPC authentication and encryption:
+  //   This test scenario would be flaky if the master/tserver authentication
+  //   were done via TLS certificates. That's because the scenario involves
+  //   removing master's data directory along with the IPKI information. Once
+  //   the master re-generates its IPKI system records and starts using the new
+  //   TLS server certificate signed by the newly generated CA private key,
+  //   the tserver fails to verify the new master's certificate using the old CA
+  //   certificate.
+  //
+  constexpr int kNumTabletServers = 1;
+  const vector<string> extra_ts_flags = {
+    // Speed up heartbeating so that the unknown tablet is detected faster.
+    "--heartbeat_interval_ms=10",
 
-  NO_FATALS(StartCluster(extra_ts_flags, {}, 1));
+    // See the note above on disabled RPC authentication and encryption.
+    "--rpc_authentication=disabled",
+    "--rpc_encryption=disabled",
+  };
+  const vector<string> extra_master_flags = {
+    // See the note above on disabled RPC authentication and encryption.
+    "--rpc_authentication=disabled",
+    "--rpc_encryption=disabled",
+  };
+
+  NO_FATALS(StartCluster(extra_ts_flags, extra_master_flags, kNumTabletServers));
 
   Schema schema(GetSimpleTestSchema());
   client::KuduSchema client_schema(client::KuduSchemaFromSchema(schema));
@@ -1113,22 +1135,12 @@ TEST_F(DeleteTableITest, TestUnknownTabletsAreNotDeleted) {
   ASSERT_OK(cluster_->master()->DeleteFromDisk());
   ASSERT_OK(cluster_->master()->Restart());
 
-  // Give the master a chance to finish writing the new master tablet to disk
-  // so that it can be found after the subsequent restart below.
-  ASSERT_OK(cluster_->master()->WaitForCatalogManager());
-
-  // The master should not delete the tablet. Let's wait for at least one
-  // heartbeat to pass.
+  // Let's wait for tablet server registration with the master: it guarantees
+  // at least one heartbeat is processed by the master.
+  ASSERT_OK(cluster_->WaitForTabletServerCount(kNumTabletServers,
+                                               MonoDelta::FromSeconds(30)));
+  // The master should not delete the tablet.
   int64_t num_delete_attempts;
-  ASSERT_EVENTUALLY([&]() {
-    int64_t num_heartbeats;
-    ASSERT_OK(GetInt64Metric(
-        cluster_->master()->bound_http_hostport(),
-        &METRIC_ENTITY_server, "kudu.master",
-        &METRIC_handler_latency_kudu_master_MasterService_TSHeartbeat, "total_count",
-        &num_heartbeats));
-    ASSERT_GE(num_heartbeats, 1);
-  });
   ASSERT_OK(GetInt64Metric(
       cluster_->tablet_server(0)->bound_http_hostport(),
       &METRIC_ENTITY_server, "kudu.tabletserver",
