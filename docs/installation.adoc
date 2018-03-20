@@ -459,7 +459,7 @@ make -j4
 ----
 $ sudo zypper install autoconf automake curl cyrus-sasl-devel \
   cyrus-sasl-gssapi flex gcc gcc-c++ gdb git java-1_8_0-openjdk-devel \
-  krb5-devel libtool lsb-release make ntp openssl-devel patch \
+  krb5-devel krb5-server libtool lsb-release make ntp openssl-devel patch \
   pkg-config python rsync unzip vim
 ----
 
