@@ -226,12 +226,12 @@ An example NTP server list may appear as follows:
 # Use my organization's internal NTP servers.
 server ntp1.myorg.internal iburst
 server ntp2.myorg.internal iburst
-# Provide several public pool servers from the US pool for
+# Provide several public pool servers for
 # redundancy and robustness.
-server 0.pool.us.ntp.org iburst
-server 1.pool.us.ntp.org iburst
-server 2.pool.us.ntp.org iburst
-server 3.pool.us.ntp.org iburst
+server 0.pool.ntp.org iburst
+server 1.pool.ntp.org iburst
+server 2.pool.ntp.org iburst
+server 3.pool.ntp.org iburst
 ----
 
 TIP: After configuring NTP, use the `ntpq` tool described above to verify that `ntpd` was
