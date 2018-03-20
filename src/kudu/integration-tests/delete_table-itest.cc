@@ -1158,7 +1158,14 @@ TEST_F(DeleteTableITest, TestNoDeleteTombstonedTablets) {
   }
 
   const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
-  NO_FATALS(StartCluster({}, {}, /*num_tablet_servers=*/ 4));
+  const vector<string> master_flags = {
+    // If running with the 3-4-3 replication scheme, the catalog manager
+    // controls replacement of replicas: it's necessary to disable that default
+    // behavior since this test manages replicas on its own.
+    "--catalog_manager_evict_excess_replicas=false",
+    "--master_add_server_when_underreplicated=false",
+  };
+  NO_FATALS(StartCluster({}, master_flags, /*num_tablet_servers=*/ 4));
   const int kNumReplicas = 3;
 
   // Create a table on the cluster. We're just using TestWorkload
