@@ -124,15 +124,13 @@ if [ ! -d $GFLAGS_SOURCE ]; then
   fetch_and_expand gflags-${GFLAGS_VERSION}.tar.gz
 fi
 
-GPERFTOOLS_PATCHLEVEL=4
+GPERFTOOLS_PATCHLEVEL=1
 delete_if_wrong_patchlevel $GPERFTOOLS_SOURCE $GPERFTOOLS_PATCHLEVEL
 if [ ! -d $GPERFTOOLS_SOURCE ]; then
   fetch_and_expand gperftools-${GPERFTOOLS_VERSION}.tar.gz
 
   pushd $GPERFTOOLS_SOURCE
-  patch -p1 < $TP_DIR/patches/gperftools-Implemented-O-log-n-searching-among-large-spans.patch
   patch -p1 < $TP_DIR/patches/gperftools-Replace-namespace-base-with-namespace-tcmalloc.patch
-  patch -p1 < $TP_DIR/patches/gperftools-sized-alloc-build-fix.patch
   touch patchlevel-$GPERFTOOLS_PATCHLEVEL
   autoreconf -fvi
   popd

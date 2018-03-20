@@ -1,52 +1,11 @@
-From 181843b0ecddcc8c8be912cf3c035e27e2f63842 Mon Sep 17 00:00:00 2001
-From: Todd Lipcon <todd@cloudera.com>
-Date: Mon, 5 Feb 2018 21:19:54 -0800
-Subject: [PATCH 3/3] Substitute namespaces
+commit afca5dcb9a9e88487523d7e0d7ff917555dc1a51
+Author: Todd Lipcon <todd@cloudera.com>
+Date:   Mon Mar 19 19:44:05 2018 -0700
 
-perl -p -i -e 's,base::,tcmalloc::,g' $(find . -name *.h -o -name \*.cc)
-perl -p -i -e 's,namespace base,namespace tcmalloc,g' $(find . -name *.h -o -name \*.cc)
----
- src/base/atomicops-internals-arm-generic.h |    6 +-
- src/base/atomicops-internals-arm-v6plus.h  |    4 +-
- src/base/atomicops-internals-gcc.h         |    6 +-
- src/base/atomicops-internals-linuxppc.h    |    6 +-
- src/base/atomicops-internals-macosx.h      |    8 +-
- src/base/atomicops-internals-mips.h        |    6 +-
- src/base/atomicops-internals-windows.h     |   14 ++--
- src/base/atomicops-internals-x86.h         |    6 +-
- src/base/atomicops.h                       |   92 ++++++++++++++--------------
- src/base/basictypes.h                      |    8 +-
- src/base/elf_mem_image.cc                  |    4 +-
- src/base/elf_mem_image.h                   |    4 +-
- src/base/spinlock.cc                       |   16 +++---
- src/base/spinlock.h                        |   14 ++--
- src/base/spinlock_internal.cc              |   18 +++---
- src/base/spinlock_internal.h               |    4 +-
- src/base/spinlock_linux-inl.h              |    6 +-
- src/base/spinlock_posix-inl.h              |    6 +-
- src/base/spinlock_win32-inl.h              |    6 +-
- src/base/vdso_support.cc                   |    4 +-
- src/base/vdso_support.h                    |    4 +-
- src/central_freelist.h                     |    2 +-
- src/emergency_malloc.cc                    |    2 +-
- src/gperftools/malloc_extension.h          |    8 +-
- src/heap-profile-table.cc                  |    2 +-
- src/internal_logging.cc                    |    2 +-
- src/malloc_hook-inl.h                      |   44 +++++++-------
- src/malloc_hook.cc                         |   60 +++++++++---------
- src/page_heap.cc                           |   10 ++--
- src/page_heap.h                            |    4 +-
- src/page_heap_allocator.h                  |    4 +-
- src/raw_printer.cc                         |    2 +-
- src/raw_printer.h                          |    2 +-
- src/stacktrace_powerpc-linux-inl.h         |    4 +-
- src/stacktrace_x86-inl.h                   |    6 +-
- src/tcmalloc.cc                            |   10 ++--
- src/tests/atomicops_unittest.cc            |   36 ++++++------
- src/tests/malloc_hook_test.cc              |    4 +-
- src/tests/raw_printer_test.cc              |    8 +-
- src/tests/tcmalloc_unittest.cc             |   28 ++++----
- 40 files changed, 240 insertions(+), 240 deletions(-)
+    Substitute namespaces
+    
+    perl -p -i -e 's,base::,tcmalloc::,g' $(find . -name *.h -o -name \*.cc)
+    perl -p -i -e 's,namespace base,namespace tcmalloc,g' $(find . -name *.h -o -name \*.cc)
 
 diff --git a/src/base/atomicops-internals-arm-generic.h b/src/base/atomicops-internals-arm-generic.h
 index d0f9413..c81f1e6 100644
@@ -1299,7 +1258,7 @@ index 64c2165..1b0dcd0 100644
  // These are available as C bindings as well as C++, hence their
  // definition outside the MallocHook class.
 diff --git a/src/page_heap.cc b/src/page_heap.cc
-index 712732a..c1c7ed3 100644
+index 7dd5646..673cfa6 100644
 --- a/src/page_heap.cc
 +++ b/src/page_heap.cc
 @@ -582,7 +582,7 @@ void PageHeap::GetLargeSpanStats(LargeSpanStats* result) {
@@ -1338,7 +1297,7 @@ index 712732a..c1c7ed3 100644
    }
    return true;
 diff --git a/src/page_heap.h b/src/page_heap.h
-index 34f18bb..c040b2d 100644
+index bf50394..ec487bc 100644
 --- a/src/page_heap.h
 +++ b/src/page_heap.h
 @@ -65,7 +65,7 @@
@@ -1360,10 +1319,10 @@ index 34f18bb..c040b2d 100644
    // Page heap statistics
    struct Stats {
 diff --git a/src/page_heap_allocator.h b/src/page_heap_allocator.h
-index 440b8ad..bc60a21 100644
+index 3fecabd..9a2f791 100644
 --- a/src/page_heap_allocator.h
 +++ b/src/page_heap_allocator.h
-@@ -163,7 +163,7 @@ class STLPageHeapAllocator {
+@@ -164,7 +164,7 @@ class STLPageHeapAllocator {
  
   private:
    struct Storage {
@@ -1372,7 +1331,7 @@ index 440b8ad..bc60a21 100644
      PageHeapAllocator<T> allocator;
      bool initialized;
    };
-@@ -171,7 +171,7 @@ class STLPageHeapAllocator {
+@@ -172,7 +172,7 @@ class STLPageHeapAllocator {
  };
  
  template<typename T, class LockingTag>
@@ -1441,10 +1400,10 @@ index 46eb5d8..ae3287b 100644
                                 STT_FUNC, &rt_sigreturn_symbol_info) ||
              !vdso.LookupSymbol("__kernel_vsyscall", "LINUX_2.5",
 diff --git a/src/tcmalloc.cc b/src/tcmalloc.cc
-index be0a6ee..e506bd3 100644
+index 1f22dfb..a8fc5ee 100644
 --- a/src/tcmalloc.cc
 +++ b/src/tcmalloc.cc
-@@ -589,7 +589,7 @@ static void IterateOverRanges(void* arg, MallocExtension::RangeFunction func) {
+@@ -590,7 +590,7 @@ static void IterateOverRanges(void* arg, MallocExtension::RangeFunction func) {
    while (!done) {
      // Accumulate a small number of ranges in a local buffer
      static const int kNumRanges = 16;
@@ -1453,7 +1412,7 @@ index be0a6ee..e506bd3 100644
      int n = 0;
      {
        SpinLockHolder h(Static::pageheap_lock());
-@@ -1823,7 +1823,7 @@ void* memalign_pages(size_t align, size_t size,
+@@ -1824,7 +1824,7 @@ void* memalign_pages(size_t align, size_t size,
  template <void* OOMHandler(size_t)>
  ATTRIBUTE_ALWAYS_INLINE inline
  static void * malloc_fast_path(size_t size) {
@@ -1462,7 +1421,7 @@ index be0a6ee..e506bd3 100644
      return tcmalloc::dispatch_allocate_full<OOMHandler>(size);
    }
  
-@@ -1874,7 +1874,7 @@ void* tc_malloc(size_t size) PERFTOOLS_NOTHROW {
+@@ -1875,7 +1875,7 @@ void* tc_malloc(size_t size) PERFTOOLS_NOTHROW {
  
  static ATTRIBUTE_ALWAYS_INLINE inline
  void free_fast_path(void *ptr) {
@@ -1471,7 +1430,7 @@ index be0a6ee..e506bd3 100644
      tcmalloc::invoke_hooks_and_free(ptr);
      return;
    }
-@@ -1888,7 +1888,7 @@ void tc_free(void* ptr) PERFTOOLS_NOTHROW {
+@@ -1889,7 +1889,7 @@ void tc_free(void* ptr) PERFTOOLS_NOTHROW {
  
  extern "C" PERFTOOLS_DLL_DECL CACHELINE_ALIGNED_FN
  void tc_free_sized(void *ptr, size_t size) PERFTOOLS_NOTHROW {
@@ -1480,7 +1439,7 @@ index be0a6ee..e506bd3 100644
      tcmalloc::invoke_hooks_and_free(ptr);
      return;
    }
-@@ -1990,7 +1990,7 @@ extern "C" PERFTOOLS_DLL_DECL void tc_delete_nothrow(void* p, const std::nothrow
+@@ -1991,7 +1991,7 @@ extern "C" PERFTOOLS_DLL_DECL void tc_delete_nothrow(void* p, const std::nothrow
  TC_ALIAS(tc_free);
  #else
  {
@@ -1690,6 +1649,3 @@ index a9c6429..9149fde 100644
  }
  
  #ifndef DEBUGALLOCATION
--- 
-1.7.1
-
