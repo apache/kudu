@@ -64,7 +64,7 @@ shift
 SHORT_TEST_NAME=$(echo $TEST_FILENAME | perl -pe 's/\..+?$//')
 
 # The full test name does include the shard number if the test is sharded.
-if [ "$GTEST_TOTAL_SHARDS" -gt 1 ]; then
+if [ ${GTEST_TOTAL_SHARDS:-0} -gt 1 ]; then
   TEST_NAME=${SHORT_TEST_NAME}.${GTEST_SHARD_INDEX:?}
 else
   TEST_NAME=${SHORT_TEST_NAME}
