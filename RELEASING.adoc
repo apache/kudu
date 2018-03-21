@@ -240,7 +240,7 @@ Apache Git repository:
 +
 ----
   git tag -s 1.x.y -m 'Release Apache Kudu 1.x.y' 1.x.y-RC1
-  git push apache 1.x.y-RC1
+  git push apache 1.x.y
 ----
 
 . Release the staged Java artifacts. Select the release candidate staging
@@ -250,10 +250,11 @@ Apache Git repository:
 . Generate the version-specific documentation from that branch following these
   link:https://github.com/apache/kudu/#updating-the-kudu-web-site-documentation[instructions].
 
-. Replace the `apidocs` and `docs` folders in the `gh-pages` branch with the new documentation.
+. Replace the `apidocs`, `cpp-client-api`, and `docs` folders in the `gh-pages` branch with
+  the new documentation.
 
 . Update the `index.md` file in the releases folder, add a new folder named after the release version,
-  copy the `apidocs` and `docs` folders there, copy an `index.md` file from one
+  copy the `apidocs`, `cpp-client-api`, and `docs` folders there, copy an `index.md` file from one
   of the other releases and modify it accordingly.
 
 . Commit all these changes.
