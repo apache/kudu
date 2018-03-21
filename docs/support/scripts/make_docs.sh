@@ -216,7 +216,12 @@ if [ -n "$SITE" ] && [ -z "$NO_JEKYLL" ]; then
   # We need to generate a config file which fakes the "github.url" property
   # so that relative links within the site work.
   BASE_URL="file://$SITE/_site/"
-  TMP_CONFIG=$(mktemp --suffix=.yml)
+  TMP_CONFIG=$(mktemp -t config.XXXXXX)
+  # Rename the config file. The template adds the random section
+  # to the end of the file to be compatible with Mac OS. However,
+  # Jekyll expects the file to end in yml.
+  mv "$TMP_CONFIG" "$TMP_CONFIG.yml"
+  TMP_CONFIG="$TMP_CONFIG.yml"
   trap "rm $TMP_CONFIG" EXIT
   printf "github:\n  url: %s" "$BASE_URL" > $TMP_CONFIG
 
