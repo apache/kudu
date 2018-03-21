@@ -171,10 +171,6 @@ static void PprofContentionHandler(const Webserver::WebRequest& req,
   int32_t seconds = ParseLeadingInt32Value(secs_str.c_str(), kPprofDefaultSampleSecs);
   int64_t discarded_samples = 0;
 
-  *output << "--- contention" << endl;
-  *output << "sampling period = 1" << endl;
-  *output << "cycles/second = " << base::CyclesPerSecond() << endl;
-
   MonoTime end = MonoTime::Now() + MonoDelta::FromSeconds(seconds);
   StartSynchronizationProfiling();
   while (MonoTime::Now() < end) {
@@ -182,16 +178,22 @@ static void PprofContentionHandler(const Webserver::WebRequest& req,
     FlushSynchronizationProfile(output, &discarded_samples);
   }
   StopSynchronizationProfiling();
-  FlushSynchronizationProfile(output, &discarded_samples);
+  ostringstream profile;
+  FlushSynchronizationProfile(&profile, &discarded_samples);
 
+  *output << "--- contention:" << endl;
+  *output << "sampling period = 1" << endl;
+  *output << "cycles/second = " << static_cast<int64_t>(base::CyclesPerSecond()) << endl;
   // pprof itself ignores this value, but we can at least look at it in the textual
   // output.
   *output << "discarded samples = " << discarded_samples << std::endl;
+  *output << profile.str();
 
 #if defined(__linux__)
   // procfs only exists on Linux.
   faststring maps;
   ReadFileToString(Env::Default(), "/proc/self/maps", &maps);
+  *output << "--- Memory map: ---" << endl;
   *output << maps.ToString();
 #endif // defined(__linux__)
 }

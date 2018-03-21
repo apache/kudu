@@ -182,8 +182,9 @@ void ContentionStacks::Flush(std::ostringstream* out, int64_t* dropped) {
   int64_t cycles;
   int64_t count;
   while (g_contention_stacks->CollectSample(&iterator, &t, &count, &cycles)) {
-    *out << cycles << "\t" << count
-         << " @ " << t.ToHexString(StackTrace::NO_FIX_CALLER_ADDRESSES)
+    *out << cycles << " " << count
+         << " @ " << t.ToHexString(StackTrace::NO_FIX_CALLER_ADDRESSES |
+                                   StackTrace::HEX_0X_PREFIX)
          << std::endl;
   }
 

@@ -74,7 +74,7 @@ TEST_F(SpinLockProfilingTest, TestStackCollection) {
   int64_t dropped = 0;
   FlushSynchronizationProfile(&str, &dropped);
   std::string s = str.str();
-  ASSERT_STR_CONTAINS(s, "12345\t1 @ ");
+  ASSERT_STR_CONTAINS(s, "12345 1 @ ");
   ASSERT_EQ(0, dropped);
 }
 

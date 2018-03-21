@@ -159,7 +159,11 @@ class StackTrace {
     // Do not fix up the addresses on the stack to try to point to the 'call'
     // instructions instead of the return address. This is necessary when dumping
     // addresses to be interpreted by 'pprof', which does this fix-up itself.
-    NO_FIX_CALLER_ADDRESSES = 1
+    NO_FIX_CALLER_ADDRESSES = 1,
+
+    // Prefix each hex address with '0x'. This is required by the go version
+    // of pprof when parsing stack traces.
+    HEX_0X_PREFIX = 1 << 1,
   };
 
   // Stringify the trace into the given buffer.

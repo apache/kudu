@@ -632,6 +632,10 @@ void StackTrace::StringifyToHex(char* buf, size_t size, int flags) const {
     if (i != 0) {
       *dst++ = ' ';
     }
+    if (flags & HEX_0X_PREFIX) {
+      *dst++ = '0';
+      *dst++ = 'x';
+    }
     // See note in Symbolize() below about why we subtract 1 from each address here.
     uintptr_t addr = reinterpret_cast<uintptr_t>(frames_[i]);
     if (addr > 0 && !(flags & NO_FIX_CALLER_ADDRESSES)) {
@@ -646,8 +650,14 @@ void StackTrace::StringifyToHex(char* buf, size_t size, int flags) const {
 string StackTrace::ToHexString(int flags) const {
   // Each frame requires kHexEntryLength, plus a space
   // We also need one more byte at the end for '\0'
-  char buf[kMaxFrames * (kHexEntryLength + 1) + 1];
-  StringifyToHex(buf, arraysize(buf), flags);
+  int len_per_frame = kHexEntryLength;
+  len_per_frame++; // For the separating space.
+  if  (flags & HEX_0X_PREFIX) {
+    len_per_frame += 2;
+  }
+  int buf_len = kMaxFrames * len_per_frame + 1;
+  char buf[buf_len];
+  StringifyToHex(buf, buf_len, flags);
   return string(buf);
 }
 
