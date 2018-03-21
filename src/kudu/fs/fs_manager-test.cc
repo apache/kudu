@@ -409,6 +409,36 @@ TEST_F(FsManagerTestBase, TestCreateWithFailedDirs) {
   FLAGS_env_inject_eio = 0;
 }
 
+TEST_F(FsManagerTestBase, TestOpenWithNoBlockManagerInstances) {
+  // Open a healthy FS layout, sharing the WAL directory with a data directory.
+  const string wal_path = GetTestPath("wals");
+  FsManagerOpts opts;
+  opts.wal_root = wal_path;
+  ReinitFsManagerWithOpts(std::move(opts));
+  ASSERT_OK(fs_manager()->CreateInitialFileSystemLayout());
+  ASSERT_OK(fs_manager()->Open());
+
+  // Now try moving the data directory out of WAL directory.
+  // Even if we're not enforcing consistency, we must be able to find an
+  // existing block manager instance to open the FsManager successfully.
+  for (auto check_behavior : { ConsistencyCheckBehavior::IGNORE_INCONSISTENCY,
+                               ConsistencyCheckBehavior::UPDATE_ON_DISK }) {
+    FsManagerOpts new_opts;
+    new_opts.wal_root = wal_path;
+    new_opts.data_roots = { GetTestPath("data") };
+    new_opts.consistency_check = check_behavior;
+    ReinitFsManagerWithOpts(new_opts);
+    Status s = fs_manager()->Open();
+    ASSERT_STR_CONTAINS(s.ToString(), "none of the provided data directories could be found");
+    ASSERT_TRUE(s.IsNotFound());
+
+    // Once we supply the WAL directory as a data directory, we can open successfully.
+    new_opts.data_roots.emplace_back(wal_path);
+    ReinitFsManagerWithOpts(std::move(new_opts));
+    ASSERT_OK(fs_manager()->Open());
+  }
+}
+
 TEST_F(FsManagerTestBase, TestOpenWithFailedDirs) {
   // Successfully create an FS layout.
   string wal_path = GetTestPath("wals");

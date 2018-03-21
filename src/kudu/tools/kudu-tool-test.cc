@@ -2195,6 +2195,38 @@ static void CreateTableWithFlushedData(const string& table_name,
   }
 }
 
+// This test simulates a user trying to update from not having data directories
+// (i.e. just the wal dir). Any supplied `fs_data_dirs` options thereafter that
+// don't include `fs_wal_dir` would effectively lead to an attempt at swapping
+// data directories, which is not supported.
+TEST_F(ToolTest, TestFsSwappingDirectoriesFailsGracefully) {
+  if (FLAGS_block_manager == "file") {
+    LOG(INFO) << "Skipping test, only log block manager is supported";
+    return;
+  }
+
+  // Configure the server to share the data root and wal root.
+  NO_FATALS(StartMiniCluster());
+  MiniTabletServer* mts = mini_cluster_->mini_tablet_server(0);
+  mts->Shutdown();
+
+  // Now try to update to put data exclusively in a different directory.
+  const string& wal_root = mts->options()->fs_opts.wal_root;
+  const string& new_data_root_no_wal = GetTestPath("foo");
+  string stderr;
+  Status s = RunTool(Substitute(
+      "fs update_dirs --fs_wal_dir=$0 --fs_data_dirs=$1",
+      wal_root, new_data_root_no_wal), nullptr, &stderr);
+  ASSERT_STR_CONTAINS(stderr, "none of the provided data directories could be found");
+
+  // If we instead try to add the directory to the existing list of
+  // directories, Kudu should allow it.
+  vector<string> new_data_roots = { new_data_root_no_wal, wal_root };
+  NO_FATALS(RunActionStdoutNone(Substitute(
+      "fs update_dirs --fs_wal_dir=$0 --fs_data_dirs=$1",
+      wal_root, JoinStrings(new_data_roots, ","))));
+}
+
 TEST_F(ToolTest, TestFsAddRemoveDataDirEndToEnd) {
   const string kTableFoo = "foo";
   const string kTableBar = "bar";

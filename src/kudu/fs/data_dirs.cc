@@ -625,7 +625,10 @@ Status DataDirManager::LoadInstances(
   }
 
   // Check that at least a single data directory exists and is healthy.
-  CHECK(!loaded_instances_tmp.empty());  // enforced above
+  if (loaded_instances_tmp.empty()) {
+    return Status::NotFound("could not open directory manager; none of the "
+                            "provided data directories could be found.");
+  }
   int num_healthy_instances = 0;
   for (const auto& instance : loaded_instances_tmp) {
     if (instance->healthy()) {
