@@ -152,10 +152,6 @@ class Log : public RefCountedThreadSafe<Log> {
     max_segment_size_ = max_segment_size;
   }
 
-  void DisableAsyncAllocationForTests() {
-    options_.async_preallocate_segments = false;
-  }
-
   void DisableSync() {
     sync_disabled_ = true;
   }
@@ -225,6 +221,8 @@ class Log : public RefCountedThreadSafe<Log> {
   // Forces the Log to allocate a new segment and roll over.
   // This can be used to make sure all entries appended up to this point are
   // available in closed, readable segments.
+  //
+  // This is not thread-safe. Used in test only.
   Status AllocateSegmentAndRollOver();
 
   // Returns this Log's FsManager.
@@ -244,6 +242,7 @@ class Log : public RefCountedThreadSafe<Log> {
   FRIEND_TEST(LogTestOptionalCompression, TestMultipleEntriesInABatch);
   FRIEND_TEST(LogTestOptionalCompression, TestReadLogWithReplacedReplicates);
   FRIEND_TEST(LogTest, TestWriteAndReadToAndFromInProgressSegment);
+  FRIEND_TEST(LogTest, TestAutoStopIdleAppendThread);
 
   class AppendThread;
 
@@ -270,6 +269,9 @@ class Log : public RefCountedThreadSafe<Log> {
 
   // Make segments roll over.
   Status RollOver();
+
+  // Sets that the current active segment is idle.
+  void SetActiveSegmentIdle();
 
   static Status CreateBatchFromPB(LogEntryTypePB type,
                                   std::unique_ptr<LogEntryBatchPB> entry_batch_pb,
@@ -398,6 +400,11 @@ class Log : public RefCountedThreadSafe<Log> {
 
   // The status of the most recent log-allocation action.
   Promise<Status> allocation_status_;
+
+  // Protects the active segment as it is going idle, in case other threads
+  // attempt to switch segments concurrently. This shouldn't happen in
+  // production, but may happen if AllocateSegmentAndRollOver() is called.
+  mutable rw_spinlock segment_idle_lock_;
 
   // Read-write lock to protect 'allocation_state_'.
   mutable RWMutex allocation_lock_;

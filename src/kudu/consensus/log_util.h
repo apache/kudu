@@ -403,6 +403,8 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
 };
 
 // A writable log segment where state data is stored.
+//
+// This class is not thread-safe.
 class WritableLogSegment {
  public:
   WritableLogSegment(std::string path,
@@ -433,6 +435,10 @@ class WritableLogSegment {
   Status Sync() {
     return writable_file_->Sync();
   }
+
+  // Indicate that the segment has not been written for some period of time.
+  // In this case, temporary buffers should be freed up.
+  void GoIdle();
 
   // Returns true if the segment header has already been written to disk.
   bool IsHeaderWritten() const {
@@ -467,6 +473,7 @@ class WritableLogSegment {
   }
 
  private:
+  FRIEND_TEST(LogTest, TestAutoStopIdleAppendThread);
 
   const std::shared_ptr<WritableFile>& writable_file() const {
     return writable_file_;

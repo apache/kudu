@@ -292,6 +292,11 @@ void Log::AppendThread::Wake() {
   }
 }
 
+void Log::SetActiveSegmentIdle() {
+  std::lock_guard<rw_spinlock> l(segment_idle_lock_);
+  active_segment_->GoIdle();
+}
+
 bool Log::AppendThread::GoIdle() {
   // Inject latency at key points in this function for the purposes of tests.
   MAYBE_INJECT_RANDOM_LATENCY(FLAGS_log_inject_thread_lifecycle_latency_ms);
@@ -348,6 +353,7 @@ void Log::AppendThread::ProcessQueue() {
     }
     HandleBatches(std::move(entry_batches));
   }
+  log_->SetActiveSegmentIdle();
   VLOG_WITH_PREFIX(2) << "WAL Appender going idle";
 }
 
@@ -726,6 +732,7 @@ void Log::UpdateFooterForBatch(LogEntryBatch* batch) {
 }
 
 Status Log::AllocateSegmentAndRollOver() {
+  std::lock_guard<rw_spinlock> l(segment_idle_lock_);
   RETURN_NOT_OK(AsyncAllocateSegment());
   return RollOver();
 }
