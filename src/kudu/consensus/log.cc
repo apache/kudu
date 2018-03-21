@@ -341,6 +341,7 @@ void Log::AppendThread::DoWork() {
     }
     HandleGroup(std::move(entry_batches));
   }
+  log_->active_segment_->GoIdle();
   VLOG_WITH_PREFIX(2) << "WAL Appender going idle";
 }
 
