@@ -25,7 +25,6 @@
 #include <ostream>
 #include <glog/logging.h>
 
-#include "kudu/gutil/atomicops.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/random.h"
 
@@ -50,14 +49,25 @@ Cell::Cell()
 // Striped64
 //
 __thread uint64_t Striped64::tls_hashcode_ = 0;
-const uint32_t Striped64::kNumCpus = sysconf(_SC_NPROCESSORS_ONLN);
 
-Striped64::Striped64()
-    : busy_(false),
-      cell_buffer_(nullptr),
-      cells_(nullptr),
-      num_cells_(0) {
+namespace {
+const uint32_t kNumCpus = sysconf(_SC_NPROCESSORS_ONLN);
+uint32_t ComputeNumCells() {
+  uint32_t n = 1;
+  // Calculate the size. Nearest power of two >= NCPU.
+  // Also handle a negative NCPU, can happen if sysconf name is unknown
+  while (kNumCpus > n) {
+    n <<= 1;
+  }
+  return n;
 }
+const uint32_t kNumCells = ComputeNumCells();
+const uint32_t kCellMask = kNumCells - 1;
+
+striped64::internal::Cell* const kCellsLocked =
+      reinterpret_cast<striped64::internal::Cell*>(-1L);
+
+} // anonymous namespace
 
 uint64_t Striped64::get_tls_hashcode() {
   if (PREDICT_FALSE(tls_hashcode_ == 0)) {
@@ -73,10 +83,11 @@ uint64_t Striped64::get_tls_hashcode() {
 
 Striped64::~Striped64() {
   // Cell is a POD, so no need to destruct each one.
-  free(cell_buffer_);
+  free(cells_);
 }
 
-void Striped64::RetryUpdate(int64_t x, Rehash to_rehash) {
+template<class Updater>
+void Striped64::RetryUpdate(Rehash to_rehash, Updater updater) {
   uint64_t h = get_tls_hashcode();
   // There are three operations in this loop.
   //
@@ -88,15 +99,15 @@ void Striped64::RetryUpdate(int64_t x, Rehash to_rehash) {
   // These are predicated on successful CAS operations, which is why it's all wrapped in an
   // infinite retry loop.
   while (true) {
-    int32_t n = base::subtle::Acquire_Load(&num_cells_);
-    if (n > 0) {
+    Cell* cells = cells_.load(std::memory_order_acquire);
+    if (cells && cells != kCellsLocked) {
       if (to_rehash == kRehash) {
         // CAS failed already, rehash before trying to increment.
         to_rehash = kNoRehash;
       } else {
-        Cell *cell = &(cells_[(n - 1) & h]);
-        int64_t v = cell->value_.Load();
-        if (cell->CompareAndSet(v, Fn(v, x))) {
+        Cell *cell = &(cells_[h & kCellMask]);
+        int64_t v = cell->value_.load(std::memory_order_relaxed);
+        if (cell->CompareAndSet(v, updater(v))) {
           // Successfully CAS'd the corresponding cell, done.
           break;
         }
@@ -105,31 +116,20 @@ void Striped64::RetryUpdate(int64_t x, Rehash to_rehash) {
       h ^= h << 13;
       h ^= h >> 17;
       h ^= h << 5;
-    } else if (n == 0 && CasBusy()) {
-      // We think table hasn't been initialized yet, try to do so.
-      // Recheck preconditions, someone else might have init'd in the meantime.
-      n = base::subtle::Acquire_Load(&num_cells_);
-      if (n == 0) {
-        n = 1;
-        // Calculate the size. Nearest power of two >= NCPU.
-        // Also handle a negative NCPU, can happen if sysconf name is unknown
-        while (kNumCpus > n) {
-          n <<= 1;
-        }
-        // Allocate cache-aligned memory for use by the cells_ table.
-        int err = posix_memalign(&cell_buffer_, CACHELINE_SIZE, sizeof(Cell)*n);
-        CHECK_EQ(0, err) << "error calling posix_memalign" << std::endl;
-        // Initialize the table
-        cells_ = new (cell_buffer_) Cell[n];
-        base::subtle::Release_Store(&num_cells_, n);
-      }
-      // End critical section
-      busy_.Store(0);
+    } else if (cells == nullptr &&
+               cells_.compare_exchange_weak(cells, kCellsLocked)) {
+      // Allocate cache-aligned memory for use by the cells_ table.
+      void* cell_buffer = nullptr;
+      int err = posix_memalign(&cell_buffer, CACHELINE_SIZE, sizeof(Cell) * kNumCells);
+      CHECK_EQ(0, err) << "error calling posix_memalign" << std::endl;
+      // Initialize the table
+      cells = new (cell_buffer) Cell[kNumCells];
+      cells_.store(cells, std::memory_order_release);
     } else {
       // Fallback to adding to the base value.
       // Means the table wasn't initialized or we failed to init it.
-      int64_t v = base_.value_.Load();
-      if (CasBase(v, Fn(v, x))) {
+      int64_t v = base_.load(std::memory_order_relaxed);
+      if (CasBase(v, updater(v))) {
         break;
       }
     }
@@ -139,32 +139,36 @@ void Striped64::RetryUpdate(int64_t x, Rehash to_rehash) {
 }
 
 void Striped64::InternalReset(int64_t initial_value) {
-  const int32_t n = base::subtle::Acquire_Load(&num_cells_);
-  base_.value_.Store(initial_value);
-  for (int i = 0; i < n; i++) {
-    cells_[i].value_.Store(initial_value);
+  base_.store(initial_value);
+  Cell* c;
+  do {
+    c = cells_.load(std::memory_order_acquire);
+  } while (c == kCellsLocked);
+  if (c) {
+    for (int i = 0; i < kNumCells; i++) {
+      c[i].value_.store(initial_value);
+    }
   }
 }
-
 void LongAdder::IncrementBy(int64_t x) {
   // Use hash table if present. If that fails, call RetryUpdate to rehash and retry.
   // If no hash table, try to CAS the base counter. If that fails, RetryUpdate to init the table.
-  const int32_t n = base::subtle::Acquire_Load(&num_cells_);
-  if (n > 0) {
-    Cell *cell = &(cells_[(n - 1) & get_tls_hashcode()]);
+  Cell* cells = cells_.load(std::memory_order_acquire);
+  if (cells && cells != kCellsLocked) {
+    Cell *cell = &(cells[get_tls_hashcode() & kCellMask]);
     DCHECK_EQ(0, reinterpret_cast<const uintptr_t>(cell) & (sizeof(Cell) - 1))
         << " unaligned Cell not allowed for Striped64" << std::endl;
-    const int64_t old = cell->value_.Load();
+    const int64_t old = cell->value_.load(std::memory_order_relaxed);
     if (!cell->CompareAndSet(old, old + x)) {
       // When we hit a hash table contention, signal RetryUpdate to rehash.
-      RetryUpdate(x, kRehash);
+      RetryUpdate(kRehash, [x](int64_t old) { return old + x; });
     }
   } else {
-    int64_t b = base_.value_.Load();
-    if (!base_.CompareAndSet(b, b + x)) {
+    int64_t b = base_.load(std::memory_order_relaxed);
+    if (!CasBase(b, b + x)) {
       // Attempt to initialize the table. No need to rehash since the contention was for the
       // base counter, not the hash table.
-      RetryUpdate(x, kNoRehash);
+      RetryUpdate(kNoRehash, [x](int64_t old) { return old + x; });
     }
   }
 }
@@ -174,10 +178,12 @@ void LongAdder::IncrementBy(int64_t x) {
 //
 
 int64_t LongAdder::Value() const {
-  int64_t sum = base_.value_.Load();
-  const int32_t n = base::subtle::Acquire_Load(&num_cells_);
-  for (int i = 0; i < n; i++) {
-    sum += cells_[i].value_.Load();
+  int64_t sum = base_.load(std::memory_order_relaxed);
+  Cell* c = cells_.load(std::memory_order_acquire);
+  if (c && c != kCellsLocked) {
+    for (int i = 0; i < kNumCells; i++) {
+      sum += c[i].value_.load(std::memory_order_relaxed);
+    }
   }
   return sum;
 }

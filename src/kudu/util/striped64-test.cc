@@ -156,4 +156,8 @@ TEST(Striped64Test, TestMultiIncrDecr) {
   RunMultiTest(FLAGS_num_operations, FLAGS_num_threads);
 }
 
+TEST(Striped64Test, TestSize) {
+  ASSERT_EQ(16, sizeof(LongAdder));
+}
+
 }  // namespace kudu
