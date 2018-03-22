@@ -250,6 +250,12 @@ string GetTestDataDirectory() {
   return dir;
 }
 
+string GetTestExecutableDirectory() {
+  string exec;
+  CHECK_OK(Env::Default()->GetExecutablePath(&exec));
+  return DirName(exec);
+}
+
 void AssertEventually(const std::function<void(void)>& f,
                       const MonoDelta& timeout,
                       AssertBackoff backoff) {

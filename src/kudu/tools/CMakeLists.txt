@@ -41,6 +41,7 @@ target_link_libraries(tool_proto
 add_library(kudu_tools_util
   color.cc
   data_gen_util.cc
+  diagnostics_log_parser.cc
   tool_action.cc
   tool_action_common.cc
 )
@@ -85,6 +86,7 @@ target_link_libraries(ksck
 
 add_executable(kudu
   tool_action_cluster.cc
+  tool_action_diagnose.cc
   tool_action_fs.cc
   tool_action_hms.cc
   tool_action_local_replica.cc
@@ -142,12 +144,15 @@ set(KUDU_TEST_LINK_LIBS
   itest_util
   mini_cluster
   ${KUDU_MIN_TEST_LIBS})
+ADD_KUDU_TEST(diagnostics_log_parser-test)
 ADD_KUDU_TEST(ksck-test)
 ADD_KUDU_TEST(ksck_remote-test PROCESSORS 3)
 ADD_KUDU_TEST(kudu-admin-test PROCESSORS 3)
 ADD_KUDU_TEST_DEPENDENCIES(kudu-admin-test
   kudu)
-ADD_KUDU_TEST(kudu-tool-test NUM_SHARDS 4 PROCESSORS 3)
+ADD_KUDU_TEST(kudu-tool-test
+  NUM_SHARDS 4 PROCESSORS 3
+  DATA_FILES testdata/sample-diagnostics-log.txt testdata/bad-diagnostics-log.txt)
 ADD_KUDU_TEST_DEPENDENCIES(kudu-tool-test
   kudu)
 ADD_KUDU_TEST(kudu-ts-cli-test)

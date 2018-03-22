@@ -142,16 +142,9 @@ TEST_F(TestCompactionPolicy, TestSignificantOverlap) {
   ASSERT_EQ(picked.size(), kBudgetMb);
 }
 
-// Return the directory of the currently-running executable.
-static string GetExecutableDir() {
-  string exec;
-  CHECK_OK(Env::Default()->GetExecutablePath(&exec));
-  return DirName(exec);
-}
-
 static RowSetVector LoadFile(const string& name) {
   RowSetVector ret;
-  string path = JoinPathSegments(GetExecutableDir(), name);
+  string path = JoinPathSegments(GetTestExecutableDirectory(), name);
   faststring data;
   CHECK_OK_PREPEND(ReadFileToString(Env::Default(), path, &data),
                    strings::Substitute("Unable to load test data file $0", path));

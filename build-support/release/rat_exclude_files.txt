@@ -146,6 +146,7 @@ src/kudu/gutil/utf/utf.h
 src/kudu/gutil/utf/utfdef.h
 src/kudu/security/x509_check_host.cc
 src/kudu/security/x509_check_host.h
+src/kudu/tools/testdata/*
 src/kudu/util/array_view.h
 src/kudu/util/cache.h
 src/kudu/util/coding.cc

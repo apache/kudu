@@ -104,6 +104,9 @@ int SeedRandom();
 // if a KuduTest instance is available.
 std::string GetTestDataDirectory();
 
+// Return the directory which contains the test's executable.
+std::string GetTestExecutableDirectory();
+
 // Wait until 'f()' succeeds without adding any GTest 'fatal failures'.
 // For example:
 //

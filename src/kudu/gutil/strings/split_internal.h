@@ -25,7 +25,8 @@
 #include "kudu/gutil/strings/stringpiece.h"
 
 #ifdef LANG_CXX11
-// This must be included after "base/port.h", which defines LANG_CXX11.
+// This must be included after "kudu/gutil/port.h", which defines LANG_CXX11.
+#include <array>
 #include <initializer_list>
 #endif  // LANG_CXX11
 
@@ -255,6 +256,11 @@ class Splitter {
     return SelectContainer<Container, is_map<Container>::value>()(this);
   }
 
+  template <typename ArrayType, size_t ArraySize>
+  operator std::array<ArrayType, ArraySize>() {
+    return ToArray<ArrayType, ArraySize>();
+  }
+
 // Restores diagnostic settings, i.e., removes the "ignore" on -Wpragmas and
 // -Wc++98-compat.
 #pragma GCC diagnostic pop
@@ -371,6 +377,22 @@ class Splitter {
     }
     return std::make_pair(first_converter(first), second_converter(second));
   }
+
+#ifdef LANG_CXX11
+  // Return an array from the split results.
+  template <typename ArrayType, size_t ArraySize>
+  std::array<ArrayType, ArraySize> ToArray() {
+    StringPieceTo<ArrayType> converter;
+    std::array<ArrayType, ArraySize> ret;
+
+    typename std::array<ArrayType, ArraySize>::iterator out_it = ret.begin();
+    Iterator it = begin();
+    while (it != end() && out_it != ret.end()) {
+      *out_it++ = converter(*it++);
+    }
+    return ret;
+  }
+#endif
 
   // Overloaded InsertInMap() function. The first overload is the commonly used
   // one for most map-like objects. The second overload is a special case for

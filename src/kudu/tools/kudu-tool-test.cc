@@ -387,6 +387,7 @@ TEST_F(ToolTest, TestHelpXML) {
   // Verify all modes are output
   const vector<string> modes = {
       "cluster",
+      "diagnose",
       "fs",
       "local_replica",
       "master",
@@ -411,6 +412,7 @@ TEST_F(ToolTest, TestHelpXML) {
 TEST_F(ToolTest, TestTopLevelHelp) {
   const vector<string> kTopLevelRegexes = {
       "cluster.*Kudu cluster",
+      "diagnose.*Diagnostic tools.*",
       "fs.*Kudu filesystem",
       "local_replica.*tablet replicas",
       "master.*Kudu Master",
@@ -497,6 +499,12 @@ TEST_F(ToolTest, TestModeHelp) {
         "ksck.*Check the health of a Kudu cluster",
     };
     NO_FATALS(RunTestHelp("cluster", kClusterModeRegexes));
+  }
+  {
+    const vector<string> kDiagnoseModeRegexes = {
+        "parse_stacks.*Parse sampled stack traces",
+    };
+    NO_FATALS(RunTestHelp("diagnose", kDiagnoseModeRegexes));
   }
   {
     const vector<string> kMasterModeRegexes = {
@@ -2800,6 +2808,29 @@ TEST_F(ToolTest, TestGetFlags) {
     ASSERT_STR_NOT_MATCHES(out, "logemaillevel,*");
     ASSERT_STR_CONTAINS(out, Substitute("fs_wal_dir,$0,false", wal_dir));
   }
+}
+
+TEST_F(ToolTest, TestParseStacks) {
+  const string kDataPath = JoinPathSegments(GetTestExecutableDirectory(),
+                                            "testdata/sample-diagnostics-log.txt");
+  const string kBadDataPath = JoinPathSegments(GetTestExecutableDirectory(),
+                                               "testdata/bad-diagnostics-log.txt");
+  string stdout;
+  NO_FATALS(RunActionStdoutString(
+      Substitute("diagnose parse_stacks $0", kDataPath),
+      &stdout));
+  // Spot check a few of the things that should be in the output.
+  ASSERT_STR_CONTAINS(stdout, "Stacks at 0314 11:54:20.737790 (periodic):");
+  ASSERT_STR_CONTAINS(stdout, "0x1caef51 kudu::StackTraceSnapshot::SnapshotAllStacks()");
+  ASSERT_STR_CONTAINS(stdout, "0x3f5ec0f710 <unknown>");
+
+  string stderr;
+  Status s = RunActionStderrString(
+      Substitute("diagnose parse_stacks $0", kBadDataPath),
+      &stderr);
+  ASSERT_TRUE(s.IsRuntimeError());
+  ASSERT_STR_MATCHES(stderr, "failed to parse stacks from .*: at line 1: "
+                     "invalid JSON payload.*lacks ending quotation");
 }
 
 } // namespace tools
