@@ -18,7 +18,6 @@
 #include "kudu/client/meta_cache.h"
 
 #include <algorithm>
-#include <cstddef>
 #include <mutex>
 #include <ostream>
 #include <set>
@@ -329,8 +328,7 @@ string MetaCacheEntry::DebugString(const KuduTable* table) const {
   const string& lower_bound = lower_bound_partition_key();
   const string& upper_bound = upper_bound_partition_key();
 
-  string lower_bound_string = lower_bound.empty() ? "<start>" :
-    table->partition_schema().PartitionKeyDebugString(lower_bound, *table->schema().schema_);
+  string lower_bound_string = MetaCache::DebugLowerBoundPartitionKey(table, lower_bound);
 
   string upper_bound_string = upper_bound.empty() ? "<end>" :
     table->partition_schema().PartitionKeyDebugString(upper_bound, *table->schema().schema_);
@@ -443,7 +441,8 @@ void MetaCacheServerPicker::PickLeader(const ServerPickedCallback& callback,
         table_,
         tablet_->partition().partition_key_start(),
         deadline,
-        NULL,
+        MetaCache::LookupType::kPoint,
+        nullptr,
         Bind(&MetaCacheServerPicker::LookUpTabletCb, Unretained(this), callback, deadline));
     return;
   }
@@ -540,11 +539,12 @@ class LookupRpc : public Rpc {
             scoped_refptr<RemoteTablet>* remote_tablet,
             const MonoTime& deadline,
             shared_ptr<Messenger> messenger,
-            int max_returned_locations,
-            bool is_exact_lookup,
+            MetaCache::LookupType lookup_type,
             ReplicaController::Visibility replica_visibility);
   virtual ~LookupRpc();
   virtual void SendRpc() OVERRIDE;
+  // Send the next RPC without consulting the metacache.
+  void SendRpcSlowPath();
   virtual string ToString() const OVERRIDE;
 
   const GetTableLocationsRequestPB& req() const { return req_; }
@@ -552,7 +552,18 @@ class LookupRpc : public Rpc {
   const string& table_name() const { return table_->name(); }
   const string& table_id() const { return table_->id(); }
   const string& partition_key() const { return partition_key_; }
-  bool is_exact_lookup() const { return is_exact_lookup_; }
+  bool is_exact_lookup() const {
+    return lookup_type_ == MetaCache::LookupType::kPoint;
+  }
+  int locations_to_fetch() const {
+    switch (lookup_type_) {
+      case MetaCache::LookupType::kLowerBound:
+        return kFetchTabletsPerRangeLookup;
+      case MetaCache::LookupType::kPoint:
+        return kFetchTabletsPerPointLookup;
+    }
+    __builtin_unreachable();
+  }
   const KuduTable* table() const { return table_; }
 
  private:
@@ -597,13 +608,8 @@ class LookupRpc : public Rpc {
   // Whether this lookup has acquired a master lookup permit.
   bool has_permit_;
 
-  // The max number of tablets to fetch per round trip from the master
-  const int max_returned_locations_;
-
-  // If true, this lookup is for an exact tablet match with the requested
-  // partition key. If false, the next tablet after the partition key should be
-  // returned if the partition key falls in a non-covered partition range.
-  const bool is_exact_lookup_;
+  // Whether this lookup is for a range or a point.
+  const MetaCache::LookupType lookup_type_;
 
   // Controlling which replicas to look up. If set to Visibility::ALL,
   // non-voter tablet replicas, if any, appear in the lookup result in addition
@@ -617,8 +623,7 @@ LookupRpc::LookupRpc(scoped_refptr<MetaCache> meta_cache,
                      scoped_refptr<RemoteTablet>* remote_tablet,
                      const MonoTime& deadline,
                      shared_ptr<Messenger> messenger,
-                     int max_returned_locations,
-                     bool is_exact_lookup,
+                     MetaCache::LookupType lookup_type,
                      ReplicaController::Visibility replica_visibility)
     : Rpc(deadline, std::move(messenger)),
       meta_cache_(std::move(meta_cache)),
@@ -627,8 +632,7 @@ LookupRpc::LookupRpc(scoped_refptr<MetaCache> meta_cache,
       partition_key_(std::move(partition_key)),
       remote_tablet_(remote_tablet),
       has_permit_(false),
-      max_returned_locations_(max_returned_locations),
-      is_exact_lookup_(is_exact_lookup),
+      lookup_type_(lookup_type),
       replica_visibility_(replica_visibility) {
   DCHECK(deadline.Initialized());
 }
@@ -640,28 +644,17 @@ LookupRpc::~LookupRpc() {
 }
 
 void LookupRpc::SendRpc() {
-  // Fast path: lookup in the cache.
-  MetaCacheEntry entry;
-  while (PREDICT_TRUE(meta_cache_->LookupTabletByKeyFastPath(table_, partition_key_, &entry))
-         && (entry.is_non_covered_range() || entry.tablet()->HasLeader())) {
-    VLOG(4) << "Fast lookup: found " << entry.DebugString(table_) << " for " << ToString();
-    if (!entry.is_non_covered_range()) {
-      if (remote_tablet_) {
-        *remote_tablet_ = entry.tablet();
-      }
-      user_cb_.Run(Status::OK());
-      delete this;
-      return;
-    }
-    if (is_exact_lookup_ || entry.upper_bound_partition_key().empty()) {
-      user_cb_.Run(Status::NotFound("No tablet covering the requested range partition",
-                                    entry.DebugString(table_)));
-      delete this;
-      return;
-    }
-    partition_key_ = entry.upper_bound_partition_key();
+  Status fastpath_status = meta_cache_->DoFastPathLookup(
+      table_, &partition_key_, lookup_type_, remote_tablet_);
+  if (!fastpath_status.IsIncomplete()) {
+    user_cb_.Run(fastpath_status);
+    delete this;
+    return;
   }
+  SendRpcSlowPath();
+}
 
+void LookupRpc::SendRpcSlowPath() {
   // Slow path: must lookup the tablet in the master.
   VLOG(4) << "Fast lookup: no cache entry for " << ToString()
           << ": refreshing our metadata from the Master";
@@ -679,7 +672,7 @@ void LookupRpc::SendRpc() {
   // Fill out the request.
   req_.mutable_table()->set_table_id(table_->id());
   req_.set_partition_key_start(partition_key_);
-  req_.set_max_returned_locations(max_returned_locations_);
+  req_.set_max_returned_locations(locations_to_fetch());
   if (replica_visibility_ == ReplicaController::Visibility::ALL) {
     req_.set_replica_type_filter(master::ANY_REPLICA);
   }
@@ -705,9 +698,7 @@ void LookupRpc::SendRpc() {
 string LookupRpc::ToString() const {
   return Substitute("GetTableLocations { table: '$0', partition-key: ($1), attempt: $2 }",
                     table_->name(),
-                    (partition_key_.empty() ? "<start>" :
-                     table_->partition_schema()
-                            .PartitionKeyDebugString(partition_key_, *table_->schema().schema_)),
+                    MetaCache::DebugLowerBoundPartitionKey(table_, partition_key_),
                     num_attempts());
 }
 
@@ -806,7 +797,7 @@ void LookupRpc::SendRpcCb(const Status& status) {
 
   if (new_status.ok()) {
     MetaCacheEntry entry;
-    new_status = meta_cache_->ProcessLookupResponse(*this, &entry, max_returned_locations_);
+    new_status = meta_cache_->ProcessLookupResponse(*this, &entry, locations_to_fetch());
     if (entry.is_non_covered_range()) {
       new_status = Status::NotFound("No tablet covering the requested range partition",
                                     entry.DebugString(table_));
@@ -967,9 +958,9 @@ Status MetaCache::ProcessLookupResponse(const LookupRpc& rpc,
   return Status::OK();
 }
 
-bool MetaCache::LookupTabletByKeyFastPath(const KuduTable* table,
-                                          const string& partition_key,
-                                          MetaCacheEntry* entry) {
+bool MetaCache::LookupEntryByKeyFastPath(const KuduTable* table,
+                                         const string& partition_key,
+                                         MetaCacheEntry* entry) {
   shared_lock<rw_spinlock> l(lock_);
   const TabletMap* tablets = FindOrNull(tablets_by_table_and_key_, table->id());
   if (PREDICT_FALSE(!tablets)) {
@@ -994,6 +985,30 @@ bool MetaCache::LookupTabletByKeyFastPath(const KuduTable* table,
   }
 
   return false;
+}
+
+Status MetaCache::DoFastPathLookup(const KuduTable* table,
+                                   string* partition_key,
+                                   MetaCache::LookupType lookup_type,
+                                   scoped_refptr<RemoteTablet>* remote_tablet) {
+  MetaCacheEntry entry;
+  while (PREDICT_TRUE(LookupEntryByKeyFastPath(table, *partition_key, &entry))
+         && (entry.is_non_covered_range() || entry.tablet()->HasLeader())) {
+    VLOG(4) << "Fast lookup: found " << entry.DebugString(table) << " for "
+            << DebugLowerBoundPartitionKey(table, *partition_key);
+    if (!entry.is_non_covered_range()) {
+      if (remote_tablet) {
+        *remote_tablet = entry.tablet();
+      }
+      return Status::OK();
+    }
+    if (lookup_type == LookupType::kPoint || entry.upper_bound_partition_key().empty()) {
+      return Status::NotFound("No tablet covering the requested range partition",
+                              entry.DebugString(table));
+    }
+    *partition_key = entry.upper_bound_partition_key();
+  }
+  return Status::Incomplete("");
 }
 
 void MetaCache::ClearNonCoveredRangeEntries(const std::string& table_id) {
@@ -1026,26 +1041,18 @@ void MetaCache::ClearCache() {
 void MetaCache::LookupTabletByKey(const KuduTable* table,
                                   string partition_key,
                                   const MonoTime& deadline,
+                                  MetaCache::LookupType lookup_type,
                                   scoped_refptr<RemoteTablet>* remote_tablet,
                                   const StatusCallback& callback) {
-  LookupRpc* rpc = new LookupRpc(this,
-                                 callback,
-                                 table,
-                                 std::move(partition_key),
-                                 remote_tablet,
-                                 deadline,
-                                 client_->data_->messenger_,
-                                 kFetchTabletsPerPointLookup,
-                                 true, replica_visibility_);
-  rpc->SendRpc();
-}
+  // Try a fast path without allocating a LookupRpc.
+  // This avoids the allocation and also reference count increment/decrements.
+  Status fastpath_status = DoFastPathLookup(
+      table, &partition_key, lookup_type, remote_tablet);
+  if (!fastpath_status.IsIncomplete()) {
+    callback.Run(fastpath_status);
+    return;
+  }
 
-void MetaCache::LookupTabletByKeyOrNext(const KuduTable* table,
-                                        string partition_key,
-                                        const MonoTime& deadline,
-                                        scoped_refptr<RemoteTablet>* remote_tablet,
-                                        const StatusCallback& callback,
-                                        int max_returned_locations) {
   LookupRpc* rpc = new LookupRpc(this,
                                  callback,
                                  table,
@@ -1053,9 +1060,9 @@ void MetaCache::LookupTabletByKeyOrNext(const KuduTable* table,
                                  remote_tablet,
                                  deadline,
                                  client_->data_->messenger_,
-                                 max_returned_locations,
-                                 false, replica_visibility_);
-  rpc->SendRpc();
+                                 lookup_type,
+                                 replica_visibility_);
+  rpc->SendRpcSlowPath();
 }
 
 void MetaCache::MarkTSFailed(RemoteTabletServer* ts,
@@ -1079,6 +1086,11 @@ bool MetaCache::AcquireMasterLookupPermit() {
 
 void MetaCache::ReleaseMasterLookupPermit() {
   master_lookup_sem_.Release();
+}
+
+string MetaCache::DebugLowerBoundPartitionKey(const KuduTable* table, const string& partition_key) {
+  return partition_key.empty() ? "<start>" :
+      table->partition_schema().PartitionKeyDebugString(partition_key, *table->schema().schema_);
 }
 
 } // namespace internal

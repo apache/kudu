@@ -53,8 +53,9 @@ Status KuduPartitionerBuilder::Data::Build(KuduPartitioner** partitioner) {
   while (true) {
     scoped_refptr<internal::RemoteTablet> tablet;
     Synchronizer sync;
-    mc->LookupTabletByKeyOrNext(table_.get(), next_part_key, deadline,
-                                &tablet, sync.AsStatusCallback());
+    mc->LookupTabletByKey(table_.get(), next_part_key, deadline,
+                          internal::MetaCache::LookupType::kLowerBound,
+                          &tablet, sync.AsStatusCallback());
     Status s = sync.Wait();
     if (s.IsNotFound()) {
       // No more tablets

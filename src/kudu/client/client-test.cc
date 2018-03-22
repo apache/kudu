@@ -204,8 +204,11 @@ class ClientTest : public KuduTest {
                                                         const string& partition_key) {
     scoped_refptr<internal::RemoteTablet> rt;
     Synchronizer sync;
-    client_->data_->meta_cache_->LookupTabletByKey(table, partition_key, MonoTime::Max(), &rt,
-                                                   sync.AsStatusCallback());
+    client_->data_->meta_cache_->LookupTabletByKey(
+        table, partition_key, MonoTime::Max(),
+        internal::MetaCache::LookupType::kPoint,
+        &rt,
+        sync.AsStatusCallback());
     CHECK_OK(sync.Wait());
     return rt;
   }
@@ -1790,21 +1793,21 @@ TEST_F(ClientTest, TestMetaCacheExpiry) {
   // Clear the cache.
   meta_cache->ClearCache();
   internal::MetaCacheEntry entry;
-  ASSERT_FALSE(meta_cache->LookupTabletByKeyFastPath(client_table_.get(), "", &entry));
+  ASSERT_FALSE(meta_cache->LookupEntryByKeyFastPath(client_table_.get(), "", &entry));
 
   // Prime the cache.
   CHECK_NOTNULL(MetaCacheLookup(client_table_.get(), "").get());
-  ASSERT_TRUE(meta_cache->LookupTabletByKeyFastPath(client_table_.get(), "", &entry));
+  ASSERT_TRUE(meta_cache->LookupEntryByKeyFastPath(client_table_.get(), "", &entry));
   ASSERT_FALSE(entry.stale());
 
   // Sleep in order to expire the cache.
   SleepFor(MonoDelta::FromMilliseconds(FLAGS_table_locations_ttl_ms));
   ASSERT_TRUE(entry.stale());
-  ASSERT_FALSE(meta_cache->LookupTabletByKeyFastPath(client_table_.get(), "", &entry));
+  ASSERT_FALSE(meta_cache->LookupEntryByKeyFastPath(client_table_.get(), "", &entry));
 
   // Force a lookup and ensure the entry is refreshed.
   CHECK_NOTNULL(MetaCacheLookup(client_table_.get(), "").get());
-  ASSERT_TRUE(meta_cache->LookupTabletByKeyFastPath(client_table_.get(), "", &entry));
+  ASSERT_TRUE(meta_cache->LookupEntryByKeyFastPath(client_table_.get(), "", &entry));
   ASSERT_FALSE(entry.stale());
 }
 

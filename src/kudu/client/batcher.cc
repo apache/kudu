@@ -601,6 +601,7 @@ Status Batcher::Add(KuduWriteOperation* write_op) {
       op->write_op->table(),
       std::move(partition_key),
       deadline,
+      MetaCache::LookupType::kPoint,
       &op->tablet,
       Bind(&Batcher::TabletLookupFinished, this, op.get()));
   IgnoreResult(op.release());

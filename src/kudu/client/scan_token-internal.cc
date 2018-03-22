@@ -62,6 +62,8 @@ using strings::Substitute;
 namespace kudu {
 namespace client {
 
+using internal::MetaCache;
+
 KuduScanToken::Data::Data(KuduTable* table,
                           ScanTokenPB message,
                           unique_ptr<KuduTablet> tablet)
@@ -283,12 +285,12 @@ Status KuduScanTokenBuilder::Data::Build(vector<KuduScanToken*>* tokens) {
     scoped_refptr<internal::RemoteTablet> tablet;
     Synchronizer sync;
     const string& partition_key = pruner.NextPartitionKey();
-    client->data_->meta_cache_->LookupTabletByKeyOrNext(table,
-                                                        partition_key,
-                                                        deadline,
-                                                        &tablet,
-                                                        sync.AsStatusCallback(),
-                                                        internal::kFetchTabletsPerRangeLookup);
+    client->data_->meta_cache_->LookupTabletByKey(table,
+                                                  partition_key,
+                                                  deadline,
+                                                  MetaCache::LookupType::kLowerBound,
+                                                  &tablet,
+                                                  sync.AsStatusCallback());
     Status s = sync.Wait();
     if (s.IsNotFound()) {
       // No more tablets in the table.

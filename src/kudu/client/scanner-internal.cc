@@ -390,11 +390,13 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
 
   for (int attempt = 1;; attempt++) {
     Synchronizer sync;
-    table_->client()->data_->meta_cache_->LookupTabletByKeyOrNext(table_.get(),
-                                                                  partition_key,
-                                                                  deadline,
-                                                                  &remote_,
-                                                                  sync.AsStatusCallback());
+    table_->client()->data_->meta_cache_->LookupTabletByKey(
+        table_.get(),
+        partition_key,
+        deadline,
+        internal::MetaCache::LookupType::kLowerBound,
+        &remote_,
+        sync.AsStatusCallback());
     Status s = sync.Wait();
     if (s.IsNotFound()) {
       // No more tablets in the table.
