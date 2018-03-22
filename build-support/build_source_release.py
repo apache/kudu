@@ -131,7 +131,7 @@ def gen_sha_file(tarball_path):
   can be used to verify the checksum.
   """
   digest = checksum_file(hashlib.sha1(), tarball_path)
-  path = tarball_path + ".sha"
+  path = tarball_path + ".sha1"
   with open(path, "w") as f:
     f.write("%s\t%s\n" % (digest, os.path.basename(tarball_path)))
   print(Colors.GREEN + "Generated sha:\t\t" + Colors.RESET + path)
