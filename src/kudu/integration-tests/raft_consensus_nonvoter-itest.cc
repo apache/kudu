@@ -1927,20 +1927,28 @@ TEST_P(IncompatibleReplicaReplacementSchemesITest, MasterAndTserverMisconfig) {
   }
 }
 
+// This test scenario runs the system with the 3-4-3 replica management scheme
+// having the total number of tablet servers equal to the replication factor
+// of the tablet being tested. The scenario makes one follower replica
+// fall behind the WAL segment GC threshold. The system should be able to
+// replace the failed replica 'in-place', i.e. no additional tablet server is
+// needed for the cluster to recover in such situations. The scenario verifies
+// that the re-replication works as expected when the tablet server hosting the
+// failed replica is:
+//   ** paused and then resumed, emulating a lagging tablet server
+//   ** shut down and then started back up
 class ReplicaBehindWalGcThresholdITest :
     public RaftConsensusNonVoterITest,
-    public ::testing::WithParamInterface<RaftConsensusITestBase::BehindWalGcBehavior> {
+    public ::testing::WithParamInterface<
+        std::tuple<RaftConsensusITestBase::BehindWalGcBehavior, bool>> {
 };
 INSTANTIATE_TEST_CASE_P(,
     ReplicaBehindWalGcThresholdITest,
-    ::testing::Values(RaftConsensusITestBase::BehindWalGcBehavior::STOP_CONTINUE,
-                      RaftConsensusITestBase::BehindWalGcBehavior::SHUTDOWN_RESTART,
-                      RaftConsensusITestBase::BehindWalGcBehavior::SHUTDOWN));
-
-// Test that the catalog manager running with the 3-4-3 scheme is able to do
-// 'in-place' replica replacement when replica falls behind the WAL segment GC,
-// i.e. no additional tablet server is needed in case of tablet with replication
-// factor 3 when there are just 3 tablet servers in the cluster.
+    ::testing::Combine(
+        ::testing::Values(RaftConsensusITestBase::BehindWalGcBehavior::STOP_CONTINUE,
+                          RaftConsensusITestBase::BehindWalGcBehavior::SHUTDOWN_RESTART,
+                          RaftConsensusITestBase::BehindWalGcBehavior::SHUTDOWN),
+        ::testing::Bool()));
 TEST_P(ReplicaBehindWalGcThresholdITest, ReplicaReplacement) {
   if (!AllowSlowTests()) {
     LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
@@ -1953,7 +1961,8 @@ TEST_P(ReplicaBehindWalGcThresholdITest, ReplicaReplacement) {
   const auto kUnavaiableFailedSec = 5;
   FLAGS_num_replicas = kReplicasNum;
   FLAGS_num_tablet_servers = kReplicasNum;
-  const auto tserver_behavior = GetParam();
+  const auto tserver_behavior = std::get<0>(GetParam());
+  const bool do_delay_workload = std::get<1>(GetParam());
 
   vector<string> master_flags = {
     // This scenario runs with the 3-4-3 replica management scheme.
@@ -1981,8 +1990,17 @@ TEST_P(ReplicaBehindWalGcThresholdITest, ReplicaReplacement) {
   string follower_uuid;
   string leader_uuid;
   int64_t orig_term;
+  MonoDelta delay;
+  if (do_delay_workload) {
+    // That's to make the leader replica to report the state of the tablet as
+    // FAILED first. Later on, when the replica falls behind the WAL segment GC
+    // threshold, the leader replica should report the follower's health status
+    // as FAILED_UNRECOVERABLE.
+    delay = MonoDelta::FromSeconds(3 * kUnavaiableFailedSec);
+  }
   NO_FATALS(CauseFollowerToFallBehindLogGC(
-      tablet_servers_, &leader_uuid, &orig_term, &follower_uuid, tserver_behavior));
+      tablet_servers_, &leader_uuid, &orig_term, &follower_uuid,
+      tserver_behavior, delay));
 
   // The catalog manager should evict the replicas which fell behing the WAL
   // segment GC threshold right away.
