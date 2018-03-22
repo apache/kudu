@@ -552,22 +552,46 @@ void PeerMessageQueue::UpdatePeerHealthUnlocked(TrackedPeer* peer) {
   }
 }
 
+// While reporting on the replica health status, it's important to report on
+// the 'definitive' health statuses once they surface. That allows the system
+// to expedite decisions on replica replacement because the more 'definitive'
+// statuses have less uncertainty and provide more information (compared
+// with less 'definitive' statuses). Informally, the level of 'definitiveness'
+// could be measured by the number of possible state transitions on the replica
+// health status state diagram.
+//
+// The health status chain below has increasing level of 'definitiveness'
+// left to right:
+//
+//   UNKNOWN --> HEALTHY --> FAILED --> FAILED_UNRECOVERABLE
+//
+// For example, in the case when a replica has been unreachable longer than the
+// time interval specified by the --follower_unavailable_considered_failed_sec
+// flag, the system should start reporting its health status as FAILED.
+// However, once the replica falls behind the WAL log GC threshold, the system
+// should start reporting its healths status as FAILED_UNRECOVERABLE. The code
+// below is written to adhere to that informal policy.
 HealthReportPB::HealthStatus PeerMessageQueue::PeerHealthStatus(const TrackedPeer& peer) {
-  // Replicas which have been unreachable for too long are considered failed.
-  auto max_unreachable = MonoDelta::FromSeconds(FLAGS_follower_unavailable_considered_failed_sec);
-  if (MonoTime::Now() - peer.last_communication_time > max_unreachable) {
-    return HealthReportPB::FAILED;
-  }
-
-  // Replicas that have fallen behind the leader's retained WAL are failed
-  // and have no chance to come back.
+  // Replicas that have fallen behind the leader's retained WAL segments are
+  // failed irrecoverably and will not come back because they cannot ever catch
+  // up with the leader replica.
   if (!peer.wal_catchup_possible) {
     return HealthReportPB::FAILED_UNRECOVERABLE;
   }
 
-  // Replicas returning TABLET_FAILED status are considered failed.
+  // Replicas returning TABLET_FAILED status are considered irrecoverably
+  // failed because the TABLED_FAILED status manifests about IO failures
+  // caused by disk corruption, etc.
   if (peer.last_exchange_status == PeerStatus::TABLET_FAILED) {
     return HealthReportPB::FAILED_UNRECOVERABLE;
+  }
+
+  // Replicas which have been unreachable for too long are considered failed,
+  // unless it's known that they have failed irrecoverably (see above). They
+  // might come back at some point and successfully catch up with the leader.
+  auto max_unreachable = MonoDelta::FromSeconds(FLAGS_follower_unavailable_considered_failed_sec);
+  if (MonoTime::Now() - peer.last_communication_time > max_unreachable) {
+    return HealthReportPB::FAILED;
   }
 
   // The happy case: replicas returned OK during the recent exchange are considered healthy.

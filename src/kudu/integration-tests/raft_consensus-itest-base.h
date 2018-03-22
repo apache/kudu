@@ -28,6 +28,8 @@
 
 namespace kudu {
 
+class MonoDelta;
+
 namespace cluster {
 class ExternalTabletServer;
 }
@@ -84,7 +86,8 @@ class RaftConsensusITestBase : public TabletServerIntegrationTestBase {
       std::string* leader_uuid,
       int64_t* orig_term,
       std::string* fell_behind_uuid,
-      BehindWalGcBehavior tserver_behavior = BehindWalGcBehavior::STOP_CONTINUE);
+      BehindWalGcBehavior tserver_behavior = BehindWalGcBehavior::STOP_CONTINUE,
+      const MonoDelta& pre_workload_delay = {});
 
   CountDownLatch inserters_;
 };

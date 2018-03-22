@@ -59,9 +59,9 @@
 #include "kudu/util/threadpool.h"
 
 DECLARE_int32(consensus_max_batch_size_bytes);
+DECLARE_int32(follower_unavailable_considered_failed_sec);
 
-METRIC_DECLARE_entity(tablet);
-
+using kudu::consensus::HealthReportPB;
 using std::vector;
 
 namespace kudu {
@@ -189,7 +189,7 @@ class ConsensusQueueTest : public KuduTest {
 
   void WaitForLocalPeerToAckIndex(int index) {
     while (true) {
-      PeerMessageQueue::TrackedPeer leader = queue_->GetTrackedPeerForTests(kLeaderUuid);
+      const auto leader = queue_->GetTrackedPeerForTests(kLeaderUuid);
       if (leader.last_received.index() >= index) {
         break;
       }
@@ -943,6 +943,67 @@ TEST_F(ConsensusQueueTest, TestFollowerCommittedIndexAndMetrics) {
   // Emulate the leader appending up to index 15. The num_ops_behind_leader should jump to 5.
   queue_->UpdateLastIndexAppendedToLeader(15);
   ASSERT_EQ(5, queue_->metrics_.num_ops_behind_leader->value());
+}
+
+// Unit test for the PeerMessageQueue::PeerHealthStatus() method.
+TEST(ConsensusQueueUnitTest, PeerHealthStatus) {
+  static constexpr PeerStatus kPeerStatusesForUnknown[] = {
+     PeerStatus::NEW,
+     PeerStatus::REMOTE_ERROR,
+     PeerStatus::RPC_LAYER_ERROR,
+     PeerStatus::TABLET_NOT_FOUND,
+     PeerStatus::INVALID_TERM,
+     PeerStatus::CANNOT_PREPARE,
+     PeerStatus::LMP_MISMATCH,
+  };
+
+  RaftPeerPB peer_pb;
+  PeerMessageQueue::TrackedPeer peer(peer_pb);
+  EXPECT_EQ(HealthReportPB::UNKNOWN, PeerMessageQueue::PeerHealthStatus(peer));
+  for (auto status : kPeerStatusesForUnknown) {
+    peer.last_exchange_status = status;
+    EXPECT_EQ(HealthReportPB::UNKNOWN, PeerMessageQueue::PeerHealthStatus(peer));
+  }
+
+  peer.last_exchange_status = PeerStatus::TABLET_FAILED;
+  EXPECT_EQ(HealthReportPB::FAILED_UNRECOVERABLE, PeerMessageQueue::PeerHealthStatus(peer));
+
+  peer.last_exchange_status = PeerStatus::OK;
+  EXPECT_EQ(HealthReportPB::HEALTHY, PeerMessageQueue::PeerHealthStatus(peer));
+
+  peer.wal_catchup_possible = false;
+  EXPECT_EQ(HealthReportPB::FAILED_UNRECOVERABLE, PeerMessageQueue::PeerHealthStatus(peer));
+
+  peer.wal_catchup_possible = true;
+  EXPECT_EQ(HealthReportPB::HEALTHY, PeerMessageQueue::PeerHealthStatus(peer));
+
+  peer.last_communication_time -=
+      MonoDelta::FromSeconds(FLAGS_follower_unavailable_considered_failed_sec + 1);
+  EXPECT_EQ(HealthReportPB::FAILED, PeerMessageQueue::PeerHealthStatus(peer));
+  for (auto status : kPeerStatusesForUnknown) {
+    peer.last_exchange_status = status;
+    EXPECT_EQ(HealthReportPB::FAILED, PeerMessageQueue::PeerHealthStatus(peer));
+  }
+
+  peer.last_exchange_status = PeerStatus::TABLET_FAILED;
+  EXPECT_EQ(HealthReportPB::FAILED_UNRECOVERABLE, PeerMessageQueue::PeerHealthStatus(peer));
+
+  peer.last_exchange_status = PeerStatus::OK;
+  EXPECT_EQ(HealthReportPB::FAILED, PeerMessageQueue::PeerHealthStatus(peer));
+
+  peer.wal_catchup_possible = false;
+  EXPECT_EQ(HealthReportPB::FAILED_UNRECOVERABLE, PeerMessageQueue::PeerHealthStatus(peer));
+
+  for (auto status : kPeerStatusesForUnknown) {
+    peer.last_exchange_status = status;
+    EXPECT_EQ(HealthReportPB::FAILED_UNRECOVERABLE, PeerMessageQueue::PeerHealthStatus(peer));
+  }
+
+  peer.last_exchange_status = PeerStatus::OK;
+  EXPECT_EQ(HealthReportPB::FAILED_UNRECOVERABLE, PeerMessageQueue::PeerHealthStatus(peer));
+
+  peer.last_exchange_status = PeerStatus::TABLET_FAILED;
+  EXPECT_EQ(HealthReportPB::FAILED_UNRECOVERABLE, PeerMessageQueue::PeerHealthStatus(peer));
 }
 
 }  // namespace consensus

@@ -197,7 +197,8 @@ void RaftConsensusITestBase::CauseFollowerToFallBehindLogGC(
     string* leader_uuid,
     int64_t* orig_term,
     string* fell_behind_uuid,
-    BehindWalGcBehavior tserver_behavior) {
+    BehindWalGcBehavior tserver_behavior,
+    const MonoDelta& pre_workload_delay) {
   MonoDelta kTimeout = MonoDelta::FromSeconds(10);
   // Wait for all of the replicas to have acknowledged the elected
   // leader and logged the first NO_OP.
@@ -233,6 +234,10 @@ void RaftConsensusITestBase::CauseFollowerToFallBehindLogGC(
   }
   *leader_uuid = leader->uuid();
   int leader_index = cluster_->tablet_server_index_by_uuid(*leader_uuid);
+
+  if (pre_workload_delay.Initialized()) {
+    SleepFor(pre_workload_delay);
+  }
 
   TestWorkload workload(cluster_.get());
   workload.set_table_name(kTableId);
