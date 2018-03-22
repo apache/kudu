@@ -40,6 +40,13 @@ class TabletServerServiceProxy;
 // Uses the whole tablet server stack with ExternalMiniCluster.
 class RaftConsensusITestBase : public TabletServerIntegrationTestBase {
  public:
+  // Behavior for the tablet server hosting the fall-behind-WAL-GC replica.
+  enum BehindWalGcBehavior {
+    STOP_CONTINUE,    // Send SIGSTOP and then SIGCONT to the affected tserver.
+    SHUTDOWN_RESTART, // Shutdown and then restart the affected tserver.
+    SHUTDOWN,         // Shutdown the affected tserver, don't start it back up.
+  };
+
   RaftConsensusITestBase();
 
   void SetUp() override;
@@ -59,19 +66,25 @@ class RaftConsensusITestBase : public TabletServerIntegrationTestBase {
   // Flags needed for CauseFollowerToFallBehindLogGC() to work well.
   static void AddFlagsForLogRolls(std::vector<std::string>* extra_tserver_flags);
 
-  // Pause one of the followers and write enough data to the remaining replicas
-  // to cause log GC, then resume the paused follower. On success,
-  // 'leader_uuid' will be set to the UUID of the leader, 'orig_term' will be
-  // set to the term of the leader before un-pausing the follower, and
-  // 'fell_behind_uuid' will be set to the UUID of the follower that was paused
-  // and caused to fall behind. These can be used for verification purposes.
+  // Pause/shutdown the tserver hosting one of the follower tablet replicas and
+  // write enough data to the remaining replicas to cause log GC. Then
+  // resume/restart/leave-shutdown the affected tserver. On success,
+  // 'leader_uuid' will be set to the UUID of the leader, 'orig_term'
+  // will be set to the term of the leader before un-pausing the follower and
+  // 'fell_behind_uuid' will be set to the UUID of the follower that was
+  // paused/shutdown and caused to fall behind. These can be used for
+  // verification purposes. The optional 'tserver_behavior' dictates what
+  // whether the affected tserver will be paused/resumed, shutdown/restarted,
+  // and so on.
   //
   // Certain flags should be set. You can add the required flags with
   // AddFlagsForLogRolls() before starting the cluster.
-  void CauseFollowerToFallBehindLogGC(const itest::TabletServerMap& tablet_servers,
-                                      std::string* leader_uuid,
-                                      int64_t* orig_term,
-                                      std::string* fell_behind_uuid);
+  void CauseFollowerToFallBehindLogGC(
+      const itest::TabletServerMap& tablet_servers,
+      std::string* leader_uuid,
+      int64_t* orig_term,
+      std::string* fell_behind_uuid,
+      BehindWalGcBehavior tserver_behavior = BehindWalGcBehavior::STOP_CONTINUE);
 
   CountDownLatch inserters_;
 };
