@@ -1895,7 +1895,7 @@ TEST_P(IncompatibleReplicaReplacementSchemesITest, MasterAndTserverMisconfig) {
 
   // Update corresponding flags to induce a misconfiguration between the master
   // and the tablet server.
-  ts->mutable_flags()->push_back(
+  ts->mutable_flags()->emplace_back(
       Substitute("--raft_prepare_replacement_before_eviction=$0", !is_3_4_3));
   ASSERT_OK(ts->Restart());
   if (is_incompatible_replica_management_fatal) {
@@ -1910,7 +1910,7 @@ TEST_P(IncompatibleReplicaReplacementSchemesITest, MasterAndTserverMisconfig) {
   // Inject feature flag not supported by the master and make sure the tablet
   // server will not be registered with incompatible master.
   ts->mutable_flags()->pop_back();
-  ts->mutable_flags()->push_back("--heartbeat_inject_required_feature_flag=999");
+  ts->mutable_flags()->emplace_back("--heartbeat_inject_required_feature_flag=999");
   ts->Shutdown();
   ASSERT_OK(ts->Restart());
   if (is_incompatible_replica_management_fatal) {
@@ -1925,6 +1925,134 @@ TEST_P(IncompatibleReplicaReplacementSchemesITest, MasterAndTserverMisconfig) {
   if (!is_incompatible_replica_management_fatal) {
     NO_FATALS(cluster_->AssertNoCrashes());
   }
+}
+
+class ReplicaBehindWalGcThresholdITest :
+    public RaftConsensusNonVoterITest,
+    public ::testing::WithParamInterface<RaftConsensusITestBase::BehindWalGcBehavior> {
+};
+INSTANTIATE_TEST_CASE_P(,
+    ReplicaBehindWalGcThresholdITest,
+    ::testing::Values(RaftConsensusITestBase::BehindWalGcBehavior::STOP_CONTINUE,
+                      RaftConsensusITestBase::BehindWalGcBehavior::SHUTDOWN_RESTART,
+                      RaftConsensusITestBase::BehindWalGcBehavior::SHUTDOWN));
+
+// Test that the catalog manager running with the 3-4-3 scheme is able to do
+// 'in-place' replica replacement when replica falls behind the WAL segment GC,
+// i.e. no additional tablet server is needed in case of tablet with replication
+// factor 3 when there are just 3 tablet servers in the cluster.
+TEST_P(ReplicaBehindWalGcThresholdITest, ReplicaReplacement) {
+  if (!AllowSlowTests()) {
+    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
+    return;
+  }
+
+  const auto kReplicasNum = 3;
+  const auto kTimeoutSec = 60;
+  const auto kTimeout = MonoDelta::FromSeconds(kTimeoutSec);
+  const auto kUnavaiableFailedSec = 5;
+  FLAGS_num_replicas = kReplicasNum;
+  FLAGS_num_tablet_servers = kReplicasNum;
+  const auto tserver_behavior = GetParam();
+
+  vector<string> master_flags = {
+    // This scenario runs with the 3-4-3 replica management scheme.
+    "--raft_prepare_replacement_before_eviction=true",
+  };
+  if (tserver_behavior != BehindWalGcBehavior::SHUTDOWN) {
+    // This scenario verifies that the system evicts the replica that's falling
+    // behind the WAL segment GC threshold. If not shutting down the tablet
+    // server hosting the affected replica, it's necessary to avoid races with
+    // catalog manager when it replaces the replica that has just been evicted.
+    master_flags.emplace_back("--master_add_server_when_underreplicated=false");
+  }
+
+  vector<string> tserver_flags = {
+    // This scenario is specific for the 3-4-3 replica management scheme.
+    "--raft_prepare_replacement_before_eviction=true",
+
+    // Detect unavailable replicas faster.
+    Substitute("--follower_unavailable_considered_failed_sec=$0", kUnavaiableFailedSec),
+  };
+  AddFlagsForLogRolls(&tserver_flags); // For CauseFollowerToFallBehindLogGC().
+
+  NO_FATALS(BuildAndStart(tserver_flags, master_flags));
+
+  string follower_uuid;
+  string leader_uuid;
+  int64_t orig_term;
+  NO_FATALS(CauseFollowerToFallBehindLogGC(
+      tablet_servers_, &leader_uuid, &orig_term, &follower_uuid, tserver_behavior));
+
+  // The catalog manager should evict the replicas which fell behing the WAL
+  // segment GC threshold right away.
+  bool has_leader = false;
+  TabletLocationsPB tablet_locations;
+  const auto num_replicas = (tserver_behavior == BehindWalGcBehavior::SHUTDOWN)
+      ? kReplicasNum : kReplicasNum - 1;
+  ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
+                                            num_replicas,
+                                            tablet_id_,
+                                            kTimeout,
+                                            WAIT_FOR_LEADER,
+                                            ANY_REPLICA,
+                                            &has_leader,
+                                            &tablet_locations));
+  consensus::ConsensusStatePB cstate;
+  ASSERT_EVENTUALLY([&] {
+    TServerDetails* leader = nullptr;
+    ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &leader));
+    // The reason for the outside ASSERT_EVENTUALLY is that the leader might
+    // have changed in between of these two calls.
+    ASSERT_OK(GetConsensusState(leader, tablet_id_, kTimeout, &cstate));
+  });
+
+  if (tserver_behavior == BehindWalGcBehavior::SHUTDOWN) {
+    // The original voter replica that fell behind the WAL catchup threshold
+    // should be evicted and replaced with a non-voter replica. Since its
+    // tablet server is shutdown, the replica is not able to catch up with
+    // the leader yet (otherwise, it would be promoted to a voter replica).
+    EXPECT_TRUE(IsRaftConfigMember(follower_uuid, cstate.committed_config()))
+        << pb_util::SecureDebugString(cstate.committed_config())
+        << "fell behind WAL replica UUID: " << follower_uuid;
+    EXPECT_FALSE(IsRaftConfigVoter(follower_uuid, cstate.committed_config()))
+        << pb_util::SecureDebugString(cstate.committed_config())
+        << "fell behind WAL replica UUID: " << follower_uuid;
+    // Bring the tablet server with the affected replica back.
+    ASSERT_OK(cluster_->tablet_server_by_uuid(follower_uuid)->Restart());
+  } else {
+    // The replica that fell behind the WAL catchup threshold should be
+    // evicted and since the catalog manager is not yet adding replacement
+    // replicas, a replacement replica should not be added yet.
+    EXPECT_FALSE(IsRaftConfigMember(follower_uuid, cstate.committed_config()))
+        << pb_util::SecureDebugString(cstate.committed_config())
+        << "fell behind WAL replica UUID: " << follower_uuid;
+    // Restore back the default behavior of the catalog manager, so it would
+    // add a replacement replica.
+    for (auto idx = 0; idx < cluster_->num_masters(); ++idx) {
+      auto* master = cluster_->master(idx);
+      master->mutable_flags()->emplace_back(
+          "--master_add_server_when_underreplicated=true");
+      master->Shutdown();
+      ASSERT_OK(master->Restart());
+      ASSERT_OK(master->WaitForCatalogManager());
+    }
+  }
+
+  // The system should be able to recover, replacing the failed replica.
+  ASSERT_OK(WaitForReplicasReportedToMaster(cluster_->master_proxy(),
+                                            kReplicasNum,
+                                            tablet_id_,
+                                            kTimeout,
+                                            WAIT_FOR_LEADER,
+                                            VOTER_REPLICA,
+                                            &has_leader,
+                                            &tablet_locations));
+  NO_FATALS(cluster_->AssertNoCrashes());
+  ClusterVerifier v(cluster_.get());
+  v.SetOperationsTimeout(kTimeout);
+  v.SetVerificationTimeout(kTimeout);
+  NO_FATALS(v.CheckCluster());
 }
 
 }  // namespace tserver
