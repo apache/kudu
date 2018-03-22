@@ -201,12 +201,10 @@ void RemoteTablet::Refresh(const TabletServerMap& tservers,
 }
 
 void RemoteTablet::MarkStale() {
-  std::lock_guard<simple_spinlock> l(lock_);
   stale_ = true;
 }
 
 bool RemoteTablet::stale() const {
-  std::lock_guard<simple_spinlock> l(lock_);
   return stale_;
 }
 
@@ -820,7 +818,7 @@ Status MetaCache::ProcessLookupResponse(const LookupRpc& rpc,
   MonoTime expiration_time = MonoTime::Now() +
       MonoDelta::FromMilliseconds(rpc.resp().ttl_millis());
 
-  std::lock_guard<rw_spinlock> l(lock_);
+  std::lock_guard<percpu_rwlock> l(lock_);
   TabletMap& tablets_by_key = LookupOrInsert(&tablets_by_table_and_key_,
                                              rpc.table_id(), TabletMap());
 
@@ -961,7 +959,7 @@ Status MetaCache::ProcessLookupResponse(const LookupRpc& rpc,
 bool MetaCache::LookupEntryByKeyFastPath(const KuduTable* table,
                                          const string& partition_key,
                                          MetaCacheEntry* entry) {
-  shared_lock<rw_spinlock> l(lock_);
+  shared_lock<rw_spinlock> l(lock_.get_lock());
   const TabletMap* tablets = FindOrNull(tablets_by_table_and_key_, table->id());
   if (PREDICT_FALSE(!tablets)) {
     // No cache available for this table.
@@ -1013,7 +1011,7 @@ Status MetaCache::DoFastPathLookup(const KuduTable* table,
 
 void MetaCache::ClearNonCoveredRangeEntries(const std::string& table_id) {
   VLOG(3) << "Clearing non-covered range entries of table " << table_id;
-  std::lock_guard<rw_spinlock> l(lock_);
+  std::lock_guard<percpu_rwlock> l(lock_);
 
   TabletMap* tablets = FindOrNull(tablets_by_table_and_key_, table_id);
   if (PREDICT_FALSE(!tablets)) {
@@ -1032,7 +1030,7 @@ void MetaCache::ClearNonCoveredRangeEntries(const std::string& table_id) {
 
 void MetaCache::ClearCache() {
   VLOG(3) << "Clearing cache";
-  std::lock_guard<rw_spinlock> l(lock_);
+  std::lock_guard<percpu_rwlock> l(lock_);
   STLDeleteValues(&ts_cache_);
   tablets_by_id_.clear();
   tablets_by_table_and_key_.clear();
@@ -1068,10 +1066,9 @@ void MetaCache::LookupTabletByKey(const KuduTable* table,
 void MetaCache::MarkTSFailed(RemoteTabletServer* ts,
                              const Status& status) {
   LOG(INFO) << "Marking tablet server " << ts->ToString() << " as failed.";
-  shared_lock<rw_spinlock> l(lock_);
-
   Status ts_status = status.CloneAndPrepend("TS failed");
 
+  shared_lock<rw_spinlock> l(lock_.get_lock());
   // TODO: replace with a ts->tablet multimap for faster lookup?
   for (const auto& tablet : tablets_by_id_) {
     // We just loop on all tablets; if a tablet does not have a replica on this

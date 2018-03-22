@@ -19,6 +19,7 @@
 #ifndef KUDU_CLIENT_META_CACHE_H
 #define KUDU_CLIENT_META_CACHE_H
 
+#include <atomic>
 #include <map>
 #include <memory>
 #include <set>
@@ -257,9 +258,9 @@ class RemoteTablet : public RefCountedThreadSafe<RemoteTablet> {
   const std::string tablet_id_;
   const Partition partition_;
 
-  // All non-const members are protected by 'lock_'.
-  mutable simple_spinlock lock_;
-  bool stale_;
+  std::atomic<bool> stale_;
+
+  mutable simple_spinlock lock_; // Protects replicas_.
   std::vector<RemoteReplica> replicas_;
 
   DISALLOW_COPY_AND_ASSIGN(RemoteTablet);
@@ -461,7 +462,7 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
 
   KuduClient* client_;
 
-  rw_spinlock lock_;
+  percpu_rwlock lock_;
 
   // Cache of Tablet Server locations: TS UUID -> RemoteTabletServer*.
   //
