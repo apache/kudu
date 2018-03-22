@@ -318,6 +318,13 @@ def create_archive_input(staging, execution,
       d = copy_system_library(d)
     files.append(abs_to_rel(d, staging))
 
+  # Add data file dependencies.
+  if 'KUDU_DATA_FILES' in execution.env:
+    for data_file in execution.env['KUDU_DATA_FILES'].split(","):
+      # Paths are relative to the test binary.
+      path = os.path.join(os.path.dirname(abs_test_exe), data_file)
+      files.append(abs_to_rel(path, staging))
+
   out_archive = os.path.join(staging.dir, '%s.gen.json' % (execution.test_name))
   out_isolate = os.path.join(staging.dir, '%s.isolate' % (execution.test_name))
 

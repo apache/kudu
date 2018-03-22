@@ -711,12 +711,22 @@ endfunction()
 #       with the KUDU_MEASURE_TEST_CPU_CONSUMPTION environment variable
 #       set. See build-support/run-test.sh for more details.
 #
+#   DATA_FILES <file1> <file2> ...
+#       Specify data files that should be copied into the build directory
+#       next to test executable. These will also be automatically uploaded
+#       to the dist-test environment.
+#
+#       If the file is in a directory, an equivalent directory path will
+#       be made in the build directory. For example, 'testdata/foo' will
+#       ensure that an equivalent directory 'testdata/' is made in the
+#       build directory.
+#
 # Any other arguments will be passed to set_tests_properties().
 function(ADD_KUDU_TEST REL_TEST_NAME)
   # Parse out properties for which we have special handling.
   set(options)
   set(one_value_args TIMEOUT NUM_SHARDS)
-  set(multi_value_args)
+  set(multi_value_args DATA_FILES)
   cmake_parse_arguments(ARG "${options}" "${one_value_args}" "${multi_value_args}" ${ARGN})
   if(NOT ARG_TIMEOUT)
     # Default to 15 minutes.
@@ -755,6 +765,25 @@ function(ADD_KUDU_TEST REL_TEST_NAME)
     message(FATAL_ERROR "Neither ${REL_TEST_NAME} nor ${REL_TEST_NAME}.cc were found in ${CMAKE_CURRENT_SOURCE_DIR}/")
   endif()
 
+  # Copy data files into the build directory.
+  foreach(DATA_FILE ${ARG_DATA_FILES})
+    get_filename_component(DST_DIR ${DATA_FILE} DIRECTORY)
+    set(DST_DIR ${EXECUTABLE_OUTPUT_PATH}/${DST_DIR})
+    # If there is a symlink there, replace it with a copy. This is to
+    # work around issues with incremental builds where earlier build
+    # setups had used symlinks into the build directory instead of
+    # copies.
+    if(IS_SYMLINK ${DST_DIR}/${DATA_FILE})
+      file(REMOVE ${DST_DIR}/${DATA_FILE})
+    endif()
+    file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/${DATA_FILE}
+      # Copy with read-only permissions since tests should not
+      # modify the data files in place.
+      DIRECTORY_PERMISSIONS OWNER_READ OWNER_EXECUTE GROUP_READ GROUP_EXECUTE
+      FILE_PERMISSIONS OWNER_READ GROUP_READ
+      DESTINATION ${DST_DIR})
+  endforeach()
+
   math(EXPR MAX_SHARD "${ARG_NUM_SHARDS} - 1")
   foreach(SHARD_NUM RANGE ${MAX_SHARD})
     # Only name the targets with a '.<shard>' if the test is sharded.
@@ -782,6 +811,13 @@ function(ADD_KUDU_TEST REL_TEST_NAME)
     list(APPEND CUR_TEST_ENV "KUDU_TEST_TIMEOUT=${ARG_TIMEOUT}")
     list(APPEND CUR_TEST_ENV "GTEST_TOTAL_SHARDS=${ARG_NUM_SHARDS}")
     list(APPEND CUR_TEST_ENV "GTEST_SHARD_INDEX=${SHARD_NUM}")
+
+    # The only way we can pass information to dist-test is through the environment.
+    # So, use a comma-delimited environment variable to pass the list of data files
+    # that need to be uploaded.
+    string(REPLACE ";" "," DATA_FILES_ENV "${ARG_DATA_FILES}")
+    list(APPEND CUR_TEST_ENV "KUDU_DATA_FILES=${DATA_FILES_ENV}")
+
     set_tests_properties(${TARGET} PROPERTIES
       TIMEOUT ${EXTENDED_TIMEOUT}
       ENVIRONMENT "${CUR_TEST_ENV}")
