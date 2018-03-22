@@ -135,6 +135,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/split.h"
+#include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/util/decimal_util.h"
@@ -292,6 +293,7 @@ class Generator {
   uint64_t seq_;
   Random random_;
   const size_t string_len_;
+  string buf_;
 };
 
 template <>
@@ -311,15 +313,11 @@ float Generator::Next() {
 
 template <>
 string Generator::Next() {
-  ostringstream ss;
-  ss << NextImpl() << ".";
-  string str(ss.str());
-  if (str.size() >= string_len_) {
-    str = str.substr(0, string_len_);
-  } else {
-    str += string(string_len_ - str.size(), 'x');
-  }
-  return str;
+  buf_.clear();
+  StrAppend(&buf_, NextImpl(), ".");
+  // Truncate or extend with 'x's.
+  buf_.resize(string_len_, 'x');
+  return buf_;
 }
 
 Status GenerateRowData(Generator* gen, KuduPartialRow* row,
