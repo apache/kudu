@@ -21,10 +21,11 @@
 #include <map>
 #include <ostream>
 #include <string>
+#include <thread>
 #include <vector>
 
-#include <gtest/gtest.h>
 #include <glog/logging.h>
+#include <gtest/gtest.h>
 #include <rapidjson/document.h>
 #include <rapidjson/rapidjson.h>
 
@@ -39,6 +40,7 @@
 #include "kudu/util/debug/trace_event_synthetic_delay.h"
 #include "kudu/util/debug/trace_logging.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
@@ -53,6 +55,7 @@ using kudu::debug::CategoryFilter;
 using rapidjson::Document;
 using rapidjson::Value;
 using std::string;
+using std::thread;
 using std::vector;
 
 namespace kudu {
@@ -104,7 +107,7 @@ TEST_F(TraceTest, TestAttach) {
 
   EXPECT_EQ("XXXX XX:XX:XX.XXXXXX trace-test.cc:XXX] hello from traceA\n",
             XOutDigits(traceA->DumpToString(Trace::NO_FLAGS)));
-  EXPECT_EQ("XXXX XX:XX:XX.XXXXXX trace-test.cc:XX] hello from traceB\n",
+  EXPECT_EQ("XXXX XX:XX:XX.XXXXXX trace-test.cc:XXX] hello from traceB\n",
             XOutDigits(traceB->DumpToString(Trace::NO_FLAGS)));
 }
 
@@ -860,5 +863,29 @@ TEST_F(TraceTest, TestTraceMetrics) {
   EXPECT_GE(m["test_scope_us"], 80 * 1000);
 }
 
+// Regression test for KUDU-2075: using tracing from vanilla threads
+// should work fine, even if some pthread_self identifiers have been
+// reused.
+TEST_F(TraceTest, TestTraceFromVanillaThreads) {
+  TraceLog::GetInstance()->SetEnabled(
+      CategoryFilter(CategoryFilter::kDefaultCategoryFilterString),
+      TraceLog::RECORDING_MODE,
+      TraceLog::RECORD_CONTINUOUSLY);
+  SCOPED_CLEANUP({ TraceLog::GetInstance()->SetDisabled(); });
+
+  // Do several passes to make it more likely that the thread identifiers
+  // will get reused.
+  for (int pass = 0; pass < 10; pass++) {
+    vector<thread> threads;
+    for (int i = 0; i < 100; i++) {
+      threads.emplace_back([i] {
+          GenerateTraceEvents(i, 1);
+        });
+    }
+    for (auto& t : threads) {
+      t.join();
+    }
+  }
+}
 } // namespace debug
 } // namespace kudu

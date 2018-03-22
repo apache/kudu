@@ -623,6 +623,9 @@ class BASE_EXPORT TraceLog {
   // Called when a thread which has registered trace events is about to exit.
   void ThreadExiting();
 
+  // The static callback registered as a thread destructor.
+  static void ThreadExitingCB(void* arg);
+
   int generation() const {
     return static_cast<int>(base::subtle::NoBarrier_Load(&generation_));
   }

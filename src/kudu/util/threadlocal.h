@@ -41,11 +41,7 @@ static __thread T* t;                                                           
 do {                                                                            \
   if (PREDICT_FALSE(t == NULL)) {                                               \
     t = new T(__VA_ARGS__);                                                     \
-    threadlocal::internal::PerThreadDestructorList* dtor_list =                 \
-        new threadlocal::internal::PerThreadDestructorList();                   \
-    dtor_list->destructor = threadlocal::internal::Destroy<T>;                  \
-    dtor_list->arg = t;                                                         \
-    threadlocal::internal::AddDestructor(dtor_list);                            \
+    threadlocal::internal::AddDestructor(threadlocal::internal::Destroy<T>, t); \
   }                                                                             \
 } while (false)
 
@@ -105,11 +101,7 @@ __thread T* Class::t
 do {                                                                              \
   if (PREDICT_FALSE(t == NULL)) {                                                 \
     t = new T(__VA_ARGS__);                                                       \
-    threadlocal::internal::PerThreadDestructorList* dtor_list =                   \
-        new threadlocal::internal::PerThreadDestructorList();                     \
-    dtor_list->destructor = threadlocal::internal::Destroy<T>;                    \
-    dtor_list->arg = t;                                                           \
-    threadlocal::internal::AddDestructor(dtor_list);                              \
+    threadlocal::internal::AddDestructor(threadlocal::internal::Destroy<T>, t);   \
   }                                                                               \
 } while (false)
 
@@ -119,15 +111,8 @@ namespace kudu {
 namespace threadlocal {
 namespace internal {
 
-// List of destructors for all thread locals instantiated on a given thread.
-struct PerThreadDestructorList {
-  void (*destructor)(void*);
-  void* arg;
-  PerThreadDestructorList* next;
-};
-
 // Add a destructor to the list.
-void AddDestructor(PerThreadDestructorList* p);
+void AddDestructor(void (*destructor)(void*), void* arg);
 
 // Destroy the passed object of type T.
 template<class T>

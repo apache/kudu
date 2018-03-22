@@ -31,13 +31,11 @@
 #include <cstdint>
 #include <string>
 #include <utility>
-#include <vector>
 
 #include <boost/bind.hpp>     // IWYU pragma: keep
 #include <boost/function.hpp> // IWYU pragma: keep
 
 #include "kudu/gutil/atomicops.h"
-#include "kudu/gutil/callback.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/countdown_latch.h"
@@ -206,16 +204,6 @@ class Thread : public RefCountedThreadSafe<Thread> {
   // will be unregistered with the ThreadMgr and will not appear in the debug UI.
   void Join() { ThreadJoiner(this).Join(); }
 
-  // Call the given Closure on the thread before it exits. The closures are executed
-  // in the order they are added.
-  //
-  // NOTE: This must only be called on the currently executing thread, to avoid having
-  // to reason about complicated races (eg registering a callback on an already-dead
-  // thread).
-  //
-  // This callback is guaranteed to be called except in the case of a process crash.
-  void CallAtExit(const Closure& cb);
-
   // The thread ID assigned to this thread by the operating system. If the thread
   // has not yet started running, returns INVALID_TID.
   //
@@ -340,8 +328,6 @@ class Thread : public RefCountedThreadSafe<Thread> {
   // Thread local pointer to the current thread of execution. Will be NULL if the current
   // thread is not a Thread.
   static __thread Thread* tls_;
-
-  std::vector<Closure> exit_callbacks_;
 
   // Wait for the running thread to publish its tid.
   int64_t WaitForTid() const;

@@ -16,6 +16,7 @@
 // under the License.
 #include "kudu/util/threadlocal.h"
 
+#include <memory>
 #include <ostream>
 #include <string>
 
@@ -35,6 +36,17 @@ static pthread_key_t destructors_key;
 
 // The above key must only be initialized once per process.
 static GoogleOnceType once = GOOGLE_ONCE_INIT;
+
+namespace {
+
+// List of destructors for all thread locals instantiated on a given thread.
+struct PerThreadDestructorList {
+  void (*destructor)(void*);
+  void* arg;
+  PerThreadDestructorList* next;
+};
+
+} // anonymous namespace
 
 // Call all the destructors associated with all THREAD_LOCAL instances in this
 // thread.
@@ -57,12 +69,15 @@ static void CreateKey() {
 }
 
 // Adds a destructor to the list.
-void AddDestructor(PerThreadDestructorList* p) {
+void AddDestructor(void (*destructor)(void*), void* arg) {
   GoogleOnceInit(&once, &CreateKey);
 
   // Returns NULL if nothing is set yet.
+  std::unique_ptr<PerThreadDestructorList> p(new PerThreadDestructorList());
+  p->destructor = destructor;
+  p->arg = arg;
   p->next = reinterpret_cast<PerThreadDestructorList*>(pthread_getspecific(destructors_key));
-  int ret = pthread_setspecific(destructors_key, p);
+  int ret = pthread_setspecific(destructors_key, p.release());
   // The only time this check should fail is if we are out of memory, or if
   // somehow key creation failed, which should be caught by the above CHECK.
   CHECK_EQ(0, ret) << "pthread_setspecific() failed, cannot update destructor list: "

@@ -211,15 +211,7 @@ void KernelStackWatchdog::CreateAndRegisterTLS() {
   auto* tls = new TLS();
   KernelStackWatchdog::GetInstance()->Register(tls);
   tls_ = tls;
-
-  // We manually install a thread-exit function here making use of the internal
-  // functionality of the thread-local module, rather than using Thread::CallAtExit().
-  // This is because we may use the stack watchdog in contexts such as the client
-  // where it's likely that threads aren't associated with a kudu::Thread instance.
-  auto* dtor_list = new threadlocal::internal::PerThreadDestructorList();
-  dtor_list->destructor = &ThreadExiting;
-  dtor_list->arg = nullptr;
-  kudu::threadlocal::internal::AddDestructor(dtor_list);
+  kudu::threadlocal::internal::AddDestructor(&ThreadExiting, nullptr);
 }
 
 KernelStackWatchdog::TLS::TLS() {

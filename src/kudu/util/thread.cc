@@ -493,11 +493,6 @@ Thread::~Thread() {
   }
 }
 
-void Thread::CallAtExit(const Closure& cb) {
-  CHECK_EQ(Thread::current_thread(), this);
-  exit_callbacks_.push_back(cb);
-}
-
 std::string Thread::ToString() const {
   return Substitute("Thread $0 (name: \"$1\", category: \"$2\")", tid(), name_, category_);
 }
@@ -613,10 +608,6 @@ void* Thread::SuperviseThread(void* arg) {
 
 void Thread::FinishThread(void* arg) {
   Thread* t = static_cast<Thread*>(arg);
-
-  for (Closure& c : t->exit_callbacks_) {
-    c.Run();
-  }
 
   // We're here either because of the explicit pthread_cleanup_pop() in
   // SuperviseThread() or through pthread_exit(). In either case,

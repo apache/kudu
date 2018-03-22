@@ -45,6 +45,7 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
+#include "kudu/util/threadlocal.h"
 
 DEFINE_string(trace_to_console, "",
               "Trace pattern specifying which trace events should be dumped "
@@ -1722,16 +1723,17 @@ TraceLog::PerThreadInfo* TraceLog::SetupThreadLocalBuffer() {
   thr_info->is_in_trace_event_ = 0;
   thread_local_info_ = thr_info;
 
-  Thread* t = Thread::current_thread();
-  if (t) {
-    t->CallAtExit(Bind(&TraceLog::ThreadExiting, Unretained(this)));
-  }
+  threadlocal::internal::AddDestructor(&TraceLog::ThreadExitingCB, this);
 
   {
     MutexLock lock(active_threads_lock_);
     InsertOrDie(&active_threads_, cur_tid, thr_info);
   }
   return thr_info;
+}
+
+void TraceLog::ThreadExitingCB(void* arg) {
+  static_cast<TraceLog*>(arg)->ThreadExiting();
 }
 
 void TraceLog::ThreadExiting() {
