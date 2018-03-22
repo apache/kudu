@@ -157,11 +157,20 @@ class Cache {
   // the cache.
   struct PendingHandle { };
 
+  // Indicates that the charge of an item in the cache should be calculated
+  // based on its memory consumption.
+  static constexpr int kAutomaticCharge = -1;
+
   // Allocate space for a new entry to be inserted into the cache.
   //
   // The provided 'key' is copied into the resulting handle object.
   // The allocated handle has enough space such that the value can
   // be written into cache_->MutableValue(handle).
+  //
+  // If 'charge' is not 'kAutomaticCharge', then the cache capacity will be charged
+  // the explicit amount. This is useful when caching items that are small but need to
+  // maintain a bounded count (eg file descriptors) rather than caring about their actual
+  // memory usage.
   //
   // Note that this does not mutate the cache itself: lookups will
   // not be able to find the provided key until it is inserted.
@@ -172,6 +181,12 @@ class Cache {
   // NOTE: the returned memory is not automatically freed by the cache: the
   // caller must either free it using Free(), or insert it using Insert().
   virtual PendingHandle* Allocate(Slice key, int val_len, int charge) = 0;
+
+  // Default 'charge' should be kAutomaticCharge.
+  // (default arguments on virtual functions are prohibited)
+  PendingHandle* Allocate(Slice key, int val_len) {
+    return Allocate(key, val_len, kAutomaticCharge);
+  }
 
   virtual uint8_t* MutableValue(PendingHandle* handle) = 0;
 

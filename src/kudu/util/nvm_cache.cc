@@ -541,7 +541,8 @@ class ShardedLRUCache : public Cache {
         handle->kv_data = &buf[sizeof(LRUHandle)];
         handle->val_length = val_len;
         handle->key_length = key_len;
-        handle->charge = charge + key.size();
+        handle->charge = (charge == kAutomaticCharge) ?
+            vmem_malloc_usable_size(vmp_, buf) : charge;
         handle->hash = HashSlice(key);
         memcpy(handle->kv_data, key.data(), key.size());
         return reinterpret_cast<PendingHandle*>(handle);

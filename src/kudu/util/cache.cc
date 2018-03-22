@@ -30,6 +30,7 @@
 #include "kudu/util/cache_metrics.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/malloc.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/slice.h"
@@ -489,7 +490,7 @@ class ShardedLRUCache : public Cache {
     LRUHandle* handle = reinterpret_cast<LRUHandle*>(buf);
     handle->key_length = key_len;
     handle->val_length = val_len;
-    handle->charge = charge;
+    handle->charge = (charge == kAutomaticCharge) ? kudu_malloc_usable_size(buf) : charge;
     handle->hash = HashSlice(key);
     memcpy(handle->kv_data, key.data(), key_len);
 

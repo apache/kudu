@@ -15,12 +15,17 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <cstddef>
+#include <cstdint>
 #include <ostream>
 #include <string>
 
 #include <gflags/gflags.h>
+#include <glog/logging.h>
 
 #include "kudu/cfile/block_cache.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/util/cache.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/slice.h"
@@ -47,20 +52,25 @@ namespace cfile {
 namespace {
 
 Cache* CreateCache(int64_t capacity) {
-  CacheType t;
-  ToUpperCase(FLAGS_block_cache_type, &FLAGS_block_cache_type);
-  if (FLAGS_block_cache_type == "NVM") {
-    t = NVM_CACHE;
-  } else if (FLAGS_block_cache_type == "DRAM") {
-    t = DRAM_CACHE;
-  } else {
-    LOG(FATAL) << "Unknown block cache type: '" << FLAGS_block_cache_type
-               << "' (expected 'DRAM' or 'NVM')";
-  }
+  CacheType t = BlockCache::GetConfiguredCacheTypeOrDie();
   return NewLRUCache(t, capacity, "block_cache");
 }
 
 } // anonymous namespace
+
+CacheType BlockCache::GetConfiguredCacheTypeOrDie() {
+    ToUpperCase(FLAGS_block_cache_type, &FLAGS_block_cache_type);
+  if (FLAGS_block_cache_type == "NVM") {
+    return NVM_CACHE;
+  }
+  if (FLAGS_block_cache_type == "DRAM") {
+    return DRAM_CACHE;
+  }
+
+  LOG(FATAL) << "Unknown block cache type: '" << FLAGS_block_cache_type
+             << "' (expected 'DRAM' or 'NVM')";
+  __builtin_unreachable();
+}
 
 BlockCache::BlockCache()
   : BlockCache(FLAGS_block_cache_capacity_mb * 1024 * 1024) {
@@ -70,10 +80,9 @@ BlockCache::BlockCache(size_t capacity)
   : cache_(CreateCache(capacity)) {
 }
 
-BlockCache::PendingEntry BlockCache::Allocate(const CacheKey& key, size_t val_size) {
+BlockCache::PendingEntry BlockCache::Allocate(const CacheKey& key, size_t block_size) {
   Slice key_slice(reinterpret_cast<const uint8_t*>(&key), sizeof(key));
-  int charge = val_size;
-  return PendingEntry(cache_.get(), cache_->Allocate(key_slice, val_size, charge));
+  return PendingEntry(cache_.get(), cache_->Allocate(key_slice, block_size));
 }
 
 bool BlockCache::Lookup(const CacheKey& key, Cache::CacheBehavior behavior,

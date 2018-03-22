@@ -48,6 +48,10 @@ class BlockCacheHandle;
 // Provides a singleton and LRU cache for CFile blocks.
 class BlockCache {
  public:
+  // Parse the gflag which configures the block cache. FATALs if the flag is
+  // invalid.
+  static CacheType GetConfiguredCacheTypeOrDie();
+
   // BlockId refers to the unique identifier for a Kudu block, that is, for an
   // entire CFile. This is different than the block cache's notion of a block,
   // which is just a portion of a CFile.

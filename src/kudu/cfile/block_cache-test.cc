@@ -16,11 +16,15 @@
 // under the License.
 
 #include <cstring>
+#include <memory>
+#include <ostream>
 
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/cfile/block_cache.h"
 #include "kudu/util/cache.h"
+#include "kudu/util/mem_tracker.h"
 #include "kudu/util/slice.h"
 
 namespace kudu {
@@ -33,6 +37,11 @@ TEST(TestBlockCache, TestBasics) {
   BlockCache cache(512 * 1024 * 1024);
   BlockCache::FileId id(1234);
   BlockCache::CacheKey key(id, 1);
+
+  std::shared_ptr<MemTracker> mem_tracker;
+  if (BlockCache::GetConfiguredCacheTypeOrDie() == DRAM_CACHE) {
+    ASSERT_TRUE(MemTracker::FindTracker("block_cache-sharded_lru_cache", &mem_tracker));
+  }
 
   // Lookup something missing from cache
   {
@@ -49,6 +58,12 @@ TEST(TestBlockCache, TestBasics) {
   cache.Insert(&data, &inserted_handle);
   ASSERT_FALSE(data.valid());
   ASSERT_TRUE(inserted_handle.valid());
+
+  if (mem_tracker) {
+    int overhead = mem_tracker->consumption() - data_size;
+    EXPECT_GT(overhead, 0);
+    LOG(INFO) << "Cache overhead for one entry: " << overhead;
+  }
 
   BlockCacheHandle retrieved_handle;
   ASSERT_TRUE(cache.Lookup(key, Cache::EXPECT_IN_CACHE, &retrieved_handle));
