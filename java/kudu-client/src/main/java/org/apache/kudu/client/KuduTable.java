@@ -221,8 +221,10 @@ public class KuduTable {
   @InterfaceStability.Unstable
   public List<String> getFormattedRangePartitions(long deadline) throws Exception {
     List<String> rangePartitions = new ArrayList<>();
-    for (LocatedTablet tablet : getTabletsLocations(deadline)) {
-      Partition partition = tablet.getPartition();
+    List<KuduScanToken> scanTokens = new KuduScanToken.KuduScanTokenBuilder(client, this)
+        .setTimeout(deadline).build();
+    for (KuduScanToken token : scanTokens) {
+      Partition partition = token.getTablet().getPartition();
       // Filter duplicate range partitions by taking only the tablets whose hash
       // partitions are all 0s.
       if (!Iterators.all(partition.getHashBuckets().iterator(), Predicates.equalTo(0))) {
