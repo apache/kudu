@@ -32,6 +32,7 @@
 #include "kudu/client/client.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
+#include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/consensus/raft_consensus.h"
@@ -77,6 +78,7 @@ using kudu::cluster::InternalMiniClusterOptions;
 using kudu::consensus::ConsensusStatePB;
 using kudu::consensus::GetConsensusRole;
 using kudu::consensus::HealthReportPB;
+using kudu::consensus::INCLUDE_HEALTH_REPORT;
 using kudu::consensus::RaftConfigPB;
 using kudu::consensus::RaftConsensus;
 using kudu::consensus::RaftPeerPB;
@@ -394,7 +396,7 @@ TEST_F(TsTabletManagerITest, ReportOnReplicaHealthStatus) {
     for (const auto& replica : tablet_replicas) {
       RaftConsensus* consensus = CHECK_NOTNULL(replica->consensus());
       ConsensusStatePB cs;
-      Status s = consensus->ConsensusState(&cs, RaftConsensus::INCLUDE_HEALTH_REPORT);
+      Status s = consensus->ConsensusState(&cs, INCLUDE_HEALTH_REPORT);
       if (!s.ok()) {
         ASSERT_TRUE(s.IsIllegalState()) << s.ToString(); // Replica is shut down.
         continue;

@@ -146,6 +146,7 @@ Status WaitUntilAllReplicasHaveOp(const int64_t log_index,
 Status GetConsensusState(const TServerDetails* replica,
                          const std::string& tablet_id,
                          const MonoDelta& timeout,
+                         consensus::IncludeHealthReport report_health,
                          consensus::ConsensusStatePB* consensus_state);
 
 // Wait until there is no longer a pending config on the specified server.

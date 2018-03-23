@@ -107,6 +107,7 @@ using kudu::cluster::ExternalMiniClusterOptions;
 using kudu::consensus::ConsensusRequestPB;
 using kudu::consensus::ConsensusResponsePB;
 using kudu::consensus::ConsensusServiceProxy;
+using kudu::consensus::EXCLUDE_HEALTH_REPORT;
 using kudu::consensus::MajoritySize;
 using kudu::consensus::MakeOpId;
 using kudu::consensus::OpId;
@@ -2503,7 +2504,8 @@ TEST_P(RaftConsensusParamReplicationModesITest, Test_KUDU_1735) {
     ASSERT_EVENTUALLY([&] {
       for (auto* srv : { leader_tserver, evicted_tserver }) {
         consensus::ConsensusStatePB cstate;
-        ASSERT_OK(itest::GetConsensusState(srv, tablet_id_, kTimeout, &cstate));
+        ASSERT_OK(itest::GetConsensusState(srv, tablet_id_, kTimeout, EXCLUDE_HEALTH_REPORT,
+                                           &cstate));
         ASSERT_TRUE(cstate.has_pending_config());
       }
     });

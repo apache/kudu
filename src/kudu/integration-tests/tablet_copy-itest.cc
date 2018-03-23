@@ -99,6 +99,7 @@ using kudu::cluster::ExternalTabletServer;
 using kudu::consensus::COMMITTED_OPID;
 using kudu::consensus::ConsensusMetadataManager;
 using kudu::consensus::ConsensusMetadataPB;
+using kudu::consensus::EXCLUDE_HEALTH_REPORT;
 using kudu::consensus::MakeOpId;
 using kudu::consensus::RaftPeerPB;
 using kudu::itest::AddServer;
@@ -495,7 +496,8 @@ TEST_F(TabletCopyITest, TestTabletCopyFollowerWithHigherTerm) {
   int64_t term = 0;
   for (int i = 0; i < 1000; i++) {
     consensus::ConsensusStatePB cstate;
-    ASSERT_OK(itest::GetConsensusState(follower_ts, tablet_id, timeout, &cstate));
+    ASSERT_OK(itest::GetConsensusState(follower_ts, tablet_id, timeout, EXCLUDE_HEALTH_REPORT,
+                                       &cstate));
     term = cstate.current_term();
     if (term == 2) break;
     SleepFor(MonoDelta::FromMilliseconds(10));

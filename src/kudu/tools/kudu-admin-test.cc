@@ -72,6 +72,7 @@ using kudu::client::sp::shared_ptr;
 using kudu::cluster::ExternalTabletServer;
 using kudu::consensus::COMMITTED_OPID;
 using kudu::consensus::ConsensusStatePB;
+using kudu::consensus::EXCLUDE_HEALTH_REPORT;
 using kudu::consensus::OpId;
 using kudu::itest::GetConsensusState;
 using kudu::itest::TabletServerMap;
@@ -1136,7 +1137,8 @@ Status GetTermFromConsensus(const vector<TServerDetails*>& tservers,
   ConsensusStatePB cstate;
   for (auto& ts : tservers) {
     RETURN_NOT_OK(
-        GetConsensusState(ts, tablet_id, MonoDelta::FromSeconds(10), &cstate));
+        GetConsensusState(ts, tablet_id, MonoDelta::FromSeconds(10), EXCLUDE_HEALTH_REPORT,
+                          &cstate));
     if (!cstate.leader_uuid().empty() &&
         IsRaftConfigMember(cstate.leader_uuid(), cstate.committed_config()) &&
         cstate.has_current_term()) {

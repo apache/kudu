@@ -72,10 +72,12 @@ using consensus::ChangeConfigRequestPB;
 using consensus::ChangeConfigResponsePB;
 using consensus::ConsensusStatePB;
 using consensus::CountVoters;
+using consensus::EXCLUDE_HEALTH_REPORT;
 using consensus::GetConsensusStateRequestPB;
 using consensus::GetConsensusStateResponsePB;
 using consensus::GetLastOpIdRequestPB;
 using consensus::GetLastOpIdResponsePB;
+using consensus::IncludeHealthReport;
 using consensus::LeaderStepDownRequestPB;
 using consensus::LeaderStepDownResponsePB;
 using consensus::OpId;
@@ -182,7 +184,8 @@ Status WaitForOpFromCurrentTerm(TServerDetails* replica,
   Status s;
   while (MonoTime::Now() < kDeadline) {
     ConsensusStatePB cstate;
-    s = GetConsensusState(replica, tablet_id, kDeadline - MonoTime::Now(), &cstate);
+    s = GetConsensusState(replica, tablet_id, kDeadline - MonoTime::Now(), EXCLUDE_HEALTH_REPORT,
+                          &cstate);
     if (s.ok()) {
       OpId tmp_opid;
       s = GetLastOpIdForReplica(tablet_id, replica, opid_type, kDeadline - MonoTime::Now(),
@@ -323,6 +326,7 @@ Status CreateTabletServerMap(const shared_ptr<MasterServiceProxy>& master_proxy,
 Status GetConsensusState(const TServerDetails* replica,
                          const string& tablet_id,
                          const MonoDelta& timeout,
+                         IncludeHealthReport report_health,
                          ConsensusStatePB* consensus_state) {
   GetConsensusStateRequestPB req;
   GetConsensusStateResponsePB resp;
@@ -330,6 +334,7 @@ Status GetConsensusState(const TServerDetails* replica,
   controller.set_timeout(timeout);
   req.set_dest_uuid(replica->uuid());
   req.add_tablet_ids(tablet_id);
+  req.set_report_health(report_health);
 
   RETURN_NOT_OK(replica->consensus_proxy->GetConsensusState(req, &resp, &controller));
   if (resp.has_error()) {
@@ -353,7 +358,7 @@ Status WaitUntilNoPendingConfig(const TServerDetails* replica,
   MonoTime now;
   Status s;
   while ((now = MonoTime::Now()) < deadline) {
-    s = GetConsensusState(replica, tablet_id, deadline - now, &cstate_tmp);
+    s = GetConsensusState(replica, tablet_id, deadline - now, EXCLUDE_HEALTH_REPORT, &cstate_tmp);
     if (s.ok() && !cstate_tmp.has_pending_config()) {
       if (cstate) {
         *cstate = std::move(cstate_tmp);
@@ -381,7 +386,7 @@ Status WaitUntilCommittedConfigNumVotersIs(int num_voters,
   ConsensusStatePB cstate;
   while (true) {
     MonoDelta remaining_timeout = deadline - MonoTime::Now();
-    s = GetConsensusState(replica, tablet_id, remaining_timeout, &cstate);
+    s = GetConsensusState(replica, tablet_id, remaining_timeout, EXCLUDE_HEALTH_REPORT, &cstate);
     if (s.ok()) {
       if (CountVoters(cstate.committed_config()) == num_voters) {
         return Status::OK();
@@ -407,7 +412,8 @@ void WaitUntilCommittedConfigNumMembersIs(int num_members,
   MonoTime deadline = MonoTime::Now() + timeout;
   AssertEventually([&] {
     ConsensusStatePB cstate;
-    ASSERT_OK(GetConsensusState(replica, tablet_id, deadline - MonoTime::Now(), &cstate));
+    ASSERT_OK(GetConsensusState(replica, tablet_id, deadline - MonoTime::Now(),
+                                EXCLUDE_HEALTH_REPORT, &cstate));
     ASSERT_EQ(num_members, cstate.committed_config().peers_size());
   }, timeout);
   NO_PENDING_FATALS();
@@ -424,7 +430,7 @@ Status WaitUntilCommittedConfigOpIdIndexIs(int64_t opid_index,
   ConsensusStatePB cstate;
   while (true) {
     MonoDelta remaining_timeout = deadline - MonoTime::Now();
-    s = GetConsensusState(replica, tablet_id, remaining_timeout, &cstate);
+    s = GetConsensusState(replica, tablet_id, remaining_timeout, EXCLUDE_HEALTH_REPORT, &cstate);
     if (s.ok() && cstate.committed_config().opid_index() == opid_index) {
       return Status::OK();
     }
@@ -553,7 +559,7 @@ Status GetReplicaStatusAndCheckIfLeader(const TServerDetails* replica,
                                         const string& tablet_id,
                                         const MonoDelta& timeout) {
   ConsensusStatePB cstate;
-  Status s = GetConsensusState(replica, tablet_id, timeout, &cstate);
+  Status s = GetConsensusState(replica, tablet_id, timeout, EXCLUDE_HEALTH_REPORT, &cstate);
   if (PREDICT_FALSE(!s.ok())) {
     VLOG(1) << "Error getting consensus state from replica: "
             << replica->instance_id.permanent_uuid();

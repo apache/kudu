@@ -1212,7 +1212,7 @@ void ConsensusServiceImpl::GetConsensusState(const consensus::GetConsensusStateR
     }
 
     consensus::GetConsensusStateResponsePB_TabletConsensusInfoPB tablet_info;
-    Status s = consensus->ConsensusState(tablet_info.mutable_cstate());
+    Status s = consensus->ConsensusState(tablet_info.mutable_cstate(), req->report_health());
     if (!s.ok()) {
       DCHECK(s.IsIllegalState()) << s.ToString();
       continue;

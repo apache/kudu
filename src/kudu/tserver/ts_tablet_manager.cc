@@ -173,6 +173,8 @@ using consensus::ConsensusMetadata;
 using consensus::ConsensusMetadataCreateMode;
 using consensus::ConsensusMetadataManager;
 using consensus::ConsensusStatePB;
+using consensus::EXCLUDE_HEALTH_REPORT;
+using consensus::INCLUDE_HEALTH_REPORT;
 using consensus::OpId;
 using consensus::OpIdToString;
 using consensus::RECEIVED_OPID;
@@ -1159,8 +1161,7 @@ void TSTabletManager::CreateReportedTabletPB(const scoped_refptr<TabletReplica>&
   shared_ptr<consensus::RaftConsensus> consensus = replica->shared_consensus();
   if (consensus) {
     auto include_health = FLAGS_raft_prepare_replacement_before_eviction ?
-                          RaftConsensus::INCLUDE_HEALTH_REPORT :
-                          RaftConsensus::EXCLUDE_HEALTH_REPORT;
+                          INCLUDE_HEALTH_REPORT : EXCLUDE_HEALTH_REPORT;
     ConsensusStatePB cstate;
     Status s = consensus->ConsensusState(&cstate, include_health);
     if (PREDICT_TRUE(s.ok())) {

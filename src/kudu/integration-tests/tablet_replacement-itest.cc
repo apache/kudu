@@ -34,6 +34,7 @@
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
+#include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
@@ -56,6 +57,7 @@
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 
 using kudu::consensus::RaftPeerPB;
+using kudu::consensus::EXCLUDE_HEALTH_REPORT;
 using kudu::itest::AddServer;
 using kudu::itest::RemoveServer;
 using kudu::itest::StartElection;
@@ -200,7 +202,8 @@ void TabletReplacementITest::TestDontEvictIfRemainingConfigIsUnstable(
   }
 
   consensus::ConsensusStatePB cstate_initial;
-  ASSERT_OK(GetConsensusState(leader_ts, tablet_id, kTimeout, &cstate_initial));
+  ASSERT_OK(GetConsensusState(leader_ts, tablet_id, kTimeout, EXCLUDE_HEALTH_REPORT,
+                              &cstate_initial));
 
   const auto& kFollower1Id = replica_uuids[1];
   const auto& kFollower2Id = replica_uuids[2];
@@ -233,7 +236,7 @@ void TabletReplacementITest::TestDontEvictIfRemainingConfigIsUnstable(
 
   {
     consensus::ConsensusStatePB cstate;
-    ASSERT_OK(GetConsensusState(leader_ts, tablet_id, kTimeout, &cstate));
+    ASSERT_OK(GetConsensusState(leader_ts, tablet_id, kTimeout, EXCLUDE_HEALTH_REPORT, &cstate));
     SCOPED_TRACE(cstate.DebugString());
     ASSERT_FALSE(cstate.has_pending_config())
         << "Leader should not have issued any config change";
@@ -255,7 +258,7 @@ void TabletReplacementITest::TestDontEvictIfRemainingConfigIsUnstable(
   // evict the failed replica, resulting in Raft configuration update.
   ASSERT_EVENTUALLY([&] {
     consensus::ConsensusStatePB cstate;
-    ASSERT_OK(GetConsensusState(leader_ts, tablet_id, kTimeout, &cstate));
+    ASSERT_OK(GetConsensusState(leader_ts, tablet_id, kTimeout, EXCLUDE_HEALTH_REPORT, &cstate));
     ASSERT_GT(cstate.committed_config().opid_index(),
               cstate_initial.committed_config().opid_index() +
               (is_3_4_3_mode ? 1 : 0))

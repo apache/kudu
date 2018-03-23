@@ -287,11 +287,6 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
 
   scoped_refptr<TimeManager> time_manager() const { return time_manager_; }
 
-  enum IncludeHealthReport {
-    EXCLUDE_HEALTH_REPORT,
-    INCLUDE_HEALTH_REPORT
-  };
-
   // Returns a copy of the state of the consensus system.
   // If 'report_health' is set to 'INCLUDE_HEALTH_REPORT', and if the
   // local replica believes it is the leader of the config, it will include a

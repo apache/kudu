@@ -475,6 +475,12 @@ message GetLastOpIdResponsePB {
   optional tserver.TabletServerErrorPB error = 2;
 }
 
+enum IncludeHealthReport {
+  UNSPECIFIED_HEALTH_REPORT = 0;
+  EXCLUDE_HEALTH_REPORT = 1;
+  INCLUDE_HEALTH_REPORT = 2;
+}
+
 message GetConsensusStateRequestPB {
   // UUID of server this request is addressed to.
   optional bytes dest_uuid = 1;
@@ -482,6 +488,12 @@ message GetConsensusStateRequestPB {
   // The ids of the tablets.
   // An empty list means return info for all tablets known to the tablet server.
   repeated bytes tablet_ids = 2;
+
+  // Include a health report inline in the consensus state PB if
+  // 'report_health' is set to INCLUDE_HEALTH_REPORT. Even in that case, only
+  // the leader replica will return a health report for the members of the
+  // config.
+  optional IncludeHealthReport report_health = 3;
 }
 
 message GetConsensusStateResponsePB {

@@ -32,6 +32,7 @@
 #include "kudu/client/client.h"
 #include "kudu/client/replica_controller-internal.h"
 #include "kudu/client/shared_ptr.h"
+#include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/gscoped_ptr.h"
@@ -75,9 +76,10 @@ using kudu::client::internal::ReplicaController;
 using kudu::cluster::ExternalDaemon;
 using kudu::cluster::ExternalMaster;
 using kudu::cluster::ExternalTabletServer;
-using kudu::consensus::RaftPeerPB;
+using kudu::consensus::EXCLUDE_HEALTH_REPORT;
 using kudu::consensus::IsRaftConfigMember;
 using kudu::consensus::IsRaftConfigVoter;
+using kudu::consensus::RaftPeerPB;
 using kudu::itest::AddServer;
 using kudu::itest::GetConsensusState;
 using kudu::itest::GetInt64Metric;
@@ -1387,7 +1389,7 @@ TEST_F(RaftConsensusNonVoterITest, TabletServerIsGoneAndBack) {
     ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &leader));
     // The reason for the outside ASSERT_EVENTUALLY is that the leader might
     // have changed in between of these two calls.
-    ASSERT_OK(GetConsensusState(leader, tablet_id_, kTimeout, &cstate));
+    ASSERT_OK(GetConsensusState(leader, tablet_id_, kTimeout, EXCLUDE_HEALTH_REPORT, &cstate));
   });
   ASSERT_TRUE(IsRaftConfigMember(ts_with_replica->uuid(), cstate.committed_config()));
 
@@ -1515,7 +1517,7 @@ TEST_F(RaftConsensusNonVoterITest, FailedTabletCopy) {
     ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &leader));
     // The reason for the outside ASSERT_EVENTUALLY is that the leader might
     // have changed in between of these two calls.
-    ASSERT_OK(GetConsensusState(leader, tablet_id_, kTimeout, &cstate));
+    ASSERT_OK(GetConsensusState(leader, tablet_id_, kTimeout, EXCLUDE_HEALTH_REPORT, &cstate));
   });
   // The original voter replica that fell behind the WAL catchup threshold should
   // not be there, it should be evicted.
@@ -1554,7 +1556,7 @@ TEST_F(RaftConsensusNonVoterITest, FailedTabletCopy) {
 
     TServerDetails* leader = nullptr;
     ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &leader));
-    ASSERT_OK(GetConsensusState(leader, tablet_id_, kTimeout, &cstate));
+    ASSERT_OK(GetConsensusState(leader, tablet_id_, kTimeout, EXCLUDE_HEALTH_REPORT, &cstate));
     // The original voter replica that fell behind the WAL catchup threshold
     // should be evicted.
     ASSERT_FALSE(IsRaftConfigMember(follower_uuid, cstate.committed_config()))
@@ -1723,7 +1725,7 @@ TEST_F(RaftConsensusNonVoterITest, RestartClusterWithNonVoter) {
     ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &leader));
     // The reason for the outside ASSERT_EVENTUALLY is that the leader might
     // have changed in between of these two calls.
-    ASSERT_OK(GetConsensusState(leader, tablet_id_, kTimeout, &cstate));
+    ASSERT_OK(GetConsensusState(leader, tablet_id_, kTimeout, EXCLUDE_HEALTH_REPORT, &cstate));
   });
   // The failed voter replica should be evicted.
   EXPECT_FALSE(IsRaftConfigMember(failed_replica_uuid, cstate.committed_config()))
@@ -1815,13 +1817,13 @@ TEST_F(RaftConsensusNonVoterITest, NonVoterReplicasInConsensusQueue) {
   LOG(INFO) << "Waiting for pending config...";
   consensus::ConsensusStatePB cstate;
   ASSERT_EVENTUALLY([&] {
-    ASSERT_OK(GetConsensusState(leader, tablet_id, kTimeout, &cstate));
+    ASSERT_OK(GetConsensusState(leader, tablet_id, kTimeout, EXCLUDE_HEALTH_REPORT, &cstate));
     ASSERT_TRUE(cstate.has_pending_config());
   });
 
   // Ensure it does not commit.
   SleepFor(MonoDelta::FromSeconds(5));
-  ASSERT_OK(GetConsensusState(leader, tablet_id, kTimeout, &cstate));
+  ASSERT_OK(GetConsensusState(leader, tablet_id, kTimeout, EXCLUDE_HEALTH_REPORT, &cstate));
   ASSERT_TRUE(cstate.has_pending_config());
 
   const auto& new_replica_uuid = new_replica->uuid();
@@ -1839,7 +1841,7 @@ TEST_F(RaftConsensusNonVoterITest, NonVoterReplicasInConsensusQueue) {
 
   // Once the new replicas come back online, this should be committed.
   ASSERT_EVENTUALLY([&] {
-    ASSERT_OK(GetConsensusState(leader, tablet_id, kTimeout, &cstate));
+    ASSERT_OK(GetConsensusState(leader, tablet_id, kTimeout, EXCLUDE_HEALTH_REPORT, &cstate));
     ASSERT_FALSE(cstate.has_pending_config());
   });
 
@@ -2022,7 +2024,7 @@ TEST_P(ReplicaBehindWalGcThresholdITest, ReplicaReplacement) {
     ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &leader));
     // The reason for the outside ASSERT_EVENTUALLY is that the leader might
     // have changed in between of these two calls.
-    ASSERT_OK(GetConsensusState(leader, tablet_id_, kTimeout, &cstate));
+    ASSERT_OK(GetConsensusState(leader, tablet_id_, kTimeout, EXCLUDE_HEALTH_REPORT, &cstate));
   });
 
   if (tserver_behavior == BehindWalGcBehavior::SHUTDOWN) {

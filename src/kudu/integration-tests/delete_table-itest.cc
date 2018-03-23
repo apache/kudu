@@ -89,6 +89,7 @@ using kudu::cluster::ExternalTabletServer;
 using kudu::consensus::COMMITTED_OPID;
 using kudu::consensus::ConsensusMetadataPB;
 using kudu::consensus::ConsensusStatePB;
+using kudu::consensus::EXCLUDE_HEALTH_REPORT;
 using kudu::consensus::RaftPeerPB;
 using kudu::itest::AddServer;
 using kudu::itest::DeleteTablet;
@@ -174,8 +175,8 @@ class DeleteTableITest : public ExternalMiniClusterITestBase {
 
 string DeleteTableITest::GetLeaderUUID(const string& ts_uuid, const string& tablet_id) {
   ConsensusStatePB cstate;
-  CHECK_OK(itest::GetConsensusState(ts_map_[ts_uuid], tablet_id,
-                                    MonoDelta::FromSeconds(10), &cstate));
+  CHECK_OK(itest::GetConsensusState(ts_map_[ts_uuid], tablet_id, MonoDelta::FromSeconds(10),
+                                    EXCLUDE_HEALTH_REPORT, &cstate));
   return cstate.leader_uuid();
 }
 
