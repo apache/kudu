@@ -39,6 +39,12 @@ message RaftPeerAttrsPB {
 
 // Report on a replica's (peer's) health.
 message HealthReportPB {
+  // HealthStatus respresents a state machine with the following transitions
+  // allowed:
+  //   HEALTHY -> UNKNOWN, FAILED, or FAILED_UNRECOVERABLE.
+  //   UNKNOWN -> FAILED, HEALTHY, or FAILED_UNRECOVERABLE.
+  //   FAILED -> UNKNOWN, HEALTHY, or FAILED_UNRECOVERABLE.
+  //   FAILED_UNRECOVERABLE is a terminal state.
   enum HealthStatus {
     // No information on the health status.
     UNKNOWN = 999;
