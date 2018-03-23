@@ -223,7 +223,8 @@ WARNING: All of the command line steps below should be executed as the Kudu UNIX
 commands assume the Kudu Unix user is `kudu`, which is typical.
 
 WARNING: The workflow presupposes at least basic familiarity with Kudu configuration management. If
-using Cloudera Manager (CM), the workflow also presupposes familiarity with it.
+using vendor-specific tools (e.g. Cloudera Manager) the workflow also presupposes familiarity with
+it and the vendor's instructions should be used instead as details may differ.
 
 ==== Prepare for the migration
 
@@ -436,7 +437,8 @@ cluster is first shut down. See the <<migrate_to_multi_master,multi-master migra
 more details on deploying with DNS aliases.
 
 WARNING: The workflow presupposes at least basic familiarity with Kudu configuration management. If
-using Cloudera Manager (CM), the workflow also presupposes familiarity with it.
+using vendor-specific tools (e.g. Cloudera Manager) the workflow also presupposes familiarity with
+it and the vendor's instructions should be used instead as details may differ.
 
 WARNING: All of the command line steps below should be executed as the Kudu UNIX user, typically
 `kudu`.
