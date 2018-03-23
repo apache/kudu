@@ -194,6 +194,14 @@ Status ScanConfiguration::SetRowFormatFlags(uint64_t flags) {
   return Status::OK();
 }
 
+Status ScanConfiguration::SetLimit(int64_t limit) {
+  if (limit < 0) {
+    return Status::InvalidArgument("Limit must be non-negative");
+  }
+  spec_.set_limit(limit);
+  return Status::OK();
+}
+
 void ScanConfiguration::OptimizeScanSpec() {
   spec_.OptimizeScan(*table_->schema().schema_,
                      &arena_,

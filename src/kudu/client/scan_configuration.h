@@ -98,6 +98,8 @@ class ScanConfiguration {
 
   Status SetRowFormatFlags(uint64_t flags);
 
+  Status SetLimit(int64_t limit);
+
   void OptimizeScanSpec();
 
   const KuduTable& table() {

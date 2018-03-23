@@ -114,6 +114,8 @@ DECLARE_bool(fail_dns_resolution);
 DECLARE_bool(log_inject_latency);
 DECLARE_bool(master_support_connect_to_master_rpc);
 DECLARE_bool(rpc_trace_negotiation);
+DECLARE_int32(flush_threshold_mb);
+DECLARE_int32(flush_threshold_secs);
 DECLARE_int32(heartbeat_interval_ms);
 DECLARE_int32(leader_failure_exp_backoff_max_delta_ms);
 DECLARE_int32(log_inject_latency_ms_mean);
@@ -121,6 +123,7 @@ DECLARE_int32(log_inject_latency_ms_stddev);
 DECLARE_int32(master_inject_latency_on_tablet_lookups_ms);
 DECLARE_int32(max_create_tablets_per_ts);
 DECLARE_int32(raft_heartbeat_interval_ms);
+DECLARE_int32(scanner_batch_size_rows);
 DECLARE_int32(scanner_gc_check_interval_us);
 DECLARE_int32(scanner_inject_latency_on_each_batch_ms);
 DECLARE_int32(scanner_max_batch_size_bytes);
@@ -130,6 +133,7 @@ DECLARE_string(superuser_acl);
 DECLARE_string(user_acl);
 DEFINE_int32(test_scan_num_rows, 1000, "Number of rows to insert and scan");
 
+METRIC_DECLARE_counter(block_manager_total_bytes_read);
 METRIC_DECLARE_counter(rpcs_queue_overflow);
 METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetMasterRegistration);
 METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetTableLocations);
@@ -777,6 +781,98 @@ TEST_F(ClientTest, TestMasterDown) {
   ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
 }
 
+// Test that we get errors when we try incorrectly configuring the scanner, and
+// that the scanner works well in a basic case.
+TEST_F(ClientTest, TestConfiguringScannerLimits) {
+  const int64_t kNumRows = 1234;
+  const int64_t kLimit = 123;
+  NO_FATALS(InsertTestRows(client_table_.get(), kNumRows));
+
+  // Ensure we can't set the limit to some negative number.
+  KuduScanner scanner(client_table_.get());
+  Status s = scanner.SetLimit(-1);
+  ASSERT_STR_CONTAINS(s.ToString(), "must be non-negative");
+  ASSERT_TRUE(s.IsInvalidArgument());
+
+  // Now actually set the limit and open the scanner.
+  ASSERT_OK(scanner.SetLimit(kLimit));
+  ASSERT_OK(scanner.Open());
+
+  // Ensure we can't set the limit once we've opened the scanner.
+  s = scanner.SetLimit(kLimit);
+  ASSERT_STR_CONTAINS(s.ToString(), "must be set before Open()");
+  ASSERT_TRUE(s.IsIllegalState());
+  int64_t count = 0;
+  KuduScanBatch batch;
+  while (scanner.HasMoreRows()) {
+    ASSERT_OK(scanner.NextBatch(&batch));
+    count += batch.NumRows();
+  }
+  ASSERT_EQ(kLimit, count);
+}
+
+// Test various scanner limits.
+TEST_F(ClientTest, TestRandomizedLimitScans) {
+  const string kTableName = "table";
+  unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  ASSERT_OK(table_creator->table_name(kTableName)
+                          .schema(&schema_)
+                          .num_replicas(1)
+                          .add_hash_partitions({ "key" }, 2)
+                          .timeout(MonoDelta::FromSeconds(60))
+                          .Create());
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client_->OpenTable(kTableName, &table));
+
+  // Set the batch size such that a full scan could yield either multi-batch
+  // or single-batch scans.
+  int64_t num_rows = rand() % 2000;
+  int64_t batch_size = rand() % 1000;
+
+  // Set a low flush threshold so we can scan a mix of flushed data in
+  // in-memory data.
+  FLAGS_flush_threshold_mb = 1;
+  FLAGS_flush_threshold_secs = 1;
+
+  FLAGS_scanner_batch_size_rows = batch_size;
+  ASSERT_NO_FATAL_FAILURE(InsertTestRows(
+      client_table_.get(), num_rows));
+  SleepFor(MonoDelta::FromSeconds(1));
+  LOG(INFO) << Substitute("Total number of rows: $0, batch size: $1", num_rows, batch_size);
+
+  auto test_scan_with_limit = [&] (int64_t limit, int64_t expected_rows) {
+    scoped_refptr<Counter> counter;
+    counter = METRIC_block_manager_total_bytes_read.Instantiate(
+        cluster_->mini_tablet_server(0)->server()->metric_entity());
+    KuduScanner scanner(client_table_.get());
+    ASSERT_OK(scanner.SetLimit(limit));
+    ASSERT_OK(scanner.Open());
+    int64_t count = 0;
+    KuduScanBatch batch;
+    while (scanner.HasMoreRows()) {
+      ASSERT_OK(scanner.NextBatch(&batch));
+      count += batch.NumRows();
+    }
+    NO_FATALS(scanner.Close());
+    ASSERT_EQ(expected_rows, count);
+    LOG(INFO) << "Total bytes read on tserver so far: " << counter.get()->value();
+  };
+
+  // As a sanity check, scanning with a limit of 0 should yield no rows.
+  NO_FATALS(test_scan_with_limit(0, 0));
+
+  // Now scan with randomly set limits. To ensure we get a spectrum of limit
+  // coverage, gradiate the max limit that we can set.
+  for (int i = 1; i < 200; i++) {
+    const int64_t max_limit = num_rows * static_cast<double>(0.01 * i);
+    const int64_t limit = rand() % max_limit + 1;
+    const int64_t expected_rows = std::min({ limit, num_rows });
+    LOG(INFO) << Substitute("Scanning with a client-side limit of $0, expecting $1 rows",
+                            limit, expected_rows);
+    NO_FATALS(test_scan_with_limit(limit, expected_rows));
+  }
+}
+
 TEST_F(ClientTest, TestScan) {
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(
       client_table_.get(), FLAGS_test_scan_num_rows));
@@ -1246,9 +1342,13 @@ static void ReadBatchToStrings(KuduScanner* scanner, vector<string>* rows) {
 
 static void DoScanWithCallback(KuduTable* table,
                                const vector<string>& expected_rows,
+                               int64_t limit,
                                const boost::function<Status(const string&)>& cb) {
   // Initialize fault-tolerant snapshot scanner.
   KuduScanner scanner(table);
+  if (limit > 0) {
+    ASSERT_OK(scanner.SetLimit(limit));
+  }
   ASSERT_OK(scanner.SetFaultTolerant());
   // Set a long timeout as we'll be restarting nodes while performing snapshot scans.
   ASSERT_OK(scanner.SetTimeoutMillis(60 * 1000 /* 60 seconds */))
@@ -1287,10 +1387,11 @@ static void DoScanWithCallback(KuduTable* table,
 
   // Verify results from the scan.
   LOG(INFO) << "Verifying results from scan.";
-  for (int i = 0; i < rows.size(); i++) {
+  int expected_num_rows = limit < 0 ? expected_rows.size() : limit;
+  ASSERT_EQ(expected_num_rows, rows.size());
+  for (int i = 0; i < expected_num_rows; i++) {
     EXPECT_EQ(expected_rows[i], rows[i]);
   }
-  ASSERT_EQ(expected_rows.size(), rows.size());
 }
 
 } // namespace internal
@@ -1317,47 +1418,54 @@ TEST_F(ClientTest, TestScanFaultTolerance) {
   vector<string> expected_rows;
   ScanTableToStrings(table.get(), &expected_rows);
 
+  // Iterate with no limit and with a lower limit than the expected rows.
+  vector<int64_t> limits = { -1, static_cast<int64_t>(expected_rows.size() / 2) };
   for (int with_flush = 0; with_flush <= 1; with_flush++) {
-    SCOPED_TRACE((with_flush == 1) ? "with flush" : "without flush");
-    // The second time through, flush to ensure that we test both against MRS and
-    // disk.
-    if (with_flush) {
-      string tablet_id = GetFirstTabletId(table.get());
-      FlushTablet(tablet_id);
-    }
+    for (int64_t limit : limits) {
+      const string kFlushString = with_flush == 1 ? "with flush" : "without flush";
+      const string kLimitString = limit < 0 ?
+          "without scanner limit" : Substitute("with scanner limit $0", limit);
+      SCOPED_TRACE(Substitute("$0, $1", kFlushString, kLimitString));
+      // The second time through, flush to ensure that we test both against MRS and
+      // disk.
+      if (with_flush) {
+        string tablet_id = GetFirstTabletId(table.get());
+        FlushTablet(tablet_id);
+      }
 
-    // Test a few different recoverable server-side error conditions.
-    // Since these are recoverable, the scan will succeed when retried elsewhere.
+      // Test a few different recoverable server-side error conditions.
+      // Since these are recoverable, the scan will succeed when retried elsewhere.
 
-    // Restarting and waiting should result in a SCANNER_EXPIRED error.
-    LOG(INFO) << "Doing a scan while restarting a tserver and waiting for it to come up...";
-    ASSERT_NO_FATAL_FAILURE(internal::DoScanWithCallback(table.get(), expected_rows,
-        boost::bind(&ClientTest_TestScanFaultTolerance_Test::RestartTServerAndWait,
-                    this, _1)));
+      // Restarting and waiting should result in a SCANNER_EXPIRED error.
+      LOG(INFO) << "Doing a scan while restarting a tserver and waiting for it to come up...";
+      ASSERT_NO_FATAL_FAILURE(internal::DoScanWithCallback(table.get(), expected_rows, limit,
+          boost::bind(&ClientTest_TestScanFaultTolerance_Test::RestartTServerAndWait,
+                      this, _1)));
 
-    // Restarting and not waiting means the tserver is hopefully bootstrapping, leading to
-    // a TABLET_NOT_RUNNING error.
-    LOG(INFO) << "Doing a scan while restarting a tserver...";
-    ASSERT_NO_FATAL_FAILURE(internal::DoScanWithCallback(table.get(), expected_rows,
-        boost::bind(&ClientTest_TestScanFaultTolerance_Test::RestartTServerAsync,
-                    this, _1)));
-    for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-      MiniTabletServer* ts = cluster_->mini_tablet_server(i);
-      ASSERT_OK(ts->WaitStarted());
-    }
-
-    // Killing the tserver should lead to an RPC timeout.
-    LOG(INFO) << "Doing a scan while killing a tserver...";
-    ASSERT_NO_FATAL_FAILURE(internal::DoScanWithCallback(table.get(), expected_rows,
-        boost::bind(&ClientTest_TestScanFaultTolerance_Test::KillTServer,
-                    this, _1)));
-
-    // Restart the server that we killed.
-    for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-      MiniTabletServer* ts = cluster_->mini_tablet_server(i);
-      if (!ts->is_started()) {
-        ASSERT_OK(ts->Start());
+      // Restarting and not waiting means the tserver is hopefully bootstrapping, leading to
+      // a TABLET_NOT_RUNNING error.
+      LOG(INFO) << "Doing a scan while restarting a tserver...";
+      ASSERT_NO_FATAL_FAILURE(internal::DoScanWithCallback(table.get(), expected_rows, limit,
+          boost::bind(&ClientTest_TestScanFaultTolerance_Test::RestartTServerAsync,
+                      this, _1)));
+      for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+        MiniTabletServer* ts = cluster_->mini_tablet_server(i);
         ASSERT_OK(ts->WaitStarted());
+      }
+
+      // Killing the tserver should lead to an RPC timeout.
+      LOG(INFO) << "Doing a scan while killing a tserver...";
+      ASSERT_NO_FATAL_FAILURE(internal::DoScanWithCallback(table.get(), expected_rows, limit,
+          boost::bind(&ClientTest_TestScanFaultTolerance_Test::KillTServer,
+                      this, _1)));
+
+      // Restart the server that we killed.
+      for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+        MiniTabletServer* ts = cluster_->mini_tablet_server(i);
+        if (!ts->is_started()) {
+          ASSERT_OK(ts->Start());
+          ASSERT_OK(ts->WaitStarted());
+        }
       }
     }
   }

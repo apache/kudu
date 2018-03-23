@@ -72,7 +72,8 @@ KuduScanner::Data::Data(KuduTable* table)
     data_in_open_(false),
     short_circuit_(false),
     table_(DCHECK_NOTNULL(table)->shared_from_this()),
-    scan_attempts_(0) {
+    scan_attempts_(0),
+    num_rows_returned_(0) {
 }
 
 KuduScanner::Data::~Data() {
@@ -298,6 +299,7 @@ ScanRpcStatus KuduScanner::Data::SendScanRpc(const MonoTime& overall_deadline,
       rpc_deadline, overall_deadline);
   if (scan_status.result == ScanRpcStatus::OK) {
     UpdateResourceMetrics();
+    num_rows_returned_ += last_response_.data().num_rows();
   }
   return scan_status;
 }
@@ -346,6 +348,14 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
     VLOG(2) << "Setting NewScanRequestPB last_primary_key to hex value "
         << HexDump(last_primary_key_);
     scan->set_last_primary_key(last_primary_key_);
+  }
+
+  if (configuration_.spec().has_limit()) {
+    // Set the limit based on the number of rows we've already returned.
+    int64_t new_limit = std::max(configuration_.spec().limit() - num_rows_returned_,
+                                 static_cast<int64_t>(0));
+    VLOG(2) << "Setting NewScanRequestPB limit " << new_limit;
+    scan->set_limit(new_limit);
   }
 
   scan->set_cache_blocks(configuration_.spec().cache_blocks());

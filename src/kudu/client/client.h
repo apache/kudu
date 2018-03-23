@@ -2089,6 +2089,13 @@ class KUDU_EXPORT KuduScanner {
   Status SetRowFormatFlags(uint64_t flags);
   ///@}
 
+  /// Set the maximum number of rows the scanner should return.
+  ///
+  /// @param [in] rows
+  ///   Limit on the number of rows to return.
+  /// @return Operation result status.
+  Status SetLimit(int64_t limit) WARN_UNUSED_RESULT;
+
   /// @return String representation of this scan.
   ///
   /// @internal

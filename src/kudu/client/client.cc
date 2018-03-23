@@ -1332,6 +1332,13 @@ Status KuduScanner::SetRowFormatFlags(uint64_t flags) {
   return data_->mutable_configuration()->SetRowFormatFlags(flags);
 }
 
+Status KuduScanner::SetLimit(int64_t limit) {
+  if (data_->open_) {
+    return Status::IllegalState("Limit must be set before Open()");
+  }
+  return data_->mutable_configuration()->SetLimit(limit);
+}
+
 const ResourceMetrics& KuduScanner::GetResourceMetrics() const {
   return data_->resource_metrics_;
 }

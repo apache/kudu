@@ -235,6 +235,9 @@ class KuduScanner::Data {
   // Number of attempts since the last successful scan.
   int scan_attempts_;
 
+  // Number of rows already returned.
+  int64_t num_rows_returned_;
+
   // The deprecated "NextBatch(vector<KuduRowResult>*) API requires some local
   // storage for the actual row data. If that API is used, this member keeps the
   // actual storage for the batch that is returned.
