@@ -531,14 +531,6 @@ void PeerMessageQueue::UpdatePeerHealthUnlocked(TrackedPeer* peer) {
   }
 
   bool changed = overall_health_status != peer->last_overall_health_status;
-  if (changed) {
-    // FAILED_UNRECOVERABLE is a terminal state; it's illegal to transition out of it.
-    DCHECK_NE(HealthReportPB::FAILED_UNRECOVERABLE, peer->last_overall_health_status)
-        << "Transitioning out of FAILED_UNRECOVERABLE health status should not be possible. "
-        << "old health status: "
-        << HealthReportPB::HealthStatus_Name(peer->last_overall_health_status) << ", "
-        << "new health status: " << HealthReportPB::HealthStatus_Name(overall_health_status);
-  }
   peer->last_overall_health_status = overall_health_status;
 
   if (FLAGS_raft_prepare_replacement_before_eviction) {
