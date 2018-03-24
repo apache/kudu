@@ -50,6 +50,7 @@
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/linked_list-test-util.h"
 #include "kudu/integration-tests/ts_itest-base.h"
+#include "kudu/master/master.pb.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/mini-cluster/mini_cluster.h"
 #include "kudu/tserver/tablet_server-test-base.h"
@@ -76,6 +77,10 @@ DEFINE_bool(stress_wal_gc, false,
 using kudu::client::sp::shared_ptr;
 using kudu::cluster::ClusterNodes;
 using kudu::itest::TServerDetails;
+using kudu::itest::WAIT_FOR_LEADER;
+using kudu::itest::WaitForReplicasReportedToMaster;
+using kudu::itest::WaitForServersToAgree;
+using kudu::master::VOTER_REPLICA;
 using std::string;
 using std::vector;
 
@@ -288,30 +293,42 @@ TEST_F(LinkedListTest, TestLoadWhileOneServerDownAndVerify) {
   FLAGS_num_tablet_servers = 3;
   FLAGS_num_tablets = 1;
 
-  ASSERT_NO_FATAL_FAILURE(BuildAndStart());
+  const auto run_time = MonoDelta::FromSeconds(FLAGS_seconds_to_run);
+  const auto wait_time = run_time;
+
+  NO_FATALS(BuildAndStart());
 
   // Load the data with one of the three servers down.
   cluster_->tablet_server(0)->Shutdown();
 
-  int64_t written = 0;
-  ASSERT_OK(tester_->LoadLinkedList(MonoDelta::FromSeconds(FLAGS_seconds_to_run),
-                                           FLAGS_num_snapshots,
-                                           &written));
+  int64_t written;
+  ASSERT_OK(tester_->LoadLinkedList(run_time, FLAGS_num_snapshots, &written));
 
   // Start back up the server that missed all of the data being loaded. It should be
   // able to stream the data back from the other server which is still up.
   ASSERT_OK(cluster_->tablet_server(0)->Restart());
 
-  // We'll give the tablets 5 seconds to start up regardless of how long we
-  // inserted for. This prevents flakiness in TSAN builds in particular.
-  const int kBaseTimeToWaitSecs = 5;
-  const int kWaitTime = FLAGS_seconds_to_run + kBaseTimeToWaitSecs;
   string tablet_id = tablet_replicas_.begin()->first;
-  ASSERT_NO_FATAL_FAILURE(WaitForServersToAgree(
-                            MonoDelta::FromSeconds(kWaitTime),
-                            tablet_servers_,
-                            tablet_id,
-                            written / FLAGS_num_chains));
+
+  // When running for longer times (like --seconds_to_run=800), the replica
+  // at the shutdown tservers falls behind the WAL segment GC threshold. In case
+  // of the 3-4-3 replica management scheme, that leads to evicting the former
+  // replica and replacing it with a non-voter one. The WaitForServersToAgree()
+  // below doesn't take into account that a non-voter replica, even caught up
+  // with the leader, first needs to be promoted to voter before commencing the
+  // verification phase. So, before checking for the minimum required operaiton
+  // index, let's first make sure that the replica at the restarted tserver
+  // is a voter.
+  bool has_leader;
+  master::TabletLocationsPB tablet_locations;
+  ASSERT_OK(WaitForReplicasReportedToMaster(
+      cluster_->master_proxy(), FLAGS_num_tablet_servers, tablet_id, wait_time,
+      WAIT_FOR_LEADER, VOTER_REPLICA, &has_leader, &tablet_locations));
+
+  // All right, having the necessary number of voter replicas, make sure all
+  // replicas are up-to-date in terms of OpId index.
+  ASSERT_OK(WaitForServersToAgree(wait_time, tablet_servers_, tablet_id,
+                                  written / FLAGS_num_chains));
 
   cluster_->tablet_server(1)->Shutdown();
   cluster_->tablet_server(2)->Shutdown();
