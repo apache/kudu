@@ -204,6 +204,9 @@ class RpcContext {
   // If the client did not specify a deadline, returns MonoTime::Max().
   MonoTime GetClientDeadline() const;
 
+  // Return the time when the inbound call was received.
+  MonoTime GetTimeReceived() const;
+
   // Whether the results of this RPC are tracked with a ResultTracker.
   // If this returns true, both result_tracker() and request_id() should return non-null results.
   bool AreResultsTracked() const { return result_tracker_.get() != nullptr; }

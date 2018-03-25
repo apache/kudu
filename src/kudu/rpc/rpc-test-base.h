@@ -41,6 +41,7 @@
 #include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/mem_tracker.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
@@ -211,6 +212,8 @@ class GenericCalculatorService : public ServiceIf {
 
     LOG(INFO) << "got call: " << pb_util::SecureShortDebugString(req);
     SleepFor(MonoDelta::FromMicroseconds(req.sleep_micros()));
+    MonoDelta duration(MonoTime::Now().GetDeltaSince(incoming->GetTimeReceived()));
+    CHECK_GE(duration.ToMicroseconds(), req.sleep_micros());
     SleepResponsePB resp;
     incoming->RespondSuccess(resp);
   }
