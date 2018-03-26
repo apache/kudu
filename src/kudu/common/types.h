@@ -37,7 +37,6 @@
 #include "kudu/gutil/strings/escaping.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/util/int128.h"
-#include "kudu/util/make_shared.h"
 #include "kudu/util/slice.h"
 // IWYU pragma: no_include "kudu/util/status.h"
 
@@ -78,9 +77,8 @@ class TypeInfo {
   }
 
  private:
-  ALLOW_MAKE_SHARED(TypeInfo);
   friend class TypeInfoResolver;
-  template<typename Type> TypeInfo(Type t);
+  template<typename Type> explicit TypeInfo(Type t);
 
   const DataType type_;
   const DataType physical_type_;

@@ -19,7 +19,6 @@
 
 #include "kudu/common/common.pb.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/util/make_shared.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -38,7 +37,6 @@ struct WriterOptions;
 // Mimicked after common::TypeInfo et al
 class TypeEncodingInfo {
  public:
-
   static Status Get(const TypeInfo* typeinfo, EncodingType encoding, const TypeEncodingInfo** out);
 
   static const EncodingType GetDefaultEncoding(const TypeInfo* typeinfo);
@@ -54,9 +52,10 @@ class TypeEncodingInfo {
   Status CreateBlockDecoder(BlockDecoder **bd, const Slice &slice,
                             CFileIterator *iter) const;
  private:
-  ALLOW_MAKE_SHARED(TypeEncodingInfo);
   friend class TypeEncodingResolver;
-  template<typename TypeEncodingTraitsClass> TypeEncodingInfo(TypeEncodingTraitsClass t);
+
+  template<typename TypeEncodingTraitsClass>
+  explicit TypeEncodingInfo(TypeEncodingTraitsClass t);
 
   EncodingType encoding_type_;
 

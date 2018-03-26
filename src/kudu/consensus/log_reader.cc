@@ -80,8 +80,7 @@ Status LogReader::Open(Env* env,
                        const string& tablet_id,
                        const scoped_refptr<MetricEntity>& metric_entity,
                        shared_ptr<LogReader>* reader) {
-  auto log_reader = std::make_shared<LogReader>(
-      env, index, tablet_id, metric_entity);
+  auto log_reader = LogReader::make_shared(env, index, tablet_id, metric_entity);
 
   RETURN_NOT_OK_PREPEND(log_reader->Init(tablet_wal_dir),
                         "Unable to initialize log reader")

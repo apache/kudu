@@ -56,7 +56,7 @@ namespace master {
 //
 // Tracks the last heartbeat, status, instance identifier, etc.
 // This class is thread-safe.
-class TSDescriptor {
+class TSDescriptor : public enable_make_shared<TSDescriptor> {
  public:
   static Status RegisterNew(const NodeInstancePB& instance,
                             const ServerRegistrationPB& registration,
@@ -123,10 +123,11 @@ class TSDescriptor {
   // Includes the UUID as well as last known host/port.
   std::string ToString() const;
 
+ protected:
+  explicit TSDescriptor(std::string perm_id);
+
  private:
   FRIEND_TEST(TestTSDescriptor, TestReplicaCreationsDecay);
-
-  explicit TSDescriptor(std::string perm_id);
 
   // Uses DNS to resolve registered hosts to a single Sockaddr.
   // Returns the resolved address as well as the hostname associated with it
@@ -156,7 +157,6 @@ class TSDescriptor {
   std::shared_ptr<tserver::TabletServerAdminServiceProxy> ts_admin_proxy_;
   std::shared_ptr<consensus::ConsensusServiceProxy> consensus_proxy_;
 
-  ALLOW_MAKE_SHARED(TSDescriptor);
   DISALLOW_COPY_AND_ASSIGN(TSDescriptor);
 };
 

@@ -201,10 +201,10 @@ Status RaftConsensus::Create(ConsensusOptions options,
                              scoped_refptr<ConsensusMetadataManager> cmeta_manager,
                              ThreadPool* raft_pool,
                              shared_ptr<RaftConsensus>* consensus_out) {
-  shared_ptr<RaftConsensus> consensus(std::make_shared<RaftConsensus>(std::move(options),
-                                                                      std::move(local_peer_pb),
-                                                                      std::move(cmeta_manager),
-                                                                      raft_pool));
+  shared_ptr<RaftConsensus> consensus(RaftConsensus::make_shared(std::move(options),
+                                                                 std::move(local_peer_pb),
+                                                                 std::move(cmeta_manager),
+                                                                 raft_pool));
   RETURN_NOT_OK_PREPEND(consensus->Init(), "Unable to initialize Raft consensus");
   *consensus_out = std::move(consensus);
   return Status::OK();
