@@ -247,6 +247,22 @@ Apache Git repository:
   repository in link:https://repository.apache.org/#stagingRepositories[Nexus],
   and click 'Release'.
 
+. Release the Python artifacts. You will need to setup an account on link:https://PyPi.org[PyPi.org]
+  and ask to be added to the kudu-python PyPi project if you have not done this before.
++
+----
+# Prepare and sign the python source distribution.
+cd python
+rm -rf dist/*
+python setup.py sdist
+gpg --detach-sign -a dist/kudu-python-1.x.y.tar.gz
+# Upload the distribution to PyPi using twine.
+pip install twine
+twine upload dist/*
+----
+Note: You can upload to the test PyPi by adding
+`--repository-url https://test.pypi.org/legacy/` to the twine command.
+
 . Generate the version-specific documentation from that branch following these
   link:https://github.com/apache/kudu/#updating-the-kudu-web-site-documentation[instructions].
 
