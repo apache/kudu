@@ -62,7 +62,8 @@ class Messenger;
 // timer cancelation, which would allow us to implement synchronous Stop(), use
 // exclusive ownership, and remove the restriction that the delta passed
 // into Snooze() be greater than GetMinimumPeriod().
-class PeriodicTimer : public std::enable_shared_from_this<PeriodicTimer> {
+class PeriodicTimer : public std::enable_shared_from_this<PeriodicTimer>,
+                      public enable_make_shared<PeriodicTimer> {
  public:
   typedef std::function<void(void)> RunTaskFunctor;
 
@@ -144,14 +145,14 @@ class PeriodicTimer : public std::enable_shared_from_this<PeriodicTimer> {
   // Returns true iff the timer has been started.
   bool started() const;
 
- private:
-  FRIEND_TEST(PeriodicTimerTest, TestCallbackRestartsTimer);
-
+ protected:
   PeriodicTimer(std::shared_ptr<Messenger> messenger,
                 RunTaskFunctor functor,
                 MonoDelta period,
                 Options options);
 
+ private:
+  FRIEND_TEST(PeriodicTimerTest, TestCallbackRestartsTimer);
   // Calculate the minimum period for the timer, which varies depending on
   // 'jitter_pct_' and the output of the PRNG.
   MonoDelta GetMinimumPeriod();
@@ -206,8 +207,6 @@ class PeriodicTimer : public std::enable_shared_from_this<PeriodicTimer> {
 
   // Whether the timer is running or not.
   bool started_;
-
-  ALLOW_MAKE_SHARED(PeriodicTimer);
 
   DISALLOW_COPY_AND_ASSIGN(PeriodicTimer);
 };

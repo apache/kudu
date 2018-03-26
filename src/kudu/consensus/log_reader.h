@@ -54,7 +54,7 @@ struct LogIndexEntry;
 // Reads a set of segments from a given path. Segment headers and footers
 // are read and parsed, but entries are not.
 // This class is thread safe.
-class LogReader {
+class LogReader : public enable_make_shared<LogReader> {
  public:
   ~LogReader();
 
@@ -114,6 +114,10 @@ class LogReader {
 
   std::string ToString() const;
 
+ protected:
+  LogReader(Env* env, scoped_refptr<LogIndex> index, std::string tablet_id,
+            const scoped_refptr<MetricEntity>& metric_entity);
+
  private:
   FRIEND_TEST(LogTestOptionalCompression, TestLogReader);
   FRIEND_TEST(LogTestOptionalCompression, TestReadLogWithReplacedReplicates);
@@ -168,9 +172,6 @@ class LogReader {
                                   faststring* tmp_buf,
                                   gscoped_ptr<LogEntryBatchPB>* batch) const;
 
-  LogReader(Env* env, scoped_refptr<LogIndex> index, std::string tablet_id,
-            const scoped_refptr<MetricEntity>& metric_entity);
-
   // Reads the headers of all segments in 'tablet_wal_path'.
   Status Init(const std::string& tablet_wal_path);
 
@@ -194,7 +195,6 @@ class LogReader {
 
   State state_;
 
-  ALLOW_MAKE_SHARED(LogReader);
   DISALLOW_COPY_AND_ASSIGN(LogReader);
 };
 

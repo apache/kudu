@@ -34,10 +34,9 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/slice.h"
 
-
 using std::make_pair;
 using std::pair;
-using std::shared_ptr;
+using std::unique_ptr;
 using std::unordered_map;
 
 namespace kudu {
@@ -284,15 +283,14 @@ class TypeEncodingResolver {
     TypeEncodingTraits<type, encoding> traits;
     pair<DataType, EncodingType> encoding_for_type = make_pair(type, encoding);
     if (mapping_.find(encoding_for_type) == mapping_.end()) {
-      default_mapping_.insert(make_pair(type, encoding));
+      default_mapping_.emplace(type, encoding);
     }
-    mapping_.insert(
-        make_pair(make_pair(type, encoding),
-                  std::make_shared<TypeEncodingInfo>(traits)));
+    mapping_.emplace(make_pair(type, encoding),
+                     unique_ptr<TypeEncodingInfo>(new TypeEncodingInfo(traits)));
   }
 
   unordered_map<pair<DataType, EncodingType>,
-      shared_ptr<const TypeEncodingInfo>,
+      unique_ptr<const TypeEncodingInfo>,
       EncodingMapHash > mapping_;
 
   unordered_map<DataType, EncodingType, std::hash<size_t> > default_mapping_;

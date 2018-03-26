@@ -18,44 +18,47 @@
 #pragma once
 
 #include <memory>
+#include <utility>
 
-// It isn't possible to use std::make_shared() with a class that has private
-// constructors. Moreover, the standard workarounds are inelegant when said
-// class has non-default constructors. As such, we employ a simple solution:
-// declare the class as a friend to std::make_shared()'s internal allocator.
-// This approach is non-portable and must be implemented separately for each
-// supported STL implementation.
+// It isn't possible to use 'std::make_shared' on a class with private or protected
+// constructors. Using friends as a workaround worked in some earlier libc++/libstdcxx
+// versions, but in the latest versions there are some static_asserts that seem to defeat
+// this trickery. So, instead, we rely on the "curiously recurring template pattern" (CRTP)
+// to inject a static 'make_shared' function inside the class.
 //
-// Note: due to friendship restrictions on partial template specialization,
-// it isn't possible to befriend just the allocation function; the entire
-// allocator class must be befriended.
+// See https://stackoverflow.com/questions/8147027/how-do-i-call-stdmake-shared-on-a-class-with-only-protected-or-private-const
+// for some details.
 //
-// See http://stackoverflow.com/q/8147027 for a longer discussion.
+// Usage:
+//
+//  class MyClass : public enable_make_shared<MyClass> {
+//   public:
+//     ...
+//
+//   protected:
+//    // The constructor must be protected rather than private.
+//    MyClass(Foo arg1, Bar arg2) {
+//    }
+//
+//  }
+//
+//    shared_ptr<MyClass> foo = MyClass::make_shared(arg1, arg2);
+template<class T>
+class enable_make_shared { // NOLINT
+ public:
 
-#ifdef __GLIBCXX__
-  // In libstdc++, new_allocator is defined as a class (ext/new_allocator.h)
-  // but forward declared as a struct (ext/alloc_traits.h). Clang complains
-  // about this when -Wmismatched-tags is set, which gcc doesn't support
-  // (which probably explains why the discrepancy exists in the first place).
-  // We can temporarily disable this warning via pragmas [1], but we must
-  // not expose them to gcc due to its poor handling of the _Pragma() C99
-  // operator [2].
-  //
-  // 1. http://clang.llvm.org/docs/UsersManual.html#controlling-diagnostics-via-pragmas
-  // 2. https://gcc.gnu.org/bugzilla/show_bug.cgi?id=60875
-  #ifdef __clang__
-    #define ALLOW_MAKE_SHARED(T)                                \
-      _Pragma("clang diagnostic push")                          \
-      _Pragma("clang diagnostic ignored \"-Wmismatched-tags\"") \
-      friend class __gnu_cxx::new_allocator<T>                  \
-      _Pragma("clang diagnostic pop")
-  #else
-    #define ALLOW_MAKE_SHARED(T) \
-      friend class __gnu_cxx::new_allocator<T>
-  #endif
-#elif defined(_LIBCPP_VERSION)
-  #define ALLOW_MAKE_SHARED(T) \
-    friend class std::__1::__libcpp_compressed_pair_imp<std::__1::allocator<T>, T, 1>
-#else
-  #error "Need to implement ALLOW_MAKE_SHARED for your platform!"
-#endif
+  // Define a static make_shared member which constructs the public subclass
+  // and casts it back to the desired class.
+  template<typename... Arg>
+  static std::shared_ptr<T> make_shared(Arg&&... args) {
+    // Define a struct subclass with a public constructor which will be accessible
+    // from make_shared.
+    struct make_shared_enabler : public T { // NOLINT
+      explicit make_shared_enabler(Arg&&... args) : T(std::forward<Arg>(args)...) {
+      }
+    };
+
+    return ::std::make_shared<make_shared_enabler>(
+        ::std::forward<Arg>(args)...);
+  }
+};

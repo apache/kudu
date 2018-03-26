@@ -56,7 +56,7 @@ namespace master {
 Status TSDescriptor::RegisterNew(const NodeInstancePB& instance,
                                  const ServerRegistrationPB& registration,
                                  shared_ptr<TSDescriptor>* desc) {
-  shared_ptr<TSDescriptor> ret(make_shared<TSDescriptor>(instance.permanent_uuid()));
+  shared_ptr<TSDescriptor> ret(TSDescriptor::make_shared(instance.permanent_uuid()));
   RETURN_NOT_OK(ret->Register(instance, registration));
   desc->swap(ret);
   return Status::OK();
