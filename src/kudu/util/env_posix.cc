@@ -1585,15 +1585,14 @@ class PosixEnv : public Env {
     return Status::OK();
   }
 
-  virtual int64_t GetResourceLimit(ResourceLimitType t) OVERRIDE {
+  virtual uint64_t GetResourceLimit(ResourceLimitType t) OVERRIDE {
+    static_assert(RLIM_INFINITY == kuint64max,
+                  "RLIM_INFINITY is assumed to be 2^64 - 1");
+
     // There's no reason for this to ever fail.
     struct rlimit l;
     PCHECK(getrlimit(ResourceLimitTypeToUnixRlimit(t), &l) == 0);
-
-    // RLIM_INFINITY is defined to -1, which will be 2^64-1 when converted to
-    // rlim_cur's type (uint64_t). Thus it'll also be captured by the
-    // comparison and converted into kint32max.
-    return l.rlim_cur > kint32max ? kint32max : l.rlim_cur;
+    return l.rlim_cur;
   }
 
   virtual void IncreaseResourceLimit(ResourceLimitType t) OVERRIDE {
