@@ -39,6 +39,7 @@
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/once.h"
@@ -1588,7 +1589,11 @@ class PosixEnv : public Env {
     // There's no reason for this to ever fail.
     struct rlimit l;
     PCHECK(getrlimit(ResourceLimitTypeToUnixRlimit(t), &l) == 0);
-    return l.rlim_cur;
+
+    // RLIM_INFINITY is defined to -1, which will be 2^64-1 when converted to
+    // rlim_cur's type (uint64_t). Thus it'll also be captured by the
+    // comparison and converted into kint32max.
+    return l.rlim_cur > kint32max ? kint32max : l.rlim_cur;
   }
 
   virtual void IncreaseResourceLimit(ResourceLimitType t) OVERRIDE {

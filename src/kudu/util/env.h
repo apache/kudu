@@ -321,6 +321,8 @@ class Env {
 
   // Gets the process' current limit for the given resource type.
   //
+  // Returns kint32max if the limit exceeds kint32max or if there is no limit.
+  //
   // On UNIX platforms, this is equivalent to the resource's soft limit.
   virtual int64_t GetResourceLimit(ResourceLimitType t) = 0;
 
