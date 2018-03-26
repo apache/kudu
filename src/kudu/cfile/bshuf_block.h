@@ -108,6 +108,8 @@ class BShufBlockBuilder final : public BlockBuilder {
     count_ = 0;
     data_.clear();
     data_.reserve(block_size);
+    DCHECK_EQ(reinterpret_cast<uintptr_t>(data_.data()) & (alignof(CppType) - 1), 0)
+        << "buffer must be naturally-aligned";
     buffer_.clear();
     buffer_.resize(kHeaderSize);
     finished_ = false;
@@ -157,13 +159,9 @@ class BShufBlockBuilder final : public BlockBuilder {
  private:
   typedef typename TypeTraits<Type>::cpp_type CppType;
 
-  const CppType* cell_ptr(int idx) const {
+  CppType cell(int idx) const {
     DCHECK_GE(idx, 0);
-    return reinterpret_cast<const CppType*>(&data_[idx * size_of_type]);
-  }
-  CppType* cell_ptr(int idx) {
-    DCHECK_GE(idx, 0);
-    return reinterpret_cast<CppType*>(&data_[idx * size_of_type]);
+    return UnalignedLoad<CppType>(&data_[idx * size_of_type]);
   }
 
   // Remember the last added key in 'last_key_'. This is done during
@@ -171,8 +169,8 @@ class BShufBlockBuilder final : public BlockBuilder {
   // data_ buffer during the encoding process.
   void RememberFirstAndLastKey() {
     if (count_ == 0) return;
-    memcpy(&first_key_, cell_ptr(0), size_of_type);
-    memcpy(&last_key_, cell_ptr(count_ - 1), size_of_type);
+    first_key_ = cell(0);
+    last_key_ = cell(count_ - 1);
   }
 
   Slice Finish(rowid_t ordinal_pos, int final_size_of_type) {
@@ -299,7 +297,7 @@ class BShufBlockDecoder final : public BlockDecoder {
   }
 
   Status SeekAtOrAfterValue(const void* value_void, bool* exact) OVERRIDE {
-    CppType target = *reinterpret_cast<const CppType*>(value_void);
+    CppType target = UnalignedLoad<CppType>(value_void);
     int32_t left = 0;
     int32_t right = num_elems_;
     while (left != right) {

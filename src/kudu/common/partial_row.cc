@@ -28,6 +28,7 @@
 #include "kudu/common/row.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/bitmap.h"
@@ -187,10 +188,12 @@ Status KuduPartialRow::Set(int32_t column_idx, const uint8_t* val) {
       break;
     };
     case STRING: {
+      // TODO(todd) Is reinterpret_cast unsafe here?
       RETURN_NOT_OK(SetStringCopy(column_idx, *reinterpret_cast<const Slice*>(val)));
       break;
     };
     case BINARY: {
+      // TODO(todd) Is reinterpret_cast unsafe here?
       RETURN_NOT_OK(SetBinaryCopy(column_idx, *reinterpret_cast<const Slice*>(val)));
       break;
     };
@@ -209,8 +212,7 @@ Status KuduPartialRow::Set(int32_t column_idx, const uint8_t* val) {
       break;
     };
     case DECIMAL128: {
-      RETURN_NOT_OK(Set<TypeTraits<DECIMAL128> >(column_idx,
-                                                 *reinterpret_cast<const int128_t*>(val)));
+      RETURN_NOT_OK(Set<TypeTraits<DECIMAL128>>(column_idx, UnalignedLoad<int128_t>(val)));
       break;
     };
     default: {

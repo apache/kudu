@@ -23,8 +23,9 @@
 #include "kudu/cfile/block_encodings.h"
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/common/columnblock.h"
-#include "kudu/util/coding.h"
+#include "kudu/gutil/port.h"
 #include "kudu/util/coding-inl.h"
+#include "kudu/util/coding.h"
 #include "kudu/util/hexdump.h"
 
 namespace kudu {
@@ -83,14 +84,14 @@ class PlainBlockBuilder final : public BlockBuilder {
 
   virtual Status GetFirstKey(void *key) const OVERRIDE {
     DCHECK_GT(count_, 0);
-    *reinterpret_cast<CppType *>(key) = Decode<CppType>(&buffer_[kPlainBlockHeaderSize]);
+    UnalignedStore(key, Decode<CppType>(&buffer_[kPlainBlockHeaderSize]));
     return Status::OK();
   }
 
   virtual Status GetLastKey(void *key) const OVERRIDE {
     DCHECK_GT(count_, 0);
     size_t idx = kPlainBlockHeaderSize + (count_ - 1) * kCppTypeSize;
-    *reinterpret_cast<CppType *>(key) = Decode<CppType>(&buffer_[idx]);
+    UnalignedStore(key, Decode<CppType>(&buffer_[idx]));
     return Status::OK();
   }
 
@@ -160,7 +161,7 @@ class PlainBlockDecoder final : public BlockDecoder {
   virtual Status SeekAtOrAfterValue(const void *value, bool *exact_match) OVERRIDE {
     DCHECK(value != NULL);
 
-    const CppType &target = *reinterpret_cast<const CppType *>(value);
+    CppType target = UnalignedLoad<CppType>(value);
 
     uint32_t left = 0;
     uint32_t right = num_elems_;

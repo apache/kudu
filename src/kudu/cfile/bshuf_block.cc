@@ -57,7 +57,7 @@ Slice BShufBlockBuilder<UINT32>::Finish(rowid_t ordinal_pos) {
   RememberFirstAndLastKey();
   uint32_t max_value = 0;
   for (int i = 0; i < count_; i++) {
-    max_value = std::max(max_value, *cell_ptr(i));
+    max_value = std::max(max_value, cell(i));
   }
 
   // Shrink the block of UINT32 to block of UINT8 or UINT16 whenever possible and
@@ -66,7 +66,7 @@ Slice BShufBlockBuilder<UINT32>::Finish(rowid_t ordinal_pos) {
   Slice ret;
   if (max_value <= std::numeric_limits<uint8_t>::max()) {
     for (int i = 0; i < count_; i++) {
-      uint32_t value = *cell_ptr(i);
+      uint32_t value = cell(i);
       uint8_t converted_value = static_cast<uint8_t>(value);
       memcpy(&data_[i * sizeof(converted_value)], &converted_value, sizeof(converted_value));
     }
@@ -74,7 +74,7 @@ Slice BShufBlockBuilder<UINT32>::Finish(rowid_t ordinal_pos) {
     InlineEncodeFixed32(ret.mutable_data() + 16, sizeof(uint8_t));
   } else if (max_value <= std::numeric_limits<uint16_t>::max()) {
     for (int i = 0; i < count_; i++) {
-      uint32_t value = *cell_ptr(i);
+      uint32_t value = cell(i);
       uint16_t converted_value = static_cast<uint16_t>(value);
       memcpy(&data_[i * sizeof(converted_value)], &converted_value, sizeof(converted_value));
     }

@@ -233,10 +233,13 @@ class RleIntBlockBuilder final : public BlockBuilder {
   }
 
   virtual int Add(const uint8_t* vals_void, size_t count) OVERRIDE {
-    if (PREDICT_FALSE(count_ == 0)) {
-      first_key_ = *reinterpret_cast<const CppType*>(vals_void);
-    }
+    DCHECK_EQ(reinterpret_cast<uintptr_t>(vals_void) & (alignof(CppType) - 1), 0)
+        << "Pointer passed to Add() must be naturally-aligned";
+
     const CppType* vals = reinterpret_cast<const CppType*>(vals_void);
+    if (PREDICT_FALSE(count_ == 0)) {
+      first_key_ = vals[0];
+    }
     for (size_t i = 0; i < count; ++i) {
       rle_encoder_.Put(vals[i], 1);
     }
@@ -268,7 +271,7 @@ class RleIntBlockBuilder final : public BlockBuilder {
     if (PREDICT_FALSE(count_ == 0)) {
       return Status::NotFound("No keys in the block");
     }
-    *reinterpret_cast<CppType*>(key) = first_key_;
+    UnalignedStore<CppType>(key, first_key_);
     return Status::OK();
   }
 
@@ -276,7 +279,7 @@ class RleIntBlockBuilder final : public BlockBuilder {
     if (PREDICT_FALSE(count_ == 0)) {
       return Status::NotFound("No keys in the block");
     }
-    *reinterpret_cast<CppType*>(key) = last_key_;
+    UnalignedStore<CppType>(key, last_key_);
     return Status::OK();
   }
 
@@ -371,7 +374,7 @@ class RleIntBlockDecoder final : public BlockDecoder {
 
     SeekToPositionInBlock(0);
 
-    CppType target = *reinterpret_cast<const CppType *>(value_void);
+    CppType target = UnalignedLoad<CppType>(value_void);
 
     while (cur_idx_ < num_elems_) {
       CppType cur_elem;

@@ -33,6 +33,7 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/mathlimits.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/escaping.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/util/int128.h"
@@ -104,8 +105,8 @@ template<DataType Type> struct DataTypeTraits {};
 template<DataType Type>
 static int GenericCompare(const void *lhs, const void *rhs) {
   typedef typename DataTypeTraits<Type>::cpp_type CppType;
-  CppType lhs_int = *reinterpret_cast<const CppType *>(lhs);
-  CppType rhs_int = *reinterpret_cast<const CppType *>(rhs);
+  CppType lhs_int = UnalignedLoad<CppType>(lhs);
+  CppType rhs_int = UnalignedLoad<CppType>(rhs);
   if (lhs_int < rhs_int) {
     return -1;
   } else if (lhs_int > rhs_int) {
@@ -118,8 +119,8 @@ static int GenericCompare(const void *lhs, const void *rhs) {
 template<DataType Type>
 static int AreIntegersConsecutive(const void* a, const void* b) {
   typedef typename DataTypeTraits<Type>::cpp_type CppType;
-  CppType a_int = *reinterpret_cast<const CppType*>(a);
-  CppType b_int = *reinterpret_cast<const CppType*>(b);
+  CppType a_int = UnalignedLoad<CppType>(a);
+  CppType b_int = UnalignedLoad<CppType>(b);
   // Avoid overflow by checking relative position first.
   return a_int < b_int && a_int + 1 == b_int;
 }
@@ -127,8 +128,8 @@ static int AreIntegersConsecutive(const void* a, const void* b) {
 template<DataType Type>
 static int AreFloatsConsecutive(const void* a, const void* b) {
   typedef typename DataTypeTraits<Type>::cpp_type CppType;
-  CppType a_float = *reinterpret_cast<const CppType*>(a);
-  CppType b_float = *reinterpret_cast<const CppType*>(b);
+  CppType a_float = UnalignedLoad<CppType>(a);
+  CppType b_float = UnalignedLoad<CppType>(b);
   return a_float < b_float && std::nextafter(a_float, b_float) == b_float;
 }
 
@@ -332,7 +333,7 @@ struct DataTypeTraits<INT128> {
     return "int128";
   }
   static void AppendDebugStringForValue(const void *val, std::string *str) {
-    str->append(SimpleItoa(*reinterpret_cast<const int128_t *>(val)));
+    str->append(SimpleItoa(UnalignedLoad<int128_t>(val)));
   }
   static int Compare(const void *lhs, const void *rhs) {
     return GenericCompare<INT128>(lhs, rhs);
