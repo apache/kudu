@@ -270,12 +270,13 @@ fetch_and_patch \
  $CRCUTIL_PATCHLEVEL \
  "patch -p0 < $TP_DIR/patches/crcutil-fix-libtoolize-on-osx.patch"
 
-LIBUNWIND_PATCHLEVEL=1
+LIBUNWIND_PATCHLEVEL=2
 fetch_and_patch \
  libunwind-${LIBUNWIND_VERSION}.tar.gz \
  $LIBUNWIND_SOURCE \
  $LIBUNWIND_PATCHLEVEL \
- "patch -p1 < $TP_DIR/patches/libunwind-Use-syscall-directly-in-write_validate-to-avoid-ASAN.patch"
+ "patch -p1 < $TP_DIR/patches/libunwind-Use-syscall-directly-in-write_validate-to-avoid-ASAN.patch" \
+ "patch -p1 < $TP_DIR/patches/libunwind-trace-cache-destructor.patch"
 
 PYTHON_PATCHLEVEL=0
 fetch_and_patch \
@@ -283,16 +284,16 @@ fetch_and_patch \
  $PYTHON_SOURCE \
  $PYTHON_PATCHLEVEL
 
-LLVM_PATCHLEVEL=6
+LLVM_PATCHLEVEL=1
 fetch_and_patch \
  llvm-${LLVM_VERSION}-iwyu-${IWYU_VERSION}.src.tar.gz \
  $LLVM_SOURCE \
  $LLVM_PATCHLEVEL \
- "patch -p1 < $TP_DIR/patches/llvm-fix-amazon-linux.patch" \
- "patch -p1 -d $LLVM_SOURCE/tools/clang/tools/extra < $TP_DIR/patches/llvm-fix-readability-redundant-declaration-false-positive.patch" \
- "patch -p1 < $TP_DIR/patches/llvm-add-iwyu.patch" \
- "patch -p1 < $TP_DIR/patches/llvm-iwyu-nocurses.patch" \
- "patch -p1 < $TP_DIR/patches/llvm-iwyu-include-picker.patch"
+  "patch -p1 < $TP_DIR/patches/llvm-fix-amazon-linux.patch" \
+  "patch -p1 < $TP_DIR/patches/llvm-add-iwyu.patch" \
+  "patch -p1 < $TP_DIR/patches/llvm-iwyu-nocurses.patch" \
+  "patch -p1 < $TP_DIR/patches/llvm-iwyu-include-picker.patch" \
+  "patch -d tools/clang/tools/include-what-you-use -p1 < $TP_DIR/patches/llvm-iwyu-llvm-6-compat.patch"
 
 LZ4_PATCHLEVEL=1
 fetch_and_patch \

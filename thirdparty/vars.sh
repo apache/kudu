@@ -139,12 +139,12 @@ LIBUNWIND_NAME=libunwind-$LIBUNWIND_VERSION
 LIBUNWIND_SOURCE=$TP_SOURCE_DIR/$LIBUNWIND_NAME
 
 # See package-llvm.sh for details on the LLVM tarball.
-LLVM_VERSION=4.0.0
+LLVM_VERSION=6.0.0
 LLVM_NAME=llvm-$LLVM_VERSION.src
 LLVM_SOURCE=$TP_SOURCE_DIR/$LLVM_NAME
 
 # The include-what-you-use is built along with LLVM in its source tree.
-IWYU_VERSION=0.8
+IWYU_VERSION=0.9
 
 # Python 2.7 is required to build LLVM 3.6+. It is only built and installed if
 # the system Python version is not 2.7.

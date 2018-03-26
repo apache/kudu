@@ -1,8 +1,14 @@
-diff --git a/lib/Driver/ToolChains.cpp b/lib/Driver/ToolChains.cpp
-index e5528f0..7348f9d 100644
---- a/tools/clang/lib/Driver/ToolChains.cpp
-+++ b/tools/clang/lib/Driver/ToolChains.cpp
-@@ -1441,7 +1441,7 @@ bool Generic_GCC::GCCInstallationDetector::getBiarchSibling(Multilib &M) const {
+commit 21956b267cef2c72b8c47eb4cec7c9c06f9ff729
+Author: Todd Lipcon <todd@cloudera.com>
+Date:   Thu Mar 22 17:26:53 2018 -0700
+
+    Add Amazon linux to toolchain
+
+diff --git a/tools/clang/lib/Driver/ToolChains/Gnu.cpp b/tools/clang/lib/Driver/ToolChains/Gnu.cpp
+index 7845781..bc6ac6c 100644
+--- a/tools/clang/lib/Driver/ToolChains/Gnu.cpp
++++ b/tools/clang/lib/Driver/ToolChains/Gnu.cpp
+@@ -1735,7 +1735,7 @@ bool Generic_GCC::GCCInstallationDetector::getBiarchSibling(Multilib &M) const {
        "x86_64-redhat-linux",    "x86_64-suse-linux",
        "x86_64-manbo-linux-gnu", "x86_64-linux-gnu",
        "x86_64-slackware-linux", "x86_64-linux-android",
@@ -11,12 +17,12 @@ index e5528f0..7348f9d 100644
    static const char *const X32LibDirs[] = {"/libx32"};
    static const char *const X86LibDirs[] = {"/lib32", "/lib"};
    static const char *const X86Triples[] = {
-@@ -1449,7 +1449,7 @@ bool Generic_GCC::GCCInstallationDetector::getBiarchSibling(Multilib &M) const {
+@@ -1743,7 +1743,7 @@ bool Generic_GCC::GCCInstallationDetector::getBiarchSibling(Multilib &M) const {
        "i386-linux-gnu",       "i386-redhat-linux6E",   "i686-redhat-linux",
        "i586-redhat-linux",    "i386-redhat-linux",     "i586-suse-linux",
        "i486-slackware-linux", "i686-montavista-linux", "i686-linux-android",
 -      "i586-linux-gnu"};
 +      "i586-linux-gnu",       "i686-amazon-linux"};
-
+ 
    static const char *const MIPSLibDirs[] = {"/lib"};
    static const char *const MIPSTriples[] = {"mips-linux-gnu", "mips-mti-linux",

@@ -32,6 +32,7 @@
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/ExecutionEngine/MCJIT.h> // IWYU pragma: keep
+#include <llvm/IR/Attributes.h>
 #include <llvm/IR/Constant.h>
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/DerivedTypes.h>
@@ -68,6 +69,8 @@
 #endif
 #endif
 
+using llvm::AttrBuilder;
+using llvm::AttributeList;
 using llvm::CodeGenOpt::Level;
 using llvm::ConstantExpr;
 using llvm::ConstantInt;
@@ -228,8 +231,10 @@ void DoOptimizations(Module* module,
   pass_builder.SizeLevel = 0;
 #if CODEGEN_MODULE_BUILDER_DO_OPTIMIZATIONS
   pass_builder.OptLevel = 2;
-  pass_builder.Inliner = llvm::createFunctionInliningPass(pass_builder.OptLevel,
-                                                          pass_builder.SizeLevel);
+  pass_builder.Inliner = llvm::createFunctionInliningPass(
+      pass_builder.OptLevel,
+      pass_builder.SizeLevel,
+      false); // don't disable inlining of hot call sites
 #else
   // Even if we don't want to do optimizations, we have to run the "AlwaysInliner" pass.
   // This pass ensures that any functions marked 'always_inline' are inlined, but nothing
@@ -284,6 +289,19 @@ void DoOptimizations(Module* module,
   ignore_result(module_passes.run(*module));
 }
 
+// Set LLVM attributes on all functions in 'module'.
+// Modeled after 'setFunctionAttributes' in LLVM's 'include/llvm/CodeGen/CommandFlags.def'
+void SetFunctionAttributes(Module* module) {
+  for (auto& func : *module) {
+    AttrBuilder new_attrs;
+    new_attrs.addAttribute("no-frame-pointer-elim", "true");
+    auto attrs = func.getAttributes();
+    attrs = attrs.addAttributes(module->getContext(),
+        AttributeList::FunctionIndex, new_attrs);
+    func.setAttributes(attrs);
+  }
+}
+
 vector<string> GetHostCPUAttrs() {
   // LLVM's ExecutionEngine expects features to be enabled or disabled with a list
   // of strings like ["+feature1", "-feature2"].
@@ -325,6 +343,7 @@ Status ModuleBuilder::Compile(unique_ptr<ExecutionEngine>* out) {
   module->setDataLayout(target_->createDataLayout());
 
   DoOptimizations(module, GetFunctionNames());
+  SetFunctionAttributes(module);
 
   // Compile the module
   local_engine->finalizeObject();

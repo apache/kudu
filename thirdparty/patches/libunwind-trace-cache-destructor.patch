@@ -1,0 +1,32 @@
+commit 17df56c50e9bacebeabe69d0cad35b3247163f03
+Author: Todd Lipcon <todd@cloudera.com>
+Date:   Mon Mar 26 17:06:51 2018 -0700
+
+    trace_cache: free on second-to-last destructor invocation
+    
+    Freeing a trace cache requires acquiring a mutex, and when running in
+    ThreadSanitizer, TSAN itself unhooks from a thread in the last
+    destructor iteration. So, if we try to free the trace cache in the last
+    destructor iteration, we end up crashing TSAN because the mutex
+    acquisition attempts to use already-destructed TSAN context info
+    for the thread.
+
+diff --git a/src/x86_64/Gtrace.c b/src/x86_64/Gtrace.c
+index 7412271..6cd8aee 100644
+--- a/src/x86_64/Gtrace.c
++++ b/src/x86_64/Gtrace.c
+@@ -58,12 +58,12 @@ static void
+ trace_cache_free (void *arg)
+ {
+   unw_trace_cache_t *cache = arg;
+-  if (++cache->dtor_count < PTHREAD_DESTRUCTOR_ITERATIONS)
++  if (++cache->dtor_count < PTHREAD_DESTRUCTOR_ITERATIONS - 1)
+   {
+     /* Not yet our turn to get destroyed. Re-install ourselves into the key. */
+     pthread_setspecific(trace_cache_key, cache);
+     Debug(5, "delayed freeing cache %p (%zx to go)\n", cache,
+-          PTHREAD_DESTRUCTOR_ITERATIONS - cache->dtor_count);
++          PTHREAD_DESTRUCTOR_ITERATIONS - 1 - cache->dtor_count);
+     return;
+   }
+   tls_cache_destroyed = 1;

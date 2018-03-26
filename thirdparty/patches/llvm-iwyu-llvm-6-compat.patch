@@ -1,0 +1,40 @@
+From c182d6a45e9ddc3a977c946e5873260fffed7351 Mon Sep 17 00:00:00 2001
+From: Kim Grasman <kim.grasman@gmail.com>
+Date: Wed, 29 Nov 2017 22:37:54 +0100
+Subject: [PATCH] Update to reflect changes in Clang
+
+The utility methods for printing template argument lists moved from
+static member functions to free functions in Clang r319178.
+
+No functional change, as far as I can tell.
+
+Fix issue #503.
+---
+ iwyu_ast_util.cc | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/iwyu_ast_util.cc b/iwyu_ast_util.cc
+index 9578de6..ea7919b 100644
+--- a/iwyu_ast_util.cc
++++ b/iwyu_ast_util.cc
+@@ -452,16 +452,16 @@ string PrintableTemplateName(const TemplateName& tpl_name) {
+ string PrintableTemplateArgument(const TemplateArgument& arg) {
+   std::string buffer;
+   raw_string_ostream ostream(buffer);
+-  TemplateSpecializationType::PrintTemplateArgumentList(
+-      ostream, ArrayRef<TemplateArgument>(arg), DefaultPrintPolicy());
++  printTemplateArgumentList(ostream, ArrayRef<TemplateArgument>(arg),
++                            DefaultPrintPolicy());
+   return ostream.str();
+ }
+ 
+ string PrintableTemplateArgumentLoc(const TemplateArgumentLoc& arg) {
+   std::string buffer;
+   raw_string_ostream ostream(buffer);
+-  TemplateSpecializationType::PrintTemplateArgumentList(
+-      ostream, ArrayRef<TemplateArgumentLoc>(arg), DefaultPrintPolicy());
++  printTemplateArgumentList(ostream, ArrayRef<TemplateArgumentLoc>(arg),
++                            DefaultPrintPolicy());
+   return ostream.str();
+ }
+ 

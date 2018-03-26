@@ -18,16 +18,16 @@
 #include "kudu/codegen/row_projector.h"
 
 #include <algorithm>
-#include <string>
 #include <ostream>
+#include <string>
 #include <utility>
 #include <vector>
 
 #include <gflags/gflags_declare.h>
 #include <llvm/ADT/Twine.h>
-#include <llvm/ADT/ilist_iterator.h>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/IR/Argument.h>
+#include <llvm/IR/Attributes.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/DerivedTypes.h>
@@ -35,6 +35,7 @@
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/Type.h>
 #include <llvm/IR/Value.h>
+#include <llvm/Support/raw_ostream.h>
 
 #include "kudu/codegen/jit_wrapper.h"
 #include "kudu/codegen/module_builder.h"
@@ -118,9 +119,9 @@ llvm::Function* MakeProjection(const string& name,
   // Mark our arguments as not aliasing. This eliminates a redundant
   // load of rbrow->row_block_ and rbrow->row_index_ for each column.
   // Note that these arguments are 1-based indexes.
-  f->setDoesNotAlias(1);
-  f->setDoesNotAlias(2);
-  f->setDoesNotAlias(3);
+  f->addParamAttr(1, llvm::Attribute::NoAlias);
+  f->addParamAttr(2, llvm::Attribute::NoAlias);
+  f->addParamAttr(3, llvm::Attribute::NoAlias);
 
   // Project row function in IR (note: values in angle brackets are
   // constants whose values are determined right now, at JIT time).
@@ -245,7 +246,7 @@ llvm::Function* MakeProjection(const string& name,
 
   if (FLAGS_codegen_dump_functions) {
     LOG(INFO) << "Dumping " << (READ? "read" : "write") << " projection:";
-    f->dump();
+    f->print(llvm::errs(), nullptr);
   }
 
   return f;

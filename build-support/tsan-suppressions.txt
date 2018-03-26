@@ -26,6 +26,10 @@
 race:_ULx86_64_init
 race:_ULx86_64_local_addr_space_init
 
+# TODO(todd) After upgrading to clang 6.0, libunwind's cache is getting
+# flagged as unsafe.
+race:_ULx86_64_step
+
 # libev uses some lock-free synchronization, but doesn't have TSAN annotations.
 race:epoll_ctl
 

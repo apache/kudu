@@ -411,7 +411,7 @@ MODE_SUFFIX=".tsan"
 
 save_env
 
-# Build the dependencies with TSAN instrumentation.
+# Build the C (non-C++) dependencies with TSAN instrumentation.
 EXTRA_CFLAGS="-fsanitize=thread $EXTRA_CFLAGS"
 
 # Enable debug symbols so that stacktraces and linenumbers are available at runtime.
