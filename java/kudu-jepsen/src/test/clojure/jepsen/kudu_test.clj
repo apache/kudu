@@ -22,7 +22,8 @@
             [jepsen.tests :as tests]
             [jepsen.kudu :as kudu]
             [jepsen.kudu.nemesis :as kn]
-            [jepsen.kudu.register :as kudu-register]))
+            [jepsen.kudu.register :as kudu-register]
+            [jepsen.kudu.sets :as kudu-sets]))
 
 (defn check
   [tcasefun opts]
@@ -51,7 +52,8 @@
 ;; Configurations for tests.  Every configuration corresponds to running
 ;; a test with particular nemesis (let's call it "scenario").
 (def register-test kudu-register/register-test)
-(def register-test-configs
+(def sets-test kudu-sets/sets-test)
+(def test-configs
   [
    {:scenario "noop-nemesis"
     :nemesis '((fn [] jn/noop))}
@@ -79,6 +81,8 @@
 
 (defmacro instantiate-all-kudu-tests
   [opts]
-  `(instantiate-tests register-test register-test-configs ~opts))
+  `(do
+     (instantiate-tests register-test test-configs ~opts)
+     (instantiate-tests sets-test test-configs ~opts)))
 
 (instantiate-all-kudu-tests {})

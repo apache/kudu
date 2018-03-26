@@ -36,6 +36,7 @@
                                    KuduTable
                                    OperationResponse
                                    PartialRow
+                                   ReplicaSelection
                                    RowResult
                                    RowResultIterator
                                    Upsert]))
@@ -104,3 +105,12 @@
         0 nil
         1 (:value (get rows 0))
         (assert false (str "Expected 0 or 1 rows. Got: " (count rows)))))))
+
+(defn count-rows
+  "Count the rows of the given table."
+  [sync-client table read-mode]
+  (let [scanner-builder (.newScannerBuilder sync-client table)]
+                        (.readMode scanner-builder read-mode)
+                        (.replicaSelection scanner-builder ReplicaSelection/CLOSEST_REPLICA)
+     (let [rows (c/drain-scanner-to-tuples (.build scanner-builder))]
+       (count rows))))
