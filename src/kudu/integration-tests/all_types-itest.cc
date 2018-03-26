@@ -223,7 +223,7 @@ struct IntKeysTestSetup {
   }
 
   Status VerifyRowKeyRaw(const uint8_t* raw_key, int split_idx, int row_idx) const {
-    CppType val = *reinterpret_cast<const CppType*>(raw_key);
+    CppType val = UnalignedLoad<CppType>(raw_key);
     return VerifyIntRowKey(val, split_idx, row_idx);
   }
 
@@ -677,7 +677,7 @@ TYPED_TEST(AllTypesItest, TestTimestampPadding) {
                             vals.expected_decimal_val);
                   break;
                 case DECIMAL128:
-                  ASSERT_EQ(*reinterpret_cast<const int128_t*>(row_data),
+                  ASSERT_EQ(UnalignedLoad<int128_t>(row_data),
                             vals.expected_decimal_val);
                   break;
                 default:
