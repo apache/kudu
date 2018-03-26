@@ -242,7 +242,6 @@ class Log : public RefCountedThreadSafe<Log> {
   FRIEND_TEST(LogTestOptionalCompression, TestMultipleEntriesInABatch);
   FRIEND_TEST(LogTestOptionalCompression, TestReadLogWithReplacedReplicates);
   FRIEND_TEST(LogTest, TestWriteAndReadToAndFromInProgressSegment);
-  FRIEND_TEST(LogTest, TestAutoStopIdleAppendThread);
 
   class AppendThread;
 

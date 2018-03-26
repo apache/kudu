@@ -866,10 +866,6 @@ Status WritableLogSegment::WriteEntryBatch(const Slice& data,
   return Status::OK();
 }
 
-void WritableLogSegment::GoIdle() {
-  compress_buf_.clear();
-  compress_buf_.shrink_to_fit();
-}
 
 unique_ptr<LogEntryBatchPB> CreateBatchFromAllocatedOperations(
     const vector<consensus::ReplicateRefPtr>& msgs) {
