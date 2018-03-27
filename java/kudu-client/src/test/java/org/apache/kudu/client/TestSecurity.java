@@ -166,6 +166,22 @@ public class TestSecurity {
   }
 
   /**
+   * Regression test for KUDU-2379: if the first usage of a client
+   * is to export credentials, that should trigger a connection to the
+   * cluster rather than returning empty credentials.
+   */
+  @Test(timeout=60000)
+  public void testExportCredentialsBeforeAnyOtherAccess() throws IOException {
+    startCluster(ImmutableSet.<Option>of());
+    try (KuduClient c = createClient()) {
+      AuthenticationCredentialsPB pb = AuthenticationCredentialsPB.parseFrom(
+          c.exportAuthenticationCredentials());
+      Assert.assertTrue(pb.hasAuthnToken());
+      Assert.assertTrue(pb.getCaCertDersCount() > 0);
+    }
+  }
+
+  /**
    * Test that if, for some reason, the client has a token but no CA certs, it
    * will emit an appropriate error message in the exception.
    */
