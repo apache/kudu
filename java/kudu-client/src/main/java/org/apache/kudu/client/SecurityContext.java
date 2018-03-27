@@ -310,7 +310,14 @@ class SecurityContext {
         checkUserMatches(authnToken, pb.getAuthnToken());
       }
 
-      authnToken = pb.getAuthnToken();
+      LOG.debug("Importing authentication credentials with {} authn token, " +
+                "{} cert(s), and realUser={}",
+                pb.hasAuthnToken() ? "one" : "no",
+                pb.getCaCertDersCount(),
+                pb.hasRealUser() ? pb.getRealUser() : "<none>");
+      if (pb.hasAuthnToken()) {
+        authnToken = pb.getAuthnToken();
+      }
       trustCertificates(pb.getCaCertDersList());
 
       if (pb.hasRealUser()) {
