@@ -68,10 +68,20 @@ Status SetStackTraceSignal(int signum);
 // thread. It requires that the target thread has not blocked POSIX signals. If
 // it has, an error message will be returned.
 //
-// This function is thread-safe but coarsely synchronized: only one "dumper" thread
-// may be active at a time.
+// This function is thread-safe.
+//
+// NOTE: if Kudu is running inside a debugger, this can be annoying to a developer since
+// it internally uses signals that will cause the debugger to stop. Consider checking
+// 'IsBeingDebugged()' from os-util.h before using this function for non-critical use
+// cases.
 std::string DumpThreadStack(int64_t tid);
 
+// Capture the thread stack of another thread
+//
+// NOTE: if Kudu is running inside a debugger, this can be annoying to a developer since
+// it internally uses signals that will cause the debugger to stop. Consider checking
+// 'IsBeingDebugged()' from os-util.h before using this function for non-critical use
+// cases.
 Status GetThreadStack(int64_t tid, StackTrace* stack);
 
 // Return the current stack trace, stringified.
@@ -230,7 +240,9 @@ class StackTraceSnapshot {
     capture_thread_names_ = c;
   }
 
-  // Snapshot the stack traces of all threads in the process.
+  // Snapshot the stack traces of all threads in the process. This may return a bad
+  // Status in the case that stack traces aren't supported on the platform, or if
+  // the process is running inside a debugger.
   //
   // NOTE: this may take some time and should not be called in a latency-sensitive
   // context.

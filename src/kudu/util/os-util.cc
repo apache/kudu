@@ -33,11 +33,17 @@
 #include <cstddef>
 #include <fstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
+#include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/strings/util.h"
+#include "kudu/util/env.h"
+#include "kudu/util/faststring.h"
+#include "kudu/util/logging.h"
 
 using std::ifstream;
 using std::istreambuf_iterator;
@@ -142,5 +148,34 @@ void DisableCoreDumps() {
   }
 }
 
+bool IsBeingDebugged() {
+#ifndef __linux__
+  return false;
+#else
+  // Look for the TracerPid line in /proc/self/status.
+  // If this is non-zero, we are being ptraced, which is indicative of gdb or strace
+  // being attached.
+  faststring buf;
+  Status s = ReadFileToString(Env::Default(), "/proc/self/status", &buf);
+  if (!s.ok()) {
+    KLOG_FIRST_N(WARNING, 1) << "could not read /proc/self/status: " << s.ToString();
+    return false;
+  }
+  StringPiece buf_sp(reinterpret_cast<const char*>(buf.data()), buf.size());
+  vector<StringPiece> lines = Split(buf_sp, "\n");
+  for (const auto& l : lines) {
+    if (!HasPrefixString(l, "TracerPid:")) continue;
+    std::pair<StringPiece, StringPiece> key_val = Split(l, "\t");
+    int64_t tracer_pid = -1;
+    if (!safe_strto64(key_val.second.data(), key_val.second.size(), &tracer_pid)) {
+      KLOG_FIRST_N(WARNING, 1) << "Invalid line in /proc/self/status: " << l;
+      return false;
+    }
+    return tracer_pid != 0;
+  }
+  KLOG_FIRST_N(WARNING, 1) << "Could not find TracerPid line in /proc/self/status";
+  return false;
+#endif // __linux__
+}
 
 } // namespace kudu

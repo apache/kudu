@@ -27,7 +27,7 @@
 
 #include <cstdint>
 #include <string>
-#include <type_traits>
+#include <type_traits> // IWYU pragma: keep
 
 #include "kudu/util/status.h"
 
@@ -70,6 +70,11 @@ Status GetThreadStats(int64_t tid, ThreadStats* stats);
 // This is useful particularly in tests where we have injected failures and don't
 // want to generate a core dump from an "expected" crash.
 void DisableCoreDumps();
+
+// Return true if this process appears to be running under a debugger or strace.
+//
+// This may return false on unsupported (non-Linux) platforms.
+bool IsBeingDebugged();
 
 } // namespace kudu
 

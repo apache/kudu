@@ -38,6 +38,7 @@
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/os-util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
 
@@ -133,6 +134,12 @@ void KernelStackWatchdog::RunThread() {
     if (finish_.WaitFor(delta)) {
       // Watchdog exiting.
       break;
+    }
+
+    // Don't send signals while the debugger is running, since it makes it hard to
+    // use.
+    if (IsBeingDebugged()) {
+      continue;
     }
 
     // Prevent threads from deleting their TLS objects between the snapshot loop and the sending of

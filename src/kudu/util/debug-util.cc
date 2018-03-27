@@ -67,6 +67,7 @@
 #include "kudu/util/errno.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/os-util.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/thread.h"
 
@@ -724,6 +725,10 @@ bool StackTrace::LessThan(const StackTrace& s) const {
 }
 
 Status StackTraceSnapshot::SnapshotAllStacks() {
+  if (IsBeingDebugged()) {
+    return Status::Incomplete("not collecting stack trace since debugger or strace is attached");
+  }
+
   vector<pid_t> tids;
   RETURN_NOT_OK_PREPEND(ListThreads(&tids), "could not list threads");
 
