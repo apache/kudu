@@ -66,6 +66,22 @@ manager.
 WARNING: The file block manager is known to scale and perform poorly, and should
 only be used for small-scale evaluation and development.
 
+[[disk_issues]]
+=== Already present: FS layout already exists
+
+When Kudu starts, it checks each configured data directory, expecting either for all to be
+initialized or for all to be empty. If a server fails to start with a log message like
+
+----
+Check failed: _s.ok() Bad status: Already present: FS layout already exists; not overwriting existing layout: FSManager roots already exist: /data0/kudu/data
+----
+
+then this precondition has failed. This could be because Kudu was configured with non-empty data
+directories on first startup, or because a previously-running, healthy Kudu process was restarted
+and at least one data directory was deleted or is somehow corrupted, perhaps because of a disk
+error. If in the latter situation, consult the
+link:administration.html#change_dir_config[Changing Directory Configurations] documentation.
+
 [[ntp]]
 === NTP Clock Synchronization
 
@@ -530,22 +546,6 @@ troubleshoot memory occupancy issues.
 TIP: Heap samples contain only summary information about allocations and do not contain any
 _data_ from the heap. It is safe to share heap samples in public without fear of exposing
 confidential or sensitive data.
-
-[[disk_issues]]
-=== Disk Issues
-
-When Kudu starts, it checks each configured data directory, expecting either for all to be
-initialized or for all to be empty. If a server fails to start with a log message like
-
-----
-Check failed: _s.ok() Bad status: Already present: FS layout already exists; not overwriting existing layout: FSManager roots already exist: /data0/kudu/data
-----
-
-then this precondition has failed. This could be because Kudu was configured with non-empty data
-directories on first startup, or because a previously-running, healthy Kudu process was restarted
-and at least one data directory was deleted or is somehow corrupted, perhaps because of a disk
-error. If in the latter situation, consult the
-link:administration.html#change_dir_config[Changing Directory Configurations] documentation.
 
 == Issues using Kudu
 

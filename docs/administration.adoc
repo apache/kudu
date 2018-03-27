@@ -876,7 +876,7 @@ replicas will be tombstoned by the master, causing their remaining data to be
 deleted.
 
 [[rebuilding_kudu]]
-==== Rebuilding a Kudu Filesystem Layout
+=== Rebuilding a Kudu Filesystem Layout
 
 In the event that critical files are lost, i.e. WALs or tablet-specific
 metadata, all Kudu directories on the server must be deleted and rebuilt to
