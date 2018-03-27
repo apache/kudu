@@ -17,23 +17,19 @@
 
 package org.apache.kudu.spark.kudu
 
-import org.apache.kudu.client.{KuduTable, Operation}
+import org.apache.yetus.audience.InterfaceStability
 
 /**
-  * OperationType enumerates the types of Kudu write operations.
+  * KuduWriteOptions holds configuration of writes to Kudu tables.
+  *
+  * The instance of this class is passed to KuduContext write functions,
+  * such as insertRows, deleteRows, upsertRows, and updateRows.
+  *
+  * @param ignoreDuplicateRowErrors when inserting, ignore any new rows that
+  *                                 have a primary key conflict with existing rows
+  * @param ignoreNull update only non-Null columns if set true
   */
-private[kudu] sealed trait OperationType {
-  def operation(table: KuduTable): Operation
-}
-private[kudu] case object Insert extends OperationType {
-  override def operation(table: KuduTable): Operation = table.newInsert()
-}
-private[kudu] case object Update extends OperationType {
-  override def operation(table: KuduTable): Operation = table.newUpdate()
-}
-private[kudu] case object Upsert extends OperationType {
-  override def operation(table: KuduTable): Operation = table.newUpsert()
-}
-private[kudu] case object Delete extends OperationType {
-  override def operation(table: KuduTable): Operation = table.newDelete()
-}
+@InterfaceStability.Unstable
+class KuduWriteOptions(
+  var ignoreDuplicateRowErrors: Boolean = false,
+  var ignoreNull: Boolean = false) extends Serializable

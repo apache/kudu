@@ -51,6 +51,8 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider
   val OPERATION = "kudu.operation"
   val FAULT_TOLERANT_SCANNER = "kudu.faultTolerantScan"
   val SCAN_LOCALITY = "kudu.scanLocality"
+  val IGNORE_NULL = "kudu.ignoreNull"
+  val IGNORE_DUPLICATE_ROW_ERRORS = "kudu.ignoreDuplicateRowErrors"
 
   def defaultMasterAddrs: String = InetAddress.getLocalHost.getCanonicalHostName
 
@@ -72,9 +74,13 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider
     val faultTolerantScanner = Try(parameters.getOrElse(FAULT_TOLERANT_SCANNER, "false").toBoolean)
       .getOrElse(false)
     val scanLocality = getScanLocalityType(parameters.getOrElse(SCAN_LOCALITY, "closest_replica"))
+    val ignoreDuplicateRowErrors = Try(parameters(IGNORE_DUPLICATE_ROW_ERRORS).toBoolean).getOrElse(false) ||
+      Try(parameters(OPERATION) == "insert-ignore").getOrElse(false)
+    val ignoreNull = Try(parameters.getOrElse(IGNORE_NULL, "false").toBoolean).getOrElse(false)
+    val writeOptions = new KuduWriteOptions(ignoreDuplicateRowErrors, ignoreNull)
 
     new KuduRelation(tableName, kuduMaster, faultTolerantScanner,
-      scanLocality, operationType, None)(sqlContext)
+      scanLocality, operationType, None, writeOptions)(sqlContext)
   }
 
   /**
@@ -83,7 +89,7 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider
     * @param sqlContext
     * @param mode Only Append mode is supported. It will upsert or insert data
     *             to an existing table, depending on the upsert parameter
-    * @param parameters Necessary parameters for kudu.table and kudu.master
+    * @param parameters Necessary parameters for kudu.table, kudu.master, etc..
     * @param data Dataframe to save into kudu
     * @return returns populated base relation
     */
@@ -116,7 +122,7 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider
   private def getOperationType(opParam: String): OperationType = {
     opParam.toLowerCase match {
       case "insert" => Insert
-      case "insert-ignore" => InsertIgnore
+      case "insert-ignore" => Insert
       case "upsert" => Upsert
       case "update" => Update
       case "delete" => Delete
@@ -144,6 +150,7 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider
   *                     take place at the closest replica.
   * @param operationType The default operation type to perform when writing to the relation
   * @param userSchema A schema used to select columns for the relation
+  * @param writeOptions Kudu write options
   * @param sqlContext SparkSQL context
   */
 @InterfaceStability.Unstable
@@ -152,7 +159,8 @@ class KuduRelation(private val tableName: String,
                    private val faultTolerantScanner: Boolean,
                    private val scanLocality: ReplicaSelection,
                    private val operationType: OperationType,
-                   private val userSchema: Option[StructType])(
+                   private val userSchema: Option[StructType],
+                   private val writeOptions: KuduWriteOptions = new KuduWriteOptions)(
                    val sqlContext: SQLContext)
   extends BaseRelation
     with PrunedFilteredScan
@@ -320,7 +328,7 @@ class KuduRelation(private val tableName: String,
     if (overwrite) {
       throw new UnsupportedOperationException("overwrite is not yet supported")
     }
-    context.writeRows(data, tableName, operationType)
+    context.writeRows(data, tableName, operationType, writeOptions)
   }
 }
 

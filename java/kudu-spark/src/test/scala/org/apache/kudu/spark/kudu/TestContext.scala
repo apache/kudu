@@ -44,6 +44,7 @@ trait TestContext extends BeforeAndAfterAll { self: Suite =>
   var kuduContext: KuduContext = _
 
   val tableName: String = "test"
+  val simpleTableName: String = "simple-test"
 
   lazy val schema: Schema = {
     val columns = ImmutableList.of(
@@ -73,6 +74,13 @@ trait TestContext extends BeforeAndAfterAll { self: Suite =>
       new Schema(columns)
   }
 
+  lazy val simpleSchema: Schema = {
+    val columns = ImmutableList.of(
+      new ColumnSchemaBuilder("key", Type.INT32).key(true).build(),
+      new ColumnSchemaBuilder("val", Type.STRING).nullable(true).build())
+    new Schema(columns)
+  }
+
   val appID: String = new Date().toString + math.floor(math.random * 10E4).toLong.toString
 
   val conf: SparkConf = new SparkConf().
@@ -96,6 +104,8 @@ trait TestContext extends BeforeAndAfterAll { self: Suite =>
     val tableOptions = new CreateTableOptions().setRangePartitionColumns(List("key").asJava)
                                                .setNumReplicas(1)
     table = kuduClient.createTable(tableName, schema, tableOptions)
+
+    kuduClient.createTable(simpleTableName, simpleSchema, tableOptions)
   }
 
   override def afterAll() {

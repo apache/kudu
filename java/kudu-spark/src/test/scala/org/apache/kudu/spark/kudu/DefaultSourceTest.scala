@@ -170,6 +170,86 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter wi
 
     // change the c2 string to abc and insert
     val updateDF = baseDF.withColumn("c2_s", lit("abc"))
+    val kuduWriteOptions = new KuduWriteOptions
+    kuduWriteOptions.ignoreDuplicateRowErrors = true
+    kuduContext.insertRows(updateDF, tableName, kuduWriteOptions)
+
+    // change the key and insert
+    val insertDF = df.limit(1).withColumn("key", df("key").plus(100)).withColumn("c2_s", lit("def"))
+    kuduContext.insertRows(insertDF, tableName, kuduWriteOptions)
+
+    // read the data back
+    val newDF = sqlContext.read.options(kuduOptions).kudu
+    val collectedUpdate = newDF.filter("key = 0").collect()
+    assertEquals("0", collectedUpdate(0).getAs[String]("c2_s"))
+    val collectedInsert = newDF.filter("key = 100").collect()
+    assertEquals("def", collectedInsert(0).getAs[String]("c2_s"))
+
+    // restore the original state of the table
+    deleteRow(100)
+  }
+
+  test("insert ignore rows using DefaultSource") {
+    val df = sqlContext.read.options(kuduOptions).kudu
+    val baseDF = df.limit(1) // filter down to just the first row
+
+    // change the c2 string to abc and insert
+    val updateDF = baseDF.withColumn("c2_s", lit("abc"))
+    val newOptions: Map[String, String] = Map(
+      "kudu.table" -> tableName,
+      "kudu.master" -> miniCluster.getMasterAddresses,
+      "kudu.operation" -> "insert",
+      "kudu.ignoreDuplicateRowErrors" -> "true")
+    updateDF.write.options(newOptions).mode("append").kudu
+
+    // change the key and insert
+    val insertDF = df.limit(1).withColumn("key", df("key").plus(100)).withColumn("c2_s", lit("def"))
+    insertDF.write.options(newOptions).mode("append").kudu
+
+    // read the data back
+    val newDF = sqlContext.read.options(kuduOptions).kudu
+    val collectedUpdate = newDF.filter("key = 0").collect()
+    assertEquals("0", collectedUpdate(0).getAs[String]("c2_s"))
+    val collectedInsert = newDF.filter("key = 100").collect()
+    assertEquals("def", collectedInsert(0).getAs[String]("c2_s"))
+
+    // restore the original state of the table
+    deleteRow(100)
+  }
+
+  test("insert ignore rows using DefaultSource with 'kudu.operation' = 'insert-ignore'") {
+    val df = sqlContext.read.options(kuduOptions).kudu
+    val baseDF = df.limit(1) // filter down to just the first row
+
+    // change the c2 string to abc and insert
+    val updateDF = baseDF.withColumn("c2_s", lit("abc"))
+    val newOptions: Map[String, String] = Map(
+      "kudu.table" -> tableName,
+      "kudu.master" -> miniCluster.getMasterAddresses,
+      "kudu.operation" -> "insert-ignore")
+    updateDF.write.options(newOptions).mode("append").kudu
+
+    // change the key and insert
+    val insertDF = df.limit(1).withColumn("key", df("key").plus(100)).withColumn("c2_s", lit("def"))
+    insertDF.write.options(newOptions).mode("append").kudu
+
+    // read the data back
+    val newDF = sqlContext.read.options(kuduOptions).kudu
+    val collectedUpdate = newDF.filter("key = 0").collect()
+    assertEquals("0", collectedUpdate(0).getAs[String]("c2_s"))
+    val collectedInsert = newDF.filter("key = 100").collect()
+    assertEquals("def", collectedInsert(0).getAs[String]("c2_s"))
+
+    // restore the original state of the table
+    deleteRow(100)
+  }
+
+  test("insert ignore rows with insertIgnoreRows(deprecated)") {
+    val df = sqlContext.read.options(kuduOptions).kudu
+    val baseDF = df.limit(1) // filter down to just the first row
+
+    // change the c2 string to abc and insert
+    val updateDF = baseDF.withColumn("c2_s", lit("abc"))
     kuduContext.insertIgnoreRows(updateDF, tableName)
 
     // change the key and insert
@@ -209,6 +289,58 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter wi
     // restore the original state of the table
     kuduContext.updateRows(baseDF.filter("key = 0").withColumn("c2_s", lit("0")), tableName)
     deleteRow(100)
+  }
+
+  test("upsert rows ignore nulls") {
+    val nonNullDF = sqlContext.createDataFrame(Seq((0, "foo"))).toDF("key", "val")
+    kuduContext.insertRows(nonNullDF, simpleTableName)
+
+    val dataDF = sqlContext.read.options(Map("kudu.master" -> miniCluster.getMasterAddresses,
+      "kudu.table" -> simpleTableName)).kudu
+
+    val nullDF = sqlContext.createDataFrame(Seq((0, null.asInstanceOf[String]))).toDF("key", "val")
+    val kuduWriteOptions = new KuduWriteOptions
+    kuduWriteOptions.ignoreNull = true
+    kuduContext.upsertRows(nullDF, simpleTableName, kuduWriteOptions)
+    assert(dataDF.collect.toList === nonNullDF.collect.toList)
+
+    kuduWriteOptions.ignoreNull = false
+    kuduContext.updateRows(nonNullDF, simpleTableName)
+    kuduContext.upsertRows(nullDF, simpleTableName, kuduWriteOptions)
+    assert(dataDF.collect.toList === nullDF.collect.toList)
+
+    kuduContext.updateRows(nonNullDF, simpleTableName)
+    kuduContext.upsertRows(nullDF, simpleTableName)
+    assert(dataDF.collect.toList === nullDF.collect.toList)
+
+    val deleteDF = dataDF.filter("key = 0").select("key")
+    kuduContext.deleteRows(deleteDF, simpleTableName)
+  }
+
+  test("upsert rows ignore nulls using DefaultSource") {
+    val nonNullDF = sqlContext.createDataFrame(Seq((0, "foo"))).toDF("key", "val")
+    kuduContext.insertRows(nonNullDF, simpleTableName)
+
+    val dataDF = sqlContext.read.options(Map("kudu.master" -> miniCluster.getMasterAddresses,
+      "kudu.table" -> simpleTableName)).kudu
+
+    val nullDF = sqlContext.createDataFrame(Seq((0, null.asInstanceOf[String]))).toDF("key", "val")
+    val options_0: Map[String, String] = Map(
+      "kudu.table" -> simpleTableName,
+      "kudu.master" -> miniCluster.getMasterAddresses,
+      "kudu.ignoreNull" -> "true")
+    nullDF.write.options(options_0).mode("append").kudu
+    assert(dataDF.collect.toList === nonNullDF.collect.toList)
+
+    kuduContext.updateRows(nonNullDF, simpleTableName)
+    val options_1: Map[String, String] = Map(
+      "kudu.table" -> simpleTableName,
+      "kudu.master" -> miniCluster.getMasterAddresses)
+    nullDF.write.options(options_1).mode("append").kudu
+    assert(dataDF.collect.toList === nullDF.collect.toList)
+
+    val deleteDF = dataDF.filter("key = 0").select("key")
+    kuduContext.deleteRows(deleteDF, simpleTableName)
   }
 
   test("delete rows") {
@@ -593,7 +725,9 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter wi
                      .withColumn("key", df("key")
                      .plus(100))
                      .withColumn("c2_s", lit("def"))
-    kuduContext.insertIgnoreRows(updateDF, tableName)
+    val kuduWriteOptions = new KuduWriteOptions
+    kuduWriteOptions.ignoreDuplicateRowErrors = true
+    kuduContext.insertRows(updateDF, tableName, kuduWriteOptions)
     assert(kuduContext.syncClient.getLastPropagatedTimestamp > prevTimestamp)
   }
 }

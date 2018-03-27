@@ -235,20 +235,32 @@ class KuduContext(val kuduMaster: String,
     *
     * @param data the data to insert
     * @param tableName the Kudu table to insert into
+    * @param writeOptions the Kudu write options
     */
-  def insertRows(data: DataFrame, tableName: String): Unit = {
-    writeRows(data, tableName, Insert)
+  def insertRows(data: DataFrame,
+                 tableName: String,
+                 writeOptions: KuduWriteOptions = new KuduWriteOptions): Unit = {
+    writeRows(data, tableName, Insert, writeOptions)
   }
 
   /**
     * Inserts the rows of a [[DataFrame]] into a Kudu table, ignoring any new
     * rows that have a primary key conflict with existing rows.
     *
+    * This function call is equivalent to the following, which is preferred:
+    * {{{
+    * insertRows(data, tableName, new KuduWriteOptions(ignoreDuplicateRowErrors = true))
+    * }}}
+    *
     * @param data the data to insert into Kudu
     * @param tableName the Kudu table to insert into
     */
-  def insertIgnoreRows(data: DataFrame, tableName: String): Unit = {
-    writeRows(data, tableName, InsertIgnore)
+  @deprecated("Use KuduContext.insertRows(data, tableName, new KuduWriteOptions(ignoreDuplicateRowErrors = true))")
+  def insertIgnoreRows(data: DataFrame,
+                       tableName: String): Unit = {
+    val writeOptions = new KuduWriteOptions
+    writeOptions.ignoreDuplicateRowErrors = true
+    writeRows(data, tableName, Insert, writeOptions)
   }
 
   /**
@@ -256,9 +268,12 @@ class KuduContext(val kuduMaster: String,
     *
     * @param data the data to upsert into Kudu
     * @param tableName the Kudu table to upsert into
+    * @param writeOptions the Kudu write options
     */
-  def upsertRows(data: DataFrame, tableName: String): Unit = {
-    writeRows(data, tableName, Upsert)
+  def upsertRows(data: DataFrame,
+                 tableName: String,
+                 writeOptions: KuduWriteOptions = new KuduWriteOptions): Unit = {
+    writeRows(data, tableName, Upsert, writeOptions)
   }
 
   /**
@@ -266,9 +281,12 @@ class KuduContext(val kuduMaster: String,
     *
     * @param data the data to update into Kudu
     * @param tableName the Kudu table to update
+    * @param writeOptions the Kudu write options
     */
-  def updateRows(data: DataFrame, tableName: String): Unit = {
-    writeRows(data, tableName, Update)
+  def updateRows(data: DataFrame,
+                 tableName: String,
+                 writeOptions: KuduWriteOptions = new KuduWriteOptions): Unit = {
+    writeRows(data, tableName, Update, writeOptions)
   }
 
   /**
@@ -277,18 +295,24 @@ class KuduContext(val kuduMaster: String,
     * @param data the data to delete from Kudu
     *             note that only the key columns should be specified for deletes
     * @param tableName The Kudu tabe to delete from
+    * @param writeOptions the Kudu write options
     */
-  def deleteRows(data: DataFrame, tableName: String): Unit = {
-    writeRows(data, tableName, Delete)
+  def deleteRows(data: DataFrame,
+                 tableName: String,
+                 writeOptions: KuduWriteOptions = new KuduWriteOptions): Unit = {
+    writeRows(data, tableName, Delete, writeOptions)
   }
 
-  private[kudu] def writeRows(data: DataFrame, tableName: String, operation: OperationType) {
+  private[kudu] def writeRows(data: DataFrame,
+                              tableName: String,
+                              operation: OperationType,
+                              writeOptions: KuduWriteOptions = new KuduWriteOptions) {
     val schema = data.schema
     // Get the client's last propagated timestamp on the driver.
     val lastPropagatedTimestamp = syncClient.getLastPropagatedTimestamp
     data.foreachPartition(iterator => {
       val pendingErrors = writePartitionRows(iterator, schema, tableName, operation,
-                                             lastPropagatedTimestamp)
+                                             lastPropagatedTimestamp, writeOptions)
       val errorCount = pendingErrors.getRowErrors.length
       if (errorCount > 0) {
         val errors = pendingErrors.getRowErrors.take(5).map(_.getErrorStatus).mkString
@@ -302,7 +326,8 @@ class KuduContext(val kuduMaster: String,
                                  schema: StructType,
                                  tableName: String,
                                  operationType: OperationType,
-                                 lastPropagatedTimestamp: Long): RowErrorsAndOverflowStatus = {
+                                 lastPropagatedTimestamp: Long,
+                                 writeOptions: KuduWriteOptions) : RowErrorsAndOverflowStatus = {
     // Since each executor has its own KuduClient, update executor's propagated timestamp
     // based on the last one on the driver.
     syncClient.updateLastPropagatedTimestamp(lastPropagatedTimestamp)
@@ -312,13 +337,17 @@ class KuduContext(val kuduMaster: String,
     })
     val session: KuduSession = syncClient.newSession
     session.setFlushMode(FlushMode.AUTO_FLUSH_BACKGROUND)
-    session.setIgnoreAllDuplicateRows(operationType.ignoreDuplicateRowErrors)
+    session.setIgnoreAllDuplicateRows(writeOptions.ignoreDuplicateRowErrors)
     try {
       for (row <- rows) {
         val operation = operationType.operation(table)
         for ((sparkIdx, kuduIdx) <- indices) {
           if (row.isNullAt(sparkIdx)) {
-            operation.getRow.setNull(kuduIdx)
+            if (table.getSchema.getColumnByIndex(kuduIdx).isKey) {
+              val key_name = table.getSchema.getColumnByIndex(kuduIdx).getName
+              throw new IllegalArgumentException(s"Can't set primary key column '$key_name' to null")
+            }
+            if (!writeOptions.ignoreNull) operation.getRow.setNull(kuduIdx)
           } else {
             schema.fields(sparkIdx).dataType match {
               case DataTypes.StringType => operation.getRow.addString(kuduIdx, row.getString(sparkIdx))
