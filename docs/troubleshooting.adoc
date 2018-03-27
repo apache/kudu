@@ -256,6 +256,54 @@ TIP: NTP requires a network connection and may take a few minutes to synchronize
 at startup. In some cases a spotty network connection may make NTP report the clock as unsynchronized.
 A common, though temporary, workaround for this is to restart NTP with one of the commands above.
 
+[[disk_space_usage]]
+== Disk Space Usage
+
+When using the log block manager (the default on Linux), Kudu uses
+link:https://en.wikipedia.org/wiki/Sparse_file[sparse files] to store data. A
+sparse file has a different apparent size than the actual amount of disk space
+it uses. This means that some tools may inaccurately report the disk space
+used by Kudu. For example, the size listed by `ls -l` does not accurately
+reflect the disk space used by Kudu data files:
+
+[source,bash]
+----
+$ ls -lh /data/kudu/tserver/data
+total 117M
+-rw------- 1 kudu kudu 160M Mar 26 19:37 0b9807b8b17d48a6a7d5b16bf4ac4e6d.data
+-rw------- 1 kudu kudu 4.4K Mar 26 19:37 0b9807b8b17d48a6a7d5b16bf4ac4e6d.metadata
+-rw------- 1 kudu kudu  32M Mar 26 19:37 2f26eeacc7e04b65a009e2c9a2a8bd20.data
+-rw------- 1 kudu kudu 4.3K Mar 26 19:37 2f26eeacc7e04b65a009e2c9a2a8bd20.metadata
+-rw------- 1 kudu kudu 672M Mar 26 19:37 30a2dd2cd3554d8a9613f588a8d136ff.data
+-rw------- 1 kudu kudu 4.4K Mar 26 19:37 30a2dd2cd3554d8a9613f588a8d136ff.metadata
+-rw------- 1 kudu kudu  32M Mar 26 19:37 7434c83c5ec74ae6af5974e4909cbf82.data
+-rw------- 1 kudu kudu 4.3K Mar 26 19:37 7434c83c5ec74ae6af5974e4909cbf82.metadata
+-rw------- 1 kudu kudu 672M Mar 26 19:37 772d070347a04f9f8ad2ad3241440090.data
+-rw------- 1 kudu kudu 4.4K Mar 26 19:37 772d070347a04f9f8ad2ad3241440090.metadata
+-rw------- 1 kudu kudu 160M Mar 26 19:37 86e50a95531f46b6a79e671e6f5f4151.data
+-rw------- 1 kudu kudu 4.4K Mar 26 19:37 86e50a95531f46b6a79e671e6f5f4151.metadata
+-rw------- 1 kudu kudu  687 Mar 26 19:26 block_manager_instance
+----
+
+Notice that the total size reported is 117MiB, while the first file's size is
+listed as 160MiB. Adding the `-s` option to `ls` will cause `ls` to output the
+file's disk space usage.
+
+The `du` and `df` utilities report the actual disk space usage by default.
+
+[source,bash]
+----
+$ du -h /data/kudu/tserver/data
+118M   /data/kudu/tserver/data
+----
+
+The apparent size can be shown with the `--apparent-size` flag to `du`.
+
+[source,bash]
+----
+$ du -h --apparent-size /data/kudu/tserver/data
+1.7G  /data/kudu/tserver/data
+----
 
 [[crash_reporting]]
 == Reporting Kudu Crashes
