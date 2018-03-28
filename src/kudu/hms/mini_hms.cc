@@ -167,6 +167,10 @@ Status MiniHms::Resume() {
   return Status::OK();
 }
 
+string MiniHms::uris() const {
+  return Substitute("thrift://127.0.0.1:$0", port_);
+}
+
 Status MiniHms::CreateHiveSite(const string& tmp_dir) const {
 
   // - datanucleus.schema.autoCreateAll

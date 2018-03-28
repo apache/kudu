@@ -51,6 +51,7 @@ target_link_libraries(master
   krpc
   kserver
   kudu_common
+  kudu_hms
   kudu_util
   master_proto
   rpc_header_proto

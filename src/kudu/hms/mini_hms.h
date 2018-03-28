@@ -73,6 +73,10 @@ class MiniHms {
     return HostPort("127.0.0.1", port_);
   }
 
+  /// Returns the Metastore URIs, in the format that the Hive
+  /// hive.metastore.uris configuration expects.
+  std::string uris() const;
+
  private:
 
   // Creates a hive-site.xml for the mini HMS.
