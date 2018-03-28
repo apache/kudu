@@ -1,0 +1,15 @@
+Here's a Java client sample that creates a table, writes some data, scans it, and then deletes
+its table.
+
+
+To build and run, do the following:
+
+$ mvn package
+$ java -jar target/kudu-java-sample-1.0-SNAPSHOT.jar
+
+This example assumes that you are running the Quickstart VM with the host name
+"quickstart.cloudera". If you are running against a different cluster, pass the
+host name of the Kudu Master using a Java property:
+
+$ java -DkuduMaster=a1216.halxg.cloudera.com -jar target/kudu-java-sample-1.0-SNAPSHOT.jar
+
