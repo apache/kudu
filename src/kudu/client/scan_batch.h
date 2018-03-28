@@ -63,7 +63,7 @@ class KuduSchema;
 /// regular for loop (C++03):
 /// @code
 ///   for (KuduScanBatch::const_iterator it = batch.begin(), it != batch.end();
-///        ++i) {
+///        ++it) {
 ///     KuduScanBatch::RowPtr row(*it);
 ///     ...
 ///   }

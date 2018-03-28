@@ -34,7 +34,7 @@ using kudu::client::KuduColumnSchema;
 using kudu::client::KuduError;
 using kudu::client::KuduInsert;
 using kudu::client::KuduPredicate;
-using kudu::client::KuduRowResult;
+using kudu::client::KuduScanBatch;
 using kudu::client::KuduScanner;
 using kudu::client::KuduSchema;
 using kudu::client::KuduSchemaBuilder;
@@ -53,10 +53,10 @@ using std::ostringstream;
 using std::string;
 using std::vector;
 
-static Status CreateClient(const string& addr,
+static Status CreateClient(const vector<string>& master_addrs,
                            shared_ptr<KuduClient>* client) {
   return KuduClientBuilder()
-      .add_master_server_addr(addr)
+      .master_server_addrs(master_addrs)
       .default_admin_operation_timeout(MonoDelta::FromSeconds(20))
       .Build(client);
 }
@@ -91,25 +91,24 @@ static Status CreateTable(const shared_ptr<KuduClient>& client,
                           const string& table_name,
                           const KuduSchema& schema,
                           int num_tablets) {
-  // Generate the split keys for the table.
-  vector<const KuduPartialRow*> splits;
+  vector<string> column_names;
+  column_names.push_back("key");
+
+  // Set the schema and range partition columns.
+  KuduTableCreator* table_creator = client->NewTableCreator();
+  table_creator->table_name(table_name)
+      .schema(&schema)
+      .set_range_partition_columns(column_names);
+
+  // Generate and add the range partition splits for the table.
   int32_t increment = 1000 / num_tablets;
   for (int32_t i = 1; i < num_tablets; i++) {
     KuduPartialRow* row = schema.NewRow();
     KUDU_CHECK_OK(row->SetInt32(0, i * increment));
-    splits.push_back(row);
+    table_creator->add_range_partition_split(row);
   }
 
-  vector<string> column_names;
-  column_names.push_back("key");
-
-  // Create the table.
-  KuduTableCreator* table_creator = client->NewTableCreator();
-  Status s = table_creator->table_name(table_name)
-      .schema(&schema)
-      .set_range_partition_columns(column_names)
-      .split_rows(splits)
-      .Create();
+  Status s = table_creator->Create();
   delete table_creator;
   return s;
 }
@@ -127,7 +126,7 @@ static Status AlterTable(const shared_ptr<KuduClient>& client,
 
 static void StatusCB(void* unused, const Status& status) {
   KUDU_LOG(INFO) << "Asynchronous flush finished with status: "
-                      << status.ToString();
+                 << status.ToString();
 }
 
 static Status InsertRows(const shared_ptr<KuduTable>& table, int num_rows) {
@@ -176,6 +175,11 @@ static Status ScanRows(const shared_ptr<KuduTable>& table) {
 
   KuduScanner scanner(table.get());
 
+  // To be guaranteed results are returned in primary key order, make the
+  // scanner fault-tolerant. This also means the scanner can recover if,
+  // for example, the server it is scanning fails in the middle of a scan.
+  KUDU_RETURN_NOT_OK(scanner.SetFaultTolerant());
+
   // Add a predicate: WHERE key >= 5
   KuduPredicate* p = table->NewComparisonPredicate(
       "key", KuduPredicate::GREATER_EQUAL, KuduValue::FromInt(kLowerBound));
@@ -187,17 +191,17 @@ static Status ScanRows(const shared_ptr<KuduTable>& table) {
   KUDU_RETURN_NOT_OK(scanner.AddConjunctPredicate(p));
 
   KUDU_RETURN_NOT_OK(scanner.Open());
-  vector<KuduRowResult> results;
+  KuduScanBatch batch;
 
   int next_row = kLowerBound;
   while (scanner.HasMoreRows()) {
-    KUDU_RETURN_NOT_OK(scanner.NextBatch(&results));
-    for (vector<KuduRowResult>::iterator iter = results.begin();
-        iter != results.end();
-        iter++, next_row++) {
-      const KuduRowResult& result = *iter;
+    KUDU_RETURN_NOT_OK(scanner.NextBatch(&batch));
+    for (KuduScanBatch::const_iterator it = batch.begin();
+         it != batch.end();
+         ++it, ++next_row) {
+      KuduScanBatch::RowPtr row(*it);
       int32_t val;
-      KUDU_RETURN_NOT_OK(result.GetInt32("key", &val));
+      KUDU_RETURN_NOT_OK(row.GetInt32("key", &val));
       if (val != next_row) {
         ostringstream out;
         out << "Scan returned the wrong results. Expected key "
@@ -205,7 +209,6 @@ static Status ScanRows(const shared_ptr<KuduTable>& table) {
         return Status::IOError(out.str());
       }
     }
-    results.clear();
   }
 
   // next_row is now one past the last row we read.
@@ -263,10 +266,13 @@ int main(int argc, char* argv[]) {
   // This is to install and automatically un-install custom logging callback.
   LogCallbackHelper log_cb_helper;
 
-  if (argc != 2) {
-    KUDU_LOG(FATAL) << "usage: " << argv[0] << " <master host>";
+  if (argc < 2) {
+    KUDU_LOG(FATAL) << "usage: " << argv[0] << " <master host> ...";
   }
-  const string master_host = argv[1];
+  vector<string> master_addrs;
+  for (int i = 1; i < argc; i++) {
+    master_addrs.push_back(argv[i]);
+  }
 
   const string kTableName = "test_table";
 
@@ -275,7 +281,7 @@ int main(int argc, char* argv[]) {
 
   // Create and connect a client.
   shared_ptr<KuduClient> client;
-  KUDU_CHECK_OK(CreateClient(master_host, &client));
+  KUDU_CHECK_OK(CreateClient(master_addrs, &client));
   KUDU_LOG(INFO) << "Created a client connection";
 
   // Disable the verbose logging.

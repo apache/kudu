@@ -19,7 +19,7 @@
 :homepage: https://kudu.apache.org/
 
 == Summary
-The Kudu {cpp} client library distribution contains {cpp} example application
+The Kudu {cpp} client library distribution contains a {cpp} example application
 that demonstrates how to use the Kudu {cpp} client API.  The example
 can be used as a starting point for a custom Kudu {cpp} client application.
 This note contains information on how to build the Kudu {cpp} client example.
@@ -45,63 +45,37 @@ super-user access and pollutes the `example` directory with
 intermediate files.
 For example, to copy the `/usr/share/doc/kuduClient/examples` directory
 recursively into `/tmp/kuduClient`:
-[source,shell]
++
+[source,bash]
+----
 cp -r /usr/share/doc/kuduClient/examples /tmp/kuduClient
+----
 
 . Navigate into the directory where the `example.cc.gz` file was copied and
 unpack the example source file.  For example:
-[source,shell]
++
+[source,bash]
+----
 cd /tmp/kuduClient/examples
 gunzip example.cc.gz
+----
 
 . Run `cmake` to generate appropriate makefiles.  For example, if targeting
 for a debug build
-(for a release build, use `release` for `CMAKE_BUILD_TYPE` correspondingly):
-[source,shell]
++
+[source,bash]
+----
 cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=debug
+----
++
+For a release build, use `release` for `CMAKE_BUILD_TYPE` instead.
 
 . Run `make` to build the example:
-[source,shell]
++
+[source,bash]
+----
 make
-
-. After the example is built, it is ready to run against your Kudu master server.
-The example application assumes the target Kudu cluster has at least 3
-tablet servers up and running (because it creates a table with replication
-factor 3).  If it's not the case, you can modify the `example.cc` accordingly
-and re-compile it.  Below is the example output with log messages in the middle
-removed: the `example` binary runs against Kudu master server running
-with the default parameters at the same machine.  Port 7051 is the default
-one and could be omitted along with the preceding colomn because the master
-server is running with the default parameters (it's left only to illustrate how
-to specify port number).
-[source,shell]
-$ ./example 127.0.0.1:7051
-Running with Kudu client version: kudu 1.1.0-SNAPSHOT (rev 91a1ed09c4c572a22bab15360ddaf481d5632927)
-Long version info: kudu 1.1.0-SNAPSHOT
-revision 91a1ed09c4c572a22bab15360ddaf481d5632927
-build type DEBUG
-built by aserbin at 06 Oct 2016 14:15:10 PST on ve0518.halxg.cloudera.com
-Received log message from Kudu client library
- Severity: 0
- Filename: /home/aserbin/Projects/kudu/src/kudu/util/thread.cc
- Line number: 546
- Time: Thu Oct 06 14:50:47 2016
- Message: Started thread 11197 - kernel-watchdog:kernel-watcher
-...
-Received log message from Kudu client library
- Severity: 0
- Filename: /home/aserbin/Projects/kudu/src/kudu/client/client-internal.cc
- Line number: 534
- Time: Thu Oct 06 14:50:47 2016
- Message: Considering host 10.17.240.17 local
-Created a client connection
-Created a schema
-Created a table
-Altered a table
-Inserted some rows into a table
-Scanned some rows out of a table
-Deleted a table
-Done
+----
 
 == How to build the example if building Kudu from source
 This section describes how to build the example if building Kudu from source.
@@ -109,7 +83,7 @@ To install the `example.cc` and other files, an alternate destination root
 is used.
 
 Specifying an alternate destination root allows you to install the
-Kudu {cpp} client library, the example file and other content
+Kudu {cpp} client library, the example file, and other content
 under the specified destination prefix.
 
 . Follow the https://kudu.apache.org/docs/installation.html#_build_from_source[instructions on the Kudu Web site]
@@ -118,57 +92,72 @@ to build the project from source.
 . Once the project is built, change into the `<build_dir>/src/kudu/client`
 sub-directory.
 
-. Run `make install` with an alternate destination root.  For example, if
+. Run `make install` with an alternate destination root. For example, if
 installing into `/tmp/client_alt_root`
-[source,shell]
++
+[source,bash]
+----
 make install DESTDIR=/tmp/client_alt_root
+----
 
 . Change the current working directory into the
 `usr/local/share/doc/kuduClient/examples` subdirectory of the alternate
 destination root.  For example, if installing into `/tmp/client_alt_root`
-[source,shell]
++
+[source,bash]
+----
 cd /tmp/client_alt_root/usr/local/share/doc/kuduClient/examples
+----
 
-. Run `cmake` to generate appropriate makefiles.  For example, if installing
+. Run `cmake` to generate appropriate makefiles. For example, if installing
 into `/tmp/client_alt_root` and targeting for a debug build
-(for a release build, use `release` for `CMAKE_BUILD_TYPE` correspondingly):
-[source,shell]
++
+[source,bash]
+----
 cmake -G "Unix Makefiles" -DkuduClient_DIR=/tmp/client_alt_root/usr/local/share/kuduClient/cmake -DCMAKE_BUILD_TYPE=debug
+----
++
+For a release build, set `release` for `CMAKE_BUILD_TYPE` instead.
 
 . Run `make` to build the example:
-[source,shell]
++
+[source,bash]
+----
 make
+----
 
-. After the example is built, it is ready to run against your Kudu master server.
+== Running the sample application
+After the example is built, it is ready to run against your Kudu cluster.
 The example application assumes the target Kudu cluster has at least 3
-tablet servers up and running (because it creates a table with replication
-factor 3).  If it's not the case, you can modify the `example.cc` accordingly
-and re-compile it.  Below is the example output with log messages in the middle
-removed: the `example` binary runs against Kudu master server running
-with the default parameters at the same machine.  Port 7051 is the default
-one and could be omitted along with the preceding colomn because the master
-server is running with the default parameters (it's left only to illustrate how
-to specify port number).
-[source,shell]
-$ ./example 127.0.0.1:7051
-Running with Kudu client version: kudu 1.1.0-SNAPSHOT (rev 91a1ed09c4c572a22bab15360ddaf481d5632927)
-Long version info: kudu 1.1.0-SNAPSHOT
-revision 91a1ed09c4c572a22bab15360ddaf481d5632927
+running tablet servers, because it creates a table with replication factor 3.
+If that's not the case, modify `example.cc` accordingly and re-compile. By
+default, the `example` binary runs against a local Kudu master using the
+default port 7051. You may also specify a different master or multiple masters
+as arguments to the binary, as shown. The following output shows a successful
+invocation of the example application, with some uninteresting log messages
+removed:
+
+[source,bash]
+----
+$ ./example localhost:9876 localhost:9877 localhost:9878
+Running with Kudu client version: kudu 1.8.0-SNAPSHOT (rev bbbb45fd31f2eb1570563e925639e549047b0707)
+Long version info: kudu 1.8.0-SNAPSHOT
+revision bbbb45fd31f2eb1570563e925639e549047b0707
 build type DEBUG
-built by aserbin at 06 Oct 2016 14:15:10 PST on ve0518.halxg.cloudera.com
+built by wdberkeley at 27 Mar 2018 23:52:18 PST on cloudbook.local
 Received log message from Kudu client library
  Severity: 0
- Filename: /home/aserbin/Projects/kudu/src/kudu/util/thread.cc
- Line number: 546
- Time: Thu Oct 06 14:50:47 2016
- Message: Started thread 11197 - kernel-watchdog:kernel-watcher
-...
-Received log message from Kudu client library
+ Filename: /Users/wdberkeley/src/kudu/src/kudu/util/thread.cc
+ Line number: 570
+ Time: Wed Mar 28 01:50:48 2018
+ Message: Started thread 17452818 - kernel-watchdog:kernel-watcher
+ ...
+ Received log message from Kudu client library
  Severity: 0
- Filename: /home/aserbin/Projects/kudu/src/kudu/client/client-internal.cc
- Line number: 534
- Time: Thu Oct 06 14:50:47 2016
- Message: Considering host 10.17.240.17 local
+ Filename: /Users/wdberkeley/src/kudu/src/kudu/client/client-internal.cc
+ Line number: 581
+ Time: Wed Mar 28 01:50:48 2018
+ Message: Considering host 192.168.1.4 local
 Created a client connection
 Created a schema
 Created a table
@@ -177,6 +166,7 @@ Inserted some rows into a table
 Scanned some rows out of a table
 Deleted a table
 Done
+----
 
 == References
 . https://kudu.apache.org/[The Kudu Project Web Site]
