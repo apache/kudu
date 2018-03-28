@@ -107,6 +107,11 @@ class MasterStressTest : public KuduTest {
     opts.num_masters = opts.master_rpc_ports.size();
     opts.num_tablet_servers = 3;
 
+    // TODO(dan): enable HMS integration. Currently the test fails when it's
+    // enabled because the HMS and Kudu catalogs become unsynchronized when
+    // masters are killed while operating on the catalog.
+    // opts.enable_hive_metastore = true;
+
     // Don't preallocate log segments, since we're creating many tablets here.
     // If each preallocates 64M or so, we use a ton of disk space in this
     // test, and it fails on normal sized /tmp dirs.
@@ -335,7 +340,7 @@ class MasterStressTest : public KuduTest {
 
  private:
   string GenerateTableName() {
-    return Substitute("table-$0", oid_generator_.Next());
+    return Substitute("default.table_$0", oid_generator_.Next());
   }
 
   bool BlockingGetTableName(string* chosen_table) {

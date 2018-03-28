@@ -18,15 +18,15 @@
 #pragma once
 
 #include <string>
-#include <vector> // IWYU pragma: keep
+#include <vector>
 
 #include <gtest/gtest_prod.h>
 
-#include "kudu/gutil/gscoped_ptr.h" // IWYU pragma: keep
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/hms/hms_client.h"
 #include "kudu/util/monotime.h"
-#include "kudu/util/net/net_util.h" // IWYU pragma: keep
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
 
 namespace hive {
@@ -36,7 +36,7 @@ class Table;
 namespace kudu {
 
 class Schema;
-class ThreadPool; // IWYU pragma: keep
+class ThreadPool;
 
 namespace hms {
 
@@ -86,6 +86,9 @@ class HmsCatalog {
 
   // Validates the Hive Metastore SASL gflags.
   static bool ValidateSasl();
+
+  // Returns true if the HMS Catalog should be enabled.
+  static bool IsEnabled();
 
  private:
 

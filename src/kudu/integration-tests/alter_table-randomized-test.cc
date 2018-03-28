@@ -76,7 +76,7 @@ using std::unique_ptr;
 using std::vector;
 using strings::SubstituteAndAppend;
 
-const char* kTableName = "test-table";
+const char* kTableName = "default.test_table";
 const int kMaxColumns = 30;
 const uint32_t kMaxRangePartitions = 32;
 const vector<KuduColumnStorageAttributes::CompressionType> kCompressionTypes =
@@ -99,6 +99,7 @@ class AlterTableRandomized : public KuduTest {
 
     ExternalMiniClusterOptions opts;
     opts.num_tablet_servers = 3;
+    opts.enable_hive_metastore = true;
     // This test produces tables with lots of columns. With container preallocation,
     // we end up using quite a bit of disk space. So, we disable it.
     opts.extra_tserver_flags.emplace_back("--log_container_preallocate_bytes=0");

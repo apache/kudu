@@ -38,6 +38,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/hms/hms_catalog.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/ts_manager.h"
 #include "kudu/tserver/tablet_replica_lookup.h"
@@ -58,7 +59,7 @@ class NodeInstancePB;
 class PartitionPB;
 class PartitionSchema;
 class Schema;
-class ThreadPool;
+class ThreadPool; // IWYU pragma: keep
 struct ColumnId;
 
 // Working around FRIEND_TEST() ugliness.
@@ -73,7 +74,7 @@ class RpcContext;
 namespace security {
 class Cert;
 class PrivateKey;
-class TokenSigningPublicKeyPB;
+class TokenSigningPublicKeyPB; // IWYU pragma: keep
 } // namespace security
 
 namespace consensus {
@@ -87,7 +88,7 @@ class TabletReplica;
 
 namespace master {
 
-class CatalogManagerBgTasks;
+class CatalogManagerBgTasks; // IWYU pragma: keep
 class Master;
 class SysCatalogTable;
 class TSDescriptor;
@@ -916,6 +917,8 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // like the assignment and cleaner
   friend class CatalogManagerBgTasks;
   gscoped_ptr<CatalogManagerBgTasks> background_tasks_;
+
+  std::unique_ptr<hms::HmsCatalog> hms_catalog_;
 
   enum State {
     kConstructed,

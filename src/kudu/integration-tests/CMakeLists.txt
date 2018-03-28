@@ -85,6 +85,7 @@ ADD_KUDU_TEST(linked_list-test RESOURCE_LOCK "master-rpc-ports" RUN_SERIAL true)
 ADD_KUDU_TEST(log-rolling-itest)
 ADD_KUDU_TEST(master_cert_authority-itest RESOURCE_LOCK "master-rpc-ports" PROCESSORS 2)
 ADD_KUDU_TEST(master_failover-itest RESOURCE_LOCK "master-rpc-ports" PROCESSORS 3)
+ADD_KUDU_TEST(master_hms-itest RUN_SERIAL true PROCESSORS 4)
 ADD_KUDU_TEST(master_migration-itest RESOURCE_LOCK "master-rpc-ports")
 ADD_KUDU_TEST_DEPENDENCIES(master_migration-itest
   kudu)

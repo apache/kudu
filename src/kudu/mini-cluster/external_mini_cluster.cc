@@ -339,6 +339,11 @@ Status ExternalMiniCluster::StartSingleMaster() {
   opts.logtostderr = opts_.logtostderr;
 
   opts.rpc_bind_address = HostPort(GetBindIpForMaster(0), 0);
+  if (opts_.enable_hive_metastore) {
+    opts.extra_flags.emplace_back(Substitute("--hive_metastore_uris=$0", hms_->uris()));
+    opts.extra_flags.emplace_back(Substitute("--hive_metastore_sasl_enabled=$0",
+                                             opts_.enable_kerberos));
+  }
   scoped_refptr<ExternalMaster> master = new ExternalMaster(opts);
   if (opts_.enable_kerberos) {
     // The bind host here is the hostname that will be used to generate the
@@ -385,6 +390,11 @@ Status ExternalMiniCluster::StartDistributedMasters() {
     opts.extra_flags = SubstituteInFlags(flags, i);
     opts.start_process_timeout = opts_.start_process_timeout;
     opts.rpc_bind_address = peer_hostports[i];
+    if (opts_.enable_hive_metastore) {
+      opts.extra_flags.emplace_back(Substitute("--hive_metastore_uris=$0", hms_->uris()));
+      opts.extra_flags.emplace_back(Substitute("--hive_metastore_sasl_enabled=$0",
+                                               opts_.enable_kerberos));
+    }
     opts.logtostderr = opts_.logtostderr;
 
     scoped_refptr<ExternalMaster> peer = new ExternalMaster(opts);

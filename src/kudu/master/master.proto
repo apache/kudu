@@ -78,6 +78,9 @@ message MasterErrorPB {
     // The callee detected that its replica management scheme is incompatible
     // with the caller's scheme.
     INCOMPATIBLE_REPLICA_MANAGEMENT = 12;
+
+    // An operation involving the Hive Metastore failed.
+    HIVE_METASTORE_ERROR = 13;
   }
 
   // The error code.

@@ -68,7 +68,8 @@ set(KUDU_TEST_LINK_LIBS
   kudu_client
   kudu_curl_util
   master
-  master_proto)
+  master_proto
+  mini_hms)
 
 ADD_KUDU_TEST(catalog_manager-test)
 ADD_KUDU_TEST(master-test RESOURCE_LOCK "master-web-port")

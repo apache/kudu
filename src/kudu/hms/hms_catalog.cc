@@ -17,13 +17,13 @@
 
 #include "kudu/hms/hms_catalog.h"
 
-#include <algorithm> // IWYU pragma: keep
-#include <functional> // IWYU pragma: keep
+#include <algorithm>
+#include <functional>
 #include <iostream>
-#include <map> // IWYU pragma: keep
+#include <map>
 #include <string>
-#include <type_traits> // IWYU pragma: keep
-#include <utility> // IWYU pragma: keep
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>
@@ -33,16 +33,16 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/strings/split.h" // IWYU pragma: keep
+#include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/hms/hive_metastore_constants.h"
 #include "kudu/hms/hive_metastore_types.h"
 #include "kudu/hms/hms_client.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/flag_tags.h"
-#include "kudu/util/net/net_util.h" // IWYU pragma: keep
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/slice.h"
-#include "kudu/util/threadpool.h" // IWYU pragma: keep
+#include "kudu/util/threadpool.h"
 
 using std::string;
 using std::vector;
@@ -273,8 +273,8 @@ Status HmsCatalog::AlterTable(const string& id,
 
 template<typename Task>
 Status HmsCatalog::Execute(Task task) {
-  Synchronizer s;
-  auto callback = s.AsStdStatusCallback();
+  Synchronizer synchronizer;
+  auto callback = synchronizer.AsStdStatusCallback();
 
   // TODO(todd): wrapping this in a TRACE_EVENT scope and a LOG_IF_SLOW and such
   // would be helpful. Perhaps a TRACE message and/or a TRACE_COUNTER_INCREMENT
@@ -284,8 +284,6 @@ Status HmsCatalog::Execute(Task task) {
   // LOG_IF_SLOW calls internally.
 
   RETURN_NOT_OK(threadpool_->SubmitFunc([=] {
-    Status s;
-
     // The main run routine of the threadpool thread. Runs the task with
     // exclusive access to the HMS client. If the task fails, it will be
     // retried, unless the failure type is non-retriable or the maximum number
@@ -312,16 +310,22 @@ Status HmsCatalog::Execute(Task task) {
     //
     // * Task results in a non-fatal error - a non-fatal error is an application
     // level error, and causes the task to be failed immediately (no retries).
-    for (int i = 0; i <= FLAGS_hive_metastore_retry_count; i++) {
+
+    // Keep track of the first attempt's failure. Typically the first failure is
+    // the most informative.
+    Status first_failure;
+
+    for (int attempt = 0; attempt <= FLAGS_hive_metastore_retry_count; attempt++) {
       if (!hms_client_.IsConnected()) {
         if (reconnect_after_ > MonoTime::Now()) {
           // Not yet ready to attempt reconnection; fail the task immediately.
+          DCHECK(!reconnect_failure_.ok());
           return callback(reconnect_failure_);
         }
 
         // Attempt to reconnect.
-        Status s = Reconnect();
-        if (!s.ok()) {
+        Status reconnect_status = Reconnect();
+        if (!reconnect_status.ok()) {
           // Reconnect failed; retry with exponential backoff capped at 10s and
           // fail the task. We don't bother with jitter here because only the
           // leader master should be attempting this in any given period per
@@ -330,7 +334,7 @@ Status HmsCatalog::Execute(Task task) {
           reconnect_after_ = MonoTime::Now() +
               std::min(MonoDelta::FromMilliseconds(100 << consecutive_reconnect_failures_),
                        MonoDelta::FromSeconds(10));
-          reconnect_failure_ = std::move(s);
+          reconnect_failure_ = std::move(reconnect_status);
           return callback(reconnect_failure_);
         }
 
@@ -338,27 +342,34 @@ Status HmsCatalog::Execute(Task task) {
       }
 
       // Execute the task.
-      s = task(&hms_client_);
+      Status task_status = task(&hms_client_);
 
       // If the task succeeds, or it's a non-retriable error, return the result.
-      if (s.ok() || !IsFatalError(s)) {
-        return callback(s);
+      if (task_status.ok() || !IsFatalError(task_status)) {
+        return callback(task_status);
       }
 
       // A fatal error occurred. Tear down the connection, and try again. We
       // don't log loudly here because odds are the reconnection will fail if
       // it's a true fault, at which point we do log loudly.
-      VLOG(1) << "Call to HMS failed: " << s.ToString();
+      VLOG(1) << "Call to HMS failed: " << task_status.ToString();
+
+      if (attempt == 0) {
+        first_failure = std::move(task_status);
+      }
+
       WARN_NOT_OK(hms_client_.Stop(), "Failed to stop Hive Metastore client");
     }
 
     // We've exhausted the allowed retries.
+    DCHECK(!first_failure.ok());
     LOG(WARNING) << "Call to HMS failed after " << FLAGS_hive_metastore_retry_count
-                 << " retries: " << s.ToString();
-    return callback(s);
+                 << " retries: " << first_failure.ToString();
+
+    return callback(first_failure);
   }));
 
-  return s.Wait();
+  return synchronizer.Wait();
 }
 
 Status HmsCatalog::Reconnect() {
@@ -426,6 +437,7 @@ string column_to_field_type(const ColumnSchema& column) {
     case UNIXTIME_MICROS: return "timestamp";
     default: LOG(FATAL) << "unhandled column type: " << column.TypeToString();
   }
+  __builtin_unreachable();
 }
 
 hive::FieldSchema column_to_field(const ColumnSchema& column) {
@@ -520,6 +532,10 @@ bool HmsCatalog::ValidateUris(const char* flag_name, const string& metastore_uri
     LOG(ERROR) << "invalid flag " << flag_name << ": " << s.ToString();
   }
   return s.ok();
+}
+
+bool HmsCatalog::IsEnabled() {
+  return !FLAGS_hive_metastore_uris.empty();
 }
 
 } // namespace hms

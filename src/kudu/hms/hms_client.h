@@ -19,7 +19,7 @@
 
 #include <cstdint>
 #include <string>
-#include <vector> // IWYU pragma: keep
+#include <vector>
 
 #include "kudu/gutil/port.h"
 #include "kudu/hms/ThriftHiveMetastore.h"
@@ -30,8 +30,8 @@
 namespace hive {
 class Database;
 class EnvironmentContext;
-class NotificationEvent; // IWYU pragma: keep
-class Partition; // IWYU pragma: keep
+class NotificationEvent;
+class Partition;
 class Table;
 }
 

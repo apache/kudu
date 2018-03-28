@@ -53,6 +53,7 @@
 #include <string>
 #include <type_traits>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -87,10 +88,12 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/escaping.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/sysinfo.h"
 #include "kudu/gutil/utf/utf.h"
 #include "kudu/gutil/walltime.h"
+#include "kudu/hms/hms_catalog.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master_cert_authority.h"
@@ -645,7 +648,7 @@ Status ProcessColumnPBDefaults(ColumnSchemaPB* col) {
 
 } // anonymous namespace
 
-CatalogManager::CatalogManager(Master *master)
+CatalogManager::CatalogManager(Master* master)
   : master_(master),
     rng_(GetRandomSeed32()),
     state_(kConstructed),
@@ -680,6 +683,22 @@ Status CatalogManager::Init(bool is_first_run) {
 
   RETURN_NOT_OK_PREPEND(sys_catalog_->WaitUntilRunning(),
                         "Failed waiting for the catalog tablet to run");
+
+  if (hms::HmsCatalog::IsEnabled()) {
+    vector<HostPortPB> master_addrs_pb;
+    RETURN_NOT_OK(master_->GetMasterHostPorts(&master_addrs_pb));
+
+    string master_addresses = JoinMapped(
+        master_addrs_pb,
+        [] (const HostPortPB& hostport) {
+          return Substitute("$0:$1", hostport.host(), hostport.port());
+        },
+        ",");
+
+    hms_catalog_.reset(new hms::HmsCatalog(std::move(master_addresses)));
+    RETURN_NOT_OK_PREPEND(hms_catalog_->Start(),
+                          "failed to start Hive Metastore catalog");
+  }
 
   std::lock_guard<LockType> l(lock_);
   background_tasks_.reset(new CatalogManagerBgTasks(this));
@@ -1145,6 +1164,10 @@ void CatalogManager::Shutdown() {
     background_tasks_->Shutdown();
   }
 
+  if (hms_catalog_) {
+    hms_catalog_->Stop();
+  }
+
   // Mark all outstanding table tasks as aborted and wait for them to fail.
   //
   // There may be an outstanding table visitor thread modifying the table map,
@@ -1509,7 +1532,31 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   }
   table->mutable_metadata()->mutable_dirty()->pb.set_state(SysTablesEntryPB::RUNNING);
 
-  // e. Write table and tablets to sys-catalog.
+  // e. Create the table in the HMS.
+  //
+  // It is critical that this step happen before writing the table to the sys catalog,
+  // since this step validates that the table name is available in the HMS catalog.
+  if (hms_catalog_) {
+    s = hms_catalog_->CreateTable(table->id(), req.name(), schema);
+    if (!s.ok()) {
+      s = s.CloneAndPrepend(Substitute("an error occurred while creating table $0 in the HMS",
+                                       req.name()));
+      LOG(WARNING) << s.ToString();
+      SetupError(resp->mutable_error(), MasterErrorPB::HIVE_METASTORE_ERROR, s);
+      return s;
+    }
+  }
+  // Delete the new HMS entry if we exit early.
+  auto abort_hms = MakeScopedCleanup([&] {
+      // TODO(dan): figure out how to test this.
+      if (hms_catalog_) {
+        TRACE("Rolling back HMS table creation");
+        WARN_NOT_OK(hms_catalog_->DropTable(table->id(), req.name()),
+                    "an error occurred while attempting to delete orphaned HMS table entry");
+      }
+  });
+
+  // f. Write table and tablets to sys-catalog.
   SysCatalogTable::Actions actions;
   actions.table_to_add = table;
   actions.tablets_to_add = tablets;
@@ -1522,7 +1569,8 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   }
   TRACE("Wrote table and tablets to system table");
 
-  // f. Commit the in-memory state.
+  // g. Commit the in-memory state.
+  abort_hms.cancel();
   table->mutable_metadata()->CommitMutation();
 
   for (const auto& tablet : tablets) {
@@ -1530,7 +1578,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   }
   abort_mutations.cancel();
 
-  // g. Add the tablets to the table.
+  // h. Add the tablets to the table.
   //
   // We can't reuse the above WRITE tablet locks for this because
   // AddRemoveTablets() will read from the clean state, which is empty for
@@ -1543,7 +1591,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
     tablet->metadata().ReadUnlock();
   }
 
-  // h. Make the new table and tablets visible in the catalog.
+  // i. Make the new table and tablets visible in the catalog.
   {
     std::lock_guard<LockType> l(lock_);
 
@@ -1682,11 +1730,43 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB* req,
     return s;
   }
 
+  // 2. Drop the HMS table entry.
+  //
+  // This step comes before modifying the sys catalog so that we can ensure the
+  // HMS is available. We do not allow dropping tables while the HMS is
+  // unavailable, because that would cause the catalogs to become unsynchronized.
+  if (hms_catalog_) {
+    Status s = hms_catalog_->DropTable(table->id(), l.data().name());
+    if (!s.ok()) {
+      s.CloneAndPrepend(Substitute("an error occurred while dropping table $0 in the HMS",
+                                   l.data().name()));
+      LOG(WARNING) << s.ToString();
+      SetupError(resp->mutable_error(), MasterErrorPB::HIVE_METASTORE_ERROR, s);
+      return s;
+    }
+  }
+  // Re-create the HMS entry if we exit early.
+  auto abort_hms = MakeScopedCleanup([&] {
+      // TODO(dan): figure out how to test this.
+      if (hms_catalog_) {
+        TRACE("Rolling back HMS table deletion");
+        Schema schema;
+        Status s = SchemaFromPB(l.data().pb.schema(), &schema);
+        if (!s.ok()) {
+          LOG(WARNING) << "Failed to decode schema during HMS table entry deletion roll-back: "
+                       << s.ToString();
+          return;
+        }
+        WARN_NOT_OK(hms_catalog_->CreateTable(table->id(), l.data().name(), schema),
+                    "An error occurred while attempting to roll-back HMS table entry deletion");
+      }
+  });
+
   TRACE("Modifying in-memory table state")
   string deletion_msg = "Table deleted at " + LocalTimeAsString();
   l.mutable_data()->set_state(SysTablesEntryPB::REMOVED, deletion_msg);
 
-  // 2. Look up the tablets, lock them, and mark them as deleted.
+  // 3. Look up the tablets, lock them, and mark them as deleted.
   {
     TRACE("Locking tablets");
     vector<scoped_refptr<TabletInfo>> tablets;
@@ -1700,7 +1780,7 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB* req,
           SysTabletsEntryPB::DELETED, deletion_msg);
     }
 
-    // 3. Update sys-catalog with the removed table and tablet state.
+    // 4. Update sys-catalog with the removed table and tablet state.
     TRACE("Removing table and tablets from system table");
     SysCatalogTable::Actions actions;
     actions.table_to_update = table;
@@ -1714,8 +1794,9 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB* req,
     }
 
     // The operation has been written to sys-catalog; now it must succeed.
+    abort_hms.cancel();
 
-    // 4. Remove the table from the by-name map.
+    // 5. Remove the table from the by-name map.
     {
       TRACE("Removing table from by-name map");
       std::lock_guard<LockType> l_map(lock_);
@@ -1724,19 +1805,19 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB* req,
       }
     }
 
-    // 5. Commit the dirty tablet state.
+    // 6. Commit the dirty tablet state.
     lock.Commit();
   }
 
-  // 6. Commit the dirty table state.
+  // 7. Commit the dirty table state.
   TRACE("Committing in-memory state");
   l.Commit();
 
-  // 7. Abort any extant tasks belonging to the table.
+  // 8. Abort any extant tasks belonging to the table.
   TRACE("Aborting table tasks");
   table->AbortTasks();
 
-  // 8. Send a DeleteTablet() request to each tablet replica in the table.
+  // 9. Send a DeleteTablet() request to each tablet replica in the table.
   SendDeleteTableRequest(table, deletion_msg);
 
   VLOG(1) << "Deleted table " << table->ToString();
@@ -2050,23 +2131,25 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
   // 3. Calculate and validate new schema for the on-disk state, not persisted yet.
   Schema new_schema;
   ColumnId next_col_id = ColumnId(l.data().pb.next_column_id());
-  if (!alter_schema_steps.empty()) {
-    TRACE("Apply alter schema");
-    Status s = ApplyAlterSchemaSteps(l.data().pb, alter_schema_steps, &new_schema, &next_col_id);
-    if (!s.ok()) {
-      SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
-      return s;
-    }
-    DCHECK_NE(next_col_id, 0);
-    DCHECK_EQ(new_schema.find_column_by_id(next_col_id),
-              static_cast<int>(Schema::kColumnNotFound));
 
-    // Just validate the schema, not the name (validated below).
-    s = ValidateClientSchema(boost::none, new_schema);
-    if (!s.ok()) {
-      SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
-      return s;
-    }
+  // Apply the alter steps. Note that there may be no steps, in which case this
+  // is essentialy a no-op. It's still important to execute because
+  // ApplyAlterSchemaSteps populates 'new_schema', which is used below.
+  TRACE("Apply alter schema");
+  Status s = ApplyAlterSchemaSteps(l.data().pb, alter_schema_steps, &new_schema, &next_col_id);
+  if (!s.ok()) {
+    SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
+    return s;
+  }
+  DCHECK_NE(next_col_id, 0);
+  DCHECK_EQ(new_schema.find_column_by_id(next_col_id),
+            static_cast<int>(Schema::kColumnNotFound));
+
+  // Just validate the schema, not the name (validated below).
+  s = ValidateClientSchema(boost::none, new_schema);
+  if (!s.ok()) {
+    SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
+    return s;
   }
 
   // 4. Validate and try to acquire the new table name.
@@ -2165,7 +2248,43 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
                                            LocalTimeAsString()));
   }
 
-  // 7. Update sys-catalog with the new table schema and tablets to add/drop.
+  // 7. Update the HMS table entry.
+  //
+  // This step comes before modifying the sys catalog so that we can ensure the
+  // HMS is available. We do not allow altering tables while the HMS is
+  // unavailable, because that would cause the catalogs to become unsynchronized.
+  if (hms_catalog_ != nullptr && has_metadata_changes) {
+    const string& new_name = req->has_new_table_name() ? req->new_table_name() : table_name;
+    Status s = hms_catalog_->AlterTable(table->id(), table_name, new_name, new_schema);
+
+    if (!s.ok()) {
+      s = s.CloneAndPrepend(Substitute("an error occurred while altering table $0 in the HMS",
+                                       table_name));
+      LOG(WARNING) << s.ToString();
+      SetupError(resp->mutable_error(), MasterErrorPB::HIVE_METASTORE_ERROR, s);
+      return s;
+    }
+  }
+  // Roll-back the HMS alteration if we exit early.
+  auto abort_hms = MakeScopedCleanup([&] {
+      // TODO(dan): figure out how to test this.
+      if (hms_catalog_) {
+        TRACE("Rolling back HMS table alterations");
+        Schema schema;
+        Status s = SchemaFromPB(l.data().pb.schema(), &schema);
+        if (!s.ok()) {
+          LOG(WARNING) << "Failed to decode schema during HMS table entry alteration roll-back: "
+                       << s.ToString();
+          return;
+        }
+        const string& new_name = req->has_new_table_name() ? req->new_table_name() : table_name;
+
+        WARN_NOT_OK(hms_catalog_->AlterTable(table->id(), new_name, table_name, schema),
+                    "An error occurred while attempting to roll-back HMS table entry alteration");
+      }
+  });
+
+  // 8. Update sys-catalog with the new table schema and tablets to add/drop.
   TRACE("Updating metadata on disk");
   string deletion_msg = "Partition dropped at " + LocalTimeAsString();
   SysCatalogTable::Actions actions;
@@ -2186,7 +2305,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
   }
   actions.tablets_to_update = tablets_to_drop;
 
-  Status s = sys_catalog_->Write(actions);
+  s = sys_catalog_->Write(actions);
   if (!s.ok()) {
     s = s.CloneAndPrepend("an error occurred while updating the sys-catalog");
     LOG(WARNING) << s.ToString();
@@ -2194,9 +2313,12 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
     return s;
   }
 
-  // 8. Commit the in-memory state.
+  // 9. Commit the in-memory state.
   {
     TRACE("Committing alterations to in-memory state");
+
+    abort_hms.cancel();
+
     // Commit new tablet in-memory state. This doesn't require taking the global
     // lock since the new tablets are not yet visible, because they haven't been
     // added to the table or tablet index.

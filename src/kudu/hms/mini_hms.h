@@ -28,7 +28,7 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
-#include "kudu/util/subprocess.h" // IWYU pragma: keep
+#include "kudu/util/subprocess.h"
 
 namespace kudu {
 namespace hms {
