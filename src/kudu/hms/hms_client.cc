@@ -25,6 +25,7 @@
 #include <utility>
 #include <vector>
 
+#include <boost/algorithm/string/predicate.hpp>
 #include <glog/logging.h>
 #include <thrift/Thrift.h>
 #include <thrift/protocol/TBinaryProtocol.h>
@@ -65,6 +66,7 @@ using std::make_shared;
 using std::shared_ptr;
 using std::string;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 namespace hms {
@@ -110,10 +112,16 @@ const char* const HmsClient::kKuduStorageHandler = "org.apache.kudu.hive.KuduSto
 
 const char* const HmsClient::kTransactionalEventListeners =
   "hive.metastore.transactional.event.listeners";
+const char* const HmsClient::kDisallowIncompatibleColTypeChanges =
+  "hive.metastore.disallow.incompatible.col.type.changes";
 const char* const HmsClient::kDbNotificationListener =
   "org.apache.hive.hcatalog.listener.DbNotificationListener";
 const char* const HmsClient::kKuduMetastorePlugin =
   "org.apache.kudu.hive.metastore.KuduMetastorePlugin";
+
+const char* const HmsClient::kManagedTable = "MANAGED_TABLE";
+
+const uint16_t HmsClient::kDefaultHmsPort = 9083;
 
 const int kSlowExecutionWarningThresholdMs = 1000;
 
@@ -166,7 +174,8 @@ Status HmsClient::Start() {
   // the required event listeners.
   string event_listener_config;
   HMS_RET_NOT_OK(client_.get_config_value(event_listener_config, kTransactionalEventListeners, ""),
-                 "failed to get Hive MetaStore transactional event listener configuration");
+                 Substitute("failed to get Hive MetaStore $0 configuration",
+                            kTransactionalEventListeners));
 
   // Parse the set of listeners from the configuration string.
   vector<string> listeners = strings::Split(event_listener_config, ",", strings::SkipWhitespace());
@@ -177,10 +186,33 @@ Status HmsClient::Start() {
   for (const auto& required_listener : { kDbNotificationListener, kKuduMetastorePlugin }) {
     if (std::find(listeners.begin(), listeners.end(), required_listener) == listeners.end()) {
       return Status::IllegalState(
-          strings::Substitute("Hive Metastore configuration is missing required "
-                              "transactional event listener ($0): $1",
-                              kTransactionalEventListeners, required_listener));
+          Substitute("Hive Metastore configuration is missing required "
+                     "transactional event listener ($0): $1",
+                     kTransactionalEventListeners, required_listener));
     }
+  }
+
+  // Also check that the HMS is configured to allow changing the type of
+  // columns, which is required to support dropping columns. File-based Hive
+  // tables handle columns by offset, and removing a column simply shifts all
+  // remaining columns down by one. The actual data is not changed, but instead
+  // reassigned to the next column. If the HMS is configured to check column
+  // type changes it will validate that the existing data matches the shifted
+  // column layout. This is overly strict for Kudu, since we handle DDL
+  // operations properly.
+  //
+  // See org.apache.hadoop.hive.metastore.MetaStoreUtils.throwExceptionIfIncompatibleColTypeChange.
+  string disallow_incompatible_column_type_changes;
+  HMS_RET_NOT_OK(client_.get_config_value(disallow_incompatible_column_type_changes,
+                                          kDisallowIncompatibleColTypeChanges,
+                                          "false"),
+                 Substitute("failed to get Hive MetaStore $0 configuration",
+                            kDisallowIncompatibleColTypeChanges));
+
+  if (boost::iequals(disallow_incompatible_column_type_changes, "true")) {
+    return Status::IllegalState(Substitute(
+          "Hive Metastore configuration is invalid: $0 must be set to false",
+          kDisallowIncompatibleColTypeChanges));
   }
 
   return Status::OK();
@@ -191,6 +223,10 @@ Status HmsClient::Stop() {
   HMS_RET_NOT_OK(client_.getInputProtocol()->getTransport()->close(),
                  "failed to close Hive MetaStore connection");
   return Status::OK();
+}
+
+bool HmsClient::IsConnected() {
+  return client_.getInputProtocol()->getTransport()->isOpen();
 }
 
 Status HmsClient::CreateDatabase(const hive::Database& database) {

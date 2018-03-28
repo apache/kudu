@@ -17,11 +17,16 @@
 
 #include "kudu/hms/hms_client.h"
 
+#include <algorithm> // IWYU pragma: keep
 #include <cstdint>
+#include <map> // IWYU pragma: keep
+#include <memory> // IWYU pragma: keep
 #include <string>
+#include <type_traits> // IWYU pragma: keep
 #include <utility>
 #include <vector>
 
+#include <boost/none_t.hpp> // IWYU pragma: keep
 #include <boost/optional/optional.hpp>
 #include <glog/stl_logging.h> // IWYU pragma: keep
 #include <gtest/gtest.h>
@@ -59,7 +64,7 @@ class HmsClientTest : public KuduTest,
     hive::Table table;
     table.dbName = database_name;
     table.tableName = table_name;
-    table.tableType = "MANAGED_TABLE";
+    table.tableType = HmsClient::kManagedTable;
 
     table.__set_parameters({
         make_pair(HmsClient::kKuduTableIdKey, table_id),
@@ -122,7 +127,9 @@ TEST_P(HmsClientTest, TestHmsOperations) {
   ASSERT_OK(hms.Start());
 
   HmsClient client(hms.address(), hms_client_opts);
+  ASSERT_FALSE(client.IsConnected());
   ASSERT_OK(client.Start());
+  ASSERT_TRUE(client.IsConnected());
 
   // Create a database.
   string database_name = "my_db";
@@ -161,7 +168,7 @@ TEST_P(HmsClientTest, TestHmsOperations) {
   EXPECT_EQ(table_id, my_table.parameters[HmsClient::kKuduTableIdKey]);
   EXPECT_EQ(HmsClient::kKuduStorageHandler,
             my_table.parameters[hive::g_hive_metastore_constants.META_TABLE_STORAGE]);
-  EXPECT_EQ("MANAGED_TABLE", my_table.tableType);
+  EXPECT_EQ(HmsClient::kManagedTable, my_table.tableType);
 
   string new_table_name = "my_altered_table";
 
@@ -186,7 +193,7 @@ TEST_P(HmsClientTest, TestHmsOperations) {
   EXPECT_EQ(table_id, renamed_table.parameters[HmsClient::kKuduTableIdKey]);
   EXPECT_EQ(HmsClient::kKuduStorageHandler,
             renamed_table.parameters[hive::g_hive_metastore_constants.META_TABLE_STORAGE]);
-  EXPECT_EQ("MANAGED_TABLE", renamed_table.tableType);
+  EXPECT_EQ(HmsClient::kManagedTable, renamed_table.tableType);
 
   // Create a table with an uppercase name.
   string uppercase_table_name = "my_UPPERCASE_Table";
@@ -279,7 +286,7 @@ TEST_P(HmsClientTest, TestLargeObjects) {
   hive::Table table;
   table.dbName = database_name;
   table.tableName = table_name;
-  table.tableType = "MANAGED_TABLE";
+  table.tableType = HmsClient::kManagedTable;
   hive::FieldSchema partition_key;
   partition_key.name = "c1";
   partition_key.type = "int";

@@ -28,6 +28,7 @@ import org.apache.hadoop.hive.metastore.HiveMetaStoreClient;
 import org.apache.hadoop.hive.metastore.MetaStoreUtils;
 import org.apache.hadoop.hive.metastore.MockPartitionExpressionForMetastore;
 import org.apache.hadoop.hive.metastore.PartitionExpressionProxy;
+import org.apache.hadoop.hive.metastore.TableType;
 import org.apache.hadoop.hive.metastore.api.EnvironmentContext;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.apache.hadoop.hive.metastore.api.SerDeInfo;
@@ -77,7 +78,7 @@ public class TestKuduMetastorePlugin {
     Table table = new Table();
     table.setDbName("default");
     table.setTableName(name);
-    table.setTableType("MANAGED_TABLE");
+    table.setTableType(TableType.MANAGED_TABLE.toString());
     table.putToParameters(hive_metastoreConstants.META_TABLE_STORAGE,
                           KuduMetastorePlugin.KUDU_STORAGE_HANDLER);
     table.putToParameters(KuduMetastorePlugin.KUDU_TABLE_ID_KEY,

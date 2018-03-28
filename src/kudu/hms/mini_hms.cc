@@ -181,6 +181,9 @@ Status MiniHms::CreateHiveSite(const string& tmp_dir) const {
   // - hive.metastore.kerberos.keytab.file
   // - hive.metastore.kerberos.principal
   //     Configures the HMS to use Kerberos for its Thrift RPC interface.
+  //
+  // - hive.metastore.disallow.incompatible.col.type.changes
+  //     Configures the HMS to allow altering and dropping columns.
   static const string kFileTemplate = R"(
 <configuration>
   <property>
@@ -208,7 +211,7 @@ Status MiniHms::CreateHiveSite(const string& tmp_dir) const {
 
   <property>
     <name>javax.jdo.option.ConnectionURL</name>
-    <value>jdbc:derby:memory:$1/metadb;create=true</value>
+    <value>jdbc:derby:$1/metadb;create=true</value>
   </property>
 
   <property>
@@ -234,6 +237,11 @@ Status MiniHms::CreateHiveSite(const string& tmp_dir) const {
   <property>
     <name>hadoop.rpc.protection</name>
     <value>$5</value>
+  </property>
+
+  <property>
+    <name>hive.metastore.disallow.incompatible.col.type.changes</name>
+    <value>false</value>
   </property>
 </configuration>
   )";
