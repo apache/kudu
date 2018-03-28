@@ -276,7 +276,7 @@ Status KinitContext::DoRenewal() {
       KRB5_RETURN_NOT_OK_PREPEND(krb5_cc_initialize(g_krb5_ctx, ccache_, principal_),
                                  "Reacquire error: could not init ccache");
 
-      KRB5_RETURN_NOT_OK_PREPEND(krb5_cc_store_cred(g_krb5_ctx, ccache_, &creds),
+      KRB5_RETURN_NOT_OK_PREPEND(krb5_cc_store_cred(g_krb5_ctx, ccache_, &new_creds),
                                  "Reacquire error: could not store creds in cache");
 #endif
     }
