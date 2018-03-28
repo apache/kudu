@@ -87,7 +87,7 @@ import org.apache.kudu.client.RowResultIterator;
  * Therefore, total number of Kudu clients opened over the course of a MR application can be
  * estimated by (#Tablets +1). To reduce the number of concurrent open clients, it might be
  * advisable to restrict resources of the MR application or implement the
- * {@link org.apache.hadoop.mapred.lib.CombineFileInputFormat} over this InputFormat.
+ * org.apache.hadoop.mapred.lib.CombineFileInputFormat over this InputFormat.
  * </p>
  */
 @InterfaceAudience.Public

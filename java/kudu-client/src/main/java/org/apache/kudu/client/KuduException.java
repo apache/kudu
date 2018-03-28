@@ -80,7 +80,7 @@ public abstract class KuduException extends IOException {
    * Thus, when the synchronous Kudu client wraps and throws the exception,
    * we suppress that stack trace and replace it with the stack trace of the user's
    * calling thread. The original stack trace is added to the {@link KuduException}
-   * as a suppressed exception ({@see Throwable#addSuppressed(Throwable)}) of
+   * as a suppressed exception (see Throwable#addSuppressed(Throwable)) of
    * this
    */
   @InterfaceAudience.Public

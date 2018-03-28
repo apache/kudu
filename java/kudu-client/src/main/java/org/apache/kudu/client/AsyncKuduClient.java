@@ -166,7 +166,7 @@ import org.apache.kudu.util.Pair;
  * <p>
  * In the context of the Hadoop ecosystem, the {@code UserGroupInformation}
  * class provides utility methods to login from a keytab and then run code as
- * the resulting {@link javax.security.auth.Subject}: <code><pre>
+ * the resulting {@link javax.security.auth.Subject}: <pre>{@code
  *   UserGroupInformation.loginUserFromKeytab("my-app", "/path/to/app.keytab");
  *   KuduClient c = UserGroupInformation.getLoginUser().doAs(
  *     new PrivilegedExceptionAction<KuduClient>() {
@@ -176,7 +176,7 @@ import org.apache.kudu.util.Pair;
  *       }
  *     }
  *   );
- * </pre></code> The {@code UserGroupInformation} class will also automatically
+ * }</pre> The {@code UserGroupInformation} class will also automatically
  * start a thread to periodically re-login from the keytab.
  *
  * <h3>Debugging Kudu's usage of Kerberos credentials</h3>
@@ -221,13 +221,13 @@ import org.apache.kudu.util.Pair;
  * <h1>API Compatibility</h1>
  *
  * Note that some methods in the Kudu client implementation are public but
- * annotated with the {@link InterfaceAudience.Private} annotation. This
+ * annotated with the InterfaceAudience.Private annotation. This
  * annotation indicates that, despite having {@code public} visibility, the
  * method is not part of the public API and there is no guarantee that its
  * existence or behavior will be maintained in subsequent versions of the Kudu
  * client library.
  *
- * Other APIs are annotated with the {@link InterfaceStability.Unstable} annotation.
+ * Other APIs are annotated with the InterfaceStability.Unstable annotation.
  * These APIs are meant for public consumption but may change between minor releases.
  * Note that the asynchronous client is currently considered unstable.
  *

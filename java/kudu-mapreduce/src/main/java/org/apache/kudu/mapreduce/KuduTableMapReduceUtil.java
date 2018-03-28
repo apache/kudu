@@ -305,9 +305,6 @@ public class KuduTableMapReduceUtil {
   public static class TableOutputFormatConfiguratorWithCommandLineParser extends
       AbstractTableOutputFormatConfigurator<TableOutputFormatConfiguratorWithCommandLineParser> {
 
-    /**
-     * {@inheritDoc}
-     */
     public TableOutputFormatConfiguratorWithCommandLineParser(Job job, String table) {
       super(job, table);
       CommandLineParser parser = new CommandLineParser(job.getConfiguration());
@@ -382,9 +379,6 @@ public class KuduTableMapReduceUtil {
   public static class TableInputFormatConfiguratorWithCommandLineParser extends
       AbstractTableInputFormatConfigurator<TableInputFormatConfiguratorWithCommandLineParser> {
 
-    /**
-     * {@inheritDoc}
-     */
     public TableInputFormatConfiguratorWithCommandLineParser(Job job,
                                                              String table,
                                                              String columnProjection) {

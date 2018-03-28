@@ -108,7 +108,6 @@ public final class Bytes {
    * Reads a byte from an offset in the given array.
    * @param b The array to read from.
    * @return A byte
-   * @return
    */
   public static byte getByte(final byte[] b, final int offset) {
     return b[offset];
@@ -1268,7 +1267,7 @@ public final class Bytes {
   /**
    * Utility method to read a byte array written the way {@link #writeByteArray} does it.
    * @param dataInput
-   * @return
+   * @return The read byte array
    * @throws IOException
    */
   public static byte[] readByteArray(DataInput dataInput) throws IOException {
