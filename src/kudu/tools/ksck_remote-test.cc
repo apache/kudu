@@ -34,14 +34,17 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/tools/data_gen_util.h"
 #include "kudu/tools/ksck.h"
 #include "kudu/tools/ksck_remote.h"
+#include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/promise.h"
 #include "kudu/util/random.h"
 #include "kudu/util/status.h"
@@ -220,6 +223,30 @@ TEST_F(RemoteKsckTest, TestTabletServersOk) {
   ASSERT_OK(ksck_->CheckMasterRunning());
   ASSERT_OK(ksck_->FetchTableAndTabletInfo());
   ASSERT_OK(ksck_->FetchInfoFromTabletServers());
+}
+
+TEST_F(RemoteKsckTest, TestTabletServerMismatchUUID) {
+  ASSERT_OK(ksck_->CheckMasterRunning());
+  ASSERT_OK(ksck_->FetchTableAndTabletInfo());
+
+  tserver::MiniTabletServer* tablet_server = mini_cluster_->mini_tablet_server(0);
+  string old_uuid = tablet_server->uuid();
+  string root_dir = mini_cluster_->GetTabletServerFsRoot(0) + "2";
+  HostPort address = HostPort(tablet_server->bound_rpc_addr());
+
+  tablet_server->Shutdown();
+  tserver::MiniTabletServer new_tablet_server(root_dir, address);
+  ASSERT_OK(new_tablet_server.Start());
+  ASSERT_OK(new_tablet_server.WaitStarted());
+
+  string new_uuid = new_tablet_server.uuid();
+
+  ASSERT_TRUE(ksck_->FetchInfoFromTabletServers().IsNetworkError());
+
+  string match_string = "Remote error: ID reported by tablet server "
+                        "($0) doesn't match the expected ID: $1";
+
+  ASSERT_STR_CONTAINS(err_stream_.str(), strings::Substitute(match_string, new_uuid, old_uuid));
 }
 
 TEST_F(RemoteKsckTest, TestTableConsistency) {
