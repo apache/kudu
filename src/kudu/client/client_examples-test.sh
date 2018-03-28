@@ -19,7 +19,7 @@
 #
 
 # This script verifies that the Kudu client library can be installed outside
-# the build tree, that the installed headers are sane, and that the sample code
+# the build tree, that the installed headers are sane, and that the example code
 # can be built and runs correctly.
 
 # Clean up after the test. Must be idempotent.
@@ -91,9 +91,9 @@ OUTPUT_DIR=$(cd $(dirname "$BASH_SOURCE"); pwd)
 
 # Install the client library to a temporary directory.
 # Try to detect whether we're building using Ninja or Make.
-LIBRARY_DIR=$(mktemp -d -t kudu-samples-test.XXXXXXXXXXXXX)
+LIBRARY_DIR=$(mktemp -d -t kudu-examples-test.XXXXXXXXXXXXX)
 PREFIX_DIR=$LIBRARY_DIR/usr/local
-SAMPLES_DIR=$PREFIX_DIR/share/doc/kuduClient/samples
+EXAMPLES_DIR=$PREFIX_DIR/share/doc/kuduClient/examples
 pushd $OUTPUT_DIR/..
 NINJA=$(which ninja 2>/dev/null) || NINJA=""
 if [ -r build.ninja -a -n "$NINJA" ]; then
@@ -131,9 +131,9 @@ if [ -z "$CMAKE" ]; then
   CMAKE=$OUTPUT_DIR/../../../thirdparty/installed/common/bin/cmake
 fi
 
-# Build the client samples using the client library.
+# Build the client examples using the client library.
 # We can just always use Make here, since we're calling cmake ourselves.
-pushd $SAMPLES_DIR
+pushd $EXAMPLES_DIR
 CMAKE_PREFIX_PATH=$PREFIX_DIR $CMAKE .
 make -j$(getconf _NPROCESSORS_ONLN)
 popd
@@ -151,7 +151,7 @@ echo Using localhost IP $LOCALHOST_IP
 export TMPDIR=${TMPDIR:-/tmp}
 export TEST_TMPDIR=${TEST_TMPDIR:-$TMPDIR/kudutest-$UID}
 mkdir -p $TEST_TMPDIR
-BASE_DIR=$(mktemp -d $TEST_TMPDIR/client_samples-test.XXXXXXXX)
+BASE_DIR=$(mktemp -d $TEST_TMPDIR/client_examples-test.XXXXXXXX)
 MASTER_RPC_PORT=7051
 mkdir -p "$BASE_DIR/master/logs"
 $OUTPUT_DIR/kudu-master \
@@ -182,7 +182,7 @@ $OUTPUT_DIR/kudu-tserver \
 TS_PID=$!
 
 # Make sure that at least it's possible to establish a TCP connection to the
-# master's and the tablet server's RPC ports before running the client sample
+# master's and the tablet server's RPC ports before running the client example
 # application.
 if ! wait_for_listen_port $MASTER_PID $MASTER_RPC_PORT 30; then
   exit_error "master is not accepting connections"
@@ -214,5 +214,5 @@ if [ $num_tservers -lt 1 ]; then
   exit_error "tserver has not registered with the master"
 fi
 
-# Run the samples.
-$SAMPLES_DIR/sample $LOCALHOST_IP
+# Run the examples.
+$EXAMPLES_DIR/example $LOCALHOST_IP

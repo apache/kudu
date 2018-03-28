@@ -15,12 +15,12 @@
 # specific language governing permissions and limitations
 # under the License.
 #
-# Client API sample executables
+# Client API example executables
 
 cmake_minimum_required(VERSION 2.8)
 
 find_package(kuduClient REQUIRED)
 include_directories(${KUDU_CLIENT_INCLUDE_DIR})
 
-add_executable(sample sample.cc)
-target_link_libraries(sample kudu_client)
+add_executable(example example.cc)
+target_link_libraries(example kudu_client)

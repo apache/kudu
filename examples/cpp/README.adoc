@@ -14,15 +14,15 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-= Kudu {cpp} client sample README
+= Kudu {cpp} client example README
 :author: Kudu Team
 :homepage: https://kudu.apache.org/
 
 == Summary
 The Kudu {cpp} client library distribution contains {cpp} example application
-that demonstrates how to use the Kudu {cpp} client API.  The sample
+that demonstrates how to use the Kudu {cpp} client API.  The example
 can be used as a starting point for a custom Kudu {cpp} client application.
-This note contains information on how to build the Kudu {cpp} client sample.
+This note contains information on how to build the Kudu {cpp} client example.
 
 == How to build the example if installing Kudu from packages
 This section describes how to build the example if installing Kudu
@@ -33,26 +33,26 @@ https://kudu.apache.org/docs/installation.html#install_packages[documentation on
 The `kudu-client0` package (`libkuduclient0` on Debian/Ubuntu Linux
 distributions) contains the Kudu {cpp} client library, and the `kudu-client-dev`
 package (`libkuduclient-dev` on Debian/Ubuntu Linux distributions) contains
-the Kudu {cpp} client header files and {cpp} code sample (`sample.cc`)
+the Kudu {cpp} client header files and {cpp} code example (`example.cc`)
 along with other auxiliary content.
 
 . Make sure `cmake` of version at least 2.8 is installed on the system.
 
-. Copy the sample into a custom location where you would like to work
-with the code. Working in the `/usr/share/doc/kuduClient/samples`
+. Copy the example into a custom location where you would like to work
+with the code. Working in the `/usr/share/doc/kuduClient/examples`
 directory is possible but is not recommended since it requires
-super-user access and pollutes the `sample` directory with
+super-user access and pollutes the `example` directory with
 intermediate files.
-For example, to copy the `/usr/share/doc/kuduClient/samples` directory
+For example, to copy the `/usr/share/doc/kuduClient/examples` directory
 recursively into `/tmp/kuduClient`:
 [source,shell]
-cp -r /usr/share/doc/kuduClient/samples /tmp/kuduClient
+cp -r /usr/share/doc/kuduClient/examples /tmp/kuduClient
 
-. Navigate into the directory where the `sample.cc.gz` file was copied and
-unpack the sample source file.  For example:
+. Navigate into the directory where the `example.cc.gz` file was copied and
+unpack the example source file.  For example:
 [source,shell]
-cd /tmp/kuduClient/samples
-gunzip sample.cc.gz
+cd /tmp/kuduClient/examples
+gunzip example.cc.gz
 
 . Run `cmake` to generate appropriate makefiles.  For example, if targeting
 for a debug build
@@ -60,22 +60,22 @@ for a debug build
 [source,shell]
 cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=debug
 
-. Run `make` to build the sample:
+. Run `make` to build the example:
 [source,shell]
 make
 
-. After the sample is built, it is ready to run against your Kudu master server.
-The sample application assumes the target Kudu cluster has at least 3
+. After the example is built, it is ready to run against your Kudu master server.
+The example application assumes the target Kudu cluster has at least 3
 tablet servers up and running (because it creates a table with replication
-factor 3).  If it's not the case, you can modify the `sample.cc` accordingly
-and re-compile it.  Below is the sample output with log messages in the middle
-removed: the `sample` binary runs against Kudu master server running
+factor 3).  If it's not the case, you can modify the `example.cc` accordingly
+and re-compile it.  Below is the example output with log messages in the middle
+removed: the `example` binary runs against Kudu master server running
 with the default parameters at the same machine.  Port 7051 is the default
 one and could be omitted along with the preceding colomn because the master
 server is running with the default parameters (it's left only to illustrate how
 to specify port number).
 [source,shell]
-$ ./sample 127.0.0.1:7051
+$ ./example 127.0.0.1:7051
 Running with Kudu client version: kudu 1.1.0-SNAPSHOT (rev 91a1ed09c4c572a22bab15360ddaf481d5632927)
 Long version info: kudu 1.1.0-SNAPSHOT
 revision 91a1ed09c4c572a22bab15360ddaf481d5632927
@@ -105,11 +105,11 @@ Done
 
 == How to build the example if building Kudu from source
 This section describes how to build the example if building Kudu from source.
-To install the `sample.cc` and other files, an alternate destination root
+To install the `example.cc` and other files, an alternate destination root
 is used.
 
 Specifying an alternate destination root allows you to install the
-Kudu {cpp} client library, the sample file and other content
+Kudu {cpp} client library, the example file and other content
 under the specified destination prefix.
 
 . Follow the https://kudu.apache.org/docs/installation.html#_build_from_source[instructions on the Kudu Web site]
@@ -124,10 +124,10 @@ installing into `/tmp/client_alt_root`
 make install DESTDIR=/tmp/client_alt_root
 
 . Change the current working directory into the
-`usr/local/share/doc/kuduClient/samples` subdirectory of the alternate
+`usr/local/share/doc/kuduClient/examples` subdirectory of the alternate
 destination root.  For example, if installing into `/tmp/client_alt_root`
 [source,shell]
-cd /tmp/client_alt_root/usr/local/share/doc/kuduClient/samples
+cd /tmp/client_alt_root/usr/local/share/doc/kuduClient/examples
 
 . Run `cmake` to generate appropriate makefiles.  For example, if installing
 into `/tmp/client_alt_root` and targeting for a debug build
@@ -135,22 +135,22 @@ into `/tmp/client_alt_root` and targeting for a debug build
 [source,shell]
 cmake -G "Unix Makefiles" -DkuduClient_DIR=/tmp/client_alt_root/usr/local/share/kuduClient/cmake -DCMAKE_BUILD_TYPE=debug
 
-. Run `make` to build the sample:
+. Run `make` to build the example:
 [source,shell]
 make
 
-. After the sample is built, it is ready to run against your Kudu master server.
-The sample application assumes the target Kudu cluster has at least 3
+. After the example is built, it is ready to run against your Kudu master server.
+The example application assumes the target Kudu cluster has at least 3
 tablet servers up and running (because it creates a table with replication
-factor 3).  If it's not the case, you can modify the `sample.cc` accordingly
-and re-compile it.  Below is the sample output with log messages in the middle
-removed: the `sample` binary runs against Kudu master server running
+factor 3).  If it's not the case, you can modify the `example.cc` accordingly
+and re-compile it.  Below is the example output with log messages in the middle
+removed: the `example` binary runs against Kudu master server running
 with the default parameters at the same machine.  Port 7051 is the default
 one and could be omitted along with the preceding colomn because the master
 server is running with the default parameters (it's left only to illustrate how
 to specify port number).
 [source,shell]
-$ ./sample 127.0.0.1:7051
+$ ./example 127.0.0.1:7051
 Running with Kudu client version: kudu 1.1.0-SNAPSHOT (rev 91a1ed09c4c572a22bab15360ddaf481d5632927)
 Long version info: kudu 1.1.0-SNAPSHOT
 revision 91a1ed09c4c572a22bab15360ddaf481d5632927
