@@ -324,6 +324,27 @@ TEST_F(KsckTest, TestTabletServersOk) {
   ASSERT_OK(RunKsck());
 }
 
+TEST_F(KsckTest, TestWrongUUIDTabletServer) {
+  CreateOneTableOneTablet();
+
+  Status error = Status::RemoteError("ID reported by tablet server "
+                                     "doesn't match the expected ID");
+  static_pointer_cast<MockKsckTabletServer>(master_->tablet_servers_["ts-id-1"])
+    ->fetch_info_status_ = error;
+
+  ASSERT_OK(ksck_->CheckMasterRunning());
+  ASSERT_OK(ksck_->FetchTableAndTabletInfo());
+  ASSERT_TRUE(ksck_->FetchInfoFromTabletServers().IsNetworkError());
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+    "Tablet Server Summary\n"
+    "  UUID   | RPC Address |      Status\n"
+    "---------+-------------+-------------------\n"
+    " ts-id-2 | <mock>      | HEALTHY\n"
+    " ts-id-0 | <mock>      | HEALTHY\n"
+    " ts-id-1 | <mock>      | WRONG_SERVER_UUID\n");
+}
+
+
 TEST_F(KsckTest, TestBadTabletServer) {
   CreateOneSmallReplicatedTable();
 

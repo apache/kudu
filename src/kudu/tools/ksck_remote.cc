@@ -33,6 +33,7 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus.proxy.h"
 #include "kudu/gutil/basictypes.h"
@@ -99,12 +100,18 @@ Status RemoteKsckTabletServer::FetchInfo() {
   state_ = kFetchFailed;
 
   {
-    tserver::PingRequestPB req;
-    tserver::PingResponsePB resp;
+    server::GetStatusRequestPB req;
+    server::GetStatusResponsePB resp;
     RpcController rpc;
     rpc.set_timeout(GetDefaultTimeout());
-    RETURN_NOT_OK_PREPEND(ts_proxy_->Ping(req, &resp, &rpc),
-                          "could not send Ping RPC to server");
+    RETURN_NOT_OK_PREPEND(generic_proxy_->GetStatus(req, &resp, &rpc),
+                          "could not get status from server");
+    string response_uuid = resp.status().node_instance().permanent_uuid();
+    if (response_uuid != uuid()) {
+      return Status::RemoteError(Substitute("ID reported by tablet server ($0) doesn't "
+                                 "match the expected ID: $1",
+                                 response_uuid, uuid()));
+    }
   }
 
   {
@@ -115,6 +122,9 @@ Status RemoteKsckTabletServer::FetchInfo() {
     req.set_need_schema_info(false);
     RETURN_NOT_OK_PREPEND(ts_proxy_->ListTablets(req, &resp, &rpc),
                           "could not list tablets");
+    if (resp.has_error()) {
+      return StatusFromPB(resp.error().status());
+    }
     tablet_status_map_.clear();
     for (auto& status : *resp.mutable_status_and_schema()) {
       tablet_status_map_[status.tablet_status().tablet_id()].Swap(status.mutable_tablet_status());
