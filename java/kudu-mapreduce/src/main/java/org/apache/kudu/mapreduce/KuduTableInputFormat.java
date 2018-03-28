@@ -29,7 +29,6 @@ import java.util.List;
 import java.util.Map;
 import javax.naming.NamingException;
 
-import com.google.common.base.Objects;
 import com.google.common.base.Splitter;
 import com.google.common.collect.Lists;
 import com.google.common.primitives.UnsignedBytes;
@@ -392,10 +391,14 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
 
     @Override
     public String toString() {
-      return Objects.toStringHelper(this)
-                    .add("partitionKey", Bytes.pretty(partitionKey))
-                    .add("locations", Arrays.toString(locations))
-                    .toString();
+      StringBuilder sb = new StringBuilder();
+      sb.append("TableSplit{");
+      sb.append("partitionKey=");
+      sb.append(Bytes.pretty(partitionKey));
+      sb.append(", locations=");
+      sb.append(Arrays.toString(locations));
+      sb.append("}");
+      return sb.toString();
     }
   }
 

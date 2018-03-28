@@ -30,8 +30,8 @@ repositories {
 dependencies {
   compile "com.commercehub.gradle.plugin:gradle-avro-plugin:0.14.0"
   compile "com.github.ben-manes:gradle-versions-plugin:0.17.0"
-  compile "com.github.jengelman.gradle.plugins:shadow:2.0.2"
-  compile "com.google.protobuf:protobuf-gradle-plugin:0.8.4"
+  compile "com.github.jengelman.gradle.plugins:shadow:2.0.3"
+  compile "com.google.protobuf:protobuf-gradle-plugin:0.8.5"
   compile "com.netflix.nebula:nebula-clojure-plugin:5.0.6"
   compile "io.spring.gradle:propdeps-plugin:0.0.9.RELEASE"
   compile "ru.vyarus:gradle-animalsniffer-plugin:1.4.3"
