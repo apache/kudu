@@ -1264,7 +1264,11 @@ static void SendAndCancelRpcs(Proxy* p, const Slice& slice) {
   // Used to generate sleep time between invoking RPC and requesting cancellation.
   Random rand(SeedRandom());
 
-  for (int i = 0; i < 40; ++i) {
+  auto end_time = MonoTime::Now() + MonoDelta::FromSeconds(
+    AllowSlowTests() ? 15 : 3);
+
+  int i = 0;
+  while (MonoTime::Now() < end_time) {
     controller.Reset();
     PushTwoStringsRequestPB request;
     PushTwoStringsResponsePB resp;
@@ -1279,7 +1283,7 @@ static void SendAndCancelRpcs(Proxy* p, const Slice& slice) {
                     request, &resp, &controller,
                     boost::bind(&CountDownLatch::CountDown, boost::ref(latch)));
 
-    if ((i % 8) != 0) {
+    if ((i++ % 8) != 0) {
       // Sleep for a while before cancelling the RPC.
       SleepFor(MonoDelta::FromMicroseconds(rand.Uniform64(100)));
       controller.Cancel();
