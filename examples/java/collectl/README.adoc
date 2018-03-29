@@ -1,0 +1,115 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+= Kudu collectl example README
+:author: Kudu Team
+:homepage: https://kudu.apache.org/
+
+== Summary
+This example implements a simple Java application which listens on a
+TCP socket for time series data corresponding to the collectl wire protocol.
+The commonly-available 'collectl' tool can be used to send example data
+to the server. The data is stored in a table called `metrics` with a
+pre-defined schema.
+
+NOTE: this code is meant as an example of Java API usage and is not meant to be
+a full-featured solution for storing metrics.
+
+These instructions assume that you are running a Kudu cluster with a single Kudu
+master on your local machine at the default port 7051. Otherwise, you can pass
+your cluster's Kudu master addresses using '-DkuduMasters=host:port,host:port,...'.
+
+To start the example server:
+
+[source,bash]
+----
+$ mvn verify
+$ java -jar target/kudu-collectl-example-1.0-SNAPSHOT.jar
+----
+
+To start collecting data, run the following command on one or more machines:
+
+[source,bash]
+----
+$ collectl --export=graphite,127.0.0.1,p=/
+----
+
+(substituting '127.0.0.1' with the IP address of whichever server is running the
+example program).
+
+== Exploring the data with Impala
+Assuming you have an Impala cluster running and configured to work with your
+Kudu cluster, you can use Impala to run SQL queries on the data sent to Kudu
+using the collectl example.
+
+First, we need to map the table into Impala:
+
+[source,sql]
+----
+CREATE EXTERNAL TABLE metrics
+STORED AS KUDU
+TBLPROPERTIES(
+  'kudu.table_name' = 'metrics'
+);
+----
+
+Then, we can run some queries:
+
+[source,sql]
+----
+[mynode:21000] > select count(distinct metric) from metrics;
+Query: select count(distinct metric) from metrics
++------------------------+
+| count(distinct metric) |
++------------------------+
+| 23                     |
++------------------------+
+Fetched 1 row(s) in 0.19s
+----
+
+== Exploring the data with Spark
+
+If you have Spark available, you can also look at the data in Kudu using Spark,
+
+[source,bash]
+----
+$ spark2-shell --packages org.apache.kudu:kudu-spark2_2.11:1.7.0
+----
+
+You can then modify this example script to query the data with SparkSQL:
+
+[source,bash]
+----
+import org.apache.kudu.spark.kudu._
+
+val df = spark.read.options(Map(
+  "kudu.master" -> "<kudu-master-addresses>",
+  "kudu.table" -> "metrics")).kudu
+df.registerTempTable("metrics")
+
+// Print the first five values
+spark.sql("select * from metrics limit 5").show()
+
+// Calculate the average value of every host/metric pair
+spark.sql("select host, metric, avg(value) from metrics group by host, metric").show()
+----
+
+`<kudu-master-addresses>` is a CSV of addresses for the masters of your
+Kudu cluster.
+
+Note that if you are still running the 'collectl' command above, you can see
+the data changing in real time by re-running the queries.

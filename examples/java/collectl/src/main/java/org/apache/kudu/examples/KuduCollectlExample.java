@@ -1,4 +1,4 @@
-package org.kududb.examples.collectl;
+package org.apache.kudu.examples;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -30,7 +30,7 @@ public class KuduCollectlExample {
   private static final String ID_TABLE_NAME = "metric_ids";
 
   private static final String KUDU_MASTER =
-      System.getProperty("kuduMaster", "quickstart.cloudera");
+      System.getProperty("kuduMasters", "localhost:7051");
 
   private KuduClient client;
   private KuduTable table;
