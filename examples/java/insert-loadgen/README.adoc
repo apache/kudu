@@ -1,0 +1,45 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+= Kudu Java insert loadgen README
+:author: Kudu Team
+:homepage: https://kudu.apache.org/
+
+== Summary
+Random insert load generator. This will insert as fast as it can into a
+pre-existing table using AUTO_BACKGROUND_FLUSH mode. All fields are randomized.
+The load generator will continue inserting until it is stopped or it encounters
+an error. This load generator is single-threaded.
+
+To build and run, do the following:
+
+[source,bash]
+----
+$ mvn verify
+$ java -jar target/kudu-insert-loadgen-1.0-SNAPSHOT.jar master_addresses table_name
+----
+
+where `master_addresses` is a CSV of the master addresses for your Kudu cluster
+and `table_name` is the name of a pre-existing table. For example,
+
+[source,bash]
+----
+$ java -jar target/kudu-insert-loadgen-1.0-SNAPSHOT.jar localhost:7051 test_table
+----
+
+This program will not create the "test_table" table. You must do that
+via other means, such as through impala-shell.

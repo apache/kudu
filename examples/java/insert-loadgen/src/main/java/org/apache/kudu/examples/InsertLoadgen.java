@@ -1,5 +1,23 @@
-package org.kududb.examples.loadgen;
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
 
+package org.apache.kudu.examples;
+
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -68,6 +86,9 @@ public class InsertLoadgen {
         case DOUBLE:
           row.addDouble(index, rng.nextDouble());
           return;
+        case DECIMAL:
+          row.addDecimal(index, new BigDecimal(rng.nextDouble()));
+          return;
         default:
           throw new UnsupportedOperationException("Unknown type " + type);
       }
@@ -76,14 +97,14 @@ public class InsertLoadgen {
 
   public static void main(String[] args) throws Exception {
     if (args.length != 2) {
-      System.err.println("Usage: InsertLoadgen kudu_master_host kudu_table");
+      System.err.println("Usage: InsertLoadgen master_addresses table_name");
       System.exit(1);
     }
 
-    String masterHost = args[0];
+    String masterAddrs = args[0];
     String tableName = args[1];
 
-    try (KuduClient client = new KuduClient.KuduClientBuilder(masterHost).build()) {
+    try (KuduClient client = new KuduClient.KuduClientBuilder(masterAddrs).build()) {
       KuduTable table = client.openTable(tableName);
       Schema schema = table.getSchema();
       List<RandomDataGenerator> generators = new ArrayList<>(schema.getColumnCount());
@@ -101,6 +122,7 @@ public class InsertLoadgen {
         }
         session.apply(insert);
 
+        // Check for errors. This is done periodically since inserts are batched.
         if (insertCount % 1000 == 0 && session.countPendingErrors() > 0) {
           throw new RuntimeException(session.getPendingErrors().getRowErrors()[0].toString());
         }
