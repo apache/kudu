@@ -47,8 +47,7 @@ using cluster::MiniCluster;
 using strings::Substitute;
 using tools::Ksck;
 using tools::KsckCluster;
-using tools::KsckMaster;
-using tools::RemoteKsckMaster;
+using tools::RemoteKsckCluster;
 
 ClusterVerifier::ClusterVerifier(MiniCluster* cluster)
     : cluster_(cluster),
@@ -102,9 +101,8 @@ Status ClusterVerifier::RunKsck() {
   for (const auto& hp : cluster_->master_rpc_addrs()) {
     hp_strs.emplace_back(hp.ToString());
   }
-  std::shared_ptr<KsckMaster> master;
-  RETURN_NOT_OK(RemoteKsckMaster::Build(hp_strs, &master));
-  std::shared_ptr<KsckCluster> cluster(new KsckCluster(master));
+  std::shared_ptr<KsckCluster> cluster;
+  RETURN_NOT_OK(RemoteKsckCluster::Build(hp_strs, &cluster));
   std::shared_ptr<Ksck> ksck(new Ksck(cluster));
 
   // Some unit tests create or remove replicas of tablets, which
@@ -112,7 +110,7 @@ Status ClusterVerifier::RunKsck() {
   ksck->set_check_replica_count(false);
 
   // This is required for everything below.
-  RETURN_NOT_OK(ksck->CheckMasterRunning());
+  RETURN_NOT_OK(ksck->CheckClusterRunning());
   RETURN_NOT_OK(ksck->FetchTableAndTabletInfo());
   RETURN_NOT_OK(ksck->FetchInfoFromTabletServers());
   RETURN_NOT_OK(ksck->CheckTablesConsistency());

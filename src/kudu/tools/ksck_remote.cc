@@ -322,43 +322,43 @@ void RemoteKsckTabletServer::RunTabletChecksumScanAsync(
   ignore_result(stepper.release()); // Deletes self on callback.
 }
 
-Status RemoteKsckMaster::Connect() {
+Status RemoteKsckCluster::Connect() {
   KuduClientBuilder builder;
   builder.default_rpc_timeout(GetDefaultTimeout());
   builder.master_server_addrs(master_addresses_);
   ReplicaController::SetVisibility(&builder, ReplicaController::Visibility::ALL);
-  client::sp::shared_ptr<KuduClient> client;
   return builder.Build(&client_);
 }
 
-Status RemoteKsckMaster::Build(const vector<string>& master_addresses,
-                               shared_ptr<KsckMaster>* master) {
+Status RemoteKsckCluster::Build(const vector<string>& master_addresses,
+                               shared_ptr<KsckCluster>* cluster) {
   CHECK(!master_addresses.empty());
   shared_ptr<Messenger> messenger;
   MessengerBuilder builder(kMessengerName);
   RETURN_NOT_OK(builder.Build(&messenger));
-  master->reset(new RemoteKsckMaster(master_addresses, messenger));
+  cluster->reset(new RemoteKsckCluster(master_addresses, messenger));
   return Status::OK();
 }
 
-Status RemoteKsckMaster::RetrieveTabletServers(TSMap* tablet_servers) {
+Status RemoteKsckCluster::RetrieveTabletServers() {
   vector<KuduTabletServer*> servers;
   ElementDeleter deleter(&servers);
   RETURN_NOT_OK(client_->ListTabletServers(&servers));
 
-  tablet_servers->clear();
+  TSMap tablet_servers;
   for (const auto* s : servers) {
     shared_ptr<RemoteKsckTabletServer> ts(
         new RemoteKsckTabletServer(s->uuid(),
                                    HostPort(s->hostname(), s->port()),
                                    messenger_));
     RETURN_NOT_OK(ts->Init());
-    InsertOrDie(tablet_servers, ts->uuid(), ts);
+    InsertOrDie(&tablet_servers, ts->uuid(), ts);
   }
+  tablet_servers_.swap(tablet_servers);
   return Status::OK();
 }
 
-Status RemoteKsckMaster::RetrieveTablesList(vector<shared_ptr<KsckTable>>* tables) {
+Status RemoteKsckCluster::RetrieveTablesList() {
   vector<string> table_names;
   RETURN_NOT_OK(client_->ListTables(&table_names));
 
@@ -372,11 +372,11 @@ Status RemoteKsckMaster::RetrieveTablesList(vector<shared_ptr<KsckTable>>* table
                                               t->num_replicas()));
     tables_temp.push_back(table);
   }
-  tables->assign(tables_temp.begin(), tables_temp.end());
+  tables_.swap(tables_temp);
   return Status::OK();
 }
 
-Status RemoteKsckMaster::RetrieveTabletsList(const shared_ptr<KsckTable>& table) {
+Status RemoteKsckCluster::RetrieveTabletsList(const shared_ptr<KsckTable>& table) {
   vector<shared_ptr<KsckTablet>> tablets;
 
   client::sp::shared_ptr<KuduTable> client_table;

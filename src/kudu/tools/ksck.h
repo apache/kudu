@@ -325,51 +325,37 @@ class KsckTabletServer {
   DISALLOW_COPY_AND_ASSIGN(KsckTabletServer);
 };
 
-// Class that must be extended to represent a master.
-class KsckMaster {
- public:
-  // Map of KsckTabletServer objects keyed by tablet server permanent_uuid.
-  typedef std::unordered_map<std::string, std::shared_ptr<KsckTabletServer>> TSMap;
-
-  KsckMaster() { }
-  virtual ~KsckMaster() { }
-
-  // Connects to the configured Master.
-  virtual Status Connect() = 0;
-
-  // Gets the list of Tablet Servers from the Master and stores it in the passed
-  // map, which is keyed on server permanent_uuid.
-  // 'tablet_servers' is only modified if this method returns OK.
-  virtual Status RetrieveTabletServers(TSMap* tablet_servers) = 0;
-
-  // Gets the list of tables from the Master and stores it in the passed vector.
-  // tables is only modified if this method returns OK.
-  virtual Status RetrieveTablesList(std::vector<std::shared_ptr<KsckTable>>* tables) = 0;
-
-  // Gets the list of tablets for the specified table and stores the list in it.
-  // The table's tablet list is only modified if this method returns OK.
-  virtual Status RetrieveTabletsList(const std::shared_ptr<KsckTable>& table) = 0;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(KsckMaster);
-};
-
-// Class used to communicate with the cluster. It bootstraps this by using the provided master.
+// Class used to communicate with a cluster.
 class KsckCluster {
  public:
-  explicit KsckCluster(std::shared_ptr<KsckMaster> master)
-      : master_(std::move(master)) {}
-  ~KsckCluster();
+  // Map of KsckTabletServer objects keyed by tablet server uuid.
+  typedef std::unordered_map<std::string, std::shared_ptr<KsckTabletServer>> TSMap;
 
-  // Fetches list of tables, tablets, and tablet servers from the master and
-  // populates the full list in cluster_->tables().
-  Status FetchTableAndTabletInfo();
-
-  const std::shared_ptr<KsckMaster>& master() {
-    return master_;
+  // Fetches the lists of tables, tablets, and tablet servers from the master.
+  Status FetchTableAndTabletInfo() {
+    RETURN_NOT_OK(Connect());
+    RETURN_NOT_OK(RetrieveTablesList());
+    RETURN_NOT_OK(RetrieveTabletServers());
+    for (const std::shared_ptr<KsckTable>& table : tables()) {
+      RETURN_NOT_OK(RetrieveTabletsList(table));
+    }
+    return Status::OK();
   }
 
-  const KsckMaster::TSMap& tablet_servers() {
+  // Connects to the cluster (i.e. to the leader master).
+  virtual Status Connect() = 0;
+
+  // Fetches the list of tablet servers.
+  virtual Status RetrieveTabletServers() = 0;
+
+  // Fetches the list of tables.
+  virtual Status RetrieveTablesList() = 0;
+
+  // Fetches the list of tablets for the given table.
+  // The table's tablet list is modified only if this method returns OK.
+  virtual Status RetrieveTabletsList(const std::shared_ptr<KsckTable>& table) = 0;
+
+  const TSMap& tablet_servers() {
     return tablet_servers_;
   }
 
@@ -377,21 +363,12 @@ class KsckCluster {
     return tables_;
   }
 
- private:
-  friend class KsckTest;
-
-  // Gets the list of tablet servers from the Master.
-  Status RetrieveTabletServers();
-
-  // Gets the list of tables from the Master.
-  Status RetrieveTablesList();
-
-  // Fetch the list of tablets for the given table from the Master.
-  Status RetrieveTabletsList(const std::shared_ptr<KsckTable>& table);
-
-  const std::shared_ptr<KsckMaster> master_;
-  KsckMaster::TSMap tablet_servers_;
+ protected:
+  KsckCluster() = default;
+  TSMap tablet_servers_;
   std::vector<std::shared_ptr<KsckTable>> tables_;
+
+ private:
   DISALLOW_COPY_AND_ASSIGN(KsckCluster);
 };
 
@@ -429,8 +406,9 @@ class Ksck {
     tablet_id_filters_ = std::move(tablet_ids);
   }
 
-  // Verifies that it can connect to the master.
-  Status CheckMasterRunning();
+  // Verifies that it can connect to the cluster, i.e. that it can contact a
+  // leader master.
+  Status CheckClusterRunning();
 
   // Populates all the cluster table and tablet info from the master.
   Status FetchTableAndTabletInfo();

@@ -24,7 +24,6 @@
 #include <vector>
 
 #include "kudu/client/shared_ptr.h"
-#include "kudu/gutil/port.h"
 #include "kudu/tools/ksck.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
@@ -80,7 +79,7 @@ class RemoteKsckTabletServer : public KsckTabletServer {
       const ChecksumOptions& options,
       ChecksumProgressCallbacks* callbacks) override;
 
-  virtual std::string address() const OVERRIDE {
+  virtual std::string address() const override {
     return host_port_.ToString();
   }
 
@@ -92,34 +91,30 @@ class RemoteKsckTabletServer : public KsckTabletServer {
   std::shared_ptr<consensus::ConsensusServiceProxy> consensus_proxy_;
 };
 
-// This implementation connects to a Master via RPC.
-class RemoteKsckMaster : public KsckMaster {
+// A KsckCluster that connects to a cluster via RPC.
+class RemoteKsckCluster : public KsckCluster {
  public:
 
   static Status Build(const std::vector<std::string>& master_addresses,
-                      std::shared_ptr<KsckMaster>* master);
+                      std::shared_ptr<KsckCluster>* cluster);
 
-  virtual ~RemoteKsckMaster() { }
+  virtual Status Connect() override;
 
-  virtual Status Connect() OVERRIDE;
+  virtual Status RetrieveTabletServers() override;
 
-  virtual Status RetrieveTabletServers(TSMap* tablet_servers) OVERRIDE;
+  virtual Status RetrieveTablesList() override;
 
-  virtual Status RetrieveTablesList(std::vector<std::shared_ptr<KsckTable> >* tables) OVERRIDE;
-
-  virtual Status RetrieveTabletsList(const std::shared_ptr<KsckTable>& table) OVERRIDE;
+  virtual Status RetrieveTabletsList(const std::shared_ptr<KsckTable>& table) override;
 
  private:
-
-  RemoteKsckMaster(std::vector<std::string> master_addresses,
-                   std::shared_ptr<rpc::Messenger> messenger)
+  RemoteKsckCluster(std::vector<std::string> master_addresses,
+                    std::shared_ptr<rpc::Messenger> messenger)
       : master_addresses_(std::move(master_addresses)),
         messenger_(std::move(messenger)) {
   }
 
   const std::vector<std::string> master_addresses_;
   const std::shared_ptr<rpc::Messenger> messenger_;
-
   client::sp::shared_ptr<client::KuduClient> client_;
 };
 

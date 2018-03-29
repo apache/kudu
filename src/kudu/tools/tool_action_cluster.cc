@@ -71,11 +71,9 @@ Status RunKsck(const RunnerContext& context) {
   const string& master_addresses_str = FindOrDie(context.required_args,
                                                  kMasterAddressesArg);
   vector<string> master_addresses = strings::Split(master_addresses_str, ",");
-  shared_ptr<KsckMaster> master;
-  RETURN_NOT_OK_PREPEND(RemoteKsckMaster::Build(master_addresses, &master),
-                        "unable to build KsckMaster");
-
-  shared_ptr<KsckCluster> cluster(new KsckCluster(master));
+  shared_ptr<KsckCluster> cluster;
+  RETURN_NOT_OK_PREPEND(RemoteKsckCluster::Build(master_addresses, &cluster),
+                        "unable to build KsckCluster");
   shared_ptr<Ksck> ksck(new Ksck(cluster));
 
   ksck->set_table_filters(strings::Split(
@@ -83,7 +81,7 @@ Status RunKsck(const RunnerContext& context) {
   ksck->set_tablet_id_filters(strings::Split(
       FLAGS_tablets, ",", strings::SkipEmpty()));
 
-  RETURN_NOT_OK_PREPEND(ksck->CheckMasterRunning(),
+  RETURN_NOT_OK_PREPEND(ksck->CheckClusterRunning(),
                         "master liveness check error");
   RETURN_NOT_OK_PREPEND(ksck->FetchTableAndTabletInfo(),
                         "error fetching the cluster metadata from the Master server");

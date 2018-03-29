@@ -123,43 +123,17 @@ tablet::TabletStatePB KsckTabletServer::ReplicaState(const std::string& tablet_i
   return tablet_status_map_.at(tablet_id).state();
 }
 
-KsckCluster::~KsckCluster() {
-}
-
-Status KsckCluster::FetchTableAndTabletInfo() {
-  RETURN_NOT_OK(master_->Connect());
-  RETURN_NOT_OK(RetrieveTablesList());
-  RETURN_NOT_OK(RetrieveTabletServers());
-  for (const shared_ptr<KsckTable>& table : tables()) {
-    RETURN_NOT_OK(RetrieveTabletsList(table));
-  }
-  return Status::OK();
-}
-
-// Gets the list of tablet servers from the Master.
-Status KsckCluster::RetrieveTabletServers() {
-  return master_->RetrieveTabletServers(&tablet_servers_);
-}
-
-// Gets the list of tables from the Master.
-Status KsckCluster::RetrieveTablesList() {
-  return master_->RetrieveTablesList(&tables_);
-}
-
-Status KsckCluster::RetrieveTabletsList(const shared_ptr<KsckTable>& table) {
-  return master_->RetrieveTabletsList(table);
-}
-
 Ksck::Ksck(shared_ptr<KsckCluster> cluster, ostream* out)
     : cluster_(std::move(cluster)),
       out_(out == nullptr ? &std::cout : out) {
 }
 
-Status Ksck::CheckMasterRunning() {
-  VLOG(1) << "Connecting to the Master";
-  Status s = cluster_->master()->Connect();
+Status Ksck::CheckClusterRunning() {
+  DCHECK_NOTNULL(cluster_);
+  VLOG(1) << "Connecting to the leader master";
+  Status s = cluster_->Connect();
   if (s.ok()) {
-    Out() << "Connected to the Master" << endl;
+    Out() << "Connected to the leader master" << endl;
   }
   return s;
 }
@@ -169,9 +143,9 @@ Status Ksck::FetchTableAndTabletInfo() {
 }
 
 Status Ksck::FetchInfoFromTabletServers() {
-  VLOG(1) << "Getting the Tablet Servers list";
+  VLOG(1) << "Fetching the list of tablet servers";
   int servers_count = cluster_->tablet_servers().size();
-  VLOG(1) << Substitute("List of $0 Tablet Servers retrieved", servers_count);
+  VLOG(1) << Substitute("List of $0 tablet servers retrieved", servers_count);
 
   if (servers_count == 0) {
     return Status::NotFound("No tablet servers found");
@@ -188,8 +162,7 @@ Status Ksck::FetchInfoFromTabletServers() {
   vector<TabletServerSummary> tablet_server_summaries;
   simple_spinlock tablet_server_summaries_lock;
 
-  for (const KsckMaster::TSMap::value_type& entry : cluster_->tablet_servers()) {
-
+  for (const KsckCluster::TSMap::value_type& entry : cluster_->tablet_servers()) {
     CHECK_OK(pool->SubmitFunc([&]() {
           Status s = ConnectToTabletServer(entry.second);
           TabletServerSummary summary;

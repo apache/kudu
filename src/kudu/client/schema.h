@@ -44,7 +44,7 @@ class Schema;
 class Slice;
 
 namespace tools {
-class RemoteKsckMaster;
+class RemoteKsckCluster;
 class ReplicaDumper;
 }
 
@@ -585,7 +585,7 @@ class KUDU_EXPORT KuduSchema {
   friend class internal::MetaCache;
   friend class internal::MetaCacheEntry;
   friend class internal::WriteRpc;
-  friend class tools::RemoteKsckMaster;
+  friend class tools::RemoteKsckCluster;
   friend class tools::ReplicaDumper;
 
   friend KuduSchema KuduSchemaFromSchema(const Schema& schema);

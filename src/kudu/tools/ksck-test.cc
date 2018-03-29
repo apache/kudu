@@ -97,41 +97,38 @@ class MockKsckTabletServer : public KsckTabletServer {
   const string address_;
 };
 
-class MockKsckMaster : public KsckMaster {
+class MockKsckCluster : public KsckCluster {
  public:
-  MockKsckMaster()
+  MockKsckCluster()
       : fetch_info_status_(Status::OK()) {
   }
 
-  virtual Status Connect() OVERRIDE {
+  virtual Status Connect() override {
     return fetch_info_status_;
   }
 
-  virtual Status RetrieveTabletServers(TSMap* tablet_servers) OVERRIDE {
-    *tablet_servers = tablet_servers_;
+  virtual Status RetrieveTabletServers() override {
     return Status::OK();
   }
 
-  virtual Status RetrieveTablesList(vector<shared_ptr<KsckTable>>* tables) OVERRIDE {
-    tables->assign(tables_.begin(), tables_.end());
+  virtual Status RetrieveTablesList() override {
     return Status::OK();
   }
 
-  virtual Status RetrieveTabletsList(const shared_ptr<KsckTable>& table) OVERRIDE {
+  virtual Status RetrieveTabletsList(const shared_ptr<KsckTable>& table) override {
     return Status::OK();
   }
 
   // Public because the unit tests mutate these variables directly.
   Status fetch_info_status_;
-  TSMap tablet_servers_;
-  vector<shared_ptr<KsckTable>> tables_;
+  using KsckCluster::tables_;
+  using KsckCluster::tablet_servers_;
 };
 
 class KsckTest : public KuduTest {
  public:
   KsckTest()
-      : master_(new MockKsckMaster()),
-        cluster_(new KsckCluster(static_pointer_cast<KsckMaster>(master_))),
+      : cluster_(new MockKsckCluster()),
         ksck_(new Ksck(cluster_, &err_stream_)) {
     FLAGS_color = "never";
     unordered_map<string, shared_ptr<KsckTabletServer>> tablet_servers;
@@ -140,7 +137,7 @@ class KsckTest : public KuduTest {
       shared_ptr<MockKsckTabletServer> ts(new MockKsckTabletServer(name));
       InsertOrDie(&tablet_servers, ts->uuid(), ts);
     }
-    master_->tablet_servers_.swap(tablet_servers);
+    cluster_->tablet_servers_.swap(tablet_servers);
   }
 
  protected:
@@ -165,7 +162,7 @@ class KsckTest : public KuduTest {
 
   void CreateDefaultAssignmentPlan(int tablets_count) {
     while (tablets_count > 0) {
-      for (const KsckMaster::TSMap::value_type& entry : master_->tablet_servers_) {
+      for (const KsckCluster::TSMap::value_type& entry : cluster_->tablet_servers_) {
         if (tablets_count-- == 0) return;
         assignment_plan_.push_back(entry.second->uuid());
       }
@@ -227,7 +224,7 @@ class KsckTest : public KuduTest {
   shared_ptr<KsckTable> CreateAndAddTable(const string& name, int num_replicas) {
     shared_ptr<KsckTable> table(new KsckTable(name, Schema(), num_replicas));
     vector<shared_ptr<KsckTable>> tables = { table };
-    master_->tables_.assign(tables.begin(), tables.end());
+    cluster_->tables_.assign(tables.begin(), tables.end());
     return table;
   }
 
@@ -258,7 +255,7 @@ class KsckTest : public KuduTest {
     }
     for (const auto& replica : tablet->replicas()) {
       shared_ptr<MockKsckTabletServer> ts =
-        static_pointer_cast<MockKsckTabletServer>(master_->tablet_servers_.at(replica->ts_uuid()));
+        static_pointer_cast<MockKsckTabletServer>(cluster_->tablet_servers_.at(replica->ts_uuid()));
       InsertOrDieNoPrint(&ts->tablet_consensus_state_map_,
                          std::make_pair(replica->ts_uuid(), tablet->id()),
                          cstate);
@@ -272,7 +269,7 @@ class KsckTest : public KuduTest {
     shared_ptr<KsckTabletReplica> replica(
         new KsckTabletReplica(assignment_plan_.back(), is_leader, true));
     shared_ptr<MockKsckTabletServer> ts = static_pointer_cast<MockKsckTabletServer>(
-            master_->tablet_servers_.at(assignment_plan_.back()));
+            cluster_->tablet_servers_.at(assignment_plan_.back()));
 
     assignment_plan_.pop_back();
     replicas->push_back(replica);
@@ -289,16 +286,14 @@ class KsckTest : public KuduTest {
     auto c = MakeScopedCleanup([this]() {
         LOG(INFO) << "Ksck output:\n" << err_stream_.str();
       });
-    RETURN_NOT_OK(ksck_->CheckMasterRunning());
+    RETURN_NOT_OK(ksck_->CheckClusterRunning());
     RETURN_NOT_OK(ksck_->FetchTableAndTabletInfo());
     RETURN_NOT_OK(ksck_->FetchInfoFromTabletServers());
     RETURN_NOT_OK(ksck_->CheckTablesConsistency());
     return Status::OK();
   }
 
-
-  shared_ptr<MockKsckMaster> master_;
-  shared_ptr<KsckCluster> cluster_;
+  shared_ptr<MockKsckCluster> cluster_;
   shared_ptr<Ksck> ksck_;
   // This is used as a stack. First the unit test is responsible to create a plan to follow, that
   // is the order in which each replica of each tablet will be assigned, starting from the end.
@@ -311,13 +306,13 @@ class KsckTest : public KuduTest {
 };
 
 TEST_F(KsckTest, TestMasterOk) {
-  ASSERT_OK(ksck_->CheckMasterRunning());
+  ASSERT_OK(ksck_->CheckClusterRunning());
 }
 
 TEST_F(KsckTest, TestMasterUnavailable) {
   Status error = Status::NetworkError("Network failure");
-  master_->fetch_info_status_ = error;
-  ASSERT_TRUE(ksck_->CheckMasterRunning().IsNetworkError());
+  cluster_->fetch_info_status_ = error;
+  ASSERT_TRUE(ksck_->CheckClusterRunning().IsNetworkError());
 }
 
 TEST_F(KsckTest, TestTabletServersOk) {
@@ -329,10 +324,10 @@ TEST_F(KsckTest, TestWrongUUIDTabletServer) {
 
   Status error = Status::RemoteError("ID reported by tablet server "
                                      "doesn't match the expected ID");
-  static_pointer_cast<MockKsckTabletServer>(master_->tablet_servers_["ts-id-1"])
+  static_pointer_cast<MockKsckTabletServer>(cluster_->tablet_servers_["ts-id-1"])
     ->fetch_info_status_ = error;
 
-  ASSERT_OK(ksck_->CheckMasterRunning());
+  ASSERT_OK(ksck_->CheckClusterRunning());
   ASSERT_OK(ksck_->FetchTableAndTabletInfo());
   ASSERT_TRUE(ksck_->FetchInfoFromTabletServers().IsNetworkError());
   ASSERT_STR_CONTAINS(err_stream_.str(),
@@ -350,10 +345,10 @@ TEST_F(KsckTest, TestBadTabletServer) {
 
   // Mock a failure to connect to one of the tablet servers.
   Status error = Status::NetworkError("Network failure");
-  static_pointer_cast<MockKsckTabletServer>(master_->tablet_servers_["ts-id-1"])
+  static_pointer_cast<MockKsckTabletServer>(cluster_->tablet_servers_["ts-id-1"])
       ->fetch_info_status_ = error;
 
-  ASSERT_OK(ksck_->CheckMasterRunning());
+  ASSERT_OK(ksck_->CheckClusterRunning());
   ASSERT_OK(ksck_->FetchTableAndTabletInfo());
   Status s = ksck_->FetchInfoFromTabletServers();
   ASSERT_TRUE(s.IsNetworkError()) << "Status returned: " << s.ToString();
@@ -450,7 +445,7 @@ TEST_F(KsckTest, TestConsensusConflictExtraPeer) {
   FLAGS_consensus = true;
   CreateOneSmallReplicatedTable();
 
-  shared_ptr<KsckTabletServer> ts = FindOrDie(master_->tablet_servers_, "ts-id-0");
+  shared_ptr<KsckTabletServer> ts = FindOrDie(cluster_->tablet_servers_, "ts-id-0");
   auto& cstate = FindOrDieNoPrint(ts->tablet_consensus_state_map_,
                                   std::make_pair("ts-id-0", "tablet-id-0"));
   cstate.mutable_committed_config()->add_peers()->set_permanent_uuid("ts-id-fake");
@@ -477,7 +472,7 @@ TEST_F(KsckTest, TestConsensusConflictMissingPeer) {
   FLAGS_consensus = true;
   CreateOneSmallReplicatedTable();
 
-  shared_ptr<KsckTabletServer> ts = FindOrDie(master_->tablet_servers_, "ts-id-0");
+  shared_ptr<KsckTabletServer> ts = FindOrDie(cluster_->tablet_servers_, "ts-id-0");
   auto& cstate = FindOrDieNoPrint(ts->tablet_consensus_state_map_,
                                   std::make_pair("ts-id-0", "tablet-id-0"));
   cstate.mutable_committed_config()->mutable_peers()->RemoveLast();
@@ -504,7 +499,7 @@ TEST_F(KsckTest, TestConsensusConflictDifferentLeader) {
   FLAGS_consensus = true;
   CreateOneSmallReplicatedTable();
 
-  const shared_ptr<KsckTabletServer>& ts = FindOrDie(master_->tablet_servers_, "ts-id-0");
+  const shared_ptr<KsckTabletServer>& ts = FindOrDie(cluster_->tablet_servers_, "ts-id-0");
   auto& cstate = FindOrDieNoPrint(ts->tablet_consensus_state_map_,
                                   std::make_pair("ts-id-0", "tablet-id-0"));
   cstate.set_leader_uuid("ts-id-1");
@@ -545,7 +540,7 @@ TEST_F(KsckTest, TestOneOneTabletBrokenTable) {
 TEST_F(KsckTest, TestMismatchedAssignments) {
   CreateOneSmallReplicatedTable();
   shared_ptr<MockKsckTabletServer> ts = static_pointer_cast<MockKsckTabletServer>(
-      master_->tablet_servers_.at(Substitute("ts-id-$0", 0)));
+      cluster_->tablet_servers_.at(Substitute("ts-id-$0", 0)));
   ASSERT_EQ(1, ts->tablet_status_map_.erase("tablet-id-2"));
 
   Status s = RunKsck();
@@ -598,7 +593,7 @@ TEST_F(KsckTest, TestTabletCopying) {
 
   // Mark one of the tablet replicas as copying.
   auto not_running_ts = static_pointer_cast<MockKsckTabletServer>(
-          master_->tablet_servers_.at(assignment_plan_.back()));
+          cluster_->tablet_servers_.at(assignment_plan_.back()));
   auto& pb = FindOrDie(not_running_ts->tablet_status_map_, "tablet-id-0");
   pb.set_tablet_data_state(TabletDataState::TABLET_DATA_COPYING);
   Status s = RunKsck();
@@ -619,7 +614,7 @@ TEST_F(KsckTest, TestMasterNotReportingTabletServer) {
   // Delete a tablet server from the master's list. This simulates a situation
   // where the master is starting and doesn't list all tablet servers yet, but
   // tablets from other tablet servers are listing a missing tablet server as a peer.
-  EraseKeyReturnValuePtr(&master_->tablet_servers_, "ts-id-0");
+  EraseKeyReturnValuePtr(&cluster_->tablet_servers_, "ts-id-0");
   Status s = RunKsck();
   ASSERT_EQ("Corruption: 1 out of 1 table(s) are not healthy", s.ToString());
   ASSERT_STR_CONTAINS(err_stream_.str(), "Table test has 3 under-replicated tablet(s)");
@@ -637,10 +632,10 @@ TEST_F(KsckTest, TestMasterNotReportingTabletServerWithConsensusConflict) {
   CreateOneSmallReplicatedTable();
 
   // Delete a tablet server from the cluster's list as in TestMasterNotReportingTabletServer.
-  EraseKeyReturnValuePtr(&master_->tablet_servers_, "ts-id-0");
+  EraseKeyReturnValuePtr(&cluster_->tablet_servers_, "ts-id-0");
 
   // Now engineer a consensus conflict.
-  const shared_ptr<KsckTabletServer>& ts = FindOrDie(master_->tablet_servers_, "ts-id-1");
+  const shared_ptr<KsckTabletServer>& ts = FindOrDie(cluster_->tablet_servers_, "ts-id-1");
   auto& cstate = FindOrDieNoPrint(ts->tablet_consensus_state_map_,
                                   std::make_pair("ts-id-1", "tablet-id-1"));
   cstate.set_leader_uuid("ts-id-1");

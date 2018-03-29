@@ -136,16 +136,15 @@ Status GetTabletLeader(const client::sp::shared_ptr<KuduClient>& client,
 }
 
 Status DoKsckForTablet(const vector<string>& master_addresses, const string& tablet_id) {
-  shared_ptr<KsckMaster> master;
-  RETURN_NOT_OK(RemoteKsckMaster::Build(master_addresses, &master));
-  shared_ptr<KsckCluster> cluster(new KsckCluster(master));
+  shared_ptr<KsckCluster> cluster;
+  RETURN_NOT_OK(RemoteKsckCluster::Build(master_addresses, &cluster));
 
   // Print to an unopened ofstream to discard ksck output.
   // See https://stackoverflow.com/questions/8243743.
   std::ofstream null_stream;
   Ksck ksck(cluster, &null_stream);
   ksck.set_tablet_id_filters({ tablet_id });
-  RETURN_NOT_OK(ksck.CheckMasterRunning());
+  RETURN_NOT_OK(ksck.CheckClusterRunning());
   RETURN_NOT_OK(ksck.FetchTableAndTabletInfo());
   // The return Status is ignored since a tserver that is not the destination
   // nor a host of a replica might be down, and in that case the move should
