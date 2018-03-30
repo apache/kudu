@@ -30,7 +30,9 @@
 #include <string>
 #include <vector>
 
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
+#include <glog/stl_logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/ref_counted.h"
@@ -38,6 +40,7 @@
 #include "kudu/util/array_view.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/debug-util.h"
+#include "kudu/util/kernel_stack_watchdog.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
@@ -47,6 +50,9 @@
 
 using std::string;
 using std::vector;
+
+DECLARE_int32(test_timeout_after);
+DECLARE_int32(stress_cpu_threads);
 
 namespace kudu {
 
@@ -154,15 +160,33 @@ TEST_F(DebugUtilTest, TestSignalStackTrace) {
 // We don't validate the results in any way -- but this verifies that we can
 // dump library threads such as the libc timer_thread and properly time out.
 TEST_F(DebugUtilTest, TestSnapshot) {
+  // HACK: prior tests in this suite start threads. Even though they Join on the
+  // threads before the test case finishes, there is actually a very short
+  // period of time after Join() returns but before the actual thread has exited
+  // and removed itself from /proc/self/task/. That means that 'ListThreads' below
+  // can sometimes show these threads from prior test cases, and then the assertions
+  // in this test case would fail.
+  //
+  // So, we have to wait here for the number of running threads to level off to the
+  // expected value.
+  // Ensure Kernel Stack Watchdog is running.
+  KernelStackWatchdog::GetInstance();
+  int initial_thread_count =
+      1 // main thread
+      + 1 // KernelStackWatchdog
+      + (FLAGS_test_timeout_after > 0 ? 1 : 0) // test timeout thread if running
+      + FLAGS_stress_cpu_threads;
+#ifdef THREAD_SANITIZER
+  initial_thread_count++; // tsan signal thread
+#endif
   // The test and runtime environment runs various utility threads (for example,
   // the kernel stack watchdog, the TSAN runtime thread, the test timeout thread, etc).
   // Count them before we start any additional threads for this test.
-  int initial_thread_count;
-  {
-    vector<pid_t> threads;
-    ASSERT_OK(ListThreads(&threads));
-    initial_thread_count = threads.size();
-  }
+  ASSERT_EVENTUALLY([&]{
+      vector<pid_t> threads;
+      ASSERT_OK(ListThreads(&threads));
+      ASSERT_EQ(initial_thread_count, threads.size()) << threads;
+    });
 
   // Start a bunch of sleeping threads.
   const int kNumThreads = 30;
