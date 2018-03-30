@@ -116,11 +116,28 @@ ChecksumOptions::ChecksumOptions(MonoDelta timeout, int scan_concurrency,
 const uint64_t ChecksumOptions::kCurrentTimestamp = 0;
 
 tablet::TabletStatePB KsckTabletServer::ReplicaState(const std::string& tablet_id) const {
-  CHECK_EQ(state_, kFetched);
+  CHECK_EQ(state_, KsckFetchState::FETCHED);
   if (!ContainsKey(tablet_status_map_, tablet_id)) {
     return tablet::UNKNOWN;
   }
   return tablet_status_map_.at(tablet_id).state();
+}
+
+std::ostream& operator<<(std::ostream& lhs, KsckFetchState state) {
+  switch (state) {
+    case KsckFetchState::UNINITIALIZED:
+      lhs << "UNINITIALIZED";
+      break;
+    case KsckFetchState::FETCH_FAILED:
+      lhs << "FETCH_FAILED";
+      break;
+    case KsckFetchState::FETCHED:
+      lhs << "FETCHED";
+      break;
+    default:
+      LOG(FATAL) << "unknown KsckFetchState";
+  }
+  return lhs;
 }
 
 Ksck::Ksck(shared_ptr<KsckCluster> cluster, ostream* out)
@@ -128,8 +145,62 @@ Ksck::Ksck(shared_ptr<KsckCluster> cluster, ostream* out)
       out_(out == nullptr ? &std::cout : out) {
 }
 
+string Ksck::ServerHealthToString(ServerHealth sh) {
+  switch (sh) {
+    case ServerHealth::HEALTHY:
+      return "HEALTHY";
+    case ServerHealth::UNAVAILABLE:
+      return "UNAVAILABLE";
+    case ServerHealth::WRONG_SERVER_UUID:
+      return "WRONG_SERVER_UUID";
+    default:
+      LOG(FATAL) << "Unknown ServerHealth";
+  }
+}
+
+int Ksck::ServerHealthScore(ServerHealth sh) {
+  switch (sh) {
+    case ServerHealth::HEALTHY:
+      return 0;
+    case ServerHealth::UNAVAILABLE:
+      return 1;
+    case ServerHealth::WRONG_SERVER_UUID:
+      return 2;
+    default:
+      LOG(FATAL) << "Unknown ServerHealth";
+  }
+}
+
+Status Ksck::CheckMasterHealth() {
+  int bad_masters = 0;
+  vector<ServerHealthSummary> master_summaries;
+  // There shouldn't be more than 5 masters, so we'll keep it simple and gather
+  // info in sequence instead of spreading it across a threadpool.
+  for (const KsckCluster::MasterList::value_type& master : cluster_->masters()) {
+    Status s = master->FetchInfo();
+    ServerHealthSummary sh;
+    sh.uuid = master->uuid();
+    sh.address = master->address();
+    sh.health = s.ok() ? ServerHealth::HEALTHY : ServerHealth::UNAVAILABLE;
+    master_summaries.emplace_back(std::move(sh));
+    if (!s.ok()) {
+      Warn() << Substitute("Unable to connect to master $0: $1",
+                           master->ToString(), s.ToString()) << endl;
+      bad_masters++;
+    }
+  }
+  CHECK_OK(PrintServerHealthSummaries(ServerType::MASTER, std::move(master_summaries), Out()));
+  int num_masters = cluster_->masters().size();
+  if (bad_masters > 0) {
+    Warn() << Substitute("Fetched info from $0 masters; $1 weren't reachable",
+                         num_masters, bad_masters) << endl;
+    return Status::NetworkError("failed to gather info from all masters");
+  }
+  Out() << Substitute("Fetched info from all $0 masters", num_masters) << endl;
+  return Status::OK();
+}
+
 Status Ksck::CheckClusterRunning() {
-  DCHECK_NOTNULL(cluster_);
   VLOG(1) << "Connecting to the leader master";
   Status s = cluster_->Connect();
   if (s.ok()) {
@@ -157,96 +228,81 @@ Status Ksck::FetchInfoFromTabletServers() {
                 .Build(&pool));
 
   AtomicInt<int32_t> bad_servers(0);
-  VLOG(1) << "Fetching info from all the Tablet Servers";
+  VLOG(1) << "Fetching info from all " << servers_count << " tablet servers";
 
-  vector<TabletServerSummary> tablet_server_summaries;
+  vector<ServerHealthSummary> tablet_server_summaries;
   simple_spinlock tablet_server_summaries_lock;
 
   for (const KsckCluster::TSMap::value_type& entry : cluster_->tablet_servers()) {
     CHECK_OK(pool->SubmitFunc([&]() {
           Status s = ConnectToTabletServer(entry.second);
-          TabletServerSummary summary;
+          ServerHealthSummary summary;
+          summary.uuid = entry.second->uuid();
+          summary.address = entry.second->address();
           if (!s.ok()) {
             bad_servers.Increment();
             if (s.IsRemoteError()) {
-              summary.health = TabletServerHealth::WRONG_SERVER_UUID;
+              summary.health = ServerHealth::WRONG_SERVER_UUID;
             } else {
-              summary.health = TabletServerHealth::UNAVAILABLE;
+              summary.health = ServerHealth::UNAVAILABLE;
             }
           } else {
-            summary.health = TabletServerHealth::HEALTHY;
+            summary.health = ServerHealth::HEALTHY;
           }
 
-          summary.uuid = entry.second->uuid();
-          summary.host_port = entry.second->address();
-
           std::lock_guard<simple_spinlock> lock(tablet_server_summaries_lock);
-          tablet_server_summaries.emplace_back(std::move(summary));
+          tablet_server_summaries.push_back(std::move(summary));
         }));
   }
-
   pool->Wait();
 
-  std::sort(tablet_server_summaries.begin(), tablet_server_summaries.end(),
-            [](const TabletServerSummary& left, const TabletServerSummary& right) {
-              return std::make_pair(left.health != TabletServerHealth::HEALTHY, left.host_port) <
-                     std::make_pair(right.health != TabletServerHealth::HEALTHY, right.host_port);
-            });
-
-  CHECK_OK(PrintTabletServerSummaries(tablet_server_summaries, Out()));
+  CHECK_OK(PrintServerHealthSummaries(ServerType::TABLET_SERVER,
+                                      std::move(tablet_server_summaries),
+                                      Out()));
 
   if (bad_servers.Load() == 0) {
-    Out() << Substitute("Fetched info from all $0 Tablet Servers", servers_count) << endl;
+    Out() << Substitute("Fetched info from all $0 tablet servers", servers_count) << endl;
     return Status::OK();
   }
-  Warn() << Substitute("Fetched info from $0 Tablet Servers, $1 weren't reachable",
+  Warn() << Substitute("Fetched info from $0 tablet servers, $1 weren't reachable",
                        servers_count - bad_servers.Load(), bad_servers.Load()) << endl;
   return Status::NetworkError("Could not gather complete information from all tablet servers");
 }
 
 Status Ksck::ConnectToTabletServer(const shared_ptr<KsckTabletServer>& ts) {
-  VLOG(1) << "Going to connect to Tablet Server: " << ts->uuid();
+  VLOG(1) << "Going to connect to tablet server: " << ts->uuid();
   Status s = ts->FetchInfo();
   if (!s.ok()) {
-    Warn() << Substitute("Unable to connect to Tablet Server $0: $1",
+    Warn() << Substitute("Unable to connect to tablet server $0: $1",
                          ts->ToString(), s.ToString()) << endl;
     return s;
   }
-  VLOG(1) << "Connected to Tablet Server: " << ts->uuid();
+  VLOG(1) << "Connected to tablet server: " << ts->uuid();
   if (FLAGS_consensus) {
     s = ts->FetchConsensusState();
     if (!s.ok()) {
-      Warn() << Substitute("Errors gathering consensus info for Tablet Server $0: $1",
+      Warn() << Substitute("Errors gathering consensus info for tablet server $0: $1",
                            ts->ToString(), s.ToString()) << endl;
     }
   }
   return s;
 }
 
-Status Ksck::PrintTabletServerSummaries(const vector<TabletServerSummary>& tablet_server_summaries,
+Status Ksck::PrintServerHealthSummaries(ServerType type,
+                                        vector<ServerHealthSummary> summaries,
                                         ostream& out) {
-  out << "Tablet Server Summary" << endl;
-  DataTable table({ "UUID", "RPC Address", "Status"});
-
-  for (const auto& ts : tablet_server_summaries) {
-    string status;
-    switch (ts.health) {
-      case TabletServerHealth::HEALTHY:
-        status = "HEALTHY";
-        break;
-      case TabletServerHealth::UNAVAILABLE:
-        status = "UNAVAILABLE";
-        break;
-      case TabletServerHealth::WRONG_SERVER_UUID:
-        status = "WRONG_SERVER_UUID";
-        break;
-      default:
-        LOG(FATAL) << "Unexpected health alert received";
-        break;
-    }
-    table.AddRow({ ts.uuid, ts.host_port, status });
+  // Sort by decreasing order of health and then by UUID, so bad health appears
+  // closest to the bottom of the output in a terminal.
+  std::sort(summaries.begin(), summaries.end(),
+            [](const ServerHealthSummary& left, const ServerHealthSummary& right) {
+              return std::make_pair(ServerHealthScore(left.health), left.uuid) <
+                     std::make_pair(ServerHealthScore(right.health), right.uuid);
+            });
+  out << ServerTypeToString(type) << " Summary" << endl;
+  DataTable table({ "UUID", "Address", "Status"});
+  for (const auto& s : summaries) {
+    table.AddRow({ s.uuid, s.address, ServerHealthToString(s.health) });
   }
-
   return table.PrintTo(out);
 }
 

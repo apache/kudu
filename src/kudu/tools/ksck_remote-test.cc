@@ -214,17 +214,15 @@ class RemoteKsckTest : public KuduTest {
   Random random_;
 };
 
-TEST_F(RemoteKsckTest, TestMasterOk) {
-  ASSERT_OK(ksck_->CheckClusterRunning());
-}
-
-TEST_F(RemoteKsckTest, TestTabletServersOk) {
+TEST_F(RemoteKsckTest, TestClusterOk) {
+  ASSERT_OK(ksck_->CheckMasterHealth());
   ASSERT_OK(ksck_->CheckClusterRunning());
   ASSERT_OK(ksck_->FetchTableAndTabletInfo());
   ASSERT_OK(ksck_->FetchInfoFromTabletServers());
 }
 
-TEST_F(RemoteKsckTest, TestTabletServerMismatchUUID) {
+TEST_F(RemoteKsckTest, TestTabletServerMismatchedUUID) {
+  ASSERT_OK(ksck_->CheckMasterHealth());
   ASSERT_OK(ksck_->CheckClusterRunning());
   ASSERT_OK(ksck_->FetchTableAndTabletInfo());
 
@@ -244,7 +242,6 @@ TEST_F(RemoteKsckTest, TestTabletServerMismatchUUID) {
 
   string match_string = "Remote error: ID reported by tablet server "
                         "($0) doesn't match the expected ID: $1";
-
   ASSERT_STR_CONTAINS(err_stream_.str(), strings::Substitute(match_string, new_uuid, old_uuid));
 }
 
@@ -252,6 +249,7 @@ TEST_F(RemoteKsckTest, TestTableConsistency) {
   MonoTime deadline = MonoTime::Now() + MonoDelta::FromSeconds(30);
   Status s;
   while (MonoTime::Now() < deadline) {
+    ASSERT_OK(ksck_->CheckMasterHealth());
     ASSERT_OK(ksck_->CheckClusterRunning());
     ASSERT_OK(ksck_->FetchTableAndTabletInfo());
     ASSERT_OK(ksck_->FetchInfoFromTabletServers());
@@ -272,6 +270,7 @@ TEST_F(RemoteKsckTest, TestChecksum) {
   MonoTime deadline = MonoTime::Now() + MonoDelta::FromSeconds(30);
   Status s;
   while (MonoTime::Now() < deadline) {
+    ASSERT_OK(ksck_->CheckMasterHealth());
     ASSERT_OK(ksck_->CheckClusterRunning());
     ASSERT_OK(ksck_->FetchTableAndTabletInfo());
     ASSERT_OK(ksck_->FetchInfoFromTabletServers());
@@ -318,6 +317,7 @@ TEST_F(RemoteKsckTest, TestChecksumSnapshot) {
   CHECK(started_writing.WaitFor(MonoDelta::FromSeconds(30)));
 
   uint64_t ts = client_->GetLatestObservedTimestamp();
+  ASSERT_OK(ksck_->CheckMasterHealth());
   ASSERT_OK(ksck_->CheckClusterRunning());
   ASSERT_OK(ksck_->FetchTableAndTabletInfo());
   ASSERT_OK(ksck_->FetchInfoFromTabletServers());
@@ -341,6 +341,7 @@ TEST_F(RemoteKsckTest, TestChecksumSnapshotCurrentTimestamp) {
                  &writer_thread);
   CHECK(started_writing.WaitFor(MonoDelta::FromSeconds(30)));
 
+  ASSERT_OK(ksck_->CheckMasterHealth());
   ASSERT_OK(ksck_->CheckClusterRunning());
   ASSERT_OK(ksck_->FetchTableAndTabletInfo());
   ASSERT_OK(ksck_->FetchInfoFromTabletServers());
@@ -352,13 +353,18 @@ TEST_F(RemoteKsckTest, TestChecksumSnapshotCurrentTimestamp) {
 }
 
 TEST_F(RemoteKsckTest, TestLeaderMasterDown) {
-  // Make sure ksck's client is created with the current leader master.
+  // Make sure ksck's client is created with the current leader master and that
+  // all masters are healthy.
+  ASSERT_OK(ksck_->CheckMasterHealth());
   ASSERT_OK(ksck_->CheckClusterRunning());
 
   // Shut down the leader master.
   int leader_idx;
   ASSERT_OK(mini_cluster_->GetLeaderMasterIndex(&leader_idx));
   mini_cluster_->mini_master(leader_idx)->Shutdown();
+
+  // Check that the bad master health is detected.
+  ASSERT_TRUE(ksck_->CheckMasterHealth().IsNetworkError());
 
   // Try to ksck. The underlying client will need to find the new leader master
   // in order for the test to pass.

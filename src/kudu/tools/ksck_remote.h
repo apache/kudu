@@ -54,7 +54,31 @@ class TabletServerServiceProxy;
 
 namespace tools {
 
-// This implementation connects to a Tablet Server via RPC.
+// This implementation connects to a master via RPC.
+class RemoteKsckMaster : public KsckMaster {
+ public:
+  RemoteKsckMaster(const std::string& address,
+                   std::shared_ptr<rpc::Messenger> messenger)
+      : KsckMaster(address),
+        messenger_(std::move(messenger)) {
+  }
+
+  // Resolves the host/port and sets up proxies.
+  // Must be called before FetchInfo() or FetchConsensusState();
+  Status Init() override;
+
+  Status FetchInfo() override;
+
+  // Gathers consensus state for the master tablet.
+  Status FetchConsensusState() override;
+
+ private:
+  std::shared_ptr<rpc::Messenger> messenger_;
+  std::shared_ptr<server::GenericServiceProxy> generic_proxy_;
+  std::shared_ptr<consensus::ConsensusServiceProxy> consensus_proxy_;
+};
+
+// This implementation connects to a tablet server via RPC.
 class RemoteKsckTabletServer : public KsckTabletServer {
  public:
   explicit RemoteKsckTabletServer(const std::string& id,
@@ -94,7 +118,6 @@ class RemoteKsckTabletServer : public KsckTabletServer {
 // A KsckCluster that connects to a cluster via RPC.
 class RemoteKsckCluster : public KsckCluster {
  public:
-
   static Status Build(const std::vector<std::string>& master_addresses,
                       std::shared_ptr<KsckCluster>* cluster);
 
@@ -111,6 +134,9 @@ class RemoteKsckCluster : public KsckCluster {
                     std::shared_ptr<rpc::Messenger> messenger)
       : master_addresses_(std::move(master_addresses)),
         messenger_(std::move(messenger)) {
+    for (const std::string& master_addr : master_addresses_) {
+      masters_.emplace_back(new RemoteKsckMaster(master_addr, messenger_));
+    }
   }
 
   const std::vector<std::string> master_addresses_;

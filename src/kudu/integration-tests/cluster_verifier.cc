@@ -109,7 +109,9 @@ Status ClusterVerifier::RunKsck() {
   // we shouldn't consider fatal.
   ksck->set_check_replica_count(false);
 
-  // This is required for everything below.
+  // The first two calls do not depend on each other, though their results are
+  // correlated. The subsequent calls depend on CheckClusterRunning().
+  RETURN_NOT_OK(ksck->CheckMasterHealth());
   RETURN_NOT_OK(ksck->CheckClusterRunning());
   RETURN_NOT_OK(ksck->FetchTableAndTabletInfo());
   RETURN_NOT_OK(ksck->FetchInfoFromTabletServers());

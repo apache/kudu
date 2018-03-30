@@ -55,6 +55,35 @@ using std::vector;
 using strings::Substitute;
 using tablet::TabletDataState;
 
+class MockKsckMaster : public KsckMaster {
+ public:
+  explicit MockKsckMaster(const string& address, const string& uuid)
+      : KsckMaster(address),
+        fetch_info_status_(Status::OK()) {
+    uuid_ = uuid;
+  }
+
+  Status Init() override {
+    return Status::OK();
+  }
+
+  Status FetchInfo() override {
+    if (fetch_info_status_.ok()) {
+      state_ = KsckFetchState::FETCHED;
+    } else {
+      state_ = KsckFetchState::FETCH_FAILED;
+    }
+    return fetch_info_status_;
+  }
+
+  Status FetchConsensusState() override {
+    return Status::OK();
+  }
+
+  // Public because the unit tests mutate this variable directly.
+  Status fetch_info_status_;
+};
+
 class MockKsckTabletServer : public KsckTabletServer {
  public:
   explicit MockKsckTabletServer(const string& uuid)
@@ -66,9 +95,9 @@ class MockKsckTabletServer : public KsckTabletServer {
   Status FetchInfo() override {
     timestamp_ = 12345;
     if (fetch_info_status_.ok()) {
-      state_ = kFetched;
+      state_ = KsckFetchState::FETCHED;
     } else {
-      state_ = kFetchFailed;
+      state_ = KsckFetchState::FETCH_FAILED;
     }
     return fetch_info_status_;
   }
@@ -121,6 +150,7 @@ class MockKsckCluster : public KsckCluster {
 
   // Public because the unit tests mutate these variables directly.
   Status fetch_info_status_;
+  using KsckCluster::masters_;
   using KsckCluster::tables_;
   using KsckCluster::tablet_servers_;
 };
@@ -131,6 +161,11 @@ class KsckTest : public KuduTest {
       : cluster_(new MockKsckCluster()),
         ksck_(new Ksck(cluster_, &err_stream_)) {
     FLAGS_color = "never";
+    for (int i = 0; i < 3; i++) {
+      const string uuid = Substitute("master-id-$0", i);
+      const string addr = Substitute("master-$0", i);
+      cluster_->masters_.emplace_back(new MockKsckMaster(addr, uuid));
+    }
     unordered_map<string, shared_ptr<KsckTabletServer>> tablet_servers;
     for (int i = 0; i < 3; i++) {
       string name = Substitute("ts-id-$0", i);
@@ -286,6 +321,7 @@ class KsckTest : public KuduTest {
     auto c = MakeScopedCleanup([this]() {
         LOG(INFO) << "Ksck output:\n" << err_stream_.str();
       });
+    RETURN_NOT_OK(ksck_->CheckMasterHealth());
     RETURN_NOT_OK(ksck_->CheckClusterRunning());
     RETURN_NOT_OK(ksck_->FetchTableAndTabletInfo());
     RETURN_NOT_OK(ksck_->FetchInfoFromTabletServers());
@@ -305,18 +341,45 @@ class KsckTest : public KuduTest {
   std::ostringstream err_stream_;
 };
 
-TEST_F(KsckTest, TestMasterOk) {
-  ASSERT_OK(ksck_->CheckClusterRunning());
+TEST_F(KsckTest, TestServersOk) {
+  ASSERT_OK(RunKsck());
+  const string err_string = err_stream_.str();
+  // Master health.
+  ASSERT_STR_CONTAINS(err_string,
+    "Master Summary\n"
+    "    UUID     | Address  | Status\n"
+    "-------------+----------+---------\n"
+    " master-id-0 | master-0 | HEALTHY\n"
+    " master-id-1 | master-1 | HEALTHY\n"
+    " master-id-2 | master-2 | HEALTHY\n");
+  // Tablet server health.
+  ASSERT_STR_CONTAINS(err_string,
+    "Tablet Server Summary\n"
+    "  UUID   | Address | Status\n"
+    "---------+---------+---------\n"
+    " ts-id-0 | <mock>  | HEALTHY\n"
+    " ts-id-1 | <mock>  | HEALTHY\n"
+    " ts-id-2 | <mock>  | HEALTHY\n");
 }
 
 TEST_F(KsckTest, TestMasterUnavailable) {
+  shared_ptr<MockKsckMaster> master =
+      std::static_pointer_cast<MockKsckMaster>(cluster_->masters_.at(1));
+  master->fetch_info_status_ = Status::NetworkError("gremlins");
+  ASSERT_TRUE(ksck_->CheckMasterHealth().IsNetworkError());
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+    "Master Summary\n"
+    "    UUID     | Address  |   Status\n"
+    "-------------+----------+-------------\n"
+    " master-id-0 | master-0 | HEALTHY\n"
+    " master-id-2 | master-2 | HEALTHY\n"
+    " master-id-1 | master-1 | UNAVAILABLE\n");
+}
+
+TEST_F(KsckTest, TestLeaderMasterUnavailable) {
   Status error = Status::NetworkError("Network failure");
   cluster_->fetch_info_status_ = error;
   ASSERT_TRUE(ksck_->CheckClusterRunning().IsNetworkError());
-}
-
-TEST_F(KsckTest, TestTabletServersOk) {
-  ASSERT_OK(RunKsck());
 }
 
 TEST_F(KsckTest, TestWrongUUIDTabletServer) {
@@ -332,13 +395,12 @@ TEST_F(KsckTest, TestWrongUUIDTabletServer) {
   ASSERT_TRUE(ksck_->FetchInfoFromTabletServers().IsNetworkError());
   ASSERT_STR_CONTAINS(err_stream_.str(),
     "Tablet Server Summary\n"
-    "  UUID   | RPC Address |      Status\n"
-    "---------+-------------+-------------------\n"
-    " ts-id-2 | <mock>      | HEALTHY\n"
-    " ts-id-0 | <mock>      | HEALTHY\n"
-    " ts-id-1 | <mock>      | WRONG_SERVER_UUID\n");
+    "  UUID   | Address |      Status\n"
+    "---------+---------+-------------------\n"
+    " ts-id-0 | <mock>  | HEALTHY\n"
+    " ts-id-2 | <mock>  | HEALTHY\n"
+    " ts-id-1 | <mock>  | WRONG_SERVER_UUID\n");
 }
-
 
 TEST_F(KsckTest, TestBadTabletServer) {
   CreateOneSmallReplicatedTable();
@@ -357,7 +419,7 @@ TEST_F(KsckTest, TestBadTabletServer) {
   EXPECT_EQ("Corruption: 1 out of 1 table(s) are not healthy", s.ToString());
   ASSERT_STR_CONTAINS(
       err_stream_.str(),
-      "WARNING: Unable to connect to Tablet Server "
+      "WARNING: Unable to connect to tablet server "
       "ts-id-1 (<mock>): Network error: Network failure");
   ASSERT_STR_CONTAINS(
       err_stream_.str(),
@@ -377,14 +439,6 @@ TEST_F(KsckTest, TestBadTabletServer) {
       "  ts-id-0 (<mock>): RUNNING [LEADER]\n"
       "  ts-id-1 (<mock>): TS unavailable\n"
       "  ts-id-2 (<mock>): RUNNING\n");
-}
-
-TEST_F(KsckTest, TestZeroTabletReplicasCheck) {
-  ASSERT_OK(RunKsck());
-}
-
-TEST_F(KsckTest, TestZeroTableCheck) {
-  ASSERT_OK(RunKsck());
 }
 
 TEST_F(KsckTest, TestOneTableCheck) {

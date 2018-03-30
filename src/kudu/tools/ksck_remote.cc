@@ -41,6 +41,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/master/master.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/response_callback.h"
 #include "kudu/rpc/rpc_controller.h"
@@ -79,8 +80,49 @@ using std::string;
 using std::vector;
 using strings::Substitute;
 
+namespace {
 MonoDelta GetDefaultTimeout() {
   return MonoDelta::FromMilliseconds(FLAGS_timeout_ms);
+}
+} // anonymous namespace
+
+Status RemoteKsckMaster::Init() {
+  vector<Sockaddr> addresses;
+  RETURN_NOT_OK(ParseAddressList(address_,
+      master::Master::kDefaultPort,
+      &addresses));
+  const auto& addr = addresses[0];
+  HostPort hp;
+  RETURN_NOT_OK(hp.ParseString(address_, master::Master::kDefaultPort));
+  const auto& host = hp.host();
+  generic_proxy_.reset(new server::GenericServiceProxy(messenger_, addr, host));
+  consensus_proxy_.reset(new consensus::ConsensusServiceProxy(messenger_, addr, host));
+  return Status::OK();
+}
+
+Status RemoteKsckMaster::FetchInfo() {
+  state_ = KsckFetchState::FETCH_FAILED;
+  server::GetStatusRequestPB req;
+  server::GetStatusResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(GetDefaultTimeout());
+  RETURN_NOT_OK_PREPEND(generic_proxy_->GetStatus(req, &resp, &rpc),
+                        "could not get status from master");
+  uuid_ = resp.status().node_instance().permanent_uuid();
+  state_ = KsckFetchState::FETCHED;
+  return Status::OK();
+}
+
+Status RemoteKsckMaster::FetchConsensusState() {
+  CHECK_EQ(state_, KsckFetchState::FETCHED);
+  consensus::GetConsensusStateRequestPB req;
+  consensus::GetConsensusStateResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(GetDefaultTimeout());
+  req.set_dest_uuid(uuid_);
+  RETURN_NOT_OK_PREPEND(consensus_proxy_->GetConsensusState(req, &resp, &rpc),
+                        "could not fetch consensus info from master");
+  return Status::OK();
 }
 
 Status RemoteKsckTabletServer::Init() {
@@ -97,7 +139,7 @@ Status RemoteKsckTabletServer::Init() {
 }
 
 Status RemoteKsckTabletServer::FetchInfo() {
-  state_ = kFetchFailed;
+  state_ = KsckFetchState::FETCH_FAILED;
 
   {
     server::GetStatusRequestPB req;
@@ -142,7 +184,7 @@ Status RemoteKsckTabletServer::FetchInfo() {
     timestamp_ = resp.timestamp();
   }
 
-  state_ = kFetched;
+  state_ = KsckFetchState::FETCHED;
   return Status::OK();
 }
 
@@ -336,7 +378,12 @@ Status RemoteKsckCluster::Build(const vector<string>& master_addresses,
   shared_ptr<Messenger> messenger;
   MessengerBuilder builder(kMessengerName);
   RETURN_NOT_OK(builder.Build(&messenger));
-  cluster->reset(new RemoteKsckCluster(master_addresses, messenger));
+  auto* cl = new RemoteKsckCluster(master_addresses, messenger);
+  for (const auto& master : cl->masters()) {
+    RETURN_NOT_OK_PREPEND(master->Init(),
+                          Substitute("unable to initialize master at $0", master->address()));
+  }
+  cluster->reset(cl);
   return Status::OK();
 }
 

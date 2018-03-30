@@ -21,9 +21,10 @@
 #define KUDU_TOOLS_KSCK_H
 
 #include <cstdint>
+#include <iosfwd>
 #include <map>
 #include <memory>
-#include <iosfwd>
+#include <ostream>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -235,10 +236,70 @@ class ChecksumProgressCallbacks {
   virtual void Finished(const Status& status, uint64_t checksum) = 0;
 };
 
-// The following two classes must be extended in order to communicate with their respective
+// Enum representing the fetch status of a ksck master or tablet server.
+enum class KsckFetchState {
+  // Information has not yet been fetched.
+  UNINITIALIZED,
+  // The attempt to fetch information failed.
+  FETCH_FAILED,
+  // Information was fetched successfully.
+  FETCHED,
+};
+
+// Required for logging in case of CHECK failures.
+std::ostream& operator<<(std::ostream& lhs, KsckFetchState state);
+
+// The following three classes must be extended in order to communicate with their respective
 // components. The two main use cases envisioned for this are:
-// - To be able to mock a cluster to more easily test the Ksck checks.
+// - To be able to mock a cluster to more easily test the ksck checks.
 // - To be able to communicate with a real Kudu cluster.
+
+// Class that must be extended to represent a master.
+class KsckMaster {
+ public:
+  explicit KsckMaster(std::string address) : address_(std::move(address)) {}
+  virtual ~KsckMaster() = default;
+
+  virtual Status Init() = 0;
+
+  virtual Status FetchInfo() = 0;
+
+  virtual Status FetchConsensusState() = 0;
+
+  // Since masters are provided by address, FetchInfo() must be called before
+  // calling this method.
+  virtual const std::string& uuid() const {
+    CHECK_NE(state_, KsckFetchState::UNINITIALIZED);
+    return uuid_;
+  }
+
+  virtual const std::string& address() const {
+    return address_;
+  }
+
+  std::string ToString() const {
+    return strings::Substitute("$0 ($1)", uuid(), address());
+  }
+
+  bool is_healthy() const {
+    CHECK_NE(KsckFetchState::UNINITIALIZED, state_);
+    return state_ == KsckFetchState::FETCHED;
+  }
+
+ protected:
+  friend class KsckTest;
+
+  // Masters that haven't been fetched from or that were unavailable have a
+  // dummy uuid.
+  static constexpr const char* kDummyUuid = "<unknown>";
+  std::string uuid_ = kDummyUuid;
+
+  KsckFetchState state_ = KsckFetchState::UNINITIALIZED;
+  const std::string address_;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(KsckMaster);
+};
 
 // Class that must be extended to represent a tablet server.
 class KsckTabletServer {
@@ -278,26 +339,26 @@ class KsckTabletServer {
   virtual std::string address() const = 0;
 
   bool is_healthy() const {
-    CHECK_NE(state_, kUninitialized);
-    return state_ == kFetched;
+    CHECK_NE(KsckFetchState::UNINITIALIZED, state_);
+    return state_ == KsckFetchState::FETCHED;
   }
 
   // Gets the mapping of tablet id to tablet replica for this tablet server.
   const TabletStatusMap& tablet_status_map() const {
-    CHECK_EQ(state_, kFetched);
+    CHECK_EQ(KsckFetchState::FETCHED, state_);
     return tablet_status_map_;
   }
 
   // Gets the mapping of tablet id to tablet consensus info for this tablet server.
   const TabletConsensusStateMap& tablet_consensus_state_map() const {
-    CHECK_EQ(state_, kFetched);
+    CHECK_EQ(KsckFetchState::FETCHED, state_);
     return tablet_consensus_state_map_;
   }
 
   tablet::TabletStatePB ReplicaState(const std::string& tablet_id) const;
 
   uint64_t current_timestamp() const {
-    CHECK_EQ(state_, kFetched);
+    CHECK_EQ(KsckFetchState::FETCHED, state_);
     return timestamp_;
   }
 
@@ -310,12 +371,7 @@ class KsckTabletServer {
   FRIEND_TEST(KsckTest, TestMismatchedAssignments);
   FRIEND_TEST(KsckTest, TestTabletCopying);
 
-  enum State {
-    kUninitialized,
-    kFetchFailed,
-    kFetched
-  };
-  State state_ = kUninitialized;
+  KsckFetchState state_ = KsckFetchState::UNINITIALIZED;
   TabletStatusMap tablet_status_map_;
   TabletConsensusStateMap tablet_consensus_state_map_;
   uint64_t timestamp_;
@@ -328,6 +384,9 @@ class KsckTabletServer {
 // Class used to communicate with a cluster.
 class KsckCluster {
  public:
+  // A list of masters.
+  typedef std::vector<std::shared_ptr<KsckMaster>> MasterList;
+
   // Map of KsckTabletServer objects keyed by tablet server uuid.
   typedef std::unordered_map<std::string, std::shared_ptr<KsckTabletServer>> TSMap;
 
@@ -355,6 +414,10 @@ class KsckCluster {
   // The table's tablet list is modified only if this method returns OK.
   virtual Status RetrieveTabletsList(const std::shared_ptr<KsckTable>& table) = 0;
 
+  const MasterList& masters() {
+    return masters_;
+  }
+
   const TSMap& tablet_servers() {
     return tablet_servers_;
   }
@@ -365,13 +428,13 @@ class KsckCluster {
 
  protected:
   KsckCluster() = default;
+  MasterList masters_;
   TSMap tablet_servers_;
   std::vector<std::shared_ptr<KsckTable>> tables_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(KsckCluster);
 };
-
 
 // Externally facing class to run checks against the provided cluster.
 class Ksck {
@@ -406,18 +469,22 @@ class Ksck {
     tablet_id_filters_ = std::move(tablet_ids);
   }
 
+  // Check that all masters are healthy.
+  Status CheckMasterHealth();
+
   // Verifies that it can connect to the cluster, i.e. that it can contact a
   // leader master.
   Status CheckClusterRunning();
 
   // Populates all the cluster table and tablet info from the master.
+  // Must first call CheckClusterRunning().
   Status FetchTableAndTabletInfo();
 
   // Connects to all tablet servers, checks that they are alive, and fetches
   // their current status and tablet information.
   Status FetchInfoFromTabletServers();
 
-  // Establishes a connection with the specified Tablet Server.
+  // Establishes a connection with the specified tablet server.
   // Must first call FetchTableAndTabletInfo().
   Status ConnectToTabletServer(const std::shared_ptr<KsckTabletServer>& ts);
 
@@ -455,21 +522,28 @@ class Ksck {
     CONSENSUS_MISMATCH,
   };
 
-  enum class TabletServerHealth {
-    // The tablet server is healthy
+  enum class ServerHealth {
+    // The server is healthy.
     HEALTHY,
 
-    // The tablet server couldn't be connected to
+    // The server couldn't be connected to.
     UNAVAILABLE,
 
-    // The tablet server reported an unknown UUID
+    // The server reported an unexpected UUID.
     WRONG_SERVER_UUID,
   };
 
-  struct TabletServerSummary {
+  static std::string ServerHealthToString(ServerHealth sh);
+
+  // Returns an int signifying the "unhealthiness level" of a 'sh'.
+  // Useful for sorting or comparing.
+  static int ServerHealthScore(ServerHealth sh);
+
+  // Summarizes the result of a server health check.
+  struct ServerHealthSummary {
     std::string uuid;
-    std::string host_port;
-    TabletServerHealth health;
+    std::string address;
+    ServerHealth health;
   };
 
   // Summarizes the result of VerifyTable().
@@ -505,9 +579,29 @@ class Ksck {
     }
   };
 
-  static Status PrintTabletServerSummaries(
-    const std::vector<TabletServerSummary>& tablet_server_summaries,
-    std::ostream& out);
+  enum class ServerType {
+    MASTER,
+    TABLET_SERVER,
+  };
+
+  static std::string ServerTypeToString(ServerType type) {
+    switch (type) {
+      case ServerType::MASTER:
+        return "Master";
+      case ServerType::TABLET_SERVER:
+        return "Tablet Server";
+      default:
+        LOG(FATAL) << "Unkown ServerType";
+    }
+  }
+
+  // Print a formatted health summary to 'out', given a list `summaries`
+  // describing the health of servers of type 'type'.
+  static Status PrintServerHealthSummaries(ServerType type,
+                                           std::vector<ServerHealthSummary> summaries,
+                                           std::ostream& out);
+
+  // Print a formatted summary of the table in 'table_summaries' to 'out'.
   static Status PrintTableSummaries(const std::vector<TableSummary>& table_summaries,
                                     std::ostream& out);
 

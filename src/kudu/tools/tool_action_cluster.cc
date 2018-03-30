@@ -81,16 +81,18 @@ Status RunKsck(const RunnerContext& context) {
   ksck->set_tablet_id_filters(strings::Split(
       FLAGS_tablets, ",", strings::SkipEmpty()));
 
-  RETURN_NOT_OK_PREPEND(ksck->CheckClusterRunning(),
-                        "master liveness check error");
-  RETURN_NOT_OK_PREPEND(ksck->FetchTableAndTabletInfo(),
-                        "error fetching the cluster metadata from the Master server");
-
   vector<string> error_messages;
+  PUSH_PREPEND_NOT_OK(ksck->CheckMasterHealth(), error_messages,
+                      "error fetching info from masters");
+
+  RETURN_NOT_OK_PREPEND(ksck->CheckClusterRunning(),
+                        "leader master liveness check error");
+  RETURN_NOT_OK_PREPEND(ksck->FetchTableAndTabletInfo(),
+                        "error fetching the cluster metadata from the leader master");
+
   PUSH_PREPEND_NOT_OK(ksck->FetchInfoFromTabletServers(), error_messages,
                       "error fetching info from tablet servers");
 
-  // TODO: Add support for tables / tablets filter in the consistency check.
   PUSH_PREPEND_NOT_OK(ksck->CheckTablesConsistency(), error_messages,
                       "table consistency check error");
 
