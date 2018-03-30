@@ -62,6 +62,7 @@
 #include "kudu/util/status.h"
 #include "kudu/util/subprocess.h"
 #include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
 #include "kudu/util/thread_restrictions.h"
 #include "kudu/util/user.h"
 
@@ -435,7 +436,7 @@ TEST_F(RpcStubTest, TestDontHandleTimedOutCalls) {
   for (int i = 0; i < n_worker_threads_; i++) {
     gscoped_ptr<AsyncSleep> sleep(new AsyncSleep);
     sleep->rpc.set_timeout(MonoDelta::FromSeconds(1));
-    sleep->req.set_sleep_micros(100*1000); // 100ms
+    sleep->req.set_sleep_micros(1000*1000); // 1sec
     p.SleepAsync(sleep->req, &sleep->resp, &sleep->rpc,
                  boost::bind(&CountDownLatch::CountDown, &sleep->latch));
     sleeps.push_back(sleep.release());
@@ -453,21 +454,34 @@ TEST_F(RpcStubTest, TestDontHandleTimedOutCalls) {
 
   // Send another call with a short timeout. This shouldn't get processed, because
   // it'll get stuck in the queue for longer than its timeout.
-  RpcController rpc;
-  SleepRequestPB req;
-  SleepResponsePB resp;
-  req.set_sleep_micros(1000);
-  rpc.set_timeout(MonoDelta::FromMilliseconds(1));
-  Status s = p.Sleep(req, &resp, &rpc);
-  ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
+  ASSERT_EVENTUALLY([&]() {
+    RpcController rpc;
+    SleepRequestPB req;
+    SleepResponsePB resp;
+    req.set_sleep_micros(1); // unused but required.
+    rpc.set_timeout(MonoDelta::FromMilliseconds(5));
+    Status s = p.Sleep(req, &resp, &rpc);
+    ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
+    // Since our timeout was short, it's possible in rare circumstances
+    // that we time out the RPC on the outbound queue, in which case
+    // we won't trigger the desired behavior here. In that case, the
+    // timeout error status would have the string 'ON_OUTBOUND_QUEUE'
+    // instead of 'SENT', so this assertion would fail and cause the
+    // ASSERT_EVENTUALLY to loop.
+    ASSERT_STR_CONTAINS(s.ToString(), "SENT");
+  });
 
   for (AsyncSleep* s : sleeps) {
     s->latch.Wait();
   }
 
   // Verify that the timedout call got short circuited before being processed.
+  // We may need to loop a short amount of time as we are racing with the reactor
+  // thread to process the remaining elements of the queue.
   const Counter* timed_out_in_queue = service_pool_->RpcsTimedOutInQueueMetricForTests();
-  ASSERT_EQ(1, timed_out_in_queue->value());
+  ASSERT_EVENTUALLY([&]{
+    ASSERT_EQ(1, timed_out_in_queue->value());
+  });
 }
 
 // Test which ensures that the RPC queue accepts requests with the earliest
