@@ -44,6 +44,7 @@
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/replica_management.pb.h"
 #include "kudu/generated/version_defines.h"
+#include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
@@ -101,6 +102,7 @@ using strings::Substitute;
 DECLARE_bool(catalog_manager_check_ts_count_for_create_table);
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 DECLARE_double(sys_catalog_fail_during_write);
+DECLARE_int32(diagnostics_log_stack_traces_interval_ms);
 DECLARE_int32(master_inject_latency_on_tablet_lookups_ms);
 
 namespace kudu {
@@ -806,6 +808,13 @@ TEST_F(MasterTest, TestInvalidGetTableLocations) {
 TEST_F(MasterTest, TestDumpStacksOnRpcQueueOverflow) {
   mini_master_->mutable_options()->rpc_opts.num_service_threads = 1;
   mini_master_->mutable_options()->rpc_opts.service_queue_length = 1;
+  // Disable periodic stack tracing, since we want to be asserting only for the
+  // overflow-triggered stack traces. If we don't disable it, it's possible that
+  // the overflow will happen during the middle of an unrelated scheduled trace,
+  // in which case it will be ignored.
+  ANNOTATE_BENIGN_RACE(&FLAGS_diagnostics_log_stack_traces_interval_ms,
+      "modified at runtime for test");
+  FLAGS_diagnostics_log_stack_traces_interval_ms = 0;
   FLAGS_master_inject_latency_on_tablet_lookups_ms = 1000;
   // Use a new log directory so that the tserver and master don't share the
   // same one. This allows us to isolate the diagnostics log from the master.
@@ -837,13 +846,18 @@ TEST_F(MasterTest, TestDumpStacksOnRpcQueueOverflow) {
   vector<string> log_paths;
   ASSERT_OK(env_->Glob(FLAGS_log_dir + "/*diagnostics*", &log_paths));
   ASSERT_EQ(1, log_paths.size());
-  faststring log_contents;
-  ASSERT_OK(ReadFileToString(env_, log_paths[0], &log_contents));
-  vector<string> lines = strings::Split(log_contents.ToString(), "\n");
-  int dump_count = std::count_if(lines.begin(), lines.end(), [](const string& line) {
-      return MatchPattern(line, "*service queue overflowed for kudu.master.MasterService*");
-    });
-  ASSERT_EQ(dump_count, 1) << log_contents.ToString();
+
+  // The dump may not arrive immediately since symbolization may take a few seconds,
+  // especially in TSAN builds, etc.
+  ASSERT_EVENTUALLY([&]() {
+    faststring log_contents;
+    ASSERT_OK(ReadFileToString(env_, log_paths[0], &log_contents));
+    vector<string> lines = strings::Split(log_contents.ToString(), "\n");
+    int dump_count = std::count_if(lines.begin(), lines.end(), [](const string& line) {
+        return MatchPattern(line, "*service queue overflowed for kudu.master.MasterService*");
+      });
+    ASSERT_EQ(dump_count, 1) << log_contents.ToString();
+  });
 }
 #endif // #ifndef __APPLE__
 

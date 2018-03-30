@@ -68,12 +68,14 @@ namespace google {
 bool Symbolize(void *pc, char *out, int out_size);
 }
 
-DEFINE_uint32(diagnostics_log_stack_traces_interval_ms, 60000,
+DEFINE_int32(diagnostics_log_stack_traces_interval_ms, 60000,
              "The interval at which the server will a snapshot of its thread stacks to the "
              "diagnostics log. In fact, the server will log at a random interval betweeen "
              "zero and twice the configured value to avoid biasing samples towards periodic "
              "processes which happen exactly on some particular schedule. If this is set to "
-             "0, stack traces will be not be periodically logged.");
+             "0, stack traces will be not be periodically logged, but will still be logged "
+             "on events such as queue overflows. Setting this to a negative value disables "
+             "stack trace logging entirely.");
 TAG_FLAG(diagnostics_log_stack_traces_interval_ms, runtime);
 TAG_FLAG(diagnostics_log_stack_traces_interval_ms, experimental);
 
@@ -221,7 +223,7 @@ void DiagnosticsLog::RunThread() {
     Status s;
     if (what == WakeupType::METRICS) {
       WARN_NOT_OK(LogMetrics(), "Unable to collect metrics to diagnostics log");
-    } else if (what == WakeupType::STACKS && FLAGS_diagnostics_log_stack_traces_interval_ms > 0) {
+    } else if (what == WakeupType::STACKS && FLAGS_diagnostics_log_stack_traces_interval_ms >= 0) {
       WARN_NOT_OK(LogStacks(reason), "Unable to collect stacks to diagnostics log");
     }
   }
