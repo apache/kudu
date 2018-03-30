@@ -100,8 +100,7 @@ Master::Master(const MasterOptions& opts)
     catalog_manager_(new CatalogManager(this)),
     path_handlers_(new MasterPathHandlers(this)),
     opts_(opts),
-    registration_initialized_(false),
-    maintenance_manager_(new MaintenanceManager(MaintenanceManager::kDefaultOptions)) {
+    registration_initialized_(false) {
 }
 
 Master::~Master() {
@@ -128,6 +127,9 @@ Status Master::Init() {
     RETURN_NOT_OK(path_handlers_->Register(web_server_.get()));
   }
 
+  maintenance_manager_.reset(new MaintenanceManager(
+      MaintenanceManager::kDefaultOptions, fs_manager_->uuid()));
+
   // The certificate authority object is initialized upon loading
   // CA private key and certificate from the system table when the server
   // becomes a leader.
@@ -152,7 +154,7 @@ Status Master::Start() {
 Status Master::StartAsync() {
   CHECK_EQ(kInitialized, state_);
 
-  RETURN_NOT_OK(maintenance_manager_->Init(fs_manager_->uuid()));
+  RETURN_NOT_OK(maintenance_manager_->Start());
 
   gscoped_ptr<ServiceIf> impl(new MasterServiceImpl(this));
   gscoped_ptr<ServiceIf> consensus_service(new ConsensusServiceImpl(

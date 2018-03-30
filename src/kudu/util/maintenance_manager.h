@@ -274,10 +274,12 @@ class MaintenanceManager : public std::enable_shared_from_this<MaintenanceManage
     uint32_t history_size;
   };
 
-  explicit MaintenanceManager(const Options& options);
+  MaintenanceManager(const Options& options, std::string server_uuid);
   ~MaintenanceManager();
 
-  Status Init(std::string server_uuid);
+  // Start running the maintenance manager.
+  // Must be called at most once.
+  Status Start();
   void Shutdown();
 
   // Register an op with the manager.
@@ -318,6 +320,7 @@ class MaintenanceManager : public std::enable_shared_from_this<MaintenanceManage
 
   std::string LogPrefix() const;
 
+  const std::string server_uuid_;
   const int32_t num_threads_;
   OpMapTy ops_; // registered operations
   Mutex lock_;
@@ -331,7 +334,6 @@ class MaintenanceManager : public std::enable_shared_from_this<MaintenanceManage
   // the completed_ops_count_ % the vector's size and then the count needs to be incremented.
   std::vector<OpInstance> completed_ops_;
   int64_t completed_ops_count_;
-  std::string server_uuid_;
   Random rand_;
 
   // Function which should return true if the server is under global memory pressure.

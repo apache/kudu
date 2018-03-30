@@ -141,9 +141,11 @@ const MaintenanceManager::Options MaintenanceManager::kDefaultOptions = {
   .history_size = 0,
 };
 
-MaintenanceManager::MaintenanceManager(const Options& options)
-  : num_threads_(options.num_threads <= 0 ?
-      FLAGS_maintenance_manager_num_threads : options.num_threads),
+MaintenanceManager::MaintenanceManager(const Options& options,
+                                       std::string server_uuid)
+  : server_uuid_(std::move(server_uuid)),
+    num_threads_(options.num_threads <= 0 ?
+                 FLAGS_maintenance_manager_num_threads : options.num_threads),
     cond_(&lock_),
     shutdown_(false),
     polling_interval_ms_(options.polling_interval_ms <= 0 ?
@@ -165,8 +167,8 @@ MaintenanceManager::~MaintenanceManager() {
   Shutdown();
 }
 
-Status MaintenanceManager::Init(std::string server_uuid) {
-  server_uuid_ = std::move(server_uuid);
+Status MaintenanceManager::Start() {
+  CHECK(!monitor_thread_);
   RETURN_NOT_OK(Thread::Create("maintenance", "maintenance_scheduler",
       boost::bind(&MaintenanceManager::RunSchedulerThread, this),
       &monitor_thread_));

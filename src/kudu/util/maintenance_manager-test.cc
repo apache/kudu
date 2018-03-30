@@ -70,12 +70,12 @@ class MaintenanceManagerTest : public KuduTest {
     options.num_threads = 2;
     options.polling_interval_ms = 1;
     options.history_size = kHistorySize;
-    manager_.reset(new MaintenanceManager(options));
+    manager_.reset(new MaintenanceManager(options, kFakeUuid));
     manager_->set_memory_pressure_func_for_tests(
         [&](double* consumption) {
           return indicate_memory_pressure_.load();
         });
-    ASSERT_OK(manager_->Init(kFakeUuid));
+    ASSERT_OK(manager_->Start());
   }
 
   void TearDown() override {
