@@ -1,0 +1,28 @@
+From 47c99cf492fa340671fa89afec263b8d6e859755 Mon Sep 17 00:00:00 2001
+From: Aliaksey Kandratsenka <alkondratenko@gmail.com>
+Date: Sat, 24 Mar 2018 18:29:06 -0700
+Subject: [PATCH] unbreak printing large span stats
+
+One of recent commits started passing kMaxPages to printf but not used
+it. Thankfully compilers gave us warning. Apparently intention was to
+print real value of kMaxPages, so this is what we're doing now.
+---
+ src/tcmalloc.cc | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/tcmalloc.cc b/src/tcmalloc.cc
+index 1f22dfb..52af2dd 100644
+--- a/src/tcmalloc.cc
++++ b/src/tcmalloc.cc
+@@ -517,9 +517,9 @@ static void DumpStats(TCMalloc_Printer* out, int level) {
+ 
+     total_normal += large.normal_pages;
+     total_returned += large.returned_pages;
+-    out->printf(">128   large * %6u spans ~ %6.1f MiB; %6.1f MiB cum"
++    out->printf(">%-5u large * %6u spans ~ %6.1f MiB; %6.1f MiB cum"
+                 "; unmapped: %6.1f MiB; %6.1f MiB cum\n",
+-                kMaxPages,
++                static_cast<unsigned int>(kMaxPages),
+                 static_cast<unsigned int>(large.spans),
+                 PagesToMiB(large.normal_pages + large.returned_pages),
+                 PagesToMiB(total_normal + total_returned),

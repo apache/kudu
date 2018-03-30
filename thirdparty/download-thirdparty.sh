@@ -157,12 +157,13 @@ fetch_and_patch \
  $GFLAGS_SOURCE \
  $GFLAGS_PATCHLEVEL
 
-GPERFTOOLS_PATCHLEVEL=1
+GPERFTOOLS_PATCHLEVEL=2
 fetch_and_patch \
  gperftools-${GPERFTOOLS_VERSION}.tar.gz \
  $GPERFTOOLS_SOURCE \
  $GPERFTOOLS_PATCHLEVEL \
  "patch -p1 < $TP_DIR/patches/gperftools-Replace-namespace-base-with-namespace-tcmalloc.patch" \
+ "patch -p1 < $TP_DIR/patches/gperftools-unbreak-memz.patch" \
  "autoreconf -fvi"
 
 PROTOBUF_PATCHLEVEL=0
