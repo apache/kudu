@@ -118,6 +118,7 @@ enum class KsckConsensusConfigType {
 
 // Representation of a consensus state.
 struct KsckConsensusState {
+  KsckConsensusState() = default;
   KsckConsensusState(KsckConsensusConfigType type,
                      boost::optional<int64_t> term,
                      boost::optional<int64_t> opid_index,
@@ -257,7 +258,10 @@ std::ostream& operator<<(std::ostream& lhs, KsckFetchState state);
 // Class that must be extended to represent a master.
 class KsckMaster {
  public:
-  explicit KsckMaster(std::string address) : address_(std::move(address)) {}
+  explicit KsckMaster(std::string address) :
+    address_(std::move(address)),
+    uuid_(strings::Substitute("$0 ($1)", kDummyUuid, address_)) {}
+
   virtual ~KsckMaster() = default;
 
   virtual Status Init() = 0;
@@ -277,6 +281,11 @@ class KsckMaster {
     return address_;
   }
 
+  virtual const boost::optional<consensus::ConsensusStatePB> cstate() const {
+    CHECK_NE(state_, KsckFetchState::UNINITIALIZED);
+    return cstate_;
+  }
+
   std::string ToString() const {
     return strings::Substitute("$0 ($1)", uuid(), address());
   }
@@ -286,16 +295,19 @@ class KsckMaster {
     return state_ == KsckFetchState::FETCHED;
   }
 
- protected:
-  friend class KsckTest;
-
   // Masters that haven't been fetched from or that were unavailable have a
   // dummy uuid.
   static constexpr const char* kDummyUuid = "<unknown>";
-  std::string uuid_ = kDummyUuid;
 
-  KsckFetchState state_ = KsckFetchState::UNINITIALIZED;
+ protected:
+  friend class KsckTest;
+
   const std::string address_;
+  std::string uuid_;
+  KsckFetchState state_ = KsckFetchState::UNINITIALIZED;
+
+  // May be none if consensus state fetch fails.
+  boost::optional<consensus::ConsensusStatePB> cstate_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(KsckMaster);
@@ -471,6 +483,9 @@ class Ksck {
 
   // Check that all masters are healthy.
   Status CheckMasterHealth();
+
+  // Check that the masters' consensus information is consistent.
+  Status CheckMasterConsensus();
 
   // Verifies that it can connect to the cluster, i.e. that it can contact a
   // leader master.

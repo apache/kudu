@@ -72,6 +72,7 @@ add_library(ksck
 target_link_libraries(ksck
   consensus
   kudu_tools_util
+  master
   master_proto
   server_base_proto
   tserver_proto

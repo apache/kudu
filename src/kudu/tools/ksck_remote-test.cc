@@ -216,6 +216,7 @@ class RemoteKsckTest : public KuduTest {
 
 TEST_F(RemoteKsckTest, TestClusterOk) {
   ASSERT_OK(ksck_->CheckMasterHealth());
+  ASSERT_OK(ksck_->CheckMasterConsensus());
   ASSERT_OK(ksck_->CheckClusterRunning());
   ASSERT_OK(ksck_->FetchTableAndTabletInfo());
   ASSERT_OK(ksck_->FetchInfoFromTabletServers());
@@ -223,6 +224,7 @@ TEST_F(RemoteKsckTest, TestClusterOk) {
 
 TEST_F(RemoteKsckTest, TestTabletServerMismatchedUUID) {
   ASSERT_OK(ksck_->CheckMasterHealth());
+  ASSERT_OK(ksck_->CheckMasterConsensus());
   ASSERT_OK(ksck_->CheckClusterRunning());
   ASSERT_OK(ksck_->FetchTableAndTabletInfo());
 
@@ -250,6 +252,7 @@ TEST_F(RemoteKsckTest, TestTableConsistency) {
   Status s;
   while (MonoTime::Now() < deadline) {
     ASSERT_OK(ksck_->CheckMasterHealth());
+    ASSERT_OK(ksck_->CheckMasterConsensus());
     ASSERT_OK(ksck_->CheckClusterRunning());
     ASSERT_OK(ksck_->FetchTableAndTabletInfo());
     ASSERT_OK(ksck_->FetchInfoFromTabletServers());
@@ -271,6 +274,7 @@ TEST_F(RemoteKsckTest, TestChecksum) {
   Status s;
   while (MonoTime::Now() < deadline) {
     ASSERT_OK(ksck_->CheckMasterHealth());
+    ASSERT_OK(ksck_->CheckMasterConsensus());
     ASSERT_OK(ksck_->CheckClusterRunning());
     ASSERT_OK(ksck_->FetchTableAndTabletInfo());
     ASSERT_OK(ksck_->FetchInfoFromTabletServers());
@@ -318,6 +322,7 @@ TEST_F(RemoteKsckTest, TestChecksumSnapshot) {
 
   uint64_t ts = client_->GetLatestObservedTimestamp();
   ASSERT_OK(ksck_->CheckMasterHealth());
+  ASSERT_OK(ksck_->CheckMasterConsensus());
   ASSERT_OK(ksck_->CheckClusterRunning());
   ASSERT_OK(ksck_->FetchTableAndTabletInfo());
   ASSERT_OK(ksck_->FetchInfoFromTabletServers());
@@ -342,6 +347,7 @@ TEST_F(RemoteKsckTest, TestChecksumSnapshotCurrentTimestamp) {
   CHECK(started_writing.WaitFor(MonoDelta::FromSeconds(30)));
 
   ASSERT_OK(ksck_->CheckMasterHealth());
+  ASSERT_OK(ksck_->CheckMasterConsensus());
   ASSERT_OK(ksck_->CheckClusterRunning());
   ASSERT_OK(ksck_->FetchTableAndTabletInfo());
   ASSERT_OK(ksck_->FetchInfoFromTabletServers());
@@ -356,6 +362,7 @@ TEST_F(RemoteKsckTest, TestLeaderMasterDown) {
   // Make sure ksck's client is created with the current leader master and that
   // all masters are healthy.
   ASSERT_OK(ksck_->CheckMasterHealth());
+  ASSERT_OK(ksck_->CheckMasterConsensus());
   ASSERT_OK(ksck_->CheckClusterRunning());
 
   // Shut down the leader master.

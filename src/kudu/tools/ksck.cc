@@ -25,6 +25,7 @@
 #include <map>
 #include <mutex>
 #include <numeric>
+#include <tuple>
 #include <type_traits>
 #include <vector>
 
@@ -97,6 +98,77 @@ bool MatchesAnyPattern(const vector<string>& patterns, const string& str) {
   }
   return false;
 }
+
+// Return a formatted string version of 'config', mapping UUIDs to single-character
+// labels using the mapping 'label_by_uuid'.
+string format_replicas(const map<string, char>& label_by_uuid, const KsckConsensusState& config) {
+  constexpr int kPeerWidth = 4;
+  ostringstream result;
+  // Sort the output by label for readability.
+  std::set<std::pair<char, string>> labeled_replicas;
+  for (const auto& entry : label_by_uuid) {
+    labeled_replicas.emplace(entry.second, entry.first);
+  }
+  for (const auto &entry : labeled_replicas) {
+    if (!ContainsKey(config.voter_uuids, entry.second) &&
+        !ContainsKey(config.non_voter_uuids, entry.second)) {
+      result << setw(kPeerWidth) << left << "";
+      continue;
+    }
+    if (config.leader_uuid && config.leader_uuid == entry.second) {
+      result << setw(kPeerWidth) << left << Substitute("$0*", entry.first);
+    } else {
+      if (ContainsKey(config.non_voter_uuids, entry.second)) {
+        result << setw(kPeerWidth) << left << Substitute("$0~", entry.first);
+      } else {
+        result << setw(kPeerWidth) << left << Substitute("$0", entry.first);
+      }
+    }
+  }
+  return result.str();
+}
+
+void BuildKsckConsensusStateForConfigMember(const consensus::ConsensusStatePB& cstate,
+                                            KsckConsensusState* ksck_cstate) {
+  CHECK(ksck_cstate);
+  ksck_cstate->term = cstate.current_term();
+  ksck_cstate->type = cstate.has_pending_config() ?
+                      KsckConsensusConfigType::PENDING :
+                      KsckConsensusConfigType::COMMITTED;
+  const auto& config = cstate.has_pending_config() ?
+                       cstate.pending_config() :
+                       cstate.committed_config();
+  if (config.has_opid_index()) {
+    ksck_cstate->opid_index = config.opid_index();
+  }
+  // Test for emptiness rather than mere presence, since Kudu nodes set
+  // leader_uuid to "" explicitly when they do not know about a leader.
+  if (!cstate.leader_uuid().empty()) {
+    ksck_cstate->leader_uuid = cstate.leader_uuid();
+  }
+  const auto& peers = config.peers();
+  for (const auto& pb : peers) {
+    if (pb.member_type() == consensus::RaftPeerPB::NON_VOTER) {
+      InsertOrDie(&ksck_cstate->non_voter_uuids, pb.permanent_uuid());
+    } else {
+      InsertOrDie(&ksck_cstate->voter_uuids, pb.permanent_uuid());
+    }
+  }
+}
+
+void AddToUuidLabelMapping(const std::set<string>& uuids,
+                           map<string, char>* uuid_label_mapping) {
+  CHECK(uuid_label_mapping);
+  // TODO(wdberkeley): use a scheme that gives > 26 unique labels.
+  const string labels = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  int i = uuid_label_mapping->size() % labels.size();
+  for (const auto& uuid : uuids) {
+    if (InsertIfNotPresent(uuid_label_mapping, uuid, labels[i])) {
+      i = (i + 1) % labels.size();
+    }
+  }
+}
+
 } // anonymous namespace
 
 ChecksumOptions::ChecksumOptions()
@@ -187,6 +259,11 @@ Status Ksck::CheckMasterHealth() {
       Warn() << Substitute("Unable to connect to master $0: $1",
                            master->ToString(), s.ToString()) << endl;
       bad_masters++;
+    } else if (FLAGS_consensus) {
+      if (!master->FetchConsensusState().ok()) {
+        Warn() << Substitute("Errors gathering consensus info for master $0: $1",
+                             master->ToString(), s.ToString()) << endl;
+      }
     }
   }
   CHECK_OK(PrintServerHealthSummaries(ServerType::MASTER, std::move(master_summaries), Out()));
@@ -197,6 +274,83 @@ Status Ksck::CheckMasterHealth() {
     return Status::NetworkError("failed to gather info from all masters");
   }
   Out() << Substitute("Fetched info from all $0 masters", num_masters) << endl;
+  return Status::OK();
+}
+
+Status Ksck::CheckMasterConsensus() {
+  if (!FLAGS_consensus) {
+    return Status::OK();
+  }
+  // There's no "reference" cstate for masters, so pick an arbitrary master
+  // cstate to compare with.
+  bool missing_or_conflict = false;
+  map<string, KsckConsensusState> master_cstates;
+  for (const KsckCluster::MasterList::value_type& master : cluster_->masters()) {
+    if (master->cstate()) {
+      KsckConsensusState ksck_cstate;
+      BuildKsckConsensusStateForConfigMember(*master->cstate(), &ksck_cstate);
+      InsertOrDie(&master_cstates, master->uuid(), ksck_cstate);
+    } else {
+      missing_or_conflict = true;
+    }
+  }
+  if (master_cstates.empty()) {
+    return Status::NotFound("no master consensus state available");
+  }
+  const KsckConsensusState& base = master_cstates.begin()->second;
+  for (const auto& entry : master_cstates) {
+    if (!base.Matches(entry.second)) {
+      missing_or_conflict = true;
+      break;
+    }
+  }
+  if (missing_or_conflict || FLAGS_verbose) {
+    // We need to make a consensus matrix for the masters now.
+    if (missing_or_conflict) {
+      Warn() << "masters have consensus conflicts";
+    }
+    map<string, char> replica_labels;
+    for (const KsckCluster::MasterList::value_type& master : cluster_->masters()) {
+      AddToUuidLabelMapping({ master->uuid() }, &replica_labels);
+    }
+    // Master configs have no non-voters.
+    for (const auto& entry : master_cstates) {
+      AddToUuidLabelMapping(entry.second.voter_uuids, &replica_labels);
+    }
+    Out() << "  All reported masters are:" << endl;
+    // Sort the output by label for readability.
+    std::set<std::pair<char, string>> reported_masters;
+    for (const auto& entry : replica_labels) {
+      reported_masters.emplace(entry.second, entry.first);
+    }
+    for (const auto& entry : reported_masters) {
+      Out() << "  " << entry.first << " = " << entry.second << endl;
+    }
+    DataTable cmatrix({ "Config source", "Replicas", "Current term",
+                        "Config index", "Committed?"});
+    for (const KsckCluster::MasterList::value_type& master : cluster_->masters()) {
+      const string label(1, FindOrDie(replica_labels, master->uuid()));
+      if (master->cstate()) {
+        const auto& cstate = master->cstate();
+        const string opid_index_str = cstate->committed_config().has_opid_index() ?
+                                      std::to_string(cstate->committed_config().opid_index()) :
+                                      "";
+        cmatrix.AddRow({ label,
+                         format_replicas(replica_labels,
+                                         FindOrDie(master_cstates,
+                                         master->uuid())),
+                         std::to_string(cstate->current_term()),
+                         opid_index_str,
+                         "Yes" });
+      } else {
+        cmatrix.AddRow({ label, "[config not available]", "", "", "" });
+      }
+    }
+    RETURN_NOT_OK(cmatrix.PrintTo(Out()));
+  }
+  if (missing_or_conflict) {
+    return Status::Corruption("there are master consensus conflicts");
+  }
   return Status::OK();
 }
 
@@ -291,12 +445,14 @@ Status Ksck::ConnectToTabletServer(const shared_ptr<KsckTabletServer>& ts) {
 Status Ksck::PrintServerHealthSummaries(ServerType type,
                                         vector<ServerHealthSummary> summaries,
                                         ostream& out) {
-  // Sort by decreasing order of health and then by UUID, so bad health appears
+  // Sort by (health decreasing, uuid, address), so bad health appears
   // closest to the bottom of the output in a terminal.
+  // The address is used in the sort for the unavailable master case, because
+  // we do not know the uuid in that case.
   std::sort(summaries.begin(), summaries.end(),
             [](const ServerHealthSummary& left, const ServerHealthSummary& right) {
-              return std::make_pair(ServerHealthScore(left.health), left.uuid) <
-                     std::make_pair(ServerHealthScore(right.health), right.uuid);
+              return std::make_tuple(ServerHealthScore(left.health), left.uuid, left.address) <
+                     std::make_tuple(ServerHealthScore(right.health), right.uuid, right.address);
             });
   out << ServerTypeToString(type) << " Summary" << endl;
   DataTable table({ "UUID", "Address", "Status"});
@@ -756,29 +912,6 @@ struct ReplicaInfo {
   boost::optional<KsckConsensusState> consensus_state;
 };
 
-// Format replicas known and unknown to 'config' using labels from 'uuid_mapping'.
-string format_replicas(const map<string, char>& uuid_mapping, const KsckConsensusState& config) {
-  constexpr int kPeerWidth = 4;
-  ostringstream result;
-  for (const auto &entry : uuid_mapping) {
-    if (!ContainsKey(config.voter_uuids, entry.first) &&
-        !ContainsKey(config.non_voter_uuids, entry.first)) {
-      result << setw(kPeerWidth) << left << "";
-      continue;
-    }
-    if (config.leader_uuid && config.leader_uuid == entry.first) {
-      result << setw(kPeerWidth) << left << Substitute("$0*", entry.second);
-    } else {
-      if (ContainsKey(config.non_voter_uuids, entry.first)) {
-        result << setw(kPeerWidth) << left << Substitute("$0~", entry.second);
-      } else {
-        result << setw(kPeerWidth) << left << Substitute("$0", entry.second);
-      }
-    }
-  }
-  return result.str();
-}
-
 } // anonymous namespace
 
 Ksck::CheckResult Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int table_num_replicas) {
@@ -832,36 +965,9 @@ Ksck::CheckResult Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int t
           continue;
         }
         const auto& cstate = FindOrDieNoPrint(ts->tablet_consensus_state_map(), tablet_key);
-        const auto& config = cstate.has_pending_config() ?
-                             cstate.pending_config() :
-                             cstate.committed_config();
-        const auto& peers = config.peers();
-        vector<string> voter_uuids_from_replica;
-        vector<string> non_voter_uuids_from_replica;
-        for (const auto& pb : peers) {
-          if (pb.member_type() == consensus::RaftPeerPB::NON_VOTER) {
-            non_voter_uuids_from_replica.push_back(pb.permanent_uuid());
-          } else {
-            voter_uuids_from_replica.push_back(pb.permanent_uuid());
-          }
-        }
-        boost::optional<int64_t> opid_index;
-        if (config.has_opid_index()) {
-          opid_index = config.opid_index();
-        }
-        boost::optional<string> repl_leader_uuid;
-        if (!cstate.leader_uuid().empty()) {
-          repl_leader_uuid = cstate.leader_uuid();
-        }
-        KsckConsensusConfigType config_type =
-            cstate.has_pending_config() ? KsckConsensusConfigType::PENDING
-                                        : KsckConsensusConfigType::COMMITTED;
-        repl_info->consensus_state = KsckConsensusState(config_type,
-                                                        cstate.current_term(),
-                                                        opid_index,
-                                                        repl_leader_uuid,
-                                                        voter_uuids_from_replica,
-                                                        non_voter_uuids_from_replica);
+        KsckConsensusState ksck_cstate;
+        BuildKsckConsensusStateForConfigMember(cstate, &ksck_cstate);
+        repl_info->consensus_state = std::move(ksck_cstate);
       }
     }
   }
@@ -977,39 +1083,20 @@ Ksck::CheckResult Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int t
   }
 
   // If there are consensus conflicts, dump the consensus info too. Do that also
-  // if the verbose output is requested.
+  // if verbose output is requested.
   if (conflicting_states > 0 || FLAGS_verbose) {
     if (result != CheckResult::CONSENSUS_MISMATCH) {
       Out() << Substitute("$0 replicas' active configs differ from the master's.",
                           conflicting_states)
             << endl;
     }
-    int i = 0;
     map<string, char> replica_uuid_mapping;
-    // TODO(wdb): use a scheme that gives > 26 unique labels.
-    const string labels = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    for (const auto& uuid : master_config.voter_uuids) {
-      if (InsertIfNotPresent(&replica_uuid_mapping, uuid, labels[i])) {
-        i = (i + 1) % labels.size();
-      }
-    }
-    for (const auto& uuid : master_config.non_voter_uuids) {
-      if (InsertIfNotPresent(&replica_uuid_mapping, uuid, labels[i])) {
-        i = (i + 1) % labels.size();
-      }
-    }
+    AddToUuidLabelMapping(master_config.voter_uuids, &replica_uuid_mapping);
+    AddToUuidLabelMapping(master_config.non_voter_uuids, &replica_uuid_mapping);
     for (const ReplicaInfo& rs : replica_infos) {
       if (!rs.consensus_state) continue;
-      for (const auto& uuid : rs.consensus_state->voter_uuids) {
-        if (InsertIfNotPresent(&replica_uuid_mapping, uuid, labels[i])) {
-          i = (i + 1) % labels.size();
-        }
-      }
-      for (const auto& uuid : rs.consensus_state->non_voter_uuids) {
-        if (InsertIfNotPresent(&replica_uuid_mapping, uuid, labels[i])) {
-          i = (i + 1) % labels.size();
-        }
-      }
+      AddToUuidLabelMapping(rs.consensus_state->voter_uuids, &replica_uuid_mapping);
+      AddToUuidLabelMapping(rs.consensus_state->non_voter_uuids, &replica_uuid_mapping);
     }
 
     Out() << "  All the peers reported by the master and tablet servers are:" << endl;

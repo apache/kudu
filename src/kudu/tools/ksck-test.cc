@@ -24,6 +24,7 @@
 #include <utility>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -77,11 +78,14 @@ class MockKsckMaster : public KsckMaster {
   }
 
   Status FetchConsensusState() override {
-    return Status::OK();
+    return fetch_cstate_status_;
   }
 
-  // Public because the unit tests mutate this variable directly.
+  // Public because the unit tests mutate these variables directly.
   Status fetch_info_status_;
+  Status fetch_cstate_status_;
+  using KsckMaster::uuid_;
+  using KsckMaster::cstate_;
 };
 
 class MockKsckTabletServer : public KsckTabletServer {
@@ -161,11 +165,25 @@ class KsckTest : public KuduTest {
       : cluster_(new MockKsckCluster()),
         ksck_(new Ksck(cluster_, &err_stream_)) {
     FLAGS_color = "never";
+
+    // Set up the master consensus state.
+    consensus::ConsensusStatePB cstate;
+    cstate.set_current_term(0);
+    cstate.set_leader_uuid("master-id-0");
+    for (int i = 0; i < 3; i++) {
+      auto* peer = cstate.mutable_committed_config()->add_peers();
+      peer->set_member_type(consensus::RaftPeerPB::VOTER);
+      peer->set_permanent_uuid(Substitute("master-id-$0", i));
+    }
+
     for (int i = 0; i < 3; i++) {
       const string uuid = Substitute("master-id-$0", i);
       const string addr = Substitute("master-$0", i);
-      cluster_->masters_.emplace_back(new MockKsckMaster(addr, uuid));
+      shared_ptr<MockKsckMaster> master = std::make_shared<MockKsckMaster>(addr, uuid);
+      master->cstate_ = cstate;
+      cluster_->masters_.push_back(master);
     }
+
     unordered_map<string, shared_ptr<KsckTabletServer>> tablet_servers;
     for (int i = 0; i < 3; i++) {
       string name = Substitute("ts-id-$0", i);
@@ -322,6 +340,7 @@ class KsckTest : public KuduTest {
         LOG(INFO) << "Ksck output:\n" << err_stream_.str();
       });
     RETURN_NOT_OK(ksck_->CheckMasterHealth());
+    RETURN_NOT_OK(ksck_->CheckMasterConsensus());
     RETURN_NOT_OK(ksck_->CheckClusterRunning());
     RETURN_NOT_OK(ksck_->FetchTableAndTabletInfo());
     RETURN_NOT_OK(ksck_->FetchInfoFromTabletServers());
@@ -366,6 +385,7 @@ TEST_F(KsckTest, TestMasterUnavailable) {
   shared_ptr<MockKsckMaster> master =
       std::static_pointer_cast<MockKsckMaster>(cluster_->masters_.at(1));
   master->fetch_info_status_ = Status::NetworkError("gremlins");
+  master->cstate_ = boost::none;
   ASSERT_TRUE(ksck_->CheckMasterHealth().IsNetworkError());
   ASSERT_STR_CONTAINS(err_stream_.str(),
     "Master Summary\n"
@@ -374,7 +394,73 @@ TEST_F(KsckTest, TestMasterUnavailable) {
     " master-id-0 | master-0 | HEALTHY\n"
     " master-id-2 | master-2 | HEALTHY\n"
     " master-id-1 | master-1 | UNAVAILABLE\n");
+  ASSERT_TRUE(ksck_->CheckMasterConsensus().IsCorruption());
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+    "WARNING: masters have consensus conflicts  All reported masters are:\n"
+    "  A = master-id-0\n"
+    "  B = master-id-1\n"
+    "  C = master-id-2\n"
+    " Config source |        Replicas        | Current term | Config index | Committed?\n"
+    "---------------+------------------------+--------------+--------------+------------\n"
+    " A             | A*  B   C              | 0            |              | Yes\n"
+    " B             | [config not available] |              |              | \n"
+    " C             | A*  B   C              | 0            |              | Yes\n");
 }
+
+// A wrong-master-uuid situation can happen if a master that is part of, e.g.,
+// a 3-peer config fails permanently and is wiped and reborn on the same address
+// with a new uuid.
+TEST_F(KsckTest, TestWrongMasterUuid) {
+  shared_ptr<MockKsckMaster> master =
+      std::static_pointer_cast<MockKsckMaster>(cluster_->masters_.at(2));
+  const string imposter_uuid = "master-id-imposter";
+  master->uuid_ = imposter_uuid;
+  master->cstate_->set_leader_uuid(imposter_uuid);
+  auto* config = master->cstate_->mutable_committed_config();
+  config->clear_peers();
+  config->add_peers()->set_permanent_uuid(imposter_uuid);
+
+  ASSERT_OK(ksck_->CheckMasterHealth());
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+    "Master Summary\n"
+    "        UUID        | Address  | Status\n"
+    "--------------------+----------+---------\n"
+    " master-id-0        | master-0 | HEALTHY\n"
+    " master-id-1        | master-1 | HEALTHY\n"
+    " master-id-imposter | master-2 | HEALTHY\n");
+  ASSERT_TRUE(ksck_->CheckMasterConsensus().IsCorruption());
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+    "WARNING: masters have consensus conflicts  All reported masters are:\n"
+    "  A = master-id-0\n"
+    "  B = master-id-1\n"
+    "  C = master-id-imposter\n"
+    "  D = master-id-2\n"
+    " Config source |     Replicas     | Current term | Config index | Committed?\n"
+    "---------------+------------------+--------------+--------------+------------\n"
+    " A             | A*  B       D    | 0            |              | Yes\n"
+    " B             | A*  B       D    | 0            |              | Yes\n"
+    " C             |         C*       | 0            |              | Yes\n");
+}
+
+TEST_F(KsckTest, TestTwoLeaderMasters) {
+  shared_ptr<MockKsckMaster> master =
+      std::static_pointer_cast<MockKsckMaster>(cluster_->masters_.at(1));
+  master->cstate_->set_leader_uuid(master->uuid_);
+
+  ASSERT_OK(ksck_->CheckMasterHealth());
+  ASSERT_TRUE(ksck_->CheckMasterConsensus().IsCorruption());
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+    "WARNING: masters have consensus conflicts  All reported masters are:\n"
+    "  A = master-id-0\n"
+    "  B = master-id-1\n"
+    "  C = master-id-2\n"
+    " Config source |   Replicas   | Current term | Config index | Committed?\n"
+    "---------------+--------------+--------------+--------------+------------\n"
+    " A             | A*  B   C    | 0            |              | Yes\n"
+    " B             | A   B*  C    | 0            |              | Yes\n"
+    " C             | A*  B   C    | 0            |              | Yes\n");
+}
+
 
 TEST_F(KsckTest, TestLeaderMasterUnavailable) {
   Status error = Status::NetworkError("Network failure");

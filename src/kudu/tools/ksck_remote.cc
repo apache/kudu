@@ -18,43 +18,37 @@
 #include "kudu/tools/ksck_remote.h"
 
 #include <cstdint>
-#include <ostream>
-#include <unordered_map>
-#include <utility>
 
 #include <boost/bind.hpp> // IWYU pragma: keep
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/client/client.h"
 #include "kudu/client/replica_controller-internal.h"
-#include "kudu/client/schema.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus.proxy.h"
-#include "kudu/gutil/basictypes.h"
-#include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.h"
+#include "kudu/master/sys_catalog.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/response_callback.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/server/server_base.pb.h"
 #include "kudu/server/server_base.proxy.h"
-#include "kudu/tablet/tablet.pb.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_service.pb.h"
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
-#include "kudu/util/net/sockaddr.h"
+#include "kudu/util/slice.h"
 
 DECLARE_int64(timeout_ms); // defined in tool_action_common
 DEFINE_bool(checksum_cache_blocks, false, "Should the checksum scanners cache the read blocks");
@@ -106,8 +100,7 @@ Status RemoteKsckMaster::FetchInfo() {
   server::GetStatusResponsePB resp;
   RpcController rpc;
   rpc.set_timeout(GetDefaultTimeout());
-  RETURN_NOT_OK_PREPEND(generic_proxy_->GetStatus(req, &resp, &rpc),
-                        "could not get status from master");
+  RETURN_NOT_OK(generic_proxy_->GetStatus(req, &resp, &rpc));
   uuid_ = resp.status().node_instance().permanent_uuid();
   state_ = KsckFetchState::FETCHED;
   return Status::OK();
@@ -122,6 +115,17 @@ Status RemoteKsckMaster::FetchConsensusState() {
   req.set_dest_uuid(uuid_);
   RETURN_NOT_OK_PREPEND(consensus_proxy_->GetConsensusState(req, &resp, &rpc),
                         "could not fetch consensus info from master");
+  if (resp.tablets_size() != 1) {
+    return Status::IllegalState(Substitute("expected 1 master tablet, but found $0",
+                                           resp.tablets_size()));
+  }
+  const auto& tablet = resp.tablets(0);
+  if (tablet.tablet_id() != master::SysCatalogTable::kSysCatalogTabletId) {
+    return Status::IllegalState(Substitute("expected master tablet with id $0, but found $1",
+                                           master::SysCatalogTable::kSysCatalogTabletId,
+                                           tablet.tablet_id()));
+  }
+  cstate_ = tablet.cstate();
   return Status::OK();
 }
 

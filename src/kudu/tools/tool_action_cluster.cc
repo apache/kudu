@@ -84,6 +84,8 @@ Status RunKsck(const RunnerContext& context) {
   vector<string> error_messages;
   PUSH_PREPEND_NOT_OK(ksck->CheckMasterHealth(), error_messages,
                       "error fetching info from masters");
+  PUSH_PREPEND_NOT_OK(ksck->CheckMasterConsensus(), error_messages,
+                      "master consensus errors");
 
   RETURN_NOT_OK_PREPEND(ksck->CheckClusterRunning(),
                         "leader master liveness check error");
