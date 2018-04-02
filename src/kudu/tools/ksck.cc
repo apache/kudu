@@ -463,7 +463,7 @@ Status Ksck::PrintServerHealthSummaries(ServerType type,
 }
 
 Status Ksck::PrintTableSummaries(const vector<TableSummary>& table_summaries, ostream& out) {
-  out << "Table Summary" << endl;
+  out << "Summary by table" << endl;
   DataTable table({ "Name", "Status", "Total Tablets",
                     "Healthy", "Recovering", "Under-replicated", "Unavailable"});
   for (const TableSummary& ts : table_summaries) {
@@ -492,6 +492,8 @@ Status Ksck::PrintTableSummaries(const vector<TableSummary>& table_summaries, os
 
 Status Ksck::CheckTablesConsistency() {
   int bad_tables_count = 0;
+  int bad_tablets_count = 0;
+  int total_tablets = 0;
   vector<TableSummary> table_summaries;
   for (const shared_ptr<KsckTable> &table : cluster_->tables()) {
     if (!MatchesAnyPattern(table_filters_, table->name())) {
@@ -502,17 +504,23 @@ Status Ksck::CheckTablesConsistency() {
     ts.name = table->name();
     if (!VerifyTable(table, &ts)) {
       bad_tables_count++;
+      bad_tablets_count += ts.UnhealthyTablets();
     }
-    table_summaries.emplace_back(std::move(ts));
-    Out() << endl;
+    // If the summary has no tablets (because of tablet id filters), don't
+    // save the summary.
+    if (ts.TotalTablets() > 0) {
+      table_summaries.emplace_back(std::move(ts));
+      total_tablets += ts.TotalTablets();
+    }
   }
 
   if (table_summaries.empty()) {
-    Out() << "The cluster doesn't have any matching tables" << endl;
+    const string tables_or_tablets = tablet_id_filters_.empty() ? "tables" : "tablets";
+    Out() << "The cluster doesn't have any matching " << tables_or_tablets << endl;
     return Status::OK();
   }
 
-  // Show unhealthy tablets at the bottom so they're easier to see;
+  // Show unhealthy tables at the bottom so they're easier to see;
   // otherwise sort alphabetically.
   std::sort(table_summaries.begin(), table_summaries.end(),
             [](const TableSummary& left, const TableSummary& right) {
@@ -522,11 +530,22 @@ Status Ksck::CheckTablesConsistency() {
   CHECK_OK(PrintTableSummaries(table_summaries, Out()));
 
   if (bad_tables_count == 0) {
-    Out() << Substitute("The metadata for $0 table(s) is HEALTHY", table_summaries.size()) << endl;
+    if (tablet_id_filters_.empty()) {
+      Out() << Substitute("The metadata for $0 table(s) is HEALTHY",
+                          table_summaries.size()) << endl;
+    } else {
+      Out() << Substitute("The metadata for $0 tablet(s) is HEALTHY",
+                          total_tablets) << endl;
+    }
     return Status::OK();
   }
-  return Status::Corruption(Substitute("$0 out of $1 table(s) are not healthy",
-                                       bad_tables_count, table_summaries.size()));
+  if (tablet_id_filters_.empty()) {
+    return Status::Corruption(Substitute("$0 out of $1 table(s) are not healthy",
+                                         bad_tables_count, table_summaries.size()));
+  } else {
+    return Status::Corruption(Substitute("$0 out of $1 tablet(s) are not healthy",
+                                         bad_tablets_count, total_tablets));
+  }
 }
 
 // Class to act as a collector of scan results.
@@ -844,6 +863,12 @@ bool Ksck::VerifyTable(const shared_ptr<KsckTable>& table, TableSummary* ts) {
                    return MatchesAnyPattern(tablet_id_filters_, t->id());
                  });
 
+  if (tablets.empty()) {
+    VLOG(1) << Substitute("Skipping table $0 as it has no matching tablets",
+                          table->name());
+    return true;
+  }
+
   int table_num_replicas = table->num_replicas();
   VLOG(1) << Substitute("Verifying $0 tablet(s) for table $1 configured with num_replicas = $2",
                         tablets.size(), table->name(), table_num_replicas);
@@ -867,11 +892,16 @@ bool Ksck::VerifyTable(const shared_ptr<KsckTable>& table, TableSummary* ts) {
         break;
     }
   }
+  // If running with tablet id filters, we're not checking the health of whole
+  // tables, so don't output conclusions about whole tables.
+  if (!tablet_id_filters_.empty()) {
+    return ts->healthy_tablets == tablets.size();
+  }
   if (ts->healthy_tablets == tablets.size()) {
     Out() << Substitute("Table $0 is $1 ($2 tablet(s) checked)",
                         table->name(),
                         Color(AnsiCode::GREEN, "HEALTHY"),
-                        tablets.size()) << endl;
+                        tablets.size()) << endl << endl;
     return true;
   }
   if (ts->recovering_tablets > 0) {
@@ -898,6 +928,8 @@ bool Ksck::VerifyTable(const shared_ptr<KsckTable>& table, TableSummary* ts) {
                         ts->unavailable_tablets,
                         Color(AnsiCode::RED, "unavailable")) << endl;
   }
+  // Empty line for spacing.
+  Out() << endl;
   return false;
 }
 
@@ -1045,6 +1077,11 @@ Ksck::CheckResult Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int t
                         Color(AnsiCode::YELLOW, "conflicted"),
                         conflicting_states) << endl;
     result = CheckResult::CONSENSUS_MISMATCH;
+  } else if (FLAGS_verbose) {
+    // The tablet is healthy. Only print if verbose mode is on.
+    Out() << Substitute("$0 is $1.",
+                        tablet_str,
+                        Color(AnsiCode::GREEN, "healthy")) << endl;
   }
 
   // In the case that we found something wrong, dump info on all the replicas
@@ -1078,17 +1115,18 @@ Ksck::CheckResult Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int t
           Color(AnsiCode::BLUE, tablet::TabletDataState_Name(r.status_pb->tablet_data_state())),
           Color(AnsiCode::BLUE, r.status_pb->last_status()));
     }
-
-    Out() << endl;
   }
 
   // If there are consensus conflicts, dump the consensus info too. Do that also
-  // if verbose output is requested.
-  if (conflicting_states > 0 || FLAGS_verbose) {
-    if (result != CheckResult::CONSENSUS_MISMATCH) {
+  // if verbose output is requested and consensus is on.
+  if (conflicting_states > 0 || (FLAGS_verbose && FLAGS_consensus)) {
+    if (result != CheckResult::CONSENSUS_MISMATCH && result != CheckResult::HEALTHY) {
       Out() << Substitute("$0 replicas' active configs differ from the master's.",
                           conflicting_states)
             << endl;
+    }
+    if (result == CheckResult::HEALTHY) {
+      Out() << Substitute("All replicas active configs agree with the master's.") << endl;
     }
     map<string, char> replica_uuid_mapping;
     AddToUuidLabelMapping(master_config.voter_uuids, &replica_uuid_mapping);
@@ -1103,7 +1141,6 @@ Ksck::CheckResult Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int t
     for (const auto& entry : replica_uuid_mapping) {
       Out() << "  " << entry.second << " = " << entry.first << endl;
     }
-    Out() << endl;
     Out() << "The consensus matrix is:" << endl;
 
     // Prepare the header and columns for PrintTable.
@@ -1143,6 +1180,10 @@ Ksck::CheckResult Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int t
     CHECK_OK(table.PrintTo(Out()));
   }
 
+  // Information is printed only if the tablet isn't healthy or verbose mode is on.
+  if (result != CheckResult::HEALTHY || FLAGS_verbose) {
+    Out() << endl;
+  }
   return result;
 }
 

@@ -231,16 +231,17 @@ class KsckTest : public KuduTest {
     table->set_tablets({ tablet });
   }
 
-  void CreateOneSmallReplicatedTable() {
+  void CreateOneSmallReplicatedTable(const string& table_name = "test",
+                                     const string& tablet_id_prefix = "") {
     int num_replicas = 3;
     int num_tablets = 3;
     CreateDefaultAssignmentPlan(num_replicas * num_tablets);
-    auto table = CreateAndAddTable("test", num_replicas);
+    auto table = CreateAndAddTable(table_name, num_replicas);
 
     vector<shared_ptr<KsckTablet>> tablets;
     for (int i = 0; i < num_tablets; i++) {
       shared_ptr<KsckTablet> tablet(new KsckTablet(
-          table.get(), Substitute("tablet-id-$0", i)));
+          table.get(), Substitute("$0tablet-id-$1", tablet_id_prefix, i)));
       CreateAndFillTablet(tablet, num_replicas, true, true);
       tablets.push_back(tablet);
     }
@@ -276,8 +277,7 @@ class KsckTest : public KuduTest {
 
   shared_ptr<KsckTable> CreateAndAddTable(const string& name, int num_replicas) {
     shared_ptr<KsckTable> table(new KsckTable(name, Schema(), num_replicas));
-    vector<shared_ptr<KsckTable>> tables = { table };
-    cluster_->tables_.assign(tables.begin(), tables.end());
+    cluster_->tables_.push_back(table);
     return table;
   }
 
@@ -797,6 +797,48 @@ TEST_F(KsckTest, TestMasterNotReportingTabletServerWithConsensusConflict) {
                                                                   /*underreplicated_tables=*/ 3,
                                                                   /*consensus_mismatch_tables=*/ 0,
                                                                   /*unavailable_tables=*/ 0));
+}
+
+TEST_F(KsckTest, TestTableFiltersNoMatch) {
+  CreateOneSmallReplicatedTable();
+
+  ksck_->set_table_filters({ "fake-table" });
+  Status s = RunKsck();
+
+  // Every table we checked was healthy ;).
+  ASSERT_OK(s);
+  ASSERT_STR_CONTAINS(err_stream_.str(), "The cluster doesn't have any matching tables");
+}
+
+TEST_F(KsckTest, TestTableFilters) {
+  CreateOneSmallReplicatedTable();
+  CreateOneSmallReplicatedTable("other", "other-");
+
+  ksck_->set_table_filters({ "test" });
+  Status s = RunKsck();
+
+  ASSERT_OK(s);
+  ASSERT_STR_CONTAINS(err_stream_.str(), "The metadata for 1 table(s) is HEALTHY");
+}
+
+TEST_F(KsckTest, TestTabletFiltersNoMatch) {
+  CreateOneSmallReplicatedTable();
+
+  ksck_->set_tablet_id_filters({ "tablet-id-fake" });
+  Status s = RunKsck();
+
+  ASSERT_OK(s);
+  ASSERT_STR_CONTAINS(err_stream_.str(), "The cluster doesn't have any matching tablets");
+}
+
+TEST_F(KsckTest, TestTabletFilters) {
+  CreateOneSmallReplicatedTable();
+
+  ksck_->set_tablet_id_filters({ "tablet-id-0", "tablet-id-1" });
+  Status s = RunKsck();
+
+  ASSERT_OK(s);
+  ASSERT_STR_CONTAINS(err_stream_.str(), "The metadata for 2 tablet(s) is HEALTHY");
 }
 
 } // namespace tools

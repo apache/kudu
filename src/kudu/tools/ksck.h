@@ -575,6 +575,10 @@ class Ksck {
           consensus_mismatch_tablets + unavailable_tablets;
     }
 
+    int UnhealthyTablets() const {
+      return TotalTablets() - healthy_tablets;
+    }
+
     // Summarize the table's status with a tablet CheckResult.
     // A table's status is determined by the health of the least healthy tablet.
     CheckResult TableStatus() const {
