@@ -22,19 +22,23 @@
 
 #include <cerrno>
 #include <cstdlib>
+#include <mutex>
 #include <string>
+#include <utility>
 
 #include <glog/logging.h>
 
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/util/debug/leakcheck_disabler.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/status.h"
 
 using std::string;
 
 namespace kudu {
+namespace {
 
-Status GetLoggedInUser(string* user_name) {
+Status DoGetLoggedInUser(string* user_name) {
   DCHECK(user_name != nullptr);
 
   struct passwd pwd;
@@ -59,9 +63,26 @@ Status GetLoggedInUser(string* user_name) {
       return Status::RuntimeError("Error calling getpwuid_r()", ErrnoToString(ret), ret);
     }
   }
-
   *user_name = pwd.pw_name;
+  return Status::OK();
+}
 
+} // anonymous namespace
+
+Status GetLoggedInUser(string* user_name) {
+  static std::once_flag once;
+  static string* once_user_name;
+  static Status* once_status;
+  std::call_once(once, [](){
+      string u;
+      Status s = DoGetLoggedInUser(&u);
+      debug::ScopedLeakCheckDisabler ignore_leaks;
+      once_status = new Status(std::move(s));
+      once_user_name = new string(std::move(u));
+    });
+
+  RETURN_NOT_OK(*once_status);
+  *user_name = *once_user_name;
   return Status::OK();
 }
 
