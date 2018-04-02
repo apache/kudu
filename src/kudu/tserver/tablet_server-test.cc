@@ -256,6 +256,74 @@ TEST_F(TabletServerTest, TestServerClock) {
   ASSERT_GT(mini_server_->server()->clock()->Now().ToUint64(), resp.timestamp());
 }
 
+TEST_F(TabletServerTest, TestGetFlags) {
+  server::GenericServiceProxy proxy(
+      client_messenger_, mini_server_->bound_rpc_addr(),
+      mini_server_->bound_rpc_addr().host());
+
+  server::GetFlagsRequestPB req;
+  server::GetFlagsResponsePB resp;
+
+  // Check that a default request returns flags set to a non-default value and
+  // does not return flags set to a default value.
+  // Throughout, we make the reasonable assumption that the -fs_wal_dir flag
+  // will have a non-default value, and the -help and unsafe -logemaillevel
+  // flags will have default values.
+  {
+    RpcController controller;
+    ASSERT_OK(proxy.GetFlags(req, &resp, &controller));
+    SCOPED_TRACE(SecureDebugString(resp));
+    EXPECT_TRUE(std::any_of(resp.flags().begin(), resp.flags().end(),
+          [](const server::GetFlagsResponsePB::Flag& flag) -> bool {
+            return flag.name() == "log_dir";
+          }));
+    EXPECT_TRUE(std::none_of(resp.flags().begin(), resp.flags().end(),
+          [](const server::GetFlagsResponsePB::Flag& flag) -> bool {
+            return flag.name() == "help";
+          }));
+  }
+
+  // Check that specifying all flags returns even flags with default values.
+  {
+    RpcController controller;
+    req.set_all_flags(true);
+    ASSERT_OK(proxy.GetFlags(req, &resp, &controller));
+    SCOPED_TRACE(SecureDebugString(resp));
+    EXPECT_TRUE(std::any_of(resp.flags().begin(), resp.flags().end(),
+          [](const server::GetFlagsResponsePB::Flag& flag) -> bool {
+            return flag.name() == "log_dir";
+          }));
+    EXPECT_TRUE(std::any_of(resp.flags().begin(), resp.flags().end(),
+          [](const server::GetFlagsResponsePB::Flag& flag) -> bool {
+            return flag.name() == "help";
+          }));
+    EXPECT_TRUE(std::any_of(resp.flags().begin(), resp.flags().end(),
+          [](const server::GetFlagsResponsePB::Flag& flag) -> bool {
+            return flag.name() == "logemaillevel";
+          }));
+  }
+
+  // Check that filtering on tags excludes flags with no matching tag.
+  {
+    RpcController controller;
+    req.add_tags("stable");
+    ASSERT_OK(proxy.GetFlags(req, &resp, &controller));
+    SCOPED_TRACE(SecureDebugString(resp));
+    EXPECT_TRUE(std::any_of(resp.flags().begin(), resp.flags().end(),
+          [](const server::GetFlagsResponsePB::Flag& flag) -> bool {
+            return flag.name() == "log_dir";
+          }));
+    EXPECT_TRUE(std::any_of(resp.flags().begin(), resp.flags().end(),
+          [](const server::GetFlagsResponsePB::Flag& flag) -> bool {
+            return flag.name() == "help";
+          }));
+    EXPECT_TRUE(std::none_of(resp.flags().begin(), resp.flags().end(),
+          [](const server::GetFlagsResponsePB::Flag& flag) -> bool {
+            return flag.name() == "logemaillevel";
+          }));
+  }
+}
+
 TEST_F(TabletServerTest, TestSetFlags) {
   server::GenericServiceProxy proxy(
       client_messenger_, mini_server_->bound_rpc_addr(),

@@ -24,6 +24,7 @@
 #include <cstddef>
 #include <iomanip>
 #include <iostream>
+#include <iterator>
 #include <memory>
 #include <numeric>
 #include <string>
@@ -50,6 +51,7 @@
 #include "kudu/gutil/endian.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -94,6 +96,11 @@ DEFINE_string(format, "pretty",
               "Format to use for printing list output tables.\n"
               "Possible values: pretty, space, tsv, csv, and json");
 
+DEFINE_string(flag_tags, "", "Comma-separated list of tags used to restrict which "
+                             "flags are returned. An empty value matches all tags");
+DEFINE_bool(all_flags, false, "Whether to return all flags, or only flags that "
+                              "were explicitly set.");
+
 namespace boost {
 template <typename Signature>
 class function;
@@ -133,6 +140,8 @@ using rpc::MessengerBuilder;
 using rpc::RequestIdPB;
 using rpc::RpcController;
 using server::GenericServiceProxy;
+using server::GetFlagsRequestPB;
+using server::GetFlagsResponsePB;
 using server::GetStatusRequestPB;
 using server::GetStatusResponsePB;
 using server::ServerClockRequestPB;
@@ -352,6 +361,41 @@ Status PrintSegment(const scoped_refptr<ReadableLogSegment>& segment) {
   }
 
   return Status::OK();
+}
+
+Status PrintServerFlags(const string& address, uint16_t default_port) {
+  unique_ptr<GenericServiceProxy> proxy;
+  RETURN_NOT_OK(BuildProxy(address, default_port, &proxy));
+
+  GetFlagsRequestPB req;
+  GetFlagsResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(MonoDelta::FromMilliseconds(FLAGS_timeout_ms));
+
+  req.set_all_flags(FLAGS_all_flags);
+  vector<string> tags = strings::Split(FLAGS_flag_tags, ",", strings::SkipEmpty());
+  for (const auto& tag : tags) {
+    req.add_tags(tag);
+  }
+  RETURN_NOT_OK(proxy->GetFlags(req, &resp, &rpc));
+
+  vector<GetFlagsResponsePB::Flag> flags(resp.flags().begin(), resp.flags().end());
+  std::sort(flags.begin(), flags.end(),
+      [](const GetFlagsResponsePB::Flag& left,
+         const GetFlagsResponsePB::Flag& right) -> bool {
+        return left.name() < right.name();
+      });
+  DataTable table({ "flag", "value", "default value?", "tags" });
+  for (const auto& flag : flags) {
+    tags.clear();
+    std::copy(flag.tags().begin(), flag.tags().end(), std::back_inserter(tags));
+    std::sort(tags.begin(), tags.end());
+    table.AddRow({ flag.name(),
+                   flag.value(),
+                   Substitute("$0", flag.is_default_value()),
+                   JoinStrings(tags, ",") });
+  }
+  return table.PrintTo(cout);
 }
 
 Status SetServerFlag(const string& address, uint16_t default_port,

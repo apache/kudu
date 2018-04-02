@@ -83,5 +83,7 @@ enum class TriStateFlag {
 Status ParseTriState(const char* flag_name, const std::string& flag_value,
     TriStateFlag* tri_state);
 
+std::string CheckFlagAndRedact(const google::CommandLineFlagInfo& flag, EscapeMode mode);
+
 } // namespace kudu
 #endif /* KUDU_UTIL_FLAGS_H */

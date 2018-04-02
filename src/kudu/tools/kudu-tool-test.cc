@@ -477,6 +477,7 @@ TEST_F(ToolTest, TestModeHelp) {
   }
   {
     const vector<string> kMasterModeRegexes = {
+        "get_flags.*Get the gflags",
         "set_flag.*Change a gflag value",
         "status.*Get the status",
         "timestamp.*Get the current timestamp"
@@ -537,6 +538,7 @@ TEST_F(ToolTest, TestModeHelp) {
   }
   {
     const vector<string> kTServerModeRegexes = {
+        "get_flags.*Get the gflags",
         "set_flag.*Change a gflag value",
         "status.*Get the status",
         "timestamp.*Get the current timestamp",
@@ -2479,6 +2481,52 @@ TEST_F(ToolTest, TestReplaceTablet) {
   client::sp::shared_ptr<client::KuduTable> workload_table;
   ASSERT_OK(workload.client()->OpenTable(workload.table_name(), &workload_table));
   ASSERT_GE(workload.rows_inserted(), CountTableRows(workload_table.get()));
+}
+
+TEST_F(ToolTest, TestGetFlags) {
+  ExternalMiniClusterOptions opts;
+  opts.num_tablet_servers = 1;
+  NO_FATALS(StartExternalMiniCluster(std::move(opts)));
+
+  // Check that we get non-default flags.
+  // CSV formatting is easiest to match against.
+  // It seems safe to assume that -help and -logemaillevel will not be
+  // set, and that fs_wal_dir will be set to a non-default value.
+  for (const string& daemon_type : { "master", "tserver" }) {
+    const string& daemon_addr = daemon_type == "master" ?
+                                cluster_->master()->bound_rpc_addr().ToString() :
+                                cluster_->tablet_server(0)->bound_rpc_addr().ToString();
+    const string& wal_dir = daemon_type == "master" ?
+                            cluster_->master()->wal_dir() :
+                            cluster_->tablet_server(0)->wal_dir();
+    string out;
+    NO_FATALS(RunActionStdoutString(
+          Substitute("$0 get_flags $1 -format=csv", daemon_type, daemon_addr),
+          &out));
+    ASSERT_STR_NOT_MATCHES(out, "help,*");
+    ASSERT_STR_NOT_MATCHES(out, "logemaillevel,*");
+    ASSERT_STR_CONTAINS(out, Substitute("fs_wal_dir,$0,false", wal_dir));
+
+    // Check that we get all flags with -all_flags.
+    out.clear();
+    NO_FATALS(RunActionStdoutString(
+          Substitute("$0 get_flags $1 -format=csv -all_flags", daemon_type, daemon_addr),
+          &out));
+    ASSERT_STR_CONTAINS(out, "help,false,true");
+    ASSERT_STR_CONTAINS(out, "logemaillevel,999,true");
+    ASSERT_STR_CONTAINS(out, Substitute("fs_wal_dir,$0,false", wal_dir));
+
+    // Check that -flag_tags filter to matching tags.
+    // -logemaillevel is an unsafe flag.
+    out.clear();
+    NO_FATALS(RunActionStdoutString(
+          Substitute("$0 get_flags $1 -format=csv -all_flags -flag_tags=stable",
+                     daemon_type, daemon_addr),
+          &out));
+    ASSERT_STR_CONTAINS(out, "help,false,true");
+    ASSERT_STR_NOT_MATCHES(out, "logemaillevel,*");
+    ASSERT_STR_CONTAINS(out, Substitute("fs_wal_dir,$0,false", wal_dir));
+  }
 }
 
 } // namespace tools

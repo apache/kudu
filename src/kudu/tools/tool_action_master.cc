@@ -65,6 +65,11 @@ const char* const kMasterAddressDesc = "Address of a Kudu Master of form "
 const char* const kFlagArg = "flag";
 const char* const kValueArg = "value";
 
+Status MasterGetFlags(const RunnerContext& context) {
+  const string& address = FindOrDie(context.required_args, kMasterAddressArg);
+  return PrintServerFlags(address, master::Master::kDefaultPort);
+}
+
 Status MasterSetFlag(const RunnerContext& context) {
   const string& address = FindOrDie(context.required_args, kMasterAddressArg);
   const string& flag = FindOrDie(context.required_args, kFlagArg);
@@ -152,6 +157,14 @@ Status ListMasters(const RunnerContext& context) {
 } // anonymous namespace
 
 unique_ptr<Mode> BuildMasterMode() {
+  unique_ptr<Action> get_flags =
+      ActionBuilder("get_flags", &MasterGetFlags)
+      .Description("Get the gflags for a Kudu Master")
+      .AddRequiredParameter({ kMasterAddressArg, kMasterAddressDesc })
+      .AddOptionalParameter("all_flags")
+      .AddOptionalParameter("flag_tags")
+      .Build();
+
   unique_ptr<Action> set_flag =
       ActionBuilder("set_flag", &MasterSetFlag)
       .Description("Change a gflag value on a Kudu Master")
@@ -187,6 +200,7 @@ unique_ptr<Mode> BuildMasterMode() {
 
   return ModeBuilder("master")
       .Description("Operate on a Kudu Master")
+      .AddAction(std::move(get_flags))
       .AddAction(std::move(set_flag))
       .AddAction(std::move(status))
       .AddAction(std::move(timestamp))

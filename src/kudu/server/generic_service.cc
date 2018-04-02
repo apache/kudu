@@ -17,9 +17,10 @@
 
 #include "kudu/server/generic_service.h"
 
-#include <string>
 #include <ostream>
+#include <string>
 #include <unordered_set>
+#include <utility>
 
 #include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
@@ -39,6 +40,7 @@
 #include "kudu/util/debug-util.h"
 #include "kudu/util/debug/leak_annotations.h" // IWYU pragma: keep
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/flags.h"
 #include "kudu/util/status.h"
 
 DECLARE_string(time_source);
@@ -70,6 +72,38 @@ bool GenericServiceImpl::AuthorizeClient(const google::protobuf::Message* /*req*
   return server_->Authorize(rpc, ServerBase::SUPER_USER | ServerBase::USER);
 }
 
+
+void GenericServiceImpl::GetFlags(const GetFlagsRequestPB* req,
+                                  GetFlagsResponsePB* resp,
+                                  rpc::RpcContext* rpc) {
+  // If no tags were specified, return all flags that have non-default values.
+  // If tags were specified, also filter flags that don't match any tag.
+  bool all_flags = req->all_flags();
+  for (const auto& entry : GetFlagsMap()) {
+    if (entry.second.is_default && !all_flags) {
+      continue;
+    }
+    unordered_set<string> tags;
+    GetFlagTags(entry.first, &tags);
+    bool matches = req->tags().empty();
+    for (const auto& tag : req->tags()) {
+      if (ContainsKey(tags, tag)) {
+        matches = true;
+        break;
+      }
+    }
+    if (!matches) continue;
+
+    auto* flag = resp->add_flags();
+    flag->set_name(entry.first);
+    flag->set_value(CheckFlagAndRedact(entry.second, EscapeMode::NONE));
+    flag->set_is_default_value(entry.second.current_value == entry.second.default_value);
+    for (const auto& tag : tags) {
+      flag->add_tags(tag);
+    }
+  }
+  rpc->RespondSuccess();
+}
 
 void GenericServiceImpl::SetFlag(const SetFlagRequestPB* req,
                                  SetFlagResponsePB* resp,

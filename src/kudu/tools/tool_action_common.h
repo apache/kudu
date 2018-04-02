@@ -105,6 +105,11 @@ Status PrintServerStatus(const std::string& address, uint16_t default_port);
 // If 'address' does not contain a port, 'default_port' is used instead.
 Status PrintServerTimestamp(const std::string& address, uint16_t default_port);
 
+// Prints the values of the gflags set for the Kudu server running at 'address'.
+//
+// If 'address' does not contain a port, 'default_port' is used instead.
+Status PrintServerFlags(const std::string& address, uint16_t default_port);
+
 // Changes the value of the gflag given by 'flag' to the value in 'value' on
 // the Kudu server running at 'address'.
 //

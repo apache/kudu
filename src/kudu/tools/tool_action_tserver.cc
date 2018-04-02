@@ -64,6 +64,11 @@ const char* const kTServerAddressDesc = "Address of a Kudu Tablet Server of "
 const char* const kFlagArg = "flag";
 const char* const kValueArg = "value";
 
+Status TServerGetFlags(const RunnerContext& context) {
+  const string& address = FindOrDie(context.required_args, kTServerAddressArg);
+  return PrintServerFlags(address, tserver::TabletServer::kDefaultPort);
+}
+
 Status TServerSetFlag(const RunnerContext& context) {
   const string& address = FindOrDie(context.required_args, kTServerAddressArg);
   const string& flag = FindOrDie(context.required_args, kFlagArg);
@@ -146,6 +151,14 @@ Status ListTServers(const RunnerContext& context) {
 } // anonymous namespace
 
 unique_ptr<Mode> BuildTServerMode() {
+  unique_ptr<Action> get_flags =
+      ActionBuilder("get_flags", &TServerGetFlags)
+      .Description("Get the gflags for a Kudu Tablet Server")
+      .AddRequiredParameter({ kTServerAddressArg, kTServerAddressDesc })
+      .AddOptionalParameter("all_flags")
+      .AddOptionalParameter("flag_tags")
+      .Build();
+
   unique_ptr<Action> set_flag =
       ActionBuilder("set_flag", &TServerSetFlag)
       .Description("Change a gflag value on a Kudu Tablet Server")
@@ -182,6 +195,7 @@ unique_ptr<Mode> BuildTServerMode() {
 
   return ModeBuilder("tserver")
       .Description("Operate on a Kudu Tablet Server")
+      .AddAction(std::move(get_flags))
       .AddAction(std::move(set_flag))
       .AddAction(std::move(status))
       .AddAction(std::move(timestamp))

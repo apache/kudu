@@ -450,6 +450,19 @@ void RunCustomValidators() {
   }
 }
 
+void SetUmask() {
+  // We already validated with a nice error message using the ValidateUmask
+  // FlagValidator above.
+  CHECK(safe_strtou32_base(FLAGS_umask.c_str(), &g_parsed_umask, 8));
+  uint32_t old_mask = umask(g_parsed_umask);
+  if (old_mask != g_parsed_umask) {
+    VLOG(2) << "Changed umask from " << StringPrintf("%03o", old_mask) << " to "
+            << StringPrintf("%03o", g_parsed_umask);
+  }
+}
+
+} // anonymous namespace
+
 // If --redact indicates, redact the flag tagged as 'sensitive'.
 // Otherwise, return its value as-is. If EscapeMode is set to HTML,
 // return HTML escaped string.
@@ -468,19 +481,6 @@ string CheckFlagAndRedact(const CommandLineFlagInfo& flag, EscapeMode mode) {
   }
   return ret_value;
 }
-
-void SetUmask() {
-  // We already validated with a nice error message using the ValidateUmask
-  // FlagValidator above.
-  CHECK(safe_strtou32_base(FLAGS_umask.c_str(), &g_parsed_umask, 8));
-  uint32_t old_mask = umask(g_parsed_umask);
-  if (old_mask != g_parsed_umask) {
-    VLOG(2) << "Changed umask from " << StringPrintf("%03o", old_mask) << " to "
-            << StringPrintf("%03o", g_parsed_umask);
-  }
-}
-
-} // anonymous namespace
 
 int ParseCommandLineFlags(int* argc, char*** argv, bool remove_flags) {
   // The logbufsecs default is 30 seconds which is a bit too long.

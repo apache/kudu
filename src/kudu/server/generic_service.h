@@ -39,6 +39,8 @@ class CheckLeaksRequestPB;
 class CheckLeaksResponsePB;
 class FlushCoverageRequestPB;
 class FlushCoverageResponsePB;
+class GetFlagsRequestPB;
+class GetFlagsResponsePB;
 class GetStatusRequestPB;
 class GetStatusResponsePB;
 class ServerBase;
@@ -61,6 +63,10 @@ class GenericServiceImpl : public GenericServiceIf {
   bool AuthorizeClient(const google::protobuf::Message* req,
                        google::protobuf::Message* resp,
                        rpc::RpcContext* rpc) override;
+
+  virtual void GetFlags(const GetFlagsRequestPB* req,
+                        GetFlagsResponsePB* resp,
+                        rpc::RpcContext* rpc) OVERRIDE;
 
   virtual void SetFlag(const SetFlagRequestPB* req,
                        SetFlagResponsePB* resp,

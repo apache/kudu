@@ -39,6 +39,27 @@ message ServerStatusPB {
   // So, do not expose anything here which may be sensitive!
 }
 
+// Retrieve the values of command line flags.
+message GetFlagsRequestPB {
+  // Whether to return all flags, or only flags with non-default values.
+  optional bool all_flags = 1;
+  // A list of flag tags. Flags that match at least one tag are returned. If
+  // no tags are specified, all flags match.
+  repeated string tags = 2;
+}
+
+message GetFlagsResponsePB {
+  message Flag {
+    optional string name = 1;
+    optional string value = 2;
+    repeated string tags = 3;
+    // true if the flag has its default value.
+    optional bool is_default_value = 4;
+  }
+
+  repeated Flag flags = 1;
+}
+
 // Attempt to set a command line flag.
 // Note that many command line flags do not take effect if changed
 // at runtime.
@@ -126,6 +147,9 @@ message SetServerWallClockForTestsResponsePB {
 
 service GenericService {
   option (kudu.rpc.default_authz_method) = "AuthorizeSuperUser";
+
+  rpc GetFlags(GetFlagsRequestPB)
+    returns (GetFlagsResponsePB);
 
   rpc SetFlag(SetFlagRequestPB)
     returns (SetFlagResponsePB);
