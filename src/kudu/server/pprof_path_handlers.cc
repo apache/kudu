@@ -166,21 +166,21 @@ static void PprofGrowthHandler(const Webserver::WebRequest& /*req*/,
 // Lock contention profiling
 static void PprofContentionHandler(const Webserver::WebRequest& req,
                                    Webserver::PrerenderedWebResponse* resp) {
-  ostringstream* output = resp->output;
   string secs_str = FindWithDefault(req.parsed_args, "seconds", "");
   int32_t seconds = ParseLeadingInt32Value(secs_str.c_str(), kPprofDefaultSampleSecs);
   int64_t discarded_samples = 0;
 
   MonoTime end = MonoTime::Now() + MonoDelta::FromSeconds(seconds);
+  ostringstream profile;
   StartSynchronizationProfiling();
   while (MonoTime::Now() < end) {
     SleepFor(MonoDelta::FromMilliseconds(500));
-    FlushSynchronizationProfile(output, &discarded_samples);
+    FlushSynchronizationProfile(&profile, &discarded_samples);
   }
   StopSynchronizationProfiling();
-  ostringstream profile;
   FlushSynchronizationProfile(&profile, &discarded_samples);
 
+  ostringstream* output = resp->output;
   *output << "--- contention:" << endl;
   *output << "sampling period = 1" << endl;
   *output << "cycles/second = " << static_cast<int64_t>(base::CyclesPerSecond()) << endl;
