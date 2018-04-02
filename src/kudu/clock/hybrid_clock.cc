@@ -387,7 +387,7 @@ Status HybridClock::WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) 
     }
     MonoDelta time_since_last_read = read_time_after - last_clock_read_time_;
     int64_t micros_since_last_read = time_since_last_read.ToMicroseconds();
-    int64_t accum_error_us = (micros_since_last_read * time_service_->skew_ppm()) / 1e6;
+    int64_t accum_error_us = (micros_since_last_read * time_service_->skew_ppm()) / 1000000;
     *now_usec = last_clock_read_physical_ + micros_since_last_read;
     *error_usec = last_clock_read_error_ + accum_error_us;
     is_extrapolated = true;

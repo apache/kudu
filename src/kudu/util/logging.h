@@ -332,7 +332,7 @@ class LogThrottler {
       return true;
     }
 
-    if (ts - last_ts_ < n_secs * 1e6) {
+    if (ts - last_ts_ < n_secs * 1000000) {
       *num_suppressed = base::subtle::NoBarrier_AtomicIncrement(&num_suppressed_, 1);
       return false;
     }

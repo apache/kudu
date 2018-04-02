@@ -1306,9 +1306,9 @@ class PosixEnv : public Env {
       return IOError(fname, errno);
     }
 #ifdef __APPLE__
-    *timestamp = s.st_mtimespec.tv_sec * 1e6 + s.st_mtimespec.tv_nsec / 1e3;
+    *timestamp = s.st_mtimespec.tv_sec * 1000000 + s.st_mtimespec.tv_nsec / 1000;
 #else
-    *timestamp = s.st_mtim.tv_sec * 1e6 + s.st_mtim.tv_nsec / 1e3;
+    *timestamp = s.st_mtim.tv_sec * 1000000 + s.st_mtim.tv_nsec / 1000;
 #endif
     return Status::OK();
   }

@@ -81,7 +81,7 @@ inline void GetCurrentTime(mach_timespec_t* ts) {
 inline MicrosecondsInt64 GetCurrentTimeMicros() {
   mach_timespec_t ts;
   GetCurrentTime(&ts);
-  return ts.tv_sec * 1e6 + ts.tv_nsec / 1e3;
+  return ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
 }
 
 inline int64_t GetMonoTimeNanos() {
@@ -96,7 +96,7 @@ inline int64_t GetMonoTimeNanos() {
 }
 
 inline MicrosecondsInt64 GetMonoTimeMicros() {
-  return GetMonoTimeNanos() / 1e3;
+  return GetMonoTimeNanos() / 1000;
 }
 
 inline MicrosecondsInt64 GetThreadCpuTimeMicros() {
@@ -122,7 +122,7 @@ inline MicrosecondsInt64 GetThreadCpuTimeMicros() {
     return 0;
   }
 
-  return thread_info_data.user_time.seconds * 1e6 + thread_info_data.user_time.microseconds;
+  return thread_info_data.user_time.seconds * 1000000 + thread_info_data.user_time.microseconds;
 }
 
 #else
@@ -130,7 +130,7 @@ inline MicrosecondsInt64 GetThreadCpuTimeMicros() {
 inline MicrosecondsInt64 GetClockTimeMicros(clockid_t clock) {
   timespec ts;
   clock_gettime(clock, &ts);
-  return ts.tv_sec * 1e6 + ts.tv_nsec / 1e3;
+  return ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
 }
 
 #endif // defined(__APPLE__)
