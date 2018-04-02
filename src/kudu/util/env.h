@@ -319,8 +319,7 @@ class Env {
     RUNNING_THREADS_PER_EUID,
   };
 
-  // Gets the process' current limit for the given resource type. If there is
-  // no limit, returns kuint64max.
+  // Gets the process' current limit for the given resource type.
   //
   // On UNIX platforms, this is equivalent to the resource's soft limit.
   virtual uint64_t GetResourceLimit(ResourceLimitType t) = 0;

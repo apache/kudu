@@ -39,7 +39,6 @@
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/once.h"
@@ -1597,8 +1596,8 @@ class PosixEnv : public Env {
   }
 
   virtual uint64_t GetResourceLimit(ResourceLimitType t) OVERRIDE {
-    static_assert(RLIM_INFINITY == kuint64max,
-                  "RLIM_INFINITY is assumed to be 2^64 - 1");
+    static_assert(std::is_unsigned<rlim_t>::value, "rlim_t must be unsigned");
+    static_assert(RLIM_INFINITY > 0, "RLIM_INFINITY must be positive");
 
     // There's no reason for this to ever fail.
     struct rlimit l;
