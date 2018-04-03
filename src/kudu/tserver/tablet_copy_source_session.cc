@@ -93,10 +93,10 @@ TabletCopySourceMetrics::TabletCopySourceMetrics(const scoped_refptr<MetricEntit
 }
 
 TabletCopySourceSession::TabletCopySourceSession(
-    const scoped_refptr<TabletReplica>& tablet_replica, std::string session_id,
+    scoped_refptr<TabletReplica> tablet_replica, std::string session_id,
     std::string requestor_uuid, FsManager* fs_manager,
     TabletCopySourceMetrics* tablet_copy_metrics)
-    : tablet_replica_(tablet_replica),
+    : tablet_replica_(std::move(tablet_replica)),
       session_id_(std::move(session_id)),
       requestor_uuid_(std::move(requestor_uuid)),
       fs_manager_(fs_manager),

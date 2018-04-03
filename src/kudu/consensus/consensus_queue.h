@@ -182,7 +182,7 @@ class PeerMessageQueue {
     int64_t last_seen_term_;
   };
 
-  PeerMessageQueue(scoped_refptr<MetricEntity> metric_entity,
+  PeerMessageQueue(const scoped_refptr<MetricEntity>& metric_entity,
                    scoped_refptr<log::Log> log,
                    scoped_refptr<TimeManager> time_manager,
                    RaftPeerPB local_peer_pb,

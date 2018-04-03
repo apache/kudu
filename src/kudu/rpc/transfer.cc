@@ -65,13 +65,16 @@ using std::set;
 using std::string;
 using strings::Substitute;
 
-#define RETURN_ON_ERROR_OR_SOCKET_NOT_READY(status) \
-  if (PREDICT_FALSE(!status.ok())) {                            \
-    if (Socket::IsTemporarySocketError(status.posix_code())) {  \
-      return Status::OK(); /* EAGAIN, etc. */                   \
-    }                                                           \
-    return status;                                              \
-  }
+#define RETURN_ON_ERROR_OR_SOCKET_NOT_READY(status)               \
+  do {                                                            \
+    Status _s = (status);                                         \
+    if (PREDICT_FALSE(!_s.ok())) {                                \
+      if (Socket::IsTemporarySocketError(_s.posix_code())) {      \
+        return Status::OK(); /* EAGAIN, etc. */                   \
+      }                                                           \
+      return _s;                                                  \
+    }                                                             \
+  } while (0)
 
 TransferCallbacks::~TransferCallbacks()
 {}

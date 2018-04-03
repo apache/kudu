@@ -261,7 +261,7 @@ class Log : public RefCountedThreadSafe<Log> {
 
   Log(LogOptions options, FsManager* fs_manager, std::string log_path,
       std::string tablet_id, const Schema& schema, uint32_t schema_version,
-      const scoped_refptr<MetricEntity>& metric_entity);
+      scoped_refptr<MetricEntity> metric_entity);
 
   // Initializes a new one or continues an existing log.
   Status Init();

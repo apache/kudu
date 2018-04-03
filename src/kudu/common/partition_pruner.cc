@@ -160,7 +160,7 @@ void EncodeRangeKeysFromPredicates(const Schema& schema,
   // Find the column indexes of the range columns.
   vector<int32_t> col_idxs;
   col_idxs.reserve(range_columns.size());
-  for (ColumnId column : range_columns) {
+  for (const auto& column : range_columns) {
     int32_t col_idx = schema.find_column_by_id(column);
     CHECK(col_idx != Schema::kColumnNotFound);
     CHECK(col_idx < schema.num_key_columns());
@@ -393,7 +393,7 @@ void PartitionPruner::Init(const Schema& schema,
         string upper = get<1>(partition_key_range);
         hash_encoder.Encode(&bucket, &lower);
         hash_encoder.Encode(&bucket_upper, &upper);
-        new_partition_key_ranges.push_back(make_tuple(move(lower), move(upper)));
+        new_partition_key_ranges.emplace_back(move(lower), move(upper));
       }
     }
     partition_key_ranges.swap(new_partition_key_ranges);

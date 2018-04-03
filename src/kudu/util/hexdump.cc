@@ -22,6 +22,8 @@
 #include <cstdint>
 #include <string>
 
+#include <glog/logging.h>
+
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/slice.h"
@@ -58,6 +60,7 @@ std::string HexDump(const Slice &slice) {
       p += 1;
       line_rem -= 1;
     }
+    DCHECK_EQ(line_rem, 0);
 
     int padding = (16 - line_len) / 2;
 

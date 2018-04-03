@@ -97,11 +97,11 @@ class Tablet {
   //
   // If 'metric_registry' is non-NULL, then this tablet will create a 'tablet' entity
   // within the provided registry. Otherwise, no metrics are collected.
-  Tablet(const scoped_refptr<TabletMetadata>& metadata,
-         const scoped_refptr<clock::Clock>& clock,
-         const std::shared_ptr<MemTracker>& parent_mem_tracker,
+  Tablet(scoped_refptr<TabletMetadata> metadata,
+         scoped_refptr<clock::Clock> clock,
+         std::shared_ptr<MemTracker> parent_mem_tracker,
          MetricRegistry* metric_registry,
-         const scoped_refptr<log::LogAnchorRegistry>& log_anchor_registry);
+         scoped_refptr<log::LogAnchorRegistry> log_anchor_registry);
 
   ~Tablet();
 

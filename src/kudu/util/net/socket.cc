@@ -580,7 +580,7 @@ Status Socket::BlockingRecv(uint8_t *buf, size_t amt, size_t *nread, const MonoT
   return Status::OK();
 }
 
-Status Socket::SetTimeout(int opt, std::string optname, const MonoDelta& timeout) {
+Status Socket::SetTimeout(int opt, const char* optname, const MonoDelta& timeout) {
   if (PREDICT_FALSE(timeout.ToNanoseconds() < 0)) {
     return Status::InvalidArgument("Timeout specified as negative to SetTimeout",
                                    timeout.ToString());
@@ -591,7 +591,7 @@ Status Socket::SetTimeout(int opt, std::string optname, const MonoDelta& timeout
   if (::setsockopt(fd_, SOL_SOCKET, opt, &tv, optlen) == -1) {
     int err = errno;
     return Status::NetworkError(
-        StringPrintf("Failed to set %s to %s", optname.c_str(), timeout.ToString().c_str()),
+        StringPrintf("Failed to set %s to %s", optname, timeout.ToString().c_str()),
         ErrnoToString(err), err);
   }
   return Status::OK();

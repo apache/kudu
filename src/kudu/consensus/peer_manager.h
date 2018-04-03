@@ -52,7 +52,7 @@ class PeerManager {
               PeerProxyFactory* peer_proxy_factory,
               PeerMessageQueue* queue,
               ThreadPoolToken* raft_pool_token,
-              const scoped_refptr<log::Log>& log);
+              scoped_refptr<log::Log> log);
 
   ~PeerManager();
 

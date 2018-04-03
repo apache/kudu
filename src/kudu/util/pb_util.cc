@@ -656,6 +656,7 @@ Status WritablePBContainerFile::CreateNew(const Message& msg) {
     InlineEncodeFixed32(buf.data() + offset, header_checksum);
     offset += sizeof(uint32_t);
   }
+  DCHECK_EQ(offset, kHeaderLen);
 
   // Serialize the supplemental header.
   ContainerSupHeaderPB sup_header;

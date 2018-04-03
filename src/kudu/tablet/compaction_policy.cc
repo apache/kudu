@@ -335,7 +335,6 @@ void BudgetedCompactionPolicy::RunExact(
     if (inrange_candidates.empty()) continue;
 
     solver.Reset(size_budget_mb_, &inrange_candidates);
-    ab_max = cc_a.cdf_max_key();
 
     vector<int> chosen_indexes;
     int j = 0;

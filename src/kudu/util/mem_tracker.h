@@ -69,7 +69,7 @@ class MemTracker : public std::enable_shared_from_this<MemTracker> {
   static std::shared_ptr<MemTracker> CreateTracker(
       int64_t byte_limit,
       const std::string& id,
-      const std::shared_ptr<MemTracker>& parent = std::shared_ptr<MemTracker>());
+      std::shared_ptr<MemTracker> parent = std::shared_ptr<MemTracker>());
 
   // If a tracker with the specified 'id' and 'parent' exists in the tree, sets
   // 'tracker' to reference that instance. Returns false if no such tracker

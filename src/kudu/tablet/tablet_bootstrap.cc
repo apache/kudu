@@ -197,14 +197,14 @@ class FlushedStoresSnapshot {
 // we need to set it before replay or we won't be able to re-rebuild.
 class TabletBootstrap {
  public:
-  TabletBootstrap(const scoped_refptr<TabletMetadata>& tablet_meta,
+  TabletBootstrap(scoped_refptr<TabletMetadata> tablet_meta,
                   RaftConfigPB committed_raft_config,
-                  const scoped_refptr<Clock>& clock,
+                  scoped_refptr<Clock> clock,
                   shared_ptr<MemTracker> mem_tracker,
-                  const scoped_refptr<ResultTracker>& result_tracker,
+                  scoped_refptr<ResultTracker> result_tracker,
                   MetricRegistry* metric_registry,
-                  const scoped_refptr<TabletReplica>& tablet_replica,
-                  const scoped_refptr<LogAnchorRegistry>& log_anchor_registry);
+                  scoped_refptr<TabletReplica> tablet_replica,
+                  scoped_refptr<LogAnchorRegistry> log_anchor_registry);
 
   // Plays the log segments, rebuilding the portion of the Tablet's soft
   // state that is present in the log (additional soft state may be present
@@ -439,21 +439,27 @@ void TabletBootstrap::SetStatusMessage(const string& status) {
   if (tablet_replica_) tablet_replica_->SetStatusMessage(status);
 }
 
-Status BootstrapTablet(const scoped_refptr<TabletMetadata>& tablet_meta,
+Status BootstrapTablet(scoped_refptr<TabletMetadata> tablet_meta,
                        RaftConfigPB committed_raft_config,
-                       const scoped_refptr<Clock>& clock,
-                       const shared_ptr<MemTracker>& mem_tracker,
-                       const scoped_refptr<ResultTracker>& result_tracker,
+                       scoped_refptr<Clock> clock,
+                       shared_ptr<MemTracker> mem_tracker,
+                       scoped_refptr<ResultTracker> result_tracker,
                        MetricRegistry* metric_registry,
-                       const scoped_refptr<TabletReplica>& tablet_replica,
+                       scoped_refptr<TabletReplica> tablet_replica,
                        shared_ptr<tablet::Tablet>* rebuilt_tablet,
                        scoped_refptr<log::Log>* rebuilt_log,
-                       const scoped_refptr<log::LogAnchorRegistry>& log_anchor_registry,
+                       scoped_refptr<log::LogAnchorRegistry> log_anchor_registry,
                        ConsensusBootstrapInfo* consensus_info) {
   TRACE_EVENT1("tablet", "BootstrapTablet",
                "tablet_id", tablet_meta->tablet_id());
-  TabletBootstrap bootstrap(tablet_meta, std::move(committed_raft_config), clock, mem_tracker,
-                            result_tracker, metric_registry, tablet_replica, log_anchor_registry);
+  TabletBootstrap bootstrap(std::move(tablet_meta),
+                            std::move(committed_raft_config),
+                            std::move(clock),
+                            std::move(mem_tracker),
+                            std::move(result_tracker),
+                            metric_registry,
+                            std::move(tablet_replica),
+                            std::move(log_anchor_registry));
   RETURN_NOT_OK(bootstrap.Bootstrap(rebuilt_tablet, rebuilt_log, consensus_info));
   // This is necessary since OpenNewLog() initially disables sync.
   RETURN_NOT_OK((*rebuilt_log)->ReEnableSyncIfRequired());
@@ -479,21 +485,21 @@ static string DebugInfo(const string& tablet_id,
 }
 
 TabletBootstrap::TabletBootstrap(
-    const scoped_refptr<TabletMetadata>& tablet_meta,
+    scoped_refptr<TabletMetadata> tablet_meta,
     RaftConfigPB committed_raft_config,
-    const scoped_refptr<Clock>& clock, shared_ptr<MemTracker> mem_tracker,
-    const scoped_refptr<ResultTracker>& result_tracker,
+    scoped_refptr<Clock> clock, shared_ptr<MemTracker> mem_tracker,
+    scoped_refptr<ResultTracker> result_tracker,
     MetricRegistry* metric_registry,
-    const scoped_refptr<TabletReplica>& tablet_replica,
-    const scoped_refptr<LogAnchorRegistry>& log_anchor_registry)
-    : tablet_meta_(tablet_meta),
+    scoped_refptr<TabletReplica> tablet_replica,
+    scoped_refptr<LogAnchorRegistry> log_anchor_registry)
+    : tablet_meta_(std::move(tablet_meta)),
       committed_raft_config_(std::move(committed_raft_config)),
-      clock_(clock),
+      clock_(std::move(clock)),
       mem_tracker_(std::move(mem_tracker)),
-      result_tracker_(result_tracker),
+      result_tracker_(std::move(result_tracker)),
       metric_registry_(metric_registry),
-      tablet_replica_(tablet_replica),
-      log_anchor_registry_(log_anchor_registry) {}
+      tablet_replica_(std::move(tablet_replica)),
+      log_anchor_registry_(std::move(log_anchor_registry)) {}
 
 Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
                                   scoped_refptr<Log>* rebuilt_log,
@@ -1066,7 +1072,7 @@ Status TabletBootstrap::HandleEntryPair(LogEntryPB* replicate_entry, LogEntryPB*
 #define RETURN_NOT_OK_REPLAY(ReplayMethodName, replicate, commit)       \
   RETURN_NOT_OK_PREPEND(ReplayMethodName(replicate, commit),            \
                         Substitute(error_fmt, OperationType_Name(op_type), \
-                                   SecureShortDebugString(*replicate),   \
+                                   SecureShortDebugString(*(replicate)), \
                                    SecureShortDebugString(commit)))
 
   ReplicateMsg* replicate = replicate_entry->mutable_replicate();

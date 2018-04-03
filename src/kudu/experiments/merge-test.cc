@@ -82,6 +82,7 @@ void SimpleMerge(const vector<vector<MergeType> > &in_lists,
                  vector<MergeType> *out) {
   typedef vector<MergeType>::const_iterator MergeTypeIter;
   vector<MergeTypeIter> iters;
+  iters.reserve(in_lists.size());
   for (const vector<MergeType> &list : in_lists) {
     iters.push_back(list.begin());
   }

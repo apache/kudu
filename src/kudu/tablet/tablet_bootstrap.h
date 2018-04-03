@@ -57,16 +57,16 @@ extern const char* kLogRecoveryDir;
 //
 // This is a synchronous method, but is typically called within a thread pool by
 // TSTabletManager.
-Status BootstrapTablet(const scoped_refptr<TabletMetadata>& tablet_meta,
+Status BootstrapTablet(scoped_refptr<TabletMetadata> tablet_meta,
                        consensus::RaftConfigPB committed_raft_config,
-                       const scoped_refptr<clock::Clock>& clock,
-                       const std::shared_ptr<MemTracker>& mem_tracker,
-                       const scoped_refptr<rpc::ResultTracker>& result_tracker,
+                       scoped_refptr<clock::Clock> clock,
+                       std::shared_ptr<MemTracker> mem_tracker,
+                       scoped_refptr<rpc::ResultTracker> result_tracker,
                        MetricRegistry* metric_registry,
-                       const scoped_refptr<TabletReplica>& tablet_replica,
+                       scoped_refptr<TabletReplica> tablet_replica,
                        std::shared_ptr<Tablet>* rebuilt_tablet,
                        scoped_refptr<log::Log>* rebuilt_log,
-                       const scoped_refptr<log::LogAnchorRegistry>& log_anchor_registry,
+                       scoped_refptr<log::LogAnchorRegistry> log_anchor_registry,
                        consensus::ConsensusBootstrapInfo* consensus_info);
 
 }  // namespace tablet

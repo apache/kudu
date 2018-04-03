@@ -455,7 +455,7 @@ Status Log::Open(const LogOptions &options,
 
 Log::Log(LogOptions options, FsManager* fs_manager, string log_path,
          string tablet_id, const Schema& schema, uint32_t schema_version,
-         const scoped_refptr<MetricEntity>& metric_entity)
+         scoped_refptr<MetricEntity> metric_entity)
     : options_(options),
       fs_manager_(fs_manager),
       log_dir_(std::move(log_path)),
@@ -471,7 +471,7 @@ Log::Log(LogOptions options, FsManager* fs_manager, string log_path,
       sync_disabled_(false),
       allocation_state_(kAllocationNotStarted),
       codec_(nullptr),
-      metric_entity_(metric_entity),
+      metric_entity_(std::move(metric_entity)),
       on_disk_size_(0) {
   CHECK_OK(ThreadPoolBuilder("log-alloc").set_max_threads(1).Build(&allocation_pool_));
   if (metric_entity_) {

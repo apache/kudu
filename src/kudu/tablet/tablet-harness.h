@@ -116,7 +116,7 @@ class TabletHarness {
                              clock_,
                              std::shared_ptr<MemTracker>(),
                              metrics_registry_.get(),
-                             new log::LogAnchorRegistry()));
+                             make_scoped_refptr(new log::LogAnchorRegistry())));
     return Status::OK();
   }
 

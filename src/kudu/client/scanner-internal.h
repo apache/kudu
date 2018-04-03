@@ -32,13 +32,12 @@
 #include "kudu/client/row_result.h"
 #include "kudu/client/scan_batch.h"
 #include "kudu/client/scan_configuration.h"
-#include "kudu/client/shared_ptr.h"
 #include "kudu/client/schema.h"
+#include "kudu/client/shared_ptr.h"
 #include "kudu/common/partition_pruner.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.pb.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -295,7 +294,7 @@ class KuduScanBatch::Data {
                const Schema* projection,
                const KuduSchema* client_projection,
                uint64_t row_format_flags,
-               gscoped_ptr<RowwiseRowBlockPB> resp_data);
+               std::unique_ptr<RowwiseRowBlockPB> resp_data);
 
   int num_rows() const {
     return resp_data_.num_rows();

@@ -96,7 +96,7 @@ class RowProjector {
   // object. Also requires that the schemas are compatible with
   // the schemas used to create 'functions'.
   RowProjector(const Schema* base_schema, const Schema* projection,
-               const scoped_refptr<RowProjectorFunctions>& code);
+               scoped_refptr<RowProjectorFunctions> functions);
 
   Status Init();
 

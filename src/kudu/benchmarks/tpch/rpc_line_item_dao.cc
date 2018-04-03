@@ -162,14 +162,14 @@ void RpcLineItemDAO::Init() {
                                   : KuduSession::AUTO_FLUSH_BACKGROUND));
 }
 
-void RpcLineItemDAO::WriteLine(boost::function<void(KuduPartialRow*)> f) {
+void RpcLineItemDAO::WriteLine(const boost::function<void(KuduPartialRow*)> &f) {
   gscoped_ptr<KuduInsert> insert(client_table_->NewInsert());
   f(insert->mutable_row());
   CHECK_OK(session_->Apply(insert.release()));
   HandleLine();
 }
 
-void RpcLineItemDAO::MutateLine(boost::function<void(KuduPartialRow*)> f) {
+void RpcLineItemDAO::MutateLine(const boost::function<void(KuduPartialRow*)> &f) {
   gscoped_ptr<KuduUpdate> update(client_table_->NewUpdate());
   f(update->mutable_row());
   CHECK_OK(session_->Apply(update.release()));

@@ -140,7 +140,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
                scoped_refptr<log::Log> log,
                scoped_refptr<TimeManager> time_manager,
                ReplicaTransactionFactory* txn_factory,
-               scoped_refptr<MetricEntity> metric_entity,
+               const scoped_refptr<MetricEntity>& metric_entity,
                Callback<void(const std::string& reason)> mark_dirty_clbk);
 
   // Returns true if RaftConsensus is running.
@@ -927,7 +927,7 @@ class ConsensusRound : public RefCountedThreadSafe<ConsensusRound> {
   // replicate callback and the commit callback is set later, after the transaction
   // is actually started.
   ConsensusRound(RaftConsensus* consensus,
-                 const ReplicateRefPtr& replicate_msg);
+                 ReplicateRefPtr replicate_msg);
 
   ReplicateMsg* replicate_msg() {
     return replicate_msg_->get();

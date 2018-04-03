@@ -16,8 +16,8 @@
 // under the License.
 
 #include <algorithm>
-#include <functional>
 #include <cstdint>
+#include <functional>
 #include <ostream>
 #include <string>
 #include <vector>

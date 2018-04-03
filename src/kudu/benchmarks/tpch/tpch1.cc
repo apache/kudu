@@ -66,6 +66,7 @@
 #include <vector>
 
 #include <boost/bind.hpp>
+#include <boost/function.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -271,7 +272,7 @@ int main(int argc, char **argv) {
 
   gscoped_ptr<kudu::RpcLineItemDAO> dao(new kudu::RpcLineItemDAO(
       master_address, FLAGS_table_name, FLAGS_tpch_max_batch_size,
-      /* timeout = */ 5000, kudu::RpcLineItemDAO::RANGE,
+      /* timeout_ms = */ 5000, kudu::RpcLineItemDAO::RANGE,
       /* num_buckets = */ 1));
   dao->Init();
 

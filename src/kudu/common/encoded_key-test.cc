@@ -64,18 +64,18 @@ class EncodedKeyTest : public KuduTest {
     return Schema({ ColumnSchema("key", UINT32) }, 1);
   }
 
-  EncodedKey* BuildEncodedKey(EncodedKeyBuilder& key_builder, int val) {
-    key_builder.Reset();
-    key_builder.AddColumnKey(&val);
-    return key_builder.BuildEncodedKey();
+  EncodedKey* BuildEncodedKey(EncodedKeyBuilder* key_builder, int val) {
+    key_builder->Reset();
+    key_builder->AddColumnKey(&val);
+    return key_builder->BuildEncodedKey();
   }
 
   // Test whether target lies within the numerical key ranges given by
   // start and end. If -1, an empty slice is used instead.
   bool InRange(int start, int end, int target) {
-    gscoped_ptr<EncodedKey> start_key(BuildEncodedKey(key_builder_, start));
-    gscoped_ptr<EncodedKey> end_key(BuildEncodedKey(key_builder_, end));
-    gscoped_ptr<EncodedKey> target_key(BuildEncodedKey(key_builder_, target));
+    gscoped_ptr<EncodedKey> start_key(BuildEncodedKey(&key_builder_, start));
+    gscoped_ptr<EncodedKey> end_key(BuildEncodedKey(&key_builder_, end));
+    gscoped_ptr<EncodedKey> target_key(BuildEncodedKey(&key_builder_, target));
     return target_key->InRange(start != -1 ? start_key->encoded_key() : Slice(),
                                end != -1 ? end_key->encoded_key() : Slice());
   }

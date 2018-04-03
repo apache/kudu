@@ -176,7 +176,7 @@ class EasyJson {
   };
 
   // Used to instantiate descendant objects.
-  EasyJson(rapidjson::Value* value, const scoped_refptr<EasyJsonAllocator>& alloc);
+  EasyJson(rapidjson::Value* value, scoped_refptr<EasyJsonAllocator> alloc);
 
   // One allocator is shared among an EasyJson object and
   // all of its descendants.

@@ -60,8 +60,8 @@ class RpcLineItemDAO {
                  std::vector<const KuduPartialRow*> tablet_splits = {});
   ~RpcLineItemDAO();
   void Init();
-  void WriteLine(boost::function<void(KuduPartialRow*)> f);
-  void MutateLine(boost::function<void(KuduPartialRow*)> f);
+  void WriteLine(const boost::function<void(KuduPartialRow*)>& f);
+  void MutateLine(const boost::function<void(KuduPartialRow*)>& f);
   void FinishWriting();
 
   // Deletes previous scanner if one is open.

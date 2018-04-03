@@ -432,7 +432,7 @@ Status TpchRealWorld::Run() {
 
   stop_threads_.Store(true);
 
-  for (scoped_refptr<kudu::Thread> thr : threads) {
+  for (const auto& thr : threads) {
     RETURN_NOT_OK(ThreadJoiner(thr.get()).Join());
   }
   return Status::OK();

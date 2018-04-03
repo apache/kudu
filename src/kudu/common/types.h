@@ -107,11 +107,11 @@ static int GenericCompare(const void *lhs, const void *rhs) {
   CppType rhs_int = UnalignedLoad<CppType>(rhs);
   if (lhs_int < rhs_int) {
     return -1;
-  } else if (lhs_int > rhs_int) {
-    return 1;
-  } else {
-    return 0;
   }
+  if (lhs_int > rhs_int) {
+    return 1;
+  }
+  return 0;
 }
 
 template<DataType Type>

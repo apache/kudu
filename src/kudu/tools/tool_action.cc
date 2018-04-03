@@ -62,7 +62,7 @@ string FakeDescribeOneFlag(const ActionArgsDescriptor::Arg& arg) {
 
   // Strip the first dash from the description; this is a positional parameter
   // so let's make sure it looks like one.
-  string::size_type first_dash_idx = res.find("-");
+  string::size_type first_dash_idx = res.find('-');
   DCHECK_NE(string::npos, first_dash_idx);
   return res.substr(0, first_dash_idx) + res.substr(first_dash_idx + 1);
 }

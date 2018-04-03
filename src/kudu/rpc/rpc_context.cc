@@ -49,11 +49,11 @@ namespace rpc {
 RpcContext::RpcContext(InboundCall *call,
                        const google::protobuf::Message *request_pb,
                        google::protobuf::Message *response_pb,
-                       const scoped_refptr<ResultTracker>& result_tracker)
+                       scoped_refptr<ResultTracker> result_tracker)
   : call_(CHECK_NOTNULL(call)),
     request_pb_(request_pb),
     response_pb_(response_pb),
-    result_tracker_(result_tracker) {
+    result_tracker_(std::move(result_tracker)) {
   VLOG(4) << call_->remote_method().service_name() << ": Received RPC request for "
           << call_->ToString() << ":" << std::endl << SecureDebugString(*request_pb_);
   TRACE_EVENT_ASYNC_BEGIN2("rpc_call", "RPC", this,

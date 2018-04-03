@@ -93,7 +93,7 @@ class FileSubstitutions : public Substituter {
   static const std::string kProtoExtension;
 
   Status Init(const FileDescriptor *file) {
-    string path = file->name();
+    const string& path = file->name();
     map_["path"] = path;
 
     // Initialize path_
@@ -152,7 +152,7 @@ class FileSubstitutions : public Substituter {
   // Extract the last filename component.
   static void GetBaseName(const string &path,
                           string *base) {
-    size_t last_slash = path.find_last_of("/");
+    size_t last_slash = path.find_last_of('/');
     if (last_slash != string::npos) {
       *base = path.substr(last_slash + 1);
     } else {

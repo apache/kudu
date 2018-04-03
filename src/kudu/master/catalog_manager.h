@@ -145,7 +145,7 @@ class TabletInfo : public RefCountedThreadSafe<TabletInfo> {
     NOT_YET_REPORTED = -1L
   };
 
-  TabletInfo(const scoped_refptr<TableInfo>& table, std::string tablet_id);
+  TabletInfo(scoped_refptr<TableInfo> table, std::string tablet_id);
 
   const std::string& id() const { return tablet_id_; }
   const scoped_refptr<TableInfo>& table() const { return table_; }

@@ -136,9 +136,9 @@ typedef std::unordered_map<std::string, RemoteTabletServer*> TabletServerMap;
 class MetaCacheServerPicker : public rpc::ServerPicker<RemoteTabletServer> {
  public:
   MetaCacheServerPicker(KuduClient* client,
-                        const scoped_refptr<MetaCache>& meta_cache,
+                        scoped_refptr<MetaCache> meta_cache,
                         const KuduTable* table,
-                        RemoteTablet* const tablet);
+                        RemoteTablet* tablet);
 
   virtual ~MetaCacheServerPicker() {}
   void PickLeader(const ServerPickedCallback& callback, const MonoTime& deadline) override;

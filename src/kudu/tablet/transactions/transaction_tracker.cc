@@ -227,7 +227,7 @@ Status TransactionTracker::WaitForAllToFinish(const MonoDelta& timeout) const {
       LOG(WARNING) << Substitute("TransactionTracker waiting for $0 outstanding transactions to"
                                  " complete now for $1", txns.size(), diff.ToString());
       LOG(INFO) << "Dumping currently running transactions: ";
-      for (scoped_refptr<TransactionDriver> driver : txns) {
+      for (const auto& driver : txns) {
         LOG(INFO) << driver->ToString();
       }
 

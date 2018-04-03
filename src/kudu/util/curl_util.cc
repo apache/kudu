@@ -80,7 +80,7 @@ Status EasyCurl::DoRequest(const std::string& url,
 
   RETURN_NOT_OK(TranslateError(curl_easy_setopt(
       curl_, CURLOPT_SSL_VERIFYPEER,
-      static_cast<long>(verify_peer_)))); // NOLINT(runtime/int)
+      static_cast<long>(verify_peer_)))); // NOLINT
   RETURN_NOT_OK(TranslateError(curl_easy_setopt(curl_, CURLOPT_URL, url.c_str())));
   if (return_headers_) {
     RETURN_NOT_OK(TranslateError(curl_easy_setopt(curl_, CURLOPT_HEADER, 1)));
@@ -100,7 +100,7 @@ Status EasyCurl::DoRequest(const std::string& url,
         timeout_.ToMilliseconds())));
   }
   RETURN_NOT_OK(TranslateError(curl_easy_perform(curl_)));
-  long rc; // NOLINT(runtime/int) curl wants a long
+  long rc; // NOLINT(*) curl wants a long
   RETURN_NOT_OK(TranslateError(curl_easy_getinfo(curl_, CURLINFO_RESPONSE_CODE, &rc)));
   if (rc != 200) {
     return Status::RemoteError(strings::Substitute("HTTP $0", rc));

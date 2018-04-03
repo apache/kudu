@@ -353,7 +353,7 @@ Status MetricRegistry::WriteAsJson(JsonWriter* writer,
   }
 
   writer->StartArray();
-  for (const EntityMap::value_type e : entities) {
+  for (const auto& e : entities) {
     WARN_NOT_OK(e.second->WriteAsJson(writer, requested_metrics, opts),
                 Substitute("Failed to write entity $0 as JSON", e.second->id()));
   }

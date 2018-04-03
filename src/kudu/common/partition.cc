@@ -116,7 +116,7 @@ Status ExtractColumnIds(const RepeatedPtrField<PartitionSchemaPB_ColumnIdentifie
                         const Schema& schema,
                         vector<ColumnId>* column_ids) {
     column_ids->reserve(identifiers.size());
-    for (PartitionSchemaPB_ColumnIdentifierPB identifier : identifiers) {
+    for (const auto& identifier : identifiers) {
       switch (identifier.identifier_case()) {
         case PartitionSchemaPB_ColumnIdentifierPB::kId: {
           ColumnId column_id(identifier.id());

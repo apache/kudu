@@ -509,8 +509,8 @@ Status Ksck::CheckTablesConsistency() {
     // If the summary has no tablets (because of tablet id filters), don't
     // save the summary.
     if (ts.TotalTablets() > 0) {
-      table_summaries.emplace_back(std::move(ts));
       total_tablets += ts.TotalTablets();
+      table_summaries.emplace_back(std::move(ts));
     }
   }
 
@@ -811,7 +811,7 @@ Status Ksck::ChecksumData(const ChecksumOptions& opts) {
                       FindOrDie(checksums, tablet->id())) {
           const string& replica_uuid = r.first;
 
-          shared_ptr<KsckTabletServer> ts = FindOrDie(cluster_->tablet_servers(), replica_uuid);
+          const auto& ts = FindOrDie(cluster_->tablet_servers(), replica_uuid);
           const ChecksumResultReporter::ResultPair& result = r.second;
           const Status& status = result.first;
           uint64_t checksum = result.second;

@@ -17,8 +17,9 @@
 
 #include "kudu/util/easy_json.h"
 
-#include <string>
 #include <ostream>
+#include <string>
+#include <utility>
 
 #include <glog/logging.h>
 #include <rapidjson/document.h>
@@ -205,7 +206,7 @@ string EasyJson::ToString() const {
   return buffer.GetString();
 }
 
-EasyJson::EasyJson(Value* value, const scoped_refptr<EasyJsonAllocator>& alloc)
-    : alloc_(alloc), value_(value) {}
+EasyJson::EasyJson(Value* value, scoped_refptr<EasyJsonAllocator> alloc)
+    : alloc_(std::move(alloc)), value_(value) {}
 
 } // namespace kudu

@@ -251,12 +251,13 @@ class KUDU_EXPORT KuduColumnSchema {
   KuduColumnSchema();
 
   /// This constructor is private because clients should use the Builder API.
-  KuduColumnSchema(const std::string &name,
-                   DataType type,
-                   bool is_nullable = false,
-                   const void* default_value = NULL,
-                   KuduColumnStorageAttributes storage_attributes = KuduColumnStorageAttributes(),
-                   KuduColumnTypeAttributes type_attributes = KuduColumnTypeAttributes());
+  KuduColumnSchema(
+      const std::string &name,
+      DataType type,
+      bool is_nullable = false,
+      const void* default_value = NULL, //NOLINT(modernize-use-nullptr)
+      const KuduColumnStorageAttributes& storage_attributes = KuduColumnStorageAttributes(),
+      const KuduColumnTypeAttributes& type_attributes = KuduColumnTypeAttributes());
 
   // Owned.
   ColumnSchema* col_;

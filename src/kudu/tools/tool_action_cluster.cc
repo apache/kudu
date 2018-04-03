@@ -38,7 +38,7 @@
 #define PUSH_PREPEND_NOT_OK(s, statuses, msg) do { \
   ::kudu::Status _s = (s); \
   if (PREDICT_FALSE(!_s.ok())) { \
-    statuses.push_back(string(msg) + ": " + _s.message().ToString()); \
+    (statuses).push_back(string((msg)) + ": " + _s.message().ToString()); \
   } \
 } while (0);
 

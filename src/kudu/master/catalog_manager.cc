@@ -592,7 +592,7 @@ string RequestorString(RpcContext* rpc) {
 // Service::UnavailableError as the error, set NOT_THE_LEADER as the
 // error code and return true.
 template<class RespClass>
-void CheckIfNoLongerLeaderAndSetupError(Status s, RespClass* resp) {
+void CheckIfNoLongerLeaderAndSetupError(const Status& s, RespClass* resp) {
   // TODO (KUDU-591): This is a bit of a hack, as right now
   // there's no way to propagate why a write to a consensus configuration has
   // failed. However, since we use Status::IllegalState()/IsAborted() to
@@ -1074,7 +1074,7 @@ Status CatalogManager::PrepareFollower(MonoTime* last_tspk_run) {
   // Import keys for authn token verification. A new TSK appear every
   // tsk_rotation_seconds, so using 1/2 of that interval to avoid edge cases.
   const auto tsk_rotation_interval =
-      MonoDelta::FromSeconds(FLAGS_tsk_rotation_seconds / 2);
+      MonoDelta::FromSeconds(FLAGS_tsk_rotation_seconds / 2.0);
   const auto now = MonoTime::Now();
   if (!last_tspk_run->Initialized() || *last_tspk_run + tsk_rotation_interval < now) {
     RETURN_NOT_OK(PrepareFollowerTokenVerifier());
@@ -2609,8 +2609,8 @@ class PickSpecificUUID : public TSPicker {
 // and sends the RPC to that server.
 class PickLeaderReplica : public TSPicker {
  public:
-  explicit PickLeaderReplica(const scoped_refptr<TabletInfo>& tablet) :
-    tablet_(tablet) {
+  explicit PickLeaderReplica(scoped_refptr<TabletInfo> tablet) :
+      tablet_(std::move(tablet)) {
   }
 
   Status PickReplica(string* ts_uuid) override {
@@ -2644,10 +2644,10 @@ class RetryingTSRpcTask : public MonitoredTask {
  public:
   RetryingTSRpcTask(Master *master,
                     gscoped_ptr<TSPicker> replica_picker,
-                    const scoped_refptr<TableInfo>& table)
+                    scoped_refptr<TableInfo> table)
     : master_(master),
       replica_picker_(std::move(replica_picker)),
-      table_(table),
+      table_(std::move(table)),
       start_ts_(MonoTime::Now()),
       deadline_(start_ts_ + MonoDelta::FromMilliseconds(FLAGS_unresponsive_ts_rpc_timeout_ms)),
       attempt_(0),
@@ -3151,11 +3151,11 @@ shared_ptr<TSDescriptor> SelectReplica(const TSDescriptorVector& ts_descs,
 class AsyncAlterTable : public RetryingTSRpcTask {
  public:
   AsyncAlterTable(Master *master,
-                  const scoped_refptr<TabletInfo>& tablet)
+                  scoped_refptr<TabletInfo> tablet)
     : RetryingTSRpcTask(master,
                         gscoped_ptr<TSPicker>(new PickLeaderReplica(tablet)),
                         tablet->table()),
-      tablet_(tablet) {
+      tablet_(std::move(tablet)) {
   }
 
   string type_name() const override { return "Alter Table"; }
@@ -4726,11 +4726,11 @@ bool CatalogManager::ScopedLeaderSharedLock::CheckIsInitializedAndIsLeaderOrResp
 #define INITTED_OR_RESPOND(RespClass) \
   template bool \
   CatalogManager::ScopedLeaderSharedLock::CheckIsInitializedOrRespond( \
-      RespClass* resp, RpcContext* rpc)
+      RespClass* resp, RpcContext* rpc) /* NOLINT */
 #define INITTED_AND_LEADER_OR_RESPOND(RespClass) \
   template bool \
   CatalogManager::ScopedLeaderSharedLock::CheckIsInitializedAndIsLeaderOrRespond( \
-      RespClass* resp, RpcContext* rpc)
+      RespClass* resp, RpcContext* rpc) /* NOLINT */
 
 INITTED_OR_RESPOND(ConnectToMasterResponsePB);
 INITTED_OR_RESPOND(GetMasterRegistrationResponsePB);
@@ -4753,9 +4753,9 @@ INITTED_AND_LEADER_OR_RESPOND(ReplaceTabletResponsePB);
 // TabletInfo
 ////////////////////////////////////////////////////////////
 
-TabletInfo::TabletInfo(const scoped_refptr<TableInfo>& table, string tablet_id)
+TabletInfo::TabletInfo(scoped_refptr<TableInfo> table, string tablet_id)
     : tablet_id_(std::move(tablet_id)),
-      table_(table),
+      table_(std::move(table)),
       last_create_tablet_time_(MonoTime::Now()),
       reported_schema_version_(NOT_YET_REPORTED) {}
 

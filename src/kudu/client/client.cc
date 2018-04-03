@@ -1480,7 +1480,8 @@ Status KuduScanner::NextBatch(KuduScanBatch* batch) {
                                data_->configuration().projection(),
                                data_->configuration().client_projection(),
                                data_->configuration().row_format_flags(),
-                               make_gscoped_ptr(data_->last_response_.release_data()));
+                               unique_ptr<RowwiseRowBlockPB>(
+                                   data_->last_response_.release_data()));
   }
 
   if (data_->last_response_.has_more_results()) {
@@ -1504,7 +1505,8 @@ Status KuduScanner::NextBatch(KuduScanBatch* batch) {
                                    data_->configuration().projection(),
                                    data_->configuration().client_projection(),
                                    data_->configuration().row_format_flags(),
-                                   make_gscoped_ptr(data_->last_response_.release_data()));
+                                   unique_ptr<RowwiseRowBlockPB>(
+                                       data_->last_response_.release_data()));
       }
 
       data_->scan_attempts_++;

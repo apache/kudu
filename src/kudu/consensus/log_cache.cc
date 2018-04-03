@@ -80,12 +80,12 @@ static const char kParentMemTrackerId[] = "log_cache";
 typedef vector<const ReplicateMsg*>::const_iterator MsgIter;
 
 LogCache::LogCache(const scoped_refptr<MetricEntity>& metric_entity,
-                   const scoped_refptr<log::Log>& log,
-                   const string& local_uuid,
-                   const string& tablet_id)
-  : log_(log),
-    local_uuid_(local_uuid),
-    tablet_id_(tablet_id),
+                   scoped_refptr<log::Log> log,
+                   string local_uuid,
+                   string tablet_id)
+  : log_(std::move(log)),
+    local_uuid_(std::move(local_uuid)),
+    tablet_id_(std::move(tablet_id)),
     next_sequential_op_index_(0),
     min_pinned_op_index_(0),
     metrics_(metric_entity) {

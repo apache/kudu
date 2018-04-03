@@ -31,19 +31,19 @@
 #include "kudu/common/row.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
+#include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/gutil/walltime.h"
+#include "kudu/tablet/local_tablet_writer.h"
+#include "kudu/tablet/tablet-test-util.h"
+#include "kudu/tablet/tablet.h"
 #include "kudu/util/env.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_graph.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
-#include "kudu/tablet/local_tablet_writer.h"
-#include "kudu/tablet/tablet.h"
-#include "kudu/tablet/tablet-test-util.h"
-#include "kudu/gutil/strings/numbers.h"
 
 namespace kudu {
 namespace tablet {
@@ -149,7 +149,8 @@ struct IntKeyTestSetup {
 
   // builds a row key from an existing row for updates
   template<class RowType>
-  void BuildRowKeyFromExistingRow(KuduPartialRow *dst_row, const RowType& row) {
+  void BuildRowKeyFromExistingRow(KuduPartialRow * /*row*/,
+                                  const RowType& /*src_row*/) {
     CHECK(false) << "Unsupported type";
   }
 

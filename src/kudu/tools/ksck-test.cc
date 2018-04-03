@@ -574,11 +574,11 @@ TEST_F(KsckTest, TestOneSmallReplicatedTableWithConsensusState) {
   CreateOneSmallReplicatedTable();
   ASSERT_OK(RunKsck());
   ASSERT_STR_CONTAINS(err_stream_.str(), ExpectedKsckTableSummary("test",
-                                                                  /*healthy_tables=*/ 3,
-                                                                  /*recovering_tables=*/ 0,
-                                                                  /*underreplicated_tables=*/ 0,
-                                                                  /*consensus_mismatch_tables=*/ 0,
-                                                                  /*unavailable_tables=*/ 0));
+                                                                  /*healthy_tablets=*/ 3,
+                                                                  /*recovering_tablets=*/ 0,
+                                                                  /*underreplicated_tablets=*/ 0,
+                                                                  /*consensus_mismatch_tablets=*/ 0,
+                                                                  /*unavailable_tablets=*/ 0));
 }
 
 TEST_F(KsckTest, TestConsensusConflictExtraPeer) {
@@ -601,11 +601,11 @@ TEST_F(KsckTest, TestConsensusConflictExtraPeer) {
       " B             | A*  B   C        | 0            |              | Yes\n"
       " C             | A*  B   C        | 0            |              | Yes");
   ASSERT_STR_CONTAINS(err_stream_.str(), ExpectedKsckTableSummary("test",
-                                                                  /*healthy_tables=*/ 2,
-                                                                  /*recovering_tables=*/ 0,
-                                                                  /*underreplicated_tables=*/ 0,
-                                                                  /*consensus_mismatch_tables=*/ 0,
-                                                                  /*unavailable_tables=*/ 1));
+                                                                  /*healthy_tablets=*/ 2,
+                                                                  /*recovering_tablets=*/ 0,
+                                                                  /*underreplicated_tablets=*/ 0,
+                                                                  /*consensus_mismatch_tablets=*/ 0,
+                                                                  /*unavailable_tablets=*/ 1));
 }
 
 TEST_F(KsckTest, TestConsensusConflictMissingPeer) {
@@ -628,11 +628,11 @@ TEST_F(KsckTest, TestConsensusConflictMissingPeer) {
       " B             | A*  B   C    | 0            |              | Yes\n"
       " C             | A*  B   C    | 0            |              | Yes");
   ASSERT_STR_CONTAINS(err_stream_.str(), ExpectedKsckTableSummary("test",
-                                                                  /*healthy_tables=*/ 2,
-                                                                  /*recovering_tables=*/ 0,
-                                                                  /*underreplicated_tables=*/ 0,
-                                                                  /*consensus_mismatch_tables=*/ 0,
-                                                                  /*unavailable_tables=*/ 1));
+                                                                  /*healthy_tablets=*/ 2,
+                                                                  /*recovering_tablets=*/ 0,
+                                                                  /*underreplicated_tablets=*/ 0,
+                                                                  /*consensus_mismatch_tablets=*/ 0,
+                                                                  /*unavailable_tablets=*/ 1));
 }
 
 TEST_F(KsckTest, TestConsensusConflictDifferentLeader) {
@@ -655,11 +655,11 @@ TEST_F(KsckTest, TestConsensusConflictDifferentLeader) {
       " B             | A*  B   C    | 0            |              | Yes\n"
       " C             | A*  B   C    | 0            |              | Yes");
   ASSERT_STR_CONTAINS(err_stream_.str(), ExpectedKsckTableSummary("test",
-                                                                  /*healthy_tables=*/ 2,
-                                                                  /*recovering_tables=*/ 0,
-                                                                  /*underreplicated_tables=*/ 0,
-                                                                  /*consensus_mismatch_tables=*/ 0,
-                                                                  /*unavailable_tables=*/ 1));
+                                                                  /*healthy_tablets=*/ 2,
+                                                                  /*recovering_tablets=*/ 0,
+                                                                  /*underreplicated_tablets=*/ 0,
+                                                                  /*consensus_mismatch_tablets=*/ 0,
+                                                                  /*unavailable_tablets=*/ 1));
 }
 
 TEST_F(KsckTest, TestOneOneTabletBrokenTable) {
@@ -670,11 +670,11 @@ TEST_F(KsckTest, TestOneOneTabletBrokenTable) {
                       "Tablet tablet-id-1 of table 'test' is under-replicated: "
                       "configuration has 2 replicas vs desired 3");
   ASSERT_STR_CONTAINS(err_stream_.str(), ExpectedKsckTableSummary("test",
-                                                                  /*healthy_tables=*/ 0,
-                                                                  /*recovering_tables=*/ 0,
-                                                                  /*underreplicated_tables=*/ 1,
-                                                                  /*consensus_mismatch_tables=*/ 0,
-                                                                  /*unavailable_tables=*/ 0));
+                                                                  /*healthy_tablets=*/ 0,
+                                                                  /*recovering_tablets=*/ 0,
+                                                                  /*underreplicated_tablets=*/ 1,
+                                                                  /*consensus_mismatch_tablets=*/ 0,
+                                                                  /*unavailable_tablets=*/ 0));
 }
 
 TEST_F(KsckTest, TestMismatchedAssignments) {
@@ -692,11 +692,11 @@ TEST_F(KsckTest, TestMismatchedAssignments) {
                       "  ts-id-1 (<mock>): RUNNING\n"
                       "  ts-id-2 (<mock>): RUNNING\n");
   ASSERT_STR_CONTAINS(err_stream_.str(), ExpectedKsckTableSummary("test",
-                                                                  /*healthy_tables=*/ 2,
-                                                                  /*recovering_tables=*/ 0,
-                                                                  /*underreplicated_tables=*/ 1,
-                                                                  /*consensus_mismatch_tables=*/ 0,
-                                                                  /*unavailable_tables=*/ 0));
+                                                                  /*healthy_tablets=*/ 2,
+                                                                  /*recovering_tablets=*/ 0,
+                                                                  /*underreplicated_tablets=*/ 1,
+                                                                  /*consensus_mismatch_tablets=*/ 0,
+                                                                  /*unavailable_tablets=*/ 0));
 }
 
 TEST_F(KsckTest, TestTabletNotRunning) {
@@ -720,11 +720,11 @@ TEST_F(KsckTest, TestTabletNotRunning) {
       "    Data state:  TABLET_DATA_UNKNOWN\n"
       "    Last status: \n");
   ASSERT_STR_CONTAINS(err_stream_.str(), ExpectedKsckTableSummary("test",
-                                                                  /*healthy_tables=*/ 2,
-                                                                  /*recovering_tables=*/ 0,
-                                                                  /*underreplicated_tables=*/ 0,
-                                                                  /*consensus_mismatch_tables=*/ 0,
-                                                                  /*unavailable_tables=*/ 1));
+                                                                  /*healthy_tablets=*/ 2,
+                                                                  /*recovering_tablets=*/ 0,
+                                                                  /*underreplicated_tablets=*/ 0,
+                                                                  /*consensus_mismatch_tablets=*/ 0,
+                                                                  /*unavailable_tablets=*/ 1));
 }
 
 TEST_F(KsckTest, TestTabletCopying) {
@@ -740,11 +740,11 @@ TEST_F(KsckTest, TestTabletCopying) {
   ASSERT_EQ("Corruption: 1 out of 1 table(s) are not healthy", s.ToString());
   ASSERT_STR_CONTAINS(err_stream_.str(), "Table test has 1 recovering tablet(s)");
   ASSERT_STR_CONTAINS(err_stream_.str(), ExpectedKsckTableSummary("test",
-                                                                  /*healthy_tables=*/ 2,
-                                                                  /*recovering_tables=*/ 1,
-                                                                  /*underreplicated_tables=*/ 0,
-                                                                  /*consensus_mismatch_tables=*/ 0,
-                                                                  /*unavailable_tables=*/ 0));
+                                                                  /*healthy_tablets=*/ 2,
+                                                                  /*recovering_tablets=*/ 1,
+                                                                  /*underreplicated_tablets=*/ 0,
+                                                                  /*consensus_mismatch_tablets=*/ 0,
+                                                                  /*unavailable_tablets=*/ 0));
 }
 
 // Test for a bug where we weren't properly handling a tserver not reported by the master.
@@ -759,11 +759,11 @@ TEST_F(KsckTest, TestMasterNotReportingTabletServer) {
   ASSERT_EQ("Corruption: 1 out of 1 table(s) are not healthy", s.ToString());
   ASSERT_STR_CONTAINS(err_stream_.str(), "Table test has 3 under-replicated tablet(s)");
   ASSERT_STR_CONTAINS(err_stream_.str(), ExpectedKsckTableSummary("test",
-                                                                  /*healthy_tables=*/ 0,
-                                                                  /*recovering_tables=*/ 0,
-                                                                  /*underreplicated_tables=*/ 3,
-                                                                  /*consensus_mismatch_tables=*/ 0,
-                                                                  /*unavailable_tables=*/ 0));
+                                                                  /*healthy_tablets=*/ 0,
+                                                                  /*recovering_tablets=*/ 0,
+                                                                  /*underreplicated_tablets=*/ 3,
+                                                                  /*consensus_mismatch_tablets=*/ 0,
+                                                                  /*unavailable_tablets=*/ 0));
 }
 
 // KUDU-2113: Test for a bug where we weren't properly handling a tserver not
@@ -792,11 +792,11 @@ TEST_F(KsckTest, TestMasterNotReportingTabletServerWithConsensusConflict) {
       " B             | A   B*  C              | 0            |              | Yes\n"
       " C             | A*  B   C              | 0            |              | Yes");
   ASSERT_STR_CONTAINS(err_stream_.str(), ExpectedKsckTableSummary("test",
-                                                                  /*healthy_tables=*/ 0,
-                                                                  /*recovering_tables=*/ 0,
-                                                                  /*underreplicated_tables=*/ 3,
-                                                                  /*consensus_mismatch_tables=*/ 0,
-                                                                  /*unavailable_tables=*/ 0));
+                                                                  /*healthy_tablets=*/ 0,
+                                                                  /*recovering_tablets=*/ 0,
+                                                                  /*underreplicated_tablets=*/ 3,
+                                                                  /*consensus_mismatch_tablets=*/ 0,
+                                                                  /*unavailable_tablets=*/ 0));
 }
 
 TEST_F(KsckTest, TestTableFiltersNoMatch) {

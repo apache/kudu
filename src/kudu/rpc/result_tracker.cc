@@ -361,7 +361,7 @@ void ResultTracker::RecordCompletionAndRespond(const RequestIdPB& request_id,
 }
 
 void ResultTracker::FailAndRespondInternal(const RequestIdPB& request_id,
-                                           HandleOngoingRpcFunc func) {
+                                           const HandleOngoingRpcFunc& func) {
   vector<OnGoingRpcInfo> to_handle;
   {
     lock_guard<simple_spinlock> l(lock_);

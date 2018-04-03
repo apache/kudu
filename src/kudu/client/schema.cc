@@ -112,7 +112,7 @@ KuduColumnStorageAttributes::CompressionType FromInternalCompressionType(
 }
 
 kudu::DataType ToInternalDataType(KuduColumnSchema::DataType type,
-                                  KuduColumnTypeAttributes attributes) {
+                                  const KuduColumnTypeAttributes& attributes) {
   switch (type) {
     case KuduColumnSchema::INT8: return kudu::INT8;
     case KuduColumnSchema::INT16: return kudu::INT16;
@@ -590,8 +590,8 @@ KuduColumnSchema::KuduColumnSchema(const std::string &name,
                                    DataType type,
                                    bool is_nullable,
                                    const void* default_value,
-                                   KuduColumnStorageAttributes storage_attributes,
-                                   KuduColumnTypeAttributes type_attributes) {
+                                   const KuduColumnStorageAttributes& storage_attributes,
+                                   const KuduColumnTypeAttributes& type_attributes) {
   ColumnStorageAttributes attr_private;
   attr_private.encoding = ToInternalEncodingType(storage_attributes.encoding());
   attr_private.compression = ToInternalCompressionType(

@@ -14,9 +14,11 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-Checks:          'clang-diagnostic-*,clang-analyzer-*,-clang-analyzer-alpha*,-*,readability-*,-readability-braces-around-statements,llvm-include-order,misc-*,-modernize-*,performance-*,-readability-implicit-bool-cast,google-*,-google-readability-braces-around-statements,-readability-redundant-string-init,modernize-make-shared,modernize-shrink-to-fit,modernize-use-emplace,modernize-pass-by-value'
+Checks:          'clang-diagnostic-*,clang-analyzer-*,-clang-analyzer-alpha*,-*,readability-*,-readability-braces-around-statements,llvm-include-order,misc-*,-modernize-*,performance-*,-readability-implicit-bool-conversion,google-*,-google-readability-braces-around-statements,-readability-redundant-string-init,modernize-make-shared,modernize-shrink-to-fit,modernize-use-emplace,modernize-pass-by-value,modernize-use-nullptr,bugprone-*,clang-analyzer-deadcode.DeadStores,hicpp-noexcept-move'
 HeaderFilterRegex: '.*,-*.pb.h'
 CheckOptions:
+  - key:             google-runtime-references.WhiteListTypes
+    value:           ev::io
   - key:             readability-identifier-naming.ClassCase
     value:           CamelCase
   - key:             readability-identifier-naming.EnumCase

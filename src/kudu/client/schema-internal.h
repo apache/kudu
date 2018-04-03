@@ -40,7 +40,7 @@ KuduColumnStorageAttributes::CompressionType FromInternalCompressionType(
 
 kudu::DataType ToInternalDataType(
     KuduColumnSchema::DataType type,
-    KuduColumnTypeAttributes attributes);
+    const KuduColumnTypeAttributes& attributes);
 KuduColumnSchema::DataType FromInternalDataType(kudu::DataType type);
 
 class KuduColumnTypeAttributes::Data {

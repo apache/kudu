@@ -55,9 +55,9 @@ class OpId;
 class LogCache {
  public:
   LogCache(const scoped_refptr<MetricEntity>& metric_entity,
-           const scoped_refptr<log::Log>& log,
-           const std::string& local_uuid,
-           const std::string& tablet_id);
+           scoped_refptr<log::Log> log,
+           std::string local_uuid,
+           std::string tablet_id);
   ~LogCache();
 
   // Initialize the cache.

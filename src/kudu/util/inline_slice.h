@@ -82,12 +82,11 @@ class InlineSlice {
       const uint8_t *indir_data = reinterpret_cast<const uint8_t *>(dptr.pointer);
       uint32_t len = *reinterpret_cast<const uint32_t *>(indir_data);
       indir_data += sizeof(uint32_t);
-      return Slice(indir_data, (size_t)len);
-    } else {
-      uint8_t len = dptr.discriminator;
-      DCHECK_LE(len, STORAGE_SIZE - 1);
-      return Slice(&buf_[1], len);
+      return Slice(indir_data, static_cast<size_t>(len));
     }
+    uint8_t len = dptr.discriminator;
+    DCHECK_LE(len, STORAGE_SIZE - 1);
+    return Slice(&buf_[1], len);
   }
 
   template<class ArenaType>

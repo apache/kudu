@@ -47,8 +47,8 @@ DnsResolver::~DnsResolver() {
 }
 
 namespace {
-static void DoResolution(const HostPort &hostport, vector<Sockaddr>* addresses,
-                         StatusCallback cb) {
+void DoResolution(const HostPort &hostport, vector<Sockaddr>* addresses,
+                  const StatusCallback& cb) {
   cb.Run(hostport.ResolveAddresses(addresses));
 }
 } // anonymous namespace

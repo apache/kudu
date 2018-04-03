@@ -52,7 +52,7 @@ TEST(StatusTest, TestMoveConstructor) {
   {
     Status src = Status::OK();
     Status dst = std::move(src);
-    ASSERT_OK(src); // NOLINT(misc-use-after-move)
+    ASSERT_OK(src); // NOLINT(bugprone-use-after-move)
     ASSERT_OK(dst);
   }
 
@@ -61,7 +61,7 @@ TEST(StatusTest, TestMoveConstructor) {
   {
     Status src = Status::NotFound("foo");
     Status dst = std::move(src);
-    ASSERT_OK(src); // NOLINT(misc-use-after-move)
+    ASSERT_OK(src); // NOLINT(bugprone-use-after-move)
     ASSERT_EQ("Not found: foo", dst.ToString());
   }
 }
@@ -73,7 +73,7 @@ TEST(StatusTest, TestMoveAssignment) {
     Status src = Status::OK();
     Status dst = Status::NotFound("orig dst");
     dst = std::move(src);
-    ASSERT_OK(src); // NOLINT(misc-use-after-move)
+    ASSERT_OK(src); // NOLINT(bugprone-use-after-move)
     ASSERT_OK(dst);
   }
 
@@ -82,7 +82,7 @@ TEST(StatusTest, TestMoveAssignment) {
     Status src = Status::NotFound("orig src");
     Status dst = Status::NotFound("orig dst");
     dst = std::move(src);
-    ASSERT_OK(src); // NOLINT(misc-use-after-move)
+    ASSERT_OK(src); // NOLINT(bugprone-use-after-move)
     ASSERT_EQ("Not found: orig src", dst.ToString());
   }
 
@@ -91,7 +91,7 @@ TEST(StatusTest, TestMoveAssignment) {
     Status src = Status::NotFound("orig src");
     Status dst = Status::OK();
     dst = std::move(src);
-    ASSERT_OK(src); // NOLINT(misc-use-after-move)
+    ASSERT_OK(src); // NOLINT(bugprone-use-after-move)
     ASSERT_EQ("Not found: orig src", dst.ToString());
   }
 }

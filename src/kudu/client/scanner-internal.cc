@@ -52,6 +52,7 @@ using google::protobuf::FieldDescriptor;
 using google::protobuf::Reflection;
 using std::set;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
@@ -580,7 +581,7 @@ Status KuduScanBatch::Data::Reset(RpcController* controller,
                                   const Schema* projection,
                                   const KuduSchema* client_projection,
                                   uint64_t row_format_flags,
-                                  gscoped_ptr<RowwiseRowBlockPB> resp_data) {
+                                  unique_ptr<RowwiseRowBlockPB> resp_data) {
   CHECK(controller->finished());
   controller_.Swap(controller);
   projection_ = projection;
@@ -595,6 +596,7 @@ Status KuduScanBatch::Data::Reset(RpcController* controller,
 
   // There's new data. Swap it in and process it.
   resp_data_.Swap(resp_data.get());
+  resp_data.reset(); // no longer valid.
 
   // First, rewrite the relative addresses into absolute ones.
   if (PREDICT_FALSE(!resp_data_.has_rows_sidecar())) {

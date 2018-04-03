@@ -150,7 +150,6 @@ Status CompressedBlockDecoder::Init() {
   }
 
   uncompressed_size_ = DecodeFixed32(p);
-  p += 4;
 
   // In CFile v2, we ensure that compressed_size <= uncompressed_size,
   // though, as per the file format, if compressed_size == uncompressed_size,

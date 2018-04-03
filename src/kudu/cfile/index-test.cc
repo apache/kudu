@@ -40,7 +40,7 @@ namespace kudu {
 namespace cfile {
 
 Status SearchInReaderString(const IndexBlockReader &reader,
-                            std::string search_key,
+                            const std::string &search_key,
                             BlockPointer *ptr, Slice *match) {
 
   static faststring dst;

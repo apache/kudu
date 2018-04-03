@@ -39,6 +39,7 @@
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus_meta_manager.h"
 #include "kudu/consensus/log.h"
+#include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
@@ -476,7 +477,7 @@ class TabletCopyRunnable : public TabletManagerRunnable {
   TabletCopyRunnable(TSTabletManager* ts_tablet_manager,
                      const StartTabletCopyRequestPB* req,
                      std::function<void(const Status&, TabletServerErrorPB::Code)> cb)
-      : TabletManagerRunnable(ts_tablet_manager, cb),
+      : TabletManagerRunnable(ts_tablet_manager, std::move(cb)),
         req_(req) {
   }
 
@@ -812,12 +813,12 @@ Status TSTabletManager::BeginReplicaStateTransition(
 class DeleteTabletRunnable : public TabletManagerRunnable {
 public:
   DeleteTabletRunnable(TSTabletManager* ts_tablet_manager,
-                       const std::string& tablet_id,
+                       std::string tablet_id,
                        tablet::TabletDataState delete_type,
-                       const boost::optional<int64_t>& cas_config_index,
+                       const boost::optional<int64_t>& cas_config_index, // NOLINT
                        std::function<void(const Status&, TabletServerErrorPB::Code)> cb)
-      : TabletManagerRunnable(ts_tablet_manager, cb),
-        tablet_id_(tablet_id),
+      : TabletManagerRunnable(ts_tablet_manager, std::move(cb)),
+        tablet_id_(std::move(tablet_id)),
         delete_type_(delete_type),
         cas_config_index_(cas_config_index) {
   }

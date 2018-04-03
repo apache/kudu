@@ -342,7 +342,7 @@ class ResultTracker : public RefCountedThreadSafe<ResultTracker> {
   // Helper method to handle the multiple overloads of FailAndRespond. Takes a lambda
   // that knows what to do with OnGoingRpcInfo in each individual case.
   void FailAndRespondInternal(const rpc::RequestIdPB& request_id,
-                              HandleOngoingRpcFunc func);
+                              const HandleOngoingRpcFunc& func);
 
   CompletionRecord* FindCompletionRecordOrNullUnlocked(const RequestIdPB& request_id);
   CompletionRecord* FindCompletionRecordOrDieUnlocked(const RequestIdPB& request_id);

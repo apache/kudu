@@ -1549,7 +1549,7 @@ Status LogWritableBlock::AppendMetadata() {
 class LogReadableBlock : public ReadableBlock {
  public:
   LogReadableBlock(LogBlockContainer* container,
-                   const scoped_refptr<LogBlock>& log_block);
+                   scoped_refptr<LogBlock> log_block);
 
   virtual ~LogReadableBlock();
 
@@ -1580,9 +1580,9 @@ class LogReadableBlock : public ReadableBlock {
 };
 
 LogReadableBlock::LogReadableBlock(LogBlockContainer* container,
-                                   const scoped_refptr<LogBlock>& log_block)
+                                   scoped_refptr<LogBlock> log_block)
   : container_(container),
-    log_block_(log_block),
+    log_block_(std::move(log_block)),
     closed_(false) {
   if (container_->metrics()) {
     container_->metrics()->generic_metrics.blocks_open_reading->Increment();

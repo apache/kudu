@@ -277,7 +277,7 @@ Status CFileWriter::FinishAndReleaseBlock(BlockCreationTransaction* transaction)
 void CFileWriter::AddMetadataPair(const Slice &key, const Slice &value) {
   CHECK_NE(state_, kWriterFinished);
 
-  unflushed_metadata_.push_back(make_pair(key.ToString(), value.ToString()));
+  unflushed_metadata_.emplace_back(key.ToString(), value.ToString());
 }
 
 string CFileWriter::GetMetaValueOrDie(Slice key) const {

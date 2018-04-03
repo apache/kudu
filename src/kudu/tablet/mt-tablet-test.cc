@@ -410,7 +410,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
 
     while (running_insert_count_.count() > 0) {
       num_rowsets_ts->SetValue(tablet()->num_rowsets());
-      memrowset_size_ts->SetValue(tablet()->MemRowSetSize() / 1024);
+      memrowset_size_ts->SetValue(tablet()->MemRowSetSize() / 1024.0);
 
       // Wait, unless the inserters are all done.
       running_insert_count_.WaitFor(MonoDelta::FromMilliseconds(250));

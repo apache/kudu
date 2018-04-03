@@ -204,17 +204,17 @@ TabletComponents::TabletComponents(shared_ptr<MemRowSet> mrs,
 // Tablet
 ////////////////////////////////////////////////////////////
 
-Tablet::Tablet(const scoped_refptr<TabletMetadata>& metadata,
-               const scoped_refptr<clock::Clock>& clock,
-               const shared_ptr<MemTracker>& parent_mem_tracker,
+Tablet::Tablet(scoped_refptr<TabletMetadata> metadata,
+               scoped_refptr<clock::Clock> clock,
+               shared_ptr<MemTracker> parent_mem_tracker,
                MetricRegistry* metric_registry,
-               const scoped_refptr<LogAnchorRegistry>& log_anchor_registry)
+               scoped_refptr<LogAnchorRegistry> log_anchor_registry)
   : key_schema_(metadata->schema().CreateKeyProjection()),
-    metadata_(metadata),
-    log_anchor_registry_(log_anchor_registry),
-    mem_trackers_(tablet_id(), parent_mem_tracker),
+    metadata_(std::move(metadata)),
+    log_anchor_registry_(std::move(log_anchor_registry)),
+    mem_trackers_(tablet_id(), std::move(parent_mem_tracker)),
     next_mrs_id_(0),
-    clock_(clock),
+    clock_(std::move(clock)),
     rowsets_flush_sem_(1),
     state_(kInitialized) {
       CHECK(schema()->has_column_ids());

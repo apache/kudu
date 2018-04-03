@@ -19,7 +19,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <string>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/util/status.h"
@@ -153,7 +152,7 @@ class Socket {
 
  private:
   // Called internally from SetSend/RecvTimeout().
-  Status SetTimeout(int opt, std::string optname, const MonoDelta& timeout);
+  Status SetTimeout(int opt, const char* optname, const MonoDelta& timeout);
 
   // Called internally during socket setup.
   Status SetCloseOnExec();

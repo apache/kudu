@@ -73,10 +73,10 @@ class FollowerTransactionCompletionCallback : public TransactionCompletionCallba
  public:
   FollowerTransactionCompletionCallback(const RequestIdPB& request_id,
                                         const google::protobuf::Message* response,
-                                        const scoped_refptr<ResultTracker>& result_tracker)
+                                        scoped_refptr<ResultTracker> result_tracker)
       : request_id_(request_id),
         response_(response),
-        result_tracker_(result_tracker) {}
+        result_tracker_(std::move(result_tracker)) {}
 
   virtual void TransactionCompleted() {
     if (status_.ok()) {

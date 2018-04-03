@@ -140,7 +140,7 @@ boost::optional<string> Cert::KuduKerberosPrincipal() const {
   X509_EXTENSION* ext = X509_get_ext(GetTopOfChainX509(), idx);
   ASN1_OCTET_STRING* octet_str = X509_EXTENSION_get_data(ext);
   const unsigned char* octet_str_data = octet_str->data;
-  long len; // NOLINT(runtime/int)
+  long len; // NOLINT
   int tag, xclass;
   if (ASN1_get_object(&octet_str_data, &len, &tag, &xclass, octet_str->length) != 0 ||
       tag != V_ASN1_UTF8STRING) {

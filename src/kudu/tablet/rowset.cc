@@ -240,7 +240,7 @@ shared_ptr<RowSetMetadata> DuplicatingRowSet::metadata() {
   return shared_ptr<RowSetMetadata>(reinterpret_cast<RowSetMetadata *>(NULL));
 }
 
-Status DuplicatingRowSet::DebugDump(vector<string> *lines) {
+Status DuplicatingRowSet::DebugDump(vector<string> *lines) { // NOLINT(*)
   int i = 1;
   for (const shared_ptr<RowSet> &rs : old_rowsets_) {
     LOG_STRING(INFO, lines) << "Duplicating rowset input " << ToString() << " "

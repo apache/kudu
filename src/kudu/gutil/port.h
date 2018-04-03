@@ -9,8 +9,8 @@
 #define BASE_PORT_H_
 
 #include <limits.h>         // So we can set the bounds of our types
-#include <string.h>         // for memcpy()
 #include <stdlib.h>         // for free()
+#include <string.h>         // for memcpy()
 
 #if defined(__APPLE__)
 #include <unistd.h>         // for getpagesize() on mac

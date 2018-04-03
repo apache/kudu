@@ -345,11 +345,11 @@ string MetaCacheEntry::DebugString(const KuduTable* table) const {
 }
 
 MetaCacheServerPicker::MetaCacheServerPicker(KuduClient* client,
-                                             const scoped_refptr<MetaCache>& meta_cache,
+                                             scoped_refptr<MetaCache> meta_cache,
                                              const KuduTable* table,
                                              RemoteTablet* const tablet)
     : client_(client),
-      meta_cache_(meta_cache),
+      meta_cache_(std::move(meta_cache)),
       table_(table),
       tablet_(tablet) {}
 
@@ -896,7 +896,7 @@ Status MetaCache::ProcessLookupResponse(const LookupRpc& rpc,
         UpdateTabletServer(replicas.ts_info());
       }
 
-      string tablet_id = tablet.tablet_id();
+      const string& tablet_id = tablet.tablet_id();
       scoped_refptr<RemoteTablet> remote = FindPtrOrNull(tablets_by_id_, tablet_id);
       if (remote.get() != nullptr) {
         // Partition should not have changed.

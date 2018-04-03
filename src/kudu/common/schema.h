@@ -67,21 +67,22 @@ class Arena;
 
 // The ID of a column. Each column in a table has a unique ID.
 struct ColumnId {
-  explicit ColumnId(int32_t t_) : t(t_) {}
-  ColumnId() : t() {}
-  ColumnId(const ColumnId& t_) : t(t_.t) {}
-  ColumnId& operator=(const ColumnId& rhs) { t = rhs.t; return *this; }
-  ColumnId& operator=(const int32_t& rhs) { t = rhs; return *this; }
-  operator const int32_t() const { return t; }
-  operator const strings::internal::SubstituteArg() const { return t; }
-  operator const AlphaNum() const { return t; }
-  bool operator==(const ColumnId & rhs) const { return t == rhs.t; }
-  bool operator<(const ColumnId & rhs) const { return t < rhs.t; }
+  explicit ColumnId(int32_t t) : t_(t) {}
+  ColumnId() = default;
+  ColumnId(const ColumnId& o) = default;
+
+  ColumnId& operator=(const ColumnId& rhs) { t_ = rhs.t_; return *this; }
+  ColumnId& operator=(const int32_t& rhs) { t_ = rhs; return *this; }
+  operator const int32_t() const { return t_; } // NOLINT
+  operator const strings::internal::SubstituteArg() const { return t_; } // NOLINT
+  operator const AlphaNum() const { return t_; } // NOLINT
+  bool operator==(const ColumnId & rhs) const { return t_ == rhs.t_; }
+  bool operator<(const ColumnId & rhs) const { return t_ < rhs.t_; }
   friend std::ostream& operator<<(std::ostream& os, ColumnId column_id) {
-    return os << column_id.t;
+    return os << column_id.t_;
   }
  private:
-  int32_t t;
+  int32_t t_;
 };
 
 // Class for storing column attributes such as precision and scale
@@ -198,19 +199,19 @@ class ColumnSchema {
   //   Slice default_str("Hello");
   //   ColumnSchema col_d("d", STRING, false, &default_str);
   ColumnSchema(std::string name, DataType type, bool is_nullable = false,
-               const void* read_default = NULL,
-               const void* write_default = NULL,
+               const void* read_default = nullptr,
+               const void* write_default = nullptr,
                ColumnStorageAttributes attributes = ColumnStorageAttributes(),
                ColumnTypeAttributes type_attributes = ColumnTypeAttributes())
       : name_(std::move(name)),
         type_info_(GetTypeInfo(type)),
         is_nullable_(is_nullable),
-        read_default_(read_default ? new Variant(type, read_default) : NULL),
+        read_default_(read_default ? new Variant(type, read_default) : nullptr),
         attributes_(attributes),
         type_attributes_(type_attributes) {
     if (write_default == read_default) {
       write_default_ = read_default_;
-    } else if (write_default != NULL) {
+    } else if (write_default != nullptr) {
       write_default_.reset(new Variant(type, write_default));
     }
   }
@@ -237,40 +238,40 @@ class ColumnSchema {
 
   // Returns true if the column has a read default value
   bool has_read_default() const {
-    return read_default_ != NULL;
+    return read_default_ != nullptr;
   }
 
   // Returns a pointer the default value associated with the column
-  // or NULL if there is no default value. You may check has_read_default() first.
+  // or nullptr if there is no default value. You may check has_read_default() first.
   // The returned value will be valid until the ColumnSchema will be destroyed.
   //
   // Example:
   //    const uint32_t *vu32 = static_cast<const uint32_t *>(col_schema.read_default_value());
   //    const Slice *vstr = static_cast<const Slice *>(col_schema.read_default_value());
   const void *read_default_value() const {
-    if (read_default_ != NULL) {
+    if (read_default_ != nullptr) {
       return read_default_->value();
     }
-    return NULL;
+    return nullptr;
   }
 
   // Returns true if the column has a write default value
   bool has_write_default() const {
-    return write_default_ != NULL;
+    return write_default_ != nullptr;
   }
 
   // Returns a pointer the default value associated with the column
-  // or NULL if there is no default value. You may check has_write_default() first.
+  // or nullptr if there is no default value. You may check has_write_default() first.
   // The returned value will be valid until the ColumnSchema will be destroyed.
   //
   // Example:
   //    const uint32_t *vu32 = static_cast<const uint32_t *>(col_schema.write_default_value());
   //    const Slice *vstr = static_cast<const Slice *>(col_schema.write_default_value());
   const void *write_default_value() const {
-    if (write_default_ != NULL) {
+    if (write_default_ != nullptr) {
       return write_default_->value();
     }
-    return NULL;
+    return nullptr;
   }
 
   bool EqualsPhysicalType(const ColumnSchema& other) const {
@@ -309,16 +310,16 @@ class ColumnSchema {
     // since we don't support them, for server vs user schema this comparison
     // will always fail, since the user does not specify the defaults.
     if (flags & COMPARE_DEFAULTS) {
-      if (read_default_ == NULL && other.read_default_ != NULL)
+      if (read_default_ == nullptr && other.read_default_ != nullptr)
         return false;
 
-      if (write_default_ == NULL && other.write_default_ != NULL)
+      if (write_default_ == nullptr && other.write_default_ != nullptr)
         return false;
 
-      if (read_default_ != NULL && !read_default_->Equals(other.read_default_.get()))
+      if (read_default_ != nullptr && !read_default_->Equals(other.read_default_.get()))
         return false;
 
-      if (write_default_ != NULL && !write_default_->Equals(other.write_default_.get()))
+      if (write_default_ != nullptr && !write_default_->Equals(other.write_default_.get()))
         return false;
     }
     return true;
@@ -421,6 +422,8 @@ class Schema {
 
   Schema(const Schema& other);
   Schema& operator=(const Schema& other);
+
+  // TODO(todd) implement a move constructor
 
   void swap(Schema& other); // NOLINT(build/include_what_you_use)
 
@@ -957,11 +960,11 @@ class SchemaBuilder {
   Status AddColumn(const ColumnSchema& column, bool is_key);
 
   Status AddColumn(const std::string& name, DataType type) {
-    return AddColumn(name, type, false, NULL, NULL);
+    return AddColumn(name, type, false, nullptr, nullptr);
   }
 
   Status AddNullableColumn(const std::string& name, DataType type) {
-    return AddColumn(name, type, true, NULL, NULL);
+    return AddColumn(name, type, true, nullptr, nullptr);
   }
 
   Status AddColumn(const std::string& name,

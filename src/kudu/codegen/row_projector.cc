@@ -370,9 +370,9 @@ Status RowProjectorFunctions::EncodeKey(const Schema& base, const Schema& proj,
 }
 
 RowProjector::RowProjector(const Schema* base_schema, const Schema* projection,
-                           const scoped_refptr<RowProjectorFunctions>& functions)
+                           scoped_refptr<RowProjectorFunctions> functions)
   : projector_(base_schema, projection),
-    functions_(functions) {}
+    functions_(std::move(functions)) {}
 
 namespace {
 

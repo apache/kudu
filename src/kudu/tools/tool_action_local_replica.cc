@@ -231,7 +231,7 @@ Status FindLastLoggedOpId(FsManager* fs, const string& tablet_id,
 Status ParsePeerString(const string& peer_str,
                        string* uuid,
                        HostPort* hostport) {
-  string::size_type first_colon_idx = peer_str.find(":");
+  string::size_type first_colon_idx = peer_str.find(':');
   if (first_colon_idx == string::npos) {
     return Status::InvalidArgument(Substitute("bad peer '$0'", peer_str));
   }

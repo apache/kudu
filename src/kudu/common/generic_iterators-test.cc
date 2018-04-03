@@ -255,9 +255,9 @@ TEST(TestMaterializingIterator, TestMaterializingPredicatePushdown) {
   spec.AddPredicate(pred1.pred_);
   LOG(INFO) << "Predicate: " << pred1.pred_.ToString();
 
-  vector<uint32_t> ints;
+  vector<uint32_t> ints(100);
   for (int i = 0; i < 100; i++) {
-    ints.push_back(i);
+    ints[i] = i;
   }
 
   shared_ptr<VectorIterator> colwise(new VectorIterator(ints));
@@ -286,9 +286,9 @@ TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluation) {
   spec.AddPredicate(pred1.pred_);
   LOG(INFO) << "Predicate: " << pred1.pred_.ToString();
 
-  vector<uint32_t> ints;
+  vector<uint32_t> ints(100);
   for (int i = 0; i < 100; i++) {
-    ints.push_back(i);
+    ints[i] = i;
   }
 
   // Set up a MaterializingIterator with pushdown disabled, so that the
@@ -343,8 +343,8 @@ TEST(TestPredicateEvaluatingIterator, TestDontWrapWhenNoPredicates) {
 class DummyIterator : public RowwiseIterator {
  public:
 
-  explicit DummyIterator(Schema schema)
-      : schema_(std::move(schema)) {
+  explicit DummyIterator(const Schema& schema)
+      : schema_(schema) {
   }
 
   Status Init(ScanSpec* /*spec*/) override {

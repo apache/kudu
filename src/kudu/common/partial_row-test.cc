@@ -71,8 +71,8 @@ class PartialRowTest : public KuduTest {
   // Utility method to perform checks on copy/no-copy behavior of the
   // PartialRow::Set{Binary,String}{,Copy,NoCopy}() methods.
   void BinaryDataSetterTest(
-      std::function<Status(const KuduPartialRow&, int, Slice*)> getter,
-      std::function<Status(KuduPartialRow&, int, const Slice&)> setter,
+      const std::function<Status(const KuduPartialRow&, int, Slice*)>& getter,
+      const std::function<Status(KuduPartialRow&, int, const Slice&)>& setter,
       int column_idx, CopyBehavior copy_behavior) {
 
     KuduPartialRow row(&schema_);
@@ -102,7 +102,7 @@ class PartialRowTest : public KuduTest {
     }
 
     // Additional, more high-level check.
-    src_data.replace(0, src_data.find("-"), "new");
+    src_data.replace(0, src_data.find('-'), "new");
     ASSERT_EQ("new-data", src_data);
 
     switch (copy_behavior) {

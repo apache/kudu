@@ -70,7 +70,7 @@ class RpcContext {
   RpcContext(InboundCall *call,
              const google::protobuf::Message *request_pb,
              google::protobuf::Message *response_pb,
-             const scoped_refptr<ResultTracker>& result_tracker);
+             scoped_refptr<ResultTracker> result_tracker);
 
   ~RpcContext();
 
