@@ -61,8 +61,7 @@ Although not strictly necessary, it is recommended to configure Impala with the
 locations of the Kudu Master servers:
 
 * Set the `--kudu_master_hosts=<master1>[:port],<master2>[:port],<master3>[:port]`
-  flag in the Impala service configuration. If you are using Cloudera Manager,
-  please refer to the appropriate Cloudera Manager documentation to do so.
+  flag in the Impala service configuration.
 
 If this flag is not set within the Impala service, it will be necessary to manually
 provide this configuration each time you create a table by specifying the
@@ -73,7 +72,7 @@ The rest of this guide assumes that the configuration has been set.
 == Using the Impala Shell
 
 NOTE: This is only a small sub-set of Impala Shell functionality. For more details, see the
-link:http://www.cloudera.com/content/cloudera/en/documentation/core/latest/topics/impala_impala_shell.html[Impala Shell] documentation.
+link:https://impala.apache.org/docs/build/html/topics/impala_impala_shell.html[Impala Shell] documentation.
 
 - Start Impala Shell using the `impala-shell` command. By default, `impala-shell`
 attempts to connect to the Impala daemon on `localhost` on port 21000. To connect
@@ -97,7 +96,7 @@ Impala, and dropping such a table does not drop the table from its source locati
 the mode used in the syntax provided by Kudu for mapping an existing table to Impala.
 
 See the
-http://www.cloudera.com/content/cloudera/en/documentation/core/latest/topics/impala_tables.html[Impala documentation]
+link:https://impala.apache.org/docs/build/html/topics/impala_tables.html[Impala documentation]
 for more information about internal and external tables.
 
 === Querying an Existing Kudu Table In Impala
@@ -554,7 +553,7 @@ both Impala and Kudu, is usually to import the data using a `SELECT FROM` statem
 in Impala.
 +
 . If your data is not already in Impala, one strategy is to
-link:http://www.cloudera.com/content/cloudera/en/documentation/core/latest/topics/impala_txtfile.html[import it from a text file],
+link:https://impala.apache.org/docs/build/html/topics/impala_txtfile.html[import it from a text file],
 such as a TSV or CSV file.
 +
 . <<kudu_impala_create_table,Create the Kudu table>>, being mindful that the columns
@@ -622,7 +621,7 @@ DELETE FROM my_first_table WHERE id < 3;
 
 You can also delete using more complex syntax. A comma in the `FROM` sub-clause is
 one way that Impala specifies a join query. For more information about Impala joins,
-see http://www.cloudera.com/content/cloudera/en/documentation/core/latest/topics/impala_joins.html.
+see https://impala.apache.org/docs/build/html/topics/impala_joins.html.
 [source,sql]
 ----
 DELETE c FROM my_second_table c, stock_symbols s WHERE c.name = s.symbol;
@@ -721,9 +720,9 @@ DROP TABLE my_first_table;
 The examples above have only explored a fraction of what you can do with Impala Shell.
 
 - Learn about the link:http://impala.io[Impala project].
-- Read the link:http://www.cloudera.com/content/www/en-us/documentation/enterprise/latest/topics/impala.html[Impala documentation].
-- View the link:http://www.cloudera.com/content/www/en-us/documentation/enterprise/latest/topics/impala_langref.html[Impala SQL reference].
-- Read about Impala internals or learn how to contribute to Impala on the link:https://github.com/cloudera/Impala/wiki[Impala Wiki].
+- Read the link:https://impala.apache.org/impala-docs.html[Impala documentation].
+- View the link:https://impala.apache.org/docs/build/html/topics/impala_langref.html[Impala SQL reference].
+- Read about Impala internals or learn how to contribute to Impala on the link:https://cwiki.apache.org/confluence/display/IMPALA/Impala+Home[Impala Wiki].
 - Read about the native link:installation.html#view_api[Kudu APIs].
 
 === Known Issues and Limitations
