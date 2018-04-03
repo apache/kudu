@@ -245,7 +245,7 @@ class KUDU_EXPORT KuduColumnSchema {
   friend class KuduSchema;
   friend class KuduSchemaBuilder;
   // KuduTableAlterer::Data needs to be a friend. Friending the parent class
-  // is transitive to nested classes. See http://tiny.cloudera.com/jwtui
+  // is transitive to nested classes. See https://s.apache.org/inner-class-friends
   friend class KuduTableAlterer;
 
   KuduColumnSchema();

@@ -23,8 +23,6 @@
 # Allows for running comparisons either locally or as part of a
 # Jenkins job which integrates with a historical stats DB.
 # Run this script with -help for usage information.
-#
-# Jenkins job: http://sandbox.jenkins.cloudera.com/job/kudu-benchmarks
 ########################################################################
 
 # Fail the job if any part fails, even when piping through 'tee', etc.

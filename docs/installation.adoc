@@ -544,7 +544,7 @@ $ sudo xcode-select --install
 .macOS Known Issues
 ====
 Kudu support for macOS is experimental, and should only be used for development.
-See link:https://issues.cloudera.org/browse/KUDU-1219[macOS Limitations & Known Issues]
+See link:https://issues.apache.org/browse/KUDU-1219[macOS Limitations & Known Issues]
 for more information.
 ====
 

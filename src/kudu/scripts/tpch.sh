@@ -32,9 +32,7 @@
 # - LINEITEM_TBL_PATH: Path to lineitem.tbl from the TPC-H suite.
 # - KUDU_DATA_DIR: Directory to use for data storage.
 # - TPCH_NUM_QUERY_ITERS: Number of TPC-H query iterations to run.
-#
-# Jenkins job: http://sandbox.jenkins.cloudera.com/job/kudu-tpch1
-########################################################################
+#########################################################################
 
 ##########################################################
 # Constants

@@ -1617,15 +1617,15 @@ issue, upgrade all Kudu servers before upgrading clients.
 [[rn_0.8.0_fixed_issues]]
 === Fixed Issues
 
-- link:https://issues.cloudera.org/browse/KUDU-1337[KUDU-1337] Tablets from tables
+- link:https://issues.apache.org/jira/browse/KUDU-1337[KUDU-1337] Tablets from tables
   that were deleted might be unnecessarily re-bootstrapped when the leader gets the
   notification to delete itself after the replicas do.
 
-- link:https://issues.cloudera.org/browse/KUDU-969[KUDU-969] If a tablet server
+- link:https://issues.apache.org/jira/browse/KUDU-969[KUDU-969] If a tablet server
   shuts down while compacting a rowset and receiving updates for it, it might immediately
   crash upon restart while bootstrapping that rowset's tablet.
 
-- link:https://issues.cloudera.org/browse/KUDU-1354[KUDU-1354] Due to a bug in Kudu's
+- link:https://issues.apache.org/jira/browse/KUDU-1354[KUDU-1354] Due to a bug in Kudu's
   MVCC implementation where row locks were released before the MVCC commit happened,
   flushed data would include out-of-order transactions, triggering a crash on the
   next compaction.
@@ -1686,7 +1686,7 @@ which prevented reading rows with `NULL` values.
 Kudu 0.7.0 is the first release done as part of the Apache Incubator and includes a number
 of changes, new features, improvements, and fixes.
 
-See also +++<a href="https://issues.cloudera.org/issues/?jql=project%20%3D%20Kudu%20AND%20status%20in%20
+See also +++<a href="https://issues.apache.org/jira/issues/?jql=project%20%3D%20KUDU%20AND%20status%20in%20
 (Resolved)%20AND%20fixVersion%20%3D%200.7.0%20ORDER%20BY%20key%20ASC">JIRAs resolved
 for Kudu 0.7.0</a>+++ and +++<a href="https://github.com/apache/kudu/compare/branch-0.6.0...branch-0.7.0">Git
 changes between 0.6.0 and 0.7.0</a>+++.
@@ -1735,10 +1735,10 @@ for SLES 12.
 [[rn_0.7.0_fixed_issues]]
 === Fixed Issues
 
-- https://issues.cloudera.org/browse/KUDU-1288[KUDU-1288] fixes a severe file descriptor
+- https://issues.apache.org/jira/browse/KUDU-1288[KUDU-1288] fixes a severe file descriptor
 leak, which could previously only be resolved by restarting the tablet server.
 
-- https://issues.cloudera.org/browse/KUDU-1250[KUDU-1250] fixes a hang in the Java
+- https://issues.apache.org/jira/browse/KUDU-1250[KUDU-1250] fixes a hang in the Java
 client when processing an in-flight batch and the previous batch encountered an error.
 
 [[rn_0.7.0_changes]]
