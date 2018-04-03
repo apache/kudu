@@ -20,6 +20,7 @@
 #include <thread>
 
 #include <glog/logging.h>
+#include <string>
 
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/countdown_latch.h"
@@ -34,9 +35,14 @@ namespace kudu {
 // process, crashing if it exceeds some upper bound.
 class PeriodicOpenFdChecker {
  public:
-  PeriodicOpenFdChecker(Env* env, int upper_bound)
+  // path_pattern: a glob-style pattern of which paths should be included while
+  //               counting file descriptors
+  // upper_bound:  the maximum number of file descriptors that should be open
+  //               at any point in time
+  PeriodicOpenFdChecker(Env* env, std::string path_pattern, int upper_bound)
     : env_(env),
-      initial_fd_count_(CountOpenFds(env)),
+      path_pattern_(std::move(path_pattern)),
+      initial_fd_count_(CountOpenFds(env, path_pattern_)),
       max_fd_count_(upper_bound + initial_fd_count_),
       running_(1),
       started_(false) {}
@@ -60,11 +66,12 @@ class PeriodicOpenFdChecker {
 
  private:
   void CheckThread() {
-    LOG(INFO) << strings::Substitute("Periodic open fd checker starting "
-        "(initial: $0 max: $1)",
-        initial_fd_count_, max_fd_count_);
+    LOG(INFO) << strings::Substitute(
+        "Periodic open fd checker starting for path pattern $0"
+        "(initial: $1 max: $2)",
+        path_pattern_, initial_fd_count_, max_fd_count_);
     do {
-      int open_fd_count = CountOpenFds(env_);
+      int open_fd_count = CountOpenFds(env_, path_pattern_);
       KLOG_EVERY_N_SECS(INFO, 1) << strings::Substitute("Open fd count: $0/$1",
                                                         open_fd_count,
                                                         max_fd_count_);
@@ -73,6 +80,7 @@ class PeriodicOpenFdChecker {
   }
 
   Env* env_;
+  const std::string path_pattern_;
   const int initial_fd_count_;
   const int max_fd_count_;
 

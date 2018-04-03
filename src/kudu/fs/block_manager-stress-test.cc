@@ -540,7 +540,8 @@ TYPED_TEST(BlockManagerStressTest, StressTest) {
                << " is not a power of 2";
   }
 
-  PeriodicOpenFdChecker checker(this->env_, this->GetMaxFdCount());
+  PeriodicOpenFdChecker checker(this->env_, this->GetTestPath("*"),
+                                this->GetMaxFdCount());
 
   LOG(INFO) << "Running on fresh block manager";
   checker.Start();

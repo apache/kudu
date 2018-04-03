@@ -354,6 +354,7 @@ TYPED_TEST(FileCacheStressTest, TestStress) {
   // Start the threads.
   PeriodicOpenFdChecker checker(
       this->env_,
+      this->GetTestPath("*"),           // only count within our test dir
       kTestMaxOpenFiles +               // cache capacity
       FLAGS_test_num_producer_threads + // files being written
       FLAGS_test_num_consumer_threads); // files being opened
