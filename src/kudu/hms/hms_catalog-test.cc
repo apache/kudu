@@ -37,6 +37,7 @@
 #include "kudu/util/net/net_util.h" // IWYU pragma: keep
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
 
 DECLARE_string(hive_metastore_uris);
 DECLARE_bool(hive_metastore_sasl_enabled);
@@ -113,7 +114,7 @@ TEST(HmsCatalogStaticTest, TestParseUris) {
 
 // Base class for HmsCatalog tests. Parameterized by whether
 // SASL/GSSAPI/Kerberos should be enabled.
-class HmsCatalogTest : public ::testing::Test {
+class HmsCatalogTest : public KuduTest {
  public:
 
   const char* const kMasterAddrs = "master-addrs";
