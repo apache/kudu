@@ -1623,6 +1623,23 @@ cdef class Scanner:
 
         return self
 
+    def set_limit(self, limit):
+        """
+        Set a limit on the number of rows returned by this scanner.
+        Must be a positive value.
+
+        Parameters
+        ----------
+        limit : the maximum number of rows to return
+
+        Returns
+        -------
+        self : Scanner
+        """
+        if limit <= 0:
+            raise ValueError("Limit must be positive.")
+        check_status(self.scanner.SetLimit(<int64_t> limit))
+
     def set_fault_tolerant(self):
         """
         Makes the underlying KuduScanner fault tolerant.

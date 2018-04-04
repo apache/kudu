@@ -59,6 +59,15 @@ class TestScanner(TestScanBase):
         tuples = _read_predicates(preds)
         self.assertEqual(sorted(tuples), self.tuples[20:50])
 
+    def test_scan_limit(self):
+        # Set limits both below and above the max number of rows.
+        limits = [self.nrows - 1, self.nrows, self.nrows + 1]
+        for limit in limits:
+            scanner = self.table.scanner()
+            scanner.set_limit(limit)
+            tuples = scanner.read_all_tuples()
+            self.assertEqual(len(tuples), min(limit, self.nrows))
+
     def test_scan_rows_string_predicate_and_projection(self):
         scanner = self.table.scanner()
         scanner.set_projected_column_names(['key', 'string_val'])

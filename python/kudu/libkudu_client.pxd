@@ -678,6 +678,7 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
         Status SetFaultTolerant()
         Status AddLowerBound(const KuduPartialRow& key)
         Status AddExclusiveUpperBound(const KuduPartialRow& key)
+        Status SetLimit(int64_t limit)
         Status KeepAlive()
         Status GetCurrentServer(KuduTabletServer** server)
 
