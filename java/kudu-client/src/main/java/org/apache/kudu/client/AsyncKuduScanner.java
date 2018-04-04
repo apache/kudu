@@ -209,6 +209,8 @@ public final class AsyncKuduScanner {
 
   private boolean hasMore = true;
 
+  private long numRowsReturned = 0;
+
   /**
    * The tabletSlice currently being scanned.
    * If null, we haven't started scanning.
@@ -436,6 +438,8 @@ public final class AsyncKuduScanner {
             lastPrimaryKey = resp.lastPrimaryKey;
           }
 
+          numRowsReturned += resp.data.getNumRows();
+
           if (!resp.more || resp.scannerId == null) {
             scanFinished();
             return Deferred.fromResult(resp.data); // there might be data to return
@@ -519,6 +523,7 @@ public final class AsyncKuduScanner {
   private final Callback<RowResultIterator, Response> gotNextRow =
       new Callback<RowResultIterator, Response>() {
         public RowResultIterator call(final Response resp) {
+          numRowsReturned += resp.data.getNumRows();
           if (!resp.more) {  // We're done scanning this tablet.
             scanFinished();
             return resp.data;
@@ -566,8 +571,9 @@ public final class AsyncKuduScanner {
   void scanFinished() {
     Partition partition = tablet.getPartition();
     pruner.removePartitionKeyRange(partition.getPartitionKeyEnd());
-    // Stop scanning if we have scanned until or past the end partition key.
-    if (!pruner.hasMorePartitionKeyRanges()) {
+    // Stop scanning if we have scanned until or past the end partition key, or
+    // if we have fulfilled the limit.
+    if (!pruner.hasMorePartitionKeyRanges() || numRowsReturned >= limit) {
       hasMore = false;
       closed = true; // the scanner is closed on the other side at this point
       return;
@@ -819,7 +825,7 @@ public final class AsyncKuduScanner {
           // is the easiest way.
           AsyncKuduScanner.this.tablet = super.getTablet();
           NewScanRequestPB.Builder newBuilder = NewScanRequestPB.newBuilder();
-          newBuilder.setLimit(limit); // currently ignored
+          newBuilder.setLimit(limit - AsyncKuduScanner.this.numRowsReturned);
           newBuilder.addAllProjectedColumns(ProtobufHelper.schemaToListPb(schema));
           newBuilder.setTabletId(UnsafeByteOperations.unsafeWrap(tablet.getTabletIdAsBytes()));
           newBuilder.setOrderMode(AsyncKuduScanner.this.getOrderMode());

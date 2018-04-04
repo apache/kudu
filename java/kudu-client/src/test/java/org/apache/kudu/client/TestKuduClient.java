@@ -490,6 +490,54 @@ public class TestKuduClient extends BaseKuduTest {
   }
 
   /**
+  * Test scanning with limits.
+  */
+  @Test
+  public void testScanWithLimit() throws Exception {
+    syncClient.createTable(tableName, basicSchema, getBasicTableOptionsWithNonCoveredRange());
+    KuduTable table = syncClient.openTable(tableName);
+    KuduSession session = syncClient.newSession();
+    int num_rows = 100;
+    for (int key = 0; key < num_rows; key++) {
+      session.apply(createBasicSchemaInsert(table, key));
+    }
+
+    // Test with some non-positive limits, expecting to raise an exception.
+    int non_positives[] = { -1, 0 };
+    for (int limit : non_positives) {
+      try {
+        KuduScanner scanner = syncClient.newScannerBuilder(table)
+                                        .limit(limit)
+                                        .build();
+        fail();
+      } catch (IllegalArgumentException e) {
+        assertTrue(e.getMessage().contains("Need a strictly positive number"));
+      }
+    }
+
+    // Test with a limit and ensure we get the expected number of rows.
+    int limits[] = { num_rows - 1, num_rows, num_rows + 1 };
+    for (int limit : limits) {
+      KuduScanner scanner = syncClient.newScannerBuilder(table)
+                                      .limit(limit)
+                                      .build();
+      int count = 0;
+      while (scanner.hasMoreRows()) {
+        count += scanner.nextRows().getNumRows();
+      }
+      assertEquals(Math.min(num_rows, limit), count);
+    }
+
+    // Now test with limits for async scanners.
+    for (int limit : limits) {
+      AsyncKuduScanner scanner = new AsyncKuduScanner.AsyncKuduScannerBuilder(client, table)
+                                                     .limit(limit)
+                                                     .build();
+      assertEquals(Math.min(limit, num_rows), countRowsInScan(scanner));
+    }
+  }
+
+  /**
    * Test scanning with predicates.
    */
   @Test
