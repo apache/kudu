@@ -193,8 +193,8 @@ Status TlsContext::VerifyCertChainUnlocked(const Cert& cert) {
   X509_STORE* store = SSL_CTX_get_cert_store(ctx_.get());
   auto store_ctx = ssl_make_unique<X509_STORE_CTX>(X509_STORE_CTX_new());
 
-  OPENSSL_RET_NOT_OK(X509_STORE_CTX_init(store_ctx.get(), store, cert.GetTopOfChainX509(), nullptr),
-                     "could not init X509_STORE_CTX");
+  OPENSSL_RET_NOT_OK(X509_STORE_CTX_init(store_ctx.get(), store, cert.GetTopOfChainX509(),
+                     cert.GetRawData()), "could not init X509_STORE_CTX");
   int rc = X509_verify_cert(store_ctx.get());
   if (rc != 1) {
     int err = X509_STORE_CTX_get_error(store_ctx.get());

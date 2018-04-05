@@ -187,7 +187,8 @@ TEST_P(TestRpc, TestCall) {
   }
 }
 
-TEST_P(TestRpc, TestCallWithChainCerts) {
+// Test for KUDU-2091 and KUDU-2220.
+TEST_P(TestRpc, TestCallWithChainCertAndChainCA) {
   bool enable_ssl = GetParam();
   // We're only interested in running this test with TLS enabled.
   if (!enable_ssl) return;
@@ -199,6 +200,38 @@ TEST_P(TestRpc, TestCallWithChainCerts) {
                                                      &rpc_certificate_file,
                                                      &rpc_private_key_file,
                                                      &rpc_ca_certificate_file));
+  // Set up server.
+  Sockaddr server_addr;
+  ASSERT_OK(StartTestServer(&server_addr, enable_ssl));
+
+  // Set up client.
+  SCOPED_TRACE(strings::Substitute("Connecting to $0", server_addr.ToString()));
+  shared_ptr<Messenger> client_messenger;
+  ASSERT_OK(CreateMessenger("Client", &client_messenger, 1, enable_ssl,
+      rpc_certificate_file, rpc_private_key_file, rpc_ca_certificate_file));
+
+  Proxy p(client_messenger, server_addr, server_addr.host(),
+          GenericCalculatorService::static_service_name());
+  ASSERT_STR_CONTAINS(p.ToString(), strings::Substitute("kudu.rpc.GenericCalculatorService@"
+                                                            "{remote=$0, user_credentials=",
+                                                        server_addr.ToString()));
+
+  ASSERT_OK(DoTestSyncCall(p, GenericCalculatorService::kAddMethodName));
+}
+
+// Test for KUDU-2041.
+TEST_P(TestRpc, TestCallWithChainCertAndRootCA) {
+  bool enable_ssl = GetParam();
+  // We're only interested in running this test with TLS enabled.
+  if (!enable_ssl) return;
+
+  string rpc_certificate_file;
+  string rpc_private_key_file;
+  string rpc_ca_certificate_file;
+  ASSERT_OK(security::CreateTestSSLCertWithChainSignedByRoot(GetTestDataDirectory(),
+                                                             &rpc_certificate_file,
+                                                             &rpc_private_key_file,
+                                                             &rpc_ca_certificate_file));
   // Set up server.
   Sockaddr server_addr;
   ASSERT_OK(StartTestServer(&server_addr, enable_ssl));

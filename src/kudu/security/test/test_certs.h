@@ -69,11 +69,18 @@ Status CreateTestSSLCertWithEncryptedKey(const std::string& dir,
                                          std::string* key_password);
 
 // Same as the CreateTestSSLCertWithPlainKey() except that the 'cert_file' is
-// signed by a CA chain.
+// signed by a CA chain ('ca_cert_file' is a chain of certificates).
 Status CreateTestSSLCertSignedByChain(const std::string& dir,
                                       std::string* cert_file,
                                       std::string* key_file,
                                       std::string* ca_cert_file);
+
+// Same as the CreateTestSSLCertWithPlainKey() except that the 'cert_file' is
+// a chain signed by a root CA ('ca_cert_file' is only the root CA).
+Status CreateTestSSLCertWithChainSignedByRoot(const std::string& dir,
+                                              std::string* cert_file,
+                                              std::string* key_file,
+                                              std::string* ca_cert_file);
 
 } // namespace security
 } // namespace kudu
