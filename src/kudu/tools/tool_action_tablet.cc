@@ -623,7 +623,7 @@ unique_ptr<Mode> BuildTabletMode() {
 
   unique_ptr<Action> replace_tablet =
       ActionBuilder("unsafe_replace_tablet", &ReplaceTablet)
-      .Description("Replace a tablet with an empty one, moving the previous tablet to a new table")
+      .Description("Replace a tablet with an empty one, deleting the previous tablet.")
       .ExtraDescription("Use this tool to repair a table when one of its tablets has permanently "
                         "lost all of its replicas. It replaces the unrecoverable tablet with a new "
                         "empty one representing the same partition. Its primary use is to jettison "
