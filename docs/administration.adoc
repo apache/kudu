@@ -817,10 +817,13 @@ directory configuration>> to exclude the failed disk.
 === Bringing a tablet that has lost a majority of replicas back online
 
 If a tablet has permanently lost a majority of its replicas, it cannot recover
-automatically and operator intervention is required. The steps below may cause
-recent edits to the tablet to be lost, potentially resulting in permanent data
-loss. Only attempt the procedure below if it is impossible to bring
-a majority back online.
+automatically and operator intervention is required. If the tablet servers
+hosting a majority of the replicas are down (i.e. ones reported as "TS
+unavailable" by ksck), they should be recovered instead if possible.
+
+WARNING: The steps below may cause recent edits to the tablet to be lost,
+potentially resulting in permanent data loss. Only attempt the procedure below
+if it is impossible to bring a majority back online.
 
 Suppose a tablet has lost a majority of its replicas. The first step in
 diagnosing and fixing the problem is to examine the tablet's state using ksck:
