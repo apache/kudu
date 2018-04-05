@@ -427,7 +427,11 @@ if [ "$BUILD_PYTHON" == "1" ]; then
   # recursively to transitive dependencies installed via a direct dependency's
   # "python setup.py" command. Therefore we have no choice but to upgrade to a
   # new version of pip to proceed.
-  pip install -i https://pypi.python.org/simple --upgrade pip
+  #
+  # Beginning with pip 10, Python 2.6 is no longer supported. Attempting to
+  # upgrade to pip 10 on Python 2.6 yields syntax errors. We don't need any new
+  # pip features, so let's pin to the last pip version to support Python 2.6.
+  pip install -i https://pypi.python.org/simple --upgrade 'pip < 10.0.0b1'
 
   # New versions of pip raise an exception when upgrading old versions of
   # setuptools (such as the one found in el6). The workaround is to upgrade
