@@ -23,9 +23,9 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <string>
 
-#include <gflags/gflags.h>
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/port.h"
@@ -35,6 +35,10 @@
   AssertEventually(expr); \
   NO_PENDING_FATALS(); \
 } while (0)
+
+namespace google {
+class FlagSaver;
+} // namespace google
 
 namespace kudu {
 
@@ -64,7 +68,11 @@ class KuduTest : public ::testing::Test {
   std::string GetTestPath(const std::string& relative_path);
 
   Env* env_;
-  google::FlagSaver flag_saver_;  // Reset flags on every test.
+
+  // Reset flags on every test. Allocated on the heap so it can be destroyed
+  // (and the flags reset) before test_dir_ is deleted.
+  std::unique_ptr<google::FlagSaver> flag_saver_;
+
   std::string test_dir_;
 };
 

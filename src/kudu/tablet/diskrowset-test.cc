@@ -223,8 +223,6 @@ TEST_F(TestRowSet, TestErrorDuringUpdate) {
   Status s = rs->MutateRow(timestamp, probe, enc.as_changelist(), op_id_, &stats, &result);
   LOG(INFO) << s.ToString();
   ASSERT_TRUE(s.IsIOError());
-
-  FLAGS_env_inject_eio = 0;
 }
 
 TEST_F(TestRowSet, TestRandomRead) {
