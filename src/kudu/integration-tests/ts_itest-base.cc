@@ -512,6 +512,7 @@ Status TabletServerIntegrationTestBase::CheckTabletServersAreAlive(int num_table
 
 void TabletServerIntegrationTestBase::TearDown() {
   STLDeleteValues(&tablet_servers_);
+  TabletServerTestBase::TearDown();
 }
 
 void TabletServerIntegrationTestBase::CreateClient(shared_ptr<client::KuduClient>* client) {
