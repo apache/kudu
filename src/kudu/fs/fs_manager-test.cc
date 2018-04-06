@@ -406,7 +406,6 @@ TEST_F(FsManagerTestBase, TestCreateWithFailedDirs) {
   Status s = fs_manager()->CreateInitialFileSystemLayout();
   ASSERT_STR_MATCHES(s.ToString(), "cannot create FS layout; at least one directory "
                                    "failed to canonicalize");
-  FLAGS_env_inject_eio = 0;
 }
 
 TEST_F(FsManagerTestBase, TestOpenWithFailedDirs) {
@@ -428,8 +427,6 @@ TEST_F(FsManagerTestBase, TestOpenWithFailedDirs) {
   ReinitFsManagerWithPaths(wal_path, data_roots);
   ASSERT_OK(fs_manager()->Open(nullptr));
   ASSERT_EQ(1, fs_manager()->dd_manager()->GetFailedDataDirs().size());
-
-  FLAGS_env_inject_eio = 0;
 }
 
 TEST_F(FsManagerTestBase, TestTmpFilesCleanup) {
@@ -603,19 +600,16 @@ TEST_F(FsManagerTestBase, TestAddRemoveDataDirs) {
 
   // Try to open with a new data dir although an existing data dir has failed;
   // this should fail.
-  {
-    google::FlagSaver saver;
-    FLAGS_crash_on_eio = false;
-    FLAGS_env_inject_eio = 1.0;
-    FLAGS_env_inject_eio_globs = JoinPathSegments(new_path2, "**");
+  FLAGS_crash_on_eio = false;
+  FLAGS_env_inject_eio = 1.0;
+  FLAGS_env_inject_eio_globs = JoinPathSegments(new_path2, "**");
 
-    const string new_path3 = GetTestPath("new_path3");
-    opts.data_roots = { fs_root_, new_path2, new_path3 };
-    ReinitFsManagerWithOpts(opts);
-    Status s = fs_manager()->Open();
-    ASSERT_TRUE(s.IsIOError());
-    ASSERT_STR_CONTAINS(s.ToString(), "found failed data directory");
-  }
+  const string new_path3 = GetTestPath("new_path3");
+  opts.data_roots = { fs_root_, new_path2, new_path3 };
+  ReinitFsManagerWithOpts(opts);
+  s = fs_manager()->Open();
+  ASSERT_TRUE(s.IsIOError());
+  ASSERT_STR_CONTAINS(s.ToString(), "found failed data directory");
 }
 
 TEST_F(FsManagerTestBase, TestReAddRemovedDataDir) {

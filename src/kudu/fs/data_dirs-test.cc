@@ -421,7 +421,6 @@ TEST_F(DataDirManagerTest, TestOpenWithFailedDirs) {
       DataDirManagerOptions(), &dd_manager_);
   ASSERT_STR_CONTAINS(s.ToString(), "could not open directory manager");
   ASSERT_TRUE(s.IsIOError());
-  FLAGS_env_inject_eio = 0;
 }
 
 class TooManyDataDirManagerTest : public DataDirManagerTest {

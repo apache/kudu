@@ -78,6 +78,7 @@ bool g_is_gtest = true;
 
 KuduTest::KuduTest()
   : env_(Env::Default()),
+    flag_saver_(new google::FlagSaver()),
     test_dir_(GetTestDataDirectory()) {
   std::map<const char*, const char*> flags_for_tests = {
     // Disabling fsync() speeds up tests dramatically, and it's safe to do as no
@@ -108,6 +109,9 @@ KuduTest::KuduTest()
 }
 
 KuduTest::~KuduTest() {
+  // Reset the flags first to prevent them from affecting test directory cleanup.
+  flag_saver_.reset();
+
   // Clean up the test directory in the destructor instead of a TearDown
   // method. This is better because it ensures that the child-class
   // dtor runs first -- so, if the child class is using a minicluster, etc,

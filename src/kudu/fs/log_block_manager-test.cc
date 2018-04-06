@@ -30,6 +30,7 @@
 #include <vector>
 
 #include <boost/optional/optional.hpp>
+#include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -1016,11 +1017,13 @@ TEST_F(LogBlockManagerTest, TestFailMultipleTransactionsPerContainer) {
   // Briefly inject an error while committing one of the transactions. This
   // should make the container read-only, preventing the remaining transactions
   // from proceeding.
-  FLAGS_crash_on_eio = false;
-  FLAGS_env_inject_eio = 1.0;
-  Status s = block_transactions[0]->CommitCreatedBlocks();
-  ASSERT_TRUE(s.IsIOError());
-  FLAGS_env_inject_eio = 0;
+  {
+    google::FlagSaver saver;
+    FLAGS_crash_on_eio = false;
+    FLAGS_env_inject_eio = 1.0;
+    Status s = block_transactions[0]->CommitCreatedBlocks();
+    ASSERT_TRUE(s.IsIOError());
+  }
 
   // Now try to add some more blocks.
   for (int i = 0; i < kNumTransactions; i++) {
@@ -1647,7 +1650,6 @@ TEST_F(LogBlockManagerTest, TestOpenWithFailedDirectories) {
   int uuid_idx;
   dd_manager_->FindUuidIndexByRoot(test_dirs[failed_idx], &uuid_idx);
   ASSERT_TRUE(ContainsKey(failed_dirs, uuid_idx));
-  FLAGS_env_inject_eio = 0;
 }
 
 // Test Close() a FINALIZED block. Including,

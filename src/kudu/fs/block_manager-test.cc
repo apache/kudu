@@ -998,7 +998,6 @@ TYPED_TEST(BlockManagerTest, TestMetadataOkayDespiteFailure) {
                                          false /* create */));
     }
   }
-  FLAGS_env_inject_eio = 0;
 }
 
 TYPED_TEST(BlockManagerTest, TestGetAllBlockIds) {
@@ -1147,7 +1146,6 @@ TYPED_TEST(BlockManagerTest, TestBlockTransaction) {
   ASSERT_STR_CONTAINS(s.ToString(), Substitute("only deleted $0 blocks, "
                                                "first failure",
                                                deleted_blocks.size()));
-  FLAGS_env_inject_eio = 0;
 }
 
 } // namespace fs
