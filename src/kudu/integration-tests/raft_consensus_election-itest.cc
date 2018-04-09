@@ -103,7 +103,7 @@ void RaftConsensusElectionITest::CreateClusterForChurnyElectionsTests(
 
   ts_flags.insert(ts_flags.end(), extra_ts_flags.cbegin(), extra_ts_flags.cend());
 
-  CreateCluster("raft_consensus-itest-cluster", ts_flags, {});
+  NO_FATALS(CreateCluster("raft_consensus-itest-cluster", ts_flags, {}));
 }
 
 void RaftConsensusElectionITest::DoTestChurnyElections(TestWorkload* workload,
@@ -187,23 +187,24 @@ TEST_F(RaftConsensusElectionITest, RunLeaderElection) {
 // crash, despite the frequent re-elections and races.
 TEST_F(RaftConsensusElectionITest, ChurnyElections) {
   const int kNumWrites = AllowSlowTests() ? 10000 : 1000;
-  CreateClusterForChurnyElectionsTests({});
+  NO_FATALS(CreateClusterForChurnyElectionsTests({}));
   TestWorkload workload(cluster_.get());
   workload.set_write_batch_size(1);
   workload.set_num_read_threads(2);
-  DoTestChurnyElections(&workload, kNumWrites);
+  NO_FATALS(DoTestChurnyElections(&workload, kNumWrites));
 }
 
 // The same test, except inject artificial latency when propagating notifications
 // from the queue back to consensus. This previously reproduced bugs like KUDU-1078 which
 // normally only appear under high load.
 TEST_F(RaftConsensusElectionITest, ChurnyElections_WithNotificationLatency) {
-  CreateClusterForChurnyElectionsTests({"--consensus_inject_latency_ms_in_notifications=50"});
+  NO_FATALS(CreateClusterForChurnyElectionsTests(
+      {"--consensus_inject_latency_ms_in_notifications=50"}));
   const int kNumWrites = AllowSlowTests() ? 10000 : 1000;
   TestWorkload workload(cluster_.get());
   workload.set_write_batch_size(1);
   workload.set_num_read_threads(2);
-  DoTestChurnyElections(&workload, kNumWrites);
+  NO_FATALS(DoTestChurnyElections(&workload, kNumWrites));
 }
 
 // The same as TestChurnyElections except insert many duplicated rows.
@@ -211,13 +212,13 @@ TEST_F(RaftConsensusElectionITest, ChurnyElections_WithNotificationLatency) {
 // locking, may cause deadlocks and other anomalies that cannot be observed when
 // keys are unique.
 TEST_F(RaftConsensusElectionITest, ChurnyElections_WithDuplicateKeys) {
-  CreateClusterForChurnyElectionsTests({});
+  NO_FATALS(CreateClusterForChurnyElectionsTests({}));
   const int kNumWrites = AllowSlowTests() ? 10000 : 1000;
   TestWorkload workload(cluster_.get());
   workload.set_write_pattern(TestWorkload::INSERT_WITH_MANY_DUP_KEYS);
   // Increase the number of rows per batch to get a higher chance of key collision.
   workload.set_write_batch_size(3);
-  DoTestChurnyElections(&workload, kNumWrites);
+  NO_FATALS(DoTestChurnyElections(&workload, kNumWrites));
 }
 
 // Test automatic leader election by killing leaders.

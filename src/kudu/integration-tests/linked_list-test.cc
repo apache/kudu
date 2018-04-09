@@ -131,7 +131,7 @@ class LinkedListTest : public tserver::TabletServerIntegrationTestBase {
       ts_flags.emplace_back("--log_segment_size_mb=1");
     }
 
-    CreateCluster("linked-list-cluster", ts_flags, common_flags);
+    NO_FATALS(CreateCluster("linked-list-cluster", ts_flags, common_flags));
     ResetClientAndTester();
     ASSERT_OK(tester_->CreateLinkedListTable());
     WaitForTSAndReplicas();
@@ -162,7 +162,7 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
   OverrideFlagForSlowTests("seconds_to_run", "30");
   OverrideFlagForSlowTests("stress_flush_compact", "true");
   OverrideFlagForSlowTests("stress_wal_gc", "true");
-  ASSERT_NO_FATAL_FAILURE(BuildAndStart());
+  NO_FATALS(BuildAndStart());
 
   string tablet_id = tablet_replicas_.begin()->first;
 

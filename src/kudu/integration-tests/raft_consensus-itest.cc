@@ -532,7 +532,7 @@ void RaftConsensusITest::CreateClusterForCrashyNodesTests() {
   // log area.
   ts_flags.emplace_back("--log_preallocate_segments=false");
 
-  CreateCluster("raft_consensus-itest-crashy-nodes-cluster", ts_flags, {});
+  NO_FATALS(CreateCluster("raft_consensus-itest-crashy-nodes-cluster", ts_flags, {}));
 }
 
 void RaftConsensusITest::DoTestCrashyNodes(TestWorkload* workload, int max_rows_to_insert) {
@@ -905,7 +905,7 @@ TEST_F(RaftConsensusITest, TestFollowerFallsBehindLeaderGC) {
 // For example, KUDU-783 reproduces from this test approximately 5% of the
 // time on a slow-test debug build.
 TEST_F(RaftConsensusITest, InsertUniqueKeysWithCrashyNodes) {
-  CreateClusterForCrashyNodesTests();
+  NO_FATALS(CreateClusterForCrashyNodesTests());
 
   TestWorkload workload(cluster_.get());
   workload.set_write_batch_size(1);
@@ -918,7 +918,7 @@ TEST_F(RaftConsensusITest, InsertUniqueKeysWithCrashyNodes) {
 // locking, may cause deadlocks and other anomalies that cannot be observed when
 // keys are unique.
 TEST_F(RaftConsensusITest, InsertDuplicateKeysWithCrashyNodes) {
-  CreateClusterForCrashyNodesTests();
+  NO_FATALS(CreateClusterForCrashyNodesTests());
 
   TestWorkload workload(cluster_.get());
   workload.set_write_pattern(TestWorkload::INSERT_WITH_MANY_DUP_KEYS);
