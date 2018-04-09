@@ -105,13 +105,25 @@ class HmsCatalog {
 
   // Returns true if the RPC status is 'fatal', e.g. the Thrift connection on
   // which it occurred should be shut down.
-  bool IsFatalError(const Status& status);
+  static bool IsFatalError(const Status& status);
 
   // Sets the Kudu-specific fields in the table without overwriting unrelated fields.
-  Status PopulateTable(const std::string& id,
-                       const std::string& name,
-                       const Schema& schema,
-                       hive::Table* table) WARN_UNUSED_RESULT;
+  static Status PopulateTable(const std::string& id,
+                              const std::string& name,
+                              const Schema& schema,
+                              const std::string& master_addresses,
+                              hive::Table* table) WARN_UNUSED_RESULT;
+
+  // Creates a table entry in the HMS, or updates that existing entry if the
+  // table already has an entry.
+  //
+  // Instead of only attempting to create or alter a table entry, this method should be
+  // used to ensure the HMS is kept synchronized in as many edge cases as possible.
+  static Status CreateOrUpdateTable(hms::HmsClient* client,
+                                    const std::string& id,
+                                    const std::string& name,
+                                    const Schema& schema,
+                                    const std::string& master_addresses) WARN_UNUSED_RESULT;
 
   // Parses a Kudu table name into a Hive database and table name.
   // Returns an error if the Kudu table name is not correctly formatted.

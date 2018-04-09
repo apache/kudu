@@ -116,6 +116,7 @@ const char* const HmsClient::kDisallowIncompatibleColTypeChanges =
   "hive.metastore.disallow.incompatible.col.type.changes";
 const char* const HmsClient::kDbNotificationListener =
   "org.apache.hive.hcatalog.listener.DbNotificationListener";
+const char* const HmsClient::kStorageHandlerKey = "storage_handler";
 const char* const HmsClient::kKuduMetastorePlugin =
   "org.apache.kudu.hive.metastore.KuduMetastorePlugin";
 

@@ -348,8 +348,8 @@ TEST_F(MasterHmsTest, TestAlterTable) {
 
   table_alterer.reset(client_->NewTableAlterer(table_name));
   s = table_alterer->DropColumn("int32_val")->Alter();
-  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
-  ASSERT_STR_CONTAINS(s.ToString(), "the HMS entry does not belong to the Kudu table");
+  EXPECT_TRUE(s.IsAlreadyPresent()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "already exists in the HMS");
 }
 
 TEST_F(MasterHmsTest, TestDeleteTable) {

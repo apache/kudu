@@ -135,11 +135,8 @@ void HmsCatalog::Stop() {
 Status HmsCatalog::CreateTable(const string& id,
                                const string& name,
                                const Schema& schema) {
-  hive::Table table;
-  RETURN_NOT_OK(PopulateTable(id, name, schema, &table));
-
   return Execute([&] (HmsClient* client) {
-    return client->CreateTable(table);
+      return CreateOrUpdateTable(client, id, name, schema, master_addresses_);
   });
 }
 
@@ -200,19 +197,17 @@ Status HmsCatalog::AlterTable(const string& id,
       // - The new table name isn't a valid Hive database/table pair
       // - The original table entry does not exist in the HMS
       // - The original table entry doesn't match the Kudu table being altered
+      // - The alteration has already been applied to the HMS
       //
       // Where possible, we try to repair the HMS state to whatever it should be
       // in these situations, unless we detect that such a repair would alter an
       // unrelated table entry.
 
-      // A small function which creates the table, instead of altering it. We
-      // can't call HmsCatalog::CreateTable in this context because it would
-      // deadlock the single-thread executor.
-      auto create_table = [&] {
-        hive::Table table;
-        RETURN_NOT_OK(PopulateTable(id, new_name, schema, &table));
-        return client->CreateTable(table);
-      };
+      // If this is not a rename, then attempt to update the existing entry, or
+      // create it if it's missing.
+      if (name == new_name) {
+        return CreateOrUpdateTable(client, id, name, schema, master_addresses_);
+      }
 
       string hms_database;
       string hms_table;
@@ -220,53 +215,34 @@ Status HmsCatalog::AlterTable(const string& id,
       if (!s.ok()) {
         // Parsing the original table name has failed, so it can not be present in
         // the HMS. Instead of altering the table, create it in the HMS as a new table.
-        VLOG(1) << "Failed to parse the name of the table being altered as an "
-                   "HMS database/table pair, will attempt to create a new HMS table entry: "
+        VLOG(1) << "Failed to parse the name of the table being renamed as an "
+                   "HMS database/table pair, will attempt to create an HMS table entry "
+                   "with the new name: "
                 << s.ToString();
-        return create_table();
+        return CreateOrUpdateTable(client, id, new_name, schema, master_addresses_);
       }
 
-      hive::Table orig_table;
-      s = client->GetTable(hms_database, hms_table, &orig_table);
+      hive::Table table;
+      s = client->GetTable(hms_database, hms_table, &table);
+
       if (s.IsNotFound()) {
         // The table doesn't already exist in the HMS, so create it.
-        VLOG(1) << "The table being altered does not have an existing HMS entry, "
-                   "will attempt to create a new HMS table entry.";
-        return create_table();
+        VLOG(1) << "The table being renamed does not have an existing HMS entry, "
+                   "will attempt to create an HMS table entry with the new name.";
+        return CreateOrUpdateTable(client, id, new_name, schema, master_addresses_);
       }
-
-      // All other errors are fatal.
-      RETURN_NOT_OK(s);
 
       // Check that the HMS entry belongs to the table being altered.
-      if (orig_table.parameters[hive::g_hive_metastore_constants.META_TABLE_STORAGE] !=
-          HmsClient::kKuduStorageHandler ||
-          orig_table.parameters[HmsClient::kKuduTableIdKey] != id) {
+      if (table.parameters[HmsClient::kStorageHandlerKey] != HmsClient::kKuduStorageHandler ||
+          table.parameters[HmsClient::kKuduTableIdKey] != id) {
         // The original table isn't a Kudu table, or isn't the same Kudu table.
-        if (name != new_name) {
-          // If this is a rename table operation, then just attempt to create
-          // the table under the new name.
-          VLOG(1) << "The HMS entry for the table being altered belongs to another table, "
-                     "will attempt to create a new HMS table entry.";
-          return create_table();
-        }
-        // Otherwise we fail, since we should not alter an entry belonging to
-        // a different table.
-        return Status::IllegalState("the HMS entry does not belong to the Kudu table");
+        VLOG(1) << "The HMS entry for the table being renamed belongs to another table, "
+                    "will attempt to create an HMS entry with the new name.";
+        return CreateOrUpdateTable(client, id, new_name, schema, master_addresses_);
       }
 
-      // Create a copy of the table object, and set the Kudu fields in it. If
-      // the original table object and the new table object match exactly then
-      // we don't need to alter the table in the HMS.
-      hive::Table table(orig_table);
-      RETURN_NOT_OK(PopulateTable(id, new_name, schema, &table));
-
-      if (orig_table == table) {
-        CHECK_EQ(name, new_name);
-        VLOG(1) << "Short-circuiting alter table for " << name << " (" << id << ")";
-        return Status::OK();
-      }
-
+      // Overwrite fields in the table that have changed, including the new name.
+      RETURN_NOT_OK(PopulateTable(id, new_name, schema, master_addresses_, &table));
       return client->AlterTable(hms_database, hms_table, table);
   });
 }
@@ -452,6 +428,7 @@ hive::FieldSchema column_to_field(const ColumnSchema& column) {
 Status HmsCatalog::PopulateTable(const string& id,
                                  const string& name,
                                  const Schema& schema,
+                                 const string& master_addresses,
                                  hive::Table* table) {
   RETURN_NOT_OK(ParseTableName(name, &table->dbName, &table->tableName));
   table->tableType = HmsClient::kManagedTable;
@@ -459,9 +436,8 @@ Status HmsCatalog::PopulateTable(const string& id,
   // Add the Kudu-specific parameters. This intentionally avoids overwriting
   // other parameters.
   table->parameters[HmsClient::kKuduTableIdKey] = id;
-  table->parameters[HmsClient::kKuduMasterAddrsKey] = master_addresses_;
-  table->parameters[hive::g_hive_metastore_constants.META_TABLE_STORAGE] =
-      HmsClient::kKuduStorageHandler;
+  table->parameters[HmsClient::kKuduMasterAddrsKey] = master_addresses;
+  table->parameters[HmsClient::kStorageHandlerKey] = HmsClient::kKuduStorageHandler;
 
   // Overwrite the entire set of columns.
   vector<hive::FieldSchema> fields;
@@ -471,6 +447,51 @@ Status HmsCatalog::PopulateTable(const string& id,
   table->sd.cols = std::move(fields);
 
   return Status::OK();
+}
+
+Status HmsCatalog::CreateOrUpdateTable(hms::HmsClient* client,
+                                       const string& id,
+                                       const string& name,
+                                       const Schema& schema,
+                                       const string& master_addresses) {
+  string hms_database;
+  string hms_table;
+  RETURN_NOT_OK(ParseTableName(name, &hms_database, &hms_table));
+
+  hive::Table existing_table;
+  Status s = client->GetTable(hms_database, hms_table, &existing_table);
+
+  if (s.IsNotFound()) {
+      VLOG(1) << "Table " << name << " (" << id << ") does not have an existing HMS entry, "
+                  "will attempt to create a new HMS table entry.";
+      hive::Table table;
+      RETURN_NOT_OK(PopulateTable(id, name, schema, master_addresses, &table));
+      return client->CreateTable(table);
+  }
+
+  // All other errors are fatal.
+  RETURN_NOT_OK(s);
+
+  // The table already exists, so we update it.
+
+  // Check if the existing HMS entry belongs to the table being altered.
+  if (existing_table.parameters[HmsClient::kStorageHandlerKey] != HmsClient::kKuduStorageHandler ||
+      existing_table.parameters[HmsClient::kKuduTableIdKey] != id) {
+
+    // Otherwise we fail, since we must not update an entry belonging to a different table.
+    return Status::AlreadyPresent(Substitute("table $0 already exists in the HMS", name));
+  }
+
+  // Create a copy of the table object, and set the Kudu fields in it. If
+  // the original table object and the new table object match exactly then
+  // we don't need to alter the table in the HMS.
+  hive::Table table(existing_table);
+  RETURN_NOT_OK(PopulateTable(id, name, schema, master_addresses, &table));
+  if (existing_table == table) {
+    VLOG(1) << "Short-circuiting alter or update table for " << name << " (" << id << ")";
+    return Status::OK();
+  }
+  return client->AlterTable(hms_database, hms_table, table);
 }
 
 Status HmsCatalog::ParseTableName(const string& table,

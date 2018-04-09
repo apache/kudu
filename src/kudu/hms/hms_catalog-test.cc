@@ -258,6 +258,17 @@ TEST_P(HmsCatalogTestParameterized, TestTableLifecycle) {
   ASSERT_OK(hms_catalog_->CreateTable(kTableId, kTableName, schema));
   NO_FATALS(CheckTable(kHmsDatabase, kHmsTableName, kTableId, schema));
 
+  // Create the table again. This should succeed since the table ID matches. The
+  // HMS catalog will automatically short-circuit creating the table.
+  // TODO(dan): once we have HMS catalog stats, assert that the op short circuits.
+  ASSERT_OK(hms_catalog_->CreateTable(kTableId, kTableName, schema));
+  NO_FATALS(CheckTable(kHmsDatabase, kHmsTableName, kTableId, schema));
+
+  // Create the table again, but with a different table ID.
+  Status s = hms_catalog_->CreateTable("new-table-id", kTableName, schema);
+  ASSERT_TRUE(s.IsAlreadyPresent()) << s.ToString();
+  NO_FATALS(CheckTable(kHmsDatabase, kHmsTableName, kTableId, schema));
+
   // Alter the table.
   SchemaBuilder b(schema);
   b.AddColumn("new_column", DataType::INT32);
@@ -305,70 +316,73 @@ TEST_F(HmsCatalogTest, TestLegacyTables) {
 // belong to external tables from other systems.
 TEST_F(HmsCatalogTest, TestExternalTable) {
   const string kTableId = "table-id";
-  const string kHmsDatabase = "default";
 
-  const string kHmsExternalTable = "external_table";
-  const string kExternalTableName = Substitute("$0.$1", kHmsDatabase, kHmsExternalTable);
-
-  const string kHmsKuduTable = "kudu_table";
-  const string kKuduTableName = Substitute("$0.$1", kHmsDatabase, kHmsKuduTable);
-
-  // Create the external table.
+  // Create the external table (default.ext).
   hive::Table external_table;
-  external_table.dbName = kHmsDatabase;
-  external_table.tableName = kHmsExternalTable;
+  external_table.dbName = "default";
+  external_table.tableName = "ext";
   external_table.tableType = HmsClient::kManagedTable;
   ASSERT_OK(hms_client_->CreateTable(external_table));
   // Retrieve the full HMS table object so it can be compared later (the HMS
   // fills in some fields during creation).
-  ASSERT_OK(hms_client_->GetTable(kHmsDatabase, kHmsExternalTable, &external_table));
+  ASSERT_OK(hms_client_->GetTable("default", "ext", &external_table));
 
   auto CheckExternalTable = [&] {
     hive::Table current_table;
-    ASSERT_OK(hms_client_->GetTable(kHmsDatabase, kHmsExternalTable, &current_table));
+    ASSERT_OK(hms_client_->GetTable("default", "ext", &current_table));
     ASSERT_EQ(current_table, external_table);
   };
 
-  // Create the Kudu table.
+  // Create the Kudu table (default.a).
   Schema schema = AllTypesSchema();
-  ASSERT_OK(hms_catalog_->CreateTable(kTableId, kKuduTableName, schema));
-  NO_FATALS(CheckTable(kHmsDatabase, kHmsKuduTable, kTableId, schema));
+  ASSERT_OK(hms_catalog_->CreateTable(kTableId, "default.a", schema));
+  NO_FATALS(CheckTable("default", "a", kTableId, schema));
 
   // Try and create a Kudu table with the same name as the external table.
-  Status s = hms_catalog_->CreateTable(kTableId, kKuduTableName, schema);
+  Status s = hms_catalog_->CreateTable(kTableId, "default.ext", schema);
   EXPECT_TRUE(s.IsAlreadyPresent()) << s.ToString();
   NO_FATALS(CheckExternalTable());
 
   // Try and rename the Kudu table to the external table name.
-  s = hms_catalog_->AlterTable(kTableId, kKuduTableName, kExternalTableName, schema);
+  s = hms_catalog_->AlterTable(kTableId, "default.a", "default.ext", schema);
   EXPECT_TRUE(s.IsIllegalState()) << s.ToString();
   NO_FATALS(CheckExternalTable());
-  NO_FATALS(CheckTable(kHmsDatabase, kHmsKuduTable, kTableId, schema));
+  NO_FATALS(CheckTable("default", "a", kTableId, schema));
 
   // Try and rename a Kudu table from the external table name to a new name.
   // This depends on the Kudu table not actually existing in the HMS catalog.
-  const string kHmsRenamedTable = "renamed_table";
-  const string kRenamedTableName = Substitute("$0.$1", kHmsDatabase, kHmsRenamedTable);
-  ASSERT_OK(hms_catalog_->AlterTable(kTableId, kExternalTableName, kRenamedTableName, schema));
+  ASSERT_OK(hms_catalog_->AlterTable(kTableId, "default.ext", "default.b", schema));
   NO_FATALS(CheckExternalTable());
   // The 'renamed' table is really just created with the new name.
-  NO_FATALS(CheckTable(kHmsDatabase, kHmsRenamedTable, kTableId, schema));
+  NO_FATALS(CheckTable("default", "b", kTableId, schema));
+
+  // Try the previous alter operation again. This should succeed, since the
+  // destination table ID matches, so the HMS catalog knows its the same table.
+  // TODO(dan): once we have HMS catalog stats, assert that the op short circuits.
+  ASSERT_OK(hms_catalog_->AlterTable(kTableId, "default.ext", "default.b", schema));
+  NO_FATALS(CheckExternalTable());
+  // The 'renamed' table is really just created with the new name.
+  NO_FATALS(CheckTable("default", "b", kTableId, schema));
+
+  // Try the previous alter operation again, but with a different table ID.
+  s = hms_catalog_->AlterTable("new-table-id", "default.ext", "default.b", schema);
+  ASSERT_TRUE(s.IsAlreadyPresent()) << s.ToString();
 
   // Try and alter a Kudu table with the same name as the external table.
   // This depends on the Kudu table not actually existing in the HMS catalog.
-  s = hms_catalog_->AlterTable(kTableId, kExternalTableName, kExternalTableName, schema);
-  EXPECT_TRUE(s.IsIllegalState()) << s.ToString();
+  s = hms_catalog_->AlterTable(kTableId, "default.ext", "default.ext", schema);
+  EXPECT_TRUE(s.IsAlreadyPresent()) << s.ToString();
   NO_FATALS(CheckExternalTable());
 
   // Try and drop the external table as if it were a Kudu table.  This should
   // return an OK status, but not actually modify the external table.
-  ASSERT_OK(hms_catalog_->DropTable(kTableId, kExternalTableName));
+  ASSERT_OK(hms_catalog_->DropTable(kTableId, "default.ext"));
   NO_FATALS(CheckExternalTable());
 
   // Drop a Kudu table with no corresponding HMS entry.
-  NO_FATALS(CheckTableDoesNotExist(kHmsDatabase, "bogus_table_name"));
+  NO_FATALS(CheckTableDoesNotExist("default", "bogus_table_name"));
   ASSERT_OK(hms_catalog_->DropTable(kTableId, "default.bogus_table_name"));
-  NO_FATALS(CheckTableDoesNotExist(kHmsDatabase, "bogus_table_name"));
+  NO_FATALS(CheckTableDoesNotExist("default", "bogus_table_name"));
 }
 
 // Checks that the HmsCatalog handles reconnecting to the metastore after a connection failure.
