@@ -73,6 +73,10 @@ class PstackWatcher {
   // Test for the existence of the given program in the system path.
   static Status HasProgram(const char* progname);
 
+  // Check whether the system path has 'gdb' and whether it is modern enough
+  // for safe stack dump usage.
+  static Status HasGoodGdb();
+
   // Get a stack dump using GDB directly.
   static Status RunGdbStackDump(pid_t pid, int flags);
 
