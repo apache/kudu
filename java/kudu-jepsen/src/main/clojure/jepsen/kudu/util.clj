@@ -133,7 +133,7 @@
   "Whether the Kudu master sees the specified number of tablet servers."
   [test node tservers-count]
   (let [pattern (str "Fetched info from all "
-                     (str tservers-count)" Tablet Servers")]
+                     (str tservers-count)" tablet servers")]
     (try (c/exec :sudo :-u kudu-uname (kudu-cli test node) :cluster :ksck node |
                  :grep pattern)
          true
