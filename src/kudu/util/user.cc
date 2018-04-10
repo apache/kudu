@@ -21,6 +21,7 @@
 #include <unistd.h>
 
 #include <cerrno>
+#include <cstdint>
 #include <cstdlib>
 #include <mutex>
 #include <string>
@@ -44,10 +45,10 @@ Status DoGetLoggedInUser(string* user_name) {
   struct passwd pwd;
   struct passwd *result;
 
-  size_t bufsize = sysconf(_SC_GETPW_R_SIZE_MAX);
-  if (bufsize == -1) {  // Value was indeterminate.
-    bufsize = 16384;    // Should be more than enough, per the man page.
-  }
+  // Get the system-defined limit for usernames. If the value was indeterminate,
+  // use a constant that should be more than enough, per the man page.
+  int64_t retval = sysconf(_SC_GETPW_R_SIZE_MAX);
+  size_t bufsize = retval > 0 ? retval : 16384;
 
   gscoped_ptr<char[], FreeDeleter> buf(static_cast<char *>(malloc(bufsize)));
   if (buf.get() == nullptr) {
