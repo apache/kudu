@@ -71,7 +71,7 @@ public class IPCUtil {
         continue;
       }
       totalSize += m.getSerializedSize();
-      totalSize += CodedOutputStream.computeRawVarint32Size(m.getSerializedSize());
+      totalSize += CodedOutputStream.computeUInt32SizeNoTag(m.getSerializedSize());
     }
     return totalSize;
   }

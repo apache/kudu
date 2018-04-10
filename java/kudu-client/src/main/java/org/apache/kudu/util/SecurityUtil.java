@@ -155,7 +155,7 @@ public abstract class SecurityUtil {
     try {
       return MessageDigest.getInstance(digestAlg).digest(cert.getEncoded());
     } catch (Exception e) {
-      throw Throwables.propagate(e);
+      throw new RuntimeException(e);
     }
   }
 

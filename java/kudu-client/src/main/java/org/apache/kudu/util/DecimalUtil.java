@@ -19,7 +19,6 @@ package org.apache.kudu.util;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
-import java.math.MathContext;
 import java.math.RoundingMode;
 
 import com.google.common.base.Strings;
@@ -123,7 +122,7 @@ public class DecimalUtil {
   public static BigDecimal coerce(BigDecimal val, int targetPrecision, int targetScale) {
     if (val.scale() != targetScale) {
       try {
-        val = val.setScale(targetScale, BigDecimal.ROUND_UNNECESSARY);
+        val = val.setScale(targetScale, RoundingMode.UNNECESSARY);
       } catch (ArithmeticException ex) {
         throw new IllegalArgumentException("Value scale " + val.scale() +
             " can't be coerced to target scale " +  targetScale + ". ");

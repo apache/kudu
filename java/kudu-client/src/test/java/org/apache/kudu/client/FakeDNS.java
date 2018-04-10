@@ -82,7 +82,7 @@ public class FakeDNS {
       List<NameService> nameServices = (List<NameService>) field.get(null);
       nameServices.add(0, new NSImpl());
     } catch (Exception e) {
-      throw Throwables.propagate(e);
+      throw new RuntimeException(e);
     }
     installed = true;
   }
