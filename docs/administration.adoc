@@ -813,6 +813,57 @@ leading to lower storage volume and reduced read parallelism. The administrator
 should schedule a brief window to <<change_dir_config,update the node's
 directory configuration>> to exclude the failed disk.
 
+[[disk_full_recovery]]
+=== Recovering from Full Disks
+By default, Kudu reserves a small amount of space (1% by capacity) in its
+directories; Kudu considers a disk full if there is less free space available
+than the reservation. Kudu nodes can only tolerate running out of space on disks
+on which certain Kudu directories are mounted. For more information about the
+different Kudu directory types, see
+link:configuration.html#directory_configuration[Kudu Directory Configurations].
+The table below describes this behavior for each type of directory. The behavior
+is uniform across masters and tablet servers.
+[[disk_full_behavior]]
+.Kudu Full Disk Behavior
+[cols="<,<,<",options="header"]
+|===
+| Kudu Directory Type | Crash on a Full Disk?
+| Directory containing WALs | Yes
+| Directory containing tablet metadata | Yes
+| Directory containing data blocks only | No (see below)
+|===
+
+Prior to Kudu 1.7.0, Kudu stripes tablet data across all directories, and will
+avoid writing data to full directories. Kudu will crash if all data directories
+are full.
+
+In 1.7.0 and later, new tablets are assigned a disk group consisting of
+-fs_target_data_dirs_per_tablet data dirs (default 3). If Kudu is not configured
+with enough data directories for a full disk group, all data directories are
+used. When a data directory is full, Kudu will stop writing new data to it and
+each tablet that uses that data directory will write new data to other data
+directories within its group. If all data directories for a tablet are full, Kudu
+will crash. Periodically, Kudu will check if full data directories are still
+full, and will resume writing to those data directories if space has become
+available.
+
+If Kudu does crash because its data directories are full, freeing space on the
+full directories will allow the affected daemon to restart and resume writing.
+Note that it may be possible for Kudu to free some space by running
+
+[source,bash]
+----
+$ sudo -u kudu kudu fs check --repair
+----
+
+but this command may also fail if there is too little space left.
+
+It's also possible to allocate additional data directories to Kudu in order to
+increase the overall amount of storage available. See the documentation on
+<<change_dir_config,updating a node's directory configuration>> for more
+information. Note that existing tablets will not use new data directories, so
+adding a new data directory does not resolve issues with full disks.
+
 [[tablet_majority_down_recovery]]
 === Bringing a tablet that has lost a majority of replicas back online
 
