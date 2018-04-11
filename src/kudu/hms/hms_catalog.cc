@@ -365,7 +365,7 @@ Status HmsCatalog::Reconnect() {
     reconnect_idx_ = (reconnect_idx_ + 1) % hms_addresses_.size();
 
     hms_client_ = HmsClient(address, options);
-    Status s = hms_client_.Start();
+    s = hms_client_.Start();
     if (s.ok()) {
       VLOG(1) << "Connected to Hive Metastore " << address.ToString();
       return Status::OK();

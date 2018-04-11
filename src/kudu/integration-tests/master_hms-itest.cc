@@ -39,6 +39,7 @@
 #include "kudu/util/net/net_util.h" // IWYU pragma: keep
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
 
 namespace kudu {
 
@@ -88,12 +89,6 @@ class MasterHmsTest : public ExternalMiniClusterITestBase {
   Status StartHms() {
     RETURN_NOT_OK(cluster_->hms()->Start());
     RETURN_NOT_OK(hms_client_->Start());
-    return Status::OK();
-  }
-
-  Status RestartHms() {
-    RETURN_NOT_OK(StopHms());
-    RETURN_NOT_OK(StartHms());
     return Status::OK();
   }
 
@@ -218,7 +213,10 @@ TEST_F(MasterHmsTest, TestCreateTable) {
 
   // Start the HMS and try again.
   ASSERT_OK(StartHms());
-  ASSERT_OK(CreateKuduTable(hms_database_name, "foo"));
+  ASSERT_EVENTUALLY([&] {
+    // HmsCatalog throttles reconnections, so it's necessary to wait out the backoff.
+    ASSERT_OK(CreateKuduTable(hms_database_name, "foo"));
+  });
   NO_FATALS(CheckTable(hms_database_name, "foo"));
 }
 
@@ -271,14 +269,16 @@ TEST_F(MasterHmsTest, TestRenameTable) {
 
   // Shutdown the HMS and try to rename the table.
   ASSERT_OK(StopHms());
-  table_alterer.reset(client_->NewTableAlterer("db.c"));
-  s = table_alterer->RenameTo("db.a")->Alter();
+  table_alterer.reset(client_->NewTableAlterer("db.c")->RenameTo("db.a"));
+  s = table_alterer->Alter();
   ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
 
   // Start the HMS and rename the table back to the original name.  This is the happy path.
   ASSERT_OK(StartHms());
-  table_alterer.reset(client_->NewTableAlterer("db.c"));
-  ASSERT_OK(table_alterer->RenameTo("db.a")->Alter());
+  ASSERT_EVENTUALLY([&] {
+    // HmsCatalog throttles reconnections, so it's necessary to wait out the backoff.
+    ASSERT_OK(table_alterer->Alter());
+  });
   NO_FATALS(CheckTable("db", "a"));
   NO_FATALS(CheckTableDoesNotExist("db", "c"));
 
@@ -327,14 +327,16 @@ TEST_F(MasterHmsTest, TestAlterTable) {
 
   // Shutdown the HMS and try to alter the table.
   ASSERT_OK(StopHms());
-  table_alterer.reset(client_->NewTableAlterer(table_name));
-  Status s = table_alterer->DropColumn("int16_val")->Alter();
+  table_alterer.reset(client_->NewTableAlterer(table_name)->DropColumn("int16_val"));
+  Status s = table_alterer->Alter();
   ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
 
   // Start the HMS and try again.
   ASSERT_OK(StartHms());
-  table_alterer.reset(client_->NewTableAlterer(table_name));
-  ASSERT_OK(table_alterer->DropColumn("int16_val")->Alter());
+  ASSERT_EVENTUALLY([&] {
+    // HmsCatalog throttles reconnections, so it's necessary to wait out the backoff.
+    ASSERT_OK(table_alterer->Alter());
+  });
   NO_FATALS(CheckTable(hms_database_name, hms_table_name));
 
   // Drop the table from the HMS, and insert a non-Kudu table entry, then try
@@ -388,7 +390,10 @@ TEST_F(MasterHmsTest, TestDeleteTable) {
   ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
   ASSERT_OK(StartHms());
   NO_FATALS(CheckTable(hms_database_name, hms_table_name));
-  ASSERT_OK(client_->DeleteTable(table_name));
+  ASSERT_EVENTUALLY([&] {
+    // HmsCatalog throttles reconnections, so it's necessary to wait out the backoff.
+    ASSERT_OK(client_->DeleteTable(table_name));
+  });
   NO_FATALS(CheckTableDoesNotExist(hms_database_name, hms_table_name));
 }
 } // namespace kudu

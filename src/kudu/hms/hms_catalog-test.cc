@@ -399,6 +399,10 @@ TEST_F(HmsCatalogTest, TestReconnect) {
   // Shutdown the HMS and try a few operations.
   ASSERT_OK(StopHms());
 
+  // TODO(dan): once we have HMS catalog stats, assert that repeated attempts
+  // while the HMS is unavailable results in a non-linear number of reconnect
+  // attempts.
+
   Status s = hms_catalog_->CreateTable(kTableId, "default.b", schema);
   EXPECT_TRUE(s.IsNetworkError()) << s.ToString();
 
@@ -407,7 +411,11 @@ TEST_F(HmsCatalogTest, TestReconnect) {
 
   // Start the HMS back up and ensure that the same operations succeed.
   ASSERT_OK(StartHms());
-  EXPECT_OK(hms_catalog_->CreateTable(kTableId, "default.d", schema));
+  ASSERT_EVENTUALLY([&] {
+    // HmsCatalog throttles reconnections, so it's necessary to wait out the backoff.
+    ASSERT_OK(hms_catalog_->CreateTable(kTableId, "default.d", schema));
+  });
+
   NO_FATALS(CheckTable(kHmsDatabase, "a", kTableId, schema));
   NO_FATALS(CheckTable(kHmsDatabase, "d", kTableId, schema));
 
