@@ -16,7 +16,7 @@
 // under the License.
 
 [[release_notes]]
-= Apache Kudu 1.7.0 Release Notes
+= Apache Kudu 1.8.0 Release Notes
 
 :author: Kudu Team
 :imagesdir: ./images
@@ -28,306 +28,82 @@
 :sectlinks:
 :experimental:
 
-[[rn_1.7.0_upgrade_notes]]
+[[rn_1.8.0_upgrade_notes]]
 == Upgrade Notes
 
-* Upgrading directly from Kudu 1.6.0 is supported and no special upgrade steps
-  are required. A rolling upgrade of the server side will _not_ work because
-  the default replica management scheme changed, and running masters and tablet
-  servers with different replica management schemes is not supported, see
-  <<rn_1.7.0_incompatible_changes>> for details. However, mixing client and
-  server sides of different versions is not a problem. You can still
-  update your clients before your servers or vice versa.
-  When upgrading to Kudu 1.7, it is required to first shut down all Kudu processes
-  across the cluster, then upgrade the software on all servers, then restart
-  the Kudu processes on all servers in the cluster.
 
-[[rn_1.7.0_obsoletions]]
+[[rn_1.8.0_obsoletions]]
 == Obsoletions
 
-* The `tcmalloc_contention_time` metric, which previously tracked the amount
-  of time spent in memory allocator lock contention, has been removed.
 
-[[rn_1.7.0_deprecations]]
+[[rn_1.8.0_deprecations]]
 == Deprecations
 
 * Support for Java 7 has been deprecated since Kudu 1.5.0 and may be removed in
   the next major release.
 
-[[rn_1.7.0_new_features]]
+[[rn_1.8.0_new_features]]
 == New features
 
-* Kudu now supports the decimal column type. The decimal type is a numeric data type
-  with fixed scale and precision suitable for financial and other arithmetic
-  calculations where the imprecise representation and rounding behavior of float and
-  double make those types impractical. The decimal type is also useful for integers
-  larger than int64 and cases with fractional values in a primary key.
-  See link:schema_design.html#decimal[Decimal Type] for more details.
 
-* The strategy Kudu uses for automatically healing tablets which have lost a
-  replica due to server or disk failures has been improved. The new re-replication
-  strategy, or replica management scheme, first adds a replacement tablet replica
-  before evicting the failed one. With the previous replica management scheme,
-  the system first evicts the failed replica and then adds a replacement. The new
-  replica management scheme allows for much faster recovery of tablets in
-  scenarios where one tablet server goes down and then returns back shortly after
-  5 minutes or so. The new scheme also provides substantially better overall
-  stability on clusters with frequent server failures.
-  (see link:https://issues.apache.org/jira/browse/KUDU-1097[KUDU-1097]).
-
-* The `kudu fs update_dirs` tool now supports removing directories. Unless the
-  `--force` flag is specified, Kudu will not allow the removal of a directory
-  across which tablets are configured to spread data. If specified, all tablet
-  replicas configured to use that directory will fail upon starting up and be
-  replicated elsewhere, provided a majority exists elsewhere.
-
-* Users can use the new `--fs_metadata_dir` to specify the directory in which
-  to place tablet-specific metadata. It is recommended, although not
-  necessary, that this be placed on a high-performance drive with high
-  bandwidth and low latency, e.g. a solid-state drive. If not specified,
-  metadata will be placed in the directory specified by `--fs_wal_dir`, or in
-  the directory specified by the first entry of `--fs_data_dirs` if metadata
-  already exists there from a pre-Kudu 1.7 deployment. Kudu will not
-  automatically move existing metadata based on this configuration.
-
-* Kudu 1.7 introduces a new scan read mode READ_YOUR_WRITES. Users can specify
-  READ_YOUR_WRITES when creating a new scanner in C++, Java and Python clients.
-  If this mode is used, the client will perform a read such that it follows all
-  previously known writes and reads from this client. Reads in this mode ensure
-  read-your-writes and read-your-reads session guarantees, while minimizing
-  latency caused by waiting for outstanding write transactions to complete.
-  Note that this is still an experimental feature which may be stabilized in
-  future releases.
-
-* The tablet server web UI scans dashboard (/scans) has been improved with
-  several new features, including: showing the most recently completed scans,
-  a pseudo-SQL scan descriptor that concisely shows the selected columns and
-  applied predicates, and more complete and better documented scan statistics.
-
-* Kudu daemons now expose a web page `/stacks` which dumps the current stack
-  trace of every thread running in the server. This information can be helpful
-  when diagnosing performance issues.
-
+[[rn_1.8.0_improvements]]
 == Optimizations and improvements
 
-* By default, each tablet replica will now stripe data blocks across 3 data
-  directories instead of all data directories. This decreases the likelihood
-  that any given tablet will be affected in the event of a single disk failure.
-  No substantial performance impact is expected due to this feature based on
-  link:https://github.com/apache/kudu/commit/60276c54a221d554287c6645df7df542fe6d6443[performance testing].
-  This change only affects new replicas created after upgrading to Kudu 1.7.
 
-* Kudu servers previously offered the ability to enable a separate metrics log
-  which stores periodic snapshots of all metrics available on a server. This
-  functionality is now available as part of a more general “diagnostics log”
-  which is enabled by default. The diagnostics log includes periodic dumps of
-  server metrics as well as collections of thread stack traces. The default
-  configuration ensures that no more than 640MB of diagnostics logs are retained,
-  and typically the space consumption is significantly less due to compression.
-  The format and contents of this log file are documented in the
-  link:administration.html[Administration guide].
-
-* The handling of errors in the synchronous Java client has been improved so that,
-  when an exception is thrown, the stack trace indicates the correct location
-  where the client function was invoked rather than a call stack of an internal
-  worker thread. The original call stack from the worker thread is available as
-  a “suppressed exception”.
-
-* The logging of errors in the Java client has been improved to exclude exception
-  stack traces for expected scenarios such as failure to connect to a server in a
-  cluster. Instead, only a single line informational message will be logged in
-  such cases to aid in debugging.
-
-* The Java client now uses a predefined prioritized list of TLS ciphers when
-  establishing an encrypted connection to Kudu servers. This cipher list matches
-  the list of ciphers preferred for server-to-server communication and ensures
-  that the most efficient and secure ciphers are preferred. When the Kudu client
-  is running on Java 8 or newer, this provides a substantial speed-up to read
-  and write performance.
-
-* Reporting for the `kudu cluster ksck` tool has been updated so tablets and
-  tables with on-going tablet copies are shown as "recovering". Additional
-  reporting changes have been made to make various common scenarios,
-  particularly tablet copies, less alarming.
-
-* The performance of inserting rows containing many string or binary columns has
-  been improved, especially in the case of highly concurrent write workloads.
-
-* By default, Spark tasks that scan Kudu will now be able to scan non-leader
-  replicas. This allows Spark to more easily schedule kudu-spark tasks local to
-  the data. Users can disable this behavior by passing 'leader_only' to the
-  'kudu.scanLocality' option."
-
-* The number of OS threads used in the steady state and during bursts of
-  activity (such as in Raft leader elections triggered by a node failure) has
-  been drastically reduced and should no longer exceed the value of `ulimit -u`.
-  As such, it should no longer be necessary to increase the value of `ulimit -u`
-  (or of /proc/sys/kernel/threads-max) in order to run a Kudu tablet server in
-  most cases.
-  (see link:https://issues.apache.org/jira/browse/KUDU-1913[KUDU-1913]).
-
-* An issue where sparse column predicates could cause excessive data-block reads
-  has been fixed. Previously in certain scans with sparsely matching predicates
-  on multiple columns, Kudu would read and decode the same data blocks many times.
-  The improvement typically results in a 5-10x performance increase for the
-  affected scans.
-  (see link:https://issues.apache.org/jira/browse/KUDU-2231[KUDU-2231]).
-
-* The efficiency and on-disk size of large updated values has been improved.
-  This will improve update-heavy workloads which overwrite large (1KiB+) values.
-  (see link:https://issues.apache.org/jira/browse/KUDU-2253[KUDU-2253]).
-
-
-[[rn_1.7.0_fixed_issues]]
+[[rn_1.8.0_fixed_issues]]
 == Fixed Issues
 
-* Fixed a scenario where the on-disk data of a tablet server was completely
-  erased and and a new tablet server was started on the same host. This issue
-  could prevent tablet replicas previously hosted on the server from being
-  evicted and re-replicated.
-  Tablets now immediately evict replicas that respond with a different server
-  UUID than expected.
-  (see link:https://issues.apache.org/jira/browse/KUDU-1613[KUDU-1613]).
 
-* Fixed a rare race condition when connecting to masters during their
-  startup which might cause a client to get a response without a CA certificate
-  and/or authentication token. This would cause the client to fail to authenticate
-  with other servers in the cluster. The leader master now always sends a CA
-  certificate and an authentication token (when applicable) to a Kudu client
-  with a successful ConnectToMaster response.
-  (see link:https://issues.apache.org/jira/browse/KUDU-1927[KUDU-1927]).
-
-* The Kudu Java client now will retry a connection if no master is discovered as a
-  leader, and the user has a valid authentication token. This avoids failure
-  in recoverable cases when masters are in the process of the very first leader
-  election after starting up.
-  (see link:https://issues.apache.org/jira/browse/KUDU-2262[KUDU-2262]).
-
-* The Java client will now automatically attempt to re-acquire Kerberos
-  credentials from the ticket cache when the prior credentials are about to
-  expire. This allows client instances to persist longer than the expiration
-  time of a single Kerberos ticket so long as some other process renews the
-  credentials in the ticket cache. Documentation on interacting with Kerberos
-  authentication has been added to the Javadoc for the `AsyncKuduClient` class.
-  (see link:https://issues.apache.org/jira/browse/KUDU-2264[KUDU-2264]).
-
-* Follower masters are now able to verify authentication tokens even if they have never
-  been a leader. Prior to this fix, if a follower master had never been a leader,
-  clients would be unable to authenticate to that master, resulting in spurious
-  error messages being logged.
-  (see link:https://issues.apache.org/jira/browse/KUDU-2265[KUDU-2265]).
-
-* Fixed a tablet server crash when a tablet replica is deleted during a scan.
-  (see link:https://issues.apache.org/jira/browse/KUDU-2295[KUDU-2295]).
-
-* The evaluation order of predicates in scans with multiple predicates has been
-  made deterministic. Due to a bug, this was not necessarily the case previously.
-  Predicates are applied in most to least selective order, with ties broken by
-  column index. The evaluation order may change in the future, particularly when
-  better column statistics are made available internally.
-  (see link:https://issues.apache.org/jira/browse/KUDU-2312[KUDU-2312]).
-
-* Previously, the `kudu tablet change_config move_replica` tool required all
-  tablet servers in the cluster to be available when performing a move. This
-  restriction has been relaxed: only the tablet server that will receive a replica
-  of the tablet being moved and the hosts of the tablet's existing replicas need to be
-  available for the move to occur.
-  (see link:https://issues.apache.org/jira/browse/KUDU-2331[KUDU-2331]).
-
-* Fixed a bug in the Java client which prevented the client from locating the
-  new leader master after a leader failover in the case that the previous leader
-  either remained online or restarted quickly. This bug resulted in the client
-  timing out operations with errors indicating that there was no leader master.
-  (see link:https://issues.apache.org/jira/browse/KUDU-2343[KUDU-2343]).
-
-* The Unix process username of the client is now included inside the exported
-  security credentials, so that the effective username of clients who import
-  credentials and subsequently use unauthenticated (SASL PLAIN) connections
-  matches the client who exported the security credentials. For example, this is
-  useful to let the Spark executors know which username to use if the Spark
-  driver has no authentication token. This change only affects clusters with
-  encryption disabled using `--rpc-encryption=disabled`.
-  (see link:https://issues.apache.org/jira/browse/KUDU-2259[KUDU-2259]).
-
-[[rn_1.7.0_wire_compatibility]]
+[[rn_1.8.0_wire_compatibility]]
 == Wire Protocol compatibility
 
-Kudu 1.7.0 is wire-compatible with previous versions of Kudu:
+Kudu 1.8.0 is wire-compatible with previous versions of Kudu:
 
-* Kudu 1.7 clients may connect to servers running Kudu 1.0 or later. If the client uses
+* Kudu 1.8 clients may connect to servers running Kudu 1.0 or later. If the client uses
   features that are not available on the target server, an error will be returned.
-* Rolling upgrade between Kudu 1.6 and Kudu 1.7 servers is believed to be possible
+* Rolling upgrade between Kudu 1.7 and Kudu 1.8 servers is believed to be possible
   though has not been sufficiently tested. Users are encouraged to shut down all nodes
   in the cluster, upgrade the software, and then restart the daemons on the new version.
-* Kudu 1.0 clients may connect to servers running Kudu 1.7 with the exception of the
+* Kudu 1.0 clients may connect to servers running Kudu 1.8 with the exception of the
   below-mentioned restrictions regarding secure clusters.
 
 The authentication features introduced in Kudu 1.3 place the following limitations
-on wire compatibility between Kudu 1.7 and versions earlier than 1.3:
+on wire compatibility between Kudu 1.8 and versions earlier than 1.3:
 
-* If a Kudu 1.7 cluster is configured with authentication or encryption set to "required",
+* If a Kudu 1.8 cluster is configured with authentication or encryption set to "required",
   clients older than Kudu 1.3 will be unable to connect.
-* If a Kudu 1.7 cluster is configured with authentication and encryption set to "optional"
+* If a Kudu 1.8 cluster is configured with authentication and encryption set to "optional"
   or "disabled", older clients will still be able to connect.
 
-[[rn_1.7.0_incompatible_changes]]
-== Incompatible Changes in Kudu 1.7.0
+[[rn_1.8.0_incompatible_changes]]
+== Incompatible Changes in Kudu 1.8.0
 
-* The newly introduced replica management scheme is not compatible with the
-  old scheme, so it's not possible to run pre-1.7 Kudu masters with
-  1.7 Kudu tablet servers or vice versa. This is a server-side
-  incompatibility only and it does not affect client compatibility. In other words,
-  Kudu clients of prior versions are compatible with upgraded Kudu clusters.
 
-**  Kudu masters of 1.7 version will not register Kudu tablet servers of 1.6
-    and prior versions.
-**  Kudu tablet servers of 1.7 version will not work with Kudu masters of 1.6
-    and prior versions.
-
-* The format of the previously-optional metrics log has changed to include a
-  human-readable timestamp on each line. The path of the log file has also
-  changed with the word “diagnostics” replacing the word “metrics” in the file
-  name. The metrics log has been optimized to only include those metrics which
-  have changed in between successive samples, and to not include entity attributes
-  such as tablet partition information in the log.
-  (see link:https://issues.apache.org/jira/browse/KUDU-2297[KUDU-2297]).
-
-[[rn_1.7.0_client_compatibility]]
+[[rn_1.8.0_client_compatibility]]
 === Client Library Compatibility
 
-* The Kudu 1.7 Java client library is API- and ABI-compatible with Kudu 1.6. Applications
-  written against Kudu 1.6 will compile and run against the Kudu 1.7 client library and
+* The Kudu 1.8 Java client library is API- and ABI-compatible with Kudu 1.7. Applications
+  written against Kudu 1.7 will compile and run against the Kudu 1.8 client library and
   vice-versa.
 
-* The Kudu 1.7 {cpp} client is API- and ABI-forward-compatible with Kudu 1.6.
-  Applications written and compiled against the Kudu 1.6 client library will run without
-  modification against the Kudu 1.7 client library. Applications written and compiled
-  against the Kudu 1.7 client library will run without modification against the Kudu 1.6
+* The Kudu 1.8 {cpp} client is API- and ABI-forward-compatible with Kudu 1.7.
+  Applications written and compiled against the Kudu 1.7 client library will run without
+  modification against the Kudu 1.8 client library. Applications written and compiled
+  against the Kudu 1.8 client library will run without modification against the Kudu 1.7
   client library.
 
-* The Kudu 1.7 Python client is API-compatible with Kudu 1.6. Applications
-  written against Kudu 1.6 will continue to run against the Kudu 1.7 client
+* The Kudu 1.8 Python client is API-compatible with Kudu 1.7. Applications
+  written against Kudu 1.7 will continue to run against the Kudu 1.8 client
   and vice-versa.
 
-* Kudu 1.7 clients that attempt to create a table with a decimal column on a
-  target server running Kudu 1.6 or earlier will receive an error response.
-  Similarly Kudu clients running Kudu 1.6 or earlier will result in an error
-  when attempting to access any table containing containing a decimal
-  column.
-
-[[rn_1.7.0_known_issues]]
+[[rn_1.8.0_known_issues]]
 == Known Issues and Limitations
 
 Please refer to the link:known_issues.html[Known Issues and Limitations] section of the
 documentation.
 
-[[rn_1.7.0_contributors]]
+[[rn_1.8.0_contributors]]
 == Contributors
-
-Kudu 1.7 includes contributions from 22 people, including two first-time
-contributors, Clemens Valiente and Tsuyoshi Ozawa.
-
-Thank you for helping to make Kudu even better!
 
 [[resources_and_next_steps]]
 == Resources
