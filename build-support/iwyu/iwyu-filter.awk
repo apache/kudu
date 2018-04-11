@@ -92,6 +92,7 @@ BEGIN {
   muted["kudu/experiments/rwlock-perf.cc"]
   muted["kudu/hms/hms_catalog.cc"]
   muted["kudu/hms/hms_catalog.h"]
+  muted["kudu/hms/hms_client-test.cc"]
   muted["kudu/hms/hms_client.cc"]
   muted["kudu/hms/hms_client.h"]
   muted["kudu/hms/mini_hms.h"]

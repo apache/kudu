@@ -17,18 +17,18 @@
 
 #include "kudu/hms/hms_client.h"
 
-#include <algorithm> // IWYU pragma: keep
+#include <algorithm>
 #include <cstdint>
-#include <map> // IWYU pragma: keep
-#include <memory> // IWYU pragma: keep
+#include <map>
+#include <memory>
 #include <string>
-#include <type_traits> // IWYU pragma: keep
+#include <type_traits>
 #include <utility>
 #include <vector>
 
-#include <boost/none_t.hpp> // IWYU pragma: keep
+#include <boost/none_t.hpp>
 #include <boost/optional/optional.hpp>
-#include <glog/stl_logging.h> // IWYU pragma: keep
+#include <glog/stl_logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/hms/hive_metastore_constants.h"
