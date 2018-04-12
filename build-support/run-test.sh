@@ -184,6 +184,15 @@ for ATTEMPT_NUMBER in $(seq 1 $TEST_EXECUTION_ATTEMPTS) ; do
     | $pipe_cmd > $LOGFILE
   STATUS=$?
 
+  # An empty gzipped file is corrupt because even a logically empty gzipped file
+  # should contain at least the gzip header. If we detect this, treat the test
+  # log output as a plain text file.
+  if [[ -f $LOGFILE && ! -s $LOGFILE && $LOGFILE =~ .gz$ ]]; then
+    RENAMED_LOGFILE=${LOGFILE%%.gz}
+    mv $LOGFILE $RENAMED_LOGFILE
+    LOGFILE=$RENAMED_LOGFILE
+  fi
+
   # TSAN doesn't always exit with a non-zero exit code due to a bug:
   # mutex errors don't get reported through the normal error reporting infrastructure.
   # So we make sure to detect this and exit 1.
