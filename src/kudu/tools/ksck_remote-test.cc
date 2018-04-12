@@ -24,6 +24,7 @@
 #include <vector>
 
 #include <boost/core/ref.hpp>
+#include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -34,6 +35,7 @@
 #include "kudu/client/write_op.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -44,6 +46,7 @@
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/countdown_latch.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
@@ -55,6 +58,12 @@
 #include "kudu/util/thread.h"
 
 DECLARE_int32(heartbeat_interval_ms);
+DECLARE_int32(safe_time_max_lag_ms);
+
+DEFINE_int32(experimental_flag_for_ksck_test, 0,
+             "A flag marked experimental so it can be used to test ksck's "
+             "unusual flag detection features");
+TAG_FLAG(experimental_flag_for_ksck_test, experimental);
 
 namespace kudu {
 namespace tools {
@@ -213,14 +222,36 @@ class RemoteKsckTest : public KuduTest {
 
 TEST_F(RemoteKsckTest, TestClusterOk) {
   ASSERT_OK(ksck_->CheckMasterHealth());
+  ASSERT_OK(ksck_->CheckMasterUnusualFlags());
   ASSERT_OK(ksck_->CheckMasterConsensus());
   ASSERT_OK(ksck_->CheckClusterRunning());
   ASSERT_OK(ksck_->FetchTableAndTabletInfo());
   ASSERT_OK(ksck_->FetchInfoFromTabletServers());
+  ASSERT_OK(ksck_->CheckTabletServerUnusualFlags());
+}
+
+TEST_F(RemoteKsckTest, TestCheckUnusualFlags) {
+  FLAGS_experimental_flag_for_ksck_test = 1;
+
+  ASSERT_OK(ksck_->CheckMasterHealth());
+  ASSERT_OK(ksck_->CheckMasterUnusualFlags());
+  ASSERT_OK(ksck_->CheckClusterRunning());
+  ASSERT_OK(ksck_->FetchTableAndTabletInfo());
+  ASSERT_OK(ksck_->FetchInfoFromTabletServers());
+  ASSERT_OK(ksck_->CheckTabletServerUnusualFlags());
+  ASSERT_OK(ksck_->PrintResults());
+
+  const string& err_string = err_stream_.str();
+  ASSERT_STR_CONTAINS(err_string,
+      "Some masters have unsafe, experimental, or hidden flags set");
+  ASSERT_STR_CONTAINS(err_string,
+      "Some tablet servers have unsafe, experimental, or hidden flags set");
+  ASSERT_STR_CONTAINS(err_string, "experimental_flag_for_ksck_test");
 }
 
 TEST_F(RemoteKsckTest, TestTabletServerMismatchedUUID) {
   ASSERT_OK(ksck_->CheckMasterHealth());
+  ASSERT_OK(ksck_->CheckMasterUnusualFlags());
   ASSERT_OK(ksck_->CheckMasterConsensus());
   ASSERT_OK(ksck_->CheckClusterRunning());
   ASSERT_OK(ksck_->FetchTableAndTabletInfo());
@@ -257,6 +288,7 @@ TEST_F(RemoteKsckTest, TestTableConsistency) {
   Status s;
   while (MonoTime::Now() < deadline) {
     ASSERT_OK(ksck_->CheckMasterHealth());
+    ASSERT_OK(ksck_->CheckMasterUnusualFlags());
     ASSERT_OK(ksck_->CheckMasterConsensus());
     ASSERT_OK(ksck_->CheckClusterRunning());
     ASSERT_OK(ksck_->FetchTableAndTabletInfo());
@@ -279,6 +311,7 @@ TEST_F(RemoteKsckTest, TestChecksum) {
   Status s;
   while (MonoTime::Now() < deadline) {
     ASSERT_OK(ksck_->CheckMasterHealth());
+    ASSERT_OK(ksck_->CheckMasterUnusualFlags());
     ASSERT_OK(ksck_->CheckMasterConsensus());
     ASSERT_OK(ksck_->CheckClusterRunning());
     ASSERT_OK(ksck_->FetchTableAndTabletInfo());
@@ -327,6 +360,7 @@ TEST_F(RemoteKsckTest, TestChecksumSnapshot) {
 
   uint64_t ts = client_->GetLatestObservedTimestamp();
   ASSERT_OK(ksck_->CheckMasterHealth());
+  ASSERT_OK(ksck_->CheckMasterUnusualFlags());
   ASSERT_OK(ksck_->CheckMasterConsensus());
   ASSERT_OK(ksck_->CheckClusterRunning());
   ASSERT_OK(ksck_->FetchTableAndTabletInfo());
@@ -352,6 +386,7 @@ TEST_F(RemoteKsckTest, TestChecksumSnapshotCurrentTimestamp) {
   CHECK(started_writing.WaitFor(MonoDelta::FromSeconds(30)));
 
   ASSERT_OK(ksck_->CheckMasterHealth());
+  ASSERT_OK(ksck_->CheckMasterUnusualFlags());
   ASSERT_OK(ksck_->CheckMasterConsensus());
   ASSERT_OK(ksck_->CheckClusterRunning());
   ASSERT_OK(ksck_->FetchTableAndTabletInfo());
@@ -367,6 +402,7 @@ TEST_F(RemoteKsckTest, TestLeaderMasterDown) {
   // Make sure ksck's client is created with the current leader master and that
   // all masters are healthy.
   ASSERT_OK(ksck_->CheckMasterHealth());
+  ASSERT_OK(ksck_->CheckMasterUnusualFlags());
   ASSERT_OK(ksck_->CheckMasterConsensus());
   ASSERT_OK(ksck_->CheckClusterRunning());
 

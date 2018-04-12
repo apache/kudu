@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <iomanip>
 #include <iostream>
+#include <iterator>
 #include <map>
 #include <memory>
 #include <numeric>
@@ -28,15 +29,23 @@
 #include <unordered_map>
 #include <utility>
 
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tools/color.h"
 #include "kudu/tools/tool.pb.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/util/jsonwriter.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
+
+DEFINE_uint32(truncate_server_csv_length, 3,
+              "Maximum length of server CSVs before truncation. Raise this to "
+              "see more servers with, e.g., unusual flags, at the cost of "
+              "output with long lines.");
 
 using std::endl;
 using std::left;
@@ -119,6 +128,28 @@ bool ServerByHealthComparator(const KsckServerHealthSummary& left,
          std::make_tuple(ServerHealthScore(right.health), right.uuid, right.address);
 }
 
+// Produces a possibly-abbreviated CSV of 'servers':
+// - If 'servers.size() == server_count', returns a special message indicating
+//   all servers.
+// - If servers.size() > FLAGS_truncate_server_csv_length, returns a csv with
+//   the first FLAGS_truncate_server_csv_length servers and a final component
+//   indicating how many are elided.
+// Requires that 'servers.size() <= server_count'
+string ServerCsv(int server_count, const vector<string>& servers) {
+  DCHECK_LE(servers.size(), server_count);
+  if (servers.size() == server_count) {
+    return Substitute("all $0 server(s) checked", server_count);
+  }
+  uint32_t n = FLAGS_truncate_server_csv_length;
+  if (servers.size() <= n) {
+    return JoinStrings(servers, ", ");
+  }
+  vector<string> first_n;
+  std::copy_n(servers.begin(), n, std::back_inserter(first_n));
+  first_n.push_back(Substitute("and $0 other server(s)", servers.size() - n));
+  return JoinStrings(first_n, ", ");
+}
+
 } // anonymous namespace
 
 const char* const KsckCheckResultToString(KsckCheckResult cr) {
@@ -197,12 +228,30 @@ Status KsckResults::PrintTo(PrintMode mode, ostream& out) {
   }
   out << endl;
 
+  RETURN_NOT_OK(PrintFlagTable(KsckServerType::MASTER,
+                               master_summaries.size(),
+                               master_flag_to_servers_map,
+                               master_flag_tags_map,
+                               out));
+  if (!master_flag_to_servers_map.empty()) {
+    out << endl;
+  }
+
   // Then, on the health of the tablet servers.
   std::sort(tserver_summaries.begin(), tserver_summaries.end(), ServerByHealthComparator);
   RETURN_NOT_OK(PrintServerHealthSummaries(KsckServerType::TABLET_SERVER,
                                            tserver_summaries,
                                            out));
   if (!tserver_summaries.empty()) {
+    out << endl;
+  }
+
+  RETURN_NOT_OK(PrintFlagTable(KsckServerType::TABLET_SERVER,
+                               tserver_summaries.size(),
+                               tserver_flag_to_servers_map,
+                               tserver_flag_tags_map,
+                               out));
+  if (!tserver_flag_to_servers_map.empty()) {
     out << endl;
   }
 
@@ -226,6 +275,17 @@ Status KsckResults::PrintTo(PrintMode mode, ostream& out) {
 
   // And, add a summary of all the things we checked.
   RETURN_NOT_OK(PrintTotalCounts(*this, out));
+
+  // Penultimately, print the warnings.
+  if (!warning_messages.empty()) {
+    out << "==================" << endl;
+    out << "Warnings:" << endl;
+    out << "==================" << endl;
+    for (const auto& s : warning_messages) {
+      out << s.message().ToString() << endl;
+    }
+    out << endl;
+  }
 
   // Finally, print a summary of all errors.
   if (error_messages.empty()) {
@@ -303,6 +363,26 @@ Status PrintServerHealthSummaries(KsckServerType type,
                       ServerHealthToString(s.health)) << endl;
   }
   return Status::OK();
+}
+
+Status PrintFlagTable(KsckServerType type,
+                      int num_servers,
+                      const KsckFlagToServersMap& flag_to_servers_map,
+                      const KsckFlagTagsMap& flag_tags_map,
+                      ostream& out) {
+  if (flag_to_servers_map.empty()) {
+    return Status::OK();
+  }
+  DataTable flags_table({"Flag", "Value", "Tags", ServerTypeToString(type)});
+  for (const auto& flag : flag_to_servers_map) {
+    const string& name = flag.first.first;
+    const string& value = flag.first.second;
+    flags_table.AddRow({name,
+                        value,
+                        FindOrDie(flag_tags_map, name),
+                        ServerCsv(num_servers, flag.second)});
+  }
+  return flags_table.PrintTo(out);
 }
 
 Status PrintTableSummaries(const vector<KsckTableSummary>& table_summaries,

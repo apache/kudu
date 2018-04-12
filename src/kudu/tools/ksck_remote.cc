@@ -89,6 +89,18 @@ namespace {
 MonoDelta GetDefaultTimeout() {
   return MonoDelta::FromMilliseconds(FLAGS_timeout_ms);
 }
+
+// Common flag-fetching routine for masters and tablet servers.
+Status FetchUnusualFlagsCommon(const shared_ptr<server::GenericServiceProxy>& proxy,
+                               server::GetFlagsResponsePB* resp) {
+  server::GetFlagsRequestPB req;
+  RpcController rpc;
+  rpc.set_timeout(GetDefaultTimeout());
+  for (const string& tag : { "experimental", "hidden", "unsafe" }) {
+    req.add_tags(tag);
+  }
+  return proxy->GetFlags(req, resp, &rpc);
+}
 } // anonymous namespace
 
 Status RemoteKsckMaster::Init() {
@@ -138,6 +150,18 @@ Status RemoteKsckMaster::FetchConsensusState() {
   }
   cstate_ = tablet.cstate();
   return Status::OK();
+}
+
+Status RemoteKsckMaster::FetchUnusualFlags() {
+  server::GetFlagsResponsePB resp;
+  Status s = FetchUnusualFlagsCommon(generic_proxy_, &resp);
+  if (!s.ok()) {
+    flags_state_ = KsckFetchState::FETCH_FAILED;
+  } else {
+    flags_state_ = KsckFetchState::FETCHED;
+    flags_ = resp;
+  }
+  return s;
 }
 
 Status RemoteKsckTabletServer::Init() {
@@ -229,6 +253,18 @@ Status RemoteKsckTabletServer::FetchConsensusState(KsckServerHealth* health) {
 
   *health = KsckServerHealth::HEALTHY;
   return Status::OK();
+}
+
+Status RemoteKsckTabletServer::FetchUnusualFlags() {
+  server::GetFlagsResponsePB resp;
+  Status s = FetchUnusualFlagsCommon(generic_proxy_, &resp);
+  if (!s.ok()) {
+    flags_state_ = KsckFetchState::FETCH_FAILED;
+  } else {
+    flags_state_ = KsckFetchState::FETCHED;
+    flags_ = resp;
+  }
+  return s;
 }
 
 class ChecksumStepper;

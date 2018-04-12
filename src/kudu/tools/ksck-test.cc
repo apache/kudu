@@ -40,6 +40,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/server/server_base.pb.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tools/ksck_results.h"
@@ -51,10 +52,12 @@
 
 DECLARE_bool(checksum_scan);
 DECLARE_string(color);
+DECLARE_uint32(truncate_server_csv_length);
 
 namespace kudu {
 namespace tools {
 
+using server::GetFlagsResponsePB;
 using std::ostringstream;
 using std::shared_ptr;
 using std::static_pointer_cast;
@@ -70,6 +73,7 @@ class MockKsckMaster : public KsckMaster {
       : KsckMaster(address),
         fetch_info_status_(Status::OK()) {
     uuid_ = uuid;
+    flags_ = GetFlagsResponsePB{};
   }
 
   Status Init() override {
@@ -89,11 +93,17 @@ class MockKsckMaster : public KsckMaster {
     return fetch_cstate_status_;
   }
 
+  Status FetchUnusualFlags() override {
+    flags_state_ = KsckFetchState::FETCHED;
+    return Status::OK();
+  }
+
   // Public because the unit tests mutate these variables directly.
   Status fetch_info_status_;
   Status fetch_cstate_status_;
   using KsckMaster::uuid_;
   using KsckMaster::cstate_;
+  using KsckMaster::flags_;
 };
 
 class MockKsckTabletServer : public KsckTabletServer {
@@ -103,6 +113,7 @@ class MockKsckTabletServer : public KsckTabletServer {
         fetch_info_status_(Status::OK()),
         fetch_info_health_(KsckServerHealth::HEALTHY),
         address_("<mock>") {
+    flags_ = GetFlagsResponsePB{};
   }
 
   Status FetchInfo(KsckServerHealth* health) override {
@@ -118,6 +129,11 @@ class MockKsckTabletServer : public KsckTabletServer {
   }
 
   Status FetchConsensusState(KsckServerHealth* /*health*/) override {
+    return Status::OK();
+  }
+
+  Status FetchUnusualFlags() override {
+    flags_state_ = KsckFetchState::FETCHED;
     return Status::OK();
   }
 
@@ -137,6 +153,7 @@ class MockKsckTabletServer : public KsckTabletServer {
   // Public because the unit tests mutate these variables directly.
   Status fetch_info_status_;
   KsckServerHealth fetch_info_health_;
+  using KsckTabletServer::flags_;
 
  private:
   const string address_;
@@ -847,6 +864,51 @@ TEST_F(KsckTest, TestLeaderMasterUnavailable) {
   CheckJsonStringVsKsckResults(KsckResultsToJsonString(), ksck_->results());
 }
 
+TEST_F(KsckTest, TestMasterFlagCheck) {
+  // Setup flags for each mock master.
+  for (int i = 0; i < cluster_->masters().size(); i++) {
+    server::GetFlagsResponsePB flags;
+    {
+      // Add an experimental flag with the same value for each master.
+      auto* flag = flags.add_flags();
+      flag->set_name("experimental_flag");
+      flag->set_value("x");
+      flag->mutable_tags()->Add("experimental");
+    }
+    {
+      // Add a hidden flag with a different value for each master.
+      auto* flag = flags.add_flags();
+      flag->set_name("hidden_flag");
+      flag->set_value(std::to_string(i));
+      flag->mutable_tags()->Add("hidden");
+    }
+    {
+      // Add a hidden and unsafe flag with one master having a different value
+      // than the other two.
+      auto* flag = flags.add_flags();
+      flag->set_name("hidden_unsafe_flag");
+      flag->set_value(std::to_string(i % 2));
+      flag->mutable_tags()->Add("hidden");
+      flag->mutable_tags()->Add("unsafe");
+    }
+    shared_ptr<MockKsckMaster> master =
+        std::static_pointer_cast<MockKsckMaster>(cluster_->masters_.at(i));
+    master->flags_ = flags;
+  }
+  ASSERT_OK(ksck_->CheckMasterHealth());
+  ASSERT_OK(ksck_->CheckMasterUnusualFlags());
+  ASSERT_OK(ksck_->PrintResults());
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+      "        Flag        | Value |     Tags      |         Master\n"
+      "--------------------+-------+---------------+-------------------------\n"
+      " experimental_flag  | x     | experimental  | all 3 server(s) checked\n"
+      " hidden_flag        | 0     | hidden        | master-0\n"
+      " hidden_flag        | 1     | hidden        | master-1\n"
+      " hidden_flag        | 2     | hidden        | master-2\n"
+      " hidden_unsafe_flag | 0     | hidden,unsafe | master-0, master-2\n"
+      " hidden_unsafe_flag | 1     | hidden,unsafe | master-1");
+}
+
 TEST_F(KsckTest, TestWrongUUIDTabletServer) {
   CreateOneTableOneTablet();
 
@@ -921,6 +983,56 @@ TEST_F(KsckTest, TestBadTabletServer) {
       "  ts-id-2 (<mock>): RUNNING\n");
 
   CheckJsonStringVsKsckResults(KsckResultsToJsonString(), ksck_->results());
+}
+
+TEST_F(KsckTest, TestTserverFlagCheck) {
+  // Lower the truncation threshold to test truncation.
+  FLAGS_truncate_server_csv_length = 1;
+
+  // Setup flags for each mock tablet server.
+  int i = 0;
+  for (const auto& entry : cluster_->tablet_servers()) {
+    server::GetFlagsResponsePB flags;
+    {
+      // Add an experimental flag with the same value for each tablet server.
+      auto* flag = flags.add_flags();
+      flag->set_name("experimental_flag");
+      flag->set_value("x");
+      flag->mutable_tags()->Add("experimental");
+    }
+    {
+      // Add a hidden flag with a different value for each tablet server.
+      auto* flag = flags.add_flags();
+      flag->set_name("hidden_flag");
+      flag->set_value(std::to_string(i));
+      flag->mutable_tags()->Add("hidden");
+    }
+    {
+      // Add a hidden and unsafe flag with one tablet server having a different value
+      // than the other two.
+      auto* flag = flags.add_flags();
+      flag->set_name("hidden_unsafe_flag");
+      flag->set_value(std::to_string(i % 2));
+      flag->mutable_tags()->Add("hidden");
+      flag->mutable_tags()->Add("unsafe");
+    }
+    shared_ptr<MockKsckTabletServer> ts =
+        std::static_pointer_cast<MockKsckTabletServer>(entry.second);
+    ts->flags_ = flags;
+    i++;
+  }
+  ASSERT_OK(ksck_->FetchInfoFromTabletServers());
+  ASSERT_OK(ksck_->CheckTabletServerUnusualFlags());
+  ASSERT_OK(ksck_->PrintResults());
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+      "        Flag        | Value |     Tags      |         Tablet Server\n"
+      "--------------------+-------+---------------+-------------------------------\n"
+      " experimental_flag  | x     | experimental  | all 3 server(s) checked\n"
+      " hidden_flag        | 0     | hidden        | <mock>\n"
+      " hidden_flag        | 1     | hidden        | <mock>\n"
+      " hidden_flag        | 2     | hidden        | <mock>\n"
+      " hidden_unsafe_flag | 0     | hidden,unsafe | <mock>, and 1 other server(s)\n"
+      " hidden_unsafe_flag | 1     | hidden,unsafe | <mock>");
 }
 
 TEST_F(KsckTest, TestOneTableCheck) {

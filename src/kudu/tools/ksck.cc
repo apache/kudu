@@ -219,6 +219,15 @@ Status Ksck::CheckMasterHealth() {
       bad_masters++;
     }
     master_summaries.push_back(std::move(sh));
+
+    // Fetch the flags information.
+    // Failing to gather flags is only a warning.
+    if (!master->FetchUnusualFlags().ok()) {
+      results_.warning_messages.push_back(s.CloneAndPrepend(Substitute(
+          "unable to get flag information for master $0 ($1)",
+          master->uuid(),
+          master->address())));
+    }
   }
   results_.master_summaries.swap(master_summaries);
 
@@ -279,6 +288,48 @@ Status Ksck::CheckMasterConsensus() {
   return Status::OK();
 }
 
+void Ksck::AddFlagsToFlagMaps(const server::GetFlagsResponsePB& flags,
+                              const string& server_address,
+                              KsckFlagToServersMap* flags_to_servers_map,
+                              KsckFlagTagsMap* flag_tags_map) {
+  CHECK(flags_to_servers_map);
+  CHECK(flag_tags_map);
+  for (const auto& f : flags.flags()) {
+    const std::pair<string, string> key(f.name(), f.value());
+    if (!InsertIfNotPresent(flags_to_servers_map, key, { server_address })) {
+      FindOrDieNoPrint(*flags_to_servers_map, key).push_back(server_address);
+    }
+    InsertIfNotPresent(flag_tags_map, f.name(), JoinStrings(f.tags(), ","));
+  }
+}
+
+Status Ksck::CheckMasterUnusualFlags() {
+  int bad_masters = 0;
+  Status last_error = Status::OK();
+  for (const auto& master : cluster_->masters()) {
+    if (!master->flags()) {
+      bad_masters++;
+      continue;
+    }
+    AddFlagsToFlagMaps(*master->flags(),
+                       master->address(),
+                       &results_.master_flag_to_servers_map,
+                       &results_.master_flag_tags_map);
+  }
+
+  if (!results_.master_flag_to_servers_map.empty()) {
+    results_.warning_messages.push_back(Status::ConfigurationError(
+        "Some masters have unsafe, experimental, or hidden flags set"));
+  }
+
+  if (bad_masters > 0) {
+    return Status::Incomplete(
+        Substitute("$0 of $1 masters' flags were not available",
+                   bad_masters, cluster_->masters().size()));
+  }
+  return Status::OK();
+}
+
 Status Ksck::CheckClusterRunning() {
   VLOG(1) << "Connecting to the leader master";
   return cluster_->Connect();
@@ -333,8 +384,19 @@ Status Ksck::FetchInfoFromTabletServers() {
           }
           summary.health = health;
 
-          std::lock_guard<simple_spinlock> lock(tablet_server_summaries_lock);
-          tablet_server_summaries.push_back(std::move(summary));
+          {
+            std::lock_guard<simple_spinlock> lock(tablet_server_summaries_lock);
+            tablet_server_summaries.push_back(std::move(summary));
+          }
+
+          // Fetch the flags information.
+          // Failing to gather flags is only a warning.
+          if (!ts->FetchUnusualFlags().ok()) {
+            results_.warning_messages.push_back(s.CloneAndPrepend(Substitute(
+                    "unable to get flag information for tablet server $0 ($1)",
+                    ts->uuid(),
+                    ts->address())));
+          }
         }));
   }
   pool->Wait();
@@ -366,6 +428,8 @@ Status Ksck::Run() {
                       "error fetching info from masters");
   PUSH_PREPEND_NOT_OK(CheckMasterConsensus(), results_.error_messages,
                       "master consensus error");
+  PUSH_PREPEND_NOT_OK(CheckMasterUnusualFlags(), results_.warning_messages,
+                      "master flag check error");
 
   // CheckClusterRunning and FetchTableAndTabletInfo must succeed for
   // subsequent checks to be runnable.
@@ -381,6 +445,8 @@ Status Ksck::Run() {
 
   PUSH_PREPEND_NOT_OK(FetchInfoFromTabletServers(), results_.error_messages,
                       "error fetching info from tablet servers");
+  PUSH_PREPEND_NOT_OK(CheckTabletServerUnusualFlags(), results_.warning_messages,
+                      "tserver flag check error");
 
   PUSH_PREPEND_NOT_OK(CheckTablesConsistency(), results_.error_messages,
                       "table consistency check error");
@@ -400,6 +466,33 @@ Status Ksck::Run() {
   }
   if (!results_.error_messages.empty()) {
     return Status::RuntimeError("ksck discovered errors");
+  }
+  return Status::OK();
+}
+
+Status Ksck::CheckTabletServerUnusualFlags() {
+  int bad_tservers = 0;
+  for (const auto& uuid_and_ts : cluster_->tablet_servers()) {
+    const auto& tserver = uuid_and_ts.second;
+    if (!tserver->flags()) {
+      bad_tservers++;
+      continue;
+    }
+    AddFlagsToFlagMaps(*tserver->flags(),
+                       tserver->address(),
+                       &results_.tserver_flag_to_servers_map,
+                       &results_.tserver_flag_tags_map);
+  }
+
+  if (!results_.tserver_flag_to_servers_map.empty()) {
+    results_.warning_messages.push_back(Status::ConfigurationError(
+        "Some tablet servers have unsafe, experimental, or hidden flags set"));
+  }
+
+  if (bad_tservers > 0) {
+    return Status::Incomplete(
+        Substitute("$0 of $1 tservers' flags were not available",
+                   bad_tservers, cluster_->tablet_servers().size()));
   }
   return Status::OK();
 }

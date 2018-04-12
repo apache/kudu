@@ -74,6 +74,8 @@ class RemoteKsckMaster : public KsckMaster {
   // Gathers consensus state for the master tablet.
   Status FetchConsensusState() override;
 
+  Status FetchUnusualFlags() override;
+
  private:
   std::shared_ptr<rpc::Messenger> messenger_;
   std::shared_ptr<server::GenericServiceProxy> generic_proxy_;
@@ -98,6 +100,8 @@ class RemoteKsckTabletServer : public KsckTabletServer {
   Status FetchInfo(KsckServerHealth* health) override;
 
   Status FetchConsensusState(KsckServerHealth* health) override;
+
+  Status FetchUnusualFlags() override;
 
   void RunTabletChecksumScanAsync(
       const std::string& tablet_id,

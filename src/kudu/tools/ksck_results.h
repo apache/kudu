@@ -21,6 +21,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -256,6 +257,15 @@ enum class PrintMode {
 
 typedef std::map<std::string, KsckConsensusState> KsckConsensusStateMap;
 
+// A flag and its value.
+typedef std::pair<std::string, std::string> KsckFlag;
+
+// Map (flag name, flag value) -> server uuids with --flag=value.
+typedef std::map<KsckFlag, std::vector<std::string>> KsckFlagToServersMap;
+
+// Convenience map flag name -> flag tags.
+typedef std::unordered_map<std::string, std::string> KsckFlagTagsMap;
+
 // Container for all the results of a series of ksck checks.
 struct KsckResults {
   // Collection of error status for failed checks. Used to print out a final
@@ -263,9 +273,20 @@ struct KsckResults {
   // All checks passed if and only if this vector is empty.
   std::vector<Status> error_messages;
 
+  // Collection of warnings from checks.
+  // These errors are not considered to indicate an unhealthy cluster,
+  // so they do not cause ksck to report an error.
+  std::vector<Status> warning_messages;
+
   // Health summaries for master and tablet servers.
   std::vector<KsckServerHealthSummary> master_summaries;
   std::vector<KsckServerHealthSummary> tserver_summaries;
+
+  // Information about the flags of masters and tablet servers.
+  KsckFlagToServersMap master_flag_to_servers_map;
+  KsckFlagTagsMap master_flag_tags_map;
+  KsckFlagToServersMap tserver_flag_to_servers_map;
+  KsckFlagTagsMap tserver_flag_tags_map;
 
   // Information about the master consensus configuration.
   std::vector<std::string> master_uuids;
@@ -295,6 +316,15 @@ struct KsckResults {
 Status PrintServerHealthSummaries(KsckServerType type,
                                   const std::vector<KsckServerHealthSummary>& summaries,
                                   std::ostream& out);
+
+// Print a formatted summary of the flags in 'flag_to_servers_map', indicating
+// which servers have which (flag, value) pairs set.
+// Flag tag information is sourced from 'flag_tags_map'.
+Status PrintFlagTable(KsckServerType type,
+                      int num_servers,
+                      const KsckFlagToServersMap& flag_to_servers_map,
+                      const KsckFlagTagsMap& flag_tags_map,
+                      std::ostream& out);
 
 // Print a formatted summary of the tables in 'table_summaries' to 'out'.
 Status PrintTableSummaries(const std::vector<KsckTableSummary>& table_summaries,
