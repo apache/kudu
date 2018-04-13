@@ -125,7 +125,7 @@ public class LocatedTablet {
       return pb.getTsInfo().getRpcAddressesList().get(0).getPort();
     }
 
-    public Role getRoleAsEnum() {
+    private Role getRoleAsEnum() {
       return pb.getRole();
     }
 
