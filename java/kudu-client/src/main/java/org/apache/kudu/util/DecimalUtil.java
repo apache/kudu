@@ -24,9 +24,11 @@ import java.math.RoundingMode;
 import com.google.common.base.Strings;
 
 import org.apache.kudu.ColumnTypeAttributes;
+import org.apache.yetus.audience.InterfaceAudience;
 
 import static org.apache.kudu.Common.DataType;
 
+@InterfaceAudience.Private
 public class DecimalUtil {
   public static final int MAX_DECIMAL32_PRECISION = 9;
   public static final int MAX_UNSCALED_DECIMAL32 = 999999999;

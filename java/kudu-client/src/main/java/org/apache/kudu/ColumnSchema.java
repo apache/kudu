@@ -49,6 +49,8 @@ public class ColumnSchema {
    * Not all encodings are available for all data types.
    * Refer to the Kudu documentation for more information on each encoding.
    */
+  @InterfaceAudience.Public
+  @InterfaceStability.Evolving
   public enum Encoding {
     UNKNOWN(EncodingType.UNKNOWN_ENCODING),
     AUTO_ENCODING(EncodingType.AUTO_ENCODING),
@@ -74,6 +76,8 @@ public class ColumnSchema {
   /**
    * Specifies the compression algorithm of data for a column on disk.
    */
+  @InterfaceAudience.Public
+  @InterfaceStability.Evolving
   public enum CompressionAlgorithm {
     UNKNOWN(CompressionType.UNKNOWN_COMPRESSION),
     DEFAULT_COMPRESSION(CompressionType.DEFAULT_COMPRESSION),

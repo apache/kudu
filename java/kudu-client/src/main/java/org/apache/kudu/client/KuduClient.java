@@ -41,7 +41,7 @@ import org.apache.kudu.master.Master.TableIdentifierPB;
 @InterfaceStability.Evolving
 public class KuduClient implements AutoCloseable {
 
-  public static final Logger LOG = LoggerFactory.getLogger(AsyncKuduClient.class);
+  private static final Logger LOG = LoggerFactory.getLogger(AsyncKuduClient.class);
   public static final long NO_TIMESTAMP = -1;
 
   @VisibleForTesting

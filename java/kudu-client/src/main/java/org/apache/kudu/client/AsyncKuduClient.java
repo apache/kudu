@@ -302,7 +302,7 @@ public class AsyncKuduClient implements AutoCloseable {
   /**
    * Timestamp required for HybridTime external consistency through timestamp
    * propagation.
-   * @see src/kudu/common/common.proto
+   * @see "src/kudu/common/common.proto"
    */
   private long lastPropagatedTimestamp = NO_TIMESTAMP;
 

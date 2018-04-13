@@ -35,8 +35,7 @@ import org.slf4j.LoggerFactory;
 @InterfaceStability.Evolving
 public class KuduSession implements SessionConfiguration {
 
-  public static final Logger LOG = LoggerFactory.getLogger(KuduSession.class);
-
+  private static final Logger LOG = LoggerFactory.getLogger(KuduSession.class);
   private final AsyncKuduSession session;
 
   KuduSession(AsyncKuduSession session) {

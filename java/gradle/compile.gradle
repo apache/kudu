@@ -25,14 +25,6 @@ tasks.withType(JavaCompile) {
   options.incremental = true // enable incremental compilation.
 }
 
-// Javadoc Configuration
-tasks.withType(Javadoc) {
-  if (JavaVersion.current().isJava8Compatible()) {
-    // Disable the super-strict doclint tool in Java 8+
-    options.addStringOption('Xdoclint:none', '-quiet')
-  }
-}
-
 // Scala configuration
 tasks.withType(ScalaCompile) {
   sourceCompatibility = javaCompatibility

@@ -17,6 +17,8 @@
 
 // This file is the entry-point for the gradle build and contains
 // common logic for the various subprojects in the build.
+// Plugins and scripts are applied in the natural "build order"
+// they are used to ensure there are no dependency issues.
 
 // Plugins and scripts applied at the root level only, instead of per module.
 apply plugin: "idea"
@@ -25,9 +27,18 @@ apply from: "$rootDir/gradle/properties.gradle"
 apply from: "$rootDir/gradle/dependencies.gradle"
 apply from: "$rootDir/gradle/wrapper.gradle"
 
+allprojects {
+  // These are common to all projects, including this
+  // top level parent project.
+  repositories {
+    mavenCentral()
+    mavenLocal()
+  }
+
+  apply from: "$rootDir/gradle/docs.gradle"
+}
+
 subprojects {
-  // Plugins and scripts are applied in the natural "build order"
-  // they are used to ensure there are no dependency issues.
   // These are common to all subprojects. However, subprojects may
   // include their own plugins and scripts as well.
   apply plugin: "java"
@@ -37,9 +48,11 @@ subprojects {
   apply from: "$rootDir/gradle/quality.gradle"
   apply from: "$rootDir/gradle/artifacts.gradle"
   apply from: "$rootDir/gradle/publishing.gradle"
+}
 
-  repositories {
-    mavenCentral()
-    mavenLocal()
-  }
+task javadocAggregate(type: Javadoc, group: "Documentation") {
+  description = "Generates Aggregate Javadoc API documentation for the main source code."
+  source subprojects.collect { it.sourceSets.main.allJava }
+  classpath = files(subprojects.collect { it.sourceSets.main.compileClasspath })
+  destinationDir = file("${buildDir}/docs/javadoc")
 }

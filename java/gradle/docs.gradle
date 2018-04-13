@@ -15,26 +15,24 @@
 // specific language governing permissions and limitations
 // under the License.
 
+// This file contains common tasks and configuration for documentation generation.
+
+configurations {
+  doclet
+}
+
 dependencies {
-  compile libs.yetusAnnotations
-  compile libs.slf4jApi
-  compile libs.hiveMetastore
-
-  testCompile libs.hiveMetastoreTest
-  testCompile libs.junit
-  testCompile libs.log4j
-  testCompile libs.slf4jLog4j12
+  doclet "org.apache.yetus:audience-annotations:0.7.0"
 }
 
-test {
-  // This property is substituted into hive-site.xml.
-  systemProperty "testdata.dir", temporaryDir
-  // Configure the derby log file location.
-  systemProperty "derby.stream.error.file", "$temporaryDir/derby.log"
-}
-
-
-// kudu-hive has no public Javadoc.
-javadoc {
-  enabled = false
+// Javadoc Configuration
+tasks.withType(Javadoc) {
+  // Configure the Yetus doclet
+  options.docletpath = configurations.doclet.files.asType(List)
+  options.doclet = "org.apache.yetus.audience.tools.IncludePublicAnnotationsStandardDoclet"
+  // Link to Java SE javadoc
+  options.links "https://docs.oracle.com/javase/7/docs/api/"
+  // Hacky workaround to YETUS-627. Replace with options.noTimestamp
+  // once this workaround is no longer needed.
+  options.addStringOption("notimestamp", "org.apache.kudu")
 }
