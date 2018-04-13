@@ -214,8 +214,17 @@ string GetTestDataDirectory() {
   // - timestamp and pid: disambiguates with prior runs of the same test
   //
   // e.g. "env-test.TestEnv.TestReadFully.1409169025392361-23600"
-  dir += Substitute("/$0.$1.$2.$3-$4",
+  //
+  // If the test is sharded, the shard index is also included so that the test
+  // invoker can more easily identify all directories belonging to each shard.
+  string shard_index_infix;
+  const char* shard_index = getenv("GTEST_SHARD_INDEX");
+  if (shard_index && shard_index[0] != '\0') {
+    shard_index_infix = Substitute("$0.", shard_index);
+  }
+  dir += Substitute("/$0.$1$2.$3.$4-$5",
     StringReplace(google::ProgramInvocationShortName(), "/", "_", true),
+    shard_index_infix,
     StringReplace(test_info->test_case_name(), "/", "_", true),
     StringReplace(test_info->name(), "/", "_", true),
     kTestBeganAtMicros,
