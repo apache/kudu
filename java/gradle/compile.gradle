@@ -23,6 +23,7 @@ tasks.withType(JavaCompile) {
   targetCompatibility = javaCompatibility
   options.encoding = encoding // make sure the encoding is defined by the project and not the system default.
   options.incremental = true // enable incremental compilation.
+  options.compilerArgs << '-proc:none' // Ignore leaked annotation processors on the compile classpath.
 }
 
 // Scala configuration

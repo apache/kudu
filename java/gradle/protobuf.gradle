@@ -25,10 +25,3 @@ protobuf {
     artifact = libs.protoc
   }
 }
-
-// Configure Intellij to see the generated classes.
-idea {
-  module {
-    generatedSourceDirs += file("${protobuf.generatedFilesBaseDir}/main/java")
-  }
-}
