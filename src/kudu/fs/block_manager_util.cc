@@ -33,6 +33,7 @@
 #include "kudu/util/env.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/test_util_prod.h"
 
 DECLARE_bool(enable_data_block_fsync);
@@ -84,8 +85,25 @@ Status PathInstanceMetadataFile::Create(const string& uuid, const vector<string>
       "Creating a metadata file that's already locked would release the lock";
   DCHECK(ContainsKey(set<string>(all_uuids.begin(), all_uuids.end()), uuid));
 
+  // Create a temporary file with which to fetch the filesystem's block size.
+  //
+  // This is a safer bet than using the parent directory as some filesystems
+  // advertise different block sizes for directories than for files. On top of
+  // that, the value may inform intra-file layout decisions made by Kudu, so
+  // it's more correct to derive it from a file in any case.
+  string created_filename;
+  string tmp_template = JoinPathSegments(
+      DirName(filename_), Substitute("getblocksize$0.XXXXXX", kTmpInfix));
+  unique_ptr<WritableFile> tmp_file;
+  RETURN_NOT_OK(env_->NewTempWritableFile(WritableFileOptions(),
+                                          tmp_template,
+                                          &created_filename, &tmp_file));
+  SCOPED_CLEANUP({
+    WARN_NOT_OK(env_->DeleteFile(created_filename),
+                "could not delete temporary file");
+  });
   uint64_t block_size;
-  RETURN_NOT_OK(env_->GetBlockSize(DirName(filename_), &block_size));
+  RETURN_NOT_OK(env_->GetBlockSize(created_filename, &block_size));
 
   PathInstanceMetadataPB new_instance;
 
