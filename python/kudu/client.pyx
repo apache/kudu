@@ -995,6 +995,64 @@ cdef class Column:
 
         return result
 
+    def is_not_null(Column self):
+        """
+        Creates a new IsNotNullPredicate for the Column which can be used for scanners
+        on this table.
+
+        Examples
+        --------
+        scanner.add_predicate(table[col_name].is_not_null())
+
+        Returns
+        -------
+        pred : Predicate
+        """
+
+        cdef:
+            KuduPredicate* pred
+            Slice col_name_slice
+            Predicate result
+            object _name = tobytes(self.name)
+
+        col_name_slice = Slice(<char*> _name, len(_name))
+
+        pred = (self.parent.ptr()
+                .NewIsNotNullPredicate(col_name_slice))
+
+        result = Predicate()
+        result.init(pred)
+
+        return result
+
+    def is_null(Column self):
+        """
+        Creates a new IsNullPredicate for the Column which can be used for scanners on this table.
+
+        Examples
+        --------
+        scanner.add_predicate(table[col_name].is_null())
+
+        Returns
+        -------
+        pred : Predicate
+        """
+
+        cdef:
+            KuduPredicate* pred
+            Slice col_name_slice
+            Predicate result
+            object _name = tobytes(self.name)
+
+        col_name_slice = Slice(<char*> _name, len(_name))
+
+        pred = (self.parent.ptr()
+                .NewIsNullPredicate(col_name_slice))
+
+        result = Predicate()
+        result.init(pred)
+
+        return result
 
 class Partitioning(object):
     """ Argument to Client.create_table(...) to describe table partitioning. """

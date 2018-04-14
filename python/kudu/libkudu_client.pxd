@@ -609,6 +609,8 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
                                               C_KuduValue* value);
         KuduPredicate* NewInListPredicate(const Slice& col_name,
                                           vector[C_KuduValue*]* values)
+        KuduPredicate* NewIsNotNullPredicate(const Slice& col_name)
+        KuduPredicate* NewIsNullPredicate(const Slice& col_name)
 
         KuduClient* client()
         # const PartitionSchema& partition_schema()

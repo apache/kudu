@@ -70,10 +70,9 @@ class TestScanner(TestScanBase):
 
     def test_scan_rows_string_predicate_and_projection(self):
         scanner = self.table.scanner()
-        scanner.set_projected_column_names(['key', 'string_val'])
-
         sv = self.table['string_val']
 
+        scanner.set_projected_column_indexes([0, 2])
         scanner.add_predicates([sv >= 'hello_20',
                                 sv <= 'hello_22'])
 
@@ -101,6 +100,36 @@ class TestScanner(TestScanBase):
         tuples = scanner.read_all_tuples()
 
         self.assertEqual(tuples, [self.tuples[98]])
+
+    def test_scan_rows_is_not_null_predicate(self):
+        """
+        Test scanner with an IsNotNull predicate on string_val column
+        """
+        pred = self.table['string_val'].is_not_null()
+        scanner = self.table.scanner()
+        scanner.add_predicate(pred)
+        scanner.open()
+
+        tuples = scanner.read_all_tuples()
+
+        rows = [i for i in range(100) if i % 2 == 0]
+
+        self.assertEqual(sorted(tuples), [self.tuples[i] for i in rows])
+
+    def test_scan_rows_is_null_predicate(self):
+        """
+        Test scanner with an IsNull predicate on string_val column
+        """
+        pred = self.table['string_val'].is_null()
+        scanner = self.table.scanner()
+        scanner.add_predicate(pred)
+        scanner.open()
+
+        tuples = scanner.read_all_tuples()
+
+        rows = [i for i in range(100) if i % 2 != 0]
+
+        self.assertEqual(sorted(tuples), [self.tuples[i] for i in rows])
 
     def test_index_projection_with_schema(self):
         scanner = self.table.scanner()

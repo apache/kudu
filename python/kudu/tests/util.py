@@ -56,13 +56,7 @@ class TestScanBase(KuduTestBase, unittest.TestCase):
         session.flush()
 
         self.table = table
-        self.tuples = []
-
-        # Replace missing values w/ defaults to test default values.
-        for tuple in tuples:
-            if tuple[2] == None:
-                tuple = (tuple[0], tuple[1], 'nothing', tuple[3])
-            self.tuples.append(tuple)
+        self.tuples = tuples
 
         # Create table to test all types
         # for various predicate tests
