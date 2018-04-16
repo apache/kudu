@@ -36,6 +36,20 @@
             <artifactId>kudu-mapreduce</artifactId>
             <version>${project.version}</version>
         </dependency>
+
+        <dependency>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava</artifactId>
+            <version>${guava.version}</version>
+            <exclusions>
+                <!-- Ignore the transitive annotations libraries that are -->
+                <!-- not marked as optional in version 22.0+ -->
+                <exclusion>
+                    <groupId>*</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
@@ -112,11 +126,22 @@
                 <configuration>
                     <artifactSet>
                         <includes>
+                            <include>com.google.guava:guava</include>
                             <include>org.apache.kudu:kudu-client</include>
                             <include>org.apache.kudu:kudu-mapreduce</include>
                             <include>org.apache.parquet:parquet-hadoop</include>
                         </includes>
                     </artifactSet>
+                    <relocations>
+                        <relocation>
+                            <pattern>com.google.common</pattern>
+                            <shadedPattern>org.apache.kudu.shaded.com.google.common</shadedPattern>
+                        </relocation>
+                        <relocation>
+                            <pattern>com.google.thirdparty</pattern>
+                            <shadedPattern>org.apache.kudu.shaded.com.google.thirdparty</shadedPattern>
+                        </relocation>
+                    </relocations>
                 </configuration>
             </plugin>
         </plugins>

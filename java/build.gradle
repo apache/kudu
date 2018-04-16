@@ -48,6 +48,17 @@ subprojects {
   apply from: "$rootDir/gradle/quality.gradle"
   apply from: "$rootDir/gradle/artifacts.gradle"
   apply from: "$rootDir/gradle/publishing.gradle"
+
+  // Ignore the transitive annotations libraries that are
+  // not marked as optional in Guava version 22.0+.
+  // See https://github.com/google/guava/issues/2824
+  configurations.compile {
+    exclude group: "com.google.errorprone", module: "error_prone_annotations"
+    exclude group: "com.google.code.findbugs", module: "jsr305"
+    exclude group: "com.google.j2objc", module: "j2objc-annotations"
+    exclude group: "org.checkerframework", module: "checker-compat-qual"
+    exclude group: "org.codehaus.mojo", module: "animal-sniffer-annotations"
+  }
 }
 
 task javadocAggregate(type: Javadoc, group: "Documentation") {

@@ -22,6 +22,7 @@ dependencies {
     // Remove this once the following is merged: https://github.com/OpenTSDB/async/pull/8
     exclude group: "org.slf4j", module: "slf4j-api"
   }
+  compile libs.guava
   compile libs.slf4jApi
 
   provided libs.hadoopClient

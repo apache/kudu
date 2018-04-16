@@ -35,6 +35,20 @@
             <artifactId>kudu-client</artifactId>
             <version>${project.version}</version>
         </dependency>
+
+        <dependency>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava</artifactId>
+            <version>${guava.version}</version>
+            <exclusions>
+                <!-- Ignore the transitive annotations libraries that are -->
+                <!-- not marked as optional in version 22.0+ -->
+                <exclusion>
+                    <groupId>*</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
         <dependency>
             <groupId>com.stumbleupon</groupId>
             <artifactId>async</artifactId>

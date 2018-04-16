@@ -27,6 +27,7 @@ dependencies {
   provided libs.avro
   provided libs.flumeConfiguration
   provided libs.flumeCore
+  provided libs.guava
   provided libs.hadoopClient
 
   testCompile project(path: ":kudu-client", configuration: "shadowTest")
