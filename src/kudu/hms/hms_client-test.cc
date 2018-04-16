@@ -297,8 +297,8 @@ TEST_P(HmsClientTest, TestLargeObjects) {
   // Add a bunch of partitions to the table. This ensures we can send and
   // receive really large thrift objects. We have to add the partitions in small
   // batches, otherwise Derby chokes.
-  const int kBatches = 25;
-  const int kPartitionsPerBatch = 40;
+  const int kBatches = 40;
+  const int kPartitionsPerBatch = 25;
 
   for (int batch_idx = 0; batch_idx < kBatches; batch_idx++) {
     vector<hive::Partition> partitions;
