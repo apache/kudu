@@ -98,6 +98,7 @@
             <groupId>org.apache.yetus</groupId>
             <artifactId>audience-annotations</artifactId>
             <version>${yetus.version}</version>
+            <optional>true</optional>
         </dependency>
 
     </dependencies>

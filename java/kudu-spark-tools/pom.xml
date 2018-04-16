@@ -86,16 +86,17 @@
             <scope>provided</scope>
         </dependency>
         <dependency>
-            <groupId>org.apache.yetus</groupId>
-            <artifactId>audience-annotations</artifactId>
-            <version>${yetus.version}</version>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
             <groupId>org.scala-lang</groupId>
             <artifactId>scala-library</artifactId>
             <version>${scala.version}</version>
             <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.yetus</groupId>
+            <artifactId>audience-annotations</artifactId>
+            <version>${yetus.version}</version>
+            <optional>true</optional>
         </dependency>
 
         <dependency>
@@ -188,7 +189,6 @@
                             <include>org.apache.kudu:kudu-client</include>
                             <include>org.apache.kudu:kudu-client-tools</include>
                             <include>org.apache.kudu:kudu-${spark.version.label}_${scala.binary.version}</include>
-                            <include>org.apache.yetus:audience-annotations</include>
                             <include>com.databricks:spark-avro_${scala.binary.version}</include>
                         </includes>
                     </artifactSet>

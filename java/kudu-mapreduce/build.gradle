@@ -23,9 +23,10 @@ dependencies {
     exclude group: "org.slf4j", module: "slf4j-api"
   }
   compile libs.slf4jApi
-  compile libs.yetusAnnotations
 
   provided libs.hadoopClient
+
+  optional libs.yetusAnnotations
 
   testCompile project(path: ":kudu-client", configuration: "shadowTest")
   testCompile libs.junit

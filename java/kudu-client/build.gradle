@@ -28,7 +28,6 @@ dependencies {
     exclude group: "org.slf4j", module: "slf4j-api"
   }
   compileUnshaded libs.slf4jApi
-  compileUnshaded libs.yetusAnnotations
 
   compile libs.guava
   compile libs.murmur
@@ -36,6 +35,7 @@ dependencies {
   compile libs.protobufJava
 
   optional libs.jsr305
+  optional libs.yetusAnnotations
 
   testCompile libs.commonsIo
   testCompile libs.hamcrestCore

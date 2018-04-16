@@ -21,7 +21,8 @@ apply plugin: "com.commercehub.gradle.plugin.avro"
 dependencies {
   compile project(path: ":kudu-client", configuration: "shadow")
   compile libs.slf4jApi
-  compile libs.yetusAnnotations
+
+  optional libs.yetusAnnotations
 
   provided libs.avro
   provided libs.flumeConfiguration

@@ -37,11 +37,6 @@
             <version>${project.version}</version>
         </dependency>
         <dependency>
-            <groupId>org.apache.yetus</groupId>
-            <artifactId>audience-annotations</artifactId>
-            <version>${yetus.version}</version>
-        </dependency>
-        <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
             <version>${slf4j.version}</version>
@@ -60,6 +55,13 @@
             <artifactId>hadoop-client</artifactId>
             <version>${hadoop.version}</version>
             <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.yetus</groupId>
+            <artifactId>audience-annotations</artifactId>
+            <version>${yetus.version}</version>
+            <optional>true</optional>
         </dependency>
 
         <dependency>
@@ -112,7 +114,6 @@
                         <includes>
                             <include>org.apache.kudu:kudu-client</include>
                             <include>org.apache.kudu:kudu-mapreduce</include>
-                            <include>org.apache.yetus:audience-annotations</include>
                             <include>org.apache.parquet:parquet-hadoop</include>
                         </includes>
                     </artifactSet>

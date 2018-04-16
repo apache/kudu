@@ -19,12 +19,12 @@ apply from: "$rootDir/gradle/shadow.gradle"
 
 dependencies {
   compile project(":kudu-mapreduce")
-
   // This artifact is in compile scope for convenience, as it is typically
   // not included in the job classpath by MapReduce platform providers.
   compile libs.parquetHadoop
   compile libs.slf4jApi
-  compile libs.yetusAnnotations
+
+  optional libs.yetusAnnotations
 
   provided libs.hadoopClient
 

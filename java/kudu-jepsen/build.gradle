@@ -36,7 +36,8 @@ dependencies {
   compile libs.clojure
   compile libs.clojureToolsCli
   compile libs.jepsen
-  compile libs.yetusAnnotations
+
+  optional libs.yetusAnnotations
 }
 
 compileClojure {
