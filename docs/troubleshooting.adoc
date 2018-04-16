@@ -575,3 +575,20 @@ Users will encounter this exception when trying to use a Kudu table via Hive. Th
 is not a case of a missing jar, but simply that Impala stores Kudu metadata in
 Hive in a format that's unreadable to other tools, including Hive itself and Spark.
 There is no workaround for Hive users. Spark users need to create temporary tables.
+
+[[too_many_threads]]
+=== Runtime error: Could not create thread: Resource temporarily unavailable (error 11)
+
+Users will encounter this error when Kudu is unable to create more threads,
+usually on versions of Kudu older than 1.7. It happens on tablet servers, and
+is a sign that the tablet server hosts too many tablet replicas. To fix the
+issue, users can raise the `nproc` ulimit as detailed in the documentation for
+their operating system or distribution. However, the better solution is to
+reduce the number of replicas on the tablet server. This may involve rethinking
+the table's partitioning schema. For the recommended limits on number of
+replicas per tablet server, see the known issues and scaling limitations
+documentation for the appropriate Kudu release. The
+link:http://kudu.apache.org/releases/[releases page] has links to documentation
+for previous versions of Kudu; for the latest release, see the
+link:known_issues.html[known issues page].
+
