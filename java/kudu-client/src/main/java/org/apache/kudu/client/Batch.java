@@ -21,7 +21,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.MoreObjects;
 import com.google.protobuf.Message;
 import com.google.protobuf.UnsafeByteOperations;
@@ -198,7 +197,7 @@ class Batch extends KuduRpc<BatchResponse> {
    * @param latencyMs blocks response handling thread for some time to simulate
    * write latency
    */
-  @VisibleForTesting
+  @InterfaceAudience.LimitedPrivate("Test")
   static void injectTabletServerErrorAndLatency(TabletServerErrorPB error, int latencyMs) {
     injectedError = error;
     injectedlatencyMs = latencyMs;

@@ -51,7 +51,6 @@ import javax.security.sasl.Sasl;
 import javax.security.sasl.SaslClient;
 import javax.security.sasl.SaslException;
 
-import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableSet;
@@ -204,7 +203,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
 
   private Certificate peerCert;
 
-  @VisibleForTesting
+  @InterfaceAudience.LimitedPrivate("Test")
   boolean overrideLoopbackForTests;
 
   public Negotiator(String remoteHostname,

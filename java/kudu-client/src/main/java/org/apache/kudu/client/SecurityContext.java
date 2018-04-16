@@ -41,7 +41,6 @@ import javax.net.ssl.X509TrustManager;
 import javax.security.auth.Subject;
 import javax.security.auth.kerberos.KerberosPrincipal;
 
-import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
@@ -53,6 +52,7 @@ import org.apache.kudu.security.Token.SignedTokenPB;
 import org.apache.kudu.security.Token.TokenPB;
 import org.apache.kudu.util.Pair;
 import org.apache.kudu.util.SecurityUtil;
+import org.apache.yetus.audience.InterfaceAudience;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -118,7 +118,7 @@ class SecurityContext {
   /**
    * The currently trusted CA certs, in DER format.
    */
-  @VisibleForTesting
+  @InterfaceAudience.LimitedPrivate("Test")
   @GuardedBy("this")
   List<ByteString> trustedCertDers = Collections.emptyList();
 

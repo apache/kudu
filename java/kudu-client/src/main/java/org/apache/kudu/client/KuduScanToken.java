@@ -21,7 +21,6 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.MoreObjects;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
@@ -97,7 +96,7 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
    * @return the serialized scan token
    * @throws IOException
    */
-  @VisibleForTesting
+  @InterfaceAudience.LimitedPrivate("Test")
   static byte[] serialize(ScanTokenPB message) throws IOException {
     byte[] buf = new byte[message.getSerializedSize()];
     CodedOutputStream cos = CodedOutputStream.newInstance(buf);

@@ -24,7 +24,6 @@ import scala.collection.JavaConverters._
 import scala.collection.immutable.IndexedSeq
 import scala.util.control.NonFatal
 
-import com.google.common.collect.ImmutableList
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.{DataTypes, StructField, StructType}
@@ -528,8 +527,8 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter wi
   test("Test SparkSQL StringStartsWith filters") {
     // This test requires a special table.
     val testTableName = "startswith"
-    val schema = new Schema(ImmutableList.of(
-      new ColumnSchemaBuilder("key", Type.STRING).key(true).build()))
+    val schema = new Schema(List(
+      new ColumnSchemaBuilder("key", Type.STRING).key(true).build()).asJava)
     val tableOptions = new CreateTableOptions().setRangePartitionColumns(List("key").asJava)
       .setNumReplicas(1)
     val testTable = kuduClient.createTable(testTableName, schema, tableOptions)

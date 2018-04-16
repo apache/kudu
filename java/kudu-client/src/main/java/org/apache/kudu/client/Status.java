@@ -17,7 +17,6 @@
 
 package org.apache.kudu.client;
 
-import com.google.common.annotations.VisibleForTesting;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 
@@ -34,11 +33,11 @@ import org.apache.kudu.tserver.Tserver;
 public class Status {
 
   // Limit the message size we get from the servers as it can be quite large.
-  @VisibleForTesting
+  @InterfaceAudience.LimitedPrivate("Test")
   static final int MAX_MESSAGE_LENGTH = 32 * 1024;
-  @VisibleForTesting
+  @InterfaceAudience.LimitedPrivate("Test")
   static final String ABBREVIATION_CHARS = "...";
-  @VisibleForTesting
+  @InterfaceAudience.LimitedPrivate("Test")
   static final int ABBREVIATION_CHARS_LENGTH = ABBREVIATION_CHARS.length();
 
   // Keep a single OK status object else we'll end up instantiating tons of them.

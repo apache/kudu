@@ -19,13 +19,13 @@ package org.apache.kudu.spark.tools
 
 import java.net.InetAddress
 
-import com.google.common.annotations.VisibleForTesting
 import org.apache.kudu.client.SessionConfiguration.FlushMode
 import org.apache.kudu.client.{KuduClient, KuduSession, KuduTable}
 import org.apache.kudu.mapreduce.tools.BigLinkedListCommon.{Xoroshiro128PlusRandom, _}
 import org.apache.kudu.spark.kudu.KuduContext
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.{SparkConf, TaskContext}
+import org.apache.yetus.audience.InterfaceAudience
 import org.slf4j.{Logger, LoggerFactory}
 
 import scala.util.Try
@@ -181,7 +181,7 @@ object Generator {
     * Entry point for testing. SparkContext is a singleton,
     * so tests must create and manage their own.
     */
-  @VisibleForTesting
+  @InterfaceAudience.LimitedPrivate(Array("Test"))
   def testMain(args: Array[String], ss: SparkSession): Unit = {
     run(Args.parse(args), ss)
   }
@@ -334,7 +334,7 @@ object Verifier {
     } else None
   }
 
-  @VisibleForTesting
+  @InterfaceAudience.LimitedPrivate(Array("Test"))
   def run(args: Args, ss: SparkSession): Counts = {
     import org.apache.kudu.spark.kudu._
     val sql = ss.sqlContext
@@ -416,7 +416,7 @@ object Verifier {
     })
   }
 
-  @VisibleForTesting
+  @InterfaceAudience.LimitedPrivate(Array("Test"))
   def testMain(arguments: Array[String], ss: SparkSession): Counts = {
     run(Args.parse(arguments), ss)
   }

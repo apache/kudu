@@ -22,7 +22,6 @@ import java.util.Date
 import scala.collection.JavaConverters._
 import scala.collection.immutable.IndexedSeq
 
-import com.google.common.collect.ImmutableList
 import org.apache.spark.SparkConf
 import org.scalatest.{BeforeAndAfterAll, Suite}
 
@@ -47,7 +46,7 @@ trait TestContext extends BeforeAndAfterAll { self: Suite =>
   val simpleTableName: String = "simple-test"
 
   lazy val schema: Schema = {
-    val columns = ImmutableList.of(
+    val columns = List(
       new ColumnSchemaBuilder("key", Type.INT32).key(true).build(),
       new ColumnSchemaBuilder("c1_i", Type.INT32).build(),
       new ColumnSchemaBuilder("c2_s", Type.STRING).nullable(true).build(),
@@ -71,7 +70,7 @@ trait TestContext extends BeforeAndAfterAll { self: Suite =>
         .typeAttributes(
           new ColumnTypeAttributesBuilder().precision(DecimalUtil.MAX_DECIMAL128_PRECISION).build()
         ).build())
-      new Schema(columns)
+      new Schema(columns.asJava)
   }
 
   lazy val simpleSchema: Schema = {

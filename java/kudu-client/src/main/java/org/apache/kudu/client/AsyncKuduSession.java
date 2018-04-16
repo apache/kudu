@@ -32,7 +32,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import javax.annotation.concurrent.GuardedBy;
 import javax.annotation.concurrent.NotThreadSafe;
 
-import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.MoreObjects;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
@@ -245,7 +244,7 @@ public class AsyncKuduSession implements SessionConfiguration {
    * Lets us set a specific seed for tests
    * @param seed
    */
-  @VisibleForTesting
+  @InterfaceAudience.LimitedPrivate("Test")
   void setRandomSeed(long seed) {
     this.randomizer.setSeed(seed);
   }

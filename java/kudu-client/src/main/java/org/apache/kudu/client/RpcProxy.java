@@ -29,7 +29,6 @@ package org.apache.kudu.client;
 import java.util.Set;
 import javax.annotation.Nonnull;
 
-import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.protobuf.Message;
 import com.stumbleupon.async.Callback;
@@ -401,7 +400,7 @@ class RpcProxy {
   /**
    * @return underlying {@link Connection} object representing TCP connection to the server
    */
-  @VisibleForTesting
+  @InterfaceAudience.LimitedPrivate("Test")
   Connection getConnection() {
     return connection;
   }

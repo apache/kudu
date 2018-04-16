@@ -31,6 +31,7 @@ dependencies {
   provided libs.scalaLibrary
   provided libs.sparkCore
   provided libs.sparkSql
+  provided libs.yetusAnnotations
 
   testCompile project(path: ":kudu-client", configuration: "shadowTest")
   testCompile project(path: ":kudu-spark", configuration: "test")

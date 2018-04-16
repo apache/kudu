@@ -34,7 +34,6 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
-import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
 import com.google.protobuf.CodedOutputStream;
 import com.google.protobuf.InvalidProtocolBufferException;
@@ -80,7 +79,7 @@ public abstract class KuduRpc<R> {
    * This along with {@link Status#MAX_MESSAGE_LENGTH} dictates how big all the messages
    * in a trace can be.
    */
-  @VisibleForTesting
+  @InterfaceAudience.LimitedPrivate("Test")
   public static final int MAX_TRACES_SIZE = 100;
 
   /**

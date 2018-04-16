@@ -48,7 +48,6 @@ import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import javax.annotation.concurrent.GuardedBy;
 
-import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
@@ -336,7 +335,7 @@ public class AsyncKuduClient implements AutoCloseable {
 
   private final RequestTracker requestTracker;
 
-  @VisibleForTesting
+  @InterfaceAudience.LimitedPrivate("Test")
   final SecurityContext securityContext;
 
   /** A helper to facilitate re-acquiring of authentication token if current one expires. */
@@ -895,7 +894,7 @@ public class AsyncKuduClient implements AutoCloseable {
     return requestTracker;
   }
 
-  @VisibleForTesting
+  @InterfaceAudience.LimitedPrivate("Test")
   KuduTable getMasterTable() {
     return masterTable;
   }
@@ -1418,7 +1417,7 @@ public class AsyncKuduClient implements AutoCloseable {
    * @param tableId table for which we remove all cached tablet location and
    *                tablet client entries
    */
-  @VisibleForTesting
+  @InterfaceAudience.LimitedPrivate("Test")
   void emptyTabletsCacheForTable(String tableId) {
     tableLocations.remove(tableId);
   }
@@ -1843,7 +1842,7 @@ public class AsyncKuduClient implements AutoCloseable {
    * @param locations the discovered locations
    * @param ttl the ttl of the locations
    */
-  @VisibleForTesting
+  @InterfaceAudience.LimitedPrivate("Test")
   void discoverTablets(KuduTable table,
                        byte[] requestPartitionKey,
                        int requestedBatchSize,
@@ -2111,7 +2110,7 @@ public class AsyncKuduClient implements AutoCloseable {
   /**
    * @return copy of the current TabletClients list
    */
-  @VisibleForTesting
+  @InterfaceAudience.LimitedPrivate("Test")
   List<Connection> getConnectionListCopy() {
     return connectionCache.getConnectionListCopy();
   }

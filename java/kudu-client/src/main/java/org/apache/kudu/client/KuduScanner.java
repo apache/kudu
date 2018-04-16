@@ -17,7 +17,6 @@
 
 package org.apache.kudu.client;
 
-import com.google.common.annotations.VisibleForTesting;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 
@@ -114,7 +113,7 @@ public class KuduScanner {
   /**
    * Returns the RemoteTablet currently being scanned, if any.
    */
-  @VisibleForTesting
+  @InterfaceAudience.LimitedPrivate("Test")
   RemoteTablet currentTablet() {
     return asyncScanner.currentTablet();
   }
@@ -124,7 +123,7 @@ public class KuduScanner {
    *
    * @return the replica selection mechanism
    */
-  @VisibleForTesting
+  @InterfaceAudience.LimitedPrivate("Test")
   ReplicaSelection getReplicaSelection() {
     return asyncScanner.getReplicaSelection();
   }

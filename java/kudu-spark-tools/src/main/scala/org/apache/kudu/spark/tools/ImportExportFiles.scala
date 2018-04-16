@@ -25,7 +25,7 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.SparkConf
 import org.slf4j.{Logger, LoggerFactory}
 import org.apache.kudu.spark.kudu._
-import com.google.common.annotations.VisibleForTesting
+import org.apache.yetus.audience.InterfaceAudience
 
 object ImportExportKudu {
   val LOG: Logger = LoggerFactory.getLogger(ImportExportKudu.getClass)
@@ -145,7 +145,7 @@ object ImportExportFiles {
     * Entry point for testing. SparkContext is a singleton,
     * so tests must create and manage their own.
     */
-  @VisibleForTesting
+  @InterfaceAudience.LimitedPrivate(Array("Test"))
   def testMain(args: Array[String], ss: SparkSession): Unit = {
     run(ArgsCls.parse(args), ss)
   }

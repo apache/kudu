@@ -24,7 +24,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
-import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Functions;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
@@ -81,12 +80,12 @@ final class ConnectToCluster {
     this.numMasters = masterAddrs.size();
   }
 
-  @VisibleForTesting
+  @InterfaceAudience.LimitedPrivate("Test")
   public Deferred<ConnectToClusterResponse> getDeferred() {
     return responseD;
   }
 
-  @VisibleForTesting
+  @InterfaceAudience.LimitedPrivate("Test")
   List<Exception> getExceptionsReceived() {
     return exceptionsReceived;
   }
@@ -158,7 +157,7 @@ final class ConnectToCluster {
     return connector.responseD;
   }
 
-  @VisibleForTesting
+  @InterfaceAudience.LimitedPrivate("Test")
   List<Deferred<ConnectToMasterResponsePB>> connectToMasters(
       KuduTable masterTable,
       KuduRpc<?> parentRpc,
@@ -193,7 +192,7 @@ final class ConnectToCluster {
    *                    be valid.
    * @return The callback object that can be added to the RPC request.
    */
-  @VisibleForTesting
+  @InterfaceAudience.LimitedPrivate("Test")
   Callback<Void, ConnectToMasterResponsePB> callbackForNode(HostAndPort hostAndPort) {
     return new ConnectToMasterCB(hostAndPort);
   }
@@ -205,7 +204,7 @@ final class ConnectToCluster {
    *                    purposes.
    * @return The errback object that can be added to the RPC request.
    */
-  @VisibleForTesting
+  @InterfaceAudience.LimitedPrivate("Test")
   Callback<Void, Exception> errbackForNode(HostAndPort hostAndPort) {
     return new ConnectToMasterErrCB(hostAndPort);
   }

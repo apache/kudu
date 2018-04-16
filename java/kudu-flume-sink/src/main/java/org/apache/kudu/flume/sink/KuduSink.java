@@ -28,7 +28,6 @@ import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.TIMEOUT_
 
 import java.util.List;
 
-import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import org.apache.flume.Channel;
 import org.apache.flume.Context;
@@ -115,7 +114,7 @@ public class KuduSink extends AbstractSink implements Configurable {
     this(null);
   }
 
-  @VisibleForTesting
+  @InterfaceAudience.LimitedPrivate("Test")
   @InterfaceAudience.Private
   public KuduSink(KuduClient kuduClient) {
     this.client = kuduClient;

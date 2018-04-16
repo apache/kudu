@@ -21,7 +21,6 @@ import java.util.Arrays;
 import java.util.List;
 import javax.annotation.concurrent.NotThreadSafe;
 
-import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.io.BaseEncoding;
 import com.google.common.primitives.Bytes;
@@ -38,7 +37,7 @@ import org.apache.yetus.audience.InterfaceAudience;
 public final class ByteVec {
 
   /** Default initial capacity for new vectors. */
-  @VisibleForTesting
+  @InterfaceAudience.LimitedPrivate("Test")
   static final int DEFAULT_CAPACITY = 32;
 
   /** data backing the vector. */

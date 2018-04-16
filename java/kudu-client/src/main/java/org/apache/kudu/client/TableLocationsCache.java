@@ -29,7 +29,6 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import javax.annotation.concurrent.GuardedBy;
 import javax.annotation.concurrent.ThreadSafe;
 
-import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.MoreObjects;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Ticker;
@@ -53,7 +52,7 @@ class TableLocationsCache {
   @GuardedBy("rwl")
   private final NavigableMap<byte[], Entry> entries = new TreeMap<>(COMPARATOR);
 
-  @VisibleForTesting
+  @InterfaceAudience.LimitedPrivate("Test")
   static Ticker ticker = Ticker.systemTicker();
 
   public Entry get(byte[] partitionKey) {

@@ -24,7 +24,6 @@ import java.util.List;
 import java.util.Set;
 import javax.annotation.concurrent.GuardedBy;
 
-import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.ImmutableList;
 import com.stumbleupon.async.Deferred;
@@ -162,7 +161,7 @@ class ConnectionCache {
    *
    * @return a copy of the list of all connections in the connection cache
    */
-  @VisibleForTesting
+  @InterfaceAudience.LimitedPrivate("Test")
   List<Connection> getConnectionListCopy() {
     synchronized (connsByAddress) {
       return ImmutableList.copyOf(connsByAddress.values());

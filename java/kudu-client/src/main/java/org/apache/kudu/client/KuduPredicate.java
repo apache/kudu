@@ -27,7 +27,6 @@ import java.util.List;
 import java.util.SortedSet;
 import java.util.TreeSet;
 
-import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Joiner;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
@@ -572,7 +571,7 @@ public class KuduPredicate {
    *              or the equality value if this is an Equality predicate
    * @param upper the upper bound serialized value if this is an Equality predicate
    */
-  @VisibleForTesting
+  @InterfaceAudience.LimitedPrivate("Test")
   KuduPredicate(PredicateType type, ColumnSchema column, byte[] lower, byte[] upper) {
     this.type = type;
     this.column = column;
@@ -599,7 +598,7 @@ public class KuduPredicate {
    * @param column the column to which the predicate applies
    * @return a None predicate
    */
-  @VisibleForTesting
+  @InterfaceAudience.LimitedPrivate("Test")
   static KuduPredicate none(ColumnSchema column) {
     return new KuduPredicate(PredicateType.NONE, column, null, null);
   }
@@ -979,7 +978,7 @@ public class KuduPredicate {
    * @param type an integer type
    * @return the maximum value
    */
-  @VisibleForTesting
+  @InterfaceAudience.LimitedPrivate("Test")
   static long maxIntValue(Type type) {
     switch (type) {
       case INT8:
@@ -1001,7 +1000,7 @@ public class KuduPredicate {
    * @param type an integer type
    * @return the minimum value
    */
-  @VisibleForTesting
+  @InterfaceAudience.LimitedPrivate("Test")
   static long minIntValue(Type type) {
     switch (type) {
       case INT8:

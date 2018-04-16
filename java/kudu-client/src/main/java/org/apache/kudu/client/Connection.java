@@ -31,7 +31,6 @@ import javax.annotation.Nullable;
 import javax.annotation.concurrent.GuardedBy;
 import javax.net.ssl.SSLException;
 
-import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import com.stumbleupon.async.Callback;
@@ -635,7 +634,7 @@ class Connection extends SimpleChannelUpstreamHandler {
    *
    * @return true iff the connection is in the READY state
    */
-  @VisibleForTesting
+  @InterfaceAudience.LimitedPrivate("Test")
   boolean isReady() {
     lock.lock();
     try {
