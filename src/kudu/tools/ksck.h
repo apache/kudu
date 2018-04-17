@@ -396,6 +396,8 @@ class KsckTabletServer {
 // Class used to communicate with a cluster.
 class KsckCluster {
  public:
+  virtual ~KsckCluster() = default;
+
   // A list of masters.
   typedef std::vector<std::shared_ptr<KsckMaster>> MasterList;
 
