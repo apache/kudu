@@ -39,8 +39,10 @@ test {
   systemProperty "derby.stream.error.file", "$temporaryDir/derby.log"
 }
 
-
 // kudu-hive has no public Javadoc.
 javadoc {
   enabled = false
 }
+
+// Skip publishing kudu-hive until it's ready to be supported long-term.
+uploadArchives.enabled = false

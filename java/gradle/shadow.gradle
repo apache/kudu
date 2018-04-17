@@ -40,6 +40,15 @@ configurations.archives.artifacts.removeAll {
   it instanceof ArchivePublishArtifact && it.archiveTask == jar
 }
 
+shadowJar {
+  dependencies {
+    // Our shaded jars always try to pull in the slf4j api from
+    // kudu-client, though we never want it included. Excluding it
+    // here prevents the need to always list it.
+    exclude dependency(libs.slf4jApi)
+  }
+}
+
 // Ensure we always relocate these shaded dependencies to the same
 // location across all modules.
 shadowJar {
@@ -54,6 +63,8 @@ shadowJar {
 // Everything below is a "hack" to support partial shading and
 // accurate pom generation. At some point this logic should exist
 // in the shadow plugin itself.
+// https://github.com/johnrengelman/shadow/issues/166
+// https://github.com/johnrengelman/shadow/issues/159
 // ------------------------------------------------------------------
 
 // Add a configuration to support unshaded compile dependencies.
@@ -61,6 +72,21 @@ shadowJar {
 configurations.create("compileUnshaded")
 configurations.shadow.extendsFrom(configurations.compileUnshaded)
 configurations.compile.extendsFrom(configurations.compileUnshaded)
+
+// Ensure compileUnshaded dependencies are not compiled into shadowJar.
+// We use afterEvaluate to add additional configuration once all the definitions
+// in the projects build script have been applied
+afterEvaluate {
+  project.configurations.compileUnshaded.dependencies.each { dep ->
+    def depStr = "${dep.group}:${dep.name}:${dep.version}"
+    logger.info "Excluding ${depStr} from being bundled into the shaded jar."
+    shadowJar {
+      dependencies {
+        exclude(dependency(depStr))
+      }
+    }
+  }
+}
 
 // Remove the shaded dependencies from the generated pom.
 // This hack allows the project to support partially shaded jars,
@@ -75,31 +101,21 @@ tasks.withType(Upload) {
     def configs = shadowJar.getConfigurations()
 
     def shadowDependencies = configs.collectMany {
-      // Find all dependencies included in the shadow configuration.
+      // Find all dependencies included in the shaded jar.
       it.resolvedConfiguration.firstLevelModuleDependencies.findAll {
         filter.isIncluded(it)
       }
     }
 
-    // Remove the shadow dependencies from the pom.
+    // Remove the shaded dependencies from the pom.
     shadowDependencies.each { shaded ->
+      def depStr = "${shaded.getModuleGroup()}:${shaded.getModuleName()}:${shaded.getModuleVersion()}"
+      logger.info "Excluding ${depStr} from the generated pom."
       pom.dependencies.removeAll { dep ->
         dep.groupId == shaded.getModuleGroup() &&
         dep.artifactId == shaded.getModuleName() &&
         dep.version == shaded.getModuleVersion()
       }
-    }
-
-    // Add the explicitly unshaded dependencies from the pom.
-    def unshadedDependencies = project.configurations.compileUnshaded.resolvedConfiguration.firstLevelModuleDependencies
-    unshadedDependencies.each { unshaded ->
-      // to avoid class loading problems
-      def dependency = pom.model.class.classLoader.loadClass("org.apache.maven.model.Dependency").newInstance()
-      dependency.setGroupId(unshaded.getModuleGroup())
-      dependency.setArtifactId(unshaded.getModuleName())
-      dependency.setVersion(unshaded.getModuleVersion())
-      dependency.setScope("compile")
-      pom.dependencies.add(dependency)
     }
 
     // Re-sort the generated maven dependencies to make pom comparisons easier.

@@ -65,3 +65,6 @@ task runJepsen(type: JavaExec) {
       "--iter-num=${iterNum}"
   ]
 }
+
+// We don't publish kudu-jepsen
+uploadArchives.enabled = false

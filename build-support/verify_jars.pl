@@ -57,13 +57,13 @@ my $dest_dir = $ARGV[0];
 chdir($dest_dir) or die "cannot chdir to destination directory $dest_dir: $!";
 print "Checking jars in directory: " . `pwd`;
 
-# TODO(KUDU-2365): re-include build/ once this bug is fixed.
 chomp(my @jars = `find . -type f -name \*.jar |
-                         grep -v build/ |
                          grep -v tests\.jar |
+                         grep -v tests-shaded\.jar |
                          grep -v original |
                          grep -v sources\.jar |
                          grep -v javadoc\.jar |
+                         grep -v unshaded\.jar |
                          grep -v gradle-wrapper.jar`);
 
 my $num_errors = 0;

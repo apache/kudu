@@ -23,13 +23,15 @@ dependencies {
     exclude group: "org.slf4j", module: "slf4j-api"
   }
   compile libs.guava
-  compile libs.slf4jApi
 
-  provided libs.hadoopClient
+  provided libs.hadoopMRClientCommon
+  provided libs.hadoopCommon
+  provided libs.slf4jApi
 
   optional libs.yetusAnnotations
 
   testCompile project(path: ":kudu-client", configuration: "shadowTest")
+  testCompile libs.commonsIo
   testCompile libs.junit
   testCompile libs.log4j
   testCompile libs.slf4jLog4j12

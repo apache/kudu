@@ -24,6 +24,7 @@ dependencies {
   provided libs.scalaLibrary
   provided libs.sparkCore
   provided libs.sparkSql
+  provided libs.slf4jApi
 
   optional libs.yetusAnnotations
 

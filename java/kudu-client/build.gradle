@@ -37,7 +37,6 @@ dependencies {
   optional libs.jsr305
   optional libs.yetusAnnotations
 
-  testCompile libs.commonsIo
   testCompile libs.hamcrestCore
   testCompile libs.junit
   testCompile libs.log4j

@@ -60,6 +60,12 @@
             <version>${scala.version}</version>
             <scope>provided</scope>
         </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>${slf4j.version}</version>
+            <scope>provided</scope>
+        </dependency>
 
         <dependency>
             <groupId>org.apache.yetus</groupId>
@@ -142,7 +148,6 @@
                     <artifactSet>
                         <includes>
                             <include>org.apache.kudu:kudu-client</include>
-                            <include>org.slf4:slf4j-api</include>
                             <include>com.stumbleupon:async</include>
                         </includes>
                     </artifactSet>

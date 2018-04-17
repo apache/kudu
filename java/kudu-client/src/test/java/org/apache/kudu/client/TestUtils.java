@@ -95,6 +95,7 @@ public class TestUtils {
     // instead relying on setting -DbinDir for cases where the test libs may be in the Maven repo.
     // See the following code reviews for the discussion: https://gerrit.cloudera.org/5328 and
     // https://gerrit.cloudera.org/4630
+    // Note: Builds using Gradle do not have this issue.
 
     LOG.warn("Unable to find bin dir! codeSrcUrl={}", codeSrcUrl);
     return null;

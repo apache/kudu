@@ -48,6 +48,22 @@ task javadocJar(type: Jar, dependsOn: javadoc, group: "Build") {
   extension "jar"
 }
 
+tasks.withType(Jar) {
+  // Configure the manifest content of the Jars.
+  manifest {
+    attributes "Implementation-Title": "$project.archivesBaseName"
+    attributes "Implementation-Version": "$project.version"
+  }
+  from ("$rootDir/../NOTICE.txt") {
+    into "META-INF"
+  }
+  from ("$rootDir/../LICENSE.txt") {
+    into "META-INF"
+  }
+  // Prevent empty directories in the Jars.
+  includeEmptyDirs = false
+}
+
 artifacts {
   test testJar
   archives testJar

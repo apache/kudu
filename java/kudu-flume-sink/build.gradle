@@ -16,11 +16,11 @@
 // under the License.
 
 // Add the Avro plugin to support code generation from schema files.
+apply from: "$rootDir/gradle/shadow.gradle"
 apply plugin: "com.commercehub.gradle.plugin.avro"
 
 dependencies {
   compile project(path: ":kudu-client", configuration: "shadow")
-  compile libs.slf4jApi
 
   optional libs.yetusAnnotations
 
@@ -28,7 +28,8 @@ dependencies {
   provided libs.flumeConfiguration
   provided libs.flumeCore
   provided libs.guava
-  provided libs.hadoopClient
+  provided libs.hadoopCommon
+  provided libs.slf4jApi
 
   testCompile project(path: ":kudu-client", configuration: "shadowTest")
   testCompile libs.junit
