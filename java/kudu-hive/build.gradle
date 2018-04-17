@@ -16,9 +16,15 @@
 // under the License.
 
 dependencies {
-  compile libs.yetusAnnotations
-  compile libs.slf4jApi
-  compile libs.hiveMetastore
+  // NOTE: The build currently expects all dependencies will be available
+  // via the hive-metastore classpath. Therefore, all dependencies should
+  // be provided scope.
+  provided libs.hiveMetastore
+  provided libs.slf4jApi
+  // Transitively required through hive-metastore,
+  // which has marked it as an optional dependency.
+  provided libs.hadoopCommon
+  provided libs.hadoopMRClientCommon
 
   testCompile libs.hiveMetastoreTest
   testCompile libs.junit
