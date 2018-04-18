@@ -22,6 +22,8 @@ import collections
 import compile_flags
 import json
 import logging
+import multiprocessing
+from multiprocessing.pool import ThreadPool
 import os
 import re
 import subprocess
@@ -42,20 +44,39 @@ GERRIT_PASSWORD = os.getenv('TIDYBOT_PASSWORD')
 GERRIT_URL = "https://gerrit.cloudera.org"
 
 def run_tidy(sha="HEAD", is_rev_range=False):
-    patch_file = tempfile.NamedTemporaryFile()
-    cmd = [
-        "git", "diff" if is_rev_range else "show", sha,
-        "--src-prefix=%s/" % ROOT,
-        "--dst-prefix=%s/" % ROOT]
-    subprocess.check_call(cmd,
-                          stdout=patch_file)
-    return subprocess.check_output(
-        [CLANG_TIDY_DIFF,
-         "-clang-tidy-binary", CLANG_TIDY,
-         "-p0",
-         "--",
-         "-DCLANG_TIDY"] + compile_flags.get_flags(),
-        stdin=file(patch_file.name))
+    diff_cmdline = ["git", "diff" if is_rev_range else "show", sha]
+
+    # Figure out which paths changed in the given diff.
+    changed_paths = subprocess.check_output(diff_cmdline + ["--name-only", "--pretty=format:"]).splitlines()
+    changed_paths = [p for p in changed_paths if p]
+
+    # Produce a separate diff for each file and run clang-tidy-diff on it
+    # in parallel.
+    def tidy_on_path(path):
+        patch_file = tempfile.NamedTemporaryFile()
+        cmd = diff_cmdline + [
+            "--src-prefix=%s/" % ROOT,
+            "--dst-prefix=%s/" % ROOT,
+            "--",
+            path]
+        subprocess.check_call(cmd, stdout=patch_file, cwd=ROOT)
+        cmdline = [CLANG_TIDY_DIFF,
+                   "-clang-tidy-binary", CLANG_TIDY,
+                   "-p0",
+                   "--",
+                   "-DCLANG_TIDY"] + compile_flags.get_flags()
+        return subprocess.check_output(
+            cmdline,
+            stdin=file(patch_file.name),
+            cwd=ROOT)
+    pool = ThreadPool(multiprocessing.cpu_count())
+    try:
+        return "".join(pool.imap(tidy_on_path, changed_paths))
+    except KeyboardInterrupt as ki:
+        sys.exit(1)
+    finally:
+        pool.terminate()
+        pool.join()
 
 
 def split_warnings(clang_output):
