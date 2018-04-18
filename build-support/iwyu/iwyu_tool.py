@@ -70,12 +70,14 @@ Example usage with CMake:
 See iwyu_tool.py -h for more details on command-line arguments.
 """
 
-import os
-import sys
-import json
 import argparse
-import subprocess
+import json
+import multiprocessing
+from multiprocessing.pool import ThreadPool
+import os
 import re
+import subprocess
+import sys
 
 
 def iwyu_formatter(output):
@@ -144,7 +146,7 @@ def get_output(cwd, args):
     return process.communicate()[0].decode("utf-8").splitlines()
 
 
-def run_iwyu(cwd, compile_command, iwyu_args, verbose, formatter):
+def run_iwyu(cwd, compile_command, iwyu_args, verbose):
     """ Rewrite compile_command to an IWYU command, and run it. """
     compiler, _, args = compile_command.partition(' ')
     if compiler.endswith('cl.exe'):
@@ -162,7 +164,10 @@ def run_iwyu(cwd, compile_command, iwyu_args, verbose, formatter):
     if verbose:
         print('{}'.format(cmd_args))
 
-    formatter(get_output(cwd, cmd_args))
+    return get_output(cwd, cmd_args)
+
+
+
 
 
 def main(compilation_db_path, source_files, verbose, formatter, iwyu_args):
@@ -203,14 +208,21 @@ def main(compilation_db_path, source_files, verbose, formatter, iwyu_args):
                       source)
 
     # Run analysis
+    def run_iwyu_task(entry):
+        cwd, compile_command = entry['directory'], entry['command']
+        return run_iwyu(cwd, compile_command, iwyu_args, verbose)
+    pool = ThreadPool(multiprocessing.cpu_count())
     try:
-        for entry in entries:
-            cwd, compile_command = entry['directory'], entry['command']
-            run_iwyu(cwd, compile_command, iwyu_args, verbose, formatter)
+        for iwyu_output in pool.imap_unordered(run_iwyu_task, entries):
+            formatter(iwyu_output)
+    except KeyboardInterrupt as ki:
+        sys.exit(1)
     except OSError as why:
         print('ERROR: Failed to launch include-what-you-use: %s' % why)
         return 1
-
+    finally:
+        pool.terminate()
+        pool.join()
     return 0
 
 
