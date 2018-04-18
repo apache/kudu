@@ -8,6 +8,7 @@ pax_global_header
 *.bib
 *.pdf
 version.txt
+build-support/iwyu/__init__.py
 build-support/iwyu/fix_includes.py
 build-support/iwyu/iwyu_tool.py
 build-support/iwyu/mappings/boost-all-private.imp

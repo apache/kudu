@@ -29,7 +29,7 @@
 #define bshuf_compress_lz4_bound bshuf_compress_lz4_bound_avx2
 #define bshuf_compress_lz4 bshuf_compress_lz4_avx2
 #define bshuf_decompress_lz4 bshuf_decompress_lz4_avx2
-#include <bitshuffle.h> // NOLINT(*)
+#include <bitshuffle.h> // NOLINT(*) IWYU pragma: keep
 #undef bshuf_compress_lz4_bound
 #undef bshuf_compress_lz4
 #undef bshuf_decompress_lz4

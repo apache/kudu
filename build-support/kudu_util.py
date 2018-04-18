@@ -26,11 +26,22 @@ import os
 import subprocess
 import sys
 
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+_GET_UPSTREAM_COMMIT_SCRIPT = os.path.join(ROOT, "build-support", "get-upstream-commit.sh")
+
+
 # Alias raw_input() to input() in Python 2.
 try:
   input = raw_input
 except NameError:
   pass
+
+
+def get_upstream_commit():
+  """ Return the last commit hash that appears to have been committed by gerrit. """
+  return check_output(_GET_UPSTREAM_COMMIT_SCRIPT).strip().decode('utf-8')
+
 
 class Colors(object):
   """ ANSI color codes. """

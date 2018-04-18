@@ -1240,11 +1240,13 @@ if (UNIX)
 endif (UNIX)
 
 ############################################################
-# "make iwyu" target
+# "make iwyu" and "make iwyu-fix" target
 ############################################################
 if (UNIX)
-  add_custom_target(iwyu ${BUILD_SUPPORT_DIR}/iwyu/iwyu.sh)
+  add_custom_target(iwyu ${BUILD_SUPPORT_DIR}/iwyu.py --from-git)
+  add_custom_target(iwyu-fix ${BUILD_SUPPORT_DIR}/iwyu.py --fix --from-git)
   add_dependencies(iwyu pb-gen krpc-gen)
+  add_dependencies(iwyu-fix pb-gen krpc-gen)
 endif (UNIX)
 
 ############################################################

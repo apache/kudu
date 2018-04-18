@@ -289,6 +289,16 @@ $ make iwyu
 This will scan any file which is dirty in your working tree, or changed since the last
 gerrit-integrated upstream change in your git log.
 
+If you want to run against a specific file, or against all files, you can use the
+`iwyu.py` script:
+
+[source,bash]
+----
+$ ./build-support/iwyu.py
+----
+
+See the output of `iwyu.py --help` for details on various modes of operation.
+
 === Building Kudu documentation
 
 Kudu's documentation is written in asciidoc and lives in the _docs_ subdirectory.

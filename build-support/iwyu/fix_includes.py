@@ -9,6 +9,9 @@
 #
 ##===----------------------------------------------------------------------===##
 
+# Modified for Kudu to suit a few idiosyncrasies of the Kudu style.
+# For a detailed changelog, refer to the git log on this file.
+
 from __future__ import print_function
 
 """Update files with the 'correct' #include and forward-declare lines.
@@ -85,6 +88,12 @@ those files are modified.
 The exit code is the number of files that were modified (or that would
 be modified if --dry_run was specified) unless that number exceeds 100,
 in which case 100 is returned.
+
+------------------------------------------------------------
+NOTE: For usage in Kudu, typically this script should be run using the
+wrapper in build-support/fix_includes.py which sets up the arguments
+appropriately for common tasks.
+------------------------------------------------------------
 """
 
 _COMMENT_RE = re.compile(r'\s*//.*')
@@ -121,6 +130,11 @@ _HEADER_GUARD_RE = re.compile(r'$.HEADER_GUARD_RE')
 # about this one.
 _HEADER_GUARD_DEFINE_RE = re.compile(r'\s*#\s*define\s+')
 
+# Infixes used in test filenames like 'foo-test.cc'. These will be
+# canonicalized to be equivalent to  'foo.cc' and thus ensure that 'foo.h'
+# be the first include.
+_TEST_INFIX_RE = re.compile(r'([-_]unittest|[-_]regtest|[-_]test)$')
+
 # We annotate every line in the source file by the re it matches, or None.
 # Note that not all of the above RE's are represented here; for instance,
 # we fold _C_COMMENT_START_RE and _C_COMMENT_END_RE into _COMMENT_LINE_RE.
@@ -146,6 +160,10 @@ _BARRIER_INCLUDES = re.compile(r'^\s*#\s*include\s+(<linux/)')
 # Please keep this in sync with source_extensions in iwyu_path_util.cc.
 _SOURCE_EXTENSIONS = [".c", ".C", ".cc", ".CC", ".cxx", ".CXX",
                       ".cpp", ".CPP", ".c++", ".C++", ".cp"]
+
+# Lines matching this pattern will not be deleted even if they look
+# like duplicate includes.
+_IWYU_PRAGMA_KEEP_RE = re.compile(r'IWYU pragma:\s+keep')
 
 
 # Adapt Python 2 iterators to Python 3 syntax
@@ -1090,6 +1108,8 @@ def _DeleteDuplicateLines(file_lines, line_ranges):
     for line_number in range(*line_range):
       if file_lines[line_number].type in (_BLANK_LINE_RE, _COMMENT_LINE_RE):
         continue
+      if _IWYU_PRAGMA_KEEP_RE.search(file_lines[line_number].line):
+        continue
       uncommented_line = _COMMENT_RE.sub('', file_lines[line_number].line)
       if uncommented_line in seen_lines:
         file_lines[line_number].deleted = True
@@ -1197,9 +1217,10 @@ def _ShouldInsertBlankLine(decorated_move_span, next_decorated_move_span,
   if this_kind == next_kind or next_kind == _EOF_KIND:
     return False
 
-  # We also never insert a blank line between C and C++-style #includes,
-  # no matter what the flag value.
-  if (this_kind in [_C_SYSTEM_INCLUDE_KIND, _CXX_SYSTEM_INCLUDE_KIND] and
+  # Unless explicitly requested, we do not insert a blank line between C
+  # and C++-style #includes.
+  if (not flags.blank_line_between_c_and_cxx_includes and
+      this_kind in [_C_SYSTEM_INCLUDE_KIND, _CXX_SYSTEM_INCLUDE_KIND] and
       next_kind in [_C_SYSTEM_INCLUDE_KIND, _CXX_SYSTEM_INCLUDE_KIND]):
     return False
 
@@ -1379,6 +1400,12 @@ def _IsSystemInclude(line_info):
   # The key for #includes includes the <> or "", so this is easy. :-)
   return line_info.type == _INCLUDE_RE and line_info.key[0] == '<'
 
+def _IsThirdpartyInclude(line_info, thirdparty_include_dirs):
+  if line_info.type != _INCLUDE_RE:
+    return False
+  inc_path = line_info.key[1:-1]
+  return any(os.path.exists(os.path.join(inc_dir, inc_path))
+             for inc_dir in thirdparty_include_dirs)
 
 def _IsMainCUInclude(line_info, filename):
   """Given a line-info, return true iff the line is a 'main-CU' #include line.
@@ -1418,7 +1445,7 @@ def _IsMainCUInclude(line_info, filename):
                              '', line_info.key.replace('"', ''))
   # Then normalize includer by stripping extension and Google's test suffixes.
   canonical_file, _ = os.path.splitext(filename)
-  canonical_file = re.sub(r'(_unittest|_regtest|_test)$', '', canonical_file)
+  canonical_file = re.sub(_TEST_INFIX_RE, '', canonical_file)
   # .h files in /public/ match .cc files in /internal/.
   canonical_include2 = re.sub(r'/public/', '/internal/', canonical_include)
 
@@ -1476,17 +1503,28 @@ def _IsSameProject(line_info, edited_file, project):
   return (included_root and edited_root and included_root == edited_root)
 
 
-def _GetLineKind(file_line, filename, separate_project_includes):
-  """Given a file_line + file being edited, return best *_KIND value or None."""
+def _GetLineKind(file_line, filename, separate_project_includes, thirdparty_include_dirs):
+  """Given a file_line + file being edited, return best *_KIND value or None.
+
+  Arguments:
+    file_line: the LineInfo structure to be analyzed
+    filename: the file which contains the line to be analyzed
+    separate_project_includes: see 'project' parameter of '_IsSameProject()'
+    thirdparty_include_dirs: see help output for the corresponding flag
+  """
   line_without_coments = _COMMENT_RE.sub('', file_line.line)
   if file_line.deleted:
     return None
   elif _IsMainCUInclude(file_line, filename):
     return _MAIN_CU_INCLUDE_KIND
-  elif _IsSystemInclude(file_line) and '.' in line_without_coments:
-    return _C_SYSTEM_INCLUDE_KIND
-  elif _IsSystemInclude(file_line):
-    return _CXX_SYSTEM_INCLUDE_KIND
+  elif _IsSystemInclude(file_line) and \
+         not _IsThirdpartyInclude(file_line, thirdparty_include_dirs):
+    if '.' in line_without_coments:
+      # e.g. <string.h>
+      return _C_SYSTEM_INCLUDE_KIND
+    else:
+      # e.g. <string>
+      return _CXX_SYSTEM_INCLUDE_KIND
   elif file_line.type == _INCLUDE_RE:
     if (separate_project_includes and
         _IsSameProject(file_line, filename, separate_project_includes)):
@@ -1569,7 +1607,8 @@ def _FirstReorderSpanWith(file_lines, good_reorder_spans, kind, filename,
   for reorder_span in good_reorder_spans:
     for line_number in range(*reorder_span):
       line_kind = _GetLineKind(file_lines[line_number], filename,
-                               flags.separate_project_includes)
+                               flags.separate_project_includes,
+                               flags.thirdparty_include_dirs)
       # Ignore forward-declares that come after 'contentful' code; we
       # never want to insert new forward-declares there.
       if (line_kind == _FORWARD_DECLARE_KIND and
@@ -1749,7 +1788,8 @@ def _DecoratedMoveSpanLines(iwyu_record, file_lines, move_span_lines, flags):
 
   # Next figure out the kind.
   kind = _GetLineKind(firstline, iwyu_record.filename,
-                      flags.separate_project_includes)
+                      flags.separate_project_includes,
+                      flags.thirdparty_include_dirs)
 
   # All we're left to do is the reorder-span we're in.  Hopefully it's easy.
   reorder_span = firstline.reorder_span
@@ -2042,12 +2082,12 @@ def FixManyFiles(iwyu_records, flags):
       if not file_contents:
         continue
 
-      print(">>> Fixing #includes in '%s'" % iwyu_record.filename)
       old_lines, fixed_lines = FixOneFile(iwyu_record, file_contents, flags)
       if old_lines == fixed_lines:
-        print("No changes in file %s" % iwyu_record.filename)
+        if not flags.quiet:
+          print("No changes in file %s" % iwyu_record.filename)
         continue
-
+      print(">>> Fixing #includes in '%s'" % iwyu_record.filename)
       if flags.dry_run:
         PrintFileDiff(old_lines, fixed_lines)
       else:
@@ -2057,18 +2097,19 @@ def FixManyFiles(iwyu_records, flags):
     except FixIncludesError as why:
       print('ERROR: %s - skipping file %s' % (why, iwyu_record.filename))
 
-  print('IWYU edited %d files on your behalf.\n' % files_fixed)
+  print('IWYU %sedited %d files on your behalf.\n' % (
+    flags.dry_run and 'would have ' or '', files_fixed))
   return files_fixed
 
 
-def ProcessIWYUOutput(f, files_to_process, flags):
-  """Fix the #include and forward-declare lines as directed by f.
-
+def ParseAndMergeIWYUOutput(f, files_to_process, flags):
+  """
   Given a file object that has the output of the include_what_you_use
-  script, see every file to be edited and edit it, if appropriate.
+  script, parse this output into a list of IWYUOutputRecord objects.
+  The records are merged so that files mentioned multiple times only
+  result in a single record.
 
   Arguments:
-    f: an iterable object that is the output of include_what_you_use.
     files_to_process: A set of filenames, or None.  If not None, we
        ignore files mentioned in f that are not in files_to_process.
     flags: commandline flags, as parsed by optparse.  The only flag
@@ -2076,9 +2117,7 @@ def ProcessIWYUOutput(f, files_to_process, flags):
        process; we also pass the flags to other routines.
 
   Returns:
-    The number of files that had to be modified (because they weren't
-    already all correct).  In dry_run mode, returns the number of
-    files that would have been modified.
+    The list of IWYUOutputRecord objects.
   """
   # First collect all the iwyu data from stdin.
 
@@ -2113,13 +2152,36 @@ def ProcessIWYUOutput(f, files_to_process, flags):
   # file, but not another, and we need to have merged them above.)
   for filename in iwyu_output_records:
     if not iwyu_output_records[filename].HasContentfulChanges():
-      print('(skipping %s: iwyu reports no contentful changes)' % filename)
+      if not flags.quiet:
+        print('(skipping %s: iwyu reports no contentful changes)' % filename)
       # Mark that we're skipping this file by setting the record to None
       iwyu_output_records[filename] = None
 
+  return [ior for ior in iwyu_output_records.values() if ior]
+
+
+def ProcessIWYUOutput(f, files_to_process, flags):
+  """Fix the #include and forward-declare lines as directed by f.
+
+  Given a file object that has the output of the include_what_you_use
+  script, see every file to be edited and edit it, if appropriate.
+
+  Arguments:
+    f: an iterable object that is the output of include_what_you_use.
+    files_to_process: A set of filenames, or None.  If not None, we
+       ignore files mentioned in f that are not in files_to_process.
+    flags: commandline flags, as parsed by optparse.  The only flag
+       we use directly is flags.ignore_re, to indicate files not to
+       process; we also pass the flags to other routines.
+
+  Returns:
+    The number of files that had to be modified (because they weren't
+    already all correct).  In dry_run mode, returns the number of
+    files that would have been modified.
+  """
+  records = ParseAndMergeIWYUOutput(f, files_to_process, flags)
   # Now do all the fixing, and return the number of files modified
-  contentful_records = [ior for ior in iwyu_output_records.values() if ior]
-  return FixManyFiles(contentful_records, flags)
+  return FixManyFiles(records, flags)
 
 
 def SortIncludesInFiles(files_to_process, flags):
@@ -2148,9 +2210,8 @@ def SortIncludesInFiles(files_to_process, flags):
     sort_only_iwyu_records.append(IWYUOutputRecord(filename))
   return FixManyFiles(sort_only_iwyu_records, flags)
 
-
-def main(argv):
-  # Parse the command line.
+def ParseArgs(args):
+  """ Parse the command line. """
   parser = optparse.OptionParser(usage=_USAGE)
   parser.add_option('-b', '--blank_lines', action='store_true', default=True,
                     help=('Put a blank line between primary header file and'
@@ -2158,6 +2219,12 @@ def main(argv):
                           ' between system #includes and google #includes'
                           ' [default]'))
   parser.add_option('--noblank_lines', action='store_false', dest='blank_lines')
+
+  parser.add_option('--blank_line_between_c_and_cxx_includes',
+                    action='store_true', default=False,
+                    help=('Put a blank line between the group of C system '
+                          'includes and C++ system includes. Not enabled '
+                          'by default.'))
 
   parser.add_option('--comments', action='store_true', default=False,
                     help='Put comments after the #include lines')
@@ -2179,6 +2246,10 @@ def main(argv):
                           ' else min(the number of files that would be'
                           ' modified, 100)'))
 
+  parser.add_option('-q', '--quiet', action='store_true', default=False,
+                    help=('Do not output anything about files that do not '
+                          'need any changes.'))
+
   parser.add_option('--ignore_re', default=None,
                     help=('fix_includes.py will skip editing any file whose'
                           ' name matches this regular expression.'))
@@ -2191,6 +2262,13 @@ def main(argv):
                           ' same top-level directory are assumed to be in the'
                           ' same project.  If not specified, project #includes'
                           ' will be sorted with other non-system #includes.'))
+
+  parser.add_option('--thirdparty_include_dir', action="append",
+                    dest="thirdparty_include_dirs",
+                    default=[],
+                    metavar="dir",
+                    help=('Any includes which are found in <dir> are considered '
+                          '"other-project" includes rather than "system" includes.'))
 
   parser.add_option('--invoking_command_line', default=None,
                     help=('Internal flag used by iwyu.py, It should be the'
@@ -2206,7 +2284,11 @@ def main(argv):
   parser.add_option('--nokeep_iwyu_namespace_format', action='store_false',
                     dest='keep_iwyu_namespace_format')
 
-  (flags, files_to_modify) = parser.parse_args(argv[1:])
+  (flags, files_to_modify) = parser.parse_args(args)
+  return flags, files_to_modify
+
+def main(argv):
+  (flags, files_to_modify) = ParseArgs(argv[1:])
   if files_to_modify:
     files_to_modify = set(files_to_modify)
   else:
