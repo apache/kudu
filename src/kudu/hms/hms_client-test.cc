@@ -31,7 +31,6 @@
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/hms/hive_metastore_constants.h"
 #include "kudu/hms/hive_metastore_types.h"
 #include "kudu/hms/mini_hms.h"
 #include "kudu/rpc/sasl_common.h"
@@ -69,8 +68,7 @@ class HmsClientTest : public KuduTest,
     table.__set_parameters({
         make_pair(HmsClient::kKuduTableIdKey, table_id),
         make_pair(HmsClient::kKuduMasterAddrsKey, string("TODO")),
-        make_pair(hive::g_hive_metastore_constants.META_TABLE_STORAGE,
-                  HmsClient::kKuduStorageHandler),
+        make_pair(HmsClient::kStorageHandlerKey, HmsClient::kKuduStorageHandler),
     });
 
     return client->CreateTable(table);
@@ -166,8 +164,7 @@ TEST_P(HmsClientTest, TestHmsOperations) {
   EXPECT_EQ(database_name, my_table.dbName) << "my_table: " << my_table;
   EXPECT_EQ(table_name, my_table.tableName);
   EXPECT_EQ(table_id, my_table.parameters[HmsClient::kKuduTableIdKey]);
-  EXPECT_EQ(HmsClient::kKuduStorageHandler,
-            my_table.parameters[hive::g_hive_metastore_constants.META_TABLE_STORAGE]);
+  EXPECT_EQ(HmsClient::kKuduStorageHandler, my_table.parameters[HmsClient::kStorageHandlerKey]);
   EXPECT_EQ(HmsClient::kManagedTable, my_table.tableType);
 
   string new_table_name = "my_altered_table";
@@ -192,7 +189,7 @@ TEST_P(HmsClientTest, TestHmsOperations) {
   EXPECT_EQ(new_table_name, renamed_table.tableName);
   EXPECT_EQ(table_id, renamed_table.parameters[HmsClient::kKuduTableIdKey]);
   EXPECT_EQ(HmsClient::kKuduStorageHandler,
-            renamed_table.parameters[hive::g_hive_metastore_constants.META_TABLE_STORAGE]);
+            renamed_table.parameters[HmsClient::kStorageHandlerKey]);
   EXPECT_EQ(HmsClient::kManagedTable, renamed_table.tableType);
 
   // Create a table with an uppercase name.

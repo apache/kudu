@@ -21,30 +21,27 @@
 #include <memory>
 #include <string>
 
-#include <glog/logging.h>
-
 #include "kudu/gutil/port.h"
 #include "kudu/rpc/sasl_common.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
-#include "kudu/util/subprocess.h"
 
 namespace kudu {
+
+class Subprocess;
+
 namespace hms {
 
 class MiniHms {
  public:
 
-  MiniHms() = default;
+  MiniHms();
 
   ~MiniHms();
 
   // Configures the notification log TTL. Must be called before Start().
-  void SetNotificationLogTtl(MonoDelta ttl) {
-    CHECK(hms_process_);
-    notification_log_ttl_ = ttl;
-  }
+  void SetNotificationLogTtl(MonoDelta ttl);
 
   // Configures the mini HMS to use Kerberos.
   void EnableKerberos(std::string krb5_conf,

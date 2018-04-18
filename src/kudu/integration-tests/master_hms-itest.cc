@@ -15,28 +15,26 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <algorithm> // IWYU pragma: keep
-#include <map> // IWYU pragma: keep
+#include <algorithm>
+#include <map>
 #include <memory>
-#include <ostream> // IWYU pragma: keep
 #include <string>
 #include <vector>
 
-#include <glog/stl_logging.h> // IWYU pragma: keep
+#include <glog/stl_logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/client/client.h" // IWYU pragma: keep
+#include "kudu/client/client.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/hms/hive_metastore_constants.h"
 #include "kudu/hms/hive_metastore_types.h"
 #include "kudu/hms/hms_client.h"
-#include "kudu/hms/mini_hms.h" // IWYU pragma: keep
+#include "kudu/hms/mini_hms.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/util/decimal_util.h"
-#include "kudu/util/net/net_util.h" // IWYU pragma: keep
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -151,7 +149,7 @@ class MasterHmsTest : public ExternalMiniClusterITestBase {
     ASSERT_EQ(HostPort::ToCommaSeparatedString(cluster_->master_rpc_addrs()),
               hms_table.parameters[hms::HmsClient::kKuduMasterAddrsKey]);
     ASSERT_EQ(hms::HmsClient::kKuduStorageHandler,
-              hms_table.parameters[hive::g_hive_metastore_constants.META_TABLE_STORAGE]);
+              hms_table.parameters[hms::HmsClient::kStorageHandlerKey]);
   }
 
   // Checks that a table does not exist in the Kudu and HMS catalogs.

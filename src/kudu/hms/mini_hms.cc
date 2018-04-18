@@ -49,8 +49,16 @@ static constexpr int kHmsStartTimeoutMs = 60000;
 namespace kudu {
 namespace hms {
 
+MiniHms::MiniHms() {
+}
+
 MiniHms::~MiniHms() {
   WARN_NOT_OK(Stop(), "Failed to stop MiniHms");
+}
+
+void MiniHms::SetNotificationLogTtl(MonoDelta ttl) {
+  CHECK(hms_process_);
+  notification_log_ttl_ = ttl;
 }
 
 void MiniHms::EnableKerberos(string krb5_conf,

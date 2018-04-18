@@ -38,7 +38,6 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/hms/hms_catalog.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/ts_manager.h"
 #include "kudu/tserver/tablet_replica_lookup.h"
@@ -80,11 +79,15 @@ class TokenSigningPublicKeyPB; // IWYU pragma: keep
 namespace consensus {
 class RaftConsensus;
 class StartTabletCopyRequestPB;
-}
+} // namespace consensus
 
 namespace tablet {
 class TabletReplica;
-}
+} // namespace tablet
+
+namespace hms {
+class HmsCatalog;
+} // namespace hms
 
 namespace master {
 

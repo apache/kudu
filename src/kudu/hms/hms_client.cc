@@ -18,26 +18,32 @@
 #include "kudu/hms/hms_client.h"
 
 #include <algorithm>
+#include <exception>
 #include <memory>
 #include <mutex>
+#include <ostream>
 #include <string>
-#include <type_traits>
-#include <utility>
 #include <vector>
 
 #include <boost/algorithm/string/predicate.hpp>
+#include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <thrift/TOutput.h>
 #include <thrift/Thrift.h>
 #include <thrift/protocol/TBinaryProtocol.h>
 #include <thrift/protocol/TJSONProtocol.h>
+#include <thrift/protocol/TProtocol.h>
 #include <thrift/transport/TBufferTransports.h>
 #include <thrift/transport/TSocket.h>
+#include <thrift/transport/TTransport.h>
+#include <thrift/transport/TTransportException.h>
 
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/hms/ThriftHiveMetastore.h"
-#include "kudu/hms/hive_metastore_constants.h"
+#include "kudu/hms/hive_metastore_types.h"
 #include "kudu/hms/sasl_client_transport.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/net/net_util.h"

@@ -17,7 +17,7 @@
 
 #include "kudu/hms/hms_catalog.h"
 
-#include <map> // IWYU pragma: keep
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -28,13 +28,12 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/hms/hive_metastore_constants.h"
 #include "kudu/hms/hive_metastore_types.h"
 #include "kudu/hms/hms_client.h"
-#include "kudu/hms/mini_hms.h" // IWYU pragma: keep
+#include "kudu/hms/mini_hms.h"
 #include "kudu/rpc/sasl_common.h"
-#include "kudu/security/test/mini_kdc.h" // IWYU pragma: keep
-#include "kudu/util/net/net_util.h" // IWYU pragma: keep
+#include "kudu/security/test/mini_kdc.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -209,8 +208,7 @@ class HmsCatalogTest : public KuduTest {
 
     EXPECT_EQ(table.parameters[HmsClient::kKuduTableIdKey], table_id);
     EXPECT_EQ(table.parameters[HmsClient::kKuduMasterAddrsKey], kMasterAddrs);
-    EXPECT_EQ(table.parameters[hive::g_hive_metastore_constants.META_TABLE_STORAGE],
-              HmsClient::kKuduStorageHandler);
+    EXPECT_EQ(table.parameters[HmsClient::kStorageHandlerKey], HmsClient::kKuduStorageHandler);
 
     for (int column_idx = 0; column_idx < schema.num_columns(); column_idx++) {
       EXPECT_EQ(table.sd.cols[column_idx].name, schema.columns()[column_idx].name());
