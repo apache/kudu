@@ -18,6 +18,8 @@
 # distutils: language = c++
 # cython: embedsignature = True
 
+include "config.pxi"
+
 from libcpp.string cimport string
 from libcpp cimport bool as c_bool
 from libcpp.map cimport map
@@ -34,6 +36,15 @@ from kudu.util import to_unixtime_micros, from_unixtime_micros, \
 from errors import KuduException
 
 import six
+
+# True if this python client was compiled with a
+# compiler that supports __int128 which is required
+# for decimal type support. This is generally true
+# except for EL6 environments.
+IF PYKUDU_INT128_SUPPORTED == 1:
+    CLIENT_SUPPORTS_DECIMAL = True
+ELSE:
+    CLIENT_SUPPORTS_DECIMAL = False
 
 # Replica selection enums
 LEADER_ONLY = ReplicaSelection_Leader
@@ -1319,9 +1330,12 @@ cdef class Row:
         return val
 
     cdef inline __get_unscaled_decimal(self, int i):
-        cdef int128_t val
-        check_status(self.row.GetUnscaledDecimal(i, &val))
-        return val
+        IF PYKUDU_INT128_SUPPORTED == 1:
+            cdef int128_t val
+            check_status(self.row.GetUnscaledDecimal(i, &val))
+            return val
+        ELSE:
+            raise KuduException("The decimal type is not supported when GCC version is < 4.6.0" % self)
 
     cdef inline get_decimal(self, int i):
         scale = self.parent.batch.projection_schema().Column(i).type_attributes().scale()
@@ -2471,7 +2485,6 @@ cdef class PartialRow:
         elif t == KUDU_STRING:
             if isinstance(value, unicode):
                 value = value.encode('utf8')
-
             slc = Slice(<char*> value, len(value))
             check_status(self.row.SetStringCopy(i, slc))
         elif t == KUDU_BINARY:
@@ -2485,8 +2498,10 @@ cdef class PartialRow:
             check_status(self.row.SetUnixTimeMicros(i, <int64_t>
                 to_unixtime_micros(value)))
         elif t == KUDU_DECIMAL:
-            check_status(self.row.SetUnscaledDecimal(i, <int128_t>
-                to_unscaled_decimal(value)))
+            IF PYKUDU_INT128_SUPPORTED == 1:
+                check_status(self.row.SetUnscaledDecimal(i, <int128_t>to_unscaled_decimal(value)))
+            ELSE:
+                raise KuduException("The decimal type is not supported when GCC version is < 4.6.0" % self)
         else:
             raise TypeError("Cannot set kudu type <{0}>.".format(_type_names[t]))
 

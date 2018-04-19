@@ -69,3 +69,4 @@ var/
 
 # automatically generated during local development
 kudu/version.py
+kudu/config.pxi

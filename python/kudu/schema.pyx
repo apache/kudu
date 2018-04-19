@@ -18,6 +18,8 @@
 # distutils: language = c++
 # cython: embedsignature = True
 
+include "config.pxi"
+
 from cython.operator cimport dereference as deref
 
 from kudu.compat import tobytes, frombytes
@@ -25,6 +27,7 @@ from kudu.schema cimport *
 from kudu.errors cimport check_status
 from kudu.client cimport PartialRow
 from kudu.util import get_decimal_scale, to_unixtime_micros, to_unscaled_decimal
+from errors import KuduException
 
 import six
 
@@ -762,9 +765,12 @@ cdef class KuduValue:
             value = to_unixtime_micros(value)
             self._value = C_KuduValue.FromInt(value)
         elif (type_.name == 'decimal'):
-            scale = get_decimal_scale(value)
-            value = to_unscaled_decimal(value)
-            self._value = C_KuduValue.FromDecimal(value, scale)
+            IF PYKUDU_INT128_SUPPORTED == 1:
+                scale = get_decimal_scale(value)
+                value = to_unscaled_decimal(value)
+                self._value = C_KuduValue.FromDecimal(value, scale)
+            ELSE:
+                raise KuduException("The decimal type is not supported when GCC version is < 4.6.0" % self)
         else:
             raise TypeError("Cannot initialize KuduValue for kudu type <{0}>"
                             .format(type_.name))

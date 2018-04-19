@@ -63,6 +63,9 @@ cdef extern from "kudu/util/status.h" namespace "kudu" nogil:
         c_bool IsAborted()
 
 cdef extern from "kudu/util/int128.h" namespace "kudu":
+    # see https://gist.github.com/ricrogz/7f9c405450689866139c49476b959044
+    # This can be defined on the Python side even if it's not defined on the
+    # C++ side.
     ctypedef int int128_t
 
 cdef extern from "kudu/util/monotime.h" namespace "kudu" nogil:
