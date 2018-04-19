@@ -74,9 +74,9 @@ trait TestContext extends BeforeAndAfterAll { self: Suite =>
   }
 
   lazy val simpleSchema: Schema = {
-    val columns = ImmutableList.of(
+    val columns = List(
       new ColumnSchemaBuilder("key", Type.INT32).key(true).build(),
-      new ColumnSchemaBuilder("val", Type.STRING).nullable(true).build())
+      new ColumnSchemaBuilder("val", Type.STRING).nullable(true).build()).asJava
     new Schema(columns)
   }
 
