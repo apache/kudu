@@ -28,7 +28,7 @@ import re
 import subprocess
 import sys
 
-from kudu_util import get_upstream_commit, check_output, ROOT, Colors
+from kudu_util import get_upstream_commit, check_output, ROOT, Colors, init_logging
 import iwyu.fix_includes
 from iwyu.fix_includes import ParseAndMergeIWYUOutput
 
@@ -268,7 +268,6 @@ def main(argv):
   else:
     return _do_iwyu(flags, paths)
 
-
 if __name__ == "__main__":
-  logging.basicConfig(level=logging.INFO)
+  init_logging()
   sys.exit(main(sys.argv))

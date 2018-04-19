@@ -39,6 +39,8 @@ import shutil
 import subprocess
 import time
 
+from kudu_util import init_logging
+
 TEST_TIMEOUT_SECS = int(os.environ.get('TEST_TIMEOUT_SECS', '900'))
 ARTIFACT_ARCHIVE_GLOBS = ["build/*/test-logs/**/*"]
 ISOLATE_SERVER = os.environ.get('ISOLATE_SERVER',
@@ -165,7 +167,7 @@ def get_test_executions(options):
                        cwd=rel_to_abs("build/latest"))
   out, err = p.communicate()
   if p.returncode != 0:
-    print >>sys.stderr, "Unable to list tests with ctest"
+    logging.error("Unable to list tests with ctest")
     sys.exit(1)
   lines = deque(out.splitlines())
   execs = []
@@ -259,7 +261,7 @@ def ldd_deps(exe):
     LDD_CACHE[exe] = (out, err, p.returncode)
   out, err, rc = LDD_CACHE[exe]
   if rc != 0:
-    print >>sys.stderr, "failed to run ldd on ", exe
+    logging.warning("failed to run ldd on %s", exe)
     return []
   ret = []
   for l in out.splitlines():
@@ -289,7 +291,7 @@ def create_archive_input(staging, execution,
   """
   argv = execution.argv
   if not argv[0].endswith('run-test.sh') or len(argv) < 2:
-    print >>sys.stderr, "Unable to handle test: ", argv
+    logging.warning("Unable to handle test: %s", argv)
     return
   abs_test_exe = os.path.realpath(argv[1])
   rel_test_exe = abs_to_rel(abs_test_exe, staging)
@@ -382,8 +384,8 @@ def create_task_json(staging,
                }] * replicate_tasks
 
   if len(tasks) > MAX_TASKS_PER_JOB:
-    print >>sys.stderr, "Job contains %d tasks which is more than the maximum %d" % (
-      len(tasks), MAX_TASKS_PER_JOB)
+    logging.error("Job contains %d tasks which is more than the maximum %d",
+                  len(tasks), MAX_TASKS_PER_JOB)
     sys.exit(1)
   outmap = {"tasks": tasks}
 
@@ -406,7 +408,7 @@ def run_isolate(staging):
                            '-dump-json=' + staging.archive_dump_path(),
                            '--'] + staging.gen_json_paths())
   except:
-    print >>sys.stderr, "Failed to run", isolate_path
+    logging.error("Failed to run %s", isolate_path)
     raise
 
 def submit_tasks(staging, options):
@@ -418,9 +420,9 @@ def submit_tasks(staging, options):
   by 'create_task_json()'.
   """
   if not os.path.exists(DIST_TEST_HOME):
-    print >>sys.stderr, "Cannot find dist_test tools at path %s " \
-        "Set the DIST_TEST_HOME environment variable to the path to the dist_test directory. " \
-        % DIST_TEST_HOME,
+    logging.error("Cannot find dist_test tools at path %s " \
+                  "Set the DIST_TEST_HOME environment variable to the path to the dist_test directory. ",
+                  DIST_TEST_HOME)
     raise OSError("Cannot find path to dist_test tools")
   client_py_path = os.path.join(DIST_TEST_HOME, "bin", "client")
   try:
@@ -430,7 +432,7 @@ def submit_tasks(staging, options):
     cmd.append(staging.tasks_json_path())
     subprocess.check_call(cmd)
   except:
-    print >>sys.stderr, "Failed to run", client_py_path
+    logging.error("Failed to run %s", client_py_path)
     raise
 
 def get_flakies():
@@ -514,7 +516,6 @@ def add_loop_test_subparser(subparsers):
 
 
 def main(argv):
-  logging.basicConfig(level=logging.INFO)
   p = argparse.ArgumentParser()
   p.add_argument("--collect-tmpdir", dest="collect_tmpdir", action="store_true",
                  help="Collect the test tmpdir of failed tasks as test artifacts", default=False)
@@ -528,4 +529,5 @@ def main(argv):
 
 
 if __name__ == "__main__":
+  init_logging()
   main(sys.argv[1:])

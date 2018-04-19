@@ -31,7 +31,8 @@ try:
 except ImportError:
   import urllib
 
-from kudu_util import check_output, confirm_prompt, Colors, get_my_email, get_upstream_commit, ROOT
+from kudu_util import check_output, confirm_prompt, Colors, get_my_email, get_upstream_commit, \
+  init_logging, ROOT
 
 
 def check_repo_not_dirty():
@@ -190,5 +191,5 @@ def main():
 
 
 if __name__ == "__main__":
-  logging.basicConfig(level=logging.INFO)
+  init_logging()
   main()

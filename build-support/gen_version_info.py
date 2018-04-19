@@ -30,7 +30,7 @@ import sys
 import time
 from time import strftime, localtime
 
-from kudu_util import check_output
+from kudu_util import check_output, init_logging
 
 def output_up_to_date(path, id_hash):
   """
@@ -46,7 +46,6 @@ def output_up_to_date(path, id_hash):
   return m.group(1) == id_hash
 
 def main():
-  logging.basicConfig(level=logging.INFO)
   parser = optparse.OptionParser(
       usage="usage: %prog --version=<version> <output path>")
   parser.add_option("-v", "--version", help="Set version number", type="string",
@@ -127,5 +126,7 @@ def main():
 """ % locals())
   return 0
 
+
 if __name__ == "__main__":
+  init_logging()
   sys.exit(main())

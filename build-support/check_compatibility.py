@@ -32,7 +32,7 @@ import subprocess
 import sys
 import tempfile
 
-from kudu_util import check_output
+from kudu_util import check_output, init_logging
 
 JAVA_ACC_GIT_URL = "https://github.com/lvc/japi-compliance-checker.git"
 
@@ -180,7 +180,6 @@ def run_java_acc(src_name, src, dst_name, dst):
 
 
 def main(argv):
-  logging.basicConfig(level=logging.INFO)
   parser = optparse.OptionParser(
       usage="usage: %prog SRC..[DST]")
   parser.add_option("-f", "--force-download", dest="force_download_deps",
@@ -223,4 +222,5 @@ def main(argv):
 
 
 if __name__ == "__main__":
+  init_logging()
   main(sys.argv)

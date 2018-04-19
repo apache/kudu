@@ -31,6 +31,8 @@ import sys
 import unittest
 import tempfile
 
+from kudu_util import init_logging
+
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 CLANG_TIDY_DIFF = os.path.join(
@@ -176,7 +178,7 @@ class TestClangTidyGerrit(unittest.TestCase):
 
 if __name__ == "__main__":
     # Basic setup and argument parsing.
-    logging.basicConfig(level=logging.INFO)
+    init_logging()
     parser = argparse.ArgumentParser(
         description="Run clang-tidy on a patch, optionally posting warnings as comments to gerrit")
     parser.add_argument("-n", "--no-gerrit", action="store_true",

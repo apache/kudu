@@ -40,7 +40,7 @@ import re
 import subprocess
 import sys
 
-from kudu_util import check_output, confirm_prompt, Colors, get_my_email
+from kudu_util import check_output, confirm_prompt, Colors, get_my_email, init_logging
 
 APACHE_REPO = "https://git-wip-us.apache.org/repos/asf/kudu.git"
 GERRIT_URL = "ssh://<username>@gerrit.cloudera.org:29418/kudu"
@@ -235,5 +235,5 @@ def main():
 
 
 if __name__ == "__main__":
-  logging.basicConfig(level=logging.INFO)
+  init_logging()
   main()
