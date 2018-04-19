@@ -27,6 +27,7 @@ from setuptools import setup
 from distutils.command.clean import clean as _clean
 from distutils.extension import Extension
 import os
+import subprocess
 
 # Workaround a Python bug in which multiprocessing's atexit handler doesn't
 # play well with pytest. See http://bugs.python.org/issue15881 for details
@@ -64,13 +65,39 @@ def write_version_py(filename=os.path.join(setup_dir, 'kudu/version.py')):
 class clean(_clean):
     def run(self):
         _clean.run(self)
-        for x in ['kudu/client.cpp', 'kudu/schema.cpp',
-                  'kudu/errors.cpp']:
+        for x in ['kudu/client.cpp',
+                  'kudu/config.pxi',
+                  'kudu/errors.cpp',
+                  'kudu/schema.cpp']:
             try:
                 os.remove(x)
             except OSError:
                 pass
 
+# Identify the cc version used and check for __int128 support
+def generate_config_pxi(include_dirs):
+    """ Generate config.pxi from config.pxi.in """
+    int128_h = None
+    for d in include_dirs:
+        candidate = os.path.join(d, 'kudu/util/int128.h')
+        if os.path.exists(candidate):
+            int128_h = candidate
+            break
+    if int128_h is None:
+        raise Exception("could not find int128.h in Kudu include dirs")
+    src = os.path.join(setup_dir, 'kudu/config.pxi.in')
+    dst = os.path.join(setup_dir, 'kudu/config.pxi')
+    dst_tmp = dst + '.tmp'
+    cc = os.getenv("CC","cc")
+    subprocess.check_call([cc, "-x", "c++", "-o", dst_tmp,
+                           "-E", '-imacros', int128_h, src])
+    # If our generated file is the same as the prior version,
+    # don't replace it. This avoids rebuilding everything on every
+    # run of setup.py.
+    if os.path.exists(dst) and open(dst).read() == open(dst_tmp).read():
+      os.unlink(dst_tmp)
+    else:
+      os.rename(dst_tmp, dst)
 
 # If we're in the context of the Kudu git repository, build against the
 # latest in-tree build artifacts
@@ -110,6 +137,8 @@ else:
 INCLUDE_PATHS = kudu_include_dirs
 LIBRARY_DIRS = [kudu_lib_dir]
 RT_LIBRARY_DIRS = LIBRARY_DIRS
+
+generate_config_pxi(INCLUDE_PATHS)
 
 ext_submodules = ['client', 'errors', 'schema']
 

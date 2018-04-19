@@ -254,8 +254,9 @@ class TestScanToken(TestScanBase):
         self._test_unixtime_micros_pred()
 
     def test_decimal_pred(self):
-        # Test decimal value predicate
-        self._test_decimal_pred()
+        if kudu.CLIENT_SUPPORTS_DECIMAL:
+            # Test decimal value predicate
+            self._test_decimal_pred()
 
     def test_bool_pred(self):
         # Test a boolean value predicate
