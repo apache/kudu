@@ -114,6 +114,7 @@ namespace hms {
 
 const char* const HmsClient::kKuduTableIdKey = "kudu.table_id";
 const char* const HmsClient::kKuduMasterAddrsKey = "kudu.master_addresses";
+const char* const HmsClient::kKuduMasterEventKey = "kudu.master_event";
 const char* const HmsClient::kKuduStorageHandler = "org.apache.kudu.hive.KuduStorageHandler";
 
 const char* const HmsClient::kTransactionalEventListeners =
@@ -265,24 +266,27 @@ Status HmsClient::GetDatabase(const string& pattern, hive::Database* database) {
   return Status::OK();
 }
 
-Status HmsClient::CreateTable(const hive::Table& table) {
+Status HmsClient::CreateTable(const hive::Table& table, const hive::EnvironmentContext& env_ctx) {
   SCOPED_LOG_SLOW_EXECUTION(WARNING, kSlowExecutionWarningThresholdMs, "create HMS table");
-  HMS_RET_NOT_OK(client_.create_table(table), "failed to create Hive MetaStore table");
+  HMS_RET_NOT_OK(client_.create_table_with_environment_context(table, env_ctx),
+                 "failed to create Hive MetaStore table");
   return Status::OK();
 }
 
 Status HmsClient::AlterTable(const std::string& database_name,
                              const std::string& table_name,
-                             const hive::Table& table) {
+                             const hive::Table& table,
+                             const hive::EnvironmentContext& env_ctx) {
   SCOPED_LOG_SLOW_EXECUTION(WARNING, kSlowExecutionWarningThresholdMs, "alter HMS table");
-  HMS_RET_NOT_OK(client_.alter_table(database_name, table_name, table),
+  HMS_RET_NOT_OK(client_.alter_table_with_environment_context(database_name, table_name,
+                                                              table, env_ctx),
                  "failed to alter Hive MetaStore table");
   return Status::OK();
 }
 
-Status HmsClient::DropTableWithContext(const string& database_name,
-                                       const string& table_name,
-                                       const hive::EnvironmentContext& env_ctx) {
+Status HmsClient::DropTable(const string& database_name,
+                            const string& table_name,
+                            const hive::EnvironmentContext& env_ctx) {
   SCOPED_LOG_SLOW_EXECUTION(WARNING, kSlowExecutionWarningThresholdMs, "drop HMS table");
   HMS_RET_NOT_OK(client_.drop_table_with_environment_context(database_name, table_name,
                                                              true, env_ctx),

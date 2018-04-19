@@ -150,11 +150,11 @@ Status HmsCatalog::DropTable(const string& id, const string& name) {
     return Status::OK();
   }
 
-  hive::EnvironmentContext env_ctx;
-  env_ctx.__set_properties({ make_pair(HmsClient::kKuduTableIdKey, id) });
+  hive::EnvironmentContext env_ctx = EnvironmentContext();
+  env_ctx.properties.insert(make_pair(HmsClient::kKuduTableIdKey, id));
 
   return Execute([&] (HmsClient* client) {
-    Status s = client->DropTableWithContext(hms_database, hms_table, env_ctx);
+    Status s = client->DropTable(hms_database, hms_table, env_ctx);
     if (s.IsNotFound()) {
       VLOG(1) << "Ignoring missing HMS table entry while dropping table "
               << name << "(" << id << ")";
@@ -242,7 +242,7 @@ Status HmsCatalog::AlterTable(const string& id,
 
       // Overwrite fields in the table that have changed, including the new name.
       RETURN_NOT_OK(PopulateTable(id, new_name, schema, master_addresses_, &table));
-      return client->AlterTable(hms_database, hms_table, table);
+      return client->AlterTable(hms_database, hms_table, table, EnvironmentContext());
   });
 }
 
@@ -465,7 +465,8 @@ Status HmsCatalog::CreateOrUpdateTable(hms::HmsClient* client,
                   "will attempt to create a new HMS table entry.";
       hive::Table table;
       RETURN_NOT_OK(PopulateTable(id, name, schema, master_addresses, &table));
-      return client->CreateTable(table);
+
+      return client->CreateTable(table, EnvironmentContext());
   }
 
   // All other errors are fatal.
@@ -490,7 +491,7 @@ Status HmsCatalog::CreateOrUpdateTable(hms::HmsClient* client,
     VLOG(1) << "Short-circuiting alter or update table for " << name << " (" << id << ")";
     return Status::OK();
   }
-  return client->AlterTable(hms_database, hms_table, table);
+  return client->AlterTable(hms_database, hms_table, table, EnvironmentContext());
 }
 
 Status HmsCatalog::ParseTableName(const string& table,
@@ -556,6 +557,12 @@ bool HmsCatalog::ValidateUris(const char* flag_name, const string& metastore_uri
 
 bool HmsCatalog::IsEnabled() {
   return !FLAGS_hive_metastore_uris.empty();
+}
+
+hive::EnvironmentContext HmsCatalog::EnvironmentContext() {
+  hive::EnvironmentContext env_ctx;
+  env_ctx.__set_properties({ std::make_pair(hms::HmsClient::kKuduMasterEventKey, "true") });
+  return env_ctx;
 }
 
 } // namespace hms

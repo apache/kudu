@@ -19,6 +19,8 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 #include <glog/stl_logging.h>
@@ -198,8 +200,7 @@ TEST_F(MasterHmsTest, TestCreateTable) {
   ASSERT_STR_CONTAINS(s.ToString(), "☃ is not a valid object name");
 
   // Drop the HMS entry and create the table through Kudu.
-  ASSERT_OK(hms_client_->DropTableWithContext(hms_database_name, hms_table_name,
-                                              hive::EnvironmentContext()));
+  ASSERT_OK(hms_client_->DropTable(hms_database_name, hms_table_name));
   ASSERT_OK(CreateKuduTable(hms_database_name, hms_table_name));
   NO_FATALS(CheckTable(hms_database_name, hms_table_name));
 
@@ -259,7 +260,7 @@ TEST_F(MasterHmsTest, TestRenameTable) {
   // HmsCatalog will create a new entry when necessary.
   shared_ptr<KuduTable> table;
   ASSERT_OK(client_->OpenTable("db.a", &table));
-  ASSERT_OK(hms_client_->DropTableWithContext("db", "a", hive::EnvironmentContext()));
+  ASSERT_OK(hms_client_->DropTable("db", "a"));
   table_alterer.reset(client_->NewTableAlterer("db.a"));
   ASSERT_OK(table_alterer->RenameTo("db.c")->Alter());
   NO_FATALS(CheckTable("db", "c"));
@@ -282,7 +283,7 @@ TEST_F(MasterHmsTest, TestRenameTable) {
 
   // Drop the HMS table entry, then create a non-Kudu table entry in it's place,
   // and attempt to rename the table.
-  ASSERT_OK(hms_client_->DropTableWithContext("db", "a", hive::EnvironmentContext()));
+  ASSERT_OK(hms_client_->DropTable("db", "a"));
   hive::Table external_table_2;
   external_table_2.dbName = "db";
   external_table_2.tableName = "a";
@@ -313,7 +314,10 @@ TEST_F(MasterHmsTest, TestAlterTable) {
   hive::Table hms_table;
   ASSERT_OK(hms_client_->GetTable(hms_database_name, hms_table_name, &hms_table));
   hms_table.sd.cols.clear();
-  ASSERT_OK(hms_client_->AlterTable(hms_database_name, hms_table_name, hms_table));
+  // The KuduMetastorePlugin requires column alteration events to come from a Kudu Master.
+  hive::EnvironmentContext env_ctx;
+  env_ctx.__set_properties({ std::make_pair(hms::HmsClient::kKuduMasterEventKey, "true") });
+  ASSERT_OK(hms_client_->AlterTable(hms_database_name, hms_table_name, hms_table, env_ctx));
   hive::Table altered_table;
   ASSERT_OK(hms_client_->GetTable(hms_database_name, hms_table_name, &altered_table));
   ASSERT_TRUE(altered_table.sd.cols.empty());
@@ -339,8 +343,7 @@ TEST_F(MasterHmsTest, TestAlterTable) {
 
   // Drop the table from the HMS, and insert a non-Kudu table entry, then try
   // and alter the table.
-  ASSERT_OK(hms_client_->DropTableWithContext(hms_database_name, hms_table_name,
-                                              hive::EnvironmentContext()));
+  ASSERT_OK(hms_client_->DropTable(hms_database_name, hms_table_name));
   hms_table = hive::Table();
   hms_table.dbName = hms_database_name;
   hms_table.tableName = hms_table_name;
@@ -373,8 +376,7 @@ TEST_F(MasterHmsTest, TestDeleteTable) {
   NO_FATALS(CheckTable(hms_database_name, hms_table_name));
   shared_ptr<KuduTable> table;
   ASSERT_OK(client_->OpenTable(table_name, &table));
-  ASSERT_OK(hms_client_->DropTableWithContext(hms_database_name, hms_table_name,
-                                              hive::EnvironmentContext()));
+  ASSERT_OK(hms_client_->DropTable(hms_database_name, hms_table_name));
   Status s = hms_client_->GetTable(hms_database_name, hms_table_name, &hms_table);
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   ASSERT_OK(client_->DeleteTable(table_name));

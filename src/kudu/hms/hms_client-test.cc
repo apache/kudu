@@ -71,7 +71,10 @@ class HmsClientTest : public KuduTest,
         make_pair(HmsClient::kStorageHandlerKey, HmsClient::kKuduStorageHandler),
     });
 
-    return client->CreateTable(table);
+    hive::EnvironmentContext env_ctx;
+    env_ctx.__set_properties({ make_pair(HmsClient::kKuduMasterEventKey, "true") });
+
+    return client->CreateTable(table, env_ctx);
   }
 
   Status DropTable(HmsClient* client,
@@ -80,7 +83,7 @@ class HmsClientTest : public KuduTest,
                    const string& table_id) {
     hive::EnvironmentContext env_ctx;
     env_ctx.__set_properties({ make_pair(HmsClient::kKuduTableIdKey, table_id) });
-    return client->DropTableWithContext(database_name, table_name, env_ctx);
+    return client->DropTable(database_name, table_name, env_ctx);
   }
 };
 

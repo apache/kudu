@@ -17,6 +17,8 @@
 
 package org.apache.kudu.hive.metastore;
 
+import java.util.Map;
+
 import com.google.common.annotations.VisibleForTesting;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.metastore.MetaStoreEventListener;
@@ -27,6 +29,7 @@ import org.apache.hadoop.hive.metastore.api.hive_metastoreConstants;
 import org.apache.hadoop.hive.metastore.events.AlterTableEvent;
 import org.apache.hadoop.hive.metastore.events.CreateTableEvent;
 import org.apache.hadoop.hive.metastore.events.DropTableEvent;
+import org.apache.hadoop.hive.metastore.events.ListenerEvent;
 
 /**
  * The {@code KuduMetastorePlugin} intercepts DDL operations on Kudu table entries
@@ -61,6 +64,8 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
   static final String KUDU_TABLE_ID_KEY = "kudu.table_id";
   @VisibleForTesting
   static final String KUDU_MASTER_ADDRS_KEY = "kudu.master_addresses";
+  @VisibleForTesting
+  static final String KUDU_MASTER_EVENT = "kudu.master_event";
 
   public KuduMetastorePlugin(Configuration config) {
     super(config);
@@ -78,6 +83,10 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
       return;
     }
 
+    if (!isKuduMasterAction(tableEvent)) {
+      throw new MetaException("Kudu tables may not be created through Hive");
+    }
+
     checkKuduProperties(table);
   }
 
@@ -93,6 +102,9 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
     if (targetTableId == null) {
       return;
     }
+
+    // The kudu.master_event property isn't checked, because the kudu.table_id
+    // property already implies this event is coming from a Kudu Master.
 
     Table table = tableEvent.getTable();
 
@@ -129,6 +141,11 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
     String newTableId = newTable.getParameters().get(KUDU_TABLE_ID_KEY);
     if (!newTableId.equals(oldTableId)) {
       throw new MetaException("Kudu table ID does not match the existing HMS entry");
+    }
+
+    if (!isKuduMasterAction(tableEvent) &&
+        !oldTable.getSd().getCols().equals(newTable.getSd().getCols())) {
+      throw new MetaException("Kudu table columns may not be altered through Hive");
     }
   }
 
@@ -186,5 +203,22 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
           "non-Kudu table entry must not contain a Master addresses property (%s)",
           KUDU_MASTER_ADDRS_KEY));
     }
+  }
+
+  /**
+   * Returns true if the event is from the Kudu Master.
+   */
+  private boolean isKuduMasterAction(ListenerEvent event) {
+    EnvironmentContext environmentContext = event.getEnvironmentContext();
+    if (environmentContext == null) {
+      return false;
+    }
+
+    Map<String, String> properties = environmentContext.getProperties();
+    if (properties == null) {
+      return false;
+    }
+
+    return Boolean.parseBoolean(properties.get(KUDU_MASTER_EVENT));
   }
 }

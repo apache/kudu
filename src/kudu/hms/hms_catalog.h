@@ -30,6 +30,7 @@
 #include "kudu/util/status.h"
 
 namespace hive {
+class EnvironmentContext;
 class Table;
 }
 
@@ -133,6 +134,9 @@ class HmsCatalog {
 
   // Parses a Hive Metastore URI string into a sequence of HostPorts.
   static Status ParseUris(const std::string& metastore_uris, std::vector<HostPort>* hostports);
+
+  // Returns a base environment context for use with calls to the HMS.
+  static hive::EnvironmentContext EnvironmentContext();
 
   // Kudu master addresses.
   const std::string master_addresses_;
