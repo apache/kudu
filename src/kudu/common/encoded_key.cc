@@ -27,7 +27,6 @@
 #include "kudu/common/row.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
-#include "kudu/gutil/move.h"
 #include "kudu/gutil/port.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/memory/arena.h"

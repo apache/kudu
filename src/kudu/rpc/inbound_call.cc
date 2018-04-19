@@ -25,7 +25,6 @@
 #include <google/protobuf/message.h>
 #include <google/protobuf/message_lite.h>
 
-#include "kudu/gutil/move.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/connection.h"

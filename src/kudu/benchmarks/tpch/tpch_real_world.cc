@@ -64,7 +64,6 @@
 #include "kudu/client/schema.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/gutil/move.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/stringprintf.h"

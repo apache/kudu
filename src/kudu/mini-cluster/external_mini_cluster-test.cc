@@ -16,6 +16,7 @@
 // under the License.
 
 #include <iosfwd>
+#include <ostream>
 #include <string>
 #include <utility>
 #include <vector>

@@ -48,7 +48,6 @@
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/map-util.h"
-#include "kudu/gutil/move.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/stringprintf.h"

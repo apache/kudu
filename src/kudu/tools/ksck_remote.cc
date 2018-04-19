@@ -18,6 +18,8 @@
 #include "kudu/tools/ksck_remote.h"
 
 #include <cstdint>
+#include <ostream>
+#include <unordered_map>
 
 #include <boost/bind.hpp> // IWYU pragma: keep
 #include <boost/optional/optional.hpp>
@@ -26,6 +28,7 @@
 #include <glog/logging.h>
 
 #include "kudu/client/client.h"
+#include "kudu/client/schema.h"
 #include "kudu/client/replica_controller-internal.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/schema.h"
@@ -33,6 +36,10 @@
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus.proxy.h"
+#include "kudu/consensus/metadata.pb.h"
+#include "kudu/gutil/basictypes.h"
+#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.h"
@@ -42,13 +49,14 @@
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/server/server_base.pb.h"
 #include "kudu/server/server_base.proxy.h"
+#include "kudu/tablet/tablet.pb.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_service.pb.h"
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
-#include "kudu/util/slice.h"
+#include "kudu/util/net/sockaddr.h"
 
 DECLARE_int64(timeout_ms); // defined in tool_action_common
 DEFINE_bool(checksum_cache_blocks, false, "Should the checksum scanners cache the read blocks");

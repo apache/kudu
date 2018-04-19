@@ -38,7 +38,6 @@
 #include "kudu/common/timestamp.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/gutil/move.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/stringpiece.h"

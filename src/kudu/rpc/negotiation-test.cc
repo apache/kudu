@@ -50,6 +50,7 @@
 #include "kudu/security/cert.h"
 #include "kudu/security/crypto.h"
 #include "kudu/security/security-test-util.h"
+#include "kudu/security/security_flags.h"
 #include "kudu/security/test/mini_kdc.h"
 #include "kudu/security/tls_context.h"
 #include "kudu/security/tls_socket.h"

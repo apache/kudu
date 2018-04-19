@@ -28,7 +28,6 @@
 #include <gflags/gflags.h>
 #include <google/protobuf/message.h>
 
-#include "kudu/gutil/move.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"

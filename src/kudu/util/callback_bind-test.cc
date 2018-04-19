@@ -28,7 +28,6 @@
 #include "kudu/gutil/callback.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/move.h"
 #include "kudu/gutil/ref_counted.h"
 
 namespace kudu {

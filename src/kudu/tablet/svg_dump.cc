@@ -29,7 +29,6 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
-#include "kudu/gutil/move.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/tablet/rowset_info.h"

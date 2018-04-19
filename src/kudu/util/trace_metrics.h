@@ -23,7 +23,6 @@
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
-#include "kudu/util/atomic.h"
 #include "kudu/util/locks.h"
 
 namespace kudu {

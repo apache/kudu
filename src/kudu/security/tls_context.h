@@ -30,12 +30,13 @@
 #include "kudu/util/locks.h"
 #include "kudu/util/rw_mutex.h"
 #include "kudu/util/status.h"
+// IWYU pragma: no_include "kudu/security/cert.h"
 
 namespace kudu {
 namespace security {
 
-class Cert;
-class CertSignRequest;
+class Cert;           // IWYU pragma: keep
+class CertSignRequest;// IWYU pragma: keep
 class PrivateKey;
 
 // TlsContext wraps data required by the OpenSSL library for creating and

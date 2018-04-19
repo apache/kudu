@@ -36,7 +36,6 @@
 #include "kudu/common/schema.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
-#include "kudu/gutil/move.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/util/auto_release_pool.h"
 #include "kudu/util/memory/arena.h"

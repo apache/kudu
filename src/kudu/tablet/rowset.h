@@ -34,7 +34,6 @@
 #include "kudu/common/timestamp.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/move.h"
 #include "kudu/gutil/port.h"
 #include "kudu/util/bloom_filter.h"
 #include "kudu/util/status.h"

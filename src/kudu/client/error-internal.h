@@ -17,8 +17,10 @@
 #ifndef KUDU_CLIENT_ERROR_INTERNAL_H
 #define KUDU_CLIENT_ERROR_INTERNAL_H
 
+#include <memory>
+
 #include "kudu/client/client.h"
-#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/client/write_op.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/status.h"
 
@@ -26,14 +28,12 @@ namespace kudu {
 
 namespace client {
 
-class KuduWriteOperation;
-
 class KuduError::Data {
  public:
-  Data(gscoped_ptr<KuduWriteOperation> failed_op, Status error);
+  Data(std::unique_ptr<KuduWriteOperation> failed_op, Status error);
   ~Data() = default;
 
-  gscoped_ptr<KuduWriteOperation> failed_op_;
+  std::unique_ptr<KuduWriteOperation> failed_op_;
   Status status_;
 
   DISALLOW_COPY_AND_ASSIGN(Data);

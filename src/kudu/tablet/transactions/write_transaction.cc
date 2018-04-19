@@ -39,7 +39,6 @@
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/gutil/dynamic_annotations.h"
-#include "kudu/gutil/move.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/rpc/rpc_header.pb.h"

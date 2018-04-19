@@ -67,7 +67,6 @@
 #include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/gutil/move.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/numbers.h"
@@ -913,7 +912,7 @@ bool KuduError::was_possibly_successful() const {
 
 KuduError::KuduError(KuduWriteOperation* failed_op,
                      const Status& status)
-  : data_(new KuduError::Data(gscoped_ptr<KuduWriteOperation>(failed_op),
+  : data_(new KuduError::Data(unique_ptr<KuduWriteOperation>(failed_op),
                               status)) {
 }
 

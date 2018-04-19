@@ -258,7 +258,7 @@ TEST_F(RaftConsensusNonVoterITest, GetTableAndTabletLocations) {
   ASSERT_OK(WaitForNumTabletsOnTS(
       new_replica, 1, kTimeout, nullptr, tablet::RUNNING));
 
-  const auto count_roles = [this](const TabletLocationsPB& tablet_locations,
+  const auto count_roles = [](const TabletLocationsPB& tablet_locations,
       int* num_leaders, int* num_followers, int* num_learners) {
     *num_leaders = 0;
     *num_followers = 0;
@@ -363,7 +363,7 @@ TEST_F(RaftConsensusNonVoterITest, ReplicaMatchPolicy) {
   ASSERT_OK(WaitForNumTabletsOnTS(
       new_replica, 1, kTimeout, nullptr, tablet::RUNNING));
 
-  auto count_replicas = [this](KuduTable* table, size_t* count) {
+  auto count_replicas = [](KuduTable* table, size_t* count) {
     vector<KuduScanToken*> tokens;
     ElementDeleter deleter(&tokens);
     KuduScanTokenBuilder builder(table);

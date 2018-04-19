@@ -23,7 +23,6 @@
 #include <glog/logging.h>
 
 #include "kudu/common/wire_protocol.h"
-#include "kudu/gutil/move.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/util/pb_util.h"

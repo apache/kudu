@@ -20,6 +20,7 @@
 #include <stddef.h>
 
 #include "kudu/gutil/once.h"
+#include "kudu/gutil/port.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/status.h"
 
