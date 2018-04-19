@@ -20,14 +20,17 @@
 #include <sys/uio.h>
 
 #include <cerrno>
+#include <string>
 #include <utility>
 
 #include <glog/logging.h>
 #include <openssl/err.h>
 
 #include "kudu/gutil/basictypes.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/security/openssl_util.h"
 #include "kudu/util/errno.h"
+#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
 
 namespace kudu {
@@ -104,20 +107,24 @@ Status TlsSocket::Writev(const struct ::iovec *iov, int iov_len, int64_t *nwritt
 
 Status TlsSocket::Recv(uint8_t *buf, int32_t amt, int32_t *nread) {
   SCOPED_OPENSSL_NO_PENDING_ERRORS;
-  const char* kErrString = "failed to read from TLS socket";
 
   CHECK(ssl_);
   errno = 0;
   int32_t bytes_read = SSL_read(ssl_.get(), buf, amt);
   int save_errno = errno;
   if (bytes_read <= 0) {
+    Sockaddr remote;
+    Socket::GetPeerAddress(&remote);
+    std::string kErrString = strings::Substitute("failed to read from TLS socket (remote: $0)",
+                                                 remote.ToString());
+
     if (bytes_read == 0 && SSL_get_shutdown(ssl_.get()) == SSL_RECEIVED_SHUTDOWN) {
       return Status::NetworkError(kErrString, ErrnoToString(ESHUTDOWN), ESHUTDOWN);
     }
     auto error_code = SSL_get_error(ssl_.get(), bytes_read);
     if (error_code == SSL_ERROR_WANT_READ) {
       if (save_errno != 0) {
-        return Status::NetworkError("SSL_read error",
+        return Status::NetworkError("SSL_read error from " + remote.ToString(),
                                     ErrnoToString(save_errno), save_errno);
       }
       // Nothing available to read yet.

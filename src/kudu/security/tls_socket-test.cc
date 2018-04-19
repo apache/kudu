@@ -45,6 +45,7 @@
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/scoped_cleanup.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -171,6 +172,8 @@ class EchoServer {
             SleepFor(MonoDelta::FromMilliseconds(10));
           }
         }
+
+        CHECK_OK(listener_.Close());
       });
   }
 
@@ -211,6 +214,33 @@ class EchoServer {
 };
 
 void handler(int /* signal */) {}
+
+TEST_F(TlsSocketTest, TestRecvFailure) {
+    EchoServer server;
+    server.Start();
+    unique_ptr<Socket> client_sock;
+    NO_FATALS(ConnectClient(server.listen_addr(), &client_sock));
+    unique_ptr<uint8_t[]> buf(new uint8_t[kEchoChunkSize]);
+
+    SleepFor(MonoDelta::FromMilliseconds(100));
+    server.Stop();
+
+    size_t nwritten;
+    ASSERT_OK(client_sock->BlockingWrite(buf.get(), kEchoChunkSize, &nwritten,
+        MonoTime::Now() + kTimeout));
+    size_t nread;
+
+    ASSERT_OK(client_sock->BlockingRecv(buf.get(), kEchoChunkSize, &nread,
+        MonoTime::Now() + kTimeout));
+
+    Status s = client_sock->BlockingRecv(buf.get(), kEchoChunkSize, &nread,
+        MonoTime::Now() + kTimeout);
+
+    ASSERT_TRUE(!s.ok());
+    ASSERT_TRUE(s.IsNetworkError());
+    ASSERT_STR_MATCHES(s.message().ToString(), "BlockingRecv error: failed to read from "
+                                               "TLS socket \\(remote: 127.0.0.1:[0-9]+\\): ");
+}
 
 // Test for failures to handle EINTR during TLS connection
 // negotiation and data send/receive.

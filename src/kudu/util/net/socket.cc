@@ -521,12 +521,18 @@ Status Socket::Recv(uint8_t *buf, int32_t amt, int32_t *nread) {
   int res;
   RETRY_ON_EINTR(res, recv(fd_, buf, amt, 0));
   if (res <= 0) {
+    Sockaddr remote;
+    GetPeerAddress(&remote);
     if (res == 0) {
-      return Status::NetworkError("Recv() got EOF from remote", Slice(), ESHUTDOWN);
+      std::string error_message = strings::Substitute("Recv() got EOF from remote $0",
+                                                      remote.ToString());
+      return Status::NetworkError(error_message, Slice(), ESHUTDOWN);
     }
     int err = errno;
-    return Status::NetworkError(std::string("recv error: ") +
-                                ErrnoToString(err), Slice(), err);
+    std::string error_message = strings::Substitute("recv error from $0: $1",
+                                                    remote.ToString(),
+                                                    ErrnoToString(err));
+    return Status::NetworkError(error_message, Slice(), err);
   }
   *nread = res;
   return Status::OK();
