@@ -146,7 +146,7 @@ def _run_iwyu_tool(paths):
 def _is_muted(path):
   assert os.path.isabs(path)
   rel = os.path.relpath(path, ROOT)
-  return rel in _MUTED_FILES
+  return not rel.startswith('src/') or rel in _MUTED_FILES
 
 
 def _filter_paths(paths):
