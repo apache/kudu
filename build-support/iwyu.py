@@ -255,6 +255,12 @@ def main(argv):
       for p in muted_paths:
         logging.warning("   %s" % p)
 
+  # If we came up with an empty list (no relevant files changed in the commit)
+  # then we should early-exit. Otherwise, we'd end up passing an empty list to
+  # IWYU and it will run on every file.
+  if flags.from_git and not paths:
+    logging.info("No files selected for analysis.")
+    sys.exit(0)
 
   # IWYU output will be relative to the compilation database which is in
   # the build directory. In order for the fixer script to properly find them, we need
