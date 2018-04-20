@@ -1503,22 +1503,23 @@ def _IsSameProject(line_info, edited_file, project):
   return (included_root and edited_root and included_root == edited_root)
 
 
-def _GetLineKind(file_line, filename, separate_project_includes, thirdparty_include_dirs):
+def _GetLineKind(file_line, filename, flags):
   """Given a file_line + file being edited, return best *_KIND value or None.
 
   Arguments:
     file_line: the LineInfo structure to be analyzed
     filename: the file which contains the line to be analyzed
-    separate_project_includes: see 'project' parameter of '_IsSameProject()'
-    thirdparty_include_dirs: see help output for the corresponding flag
+    flags: the program flags. Uses 'separate_project_includes' and 'thirdparty_include_dirs'
   """
+  if flags.source_root:
+    filename = os.path.relpath(filename, flags.source_root)
   line_without_coments = _COMMENT_RE.sub('', file_line.line)
   if file_line.deleted:
     return None
   elif _IsMainCUInclude(file_line, filename):
     return _MAIN_CU_INCLUDE_KIND
   elif _IsSystemInclude(file_line) and \
-         not _IsThirdpartyInclude(file_line, thirdparty_include_dirs):
+         not _IsThirdpartyInclude(file_line, flags.thirdparty_include_dirs):
     if '.' in line_without_coments:
       # e.g. <string.h>
       return _C_SYSTEM_INCLUDE_KIND
@@ -1526,8 +1527,8 @@ def _GetLineKind(file_line, filename, separate_project_includes, thirdparty_incl
       # e.g. <string>
       return _CXX_SYSTEM_INCLUDE_KIND
   elif file_line.type == _INCLUDE_RE:
-    if (separate_project_includes and
-        _IsSameProject(file_line, filename, separate_project_includes)):
+    if (flags.separate_project_includes and
+        _IsSameProject(file_line, filename, flags.separate_project_includes)):
       return _PROJECT_INCLUDE_KIND
     return _NONSYSTEM_INCLUDE_KIND
   elif file_line.type == _FORWARD_DECLARE_RE:
@@ -1606,9 +1607,8 @@ def _FirstReorderSpanWith(file_lines, good_reorder_spans, kind, filename,
   last_reorder_spans = {}
   for reorder_span in good_reorder_spans:
     for line_number in range(*reorder_span):
-      line_kind = _GetLineKind(file_lines[line_number], filename,
-                               flags.separate_project_includes,
-                               flags.thirdparty_include_dirs)
+      line_kind = _GetLineKind(file_lines[line_number], filename, flags)
+
       # Ignore forward-declares that come after 'contentful' code; we
       # never want to insert new forward-declares there.
       if (line_kind == _FORWARD_DECLARE_KIND and
@@ -1787,9 +1787,7 @@ def _DecoratedMoveSpanLines(iwyu_record, file_lines, move_span_lines, flags):
   sort_key = sort_key.replace('-inl.h', '_inl.h')
 
   # Next figure out the kind.
-  kind = _GetLineKind(firstline, iwyu_record.filename,
-                      flags.separate_project_includes,
-                      flags.thirdparty_include_dirs)
+  kind = _GetLineKind(firstline, iwyu_record.filename, flags)
 
   # All we're left to do is the reorder-span we're in.  Hopefully it's easy.
   reorder_span = firstline.reorder_span
@@ -2269,6 +2267,14 @@ def ParseArgs(args):
                     metavar="dir",
                     help=('Any includes which are found in <dir> are considered '
                           '"other-project" includes rather than "system" includes.'))
+
+  parser.add_option('--source_root', type='str',
+                    metavar="dir",
+                    help=('The path to the root of the source tree. When processing '
+                          'changes to a file /project/src/bar/baz.cc, setting '
+                          '--source_root to /project/src will ensure that an include '
+                          'of "bar/baz.h" is properly identified as the corresponding '
+                          'main-compilation-unit include.'))
 
   parser.add_option('--invoking_command_line', default=None,
                     help=('Internal flag used by iwyu.py, It should be the'

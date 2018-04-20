@@ -134,7 +134,9 @@ def _run_iwyu_tool(paths):
 
   try:
     output = check_output(cmdline, env=env, stderr=subprocess.STDOUT)
-    if '\nFATAL ERROR: ' in output or _RE_CLANG_ERROR.search(output):
+    if '\nFATAL ERROR: ' in output or \
+       'Assertion failed: ' in output or \
+       _RE_CLANG_ERROR.search(output):
       crash(output)
     return output
   except subprocess.CalledProcessError, e:
@@ -161,7 +163,9 @@ def _get_thirdparty_include_dirs():
 
 
 def _get_fixer_flags(flags):
-  args = ['--quiet', '--nosafe_headers']
+  args = ['--quiet',
+          '--nosafe_headers',
+          '--source_root=%s' % os.path.join(ROOT, 'src')]
   if flags.dry_run:
     args.append("--dry_run")
   for d in _get_thirdparty_include_dirs():
