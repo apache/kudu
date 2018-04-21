@@ -43,6 +43,7 @@
 #include "kudu/util/slice.h"
 #include "kudu/util/threadpool.h"
 
+using std::move;
 using std::string;
 using std::vector;
 using strings::Substitute;
@@ -94,6 +95,10 @@ TAG_FLAG(hive_metastore_conn_timeout, runtime);
 
 namespace kudu {
 namespace hms {
+
+const char* const HmsCatalog::kInvalidTableError = "when the Hive Metastore integration "
+    "is enabled, Kudu table names must be a period "
+    "('.') separated database and table name pair";
 
 HmsCatalog::HmsCatalog(string master_addresses)
     : master_addresses_(std::move(master_addresses)),
@@ -151,6 +156,42 @@ Status HmsCatalog::DropTable(const string& id, const string& name) {
 
   return Execute([&] (HmsClient* client) {
     return client->DropTable(hms_database, hms_table, env_ctx);
+  });
+}
+
+Status HmsCatalog::UpgradeLegacyImpalaTable(const string& id,
+                                            const std::string& db_name,
+                                            const std::string& tb_name,
+                                            const Schema& schema) {
+  return Execute([&] (HmsClient* client) {
+    hive::Table table;
+    RETURN_NOT_OK(client->GetTable(db_name, tb_name, &table));
+    if (table.parameters[HmsClient::kStorageHandlerKey] !=
+        HmsClient::kLegacyKuduStorageHandler) {
+      return Status::IllegalState("non-legacy table cannot be upgraded");
+    }
+
+    RETURN_NOT_OK(PopulateTable(id, Substitute("$0.$1", db_name, tb_name),
+                                schema, master_addresses_, &table));
+    return client->AlterTable(db_name, tb_name, table, EnvironmentContext());
+  });
+}
+
+Status HmsCatalog::RetrieveTables(vector<hive::Table>* hms_tables) {
+  return Execute([&] (HmsClient* client) {
+    vector<string> database_names;
+    RETURN_NOT_OK(client->GetAllDatabases(&database_names));
+    for (const auto &database_name : database_names) {
+      vector<string> table_names;
+      RETURN_NOT_OK(client->GetAllTables(database_name, &table_names));
+      for (const auto &table_name : table_names) {
+        hive::Table hms_table;
+        RETURN_NOT_OK(client->GetTable(database_name, table_name, &hms_table));
+        hms_tables->emplace_back(move(hms_table));
+      }
+    }
+
+    return Status::OK();
   });
 }
 
@@ -388,6 +429,9 @@ Status HmsCatalog::PopulateTable(const string& id,
   table->parameters[HmsClient::kKuduMasterAddrsKey] = master_addresses;
   table->parameters[HmsClient::kStorageHandlerKey] = HmsClient::kKuduStorageHandler;
 
+  // Remove the deprecated Kudu-specific field 'kudu.table_name'.
+  EraseKeyReturnValuePtr(&table->parameters, HmsClient::kLegacyKuduTableNameKey);
+
   // Overwrite the entire set of columns.
   vector<hive::FieldSchema> fields;
   for (const auto& column : schema.columns()) {
@@ -411,10 +455,7 @@ Status HmsCatalog::ParseTableName(const string& table,
 
   vector<string> identifiers = strings::Split(table, ".");
   if (identifiers.size() != 2) {
-    return Status::InvalidArgument(
-        "when the Hive Metastore integration is enabled, Kudu table names must be a "
-        "period ('.') separated database and table name pair",
-        table);
+    return Status::InvalidArgument(kInvalidTableError, table);
   }
 
   *hms_database = std::move(identifiers[0]);

@@ -28,6 +28,7 @@
 #include "kudu/client/scan_batch.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/write_op.h"
+#include "kudu/common/schema.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -134,6 +135,10 @@ Status ScanToStrings(KuduScanner* scanner, vector<string>* row_strings) {
 
 KuduSchema KuduSchemaFromSchema(const Schema& schema) {
   return KuduSchema(schema);
+}
+
+Schema SchemaFromKuduSchema(const KuduSchema& schema) {
+  return Schema(*schema.schema_);
 }
 
 } // namespace client

@@ -29,6 +29,7 @@
 #include "kudu/client/client.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/hms/hive_metastore_types.h"
 #include "kudu/hms/hms_client.h"
@@ -66,7 +67,7 @@ class MasterHmsTest : public ExternalMiniClusterITestBase {
     ExternalMiniClusterITestBase::SetUp();
 
     ExternalMiniClusterOptions opts;
-    opts.enable_hive_metastore = true;
+    opts.hms_mode = HmsMode::ENABLE_METASTORE_INTEGRATION;
     opts.num_masters = 1;
     opts.num_tablet_servers = 1;
     StartClusterWithOpts(std::move(opts));

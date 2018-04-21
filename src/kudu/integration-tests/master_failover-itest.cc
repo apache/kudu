@@ -29,6 +29,7 @@
 #include "kudu/client/client.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/strip.h" // IWYU pragma: keep
@@ -80,7 +81,7 @@ class MasterFailoverTest : public KuduTest {
   MasterFailoverTest() {
     opts_.num_masters = 3;
     opts_.num_tablet_servers = kNumTabletServerReplicas;
-    opts_.enable_hive_metastore = true;
+    opts_.hms_mode = HmsMode::ENABLE_METASTORE_INTEGRATION;
 
     // Reduce various timeouts below as to make the detection of
     // leader master failures (specifically, failures as result of

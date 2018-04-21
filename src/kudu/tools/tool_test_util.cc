@@ -46,7 +46,8 @@ string GetKuduToolAbsolutePath() {
   return tool_abs_path;
 }
 
-Status RunKuduTool(const vector<string>& args, string* out, string* err) {
+Status RunKuduTool(const vector<string>& args, string* out, string* err,
+                   const std::string& in) {
   vector<string> total_args = { GetKuduToolAbsolutePath() };
 
   // Speed up filesystem-based operations.
@@ -54,7 +55,7 @@ Status RunKuduTool(const vector<string>& args, string* out, string* err) {
   total_args.emplace_back("--never_fsync");
 
   total_args.insert(total_args.end(), args.begin(), args.end());
-  return Subprocess::Call(total_args, "", out, err);
+  return Subprocess::Call(total_args, in, out, err);
 }
 
 } // namespace tools

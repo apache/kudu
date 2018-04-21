@@ -112,6 +112,10 @@ namespace hms {
     return Status::RuntimeError((msg), e.what()); \
   }
 
+const char* const HmsClient::kLegacyKuduStorageHandler =
+  "com.cloudera.kudu.hive.KuduStorageHandler";
+const char* const HmsClient::kLegacyKuduTableNameKey = "kudu.table_name";
+const char* const HmsClient::kLegacyTablePrefix = "impala::";
 const char* const HmsClient::kKuduTableIdKey = "kudu.table_id";
 const char* const HmsClient::kKuduMasterAddrsKey = "kudu.master_addresses";
 const char* const HmsClient::kKuduMasterEventKey = "kudu.master_event";
@@ -123,11 +127,13 @@ const char* const HmsClient::kDisallowIncompatibleColTypeChanges =
   "hive.metastore.disallow.incompatible.col.type.changes";
 const char* const HmsClient::kDbNotificationListener =
   "org.apache.hive.hcatalog.listener.DbNotificationListener";
+const char* const HmsClient::kExternalTableKey = "EXTERNAL";
 const char* const HmsClient::kStorageHandlerKey = "storage_handler";
 const char* const HmsClient::kKuduMetastorePlugin =
   "org.apache.kudu.hive.metastore.KuduMetastorePlugin";
 
 const char* const HmsClient::kManagedTable = "MANAGED_TABLE";
+const char* const HmsClient::kExternalTable = "EXTERNAL_TABLE";
 
 const uint16_t HmsClient::kDefaultHmsPort = 9083;
 

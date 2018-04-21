@@ -32,6 +32,7 @@
 #include <gtest/gtest_prod.h>
 
 #include "kudu/client/shared_ptr.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
@@ -137,10 +138,11 @@ struct ExternalMiniClusterOptions {
   // Default: false.
   bool enable_kerberos;
 
-  // If true, set up a Hive Metastore as part of this ExternalMiniCluster.
+  // Tri state mode flag that indicates whether to set up a Hive Metastore as
+  // part of this ExternalMiniCluster and enable Kudu Hive Metastore integration.
   //
-  // Default: false.
-  bool enable_hive_metastore;
+  // Default: HmsMode::NONE.
+  HmsMode hms_mode;
 
   // If true, sends logging output to stderr instead of a log file.
   //
@@ -317,6 +319,10 @@ class ExternalMiniCluster : public MiniCluster {
                  const std::string& flag,
                  const std::string& value) WARN_UNUSED_RESULT;
 
+  // Enable Hive Metastore integration.
+  // Overrides 'enable_metastore_integration' set by ExternalMiniClusterOptions.
+  void EnableMetastoreIntegration();
+
   // Set the path where daemon binaries can be found.
   // Overrides 'daemon_bin_path' set by ExternalMiniClusterOptions.
   // The cluster must be shut down before calling this method.
@@ -411,6 +417,12 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   // Overrides the exe path specified in the constructor.
   // The daemon must be shut down before calling this method.
   void SetExePath(std::string exe);
+
+  // Set '--hive_metastore_uris' and '--hive_metastore_sasl_enabled'
+  // to enable Hive Metastore integration.
+  // Overrides the extra flags specified in the constructor.
+  void SetMetastoreIntegration(const std::string& hms_uris,
+                               bool enable_kerberos);
 
   // Enable Kerberos for this daemon. This creates a Kerberos principal
   // and keytab, and sets the appropriate environment variables in the

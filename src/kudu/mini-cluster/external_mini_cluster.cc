@@ -106,7 +106,7 @@ ExternalMiniClusterOptions::ExternalMiniClusterOptions()
       bind_mode(MiniCluster::kDefaultBindMode),
       num_data_dirs(1),
       enable_kerberos(false),
-      enable_hive_metastore(false),
+      hms_mode(HmsMode::NONE),
       logtostderr(true),
       start_process_timeout(MonoDelta::FromSeconds(30)) {
 }
@@ -186,7 +186,8 @@ Status ExternalMiniCluster::Start() {
                           "could not set krb5 client env");
   }
 
-  if (opts_.enable_hive_metastore) {
+  if (opts_.hms_mode == HmsMode::ENABLE_HIVE_METASTORE ||
+      opts_.hms_mode == HmsMode::ENABLE_METASTORE_INTEGRATION) {
     hms_.reset(new hms::MiniHms());
 
     if (opts_.enable_kerberos) {
@@ -233,6 +234,9 @@ void ExternalMiniCluster::ShutdownNodes(ClusterNodes nodes) {
 Status ExternalMiniCluster::Restart() {
   for (const scoped_refptr<ExternalMaster>& master : masters_) {
     if (master && master->IsShutdown()) {
+      if (opts_.hms_mode == HmsMode::ENABLE_METASTORE_INTEGRATION) {
+        master->SetMetastoreIntegration(hms_->uris(), opts_.enable_kerberos);
+      }
       RETURN_NOT_OK_PREPEND(master->Restart(), "Cannot restart master bound at: " +
                                                master->bound_rpc_hostport().ToString());
     }
@@ -250,6 +254,10 @@ Status ExternalMiniCluster::Restart() {
       MonoDelta::FromSeconds(kTabletServerRegistrationTimeoutSeconds)));
 
   return Status::OK();
+}
+
+void ExternalMiniCluster::EnableMetastoreIntegration() {
+  opts_.hms_mode = HmsMode::ENABLE_METASTORE_INTEGRATION;
 }
 
 void ExternalMiniCluster::SetDaemonBinPath(string daemon_bin_path) {
@@ -367,7 +375,7 @@ Status ExternalMiniCluster::StartMasters() {
     opts.extra_flags = SubstituteInFlags(flags, i);
     opts.start_process_timeout = opts_.start_process_timeout;
     opts.rpc_bind_address = master_rpc_addrs[i];
-    if (opts_.enable_hive_metastore) {
+    if (opts_.hms_mode == HmsMode::ENABLE_METASTORE_INTEGRATION) {
       opts.extra_flags.emplace_back(Substitute("--hive_metastore_uris=$0", hms_->uris()));
       opts.extra_flags.emplace_back(Substitute("--hive_metastore_sasl_enabled=$0",
                                                opts_.enable_kerberos));
@@ -856,6 +864,13 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
 void ExternalDaemon::SetExePath(string exe) {
   CHECK(IsShutdown()) << "Call Shutdown() before changing the executable path";
   opts_.exe = std::move(exe);
+}
+
+void ExternalDaemon::SetMetastoreIntegration(const string& hms_uris,
+                                             bool enable_kerberos) {
+  opts_.extra_flags.emplace_back(Substitute("--hive_metastore_uris=$0", hms_uris));
+  opts_.extra_flags.emplace_back(Substitute("--hive_metastore_sasl_enabled=$0",
+                                            enable_kerberos));
 }
 
 Status ExternalDaemon::Pause() {

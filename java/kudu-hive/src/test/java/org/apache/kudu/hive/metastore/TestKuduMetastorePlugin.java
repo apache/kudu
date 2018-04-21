@@ -77,19 +77,21 @@ public class TestKuduMetastorePlugin {
   }
 
   /**
-   * @return a valid Kudu table descriptor.
+   * @return a Kudu table descriptor given the storage handler type.
    */
-  private static Table newTable(String name) {
+  private static Table newKuduTable(String name, String storageHandler) {
     Table table = new Table();
     table.setDbName("default");
     table.setTableName(name);
     table.setTableType(TableType.MANAGED_TABLE.toString());
     table.putToParameters(hive_metastoreConstants.META_TABLE_STORAGE,
-                          KuduMetastorePlugin.KUDU_STORAGE_HANDLER);
-    table.putToParameters(KuduMetastorePlugin.KUDU_TABLE_ID_KEY,
-                          UUID.randomUUID().toString());
-    table.putToParameters(KuduMetastorePlugin.KUDU_MASTER_ADDRS_KEY,
-                          "localhost");
+                          storageHandler);
+    if (!storageHandler.equals(KuduMetastorePlugin.LEGACY_KUDU_STORAGE_HANDLER)) {
+      table.putToParameters(KuduMetastorePlugin.KUDU_TABLE_ID_KEY,
+                            UUID.randomUUID().toString());
+      table.putToParameters(KuduMetastorePlugin.KUDU_MASTER_ADDRS_KEY,
+                           "localhost");
+    }
 
     // The HMS will NPE if the storage descriptor and partition keys aren't set...
     StorageDescriptor sd = new StorageDescriptor();
@@ -104,6 +106,20 @@ public class TestKuduMetastorePlugin {
     return table;
   }
 
+  /**
+   * @return a legacy Kudu table descriptor.
+   */
+  private static Table newLegacyTable(String name) {
+    return newKuduTable(name, KuduMetastorePlugin.LEGACY_KUDU_STORAGE_HANDLER);
+  }
+
+  /**
+   * @return a valid Kudu table descriptor.
+   */
+  private static Table newTable(String name) {
+    return newKuduTable(name, KuduMetastorePlugin.KUDU_STORAGE_HANDLER);
+  }
+
   @Test
   public void testCreateTableHandler() throws Exception {
     // A non-Kudu table with a Kudu table ID should be rejected.
@@ -116,18 +132,6 @@ public class TestKuduMetastorePlugin {
     } catch (TException e) {
       assertTrue(e.getMessage().contains(
           "non-Kudu table entry must not contain a table ID property"));
-    }
-
-    // A non-Kudu table with a Kudu master address should be rejected.
-    try {
-      Table table = newTable("table");
-      table.getParameters().remove(hive_metastoreConstants.META_TABLE_STORAGE);
-      table.getParameters().remove(KuduMetastorePlugin.KUDU_TABLE_ID_KEY);
-      client.createTable(table);
-      fail();
-    } catch (TException e) {
-      assertTrue(e.getMessage().contains(
-          "non-Kudu table entry must not contain a Master addresses property"));
     }
 
     // A Kudu table without a Kudu table ID.
@@ -168,9 +172,11 @@ public class TestKuduMetastorePlugin {
 
   @Test
   public void testAlterTableHandler() throws Exception {
-    // Test altering a Kudu table.
+    // Test altering a Kudu (or a legacy) table.
     Table table = newTable("table");
     client.createTable(table, masterContext());
+    Table legacyTable = newLegacyTable("legacy_table");
+    client.createTable(legacyTable, masterContext());
     try {
 
       // Try to alter the Kudu table with a different table ID.
@@ -244,6 +250,21 @@ public class TestKuduMetastorePlugin {
 
       // Check that altering the table succeeds.
       client.alter_table(table.getDbName(), table.getTableName(), table);
+
+      // Check that altering the legacy table with Kudu storage handler
+      // succeeds.
+      {
+        Table alteredTable = legacyTable.deepCopy();
+        alteredTable.putToParameters(hive_metastoreConstants.META_TABLE_STORAGE,
+                                     KuduMetastorePlugin.KUDU_STORAGE_HANDLER);
+        alteredTable.putToParameters(KuduMetastorePlugin.KUDU_TABLE_ID_KEY,
+                                     UUID.randomUUID().toString());
+        alteredTable.putToParameters(KuduMetastorePlugin.KUDU_MASTER_ADDRS_KEY,
+                                    "localhost");
+        client.alter_table(legacyTable.getDbName(), legacyTable.getTableName(),
+                           alteredTable);
+      }
+
     } finally {
       client.dropTable(table.getDbName(), table.getTableName());
     }

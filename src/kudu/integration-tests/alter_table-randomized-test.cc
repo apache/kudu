@@ -36,6 +36,7 @@
 #include "kudu/client/shared_ptr.h"
 #include "kudu/client/value.h"
 #include "kudu/client/write_op.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
@@ -99,7 +100,7 @@ class AlterTableRandomized : public KuduTest {
 
     ExternalMiniClusterOptions opts;
     opts.num_tablet_servers = 3;
-    opts.enable_hive_metastore = true;
+    opts.hms_mode = HmsMode::ENABLE_METASTORE_INTEGRATION;
     // This test produces tables with lots of columns. With container preallocation,
     // we end up using quite a bit of disk space. So, we disable it.
     opts.extra_tserver_flags.emplace_back("--log_container_preallocate_bytes=0");

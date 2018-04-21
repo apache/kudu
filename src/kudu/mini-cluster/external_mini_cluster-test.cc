@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/mini-cluster/external_mini_cluster.h"
+
 #include <iosfwd>
 #include <ostream>
 #include <string>
@@ -25,11 +27,11 @@
 #include <glog/stl_logging.h> // IWYU pragma: keep
 #include <gtest/gtest.h>
 
+#include "kudu/common/common.pb.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h" // IWYU pragma: keep
 #include "kudu/hms/hms_client.h"
 #include "kudu/hms/mini_hms.h"
-#include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/mini-cluster/mini_cluster.h"
 #include "kudu/security/test/mini_kdc.h"
 #include "kudu/util/monotime.h"
@@ -124,7 +126,9 @@ TEST_F(ExternalMiniClusterTest, TestKerberosReacquire) {
 TEST_P(ExternalMiniClusterTest, TestBasicOperation) {
   ExternalMiniClusterOptions opts;
   opts.enable_kerberos = GetParam().first == Kerberos::ENABLED;
-  opts.enable_hive_metastore = GetParam().second == HiveMetastore::ENABLED;
+  if (GetParam().second == HiveMetastore::ENABLED) {
+    opts.hms_mode = HmsMode::ENABLE_HIVE_METASTORE;
+  }
 
   opts.num_masters = 3;
   opts.num_tablet_servers = 3;
@@ -188,7 +192,7 @@ TEST_P(ExternalMiniClusterTest, TestBasicOperation) {
   ASSERT_EQ(ts_http.ToString(), ts->bound_http_hostport().ToString());
 
   // Verify that the HMS is reachable.
-  if (opts.enable_hive_metastore) {
+  if (opts.hms_mode == HmsMode::ENABLE_HIVE_METASTORE) {
     hms::HmsClientOptions hms_client_opts;
     hms_client_opts.enable_kerberos = opts.enable_kerberos;
     hms::HmsClient hms_client(cluster.hms()->address(), hms_client_opts);

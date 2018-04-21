@@ -68,6 +68,12 @@ enum EncodingType {
   BIT_SHUFFLE = 6;
 }
 
+enum HmsMode {
+  NONE = 0;
+  ENABLE_HIVE_METASTORE = 1;
+  ENABLE_METASTORE_INTEGRATION = 2;
+};
+
 // Holds detailed attributes for the column. Only certain fields will be set,
 // depending on the type of the column.
 message ColumnTypeAttributesPB {

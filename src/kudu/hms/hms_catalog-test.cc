@@ -20,6 +20,8 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags_declare.h>
@@ -27,6 +29,7 @@
 
 #include "kudu/common/common.pb.h"
 #include "kudu/common/schema.h"
+#include "kudu/gutil/map-util.h" // IWYU pragma: keep
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/hms/hive_metastore_types.h"
 #include "kudu/hms/hms_client.h"
@@ -42,6 +45,7 @@ DECLARE_string(hive_metastore_uris);
 DECLARE_bool(hive_metastore_sasl_enabled);
 
 using kudu::rpc::SaslProtection;
+using std::make_pair;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -215,6 +219,36 @@ class HmsCatalogTest : public KuduTest {
     }
   }
 
+  Status CreateLegacyTable(const string& database_name,
+                           const string& table_name,
+                           const string& table_type) {
+    hive::Table table;
+    string kudu_table_name(table_name);
+    table.dbName = database_name;
+    table.tableName = table_name;
+    table.tableType = table_type;
+    if (table_type == HmsClient::kManagedTable) {
+      kudu_table_name = Substitute("$0$1.$2", HmsClient::kLegacyTablePrefix,
+                                   database_name, table_name);
+    }
+
+    table.__set_parameters({
+        make_pair(HmsClient::kStorageHandlerKey,
+                  HmsClient::kLegacyKuduStorageHandler),
+        make_pair(HmsClient::kLegacyKuduTableNameKey,
+                  kudu_table_name),
+        make_pair(HmsClient::kKuduMasterAddrsKey,
+                  kMasterAddrs),
+    });
+
+    // TODO(Hao): Remove this once HIVE-19253 is fixed.
+    if (table_type == HmsClient::kExternalTable) {
+      table.parameters[HmsClient::kExternalTableKey] = "TRUE";
+    }
+
+    return hms_client_->CreateTable(table);
+  }
+
   void CheckTableDoesNotExist(const string& database_name, const string& table_name) {
     hive::Table table;
     Status s = hms_client_->GetTable(database_name, table_name, &table);
@@ -330,6 +364,38 @@ TEST_F(HmsCatalogTest, TestExternalTable) {
   s = hms_catalog_->DropTable(kTableId, "default.bogus_table_name");
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   NO_FATALS(CheckTableDoesNotExist("default", "bogus_table_name"));
+}
+
+TEST_F(HmsCatalogTest, TestRetrieveTables) {
+  const string kHmsDatabase = "db";
+  const string kManagedTableName = "managed_table";
+  const string kExternalTableName = "external_table";
+  const string kNonKuduTableName = "non_kudu_table";
+
+  // Create a Impala managed table, a external table and a non Kudu table.
+  hive::Database db;
+  db.name = kHmsDatabase;
+  ASSERT_OK(hms_client_->CreateDatabase(db));
+  ASSERT_OK(CreateLegacyTable(kHmsDatabase,
+                              kManagedTableName,
+                              HmsClient::kManagedTable));
+  hive::Table table;
+  ASSERT_OK(hms_client_->GetTable(kHmsDatabase, kManagedTableName, &table));
+  ASSERT_OK(CreateLegacyTable(kHmsDatabase,
+                              kExternalTableName,
+                              HmsClient::kExternalTable));
+  ASSERT_OK(hms_client_->GetTable(kHmsDatabase, kExternalTableName, &table));
+
+  hive::Table non_kudu_table;
+  non_kudu_table.dbName = kHmsDatabase;
+  non_kudu_table.tableName = kNonKuduTableName;
+  ASSERT_OK(hms_client_->CreateTable(non_kudu_table));
+  ASSERT_OK(hms_client_->GetTable(kHmsDatabase, kNonKuduTableName, &table));
+
+  // Retrieve all tables and ensure all entries are found.
+  vector<hive::Table> hms_tables;
+  ASSERT_OK(hms_catalog_->RetrieveTables(&hms_tables));
+  ASSERT_EQ(3, hms_tables.size());
 }
 
 // Checks that the HmsCatalog handles reconnecting to the metastore after a connection failure.

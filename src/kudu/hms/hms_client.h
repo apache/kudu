@@ -87,6 +87,10 @@ struct HmsClientOptions {
 class HmsClient {
  public:
 
+  static const char* const kExternalTableKey;
+  static const char* const kLegacyKuduStorageHandler;
+  static const char* const kLegacyKuduTableNameKey;
+  static const char* const kLegacyTablePrefix;
   static const char* const kKuduTableIdKey;
   static const char* const kKuduMasterAddrsKey;
   static const char* const kKuduMasterEventKey;;
@@ -100,6 +104,7 @@ class HmsClient {
 
   // See org.apache.hadoop.hive.metastore.TableType.
   static const char* const kManagedTable;
+  static const char* const kExternalTable;
 
   static const uint16_t kDefaultHmsPort;
 

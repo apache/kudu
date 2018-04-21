@@ -49,6 +49,8 @@ namespace hms {
 class HmsCatalog {
  public:
 
+  static const char* const kInvalidTableError;
+
   explicit HmsCatalog(std::string master_addresses);
   ~HmsCatalog();
 
@@ -82,6 +84,20 @@ class HmsCatalog {
                     const std::string& name,
                     const std::string& new_name,
                     const Schema& schema) WARN_UNUSED_RESULT;
+
+  // Upgrades a legacy Impala table entry in the HMS.
+  //
+  // This method will fail if the HMS is unreachable, if the table is not a
+  // legacy table, or if the table entry in not in the HMS.
+  Status UpgradeLegacyImpalaTable(const std::string& id,
+                                  const std::string& db_name,
+                                  const std::string& tb_name,
+                                  const Schema& schema) WARN_UNUSED_RESULT;
+
+  // Retrieves all tables in the HMS.
+  //
+  // This method will fail if the HMS is unreachable.
+  Status RetrieveTables(std::vector<hive::Table>* hms_tables) WARN_UNUSED_RESULT;
 
   // Validates the hive_metastore_uris gflag.
   static bool ValidateUris(const char* flag_name, const std::string& metastore_uris);

@@ -63,6 +63,7 @@ unique_ptr<Mode> RootMode(const string& name) {
       .Description("Kudu Command Line Tools") // root mode description isn't printed
       .AddMode(BuildClusterMode())
       .AddMode(BuildFsMode())
+      .AddMode(BuildHmsMode())
       .AddMode(BuildLocalReplicaMode())
       .AddMode(BuildMasterMode())
       .AddMode(BuildPbcMode())

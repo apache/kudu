@@ -86,6 +86,7 @@ target_link_libraries(ksck
 add_executable(kudu
   tool_action_cluster.cc
   tool_action_fs.cc
+  tool_action_hms.cc
   tool_action_local_replica.cc
   tool_action_master.cc
   tool_action_pbc.cc
@@ -106,6 +107,7 @@ target_link_libraries(kudu
   krpc
   ksck
   kudu_client
+  kudu_client_test_util
   kudu_common
   kudu_fs
   kudu_util

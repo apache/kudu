@@ -63,5 +63,8 @@ Status ScanToStrings(KuduScanner* scanner,
 // Convert a kudu::Schema to a kudu::client::KuduSchema.
 KuduSchema KuduSchemaFromSchema(const Schema& schema);
 
+// Convert a kudu::client::KuduSchema to a kudu::Schema.
+Schema SchemaFromKuduSchema(const KuduSchema& schema);
+
 } // namespace client
 } // namespace kudu

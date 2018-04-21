@@ -590,7 +590,7 @@ class KUDU_EXPORT KuduSchema {
   friend class tools::ReplicaDumper;
 
   friend KuduSchema KuduSchemaFromSchema(const Schema& schema);
-
+  friend Schema SchemaFromKuduSchema(const KuduSchema& schema);
 
   // For use by kudu tests.
   explicit KuduSchema(const Schema& schema);

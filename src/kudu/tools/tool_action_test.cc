@@ -157,7 +157,7 @@ Status ProcessRequest(const ControlShellRequestPB& req,
         opts.num_tablet_servers = cc.num_tservers();
       }
       opts.enable_kerberos = cc.enable_kerberos();
-      opts.enable_hive_metastore = cc.enable_hive_metastore();
+      opts.hms_mode = cc.hms_mode();
       if (cc.has_cluster_root()) {
         opts.cluster_root = cc.cluster_root();
       } else {
