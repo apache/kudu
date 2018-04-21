@@ -274,7 +274,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
 
   // Implement an UnsafeChangeConfig() request.
   Status UnsafeChangeConfig(const UnsafeChangeConfigRequestPB& req,
-                            tserver::TabletServerErrorPB::Code* error_code);
+                            boost::optional<tserver::TabletServerErrorPB::Code>* error_code);
 
   // Returns the last OpId (either received or committed, depending on the
   // 'type' argument) that the Consensus implementation knows about.

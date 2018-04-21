@@ -1086,11 +1086,13 @@ void ConsensusServiceImpl::UnsafeChangeConfig(const UnsafeChangeConfigRequestPB*
   }
 
   shared_ptr<RaftConsensus> consensus;
-  if (!GetConsensusOrRespond(replica, resp, context, &consensus)) return;
-  TabletServerErrorPB::Code error_code;
-  Status s = consensus->UnsafeChangeConfig(*req, &error_code);
+  if (!GetConsensusOrRespond(replica, resp, context, &consensus)) {
+    return;
+  }
+  boost::optional<TabletServerErrorPB::Code> error_code;
+  const Status s = consensus->UnsafeChangeConfig(*req, &error_code);
   if (PREDICT_FALSE(!s.ok())) {
-    SetupErrorAndRespond(resp->mutable_error(), s, error_code, context);
+    HandleErrorResponse(req, resp, context, error_code, s);
     return;
   }
   context->RespondSuccess();

@@ -1886,8 +1886,9 @@ Status RaftConsensus::BulkChangeConfig(const BulkChangeConfigRequestPB& req,
   return Status::OK();
 }
 
-Status RaftConsensus::UnsafeChangeConfig(const UnsafeChangeConfigRequestPB& req,
-                                         TabletServerErrorPB::Code* error_code) {
+Status RaftConsensus::UnsafeChangeConfig(
+    const UnsafeChangeConfigRequestPB& req,
+    boost::optional<tserver::TabletServerErrorPB::Code>* error_code) {
   if (PREDICT_FALSE(!req.has_new_config())) {
     *error_code = TabletServerErrorPB::INVALID_CONFIG;
     return Status::InvalidArgument("Request must contain 'new_config' argument "
@@ -1960,6 +1961,7 @@ Status RaftConsensus::UnsafeChangeConfig(const UnsafeChangeConfigRequestPB& req,
   // in the committed config, it is rare and a replica without itself
   // in the latest config is definitely not caught up with the latest leader's log.
   if (!IsRaftConfigVoter(peer_uuid(), new_config)) {
+    *error_code = TabletServerErrorPB::INVALID_CONFIG;
     return Status::InvalidArgument(Substitute("Local replica uuid $0 is not "
                                               "a VOTER in the new config, "
                                               "rejecting the unsafe config "
@@ -1985,13 +1987,12 @@ Status RaftConsensus::UnsafeChangeConfig(const UnsafeChangeConfigRequestPB& req,
   // Prepare the consensus request as if the request is being generated
   // from a different leader.
   ConsensusRequestPB consensus_req;
-  ConsensusResponsePB consensus_resp;
   consensus_req.set_caller_uuid(req.caller_id());
   // Bumping up the term for the consensus request being generated.
   // This makes this request appear to come from a new leader that
   // the local replica doesn't know about yet. If the local replica
   // happens to be the leader, this will cause it to step down.
-  int64_t new_term = current_term + 1;
+  const int64_t new_term = current_term + 1;
   consensus_req.set_caller_term(new_term);
   consensus_req.mutable_preceding_id()->CopyFrom(preceding_opid);
   consensus_req.set_committed_index(last_committed_index);
@@ -2018,14 +2019,11 @@ Status RaftConsensus::UnsafeChangeConfig(const UnsafeChangeConfigRequestPB& req,
         << "COMMITTED CONFIG: " << SecureShortDebugString(committed_config)
         << "NEW CONFIG: " << SecureShortDebugString(new_config);
 
-  s = Update(&consensus_req, &consensus_resp);
-  if (!s.ok() || consensus_resp.has_error()) {
-    *error_code = TabletServerErrorPB::UNKNOWN_ERROR;
-  }
-  if (s.ok() && consensus_resp.has_error()) {
-    s = StatusFromPB(consensus_resp.error().status());
-  }
-  return s;
+  ConsensusResponsePB consensus_resp;
+  return Update(&consensus_req, &consensus_resp).AndThen([&consensus_resp]{
+    return consensus_resp.has_error()
+        ? StatusFromPB(consensus_resp.error().status()) : Status::OK();
+  });
 }
 
 void RaftConsensus::Stop() {
