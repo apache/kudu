@@ -22,11 +22,8 @@ dependencies {
   compile libs.guava
   compile libs.slf4jApi
 
-  // This artifact is in compile scope for convenience, as it is typically
-  // not included in the job classpath by MapReduce platform providers.
-  compile libs.parquetHadoop
-
   provided libs.hadoopClient
+  provided libs.parquetHadoop
 
   optional libs.yetusAnnotations
 

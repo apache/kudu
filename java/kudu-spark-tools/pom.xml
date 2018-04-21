@@ -53,14 +53,12 @@
             <version>${slf4j.version}</version>
         </dependency>
 
-        <!-- This artifact is in compile scope for convenience, as it is typically
-             not included in the Spark submit classpath by Spark platform providers. -->
         <dependency>
             <groupId>com.databricks</groupId>
             <artifactId>spark-avro_${scala.binary.version}</artifactId>
             <version>${sparkavro.version}</version>
+            <scope>provided</scope>
         </dependency>
-
         <dependency>
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-core_${scala.binary.version}</artifactId>
@@ -189,7 +187,6 @@
                             <include>org.apache.kudu:kudu-client</include>
                             <include>org.apache.kudu:kudu-client-tools</include>
                             <include>org.apache.kudu:kudu-${spark.version.label}_${scala.binary.version}</include>
-                            <include>com.databricks:spark-avro_${scala.binary.version}</include>
                         </includes>
                     </artifactSet>
                 </configuration>

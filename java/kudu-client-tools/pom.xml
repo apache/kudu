@@ -56,18 +56,16 @@
             <version>${slf4j.version}</version>
         </dependency>
 
-        <!-- This artifact is in compile scope for convenience, as it is typically
-             not included in the job classpath by MapReduce platform providers. -->
-        <dependency>
-            <groupId>org.apache.parquet</groupId>
-            <artifactId>parquet-hadoop</artifactId>
-            <version>${parquet.version}</version>
-        </dependency>
-
         <dependency>
             <groupId>org.apache.hadoop</groupId>
             <artifactId>hadoop-client</artifactId>
             <version>${hadoop.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.parquet</groupId>
+            <artifactId>parquet-hadoop</artifactId>
+            <version>${parquet.version}</version>
             <scope>provided</scope>
         </dependency>
 
@@ -129,7 +127,6 @@
                             <include>com.google.guava:guava</include>
                             <include>org.apache.kudu:kudu-client</include>
                             <include>org.apache.kudu:kudu-mapreduce</include>
-                            <include>org.apache.parquet:parquet-hadoop</include>
                         </includes>
                     </artifactSet>
                     <relocations>

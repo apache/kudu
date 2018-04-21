@@ -24,11 +24,8 @@ dependencies {
   compile project(path: ":kudu-spark", configuration: "shadow")
   compile libs.slf4jApi
 
-  // This artifact is in compile scope for convenience, as it is typically
-  // not included in the Spark submit classpath by Spark platform providers.
-  compile libs.sparkAvro
-
   provided libs.scalaLibrary
+  provided libs.sparkAvro
   provided libs.sparkCore
   provided libs.sparkSql
 

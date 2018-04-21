@@ -182,7 +182,9 @@ name and keytab location must be provided through the `--principal` and
   `Date` and complex types are not supported.
 - Kudu tables may only be registered as temporary tables in SparkSQL.
   Kudu tables may not be queried using HiveContext.
-
+- When importing or exporting Avro via the tools in `kudu-spark-tools`
+  the `spark-avro` dependency jars are expected to be on the classpath.
+  You can read more about `spark-avro` link:https://github.com/databricks/spark-avro[here].
 
 == Kudu Python Client
 The Kudu Python client provides a Python friendly interface to the C++ client API.
@@ -254,3 +256,9 @@ and
 link:https://github.com/apache/kudu/blob/master/java/kudu-client-tools/src/main/java/org/apache/kudu/mapreduce/tools/ImportCsv.java[ImportCsv.java]
 for examples which you can model your own integrations on. Stay tuned for more examples
 using YARN and Spark in the future.
+
+=== MapReduce Integration Known Issues and Limitations
+
+- When importing or exporting Parquet via the tools in `kudu-client-tools`
+  the `parquet-hadoop` dependency jars are expected to be on the classpath.
+  You can read more about `parquet-hadoop` link:https://github.com/apache/parquet-mr[here].
