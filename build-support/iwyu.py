@@ -49,7 +49,8 @@ _IWYU_TOOL = os.path.join(ROOT, "build-support/iwyu/iwyu_tool.py")
 _RE_SOURCE_FILE = re.compile(r'\.(c|cc|h)$')
 
 # Matches compilation errors in the output of IWYU
-_RE_CLANG_ERROR = re.compile(r'^.+?:\d+:\d+: error:', re.MULTILINE)
+_RE_CLANG_ERROR = re.compile(r'^.+?:\d+:\d+:\s*'
+                             r'(fatal )?error:', re.MULTILINE)
 
 # Files that we don't want to ever run IWYU on, because they aren't clean yet.
 _MUTED_FILES = set([
@@ -271,6 +272,17 @@ def main(argv):
   # to treat all paths relative to that directory and chdir into it first.
   paths = _relativize_paths(paths)
   os.chdir(_BUILD_DIR)
+
+  # For correct results, IWYU depends on the generated header files.
+  logging.info("Ensuring IWYU dependencies are built...")
+  if os.path.exists('Makefile'):
+    subprocess.check_call(['make', 'iwyu-generated-headers'])
+  elif os.path.exists('build.ninja'):
+    subprocess.check_call(['ninja', 'iwyu-generated-headers'])
+  else:
+    logging.error('No Makefile or build.ninja found in build directory %s',
+                  _BUILD_DIR)
+    sys.exit(1)
 
   logging.info("Checking %d file(s)...", len(paths))
   if flags.sort_only:
