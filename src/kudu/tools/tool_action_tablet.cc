@@ -150,6 +150,8 @@ Status DoKsckForTablet(const vector<string>& master_addresses, const string& tab
   std::ofstream null_stream;
   Ksck ksck(cluster, &null_stream);
   ksck.set_tablet_id_filters({ tablet_id });
+  RETURN_NOT_OK(ksck.CheckMasterHealth());
+  RETURN_NOT_OK(ksck.CheckMasterConsensus());
   RETURN_NOT_OK(ksck.CheckClusterRunning());
   RETURN_NOT_OK(ksck.FetchTableAndTabletInfo());
   // The return Status is ignored since a tserver that is not the destination

@@ -37,13 +37,14 @@
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tools/ksck.h"
+#include "kudu/tools/ksck_results.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+DECLARE_bool(checksum_scan);
 DECLARE_string(color);
-DECLARE_bool(consensus);
 
 namespace kudu {
 namespace tools {
@@ -196,20 +197,22 @@ class KsckTest : public KuduTest {
  protected:
   // Returns the expected summary for a table with the given tablet states.
   std::string ExpectedKsckTableSummary(const string& table_name,
+                                       int replication_factor,
                                        int healthy_tablets,
                                        int recovering_tablets,
                                        int underreplicated_tablets,
                                        int consensus_mismatch_tablets,
                                        int unavailable_tablets) {
-    Ksck::TableSummary table_summary;
+    KsckTableSummary table_summary;
     table_summary.name = table_name;
+    table_summary.replication_factor = replication_factor;
     table_summary.healthy_tablets = healthy_tablets;
     table_summary.recovering_tablets = recovering_tablets;
     table_summary.underreplicated_tablets = underreplicated_tablets;
     table_summary.consensus_mismatch_tablets = consensus_mismatch_tablets;
     table_summary.unavailable_tablets = unavailable_tablets;
     std::ostringstream oss;
-    Ksck::PrintTableSummaries({ table_summary }, oss);
+    PrintTableSummaries({ table_summary }, oss);
     return oss.str();
   }
 
@@ -339,13 +342,7 @@ class KsckTest : public KuduTest {
     auto c = MakeScopedCleanup([this]() {
         LOG(INFO) << "Ksck output:\n" << err_stream_.str();
       });
-    RETURN_NOT_OK(ksck_->CheckMasterHealth());
-    RETURN_NOT_OK(ksck_->CheckMasterConsensus());
-    RETURN_NOT_OK(ksck_->CheckClusterRunning());
-    RETURN_NOT_OK(ksck_->FetchTableAndTabletInfo());
-    RETURN_NOT_OK(ksck_->FetchInfoFromTabletServers());
-    RETURN_NOT_OK(ksck_->CheckTablesConsistency());
-    return Status::OK();
+    return ksck_->RunAndPrintResults();
   }
 
   shared_ptr<MockKsckCluster> cluster_;
@@ -387,6 +384,8 @@ TEST_F(KsckTest, TestMasterUnavailable) {
   master->fetch_info_status_ = Status::NetworkError("gremlins");
   master->cstate_ = boost::none;
   ASSERT_TRUE(ksck_->CheckMasterHealth().IsNetworkError());
+  ASSERT_TRUE(ksck_->CheckMasterConsensus().IsCorruption());
+  ASSERT_OK(ksck_->PrintResults());
   ASSERT_STR_CONTAINS(err_stream_.str(),
     "Master Summary\n"
     "    UUID     | Address  |   Status\n"
@@ -394,12 +393,12 @@ TEST_F(KsckTest, TestMasterUnavailable) {
     " master-id-0 | master-0 | HEALTHY\n"
     " master-id-2 | master-2 | HEALTHY\n"
     " master-id-1 | master-1 | UNAVAILABLE\n");
-  ASSERT_TRUE(ksck_->CheckMasterConsensus().IsCorruption());
   ASSERT_STR_CONTAINS(err_stream_.str(),
-    "WARNING: masters have consensus conflicts  All reported masters are:\n"
+    "All reported replicas are:\n"
     "  A = master-id-0\n"
     "  B = master-id-1\n"
     "  C = master-id-2\n"
+    "The consensus matrix is:\n"
     " Config source |        Replicas        | Current term | Config index | Committed?\n"
     "---------------+------------------------+--------------+--------------+------------\n"
     " A             | A*  B   C              | 0            |              | Yes\n"
@@ -421,6 +420,8 @@ TEST_F(KsckTest, TestWrongMasterUuid) {
   config->add_peers()->set_permanent_uuid(imposter_uuid);
 
   ASSERT_OK(ksck_->CheckMasterHealth());
+  ASSERT_TRUE(ksck_->CheckMasterConsensus().IsCorruption());
+  ASSERT_OK(ksck_->PrintResults());
   ASSERT_STR_CONTAINS(err_stream_.str(),
     "Master Summary\n"
     "        UUID        | Address  | Status\n"
@@ -428,13 +429,13 @@ TEST_F(KsckTest, TestWrongMasterUuid) {
     " master-id-0        | master-0 | HEALTHY\n"
     " master-id-1        | master-1 | HEALTHY\n"
     " master-id-imposter | master-2 | HEALTHY\n");
-  ASSERT_TRUE(ksck_->CheckMasterConsensus().IsCorruption());
   ASSERT_STR_CONTAINS(err_stream_.str(),
-    "WARNING: masters have consensus conflicts  All reported masters are:\n"
+    "All reported replicas are:\n"
     "  A = master-id-0\n"
     "  B = master-id-1\n"
     "  C = master-id-imposter\n"
     "  D = master-id-2\n"
+    "The consensus matrix is:\n"
     " Config source |     Replicas     | Current term | Config index | Committed?\n"
     "---------------+------------------+--------------+--------------+------------\n"
     " A             | A*  B       D    | 0            |              | Yes\n"
@@ -449,11 +450,13 @@ TEST_F(KsckTest, TestTwoLeaderMasters) {
 
   ASSERT_OK(ksck_->CheckMasterHealth());
   ASSERT_TRUE(ksck_->CheckMasterConsensus().IsCorruption());
+  ASSERT_OK(ksck_->PrintResults());
   ASSERT_STR_CONTAINS(err_stream_.str(),
-    "WARNING: masters have consensus conflicts  All reported masters are:\n"
+    "All reported replicas are:\n"
     "  A = master-id-0\n"
     "  B = master-id-1\n"
     "  C = master-id-2\n"
+    "The consensus matrix is:\n"
     " Config source |   Replicas   | Current term | Config index | Committed?\n"
     "---------------+--------------+--------------+--------------+------------\n"
     " A             | A*  B   C    | 0            |              | Yes\n"
@@ -479,6 +482,7 @@ TEST_F(KsckTest, TestWrongUUIDTabletServer) {
   ASSERT_OK(ksck_->CheckClusterRunning());
   ASSERT_OK(ksck_->FetchTableAndTabletInfo());
   ASSERT_TRUE(ksck_->FetchInfoFromTabletServers().IsNetworkError());
+  ASSERT_OK(ksck_->PrintResults());
   ASSERT_STR_CONTAINS(err_stream_.str(),
     "Tablet Server Summary\n"
     "  UUID   | Address |      Status\n"
@@ -503,10 +507,18 @@ TEST_F(KsckTest, TestBadTabletServer) {
 
   s = ksck_->CheckTablesConsistency();
   EXPECT_EQ("Corruption: 1 out of 1 table(s) are not healthy", s.ToString());
+  ASSERT_OK(ksck_->PrintResults());
   ASSERT_STR_CONTAINS(
       err_stream_.str(),
-      "WARNING: Unable to connect to tablet server "
-      "ts-id-1 (<mock>): Network error: Network failure");
+      "Tablet Server Summary\n"
+      "  UUID   | Address |   Status\n"
+      "---------+---------+-------------\n"
+      " ts-id-0 | <mock>  | HEALTHY\n"
+      " ts-id-2 | <mock>  | HEALTHY\n"
+      " ts-id-1 | <mock>  | UNAVAILABLE\n");
+  ASSERT_STR_CONTAINS(
+      err_stream_.str(),
+      "Error from <mock>: Network error: Network failure\n");
   ASSERT_STR_CONTAINS(
       err_stream_.str(),
       "Tablet tablet-id-0 of table 'test' is under-replicated: 1 replica(s) not RUNNING\n"
@@ -529,60 +541,83 @@ TEST_F(KsckTest, TestBadTabletServer) {
 
 TEST_F(KsckTest, TestOneTableCheck) {
   CreateOneTableOneTablet();
+  FLAGS_checksum_scan = true;
   ASSERT_OK(RunKsck());
-  ASSERT_OK(ksck_->ChecksumData(ChecksumOptions()));
   ASSERT_STR_CONTAINS(err_stream_.str(),
                       "0/1 replicas remaining (20B from disk, 10 rows summed)");
 }
 
 TEST_F(KsckTest, TestOneSmallReplicatedTable) {
   CreateOneSmallReplicatedTable();
+  FLAGS_checksum_scan = true;
   ASSERT_OK(RunKsck());
-  ASSERT_OK(ksck_->ChecksumData(ChecksumOptions()));
   ASSERT_STR_CONTAINS(err_stream_.str(),
                       "0/9 replicas remaining (180B from disk, 90 rows summed)");
+}
 
-  // Test filtering (a non-matching pattern)
-  err_stream_.str("");
+// Test filtering on a non-matching table pattern.
+TEST_F(KsckTest, TestNonMatchingTableFilter) {
+  CreateOneSmallReplicatedTable();
   ksck_->set_table_filters({"xyz"});
-  ASSERT_OK(RunKsck());
-  Status s = ksck_->ChecksumData(ChecksumOptions());
-  EXPECT_EQ("Not found: No table found. Filter: table_filters=xyz", s.ToString());
+  FLAGS_checksum_scan = true;
+  ASSERT_TRUE(RunKsck().IsRuntimeError());
+  const vector<Status>& error_messages = ksck_->results().error_messages;
+  ASSERT_EQ(1, error_messages.size());
+  EXPECT_EQ("Not found: checksum scan error: No table found. Filter: table_filters=xyz",
+            error_messages[0].ToString());
   ASSERT_STR_CONTAINS(err_stream_.str(),
                       "The cluster doesn't have any matching tables");
+}
 
-  // Test filtering with a matching table pattern.
-  err_stream_.str("");
+// Test filtering with a matching table pattern.
+TEST_F(KsckTest, TestMatchingTableFilter) {
+  CreateOneSmallReplicatedTable();
   ksck_->set_table_filters({"te*"});
+  FLAGS_checksum_scan = true;
   ASSERT_OK(RunKsck());
-  ASSERT_OK(ksck_->ChecksumData(ChecksumOptions()));
   ASSERT_STR_CONTAINS(err_stream_.str(),
                       "0/9 replicas remaining (180B from disk, 90 rows summed)");
+}
 
-  // Test filtering with a matching tablet ID pattern.
-  err_stream_.str("");
-  ksck_->set_table_filters({});
+// Test filtering on a non-matching tablet id pattern.
+TEST_F(KsckTest, TestNonMatchingTabletIdFilter) {
+  CreateOneSmallReplicatedTable();
+  ksck_->set_tablet_id_filters({"xyz"});
+  FLAGS_checksum_scan = true;
+  ASSERT_TRUE(RunKsck().IsRuntimeError());
+  const vector<Status>& error_messages = ksck_->results().error_messages;
+  ASSERT_EQ(1, error_messages.size());
+  EXPECT_EQ(
+      "Not found: checksum scan error: No tablet replicas found. Filter: tablet_id_filters=xyz",
+      error_messages[0].ToString());
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+                      "The cluster doesn't have any matching tablets");
+}
+
+// Test filtering with a matching tablet ID pattern.
+TEST_F(KsckTest, TestMatchingTabletIdFilter) {
+  CreateOneSmallReplicatedTable();
   ksck_->set_tablet_id_filters({"*-id-2"});
+  FLAGS_checksum_scan = true;
   ASSERT_OK(RunKsck());
-  ASSERT_OK(ksck_->ChecksumData(ChecksumOptions()));
   ASSERT_STR_CONTAINS(err_stream_.str(),
                       "0/3 replicas remaining (60B from disk, 30 rows summed)");
 }
 
 TEST_F(KsckTest, TestOneSmallReplicatedTableWithConsensusState) {
-  FLAGS_consensus = true;
   CreateOneSmallReplicatedTable();
   ASSERT_OK(RunKsck());
-  ASSERT_STR_CONTAINS(err_stream_.str(), ExpectedKsckTableSummary("test",
-                                                                  /*healthy_tablets=*/ 3,
-                                                                  /*recovering_tablets=*/ 0,
-                                                                  /*underreplicated_tablets=*/ 0,
-                                                                  /*consensus_mismatch_tablets=*/ 0,
-                                                                  /*unavailable_tablets=*/ 0));
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+                      ExpectedKsckTableSummary("test",
+                                               /*replication_factor=*/ 3,
+                                               /*healthy_tables=*/ 3,
+                                               /*recovering_tables=*/ 0,
+                                               /*underreplicated_tables=*/ 0,
+                                               /*consensus_mismatch_tables=*/ 0,
+                                               /*unavailable_tables=*/ 0));
 }
 
 TEST_F(KsckTest, TestConsensusConflictExtraPeer) {
-  FLAGS_consensus = true;
   CreateOneSmallReplicatedTable();
 
   shared_ptr<KsckTabletServer> ts = FindOrDie(cluster_->tablet_servers_, "ts-id-0");
@@ -590,8 +625,11 @@ TEST_F(KsckTest, TestConsensusConflictExtraPeer) {
                                   std::make_pair("ts-id-0", "tablet-id-0"));
   cstate.mutable_committed_config()->add_peers()->set_permanent_uuid("ts-id-fake");
 
-  Status s = RunKsck();
-  ASSERT_EQ("Corruption: 1 out of 1 table(s) are not healthy", s.ToString());
+  ASSERT_TRUE(RunKsck().IsRuntimeError());
+  const vector<Status>& error_messages = ksck_->results().error_messages;
+  ASSERT_EQ(1, error_messages.size());
+  ASSERT_EQ("Corruption: table consistency check error: 1 out of 1 table(s) are not healthy",
+            error_messages[0].ToString());
   ASSERT_STR_CONTAINS(err_stream_.str(),
       "The consensus matrix is:\n"
       " Config source |     Replicas     | Current term | Config index | Committed?\n"
@@ -600,16 +638,17 @@ TEST_F(KsckTest, TestConsensusConflictExtraPeer) {
       " A             | A*  B   C   D    | 0            |              | Yes\n"
       " B             | A*  B   C        | 0            |              | Yes\n"
       " C             | A*  B   C        | 0            |              | Yes");
-  ASSERT_STR_CONTAINS(err_stream_.str(), ExpectedKsckTableSummary("test",
-                                                                  /*healthy_tablets=*/ 2,
-                                                                  /*recovering_tablets=*/ 0,
-                                                                  /*underreplicated_tablets=*/ 0,
-                                                                  /*consensus_mismatch_tablets=*/ 0,
-                                                                  /*unavailable_tablets=*/ 1));
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+                      ExpectedKsckTableSummary("test",
+                                               /*replication_factor=*/ 3,
+                                               /*healthy_tables=*/ 2,
+                                               /*recovering_tables=*/ 0,
+                                               /*underreplicated_tables=*/ 0,
+                                               /*consensus_mismatch_tables=*/ 0,
+                                               /*unavailable_tables=*/ 1));
 }
 
 TEST_F(KsckTest, TestConsensusConflictMissingPeer) {
-  FLAGS_consensus = true;
   CreateOneSmallReplicatedTable();
 
   shared_ptr<KsckTabletServer> ts = FindOrDie(cluster_->tablet_servers_, "ts-id-0");
@@ -617,8 +656,11 @@ TEST_F(KsckTest, TestConsensusConflictMissingPeer) {
                                   std::make_pair("ts-id-0", "tablet-id-0"));
   cstate.mutable_committed_config()->mutable_peers()->RemoveLast();
 
-  Status s = RunKsck();
-  ASSERT_EQ("Corruption: 1 out of 1 table(s) are not healthy", s.ToString());
+  ASSERT_TRUE(RunKsck().IsRuntimeError());
+  const vector<Status>& error_messages = ksck_->results().error_messages;
+  ASSERT_EQ(1, error_messages.size());
+  ASSERT_EQ("Corruption: table consistency check error: 1 out of 1 table(s) are not healthy",
+            error_messages[0].ToString());
   ASSERT_STR_CONTAINS(err_stream_.str(),
       "The consensus matrix is:\n"
       " Config source |   Replicas   | Current term | Config index | Committed?\n"
@@ -627,16 +669,17 @@ TEST_F(KsckTest, TestConsensusConflictMissingPeer) {
       " A             | A*  B        | 0            |              | Yes\n"
       " B             | A*  B   C    | 0            |              | Yes\n"
       " C             | A*  B   C    | 0            |              | Yes");
-  ASSERT_STR_CONTAINS(err_stream_.str(), ExpectedKsckTableSummary("test",
-                                                                  /*healthy_tablets=*/ 2,
-                                                                  /*recovering_tablets=*/ 0,
-                                                                  /*underreplicated_tablets=*/ 0,
-                                                                  /*consensus_mismatch_tablets=*/ 0,
-                                                                  /*unavailable_tablets=*/ 1));
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+                      ExpectedKsckTableSummary("test",
+                                               /*replication_factor=*/ 3,
+                                               /*healthy_tables=*/ 2,
+                                               /*recovering_tables=*/ 0,
+                                               /*underreplicated_tables=*/ 0,
+                                               /*consensus_mismatch_tables=*/ 0,
+                                               /*unavailable_tables=*/ 1));
 }
 
 TEST_F(KsckTest, TestConsensusConflictDifferentLeader) {
-  FLAGS_consensus = true;
   CreateOneSmallReplicatedTable();
 
   const shared_ptr<KsckTabletServer>& ts = FindOrDie(cluster_->tablet_servers_, "ts-id-0");
@@ -644,8 +687,11 @@ TEST_F(KsckTest, TestConsensusConflictDifferentLeader) {
                                   std::make_pair("ts-id-0", "tablet-id-0"));
   cstate.set_leader_uuid("ts-id-1");
 
-  Status s = RunKsck();
-  ASSERT_EQ("Corruption: 1 out of 1 table(s) are not healthy", s.ToString());
+  ASSERT_TRUE(RunKsck().IsRuntimeError());
+  const vector<Status>& error_messages = ksck_->results().error_messages;
+  ASSERT_EQ(1, error_messages.size());
+  ASSERT_EQ("Corruption: table consistency check error: 1 out of 1 table(s) are not healthy",
+            error_messages[0].ToString());
   ASSERT_STR_CONTAINS(err_stream_.str(),
       "The consensus matrix is:\n"
       " Config source |   Replicas   | Current term | Config index | Committed?\n"
@@ -654,27 +700,34 @@ TEST_F(KsckTest, TestConsensusConflictDifferentLeader) {
       " A             | A   B*  C    | 0            |              | Yes\n"
       " B             | A*  B   C    | 0            |              | Yes\n"
       " C             | A*  B   C    | 0            |              | Yes");
-  ASSERT_STR_CONTAINS(err_stream_.str(), ExpectedKsckTableSummary("test",
-                                                                  /*healthy_tablets=*/ 2,
-                                                                  /*recovering_tablets=*/ 0,
-                                                                  /*underreplicated_tablets=*/ 0,
-                                                                  /*consensus_mismatch_tablets=*/ 0,
-                                                                  /*unavailable_tablets=*/ 1));
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+                      ExpectedKsckTableSummary("test",
+                                               /*replication_factor=*/ 3,
+                                               /*healthy_tables=*/ 2,
+                                               /*recovering_tables=*/ 0,
+                                               /*underreplicated_tables=*/ 0,
+                                               /*consensus_mismatch_tables=*/ 0,
+                                               /*unavailable_tables=*/ 1));
 }
 
 TEST_F(KsckTest, TestOneOneTabletBrokenTable) {
   CreateOneOneTabletReplicatedBrokenTable();
-  Status s = RunKsck();
-  EXPECT_EQ("Corruption: 1 out of 1 table(s) are not healthy", s.ToString());
+  ASSERT_TRUE(RunKsck().IsRuntimeError());
+  const vector<Status>& error_messages = ksck_->results().error_messages;
+  ASSERT_EQ(1, error_messages.size());
+  ASSERT_EQ("Corruption: table consistency check error: 1 out of 1 table(s) are not healthy",
+            error_messages[0].ToString());
   ASSERT_STR_CONTAINS(err_stream_.str(),
                       "Tablet tablet-id-1 of table 'test' is under-replicated: "
                       "configuration has 2 replicas vs desired 3");
-  ASSERT_STR_CONTAINS(err_stream_.str(), ExpectedKsckTableSummary("test",
-                                                                  /*healthy_tablets=*/ 0,
-                                                                  /*recovering_tablets=*/ 0,
-                                                                  /*underreplicated_tablets=*/ 1,
-                                                                  /*consensus_mismatch_tablets=*/ 0,
-                                                                  /*unavailable_tablets=*/ 0));
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+                      ExpectedKsckTableSummary("test",
+                                               /*replication_factor=*/ 3,
+                                               /*healthy_tables=*/ 0,
+                                               /*recovering_tables=*/ 0,
+                                               /*underreplicated_tables=*/ 1,
+                                               /*consensus_mismatch_tables=*/ 0,
+                                               /*unavailable_tables=*/ 0));
 }
 
 TEST_F(KsckTest, TestMismatchedAssignments) {
@@ -683,27 +736,35 @@ TEST_F(KsckTest, TestMismatchedAssignments) {
       cluster_->tablet_servers_.at(Substitute("ts-id-$0", 0)));
   ASSERT_EQ(1, ts->tablet_status_map_.erase("tablet-id-2"));
 
-  Status s = RunKsck();
-  EXPECT_EQ("Corruption: 1 out of 1 table(s) are not healthy", s.ToString());
+  ASSERT_TRUE(RunKsck().IsRuntimeError());
+  const vector<Status>& error_messages = ksck_->results().error_messages;
+  ASSERT_EQ(1, error_messages.size());
+  ASSERT_EQ("Corruption: table consistency check error: 1 out of 1 table(s) are not healthy",
+            error_messages[0].ToString());
   ASSERT_STR_CONTAINS(err_stream_.str(),
                       "Tablet tablet-id-2 of table 'test' is under-replicated: "
                       "1 replica(s) not RUNNING\n"
                       "  ts-id-0 (<mock>): missing [LEADER]\n"
                       "  ts-id-1 (<mock>): RUNNING\n"
                       "  ts-id-2 (<mock>): RUNNING\n");
-  ASSERT_STR_CONTAINS(err_stream_.str(), ExpectedKsckTableSummary("test",
-                                                                  /*healthy_tablets=*/ 2,
-                                                                  /*recovering_tablets=*/ 0,
-                                                                  /*underreplicated_tablets=*/ 1,
-                                                                  /*consensus_mismatch_tablets=*/ 0,
-                                                                  /*unavailable_tablets=*/ 0));
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+                     ExpectedKsckTableSummary("test",
+                                              /*replication_factor=*/ 3,
+                                              /*healthy_tables=*/ 2,
+                                              /*recovering_tables=*/ 0,
+                                              /*underreplicated_tables=*/ 1,
+                                              /*consensus_mismatch_tables=*/ 0,
+                                              /*unavailable_tables=*/ 0));
 }
 
 TEST_F(KsckTest, TestTabletNotRunning) {
   CreateOneSmallReplicatedTableWithTabletNotRunning();
 
-  Status s = RunKsck();
-  EXPECT_EQ("Corruption: 1 out of 1 table(s) are not healthy", s.ToString());
+  ASSERT_TRUE(RunKsck().IsRuntimeError());
+  const vector<Status>& error_messages = ksck_->results().error_messages;
+  ASSERT_EQ(1, error_messages.size());
+  ASSERT_EQ("Corruption: table consistency check error: 1 out of 1 table(s) are not healthy",
+            error_messages[0].ToString());
   ASSERT_STR_CONTAINS(
       err_stream_.str(),
       "Tablet tablet-id-0 of table 'test' is unavailable: 3 replica(s) not RUNNING\n"
@@ -719,12 +780,14 @@ TEST_F(KsckTest, TestTabletNotRunning) {
       "    State:       FAILED\n"
       "    Data state:  TABLET_DATA_UNKNOWN\n"
       "    Last status: \n");
-  ASSERT_STR_CONTAINS(err_stream_.str(), ExpectedKsckTableSummary("test",
-                                                                  /*healthy_tablets=*/ 2,
-                                                                  /*recovering_tablets=*/ 0,
-                                                                  /*underreplicated_tablets=*/ 0,
-                                                                  /*consensus_mismatch_tablets=*/ 0,
-                                                                  /*unavailable_tablets=*/ 1));
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+                      ExpectedKsckTableSummary("test",
+                                               /*replication_factor=*/ 3,
+                                               /*healthy_tables=*/ 2,
+                                               /*recovering_tables=*/ 0,
+                                               /*underreplicated_tables=*/ 0,
+                                               /*consensus_mismatch_tables=*/ 0,
+                                               /*unavailable_tables=*/ 1));
 }
 
 TEST_F(KsckTest, TestTabletCopying) {
@@ -736,15 +799,19 @@ TEST_F(KsckTest, TestTabletCopying) {
           cluster_->tablet_servers_.at(assignment_plan_.back()));
   auto& pb = FindOrDie(not_running_ts->tablet_status_map_, "tablet-id-0");
   pb.set_tablet_data_state(TabletDataState::TABLET_DATA_COPYING);
-  Status s = RunKsck();
-  ASSERT_EQ("Corruption: 1 out of 1 table(s) are not healthy", s.ToString());
-  ASSERT_STR_CONTAINS(err_stream_.str(), "Table test has 1 recovering tablet(s)");
-  ASSERT_STR_CONTAINS(err_stream_.str(), ExpectedKsckTableSummary("test",
-                                                                  /*healthy_tablets=*/ 2,
-                                                                  /*recovering_tablets=*/ 1,
-                                                                  /*underreplicated_tablets=*/ 0,
-                                                                  /*consensus_mismatch_tablets=*/ 0,
-                                                                  /*unavailable_tablets=*/ 0));
+  ASSERT_TRUE(RunKsck().IsRuntimeError());
+  const vector<Status>& error_messages = ksck_->results().error_messages;
+  ASSERT_EQ(1, error_messages.size());
+  ASSERT_EQ("Corruption: table consistency check error: 1 out of 1 table(s) are not healthy",
+            error_messages[0].ToString());
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+                      ExpectedKsckTableSummary("test",
+                                               /*replication_factor=*/ 3,
+                                               /*healthy_tables=*/ 2,
+                                               /*recovering_tables=*/ 1,
+                                               /*underreplicated_tables=*/ 0,
+                                               /*consensus_mismatch_tables=*/ 0,
+                                               /*unavailable_tables=*/ 0));
 }
 
 // Test for a bug where we weren't properly handling a tserver not reported by the master.
@@ -755,15 +822,19 @@ TEST_F(KsckTest, TestMasterNotReportingTabletServer) {
   // where the master is starting and doesn't list all tablet servers yet, but
   // tablets from other tablet servers are listing a missing tablet server as a peer.
   EraseKeyReturnValuePtr(&cluster_->tablet_servers_, "ts-id-0");
-  Status s = RunKsck();
-  ASSERT_EQ("Corruption: 1 out of 1 table(s) are not healthy", s.ToString());
-  ASSERT_STR_CONTAINS(err_stream_.str(), "Table test has 3 under-replicated tablet(s)");
-  ASSERT_STR_CONTAINS(err_stream_.str(), ExpectedKsckTableSummary("test",
-                                                                  /*healthy_tablets=*/ 0,
-                                                                  /*recovering_tablets=*/ 0,
-                                                                  /*underreplicated_tablets=*/ 3,
-                                                                  /*consensus_mismatch_tablets=*/ 0,
-                                                                  /*unavailable_tablets=*/ 0));
+  ASSERT_TRUE(RunKsck().IsRuntimeError());
+  const vector<Status>& error_messages = ksck_->results().error_messages;
+  ASSERT_EQ(1, error_messages.size());
+  ASSERT_EQ("Corruption: table consistency check error: 1 out of 1 table(s) are not healthy",
+            error_messages[0].ToString());
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+                      ExpectedKsckTableSummary("test",
+                                               /*replication_factor=*/ 3,
+                                               /*healthy_tables=*/ 0,
+                                               /*recovering_tables=*/ 0,
+                                               /*underreplicated_tables=*/ 3,
+                                               /*consensus_mismatch_tables=*/ 0,
+                                               /*unavailable_tables=*/ 0));
 }
 
 // KUDU-2113: Test for a bug where we weren't properly handling a tserver not
@@ -780,9 +851,11 @@ TEST_F(KsckTest, TestMasterNotReportingTabletServerWithConsensusConflict) {
                                   std::make_pair("ts-id-1", "tablet-id-1"));
   cstate.set_leader_uuid("ts-id-1");
 
-  Status s = RunKsck();
-  ASSERT_EQ("Corruption: 1 out of 1 table(s) are not healthy", s.ToString());
-  ASSERT_STR_CONTAINS(err_stream_.str(), "Table test has 3 under-replicated tablet(s)");
+  ASSERT_TRUE(RunKsck().IsRuntimeError());
+  const vector<Status>& error_messages = ksck_->results().error_messages;
+  ASSERT_EQ(1, error_messages.size());
+  ASSERT_EQ("Corruption: table consistency check error: 1 out of 1 table(s) are not healthy",
+            error_messages[0].ToString());
   ASSERT_STR_CONTAINS(err_stream_.str(),
       "The consensus matrix is:\n"
       " Config source |        Replicas        | Current term | Config index | Committed?\n"
@@ -791,23 +864,27 @@ TEST_F(KsckTest, TestMasterNotReportingTabletServerWithConsensusConflict) {
       " A             | [config not available] |              |              | \n"
       " B             | A   B*  C              | 0            |              | Yes\n"
       " C             | A*  B   C              | 0            |              | Yes");
-  ASSERT_STR_CONTAINS(err_stream_.str(), ExpectedKsckTableSummary("test",
-                                                                  /*healthy_tablets=*/ 0,
-                                                                  /*recovering_tablets=*/ 0,
-                                                                  /*underreplicated_tablets=*/ 3,
-                                                                  /*consensus_mismatch_tablets=*/ 0,
-                                                                  /*unavailable_tablets=*/ 0));
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+                      ExpectedKsckTableSummary("test",
+                                               /*replication_factor=*/ 3,
+                                               /*healthy_tables=*/ 0,
+                                               /*recovering_tables=*/ 0,
+                                               /*underreplicated_tables=*/ 3,
+                                               /*consensus_mismatch_tables=*/ 0,
+                                               /*unavailable_tables=*/ 0));
 }
 
 TEST_F(KsckTest, TestTableFiltersNoMatch) {
   CreateOneSmallReplicatedTable();
 
   ksck_->set_table_filters({ "fake-table" });
-  Status s = RunKsck();
 
-  // Every table we checked was healthy ;).
-  ASSERT_OK(s);
+  // Every table we check is healthy ;).
+  ASSERT_OK(RunKsck());
   ASSERT_STR_CONTAINS(err_stream_.str(), "The cluster doesn't have any matching tables");
+  ASSERT_STR_NOT_CONTAINS(err_stream_.str(),
+      "                | Total Count\n"
+      "----------------+-------------\n");
 }
 
 TEST_F(KsckTest, TestTableFilters) {
@@ -815,30 +892,43 @@ TEST_F(KsckTest, TestTableFilters) {
   CreateOneSmallReplicatedTable("other", "other-");
 
   ksck_->set_table_filters({ "test" });
-  Status s = RunKsck();
-
-  ASSERT_OK(s);
-  ASSERT_STR_CONTAINS(err_stream_.str(), "The metadata for 1 table(s) is HEALTHY");
+  ASSERT_OK(RunKsck());
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+      "                | Total Count\n"
+      "----------------+-------------\n"
+      " Masters        | 3\n"
+      " Tablet Servers | 3\n"
+      " Tables         | 1\n"
+      " Tablets        | 3\n"
+      " Replicas       | 9\n");
 }
 
 TEST_F(KsckTest, TestTabletFiltersNoMatch) {
   CreateOneSmallReplicatedTable();
 
   ksck_->set_tablet_id_filters({ "tablet-id-fake" });
-  Status s = RunKsck();
 
-  ASSERT_OK(s);
+  // Every tablet we check is healthy ;).
+  ASSERT_OK(RunKsck());
   ASSERT_STR_CONTAINS(err_stream_.str(), "The cluster doesn't have any matching tablets");
+  ASSERT_STR_NOT_CONTAINS(err_stream_.str(),
+      "                | Total Count\n"
+      "----------------+-------------\n");
 }
 
 TEST_F(KsckTest, TestTabletFilters) {
   CreateOneSmallReplicatedTable();
 
   ksck_->set_tablet_id_filters({ "tablet-id-0", "tablet-id-1" });
-  Status s = RunKsck();
-
-  ASSERT_OK(s);
-  ASSERT_STR_CONTAINS(err_stream_.str(), "The metadata for 2 tablet(s) is HEALTHY");
+  ASSERT_OK(ksck_->RunAndPrintResults());
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+      "                | Total Count\n"
+      "----------------+-------------\n"
+      " Masters        | 3\n"
+      " Tablet Servers | 3\n"
+      " Tables         | 1\n"
+      " Tablets        | 2\n"
+      " Replicas       | 6\n");
 }
 
 } // namespace tools

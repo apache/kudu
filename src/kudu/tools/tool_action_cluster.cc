@@ -15,13 +15,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/tools/tool_action.h"
-
 #include <iostream>
 #include <memory>
 #include <string>
-#include <utility>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>
@@ -31,8 +29,8 @@
 #include "kudu/gutil/strings/split.h"
 #include "kudu/tools/ksck.h"
 #include "kudu/tools/ksck_remote.h"
+#include "kudu/tools/tool_action.h"
 #include "kudu/tools/tool_action_common.h"
-#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
 #define PUSH_PREPEND_NOT_OK(s, statuses, msg) do { \
@@ -41,10 +39,6 @@
     (statuses).push_back(string((msg)) + ": " + _s.message().ToString()); \
   } \
 } while (0);
-
-
-DEFINE_bool(checksum_scan, false,
-            "Perform a checksum scan on data in the cluster.");
 
 DEFINE_string(tables, "",
               "Tables to check (comma-separated list of names). "
@@ -81,44 +75,7 @@ Status RunKsck(const RunnerContext& context) {
   ksck->set_tablet_id_filters(strings::Split(
       FLAGS_tablets, ",", strings::SkipEmpty()));
 
-  vector<string> error_messages;
-  PUSH_PREPEND_NOT_OK(ksck->CheckMasterHealth(), error_messages,
-                      "error fetching info from masters");
-  PUSH_PREPEND_NOT_OK(ksck->CheckMasterConsensus(), error_messages,
-                      "master consensus errors");
-
-  RETURN_NOT_OK_PREPEND(ksck->CheckClusterRunning(),
-                        "leader master liveness check error");
-  RETURN_NOT_OK_PREPEND(ksck->FetchTableAndTabletInfo(),
-                        "error fetching the cluster metadata from the leader master");
-
-  PUSH_PREPEND_NOT_OK(ksck->FetchInfoFromTabletServers(), error_messages,
-                      "error fetching info from tablet servers");
-
-  PUSH_PREPEND_NOT_OK(ksck->CheckTablesConsistency(), error_messages,
-                      "table consistency check error");
-
-  if (FLAGS_checksum_scan) {
-    PUSH_PREPEND_NOT_OK(ksck->ChecksumData(ChecksumOptions()),
-                        error_messages, "checksum scan error");
-  }
-
-  // All good.
-  if (error_messages.empty()) {
-    cout << "OK" << endl;
-    return Status::OK();
-  }
-
-  // Something went wrong.
-  cerr << "==================" << endl;
-  cerr << "Errors:" << endl;
-  cerr << "==================" << endl;
-  for (const auto& s : error_messages) {
-    cerr << s << endl;
-  }
-  cerr << endl;
-  cerr << "FAILED" << endl;
-  return Status::RuntimeError("ksck discovered errors");
+  return ksck->RunAndPrintResults();
 }
 
 } // anonymous namespace

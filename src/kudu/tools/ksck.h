@@ -24,8 +24,6 @@
 #include <iosfwd>
 #include <map>
 #include <memory>
-#include <ostream>
-#include <set>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -41,7 +39,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet.pb.h"  // IWYU pragma: keep
-#include "kudu/tools/color.h"
+#include "kudu/tools/ksck_results.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 
@@ -106,60 +104,9 @@ class KsckTabletReplica {
   DISALLOW_COPY_AND_ASSIGN(KsckTabletReplica);
 };
 
-// Possible types of consensus configs.
-enum class KsckConsensusConfigType {
-  // A config reported by the master.
-  MASTER,
-  // A config that has been committed.
-  COMMITTED,
-  // A config that has not yet been committed.
-  PENDING,
-};
-
-// Representation of a consensus state.
-struct KsckConsensusState {
-  KsckConsensusState() = default;
-  KsckConsensusState(KsckConsensusConfigType type,
-                     boost::optional<int64_t> term,
-                     boost::optional<int64_t> opid_index,
-                     boost::optional<std::string> leader_uuid,
-                     const std::vector<std::string>& voters,
-                     const std::vector<std::string>& non_voters)
-    : type(type),
-      term(std::move(term)),
-      opid_index(std::move(opid_index)),
-      leader_uuid(std::move(leader_uuid)),
-      voter_uuids(voters.cbegin(), voters.cend()),
-      non_voter_uuids(non_voters.cbegin(), non_voters.cend()) {
-  }
-
-  // Two KsckConsensusState structs match if they have the same
-  // leader_uuid, the same set of peers, and one of the following holds:
-  // - at least one of them is of type MASTER
-  // - they are configs of the same type and they have the same term
-  bool Matches(const KsckConsensusState &other) const {
-    bool same_leader_and_peers =
-        leader_uuid == other.leader_uuid &&
-        voter_uuids == other.voter_uuids &&
-        non_voter_uuids == other.non_voter_uuids;
-    if (type == KsckConsensusConfigType::MASTER || other.type == KsckConsensusConfigType::MASTER) {
-      return same_leader_and_peers;
-    }
-    return type == other.type && term == other.term && same_leader_and_peers;
-  }
-
-  KsckConsensusConfigType type;
-  boost::optional<int64_t> term;
-  boost::optional<int64_t> opid_index;
-  boost::optional<std::string> leader_uuid;
-  std::set<std::string> voter_uuids;
-  std::set<std::string> non_voter_uuids;
-};
-
 // Representation of a tablet belonging to a table. The tablet is composed of replicas.
 class KsckTablet {
  public:
-  // TODO add start/end keys, stale.
   KsckTablet(KsckTable* table, std::string id)
       : id_(std::move(id)),
         table_(table) {
@@ -483,6 +430,8 @@ class Ksck {
     tablet_id_filters_ = std::move(tablet_ids);
   }
 
+  const KsckResults& results() const;
+
   // Check that all masters are healthy.
   Status CheckMasterHealth();
 
@@ -501,10 +450,6 @@ class Ksck {
   // their current status and tablet information.
   Status FetchInfoFromTabletServers();
 
-  // Establishes a connection with the specified tablet server.
-  // Must first call FetchTableAndTabletInfo().
-  Status ConnectToTabletServer(const std::shared_ptr<KsckTabletServer>& ts);
-
   // Verifies that all the tablets in all tables matching the filters have
   // enough replicas, and that each tablet's view of the tablet's consensus
   // matches every other tablet's and the master's.
@@ -516,137 +461,27 @@ class Ksck {
   // Must first call FetchTableAndTabletInfo().
   Status ChecksumData(const ChecksumOptions& options);
 
+  // Runs all the checks of ksck in the proper order, including checksum scans,
+  // if enabled. Returns OK if and only if all checks succeed.
+  Status Run();
+
+  // Prints the results of ksck.
+  Status PrintResults();
+
+  // Performs all checks and prints the results.
+  // Returns OK if and only if the ksck finds the cluster completely healthy,
+  // and printing succeeds.
+  Status RunAndPrintResults();
+
  private:
   friend class KsckTest;
 
-  enum class CheckResult {
-    // The tablet is healthy.
-    HEALTHY,
-
-    // The tablet has on-going tablet copies.
-    RECOVERING,
-
-    // The tablet has fewer replicas than its table's replication factor and
-    // has no on-going tablet copies.
-    UNDER_REPLICATED,
-
-    // The tablet is missing a majority of its replicas and is unavailable for
-    // writes. If a majority cannot be brought back online, then the tablet
-    // requires manual intervention to recover.
-    UNAVAILABLE,
-
-    // There was a discrepancy among the tablets' consensus configs and the master's.
-    CONSENSUS_MISMATCH,
-  };
-
-  enum class ServerHealth {
-    // The server is healthy.
-    HEALTHY,
-
-    // The server couldn't be connected to.
-    UNAVAILABLE,
-
-    // The server reported an unexpected UUID.
-    WRONG_SERVER_UUID,
-  };
-
-  static std::string ServerHealthToString(ServerHealth sh);
-
-  // Returns an int signifying the "unhealthiness level" of a 'sh'.
-  // Useful for sorting or comparing.
-  static int ServerHealthScore(ServerHealth sh);
-
-  // Summarizes the result of a server health check.
-  struct ServerHealthSummary {
-    std::string uuid;
-    std::string address;
-    ServerHealth health;
-  };
-
-  // Summarizes the result of VerifyTable().
-  struct TableSummary {
-    std::string name;
-    int healthy_tablets = 0;
-    int recovering_tablets = 0;
-    int underreplicated_tablets = 0;
-    int consensus_mismatch_tablets = 0;
-    int unavailable_tablets = 0;
-
-    int TotalTablets() const {
-      return healthy_tablets + recovering_tablets + underreplicated_tablets +
-          consensus_mismatch_tablets + unavailable_tablets;
-    }
-
-    int UnhealthyTablets() const {
-      return TotalTablets() - healthy_tablets;
-    }
-
-    // Summarize the table's status with a tablet CheckResult.
-    // A table's status is determined by the health of the least healthy tablet.
-    CheckResult TableStatus() const {
-      if (unavailable_tablets > 0) {
-        return CheckResult::UNAVAILABLE;
-      }
-      if (consensus_mismatch_tablets > 0) {
-        return CheckResult::CONSENSUS_MISMATCH;
-      }
-      if (underreplicated_tablets > 0) {
-        return CheckResult::UNDER_REPLICATED;
-      }
-      if (recovering_tablets > 0) {
-        return CheckResult::RECOVERING;
-      }
-      return CheckResult::HEALTHY;
-    }
-  };
-
-  enum class ServerType {
-    MASTER,
-    TABLET_SERVER,
-  };
-
-  static std::string ServerTypeToString(ServerType type) {
-    switch (type) {
-      case ServerType::MASTER:
-        return "Master";
-      case ServerType::TABLET_SERVER:
-        return "Tablet Server";
-      default:
-        LOG(FATAL) << "Unkown ServerType";
-    }
-  }
-
-  // Print a formatted health summary to 'out', given a list `summaries`
-  // describing the health of servers of type 'type'.
-  static Status PrintServerHealthSummaries(ServerType type,
-                                           std::vector<ServerHealthSummary> summaries,
-                                           std::ostream& out);
-
-  // Print a formatted summary of the table in 'table_summaries' to 'out'.
-  static Status PrintTableSummaries(const std::vector<TableSummary>& table_summaries,
-                                    std::ostream& out);
-
-  bool VerifyTable(const std::shared_ptr<KsckTable>& table, TableSummary* ts);
+  bool VerifyTable(const std::shared_ptr<KsckTable>& table);
   bool VerifyTableWithTimeout(const std::shared_ptr<KsckTable>& table,
                               const MonoDelta& timeout,
                               const MonoDelta& retry_interval);
-  CheckResult VerifyTablet(const std::shared_ptr<KsckTablet>& tablet,
+  KsckCheckResult VerifyTablet(const std::shared_ptr<KsckTablet>& tablet,
                            int table_num_replicas);
-
-  // Print an informational message to this instance's output stream.
-  std::ostream& Out() {
-    return *out_;
-  }
-
-  // Print an error message to this instance's output stream.
-  std::ostream& Error() {
-    return (*out_) << Color(AnsiCode::RED, "ERROR: ");
-  }
-
-  // Print a warning message to this instance's output stream.
-  std::ostream& Warn() {
-    return (*out_) << Color(AnsiCode::YELLOW, "WARNING: ");
-  }
 
   const std::shared_ptr<KsckCluster> cluster_;
 
@@ -656,8 +491,11 @@ class Ksck {
 
   std::ostream* const out_;
 
+  KsckResults results_;
+
   DISALLOW_COPY_AND_ASSIGN(Ksck);
 };
+
 } // namespace tools
 } // namespace kudu
 

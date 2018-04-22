@@ -109,17 +109,7 @@ Status ClusterVerifier::RunKsck() {
   // we shouldn't consider fatal.
   ksck->set_check_replica_count(false);
 
-  // The CheckMaster* calls are independent of CheckClusterRunning, though
-  // their results are correlated. The subsequent calls depend on
-  // CheckClusterRunning().
-  RETURN_NOT_OK(ksck->CheckMasterHealth());
-  RETURN_NOT_OK(ksck->CheckMasterConsensus());
-  RETURN_NOT_OK(ksck->CheckClusterRunning());
-  RETURN_NOT_OK(ksck->FetchTableAndTabletInfo());
-  RETURN_NOT_OK(ksck->FetchInfoFromTabletServers());
-  RETURN_NOT_OK(ksck->CheckTablesConsistency());
-  RETURN_NOT_OK(ksck->ChecksumData(checksum_options_));
-  return Status::OK();
+  return ksck->RunAndPrintResults();
 }
 
 void ClusterVerifier::CheckRowCount(const std::string& table_name,

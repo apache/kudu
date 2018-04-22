@@ -241,6 +241,7 @@ TEST_F(RemoteKsckTest, TestTabletServerMismatchedUUID) {
   string new_uuid = new_tablet_server.uuid();
 
   ASSERT_TRUE(ksck_->FetchInfoFromTabletServers().IsNetworkError());
+  ASSERT_OK(ksck_->PrintResults());
 
   string match_string = "Remote error: ID reported by tablet server "
                         "($0) doesn't match the expected ID: $1";
