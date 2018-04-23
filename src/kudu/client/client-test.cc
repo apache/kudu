@@ -138,9 +138,9 @@ METRIC_DECLARE_counter(rpcs_queue_overflow);
 METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetMasterRegistration);
 METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetTableLocations);
 METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetTabletLocations);
+METRIC_DECLARE_histogram(handler_latency_kudu_tserver_TabletServerService_Scan);
 
 using std::bind;
-using std::for_each;
 using std::function;
 using std::map;
 using std::pair;
@@ -1469,6 +1469,49 @@ TEST_F(ClientTest, TestScanFaultTolerance) {
       }
     }
   }
+}
+
+// For a non-fault-tolerant scan, if we see a SCANNER_EXPIRED error, we should
+// immediately fail, rather than retrying over and over on the same server.
+// Regression test for KUDU-2414.
+TEST_F(ClientTest, TestNonFaultTolerantScannerExpired) {
+  // Create test table and insert test rows.
+  const string kScanTable = "TestNonFaultTolerantScannerExpired";
+  shared_ptr<KuduTable> table;
+
+  const int kNumReplicas = 1;
+  ASSERT_NO_FATAL_FAILURE(CreateTable(kScanTable, kNumReplicas, {}, {}, &table));
+  ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(), FLAGS_test_scan_num_rows));
+
+  KuduScanner scanner(table.get());
+  ASSERT_OK(scanner.SetTimeoutMillis(30 * 1000));
+  // Set a small batch size so it reads in multiple batches.
+  ASSERT_OK(scanner.SetBatchSizeBytes(1));
+
+  // First batch should be fine.
+  ASSERT_OK(scanner.Open());
+  KuduScanBatch batch;
+  Status s = scanner.NextBatch(&batch);
+  ASSERT_OK(s);
+
+  // Restart the server hosting the scan, so that on an attempt to continue
+  // the scan, it will get an error.
+  {
+    KuduTabletServer* kts_ptr;
+    ASSERT_OK(scanner.GetCurrentServer(&kts_ptr));
+    unique_ptr<KuduTabletServer> kts(kts_ptr);
+    ASSERT_OK(this->RestartTServerAndWait(kts->uuid()));
+  }
+
+  // We should now get the appropriate error.
+  s = scanner.NextBatch(&batch);
+  EXPECT_EQ("Not found: Scanner not found", s.ToString());
+
+  // It should not have performed any retries. Since we restarted the server above,
+  // we should see only one Scan RPC: the latest (failed) attempt above.
+  const auto& scan_rpcs = METRIC_handler_latency_kudu_tserver_TabletServerService_Scan.Instantiate(
+      cluster_->mini_tablet_server(0)->server()->metric_entity());
+  ASSERT_EQ(1, scan_rpcs->TotalCount());
 }
 
 TEST_F(ClientTest, TestNonCoveringRangePartitions) {

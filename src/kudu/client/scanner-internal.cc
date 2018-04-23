@@ -82,7 +82,12 @@ KuduScanner::Data::~Data() {
 
 Status KuduScanner::Data::HandleError(const ScanRpcStatus& err,
                                       const MonoTime& deadline,
-                                      set<string>* blacklist) {
+                                      set<string>* blacklist,
+                                      bool* needs_reopen) {
+  if (needs_reopen != nullptr) {
+    *needs_reopen = false;
+  }
+
   // If we timed out because of the overall deadline, we're done.
   // We didn't wait a full RPC timeout, though, so don't mark the tserver as failed.
   if (err.result == ScanRpcStatus::OVERALL_DEADLINE_EXCEEDED) {
@@ -110,6 +115,11 @@ Status KuduScanner::Data::HandleError(const ScanRpcStatus& err,
       mark_ts_failed = true;
       break;
     case ScanRpcStatus::SCANNER_EXPIRED:
+      // It's safe to retry on the same server, but the scanner needs to be
+      // re-opened.
+      if (needs_reopen != nullptr) {
+        *needs_reopen = true;
+      }
       break;
     case ScanRpcStatus::RPC_INVALID_AUTHENTICATION_TOKEN:
       // Usually this happens if doing an RPC call with an expired auth token.
@@ -466,7 +476,7 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
       break;
     }
     scan_attempts_++;
-    RETURN_NOT_OK(HandleError(scan_status, deadline, blacklist));
+    RETURN_NOT_OK(HandleError(scan_status, deadline, blacklist, /* needs_reopen=*/ nullptr));
   }
 
   partition_pruner_.RemovePartitionKeyRange(remote_->partition().partition_key_end());

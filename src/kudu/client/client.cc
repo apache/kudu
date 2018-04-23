@@ -1521,7 +1521,8 @@ Status KuduScanner::NextBatch(KuduScanBatch* batch) {
 
       // Error handling.
       set<string> blacklist;
-      Status s = data_->HandleError(result, batch_deadline, &blacklist);
+      bool needs_reopen = false;
+      Status s = data_->HandleError(result, batch_deadline, &blacklist, &needs_reopen);
       if (!s.ok()) {
         LOG(WARNING) << "Scan at tablet server " << data_->ts_->ToString() << " of tablet "
                      << data_->DebugString() << " failed: " << result.status.ToString();
@@ -1534,7 +1535,7 @@ Status KuduScanner::NextBatch(KuduScanBatch* batch) {
         return data_->ReopenCurrentTablet(batch_deadline, &blacklist);
       }
 
-      if (blacklist.empty()) {
+      if (blacklist.empty() && !needs_reopen) {
         // If we didn't blacklist the current server, we can just retry again.
         continue;
       }

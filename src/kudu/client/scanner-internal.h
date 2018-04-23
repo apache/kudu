@@ -129,14 +129,18 @@ class KuduScanner::Data {
   // Called when KuduScanner::NextBatch or KuduScanner::Data::OpenTablet result in an RPC or
   // server error.
   //
-  // If the provided 'status' indicates the error was retryable, then returns Status::OK()
+  // If the provided 'err' indicates the error was retryable, then returns Status::OK()
   // and potentially inserts the current server into 'blacklist' if the retry should be
-  // made on a different replica.
+  // made on a different replica. If the current server seems healthy, but the scanner expired,
+  // sets 'needs_reopen' to true to indicate that the client should re-open a new scanner.
+  //
+  // If 'needs_reopen' is nullptr, then it is not set.
   //
   // This function may also sleep in case the error suggests that backoff is necessary.
-  Status HandleError(const ScanRpcStatus& status,
+  Status HandleError(const ScanRpcStatus& err,
                      const MonoTime& deadline,
-                     std::set<std::string>* blacklist);
+                     std::set<std::string>* blacklist,
+                     bool* needs_reopen);
 
   // Opens the next tablet in the scan, or returns Status::NotFound if there are
   // no more tablets to scan.
