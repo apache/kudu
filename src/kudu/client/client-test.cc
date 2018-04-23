@@ -864,7 +864,7 @@ TEST_F(ClientTest, TestRandomizedLimitScans) {
   // Now scan with randomly set limits. To ensure we get a spectrum of limit
   // coverage, gradiate the max limit that we can set.
   for (int i = 1; i < 200; i++) {
-    const int64_t max_limit = num_rows * static_cast<double>(0.01 * i);
+    const int64_t max_limit = std::max<int>(num_rows * 0.01 * i, 1);
     const int64_t limit = rand() % max_limit + 1;
     const int64_t expected_rows = std::min({ limit, num_rows });
     LOG(INFO) << Substitute("Scanning with a client-side limit of $0, expecting $1 rows",
