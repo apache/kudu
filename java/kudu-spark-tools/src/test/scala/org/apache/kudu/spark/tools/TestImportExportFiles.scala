@@ -17,7 +17,7 @@
 
 package org.apache.kudu.spark.tools
 
-import java.io.{File, FileOutputStream}
+import java.io.File
 
 import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder
 import org.apache.kudu.{Schema, Type}
@@ -34,7 +34,8 @@ import scala.collection.JavaConverters._
 @RunWith(classOf[JUnitRunner])
 class TestImportExportFiles  extends FunSuite with TestContext with  Matchers {
 
-  private val TABLE_NAME: String = classOf[TestImportExportFiles].getName + "-" + System.currentTimeMillis
+  private val TABLE_NAME: String = "TestImportExportFiles"
+  private val TABLE_DATA_PATH: String = "src/test/resources/TestImportExportFiles.csv"
 
   test("Spark Import Export") {
     val schema: Schema = {
@@ -50,13 +51,12 @@ class TestImportExportFiles  extends FunSuite with TestContext with  Matchers {
       .setNumReplicas(1)
     kuduClient.createTable(TABLE_NAME, schema, tableOptions)
 
-    val data: File = new File("target/", TABLE_NAME+".csv")
-    writeCsvFile(data)
+    val dataPath = new File(TABLE_DATA_PATH).getAbsolutePath
 
     ImportExportFiles.testMain(Array("--operation=import",
       "--format=csv",
       s"--master-addrs=${miniCluster.getMasterAddresses}",
-      s"--path=${"target/"+TABLE_NAME+".csv"}",
+      s"--path=$TABLE_DATA_PATH",
       s"--table-name=$TABLE_NAME",
       "--delimiter=,",
       "--header=true",
@@ -64,16 +64,5 @@ class TestImportExportFiles  extends FunSuite with TestContext with  Matchers {
     val rdd = kuduContext.kuduRDD(ss.sparkContext, TABLE_NAME, List("key"))
     assert(rdd.collect.length == 4)
     assertEquals(rdd.collect().mkString(","),"[1],[2],[3],[4]")
-  }
-
-  def writeCsvFile(data: File)
-  {
-    val fos: FileOutputStream = new FileOutputStream(data)
-    fos.write("key,column1_i,column2_d,column3_s,column4_b\n".getBytes)
-    fos.write("1,3,2.3,some string,true\n".getBytes)
-    fos.write("2,5,4.5,some more,false\n".getBytes)
-    fos.write("3,7,1.2,wait this is not a double bad row,true\n".getBytes)
-    fos.write("4,9,10.1,trailing separator isn't bad mkay?,true\n".getBytes)
-    fos.close()
   }
 }

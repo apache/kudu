@@ -25,6 +25,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
 import java.net.URLDecoder;
+import java.nio.file.Files;
 import java.text.MessageFormat;
 import java.util.Enumeration;
 import java.util.jar.JarFile;
@@ -34,6 +35,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 import com.google.common.base.Preconditions;
+import org.apache.yetus.audience.InterfaceAudience;
 
 /**
  * Finds the Jar for a class. If the class is in a directory in the
@@ -44,6 +46,11 @@ import com.google.common.base.Preconditions;
  * This file was forked from hbase/branches/master@4ce6f48.
  */
 public class JarFinder {
+
+  @InterfaceAudience.Private
+  public static String FILE_DIR_PROPERTY = "jar.file.dir";
+
+  private static File fileDir = null;
 
   private static void copyToZipStream(File file, ZipEntry entry,
                                       ZipOutputStream zos) throws IOException {
@@ -155,7 +162,7 @@ public class JarFinder {
             String klassName = klass.getName();
             klassName = klassName.replace(".", "/") + ".class";
             path = path.substring(0, path.length() - klassName.length());
-            File testDir = new File(System.getProperty("test.build.dir", "target/test-dir"));
+            File testDir = getFileDir();
             testDir = testDir.getAbsoluteFile();
             if (!testDir.exists()) {
               testDir.mkdirs();
@@ -173,5 +180,16 @@ public class JarFinder {
       }
     }
     return null;
+  }
+
+  private static File getFileDir() throws IOException {
+    if (fileDir == null) {
+      String testDirPath = System.getProperty(FILE_DIR_PROPERTY);
+      if (testDirPath == null) {
+        testDirPath = Files.createTempDirectory("file-dir").toString();
+      }
+      fileDir = new File(testDirPath);
+    }
+    return fileDir;
   }
 }

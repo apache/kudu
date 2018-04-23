@@ -20,6 +20,7 @@ package org.apache.kudu.mapreduce;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.logging.Log;
@@ -48,7 +49,7 @@ public class HadoopTestingUtility {
   /**
    * Default base directory for test output.
    */
-  private static final String DEFAULT_BASE_TEST_DIRECTORY = "target/mr-data";
+  private static final String DEFAULT_BASE_TEST_DIRECTORY_PREFIX = "mr-data";
 
   public Configuration getConfiguration() {
     return this.conf;
@@ -77,7 +78,15 @@ public class HadoopTestingUtility {
   }
 
   private Path getBaseTestDir() {
-    String pathName = System.getProperty(BASE_TEST_DIRECTORY_KEY, DEFAULT_BASE_TEST_DIRECTORY);
+    String pathName = System.getProperty(BASE_TEST_DIRECTORY_KEY);
+    // Use a temporary by default if no test directory is specified.
+    if (pathName == null) {
+      try {
+        pathName = Files.createTempDirectory(DEFAULT_BASE_TEST_DIRECTORY_PREFIX).toString();
+      } catch (IOException e) {
+        throw new RuntimeException(e);
+      }
+    }
     return new Path(pathName);
   }
 

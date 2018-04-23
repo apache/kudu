@@ -21,17 +21,19 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.FileWriter;
-import java.io.IOException;
 import java.io.OutputStream;
 import java.io.Writer;
-import java.text.MessageFormat;
+import java.nio.file.Files;
 import java.util.Properties;
 import java.util.jar.JarInputStream;
 import java.util.jar.JarOutputStream;
 import java.util.jar.Manifest;
 
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.logging.LogFactory;
+import org.junit.AfterClass;
 import org.junit.Assert;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 /**
@@ -39,35 +41,24 @@ import org.junit.Test;
  */
 public class TestJarFinder {
 
+  private static File testDir;
+
+  @BeforeClass
+  public static void setUpBeforeClass() throws Exception {
+    testDir = Files.createTempDirectory("test-dir").toFile();
+    System.setProperty(JarFinder.FILE_DIR_PROPERTY, testDir.getAbsolutePath());
+  }
+
+  @AfterClass
+  public static void tearDownAfterClass() throws Exception {
+    FileUtils.deleteDirectory(testDir);
+  }
+
   @Test
   public void testJar() throws Exception {
-
     // Picking a class that is for sure in a JAR in the classpath
     String jar = JarFinder.getJar(LogFactory.class);
     Assert.assertTrue(new File(jar).exists());
-  }
-
-  private static void delete(File file) throws IOException {
-    if (file.getAbsolutePath().length() < 5) {
-      throw new IllegalArgumentException(
-        MessageFormat.format("Path [{0}] is too short, not deleting",
-          file.getAbsolutePath()));
-    }
-    if (file.exists()) {
-      if (file.isDirectory()) {
-        File[] children = file.listFiles();
-        if (children != null) {
-          for (File child : children) {
-            delete(child);
-          }
-        }
-      }
-      if (!file.delete()) {
-        throw new RuntimeException(
-          MessageFormat.format("Could not delete path [{0}]",
-            file.getAbsolutePath()));
-      }
-    }
   }
 
   @Test
@@ -80,11 +71,8 @@ public class TestJarFinder {
 
   @Test
   public void testExistingManifest() throws Exception {
-    File dir = new File(System.getProperty("test.build.dir", "target/test-dir"),
+    File dir = new File(testDir,
       TestJarFinder.class.getName() + "-testExistingManifest");
-    delete(dir);
-    dir.mkdirs();
-
     File metaInfDir = new File(dir, "META-INF");
     metaInfDir.mkdirs();
     File manifestFile = new File(metaInfDir, "MANIFEST.MF");
@@ -108,9 +96,8 @@ public class TestJarFinder {
 
   @Test
   public void testNoManifest() throws Exception {
-    File dir = new File(System.getProperty("test.build.dir", "target/test-dir"),
+    File dir = new File(testDir,
       TestJarFinder.class.getName() + "-testNoManifest");
-    delete(dir);
     dir.mkdirs();
     File propsFile = new File(dir, "props.properties");
     Writer writer = new FileWriter(propsFile);
