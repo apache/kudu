@@ -284,6 +284,11 @@ KuduClientBuilder& KuduClientBuilder::import_authentication_credentials(string a
   return *this;
 }
 
+KuduClientBuilder& KuduClientBuilder::num_reactors(int num_reactors) {
+  data_->num_reactors_ = num_reactors;
+  return *this;
+}
+
 namespace {
 Status ImportAuthnCreds(const string& authn_creds,
                         Messenger* messenger,
@@ -320,6 +325,9 @@ Status KuduClientBuilder::Build(shared_ptr<KuduClient>* client) {
 
   // Init messenger.
   MessengerBuilder builder("client");
+  if (data_->num_reactors_) {
+    builder.set_num_reactors(data_->num_reactors_.get());
+  }
   std::shared_ptr<Messenger> messenger;
   RETURN_NOT_OK(builder.Build(&messenger));
   UserCredentials user_credentials;
