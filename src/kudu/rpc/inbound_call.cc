@@ -59,7 +59,8 @@ namespace rpc {
 InboundCall::InboundCall(Connection* conn)
   : conn_(conn),
     trace_(new Trace),
-    method_info_(nullptr) {
+    method_info_(nullptr),
+    deadline_(MonoTime::Max()) {
   RecordCallReceived();
 }
 
@@ -79,6 +80,11 @@ Status InboundCall::ParseFrom(gscoped_ptr<InboundTransfer> transfer) {
                               header_.remote_method().InitializationErrorString());
   }
   remote_method_.FromPB(header_.remote_method());
+
+  // Compute and cache the call deadline.
+  if (header_.has_timeout_millis() && header_.timeout_millis() != 0) {
+    deadline_ = timing_.time_received + MonoDelta::FromMilliseconds(header_.timeout_millis());
+  }
 
   if (header_.sidecar_offsets_size() > TransferLimits::kMaxSidecars) {
     return Status::Corruption(strings::Substitute(
@@ -301,20 +307,7 @@ void InboundCall::RecordHandlingCompleted() {
 }
 
 bool InboundCall::ClientTimedOut() const {
-  if (!header_.has_timeout_millis() || header_.timeout_millis() == 0) {
-    return false;
-  }
-
-  MonoTime now = MonoTime::Now();
-  int total_time = (now - timing_.time_received).ToMilliseconds();
-  return total_time > header_.timeout_millis();
-}
-
-MonoTime InboundCall::GetClientDeadline() const {
-  if (!header_.has_timeout_millis() || header_.timeout_millis() == 0) {
-    return MonoTime::Max();
-  }
-  return timing_.time_received + MonoDelta::FromMilliseconds(header_.timeout_millis());
+  return MonoTime::Now() >= deadline_;
 }
 
 MonoTime InboundCall::GetTimeReceived() const {
