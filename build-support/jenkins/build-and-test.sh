@@ -56,10 +56,10 @@
 #   BUILD_JAVA        Default: 1
 #     Build and test java code if this is set to 1.
 #
-#   BUILD_MAVEN       Default: 1
+#   BUILD_MAVEN       Default: 0
 #     When building java code, build with Maven if this is set to 1.
 #
-#   BUILD_GRADLE      Default: 0
+#   BUILD_GRADLE      Default: 1
 #     When building java code, build with Gradle if this is set to 1.
 #
 #   BUILD_PYTHON       Default: 1
@@ -112,8 +112,8 @@ export KUDU_ALLOW_SLOW_TESTS=${KUDU_ALLOW_SLOW_TESTS:-$DEFAULT_ALLOW_SLOW_TESTS}
 export KUDU_COMPRESS_TEST_OUTPUT=${KUDU_COMPRESS_TEST_OUTPUT:-1}
 export TEST_TMPDIR=${TEST_TMPDIR:-/tmp/kudutest-$UID}
 BUILD_JAVA=${BUILD_JAVA:-1}
-BUILD_MAVEN=${BUILD_MAVEN:-1}
-BUILD_GRADLE=${BUILD_GRADLE:-0}
+BUILD_MAVEN=${BUILD_MAVEN:-0}
+BUILD_GRADLE=${BUILD_GRADLE:-1}
 BUILD_PYTHON=${BUILD_PYTHON:-1}
 BUILD_PYTHON3=${BUILD_PYTHON3:-1}
 
@@ -389,7 +389,7 @@ if [ "$BUILD_JAVA" == "1" ]; then
 
   # Run the full Gradle build.
   if [ "$BUILD_GRADLE" == "1" ]; then
-     GRADLE_FLAGS="$GRADLE_FLAGS --console=plain --no-daemon -DrerunFailingTestsCount=3"
+     GRADLE_FLAGS="$GRADLE_FLAGS --console=plain --no-daemon --continue -DrerunFailingTestsCount=3"
      # TODO: Run `gradle check` in BUILD_TYPE DEBUG when static code analysis is fixed
      if ! ./gradlew $GRADLE_FLAGS clean test integrationTest ; then
        EXIT_STATUS=1
