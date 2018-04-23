@@ -56,9 +56,11 @@
 #   BUILD_JAVA        Default: 1
 #     Build and test java code if this is set to 1.
 #
-#   BUILD_GRADLE      Default: 1
-#     When building java code, also build the gradle build if this is set
-#     to 1.
+#   BUILD_MAVEN       Default: 1
+#     When building java code, build with Maven if this is set to 1.
+#
+#   BUILD_GRADLE      Default: 0
+#     When building java code, build with Gradle if this is set to 1.
 #
 #   BUILD_PYTHON       Default: 1
 #     Build and test the Python wrapper of the client API.
@@ -110,7 +112,8 @@ export KUDU_ALLOW_SLOW_TESTS=${KUDU_ALLOW_SLOW_TESTS:-$DEFAULT_ALLOW_SLOW_TESTS}
 export KUDU_COMPRESS_TEST_OUTPUT=${KUDU_COMPRESS_TEST_OUTPUT:-1}
 export TEST_TMPDIR=${TEST_TMPDIR:-/tmp/kudutest-$UID}
 BUILD_JAVA=${BUILD_JAVA:-1}
-BUILD_GRADLE=${BUILD_GRADLE:-1}
+BUILD_MAVEN=${BUILD_MAVEN:-1}
+BUILD_GRADLE=${BUILD_GRADLE:-0}
 BUILD_PYTHON=${BUILD_PYTHON:-1}
 BUILD_PYTHON3=${BUILD_PYTHON3:-1}
 
@@ -201,7 +204,6 @@ elif [ "$BUILD_TYPE" = "COVERAGE" ]; then
 
   # We currently dont capture coverage for Java or Python.
   BUILD_JAVA=0
-  BUILD_GRADLE=0
   BUILD_PYTHON=0
   BUILD_PYTHON3=0
 elif [ "$BUILD_TYPE" = "LINT" ]; then
@@ -320,7 +322,6 @@ if [ "$RUN_FLAKY_ONLY" == "1" ] ; then
   BUILD_PYTHON=0
   BUILD_PYTHON3=0
   BUILD_JAVA=0
-  BUILD_GRADLE=0
 fi
 
 EXIT_STATUS=0
@@ -375,22 +376,24 @@ if [ "$BUILD_JAVA" == "1" ]; then
   set -x
 
   # Run the full Maven build.
-  MVN_FLAGS="$MVN_FLAGS -B"
-  MVN_FLAGS="$MVN_FLAGS -Dsurefire.rerunFailingTestsCount=3"
-  MVN_FLAGS="$MVN_FLAGS -Dfailsafe.rerunFailingTestsCount=3"
-  MVN_FLAGS="$MVN_FLAGS -Dmaven.javadoc.skip"
-  if ! mvn $MVN_FLAGS clean verify ; then
-    EXIT_STATUS=1
-    FAILURES="$FAILURES"$'Java build/test failed\n'
+  if [ "$BUILD_MAVEN" == "1" ]; then
+      MVN_FLAGS="$MVN_FLAGS -B"
+      MVN_FLAGS="$MVN_FLAGS -Dsurefire.rerunFailingTestsCount=3"
+      MVN_FLAGS="$MVN_FLAGS -Dfailsafe.rerunFailingTestsCount=3"
+      MVN_FLAGS="$MVN_FLAGS -Dmaven.javadoc.skip"
+      if ! mvn $MVN_FLAGS clean verify ; then
+        EXIT_STATUS=1
+        FAILURES="$FAILURES"$'Java Maven build/test failed\n'
+      fi
   fi
 
-  # Rerun the build using the Gradle build.
-  # Note: We just ensure we can assemble and don't rerun the tests.
+  # Run the full Gradle build.
   if [ "$BUILD_GRADLE" == "1" ]; then
      GRADLE_FLAGS="$GRADLE_FLAGS --console=plain --no-daemon"
-     if ! ./gradlew $GRADLE_FLAGS clean assemble; then
+     # TODO: Run `gradle check` in BUILD_TYPE DEBUG when static code analysis is fixed
+     if ! ./gradlew $GRADLE_FLAGS clean test integrationTest ; then
        EXIT_STATUS=1
-       FAILURES="$FAILURES"$'Java Gradle build failed\n'
+       FAILURES="$FAILURES"$'Java Gradle build/test failed\n'
      fi
   fi
 
