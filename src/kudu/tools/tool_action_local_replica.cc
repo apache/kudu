@@ -15,13 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/tools/tool_action.h"
-
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
-#include <list>
 #include <map>
 #include <memory>
 #include <string>
@@ -34,19 +30,15 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
-#include "kudu/cfile/cfile.pb.h"
-#include "kudu/cfile/cfile_reader.h"
-#include "kudu/cfile/cfile_util.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partition.h"
-#include "kudu/common/row_changelist.h"
-#include "kudu/common/rowblock.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus_meta_manager.h"
 #include "kudu/consensus/log.pb.h"
+#include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/log_index.h"
 #include "kudu/consensus/log_reader.h"
 #include "kudu/consensus/log_util.h"
@@ -55,35 +47,28 @@
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/numbers.h"
-#include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/master/sys_catalog.h"
 #include "kudu/rpc/messenger.h"
-#include "kudu/tablet/cfile_set.h"
-#include "kudu/tablet/delta_key.h"
-#include "kudu/tablet/delta_stats.h"
-#include "kudu/tablet/delta_store.h"
-#include "kudu/tablet/deltafile.h"
+#include "kudu/tablet/diskrowset.h"
 #include "kudu/tablet/metadata.pb.h"
-#include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/rowset_metadata.h"
+#include "kudu/tablet/tablet_mem_trackers.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_replica.h"
+#include "kudu/tools/tool_action.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/tserver/tablet_copy_client.h"
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
-#include "kudu/util/mem_tracker.h"
-#include "kudu/util/memory/arena.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/pb_util.h"
@@ -108,10 +93,6 @@ DEFINE_bool(clean_unsafe, false,
 namespace kudu {
 namespace tools {
 
-using cfile::CFileIterator;
-using cfile::CFileReader;
-using cfile::DumpIterator;
-using cfile::ReaderOptions;
 using consensus::ConsensusMetadata;
 using consensus::ConsensusMetadataManager;
 using consensus::OpId;
@@ -128,21 +109,14 @@ using rpc::Messenger;
 using rpc::MessengerBuilder;
 using std::cout;
 using std::endl;
-using std::list;
 using std::map;
 using std::pair;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using std::vector;
-using strings::Split;
 using strings::Substitute;
-using tablet::CFileSet;
-using tablet::DeltaFileReader;
-using tablet::DeltaIterator;
-using tablet::DeltaKeyAndUpdate;
-using tablet::DeltaType;
-using tablet::MvccSnapshot;
+using tablet::DiskRowSet;
 using tablet::RowSetMetadata;
 using tablet::TabletMetadata;
 using tablet::TabletDataState;
@@ -645,141 +619,7 @@ Status ListLocalReplicas(const RunnerContext& context) {
   return Status::OK();
 }
 
-Status DumpCFileBlockInternal(FsManager* fs_manager,
-                              const BlockId& block_id,
-                              int indent) {
-  unique_ptr<ReadableBlock> block;
-  RETURN_NOT_OK(fs_manager->OpenBlock(block_id, &block));
-  unique_ptr<CFileReader> reader;
-  RETURN_NOT_OK(CFileReader::Open(std::move(block), ReaderOptions(), &reader));
-
-  cout << Indent(indent) << "CFile Header: "
-       << pb_util::SecureShortDebugString(reader->header()) << endl;
-  if (!FLAGS_dump_data) {
-    return Status::OK();
-  }
-  cout << Indent(indent) << reader->footer().num_values()
-       << " values:" << endl;
-
-  gscoped_ptr<CFileIterator> it;
-  RETURN_NOT_OK(reader->NewIterator(&it, CFileReader::DONT_CACHE_BLOCK));
-  RETURN_NOT_OK(it->SeekToFirst());
-  return DumpIterator(*reader, it.get(), &cout, FLAGS_nrows, indent + 2);
-}
-
-Status DumpDeltaCFileBlockInternal(FsManager* fs_manager,
-                                   const Schema& schema,
-                                   const shared_ptr<RowSetMetadata>& rs_meta,
-                                   const BlockId& block_id,
-                                   DeltaType delta_type,
-                                   int indent) {
-  // Open the delta reader
-  unique_ptr<ReadableBlock> readable_block;
-  RETURN_NOT_OK(fs_manager->OpenBlock(block_id, &readable_block));
-  shared_ptr<DeltaFileReader> delta_reader;
-  RETURN_NOT_OK(DeltaFileReader::Open(std::move(readable_block),
-                                      delta_type,
-                                      ReaderOptions(),
-                                      &delta_reader));
-
-  cout << Indent(indent) << "Delta stats: "
-       << delta_reader->delta_stats().ToString() << endl;
-  if (FLAGS_metadata_only) {
-    return Status::OK();
-  }
-
-  // Create the delta iterator.
-  // TODO: see if it's worth re-factoring NewDeltaIterator to return a
-  // gscoped_ptr that can then be released if we need a raw or shared
-  // pointer.
-  DeltaIterator* raw_iter;
-
-  MvccSnapshot snap_all;
-  if (delta_type == tablet::REDO) {
-    snap_all = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
-  } else if (delta_type == tablet::UNDO) {
-    snap_all = MvccSnapshot::CreateSnapshotIncludingNoTransactions();
-  }
-
-  Status s = delta_reader->NewDeltaIterator(&schema, snap_all, &raw_iter);
-
-  if (s.IsNotFound()) {
-    cout << "Empty delta block." << endl;
-    return Status::OK();
-  }
-  RETURN_NOT_OK(s);
-
-  // NewDeltaIterator returns Status::OK() iff a new DeltaIterator is created. Thus,
-  // it's safe to have a unique_ptr take possesion of 'raw_iter' here.
-  unique_ptr<DeltaIterator> delta_iter(raw_iter);
-  RETURN_NOT_OK(delta_iter->Init(NULL));
-  RETURN_NOT_OK(delta_iter->SeekToOrdinal(0));
-
-  // TODO: it's awkward that whenever we want to iterate over deltas we also
-  // need to open the CFileSet for the rowset. Ideally, we should use
-  // information stored in the footer/store additional information in the
-  // footer as to make it feasible iterate over all deltas using a
-  // DeltaFileIterator alone.
-  shared_ptr<CFileSet> cfileset;
-  RETURN_NOT_OK(CFileSet::Open(rs_meta, MemTracker::GetRootTracker(), &cfileset));
-  gscoped_ptr<CFileSet::Iterator> cfileset_iter(cfileset->NewIterator(&schema));
-
-  RETURN_NOT_OK(cfileset_iter->Init(NULL));
-
-  const size_t kRowsPerBlock  = 100;
-  size_t nrows = 0;
-  size_t ndeltas = 0;
-  Arena arena(32 * 1024);
-  RowBlock block(schema, kRowsPerBlock, &arena);
-
-  // See tablet/delta_compaction.cc to understand why this loop is structured the way
-  // it is.
-  while (cfileset_iter->HasNext()) {
-    size_t n;
-    if (FLAGS_nrows > 0) {
-      // Note: number of deltas may not equal the number of rows, but
-      // since this is a CLI tool (and the nrows option exists
-      // primarily to limit copious output) it's okay not to be
-      // exact here.
-      size_t remaining = FLAGS_nrows - nrows;
-      if (remaining == 0) break;
-      n = std::min(remaining, kRowsPerBlock);
-    } else {
-      n = kRowsPerBlock;
-    }
-
-    arena.Reset();
-    cfileset_iter->PrepareBatch(&n);
-
-    block.Resize(n);
-
-    RETURN_NOT_OK(delta_iter->PrepareBatch(
-        n, DeltaIterator::PREPARE_FOR_COLLECT));
-    vector<DeltaKeyAndUpdate> out;
-    RETURN_NOT_OK(
-        delta_iter->FilterColumnIdsAndCollectDeltas(vector<ColumnId>(),
-                                                              &out,
-                                                              &arena));
-    for (const DeltaKeyAndUpdate& upd : out) {
-      if (FLAGS_dump_data) {
-        cout << Indent(indent) << upd.key.ToString() << " "
-             << RowChangeList(upd.cell).ToString(schema) << endl;
-        ++ndeltas;
-      }
-    }
-    RETURN_NOT_OK(cfileset_iter->FinishBatch());
-
-    nrows += n;
-  }
-
-  VLOG(1) << "Processed " << ndeltas << " deltas, for total of "
-          << nrows << " possible rows.";
-  return Status::OK();
-}
-
-Status DumpRowSetInternal(FsManager* fs_manager,
-                          const Schema& schema,
-                          const shared_ptr<RowSetMetadata>& rs_meta,
+Status DumpRowSetInternal(const shared_ptr<RowSetMetadata>& rs_meta,
                           int indent) {
   tablet::RowSetDataPB pb;
   rs_meta->ToProtobuf(&pb);
@@ -787,48 +627,16 @@ Status DumpRowSetInternal(FsManager* fs_manager,
   cout << Indent(indent) << "RowSet metadata: " << pb_util::SecureDebugString(pb)
        << endl << endl;
 
-  RowSetMetadata::ColumnIdToBlockIdMap col_blocks =
-      rs_meta->GetColumnBlocksById();
-  for (const RowSetMetadata::ColumnIdToBlockIdMap::value_type& e :
-      col_blocks) {
-    ColumnId col_id = e.first;
-    const BlockId& block_id = e.second;
-
-    cout << Indent(indent) << "Dumping column block " << block_id
-         << " for column id " << col_id;
-    int col_idx = schema.find_column_by_id(col_id);
-    if (col_idx != -1) {
-      cout << "( " << schema.column(col_idx).ToString() <<  ")";
-    }
-    cout << ":" << endl;
-    cout << Indent(indent) << kSeparatorLine;
-    if (FLAGS_metadata_only) continue;
-    RETURN_NOT_OK(DumpCFileBlockInternal(fs_manager, block_id, indent));
-    cout << endl;
-  }
-
-  for (const BlockId& block : rs_meta->undo_delta_blocks()) {
-    cout << Indent(indent) << "Dumping undo delta block " << block << ":"
-         << endl << Indent(indent) << kSeparatorLine;
-    RETURN_NOT_OK(DumpDeltaCFileBlockInternal(fs_manager,
-                                              schema,
-                                              rs_meta,
-                                              block,
-                                              tablet::UNDO,
-                                              indent));
-    cout << endl;
-  }
-
-  for (const BlockId& block : rs_meta->redo_delta_blocks()) {
-    cout << Indent(indent) << "Dumping redo delta block " << block << ":"
-         << endl << Indent(indent) << kSeparatorLine;
-    RETURN_NOT_OK(DumpDeltaCFileBlockInternal(fs_manager,
-                                              schema,
-                                              rs_meta,
-                                              block,
-                                              tablet::REDO,
-                                              indent));
-    cout << endl;
+  scoped_refptr<log::LogAnchorRegistry> log_reg(new log::LogAnchorRegistry());
+  shared_ptr<DiskRowSet> rs;
+  RETURN_NOT_OK(DiskRowSet::Open(rs_meta,
+                                 log_reg.get(),
+                                 tablet::TabletMemTrackers(),
+                                 &rs));
+  vector<string> lines;
+  RETURN_NOT_OK(rs->DebugDump(&lines));
+  for (const auto& l : lines) {
+    cout << l << endl;
   }
 
   return Status::OK();
@@ -851,8 +659,7 @@ Status DumpRowSet(const RunnerContext& context) {
   if (FLAGS_rowset_index != -1) {
     for (const shared_ptr<RowSetMetadata>& rs_meta : meta->rowsets())  {
       if (rs_meta->id() == FLAGS_rowset_index) {
-        return DumpRowSetInternal(fs_manager.get(), meta->schema(),
-                                  rs_meta, 0);
+        return Status::OK();
       }
     }
     return Status::InvalidArgument(
@@ -864,8 +671,7 @@ Status DumpRowSet(const RunnerContext& context) {
   size_t idx = 0;
   for (const shared_ptr<RowSetMetadata>& rs_meta : meta->rowsets())  {
     cout << endl << "Dumping rowset " << idx++ << endl << kSeparatorLine;
-    RETURN_NOT_OK(DumpRowSetInternal(fs_manager.get(), meta->schema(),
-                                     rs_meta, 2));
+    RETURN_NOT_OK(DumpRowSetInternal(rs_meta, 2));
   }
   return Status::OK();
 }

@@ -1145,11 +1145,11 @@ TEST_F(ToolTest, TestLocalReplicaOps) {
     ASSERT_STR_CONTAINS(stdout, "bloom_block {");
     ASSERT_STR_MATCHES(stdout, "id: .*");
     ASSERT_STR_CONTAINS(stdout, "undo_deltas {");
-    ASSERT_STR_MATCHES(stdout, "CFile Header: ");
-    ASSERT_STR_MATCHES(stdout, "Delta stats:.*");
-    ASSERT_STR_MATCHES(stdout, "ts range=.*");
-    ASSERT_STR_MATCHES(stdout, "update_counts_by_col_id=.*");
-    ASSERT_STR_MATCHES(stdout, "Dumping column block.*for column id.*");
+
+    ASSERT_STR_CONTAINS(stdout,
+                       "RowIdxInBlock: 0; Base: (int32 key=0, int32 int_val=0,"
+                       " string string_val=\"HelloWorld\"); "
+                       "Undo Mutations: [@1(DELETE)]; Redo Mutations: [];");
     ASSERT_STR_MATCHES(stdout, ".*---------------------.*");
 
     // This is expected to fail with Invalid argument for kRowId.
