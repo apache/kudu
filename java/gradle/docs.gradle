@@ -26,13 +26,17 @@ dependencies {
 }
 
 // Javadoc Configuration
-tasks.withType(Javadoc) {
-  // Configure the Yetus doclet
-  options.docletpath = configurations.doclet.files.asType(List)
-  options.doclet = "org.apache.yetus.audience.tools.IncludePublicAnnotationsStandardDoclet"
-  // Link to Java SE javadoc
-  options.links "https://docs.oracle.com/javase/7/docs/api/"
-  // Hacky workaround to YETUS-627. Replace with options.noTimestamp
-  // once this workaround is no longer needed.
-  options.addStringOption("notimestamp", "org.apache.kudu")
+// We use afterEvaluate to add additional configuration once all the definitions
+// in the projects build script have been applied
+afterEvaluate {
+  tasks.withType(Javadoc) {
+    // Configure the Yetus doclet
+    options.docletpath = configurations.doclet.files.asType(List)
+    options.doclet = "org.apache.yetus.audience.tools.IncludePublicAnnotationsStandardDoclet"
+    // Link to Java SE javadoc
+    options.links "https://docs.oracle.com/javase/7/docs/api/"
+    // Hacky workaround to YETUS-627. Replace with options.noTimestamp
+    // once this workaround is no longer needed.
+    options.addStringOption("notimestamp", "org.apache.kudu")
+  }
 }

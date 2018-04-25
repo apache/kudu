@@ -32,7 +32,7 @@ versions += [
     commonsIo      : "2.6",
     findbugs       : "3.0.1",
     flume          : "1.8.0",
-    gradle         : "4.6",
+    gradle         : "4.7",
     // We use the android version instead of the jre version
     // to maintain Java 1.7 compatibility.
     guava          : "24.1-android",
