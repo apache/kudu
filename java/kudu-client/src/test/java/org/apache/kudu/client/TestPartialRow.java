@@ -338,6 +338,26 @@ public class TestPartialRow {
     assertArrayEquals(new byte[] { 0, 1, 2, 3, 4, 0 }, partialRow.getBinaryCopy(binaryIndex));
   }
 
+  @Test
+  public void testSetMin() {
+    PartialRow partialRow = getPartialRowWithAllTypes();
+    for (int i = 0; i < partialRow.getSchema().getColumnCount(); i++) {
+      partialRow.setMin(i);
+    }
+    assertEquals(false, partialRow.getBoolean("bool"));
+    assertEquals(Byte.MIN_VALUE, partialRow.getByte("int8"));
+    assertEquals(Short.MIN_VALUE, partialRow.getShort("int16"));
+    assertEquals(Integer.MIN_VALUE, partialRow.getInt("int32"));
+    assertEquals(Long.MIN_VALUE, partialRow.getLong("int64"));
+    assertEquals(Long.MIN_VALUE, partialRow.getLong("timestamp"));
+    assertEquals(-Float.MAX_VALUE, partialRow.getFloat("float"), 0.0f);
+    assertEquals(-Double.MAX_VALUE, partialRow.getDouble("double"), 0.0);
+    assertEquals("", partialRow.getString("string"));
+    assertArrayEquals(new byte[0], partialRow.getBinaryCopy("binary-array"));
+    assertArrayEquals(new byte[0], partialRow.getBinaryCopy("binary-bytebuffer"));
+    assertEquals(BigDecimal.valueOf(-99999, 3), partialRow.getDecimal("decimal"));
+  }
+
   private int getColumnIndex(PartialRow partialRow, String columnName) {
     return partialRow.getSchema().getColumnIndex(columnName);
   }
