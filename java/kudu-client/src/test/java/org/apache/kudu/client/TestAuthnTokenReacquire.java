@@ -78,6 +78,7 @@ public class TestAuthnTokenReacquire extends BaseKuduTest {
       final int threadIdx = i;
       Thread thread = new Thread(new Runnable() {
         @Override
+        @SuppressWarnings("AssertionFailureIgnored")
         public void run() {
           final String tableName = "TestAuthnTokenReacquire-table-" + threadIdx;
           try {

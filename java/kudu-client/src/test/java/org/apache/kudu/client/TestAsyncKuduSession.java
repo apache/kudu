@@ -69,15 +69,11 @@ public class TestAsyncKuduSession extends BaseKuduTest {
       session.setFlushInterval(10);
       Batch.injectTabletServerErrorAndLatency(makeTabletServerError(), 0);
 
-      try {
-        OperationResponse resp = session.apply(createInsert(1)).join(DEFAULT_SLEEP);
-        assertTrue(resp.hasRowError());
-        assertTrue(
-            resp.getRowError().getErrorStatus()
-                .getMessage().contains(getTabletServerErrorMessage()));
-      } catch (Exception e) {
-        fail("Should not throw");
-      }
+      OperationResponse resp = session.apply(createInsert(1)).join(DEFAULT_SLEEP);
+      assertTrue(resp.hasRowError());
+      assertTrue(
+          resp.getRowError().getErrorStatus()
+              .getMessage().contains(getTabletServerErrorMessage()));
       assertEquals(1, session.countPendingErrors());
     } finally {
       Batch.injectTabletServerErrorAndLatency(null, 0);
@@ -106,23 +102,19 @@ public class TestAsyncKuduSession extends BaseKuduTest {
       // 220ms: start to send the second batch, but first batch is inflight,
       //        so add callback to retry after first batch finishes.
       // 300ms: first batch's callback handles error, retry second batch.
-      try {
+      {
         OperationResponse resp = resp1.join(DEFAULT_SLEEP);
         assertTrue(resp.hasRowError());
         assertTrue(
             resp.getRowError().getErrorStatus()
                 .getMessage().contains(getTabletServerErrorMessage()));
-      } catch (Exception e) {
-        fail("Should not throw");
       }
-      try {
+      {
         OperationResponse resp = resp2.join(DEFAULT_SLEEP);
         assertTrue(resp.hasRowError());
         assertTrue(
             resp.getRowError().getErrorStatus()
                 .getMessage().contains(getTabletServerErrorMessage()));
-      } catch (Exception e) {
-        fail("Should not throw");
       }
       assertFalse(session.hasPendingOperations());
     } finally {
@@ -265,6 +257,7 @@ public class TestAsyncKuduSession extends BaseKuduTest {
 
     try {
       session.setFlushMode(AsyncKuduSession.FlushMode.AUTO_FLUSH_SYNC);
+      fail();
     } catch (IllegalArgumentException ex) {
       /* expected, flush mode remains manual */
     }
@@ -278,6 +271,7 @@ public class TestAsyncKuduSession extends BaseKuduTest {
     assertEquals(0, countInRange(10, 20));
     try {
       session.apply(createInsert(20));
+      fail();
     } catch (KuduException ex) {
       /* expected, buffer would be too big */
     }

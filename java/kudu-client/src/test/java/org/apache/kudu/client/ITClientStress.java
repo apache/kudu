@@ -37,6 +37,7 @@ import org.apache.kudu.util.CapturingLogAppender;
 
 public class ITClientStress extends BaseKuduTest {
 
+  @SuppressWarnings("FutureReturnValueIgnored")
   private void runTasks(int numThreads, int secondsToRun,
       Supplier<Callable<Void>> taskFactory) throws InterruptedException, IOException {
     // Capture any exception thrown by the tasks.
@@ -72,9 +73,9 @@ public class ITClientStress extends BaseKuduTest {
     } finally {
       pool.shutdown();
       assertTrue(pool.awaitTermination(10, TimeUnit.SECONDS));
-      if (thrown.get() != null) {
-        throw new AssertionError(thrown.get());
-      }
+    }
+    if (thrown.get() != null) {
+      throw new AssertionError(thrown.get());
     }
     assertFalse("log contained NPE",
         cla.getAppendedText().contains("NullPointerException"));

@@ -17,6 +17,7 @@
 package org.apache.kudu.client;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -36,9 +37,9 @@ public class TestBytes {
 
     // Boolean
     Bytes.setUnsignedByte(bytes, (short) 1);
-    assert(Bytes.getBoolean(bytes));
+    assertTrue(Bytes.getBoolean(bytes));
     Bytes.setUnsignedByte(bytes, (short) 0);
-    assert(!Bytes.getBoolean(bytes));
+    assertTrue(!Bytes.getBoolean(bytes));
 
     // BYTES
     short smallUbyte = 120;

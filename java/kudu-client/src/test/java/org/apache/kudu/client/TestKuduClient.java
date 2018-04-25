@@ -187,6 +187,7 @@ public class TestKuduClient extends BaseKuduTest {
     Schema schema = new Schema(cols);
     try {
       syncClient.createTable(tableName, schema, getBasicCreateTableOptions());
+      fail();
     } catch (NonRecoverableException nre) {
       assertThat(nre.toString(), containsString(
           "number of columns 1001 is greater than the permitted maximum"));
@@ -454,8 +455,6 @@ public class TestKuduClient extends BaseKuduTest {
   public void testDecimalColumns() throws Exception {
     Schema schema = createSchemaWithDecimalColumns();
     syncClient.createTable(tableName, schema, createTableOptions());
-
-    List<Long> timestamps = new ArrayList<>();
 
     KuduSession session = syncClient.newSession();
     KuduTable table = syncClient.openTable(tableName);
@@ -966,6 +965,7 @@ public class TestKuduClient extends BaseKuduTest {
       try (KuduClient localClient = new KuduClient.KuduClientBuilder(masterAddresses).build()) {
         // Force the client to connect to the masters.
         localClient.exportAuthenticationCredentials();
+        fail("Should have failed to connect.");
       } catch (NoLeaderFoundException e) {
         assertTrue("Bad exception string: " + e.getMessage(),
             e.getMessage().matches(".*Master config .+ has no leader. " +

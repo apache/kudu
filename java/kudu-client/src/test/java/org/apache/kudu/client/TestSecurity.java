@@ -252,7 +252,7 @@ public class TestSecurity {
               List<Exception> s = connector.getExceptionsReceived();
               return s.size() == 0;
             }
-      }, /* timeout = */50000);
+      }, /* timeoutMillis = */50000);
     } finally {
       System.setProperty(SecurityUtil.KUDU_TICKETCACHE_PROPERTY, oldTicketCache);
     }

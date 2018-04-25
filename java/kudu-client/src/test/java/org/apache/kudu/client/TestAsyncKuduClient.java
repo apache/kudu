@@ -245,6 +245,7 @@ public class TestAsyncKuduClient extends BaseKuduTest {
       client.createTable("testCreateTableOutOfOrderPrimaryKeys-" + System.currentTimeMillis(),
           schema,
           getBasicCreateTableOptions()).join();
+      fail();
     } catch (NonRecoverableException nre) {
       assertTrue(nre.getMessage().startsWith("Got out-of-order key column"));
     }
