@@ -90,16 +90,19 @@ and using Impala with Kudu, including several `impala-shell` examples.
 Kudu integrates with Spark through the Data Source API as of version 1.0.0.
 Include the kudu-spark dependency using the --packages option:
 
-Use the kudu-spark_2.10 artifact if using Spark with Scala 2.10
+Use the kudu-spark_2.10 artifact if using Spark with Scala 2.10. Note that Spark 1 is no
+longer supported in Kudu starting from version 1.6.0. So in order to use Spark 1 integrated
+with Kudu, version 1.5.0 is the latest to go to.
 [source]
 ----
-spark-shell --packages org.apache.kudu:kudu-spark_2.10:1.1.0
+spark-shell --packages org.apache.kudu:kudu-spark_2.10:1.5.0
 ----
 
-Use kudu-spark2_2.11 artifact if using Spark 2 with Scala 2.11
+Use kudu-spark2_2.11 artifact if using Spark 2 with Scala 2.11. Spark 2 artifacts are available
+up to version 1.7.0.
 [source]
 ----
-spark-shell --packages org.apache.kudu:kudu-spark2_2.11:1.1.0
+spark-shell --packages org.apache.kudu:kudu-spark2_2.11:1.7.0
 ----
 
 then import kudu-spark and create a dataframe:
@@ -110,17 +113,18 @@ import org.apache.kudu.client._
 import collection.JavaConverters._
 
 // Read a table from Kudu
-val df = sqlContext.read.options(Map("kudu.master" -> "kudu.master:7051","kudu.table" -> "kudu_table")).kudu
+val df = spark.read.options(Map("kudu.master" -> "kudu.master:7051",
+                                "kudu.table" -> "kudu_table")).kudu
 
 // Query using the Spark API...
-df.select("id").filter("id" >= 5).show()
+df.select("id").filter("id >= 5").show()
 
 // ...or register a temporary table and use SQL
 df.registerTempTable("kudu_table")
-val filteredDF = sqlContext.sql("select id from kudu_table where id >= 5").show()
+val filteredDF = spark.sql("select id from kudu_table where id >= 5").show()
 
 // Use KuduContext to create, delete, or write to Kudu tables
-val kuduContext = new KuduContext("kudu.master:7051", sqlContext.sparkContext)
+val kuduContext = new KuduContext("kudu.master:7051", spark.sparkContext)
 
 // Create a new Kudu table from a dataframe schema
 // NB: No rows from the dataframe are inserted into the table
@@ -141,18 +145,66 @@ kuduContext.upsertRows(df, "test_table")
 
 // Update data
 val alteredDF = df.select("id", $"count" + 1)
-kuduContext.updateRows(filteredRows, "test_table"
+kuduContext.updateRows(filteredRows, "test_table")
 
-// Data can also be inserted into the Kudu table using the data source, though the methods on KuduContext are preferred
-// NB: The default is to upsert rows; to perform standard inserts instead, set operation = insert in the options map
+// Data can also be inserted into the Kudu table using the data source, though the methods on
+// KuduContext are preferred
+// NB: The default is to upsert rows; to perform standard inserts instead, set operation = insert
+// in the options map
 // NB: Only mode Append is supported
-df.write.options(Map("kudu.master"-> "kudu.master:7051", "kudu.table"-> "test_table")).mode("append").kudu
+df.write.options(Map("kudu.master"-> "kudu.master:7051",
+                     "kudu.table"-> "test_table")).mode("append").kudu
 
 // Check for the existence of a Kudu table
 kuduContext.tableExists("another_table")
 
 // Delete a Kudu table
 kuduContext.deleteTable("unwanted_table")
+----
+
+=== Upsert option in Kudu Spark
+The upsert operation in kudu-spark supports an extra write option of `ignoreNull`. If set to true,
+it will avoid setting existing column values in Kudu table to Null if the corresponding dataframe
+column values are Null. If unspecified, `ignoreNull` is false by default.
+[source,scala]
+----
+val dataDF = spark.read.options(Map("kudu.master" -> "kudu.master:7051",
+  "kudu.table" -> simpleTableName)).kudu
+dataDF.registerTempTable(simpleTableName)
+dataDF.show()
+// Below is the original data in the table 'simpleTableName'
++---+---+
+|key|val|
++---+---+
+|  0|foo|
++---+---+
+
+// Upsert a row with existing key 0 and val Null with ignoreNull set to true
+val nullDF = spark.createDataFrame(Seq((0, null.asInstanceOf[String]))).toDF("key", "val")
+val wo = new KuduWriteOptions
+wo.ignoreNull = true
+kuduContext.upsertRows(nullDF, simpleTableName, wo)
+dataDF.show()
+// The val field stays unchanged
++---+---+
+|key|val|
++---+---+
+|  0|foo|
++---+---+
+
+// Upsert a row with existing key 0 and val Null with ignoreNull default/set to false
+kuduContext.upsertRows(nullDF, simpleTableName)
+// Equivalent to:
+// val wo = new KuduWriteOptions
+// wo.ignoreNull = false
+// kuduContext.upsertRows(nullDF, simpleTableName, wo)
+df.show()
+// The val field is set to Null this time
++---+----+
+|key| val|
++---+----+
+|  0|null|
++---+----+
 ----
 
 === Using Spark with a Secure Kudu Cluster
@@ -182,9 +234,7 @@ name and keytab location must be provided through the `--principal` and
   `Date` and complex types are not supported.
 - Kudu tables may only be registered as temporary tables in SparkSQL.
   Kudu tables may not be queried using HiveContext.
-- When importing or exporting Avro via the tools in `kudu-spark-tools`
-  the `spark-avro` dependency jars are expected to be on the classpath.
-  You can read more about `spark-avro` link:https://github.com/databricks/spark-avro[here].
+
 
 == Kudu Python Client
 The Kudu Python client provides a Python friendly interface to the C++ client API.
@@ -257,8 +307,3 @@ link:https://github.com/apache/kudu/blob/master/java/kudu-client-tools/src/main/
 for examples which you can model your own integrations on. Stay tuned for more examples
 using YARN and Spark in the future.
 
-=== MapReduce Integration Known Issues and Limitations
-
-- When importing or exporting Parquet via the tools in `kudu-client-tools`
-  the `parquet-hadoop` dependency jars are expected to be on the classpath.
-  You can read more about `parquet-hadoop` link:https://github.com/apache/parquet-mr[here].
