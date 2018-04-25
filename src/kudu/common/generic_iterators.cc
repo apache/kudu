@@ -524,6 +524,13 @@ Status MaterializingIterator::MaterializeBlock(RowBlock *dst) {
   // been deleted.
   RETURN_NOT_OK(iter_->InitializeSelectionVector(dst->selection_vector()));
 
+  // It's relatively common to delete large sequential chunks of rows.
+  // We can fast-path that case and avoid reading any column data.
+  if (!dst->selection_vector()->AnySelected()) {
+    DVLOG(1) << "Fast path over " << dst->nrows() << " deleted rows";
+    return Status::OK();
+  }
+
   for (const auto& col_pred : col_idx_predicates_) {
     // Materialize the column itself into the row block.
     ColumnBlock dst_col(dst->column_block(get<0>(col_pred)));

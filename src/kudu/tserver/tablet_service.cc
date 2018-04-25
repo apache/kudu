@@ -481,8 +481,12 @@ class ScanResultCopier : public ScanResultCollector {
         pad_unixtime_micros_to_16_bytes_(false) {}
 
   void HandleRowBlock(const Schema* client_projection_schema,
-                              const RowBlock& row_block) override {
-    num_rows_returned_ += row_block.selection_vector()->CountSelected();
+                      const RowBlock& row_block) override {
+    int64_t num_selected = row_block.selection_vector()->CountSelected();
+    // Fast-path empty blocks (eg because the predicate didn't match any rows or
+    // all rows in the block were deleted)
+    if (num_selected == 0) return;
+    num_rows_returned_ += num_selected;
     SerializeRowBlock(row_block, rowblock_pb_, client_projection_schema,
                       rows_data_, indirect_data_, pad_unixtime_micros_to_16_bytes_);
     SetLastRow(row_block, &last_primary_key_);
