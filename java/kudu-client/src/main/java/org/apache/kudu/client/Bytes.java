@@ -182,7 +182,7 @@ public final class Bytes {
    * @throws IndexOutOfBoundsException if the byte array is too small.
    */
   public static short getShort(final byte[] b, final int offset) {
-    return (short) (b[offset] & 0xFF | b[offset + 1] << 8 );
+    return (short) ((b[offset] & 0xFF) | (b[offset + 1] << 8));
   }
 
   /**
@@ -1188,7 +1188,7 @@ public final class Bytes {
     byte[] bytes = new byte[getBitSetSize(colCount)];
     for (int i = 0; i < bits.length(); i++) {
       if (bits.get(i)) {
-        bytes[i / 8] |= 1 << (i % 8);
+        bytes[i / 8] |= (byte)(1 << (i % 8));
       }
     }
     return bytes;
@@ -1211,7 +1211,7 @@ public final class Bytes {
    * @return same byte with xor applied on the left most bit
    */
   public static byte xorLeftMostBit(byte value) {
-    value ^= (1 << 7);
+    value ^= (byte)(1 << 7);
     return value;
   }
 

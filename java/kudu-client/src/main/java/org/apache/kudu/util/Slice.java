@@ -123,7 +123,7 @@ public final class Slice implements Comparable<Slice> {
   public short getShort(int index) {
     Preconditions.checkPositionIndexes(index, index + Shorts.BYTES, this.length);
     index += offset;
-    return (short) (data[index] & 0xFF | data[index + 1] << 8);
+    return (short) ((data[index] & 0xFF) | (data[index + 1] << 8));
   }
 
   /**

@@ -145,29 +145,6 @@ public final class Slices {
     return dst.flip().toString();
   }
 
-  /**
-   * Toggles the endianness of the specified 16-bit short integer.
-   */
-  public static short swapShort(short value) {
-    return (short) (value << 8 | value >>> 8 & 0xff);
-  }
-
-  /**
-   * Toggles the endianness of the specified 32-bit integer.
-   */
-  public static int swapInt(int value) {
-    return swapShort((short) value) << 16 |
-        swapShort((short) (value >>> 16)) & 0xffff;
-  }
-
-  /**
-   * Toggles the endianness of the specified 64-bit long integer.
-   */
-  public static long swapLong(long value) {
-    return (long) swapInt((int) value) << 32 |
-        swapInt((int) (value >>> 32)) & 0xffffffffL;
-  }
-
   private static final ThreadLocal<Map<Charset, CharsetEncoder>> encoders =
       new ThreadLocal<Map<Charset, CharsetEncoder>>() {
         @Override

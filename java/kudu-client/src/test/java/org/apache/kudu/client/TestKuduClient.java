@@ -1199,7 +1199,7 @@ public class TestKuduClient extends BaseKuduTest {
                               client.getLastPropagatedTimestamp());
 
               long row_count = countRowsInScan(syncScanner);
-              long expected_count = 100 * (i + 1);
+              long expected_count = 100L * (i + 1);
               assertTrue(expected_count <= row_count);
 
               // After the scan, verify that the chosen snapshot timestamp is

@@ -91,8 +91,8 @@ class Batch extends KuduRpc<BatchResponse> {
   Message createRequestPB() {
     final Tserver.WriteRequestPB.Builder builder =
         Operation.createAndFillWriteRequestPB(operations);
-    rowOperationsSizeBytes = builder.getRowOperations().getRows().size() +
-                             builder.getRowOperations().getIndirectData().size();
+    rowOperationsSizeBytes = (long)builder.getRowOperations().getRows().size() +
+                             (long)builder.getRowOperations().getIndirectData().size();
     builder.setTabletId(UnsafeByteOperations.unsafeWrap(getTablet().getTabletIdAsBytes()));
     builder.setExternalConsistencyMode(externalConsistencyMode.pbVersion());
     return builder.build();
