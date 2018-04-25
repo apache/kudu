@@ -17,8 +17,6 @@
 
 package org.apache.kudu.mapreduce.tools;
 
-import static java.sql.Types.TIMESTAMP;
-
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -38,6 +36,7 @@ import org.apache.parquet.hadoop.ParquetInputFormat;
 import org.apache.parquet.hadoop.example.GroupWriteSupport;
 import org.apache.parquet.schema.MessageType;
 import org.apache.parquet.schema.PrimitiveType;
+import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 
@@ -111,9 +110,10 @@ public class ImportParquet extends Configured implements Tool {
     // Kudu doesn't support Parquet's TIMESTAMP.
     Iterator<ColumnDescriptor> fields = schema.getColumns().iterator();
     while (fields.hasNext()) {
-      if (fields.next().getType().equals(TIMESTAMP)) {
-        throw new IllegalArgumentException("This " + fields.next().getType() +
-          " Parquet type is not supported in Kudu");
+      ColumnDescriptor colDesc = fields.next();
+      if (colDesc.getType().equals(PrimitiveTypeName.INT96)) {
+        throw new IllegalArgumentException("Column type not supported in Kudu: "
+            + colDesc);
       }
     }
 
