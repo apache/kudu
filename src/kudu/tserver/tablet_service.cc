@@ -481,6 +481,10 @@ class ScanResultCopier : public ScanResultCollector {
 
   void HandleRowBlock(Scanner* scanner, const RowBlock& row_block) override {
     int64_t num_selected = row_block.selection_vector()->CountSelected();
+    // Fast-path empty blocks (eg because the predicate didn't match any rows or
+    // all rows in the block were deleted)
+    if (num_selected == 0) return;
+
     num_rows_returned_ += num_selected;
     scanner->add_num_rows_returned(num_selected);
     SerializeRowBlock(row_block, rowblock_pb_, scanner->client_projection_schema(),
