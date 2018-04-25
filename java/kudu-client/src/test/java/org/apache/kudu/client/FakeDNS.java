@@ -91,8 +91,10 @@ public class FakeDNS {
     @Override
     public InetAddress[] lookupAllHostAddr(String host)
         throws UnknownHostException {
-
-      InetAddress inetAddress = forwardResolutions.get(host);
+      InetAddress inetAddress;
+      synchronized(FakeDNS.this) {
+        inetAddress = forwardResolutions.get(host);
+      }
       if (inetAddress != null) {
         return new InetAddress[]{inetAddress};
       }
@@ -107,7 +109,10 @@ public class FakeDNS {
         return InetAddresses.toAddrString(InetAddress.getByAddress(addr));
       }
 
-      String hostname = reverseResolutions.get(InetAddress.getByAddress(addr));
+      String hostname;
+      synchronized (FakeDNS.this) {
+        hostname = reverseResolutions.get(InetAddress.getByAddress(addr));
+      }
       if (hostname != null) {
         return hostname;
       }

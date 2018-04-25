@@ -2090,7 +2090,7 @@ public class AsyncKuduClient implements AutoCloseable {
     synchronized (sessions) {
       copyOfSessions = new HashSet<>(sessions);
     }
-    if (sessions.isEmpty()) {
+    if (copyOfSessions.isEmpty()) {
       return Deferred.fromResult(null);
     }
     // Guaranteed that we'll have at least one session to close.

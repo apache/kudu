@@ -234,7 +234,12 @@ class TableLocationsCache {
 
   @Override
   public String toString() {
-    return entries.values().toString();
+    rwl.readLock().lock();
+    try {
+      return entries.values().toString();
+    } finally {
+      rwl.readLock().unlock();
+    }
   }
 
   /**

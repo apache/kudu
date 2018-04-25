@@ -722,6 +722,7 @@ class Connection extends SimpleChannelUpstreamHandler {
   }
 
   /** Initiate opening TCP connection to the server. */
+  @GuardedBy("lock")
   private void connect() {
     Preconditions.checkState(lock.isHeldByCurrentThread());
     Preconditions.checkState(state == State.NEW);
