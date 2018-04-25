@@ -265,7 +265,7 @@ public class KuduPredicate {
       value = value.add(smallestValue);
       op = ComparisonOp.LESS;
     } else if (op == ComparisonOp.GREATER) {
-      if (value == maxValue) {
+      if (value.equals(maxValue)) {
         return none(column);
       }
       value = value.add(smallestValue);
