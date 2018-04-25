@@ -247,7 +247,7 @@ public class TestKuduClient extends BaseKuduTest {
         "STRING key=r3, STRING c1=NULL, STRING c2=def, STRING c3=c, STRING c4=def");
     for (String row : rows) {
       try {
-        String[] fields = row.split(",");
+        String[] fields = row.split(",", -1);
         Insert insert = table.newInsert();
         for (int i = 0; i < fields.length; i++) {
           if (fields[i].equals("-")) { // leave unset

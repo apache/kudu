@@ -143,7 +143,7 @@ public abstract class SecurityUtil {
     // The signature algorithm name is a string like 'SHA256withRSA'.
     // There's no API available to actually find just the digest algorithm,
     // so we resort to some hackery.
-    String[] components = sigAlg.split("with");
+    String[] components = sigAlg.split("with", 2);
     String digestAlg = CERT_DIGEST_TO_MESSAGE_DIGEST.get(components[0].toUpperCase());
     if (digestAlg == null) {
       // RFC 5929: if the certificate's signatureAlgorithm uses no hash functions or

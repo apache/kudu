@@ -78,7 +78,7 @@ public class ITExportCsv extends BaseKuduTest {
 
     String csvContent = readCsvFile(new File(testHome + "/exportdata/part-m-00001"));
     assertEquals(csvContent.split("\n").length,3);
-    assertEquals(csvContent.split("\n")[0].split("\t")[3],"a string");
+    assertEquals(csvContent.split("\n", -1)[0].split("\t", -1)[3],"a string");
   }
 
   private String readCsvFile(File data) throws IOException {

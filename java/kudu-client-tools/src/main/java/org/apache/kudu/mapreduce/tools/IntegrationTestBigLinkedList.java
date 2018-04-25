@@ -1373,7 +1373,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       }
       System.out.println("Running Walker with args:" + Arrays.deepToString(args));
 
-      String[] keys = args[0].split(",");
+      String[] keys = args[0].split(",", -1);
       if (keys.length != 2) {
         System.err.println("The row key must be formatted like key1,key2");
         return 1;
