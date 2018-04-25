@@ -1024,7 +1024,7 @@ public class PartialRow {
         break;
       case INT64:
       case UNIXTIME_MICROS:
-        addLong(index, Integer.MIN_VALUE);
+        addLong(index, Long.MIN_VALUE);
         break;
       case FLOAT:
         addFloat(index, -Float.MAX_VALUE);
