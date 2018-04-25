@@ -27,7 +27,7 @@ import org.apache.yetus.audience.InterfaceAudience;
  */
 @InterfaceAudience.Private
 public class RequestTracker {
-  private Object lock = new Object();
+  private final Object lock = new Object();
 
   @GuardedBy("lock")
   private long nextSeqNo = 1;

@@ -64,6 +64,7 @@ public class RowError {
    * @return A short string representation of the error.
    * @deprecated Please use getErrorStatus() instead. Will be removed in a future version.
    */
+  @Deprecated
   public String getStatus() {
     return status.getCodeName();
   }
@@ -73,6 +74,7 @@ public class RowError {
    * @return The error message.
    * @deprecated Please use getErrorStatus() instead. Will be removed in a future version.
    */
+  @Deprecated
   public String getMessage() {
     return status.getMessage();
   }

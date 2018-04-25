@@ -2102,6 +2102,7 @@ public class AsyncKuduClient implements AutoCloseable {
     return Deferred.group(deferreds);
   }
 
+  @SuppressWarnings("ReferenceEquality")
   private static boolean isMasterTable(String tableId) {
     // Checking that it's the same instance so there's absolutely no chance of confusing the master
     // 'table' for a user one.

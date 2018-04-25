@@ -80,11 +80,8 @@ public class Status {
    * @return status object equivalent to the pb
    */
   static Status fromMasterErrorPB(Master.MasterErrorPB masterErrorPB) {
-    if (masterErrorPB == Master.MasterErrorPB.getDefaultInstance()) {
-      return Status.OK();
-    } else {
-      return new Status(masterErrorPB.getStatus());
-    }
+    assert masterErrorPB.hasStatus() : "no status in PB " + masterErrorPB;
+    return new Status(masterErrorPB.getStatus());
   }
 
   /**
@@ -93,11 +90,8 @@ public class Status {
    * @return status object equivalent to the pb
    */
   static Status fromTabletServerErrorPB(Tserver.TabletServerErrorPB tserverErrorPB) {
-    if (tserverErrorPB == Tserver.TabletServerErrorPB.getDefaultInstance()) {
-      return Status.OK();
-    } else {
-      return new Status(tserverErrorPB.getStatus());
-    }
+    assert tserverErrorPB.hasStatus() : "no status in PB " + tserverErrorPB;
+    return new Status(tserverErrorPB.getStatus());
   }
 
   /**

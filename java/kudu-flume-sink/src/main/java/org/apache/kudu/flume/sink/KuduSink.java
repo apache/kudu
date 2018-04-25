@@ -121,7 +121,7 @@ public class KuduSink extends AbstractSink implements Configurable {
   }
 
   @Override
-  public void start() {
+  public synchronized void start() {
     Preconditions.checkState(table == null && session == null,
         "Please call stop before calling start on an old instance.");
 
@@ -151,7 +151,7 @@ public class KuduSink extends AbstractSink implements Configurable {
   }
 
   @Override
-  public void stop() {
+  public synchronized void stop() {
     Exception ex = null;
     try {
       operationsProducer.close();
@@ -182,7 +182,7 @@ public class KuduSink extends AbstractSink implements Configurable {
   public void configure(Context context) {
     masterAddresses = context.getString(MASTER_ADDRESSES);
     Preconditions.checkNotNull(masterAddresses,
-        "Missing master addresses. Please specify property '$s'.",
+        "Missing master addresses. Please specify property '%s'.",
         MASTER_ADDRESSES);
 
     tableName = context.getString(TABLE_NAME);
@@ -209,7 +209,7 @@ public class KuduSink extends AbstractSink implements Configurable {
       Class<? extends KuduOperationsProducer> clazz =
           (Class<? extends KuduOperationsProducer>)
           Class.forName(operationProducerType);
-      operationsProducer = clazz.newInstance();
+      operationsProducer = clazz.getDeclaredConstructor().newInstance();
       operationsProducer.configure(producerContext);
     } catch (Exception e) {
       logger.error("Could not instantiate Kudu operations producer" , e);

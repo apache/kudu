@@ -21,6 +21,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.Iterator;
 import java.util.List;
@@ -515,7 +516,7 @@ public class PartitionPruner {
       KuduPredicate predicate = predicates.get(column.getName());
       List<byte[]> predicateValues;
       if (predicate.getType() == KuduPredicate.PredicateType.EQUALITY) {
-        predicateValues = Arrays.asList(predicate.getLower());
+        predicateValues = Collections.singletonList(predicate.getLower());
       } else {
         predicateValues = Arrays.asList(predicate.getInListValues());
       }

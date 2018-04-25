@@ -31,18 +31,18 @@ import org.apache.kudu.util.Pair;
  */
 @InterfaceAudience.Private
 class IsAlterTableDoneRequest extends KuduRpc<IsAlterTableDoneResponse> {
-  private final TableIdentifierPB.Builder table;
+  private final TableIdentifierPB.Builder tableId;
 
-  IsAlterTableDoneRequest(KuduTable masterTable, TableIdentifierPB.Builder table) {
+  IsAlterTableDoneRequest(KuduTable masterTable, TableIdentifierPB.Builder tableId) {
     super(masterTable);
-    this.table = table;
+    this.tableId = tableId;
   }
 
   @Override
   Message createRequestPB() {
     final IsAlterTableDoneRequestPB.Builder builder =
         IsAlterTableDoneRequestPB.newBuilder();
-    builder.setTable(table);
+    builder.setTable(tableId);
     return builder.build();
   }
 

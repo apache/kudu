@@ -32,6 +32,7 @@ import org.apache.kudu.util.Slice;
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
+@SuppressWarnings("IterableAndIterator")
 public class RowResultIterator extends KuduRpcResponse implements Iterator<RowResult>,
     Iterable<RowResult> {
 

@@ -577,10 +577,8 @@ public class RowResult {
   static String timestampToString(long timestamp) {
     long tsMillis = timestamp / MS_IN_S;
     long tsMicros = timestamp % US_IN_S;
-    StringBuffer formattedTs = new StringBuffer();
-    DATE_FORMAT.get().format(new Date(tsMillis), formattedTs, new FieldPosition(0));
-    formattedTs.append(String.format(".%06dZ", tsMicros));
-    return formattedTs.toString();
+    String tsStr = DATE_FORMAT.get().format(new Date(tsMillis));
+    return String.format("%s.%06dZ", tsStr, tsMicros);
   }
 
   /**

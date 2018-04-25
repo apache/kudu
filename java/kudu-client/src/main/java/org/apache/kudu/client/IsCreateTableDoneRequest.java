@@ -29,11 +29,11 @@ import org.apache.kudu.util.Pair;
  */
 @InterfaceAudience.Private
 class IsCreateTableDoneRequest extends KuduRpc<IsCreateTableDoneResponse> {
-  private final TableIdentifierPB.Builder table;
+  private final TableIdentifierPB.Builder tableId;
 
-  IsCreateTableDoneRequest(KuduTable masterTable, TableIdentifierPB.Builder table) {
+  IsCreateTableDoneRequest(KuduTable masterTable, TableIdentifierPB.Builder tableId) {
     super(masterTable);
-    this.table = table;
+    this.tableId = tableId;
   }
 
   @Override
@@ -63,7 +63,7 @@ class IsCreateTableDoneRequest extends KuduRpc<IsCreateTableDoneResponse> {
   Message createRequestPB() {
     final IsCreateTableDoneRequestPB.Builder builder =
         IsCreateTableDoneRequestPB.newBuilder();
-    builder.setTable(table);
+    builder.setTable(tableId);
     return builder.build();
   }
 }

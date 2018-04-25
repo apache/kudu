@@ -73,7 +73,7 @@ public class ConnectToMasterRequest extends KuduRpc<ConnectToMasterResponsePB> {
 
   @Override
   Collection<Integer> getRequiredFeatures() {
-    if (method == CONNECT_TO_MASTER) {
+    if (CONNECT_TO_MASTER.equals(method)) {
       return Collections.singleton(MasterFeatures.CONNECT_TO_MASTER.getNumber());
     }
     return Collections.emptySet();
@@ -82,7 +82,7 @@ public class ConnectToMasterRequest extends KuduRpc<ConnectToMasterResponsePB> {
   @Override
   Pair<ConnectToMasterResponsePB, Object> deserialize(CallResponse callResponse,
                                                        String tsUUID) throws KuduException {
-    if (method == CONNECT_TO_MASTER) {
+    if (CONNECT_TO_MASTER.equals(method)) {
       return deserializeNewRpc(callResponse, tsUUID);
     }
     return deserializeOldRpc(callResponse, tsUUID);
