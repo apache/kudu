@@ -926,6 +926,7 @@ public class PartialRow {
   }
 
   /** {@inheritDoc} */
+  @Override
   public String toString() {
     int numCols = schema.getColumnCount();
     StringBuilder sb = new StringBuilder();

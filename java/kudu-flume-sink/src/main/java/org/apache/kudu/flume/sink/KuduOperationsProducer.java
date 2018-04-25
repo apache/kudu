@@ -53,5 +53,6 @@ public interface KuduOperationsProducer extends Configurable, AutoCloseable {
   /**
    * Cleans up any state. Called when the sink is stopped.
    */
+  @Override
   void close();
 }

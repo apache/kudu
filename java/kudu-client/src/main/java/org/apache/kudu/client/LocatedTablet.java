@@ -133,6 +133,7 @@ public class LocatedTablet {
       return pb.getRole().toString();
     }
 
+    @Override
     public String toString() {
       return pb.toString();
     }

@@ -91,6 +91,7 @@ public final class PleaseThrottleException extends RecoverableException
   /**
    * The RPC that was made to fail with this exception.
    */
+  @Override
   public Operation getFailedRpc() {
     return rpc;
   }

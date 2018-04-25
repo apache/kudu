@@ -1076,11 +1076,13 @@ public class AsyncKuduClient implements AutoCloseable {
       this.request = request;
     }
 
+    @Override
     public Deferred<R> call(final D arg) {
       LOG.debug("Retrying sending RPC {} after lookup", request);
       return sendRpcToTablet(request);  // Retry the RPC.
     }
 
+    @Override
     public String toString() {
       return "retry RPC";
     }
@@ -1341,6 +1343,7 @@ public class AsyncKuduClient implements AutoCloseable {
       final Callback<Deferred<KuduTable>, IsCreateTableDoneResponse> callback,
       final Callback<Exception, Exception> errback) {
     final class RetryTimer implements TimerTask {
+      @Override
       public void run(final Timeout timeout) {
         doIsCreateTableDone(table, rpc).addCallbacks(callback, errback);
       }
@@ -1370,6 +1373,7 @@ public class AsyncKuduClient implements AutoCloseable {
       final Callback<Deferred<AlterTableResponse>, IsAlterTableDoneResponse> callback,
       final Callback<Exception, Exception> errback) {
     final class RetryTimer implements TimerTask {
+      @Override
       public void run(final Timeout timeout) {
         doIsAlterTableDone(table, rpc).addCallbacks(callback, errback);
       }
@@ -1384,11 +1388,13 @@ public class AsyncKuduClient implements AutoCloseable {
   }
 
   private final class ReleaseMasterLookupPermit<T> implements Callback<T, T> {
+    @Override
     public T call(final T arg) {
       releaseMasterLookupPermit();
       return arg;
     }
 
+    @Override
     public String toString() {
       return "release master lookup permit";
     }
@@ -1715,6 +1721,7 @@ public class AsyncKuduClient implements AutoCloseable {
     // on hold but we won't be doing this for the moment. Regions in HBase can move a lot,
     // we're not expecting this in Kudu.
     final class RetryTimer implements TimerTask {
+      @Override
       public void run(final Timeout timeout) {
         sendRpcToTablet(rpc);
       }
@@ -1791,6 +1798,7 @@ public class AsyncKuduClient implements AutoCloseable {
       this.requestedBatchSize = requestedBatchSize;
     }
 
+    @Override
     public Object call(final GetTableLocationsResponsePB response) {
       if (response.hasError()) {
         Status status = Status.fromMasterErrorPB(response.getError());
@@ -1809,6 +1817,7 @@ public class AsyncKuduClient implements AutoCloseable {
       return null;
     }
 
+    @Override
     public String toString() {
       return "get tablet locations from the master for table " + table.getName();
     }
@@ -2035,6 +2044,7 @@ public class AsyncKuduClient implements AutoCloseable {
 
     // 3. Release all other resources.
     final class ReleaseResourcesCB implements Callback<ArrayList<Void>, ArrayList<Void>> {
+      @Override
       public ArrayList<Void> call(final ArrayList<Void> arg) {
         LOG.debug("Releasing all remaining resources");
         timer.stop();
@@ -2042,6 +2052,7 @@ public class AsyncKuduClient implements AutoCloseable {
         return arg;
       }
 
+      @Override
       public String toString() {
         return "release resources callback";
       }
@@ -2050,10 +2061,12 @@ public class AsyncKuduClient implements AutoCloseable {
     // 2. Terminate all connections.
     final class DisconnectCB implements Callback<Deferred<ArrayList<Void>>,
         ArrayList<List<OperationResponse>>> {
+      @Override
       public Deferred<ArrayList<Void>> call(ArrayList<List<OperationResponse>> ignoredResponses) {
         return connectionCache.disconnectEverything().addCallback(new ReleaseResourcesCB());
       }
 
+      @Override
       public String toString() {
         return "disconnect callback";
       }

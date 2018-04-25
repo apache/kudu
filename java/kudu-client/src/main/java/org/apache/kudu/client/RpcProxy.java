@@ -393,6 +393,7 @@ class RpcProxy {
   /**
    * @return string representation of the object suitable for printing into logs, etc.
    */
+  @Override
   public String toString() {
     return "RpcProxy@" + hashCode() + ", connection=" + connection;
   }

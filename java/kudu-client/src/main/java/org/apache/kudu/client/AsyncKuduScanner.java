@@ -453,6 +453,7 @@ public final class AsyncKuduScanner {
           return Deferred.fromResult(resp.data);
         }
 
+        @Override
         public String toString() {
           return "scanner opened";
         }
@@ -483,6 +484,7 @@ public final class AsyncKuduScanner {
           }
         }
 
+        @Override
         public String toString() {
           return "open scanner errback";
         }
@@ -522,6 +524,7 @@ public final class AsyncKuduScanner {
    */
   private final Callback<RowResultIterator, Response> gotNextRow =
       new Callback<RowResultIterator, Response>() {
+        @Override
         public RowResultIterator call(final Response resp) {
           numRowsReturned += resp.data.getNumRows();
           if (!resp.more) {  // We're done scanning this tablet.
@@ -534,6 +537,7 @@ public final class AsyncKuduScanner {
           return resp.data;
         }
 
+        @Override
         public String toString() {
           return "get nextRows response";
         }
@@ -562,6 +566,7 @@ public final class AsyncKuduScanner {
         }
       }
 
+      @Override
       public String toString() {
         return "NextRow errback";
       }
@@ -607,6 +612,7 @@ public final class AsyncKuduScanner {
   /** Callback+Errback invoked when the TabletServer closed our scanner.  */
   private Callback<RowResultIterator, Response> closedCallback() {
     return new Callback<RowResultIterator, Response>() {
+      @Override
       public RowResultIterator call(Response response) {
         closed = true;
         if (LOG.isDebugEnabled()) {
@@ -618,12 +624,14 @@ public final class AsyncKuduScanner {
         return response == null ? null : response.data;
       }
 
+      @Override
       public String toString() {
         return "scanner closed";
       }
     };
   }
 
+  @Override
   public String toString() {
     final String tablet = this.tablet == null ? "null" : this.tablet.getTabletId();
     final StringBuilder buf = new StringBuilder();
@@ -760,6 +768,7 @@ public final class AsyncKuduScanner {
       this.lastPrimaryKey = lastPrimaryKey;
     }
 
+    @Override
     public String toString() {
       String ret = "AsyncKuduScanner$Response(scannerId = " + Bytes.pretty(scannerId) +
           ", data = " + data + ", more = " + more;
@@ -942,6 +951,7 @@ public final class AsyncKuduScanner {
       return new Pair<Response, Object>(response, error);
     }
 
+    @Override
     public String toString() {
       return "ScanRequest(scannerId=" + Bytes.pretty(scannerId) +
           (tablet != null ? ", tablet=" + tablet.getTabletId() : "") +
@@ -972,6 +982,7 @@ public final class AsyncKuduScanner {
      * Builds an {@link AsyncKuduScanner} using the passed configurations.
      * @return a new {@link AsyncKuduScanner}
      */
+    @Override
     public AsyncKuduScanner build() {
       return new AsyncKuduScanner(
           client, table, projectedColumnNames, projectedColumnIndexes, readMode, isFaultTolerant,

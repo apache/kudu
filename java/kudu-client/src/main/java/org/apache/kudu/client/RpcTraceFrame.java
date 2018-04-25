@@ -31,6 +31,7 @@ class RpcTraceFrame {
   enum Action {
     // Just before putting the RPC on the wire.
     SEND_TO_SERVER {
+      @Override
       void appendToStringBuilder(RpcTraceFrame trace, StringBuilder sb) {
         sb.append("sending RPC to server ");
         sb.append(trace.getServer().getUuid());
@@ -38,6 +39,7 @@ class RpcTraceFrame {
     },
     // Just after parsing the response from the server.
     RECEIVE_FROM_SERVER {
+      @Override
       void appendToStringBuilder(RpcTraceFrame trace, StringBuilder sb) {
         sb.append("received from server ");
         sb.append(trace.getServer().getUuid());
@@ -47,6 +49,7 @@ class RpcTraceFrame {
     },
     // Just before sleeping and then retrying.
     SLEEP_THEN_RETRY {
+      @Override
       void appendToStringBuilder(RpcTraceFrame trace, StringBuilder sb) {
         sb.append("delaying RPC due to ");
         sb.append(trace.getStatus());
@@ -54,6 +57,7 @@ class RpcTraceFrame {
     },
     // Waiting for a new authn token to re-send the request.
     GET_NEW_AUTHENTICATION_TOKEN_THEN_RETRY {
+      @Override
       void appendToStringBuilder(RpcTraceFrame trace, StringBuilder sb) {
         sb.append("waiting for new authn token");
       }
@@ -61,12 +65,14 @@ class RpcTraceFrame {
     // After having figured out that we don't know where the RPC is going,
     // before querying the master.
     QUERY_MASTER {
+      @Override
       void appendToStringBuilder(RpcTraceFrame trace, StringBuilder sb) {
         sb.append("querying master");
       }
     },
     // Once the trace becomes too large, will be the last trace object in the list.
     TRACE_TRUNCATED {
+      @Override
       void appendToStringBuilder(RpcTraceFrame trace, StringBuilder sb) {
         sb.append("trace too long, truncated");
       }

@@ -145,6 +145,7 @@ public class KuduScanner {
      * Builds a {@link KuduScanner} using the passed configurations.
      * @return a new {@link KuduScanner}
      */
+    @Override
     public KuduScanner build() {
       return new KuduScanner(new AsyncKuduScanner(
           client, table, projectedColumnNames, projectedColumnIndexes, readMode, isFaultTolerant,

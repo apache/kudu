@@ -588,6 +588,7 @@ class Connection extends SimpleChannelUpstreamHandler {
     final ChannelFuture disconnectFuture = disconnect();
     final Deferred<Void> d = new Deferred<>();
     disconnectFuture.addListener(new ChannelFutureListener() {
+      @Override
       public void operationComplete(final ChannelFuture future) {
         if (future.isSuccess()) {
           d.callback(null);
@@ -606,6 +607,7 @@ class Connection extends SimpleChannelUpstreamHandler {
   }
 
   /** @return string representation of this object (suitable for printing into the logs, etc.) */
+  @Override
   public String toString() {
     final StringBuilder buf = new StringBuilder();
     buf.append("Connection@")

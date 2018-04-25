@@ -826,6 +826,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
   }
 
   private class SaslClientCallbackHandler implements CallbackHandler {
+    @Override
     public void handle(Callback[] callbacks) throws UnsupportedCallbackException {
       for (Callback callback : callbacks) {
         if (callback instanceof NameCallback) {

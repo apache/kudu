@@ -241,6 +241,7 @@ public class Statistics {
       return this.statistics.get(statistic.getIndex());
     }
 
+    @Override
     public String toString() {
       final StringBuilder buf = new StringBuilder();
       buf.append("Table: ");
