@@ -229,7 +229,7 @@ public class CreateTableOptions {
     return wait;
   }
 
-  final class RangePartition {
+  static final class RangePartition {
     private final PartialRow lowerBound;
     private final PartialRow upperBound;
     private final RangePartitionBound lowerBoundType;

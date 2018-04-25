@@ -773,7 +773,7 @@ public class AsyncKuduSession implements SessionConfiguration {
    * Analogous to BatchErrCallback above but for AUTO_FLUSH_SYNC which doesn't handle lists of
    * operations and responses.
    */
-  private final class SingleOperationErrCallback implements Callback<Object, Exception> {
+  private static final class SingleOperationErrCallback implements Callback<Object, Exception> {
 
     private final Operation operation;
 

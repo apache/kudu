@@ -71,7 +71,7 @@ public class MiniKuduCluster implements AutoCloseable {
   // Thread that reads and logs stderr from the control shell.
   private Thread miniClusterErrorPrinter;
 
-  private class DaemonInfo {
+  private static class DaemonInfo {
     DaemonIdentifierPB id;
     boolean isRunning;
   }

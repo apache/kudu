@@ -56,14 +56,14 @@ public class TestAsyncUtil {
     d.join();
   }
 
-  final class TestCallback implements Callback<Deferred<String>, String> {
+  final static class TestCallback implements Callback<Deferred<String>, String> {
     @Override
     public Deferred<String> call(String arg) throws Exception {
       return Deferred.fromResult("callback: " + arg);
     }
   }
 
-  final class TestErrback implements Callback<Deferred<String>, Exception> {
+  final static class TestErrback implements Callback<Deferred<String>, Exception> {
     @Override
     public Deferred<String> call(Exception arg) {
       if (arg instanceof IllegalArgumentException) {
