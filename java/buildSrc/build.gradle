@@ -33,6 +33,7 @@ dependencies {
   compile "com.github.jengelman.gradle.plugins:shadow:2.0.3"
   compile "com.google.protobuf:protobuf-gradle-plugin:0.8.5"
   compile "com.netflix.nebula:nebula-clojure-plugin:5.0.6"
+  compile "gradle.plugin.com.github.spotbugs:spotbugs-gradle-plugin:1.6.1"
   compile "io.spring.gradle:propdeps-plugin:0.0.9.RELEASE"
   compile "net.ltgt.gradle:gradle-errorprone-plugin:0.0.13"
   compile "ru.vyarus:gradle-animalsniffer-plugin:1.4.3"

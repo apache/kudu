@@ -18,7 +18,7 @@
 // This file contains common tasks and configuration for checking the quality of the code.
 
 apply plugin: "checkstyle" // Ensures Java code follows the defined coding style.
-apply plugin: "findbugs"   // Performs static code analysis to look for bugs in Java code.
+apply plugin: "com.github.spotbugs"   // Performs static code analysis to look for bugs in Java code.
 apply plugin: "net.ltgt.errorprone" // Performs static code analysis to look for bugs in Java code.
 apply plugin: "pmd"        // Performs static code analysis to look for common code smells in Java code.
 apply plugin: "com.github.ben-manes.versions" // Provides a task to determine which dependencies have updates.
@@ -39,23 +39,23 @@ task checkstyle(dependsOn: [checkstyleMain, checkstyleTest, checkstyleIntegratio
   description = "Run Checkstyle analysis."
 }
 
-findbugs {
-  toolVersion = versions.findbugs
+spotbugs {
+  toolVersion = versions.spotBugs
   ignoreFailures = true
   effort = "max"
 }
 
-tasks.withType(FindBugs) {
+tasks.withType(com.github.spotbugs.SpotBugsTask) {
   reports {
     xml.enabled false
     html.enabled true
   }
 }
 
-// Create an aggregate findbugs task.
-// This simplifies running findbugs on all the code by only needing one task instead of multiple in your command.
-task findbugs(dependsOn: [findbugsMain, findbugsTest, findbugsIntegrationTest], group: "Verification") {
-  description = "Run FindBugs analysis."
+// Create an aggregate spotbugs task.
+// This simplifies running spotbugs on all the code by only needing one task instead of multiple in your command.
+task spotbugs(dependsOn: [spotbugsMain, spotbugsTest, spotbugsIntegrationTest], group: "Verification") {
+  description = "Run SpotBugs analysis."
 }
 
 pmd {
