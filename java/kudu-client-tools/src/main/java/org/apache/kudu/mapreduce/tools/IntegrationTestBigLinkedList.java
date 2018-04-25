@@ -1075,7 +1075,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
        * Schema we use when getting rows from the linked list, we only need the reference and
        * its update count.
        */
-      private static final List<String> SCAN_COLUMN_NAMES =
+      private static final ImmutableList<String> SCAN_COLUMN_NAMES =
           ImmutableList.of(COLUMN_PREV_ONE, COLUMN_PREV_TWO, COLUMN_UPDATE_COUNT, COLUMN_CLIENT);
 
       private int numUpdatesPerMapper;

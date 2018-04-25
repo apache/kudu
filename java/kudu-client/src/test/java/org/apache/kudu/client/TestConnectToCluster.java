@@ -37,7 +37,7 @@ import org.hamcrest.CoreMatchers;
 
 public class TestConnectToCluster {
 
-  private static final List<HostAndPort> MASTERS = ImmutableList.of(
+  private static final ImmutableList<HostAndPort> MASTERS = ImmutableList.of(
       HostAndPort.fromParts("0", 9000),
       HostAndPort.fromParts("1", 9000),
       HostAndPort.fromParts("2", 9000));

@@ -92,7 +92,7 @@ public class Negotiator extends SimpleChannelUpstreamHandler {
   private static final Logger LOG = LoggerFactory.getLogger(Negotiator.class);
 
   private final SaslClientCallbackHandler SASL_CALLBACK = new SaslClientCallbackHandler();
-  private static final Set<RpcHeader.RpcFeatureFlag> SUPPORTED_RPC_FEATURES =
+  private static final ImmutableSet<RpcHeader.RpcFeatureFlag> SUPPORTED_RPC_FEATURES =
       ImmutableSet.of(
           RpcHeader.RpcFeatureFlag.APPLICATION_FEATURE_FLAGS,
           RpcHeader.RpcFeatureFlag.TLS);

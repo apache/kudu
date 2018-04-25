@@ -134,7 +134,7 @@ public final class AsyncKuduScanner {
      */
     READ_YOUR_WRITES(Common.ReadMode.READ_YOUR_WRITES);
 
-    private Common.ReadMode pbVersion;
+    private final Common.ReadMode pbVersion;
     ReadMode(Common.ReadMode pbVersion) {
       this.pbVersion = pbVersion;
     }

@@ -74,7 +74,7 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
     }
 
     /** The byte used to encode this in a RowOperationsPB */
-    private byte encodedByte;
+    private final byte encodedByte;
   }
 
   static final String METHOD = "Write";

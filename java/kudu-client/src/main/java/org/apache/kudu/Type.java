@@ -20,9 +20,9 @@ package org.apache.kudu;
 import static org.apache.kudu.Common.DataType;
 
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
 import com.google.common.primitives.Shorts;
@@ -51,7 +51,7 @@ public enum Type {
   UNIXTIME_MICROS(DataType.UNIXTIME_MICROS, "unixtime_micros"),
   DECIMAL(Arrays.asList(DataType.DECIMAL32, DataType.DECIMAL64, DataType.DECIMAL128), "decimal");
 
-  private final List<DataType> dataTypes;
+  private final ImmutableList<DataType> dataTypes;
   private final String name;
   private final int size;
 
@@ -61,13 +61,13 @@ public enum Type {
    * @param name string representation of the type
    */
   private Type(DataType dataType, String name) {
-    this.dataTypes = Collections.singletonList(dataType);
+    this.dataTypes = ImmutableList.of(dataType);
     this.name = name;
     this.size = getTypeSize(dataType);
   }
 
   private Type(List<DataType> dataTypes, String name) {
-    this.dataTypes = dataTypes;
+    this.dataTypes = ImmutableList.copyOf(dataTypes);
     this.name = name;
     this.size = -1;
   }

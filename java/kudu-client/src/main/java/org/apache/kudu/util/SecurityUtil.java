@@ -50,7 +50,7 @@ public abstract class SecurityUtil {
    * Map from the names of digest algorithms used in X509 certificates to
    * the appropriate MessageDigest implementation to use for channel-bindings.
    */
-  private static final Map<String, String> CERT_DIGEST_TO_MESSAGE_DIGEST =
+  private static final ImmutableMap<String, String> CERT_DIGEST_TO_MESSAGE_DIGEST =
       ImmutableMap.<String, String>builder()
       // RFC 5929: if the certificate's signatureAlgorithm uses a single hash
       // function, and that hash function is either MD5 [RFC1321] or SHA-1
