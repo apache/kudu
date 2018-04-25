@@ -27,6 +27,7 @@
 package org.apache.kudu.client;
 
 import static com.google.common.base.Preconditions.checkArgument;
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.kudu.tserver.Tserver.NewScanRequestPB;
 import static org.apache.kudu.tserver.Tserver.ScanRequestPB;
 import static org.apache.kudu.tserver.Tserver.ScanResponsePB;
@@ -620,7 +621,7 @@ public final class AsyncKuduScanner {
               tablet);
         }
         invalidate();
-        scannerId = "client debug closed".getBytes();   // Make debugging easier.
+        scannerId = "client debug closed".getBytes(UTF_8);   // Make debugging easier.
         return response == null ? null : response.data;
       }
 

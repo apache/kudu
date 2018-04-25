@@ -16,11 +16,12 @@
 // under the License.
 package org.apache.kudu.mapreduce;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
-import java.io.FileWriter;
 import java.io.OutputStream;
 import java.io.Writer;
 import java.nio.file.Files;
@@ -82,7 +83,7 @@ public class TestJarFinder {
     os.close();
 
     File propsFile = new File(dir, "props.properties");
-    Writer writer = new FileWriter(propsFile);
+    Writer writer = Files.newBufferedWriter(propsFile.toPath(), UTF_8);
     new Properties().store(writer, "");
     writer.close();
     ByteArrayOutputStream baos = new ByteArrayOutputStream();
@@ -100,7 +101,7 @@ public class TestJarFinder {
       TestJarFinder.class.getName() + "-testNoManifest");
     dir.mkdirs();
     File propsFile = new File(dir, "props.properties");
-    Writer writer = new FileWriter(propsFile);
+    Writer writer = Files.newBufferedWriter(propsFile.toPath(), UTF_8);
     new Properties().store(writer, "");
     writer.close();
     ByteArrayOutputStream baos = new ByteArrayOutputStream();

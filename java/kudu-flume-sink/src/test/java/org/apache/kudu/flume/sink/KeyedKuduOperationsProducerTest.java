@@ -18,6 +18,7 @@
  */
 package org.apache.kudu.flume.sink;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.MASTER_ADDRESSES;
 import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.PRODUCER;
 import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.PRODUCER_PREFIX;
@@ -32,7 +33,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 
-import com.google.common.base.Charsets;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import org.apache.flume.Channel;
@@ -126,7 +126,7 @@ public class KeyedKuduOperationsProducerTest extends BaseKuduTest {
 
     int numRows = 3;
     for (int i = 0; i < numRows; i++) {
-      Event e = EventBuilder.withBody(String.format("payload body %s", i), Charsets.UTF_8);
+      Event e = EventBuilder.withBody(String.format("payload body %s", i), UTF_8);
       e.setHeaders(ImmutableMap.of(KEY_COLUMN_DEFAULT, String.format("key %s", i)));
       channel.put(e);
     }
@@ -147,7 +147,7 @@ public class KeyedKuduOperationsProducerTest extends BaseKuduTest {
     Transaction utx = channel.getTransaction();
     utx.begin();
 
-    Event dup = EventBuilder.withBody("payload body upserted".getBytes());
+    Event dup = EventBuilder.withBody("payload body upserted".getBytes(UTF_8));
     dup.setHeaders(ImmutableMap.of("key", String.format("key %s", 0)));
     channel.put(dup);
 
@@ -185,7 +185,8 @@ public class KeyedKuduOperationsProducerTest extends BaseKuduTest {
     tx.begin();
 
     for (int i = 0; i < eventCount; i++) {
-      Event e = EventBuilder.withBody(String.format("payload body %s", i).getBytes());
+      Event e = EventBuilder.withBody(String.format("payload body %s", i)
+          .getBytes(UTF_8));
       e.setHeaders(ImmutableMap.of("key", String.format("key %s", i)));
       channel.put(e);
     }

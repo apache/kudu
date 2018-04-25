@@ -16,6 +16,7 @@
 // under the License.
 package org.apache.kudu.client;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.kudu.client.KuduPredicate.ComparisonOp.GREATER;
 import static org.apache.kudu.client.KuduPredicate.ComparisonOp.GREATER_EQUAL;
 import static org.apache.kudu.client.KuduPredicate.ComparisonOp.LESS;
@@ -372,7 +373,7 @@ public class TestKuduClient extends BaseKuduTest {
     for (int i = 0; i < 100; i++) {
       Insert insert = table.newInsert();
       PartialRow row = insert.getRow();
-      row.addBinary("key", String.format("key_%02d", i).getBytes());
+      row.addBinary("key", String.format("key_%02d", i).getBytes(UTF_8));
       row.addString("c1", "✁✂✃✄✆");
       row.addDouble("c2", i);
       if (i % 2 == 1) {

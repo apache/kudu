@@ -18,6 +18,7 @@
  */
 package org.apache.kudu.flume.sink;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.MASTER_ADDRESSES;
 import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.PRODUCER;
 import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.PRODUCER_PREFIX;
@@ -134,7 +135,7 @@ public class RegexpKuduOperationsProducerTest extends BaseKuduTest {
         String row = String.format(baseRow, i, j);
         payload.append(row);
       }
-      Event e = EventBuilder.withBody(payload.toString().getBytes());
+      Event e = EventBuilder.withBody(payload.toString().getBytes(UTF_8));
       channel.put(e);
     }
 
@@ -148,7 +149,7 @@ public class RegexpKuduOperationsProducerTest extends BaseKuduTest {
               "string,false,%1$d.%1$d,%1$d.%1$d,%1$d.%1$d,%1$d|", 1, 0, j);
           upserts.append(row);
         }
-        Event e = EventBuilder.withBody(upserts.toString().getBytes());
+        Event e = EventBuilder.withBody(upserts.toString().getBytes(UTF_8));
         channel.put(e);
       }
 
@@ -157,7 +158,7 @@ public class RegexpKuduOperationsProducerTest extends BaseKuduTest {
       String emptyString = "";
       String[] testCases = {mismatchInInt, emptyString};
       for (String testCase : testCases) {
-        Event e = EventBuilder.withBody(testCase.getBytes());
+        Event e = EventBuilder.withBody(testCase.getBytes(UTF_8));
         channel.put(e);
       }
     }

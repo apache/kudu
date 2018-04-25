@@ -19,6 +19,7 @@
 
 package org.apache.kudu.flume.sink;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.kudu.flume.sink.AvroKuduOperationsProducer.SCHEMA_LITERAL_HEADER;
 import static org.apache.kudu.flume.sink.AvroKuduOperationsProducer.SCHEMA_PROP;
 import static org.apache.kudu.flume.sink.AvroKuduOperationsProducer.SCHEMA_URL_HEADER;
@@ -38,7 +39,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 
-import com.google.common.base.Charsets;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
@@ -78,7 +78,7 @@ public class AvroKuduOperationsProducerTest extends BaseKuduTest {
   @BeforeClass
   public static void setupAvroSchemaBeforeClass() {
     try {
-      schemaLiteral = Files.toString(new File(schemaPath), Charsets.UTF_8);
+      schemaLiteral = Files.toString(new File(schemaPath), UTF_8);
     } catch (IOException e) {
       throw new FlumeException("Unable to read schema file!", e);
     }

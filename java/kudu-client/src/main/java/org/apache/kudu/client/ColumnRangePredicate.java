@@ -17,6 +17,8 @@
 
 package org.apache.kudu.client;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -184,7 +186,7 @@ public class ColumnRangePredicate {
    */
   public void setLowerBound(String lowerBound) {
     checkColumn(Type.STRING);
-    setLowerBoundInternal(lowerBound.getBytes());
+    setLowerBoundInternal(lowerBound.getBytes(UTF_8));
   }
 
   /**
@@ -281,7 +283,7 @@ public class ColumnRangePredicate {
    */
   public void setUpperBound(String upperBound) {
     checkColumn(Type.STRING);
-    setUpperBoundInternal(upperBound.getBytes());
+    setUpperBoundInternal(upperBound.getBytes(UTF_8));
   }
 
   /**

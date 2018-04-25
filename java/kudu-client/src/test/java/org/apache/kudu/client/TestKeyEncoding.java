@@ -16,6 +16,7 @@
 // under the License.
 package org.apache.kudu.client;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -23,7 +24,6 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.google.common.base.Charsets;
 import com.google.common.collect.ImmutableList;
 import org.junit.Test;
 
@@ -58,7 +58,7 @@ public class TestKeyEncoding extends BaseKuduTest {
   }
 
   private static void assertBytesEquals(byte[] actual, String expected) {
-    assertBytesEquals(actual, expected.getBytes(Charsets.UTF_8));
+    assertBytesEquals(actual, expected.getBytes(UTF_8));
   }
 
   /**
@@ -186,7 +186,7 @@ public class TestKeyEncoding extends BaseKuduTest {
     rowA.addDecimal("decimal64", BigDecimal.valueOf(6));
     rowA.addDecimal("decimal128", BigDecimal.valueOf(7));
     rowA.addString("string", "");
-    rowA.addBinary("binary", "".getBytes(Charsets.UTF_8));
+    rowA.addBinary("binary", "".getBytes(UTF_8));
 
     byte[] rowAEncoded = rowA.encodePrimaryKey();
     assertBytesEquals(rowAEncoded,
@@ -214,7 +214,7 @@ public class TestKeyEncoding extends BaseKuduTest {
     rowB.addDecimal("decimal64", BigDecimal.valueOf(6));
     rowB.addDecimal("decimal128", BigDecimal.valueOf(7));
     rowB.addString("string", "abc\1\0def");
-    rowB.addBinary("binary", "\0\1binary".getBytes(Charsets.UTF_8));
+    rowB.addBinary("binary", "\0\1binary".getBytes(UTF_8));
 
     byte[] rowBEncoded = rowB.encodePrimaryKey();
     assertBytesEquals(rowB.encodePrimaryKey(),
@@ -241,7 +241,7 @@ public class TestKeyEncoding extends BaseKuduTest {
     rowC.addDecimal("decimal64", BigDecimal.valueOf(6));
     rowC.addDecimal("decimal128", BigDecimal.valueOf(7));
     rowC.addString("string", "abc\n123");
-    rowC.addBinary("binary", "\0\1\2\3\4\5".getBytes(Charsets.UTF_8));
+    rowC.addBinary("binary", "\0\1\2\3\4\5".getBytes(UTF_8));
 
     byte[] rowCEncoded = rowC.encodePrimaryKey();
     assertBytesEquals(rowCEncoded,
@@ -268,7 +268,7 @@ public class TestKeyEncoding extends BaseKuduTest {
     rowD.addDecimal("decimal64", BigDecimal.valueOf(-6));
     rowD.addDecimal("decimal128", BigDecimal.valueOf(-7));
     rowD.addString("string", "\0abc\n\1\1\0 123\1\0");
-    rowD.addBinary("binary", "\0\1\2\3\4\5\0".getBytes(Charsets.UTF_8));
+    rowD.addBinary("binary", "\0\1\2\3\4\5\0".getBytes(UTF_8));
 
     byte[] rowDEncoded = rowD.encodePrimaryKey();
     assertBytesEquals(rowDEncoded,
@@ -383,7 +383,7 @@ public class TestKeyEncoding extends BaseKuduTest {
     row.addInt(2, 3);
     row.addLong(3, 4l);
     row.addString(4, "foo");
-    row.addBinary(5, "bar".getBytes(Charsets.UTF_8));
+    row.addBinary(5, "bar".getBytes(UTF_8));
     row.addLong(6, 6l);
     row.addDecimal(7, BigDecimal.valueOf(DecimalUtil.MAX_UNSCALED_DECIMAL32));
     row.addDecimal(8, BigDecimal.valueOf(DecimalUtil.MAX_UNSCALED_DECIMAL64));

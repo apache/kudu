@@ -17,6 +17,8 @@
 
 package org.apache.kudu.client;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -234,7 +236,7 @@ class RemoteTablet implements Comparable<RemoteTablet> {
   }
 
   byte[] getTabletIdAsBytes() {
-    return tabletId.getBytes();
+    return tabletId.getBytes(UTF_8);
   }
 
   @Override

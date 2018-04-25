@@ -17,6 +17,7 @@
 
 package org.apache.kudu.client;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.kudu.client.KuduPredicate.ComparisonOp.EQUAL;
 import static org.apache.kudu.client.KuduPredicate.ComparisonOp.GREATER;
 import static org.apache.kudu.client.KuduPredicate.ComparisonOp.GREATER_EQUAL;
@@ -929,9 +930,14 @@ public class TestKuduPredicate {
                                 new byte[] { 0, 1, 2, 3, 4, 5, 6 },
                                 new byte[] { 10 }));
 
-    testMerge(KuduPredicate.newInListPredicate(binaryCol, ImmutableList.of("a".getBytes(), "b".getBytes(), "c".getBytes(), "d".getBytes())),
-              KuduPredicate.newInListPredicate(binaryCol, ImmutableList.of("b".getBytes(), "d".getBytes(), "e".getBytes())),
-              KuduPredicate.newInListPredicate(binaryCol, ImmutableList.of("b".getBytes(), "d".getBytes())));
+    byte[] bA = "a".getBytes(UTF_8);
+    byte[] bB = "b".getBytes(UTF_8);
+    byte[] bC = "c".getBytes(UTF_8);
+    byte[] bD = "d".getBytes(UTF_8);
+    byte[] bE = "e".getBytes(UTF_8);
+    testMerge(KuduPredicate.newInListPredicate(binaryCol, ImmutableList.of(bA, bB, bC, bD)),
+              KuduPredicate.newInListPredicate(binaryCol, ImmutableList.of(bB, bD, bE)),
+              KuduPredicate.newInListPredicate(binaryCol, ImmutableList.of(bB, bD)));
   }
 
   @Test

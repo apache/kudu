@@ -16,6 +16,7 @@
 // under the License.
 package org.apache.kudu.client;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -90,7 +91,7 @@ public class TestTestUtils {
     public void run() {
       BufferedReader in = null;
       try {
-        in = new BufferedReader(new InputStreamReader(is));
+        in = new BufferedReader(new InputStreamReader(is, UTF_8));
         while (in.readLine() != null) {
           counter.incrementAndGet();
         }

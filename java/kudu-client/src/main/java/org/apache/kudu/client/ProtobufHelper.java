@@ -17,13 +17,14 @@
 
 package org.apache.kudu.client;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.google.common.base.Charsets;
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
 import com.google.common.net.HostAndPort;
@@ -232,7 +233,7 @@ public class ProtobufHelper {
       case UNIXTIME_MICROS:
         return Bytes.fromLong((Long) value);
       case STRING:
-        return ((String) value).getBytes(Charsets.UTF_8);
+        return ((String) value).getBytes(UTF_8);
       case BINARY:
         return (byte[]) value;
       case FLOAT:
@@ -301,7 +302,7 @@ public class ProtobufHelper {
     } else if (value instanceof Long) {
       bytes = Bytes.fromLong((Long) value);
     } else if (value instanceof String) {
-      bytes = ((String) value).getBytes(Charsets.UTF_8);
+      bytes = ((String) value).getBytes(UTF_8);
     } else if (value instanceof byte[]) {
       bytes = (byte[]) value;
     } else if (value instanceof ByteBuffer) {

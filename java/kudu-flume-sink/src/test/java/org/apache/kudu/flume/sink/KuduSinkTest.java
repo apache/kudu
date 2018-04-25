@@ -18,6 +18,7 @@
  */
 package org.apache.kudu.flume.sink;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -26,7 +27,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 
-import com.google.common.base.Charsets;
 import com.google.common.collect.ImmutableList;
 import org.apache.flume.Channel;
 import org.apache.flume.Context;
@@ -150,7 +150,7 @@ public class KuduSinkTest extends BaseKuduTest {
     tx.begin();
 
     for (int i = 0; i < 2; i++) {
-      Event e = EventBuilder.withBody("key-0", Charsets.UTF_8); // Duplicate keys.
+      Event e = EventBuilder.withBody("key-0", UTF_8); // Duplicate keys.
       channel.put(e);
     }
 
@@ -199,7 +199,8 @@ public class KuduSinkTest extends BaseKuduTest {
     tx.begin();
 
     for (int i = 0; i < eventCount; i++) {
-      Event e = EventBuilder.withBody(String.format("payload body %s", i).getBytes());
+      Event e = EventBuilder.withBody(String.format("payload body %s", i)
+          .getBytes(UTF_8));
       channel.put(e);
     }
 

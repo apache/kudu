@@ -16,6 +16,7 @@
 // under the License.
 package org.apache.kudu.mapreduce;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -42,7 +43,6 @@ import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.client.Operation;
 import org.apache.kudu.client.PartialRow;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
 
 public class ITOutputFormatJob extends BaseKuduTest {
 

@@ -14,6 +14,8 @@
 
 package org.apache.kudu.client;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import java.io.BufferedReader;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
@@ -462,7 +464,8 @@ public class MiniKuduCluster implements AutoCloseable {
     public void run() {
       try {
         String line;
-        BufferedReader in = new BufferedReader(new InputStreamReader(is));
+        BufferedReader in = new BufferedReader(
+            new InputStreamReader(is, UTF_8));
         while ((line = in.readLine()) != null) {
           LOG.info(line);
         }

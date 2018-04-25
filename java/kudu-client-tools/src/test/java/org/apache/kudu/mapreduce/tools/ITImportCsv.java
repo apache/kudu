@@ -17,6 +17,7 @@
 
 package org.apache.kudu.mapreduce.tools;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -41,8 +42,6 @@ import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.client.CreateTableOptions;
 import org.apache.kudu.mapreduce.CommandLineParser;
 import org.apache.kudu.mapreduce.HadoopTestingUtility;
-
-import static java.nio.charset.StandardCharsets.UTF_8;
 
 public class ITImportCsv extends BaseKuduTest {
 
