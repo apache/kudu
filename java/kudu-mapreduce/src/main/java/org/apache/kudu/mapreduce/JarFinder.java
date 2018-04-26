@@ -48,7 +48,7 @@ import org.apache.yetus.audience.InterfaceAudience;
 public class JarFinder {
 
   @InterfaceAudience.Private
-  public static String FILE_DIR_PROPERTY = "jar.file.dir";
+  public static final String FILE_DIR_PROPERTY = "jar.file.dir";
 
   private static File fileDir = null;
 

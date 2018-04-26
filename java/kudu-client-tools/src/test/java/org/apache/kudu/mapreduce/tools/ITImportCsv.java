@@ -42,6 +42,8 @@ import org.apache.kudu.client.CreateTableOptions;
 import org.apache.kudu.mapreduce.CommandLineParser;
 import org.apache.kudu.mapreduce.HadoopTestingUtility;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 public class ITImportCsv extends BaseKuduTest {
 
   private static final String TABLE_NAME =
@@ -116,10 +118,10 @@ public class ITImportCsv extends BaseKuduTest {
 
   private void writeCsvFile(File data) throws IOException {
     FileOutputStream fos = new FileOutputStream(data);
-    fos.write("1\t3\t2.3\tsome string\ttrue\n".getBytes());
-    fos.write("2\t5\t4.5\tsome more\tfalse\n".getBytes());
-    fos.write("3\t7\twait this is not a double\tbad row\ttrue\n".getBytes());
-    fos.write("4\t9\t10\ttrailing separator isn't bad mkay?\ttrue\t\n".getBytes());
+    fos.write("1\t3\t2.3\tsome string\ttrue\n".getBytes(UTF_8));
+    fos.write("2\t5\t4.5\tsome more\tfalse\n".getBytes(UTF_8));
+    fos.write("3\t7\twait this is not a double\tbad row\ttrue\n".getBytes(UTF_8));
+    fos.write("4\t9\t10\ttrailing separator isn't bad mkay?\ttrue\t\n".getBytes(UTF_8));
     fos.close();
   }
 }

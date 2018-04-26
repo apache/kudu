@@ -34,7 +34,7 @@ import org.apache.yetus.audience.InterfaceAudience;
  */
 @InterfaceAudience.Private
 @NotThreadSafe
-public final class ByteVec {
+public final class ByteVec implements Cloneable {
 
   /** Default initial capacity for new vectors. */
   @InterfaceAudience.LimitedPrivate("Test")

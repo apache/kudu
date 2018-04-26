@@ -50,7 +50,7 @@ public class TestHybridTime extends BaseKuduTest {
   protected static final String TABLE_NAME =
     TestHybridTime.class.getName() + "-" + System.currentTimeMillis();
 
-  protected static Schema schema = getSchema();
+  protected static final Schema schema = getSchema();
   protected static KuduTable table;
 
   @BeforeClass

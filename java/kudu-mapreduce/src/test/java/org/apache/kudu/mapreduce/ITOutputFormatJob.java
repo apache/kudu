@@ -42,6 +42,8 @@ import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.client.Operation;
 import org.apache.kudu.client.PartialRow;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 public class ITOutputFormatJob extends BaseKuduTest {
 
   private static final String TABLE_NAME =
@@ -132,7 +134,7 @@ public class ITOutputFormatJob extends BaseKuduTest {
 
   private void writeDataFile(File data) throws IOException {
     FileOutputStream fos = new FileOutputStream(data);
-    fos.write("VALUE1\nVALUE2\n".getBytes());
+    fos.write("VALUE1\nVALUE2\n".getBytes(UTF_8));
     fos.close();
   }
 }
