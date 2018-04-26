@@ -974,3 +974,32 @@ $ rm -rf /data/0/kudu-tserver-wal/* /data/0/kudu-tserver-meta/* /data/1/kudu-tse
 . After directories are deleted, the server process can be started with the new
   directory configuration. The appropriate sub-directories will be created by
   Kudu upon starting up.
+
+[[physical_backup]]
+=== Physical backups of an entire node
+
+As documented in the link:known_issues.html#_replication_and_backup_limitations[Known Issues and Limitations],
+Kudu does not yet provide any built-in backup and restore functionality. However,
+it is possible to create a physical backup of a Kudu node (either tablet server
+or master) and restore it later.
+
+WARNING: The node to be backed up must be offline during the procedure, or else
+the backed up (or restored) data will be inconsistent.
+
+WARNING: Certain aspects of the Kudu node (such as its hostname) are embedded in
+the on-disk data. As such, it's not yet possible to restore a physical backup of
+a node onto another machine.
+
+. Stop all Kudu processes in the cluster. This prevents the tablets on the
+  backed up node from being rereplicated elsewhere unnecessarily.
+
+. If creating a backup, make a copy of the WAL, metadata, and data directories
+  on each node to be backed up. It is important that this copy preserve all file
+  attributes as well as sparseness.
+
+. If restoring from a backup, delete the existing WAL, metadata, and data
+  directories, then restore the backup via move or copy. As with creating a
+  backup, it is important that the restore preserve all file attributes and
+  sparseness.
+
+. Start all Kudu processes in the cluster.
