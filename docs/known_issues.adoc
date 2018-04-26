@@ -117,14 +117,6 @@
 
 * Write ahead logs (WAL) can only be stored on one disk.
 
-* Disk failures are not tolerated and tablets servers will crash as soon as one is detected.
-
-* Failed disks with unrecoverable data require the formatting of all the Kudu data for
-  that tablet server before it can be started again.
-
-* Data directories cannot be added/removed; all must be reformatted to change the set
-  of directories.
-
 * Tablet servers cannot be gracefully decommissioned.
 
 * Tablet servers can’t change address/port.
