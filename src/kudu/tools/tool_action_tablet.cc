@@ -408,7 +408,11 @@ Status MoveReplica(const RunnerContext &context) {
   const string& to_ts_uuid = FindOrDie(context.required_args, kToTsUuidArg);
 
   // Check the tablet is in perfect health first.
-  RETURN_NOT_OK_PREPEND(DoKsckForTablet(master_addresses, tablet_id),
+  // We retry since occasionally ksck returns bad status because of transient
+  // issues like leader elections.
+  RETURN_NOT_OK_PREPEND(WaitForCleanKsck(master_addresses,
+                                         tablet_id,
+                                         MonoDelta::FromSeconds(5)),
                         "ksck pre-move health check failed");
 
   client::sp::shared_ptr<KuduClient> client;
