@@ -338,7 +338,7 @@ TEST_P(MoveTabletParamTest, Test) {
   }
 }
 
-INSTANTIATE_TEST_CASE_P(EnableKudu2097AndDownTS, MoveTabletParamTest,
+INSTANTIATE_TEST_CASE_P(EnableKudu1097AndDownTS, MoveTabletParamTest,
                         ::testing::Combine(::testing::Values(Kudu1097::Disable,
                                                              Kudu1097::Enable),
                                            ::testing::Values(DownTS::None,
