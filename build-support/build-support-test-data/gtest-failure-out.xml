@@ -1,0 +1,11 @@
+<testsuites>
+  <testsuite name="FileCacheTest/1">
+    <testcase name="TestHeavyReads" classname="FileCacheTest/1">
+      <error message="/data/somelongdirectorytoavoidrpathissues/src/kudu/src/kudu/util/file_cache-test.cc:308: Failure">
+<![CDATA[
+/data/somelongdirectorytoavoidrpathissues/src/kudu/src/kudu/util/file_cache-test.cc:308: Failure
+Expected: (CountOpenFds(this->env_)) <= (this->initial_open_fds_ + kCacheCapacity), actual: 12 vs 11]]>
+      </error>
+    </testcase>
+  </testsuite>
+</testsuites>

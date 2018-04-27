@@ -1,0 +1,63 @@
+[==========] Running 2 tests from 1 test case.
+[----------] Global test environment set-up.
+[----------] 2 tests from BloomFileTest
+[ RUN      ] BloomFileTest.TestWriteAndRead
+WARNING: Logging before InitGoogleLogging() is written to STDERR
+I0402 16:55:17.833050 79693 fs_manager.cc:260] Metadata directory not provided
+I0402 16:55:17.833226 79693 fs_manager.cc:266] Using write-ahead log directory (fs_wal_dir) as metadata directory
+I0402 16:55:17.851721 79693 fs_manager.cc:595] Generated new instance metadata in path /data/2/todd-testdir/bloomfile-test.BloomFileTest.TestWriteAndRead.1522713317375014-79693/fs_root/instance:
+uuid: "f6157795a9164b22ae7a34e1f9ca80e3"
+format_stamp: "Formatted at 2018-04-02 23:55:17 on va1022.halxg.cloudera.com"
+I0402 16:55:17.857049 79693 fs_manager.cc:495] Time spent creating directory manager: real 0.005s	user 0.003s	sys 0.001s
+I0402 16:55:17.858012 79693 env_posix.cc:1643] Not raising this process' open files per process limit of 32768; it is already as high as it can go
+I0402 16:55:17.858685 79693 file_cache.cc:470] Constructed file cache lbm with capacity 13107
+I0402 16:55:17.861469 79693 fs_report.cc:347] Block manager report
+--------------------
+1 data directories: /data/2/todd-testdir/bloomfile-test.BloomFileTest.TestWriteAndRead.1522713317375014-79693/fs_root/data
+Total live blocks: 0
+Total live bytes: 0
+Total live bytes (after alignment): 0
+Total number of LBM containers: 0 (0 full)
+Did not check for missing blocks
+Did not check for orphaned blocks
+Total full LBM containers with extra space: 0 (0 repaired)
+Total full LBM container extra space in bytes: 0 (0 repaired)
+Total incomplete LBM containers: 0 (0 repaired)
+Total LBM partial records: 0 (0 repaired)
+I0402 16:55:17.861634 79693 fs_manager.cc:417] Time spent opening block manager: real 0.001s	user 0.001s	sys 0.000s
+I0402 16:55:17.861686 79693 fs_manager.cc:428] Opened local filesystem: /data/2/todd-testdir/bloomfile-test.BloomFileTest.TestWriteAndRead.1522713317375014-79693/fs_root
+uuid: "f6157795a9164b22ae7a34e1f9ca80e3"
+format_stamp: "Formatted at 2018-04-02 23:55:17 on va1022.halxg.cloudera.com"
+I0402 16:55:17.888705 79693 bloomfile-test.cc:76] fp_rate: 0.0064(64/10000)
+[       OK ] BloomFileTest.TestWriteAndRead (512 ms)
+[ RUN      ] BloomFileTest.TestLazyInit
+I0402 16:55:17.890864 79693 fs_manager.cc:260] Metadata directory not provided
+I0402 16:55:17.890918 79693 fs_manager.cc:266] Using write-ahead log directory (fs_wal_dir) as metadata directory
+I0402 16:55:17.892197 79693 fs_manager.cc:595] Generated new instance metadata in path /data/2/todd-testdir/bloomfile-test.BloomFileTest.TestLazyInit.1522713317375014-79693/fs_root/instance:
+uuid: "09f1157408ce4ce09d718faeeae21d33"
+format_stamp: "Formatted at 2018-04-02 23:55:17 on va1022.halxg.cloudera.com"
+I0402 16:55:17.894668 79693 fs_manager.cc:495] Time spent creating directory manager: real 0.002s	user 0.002s	sys 0.001s
+I0402 16:55:17.895367 79693 file_cache.cc:470] Constructed file cache lbm with capacity 13107
+I0402 16:55:17.896970 79693 fs_report.cc:347] Block manager report
+--------------------
+1 data directories: /data/2/todd-testdir/bloomfile-test.BloomFileTest.TestLazyInit.1522713317375014-79693/fs_root/data
+Total live blocks: 0
+Total live bytes: 0
+Total live bytes (after alignment): 0
+Total number of LBM containers: 0 (0 full)
+Did not check for missing blocks
+Did not check for orphaned blocks
+Total full LBM containers with extra space: 0 (0 repaired)
+Total full LBM container extra space in bytes: 0 (0 repaired)
+Total incomplete LBM containers: 0 (0 repaired)
+Total LBM partial records: 0 (0 repaired)
+I0402 16:55:17.897054 79693 fs_manager.cc:417] Time spent opening block manager: real 0.001s	user 0.000s	sys 0.000s
+I0402 16:55:17.897107 79693 fs_manager.cc:428] Opened local filesystem: /data/2/todd-testdir/bloomfile-test.BloomFileTest.TestLazyInit.1522713317375014-79693/fs_root
+uuid: "09f1157408ce4ce09d718faeeae21d33"
+format_stamp: "Formatted at 2018-04-02 23:55:17 on va1022.halxg.cloudera.com"
+[       OK ] BloomFileTest.TestLazyInit (26 ms)
+[----------] 2 tests from BloomFileTest (538 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test case ran. (539 ms total)
+[  PASSED  ] 2 tests.

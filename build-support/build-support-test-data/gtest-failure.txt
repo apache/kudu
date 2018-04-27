@@ -1,0 +1,74 @@
+[==========] Running 11 tests from 3 test cases.
+[----------] Global test environment set-up.
+[----------] 5 tests from FileCacheTest/0, where TypeParam = kudu::RWFile
+[ RUN      ] FileCacheTest/0.TestBasicOperations
+WARNING: Logging before InitGoogleLogging() is written to STDERR
+I0426 13:33:30.949581 18140 test_util.cc:200] Using random seed: 1291327396
+I0426 13:33:30.954530 18140 file_cache.cc:470] Constructed file cache test with capacity 1
+[       OK ] FileCacheTest/0.TestBasicOperations (26 ms)
+[ RUN      ] FileCacheTest/0.TestDeletion
+I0426 13:33:30.973222 18140 test_util.cc:200] Using random seed: 1291351042
+I0426 13:33:30.973824 18140 file_cache.cc:470] Constructed file cache test with capacity 1
+[       OK ] FileCacheTest/0.TestDeletion (7 ms)
+[ RUN      ] FileCacheTest/0.TestInvalidation
+I0426 13:33:30.979429 18140 test_util.cc:200] Using random seed: 1291357267
+I0426 13:33:30.979940 18140 file_cache.cc:470] Constructed file cache test with capacity 1
+
+[WARNING] /data/somelongdirectorytoavoidrpathissues/src/kudu/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest-death-test.cc:836:: Death tests use fork(), which is unsafe particularly in a threaded context. For this test, Google Test detected 5 threads.
+[       OK ] FileCacheTest/0.TestInvalidation (26 ms)
+[ RUN      ] FileCacheTest/0.TestHeavyReads
+I0426 13:33:31.005144 18140 test_util.cc:200] Using random seed: 1291382969
+I0426 13:33:31.005558 18140 file_cache.cc:470] Constructed file cache test with capacity 1
+I0426 13:33:31.007810 18140 file_cache.cc:470] Constructed file cache test with capacity 5
+[       OK ] FileCacheTest/0.TestHeavyReads (63 ms)
+[ RUN      ] FileCacheTest/0.TestNoRecursiveDeadlock
+I0426 13:33:31.068702 18140 test_util.cc:200] Using random seed: 1291446533
+I0426 13:33:31.069264 18140 file_cache.cc:470] Constructed file cache test with capacity 1
+[       OK ] FileCacheTest/0.TestNoRecursiveDeadlock (588 ms)
+[----------] 5 tests from FileCacheTest/0 (710 ms total)
+
+[----------] 5 tests from FileCacheTest/1, where TypeParam = kudu::RandomAccessFile
+[ RUN      ] FileCacheTest/1.TestBasicOperations
+I0426 13:33:31.656993 18140 test_util.cc:200] Using random seed: 1292034823
+I0426 13:33:31.657578 18140 file_cache.cc:470] Constructed file cache test with capacity 1
+[       OK ] FileCacheTest/1.TestBasicOperations (14 ms)
+[ RUN      ] FileCacheTest/1.TestDeletion
+I0426 13:33:31.670722 18140 test_util.cc:200] Using random seed: 1292048553
+I0426 13:33:31.671290 18140 file_cache.cc:470] Constructed file cache test with capacity 1
+[       OK ] FileCacheTest/1.TestDeletion (10 ms)
+[ RUN      ] FileCacheTest/1.TestInvalidation
+I0426 13:33:31.681164 18140 test_util.cc:200] Using random seed: 1292058998
+I0426 13:33:31.681687 18140 file_cache.cc:470] Constructed file cache test with capacity 1
+
+[WARNING] /data/somelongdirectorytoavoidrpathissues/src/kudu/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest-death-test.cc:836:: Death tests use fork(), which is unsafe particularly in a threaded context. For this test, Google Test detected 5 threads.
+[       OK ] FileCacheTest/1.TestInvalidation (40 ms)
+[ RUN      ] FileCacheTest/1.TestHeavyReads
+I0426 13:33:31.720608 18140 test_util.cc:200] Using random seed: 1292098432
+I0426 13:33:31.721287 18140 file_cache.cc:470] Constructed file cache test with capacity 1
+I0426 13:33:31.728096 18140 file_cache.cc:470] Constructed file cache test with capacity 5
+/data/somelongdirectorytoavoidrpathissues/src/kudu/src/kudu/util/file_cache-test.cc:308: Failure
+Expected: (CountOpenFds(this->env_)) <= (this->initial_open_fds_ + kCacheCapacity), actual: 12 vs 11
+I0426 13:33:31.763545 18140 test_util.cc:123] -----------------------------------------------
+I0426 13:33:31.763656 18140 test_util.cc:124] Had fatal failures, leaving test files at /data/somelongdirectorytoavoidrpathissues/src/kudutest/file_cache-test.0.FileCacheTest_1.TestHeavyReads.1524774810915619-18140
+[  FAILED  ] FileCacheTest/1.TestHeavyReads, where TypeParam = kudu::RandomAccessFile (44 ms)
+[ RUN      ] FileCacheTest/1.TestNoRecursiveDeadlock
+I0426 13:33:31.764510 18140 test_util.cc:200] Using random seed: 1292142355
+I0426 13:33:31.764858 18140 file_cache.cc:470] Constructed file cache test with capacity 1
+[       OK ] FileCacheTest/1.TestNoRecursiveDeadlock (529 ms)
+[----------] 5 tests from FileCacheTest/1 (637 ms total)
+
+[----------] 1 test from RandomAccessFileCacheTest
+[ RUN      ] RandomAccessFileCacheTest.TestMemoryFootprintDoesNotCrash
+I0426 13:33:32.293069 18140 test_util.cc:200] Using random seed: 1292670905
+I0426 13:33:32.293491 18140 file_cache.cc:470] Constructed file cache test with capacity 1
+I0426 13:33:32.294829 18140 file_cache-test.cc:351] 239
+[       OK ] RandomAccessFileCacheTest.TestMemoryFootprintDoesNotCrash (3 ms)
+[----------] 1 test from RandomAccessFileCacheTest (3 ms total)
+
+[----------] Global test environment tear-down
+[==========] 11 tests from 3 test cases ran. (1351 ms total)
+[  PASSED  ] 10 tests.
+[  FAILED  ] 1 test, listed below:
+[  FAILED  ] FileCacheTest/1.TestHeavyReads, where TypeParam = kudu::RandomAccessFile
+
+ 1 FAILED TEST

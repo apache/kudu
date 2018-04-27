@@ -22,8 +22,10 @@
 
 from xml.sax.saxutils import quoteattr
 import argparse
+import os
 import re
 import sys
+import unittest
 
 # Read at most 100MB of a test log.
 # Rarely would this be exceeded, but we don't want to end up
@@ -32,9 +34,10 @@ MAX_MEMORY = 100 * 1024 * 1024
 
 START_TESTCASE_RE = re.compile(r'\[ RUN\s+\] (.+)$')
 END_TESTCASE_RE = re.compile(r'\[\s+(?:OK|FAILED)\s+\] (.+)$')
-ASAN_ERROR_RE = re.compile('ERROR: AddressSanitizer')
+ASAN_ERROR_RE = re.compile('ERROR: (AddressSanitizer|LeakSanitizer)')
 TSAN_ERROR_RE = re.compile('WARNING: ThreadSanitizer.*')
 END_TSAN_ERROR_RE = re.compile('SUMMARY: ThreadSanitizer.*')
+UBSAN_ERROR_RE = re.compile(r'SUMMARY: UndefinedBehaviorSanitizer')
 FATAL_LOG_RE = re.compile(r'^F\d\d\d\d \d\d:\d\d:\d\d\.\d\d\d\d\d\d\s+\d+ (.*)')
 LINE_RE = re.compile(r"^.*$", re.MULTILINE)
 STACKTRACE_ELEM_RE = re.compile(r'^    @')
@@ -43,126 +46,169 @@ IGNORED_STACKTRACE_ELEM_RE = re.compile(
 TEST_FAILURE_RE = re.compile(r'.*\d+: Failure$')
 GLOG_LINE_RE = re.compile(r'^[WIEF]\d\d\d\d \d\d:\d\d:\d\d')
 
-def consume_rest(line_iter):
-  """ Consume and return the rest of the lines in the iterator. """
-  return [l.group(0) for l in line_iter]
 
-def consume_until(line_iter, end_re):
+class ParsedTest(object):
   """
-  Consume and return lines from the iterator until one matches 'end_re'.
-  The line matching 'end_re' will not be returned, but will be consumed.
+  The LogParser creates one instance of this class for each test that is discovered
+  while parsing the log.
   """
-  ret = []
-  for l in line_iter:
-    line = l.group(0)
-    if end_re.search(line):
-      break
-    ret.append(line)
-  return ret
+  def __init__(self, test_name):
+    self.test_name = test_name
+    self.errors = []
 
-def remove_glog_lines(lines):
-  """ Remove any lines from the list of strings which appear to be GLog messages. """
-  return [l for l in lines if not GLOG_LINE_RE.search(l)]
 
-def record_error(errors, name, error):
-  errors.setdefault(name, []).append(error)
+class LogParser(object):
+  """
+  Parser for textual gtest output
+  """
+  def __init__(self):
+    self._tests = []
+    self._cur_test = None
 
-def extract_failures(log_text):
-  cur_test_case = None
-  tests_seen = set()
-  tests_seen_in_order = list()
-  errors_by_test = dict()
+  @staticmethod
+  def _consume_rest(line_iter):
+    """ Consume and return the rest of the lines in the iterator. """
+    return [l for l in line_iter]
 
-  # Iterate over the lines, using finditer instead of .split()
-  # so that we don't end up doubling memory usage.
-  line_iter = LINE_RE.finditer(log_text)
-  for match in line_iter:
-    line = match.group(0)
+  @staticmethod
+  def _consume_until(line_iter, end_re):
+    """
+    Consume and return lines from the iterator until one matches 'end_re'.
+    The line matching 'end_re' will not be returned, but will be consumed.
+    """
+    ret = []
+    for line in line_iter:
+      if end_re.search(line):
+        break
+      ret.append(line)
+    return ret
 
-    # Track the currently-running test case
-    m = START_TESTCASE_RE.search(line)
-    if m:
-      cur_test_case = m.group(1)
-      if cur_test_case not in tests_seen:
-        tests_seen.add(cur_test_case)
-        tests_seen_in_order.append(cur_test_case)
+  @staticmethod
+  def _remove_glog_lines(lines):
+    """ Remove any lines from the list of strings which appear to be GLog messages. """
+    return [l for l in lines if not GLOG_LINE_RE.search(l)]
 
-    m = END_TESTCASE_RE.search(line)
-    if m:
-      cur_test_case = None
+  def _record_error(self, error):
+    if self._cur_test is None:
+      # TODO(todd) would be nice to have a more specific name indicating which
+      # test file caused the issue.
+      self._start_test("General.OutsideOfAnyTestCase")
+      self._record_error(error)
+      self._end_test()
+    else:
+      self._cur_test.errors.append(error)
 
-    # Look for ASAN errors.
-    m = ASAN_ERROR_RE.search(line)
-    if m:
-      error_signature = line + "\n"
-      asan_lines = remove_glog_lines(consume_rest(line_iter))
-      error_signature += "\n".join(asan_lines)
-      record_error(errors_by_test, cur_test_case, error_signature)
+  def _start_test(self, test_name):
+    assert test_name is not None
+    self._cur_test = ParsedTest(test_name)
+    self._tests.append(self._cur_test)
 
-    # Look for TSAN errors
-    m = TSAN_ERROR_RE.search(line)
-    if m:
-      error_signature = m.group(0)
-      error_signature += "\n".join(remove_glog_lines(
-          consume_until(line_iter, END_TSAN_ERROR_RE)))
-      record_error(errors_by_test, cur_test_case, error_signature)
+  def _end_test(self):
+    self._cur_test = None
 
-    # Look for test failures
-    # - slight micro-optimization to check for substring before running the regex
-    m = 'Failure' in line and TEST_FAILURE_RE.search(line)
-    if m:
-      error_signature = m.group(0) + "\n"
-      error_signature += "\n".join(remove_glog_lines(
-          consume_until(line_iter, END_TESTCASE_RE)))
-      record_error(errors_by_test, cur_test_case, error_signature)
+  @staticmethod
+  def _fast_re(substr, regexp, line):
+    """
+    Implements a micro-optimization: returns true if 'line' matches 'regexp,
+    but short-circuited by a much faster check whether 'line' contains 'substr'.
+    This provides a big speed-up since substring searches execute much more
+    quickly than regexp matches.
+    """
+    if substr not in line:
+      return None
+    return regexp.search(line)
 
-    # Look for fatal log messages (including CHECK failures)
-    # - slight micro-optimization to check for 'F' before running the regex
-    m = line and line[0] == 'F' and FATAL_LOG_RE.search(line)
-    if m:
-      error_signature = m.group(1) + "\n"
-      remaining_lines = consume_rest(line_iter)
-      remaining_lines = [l for l in remaining_lines if STACKTRACE_ELEM_RE.search(l)
-                         and not IGNORED_STACKTRACE_ELEM_RE.search(l)]
-      error_signature += "\n".join(remaining_lines)
-      record_error(errors_by_test, cur_test_case, error_signature)
+  def parse_text(self, log_text):
+    # Iterate over the lines, using finditer instead of .split()
+    # so that we don't end up doubling memory usage.
+    def line_iter():
+      for match in LINE_RE.finditer(log_text):
+        yield match.group(0)
+    self.parse_lines(line_iter())
 
-  # Sometimes we see crashes that the script doesn't know how to parse.
-  # When that happens, we leave a generic message to be picked up by Jenkins.
-  if cur_test_case and cur_test_case not in errors_by_test:
-    record_error(errors_by_test, cur_test_case, "Unrecognized error type. Please see the error log for more information.")
+  def parse_lines(self, line_iter):
+    """
+    Arguments:
+      lines: generator which should yield lines of log output
+    """
+    for line in line_iter:
+      # Track the currently-running test case
+      m = self._fast_re('RUN', START_TESTCASE_RE, line)
+      if m:
+        self._start_test(m.group(1))
+        continue
 
-  return (tests_seen_in_order, errors_by_test)
+      m = self._fast_re('[', END_TESTCASE_RE, line)
+      if m:
+        self._end_test()
+        continue
 
-# Return failure summary formatted as text.
-def text_failure_summary(tests, errors_by_test):
-  msg = ''
-  for test_name in tests:
-    if test_name not in errors_by_test:
-      continue
-    for error in errors_by_test[test_name]:
-      if msg: msg += "\n"
-      msg += "%s: %s\n" % (test_name, error)
-  return msg
+      # Look for ASAN errors.
+      m = self._fast_re('ERROR', ASAN_ERROR_RE, line)
+      if m:
+        error_signature = line + "\n"
+        # ASAN errors kill the process, so we consume the rest of the log
+        # and remove any lines that don't look like part of the stack trace
+        asan_lines = self._remove_glog_lines(self._consume_rest(line_iter))
+        error_signature += "\n".join(asan_lines)
+        self._record_error(error_signature)
+        continue
 
-# Parse log lines and return failure summary formatted as text.
-#
-# This helper function is part of a public API called from test_result_server.py
-def extract_failure_summary(log_text):
-  (tests, errors_by_test) = extract_failures(log_text)
-  return text_failure_summary(tests, errors_by_test)
+      # Look for TSAN errors
+      m = self._fast_re('ThreadSanitizer', TSAN_ERROR_RE, line)
+      if m:
+        error_signature = m.group(0)
+        error_signature += "\n".join(self._remove_glog_lines(
+          self._consume_until(line_iter, END_TSAN_ERROR_RE)))
+        self._record_error(error_signature)
+        continue
 
-# Print failure summary based on desired output format.
-# 'tests' is a list of all tests run (in order), not just the failed ones.
-# This allows us to print the test results in the order they were run.
-# 'errors_by_test' is a dict of lists, keyed by test name.
-def print_failure_summary(tests, errors_by_test, is_xml):
-  # Plain text dump.
-  if not is_xml:
-    sys.stdout.write(text_failure_summary(tests, errors_by_test))
+      # Look for UBSAN errors
+      m = self._fast_re('UndefinedBehavior', UBSAN_ERROR_RE, line)
+      if m:
+        # UBSAN errors are a single line.
+        # TODO: there is actually some info on the previous line but there
+        # is no obvious prefix to look for.
+        self._record_error(line)
+        continue
 
-  # Fake a JUnit report file.
-  else:
+      # Look for test failures
+      # - slight micro-optimization to check for substring before running the regex
+      m = self._fast_re('Failure', TEST_FAILURE_RE, line)
+      if m:
+        error_signature = m.group(0) + "\n"
+        error_signature += "\n".join(self._remove_glog_lines(
+          self._consume_until(line_iter, END_TESTCASE_RE)))
+        self._record_error(error_signature)
+        self._end_test()
+        continue
+
+      # Look for fatal log messages (including CHECK failures)
+      # - slight micro-optimization to check for 'F' before running the regex
+      m = line and line[0] == 'F' and FATAL_LOG_RE.search(line)
+      if m:
+        error_signature = m.group(1) + "\n"
+        remaining_lines = self._consume_rest(line_iter)
+        remaining_lines = [l for l in remaining_lines if STACKTRACE_ELEM_RE.search(l) and
+                           not IGNORED_STACKTRACE_ELEM_RE.search(l)]
+        error_signature += "\n".join(remaining_lines)
+        self._record_error(error_signature)
+
+    # Sometimes we see crashes that the script doesn't know how to parse.
+    # When that happens, we leave a generic message to be picked up by Jenkins.
+    if self._cur_test and not self._cur_test.errors:
+      self._record_error("Unrecognized error type. Please see the error log for more information.")
+
+  # Return failure summary formatted as text.
+  def text_failure_summary(self):
+    msgs = []
+    for test in self._tests:
+      for error in test.errors:
+        msgs.append("%s: %s\n" % (test.test_name, error))
+
+    return "\n".join(msgs)
+
+  def xml_failure_summary(self):
     # Example format:
     """
     <testsuites>
@@ -175,43 +221,92 @@ def print_failure_summary(tests, errors_by_test, is_xml):
       </testsuite>
     </testsuites>
     """
+    ret = ""
+
     cur_test_suite = None
-    print '<testsuites>'
+    ret += '<testsuites>\n'
 
     found_test_suites = False
-    for test_name in tests:
-      if test_name not in errors_by_test:
+    for test in self._tests:
+      if not test.errors:
         continue
 
-      (test_suite, test_case) = test_name.split(".")
+      (test_suite, test_case) = test.test_name.split(".")
 
       # Test suite initialization or name change.
       if test_suite and test_suite != cur_test_suite:
         if cur_test_suite:
-          print '  </testsuite>'
+          ret += '  </testsuite>\n'
         cur_test_suite = test_suite
-        print '  <testsuite name="%s">' % cur_test_suite
+        ret += '  <testsuite name="%s">\n' % cur_test_suite
         found_test_suites = True
 
       # Print each test case.
-      print '    <testcase name="%s" classname="%s">' % (test_case, cur_test_suite)
-      errors = "\n\n".join(errors_by_test[test_name])
+      ret += '    <testcase name="%s" classname="%s">\n' % (test_case, cur_test_suite)
+      errors = "\n\n".join(test.errors)
       first_line = re.sub("\n.*", '', errors)
-      print '      <error message=%s>' % quoteattr(first_line)
-      print '<![CDATA['
-      print errors
-      print ']]>'
-      print '      </error>'
-      print '    </testcase>'
+      ret += '      <error message=%s>\n' % quoteattr(first_line)
+      ret += '<![CDATA[\n'
+      ret += errors
+      ret += ']]>\n'
+      ret += '      </error>\n'
+      ret += '    </testcase>\n'
 
     if found_test_suites:
-      print '  </testsuite>'
-    print '</testsuites>'
+      ret += '  </testsuite>\n'
+    ret += '</testsuites>\n'
+    return ret
+
+
+# Parse log lines and return failure summary formatted as text.
+#
+# Print failure summary based on desired output format.
+# 'tests' is a list of all tests run (in order), not just the failed ones.
+# This allows us to print the test results in the order they were run.
+# 'errors_by_test' is a dict of lists, keyed by test name.
+#
+# This helper function is part of a public API called from test_result_server.py
+def extract_failure_summary(log_text, format='text'):
+  p = LogParser()
+  p.parse_text(log_text)
+  if format == 'text':
+    return p.text_failure_summary()
+  else:
+    return p.xml_failure_summary()
+
+
+class Test(unittest.TestCase):
+  _TEST_DIR = os.path.join(os.path.dirname(__file__), "build-support-test-data")
+
+  def __init__(self, *args, **kwargs):
+    super(Test, self).__init__(*args, **kwargs)
+    self.regenerate = os.environ.get('REGENERATE_TEST_EXPECTATIONS') == '1'
+
+  def test_all(self):
+    for child in os.listdir(self._TEST_DIR):
+      if not child.endswith(".txt") or '-out' in child:
+        continue
+      base, _ = os.path.splitext(child)
+
+      p = LogParser()
+      p.parse_text(file(os.path.join(self._TEST_DIR, child)).read())
+      self._do_test(p.text_failure_summary(), base + "-out.txt")
+      self._do_test(p.xml_failure_summary(), base + "-out.xml")
+
+  def _do_test(self, got_value, filename):
+    path = os.path.join(self._TEST_DIR, filename)
+    if self.regenerate:
+      print("Regenerating %s" % path)
+      with file(path, "w") as f:
+        f.write(got_value)
+    else:
+      self.assertEquals(got_value, file(path).read())
+
 
 def main():
-
   parser = argparse.ArgumentParser()
-  parser.add_argument("-x", "--xml", help="Print output in JUnit report XML format (default: plain text)",
+  parser.add_argument("-x", "--xml",
+                      help="Print output in JUnit report XML format (default: plain text)",
                       action="store_true")
   parser.add_argument("path", nargs="?", help="File to parse. If not provided, parses stdin")
   args = parser.parse_args()
@@ -221,8 +316,9 @@ def main():
   else:
     in_file = sys.stdin
   log_text = in_file.read(MAX_MEMORY)
-  (tests, errors_by_test) = extract_failures(log_text)
-  print_failure_summary(tests, errors_by_test, args.xml)
+  format = args.xml and 'xml' or 'text'
+  sys.stdout.write(extract_failure_summary(log_text, format))
+
 
 if __name__ == "__main__":
   main()

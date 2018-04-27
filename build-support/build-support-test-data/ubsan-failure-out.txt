@@ -1,0 +1,1 @@
+Patterns/CacheBench.RunBench/0: SUMMARY: UndefinedBehaviorSanitizer: undefined-behavior /home/jenkins-slave/workspace/kudu-master/0/src/kudu/util/cache.cc:294:20 in 

@@ -1,0 +1,100 @@
+[==========] Running 16 tests from 2 test cases.
+[----------] Global test environment set-up.
+[----------] 2 tests from ConcCacheTest
+[ RUN      ] ConcCacheTest.TestConcCache
+=================================================================
+==181241==ERROR: AddressSanitizer: heap-use-after-free on address 0x608000000020 at pc 0x0000005655d2 bp 0x7ffc655efd70 sp 0x7ffc655efd68
+WRITE of size 8 at 0x608000000020 thread T0
+    #0 0x5655d1 in std::__atomic_base<cds::intrusive::michael_list::node<cds::gc::HP, cds::opt::none>*>::store(cds::intrusive::michael_list::node<cds::gc::HP, cds::opt::none>*, std::memory_order) /usr/lib/gcc/x86_64-redhat-linux/4.8.5/../../../../include/c++/4.8.5/bits/atomic_base.h:783:2
+    #1 0x565372 in std::atomic<cds::intrusive::michael_list::node<cds::gc::HP, cds::opt::none>*>::store(cds::intrusive::michael_list::node<cds::gc::HP, cds::opt::none>*, std::memory_order) /usr/lib/gcc/x86_64-redhat-linux/4.8.5/../../../../include/c++/4.8.5/atomic:377:21
+    #2 0x565302 in std::atomic<cds::details::marked_ptr<cds::intrusive::michael_list::node<cds::gc::HP, cds::opt::none>, 1> >::store(cds::details::marked_ptr<cds::intrusive::michael_list::node<cds::gc::HP, cds::opt::none>, 1>, std::memory_order) /home/todd/kudu/build/asan/../../thirdparty/installed/common/include/cds/details/marked_ptr.h:300:22
+    #3 0x565136 in cds::intrusive::michael_list::node_cleaner<cds::gc::HP, cds::intrusive::michael_list::node<cds::gc::HP, cds::opt::none>, cds::opt::v::relaxed_ordering>::operator()(cds::intrusive::michael_list::node<cds::gc::HP, cds::opt::none>*) /home/todd/kudu/build/asan/../../thirdparty/installed/common/include/cds/intrusive/details/michael_list_base.h:75:28
+    #4 0x564fb9 in cds::intrusive::MichaelList<cds::gc::HP, kudu::Entry, cds::opt::stat<cds::intrusive::michael_list::empty_stat>::pack<cds::opt::item_counter<cds::atomicity::empty_item_counter>::pack<cds::opt::compare<kudu::EntryCmp>::pack<cds::intrusive::opt::hook<cds::intrusive::michael_list::base_hook<cds::opt::gc<cds::gc::HP> > >::pack<cds::intrusive::michael_list::traits> > > > >::clean_disposer::operator()(kudu::Entry*) /home/todd/kudu/build/asan/../../thirdparty/installed/common/include/cds/intrusive/impl/michael_list.h:262:17
+    #5 0x564dcc in cds::details::static_functor<cds::intrusive::MichaelList<cds::gc::HP, kudu::Entry, cds::opt::stat<cds::intrusive::michael_list::empty_stat>::pack<cds::opt::item_counter<cds::atomicity::empty_item_counter>::pack<cds::opt::compare<kudu::EntryCmp>::pack<cds::intrusive::opt::hook<cds::intrusive::michael_list::base_hook<cds::opt::gc<cds::gc::HP> > >::pack<cds::intrusive::michael_list::traits> > > > >::clean_disposer, kudu::Entry>::call(void*) /home/todd/kudu/build/asan/../../thirdparty/installed/common/include/cds/details/static_functor.h:42:13
+    #6 0x7faeeedb97d3 in cds::gc::hp::smr::inplace_scan(cds::gc::hp::thread_data*) (/home/todd/kudu/thirdparty/installed/common/lib64/libcds.so.2.3.0+0x47d3)
+    #7 0x55e0e9 in cds::gc::hp::smr::scan(cds::gc::hp::thread_data*) /home/todd/kudu/build/asan/../../thirdparty/installed/common/include/cds/gc/hp.h:545:17
+    #8 0x55d4e1 in cds::gc::HP::scan() /home/todd/kudu/build/asan/../../thirdparty/installed/common/include/cds/gc/hp.h:1458:33
+    #9 0x55d1e4 in void cds::gc::HP::retire<cds::intrusive::SegmentedQueue<cds::gc::HP, std::function<void ()>, cds::container::details::make_segmented_queue<cds::gc::HP, std::function<void ()>, cds::container::segmented_queue::traits>::intrusive_type_traits>::segment_list::segment_disposer, cds::intrusive::SegmentedQueue<cds::gc::HP, std::function<void ()>, cds::container::details::make_segmented_queue<cds::gc::HP, std::function<void ()>, cds::container::segmented_queue::traits>::intrusive_type_traits>::segment>(cds::intrusive::SegmentedQueue<cds::gc::HP, std::function<void ()>, cds::container::details::make_segmented_queue<cds::gc::HP, std::function<void ()>, cds::container::segmented_queue::traits>::intrusive_type_traits>::segment*) /home/todd/kudu/build/asan/../../thirdparty/installed/common/include/cds/gc/hp.h:1437:17
+    #10 0x55d0d4 in cds::intrusive::SegmentedQueue<cds::gc::HP, std::function<void ()>, cds::container::details::make_segmented_queue<cds::gc::HP, std::function<void ()>, cds::container::segmented_queue::traits>::intrusive_type_traits>::segment_list::retire_segment(cds::intrusive::SegmentedQueue<cds::gc::HP, std::function<void ()>, cds::container::details::make_segmented_queue<cds::gc::HP, std::function<void ()>, cds::container::segmented_queue::traits>::intrusive_type_traits>::segment*) /home/todd/kudu/build/asan/../../thirdparty/installed/common/include/cds/intrusive/segmented_queue.h:456:17
+    #11 0x56875d in cds::intrusive::SegmentedQueue<cds::gc::HP, std::function<void ()>, cds::container::details::make_segmented_queue<cds::gc::HP, std::function<void ()>, cds::container::segmented_queue::traits>::intrusive_type_traits>::segment_list::remove_head(cds::intrusive::SegmentedQueue<cds::gc::HP, std::function<void ()>, cds::container::details::make_segmented_queue<cds::gc::HP, std::function<void ()>, cds::container::segmented_queue::traits>::intrusive_type_traits>::segment*, cds::gc::HP::Guard&) /home/todd/kudu/build/asan/../../thirdparty/installed/common/include/cds/intrusive/segmented_queue.h:425:17
+    #12 0x567547 in cds::intrusive::SegmentedQueue<cds::gc::HP, std::function<void ()>, cds::container::details::make_segmented_queue<cds::gc::HP, std::function<void ()>, cds::container::segmented_queue::traits>::intrusive_type_traits>::do_dequeue(cds::gc::HP::Guard&) /home/todd/kudu/build/asan/../../thirdparty/installed/common/include/cds/intrusive/segmented_queue.h:711:46
+    #13 0x57386f in cds::intrusive::SegmentedQueue<cds::gc::HP, std::function<void ()>, cds::container::details::make_segmented_queue<cds::gc::HP, std::function<void ()>, cds::container::segmented_queue::traits>::intrusive_type_traits>::dequeue() /home/todd/kudu/build/asan/../../thirdparty/installed/common/include/cds/intrusive/segmented_queue.h:571:18
+    #14 0x5736ef in bool cds::container::SegmentedQueue<cds::gc::HP, std::function<void ()>, cds::container::segmented_queue::traits>::dequeue_with<cds::container::SegmentedQueue<cds::gc::HP, std::function<void ()>, cds::container::segmented_queue::traits>::dequeue(std::function<void ()>&)::{lambda(std::function<void ()>&)#1}>(cds::container::SegmentedQueue<cds::gc::HP, std::function<void ()>, cds::container::segmented_queue::traits>::dequeue(std::function<void ()>&)::{lambda(std::function<void ()>&)#1}) /home/todd/kudu/build/asan/../../thirdparty/installed/common/include/cds/container/segmented_queue.h:374:42
+    #15 0x572f4c in cds::container::SegmentedQueue<cds::gc::HP, std::function<void ()>, cds::container::segmented_queue::traits>::dequeue(std::function<void ()>&) /home/todd/kudu/build/asan/../../thirdparty/installed/common/include/cds/container/segmented_queue.h:357:20
+    #16 0x572bc2 in kudu::ConcurrentCache::DoDrain() /home/todd/kudu/build/asan/../../src/kudu/util/concurrent_cache.h:337:26
+    #17 0x56d39b in kudu::ConcurrentCache::TryDrain() /home/todd/kudu/build/asan/../../src/kudu/util/concurrent_cache.h:318:5
+    #18 0x56d0b6 in kudu::ConcurrentCache::AfterWrite(std::function<void ()>) /home/todd/kudu/build/asan/../../src/kudu/util/concurrent_cache.h:292:5
+    #19 0x551bbf in kudu::ConcurrentCache::Populate(kudu::Slice) /home/todd/kudu/build/asan/../../src/kudu/util/concurrent_cache.h:267:5
+    #20 0x54a858 in kudu::ConcCacheTest_TestConcCache_Test::TestBody() /home/todd/kudu/build/asan/../../src/kudu/util/cache-test.cc:256:17
+    #21 0x7faeebca7638 in HandleSehExceptionsInMethodIfSupported<testing::Test, void> /home/todd/kudu/thirdparty/src/gmock-1.7.0/gtest/src/gtest.cc:2078
+    #22 0x7faeebca7638 in void testing::internal::HandleExceptionsInMethodIfSupported<testing::Test, void>(testing::Test*, void (testing::Test::*)(), char const*) /home/todd/kudu/thirdparty/src/gmock-1.7.0/gtest/src/gtest.cc:2114
+    #23 0x7faeebc994ee in testing::Test::Run() /home/todd/kudu/thirdparty/src/gmock-1.7.0/gtest/src/gtest.cc:2151
+    #24 0x7faeebc995ac in testing::TestInfo::Run() /home/todd/kudu/thirdparty/src/gmock-1.7.0/gtest/src/gtest.cc:2326
+    #25 0x7faeebc996c4 in testing::TestCase::Run() /home/todd/kudu/thirdparty/src/gmock-1.7.0/gtest/src/gtest.cc:2444
+    #26 0x7faeebc99977 in testing::internal::UnitTestImpl::RunAllTests() /home/todd/kudu/thirdparty/src/gmock-1.7.0/gtest/src/gtest.cc:4315
+    #27 0x7faeebc99c18 in HandleSehExceptionsInMethodIfSupported<testing::internal::UnitTestImpl, bool> /home/todd/kudu/thirdparty/src/gmock-1.7.0/gtest/src/gtest.cc:2078
+    #28 0x7faeebc99c18 in HandleExceptionsInMethodIfSupported<testing::internal::UnitTestImpl, bool> /home/todd/kudu/thirdparty/src/gmock-1.7.0/gtest/src/gtest.cc:2114
+    #29 0x7faeebc99c18 in testing::UnitTest::Run() /home/todd/kudu/thirdparty/src/gmock-1.7.0/gtest/src/gtest.cc:3929
+    #30 0x7faeeebad010 in RUN_ALL_TESTS() /home/todd/kudu/build/asan/../../thirdparty/installed/uninstrumented/include/gtest/gtest.h:2288:46
+    #31 0x7faeeeba8dcf in main /home/todd/kudu/build/asan/../../src/kudu/util/test_main.cc:94:13
+    #32 0x7faeeae8ab34 in __libc_start_main (/lib64/libc.so.6+0x21b34)
+    #33 0x44eb46 in _start (/home/todd/kudu/build/asan/bin/cache-test+0x44eb46)
+
+0x608000000020 is located 0 bytes inside of 96-byte region [0x608000000020,0x608000000080)
+freed by thread T0 here:
+    #0 0x53ea60 in operator delete(void*) /home/todd/kudu/thirdparty/src/llvm-3.9.1.src/projects/compiler-rt/lib/asan/asan_new_delete.cc:110
+    #1 0x5728a1 in kudu::ConcurrentCache::MarkRetired(void*) /home/todd/kudu/build/asan/../../src/kudu/util/concurrent_cache.h:381:5
+    #2 0x7faeeedb97d3 in cds::gc::hp::smr::inplace_scan(cds::gc::hp::thread_data*) (/home/todd/kudu/thirdparty/installed/common/lib64/libcds.so.2.3.0+0x47d3)
+
+previously allocated by thread T0 here:
+    #0 0x53e3a0 in operator new(unsigned long) /home/todd/kudu/thirdparty/src/llvm-3.9.1.src/projects/compiler-rt/lib/asan/asan_new_delete.cc:78
+    #1 0x5519d7 in kudu::ConcurrentCache::Populate(kudu::Slice) /home/todd/kudu/build/asan/../../src/kudu/util/concurrent_cache.h:263:15
+    #2 0x54a858 in kudu::ConcCacheTest_TestConcCache_Test::TestBody() /home/todd/kudu/build/asan/../../src/kudu/util/cache-test.cc:256:17
+    #3 0x7faeebca7638 in HandleSehExceptionsInMethodIfSupported<testing::Test, void> /home/todd/kudu/thirdparty/src/gmock-1.7.0/gtest/src/gtest.cc:2078
+    #4 0x7faeebca7638 in void testing::internal::HandleExceptionsInMethodIfSupported<testing::Test, void>(testing::Test*, void (testing::Test::*)(), char const*) /home/todd/kudu/thirdparty/src/gmock-1.7.0/gtest/src/gtest.cc:2114
+    #5 0x7faeebc994ee in testing::Test::Run() /home/todd/kudu/thirdparty/src/gmock-1.7.0/gtest/src/gtest.cc:2151
+    #6 0x7faeebc995ac in testing::TestInfo::Run() /home/todd/kudu/thirdparty/src/gmock-1.7.0/gtest/src/gtest.cc:2326
+    #7 0x7faeebc996c4 in testing::TestCase::Run() /home/todd/kudu/thirdparty/src/gmock-1.7.0/gtest/src/gtest.cc:2444
+    #8 0x7faeebc99977 in testing::internal::UnitTestImpl::RunAllTests() /home/todd/kudu/thirdparty/src/gmock-1.7.0/gtest/src/gtest.cc:4315
+    #9 0x7faeebc99c18 in HandleSehExceptionsInMethodIfSupported<testing::internal::UnitTestImpl, bool> /home/todd/kudu/thirdparty/src/gmock-1.7.0/gtest/src/gtest.cc:2078
+    #10 0x7faeebc99c18 in HandleExceptionsInMethodIfSupported<testing::internal::UnitTestImpl, bool> /home/todd/kudu/thirdparty/src/gmock-1.7.0/gtest/src/gtest.cc:2114
+    #11 0x7faeebc99c18 in testing::UnitTest::Run() /home/todd/kudu/thirdparty/src/gmock-1.7.0/gtest/src/gtest.cc:3929
+    #12 0x7faeeebad010 in RUN_ALL_TESTS() /home/todd/kudu/build/asan/../../thirdparty/installed/uninstrumented/include/gtest/gtest.h:2288:46
+    #13 0x7faeeeba8dcf in main /home/todd/kudu/build/asan/../../src/kudu/util/test_main.cc:94:13
+    #14 0x7faeeae8ab34 in __libc_start_main (/lib64/libc.so.6+0x21b34)
+
+SUMMARY: AddressSanitizer: heap-use-after-free /usr/lib/gcc/x86_64-redhat-linux/4.8.5/../../../../include/c++/4.8.5/bits/atomic_base.h:783:2 in std::__atomic_base<cds::intrusive::michael_list::node<cds::gc::HP, cds::opt::none>*>::store(cds::intrusive::michael_list::node<cds::gc::HP, cds::opt::none>*, std::memory_order)
+Shadow bytes around the buggy address:
+  0x0c107fff7fb0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x0c107fff7fc0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x0c107fff7fd0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x0c107fff7fe0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x0c107fff7ff0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+=>0x0c107fff8000: fa fa fa fa[fd]fd fd fd fd fd fd fd fd fd fd fd
+  0x0c107fff8010: fa fa fa fa 00 00 00 f7 f7 f7 00 00 00 00 00 00
+  0x0c107fff8020: fa fa fa fa 00 00 00 f7 f7 f7 00 00 00 00 00 00
+  0x0c107fff8030: fa fa fa fa 00 00 00 f7 f7 f7 00 00 00 00 00 00
+  0x0c107fff8040: fa fa fa fa 00 00 00 f7 f7 f7 00 00 00 00 00 00
+  0x0c107fff8050: fa fa fa fa 00 00 00 f7 f7 f7 00 00 00 00 00 00
+Shadow byte legend (one shadow byte represents 8 application bytes):
+  Addressable:           00
+  Partially addressable: 01 02 03 04 05 06 07 
+  Heap left redzone:       fa
+  Heap right redzone:      fb
+  Freed heap region:       fd
+  Stack left redzone:      f1
+  Stack mid redzone:       f2
+  Stack right redzone:     f3
+  Stack partial redzone:   f4
+  Stack after return:      f5
+  Stack use after scope:   f8
+  Global redzone:          f9
+  Global init order:       f6
+  Poisoned by user:        f7
+  Container overflow:      fc
+  Array cookie:            ac
+  Intra object redzone:    bb
+  ASan internal:           fe
+  Left alloca redzone:     ca
+  Right alloca redzone:    cb
+==181241==ABORTING

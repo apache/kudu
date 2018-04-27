@@ -1,0 +1,8 @@
+[==========] Running 4 tests from 1 test case.
+[----------] Global test environment set-up.
+[----------] 4 tests from Patterns/CacheBench
+[ RUN      ] Patterns/CacheBench.RunBench/0
+WARNING: Logging before InitGoogleLogging() is written to STDERR
+I0425 23:59:43.137094 30971 cache-bench.cc:176] Warming up...
+/home/jenkins-slave/workspace/kudu-master/0/src/kudu/util/cache.cc:294:20: runtime error: negation of 4096 cannot be represented in type 'size_t' (aka 'unsigned long')
+SUMMARY: UndefinedBehaviorSanitizer: undefined-behavior /home/jenkins-slave/workspace/kudu-master/0/src/kudu/util/cache.cc:294:20 in 

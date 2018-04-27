@@ -1,0 +1,2 @@
+FileCacheTest/1.TestHeavyReads: /data/somelongdirectorytoavoidrpathissues/src/kudu/src/kudu/util/file_cache-test.cc:308: Failure
+Expected: (CountOpenFds(this->env_)) <= (this->initial_open_fds_ + kCacheCapacity), actual: 12 vs 11

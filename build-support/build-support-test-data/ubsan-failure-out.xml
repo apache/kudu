@@ -1,0 +1,10 @@
+<testsuites>
+  <testsuite name="Patterns/CacheBench">
+    <testcase name="RunBench/0" classname="Patterns/CacheBench">
+      <error message="SUMMARY: UndefinedBehaviorSanitizer: undefined-behavior /home/jenkins-slave/workspace/kudu-master/0/src/kudu/util/cache.cc:294:20 in ">
+<![CDATA[
+SUMMARY: UndefinedBehaviorSanitizer: undefined-behavior /home/jenkins-slave/workspace/kudu-master/0/src/kudu/util/cache.cc:294:20 in ]]>
+      </error>
+    </testcase>
+  </testsuite>
+</testsuites>

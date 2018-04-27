@@ -1,0 +1,1135 @@
+[==========] Running 10 tests from 1 test case.
+[----------] Global test environment set-up.
+[----------] 10 tests from RaftConsensusElectionITest
+[ RUN      ] RaftConsensusElectionITest.RunLeaderElection
+I0426 18:02:11.515056 20091 test_util.cc:200] Using random seed: 801827415
+I0426 18:02:11.664279 20091 ts_itest-base.cc:113] Starting cluster with:
+I0426 18:02:11.664485 20091 ts_itest-base.cc:114] --------------
+I0426 18:02:11.664600 20091 ts_itest-base.cc:115] 3 tablet servers
+I0426 18:02:11.664726 20091 ts_itest-base.cc:116] 3 replicas per TS
+I0426 18:02:11.664837 20091 ts_itest-base.cc:117] --------------
+I0426 18:02:11.669464 20091 external_mini_cluster.cc:819] Running /tmp/dist-test-taskEpRJ5y/build/tsan/bin/kudu-master
+/tmp/dist-test-taskEpRJ5y/build/tsan/bin/kudu-master
+--fs_wal_dir=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/master-0/wal
+--fs_data_dirs=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/master-0/data
+--block_manager=log
+--webserver_interface=localhost
+--ipki_ca_key_size=1024
+--tsk_num_rsa_bits=512
+--rpc_bind_addresses=127.19.158.254:0
+--webserver_interface=127.19.158.254
+--webserver_port=0
+--never_fsync
+--ipki_server_key_size=1024
+--enable_minidumps=false
+--redact=none
+--metrics_log_interval_ms=1000
+--logtostderr
+--logbuflevel=-1
+--log_dir=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/master-0/logs
+--server_dump_info_path=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/master-0/data/info.pb
+--server_dump_info_format=pb
+--rpc_server_allow_ephemeral_ports
+--unlock_experimental_flags
+--unlock_unsafe_flags with env {}
+WARNING: Logging before InitGoogleLogging() is written to STDERR
+W0426 18:02:11.789261 20103 flags.cc:412] Enabled unsafe flag: --rpc_server_allow_ephemeral_ports=true
+W0426 18:02:11.789655 20103 flags.cc:412] Enabled unsafe flag: --never_fsync=true
+W0426 18:02:11.799146 20103 flags.cc:412] Enabled experimental flag: --ipki_ca_key_size=1024
+W0426 18:02:11.799295 20103 flags.cc:412] Enabled experimental flag: --ipki_server_key_size=1024
+W0426 18:02:11.799396 20103 flags.cc:412] Enabled experimental flag: --tsk_num_rsa_bits=512
+I0426 18:02:11.814257 20103 master_main.cc:66] Master server non-default flags:
+--fs_data_dirs=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/master-0/data
+--fs_wal_dir=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/master-0/wal
+--ipki_ca_key_size=1024
+--ipki_server_key_size=1024
+--tsk_num_rsa_bits=512
+--rpc_bind_addresses=127.19.158.254:0
+--rpc_server_allow_ephemeral_ports=true
+--metrics_log_interval_ms=1000
+--server_dump_info_format=pb
+--server_dump_info_path=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/master-0/data/info.pb
+--webserver_interface=127.19.158.254
+--webserver_port=0
+--never_fsync=true
+--redact=none
+--unlock_experimental_flags=true
+--unlock_unsafe_flags=true
+--enable_minidumps=false
+--log_dir=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/master-0/logs
+--logbuflevel=-1
+--logtostderr=true
+Master server version:
+kudu 1.8.0-SNAPSHOT
+revision c9307f8eb89fd99c1492b5e53812f2cdc1adffb4
+build type FASTDEBUG
+built by None at 26 Apr 2018 18:00:48 UTC on jenkins-slave-vn0g
+build id 13197
+TSAN enabled
+I0426 18:02:11.822619 20103 master_main.cc:73] Initializing master server...
+I0426 18:02:11.824295 20103 system_ntp.cc:143] NTP initialized. Skew: 500ppm Current error: 13547us
+I0426 18:02:11.825196 20103 fs_manager.cc:260] Metadata directory not provided
+I0426 18:02:11.825330 20103 fs_manager.cc:266] Using write-ahead log directory (fs_wal_dir) as metadata directory
+I0426 18:02:11.825552 20103 server_base.cc:433] Could not load existing FS layout: Not found: /tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/master-0/data/instance: No such file or directory (error 2)
+I0426 18:02:11.825667 20103 server_base.cc:434] Attempting to create new FS layout instead
+I0426 18:02:11.833616 20103 fs_manager.cc:595] Generated new instance metadata in path /tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/master-0/data/instance:
+uuid: "08f726b6ca8e483486158eacd80e933a"
+format_stamp: "Formatted at 2018-04-26 18:02:11 on dist-test-slave-dist-test-slave-qvfl"
+I0426 18:02:11.834422 20103 fs_manager.cc:595] Generated new instance metadata in path /tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/master-0/wal/instance:
+uuid: "08f726b6ca8e483486158eacd80e933a"
+format_stamp: "Formatted at 2018-04-26 18:02:11 on dist-test-slave-dist-test-slave-qvfl"
+I0426 18:02:11.844794 20103 fs_manager.cc:495] Time spent creating directory manager: real 0.010s	user 0.008s	sys 0.000s
+I0426 18:02:11.846194 20103 env_posix.cc:1643] Not raising this process' open files per process limit of 65536; it is already as high as it can go
+I0426 18:02:11.846695 20103 file_cache.cc:470] Constructed file cache lbm with capacity 26214
+I0426 18:02:11.853688 20103 fs_manager.cc:417] Time spent opening block manager: real 0.002s	user 0.004s	sys 0.000s
+I0426 18:02:11.853826 20103 fs_manager.cc:428] Opened local filesystem: /tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/master-0/data,/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/master-0/wal
+uuid: "08f726b6ca8e483486158eacd80e933a"
+format_stamp: "Formatted at 2018-04-26 18:02:11 on dist-test-slave-dist-test-slave-qvfl"
+I0426 18:02:11.854120 20103 fs_report.cc:347] Block manager report
+--------------------
+1 data directories: /tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/master-0/data/data
+Total live blocks: 0
+Total live bytes: 0
+Total live bytes (after alignment): 0
+Total number of LBM containers: 0 (0 full)
+Did not check for missing blocks
+Did not check for orphaned blocks
+Total full LBM containers with extra space: 0 (0 repaired)
+Total full LBM container extra space in bytes: 0 (0 repaired)
+Total incomplete LBM containers: 0 (0 repaired)
+Total LBM partial records: 0 (0 repaired)
+I0426 18:02:12.025734 20103 env_posix.cc:1643] Not raising this process' running threads per effective uid limit of 60284; it is already as high as it can go
+I0426 18:02:12.027698 20103 master_main.cc:76] Starting Master server...
+I0426 18:02:12.029160 20120 process_memory.cc:182] Process hard memory limit is 11.777631 GB
+I0426 18:02:12.029335 20120 process_memory.cc:184] Process soft memory limit is 9.422105 GB
+I0426 18:02:12.029428 20120 process_memory.cc:187] Process memory pressure threshold is 7.066578 GB
+I0426 18:02:12.070179 20103 rpc_server.cc:200] RPC server started. Bound to: 127.19.158.254:32815
+I0426 18:02:12.083832 20103 webserver.cc:173] Starting webserver on 127.19.158.254:0
+I0426 18:02:12.083942 20103 webserver.cc:184] Document root disabled
+I0426 18:02:12.085273 20103 webserver.cc:311] Webserver started. Bound to: http://127.19.158.254:35161/
+I0426 18:02:12.086097 20103 server_base.cc:606] Dumped server information to /tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/master-0/data/info.pb
+I0426 18:02:12.089023 20164 data_dirs.cc:934] Could only allocate 1 dirs of requested 3 for tablet 00000000000000000000000000000000. 1 dirs total, 0 dirs full, 0 dirs failed
+I0426 18:02:12.093897 20091 external_mini_cluster.cc:881] Started /tmp/dist-test-taskEpRJ5y/build/tsan/bin/kudu-master as pid 20103
+I0426 18:02:12.095029 20091 external_mini_cluster.cc:819] Running /tmp/dist-test-taskEpRJ5y/build/tsan/bin/kudu-tserver
+/tmp/dist-test-taskEpRJ5y/build/tsan/bin/kudu-tserver
+--fs_wal_dir=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-0/wal
+--fs_data_dirs=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-0/data
+--block_manager=log
+--rpc_bind_addresses=127.19.158.193:0
+--local_ip_for_outbound_sockets=127.19.158.193
+--webserver_interface=127.19.158.193
+--webserver_port=0
+--tserver_master_addrs=127.19.158.254:32815
+--never_fsync
+--ipki_server_key_size=1024
+--enable_minidumps=false
+--redact=none
+--metrics_log_interval_ms=1000
+--logtostderr
+--logbuflevel=-1
+--log_dir=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-0/logs
+--server_dump_info_path=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-0/data/info.pb
+--server_dump_info_format=pb
+--rpc_server_allow_ephemeral_ports
+--unlock_experimental_flags
+--unlock_unsafe_flags
+--log_cache_size_limit_mb=10
+--consensus_rpc_timeout_ms=1000 with env {}
+I0426 18:02:12.104182 20164 tablet_bootstrap.cc:436] T 00000000000000000000000000000000 P 08f726b6ca8e483486158eacd80e933a: Bootstrap starting.
+I0426 18:02:12.106734 20164 tablet_bootstrap.cc:587] T 00000000000000000000000000000000 P 08f726b6ca8e483486158eacd80e933a: No blocks or log segments found. Creating new log.
+I0426 18:02:12.108031 20164 log.cc:520] T 00000000000000000000000000000000 P 08f726b6ca8e483486158eacd80e933a: Log is configured to *not* fsync() on all Append() calls
+I0426 18:02:12.110610 20164 tablet_bootstrap.cc:436] T 00000000000000000000000000000000 P 08f726b6ca8e483486158eacd80e933a: No bootstrap required, opened a new log
+I0426 18:02:12.123486 20164 raft_consensus.cc:303] T 00000000000000000000000000000000 P 08f726b6ca8e483486158eacd80e933a [term 0 FOLLOWER]: Replica starting. Triggering 0 pending transactions. Active config: opid_index: -1 OBSOLETE_local: true peers { permanent_uuid: "08f726b6ca8e483486158eacd80e933a" member_type: VOTER }
+I0426 18:02:12.123858 20164 raft_consensus.cc:329] T 00000000000000000000000000000000 P 08f726b6ca8e483486158eacd80e933a [term 0 FOLLOWER]: Consensus starting up: Expiring failure detector timer to make a prompt election more likely
+I0426 18:02:12.123996 20164 raft_consensus.cc:604] T 00000000000000000000000000000000 P 08f726b6ca8e483486158eacd80e933a [term 0 FOLLOWER]: Becoming Follower/Learner. State: Replica: 08f726b6ca8e483486158eacd80e933a, State: Initialized, Role: FOLLOWER
+I0426 18:02:12.124481 20164 consensus_queue.cc:227] T 00000000000000000000000000000000 P 08f726b6ca8e483486158eacd80e933a [NON_LEADER]: Queue going to NON_LEADER mode. State: All replicated index: 0, Majority replicated index: 0, Committed index: 0, Last appended: 0.0, Last appended by leader: 0, Current term: 0, Majority size: -1, State: 0, Mode: NON_LEADER, active raft config: opid_index: -1 OBSOLETE_local: true peers { permanent_uuid: "08f726b6ca8e483486158eacd80e933a" member_type: VOTER }
+I0426 18:02:12.124832 20164 raft_consensus.cc:343] T 00000000000000000000000000000000 P 08f726b6ca8e483486158eacd80e933a [term 0 FOLLOWER]: Only one voter in the Raft config. Triggering election immediately
+I0426 18:02:12.125000 20164 raft_consensus.cc:435] T 00000000000000000000000000000000 P 08f726b6ca8e483486158eacd80e933a [term 0 FOLLOWER]: Starting leader election (initial election of a single-replica configuration)
+I0426 18:02:12.125151 20164 raft_consensus.cc:2699] T 00000000000000000000000000000000 P 08f726b6ca8e483486158eacd80e933a: Snoozing failure detection for 2.180s (starting election)
+I0426 18:02:12.125298 20164 raft_consensus.cc:2751] T 00000000000000000000000000000000 P 08f726b6ca8e483486158eacd80e933a [term 0 FOLLOWER]: Advancing to term 1
+I0426 18:02:12.128233 20164 raft_consensus.cc:457] T 00000000000000000000000000000000 P 08f726b6ca8e483486158eacd80e933a [term 1 FOLLOWER]: Starting leader election with config: opid_index: -1 OBSOLETE_local: true peers { permanent_uuid: "08f726b6ca8e483486158eacd80e933a" member_type: VOTER }
+I0426 18:02:12.128779 20164 leader_election.cc:257] T 00000000000000000000000000000000 P 08f726b6ca8e483486158eacd80e933a [CANDIDATE]: Term 1 election: Election decided. Result: candidate won.
+I0426 18:02:12.130381 20167 raft_consensus.cc:2699] T 00000000000000000000000000000000 P 08f726b6ca8e483486158eacd80e933a: Snoozing failure detection for 2.030s (election complete)
+I0426 18:02:12.130643 20167 raft_consensus.cc:2506] T 00000000000000000000000000000000 P 08f726b6ca8e483486158eacd80e933a [term 1 FOLLOWER]: Leader election won for term 1
+I0426 18:02:12.138551 20167 raft_consensus.cc:571] T 00000000000000000000000000000000 P 08f726b6ca8e483486158eacd80e933a [term 1 LEADER]: Becoming Leader. State: Replica: 08f726b6ca8e483486158eacd80e933a, State: Running, Role: LEADER
+I0426 18:02:12.138965 20167 consensus_queue.cc:204] T 00000000000000000000000000000000 P 08f726b6ca8e483486158eacd80e933a [LEADER]: Queue going to LEADER mode. State: All replicated index: 0, Majority replicated index: 0, Committed index: 0, Last appended: 0.0, Last appended by leader: 0, Current term: 1, Majority size: 1, State: 0, Mode: LEADER, active raft config: opid_index: -1 OBSOLETE_local: true peers { permanent_uuid: "08f726b6ca8e483486158eacd80e933a" member_type: VOTER }
+I0426 18:02:12.142307 20164 sys_catalog.cc:335] T 00000000000000000000000000000000 P 08f726b6ca8e483486158eacd80e933a [sys.catalog]: SysCatalogTable state changed. Reason: Started TabletReplica. Latest consensus state: current_term: 1 leader_uuid: "08f726b6ca8e483486158eacd80e933a" committed_config { opid_index: -1 OBSOLETE_local: true peers { permanent_uuid: "08f726b6ca8e483486158eacd80e933a" member_type: VOTER } }
+I0426 18:02:12.142688 20164 sys_catalog.cc:338] T 00000000000000000000000000000000 P 08f726b6ca8e483486158eacd80e933a [sys.catalog]: This master's current role is: LEADER
+I0426 18:02:12.144579 20169 sys_catalog.cc:335] T 00000000000000000000000000000000 P 08f726b6ca8e483486158eacd80e933a [sys.catalog]: SysCatalogTable state changed. Reason: New leader 08f726b6ca8e483486158eacd80e933a. Latest consensus state: current_term: 1 leader_uuid: "08f726b6ca8e483486158eacd80e933a" committed_config { opid_index: -1 OBSOLETE_local: true peers { permanent_uuid: "08f726b6ca8e483486158eacd80e933a" member_type: VOTER } }
+I0426 18:02:12.144220 20168 sys_catalog.cc:335] T 00000000000000000000000000000000 P 08f726b6ca8e483486158eacd80e933a [sys.catalog]: SysCatalogTable state changed. Reason: RaftConsensus started. Latest consensus state: current_term: 1 leader_uuid: "08f726b6ca8e483486158eacd80e933a" committed_config { opid_index: -1 OBSOLETE_local: true peers { permanent_uuid: "08f726b6ca8e483486158eacd80e933a" member_type: VOTER } }
+I0426 18:02:12.145058 20164 sys_catalog.cc:422] T 00000000000000000000000000000000 P 08f726b6ca8e483486158eacd80e933a [sys.catalog]: configured and running, proceeding with master startup.
+I0426 18:02:12.145534 20168 sys_catalog.cc:338] T 00000000000000000000000000000000 P 08f726b6ca8e483486158eacd80e933a [sys.catalog]: This master's current role is: LEADER
+I0426 18:02:12.145277 20171 catalog_manager.cc:990] Loading table and tablet metadata into memory...
+I0426 18:02:12.145545 20169 sys_catalog.cc:338] T 00000000000000000000000000000000 P 08f726b6ca8e483486158eacd80e933a [sys.catalog]: This master's current role is: LEADER
+I0426 18:02:12.147105 20103 master_main.cc:79] Master server successfully started.
+I0426 18:02:12.150617 20171 catalog_manager.cc:1001] Initializing Kudu internal certificate authority...
+WARNING: Logging before InitGoogleLogging() is written to STDERR
+W0426 18:02:12.207855 20165 flags.cc:412] Enabled unsafe flag: --rpc_server_allow_ephemeral_ports=true
+W0426 18:02:12.208323 20165 flags.cc:412] Enabled unsafe flag: --never_fsync=true
+W0426 18:02:12.217430 20165 flags.cc:412] Enabled experimental flag: --ipki_server_key_size=1024
+W0426 18:02:12.217840 20165 flags.cc:412] Enabled experimental flag: --local_ip_for_outbound_sockets=127.19.158.193
+I0426 18:02:12.220098 20171 catalog_manager.cc:888] Generated new certificate authority record
+I0426 18:02:12.221678 20171 catalog_manager.cc:1010] Loading token signing keys...
+I0426 18:02:12.235308 20171 catalog_manager.cc:3992] T 00000000000000000000000000000000 P 08f726b6ca8e483486158eacd80e933a: Generated new TSK 0
+I0426 18:02:12.250535 20165 tablet_server_main.cc:72] Tablet server non-default flags:
+--consensus_rpc_timeout_ms=1000
+--log_cache_size_limit_mb=10
+--fs_data_dirs=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-0/data
+--fs_wal_dir=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-0/wal
+--ipki_server_key_size=1024
+--rpc_bind_addresses=127.19.158.193:0
+--rpc_server_allow_ephemeral_ports=true
+--metrics_log_interval_ms=1000
+--server_dump_info_format=pb
+--server_dump_info_path=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-0/data/info.pb
+--webserver_interface=127.19.158.193
+--webserver_port=0
+--tserver_master_addrs=127.19.158.254:32815
+--never_fsync=true
+--redact=none
+--unlock_experimental_flags=true
+--unlock_unsafe_flags=true
+--enable_minidumps=false
+--local_ip_for_outbound_sockets=127.19.158.193
+--log_dir=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-0/logs
+--logbuflevel=-1
+--logtostderr=true
+Tablet server version:
+kudu 1.8.0-SNAPSHOT
+revision c9307f8eb89fd99c1492b5e53812f2cdc1adffb4
+build type FASTDEBUG
+built by None at 26 Apr 2018 18:00:48 UTC on jenkins-slave-vn0g
+build id 13197
+TSAN enabled
+I0426 18:02:12.259595 20165 tablet_server_main.cc:79] Initializing tablet server...
+I0426 18:02:12.261610 20165 system_ntp.cc:143] NTP initialized. Skew: 500ppm Current error: 14047us
+I0426 18:02:12.262135 20165 fs_manager.cc:260] Metadata directory not provided
+I0426 18:02:12.262276 20165 fs_manager.cc:266] Using write-ahead log directory (fs_wal_dir) as metadata directory
+I0426 18:02:12.262487 20165 server_base.cc:433] Could not load existing FS layout: Not found: /tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-0/data/instance: No such file or directory (error 2)
+I0426 18:02:12.262609 20165 server_base.cc:434] Attempting to create new FS layout instead
+I0426 18:02:12.270684 20165 fs_manager.cc:595] Generated new instance metadata in path /tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-0/data/instance:
+uuid: "849e2ce84972434a997a3dfa1f77ae22"
+format_stamp: "Formatted at 2018-04-26 18:02:12 on dist-test-slave-dist-test-slave-qvfl"
+I0426 18:02:12.271466 20165 fs_manager.cc:595] Generated new instance metadata in path /tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-0/wal/instance:
+uuid: "849e2ce84972434a997a3dfa1f77ae22"
+format_stamp: "Formatted at 2018-04-26 18:02:12 on dist-test-slave-dist-test-slave-qvfl"
+I0426 18:02:12.303690 20165 fs_manager.cc:495] Time spent creating directory manager: real 0.032s	user 0.008s	sys 0.024s
+I0426 18:02:12.305124 20165 env_posix.cc:1643] Not raising this process' open files per process limit of 65536; it is already as high as it can go
+I0426 18:02:12.305610 20165 file_cache.cc:470] Constructed file cache lbm with capacity 26214
+I0426 18:02:12.321331 20165 fs_manager.cc:417] Time spent opening block manager: real 0.011s	user 0.008s	sys 0.004s
+I0426 18:02:12.321472 20165 fs_manager.cc:428] Opened local filesystem: /tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-0/data,/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-0/wal
+uuid: "849e2ce84972434a997a3dfa1f77ae22"
+format_stamp: "Formatted at 2018-04-26 18:02:12 on dist-test-slave-dist-test-slave-qvfl"
+I0426 18:02:12.321710 20165 fs_report.cc:347] Block manager report
+--------------------
+1 data directories: /tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-0/data/data
+Total live blocks: 0
+Total live bytes: 0
+Total live bytes (after alignment): 0
+Total number of LBM containers: 0 (0 full)
+Did not check for missing blocks
+Did not check for orphaned blocks
+Total full LBM containers with extra space: 0 (0 repaired)
+Total full LBM container extra space in bytes: 0 (0 repaired)
+Total incomplete LBM containers: 0 (0 repaired)
+Total LBM partial records: 0 (0 repaired)
+I0426 18:02:12.527070 20165 env_posix.cc:1643] Not raising this process' running threads per effective uid limit of 60284; it is already as high as it can go
+I0426 18:02:12.530267 20165 ts_tablet_manager.cc:356] Loaded tablet metadata (0 live tablets)
+I0426 18:02:12.542541 20165 tablet_server_main.cc:84] Starting tablet server...
+I0426 18:02:13.084795 20165 rpc_server.cc:200] RPC server started. Bound to: 127.19.158.193:39806
+I0426 18:02:13.085728 20165 webserver.cc:173] Starting webserver on 127.19.158.193:0
+I0426 18:02:13.085840 20165 webserver.cc:184] Document root disabled
+I0426 18:02:13.087486 20165 webserver.cc:311] Webserver started. Bound to: http://127.19.158.193:37023/
+I0426 18:02:13.088268 20165 server_base.cc:606] Dumped server information to /tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-0/data/info.pb
+I0426 18:02:13.093343 20297 process_memory.cc:182] Process hard memory limit is 11.777631 GB
+I0426 18:02:13.094067 20297 process_memory.cc:184] Process soft memory limit is 9.422105 GB
+I0426 18:02:13.094192 20297 process_memory.cc:187] Process memory pressure threshold is 7.066578 GB
+I0426 18:02:13.095690 20091 external_mini_cluster.cc:881] Started /tmp/dist-test-taskEpRJ5y/build/tsan/bin/kudu-tserver as pid 20165
+I0426 18:02:13.096597 20091 external_mini_cluster.cc:819] Running /tmp/dist-test-taskEpRJ5y/build/tsan/bin/kudu-tserver
+/tmp/dist-test-taskEpRJ5y/build/tsan/bin/kudu-tserver
+--fs_wal_dir=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-1/wal
+--fs_data_dirs=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-1/data
+--block_manager=log
+--rpc_bind_addresses=127.19.158.194:0
+--local_ip_for_outbound_sockets=127.19.158.194
+--webserver_interface=127.19.158.194
+--webserver_port=0
+--tserver_master_addrs=127.19.158.254:32815
+--never_fsync
+--ipki_server_key_size=1024
+--enable_minidumps=false
+--redact=none
+--metrics_log_interval_ms=1000
+--logtostderr
+--logbuflevel=-1
+--log_dir=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-1/logs
+--server_dump_info_path=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-1/data/info.pb
+--server_dump_info_format=pb
+--rpc_server_allow_ephemeral_ports
+--unlock_experimental_flags
+--unlock_unsafe_flags
+--log_cache_size_limit_mb=10
+--consensus_rpc_timeout_ms=1000 with env {}
+I0426 18:02:13.093793 20165 tablet_server_main.cc:87] Tablet server successfully started.
+I0426 18:02:13.113649 20296 heartbeater.cc:346] Connected to a master server at 127.19.158.254:32815
+I0426 18:02:13.113927 20296 heartbeater.cc:426] Registering TS with master...
+I0426 18:02:13.114444 20296 heartbeater.cc:475] Master 127.19.158.254:32815 requested a full tablet report, sending...
+I0426 18:02:13.116511 20131 ts_manager.cc:81] Registered new tserver with Master: 849e2ce84972434a997a3dfa1f77ae22 (127.19.158.193:39806)
+I0426 18:02:13.118386 20131 master_service.cc:249] Signed X509 certificate for tserver {username='slave'} at 127.19.158.193:48198
+WARNING: Logging before InitGoogleLogging() is written to STDERR
+W0426 18:02:13.214220 20300 flags.cc:412] Enabled unsafe flag: --rpc_server_allow_ephemeral_ports=true
+W0426 18:02:13.214615 20300 flags.cc:412] Enabled unsafe flag: --never_fsync=true
+W0426 18:02:13.223816 20300 flags.cc:412] Enabled experimental flag: --ipki_server_key_size=1024
+W0426 18:02:13.224174 20300 flags.cc:412] Enabled experimental flag: --local_ip_for_outbound_sockets=127.19.158.194
+I0426 18:02:13.238559 20300 tablet_server_main.cc:72] Tablet server non-default flags:
+--consensus_rpc_timeout_ms=1000
+--log_cache_size_limit_mb=10
+--fs_data_dirs=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-1/data
+--fs_wal_dir=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-1/wal
+--ipki_server_key_size=1024
+--rpc_bind_addresses=127.19.158.194:0
+--rpc_server_allow_ephemeral_ports=true
+--metrics_log_interval_ms=1000
+--server_dump_info_format=pb
+--server_dump_info_path=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-1/data/info.pb
+--webserver_interface=127.19.158.194
+--webserver_port=0
+--tserver_master_addrs=127.19.158.254:32815
+--never_fsync=true
+--redact=none
+--unlock_experimental_flags=true
+--unlock_unsafe_flags=true
+--enable_minidumps=false
+--local_ip_for_outbound_sockets=127.19.158.194
+--log_dir=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-1/logs
+--logbuflevel=-1
+--logtostderr=true
+Tablet server version:
+kudu 1.8.0-SNAPSHOT
+revision c9307f8eb89fd99c1492b5e53812f2cdc1adffb4
+build type FASTDEBUG
+built by None at 26 Apr 2018 18:00:48 UTC on jenkins-slave-vn0g
+build id 13197
+TSAN enabled
+I0426 18:02:13.247191 20300 tablet_server_main.cc:79] Initializing tablet server...
+I0426 18:02:13.249528 20300 system_ntp.cc:143] NTP initialized. Skew: 500ppm Current error: 14547us
+I0426 18:02:13.250048 20300 fs_manager.cc:260] Metadata directory not provided
+I0426 18:02:13.250216 20300 fs_manager.cc:266] Using write-ahead log directory (fs_wal_dir) as metadata directory
+I0426 18:02:13.250466 20300 server_base.cc:433] Could not load existing FS layout: Not found: /tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-1/data/instance: No such file or directory (error 2)
+I0426 18:02:13.250630 20300 server_base.cc:434] Attempting to create new FS layout instead
+I0426 18:02:13.259886 20300 fs_manager.cc:595] Generated new instance metadata in path /tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-1/data/instance:
+uuid: "e8cb9d247c364de2956352d4368be4f3"
+format_stamp: "Formatted at 2018-04-26 18:02:13 on dist-test-slave-dist-test-slave-qvfl"
+I0426 18:02:13.260687 20300 fs_manager.cc:595] Generated new instance metadata in path /tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-1/wal/instance:
+uuid: "e8cb9d247c364de2956352d4368be4f3"
+format_stamp: "Formatted at 2018-04-26 18:02:13 on dist-test-slave-dist-test-slave-qvfl"
+I0426 18:02:13.270881 20300 fs_manager.cc:495] Time spent creating directory manager: real 0.010s	user 0.008s	sys 0.004s
+I0426 18:02:13.272297 20300 env_posix.cc:1643] Not raising this process' open files per process limit of 65536; it is already as high as it can go
+I0426 18:02:13.272773 20300 file_cache.cc:470] Constructed file cache lbm with capacity 26214
+I0426 18:02:13.279654 20300 fs_manager.cc:417] Time spent opening block manager: real 0.002s	user 0.000s	sys 0.004s
+I0426 18:02:13.279789 20300 fs_manager.cc:428] Opened local filesystem: /tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-1/data,/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-1/wal
+uuid: "e8cb9d247c364de2956352d4368be4f3"
+format_stamp: "Formatted at 2018-04-26 18:02:13 on dist-test-slave-dist-test-slave-qvfl"
+I0426 18:02:13.280829 20300 fs_report.cc:347] Block manager report
+--------------------
+1 data directories: /tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-1/data/data
+Total live blocks: 0
+Total live bytes: 0
+Total live bytes (after alignment): 0
+Total number of LBM containers: 0 (0 full)
+Did not check for missing blocks
+Did not check for orphaned blocks
+Total full LBM containers with extra space: 0 (0 repaired)
+Total full LBM container extra space in bytes: 0 (0 repaired)
+Total incomplete LBM containers: 0 (0 repaired)
+Total LBM partial records: 0 (0 repaired)
+I0426 18:02:13.499577 20300 env_posix.cc:1643] Not raising this process' running threads per effective uid limit of 60284; it is already as high as it can go
+I0426 18:02:13.502252 20300 ts_tablet_manager.cc:356] Loaded tablet metadata (0 live tablets)
+I0426 18:02:13.503315 20300 tablet_server_main.cc:84] Starting tablet server...
+I0426 18:02:13.608496 20300 rpc_server.cc:200] RPC server started. Bound to: 127.19.158.194:34029
+I0426 18:02:13.609426 20300 webserver.cc:173] Starting webserver on 127.19.158.194:0
+I0426 18:02:13.609536 20300 webserver.cc:184] Document root disabled
+I0426 18:02:13.610909 20300 webserver.cc:311] Webserver started. Bound to: http://127.19.158.194:38362/
+I0426 18:02:13.611703 20300 server_base.cc:606] Dumped server information to /tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-1/data/info.pb
+I0426 18:02:13.614548 20091 external_mini_cluster.cc:881] Started /tmp/dist-test-taskEpRJ5y/build/tsan/bin/kudu-tserver as pid 20300
+I0426 18:02:13.615696 20091 external_mini_cluster.cc:819] Running /tmp/dist-test-taskEpRJ5y/build/tsan/bin/kudu-tserver
+/tmp/dist-test-taskEpRJ5y/build/tsan/bin/kudu-tserver
+--fs_wal_dir=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-2/wal
+--fs_data_dirs=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-2/data
+--block_manager=log
+--rpc_bind_addresses=127.19.158.195:0
+--local_ip_for_outbound_sockets=127.19.158.195
+--webserver_interface=127.19.158.195
+--webserver_port=0
+--tserver_master_addrs=127.19.158.254:32815
+--never_fsync
+--ipki_server_key_size=1024
+--enable_minidumps=false
+--redact=none
+--metrics_log_interval_ms=1000
+--logtostderr
+--logbuflevel=-1
+--log_dir=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-2/logs
+--server_dump_info_path=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-2/data/info.pb
+--server_dump_info_format=pb
+--rpc_server_allow_ephemeral_ports
+--unlock_experimental_flags
+--unlock_unsafe_flags
+--log_cache_size_limit_mb=10
+--consensus_rpc_timeout_ms=1000 with env {}
+I0426 18:02:13.614572 20422 process_memory.cc:182] Process hard memory limit is 11.777631 GB
+I0426 18:02:13.617153 20422 process_memory.cc:184] Process soft memory limit is 9.422105 GB
+I0426 18:02:13.617282 20422 process_memory.cc:187] Process memory pressure threshold is 7.066578 GB
+I0426 18:02:13.617504 20300 tablet_server_main.cc:87] Tablet server successfully started.
+I0426 18:02:13.635696 20421 heartbeater.cc:346] Connected to a master server at 127.19.158.254:32815
+I0426 18:02:13.636018 20421 heartbeater.cc:426] Registering TS with master...
+I0426 18:02:13.636514 20421 heartbeater.cc:475] Master 127.19.158.254:32815 requested a full tablet report, sending...
+I0426 18:02:13.638370 20131 ts_manager.cc:81] Registered new tserver with Master: e8cb9d247c364de2956352d4368be4f3 (127.19.158.194:34029)
+I0426 18:02:13.639716 20131 master_service.cc:249] Signed X509 certificate for tserver {username='slave'} at 127.19.158.194:55036
+WARNING: Logging before InitGoogleLogging() is written to STDERR
+W0426 18:02:13.733669 20425 flags.cc:412] Enabled unsafe flag: --rpc_server_allow_ephemeral_ports=true
+W0426 18:02:13.734097 20425 flags.cc:412] Enabled unsafe flag: --never_fsync=true
+W0426 18:02:13.743257 20425 flags.cc:412] Enabled experimental flag: --ipki_server_key_size=1024
+W0426 18:02:13.743616 20425 flags.cc:412] Enabled experimental flag: --local_ip_for_outbound_sockets=127.19.158.195
+I0426 18:02:13.759395 20425 tablet_server_main.cc:72] Tablet server non-default flags:
+--consensus_rpc_timeout_ms=1000
+--log_cache_size_limit_mb=10
+--fs_data_dirs=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-2/data
+--fs_wal_dir=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-2/wal
+--ipki_server_key_size=1024
+--rpc_bind_addresses=127.19.158.195:0
+--rpc_server_allow_ephemeral_ports=true
+--metrics_log_interval_ms=1000
+--server_dump_info_format=pb
+--server_dump_info_path=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-2/data/info.pb
+--webserver_interface=127.19.158.195
+--webserver_port=0
+--tserver_master_addrs=127.19.158.254:32815
+--never_fsync=true
+--redact=none
+--unlock_experimental_flags=true
+--unlock_unsafe_flags=true
+--enable_minidumps=false
+--local_ip_for_outbound_sockets=127.19.158.195
+--log_dir=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-2/logs
+--logbuflevel=-1
+--logtostderr=true
+Tablet server version:
+kudu 1.8.0-SNAPSHOT
+revision c9307f8eb89fd99c1492b5e53812f2cdc1adffb4
+build type FASTDEBUG
+built by None at 26 Apr 2018 18:00:48 UTC on jenkins-slave-vn0g
+build id 13197
+TSAN enabled
+I0426 18:02:13.768307 20425 tablet_server_main.cc:79] Initializing tablet server...
+I0426 18:02:13.770530 20425 system_ntp.cc:143] NTP initialized. Skew: 500ppm Current error: 14547us
+I0426 18:02:13.771080 20425 fs_manager.cc:260] Metadata directory not provided
+I0426 18:02:13.771211 20425 fs_manager.cc:266] Using write-ahead log directory (fs_wal_dir) as metadata directory
+I0426 18:02:13.771442 20425 server_base.cc:433] Could not load existing FS layout: Not found: /tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-2/data/instance: No such file or directory (error 2)
+I0426 18:02:13.771569 20425 server_base.cc:434] Attempting to create new FS layout instead
+I0426 18:02:13.779753 20425 fs_manager.cc:595] Generated new instance metadata in path /tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-2/data/instance:
+uuid: "667824c990864570a89a4c4f2c4e5ab5"
+format_stamp: "Formatted at 2018-04-26 18:02:13 on dist-test-slave-dist-test-slave-qvfl"
+I0426 18:02:13.780661 20425 fs_manager.cc:595] Generated new instance metadata in path /tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-2/wal/instance:
+uuid: "667824c990864570a89a4c4f2c4e5ab5"
+format_stamp: "Formatted at 2018-04-26 18:02:13 on dist-test-slave-dist-test-slave-qvfl"
+I0426 18:02:13.791282 20425 fs_manager.cc:495] Time spent creating directory manager: real 0.010s	user 0.004s	sys 0.008s
+I0426 18:02:13.792649 20425 env_posix.cc:1643] Not raising this process' open files per process limit of 65536; it is already as high as it can go
+I0426 18:02:13.793131 20425 file_cache.cc:470] Constructed file cache lbm with capacity 26214
+I0426 18:02:13.800127 20425 fs_manager.cc:417] Time spent opening block manager: real 0.002s	user 0.000s	sys 0.000s
+I0426 18:02:13.800271 20425 fs_manager.cc:428] Opened local filesystem: /tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-2/data,/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-2/wal
+uuid: "667824c990864570a89a4c4f2c4e5ab5"
+format_stamp: "Formatted at 2018-04-26 18:02:13 on dist-test-slave-dist-test-slave-qvfl"
+I0426 18:02:13.800509 20425 fs_report.cc:347] Block manager report
+--------------------
+1 data directories: /tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-2/data/data
+Total live blocks: 0
+Total live bytes: 0
+Total live bytes (after alignment): 0
+Total number of LBM containers: 0 (0 full)
+Did not check for missing blocks
+Did not check for orphaned blocks
+Total full LBM containers with extra space: 0 (0 repaired)
+Total full LBM container extra space in bytes: 0 (0 repaired)
+Total incomplete LBM containers: 0 (0 repaired)
+Total LBM partial records: 0 (0 repaired)
+I0426 18:02:13.992527 20425 env_posix.cc:1643] Not raising this process' running threads per effective uid limit of 60284; it is already as high as it can go
+I0426 18:02:13.995317 20425 ts_tablet_manager.cc:356] Loaded tablet metadata (0 live tablets)
+I0426 18:02:13.996407 20425 tablet_server_main.cc:84] Starting tablet server...
+I0426 18:02:14.104907 20425 rpc_server.cc:200] RPC server started. Bound to: 127.19.158.195:44330
+I0426 18:02:14.105895 20425 webserver.cc:173] Starting webserver on 127.19.158.195:0
+I0426 18:02:14.106009 20425 webserver.cc:184] Document root disabled
+I0426 18:02:14.107342 20425 webserver.cc:311] Webserver started. Bound to: http://127.19.158.195:42457/
+I0426 18:02:14.108196 20425 server_base.cc:606] Dumped server information to /tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-2/data/info.pb
+I0426 18:02:14.114238 20547 process_memory.cc:182] Process hard memory limit is 11.777631 GB
+I0426 18:02:14.114547 20547 process_memory.cc:184] Process soft memory limit is 9.422105 GB
+I0426 18:02:14.114681 20547 process_memory.cc:187] Process memory pressure threshold is 7.066578 GB
+I0426 18:02:14.115056 20091 external_mini_cluster.cc:881] Started /tmp/dist-test-taskEpRJ5y/build/tsan/bin/kudu-tserver as pid 20425
+I0426 18:02:14.121412 20296 heartbeater.cc:467] Master 127.19.158.254:32815 was elected leader, sending a full tablet report...
+I0426 18:02:14.114364 20425 tablet_server_main.cc:87] Tablet server successfully started.
+I0426 18:02:14.143072 20546 heartbeater.cc:346] Connected to a master server at 127.19.158.254:32815
+I0426 18:02:14.143391 20546 heartbeater.cc:426] Registering TS with master...
+I0426 18:02:14.143918 20546 heartbeater.cc:475] Master 127.19.158.254:32815 requested a full tablet report, sending...
+I0426 18:02:14.145822 20131 ts_manager.cc:81] Registered new tserver with Master: 667824c990864570a89a4c4f2c4e5ab5 (127.19.158.195:44330)
+I0426 18:02:14.147114 20131 master_service.cc:249] Signed X509 certificate for tserver {username='slave'} at 127.19.158.195:59229
+I0426 18:02:14.155324 20091 external_mini_cluster.cc:509] 3 TS(s) registered with all masters
+I0426 18:02:14.187079 20131 catalog_manager.cc:1316] Servicing CreateTable request from {username='slave'} at 127.0.0.1:35703:
+name: "TestTable"
+schema {
+  columns {
+    name: "key"
+    type: INT32
+    is_key: true
+    is_nullable: false
+    encoding: AUTO_ENCODING
+    compression: DEFAULT_COMPRESSION
+    cfile_block_size: 0
+  }
+  columns {
+    name: "int_val"
+    type: INT32
+    is_key: false
+    is_nullable: false
+    encoding: AUTO_ENCODING
+    compression: DEFAULT_COMPRESSION
+    cfile_block_size: 0
+  }
+  columns {
+    name: "string_val"
+    type: STRING
+    is_key: false
+    is_nullable: true
+    encoding: AUTO_ENCODING
+    compression: DEFAULT_COMPRESSION
+    cfile_block_size: 0
+  }
+}
+num_replicas: 3
+split_rows_range_bounds {
+}
+partition_schema {
+  range_schema {
+    columns {
+      name: "key"
+    }
+  }
+}
+W0426 18:02:14.196913 20131 catalog_manager.cc:1472] The number of live tablet servers is not enough to re-replicate a tablet replica of the newly created table TestTable in case of a replica failure: 4 tablet servers are needed, 3 are alive. Consider bringing up additional tablet server(s) or running both the masters and all tablet servers with --raft_prepare_replacement_before_eviction=false flag (not recommended).
+I0426 18:02:14.234140 20483 tablet_service.cc:756] Processing CreateTablet for tablet cdcca06f278544a7b2cc376ef47fde17 (table=TestTable [id=20d4403e67364c6aa058efb2c94fcb71]), partition=RANGE (key) PARTITION UNBOUNDED
+I0426 18:02:14.235191 20483 data_dirs.cc:934] Could only allocate 1 dirs of requested 3 for tablet cdcca06f278544a7b2cc376ef47fde17. 1 dirs total, 0 dirs full, 0 dirs failed
+I0426 18:02:14.238070 20233 tablet_service.cc:756] Processing CreateTablet for tablet cdcca06f278544a7b2cc376ef47fde17 (table=TestTable [id=20d4403e67364c6aa058efb2c94fcb71]), partition=RANGE (key) PARTITION UNBOUNDED
+I0426 18:02:14.238284 20358 tablet_service.cc:756] Processing CreateTablet for tablet cdcca06f278544a7b2cc376ef47fde17 (table=TestTable [id=20d4403e67364c6aa058efb2c94fcb71]), partition=RANGE (key) PARTITION UNBOUNDED
+I0426 18:02:14.239253 20233 data_dirs.cc:934] Could only allocate 1 dirs of requested 3 for tablet cdcca06f278544a7b2cc376ef47fde17. 1 dirs total, 0 dirs full, 0 dirs failed
+I0426 18:02:14.239549 20358 data_dirs.cc:934] Could only allocate 1 dirs of requested 3 for tablet cdcca06f278544a7b2cc376ef47fde17. 1 dirs total, 0 dirs full, 0 dirs failed
+I0426 18:02:14.251497 20483 ts_tablet_manager.cc:1173] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5: Registered tablet (data state: TABLET_DATA_READY)
+I0426 18:02:14.253331 20566 ts_tablet_manager.cc:1028] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5: Bootstrapping tablet
+I0426 18:02:14.254082 20566 tablet_bootstrap.cc:436] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5: Bootstrap starting.
+I0426 18:02:14.257663 20566 tablet_bootstrap.cc:587] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5: No blocks or log segments found. Creating new log.
+I0426 18:02:14.259575 20566 log.cc:520] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5: Log is configured to *not* fsync() on all Append() calls
+I0426 18:02:14.262907 20566 tablet_bootstrap.cc:436] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5: No bootstrap required, opened a new log
+I0426 18:02:14.263509 20566 ts_tablet_manager.cc:1045] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5: Time spent bootstrapping tablet: real 0.010s	user 0.008s	sys 0.000s
+I0426 18:02:14.264040 20358 ts_tablet_manager.cc:1173] T cdcca06f278544a7b2cc376ef47fde17 P e8cb9d247c364de2956352d4368be4f3: Registered tablet (data state: TABLET_DATA_READY)
+I0426 18:02:14.274152 20233 ts_tablet_manager.cc:1173] T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22: Registered tablet (data state: TABLET_DATA_READY)
+I0426 18:02:14.276777 20568 ts_tablet_manager.cc:1028] T cdcca06f278544a7b2cc376ef47fde17 P e8cb9d247c364de2956352d4368be4f3: Bootstrapping tablet
+I0426 18:02:14.277443 20568 tablet_bootstrap.cc:436] T cdcca06f278544a7b2cc376ef47fde17 P e8cb9d247c364de2956352d4368be4f3: Bootstrap starting.
+I0426 18:02:14.280378 20568 tablet_bootstrap.cc:587] T cdcca06f278544a7b2cc376ef47fde17 P e8cb9d247c364de2956352d4368be4f3: No blocks or log segments found. Creating new log.
+I0426 18:02:14.280479 20566 raft_consensus.cc:303] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5 [term 0 FOLLOWER]: Replica starting. Triggering 0 pending transactions. Active config: opid_index: -1 OBSOLETE_local: false peers { permanent_uuid: "e8cb9d247c364de2956352d4368be4f3" member_type: VOTER last_known_addr { host: "127.19.158.194" port: 34029 } } peers { permanent_uuid: "667824c990864570a89a4c4f2c4e5ab5" member_type: VOTER last_known_addr { host: "127.19.158.195" port: 44330 } } peers { permanent_uuid: "849e2ce84972434a997a3dfa1f77ae22" member_type: VOTER last_known_addr { host: "127.19.158.193" port: 39806 } }
+I0426 18:02:14.281390 20566 raft_consensus.cc:329] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5 [term 0 FOLLOWER]: Consensus starting up: Expiring failure detector timer to make a prompt election more likely
+I0426 18:02:14.281605 20566 raft_consensus.cc:604] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5 [term 0 FOLLOWER]: Becoming Follower/Learner. State: Replica: 667824c990864570a89a4c4f2c4e5ab5, State: Initialized, Role: FOLLOWER
+I0426 18:02:14.281891 20568 log.cc:520] T cdcca06f278544a7b2cc376ef47fde17 P e8cb9d247c364de2956352d4368be4f3: Log is configured to *not* fsync() on all Append() calls
+I0426 18:02:14.282387 20566 consensus_queue.cc:227] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5 [NON_LEADER]: Queue going to NON_LEADER mode. State: All replicated index: 0, Majority replicated index: 0, Committed index: 0, Last appended: 0.0, Last appended by leader: 0, Current term: 0, Majority size: -1, State: 0, Mode: NON_LEADER, active raft config: opid_index: -1 OBSOLETE_local: false peers { permanent_uuid: "e8cb9d247c364de2956352d4368be4f3" member_type: VOTER last_known_addr { host: "127.19.158.194" port: 34029 } } peers { permanent_uuid: "667824c990864570a89a4c4f2c4e5ab5" member_type: VOTER last_known_addr { host: "127.19.158.195" port: 44330 } } peers { permanent_uuid: "849e2ce84972434a997a3dfa1f77ae22" member_type: VOTER last_known_addr { host: "127.19.158.193" port: 39806 } }
+I0426 18:02:14.284567 20569 ts_tablet_manager.cc:1028] T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22: Bootstrapping tablet
+I0426 18:02:14.285219 20569 tablet_bootstrap.cc:436] T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22: Bootstrap starting.
+I0426 18:02:14.288468 20569 tablet_bootstrap.cc:587] T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22: No blocks or log segments found. Creating new log.
+I0426 18:02:14.289912 20569 log.cc:520] T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22: Log is configured to *not* fsync() on all Append() calls
+I0426 18:02:14.291940 20546 heartbeater.cc:467] Master 127.19.158.254:32815 was elected leader, sending a full tablet report...
+I0426 18:02:14.292465 20566 ts_tablet_manager.cc:1073] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5: Time spent starting tablet: real 0.029s	user 0.024s	sys 0.004s
+I0426 18:02:14.292706 20568 tablet_bootstrap.cc:436] T cdcca06f278544a7b2cc376ef47fde17 P e8cb9d247c364de2956352d4368be4f3: No bootstrap required, opened a new log
+I0426 18:02:14.293184 20568 ts_tablet_manager.cc:1045] T cdcca06f278544a7b2cc376ef47fde17 P e8cb9d247c364de2956352d4368be4f3: Time spent bootstrapping tablet: real 0.016s	user 0.004s	sys 0.000s
+I0426 18:02:14.295348 20569 tablet_bootstrap.cc:436] T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22: No bootstrap required, opened a new log
+I0426 18:02:14.295907 20569 ts_tablet_manager.cc:1045] T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22: Time spent bootstrapping tablet: real 0.011s	user 0.004s	sys 0.004s
+I0426 18:02:14.311352 20568 raft_consensus.cc:303] T cdcca06f278544a7b2cc376ef47fde17 P e8cb9d247c364de2956352d4368be4f3 [term 0 FOLLOWER]: Replica starting. Triggering 0 pending transactions. Active config: opid_index: -1 OBSOLETE_local: false peers { permanent_uuid: "e8cb9d247c364de2956352d4368be4f3" member_type: VOTER last_known_addr { host: "127.19.158.194" port: 34029 } } peers { permanent_uuid: "667824c990864570a89a4c4f2c4e5ab5" member_type: VOTER last_known_addr { host: "127.19.158.195" port: 44330 } } peers { permanent_uuid: "849e2ce84972434a997a3dfa1f77ae22" member_type: VOTER last_known_addr { host: "127.19.158.193" port: 39806 } }
+I0426 18:02:14.312263 20568 raft_consensus.cc:329] T cdcca06f278544a7b2cc376ef47fde17 P e8cb9d247c364de2956352d4368be4f3 [term 0 FOLLOWER]: Consensus starting up: Expiring failure detector timer to make a prompt election more likely
+I0426 18:02:14.312481 20568 raft_consensus.cc:604] T cdcca06f278544a7b2cc376ef47fde17 P e8cb9d247c364de2956352d4368be4f3 [term 0 FOLLOWER]: Becoming Follower/Learner. State: Replica: e8cb9d247c364de2956352d4368be4f3, State: Initialized, Role: FOLLOWER
+I0426 18:02:14.313243 20569 raft_consensus.cc:303] T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22 [term 0 FOLLOWER]: Replica starting. Triggering 0 pending transactions. Active config: opid_index: -1 OBSOLETE_local: false peers { permanent_uuid: "e8cb9d247c364de2956352d4368be4f3" member_type: VOTER last_known_addr { host: "127.19.158.194" port: 34029 } } peers { permanent_uuid: "667824c990864570a89a4c4f2c4e5ab5" member_type: VOTER last_known_addr { host: "127.19.158.195" port: 44330 } } peers { permanent_uuid: "849e2ce84972434a997a3dfa1f77ae22" member_type: VOTER last_known_addr { host: "127.19.158.193" port: 39806 } }
+I0426 18:02:14.313241 20568 consensus_queue.cc:227] T cdcca06f278544a7b2cc376ef47fde17 P e8cb9d247c364de2956352d4368be4f3 [NON_LEADER]: Queue going to NON_LEADER mode. State: All replicated index: 0, Majority replicated index: 0, Committed index: 0, Last appended: 0.0, Last appended by leader: 0, Current term: 0, Majority size: -1, State: 0, Mode: NON_LEADER, active raft config: opid_index: -1 OBSOLETE_local: false peers { permanent_uuid: "e8cb9d247c364de2956352d4368be4f3" member_type: VOTER last_known_addr { host: "127.19.158.194" port: 34029 } } peers { permanent_uuid: "667824c990864570a89a4c4f2c4e5ab5" member_type: VOTER last_known_addr { host: "127.19.158.195" port: 44330 } } peers { permanent_uuid: "849e2ce84972434a997a3dfa1f77ae22" member_type: VOTER last_known_addr { host: "127.19.158.193" port: 39806 } }
+I0426 18:02:14.314180 20569 raft_consensus.cc:329] T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22 [term 0 FOLLOWER]: Consensus starting up: Expiring failure detector timer to make a prompt election more likely
+I0426 18:02:14.314438 20569 raft_consensus.cc:604] T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22 [term 0 FOLLOWER]: Becoming Follower/Learner. State: Replica: 849e2ce84972434a997a3dfa1f77ae22, State: Initialized, Role: FOLLOWER
+I0426 18:02:14.315445 20569 consensus_queue.cc:227] T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22 [NON_LEADER]: Queue going to NON_LEADER mode. State: All replicated index: 0, Majority replicated index: 0, Committed index: 0, Last appended: 0.0, Last appended by leader: 0, Current term: 0, Majority size: -1, State: 0, Mode: NON_LEADER, active raft config: opid_index: -1 OBSOLETE_local: false peers { permanent_uuid: "e8cb9d247c364de2956352d4368be4f3" member_type: VOTER last_known_addr { host: "127.19.158.194" port: 34029 } } peers { permanent_uuid: "667824c990864570a89a4c4f2c4e5ab5" member_type: VOTER last_known_addr { host: "127.19.158.195" port: 44330 } } peers { permanent_uuid: "849e2ce84972434a997a3dfa1f77ae22" member_type: VOTER last_known_addr { host: "127.19.158.193" port: 39806 } }
+I0426 18:02:14.316835 20421 heartbeater.cc:467] Master 127.19.158.254:32815 was elected leader, sending a full tablet report...
+I0426 18:02:14.318500 20568 ts_tablet_manager.cc:1073] T cdcca06f278544a7b2cc376ef47fde17 P e8cb9d247c364de2956352d4368be4f3: Time spent starting tablet: real 0.025s	user 0.020s	sys 0.004s
+I0426 18:02:14.319715 20569 ts_tablet_manager.cc:1073] T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22: Time spent starting tablet: real 0.024s	user 0.016s	sys 0.008s
+W0426 18:02:14.345257 20297 tablet.cc:1678] T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22: Can't schedule compaction. Clean time has not been advanced past its initial value.
+W0426 18:02:14.365144 20547 tablet.cc:1678] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5: Can't schedule compaction. Clean time has not been advanced past its initial value.
+W0426 18:02:14.367998 20422 tablet.cc:1678] T cdcca06f278544a7b2cc376ef47fde17 P e8cb9d247c364de2956352d4368be4f3: Can't schedule compaction. Clean time has not been advanced past its initial value.
+I0426 18:02:14.368721 20571 raft_consensus.cc:435] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5 [term 0 FOLLOWER]: Starting pre-election (no leader contacted us within the election timeout)
+I0426 18:02:14.369001 20571 raft_consensus.cc:2699] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5: Snoozing failure detection for 1.847s (starting election)
+I0426 18:02:14.369236 20571 raft_consensus.cc:457] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5 [term 0 FOLLOWER]: Starting pre-election with config: opid_index: -1 OBSOLETE_local: false peers { permanent_uuid: "e8cb9d247c364de2956352d4368be4f3" member_type: VOTER last_known_addr { host: "127.19.158.194" port: 34029 } } peers { permanent_uuid: "667824c990864570a89a4c4f2c4e5ab5" member_type: VOTER last_known_addr { host: "127.19.158.195" port: 44330 } } peers { permanent_uuid: "849e2ce84972434a997a3dfa1f77ae22" member_type: VOTER last_known_addr { host: "127.19.158.193" port: 39806 } }
+I0426 18:02:14.370364 20571 leader_election.cc:230] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5 [CANDIDATE]: Term 1 pre-election: Requesting pre-vote from peer e8cb9d247c364de2956352d4368be4f3
+I0426 18:02:14.370854 20571 leader_election.cc:230] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5 [CANDIDATE]: Term 1 pre-election: Requesting pre-vote from peer 849e2ce84972434a997a3dfa1f77ae22
+I0426 18:02:14.381652 20378 tablet_service.cc:994] Received RequestConsensusVote() RPC: tablet_id: "cdcca06f278544a7b2cc376ef47fde17" candidate_uuid: "667824c990864570a89a4c4f2c4e5ab5" candidate_term: 1 candidate_status { last_received { term: 0 index: 0 } } ignore_live_leader: false dest_uuid: "e8cb9d247c364de2956352d4368be4f3" is_pre_election: true
+I0426 18:02:14.382345 20378 raft_consensus.cc:2699] T cdcca06f278544a7b2cc376ef47fde17 P e8cb9d247c364de2956352d4368be4f3: Snoozing failure detection for 1.990s (vote granted)
+I0426 18:02:14.382639 20378 raft_consensus.cc:2214] T cdcca06f278544a7b2cc376ef47fde17 P e8cb9d247c364de2956352d4368be4f3 [term 0 FOLLOWER]: Leader pre-election vote request: Granting yes vote for candidate 667824c990864570a89a4c4f2c4e5ab5 in term 0.
+I0426 18:02:14.382711 20253 tablet_service.cc:994] Received RequestConsensusVote() RPC: tablet_id: "cdcca06f278544a7b2cc376ef47fde17" candidate_uuid: "667824c990864570a89a4c4f2c4e5ab5" candidate_term: 1 candidate_status { last_received { term: 0 index: 0 } } ignore_live_leader: false dest_uuid: "849e2ce84972434a997a3dfa1f77ae22" is_pre_election: true
+I0426 18:02:14.383342 20253 raft_consensus.cc:2699] T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22: Snoozing failure detection for 1.783s (vote granted)
+I0426 18:02:14.383558 20253 raft_consensus.cc:2214] T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22 [term 0 FOLLOWER]: Leader pre-election vote request: Granting yes vote for candidate 667824c990864570a89a4c4f2c4e5ab5 in term 0.
+I0426 18:02:14.383882 20433 leader_election.cc:362] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5 [CANDIDATE]: Term 1 pre-election: Vote granted by peer e8cb9d247c364de2956352d4368be4f3
+I0426 18:02:14.384081 20433 leader_election.cc:257] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5 [CANDIDATE]: Term 1 pre-election: Election decided. Result: candidate won.
+I0426 18:02:14.384575 20435 leader_election.cc:362] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5 [CANDIDATE]: Term 1 pre-election: Vote granted by peer 849e2ce84972434a997a3dfa1f77ae22
+I0426 18:02:14.384584 20571 raft_consensus.cc:2699] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5: Snoozing failure detection for 1.929s (election complete)
+I0426 18:02:14.384896 20571 raft_consensus.cc:2506] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5 [term 0 FOLLOWER]: Leader pre-election won for term 1
+I0426 18:02:14.385104 20571 raft_consensus.cc:435] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5 [term 0 FOLLOWER]: Starting leader election (no leader contacted us within the election timeout)
+I0426 18:02:14.385280 20571 raft_consensus.cc:2699] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5: Snoozing failure detection for 1.558s (starting election)
+I0426 18:02:14.385442 20571 raft_consensus.cc:2751] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5 [term 0 FOLLOWER]: Advancing to term 1
+I0426 18:02:14.388785 20571 raft_consensus.cc:457] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5 [term 1 FOLLOWER]: Starting leader election with config: opid_index: -1 OBSOLETE_local: false peers { permanent_uuid: "e8cb9d247c364de2956352d4368be4f3" member_type: VOTER last_known_addr { host: "127.19.158.194" port: 34029 } } peers { permanent_uuid: "667824c990864570a89a4c4f2c4e5ab5" member_type: VOTER last_known_addr { host: "127.19.158.195" port: 44330 } } peers { permanent_uuid: "849e2ce84972434a997a3dfa1f77ae22" member_type: VOTER last_known_addr { host: "127.19.158.193" port: 39806 } }
+I0426 18:02:14.389542 20571 leader_election.cc:230] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5 [CANDIDATE]: Term 1 election: Requesting vote from peer e8cb9d247c364de2956352d4368be4f3
+I0426 18:02:14.389896 20571 leader_election.cc:230] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5 [CANDIDATE]: Term 1 election: Requesting vote from peer 849e2ce84972434a997a3dfa1f77ae22
+I0426 18:02:14.391108 20253 tablet_service.cc:994] Received RequestConsensusVote() RPC: tablet_id: "cdcca06f278544a7b2cc376ef47fde17" candidate_uuid: "667824c990864570a89a4c4f2c4e5ab5" candidate_term: 1 candidate_status { last_received { term: 0 index: 0 } } ignore_live_leader: false dest_uuid: "849e2ce84972434a997a3dfa1f77ae22"
+I0426 18:02:14.391088 20378 tablet_service.cc:994] Received RequestConsensusVote() RPC: tablet_id: "cdcca06f278544a7b2cc376ef47fde17" candidate_uuid: "667824c990864570a89a4c4f2c4e5ab5" candidate_term: 1 candidate_status { last_received { term: 0 index: 0 } } ignore_live_leader: false dest_uuid: "e8cb9d247c364de2956352d4368be4f3"
+I0426 18:02:14.391474 20253 raft_consensus.cc:2751] T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22 [term 0 FOLLOWER]: Advancing to term 1
+I0426 18:02:14.391496 20378 raft_consensus.cc:2751] T cdcca06f278544a7b2cc376ef47fde17 P e8cb9d247c364de2956352d4368be4f3 [term 0 FOLLOWER]: Advancing to term 1
+I0426 18:02:14.391685 20253 raft_consensus.cc:2699] T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22: Snoozing failure detection for 2.201s (vote granted)
+I0426 18:02:14.391723 20378 raft_consensus.cc:2699] T cdcca06f278544a7b2cc376ef47fde17 P e8cb9d247c364de2956352d4368be4f3: Snoozing failure detection for 1.518s (vote granted)
+I0426 18:02:14.395119 20253 raft_consensus.cc:2214] T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22 [term 1 FOLLOWER]: Leader election vote request: Granting yes vote for candidate 667824c990864570a89a4c4f2c4e5ab5 in term 1.
+I0426 18:02:14.395923 20378 raft_consensus.cc:2214] T cdcca06f278544a7b2cc376ef47fde17 P e8cb9d247c364de2956352d4368be4f3 [term 1 FOLLOWER]: Leader election vote request: Granting yes vote for candidate 667824c990864570a89a4c4f2c4e5ab5 in term 1.
+I0426 18:02:14.396093 20435 leader_election.cc:362] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5 [CANDIDATE]: Term 1 election: Vote granted by peer 849e2ce84972434a997a3dfa1f77ae22
+I0426 18:02:14.396289 20435 leader_election.cc:257] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5 [CANDIDATE]: Term 1 election: Election decided. Result: candidate won.
+I0426 18:02:14.396751 20571 raft_consensus.cc:2699] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5: Snoozing failure detection for 1.836s (election complete)
+I0426 18:02:14.396967 20571 raft_consensus.cc:2506] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5 [term 1 FOLLOWER]: Leader election won for term 1
+I0426 18:02:14.396976 20433 leader_election.cc:362] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5 [CANDIDATE]: Term 1 election: Vote granted by peer e8cb9d247c364de2956352d4368be4f3
+I0426 18:02:14.398319 20571 raft_consensus.cc:571] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5 [term 1 LEADER]: Becoming Leader. State: Replica: 667824c990864570a89a4c4f2c4e5ab5, State: Running, Role: LEADER
+I0426 18:02:14.398808 20571 consensus_queue.cc:204] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5 [LEADER]: Queue going to LEADER mode. State: All replicated index: 0, Majority replicated index: 0, Committed index: 0, Last appended: 0.0, Last appended by leader: 0, Current term: 1, Majority size: 2, State: 0, Mode: LEADER, active raft config: opid_index: -1 OBSOLETE_local: false peers { permanent_uuid: "e8cb9d247c364de2956352d4368be4f3" member_type: VOTER last_known_addr { host: "127.19.158.194" port: 34029 } } peers { permanent_uuid: "667824c990864570a89a4c4f2c4e5ab5" member_type: VOTER last_known_addr { host: "127.19.158.195" port: 44330 } } peers { permanent_uuid: "849e2ce84972434a997a3dfa1f77ae22" member_type: VOTER last_known_addr { host: "127.19.158.193" port: 39806 } }
+I0426 18:02:14.405359 20131 catalog_manager.cc:3716] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5 reported cstate change: term changed from 0 to 1, leader changed from <none> to 667824c990864570a89a4c4f2c4e5ab5 (127.19.158.195). New cstate: current_term: 1 leader_uuid: "667824c990864570a89a4c4f2c4e5ab5" committed_config { opid_index: -1 OBSOLETE_local: false peers { permanent_uuid: "e8cb9d247c364de2956352d4368be4f3" member_type: VOTER last_known_addr { host: "127.19.158.194" port: 34029 } health_report { overall_health: UNKNOWN } } peers { permanent_uuid: "667824c990864570a89a4c4f2c4e5ab5" member_type: VOTER last_known_addr { host: "127.19.158.195" port: 44330 } health_report { overall_health: HEALTHY } } peers { permanent_uuid: "849e2ce84972434a997a3dfa1f77ae22" member_type: VOTER last_known_addr { host: "127.19.158.193" port: 39806 } health_report { overall_health: UNKNOWN } } }
+I0426 18:02:14.440295 20091 external_mini_cluster.cc:509] 3 TS(s) registered with all masters
+I0426 18:02:14.443260 20091 ts_itest-base.cc:233] Waiting for 1 tablets on tserver 849e2ce84972434a997a3dfa1f77ae22 to finish bootstrapping
+I0426 18:02:14.455464 20091 ts_itest-base.cc:233] Waiting for 1 tablets on tserver e8cb9d247c364de2956352d4368be4f3 to finish bootstrapping
+I0426 18:02:14.466791 20091 ts_itest-base.cc:233] Waiting for 1 tablets on tserver 667824c990864570a89a4c4f2c4e5ab5 to finish bootstrapping
+I0426 18:02:14.513281 20378 raft_consensus.cc:1057] T cdcca06f278544a7b2cc376ef47fde17 P e8cb9d247c364de2956352d4368be4f3 [term 1 FOLLOWER]: Refusing update from remote peer 667824c990864570a89a4c4f2c4e5ab5: Log matching property violated. Preceding OpId in replica: term: 0 index: 0. Preceding OpId from leader: term: 1 index: 2. (index mismatch)
+I0426 18:02:14.515671 20576 consensus_queue.cc:963] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5 [LEADER]: Connected to new peer: Peer: permanent_uuid: "e8cb9d247c364de2956352d4368be4f3" member_type: VOTER last_known_addr { host: "127.19.158.194" port: 34029 }, Status: LMP_MISMATCH, Last received: 0.0, Next index: 1, Last known committed idx: 0, Time since last communication: 0.000s
+I0426 18:02:14.516553 20253 raft_consensus.cc:1057] T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22 [term 1 FOLLOWER]: Refusing update from remote peer 667824c990864570a89a4c4f2c4e5ab5: Log matching property violated. Preceding OpId in replica: term: 0 index: 0. Preceding OpId from leader: term: 1 index: 2. (index mismatch)
+I0426 18:02:14.518234 20576 consensus_queue.cc:963] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5 [LEADER]: Connected to new peer: Peer: permanent_uuid: "849e2ce84972434a997a3dfa1f77ae22" member_type: VOTER last_known_addr { host: "127.19.158.193" port: 39806 }, Status: LMP_MISMATCH, Last received: 0.0, Next index: 1, Last known committed idx: 0, Time since last communication: 0.000s
+Master Summary
+               UUID               |       Address        | Status
+----------------------------------+----------------------+---------
+ 08f726b6ca8e483486158eacd80e933a | 127.19.158.254:32815 | HEALTHY
+Fetched info from all 1 masters
+Connected to the leader master
+Tablet Server Summary
+               UUID               |       Address        | Status
+----------------------------------+----------------------+---------
+ 667824c990864570a89a4c4f2c4e5ab5 | 127.19.158.195:44330 | HEALTHY
+ 849e2ce84972434a997a3dfa1f77ae22 | 127.19.158.193:39806 | HEALTHY
+ e8cb9d247c364de2956352d4368be4f3 | 127.19.158.194:34029 | HEALTHY
+Fetched info from all 3 tablet servers
+Table TestTable is HEALTHY (1 tablet(s) checked)
+
+Summary by table
+   Name    | Status  | Total Tablets | Healthy | Recovering | Under-replicated | Unavailable
+-----------+---------+---------------+---------+------------+------------------+-------------
+ TestTable | HEALTHY | 1             | 1       | 0          | 0                | 0
+The metadata for 1 table(s) is HEALTHY
+Checksum finished in 0s: 0/3 replicas remaining (0B from disk, 150 rows summed)
+-----------------------
+TestTable
+-----------------------
+T cdcca06f278544a7b2cc376ef47fde17 P e8cb9d247c364de2956352d4368be4f3 (127.19.158.194:34029): Checksum: 108787617684
+T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22 (127.19.158.193:39806): Checksum: 108787617684
+T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5 (127.19.158.195:44330): Checksum: 108787617684
+
+I0426 18:02:14.745784 20091 log_verifier.cc:121] Checking tablet cdcca06f278544a7b2cc376ef47fde17
+I0426 18:02:14.866740 20091 log_verifier.cc:172] Verified matching terms for 6 ops in tablet cdcca06f278544a7b2cc376ef47fde17
+I0426 18:02:15.092761 20091 external_mini_cluster.cc:1011] Killing /tmp/dist-test-taskEpRJ5y/build/tsan/bin/kudu-tserver with pid 20425
+W0426 18:02:15.156270 20111 connection.cc:512] client connection to 127.19.158.195:44330 recv error: Network error: failed to read from TLS socket (remote: 127.19.158.195:44330): Connection reset by peer (error 104)
+W0426 18:02:15.158399 20310 connection.cc:512] server connection from 127.19.158.195:42376 recv error: Network error: failed to read from TLS socket (remote: 127.19.158.195:42376): Connection reset by peer (error 104)
+W0426 18:02:15.162487 20112 connection.cc:512] server connection from 127.19.158.195:59229 recv error: Network error: failed to read from TLS socket (remote: 127.19.158.195:59229): Connection reset by peer (error 104)
+W0426 18:02:15.165395 20184 connection.cc:512] server connection from 127.19.158.195:43998 recv error: Network error: failed to read from TLS socket (remote: 127.19.158.195:43998): Connection reset by peer (error 104)
+I0426 18:02:15.166775 20253 tablet_service.cc:1106] Received Run Leader Election RPC: tablet_id: "cdcca06f278544a7b2cc376ef47fde17"
+dest_uuid: "849e2ce84972434a997a3dfa1f77ae22"
+ from {username='slave'} at 127.0.0.1:58542
+I0426 18:02:15.167244 20253 raft_consensus.cc:435] T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22 [term 1 FOLLOWER]: Starting forced leader election (received explicit request)
+I0426 18:02:15.167485 20253 raft_consensus.cc:2699] T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22: Snoozing failure detection for 1.936s (starting election)
+I0426 18:02:15.167692 20253 raft_consensus.cc:2751] T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22 [term 1 FOLLOWER]: Advancing to term 2
+I0426 18:02:15.173108 20253 raft_consensus.cc:457] T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22 [term 2 FOLLOWER]: Starting forced leader election with config: opid_index: -1 OBSOLETE_local: false peers { permanent_uuid: "e8cb9d247c364de2956352d4368be4f3" member_type: VOTER last_known_addr { host: "127.19.158.194" port: 34029 } } peers { permanent_uuid: "667824c990864570a89a4c4f2c4e5ab5" member_type: VOTER last_known_addr { host: "127.19.158.195" port: 44330 } } peers { permanent_uuid: "849e2ce84972434a997a3dfa1f77ae22" member_type: VOTER last_known_addr { host: "127.19.158.193" port: 39806 } }
+I0426 18:02:15.182974 20253 leader_election.cc:230] T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22 [CANDIDATE]: Term 2 election: Requesting vote from peer e8cb9d247c364de2956352d4368be4f3
+I0426 18:02:15.189709 20253 leader_election.cc:230] T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22 [CANDIDATE]: Term 2 election: Requesting vote from peer 667824c990864570a89a4c4f2c4e5ab5
+W0426 18:02:15.157677 20551 connection.cc:512] client connection to 127.19.158.195:44330 recv error: Network error: failed to read from TLS socket (remote: 127.19.158.195:44330): Connection reset by peer (error 104)
+W0426 18:02:15.207605 20183 leader_election.cc:286] T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22 [CANDIDATE]: Term 2 election: RPC error from VoteRequest() call to peer 667824c990864570a89a4c4f2c4e5ab5: Network error: Client connection negotiation failed: client connection to 127.19.158.195:44330: connect: Connection refused (error 111)
+I0426 18:02:15.209192 20378 tablet_service.cc:994] Received RequestConsensusVote() RPC: tablet_id: "cdcca06f278544a7b2cc376ef47fde17" candidate_uuid: "849e2ce84972434a997a3dfa1f77ae22" candidate_term: 2 candidate_status { last_received { term: 1 index: 6 } } ignore_live_leader: true dest_uuid: "e8cb9d247c364de2956352d4368be4f3"
+I0426 18:02:15.209715 20378 raft_consensus.cc:2751] T cdcca06f278544a7b2cc376ef47fde17 P e8cb9d247c364de2956352d4368be4f3 [term 1 FOLLOWER]: Advancing to term 2
+I0426 18:02:15.209977 20378 raft_consensus.cc:2699] T cdcca06f278544a7b2cc376ef47fde17 P e8cb9d247c364de2956352d4368be4f3: Snoozing failure detection for 1.726s (vote granted)
+W0426 18:02:15.163483 20102 connection.cc:512] client connection to 127.19.158.195:44330 recv error: Network error: failed to read from TLS socket (remote: 127.19.158.195:44330): Connection reset by peer (error 104)
+I0426 18:02:15.215559 20378 raft_consensus.cc:2214] T cdcca06f278544a7b2cc376ef47fde17 P e8cb9d247c364de2956352d4368be4f3 [term 2 FOLLOWER]: Leader election vote request: Granting yes vote for candidate 849e2ce84972434a997a3dfa1f77ae22 in term 2.
+W0426 18:02:15.164324 20097 connection.cc:512] client connection to 127.19.158.195:44330 recv error: Network error: failed to read from TLS socket (remote: 127.19.158.195:44330): Connection reset by peer (error 104)
+I0426 18:02:15.216960 20183 leader_election.cc:362] T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22 [CANDIDATE]: Term 2 election: Vote granted by peer e8cb9d247c364de2956352d4368be4f3
+I0426 18:02:15.217273 20183 leader_election.cc:257] T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22 [CANDIDATE]: Term 2 election: Election decided. Result: candidate won.
+W0426 18:02:15.218904 20551 meta_cache.cc:216] Tablet cdcca06f278544a7b2cc376ef47fde17: Replica 667824c990864570a89a4c4f2c4e5ab5 (127.19.158.195:44330) has failed: Network error: Client connection negotiation failed: client connection to 127.19.158.195:44330: connect: Connection refused (error 111)
+I0426 18:02:15.230994 20622 raft_consensus.cc:2699] T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22: Snoozing failure detection for 2.212s (election complete)
+I0426 18:02:15.231458 20622 raft_consensus.cc:2506] T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22 [term 2 FOLLOWER]: Leader election won for term 2
+I0426 18:02:15.246575 20622 raft_consensus.cc:571] T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22 [term 2 LEADER]: Becoming Leader. State: Replica: 849e2ce84972434a997a3dfa1f77ae22, State: Running, Role: LEADER
+I0426 18:02:15.247300 20622 consensus_queue.cc:204] T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22 [LEADER]: Queue going to LEADER mode. State: All replicated index: 0, Majority replicated index: 6, Committed index: 6, Last appended: 1.6, Last appended by leader: 6, Current term: 2, Majority size: 2, State: 0, Mode: LEADER, active raft config: opid_index: -1 OBSOLETE_local: false peers { permanent_uuid: "e8cb9d247c364de2956352d4368be4f3" member_type: VOTER last_known_addr { host: "127.19.158.194" port: 34029 } } peers { permanent_uuid: "667824c990864570a89a4c4f2c4e5ab5" member_type: VOTER last_known_addr { host: "127.19.158.195" port: 44330 } } peers { permanent_uuid: "849e2ce84972434a997a3dfa1f77ae22" member_type: VOTER last_known_addr { host: "127.19.158.193" port: 39806 } }
+I0426 18:02:15.252295 20131 catalog_manager.cc:3716] T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22 reported cstate change: term changed from 1 to 2, leader changed from 667824c990864570a89a4c4f2c4e5ab5 (127.19.158.195) to 849e2ce84972434a997a3dfa1f77ae22 (127.19.158.193). New cstate: current_term: 2 leader_uuid: "849e2ce84972434a997a3dfa1f77ae22" committed_config { opid_index: -1 OBSOLETE_local: false peers { permanent_uuid: "e8cb9d247c364de2956352d4368be4f3" member_type: VOTER last_known_addr { host: "127.19.158.194" port: 34029 } health_report { overall_health: UNKNOWN } } peers { permanent_uuid: "667824c990864570a89a4c4f2c4e5ab5" member_type: VOTER last_known_addr { host: "127.19.158.195" port: 44330 } health_report { overall_health: UNKNOWN } } peers { permanent_uuid: "849e2ce84972434a997a3dfa1f77ae22" member_type: VOTER last_known_addr { host: "127.19.158.193" port: 39806 } health_report { overall_health: HEALTHY } } }
+W0426 18:02:15.297312 20183 consensus_peers.cc:434] T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22 -> Peer 667824c990864570a89a4c4f2c4e5ab5 (127.19.158.195:44330): Couldn't send request to peer 667824c990864570a89a4c4f2c4e5ab5 for tablet cdcca06f278544a7b2cc376ef47fde17. Status: Network error: Client connection negotiation failed: client connection to 127.19.158.195:44330: connect: Connection refused (error 111). Retrying in the next heartbeat period. Already tried 1 times.
+I0426 18:02:15.298542 20378 raft_consensus.cc:1057] T cdcca06f278544a7b2cc376ef47fde17 P e8cb9d247c364de2956352d4368be4f3 [term 2 FOLLOWER]: Refusing update from remote peer 849e2ce84972434a997a3dfa1f77ae22: Log matching property violated. Preceding OpId in replica: term: 1 index: 6. Preceding OpId from leader: term: 2 index: 8. (index mismatch)
+I0426 18:02:15.300113 20624 consensus_queue.cc:963] T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22 [LEADER]: Connected to new peer: Peer: permanent_uuid: "e8cb9d247c364de2956352d4368be4f3" member_type: VOTER last_known_addr { host: "127.19.158.194" port: 34029 }, Status: LMP_MISMATCH, Last received: 0.0, Next index: 7, Last known committed idx: 6, Time since last communication: 0.000s
+I0426 18:02:15.418908 20091 external_mini_cluster.cc:819] Running /tmp/dist-test-taskEpRJ5y/build/tsan/bin/kudu-tserver
+/tmp/dist-test-taskEpRJ5y/build/tsan/bin/kudu-tserver
+--fs_wal_dir=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-2/wal
+--fs_data_dirs=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-2/data
+--block_manager=log
+--rpc_bind_addresses=127.19.158.195:44330
+--local_ip_for_outbound_sockets=127.19.158.195
+--webserver_port=42457
+--webserver_interface=127.19.158.195
+--tserver_master_addrs=127.19.158.254:32815
+--never_fsync
+--ipki_server_key_size=1024
+--enable_minidumps=false
+--redact=none
+--metrics_log_interval_ms=1000
+--logtostderr
+--logbuflevel=-1
+--log_dir=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-2/logs
+--server_dump_info_path=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-2/data/info.pb
+--server_dump_info_format=pb
+--rpc_server_allow_ephemeral_ports
+--unlock_experimental_flags
+--unlock_unsafe_flags
+--log_cache_size_limit_mb=10
+--consensus_rpc_timeout_ms=1000 with env {}
+WARNING: Logging before InitGoogleLogging() is written to STDERR
+W0426 18:02:15.600291 20634 flags.cc:412] Enabled unsafe flag: --rpc_server_allow_ephemeral_ports=true
+W0426 18:02:15.600889 20634 flags.cc:412] Enabled unsafe flag: --never_fsync=true
+W0426 18:02:15.616897 20634 flags.cc:412] Enabled experimental flag: --ipki_server_key_size=1024
+W0426 18:02:15.617478 20634 flags.cc:412] Enabled experimental flag: --local_ip_for_outbound_sockets=127.19.158.195
+I0426 18:02:15.641549 20634 tablet_server_main.cc:72] Tablet server non-default flags:
+--consensus_rpc_timeout_ms=1000
+--log_cache_size_limit_mb=10
+--fs_data_dirs=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-2/data
+--fs_wal_dir=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-2/wal
+--ipki_server_key_size=1024
+--rpc_bind_addresses=127.19.158.195:44330
+--rpc_server_allow_ephemeral_ports=true
+--metrics_log_interval_ms=1000
+--server_dump_info_format=pb
+--server_dump_info_path=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-2/data/info.pb
+--webserver_interface=127.19.158.195
+--webserver_port=42457
+--tserver_master_addrs=127.19.158.254:32815
+--never_fsync=true
+--redact=none
+--unlock_experimental_flags=true
+--unlock_unsafe_flags=true
+--enable_minidumps=false
+--local_ip_for_outbound_sockets=127.19.158.195
+--log_dir=/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-2/logs
+--logbuflevel=-1
+--logtostderr=true
+Tablet server version:
+kudu 1.8.0-SNAPSHOT
+revision c9307f8eb89fd99c1492b5e53812f2cdc1adffb4
+build type FASTDEBUG
+built by None at 26 Apr 2018 18:00:48 UTC on jenkins-slave-vn0g
+build id 13197
+TSAN enabled
+I0426 18:02:15.655854 20634 tablet_server_main.cc:79] Initializing tablet server...
+I0426 18:02:15.658774 20634 system_ntp.cc:143] NTP initialized. Skew: 500ppm Current error: 15547us
+I0426 18:02:15.659525 20634 fs_manager.cc:260] Metadata directory not provided
+I0426 18:02:15.659799 20634 fs_manager.cc:266] Using write-ahead log directory (fs_wal_dir) as metadata directory
+I0426 18:02:15.668844 20634 fs_manager.cc:397] Time spent opening directory manager: real 0.006s	user 0.004s	sys 0.000s
+I0426 18:02:15.669895 20634 env_posix.cc:1643] Not raising this process' open files per process limit of 65536; it is already as high as it can go
+I0426 18:02:15.670699 20634 file_cache.cc:470] Constructed file cache lbm with capacity 26214
+I0426 18:02:15.682560 20634 fs_manager.cc:417] Time spent opening block manager: real 0.003s	user 0.000s	sys 0.004s
+I0426 18:02:15.682811 20634 fs_manager.cc:428] Opened local filesystem: /tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-2/data,/tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-2/wal
+uuid: "667824c990864570a89a4c4f2c4e5ab5"
+format_stamp: "Formatted at 2018-04-26 18:02:13 on dist-test-slave-dist-test-slave-qvfl"
+I0426 18:02:15.685031 20634 fs_report.cc:347] Block manager report
+--------------------
+1 data directories: /tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-2/data/data
+Total live blocks: 0
+Total live bytes: 0
+Total live bytes (after alignment): 0
+Total number of LBM containers: 0 (0 full)
+Did not check for missing blocks
+Did not check for orphaned blocks
+Total full LBM containers with extra space: 0 (0 repaired)
+Total full LBM container extra space in bytes: 0 (0 repaired)
+Total incomplete LBM containers: 0 (0 repaired)
+Total LBM partial records: 0 (0 repaired)
+W0426 18:02:15.743782 20183 consensus_peers.cc:434] T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22 -> Peer 667824c990864570a89a4c4f2c4e5ab5 (127.19.158.195:44330): Couldn't send request to peer 667824c990864570a89a4c4f2c4e5ab5 for tablet cdcca06f278544a7b2cc376ef47fde17. Status: Network error: Client connection negotiation failed: client connection to 127.19.158.195:44330: connect: Connection refused (error 111). Retrying in the next heartbeat period. Already tried 2 times.
+I0426 18:02:15.980309 20634 env_posix.cc:1643] Not raising this process' running threads per effective uid limit of 60284; it is already as high as it can go
+I0426 18:02:15.984465 20634 ts_tablet_manager.cc:344] Loading tablet metadata (0/1 complete)
+I0426 18:02:15.984674 20634 ts_tablet_manager.cc:1005] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5: Loading tablet metadata
+I0426 18:02:15.992148 20634 ts_tablet_manager.cc:356] Loaded tablet metadata (1 live tablets)
+I0426 18:02:15.997766 20634 ts_tablet_manager.cc:1173] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5: Registered tablet (data state: TABLET_DATA_READY)
+I0426 18:02:16.002583 20651 ts_tablet_manager.cc:1028] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5: Bootstrapping tablet
+I0426 18:02:16.003321 20651 tablet_bootstrap.cc:436] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5: Bootstrap starting.
+I0426 18:02:16.042874 20651 log.cc:520] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5: Log is configured to *not* fsync() on all Append() calls
+I0426 18:02:16.015276 20634 tablet_server_main.cc:84] Starting tablet server...
+I0426 18:02:16.113045 20651 tablet_bootstrap.cc:436] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5: Bootstrap replayed 1/1 log segments. Stats: ops{read=6 overwritten=0 applied=6 ignored=0} inserts{seen=50 ignored=0} mutations{seen=0 ignored=0} orphaned_commits=0. Pending: 0 replicates
+I0426 18:02:16.116505 20651 tablet_bootstrap.cc:436] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5: Bootstrap complete.
+I0426 18:02:16.118551 20651 ts_tablet_manager.cc:1045] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5: Time spent bootstrapping tablet: real 0.116s	user 0.064s	sys 0.012s
+I0426 18:02:16.148969 20651 raft_consensus.cc:303] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5 [term 1 FOLLOWER]: Replica starting. Triggering 0 pending transactions. Active config: opid_index: -1 OBSOLETE_local: false peers { permanent_uuid: "e8cb9d247c364de2956352d4368be4f3" member_type: VOTER last_known_addr { host: "127.19.158.194" port: 34029 } } peers { permanent_uuid: "667824c990864570a89a4c4f2c4e5ab5" member_type: VOTER last_known_addr { host: "127.19.158.195" port: 44330 } } peers { permanent_uuid: "849e2ce84972434a997a3dfa1f77ae22" member_type: VOTER last_known_addr { host: "127.19.158.193" port: 39806 } }
+I0426 18:02:16.158123 20651 raft_consensus.cc:604] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5 [term 1 FOLLOWER]: Becoming Follower/Learner. State: Replica: 667824c990864570a89a4c4f2c4e5ab5, State: Initialized, Role: FOLLOWER
+I0426 18:02:16.159394 20651 consensus_queue.cc:227] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5 [NON_LEADER]: Queue going to NON_LEADER mode. State: All replicated index: 0, Majority replicated index: 0, Committed index: 6, Last appended: 1.6, Last appended by leader: 6, Current term: 0, Majority size: -1, State: 0, Mode: NON_LEADER, active raft config: opid_index: -1 OBSOLETE_local: false peers { permanent_uuid: "e8cb9d247c364de2956352d4368be4f3" member_type: VOTER last_known_addr { host: "127.19.158.194" port: 34029 } } peers { permanent_uuid: "667824c990864570a89a4c4f2c4e5ab5" member_type: VOTER last_known_addr { host: "127.19.158.195" port: 44330 } } peers { permanent_uuid: "849e2ce84972434a997a3dfa1f77ae22" member_type: VOTER last_known_addr { host: "127.19.158.193" port: 39806 } }
+I0426 18:02:16.165856 20651 ts_tablet_manager.cc:1073] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5: Time spent starting tablet: real 0.047s	user 0.028s	sys 0.012s
+W0426 18:02:16.272392 20183 consensus_peers.cc:434] T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22 -> Peer 667824c990864570a89a4c4f2c4e5ab5 (127.19.158.195:44330): Couldn't send request to peer 667824c990864570a89a4c4f2c4e5ab5 for tablet cdcca06f278544a7b2cc376ef47fde17. Status: Network error: Client connection negotiation failed: client connection to 127.19.158.195:44330: connect: Connection refused (error 111). Retrying in the next heartbeat period. Already tried 3 times.
+I0426 18:02:16.385583 20634 rpc_server.cc:200] RPC server started. Bound to: 127.19.158.195:44330
+I0426 18:02:16.387074 20634 webserver.cc:173] Starting webserver on 127.19.158.195:42457
+I0426 18:02:16.387246 20634 webserver.cc:184] Document root disabled
+I0426 18:02:16.389330 20634 webserver.cc:311] Webserver started. Bound to: http://127.19.158.195:42457/
+I0426 18:02:16.390461 20634 server_base.cc:606] Dumped server information to /tmp/dist-test-taskEpRJ5y/test-tmp/raft_consensus_election-itest.0.RaftConsensusElectionITest.RunLeaderElection.1524765731449908-20091/raft_consensus-itest-cluster/ts-2/data/info.pb
+I0426 18:02:16.399819 20091 external_mini_cluster.cc:881] Started /tmp/dist-test-taskEpRJ5y/build/tsan/bin/kudu-tserver as pid 20634
+I0426 18:02:16.403182 20634 tablet_server_main.cc:87] Tablet server successfully started.
+I0426 18:02:16.404460 20760 process_memory.cc:182] Process hard memory limit is 11.777631 GB
+I0426 18:02:16.405865 20760 process_memory.cc:184] Process soft memory limit is 9.422105 GB
+I0426 18:02:16.406112 20760 process_memory.cc:187] Process memory pressure threshold is 7.066578 GB
+I0426 18:02:16.420740 20759 heartbeater.cc:346] Connected to a master server at 127.19.158.254:32815
+I0426 18:02:16.421133 20759 heartbeater.cc:426] Registering TS with master...
+I0426 18:02:16.421840 20759 heartbeater.cc:475] Master 127.19.158.254:32815 requested a full tablet report, sending...
+I0426 18:02:16.424929 20131 ts_manager.cc:87] Re-registered known tserver with Master: 667824c990864570a89a4c4f2c4e5ab5 (127.19.158.195:44330)
+I0426 18:02:16.427646 20131 master_service.cc:249] Signed X509 certificate for tserver {username='slave'} at 127.19.158.195:44078
+Master Summary
+               UUID               |       Address        | Status
+----------------------------------+----------------------+---------
+ 08f726b6ca8e483486158eacd80e933a | 127.19.158.254:32815 | HEALTHY
+Fetched info from all 1 masters
+Connected to the leader master
+Tablet Server Summary
+               UUID               |       Address        | Status
+----------------------------------+----------------------+---------
+ 667824c990864570a89a4c4f2c4e5ab5 | 127.19.158.195:44330 | HEALTHY
+ 849e2ce84972434a997a3dfa1f77ae22 | 127.19.158.193:39806 | HEALTHY
+ e8cb9d247c364de2956352d4368be4f3 | 127.19.158.194:34029 | HEALTHY
+Fetched info from all 3 tablet servers
+Tablet cdcca06f278544a7b2cc376ef47fde17 of table 'TestTable' is conflicted: Tablet cdcca06f278544a7b2cc376ef47fde17 of table 'TestTable' replicas' active configs disagree with the master's
+  667824c990864570a89a4c4f2c4e5ab5 (127.19.158.195:44330): RUNNING
+  849e2ce84972434a997a3dfa1f77ae22 (127.19.158.193:39806): RUNNING [LEADER]
+  e8cb9d247c364de2956352d4368be4f3 (127.19.158.194:34029): RUNNING
+  All the peers reported by the master and tablet servers are:
+  A = 667824c990864570a89a4c4f2c4e5ab5
+  B = 849e2ce84972434a997a3dfa1f77ae22
+  C = e8cb9d247c364de2956352d4368be4f3
+The consensus matrix is:
+ Config source |   Replicas   | Current term | Config index | Committed?
+---------------+--------------+--------------+--------------+------------
+ master        | A   B*  C    |              |              | Yes
+ A             | A   B   C    | 1            | -1           | Yes
+ B             | A   B*  C    | 2            | -1           | Yes
+ C             | A   B*  C    | 2            | -1           | Yes
+
+Table TestTable has 1 tablet(s) with mismatched consensus
+
+Summary by table
+   Name    |   Status    | Total Tablets | Healthy | Recovering | Under-replicated | Unavailable
+-----------+-------------+---------------+---------+------------+------------------+-------------
+ TestTable | UNAVAILABLE | 1             | 0       | 0          | 0                | 1
+I0426 18:02:16.616920 20091 cluster_verifier.cc:82] Check not successful yet, sleeping and retrying: Corruption: 1 out of 1 table(s) are not healthy
+Master Summary
+               UUID               |       Address        | Status
+----------------------------------+----------------------+---------
+ 08f726b6ca8e483486158eacd80e933a | 127.19.158.254:32815 | HEALTHY
+Fetched info from all 1 masters
+Connected to the leader master
+I0426 18:02:16.866853 20716 raft_consensus.cc:2751] T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5 [term 1 FOLLOWER]: Advancing to term 2
+Tablet Server Summary
+               UUID               |       Address        | Status
+----------------------------------+----------------------+---------
+ 667824c990864570a89a4c4f2c4e5ab5 | 127.19.158.195:44330 | HEALTHY
+ 849e2ce84972434a997a3dfa1f77ae22 | 127.19.158.193:39806 | HEALTHY
+ e8cb9d247c364de2956352d4368be4f3 | 127.19.158.194:34029 | HEALTHY
+Fetched info from all 3 tablet servers
+Tablet cdcca06f278544a7b2cc376ef47fde17 of table 'TestTable' is conflicted: Tablet cdcca06f278544a7b2cc376ef47fde17 of table 'TestTable' replicas' active configs disagree with the master's
+  667824c990864570a89a4c4f2c4e5ab5 (127.19.158.195:44330): RUNNING
+  849e2ce84972434a997a3dfa1f77ae22 (127.19.158.193:39806): RUNNING [LEADER]
+  e8cb9d247c364de2956352d4368be4f3 (127.19.158.194:34029): RUNNING
+  All the peers reported by the master and tablet servers are:
+  A = 667824c990864570a89a4c4f2c4e5ab5
+  B = 849e2ce84972434a997a3dfa1f77ae22
+  C = e8cb9d247c364de2956352d4368be4f3
+The consensus matrix is:
+ Config source |   Replicas   | Current term | Config index | Committed?
+---------------+--------------+--------------+--------------+------------
+ master        | A   B*  C    |              |              | Yes
+ A             | A   B   C    | 1            | -1           | Yes
+ B             | A   B*  C    | 2            | -1           | Yes
+ C             | A   B*  C    | 2            | -1           | Yes
+
+Table TestTable has 1 tablet(s) with mismatched consensus
+
+Summary by table
+I0426 18:02:16.872921 20759 heartbeater.cc:467] Master 127.19.158.254:32815 was elected leader, sending a full tablet report...
+   Name    |   Status    | Total Tablets | Healthy | Recovering | Under-replicated | Unavailable
+-----------+-------------+---------------+---------+------------+------------------+-------------
+ TestTable | UNAVAILABLE | 1             | 0       | 0          | 0                | 1
+I0426 18:02:16.883785 20091 cluster_verifier.cc:82] Check not successful yet, sleeping and retrying: Corruption: 1 out of 1 table(s) are not healthy
+Master Summary
+               UUID               |       Address        | Status
+----------------------------------+----------------------+---------
+ 08f726b6ca8e483486158eacd80e933a | 127.19.158.254:32815 | HEALTHY
+Fetched info from all 1 masters
+Connected to the leader master
+Tablet Server Summary
+               UUID               |       Address        | Status
+----------------------------------+----------------------+---------
+ 667824c990864570a89a4c4f2c4e5ab5 | 127.19.158.195:44330 | HEALTHY
+ 849e2ce84972434a997a3dfa1f77ae22 | 127.19.158.193:39806 | HEALTHY
+ e8cb9d247c364de2956352d4368be4f3 | 127.19.158.194:34029 | HEALTHY
+Fetched info from all 3 tablet servers
+Table TestTable is HEALTHY (1 tablet(s) checked)
+
+Summary by table
+   Name    | Status  | Total Tablets | Healthy | Recovering | Under-replicated | Unavailable
+-----------+---------+---------------+---------+------------+------------------+-------------
+ TestTable | HEALTHY | 1             | 1       | 0          | 0                | 0
+The metadata for 1 table(s) is HEALTHY
+Checksum finished in 0s: 0/3 replicas remaining (0B from disk, 300 rows summed)
+-----------------------
+TestTable
+-----------------------
+T cdcca06f278544a7b2cc376ef47fde17 P 849e2ce84972434a997a3dfa1f77ae22 (127.19.158.193:39806): Checksum: 214634478652
+T cdcca06f278544a7b2cc376ef47fde17 P e8cb9d247c364de2956352d4368be4f3 (127.19.158.194:34029): Checksum: 214634478652
+T cdcca06f278544a7b2cc376ef47fde17 P 667824c990864570a89a4c4f2c4e5ab5 (127.19.158.195:44330): Checksum: 214634478652
+
+I0426 18:02:17.218503 20091 log_verifier.cc:121] Checking tablet cdcca06f278544a7b2cc376ef47fde17
+I0426 18:02:17.296936 20091 log_verifier.cc:172] Verified matching terms for 12 ops in tablet cdcca06f278544a7b2cc376ef47fde17
+==================
+WARNING: ThreadSanitizer: data race (pid=20091)
+  Write of size 8 at 0x7b2c00001558 by main thread:
+    #0 operator delete(void*) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/llvm-6.0.0.src/projects/compiler-rt/lib/tsan/rtl/tsan_new_delete.cc:119 (raft_consensus_election-itest+0x4cc9d1)
+    #1 std::__1::default_delete<kudu::ThreadPoolToken>::operator()(kudu::ThreadPoolToken*) const /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/c++/v1/memory:2285:5 (libkudu_util.so+0x1c42f3)
+    #2 std::__1::unique_ptr<kudu::ThreadPoolToken, std::__1::default_delete<kudu::ThreadPoolToken> >::reset(kudu::ThreadPoolToken*) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/c++/v1/memory:2598 (libkudu_util.so+0x1c42f3)
+    #3 std::__1::unique_ptr<kudu::ThreadPoolToken, std::__1::default_delete<kudu::ThreadPoolToken> >::~unique_ptr() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/c++/v1/memory:2552 (libkudu_util.so+0x1c42f3)
+    #4 kudu::ThreadPool::~ThreadPool() /home/jenkins-slave/workspace/kudu-master/0/src/kudu/util/threadpool.cc:342 (libkudu_util.so+0x1c42f3)
+    #5 kudu::DefaultDeleter<kudu::ThreadPool>::operator()(kudu::ThreadPool*) const /home/jenkins-slave/workspace/kudu-master/0/src/kudu/gutil/gscoped_ptr.h:145:5 (libksck.so+0x4e4ae)
+    #6 kudu::internal::gscoped_ptr_impl<kudu::ThreadPool, kudu::DefaultDeleter<kudu::ThreadPool> >::~gscoped_ptr_impl() /home/jenkins-slave/workspace/kudu-master/0/src/kudu/gutil/gscoped_ptr.h:228:7 (libksck.so+0x4e479)
+    #7 gscoped_ptr<kudu::ThreadPool, kudu::DefaultDeleter<kudu::ThreadPool> >::~gscoped_ptr() /home/jenkins-slave/workspace/kudu-master/0/src/kudu/gutil/gscoped_ptr.h:318:7 (libksck.so+0x48269)
+    #8 kudu::DnsResolver::~DnsResolver() /home/jenkins-slave/workspace/kudu-master/0/src/kudu/util/net/dns_resolver.cc:47:1 (libkudu_util.so+0x18a9fa)
+    #9 kudu::DefaultDeleter<kudu::DnsResolver>::operator()(kudu::DnsResolver*) const /home/jenkins-slave/workspace/kudu-master/0/src/kudu/gutil/gscoped_ptr.h:145:5 (libkudu_client.so+0xd568e)
+    #10 kudu::internal::gscoped_ptr_impl<kudu::DnsResolver, kudu::DefaultDeleter<kudu::DnsResolver> >::reset(kudu::DnsResolver*) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/gutil/gscoped_ptr.h:254:7 (libkudu_client.so+0xd5644)
+    #11 gscoped_ptr<kudu::DnsResolver, kudu::DefaultDeleter<kudu::DnsResolver> >::reset(kudu::DnsResolver*) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/gutil/gscoped_ptr.h:375:46 (libkudu_client.so+0xca410)
+    #12 kudu::client::KuduClient::Data::~Data() /home/jenkins-slave/workspace/kudu-master/0/src/kudu/client/client-internal.cc:370:17 (libkudu_client.so+0xdaffd)
+    #13 kudu::client::KuduClient::~KuduClient() /home/jenkins-slave/workspace/kudu-master/0/src/kudu/client/client.cc:378:3 (libkudu_client.so+0xbff7c)
+    #14 std::__1::default_delete<kudu::client::KuduClient>::operator()(kudu::client::KuduClient*) const /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/c++/v1/memory:2285:5 (libkudu_client.so+0xd504b)
+    #15 std::__1::__shared_ptr_pointer<kudu::client::KuduClient*, std::__1::default_delete<kudu::client::KuduClient>, std::__1::allocator<kudu::client::KuduClient> >::__on_zero_shared() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/c++/v1/memory:3586 (libkudu_client.so+0xd504b)
+    #16 std::__1::__shared_count::__release_shared() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/c++/v1/memory:3490:9 (raft_consensus_election-itest+0x4daeae)
+    #17 std::__1::__shared_weak_count::__release_shared() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/c++/v1/memory:3532 (raft_consensus_election-itest+0x4daeae)
+    #18 std::__1::shared_ptr<kudu::client::KuduClient>::~shared_ptr() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/c++/v1/memory:4468 (raft_consensus_election-itest+0x4daeae)
+    #19 kudu::tserver::TabletServerIntegrationTestBase::~TabletServerIntegrationTestBase() /home/jenkins-slave/workspace/kudu-master/0/src/kudu/integration-tests/ts_itest-base.h:46:7 (raft_consensus_election-itest+0x4dad9f)
+    #20 kudu::tserver::RaftConsensusITestBase::~RaftConsensusITestBase() /home/jenkins-slave/workspace/kudu-master/0/src/kudu/integration-tests/raft_consensus-itest-base.h:43:7 (raft_consensus_election-itest+0x4da1af)
+    #21 kudu::tserver::RaftConsensusElectionITest_RunLeaderElection_Test::~RaftConsensusElectionITest_RunLeaderElection_Test() /home/jenkins-slave/workspace/kudu-master/0/src/kudu/integration-tests/raft_consensus_election-itest.cc:143:1 (raft_consensus_election-itest+0x4da1d9)
+    #22 testing::Test::DeleteSelf_() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/include/gtest/gtest.h:453:24 (libgmock.so+0x55a07)
+    #23 void testing::internal::HandleSehExceptionsInMethodIfSupported<testing::Test, void>(testing::Test*, void (testing::Test::*)(), char const*) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2402:10 (libgmock.so+0x552ef)
+    #24 void testing::internal::HandleExceptionsInMethodIfSupported<testing::Test, void>(testing::Test*, void (testing::Test::*)(), char const*) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2438 (libgmock.so+0x552ef)
+    #25 testing::TestInfo::Run() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2661:3 (libgmock.so+0x357b8)
+    #26 testing::TestCase::Run() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2774:28 (libgmock.so+0x36226)
+    #27 testing::internal::UnitTestImpl::RunAllTests() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:4649:43 (libgmock.so+0x425fa)
+    #28 bool testing::internal::HandleSehExceptionsInMethodIfSupported<testing::internal::UnitTestImpl, bool>(testing::internal::UnitTestImpl*, bool (testing::internal::UnitTestImpl::*)(), char const*) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2402:10 (libgmock.so+0x5625f)
+    #29 bool testing::internal::HandleExceptionsInMethodIfSupported<testing::internal::UnitTestImpl, bool>(testing::internal::UnitTestImpl*, bool (testing::internal::UnitTestImpl::*)(), char const*) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2438 (libgmock.so+0x5625f)
+    #30 testing::UnitTest::Run() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:4257:10 (libgmock.so+0x41ee2)
+    #31 RUN_ALL_TESTS() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/gtest/gtest.h:2233:46 (libkudu_test_main.so+0x340b)
+    #32 main /home/jenkins-slave/workspace/kudu-master/0/src/kudu/util/test_main.cc:106:13 (libkudu_test_main.so+0x2bd6)
+
+  Previous read of size 8 at 0x7b2c00001558 by thread T9:
+    #0 scoped_refptr<kudu::Histogram>::operator kudu::Histogram* scoped_refptr<kudu::Histogram>::*() const /home/jenkins-slave/workspace/kudu-master/0/src/kudu/gutil/ref_counted.h:280:38 (libkrpc.so+0xc2e39)
+    #1 kudu::ThreadPool::DoSubmit(std::__1::shared_ptr<kudu::Runnable>, kudu::ThreadPoolToken*) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/util/threadpool.cc:551:7 (libkudu_util.so+0x1c3180)
+    #2 kudu::ThreadPool::Submit(std::__1::shared_ptr<kudu::Runnable>) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/util/threadpool.cc:458:10 (libkudu_util.so+0x1c4c5f)
+    #3 kudu::ThreadPool::SubmitFunc(boost::function<void ()>) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/util/threadpool.cc:454:10 (libkudu_util.so+0x1c4cf1)
+    #4 kudu::DnsResolver::ResolveAddresses(kudu::HostPort const&, std::__1::vector<kudu::Sockaddr, std::__1::allocator<kudu::Sockaddr> >*, kudu::Callback<void (kudu::Status const&)> const&) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/util/net/dns_resolver.cc:59:21 (libkudu_util.so+0x18aaab)
+    #5 kudu::client::internal::RemoteTabletServer::InitProxy(kudu::client::KuduClient*, kudu::Callback<void (kudu::Status const&)> const&) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/client/meta_cache.cc:144:33 (libkudu_client.so+0xff663)
+    #6 kudu::client::internal::MetaCacheServerPicker::PickLeader(kudu::Callback<void (kudu::Status const&, kudu::client::internal::RemoteTabletServer*)> const&, kudu::MonoTime const&) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/client/meta_cache.cc:450:11 (libkudu_client.so+0x10176b)
+    #7 kudu::rpc::RetriableRpc<kudu::client::internal::RemoteTabletServer, kudu::tserver::WriteRequestPB, kudu::tserver::WriteResponsePB>::SendRpc() /home/jenkins-slave/workspace/kudu-master/0/src/kudu/rpc/retriable_rpc.h:144:19 (libkudu_client.so+0xb6988)
+    #8 kudu::rpc::RpcRetrier::DelayedRetryCb(kudu::rpc::Rpc*, kudu::Status const&) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/rpc/rpc.cc:94:10 (libkrpc.so+0xd5438)
+    #9 boost::_mfi::mf2<void, kudu::rpc::RpcRetrier, kudu::rpc::Rpc*, kudu::Status const&>::operator()(kudu::rpc::RpcRetrier*, kudu::rpc::Rpc*, kudu::Status const&) const /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/boost/bind/mem_fn_template.hpp:280:29 (libkrpc.so+0xd5e1a)
+    #10 void boost::_bi::list3<boost::_bi::value<kudu::rpc::RpcRetrier*>, boost::_bi::value<kudu::rpc::Rpc*>, boost::arg<1> >::operator()<boost::_mfi::mf2<void, kudu::rpc::RpcRetrier, kudu::rpc::Rpc*, kudu::Status const&>, boost::_bi::rrlist1<kudu::Status const&> >(boost::_bi::type<void>, boost::_mfi::mf2<void, kudu::rpc::RpcRetrier, kudu::rpc::Rpc*, kudu::Status const&>&, boost::_bi::rrlist1<kudu::Status const&>&, int) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/boost/bind/bind.hpp:398:9 (libkrpc.so+0xd5d52)
+    #11 void boost::_bi::bind_t<void, boost::_mfi::mf2<void, kudu::rpc::RpcRetrier, kudu::rpc::Rpc*, kudu::Status const&>, boost::_bi::list3<boost::_bi::value<kudu::rpc::RpcRetrier*>, boost::_bi::value<kudu::rpc::Rpc*>, boost::arg<1> > >::operator()<kudu::Status const&>(kudu::Status const&) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/boost/bind/bind.hpp:1234:16 (libkrpc.so+0xd5c78)
+    #12 boost::detail::function::void_function_obj_invoker1<boost::_bi::bind_t<void, boost::_mfi::mf2<void, kudu::rpc::RpcRetrier, kudu::rpc::Rpc*, kudu::Status const&>, boost::_bi::list3<boost::_bi::value<kudu::rpc::RpcRetrier*>, boost::_bi::value<kudu::rpc::Rpc*>, boost::arg<1> > >, void, kudu::Status const&>::invoke(boost::detail::function::function_buffer&, kudu::Status const&) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/boost/function/function_template.hpp:159:11 (libkrpc.so+0xd5a13)
+    #13 boost::function1<void, kudu::Status const&>::operator()(kudu::Status const&) const /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/boost/function/function_template.hpp:770:14 (libkrpc.so+0xc4014)
+    #14 kudu::rpc::DelayedTask::TimerHandler(ev::timer&, int) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/rpc/reactor.cc:705:5 (libkrpc.so+0xc18a6)
+    #15 void ev::base<ev_timer, ev::timer>::method_thunk<kudu::rpc::DelayedTask, &kudu::rpc::DelayedTask::TimerHandler>(ev_loop*, ev_timer*, int) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/ev++.h:479:7 (libkrpc.so+0xc970a)
+    #16 ev_invoke_pending /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/libev-4.20/ev.c:3155:11 (libev.so.4+0x9800)
+    #17 kudu::rpc::ReactorThread::InvokePendingCb(ev_loop*) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/rpc/reactor.cc:176:3 (libkrpc.so+0xbdaa5)
+    #18 ev_run /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/libev-4.20/ev.c:3555:7 (libev.so.4+0xa90d)
+    #19 ev::loop_ref::run(int) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/ev++.h:211:7 (libkrpc.so+0xc3708)
+    #20 kudu::rpc::ReactorThread::RunThread() /home/jenkins-slave/workspace/kudu-master/0/src/kudu/rpc/reactor.cc:471:9 (libkrpc.so+0xbdbea)
+    #21 boost::_mfi::mf0<void, kudu::rpc::ReactorThread>::operator()(kudu::rpc::ReactorThread*) const /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/boost/bind/mem_fn_template.hpp:49:29 (libkrpc.so+0xc79a9)
+    #22 void boost::_bi::list1<boost::_bi::value<kudu::rpc::ReactorThread*> >::operator()<boost::_mfi::mf0<void, kudu::rpc::ReactorThread>, boost::_bi::list0>(boost::_bi::type<void>, boost::_mfi::mf0<void, kudu::rpc::ReactorThread>&, boost::_bi::list0&, int) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/boost/bind/bind.hpp:259:9 (libkrpc.so+0xc78fa)
+    #23 boost::_bi::bind_t<void, boost::_mfi::mf0<void, kudu::rpc::ReactorThread>, boost::_bi::list1<boost::_bi::value<kudu::rpc::ReactorThread*> > >::operator()() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/boost/bind/bind.hpp:1222:16 (libkrpc.so+0xc7883)
+    #24 boost::detail::function::void_function_obj_invoker0<boost::_bi::bind_t<void, boost::_mfi::mf0<void, kudu::rpc::ReactorThread>, boost::_bi::list1<boost::_bi::value<kudu::rpc::ReactorThread*> > >, void>::invoke(boost::detail::function::function_buffer&) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/boost/function/function_template.hpp:159:11 (libkrpc.so+0xc7679)
+    #25 boost::function0<void>::operator()() const /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/boost/function/function_template.hpp:770:14 (libkrpc.so+0xb7781)
+    #26 kudu::Thread::SuperviseThread(void*) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/util/thread.cc:603:3 (libkudu_util.so+0x1bcff4)
+
+  As if synchronized via sleep:
+    #0 nanosleep /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/llvm-6.0.0.src/projects/compiler-rt/lib/tsan/rtl/tsan_interceptors.cc:355 (raft_consensus_election-itest+0x442f6a)
+    #1 base::SleepForNanoseconds(long) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/gutil/sysinfo.cc:89:10 (libgutil.so+0x61c92)
+    #2 kudu::SleepFor(kudu::MonoDelta const&) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/util/monotime.cc:267:3 (libkudu_util.so+0x1893b6)
+    #3 kudu::ClusterVerifier::CheckCluster() /home/jenkins-slave/workspace/kudu-master/0/src/kudu/integration-tests/cluster_verifier.cc:85:5 (libitest_util.so+0x5725d)
+    #4 kudu::tserver::TabletServerIntegrationTestBase::AssertAllReplicasAgree(int) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/integration-tests/ts_itest-base.cc:554:3 (libitest_util.so+0x73d9a)
+    #5 kudu::tserver::RaftConsensusElectionITest_RunLeaderElection_Test::TestBody() /home/jenkins-slave/workspace/kudu-master/0/src/kudu/integration-tests/raft_consensus_election-itest.cc:182:3 (raft_consensus_election-itest+0x4cffa3)
+    #6 void testing::internal::HandleSehExceptionsInMethodIfSupported<testing::Test, void>(testing::Test*, void (testing::Test::*)(), char const*) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2402:10 (libgmock.so+0x552ef)
+    #7 void testing::internal::HandleExceptionsInMethodIfSupported<testing::Test, void>(testing::Test*, void (testing::Test::*)(), char const*) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2438 (libgmock.so+0x552ef)
+    #8 testing::Test::Run() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2474:5 (libgmock.so+0x344b8)
+    #9 testing::TestInfo::Run() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2656:11 (libgmock.so+0x3574c)
+    #10 testing::TestCase::Run() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2774:28 (libgmock.so+0x36226)
+    #11 testing::internal::UnitTestImpl::RunAllTests() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:4649:43 (libgmock.so+0x425fa)
+    #12 bool testing::internal::HandleSehExceptionsInMethodIfSupported<testing::internal::UnitTestImpl, bool>(testing::internal::UnitTestImpl*, bool (testing::internal::UnitTestImpl::*)(), char const*) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2402:10 (libgmock.so+0x5625f)
+    #13 bool testing::internal::HandleExceptionsInMethodIfSupported<testing::internal::UnitTestImpl, bool>(testing::internal::UnitTestImpl*, bool (testing::internal::UnitTestImpl::*)(), char const*) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2438 (libgmock.so+0x5625f)
+    #14 testing::UnitTest::Run() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:4257:10 (libgmock.so+0x41ee2)
+    #15 RUN_ALL_TESTS() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/gtest/gtest.h:2233:46 (libkudu_test_main.so+0x340b)
+    #16 main /home/jenkins-slave/workspace/kudu-master/0/src/kudu/util/test_main.cc:106:13 (libkudu_test_main.so+0x2bd6)
+
+  Thread T9 'rpc reactor-205' (tid=20551, running) created by main thread at:
+    #0 pthread_create /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/llvm-6.0.0.src/projects/compiler-rt/lib/tsan/rtl/tsan_interceptors.cc:992 (raft_consensus_election-itest+0x43ced6)
+    #1 kudu::Thread::StartThread(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> > const&, std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> > const&, boost::function<void ()> const&, unsigned long, scoped_refptr<kudu::Thread>*) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/util/thread.cc:556:15 (libkudu_util.so+0x1bca1f)
+    #2 kudu::Status kudu::Thread::Create<void (kudu::rpc::ReactorThread::*)(), kudu::rpc::ReactorThread*>(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> > const&, std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> > const&, void (kudu::rpc::ReactorThread::* const&)(), kudu::rpc::ReactorThread* const&, scoped_refptr<kudu::Thread>*) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/util/thread.h:164:12 (libkrpc.so+0xc2dd5)
+    #3 kudu::rpc::ReactorThread::Init() /home/jenkins-slave/workspace/kudu-master/0/src/kudu/rpc/reactor.cc:168:10 (libkrpc.so+0xbd80e)
+    #4 kudu::rpc::Reactor::Init() /home/jenkins-slave/workspace/kudu-master/0/src/kudu/rpc/reactor.cc:722:18 (libkrpc.so+0xc1cd1)
+    #5 kudu::rpc::Messenger::Init() /home/jenkins-slave/workspace/kudu-master/0/src/kudu/rpc/messenger.cc:436:5 (libkrpc.so+0xa8402)
+    #6 kudu::rpc::MessengerBuilder::Build(std::__1::shared_ptr<kudu::rpc::Messenger>*) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/rpc/messenger.cc:199:3 (libkrpc.so+0xa7e5d)
+    #7 kudu::client::KuduClientBuilder::Build(std::__1::shared_ptr<kudu::client::KuduClient>*) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/client/client.cc:332:3 (libkudu_client.so+0xbf3e1)
+    #8 kudu::tserver::TabletServerIntegrationTestBase::CreateClient(std::__1::shared_ptr<kudu::client::KuduClient>*) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/integration-tests/ts_itest-base.cc:520:3 (libitest_util.so+0x73302)
+    #9 kudu::tserver::TabletServerIntegrationTestBase::BuildAndStart(std::__1::vector<std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> >, std::__1::allocator<std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> > > > const&, std::__1::vector<std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> >, std::__1::allocator<std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> > > > const&) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/integration-tests/ts_itest-base.cc:545:3 (libitest_util.so+0x73a1f)
+    #10 kudu::tserver::RaftConsensusElectionITest_RunLeaderElection_Test::TestBody() /home/jenkins-slave/workspace/kudu-master/0/src/kudu/integration-tests/raft_consensus_election-itest.cc:147:3 (raft_consensus_election-itest+0x4cfb63)
+    #11 void testing::internal::HandleSehExceptionsInMethodIfSupported<testing::Test, void>(testing::Test*, void (testing::Test::*)(), char const*) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2402:10 (libgmock.so+0x552ef)
+    #12 void testing::internal::HandleExceptionsInMethodIfSupported<testing::Test, void>(testing::Test*, void (testing::Test::*)(), char const*) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2438 (libgmock.so+0x552ef)
+    #13 testing::Test::Run() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2474:5 (libgmock.so+0x344b8)
+    #14 testing::TestInfo::Run() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2656:11 (libgmock.so+0x3574c)
+    #15 testing::TestCase::Run() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2774:28 (libgmock.so+0x36226)
+    #16 testing::internal::UnitTestImpl::RunAllTests() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:4649:43 (libgmock.so+0x425fa)
+    #17 bool testing::internal::HandleSehExceptionsInMethodIfSupported<testing::internal::UnitTestImpl, bool>(testing::internal::UnitTestImpl*, bool (testing::internal::UnitTestImpl::*)(), char const*) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2402:10 (libgmock.so+0x5625f)
+    #18 bool testing::internal::HandleExceptionsInMethodIfSupported<testing::internal::UnitTestImpl, bool>(testing::internal::UnitTestImpl*, bool (testing::internal::UnitTestImpl::*)(), char const*) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2438 (libgmock.so+0x5625f)
+    #19 testing::UnitTest::Run() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:4257:10 (libgmock.so+0x41ee2)
+    #20 RUN_ALL_TESTS() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/gtest/gtest.h:2233:46 (libkudu_test_main.so+0x340b)
+    #21 main /home/jenkins-slave/workspace/kudu-master/0/src/kudu/util/test_main.cc:106:13 (libkudu_test_main.so+0x2bd6)
+
+SUMMARY: ThreadSanitizer: data race /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/llvm-6.0.0.src/projects/compiler-rt/lib/tsan/rtl/tsan_new_delete.cc:119 in operator delete(void*)
+==================
+==================
+WARNING: ThreadSanitizer: data race (pid=20091)
+  Write of size 8 at 0x7b5000001ba0 by main thread:
+    #0 operator delete(void*) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/llvm-6.0.0.src/projects/compiler-rt/lib/tsan/rtl/tsan_new_delete.cc:119 (raft_consensus_election-itest+0x4cc9d1)
+    #1 kudu::DefaultDeleter<kudu::ThreadPool>::operator()(kudu::ThreadPool*) const /home/jenkins-slave/workspace/kudu-master/0/src/kudu/gutil/gscoped_ptr.h:145:5 (libksck.so+0x4e4b6)
+    #2 kudu::internal::gscoped_ptr_impl<kudu::ThreadPool, kudu::DefaultDeleter<kudu::ThreadPool> >::~gscoped_ptr_impl() /home/jenkins-slave/workspace/kudu-master/0/src/kudu/gutil/gscoped_ptr.h:228:7 (libksck.so+0x4e479)
+    #3 gscoped_ptr<kudu::ThreadPool, kudu::DefaultDeleter<kudu::ThreadPool> >::~gscoped_ptr() /home/jenkins-slave/workspace/kudu-master/0/src/kudu/gutil/gscoped_ptr.h:318:7 (libksck.so+0x48269)
+    #4 kudu::DnsResolver::~DnsResolver() /home/jenkins-slave/workspace/kudu-master/0/src/kudu/util/net/dns_resolver.cc:47:1 (libkudu_util.so+0x18a9fa)
+    #5 kudu::DefaultDeleter<kudu::DnsResolver>::operator()(kudu::DnsResolver*) const /home/jenkins-slave/workspace/kudu-master/0/src/kudu/gutil/gscoped_ptr.h:145:5 (libkudu_client.so+0xd568e)
+    #6 kudu::internal::gscoped_ptr_impl<kudu::DnsResolver, kudu::DefaultDeleter<kudu::DnsResolver> >::reset(kudu::DnsResolver*) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/gutil/gscoped_ptr.h:254:7 (libkudu_client.so+0xd5644)
+    #7 gscoped_ptr<kudu::DnsResolver, kudu::DefaultDeleter<kudu::DnsResolver> >::reset(kudu::DnsResolver*) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/gutil/gscoped_ptr.h:375:46 (libkudu_client.so+0xca410)
+    #8 kudu::client::KuduClient::Data::~Data() /home/jenkins-slave/workspace/kudu-master/0/src/kudu/client/client-internal.cc:370:17 (libkudu_client.so+0xdaffd)
+    #9 kudu::client::KuduClient::~KuduClient() /home/jenkins-slave/workspace/kudu-master/0/src/kudu/client/client.cc:378:3 (libkudu_client.so+0xbff7c)
+    #10 std::__1::default_delete<kudu::client::KuduClient>::operator()(kudu::client::KuduClient*) const /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/c++/v1/memory:2285:5 (libkudu_client.so+0xd504b)
+    #11 std::__1::__shared_ptr_pointer<kudu::client::KuduClient*, std::__1::default_delete<kudu::client::KuduClient>, std::__1::allocator<kudu::client::KuduClient> >::__on_zero_shared() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/c++/v1/memory:3586 (libkudu_client.so+0xd504b)
+    #12 std::__1::__shared_count::__release_shared() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/c++/v1/memory:3490:9 (raft_consensus_election-itest+0x4daeae)
+    #13 std::__1::__shared_weak_count::__release_shared() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/c++/v1/memory:3532 (raft_consensus_election-itest+0x4daeae)
+    #14 std::__1::shared_ptr<kudu::client::KuduClient>::~shared_ptr() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/c++/v1/memory:4468 (raft_consensus_election-itest+0x4daeae)
+    #15 kudu::tserver::TabletServerIntegrationTestBase::~TabletServerIntegrationTestBase() /home/jenkins-slave/workspace/kudu-master/0/src/kudu/integration-tests/ts_itest-base.h:46:7 (raft_consensus_election-itest+0x4dad9f)
+    #16 kudu::tserver::RaftConsensusITestBase::~RaftConsensusITestBase() /home/jenkins-slave/workspace/kudu-master/0/src/kudu/integration-tests/raft_consensus-itest-base.h:43:7 (raft_consensus_election-itest+0x4da1af)
+    #17 kudu::tserver::RaftConsensusElectionITest_RunLeaderElection_Test::~RaftConsensusElectionITest_RunLeaderElection_Test() /home/jenkins-slave/workspace/kudu-master/0/src/kudu/integration-tests/raft_consensus_election-itest.cc:143:1 (raft_consensus_election-itest+0x4da1d9)
+    #18 testing::Test::DeleteSelf_() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/include/gtest/gtest.h:453:24 (libgmock.so+0x55a07)
+    #19 void testing::internal::HandleSehExceptionsInMethodIfSupported<testing::Test, void>(testing::Test*, void (testing::Test::*)(), char const*) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2402:10 (libgmock.so+0x552ef)
+    #20 void testing::internal::HandleExceptionsInMethodIfSupported<testing::Test, void>(testing::Test*, void (testing::Test::*)(), char const*) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2438 (libgmock.so+0x552ef)
+    #21 testing::TestInfo::Run() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2661:3 (libgmock.so+0x357b8)
+    #22 testing::TestCase::Run() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2774:28 (libgmock.so+0x36226)
+    #23 testing::internal::UnitTestImpl::RunAllTests() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:4649:43 (libgmock.so+0x425fa)
+    #24 bool testing::internal::HandleSehExceptionsInMethodIfSupported<testing::internal::UnitTestImpl, bool>(testing::internal::UnitTestImpl*, bool (testing::internal::UnitTestImpl::*)(), char const*) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2402:10 (libgmock.so+0x5625f)
+    #25 bool testing::internal::HandleExceptionsInMethodIfSupported<testing::internal::UnitTestImpl, bool>(testing::internal::UnitTestImpl*, bool (testing::internal::UnitTestImpl::*)(), char const*) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2438 (libgmock.so+0x5625f)
+    #26 testing::UnitTest::Run() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:4257:10 (libgmock.so+0x41ee2)
+    #27 RUN_ALL_TESTS() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/gtest/gtest.h:2233:46 (libkudu_test_main.so+0x340b)
+    #28 main /home/jenkins-slave/workspace/kudu-master/0/src/kudu/util/test_main.cc:106:13 (libkudu_test_main.so+0x2bd6)
+
+  Previous read of size 8 at 0x7b5000001ba0 by thread T9:
+    #0 scoped_refptr<kudu::Histogram>::operator kudu::Histogram* scoped_refptr<kudu::Histogram>::*() const /home/jenkins-slave/workspace/kudu-master/0/src/kudu/gutil/ref_counted.h:280:38 (libkrpc.so+0xc2e39)
+    #1 kudu::ThreadPool::DoSubmit(std::__1::shared_ptr<kudu::Runnable>, kudu::ThreadPoolToken*) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/util/threadpool.cc:548:7 (libkudu_util.so+0x1c3151)
+    #2 kudu::ThreadPool::Submit(std::__1::shared_ptr<kudu::Runnable>) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/util/threadpool.cc:458:10 (libkudu_util.so+0x1c4c5f)
+    #3 kudu::ThreadPool::SubmitFunc(boost::function<void ()>) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/util/threadpool.cc:454:10 (libkudu_util.so+0x1c4cf1)
+    #4 kudu::DnsResolver::ResolveAddresses(kudu::HostPort const&, std::__1::vector<kudu::Sockaddr, std::__1::allocator<kudu::Sockaddr> >*, kudu::Callback<void (kudu::Status const&)> const&) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/util/net/dns_resolver.cc:59:21 (libkudu_util.so+0x18aaab)
+    #5 kudu::client::internal::RemoteTabletServer::InitProxy(kudu::client::KuduClient*, kudu::Callback<void (kudu::Status const&)> const&) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/client/meta_cache.cc:144:33 (libkudu_client.so+0xff663)
+    #6 kudu::client::internal::MetaCacheServerPicker::PickLeader(kudu::Callback<void (kudu::Status const&, kudu::client::internal::RemoteTabletServer*)> const&, kudu::MonoTime const&) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/client/meta_cache.cc:450:11 (libkudu_client.so+0x10176b)
+    #7 kudu::rpc::RetriableRpc<kudu::client::internal::RemoteTabletServer, kudu::tserver::WriteRequestPB, kudu::tserver::WriteResponsePB>::SendRpc() /home/jenkins-slave/workspace/kudu-master/0/src/kudu/rpc/retriable_rpc.h:144:19 (libkudu_client.so+0xb6988)
+    #8 kudu::rpc::RpcRetrier::DelayedRetryCb(kudu::rpc::Rpc*, kudu::Status const&) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/rpc/rpc.cc:94:10 (libkrpc.so+0xd5438)
+    #9 boost::_mfi::mf2<void, kudu::rpc::RpcRetrier, kudu::rpc::Rpc*, kudu::Status const&>::operator()(kudu::rpc::RpcRetrier*, kudu::rpc::Rpc*, kudu::Status const&) const /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/boost/bind/mem_fn_template.hpp:280:29 (libkrpc.so+0xd5e1a)
+    #10 void boost::_bi::list3<boost::_bi::value<kudu::rpc::RpcRetrier*>, boost::_bi::value<kudu::rpc::Rpc*>, boost::arg<1> >::operator()<boost::_mfi::mf2<void, kudu::rpc::RpcRetrier, kudu::rpc::Rpc*, kudu::Status const&>, boost::_bi::rrlist1<kudu::Status const&> >(boost::_bi::type<void>, boost::_mfi::mf2<void, kudu::rpc::RpcRetrier, kudu::rpc::Rpc*, kudu::Status const&>&, boost::_bi::rrlist1<kudu::Status const&>&, int) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/boost/bind/bind.hpp:398:9 (libkrpc.so+0xd5d52)
+    #11 void boost::_bi::bind_t<void, boost::_mfi::mf2<void, kudu::rpc::RpcRetrier, kudu::rpc::Rpc*, kudu::Status const&>, boost::_bi::list3<boost::_bi::value<kudu::rpc::RpcRetrier*>, boost::_bi::value<kudu::rpc::Rpc*>, boost::arg<1> > >::operator()<kudu::Status const&>(kudu::Status const&) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/boost/bind/bind.hpp:1234:16 (libkrpc.so+0xd5c78)
+    #12 boost::detail::function::void_function_obj_invoker1<boost::_bi::bind_t<void, boost::_mfi::mf2<void, kudu::rpc::RpcRetrier, kudu::rpc::Rpc*, kudu::Status const&>, boost::_bi::list3<boost::_bi::value<kudu::rpc::RpcRetrier*>, boost::_bi::value<kudu::rpc::Rpc*>, boost::arg<1> > >, void, kudu::Status const&>::invoke(boost::detail::function::function_buffer&, kudu::Status const&) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/boost/function/function_template.hpp:159:11 (libkrpc.so+0xd5a13)
+    #13 boost::function1<void, kudu::Status const&>::operator()(kudu::Status const&) const /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/boost/function/function_template.hpp:770:14 (libkrpc.so+0xc4014)
+    #14 kudu::rpc::DelayedTask::TimerHandler(ev::timer&, int) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/rpc/reactor.cc:705:5 (libkrpc.so+0xc18a6)
+    #15 void ev::base<ev_timer, ev::timer>::method_thunk<kudu::rpc::DelayedTask, &kudu::rpc::DelayedTask::TimerHandler>(ev_loop*, ev_timer*, int) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/ev++.h:479:7 (libkrpc.so+0xc970a)
+    #16 ev_invoke_pending /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/libev-4.20/ev.c:3155:11 (libev.so.4+0x9800)
+    #17 kudu::rpc::ReactorThread::InvokePendingCb(ev_loop*) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/rpc/reactor.cc:176:3 (libkrpc.so+0xbdaa5)
+    #18 ev_run /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/libev-4.20/ev.c:3555:7 (libev.so.4+0xa90d)
+    #19 ev::loop_ref::run(int) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/ev++.h:211:7 (libkrpc.so+0xc3708)
+    #20 kudu::rpc::ReactorThread::RunThread() /home/jenkins-slave/workspace/kudu-master/0/src/kudu/rpc/reactor.cc:471:9 (libkrpc.so+0xbdbea)
+    #21 boost::_mfi::mf0<void, kudu::rpc::ReactorThread>::operator()(kudu::rpc::ReactorThread*) const /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/boost/bind/mem_fn_template.hpp:49:29 (libkrpc.so+0xc79a9)
+    #22 void boost::_bi::list1<boost::_bi::value<kudu::rpc::ReactorThread*> >::operator()<boost::_mfi::mf0<void, kudu::rpc::ReactorThread>, boost::_bi::list0>(boost::_bi::type<void>, boost::_mfi::mf0<void, kudu::rpc::ReactorThread>&, boost::_bi::list0&, int) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/boost/bind/bind.hpp:259:9 (libkrpc.so+0xc78fa)
+    #23 boost::_bi::bind_t<void, boost::_mfi::mf0<void, kudu::rpc::ReactorThread>, boost::_bi::list1<boost::_bi::value<kudu::rpc::ReactorThread*> > >::operator()() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/boost/bind/bind.hpp:1222:16 (libkrpc.so+0xc7883)
+    #24 boost::detail::function::void_function_obj_invoker0<boost::_bi::bind_t<void, boost::_mfi::mf0<void, kudu::rpc::ReactorThread>, boost::_bi::list1<boost::_bi::value<kudu::rpc::ReactorThread*> > >, void>::invoke(boost::detail::function::function_buffer&) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/boost/function/function_template.hpp:159:11 (libkrpc.so+0xc7679)
+    #25 boost::function0<void>::operator()() const /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/boost/function/function_template.hpp:770:14 (libkrpc.so+0xb7781)
+    #26 kudu::Thread::SuperviseThread(void*) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/util/thread.cc:603:3 (libkudu_util.so+0x1bcff4)
+
+  As if synchronized via sleep:
+    #0 nanosleep /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/llvm-6.0.0.src/projects/compiler-rt/lib/tsan/rtl/tsan_interceptors.cc:355 (raft_consensus_election-itest+0x442f6a)
+    #1 base::SleepForNanoseconds(long) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/gutil/sysinfo.cc:89:10 (libgutil.so+0x61c92)
+    #2 kudu::SleepFor(kudu::MonoDelta const&) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/util/monotime.cc:267:3 (libkudu_util.so+0x1893b6)
+    #3 kudu::ClusterVerifier::CheckCluster() /home/jenkins-slave/workspace/kudu-master/0/src/kudu/integration-tests/cluster_verifier.cc:85:5 (libitest_util.so+0x5725d)
+    #4 kudu::tserver::TabletServerIntegrationTestBase::AssertAllReplicasAgree(int) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/integration-tests/ts_itest-base.cc:554:3 (libitest_util.so+0x73d9a)
+    #5 kudu::tserver::RaftConsensusElectionITest_RunLeaderElection_Test::TestBody() /home/jenkins-slave/workspace/kudu-master/0/src/kudu/integration-tests/raft_consensus_election-itest.cc:182:3 (raft_consensus_election-itest+0x4cffa3)
+    #6 void testing::internal::HandleSehExceptionsInMethodIfSupported<testing::Test, void>(testing::Test*, void (testing::Test::*)(), char const*) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2402:10 (libgmock.so+0x552ef)
+    #7 void testing::internal::HandleExceptionsInMethodIfSupported<testing::Test, void>(testing::Test*, void (testing::Test::*)(), char const*) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2438 (libgmock.so+0x552ef)
+    #8 testing::Test::Run() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2474:5 (libgmock.so+0x344b8)
+    #9 testing::TestInfo::Run() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2656:11 (libgmock.so+0x3574c)
+    #10 testing::TestCase::Run() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2774:28 (libgmock.so+0x36226)
+    #11 testing::internal::UnitTestImpl::RunAllTests() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:4649:43 (libgmock.so+0x425fa)
+    #12 bool testing::internal::HandleSehExceptionsInMethodIfSupported<testing::internal::UnitTestImpl, bool>(testing::internal::UnitTestImpl*, bool (testing::internal::UnitTestImpl::*)(), char const*) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2402:10 (libgmock.so+0x5625f)
+    #13 bool testing::internal::HandleExceptionsInMethodIfSupported<testing::internal::UnitTestImpl, bool>(testing::internal::UnitTestImpl*, bool (testing::internal::UnitTestImpl::*)(), char const*) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2438 (libgmock.so+0x5625f)
+    #14 testing::UnitTest::Run() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:4257:10 (libgmock.so+0x41ee2)
+    #15 RUN_ALL_TESTS() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/gtest/gtest.h:2233:46 (libkudu_test_main.so+0x340b)
+    #16 main /home/jenkins-slave/workspace/kudu-master/0/src/kudu/util/test_main.cc:106:13 (libkudu_test_main.so+0x2bd6)
+
+  Thread T9 'rpc reactor-205' (tid=20551, running) created by main thread at:
+    #0 pthread_create /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/llvm-6.0.0.src/projects/compiler-rt/lib/tsan/rtl/tsan_interceptors.cc:992 (raft_consensus_election-itest+0x43ced6)
+    #1 kudu::Thread::StartThread(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> > const&, std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> > const&, boost::function<void ()> const&, unsigned long, scoped_refptr<kudu::Thread>*) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/util/thread.cc:556:15 (libkudu_util.so+0x1bca1f)
+    #2 kudu::Status kudu::Thread::Create<void (kudu::rpc::ReactorThread::*)(), kudu::rpc::ReactorThread*>(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> > const&, std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> > const&, void (kudu::rpc::ReactorThread::* const&)(), kudu::rpc::ReactorThread* const&, scoped_refptr<kudu::Thread>*) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/util/thread.h:164:12 (libkrpc.so+0xc2dd5)
+    #3 kudu::rpc::ReactorThread::Init() /home/jenkins-slave/workspace/kudu-master/0/src/kudu/rpc/reactor.cc:168:10 (libkrpc.so+0xbd80e)
+    #4 kudu::rpc::Reactor::Init() /home/jenkins-slave/workspace/kudu-master/0/src/kudu/rpc/reactor.cc:722:18 (libkrpc.so+0xc1cd1)
+    #5 kudu::rpc::Messenger::Init() /home/jenkins-slave/workspace/kudu-master/0/src/kudu/rpc/messenger.cc:436:5 (libkrpc.so+0xa8402)
+    #6 kudu::rpc::MessengerBuilder::Build(std::__1::shared_ptr<kudu::rpc::Messenger>*) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/rpc/messenger.cc:199:3 (libkrpc.so+0xa7e5d)
+    #7 kudu::client::KuduClientBuilder::Build(std::__1::shared_ptr<kudu::client::KuduClient>*) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/client/client.cc:332:3 (libkudu_client.so+0xbf3e1)
+    #8 kudu::tserver::TabletServerIntegrationTestBase::CreateClient(std::__1::shared_ptr<kudu::client::KuduClient>*) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/integration-tests/ts_itest-base.cc:520:3 (libitest_util.so+0x73302)
+    #9 kudu::tserver::TabletServerIntegrationTestBase::BuildAndStart(std::__1::vector<std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> >, std::__1::allocator<std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> > > > const&, std::__1::vector<std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> >, std::__1::allocator<std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char> > > > const&) /home/jenkins-slave/workspace/kudu-master/0/src/kudu/integration-tests/ts_itest-base.cc:545:3 (libitest_util.so+0x73a1f)
+    #10 kudu::tserver::RaftConsensusElectionITest_RunLeaderElection_Test::TestBody() /home/jenkins-slave/workspace/kudu-master/0/src/kudu/integration-tests/raft_consensus_election-itest.cc:147:3 (raft_consensus_election-itest+0x4cfb63)
+    #11 void testing::internal::HandleSehExceptionsInMethodIfSupported<testing::Test, void>(testing::Test*, void (testing::Test::*)(), char const*) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2402:10 (libgmock.so+0x552ef)
+    #12 void testing::internal::HandleExceptionsInMethodIfSupported<testing::Test, void>(testing::Test*, void (testing::Test::*)(), char const*) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2438 (libgmock.so+0x552ef)
+    #13 testing::Test::Run() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2474:5 (libgmock.so+0x344b8)
+    #14 testing::TestInfo::Run() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2656:11 (libgmock.so+0x3574c)
+    #15 testing::TestCase::Run() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2774:28 (libgmock.so+0x36226)
+    #16 testing::internal::UnitTestImpl::RunAllTests() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:4649:43 (libgmock.so+0x425fa)
+    #17 bool testing::internal::HandleSehExceptionsInMethodIfSupported<testing::internal::UnitTestImpl, bool>(testing::internal::UnitTestImpl*, bool (testing::internal::UnitTestImpl::*)(), char const*) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2402:10 (libgmock.so+0x5625f)
+    #18 bool testing::internal::HandleExceptionsInMethodIfSupported<testing::internal::UnitTestImpl, bool>(testing::internal::UnitTestImpl*, bool (testing::internal::UnitTestImpl::*)(), char const*) /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:2438 (libgmock.so+0x5625f)
+    #19 testing::UnitTest::Run() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/googletest-release-1.8.0/googletest/src/gtest.cc:4257:10 (libgmock.so+0x41ee2)
+    #20 RUN_ALL_TESTS() /home/jenkins-slave/workspace/kudu-master/0/thirdparty/installed/tsan/include/gtest/gtest.h:2233:46 (libkudu_test_main.so+0x340b)
+    #21 main /home/jenkins-slave/workspace/kudu-master/0/src/kudu/util/test_main.cc:106:13 (libkudu_test_main.so+0x2bd6)
+
+SUMMARY: ThreadSanitizer: data race /home/jenkins-slave/workspace/kudu-master/0/thirdparty/src/llvm-6.0.0.src/projects/compiler-rt/lib/tsan/rtl/tsan_new_delete.cc:119 in operator delete(void*)
+==================
+I0426 18:02:17.518096 20091 external_mini_cluster.cc:1011] Killing /tmp/dist-test-taskEpRJ5y/build/tsan/bin/kudu-tserver with pid 20165
+W0426 18:02:17.570519 20113 connection.cc:512] client connection to 127.19.158.193:39806 recv error: Network error: failed to read from TLS socket (remote: 127.19.158.193:39806): Connection reset by peer (error 104)
+W0426 18:02:17.570564 20309 connection.cc:512] server connection from 127.19.158.193:42428 recv error: Network error: failed to read from TLS socket (remote: 127.19.158.193:42428): Connection reset by peer (error 104)
+W0426 18:02:17.570650 20102 connection.cc:512] client connection to 127.19.158.193:39806 recv error: Network error: failed to read from TLS socket (remote: 127.19.158.193:39806): Connection reset by peer (error 104)
+W0426 18:02:17.571547 20113 connection.cc:512] server connection from 127.19.158.193:48198 recv error: Network error: failed to read from TLS socket (remote: 127.19.158.193:48198): Connection reset by peer (error 104)
+W0426 18:02:17.571811 20099 connection.cc:512] client connection to 127.19.158.193:39806 recv error: Network error: failed to read from TLS socket (remote: 127.19.158.193:39806): Connection reset by peer (error 104)
+W0426 18:02:17.572953 20642 connection.cc:512] server connection from 127.19.158.193:59360 recv error: Network error: failed to read from TLS socket (remote: 127.19.158.193:59360): Connection reset by peer (error 104)
+I0426 18:02:17.573035 20091 external_mini_cluster.cc:1011] Killing /tmp/dist-test-taskEpRJ5y/build/tsan/bin/kudu-tserver with pid 20300
+W0426 18:02:17.603667 20111 connection.cc:512] client connection to 127.19.158.194:34029 recv error: Network error: failed to read from TLS socket (remote: 127.19.158.194:34029): Connection reset by peer (error 104)
+W0426 18:02:17.604725 20115 connection.cc:512] server connection from 127.19.158.194:55036 recv error: Network error: failed to read from TLS socket (remote: 127.19.158.194:55036): Connection reset by peer (error 104)
+W0426 18:02:17.605597 20102 connection.cc:512] client connection to 127.19.158.194:34029 recv error: Network error: failed to read from TLS socket (remote: 127.19.158.194:34029): Connection reset by peer (error 104)
+W0426 18:02:17.606722 20097 connection.cc:512] client connection to 127.19.158.194:34029 recv error: Network error: failed to read from TLS socket (remote: 127.19.158.194:34029): Connection reset by peer (error 104)
+I0426 18:02:17.607700 20091 external_mini_cluster.cc:1011] Killing /tmp/dist-test-taskEpRJ5y/build/tsan/bin/kudu-tserver with pid 20634
+I0426 18:02:17.633913 20091 external_mini_cluster.cc:1011] Killing /tmp/dist-test-taskEpRJ5y/build/tsan/bin/kudu-master with pid 20103
+W0426 18:02:17.633883 20111 connection.cc:512] server connection from 127.19.158.195:44078 recv error: Network error: failed to read from TLS socket (remote: 127.19.158.195:44078): Connection reset by peer (error 104)
+W0426 18:02:17.661109 20102 connection.cc:512] client connection to 127.19.158.254:32815 recv error: Network error: failed to read from TLS socket (remote: 127.19.158.254:32815): Connection reset by peer (error 104)
+[       OK ] RaftConsensusElectionITest.RunLeaderElection (6165 ms)
+[----------] 10 tests from RaftConsensusElectionITest (127508 ms total)
+
+[----------] Global test environment tear-down
+[==========] 10 tests from 1 test case ran. (127508 ms total)
+[  PASSED  ] 10 tests.
+ThreadSanitizer: reported 2 warnings
