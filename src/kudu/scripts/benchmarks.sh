@@ -208,10 +208,12 @@ run_benchmarks() {
   done
 
   # run mt-bloomfile-test 5 times. 20-30 seconds per run.
-  # The block cache is set to 1MB to generate churn.
+  # We use 150M keys so the total bloom space is >150MB, and then
+  # set the cache capacity to be only 100M to ensure that the cache
+  # churns a lot.
   for i in $(seq 1 $NUM_SAMPLES); do
-    ./build/latest/bin/mt-bloomfile-test --benchmark_queries=2000000 --bloom_size_bytes=32768 \
-      --n_keys=5000000 --block_cache_capacity_mb=1 &> $LOGDIR/$MT_BLOOM_TEST$i.log
+    ./build/latest/bin/mt-bloomfile-test --benchmark_queries=2000000 --bloom_size_bytes=4096 \
+      --n_keys=150000000 --block_cache_capacity_mb=100 &> $LOGDIR/$MT_BLOOM_TEST$i.log
   done
 
   # run wire_protocol-test 5 times. 6 seconds per run
