@@ -825,7 +825,7 @@ The table below describes this behavior for each type of directory. The behavior
 is uniform across masters and tablet servers.
 [[disk_full_behavior]]
 .Kudu Full Disk Behavior
-[cols="<,<,<",options="header"]
+[options="header"]
 |===
 | Kudu Directory Type | Crash on a Full Disk?
 | Directory containing WALs | Yes
