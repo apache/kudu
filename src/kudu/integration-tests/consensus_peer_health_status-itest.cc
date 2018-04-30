@@ -195,10 +195,14 @@ TEST_F(ConsensusPeerHealthStatusITest, TestPeerHealthStatusTransitions) {
     ASSERT_EQ(TABLET_DATA_TOMBSTONED, tablets[0].tablet_status().tablet_data_state());
   });
   ASSERT_OK(AddServer(leader_ts, tablet_id_, follower_ts, RaftPeerPB::VOTER, kTimeout));
-  NO_FATALS(wait_for_health_state(leader_ts, follower_uuid, HEALTHY));
+  // Make sure the tablet copying (initiated by AddServer() above) finishes.
+  // Otherwise, the abandoned tablet copying session at the source tablet server
+  // might anchor WAL segments and they would not be GCed as the scneario below
+  // expects.
+  ASSERT_OK(WaitUntilTabletRunning(follower_ts, tablet_id_, kTimeout));
 
   LOG(INFO) << "Test: HEALTHY -> UNKNOWN -> FAILED -> FAILED_UNRECOVERABLE";
-
+  NO_FATALS(wait_for_health_state(leader_ts, follower_uuid, HEALTHY));
   cluster_->tablet_server_by_uuid(follower_uuid)->Shutdown();
   NO_FATALS(wait_for_health_state(leader_ts, follower_uuid, UNKNOWN));
   NO_FATALS(wait_for_health_state(leader_ts, follower_uuid, FAILED));
