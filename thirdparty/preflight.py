@@ -131,6 +131,27 @@ def check_sasl():
       """,
       flags=["-E"]))
 
+def check_openssl():
+  try_do(
+    "Checking for openssl headers",
+    ("Unable to compile a simple program that uses openssl. " +
+     "Please check that openssl-devel (RPM) or libssl-dev (deb) " +
+     "dependencies are installed."),
+    lambda: compile("""
+      #include <openssl/ssl.h>
+      """,
+      flags=["-E"]))
+
+def check_zlib():
+  try_do(
+    "Checking for zlib headers",
+    ("Unable to compile a simple program that uses zlib. " +
+     "Please check that zlib-devel (RPM) or zlib1g-dev (deb) " +
+     "dependencies are installed."),
+    lambda: compile("""
+      #include <zlib.h>
+      """,
+      flags=["-E"]))
 
 def main():
   print("Running pre-flight checks")
@@ -143,6 +164,8 @@ def main():
   check_tools()
   check_cxx11()
   check_sasl()
+  check_openssl()
+  check_zlib()
   print("-------------")
   print("Pre-flight checks succeeded.")
   return 0
