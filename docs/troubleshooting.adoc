@@ -532,6 +532,16 @@ are several ways to relieve the memory pressure on Kudu:
   Generally, the recommended ratio of maintenance manager threads to data directories is 1:3.
 - Reduce the volume of writes flowing to Kudu on the application side.
 
+Finally, check the value of `--block_cache_capacity_mb`. This setting determines
+the maximum size of Kudu's block cache. While a higher value can help with read
+and write performance, setting it too high (as a percentage of `--memory_limit_hard_bytes`)
+is harmful. Do not raise `--block_cache_capacity_mb` above `--memory_pressure_percentage`
+(default 60%) of `--memory_limit_hard_bytes`, as this will cause Kudu to flush
+aggressively even if write throughput is low. Keeping the block cache capacity
+below 50% of the memory pressure percentage times the hard limit is recommended.
+With the defaults, this means the `--block_cache_capacity_mb` should not exceed
+30% of `--memory_limit_hard_bytes`.
+
 [[heap_sampling]]
 === Heap Sampling
 

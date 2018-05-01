@@ -44,6 +44,12 @@ int64_t CurrentConsumption();
 // Return the configured hard limit for the process.
 int64_t HardLimit();
 
+// Return the configured soft limit for the process.
+int64_t SoftLimit();
+
+// Return the configured memory pressure threshold for the process.
+int64_t MemoryPressureThreshold();
+
 #ifdef TCMALLOC_ENABLED
 // Get the current amount of allocated memory, according to tcmalloc.
 //

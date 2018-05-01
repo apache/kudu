@@ -178,15 +178,6 @@ void DoInitLimits() {
   g_pressure_threshold = FLAGS_memory_pressure_percentage * g_hard_limit / 100;
 
   g_rand = new ThreadSafeRandom(1);
-
-  LOG(INFO) << StringPrintf("Process hard memory limit is %.6f GB",
-                            (static_cast<float>(g_hard_limit) / (1024.0 * 1024.0 * 1024.0)));
-  LOG(INFO) << StringPrintf("Process soft memory limit is %.6f GB",
-                            (static_cast<float>(g_soft_limit) /
-                             (1024.0 * 1024.0 * 1024.0)));
-  LOG(INFO) << StringPrintf("Process memory pressure threshold is %.6f GB",
-                            (static_cast<float>(g_pressure_threshold) /
-                             (1024.0 * 1024.0 * 1024.0)));
 }
 
 void InitLimits() {
@@ -226,6 +217,16 @@ int64_t CurrentConsumption() {
 int64_t HardLimit() {
   InitLimits();
   return g_hard_limit;
+}
+
+int64_t SoftLimit() {
+  InitLimits();
+  return g_soft_limit;
+}
+
+int64_t MemoryPressureThreshold() {
+  InitLimits();
+  return g_pressure_threshold;
 }
 
 bool UnderMemoryPressure(double* current_capacity_pct) {

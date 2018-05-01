@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/cfile/block_cache.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <ostream>
@@ -23,16 +25,23 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
-#include "kudu/cfile/block_cache.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/cache.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/flag_validators.h"
+#include "kudu/util/process_memory.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/string_case.h"
 
 DEFINE_int64(block_cache_capacity_mb, 512, "block cache capacity in MB");
 TAG_FLAG(block_cache_capacity_mb, stable);
+
+DEFINE_bool(force_block_cache_capacity, false,
+            "Force Kudu to accept the block cache size, even if it is unsafe.");
+TAG_FLAG(force_block_cache_capacity, unsafe);
+TAG_FLAG(force_block_cache_capacity, hidden);
 
 DEFINE_string(block_cache_type, "DRAM",
               "Which type of block cache to use for caching data. "
@@ -40,6 +49,8 @@ DEFINE_string(block_cache_type, "DRAM",
               "caches data in regular memory. 'NVM' caches data "
               "in a memory-mapped file using the NVML library.");
 TAG_FLAG(block_cache_type, experimental);
+
+using strings::Substitute;
 
 template <class T> class scoped_refptr;
 
@@ -56,7 +67,37 @@ Cache* CreateCache(int64_t capacity) {
   return NewLRUCache(t, capacity, "block_cache");
 }
 
+// Validates the block cache capacity won't permit the cache to grow large enough
+// to cause pernicious flushing behavior. See KUDU-2318.
+bool ValidateBlockCacheCapacity() {
+  if (FLAGS_force_block_cache_capacity) {
+    return true;
+  }
+  int64_t capacity = FLAGS_block_cache_capacity_mb * 1024 * 1024;
+  int64_t mpt = process_memory::MemoryPressureThreshold();
+  if (capacity > mpt) {
+    LOG(ERROR) << Substitute("Block cache capacity exceeds the memory pressure "
+                             "threshold ($0 bytes vs. $1 bytes). This will "
+                             "cause instability and harmful flushing behavior. "
+                             "Lower --block_cache_capacity_mb or raise "
+                             "--memory_limit_hard_bytes.",
+                             capacity, mpt);
+    return false;
+  }
+  if (capacity > mpt / 2) {
+    LOG(WARNING) << Substitute("Block cache capacity exceeds 50% of the memory "
+                               "pressure threshold ($0 bytes vs. 50% of $1 bytes). "
+                               "This may cause performance problems. Consider "
+                               "lowering --block_cache_capacity_mb or raising "
+                               "--memory_limit_hard_bytes.",
+                               capacity, mpt);
+  }
+  return true;
+}
+
 } // anonymous namespace
+
+GROUP_FLAG_VALIDATOR(block_cache_capacity_mb, ValidateBlockCacheCapacity);
 
 CacheType BlockCache::GetConfiguredCacheTypeOrDie() {
     ToUpperCase(FLAGS_block_cache_type, &FLAGS_block_cache_type);

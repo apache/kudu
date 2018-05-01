@@ -1800,6 +1800,10 @@ TEST_F(RaftConsensusITest, TestEarlyCommitDespiteMemoryPressure) {
     // When using tcmalloc, we set it to 30MB, since we can get accurate process memory
     // usage statistics. Otherwise, set to only 4MB, since we'll only be throttling based
     // on our tracked memory.
+    // Since part of the point of the test is to have memory pressure, don't
+    // insist the block cache capacity is small compared to the memory pressure
+    // threshold.
+    "--force_block_cache_capacity",
 #ifdef TCMALLOC_ENABLED
     "--memory_limit_hard_bytes=30000000",
 #else
