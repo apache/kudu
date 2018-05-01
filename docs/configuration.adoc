@@ -65,7 +65,11 @@ logs. The `--fs_metadata_dir` configuration indicates where Kudu will place
 metadata for each tablet. It is recommended, although not necessary, that these
 directories be placed on a high-performance drives with high bandwidth and low
 latency, e.g. solid-state drives. If `--fs_metadata_dir` is not specified,
-metadata will be placed in the directory specified by `--fs_wal_dir`.
+metadata will be placed in the directory specified by `--fs_wal_dir`. Since
+a Kudu node cannot tolerate the loss of its WAL or metadata directories, it
+may be wise to mirror the drives containing these directories in order to
+make recovering from a drive failure easier; however, mirroring may increase
+the latency of Kudu writes.
 
 The `--fs_data_dirs` configuration indicates where Kudu will write its data
 blocks. This is a comma-separated list of directories; if multiple values are
