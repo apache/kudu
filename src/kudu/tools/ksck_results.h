@@ -16,10 +16,10 @@
 // under the License.
 #pragma once
 
+#include <cstdint>
 #include <iosfwd>
 #include <map>
 #include <set>
-#include <stdint.h>
 #include <string>
 #include <utility>
 #include <vector>
@@ -33,6 +33,8 @@
 
 namespace kudu {
 namespace tools {
+
+class KsckResultsPB;
 
 // The result of health check on a tablet.
 // Also used to indicate the health of a table, since the health of a table is
@@ -208,7 +210,7 @@ struct KsckTabletSummary {
   KsckCheckResult result;
   std::string status;
   KsckConsensusState master_cstate;
-  std::vector<KsckReplicaSummary> replica_infos;
+  std::vector<KsckReplicaSummary> replicas;
 };
 
 // The result of a checksum on a tablet replica.
@@ -237,9 +239,16 @@ struct KsckChecksumResults {
 };
 
 enum class PrintMode {
-  DEFAULT,
-  // Print all results, including for healthy tablets.
-  VERBOSE,
+  // Print results in pretty-printed JSON format.
+  JSON_PRETTY,
+  // Print results in compact JSON format. Differs from JSON_PRETTY only in
+  // format, not content.
+  JSON_COMPACT,
+  // Print results in plain text, focusing on errors and omitting most
+  // information about healthy tablets.
+  PLAIN_CONCISE,
+  // Print results in plain text.
+  PLAIN_FULL,
 };
 
 typedef std::map<std::string, KsckConsensusState> KsckConsensusStateMap;
@@ -270,6 +279,12 @@ struct KsckResults {
 
   // Print this KsckResults to 'out', according to the PrintMode 'mode'.
   Status PrintTo(PrintMode mode, std::ostream& out);
+
+  // Print this KsckResults to 'out' in JSON format.
+  // 'mode' must be PrintMode::JSON_PRETTY or PrintMode::JSON_COMPACT.
+  Status PrintJsonTo(PrintMode mode, std::ostream& out) const;
+
+  void ToPb(KsckResultsPB* pb) const;
 };
 
 // Print a formatted health summary to 'out', given a list `summaries`

@@ -32,11 +32,12 @@
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/tools/tool_action_common.h"
 #include "kudu/tools/color.h"
+#include "kudu/tools/tool.pb.h"
+#include "kudu/tools/tool_action_common.h"
+#include "kudu/util/jsonwriter.h"
 #include "kudu/util/status.h"
 
-using std::cout;
 using std::endl;
 using std::left;
 using std::map;
@@ -127,8 +128,9 @@ const char* const KsckCheckResultToString(KsckCheckResult cr) {
     case KsckCheckResult::RECOVERING:
       return "RECOVERING";
     case KsckCheckResult::UNDER_REPLICATED:
-      return "UNDER-REPLICATED";
+      return "UNDER_REPLICATED";
     case KsckCheckResult::CONSENSUS_MISMATCH:
+      return "CONSENSUS_MISMATCH";
     case KsckCheckResult::UNAVAILABLE:
       return "UNAVAILABLE";
     default:
@@ -174,12 +176,16 @@ int ServerHealthScore(KsckServerHealth sh) {
 }
 
 Status KsckResults::PrintTo(PrintMode mode, ostream& out) {
+  if (mode == PrintMode::JSON_PRETTY || mode == PrintMode::JSON_COMPACT) {
+    return PrintJsonTo(mode, out);
+  }
+
   // First, report on the masters and master tablet.
   std::sort(master_summaries.begin(), master_summaries.end(), ServerByHealthComparator);
   RETURN_NOT_OK(PrintServerHealthSummaries(KsckServerType::MASTER,
                                            master_summaries,
                                            out));
-  if (mode == PrintMode::VERBOSE || master_consensus_conflict) {
+  if (mode == PrintMode::PLAIN_FULL || master_consensus_conflict) {
     RETURN_NOT_OK(PrintConsensusMatrix(master_uuids,
                                        boost::none,
                                        master_consensus_state_map,
@@ -325,12 +331,19 @@ Status PrintTabletSummaries(const vector<KsckTabletSummary>& tablet_summaries,
     out << "The cluster doesn't have any matching tablets" << endl;
     return Status::OK();
   }
+  bool first = true;
   for (const auto& tablet_summary : tablet_summaries) {
-    if (mode != PrintMode::VERBOSE && tablet_summary.result == KsckCheckResult::HEALTHY) {
+    if (first) {
+      first = false;
+    } else {
+      out << endl;
+    }
+    if (mode != PrintMode::PLAIN_FULL &&
+        tablet_summary.result == KsckCheckResult::HEALTHY) {
       continue;
     }
     out << tablet_summary.status << endl;
-    for (const KsckReplicaSummary& r : tablet_summary.replica_infos) {
+    for (const KsckReplicaSummary& r : tablet_summary.replicas) {
       const char* spec_str = r.is_leader
           ? " [LEADER]" : (!r.is_voter ? " [NONVOTER]" : "");
 
@@ -364,11 +377,11 @@ Status PrintTabletSummaries(const vector<KsckTabletSummary>& tablet_summaries,
 
     auto& master_cstate = tablet_summary.master_cstate;
     vector<string> ts_uuids;
-    for (const KsckReplicaSummary& rs : tablet_summary.replica_infos) {
+    for (const KsckReplicaSummary& rs : tablet_summary.replicas) {
       ts_uuids.push_back(rs.ts_uuid);
     }
     KsckConsensusStateMap consensus_state_map;
-    for (const KsckReplicaSummary& rs : tablet_summary.replica_infos) {
+    for (const KsckReplicaSummary& rs : tablet_summary.replicas) {
       if (rs.consensus_state) {
         InsertOrDie(&consensus_state_map, rs.ts_uuid, *rs.consensus_state);
       }
@@ -424,7 +437,7 @@ Status PrintTotalCounts(const KsckResults& results, std::ostream& out) {
                                      results.tablet_summaries.end(),
                                      0,
                                      [](int acc, const KsckTabletSummary& ts) {
-                                       return acc + ts.replica_infos.size();
+                                       return acc + ts.replicas.size();
                                      });
   DataTable totals({ "", "Total Count" });
   totals.AddRow({ "Masters", to_string(results.master_summaries.size()) });
@@ -433,6 +446,202 @@ Status PrintTotalCounts(const KsckResults& results, std::ostream& out) {
   totals.AddRow({ "Tablets", to_string(results.tablet_summaries.size()) });
   totals.AddRow({ "Replicas", to_string(num_replicas) });
   return totals.PrintTo(out);
+}
+
+void KsckServerHealthSummaryToPb(const KsckServerHealthSummary& summary,
+                                 KsckServerHealthSummaryPB* pb) {
+  switch (summary.health) {
+    case KsckServerHealth::HEALTHY:
+      pb->set_health(KsckServerHealthSummaryPB_ServerHealth_HEALTHY);
+      break;
+    case KsckServerHealth::UNAVAILABLE:
+      pb->set_health(KsckServerHealthSummaryPB_ServerHealth_UNAVAILABLE);
+      break;
+    case KsckServerHealth::WRONG_SERVER_UUID:
+      pb->set_health(KsckServerHealthSummaryPB_ServerHealth_WRONG_SERVER_UUID);
+      break;
+    default:
+      pb->set_health(KsckServerHealthSummaryPB_ServerHealth_UNKNOWN);
+  }
+  pb->set_uuid(summary.uuid);
+  pb->set_address(summary.address);
+  pb->set_status(summary.status.ToString());
+}
+
+void KsckConsensusStateToPb(const KsckConsensusState& cstate,
+                            KsckConsensusStatePB* pb) {
+  switch (cstate.type) {
+    case KsckConsensusConfigType::MASTER:
+      pb->set_type(KsckConsensusStatePB_ConfigType_MASTER);
+      break;
+    case KsckConsensusConfigType::COMMITTED:
+      pb->set_type(KsckConsensusStatePB_ConfigType_COMMITTED);
+      break;
+    case KsckConsensusConfigType::PENDING:
+      pb->set_type(KsckConsensusStatePB_ConfigType_PENDING);
+      break;
+    default:
+      pb->set_type(KsckConsensusStatePB_ConfigType_UNKNOWN);
+  }
+  if (cstate.term) {
+    pb->set_term(*cstate.term);
+  }
+  if (cstate.opid_index) {
+    pb->set_opid_index(*cstate.opid_index);
+  }
+  if (cstate.leader_uuid) {
+    pb->set_leader_uuid(*cstate.leader_uuid);
+  }
+  for (const auto& voter_uuid : cstate.voter_uuids) {
+    pb->add_voter_uuids(voter_uuid);
+  }
+  for (const auto& non_voter_uuid : cstate.non_voter_uuids) {
+    pb->add_non_voter_uuids(non_voter_uuid);
+  }
+}
+
+void KsckReplicaSummaryToPb(const KsckReplicaSummary& replica,
+                            KsckReplicaSummaryPB* pb) {
+  pb->set_ts_uuid(replica.ts_uuid);
+  if (replica.ts_address) {
+    pb->set_ts_address(*replica.ts_address);
+  }
+  pb->set_ts_healthy(replica.ts_healthy);
+  pb->set_is_leader(replica.is_leader);
+  pb->set_is_voter(replica.is_voter);
+  pb->set_state(replica.state);
+  if (replica.status_pb) {
+    pb->mutable_status_pb()->CopyFrom(*replica.status_pb);
+  }
+  if (replica.consensus_state) {
+    KsckConsensusStateToPb(*replica.consensus_state, pb->mutable_consensus_state());
+  }
+}
+
+KsckTabletHealthPB KsckTabletHealthToPB(KsckCheckResult c) {
+  switch (c) {
+    case KsckCheckResult::HEALTHY:
+      return KsckTabletHealthPB::HEALTHY;
+    case KsckCheckResult::RECOVERING:
+      return KsckTabletHealthPB::RECOVERING;
+    case KsckCheckResult::UNDER_REPLICATED:
+      return KsckTabletHealthPB::UNDER_REPLICATED;
+    case KsckCheckResult::UNAVAILABLE:
+      return KsckTabletHealthPB::UNAVAILABLE;
+    case KsckCheckResult::CONSENSUS_MISMATCH:
+      return KsckTabletHealthPB::CONSENSUS_MISMATCH;
+    default:
+      return KsckTabletHealthPB::UNKNOWN;
+  }
+}
+
+void KsckTabletSummaryToPb(const KsckTabletSummary& tablet,
+                           KsckTabletSummaryPB* pb) {
+  pb->set_id(tablet.id);
+  pb->set_table_id(tablet.table_id);
+  pb->set_table_name(tablet.table_name);
+  pb->set_health(KsckTabletHealthToPB(tablet.result));
+  pb->set_status(tablet.status);
+  KsckConsensusStateToPb(tablet.master_cstate, pb->mutable_master_cstate());
+  for (const auto& replica : tablet.replicas) {
+    KsckReplicaSummaryToPb(replica, pb->add_replicas());
+  }
+}
+
+void KsckTableSummaryToPb(const KsckTableSummary& table, KsckTableSummaryPB* pb) {
+  pb->set_id(table.id);
+  pb->set_name(table.name);
+  pb->set_health(KsckTabletHealthToPB(table.TableStatus()));
+  pb->set_replication_factor(table.replication_factor);
+  pb->set_total_tablets(table.TotalTablets());
+  pb->set_healthy_tablets(table.healthy_tablets);
+  pb->set_recovering_tablets(table.recovering_tablets);
+  pb->set_underreplicated_tablets(table.underreplicated_tablets);
+  pb->set_unavailable_tablets(table.unavailable_tablets);
+  pb->set_consensus_mismatch_tablets(table.consensus_mismatch_tablets);
+}
+
+void KsckReplicaChecksumToPb(const string& ts_uuid,
+                             const KsckReplicaChecksum& replica,
+                             KsckReplicaChecksumPB* pb) {
+  pb->set_ts_uuid(ts_uuid);
+  pb->set_ts_address(replica.ts_address);
+  pb->set_checksum(replica.checksum);
+  pb->set_status(replica.status.ToString());
+}
+
+void KsckTabletChecksumToPb(const string& tablet_id,
+                            const KsckTabletChecksum& tablet,
+                            KsckTabletChecksumPB* pb) {
+  pb->set_tablet_id(tablet_id);
+  pb->set_mismatch(tablet.mismatch);
+  for (const auto& entry : tablet.replica_checksums) {
+    KsckReplicaChecksumToPb(entry.first, entry.second, pb->add_replica_checksums());
+  }
+}
+
+void KsckTableChecksumToPb(const string& name,
+                           const KsckTableChecksum& table,
+                           KsckTableChecksumPB* pb) {
+  pb->set_name(name);
+  for (const auto& entry : table) {
+    KsckTabletChecksumToPb(entry.first, entry.second, pb->add_tablets());
+  }
+}
+
+void KsckChecksumResultsToPb(const KsckChecksumResults& results,
+                             KsckChecksumResultsPB* pb) {
+  if (results.snapshot_timestamp) {
+    pb->set_snapshot_timestamp(*results.snapshot_timestamp);
+  }
+  for (const auto& entry : results.tables) {
+    KsckTableChecksumToPb(entry.first, entry.second, pb->add_tables());
+  }
+}
+
+void KsckResults::ToPb(KsckResultsPB* pb) const {
+  for (const auto& error : error_messages) {
+    pb->add_errors(error.ToString());
+  }
+
+  for (const auto& master_summary : master_summaries) {
+    KsckServerHealthSummaryToPb(master_summary, pb->add_master_summaries());
+  }
+  for (const auto& tserver_summary : tserver_summaries) {
+    KsckServerHealthSummaryToPb(tserver_summary, pb->add_tserver_summaries());
+  }
+
+  for (const auto& master_uuid : master_uuids) {
+    pb->add_master_uuids(master_uuid);
+  }
+  pb->set_master_consensus_conflict(master_consensus_conflict);
+  for (const auto& entry : master_consensus_state_map) {
+    KsckConsensusStateToPb(entry.second, pb->add_master_consensus_states());
+  }
+
+  for (const auto& tablet : tablet_summaries) {
+    KsckTabletSummaryToPb(tablet, pb->add_tablet_summaries());
+  }
+  for (const auto& table : table_summaries) {
+    KsckTableSummaryToPb(table, pb->add_table_summaries());
+  }
+
+  if (!checksum_results.tables.empty()) {
+    KsckChecksumResultsToPb(checksum_results, pb->mutable_checksum_results());
+  }
+}
+
+Status KsckResults::PrintJsonTo(PrintMode mode, ostream& out) const {
+  CHECK(mode == PrintMode::JSON_PRETTY || mode == PrintMode::JSON_COMPACT);
+  JsonWriter::Mode jw_mode = JsonWriter::Mode::PRETTY;
+  if (mode == PrintMode::JSON_COMPACT) {
+    jw_mode = JsonWriter::Mode::COMPACT;
+  }
+
+  KsckResultsPB pb;
+  ToPb(&pb);
+  out << JsonWriter::ToJson(pb, jw_mode) << endl;
+  return Status::OK();
 }
 
 } // namespace tools

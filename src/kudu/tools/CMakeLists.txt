@@ -31,6 +31,7 @@ add_library(tool_proto
 target_link_libraries(tool_proto
   kudu_common_proto
   protobuf
+  tablet_proto
   wire_protocol_proto)
 
 #######################################

@@ -21,6 +21,8 @@ option java_package = "org.apache.kudu.tools";
 
 import "kudu/common/common.proto";
 import "kudu/common/wire_protocol.proto";
+import "kudu/tablet/metadata.proto";
+import "kudu/tablet/tablet.proto";
 
 // Creates a new ExternalMiniCluster.
 //
@@ -192,4 +194,116 @@ message ControlShellRequestPB {
     KdestroyRequestPB kdestroy = 10;
     KinitRequestPB kinit = 11;
   }
+}
+
+// Results of ksck, the Kudu system check.
+// See the struct analogues of these messages in ksck_results.h.
+message KsckResultsPB {
+  repeated string errors = 1;
+
+  repeated KsckServerHealthSummaryPB master_summaries = 2;
+  repeated KsckServerHealthSummaryPB tserver_summaries = 3;
+
+  repeated string master_uuids = 4;
+  optional bool master_consensus_conflict = 5;
+  repeated KsckConsensusStatePB master_consensus_states = 6;
+
+  repeated KsckTabletSummaryPB tablet_summaries = 7;
+  repeated KsckTableSummaryPB table_summaries = 8;
+
+  optional KsckChecksumResultsPB checksum_results = 9;
+}
+
+message KsckServerHealthSummaryPB {
+  enum ServerHealth {
+    UNKNOWN = 999;
+    HEALTHY = 0;
+    UNAVAILABLE = 1;
+    WRONG_SERVER_UUID = 2;
+  }
+  optional string uuid = 1;
+  optional string address = 2;
+  optional ServerHealth health = 3;
+  optional string status = 4;
+}
+
+message KsckConsensusStatePB {
+  enum ConfigType {
+    UNKNOWN = 999;
+    MASTER = 0;
+    COMMITTED = 1;
+    PENDING = 2;
+  }
+  optional ConfigType type = 1;
+  optional int64 term = 2;
+  optional int64 opid_index = 3;
+  optional string leader_uuid = 4;
+  repeated string voter_uuids = 5;
+  repeated string non_voter_uuids = 6;
+}
+
+enum KsckTabletHealthPB {
+  UNKNOWN = 999;
+  HEALTHY = 0;
+  RECOVERING = 1;
+  UNDER_REPLICATED = 2;
+  UNAVAILABLE = 3;
+  CONSENSUS_MISMATCH = 4;
+}
+
+message KsckTabletSummaryPB {
+  optional string id = 1;
+  optional string table_id = 2;
+  optional string table_name = 3;
+  optional KsckTabletHealthPB health = 4;
+  optional string status = 5;
+  optional KsckConsensusStatePB master_cstate = 6;
+  repeated KsckReplicaSummaryPB replicas = 7;
+}
+
+message KsckReplicaSummaryPB {
+  optional string ts_uuid = 1;
+  optional string ts_address = 2;
+  optional bool ts_healthy = 3;
+  optional bool is_leader = 4;
+  optional bool is_voter = 5;
+  optional tablet.TabletStatePB state = 6;
+  optional tablet.TabletStatusPB status_pb = 7;
+  optional KsckConsensusStatePB consensus_state = 8;
+}
+
+message KsckTableSummaryPB {
+  optional string id = 1;
+  optional string name = 2;
+  optional KsckTabletHealthPB health = 3;
+  optional int32 replication_factor = 4;
+  optional int32 total_tablets = 5;
+  optional int32 healthy_tablets = 6;
+  optional int32 recovering_tablets = 7;
+  optional int32 underreplicated_tablets = 8;
+  optional int32 unavailable_tablets = 9;
+  optional int32 consensus_mismatch_tablets = 10;
+}
+
+message KsckChecksumResultsPB {
+  optional fixed64 snapshot_timestamp = 1;
+  repeated KsckTableChecksumPB tables = 2;
+}
+
+message KsckTableChecksumPB {
+  optional string name = 1;
+  repeated KsckTabletChecksumPB tablets = 2;
+}
+
+message KsckTabletChecksumPB {
+  optional string tablet_id = 1;
+  optional bool mismatch = 2;
+  repeated KsckReplicaChecksumPB replica_checksums = 3;
+}
+
+message KsckReplicaChecksumPB {
+  optional string ts_address = 1;
+  optional string ts_uuid = 2;
+  optional string status = 3;
+  optional fixed64 checksum = 4;
 }

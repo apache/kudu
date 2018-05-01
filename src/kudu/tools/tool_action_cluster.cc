@@ -101,9 +101,9 @@ unique_ptr<Mode> BuildClusterMode() {
       .AddOptionalParameter("checksum_timeout_sec")
       .AddOptionalParameter("color")
       .AddOptionalParameter("consensus")
+      .AddOptionalParameter("ksck_format")
       .AddOptionalParameter("tables")
       .AddOptionalParameter("tablets")
-      .AddOptionalParameter("verbose")
       .Build();
 
   return ModeBuilder("cluster")

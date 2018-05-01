@@ -72,10 +72,17 @@ DEFINE_uint64(checksum_snapshot_timestamp,
 DEFINE_int32(fetch_replica_info_concurrency, 20,
              "Number of concurrent tablet servers to fetch replica info from.");
 
+DEFINE_string(ksck_format, "plain_concise",
+              "Output format for ksck. Available options are 'plain_concise', "
+              "'plain_full', 'json_pretty', and 'json_compact'.\n"
+              "'plain_concise' format is plain text, omitting most information "
+              "about healthy tablets.\n"
+              "'plain_full' is plain text with all results included.\n"
+              "'json_pretty' produces pretty-printed json.\n"
+              "'json_compact' produces json suitable for parsing by other programs.\n"
+              "'json_pretty' and 'json_compact' differ in format, not content.");
 DEFINE_bool(consensus, true,
             "Whether to check the consensus state from each tablet against the master.");
-DEFINE_bool(verbose, false,
-            "Output detailed information even if no inconsistency is found.");
 
 using std::cout;
 using std::endl;
@@ -362,7 +369,19 @@ Status Ksck::Run() {
 }
 
 Status Ksck::PrintResults() {
-  PrintMode mode = FLAGS_verbose ? PrintMode::VERBOSE : PrintMode::DEFAULT;
+  PrintMode mode;
+  if (FLAGS_ksck_format == "plain_concise") {
+    mode = PrintMode::PLAIN_CONCISE;
+  } else if (FLAGS_ksck_format == "plain_full") {
+    mode = PrintMode::PLAIN_FULL;
+  } else if (FLAGS_ksck_format == "json_pretty") {
+    mode = PrintMode::JSON_PRETTY;
+  } else if (FLAGS_ksck_format == "json_compact") {
+    mode = PrintMode::JSON_COMPACT;
+  } else {
+    return Status::InvalidArgument("unknown ksck format (--ksck_format)",
+                                   FLAGS_ksck_format);
+  }
   return results_.PrintTo(mode, *out_);
 }
 
@@ -780,10 +799,10 @@ KsckCheckResult Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet,
   int copying_replicas_count = 0;
   int conflicting_states = 0;
   int num_voters = 0;
-  vector<KsckReplicaSummary> replica_infos;
+  vector<KsckReplicaSummary> replicas;
   for (const shared_ptr<KsckTabletReplica>& replica : tablet->replicas()) {
-    replica_infos.emplace_back();
-    auto* repl_info = &replica_infos.back();
+    replicas.emplace_back();
+    auto* repl_info = &replicas.back();
     repl_info->ts_uuid = replica->ts_uuid();
     VLOG(1) << Substitute("A replica of tablet $0 is on live tablet server $1",
                           tablet->id(), replica->ts_uuid());
@@ -824,7 +843,7 @@ KsckCheckResult Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet,
       copying_replicas_count++;
     }
     // Compare the master's and peers' consensus configs.
-    for (const auto& r : replica_infos) {
+    for (const auto& r : replicas) {
       if (r.consensus_state && !r.consensus_state->Matches(master_config)) {
         conflicting_states++;
       }
@@ -883,7 +902,7 @@ KsckCheckResult Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet,
   tablet_summary.result = result;
   tablet_summary.status = status;
   tablet_summary.master_cstate = std::move(master_config);
-  tablet_summary.replica_infos.swap(replica_infos);
+  tablet_summary.replicas.swap(replicas);
   results_.tablet_summaries.push_back(std::move(tablet_summary));
   return result;
 }
