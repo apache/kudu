@@ -70,12 +70,10 @@ class TestScanner(TestScanBase):
 
     def test_scan_rows_string_predicate_and_projection(self):
         scanner = self.table.scanner()
+        scanner.set_projected_column_names(['key', 'string_val'])
         sv = self.table['string_val']
-
-        scanner.set_projected_column_indexes([0, 2])
         scanner.add_predicates([sv >= 'hello_20',
                                 sv <= 'hello_22'])
-
         scanner.set_fault_tolerant()
         scanner.open()
 
