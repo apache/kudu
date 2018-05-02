@@ -174,7 +174,7 @@ OPENSSL_WORKAROUND_DIR="$TP_DIR/installed/openssl-el6-workaround"
 
 # The breakpad source artifact is created using the script found in
 # scripts/make-breakpad-src-archive.sh
-BREAKPAD_VERSION=f78d953511606348173911ae0b62572ebec1bbc4
+BREAKPAD_VERSION=9eac2058b70615519b2c4d8c6bdbfca1bd079e39
 BREAKPAD_NAME=breakpad-$BREAKPAD_VERSION
 BREAKPAD_SOURCE=$TP_SOURCE_DIR/$BREAKPAD_NAME
 
