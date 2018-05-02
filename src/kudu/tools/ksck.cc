@@ -26,7 +26,6 @@
 #include <mutex>
 #include <numeric>
 #include <type_traits>
-#include <vector>
 
 #include <boost/optional.hpp> // IWYU pragma: keep
 #include <gflags/gflags.h>
@@ -184,43 +183,15 @@ Status Ksck::FetchInfoFromTabletServers() {
 
   AtomicInt<int32_t> bad_servers(0);
   VLOG(1) << "Fetching info from all the Tablet Servers";
-
-  vector<TabletServerSummary> tablet_server_summaries;
-  simple_spinlock tablet_server_summaries_lock;
-
   for (const KsckMaster::TSMap::value_type& entry : cluster_->tablet_servers()) {
-
     CHECK_OK(pool->SubmitFunc([&]() {
           Status s = ConnectToTabletServer(entry.second);
-          TabletServerSummary summary;
           if (!s.ok()) {
             bad_servers.Increment();
-            if (s.IsRemoteError()) {
-              summary.health = TabletServerHealth::WRONG_SERVER_UUID;
-            } else {
-              summary.health = TabletServerHealth::UNAVAILABLE;
-            }
-          } else {
-            summary.health = TabletServerHealth::HEALTHY;
           }
-
-          summary.uuid = entry.second->uuid();
-          summary.host_port = entry.second->address();
-
-          std::lock_guard<simple_spinlock> lock(tablet_server_summaries_lock);
-          tablet_server_summaries.emplace_back(std::move(summary));
         }));
   }
-
   pool->Wait();
-
-  std::sort(tablet_server_summaries.begin(), tablet_server_summaries.end(),
-            [](const TabletServerSummary& left, const TabletServerSummary& right) {
-              return std::make_pair(left.health != TabletServerHealth::HEALTHY, left.host_port) <
-                     std::make_pair(right.health != TabletServerHealth::HEALTHY, right.host_port);
-            });
-
-  CHECK_OK(PrintTabletServerSummaries(tablet_server_summaries, Out()));
 
   if (bad_servers.Load() == 0) {
     Out() << Substitute("Fetched info from all $0 Tablet Servers", servers_count) << endl;
@@ -248,33 +219,6 @@ Status Ksck::ConnectToTabletServer(const shared_ptr<KsckTabletServer>& ts) {
     }
   }
   return s;
-}
-
-Status Ksck::PrintTabletServerSummaries(const vector<TabletServerSummary>& tablet_server_summaries,
-                                        ostream& out) {
-  out << "Tablet Server Summary" << endl;
-  DataTable table({ "UUID", "RPC Address", "Status"});
-
-  for (const auto& ts : tablet_server_summaries) {
-    string status;
-    switch (ts.health) {
-      case TabletServerHealth::HEALTHY:
-        status = "HEALTHY";
-        break;
-      case TabletServerHealth::UNAVAILABLE:
-        status = "UNAVAILABLE";
-        break;
-      case TabletServerHealth::WRONG_SERVER_UUID:
-        status = "WRONG_SERVER_UUID";
-        break;
-      default:
-        LOG(FATAL) << "Unexpected health alert received";
-        break;
-    }
-    table.AddRow({ ts.uuid, ts.host_port, status });
-  }
-
-  return table.PrintTo(out);
 }
 
 Status Ksck::PrintTableSummaries(const vector<TableSummary>& table_summaries, ostream& out) {

@@ -477,23 +477,6 @@ class Ksck {
     CONSENSUS_MISMATCH,
   };
 
-  enum class TabletServerHealth {
-    // The tablet server is healthy
-    HEALTHY,
-
-    // The tablet server couldn't be connected to
-    UNAVAILABLE,
-
-    // The tablet server reported an unknown UUID
-    WRONG_SERVER_UUID,
-  };
-
-  struct TabletServerSummary {
-    std::string uuid;
-    std::string host_port;
-    TabletServerHealth health;
-  };
-
   // Summarizes the result of VerifyTable().
   struct TableSummary {
     std::string name;
@@ -527,9 +510,6 @@ class Ksck {
     }
   };
 
-  static Status PrintTabletServerSummaries(
-    const std::vector<TabletServerSummary>& tablet_server_summaries,
-    std::ostream& out);
   static Status PrintTableSummaries(const std::vector<TableSummary>& table_summaries,
                                     std::ostream& out);
 
