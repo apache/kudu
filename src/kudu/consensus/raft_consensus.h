@@ -42,6 +42,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/tablet/metadata.pb.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/locks.h"
@@ -81,6 +82,15 @@ struct ElectionResult;
 
 struct ConsensusOptions {
   std::string tablet_id;
+};
+
+struct TabletVotingState {
+  boost::optional<OpId> tombstone_last_logged_opid_;
+  tablet::TabletDataState data_state_;
+  TabletVotingState(boost::optional<OpId> tombstone_last_logged_opid,
+                    tablet::TabletDataState data_state)
+          : tombstone_last_logged_opid_(std::move(tombstone_last_logged_opid)),
+            data_state_(data_state) {}
 };
 
 typedef int64_t ConsensusTerm;
@@ -250,7 +260,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // in kInitialized and kStopped states, instead of just in the kRunning
   // state.
   Status RequestVote(const VoteRequestPB* request,
-                     boost::optional<OpId> tombstone_last_logged_opid,
+                     TabletVotingState tablet_voting_state,
                      VoteResponsePB* response);
 
   // Implement a ChangeConfig() request.

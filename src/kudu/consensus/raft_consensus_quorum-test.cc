@@ -63,6 +63,7 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/tablet/metadata.pb.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
@@ -1027,7 +1028,9 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   VoteResponsePB response;
   request.set_candidate_uuid(fs_managers_[0]->uuid());
   request.set_candidate_term(last_op_id.term() + 1);
-  ASSERT_OK(peer->RequestVote(&request, boost::none, &response));
+  ASSERT_OK(peer->RequestVote(&request,
+                              TabletVotingState(boost::none, tablet::TABLET_DATA_READY),
+                              &response));
   ASSERT_FALSE(response.vote_granted());
   ASSERT_EQ(ConsensusErrorPB::LEADER_IS_ALIVE, response.consensus_error().code());
   ASSERT_EQ(0, flush_count() - flush_count_before)
@@ -1039,7 +1042,9 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   // This will allow the rest of the requests in the test to go through.
   flush_count_before = flush_count();
   request.set_ignore_live_leader(true);
-  ASSERT_OK(peer->RequestVote(&request, boost::none, &response));
+  ASSERT_OK(peer->RequestVote(&request,
+                              TabletVotingState(boost::none, tablet::TABLET_DATA_READY),
+                              &response));
   ASSERT_TRUE(response.vote_granted());
   ASSERT_EQ(last_op_id.term() + 1, response.responder_term());
   ASSERT_NO_FATAL_FAILURE(AssertDurableTermAndVote(kPeerIndex, last_op_id.term() + 1,
@@ -1050,7 +1055,9 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   // Ensure we get same response for same term and same UUID.
   response.Clear();
   flush_count_before = flush_count();
-  ASSERT_OK(peer->RequestVote(&request, boost::none, &response));
+  ASSERT_OK(peer->RequestVote(&request,
+                              TabletVotingState(boost::none, tablet::TABLET_DATA_READY),
+                              &response));
   ASSERT_TRUE(response.vote_granted());
   ASSERT_EQ(0, flush_count() - flush_count_before)
       << "Confirming a previous vote should not flush";
@@ -1059,7 +1066,9 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   flush_count_before = flush_count();
   response.Clear();
   request.set_candidate_uuid(fs_managers_[2]->uuid());
-  ASSERT_OK(peer->RequestVote(&request, boost::none, &response));
+  ASSERT_OK(peer->RequestVote(&request,
+                              TabletVotingState(boost::none, tablet::TABLET_DATA_READY),
+                              &response));
   ASSERT_FALSE(response.vote_granted());
   ASSERT_TRUE(response.has_consensus_error());
   ASSERT_EQ(ConsensusErrorPB::ALREADY_VOTED, response.consensus_error().code());
@@ -1079,7 +1088,9 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   request.set_candidate_uuid(fs_managers_[0]->uuid());
   request.set_candidate_term(last_op_id.term() + 2);
   response.Clear();
-  ASSERT_OK(peer->RequestVote(&request, boost::none, &response));
+  ASSERT_OK(peer->RequestVote(&request,
+                              TabletVotingState(boost::none, tablet::TABLET_DATA_READY),
+                              &response));
   ASSERT_TRUE(response.vote_granted());
   ASSERT_EQ(last_op_id.term() + 2, response.responder_term());
   ASSERT_NO_FATAL_FAILURE(AssertDurableTermAndVote(kPeerIndex, last_op_id.term() + 2,
@@ -1093,7 +1104,9 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   flush_count_before = flush_count();
   request.set_candidate_term(last_op_id.term() + 1);
   response.Clear();
-  ASSERT_OK(peer->RequestVote(&request, boost::none, &response));
+  ASSERT_OK(peer->RequestVote(&request,
+                              TabletVotingState(boost::none, tablet::TABLET_DATA_READY),
+                              &response));
   ASSERT_FALSE(response.vote_granted());
   ASSERT_TRUE(response.has_consensus_error());
   ASSERT_EQ(ConsensusErrorPB::INVALID_TERM, response.consensus_error().code());
@@ -1109,7 +1122,9 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   request.set_candidate_term(last_op_id.term() + 3);
   request.set_is_pre_election(true);
   response.Clear();
-  ASSERT_OK(peer->RequestVote(&request, boost::none, &response));
+  ASSERT_OK(peer->RequestVote(&request,
+                              TabletVotingState(boost::none, tablet::TABLET_DATA_READY),
+                              &response));
   ASSERT_TRUE(response.vote_granted());
   ASSERT_FALSE(response.has_consensus_error());
   ASSERT_EQ(last_op_id.term() + 2, response.responder_term());
@@ -1128,7 +1143,9 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   request.set_candidate_term(last_op_id.term() + 3);
   request.mutable_candidate_status()->mutable_last_received()->CopyFrom(MinimumOpId());
   response.Clear();
-  ASSERT_OK(peer->RequestVote(&request, boost::none, &response));
+  ASSERT_OK(peer->RequestVote(&request,
+                              TabletVotingState(boost::none, tablet::TABLET_DATA_READY),
+                              &response));
   ASSERT_FALSE(response.vote_granted());
   ASSERT_TRUE(response.has_consensus_error());
   ASSERT_EQ(ConsensusErrorPB::LAST_OPID_TOO_OLD, response.consensus_error().code());

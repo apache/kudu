@@ -1501,7 +1501,7 @@ void RaftConsensus::FillConsensusResponseError(ConsensusResponsePB* response,
 }
 
 Status RaftConsensus::RequestVote(const VoteRequestPB* request,
-                                  optional<OpId> tombstone_last_logged_opid,
+                                  TabletVotingState tablet_voting_state,
                                   VoteResponsePB* response) {
   TRACE_EVENT2("consensus", "RaftConsensus::RequestVote",
                "peer", peer_uuid(),
@@ -1551,15 +1551,20 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request,
       local_last_logged_opid = queue_->GetLastOpIdInLog();
       break;
     default:
-      if (!tombstone_last_logged_opid) {
+      if (!tablet_voting_state.tombstone_last_logged_opid_) {
         return Status::IllegalState("must be running to vote when last-logged opid is not known");
       }
       if (!FLAGS_raft_enable_tombstoned_voting) {
         return Status::IllegalState("must be running to vote when tombstoned voting is disabled");
       }
-      local_last_logged_opid = *tombstone_last_logged_opid;
-      LOG_WITH_PREFIX_UNLOCKED(INFO) << "voting while tombstoned based on last-logged opid "
-                                     << local_last_logged_opid;
+      local_last_logged_opid = *(tablet_voting_state.tombstone_last_logged_opid_);
+      if (tablet_voting_state.data_state_ == tablet::TABLET_DATA_COPYING) {
+        LOG_WITH_PREFIX_UNLOCKED(INFO) << "voting while copying based on last-logged opid "
+                                       << local_last_logged_opid;
+      } else if (tablet_voting_state.data_state_ == tablet::TABLET_DATA_TOMBSTONED) {
+        LOG_WITH_PREFIX_UNLOCKED(INFO) << "voting while tombstoned based on last-logged opid "
+                                       << local_last_logged_opid;
+      }
       break;
   }
   DCHECK(local_last_logged_opid.IsInitialized());

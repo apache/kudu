@@ -544,7 +544,9 @@ class LocalTestPeerProxy : public TestPeerProxy {
     Status s = peers_->GetPeerByUuid(peer_uuid_, &peer);
 
     if (s.ok()) {
-      s = peer->RequestVote(&other_peer_req, boost::none, &other_peer_resp);
+      s = peer->RequestVote(&other_peer_req,
+                            TabletVotingState(boost::none, tablet::TABLET_DATA_READY),
+                            &other_peer_resp);
     }
     if (!s.ok()) {
       LOG(WARNING) << "Could not RequestVote from replica with request: "
