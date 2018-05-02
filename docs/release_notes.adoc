@@ -16,7 +16,7 @@
 // under the License.
 
 [[release_notes]]
-= Apache Kudu 1.7.0 Release Notes
+= Apache Kudu 1.7.1 Release Notes
 
 :author: Kudu Team
 :imagesdir: ./images
@@ -27,6 +27,43 @@
 :backend: html5
 :sectlinks:
 :experimental:
+
+[[rn_1.7.1_fixed_issues]]
+== Fixed Issues
+
+Apache Kudu 1.7.1 is a bug-fix release which fixes critical issues in Kudu 1.7.0.
+
+* Fixed and issue where a leader replica could report a follower's health status
+  as FAILED instead of FAILED_UNRECOVERABLE. In configurations where the tablet
+  replication factor equals to the total number of tablet servers in the cluster,
+  that lead to situations where the tablet could not be automatically recovered
+  until a new leader was elected or corresponding tablet servers were restarted.
+  (see link:https://issues.apache.org/jira/browse/KUDU-2367[KUDU-2367]).
+
+* Fixed an issue where Kudu would fail to start if RLIMIT_NPROC was set to -1.
+  (see link:https://issues.apache.org/jira/browse/KUDU-2377[KUDU-2377]).
+
+* Fixed an issue where `kudu-spark` was unable to connect to secure clusters.
+  (see link:https://issues.apache.org/jira/browse/KUDU-2379[KUDU-2379]).
+
+* Fixed an issue where the `kudu-python` client would not compile in environments
+  where `__int128` is not supported. This was most commonly el6 environments.
+  (see link:https://issues.apache.org/jira/browse/KUDU-2412[KUDU-2412]).
+
+* Fixed an issue where unaligned loads of `__int128` integers could result
+  in a crash.
+  (see link:https://issues.apache.org/jira/browse/KUDU-2378[KUDU-2378]).
+
+* Fixed a bug in `PartialRow.setMin` that could lead to incorrect partition
+  pruning when a `decimal` column is part of the tables range partition but
+  not a part of the query predicate.
+  (see link:https://issues.apache.org/jira/browse/KUDU-2416[KUDU-2416]).
+
+* Fixed an equality check on `decimal` column predicates that could result
+  in pruning that is too conservative.
+
+[[rn_1.7.0_release_notes]]
+= Apache Kudu 1.7.0 Release Notes
 
 [[rn_1.7.0_upgrade_notes]]
 == Upgrade Notes
