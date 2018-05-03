@@ -35,7 +35,11 @@
 // Forward declarations for the relevant OpenSSL typedefs
 // in addition to openssl_util.h.
 typedef struct asn1_string_st ASN1_INTEGER;
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
 typedef struct env_md_st EVP_MD;
+#else
+typedef struct evp_md_st EVP_MD;
+#endif
 typedef struct rsa_st RSA;
 typedef struct x509_st X509;
 typedef struct X509_req_st X509_REQ;

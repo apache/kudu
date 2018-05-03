@@ -89,7 +89,7 @@ Status TlsHandshake::Continue(const string& recv, string* send) {
 
   BIO* rbio = SSL_get_rbio(ssl_.get());
   int n = BIO_write(rbio, recv.data(), recv.size());
-  DCHECK_EQ(n, recv.size());
+  DCHECK(n == recv.size() || (n == -1 && recv.empty()));
   DCHECK_EQ(BIO_ctrl_pending(rbio), recv.size());
 
   int rc = SSL_do_handshake(ssl_.get());

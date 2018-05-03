@@ -104,7 +104,11 @@ class CertSignRequest : public RawDataWrapper<X509_REQ> {
   Status ToString(std::string* data, DataFormat format) const WARN_UNUSED_RESULT;
   Status FromFile(const std::string& fpath, DataFormat format) WARN_UNUSED_RESULT;
 
-  // Returns a shallow clone of the CSR (only a reference count is incremented).
+  // Returns a clone of the CSR.
+  //
+  // Whether this clone is deep or shallow (i.e. only a reference count is
+  // incremented) depends on the version of OpenSSL. Either way, the right
+  // thing happens when the clone goes out of scope.
   CertSignRequest Clone() const;
 
   // Returns the CSR's public key.

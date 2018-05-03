@@ -339,12 +339,16 @@ Status CertSigner::CopyExtensions(X509_REQ* req, X509* x) {
 Status CertSigner::FillCertTemplateFromRequest(X509_REQ* req, X509* tmpl) {
   SCOPED_OPENSSL_NO_PENDING_ERRORS;
   CHECK(req);
+
+  // As of OpenSSL 1.1, req's internals are hidden.
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
   if (!req->req_info ||
       !req->req_info->pubkey ||
       !req->req_info->pubkey->public_key ||
       !req->req_info->pubkey->public_key->data) {
     return Status::RuntimeError("corrupted CSR: no public key");
   }
+#endif
   auto pub_key = ssl_make_unique(X509_REQ_get_pubkey(req));
   OPENSSL_RET_IF_NULL(pub_key, "error unpacking public key from CSR");
   const int rc = X509_REQ_verify(req, pub_key.get());

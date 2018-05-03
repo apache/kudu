@@ -90,6 +90,26 @@ template<> struct SslTypeTraits<X509_STORE_CTX> {
   static constexpr auto kFreeFunc = &X509_STORE_CTX_free;
 };
 
+namespace {
+
+Status CheckMaxSupportedTlsVersion(int tls_version, const char* tls_version_str) {
+  // OpenSSL 1.1 and newer supports all of the TLS versions we care about, so
+  // the below check is only necessary in older versions of OpenSSL.
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+  auto max_supported_tls_version = SSLv23_method()->version;
+  DCHECK_GE(max_supported_tls_version, TLS1_VERSION);
+
+  if (max_supported_tls_version < tls_version) {
+    return Status::InvalidArgument(
+        Substitute("invalid minimum TLS protocol version (--rpc_tls_min_protocol): "
+                   "this platform does not support $0", tls_version_str));
+  }
+#endif
+  return Status::OK();
+}
+
+} // anonymous namespace
+
 TlsContext::TlsContext()
     : tls_ciphers_(kudu::security::SecurityDefaults::kDefaultTlsCiphers),
       tls_min_protocol_(kudu::security::SecurityDefaults::kDefaultTlsMinVersion),
@@ -134,24 +154,11 @@ Status TlsContext::Init() {
   //   https://tools.ietf.org/html/rfc7525#section-3.3
   auto options = SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_COMPRESSION;
 
-  auto max_supported_tls_version = SSLv23_method()->version;
-  DCHECK_GE(max_supported_tls_version, TLS1_VERSION);
-
   if (boost::iequals(tls_min_protocol_, "TLSv1.2")) {
-    if (max_supported_tls_version < TLS1_2_VERSION) {
-      return Status::InvalidArgument(
-          "invalid minimum TLS protocol version (--rpc_tls_min_protocol): "
-          "this platform does not support TLSv1.2");
-    }
-
+    RETURN_NOT_OK(CheckMaxSupportedTlsVersion(TLS1_2_VERSION, "TLSv1.2"));
     options |= SSL_OP_NO_TLSv1 | SSL_OP_NO_TLSv1_1;
   } else if (boost::iequals(tls_min_protocol_, "TLSv1.1")) {
-    if (max_supported_tls_version < TLS1_1_VERSION) {
-      return Status::InvalidArgument(
-          "invalid minimum TLS protocol version (--rpc_tls_min_protocol): "
-          "this platform does not support TLSv1.1");
-    }
-
+    RETURN_NOT_OK(CheckMaxSupportedTlsVersion(TLS1_1_VERSION, "TLSv1.1"));
     options |= SSL_OP_NO_TLSv1;
   } else if (!boost::iequals(tls_min_protocol_, "TLSv1")) {
     return Status::InvalidArgument("unknown value provided for --rpc_tls_min_protocol flag",
@@ -293,15 +300,32 @@ Status TlsContext::DumpTrustedCerts(vector<string>* cert_ders) const {
   vector<string> ret;
   auto* cert_store = SSL_CTX_get_cert_store(ctx_.get());
 
-  CRYPTO_w_lock(CRYPTO_LOCK_X509_STORE);
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+#define STORE_LOCK(CS) CRYPTO_w_lock(CRYPTO_LOCK_X509_STORE)
+#define STORE_UNLOCK(CS) CRYPTO_w_unlock(CRYPTO_LOCK_X509_STORE)
+#define STORE_GET_X509_OBJS(CS) (CS)->objs
+#define X509_OBJ_GET_TYPE(X509_OBJ) (X509_OBJ)->type
+#define X509_OBJ_GET_X509(X509_OBJ) (X509_OBJ)->data.x509
+#else
+#define STORE_LOCK(CS) CHECK_EQ(1, X509_STORE_lock(CS)) << "Could not lock certificate store"
+#define STORE_UNLOCK(CS) CHECK_EQ(1, X509_STORE_unlock(CS)) << "Could not unlock certificate store"
+#define STORE_GET_X509_OBJS(CS) X509_STORE_get0_objects(CS)
+#define X509_OBJ_GET_TYPE(X509_OBJ) X509_OBJECT_get_type(X509_OBJ)
+#define X509_OBJ_GET_X509(X509_OBJ) X509_OBJECT_get0_X509(X509_OBJ)
+#endif
+
+  STORE_LOCK(cert_store);
   auto unlock = MakeScopedCleanup([&]() {
-      CRYPTO_w_unlock(CRYPTO_LOCK_X509_STORE);
+      STORE_UNLOCK(cert_store);
     });
-  for (int i = 0; i < sk_X509_OBJECT_num(cert_store->objs); i++) {
-    X509_OBJECT* obj = sk_X509_OBJECT_value(cert_store->objs, i);
-    if (obj->type != X509_LU_X509) continue;
+  auto* objects = STORE_GET_X509_OBJS(cert_store);
+  int num_objects = sk_X509_OBJECT_num(objects);
+  for (int i = 0; i < num_objects; i++) {
+    auto* obj = sk_X509_OBJECT_value(objects, i);
+    if (X509_OBJ_GET_TYPE(obj) != X509_LU_X509) continue;
+    auto* x509 = X509_OBJ_GET_X509(obj);
     Cert c;
-    c.AdoptAndAddRefX509(obj->data.x509);
+    c.AdoptAndAddRefX509(x509);
     string der;
     RETURN_NOT_OK(c.ToString(&der, DataFormat::DER));
     ret.emplace_back(std::move(der));

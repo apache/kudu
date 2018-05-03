@@ -38,7 +38,16 @@ using ca::CertSigner;
 Status GenerateSelfSignedCAForTests(PrivateKey* ca_key, Cert* ca_cert) {
   static const int64_t kRootCaCertExpirationSeconds = 24 * 60 * 60;
   // Create a key for the self-signed CA.
-  RETURN_NOT_OK(GeneratePrivateKey(512, ca_key));
+  //
+  // OpenSSL has a concept of "security levels" which, amongst other things,
+  // place certain restrictions on key strength. OpenSSL 1.0 defaults to level
+  // 0 (no restrictions) while 1.1 defaults to level 1, which requires RSA keys
+  // to have at least 1024 bits. For simplicity, we'll just use 1024 bits here,
+  // even though shorter keys would decrease test running time.
+  //
+  // See https://www.openssl.org/docs/man1.1.0/ssl/SSL_CTX_get_security_level.html
+  // for more details.
+  RETURN_NOT_OK(GeneratePrivateKey(1024, ca_key));
 
   CaCertRequestGenerator::Config config = { "test-ca-cn" };
   RETURN_NOT_OK(CertSigner::SelfSignCA(*ca_key,

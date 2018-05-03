@@ -88,7 +88,11 @@ template<> struct SslTypeTraits<RSA> {
   static constexpr auto kFreeFunc = &RSA_free;
 };
 template<> struct SslTypeTraits<EVP_MD_CTX> {
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
   static constexpr auto kFreeFunc = &EVP_MD_CTX_destroy;
+#else
+  static constexpr auto kFreeFunc = &EVP_MD_CTX_free;
+#endif
 };
 
 namespace {

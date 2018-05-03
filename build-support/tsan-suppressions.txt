@@ -99,3 +99,12 @@ race:kudu::consensus::LocalTestPeerProxy::~LocalTestPeerProxy
 # GetBoundAddresses()
 race:kudu::Webserver::GetBoundAddresses
 race:kudu::RpcServer::GetBoundAddresses
+
+# KUDU-2439: OpenSSL 1.1's atexit() handler may destroy global state while a
+# Messenger is shutting down and still accessing that state. See
+# https://github.com/openssl/openssl/issues/6214 for more details.
+#
+# This is carried out by OPENSSL_cleanup, but TSAN's unwinder doesn't
+# include any stack frame above the libcrypto lock destruction or memory release
+# call for some reason, so we have to do something more generic.
+called_from_lib:libcrypto.so

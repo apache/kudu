@@ -250,7 +250,13 @@ void ReactorThread::ShutdownInternal() {
   }
 
   // Remove the OpenSSL thread state.
+  //
+  // As of OpenSSL 1.1, this [1] is a no-op and can be ignored.
+  //
+  // 1. https://www.openssl.org/docs/man1.1.0/crypto/ERR_remove_thread_state.html
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
   ERR_remove_thread_state(nullptr);
+#endif
 }
 
 ReactorTask::ReactorTask() {

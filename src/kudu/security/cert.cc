@@ -271,11 +271,21 @@ Status CertSignRequest::FromFile(const std::string& fpath, DataFormat format) {
 }
 
 CertSignRequest CertSignRequest::Clone() const {
+  X509_REQ* cloned_req;
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
   CHECK_GT(CRYPTO_add(&data_->references, 1, CRYPTO_LOCK_X509_REQ), 1)
     << "X509_REQ use-after-free detected";
+  cloned_req = GetRawData();
+#else
+  // With OpenSSL 1.1, data structure internals are hidden, and there doesn't
+  // seem to be a public method that increments data_'s refcount.
+  cloned_req = X509_REQ_dup(GetRawData());
+  CHECK(cloned_req != nullptr)
+    << "X509 allocation failure detected: " << GetOpenSSLErrors();
+#endif
 
   CertSignRequest clone;
-  clone.AdoptRawData(GetRawData());
+  clone.AdoptRawData(cloned_req);
   return clone;
 }
 
