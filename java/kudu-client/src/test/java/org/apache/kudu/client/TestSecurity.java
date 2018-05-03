@@ -36,6 +36,7 @@ import org.apache.kudu.util.SecurityUtil;
 import org.hamcrest.CoreMatchers;
 import org.junit.After;
 import org.junit.Assert;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 import com.google.common.base.Preconditions;
@@ -81,6 +82,11 @@ public class TestSecurity {
     // So, we have to use a hack of calling listTabletServers, which _does_ properly retry,
     // in order to wait for the masters to elect a leader.
     client.listTabletServers();
+  }
+
+  @BeforeClass
+  public static void setUpBeforeClass() throws Exception {
+    FakeDNS.getInstance().install();
   }
 
   @After
