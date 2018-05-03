@@ -445,13 +445,13 @@ Status DataDirManager::Create() {
     all_uuids.emplace_back(uuid);
     root_uuid_pairs_to_create.emplace_back(r.path, std::move(uuid));
   }
-  RETURN_NOT_OK_PREPEND(CreateNewDataDirectoriesAndUpdateExistingOnes(
+  RETURN_NOT_OK_PREPEND(CreateNewDataDirectoriesAndUpdateInstances(
       std::move(root_uuid_pairs_to_create), {}, std::move(all_uuids)),
                         "could not create new data directories");
   return Status::OK();
 }
 
-Status DataDirManager::CreateNewDataDirectoriesAndUpdateExistingOnes(
+Status DataDirManager::CreateNewDataDirectoriesAndUpdateInstances(
     vector<pair<string, string>> root_uuid_pairs_to_create,
     vector<unique_ptr<PathInstanceMetadataFile>> instances_to_update,
     vector<string> all_uuids) {
@@ -493,7 +493,7 @@ Status DataDirManager::CreateNewDataDirectoriesAndUpdateExistingOnes(
   }
 
   // Update existing instances, if any.
-  RETURN_NOT_OK_PREPEND(UpdateExistingInstances(
+  RETURN_NOT_OK_PREPEND(UpdateInstances(
       std::move(instances_to_update), std::move(all_uuids)),
                         "could not update existing data directories");
 
@@ -508,7 +508,7 @@ Status DataDirManager::CreateNewDataDirectoriesAndUpdateExistingOnes(
   return Status::OK();
 }
 
-Status DataDirManager::UpdateExistingInstances(
+Status DataDirManager::UpdateInstances(
     vector<unique_ptr<PathInstanceMetadataFile>> instances_to_update,
     vector<string> new_all_uuids) {
   // Prepare a scoped cleanup for managing instance metadata copies.
@@ -531,6 +531,9 @@ Status DataDirManager::UpdateExistingInstances(
   WritableFileOptions opts;
   opts.sync_on_close = true;
   for (const auto& instance : instances_to_update) {
+    if (!instance->healthy()) {
+      continue;
+    }
     const string& instance_filename = instance->path();
     string copy_filename = instance_filename + kTmpInfix;
     RETURN_NOT_OK_PREPEND(env_util::CopyFile(
@@ -541,6 +544,9 @@ Status DataDirManager::UpdateExistingInstances(
 
   // Update existing instance metadata files with the new value of all_uuids.
   for (const auto& instance : instances_to_update) {
+    if (!instance->healthy()) {
+      continue;
+    }
     const string& instance_filename = instance->path();
     string copy_filename = instance_filename + kTmpInfix;
 
@@ -570,7 +576,6 @@ Status DataDirManager::UpdateExistingInstances(
 }
 
 Status DataDirManager::LoadInstances(
-    vector<string>* missing_roots,
     vector<unique_ptr<PathInstanceMetadataFile>>* loaded_instances) {
   LockMode lock_mode;
   if (!FLAGS_fs_lock_data_dirs) {
@@ -592,21 +597,16 @@ Status DataDirManager::LoadInstances(
     if (PREDICT_FALSE(!root.status.ok())) {
       instance->SetInstanceFailed(root.status);
     } else {
-      // This may return OK and mark 'instance' as failed.
-      Status s = instance->LoadFromDisk();
-      if (s.IsNotFound() &&
-          opts_.consistency_check != ConsistencyCheckBehavior::ENFORCE_CONSISTENCY) {
-        // A missing instance is not tolerated if we've been asked to enforce
-        // consistency checks.
-        missing_roots_tmp.emplace_back(root.path);
-        continue;
-      }
-      RETURN_NOT_OK_PREPEND(s, Substitute("could not load $0", instance_filename));
+      // This may return OK and mark 'instance' as unhealthy if the file could
+      // not be loaded (e.g. not found, disk errors).
+      RETURN_NOT_OK_PREPEND(instance->LoadFromDisk(),
+                            Substitute("could not load $0", instance_filename));
     }
 
     // Try locking the instance.
     if (instance->healthy() && lock_mode != LockMode::NONE) {
-      // This may return OK and mark 'instance' as failed.
+      // This may return OK and mark 'instance' as unhealthy if the file could
+      // not be locked due to non-locking issues (e.g. disk errors).
       Status s = instance->Lock();
       if (!s.ok()) {
         if (lock_mode == LockMode::OPTIONAL) {
@@ -622,11 +622,6 @@ Status DataDirManager::LoadInstances(
     loaded_instances_tmp.emplace_back(std::move(instance));
   }
 
-  // Check that at least a single data directory exists and is healthy.
-  if (loaded_instances_tmp.empty()) {
-    return Status::NotFound("could not open directory manager; none of the "
-                            "provided data directories could be found.");
-  }
   int num_healthy_instances = 0;
   for (const auto& instance : loaded_instances_tmp) {
     if (instance->healthy()) {
@@ -634,10 +629,9 @@ Status DataDirManager::LoadInstances(
     }
   }
   if (num_healthy_instances == 0) {
-    return Status::IOError("could not open directory manager; all data "
-                           "directories failed");
+    return Status::NotFound("could not open directory manager; no healthy "
+                            "data directories found");
   }
-  missing_roots->swap(missing_roots_tmp);
   loaded_instances->swap(loaded_instances_tmp);
   return Status::OK();
 }
@@ -646,9 +640,8 @@ Status DataDirManager::Open() {
   const int kMaxDataDirs = opts_.block_manager_type == "file" ? (1 << 16) - 1 : kint32max;
 
   // Find and load existing data directory instances.
-  vector<string> missing_roots;
   vector<unique_ptr<PathInstanceMetadataFile>> loaded_instances;
-  RETURN_NOT_OK(LoadInstances(&missing_roots, &loaded_instances));
+  RETURN_NOT_OK(LoadInstances(&loaded_instances));
 
   // Add new or remove existing data directories, if desired.
   if (opts_.consistency_check == ConsistencyCheckBehavior::UPDATE_ON_DISK) {
@@ -666,18 +659,19 @@ Status DataDirManager::Open() {
     vector<string> new_all_uuids;
     vector<pair<string, string>> root_uuid_pairs_to_create;
     for (const auto& i : loaded_instances) {
+      if (i->health_status().IsNotFound()) {
+        string uuid = gen.Next();
+        new_all_uuids.emplace_back(uuid);
+        root_uuid_pairs_to_create.emplace_back(DirName(i->dir()), std::move(uuid));
+        continue;
+      }
       RETURN_NOT_OK_PREPEND(
           i->health_status(),
           "found failed data directory while adding new data directories");
       new_all_uuids.emplace_back(i->metadata()->path_set().uuid());
     }
-    for (const auto& m : missing_roots) {
-      string uuid = gen.Next();
-      new_all_uuids.emplace_back(uuid);
-      root_uuid_pairs_to_create.emplace_back(m, std::move(uuid));
-    }
     RETURN_NOT_OK_PREPEND(
-        CreateNewDataDirectoriesAndUpdateExistingOnes(
+        CreateNewDataDirectoriesAndUpdateInstances(
             std::move(root_uuid_pairs_to_create),
             std::move(loaded_instances),
             std::move(new_all_uuids)),
@@ -688,9 +682,11 @@ Status DataDirManager::Open() {
     //
     // Note: 'loaded_instances' must be cleared to unlock the instance files.
     loaded_instances.clear();
-    missing_roots.clear();
-    RETURN_NOT_OK(LoadInstances(&missing_roots, &loaded_instances));
-    DCHECK(missing_roots.empty());
+    RETURN_NOT_OK(LoadInstances(&loaded_instances));
+    for (const auto& i : loaded_instances) {
+      RETURN_NOT_OK_PREPEND(i->health_status(),
+          "found failed data directory after updating data directories");
+    }
   }
 
   // Check the integrity of all loaded instances.
@@ -765,74 +761,80 @@ Status DataDirManager::Open() {
     InsertOrDie(&tablets_by_uuid_idx_map, idx, {});
   };
 
-  vector<DataDir*> unassigned_dirs;
-  int first_healthy = -1;
-  // Assign a uuid index to each healthy instance.
-  for (int dir = 0; dir < dds.size(); dir++) {
-    const auto& dd = dds[dir];
-    if (PREDICT_FALSE(!dd->instance()->healthy())) {
-      // Keep track of failed directories so we can assign them UUIDs later.
-      unassigned_dirs.push_back(dd.get());
-      continue;
-    }
-    if (first_healthy == -1) {
-      first_healthy = dir;
-    }
-    const PathSetPB& path_set = dd->instance()->metadata()->path_set();
-    int idx = -1;
-    for (int i = 0; i < path_set.all_uuids_size(); i++) {
-      if (path_set.uuid() == path_set.all_uuids(i)) {
-        idx = i;
-        break;
-      }
-    }
-    if (idx == -1) {
-      return Status::IOError(Substitute(
-          "corrupt path set for data directory $0: uuid $1 not found in path set",
-          dd->dir(), path_set.uuid()));
-    }
-    if (idx > kMaxDataDirs) {
-      return Status::NotSupported(
-          Substitute("block manager supports a maximum of $0 paths", kMaxDataDirs));
-    }
-    insert_to_maps(idx, path_set.uuid(), dd.get());
-  }
-  CHECK_NE(first_healthy, -1); // Guaranteed by LoadInstances().
-
-  // If the uuid index was not assigned, assign it to a failed directory. Use
-  // the path set from the first healthy instance.
-  PathSetPB path_set = dds[first_healthy]->instance()->metadata()->path_set();
-  int failed_dir_idx = 0;
-  for (int uuid_idx = 0; uuid_idx < path_set.all_uuids_size(); uuid_idx++) {
-    if (!ContainsKey(uuid_by_idx, uuid_idx)) {
-      const string& unassigned_uuid = path_set.all_uuids(uuid_idx);
-      if (failed_dir_idx == unassigned_dirs.size()) {
-        // This uuid's data directory is missing outright, which can only
-        // happen when opts_.consistency_check is IGNORE_INCONSISTENCY (i.e. if
-        // this DataDirManager is trialing a new data dir configuration that
-        // removes an existing data dir). In such a case, we don't bother
-        // tracking the missing directory at all.
-        //
-        // If opts_.consistency_check is UPDATE_ON_DISK, the on-disk instances
-        // were updated and reloaded above, ensuring that the list of data
-        // directories now excludes the missing directory.
-        //
-        // If opts_.consistency_check is ENFORCE_CONSISTENCY, the
-        // CheckIntegrity call above requires that on-disk instances and the
-        // list of data directories match, so there cannot be a missing data directory.
+  if (opts_.consistency_check != ConsistencyCheckBehavior::IGNORE_INCONSISTENCY) {
+    // If we're not in IGNORE_INCONSISTENCY mode, we're guaranteed that the
+    // healthy instances match from the above integrity check, so we can assign
+    // each healthy directory a UUID in accordance with its instance file.
+    //
+    // A directory may not have been assigned a UUID because its instance file
+    // could not be read, in which case, we track it and assign a UUID to it
+    // later if we can.
+    vector<DataDir*> unassigned_dirs;
+    int first_healthy = -1;
+    for (int dir = 0; dir < dds.size(); dir++) {
+      const auto& dd = dds[dir];
+      if (PREDICT_FALSE(!dd->instance()->healthy())) {
+        // Keep track of failed directories so we can assign them UUIDs later.
+        unassigned_dirs.push_back(dd.get());
         continue;
       }
-      insert_to_maps(uuid_idx, unassigned_uuid, unassigned_dirs[failed_dir_idx]);
-
-      // Record the directory as failed.
-      if (metrics_) {
-        metrics_->data_dirs_failed->IncrementBy(1);
+      if (first_healthy == -1) {
+        first_healthy = dir;
       }
-      InsertOrDie(&failed_data_dirs, uuid_idx);
-      failed_dir_idx++;
+      const PathSetPB& path_set = dd->instance()->metadata()->path_set();
+      int idx = -1;
+      for (int i = 0; i < path_set.all_uuids_size(); i++) {
+        if (path_set.uuid() == path_set.all_uuids(i)) {
+          idx = i;
+          break;
+        }
+      }
+      if (idx == -1) {
+        return Status::IOError(Substitute(
+            "corrupt path set for data directory $0: uuid $1 not found in path set",
+            dd->dir(), path_set.uuid()));
+      }
+      if (idx > kMaxDataDirs) {
+        return Status::NotSupported(
+            Substitute("block manager supports a maximum of $0 paths", kMaxDataDirs));
+      }
+      insert_to_maps(idx, path_set.uuid(), dd.get());
+    }
+    CHECK_NE(first_healthy, -1); // Guaranteed by LoadInstances().
+
+    // If the uuid index was not assigned, assign it to a failed directory. Use
+    // the path set from the first healthy instance.
+    PathSetPB path_set = dds[first_healthy]->instance()->metadata()->path_set();
+    int failed_dir_idx = 0;
+    for (int uuid_idx = 0; uuid_idx < path_set.all_uuids_size(); uuid_idx++) {
+      if (!ContainsKey(uuid_by_idx, uuid_idx)) {
+        const string& unassigned_uuid = path_set.all_uuids(uuid_idx);
+        insert_to_maps(uuid_idx, unassigned_uuid, unassigned_dirs[failed_dir_idx]);
+
+        // Record the directory as failed.
+        if (metrics_) {
+          metrics_->data_dirs_failed->IncrementBy(1);
+        }
+        InsertOrDie(&failed_data_dirs, uuid_idx);
+        failed_dir_idx++;
+      }
+    }
+    CHECK_EQ(unassigned_dirs.size(), failed_dir_idx);
+  } else {
+    // If we are in IGNORE_INCONSISTENCY mode, all bets are off. The most we
+    // can do is make a best effort assignment of data dirs to UUIDs based on
+    // the ones that are healthy, and for the sake of completeness, assign
+    // artificial UUIDs to the unhealthy ones.
+    for (int dir = 0; dir < dds.size(); dir++) {
+      DataDir* dd = dds[dir].get();
+      if (dd->instance()->healthy()) {
+        insert_to_maps(dir, dd->instance()->metadata()->path_set().uuid(), dd);
+      } else {
+        insert_to_maps(dir, Substitute("<unknown uuid $0>", dir), dd);
+        InsertOrDie(&failed_data_dirs, dir);
+      }
     }
   }
-  CHECK_EQ(unassigned_dirs.size(), failed_dir_idx);
 
   data_dirs_.swap(dds);
   uuid_by_idx_.swap(uuid_by_idx);

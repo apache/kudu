@@ -420,31 +420,33 @@ class DataDirManager {
 
   // Loads the instance files for each data directory.
   //
-  // If consistency checking is disabled, missing instance files are tolerated
-  // and will be written to 'missing_roots' on success.
+  // On success, 'loaded_instances' contains loaded instance objects. It also
+  // includes instance files that failed to load because they were missing or
+  // because of a disk failure; they are still considered "loaded" and are
+  // labeled unhealthy internally.
   //
-  // On success, 'loaded_instances' contains all successfully loaded instance files.
-  //
-  // Returns an error if an instance file fails to load or if all instance
-  // files are unhealthy.
-  Status LoadInstances(std::vector<std::string>* missing_roots,
+  // Returns an error if an instance file fails in an irreconcileable way (e.g.
+  // the file is locked), or if none of the instance files are healthy.
+  Status LoadInstances(
       std::vector<std::unique_ptr<PathInstanceMetadataFile>>* loaded_instances);
 
   // Initializes new data directories specified by 'root_uuid_pairs_to_create'
-  // and updates the on-disk instance files of existing data directories
-  // specified by 'instances_to_update' using the contents of 'all_uuids'.
+  // and updates the on-disk instance files of data directories specified by
+  // 'instances_to_update' using the contents of 'all_uuids', skipping any
+  // unhealthy instance files.
   //
   // Returns an error if any disk operations fail.
-  Status CreateNewDataDirectoriesAndUpdateExistingOnes(
+  Status CreateNewDataDirectoriesAndUpdateInstances(
       std::vector<std::pair<std::string, std::string>> root_uuid_pairs_to_create,
       std::vector<std::unique_ptr<PathInstanceMetadataFile>> instances_to_update,
       std::vector<std::string> all_uuids);
 
   // Updates the on-disk instance files specified by 'instances_to_update'
-  // using the contents of 'new_all_uuids'.
+  // using the contents of 'new_all_uuids', skipping any unhealthy instance
+  // files.
   //
   // Returns an error if any disk operations fail.
-  Status UpdateExistingInstances(
+  Status UpdateInstances(
       std::vector<std::unique_ptr<PathInstanceMetadataFile>> instances_to_update,
       std::vector<std::string> new_all_uuids);
 

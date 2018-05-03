@@ -415,12 +415,13 @@ TEST_F(DataDirManagerTest, TestOpenWithFailedDirs) {
   ASSERT_OK(OpenDataDirManager());
   ASSERT_EQ(kNumDirs - 1, dd_manager_->GetFailedDataDirs().size());
 
-  // Ensure that when all data directories fail, the server will crash.
+  // Ensure that when there are no healthy data directories, the open will
+  // yield an error.
   FLAGS_env_inject_eio_globs = JoinStrings(JoinPathSegmentsV(test_roots_, "**"), ",");
   Status s = DataDirManager::OpenExistingForTests(env_, test_roots_,
       DataDirManagerOptions(), &dd_manager_);
   ASSERT_STR_CONTAINS(s.ToString(), "could not open directory manager");
-  ASSERT_TRUE(s.IsIOError());
+  ASSERT_TRUE(s.IsNotFound());
 }
 
 class TooManyDataDirManagerTest : public DataDirManagerTest {

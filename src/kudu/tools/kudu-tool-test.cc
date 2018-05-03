@@ -2494,7 +2494,7 @@ TEST_F(ToolTest, TestFsSwappingDirectoriesFailsGracefully) {
   Status s = RunTool(Substitute(
       "fs update_dirs --fs_wal_dir=$0 --fs_data_dirs=$1",
       wal_root, new_data_root_no_wal), nullptr, &stderr);
-  ASSERT_STR_CONTAINS(stderr, "none of the provided data directories could be found");
+  ASSERT_STR_CONTAINS(stderr, "no healthy data directories found");
 
   // If we instead try to add the directory to the existing list of
   // directories, Kudu should allow it.

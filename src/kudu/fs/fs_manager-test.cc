@@ -40,6 +40,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/util/env.h"
@@ -428,7 +429,7 @@ TEST_F(FsManagerTestBase, TestOpenWithNoBlockManagerInstances) {
     new_opts.consistency_check = check_behavior;
     ReinitFsManagerWithOpts(new_opts);
     Status s = fs_manager()->Open();
-    ASSERT_STR_CONTAINS(s.ToString(), "none of the provided data directories could be found");
+    ASSERT_STR_CONTAINS(s.ToString(), "no healthy data directories found");
     ASSERT_TRUE(s.IsNotFound());
 
     // Once we supply the WAL directory as a data directory, we can open successfully.
@@ -438,25 +439,131 @@ TEST_F(FsManagerTestBase, TestOpenWithNoBlockManagerInstances) {
   }
 }
 
-TEST_F(FsManagerTestBase, TestOpenWithFailedDirs) {
-  // Successfully create an FS layout.
-  string wal_path = GetTestPath("wals");
-  vector<string> data_paths = { GetTestPath("data1"), GetTestPath("data2"), GetTestPath("data3") };
-  for (const string& path : data_paths) {
-    env_->CreateDir(path);
+// Test the behavior when we fail to open a data directory for some reason (its
+// mountpoint failed, it's missing, etc). Kudu should allow this and open up
+// with failed data directories listed.
+TEST_F(FsManagerTestBase, TestOpenWithUnhealthyDataDir) {
+  // Successfully create a multi-directory FS layout.
+  const string new_root = GetTestPath("new_root");
+  FsManagerOpts opts;
+  opts.wal_root = fs_root_;
+  opts.data_roots = { fs_root_, new_root };
+  opts.consistency_check = ConsistencyCheckBehavior::UPDATE_ON_DISK;
+  ReinitFsManagerWithOpts(opts);
+  ASSERT_OK(fs_manager()->Open());
+  string new_root_uuid;
+  ASSERT_TRUE(fs_manager()->dd_manager()->FindUuidByRoot(new_root, &new_root_uuid));
+
+  // Fail the new directory. Kudu should have no problem starting up with this
+  // and should list one as failed.
+  FLAGS_env_inject_eio_globs = JoinPathSegments(new_root, "**");
+  FLAGS_env_inject_eio = 1.0;
+  opts.consistency_check = ConsistencyCheckBehavior::ENFORCE_CONSISTENCY;
+  ReinitFsManagerWithOpts(opts);
+  ASSERT_OK(fs_manager()->Open());
+  ASSERT_EQ(1, fs_manager()->dd_manager()->GetFailedDataDirs().size());
+
+  // Now remove the new directory on disk. Similarly, Kudu should have no
+  // problem starting up and it should list one failed data directory.
+  FLAGS_env_inject_eio = 0;
+  ASSERT_OK(env_->DeleteRecursively(new_root));
+  ReinitFsManagerWithOpts(opts);
+  ASSERT_OK(fs_manager()->Open());
+  ASSERT_EQ(1, fs_manager()->dd_manager()->GetFailedDataDirs().size());
+
+  // Now let's simulate the operator replacing the drive. The update tool will
+  // be run and the new directory, even at the same mountpoint, will be
+  // assigned a new UUID.
+  //
+  // At this point, our remaining healthy instance file should know about two
+  // data directories. Kudu should detect one missing and create a new one.
+  // Let's update and ensure we get a new UUID.
+  opts.consistency_check = ConsistencyCheckBehavior::UPDATE_ON_DISK;
+  ReinitFsManagerWithOpts(opts);
+  ASSERT_OK(fs_manager()->Open());
+  ASSERT_EQ(0, fs_manager()->dd_manager()->GetFailedDataDirs().size());
+  string new_root_uuid_post_update;
+  ASSERT_TRUE(fs_manager()->dd_manager()->FindUuidByRoot(new_root, &new_root_uuid_post_update));
+  ASSERT_NE(new_root_uuid, new_root_uuid_post_update);
+
+  // Now let's try failing all the directories. Kudu should yield an error,
+  // complaining it couldn't find any healthy data directories.
+  FLAGS_env_inject_eio_globs = JoinStrings(JoinPathSegmentsV(opts.data_roots, "**"), ",");
+  FLAGS_env_inject_eio = 1.0;
+  opts.consistency_check = ConsistencyCheckBehavior::ENFORCE_CONSISTENCY;
+  ReinitFsManagerWithOpts(opts);
+  Status s = fs_manager()->Open();
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "could not find a healthy instance file");
+
+  // Upon returning from FsManager::Open() with a NotFound error, Kudu will
+  // attempt to create a new FS layout. With bad mountpoints, this should fail.
+  s = fs_manager()->CreateInitialFileSystemLayout();
+  ASSERT_TRUE(s.IsIOError()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "cannot create FS layout");
+
+  // The above behavior should be seen if the data directories are missing...
+  FLAGS_env_inject_eio = 0;
+  for (const auto& root : opts.data_roots) {
+    ASSERT_OK(env_->DeleteRecursively(root));
   }
-  vector<string> data_roots = { GetTestPath("data1/roots"), GetTestPath("data2/roots"),
-                                GetTestPath("data3/roots") };
-  ReinitFsManagerWithPaths(wal_path, data_roots);
+  ReinitFsManagerWithOpts(opts);
+  s = fs_manager()->Open();
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "could not find a healthy instance file");
+
+  // ...except we should be able to successfully create a new FS layout.
+  ASSERT_OK(fs_manager()->CreateInitialFileSystemLayout());
+  ASSERT_EQ(0, fs_manager()->dd_manager()->GetFailedDataDirs().size());
+}
+
+// When we canonicalize a directory, we actually canonicalize the directory's
+// parent directory; as such, canonicalization can fail if the parent directory
+// can't be read (e.g. due to a disk error or because it's flat out missing).
+// In such cases, we should still be able to open the FS layout.
+TEST_F(FsManagerTestBase, TestOpenWithCanonicalizationFailure) {
+  // Create some parent directories and subdirectories.
+  const string dir1 = GetTestPath("test1");
+  const string dir2 = GetTestPath("test2");
+  ASSERT_OK(env_->CreateDir(dir1));
+  ASSERT_OK(env_->CreateDir(dir2));
+  const string subdir1 = GetTestPath("test1/subdir");
+  const string subdir2 = GetTestPath("test2/subdir");
+  FsManagerOpts opts;
+  opts.wal_root = subdir1;
+  opts.data_roots = { subdir1, subdir2 };
+  ReinitFsManagerWithOpts(opts);
   ASSERT_OK(fs_manager()->CreateInitialFileSystemLayout());
 
-  // Now fail one of the directories.
-  FLAGS_crash_on_eio = false;
+  // Fail the canonicalization by injecting errors to a parent directory.
+  ReinitFsManagerWithOpts(opts);
+  FLAGS_env_inject_eio_globs = JoinPathSegments(dir2, "**");
   FLAGS_env_inject_eio = 1.0;
-  FLAGS_env_inject_eio_globs = JoinPathSegments(Substitute("$0,$0", data_paths[1]), "**");
-  ReinitFsManagerWithPaths(wal_path, data_roots);
-  ASSERT_OK(fs_manager()->Open(nullptr));
+  ASSERT_OK(fs_manager()->Open());
   ASSERT_EQ(1, fs_manager()->dd_manager()->GetFailedDataDirs().size());
+  FLAGS_env_inject_eio = 0;
+
+  // Now fail the canonicalization by deleting a parent directory. This
+  // simulates the mountpoint disappearing.
+  ASSERT_OK(env_->DeleteRecursively(dir2));
+  ReinitFsManagerWithOpts(opts);
+  ASSERT_OK(fs_manager()->Open());
+  ASSERT_EQ(1, fs_manager()->dd_manager()->GetFailedDataDirs().size());
+
+  // In both of the above failures, the appropriate steps would be to run the
+  // update tool after ensuring the bad mountpoint is replaced with a healthy
+  // one. Until that happens, we won't be able to update the data dirs.
+  opts.consistency_check = ConsistencyCheckBehavior::UPDATE_ON_DISK;
+  ReinitFsManagerWithOpts(opts);
+  Status s = fs_manager()->Open();
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "could not add new data directories");
+
+  // Let's try that again, but with the appropriate mountpoint/directory.
+  ASSERT_OK(env_->CreateDir(dir2));
+  ReinitFsManagerWithOpts(opts);
+  ASSERT_OK(fs_manager()->Open());
+  ASSERT_EQ(0, fs_manager()->dd_manager()->GetFailedDataDirs().size());
 }
 
 TEST_F(FsManagerTestBase, TestTmpFilesCleanup) {
@@ -598,8 +705,8 @@ TEST_F(FsManagerTestBase, TestAddRemoveDataDirs) {
   opts.data_roots = { fs_root_, new_path1 };
   ReinitFsManagerWithOpts(opts);
   Status s = fs_manager()->Open();
-  ASSERT_TRUE(s.IsNotFound());
-  ASSERT_STR_CONTAINS(s.ToString(), fs_manager()->GetInstanceMetadataPath(new_path1));
+  ASSERT_TRUE(s.IsIOError()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "2 data directories provided, but expected 1");
 
   // This time allow new data directories to be created.
   opts.consistency_check = ConsistencyCheckBehavior::UPDATE_ON_DISK;
@@ -627,14 +734,22 @@ TEST_F(FsManagerTestBase, TestAddRemoveDataDirs) {
   ReinitFsManagerWithOpts(opts);
   ASSERT_OK(fs_manager()->Open());
   ASSERT_EQ(2, fs_manager()->dd_manager()->GetDataDirs().size());
+  ASSERT_EQ(0, fs_manager()->dd_manager()->GetFailedDataDirs().size());
 
-  // Try to open with a new data dir although an existing data dir has failed;
-  // this should fail.
+  // Open the FS layout with an existing, failed data dir; this should be fine,
+  // but should report a single failed directory.
   FLAGS_crash_on_eio = false;
   FLAGS_env_inject_eio = 1.0;
   FLAGS_env_inject_eio_globs = JoinPathSegments(new_path2, "**");
+  opts.consistency_check = ConsistencyCheckBehavior::ENFORCE_CONSISTENCY;
+  ReinitFsManagerWithOpts(opts);
+  ASSERT_OK(fs_manager()->Open());
+  ASSERT_EQ(1, fs_manager()->dd_manager()->GetFailedDataDirs().size());
 
+  // Now try to add a new data dir with an existing, failed data dir; this
+  // should fail.
   const string new_path3 = GetTestPath("new_path3");
+  opts.consistency_check = ConsistencyCheckBehavior::UPDATE_ON_DISK;
   opts.data_roots = { fs_root_, new_path2, new_path3 };
   ReinitFsManagerWithOpts(opts);
   s = fs_manager()->Open();
@@ -729,6 +844,7 @@ TEST_F(FsManagerTestBase, TestAddRemoveSpeculative) {
   ReinitFsManagerWithOpts(opts);
   ASSERT_OK(fs_manager()->Open());
   ASSERT_EQ(3, fs_manager()->dd_manager()->GetDataDirs().size());
+  ASSERT_EQ(1, fs_manager()->dd_manager()->GetFailedDataDirs().size());
 
   // Neither of those attempts should have changed the on-disk state. Verify
   // this by retrying all three combinations with consistency checking
@@ -750,8 +866,8 @@ TEST_F(FsManagerTestBase, TestAddRemoveSpeculative) {
       ASSERT_EQ(2, fs_manager()->dd_manager()->GetDataDirs().size());
     } else {
       // The third data directory has no instance file.
-      ASSERT_TRUE(s.IsNotFound()) << s.ToString();
-      ASSERT_STR_CONTAINS(s.ToString(), "No such file or directory");
+      ASSERT_TRUE(s.IsIOError()) << s.ToString();
+      ASSERT_STR_CONTAINS(s.ToString(), "3 data directories provided, but expected 2");
     }
   }
 }

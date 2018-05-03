@@ -217,7 +217,7 @@ Status FsManager::Init() {
     string canonicalized;
     Status s = env_->Canonicalize(DirName(root), &canonicalized);
     if (PREDICT_FALSE(!s.ok())) {
-      if (s.IsDiskFailure()) {
+      if (s.IsNotFound() || s.IsDiskFailure()) {
         // If the directory fails to canonicalize due to disk failure, store
         // the non-canonicalized form and the returned error.
         canonicalized = DirName(root);
@@ -325,8 +325,7 @@ Status FsManager::Open(FsReport* report) {
     Status s = pb_util::ReadPBContainerFromPath(env_, GetInstanceMetadataPath(root.path),
                                                 pb.get());
     if (PREDICT_FALSE(!s.ok())) {
-      if (s.IsNotFound() &&
-          opts_.consistency_check != ConsistencyCheckBehavior::ENFORCE_CONSISTENCY) {
+      if (s.IsNotFound()) {
         missing_roots.emplace_back(root);
         continue;
       }
@@ -348,7 +347,7 @@ Status FsManager::Open(FsReport* report) {
   }
 
   if (!metadata_) {
-    return Status::Corruption("All instance files are missing");
+    return Status::NotFound("could not find a healthy instance file");
   }
 
   // Ensure all of the ancillary directories exist.
