@@ -81,7 +81,7 @@
 (defn kudu-cli
   "Returns path to the Kudu CLI tool or just binary name, if it's appropriate
   to rely on the PATH environment variable."
-  [test node]
+  [test]
   (if (:use-packages? test)
     "kudu"  ;; relying on the standard PATH env variable
     (path kudu-target-bin-dir "kudu")))
@@ -124,7 +124,7 @@
   This function should be called in the context of already established SSH
   session at the node."
   [test node]
-  (try (c/exec :sudo :-u kudu-uname (kudu-cli test node) :table :list node)
+  (try (c/exec :sudo :-u kudu-uname (kudu-cli test) :table :list node)
        true
        (catch RuntimeException _ false)))
 
@@ -132,20 +132,22 @@
 (defn kudu-master-see-tservers?
   "Whether the Kudu master sees the specified number of tablet servers."
   [test node tservers-count]
-  (let [pattern (str "Fetched info from all "
-                     (str tservers-count)" tablet servers")]
-    (try (c/exec :sudo :-u kudu-uname (kudu-cli test node) :cluster :ksck node |
-                 :grep pattern)
+  (let [count-regex (str "^"(str tservers-count)"$")]
+    (try (c/exec :sudo :-u kudu-uname
+                 (kudu-cli test) :tserver :list node :--format=space |
+                 :wc :-l |
+                 :tr :-d (c/lit "[:space:]") |
+                 :grep :-E count-regex)
          true
          (catch RuntimeException _ false))))
 
 
 (defn kudu-tserver-in-service?
-  "Is the Kudu tserver process at the specified node is up and running?
+  "Is the Kudu tserver process at the specified node up and running?
   This function should be called in the context of already established SSH
   session at the node."
   [test node]
-  (try (c/exec :sudo :-u kudu-uname (kudu-cli test node) :tserver :status node)
+  (try (c/exec :sudo :-u kudu-uname (kudu-cli test) :tserver :status node)
        true
        (catch RuntimeException _ false)))
 
@@ -183,7 +185,7 @@
 
   ;; Wait until the master sees all tservers in the cluster. Otherwise
   ;; the client would not be able to create a table with the desired
-  ;; replication factor when not all tservers have registered.
+  ;; replication factor when not all tservers have registered yet.
   (let [tservers-count (count (:tservers test))]
     (loop [iteration 0]
       (when-not (kudu-master-see-tservers? test node tservers-count)
