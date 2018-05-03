@@ -184,14 +184,18 @@ TEST(TestBitMap, TestFindBit) {
       size_t expected_set_idx = (offset + !(offset & 3));
       bool expect_set_found = (expected_set_idx < num_bits);
       ASSERT_EQ(expect_set_found, res);
-      if (expect_set_found) ASSERT_EQ(expected_set_idx, idx);
+      if (expect_set_found) {
+        ASSERT_EQ(expected_set_idx, idx);
+      }
 
       // Find a zero bit
       res = BitmapFindFirstZero(bm, offset, num_bits, &idx);
       size_t expected_zero_idx = offset + ((offset & 3) ? (4 - (offset & 3)) : 0);
       bool expect_zero_found = (expected_zero_idx < num_bits);
       ASSERT_EQ(expect_zero_found, res);
-      if (expect_zero_found) ASSERT_EQ(expected_zero_idx, idx);
+      if (expect_zero_found) {
+        ASSERT_EQ(expected_zero_idx, idx);
+      }
     }
   }
 }
