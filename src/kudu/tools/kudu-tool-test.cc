@@ -2446,6 +2446,110 @@ TEST_F(ToolTest, TestCheckHmsMetadata) {
   }
 }
 
+TEST_F(ToolTest, TestFixHmsMetadata) {
+  ExternalMiniClusterOptions opts;
+  opts.hms_mode = HmsMode::ENABLE_HIVE_METASTORE;
+  NO_FATALS(StartExternalMiniCluster(std::move(opts)));
+
+  string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+  HmsClient hms_client(cluster_->hms()->address(), HmsClientOptions());
+  ASSERT_OK(hms_client.Start());
+  ASSERT_TRUE(hms_client.IsConnected());
+
+  string hms_table_id = "table_id";
+  shared_ptr<KuduClient> kudu_client;
+  ASSERT_OK(KuduClientBuilder()
+                .add_master_server_addr(master_addr)
+                .Build(&kudu_client));
+
+  {
+    // Create a table with the same name/ID but different schema in Kudu and the HMS.
+    ASSERT_OK(CreateKuduTable(kudu_client, "default.a"));
+    shared_ptr<KuduTable> kudu_table;
+    ASSERT_OK(kudu_client->OpenTable("default.a", &kudu_table));
+    hive::Table hms_table;
+    ASSERT_OK(CreateHmsTable(&hms_client, "default", "a",
+                             HmsClient::kManagedTable, master_addr, kudu_table->id()));
+    ASSERT_OK(hms_client.GetTable("default", "a", &hms_table));
+
+    // Create a table with the same ID but different name/schema in Kudu and the HMS.
+    ASSERT_OK(CreateKuduTable(kudu_client, "default.b"));
+    ASSERT_OK(kudu_client->OpenTable("default.b", &kudu_table));
+    ASSERT_OK(CreateHmsTable(&hms_client, "default", "c",
+                             HmsClient::kManagedTable, master_addr, kudu_table->id()));
+    ASSERT_OK(hms_client.GetTable("default", "c", &hms_table));
+
+    // Create a table in Kudu but not the HMS.
+    ASSERT_OK(CreateKuduTable(kudu_client, "default.d"));
+    ASSERT_OK(kudu_client->OpenTable("default.d", &kudu_table));
+
+    // Create an orphan table in the HMS.
+    ASSERT_OK(CreateHmsTable(&hms_client, "default", "e",
+                             HmsClient::kManagedTable, master_addr, hms_table_id));
+    ASSERT_OK(hms_client.GetTable("default", "e", &hms_table));
+
+    // Create multiple tables in the HMS sharing the same table ID .
+    ASSERT_OK(CreateKuduTable(kudu_client, "default.kudu"));
+    ASSERT_OK(kudu_client->OpenTable("default.kudu", &kudu_table));
+    string id = kudu_table->id();
+
+    ASSERT_OK(CreateHmsTable(&hms_client, "default", "kudu",
+                             HmsClient::kManagedTable, master_addr, id));
+    ASSERT_OK(hms_client.GetTable("default", "kudu", &hms_table));
+
+    ASSERT_OK(CreateHmsTable(&hms_client, "default", "diff_name",
+                             HmsClient::kManagedTable, master_addr, id));
+    ASSERT_OK(hms_client.GetTable("default", "diff_name", &hms_table));
+  }
+
+  // Restart external mini cluster to enable Hive Metastore integration.
+  cluster_->EnableMetastoreIntegration();
+  cluster_->ShutdownNodes(cluster::ClusterNodes::ALL);
+  ASSERT_OK(cluster_->Restart());
+
+  // 2. Run the fix tool and expect it to fail.
+  {
+    string err;
+    RunActionStderrString(Substitute("hms fix $0 --unlock_experimental_flags=true "
+                                     "--hive_metastore_uris=$1",
+                                     master_addr, cluster_->hms()->uris()), &err);
+    ASSERT_STR_CONTAINS(err, "Illegal state: error fixing inconsistent metadata: "
+                             "Found more than one tables");
+  }
+
+  // 3. Delete one of the tables that share the same table ID in the HMS and then
+  //    run the fix tool again and expect it to succeed.
+  {
+    hive::EnvironmentContext env_ctx;
+    ASSERT_OK(hms_client.DropTable("default", "diff_name", env_ctx));
+    string out;
+    NO_FATALS(RunActionStdinStdoutString(Substitute("hms fix $0 --unlock_experimental_flags=true "
+                                                    "--hive_metastore_uris=$1",
+                                                    master_addr, cluster_->hms()->uris()),
+                                         "default.c\n", &out));
+
+    NO_FATALS(RunActionStdoutString(Substitute("hms check $0 --unlock_experimental_flags=true "
+                                               "--hive_metastore_uris=$1",
+                                               master_addr, cluster_->hms()->uris()), &out));
+    ASSERT_STR_CONTAINS(out, "OK");
+
+    shared_ptr<KuduTable> kudu_table;
+    ASSERT_OK(kudu_client->OpenTable("default.a", &kudu_table));
+    hive::Table hms_table;
+    ASSERT_OK(hms_client.GetTable("default", "a", &hms_table));
+
+    ASSERT_OK(kudu_client->OpenTable("default.c", &kudu_table));
+    ASSERT_OK(hms_client.GetTable("default", "c", &hms_table));
+
+    ASSERT_OK(kudu_client->OpenTable("default.d", &kudu_table));
+    ASSERT_OK(hms_client.GetTable("default", "d", &hms_table));
+
+    Status s = kudu_client->OpenTable("default.e", &kudu_table);
+    ASSERT_TRUE(s.IsNotFound());
+    ASSERT_OK(hms_client.GetTable("default", "e", &hms_table));
+  }
+}
+
 // This test is parameterized on the serialization mode and Kerberos.
 class ControlShellToolTest :
     public ToolTest,

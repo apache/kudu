@@ -63,9 +63,9 @@ class KuduClient;
 namespace tools {
 class LeaderMasterProxy;
 
-Status AlterKuduTable(client::KuduClient* kudu_client,
-                      const std::string& name,
-                      const std::string& new_name);
+Status AlterKuduTableOnly(client::KuduClient* kudu_client,
+                          const std::string& name,
+                          const std::string& new_name);
 } // namespace tools
 
 namespace client {
@@ -1192,7 +1192,7 @@ class KUDU_EXPORT KuduTableAlterer {
 
   friend class KuduClient;
 
-  friend Status tools::AlterKuduTable(
+  friend Status tools::AlterKuduTableOnly(
       client::KuduClient* kudu_client,
       const std::string& name,
       const std::string& new_name);
