@@ -15,7 +15,14 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# This overrides all flags in a flag file
+# This overrides all flags in a flag file.
+#
+# The block cache capacity is set to not exceed 1/2 of the effective
+# memory pressure threshold on smaller machines: current Kudu Jepsen
+# tests do not require a lot of memory of block cache capacity around.
+# An alternative approach would be replacing that with the
+# --force_block_cache_capacity flag.
 --unlock_experimental_flags
 --unlock_unsafe_flags
+--block_cache_capacity_mb=128
 --logtostderr
