@@ -142,17 +142,6 @@ def check_openssl():
       """,
       flags=["-E"]))
 
-def check_zlib():
-  try_do(
-    "Checking for zlib headers",
-    ("Unable to compile a simple program that uses zlib. " +
-     "Please check that zlib-devel (RPM) or zlib1g-dev (deb) " +
-     "dependencies are installed."),
-    lambda: compile("""
-      #include <zlib.h>
-      """,
-      flags=["-E"]))
-
 def main():
   print("Running pre-flight checks")
   print("-------------------------")
@@ -165,7 +154,6 @@ def main():
   check_cxx11()
   check_sasl()
   check_openssl()
-  check_zlib()
   print("-------------")
   print("Pre-flight checks succeeded.")
   return 0

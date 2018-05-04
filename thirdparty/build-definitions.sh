@@ -307,6 +307,14 @@ build_llvm() {
   # handles this when passing --stdlib=libc++ and passing this confuses
   # the check for -fPIC.
   CLANG_CXXFLAGS=$(echo "$EXTRA_CXXFLAGS" | sed -e 's,-nostdinc++,,g;')
+
+  # Depend on zlib from the thirdparty tree. It's an optional dependency for
+  # LLVM, but a required [1] one for IWYU.
+  #
+  # 1. https://github.com/include-what-you-use/include-what-you-use/issues/539
+  CLANG_CXXFLAGS="$CLANG_CXXFLAGS -I$PREFIX/include"
+  CLANG_LDFLAGS="$EXTRA_LDFLAGS -L$PREFIX/lib -Wl,-rpath,$PREFIX/lib"
+
   cmake \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX=$PREFIX \
@@ -316,7 +324,7 @@ build_llvm() {
     -DLLVM_INCLUDE_UTILS=OFF \
     -DLLVM_TARGETS_TO_BUILD=X86 \
     -DLLVM_ENABLE_RTTI=ON \
-    -DCMAKE_CXX_FLAGS="$CLANG_CXXFLAGS $EXTRA_LDFLAGS" \
+    -DCMAKE_CXX_FLAGS="$CLANG_CXXFLAGS $CLANG_LDFLAGS" \
     -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
     $TOOLS_ARGS \
     $EXTRA_CMAKE_FLAGS \
