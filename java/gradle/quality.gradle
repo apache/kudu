@@ -86,10 +86,8 @@ dependencies {
 
 // Define a Java API signature for use by animal-sniffer. It'll enforce that all
 // Java API usage adheres to this signature.
-//
-// When changing this, also change javaCompatibility defined in gradle.properties.
 dependencies {
-  signature 'org.codehaus.mojo.signature:java17:1.0@signature'
+  signature "org.codehaus.mojo.signature:java1$javaCompatibility:1.0@signature"
 }
 
 // Create an aggregate animal-sniffer task.
