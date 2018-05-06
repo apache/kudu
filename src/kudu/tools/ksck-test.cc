@@ -278,8 +278,9 @@ class KsckTest : public KuduTest {
     table->set_tablets({ tablet });
   }
 
-  shared_ptr<KsckTable> CreateAndAddTable(const string& name, int num_replicas) {
-    shared_ptr<KsckTable> table(new KsckTable(name, Schema(), num_replicas));
+  shared_ptr<KsckTable> CreateAndAddTable(const string& id_and_name, int num_replicas) {
+    shared_ptr<KsckTable> table(new KsckTable(id_and_name, id_and_name,
+                                              Schema(), num_replicas));
     cluster_->tables_.push_back(table);
     return table;
   }

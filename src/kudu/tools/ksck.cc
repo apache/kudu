@@ -716,10 +716,11 @@ bool Ksck::VerifyTable(const shared_ptr<KsckTable>& table) {
   }
 
   KsckTableSummary ts;
+  ts.id = table->id();
+  ts.name = table->name();
   ts.replication_factor = table->num_replicas();
   VLOG(1) << Substitute("Verifying $0 tablet(s) for table $1 configured with num_replicas = $2",
                         tablets.size(), table->name(), table->num_replicas());
-  ts.name = table->name();
   for (const auto& tablet : tablets) {
     auto tablet_result = VerifyTablet(tablet, table->num_replicas());
     switch (tablet_result) {
@@ -876,6 +877,9 @@ KsckCheckResult Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet,
   }
 
   KsckTabletSummary tablet_summary;
+  tablet_summary.id = tablet->id();
+  tablet_summary.table_id = tablet->table()->id();
+  tablet_summary.table_name = tablet->table()->name();
   tablet_summary.result = result;
   tablet_summary.status = status;
   tablet_summary.master_cstate = std::move(master_config);

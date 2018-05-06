@@ -138,8 +138,15 @@ class KsckTablet {
 // Representation of a table. Composed of tablets.
 class KsckTable {
  public:
-  KsckTable(std::string name, const Schema& schema, int num_replicas)
-      : name_(std::move(name)), schema_(schema), num_replicas_(num_replicas) {}
+  KsckTable(std::string id, std::string name, const Schema& schema, int num_replicas)
+      : id_(std::move(id)),
+        name_(std::move(name)),
+        schema_(schema),
+        num_replicas_(num_replicas) {}
+
+  const std::string& id() const {
+    return id_;
+  }
 
   const std::string& name() const {
     return name_;
@@ -162,6 +169,7 @@ class KsckTable {
   }
 
  private:
+  const std::string id_;
   const std::string name_;
   const Schema schema_;
   const int num_replicas_;

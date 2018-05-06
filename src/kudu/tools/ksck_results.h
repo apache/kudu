@@ -142,6 +142,7 @@ struct KsckServerHealthSummary {
 
 // A summary of the state of a table.
 struct KsckTableSummary {
+  std::string id;
   std::string name;
   int replication_factor = 0;
   int healthy_tablets = 0;
@@ -201,6 +202,9 @@ struct KsckReplicaSummary {
 
 // A summary of the state of a tablet.
 struct KsckTabletSummary {
+  std::string id;
+  std::string table_id;
+  std::string table_name;
   KsckCheckResult result;
   std::string status;
   KsckConsensusState master_cstate;

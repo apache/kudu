@@ -426,7 +426,8 @@ Status RemoteKsckCluster::RetrieveTablesList() {
     client::sp::shared_ptr<KuduTable> t;
     RETURN_NOT_OK(client_->OpenTable(n, &t));
 
-    shared_ptr<KsckTable> table(new KsckTable(n,
+    shared_ptr<KsckTable> table(new KsckTable(t->id(),
+                                              n,
                                               *t->schema().schema_,
                                               t->num_replicas()));
     tables_temp.push_back(table);
