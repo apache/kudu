@@ -34,7 +34,23 @@ tasks.withType(Test) {
   forkEvery 1
 
   // Enable assertions during tests.
-  jvmArgs "-enableassertions"
+  jvmArgs += "-enableassertions"
+  // Hide the Java 9+ warnings about illegal reflective access
+  if (JavaVersion.current().isJava9Compatible()) {
+    jvmArgs += "--illegal-access=permit"
+    def reflectionModules = [
+        "java.base/java.lang", // java.lang reflection is used by TestUtils
+        "java.base/java.net",  // java.net reflection is used by FakeDNS
+        "java.base/java.nio",  // java.nio reflection is used by Protobuf
+        "java.base/java.util", // java.util reflection is used by Spark
+        "java.base/java.util.concurrent", // java.util.concurrent reflection is used by Spark
+        "java.base/sun.nio.ch", // sun.nio.ch reflection is used by Netty
+        "java.security.jgss/sun.security.krb5" // sun.security.krb5 reflection is used by Hadoop's KerberosUtil
+    ]
+    reflectionModules.forEach { module ->
+      jvmArgs += "--add-opens=$module=ALL-UNNAMED"
+    }
+  }
 
   // Set a few system properties.
   systemProperty "java.awt.headless", true

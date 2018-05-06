@@ -18,17 +18,18 @@
 package org.apache.kudu.client;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.util.Arrays;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import javax.annotation.concurrent.GuardedBy;
 
 import com.google.common.base.Throwables;
 import com.google.common.net.InetAddresses;
-import sun.net.spi.nameservice.NameService;
 
 /**
  * Fake DNS resolver which allows our tests to work well even though we use
@@ -76,21 +77,59 @@ public class FakeDNS {
   public synchronized void install() {
     if (installed) return;
     try {
-      Field field = InetAddress.class.getDeclaredField("nameServices");
-      field.setAccessible(true);
-      @SuppressWarnings("unchecked")
-      List<NameService> nameServices = (List<NameService>) field.get(null);
-      nameServices.add(0, new NSImpl());
+      try {
+        // Override the NameService in Java 9 or later.
+        final Class<?> nameServiceInterface = Class.forName("java.net.InetAddress$NameService");
+        Field field = InetAddress.class.getDeclaredField("nameService");
+        // Get the default NameService to fallback to.
+        Method method = InetAddress.class.getDeclaredMethod("createNameService");
+        method.setAccessible(true);
+        Object fallbackNameService = method.invoke(null);
+        // Create a proxy instance to set on the InetAddress field which will handle
+        // all NameService calls.
+        Object proxy = Proxy.newProxyInstance(nameServiceInterface.getClassLoader(),
+            new Class<?>[]{nameServiceInterface}, new NameServiceListener(fallbackNameService));
+        field.setAccessible(true);
+        field.set(InetAddress.class, proxy);
+      } catch (final ClassNotFoundException | NoSuchFieldException e) {
+        // Override the NameService in Java 8 or earlier.
+        final Class<?> nameServiceInterface = Class.forName("sun.net.spi.nameservice.NameService");
+        Field field = InetAddress.class.getDeclaredField("nameServices");
+        // Get the default NameService to fallback to.
+        Method method = InetAddress.class.getDeclaredMethod("createNSProvider", String.class);
+        method.setAccessible(true);
+        Object fallbackNameService = method.invoke(null, "default");
+        // Create a proxy instance to set on the InetAddress field which will handle
+        // all NameService calls.
+        Object proxy = Proxy.newProxyInstance(nameServiceInterface.getClassLoader(),
+            new Class<?>[]{nameServiceInterface}, new NameServiceListener(fallbackNameService));
+        field.setAccessible(true);
+        // Java 8 or earlier takes a list of NameServices
+        field.set(InetAddress.class, Arrays.asList(proxy));
+      }
     } catch (Exception e) {
       throw new RuntimeException(e);
     }
     installed = true;
   }
 
-  private class NSImpl implements NameService {
-    @Override
-    public InetAddress[] lookupAllHostAddr(String host)
-        throws UnknownHostException {
+  /**
+   * The NameService in all versions of Java has the same interface, so we
+   * can use the same InvocationHandler as our proxy instance for both
+   * java.net.InetAddress$NameService and sun.net.spi.nameservice.NameService.
+   */
+  private class NameServiceListener implements InvocationHandler {
+
+    private final Object fallbackNameService;
+
+    // Creates a NameServiceListener with a NameService implementation to
+    // fallback to. The parameter is untyped so we can handle the NameService
+    // type in all versions of Java with reflection.
+    NameServiceListener(Object fallbackNameService) {
+      this.fallbackNameService = fallbackNameService;
+    }
+
+    private InetAddress[] lookupAllHostAddr(String host) throws UnknownHostException {
       InetAddress inetAddress;
       synchronized(FakeDNS.this) {
         inetAddress = forwardResolutions.get(host);
@@ -99,12 +138,18 @@ public class FakeDNS {
         return new InetAddress[]{inetAddress};
       }
 
-      // JDK chains to the next provider automatically.
-      throw new UnknownHostException();
+      try {
+        Method method = fallbackNameService.getClass()
+            .getDeclaredMethod("lookupAllHostAddr", String.class);
+        method.setAccessible(true);
+        return (InetAddress[]) method.invoke(fallbackNameService, host);
+      } catch (ReflectiveOperationException e) {
+        Throwables.propagateIfPossible(e.getCause(), UnknownHostException.class);
+        throw new AssertionError("unexpected reflection issue", e);
+      }
     }
 
-    @Override
-    public String getHostByAddr(byte[] addr) throws UnknownHostException {
+    private String getHostByAddr(byte[] addr) throws UnknownHostException {
       if (addr[0] == 127) {
         return InetAddresses.toAddrString(InetAddress.getByAddress(addr));
       }
@@ -117,7 +162,27 @@ public class FakeDNS {
         return hostname;
       }
 
-      throw new UnknownHostException();
+      try {
+        Method method = fallbackNameService.getClass()
+            .getDeclaredMethod("getHostByAddr", byte[].class);
+        method.setAccessible(true);
+        return (String) method.invoke(fallbackNameService, (Object) addr);
+      } catch (ReflectiveOperationException e) {
+        Throwables.propagateIfPossible(e.getCause(), UnknownHostException.class);
+        throw new AssertionError("unexpected reflection issue", e);
+      }
+    }
+
+    @Override
+    public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+      switch (method.getName()) {
+        case "lookupAllHostAddr":
+          return lookupAllHostAddr((String) args[0]);
+        case "getHostByAddr":
+          return getHostByAddr((byte[]) args[0]);
+        default:
+          throw new UnsupportedOperationException();
+      }
     }
   }
 }
