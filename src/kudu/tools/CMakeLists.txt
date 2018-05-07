@@ -81,6 +81,18 @@ target_link_libraries(ksck
 )
 
 #######################################
+# kudu_tools_rebalance
+#######################################
+
+add_library(kudu_tools_rebalance
+  rebalance_algo.cc
+)
+target_link_libraries(kudu_tools_rebalance
+  kudu_common
+  ${KUDU_BASE_LIBS}
+)
+
+#######################################
 # kudu
 #######################################
 
@@ -112,6 +124,7 @@ target_link_libraries(kudu
   kudu_client_test_util
   kudu_common
   kudu_fs
+  kudu_tools_rebalance
   kudu_util
   log
   master
@@ -141,6 +154,7 @@ set(KUDU_TEST_LINK_LIBS
   ksck
   kudu_tools_util
   kudu_tools_test_util
+  kudu_tools_rebalance
   itest_util
   mini_cluster
   ${KUDU_MIN_TEST_LIBS})
@@ -158,4 +172,5 @@ ADD_KUDU_TEST_DEPENDENCIES(kudu-tool-test
 ADD_KUDU_TEST(kudu-ts-cli-test)
 ADD_KUDU_TEST_DEPENDENCIES(kudu-ts-cli-test
   kudu)
+ADD_KUDU_TEST(rebalance_algo-test)
 ADD_KUDU_TEST(tool_action-test)
