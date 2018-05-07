@@ -30,11 +30,15 @@ dependencies {
 // in the projects build script have been applied
 afterEvaluate {
   tasks.withType(Javadoc) {
+    if(JavaVersion.current().isJava10Compatible()) {
+      // Disable Javadoc generation on Java 10+ until it is fixed.
+      enabled = false
+    }
     // Configure the Yetus doclet
     options.docletpath = configurations.doclet.files.asType(List)
     options.doclet = "org.apache.yetus.audience.tools.IncludePublicAnnotationsStandardDoclet"
     // Link to Java SE javadoc
-    options.links "https://docs.oracle.com/javase/7/docs/api/"
+    options.links "https://docs.oracle.com/javase/$javaCompatibility/docs/api/"
     // Hacky workaround to YETUS-627. Replace with options.noTimestamp
     // once this workaround is no longer needed.
     options.addStringOption("notimestamp", "org.apache.kudu")
