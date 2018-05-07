@@ -212,7 +212,7 @@ public class TestNegotiator {
                                             ByteString clientTlsMessage) throws SSLException {
     LOG.debug("Handling TLS message from client: {}", Bytes.hex(clientTlsMessage.toByteArray()));
     ByteBuffer dst = ByteBuffer.allocate(engine.getSession().getPacketBufferSize());
-    ByteBuffer src = clientTlsMessage.asReadOnlyByteBuffer();
+    ByteBuffer src =  ByteBuffer.wrap(clientTlsMessage.toByteArray());
     do {
       SSLEngineResult result = engine.unwrap(src, dst);
       runTasks(result, engine);
