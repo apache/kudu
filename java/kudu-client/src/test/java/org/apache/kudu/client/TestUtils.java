@@ -40,8 +40,6 @@ import org.apache.kudu.master.Master;
 public class TestUtils {
   private static final Logger LOG = LoggerFactory.getLogger(TestUtils.class);
 
-  // Used by pidOfProcess()
-  private static String UNIX_PROCESS_CLS_NAME =  "java.lang.UNIXProcess";
   private static Set<String> VALID_SIGNALS =  ImmutableSet.of("STOP", "CONT", "TERM", "KILL");
 
   private static final String BIN_DIR_PROP = "binDir";
@@ -127,13 +125,16 @@ public class TestUtils {
    */
   static int pidOfProcess(Process proc) throws Exception {
     Class<?> procCls = proc.getClass();
-    if (!procCls.getName().equals(UNIX_PROCESS_CLS_NAME)) {
-      throw new IllegalArgumentException("stopProcess() expects objects of class " +
-          UNIX_PROCESS_CLS_NAME + ", but " + procCls.getName() + " was passed in instead!");
+    try {
+      // Note: In Java 9+ you can call proc.getPid(). We use reflection
+      // because we support earlier version of java.
+      Field pidField = procCls.getDeclaredField("pid");
+      pidField.setAccessible(true);
+      return (Integer) pidField.get(proc);
+    } catch (ReflectiveOperationException e) {
+      throw new IllegalArgumentException("pidOfProcess could not find or access the pid field" +
+          "via reflection on the class " + procCls.getName(), e);
     }
-    Field pidField = procCls.getDeclaredField("pid");
-    pidField.setAccessible(true);
-    return (Integer) pidField.get(proc);
   }
 
   /**
