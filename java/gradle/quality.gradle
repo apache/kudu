@@ -19,7 +19,6 @@
 
 apply plugin: "checkstyle" // Ensures Java code follows the defined coding style.
 apply plugin: "com.github.spotbugs"   // Performs static code analysis to look for bugs in Java code.
-apply plugin: "net.ltgt.errorprone" // Performs static code analysis to look for bugs in Java code.
 apply plugin: "pmd"        // Performs static code analysis to look for common code smells in Java code.
 apply plugin: "com.github.ben-manes.versions" // Provides a task to determine which dependencies have updates.
 apply plugin: "ru.vyarus.animalsniffer" // Ensures Java code uses APIs from a particular version of Java.
@@ -69,19 +68,26 @@ task pmd(dependsOn: [pmdMain, pmdTest, pmdIntegrationTest], group: "Verification
   description = "Run PMD analysis."
 }
 
-// Enable error-prone.
-// Running with '-Derrorprone-fix=...' can instruct error-prone to automatically fix issues.
-tasks.withType(JavaCompile) {
-  options.compilerArgs += ['-XepExcludedPaths:.*/build/generated.*/.*',
-                           '-XepAllErrorsAsWarnings']
-  def fix = propertyWithDefault("errorprone-fix", "")
-  if (!fix.isEmpty()) {
-    options.compilerArgs += ['-XepPatchChecks:' + fix, '-XepPatchLocation:IN_PLACE']
+
+// Disable error-prone if we are compiling with Java 10+ util support is added.
+// See https://github.com/google/error-prone/issues/860
+if (!JavaVersion.current().isJava10Compatible()) {
+  // Enable error-prone.
+  // Running with '-Derrorprone-fix=...' can instruct error-prone to automatically fix issues.
+  apply plugin: "net.ltgt.errorprone"
+  // Performs static code analysis to look for bugs in Java code.
+  tasks.withType(JavaCompile) {
+    options.compilerArgs += ['-XepExcludedPaths:.*/build/generated.*/.*',
+                             '-XepAllErrorsAsWarnings']
+    def fix = propertyWithDefault("errorprone-fix", "")
+    if (!fix.isEmpty()) {
+      options.compilerArgs += ['-XepPatchChecks:' + fix, '-XepPatchLocation:IN_PLACE']
+    }
   }
-}
 // Set a specific version of Error Prone
-dependencies {
-  errorprone libs.errorProne
+  dependencies {
+    errorprone libs.errorProne
+  }
 }
 
 // Define a Java API signature for use by animal-sniffer. It'll enforce that all
