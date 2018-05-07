@@ -128,8 +128,11 @@ namespace tools {
 using cfile::CFileWriter;
 using cfile::StringDataGenerator;
 using cfile::WriterOptions;
+using client::KuduClient;
+using client::KuduClientBuilder;
 using client::KuduSchema;
 using client::KuduSchemaBuilder;
+using client::KuduTable;
 using client::sp::shared_ptr;
 using cluster::ExternalMiniCluster;
 using cluster::ExternalMiniClusterOptions;
@@ -1829,6 +1832,30 @@ TEST_F(ToolTest, TestMasterList) {
 
   ASSERT_STR_CONTAINS(out, master->uuid());
   ASSERT_STR_CONTAINS(out, master->bound_rpc_hostport().ToString());
+}
+
+TEST_F(ToolTest, TestRenameTable) {
+  NO_FATALS(StartExternalMiniCluster());
+  const string& kTableName = "kudu.table";
+  const string& kNewTableName = "kudu_table";
+
+  // Create the table.
+  TestWorkload workload(cluster_.get());
+  workload.set_table_name(kTableName);
+  workload.set_num_replicas(1);
+  workload.Setup();
+
+  string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+  string out;
+  NO_FATALS(RunActionStdoutNone(Substitute("table rename $0 $1 $2",
+                                           master_addr, kTableName,
+                                           kNewTableName)));
+  shared_ptr<KuduClient> client;
+  ASSERT_OK(KuduClientBuilder()
+      .add_master_server_addr(master_addr)
+      .Build(&client));
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client->OpenTable(kNewTableName, &table));
 }
 
 // This test is parameterized on the serialization mode and Kerberos.

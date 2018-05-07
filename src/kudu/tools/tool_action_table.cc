@@ -47,6 +47,7 @@ using client::KuduClientBuilder;
 using client::KuduScanToken;
 using client::KuduScanTokenBuilder;
 using client::KuduTable;
+using client::KuduTableAlterer;
 using client::internal::ReplicaController;
 using std::cout;
 using std::endl;
@@ -101,18 +102,34 @@ class TableLister {
 namespace {
 
 const char* const kTableNameArg = "table_name";
+const char* const kNewTableNameArg = "new_table_name";
 
-Status DeleteTable(const RunnerContext& context) {
+Status CreateKuduClient(const RunnerContext& context,
+                        client::sp::shared_ptr<KuduClient>* client) {
   const string& master_addresses_str = FindOrDie(context.required_args,
                                                  kMasterAddressesArg);
   vector<string> master_addresses = Split(master_addresses_str, ",");
+  return KuduClientBuilder()
+             .master_server_addrs(master_addresses)
+             .Build(client);
+}
+
+Status DeleteTable(const RunnerContext& context) {
   const string& table_name = FindOrDie(context.required_args, kTableNameArg);
+  client::sp::shared_ptr<KuduClient> client;
+  RETURN_NOT_OK(CreateKuduClient(context, &client));
+  return client->DeleteTable(table_name);
+}
+
+Status RenameTable(const RunnerContext& context) {
+  const string& table_name = FindOrDie(context.required_args, kTableNameArg);
+  const string& new_table_name = FindOrDie(context.required_args, kNewTableNameArg);
 
   client::sp::shared_ptr<KuduClient> client;
-  RETURN_NOT_OK(KuduClientBuilder()
-                .master_server_addrs(master_addresses)
-                .Build(&client));
-  return client->DeleteTable(table_name);
+  RETURN_NOT_OK(CreateKuduClient(context, &client));
+  unique_ptr<KuduTableAlterer> alterer(client->NewTableAlterer(table_name));
+  return alterer->RenameTo(new_table_name)
+      ->Alter();
 }
 
 Status ListTables(const RunnerContext& context) {
@@ -131,6 +148,14 @@ unique_ptr<Mode> BuildTableMode() {
       .AddRequiredParameter({ kTableNameArg, "Name of the table to delete" })
       .Build();
 
+  unique_ptr<Action> rename_table =
+      ActionBuilder("rename", &RenameTable)
+      .Description("Rename a table")
+      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
+      .AddRequiredParameter({ kTableNameArg, "Name of the table to rename" })
+      .AddRequiredParameter({ kNewTableNameArg, "New table name" })
+      .Build();
+
   unique_ptr<Action> list_tables =
       ActionBuilder("list", &ListTables)
       .Description("List all tables")
@@ -141,6 +166,7 @@ unique_ptr<Mode> BuildTableMode() {
   return ModeBuilder("table")
       .Description("Operate on Kudu tables")
       .AddAction(std::move(delete_table))
+      .AddAction(std::move(rename_table))
       .AddAction(std::move(list_tables))
       .Build();
 }
