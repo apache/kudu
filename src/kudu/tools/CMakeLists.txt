@@ -15,20 +15,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-set(LINK_LIBS
-  cfile
-  consensus
-  gutil
-  kudu_client
-  kudu_common
-  kudu_fs
-  kudu_util
-  log
-  tablet
-  tserver
-  ${KUDU_BASE_LIBS}
-)
-
 #######################################
 # tool_proto
 #######################################
@@ -58,8 +44,19 @@ add_library(kudu_tools_util
   tool_action_common.cc
 )
 target_link_libraries(kudu_tools_util
+  cfile
+  consensus
+  gutil
+  kudu_client
+  kudu_common
+  kudu_fs
+  kudu_util
+  log
+  server_process
+  tablet
   tool_proto
-  ${LINK_LIBS})
+  ${KUDU_BASE_LIBS}
+)
 
 #######################################
 # ksck

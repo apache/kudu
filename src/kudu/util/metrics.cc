@@ -16,7 +16,6 @@
 // under the License.
 #include "kudu/util/metrics.h"
 
-#include <cstdlib>
 #include <iostream>
 #include <map>
 #include <utility>
@@ -437,12 +436,11 @@ void MetricPrototypeRegistry::WriteAsJson(JsonWriter* writer) const {
   writer->EndObject();
 }
 
-void MetricPrototypeRegistry::WriteAsJsonAndExit() const {
+void MetricPrototypeRegistry::WriteAsJson() const {
   std::ostringstream s;
   JsonWriter w(&s, JsonWriter::PRETTY);
   WriteAsJson(&w);
   std::cout << s.str() << std::endl;
-  exit(0);
 }
 
 //

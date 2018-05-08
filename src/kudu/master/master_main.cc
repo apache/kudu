@@ -18,6 +18,7 @@
 #include <iostream>
 #include <string>
 
+#include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
@@ -33,9 +34,9 @@
 
 using kudu::master::Master;
 
-DECLARE_string(rpc_bind_addresses);
-DECLARE_int32(webserver_port);
 DECLARE_bool(evict_failed_followers);
+DECLARE_int32(webserver_port);
+DECLARE_string(rpc_bind_addresses);
 
 namespace kudu {
 namespace master {
@@ -52,6 +53,12 @@ static int MasterMain(int argc, char** argv) {
   // because there is no-one to assign replacement servers in order to maintain
   // the desired replication factor. (It's not turtles all the way down!)
   FLAGS_evict_failed_followers = false;
+
+  // Setting the default value of the 'force_block_cache_capacity' flag to
+  // 'false' makes the corresponding group validator enforce proper settings
+  // for the memory limit and the cfile cache capacity.
+  CHECK_NE("", SetCommandLineOptionWithMode("force_block_cache_capacity",
+        "false", gflags::SET_FLAGS_DEFAULT));
 
   GFlagsMap default_flags = GetFlagsMap();
 

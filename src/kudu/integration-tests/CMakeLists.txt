@@ -34,9 +34,9 @@ set(INTEGRATION_TESTS_SRCS
 
 add_library(itest_util ${INTEGRATION_TESTS_SRCS})
 target_link_libraries(itest_util
-  tserver
+  tserver_proto
   tserver_test_util
-  master
+  master_proto
   mini_cluster
   ksck
   kudu_client

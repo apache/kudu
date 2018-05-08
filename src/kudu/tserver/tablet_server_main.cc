@@ -27,8 +27,8 @@
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/tablet_server_options.h"
 #include "kudu/util/fault_injection.h"
-#include "kudu/util/flags.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/flags.h"
 #include "kudu/util/init.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
@@ -37,9 +37,9 @@
 
 using kudu::tserver::TabletServer;
 
-DECLARE_string(rpc_bind_addresses);
 DECLARE_int32(rpc_num_service_threads);
 DECLARE_int32(webserver_port);
+DECLARE_string(rpc_bind_addresses);
 
 DEFINE_double(fault_before_start, 0.0,
               "Fake fault flag that always causes a crash on startup. "
@@ -58,6 +58,12 @@ static int TabletServerMain(int argc, char** argv) {
                                                  TabletServer::kDefaultPort);
   FLAGS_rpc_num_service_threads = 20;
   FLAGS_webserver_port = TabletServer::kDefaultWebPort;
+
+  // Setting the default value of the 'force_block_cache_capacity' flag to
+  // 'false' makes the corresponding group validator enforce proper settings
+  // for the memory limit and the cfile cache capacity.
+  CHECK_NE("", SetCommandLineOptionWithMode("force_block_cache_capacity",
+        "false", gflags::SET_FLAGS_DEFAULT));
 
   GFlagsMap default_flags = GetFlagsMap();
 

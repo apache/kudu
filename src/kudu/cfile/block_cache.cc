@@ -38,7 +38,11 @@
 DEFINE_int64(block_cache_capacity_mb, 512, "block cache capacity in MB");
 TAG_FLAG(block_cache_capacity_mb, stable);
 
-DEFINE_bool(force_block_cache_capacity, false,
+// Yes, it's strange: the default value is 'true' but that's intentional.
+// The idea is to avoid the corresponding group flag validator striking
+// while running anything but master and tserver. As for the master and tserver,
+// those have the default value for this flag set to 'false'.
+DEFINE_bool(force_block_cache_capacity, true,
             "Force Kudu to accept the block cache size, even if it is unsafe.");
 TAG_FLAG(force_block_cache_capacity, unsafe);
 TAG_FLAG(force_block_cache_capacity, hidden);

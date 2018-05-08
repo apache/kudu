@@ -120,7 +120,7 @@ target_link_libraries(consensus
 set(KUDU_TEST_LINK_LIBS
   log
   consensus
-  tserver
+  tserver_proto
   cfile
   tablet
   kudu_util

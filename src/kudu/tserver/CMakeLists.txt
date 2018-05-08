@@ -132,8 +132,8 @@ target_link_libraries(tserver
   server_process
   tablet
   tablet_copy_proto
-  tserver_proto
   tserver_admin_proto
+  tserver_proto
   tserver_service_proto)
 
 #########################################

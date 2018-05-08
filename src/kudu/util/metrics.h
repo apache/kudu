@@ -698,8 +698,8 @@ class MetricPrototypeRegistry {
   void WriteAsJson(JsonWriter* writer) const;
 
   // Convenience wrapper around WriteAsJson(...). This dumps the JSON information
-  // to stdout and then exits.
-  void WriteAsJsonAndExit() const;
+  // to stdout.
+  void WriteAsJson() const;
  private:
   friend class Singleton<MetricPrototypeRegistry>;
   friend class MetricPrototype;

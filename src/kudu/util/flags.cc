@@ -384,12 +384,6 @@ void DumpFlagsXML() {
   }
 
   cout << "</AllFlags>" << endl;
-  exit(1);
-}
-
-void ShowVersionAndExit() {
-  cout << VersionInfo::GetAllVersionInfo() << endl;
-  exit(0);
 }
 
 // Check that, if any flags tagged with 'tag' have been specified to
@@ -493,18 +487,20 @@ int ParseCommandLineFlags(int* argc, char*** argv, bool remove_flags) {
 }
 
 void HandleCommonFlags() {
-  CheckFlagsAllowed();
-  RunCustomValidators();
-
   if (FLAGS_helpxml) {
     DumpFlagsXML();
+    exit(1);
   } else if (FLAGS_dump_metrics_json) {
-    MetricPrototypeRegistry::get()->WriteAsJsonAndExit();
+    MetricPrototypeRegistry::get()->WriteAsJson();
+    exit(0);
   } else if (FLAGS_version) {
-    ShowVersionAndExit();
-  } else {
-    google::HandleCommandLineHelpFlags();
+    cout << VersionInfo::GetAllVersionInfo() << endl;
+    exit(0);
   }
+
+  google::HandleCommandLineHelpFlags();
+  CheckFlagsAllowed();
+  RunCustomValidators();
 
   if (FLAGS_disable_core_dumps) {
     DisableCoreDumps();
