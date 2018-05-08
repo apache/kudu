@@ -40,6 +40,7 @@ versions += [
     hdrhistogram   : "2.1.12",
     hive           : "3.1.2",
     httpClient     : "4.5.13",
+    jacoco         : "0.8.6",
     jepsen         : "0.1.5",
     jetty          : "9.4.35.v20201120",
     jmh            : "1.27",

@@ -30,6 +30,7 @@ repositories {
 dependencies {
   compile "com.github.ben-manes:gradle-versions-plugin:0.36.0"
   compile "com.github.jengelman.gradle.plugins:shadow:6.1.0"
+  compile "gradle.plugin.org.barfuin.gradle.jacocolog:gradle-jacoco-log:1.2.3"
   compile "gradle.plugin.com.google.gradle:osdetector-gradle-plugin:1.6.2"
   compile "com.google.protobuf:protobuf-gradle-plugin:0.8.14"
   compile "com.netflix.nebula:nebula-clojure-plugin:9.4.3"

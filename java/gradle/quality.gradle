@@ -101,6 +101,25 @@ if(!JavaVersion.current().isJava12Compatible()) {
   }
 }
 
+// Don't enable code coverage for kudu-proto given it is exclusively generated code.
+// Don't enable code coverage for kudu-jepsen given it is exclusively test code.
+if (project.name != "kudu-proto" && project.name != "kudu-jepsen") {
+  apply plugin: "jacoco" // Provides code coverage metrics for Java code.
+  jacoco {
+    toolVersion = versions.jacoco
+  }
+  tasks.withType(JacocoReport) {
+    reports {
+      csv.enabled false
+      xml.enabled true
+      html.enabled true
+    }
+  }
+  jacocoTestReport {
+    dependsOn test // tests are required to run before generating the report
+  }
+}
+
 // Define a Java API signature for use by animal-sniffer. It'll enforce that all
 // Java API usage adheres to this signature.
 dependencies {
