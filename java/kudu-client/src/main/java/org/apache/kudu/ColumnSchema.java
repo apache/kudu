@@ -227,7 +227,15 @@ public class ColumnSchema {
 
   @Override
   public String toString() {
-    return "Column name: " + name + ", type: " + type.getName() + typeAttributes.toStringForType(type);
+    StringBuilder sb = new StringBuilder();
+    sb.append("Column name: ");
+    sb.append(name);
+    sb.append(", type: ");
+    sb.append(type.getName());
+    if (typeAttributes != null) {
+      sb.append(typeAttributes.toStringForType(type));
+    }
+    return sb.toString();
   }
 
   /**
