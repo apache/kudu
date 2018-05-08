@@ -696,7 +696,10 @@ string StackTrace::Symbolize() const {
     //
     // This also ensures that we point at the correct line number when using addr2line
     // on logged stacks.
-    if (google::Symbolize(
+    //
+    // We check that the pc is not 0 to avoid undefined behavior in the case of
+    // invalid unwinding (see KUDU-2433).
+    if (pc && google::Symbolize(
             reinterpret_cast<char *>(pc) - 1, tmp, sizeof(tmp))) {
       symbol = tmp;
     }
