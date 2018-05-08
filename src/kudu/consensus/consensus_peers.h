@@ -27,17 +27,17 @@
 #include <glog/logging.h>
 
 #include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/consensus.proxy.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/ref_counted_replicate.h"
 #include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/gutil/port.h"
 #include "kudu/rpc/response_callback.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
-class HostPort;
 class ThreadPoolToken;
 
 namespace rpc {
@@ -46,9 +46,8 @@ class PeriodicTimer;
 }
 
 namespace consensus {
-class ConsensusServiceProxy;
-class PeerProxy;
 class PeerMessageQueue;
+class PeerProxy;
 
 // A remote peer in consensus.
 //
@@ -195,6 +194,7 @@ class Peer : public std::enable_shared_from_this<Peer> {
 // be replaced for tests.
 class PeerProxy {
  public:
+  virtual ~PeerProxy() {}
 
   // Sends a request, asynchronously, to a remote peer.
   virtual void UpdateAsync(const ConsensusRequestPB* request,
@@ -216,7 +216,8 @@ class PeerProxy {
     LOG(DFATAL) << "Not implemented";
   }
 
-  virtual ~PeerProxy() {}
+  // Remote endpoint or description of the peer.
+  virtual std::string PeerName() const = 0;
 };
 
 // A peer proxy factory. Usually just obtains peers through the rpc implementation
@@ -238,22 +239,22 @@ class RpcPeerProxy : public PeerProxy {
   RpcPeerProxy(gscoped_ptr<HostPort> hostport,
                gscoped_ptr<ConsensusServiceProxy> consensus_proxy);
 
-  virtual void UpdateAsync(const ConsensusRequestPB* request,
-                           ConsensusResponsePB* response,
-                           rpc::RpcController* controller,
-                           const rpc::ResponseCallback& callback) OVERRIDE;
+  void UpdateAsync(const ConsensusRequestPB* request,
+                   ConsensusResponsePB* response,
+                   rpc::RpcController* controller,
+                   const rpc::ResponseCallback& callback) override;
 
-  virtual void RequestConsensusVoteAsync(const VoteRequestPB* request,
-                                         VoteResponsePB* response,
-                                         rpc::RpcController* controller,
-                                         const rpc::ResponseCallback& callback) OVERRIDE;
+  void RequestConsensusVoteAsync(const VoteRequestPB* request,
+                                 VoteResponsePB* response,
+                                 rpc::RpcController* controller,
+                                 const rpc::ResponseCallback& callback) override;
 
-  virtual void StartTabletCopy(const StartTabletCopyRequestPB* request,
-                                    StartTabletCopyResponsePB* response,
-                                    rpc::RpcController* controller,
-                                    const rpc::ResponseCallback& callback) OVERRIDE;
+  void StartTabletCopy(const StartTabletCopyRequestPB* request,
+                       StartTabletCopyResponsePB* response,
+                       rpc::RpcController* controller,
+                       const rpc::ResponseCallback& callback) override;
 
-  virtual ~RpcPeerProxy();
+  std::string PeerName() const override;
 
  private:
   gscoped_ptr<HostPort> hostport_;

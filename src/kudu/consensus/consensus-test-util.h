@@ -143,6 +143,10 @@ class TestPeerProxy : public PeerProxy {
 
   explicit TestPeerProxy(ThreadPool* pool) : pool_(pool) {}
 
+  std::string PeerName() const override {
+    return "TestPeerProxy";
+  }
+
  protected:
   // Register the RPC callback in order to call later.
   // We currently only support one request of each method being in flight at a time.

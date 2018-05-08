@@ -156,6 +156,7 @@ class LeaderElection : public RefCountedThreadSafe<LeaderElection> {
   friend class RefCountedThreadSafe<LeaderElection>;
 
   struct VoterState {
+    std::string peer_uuid;
     gscoped_ptr<PeerProxy> proxy;
 
     // If constructing the proxy failed (e.g. due to a DNS resolution issue)
@@ -165,6 +166,8 @@ class LeaderElection : public RefCountedThreadSafe<LeaderElection> {
     rpc::RpcController rpc;
     VoteRequestPB request;
     VoteResponsePB response;
+
+    std::string PeerInfo() const;
   };
 
   typedef std::unordered_map<std::string, VoterState*> VoterStateMap;
@@ -181,16 +184,16 @@ class LeaderElection : public RefCountedThreadSafe<LeaderElection> {
   void VoteResponseRpcCallback(const std::string& voter_uuid);
 
   // Record vote from specified peer.
-  void RecordVoteUnlocked(const std::string& voter_uuid, ElectionVote vote);
+  void RecordVoteUnlocked(const VoterState& state, ElectionVote vote);
 
   // Handle a peer that reponded with a term greater than the election term.
-  void HandleHigherTermUnlocked(const std::string& voter_uuid, const VoterState& state);
+  void HandleHigherTermUnlocked(const VoterState& state);
 
   // Log and record a granted vote.
-  void HandleVoteGrantedUnlocked(const std::string& voter_uuid, const VoterState& state);
+  void HandleVoteGrantedUnlocked(const VoterState& state);
 
   // Log the reason for a denied vote and record it.
-  void HandleVoteDeniedUnlocked(const std::string& voter_uuid, const VoterState& state);
+  void HandleVoteDeniedUnlocked(const VoterState& state);
 
   // Returns a string to be prefixed to all log entries.
   // This method accesses const members and is thread safe.
