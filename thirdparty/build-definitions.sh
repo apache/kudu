@@ -252,6 +252,11 @@ build_llvm() {
     TOOLS_ARGS="$TOOLS_ARGS -D${arg}=OFF"
   done
 
+  # Remove '-nostdinc++' from the cflags for clang, since it already
+  # handles this when passing --stdlib=libc++ and passing this confuses
+  # the check for -fPIC.
+  CLANG_CXXFLAGS=$(echo "$EXTRA_CXXFLAGS" | sed -e 's,-nostdinc++,,g;')
+
   case $BUILD_TYPE in
     "normal")
       # Default build: core LLVM libraries, clang, compiler-rt, and all tools.
@@ -269,6 +274,15 @@ build_llvm() {
       if [ -n "$GCC_INSTALL_PREFIX" ]; then
         TOOLS_ARGS="$TOOLS_ARGS -DGCC_INSTALL_PREFIX=$GCC_INSTALL_PREFIX"
       fi
+
+      # Depend on zlib from the thirdparty tree. It's an optional dependency for
+      # LLVM, but a required [1] one for IWYU. When TSAN is enabled these flags
+      # are already set by build-thirdparty.sh in order to support the
+      # thirdparty libc++, so it's not necessary to set them again.
+      #
+      # 1. https://github.com/include-what-you-use/include-what-you-use/issues/539
+      CLANG_CXXFLAGS="$CLANG_CXXFLAGS -I$PREFIX/include"
+      CLANG_LDFLAGS="$CLANG_LDFLAGS -L$PREFIX/lib -Wl,-rpath,$PREFIX/lib"
       ;;
     "tsan")
       # Build just the core LLVM libraries, dependent on libc++.
@@ -303,18 +317,6 @@ build_llvm() {
          $PREFIX/lib/clang/ \
          $PREFIX/lib/cmake/{llvm,clang}
 
-  # Remove '-nostdinc++' from the cflags for clang, since it already
-  # handles this when passing --stdlib=libc++ and passing this confuses
-  # the check for -fPIC.
-  CLANG_CXXFLAGS=$(echo "$EXTRA_CXXFLAGS" | sed -e 's,-nostdinc++,,g;')
-
-  # Depend on zlib from the thirdparty tree. It's an optional dependency for
-  # LLVM, but a required [1] one for IWYU.
-  #
-  # 1. https://github.com/include-what-you-use/include-what-you-use/issues/539
-  CLANG_CXXFLAGS="$CLANG_CXXFLAGS -I$PREFIX/include"
-  CLANG_LDFLAGS="$EXTRA_LDFLAGS -L$PREFIX/lib -Wl,-rpath,$PREFIX/lib"
-
   cmake \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX=$PREFIX \
@@ -324,7 +326,8 @@ build_llvm() {
     -DLLVM_INCLUDE_UTILS=OFF \
     -DLLVM_TARGETS_TO_BUILD=X86 \
     -DLLVM_ENABLE_RTTI=ON \
-    -DCMAKE_CXX_FLAGS="$CLANG_CXXFLAGS $CLANG_LDFLAGS" \
+    -DCMAKE_CXX_FLAGS="$CLANG_CXXFLAGS $EXTRA_LDFLAGS" \
+    -DCMAKE_EXE_LINKER_FLAGS="$CLANG_LDFLAGS" \
     -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
     $TOOLS_ARGS \
     $EXTRA_CMAKE_FLAGS \
