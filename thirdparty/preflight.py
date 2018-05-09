@@ -133,14 +133,14 @@ def check_sasl():
 
 def check_openssl():
   cflags = ["-E"]
-  try:
-    openssl_include = subprocess.check_output(["pkg-config", "--cflags", "openssl"]).rstrip()
-    if openssl_include != "":
-      cflags.append(openssl_include)
-  except subprocess.CalledProcessError:
-      homebrew_openssl_dir="/usr/local/opt/openssl/include"
-      if os.path.isdir(homebrew_openssl_dir):
-        cflags.append("-I" + homebrew_openssl_dir)
+  proc = subprocess.Popen(["pkg-config", "--cflags", "openssl"], stdout=subprocess.PIPE)
+  openssl_include = proc.communicate()[0].decode("utf-8").rstrip()
+  if openssl_include != "":
+    cflags.append(openssl_include)
+  else:
+    homebrew_openssl_dir="/usr/local/opt/openssl/include"
+    if os.path.isdir(homebrew_openssl_dir):
+      cflags.append("-I" + homebrew_openssl_dir)
   try_do(
     "Checking for openssl headers",
     ("Unable to compile a simple program that uses openssl. " +
