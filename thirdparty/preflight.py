@@ -132,6 +132,15 @@ def check_sasl():
       flags=["-E"]))
 
 def check_openssl():
+  cflags = ["-E"]
+  try:
+    openssl_include = subprocess.check_output(["pkg-config", "--cflags", "openssl"]).rstrip()
+    if openssl_include != "":
+      cflags.append(openssl_include)
+  except subprocess.CalledProcessError:
+      homebrew_openssl_dir="/usr/local/opt/openssl/include"
+      if os.path.isdir(homebrew_openssl_dir):
+        cflags.append("-I" + homebrew_openssl_dir)
   try_do(
     "Checking for openssl headers",
     ("Unable to compile a simple program that uses openssl. " +
@@ -140,7 +149,7 @@ def check_openssl():
     lambda: compile("""
       #include <openssl/ssl.h>
       """,
-      flags=["-E"]))
+      flags=cflags))
 
 def main():
   print("Running pre-flight checks")
