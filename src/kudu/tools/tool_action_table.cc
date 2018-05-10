@@ -15,8 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/tools/tool_action.h"
-
 #include <iostream>
 #include <memory>
 #include <string>
@@ -28,11 +26,13 @@
 
 #include "kudu/client/client.h"
 #include "kudu/client/replica_controller-internal.h"
+#include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/tools/tool_action.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/util/status.h"
 
@@ -103,6 +103,8 @@ namespace {
 
 const char* const kTableNameArg = "table_name";
 const char* const kNewTableNameArg = "new_table_name";
+const char* const kColumnNameArg = "column_name";
+const char* const kNewColumnNameArg = "new_column_name";
 
 Status CreateKuduClient(const RunnerContext& context,
                         client::sp::shared_ptr<KuduClient>* client) {
@@ -129,7 +131,19 @@ Status RenameTable(const RunnerContext& context) {
   RETURN_NOT_OK(CreateKuduClient(context, &client));
   unique_ptr<KuduTableAlterer> alterer(client->NewTableAlterer(table_name));
   return alterer->RenameTo(new_table_name)
-      ->Alter();
+                ->Alter();
+}
+
+Status RenameColumn(const RunnerContext& context) {
+  const string& table_name = FindOrDie(context.required_args, kTableNameArg);
+  const string& column_name = FindOrDie(context.required_args, kColumnNameArg);
+  const string& new_column_name = FindOrDie(context.required_args, kNewColumnNameArg);
+
+  client::sp::shared_ptr<KuduClient> client;
+  RETURN_NOT_OK(CreateKuduClient(context, &client));
+  unique_ptr<KuduTableAlterer> alterer(client->NewTableAlterer(table_name));
+  alterer->AlterColumn(column_name)->RenameTo(new_column_name);
+  return alterer->Alter();
 }
 
 Status ListTables(const RunnerContext& context) {
@@ -149,12 +163,21 @@ unique_ptr<Mode> BuildTableMode() {
       .Build();
 
   unique_ptr<Action> rename_table =
-      ActionBuilder("rename", &RenameTable)
+      ActionBuilder("rename_table", &RenameTable)
       .Description("Rename a table")
       .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTableNameArg, "Name of the table to rename" })
       .AddRequiredParameter({ kNewTableNameArg, "New table name" })
       .Build();
+
+  unique_ptr<Action> rename_column =
+      ActionBuilder("rename_column", &RenameColumn)
+          .Description("Rename a column")
+          .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
+          .AddRequiredParameter({ kTableNameArg, "Name of the table to alter" })
+          .AddRequiredParameter({ kColumnNameArg, "Name of the table column to rename" })
+          .AddRequiredParameter({ kNewColumnNameArg, "New column name" })
+          .Build();
 
   unique_ptr<Action> list_tables =
       ActionBuilder("list", &ListTables)
@@ -167,6 +190,7 @@ unique_ptr<Mode> BuildTableMode() {
       .Description("Operate on Kudu tables")
       .AddAction(std::move(delete_table))
       .AddAction(std::move(rename_table))
+      .AddAction(std::move(rename_column))
       .AddAction(std::move(list_tables))
       .Build();
 }

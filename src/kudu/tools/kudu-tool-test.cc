@@ -1847,7 +1847,7 @@ TEST_F(ToolTest, TestRenameTable) {
 
   string master_addr = cluster_->master()->bound_rpc_addr().ToString();
   string out;
-  NO_FATALS(RunActionStdoutNone(Substitute("table rename $0 $1 $2",
+  NO_FATALS(RunActionStdoutNone(Substitute("table rename_table $0 $1 $2",
                                            master_addr, kTableName,
                                            kNewTableName)));
   shared_ptr<KuduClient> client;
@@ -1856,6 +1856,44 @@ TEST_F(ToolTest, TestRenameTable) {
       .Build(&client));
   shared_ptr<KuduTable> table;
   ASSERT_OK(client->OpenTable(kNewTableName, &table));
+}
+
+TEST_F(ToolTest, TestRenameColumn) {
+  NO_FATALS(StartExternalMiniCluster());
+  const string& kTableName = "table";
+  const string& kColumnName = "col.0";
+  const string& kNewColumnName = "col_0";
+
+  KuduSchemaBuilder schema_builder;
+  schema_builder.AddColumn("key")
+      ->Type(client::KuduColumnSchema::INT32)
+      ->NotNull()
+      ->PrimaryKey();
+  schema_builder.AddColumn(kColumnName)
+      ->Type(client::KuduColumnSchema::INT32)
+      ->NotNull();
+  KuduSchema schema;
+  ASSERT_OK(schema_builder.Build(&schema));
+
+  // Create the table.
+  TestWorkload workload(cluster_.get());
+  workload.set_table_name(kTableName);
+  workload.set_schema(schema);
+  workload.set_num_replicas(1);
+  workload.Setup();
+
+  string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+  string out;
+  NO_FATALS(RunActionStdoutNone(Substitute("table rename_column $0 $1 $2 $3",
+                                           master_addr, kTableName,
+                                           kColumnName, kNewColumnName)));
+  shared_ptr<KuduClient> client;
+  ASSERT_OK(KuduClientBuilder()
+                .add_master_server_addr(master_addr)
+                .Build(&client));
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client->OpenTable(kTableName, &table));
+  ASSERT_STR_CONTAINS(table->schema().ToString(), kNewColumnName);
 }
 
 // This test is parameterized on the serialization mode and Kerberos.
