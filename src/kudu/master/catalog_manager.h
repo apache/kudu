@@ -768,8 +768,11 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
                                  TabletLocationsPB* locs_pb);
 
   // Looks up the table and locks it with the provided lock mode. If the table
-  // does not exist, the lock is not acquired and the table is not modified.
-  Status FindAndLockTable(const TableIdentifierPB& table_identifier,
+  // does not exist an error status is returned, and the appropriate error code
+  // is set in the response.
+  template<typename ReqClass, typename RespClass>
+  Status FindAndLockTable(const ReqClass& request,
+                          RespClass* response,
                           LockMode lock_mode,
                           scoped_refptr<TableInfo>* table_info,
                           TableMetadataLock* table_lock) WARN_UNUSED_RESULT;
