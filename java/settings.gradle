@@ -19,6 +19,7 @@
 // Mainly we just define what subprojects are in the build.
 
 rootProject.name = "kudu-parent"
+include "kudu-backup"
 include "kudu-client"
 include "kudu-client-tools"
 include "kudu-flume-sink"

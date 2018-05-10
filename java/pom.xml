@@ -90,6 +90,7 @@
         <!--  This is a workaround for
               https://github.com/google/protobuf/issues/4109 -->
         <protoc.version>3.5.1-1</protoc.version>
+        <scopt.version>3.7.0</scopt.version>
         <slf4j.version>1.7.25</slf4j.version>
         <sparkavro.version>4.0.0</sparkavro.version>
         <yetus.version>0.7.0</yetus.version>

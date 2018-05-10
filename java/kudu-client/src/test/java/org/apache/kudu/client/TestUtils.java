@@ -22,6 +22,7 @@ import java.io.UnsupportedEncodingException;
 import java.lang.reflect.Field;
 import java.net.URL;
 import java.net.URLDecoder;
+import java.util.Random;
 import java.util.Set;
 
 import com.google.common.base.Joiner;
@@ -43,6 +44,8 @@ public class TestUtils {
   private static Set<String> VALID_SIGNALS =  ImmutableSet.of("STOP", "CONT", "TERM", "KILL");
 
   private static final String BIN_DIR_PROP = "binDir";
+
+  private static final String TEST_RANDOM_SEED_PROP = "testRandomSeed";
 
   /**
    * Return the path portion of a file URL, after decoding the escaped
@@ -210,5 +213,22 @@ public class TestUtils {
     replicaBuilder.setTsInfo(tsInfoBuilder);
     replicaBuilder.setRole(role);
     return replicaBuilder;
+  }
+
+  /**
+   * Get an instance of Random for use in tests and logs the seed used.
+   *
+   * Uses a default seed of System.currentTimeMillis() with the option to
+   * override via the testRandomSeed system property.
+   */
+  public static Random getRandom() {
+    // First check the system property.
+    long seed = System.currentTimeMillis();
+    if (System.getProperty(TEST_RANDOM_SEED_PROP) != null) {
+      seed = Long.parseLong(System.getProperty(TEST_RANDOM_SEED_PROP));
+      LOG.info("System property {} is defined. Overriding random seed.", TEST_RANDOM_SEED_PROP, seed);
+    }
+    LOG.info("Using random seed: {}", seed);
+    return new Random(seed);
   }
 }

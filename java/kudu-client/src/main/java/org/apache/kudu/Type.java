@@ -190,4 +190,13 @@ public enum Type {
     }
   }
 
+  public static Type getTypeForName(String name) {
+    for (Type t : values()) {
+      if (t.name().equals(name)) {
+        return t;
+      }
+    }
+    throw new IllegalArgumentException("The provided name doesn't map to any known type: " + name);
+  }
+
 }

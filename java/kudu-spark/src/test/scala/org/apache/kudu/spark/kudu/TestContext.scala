@@ -100,11 +100,23 @@ trait TestContext extends BeforeAndAfterAll { self: Suite =>
 
     kuduContext = new KuduContext(miniCluster.getMasterAddresses, ss.sparkContext)
 
-    val tableOptions = new CreateTableOptions().setRangePartitionColumns(List("key").asJava)
-                                               .setNumReplicas(1)
+    val bottom = schema.newPartialRow() // Unbounded.
+    val middle = schema.newPartialRow()
+    middle.addInt("key", 50)
+    val top = schema.newPartialRow() // Unbounded.
+
+    val tableOptions = new CreateTableOptions()
+      .setRangePartitionColumns(List("key").asJava)
+      .addRangePartition(bottom, middle)
+      .addRangePartition(middle, top)
+      .setNumReplicas(1)
     table = kuduClient.createTable(tableName, schema, tableOptions)
 
-    kuduClient.createTable(simpleTableName, simpleSchema, tableOptions)
+    val simpleTableOptions = new CreateTableOptions()
+      .setRangePartitionColumns(List("key").asJava)
+      .setNumReplicas(1)
+
+    kuduClient.createTable(simpleTableName, simpleSchema, simpleTableOptions)
   }
 
   override def afterAll() {

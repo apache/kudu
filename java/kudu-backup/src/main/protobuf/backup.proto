@@ -1,0 +1,115 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+//
+// Protobufs which are used in the Kudu backup process.
+// Though these are similar to the kudu common protobufs,
+// they are specific to the kudu backup application and
+// should be kept seperate.
+syntax = "proto3";
+package kudu.backup;
+
+option java_package = "org.apache.kudu.backup";
+
+import "google/protobuf/wrappers.proto";
+
+// Maps to the ColumnTypeAttributes class.
+// The fields are effectively 1 to 1 mappings of those in ColumnTypeAttributes.
+message ColumnTypeAttributesMetadataPB {
+  int32 precision = 1;
+  int32 scale = 2;
+}
+
+// Maps to the ColumnSchema class.
+// The fields are effectively 1 to 1 mappings of those in ColumnSchema.
+message ColumnMetadataPB {
+  string name = 1;
+  string type = 2;
+  ColumnTypeAttributesMetadataPB type_attributes = 3;
+  bool is_key = 4;
+  bool is_nullable = 5;
+  // Uses the StringValue wrapper so we can differentiate between "unset"
+  // and a default value.
+  google.protobuf.StringValue default_value = 6;
+  string encoding = 7;
+  string compression = 8;
+  int32 block_size = 9;
+}
+
+// A human readable string representation of a column value for use
+// in the RangeBoundsMetadataPB.
+message ColumnValueMetadataPB {
+  string column_name = 1;
+  // This is a human-readable string value that can
+  // be parsed back into the appropriate type.
+  string value = 2;
+}
+
+// These bounds are used in CreateTableOptions to
+// generate valid range partition splits.
+// They are encoded from a PartialRow and decoded to a PartialRow.
+// The fields are repeated because each bound can have multiple column values.
+// The number of values equals the number of columns in the range partition key,
+// the column must exist in the schema and a column can not be repeated.
+message RangeBoundsMetadataPB {
+  repeated ColumnValueMetadataPB lower_bounds = 1;
+  repeated ColumnValueMetadataPB upper_bounds = 2;
+}
+
+// Maps to RangeSchema class.
+// We add the bounds field so we can generate matching splits
+// when restoring the tables. These splits are not currently
+// included in the RangeSchema class, but are instead provided in
+// the CreateTableOptions.
+message RangePartitionMetadataPB {
+  repeated string column_names = 1;
+  repeated RangeBoundsMetadataPB bounds = 2;
+}
+
+// Maps to HashBucketSchema class.
+// The fields are effectively 1 to 1 mappings of those in HashBucketSchema.
+message HashPartitionMetadataPB {
+  repeated string column_names = 1;
+  int32 num_buckets = 2;
+  int32 seed = 3;
+}
+
+// Maps to PartitionSchema class.
+// The fields are effectively 1 to 1 mappings of those in PartitionSchema.
+message PartitionMetadataPB {
+  repeated HashPartitionMetadataPB hash_partitions = 1;
+  RangePartitionMetadataPB range_partitions = 2;
+}
+
+// Represents the metadata of a table backup. This metadata is output
+// so we can understand and create a table that matches the backed up
+// table on restore.
+message TableMetadataPB {
+  // The starting point of a backup. A UNIX timestamp in milliseconds since the epoch.
+  int64 from_ms = 1;
+  // The end point of a backup. A UNIX timestamp in milliseconds since the epoch.
+  int64 to_ms = 2;
+  // The file format used to store the data.
+  string data_format = 3;
+  // The name of the table.
+  string table_name = 4;
+  // The replication factor of this table.
+  int32 num_replicas = 5;
+  // The metadata for the table's columns.
+  repeated ColumnMetadataPB columns = 6;
+  // The metadata for the table's partitions.
+  PartitionMetadataPB partitions = 7;
+}

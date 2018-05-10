@@ -54,10 +54,7 @@ public class BaseKuduTest {
   // to complete, etc.
   protected static final int DEFAULT_SLEEP = 50000;
 
-  // Currently not specifying a seed since we want a random behavior when running tests that
-  // restart tablet servers. Would be nice to have the same kind of facility that C++ has that dumps
-  // the seed it picks so that you can re-run tests with it.
-  private static final Random randomForTSRestart = new Random();
+  private static final Random randomForTSRestart = TestUtils.getRandom();
 
   protected static MiniKuduCluster miniCluster;
 
