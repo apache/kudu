@@ -768,7 +768,7 @@ TEST_F(ClientTest, TestBadTable) {
   shared_ptr<KuduTable> t;
   Status s = client_->OpenTable("xxx-does-not-exist", &t);
   ASSERT_TRUE(s.IsNotFound());
-  ASSERT_STR_CONTAINS(s.ToString(), "Not found: The table does not exist");
+  ASSERT_STR_CONTAINS(s.ToString(), "Not found: the table does not exist");
 }
 
 // Test that, if the master is down, we experience a network error talking
@@ -3926,7 +3926,7 @@ TEST_F(ClientTest, TestDeleteTable) {
   // Try to open the deleted table
   Status s = client_->OpenTable(kTableName, &client_table_);
   ASSERT_TRUE(s.IsNotFound());
-  ASSERT_STR_CONTAINS(s.ToString(), "The table does not exist");
+  ASSERT_STR_CONTAINS(s.ToString(), "the table does not exist");
 
   // Create a new table with the same name. This is to ensure that the client
   // doesn't cache anything inappropriately by table name (see KUDU-1055).
@@ -3946,7 +3946,7 @@ TEST_F(ClientTest, TestGetTableSchema) {
   // Verify that a get schema request for a missing table throws not found
   Status s = client_->GetTableSchema("MissingTableName", &schema);
   ASSERT_TRUE(s.IsNotFound());
-  ASSERT_STR_CONTAINS(s.ToString(), "The table does not exist");
+  ASSERT_STR_CONTAINS(s.ToString(), "the table does not exist");
 }
 
 // Test creating and accessing a table which has multiple tablets,
@@ -4439,15 +4439,15 @@ TEST_F(ClientTest, TestCreateTableWithTooManyTablets) {
       .Create();
   ASSERT_TRUE(s.IsInvalidArgument());
   ASSERT_STR_CONTAINS(s.ToString(),
-                      "The requested number of tablets is over the "
+                      "the requested number of tablets is over the "
                       "maximum permitted at creation time (1)");
 }
 
 // Tests for too many replicas, too few replicas, even replica count, etc.
 TEST_F(ClientTest, TestCreateTableWithBadNumReplicas) {
   const vector<pair<int, string>> cases = {
-    {3, "Not enough live tablet servers to create a table with the requested "
-     "replication factor 3. 1 tablet servers are alive"},
+    {3, "not enough live tablet servers to create a table with the requested "
+     "replication factor 3; 1 tablet servers are alive"},
     {2, "illegal replication factor 2 (replication factor must be odd)"},
     {-1, "illegal replication factor -1 (replication factor must be positive)"},
     {11, "illegal replication factor 11 (max replication factor is 7)"}
@@ -4510,7 +4510,7 @@ TEST_F(ClientTest, TestCreateTable_TableNames) {
     // From http://stackoverflow.com/questions/1301402/example-invalid-utf8-string
     {string("foo\xf0\x28\x8c\xbc", 7), "invalid table name: invalid UTF8 sequence"},
     // Should pass validation but fail due to lack of tablet servers running.
-    {"你好", "Not enough live tablet servers"}
+    {"你好", "not enough live tablet servers"}
   };
 
   for (const auto& test_case : kCases) {
