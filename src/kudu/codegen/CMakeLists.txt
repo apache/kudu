@@ -125,6 +125,10 @@ list(REMOVE_ITEM IR_FLAGS "-fsanitize=thread" "-DTHREAD_SANITIZER")
 # again at runtime.
 list(REMOVE_ITEM IR_FLAGS "-O3" "-O2" "-O1" "-Os")
 
+# If present (see the top-level CMakeLists.txt), this has no effect and just generates
+# an unused argument warning.
+list(REMOVE_ITEM IR_FLAGS "-fuse-ld=gold")
+
 # Disable built-in LLVM passes which would add 'noinline' attributes to all
 # standalone functions.
 #

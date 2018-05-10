@@ -438,27 +438,89 @@ if ("${KUDU_LINK}" STREQUAL "a")
   endif()
 endif()
 
-# Are we using the gold linker? It doesn't work with dynamic linking as
-# weak symbols aren't properly overridden, causing tcmalloc to be omitted.
-# Let's flag this as an error in RELEASE builds (we shouldn't release a
-# product like this).
+# Interrogates the linker version via the C++ compiler to determine whether
+# we're using the gold linker, and if so, extracts its version.
 #
-# See https://sourceware.org/bugzilla/show_bug.cgi?id=16979 for details.
+# If the gold linker is being used, sets GOLD_VERSION in the parent scope with
+# the extracted version.
 #
-# The gold linker is only for ELF binaries, which OSX doesn't use. We can
-# just skip.
-if (NOT APPLE)
-  execute_process(COMMAND ${CMAKE_CXX_COMPILER} -Wl,--version OUTPUT_VARIABLE LINKER_OUTPUT)
-endif ()
-if (LINKER_OUTPUT MATCHES "gold")
-  if ("${KUDU_LINK}" STREQUAL "d" AND
-      "${CMAKE_BUILD_TYPE}" STREQUAL "RELEASE")
-    message(SEND_ERROR "Cannot use gold with dynamic linking in a RELEASE build "
-      "as it would cause tcmalloc symbols to get dropped")
-  else()
-    message("Using gold linker")
+# Any additional arguments are passed verbatim into the C++ compiler invocation.
+function(GET_GOLD_VERSION)
+  # The gold linker is only for ELF binaries, which macOS doesn't use.
+  if (APPLE)
+    return()
   endif()
-  set(KUDU_USING_GOLD 1)
+
+  execute_process(COMMAND ${CMAKE_CXX_COMPILER} "-Wl,--version" ${ARGN}
+    ERROR_QUIET
+    OUTPUT_VARIABLE LINKER_OUTPUT)
+  # We're expecting LINKER_OUTPUT to look like one of these:
+  #   GNU gold (version 2.24) 1.11
+  #   GNU gold (GNU Binutils for Ubuntu 2.30) 1.15
+  if (LINKER_OUTPUT MATCHES "GNU gold")
+    string(REGEX MATCH "GNU gold \\([^\\)]*\\) (([0-9]+\\.?)+)" _ "${LINKER_OUTPUT}")
+    if (NOT CMAKE_MATCH_1)
+      message(SEND_ERROR "Could not extract GNU gold version. "
+        "Linker version output: ${LINKER_OUTPUT}")
+    endif()
+    set(GOLD_VERSION "${CMAKE_MATCH_1}" PARENT_SCOPE)
+  endif()
+endfunction()
+
+# Is the compiler hard-wired to use the gold linker?
+GET_GOLD_VERSION()
+if (GOLD_VERSION)
+  set(MUST_USE_GOLD 1)
+else()
+  # Can the compiler optionally enable the gold linker?
+  GET_GOLD_VERSION("-fuse-ld=gold")
+
+  # We can't use the gold linker if it's inside devtoolset because the compiler
+  # won't find it when invoked directly from make/ninja (which is typically
+  # done outside devtoolset).
+  execute_process(COMMAND which ld.gold
+    OUTPUT_VARIABLE GOLD_LOCATION
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET)
+  if ("${GOLD_LOCATION}" MATCHES "^/opt/rh/devtoolset")
+    message("Skipping optional gold linker (version ${GOLD_VERSION}) because "
+      "it's in devtoolset")
+    set(GOLD_VERSION)
+  endif()
+endif()
+if (GOLD_VERSION)
+  # Older versions of the gold linker are vulnerable to a bug [1] which
+  # prevents weak symbols from being overridden properly. This leads to
+  # omitting of Kudu's tcmalloc dependency.
+  #
+  # How we handle this situation depends on other factors:
+  # - If gold is optional, we won't use it.
+  # - If gold is required, we'll either:
+  #   - Raise an error in RELEASE builds (we shouldn't release such a product), or
+  #   - Drop tcmalloc in all other builds.
+  #
+  # 1. https://sourceware.org/bugzilla/show_bug.cgi?id=16979.
+  if ("${GOLD_VERSION}" VERSION_LESS "1.12")
+    set(KUDU_BUGGY_GOLD 1)
+  endif()
+  if (MUST_USE_GOLD)
+    message("Using hard-wired gold linker (version ${GOLD_VERSION})")
+    if (KUDU_BUGGY_GOLD)
+      if ("${KUDU_LINK}" STREQUAL "d" AND
+          "${CMAKE_BUILD_TYPE}" STREQUAL "RELEASE")
+        message(SEND_ERROR "Configured to use buggy gold with dynamic linking "
+          "in a RELEASE build; this would cause tcmalloc symbols to get dropped")
+      endif()
+      message("Hard-wired gold linker is buggy, dropping tcmalloc dependency")
+    endif()
+  elseif (NOT KUDU_BUGGY_GOLD)
+    # The Gold linker must be manually enabled.
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fuse-ld=gold")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fuse-ld=gold")
+    message("Using optional gold linker (version ${GOLD_VERSION})")
+  else()
+    message("Optional gold linker is buggy, using ld linker instead")
+  endif()
 else()
   message("Using ld linker")
 endif()
@@ -1058,12 +1120,12 @@ ADD_THIRDPARTY_LIB(krb5
 
 ## Google PerfTools
 ##
-## Disabled with TSAN/ASAN as well as with gold+dynamic linking (see comment
-## near definition of KUDU_USING_GOLD).
+## Disabled with TSAN/ASAN as well as with gold+dynamic linking (see
+## earlier comment).
 find_package(GPerf REQUIRED)
 if (NOT "${KUDU_USE_ASAN}" AND
     NOT "${KUDU_USE_TSAN}" AND
-    NOT ("${KUDU_USING_GOLD}" AND "${KUDU_LINK}" STREQUAL "d"))
+    NOT ("${KUDU_BUGGY_GOLD}" AND "${KUDU_LINK}" STREQUAL "d"))
   ADD_THIRDPARTY_LIB(tcmalloc
     STATIC_LIB "${TCMALLOC_STATIC_LIB}"
     SHARED_LIB "${TCMALLOC_SHARED_LIB}")
