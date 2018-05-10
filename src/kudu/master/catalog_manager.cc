@@ -1700,19 +1700,22 @@ Status CatalogManager::FindAndLockTable(const ReqClass& request,
   return Status::OK();
 }
 
-Status CatalogManager::DeleteTable(const DeleteTableRequestPB* req,
-                                   DeleteTableResponsePB* resp,
-                                   rpc::RpcContext* rpc) {
+Status CatalogManager::DeleteTableRpc(const DeleteTableRequestPB& req,
+                                      DeleteTableResponsePB* resp,
+                                      rpc::RpcContext* rpc) {
+  LOG(INFO) << Substitute("Servicing DeleteTable request from $0:\n$1",
+                          RequestorString(rpc), SecureShortDebugString(req));
+  return DeleteTable(req, resp);
+}
+
+Status CatalogManager::DeleteTable(const DeleteTableRequestPB& req, DeleteTableResponsePB* resp) {
   leader_lock_.AssertAcquiredForReading();
   RETURN_NOT_OK(CheckOnline());
-
-  LOG(INFO) << Substitute("Servicing DeleteTable request from $0:\n$1",
-                          RequestorString(rpc), SecureShortDebugString(*req));
 
   // 1. Look up the table, lock it, and mark it as removed.
   scoped_refptr<TableInfo> table;
   TableMetadataLock l;
-  RETURN_NOT_OK(FindAndLockTable(*req, resp, LockMode::WRITE, &table, &l));
+  RETURN_NOT_OK(FindAndLockTable(req, resp, LockMode::WRITE, &table, &l));
   if (l.data().is_deleted()) {
     return SetupError(Status::NotFound("the table was deleted", l.data().pb.state_msg()),
         resp, MasterErrorPB::TABLE_NOT_FOUND);
@@ -1788,7 +1791,9 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB* req,
       TRACE("Removing table from by-name map");
       std::lock_guard<LockType> l_map(lock_);
       if (table_names_map_.erase(l.data().name()) != 1) {
-        PANIC_RPC(rpc, "Could not remove table from map, name=" + l.data().name());
+        LOG(FATAL) << "Could not remove table " << table->ToString()
+                   << " from map in response to DeleteTable request: "
+                   << SecureShortDebugString(req);
       }
     }
 
@@ -2064,19 +2069,22 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
   return Status::OK();
 }
 
-Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
-                                  AlterTableResponsePB* resp,
-                                  rpc::RpcContext* rpc) {
+Status CatalogManager::AlterTableRpc(const AlterTableRequestPB& req,
+                                     AlterTableResponsePB* resp,
+                                     rpc::RpcContext* rpc) {
+  LOG(INFO) << Substitute("Servicing AlterTable request from $0:\n$1",
+                          RequestorString(rpc), SecureShortDebugString(req));
+  return AlterTable(req, resp);
+}
+
+Status CatalogManager::AlterTable(const AlterTableRequestPB& req, AlterTableResponsePB* resp) {
   leader_lock_.AssertAcquiredForReading();
   RETURN_NOT_OK(CheckOnline());
-
-  LOG(INFO) << Substitute("Servicing AlterTable request from $0:\n$1",
-                          RequestorString(rpc), SecureShortDebugString(*req));
 
   // 1. Group the steps into schema altering steps and partition altering steps.
   vector<AlterTableRequestPB::Step> alter_schema_steps;
   vector<AlterTableRequestPB::Step> alter_partitioning_steps;
-  for (const auto& step : req->alter_schema_steps()) {
+  for (const auto& step : req.alter_schema_steps()) {
     switch (step.type()) {
       case AlterTableRequestPB::ADD_COLUMN:
       case AlterTableRequestPB::DROP_COLUMN:
@@ -2099,7 +2107,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
   // 2. Lookup the table, verify if it exists, and lock it for modification.
   scoped_refptr<TableInfo> table;
   TableMetadataLock l;
-  RETURN_NOT_OK(FindAndLockTable(*req, resp, LockMode::WRITE, &table, &l));
+  RETURN_NOT_OK(FindAndLockTable(req, resp, LockMode::WRITE, &table, &l));
   if (l.data().is_deleted()) {
     return SetupError(
         Status::NotFound("the table was deleted", l.data().pb.state_msg()),
@@ -2131,43 +2139,43 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
         resp, MasterErrorPB::INVALID_SCHEMA));
 
   // 4. Validate and try to acquire the new table name.
-  if (req->has_new_table_name()) {
+  if (req.has_new_table_name()) {
     RETURN_NOT_OK(SetupError(
-          ValidateIdentifier(req->new_table_name()).CloneAndPrepend("invalid table name"),
+          ValidateIdentifier(req.new_table_name()).CloneAndPrepend("invalid table name"),
           resp, MasterErrorPB::INVALID_SCHEMA));
 
     std::lock_guard<LockType> catalog_lock(lock_);
     TRACE("Acquired catalog manager lock");
 
     // Verify that the table does not exist.
-    scoped_refptr<TableInfo> other_table = FindPtrOrNull(table_names_map_, req->new_table_name());
+    scoped_refptr<TableInfo> other_table = FindPtrOrNull(table_names_map_, req.new_table_name());
     if (other_table != nullptr) {
       return SetupError(
           Status::AlreadyPresent(Substitute("table $0 already exists with id $1",
-              req->new_table_name(), table->id())),
+              req.new_table_name(), table->id())),
           resp, MasterErrorPB::TABLE_ALREADY_PRESENT);
     }
 
     // Reserve the new table name if possible.
-    if (!InsertIfNotPresent(&reserved_table_names_, req->new_table_name())) {
+    if (!InsertIfNotPresent(&reserved_table_names_, req.new_table_name())) {
       // ServiceUnavailable will cause the client to retry the create table
       // request. We don't want to outright fail the request with
       // 'AlreadyPresent', because a table name reservation can be rolled back
       // in the case of an error. Instead, we force the client to retry at a
       // later time.
       return SetupError(Status::ServiceUnavailable(Substitute(
-              "table name $0 is already reserved", req->new_table_name())),
+              "table name $0 is already reserved", req.new_table_name())),
           resp, MasterErrorPB::TABLE_ALREADY_PRESENT);
     }
 
-    l.mutable_data()->pb.set_name(req->new_table_name());
+    l.mutable_data()->pb.set_name(req.new_table_name());
   }
 
   // Ensure that we drop our reservation upon return.
   auto cleanup = MakeScopedCleanup([&] () {
-    if (req->has_new_table_name()) {
+    if (req.has_new_table_name()) {
       std::lock_guard<LockType> l(lock_);
-      CHECK_EQ(1, reserved_table_names_.erase(req->new_table_name()));
+      CHECK_EQ(1, reserved_table_names_.erase(req.new_table_name()));
     }
   });
 
@@ -2177,7 +2185,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
   if (!alter_partitioning_steps.empty()) {
     TRACE("Apply alter partitioning");
     Schema client_schema;
-    RETURN_NOT_OK(SetupError(SchemaFromPB(req->schema(), &client_schema),
+    RETURN_NOT_OK(SetupError(SchemaFromPB(req.schema(), &client_schema),
           resp, MasterErrorPB::UNKNOWN_ERROR));
     RETURN_NOT_OK(SetupError(
           ApplyAlterPartitioningSteps(l, table, client_schema, alter_partitioning_steps,
@@ -2188,7 +2196,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
   // Set to true if columns are altered, added or dropped.
   bool has_schema_changes = !alter_schema_steps.empty();
   // Set to true if there are schema changes, or the table is renamed.
-  bool has_metadata_changes = has_schema_changes || req->has_new_table_name();
+  bool has_metadata_changes = has_schema_changes || req.has_new_table_name();
   // Set to true if there are partitioning changes.
   bool has_partitioning_changes = !alter_partitioning_steps.empty();
   // Set to true if metadata changes need to be applied to existing tablets.
@@ -2227,7 +2235,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
   // HMS is available. We do not allow altering tables while the HMS is
   // unavailable, because that would cause the catalogs to become unsynchronized.
   if (hms_catalog_ != nullptr && has_metadata_changes) {
-    const string& new_name = req->has_new_table_name() ? req->new_table_name() : table_name;
+    const string& new_name = req.has_new_table_name() ? req.new_table_name() : table_name;
     Status s = hms_catalog_->AlterTable(table->id(), table_name, new_name, new_schema);
 
     if (!s.ok()) {
@@ -2249,7 +2257,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
                        << s.ToString();
           return;
         }
-        const string& new_name = req->has_new_table_name() ? req->new_table_name() : table_name;
+        const string& new_name = req.has_new_table_name() ? req.new_table_name() : table_name;
 
         WARN_NOT_OK(hms_catalog_->AlterTable(table->id(), new_name, table_name, schema),
                     "An error occurred while attempting to roll-back HMS table entry alteration");
@@ -2299,12 +2307,13 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
     // Take the global catalog manager lock in order to modify the global table
     // and tablets indices.
     std::lock_guard<LockType> lock(lock_);
-    if (req->has_new_table_name()) {
+    if (req.has_new_table_name()) {
       if (table_names_map_.erase(table_name) != 1) {
-        PANIC_RPC(rpc, Substitute(
-            "Could not remove table (name $0) from map", table_name));
+        LOG(FATAL) << "Could not remove table " << table->ToString()
+                   << " from map in response to AlterTable request: "
+                   << SecureShortDebugString(req);
       }
-      InsertOrDie(&table_names_map_, req->new_table_name(), table);
+      InsertOrDie(&table_names_map_, req.new_table_name(), table);
     }
 
     // Insert new tablets into the global tablet map. After this, the tablets

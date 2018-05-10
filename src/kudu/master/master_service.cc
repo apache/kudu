@@ -332,7 +332,7 @@ void MasterServiceImpl::DeleteTable(const DeleteTableRequestPB* req,
     return;
   }
 
-  Status s = server_->catalog_manager()->DeleteTable(req, resp, rpc);
+  Status s = server_->catalog_manager()->DeleteTableRpc(*req, resp, rpc);
   CheckRespErrorOrSetUnknown(s, resp);
   rpc->RespondSuccess();
 }
@@ -345,7 +345,7 @@ void MasterServiceImpl::AlterTable(const AlterTableRequestPB* req,
     return;
   }
 
-  Status s = server_->catalog_manager()->AlterTable(req, resp, rpc);
+  Status s = server_->catalog_manager()->AlterTableRpc(*req, resp, rpc);
   CheckRespErrorOrSetUnknown(s, resp);
   rpc->RespondSuccess();
 }

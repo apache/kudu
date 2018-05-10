@@ -533,21 +533,21 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   Status IsCreateTableDone(const IsCreateTableDoneRequestPB* req,
                            IsCreateTableDoneResponsePB* resp);
 
-  // Delete the specified table
+  // Delete the specified table in response to a DeleteTableRequest RPC.
   //
   // The RPC context is provided for logging/tracing purposes,
   // but this function does not itself respond to the RPC.
-  Status DeleteTable(const DeleteTableRequestPB* req,
-                     DeleteTableResponsePB* resp,
-                     rpc::RpcContext* rpc);
+  Status DeleteTableRpc(const DeleteTableRequestPB& req,
+                        DeleteTableResponsePB* resp,
+                        rpc::RpcContext* rpc);
 
-  // Alter the specified table
+  // Alter the specified table in response to an AlterTableRequest RPC.
   //
   // The RPC context is provided for logging/tracing purposes,
   // but this function does not itself respond to the RPC.
-  Status AlterTable(const AlterTableRequestPB* req,
-                    AlterTableResponsePB* resp,
-                    rpc::RpcContext* rpc);
+  Status AlterTableRpc(const AlterTableRequestPB& req,
+                       AlterTableResponsePB* resp,
+                       rpc::RpcContext* rpc);
 
   // Get the information about an in-progress alter operation
   //
@@ -663,6 +663,15 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
 
   typedef std::unordered_map<std::string, scoped_refptr<TableInfo>> TableInfoMap;
   typedef std::unordered_map<std::string, scoped_refptr<TabletInfo>> TabletInfoMap;
+
+  // Delete the specified table in the catalog.
+  Status DeleteTable(const DeleteTableRequestPB& req,
+                     DeleteTableResponsePB* resp) WARN_UNUSED_RESULT;
+
+
+  // Alter the specified table in the catalog.
+  Status AlterTable(const AlterTableRequestPB& req,
+                    AlterTableResponsePB* resp) WARN_UNUSED_RESULT;
 
   // Called by SysCatalog::SysCatalogStateChanged when this node
   // becomes the leader of a consensus configuration. Executes
