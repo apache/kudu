@@ -62,7 +62,7 @@ struct HmsClientOptions {
   bool enable_kerberos = false;
 };
 
-// A client for the Hive MetaStore.
+// A client for the Hive Metastore.
 //
 // All operations are synchronous, and may block.
 //

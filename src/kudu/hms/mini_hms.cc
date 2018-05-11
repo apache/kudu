@@ -154,7 +154,7 @@ Status MiniHms::Stop() {
   if (hms_process_) {
     VLOG(1) << "Stopping HMS";
     unique_ptr<Subprocess> proc = std::move(hms_process_);
-    RETURN_NOT_OK_PREPEND(proc->KillAndWait(SIGTERM), "failed to stop the Hive MetaStore process");
+    RETURN_NOT_OK_PREPEND(proc->KillAndWait(SIGTERM), "failed to stop the Hive Metastore process");
   }
   return Status::OK();
 }
@@ -163,7 +163,7 @@ Status MiniHms::Pause() {
   CHECK(hms_process_);
   VLOG(1) << "Pausing HMS";
   RETURN_NOT_OK_PREPEND(hms_process_->Kill(SIGSTOP),
-                        "failed to pause the Hive MetaStore process");
+                        "failed to pause the Hive Metastore process");
   return Status::OK();
 }
 
@@ -171,7 +171,7 @@ Status MiniHms::Resume() {
   CHECK(hms_process_);
   VLOG(1) << "Resuming HMS";
   RETURN_NOT_OK_PREPEND(hms_process_->Kill(SIGCONT),
-                        "failed to unpause the Hive MetaStore process");
+                        "failed to unpause the Hive Metastore process");
   return Status::OK();
 }
 
