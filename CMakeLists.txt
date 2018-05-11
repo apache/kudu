@@ -613,7 +613,9 @@ endif()
   # include sized deallocation (new in C++14). This reverses the setting from
   # non-exported (default) flags.
   if(COMPILER_SUPPORTS_SIZED_DEALLOCATION)
-    set(EXPORTED_FLAGS "${EXPORTED_FLAGS} -fno-sized-deallocation")
+    # Note: this is retained by the set_target_properties() call below.
+    target_compile_options(${EXPORTED_LIB_NAME}
+      PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fno-sized-deallocation>)
   endif()
 
   set_target_properties(${EXPORTED_LIB_NAME}
