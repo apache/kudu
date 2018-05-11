@@ -83,6 +83,7 @@ public class GetTableSchemaRequest extends KuduRpc<GetTableSchemaResponse> {
         tsUUID,
         schema,
         respBuilder.getTableId().toStringUtf8(),
+        respBuilder.getNumReplicas(),
         ProtobufHelper.pbToPartitionSchema(respBuilder.getPartitionSchema(), schema));
     return new Pair<GetTableSchemaResponse, Object>(
         response, respBuilder.hasError() ? respBuilder.getError() : null);

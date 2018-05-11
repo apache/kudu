@@ -47,20 +47,25 @@ public class KuduTable {
   private final AsyncKuduClient client;
   private final String name;
   private final String tableId;
+  private final int numReplicas;
 
   /**
    * Package-private constructor, use {@link KuduClient#openTable(String)} to get an instance.
    * @param client the client this instance belongs to
    * @param name this table's name
+   * @param tableId this table's UUID
    * @param schema this table's schema
+   * @param partitionSchema this table's partition schema
+   * @param numReplicas this table's replication factor
    */
   KuduTable(AsyncKuduClient client, String name, String tableId,
-            Schema schema, PartitionSchema partitionSchema) {
+            Schema schema, PartitionSchema partitionSchema, int numReplicas) {
     this.schema = schema;
     this.partitionSchema = partitionSchema;
     this.client = client;
     this.name = name;
     this.tableId = tableId;
+    this.numReplicas = numReplicas;
   }
 
   /**
@@ -98,6 +103,14 @@ public class KuduTable {
    */
   public String getTableId() {
     return tableId;
+  }
+
+  /**
+   * Get this table's replication factor.
+   * @return this table's replication factor
+   */
+  public int getNumReplicas() {
+    return numReplicas;
   }
 
   /**

@@ -619,4 +619,19 @@ public class TestKuduTable extends BaseKuduTest {
     }
     fail("Could not run test even after multiple attempts");
   }
+
+  @Test(timeout = 100000)
+  public void testNumReplicas() throws Exception {
+    for (int i = 1; i <= 3; i++) {
+      // Ignore even numbers.
+      if (i % 2 != 0) {
+        String tableName = name.getMethodName() + System.currentTimeMillis() + "-" + i;
+        CreateTableOptions options = getBasicCreateTableOptions();
+        options.setNumReplicas(i);
+        createTable(tableName, basicSchema, options);
+        KuduTable table = syncClient.openTable(tableName);
+        assertEquals(i, table.getNumReplicas());
+      }
+    }
+  }
 }
