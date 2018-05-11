@@ -602,3 +602,19 @@ link:http://kudu.apache.org/releases/[releases page] has links to documentation
 for previous versions of Kudu; for the latest release, see the
 link:known_issues.html[known issues page].
 
+[[tombstoned_or_stopped_tablets]]
+=== Tombstoned or STOPPED tablet replicas
+
+Users may notice some replicas on a tablet server are in a STOPPED state, and
+remain on the server indefinitely. These replicas are tombstones. A tombstone
+indicates that the tablet server once held a bona fide replica of its tablet.
+For example, if a tablet server goes down and its replicas are re-replicated
+elsewhere, if the tablet server rejoins the cluster its replicas will become
+tombstones. A tombstone will remain until the table it belongs to is deleted, or
+a new replica of the same tablet is placed on the tablet server. A count of
+tombstoned replicas and details of each one are available on the /tablets page
+of the tablet server web UI.
+
+The Raft consensus algorithm that Kudu uses for replication requires tombstones
+for correctness in certain rare situations. They consume minimal resources and
+hold no data. They must not be deleted.
