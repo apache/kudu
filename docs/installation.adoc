@@ -551,7 +551,6 @@ for more information.
 . Install the prerequisite libraries, if they are not installed.
 +
 ----
-$ brew tap homebrew/dupes
 $ brew install autoconf automake cmake git krb5 libtool openssl pkg-config pstree
 ----
 
