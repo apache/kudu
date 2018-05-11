@@ -117,10 +117,15 @@ Status RebalancingAlgo::GetNextMoves(const ClusterBalanceInfo& cluster_info,
   if (max_moves_num == 0) {
     max_moves_num = std::numeric_limits<decltype(max_moves_num)>::max();
   }
+  moves->clear();
+  if (cluster_info.table_info_by_skew.empty() &&
+      cluster_info.servers_by_total_replica_count.empty()) {
+    // Nothing to balance: cluster is empty. Leave 'moves' empty and return.
+    return Status::OK();
+  }
 
   // Copy cluster_info so we can apply moves to the copy.
   ClusterBalanceInfo info(cluster_info);
-  moves->clear();
   for (decltype(max_moves_num) i = 0; i < max_moves_num; ++i) {
     boost::optional<TableReplicaMove> move;
     RETURN_NOT_OK(GetNextMove(info, &move));

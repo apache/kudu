@@ -1,0 +1,504 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+#include "kudu/tools/tool_replica_util.h"
+
+#include <cstdint>
+#include <fstream>  // IWYU pragma: keep
+#include <iostream>
+#include <memory>
+#include <string>
+#include <vector>
+
+#include <glog/logging.h>
+
+#include "kudu/client/client.h"
+#include "kudu/client/shared_ptr.h"
+#include "kudu/common/wire_protocol.h"
+#include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/consensus.proxy.h"
+#include "kudu/consensus/metadata.pb.h"
+#include "kudu/consensus/opid.pb.h"
+#include "kudu/consensus/replica_management.pb.h"
+#include "kudu/gutil/basictypes.h"
+#include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/split.h"
+#include "kudu/gutil/strings/substitute.h"
+#include "kudu/rpc/rpc_controller.h"
+#include "kudu/tools/ksck.h"
+#include "kudu/tools/ksck_remote.h"
+#include "kudu/tools/tool_action_common.h"
+#include "kudu/tserver/tserver.pb.h"
+#include "kudu/util/net/net_util.h"
+#include "kudu/util/status.h"
+
+using kudu::MonoDelta;
+using kudu::client::KuduClient;
+using kudu::client::KuduClientBuilder;
+using kudu::client::KuduTablet;
+using kudu::client::KuduTabletServer;
+using kudu::consensus::ADD_PEER;
+using kudu::consensus::BulkChangeConfigRequestPB;
+using kudu::consensus::ChangeConfigType;
+using kudu::consensus::ConsensusServiceProxy;
+using kudu::consensus::ConsensusStatePB;
+using kudu::consensus::GetConsensusStateRequestPB;
+using kudu::consensus::GetConsensusStateResponsePB;
+using kudu::consensus::GetLastOpIdRequestPB;
+using kudu::consensus::GetLastOpIdResponsePB;
+using kudu::consensus::MODIFY_PEER;
+using kudu::consensus::OpId;
+using kudu::consensus::REMOVE_PEER;
+using kudu::consensus::RaftPeerPB;
+using kudu::consensus::ReplicaManagementInfoPB;
+using kudu::rpc::RpcController;
+using std::cerr;
+using std::cout;
+using std::endl;
+using std::shared_ptr;
+using std::string;
+using std::unique_ptr;
+using std::vector;
+using strings::Split;
+using strings::Substitute;
+
+namespace kudu {
+namespace tools {
+
+namespace {
+
+Status GetLastCommittedOpId(const string& tablet_id,
+                            const string& replica_uuid,
+                            const HostPort& replica_hp,
+                            const MonoDelta& timeout,
+                            OpId* opid) {
+  GetLastOpIdRequestPB req;
+  GetLastOpIdResponsePB resp;
+  RpcController controller;
+  controller.set_timeout(timeout);
+  req.set_tablet_id(tablet_id);
+  req.set_dest_uuid(replica_uuid);
+  req.set_opid_type(consensus::COMMITTED_OPID);
+
+  unique_ptr<ConsensusServiceProxy> proxy;
+  RETURN_NOT_OK(BuildProxy(replica_hp.host(), replica_hp.port(), &proxy));
+  RETURN_NOT_OK(proxy->GetLastOpId(req, &resp, &controller));
+  *opid = resp.opid();
+  return Status::OK();
+}
+
+} // anonymous namespace
+
+Status GetConsensusState(const unique_ptr<ConsensusServiceProxy>& proxy,
+                         const string& tablet_id,
+                         const string& replica_uuid,
+                         const MonoDelta& timeout,
+                         ConsensusStatePB* consensus_state,
+                         bool* is_3_4_3_replication) {
+  GetConsensusStateRequestPB req;
+  GetConsensusStateResponsePB resp;
+  RpcController controller;
+  controller.set_timeout(timeout);
+  req.set_dest_uuid(replica_uuid);
+  req.add_tablet_ids(tablet_id);
+  RETURN_NOT_OK(proxy->GetConsensusState(req, &resp, &controller));
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+  if (resp.tablets_size() == 0) {
+    return Status::NotFound("tablet not found:", tablet_id);
+  }
+  DCHECK_EQ(1, resp.tablets_size());
+  if (consensus_state) {
+    *consensus_state = resp.tablets(0).cstate();
+  }
+  if (is_3_4_3_replication) {
+    *is_3_4_3_replication = resp.replica_management_info().replacement_scheme() ==
+        ReplicaManagementInfoPB::PREPARE_REPLACEMENT_BEFORE_EVICTION;
+  }
+  return Status::OK();
+}
+
+Status DoLeaderStepDown(const string& tablet_id,
+                        const string& leader_uuid,
+                        const HostPort& leader_hp,
+                        const MonoDelta& timeout) {
+  unique_ptr<ConsensusServiceProxy> proxy;
+  RETURN_NOT_OK(BuildProxy(leader_hp.host(), leader_hp.port(), &proxy));
+
+  consensus::LeaderStepDownRequestPB req;
+  req.set_dest_uuid(leader_uuid);
+  req.set_tablet_id(tablet_id);
+
+  RpcController rpc;
+  rpc.set_timeout(timeout);
+  consensus::LeaderStepDownResponsePB resp;
+  RETURN_NOT_OK(proxy->LeaderStepDown(req, &resp, &rpc));
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+  return Status::OK();
+}
+
+Status GetTabletLeader(const client::sp::shared_ptr<KuduClient>& client,
+                       const string& tablet_id,
+                       string* leader_uuid,
+                       HostPort* leader_hp,
+                       bool* is_no_leader) {
+  KuduTablet* tablet_raw = nullptr;
+  RETURN_NOT_OK(client->GetTablet(tablet_id, &tablet_raw));
+  unique_ptr<KuduTablet> tablet(tablet_raw);
+
+  for (const auto* r : tablet->replicas()) {
+    if (r->is_leader()) {
+      *leader_uuid = r->ts().uuid();
+      leader_hp->set_host(r->ts().hostname());
+      leader_hp->set_port(r->ts().port());
+      return Status::OK();
+    }
+  }
+  if (is_no_leader) {
+    *is_no_leader = true;
+  }
+
+  return Status::NotFound(Substitute("No leader replica found for tablet $0",
+                                     tablet_id));
+}
+
+// For the target (i.e. newly added replica) we have the following options:
+//
+//  * The tablet copy succeeds and the replica successfully bootstraps and
+//    starts, so the tablet configuration contains the desired target replica.
+//
+//  * The newly added replica fails to copy the data or any other failure
+//    happens during bootstrap or any other phase. In that case, the system
+//    eventually kicks out the failed replica, so the target replica
+//    will not be in the config.
+//
+// The former case and the absence of the source replica in the configuration
+// signals about successful completion of the replica movement operation.
+// The latter case manifests a failure of the replica movement operation.
+Status CheckCompleteMove(const vector<string>& master_addresses,
+                         const client::sp::shared_ptr<client::KuduClient>& client,
+                         const string& tablet_id,
+                         const string& from_ts_uuid,
+                         const string& to_ts_uuid,
+                         bool* is_complete,
+                         Status* completion_status) {
+  DCHECK(is_complete);
+  DCHECK(completion_status);
+  *is_complete = false;
+  // Get the latest leader info.
+  string leader_uuid;
+  HostPort leader_hp;
+  RETURN_NOT_OK(GetTabletLeader(client, tablet_id, &leader_uuid, &leader_hp));
+  unique_ptr<ConsensusServiceProxy> proxy;
+  RETURN_NOT_OK(BuildProxy(leader_hp.host(), leader_hp.port(), &proxy));
+
+  // Wait until 'from_ts_uuid' is no longer a member of the config.
+  ConsensusStatePB cstate;
+  bool is_343_scheme;
+  RETURN_NOT_OK(GetConsensusState(proxy, tablet_id, leader_uuid,
+                                  client->default_admin_operation_timeout(),
+                                  &cstate, &is_343_scheme));
+  // In case if a leader replica is being replaced, there isn't much sense
+  // to make the leader stepping down when the newly added non-voter
+  // replica hasn't caught up yet. The stepped down leader replica will
+  // not be evicted until the newly added replica is promoted to voter.
+  bool to_ts_uuid_in_config = false;
+  bool to_ts_uuid_is_a_voter = false;
+  for (const auto& peer : cstate.committed_config().peers()) {
+    if (peer.permanent_uuid() == to_ts_uuid) {
+      to_ts_uuid_in_config = true;
+      if (peer.member_type() == RaftPeerPB::VOTER) {
+        to_ts_uuid_is_a_voter = true;
+      }
+      break;
+    }
+  }
+
+  // The failure case: the newly added replica is no longer in the config,
+  // it might be something wrong with the replica and the system kicked it out.
+  if (!to_ts_uuid_in_config) {
+    *is_complete = true;
+    *completion_status = Status::Incomplete(Substitute(
+        "tablet $0, TS $1 -> TS $2 move failed, target replica disappeared",
+        tablet_id, from_ts_uuid, to_ts_uuid));
+    return Status::OK();
+  }
+
+  bool from_ts_uuid_in_config = false; // Is 'from_ts_uuid' still in the config?
+  for (const auto& peer : cstate.committed_config().peers()) {
+    if (peer.permanent_uuid() == from_ts_uuid) {
+      // Sanity check: in case of 3-4-3 replication mode, the source replica
+      // must have the REPLACE attribute set. Otherwise, something has changed
+      // in the middle and the source replica will never be evicted,
+      // so it does not make much sense awaiting for its removal.
+      if (is_343_scheme && !peer.attrs().replace()) {
+        return Status::IllegalState(Substitute(
+            "$0: source replica $1 does not have REPLACE attribute set",
+            tablet_id, from_ts_uuid));
+      }
+      // The information about the leader replica received by GetTabletLeader()
+      // might be stale and the actual leader might already be different. So,
+      // check that against the consensus information which is more up-to-date.
+      if (leader_uuid == from_ts_uuid && leader_uuid == cstate.leader_uuid() &&
+          to_ts_uuid_is_a_voter &&
+          (is_343_scheme || DoKsckForTablet(master_addresses, tablet_id).ok())) {
+        // The leader is the node we intend to remove; make it step down.
+        ignore_result(DoLeaderStepDown(tablet_id, leader_uuid, leader_hp,
+                                       client->default_admin_operation_timeout()));
+      }
+      from_ts_uuid_in_config = true;
+      break;
+    }
+  }
+
+  // In case of the 3-4-3 replica management scheme, once the newly added
+  // replica becomes a voter, the rest is taken care by the catalog manager (if
+  // the source replica is leader then it's also necessary to make make it step
+  // down). In contrast the 3-2-3 scheme requires explicitly removing the source
+  // replica since the catalog manager doesn't take care of
+  // over-replicated tablets.
+  if (!is_343_scheme && from_ts_uuid_in_config &&
+      DoKsckForTablet(master_addresses, tablet_id).ok()) {
+    // Once the newly added replica is caught up and ready (ksck returned OK),
+    // it's time to remove the source replica. Once the replica is gone,
+    // that will be detected next cycle.
+    string leader_uuid;
+    HostPort leader_hp;
+    RETURN_NOT_OK(GetTabletLeader(client, tablet_id, &leader_uuid, &leader_hp));
+    if (from_ts_uuid != leader_uuid) {
+      // DoChangeConfig() might return InvalidState if the newly elected leader
+      // hasn't yet committed a single operation on its term. Let's make sure
+      // the current leader has asserted its leadership.
+      ConsensusStatePB cstate;
+      RETURN_NOT_OK(GetConsensusState(proxy, tablet_id, leader_uuid,
+                                      client->default_admin_operation_timeout(),
+                                      &cstate));
+      if (!cstate.has_leader_uuid() || cstate.leader_uuid() != leader_uuid) {
+        // Something has changed in the middle, the caller of this method
+        // (i.e. the upper level) will need to retry.
+        *is_complete = false;
+        *completion_status = Status::Incomplete(
+            Substitute("$0: leader info changed", tablet_id));
+        return Status::OK();
+      }
+      // Make sure the current leader has asserted its leadership before sending
+      // it to ChangeConfig request.
+      OpId opid;
+      RETURN_NOT_OK(GetLastCommittedOpId(tablet_id, leader_uuid, leader_hp,
+                                         client->default_admin_operation_timeout(),
+                                         &opid));
+      if (opid.term() == cstate.current_term()) {
+        bool cas_failed = false;
+        const auto s = DoChangeConfig(master_addresses, tablet_id, from_ts_uuid,
+                                      boost::none, REMOVE_PEER,
+                                      cstate.committed_config().opid_index(),
+                                      &cas_failed);
+        if (cas_failed) {
+          // Something has changed in the configuration, need to retry.
+          *is_complete = false;
+          *completion_status = s;
+          return Status::OK();
+        }
+        RETURN_NOT_OK(s);
+      }
+    }
+  }
+
+  // The success case: the source replica has gone from the config and the
+  // target replica is present as a full-fledged voter.
+  if (!from_ts_uuid_in_config && to_ts_uuid_is_a_voter) {
+    *is_complete = true;
+    *completion_status = Status::OK();
+  }
+
+  return Status::OK();
+}
+
+
+Status ScheduleReplicaMove(const vector<string>& master_addresses,
+                           const client::sp::shared_ptr<client::KuduClient>& client,
+                           const string& tablet_id,
+                           const string& from_ts_uuid,
+                           const string& to_ts_uuid) {
+  // Find this tablet's leader replica. We need its UUID and RPC address.
+  string leader_uuid;
+  HostPort leader_hp;
+  RETURN_NOT_OK(GetTabletLeader(client, tablet_id, &leader_uuid, &leader_hp));
+  unique_ptr<ConsensusServiceProxy> proxy;
+  RETURN_NOT_OK(BuildProxy(leader_hp.host(), leader_hp.port(), &proxy));
+
+  // Get information on current replication scheme: the move scenario depends
+  // on the replication scheme used.
+  bool is_343_scheme;
+  RETURN_NOT_OK(GetConsensusState(proxy, tablet_id, leader_uuid,
+                                  client->default_admin_operation_timeout(),
+                                  nullptr, &is_343_scheme));
+  // The pre- KUDU-1097 way of moving a replica involves first adding a new
+  // replica and then evicting the old one.
+  if (!is_343_scheme) {
+    return DoChangeConfig(master_addresses, tablet_id, to_ts_uuid,
+                          RaftPeerPB::VOTER, ADD_PEER);
+  }
+
+  // In a post-KUDU-1097 world, the procedure to move a replica is to add the
+  // replace=true attribute to the replica to remove while simultaneously
+  // adding the replacement as a non-voter with promote=true.
+  // The following code implements tablet movement in that paradigm.
+
+  BulkChangeConfigRequestPB req;
+  {
+    auto* change = req.add_config_changes();
+    change->set_type(MODIFY_PEER);
+    *change->mutable_peer()->mutable_permanent_uuid() = from_ts_uuid;
+    change->mutable_peer()->mutable_attrs()->set_replace(true);
+  }
+  {
+    auto* change = req.add_config_changes();
+    change->set_type(ADD_PEER);
+    *change->mutable_peer()->mutable_permanent_uuid() = to_ts_uuid;
+    change->mutable_peer()->set_member_type(RaftPeerPB::NON_VOTER);
+    change->mutable_peer()->mutable_attrs()->set_promote(true);
+    HostPort hp;
+    RETURN_NOT_OK(GetRpcAddressForTS(client, to_ts_uuid, &hp));
+    RETURN_NOT_OK(HostPortToPB(hp, change->mutable_peer()->mutable_last_known_addr()));
+  }
+
+  consensus::ChangeConfigResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(client->default_admin_operation_timeout());
+  req.set_dest_uuid(leader_uuid);
+  req.set_tablet_id(tablet_id);
+  RETURN_NOT_OK(proxy->BulkChangeConfig(req, &resp, &rpc));
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+  return Status::OK();
+}
+
+Status DoKsckForTablet(const vector<string>& master_addresses,
+                       const string& tablet_id) {
+  shared_ptr<KsckCluster> cluster;
+  RETURN_NOT_OK(RemoteKsckCluster::Build(master_addresses, &cluster));
+
+  // Print to an unopened ofstream to discard ksck output.
+  // See https://stackoverflow.com/questions/8243743.
+  std::ofstream null_stream;
+  Ksck ksck(cluster, &null_stream);
+  ksck.set_tablet_id_filters({ tablet_id });
+  RETURN_NOT_OK(ksck.CheckMasterHealth());
+  RETURN_NOT_OK(ksck.CheckMasterConsensus());
+  RETURN_NOT_OK(ksck.CheckClusterRunning());
+  RETURN_NOT_OK(ksck.FetchTableAndTabletInfo());
+  // The return Status is ignored since a tserver that is not the destination
+  // nor a host of a replica might be down, and in that case the move should
+  // succeed. Problems with the destination tserver or the tablet will still
+  // be detected by ksck or other commands.
+  ignore_result(ksck.FetchInfoFromTabletServers());
+  return ksck.CheckTablesConsistency();
+}
+
+Status GetRpcAddressForTS(const client::sp::shared_ptr<KuduClient>& client,
+                          const string& uuid,
+                          HostPort* hp) {
+  vector<KuduTabletServer*> servers;
+  ElementDeleter deleter(&servers);
+  RETURN_NOT_OK(client->ListTabletServers(&servers));
+  for (const auto* s : servers) {
+    if (s->uuid() == uuid) {
+      hp->set_host(s->hostname());
+      hp->set_port(s->port());
+      return Status::OK();
+    }
+  }
+
+  return Status::NotFound(Substitute(
+      "server $0 has no RPC address registered with the Master", uuid));
+}
+
+Status DoChangeConfig(const vector<string>& master_addresses,
+                      const string& tablet_id,
+                      const string& replica_uuid,
+                      const boost::optional<RaftPeerPB::MemberType>& member_type,
+                      ChangeConfigType cc_type,
+                      const boost::optional<int64_t>& cas_opid_idx,
+                      bool* cas_failed) {
+  if (cas_failed) {
+    *cas_failed = false;
+  }
+  if (cc_type == consensus::REMOVE_PEER && member_type) {
+    return Status::InvalidArgument("cannot supply Raft member type when removing a server");
+  }
+  if ((cc_type == consensus::ADD_PEER || cc_type == consensus::MODIFY_PEER) &&
+      !member_type) {
+    return Status::InvalidArgument(
+        "must specify member type when adding a server or changing member type");
+  }
+
+  RaftPeerPB peer_pb;
+  peer_pb.set_permanent_uuid(replica_uuid);
+  if (member_type) {
+    peer_pb.set_member_type(*member_type);
+  }
+
+  client::sp::shared_ptr<KuduClient> client;
+  RETURN_NOT_OK(KuduClientBuilder()
+                .master_server_addrs(master_addresses)
+                .Build(&client));
+
+  // When adding a new server, we need to provide the server's RPC address.
+  if (cc_type == consensus::ADD_PEER) {
+    HostPort hp;
+    RETURN_NOT_OK(GetRpcAddressForTS(client, replica_uuid, &hp));
+    RETURN_NOT_OK(HostPortToPB(hp, peer_pb.mutable_last_known_addr()));
+  }
+
+  // Find this tablet's leader replica. We need its UUID and RPC address.
+  string leader_uuid;
+  HostPort leader_hp;
+  RETURN_NOT_OK(GetTabletLeader(client, tablet_id, &leader_uuid, &leader_hp));
+
+  unique_ptr<ConsensusServiceProxy> proxy;
+  RETURN_NOT_OK(BuildProxy(leader_hp.host(), leader_hp.port(), &proxy));
+
+  consensus::ChangeConfigRequestPB req;
+  consensus::ChangeConfigResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(client->default_admin_operation_timeout());
+  req.set_dest_uuid(leader_uuid);
+  req.set_tablet_id(tablet_id);
+  req.set_type(cc_type);
+  if (cas_opid_idx) {
+    req.set_cas_config_opid_index(*cas_opid_idx);
+  }
+  *req.mutable_server() = peer_pb;
+  RETURN_NOT_OK(proxy->ChangeConfig(req, &resp, &rpc));
+  if (resp.has_error()) {
+    if (resp.error().code() == tserver::TabletServerErrorPB::CAS_FAILED &&
+        cas_failed) {
+      *cas_failed = true;
+    }
+    return StatusFromPB(resp.error().status());
+  }
+  return Status::OK();
+}
+
+} // namespace tools
+} // namespace kudu
+

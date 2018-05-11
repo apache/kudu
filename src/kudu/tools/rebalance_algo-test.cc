@@ -189,13 +189,21 @@ string TestClusterConfigToDebugString(const TestClusterConfig& cfg) {
 }
 
 // Test the behavior of the algorithm when no input information is given.
-TEST(RebalanceAlgoUnitTest, EmptyClusterBalanceInfo) {
-  TwoDimensionalGreedyAlgo algo;
+TEST(RebalanceAlgoUnitTest, EmptyClusterBalanceInfoGetNextMoves) {
   vector<TableReplicaMove> moves;
   ClusterBalanceInfo info;
-  Status s = algo.GetNextMoves(info, 1, &moves);
-  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_OK(TwoDimensionalGreedyAlgo().GetNextMoves(info, 0, &moves));
   EXPECT_TRUE(moves.empty());
+}
+
+// Test the behavior of the internal (non-public) algorithm's method
+// GetNextMove() when no input information is given.
+TEST(RebalanceAlgoUnitTest, EmptyClusterBalanceInfoGetNextMove) {
+  boost::optional<TableReplicaMove> move;
+  ClusterBalanceInfo info;
+  const auto s = TwoDimensionalGreedyAlgo().GetNextMove(info, &move);
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  EXPECT_EQ(boost::none, move);
 }
 
 // Various scenarios of balanced configurations where no moves are expected

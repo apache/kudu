@@ -545,6 +545,9 @@ Status KuduClient::GetTablet(const string& tablet_id, KuduTablet** tablet) {
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
   }
+  if (resp.tablet_locations_size() == 0) {
+    return Status::NotFound(Substitute("$0: tablet not found", tablet_id));
+  }
   if (resp.tablet_locations_size() != 1) {
     return Status::IllegalState(Substitute(
         "Expected only one tablet, but received $0",

@@ -121,6 +121,8 @@ namespace tools {
 
 using client::KuduClient;
 using client::KuduClientBuilder;
+using client::KuduTablet;
+using client::KuduTabletServer;
 using consensus::ConsensusServiceProxy;
 using consensus::ReplicateMsg;
 using log::LogEntryPB;

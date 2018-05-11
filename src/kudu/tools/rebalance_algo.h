@@ -134,6 +134,9 @@ class TwoDimensionalGreedyAlgo : public RebalancingAlgo {
  private:
   enum class ExtremumType { MAX, MIN, };
 
+  FRIEND_TEST(RebalanceAlgoUnitTest, RandomizedTest);
+  FRIEND_TEST(RebalanceAlgoUnitTest, EmptyClusterBalanceInfoGetNextMove);
+
   // Compute the intersection of the least or most loaded tablet servers for a
   // table with the least or most loaded tablet servers in the cluster:
   // 'intersection' is populated with the ids of the tablet servers in the
@@ -172,8 +175,6 @@ class TwoDimensionalGreedyAlgo : public RebalancingAlgo {
   const EqualSkewOption equal_skew_opt_;
   std::random_device random_device_;
   std::mt19937 generator_;
-
-  FRIEND_TEST(RebalanceAlgoUnitTest, RandomizedTest);
 };
 
 } // namespace tools

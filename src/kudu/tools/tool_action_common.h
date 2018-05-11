@@ -36,8 +36,8 @@ class function;
 
 namespace kudu {
 
-class faststring;
 class MonoDelta;
+class faststring;
 
 namespace client {
 class KuduClient;
