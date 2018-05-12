@@ -1122,10 +1122,10 @@ ADD_THIRDPARTY_LIB(krb5
 ##
 ## Disabled with TSAN/ASAN as well as with gold+dynamic linking (see
 ## earlier comment).
-find_package(GPerf REQUIRED)
 if (NOT "${KUDU_USE_ASAN}" AND
     NOT "${KUDU_USE_TSAN}" AND
     NOT ("${KUDU_BUGGY_GOLD}" AND "${KUDU_LINK}" STREQUAL "d"))
+  find_package(GPerf REQUIRED)
   ADD_THIRDPARTY_LIB(tcmalloc
     STATIC_LIB "${TCMALLOC_STATIC_LIB}"
     SHARED_LIB "${TCMALLOC_SHARED_LIB}")
