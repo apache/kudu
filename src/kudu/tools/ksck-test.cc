@@ -17,6 +17,7 @@
 
 #include "kudu/tools/ksck.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -191,7 +192,7 @@ class KsckTest : public KuduTest {
       cluster_->masters_.push_back(master);
     }
 
-    unordered_map<string, shared_ptr<KsckTabletServer>> tablet_servers;
+    KsckCluster::TSMap tablet_servers;
     for (int i = 0; i < 3; i++) {
       string name = Substitute("ts-id-$0", i);
       shared_ptr<MockKsckTabletServer> ts(new MockKsckTabletServer(name));
@@ -223,8 +224,14 @@ class KsckTest : public KuduTest {
   }
 
   void CreateDefaultAssignmentPlan(int tablets_count) {
+    SCOPED_CLEANUP({
+        // This isn't necessary for correctness, but the tests were all
+        // written to expect a reversed order and doing that here is more
+        // convenient than rewriting many ASSERTs.
+        std::reverse(assignment_plan_.begin(), assignment_plan_.end());
+      })
     while (tablets_count > 0) {
-      for (const KsckCluster::TSMap::value_type& entry : cluster_->tablet_servers_) {
+      for (const auto& entry : cluster_->tablet_servers_) {
         if (tablets_count-- == 0) return;
         assignment_plan_.push_back(entry.second->uuid());
       }

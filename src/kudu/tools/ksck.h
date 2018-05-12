@@ -357,7 +357,7 @@ class KsckCluster {
   typedef std::vector<std::shared_ptr<KsckMaster>> MasterList;
 
   // Map of KsckTabletServer objects keyed by tablet server uuid.
-  typedef std::unordered_map<std::string, std::shared_ptr<KsckTabletServer>> TSMap;
+  typedef std::map<std::string, std::shared_ptr<KsckTabletServer>> TSMap;
 
   // Fetches the lists of tables, tablets, and tablet servers from the master.
   Status FetchTableAndTabletInfo() {
