@@ -261,7 +261,8 @@ CURL_PATCHLEVEL=0
 fetch_and_patch \
  curl-${CURL_VERSION}.tar.gz \
  $CURL_SOURCE \
- $CURL_PATCHLEVEL
+ $CURL_PATCHLEVEL \
+ "autoreconf -fvi"
 
 CRCUTIL_PATCHLEVEL=1
 fetch_and_patch \
