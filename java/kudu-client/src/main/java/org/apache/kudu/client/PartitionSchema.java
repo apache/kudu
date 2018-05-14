@@ -109,7 +109,21 @@ public class PartitionSchema {
       this.columns = columns;
     }
 
+    /**
+     * Gets the column IDs of the columns in the range partition.
+     * @return the column IDs of the columns in the range partition
+     * @deprecated Use {@link #getColumnIds} instead.
+     */
+    @Deprecated
     public List<Integer> getColumns() {
+      return columns;
+    }
+
+    /**
+     * Gets the column IDs of the columns in the range partition.
+     * @return the column IDs of the columns in the range partition
+     */
+    public List<Integer> getColumnIds() {
       return columns;
     }
   }
@@ -127,7 +141,7 @@ public class PartitionSchema {
 
     /**
      * Gets the column IDs of the columns in the hash partition.
-     * @return the column IDs of the columns in the has partition
+     * @return the column IDs of the columns in the hash partition
      */
     public List<Integer> getColumnIds() {
       return columnIds;
