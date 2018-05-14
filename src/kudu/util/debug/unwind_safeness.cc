@@ -35,6 +35,13 @@
 #define CALL_ORIG(func_name, ...) \
   ((decltype(&func_name))g_orig_ ## func_name)(__VA_ARGS__)
 
+// Don't hook dl_iterate_phdr in TSAN builds since TSAN already instruments this
+// function and blocks signals while calling it. And skip it for macOS; it
+// doesn't exist there.
+#if !defined(THREAD_SANITIZER) && !defined(__APPLE__)
+#define HOOK_DL_ITERATE_PHDR 1
+#endif
+
 typedef int (*dl_iterate_phdr_cbtype)(struct dl_phdr_info *, size_t, void *);
 
 namespace {
@@ -45,7 +52,7 @@ bool g_initted;
 // The original versions of our wrapped functions.
 void* g_orig_dlopen;
 void* g_orig_dlclose;
-#ifndef __APPLE__
+#ifdef HOOK_DL_ITERATE_PHDR
 void* g_orig_dl_iterate_phdr;
 #endif
 
@@ -92,8 +99,30 @@ void InitIfNecessary() {
 
   g_orig_dlopen = dlsym_or_die("dlopen");
   g_orig_dlclose = dlsym_or_die("dlclose");
-#ifndef __APPLE__ // This function doesn't exist on macOS.
-  g_orig_dl_iterate_phdr = dlsym_or_die("dl_iterate_phdr");
+#ifdef HOOK_DL_ITERATE_PHDR
+  // Failing to hook dl_iterate_phdr is non-fatal.
+  //
+  // In toolchains where the linker is passed --as-needed by default, a
+  // dynamically linked binary that doesn't directly reference any kudu_util
+  // symbols will omit a DT_NEEDED entry for kudu_util. Such a binary will
+  // no doubt emit a DT_NEEDED entry for libc, which means libc will wind up
+  // _before_ kudu_util in dlsym's search order. The net effect: the dlsym()
+  // call below will fail.
+  //
+  // All Ubuntu releases since Natty[1] behave in this way, except that many
+  // of them are also vulnerable to a glibc bug[2] that'll cause such a
+  // failure to go unreported by dlerror(). In newer releases, the failure
+  // is reported and dlsym_or_die() crashes the process.
+  //
+  // Given that the subset of affected binaries is small, and given that
+  // dynamic linkage isn't used in production anyway, we'll just treat the
+  // hook attempt as a best effort. Affected binaries that actually attempt
+  // to invoke dl_iterate_phdr will dereference a null pointer and crash, so
+  // if this is ever becomes a problem, we'll know right away.a
+  //
+  // 1. https://wiki.ubuntu.com/NattyNarwhal/ToolchainTransition
+  // 2. https://sourceware.org/bugzilla/show_bug.cgi?id=19509
+  g_orig_dl_iterate_phdr = dlsym(RTLD_NEXT, "dl_iterate_phdr");
 #endif
   g_initted = true;
 }
@@ -124,9 +153,7 @@ int dlclose(void *handle) { // NOLINT
   return CALL_ORIG(dlclose, handle);
 }
 
-// Don't hook dl_iterate_phdr in TSAN builds since TSAN already instruments this
-// function and blocks signals while calling it.
-#if !defined(THREAD_SANITIZER) && !defined(__APPLE__)
+#ifdef HOOK_DL_ITERATE_PHDR
 int dl_iterate_phdr(dl_iterate_phdr_cbtype callback, void *data) { // NOLINT
   InitIfNecessary();
   ScopedBumpDepth d;
