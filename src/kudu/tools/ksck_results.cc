@@ -204,9 +204,6 @@ Status KsckResults::PrintTo(PrintMode mode, ostream& out) {
 
   // Then, on each tablet.
   RETURN_NOT_OK(PrintTabletSummaries(tablet_summaries, mode, out));
-  if (!tablet_summaries.empty()) {
-    out << endl;
-  }
 
   // Then, summarize the tablets by table.
   // Sort the tables so unhealthy tables are easy to see at the bottom.
@@ -328,16 +325,10 @@ Status PrintTabletSummaries(const vector<KsckTabletSummary>& tablet_summaries,
                             PrintMode mode,
                             ostream& out) {
   if (tablet_summaries.empty()) {
-    out << "The cluster doesn't have any matching tablets" << endl;
+    out << "The cluster doesn't have any matching tablets" << endl << endl;
     return Status::OK();
   }
-  bool first = true;
   for (const auto& tablet_summary : tablet_summaries) {
-    if (first) {
-      first = false;
-    } else {
-      out << endl;
-    }
     if (mode != PrintMode::PLAIN_FULL &&
         tablet_summary.result == KsckCheckResult::HEALTHY) {
       continue;
@@ -387,6 +378,7 @@ Status PrintTabletSummaries(const vector<KsckTabletSummary>& tablet_summaries,
       }
     }
     RETURN_NOT_OK(PrintConsensusMatrix(ts_uuids, master_cstate, consensus_state_map, out));
+    out << endl;
   }
   return Status::OK();
 }
