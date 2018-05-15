@@ -28,14 +28,15 @@
 #include <sys/resource.h>
 #include <unistd.h>
 
-#include <glog/logging.h>
-
 #include <cstddef>
 #include <fstream>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include <glog/logging.h>
+
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/stringpiece.h"
@@ -141,10 +142,13 @@ void DisableCoreDumps() {
   // is set to a pipe rather than a file, it's not sufficient. Setting
   // this pattern results in piping a very minimal dump into the core
   // processor (eg abrtd), thus speeding up the crash.
-  int f = open("/proc/self/coredump_filter", O_WRONLY);
+  int f;
+  RETRY_ON_EINTR(f, open("/proc/self/coredump_filter", O_WRONLY));
   if (f >= 0) {
-    write(f, "00000000", 8);
-    close(f);
+    ssize_t ret;
+    RETRY_ON_EINTR(ret, write(f, "00000000", 8));
+    int close_ret;
+    RETRY_ON_EINTR(close_ret, close(f));
   }
 }
 

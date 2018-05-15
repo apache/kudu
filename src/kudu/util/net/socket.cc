@@ -44,7 +44,6 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
-#include "kudu/util/os-util.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/slice.h"
@@ -94,7 +93,9 @@ Status Socket::Close() {
     return Status::OK();
   }
   int fd = fd_;
-  if (::close(fd) < 0) {
+  int ret;
+  RETRY_ON_EINTR(ret, ::close(fd));
+  if (ret < 0) {
     int err = errno;
     return Status::NetworkError("close error", ErrnoToString(err), err);
   }
@@ -379,7 +380,10 @@ Status Socket::Connect(const Sockaddr &remote) {
   struct sockaddr_in addr;
   memcpy(&addr, &remote.addr(), sizeof(sockaddr_in));
   DCHECK_GE(fd_, 0);
-  if (::connect(fd_, reinterpret_cast<const struct sockaddr*>(&addr), sizeof(addr)) < 0) {
+  int ret;
+  RETRY_ON_EINTR(ret, ::connect(
+      fd_, reinterpret_cast<const struct sockaddr*>(&addr), sizeof(addr)));
+  if (ret < 0) {
     int err = errno;
     return Status::NetworkError("connect(2) error", ErrnoToString(err), err);
   }
@@ -408,7 +412,8 @@ Status Socket::Write(const uint8_t *buf, int32_t amt, int32_t *nwritten) {
                            amt), Slice(), EINVAL);
   }
   DCHECK_GE(fd_, 0);
-  int res = ::send(fd_, buf, amt, MSG_NOSIGNAL);
+  int res;
+  RETRY_ON_EINTR(res, ::send(fd_, buf, amt, MSG_NOSIGNAL));
   if (res < 0) {
     int err = errno;
     return Status::NetworkError("write error", ErrnoToString(err), err);
@@ -431,7 +436,8 @@ Status Socket::Writev(const struct ::iovec *iov, int iov_len,
   memset(&msg, 0, sizeof(struct msghdr));
   msg.msg_iov = const_cast<iovec *>(iov);
   msg.msg_iovlen = iov_len;
-  ssize_t res = ::sendmsg(fd_, &msg, MSG_NOSIGNAL);
+  ssize_t res;
+  RETRY_ON_EINTR(res, ::sendmsg(fd_, &msg, MSG_NOSIGNAL));
   if (PREDICT_FALSE(res < 0)) {
     int err = errno;
     return Status::NetworkError("sendmsg error", ErrnoToString(err), err);

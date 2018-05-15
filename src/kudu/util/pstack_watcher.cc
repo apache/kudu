@@ -27,6 +27,7 @@
 #include <boost/bind.hpp>
 #include <glog/logging.h>
 
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/strip.h"
@@ -224,7 +225,9 @@ Status PstackWatcher::RunStackDump(const vector<string>& argv) {
   }
   Subprocess pstack_proc(argv);
   RETURN_NOT_OK_PREPEND(pstack_proc.Start(), "RunStackDump proc.Start() failed");
-  if (::close(pstack_proc.ReleaseChildStdinFd()) == -1) {
+  int ret;
+  RETRY_ON_EINTR(ret, ::close(pstack_proc.ReleaseChildStdinFd()));
+  if (ret == -1) {
     return Status::IOError("Unable to close child stdin", ErrnoToString(errno), errno);
   }
   RETURN_NOT_OK_PREPEND(pstack_proc.Wait(), "RunStackDump proc.Wait() failed");

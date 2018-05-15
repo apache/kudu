@@ -50,7 +50,6 @@
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/errno.h"
-#include "kudu/util/os-util.h"
 
 using std::string;
 using std::vector;
@@ -113,7 +112,11 @@ LogIndex::IndexChunk::~IndexChunk() {
   }
 
   if (fd_ >= 0) {
-    close(fd_);
+    int ret;
+    RETRY_ON_EINTR(ret, close(fd_));
+    if (PREDICT_FALSE(ret != 0)) {
+      PLOG(WARNING) << "Failed to close fd " << fd_;
+    }
   }
 }
 

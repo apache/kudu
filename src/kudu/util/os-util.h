@@ -23,20 +23,11 @@
 #ifndef KUDU_UTIL_OS_UTIL_H
 #define KUDU_UTIL_OS_UTIL_H
 
-#include <errno.h>
-
 #include <cstdint>
 #include <string>
 #include <type_traits> // IWYU pragma: keep
 
 #include "kudu/util/status.h"
-
-// Retry on EINTR for functions like read() that return -1 on error.
-#define RETRY_ON_EINTR(err, expr) do { \
-  static_assert(std::is_signed<decltype(err)>::value, \
-                #err " must be a signed integer"); \
-  (err) = (expr); \
-} while ((err) == -1 && errno == EINTR)
 
 namespace kudu {
 

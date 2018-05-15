@@ -47,23 +47,23 @@ Semaphore::~Semaphore() {
 
 void Semaphore::Acquire() {
   while (true) {
-    int ret = sem_wait(&sem_);
+    int ret;
+    RETRY_ON_EINTR(ret, sem_wait(&sem_));
     if (ret == 0) {
-      // TODO: would be nice to track acquisition time, etc.
+      // TODO(todd): would be nice to track acquisition time, etc.
       return;
     }
-
-    if (errno == EINTR) continue;
     Fatal("wait");
   }
 }
 
 bool Semaphore::TryAcquire() {
-  int ret = sem_trywait(&sem_);
+  int ret;
+  RETRY_ON_EINTR(ret, sem_trywait(&sem_));
   if (ret == 0) {
     return true;
   }
-  if (errno == EAGAIN || errno == EINTR) {
+  if (errno == EAGAIN) {
     return false;
   }
   Fatal("trywait");
@@ -78,10 +78,10 @@ bool Semaphore::TimedAcquire(const MonoDelta& timeout) {
                              &abs_timeout);
 
   while (true) {
-    int ret = sem_timedwait(&sem_, &abs_timeout);
+    int ret;
+    RETRY_ON_EINTR(ret, sem_timedwait(&sem_, &abs_timeout));
     if (ret == 0) return true;
     if (errno == ETIMEDOUT) return false;
-    if (errno == EINTR) continue;
     Fatal("timedwait");
   }
 }

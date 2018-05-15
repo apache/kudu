@@ -27,6 +27,8 @@
 #define FALLOC_FL_PUNCH_HOLE  0x02 /* de-allocates range */
 #endif
 
+#include "kudu/util/env.h"
+
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -48,13 +50,13 @@
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/bind.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/util/array_view.h" // IWYU pragma: keep
-#include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/monotime.h"
@@ -105,16 +107,18 @@ class TestEnv : public KuduTest {
     if (checked) return;
 
 #if defined(__linux__)
-    int fd = creat(GetTestPath("check-fallocate").c_str(), S_IWUSR);
-    PCHECK(fd >= 0);
-    int err = fallocate(fd, 0, 0, 4096);
+    int fd;
+    RETRY_ON_EINTR(fd, creat(GetTestPath("check-fallocate").c_str(), S_IWUSR));
+    CHECK_ERR(fd);
+    int err;
+    RETRY_ON_EINTR(err, fallocate(fd, 0, 0, 4096));
     if (err != 0) {
       PCHECK(errno == ENOTSUP);
     } else {
       fallocate_supported_ = true;
 
-      err = fallocate(fd, FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE,
-                      1024, 1024);
+      RETRY_ON_EINTR(err, fallocate(fd, FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE,
+                                    1024, 1024));
       if (err != 0) {
         PCHECK(errno == ENOTSUP);
       } else {
@@ -122,7 +126,7 @@ class TestEnv : public KuduTest {
       }
     }
 
-    close(fd);
+    RETRY_ON_EINTR(err, close(fd));
 #endif
 
     checked = true;

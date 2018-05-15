@@ -57,7 +57,6 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/malloc.h"
 #include "kudu/util/monotime.h"
-#include "kudu/util/os-util.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/slice.h"
@@ -119,13 +118,6 @@ typedef struct xfs_flock64 {
 #define fdatasync fsync
 #define fread_unlocked fread
 #endif
-
-// Same as the above, but for stream API calls like fread() and fwrite().
-#define STREAM_RETRY_ON_EINTR(nread, stream, expr) do { \
-  static_assert(std::is_unsigned<decltype(nread)>::value == true, \
-                #nread " must be an unsigned integer"); \
-  (nread) = (expr); \
-} while ((nread) == 0 && ferror(stream) == EINTR)
 
 // With some probability, if 'filename_expr' matches the glob pattern specified
 // by the 'env_inject_eio_globs' flag, calls RETURN_NOT_OK on 'error_expr'.
@@ -296,7 +288,8 @@ class ScopedFdCloser {
 
   ~ScopedFdCloser() {
     ThreadRestrictions::AssertIOAllowed();
-    int err = ::close(fd_);
+    int err;
+    RETRY_ON_EINTR(err, ::close(fd_));
     if (PREDICT_FALSE(err != 0)) {
       PLOG(WARNING) << "Failed to close fd " << fd_;
     }
@@ -363,7 +356,8 @@ Status DoOpen(const string& filename, Env::CreateMode mode, int* fd) {
     default:
       return Status::NotSupported(Substitute("Unknown create mode $0", mode));
   }
-  const int f = open(filename.c_str(), flags, 0666);
+  int f;
+  RETRY_ON_EINTR(f, open(filename.c_str(), flags, 0666));
   if (f < 0) {
     return IOError(filename, errno);
   }
@@ -556,7 +550,13 @@ class PosixSequentialFile: public SequentialFile {
  public:
   PosixSequentialFile(std::string fname, FILE* f)
       : filename_(std::move(fname)), file_(f) {}
-  virtual ~PosixSequentialFile() { fclose(file_); }
+  virtual ~PosixSequentialFile() {
+    int err;
+    RETRY_ON_EINTR(err, fclose(file_));
+    if (PREDICT_FALSE(err != 0)) {
+      PLOG(WARNING) << "Failed to close " << filename_;
+    }
+  }
 
   virtual Status Read(Slice* result) OVERRIDE {
     MAYBE_RETURN_EIO(filename_, IOError(Env::kInjectedFailureStatusMsg, EIO));
@@ -599,7 +599,13 @@ class PosixRandomAccessFile: public RandomAccessFile {
  public:
   PosixRandomAccessFile(std::string fname, int fd)
       : filename_(std::move(fname)), fd_(fd) {}
-  virtual ~PosixRandomAccessFile() { close(fd_); }
+  virtual ~PosixRandomAccessFile() {
+    int err;
+    RETRY_ON_EINTR(err, close(fd_));
+    if (PREDICT_FALSE(err != 0)) {
+      PLOG(WARNING) << "Failed to close " << filename_;
+    }
+  }
 
   virtual Status Read(uint64_t offset, Slice result) const OVERRIDE {
     return DoReadV(fd_, filename_, offset, ArrayView<Slice>(&result, 1));
@@ -672,7 +678,9 @@ class PosixWritableFile : public WritableFile {
     TRACE_EVENT1("io", "PosixWritableFile::PreAllocate", "path", filename_);
     ThreadRestrictions::AssertIOAllowed();
     uint64_t offset = std::max(filesize_, pre_allocated_size_);
-    if (fallocate(fd_, 0, offset, size) < 0) {
+    int ret;
+    RETRY_ON_EINTR(ret, fallocate(fd_, 0, offset, size));
+    if (ret != 0) {
       if (errno == EOPNOTSUPP) {
         KLOG_FIRST_N(WARNING, 1) << "The filesystem does not support fallocate().";
       } else if (errno == ENOSYS) {
@@ -712,7 +720,9 @@ class PosixWritableFile : public WritableFile {
       }
     }
 
-    if (close(fd_) < 0) {
+    int ret;
+    RETRY_ON_EINTR(ret, close(fd_));
+    if (ret < 0) {
       if (s.ok()) {
         s = IOError(filename_, errno);
       }
@@ -797,8 +807,7 @@ class PosixRWFile : public RWFile {
   }
 
   virtual Status WriteV(uint64_t offset, ArrayView<const Slice> data) OVERRIDE {
-    Status s = DoWriteV(fd_, filename_, offset, data);
-    return s;
+    return DoWriteV(fd_, filename_, offset, data);
   }
 
   virtual Status PreAllocate(uint64_t offset,
@@ -812,7 +821,9 @@ class PosixRWFile : public RWFile {
     if (mode == DONT_CHANGE_FILE_SIZE) {
       falloc_mode = FALLOC_FL_KEEP_SIZE;
     }
-    if (fallocate(fd_, falloc_mode, offset, length) < 0) {
+    int ret;
+    RETRY_ON_EINTR(ret, fallocate(fd_, falloc_mode, offset, length));
+    if (ret != 0) {
       if (errno == EOPNOTSUPP) {
         KLOG_FIRST_N(WARNING, 1) << "The filesystem does not support fallocate().";
       } else if (errno == ENOSYS) {
@@ -863,9 +874,13 @@ class PosixRWFile : public RWFile {
       if (ioctl(fd_, XFS_IOC_UNRESVSP64, &cmd) < 0) {
         return IOError(filename_, errno);
       }
-    } else if (fallocate(fd_, FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE,
-                         offset, length) < 0) {
-      return IOError(filename_, errno);
+    } else {
+      int ret;
+      RETRY_ON_EINTR(ret, fallocate(
+          fd_, FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE, offset, length));
+      if (ret != 0) {
+        return IOError(filename_, errno);
+      }
     }
     return Status::OK();
 #else
@@ -918,7 +933,9 @@ class PosixRWFile : public RWFile {
       }
     }
 
-    if (close(fd_) < 0) {
+    int ret;
+    RETRY_ON_EINTR(ret, close(fd_));
+    if (ret < 0) {
       if (s.ok()) {
         s = IOError(filename_, errno);
       }
@@ -1034,7 +1051,9 @@ int LockOrUnlock(int fd, bool lock) {
   f.l_whence = SEEK_SET;
   f.l_start = 0;
   f.l_len = 0;        // Lock/unlock entire file
-  return fcntl(fd, F_SETLK, &f);
+  int ret;
+  RETRY_ON_EINTR(ret, fcntl(fd, F_SETLK, &f));
+  return ret;
 }
 
 class PosixFileLock : public FileLock {
@@ -1055,13 +1074,13 @@ class PosixEnv : public Env {
     TRACE_EVENT1("io", "PosixEnv::NewSequentialFile", "path", fname);
     MAYBE_RETURN_EIO(fname, IOError(Env::kInjectedFailureStatusMsg, EIO));
     ThreadRestrictions::AssertIOAllowed();
-    FILE* f = fopen(fname.c_str(), "r");
+    FILE* f;
+    POINTER_RETRY_ON_EINTR(f, fopen(fname.c_str(), "r"));
     if (f == nullptr) {
       return IOError(fname, errno);
-    } else {
-      result->reset(new PosixSequentialFile(fname, f));
-      return Status::OK();
     }
+    result->reset(new PosixSequentialFile(fname, f));
+    return Status::OK();
   }
 
   virtual Status NewRandomAccessFile(const std::string& fname,
@@ -1075,7 +1094,8 @@ class PosixEnv : public Env {
     TRACE_EVENT1("io", "PosixEnv::NewRandomAccessFile", "path", fname);
     MAYBE_RETURN_EIO(fname, IOError(Env::kInjectedFailureStatusMsg, EIO));
     ThreadRestrictions::AssertIOAllowed();
-    int fd = open(fname.c_str(), O_RDONLY);
+    int fd;
+    RETRY_ON_EINTR(fd, open(fname.c_str(), O_RDONLY));
     if (fd < 0) {
       return IOError(fname, errno);
     }
@@ -1223,7 +1243,8 @@ class PosixEnv : public Env {
     ThreadRestrictions::AssertIOAllowed();
     if (FLAGS_never_fsync) return Status::OK();
     int dir_fd;
-    if ((dir_fd = open(dirname.c_str(), O_DIRECTORY|O_RDONLY)) == -1) {
+    RETRY_ON_EINTR(dir_fd, open(dirname.c_str(), O_DIRECTORY|O_RDONLY));
+    if (dir_fd < 0) {
       return IOError(dirname, errno);
     }
     ScopedFdCloser fd_closer(dir_fd);
@@ -1355,12 +1376,17 @@ class PosixEnv : public Env {
     ThreadRestrictions::AssertIOAllowed();
     *lock = nullptr;
     Status result;
-    int fd = open(fname.c_str(), O_RDWR | O_CREAT, 0666);
+    int fd;
+    RETRY_ON_EINTR(fd, open(fname.c_str(), O_RDWR | O_CREAT, 0666));
     if (fd < 0) {
       result = IOError(fname, errno);
     } else if (LockOrUnlock(fd, true) == -1) {
       result = IOError("lock " + fname, errno);
-      close(fd);
+      int err;
+      RETRY_ON_EINTR(err, close(fd));
+      if (PREDICT_FALSE(err != 0)) {
+        PLOG(WARNING) << "Failed to close fd " << fd;
+      }
     } else {
       auto my_lock = new PosixFileLock;
       my_lock->fd_ = fd;
@@ -1372,13 +1398,16 @@ class PosixEnv : public Env {
   virtual Status UnlockFile(FileLock* lock) OVERRIDE {
     TRACE_EVENT0("io", "PosixEnv::UnlockFile");
     ThreadRestrictions::AssertIOAllowed();
-    PosixFileLock* my_lock = reinterpret_cast<PosixFileLock*>(lock);
+    unique_ptr<PosixFileLock> my_lock(reinterpret_cast<PosixFileLock*>(lock));
     Status result;
     if (LockOrUnlock(my_lock->fd_, false) == -1) {
       result = IOError("unlock", errno);
     }
-    close(my_lock->fd_);
-    delete my_lock;
+    int err;
+    RETRY_ON_EINTR(err, close(my_lock->fd_));
+    if (PREDICT_FALSE(err != 0)) {
+      PLOG(WARNING) << "Failed to close fd " << my_lock->fd_;
+    }
     return result;
   }
 
@@ -1481,11 +1510,13 @@ class PosixEnv : public Env {
     char *(paths[]) = { name_dup.get(), nullptr };
 
     // FTS_NOCHDIR is important here to make this thread-safe.
-    unique_ptr<FTS, FtsCloser> tree(
-        fts_open(paths, FTS_PHYSICAL | FTS_XDEV | FTS_NOCHDIR, nullptr));
-    if (!tree.get()) {
+    FTS* ret;
+    POINTER_RETRY_ON_EINTR(ret, fts_open(
+        paths, FTS_PHYSICAL | FTS_XDEV | FTS_NOCHDIR, nullptr));
+    if (ret == nullptr) {
       return IOError(root, errno);
     }
+    unique_ptr<FTS, FtsCloser> tree(ret);
 
     FTSENT *ent = nullptr;
     bool had_errors = false;
@@ -1717,7 +1748,13 @@ class PosixEnv : public Env {
   // unique_ptr Deleter implementation for fts_close
   struct FtsCloser {
     void operator()(FTS *fts) const {
-      if (fts) { fts_close(fts); }
+      if (fts) {
+        int err;
+        RETRY_ON_EINTR(err, fts_close(fts));
+        if (PREDICT_FALSE(err != 0)) {
+          PLOG(WARNING) << "Failed to close fts";
+        }
+      }
     }
   };
 

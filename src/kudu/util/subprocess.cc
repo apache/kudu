@@ -51,7 +51,6 @@
 #include "kudu/util/errno.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/monotime.h"
-#include "kudu/util/os-util.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/signal.h"
 #include "kudu/util/status.h"
@@ -146,7 +145,8 @@ void CloseNonStandardFDs(DIR* fd_dir) {
           fd == STDOUT_FILENO ||
           fd == STDERR_FILENO ||
           fd == dir_fd))  {
-      close(fd);
+      int ret;
+      RETRY_ON_EINTR(ret, close(fd));
     }
   }
 }
@@ -163,11 +163,14 @@ void RedirectToDevNull(int fd) {
   // It is expected that the file descriptor allocated when opening /dev/null
   // will be closed when the child process closes all of its "non-standard"
   // file descriptors later on.
-  int dev_null = open("/dev/null", O_WRONLY);
+  int dev_null;
+  RETRY_ON_EINTR(dev_null, open("/dev/null", O_WRONLY));
   if (dev_null < 0) {
     PLOG(WARNING) << "failed to open /dev/null";
   } else {
-    PCHECK(dup2(dev_null, fd));
+    int ret;
+    RETRY_ON_EINTR(ret, dup2(dev_null, fd));
+    PCHECK(ret);
   }
 }
 
@@ -190,14 +193,12 @@ class ReadFdsFullyHelper {
     DCHECK_EQ(ev::READ, revents);
 
     char buf[1024];
-    ssize_t n = read(w.fd, buf, arraysize(buf));
+    ssize_t n;
+    RETRY_ON_EINTR(n, read(w.fd, buf, arraysize(buf)));
     if (n == 0) {
       // EOF, stop watching.
       w.stop();
     } else if (n < 0) {
-      // Interrupted by a signal, do nothing.
-      if (errno == EINTR) return;
-
       // A fatal error. Store it and stop watching.
       status_ = Status::IOError("IO error reading from " + progname_,
                                 ErrnoToString(errno), errno);
@@ -283,7 +284,8 @@ Subprocess::~Subprocess() {
 
   for (int i = 0; i < 3; ++i) {
     if (fd_state_[i] == PIPED && child_fds_[i] >= 0) {
-      close(child_fds_[i]);
+      int ret;
+      RETRY_ON_EINTR(ret, close(child_fds_[i]));
     }
   }
 }
@@ -297,13 +299,15 @@ static int pipe2(int pipefd[2], int flags) {
     return -1;
   }
   if (fcntl(new_fds[0], F_SETFD, O_CLOEXEC) == -1) {
-    close(new_fds[0]);
-    close(new_fds[1]);
+    int ret;
+    RETRY_ON_EINTR(ret, close(new_fds[0]));
+    RETRY_ON_EINTR(ret, close(new_fds[1]));
     return -1;
   }
   if (fcntl(new_fds[1], F_SETFD, O_CLOEXEC) == -1) {
-    close(new_fds[0]);
-    close(new_fds[1]);
+    int ret;
+    RETRY_ON_EINTR(ret, close(new_fds[0]));
+    RETRY_ON_EINTR(ret, close(new_fds[1]));
     return -1;
   }
   pipefd[0] = new_fds[0];
@@ -376,7 +380,9 @@ Status Subprocess::Start() {
 
     // stdin
     if (fd_state_[STDIN_FILENO] == PIPED) {
-      PCHECK(dup2(child_stdin[0], STDIN_FILENO) == STDIN_FILENO);
+      int dup2_ret;
+      RETRY_ON_EINTR(dup2_ret, dup2(child_stdin[0], STDIN_FILENO));
+      PCHECK(dup2_ret == STDIN_FILENO);
     } else {
       DCHECK_EQ(SHARED, fd_state_[STDIN_FILENO]);
     }
@@ -384,7 +390,9 @@ Status Subprocess::Start() {
     // stdout
     switch (fd_state_[STDOUT_FILENO]) {
       case PIPED: {
-        PCHECK(dup2(child_stdout[1], STDOUT_FILENO) == STDOUT_FILENO);
+        int dup2_ret;
+        RETRY_ON_EINTR(dup2_ret, dup2(child_stdout[1], STDOUT_FILENO));
+        PCHECK(dup2_ret == STDOUT_FILENO);
         break;
       }
       case DISABLED: {
@@ -399,7 +407,9 @@ Status Subprocess::Start() {
     // stderr
     switch (fd_state_[STDERR_FILENO]) {
       case PIPED: {
-        PCHECK(dup2(child_stderr[1], STDERR_FILENO) == STDERR_FILENO);
+        int dup2_ret;
+        RETRY_ON_EINTR(dup2_ret, dup2(child_stderr[1], STDERR_FILENO));
+        PCHECK(dup2_ret == STDERR_FILENO);
         break;
       }
       case DISABLED: {
@@ -413,7 +423,9 @@ Status Subprocess::Start() {
 
     // Close the read side of the sync pipe;
     // the write side should be closed upon execvp().
-    PCHECK(close(sync_pipe[0]) == 0);
+    int close_ret;
+    RETRY_ON_EINTR(close_ret, close(sync_pipe[0]));
+    PCHECK(close_ret == 0);
 
     CloseNonStandardFDs(fd_dir);
 
@@ -446,9 +458,10 @@ Status Subprocess::Start() {
     // We are the parent
     child_pid_ = ret;
     // Close child's side of the pipes
-    if (fd_state_[STDIN_FILENO]  == PIPED) close(child_stdin[0]);
-    if (fd_state_[STDOUT_FILENO] == PIPED) close(child_stdout[1]);
-    if (fd_state_[STDERR_FILENO] == PIPED) close(child_stderr[1]);
+    int close_ret;
+    if (fd_state_[STDIN_FILENO]  == PIPED) RETRY_ON_EINTR(close_ret, close(child_stdin[0]));
+    if (fd_state_[STDOUT_FILENO] == PIPED) RETRY_ON_EINTR(close_ret, close(child_stdout[1]));
+    if (fd_state_[STDERR_FILENO] == PIPED) RETRY_ON_EINTR(close_ret, close(child_stderr[1]));
     // Keep parent's side of the pipes
     child_fds_[STDIN_FILENO]  = child_stdin[1];
     child_fds_[STDOUT_FILENO] = child_stdout[0];
@@ -464,19 +477,18 @@ Status Subprocess::Start() {
       // Close the write side of the sync pipe. It's crucial to make sure
       // it succeeds otherwise the blocking read() below might wait forever
       // even if the child process has closed the pipe.
-      PCHECK(close(sync_pipe[1]) == 0);
+      RETRY_ON_EINTR(close_ret, close(sync_pipe[1]));
+      PCHECK(close_ret == 0);
       while (true) {
         uint8_t buf;
         int err = 0;
-        const int rc = read(sync_pipe[0], &buf, 1);
+        int rc;
+        RETRY_ON_EINTR(rc, read(sync_pipe[0], &buf, 1));
         if (rc == -1) {
           err = errno;
-          if (err == EINTR) {
-            // Retry in case of a signal.
-            continue;
-          }
         }
-        PCHECK(close(sync_pipe[0]) == 0);
+        RETRY_ON_EINTR(close_ret, close(sync_pipe[0]));
+        PCHECK(close_ret == 0);
         if (rc == 0) {
           // That's OK -- expecting EOF from the other side of the pipe.
           break;
@@ -673,12 +685,17 @@ Status Subprocess::Call(const vector<string>& argv,
   RETURN_NOT_OK_PREPEND(p.Start(),
                         "Unable to fork " + argv[0]);
 
-  if (!stdin_in.empty() &&
-      write(p.to_child_stdin_fd(), stdin_in.data(), stdin_in.size()) < stdin_in.size()) {
-    return Status::IOError("Unable to write to child process stdin", ErrnoToString(errno), errno);
+  if (!stdin_in.empty()) {
+    ssize_t written;
+    RETRY_ON_EINTR(written, write(p.to_child_stdin_fd(), stdin_in.data(), stdin_in.size()));
+    if (written < stdin_in.size()) {
+      return Status::IOError("Unable to write to child process stdin",
+                             ErrnoToString(errno), errno);
+    }
   }
 
-  int err = close(p.ReleaseChildStdinFd());
+  int err;
+  RETRY_ON_EINTR(err, close(p.ReleaseChildStdinFd()));
   if (PREDICT_FALSE(err != 0)) {
     return Status::IOError("Unable to close child process stdin", ErrnoToString(errno), errno);
   }

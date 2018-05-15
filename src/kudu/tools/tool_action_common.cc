@@ -663,8 +663,9 @@ ControlShellProtocol::ControlShellProtocol(SerializationMode serialization_mode,
 
 ControlShellProtocol::~ControlShellProtocol() {
   if (close_mode_ == CloseMode::CLOSE_ON_DESTROY) {
-    close(read_fd_);
-    close(write_fd_);
+    int ret;
+    RETRY_ON_EINTR(ret, close(read_fd_));
+    RETRY_ON_EINTR(ret, close(write_fd_));
   }
 }
 
@@ -772,12 +773,9 @@ Status ControlShellProtocol::DoRead(faststring* buf) {
   uint8_t* pos = buf->data();
   size_t rem = buf->length();
   while (rem > 0) {
-    ssize_t r = read(read_fd_, pos, rem);
+    ssize_t r;
+    RETRY_ON_EINTR(r, read(read_fd_, pos, rem));
     if (r == -1) {
-      if (errno == EINTR) {
-        // Interrupted by a signal, retry.
-        continue;
-      }
       return Status::IOError("Error reading from pipe", "", errno);
     }
     if (r == 0) {
@@ -794,12 +792,9 @@ Status ControlShellProtocol::DoWrite(const faststring& buf) {
   const uint8_t* pos = buf.data();
   size_t rem = buf.length();
   while (rem > 0) {
-    ssize_t r = write(write_fd_, pos, rem);
+    ssize_t r;
+    RETRY_ON_EINTR(r, write(write_fd_, pos, rem));
     if (r == -1) {
-      if (errno == EINTR) {
-        // Interrupted by a signal, retry.
-        continue;
-      }
       if (errno == EPIPE) {
         return Status::EndOfFile("Other end of pipe was closed");
       }

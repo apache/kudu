@@ -35,6 +35,7 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/env.h"
 #include "kudu/util/monotime.h"
@@ -67,7 +68,8 @@ TEST_F(SubprocessTest, TestSimplePipe) {
   fprintf(out, "hello world\n");
   // We have to close 'out' or else tr won't write any output, since
   // it enters a buffered mode if it detects that its input is a FIFO.
-  fclose(out);
+  int err;
+  RETRY_ON_EINTR(err, fclose(out));
 
   char buf[1024];
   ASSERT_EQ(buf, fgets(buf, sizeof(buf), in));
@@ -88,7 +90,10 @@ TEST_F(SubprocessTest, TestErrPipe) {
   PCHECK(out);
 
   fprintf(out, "Hello, World\n");
-  fclose(out); // same reasoning as above, flush to prevent tee buffering
+
+  // Same reasoning as above, flush to prevent tee buffering.
+  int err;
+  RETRY_ON_EINTR(err, fclose(out));
 
   FILE* in = fdopen(p.from_child_stderr_fd(), "r");
   PCHECK(in);
