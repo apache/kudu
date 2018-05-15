@@ -157,7 +157,9 @@ Status PathInstanceMetadataFile::Lock() {
 
   FileLock* lock;
   RETURN_NOT_OK_FAIL_INSTANCE_PREPEND(env_->LockFile(filename_, &lock),
-                                      Substitute("Could not lock $0", filename_));
+                                      "Could not lock block_manager_instance file. Make sure that "
+                                      "Kudu is not already running and you are not trying to run "
+                                      "Kudu with a different user than before");
   lock_.reset(lock);
   return Status::OK();
 }

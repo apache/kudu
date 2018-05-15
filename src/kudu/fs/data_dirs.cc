@@ -609,14 +609,12 @@ Status DataDirManager::LoadInstances(
       // This may return OK and mark 'instance' as failed.
       Status s = instance->Lock();
       if (!s.ok()) {
-        Status new_status = s.CloneAndPrepend(Substitute(
-            "Could not lock $0", instance_filename));
         if (lock_mode == LockMode::OPTIONAL) {
-          LOG(WARNING) << new_status.ToString();
+          LOG(WARNING) << s.ToString();
           LOG(WARNING) << "Proceeding without lock";
         } else {
           DCHECK(LockMode::MANDATORY == lock_mode);
-          return new_status;
+          return s;
         }
       }
     }
