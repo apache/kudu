@@ -143,6 +143,21 @@ See <<partitioning_tables>>. The table creation example above is distributed int
 16 partitions by hashing the `id` column, for simplicity. See
 <<partitioning_rules_of_thumb>> for guidelines on partitioning.
 
+By default, Kudu tables created through Impala use a tablet replication factor of 3.
+To specify the replication factor for a Kudu table, add a `TBLPROPERTIES` clause
+to the `CREATE TABLE` statement as shown below where n is the replication factor
+you want to use:
+
+[source,sql]
+----
+TBLPROPERTIES ('kudu.num_tablet_replicas' = 'n')
+----
+
+A replication factor must be an odd number.
+
+Changing the `kudu.num_tablet_replicas` table property using ALTER TABLE currently
+has no effect.
+
 ==== `CREATE TABLE AS SELECT`
 
 You can create a table by querying any other table or tables in Impala, using a `CREATE
