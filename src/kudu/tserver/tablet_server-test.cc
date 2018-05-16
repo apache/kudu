@@ -400,13 +400,13 @@ TEST_F(TabletServerTest, TestWebPages) {
   ASSERT_OK(c.FetchURL(Substitute("http://$0/tablets", addr),
                               &buf));
   ASSERT_STR_CONTAINS(buf.ToString(), kTabletId);
-  ASSERT_STR_CONTAINS(buf.ToString(), "RANGE (key) PARTITION UNBOUNDED</td>");
+  ASSERT_STR_CONTAINS(buf.ToString(), "RANGE (key) PARTITION UNBOUNDED");
 
   // Tablet page should include the schema.
   ASSERT_OK(c.FetchURL(Substitute("http://$0/tablet?id=$1", addr, kTabletId),
                        &buf));
-  ASSERT_STR_CONTAINS(buf.ToString(), "<th><u>key</u></th>");
-  ASSERT_STR_CONTAINS(buf.ToString(), "<td>string NULLABLE</td>");
+  ASSERT_STR_CONTAINS(buf.ToString(), "key");
+  ASSERT_STR_CONTAINS(buf.ToString(), "string NULLABLE");
 
   // Test fetching metrics.
   // Fetching metrics has the side effect of retiring metrics, but not in a single pass.
@@ -505,8 +505,8 @@ TEST_F(TabletServerTest, TestFailedTabletsRejectConsensusState) {
   ASSERT_STR_CONTAINS(s.ToString(), "Tablet replica is shutdown");
 }
 
-// Test that tablets that get failed and deleted will eventually show up as
-// failed tombstones on the web UI.
+// Test that tablet replicas that get failed and deleted will eventually show
+// up as failed tombstones on the web UI.
 TEST_F(TabletServerTest, TestFailedTabletsOnWebUI) {
   scoped_refptr<TabletReplica> replica;
   TSTabletManager* tablet_manager = mini_server_->server()->tablet_manager();
@@ -515,7 +515,7 @@ TEST_F(TabletServerTest, TestFailedTabletsOnWebUI) {
   replica->Shutdown();
   ASSERT_EQ(tablet::FAILED, replica->state());
 
-  // Now delete the tablet and leave it tombstoned, e.g. as if the failed
+  // Now delete the replica and leave it tombstoned, e.g. as if the failed
   // replica were deleted.
   TabletServerErrorPB::Code error_code;
   ASSERT_OK(tablet_manager->DeleteTablet(kTabletId,
@@ -526,9 +526,8 @@ TEST_F(TabletServerTest, TestFailedTabletsOnWebUI) {
   const string addr = mini_server_->bound_http_addr().ToString();
   ASSERT_OK(c.FetchURL(Substitute("http://$0/tablets", addr), &buf));
 
-  // Ensure the html contains the "Tombstoned Tablets" header, indicating the
-  // failed tombstone is correctly displayed as a tombstone.
-  ASSERT_STR_CONTAINS(buf.ToString(), "Tombstoned Tablets");
+  // The webui should have a record of a FAILED and tombstoned tablet replica.
+  ASSERT_STR_CONTAINS(buf.ToString(), "FAILED (TABLET_DATA_TOMBSTONED)");
 }
 
 // Test that tombstoned tablets are displayed correctly in the web ui:
@@ -552,14 +551,13 @@ TEST_F(TabletServerTest, TestTombstonedTabletOnWebUI) {
   const string addr = mini_server_->bound_http_addr().ToString();
   ASSERT_OK(c.FetchURL(Substitute("http://$0/tablets", addr), &buf));
 
-  // Ensure the html contains the "Tombstoned Tablets" header and
-  // a table entry with the proper status message.
+  // Check the page contains a tombstoned tablet, and its state is not
+  // "Tablet initializing...".
   string s = buf.ToString();
-  ASSERT_STR_CONTAINS(s, "Tombstoned Tablets");
-  ASSERT_STR_CONTAINS(s, "<td>Tombstoned</td>");
-  ASSERT_STR_NOT_CONTAINS(s, "<td>Tablet initializing...</td>");
+  ASSERT_STR_CONTAINS(s, "TABLET_DATA_TOMBSTONED");
+  ASSERT_STR_NOT_CONTAINS(s, "Tablet initializing...");
 
-  // Since the consensus config shouldn't be displayed, the html should not
+  // Since the consensus config shouldn't be displayed, the page should not
   // contain the server's RPC address.
   ASSERT_STR_NOT_CONTAINS(s, mini_server_->bound_rpc_addr().ToString());
 }

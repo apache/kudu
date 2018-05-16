@@ -24,11 +24,6 @@
 #include "kudu/util/status.h"
 
 namespace kudu {
-
-namespace consensus {
-class ConsensusStatePB;
-} // namespace consensus
-
 namespace tserver {
 
 class TabletServer;
@@ -47,7 +42,7 @@ class TabletServerPathHandlers {
   void HandleScansPage(const Webserver::WebRequest& req,
                        Webserver::WebResponse* resp);
   void HandleTabletsPage(const Webserver::WebRequest& req,
-                         Webserver::PrerenderedWebResponse* resp);
+                         Webserver::WebResponse* resp);
   void HandleTabletPage(const Webserver::WebRequest& req,
                         Webserver::PrerenderedWebResponse* resp);
   void HandleTransactionsPage(const Webserver::WebRequest& req,
@@ -62,7 +57,6 @@ class TabletServerPathHandlers {
                             Webserver::PrerenderedWebResponse* resp);
   void HandleMaintenanceManagerPage(const Webserver::WebRequest& req,
                                     Webserver::WebResponse* resp);
-  std::string ConsensusStatePBToHtml(const consensus::ConsensusStatePB& cstate) const;
   std::string GetDashboardLine(const std::string& link,
                                const std::string& text, const std::string& desc);
 
