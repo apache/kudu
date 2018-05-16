@@ -19,6 +19,7 @@ apply plugin: "scala"
 apply from: "$rootDir/gradle/shadow.gradle"
 
 dependencies {
+  compile project(path: ":kudu-client", configuration: "shadow")
   compile project(path: ":kudu-client-tools", configuration: "shadow")
   compile project(path: ":kudu-spark", configuration: "shadow")
 
