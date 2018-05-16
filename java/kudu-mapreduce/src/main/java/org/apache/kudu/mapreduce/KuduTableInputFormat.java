@@ -251,14 +251,9 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
       }
     }
 
-    this.predicates = new ArrayList<>();
     try {
-      InputStream is =
-          new ByteArrayInputStream(Base64.decodeBase64(conf.get(ENCODED_PREDICATES_KEY, "")));
-      while (is.available() > 0) {
-        this.predicates.add(KuduPredicate.fromPB(table.getSchema(),
-                                                 Common.ColumnPredicatePB.parseDelimitedFrom(is)));
-      }
+      byte[] bytes = Base64.decodeBase64(conf.get(ENCODED_PREDICATES_KEY, ""));
+      this.predicates = KuduPredicate.deserialize(table.getSchema(), bytes);
     } catch (IOException e) {
       throw new RuntimeException("unable to deserialize predicates from the configuration", e);
     }

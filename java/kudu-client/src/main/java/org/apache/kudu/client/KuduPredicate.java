@@ -17,6 +17,9 @@
 
 package org.apache.kudu.client;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.math.BigInteger;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -762,6 +765,37 @@ public class KuduPredicate {
    */
   ColumnSchema getColumn() {
     return column;
+  }
+
+  /**
+   * Serializes a list of {@code KuduPredicate} into a byte array.
+   * @return the serialized kudu predicates
+   * @throws IOException
+   */
+  @InterfaceAudience.LimitedPrivate("kudu-mapreduce")
+  public static byte[] serialize(List<KuduPredicate> predicates) throws IOException {
+    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+    for (KuduPredicate predicate : predicates) {
+      Common.ColumnPredicatePB message = predicate.toPB();
+      message.writeDelimitedTo(baos);
+    }
+    return baos.toByteArray();
+  }
+
+  /**
+   * Serializes a list of {@code KuduPredicate} into a byte array.
+   * @return the serialized kudu predicates
+   * @throws IOException
+   */
+  @InterfaceAudience.LimitedPrivate("kudu-mapreduce")
+  public static List<KuduPredicate> deserialize(Schema schema, byte[] bytes) throws IOException {
+    ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
+    List<KuduPredicate> predicates = new ArrayList<>();
+    while (bais.available() > 0) {
+      Common.ColumnPredicatePB message = Common.ColumnPredicatePB.parseDelimitedFrom(bais);
+      predicates.add(KuduPredicate.fromPB(schema, message));
+    }
+    return predicates;
   }
 
   /**

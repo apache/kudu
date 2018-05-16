@@ -258,11 +258,8 @@ public class KuduTableMapReduceUtil {
    * @return the encoded predicates
    */
   static String base64EncodePredicates(List<KuduPredicate> predicates) throws IOException {
-    ByteArrayOutputStream baos = new ByteArrayOutputStream();
-    for (KuduPredicate predicate : predicates) {
-      predicate.toPB().writeDelimitedTo(baos);
-    }
-    return Base64.encodeBase64String(baos.toByteArray());
+    byte[] bytes = KuduPredicate.serialize(predicates);
+    return Base64.encodeBase64String(bytes);
   }
 
 
