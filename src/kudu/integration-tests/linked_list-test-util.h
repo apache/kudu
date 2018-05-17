@@ -374,8 +374,12 @@ class PeriodicWebUIChecker {
     while (is_running_.Load()) {
       // Poll all of the URLs.
       const MonoTime start = MonoTime::Now();
+      bool compression_enabled = true;
       for (const auto& url : urls_) {
-        Status s = curl.FetchURL(url, &dst);
+        // Switch compression back and forth.
+        Status s = compression_enabled ? curl.FetchURL(url, &dst, {"Accept-Encoding: gzip"})
+                                       : curl.FetchURL(url, &dst);
+        compression_enabled = !compression_enabled;
         if (s.ok()) {
           CHECK_GT(dst.length(), 0);
         }

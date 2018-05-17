@@ -15,6 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/server/webserver.h"
+
+#include <iosfwd>
 #include <memory>
 #include <string>
 #include <vector>
@@ -32,7 +35,6 @@
 #include "kudu/security/test/test_certs.h"
 #include "kudu/security/test/test_pass.h"
 #include "kudu/server/default_path_handlers.h"
-#include "kudu/server/webserver.h"
 #include "kudu/server/webserver_options.h"
 #include "kudu/util/curl_util.h"
 #include "kudu/util/env.h"
@@ -44,6 +46,7 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+#include "kudu/util/zlib.h"
 
 using std::string;
 using std::vector;
@@ -141,6 +144,63 @@ TEST_F(WebserverTest, TestIndexPage) {
                            &buf_));
   // Check expected header.
   ASSERT_STR_CONTAINS(buf_.ToString(), "X-Frame-Options: DENY");
+
+  // Should have expected title.
+  ASSERT_STR_CONTAINS(buf_.ToString(), "Kudu");
+
+  // Should have link to default path handlers (e.g memz)
+  ASSERT_STR_CONTAINS(buf_.ToString(), "memz");
+}
+
+TEST_F(WebserverTest, TestHttpCompression) {
+  string url = strings::Substitute("http://$0/", addr_.ToString());
+  std::ostringstream oss;
+  string decoded_str;
+
+  // Curl with gzip compression enabled.
+  ASSERT_OK(curl_.FetchURL(url, &buf_, {"Accept-Encoding: deflate, br, gzip"}));
+
+  // If compressed successfully, we should be able to uncompress.
+  ASSERT_OK(zlib::Uncompress(Slice(buf_.ToString()), &oss));
+  decoded_str = oss.str();
+
+  // Should have expected title.
+  ASSERT_STR_CONTAINS(decoded_str, "Kudu");
+
+  // Should have link to default path handlers (e.g memz)
+  ASSERT_STR_CONTAINS(decoded_str, "memz");
+
+  // Should have expected header when compressed with headers returned.
+  curl_.set_return_headers(true);
+  ASSERT_OK(curl_.FetchURL(url, &buf_,
+                          {"Accept-Encoding: deflate, megaturbogzip,  gzip , br"}));
+  ASSERT_STR_CONTAINS(buf_.ToString(), "Content-Encoding: gzip");
+
+
+  // Curl with compression disabled.
+  curl_.set_return_headers(true);
+  ASSERT_OK(curl_.FetchURL(url, &buf_));
+  // Check expected header.
+  ASSERT_STR_CONTAINS(buf_.ToString(), "Content-Type:");
+
+  // Check unexpected header.
+  ASSERT_STR_NOT_CONTAINS(buf_.ToString(), "Content-Encoding: gzip");
+
+  // Should have expected title.
+  ASSERT_STR_CONTAINS(buf_.ToString(), "Kudu");
+
+  // Should have link to default path handlers (e.g memz)
+  ASSERT_STR_CONTAINS(buf_.ToString(), "memz");
+
+
+  // Curl with compression enabled but not accepted by Kudu.
+  curl_.set_return_headers(true);
+  ASSERT_OK(curl_.FetchURL(url, &buf_, {"Accept-Encoding: megaturbogzip, deflate, xz"}));
+  // Check expected header.
+  ASSERT_STR_CONTAINS(buf_.ToString(), "HTTP/1.1 200 OK");
+
+  // Check unexpected header.
+  ASSERT_STR_NOT_CONTAINS(buf_.ToString(), "Content-Encoding: gzip");
 
   // Should have expected title.
   ASSERT_STR_CONTAINS(buf_.ToString(), "Kudu");

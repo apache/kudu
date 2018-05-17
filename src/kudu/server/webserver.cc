@@ -45,6 +45,7 @@
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/stringpiece.h"
+#include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/security/openssl_util.h"
 #include "kudu/util/easy_json.h"
@@ -56,6 +57,7 @@
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/url-coding.h"
 #include "kudu/util/version_info.h"
+#include "kudu/util/zlib.h"
 
 struct sockaddr_in;
 
@@ -477,10 +479,30 @@ int Webserver::RunPathHandler(const PathHandler& handler,
     full_content = content.str();
   }
 
+  // Check if the gzip compression is accepted by the caller. If so, compress the content.
+  const char* accept_encoding_str = sq_get_header(connection, "Accept-Encoding");
+  bool is_compressed = false;
+  vector<string> encodings = strings::Split(accept_encoding_str, ",");
+  for (string& encoding : encodings) {
+    StripWhiteSpace(&encoding);
+    if (encoding == "gzip") {
+      ostringstream oss;
+      Status s = zlib::Compress(Slice(full_content), &oss);
+      if (s.ok()) {
+        full_content = oss.str();
+        is_compressed = true;
+      } else {
+        LOG(WARNING) << "Could not compress output: " << s.ToString();
+      }
+      break;
+    }
+  }
+
   ostringstream headers_stream;
   headers_stream << Substitute("HTTP/1.1 $0\r\n", HttpStatusCodeToString(resp.status_code));
   headers_stream << Substitute("Content-Type: $0\r\n", use_style ? "text/html" : "text/plain");
   headers_stream << Substitute("Content-Length: $0\r\n", full_content.length());
+  if (is_compressed) headers_stream << "Content-Encoding: gzip\r\n";
   headers_stream << Substitute("X-Frame-Options: $0\r\n", FLAGS_webserver_x_frame_options);
   std::unordered_set<string> invalid_headers{"Content-Type", "Content-Length", "X-Frame-Options"};
   for (const auto& entry : resp.response_headers) {
