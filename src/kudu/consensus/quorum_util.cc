@@ -732,7 +732,11 @@ bool ShouldEvictReplica(const RaftConfigPB& config,
   // Working with the replicas marked with the 'replace' attribute:
   // the case when too many replicas are marked with the 'replace' attribute
   // while all required replicas are healthy.
+  //
+  // In the special case when the leader replica is the only one marked with the
+  // 'replace' attribute, the leader replica cannot be evicted.
   need_to_evict_voter |= (num_voters_healthy >= replication_factor) &&
+      !(num_voters_with_replace == 1 && leader_with_replace) &&
       ((num_voters_with_replace > replication_factor) ||
        (num_voters_with_replace >= replication_factor && num_voters_viable > 0));
 
