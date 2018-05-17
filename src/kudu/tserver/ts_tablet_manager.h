@@ -218,6 +218,11 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
   // and return the count for tablet state 'st'.
   int RefreshTabletStateCacheAndReturnCount(tablet::TabletStatePB st);
 
+  // Wait a period up to 'timeout' for there to be no tablet state transitions
+  // registered with the tablet manager.
+  // This method is for use in tests only. See KUDU-2444.
+  Status WaitForNoTransitionsForTests(const MonoDelta& timeout) const;
+
  private:
   FRIEND_TEST(TsTabletManagerTest, TestPersistBlocks);
 

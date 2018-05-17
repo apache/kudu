@@ -269,8 +269,13 @@ TEST_F(TabletCopyClientSessionITest, TestCopyFromCrashedSource) {
 
   // Attempt the copy again. This time it should succeed.
   ASSERT_OK(WaitUntilTabletRunning(ts0, tablet_id, kDefaultTimeout));
-  ASSERT_OK(StartTabletCopy(ts1, tablet_id, ts0->uuid(), src_addr,
-                            std::numeric_limits<int64_t>::max(), kDefaultTimeout));
+  // KUDU-2444: Even though the copy failed and the tablet replica is
+  // tombstoned, the tablet manager may not have transitioned the replica out
+  // of the 'copying' phase yet, so we retry here.
+  ASSERT_EVENTUALLY([&]{
+    ASSERT_OK(StartTabletCopy(ts1, tablet_id, ts0->uuid(), src_addr,
+                              std::numeric_limits<int64_t>::max(), kDefaultTimeout));
+  });
   ASSERT_OK(WaitUntilTabletRunning(ts1, tablet_id, kDefaultTimeout));
 }
 

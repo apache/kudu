@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/tserver/tablet_server-test-base.h"
+#include "kudu/tserver/tablet_server.h"
 
 #include <stdlib.h>
 #include <unistd.h>
@@ -80,7 +80,7 @@
 #include "kudu/tserver/heartbeater.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/scanners.h"
-#include "kudu/tserver/tablet_server.h"
+#include "kudu/tserver/tablet_server-test-base.h"
 #include "kudu/tserver/tablet_server_options.h"
 #include "kudu/tserver/tablet_server_test_util.h"
 #include "kudu/tserver/ts_tablet_manager.h"
@@ -536,8 +536,11 @@ TEST_F(TabletServerTest, TestFailedTabletsOnWebUI) {
 TEST_F(TabletServerTest, TestTombstonedTabletOnWebUI) {
   TSTabletManager* tablet_manager = mini_server_->server()->tablet_manager();
   TabletServerErrorPB::Code error_code;
-  ASSERT_OK(tablet_manager->DeleteTablet(kTabletId,
-                                         tablet::TABLET_DATA_TOMBSTONED, boost::none, &error_code));
+  ASSERT_OK(
+      tablet_manager->DeleteTablet(kTabletId,
+                                   tablet::TABLET_DATA_TOMBSTONED,
+                                   boost::none,
+                                   &error_code));
 
   // Restart the server. We drop the tablet_replica_ reference since it becomes
   // invalid when the server shuts down.
