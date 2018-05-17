@@ -89,6 +89,7 @@ using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using std::vector;
+using strings::Split;
 using strings::Substitute;
 
 namespace kudu {
@@ -233,7 +234,7 @@ Status DoChangeConfig(const vector<string>& master_addresses,
 Status ChangeConfig(const RunnerContext& context, ChangeConfigType cc_type) {
   const string& master_addresses_str = FindOrDie(context.required_args,
                                                  kMasterAddressesArg);
-  vector<string> master_addresses = strings::Split(master_addresses_str, ",");
+  vector<string> master_addresses = Split(master_addresses_str, ",");
   const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
   const string& replica_uuid = FindOrDie(context.required_args, kTsUuidArg);
   boost::optional<RaftPeerPB::MemberType> member_type;
@@ -285,7 +286,7 @@ Status DoLeaderStepDown(const client::sp::shared_ptr<KuduClient>& client, const 
 Status LeaderStepDown(const RunnerContext& context) {
   const string& master_addresses_str = FindOrDie(context.required_args,
                                                  kMasterAddressesArg);
-  vector<string> master_addresses = strings::Split(master_addresses_str, ",");
+  vector<string> master_addresses = Split(master_addresses_str, ",");
   const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
 
   client::sp::shared_ptr<KuduClient> client;
@@ -404,7 +405,7 @@ Status ChangeLeader(const client::sp::shared_ptr<KuduClient>& client, const stri
 
 Status MoveReplica(const RunnerContext &context) {
   const string& master_addresses_str = FindOrDie(context.required_args, kMasterAddressesArg);
-  vector<string> master_addresses = strings::Split(master_addresses_str, ",");
+  vector<string> master_addresses = Split(master_addresses_str, ",");
   const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
   const string& from_ts_uuid = FindOrDie(context.required_args, kFromTsUuidArg);
   const string& to_ts_uuid = FindOrDie(context.required_args, kToTsUuidArg);
@@ -440,7 +441,7 @@ Status MoveReplica(const RunnerContext &context) {
   // replica and then evicting the old one.
   if (!is_3_4_3_replication) {
     RETURN_NOT_OK(DoChangeConfig(master_addresses, tablet_id, to_ts_uuid,
-                                RaftPeerPB::VOTER, consensus::ADD_PEER));
+                                 RaftPeerPB::VOTER, consensus::ADD_PEER));
 
     // Wait until the tablet copy completes and the tablet returns to perfect health.
     MonoDelta copy_timeout = MonoDelta::FromSeconds(FLAGS_move_copy_timeout_sec);
@@ -456,8 +457,8 @@ Status MoveReplica(const RunnerContext &context) {
     RETURN_NOT_OK(GetTabletLeader(client, tablet_id, &leader_uuid, &leader_hp));
     if (from_ts_uuid == leader_uuid) {
       RETURN_NOT_OK_PREPEND(ChangeLeader(client, tablet_id,
-                                        leader_uuid, leader_hp,
-                                        MonoDelta::FromSeconds(FLAGS_move_leader_timeout_sec)),
+                                         leader_uuid, leader_hp,
+                                         MonoDelta::FromSeconds(FLAGS_move_leader_timeout_sec)),
                             "failed changing leadership from the replica to be removed");
     }
     return DoChangeConfig(master_addresses, tablet_id, from_ts_uuid,
@@ -469,15 +470,15 @@ Status MoveReplica(const RunnerContext &context) {
   // adding the replacement as a non-voter with promote=true.
   // The following code implements tablet movement in that paradigm.
 
-  BulkChangeConfigRequestPB bulk_req;
+  BulkChangeConfigRequestPB req;
   {
-    auto* change = bulk_req.add_config_changes();
+    auto* change = req.add_config_changes();
     change->set_type(MODIFY_PEER);
     *change->mutable_peer()->mutable_permanent_uuid() = from_ts_uuid;
     change->mutable_peer()->mutable_attrs()->set_replace(true);
   }
   {
-    auto* change = bulk_req.add_config_changes();
+    auto* change = req.add_config_changes();
     change->set_type(ADD_PEER);
     *change->mutable_peer()->mutable_permanent_uuid() = to_ts_uuid;
     change->mutable_peer()->set_member_type(RaftPeerPB::NON_VOTER);
@@ -487,13 +488,12 @@ Status MoveReplica(const RunnerContext &context) {
     RETURN_NOT_OK(HostPortToPB(hp, change->mutable_peer()->mutable_last_known_addr()));
   }
 
-  BulkChangeConfigRequestPB req;
   consensus::ChangeConfigResponsePB resp;
   RpcController rpc;
   rpc.set_timeout(client->default_admin_operation_timeout());
-  bulk_req.set_dest_uuid(leader_uuid);
-  bulk_req.set_tablet_id(tablet_id);
-  RETURN_NOT_OK(proxy->BulkChangeConfig(bulk_req, &resp, &rpc));
+  req.set_dest_uuid(leader_uuid);
+  req.set_tablet_id(tablet_id);
+  RETURN_NOT_OK(proxy->BulkChangeConfig(req, &resp, &rpc));
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
   }
@@ -513,12 +513,25 @@ Status MoveReplica(const RunnerContext &context) {
       ConsensusStatePB cstate;
       RETURN_NOT_OK(GetConsensusState(proxy, tablet_id, leader_uuid,
                                       client->default_admin_operation_timeout(), &cstate));
+      // In case if a leader replica is being replaced, there isn't much sense
+      // to make the leader stepping down when the newly added non-voter
+      // replica hasn't caught up yet. The stepped down leader replica will
+      // not be evicted until the newly added replica is promoted to voter.
+      bool to_ts_uuid_is_a_voter = false;
+      for (const auto& peer : cstate.committed_config().peers()) {
+        if (peer.permanent_uuid() == to_ts_uuid &&
+            peer.member_type() == RaftPeerPB::VOTER) {
+          to_ts_uuid_is_a_voter = true;
+          break;
+        }
+      }
       bool from_ts_uuid_in_config = false; // Is 'from_ts_uuid' still in the config?
       for (const auto& peer : cstate.committed_config().peers()) {
         if (peer.permanent_uuid() == from_ts_uuid) {
-          if (peer.attrs().replace() && peer.permanent_uuid() == leader_uuid) {
+          if (peer.attrs().replace() && peer.permanent_uuid() == leader_uuid &&
+              to_ts_uuid_is_a_voter) {
             // The leader is the node we intend to remove and is currently
-            // marked for replacement; Make it step down.
+            // marked for replacement; make it step down.
             ignore_result(DoLeaderStepDown(client, tablet_id, leader_uuid, leader_hp));
           }
           from_ts_uuid_in_config = true;
