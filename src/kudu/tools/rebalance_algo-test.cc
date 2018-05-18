@@ -17,7 +17,6 @@
 
 #include "kudu/tools/rebalance_algo.h"
 
-#include <algorithm>
 #include <cstddef>
 #include <iostream>
 #include <iterator>
@@ -28,13 +27,16 @@
 #include <utility>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/random.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
 
 namespace kudu {
 namespace tools {
@@ -50,9 +52,10 @@ struct TestClusterConfig;
     } \
   } while (false)
 
+using std::endl;
 using std::ostream;
+using std::ostringstream;
 using std::set;
-using std::sort;
 using std::string;
 using std::vector;
 using strings::Substitute;
@@ -154,6 +157,35 @@ void VerifyRebalancingMoves(const TestClusterConfig& cfg) {
     ASSERT_OK(algo.GetNextMoves(std::move(cbi), 0, &moves));
   }
   EXPECT_EQ(cfg.expected_moves, moves);
+}
+
+// Is 'cbi' balanced according to the two-dimensional greedy algorithm?
+bool IsBalanced(const ClusterBalanceInfo& cbi) {
+  if (cbi.table_info_by_skew.empty()) {
+    return true;
+  }
+  auto max_table_skew = cbi.table_info_by_skew.rbegin()->first;
+  auto cluster_skew = cbi.servers_by_total_replica_count.rbegin()->first -
+                      cbi.servers_by_total_replica_count.begin()->first;
+  return (max_table_skew <= 1) && (cluster_skew <= 1);
+}
+
+string TestClusterConfigToDebugString(const TestClusterConfig& cfg) {
+  ostringstream oss;
+  oss << Substitute("TestClusterConfig: $0 tservers, $0 tables",
+                    cfg.table_replicas.size(), cfg.tserver_uuids.size()) << endl;
+  for (const auto& t : cfg.table_replicas) {
+    oss << Substitute("table $0: [", t.table_id);
+    for (auto i = 0; i < t.num_replicas_by_server.size(); i++) {
+      if (i > 0) {
+        oss << ", ";
+      }
+      oss << Substitute("ts $0: $1",
+                        cfg.tserver_uuids[i], t.num_replicas_by_server[i]);
+    }
+    oss << "]" << endl;
+  }
+  return oss.str();
 }
 
 // Test the behavior of the algorithm when no input information is given.
@@ -623,6 +655,62 @@ TEST(RebalanceAlgoUnitTest, ManyMoves) {
   vector<TableReplicaMove> moves;
   ASSERT_OK(algo.GetNextMoves(cbi, 0, &moves));
   EXPECT_EQ(ref_moves, moves);
+}
+
+TEST(RebalanceAlgoUnitTest, RandomizedTest) {
+  const auto num_iters = AllowSlowTests() ? 1000 : 100;
+  Random r(SeedRandom());
+  const auto max_tservers = 10;
+  const auto max_tables = 10;
+  const auto max_replicas_per_table_and_tserver = 25;
+  for (auto i = 0; i < num_iters; i++) {
+    // Generate a random cluster config.
+    const auto num_tservers = 1 + r.Uniform(max_tservers);
+    const auto num_tables = 1 + r.Uniform(max_tables);
+    vector<string> tserver_uuids;
+    tserver_uuids.reserve(num_tservers);
+    for (auto i = 0; i < num_tservers; i++) {
+      tserver_uuids.push_back(Substitute("$0", i));
+    }
+    vector<TablePerServerReplicas> table_replicas;
+    table_replicas.reserve(num_tables);
+    for (auto i = 0; i < num_tables; i++) {
+      vector<size_t> num_replicas_per_server;
+      num_replicas_per_server.reserve(num_tservers);
+      for (auto j = 0; j < num_tservers; j++) {
+        num_replicas_per_server.push_back(
+            r.Uniform(1 + max_replicas_per_table_and_tserver));
+      }
+      table_replicas.push_back(TablePerServerReplicas{
+          Substitute("$0", i),
+          std::move(num_replicas_per_server),
+      });
+    }
+    TestClusterConfig cfg{
+      std::move(tserver_uuids),
+      std::move(table_replicas),
+      {}  // This tests checks achievement of balance, not the path to it.
+    };
+
+    // Make sure the rebalancing algorithm can balance the config.
+    {
+      SCOPED_TRACE(TestClusterConfigToDebugString(cfg));
+      ClusterBalanceInfo cbi;
+      ClusterConfigToClusterBalanceInfo(cfg, &cbi);
+      TwoDimensionalGreedyAlgo algo;
+      boost::optional<TableReplicaMove> move;
+      // Set a generous upper bound on the number of moves allowed before we
+      // conclude the algorithm is not converging.
+      // We shouldn't need to do more moves than there are replicas.
+      int num_moves_ub = num_tservers * num_tables * max_replicas_per_table_and_tserver;
+      int num_moves = 0;
+      while (!IsBalanced(cbi)) {
+        ASSERT_OK(algo.GetNextMove(cbi, &move));
+        ASSERT_OK(TwoDimensionalGreedyAlgo::ApplyMove(*move, &cbi));
+        ASSERT_GE(num_moves_ub, ++num_moves) << "Too many moves! The algorithm is likely stuck";
+      }
+    }
+  }
 }
 
 } // namespace tools

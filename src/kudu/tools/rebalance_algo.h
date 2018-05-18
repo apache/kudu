@@ -22,6 +22,8 @@
 #include <string>
 #include <vector>
 
+#include <gtest/gtest_prod.h>
+
 #include "kudu/util/status.h"
 
 namespace boost {
@@ -170,6 +172,8 @@ class TwoDimensionalGreedyAlgo : public RebalancingAlgo {
   const EqualSkewOption equal_skew_opt_;
   std::random_device random_device_;
   std::mt19937 generator_;
+
+  FRIEND_TEST(RebalanceAlgoUnitTest, RandomizedTest);
 };
 
 } // namespace tools
