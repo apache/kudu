@@ -121,6 +121,34 @@ under the License.
     </table>
   </div>
 
+  {{#replica_distribution}}
+  <h3>Tablet Replica Distribution</h3>
+  <table class='table table-striped table-hover'>
+    <tbody>
+      <tr><td>Min Count</td><td>{{min_count}}</td></tr>
+      <tr><td>Max Count</td><td>{{max_count}}</td></tr>
+      <tr>
+        <td>
+          <p>Skew <small>(<a href="#skew-help" data-toggle="collapse">?</a>)</small></p>
+          <div id="skew-help" class="collapse text-muted"><p>
+            Skew is the difference between the max and min replica counts.
+            It measures how imbalanced the table is.
+          </p></div>
+        </td>
+        <td>{{skew}}</td>
+      </tr>
+    </tbody>
+  </table>
+  <table class='table table-striped table-hover'>
+    <thead><tr><th>Tablet Server</th><th>Replica Count</th></thead>
+    <tbody>
+      {{#counts}}
+        <tr><td>{{ts_uuid}}</td><td>{{count}}</td></tr>
+      {{/counts}}
+    </tbody>
+  </table>
+  {{/replica_distribution}}
+
   <h3>Impala CREATE TABLE statement</h3>
   {{! Unusual formatting below because <pre> preserves whitespace in the output. }}
   <pre><code>CREATE EXTERNAL TABLE `{{name}}` STORED AS KUDU
