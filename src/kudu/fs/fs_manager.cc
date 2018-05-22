@@ -34,6 +34,7 @@
 #include "kudu/fs/error_manager.h"
 #include "kudu/fs/file_block_manager.h"
 #include "kudu/fs/fs.pb.h"
+#include "kudu/fs/fs_report.h"
 #include "kudu/fs/log_block_manager.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"
@@ -410,6 +411,12 @@ Status FsManager::Open(FsReport* report) {
   // Set an initial error handler to mark data directories as failed.
   error_manager_->SetErrorNotificationCb(ErrorHandlerType::DISK,
       Bind(&DataDirManager::MarkDataDirFailedByUuid, Unretained(dd_manager_.get())));
+
+  // Report wal and metadata directories.
+  if (report) {
+    report->wal_dir = canonicalized_wal_fs_root_.path;
+    report->metadata_dir = canonicalized_metadata_fs_root_.path;
+  }
 
   // Finally, initialize and open the block manager.
   InitBlockManager();

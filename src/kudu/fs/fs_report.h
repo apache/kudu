@@ -253,6 +253,12 @@ struct FsReport {
   // Data directories described by this report.
   std::vector<std::string> data_dirs;
 
+  // WAL directory.
+  std::string wal_dir;
+
+  // Metadata directory.
+  std::string metadata_dir;
+
   // General inconsistency checks.
   boost::optional<MissingBlockCheck> missing_block_check;
   boost::optional<OrphanedBlockCheck> orphaned_block_check;

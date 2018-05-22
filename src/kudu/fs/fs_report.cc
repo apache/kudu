@@ -279,6 +279,9 @@ string FsReport::Stats::ToString() const {
 ///////////////////////////////////////////////////////////////////////////////
 
 void FsReport::MergeFrom(const FsReport& other) {
+  DCHECK_EQ(metadata_dir, other.metadata_dir);
+  DCHECK_EQ(wal_dir, other.wal_dir);
+
   data_dirs.insert(data_dirs.end(),
                    other.data_dirs.begin(), other.data_dirs.end());
 
@@ -304,8 +307,10 @@ void FsReport::MergeFrom(const FsReport& other) {
 
 string FsReport::ToString() const {
   string s;
-  s += "Block manager report\n";
+  s += "FS layout report\n";
   s += "--------------------\n";
+  s += "wal directory: " + wal_dir + "\n";
+  s += "metadata directory: " + metadata_dir + "\n";
   SubstituteAndAppend(&s, "$0 data directories: $1\n", data_dirs.size(),
                       JoinStrings(data_dirs, ", "));
   s += stats.ToString();
