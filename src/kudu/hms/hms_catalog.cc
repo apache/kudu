@@ -421,7 +421,6 @@ Status HmsCatalog::PopulateTable(const string& id,
                                  const string& master_addresses,
                                  hive::Table* table) {
   RETURN_NOT_OK(ParseTableName(name, &table->dbName, &table->tableName));
-  table->tableType = HmsClient::kManagedTable;
 
   // Add the Kudu-specific parameters. This intentionally avoids overwriting
   // other parameters.
