@@ -576,6 +576,18 @@ TIP: Heap samples contain only summary information about allocations and do not 
 _data_ from the heap. It is safe to share heap samples in public without fear of exposing
 confidential or sensitive data.
 
+[[slow_dns_nscd]]
+=== Slow DNS Lookups and `nscd`
+
+If the logs contain messages about slow name resolution like
+
+----
+W0926 11:19:01.339553 27231 net_util.cc:129] Time spent resolving address for kudu-tserver.example.com: real 4.647s    user 0.000s     sys 0.000s
+----
+
+then it may help to run `nscd` (the name service cache daemon). Consult your
+operating system's documentation for how to install and enable `nscd`.
+
 == Issues using Kudu
 
 [[hive_handler]]
