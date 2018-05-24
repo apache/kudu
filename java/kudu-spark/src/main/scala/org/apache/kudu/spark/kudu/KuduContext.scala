@@ -359,7 +359,7 @@ class KuduContext(val kuduMaster: String,
               case DataTypes.LongType => operation.getRow.addLong(kuduIdx, row.getLong(sparkIdx))
               case DataTypes.FloatType => operation.getRow.addFloat(kuduIdx, row.getFloat(sparkIdx))
               case DataTypes.DoubleType => operation.getRow.addDouble(kuduIdx, row.getDouble(sparkIdx))
-              case DataTypes.TimestampType => operation.getRow.addLong(kuduIdx, KuduRelation.timestampToMicros(row.getTimestamp(sparkIdx)))
+              case DataTypes.TimestampType => operation.getRow.addTimestamp(kuduIdx, row.getTimestamp(sparkIdx))
               case DecimalType() => operation.getRow.addDecimal(kuduIdx, row.getDecimal(sparkIdx))
               case t => throw new IllegalArgumentException(s"No support for Spark SQL type $t")
             }

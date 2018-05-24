@@ -25,6 +25,7 @@ import static org.junit.Assert.fail;
 
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
+import java.sql.Timestamp;
 
 import org.junit.Test;
 
@@ -42,7 +43,7 @@ public class TestPartialRow {
     assertEquals(43, partialRow.getShort("int16"));
     assertEquals(44, partialRow.getInt("int32"));
     assertEquals(45, partialRow.getLong("int64"));
-    assertEquals(1234567890, partialRow.getLong("timestamp"));
+    assertEquals(new Timestamp(1234567890), partialRow.getTimestamp("timestamp"));
     assertEquals(52.35F, partialRow.getFloat("float"), 0.0f);
     assertEquals(53.35, partialRow.getDouble("double"), 0.0);
     assertEquals("fun with ütf\0", partialRow.getString("string"));
@@ -372,7 +373,7 @@ public class TestPartialRow {
     row.addShort("int16", (short) 43);
     row.addInt("int32", 44);
     row.addLong("int64", 45);
-    row.addLong("timestamp", 1234567890); // Fri, 13 Feb 2009 23:31:30 UTC
+    row.addTimestamp("timestamp", new Timestamp(1234567890));
     row.addBoolean("bool", true);
     row.addFloat("float", 52.35F);
     row.addDouble("double", 53.35);
@@ -397,7 +398,7 @@ public class TestPartialRow {
       case INT16: return partialRow.getShort(columnName);
       case INT32: return partialRow.getInt(columnName);
       case INT64: return partialRow.getLong(columnName);
-      case UNIXTIME_MICROS: return partialRow.getLong(columnName);
+      case UNIXTIME_MICROS: return partialRow.getTimestamp(columnName);
       case STRING: return partialRow.getString(columnName);
       case BINARY: return partialRow.getBinary(columnName);
       case FLOAT: return partialRow.getFloat(columnName);
@@ -415,7 +416,7 @@ public class TestPartialRow {
       case INT16: return partialRow.getShort(columnIndex);
       case INT32: return partialRow.getInt(columnIndex);
       case INT64: return partialRow.getLong(columnIndex);
-      case UNIXTIME_MICROS: return partialRow.getLong(columnIndex);
+      case UNIXTIME_MICROS: return partialRow.getTimestamp(columnIndex);
       case STRING: return partialRow.getString(columnIndex);
       case BINARY: return partialRow.getBinary(columnIndex);
       case FLOAT: return partialRow.getFloat(columnIndex);
@@ -433,7 +434,7 @@ public class TestPartialRow {
       case INT16: partialRow.addShort(columnName, (short) 43); break;
       case INT32: partialRow.addInt(columnName, 44); break;
       case INT64: partialRow.addLong(columnName, 45); break;
-      case UNIXTIME_MICROS: partialRow.addLong(columnName, 1234567890); break;
+      case UNIXTIME_MICROS: partialRow.addTimestamp(columnName, new Timestamp(1234567890)); break;
       case STRING: partialRow.addString(columnName, "fun with ütf\0"); break;
       case BINARY: partialRow.addBinary(columnName, new byte[] { 0, 1, 2, 3, 4 }); break;
       case FLOAT: partialRow.addFloat(columnName, 52.35F); break;
@@ -451,7 +452,7 @@ public class TestPartialRow {
       case INT16: partialRow.addShort(columnIndex, (short) 43); break;
       case INT32: partialRow.addInt(columnIndex, 44); break;
       case INT64: partialRow.addLong(columnIndex, 45); break;
-      case UNIXTIME_MICROS: partialRow.addLong(columnIndex, 1234567890); break;
+      case UNIXTIME_MICROS: partialRow.addTimestamp(columnIndex, new Timestamp(1234567890)); break;
       case STRING: partialRow.addString(columnIndex, "fun with ütf\0"); break;
       case BINARY: partialRow.addBinary(columnIndex, new byte[] { 0, 1, 2, 3, 4 }); break;
       case FLOAT: partialRow.addFloat(columnIndex, 52.35F); break;

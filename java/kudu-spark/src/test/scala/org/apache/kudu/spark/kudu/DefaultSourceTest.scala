@@ -16,10 +16,6 @@
  */
 package org.apache.kudu.spark.kudu
 
-import java.sql.Timestamp
-import java.text.SimpleDateFormat
-import java.util.TimeZone
-
 import scala.collection.JavaConverters._
 import scala.collection.immutable.IndexedSeq
 import scala.util.control.NonFatal
@@ -38,25 +34,6 @@ import org.apache.kudu.{Schema, Type}
 
 @RunWith(classOf[JUnitRunner])
 class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter with Matchers {
-
-  test("timestamp conversion") {
-    val epoch = new Timestamp(0)
-    assertEquals(0, KuduRelation.timestampToMicros(epoch))
-    assertEquals(epoch, KuduRelation.microsToTimestamp(0))
-
-    val t1 = new Timestamp(0)
-    t1.setNanos(123456000)
-    assertEquals(123456, KuduRelation.timestampToMicros(t1))
-    assertEquals(t1, KuduRelation.microsToTimestamp(123456))
-
-    val iso8601 = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS")
-    iso8601.setTimeZone(TimeZone.getTimeZone("UTC"))
-
-    val t3 = new Timestamp(iso8601.parse("1923-12-01T00:44:36.876").getTime)
-    t3.setNanos(876544000)
-    assertEquals(-1454368523123456L, KuduRelation.timestampToMicros(t3))
-    assertEquals(t3, KuduRelation.microsToTimestamp(-1454368523123456L))
-  }
 
   val rowCount = 10
   var sqlContext : SQLContext = _

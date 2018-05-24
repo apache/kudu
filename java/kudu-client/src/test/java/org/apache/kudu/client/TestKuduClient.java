@@ -21,7 +21,6 @@ import static org.apache.kudu.client.KuduPredicate.ComparisonOp.GREATER;
 import static org.apache.kudu.client.KuduPredicate.ComparisonOp.GREATER_EQUAL;
 import static org.apache.kudu.client.KuduPredicate.ComparisonOp.LESS;
 import static org.apache.kudu.client.KuduPredicate.ComparisonOp.LESS_EQUAL;
-import static org.apache.kudu.client.RowResult.timestampToString;
 import static org.hamcrest.CoreMatchers.containsString;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
@@ -47,6 +46,7 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterators;
 import com.stumbleupon.async.Deferred;
 
+import org.apache.kudu.util.TimestampUtil;
 import org.junit.Before;
 import org.junit.Test;
 import org.slf4j.Logger;
@@ -439,9 +439,9 @@ public class TestKuduClient extends BaseKuduTest {
     for (int i = 0; i < rowStrings.size(); i++) {
       StringBuilder expectedRow = new StringBuilder();
       expectedRow.append(String.format("UNIXTIME_MICROS key=%s, UNIXTIME_MICROS c1=",
-          timestampToString(timestamps.get(i))));
+          TimestampUtil.timestampToString(timestamps.get(i))));
       if (i % 2 == 1) {
-        expectedRow.append(timestampToString(timestamps.get(i)));
+        expectedRow.append(TimestampUtil.timestampToString(timestamps.get(i)));
       } else {
         expectedRow.append("NULL");
       }

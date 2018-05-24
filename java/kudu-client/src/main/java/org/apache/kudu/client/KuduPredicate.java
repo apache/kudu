@@ -22,6 +22,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigInteger;
 import java.math.BigDecimal;
+import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -35,6 +36,7 @@ import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import com.google.common.primitives.UnsignedBytes;
 import com.google.protobuf.ByteString;
+import org.apache.kudu.util.TimestampUtil;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 
@@ -295,6 +297,20 @@ public class KuduPredicate {
       default:
         throw new RuntimeException("unknown comparison op");
     }
+  }
+
+  /**
+   * Creates a new comparison predicate on a timestamp column.
+   * @param column the column schema
+   * @param op the comparison operation
+   * @param value the value to compare against
+   */
+  public static KuduPredicate newComparisonPredicate(ColumnSchema column,
+                                                     ComparisonOp op,
+                                                     Timestamp value) {
+    checkColumn(column, Type.UNIXTIME_MICROS);
+    long micros = TimestampUtil.timestampToMicros(value);
+    return newComparisonPredicate(column, op, micros);
   }
 
   /**
@@ -1079,7 +1095,7 @@ public class KuduPredicate {
       case INT16: return Short.toString(Bytes.getShort(value));
       case INT32: return Integer.toString(Bytes.getInt(value));
       case INT64: return Long.toString(Bytes.getLong(value));
-      case UNIXTIME_MICROS: return RowResult.timestampToString(Bytes.getLong(value));
+      case UNIXTIME_MICROS: return TimestampUtil.timestampToString(Bytes.getLong(value));
       case FLOAT: return Float.toString(Bytes.getFloat(value));
       case DOUBLE: return Double.toString(Bytes.getDouble(value));
       case STRING: {

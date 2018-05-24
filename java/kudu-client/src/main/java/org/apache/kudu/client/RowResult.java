@@ -19,6 +19,7 @@ package org.apache.kudu.client;
 
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
+import java.sql.Timestamp;
 import java.text.DateFormat;
 import java.text.FieldPosition;
 import java.text.SimpleDateFormat;
@@ -26,6 +27,7 @@ import java.util.BitSet;
 import java.util.Date;
 import java.util.TimeZone;
 
+import org.apache.kudu.util.TimestampUtil;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 
@@ -44,18 +46,6 @@ public class RowResult {
 
   private static final int INDEX_RESET_LOCATION = -1;
 
-  // Thread local DateFormat since they're not thread-safe.
-  private static final ThreadLocal<DateFormat> DATE_FORMAT = new ThreadLocal<DateFormat>() {
-    @Override
-    protected DateFormat initialValue() {
-      SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss");
-      sdf.setTimeZone(TimeZone.getTimeZone("UTC"));
-      return sdf;
-    }
-  };
-
-  private static final long MS_IN_S = 1000L;
-  private static final long US_IN_S = 1000L * 1000L;
   private int index = INDEX_RESET_LOCATION;
   private int offset;
   private BitSet nullsBitSet;
@@ -358,6 +348,38 @@ public class RowResult {
   }
 
   /**
+   * Get the specified column's Timestamp.
+   *
+   * @param columnName name of the column to get data for
+   * @return a Timestamp
+   * @throws IllegalArgumentException if the column doesn't exist,
+   * is null, is unset, or the type doesn't match the column's type
+   */
+  public Timestamp getTimestamp(String columnName) {
+    return getTimestamp(this.schema.getColumnIndex(columnName));
+  }
+
+  /**
+   * Get the specified column's Timestamp.
+   *
+   * @param columnIndex Column index in the schema
+   * @return a Timestamp
+   * @throws IllegalArgumentException if the column is null, is unset,
+   * or if the type doesn't match the column's type
+   * @throws IndexOutOfBoundsException if the column doesn't exist
+   */
+  public Timestamp getTimestamp(int columnIndex) {
+    checkValidColumn(columnIndex);
+    checkNull(columnIndex);
+    checkType(columnIndex, Type.UNIXTIME_MICROS);
+    ColumnSchema column = schema.getColumnByIndex(columnIndex);
+    long micros = Bytes.getLong(this.rowData.getRawArray(),
+        this.rowData.getRawOffset() +
+            getCurrentRowDataOffsetForColumn(columnIndex));
+    return TimestampUtil.microsToTimestamp(micros);
+  }
+
+  /**
    * Get the schema used for this scanner's column projection.
    * @return a column projection as a schema.
    */
@@ -569,19 +591,6 @@ public class RowResult {
   }
 
   /**
-   * Transforms a timestamp into a string, whose formatting and timezone is consistent
-   * across Kudu.
-   * @param timestamp the timestamp, in microseconds
-   * @return a string, in the format: YYYY-MM-DDTHH:MM:SS.ssssssZ
-   */
-  static String timestampToString(long timestamp) {
-    long tsMillis = timestamp / MS_IN_S;
-    long tsMicros = timestamp % US_IN_S;
-    String tsStr = DATE_FORMAT.get().format(new Date(tsMillis));
-    return String.format("%s.%06dZ", tsStr, tsMicros);
-  }
-
-  /**
    * Return the actual data from this row in a stringified key=value
    * form.
    */
@@ -616,7 +625,7 @@ public class RowResult {
             buf.append(getLong(i));
             break;
           case UNIXTIME_MICROS: {
-            buf.append(timestampToString(getLong(i)));
+            buf.append(TimestampUtil.timestampToString(getLong(i)));
           } break;
           case STRING:
             buf.append(getString(i));

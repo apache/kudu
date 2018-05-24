@@ -275,7 +275,7 @@ class KuduRelation(private val tableName: String,
       case value: Short => KuduPredicate.newComparisonPredicate(columnSchema, operator, value)
       case value: Int => KuduPredicate.newComparisonPredicate(columnSchema, operator, value)
       case value: Long => KuduPredicate.newComparisonPredicate(columnSchema, operator, value)
-      case value: Timestamp => KuduPredicate.newComparisonPredicate(columnSchema, operator, timestampToMicros(value))
+      case value: Timestamp => KuduPredicate.newComparisonPredicate(columnSchema, operator, value)
       case value: Float => KuduPredicate.newComparisonPredicate(columnSchema, operator, value)
       case value: Double => KuduPredicate.newComparisonPredicate(columnSchema, operator, value)
       case value: String => KuduPredicate.newComparisonPredicate(columnSchema, operator, value)
@@ -371,42 +371,5 @@ private[spark] object KuduRelation {
        | IsNotNull(_) => true
     case And(left, right) => supportsFilter(left) && supportsFilter(right)
     case _ => false
-  }
-
-  /**
-    * Converts a [[Timestamp]] to microseconds since the Unix epoch (1970-01-01T00:00:00Z).
-    *
-    * @param timestamp the timestamp to convert to microseconds
-    * @return the microseconds since the Unix epoch
-    */
-  def timestampToMicros(timestamp: Timestamp): Long = {
-    // Number of whole milliseconds since the Unix epoch, in microseconds.
-    val millis = timestamp.getTime * 1000
-    // Sub millisecond time since the Unix epoch, in microseconds.
-    val micros = (timestamp.getNanos % 1000000) / 1000
-    if (micros >= 0) {
-      millis + micros
-    } else {
-      millis + 1000000 + micros
-    }
-  }
-
-  /**
-    * Converts a microsecond offset from the Unix epoch (1970-01-01T00:00:00Z) to a [[Timestamp]].
-    *
-    * @param micros the offset in microseconds since the Unix epoch
-    * @return the corresponding timestamp
-    */
-  def microsToTimestamp(micros: Long): Timestamp = {
-    var millis = micros / 1000
-    var nanos = (micros % 1000000) * 1000
-    if (nanos < 0) {
-      millis -= 1
-      nanos += 1000000000
-    }
-
-    val timestamp = new Timestamp(millis)
-    timestamp.setNanos(nanos.asInstanceOf[Int])
-    timestamp
   }
 }

@@ -19,6 +19,7 @@ package org.apache.kudu.client;
 
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
+import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
@@ -27,6 +28,7 @@ import java.util.ListIterator;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
+import org.apache.kudu.util.TimestampUtil;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 import org.jboss.netty.util.CharsetUtil;
@@ -545,6 +547,69 @@ public class PartialRow {
   }
 
   /**
+   * Add a Timestamp for the specified column.
+   *
+   * Note: Timestamp instances with nanosecond precision are truncated to microseconds.
+   *
+   * @param columnIndex the column's index in the schema
+   * @param val value to add
+   * @throws IllegalArgumentException if the value doesn't match the column's type
+   * @throws IllegalStateException if the row was already applied
+   * @throws IndexOutOfBoundsException if the column doesn't exist
+   */
+  public void addTimestamp(int columnIndex, Timestamp val) {
+    checkNotFrozen();
+    ColumnSchema column = schema.getColumnByIndex(columnIndex);
+    checkColumn(column, Type.UNIXTIME_MICROS);
+    long micros = TimestampUtil.timestampToMicros(val);
+    Bytes.setLong(rowAlloc, micros, getPositionInRowAllocAndSetBitSet(columnIndex));
+  }
+
+  /**
+   * Add a Timestamp for the specified column.
+   *
+   * Note: Timestamp instances with nanosecond precision are truncated to microseconds.
+   *
+   * @param columnName Name of the column
+   * @param val value to add
+   * @throws IllegalArgumentException if the column doesn't exist
+   * or if the value doesn't match the column's type
+   * @throws IllegalStateException if the row was already applied
+   */
+  public void addTimestamp(String columnName, Timestamp val) {
+    addTimestamp(schema.getColumnIndex(columnName), val);
+  }
+
+  /**
+   * Get the specified column's Timestamp.
+   *
+   * @param columnName name of the column to get data for
+   * @return a Timestamp
+   * @throws IllegalArgumentException if the column doesn't exist,
+   * is null, is unset, or the type doesn't match the column's type
+   */
+  public Timestamp getTimestamp(String columnName) {
+    return getTimestamp(this.schema.getColumnIndex(columnName));
+  }
+
+  /**
+   * Get the specified column's Timestamp.
+   *
+   * @param columnIndex Column index in the schema
+   * @return a Timestamp
+   * @throws IllegalArgumentException if the column is null, is unset,
+   * or if the type doesn't match the column's type
+   * @throws IndexOutOfBoundsException if the column doesn't exist
+   */
+  public Timestamp getTimestamp(int columnIndex) {
+    checkColumn(schema.getColumnByIndex(columnIndex), Type.UNIXTIME_MICROS);
+    checkColumnExists(schema.getColumnByIndex(columnIndex));
+    checkValue(columnIndex);
+    long micros = Bytes.getLong(rowAlloc, schema.getColumnOffset(columnIndex));
+    return TimestampUtil.microsToTimestamp(micros);
+  }
+
+  /**
    * Add a String for the specified column.
    * @param columnIndex the column's index in the schema
    * @param val value to add
@@ -1053,7 +1118,7 @@ public class PartialRow {
         sb.append(Bytes.getLong(rowAlloc, schema.getColumnOffset(idx)));
         return;
       case UNIXTIME_MICROS:
-        sb.append(RowResult.timestampToString(
+        sb.append(TimestampUtil.timestampToString(
             Bytes.getLong(rowAlloc, schema.getColumnOffset(idx))));
         return;
       case FLOAT:

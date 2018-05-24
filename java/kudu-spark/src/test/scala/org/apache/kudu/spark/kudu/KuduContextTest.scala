@@ -20,6 +20,7 @@ import java.io.{ByteArrayInputStream, ByteArrayOutputStream, ObjectInputStream, 
 import java.math.BigDecimal
 import java.sql.Timestamp
 
+import org.apache.kudu.util.TimestampUtil
 import org.apache.spark.sql.functions.decode
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
@@ -77,7 +78,7 @@ class KuduContextTest extends FunSuite with TestContext with Matchers {
       val binaryBytes = s"bytes ${rows.apply(index)._2}".getBytes().toSeq
       assert(r.apply(8).asInstanceOf[Array[Byte]].toSeq == binaryBytes)
       assert(r.apply(9).asInstanceOf[Timestamp] ==
-        KuduRelation.microsToTimestamp(rows.apply(index)._4))
+        TimestampUtil.microsToTimestamp(rows.apply(index)._4))
       assert(r.apply(10).asInstanceOf[Byte] == rows.apply(index)._2.toByte)
       assert(r.apply(11).asInstanceOf[BigDecimal] == BigDecimal.valueOf(rows.apply(index)._2))
       assert(r.apply(12).asInstanceOf[BigDecimal] == BigDecimal.valueOf(rows.apply(index)._2))

@@ -23,6 +23,7 @@ import static org.junit.Assert.assertTrue;
 
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
+import java.sql.Timestamp;
 
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -62,7 +63,7 @@ public class TestRowResult extends BaseKuduTest {
     bb.position(7); // We're only inserting the bytebuffer part of the original array.
     row.addBinary(9, bb);
     row.setNull(10);
-    row.addLong(11, 11l);
+    row.addTimestamp(11, new Timestamp(11));
     row.addDecimal(12, BigDecimal.valueOf(12345, 3));
 
     KuduSession session = syncClient.newSession();
@@ -113,8 +114,8 @@ public class TestRowResult extends BaseKuduTest {
       assertEquals(true, rr.isNull(10));
       assertEquals(true, rr.isNull(allTypesSchema.getColumnByIndex(10).getName()));
 
-      assertEquals(11, rr.getLong(11));
-      assertEquals(11, rr.getLong(allTypesSchema.getColumnByIndex(11).getName()));
+      assertEquals(new Timestamp(11), rr.getTimestamp(11));
+      assertEquals(new Timestamp(11), rr.getTimestamp(allTypesSchema.getColumnByIndex(11).getName()));
 
       assertEquals(BigDecimal.valueOf(12345, 3), rr.getDecimal(12));
       assertEquals(BigDecimal.valueOf(12345, 3), rr.getDecimal(allTypesSchema.getColumnByIndex(12).getName()));

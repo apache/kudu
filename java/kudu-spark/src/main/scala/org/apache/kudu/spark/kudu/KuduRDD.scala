@@ -126,7 +126,7 @@ private class RowIterator(private val scanner: KuduScanner,
       case Type.INT16 => rowResult.getShort(i)
       case Type.INT32 => rowResult.getInt(i)
       case Type.INT64 => rowResult.getLong(i)
-      case Type.UNIXTIME_MICROS => KuduRelation.microsToTimestamp(rowResult.getLong(i))
+      case Type.UNIXTIME_MICROS => rowResult.getTimestamp(i)
       case Type.FLOAT => rowResult.getFloat(i)
       case Type.DOUBLE => rowResult.getDouble(i)
       case Type.STRING => rowResult.getString(i)
