@@ -107,6 +107,18 @@ a command-line tool called
 link:https://www.mediawiki.org/wiki/Gerrit/Tutorial#Installing_git-review[git-review],
 which you may find helpful.
 
+TIP: You can add reviewers automatically for a patch by adding their GitHub
+username or associated email address to the remote branch name following with
+the "r" flag:
+----
+git push gerrit HEAD:refs/for/master%r=githubuser,r=example@apache.org
+----
+
+TIP: To find possible reviewer candidates for your commit, use git blame or git
+log to find out who are involved with the area you're touching. It's also a
+good idea to add as reviewer whoever is involved with the JIRA you're working
+on.
+
 Gerrit will add a change ID to your commit message and will create a Gerrit review,
 whose URL will be emitted as part of the push reply. If desired, you can send a message
 to the `kudu-dev` mailing list, explaining your patch and requesting review.
