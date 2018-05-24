@@ -18,6 +18,7 @@
 #include "kudu/tools/ksck_remote.h"
 
 #include <cstdint>
+#include <map>
 #include <ostream>
 #include <unordered_map>
 
@@ -28,8 +29,8 @@
 #include <glog/logging.h>
 
 #include "kudu/client/client.h"
-#include "kudu/client/schema.h"
 #include "kudu/client/replica_controller-internal.h"
+#include "kudu/client/schema.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
@@ -50,6 +51,8 @@
 #include "kudu/server/server_base.pb.h"
 #include "kudu/server/server_base.proxy.h"
 #include "kudu/tablet/tablet.pb.h"
+#include "kudu/tools/ksck.h"
+#include "kudu/tools/ksck_results.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_service.pb.h"
@@ -150,9 +153,10 @@ Status RemoteKsckTabletServer::Init() {
   return Status::OK();
 }
 
-Status RemoteKsckTabletServer::FetchInfo() {
+Status RemoteKsckTabletServer::FetchInfo(KsckServerHealth* health) {
+  DCHECK(health);
   state_ = KsckFetchState::FETCH_FAILED;
-
+  *health = KsckServerHealth::UNAVAILABLE;
   {
     server::GetStatusRequestPB req;
     server::GetStatusResponsePB resp;
@@ -162,6 +166,7 @@ Status RemoteKsckTabletServer::FetchInfo() {
                           "could not get status from server");
     string response_uuid = resp.status().node_instance().permanent_uuid();
     if (response_uuid != uuid()) {
+      *health = KsckServerHealth::WRONG_SERVER_UUID;
       return Status::RemoteError(Substitute("ID reported by tablet server ($0) doesn't "
                                  "match the expected ID: $1",
                                  response_uuid, uuid()));
@@ -197,10 +202,13 @@ Status RemoteKsckTabletServer::FetchInfo() {
   }
 
   state_ = KsckFetchState::FETCHED;
+  *health = KsckServerHealth::HEALTHY;
   return Status::OK();
 }
 
-Status RemoteKsckTabletServer::FetchConsensusState() {
+Status RemoteKsckTabletServer::FetchConsensusState(KsckServerHealth* health) {
+  DCHECK(health);
+  *health = KsckServerHealth::UNAVAILABLE;
   tablet_consensus_state_map_.clear();
   consensus::GetConsensusStateRequestPB req;
   consensus::GetConsensusStateResponsePB resp;
@@ -219,6 +227,7 @@ Status RemoteKsckTabletServer::FetchConsensusState() {
     }
   }
 
+  *health = KsckServerHealth::HEALTHY;
   return Status::OK();
 }
 

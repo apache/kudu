@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/tools/ksck_remote.h"
+
 #include <cstdint>
 #include <memory>
 #include <sstream>
@@ -27,8 +29,8 @@
 #include <gtest/gtest.h>
 
 #include "kudu/client/client.h"
-#include "kudu/client/shared_ptr.h"
 #include "kudu/client/schema.h"
+#include "kudu/client/shared_ptr.h"
 #include "kudu/client/write_op.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/gutil/gscoped_ptr.h"
@@ -39,12 +41,12 @@
 #include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/tools/data_gen_util.h"
 #include "kudu/tools/ksck.h"
-#include "kudu/tools/ksck_remote.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/net/sockaddr.h"
 #include "kudu/util/promise.h"
 #include "kudu/util/random.h"
 #include "kudu/util/status.h"
@@ -238,9 +240,16 @@ TEST_F(RemoteKsckTest, TestTabletServerMismatchedUUID) {
   ASSERT_TRUE(ksck_->FetchInfoFromTabletServers().IsNetworkError());
   ASSERT_OK(ksck_->PrintResults());
 
-  string match_string = "Remote error: ID reported by tablet server "
-                        "($0) doesn't match the expected ID: $1";
-  ASSERT_STR_CONTAINS(err_stream_.str(), strings::Substitute(match_string, new_uuid, old_uuid));
+  string match_string = "Error from $0: Remote error: ID reported by tablet server "
+                        "($1) doesn't match the expected ID: $2 (WRONG_SERVER_UUID)";
+  ASSERT_STR_CONTAINS(err_stream_.str(), strings::Substitute(match_string, address.ToString(),
+                                                             new_uuid, old_uuid));
+  tserver::MiniTabletServer* ts = mini_cluster_->mini_tablet_server(1);
+  ASSERT_STR_CONTAINS(err_stream_.str(), strings::Substitute("$0 | $1 | HEALTHY", ts->uuid(),
+                                                             ts->bound_rpc_addr().ToString()));
+  ts = mini_cluster_->mini_tablet_server(2);
+  ASSERT_STR_CONTAINS(err_stream_.str(), strings::Substitute("$0 | $1 | HEALTHY", ts->uuid(),
+                                                             ts->bound_rpc_addr().ToString()));
 }
 
 TEST_F(RemoteKsckTest, TestTableConsistency) {

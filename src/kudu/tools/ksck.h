@@ -281,11 +281,20 @@ class KsckTabletServer {
   explicit KsckTabletServer(std::string uuid) : uuid_(std::move(uuid)) {}
   virtual ~KsckTabletServer() { }
 
-  // Connects to the configured tablet server and populates the fields of this class.
-  virtual Status FetchInfo() = 0;
+  // Connects to the configured tablet server and populates the fields of this class. 'health' must
+  // not be nullptr.
+  //
+  // If Status is OK, 'health' will be HEALTHY
+  // If the UUID is not what ksck expects, 'health' will be WRONG_SERVER_UUID
+  // Otherwise 'health' will be UNAVAILABLE
+  virtual Status FetchInfo(KsckServerHealth* health) = 0;
 
-  // Connects to the configured tablet server and populates the consensus map.
-  virtual Status FetchConsensusState() = 0;
+  // Connects to the configured tablet server and populates the consensus map. 'health' must not be
+  // nullptr.
+  //
+  // If Status is OK, 'health' will be HEALTHY
+  // Otherwise 'health' will be UNAVAILABLE
+  virtual Status FetchConsensusState(KsckServerHealth* health) = 0;
 
   // Executes a checksum scan on the associated tablet, and runs the callback
   // with the result. The callback must be threadsafe and non-blocking.

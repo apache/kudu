@@ -101,10 +101,13 @@ class MockKsckTabletServer : public KsckTabletServer {
   explicit MockKsckTabletServer(const string& uuid)
       : KsckTabletServer(uuid),
         fetch_info_status_(Status::OK()),
+        fetch_info_health_(KsckServerHealth::HEALTHY),
         address_("<mock>") {
   }
 
-  Status FetchInfo() override {
+  Status FetchInfo(KsckServerHealth* health) override {
+    CHECK(health);
+    *health = fetch_info_health_;
     timestamp_ = 12345;
     if (fetch_info_status_.ok()) {
       state_ = KsckFetchState::FETCHED;
@@ -114,7 +117,7 @@ class MockKsckTabletServer : public KsckTabletServer {
     return fetch_info_status_;
   }
 
-  Status FetchConsensusState() override {
+  Status FetchConsensusState(KsckServerHealth* /*health*/) override {
     return Status::OK();
   }
 
@@ -131,8 +134,9 @@ class MockKsckTabletServer : public KsckTabletServer {
     return address_;
   }
 
-  // Public because the unit tests mutate this variable directly.
+  // Public because the unit tests mutate these variables directly.
   Status fetch_info_status_;
+  KsckServerHealth fetch_info_health_;
 
  private:
   const string address_;
@@ -828,6 +832,8 @@ TEST_F(KsckTest, TestWrongUUIDTabletServer) {
                                      "doesn't match the expected ID");
   static_pointer_cast<MockKsckTabletServer>(cluster_->tablet_servers_["ts-id-1"])
     ->fetch_info_status_ = error;
+  static_pointer_cast<MockKsckTabletServer>(cluster_->tablet_servers_["ts-id-1"])
+    ->fetch_info_health_ = KsckServerHealth::WRONG_SERVER_UUID;
 
   ASSERT_OK(ksck_->CheckClusterRunning());
   ASSERT_OK(ksck_->FetchTableAndTabletInfo());
@@ -851,6 +857,8 @@ TEST_F(KsckTest, TestBadTabletServer) {
   Status error = Status::NetworkError("Network failure");
   static_pointer_cast<MockKsckTabletServer>(cluster_->tablet_servers_["ts-id-1"])
       ->fetch_info_status_ = error;
+  static_pointer_cast<MockKsckTabletServer>(cluster_->tablet_servers_["ts-id-1"])
+      ->fetch_info_health_ = KsckServerHealth::UNAVAILABLE;
 
   ASSERT_OK(ksck_->CheckClusterRunning());
   ASSERT_OK(ksck_->FetchTableAndTabletInfo());
@@ -870,7 +878,7 @@ TEST_F(KsckTest, TestBadTabletServer) {
       " ts-id-1 | <mock>  | UNAVAILABLE\n");
   ASSERT_STR_CONTAINS(
       err_stream_.str(),
-      "Error from <mock>: Network error: Network failure\n");
+      "Error from <mock>: Network error: Network failure (UNAVAILABLE)\n");
   ASSERT_STR_CONTAINS(
       err_stream_.str(),
       "Tablet tablet-id-0 of table 'test' is under-replicated: 1 replica(s) not RUNNING\n"

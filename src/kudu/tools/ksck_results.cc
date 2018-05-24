@@ -295,7 +295,8 @@ Status PrintServerHealthSummaries(KsckServerType type,
   // This isn't done as part of the table because the messages can be quite long.
   for (const auto& s : summaries) {
     if (s.health == KsckServerHealth::HEALTHY) continue;
-    out << Substitute("Error from $1: $2", s.uuid, s.address, s.status.ToString()) << endl;
+    out << Substitute("Error from $0: $1 ($2)", s.address, s.status.ToString(),
+                      ServerHealthToString(s.health)) << endl;
   }
   return Status::OK();
 }

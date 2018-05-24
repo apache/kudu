@@ -292,9 +292,10 @@ Status Ksck::FetchInfoFromTabletServers() {
     const auto& ts = entry.second;
     CHECK_OK(pool->SubmitFunc([&]() {
           VLOG(1) << "Going to connect to tablet server: " << ts->uuid();
-          Status s = ts->FetchInfo().AndThen([&ts]() {
+          KsckServerHealth health;
+          Status s = ts->FetchInfo(&health).AndThen([&ts, &health]() {
                 if (FLAGS_consensus) {
-                  return ts->FetchConsensusState();
+                  return ts->FetchConsensusState(&health);
                 }
                 return Status::OK();
               });
@@ -304,14 +305,8 @@ Status Ksck::FetchInfoFromTabletServers() {
           summary.status = s;
           if (!s.ok()) {
             bad_servers.Increment();
-            if (s.IsRemoteError()) {
-              summary.health = KsckServerHealth::WRONG_SERVER_UUID;
-            } else {
-              summary.health = KsckServerHealth::UNAVAILABLE;
-              }
-          } else {
-            summary.health = KsckServerHealth::HEALTHY;
           }
+          summary.health = health;
 
           std::lock_guard<simple_spinlock> lock(tablet_server_summaries_lock);
           tablet_server_summaries.push_back(std::move(summary));
