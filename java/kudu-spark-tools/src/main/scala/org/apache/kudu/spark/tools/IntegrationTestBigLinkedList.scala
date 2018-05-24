@@ -25,7 +25,7 @@ import org.apache.kudu.mapreduce.tools.BigLinkedListCommon.{Xoroshiro128PlusRand
 import org.apache.kudu.spark.kudu.KuduContext
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.{SparkConf, TaskContext}
-import org.apache.yetus.audience.InterfaceAudience
+import org.apache.yetus.audience.{InterfaceAudience, InterfaceStability}
 import org.slf4j.{Logger, LoggerFactory}
 
 import scala.util.Try
@@ -42,6 +42,8 @@ import scala.util.Try
   *     This is hopefully easier to understand, and has the advantage of stressing
   *     slightly different code paths than the MR version.
   */
+@InterfaceAudience.Private
+@InterfaceStability.Unstable
 object IntegrationTestBigLinkedList {
   val LOG: Logger = LoggerFactory.getLogger(IntegrationTestBigLinkedList.getClass)
 

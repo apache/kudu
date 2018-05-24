@@ -25,8 +25,10 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.SparkConf
 import org.slf4j.{Logger, LoggerFactory}
 import org.apache.kudu.spark.kudu._
-import org.apache.yetus.audience.InterfaceAudience
+import org.apache.yetus.audience.{InterfaceAudience, InterfaceStability}
 
+@InterfaceAudience.Public
+@InterfaceStability.Unstable //TODO: Unstable due to KUDU-2454
 object ImportExportKudu {
   val LOG: Logger = LoggerFactory.getLogger(ImportExportKudu.getClass)
 
