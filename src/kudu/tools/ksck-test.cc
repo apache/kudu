@@ -756,6 +756,28 @@ TEST_F(KsckTest, TestMasterUnavailable) {
   CheckJsonStringVsKsckResults(KsckResultsToJsonString(), ksck_->results());
 }
 
+TEST_F(KsckTest, TestUnauthorized) {
+  Status noauth = Status::RemoteError("Not authorized: unauthorized access to method");
+  shared_ptr<MockKsckMaster> master =
+      std::static_pointer_cast<MockKsckMaster>(cluster_->masters_.at(1));
+  master->fetch_info_status_ = noauth;
+  shared_ptr<MockKsckTabletServer> tserver =
+      std::static_pointer_cast<MockKsckTabletServer>(
+          cluster_->tablet_servers().begin()->second);
+  tserver->fetch_info_status_ = noauth;
+  Status s = RunKsck();
+  ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "re-run ksck with administrator privileges");
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+                      "failed to gather info from 1 of 3 "
+                      "masters due to lack of admin privileges");
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+                      "failed to gather info from 1 of 3 "
+                      "tablet servers due to lack of admin privileges");
+
+  CheckJsonStringVsKsckResults(KsckResultsToJsonString(), ksck_->results());
+}
+
 // A wrong-master-uuid situation can happen if a master that is part of, e.g.,
 // a 3-peer config fails permanently and is wiped and reborn on the same address
 // with a new uuid.

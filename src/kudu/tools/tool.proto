@@ -221,6 +221,7 @@ message KsckServerHealthSummaryPB {
     HEALTHY = 0;
     UNAVAILABLE = 1;
     WRONG_SERVER_UUID = 2;
+    UNAUTHORIZED = 3;
   }
   optional string uuid = 1;
   optional string address = 2;

@@ -142,6 +142,11 @@ void BuildKsckConsensusStateForConfigMember(const consensus::ConsensusStatePB& c
   }
 }
 
+bool IsNotAuthorizedMethodAccess(const Status& s) {
+  return s.IsRemoteError() &&
+         s.ToString().find("Not authorized: unauthorized access to method") != string::npos;
+}
+
 } // anonymous namespace
 
 ChecksumOptions::ChecksumOptions()
@@ -192,6 +197,7 @@ Ksck::Ksck(shared_ptr<KsckCluster> cluster, ostream* out)
 
 Status Ksck::CheckMasterHealth() {
   int bad_masters = 0;
+  int unauthorized_masters = 0;
   vector<KsckServerHealthSummary> master_summaries;
   // There shouldn't be more than 5 masters, so we'll keep it simple and gather
   // info in sequence instead of spreading it across a threadpool.
@@ -204,14 +210,28 @@ Status Ksck::CheckMasterHealth() {
     sh.address = master->address();
     sh.status = s;
     if (!s.ok()) {
+      if (IsNotAuthorizedMethodAccess(s)) {
+        sh.health = KsckServerHealth::UNAUTHORIZED;
+        unauthorized_masters++;
+      } else {
+        sh.health = KsckServerHealth::UNAVAILABLE;
+      }
       bad_masters++;
-      sh.health = KsckServerHealth::UNAVAILABLE;
     }
     master_summaries.push_back(std::move(sh));
   }
   results_.master_summaries.swap(master_summaries);
 
   int num_masters = cluster_->masters().size();
+
+  // Return a NotAuthorized status if any master has auth errors, since this
+  // indicates ksck may not be able to gather full and accurate info.
+  if (unauthorized_masters > 0) {
+    return Status::NotAuthorized(
+        Substitute("failed to gather info from $0 of $1 "
+                   "masters due to lack of admin privileges",
+                   unauthorized_masters, num_masters));
+  }
   if (bad_masters > 0) {
     return Status::NetworkError(
         Substitute("failed to gather info from all masters: $0 of $1 had errors",
@@ -283,6 +303,7 @@ Status Ksck::FetchInfoFromTabletServers() {
                 .Build(&pool));
 
   AtomicInt<int32_t> bad_servers(0);
+  AtomicInt<int32_t> unauthorized_servers(0);
   VLOG(1) << "Fetching info from all " << servers_count << " tablet servers";
 
   vector<KsckServerHealthSummary> tablet_server_summaries;
@@ -304,6 +325,10 @@ Status Ksck::FetchInfoFromTabletServers() {
           summary.address = entry.second->address();
           summary.status = s;
           if (!s.ok()) {
+            if (IsNotAuthorizedMethodAccess(s)) {
+              health = KsckServerHealth::UNAUTHORIZED;
+              unauthorized_servers.Increment();
+            }
             bad_servers.Increment();
           }
           summary.health = health;
@@ -318,6 +343,14 @@ Status Ksck::FetchInfoFromTabletServers() {
 
   if (bad_servers.Load() == 0) {
     return Status::OK();
+  }
+  // Return a NotAuthorized status if any tablet server has auth errors, since
+  // this indicates ksck may not be able to gather full and accurate info.
+  if (unauthorized_servers.Load() > 0) {
+    return Status::NotAuthorized(
+        Substitute("failed to gather info from $0 of $1 tablet servers due "
+                   "to lack of admin privileges",
+                   unauthorized_servers.Load(), servers_count));
   }
   return Status::NetworkError(
       Substitute("failed to gather info for all tablet servers: $0 of $1 had errors",
@@ -357,6 +390,14 @@ Status Ksck::Run() {
                         results_.error_messages, "checksum scan error");
   }
 
+  // Use a special-case error if there are auth errors. This makes it harder
+  // for admins to miss that ksck isn't working right because they forgot to
+  // (e.g.) sudo -u kudu when running ksck!
+  if (std::any_of(std::begin(results_.error_messages),
+                  std::end(results_.error_messages),
+                  [](const Status& s) { return s.IsNotAuthorized(); })) {
+    return Status::NotAuthorized("re-run ksck with administrator privileges");
+  }
   if (!results_.error_messages.empty()) {
     return Status::RuntimeError("ksck discovered errors");
   }

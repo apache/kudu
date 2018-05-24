@@ -119,6 +119,9 @@ enum class KsckServerHealth {
   // The server is healthy.
   HEALTHY,
 
+  // The server rejected attempts to communicate as unauthorized.
+  UNAUTHORIZED,
+
   // The server can't be contacted.
   UNAVAILABLE,
 

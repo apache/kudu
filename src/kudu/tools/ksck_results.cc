@@ -153,6 +153,8 @@ const char* const ServerHealthToString(KsckServerHealth sh) {
   switch (sh) {
     case KsckServerHealth::HEALTHY:
       return "HEALTHY";
+    case KsckServerHealth::UNAUTHORIZED:
+      return "UNAUTHORIZED";
     case KsckServerHealth::UNAVAILABLE:
       return "UNAVAILABLE";
     case KsckServerHealth::WRONG_SERVER_UUID:
@@ -166,10 +168,12 @@ int ServerHealthScore(KsckServerHealth sh) {
   switch (sh) {
     case KsckServerHealth::HEALTHY:
       return 0;
-    case KsckServerHealth::UNAVAILABLE:
+    case KsckServerHealth::UNAUTHORIZED:
       return 1;
-    case KsckServerHealth::WRONG_SERVER_UUID:
+    case KsckServerHealth::UNAVAILABLE:
       return 2;
+    case KsckServerHealth::WRONG_SERVER_UUID:
+      return 3;
     default:
       LOG(FATAL) << "Unknown KsckServerHealth";
   }
@@ -446,6 +450,9 @@ void KsckServerHealthSummaryToPb(const KsckServerHealthSummary& summary,
   switch (summary.health) {
     case KsckServerHealth::HEALTHY:
       pb->set_health(KsckServerHealthSummaryPB_ServerHealth_HEALTHY);
+      break;
+    case KsckServerHealth::UNAUTHORIZED:
+      pb->set_health(KsckServerHealthSummaryPB_ServerHealth_UNAUTHORIZED);
       break;
     case KsckServerHealth::UNAVAILABLE:
       pb->set_health(KsckServerHealthSummaryPB_ServerHealth_UNAVAILABLE);
