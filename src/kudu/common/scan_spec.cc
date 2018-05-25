@@ -136,7 +136,10 @@ void ScanSpec::OptimizeScan(const Schema& schema,
   // predicates in the optimization step.
   if (!CanShortCircuit()) {
     LiftPrimaryKeyBounds(schema, arena);
-    PushPredicatesIntoPrimaryKeyBounds(schema, arena, pool, remove_pushed_predicates);
+    // Predicates may be has None, after merge PrimaryKeyBounds and Predicates
+    if (!CanShortCircuit()) {
+      PushPredicatesIntoPrimaryKeyBounds(schema, arena, pool, remove_pushed_predicates);
+    }
   }
 
   // KUDU-1652: Filter IS NOT NULL predicates for non-nullable columns.

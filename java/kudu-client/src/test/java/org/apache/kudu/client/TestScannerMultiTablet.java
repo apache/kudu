@@ -121,8 +121,13 @@ public class TestScannerMultiTablet extends BaseKuduTest {
   // Test mixing start/end row keys with predicates.
   @Test(timeout = 100000)
   public void testKeysAndPredicates() throws Exception {
+    // Value that doesn't exist, predicates has primary column
+    ColumnRangePredicate predicate = new ColumnRangePredicate(schema.getColumnByIndex(1));
+    predicate.setUpperBound("1");
+    assertEquals(0, countRowsInScan(getScanner("1", "2", "1", "3", predicate)));
+
     // First row from the 2nd tablet.
-    ColumnRangePredicate predicate = new ColumnRangePredicate(schema.getColumnByIndex(2));
+    predicate = new ColumnRangePredicate(schema.getColumnByIndex(2));
     predicate.setLowerBound("1");
     predicate.setUpperBound("1");
     assertEquals(1, countRowsInScan(getScanner("1", "", "2", "", predicate)));
