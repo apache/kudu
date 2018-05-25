@@ -2038,8 +2038,8 @@ bool LogBlockManager::AddLogBlockUnlocked(scoped_refptr<LogBlock> lb) {
     return false;
   }
 
-  VLOG(2) << Substitute("Added block: offset $0, length $1",
-                        lb->offset(), lb->length());
+  VLOG(2) << Substitute("Added block: id $0, offset $1, length $2",
+                        lb->block_id().ToString(), lb->offset(), lb->length());
 
   // There may already be an entry in open_block_ids_ (e.g. we just finished
   // writing out a block).
@@ -2143,8 +2143,8 @@ Status LogBlockManager::RemoveLogBlockUnlocked(const BlockId& block_id,
   *lb = std::move(it->second);
   blocks_by_block_id_.erase(it);
 
-  VLOG(2) << Substitute("Removed block: offset $0, length $1",
-                        (*lb)->offset(), (*lb)->length());
+  VLOG(2) << Substitute("Removed block: id $0, offset $1, length $2",
+                        (*lb)->block_id().ToString(), (*lb)->offset(), (*lb)->length());
   return Status::OK();
 }
 

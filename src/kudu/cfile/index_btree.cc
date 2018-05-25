@@ -106,8 +106,7 @@ Status IndexTreeBuilder::Finish(BTreeInfoPB *info) {
   BlockPointer ptr;
   Status s = FinishAndWriteBlock(root_level, &ptr);
   if (!s.ok()) {
-    LOG(ERROR) << "Unable to flush root index block";
-    return s;
+    return s.CloneAndPrepend("Unable to flush root index block");
   }
 
   VLOG(1) << "Flushed root index block: " << ptr.ToString();

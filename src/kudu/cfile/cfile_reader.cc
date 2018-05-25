@@ -488,8 +488,8 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr, CacheControl cache_contro
     CompressedBlockDecoder uncompressor(codec_, cfile_version_, block);
     Status s = uncompressor.Init();
     if (!s.ok()) {
-      LOG(WARNING) << "Unable to validate compressed block at "
-                   << ptr.offset() << " of size " << block.size() << ": "
+      LOG(WARNING) << "Unable to validate compressed block " << block_id().ToString()
+                   << " at " << ptr.offset() << " of size " << block.size() << ": "
                    << s.ToString();
       return s;
     }
@@ -505,7 +505,8 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr, CacheControl cache_contro
     }
     s = uncompressor.UncompressIntoBuffer(decompressed_scratch.get());
     if (!s.ok()) {
-      LOG(WARNING) << "Unable to uncompress block at " << ptr.offset()
+      LOG(WARNING) << "Unable to uncompress block " << block_id().ToString()
+                   << " at " << ptr.offset()
                    << " of size " <<  block.size() << ": " << s.ToString();
       return s;
     }
