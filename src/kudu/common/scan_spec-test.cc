@@ -642,34 +642,67 @@ TEST_F(CompositeIntKeysTest, TestLiftPrimaryKeyBounds_BothBounds) {
 // Test that implicit constraints specified in the primary key upper/lower
 // bounds are merged into the set of predicates.
 TEST_F(CompositeIntKeysTest, TestLiftPrimaryKeyBounds_WithPredicates) {
-  // b >= 15
-  // c >= 3
-  // c <= 100
-  // key >= (10, min, min)
-  //      < (10,  90, min)
-  ScanSpec spec;
-  AddPredicate<int8_t>(&spec, "b", GE, 15);
-  AddPredicate<int8_t>(&spec, "c", GE, 3);
-  AddPredicate<int8_t>(&spec, "c", LE, 100);
+  {
+    // b >= 15
+    // c >= 3
+    // c <= 100
+    // key >= (10, min, min)
+    //      < (10,  90, min)
+    ScanSpec spec;
+    AddPredicate<int8_t>(&spec, "b", GE, 15);
+    AddPredicate<int8_t>(&spec, "c", GE, 3);
+    AddPredicate<int8_t>(&spec, "c", LE, 100);
 
-  KuduPartialRow lower_bound(&schema_);
-  CHECK_OK(lower_bound.SetInt8("a", 10));
-  CHECK_OK(lower_bound.SetInt8("b", INT8_MIN));
-  CHECK_OK(lower_bound.SetInt8("c", INT8_MIN));
+    KuduPartialRow lower_bound(&schema_);
+    CHECK_OK(lower_bound.SetInt8("a", 10));
+    CHECK_OK(lower_bound.SetInt8("b", INT8_MIN));
+    CHECK_OK(lower_bound.SetInt8("c", INT8_MIN));
 
-  KuduPartialRow upper_bound(&schema_);
-  CHECK_OK(upper_bound.SetInt8("a", 10));
-  CHECK_OK(upper_bound.SetInt8("b", 90));
-  CHECK_OK(upper_bound.SetInt8("c", INT8_MIN));
+    KuduPartialRow upper_bound(&schema_);
+    CHECK_OK(upper_bound.SetInt8("a", 10));
+    CHECK_OK(upper_bound.SetInt8("b", 90));
+    CHECK_OK(upper_bound.SetInt8("c", INT8_MIN));
 
-  SetLowerBound(&spec, lower_bound);
-  SetExclusiveUpperBound(&spec, upper_bound);
+    SetLowerBound(&spec, lower_bound);
+    SetExclusiveUpperBound(&spec, upper_bound);
 
-  spec.OptimizeScan(schema_, &arena_, &pool_, false);
-  ASSERT_EQ(3, spec.predicates().size());
-  ASSERT_EQ("a = 10", FindOrDie(spec.predicates(), "a").ToString());
-  ASSERT_EQ("b >= 15 AND b < 90", FindOrDie(spec.predicates(), "b").ToString());
-  ASSERT_EQ("c >= 3 AND c < 101", FindOrDie(spec.predicates(), "c").ToString());
+    spec.OptimizeScan(schema_, &arena_, &pool_, false);
+    ASSERT_EQ(3, spec.predicates().size());
+    ASSERT_EQ("a = 10", FindOrDie(spec.predicates(), "a").ToString());
+    ASSERT_EQ("b >= 15 AND b < 90", FindOrDie(spec.predicates(), "b").ToString());
+    ASSERT_EQ("c >= 3 AND c < 101", FindOrDie(spec.predicates(), "c").ToString());
+  }
+  {
+    // b >= 15
+    // c >= 3
+    // c <= 100
+    // key >= (10,  5, min)
+    //      < (10, 10, min)
+    ScanSpec spec;
+    AddPredicate<int8_t>(&spec, "b", GE, 15);
+    AddPredicate<int8_t>(&spec, "c", GE, 3);
+    AddPredicate<int8_t>(&spec, "c", LE, 100);
+
+    KuduPartialRow lower_bound(&schema_);
+    CHECK_OK(lower_bound.SetInt8("a", 10));
+    CHECK_OK(lower_bound.SetInt8("b", 5));
+    CHECK_OK(lower_bound.SetInt8("c", INT8_MIN));
+
+    KuduPartialRow upper_bound(&schema_);
+    CHECK_OK(upper_bound.SetInt8("a", 10));
+    CHECK_OK(upper_bound.SetInt8("b", 10));
+    CHECK_OK(upper_bound.SetInt8("c", INT8_MIN));
+
+    SetLowerBound(&spec, lower_bound);
+    SetExclusiveUpperBound(&spec, upper_bound);
+
+    spec.OptimizeScan(schema_, &arena_, &pool_, false);
+    ASSERT_EQ(3, spec.predicates().size());
+    ASSERT_EQ("a = 10", FindOrDie(spec.predicates(), "a").ToString());
+    ASSERT_EQ("b NONE", FindOrDie(spec.predicates(), "b").ToString());
+    ASSERT_EQ("c >= 3 AND c < 101", FindOrDie(spec.predicates(), "c").ToString());
+    ASSERT_EQ(true, spec.CanShortCircuit());
+  }
 }
 
 // Tests for String parts in composite keys
