@@ -25,6 +25,7 @@
 #include <string>
 #include <vector>
 
+#include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
@@ -32,12 +33,21 @@
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/errno.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/subprocess.h"
 
 DECLARE_bool(inject_unsync_time_errors);
+
+DEFINE_int32(ntp_initial_sync_wait_secs, 60,
+             "Amount of time in seconds to wait for NTP to synchronize the "
+             "clock at startup. A value of zero means Kudu will fail to start "
+             "if the clock is unsynchronized. This flag can prevent Kudu from "
+             "crashing if it starts before NTP can synchronize the clock.");
+TAG_FLAG(ntp_initial_sync_wait_secs, evolving);
+TAG_FLAG(ntp_initial_sync_wait_secs, advanced);
 
 using std::string;
 using std::vector;
@@ -63,8 +73,9 @@ Status CallAdjTime(timex* tx) {
     case TIME_OK:
       return Status::OK();
     case -1: // generic error
-      return Status::ServiceUnavailable("Error reading clock. ntp_adjtime() failed",
-                                        ErrnoToString(errno));
+      // From 'man 2 adjtimex', ntp_adjtime failure implies an improper 'tx'.
+      return Status::InvalidArgument("Error reading clock. ntp_adjtime() failed",
+                                     ErrnoToString(errno));
     case TIME_ERROR:
       return Status::ServiceUnavailable("Error reading clock. Clock considered unsynchronized");
     default:
@@ -100,6 +111,46 @@ void TryRun(vector<string> cmd, vector<string>* log) {
 
 }
 
+Status WaitForNtp() {
+  int32_t wait_secs = FLAGS_ntp_initial_sync_wait_secs;
+  if (wait_secs <= 0) {
+    LOG(INFO) << Substitute("Not waiting for clock synchronization: "
+                            "--ntp_initial_sync_wait_secs=$0 is nonpositive",
+                            wait_secs);
+    return Status::OK();
+  }
+  LOG(INFO) << Substitute("Waiting up to --ntp_initial_sync_wait_secs=$0 "
+                          "seconds for the clock to synchronize", wait_secs);
+  vector<string> cmd;
+  string exe;
+  Status s = FindExecutable("ntp-wait", {"/sbin", "/usr/sbin"}, &exe);
+  if (s.ok()) {
+    // -s is the number of seconds to sleep between retries.
+    // -n is the number of tries before giving up.
+    cmd = {exe, "-s", "1", "-n", std::to_string(wait_secs)};
+  } else {
+    LOG(WARNING) << "Could not find ntp-wait; trying chrony waitsync instead: "
+                 << s.ToString();
+    s = FindExecutable("chronyc", {"/sbin", "/usr/sbin"}, &exe);
+    if (!s.ok()) {
+      LOG(WARNING) << "Could not find chronyc: " << s.ToString();
+      return Status::NotFound("failed to find ntp-wait or chronyc");
+    }
+    // Usage: waitsync max-tries max-correction max-skew interval.
+    // max-correction and max-skew parameters as 0 means no checks.
+    // The interval is measured in seconds.
+    cmd = {exe, "waitsync", std::to_string(wait_secs), "0", "0", "1"};
+  }
+  // Unfortunately, neither ntp-wait nor chronyc waitsync print useful messages.
+  // Instead, rely on DumpDiagnostics.
+  s = Subprocess::Call(cmd);
+  if (!s.ok()) {
+    return s.CloneAndPrepend(
+        Substitute("failed to wait for clock sync using command '$0'",
+                   JoinStrings(cmd, " ")));
+  }
+  return Status::OK();
+}
 } // anonymous namespace
 
 void SystemNtp::DumpDiagnostics(vector<string>* log) const {
@@ -131,6 +182,11 @@ void SystemNtp::DumpDiagnostics(vector<string>* log) const {
 Status SystemNtp::Init() {
   timex timex;
   Status s = CallAdjTime(&timex);
+  if (s.IsServiceUnavailable()) {
+    s = WaitForNtp().AndThen([&timex]() {
+          return CallAdjTime(&timex);
+        });
+  }
   if (!s.ok()) {
     DumpDiagnostics(/* log= */nullptr);
     return s;
