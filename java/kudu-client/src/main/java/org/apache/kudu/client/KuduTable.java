@@ -227,15 +227,36 @@ public class KuduTable {
    * range partitions will be returned in sorted order by value, and will
    * contain no duplicates.
    *
-   * @param deadline the deadline of the operation
+   * @param timeout the timeout of the operation
    * @return a list of the formatted range partitions
    */
   @InterfaceAudience.LimitedPrivate("Impala")
   @InterfaceStability.Unstable
-  public List<String> getFormattedRangePartitions(long deadline) throws Exception {
-    List<String> rangePartitions = new ArrayList<>();
+  public List<String> getFormattedRangePartitions(long timeout) throws Exception {
+    List<Partition> rangePartitions = getRangePartitions(timeout);
+    List<String> formattedPartitions = new ArrayList<>();
+    for (Partition partition : rangePartitions) {
+      formattedPartitions.add(partition.formatRangePartition(this));
+    }
+    return formattedPartitions;
+  }
+
+  /**
+   * Retrieves this table's range partitions. The range partitions will be returned
+   * in sorted order by value, and will contain no duplicates.
+   *
+   * @param timeout the timeout of the operation
+   * @return a list of the formatted range partitions
+   */
+  @InterfaceAudience.Private
+  @InterfaceStability.Unstable
+  public List<Partition> getRangePartitions(long timeout) throws Exception {
+    // TODO: This could be moved into the RangeSchemaPB returned from server
+    // to avoid an extra call to get the range partitions.
+    List<Partition> rangePartitions = new ArrayList<>();
     List<KuduScanToken> scanTokens = new KuduScanToken.KuduScanTokenBuilder(client, this)
-        .setTimeout(deadline).build();
+      .setTimeout(timeout)
+      .build();
     for (KuduScanToken token : scanTokens) {
       Partition partition = token.getTablet().getPartition();
       // Filter duplicate range partitions by taking only the tablets whose hash
@@ -243,7 +264,7 @@ public class KuduTable {
       if (!Iterators.all(partition.getHashBuckets().iterator(), Predicates.equalTo(0))) {
         continue;
       }
-      rangePartitions.add(partition.formatRangePartition(this));
+      rangePartitions.add(partition);
     }
     return rangePartitions;
   }

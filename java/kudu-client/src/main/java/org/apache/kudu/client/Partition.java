@@ -98,11 +98,39 @@ public class Partition implements Comparable<Partition> {
   }
 
   /**
+   * Gets the decoded start range key.
+   * @return the decoded start range key
+   */
+  public PartialRow getDecodedRangeKeyStart(KuduTable table) {
+    Schema schema = table.getSchema();
+    if (rangeKeyStart.length == 0) {
+      return schema.newPartialRow();
+    } else {
+      PartitionSchema partitionSchema = table.getPartitionSchema();
+      return KeyEncoder.decodeRangePartitionKey(schema, partitionSchema, rangeKeyStart);
+    }
+  }
+
+  /**
    * Gets the end range key.
    * @return the end range key
    */
   public byte[] getRangeKeyEnd() {
     return rangeKeyEnd;
+  }
+
+  /**
+   * Gets the decoded end range key.
+   * @return the decoded end range key
+   */
+  public PartialRow getDecodedRangeKeyEnd(KuduTable table) {
+    Schema schema = table.getSchema();
+    if (rangeKeyEnd.length == 0) {
+      return schema.newPartialRow();
+    } else {
+      PartitionSchema partitionSchema = table.getPartitionSchema();
+      return KeyEncoder.decodeRangePartitionKey(schema, partitionSchema, rangeKeyEnd);
+    }
   }
 
   /**

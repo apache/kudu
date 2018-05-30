@@ -51,6 +51,7 @@ public class LocatedTablet {
     return replicas;
   }
 
+  @InterfaceAudience.LimitedPrivate("Impala")
   public Partition getPartition() {
     return partition;
   }
