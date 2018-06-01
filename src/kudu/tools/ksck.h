@@ -243,6 +243,12 @@ class KsckMaster {
     return address_;
   }
 
+  virtual const boost::optional<std::string>& version() const {
+    CHECK_NE(KsckFetchState::UNINITIALIZED, state_);
+    return version_;
+  }
+
+
   virtual const boost::optional<consensus::ConsensusStatePB> cstate() const {
     CHECK_NE(KsckFetchState::UNINITIALIZED, state_);
     return cstate_;
@@ -279,6 +285,9 @@ class KsckMaster {
   // flags_state_ reflects whether the fetch of the non-critical flags info has
   // been done, and if it succeeded or failed.
   KsckFetchState flags_state_ = KsckFetchState::UNINITIALIZED;
+
+  // May be none if fetching info from the master fails.
+  boost::optional<std::string> version_;
 
   // May be none if consensus state fetch fails.
   boost::optional<consensus::ConsensusStatePB> cstate_;
@@ -359,6 +368,11 @@ class KsckTabletServer {
 
   tablet::TabletStatePB ReplicaState(const std::string& tablet_id) const;
 
+  virtual const boost::optional<std::string>& version() const {
+    CHECK_NE(KsckFetchState::UNINITIALIZED, state_);
+    return version_;
+  }
+
   virtual const boost::optional<server::GetFlagsResponsePB>& flags() const {
     CHECK_NE(KsckFetchState::UNINITIALIZED, flags_state_);
     return flags_;
@@ -388,6 +402,9 @@ class KsckTabletServer {
 
   TabletStatusMap tablet_status_map_;
   TabletConsensusStateMap tablet_consensus_state_map_;
+
+  // May be none if fetching info from the tablet server fails.
+  boost::optional<std::string> version_;
 
   // May be none if flag fetch fails.
   boost::optional<server::GetFlagsResponsePB> flags_;
@@ -520,6 +537,9 @@ class Ksck {
   // to a non-default value.
   // Must first call FetchInfoFromTabletServers().
   Status CheckTabletServerUnusualFlags();
+
+  // Check for version inconsistencies among all servers.
+  Status CheckServerVersions();
 
   // Verifies that all the tablets in all tables matching the filters have
   // enough replicas, and that each tablet's view of the tablet's consensus

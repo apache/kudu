@@ -142,6 +142,7 @@ int ServerHealthScore(KsckServerHealth sh);
 struct KsckServerHealthSummary {
   std::string uuid;
   std::string address;
+  boost::optional<std::string> version;
   KsckServerHealth health = KsckServerHealth::HEALTHY;
   Status status = Status::OK();
 };
@@ -325,6 +326,13 @@ Status PrintFlagTable(KsckServerType type,
                       const KsckFlagToServersMap& flag_to_servers_map,
                       const KsckFlagTagsMap& flag_tags_map,
                       std::ostream& out);
+
+// Print a summary of the Kudu versions running across all servers from which
+// information could be fetched. Servers are grouped by version to make the
+// table compact.
+Status PrintVersionTable(const std::vector<KsckServerHealthSummary>& masters,
+                         const std::vector<KsckServerHealthSummary>& tservers,
+                         std::ostream& out);
 
 // Print a formatted summary of the tables in 'table_summaries' to 'out'.
 Status PrintTableSummaries(const std::vector<KsckTableSummary>& table_summaries,

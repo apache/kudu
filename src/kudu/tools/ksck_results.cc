@@ -255,6 +255,10 @@ Status KsckResults::PrintTo(PrintMode mode, ostream& out) {
     out << endl;
   }
 
+  // Finally, in the "server section", print the version summary.
+  RETURN_NOT_OK(PrintVersionTable(master_summaries, tserver_summaries, out));
+  out << endl;
+
   // Then, on each tablet.
   RETURN_NOT_OK(PrintTabletSummaries(tablet_summaries, mode, out));
 
@@ -383,6 +387,29 @@ Status PrintFlagTable(KsckServerType type,
                         ServerCsv(num_servers, flag.second)});
   }
   return flags_table.PrintTo(out);
+}
+
+Status PrintVersionTable(const vector<KsckServerHealthSummary>& masters,
+                         const vector<KsckServerHealthSummary>& tservers,
+                         ostream& out) {
+  map<string, vector<string>> version_map;
+  for (const auto& s : masters) {
+    if (!s.version) continue;
+    auto& servers = LookupOrInsert(&version_map, *s.version, {});
+    servers.push_back(Substitute("master@$0", s.address));
+  }
+  for (const auto& s : tservers) {
+    if (!s.version) continue;
+    auto& servers = LookupOrInsert(&version_map, *s.version, {});
+    servers.push_back(Substitute("tserver@$0", s.address));
+  }
+  out << "Version Summary" << endl;
+  DataTable table({"Version", "Servers"});
+  int num_servers = masters.size() + tservers.size();
+  for (const auto& entry : version_map) {
+    table.AddRow({entry.first, ServerCsv(num_servers, entry.second)});
+  }
+  return table.PrintTo(out);
 }
 
 Status PrintTableSummaries(const vector<KsckTableSummary>& table_summaries,
@@ -545,6 +572,9 @@ void KsckServerHealthSummaryToPb(const KsckServerHealthSummary& summary,
   }
   pb->set_uuid(summary.uuid);
   pb->set_address(summary.address);
+  if (summary.version) {
+    pb->set_version(*summary.version);
+  }
   pb->set_status(summary.status.ToString());
 }
 

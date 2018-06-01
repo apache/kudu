@@ -19,7 +19,6 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <iomanip>
 #include <iostream>
 #include <iterator>
 #include <map>
@@ -41,9 +40,9 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/tablet/tablet.pb.h"
+#include "kudu/tools/color.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/blocking_queue.h"
-#include "kudu/tools/color.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
@@ -86,14 +85,11 @@ DEFINE_bool(consensus, true,
 
 using std::cout;
 using std::endl;
-using std::left;
-using std::map;
 using std::ostream;
 using std::ostringstream;
-using std::setw;
+using std::set;
 using std::shared_ptr;
 using std::string;
-using std::to_string;
 using std::unordered_map;
 using std::vector;
 using strings::Substitute;
@@ -208,6 +204,7 @@ Status Ksck::CheckMasterHealth() {
         });
     sh.uuid = master->uuid();
     sh.address = master->address();
+    sh.version = master->version();
     sh.status = s;
     if (!s.ok()) {
       if (IsNotAuthorizedMethodAccess(s)) {
@@ -372,8 +369,9 @@ Status Ksck::FetchInfoFromTabletServers() {
                 return Status::OK();
               });
           KsckServerHealthSummary summary;
-          summary.uuid = entry.second->uuid();
-          summary.address = entry.second->address();
+          summary.uuid = ts->uuid();
+          summary.address = ts->address();
+          summary.version = ts->version();
           summary.status = s;
           if (!s.ok()) {
             if (IsNotAuthorizedMethodAccess(s)) {
@@ -447,6 +445,8 @@ Status Ksck::Run() {
                       "error fetching info from tablet servers");
   PUSH_PREPEND_NOT_OK(CheckTabletServerUnusualFlags(), results_.warning_messages,
                       "tserver flag check error");
+  PUSH_PREPEND_NOT_OK(CheckServerVersions(), results_.warning_messages,
+                      "version check error");
 
   PUSH_PREPEND_NOT_OK(CheckTablesConsistency(), results_.error_messages,
                       "table consistency check error");
@@ -493,6 +493,27 @@ Status Ksck::CheckTabletServerUnusualFlags() {
     return Status::Incomplete(
         Substitute("$0 of $1 tservers' flags were not available",
                    bad_tservers, cluster_->tablet_servers().size()));
+  }
+  return Status::OK();
+}
+
+Status Ksck::CheckServerVersions() {
+  set<string> versions;
+  for (const auto& s : results_.master_summaries) {
+    if (!s.version) continue;
+    InsertIfNotPresent(&versions, *s.version);
+  }
+  for (const auto& s : results_.tserver_summaries) {
+    if (!s.version) continue;
+    InsertIfNotPresent(&versions, *s.version);
+  }
+  if (versions.size() > 1) {
+    // This status seemed to fit best even though a version mismatch isn't an
+    // error. In any case, ksck only prints the message for warnings.
+    return Status::ConfigurationError(
+        Substitute("not all servers are running the same version: "
+                   "$0 different versions were seen",
+                   versions.size()));
   }
   return Status::OK();
 }
