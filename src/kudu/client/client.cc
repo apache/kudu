@@ -396,8 +396,8 @@ Status KuduClient::DeleteTable(const string& table_name) {
   return data_->DeleteTable(this, table_name, deadline);
 }
 
-KuduTableAlterer* KuduClient::NewTableAlterer(const string& name) {
-  return new KuduTableAlterer(this, name);
+KuduTableAlterer* KuduClient::NewTableAlterer(const string& table_name) {
+  return new KuduTableAlterer(this, table_name);
 }
 
 Status KuduClient::IsAlterTableInProgress(const string& table_name,
@@ -1137,6 +1137,12 @@ KuduTableAlterer* KuduTableAlterer::timeout(const MonoDelta& timeout) {
 
 KuduTableAlterer* KuduTableAlterer::wait(bool wait) {
   data_->wait_ = wait;
+  return this;
+}
+
+KuduTableAlterer* KuduTableAlterer::alter_external_catalogs(
+    bool alter_external_catalogs) {
+  data_->alter_external_catalogs_ = alter_external_catalogs;
   return this;
 }
 

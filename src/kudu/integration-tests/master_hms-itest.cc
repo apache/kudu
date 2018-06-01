@@ -347,6 +347,16 @@ TEST_F(MasterHmsTest, TestAlterTable) {
     ASSERT_OK(table_alterer->Alter());
   });
   NO_FATALS(CheckTable("default", "a"));
+
+  // Only alter the table in Kudu, the corresponding table in the HMS will not be altered.
+  table_alterer.reset(client_->NewTableAlterer("default.a")->RenameTo("default.b")
+                             ->alter_external_catalogs(false));
+  ASSERT_OK(table_alterer->Alter());
+  bool exists;
+  ASSERT_OK(client_->TableExists("default.b", &exists));
+  ASSERT_TRUE(exists);
+  hive::Table hms_table;
+  ASSERT_OK(hms_client_->GetTable("default", "a", &hms_table));
 }
 
 TEST_F(MasterHmsTest, TestDeleteTable) {

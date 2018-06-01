@@ -50,6 +50,7 @@ namespace kudu {
 
 class ClientStressTest_TestUniqueClientIds_Test;
 class KuduPartialRow;
+class MasterHmsTest_TestAlterTable_Test;
 class MonoDelta;
 class PartitionSchema;
 class SecurityUnknownTskTest;
@@ -1182,8 +1183,15 @@ class KUDU_EXPORT KuduTableAlterer {
   class KUDU_NO_EXPORT Data;
   friend class KuduClient;
 
+  FRIEND_TEST(kudu::MasterHmsTest, TestAlterTable);
+
   KuduTableAlterer(KuduClient* client,
                    const std::string& name);
+
+  // Whether to apply the alteration to external catalogs, such as the Hive
+  // Metastore, which the Kudu master has been configured to integrate with.
+  // This method returns a raw pointer to this alterer object.
+  KuduTableAlterer* alter_external_catalogs(bool alter_external_catalogs);
 
   // Owned.
   Data* data_;

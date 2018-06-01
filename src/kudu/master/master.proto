@@ -564,6 +564,10 @@ message AlterTableRequestPB {
   // The table schema to use when decoding the range bound row operations. Only
   // necessary when partitions are being added or dropped.
   optional SchemaPB schema = 4;
+
+  // Whether to apply the alteration to external catalogs, such as the Hive Metastore,
+  // which the Kudu master has been configured to integrate with.
+  optional bool alter_external_catalogs = 5 [default = true];
 }
 
 message AlterTableResponsePB {

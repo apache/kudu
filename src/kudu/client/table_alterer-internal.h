@@ -44,7 +44,6 @@ class KuduTableAlterer::Data {
   ~Data();
   Status ToRequest(master::AlterTableRequestPB* req);
 
-
   KuduClient* const client_;
   const std::string table_name_;
 
@@ -77,6 +76,10 @@ class KuduTableAlterer::Data {
 
   // Schema of add/drop range partition bound rows.
   const Schema* schema_;
+
+  // Whether to apply the alteration to external catalogs, such as the Hive
+  // Metastore. The default value is true.
+  bool alter_external_catalogs_ = true;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(Data);

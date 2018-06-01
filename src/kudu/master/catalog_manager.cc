@@ -2136,12 +2136,13 @@ Status CatalogManager::AlterTableRpc(const AlterTableRequestPB& req,
   LOG(INFO) << Substitute("Servicing AlterTable request from $0:\n$1",
                           RequestorString(rpc), SecureShortDebugString(req));
 
-  // If the HMS integration is enabled and the alteration includes a table
-  // rename, then don't directly rename the table in the Kudu catalog. Instead,
-  // rename the table in the HMS and wait for the notification log listener to
-  // apply that event to the catalog. By 'serializing' the rename through the
+  // If the HMS integration is enabled, the alteration includes a table
+  // rename and the table should be altered in the HMS, then don't directly
+  // rename the table in the Kudu catalog. Instead, rename the table
+  // in the HMS and wait for the notification log listener to apply
+  // that event to the catalog. By 'serializing' the rename through the
   // HMS, race conditions are avoided.
-  if (hms_catalog_ && req.has_new_table_name()) {
+  if (hms_catalog_ && req.has_new_table_name() && req.alter_external_catalogs()) {
     // Look up the table, lock it, and mark it as removed.
     scoped_refptr<TableInfo> table;
     TableMetadataLock l;
