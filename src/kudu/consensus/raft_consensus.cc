@@ -47,12 +47,14 @@
 #include "kudu/consensus/pending_rounds.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/bind.h"
+#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/walltime.h"
 #include "kudu/rpc/periodic.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/debug/trace_event.h"
@@ -149,6 +151,18 @@ METRIC_DEFINE_gauge_int64(tablet, raft_term,
                           kudu::MetricUnit::kUnits,
                           "Current Term of the Raft Consensus algorithm. This number increments "
                           "each time a leader election is started.");
+METRIC_DEFINE_gauge_int64(tablet, failed_elections_since_stable_leader,
+                          "Failed Elections Since Stable Leader",
+                          kudu::MetricUnit::kUnits,
+                          "Number of failed elections on this node since there was a stable "
+                          "leader. This number increments on each failed election and resets on "
+                          "each successful one.");
+METRIC_DEFINE_gauge_int64(tablet, time_since_last_leader_heartbeat,
+                          "Time Since Last Leader Heartbeat",
+                          kudu::MetricUnit::kMilliseconds,
+                          "The time elapsed since the last heartbeat from the leader "
+                          "in milliseconds. This metric is identically zero on a leader replica.");
+
 
 using boost::optional;
 using google::protobuf::util::MessageDifferencer;
@@ -227,6 +241,14 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
   term_metric_ = metric_entity->FindOrCreateGauge(&METRIC_raft_term, CurrentTerm());
   follower_memory_pressure_rejections_ =
       metric_entity->FindOrCreateCounter(&METRIC_follower_memory_pressure_rejections);
+
+  num_failed_elections_metric_ =
+      metric_entity->FindOrCreateGauge(&METRIC_failed_elections_since_stable_leader,
+                                       failed_elections_since_stable_leader_);
+
+  METRIC_time_since_last_leader_heartbeat.InstantiateFunctionGauge(
+    metric_entity, Bind(&RaftConsensus::GetMillisSinceLastLeaderHeartbeat, Unretained(this)))
+    ->AutoDetach(&metric_detacher_);
 
   // A single Raft thread pool token is shared between RaftConsensus and
   // PeerManager. Because PeerManager is owned by RaftConsensus, it receives a
@@ -594,6 +616,8 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
       round.get(),
       &DoNothingStatusCB,
       std::placeholders::_1));
+
+  last_leader_communication_time_micros_ = 0;
 
   return AppendNewRoundToQueueUnlocked(round);
 }
@@ -1291,6 +1315,8 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     // We are guaranteed to be acting as a FOLLOWER at this point by the above
     // sanity check.
     SnoozeFailureDetector();
+
+    last_leader_communication_time_micros_ = GetMonoTimeMicros();
 
     // We update the lag metrics here in addition to after appending to the queue so the
     // metrics get updated even when the operation is rejected.
@@ -2281,6 +2307,7 @@ const char* RaftConsensus::State_Name(State state) {
 void RaftConsensus::SetLeaderUuidUnlocked(const string& uuid) {
   DCHECK(lock_.is_locked());
   failed_elections_since_stable_leader_ = 0;
+  num_failed_elections_metric_->set_value(failed_elections_since_stable_leader_);
   cmeta_->set_leader_uuid(uuid);
   MarkDirty(Substitute("New leader $0", uuid));
 }
@@ -2441,6 +2468,7 @@ void RaftConsensus::DoElectionCallback(ElectionReason reason, const ElectionResu
 
   if (result.decision == VOTE_DENIED) {
     failed_elections_since_stable_leader_++;
+    num_failed_elections_metric_->set_value(failed_elections_since_stable_leader_);
 
     // If we called an election and one of the voters had a higher term than we did,
     // we should bump our term before we potentially try again. This is particularly
@@ -2968,6 +2996,11 @@ int64_t RaftConsensus::MetadataOnDiskSize() const {
 
 ConsensusMetadata* RaftConsensus::consensus_metadata_for_tests() const {
   return cmeta_.get();
+}
+
+int64_t RaftConsensus::GetMillisSinceLastLeaderHeartbeat() const {
+    return last_leader_communication_time_micros_ == 0 ?
+        0 : (GetMonoTimeMicros() - last_leader_communication_time_micros_) / 1000;
 }
 
 ////////////////////////////////////////////////////////////////////////

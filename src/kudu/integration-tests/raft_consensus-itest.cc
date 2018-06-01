@@ -95,6 +95,8 @@ DECLARE_int32(rpc_timeout);
 
 METRIC_DECLARE_entity(tablet);
 METRIC_DECLARE_counter(transaction_memory_pressure_rejections);
+METRIC_DECLARE_gauge_int64(time_since_last_leader_heartbeat);
+METRIC_DECLARE_gauge_int64(failed_elections_since_stable_leader);
 
 using kudu::client::KuduInsert;
 using kudu::client::KuduSession;
@@ -2640,6 +2642,90 @@ TEST_F(RaftConsensusITest, TestCorruptReplicaMetadata) {
                                    tablet_id_,
                                    tablet::RUNNING,
                                    kTimeout));
+}
+
+int64_t GetFailedElectionsSinceStableLeader(const ExternalTabletServer* ets,
+                                            const std::string& tablet_id) {
+  int64_t ret;
+  CHECK_OK(GetInt64Metric(
+        ets->bound_http_hostport(),
+        &METRIC_ENTITY_tablet,
+        tablet_id.c_str(),
+        &METRIC_failed_elections_since_stable_leader,
+        "value",
+        &ret));
+  return ret;
+}
+
+int64_t GetTimeSinceLastLeaderHeartbeat(const ExternalTabletServer* ets,
+                                        const std::string& tablet_id) {
+  int64_t ret;
+  CHECK_OK(GetInt64Metric(
+        ets->bound_http_hostport(),
+        &METRIC_ENTITY_tablet,
+        tablet_id.c_str(),
+        &METRIC_time_since_last_leader_heartbeat,
+        "value",
+        &ret));
+  return ret;
+}
+
+TEST_F(RaftConsensusITest, TestElectionMetrics) {
+  const vector<string> kTsFlags = {
+    // Make leader elections faster so we can test
+    // failed_elections_since_stable_leader faster.
+    "--raft_heartbeat_interval_ms=100",
+  };
+
+  FLAGS_num_replicas = 3;
+  FLAGS_num_tablet_servers = 3;
+  NO_FATALS(BuildAndStart(kTsFlags));
+
+  vector<TServerDetails*> tservers;
+  AppendValuesFromMap(tablet_servers_, &tservers);
+
+  ASSERT_OK(StartElection(tservers[0], tablet_id_, MonoDelta::FromSeconds(10)));
+  ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10), tablet_servers_, tablet_id_, 1));
+
+  int num_tablet_servers = cluster_->num_tablet_servers();
+  int leader_idx = cluster_->tablet_server_index_by_uuid(tservers[0]->uuid());
+  ExternalTabletServer* leader = cluster_->tablet_server(leader_idx);
+  ExternalTabletServer* follower = cluster_->tablet_server((leader_idx + 1) % num_tablet_servers);
+
+  // Leader should always report 0 since last leader heartbeat.
+  ASSERT_EQ(0, GetTimeSinceLastLeaderHeartbeat(leader, tablet_id_));
+  ASSERT_EQ(0, GetFailedElectionsSinceStableLeader(leader, tablet_id_));
+
+  // Let's shut down all tablet servers except our chosen follower to make sure we don't
+  // have a leader.
+  for (auto i = 0; i < num_tablet_servers; ++i) {
+    if (cluster_->tablet_server(i) != follower) {
+      cluster_->tablet_server(i)->Shutdown();
+    }
+  }
+
+  // Get two measurements with 500 ms sleep between them and see if the
+  // difference between them is at least 500ms.
+  int64_t time_before_wait = GetTimeSinceLastLeaderHeartbeat(follower, tablet_id_);
+  SleepFor(MonoDelta::FromMilliseconds(500));
+  int64_t time_after_wait = GetTimeSinceLastLeaderHeartbeat(follower, tablet_id_);
+  ASSERT_TRUE(time_after_wait >= time_before_wait + 500);
+
+  // Verify failed_elections_since_stable_leader is advanced eventually.
+  ASSERT_EVENTUALLY([&]() {
+    ASSERT_TRUE(GetFailedElectionsSinceStableLeader(follower, tablet_id_) > 0);
+  });
+
+  // Start the servers back up and verify failed_elections_since_stable_leader
+  // is reset to 0.
+  for (auto i = 0; i < num_tablet_servers; ++i) {
+    if (cluster_->tablet_server(i) != follower) {
+      cluster_->tablet_server(i)->Start();
+    }
+  }
+  ASSERT_EVENTUALLY([&]() {
+    ASSERT_EQ(0, GetFailedElectionsSinceStableLeader(follower, tablet_id_));
+  });
 }
 
 // Test that an IOError when writing to the write-ahead log is a fatal error.
