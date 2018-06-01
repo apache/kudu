@@ -18,7 +18,6 @@
 package org.apache.kudu.spark.kudu
 
 import java.security.{AccessController, PrivilegedAction}
-import java.util
 import javax.security.auth.Subject
 import javax.security.auth.login.{AppConfigurationEntry, Configuration, LoginContext}
 
@@ -26,10 +25,9 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable
 
 import org.apache.hadoop.util.ShutdownHookManager
-import org.apache.kudu.ColumnTypeAttributes.ColumnTypeAttributesBuilder
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.types.{DataType, DataTypes, DecimalType, StructField, StructType}
+import org.apache.spark.sql.types.{DataType, DataTypes, DecimalType, StructType}
 import org.apache.spark.sql.{DataFrame, Row}
 import org.apache.spark.util.AccumulatorV2
 import org.apache.yetus.audience.InterfaceStability
@@ -38,7 +36,8 @@ import org.slf4j.{Logger, LoggerFactory}
 import org.apache.kudu.client.SessionConfiguration.FlushMode
 import org.apache.kudu.client._
 import org.apache.kudu.spark.kudu
-import org.apache.kudu.{ColumnSchema, Schema, Type}
+import org.apache.kudu.spark.kudu.SparkUtil._
+import org.apache.kudu.{Schema, Type}
 
 /**
   * KuduContext is a serializable container for Kudu client connections.
@@ -186,48 +185,12 @@ class KuduContext(val kuduMaster: String,
     * @return the Kudu schema
     */
   def createSchema(schema: StructType, keys: Seq[String]): Schema = {
-    val kuduCols = new util.ArrayList[ColumnSchema]()
-    // add the key columns first, in the order specified
-    for (key <- keys) {
-      val field = schema.fields(schema.fieldIndex(key))
-      val col = createColumn(field, isKey = true)
-      kuduCols.add(col)
-    }
-    // now add the non-key columns
-    for (field <- schema.fields.filter(field => !keys.contains(field.name))) {
-      val col = createColumn(field, isKey = false)
-      kuduCols.add(col)
-    }
-    new Schema(kuduCols)
-  }
-
-  private def createColumn(field: StructField, isKey: Boolean): ColumnSchema = {
-    val kt = kuduType(field.dataType)
-    val col = new ColumnSchema.ColumnSchemaBuilder(field.name, kt).key(isKey).nullable(field.nullable)
-    // Add ColumnTypeAttributesBuilder to DECIMAL columns
-    if (kt == Type.DECIMAL) {
-      val dt = field.dataType.asInstanceOf[DecimalType]
-      col.typeAttributes(
-        new ColumnTypeAttributesBuilder().precision(dt.precision).scale(dt.scale).build()
-      )
-    }
-    col.build()
+    kuduSchema(schema, keys)
   }
 
   /** Map Spark SQL type to Kudu type */
-  def kuduType(dt: DataType) : Type = dt match {
-    case DataTypes.BinaryType => Type.BINARY
-    case DataTypes.BooleanType => Type.BOOL
-    case DataTypes.StringType => Type.STRING
-    case DataTypes.TimestampType => Type.UNIXTIME_MICROS
-    case DataTypes.ByteType => Type.INT8
-    case DataTypes.ShortType => Type.INT16
-    case DataTypes.IntegerType => Type.INT32
-    case DataTypes.LongType => Type.INT64
-    case DataTypes.FloatType => Type.FLOAT
-    case DataTypes.DoubleType => Type.DOUBLE
-    case DecimalType() => Type.DECIMAL
-    case _ => throw new IllegalArgumentException(s"No support for Spark SQL type $dt")
+  def kuduType(dt: DataType) : Type = {
+    sparkTypeToKuduType(dt)
   }
 
   /**

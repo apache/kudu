@@ -23,16 +23,14 @@ import java.sql.Timestamp
 
 import scala.collection.JavaConverters._
 import scala.util.Try
-
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, Row, SQLContext, SaveMode}
 import org.apache.yetus.audience.InterfaceStability
-
 import org.apache.kudu.client.KuduPredicate.ComparisonOp
 import org.apache.kudu.client._
-import org.apache.kudu.{ColumnSchema, ColumnTypeAttributes, Type}
+import org.apache.kudu.spark.kudu.SparkUtil._
 
 /**
   * Data source for integration with Spark's [[DataFrame]] API.
@@ -181,19 +179,7 @@ class KuduRelation(private val tableName: String,
     * @return schema generated from the Kudu table's schema
     */
   override def schema: StructType = {
-    userSchema match {
-      case Some(x) =>
-        StructType(x.fields.map(uf => table.getSchema.getColumn(uf.name))
-          .map(kuduColumnToSparkField))
-      case None =>
-        StructType(table.getSchema.getColumns.asScala.map(kuduColumnToSparkField).toArray)
-    }
-  }
-
-  def kuduColumnToSparkField: (ColumnSchema) => StructField = {
-    columnSchema =>
-      val sparkType = kuduTypeToSparkType(columnSchema.getType, columnSchema.getTypeAttributes)
-      new StructField(columnSchema.getName, sparkType, columnSchema.isNullable)
+    sparkSchema(table.getSchema, userSchema.map(_.fieldNames))
   }
 
   /**
@@ -333,27 +319,6 @@ class KuduRelation(private val tableName: String,
 }
 
 private[spark] object KuduRelation {
-  /**
-    * Converts a Kudu [[Type]] to a Spark SQL [[DataType]].
-    *
-    * @param t the Kudu type
-    * @param a the Kudu type attributes
-    * @return the corresponding Spark SQL type
-    */
-  private def kuduTypeToSparkType(t: Type, a: ColumnTypeAttributes): DataType = t match {
-    case Type.BOOL => BooleanType
-    case Type.INT8 => ByteType
-    case Type.INT16 => ShortType
-    case Type.INT32 => IntegerType
-    case Type.INT64 => LongType
-    case Type.UNIXTIME_MICROS => TimestampType
-    case Type.FLOAT => FloatType
-    case Type.DOUBLE => DoubleType
-    case Type.STRING => StringType
-    case Type.BINARY => BinaryType
-    case Type.DECIMAL => DecimalType(a.getPrecision, a.getScale)
-  }
-
   /**
     * Returns `true` if the filter is able to be pushed down to Kudu.
     *
