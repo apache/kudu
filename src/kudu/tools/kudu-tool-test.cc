@@ -124,6 +124,9 @@
 
 DECLARE_string(block_manager);
 
+METRIC_DECLARE_counter(bloom_lookups);
+METRIC_DECLARE_entity(tablet);
+
 namespace kudu {
 
 namespace tserver {
@@ -143,6 +146,7 @@ using client::KuduTable;
 using client::sp::shared_ptr;
 using cluster::ExternalMiniCluster;
 using cluster::ExternalMiniClusterOptions;
+using cluster::ExternalTabletServer;
 using cluster::InternalMiniCluster;
 using cluster::InternalMiniClusterOptions;
 using consensus::OpId;
@@ -1462,6 +1466,129 @@ TEST_F(ToolTest, TestLoadgenManualFlush) {
         "--string_len=16",
       },
       "bench_manual_flush"));
+}
+
+// Run the loadgen, generating a few different partitioning schemas.
+TEST_F(ToolTest, TestLoadgenAutoGenTablePartitioning) {
+  {
+    ExternalMiniClusterOptions opts;
+    opts.num_tablet_servers = 1;
+    NO_FATALS(StartExternalMiniCluster(std::move(opts)));
+  }
+  const vector<string> base_args = {
+    "perf", "loadgen",
+    cluster_->master()->bound_rpc_addr().ToString(),
+    // Use a number of threads that isn't a divisor of the number of partitions
+    // so the insertion bounds of the threads don't align with the bounds of
+    // the partitions. This isn't necessary for the correctness of this test,
+    // but is a bit more unusual and, thus, worth testing. See the comments in
+    // tools/tool_action_perf.cc for more details about this partitioning.
+    "--num_threads=3",
+
+    // Keep the tables so we can verify the presence of tablets as we go.
+    "--keep_auto_table=true",
+
+    // Let's make sure nothing breaks even if we insert across the entire
+    // keyspace. If we didn't use `use_random`, the bounds of inserted data
+    // would be limited by the number of rows inserted.
+    "--use_random",
+
+    // Let's also make sure we get the correct results.
+    "--run_scan",
+  };
+
+  const MonoDelta kTimeout = MonoDelta::FromMilliseconds(10);
+  TServerDetails* ts = ts_map_[cluster_->tablet_server(0)->uuid()];
+
+  // Test with misconfigured partitioning. This should fail because we disallow
+  // creating tables with "no" partitioning.
+  vector<string> args(base_args);
+  args.emplace_back("--table_num_range_partitions=1");
+  args.emplace_back("--table_num_hash_partitions=1");
+  Status s = RunKuduTool(args);
+  ASSERT_FALSE(s.ok());
+
+  // Now let's try running with a couple range partitions.
+  args = base_args;
+  args.emplace_back("--table_num_range_partitions=2");
+  args.emplace_back("--table_num_hash_partitions=1");
+  int expected_tablets = 2;
+  ASSERT_OK(RunKuduTool(args));
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  ASSERT_OK(WaitForNumTabletsOnTS(ts, expected_tablets, kTimeout));
+
+  // Now let's try running with only hash partitions.
+  args = base_args;
+  args.emplace_back("--table_num_range_partitions=1");
+  args.emplace_back("--table_num_hash_partitions=2");
+  ASSERT_OK(RunKuduTool(args));
+  // Note: we're not deleting the tables as we go so that we can do this check.
+  // That also means that we have to take into account the previous tables
+  // created during this test.
+  expected_tablets += 2;
+  ASSERT_OK(WaitForNumTabletsOnTS(ts, expected_tablets, kTimeout));
+
+  // And now with both.
+  args = base_args;
+  args.emplace_back("--table_num_range_partitions=2");
+  args.emplace_back("--table_num_hash_partitions=2");
+  expected_tablets += 4;
+  ASSERT_OK(RunKuduTool(args));
+  ASSERT_OK(WaitForNumTabletsOnTS(ts, expected_tablets, kTimeout));
+}
+
+// Test that a non-random workload results in the behavior we would expect when
+// running against an auto-generated range partitioned table.
+TEST_F(ToolTest, TestNonRandomWorkloadLoadgen) {
+  {
+    ExternalMiniClusterOptions opts;
+    opts.num_tablet_servers = 1;
+    // Flush frequently so there are bloom files to check.
+    //
+    // Note: we use the number of bloom lookups as a loose indicator of whether
+    // writes are sequential or not. If row A is being inserted to a range of
+    // the keyspace that has already been inserted to, the interval tree that
+    // backs the tablet will be unable to say with certainty that row A does or
+    // doesn't already exist, necessitating a bloom lookup. As such, if there
+    // are bloom lookups for a tablet for a given workload, we can say that
+    // that workload is not sequential.
+    opts.extra_tserver_flags = {
+      "--flush_threshold_mb=1",
+      "--flush_threshold_secs=1",
+    };
+    NO_FATALS(StartExternalMiniCluster(std::move(opts)));
+  }
+  const vector<string> base_args = {
+    "perf", "loadgen",
+    cluster_->master()->bound_rpc_addr().ToString(),
+    "--keep_auto_table",
+
+    // Use the same number of threads as partitions so when we range partition,
+    // each thread will be writing to a single tablet.
+    "--num_threads=4",
+
+    // Insert a bunch of large rows for us to begin flushing so there are bloom
+    // files to check.
+    "--num_rows_per_thread=10000",
+    "--string_len=32768",
+
+    // Since we're using such large payloads, flush more frequently so the
+    // client doesn't run out of memory.
+    "--flush_per_n_rows=1",
+  };
+
+  // Partition the table so each thread inserts to a single range.
+  vector<string> args = base_args;
+  args.emplace_back("--table_num_range_partitions=4");
+  args.emplace_back("--table_num_hash_partitions=1");
+  ASSERT_OK(RunKuduTool(args));
+
+  // Check that the insert workload didn't require any bloom lookups.
+  ExternalTabletServer* ts = cluster_->tablet_server(0);
+  int64_t bloom_lookups = 0;
+  ASSERT_OK(itest::GetInt64Metric(ts->bound_http_hostport(),
+      &METRIC_ENTITY_tablet, nullptr, &METRIC_bloom_lookups, "value", &bloom_lookups));
+  ASSERT_EQ(0, bloom_lookups);
 }
 
 // Test 'kudu remote_replica copy' tool when the destination tablet server is online.

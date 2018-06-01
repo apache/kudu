@@ -104,8 +104,61 @@
 // so for the example above each run increments the sequence number by 10000:
 // 1000 rows per thread * 2 threads * 5 columns
 //
-
-#include "kudu/tools/tool_action.h"
+// Auto-generated tables can be configured to use hash partitioning, range
+// partitioning, or both. Below are a few examples of this.
+//
+//   kudu perf loadgen 127.0.0.1 --num_threads=8 --num_rows_per_thread=1000 \
+//     --table_num_hash_partitions=1 --table_num_range_partitions=8 --use_random=false
+//
+// In the above example, a table with eight range partitions will be created,
+// each partition will be in charge of 1000 rows worth of values; for a
+// three-column table, this means a primary key range width of 3000. Eight
+// inserter threads will be created and will insert rows non-randomly; by
+// design of the range partitioning splits, this means each thread will insert
+// into a single range partition.
+//
+//   kudu perf loadgen 127.0.0.1 --num_threads=8 --num_rows_per_thread=1000 \
+//     --table_num_hash_partitions=8 --table_num_range_partitions=1 --use_random=false
+//
+// In the above example, a table with 8 hash partitions will be created.
+//
+//   kudu perf loadgen 127.0.0.1 --num_threads=8 --num_rows_per_thread=1000 \
+//     --table_num_hash_partitions=8 --table_num_range_partitions=8 --use_random=false
+//
+// In the above example, a table with a total of 64 tablets will be created.
+// The range partitioning splits will be the same as those in the
+// range-partitioning-only example.
+//
+// Below are illustrations of range partitioning and non-random write
+// workloads. The y-axis for both the threads and the tablets is the keyspace,
+// increasing going downwards.
+//
+//   --num_threads=2 --table_num_range_partitions=2 --table_num_hash_partitions=1
+//
+//   Threads sequentially
+//   insert to their keyspaces
+//   in non-random insert mode.
+//      +  +---------+         ^
+//      |  | thread1 | tabletA |  Tablets' range partitions are
+//      |  |         |         |  set to match the desired total
+//      v  +---------+---------+  number of inserted rows for the
+//      |  | thread2 | tabletB |  entire workload, but leaving the
+//      |  |         |         |  outermost tablets unbounded.
+//      v  +---------+         v
+//
+// If the number of tablets is not a multiple of the number of threads when
+// using an auto-generated range-partitioned table, we lose the guarantee
+// that we always write to a monotonically increasing range on each tablet.
+//
+//   --num_threads=2 --table_num_range_partitions=3 --table_num_hash_partitions=1
+//
+//      +  +---------+         ^
+//      |  | thread1 | tabletA |
+//      |  |         +---------+
+//      v  +---------| tabletB |
+//      |  | thread2 +---------+
+//      |  |         | tabletC |
+//      v  +---------+         v
 
 #include <algorithm>
 #include <cstdint>
@@ -122,6 +175,7 @@
 #include <vector>
 
 #include <gflags/gflags.h>
+#include <glog/logging.h>
 
 #include "kudu/client/client.h"
 #include "kudu/client/scan_batch.h"
@@ -137,8 +191,10 @@
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/tools/tool_action.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/util/decimal_util.h"
+#include "kudu/util/flag_validators.h"
 #include "kudu/util/int128.h"
 #include "kudu/util/oid_generator.h"
 #include "kudu/util/random.h"
@@ -245,8 +301,17 @@ DEFINE_string(table_name, "",
               "an already existing table, it's highly recommended to use a "
               "dedicated table created just for testing purposes: "
               "the existing table nor its data is never dropped/deleted.");
-DEFINE_int32(table_num_buckets, 8,
-             "The number of buckets to create when this tool creates a new table.");
+DEFINE_int32(table_num_hash_partitions, 8,
+             "The number of hash partitions to create when this tool creates "
+             "a new table. Note: The total number of partitions must be "
+             "greater than 1.");
+DEFINE_int32(table_num_range_partitions, 1,
+             "The number of range partitions to create when this tool creates "
+             "a new table. A range partitioning schema will be determined to "
+             "evenly split a sequential workload across ranges, leaving "
+             "the outermost ranges unbounded to ensure coverage of the entire "
+             "keyspace. Note: The total number of partitions must be greater "
+             "than 1.");
 DEFINE_int32(table_num_replicas, 1,
              "The number of replicas for the auto-created table; "
              "0 means 'use server-side default'.");
@@ -259,6 +324,19 @@ namespace kudu {
 namespace tools {
 
 namespace {
+
+bool ValidatePartitionFlags() {
+  int num_tablets = FLAGS_table_num_hash_partitions * FLAGS_table_num_range_partitions;
+  if (num_tablets <= 1) {
+    LOG(ERROR) << Substitute("Invalid partitioning: --table_num_hash_partitions=$0 "
+                  "--table_num_range_partitions=$1, must specify more than one partition "
+                  "for auto-generated tables", FLAGS_table_num_hash_partitions,
+                  FLAGS_table_num_range_partitions);
+    return false;
+  }
+  return true;
+}
+GROUP_FLAG_VALIDATOR(partition_flags, &ValidatePartitionFlags);
 
 class Generator {
  public:
@@ -318,6 +396,15 @@ string Generator::Next() {
   // Truncate or extend with 'x's.
   buf_.resize(string_len_, 'x');
   return buf_;
+}
+
+// Utility function that determines the range of generated values each thread
+// should insert across if inserting in non-random mode. In random mode, this
+// is used to generate different RNG seeds per thread.
+int64_t SpanPerThread(int num_columns) {
+  return (FLAGS_num_rows_per_thread == 0) ?
+      numeric_limits<int64_t>::max() / FLAGS_num_threads
+      : FLAGS_num_rows_per_thread * num_columns;
 }
 
 Status GenerateRowData(Generator* gen, KuduPartialRow* row,
@@ -387,8 +474,7 @@ mutex cerr_lock;
 
 void GeneratorThread(
     const shared_ptr<KuduClient>& client, const string& table_name,
-    size_t gen_idx, size_t gen_num,
-    Status* status, uint64_t* row_count, uint64_t* err_count) {
+    size_t gen_idx, Status* status, uint64_t* row_count, uint64_t* err_count) {
 
   const Generator::Mode gen_mode = FLAGS_use_random ? Generator::MODE_RAND
                                                     : Generator::MODE_SEQ;
@@ -415,9 +501,7 @@ void GeneratorThread(
 
     // Planning for non-intersecting ranges for different generator threads
     // in sequential generation mode.
-    const int64_t gen_span =
-        (num_rows_per_gen == 0) ? numeric_limits<int64_t>::max() / gen_num
-                                : num_rows_per_gen * num_columns;
+    const int64_t gen_span = SpanPerThread(num_columns);
     const int64_t gen_seed = gen_idx * gen_span + gen_seq_start;
     Generator gen(gen_mode, gen_seed, FLAGS_string_len);
     for (; num_rows_per_gen == 0 || idx < num_rows_per_gen; ++idx) {
@@ -467,7 +551,7 @@ Status GenerateInsertRows(const shared_ptr<KuduClient>& client,
   vector<uint64_t> err_count(gen_num, 0);
   vector<thread> threads;
   for (size_t i = 0; i < gen_num; ++i) {
-    threads.emplace_back(&GeneratorThread, client, table_name, i, gen_num,
+    threads.emplace_back(&GeneratorThread, client, table_name, i,
                          &status[i], &row_count[i], &err_count[i]);
   }
   for (auto& t : threads) {
@@ -579,13 +663,29 @@ Status TestLoadGenerator(const RunnerContext& context) {
     RETURN_NOT_OK(b.Build(&schema));
 
     unique_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
-    RETURN_NOT_OK(table_creator->table_name(table_name)
+    table_creator->table_name(table_name)
                   .schema(&schema)
                   .num_replicas(FLAGS_table_num_replicas)
-                  .add_hash_partitions(vector<string>({ kKeyColumnName }),
-                                       FLAGS_table_num_buckets)
-                  .wait(true)
-                  .Create());
+                  .wait(true);
+    if (FLAGS_table_num_range_partitions > 1) {
+      // Split the generated span for a sequential workload evenly across all
+      // tablets. In case we're inserting in random mode, use unbounded range
+      // partitioning, so the table has key coverage of the entire keyspace.
+      const int64_t total_inserted_span = SpanPerThread(schema.num_columns()) * FLAGS_num_threads;
+      const int64_t span_per_range = total_inserted_span / FLAGS_table_num_range_partitions;
+      table_creator->set_range_partition_columns({ kKeyColumnName });
+      for (int i = 1; i < FLAGS_table_num_range_partitions; i++) {
+        unique_ptr<KuduPartialRow> split(schema.NewRow());
+        int64_t split_val = FLAGS_seq_start + i * span_per_range;
+        RETURN_NOT_OK(split->SetInt64(kKeyColumnName, split_val));
+        table_creator->add_range_partition_split(split.release());
+      }
+    }
+    if (FLAGS_table_num_hash_partitions > 1) {
+      table_creator->add_hash_partitions(
+          vector<string>({ kKeyColumnName }), FLAGS_table_num_hash_partitions);
+    }
+    RETURN_NOT_OK(table_creator->Create());
   }
   cout << "Using " << (is_auto_table ? "auto-created " : "")
        << "table '" << table_name << "'" << endl;
@@ -670,7 +770,8 @@ unique_ptr<Mode> BuildPerfMode() {
       .AddOptionalParameter("string_fixed")
       .AddOptionalParameter("string_len")
       .AddOptionalParameter("table_name")
-      .AddOptionalParameter("table_num_buckets")
+      .AddOptionalParameter("table_num_hash_partitions")
+      .AddOptionalParameter("table_num_range_partitions")
       .AddOptionalParameter("table_num_replicas")
       .AddOptionalParameter("use_random")
       .Build();
