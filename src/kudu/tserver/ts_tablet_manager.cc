@@ -1387,6 +1387,7 @@ Status TSTabletManager::DeleteTabletData(
   MAYBE_FAULT(FLAGS_fault_crash_after_blocks_deleted);
 
   CHECK_OK(Log::DeleteOnDiskData(meta->fs_manager(), tablet_id));
+  CHECK_OK(Log::RemoveRecoveryDirIfExists(meta->fs_manager(), tablet_id));
   MAYBE_FAULT(FLAGS_fault_crash_after_wal_deleted);
 
   // We do not delete the superblock or the consensus metadata when tombstoning

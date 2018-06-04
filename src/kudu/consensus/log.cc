@@ -103,6 +103,11 @@ DEFINE_bool(log_inject_latency, false,
             "If true, injects artificial latency in log sync operations. "
             "Advanced option. Use at your own risk -- has a negative effect "
             "on performance for obvious reasons!");
+
+DEFINE_bool(skip_remove_old_recovery_dir, false,
+            "Skip removing WAL recovery dir after startup. (useful for debugging)");
+TAG_FLAG(skip_remove_old_recovery_dir, hidden);
+
 TAG_FLAG(log_inject_latency, unsafe);
 TAG_FLAG(log_inject_latency, runtime);
 
@@ -982,6 +987,36 @@ Status Log::DeleteOnDiskData(FsManager* fs_manager, const string& tablet_id) {
                           tablet_id, fs_manager->uuid(), wal_dir);
   RETURN_NOT_OK_PREPEND(env->DeleteRecursively(wal_dir),
                         "Unable to recursively delete WAL dir for tablet " + tablet_id);
+  return Status::OK();
+}
+
+Status Log::RemoveRecoveryDirIfExists(FsManager* fs_manager, const string& tablet_id) {
+  string recovery_path = fs_manager->GetTabletWalRecoveryDir(tablet_id);
+  const auto kLogPrefix = Substitute("T $0 P $1: ", tablet_id, fs_manager->uuid());
+  if (!fs_manager->Exists(recovery_path)) {
+    VLOG(1) << kLogPrefix << "Tablet WAL recovery dir " << recovery_path <<
+            " does not exist.";
+    return Status::OK();
+  }
+
+  VLOG(1) << kLogPrefix << "Preparing to delete log recovery files and directory " << recovery_path;
+
+  string tmp_path = Substitute("$0-$1", recovery_path, GetCurrentTimeMicros());
+  VLOG(1) << kLogPrefix << "Renaming log recovery dir from "  << recovery_path
+          << " to " << tmp_path;
+  RETURN_NOT_OK_PREPEND(fs_manager->env()->RenameFile(recovery_path, tmp_path),
+                        Substitute("Could not rename old recovery dir from: $0 to: $1",
+                                   recovery_path, tmp_path));
+
+  if (FLAGS_skip_remove_old_recovery_dir) {
+    LOG(INFO) << kLogPrefix << "--skip_remove_old_recovery_dir enabled. NOT deleting " << tmp_path;
+    return Status::OK();
+  }
+  VLOG(1) << kLogPrefix << "Deleting all files from renamed log recovery directory " << tmp_path;
+  RETURN_NOT_OK_PREPEND(fs_manager->env()->DeleteRecursively(tmp_path),
+                        "Could not remove renamed recovery dir " + tmp_path);
+  VLOG(1) << kLogPrefix << "Completed deletion of old log recovery files and directory "
+          << tmp_path;
   return Status::OK();
 }
 

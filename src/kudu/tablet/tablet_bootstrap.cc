@@ -62,7 +62,6 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/gutil/walltime.h"
 #include "kudu/rpc/result_tracker.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/tablet/metadata.pb.h"
@@ -92,10 +91,6 @@
 #include "kudu/util/stopwatch.h"
 
 DECLARE_int32(group_commit_queue_size_bytes);
-
-DEFINE_bool(skip_remove_old_recovery_dir, false,
-            "Skip removing WAL recovery dir after startup. (useful for debugging)");
-TAG_FLAG(skip_remove_old_recovery_dir, hidden);
 
 DEFINE_double(fault_crash_during_log_replay, 0.0,
               "Fraction of the time when the tablet will crash immediately "
@@ -359,10 +354,6 @@ class TabletBootstrap {
   // with it.
   Status UpdateClock(uint64_t timestamp);
 
-  // Removes the recovery directory and all files contained therein.
-  // Intended to be invoked after log replay successfully completes.
-  Status RemoveRecoveryDir();
-
   // Return a log prefix string in the standard "T xxx P yyy" format.
   string LogPrefix() const;
 
@@ -604,7 +595,8 @@ Status TabletBootstrap::RunBootstrap(shared_ptr<Tablet>* rebuilt_tablet,
 
   RETURN_NOT_OK_PREPEND(PlaySegments(consensus_info), "Failed log replay. Reason");
 
-  RETURN_NOT_OK(RemoveRecoveryDir());
+  RETURN_NOT_OK(Log::RemoveRecoveryDirIfExists(tablet_->metadata()->fs_manager(),
+                                               tablet_->metadata()->tablet_id()))
   RETURN_NOT_OK(FinishBootstrap("Bootstrap complete.", rebuilt_log, rebuilt_tablet));
 
   return Status::OK();
@@ -717,33 +709,6 @@ Status TabletBootstrap::OpenLogReaderInRecoveryDir() {
                                         tablet_->GetMetricEntity().get(),
                                         &log_reader_),
                         "Could not open LogReader. Reason");
-  return Status::OK();
-}
-
-Status TabletBootstrap::RemoveRecoveryDir() {
-  FsManager* fs_manager = tablet_->metadata()->fs_manager();
-  string recovery_path = fs_manager->GetTabletWalRecoveryDir(tablet_->metadata()->tablet_id());
-  CHECK(fs_manager->Exists(recovery_path))
-      << "Tablet WAL recovery dir " << recovery_path << " does not exist.";
-
-  VLOG_WITH_PREFIX(1) << "Preparing to delete log recovery files and directory " << recovery_path;
-
-  string tmp_path = Substitute("$0-$1", recovery_path, GetCurrentTimeMicros());
-  VLOG_WITH_PREFIX(1) << "Renaming log recovery dir from "  << recovery_path
-                        << " to " << tmp_path;
-  RETURN_NOT_OK_PREPEND(fs_manager->env()->RenameFile(recovery_path, tmp_path),
-                        Substitute("Could not rename old recovery dir from: $0 to: $1",
-                                   recovery_path, tmp_path));
-
-  if (FLAGS_skip_remove_old_recovery_dir) {
-    LOG_WITH_PREFIX(INFO) << "--skip_remove_old_recovery_dir enabled. NOT deleting " << tmp_path;
-    return Status::OK();
-  }
-  VLOG_WITH_PREFIX(1) << "Deleting all files from renamed log recovery directory " << tmp_path;
-  RETURN_NOT_OK_PREPEND(fs_manager->env()->DeleteRecursively(tmp_path),
-                        "Could not remove renamed recovery dir " + tmp_path);
-  VLOG_WITH_PREFIX(1) << "Completed deletion of old log recovery files and directory "
-                        << tmp_path;
   return Status::OK();
 }
 

@@ -140,6 +140,10 @@ class Log : public RefCountedThreadSafe<Log> {
   // REQUIRES: The Log must be closed.
   static Status DeleteOnDiskData(FsManager* fs_manager, const std::string& tablet_id);
 
+  // Removes the recovery directory and all files contained therein, if it exists.
+  // Intended to be invoked after log replay successfully completes.
+  static Status RemoveRecoveryDirIfExists(FsManager* fs_manager, const std::string& tablet_id);
+
   // Returns a reader that is able to read through the previous segments,
   // provided the log is initialized and not yet closed. After being closed,
   // this function will return NULL, but existing reader references will

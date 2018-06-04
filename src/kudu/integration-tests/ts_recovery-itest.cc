@@ -44,6 +44,7 @@
 #include "kudu/consensus/log-test-base.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_util.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
@@ -86,7 +87,6 @@ using std::vector;
 namespace kudu {
 
 using client::KuduClient;
-using client::KuduClientBuilder;
 using client::KuduInsert;
 using client::KuduSession;
 using client::KuduTable;
@@ -98,10 +98,13 @@ using clock::Clock;
 using clock::HybridClock;
 using consensus::ConsensusMetadata;
 using consensus::ConsensusMetadataManager;
+using consensus::ConsensusStatePB;
+using consensus::EXCLUDE_HEALTH_REPORT;
 using consensus::OpId;
 using consensus::RECEIVED_OPID;
 using fs::BlockManager;
 using itest::MiniClusterFsInspector;
+using kudu::itest::TServerDetails;
 using log::AppendNoOpsToLogSync;
 using log::Log;
 using log::LogOptions;
@@ -136,6 +139,99 @@ void TsRecoveryITest::StartClusterOneTs(vector<string> extra_tserver_flags,
   opts.extra_tserver_flags = std::move(extra_tserver_flags);
   opts.extra_master_flags = std::move(extra_master_flags);
   StartClusterWithOpts(opts);
+}
+
+// Regression test for KUDU-1038: This test replicates the scenario where :
+// 1. A log segment is deleted from one of the Tablet Replicas or is not fsynced before a crash.
+// 2. On server restart, the replica with the deleted log segment enters a FAILED state after
+// being unable to complete replay of the WAL and leaves the WAL recovery directory in place.
+// 3. The master should tombstone the FAILED replica, causing its recovery directory to be deleted.
+// A subsequent tablet copy and tablet bootstrap should cause the replica to become healthy again.
+TEST_F(TsRecoveryITest, TestTabletRecoveryAfterSegmentDelete) {
+  // Start a cluster with 3 tablet servers consisting of 1 tablet with 3 replicas.
+  vector<string> flags;
+  // The log segment size and the number of log segments to retain is configured to be very small
+  // that is done to be able to quickly fill up the log segments in order to corrupt them
+  // in a way that exercises the necessary code paths for this regression test.
+  flags.emplace_back("--log_segment_size_mb=1");
+  flags.emplace_back("--log_min_segments_to_retain=3");
+  NO_FATALS(StartCluster(flags));
+
+  const int kNumTablets = 1;
+  const int kNumTs = 3;
+  const int kTsIndex = 0; // Index of the tablet server we'll use for the test.
+  MonoDelta timeout = MonoDelta::FromSeconds(30);
+
+  // Create a new tablet.
+  TestWorkload write_workload(cluster_.get());
+  write_workload.set_payload_bytes(32 * 1024); // Write ops of size 32KB to quickly fill the logs.
+  write_workload.set_num_tablets(kNumTablets);
+  write_workload.set_write_batch_size(1);
+  write_workload.Setup();
+
+  // Retrieve tablet id.
+  TServerDetails *ts = ts_map_[cluster_->tablet_server(kTsIndex)->uuid()];
+  vector<tserver::ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  ASSERT_OK(WaitForNumTabletsOnTS(ts, 1, timeout, &tablets));
+  string tablet_id = tablets[0].tablet_status().tablet_id();
+
+  LOG(INFO) << "Starting workload...";
+
+  write_workload.Start();
+
+  LOG(INFO) << "Waiting for at least 4 files in WAL dir on tserver 0 for tablet "
+            << tablets[0].tablet_status().tablet_id() << "...";
+  ASSERT_OK(inspect_->WaitForMinFilesInTabletWalDirOnTS(kTsIndex,
+            tablet_id, /* num wal segments + index file */ 4));
+
+  auto *ets = cluster_->tablet_server(0);
+
+  write_workload.StopAndJoin();
+
+  // Get the current consensus state.
+  ConsensusStatePB orig_cstate;
+  ASSERT_OK(GetConsensusState(ts, tablet_id, timeout, EXCLUDE_HEALTH_REPORT, &orig_cstate));
+
+  // Shutdown the cluster.
+  cluster_->Shutdown();
+
+  // Before restarting the cluster, delete a log segment
+  // from the first tablet replica.
+  {
+    FsManagerOpts opts;
+    opts.wal_root = ets->wal_dir();
+    opts.data_roots = ets->data_dirs();
+
+    gscoped_ptr<FsManager> fs_manager(new FsManager(env_, opts));
+
+    ASSERT_OK(fs_manager->Open());
+
+    string wal_dir = fs_manager->GetTabletWalDir(tablet_id);
+
+    // Delete one of the WAL segments so at tablet startup time we will
+    // detect out-of-order WAL segments during log replay and fail to bootstrap.
+    string segment = fs_manager->GetWalSegmentFileName(tablet_id, 2);
+
+    LOG(INFO) << "Deleting WAL segment: " << segment;
+    ASSERT_OK(fs_manager->env()->DeleteFile(segment));
+  }
+
+  ASSERT_OK(cluster_->Restart());
+
+  // The master will evict and then re-add the FAILED tablet replica.
+  for (unsigned i = 0; i < kNumTs; ++i) {
+    TServerDetails *ts_details = ts_map_[cluster_->tablet_server(i)->uuid()];
+    // Timeout atleast 60s to avoid test being flaky on TSAN mode.
+    ASSERT_OK(WaitUntilTabletRunning(ts_details, tablet_id,
+              MonoDelta::FromSeconds(60)));
+  }
+
+  // Ensure that the config changed since we started (evicted, re-added).
+  ConsensusStatePB new_cstate;
+  ASSERT_OK(GetConsensusState(ts, tablet_id, timeout, EXCLUDE_HEALTH_REPORT, &new_cstate));
+
+  ASSERT_GT(new_cstate.committed_config().opid_index(),
+            orig_cstate.committed_config().opid_index());
 }
 
 // Test for KUDU-2202 that ensures that blocks not found in the FS layer but
