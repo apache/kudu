@@ -28,7 +28,6 @@
 
 #include <gtest/gtest.h>
 
-#include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tools/ksck_results.h"
 #include "kudu/tools/rebalance_algo.h"
@@ -64,6 +63,7 @@ struct KsckTabletSummaryInput {
 
 struct KsckTableSummaryInput {
   std::string id;
+  int replication_factor;
 };
 
 // The input to build KsckResults data. Contains relevant sub-fields of the
@@ -114,7 +114,8 @@ KsckResults GenerateKsckResults(KsckResultsInput input) {
     for (const auto& summary_input : input.table_summaries) {
       KsckTableSummary summary;
       summary.id = summary_input.id;
-      summaries.emplace_back(summary);
+      summary.replication_factor = summary_input.replication_factor;
+      summaries.emplace_back(std::move(summary));
     }
   }
   return results;
@@ -208,9 +209,37 @@ ostream& operator<<(ostream& s, const ClusterBalanceInfo& info) {
   return s;
 }
 
-// Test converting KsckResults result into ClusterBalanceInfo.
-TEST(KuduKsckRebalanceTest, KsckResultsToClusterBalanceInfo) {
-  const KsckResultsTestConfig kConfigs[] = {
+class KsckResultsToClusterBalanceInfoTest : public ::testing::Test {
+ protected:
+  void RunTest(const Rebalancer::Config& rebalancer_cfg,
+               const vector<KsckResultsTestConfig>& test_configs) {
+    for (auto idx = 0; idx < test_configs.size(); ++idx) {
+      SCOPED_TRACE(Substitute("test config index: $0", idx));
+      const auto& cfg = test_configs[idx];
+      auto ksck_results = GenerateKsckResults(cfg.input);
+
+      Rebalancer rebalancer(rebalancer_cfg);
+      ClusterBalanceInfo cbi;
+      ASSERT_OK(rebalancer.KsckResultsToClusterBalanceInfo(
+          ksck_results, Rebalancer::MovesInProgress(), &cbi));
+      ASSERT_EQ(cfg.ref_balance_info, cbi);
+    }
+  }
+};
+
+// Test converting KsckResults result into ClusterBalanceInfo when movement
+// of RF=1 replicas is allowed.
+TEST_F(KsckResultsToClusterBalanceInfoTest, MoveRf1Replicas) {
+  const Rebalancer::Config rebalancer_config = {
+    {},     // master_addresses
+    {},     // table_filters
+    5,      // max_moves_per_server
+    30,     // max_staleness_interval_sec
+    0,      // max_run_time_sec
+    true,   // move_rf1_replicas
+  };
+
+  const vector<KsckResultsTestConfig> test_configs = {
     // Empty
     {
       {},
@@ -221,7 +250,7 @@ TEST(KuduKsckRebalanceTest, KsckResultsToClusterBalanceInfo) {
       {
         { { "ts_0" }, },
         { { "tablet_0", "table_a", { { "ts_0", true }, }, }, },
-        { { "table_a" }, },
+        { { "table_a", 1 }, },
       },
       {
         { { 0, { "table_a", { { 1, "ts_0" }, } } }, },
@@ -237,7 +266,7 @@ TEST(KuduKsckRebalanceTest, KsckResultsToClusterBalanceInfo) {
           { "tablet_a0", "table_a", { { "ts_1", true }, }, },
           { "tablet_a0", "table_a", { { "ts_2", true }, }, },
         },
-        { { "table_a", } },
+        { { "table_a", 3 } },
       },
       {
         {
@@ -263,7 +292,7 @@ TEST(KuduKsckRebalanceTest, KsckResultsToClusterBalanceInfo) {
           { "tablet_b_0", "table_b", { { "ts_0", true }, }, },
           { "tablet_c_0", "table_c", { { "ts_0", true }, }, },
         },
-        { { { "table_a" }, { "table_b" }, { "table_c" }, } },
+        { { { "table_a", 1 }, { "table_b", 1 }, { "table_c", 1 }, } },
       },
       {
         {
@@ -304,7 +333,7 @@ TEST(KuduKsckRebalanceTest, KsckResultsToClusterBalanceInfo) {
           { "tablet_c_0", "table_c", { { "ts_1", true }, }, },
           { "tablet_c_1", "table_c", { { "ts_1", true }, }, },
         },
-        { { { "table_a" }, { "table_b" }, { "table_c" }, } },
+        { { { "table_a", 3 }, { "table_b", 1 }, { "table_c", 1 }, } },
       },
       {
         {
@@ -331,16 +360,91 @@ TEST(KuduKsckRebalanceTest, KsckResultsToClusterBalanceInfo) {
     },
   };
 
-  for (auto idx = 0; idx < arraysize(kConfigs); ++idx) {
-    SCOPED_TRACE(Substitute("test config index: $0", idx)); \
-    const auto& cfg = kConfigs[idx];
-    auto ksck_results = GenerateKsckResults(cfg.input);
-    ClusterBalanceInfo cbi;
-    Rebalancer rebalancer({});
-    ASSERT_OK(rebalancer.KsckResultsToClusterBalanceInfo(
-        ksck_results, Rebalancer::MovesInProgress(), &cbi));
-    ASSERT_EQ(cfg.ref_balance_info, cbi);
-  }
+  NO_FATALS(RunTest(rebalancer_config, test_configs));
+}
+
+// Test converting KsckResults result into ClusterBalanceInfo when movement of
+// RF=1 replicas is disabled.
+TEST_F(KsckResultsToClusterBalanceInfoTest, DoNotMoveRf1Replicas) {
+  const Rebalancer::Config rebalancer_config = {
+    {},     // master_addresses
+    {},     // table_filters
+    5,      // max_moves_per_server
+    30,     // max_staleness_interval_sec
+    0,      // max_run_time_sec
+    false,  // move_rf1_replicas
+  };
+
+  const vector<KsckResultsTestConfig> test_configs = {
+    // Empty
+    {
+      {},
+      {}
+    },
+    // One tserver, one table, one tablet, RF=1.
+    {
+      {
+        { { "ts_0" }, },
+        { { "tablet_0", "table_a", { { "ts_0", true }, }, }, },
+        { { "table_a", 1 }, },
+      },
+      {
+        {},
+        { { 0, "ts_0" }, }
+      }
+    },
+    // Two tserver, two tables, RF=1.
+    {
+      {
+        { { "ts_0" }, { "ts_1" }, },
+        {
+          { "tablet_a0", "table_a", { { "ts_0", true }, }, },
+          { "tablet_b0", "table_b", { { "ts_0", true }, }, },
+          { "tablet_b1", "table_b", { { "ts_1", true }, }, },
+        },
+        { { "table_a", 1 }, { "table_b", 1 } },
+      },
+      {
+        {},
+        { { 0, "ts_1" }, { 0, "ts_0" }, }
+      }
+    },
+    // table_a: 1 tablet with RF=3
+    // table_b: 3 tablets with RF=1
+    // table_c: 2 tablets with RF=1
+    {
+      {
+        { { "ts_0" }, { "ts_1" }, { "ts_2" }, },
+        {
+          { "tablet_a_0", "table_a", { { "ts_0", true }, }, },
+          { "tablet_a_0", "table_a", { { "ts_1", true }, }, },
+          { "tablet_a_0", "table_a", { { "ts_2", true }, }, },
+          { "tablet_b_0", "table_b", { { "ts_0", true }, }, },
+          { "tablet_b_1", "table_b", { { "ts_0", true }, }, },
+          { "tablet_b_2", "table_b", { { "ts_0", true }, }, },
+          { "tablet_c_0", "table_c", { { "ts_1", true }, }, },
+          { "tablet_c_1", "table_c", { { "ts_1", true }, }, },
+        },
+        { { { "table_a", 3 }, { "table_b", 1 }, { "table_c", 1 }, } },
+      },
+      {
+        {
+          {
+            0, {
+              "table_a", {
+                { 1, "ts_2" }, { 1, "ts_1" }, { 1, "ts_0" },
+              }
+            }
+          },
+        },
+        {
+          { 1, "ts_2" }, { 1, "ts_1" }, { 1, "ts_0" },
+        },
+      }
+    },
+  };
+
+  NO_FATALS(RunTest(rebalancer_config, test_configs));
 }
 
 } // namespace tools

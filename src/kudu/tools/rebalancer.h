@@ -229,7 +229,7 @@ class Rebalancer {
     client::sp::shared_ptr<client::KuduClient> client_;
   };
 
-  FRIEND_TEST(KuduKsckRebalanceTest, KsckResultsToClusterBalanceInfo);
+  friend class KsckResultsToClusterBalanceInfoTest;
 
   // Convert ksck results into cluster balance information suitable for the
   // input of the high-level rebalancing algorithm. The 'moves_in_progress'

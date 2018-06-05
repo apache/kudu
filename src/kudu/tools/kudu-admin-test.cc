@@ -108,6 +108,7 @@ using std::deque;
 using std::ostringstream;
 using std::string;
 using std::thread;
+using std::tuple;
 using std::unique_ptr;
 using std::vector;
 using strings::Split;
@@ -253,7 +254,7 @@ enum class DownTS {
 };
 class MoveTabletParamTest :
     public AdminCliTest,
-    public ::testing::WithParamInterface<std::tuple<Kudu1097, DownTS>> {
+    public ::testing::WithParamInterface<tuple<Kudu1097, DownTS>> {
 };
 
 TEST_P(MoveTabletParamTest, Test) {
@@ -1426,7 +1427,7 @@ static Status CreateUnbalancedTables(
 // every table being rebalanced. This test covers different replication factors.
 class RebalanceParamTest :
     public AdminCliTest,
-    public ::testing::WithParamInterface<std::tuple<int, Kudu1097>> {
+    public ::testing::WithParamInterface<tuple<int, Kudu1097>> {
 };
 INSTANTIATE_TEST_CASE_P(, RebalanceParamTest,
     ::testing::Combine(::testing::Values(1, 2, 3, 5),
@@ -1493,7 +1494,7 @@ TEST_P(RebalanceParamTest, Rebalance) {
     "cluster",
     "rebalance",
     cluster_->master()->bound_rpc_addr().ToString(),
-    "--move_single_replicas",
+    "--move_single_replicas=enabled",
   };
 
   {
@@ -1534,7 +1535,7 @@ TEST_P(RebalanceParamTest, Rebalance) {
     ASSERT_TRUE(s.ok()) << s.ToString() << ":" << err;
     ASSERT_STR_CONTAINS(out, "rebalancing is complete: cluster is balanced")
         << "stderr: " << err;
-    // The cluster is un-balanced, so many replicas should have been moved.
+    // The cluster was un-balanced, so many replicas should have been moved.
     ASSERT_STR_NOT_CONTAINS(out, "(moved 0 replicas)");
   }
 
@@ -1748,7 +1749,6 @@ TEST_P(DDLDuringRebalancingTest, TablesCreatedAndDeletedDuringRebalancing) {
     "cluster",
     "rebalance",
     cluster_->master()->bound_rpc_addr().ToString(),
-    "--move_single_replicas",
   };
 
   // Run the rebalancer concurrently with the DDL operations. The second run
@@ -2052,6 +2052,103 @@ TEST_P(TserverAddedDuringRebalancingTest, TserverStarts) {
 
   NO_FATALS(cluster_->AssertNoCrashes());
   NO_FATALS(ClusterVerifier(cluster_.get()).CheckCluster());
+}
+
+// A test to verify how the rebalancer handles replicas of single-replica
+// tablets in case of various values of the '--move_single_replicas' flag
+// and replica management schemes.
+class RebalancerAndSingleReplicaTablets :
+    public AdminCliTest,
+    public ::testing::WithParamInterface<tuple<string, Kudu1097>> {
+};
+INSTANTIATE_TEST_CASE_P(, RebalancerAndSingleReplicaTablets,
+    ::testing::Combine(::testing::Values("auto", "enabled", "disabled"),
+                       ::testing::Values(Kudu1097::Disable, Kudu1097::Enable)));
+TEST_P(RebalancerAndSingleReplicaTablets, SingleReplicasStayOrMove) {
+  if (!AllowSlowTests()) {
+    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
+    return;
+  }
+
+  constexpr auto kRepFactor = 1;
+  constexpr auto kNumTservers = 2 * (kRepFactor + 1);
+  constexpr auto kNumTables = kNumTservers;
+  constexpr auto kTserverUnresponsiveMs = 3000;
+  const auto& param = GetParam();
+  const auto& move_single_replica = std::get<0>(param);
+  const auto is_343_scheme = (std::get<1>(param) == Kudu1097::Enable);
+  const string table_name_pattern = "rebalance_test_table_$0";
+  const vector<string> master_flags = {
+    Substitute("--raft_prepare_replacement_before_eviction=$0", is_343_scheme),
+    Substitute("--tserver_unresponsive_timeout_ms=$0", kTserverUnresponsiveMs),
+  };
+  const vector<string> tserver_flags = {
+    Substitute("--raft_prepare_replacement_before_eviction=$0", is_343_scheme),
+  };
+
+  FLAGS_num_tablet_servers = kNumTservers;
+  FLAGS_num_replicas = kRepFactor;
+  NO_FATALS(BuildAndStart(tserver_flags, master_flags));
+
+  // Keep running only (kRepFactor + 1) tablet servers and shut down the rest.
+  for (auto i = kRepFactor + 1; i < kNumTservers; ++i) {
+    cluster_->tablet_server(i)->Shutdown();
+  }
+
+  // Wait for the catalog manager to understand that only (kRepFactor + 1)
+  // tablet servers are available.
+  SleepFor(MonoDelta::FromMilliseconds(5 * kTserverUnresponsiveMs / 4));
+
+  // Create few tables with their tablet replicas landing only on those
+  // (kRepFactor + 1) running tablet servers.
+  KuduSchema client_schema(client::KuduSchemaFromSchema(schema_));
+  for (auto i = 0; i < kNumTables; ++i) {
+    const string table_name = Substitute(table_name_pattern, i);
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    ASSERT_OK(table_creator->table_name(table_name)
+              .schema(&client_schema)
+              .add_hash_partitions({ "key" }, 3)
+              .num_replicas(kRepFactor)
+              .Create());
+    ASSERT_OK(RunKuduTool({
+      "perf",
+      "loadgen",
+      cluster_->master()->bound_rpc_addr().ToString(),
+      Substitute("--table_name=$0", table_name),
+      // Don't need much data in there.
+      "--num_threads=1",
+      "--num_rows_per_thread=1",
+    }));
+  }
+  for (auto i = kRepFactor + 1; i < kNumTservers; ++i) {
+    ASSERT_OK(cluster_->tablet_server(i)->Restart());
+  }
+
+  string out;
+  string err;
+  const Status s = RunKuduTool({
+    "cluster",
+    "rebalance",
+    cluster_->master()->bound_rpc_addr().ToString(),
+    Substitute("--move_single_replicas=$0", move_single_replica),
+  }, &out, &err);
+  ASSERT_TRUE(s.ok()) << s.ToString() << ":" << err;
+  ASSERT_STR_CONTAINS(out, "rebalancing is complete: cluster is balanced");
+  if (move_single_replica == "enabled" ||
+      (move_single_replica == "auto" && is_343_scheme)) {
+    // Should move appropriate replicas of single-replica tablets.
+    ASSERT_STR_NOT_CONTAINS(out,
+        "rebalancing is complete: cluster is balanced (moved 0 replicas)");
+    ASSERT_STR_NOT_CONTAINS(err, "has single replica, skipping");
+  } else {
+    ASSERT_STR_CONTAINS(out,
+        "rebalancing is complete: cluster is balanced (moved 0 replicas)");
+    ASSERT_STR_MATCHES(err, "tablet .* of table '.*' (.*) has single replica, skipping");
+  }
+
+  NO_FATALS(cluster_->AssertNoCrashes());
+  ClusterVerifier v(cluster_.get());
+  NO_FATALS(v.CheckCluster());
 }
 
 } // namespace tools

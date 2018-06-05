@@ -299,7 +299,7 @@ Status CheckCompleteMove(const vector<string>& master_addresses,
         return Status::OK();
       }
       // Make sure the current leader has asserted its leadership before sending
-      // it to ChangeConfig request.
+      // it the ChangeConfig request.
       OpId opid;
       RETURN_NOT_OK(GetLastCommittedOpId(tablet_id, leader_uuid, leader_hp,
                                          client->default_admin_operation_timeout(),
@@ -497,6 +497,52 @@ Status DoChangeConfig(const vector<string>& master_addresses,
     return StatusFromPB(resp.error().status());
   }
   return Status::OK();
+}
+
+// This could alternatively be implemented using the GetFlags API, but the
+// GetFlags RPC is not supported on all versions with which the rebalancing
+// tool would like to be compatible, and this method based on PB fields
+// is less fragile than the string matching required to use GetFlags with old
+// versions.
+Status Is343SchemeCluster(const vector<string>& master_addresses,
+                          const boost::optional<string>& tablet_id_in,
+                          bool* is_343_scheme) {
+  client::sp::shared_ptr<client::KuduClient> client;
+  RETURN_NOT_OK(client::KuduClientBuilder()
+                .master_server_addrs(master_addresses)
+                .Build(&client));
+  string tablet_id;
+  if (tablet_id_in) {
+    tablet_id = *tablet_id_in;
+  } else {
+    vector<string> table_names;
+    RETURN_NOT_OK(client->ListTables(&table_names));
+    if (table_names.empty()) {
+      return Status::Incomplete("not a single table found");
+    }
+
+    const auto& table_name = table_names.front();
+    client::sp::shared_ptr<client::KuduTable> client_table;
+    RETURN_NOT_OK(client->OpenTable(table_name, &client_table));
+    vector<client::KuduScanToken*> tokens;
+    ElementDeleter deleter(&tokens);
+    client::KuduScanTokenBuilder builder(client_table.get());
+    RETURN_NOT_OK(builder.Build(&tokens));
+    if (tokens.empty()) {
+      return Status::Incomplete(Substitute(
+          "table '$0': not a single scan token returned", table_name));
+    }
+    tablet_id = tokens.front()->tablet().id();
+  }
+
+  string leader_uuid;
+  HostPort leader_hp;
+  RETURN_NOT_OK(GetTabletLeader(client, tablet_id, &leader_uuid, &leader_hp));
+  unique_ptr<consensus::ConsensusServiceProxy> proxy;
+  RETURN_NOT_OK(BuildProxy(leader_hp.host(), leader_hp.port(), &proxy));
+  return GetConsensusState(proxy, tablet_id, leader_uuid,
+                           client->default_admin_operation_timeout(),
+                           nullptr /* consensus_state */, is_343_scheme);
 }
 
 } // namespace tools

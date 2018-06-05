@@ -15,35 +15,39 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <cstddef>
+#include <algorithm>
+#include <cstdlib>
 #include <iostream>
-#include <map>
+#include <iterator>
 #include <memory>
-#include <set>
 #include <string>
-#include <type_traits>
+#include <tuple>
 #include <unordered_map>
-#include <utility>
 #include <vector>
 
+#include <boost/algorithm/string/predicate.hpp>
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
+#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tools/ksck.h"
 #include "kudu/tools/ksck_remote.h"
+#include "kudu/tools/ksck_results.h"
 #include "kudu/tools/rebalancer.h"
 #include "kudu/tools/tool_action.h"
 #include "kudu/tools/tool_action_common.h"
+#include "kudu/tools/tool_replica_util.h"
 #include "kudu/util/status.h"
+#include "kudu/util/version_util.h"
 
 using std::cout;
 using std::endl;
-using std::multimap;
-using std::set;
+using std::make_tuple;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
@@ -84,13 +88,37 @@ DEFINE_int64(max_run_time_sec, 0,
              "Maximum time to run the rebalancing, in seconds. Specifying 0 "
              "means not imposing any limit on the rebalancing run time.");
 
-DEFINE_bool(move_single_replicas, false,
-            "Whether to move single replica tablets (i.e. replicas of tablets "
-            "of replication factor 1).");
+DEFINE_string(move_single_replicas, "auto",
+              "Whether to move single replica tablets (i.e. replicas of tablets "
+              "of replication factor 1). Acceptable values are: "
+              "'auto', 'enabled', 'disabled'. The value of 'auto' means "
+              "turn it on/off depending on the replica management scheme "
+              "and Kudu version.");
 
 DEFINE_bool(output_replica_distribution_details, false,
             "Whether to output details on per-table and per-server "
             "replica distribution");
+
+static bool ValidateMoveSingleReplicas(const char* flag_name,
+                                       const string& flag_value) {
+  const vector<string> allowed_values = { "auto", "enabled", "disabled" };
+  if (std::find_if(allowed_values.begin(), allowed_values.end(),
+                   [&](const string& allowed_value) {
+                     return boost::iequals(allowed_value, flag_value);
+                   }) != allowed_values.end()) {
+    return true;
+  }
+
+  std::ostringstream ss;
+  ss << "'" << flag_value << "': unsupported value for --" << flag_name
+     << " flag; should be one of ";
+  copy(allowed_values.begin(), allowed_values.end(),
+       std::ostream_iterator<string>(ss, " "));
+  LOG(ERROR) << ss.str();
+
+  return false;
+}
+DEFINE_validator(move_single_replicas, &ValidateMoveSingleReplicas);
 
 namespace kudu {
 namespace tools {
@@ -111,6 +139,99 @@ Status RunKsck(const RunnerContext& context) {
   return ksck->RunAndPrintResults();
 }
 
+// Does the version in 'version_str' support movement of single replicas?
+// The minimum version required is 1.7.1.
+bool VersionSupportsRF1Movement(const string& version_str) {
+  Version v;
+  if (!ParseVersion(version_str, &v).ok()) {
+    return false;
+  }
+  return make_tuple(v.major, v.minor, v.maintenance) >= make_tuple(1, 7, 1);
+}
+
+// Whether it make sense to move replicas of single-replica tablets.
+// The output parameter 'move_single_replicas' cannot be null.
+//
+// Moving replicas of tablets with replication factor one (a.k.a. non-replicated
+// tablets) is tricky because of the following:
+//
+//   * The sequence of Raft configuration updates when moving tablet replica
+//     in case of the 3-2-3 replica management scheme.
+//
+//   * KUDU-2443: even with the 3-4-3 replica management scheme, moving of
+//     non-replicated tablets is not possible for the versions prior to the fix.
+//
+Status EvaluateMoveSingleReplicasFlag(const vector<string>& master_addresses,
+                                      bool* move_single_replicas) {
+  DCHECK(move_single_replicas);
+  if (!boost::iequals(FLAGS_move_single_replicas, "auto")) {
+    if (boost::iequals(FLAGS_move_single_replicas, "enabled")) {
+      *move_single_replicas = true;
+    } else {
+      DCHECK(boost::iequals(FLAGS_move_single_replicas, "disabled"));
+      *move_single_replicas = false;
+    }
+    return Status::OK();
+  }
+
+  shared_ptr<KsckCluster> cluster;
+  RETURN_NOT_OK_PREPEND(RemoteKsckCluster::Build(master_addresses, &cluster),
+                        "unable to build KsckCluster");
+  shared_ptr<Ksck> ksck(new Ksck(cluster));
+
+  // Ignoring the result of the Ksck::Run() method: it's possible the cluster
+  // is not completely healthy but rebalancing can proceed; for example,
+  // if a leader election is occurring.
+  ignore_result(ksck->Run());
+  const auto& ksck_results = ksck->results();
+
+  for (const auto& summaries : { ksck_results.tserver_summaries,
+                                 ksck_results.master_summaries }) {
+    for (const auto& summary : summaries) {
+      if (summary.version) {
+        if (!VersionSupportsRF1Movement(*summary.version)) {
+          LOG(INFO) << "found Kudu server of version '" << *summary.version
+                    << "'; not rebalancing single-replica tablets as a result";
+          *move_single_replicas = false;
+          return Status::OK();
+        }
+      } else {
+        LOG(INFO) << "no version information from some servers; "
+                  << "not rebalancing single-replica tablets as the result";
+        *move_single_replicas = false;
+        return Status::OK();
+      }
+    }
+  }
+
+  // Now check for the replica management scheme. If it's the 3-2-3 scheme,
+  // don't move replicas of non-replicated (a.k.a. RF=1) tablets. The reasoning
+  // is simple: in Raft it's necessary to get acknowledgement from the majority
+  // of voter replicas to commit a write operation. In case of the 3-2-3 scheme
+  // and non-replicated tablets the majority is two out of two tablet replicas
+  // because the destination replica is added as a voter. In case of huge amount
+  // of data in the tablet or frequent updates, it might take a long time for the
+  // destination replica to catch up. During that time the tablet would not be
+  // available. The idea is to reduce the risk of unintended unavailability
+  // unless it's explicitly requested by the operator.
+  boost::optional<string> tid;
+  if (!ksck_results.tablet_summaries.empty()) {
+    tid = ksck_results.tablet_summaries.front().id;
+  }
+  bool is_343_scheme = false;
+  auto s = Is343SchemeCluster(master_addresses, tid, &is_343_scheme);
+  if (!s.ok()) {
+    LOG(WARNING) << s.ToString() << ": failed to get information "
+        "on the replica management scheme; not rebalancing "
+        "single-replica tablets as the result";
+    *move_single_replicas = false;
+    return Status::OK();
+  }
+
+  *move_single_replicas = is_343_scheme;
+  return Status::OK();
+}
+
 // Rebalance the cluster. The process is run step-by-step, where at each step
 // a new batch of move operations is output by the algorithm. As many as
 // possible replica movements from one batch are performed concurrently, while
@@ -119,13 +240,24 @@ Status RunKsck(const RunnerContext& context) {
 // can be the source and the destination of no more than the specified number of
 // move operations.
 Status RunRebalance(const RunnerContext& context) {
+  const vector<string> master_addresses = Split(
+      FindOrDie(context.required_args, kMasterAddressesArg), ",");
+  const vector<string> table_filters =
+      Split(FLAGS_tables, ",", strings::SkipEmpty());
+
+  // Evaluate --move_single_replicas flag: decide whether enable to disable
+  // moving of single-replica tablets based on the reported version of the
+  // Kudu components.
+  bool move_single_replicas = false;
+  RETURN_NOT_OK(EvaluateMoveSingleReplicasFlag(master_addresses,
+                                               &move_single_replicas));
   Rebalancer rebalancer(Rebalancer::Config(
-      std::move(Split(FindOrDie(context.required_args, kMasterAddressesArg), ",")),
-      std::move(Split(FLAGS_tables, ",", strings::SkipEmpty())),
+      master_addresses,
+      table_filters,
       FLAGS_max_moves_per_server,
       FLAGS_max_staleness_interval_sec,
       FLAGS_max_run_time_sec,
-      FLAGS_move_single_replicas,
+      move_single_replicas,
       FLAGS_output_replica_distribution_details));
 
   // Print info on pre-rebalance distribution of replicas.

@@ -83,7 +83,7 @@ Status GetTabletLeader(
 //
 // The function returns Status::OK() if the 'is_complete' and
 // 'completion_status' contain valid information, otherwise it returns first
-// non-OK status encountered while trying to status of the replica move.
+// non-OK status encountered while trying to get status of the replica movement.
 //
 // If the source replica happens to be a leader, this function asks it to step
 // down. Also, in case of 3-2-3 replica management mode, this function removes
@@ -126,6 +126,17 @@ Status DoChangeConfig(const std::vector<std::string>& master_addresses,
     consensus::ChangeConfigType cc_type,
     const boost::optional<int64_t>& cas_opid_idx = boost::none,
     bool* cas_failed = nullptr);
+
+// Check whether the cluster with the specified master addresses supports
+// the 3-4-3 replica management scheme. Returns Status::Incomplete() if
+// there is not enough information available to determine the replica management
+// scheme (e.g., not a single table exists in the cluster). If the identifier
+// of an existing tablet is known, pass it via the 'tablet_id_in' parameter.
+// The 'is_343_scheme' out parameter is set to 'true' if the cluster uses
+// the 3-4-3 replica management scheme.
+Status Is343SchemeCluster(const std::vector<std::string>& master_addresses,
+                          const boost::optional<std::string>& tablet_id_in,
+                          bool* is_343_scheme);
 
 } // namespace tools
 } // namespace kudu
