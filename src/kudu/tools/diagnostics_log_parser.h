@@ -41,18 +41,9 @@ enum class RecordType {
   kUnknown
 };
 
-const char* RecordTypeToString(RecordType r) {
-  switch (r) {
-    case RecordType::kStacks: return "stacks"; break;
-    case RecordType::kSymbols: return "symbols"; break;
-    case RecordType::kUnknown: return "<unknown>"; break;
-  }
-  return "<unreachable>";
-}
+const char* RecordTypeToString(RecordType r);
 
-std::ostream& operator<<(std::ostream& o, RecordType r) {
-  return o << RecordTypeToString(r);
-}
+std::ostream& operator<<(std::ostream& o, RecordType r);
 
 // A stack sample from the log.
 struct StacksRecord {

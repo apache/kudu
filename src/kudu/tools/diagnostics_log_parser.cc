@@ -21,11 +21,8 @@
 #include <cstdint>
 #include <iomanip>
 #include <iostream>
-#include <memory>
 #include <string>
-#include <unordered_map>
 #include <utility>
-#include <vector>
 
 #include <boost/optional/optional.hpp>
 #include <glog/logging.h>
@@ -41,19 +38,28 @@
 #include "kudu/util/jsonreader.h"
 #include "kudu/util/status.h"
 
-namespace kudu {
-namespace tools {
-
 using std::array;
-using std::cerr;
 using std::cout;
 using std::endl;
 using std::ifstream;
 using std::string;
-using std::unique_ptr;
-using std::unordered_map;
-using std::vector;
 using strings::Substitute;
+
+namespace kudu {
+namespace tools {
+
+const char* RecordTypeToString(RecordType r) {
+  switch (r) {
+    case RecordType::kStacks: return "stacks"; break;
+    case RecordType::kSymbols: return "symbols"; break;
+    case RecordType::kUnknown: return "<unknown>"; break;
+  }
+  return "<unreachable>";
+}
+
+std::ostream& operator<<(std::ostream& o, RecordType r) {
+  return o << RecordTypeToString(r);
+}
 
 void StackDumpingLogVisitor::VisitSymbol(const string& addr, const string& symbol) {
   InsertIfNotPresent(&symbols_, addr, symbol);
@@ -164,7 +170,7 @@ Status LogParser::ParseSymbols(const ParsedLine& pl) {
 
 Status LogParser::ParseStackGroup(const rapidjson::Value& group_json,
                                   StacksRecord::Group* group) {
-  DCHECK_NOTNULL(group);
+  DCHECK(group);
   StacksRecord::Group ret;
   if (PREDICT_FALSE(!group_json.IsObject())) {
     return Status::InvalidArgument("expected stacks groups to be JSON objects");
