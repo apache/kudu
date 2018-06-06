@@ -655,8 +655,8 @@ Status DeltaFileIterator::VisitMutations(Visitor *visitor) {
 // If snap cannot include any mutations with a higher timestamp 'continue_visit' is
 // set to false, it's set to true otherwise.
 inline bool IsRedoRelevant(const MvccSnapshot& snap,
-                            const Timestamp& timestamp,
-                            bool* continue_visit) {
+                           const Timestamp& timestamp,
+                           bool* continue_visit) {
   *continue_visit = true;
   if (!snap.IsCommitted(timestamp)) {
     if (!snap.MayHaveCommittedTransactionsAtOrAfter(timestamp)) {
