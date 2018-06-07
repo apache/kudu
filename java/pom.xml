@@ -24,7 +24,7 @@
 
     <groupId>org.apache.kudu</groupId>
     <artifactId>kudu-parent</artifactId>
-    <version>1.7.1</version>
+    <version>1.7.2-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <!-- inherit from the ASF POM for distribution management -->
