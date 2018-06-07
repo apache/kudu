@@ -67,10 +67,10 @@
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 
-DEFINE_int32(tablet_copy_begin_session_timeout_ms, 3000,
+DEFINE_int32(tablet_copy_begin_session_timeout_ms, 30000,
              "Tablet server RPC client timeout for BeginTabletCopySession calls. "
              "Also used for EndTabletCopySession calls.");
-TAG_FLAG(tablet_copy_begin_session_timeout_ms, hidden);
+TAG_FLAG(tablet_copy_begin_session_timeout_ms, advanced);
 
 DEFINE_bool(tablet_copy_save_downloaded_metadata, false,
             "Save copies of the downloaded tablet copy files for debugging purposes. "
@@ -265,6 +265,7 @@ Status TabletCopyClient::Start(const HostPort& copy_source_addr,
   }
 
   session_id_ = resp.session_id();
+  // Update our default RPC timeout to reflect the server's session timeout.
   session_idle_timeout_millis_ = resp.session_idle_timeout_millis();
 
   // Store a copy of the remote (old) superblock.
