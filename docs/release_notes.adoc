@@ -62,6 +62,18 @@ Apache Kudu 1.7.1 is a bug-fix release which fixes critical issues in Kudu 1.7.0
 * Fixed an equality check on `decimal` column predicates that could result
   in pruning that is too conservative.
 
+* Fixed an issue where ColumnSchema.toString() would throw a
+  NullPointerException on non-decimal types.
+
+* Added an optimization that improves the performance when scanning tables
+  with large consecutive runs of deleted rows. For example, users may use
+  'DELETE' all rows in a table or partition before re-adding them, or they
+  may delete all data corresponding to some prefix of the PK.
+
+* Fixed an issue where moving single-replica tablets via
+  `kudu tablet change_config move_replica` does not work.
+  (see link:https://issues.apache.org/jira/browse/KUDU-2443[KUDU-2443]).
+
 [[rn_1.7.0_release_notes]]
 = Apache Kudu 1.7.0 Release Notes
 
