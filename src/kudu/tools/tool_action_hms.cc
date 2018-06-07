@@ -102,6 +102,16 @@ string RenameHiveIncompatibleTable(const string& name) {
   return table_name;
 }
 
+// Only alter the table in Kudu but not in the Hive Metastore.
+Status AlterKuduTable(const client::sp::shared_ptr<KuduClient>& kudu_client,
+                      const string& name,
+                      const string& new_name) {
+  unique_ptr<KuduTableAlterer> alterer(kudu_client->NewTableAlterer(name));
+  return alterer->RenameTo(new_name)
+                ->alter_external_catalogs(false)
+                ->Alter();
+}
+
 // Alter legacy tables (which includes non-Impala tables, Impala managed/external
 // tables) to follow the format 'database_name.table_name' in table naming in Kudu.
 // Also, create HMS entries for non-Impala tables.
@@ -126,13 +136,6 @@ Status AlterLegacyKuduTables(const client::sp::shared_ptr<KuduClient>& kudu_clie
     }
   }
 
-  auto alter_kudu_table = [&](const string& name,
-                              const string& new_name) -> Status {
-    unique_ptr<KuduTableAlterer> alterer(kudu_client->NewTableAlterer(name));
-    return alterer->RenameTo(new_name)
-                  ->Alter();
-  };
-
   unordered_map<string, Status> failures;
   for (const auto& table_name : table_names) {
     hive::Table* hms_table = FindOrNull(hms_tables_map, table_name);
@@ -150,7 +153,7 @@ Status AlterLegacyKuduTables(const client::sp::shared_ptr<KuduClient>& kudu_clie
         RETURN_NOT_OK(kudu_client->TableExists(new_table_name, &exist));
         if (!exist) {
           // TODO(Hao): Use notification listener to avoid race conditions.
-          s = alter_kudu_table(table_name, new_table_name).AndThen([&] {
+          s = AlterKuduTable(kudu_client, table_name, new_table_name).AndThen([&] {
             return hms_catalog->UpgradeLegacyImpalaTable(kudu_table->id(),
                 hms_table->dbName, hms_table->tableName,
                 client::SchemaFromKuduSchema(kudu_table->schema()));
@@ -175,7 +178,7 @@ Status AlterLegacyKuduTables(const client::sp::shared_ptr<KuduClient>& kudu_clie
         s = hms_catalog->CreateTable(kudu_table->id(), new_table_name, schema);
       }
       s = s.AndThen([&] {
-        return alter_kudu_table(table_name, new_table_name);
+        return AlterKuduTable(kudu_client, table_name, new_table_name);
       });
     }
 

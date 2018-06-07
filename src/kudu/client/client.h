@@ -37,6 +37,7 @@
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #ifdef KUDU_HEADERS_NO_STUBS
 #include <gtest/gtest_prod.h>
+
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #else
@@ -55,13 +56,19 @@ class MonoDelta;
 class PartitionSchema;
 class SecurityUnknownTskTest;
 
+namespace client {
+class KuduClient;
+}
+
 namespace tools {
 class LeaderMasterProxy;
+
+Status AlterKuduTable(const client::sp::shared_ptr<client::KuduClient>& kudu_client,
+                      const std::string& name, const std::string& new_name);
 } // namespace tools
 
 namespace client {
 
-class KuduClient;
 class KuduDelete;
 class KuduInsert;
 class KuduLoggingCallback;
@@ -1181,7 +1188,13 @@ class KUDU_EXPORT KuduTableAlterer {
 
  private:
   class KUDU_NO_EXPORT Data;
+
   friend class KuduClient;
+
+  friend Status tools::AlterKuduTable(
+      const client::sp::shared_ptr<client::KuduClient>& kudu_client,
+      const std::string& name,
+      const std::string& new_name);
 
   FRIEND_TEST(kudu::MasterHmsTest, TestAlterTable);
 
@@ -2391,6 +2404,7 @@ class KUDU_EXPORT KuduPartitioner {
   Status PartitionRow(const KuduPartialRow& row, int* partition);
  private:
   class KUDU_NO_EXPORT Data;
+
   friend class KuduPartitionerBuilder;
 
   explicit KuduPartitioner(Data* data);

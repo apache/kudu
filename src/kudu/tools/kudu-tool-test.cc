@@ -2075,6 +2075,11 @@ TEST_F(ToolTest, TestHmsUpgrade) {
     ASSERT_EQ(2, table_names.size());
   }
 
+  // Restart external mini cluster to enable Hive Metastore integration.
+  cluster_->EnableMetastoreIntegration();
+  cluster_->ShutdownNodes(cluster::ClusterNodes::ALL);
+  ASSERT_OK(cluster_->Restart());
+
   // Upgrade the historical metadata in both Hive Metastore and Kudu.
   string out;
   NO_FATALS(RunActionStdinStdoutString(
