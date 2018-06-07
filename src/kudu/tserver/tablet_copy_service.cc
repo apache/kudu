@@ -98,10 +98,6 @@ using tablet::TabletReplica;
 
 namespace tserver {
 
-static MonoTime GetNewExpireTime() {
-  return MonoTime::Now() + MonoDelta::FromSeconds(FLAGS_tablet_copy_idle_timeout_sec);
-}
-
 TabletCopyServiceImpl::TabletCopyServiceImpl(
     ServerBase* server,
     TabletReplicaLookupIf* tablet_replica_lookup)
@@ -115,6 +111,12 @@ TabletCopyServiceImpl::TabletCopyServiceImpl(
   CHECK_OK(Thread::Create("tablet-copy", "tc-session-exp",
                           &TabletCopyServiceImpl::EndExpiredSessions, this,
                           &session_expiration_thread_));
+}
+
+TabletCopyServiceImpl::SessionEntry::SessionEntry(scoped_refptr<TabletCopySourceSession> session_in)
+    : session(std::move(session_in)),
+      last_accessed_time(MonoTime::Now()),
+      expire_timeout(MonoDelta::FromSeconds(FLAGS_tablet_copy_idle_timeout_sec)) {
 }
 
 bool TabletCopyServiceImpl::AuthorizeServiceUser(const google::protobuf::Message* /*req*/,
@@ -158,7 +160,7 @@ void TabletCopyServiceImpl::BeginTabletCopySession(
       session.reset(new TabletCopySourceSession(tablet_replica, session_id,
                                                 requestor_uuid, fs_manager_,
                                                 &tablet_copy_metrics_));
-      InsertOrDie(&sessions_, session_id, { session, GetNewExpireTime() });
+      InsertOrDie(&sessions_, session_id, SessionEntry(session));
     } else {
       session = session_entry->session;
       LOG_WITH_PREFIX(INFO) << Substitute(
@@ -397,7 +399,7 @@ Status TabletCopyServiceImpl::ValidateFetchRequestDataId(
 void TabletCopyServiceImpl::ResetSessionExpirationUnlocked(const std::string& session_id) {
   SessionEntry* session_entry = FindOrNull(sessions_, session_id);
   if (!session_entry) return;
-  session_entry->expires = GetNewExpireTime();
+  session_entry->last_accessed_time = MonoTime::Now();
 }
 
 Status TabletCopyServiceImpl::DoEndTabletCopySessionUnlocked(
@@ -408,7 +410,7 @@ Status TabletCopyServiceImpl::DoEndTabletCopySessionUnlocked(
   RETURN_NOT_OK(FindSessionUnlocked(session_id, app_error, &session));
   // Remove the session from the map.
   // It will get destroyed once there are no outstanding refs.
-  LOG_WITH_PREFIX(INFO) << "Ending tablet copy session " << session_id << " on tablet "
+  LOG_WITH_PREFIX(INFO) << "ending tablet copy session " << session_id << " on tablet "
                         << session->tablet_id() << " with peer " << session->requestor_uuid();
   CHECK_EQ(1, sessions_.erase(session_id));
   return Status::OK();
@@ -419,19 +421,23 @@ void TabletCopyServiceImpl::EndExpiredSessions() {
     MutexLock l(sessions_lock_);
     const MonoTime now = MonoTime::Now();
 
-    vector<string> expired_session_ids;
+    vector<SessionEntry> expired_session_entries;
     for (const auto& entry : sessions_) {
-      const string& session_id = entry.first;
-      const MonoTime& expiration = entry.second.expires;
+      const MonoTime& expiration = entry.second.last_accessed_time + entry.second.expire_timeout;
       if (expiration < now) {
-        expired_session_ids.push_back(session_id);
+        expired_session_entries.push_back(entry.second);
       }
     }
-    for (const string& session_id : expired_session_ids) {
-      LOG_WITH_PREFIX(INFO) << "Tablet Copy session " << session_id
-                            << " has expired. Terminating session.";
+    for (const auto& session_entry : expired_session_entries) {
+      auto idle_time = MonoTime::Now() - session_entry.last_accessed_time;
+      auto& session = session_entry.session;
+      LOG_WITH_PREFIX(INFO) << "tablet copy session " << session->session_id()
+                            << " on tablet " << session->tablet_id()
+                            << " with peer " << session->requestor_uuid()
+                            << " has expired after " << idle_time.ToString()
+                            << " of idle time";
       TabletCopyErrorPB::Code app_error;
-      CHECK_OK(DoEndTabletCopySessionUnlocked(session_id, &app_error));
+      CHECK_OK(DoEndTabletCopySessionUnlocked(session->session_id(), &app_error));
     }
   } while (!shutdown_latch_.WaitFor(MonoDelta::FromMilliseconds(
                                     FLAGS_tablet_copy_timeout_poll_period_ms)));

@@ -117,6 +117,9 @@ class TabletCopySourceSession : public RefCountedThreadSafe<TabletCopySourceSess
   // Return ID of tablet corresponding to this session.
   const std::string& tablet_id() const;
 
+  // Return ID of session.
+  const std::string& session_id() const { return session_id_; }
+
   // Return UUID of the requestor that initiated this session.
   const std::string& requestor_uuid() const;
 

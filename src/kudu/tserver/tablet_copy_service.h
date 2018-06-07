@@ -83,8 +83,11 @@ class TabletCopyServiceImpl : public TabletCopyServiceIf {
 
  private:
   struct SessionEntry {
+    explicit SessionEntry(scoped_refptr<TabletCopySourceSession> session_in);
+
     scoped_refptr<TabletCopySourceSession> session;
-    MonoTime expires;
+    MonoTime last_accessed_time; // Time this session was last accessed.
+    MonoDelta expire_timeout;
   };
 
   typedef std::unordered_map<std::string, SessionEntry> SessionMap;
