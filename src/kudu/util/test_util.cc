@@ -343,15 +343,15 @@ int CountOpenFds(Env* env, const string& path_pattern) {
     CHECK(safe_strto32(c, &fd)) << "Unexpected file in fd list: " << c;
 #ifdef __APPLE__
     path_buf.resize(MAXPATHLEN);
-    char* buf_data = reinterpret_cast<char*>(path_buf.data());
     if (fcntl(fd, F_GETPATH, path_buf.data()) != 0) {
       if (errno == EBADF) {
         // The file was closed while we were looping. This is likely the
         // actual file descriptor used for opening /proc/fd itself.
         continue;
       }
-      PLOG(FATAL) << "Unknown error in fcntl(F_GETPATH): " << proc_file;
+      PLOG(FATAL) << "Unknown error in fcntl(F_GETPATH): " << fd;
     }
+    char* buf_data = reinterpret_cast<char*>(path_buf.data());
     path_buf.resize(strlen(buf_data));
 #else
     path_buf.resize(PATH_MAX);
