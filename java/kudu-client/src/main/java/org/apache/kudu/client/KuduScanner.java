@@ -129,6 +129,14 @@ public class KuduScanner {
   }
 
   /**
+   * Returns the current value of the scanner's scan request timeout.
+   * @return the timeout value, in milliseconds
+   */
+  public long getScanRequestTimeout() {
+    return asyncScanner.getScanRequestTimeout();
+  }
+
+  /**
    * A Builder class to build {@link KuduScanner}.
    * Use {@link KuduClient#newScannerBuilder} in order to get a builder instance.
    */

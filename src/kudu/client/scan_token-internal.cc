@@ -201,6 +201,10 @@ Status KuduScanToken::Data::PBIntoScanner(KuduClient* client,
     RETURN_NOT_OK(scan_builder->SetBatchSizeBytes(message.batch_size_bytes()));
   }
 
+  if (message.has_scan_request_timeout_ms()) {
+    scan_builder->SetTimeoutMillis(message.scan_request_timeout_ms());
+  }
+
   *scanner = scan_builder.release();
   return Status::OK();
 }
@@ -272,6 +276,7 @@ Status KuduScanTokenBuilder::Data::Build(vector<KuduScanToken*>* tokens) {
   pb.set_cache_blocks(configuration_.spec().cache_blocks());
   pb.set_fault_tolerant(configuration_.is_fault_tolerant());
   pb.set_propagated_timestamp(client->GetLatestObservedTimestamp());
+  pb.set_scan_request_timeout_ms(configuration_.timeout().ToMilliseconds());
 
   if (configuration_.has_batch_size_bytes()) {
     pb.set_batch_size_bytes(configuration_.batch_size_bytes());

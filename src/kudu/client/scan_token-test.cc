@@ -30,6 +30,7 @@
 #include "kudu/client/client.h"
 #include "kudu/client/client.pb.h"
 #include "kudu/client/scan_batch.h"
+#include "kudu/client/scan_configuration.h"
 #include "kudu/client/scan_predicate.h"
 #include "kudu/client/scanner-internal.h"
 #include "kudu/client/schema.h"
@@ -45,6 +46,7 @@
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/tserver.pb.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -294,6 +296,29 @@ TEST_F(ScanTokenTest, TestScanTokens) {
 
     ASSERT_EQ(4, tokens.size());
     ASSERT_EQ(60, CountRows(tokens));
+    NO_FATALS(VerifyTabletInfo(tokens));
+  }
+
+  { // Scan timeout.
+    vector<KuduScanToken*> tokens;
+    ElementDeleter deleter(&tokens);
+    KuduScanTokenBuilder builder(table.get());
+    const int64_t kTimeoutMillis = 300001; // 5 minutes + 1 ms.
+    ASSERT_OK(builder.SetTimeoutMillis(kTimeoutMillis));
+    ASSERT_OK(builder.Build(&tokens));
+
+    for (const auto& token : tokens) {
+      string buf;
+      ASSERT_OK(token->Serialize(&buf));
+      KuduScanner* scanner_raw;
+      ASSERT_OK(KuduScanToken::DeserializeIntoScanner(client_.get(), buf, &scanner_raw));
+      unique_ptr<KuduScanner> scanner(scanner_raw); // Caller gets ownership of the scanner.
+      // Ensure the timeout configuration gets carried through the serialization process.
+      ASSERT_EQ(kTimeoutMillis, scanner->data_->configuration().timeout().ToMilliseconds());
+    }
+
+    ASSERT_GE(8, tokens.size());
+    ASSERT_EQ(200, CountRows(tokens));
     NO_FATALS(VerifyTabletInfo(tokens));
   }
 }

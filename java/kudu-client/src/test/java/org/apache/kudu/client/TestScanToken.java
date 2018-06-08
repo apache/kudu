@@ -24,10 +24,13 @@ import org.apache.kudu.Type;
 import org.junit.Before;
 import org.junit.Test;
 
+import java.io.IOException;
 import java.util.List;
 
 import static org.apache.kudu.util.ClientTestUtil.countScanTokenRows;
+import static org.apache.kudu.util.ClientTestUtil.createDefaultTable;
 import static org.apache.kudu.util.ClientTestUtil.createManyStringsSchema;
+import static org.apache.kudu.util.ClientTestUtil.loadDefaultTable;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -232,4 +235,21 @@ public class TestScanToken extends BaseKuduTest {
     token.intoScanner(syncClient);
   }
 
+  /** Test that scanRequestTimeout makes it from the scan token to the underlying Scanner class. */
+  @Test
+  public void testScanRequestTimeout() throws IOException {
+    final int NUM_ROWS_DESIRED = 100;
+    final int SCAN_REQUEST_TIMEOUT_MS = 20;
+    KuduTable table = createDefaultTable(syncClient, testTableName);
+    loadDefaultTable(syncClient, testTableName, NUM_ROWS_DESIRED);
+    KuduScanToken.KuduScanTokenBuilder builder =
+        new KuduScanToken.KuduScanTokenBuilder(client, table);
+    builder.scanRequestTimeout(SCAN_REQUEST_TIMEOUT_MS);
+    List<KuduScanToken> tokens = builder.build();
+    for (KuduScanToken token : tokens) {
+      byte[] serialized = token.serialize();
+      KuduScanner scanner = KuduScanToken.deserializeIntoScanner(serialized, syncClient);
+      assertEquals(SCAN_REQUEST_TIMEOUT_MS, scanner.getScanRequestTimeout());
+    }
+  }
 }

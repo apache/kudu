@@ -379,6 +379,14 @@ public final class AsyncKuduScanner {
   }
 
   /**
+   * Returns the scan request timeout for this scanner.
+   * @return the scan request timeout, in milliseconds
+   */
+  public long getScanRequestTimeout() {
+    return scanRequestTimeout;
+  }
+
+  /**
    * Returns the projection schema of this scanner. If specific columns were
    * not specified during scanner creation, the table schema is returned.
    * @return the projection schema for this scanner

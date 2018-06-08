@@ -36,6 +36,7 @@ import org.apache.kudu.client.KuduException;
 import org.apache.kudu.client.KuduPredicate;
 import org.apache.kudu.client.KuduScanToken;
 import org.apache.kudu.client.KuduScanner;
+import org.apache.kudu.client.KuduSession;
 import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.client.PartialRow;
 import org.apache.kudu.client.RowResult;
@@ -260,6 +261,28 @@ public abstract class ClientTestUtil {
     split.addInt("key", 50);
     option.addSplitRow(split);
     return option;
+  }
+
+  /**
+   * A generic helper function to create a table with default test options.
+   */
+  public static KuduTable createDefaultTable(KuduClient client, String tableName) throws KuduException {
+    return client.createTable(tableName, getBasicSchema(), getBasicCreateTableOptions());
+  }
+
+  /**
+   * Load a table of default schema with the specified number of records, in ascending key order.
+   */
+  public static void loadDefaultTable(KuduClient client, String tableName, int numRows)
+      throws KuduException {
+    KuduTable table = client.openTable(tableName);
+    KuduSession session = client.newSession();
+    for (int i = 0; i < numRows; i++) {
+      Insert insert = createBasicSchemaInsert(table, i);
+      session.apply(insert);
+    }
+    session.flush();
+    session.close();
   }
 
   public static Insert createBasicSchemaInsert(KuduTable table, int key) {

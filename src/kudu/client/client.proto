@@ -101,6 +101,11 @@ message ScanTokenPB {
   // The replica selection policy for the scan request.
   // See common.proto for further information about replica selections.
   optional ReplicaSelection replica_selection = 16 [default = LEADER_ONLY];
+
+  // The maximum length of time, in milliseconds, that each scan request to a
+  // server can take. If not set, the default value is controlled by the client
+  // scanner implementation.
+  optional int64 scan_request_timeout_ms = 17;
 }
 
 // All of the data necessary to authenticate to a cluster from a client with
