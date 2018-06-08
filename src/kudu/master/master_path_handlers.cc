@@ -45,6 +45,7 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/strings/ascii_ctype.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -261,6 +262,32 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
   {
     TableMetadataLock l(table.get(), LockMode::READ);
     (*output)["name"] = l.data().name();
+
+    // Not all Kudu tablenames are also valid Impala identifiers. We need to
+    // replace such names with a placeholder when they are used as Impala
+    // identifiers, like when used for Impala tablename in the Kudu Web UI.
+    // Valid Impala identifiers conform to the following rules:
+    // 1. Must not be empty.
+    // 2. Length must not exceed 128 characters.
+    // 3. First character must be alphabetic.
+    // 4. Every character must be alphanumeric or an underscore.
+    // 5. If it matches any Impala-reserved keyword, it must be surrounded
+    // by backticks.
+    // The last rule is not tested for in the code segment below as the backticks
+    // can be added at the time of usage, as is the case for Web UI where it's
+    // currently being passed to.
+    string impala_name = "<placeholder>";
+    string orig_name = l.data().name();
+    if (!orig_name.empty() &&
+      orig_name.length() <= 128 &&
+      ascii_isalpha(orig_name[0]) &&
+      find_if(orig_name.begin(), orig_name.end(), [](char c) {
+        return !(ascii_isalnum(c) || (c == '_'));
+        }) == orig_name.end()) {
+      impala_name = orig_name;
+    }
+
+    (*output)["impala_table_name"] = impala_name;
     (*output)["id"] = table_id;
     (*output)["version"] = l.data().pb.version();
 

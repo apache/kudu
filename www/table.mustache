@@ -151,7 +151,7 @@ under the License.
 
   <h3>Impala CREATE TABLE statement</h3>
   {{! Unusual formatting below because <pre> preserves whitespace in the output. }}
-  <pre><code>CREATE EXTERNAL TABLE `{{name}}` STORED AS KUDU
+  <pre><code>CREATE EXTERNAL TABLE `{{impala_table_name}}` STORED AS KUDU
 TBLPROPERTIES(
     'kudu.table_name' = '{{name}}',
     'kudu.master_addresses' = '{{master_addresses}}')</code></pre>
