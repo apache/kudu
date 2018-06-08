@@ -219,7 +219,8 @@ Status Ksck::CheckMasterHealth() {
 
     // Fetch the flags information.
     // Failing to gather flags is only a warning.
-    if (!master->FetchUnusualFlags().ok()) {
+    s = master->FetchUnusualFlags();
+    if (!s.ok()) {
       results_.warning_messages.push_back(s.CloneAndPrepend(Substitute(
           "unable to get flag information for master $0 ($1)",
           master->uuid(),
@@ -389,7 +390,8 @@ Status Ksck::FetchInfoFromTabletServers() {
 
           // Fetch the flags information.
           // Failing to gather flags is only a warning.
-          if (!ts->FetchUnusualFlags().ok()) {
+          s = ts->FetchUnusualFlags();
+          if (!s.ok()) {
             results_.warning_messages.push_back(s.CloneAndPrepend(Substitute(
                     "unable to get flag information for tablet server $0 ($1)",
                     ts->uuid(),

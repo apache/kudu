@@ -276,9 +276,13 @@ Status KsckResults::PrintTo(PrintMode mode, ostream& out) {
 
   // Next, report on checksum scans.
   RETURN_NOT_OK(PrintChecksumResults(checksum_results, out));
+  if (!checksum_results.tables.empty()) {
+    out << endl;
+  }
 
   // And, add a summary of all the things we checked.
   RETURN_NOT_OK(PrintTotalCounts(*this, out));
+  out << endl;
 
   // Penultimately, print the warnings.
   if (!warning_messages.empty()) {
@@ -528,7 +532,6 @@ Status PrintChecksumResults(const KsckChecksumResults& checksum_results,
       }
     }
   }
-  out << endl;
   return Status::OK();
 }
 
