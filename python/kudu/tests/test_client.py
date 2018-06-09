@@ -255,6 +255,35 @@ class TestClient(KuduTestBase, unittest.TestCase):
         with self.assertRaises(ValueError):
             self.client.new_session(flush_mode='foo')
 
+
+    def test_session_mutation_buffer_settings(self):
+        self.client.new_session(flush_mode=kudu.FLUSH_AUTO_BACKGROUND,
+                                mutation_buffer_sz= 10*1024*1024,
+                                mutation_buffer_watermark=0.5,
+                                mutation_buffer_flush_interval=2000,
+                                mutation_buffer_max_num=3)
+
+        session = self.client.new_session(flush_mode=kudu.FLUSH_AUTO_BACKGROUND)
+        session.set_mutation_buffer_space(10*1024*1024)
+        session.set_mutation_buffer_flush_watermark(0.5)
+        session.set_mutation_buffer_flush_interval(2000)
+        session.set_mutation_buffer_max_num(3)
+
+    def test_session_mutation_buffer_errors(self):
+        session = self.client.new_session(flush_mode=kudu.FLUSH_AUTO_BACKGROUND)
+
+        with self.assertRaises(OverflowError):
+            session.set_mutation_buffer_max_num(-1)
+
+        with self.assertRaises(kudu.errors.KuduInvalidArgument):
+            session.set_mutation_buffer_flush_watermark(1.2)
+
+        with self.assertRaises(OverflowError):
+            session.set_mutation_buffer_flush_interval(-1)
+
+        with self.assertRaises(OverflowError):
+            session.set_mutation_buffer_space(-1)
+
     def test_connect_timeouts(self):
         # it works! any other way to check
         kudu.connect(self.master_hosts, self.master_ports,

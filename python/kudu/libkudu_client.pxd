@@ -624,7 +624,11 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
 
         Status SetFlushMode(FlushMode m)
 
-        void SetMutationBufferSpace(size_t size)
+        Status SetMutationBufferSpace(size_t size)
+        Status SetMutationBufferFlushWatermark(double watermark_pct)
+        Status SetMutationBufferFlushInterval(unsigned int millis)
+        Status SetMutationBufferMaxNum(unsigned int max_num)
+
         void SetTimeoutMillis(int millis)
 
         void SetPriority(int priority)
