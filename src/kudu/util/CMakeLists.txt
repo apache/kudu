@@ -199,6 +199,7 @@ set(UTIL_SRCS
   user.cc
   url-coding.cc
   version_info.cc
+  version_util.cc
   website_util.cc
   zlib.cc
 )
@@ -403,6 +404,7 @@ ADD_KUDU_TEST(throttler-test)
 ADD_KUDU_TEST(trace-test PROCESSORS 4)
 ADD_KUDU_TEST(url-coding-test)
 ADD_KUDU_TEST(user-test)
+ADD_KUDU_TEST(version_util-test)
 
 if (NOT APPLE)
   ADD_KUDU_TEST(minidump-test)
