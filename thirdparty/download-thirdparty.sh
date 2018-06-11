@@ -73,7 +73,7 @@ fetch_and_expand() {
       echo "Archive $FILENAME already exists. Not re-downloading archive."
     else
       echo "Fetching $FILENAME from $FULL_URL"
-      curl -L -O "$FULL_URL"
+      curl --retry 3 -L -O "$FULL_URL"
     fi
 
     echo "Unpacking $FILENAME to $SOURCE"
