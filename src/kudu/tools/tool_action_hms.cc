@@ -53,11 +53,13 @@ using client::KuduClient;
 using client::KuduClientBuilder;
 using client::KuduTable;
 using client::KuduTableAlterer;
+using client::sp::shared_ptr;
 using hms::HmsClient;
 using hms::HmsCatalog;
 using std::cin;
 using std::cout;
 using std::endl;
+using std::ostream;
 using std::pair;
 using std::string;
 using std::unique_ptr;
@@ -69,6 +71,10 @@ using strings::Substitute;
 DEFINE_bool(enable_input, true,
             "Whether to enable user input for renaming tables that have hive"
             "incompatible names.");
+
+// The key is the table ID. The value is a pair of a table in Kudu and a
+// vector of tables in the HMS that all share the same table ID.
+typedef unordered_map<string, pair<shared_ptr<KuduTable>, vector<hive::Table>>> TablesMap;
 
 const char* const kDefaultDatabaseArg = "default_database";
 const char* const kDefaultDatabaseArgDesc = "The database that non-Impala Kudu "
@@ -103,7 +109,7 @@ string RenameHiveIncompatibleTable(const string& name) {
 }
 
 // Only alter the table in Kudu but not in the Hive Metastore.
-Status AlterKuduTable(const client::sp::shared_ptr<KuduClient>& kudu_client,
+Status AlterKuduTable(KuduClient* kudu_client,
                       const string& name,
                       const string& new_name) {
   unique_ptr<KuduTableAlterer> alterer(kudu_client->NewTableAlterer(name));
@@ -118,8 +124,8 @@ Status AlterKuduTable(const client::sp::shared_ptr<KuduClient>& kudu_client,
 //
 // Note that non-Impala tables name should conform to Hive naming standard.
 // Otherwise, the upgrade process will fail.
-Status AlterLegacyKuduTables(const client::sp::shared_ptr<KuduClient>& kudu_client,
-                             const unique_ptr<HmsCatalog>& hms_catalog,
+Status AlterLegacyKuduTables(KuduClient* kudu_client,
+                             HmsCatalog* hms_catalog,
                              const string& default_database,
                              const vector<hive::Table>& hms_tables) {
   vector<string> table_names;
@@ -139,7 +145,7 @@ Status AlterLegacyKuduTables(const client::sp::shared_ptr<KuduClient>& kudu_clie
   unordered_map<string, Status> failures;
   for (const auto& table_name : table_names) {
     hive::Table* hms_table = FindOrNull(hms_tables_map, table_name);
-    client::sp::shared_ptr<KuduTable> kudu_table;
+    shared_ptr<KuduTable> kudu_table;
     RETURN_NOT_OK(kudu_client->OpenTable(table_name, &kudu_table));
     Status s;
     if (hms_table) {
@@ -200,6 +206,28 @@ Status AlterLegacyKuduTables(const client::sp::shared_ptr<KuduClient>& kudu_clie
   }
 }
 
+Status Init(const RunnerContext& context,
+            shared_ptr<KuduClient>* kudu_client,
+            unique_ptr<HmsCatalog>* hms_catalog) {
+  const string& master_addresses_str = FindOrDie(context.required_args,
+                                                 kMasterAddressesArg);
+  vector<string> master_addresses = Split(master_addresses_str, ",");
+
+  if (!hms::HmsCatalog::IsEnabled()) {
+    return Status::IllegalState("HMS URIs cannot be empty!");
+  }
+
+  // Create Hms Catalog.
+  hms_catalog->reset(new hms::HmsCatalog(master_addresses_str));
+  RETURN_NOT_OK((*hms_catalog)->Start());
+
+  // Create a Kudu Client.
+  return KuduClientBuilder()
+      .default_rpc_timeout(MonoDelta::FromMilliseconds(FLAGS_timeout_ms))
+      .master_server_addrs(master_addresses)
+      .Build(kudu_client);
+}
+
 // Upgrade the metadata format of legacy impala managed or external tables
 // in HMS entries, as well as rename the existing tables in Kudu to adapt
 // to the new naming rules.
@@ -230,26 +258,11 @@ Status AlterLegacyKuduTables(const client::sp::shared_ptr<KuduClient>& kudu_clie
 //      tableType=EXTERNAL_TABLE,
 //  )
 Status HmsUpgrade(const RunnerContext& context) {
-  const string& master_addresses_str = FindOrDie(context.required_args,
-                                                 kMasterAddressesArg);
-  vector<string> master_addresses = Split(master_addresses_str, ",");
   const string& default_database = FindOrDie(context.required_args,
                                              kDefaultDatabaseArg);
-
-  if (!hms::HmsCatalog::IsEnabled()) {
-    return Status::IllegalState("HMS URIs cannot be empty!");
-  }
-
-  // Start Hms Catalog.
-  unique_ptr<HmsCatalog> hms_catalog(new hms::HmsCatalog(master_addresses_str));
-  RETURN_NOT_OK(hms_catalog->Start());
-
-  // Create a Kudu Client.
-  client::sp::shared_ptr<KuduClient> kudu_client;
-  RETURN_NOT_OK(KuduClientBuilder()
-      .default_rpc_timeout(MonoDelta::FromMilliseconds(FLAGS_timeout_ms))
-      .master_server_addrs(master_addresses)
-      .Build(&kudu_client));
+  shared_ptr<KuduClient> kudu_client;
+  unique_ptr<HmsCatalog> hms_catalog;
+  Init(context, &kudu_client, &hms_catalog);
 
   // 1. Identify all Kudu tables in the HMS entries.
   vector<hive::Table> hms_tables;
@@ -257,11 +270,161 @@ Status HmsUpgrade(const RunnerContext& context) {
 
   // 2. Rename all existing Kudu tables to have Hive-compatible table names.
   //    Also, correct all out of sync metadata in HMS entries.
-  RETURN_NOT_OK(AlterLegacyKuduTables(kudu_client, hms_catalog,
-                                      default_database, hms_tables));
+  return AlterLegacyKuduTables(kudu_client.get(), hms_catalog.get(),
+                               default_database, hms_tables);
+}
 
-  hms_catalog->Stop();
-  return Status::OK();
+// Given a kudu table and a hms table, checks if their metadata is in sync.
+bool isSynced(const string& master_addresses,
+              const shared_ptr<KuduTable>& kudu_table,
+              const hive::Table& hms_table) {
+  Schema schema(client::SchemaFromKuduSchema(kudu_table->schema()));
+  hive::Table hms_table_copy(hms_table);
+  Status s = HmsCatalog::PopulateTable(kudu_table->id(), kudu_table->name(),
+                                       schema, master_addresses, &hms_table_copy);
+  return hms_table_copy == hms_table && s.ok();
+}
+
+// Filter orphan tables from the unsynchronized tables map.
+void FilterUnsyncedTables(TablesMap* tables_map) {
+  for (auto it = tables_map->cbegin(); it != tables_map->cend();) {
+    // If the kudu table is empty, then these table in the HMS are
+    // orphan tables. Filter it as we do not care about orphan tables.
+    if (it->second.first == nullptr) {
+      for (const auto &table : it->second.second) {
+        LOG(WARNING) << Substitute("Found orphan table $0.$1 in the Hive Metastore",
+                                   table.dbName, table.tableName);
+      }
+      it = tables_map->erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
+
+// Sample of unsynchronized tables:
+//
+// TableID| KuduTableName| HmsDbName| HmsTableName| KuduMasterAddresses| HmsTableMasterAddresses
+//--------+--------------+----------+-------------+--------------------+-------------------------
+//    1   | a            |          |             | 127.0.0.1:50232    |
+//    2   | default.c    | default  | c           | 127.0.0.1:50232    | 127.0.0.1:50232
+//    2   |              | default  | d           | 127.0.0.1:50232    | 127.0.0.1:50232
+//    3   | default.b    |          |             | 127.0.0.1:50232    |
+Status PrintUnsyncedTables(const string& master_addresses,
+                           const TablesMap& tables_map,
+                           ostream& out) {
+  out << "Metadata of unsynchronized tables:" << endl;
+  DataTable table({ "TableID", "KuduTableName", "HmsDbName", "HmsTableName",
+                    "KuduMasterAddresses", "HmsTableMasterAddresses"});
+  for (const auto& entry : tables_map) {
+    string table_id = entry.first;
+    shared_ptr<KuduTable> kudu_table = entry.second.first;
+    vector<hive::Table> hms_tables = entry.second.second;
+    string kudu_table_name = kudu_table->name();
+    if (hms_tables.empty()) {
+      table.AddRow({ table_id, kudu_table_name, "", "", master_addresses, "" });
+    } else {
+      for (hive::Table hms_table : hms_tables) {
+        table.AddRow({table_id, kudu_table_name, hms_table.dbName, hms_table.tableName,
+                     master_addresses, hms_table.parameters[HmsClient::kKuduMasterAddrsKey]});
+      }
+    }
+  }
+
+  return table.PrintTo(out);
+}
+
+Status PrintLegacyTables(const vector<hive::Table>& tables,
+                         ostream& out) {
+  cout << "Found legacy tables in the Hive Metastore, "
+       << "use metadata upgrade tool first: 'kudu hms upgrade'."
+       << endl;
+  DataTable table({ "HmsDbName", "HmsTableName", "KuduTableName",
+                    "KuduMasterAddresses"});
+  for (hive::Table t : tables) {
+    string kudu_table_name = t.parameters[HmsClient::kLegacyKuduTableNameKey];
+    string master_addresses = t.parameters[HmsClient::kKuduMasterAddrsKey];
+    table.AddRow({ t.dbName, t.tableName, kudu_table_name, master_addresses });
+  }
+  return table.PrintTo(out);
+}
+
+Status CheckHmsMetadata(const RunnerContext& context) {
+  const string& master_addresses_str = FindOrDie(context.required_args,
+                                                 kMasterAddressesArg);
+  shared_ptr<KuduClient> kudu_client;
+  unique_ptr<HmsCatalog> hms_catalog;
+  Init(context, &kudu_client, &hms_catalog);
+
+  // 1. Identify all Kudu table in the HMS entries.
+  vector<hive::Table> hms_tables;
+  RETURN_NOT_OK(hms_catalog->RetrieveTables(&hms_tables));
+
+  // 2. Walk through all the Kudu tables in the HMS and identify any
+  //    out of sync tables.
+  TablesMap unsynced_tables_map;
+  std::vector<hive::Table> legacy_tables;
+  for (auto& hms_table : hms_tables) {
+    string hms_table_id = hms_table.parameters[HmsClient::kKuduTableIdKey];
+    if (hms_table.parameters[HmsClient::kStorageHandlerKey] ==
+        HmsClient::kKuduStorageHandler) {
+      string table_name = Substitute("$0.$1", hms_table.dbName, hms_table.tableName);
+      shared_ptr<KuduTable> kudu_table;
+      Status s = kudu_client->OpenTable(table_name, &kudu_table);
+      if (s.ok() && !isSynced(master_addresses_str, kudu_table, hms_table)) {
+        unsynced_tables_map[kudu_table->id()].first = kudu_table;
+        unsynced_tables_map[hms_table_id].second.emplace_back(hms_table);
+      } else if (s.IsNotFound()) {
+        // We cannot determine whether this table is an orphan table in the HMS now, since
+        // there may be other tables in Kudu shares the same table ID but not the same name.
+        // So do it in the filtering step below.
+        unsynced_tables_map[hms_table_id].second.emplace_back(hms_table);
+      } else {
+        RETURN_NOT_OK(s);
+      }
+    } else if (hms_table.parameters[HmsClient::kStorageHandlerKey] ==
+               HmsClient::kLegacyKuduStorageHandler) {
+      legacy_tables.push_back(hms_table);
+    }
+  }
+
+  // 3. If any Kudu table is not present in the HMS, consider it as an out of sync
+  //    table.
+  vector<string> table_names;
+  RETURN_NOT_OK(kudu_client->ListTables(&table_names));
+  unordered_map<string, hive::Table> hms_tables_map = RetrieveTablesMap(std::move(hms_tables));
+  for (const auto& table_name : table_names) {
+    if (!ContainsKey(hms_tables_map, table_name)) {
+      shared_ptr<KuduTable> kudu_table;
+      RETURN_NOT_OK(kudu_client->OpenTable(table_name, &kudu_table));
+      unsynced_tables_map[kudu_table->id()].first = kudu_table;
+    }
+  }
+
+  // Filter orphan tables.
+  FilterUnsyncedTables(&unsynced_tables_map);
+
+  // All good.
+  if (unsynced_tables_map.empty() && legacy_tables.empty()) {
+    cout << "OK" << endl;
+    return Status::OK();
+  }
+
+  // Something went wrong.
+  cout << "FAILED" << endl;
+  if (!unsynced_tables_map.empty()) {
+    RETURN_NOT_OK_PREPEND(PrintUnsyncedTables(master_addresses_str,
+                                              unsynced_tables_map, cout),
+                          "error printing inconsistent data");
+    cout << endl;
+  }
+
+  if (!legacy_tables.empty()) {
+    RETURN_NOT_OK_PREPEND(PrintLegacyTables(legacy_tables, cout),
+                          "error printing legacy tables");
+  }
+
+  return Status::RuntimeError("metadata check tool discovered inconsistent data");
 }
 
 unique_ptr<Mode> BuildHmsMode() {
@@ -279,8 +442,21 @@ unique_ptr<Mode> BuildHmsMode() {
           .AddOptionalParameter("enable_input")
           .Build();
 
+  unique_ptr<Action> hms_check =
+      ActionBuilder("check", &CheckHmsMetadata)
+          .Description("Check the metadata consistency between Kudu and Hive Metastores")
+          .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
+          .AddOptionalParameter("hive_metastore_uris")
+          .AddOptionalParameter("hive_metastore_sasl_enabled")
+          .AddOptionalParameter("hive_metastore_retry_count")
+          .AddOptionalParameter("hive_metastore_send_timeout")
+          .AddOptionalParameter("hive_metastore_recv_timeout")
+          .AddOptionalParameter("hive_metastore_conn_timeout")
+          .Build();
+
   return ModeBuilder("hms").Description("Operate on remote Hive Metastores")
                            .AddAction(std::move(hms_upgrade))
+                           .AddAction(std::move(hms_check))
                            .Build();
 }
 

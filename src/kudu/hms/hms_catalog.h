@@ -116,6 +116,13 @@ class HmsCatalog {
   // Returns true if the HMS Catalog should be enabled.
   static bool IsEnabled();
 
+  // Sets the Kudu-specific fields in the table without overwriting unrelated fields.
+  static Status PopulateTable(const std::string& id,
+                              const std::string& name,
+                              const Schema& schema,
+                              const std::string& master_addresses,
+                              hive::Table* table) WARN_UNUSED_RESULT;
+
  private:
 
   FRIEND_TEST(HmsCatalogStaticTest, TestParseTableName);
@@ -132,13 +139,6 @@ class HmsCatalog {
   // Returns true if the RPC status is 'fatal', e.g. the Thrift connection on
   // which it occurred should be shut down.
   static bool IsFatalError(const Status& status);
-
-  // Sets the Kudu-specific fields in the table without overwriting unrelated fields.
-  static Status PopulateTable(const std::string& id,
-                              const std::string& name,
-                              const Schema& schema,
-                              const std::string& master_addresses,
-                              hive::Table* table) WARN_UNUSED_RESULT;
 
   // Parses a Kudu table name into a Hive database and table name.
   // Returns an error if the Kudu table name is not correctly formatted.
