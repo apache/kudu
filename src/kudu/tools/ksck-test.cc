@@ -52,6 +52,7 @@
 
 DECLARE_bool(checksum_scan);
 DECLARE_string(color);
+DECLARE_string(ksck_format);
 DECLARE_uint32(truncate_server_csv_length);
 
 namespace kudu {
@@ -1491,6 +1492,15 @@ TEST_F(KsckTest, TestVersionCheck) {
                                          "3 different versions were seen");
 
   CheckJsonStringVsKsckResults(KsckResultsToJsonString(), ksck_->results());
+}
+
+TEST_F(KsckTest, TestChecksumScanJson) {
+  CreateOneTableOneTablet();
+  FLAGS_checksum_scan = true;
+  FLAGS_ksck_format = "json_compact";
+  ASSERT_OK(RunKsck());
+  JsonReader r(err_stream_.str());
+  ASSERT_OK(r.Init());
 }
 
 } // namespace tools

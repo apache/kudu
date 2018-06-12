@@ -26,6 +26,7 @@
 #include <set>
 #include <vector>
 
+#include <boost/algorithm/string/predicate.hpp>
 #include <boost/optional.hpp> // IWYU pragma: keep
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -141,6 +142,12 @@ void BuildKsckConsensusStateForConfigMember(const consensus::ConsensusStatePB& c
 bool IsNotAuthorizedMethodAccess(const Status& s) {
   return s.IsRemoteError() &&
          s.ToString().find("Not authorized: unauthorized access to method") != string::npos;
+}
+
+// Return whether the format of the ksck results is non-JSON.
+bool IsNonJSONFormat() {
+  return boost::iequals(FLAGS_ksck_format, "plain_full") ||
+         boost::iequals(FLAGS_ksck_format, "plain_concise");
 }
 
 } // anonymous namespace
@@ -613,12 +620,14 @@ class ChecksumResultReporter : public RefCountedThreadSafe<ChecksumResultReporte
 
       done = responses_.WaitFor(MonoDelta::FromMilliseconds(std::min(rem_ms, 5000)));
       string status = done ? "finished in " : "running for ";
-      int run_time_sec = (MonoTime::Now() - start).ToSeconds();
-      (*out) << "Checksum " << status << run_time_sec << "s: "
-             << responses_.count() << "/" << expected_count_ << " replicas remaining ("
-             << HumanReadableNumBytes::ToString(disk_bytes_summed_.Load()) << " from disk, "
-             << HumanReadableInt::ToString(rows_summed_.Load()) << " rows summed)"
-             << endl;
+      if (IsNonJSONFormat()) {
+        int run_time_sec = (MonoTime::Now() - start).ToSeconds();
+        (*out) << "Checksum " << status << run_time_sec << "s: "
+               << responses_.count() << "/" << expected_count_ << " replicas remaining ("
+               << HumanReadableNumBytes::ToString(disk_bytes_summed_.Load()) << " from disk, "
+               << HumanReadableInt::ToString(rows_summed_.Load()) << " rows summed)"
+               << endl;
+      }
     }
     return true;
   }
