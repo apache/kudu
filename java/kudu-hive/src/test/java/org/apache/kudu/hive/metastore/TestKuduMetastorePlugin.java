@@ -265,6 +265,20 @@ public class TestKuduMetastorePlugin {
                            alteredTable);
       }
 
+      // Check that altering table with Kudu storage handler to legacy format
+      // succeeds.
+      {
+        Table alteredTable = table.deepCopy();
+        alteredTable.putToParameters(hive_metastoreConstants.META_TABLE_STORAGE,
+                KuduMetastorePlugin.LEGACY_KUDU_STORAGE_HANDLER);
+        alteredTable.putToParameters(KuduMetastorePlugin.LEGACY_KUDU_TABLE_NAME,
+                "legacy_table");
+        alteredTable.putToParameters(KuduMetastorePlugin.KUDU_MASTER_ADDRS_KEY,
+                "localhost");
+        client.alter_table(table.getDbName(), table.getTableName(),
+                alteredTable);
+      }
+
     } finally {
       client.dropTable(table.getDbName(), table.getTableName());
     }

@@ -95,6 +95,12 @@ class HmsCatalog {
                                   const std::string& tb_name,
                                   const Schema& schema) WARN_UNUSED_RESULT;
 
+  // Downgrades to a legacy Impala table entry in the HMS.
+  //
+  // This method will fail if the HMS is unreachable, if the table is not a
+  // Kudu table, or if the table entry in not in the HMS.
+  Status DowngradeToLegacyImpalaTable(const std::string& name) WARN_UNUSED_RESULT;
+
   // Retrieves all tables in the HMS.
   //
   // This method will fail if the HMS is unreachable.

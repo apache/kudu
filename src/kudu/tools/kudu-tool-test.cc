@@ -2303,6 +2303,63 @@ TEST_F(ToolTest, TestHmsUpgrade) {
   ASSERT_OK(hms_client.Stop());
 }
 
+TEST_F(ToolTest, TestHmsDowngrade) {
+  ExternalMiniClusterOptions opts;
+  opts.hms_mode = HmsMode::ENABLE_METASTORE_INTEGRATION;
+  NO_FATALS(StartExternalMiniCluster(std::move(opts)));
+
+  string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+  HmsClient hms_client(cluster_->hms()->address(), HmsClientOptions());
+  ASSERT_OK(hms_client.Start());
+  ASSERT_TRUE(hms_client.IsConnected());
+  shared_ptr<KuduClient> kudu_client;
+  ASSERT_OK(KuduClientBuilder()
+      .add_master_server_addr(master_addr)
+      .Build(&kudu_client));
+
+  {
+    ASSERT_OK(CreateKuduTable(kudu_client, "default.a"));
+    shared_ptr<KuduTable> kudu_table;
+    ASSERT_OK(kudu_client->OpenTable("default.a", &kudu_table));
+    hive::Table hms_table;
+    ASSERT_OK(hms_client.GetTable("default", "a", &hms_table));
+
+    ASSERT_OK(CreateKuduTable(kudu_client, "default.b"));
+    ASSERT_OK(kudu_client->OpenTable("default.b", &kudu_table));
+    ASSERT_OK(hms_client.GetTable("default", "b", &hms_table));
+
+    // Downgrade to legacy table in both Hive Metastore and Kudu.
+    NO_FATALS(RunActionStdoutNone(Substitute("hms downgrade $0 "
+                                             "--unlock_experimental_flags=true "
+                                             "--hive_metastore_uris=$1", master_addr,
+                                             cluster_->hms()->uris())));
+  }
+
+  {
+    // Upgrade the metadata in both the Hive Metastore and Kudu.
+    string out;
+    NO_FATALS(RunActionStdinStdoutString(
+        Substitute("hms upgrade $0 $1 --unlock_experimental_flags=true "
+                   "--hive_metastore_uris=$2", master_addr, "default",
+                   cluster_->hms()->uris()),
+        "", &out));
+
+    // Check if the metadata is in sync between the Hive Metastore and Kudu.
+    NO_FATALS(RunActionStdoutString(
+        Substitute("hms check $0 --unlock_experimental_flags=true "
+                   "--hive_metastore_uris=$1", master_addr, cluster_->hms()->uris()),
+        &out));
+    ASSERT_STR_CONTAINS(out, "OK");
+
+    shared_ptr<KuduTable> kudu_table;
+    ASSERT_OK(kudu_client->OpenTable("default.a", &kudu_table));
+    ASSERT_OK(kudu_client->OpenTable("default.b", &kudu_table));
+    hive::Table hms_table;
+    ASSERT_OK(hms_client.GetTable("default", "a", &hms_table));
+    ASSERT_OK(hms_client.GetTable("default", "b", &hms_table));
+  }
+}
+
 TEST_F(ToolTest, TestCheckHmsMetadata) {
   ExternalMiniClusterOptions opts;
   opts.hms_mode = HmsMode::ENABLE_HIVE_METASTORE;

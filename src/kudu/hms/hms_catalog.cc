@@ -177,6 +177,33 @@ Status HmsCatalog::UpgradeLegacyImpalaTable(const string& id,
   });
 }
 
+Status HmsCatalog::DowngradeToLegacyImpalaTable(const std::string& name) {
+  return Execute([&] (HmsClient* client) {
+    string hms_database;
+    string hms_table;
+    RETURN_NOT_OK(ParseTableName(name, &hms_database, &hms_table));
+    hive::Table table;
+    RETURN_NOT_OK(client->GetTable(hms_database, hms_table, &table));
+    if (table.parameters[HmsClient::kStorageHandlerKey] !=
+        HmsClient::kKuduStorageHandler) {
+      return Status::IllegalState("non-Kudu table cannot be downgraded");
+    }
+
+    // Add the legacy Kudu-specific parameters. And set it to
+    // external table type.
+    table.tableType = HmsClient::kExternalTable;
+    table.parameters[HmsClient::kLegacyKuduTableNameKey] = name;
+    table.parameters[HmsClient::kKuduMasterAddrsKey] = master_addresses_;
+    table.parameters[HmsClient::kStorageHandlerKey] = HmsClient::kLegacyKuduStorageHandler;
+    table.parameters[HmsClient::kExternalTableKey] = "TRUE";
+
+    // Remove the Kudu-specific field 'kudu.table_id'.
+    EraseKeyReturnValuePtr(&table.parameters, HmsClient::kKuduTableIdKey);
+
+    return client->AlterTable(hms_database, hms_table, table, EnvironmentContext());
+  });
+}
+
 Status HmsCatalog::RetrieveTables(vector<hive::Table>* hms_tables) {
   return Execute([&] (HmsClient* client) {
     vector<string> database_names;

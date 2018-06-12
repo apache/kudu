@@ -65,6 +65,8 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
   @VisibleForTesting
   static final String KUDU_TABLE_ID_KEY = "kudu.table_id";
   @VisibleForTesting
+  static final String LEGACY_KUDU_TABLE_NAME = "kudu.table_name";
+  @VisibleForTesting
   static final String KUDU_MASTER_ADDRS_KEY = "kudu.master_addresses";
   @VisibleForTesting
   static final String KUDU_MASTER_EVENT = "kudu.master_event";
@@ -135,12 +137,14 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
       return;
     }
 
-    // Check the altered table's properties. This implies legacy Kudu table
-    // can only be upgraded to the new format.
-    checkKuduProperties(newTable);
+    // Check the altered table's properties. Kudu tables can be downgraded
+    // to the legacy format.
+    if (!isLegacyKuduTable(newTable)) {
+      checkKuduProperties(newTable);
+    }
 
     // Check that the non legacy Kudu table ID isn't changing.
-    if (!isLegacyKuduTable(oldTable)) {
+    if (!isLegacyKuduTable(oldTable) && !isLegacyKuduTable(newTable)) {
       String oldTableId = oldTable.getParameters().get(KUDU_TABLE_ID_KEY);
       String newTableId = newTable.getParameters().get(KUDU_TABLE_ID_KEY);
       if (!newTableId.equals(oldTableId)) {

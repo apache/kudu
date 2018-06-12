@@ -90,11 +90,11 @@ unordered_map<string, hive::Table> RetrieveTablesMap(vector<hive::Table> hms_tab
     if (hms_table.parameters[HmsClient::kStorageHandlerKey] ==
         HmsClient::kLegacyKuduStorageHandler) {
       hms_tables_map.emplace(hms_table.parameters[HmsClient::kLegacyKuduTableNameKey],
-                              hms_table);
+                             hms_table);
     } else if (hms_table.parameters[HmsClient::kStorageHandlerKey] ==
-        HmsClient::kKuduStorageHandler) {
+               HmsClient::kKuduStorageHandler) {
       hms_tables_map.emplace(Substitute("$0.$1", hms_table.dbName, hms_table.tableName),
-                              hms_table);
+                             hms_table);
     }
   }
   return hms_tables_map;
@@ -275,6 +275,28 @@ Status HmsUpgrade(const RunnerContext& context) {
   //    Also, correct all out of sync metadata in HMS entries.
   return AlterLegacyKuduTables(kudu_client.get(), hms_catalog.get(),
                                default_database, hms_tables);
+}
+
+// TODO: check that the HMS integration isn't enabled before running it.
+Status HmsDowngrade(const RunnerContext& context) {
+  shared_ptr<KuduClient> kudu_client;
+  unique_ptr<HmsCatalog> hms_catalog;
+  Init(context, &kudu_client, &hms_catalog);
+
+  // 1. Identify all Kudu tables in the HMS entries.
+  vector<hive::Table> hms_tables;
+  RETURN_NOT_OK(hms_catalog->RetrieveTables(&hms_tables));
+
+  // 2. Downgrades all Kudu tables to legacy table format.
+  for (auto& hms_table : hms_tables) {
+    if (hms_table.parameters[HmsClient::kStorageHandlerKey] ==
+        HmsClient::kKuduStorageHandler) {
+      RETURN_NOT_OK(hms_catalog->DowngradeToLegacyImpalaTable(
+          Substitute("$0.$1", hms_table.dbName, hms_table.tableName)));
+    }
+  }
+
+  return Status::OK();
 }
 
 // Given a kudu table and a hms table, checks if their metadata is in sync.
@@ -536,7 +558,7 @@ Status FixHmsMetadata(const RunnerContext& context) {
 unique_ptr<Mode> BuildHmsMode() {
   unique_ptr<Action> hms_upgrade =
       ActionBuilder("upgrade", &HmsUpgrade)
-          .Description("Upgrade the legacy metadata for Kudu and Hive Metastores")
+          .Description("Upgrade the legacy metadata for Kudu and the Hive Metastores")
           .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
           .AddRequiredParameter({ kDefaultDatabaseArg, kDefaultDatabaseArgDesc })
           .AddOptionalParameter("hive_metastore_uris")
@@ -548,9 +570,22 @@ unique_ptr<Mode> BuildHmsMode() {
           .AddOptionalParameter("enable_input")
           .Build();
 
+  unique_ptr<Action> hms_downgrade =
+      ActionBuilder("downgrade", &HmsDowngrade)
+          .Description("Downgrade the metadata to legacy format for "
+                       "Kudu and the Hive Metastores")
+          .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
+          .AddOptionalParameter("hive_metastore_uris")
+          .AddOptionalParameter("hive_metastore_sasl_enabled")
+          .AddOptionalParameter("hive_metastore_retry_count")
+          .AddOptionalParameter("hive_metastore_send_timeout")
+          .AddOptionalParameter("hive_metastore_recv_timeout")
+          .AddOptionalParameter("hive_metastore_conn_timeout")
+          .Build();
+
   unique_ptr<Action> hms_check =
       ActionBuilder("check", &CheckHmsMetadata)
-          .Description("Check the metadata consistency between Kudu and Hive Metastores")
+          .Description("Check the metadata consistency between Kudu and the Hive Metastores")
           .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
           .AddOptionalParameter("hive_metastore_uris")
           .AddOptionalParameter("hive_metastore_sasl_enabled")
@@ -562,7 +597,7 @@ unique_ptr<Mode> BuildHmsMode() {
 
   unique_ptr<Action> hms_fix =
     ActionBuilder("fix", &FixHmsMetadata)
-        .Description("Fix the metadata inconsistency between Kudu and Hive Metastores")
+        .Description("Fix the metadata inconsistency between Kudu and the Hive Metastores")
         .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
         .AddOptionalParameter("hive_metastore_uris")
         .AddOptionalParameter("hive_metastore_sasl_enabled")
@@ -574,6 +609,7 @@ unique_ptr<Mode> BuildHmsMode() {
 
   return ModeBuilder("hms").Description("Operate on remote Hive Metastores")
                            .AddAction(std::move(hms_upgrade))
+                           .AddAction(std::move(hms_downgrade))
                            .AddAction(std::move(hms_check))
                            .AddAction(std::move(hms_fix))
                            .Build();
