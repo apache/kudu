@@ -211,9 +211,13 @@ class MasterStressTest : public KuduTest {
         continue;
       }
       if (s.IsInvalidArgument() &&
-          MatchPattern(s.ToString(), "*Not enough live tablet servers*")) {
-        // The test placed enough load on the cluster that some tservers
-        // haven't heartbeat in a little while.
+          MatchPattern(s.ToString(), "*not enough live tablet servers*")) {
+        // The test placed enough load on the cluster that some tservers haven't
+        // heartbeat in a while, or the leader master has not been alive for
+        // long enough to receive heartbeats from all tservers.
+        //
+        // TODO(KUDU-1358): remove this special case once table creation
+        // following leader restart is robust.
         continue;
       }
       CHECK_OK(s);

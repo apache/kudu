@@ -1438,6 +1438,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   // Verify that the number of replicas isn't larger than the number of live tablet
   // servers.
   if (FLAGS_catalog_manager_check_ts_count_for_create_table && num_replicas > num_live_tservers) {
+    // Note: this error message is matched against in master-stress-test.
     return SetupError(Status::InvalidArgument(Substitute(
             "not enough live tablet servers to create a table with the requested replication "
             "factor $0; $1 tablet servers are alive", req.num_replicas(), num_live_tservers)),
