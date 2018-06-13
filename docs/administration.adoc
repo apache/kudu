@@ -647,13 +647,13 @@ To verify that all masters are working properly, perform the following sanity ch
 [[ksck]]
 === Checking Cluster Health with `ksck`
 
-The `kudu` CLI includes a tool named `ksck` which can be used for checking
-cluster health and data integrity. `ksck` will identify issues such as
-under-replicated tablets, unreachable tablet servers, or tablets without a
-leader.
+The `kudu` CLI includes a tool named `ksck` that can be used for gathering
+information about the state of a Kudu cluster, including checking its health.
+`ksck` will identify issues such as under-replicated tablets, unreachable
+tablet servers, or tablets without a leader.
 
-`ksck` should be run from the command line, and requires the full list of master
-addresses to be specified:
+`ksck` should be run from the command line as the Kudu admin user, and requires
+the full list of master addresses to be specified:
 
 [source,bash]
 ----
@@ -661,54 +661,88 @@ $ sudo -u kudu kudu cluster ksck master-01.example.com,master-02.example.com,mas
 ----
 
 To see a full list of the options available with `ksck`, use the `--help` flag.
-If the cluster is healthy, `ksck` will print a success message, and return a
-zero (success) exit status.
+If the cluster is healthy, `ksck` will print information about the cluster, a
+success message, and return a zero (success) exit status.
 
 ----
-Connected to the Master
-Fetched info from all 1 Tablet Servers
-Table IntegrationTestBigLinkedList is HEALTHY (1 tablet(s) checked)
+Master Summary
+               UUID               |       Address         | Status
+----------------------------------+-----------------------+---------
+ a811c07b99394df799e6650e7310f282 | master-01.example.com | HEALTHY
+ b579355eeeea446e998606bcb7e87844 | master-02.example.com | HEALTHY
+ cfdcc8592711485fad32ec4eea4fbfcd | master-02.example.com | HEALTHY
 
-The metadata for 1 table(s) is HEALTHY
+Tablet Server Summary
+               UUID               |        Address         | Status
+----------------------------------+------------------------+---------
+ a598f75345834133a39c6e51163245db | tserver-01.example.com | HEALTHY
+ e05ca6b6573b4e1f9a518157c0c0c637 | tserver-02.example.com | HEALTHY
+ e7e53a91fe704296b3a59ad304e7444a | tserver-03.example.com | HEALTHY
+
+Version Summary
+ Version |      Servers
+---------+-------------------------
+  1.7.1  | all 6 server(s) checked
+
+Summary by table
+   Name   | RF | Status  | Total Tablets | Healthy | Recovering | Under-replicated | Unavailable
+----------+----+---------+---------------+---------+------------+------------------+-------------
+ my_table | 3  | HEALTHY | 8             | 8       | 0          | 0                | 0
+
+                | Total Count
+----------------+-------------
+ Masters        | 3
+ Tablet Servers | 3
+ Tables         | 1
+ Tablets        | 8
+ Replicas       | 24
 OK
 ----
 
 If the cluster is unhealthy, for instance if a tablet server process has
-stopped, `ksck` will report the issue(s) and return a non-zero exit status:
+stopped, `ksck` will report the issue(s) and return a non-zero exit status, as
+shown in the abbreviated snippet of `ksck` output below:
 
 ----
-Connected to the Master
-WARNING: Unable to connect to Tablet Server 8a0b66a756014def82760a09946d1fce
-(tserver-01.example.com:7050): Network error: could not send Ping RPC to server: Client connection negotiation failed: client connection to 192.168.0.2:7050: connect: Connection refused (error 61)
-WARNING: Fetched info from 0 Tablet Servers, 1 weren't reachable
-Tablet ce3c2d27010d4253949a989b9d9bf43c of table 'IntegrationTestBigLinkedList'
-is unavailable: 1 replica(s) not RUNNING
-  8a0b66a756014def82760a09946d1fce (tserver-01.example.com:7050): TS unavailable [LEADER]
+Tablet Server Summary
+               UUID               |        Address         |   Status
+----------------------------------+------------------------+-------------
+ a598f75345834133a39c6e51163245db | tserver-01.example.com | HEALTHY
+ e05ca6b6573b4e1f9a518157c0c0c637 | tserver-02.example.com | HEALTHY
+ e7e53a91fe704296b3a59ad304e7444a | tserver-03.example.com | UNAVAILABLE
+Error from 127.0.0.1:7150: Network error: could not get status from server: Client connection negotiation failed: client connection to 127.0.0.1:7150: connect: Connection refused (error 61) (UNAVAILABLE)
 
-  Table IntegrationTestBigLinkedList has 1 unavailable tablet(s)
+... (full output elided)
 
-  WARNING: 1 out of 1 table(s) are not in a healthy state
-  ==================
-  Errors:
-  ==================
-  error fetching info from tablet servers: Network error: Not all Tablet Servers are reachable
-  table consistency check error: Corruption: 1 table(s) are bad
+==================
+Errors:
+==================
+Network error: error fetching info from tablet servers: failed to gather info for all tablet servers: 1 of 3 had errors
+Corruption: table consistency check error: 1 out of 1 table(s) are not healthy
 
-  FAILED
-  Runtime error: ksck discovered errors
+FAILED
+Runtime error: ksck discovered errors
 ----
 
 To verify data integrity, the optional `--checksum_scan` flag can be set, which
 will ensure the cluster has consistent data by scanning each tablet replica and
 comparing results. The `--tables` or `--tablets` flags can be used to limit the
 scope of the checksum scan to specific tables or tablets, respectively. For
-example, checking data integrity on the `IntegrationTestBigLinkedList` table can
-be done with the following command:
+example, checking data integrity on the `my_table` table can be done with the
+following command:
 
 [source,bash]
 ----
-$ sudo -u kudu kudu cluster ksck --checksum_scan --tables IntegrationTestBigLinkedList master-01.example.com,master-02.example.com,master-03.example.com
+$ sudo -u kudu kudu cluster ksck --checksum_scan --tables my_table master-01.example.com,master-02.example.com,master-03.example.com
 ----
+
+By default, `ksck` will attempt to use a snapshot scan of the table, so the
+checksum scan can be done while writes continue.
+
+Finally, `ksck` also supports output in JSON format using the `--ksck_format`
+flag. JSON output contains the same information as the plain text output, but
+in a format that can be used by other tools. See `kudu cluster ksck --help` for
+more information.
 
 [[change_dir_config]]
 === Changing Directory Configurations
