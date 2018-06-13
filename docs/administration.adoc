@@ -1037,3 +1037,88 @@ a node onto another machine.
   sparseness.
 
 . Start all Kudu processes in the cluster.
+
+[[rebalancer_tool]]
+=== Running the tablet rebalancing tool
+
+The `kudu` CLI contains a rebalancing tool that can be used to rebalance
+tablet replicas among tablet servers. For each table, the tool attempts to
+balance the number of replicas per tablet server. It will also, without
+unbalancing any table, attempt to even out the number of replicas per tablet
+server across the cluster as a whole. The rebalancing tool should be run as the
+Kudu admin user, specifying all master addresses:
+
+[source,bash]
+----
+sudo -u kudu kudu cluster rebalance master-01.example.com,master-02.example.com,master-03.example.com
+----
+
+When run, the rebalancer will report on the initial tablet replica distribution
+in the cluster, log the replicas it moves, and print a final summary of the
+distribution when it terminates:
+
+----
+Per-server replica distribution summary:
+       Statistic       |   Value
+-----------------------+-----------
+ Minimum Replica Count | 0
+ Maximum Replica Count | 24
+ Average Replica Count | 14.400000
+
+Per-table replica distribution summary:
+ Replica Skew |  Value
+--------------+----------
+ Minimum      | 8
+ Maximum      | 8
+ Average      | 8.000000
+
+I0613 14:18:49.905897 3002065792 rebalancer.cc:779] tablet e7ee9ade95b342a7a94649b7862b345d: 206a51de1486402bbb214b5ce97a633c -> 3b4d9266ac8c45ff9a5d4d7c3e1cb326 move scheduled
+I0613 14:18:49.917578 3002065792 rebalancer.cc:779] tablet 5f03944529f44626a0d6ec8b1edc566e: 6e64c4165b864cbab0e67ccd82091d60 -> ba8c22ab030346b4baa289d6d11d0809 move scheduled
+I0613 14:18:49.928683 3002065792 rebalancer.cc:779] tablet 9373fee3bfe74cec9054737371a3b15d: fab382adf72c480984c6cc868fdd5f0e -> 3b4d9266ac8c45ff9a5d4d7c3e1cb326 move scheduled
+
+... (full output elided)
+
+I0613 14:19:01.162802 3002065792 rebalancer.cc:842] tablet f4c046f18b174cc2974c65ac0bf52767: 206a51de1486402bbb214b5ce97a633c -> 3b4d9266ac8c45ff9a5d4d7c3e1cb326 move completed: OK
+
+rebalancing is complete: cluster is balanced (moved 28 replicas)
+Per-server replica distribution summary:
+       Statistic       |   Value
+-----------------------+-----------
+ Minimum Replica Count | 14
+ Maximum Replica Count | 15
+ Average Replica Count | 14.400000
+
+Per-table replica distribution summary:
+ Replica Skew |  Value
+--------------+----------
+ Minimum      | 1
+ Maximum      | 1
+ Average      | 1.000000
+----
+
+The rebalancer can also be restricted to run on a subset of the tables by
+supplying the `--tables` flag. Note that, when running on a subset of tables,
+the tool will not attempt to balance the cluster as a whole.
+
+The length of time rebalancing is run for can be controlled with the flag
+`--max_run_time_sec`. By default, the rebalancer will run until the cluster is
+balanced. To control the amount of resources devoted to rebalancing, modify
+the flag `--max_moves_per_server`. See `kudu cluster rebalance --help` for more.
+
+The rebalancing tool can rebalance Kudu clusters running older versions as well,
+with some restrictions. Consult the following table for more information. In the
+table, "RF" stands for "replication factor".
+
+[[rebalancer_compatibility]]
+.Kudu Rebalancing Tool Compatibility
+[options="header"]
+|===
+| Version Range | Rebalances RF = 1 Tables? | Rebalances RF > 1 Tables?
+| v < 1.4.0 | No | No
+| 1.4.0 +<=+ v < 1.7.1 | No | Yes
+| v >= 1.7.1 | Yes | Yes
+|===
+
+If the rebalancer is running against a cluster where rebalancing replication
+factor one tables is not supported, it will rebalance all the other tables
+and the cluster as if those singly-replicated tables did not exist.
