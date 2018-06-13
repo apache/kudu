@@ -37,6 +37,7 @@ class KuduRDD private[kudu] (val kuduContext: KuduContext,
                              @transient val table: KuduTable,
                              @transient val isFaultTolerant: Boolean,
                              @transient val scanLocality: ReplicaSelection,
+                             @transient val scanRequestTimeoutMs: Option[Long],
                              @transient val sc: SparkContext) extends RDD[Row](sc, Nil) {
 
   override protected def getPartitions: Array[Partition] = {
@@ -54,6 +55,11 @@ class KuduRDD private[kudu] (val kuduContext: KuduContext,
     if (scanLocality == ReplicaSelection.CLOSEST_REPLICA) {
       builder.replicaSelection(ReplicaSelection.CLOSEST_REPLICA)
              .readMode(AsyncKuduScanner.ReadMode.READ_AT_SNAPSHOT)
+    }
+
+    scanRequestTimeoutMs match {
+      case Some(timeout) => builder.scanRequestTimeout(timeout)
+      case _ =>
     }
 
     for (predicate <- predicates) {

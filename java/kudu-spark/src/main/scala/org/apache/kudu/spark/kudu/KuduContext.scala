@@ -127,7 +127,8 @@ class KuduContext(val kuduMaster: String,
     // TODO: provide an elegant way to pass various options (faultTolerantScan,
     // TODO: localityScan, etc) to KuduRDD
     new KuduRDD(this, 1024*1024*20, columnProjection.toArray, Array(),
-                syncClient.openTable(tableName), false, ReplicaSelection.LEADER_ONLY, sc)
+                syncClient.openTable(tableName), false, ReplicaSelection.LEADER_ONLY,
+                None, sc)
   }
 
   /**

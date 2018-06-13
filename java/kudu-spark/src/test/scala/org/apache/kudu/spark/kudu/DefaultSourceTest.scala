@@ -19,7 +19,7 @@ package org.apache.kudu.spark.kudu
 import scala.collection.JavaConverters._
 import scala.collection.immutable.IndexedSeq
 import scala.util.control.NonFatal
-import org.apache.spark.sql.SQLContext
+import org.apache.spark.sql.{DataFrame, SQLContext}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.{DataTypes, StructField, StructType}
 import org.junit.Assert._
@@ -29,6 +29,7 @@ import org.scalatest.{BeforeAndAfterEach, FunSuite, Matchers}
 import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder
 import org.apache.kudu.client.CreateTableOptions
 import org.apache.kudu.{Schema, Type}
+import org.apache.spark.sql.execution.datasources.LogicalRelation
 
 @RunWith(classOf[JUnitRunner])
 class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEach with Matchers {
@@ -705,5 +706,32 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEac
     kuduWriteOptions.ignoreDuplicateRowErrors = true
     kuduContext.insertRows(updateDF, tableName, kuduWriteOptions)
     assert(kuduContext.syncClient.getLastPropagatedTimestamp > prevTimestamp)
+  }
+
+  /**
+    * Assuming that the only part of the logical plan is a Kudu scan, this
+    * function extracts the KuduRelation from the passed DataFrame for
+    * testing purposes.
+    */
+  def kuduRelationFromDataFrame(dataFrame: DataFrame) = {
+    val logicalPlan = dataFrame.queryExecution.logical
+    val logicalRelation = logicalPlan.asInstanceOf[LogicalRelation]
+    val baseRelation = logicalRelation.relation
+    baseRelation.asInstanceOf[KuduRelation]
+  }
+
+  /**
+    * Verify that the kudu.scanRequestTimeoutMs parameter is parsed by the
+    * DefaultSource and makes it into the KuduRelation as a configuration
+    * parameter.
+    */
+  test("scan request timeout propagation") {
+    kuduOptions = Map(
+      "kudu.table" -> tableName,
+      "kudu.master" -> miniCluster.getMasterAddresses,
+      "kudu.scanRequestTimeoutMs" -> "1")
+    val dataFrame = sqlContext.read.options(kuduOptions).kudu
+    val kuduRelation = kuduRelationFromDataFrame(dataFrame)
+    assert(kuduRelation.scanRequestTimeoutMs == Some(1))
   }
 }
