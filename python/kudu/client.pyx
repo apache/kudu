@@ -2162,9 +2162,9 @@ cdef class ScanTokenBuilder:
 
         return self
 
-    def set_timout_millis(self, millis):
+    def set_timeout_millis(self, millis):
         """
-        Sets the timeout in milliseconds.
+        Sets the scan request timeout in milliseconds.
         Returns a reference to itself to facilitate chaining.
 
         Parameters
@@ -2178,6 +2178,15 @@ cdef class ScanTokenBuilder:
         """
         check_status(self._builder.SetTimeoutMillis(millis))
         return self
+
+    def set_timout_millis(self, millis):
+        """
+        See set_timeout_millis().
+
+        This method is deprecated due to having a typo in the method name and
+        will be removed in a future release.
+        """
+        return self.set_timeout_millis(millis)
 
     def set_fault_tolerant(self):
         """
