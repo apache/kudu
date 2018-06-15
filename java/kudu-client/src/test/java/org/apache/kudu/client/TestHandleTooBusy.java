@@ -26,6 +26,8 @@ import com.google.common.collect.Lists;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
+import static org.apache.kudu.util.ClientTestUtil.getBasicCreateTableOptions;
+
 /**
  * Tests which provoke RPC queue overflow errors on the server side
  * to ensure that we properly handle them in the client.

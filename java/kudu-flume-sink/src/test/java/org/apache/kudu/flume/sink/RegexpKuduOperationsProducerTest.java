@@ -25,6 +25,7 @@ import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.PRODUCER
 import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.TABLE_NAME;
 import static org.apache.kudu.flume.sink.RegexpKuduOperationsProducer.OPERATION_PROP;
 import static org.apache.kudu.flume.sink.RegexpKuduOperationsProducer.PATTERN_PROP;
+import static org.apache.kudu.util.ClientTestUtil.scanTableToStrings;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 

@@ -14,6 +14,8 @@
 package org.apache.kudu.client;
 
 import static org.apache.kudu.util.AssertHelpers.assertEventuallyTrue;
+import static org.apache.kudu.util.ClientTestUtil.createBasicSchemaInsert;
+import static org.apache.kudu.util.ClientTestUtil.getBasicCreateTableOptions;
 import static org.junit.Assert.assertNotNull;
 
 import java.io.Closeable;
@@ -161,9 +163,9 @@ public class TestSecurity {
       // we should now be able to perform all of the normal client operations.
       newClient.importAuthenticationCredentials(authnData);
       KuduTable table = newClient.createTable(TABLE_NAME, BaseKuduTest.basicSchema,
-          BaseKuduTest.getBasicCreateTableOptions());
+          getBasicCreateTableOptions());
       KuduSession session = newClient.newSession();
-      session.apply(BaseKuduTest.createBasicSchemaInsert(table, 1));
+      session.apply(createBasicSchemaInsert(table, 1));
       session.flush();
     } finally {
       // Restore ticket cache for other test cases.

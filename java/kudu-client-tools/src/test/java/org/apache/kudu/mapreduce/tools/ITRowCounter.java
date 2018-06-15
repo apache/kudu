@@ -17,6 +17,7 @@
 
 package org.apache.kudu.mapreduce.tools;
 
+import static org.apache.kudu.util.ClientTestUtil.createFourTabletsTableWithNineRows;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -57,7 +58,7 @@ public class ITRowCounter extends BaseKuduTest {
     Configuration conf = new Configuration();
     HADOOP_UTIL.setupAndGetTestDir(ITRowCounter.class.getName(), conf).getAbsolutePath();
 
-    createFourTabletsTableWithNineRows(TABLE_NAME);
+    createFourTabletsTableWithNineRows(client, TABLE_NAME, DEFAULT_SLEEP);
 
     String[] args = new String[] {
         "-D" + CommandLineParser.MASTER_ADDRESSES_KEY + "=" + getMasterAddresses(), TABLE_NAME};

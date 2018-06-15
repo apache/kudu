@@ -17,6 +17,7 @@
 
 package org.apache.kudu.client;
 
+import static org.apache.kudu.util.ClientTestUtil.getSchemaWithAllTypes;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -72,7 +73,7 @@ public class TestPartialRow {
 
   @Test
   public void testGetUnsetColumn() {
-    Schema schema = BaseKuduTest.getSchemaWithAllTypes();
+    Schema schema = getSchemaWithAllTypes();
     PartialRow partialRow = schema.newPartialRow();
     for (ColumnSchema columnSchema : schema.getColumns()) {
       assertFalse(partialRow.isSet("null"));
@@ -230,7 +231,7 @@ public class TestPartialRow {
 
   @Test
   public void testToString() {
-    Schema schema = BaseKuduTest.getSchemaWithAllTypes();
+    Schema schema = getSchemaWithAllTypes();
 
     PartialRow row = schema.newPartialRow();
     assertEquals("()", row.toString());
@@ -364,7 +365,7 @@ public class TestPartialRow {
   }
 
   private PartialRow getPartialRowWithAllTypes() {
-    Schema schema = BaseKuduTest.getSchemaWithAllTypes();
+    Schema schema = getSchemaWithAllTypes();
     // Ensure we aren't missing any types
     assertEquals(13, schema.getColumnCount());
 

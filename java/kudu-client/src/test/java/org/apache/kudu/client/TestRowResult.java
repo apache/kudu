@@ -17,6 +17,7 @@
 package org.apache.kudu.client;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.apache.kudu.util.ClientTestUtil.getAllTypesCreateTableOptions;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;

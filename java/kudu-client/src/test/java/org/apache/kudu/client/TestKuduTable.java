@@ -16,6 +16,11 @@
 // under the License.
 package org.apache.kudu.client;
 
+import static org.apache.kudu.util.ClientTestUtil.createBasicSchemaInsert;
+import static org.apache.kudu.util.ClientTestUtil.getBasicCreateTableOptions;
+import static org.apache.kudu.util.ClientTestUtil.getBasicSchema;
+import static org.apache.kudu.util.ClientTestUtil.getBasicTableOptionsWithNonCoveredRange;
+import static org.apache.kudu.util.ClientTestUtil.scanTableToStrings;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -64,6 +69,7 @@ public class TestKuduTable extends BaseKuduTest {
     KuduSession session = syncClient.newSession();
     // Insert a row before a default is defined and check the value is NULL.
     insertDefaultRow(table, session, 0);
+    //ClientTestUtil.scanTa
     List<String> rows = scanTableToStrings(table);
     assertEquals("wrong number of rows", 1, rows.size());
     assertEquals("wrong row", "INT32 key=0, STRING value=NULL", rows.get(0));

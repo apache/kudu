@@ -16,6 +16,9 @@
 // under the License.
 package org.apache.kudu.client;
 
+import static org.apache.kudu.util.ClientTestUtil.countRowsInScan;
+import static org.apache.kudu.util.ClientTestUtil.createBasicSchemaInsert;
+import static org.apache.kudu.util.ClientTestUtil.getBasicCreateTableOptions;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 

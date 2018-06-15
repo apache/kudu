@@ -27,6 +27,7 @@ import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.MASTER_A
 import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.PRODUCER;
 import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.PRODUCER_PREFIX;
 import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.TABLE_NAME;
+import static org.apache.kudu.util.ClientTestUtil.scanTableToStrings;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 

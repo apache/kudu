@@ -16,6 +16,7 @@
 // under the License.
 package org.apache.kudu.mapreduce;
 
+import static org.apache.kudu.util.ClientTestUtil.createFourTabletsTableWithNineRows;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -68,7 +69,7 @@ public class ITInputFormatJob extends BaseKuduTest {
   @SuppressWarnings("deprecation")
   public void test() throws Exception {
 
-    createFourTabletsTableWithNineRows(TABLE_NAME);
+    createFourTabletsTableWithNineRows(client, TABLE_NAME, DEFAULT_SLEEP);
 
     JobConf conf = new JobConf();
     HADOOP_UTIL.setupAndGetTestDir(ITInputFormatJob.class.getName(), conf).getAbsolutePath();
