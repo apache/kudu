@@ -412,16 +412,16 @@ Status FsManager::Open(FsReport* report) {
   error_manager_->SetErrorNotificationCb(ErrorHandlerType::DISK,
       Bind(&DataDirManager::MarkDataDirFailedByUuid, Unretained(dd_manager_.get())));
 
-  // Report wal and metadata directories.
-  if (report) {
-    report->wal_dir = canonicalized_wal_fs_root_.path;
-    report->metadata_dir = canonicalized_metadata_fs_root_.path;
-  }
-
   // Finally, initialize and open the block manager.
   InitBlockManager();
   LOG_TIMING(INFO, "opening block manager") {
     RETURN_NOT_OK(block_manager_->Open(report));
+  }
+
+  // Report wal and metadata directories.
+  if (report) {
+    report->wal_dir = canonicalized_wal_fs_root_.path;
+    report->metadata_dir = canonicalized_metadata_fs_root_.path;
   }
 
   if (FLAGS_enable_data_block_fsync) {

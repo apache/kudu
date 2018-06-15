@@ -37,6 +37,7 @@
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/data_dirs.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/fs/fs_report.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
@@ -996,6 +997,20 @@ TEST_F(FsManagerTestBase, TestAddRemoveDataDirsFuzz) {
     // something else is wrong.
     ASSERT_OK(open_status);
   }
+}
+
+TEST_F(FsManagerTestBase, TestAncillaryDirsReported) {
+  FsManagerOpts opts;
+  opts.wal_root = GetTestPath("wal");
+  opts.data_roots = { GetTestPath("data") };
+  opts.metadata_root = GetTestPath("metadata");
+  ReinitFsManagerWithOpts(opts);
+  ASSERT_OK(fs_manager()->CreateInitialFileSystemLayout());
+  fs::FsReport report;
+  ASSERT_OK(fs_manager()->Open(&report));
+  string report_str = report.ToString();
+  ASSERT_STR_CONTAINS(report_str, "wal directory: " + opts.wal_root);
+  ASSERT_STR_CONTAINS(report_str, "metadata directory: " + opts.metadata_root);
 }
 
 } // namespace kudu
