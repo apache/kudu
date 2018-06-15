@@ -2,7 +2,7 @@
 title: Installing Apache Kudu
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2018-03-17 09:37:29 CDT'
+last_updated: 'Last updated 2018-06-14 08:17:56 PDT'
 ---
 <!--
 
@@ -59,14 +59,28 @@ instead of following these instructions. For more information, see Cloudera&#821
 <div class="title">Hardware</div>
 <ul>
 <li>
-<p>One or more hosts to run Kudu masters. It is recommended to have either one master
-(no fault tolerance), three masters (can tolerate one failure), or five masters (two failures).</p>
+<p>One or more hosts to run Kudu masters. It is recommended to have either one master (no fault
+tolerance), or three masters (can tolerate one failure). The number of masters must be odd.</p>
 </li>
 <li>
-<p>One or more hosts to run Kudu tablet servers. When using replication, a minimum of
-three tablet servers is necessary.</p>
+<p>One or more hosts to run Kudu tablet servers. When using replication, a minimum of three tablet
+servers is necessary.</p>
 </li>
 </ul>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+A deployment with an even number of masters provides the same level of fault tolerance as a
+deployment with one fewer master. For example, both four-master and three-master deployments can
+only tolerate a single failure; two-master deployments cannot tolerate any failures.
+</td>
+</tr>
+</table>
 </div>
 <div class="dlist">
 <div class="title">Operating System Requirements</div>
@@ -683,7 +697,7 @@ make -j4</code></pre>
 <div class="content">
 <pre>$ sudo zypper install autoconf automake curl cyrus-sasl-devel \
   cyrus-sasl-gssapi flex gcc gcc-c++ gdb git java-1_8_0-openjdk-devel \
-  krb5-devel libtool lsb-release make ntp openssl-devel patch \
+  krb5-devel krb5-server libtool lsb-release make ntp openssl-devel patch \
   pkg-config python rsync unzip vim</pre>
 </div>
 </div>
@@ -789,7 +803,7 @@ $ sudo xcode-select --install</pre>
 <div class="title">macOS Known Issues</div>
 <div class="paragraph">
 <p>Kudu support for macOS is experimental, and should only be used for development.
-See <a href="https://issues.cloudera.org/browse/KUDU-1219">macOS Limitations &amp; Known Issues</a>
+See <a href="https://issues.apache.org/browse/KUDU-1219">macOS Limitations &amp; Known Issues</a>
 for more information.</p>
 </div>
 </td>
@@ -802,8 +816,7 @@ for more information.</p>
 <p>Install the prerequisite libraries, if they are not installed.</p>
 <div class="listingblock">
 <div class="content">
-<pre>$ brew tap homebrew/dupes
-$ brew install autoconf automake cmake git krb5 libtool openssl pkg-config pstree</pre>
+<pre>$ brew install autoconf automake cmake git krb5 libtool openssl pkg-config pstree</pre>
 </div>
 </div>
 </li>
@@ -1198,6 +1211,10 @@ $ sudo service kudu-tserver start</code></pre>
       <li>
 
           <a href="schema_design.html">Kudu Schema Design</a> 
+      </li> 
+      <li>
+
+          <a href="scaling_guide.html">Kudu Scaling Guide</a> 
       </li> 
       <li>
 

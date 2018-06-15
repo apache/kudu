@@ -2,7 +2,7 @@
 title: Configuring Apache Kudu
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2018-03-17 09:37:29 CDT'
+last_updated: 'Last updated 2018-06-14 08:17:56 PDT'
 ---
 <!--
 
@@ -87,7 +87,11 @@ logs. The <code>--fs_metadata_dir</code> configuration indicates where Kudu will
 metadata for each tablet. It is recommended, although not necessary, that these
 directories be placed on a high-performance drives with high bandwidth and low
 latency, e.g. solid-state drives. If <code>--fs_metadata_dir</code> is not specified,
-metadata will be placed in the directory specified by <code>--fs_wal_dir</code>.</p>
+metadata will be placed in the directory specified by <code>--fs_wal_dir</code>. Since
+a Kudu node cannot tolerate the loss of its WAL or metadata directories, it
+may be wise to mirror the drives containing these directories in order to
+make recovering from a drive failure easier; however, mirroring may increase
+the latency of Kudu writes.</p>
 </div>
 <div class="paragraph">
 <p>The <code>--fs_data_dirs</code> configuration indicates where Kudu will write its data
@@ -346,6 +350,10 @@ do not read this flag.</p></td>
       <li>
 
           <a href="schema_design.html">Kudu Schema Design</a> 
+      </li> 
+      <li>
+
+          <a href="scaling_guide.html">Kudu Scaling Guide</a> 
       </li> 
       <li>
 

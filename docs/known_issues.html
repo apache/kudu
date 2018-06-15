@@ -2,7 +2,7 @@
 title: Known Issues and Limitations
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2018-03-17 09:37:29 CDT'
+last_updated: 'Last updated 2018-06-14 08:17:56 PDT'
 ---
 <!--
 
@@ -189,17 +189,6 @@ and ideally more than 16GB when approaching the data and tablet <a href="#_scale
 <p>Write ahead logs (WAL) can only be stored on one disk.</p>
 </li>
 <li>
-<p>Disk failures are not tolerated and tablets servers will crash as soon as one is detected.</p>
-</li>
-<li>
-<p>Failed disks with unrecoverable data require the formatting of all the Kudu data for
-that tablet server before it can be started again.</p>
-</li>
-<li>
-<p>Data directories cannot be added/removed; all must be reformatted to change the set
-of directories.</p>
-</li>
-<li>
 <p>Tablet servers cannot be gracefully decommissioned.</p>
 </li>
 <li>
@@ -365,6 +354,10 @@ in <code>krb5.conf</code>.</p>
       <li>
 
           <a href="schema_design.html">Kudu Schema Design</a> 
+      </li> 
+      <li>
+
+          <a href="scaling_guide.html">Kudu Scaling Guide</a> 
       </li> 
       <li>
 

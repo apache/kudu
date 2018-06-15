@@ -2,7 +2,7 @@
 title: Apache Kudu Administration
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2018-03-17 09:37:29 CDT'
+last_updated: 'Last updated 2018-06-14 08:17:56 PDT'
 ---
 <!--
 
@@ -337,7 +337,7 @@ format exposed by the HTTP endpoint above.</p>
 multiple masters. Many Kudu clusters were created with just a single master, either for simplicity
 or because Kudu multi-master support was still experimental at the time. This workflow demonstrates
 how to migrate to a multi-master configuration. It can also be used to migrate from two masters to
-three, with straightforward modifications.</p>
+three, with straightforward modifications. Note that the number of masters must be odd.</p>
 </div>
 <div class="admonitionblock warning">
 <table>
@@ -348,6 +348,19 @@ three, with straightforward modifications.</p>
 <td class="content">
 The workflow is unsafe for adding new masters to an existing configuration that already has
 three or more masters. Do not use it for that purpose.
+</td>
+</tr>
+</table>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+An even number of masters doesn&#8217;t provide any benefit over having one fewer masters.  This
+guide should always be used for migrating to three masters.
 </td>
 </tr>
 </table>
@@ -373,7 +386,8 @@ commands assume the Kudu Unix user is <code>kudu</code>, which is typical.
 </td>
 <td class="content">
 The workflow presupposes at least basic familiarity with Kudu configuration management. If
-using Cloudera Manager (CM), the workflow also presupposes familiarity with it.
+using vendor-specific tools (e.g. Cloudera Manager) the workflow also presupposes familiarity with
+it and the vendor&#8217;s instructions should be used instead as details may differ.
 </td>
 </tr>
 </table>
@@ -803,7 +817,8 @@ more details on deploying with DNS aliases.
 </td>
 <td class="content">
 The workflow presupposes at least basic familiarity with Kudu configuration management. If
-using Cloudera Manager (CM), the workflow also presupposes familiarity with it.
+using vendor-specific tools (e.g. Cloudera Manager) the workflow also presupposes familiarity with
+it and the vendor&#8217;s instructions should be used instead as details may differ.
 </td>
 </tr>
 </table>
@@ -1468,13 +1483,102 @@ directory configuration</a> to exclude the failed disk.</p>
 </div>
 </div>
 <div class="sect2">
+<h3 id="disk_full_recovery"><a class="link" href="#disk_full_recovery">Recovering from Full Disks</a></h3>
+<div class="paragraph">
+<p>By default, Kudu reserves a small amount of space (1% by capacity) in its
+directories; Kudu considers a disk full if there is less free space available
+than the reservation. Kudu nodes can only tolerate running out of space on disks
+on which certain Kudu directories are mounted. For more information about the
+different Kudu directory types, see
+<a href="configuration.html#directory_configuration">Kudu Directory Configurations</a>.
+The table below describes this behavior for each type of directory. The behavior
+is uniform across masters and tablet servers.</p>
+</div>
+<table id="disk_full_behavior" class="tableblock frame-all grid-all spread">
+<caption class="title">Table 2. Kudu Full Disk Behavior</caption>
+<colgroup>
+<col style="width: 50%;">
+<col style="width: 50%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Kudu Directory Type</th>
+<th class="tableblock halign-left valign-top">Crash on a Full Disk?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Directory containing WALs</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Yes</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Directory containing tablet metadata</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Yes</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Directory containing data blocks only</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">No (see below)</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>Prior to Kudu 1.7.0, Kudu stripes tablet data across all directories, and will
+avoid writing data to full directories. Kudu will crash if all data directories
+are full.</p>
+</div>
+<div class="paragraph">
+<p>In 1.7.0 and later, new tablets are assigned a disk group consisting of
+-fs_target_data_dirs_per_tablet data dirs (default 3). If Kudu is not configured
+with enough data directories for a full disk group, all data directories are
+used. When a data directory is full, Kudu will stop writing new data to it and
+each tablet that uses that data directory will write new data to other data
+directories within its group. If all data directories for a tablet are full, Kudu
+will crash. Periodically, Kudu will check if full data directories are still
+full, and will resume writing to those data directories if space has become
+available.</p>
+</div>
+<div class="paragraph">
+<p>If Kudu does crash because its data directories are full, freeing space on the
+full directories will allow the affected daemon to restart and resume writing.
+Note that it may be possible for Kudu to free some space by running</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ sudo -u kudu kudu fs check --repair</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>but this command may also fail if there is too little space left.</p>
+</div>
+<div class="paragraph">
+<p>It&#8217;s also possible to allocate additional data directories to Kudu in order to
+increase the overall amount of storage available. See the documentation on
+<a href="#change_dir_config">updating a node&#8217;s directory configuration</a> for more
+information. Note that existing tablets will not use new data directories, so
+adding a new data directory does not resolve issues with full disks.</p>
+</div>
+</div>
+<div class="sect2">
 <h3 id="tablet_majority_down_recovery"><a class="link" href="#tablet_majority_down_recovery">Bringing a tablet that has lost a majority of replicas back online</a></h3>
 <div class="paragraph">
 <p>If a tablet has permanently lost a majority of its replicas, it cannot recover
-automatically and operator intervention is required. The steps below may cause
-recent edits to the tablet to be lost, potentially resulting in permanent data
-loss. Only attempt the procedure below if it is impossible to bring
-a majority back online.</p>
+automatically and operator intervention is required. If the tablet servers
+hosting a majority of the replicas are down (i.e. ones reported as "TS
+unavailable" by ksck), they should be recovered instead if possible.</p>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+The steps below may cause recent edits to the tablet to be lost,
+potentially resulting in permanent data loss. Only attempt the procedure below
+if it is impossible to bring a majority back online.
+</td>
+</tr>
+</table>
 </div>
 <div class="paragraph">
 <p>Suppose a tablet has lost a majority of its replicas. The first step in
@@ -1543,8 +1647,9 @@ re-replicate until the proper replication factor is restored. The unhealthy
 replicas will be tombstoned by the master, causing their remaining data to be
 deleted.</p>
 </div>
-<div class="sect3">
-<h4 id="rebuilding_kudu"><a class="link" href="#rebuilding_kudu">Rebuilding a Kudu Filesystem Layout</a></h4>
+</div>
+<div class="sect2">
+<h3 id="rebuilding_kudu"><a class="link" href="#rebuilding_kudu">Rebuilding a Kudu Filesystem Layout</a></h3>
 <div class="paragraph">
 <p>In the event that critical files are lost, i.e. WALs or tablet-specific
 metadata, all Kudu directories on the server must be deleted and rebuilt to
@@ -1623,6 +1728,63 @@ Kudu upon starting up.</p>
 </ol>
 </div>
 </div>
+<div class="sect2">
+<h3 id="physical_backup"><a class="link" href="#physical_backup">Physical backups of an entire node</a></h3>
+<div class="paragraph">
+<p>As documented in the <a href="known_issues.html#_replication_and_backup_limitations">Known Issues and Limitations</a>,
+Kudu does not yet provide any built-in backup and restore functionality. However,
+it is possible to create a physical backup of a Kudu node (either tablet server
+or master) and restore it later.</p>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+The node to be backed up must be offline during the procedure, or else
+the backed up (or restored) data will be inconsistent.
+</td>
+</tr>
+</table>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+Certain aspects of the Kudu node (such as its hostname) are embedded in
+the on-disk data. As such, it&#8217;s not yet possible to restore a physical backup of
+a node onto another machine.
+</td>
+</tr>
+</table>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Stop all Kudu processes in the cluster. This prevents the tablets on the
+backed up node from being rereplicated elsewhere unnecessarily.</p>
+</li>
+<li>
+<p>If creating a backup, make a copy of the WAL, metadata, and data directories
+on each node to be backed up. It is important that this copy preserve all file
+attributes as well as sparseness.</p>
+</li>
+<li>
+<p>If restoring from a backup, delete the existing WAL, metadata, and data
+directories, then restore the backup via move or copy. As with creating a
+backup, it is important that the restore preserve all file attributes and
+sparseness.</p>
+</li>
+<li>
+<p>Start all Kudu processes in the cluster.</p>
+</li>
+</ol>
+</div>
 </div>
 </div>
 </div>
@@ -1698,11 +1860,10 @@ Kudu upon starting up.</p>
 <li><a href="#ksck">Checking Cluster Health with <code>ksck</code></a></li>
 <li><a href="#change_dir_config">Changing Directory Configurations</a></li>
 <li><a href="#disk_failure_recovery">Recovering from Disk Failure</a></li>
-<li><a href="#tablet_majority_down_recovery">Bringing a tablet that has lost a majority of replicas back online</a>
-<ul class="sectlevel3">
+<li><a href="#disk_full_recovery">Recovering from Full Disks</a></li>
+<li><a href="#tablet_majority_down_recovery">Bringing a tablet that has lost a majority of replicas back online</a></li>
 <li><a href="#rebuilding_kudu">Rebuilding a Kudu Filesystem Layout</a></li>
-</ul>
-</li>
+<li><a href="#physical_backup">Physical backups of an entire node</a></li>
 </ul>
 </li>
 </ul> 
@@ -1718,6 +1879,10 @@ Kudu upon starting up.</p>
       <li>
 
           <a href="schema_design.html">Kudu Schema Design</a> 
+      </li> 
+      <li>
+
+          <a href="scaling_guide.html">Kudu Scaling Guide</a> 
       </li> 
       <li>
 

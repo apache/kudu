@@ -2,7 +2,7 @@
 title: Contributing to Apache Kudu
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2018-03-17 09:37:29 CDT'
+last_updated: 'Last updated 2018-06-14 08:17:56 PDT'
 ---
 <!--
 
@@ -155,6 +155,40 @@ Consider creating Git aliases for the above commands. Gerrit also includes
 a command-line tool called
 <a href="https://www.mediawiki.org/wiki/Gerrit/Tutorial#Installing_git-review">git-review</a>,
 which you may find helpful.
+</td>
+</tr>
+</table>
+</div>
+<div class="admonitionblock tip">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-tip" title="Tip"></i>
+</td>
+<td class="content">
+You can add reviewers automatically for a patch by adding their GitHub
+username or associated email address to the remote branch name following with
+the "r" flag:
+</td>
+</tr>
+</table>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>git push gerrit HEAD:refs/for/master%r=githubuser,r=example@apache.org</pre>
+</div>
+</div>
+<div class="admonitionblock tip">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-tip" title="Tip"></i>
+</td>
+<td class="content">
+To find possible reviewer candidates for your commit, use git blame or git
+log to find out who are involved with the area you&#8217;re touching. It&#8217;s also a
+good idea to add as reviewer whoever is involved with the JIRA you&#8217;re working
+on.
 </td>
 </tr>
 </table>
@@ -733,6 +767,10 @@ for guidelines about contributing to the official Kudu documentation.</p>
       <li>
 
           <a href="schema_design.html">Kudu Schema Design</a> 
+      </li> 
+      <li>
+
+          <a href="scaling_guide.html">Kudu Scaling Guide</a> 
       </li> 
       <li>
 

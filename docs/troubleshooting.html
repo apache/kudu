@@ -2,7 +2,7 @@
 title: Apache Kudu Troubleshooting
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2018-03-21 12:01:40 CDT'
+last_updated: 'Last updated 2018-06-14 08:17:56 PDT'
 ---
 <!--
 
@@ -44,11 +44,9 @@ Unpatched RHEL or CentOS 6.4 does not include a kernel with support for hole pun
 <p>Ubuntu 14.04 includes version 3.13 of the Linux kernel, which supports hole punching.</p>
 </li>
 <li>
-<p>Newer versions of the EXT4 or XFS file systems support hole punching, but EXT3 does
-not. Older versions of XFS that do not support hole punching return a <code>EOPNOTSUPP</code>
-(operation not supported) error. Older versions of either EXT4 or XFS that do
-not support hole punching cause Kudu to emit an error message such as the following
-and to fail to start:</p>
+<p>Newer versions of the ext4 and xfs filesystems support hole punching. Older versions
+that do not support hole punching will cause Kudu to emit an error message such as the
+following and to fail to start:</p>
 <div class="listingblock">
 <div class="content">
 <pre>Error during hole punch test. The log block manager requires a
@@ -61,6 +59,25 @@ details. Raw error message follows.</pre>
 </div>
 </li>
 </ul>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+ext4 mountpoints may actually be backed by ext2 or ext3 formatted devices, which do not
+support hole punching. The hole punching test will fail when run on such filesystems. There
+are several different ways to determine whether an ext4 mountpoint is backed by an ext2,
+ext3, or ext4 formatted device; see <a href="https://unix.stackexchange.com/q/60723">this Stack
+Exchange post</a> for details.
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p><a href="administration.html#change_dir_config">Changing Directory Configurations</a> documentation.</p>
 </div>
 <div class="paragraph">
 <p>Without hole punching support, the log block manager is unsafe to use. It won&#8217;t
@@ -85,6 +102,25 @@ only be used for small-scale evaluation and development.
 </td>
 </tr>
 </table>
+</div>
+</div>
+<div class="sect2">
+<h3 id="disk_issues"><a class="link" href="#disk_issues">Already present: FS layout already exists</a></h3>
+<div class="paragraph">
+<p>When Kudu starts, it checks each configured data directory, expecting either for all to be
+initialized or for all to be empty. If a server fails to start with a log message like</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>Check failed: _s.ok() Bad status: Already present: FS layout already exists; not overwriting existing layout: FSManager roots already exist: /data0/kudu/data</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>then this precondition has failed. This could be because Kudu was configured with non-empty data
+directories on first startup, or because a previously-running, healthy Kudu process was restarted
+and at least one data directory was deleted or is somehow corrupted, perhaps because of a disk
+error. If in the latter situation, consult the
+<a href="administration.html#change_dir_config">Changing Directory Configurations</a> documentation.</p>
 </div>
 </div>
 <div class="sect2">
@@ -234,30 +270,42 @@ are currently acting as sources:</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre>$ ntpq -n -c opeers
+<pre>$ ntpq -nc lpeers
+     remote           refid      st t when poll reach   delay   offset  jitter
+==============================================================================
+-108.59.2.24     130.133.1.10     2 u   13   64    1   71.743    0.373   0.016
++192.96.202.120  129.6.15.28      2 u   12   64    1   72.583   -0.426   0.028
+-69.10.161.7     204.26.59.157    3 u   11   64    1   15.741    2.641   0.021
+-173.255.206.154 45.56.123.24     3 u   10   64    1   43.502    0.199   0.029
+-69.195.159.158  128.138.140.44   2 u    9   64    1   53.885   -0.016   0.013
+*216.218.254.202 .CDMA.           1 u    6   64    1    1.475   -0.400   0.012
++129.250.35.250  249.224.99.213   2 u    7   64    1    1.342   -0.640   0.018
+ 45.76.244.193   216.239.35.4     2 u    6   64    1   17.380   -0.754   0.051
+ 69.89.207.199   212.215.1.157    2 u    5   64    1   57.796   -3.411   0.059
+ 171.66.97.126   .GPSs.           1 u    4   64    1    1.024   -0.374   0.018
+ 66.228.42.59    211.172.242.174  3 u    3   64    1   72.409    0.895   0.964
+ 91.189.89.198   17.253.34.125    2 u    2   64    1  135.195   -0.329   0.171
+ 162.210.111.4   216.218.254.202  2 u    1   64    1   28.570    0.693   0.306
+ 199.102.46.80   .GPS.            1 u    2   64    1   55.652   -0.039   0.019
+ 91.189.89.199   17.253.34.125    2 u    1   64    1  135.265   -0.413   0.037
+$ ntpq -nc opeers
      remote           local      st t when poll reach   delay   offset    disp
 ==============================================================================
- 0.0.0.0         0.0.0.0         16 p    -   64    0    0.000    0.000 16000.0
- 0.0.0.0         0.0.0.0         16 p    -   64    0    0.000    0.000 16000.0
- 0.0.0.0         0.0.0.0         16 p    -   64    0    0.000    0.000 16000.0
- 0.0.0.0         0.0.0.0         16 p    -   64    0    0.000    0.000 16000.0
- 0.0.0.0         0.0.0.0         16 p    -   64    0    0.000    0.000 16000.0
--108.59.2.24     10.16.2.89       2 u    3   64    3   74.380    0.321  62.992
--208.82.104.205  10.16.2.89       2 u    5   64    3   52.654   -4.054  62.965
-#192.96.202.120  10.16.2.89       2 u    1   64    3   74.737    6.538  62.988
-#69.10.161.7     10.16.2.89       3 u    5   64    3   28.353   -1.967  62.960
--173.255.206.154 10.16.2.89       3 u    -   64    3   42.906   -3.127  62.996
--69.195.159.158  10.16.2.89       2 u    1   64    3   52.543   -4.788  62.987
-*216.218.254.202 10.16.2.89       1 u    5   64    3    2.567    0.053  62.974
--129.250.35.250  10.16.2.89       2 u    3   64    3    2.603    0.256  62.985
-+45.76.244.193   10.16.2.89       2 u    5   64    3   19.522    0.188  62.969
--69.89.207.199   10.16.2.89       2 u    5   64    3   66.687   -0.395  62.967
--171.66.97.126   10.16.2.89       1 u    1   64    3   12.627   -3.572  62.963
-#66.228.42.59    10.16.2.89       4 u    1   64    3   72.143    4.034  62.971
- 91.189.89.198   10.16.2.89       2 u    5   64    3  135.329    3.069 3937.74
-#162.210.111.4   10.16.2.89       2 u    -   64    3   29.572    6.849  62.966
-+199.102.46.80   10.16.2.89       1 u    3   64    3   57.022    0.111  63.386
- 91.189.89.199   10.16.2.89       2 u    4   64    3  138.269    3.228 3937.98</pre>
+-108.59.2.24     10.17.100.238    2 u   17   64    1   71.743    0.373 187.573
++192.96.202.120  10.17.100.238    2 u   16   64    1   72.583   -0.426 187.594
+-69.10.161.7     10.17.100.238    3 u   15   64    1   15.741    2.641 187.569
+-173.255.206.154 10.17.100.238    3 u   14   64    1   43.502    0.199 187.580
+-69.195.159.158  10.17.100.238    2 u   13   64    1   53.885   -0.016 187.561
+*216.218.254.202 10.17.100.238    1 u   10   64    1    1.475   -0.400 187.543
++129.250.35.250  10.17.100.238    2 u   11   64    1    1.342   -0.640 187.588
+ 45.76.244.193   10.17.100.238    2 u   10   64    1   17.380   -0.754 187.596
+ 69.89.207.199   10.17.100.238    2 u    9   64    1   57.796   -3.411 187.541
+ 171.66.97.126   10.17.100.238    1 u    8   64    1    1.024   -0.374 187.578
+ 66.228.42.59    10.17.100.238    3 u    7   64    1   72.409    0.895 187.589
+ 91.189.89.198   10.17.100.238    2 u    6   64    1  135.195   -0.329 187.584
+ 162.210.111.4   10.17.100.238    2 u    5   64    1   28.570    0.693 187.606
+ 199.102.46.80   10.17.100.238    1 u    4   64    1   55.652   -0.039 187.587
+ 91.189.89.199   10.17.100.238    2 u    3   64    1  135.265   -0.413 187.621</pre>
 </div>
 </div>
 <div class="admonitionblock tip">
@@ -267,8 +315,8 @@ are currently acting as sources:</p>
 <i class="fa icon-tip" title="Tip"></i>
 </td>
 <td class="content">
-Depending on the specific version of NTP, the correct command may be either
-<code>ntpq -n -c opeers</code> or <code>ntpq -n -c lpeers</code>.
+Both <code>opeers</code> and <code>lpeers</code> may be helpful as <code>lpeers</code> lists refid and
+jitter, while <code>lpeers</code> lists dispersion.
 </td>
 </tr>
 </table>
@@ -320,12 +368,12 @@ results in a faster time synchronization when a machine restarts.</p>
 <pre># Use my organization's internal NTP servers.
 server ntp1.myorg.internal iburst
 server ntp2.myorg.internal iburst
-# Provide several public pool servers from the US pool for
+# Provide several public pool servers for
 # redundancy and robustness.
-server 0.pool.us.ntp.org iburst
-server 1.pool.us.ntp.org iburst
-server 2.pool.us.ntp.org iburst
-server 3.pool.us.ntp.org iburst</pre>
+server 0.pool.ntp.org iburst
+server 1.pool.ntp.org iburst
+server 2.pool.ntp.org iburst
+server 3.pool.ntp.org iburst</pre>
 </div>
 </div>
 <div class="admonitionblock tip">
@@ -382,6 +430,61 @@ A common, though temporary, workaround for this is to restart NTP with one of th
 </tr>
 </table>
 </div>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="disk_space_usage"><a class="link" href="#disk_space_usage">Disk Space Usage</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>When using the log block manager (the default on Linux), Kudu uses
+<a href="https://en.wikipedia.org/wiki/Sparse_file">sparse files</a> to store data. A
+sparse file has a different apparent size than the actual amount of disk space
+it uses. This means that some tools may inaccurately report the disk space
+used by Kudu. For example, the size listed by <code>ls -l</code> does not accurately
+reflect the disk space used by Kudu data files:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ ls -lh /data/kudu/tserver/data
+total 117M
+-rw------- 1 kudu kudu 160M Mar 26 19:37 0b9807b8b17d48a6a7d5b16bf4ac4e6d.data
+-rw------- 1 kudu kudu 4.4K Mar 26 19:37 0b9807b8b17d48a6a7d5b16bf4ac4e6d.metadata
+-rw------- 1 kudu kudu  32M Mar 26 19:37 2f26eeacc7e04b65a009e2c9a2a8bd20.data
+-rw------- 1 kudu kudu 4.3K Mar 26 19:37 2f26eeacc7e04b65a009e2c9a2a8bd20.metadata
+-rw------- 1 kudu kudu 672M Mar 26 19:37 30a2dd2cd3554d8a9613f588a8d136ff.data
+-rw------- 1 kudu kudu 4.4K Mar 26 19:37 30a2dd2cd3554d8a9613f588a8d136ff.metadata
+-rw------- 1 kudu kudu  32M Mar 26 19:37 7434c83c5ec74ae6af5974e4909cbf82.data
+-rw------- 1 kudu kudu 4.3K Mar 26 19:37 7434c83c5ec74ae6af5974e4909cbf82.metadata
+-rw------- 1 kudu kudu 672M Mar 26 19:37 772d070347a04f9f8ad2ad3241440090.data
+-rw------- 1 kudu kudu 4.4K Mar 26 19:37 772d070347a04f9f8ad2ad3241440090.metadata
+-rw------- 1 kudu kudu 160M Mar 26 19:37 86e50a95531f46b6a79e671e6f5f4151.data
+-rw------- 1 kudu kudu 4.4K Mar 26 19:37 86e50a95531f46b6a79e671e6f5f4151.metadata
+-rw------- 1 kudu kudu  687 Mar 26 19:26 block_manager_instance</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Notice that the total size reported is 117MiB, while the first file&#8217;s size is
+listed as 160MiB. Adding the <code>-s</code> option to <code>ls</code> will cause <code>ls</code> to output the
+file&#8217;s disk space usage.</p>
+</div>
+<div class="paragraph">
+<p>The <code>du</code> and <code>df</code> utilities report the actual disk space usage by default.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ du -h /data/kudu/tserver/data
+118M   /data/kudu/tserver/data</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The apparent size can be shown with the <code>--apparent-size</code> flag to <code>du</code>.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ du -h --apparent-size /data/kudu/tserver/data
+1.7G  /data/kudu/tserver/data</code></pre>
 </div>
 </div>
 </div>
@@ -612,7 +715,7 @@ User stack:
 </div>
 <div class="paragraph">
 <p>These traces can be useful for diagnosing root-cause latency issues when they are caused by systems
-below Kudu, such as disk controllers or file systems.</p>
+below Kudu, such as disk controllers or filesystems.</p>
 </div>
 </div>
 <div class="sect2">
@@ -650,6 +753,17 @@ Generally, the recommended ratio of maintenance manager threads to data director
 <p>Reduce the volume of writes flowing to Kudu on the application side.</p>
 </li>
 </ul>
+</div>
+<div class="paragraph">
+<p>Finally, check the value of <code>--block_cache_capacity_mb</code>. This setting determines
+the maximum size of Kudu&#8217;s block cache. While a higher value can help with read
+and write performance, setting it too high (as a percentage of <code>--memory_limit_hard_bytes</code>)
+is harmful. Do not raise <code>--block_cache_capacity_mb</code> above <code>--memory_pressure_percentage</code>
+(default 60%) of <code>--memory_limit_hard_bytes</code>, as this will cause Kudu to flush
+aggressively even if write throughput is low. Keeping the block cache capacity
+below 50% of the memory pressure percentage times the hard limit is recommended.
+With the defaults, this means the <code>--block_cache_capacity_mb</code> should not exceed
+30% of <code>--memory_limit_hard_bytes</code>.</p>
 </div>
 </div>
 <div class="sect2">
@@ -712,22 +826,18 @@ confidential or sensitive data.
 </div>
 </div>
 <div class="sect2">
-<h3 id="disk_issues"><a class="link" href="#disk_issues">Disk Issues</a></h3>
+<h3 id="slow_dns_nscd"><a class="link" href="#slow_dns_nscd">Slow DNS Lookups and <code>nscd</code></a></h3>
 <div class="paragraph">
-<p>When Kudu starts, it checks each configured data directory, expecting either for all to be
-initialized or for all to be empty. If a server fails to start with a log message like</p>
+<p>If the logs contain messages about slow name resolution like</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre>Check failed: _s.ok() Bad status: Already present: FS layout already exists; not overwriting existing layout: FSManager roots already exist: /data0/kudu/data</pre>
+<pre>W0926 11:19:01.339553 27231 net_util.cc:129] Time spent resolving address for kudu-tserver.example.com: real 4.647s    user 0.000s     sys 0.000s</pre>
 </div>
 </div>
 <div class="paragraph">
-<p>then this precondition has failed. This could be because Kudu was configured with non-empty data
-directories on first startup, or because a previously-running, healthy Kudu process was restarted
-and at least one data directory was deleted or is somehow corrupted, perhaps because of a disk
-error. If in the latter situation, consult the
-<a href="administration.html#change_dir_config">Changing Directory Configurations</a> documentation.</p>
+<p>then it may help to run <code>nscd</code> (the name service cache daemon). Consult your
+operating system&#8217;s documentation for how to install and enable <code>nscd</code>.</p>
 </div>
 </div>
 </div>
@@ -742,6 +852,42 @@ error. If in the latter situation, consult the
 is not a case of a missing jar, but simply that Impala stores Kudu metadata in
 Hive in a format that&#8217;s unreadable to other tools, including Hive itself and Spark.
 There is no workaround for Hive users. Spark users need to create temporary tables.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="too_many_threads"><a class="link" href="#too_many_threads">Runtime error: Could not create thread: Resource temporarily unavailable (error 11)</a></h3>
+<div class="paragraph">
+<p>Users will encounter this error when Kudu is unable to create more threads,
+usually on versions of Kudu older than 1.7. It happens on tablet servers, and
+is a sign that the tablet server hosts too many tablet replicas. To fix the
+issue, users can raise the <code>nproc</code> ulimit as detailed in the documentation for
+their operating system or distribution. However, the better solution is to
+reduce the number of replicas on the tablet server. This may involve rethinking
+the table&#8217;s partitioning schema. For the recommended limits on number of
+replicas per tablet server, see the known issues and scaling limitations
+documentation for the appropriate Kudu release. The
+<a href="http://kudu.apache.org/releases/">releases page</a> has links to documentation
+for previous versions of Kudu; for the latest release, see the
+<a href="known_issues.html">known issues page</a>.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="tombstoned_or_stopped_tablets"><a class="link" href="#tombstoned_or_stopped_tablets">Tombstoned or STOPPED tablet replicas</a></h3>
+<div class="paragraph">
+<p>Users may notice some replicas on a tablet server are in a STOPPED state, and
+remain on the server indefinitely. These replicas are tombstones. A tombstone
+indicates that the tablet server once held a bona fide replica of its tablet.
+For example, if a tablet server goes down and its replicas are re-replicated
+elsewhere, if the tablet server rejoins the cluster its replicas will become
+tombstones. A tombstone will remain until the table it belongs to is deleted, or
+a new replica of the same tablet is placed on the tablet server. A count of
+tombstoned replicas and details of each one are available on the /tablets page
+of the tablet server web UI.</p>
+</div>
+<div class="paragraph">
+<p>The Raft consensus algorithm that Kudu uses for replication requires tombstones
+for correctness in certain rare situations. They consume minimal resources and
+hold no data. They must not be deleted.</p>
 </div>
 </div>
 </div>
@@ -786,9 +932,11 @@ There is no workaround for Hive users. Spark users need to create temporary tabl
 <li><a href="#_startup_errors">Startup Errors</a>
 <ul class="sectlevel2">
 <li><a href="#req_hole_punching">Errors During Hole Punching Test</a></li>
+<li><a href="#disk_issues">Already present: FS layout already exists</a></li>
 <li><a href="#ntp">NTP Clock Synchronization</a></li>
 </ul>
 </li>
+<li><a href="#disk_space_usage">Disk Space Usage</a></li>
 <li><a href="#crash_reporting">Reporting Kudu Crashes</a></li>
 <li><a href="#_performance_troubleshooting">Performance Troubleshooting</a>
 <ul class="sectlevel2">
@@ -797,12 +945,14 @@ There is no workaround for Hive users. Spark users need to create temporary tabl
 <li><a href="#_kernel_stack_watchdog_traces">Kernel Stack Watchdog Traces</a></li>
 <li><a href="#memory_limits">Memory Limits</a></li>
 <li><a href="#heap_sampling">Heap Sampling</a></li>
-<li><a href="#disk_issues">Disk Issues</a></li>
+<li><a href="#slow_dns_nscd">Slow DNS Lookups and <code>nscd</code></a></li>
 </ul>
 </li>
 <li><a href="#_issues_using_kudu">Issues using Kudu</a>
 <ul class="sectlevel2">
 <li><a href="#hive_handler">ClassNotFoundException: com.cloudera.kudu.hive.KuduStorageHandler</a></li>
+<li><a href="#too_many_threads">Runtime error: Could not create thread: Resource temporarily unavailable (error 11)</a></li>
+<li><a href="#tombstoned_or_stopped_tablets">Tombstoned or STOPPED tablet replicas</a></li>
 </ul>
 </li>
 </ul> 
@@ -814,6 +964,10 @@ There is no workaround for Hive users. Spark users need to create temporary tabl
       <li>
 
           <a href="schema_design.html">Kudu Schema Design</a> 
+      </li> 
+      <li>
+
+          <a href="scaling_guide.html">Kudu Scaling Guide</a> 
       </li> 
       <li>
 
