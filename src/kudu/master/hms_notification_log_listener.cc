@@ -109,8 +109,6 @@ void HmsNotificationLogListenerTask::Shutdown() {
 
 Status HmsNotificationLogListenerTask::WaitForCatchUp(const MonoTime& deadline) {
   Synchronizer synchronizer;
-  auto callback = synchronizer.AsStdStatusCallback();
-
   {
     std::lock_guard<Mutex> l(lock_);
     if (closing_) {
