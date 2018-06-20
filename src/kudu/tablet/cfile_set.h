@@ -102,6 +102,9 @@ class CFileSet : public std::enable_shared_from_this<CFileSet> {
   // Excludes the ad hoc index and bloomfiles.
   uint64_t OnDiskDataSize() const;
 
+  // The size on-disk of column cfile's data, in bytes.
+  uint64_t OnDiskColumnDataSize(const ColumnId& col_id) const;
+
   // Determine the index of the given row key.
   // Sets *idx to boost::none if the row is not found.
   Status FindRow(const RowSetKeyProbe& probe,

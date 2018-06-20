@@ -104,6 +104,10 @@ class KuduTabletTest : public KuduTest {
     return harness_->tablet();
   }
 
+  Tablet* mutable_tablet() {
+    return harness_->mutable_tablet();
+  }
+
   TabletHarness* harness() {
     return harness_.get();
   }

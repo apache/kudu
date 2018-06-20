@@ -385,6 +385,34 @@ message ScannerKeepAliveResponsePB {
   optional TabletServerErrorPB error = 1;
 }
 
+// A split key range request. Split tablet to key ranges, the request
+// doesn't change layout of tablet.
+message SplitKeyRangeRequestPB {
+  required bytes tablet_id = 1;
+
+  // Encoded primary key to begin scanning at (inclusive).
+  optional bytes start_primary_key = 2 [(kudu.REDACT) = true];
+  // Encoded primary key to stop scanning at (exclusive).
+  optional bytes stop_primary_key = 3 [(kudu.REDACT) = true];
+
+  // Number of bytes to try to return in each chunk. This is a hint.
+  // The tablet server may return chunks larger or smaller than this value.
+  optional uint64 target_chunk_size_bytes = 4;
+
+  // The columns to consider when chunking.
+  // If specified, then the size estimate used for 'target_chunk_size_bytes'
+  // should only include these columns. This can be used if a query will
+  // only scan a certain subset of the columns.
+  repeated ColumnSchemaPB columns = 5;
+}
+
+message SplitKeyRangeResponsePB {
+  // The error, if an error occurred with this request.
+  optional TabletServerErrorPB error = 1;
+
+  repeated KeyRangePB ranges = 2;
+}
+
 enum TabletServerFeatures {
   UNKNOWN_FEATURE = 0;
   COLUMN_PREDICATES = 1;

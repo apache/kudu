@@ -391,3 +391,13 @@ message ColumnPredicatePB {
     IsNull is_null = 6;
   }
 }
+
+// The primary key range of a Kudu tablet.
+message KeyRangePB {
+  // Encoded primary key to begin scanning at (inclusive).
+  optional bytes start_primary_key = 1 [(kudu.REDACT) = true];
+  // Encoded primary key to stop scanning at (exclusive).
+  optional bytes stop_primary_key = 2 [(kudu.REDACT) = true];
+  // Number of bytes in chunk.
+  required uint64 size_bytes_estimates = 3;
+}

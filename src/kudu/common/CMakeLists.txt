@@ -46,6 +46,7 @@ set(COMMON_SRCS
   id_mapping.cc
   iterator_stats.cc
   key_encoder.cc
+  key_range.cc
   key_util.cc
   partial_row.cc
   partition.cc

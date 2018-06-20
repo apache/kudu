@@ -263,6 +263,10 @@ uint64_t CFileSet::OnDiskDataSize() const {
   return ret;
 }
 
+uint64_t CFileSet::OnDiskColumnDataSize(const ColumnId& col_id) const {
+  return FindOrDie(readers_by_col_id_, col_id)->file_size();
+}
+
 Status CFileSet::FindRow(const RowSetKeyProbe &probe,
                          const IOContext* io_context,
                          boost::optional<rowid_t>* idx,

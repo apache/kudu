@@ -123,6 +123,10 @@ class TabletServiceImpl : public TabletServerServiceIf {
                            ListTabletsResponsePB* resp,
                            rpc::RpcContext* context) OVERRIDE;
 
+  virtual void SplitKeyRange(const SplitKeyRangeRequestPB* req,
+                             SplitKeyRangeResponsePB* resp,
+                             rpc::RpcContext* context) OVERRIDE;
+
   virtual void Checksum(const ChecksumRequestPB* req,
                         ChecksumResponsePB* resp,
                         rpc::RpcContext* context) OVERRIDE;

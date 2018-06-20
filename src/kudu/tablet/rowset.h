@@ -48,6 +48,7 @@ class RowChangeList;
 class RowwiseIterator;
 class Schema;
 class Slice;
+struct ColumnId;
 
 namespace consensus {
 class OpId;
@@ -181,6 +182,9 @@ class RowSet {
   // Return the size, in bytes, of this rowset's base data and REDO deltas.
   // Does not include bloomfiles, the ad hoc index, or UNDO deltas.
   virtual uint64_t OnDiskBaseDataSizeWithRedos() const = 0;
+
+  // Return the size of this rowset's column in base data on disk, in bytes.
+  virtual uint64_t OnDiskBaseDataColumnSize(const ColumnId& col_id) const = 0;
 
   // Return the lock used for including this DiskRowSet in a compaction.
   // This prevents multiple compactions and flushes from trying to include
@@ -404,6 +408,9 @@ class DuplicatingRowSet : public RowSet {
 
   // Return the total size on-disk of this rowset's data (i.e. excludes metadata), in bytes.
   uint64_t OnDiskBaseDataSize() const OVERRIDE;
+
+  // Return the total size on-disk of this rowset's column data, in bytes.
+  uint64_t OnDiskBaseDataColumnSize(const ColumnId& col_id) const OVERRIDE;
 
   // Return the size, in bytes, of this rowset's data, not including UNDOs.
   uint64_t OnDiskBaseDataSizeWithRedos() const OVERRIDE;

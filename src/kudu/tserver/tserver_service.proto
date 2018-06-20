@@ -44,6 +44,9 @@ service TabletServerService {
   rpc ListTablets(ListTabletsRequestPB) returns (ListTabletsResponsePB) {
     option (kudu.rpc.authz_method) = "AuthorizeClient";
   }
+  rpc SplitKeyRange(SplitKeyRangeRequestPB) returns (SplitKeyRangeResponsePB) {
+    option (kudu.rpc.authz_method) = "AuthorizeClient";
+  }
 
   // Run full-scan data checksum on a tablet to verify data integrity.
   //

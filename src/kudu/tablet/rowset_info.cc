@@ -36,6 +36,7 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
+#include "kudu/common/key_range.h"
 
 using std::shared_ptr;
 using std::string;
@@ -147,6 +148,21 @@ double WidthByDataSize(const Slice& prev, const Slice& next,
   return weight;
 }
 
+// Computes the "width" of an interval as above, for the provided columns in the rowsets.
+double WidthByDataSize(const Slice& prev, const Slice& next,
+                       const unordered_map<RowSet*, RowSetInfo*>& active,
+                       const vector<ColumnId>& col_ids) {
+  double weight = 0;
+
+  for (const auto& rs_rsi : active) {
+    double fraction = StringFractionInRange(rs_rsi.second, prev, next);
+    for (const auto col_id : col_ids) {
+      weight += rs_rsi.second->size_bytes(col_id) * fraction;
+    }
+  }
+
+  return weight;
+}
 
 void CheckCollectOrderedCorrectness(const vector<RowSetInfo>& min_key,
                                     const vector<RowSetInfo>& max_key,
@@ -255,6 +271,91 @@ void RowSetInfo::CollectOrdered(const RowSetTree& tree,
   FinalizeCDFVector(max_key, total_width);
 }
 
+void RowSetInfo::SplitKeyRange(const RowSetTree& tree,
+                               Slice start_key,
+                               Slice stop_key,
+                               const std::vector<ColumnId>& col_ids,
+                               uint64_t target_chunk_size,
+                               vector<KeyRange>* ranges) {
+  // check start_key greater than stop_key
+  CHECK(stop_key.empty() || start_key.compare(stop_key) <= 0);
+
+  // The split process works as follows:
+  // For each sorted endpoint, first we identify whether it is a
+  // start or stop endpoint.
+  //
+  // At a start point, the associated rowset is added to the
+  // "active" rowset mapping.
+  //
+  // At a stop point, the rowset is removed from the "active" map.
+  // Note that the "active" map allows access to the incomplete
+  // RowSetInfo that the RowSet maps to.
+  //
+  // The algorithm keeps track of its state - a "sliding window"
+  // across the keyspace - by maintaining the previous key and current
+  // value of the total data size traversed over the intervals.
+  vector<RowSetInfo> active_rsi;
+  active_rsi.reserve(tree.all_rowsets().size());
+  unordered_map<RowSet*, RowSetInfo*> active;
+  uint64_t chunk_size = 0;
+  Slice last_bound = start_key;
+  Slice prev = start_key;
+  Slice next;
+
+  for (const auto& rse : tree.key_endpoints()) {
+    RowSet* rs = rse.rowset_;
+    next = rse.slice_;
+
+    if (prev.compare(next) < 0) {
+      // reset next when next greater than stop_key
+      if (!stop_key.empty() && next.compare(stop_key) > 0) {
+        next = stop_key;
+      }
+
+      uint64_t interval_size = 0;
+      if (col_ids.empty()) {
+        interval_size = WidthByDataSize(prev, next, active);
+      } else {
+        interval_size = WidthByDataSize(prev, next, active, col_ids);
+      }
+
+      if (chunk_size != 0 && chunk_size + interval_size / 2 >= target_chunk_size) {
+        // Select the interval closest to the target chunk size
+        ranges->push_back(KeyRange(
+            last_bound.ToString(), prev.ToString(), chunk_size));
+        last_bound = prev;
+        chunk_size = 0;
+      }
+      chunk_size += interval_size;
+      prev = next;
+    }
+
+    if (!stop_key.empty() && prev.compare(stop_key) >= 0) {
+      break;
+    }
+
+    // Add/remove current RowSetInfo
+    if (rse.endpoint_ == RowSetTree::START) {
+      // Store reference from vector. This is safe b/c of reserve() above.
+      active_rsi.push_back(RowSetInfo(rs, 0));
+      active.insert(std::make_pair(rs, &active_rsi.back()));
+    } else if (rse.endpoint_ == RowSetTree::STOP) {
+      CHECK_EQ(active.erase(rs), 1);
+    } else {
+      LOG(FATAL) << "Undefined RowSet endpoint type.\n"
+                 << "\tExpected either RowSetTree::START=" << RowSetTree::START
+                 << " or RowSetTree::STOP=" << RowSetTree::STOP << ".\n"
+                 << "\tRecieved:\n"
+                 << "\t\tRowSet=" << rs->ToString() << "\n"
+                 << "\t\tKey=" << KUDU_REDACT(next.ToDebugString()) << "\n"
+                 << "\t\tEndpointType=" << rse.endpoint_;
+    }
+  }
+  if (last_bound.compare(stop_key) < 0 || stop_key.empty()) {
+    ranges->emplace_back(last_bound.ToString(), stop_key.ToString(), chunk_size);
+  }
+}
+
 RowSetInfo::RowSetInfo(RowSet* rs, double init_cdf)
     : cdf_min_key_(init_cdf),
       cdf_max_key_(init_cdf),
@@ -263,6 +364,10 @@ RowSetInfo::RowSetInfo(RowSet* rs, double init_cdf)
   extra_->size_bytes = rs->OnDiskBaseDataSizeWithRedos();
   extra_->has_bounds = rs->GetBounds(&extra_->min_key, &extra_->max_key).ok();
   size_mb_ = std::max(implicit_cast<int>(extra_->size_bytes / 1024 / 1024), kMinSizeMb);
+}
+
+uint64_t RowSetInfo::size_bytes(const ColumnId& col_id) const {
+  return extra_->rowset->OnDiskBaseDataColumnSize(col_id);
 }
 
 void RowSetInfo::FinalizeCDFVector(vector<RowSetInfo>* vec,

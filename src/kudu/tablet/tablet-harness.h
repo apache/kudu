@@ -133,6 +133,10 @@ class TabletHarness {
     return tablet_;
   }
 
+  Tablet* mutable_tablet() {
+    return tablet_.get();
+  }
+
   FsManager* fs_manager() {
     return fs_manager_.get();
   }

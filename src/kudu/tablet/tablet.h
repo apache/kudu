@@ -36,6 +36,7 @@
 #include "kudu/common/schema.h"
 #include "kudu/fs/io_context.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
@@ -55,6 +56,8 @@
 namespace kudu {
 
 class ConstContiguousRow;
+class EncodedKey;
+class KeyRange;
 class MaintenanceManager;
 class MaintenanceOp;
 class MaintenanceOpStats;
@@ -433,10 +436,26 @@ class Tablet {
   // Return the default bloom filter sizing parameters, configured by server flags.
   static BloomFilterSizing DefaultBloomSizing();
 
+  // Split [start_key, stop_key) into primary key ranges by chunk size.
+  //
+  // If column_ids specified, then the size estimate used for 'target_chunk_size'
+  // should only include these columns. This can be used if a query will
+  // only scan a certain subset of the columns.
+  void SplitKeyRange(const EncodedKey* start_key,
+                     const EncodedKey* stop_key,
+                     const std::vector<ColumnId>& column_ids,
+                     uint64 target_chunk_size,
+                     std::vector<KeyRange>* ranges);
+
  private:
   friend class Iterator;
   friend class TabletReplicaTest;
   FRIEND_TEST(TestTablet, TestGetReplaySizeForIndex);
+  FRIEND_TEST(TestTabletStringKey, TestSplitKeyRange);
+  FRIEND_TEST(TestTabletStringKey, TestSplitKeyRangeWithZeroRowSets);
+  FRIEND_TEST(TestTabletStringKey, TestSplitKeyRangeWithOneRowSet);
+  FRIEND_TEST(TestTabletStringKey, TestSplitKeyRangeWithNonOverlappingRowSets);
+  FRIEND_TEST(TestTabletStringKey, TestSplitKeyRangeWithMinimumValueRowSet);
 
   // Lifecycle states that a Tablet can be in. Legal state transitions for a
   // Tablet object:

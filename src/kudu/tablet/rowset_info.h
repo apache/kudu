@@ -21,9 +21,15 @@
 #include <string>
 #include <vector>
 
+#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/util/slice.h"
 
 namespace kudu {
+
+class KeyRange;
+struct ColumnId;
+
 namespace tablet {
 
 class RowSet;
@@ -44,6 +50,19 @@ class RowSetInfo {
                              std::vector<RowSetInfo>* min_key,
                              std::vector<RowSetInfo>* max_key);
 
+  // Split [start_key, stop_key) into primary key ranges by chunk size.
+  //
+  // If col_ids specified, then the size estimate used for 'target_chunk_size'
+  // should only include these columns. This can be used if a query will
+  // only scan a certain subset of the columns.
+  static void SplitKeyRange(const RowSetTree& tree,
+                            Slice start_key,
+                            Slice stop_key,
+                            const std::vector<ColumnId>& col_ids,
+                            uint64 target_chunk_size,
+                            std::vector<KeyRange>* ranges);
+
+  uint64_t size_bytes(const ColumnId& col_id) const;
   uint64_t size_bytes() const { return extra_->size_bytes; }
   int size_mb() const { return size_mb_; }
 

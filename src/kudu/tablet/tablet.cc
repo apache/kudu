@@ -374,6 +374,28 @@ BloomFilterSizing Tablet::DefaultBloomSizing() {
                                             FLAGS_tablet_bloom_target_fp_rate);
 }
 
+void Tablet::SplitKeyRange(const EncodedKey* start_key,
+                           const EncodedKey* stop_key,
+                           const std::vector<ColumnId>& column_ids,
+                           uint64 target_chunk_size,
+                           std::vector<KeyRange>* key_range_info) {
+  shared_ptr<RowSetTree> rowsets_copy;
+  {
+    shared_lock<rw_spinlock> l(component_lock_);
+    rowsets_copy = components_->rowsets;
+  }
+
+  Slice start, stop;
+  if (start_key != nullptr) {
+    start = start_key->encoded_key();
+  }
+  if (stop_key != nullptr) {
+    stop = stop_key->encoded_key();
+  }
+  RowSetInfo::SplitKeyRange(*rowsets_copy, start, stop,
+                            column_ids, target_chunk_size, key_range_info);
+}
+
 Status Tablet::NewRowIterator(const Schema &projection,
                               gscoped_ptr<RowwiseIterator> *iter) const {
   // Yield current rows.

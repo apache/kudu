@@ -90,6 +90,10 @@ class MockRowSet : public RowSet {
     LOG(FATAL) << "Unimplemented";
     return 0;
   }
+  virtual uint64_t OnDiskBaseDataColumnSize(const ColumnId& col_id) const OVERRIDE {
+    LOG(FATAL) << "Unimplemented";
+    return 0;
+  }
   virtual uint64_t OnDiskBaseDataSizeWithRedos() const OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return 0;
@@ -172,10 +176,11 @@ class MockRowSet : public RowSet {
 class MockDiskRowSet : public MockRowSet {
  public:
   MockDiskRowSet(std::string first_key, std::string last_key,
-                 uint64_t size = 1000000)
+                 uint64_t size = 1000000, uint64_t column_size = 200)
       : first_key_(std::move(first_key)),
         last_key_(std::move(last_key)),
-        size_(size) {}
+        size_(size),
+        column_size_(column_size) {}
 
   virtual Status GetBounds(std::string* min_encoded_key,
                            std::string* max_encoded_key) const OVERRIDE {
@@ -192,6 +197,10 @@ class MockDiskRowSet : public MockRowSet {
     return size_;
   }
 
+  virtual uint64_t OnDiskBaseDataColumnSize(const ColumnId& col_id) const OVERRIDE {
+    return column_size_;
+  }
+
   virtual uint64_t OnDiskBaseDataSizeWithRedos() const OVERRIDE {
     return size_;
   }
@@ -206,6 +215,7 @@ class MockDiskRowSet : public MockRowSet {
   const std::string first_key_;
   const std::string last_key_;
   const uint64_t size_;
+  const uint64_t column_size_;
 };
 
 // Mock which acts like a MemRowSet and has no known bounds.

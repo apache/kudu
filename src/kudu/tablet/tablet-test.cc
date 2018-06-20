@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/tablet/tablet.h"
+
 #include <algorithm>
 #include <cstdint>
 #include <ctime>
@@ -31,7 +33,10 @@
 
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/common/common.pb.h"
+#include "kudu/common/encoded_key.h"
 #include "kudu/common/iterator.h"
+#include "kudu/common/key_range.h"
+#include "kudu/common/partial_row.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/timestamp.h"
@@ -39,22 +44,26 @@
 #include "kudu/fs/block_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/tablet/delta_key.h"
 #include "kudu/tablet/delta_stats.h"
 #include "kudu/tablet/deltafile.h"
 #include "kudu/tablet/local_tablet_writer.h"
+#include "kudu/tablet/mock-rowsets.h"
 #include "kudu/tablet/mvcc.h"
+#include "kudu/tablet/rowset.h"
 #include "kudu/tablet/rowset_metadata.h"
+#include "kudu/tablet/rowset_tree.h"
 #include "kudu/tablet/tablet-test-base.h"
 #include "kudu/tablet/tablet-test-util.h"
-#include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_metrics.h" // IWYU pragma: keep
 #include "kudu/util/faststring.h"
 #include "kudu/util/jsonwriter.h"
+#include "kudu/util/memory/arena.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
@@ -1134,6 +1143,261 @@ TEST(TestTablet, TestGetReplaySizeForIndex) {
   // A value after all the passed segments, doesn't retain anything.
   min_log_index = 301;
   EXPECT_EQ(Tablet::GetReplaySizeForIndex(min_log_index, replay_size_map), 0);
+}
+
+class TestTabletStringKey : public TestTablet<StringKeyTestSetup> {
+public:
+  void AssertChunks(vector<KeyRange> expected, vector<KeyRange> actual) {
+    ASSERT_EQ(actual.size(), expected.size());
+    for (size_t idx = 0; idx < actual.size(); ++idx) {
+      ASSERT_STREQ(actual[idx].start_primary_key().c_str(),
+                   expected[idx].start_primary_key().c_str());
+      ASSERT_STREQ(actual[idx].stop_primary_key().c_str(),
+                   expected[idx].stop_primary_key().c_str());
+      ASSERT_EQ(actual[idx].size_bytes(), expected[idx].size_bytes());
+    }
+  }
+};
+
+// Test for split key range
+TEST_F(TestTabletStringKey, TestSplitKeyRange) {
+  Tablet* tablet = this->mutable_tablet();
+
+  scoped_refptr<TabletComponents> comps;
+  tablet->GetComponents(&comps);
+
+  RowSetVector old_rowset = comps->rowsets->all_rowsets();
+  RowSetVector new_rowset = {
+      std::make_shared<MockDiskRowSet>("0", "9", 9000, 90),
+      std::make_shared<MockDiskRowSet>("2", "5", 3000, 30),
+      std::make_shared<MockDiskRowSet>("5", "6", 1000, 10)
+  };
+  tablet->AtomicSwapRowSets(old_rowset, new_rowset);
+  {
+    std::vector<KeyRange> result = {
+        KeyRange("", "2", 2000),
+        KeyRange("2", "5", 6000),
+        KeyRange("5", "6", 2000),
+        KeyRange("6", "", 3000)
+    };
+    std::vector<ColumnId> col_ids;
+    std::vector<KeyRange> range;
+    tablet->SplitKeyRange(nullptr, nullptr, col_ids, 3000, &range);
+    AssertChunks(result, range);
+  }
+  // target chunk size less than the min interval size
+  {
+    std::vector<KeyRange> result = {
+        KeyRange("", "2", 2000),
+        KeyRange("2", "5", 6000),
+        KeyRange("5", "6", 2000),
+        KeyRange("6", "", 3000)
+    };
+    std::vector<ColumnId> col_ids;
+    std::vector<KeyRange> range;
+    tablet->SplitKeyRange(nullptr, nullptr, col_ids, 900, &range);
+    AssertChunks(result, range);
+  }
+  // target chunk size greater than the max interval size
+  {
+    std::vector<KeyRange> result = {
+        KeyRange("", "", 13000)
+    };
+    std::vector<ColumnId> col_ids;
+    std::vector<KeyRange> range;
+    tablet->SplitKeyRange(nullptr, nullptr, col_ids, 20000, &range);
+    AssertChunks(result, range);
+  }
+  // test split key range with column
+  {
+    std::vector<KeyRange> result = {
+        KeyRange("", "2", 40),
+        KeyRange("2", "5", 120),
+        KeyRange("5", "6", 40),
+        KeyRange("6", "", 60)
+    };
+    std::vector<ColumnId> col_ids;
+    col_ids.emplace_back(0);
+    col_ids.emplace_back(1);
+    std::vector<KeyRange> range;
+    tablet->SplitKeyRange(nullptr, nullptr, col_ids, 60, &range);
+    AssertChunks(result, range);
+  }
+  // test split key range with bound
+  {
+    gscoped_ptr<EncodedKey> l_enc_key;
+    gscoped_ptr<EncodedKey> u_enc_key;
+    Arena arena(256);
+    KuduPartialRow lower_bound(&this->schema_);
+    CHECK_OK(lower_bound.SetString("key", "1"));
+    CHECK_OK(lower_bound.SetInt32("key_idx", 0));
+    CHECK_OK(lower_bound.SetInt32("val", 0));
+    string l_encoded;
+    ASSERT_OK(lower_bound.EncodeRowKey(&l_encoded));
+    ASSERT_OK(EncodedKey::DecodeEncodedString(this->schema_, &arena, l_encoded, &l_enc_key));
+
+    KuduPartialRow upper_bound(&this->schema_);
+    CHECK_OK(upper_bound.SetString("key", "4"));
+    CHECK_OK(upper_bound.SetInt32("key_idx", 0));
+    CHECK_OK(upper_bound.SetInt32("val", 0));
+    string u_encoded;
+    ASSERT_OK(upper_bound.EncodeRowKey(&u_encoded));
+    ASSERT_OK(EncodedKey::DecodeEncodedString(this->schema_, &arena, u_encoded, &u_enc_key));
+    // split key range in [1, 4)
+    {
+      std::vector<KeyRange> result = {
+          KeyRange("1", "2", 1000),
+          KeyRange("2", "4", 4000)
+      };
+      std::vector<ColumnId> col_ids;
+      std::vector<KeyRange> range;
+      tablet->SplitKeyRange(l_enc_key.get(), u_enc_key.get(), col_ids, 2000, &range);
+      AssertChunks(result, range);
+    }
+    // split key range in [min, 4)
+    {
+      std::vector<KeyRange> result = {
+          KeyRange("", "2", 2000),
+          KeyRange("2", "4", 4000)
+      };
+      std::vector<ColumnId> col_ids;
+      std::vector<KeyRange> range;
+      tablet->SplitKeyRange(nullptr, u_enc_key.get(), col_ids, 2000, &range);
+      AssertChunks(result, range);
+    }
+    // split key range in [4, max)
+    {
+      std::vector<KeyRange> result = {
+          KeyRange("4", "5", 2000),
+          KeyRange("5", "6", 2000),
+          KeyRange("6", "", 3000)
+      };
+      std::vector<ColumnId> col_ids;
+      std::vector<KeyRange> range;
+      tablet->SplitKeyRange(u_enc_key.get(), nullptr, col_ids, 2000, &range);
+      AssertChunks(result, range);
+    }
+  }
+}
+
+// Test for split key range, tablet with 0 rowsets
+TEST_F(TestTabletStringKey, TestSplitKeyRangeWithZeroRowSets) {
+  Tablet* tablet = this->mutable_tablet();
+
+  scoped_refptr<TabletComponents> comps;
+  tablet->GetComponents(&comps);
+
+  RowSetVector old_rowset = comps->rowsets->all_rowsets();
+  RowSetVector new_rowset = {};
+  tablet->AtomicSwapRowSets(old_rowset, new_rowset);
+  {
+    std::vector<KeyRange> result = {
+        KeyRange("", "", 0)
+    };
+    std::vector<ColumnId> col_ids;
+    std::vector<KeyRange> range;
+    tablet->SplitKeyRange(nullptr, nullptr, col_ids, 3000, &range);
+    AssertChunks(result, range);
+  }
+}
+
+// Test for split key range, tablet with 1 rowset
+TEST_F(TestTabletStringKey, TestSplitKeyRangeWithOneRowSet) {
+  Tablet* tablet = this->mutable_tablet();
+
+  scoped_refptr<TabletComponents> comps;
+  tablet->GetComponents(&comps);
+
+  RowSetVector old_rowset = comps->rowsets->all_rowsets();
+  RowSetVector new_rowset = {
+      std::make_shared<MockDiskRowSet>("0", "9", 9000, 90)
+  };
+  tablet->AtomicSwapRowSets(old_rowset, new_rowset);
+  {
+    std::vector<KeyRange> result = {
+        KeyRange("", "", 9000)
+    };
+    std::vector<ColumnId> col_ids;
+    std::vector<KeyRange> range;
+    tablet->SplitKeyRange(nullptr, nullptr, col_ids, 3000, &range);
+    AssertChunks(result, range);
+  }
+}
+
+// Test for split key range, tablet with non-overlapping rowsets
+TEST_F(TestTabletStringKey, TestSplitKeyRangeWithNonOverlappingRowSets) {
+  Tablet *tablet = this->mutable_tablet();
+
+  // Rowsets without gaps
+  scoped_refptr<TabletComponents> comps;
+  tablet->GetComponents(&comps);
+  RowSetVector old_rowset = comps->rowsets->all_rowsets();
+  RowSetVector without_gaps_rowset = {
+      std::make_shared<MockDiskRowSet>("0", "2", 2000, 20),
+      std::make_shared<MockDiskRowSet>("2", "5", 3000, 30),
+      std::make_shared<MockDiskRowSet>("5", "6", 1000, 10),
+      std::make_shared<MockDiskRowSet>("6", "9", 3000, 30)
+  };
+  tablet->AtomicSwapRowSets(old_rowset, without_gaps_rowset);
+  {
+    std::vector<KeyRange> result = {
+        KeyRange("", "2", 2000),
+        KeyRange("2", "5", 3000),
+        KeyRange("5", "", 4000)
+    };
+    std::vector<ColumnId> col_ids;
+    std::vector<KeyRange> range;
+    tablet->SplitKeyRange(nullptr, nullptr, col_ids, 3000, &range);
+    AssertChunks(result, range);
+  }
+
+  // Rowsets with gaps
+  tablet->GetComponents(&comps);
+  old_rowset = comps->rowsets->all_rowsets();
+  RowSetVector with_gaps_rowset = {
+      std::make_shared<MockDiskRowSet>("0", "2", 2000, 20),
+      std::make_shared<MockDiskRowSet>("5", "6", 1000, 10),
+      std::make_shared<MockDiskRowSet>("6", "9", 3000, 30)
+  };
+  tablet->AtomicSwapRowSets(old_rowset, with_gaps_rowset);
+  {
+    std::vector<KeyRange> result = {
+        KeyRange("", "6", 3000),
+        KeyRange("6", "", 3000)
+    };
+    std::vector<ColumnId> col_ids;
+    std::vector<KeyRange> range;
+    tablet->SplitKeyRange(nullptr, nullptr, col_ids, 3000, &range);
+    AssertChunks(result, range);
+  }
+}
+
+// Test for split key range, tablet with rowset whose start is the minimum value
+TEST_F(TestTabletStringKey, TestSplitKeyRangeWithMinimumValueRowSet) {
+  Tablet *tablet = this->mutable_tablet();
+
+  // Rowsets without gaps
+  scoped_refptr<TabletComponents> comps;
+  tablet->GetComponents(&comps);
+  RowSetVector old_rowset = comps->rowsets->all_rowsets();
+  RowSetVector without_gaps_rowset = {
+      std::make_shared<MockDiskRowSet>("", "2", 2500, 20),
+      std::make_shared<MockDiskRowSet>("2", "5", 3000, 30),
+      std::make_shared<MockDiskRowSet>("5", "6", 1000, 10),
+      std::make_shared<MockDiskRowSet>("6", "9", 3000, 30)
+  };
+  tablet->AtomicSwapRowSets(old_rowset, without_gaps_rowset);
+  {
+    std::vector<KeyRange> result = {
+        KeyRange("", "2", 2500),
+        KeyRange("2", "5", 3000),
+        KeyRange("5", "", 4000)
+    };
+    std::vector<ColumnId> col_ids;
+    std::vector<KeyRange> range;
+    tablet->SplitKeyRange(nullptr, nullptr, col_ids, 3000, &range);
+    AssertChunks(result, range);
+  }
 }
 
 } // namespace tablet

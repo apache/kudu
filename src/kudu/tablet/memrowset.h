@@ -274,6 +274,10 @@ class MemRowSet : public RowSet,
     return 0;
   }
 
+  uint64_t OnDiskBaseDataColumnSize(const ColumnId& col_id) const override {
+    return 0;
+  }
+
   std::mutex *compact_flush_lock() override {
     return &compact_flush_lock_;
   }
