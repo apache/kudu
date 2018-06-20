@@ -74,4 +74,24 @@ std::string Slice::ToDebugString(size_t max_len) const {
   return ret;
 }
 
+bool IsAllZeros(const Slice& s) {
+  // Walk a pointer through the slice instead of using s[i]
+  // since this is way faster in debug mode builds. We also do some
+  // manual unrolling for the same purpose.
+  const uint8_t* p = &s[0];
+  int rem = s.size();
+
+  while (rem >= 8) {
+    if (UNALIGNED_LOAD64(p) != 0) return false;
+    rem -= 8;
+    p += 8;
+  }
+
+  while (rem > 0) {
+    if (*p++ != '\0') return false;
+    rem--;
+  }
+  return true;
+}
+
 }  // namespace kudu

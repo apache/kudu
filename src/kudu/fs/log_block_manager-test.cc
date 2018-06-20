@@ -622,33 +622,39 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
   uint64_t good_meta_size;
   ASSERT_OK(env_->GetFileSize(metadata_path, &good_meta_size));
 
-  // First, add an extra byte to the end of the metadata file. This makes the
-  // trailing "record" of the metadata file corrupt, but doesn't cause data
+  // First, add extra null bytes to the end of the metadata file. This makes
+  // the trailing "record" of the metadata file corrupt, but doesn't cause data
   // loss. The result is that the container will automatically truncate the
   // metadata file back to its correct size.
-  {
-    RWFileOptions opts;
-    opts.mode = Env::OPEN_EXISTING;
-    unique_ptr<RWFile> file;
-    ASSERT_OK(env_->NewRWFile(opts, metadata_path, &file));
-    ASSERT_OK(file->Truncate(good_meta_size + 1));
-  }
-
+  // We'll do this with 1, 8, and 128 extra bytes-- the first case is too few
+  // bytes to be a valid record, while the second is too few but is enough for
+  // a data length and its checksum, and the third is too long for a record.
+  // The 8- and 128-byte cases are regression tests for KUDU-2260.
   uint64_t cur_meta_size;
-  ASSERT_OK(env_->GetFileSize(metadata_path, &cur_meta_size));
-  ASSERT_EQ(good_meta_size + 1, cur_meta_size);
+  for (const auto num_bytes : {1, 8, 128}) {
+    {
+      RWFileOptions opts;
+      opts.mode = Env::OPEN_EXISTING;
+      unique_ptr<RWFile> file;
+      ASSERT_OK(env_->NewRWFile(opts, metadata_path, &file));
+      ASSERT_OK(file->Truncate(good_meta_size + num_bytes));
+    }
 
-  // Reopen the metadata file. We will still see all of our blocks. The size of
-  // the metadata file will be restored back to its previous value.
-  ASSERT_OK(ReopenBlockManager());
-  ASSERT_OK(bm_->GetAllBlockIds(&block_ids));
-  ASSERT_EQ(4, block_ids.size());
-  ASSERT_OK(bm_->OpenBlock(last_block_id, &block));
-  ASSERT_OK(block->Close());
+    ASSERT_OK(env_->GetFileSize(metadata_path, &cur_meta_size));
+    ASSERT_EQ(good_meta_size + num_bytes, cur_meta_size);
 
-  // Check that the file was truncated back to its previous size by the system.
-  ASSERT_OK(env_->GetFileSize(metadata_path, &cur_meta_size));
-  ASSERT_EQ(good_meta_size, cur_meta_size);
+    // Reopen the metadata file. We will still see all of our blocks. The size of
+    // the metadata file will be restored back to its previous value.
+    ASSERT_OK(ReopenBlockManager());
+    ASSERT_OK(bm_->GetAllBlockIds(&block_ids));
+    ASSERT_EQ(4, block_ids.size());
+    ASSERT_OK(bm_->OpenBlock(last_block_id, &block));
+    ASSERT_OK(block->Close());
+
+    // Check that the file was truncated back to its previous size by the system.
+    ASSERT_OK(env_->GetFileSize(metadata_path, &cur_meta_size));
+    ASSERT_EQ(good_meta_size, cur_meta_size);
+  }
 
   // Delete the first block we created. This necessitates writing to the
   // metadata file of the originally-written container, since we append a

@@ -23,6 +23,9 @@
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/util/faststring.h"
 #endif
+#ifdef KUDU_HEADERS_NO_STUBS
+#include "kudu/gutil/port.h"
+#endif
 #include "kudu/util/kudu_export.h"
 
 namespace kudu {
@@ -294,6 +297,14 @@ inline int Slice::compare(const Slice& b) const {
   }
   return r;
 }
+
+// We don't run TSAN on this function because it makes it really slow and causes some
+// test timeouts. This is only used on local buffers anyway, so we don't lose much
+// by not checking it.
+#ifdef KUDU_HEADERS_NO_STUBS
+ATTRIBUTE_NO_SANITIZE_THREAD
+#endif
+bool IsAllZeros(const Slice& s);
 
 /// @brief STL map whose keys are Slices.
 ///

@@ -454,33 +454,6 @@ Status ReadableLogSegment::ReadHeaderMagicAndHeaderLength(uint32_t *len) {
   return Status::OK();
 }
 
-namespace {
-
-// We don't run TSAN on this function because it makes it really slow and causes some
-// test timeouts. This is only used on local buffers anyway, so we don't lose much
-// by not checking it.
-ATTRIBUTE_NO_SANITIZE_THREAD
-bool IsAllZeros(const Slice& s) {
-  // Walk a pointer through the slice instead of using s[i]
-  // since this is way faster in debug mode builds. We also do some
-  // manual unrolling for the same purpose.
-  const uint8_t* p = &s[0];
-  int rem = s.size();
-
-  while (rem >= 8) {
-    if (UNALIGNED_LOAD64(p) != 0) return false;
-    rem -= 8;
-    p += 8;
-  }
-
-  while (rem > 0) {
-    if (*p++ != '\0') return false;
-    rem--;
-  }
-  return true;
-}
-} // anonymous namespace
-
 Status ReadableLogSegment::ParseHeaderMagicAndHeaderLength(const Slice &data,
                                                            uint32_t *parsed_len) {
   RETURN_NOT_OK_PREPEND(data.check_size(kLogSegmentHeaderMagicAndHeaderLength),

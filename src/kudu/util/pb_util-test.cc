@@ -363,6 +363,40 @@ TEST_P(TestPBContainerVersions, TestPartialRecord) {
   ASSERT_OK(pb_file.Close());
 }
 
+// KUDU-2260: Test handling extra null bytes at the end of file. This can
+// occur, for example, on ext4 in default data=ordered mode when a write
+// increases the filesize but the system crashes before the actual data is
+// persisted.
+TEST_P(TestPBContainerVersions, TestExtraNullBytes) {
+  ASSERT_OK(CreateKnownGoodContainerFileWithVersion(version_));
+  uint64_t known_good_size;
+  ASSERT_OK(env_->GetFileSize(path_, &known_good_size));
+  for (const auto extra_bytes : {1, 8, 128}) {
+    ASSERT_OK(TruncateFile(path_, known_good_size + extra_bytes));
+
+    unique_ptr<RandomAccessFile> file;
+    ASSERT_OK(env_->NewRandomAccessFile(path_, &file));
+    ReadablePBContainerFile pb_file(std::move(file));
+    ASSERT_OK(pb_file.Open());
+    ProtoContainerTestPB test_pb;
+    // Read the first good PB. Trouble starts at the second.
+    ASSERT_OK(pb_file.ReadNextPB(&test_pb));
+    Status s = pb_file.ReadNextPB(&test_pb);
+    // Loop to verify that the same response is repeatably returned.
+    for (int i = 0; i < 2; i++) {
+      ASSERT_TRUE(version_ == 1 ? s.IsCorruption() : s.IsIncomplete()) << s.ToString();
+      if (extra_bytes < 8) {
+        ASSERT_STR_CONTAINS(s.ToString(), "File size not large enough to be valid");
+      } else if (version_ == 1) {
+        ASSERT_STR_CONTAINS(s.ToString(), "Length and data checksum does not match");
+      } else {
+        ASSERT_STR_CONTAINS(s.ToString(), "rest of file is NULL bytes");
+      }
+    }
+    ASSERT_OK(pb_file.Close());
+  }
+}
+
 // Test that it is possible to append after a partial write if we truncate the
 // partial record. This is only fully supported in V2+.
 TEST_P(TestPBContainerVersions, TestAppendAfterPartialWrite) {
