@@ -189,7 +189,12 @@ setup(
         'build_ext': build_ext
     },
     setup_requires=['pytest-runner'],
-    tests_require=['pytest >= 2.8', 'pytest-timeout >= 1.1.0'],
+
+    # pytest 3.3 and pytest-timeout 1.2.1 dropped support for python 2.6.
+    #
+    # See https://docs.pytest.org/en/latest/changelog.html#id164 and
+    # https://pypi.org/project/pytest-timeout/#id5 for more details.
+    tests_require=['pytest >=2.8,<3.3', 'pytest-timeout >=1.1.0,<1.2.1'],
     install_requires=['cython >= 0.21', 'pytz', 'six'],
     description=DESCRIPTION,
     long_description=LONG_DESCRIPTION,
