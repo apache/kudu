@@ -1,5 +1,9 @@
-pytest
-cython == 0.26.1
+# pytest 3.3 dropped support for python 2.6.
+#
+# See https://docs.pytest.org/en/latest/changelog.html#id164 for more details.
+pytest >=2.8,<3.3
+
+cython ==0.26.1
 six
 unittest2
 pytz
