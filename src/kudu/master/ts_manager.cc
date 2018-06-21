@@ -17,16 +17,29 @@
 
 #include "kudu/master/ts_manager.h"
 
+#include <algorithm>
+#include <limits>
 #include <mutex>
 #include <vector>
 
 #include <glog/logging.h>
 
 #include "kudu/common/wire_protocol.pb.h"
+#include "kudu/gutil/bind.h"
+#include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/ts_descriptor.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/pb_util.h"
+
+METRIC_DEFINE_gauge_int32(server, cluster_replica_skew,
+                          "Cluster Replica Skew",
+                          kudu::MetricUnit::kTablets,
+                          "The difference between the number of replicas on "
+                          "the tablet server hosting the most replicas and "
+                          "the number of replicas on the tablet server hosting "
+                          "the least replicas.");
 
 using std::shared_ptr;
 using std::string;
@@ -36,7 +49,11 @@ using strings::Substitute;
 namespace kudu {
 namespace master {
 
-TSManager::TSManager() {
+TSManager::TSManager(const scoped_refptr<MetricEntity>& metric_entity) {
+  METRIC_cluster_replica_skew.InstantiateFunctionGauge(
+      metric_entity,
+      Bind(&TSManager::ClusterSkew, Unretained(this)))
+    ->AutoDetach(&metric_detacher_);
 }
 
 TSManager::~TSManager() {
@@ -114,6 +131,22 @@ void TSManager::GetAllLiveDescriptors(vector<shared_ptr<TSDescriptor>> *descs) c
 int TSManager::GetCount() const {
   shared_lock<rw_spinlock> l(lock_);
   return servers_by_id_.size();
+}
+
+int TSManager::ClusterSkew() const {
+  int min_count = std::numeric_limits<int>::max();
+  int max_count = 0;
+  shared_lock<rw_spinlock> l(lock_);
+  for (const TSDescriptorMap::value_type& entry : servers_by_id_) {
+    const shared_ptr<TSDescriptor>& ts = entry.second;
+    if (ts->PresumedDead()) {
+      continue;
+    }
+    int num_live_replicas = ts->num_live_replicas();
+    min_count = std::min(min_count, num_live_replicas);
+    max_count = std::max(max_count, num_live_replicas);
+  }
+  return max_count - min_count;
 }
 
 } // namespace master

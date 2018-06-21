@@ -23,7 +23,9 @@
 #include <vector>
 
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -49,7 +51,7 @@ typedef std::vector<std::shared_ptr<TSDescriptor>> TSDescriptorVector;
 // This class is thread-safe.
 class TSManager {
  public:
-  TSManager();
+  explicit TSManager(const scoped_refptr<MetricEntity>& metric_entity);
   virtual ~TSManager();
 
   // Lookup the tablet server descriptor for the given instance identifier.
@@ -84,7 +86,11 @@ class TSManager {
   int GetCount() const;
 
  private:
+  int ClusterSkew() const;
+
   mutable rw_spinlock lock_;
+
+  FunctionGaugeDetacher metric_detacher_;
 
   typedef std::unordered_map<
     std::string, std::shared_ptr<TSDescriptor>> TSDescriptorMap;
