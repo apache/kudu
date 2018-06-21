@@ -331,6 +331,7 @@ target_link_libraries(protoc-gen-insertions gutil protobuf protoc ${KUDU_BASE_LI
 #######################################
 
 set(KUDU_TEST_LINK_LIBS kudu_util gutil ${KUDU_MIN_TEST_LIBS})
+ADD_KUDU_TEST(async_util-test)
 ADD_KUDU_TEST(atomic-test)
 ADD_KUDU_TEST(bit-util-test)
 ADD_KUDU_TEST(bitmap-test)
