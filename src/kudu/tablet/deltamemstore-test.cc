@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/tablet/deltamemstore.h"
+
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
@@ -51,9 +53,9 @@
 #include "kudu/tablet/delta_stats.h"
 #include "kudu/tablet/delta_store.h"
 #include "kudu/tablet/deltafile.h"
-#include "kudu/tablet/deltamemstore.h"
 #include "kudu/tablet/mutation.h"
 #include "kudu/tablet/mvcc.h"
+#include "kudu/tablet/rowset.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/memory/arena.h"
@@ -130,9 +132,11 @@ class TestDeltaMemStore : public KuduTest {
     Schema single_col_projection({ col_schema },
                                  { schema_.column_id(col_idx) },
                                  0);
-
+    RowIteratorOptions opts;
+    opts.projection = &single_col_projection;
+    opts.snap = snapshot;
     DeltaIterator* raw_iter;
-    Status s = dms_->NewDeltaIterator(&single_col_projection, snapshot, &raw_iter);
+    Status s = dms_->NewDeltaIterator(opts, &raw_iter);
     if (s.IsNotFound()) {
       return;
     }
@@ -443,12 +447,14 @@ TEST_F(TestDeltaMemStore, TestIteratorDoesUpdates) {
   UpdateIntsAtIndexes(to_update);
   ASSERT_EQ(1000, dms_->Count());
 
-  // TODO: test snapshot reads from different points
-  MvccSnapshot snap(mvcc_);
   ScopedColumnBlock<UINT32> block(100);
 
+  RowIteratorOptions opts;
+  opts.projection = &schema_;
+  // TODO(todd): test snapshot reads from different points
+  opts.snap = MvccSnapshot(mvcc_);
   DeltaIterator* raw_iter;
-  Status s = dms_->NewDeltaIterator(&schema_, snap, &raw_iter);
+  Status s = dms_->NewDeltaIterator(opts, &raw_iter);
   if (s.IsNotFound()) {
     FAIL() << "Iterator fell outside of the range of the snapshot";
   }
@@ -488,14 +494,15 @@ TEST_F(TestDeltaMemStore, TestCollectMutations) {
 
   ASSERT_EQ(2, dms_->Count());
 
-  MvccSnapshot snap(mvcc_);
-
   const int kBatchSize = 10;
   vector<Mutation *> mutations;
   mutations.resize(kBatchSize);
 
+  RowIteratorOptions opts;
+  opts.projection = &schema_;
+  opts.snap = MvccSnapshot(mvcc_);
   DeltaIterator* raw_iter;
-  Status s =  dms_->NewDeltaIterator(&schema_, snap, &raw_iter);
+  Status s =  dms_->NewDeltaIterator(opts, &raw_iter);
   if (s.IsNotFound()) {
     FAIL() << "Iterator fell outside of the range of the snapshot";
   }

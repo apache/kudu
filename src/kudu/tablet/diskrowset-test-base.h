@@ -212,10 +212,11 @@ class TestRowSet : public KuduRowSetTest {
   void VerifyUpdatesWithRowIter(const DiskRowSet &rs,
                                 const std::unordered_set<uint32_t> &updated) {
     Schema proj_val = CreateProjection(schema_, { "val" });
-    MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
+    RowIteratorOptions opts;
+    opts.projection = &proj_val;
     gscoped_ptr<RowwiseIterator> row_iter;
-    CHECK_OK(rs.NewRowIterator(&proj_val, snap, UNORDERED, &row_iter));
-    CHECK_OK(row_iter->Init(NULL));
+    CHECK_OK(rs.NewRowIterator(opts, &row_iter));
+    CHECK_OK(row_iter->Init(nullptr));
     Arena arena(1024);
     int batch_size = 10000;
     RowBlock dst(proj_val, batch_size, &arena);
@@ -259,9 +260,10 @@ class TestRowSet : public KuduRowSetTest {
     spec.AddPredicate(pred);
     spec.OptimizeScan(schema_, &arena, &pool, true);
 
-    MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
+    RowIteratorOptions opts;
+    opts.projection = &schema_;
     gscoped_ptr<RowwiseIterator> row_iter;
-    CHECK_OK(rs.NewRowIterator(&schema_, snap, UNORDERED, &row_iter));
+    CHECK_OK(rs.NewRowIterator(opts, &row_iter));
     CHECK_OK(row_iter->Init(&spec));
     std::vector<std::string> rows;
     IterateToStringList(row_iter.get(), &rows);
@@ -273,10 +275,11 @@ class TestRowSet : public KuduRowSetTest {
   // using the given schema as a projection.
   static void IterateProjection(const DiskRowSet &rs, const Schema &schema,
                                 int expected_rows, bool do_log = true) {
-    MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
+    RowIteratorOptions opts;
+    opts.projection = &schema;
     gscoped_ptr<RowwiseIterator> row_iter;
-    CHECK_OK(rs.NewRowIterator(&schema, snap, UNORDERED, &row_iter));
-    CHECK_OK(row_iter->Init(NULL));
+    CHECK_OK(rs.NewRowIterator(opts, &row_iter));
+    CHECK_OK(row_iter->Init(nullptr));
 
     int batch_size = 1000;
     Arena arena(1024);

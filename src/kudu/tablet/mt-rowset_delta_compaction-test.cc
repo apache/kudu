@@ -34,7 +34,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/diskrowset-test-base.h"
 #include "kudu/tablet/diskrowset.h"
-#include "kudu/tablet/mvcc.h"
+#include "kudu/tablet/rowset.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/monotime.h"
@@ -109,11 +109,10 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
   void ReadVerify(DiskRowSet *rs) {
     Arena arena(1024);
     RowBlock dst(schema_, 1000, &arena);
+    RowIteratorOptions opts;
+    opts.projection = &schema_;
     gscoped_ptr<RowwiseIterator> iter;
-    ASSERT_OK(rs->NewRowIterator(&schema_,
-                                 MvccSnapshot::CreateSnapshotIncludingAllTransactions(),
-                                 UNORDERED,
-                                 &iter));
+    ASSERT_OK(rs->NewRowIterator(opts, &iter));
     uint32_t expected = NoBarrier_Load(&update_counter_);
     ASSERT_OK(iter->Init(nullptr));
     while (iter->HasNext()) {

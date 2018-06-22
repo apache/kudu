@@ -29,7 +29,6 @@
 #include "kudu/codegen/compilation_manager.h"
 #include "kudu/codegen/row_projector.h"
 #include "kudu/common/columnblock.h"
-#include "kudu/common/common.pb.h"
 #include "kudu/common/encoded_key.h"
 #include "kudu/common/row.h"
 #include "kudu/common/row_changelist.h"
@@ -42,6 +41,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/compaction.h"
 #include "kudu/tablet/mutation.h"
+#include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/mem_tracker.h"
@@ -286,22 +286,20 @@ Status MemRowSet::CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
   return Status::OK();
 }
 
-MemRowSet::Iterator *MemRowSet::NewIterator(const Schema *projection,
-                                            const MvccSnapshot &snap) const {
-  return new MemRowSet::Iterator(shared_from_this(), tree_.NewIterator(),
-                                 projection, snap);
+MemRowSet::Iterator *MemRowSet::NewIterator(const RowIteratorOptions& opts) const {
+  return new MemRowSet::Iterator(shared_from_this(), tree_.NewIterator(), opts);
 }
 
 MemRowSet::Iterator *MemRowSet::NewIterator() const {
-  // TODO: can we kill this function? should be only used by tests?
-  return NewIterator(&schema(), MvccSnapshot::CreateSnapshotIncludingAllTransactions());
+  // TODO(todd): can we kill this function? should be only used by tests?
+  RowIteratorOptions opts;
+  opts.projection = &schema();
+  return NewIterator(opts);
 }
 
-Status MemRowSet::NewRowIterator(const Schema *projection,
-                                 const MvccSnapshot &snap,
-                                 OrderMode /*order*/,
+Status MemRowSet::NewRowIterator(const RowIteratorOptions& opts,
                                  gscoped_ptr<RowwiseIterator>* out) const {
-  out->reset(NewIterator(projection, snap));
+  out->reset(NewIterator(opts));
   return Status::OK();
 }
 
@@ -386,16 +384,15 @@ gscoped_ptr<MRSRowProjector> GenerateAppropriateProjector(
 
 MemRowSet::Iterator::Iterator(const std::shared_ptr<const MemRowSet>& mrs,
                               MemRowSet::MSBTIter* iter,
-                              const Schema* projection, MvccSnapshot mvcc_snap)
+                              RowIteratorOptions opts)
     : memrowset_(mrs),
       iter_(iter),
-      mvcc_snap_(std::move(mvcc_snap)),
-      projection_(projection),
+      opts_(std::move(opts)),
       projector_(
-          GenerateAppropriateProjector(&mrs->schema_nonvirtual(), projection)),
-      delta_projector_(&mrs->schema_nonvirtual(), projection),
+          GenerateAppropriateProjector(&mrs->schema_nonvirtual(), opts_.projection)),
+      delta_projector_(&mrs->schema_nonvirtual(), opts_.projection),
       state_(kUninitialized) {
-  // TODO: various code assumes that a newly constructed iterator
+  // TODO(todd): various code assumes that a newly constructed iterator
   // is pointed at the beginning of the dataset. This causes a redundant
   // seek. Could make this lazy instead, or change the semantics so that
   // a seek is required (probably the latter)
@@ -499,7 +496,7 @@ Status MemRowSet::Iterator::FetchRows(RowBlock* dst, size_t* fetched) {
     iter_->GetCurrentEntry(&k, &v);
     MRSRow row(memrowset_.get(), v);
 
-    if (mvcc_snap_.IsCommitted(row.insertion_timestamp())) {
+    if (opts_.snap.IsCommitted(row.insertion_timestamp())) {
       if (has_upper_bound() && out_of_bounds(k)) {
         state_ = kFinished;
         break;
@@ -545,7 +542,7 @@ Status MemRowSet::Iterator::ApplyMutationsToProjectedRow(
   for (const Mutation *mut = mutation_head;
        mut != nullptr;
        mut = mut->acquire_next()) {
-    if (!mvcc_snap_.IsCommitted(mut->timestamp_)) {
+    if (!opts_.snap.IsCommitted(mut->timestamp_)) {
       // Transaction which wasn't committed yet in the reader's snapshot.
       continue;
     }

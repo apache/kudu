@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/tablet/deltamemstore.h"
+
 #include <cstring>
 #include <ostream>
 #include <utility>
@@ -32,10 +34,10 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/deltafile.h"
-#include "kudu/tablet/deltamemstore.h"
 #include "kudu/tablet/mutation.h"
 #include "kudu/tablet/mvcc.h"
 #include "kudu/util/debug-util.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/memcmpable_varint.h"
 #include "kudu/util/memory/memory.h"
 #include "kudu/util/status.h"
@@ -143,10 +145,9 @@ Status DeltaMemStore::FlushToFile(DeltaFileWriter *dfw,
   return Status::OK();
 }
 
-Status DeltaMemStore::NewDeltaIterator(const Schema *projection,
-                                       const MvccSnapshot &snap,
+Status DeltaMemStore::NewDeltaIterator(const RowIteratorOptions& opts,
                                        DeltaIterator** iterator) const {
-  *iterator = new DMSIterator(shared_from_this(), projection, snap);
+  *iterator = new DMSIterator(shared_from_this(), opts);
   return Status::OK();
 }
 
@@ -195,18 +196,17 @@ void DeltaMemStore::DebugPrint() const {
 ////////////////////////////////////////////////////////////
 
 DMSIterator::DMSIterator(const shared_ptr<const DeltaMemStore>& dms,
-                         const Schema* projection, MvccSnapshot snapshot)
+                         RowIteratorOptions opts)
     : dms_(dms),
-      mvcc_snapshot_(std::move(snapshot)),
+      opts_(std::move(opts)),
       iter_(dms->tree_.NewIterator()),
       initted_(false),
       prepared_idx_(0),
       prepared_count_(0),
       prepared_for_(NOT_PREPARED),
-      seeked_(false),
-      projection_(projection) {}
+      seeked_(false) {}
 
-Status DMSIterator::Init(ScanSpec *spec) {
+Status DMSIterator::Init(ScanSpec* /*spec*/) {
   initted_ = true;
   return Status::OK();
 }
@@ -243,7 +243,7 @@ Status DMSIterator::PrepareBatch(size_t nrows, PrepareFlag flag) {
   rowid_t stop_row = start_row + nrows - 1;
 
   if (updates_by_col_.empty()) {
-    updates_by_col_.resize(projection_->num_columns());
+    updates_by_col_.resize(opts_.projection->num_columns());
   }
   for (UpdatesForColumn& ufc : updates_by_col_) {
     ufc.clear();
@@ -259,7 +259,7 @@ Status DMSIterator::PrepareBatch(size_t nrows, PrepareFlag flag) {
     DCHECK_GE(key.row_idx(), start_row);
     if (key.row_idx() > stop_row) break;
 
-    if (!mvcc_snapshot_.IsCommitted(key.timestamp())) {
+    if (!opts_.snap.IsCommitted(key.timestamp())) {
       // The transaction which applied this update is not yet committed
       // in this iterator's MVCC snapshot. Hence, skip it.
       iter_->Next();
@@ -279,12 +279,12 @@ Status DMSIterator::PrepareBatch(size_t nrows, PrepareFlag flag) {
           RETURN_NOT_OK(decoder.DecodeNext(&dec));
           int col_idx;
           const void* col_val;
-          RETURN_NOT_OK(dec.Validate(*projection_, &col_idx, &col_val));
+          RETURN_NOT_OK(dec.Validate(*opts_.projection, &col_idx, &col_val));
           if (col_idx == -1) {
             // This column isn't being projected.
             continue;
           }
-          int col_size = projection_->column(col_idx).type_info()->size();
+          int col_size = opts_.projection->column(col_idx).type_info()->size();
 
           // If we already have an earlier update for the same column, we can
           // just overwrite that one.
@@ -325,7 +325,7 @@ Status DMSIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
   DCHECK_EQ(prepared_for_, PREPARED_FOR_APPLY);
   DCHECK_EQ(prepared_count_, dst->nrows());
 
-  const ColumnSchema* col_schema = &projection_->column(col_to_apply);
+  const ColumnSchema* col_schema = &opts_.projection->column(col_to_apply);
   for (const ColumnUpdate& cu : updates_by_col_[col_to_apply]) {
     int32_t idx_in_block = cu.row_id - prepared_idx_;
     DCHECK_GE(idx_in_block, 0);

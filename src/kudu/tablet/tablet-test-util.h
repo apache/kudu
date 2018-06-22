@@ -233,9 +233,12 @@ static inline Status DumpRowSet(const RowSet &rs,
                                 const MvccSnapshot &snap,
                                 std::vector<std::string> *out,
                                 int limit = INT_MAX) {
+  RowIteratorOptions opts;
+  opts.projection = &projection;
+  opts.snap = snap;
   gscoped_ptr<RowwiseIterator> iter;
-  RETURN_NOT_OK(rs.NewRowIterator(&projection, snap, UNORDERED, &iter));
-  RETURN_NOT_OK(iter->Init(NULL));
+  RETURN_NOT_OK(rs.NewRowIterator(opts, &iter));
+  RETURN_NOT_OK(iter->Init(nullptr));
   RETURN_NOT_OK(IterateToStringList(iter.get(), out, limit));
   return Status::OK();
 }

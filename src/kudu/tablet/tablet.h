@@ -75,12 +75,12 @@ class AlterSchemaTransactionState;
 class CompactionPolicy;
 class HistoryGcOpts;
 class MemRowSet;
-struct RowOp;
-class RowSetsInCompaction;
 class RowSetTree;
+class RowSetsInCompaction;
+class WriteTransactionState;
+struct RowOp;
 struct TabletComponents;
 struct TabletMetrics;
-class WriteTransactionState;
 
 class Tablet {
  public:

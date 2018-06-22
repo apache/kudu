@@ -30,6 +30,7 @@
 #include "kudu/cfile/bloomfile.h"
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/cfile/cfile_writer.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/generic_iterators.h"
 #include "kudu/common/iterator.h"
 #include "kudu/common/rowblock.h"
@@ -626,14 +627,12 @@ Status DiskRowSet::NewMajorDeltaCompaction(const vector<ColumnId>& col_ids,
 
   const Schema* schema = &rowset_metadata_->tablet_schema();
 
-  vector<shared_ptr<DeltaStore> > included_stores;
+  RowIteratorOptions opts;
+  opts.projection = schema;
+  vector<shared_ptr<DeltaStore>> included_stores;
   unique_ptr<DeltaIterator> delta_iter;
   RETURN_NOT_OK(delta_tracker_->NewDeltaFileIterator(
-    schema,
-    MvccSnapshot::CreateSnapshotIncludingAllTransactions(),
-    REDO,
-    &included_stores,
-    &delta_iter));
+      opts, REDO, &included_stores, &delta_iter));
 
   out->reset(new MajorDeltaCompaction(rowset_metadata_->fs_manager(),
                                       *schema,
@@ -646,16 +645,14 @@ Status DiskRowSet::NewMajorDeltaCompaction(const vector<ColumnId>& col_ids,
   return Status::OK();
 }
 
-Status DiskRowSet::NewRowIterator(const Schema *projection,
-                                  const MvccSnapshot &mvcc_snap,
-                                  OrderMode /*order*/,
+Status DiskRowSet::NewRowIterator(const RowIteratorOptions& opts,
                                   gscoped_ptr<RowwiseIterator>* out) const {
   DCHECK(open_);
   shared_lock<rw_spinlock> l(component_lock_);
 
-  shared_ptr<CFileSet::Iterator> base_iter(base_data_->NewIterator(projection));
+  shared_ptr<CFileSet::Iterator> base_iter(base_data_->NewIterator(opts.projection));
   gscoped_ptr<ColumnwiseIterator> col_iter;
-  RETURN_NOT_OK(delta_tracker_->WrapIterator(base_iter, mvcc_snap, &col_iter));
+  RETURN_NOT_OK(delta_tracker_->WrapIterator(base_iter, opts, &col_iter));
 
   out->reset(new MaterializingIterator(
       shared_ptr<ColumnwiseIterator>(col_iter.release())));

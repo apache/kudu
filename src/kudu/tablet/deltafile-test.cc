@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/tablet/deltafile.h"
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -45,9 +47,9 @@
 #include "kudu/tablet/delta_key.h"
 #include "kudu/tablet/delta_stats.h"
 #include "kudu/tablet/delta_store.h"
-#include "kudu/tablet/deltafile.h"
 #include "kudu/tablet/mutation.h"
 #include "kudu/tablet/mvcc.h"
+#include "kudu/tablet/rowset.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/status.h"
@@ -147,11 +149,13 @@ class TestDeltaFile : public KuduTest {
   Status OpenDeltaFileIteratorFromReader(DeltaType type,
                                          const shared_ptr<DeltaFileReader>& reader,
                                          gscoped_ptr<DeltaIterator>* out) {
-    MvccSnapshot snap = type == REDO ?
-                        MvccSnapshot::CreateSnapshotIncludingAllTransactions() :
-                        MvccSnapshot::CreateSnapshotIncludingNoTransactions();
+    RowIteratorOptions opts;
+    opts.snap = type == REDO ?
+                MvccSnapshot::CreateSnapshotIncludingAllTransactions() :
+                MvccSnapshot::CreateSnapshotIncludingNoTransactions();
+    opts.projection = &schema_;
     DeltaIterator* raw_iter;
-    RETURN_NOT_OK(reader->NewDeltaIterator(&schema_, snap, &raw_iter));
+    RETURN_NOT_OK(reader->NewDeltaIterator(opts, &raw_iter));
     out->reset(raw_iter);
     return Status::OK();
   }
@@ -333,25 +337,28 @@ TEST_F(TestDeltaFile, TestSkipsDeltasOutOfRange) {
 
   gscoped_ptr<DeltaIterator> iter;
 
+  RowIteratorOptions opts;
+  opts.projection = &schema_;
+
   // should skip
-  MvccSnapshot snap1(Timestamp(9));
-  ASSERT_FALSE(snap1.MayHaveCommittedTransactionsAtOrAfter(Timestamp(10)));
+  opts.snap = MvccSnapshot(Timestamp(9));
+  ASSERT_FALSE(opts.snap.MayHaveCommittedTransactionsAtOrAfter(Timestamp(10)));
   DeltaIterator* raw_iter = nullptr;
-  Status s = reader->NewDeltaIterator(&schema_, snap1, &raw_iter);
+  Status s = reader->NewDeltaIterator(opts, &raw_iter);
   ASSERT_TRUE(s.IsNotFound());
   ASSERT_TRUE(raw_iter == nullptr);
 
   // should include
   raw_iter = nullptr;
-  MvccSnapshot snap2(Timestamp(15));
-  ASSERT_OK(reader->NewDeltaIterator(&schema_, snap2, &raw_iter));
+  opts.snap = MvccSnapshot(Timestamp(15));
+  ASSERT_OK(reader->NewDeltaIterator(opts, &raw_iter));
   ASSERT_TRUE(raw_iter != nullptr);
   iter.reset(raw_iter);
 
   // should include
   raw_iter = nullptr;
-  MvccSnapshot snap3(Timestamp(21));
-  ASSERT_OK(reader->NewDeltaIterator(&schema_, snap3, &raw_iter));
+  opts.snap = MvccSnapshot(Timestamp(21));
+  ASSERT_OK(reader->NewDeltaIterator(opts, &raw_iter));
   ASSERT_TRUE(raw_iter != nullptr);
   iter.reset(raw_iter);
 }

@@ -1737,9 +1737,14 @@ Status Tablet::CaptureConsistentIterators(
   // in the middle, we don't modify the output arguments.
   vector<shared_ptr<RowwiseIterator>> ret;
 
+  RowIteratorOptions opts;
+  opts.projection = projection;
+  opts.snap = snap;
+  opts.order = order;
+
   // Grab the memrowset iterator.
   gscoped_ptr<RowwiseIterator> ms_iter;
-  RETURN_NOT_OK(components_->memrowset->NewRowIterator(projection, snap, order, &ms_iter));
+  RETURN_NOT_OK(components_->memrowset->NewRowIterator(opts, &ms_iter));
   ret.emplace_back(ms_iter.release());
 
   // Cull row-sets in the case of key-range queries.
@@ -1755,7 +1760,7 @@ Status Tablet::CaptureConsistentIterators(
         &interval_sets);
     for (const RowSet *rs : interval_sets) {
       gscoped_ptr<RowwiseIterator> row_it;
-      RETURN_NOT_OK_PREPEND(rs->NewRowIterator(projection, snap, order, &row_it),
+      RETURN_NOT_OK_PREPEND(rs->NewRowIterator(opts, &row_it),
                             Substitute("Could not create iterator for rowset $0",
                                        rs->ToString()));
       ret.emplace_back(row_it.release());
@@ -1768,7 +1773,7 @@ Status Tablet::CaptureConsistentIterators(
   // fall back to grabbing all rowset iterators
   for (const shared_ptr<RowSet> &rs : components_->rowsets->all_rowsets()) {
     gscoped_ptr<RowwiseIterator> row_it;
-    RETURN_NOT_OK_PREPEND(rs->NewRowIterator(projection, snap, order, &row_it),
+    RETURN_NOT_OK_PREPEND(rs->NewRowIterator(opts, &row_it),
                           Substitute("Could not create iterator for rowset $0",
                                      rs->ToString()));
     ret.emplace_back(row_it.release());

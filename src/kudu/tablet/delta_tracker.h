@@ -63,11 +63,11 @@ namespace tablet {
 
 class DeltaFileReader;
 class DeltaMemStore;
-class MvccSnapshot;
 class OperationResultPB;
 class RowSetMetadata;
 class RowSetMetadataUpdate;
 struct ProbeStats;
+struct RowIteratorOptions;
 
 // The DeltaTracker is the part of a DiskRowSet which is responsible for
 // tracking modifications against the base data. It consists of a set of
@@ -88,7 +88,7 @@ class DeltaTracker {
                      gscoped_ptr<DeltaTracker>* delta_tracker);
 
   Status WrapIterator(const std::shared_ptr<CFileSet::Iterator> &base,
-                      const MvccSnapshot &mvcc_snap,
+                      const RowIteratorOptions& opts,
                       gscoped_ptr<ColumnwiseIterator>* out) const;
 
   // Enum used for NewDeltaIterator() and CollectStores() below.
@@ -104,17 +104,14 @@ class DeltaTracker {
   // by this DeltaTracker. Depending on the value of 'which' (see above),
   // this iterator may include UNDOs, REDOs, or both.
   //
-  // 'schema' is the schema of the rows that are being read by the client.
-  // It must remain valid for the lifetime of the returned iterator.
-  Status NewDeltaIterator(const Schema* schema,
-                          const MvccSnapshot& snap,
+  // Pointers in 'opts' must remain valid for the lifetime of the returned iterator.
+  Status NewDeltaIterator(const RowIteratorOptions& opts,
                           WhichStores which,
                           std::unique_ptr<DeltaIterator>* out) const;
 
-  Status NewDeltaIterator(const Schema* schema,
-                          const MvccSnapshot& snap,
+  Status NewDeltaIterator(const RowIteratorOptions& opts,
                           std::unique_ptr<DeltaIterator>* out) const {
-    return NewDeltaIterator(schema, snap, UNDOS_AND_REDOS, out);
+    return NewDeltaIterator(opts, UNDOS_AND_REDOS, out);
   }
 
 
@@ -122,11 +119,10 @@ class DeltaTracker {
   // the DMS.
   // Returns the delta stores being merged in *included_stores.
   Status NewDeltaFileIterator(
-    const Schema* schema,
-    const MvccSnapshot &snap,
-    DeltaType type,
-    std::vector<std::shared_ptr<DeltaStore> >* included_stores,
-    std::unique_ptr<DeltaIterator>* out) const;
+      const RowIteratorOptions& opts,
+      DeltaType type,
+      std::vector<std::shared_ptr<DeltaStore>>* included_stores,
+      std::unique_ptr<DeltaIterator>* out) const;
 
   // Flushes the current DeltaMemStore and replaces it with a new one.
   // Caller selects whether to also have the RowSetMetadata (and consequently

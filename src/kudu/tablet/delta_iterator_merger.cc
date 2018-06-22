@@ -26,14 +26,12 @@ namespace kudu {
 
 class Arena;
 class ColumnBlock;
-class Schema;
 class SelectionVector;
 struct ColumnId;
 
 namespace tablet {
 
 class Mutation;
-class MvccSnapshot;
 
 using std::shared_ptr;
 using std::string;
@@ -148,14 +146,13 @@ string DeltaIteratorMerger::ToString() const {
 
 Status DeltaIteratorMerger::Create(
     const vector<shared_ptr<DeltaStore> > &stores,
-    const Schema* projection,
-    const MvccSnapshot &snapshot,
+    const RowIteratorOptions& opts,
     unique_ptr<DeltaIterator>* out) {
   vector<unique_ptr<DeltaIterator> > delta_iters;
 
   for (const shared_ptr<DeltaStore> &store : stores) {
     DeltaIterator* raw_iter;
-    Status s = store->NewDeltaIterator(projection, snapshot, &raw_iter);
+    Status s = store->NewDeltaIterator(opts, &raw_iter);
     if (s.IsNotFound()) {
       continue;
     }

@@ -42,7 +42,7 @@
 #include "kudu/tablet/delta_stats.h"
 #include "kudu/tablet/delta_store.h"
 #include "kudu/tablet/deltafile.h"
-#include "kudu/tablet/mvcc.h"
+#include "kudu/tablet/rowset.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
@@ -194,11 +194,11 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
   }
 
   // Merge
-  MvccSnapshot snap(MvccSnapshot::CreateSnapshotIncludingAllTransactions());
   const Schema& merge_schema = schemas.back();
+  RowIteratorOptions opts;
+  opts.projection = &merge_schema;
   unique_ptr<DeltaIterator> merge_iter;
-  ASSERT_OK(DeltaIteratorMerger::Create(inputs, &merge_schema,
-                                        snap, &merge_iter));
+  ASSERT_OK(DeltaIteratorMerger::Create(inputs, opts, &merge_iter));
   gscoped_ptr<DeltaFileWriter> dfw;
   BlockId block_id;
   ASSERT_OK(GetDeltaFileWriter(&dfw, &block_id));
@@ -210,7 +210,7 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
   shared_ptr<DeltaFileReader> dfr;
   ASSERT_OK(GetDeltaFileReader(block_id, &dfr));
   DeltaIterator* raw_iter;
-  ASSERT_OK(dfr->NewDeltaIterator(&merge_schema, snap, &raw_iter));
+  ASSERT_OK(dfr->NewDeltaIterator(opts, &raw_iter));
   gscoped_ptr<DeltaIterator> scoped_iter(raw_iter);
 
   vector<string> results;

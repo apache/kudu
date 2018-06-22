@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/tablet/memrowset.h"
+
 #include <cstdint>
 #include <cstdio>
 #include <memory>
@@ -40,7 +42,6 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
-#include "kudu/tablet/memrowset.h"
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/tablet-test-util.h"
@@ -189,8 +190,11 @@ class TestMemRowSet : public KuduTest {
   }
 
   int ScanAndCount(MemRowSet* mrs, const MvccSnapshot& snap) {
-    gscoped_ptr<MemRowSet::Iterator> iter(mrs->NewIterator(&schema_, snap));
-    CHECK_OK(iter->Init(NULL));
+    RowIteratorOptions opts;
+    opts.projection = &schema_;
+    opts.snap = snap;
+    gscoped_ptr<MemRowSet::Iterator> iter(mrs->NewIterator(opts));
+    CHECK_OK(iter->Init(nullptr));
 
     Arena arena(1024);
     RowBlock block(schema_, 100, &arena);

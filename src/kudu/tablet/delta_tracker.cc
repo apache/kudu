@@ -46,7 +46,6 @@
 #include "kudu/tablet/delta_store.h"
 #include "kudu/tablet/deltafile.h"
 #include "kudu/tablet/deltamemstore.h"
-#include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/rowset_metadata.h"
 #include "kudu/tablet/tablet.pb.h"
@@ -180,9 +179,9 @@ Status DeltaTracker::MakeDeltaIteratorMergerUnlocked(size_t start_idx, size_t en
     target_stores->push_back(delta_store);
     target_blocks->push_back(dfr->block_id());
   }
-  RETURN_NOT_OK(DeltaIteratorMerger::Create(
-      inputs, projection,
-      MvccSnapshot::CreateSnapshotIncludingAllTransactions(), out));
+  RowIteratorOptions opts;
+  opts.projection = projection;
+  RETURN_NOT_OK(DeltaIteratorMerger::Create(inputs, opts, out));
   return Status::OK();
 }
 
@@ -549,20 +548,18 @@ void DeltaTracker::CollectStores(vector<shared_ptr<DeltaStore>>* deltas,
   }
 }
 
-Status DeltaTracker::NewDeltaIterator(const Schema* schema,
-                                      const MvccSnapshot& snap,
+Status DeltaTracker::NewDeltaIterator(const RowIteratorOptions& opts,
                                       WhichStores which,
                                       unique_ptr<DeltaIterator>* out) const {
-  std::vector<shared_ptr<DeltaStore> > stores;
+  std::vector<shared_ptr<DeltaStore>> stores;
   CollectStores(&stores, which);
-  return DeltaIteratorMerger::Create(stores, schema, snap, out);
+  return DeltaIteratorMerger::Create(stores, opts, out);
 }
 
 Status DeltaTracker::NewDeltaFileIterator(
-    const Schema* schema,
-    const MvccSnapshot& snap,
+    const RowIteratorOptions& opts,
     DeltaType type,
-    vector<shared_ptr<DeltaStore> >* included_stores,
+    vector<shared_ptr<DeltaStore>>* included_stores,
     unique_ptr<DeltaIterator>* out) const {
   {
     std::lock_guard<rw_spinlock> lock(component_lock_);
@@ -585,14 +582,14 @@ Status DeltaTracker::NewDeltaFileIterator(
     ignore_result(down_cast<DeltaFileReader*>(store.get()));
   }
 
-  return DeltaIteratorMerger::Create(*included_stores, schema, snap, out);
+  return DeltaIteratorMerger::Create(*included_stores, opts, out);
 }
 
 Status DeltaTracker::WrapIterator(const shared_ptr<CFileSet::Iterator> &base,
-                                  const MvccSnapshot &mvcc_snap,
+                                  const RowIteratorOptions& opts,
                                   gscoped_ptr<ColumnwiseIterator>* out) const {
   unique_ptr<DeltaIterator> iter;
-  RETURN_NOT_OK(NewDeltaIterator(&base->schema(), mvcc_snap, &iter));
+  RETURN_NOT_OK(NewDeltaIterator(opts, &iter));
 
   out->reset(new DeltaApplier(base, std::move(iter)));
   return Status::OK();

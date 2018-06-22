@@ -28,7 +28,6 @@
 #include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
-#include "kudu/common/common.pb.h"
 #include "kudu/common/iterator.h"
 #include "kudu/common/row.h"
 #include "kudu/common/rowid.h"
@@ -39,7 +38,6 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/tablet/concurrent_btree.h"
-#include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/rowset_metadata.h"
 #include "kudu/util/faststring.h"
@@ -58,9 +56,13 @@ class RowChangeList;
 class ScanSpec;
 struct IteratorStats;
 
+namespace tablet {
+class MvccSnapshot;
+} // namespace tablet
+
 namespace consensus {
 class OpId;
-}
+} // namespace consensus
 
 namespace tablet {
 //
@@ -309,13 +311,10 @@ class MemRowSet : public RowSet,
   //
   // TODO(todd): clarify the consistency of this iterator in the method doc
   Iterator *NewIterator() const;
-  Iterator *NewIterator(const Schema *projection,
-                        const MvccSnapshot &snap) const;
+  Iterator *NewIterator(const RowIteratorOptions& opts) const;
 
   // Alias to conform to DiskRowSet interface
-  virtual Status NewRowIterator(const Schema* projection,
-                                const MvccSnapshot& snap,
-                                OrderMode order,
+  virtual Status NewRowIterator(const RowIteratorOptions& opts,
                                 gscoped_ptr<RowwiseIterator>* out) const override;
 
   // Create compaction input.
@@ -515,7 +514,7 @@ class MemRowSet::Iterator : public RowwiseIterator {
   }
 
   const Schema& schema() const override {
-    return *projection_;
+    return *opts_.projection;
   }
 
   virtual void GetIteratorStats(std::vector<IteratorStats>* stats) const override {
@@ -541,8 +540,7 @@ class MemRowSet::Iterator : public RowwiseIterator {
   DISALLOW_COPY_AND_ASSIGN(Iterator);
 
   Iterator(const std::shared_ptr<const MemRowSet> &mrs,
-           MemRowSet::MSBTIter *iter, const Schema *projection,
-           MvccSnapshot mvcc_snap);
+           MemRowSet::MSBTIter *iter, RowIteratorOptions opts);
 
   // Various helper functions called while getting the next RowBlock
   Status FetchRows(RowBlock* dst, size_t* fetched);
@@ -553,15 +551,12 @@ class MemRowSet::Iterator : public RowwiseIterator {
   const std::shared_ptr<const MemRowSet> memrowset_;
   gscoped_ptr<MemRowSet::MSBTIter> iter_;
 
-  // The MVCC snapshot which determines which rows and mutations are visible to
-  // this iterator.
-  const MvccSnapshot mvcc_snap_;
+  RowIteratorOptions opts_;
 
   // Mapping from projected column index back to memrowset column index.
   // Relies on the MRSRowProjector interface to abstract from the two
   // different implementations of the RowProjector, which may change
   // at runtime (using vs. not using code generation).
-  const Schema* const projection_;
   gscoped_ptr<MRSRowProjector> projector_;
   DeltaProjector delta_projector_;
 

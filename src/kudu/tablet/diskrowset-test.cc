@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/tablet/diskrowset.h"
+
 #include <algorithm>
 #include <cstdint>
 #include <memory>
@@ -30,7 +32,6 @@
 #include <gtest/gtest.h>
 
 #include "kudu/clock/clock.h"
-#include "kudu/common/common.pb.h"
 #include "kudu/common/iterator.h"
 #include "kudu/common/row.h"
 #include "kudu/common/row_changelist.h"
@@ -47,7 +48,6 @@
 #include "kudu/tablet/delta_tracker.h"
 #include "kudu/tablet/deltamemstore.h"
 #include "kudu/tablet/diskrowset-test-base.h"
-#include "kudu/tablet/diskrowset.h"
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/rowset_metadata.h"
@@ -414,8 +414,11 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
   ASSERT_EQ(5, snaps.size());
   for (int i = 0; i < 5; i++) {
     SCOPED_TRACE(i);
+    RowIteratorOptions opts;
+    opts.projection = &schema_;
+    opts.snap = snaps[i];
     gscoped_ptr<RowwiseIterator> iter;
-    ASSERT_OK(rs->NewRowIterator(&schema_, snaps[i], UNORDERED, &iter));
+    ASSERT_OK(rs->NewRowIterator(opts, &iter));
     string data = InitAndDumpIterator(std::move(iter));
     EXPECT_EQ(StringPrintf(R"((string key="row", uint32 val=%d))", i + 1), data);
   }
@@ -426,8 +429,11 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
 
   for (int i = 0; i < 5; i++) {
     SCOPED_TRACE(i);
+    RowIteratorOptions opts;
+    opts.projection = &schema_;
+    opts.snap = snaps[i];
     gscoped_ptr<RowwiseIterator> iter;
-    ASSERT_OK(rs->NewRowIterator(&schema_, snaps[i], UNORDERED, &iter));
+    ASSERT_OK(rs->NewRowIterator(opts, &iter));
     string data = InitAndDumpIterator(std::move(iter));
     EXPECT_EQ(StringPrintf(R"((string key="row", uint32 val=%d))", i + 1), data);
   }

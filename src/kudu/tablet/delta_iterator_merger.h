@@ -18,8 +18,8 @@
 #define KUDU_TABLET_DELTA_ITERATOR_MERGER_H
 
 #include <cstddef>
-#include <string>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "kudu/common/rowid.h"
@@ -32,14 +32,13 @@ namespace kudu {
 class Arena;
 class ColumnBlock;
 class ScanSpec;
-class Schema;
 class SelectionVector;
 struct ColumnId;
 
 namespace tablet {
 
 class Mutation;
-class MvccSnapshot;
+struct RowIteratorOptions;
 
 // DeltaIterator that simply combines together other DeltaIterators,
 // applying deltas from each in order.
@@ -51,9 +50,8 @@ class DeltaIteratorMerger : public DeltaIterator {
   // If only one store is input, this will automatically return an unwrapped
   // iterator for greater efficiency.
   static Status Create(
-      const std::vector<std::shared_ptr<DeltaStore> > &stores,
-      const Schema* projection,
-      const MvccSnapshot &snapshot,
+      const std::vector<std::shared_ptr<DeltaStore>> &stores,
+      const RowIteratorOptions& opts,
       std::unique_ptr<DeltaIterator>* out);
 
   ////////////////////////////////////////////////////////////

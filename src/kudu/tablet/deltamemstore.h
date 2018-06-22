@@ -36,9 +36,8 @@
 #include "kudu/tablet/delta_key.h"
 #include "kudu/tablet/delta_stats.h"
 #include "kudu/tablet/delta_store.h"
-#include "kudu/tablet/mvcc.h"
+#include "kudu/tablet/rowset.h"
 #include "kudu/util/atomic.h"
-#include "kudu/util/faststring.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
@@ -50,7 +49,6 @@ class MemTracker;
 class MemoryTrackingBufferAllocator;
 class RowChangeList;
 class ScanSpec;
-class Schema;
 class SelectionVector;
 class Timestamp;
 struct ColumnId;
@@ -112,17 +110,16 @@ class DeltaMemStore : public DeltaStore,
 
   // Create an iterator for applying deltas from this DMS.
   //
-  // The projection passed here must be the same as the schema of any
+  // The projection passed in 'opts' must be the same as the schema of any
   // RowBlocks which are passed in, or else bad things will happen.
   //
-  // 'snapshot' is the MVCC state which determines which transactions
+  // The snapshot in 'opts' is the MVCC state which determines which transactions
   // should be considered committed (and thus applied by the iterator).
   //
   // Returns Status::OK and sets 'iterator' to the new DeltaIterator, or
   // returns Status::NotFound if the mutations within this delta store
-  // cannot include 'snap'.
-  virtual Status NewDeltaIterator(const Schema *projection,
-                                  const MvccSnapshot &snap,
+  // cannot include the snapshot.
+  virtual Status NewDeltaIterator(const RowIteratorOptions& opts,
                                   DeltaIterator** iterator) const OVERRIDE;
 
   virtual Status CheckRowDeleted(rowid_t row_idx, bool *deleted) const OVERRIDE;
@@ -229,14 +226,13 @@ class DMSIterator : public DeltaIterator {
   // Initialize the iterator.
   // The projection passed here must be the same as the schema of any
   // RowBlocks which are passed in, or else bad things will happen.
-  // The pointer must also remain valid for the lifetime of the iterator.
+  // The pointers in 'opts' must also remain valid for the lifetime of the iterator.
   DMSIterator(const std::shared_ptr<const DeltaMemStore> &dms,
-              const Schema *projection, MvccSnapshot snapshot);
+              RowIteratorOptions opts);
 
   const std::shared_ptr<const DeltaMemStore> dms_;
 
-  // MVCC state which allows us to ignore uncommitted transactions.
-  const MvccSnapshot mvcc_snapshot_;
+  const RowIteratorOptions opts_;
 
   gscoped_ptr<DeltaMemStore::DMSTreeIter> iter_;
 
@@ -258,9 +254,6 @@ class DMSIterator : public DeltaIterator {
 
   // True if SeekToOrdinal() been called at least once.
   bool seeked_;
-
-  // The schema of the row blocks that will be passed to PrepareBatch(), etc.
-  const Schema* projection_;
 
   // State when prepared_for_ == PREPARED_FOR_APPLY
   // ------------------------------------------------------------

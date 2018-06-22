@@ -35,7 +35,13 @@ using std::string;
 using std::vector;
 using strings::Substitute;
 
-namespace kudu { namespace tablet {
+namespace kudu {
+namespace tablet {
+
+RowIteratorOptions::RowIteratorOptions()
+    : projection(nullptr),
+      snap(MvccSnapshot::CreateSnapshotIncludingAllTransactions()),
+      order(OrderMode::UNORDERED) {}
 
 DuplicatingRowSet::DuplicatingRowSet(RowSetVector old_rowsets,
                                      RowSetVector new_rowsets)
@@ -73,34 +79,32 @@ string DuplicatingRowSet::ToString() const {
   return ret;
 }
 
-Status DuplicatingRowSet::NewRowIterator(const Schema *projection,
-                                         const MvccSnapshot &snap,
-                                         OrderMode order,
+Status DuplicatingRowSet::NewRowIterator(const RowIteratorOptions& opts,
                                          gscoped_ptr<RowwiseIterator>* out) const {
   // Use the original rowset.
   if (old_rowsets_.size() == 1) {
-    return old_rowsets_[0]->NewRowIterator(projection, snap, order, out);
+    return old_rowsets_[0]->NewRowIterator(opts, out);
   }
   // Union or merge between them
 
   vector<shared_ptr<RowwiseIterator> > iters;
   for (const shared_ptr<RowSet> &rowset : old_rowsets_) {
     gscoped_ptr<RowwiseIterator> iter;
-    RETURN_NOT_OK_PREPEND(rowset->NewRowIterator(projection, snap, order, &iter),
+    RETURN_NOT_OK_PREPEND(rowset->NewRowIterator(opts, &iter),
                           Substitute("Could not create iterator for rowset $0",
                                      rowset->ToString()));
     iters.push_back(shared_ptr<RowwiseIterator>(iter.release()));
   }
 
-  switch (order) {
+  switch (opts.order) {
     case ORDERED:
-      out->reset(new MergeIterator(*projection, std::move(iters)));
+      out->reset(new MergeIterator(*opts.projection, std::move(iters)));
       break;
     case UNORDERED:
       out->reset(new UnionIterator(std::move(iters)));
       break;
     default:
-      LOG(FATAL) << "unknown order: " << order;
+      LOG(FATAL) << "unknown order: " << opts.order;
   }
   return Status::OK();
 }

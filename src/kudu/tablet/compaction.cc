@@ -90,9 +90,12 @@ class MemRowSetCompactionInput : public CompactionInput {
   MemRowSetCompactionInput(const MemRowSet& memrowset,
                            const MvccSnapshot& snap,
                            const Schema* projection)
-    : iter_(memrowset.NewIterator(projection, snap)),
-      arena_(32*1024),
+    : arena_(32*1024),
       has_more_blocks_(false) {
+    RowIteratorOptions opts;
+    opts.projection = projection;
+    opts.snap = snap;
+    iter_.reset(memrowset.NewIterator(opts));
   }
 
   Status Init() override {
@@ -856,15 +859,20 @@ Status CompactionInput::Create(const DiskRowSet &rowset,
   gscoped_ptr<RowwiseIterator> base_iter(new MaterializingIterator(base_cwise));
 
   // Creates a DeltaIteratorMerger that will only include the relevant REDO deltas.
+  RowIteratorOptions redo_opts;
+  redo_opts.projection = projection;
+  redo_opts.snap = snap;
   unique_ptr<DeltaIterator> redo_deltas;
   RETURN_NOT_OK_PREPEND(rowset.delta_tracker_->NewDeltaIterator(
-      projection, snap, DeltaTracker::REDOS_ONLY, &redo_deltas), "Could not open REDOs");
+      redo_opts, DeltaTracker::REDOS_ONLY, &redo_deltas), "Could not open REDOs");
   // Creates a DeltaIteratorMerger that will only include UNDO deltas. Using the
   // "empty" snapshot ensures that all deltas are included.
+  RowIteratorOptions undo_opts;
+  undo_opts.projection = projection;
+  undo_opts.snap = MvccSnapshot::CreateSnapshotIncludingNoTransactions();
   unique_ptr<DeltaIterator> undo_deltas;
   RETURN_NOT_OK_PREPEND(rowset.delta_tracker_->NewDeltaIterator(
-      projection, MvccSnapshot::CreateSnapshotIncludingNoTransactions(),
-      DeltaTracker::UNDOS_ONLY, &undo_deltas), "Could not open UNDOs");
+      undo_opts, DeltaTracker::UNDOS_ONLY, &undo_deltas), "Could not open UNDOs");
 
   out->reset(new DiskRowSetCompactionInput(std::move(base_iter),
                                            std::move(redo_deltas),

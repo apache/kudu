@@ -47,9 +47,7 @@ class MockRowSet : public RowSet {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }
-  virtual Status NewRowIterator(const Schema* /*projection*/,
-                                const MvccSnapshot& /*snap*/,
-                                OrderMode /*order*/,
+  virtual Status NewRowIterator(const RowIteratorOptions& /*opts*/,
                                 gscoped_ptr<RowwiseIterator>* /*out*/) const OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();

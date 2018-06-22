@@ -35,6 +35,7 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
+#include "kudu/tablet/mvcc.h"
 #include "kudu/util/bloom_filter.h"
 #include "kudu/util/status.h"
 // IWYU pragma: no_include "kudu/util/monotime.h"
@@ -55,10 +56,30 @@ namespace tablet {
 
 class CompactionInput;
 class OperationResultPB;
-class MvccSnapshot;
 class RowSetKeyProbe;
 class RowSetMetadata;
 struct ProbeStats;
+
+// Encapsulates all options passed to row-based Iterators.
+struct RowIteratorOptions {
+  RowIteratorOptions();
+
+  // The projection to use in the iteration.
+  //
+  // Defaults to nullptr.
+  const Schema* projection;
+
+  // Transactions not committed in this snapshot will be ignored in the iteration.
+  //
+  // Defaults to a snapshot that includes all transactions.
+  MvccSnapshot snap;
+
+  // Whether iteration should be ordered by primary key. Only relevant to those
+  // iterators that deal with primary key order.
+  //
+  // Defaults to UNORDERED.
+  OrderMode order;
+};
 
 class RowSet {
  public:
@@ -89,17 +110,19 @@ class RowSet {
                            ProbeStats* stats,
                            OperationResultPB* result) = 0;
 
-  // Return a new RowIterator for this rowset, with the given projection.
-  // The projection schema must remain valid for the lifetime of the iterator.
+  // Return a new RowIterator for this rowset, with the given options.
+  //
+  // Pointers in 'opts' must remain valid for the lifetime of the iterator.
+  //
   // The iterator will return rows/updates which were committed as of the time of
-  // 'snap'.
+  // the snapshot in 'opts'.
+  //
   // The returned iterator is not Initted.
-  virtual Status NewRowIterator(const Schema *projection,
-                                const MvccSnapshot &snap,
-                                OrderMode order,
+  virtual Status NewRowIterator(const RowIteratorOptions& opts,
                                 gscoped_ptr<RowwiseIterator>* out) const = 0;
 
   // Create the input to be used for a compaction.
+  //
   // The provided 'projection' is for the compaction output. Each row
   // will be projected into this Schema.
   virtual Status NewCompactionInput(const Schema* projection,
@@ -336,9 +359,7 @@ class DuplicatingRowSet : public RowSet {
   Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
                          ProbeStats* stats) const OVERRIDE;
 
-  virtual Status NewRowIterator(const Schema *projection,
-                                const MvccSnapshot &snap,
-                                OrderMode order,
+  virtual Status NewRowIterator(const RowIteratorOptions& opts,
                                 gscoped_ptr<RowwiseIterator>* out) const OVERRIDE;
 
   virtual Status NewCompactionInput(const Schema* projection,

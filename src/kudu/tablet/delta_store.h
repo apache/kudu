@@ -44,6 +44,7 @@ class DeltaIterator;
 class DeltaStats;
 class Mutation;
 class MvccSnapshot;
+struct RowIteratorOptions;
 
 // Interface for the pieces of the system that track deltas/updates.
 // This is implemented by DeltaMemStore and by DeltaFileReader.
@@ -58,17 +59,16 @@ class DeltaStore {
 
   // Create a DeltaIterator for the given projection.
   //
-  // The projection corresponds to whatever scan is currently ongoing.
+  // The projection in 'opts' corresponds to whatever scan is currently ongoing.
   // All RowBlocks passed to this DeltaIterator must have this same schema.
   //
-  // 'snapshot' is the MVCC state which determines which transactions
+  // The snapshot in 'opts' is the MVCC state which determines which transactions
   // should be considered committed (and thus applied by the iterator).
   //
   // Returns Status::OK and sets 'iterator' to the new DeltaIterator, or
   // returns Status::NotFound if the mutations within this delta store
-  // cannot include 'snap'.
-  virtual Status NewDeltaIterator(const Schema *projection,
-                                  const MvccSnapshot &snap,
+  // cannot include the snapshot.
+  virtual Status NewDeltaIterator(const RowIteratorOptions& opts,
                                   DeltaIterator** iterator) const = 0;
 
   // Set *deleted to true if the latest update for the given row is a deletion.
