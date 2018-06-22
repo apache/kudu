@@ -37,6 +37,7 @@
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/strings/join.h"
+#include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/hms/mini_hms.h"
@@ -258,6 +259,20 @@ Status ExternalMiniCluster::Restart() {
 
 void ExternalMiniCluster::EnableMetastoreIntegration() {
   opts_.hms_mode = HmsMode::ENABLE_METASTORE_INTEGRATION;
+}
+
+void ExternalMiniCluster::DisableMetastoreIntegration() {
+  for (const auto& master : masters_) {
+    CHECK(master->IsShutdown()) << "Call Shutdown() before changing the HMS mode";
+    master->mutable_flags()->erase(
+        std::remove_if(
+          master->mutable_flags()->begin(), master->mutable_flags()->end(),
+          [] (const string& flag) {
+            return StringPiece(flag).starts_with("--hive_metastore");
+          }),
+        master->mutable_flags()->end());
+  }
+  opts_.hms_mode = HmsMode::ENABLE_HIVE_METASTORE;
 }
 
 void ExternalMiniCluster::SetDaemonBinPath(string daemon_bin_path) {

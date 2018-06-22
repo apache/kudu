@@ -396,7 +396,7 @@ class MasterStressTest : public KuduTest,
 
  private:
   string GenerateTableName() {
-    return Substitute("default.table_$0", oid_generator_.Next());
+    return Substitute("default.Table_$0", oid_generator_.Next());
   }
 
   bool BlockingGetTableName(string* chosen_table) {

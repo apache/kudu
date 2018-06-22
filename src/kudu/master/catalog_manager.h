@@ -683,6 +683,16 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
     return hms_catalog_.get();
   }
 
+  // Returns the normalized form of the provided table name.
+  //
+  // If the HMS integration is configured and the table name is a valid HMS
+  // table name, the normalized form is returned (see HmsCatalog::NormalizeTableName),
+  // otherwise a copy of the original table name is returned.
+  //
+  // If the HMS integration is not configured then a copy of the original table
+  // name is returned.
+  static std::string NormalizeTableName(const std::string& table_name);
+
  private:
   // These tests call ElectedAsLeaderCb() directly.
   FRIEND_TEST(MasterTest, TestShutdownDuringTableVisit);
@@ -753,9 +763,8 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // of authn tokens.
   Status PrepareFollowerTokenVerifier();
 
-  // Clears out the existing metadata ('table_names_map_', 'table_ids_map_',
-  // and 'tablet_map_'), loads tables metadata into memory and if successful
-  // loads the tablets metadata.
+  // Clears out the existing metadata (by-name map, table-id map, and tablet
+  // map), and loads table and tablet metadata into memory.
   Status VisitTablesAndTabletsUnlocked();
   // This is called by tests only.
   Status VisitTablesAndTablets();
@@ -953,26 +962,25 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   typedef rw_spinlock LockType;
   mutable LockType lock_;
 
-  // Table maps: table-id -> TableInfo and table-name -> TableInfo
+  // Table maps: table-id -> TableInfo and normalized-table-name -> TableInfo
   TableInfoMap table_ids_map_;
-  TableInfoMap table_names_map_;
+  TableInfoMap normalized_table_names_map_;
 
   // Tablet maps: tablet-id -> TabletInfo
   TabletInfoMap tablet_map_;
 
-  // Names of tables that are currently reserved by CreateTable() or
-  // AlterTable().
+  // Names of tables that are currently reserved by CreateTable() or AlterTable().
   //
   // As a rule, operations that add new table names should do so as follows:
   // 1. Acquire lock_.
-  // 2. Ensure table_names_map_ does not contain the new name.
-  // 3. Ensure reserved_table_names_ does not contain the new name.
-  // 4. Add the new name to reserved_table_names_.
+  // 2. Ensure normalized_table_names_map_ does not contain the new normalized name.
+  // 3. Ensure reserved_normalized_table_names_ does not contain the new normalized name.
+  // 4. Add the new normalized name to reserved_normalized_table_names_.
   // 5. Release lock_.
   // 6. Perform the operation.
-  // 7. If it succeeded, add the name to table_names_map_ with lock_ held.
-  // 8. Remove the new name from reserved_table_names_ with lock_ held.
-  std::unordered_set<std::string> reserved_table_names_;
+  // 7. If it succeeded, add the normalized name to normalized_table_names_map_ with lock_ held.
+  // 8. Remove the new normalized name from reserved_normalized_table_names_ with lock_ held.
+  std::unordered_set<std::string> reserved_normalized_table_names_;
 
   Master *master_;
   ObjectIdGenerator oid_generator_;

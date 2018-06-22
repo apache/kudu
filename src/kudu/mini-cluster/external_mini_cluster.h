@@ -320,8 +320,14 @@ class ExternalMiniCluster : public MiniCluster {
                  const std::string& value) WARN_UNUSED_RESULT;
 
   // Enable Hive Metastore integration.
-  // Overrides 'enable_metastore_integration' set by ExternalMiniClusterOptions.
+  // Overrides HMS integration options set by ExternalMiniClusterOptions.
+  // The cluster must be shut down before calling this method.
   void EnableMetastoreIntegration();
+
+  // Disable Hive Metastore integration.
+  // Overrides HMS integration options set by ExternalMiniClusterOptions.
+  // The cluster must be shut down before calling this method.
+  void DisableMetastoreIntegration();
 
   // Set the path where daemon binaries can be found.
   // Overrides 'daemon_bin_path' set by ExternalMiniClusterOptions.

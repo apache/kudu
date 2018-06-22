@@ -32,10 +32,12 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/hms/hive_metastore_types.h"
+#include "kudu/hms/hms_catalog.h"
 #include "kudu/hms/hms_client.h"
 #include "kudu/hms/mini_hms.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
+#include "kudu/mini-cluster/mini_cluster.h"
 #include "kudu/util/decimal_util.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
@@ -63,11 +65,15 @@ using strings::Substitute;
 class MasterHmsTest : public ExternalMiniClusterITestBase {
  public:
 
+  virtual HmsMode GetHmsMode() {
+    return HmsMode::ENABLE_METASTORE_INTEGRATION;
+  }
+
   void SetUp() override {
     ExternalMiniClusterITestBase::SetUp();
 
     ExternalMiniClusterOptions opts;
-    opts.hms_mode = HmsMode::ENABLE_METASTORE_INTEGRATION;
+    opts.hms_mode = GetHmsMode();
     opts.num_masters = 1;
     opts.num_tablet_servers = 1;
     // Tune down the notification log poll period in order to speed up catalog convergence.
@@ -234,7 +240,7 @@ TEST_F(MasterHmsTest, TestCreateTable) {
   // Attempt to create a Kudu table to an invalid table name.
   s = CreateKuduTable(hms_database_name, "☃");
   ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
-  ASSERT_STR_CONTAINS(s.ToString(), "☃ is not a valid object name");
+  ASSERT_STR_CONTAINS(s.ToString(), "create_db.☃");
 
   // Drop the HMS entry and create the table through Kudu.
   ASSERT_OK(hms_client_->DropTable(hms_database_name, hms_table_name));
@@ -284,8 +290,7 @@ TEST_F(MasterHmsTest, TestRenameTable) {
   table_alterer.reset(client_->NewTableAlterer("db.a"));
   s = table_alterer->RenameTo("foo")->Alter();
   ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
-  ASSERT_STR_CONTAINS(s.ToString(), "Kudu table names must be a period ('.') separated "
-                                    "database and table name pair");
+  ASSERT_STR_CONTAINS(s.ToString(), hms::HmsCatalog::kInvalidTableError);
 
   // Attempt to rename the Kudu table to a non-existent database.
   table_alterer.reset(client_->NewTableAlterer("db.a"));
@@ -296,8 +301,8 @@ TEST_F(MasterHmsTest, TestRenameTable) {
   // Attempt to rename the Kudu table to an invalid table name.
   table_alterer.reset(client_->NewTableAlterer("db.a"));
   s = table_alterer->RenameTo("db.☃")->Alter();
-  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
-  ASSERT_STR_CONTAINS(s.ToString(), "☃ is not a valid object name");
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "db.☃");
 
   // Shutdown the HMS and try to rename the table.
   ASSERT_OK(StopHms());
@@ -467,13 +472,118 @@ TEST_F(MasterHmsTest, TestNotificationLogListener) {
   ASSERT_OK(hms_client_->DropTable("default", "a"));
   Status s = client_->DeleteTable("default.a");
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
-  CheckTableDoesNotExist("default", "a");
+  NO_FATALS(CheckTableDoesNotExist("default", "a"));
 
   // Scenario 2: drop from Kudu first.
   ASSERT_OK(CreateKuduTable("default", "a"));
   ASSERT_OK(client_->DeleteTable("default.a"));
   s = hms_client_->DropTable("default", "a");
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
-  CheckTableDoesNotExist("default", "a");
+  NO_FATALS(CheckTableDoesNotExist("default", "a"));
+}
+
+TEST_F(MasterHmsTest, TestUppercaseIdentifiers) {
+  ASSERT_OK(CreateKuduTable("default", "MyTable"));
+  NO_FATALS(CheckTable("default", "MyTable"));
+  NO_FATALS(CheckTable("default", "mytable"));
+  NO_FATALS(CheckTable("default", "MYTABLE"));
+
+  // Kudu table schema lookups should be case-insensitive.
+  for (const auto& name : { "default.MyTable",
+                            "default.mytable",
+                            "DEFAULT.MYTABLE",
+                            "default.mYtABLE" }) {
+    shared_ptr<KuduTable> table;
+    ASSERT_OK(client_->OpenTable(name, &table));
+    // The client uses the requested name as the table object's name.
+    ASSERT_EQ(name, table->name());
+  }
+
+  // Listing tables shows the preserved case.
+  vector<string> tables;
+  ASSERT_OK(client_->ListTables(&tables));
+  ASSERT_EQ(tables, vector<string>({ "default.MyTable" }));
+
+  // Rename the table to the same normalized name, but with a different case.
+  unique_ptr<KuduTableAlterer> table_alterer;
+  table_alterer.reset(client_->NewTableAlterer("default.mytable"));
+  ASSERT_OK(table_alterer->RenameTo("DEFAULT.MYTABLE")->Alter());
+  NO_FATALS(CheckTable("default", "MyTable"));
+  NO_FATALS(CheckTable("default", "mytable"));
+  NO_FATALS(CheckTable("default", "MYTABLE"));
+
+  // The master should retain the new case.
+  tables.clear();
+  ASSERT_OK(client_->ListTables(&tables));
+  ASSERT_EQ(tables, vector<string>({ "DEFAULT.MYTABLE" }));
+
+  // Rename the table to something different.
+  table_alterer.reset(client_->NewTableAlterer("DEFAULT.MYTABLE"));
+  ASSERT_OK(table_alterer->RenameTo("default.T_1/1")->Alter());
+  NO_FATALS(CheckTable("default", "T_1/1"));
+  NO_FATALS(CheckTable("default", "t_1/1"));
+  NO_FATALS(CheckTable("DEFAULT", "T_1/1"));
+
+  // Rename the table through the HMS.
+  ASSERT_OK(RenameHmsTable("default", "T_1/1", "AbC"));
+  ASSERT_EVENTUALLY([&] {
+    NO_FATALS(CheckTable("default", "AbC"));
+  });
+
+  // Listing tables shows the preserved case.
+  tables.clear();
+  ASSERT_OK(client_->ListTables(&tables));
+  ASSERT_EQ(tables, vector<string>({ "default.AbC" }));
+
+  // Drop the table.
+  ASSERT_OK(client_->DeleteTable("DEFAULT.abc"));
+  NO_FATALS(CheckTableDoesNotExist("default", "AbC"));
+  NO_FATALS(CheckTableDoesNotExist("default", "abc"));
+}
+
+class MasterHmsUpgradeTest : public MasterHmsTest {
+ public:
+  HmsMode GetHmsMode() override {
+    return HmsMode::ENABLE_HIVE_METASTORE;
+  }
+};
+
+TEST_F(MasterHmsUpgradeTest, TestConflictingNormalizedNames) {
+  ASSERT_OK(CreateKuduTable("default", "MyTable"));
+  ASSERT_OK(CreateKuduTable("default", "mytable"));
+
+  // Shutdown the masters and turn on the HMS integration. The masters should
+  // fail to startup because of conflicting normalized table names.
+  cluster_->ShutdownNodes(cluster::ClusterNodes::MASTERS_ONLY);
+  cluster_->EnableMetastoreIntegration();
+  // Typically, restarting the cluster will fail because the master will
+  // immediately try to elect itself leader, and CHECK fail upon seeing the
+  // conflicting table names. However, in TSAN or otherwise slow situations the
+  // master may be able to register the tablet server before attempting to elect
+  // itself leader, in which case ExternalMiniCluster::Restart() can succeed. In
+  // this situation a fallback to a leader-only API will deterministically fail.
+  Status s = cluster_->Restart();
+  if (s.ok()) {
+    vector<string> tables;
+    s = client_->ListTables(&tables);
+  }
+  ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
+
+  // Disable the metastore integration and rename one of the conflicting tables.
+  cluster_->ShutdownNodes(cluster::ClusterNodes::MASTERS_ONLY);
+  cluster_->DisableMetastoreIntegration();
+  ASSERT_OK(cluster_->Restart());
+  unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer("default.mytable"));
+  ASSERT_OK(table_alterer->RenameTo("default.mytable-renamed")->Alter());
+
+  // Try again to enable the integration.
+  cluster_->ShutdownNodes(cluster::ClusterNodes::MASTERS_ONLY);
+  cluster_->EnableMetastoreIntegration();
+  ASSERT_OK(cluster_->Restart());
+
+  vector<string> tables;
+  client_->ListTables(&tables);
+  std::sort(tables.begin(), tables.end());
+  ASSERT_EQ(tables, vector<string>({ "default.MyTable", "default.mytable-renamed" }));
 }
 } // namespace kudu

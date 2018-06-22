@@ -403,5 +403,33 @@ TEST_F(HmsClientTest, TestDeserializeJsonTable) {
   ASSERT_EQ("database_name", table.dbName);
 }
 
+TEST_F(HmsClientTest, TestCaseSensitivity) {
+  MiniKdc kdc;
+  MiniHms hms;
+  ASSERT_OK(hms.Start());
+
+  HmsClient client(hms.address(), HmsClientOptions());
+  ASSERT_OK(client.Start());
+
+  // Create a database.
+  hive::Database db;
+  db.name = "my_db";
+  ASSERT_OK(client.CreateDatabase(db));
+
+  // Create a table.
+  ASSERT_OK(CreateTable(&client, "my_db", "Foo", "abc123"));
+
+  hive::Table table;
+  ASSERT_OK(client.GetTable("my_db", "Foo", &table));
+  ASSERT_EQ(table.tableName, "foo");
+
+  ASSERT_OK(client.GetTable("my_db", "foo", &table));
+  ASSERT_EQ(table.tableName, "foo");
+
+  ASSERT_OK(client.GetTable("MY_DB", "FOO", &table));
+  ASSERT_EQ(table.dbName, "my_db");
+  ASSERT_EQ(table.tableName, "foo");
+}
+
 } // namespace hms
 } // namespace kudu

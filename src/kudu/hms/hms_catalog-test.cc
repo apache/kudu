@@ -37,6 +37,7 @@
 #include "kudu/rpc/sasl_common.h"
 #include "kudu/security/test/mini_kdc.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -55,35 +56,64 @@ namespace kudu {
 namespace hms {
 
 TEST(HmsCatalogStaticTest, TestParseTableName) {
-  string db;
-  string tbl;
+  Slice db;
+  Slice tbl;
+  string table;
 
-  EXPECT_OK(HmsCatalog::ParseTableName("foo.bar", &db, &tbl));
+  table = "foo.bar";
+  ASSERT_OK(HmsCatalog::ParseTableName(table, &db, &tbl));
   EXPECT_EQ("foo", db);
   EXPECT_EQ("bar", tbl);
 
-  EXPECT_OK(HmsCatalog::ParseTableName("99bottles.my_awesome/table/22", &db, &tbl));
+  table = "99bottles.my_awesome/table/22";
+  ASSERT_OK(HmsCatalog::ParseTableName(table, &db, &tbl));
   EXPECT_EQ("99bottles", db);
   EXPECT_EQ("my_awesome/table/22", tbl);
 
-  EXPECT_OK(HmsCatalog::ParseTableName("_leading_underscore.trailing_underscore_", &db, &tbl));
+  table = "_leading_underscore.trailing_underscore_";
+  ASSERT_OK(HmsCatalog::ParseTableName(table, &db, &tbl));
   EXPECT_EQ("_leading_underscore", db);
   EXPECT_EQ("trailing_underscore_", tbl);
 
-  EXPECT_OK(HmsCatalog::ParseTableName("unicode ☃ tables?.maybe/one_day", &db, &tbl));
-  EXPECT_EQ("unicode ☃ tables?", db);
-  EXPECT_EQ("maybe/one_day", tbl);
-
-  EXPECT_OK(HmsCatalog::ParseTableName(".", &db, &tbl));
-  EXPECT_EQ("", db);
-  EXPECT_EQ("", tbl);
-
-  EXPECT_OK(HmsCatalog::ParseTableName(string("\0.\0", 3), &db, &tbl));
-  EXPECT_EQ(string("\0", 1), db);
-  EXPECT_EQ(string("\0", 1), tbl);
-
+  EXPECT_TRUE(HmsCatalog::ParseTableName(".", &db, &tbl).IsInvalidArgument());
   EXPECT_TRUE(HmsCatalog::ParseTableName("no-table", &db, &tbl).IsInvalidArgument());
   EXPECT_TRUE(HmsCatalog::ParseTableName("lots.of.tables", &db, &tbl).IsInvalidArgument());
+  EXPECT_TRUE(HmsCatalog::ParseTableName("no-table", &db, &tbl).IsInvalidArgument());
+  EXPECT_TRUE(HmsCatalog::ParseTableName("lots.of.tables", &db, &tbl).IsInvalidArgument());
+  EXPECT_TRUE(HmsCatalog::ParseTableName(".no_table", &db, &tbl).IsInvalidArgument());
+  EXPECT_TRUE(HmsCatalog::ParseTableName(".no_database", &db, &tbl).IsInvalidArgument());
+  EXPECT_TRUE(HmsCatalog::ParseTableName("punctuation?.no", &db, &tbl).IsInvalidArgument());
+  EXPECT_TRUE(HmsCatalog::ParseTableName("white space.no", &db, &tbl).IsInvalidArgument());
+  EXPECT_TRUE(HmsCatalog::ParseTableName("unicode☃tables.no", &db, &tbl).IsInvalidArgument());
+  EXPECT_TRUE(HmsCatalog::ParseTableName(string("\0.\0", 3), &db, &tbl).IsInvalidArgument());
+}
+
+TEST(HmsCatalogStaticTest, TestNormalizeTableName) {
+  string table = "foo.bar";
+  ASSERT_OK(HmsCatalog::NormalizeTableName(&table));
+  ASSERT_EQ("foo.bar", table);
+
+  table = "fOo.BaR";
+  ASSERT_OK(HmsCatalog::NormalizeTableName(&table));
+  EXPECT_EQ("foo.bar", table);
+
+  table = "A.B";
+  ASSERT_OK(HmsCatalog::NormalizeTableName(&table));
+  EXPECT_EQ("a.b", table);
+
+  table = "__/A__.buzz";
+  ASSERT_OK(HmsCatalog::NormalizeTableName(&table));
+  EXPECT_EQ("__/a__.buzz", table);
+
+  table = "THE/QUICK/BROWN/FOX/JUMPS/OVER/THE/LAZY/DOG."
+          "the_quick_brown_fox_jumps_over_the_lazy_dog";
+  ASSERT_OK(HmsCatalog::NormalizeTableName(&table));
+  EXPECT_EQ("the/quick/brown/fox/jumps/over/the/lazy/dog."
+            "the_quick_brown_fox_jumps_over_the_lazy_dog", table);
+
+  table = "default.MyTable";
+  ASSERT_OK(HmsCatalog::NormalizeTableName(&table));
+  EXPECT_EQ("default.mytable", table);
 }
 
 TEST(HmsCatalogStaticTest, TestParseUris) {

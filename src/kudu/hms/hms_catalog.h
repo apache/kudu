@@ -30,6 +30,8 @@
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
 
+class StringPiece;
+
 namespace hive {
 class NotificationEvent;
 class Table;
@@ -129,9 +131,26 @@ class HmsCatalog {
                               const std::string& master_addresses,
                               hive::Table* table) WARN_UNUSED_RESULT;
 
+  // Validates and canonicalizes the provided table name according to HMS rules.
+  // If the table name is not valid it will not be modified. If the table name
+  // is valid, it will be canonicalized.
+  //
+  // Valid Kudu/HMS table names consist of a period ('.') separated database and
+  // table name pair. The database and table names must contain only the ASCII
+  // alphanumeric, '_', and '/' characters.
+  //
+  // Normalized Kudu/HMS table names are downcased so that they contain no
+  // upper-case (A-Z) ASCII characters.
+  //
+  // Hive handles validating and canonicalizing table names in
+  // org.apache.hadoop.hive.metastore.MetaStoreUtils.validateName and
+  // org.apache.hadoop.hive.common.util.normalizeIdentifier.
+  static Status NormalizeTableName(std::string* table_name);
+
  private:
 
   FRIEND_TEST(HmsCatalogStaticTest, TestParseTableName);
+  FRIEND_TEST(HmsCatalogStaticTest, TestParseTableNameSlices);
   FRIEND_TEST(HmsCatalogStaticTest, TestParseUris);
 
   // Synchronously executes a task with exclusive access to the HMS client.
@@ -148,9 +167,10 @@ class HmsCatalog {
 
   // Parses a Kudu table name into a Hive database and table name.
   // Returns an error if the Kudu table name is not correctly formatted.
-  static Status ParseTableName(const std::string& table,
-                               std::string* hms_database,
-                               std::string* hms_table) WARN_UNUSED_RESULT;
+  // The returned HMS database and table slices must not outlive 'table_name'.
+  static Status ParseTableName(const std::string& table_name,
+                               Slice* hms_database,
+                               Slice* hms_table) WARN_UNUSED_RESULT;
 
   // Parses a Hive Metastore URI string into a sequence of HostPorts.
   static Status ParseUris(const std::string& metastore_uris, std::vector<HostPort>* hostports);
