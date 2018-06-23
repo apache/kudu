@@ -29,6 +29,8 @@ import com.google.common.net.HostAndPort;
 import com.stumbleupon.async.Deferred;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
+import org.junit.Rule;
+import org.junit.rules.TestName;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -62,6 +64,9 @@ public class BaseKuduTest {
   protected static KuduClient syncClient;
   protected static final Schema basicSchema = getBasicSchema();
   protected static final Schema allTypesSchema = getSchemaWithAllTypes();
+
+  @Rule
+  public TestName testName = new TestName();
 
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
@@ -109,6 +114,23 @@ public class BaseKuduTest {
         .defaultAdminOperationTimeoutMs(DEFAULT_SLEEP)
         .build();
     syncClient = client.syncClient();
+  }
+
+  /**
+   * Returns the method name of the currently-running JUnit test.
+   * @return a test method name
+   */
+  protected String getTestMethodName() {
+    return testName.getMethodName();
+  }
+
+  /**
+   * Returns the method name of the currently-running JUnit test with a concatenated millisecond
+   * timestamp. Useful for table names in tests that are automatically retried.
+   * @return a test method name with a millisecond timestamp appended
+   */
+  protected String getTestMethodNameWithTimestamp() {
+    return getTestMethodName() + "-" + System.currentTimeMillis();
   }
 
   protected static KuduTable createTable(String tableName, Schema schema,

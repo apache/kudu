@@ -31,34 +31,34 @@ import static org.junit.Assert.fail;
 import java.util.List;
 
 import com.google.common.collect.ImmutableList;
-import org.junit.Rule;
+import org.junit.Before;
 import org.junit.Test;
-import org.junit.rules.TestName;
 
 public class TestKuduSession extends BaseKuduTest {
-  @Rule
-  public final TestName name = new TestName();
+  private String tableName;
 
-  private KuduTable table;
+  @Before
+  public void setUp() {
+    tableName = getTestMethodNameWithTimestamp();
+  }
 
   @Test(timeout = 100000)
   public void testBasicOps() throws Exception {
-    String tableName = name.getMethodName();
-    table = createTable(tableName, basicSchema, getBasicCreateTableOptions());
+    KuduTable table = createTable(tableName, basicSchema, getBasicCreateTableOptions());
 
     KuduSession session = syncClient.newSession();
     for (int i = 0; i < 10; i++) {
-      session.apply(createInsert(i));
+      session.apply(createInsert(table, i));
     }
     assertEquals(10, countRowsInScan(client.newScannerBuilder(table).build()));
 
-    OperationResponse resp = session.apply(createInsert(0));
+    OperationResponse resp = session.apply(createInsert(table, 0));
     assertTrue(resp.hasRowError());
 
     session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
 
     for (int i = 10; i < 20; i++) {
-      session.apply(createInsert(i));
+      session.apply(createInsert(table, i));
     }
     session.flush();
     assertEquals(20, countRowsInScan(client.newScannerBuilder(table).build()));
@@ -66,18 +66,17 @@ public class TestKuduSession extends BaseKuduTest {
 
   @Test(timeout = 100000)
   public void testIgnoreAllDuplicateRows() throws Exception {
-    String tableName = name.getMethodName();
-    table = createTable(tableName, basicSchema, getBasicCreateTableOptions());
+    KuduTable table = createTable(tableName, basicSchema, getBasicCreateTableOptions());
 
     KuduSession session = syncClient.newSession();
     session.setIgnoreAllDuplicateRows(true);
     for (int i = 0; i < 10; i++) {
-      session.apply(createInsert(i));
+      session.apply(createInsert(table, i));
     }
     for (SessionConfiguration.FlushMode mode : SessionConfiguration.FlushMode.values()) {
       session.setFlushMode(mode);
       for (int i = 0; i < 10; i++) {
-        OperationResponse resp = session.apply(createInsert(i));
+        OperationResponse resp = session.apply(createInsert(table, i));
         if (mode == SessionConfiguration.FlushMode.AUTO_FLUSH_SYNC) {
           assertFalse(resp.hasRowError());
         }
@@ -98,8 +97,7 @@ public class TestKuduSession extends BaseKuduTest {
 
   @Test(timeout = 100000)
   public void testBatchWithSameRow() throws Exception {
-    String tableName = name.getMethodName();
-    table = createTable(tableName, basicSchema, getBasicCreateTableOptions());
+    KuduTable table = createTable(tableName, basicSchema, getBasicCreateTableOptions());
 
     KuduSession session = syncClient.newSession();
     session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
@@ -108,7 +106,7 @@ public class TestKuduSession extends BaseKuduTest {
     // while also clearing the cache between each batch half the time. The delete is added here
     // so that a misplaced update would fail if it happens later than its delete.
     for (int i = 0; i < 25; i++) {
-      session.apply(createInsert(i));
+      session.apply(createInsert(table, i));
       for (int j = 0; j < 50; j++) {
         Update update = table.newUpdate();
         PartialRow row = update.getRow();
@@ -149,7 +147,6 @@ public class TestKuduSession extends BaseKuduTest {
    */
   @Test(timeout = 10000)
   public void testConcurrentFlushes() throws Exception {
-    String tableName = name.getMethodName();
     CreateTableOptions builder = getBasicCreateTableOptions();
     int numTablets = 4;
     int numRowsPerTablet = 100;
@@ -160,7 +157,7 @@ public class TestKuduSession extends BaseKuduTest {
       split.addInt(0, i * numRowsPerTablet);
       builder.addSplitRow(split);
     }
-    table = createTable(tableName, basicSchema, builder);
+    KuduTable table = createTable(tableName, basicSchema, builder);
 
     // Configure the session to background flush as often as it can (every 1ms).
     KuduSession session = syncClient.newSession();
@@ -171,7 +168,7 @@ public class TestKuduSession extends BaseKuduTest {
     // NPE.
     for (int i = 0; i < numRowsPerTablet; i++) {
       for (int j = 0; j < numTablets; j++) {
-        session.apply(createInsert(i + (numRowsPerTablet * j)));
+        session.apply(createInsert(table, i + (numRowsPerTablet * j)));
       }
       session.flush();
     }
@@ -179,10 +176,9 @@ public class TestKuduSession extends BaseKuduTest {
 
   @Test(timeout = 10000)
   public void testOverWritingValues() throws Exception {
-    String tableName = name.getMethodName();
-    table = createTable(tableName, basicSchema, getBasicCreateTableOptions());
+    KuduTable table = createTable(tableName, basicSchema, getBasicCreateTableOptions());
     KuduSession session = syncClient.newSession();
-    Insert insert = createInsert(0);
+    Insert insert = createInsert(table, 0);
     PartialRow row = insert.getRow();
 
     // Overwrite all the normal columns.
@@ -216,12 +212,11 @@ public class TestKuduSession extends BaseKuduTest {
 
   @Test(timeout = 10000)
   public void testUpsert() throws Exception {
-    String tableName = name.getMethodName();
-    table = createTable(tableName, basicSchema, getBasicCreateTableOptions());
+    KuduTable table = createTable(tableName, basicSchema, getBasicCreateTableOptions());
     KuduSession session = syncClient.newSession();
 
     // Test an Upsert that acts as an Insert.
-    assertFalse(session.apply(createUpsert(1, 1, false)).hasRowError());
+    assertFalse(session.apply(createUpsert(table, 1, 1, false)).hasRowError());
 
     List<String> rowStrings = scanTableToStrings(table);
     assertEquals(1, rowStrings.size());
@@ -231,7 +226,7 @@ public class TestKuduSession extends BaseKuduTest {
         rowStrings.get(0));
 
     // Test an Upsert that acts as an Update.
-    assertFalse(session.apply(createUpsert(1, 2, false)).hasRowError());
+    assertFalse(session.apply(createUpsert(table, 1, 2, false)).hasRowError());
     rowStrings = scanTableToStrings(table);
     assertEquals(
         "INT32 key=1, INT32 column1_i=2, INT32 column2_i=3, " +
@@ -241,7 +236,6 @@ public class TestKuduSession extends BaseKuduTest {
 
   @Test(timeout = 10000)
   public void testInsertManualFlushNonCoveredRange() throws Exception {
-    String tableName = name.getMethodName();
     CreateTableOptions createOptions = getBasicTableOptionsWithNonCoveredRange();
     createOptions.setNumReplicas(1);
     syncClient.createTable(tableName, basicSchema, createOptions);
@@ -281,7 +275,6 @@ public class TestKuduSession extends BaseKuduTest {
 
   @Test(timeout = 10000)
   public void testInsertManualFlushResponseOrder() throws Exception {
-    String tableName = name.getMethodName();
     CreateTableOptions createOptions = getBasicTableOptionsWithNonCoveredRange();
     createOptions.setNumReplicas(1);
     syncClient.createTable(tableName, basicSchema, createOptions);
@@ -312,7 +305,6 @@ public class TestKuduSession extends BaseKuduTest {
 
   @Test(timeout = 10000)
   public void testInsertAutoFlushSyncNonCoveredRange() throws Exception {
-    String tableName = name.getMethodName();
     CreateTableOptions createOptions = getBasicTableOptionsWithNonCoveredRange();
     createOptions.setNumReplicas(1);
     syncClient.createTable(tableName, basicSchema, createOptions);
@@ -331,7 +323,6 @@ public class TestKuduSession extends BaseKuduTest {
 
   @Test(timeout = 10000)
   public void testInsertAutoFlushBackgrounNonCoveredRange() throws Exception {
-    String tableName = name.getMethodName();
     CreateTableOptions createOptions = getBasicTableOptionsWithNonCoveredRange();
     createOptions.setNumReplicas(1);
     syncClient.createTable(tableName, basicSchema, createOptions);
@@ -366,11 +357,11 @@ public class TestKuduSession extends BaseKuduTest {
     }
   }
 
-  private Insert createInsert(int key) {
+  private Insert createInsert(KuduTable table, int key) {
     return createBasicSchemaInsert(table, key);
   }
 
-  private Upsert createUpsert(int key, int secondVal, boolean hasNull) {
+  private Upsert createUpsert(KuduTable table, int key, int secondVal, boolean hasNull) {
     Upsert upsert = table.newUpsert();
     PartialRow row = upsert.getRow();
     row.addInt(0, key);

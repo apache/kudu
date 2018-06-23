@@ -72,8 +72,8 @@ public class TestKuduClient extends BaseKuduTest {
   private String tableName;
 
   @Before
-  public void setTableName() {
-    tableName = TestKuduClient.class.getName() + "-" + System.currentTimeMillis();
+  public void setUp() {
+    tableName = getTestMethodNameWithTimestamp();
   }
 
   /**
