@@ -18,6 +18,7 @@
 package org.apache.kudu.util;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Iterators;
 import com.google.common.collect.Lists;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
@@ -30,8 +31,10 @@ import org.apache.kudu.client.AsyncKuduScanner;
 import org.apache.kudu.client.AsyncKuduSession;
 import org.apache.kudu.client.CreateTableOptions;
 import org.apache.kudu.client.Insert;
+import org.apache.kudu.client.KuduClient;
 import org.apache.kudu.client.KuduException;
 import org.apache.kudu.client.KuduPredicate;
+import org.apache.kudu.client.KuduScanToken;
 import org.apache.kudu.client.KuduScanner;
 import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.client.PartialRow;
@@ -40,6 +43,7 @@ import org.apache.kudu.client.RowResultIterator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -121,6 +125,47 @@ public abstract class ClientTestUtil {
     }
     scanBuilder.setProjectedColumnIndexes(ImmutableList.<Integer>of());
     return countRowsInScan(scanBuilder.build());
+  }
+
+  /**
+   * Counts the rows in the provided scan tokens.
+   */
+  public static int countScanTokenRows(List<KuduScanToken> tokens, final String masterAddresses,
+                                       final long operationTimeoutMs)
+      throws IOException, InterruptedException {
+    final AtomicInteger count = new AtomicInteger(0);
+    List<Thread> threads = new ArrayList<>();
+    for (final KuduScanToken token : tokens) {
+      final byte[] serializedToken = token.serialize();
+      Thread thread = new Thread(new Runnable() {
+        @Override
+        public void run() {
+          try (KuduClient contextClient = new KuduClient.KuduClientBuilder(masterAddresses)
+                   .defaultAdminOperationTimeoutMs(operationTimeoutMs)
+                   .build()) {
+            KuduScanner scanner = KuduScanToken.deserializeIntoScanner(serializedToken, contextClient);
+            try {
+              int localCount = 0;
+              while (scanner.hasMoreRows()) {
+                localCount += Iterators.size(scanner.nextRows());
+              }
+              count.addAndGet(localCount);
+            } finally {
+              scanner.close();
+            }
+          } catch (Exception e) {
+            LOG.error("exception in parallel token scanner", e);
+          }
+        }
+      });
+      thread.run();
+      threads.add(thread);
+    }
+
+    for (Thread thread : threads) {
+      thread.join();
+    }
+    return count.get();
   }
 
   public static List<String> scanTableToStrings(KuduTable table,
