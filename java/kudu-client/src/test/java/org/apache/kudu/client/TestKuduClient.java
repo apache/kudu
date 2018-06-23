@@ -23,6 +23,10 @@ import static org.apache.kudu.client.KuduPredicate.ComparisonOp.LESS;
 import static org.apache.kudu.client.KuduPredicate.ComparisonOp.LESS_EQUAL;
 import static org.apache.kudu.util.ClientTestUtil.countRowsInScan;
 import static org.apache.kudu.util.ClientTestUtil.createBasicSchemaInsert;
+import static org.apache.kudu.util.ClientTestUtil.createManyStringsSchema;
+import static org.apache.kudu.util.ClientTestUtil.createSchemaWithBinaryColumns;
+import static org.apache.kudu.util.ClientTestUtil.createSchemaWithDecimalColumns;
+import static org.apache.kudu.util.ClientTestUtil.createSchemaWithTimestampColumns;
 import static org.apache.kudu.util.ClientTestUtil.getBasicCreateTableOptions;
 import static org.apache.kudu.util.ClientTestUtil.getBasicTableOptionsWithNonCoveredRange;
 import static org.apache.kudu.util.ClientTestUtil.scanTableToStrings;
@@ -58,7 +62,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.apache.kudu.ColumnSchema;
-import org.apache.kudu.ColumnTypeAttributes.ColumnTypeAttributesBuilder;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.util.CapturingLogAppender;
@@ -71,51 +74,6 @@ public class TestKuduClient extends BaseKuduTest {
   @Before
   public void setTableName() {
     tableName = TestKuduClient.class.getName() + "-" + System.currentTimeMillis();
-  }
-
-  private Schema createManyStringsSchema() {
-    ArrayList<ColumnSchema> columns = new ArrayList<ColumnSchema>(4);
-    columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.STRING).key(true).build());
-    columns.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.STRING).build());
-    columns.add(new ColumnSchema.ColumnSchemaBuilder("c2", Type.STRING).build());
-    columns.add(new ColumnSchema.ColumnSchemaBuilder("c3", Type.STRING).nullable(true).build());
-    columns.add(new ColumnSchema.ColumnSchemaBuilder("c4", Type.STRING).nullable(true).build());
-    return new Schema(columns);
-  }
-
-  private Schema createSchemaWithBinaryColumns() {
-    ArrayList<ColumnSchema> columns = new ArrayList<ColumnSchema>();
-    columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.BINARY).key(true).build());
-    columns.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.STRING).build());
-    columns.add(new ColumnSchema.ColumnSchemaBuilder("c2", Type.DOUBLE).build());
-    columns.add(new ColumnSchema.ColumnSchemaBuilder("c3", Type.BINARY).nullable(true).build());
-    return new Schema(columns);
-  }
-
-  private Schema createSchemaWithTimestampColumns() {
-    ArrayList<ColumnSchema> columns = new ArrayList<ColumnSchema>();
-    columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.UNIXTIME_MICROS).key(true).build());
-    columns.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.UNIXTIME_MICROS).nullable(true).build());
-    return new Schema(columns);
-  }
-
-  private Schema createSchemaWithDecimalColumns() {
-    ArrayList<ColumnSchema> columns = new ArrayList<ColumnSchema>();
-    columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.DECIMAL).key(true)
-        .typeAttributes(
-            new ColumnTypeAttributesBuilder()
-                .precision(org.apache.kudu.util.DecimalUtil.MAX_DECIMAL64_PRECISION).build()
-        ).build());
-    columns.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.DECIMAL).nullable(true)
-        .typeAttributes(
-            new ColumnTypeAttributesBuilder()
-                .precision(org.apache.kudu.util.DecimalUtil.MAX_DECIMAL128_PRECISION).build()
-        ).build());
-    return new Schema(columns);
-  }
-
-  private static CreateTableOptions createTableOptions() {
-    return new CreateTableOptions().setRangePartitionColumns(ImmutableList.of("key"));
   }
 
   /**
@@ -288,7 +246,7 @@ public class TestKuduClient extends BaseKuduTest {
   @Test(timeout = 100000)
   public void testStrings() throws Exception {
     Schema schema = createManyStringsSchema();
-    syncClient.createTable(tableName, schema, createTableOptions());
+    syncClient.createTable(tableName, schema, getBasicCreateTableOptions());
 
     KuduSession session = syncClient.newSession();
     KuduTable table = syncClient.openTable(tableName);
@@ -342,7 +300,7 @@ public class TestKuduClient extends BaseKuduTest {
   @Test(timeout = 100000)
   public void testUTF8() throws Exception {
     Schema schema = createManyStringsSchema();
-    syncClient.createTable(tableName, schema, createTableOptions());
+    syncClient.createTable(tableName, schema, getBasicCreateTableOptions());
 
     KuduSession session = syncClient.newSession();
     KuduTable table = syncClient.openTable(tableName);
@@ -369,7 +327,7 @@ public class TestKuduClient extends BaseKuduTest {
   @Test(timeout = 100000)
   public void testBinaryColumns() throws Exception {
     Schema schema = createSchemaWithBinaryColumns();
-    syncClient.createTable(tableName, schema, createTableOptions());
+    syncClient.createTable(tableName, schema, getBasicCreateTableOptions());
 
     byte[] testArray = new byte[] {1, 2, 3, 4, 5, 6 ,7, 8, 9};
 
@@ -412,7 +370,7 @@ public class TestKuduClient extends BaseKuduTest {
   @Test(timeout = 100000)
   public void testTimestampColumns() throws Exception {
     Schema schema = createSchemaWithTimestampColumns();
-    syncClient.createTable(tableName, schema, createTableOptions());
+    syncClient.createTable(tableName, schema, getBasicCreateTableOptions());
 
     List<Long> timestamps = new ArrayList<>();
 
@@ -460,7 +418,7 @@ public class TestKuduClient extends BaseKuduTest {
   @Test(timeout = 100000)
   public void testDecimalColumns() throws Exception {
     Schema schema = createSchemaWithDecimalColumns();
-    syncClient.createTable(tableName, schema, createTableOptions());
+    syncClient.createTable(tableName, schema, getBasicCreateTableOptions());
 
     KuduSession session = syncClient.newSession();
     KuduTable table = syncClient.openTable(tableName);
@@ -549,7 +507,7 @@ public class TestKuduClient extends BaseKuduTest {
   @Test
   public void testScanWithPredicates() throws Exception {
     Schema schema = createManyStringsSchema();
-    syncClient.createTable(tableName, schema, createTableOptions());
+    syncClient.createTable(tableName, schema, getBasicCreateTableOptions());
 
     KuduSession session = syncClient.newSession();
     session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_BACKGROUND);
@@ -1036,7 +994,7 @@ public class TestKuduClient extends BaseKuduTest {
 
   @Test(timeout = 100000)
   public void testOpenTableClearsNonCoveringRangePartitions() throws KuduException {
-    CreateTableOptions options = createTableOptions();
+    CreateTableOptions options = getBasicCreateTableOptions();
     PartialRow lower = basicSchema.newPartialRow();
     PartialRow upper = basicSchema.newPartialRow();
     lower.addInt("key", 0);
@@ -1080,7 +1038,7 @@ public class TestKuduClient extends BaseKuduTest {
   @Test(timeout = 100000)
   public void testCreateTableWithConcurrentInsert() throws Exception {
     KuduTable table = syncClient.createTable(
-        tableName, createManyStringsSchema(), createTableOptions().setWait(false));
+        tableName, createManyStringsSchema(), getBasicCreateTableOptions().setWait(false));
 
     // Insert a row.
     //
@@ -1104,7 +1062,7 @@ public class TestKuduClient extends BaseKuduTest {
   public void testCreateTableWithConcurrentAlter() throws Exception {
     // Kick off an asynchronous table creation.
     Deferred<KuduTable> d = client.createTable(tableName,
-        createManyStringsSchema(), createTableOptions());
+        createManyStringsSchema(), getBasicCreateTableOptions());
 
     // Rename the table that's being created to make sure it doesn't interfere
     // with the "wait for all tablets to be created" behavior of createTable().
@@ -1164,7 +1122,7 @@ public class TestKuduClient extends BaseKuduTest {
                               final ReplicaSelection replicaSelection)
           throws Exception {
     Schema schema = createManyStringsSchema();
-    syncClient.createTable(tableName, schema, createTableOptions());
+    syncClient.createTable(tableName, schema, getBasicCreateTableOptions());
 
     final int tasksNum = 4;
     List<Callable<Void>> callables = new ArrayList<>();

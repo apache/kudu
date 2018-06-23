@@ -1,3 +1,20 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
 package org.apache.kudu.util;
 
 import com.google.common.collect.ImmutableList;
@@ -5,6 +22,7 @@ import com.google.common.collect.Lists;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.ColumnTypeAttributes;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.client.AsyncKuduClient;
@@ -240,5 +258,46 @@ public abstract class ClientTestUtil {
     }
     session.close().join(timeoutMs);
     return table;
+  }
+
+  public static Schema createManyStringsSchema() {
+    ArrayList<ColumnSchema> columns = new ArrayList<ColumnSchema>(4);
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.STRING).key(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.STRING).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c2", Type.STRING).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c3", Type.STRING).nullable(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c4", Type.STRING).nullable(true).build());
+    return new Schema(columns);
+  }
+
+  public static Schema createSchemaWithBinaryColumns() {
+    ArrayList<ColumnSchema> columns = new ArrayList<ColumnSchema>();
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.BINARY).key(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.STRING).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c2", Type.DOUBLE).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c3", Type.BINARY).nullable(true).build());
+    return new Schema(columns);
+  }
+
+  public static Schema createSchemaWithTimestampColumns() {
+    ArrayList<ColumnSchema> columns = new ArrayList<ColumnSchema>();
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.UNIXTIME_MICROS).key(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.UNIXTIME_MICROS).nullable(true).build());
+    return new Schema(columns);
+  }
+
+  public static Schema createSchemaWithDecimalColumns() {
+    ArrayList<ColumnSchema> columns = new ArrayList<ColumnSchema>();
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.DECIMAL).key(true)
+        .typeAttributes(
+            new ColumnTypeAttributes.ColumnTypeAttributesBuilder()
+                .precision(DecimalUtil.MAX_DECIMAL64_PRECISION).build()
+        ).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.DECIMAL).nullable(true)
+        .typeAttributes(
+            new ColumnTypeAttributes.ColumnTypeAttributesBuilder()
+                .precision(DecimalUtil.MAX_DECIMAL128_PRECISION).build()
+        ).build());
+    return new Schema(columns);
   }
 }
