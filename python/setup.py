@@ -194,7 +194,7 @@ setup(
     #
     # See https://docs.pytest.org/en/latest/changelog.html#id164 and
     # https://pypi.org/project/pytest-timeout/#id5 for more details.
-    tests_require=['pytest >=2.8,<3.3', 'pytest-timeout >=1.1.0,<1.2.1'],
+    tests_require=['pytest >=2.8,<3.3', 'pytest-timeout >=1.1.0,<1.2.1', 'pandas <0.21'],
     install_requires=['cython >= 0.21', 'pytz', 'six'],
     description=DESCRIPTION,
     long_description=LONG_DESCRIPTION,

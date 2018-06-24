@@ -46,6 +46,12 @@ IF PYKUDU_INT128_SUPPORTED == 1:
 ELSE:
     CLIENT_SUPPORTS_DECIMAL = False
 
+try:
+    import pandas
+    CLIENT_SUPPORTS_PANDAS = True
+except ImportError:
+    CLIENT_SUPPORTS_PANDAS = False
+
 # Replica selection enums
 LEADER_ONLY = ReplicaSelection_Leader
 CLOSEST_REPLICA = ReplicaSelection_Closest
@@ -109,6 +115,26 @@ def _check_convert_range_bound_type(bound):
         except KeyError:
             invalid_bound_type(bound)
 
+def _correct_pandas_data_type(dtype):
+    """
+    This method returns the correct Pandas data type for some data types that
+    are converted incorrectly by Pandas.
+
+    Returns
+    -------
+    pdtype : type
+    """
+    import numpy as np
+    if dtype == "int8":
+        return np.int8
+    if dtype == "int16":
+        return np.int16
+    if dtype == "int32":
+        return np.int32
+    if dtype == "float":
+        return np.float32
+    else:
+        return None
 
 cdef class TimeDelta:
     """
@@ -1970,6 +1996,18 @@ cdef class Scanner:
 
         return tuples
 
+    def xbatches(self):
+        """
+        This method acts as a generator to enable more effective memory management
+        by yielding batches of tuples.
+        """
+
+        self.ensure_open()
+
+        while self.has_more_rows():
+            yield self.next_batch().as_tuples()
+
+
     def read_next_batch_tuples(self):
         return self.next_batch().as_tuples()
 
@@ -2058,6 +2096,57 @@ cdef class Scanner:
         resources on the server.
         """
         self.scanner.Close()
+
+    def to_pandas(self, index=None, coerce_float=False):
+        """
+        Returns the contents of this Scanner to a Pandas DataFrame.
+
+        This is only available if Pandas is installed.
+
+        Note: This should only be used if the results from the scanner are expected
+        to be small, as Pandas will load the entire contents into memory.
+
+        Parameters
+        ----------
+        index : string, list of fields
+            Field or list of fields to use as the index
+        coerce_float : boolean
+            Attempt to convert decimal values to floating point (double precision).
+
+        Returns
+        -------
+        dataframe : DataFrame
+        """
+        import pandas as pd
+
+        self.ensure_open()
+
+        # Here we are using list comprehension with the batch generator to avoid
+        # doubling our memory footprint.
+        dfs = [ pd.DataFrame.from_records(batch,
+                                          index=index,
+                                          coerce_float=coerce_float,
+                                          columns=self.get_projection_schema().names)
+                for batch in self.xbatches()
+                if len(batch) != 0
+                ]
+
+        df = pd.concat(dfs, ignore_index=not(bool(index)))
+
+        types = {}
+        for column in self.get_projection_schema():
+            pandas_type = _correct_pandas_data_type(column.type.name)
+
+            if pandas_type is not None and \
+                not(column.nullable and df[column.name].isnull().any()):
+                types[column.name] = pandas_type
+
+        for col, dtype in types.items():
+            df[col] = df[col].astype(dtype, copy=False)
+
+        return df
+
+
 
 
 cdef class ScanToken:

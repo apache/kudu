@@ -24,6 +24,7 @@ from kudu.tests.common import KuduTestBase, TimeoutError
 import kudu
 import datetime
 import time
+import pytest
 
 
 class TestScanner(TestScanBase):
@@ -326,3 +327,63 @@ class TestScanner(TestScanBase):
             scanner.open()
             self.assertEqual(sorted(scanner.read_all_tuples()),
                              sorted(self.tuples))
+
+    def test_scanner_to_pandas_types(self):
+        """
+        This test confirms that data types are converted as expected to Pandas.
+        """
+        import numpy as np
+        scanner = self.type_table.scanner()
+        df = scanner.to_pandas()
+        types = df.dtypes
+
+        if kudu.CLIENT_SUPPORTS_DECIMAL:
+            self.assertEqual(types[0], np.int64)
+            self.assertEqual(types[1], 'datetime64[ns, UTC]')
+            self.assertEqual(types[2], np.object)
+            self.assertEqual(types[3], np.object)
+            self.assertEqual(types[4], np.bool)
+            self.assertEqual(types[5], np.float64)
+            self.assertEqual(types[6], np.int8)
+            self.assertEqual(types[7], np.object)
+            self.assertEqual(types[8], np.float32)
+        else:
+            self.assertEqual(types[0], np.int64)
+            self.assertEqual(types[1], 'datetime64[ns, UTC]')
+            self.assertEqual(types[3], np.object)
+            self.assertEqual(types[4], np.bool)
+            self.assertEqual(types[5], np.float64)
+            self.assertEqual(types[6], np.int8)
+            self.assertEqual(types[7], np.object)
+            self.assertEqual(types[8], np.float32)
+
+    def test_scanner_to_pandas_row_count(self):
+        """
+        This test confirms that the record counts match between Pandas and the scanner.
+        """
+        scanner = self.type_table.scanner()
+        scanner_count = len(scanner.read_all_tuples())
+        scanner = self.type_table.scanner()
+        df = scanner.to_pandas()
+        self.assertEqual(scanner_count, df.shape[0])
+
+    def test_scanner_to_pandas_index(self):
+        """
+        This test confirms that an index is correctly applied.
+        """
+        scanner = self.type_table.scanner()
+        df = scanner.to_pandas(index='key')
+        self.assertEqual(df.index.name, 'key')
+        self.assertEqual(list(df.index), [1, 2])
+
+    @pytest.mark.skipif(not(kudu.CLIENT_SUPPORTS_DECIMAL),
+                        reason="Decimal is not supported on this client.")
+    def test_scanner_to_pandas_index(self):
+        """
+        This test confirms that a decimal column is coerced to a double when specified.
+        """
+        import numpy as np
+        scanner = self.type_table.scanner()
+        df = scanner.to_pandas(coerce_float=True)
+        types = df.dtypes
+        self.assertEqual(types[2], np.float64)

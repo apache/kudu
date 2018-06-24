@@ -30,7 +30,8 @@ from kudu.client import (Client, Table, Scanner, Session,  # noqa
                          READ_YOUR_WRITES,
                          EXCLUSIVE_BOUND,
                          INCLUSIVE_BOUND,
-                         CLIENT_SUPPORTS_DECIMAL)
+                         CLIENT_SUPPORTS_DECIMAL,
+                         CLIENT_SUPPORTS_PANDAS)
 
 from kudu.errors import (KuduException, KuduBadStatus, KuduNotFound,  # noqa
                          KuduNotSupported,
