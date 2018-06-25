@@ -20,9 +20,8 @@
 #include <algorithm>
 #include <cstdint>
 #include <iostream>
-#include <limits>
+#include <iterator>
 #include <map>
-#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -35,11 +34,11 @@
 #include "kudu/tools/rebalance_algo.h"
 #include "kudu/util/test_macros.h"
 
-using std::numeric_limits;
+using std::inserter;
 using std::ostream;
-using std::set;
 using std::sort;
 using std::string;
+using std::transform;
 using std::vector;
 using strings::Substitute;
 
@@ -121,16 +120,74 @@ KsckResults GenerateKsckResults(KsckResultsInput input) {
   return results;
 }
 
+// The order of the key-value pairs whose keys compare equivalent is the order
+// of insertion and does not change. Since the insertion order is not
+// important for the comparison with the reference results, this comparison
+// operator normalizes both the 'lhs' and 'rhs', so the comparison operator
+// compares only the contents of the 'servers_by_replica_count', not the order
+// of the elements.
+bool HasSameContents(const ServersByCountMap& lhs,
+                     const ServersByCountMap& rhs) {
+  if (lhs.size() != rhs.size()) {
+    return false;
+  }
+
+  auto it_lhs = lhs.begin();
+  auto it_rhs = rhs.begin();
+  for (; it_lhs != lhs.end() && it_rhs != rhs.end(); ) {
+    auto key_lhs = it_lhs->first;
+    auto key_rhs = it_rhs->first;
+    if (key_lhs != key_rhs) {
+      return false;
+    }
+
+    auto eq_range_lhs = lhs.equal_range(key_lhs);
+    auto eq_range_rhs = rhs.equal_range(key_rhs);
+
+    vector<string> lhs_values;
+    {
+      transform(eq_range_lhs.first, eq_range_lhs.second,
+                inserter(lhs_values, lhs_values.begin()),
+                [](const ServersByCountMap::value_type& elem) {
+                  return elem.second;
+                });
+      sort(lhs_values.begin(), lhs_values.end());
+    }
+
+    vector<string> rhs_values;
+    {
+      transform(eq_range_rhs.first, eq_range_rhs.second,
+                inserter(rhs_values, rhs_values.begin()),
+                [](const ServersByCountMap::value_type& elem) {
+                  return elem.second;
+                });
+      sort(rhs_values.begin(), rhs_values.end());
+    }
+
+    if (lhs_values != rhs_values) {
+      return false;
+    }
+
+    // Advance the iterators to continue with next key.
+    it_lhs = eq_range_lhs.second;
+    it_rhs = eq_range_rhs.second;
+  }
+
+  return true;
+}
+
 } // anonymous namespace
 
 bool operator==(const TableBalanceInfo& lhs, const TableBalanceInfo& rhs) {
-  return lhs.servers_by_replica_count == rhs.servers_by_replica_count;
+  return HasSameContents(lhs.servers_by_replica_count,
+                         rhs.servers_by_replica_count);
 }
 
 bool operator==(const ClusterBalanceInfo& lhs, const ClusterBalanceInfo& rhs) {
   return
       lhs.table_info_by_skew == rhs.table_info_by_skew &&
-      lhs.servers_by_total_replica_count == rhs.servers_by_total_replica_count;
+      HasSameContents(lhs.servers_by_total_replica_count,
+                      rhs.servers_by_total_replica_count);
 }
 
 ostream& operator<<(ostream& s, const ClusterBalanceInfo& info) {
@@ -159,7 +216,7 @@ TEST(KuduKsckRebalanceTest, KsckResultsToClusterBalanceInfo) {
       {},
       {}
     },
-    // Simple one tserver, one table, one tablet, RF=1.
+    // One tserver, one table, one tablet, RF=1.
     {
       {
         { { "ts_0" }, },
