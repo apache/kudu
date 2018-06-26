@@ -268,9 +268,15 @@ TEST_F(MasterHmsTest, TestRenameTable) {
   external_table.tableName = "b";
   ASSERT_OK(hms_client_->CreateTable(external_table));
 
-  // Attempt to rename the Kudu table to the external table name.
+  // Attempt to rename the Kudu table to the same name.
   unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer("db.a"));
-  Status s = table_alterer->RenameTo("db.b")->Alter();
+  Status s = table_alterer->RenameTo("db.a")->Alter();
+  ASSERT_TRUE(s.IsAlreadyPresent()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "a already exists");
+
+  // Attempt to rename the Kudu table to the external table name.
+  table_alterer.reset(client_->NewTableAlterer("db.a"));
+  s = table_alterer->RenameTo("db.b")->Alter();
   ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "b already exists");
 

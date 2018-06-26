@@ -804,6 +804,12 @@ TEST_F(AlterTableTest, TestRenameTableAndAdd) {
   ASSERT_OK(AddNewI32Column(new_name, "new", 0xdeadbeef));
 }
 
+TEST_F(AlterTableTest, TestRenameToSameName) {
+  unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+  Status s = table_alterer->RenameTo(kTableName)->Alter();
+  ASSERT_TRUE(s.IsAlreadyPresent()) << s.ToString();
+}
+
 // Test restarting a tablet server several times after various
 // schema changes.
 // This is a regression test for KUDU-462.

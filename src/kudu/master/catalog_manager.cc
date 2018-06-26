@@ -2149,6 +2149,18 @@ Status CatalogManager::AlterTableRpc(const AlterTableRequestPB& req,
     RETURN_NOT_OK(FindAndLockTable(req, resp, LockMode::READ, &table, &l));
     RETURN_NOT_OK(CheckIfTableDeletedOrNotRunning(&l, resp));
 
+    // The HMS allows renaming a table to the same name (ALTER TABLE t RENAME TO t;),
+    // however Kudu does not, so we must validate this case ourselves. This
+    // invariant is also checked in CatalogManager::AlterTable, but when the HMS
+    // integration is enabled that check does not bubble up to the client (it's
+    // called by the notification log listener).
+    if (l.data().name() == req.new_table_name()) {
+      return SetupError(
+          Status::AlreadyPresent(Substitute("table $0 already exists with id $1",
+              req.new_table_name(), table->id())),
+          resp, MasterErrorPB::TABLE_ALREADY_PRESENT);
+    }
+
     Schema schema;
     RETURN_NOT_OK(SchemaFromPB(l.data().pb.schema(), &schema));
 
