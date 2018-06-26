@@ -6,7 +6,8 @@
 // "License"); you may not use this file except in compliance
 // with the License.  You may obtain a copy of the License at
 //
-//   http://www.apache.org/licenses/LICENSE-2.0 //
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
 // Unless required by applicable law or agreed to in writing,
 // software distributed under the License is distributed on an
 // "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -27,8 +28,10 @@ import java.util.concurrent.TimeUnit;
 import com.google.common.base.Stopwatch;
 import com.google.common.net.HostAndPort;
 import com.stumbleupon.async.Deferred;
+import org.apache.kudu.junit.RetryRule;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -61,6 +64,17 @@ public class BaseKuduTest {
   protected KuduClient syncClient;
   protected static final Schema basicSchema = getBasicSchema();
   protected static final Schema allTypesSchema = getSchemaWithAllTypes();
+
+  // Add a rule to rerun tests. We use this with Gradle because it doesn't support
+  // Surefire/Failsafe rerunFailingTestsCount like Maven does. We use the system
+  // property rerunFailingTestsCount to mimic the maven arguments closely.
+  private static final String RETRY_PROPERTY_NAME = "rerunFailingTestsCount";
+  private static final int DEFAULT_RETRY_COUNT = 0;
+  private static final String retryPropVal = System.getProperty(RETRY_PROPERTY_NAME);
+  private static final int retryCount =
+      retryPropVal != null ? Integer.parseInt(retryPropVal) : DEFAULT_RETRY_COUNT;
+  @Rule
+  public RetryRule retryRule = new RetryRule(retryCount);
 
   @Before
   public void setUpBase() throws Exception {

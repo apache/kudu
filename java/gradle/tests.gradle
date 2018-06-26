@@ -57,6 +57,9 @@ tasks.withType(Test) {
   systemProperty "java.net.preferIPv4Stack", true
   systemProperty "java.security.egd", "file:/dev/urandom" // Improve RNG generation speed.
 
+  // Set rerunFailingTestsCount for use in BaseKuduTest.java to rerun failing tests
+  systemProperty "rerunFailingTestsCount", propertyWithDefault("rerunFailingTestsCount", 0)
+
   // Don't fail the build if a --tests filter doesn't match any tests.
   // This is useful for filtering tests from the top of the project where some
   // subprojects won't match the filter. Without this, those subprojects would fail.

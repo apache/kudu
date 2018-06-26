@@ -389,7 +389,7 @@ if [ "$BUILD_JAVA" == "1" ]; then
 
   # Run the full Gradle build.
   if [ "$BUILD_GRADLE" == "1" ]; then
-     GRADLE_FLAGS="$GRADLE_FLAGS --console=plain --no-daemon"
+     GRADLE_FLAGS="$GRADLE_FLAGS --console=plain --no-daemon -DrerunFailingTestsCount=3"
      # TODO: Run `gradle check` in BUILD_TYPE DEBUG when static code analysis is fixed
      if ! ./gradlew $GRADLE_FLAGS clean test integrationTest ; then
        EXIT_STATUS=1
