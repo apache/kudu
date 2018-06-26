@@ -325,6 +325,21 @@ TEST_F(MasterHmsTest, TestRenameTable) {
   ASSERT_OK(hms_client_->GetAllTables("db", &tables));
   std::sort(tables.begin(), tables.end());
   ASSERT_EQ(tables, vector<string>({ "b", "d" })) << tables;
+
+  // Regression test for HIVE-19569
+  // If HIVE-19569 is in effect the rename across databases will result in DROP
+  // TABLE and CREATE TABLE events, which will cause the notification log
+  // listener to drop the table. The alter will succeed (see KUDU-2475), but the
+  // subsequent checks will fail, since the table will be deleted.
+  ASSERT_OK(CreateDatabase("db1"));
+  ASSERT_OK(CreateDatabase("db2"));
+  ASSERT_OK(CreateKuduTable("db1", "t1"));
+  NO_FATALS(CheckTable("db1", "t1"));
+  table_alterer.reset(client_->NewTableAlterer("db1.t1"));
+  ASSERT_OK(table_alterer->RenameTo("db2.t2")->Alter());
+  NO_FATALS(CheckTable("db2", "t2"));
+  NO_FATALS(CheckTableDoesNotExist("db1", "t1"));
+  NO_FATALS(CheckTableDoesNotExist("db1", "t2"));
 }
 
 TEST_F(MasterHmsTest, TestAlterTable) {
