@@ -28,13 +28,13 @@ repositories {
 // Manage plugin dependencies since the plugin block can't be used in included build scripts yet.
 // For more details see: https://docs.gradle.org/current/userguide/plugins.html#plugins_dsl_limitations
 dependencies {
-  compile "com.commercehub.gradle.plugin:gradle-avro-plugin:0.14.0"
-  compile "com.github.ben-manes:gradle-versions-plugin:0.17.0"
-  compile "com.github.jengelman.gradle.plugins:shadow:2.0.3"
+  compile "com.commercehub.gradle.plugin:gradle-avro-plugin:0.14.2"
+  compile "com.github.ben-manes:gradle-versions-plugin:0.20.0"
+  compile "com.github.jengelman.gradle.plugins:shadow:2.0.4"
   compile "com.google.protobuf:protobuf-gradle-plugin:0.8.5"
-  compile "com.netflix.nebula:nebula-clojure-plugin:5.0.6"
-  compile "gradle.plugin.com.github.spotbugs:spotbugs-gradle-plugin:1.6.1"
+  compile "com.netflix.nebula:nebula-clojure-plugin:5.1.0"
+  compile "gradle.plugin.com.github.spotbugs:spotbugs-gradle-plugin:1.6.2"
   compile "io.spring.gradle:propdeps-plugin:0.0.9.RELEASE"
-  compile "net.ltgt.gradle:gradle-errorprone-plugin:0.0.13"
+  compile "net.ltgt.gradle:gradle-errorprone-plugin:0.0.14"
   compile "ru.vyarus:gradle-animalsniffer-plugin:1.4.3"
 }

@@ -20,7 +20,7 @@
 // Ensure the wrapper script is generated based on the version defined in the project
 // and not the version installed on the machine running the task.
 // Read more about the wrapper here: https://docs.gradle.org/current/userguide/gradle_wrapper.html
-task wrapper(type: Wrapper) {
+wrapper {
   gradleVersion = versions.gradle
 }
 

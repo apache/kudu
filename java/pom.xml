@@ -72,7 +72,7 @@
         <commons-io.version>2.6</commons-io.version>
         <flume.version>1.8.0</flume.version>
 
-        <guava.version>24.1-android</guava.version>
+        <guava.version>25.1-android</guava.version>
         <hadoop.version>3.1.0</hadoop.version>
         <hamcrest-core.version>1.3</hamcrest-core.version>
         <hive.version>2.3.3</hive.version>
@@ -80,16 +80,11 @@
         <jsr305.version>3.0.2</jsr305.version>
         <junit.version>4.12</junit.version>
         <log4j.version>1.2.17</log4j.version>
-        <mockito-core.version>2.18.0</mockito-core.version>
+        <mockito-core.version>2.19.0</mockito-core.version>
         <murmur.version>1.0.0</murmur.version>
         <netty.version>3.10.6.Final</netty.version>
-        <parquet.version>1.9.0</parquet.version>
-        <!-- Upgrading protobuf breaks el6 compatibility
-             https://github.com/google/protobuf/issues/4109 -->
-        <protobuf.version>3.5.1</protobuf.version>
-        <!--  This is a workaround for
-              https://github.com/google/protobuf/issues/4109 -->
-        <protoc.version>3.5.1-1</protoc.version>
+        <parquet.version>1.10.0</parquet.version>
+        <protobuf.version>3.6.0</protobuf.version>
         <scopt.version>3.7.0</scopt.version>
         <slf4j.version>1.7.25</slf4j.version>
         <sparkavro.version>4.0.0</sparkavro.version>
@@ -99,7 +94,7 @@
         <scala.binary.version>2.11</scala.binary.version>
         <scala.version>2.11.12</scala.version>
         <scalatest.version>3.0.5</scalatest.version>
-        <spark.version>2.3.0</spark.version>
+        <spark.version>2.3.1</spark.version>
         <spark.version.label>spark2</spark.version.label>
 
         <!-- Misc variables -->
