@@ -76,7 +76,11 @@ using kudu::consensus::COMMITTED_OPID;
 using kudu::consensus::ConsensusStatePB;
 using kudu::consensus::EXCLUDE_HEALTH_REPORT;
 using kudu::consensus::OpId;
+using kudu::itest::FindTabletFollowers;
+using kudu::itest::FindTabletLeader;
 using kudu::itest::GetConsensusState;
+using kudu::itest::StartElection;
+using kudu::itest::WaitUntilLeader;
 using kudu::itest::TabletServerMap;
 using kudu::itest::TServerDetails;
 using kudu::itest::WAIT_FOR_LEADER;
@@ -353,7 +357,7 @@ INSTANTIATE_TEST_CASE_P(EnableKudu1097AndDownTS, MoveTabletParamTest,
 
 Status RunUnsafeChangeConfig(const string& tablet_id,
                              const string& dst_host,
-                             vector<string> peer_uuid_list) {
+                             const vector<string>& peer_uuid_list) {
   vector<string> command_args = {
       "remote_replica",
       "unsafe_change_config",
@@ -510,8 +514,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigOnSingleLeader) {
   const string& leader_addr = Substitute("$0:$1",
                                          leader_ts->registration.rpc_addresses(0).host(),
                                          leader_ts->registration.rpc_addresses(0).port());
-  vector<string> peer_uuid_list;
-  peer_uuid_list.push_back(leader_ts->uuid());
+  const vector<string> peer_uuid_list = { leader_ts->uuid() };
   ASSERT_OK(RunUnsafeChangeConfig(tablet_id_, leader_addr, peer_uuid_list));
 
   // Check that new config is populated to a new follower.
@@ -592,9 +595,8 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigForConfigWithTwoNodes) {
   const string& follower1_addr = Substitute("$0:$1",
                                             followers[1]->registration.rpc_addresses(0).host(),
                                             followers[1]->registration.rpc_addresses(0).port());
-  vector<string> peer_uuid_list;
-  peer_uuid_list.push_back(followers[0]->uuid());
-  peer_uuid_list.push_back(followers[1]->uuid());
+  const vector<string> peer_uuid_list = { followers[0]->uuid(),
+                                          followers[1]->uuid(), };
   ASSERT_OK(RunUnsafeChangeConfig(tablet_id_, follower1_addr, peer_uuid_list));
 
   // Find a remaining node which will be picked for re-replication.
@@ -685,9 +687,8 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigWithFiveReplicaConfig) {
   const string& follower1_addr = Substitute("$0:$1",
                                          followers[1]->registration.rpc_addresses(0).host(),
                                          followers[1]->registration.rpc_addresses(0).port());
-  vector<string> peer_uuid_list;
-  peer_uuid_list.push_back(followers[0]->uuid());
-  peer_uuid_list.push_back(followers[1]->uuid());
+  const vector<string> peer_uuid_list = { followers[0]->uuid(),
+                                          followers[1]->uuid(), };
   ASSERT_OK(RunUnsafeChangeConfig(tablet_id_, follower1_addr, peer_uuid_list));
 
   // Find a remaining node which will be picked for re-replication.
@@ -777,8 +778,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigLeaderWithPendingConfig) {
   const string& leader_addr = Substitute("$0:$1",
                                          leader_ts->registration.rpc_addresses(0).host(),
                                          leader_ts->registration.rpc_addresses(0).port());
-  vector<string> peer_uuid_list;
-  peer_uuid_list.push_back(leader_ts->uuid());
+  const vector<string> peer_uuid_list = { leader_ts->uuid() };
   ASSERT_OK(RunUnsafeChangeConfig(tablet_id_, leader_addr, peer_uuid_list));
 
   // Restart master to cleanup cache of dead servers from its list of candidate
@@ -889,8 +889,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigFollowerWithPendingConfig) {
   const string& leader_addr = Substitute("$0:$1",
                                          leader_ts->registration.rpc_addresses(0).host(),
                                          leader_ts->registration.rpc_addresses(0).port());
-  vector<string> peer_uuid_list;
-  peer_uuid_list.push_back(leader_ts->uuid());
+  const vector<string> peer_uuid_list = { leader_ts->uuid() };
   ASSERT_OK(RunUnsafeChangeConfig(tablet_id_, leader_addr, peer_uuid_list));
 
   // Find a remaining node which will be picked for re-replication.
@@ -979,8 +978,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigWithPendingConfigsOnWAL) {
   const string& leader_addr = Substitute("$0:$1",
                                          leader_ts->registration.rpc_addresses(0).host(),
                                          leader_ts->registration.rpc_addresses(0).port());
-  vector<string> peer_uuid_list;
-  peer_uuid_list.push_back(leader_ts->uuid());
+  const vector<string> peer_uuid_list = { leader_ts->uuid() };
   ASSERT_OK(RunUnsafeChangeConfig(tablet_id_, leader_addr, peer_uuid_list));
 
   // Inject the crash via fault_crash_before_cmeta_flush flag.
@@ -1068,21 +1066,22 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigWithMultiplePendingConfigs) {
   LOG(INFO) << "Tablet locations:\n" << SecureDebugString(tablet_locations);
   ASSERT_TRUE(has_leader) << SecureDebugString(tablet_locations);
 
-  // Wait for initial NO_OP to be committed by the leader.
   TServerDetails* leader_ts;
   ASSERT_OK(FindTabletLeader(active_tablet_servers, tablet_id_, kTimeout, &leader_ts));
-  ASSERT_OK(WaitUntilCommittedOpIdIndexIs(1, leader_ts, tablet_id_, kTimeout));
   vector<TServerDetails*> followers;
-  ASSERT_OK(FindTabletFollowers(active_tablet_servers, tablet_id_, kTimeout, &followers));
-  ASSERT_EQ(followers.size(), 4);
-  for (int i = 0; i < followers.size(); i++) {
-    cluster_->tablet_server_by_uuid(followers[i]->uuid())->Shutdown();
+  for (const auto& elem : active_tablet_servers) {
+    if (elem.first == leader_ts->uuid()) {
+      continue;
+    }
+    followers.push_back(elem.second);
+    cluster_->tablet_server_by_uuid(elem.first)->Shutdown();
   }
+  ASSERT_EQ(4, followers.size());
+
   // Shutdown master to cleanup cache of dead servers from its list of candidate
   // servers to trigger placement of new replicas on healthy servers when we restart later.
   cluster_->master()->Shutdown();
 
-  LOG(INFO) << "Forcing unsafe config change on tserver " << followers[1]->uuid();
   const string& leader_addr = Substitute("$0:$1",
                                          leader_ts->registration.rpc_addresses(0).host(),
                                          leader_ts->registration.rpc_addresses(0).port());
