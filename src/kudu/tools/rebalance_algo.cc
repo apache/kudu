@@ -118,8 +118,18 @@ Status RebalancingAlgo::GetNextMoves(const ClusterBalanceInfo& cluster_info,
     max_moves_num = std::numeric_limits<decltype(max_moves_num)>::max();
   }
   moves->clear();
-  if (cluster_info.table_info_by_skew.empty() &&
-      cluster_info.servers_by_total_replica_count.empty()) {
+
+  if (cluster_info.table_info_by_skew.empty()) {
+    // Check for the consistency of the 'cluster_info' parameter: if no
+    // information is given on the table skew, table count for all the tablet
+    // servers should be 0.
+    for (const auto& elem : cluster_info.servers_by_total_replica_count) {
+      if (elem.first != 0) {
+        return Status::InvalidArgument(Substitute(
+            "non-zero table count ($0) on tablet server ($1) while no table "
+            "skew information in ClusterBalanceInfo", elem.first, elem.second));
+      }
+    }
     // Nothing to balance: cluster is empty. Leave 'moves' empty and return.
     return Status::OK();
   }

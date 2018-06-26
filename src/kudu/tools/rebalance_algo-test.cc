@@ -18,6 +18,7 @@
 #include "kudu/tools/rebalance_algo.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <iostream>
 #include <iterator>
 #include <map>
@@ -191,16 +192,37 @@ string TestClusterConfigToDebugString(const TestClusterConfig& cfg) {
 // Test the behavior of the algorithm when no input information is given.
 TEST(RebalanceAlgoUnitTest, EmptyClusterBalanceInfoGetNextMoves) {
   vector<TableReplicaMove> moves;
-  ClusterBalanceInfo info;
+  const ClusterBalanceInfo info;
   ASSERT_OK(TwoDimensionalGreedyAlgo().GetNextMoves(info, 0, &moves));
   EXPECT_TRUE(moves.empty());
+}
+
+// Test the behavior of the algorithm when no tablet skew information
+// is provided in the ClusterBalanceInfo structure.
+TEST(RebalanceAlgoUnitTest, NoTableSkewInClusterBalanceInfoGetNextMoves) {
+  {
+    vector<TableReplicaMove> moves;
+    const ClusterBalanceInfo info = { {}, { { 0, "ts_0" } } };
+    ASSERT_OK(TwoDimensionalGreedyAlgo().GetNextMoves(info, 0, &moves));
+    EXPECT_TRUE(moves.empty());
+  }
+
+  {
+    vector<TableReplicaMove> moves;
+    const ClusterBalanceInfo info = { {}, { { 1, "ts_0" }, } };
+    const auto s = TwoDimensionalGreedyAlgo().GetNextMoves(info, 0, &moves);
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_MATCHES(s.ToString(),
+        "non-zero table count .* on tablet server .* while no table "
+        "skew information in ClusterBalanceInfo");
+  }
 }
 
 // Test the behavior of the internal (non-public) algorithm's method
 // GetNextMove() when no input information is given.
 TEST(RebalanceAlgoUnitTest, EmptyClusterBalanceInfoGetNextMove) {
   boost::optional<TableReplicaMove> move;
-  ClusterBalanceInfo info;
+  const ClusterBalanceInfo info;
   const auto s = TwoDimensionalGreedyAlgo().GetNextMove(info, &move);
   ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
   EXPECT_EQ(boost::none, move);
