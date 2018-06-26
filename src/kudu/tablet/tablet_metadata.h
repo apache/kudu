@@ -291,8 +291,6 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // Updates the cached on-disk size of the tablet superblock.
   Status UpdateOnDiskSize();
 
-  Status ReadSuperBlock(TabletSuperBlockPB *pb);
-
   // Fully replace superblock.
   // Requires 'flush_lock_'.
   Status ReplaceSuperBlockUnlocked(const TabletSuperBlockPB &pb);
