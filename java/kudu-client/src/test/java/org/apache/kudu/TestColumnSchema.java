@@ -21,6 +21,7 @@ import org.apache.kudu.util.DecimalUtil;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotEquals;
 
 public class TestColumnSchema {
 
@@ -35,5 +36,48 @@ public class TestColumnSchema {
     assertEquals("Column name: col1, type: string", col1.toString());
     assertEquals("Column name: col2, type: int64", col2.toString());
     assertEquals("Column name: col3, type: decimal(5, 2)", col3.toString());
+  }
+
+  @Test
+  public void testEquals() {
+    ColumnSchema stringCol1 = new ColumnSchemaBuilder("col1", Type.STRING)
+        .defaultValue("test")
+        .build();
+    // Same instance
+    assertEquals(stringCol1, stringCol1);
+
+    // Same value
+    ColumnSchema stringCol2 = new ColumnSchemaBuilder("col1", Type.STRING)
+        .defaultValue("test")
+        .build();
+    assertEquals(stringCol1, stringCol2);
+
+    // Different by key
+    ColumnSchema isKey = new ColumnSchemaBuilder("col1", Type.STRING)
+        .key(true)
+        .build();
+    assertNotEquals(stringCol1, isKey);
+
+    // Different by type
+    ColumnSchema isInt = new ColumnSchemaBuilder("col1", Type.INT32)
+        .build();
+    assertNotEquals(stringCol1, isInt);
+
+    // Same with type attributes
+    ColumnSchema decCol1 = new ColumnSchemaBuilder("col1", Type.DECIMAL)
+        .typeAttributes(DecimalUtil.typeAttributes(9, 2))
+        .build();
+    ColumnSchema decCol2 = new ColumnSchemaBuilder("col1", Type.DECIMAL)
+        .typeAttributes(DecimalUtil.typeAttributes(9, 2))
+        .build();
+    assertEquals(decCol1, decCol2);
+
+    // Different by type attributes
+    ColumnSchema decCol3 = new ColumnSchemaBuilder("col1", Type.DECIMAL)
+        .typeAttributes(DecimalUtil.typeAttributes(9, 0))
+        .build();
+    assertNotEquals(decCol1, decCol3);
+
+
   }
 }
