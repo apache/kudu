@@ -143,7 +143,7 @@ class ConsensusQueueTest : public KuduTest {
                                const OpId& last_received,
                                const OpId& last_received_current_leader,
                                int last_committed_idx,
-                               bool* more_pending) {
+                               bool* send_more_immediately) {
 
     queue_->TrackPeer(MakePeer(kPeerUuid, RaftPeerPB::VOTER));
     response->set_responder_uuid(kPeerUuid);
@@ -160,7 +160,7 @@ class ConsensusQueueTest : public KuduTest {
     // that our last operation is actually 'last_received'.
     RefuseWithLogPropertyMismatch(response, last_received, last_received_current_leader);
     response->mutable_status()->set_last_committed_idx(last_committed_idx);
-    queue_->ResponseFromPeer(response->responder_uuid(), *response, more_pending);
+    *send_more_immediately = queue_->ResponseFromPeer(response->responder_uuid(), *response);
     request->Clear();
     response->mutable_status()->Clear();
   }
@@ -170,10 +170,10 @@ class ConsensusQueueTest : public KuduTest {
                                ConsensusResponsePB* response,
                                const OpId& last_received,
                                const OpId& last_received_current_leader,
-                               bool* more_pending) {
+                               bool* send_more_immediately) {
     return UpdatePeerWatermarkToOp(request, response, last_received,
                                    last_received_current_leader,
-                                   last_received.index(), more_pending);
+                                   last_received.index(), send_more_immediately);
   }
 
   void RefuseWithLogPropertyMismatch(ConsensusResponsePB* response,
@@ -245,15 +245,15 @@ TEST_F(ConsensusQueueTest, TestStartTrackingAfterStart) {
   ConsensusRequestPB request;
   ConsensusResponsePB response;
   response.set_responder_uuid(kPeerUuid);
-  bool more_pending = false;
+  bool send_more_immediately = false;
 
   // Peer already has some messages, last one being 7.50
   OpId last_received = MakeOpId(7, 50);
   OpId last_received_current_leader = MinimumOpId();
 
   UpdatePeerWatermarkToOp(&request, &response, last_received,
-                          last_received_current_leader, &more_pending);
-  ASSERT_TRUE(more_pending);
+                          last_received_current_leader, &send_more_immediately);
+  ASSERT_TRUE(send_more_immediately);
 
   // Getting a new request should get all operations after 7.50
   vector<ReplicateRefPtr> refs;
@@ -263,8 +263,8 @@ TEST_F(ConsensusQueueTest, TestStartTrackingAfterStart) {
   ASSERT_EQ(50, request.ops_size());
 
   SetLastReceivedAndLastCommitted(&response, request.ops(49).id());
-  queue_->ResponseFromPeer(response.responder_uuid(), response, &more_pending);
-  ASSERT_FALSE(more_pending) << "Queue still had requests pending";
+  send_more_immediately = queue_->ResponseFromPeer(response.responder_uuid(), response);
+  ASSERT_FALSE(send_more_immediately) << "Queue still had requests pending";
 
   // if we ask for a new request, it should come back empty
   ASSERT_OK(queue_->RequestForPeer(kPeerUuid, &request, &refs, &needs_tablet_copy));
@@ -307,10 +307,11 @@ TEST_F(ConsensusQueueTest, TestGetPagedMessages) {
   ConsensusRequestPB request;
   ConsensusResponsePB response;
   response.set_responder_uuid(kPeerUuid);
-  bool more_pending = false;
+  bool send_more_immediately = false;
 
-  UpdatePeerWatermarkToOp(&request, &response, MinimumOpId(), MinimumOpId(), &more_pending);
-  ASSERT_TRUE(more_pending);
+  UpdatePeerWatermarkToOp(&request, &response, MinimumOpId(), MinimumOpId(),
+                          &send_more_immediately);
+  ASSERT_TRUE(send_more_immediately);
 
   // Append the messages after the queue is tracked. Otherwise the ops might
   // get evicted from the cache immediately and the requests below would
@@ -328,8 +329,8 @@ TEST_F(ConsensusQueueTest, TestGetPagedMessages) {
     last = request.ops(request.ops_size() -1).id();
     SetLastReceivedAndLastCommitted(&response, last);
     VLOG(1) << "Faking received up through " << last;
-    queue_->ResponseFromPeer(response.responder_uuid(), response, &more_pending);
-    ASSERT_TRUE(more_pending);
+    send_more_immediately = queue_->ResponseFromPeer(response.responder_uuid(), response);
+    ASSERT_TRUE(send_more_immediately);
   }
   vector<ReplicateRefPtr> refs;
   bool needs_tablet_copy;
@@ -338,8 +339,8 @@ TEST_F(ConsensusQueueTest, TestGetPagedMessages) {
   ASSERT_EQ(1, request.ops_size());
   last = request.ops(request.ops_size() -1).id();
   SetLastReceivedAndLastCommitted(&response, last);
-  queue_->ResponseFromPeer(response.responder_uuid(), response, &more_pending);
-  ASSERT_FALSE(more_pending);
+  send_more_immediately = queue_->ResponseFromPeer(response.responder_uuid(), response);
+  ASSERT_FALSE(send_more_immediately);
 
   // extract the ops from the request to avoid double free
   request.mutable_ops()->ExtractSubrange(0, request.ops_size(), nullptr);
@@ -364,10 +365,10 @@ TEST_F(ConsensusQueueTest, TestPeersDontAckBeyondWatermarks) {
   ConsensusRequestPB request;
   ConsensusResponsePB response;
   response.set_responder_uuid(kPeerUuid);
-  bool more_pending = false;
+  bool send_more_immediately = false;
 
-  UpdatePeerWatermarkToOp(&request, &response, first_msg, MinimumOpId(), &more_pending);
-  ASSERT_TRUE(more_pending);
+  UpdatePeerWatermarkToOp(&request, &response, first_msg, MinimumOpId(), &send_more_immediately);
+  ASSERT_TRUE(send_more_immediately);
 
   // Tracking a peer a new peer should have moved the all replicated watermark back.
   ASSERT_EQ(queue_->GetAllReplicatedIndex(), 0);
@@ -384,8 +385,8 @@ TEST_F(ConsensusQueueTest, TestPeersDontAckBeyondWatermarks) {
   SetLastReceivedAndLastCommitted(&response, request.ops(49).id());
   response.set_responder_term(28);
 
-  queue_->ResponseFromPeer(response.responder_uuid(), response, &more_pending);
-  ASSERT_TRUE(more_pending) << "Queue didn't have anymore requests pending";
+  send_more_immediately = queue_->ResponseFromPeer(response.responder_uuid(), response);
+  ASSERT_TRUE(send_more_immediately) << "Queue didn't have anymore requests pending";
 
   ASSERT_EQ(queue_->GetMajorityReplicatedIndexForTests(), 100);
   ASSERT_EQ(queue_->GetAllReplicatedIndex(), 100);
@@ -399,8 +400,8 @@ TEST_F(ConsensusQueueTest, TestPeersDontAckBeyondWatermarks) {
 
   SetLastReceivedAndLastCommitted(&response, expected);
   response.set_responder_term(expected.term());
-  queue_->ResponseFromPeer(response.responder_uuid(), response, &more_pending);
-  ASSERT_FALSE(more_pending) << "Queue didn't have anymore requests pending";
+  send_more_immediately = queue_->ResponseFromPeer(response.responder_uuid(), response);
+  ASSERT_FALSE(send_more_immediately) << "Queue didn't have anymore requests pending";
 
   WaitForLocalPeerToAckIndex(expected.index());
 
@@ -433,23 +434,23 @@ TEST_F(ConsensusQueueTest, TestQueueAdvancesCommittedIndex) {
   ConsensusResponsePB response;
   response.set_responder_term(1);
 
-  bool more_pending;
+  bool send_more_immediately;
   OpId last_sent = MakeOpId(0, 5);
 
   // Ack the first five operations for peer-1.
   response.set_responder_uuid("peer-1");
   SetLastReceivedAndLastCommitted(&response, last_sent, MinimumOpId().index());
 
-  queue_->ResponseFromPeer(response.responder_uuid(), response, &more_pending);
-  ASSERT_TRUE(more_pending);
+  send_more_immediately = queue_->ResponseFromPeer(response.responder_uuid(), response);
+  ASSERT_TRUE(send_more_immediately);
 
   // Committed index should be the same
   ASSERT_EQ(queue_->GetCommittedIndex(), 0);
 
   // Ack the first five operations for peer-2.
   response.set_responder_uuid("peer-2");
-  queue_->ResponseFromPeer(response.responder_uuid(), response, &more_pending);
-  ASSERT_TRUE(more_pending);
+  send_more_immediately = queue_->ResponseFromPeer(response.responder_uuid(), response);
+  ASSERT_TRUE(send_more_immediately);
 
   // A majority has now replicated up to 0.5: local, 'peer-1', and 'peer-2'.
   ASSERT_EQ(queue_->GetMajorityReplicatedIndexForTests(), 5);
@@ -464,10 +465,10 @@ TEST_F(ConsensusQueueTest, TestQueueAdvancesCommittedIndex) {
   response.set_responder_uuid("peer-3");
   last_sent = MakeOpId(1, 10);
   SetLastReceivedAndLastCommitted(&response, last_sent, MinimumOpId().index());
-  queue_->ResponseFromPeer(response.responder_uuid(), response, &more_pending);
+  send_more_immediately = queue_->ResponseFromPeer(response.responder_uuid(), response);
 
   // peer-3 now has all operations, and the commit index hasn't advanced.
-  EXPECT_FALSE(more_pending);
+  EXPECT_FALSE(send_more_immediately);
 
   // Watermarks should remain the same as above: we still have not majority-replicated
   // anything in the current term, so committed index cannot advance.
@@ -477,8 +478,8 @@ TEST_F(ConsensusQueueTest, TestQueueAdvancesCommittedIndex) {
 
   // Ack the remaining operations for peer-4.
   response.set_responder_uuid("peer-4");
-  queue_->ResponseFromPeer(response.responder_uuid(), response, &more_pending);
-  EXPECT_TRUE(more_pending);
+  send_more_immediately = queue_->ResponseFromPeer(response.responder_uuid(), response);
+  EXPECT_TRUE(send_more_immediately);
 
   // Now that a majority of peers have replicated an operation in the queue's
   // term the committed index should advance.
@@ -525,9 +526,8 @@ TEST_F(ConsensusQueueTest, TestNonVoterAcksDontCountTowardMajority) {
                                   /*last_received=*/ MakeOpId(kCurrentTerm, kNumMessages),
                                   /*last_committed_idx=*/ kNoneCommittedIndex);
 
-  bool more_pending;
-  queue_->ResponseFromPeer(response.responder_uuid(), response, &more_pending);
-  ASSERT_FALSE(more_pending);
+  bool send_more_immediately = queue_->ResponseFromPeer(response.responder_uuid(), response);
+  ASSERT_FALSE(send_more_immediately);
 
   // Committed index should be the same.
   ASSERT_EQ(kNoneCommittedIndex, queue_->GetCommittedIndex());
@@ -535,8 +535,8 @@ TEST_F(ConsensusQueueTest, TestNonVoterAcksDontCountTowardMajority) {
   // 4. Send an identical ack from the 2nd VOTER peer. This should cause the
   // operation to be committed.
   response.set_responder_uuid(kOtherVoterPeer);
-  queue_->ResponseFromPeer(response.responder_uuid(), response, &more_pending);
-  ASSERT_TRUE(more_pending); // The committed index has increased.
+  send_more_immediately = queue_->ResponseFromPeer(response.responder_uuid(), response);
+  ASSERT_TRUE(send_more_immediately); // The committed index has increased.
 
   // The committed index should include the full set of ops now.
   ASSERT_EQ(kNumMessages, queue_->GetCommittedIndex());
@@ -545,8 +545,8 @@ TEST_F(ConsensusQueueTest, TestNonVoterAcksDontCountTowardMajority) {
                                   /*last_received=*/ MakeOpId(kCurrentTerm, kNumMessages),
                                   /*last_committed_idx=*/ kNumMessages);
 
-  queue_->ResponseFromPeer(response.responder_uuid(), response, &more_pending);
-  ASSERT_FALSE(more_pending);
+  send_more_immediately = queue_->ResponseFromPeer(response.responder_uuid(), response);
+  ASSERT_FALSE(send_more_immediately);
 }
 
 // In this test we append a sequence of operations to a log
@@ -580,7 +580,7 @@ TEST_F(ConsensusQueueTest, TestQueueLoadsOperationsForPeer) {
   ConsensusRequestPB request;
   ConsensusResponsePB response;
   response.set_responder_uuid(kPeerUuid);
-  bool more_pending = false;
+  bool send_more_immediately = false;
 
   // The peer will actually be behind the first operation in the queue.
   // In this case about 50 operations before.
@@ -594,10 +594,10 @@ TEST_F(ConsensusQueueTest, TestQueueLoadsOperationsForPeer) {
                                                   &response,
                                                   peers_last_op,
                                                   MinimumOpId(),
-                                                  &more_pending));
+                                                  &send_more_immediately));
 
   // The queue should reply that there are more messages for the peer.
-  ASSERT_TRUE(more_pending);
+  ASSERT_TRUE(send_more_immediately);
 
   // When we get another request for the peer the queue should load
   // the missing operations.
@@ -656,7 +656,7 @@ TEST_F(ConsensusQueueTest, TestQueueHandlesOperationOverwriting) {
   ConsensusResponsePB response;
   vector<ReplicateRefPtr> refs;
   response.set_responder_uuid(kPeerUuid);
-  bool more_pending = false;
+  bool send_more_immediately = false;
 
   queue_->TrackPeer(MakePeer(kPeerUuid, RaftPeerPB::VOTER));
 
@@ -682,11 +682,11 @@ TEST_F(ConsensusQueueTest, TestQueueHandlesOperationOverwriting) {
   error->set_code(ConsensusErrorPB::PRECEDING_ENTRY_DIDNT_MATCH);
   StatusToPB(Status::IllegalState("LMP failed."), error->mutable_status());
 
-  queue_->ResponseFromPeer(response.responder_uuid(), response, &more_pending);
+  send_more_immediately = queue_->ResponseFromPeer(response.responder_uuid(), response);
   request.Clear();
 
   // The queue should reply that there are more operations pending.
-  ASSERT_TRUE(more_pending);
+  ASSERT_TRUE(send_more_immediately);
 
   // We're waiting for a two nodes. The all committed watermark should be
   // 0.0 since we haven't had a successful exchange with the 'remote' peer.
@@ -710,7 +710,8 @@ TEST_F(ConsensusQueueTest, TestQueueHandlesOperationOverwriting) {
   // Now when we respond the watermarks should advance.
   response.mutable_status()->clear_error();
   SetLastReceivedAndLastCommitted(&response, MakeOpId(2, 21), 5);
-  queue_->ResponseFromPeer(response.responder_uuid(), response, &more_pending);
+  send_more_immediately = queue_->ResponseFromPeer(response.responder_uuid(), response);
+  ASSERT_TRUE(send_more_immediately);
 
   // Now the watermark should have advanced.
   ASSERT_EQ(queue_->GetAllReplicatedIndex(), 21);
@@ -797,7 +798,7 @@ TEST_F(ConsensusQueueTest, TestOnlyAdvancesWatermarkWhenPeerHasAPrefixOfOurLog) 
   ConsensusResponsePB response;
   vector<ReplicateRefPtr> refs;
 
-  bool more_pending;
+  bool send_more_immediately;
   // We expect the majority replicated watermark to start at the committed index.
   int64_t expected_majority_replicated = kInitialCommittedIndex;
   // We expect the all replicated watermark to be reset when we track a new peer.
@@ -806,8 +807,9 @@ TEST_F(ConsensusQueueTest, TestOnlyAdvancesWatermarkWhenPeerHasAPrefixOfOurLog) 
   ASSERT_EQ(queue_->GetMajorityReplicatedIndexForTests(), expected_majority_replicated);
   ASSERT_EQ(queue_->GetAllReplicatedIndex(), expected_all_replicated);
 
-  UpdatePeerWatermarkToOp(&request, &response, MakeOpId(75, 49), MinimumOpId(), 31, &more_pending);
-  ASSERT_TRUE(more_pending);
+  UpdatePeerWatermarkToOp(&request, &response, MakeOpId(75, 49), MinimumOpId(), 31,
+                          &send_more_immediately);
+  ASSERT_TRUE(send_more_immediately);
 
   for (int i = 31; i <= 53; i++) {
     if (i <= 45) {
@@ -835,8 +837,8 @@ TEST_F(ConsensusQueueTest, TestOnlyAdvancesWatermarkWhenPeerHasAPrefixOfOurLog) 
   // When the peer acks that it received an operation that is not in our current
   // term, it gets ignored in terms of watermark advancement.
   SetLastReceivedAndLastCommitted(&response, MakeOpId(75, 49), *last_op, 31);
-  queue_->ResponseFromPeer(response.responder_uuid(), response, &more_pending);
-  ASSERT_TRUE(more_pending);
+  send_more_immediately = queue_->ResponseFromPeer(response.responder_uuid(), response);
+  ASSERT_TRUE(send_more_immediately);
 
   // We've sent (and received and ack) up to 72.40 from the remote peer
   expected_majority_replicated = expected_all_replicated = 40;
@@ -854,7 +856,7 @@ TEST_F(ConsensusQueueTest, TestOnlyAdvancesWatermarkWhenPeerHasAPrefixOfOurLog) 
   last_op = &request.ops(request.ops_size() - 1).id();
 
   SetLastReceivedAndLastCommitted(&response, MakeOpId(75, 49), *last_op, 31);
-  queue_->ResponseFromPeer(response.responder_uuid(), response, &more_pending);
+  send_more_immediately = queue_->ResponseFromPeer(response.responder_uuid(), response);
 
   // We've now sent (and received an ack) up to 73.39
   expected_majority_replicated = expected_all_replicated = 49;
@@ -874,7 +876,7 @@ TEST_F(ConsensusQueueTest, TestOnlyAdvancesWatermarkWhenPeerHasAPrefixOfOurLog) 
   expected_majority_replicated = expected_all_replicated = 53;
 
   SetLastReceivedAndLastCommitted(&response, MakeOpId(76, 53), 31);
-  queue_->ResponseFromPeer(response.responder_uuid(), response, &more_pending);
+  send_more_immediately = queue_->ResponseFromPeer(response.responder_uuid(), response);
 
   ASSERT_EQ(queue_->GetMajorityReplicatedIndexForTests(), expected_majority_replicated);
   ASSERT_EQ(queue_->GetAllReplicatedIndex(), expected_all_replicated);

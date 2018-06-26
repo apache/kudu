@@ -350,8 +350,7 @@ void PeerMessageQueue::LocalPeerAppendFinished(const OpId& id,
     std::lock_guard<simple_spinlock> lock(queue_lock_);
     fake_response.mutable_status()->set_last_committed_idx(queue_state_.committed_index);
   }
-  bool junk;
-  ResponseFromPeer(local_peer_pb_.permanent_uuid(), fake_response, &junk);
+  ResponseFromPeer(local_peer_pb_.permanent_uuid(), fake_response);
 
   callback.Run(status);
 }
@@ -1025,13 +1024,13 @@ void PeerMessageQueue::PromoteIfNeeded(TrackedPeer* peer, const TrackedPeer& pre
   }
 }
 
-void PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
-                                        const ConsensusResponsePB& response,
-                                        bool* more_pending) {
+bool PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
+                                        const ConsensusResponsePB& response) {
   DCHECK(response.IsInitialized()) << "Error: Uninitialized: "
       << response.InitializationErrorString() << ". Response: " << SecureShortDebugString(response);
   CHECK(!response.has_error());
 
+  bool send_more_immediately = false;
   boost::optional<int64_t> updated_commit_index;
   Mode mode_copy;
   {
@@ -1041,8 +1040,7 @@ void PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
     if (PREDICT_FALSE(queue_state_.state != kQueueOpen || peer == nullptr)) {
       LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Queue is closed or peer was untracked, disregarding "
           "peer response. Response: " << SecureShortDebugString(response);
-      *more_pending = false;
-      return;
+      return send_more_immediately;
     }
 
     // Sanity checks.
@@ -1066,7 +1064,10 @@ void PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
     const TrackedPeer prev_peer_state = *peer;
 
     // Update the peer's last exchange status based on the response.
-    UpdateExchangeStatus(peer, prev_peer_state, response, more_pending);
+    // In this case, if there is a log matching property (LMP) mismatch, we
+    // want to immediately send another request as we attempt to sync the log
+    // offset between the local leader and the remote peer.
+    UpdateExchangeStatus(peer, prev_peer_state, response, &send_more_immediately);
 
     // If the reported last-received op for the replica is in our local log,
     // then resume sending entries from that point onward. Otherwise, resume
@@ -1107,8 +1108,10 @@ void PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
     }
 
     if (peer->last_exchange_status != PeerStatus::OK) {
-      // In this case, *more_pending has has already been set to false by UpdateExchangeStatus().
-      return;
+      // In this case, 'send_more_immediately' has already been set by
+      // UpdateExchangeStatus() to true in the case of an LMP mismatch, false
+      // otherwise.
+      return send_more_immediately;
     }
 
     if (response.has_responder_term()) {
@@ -1187,10 +1190,10 @@ void PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
       }
     }
 
-    // If our log has the next request for the peer or if the peer's committed index is
-    // lower than our own, set 'more_pending' to true.
-    *more_pending = log_cache_.HasOpBeenWritten(peer->next_index) ||
-        (peer->last_known_committed_index < queue_state_.committed_index);
+    // If the peer's committed index is lower than our own, or if our log has
+    // the next request for the peer, set 'send_more_immediately' to true.
+    send_more_immediately = peer->last_known_committed_index < queue_state_.committed_index ||
+                            log_cache_.HasOpBeenWritten(peer->next_index);
 
     log_cache_.EvictThroughOp(queue_state_.all_replicated_index);
 
@@ -1200,6 +1203,8 @@ void PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
   if (mode_copy == LEADER && updated_commit_index != boost::none) {
     NotifyObserversOfCommitIndexChange(*updated_commit_index);
   }
+
+  return send_more_immediately;
 }
 
 PeerMessageQueue::TrackedPeer PeerMessageQueue::GetTrackedPeerForTests(const string& uuid) {

@@ -287,11 +287,13 @@ class PeerMessageQueue {
                         PeerStatus ps,
                         const Status& status);
 
-  // Updates the request queue with the latest response of a peer, returns
-  // whether this peer has more requests pending.
-  void ResponseFromPeer(const std::string& peer_uuid,
-                        const ConsensusResponsePB& response,
-                        bool* more_pending);
+  // Updates the request queue with the latest response from a request to a
+  // consensus peer.
+  // Returns true iff there are more requests pending in the queue for this
+  // peer and another request should be sent immediately, with no intervening
+  // delay.
+  bool ResponseFromPeer(const std::string& peer_uuid,
+                        const ConsensusResponsePB& response);
 
   // Called by the consensus implementation to update the queue's watermarks
   // based on information provided by the leader. This is used for metrics and
@@ -303,9 +305,9 @@ class PeerMessageQueue {
   // This should not be called by a leader.
   void UpdateLastIndexAppendedToLeader(int64_t last_idx_appended_to_leader);
 
-  // Closes the queue, peers are still allowed to call UntrackPeer() and
-  // ResponseFromPeer() but no additional peers can be tracked or messages
-  // queued.
+  // Closes the queue. Once the queue is closed, peers are still allowed to
+  // call UntrackPeer() and ResponseFromPeer(), however no additional peers may
+  // be tracked and no additional messages may be enqueued.
   void Close();
 
   int64_t GetQueuedOperationsSizeBytesForTests() const;
@@ -445,7 +447,9 @@ class PeerMessageQueue {
   void UpdatePeerHealthUnlocked(TrackedPeer* peer);
 
   // Update the peer's last exchange status, and other fields, based on the
-  // response.
+  // response. Sets 'lmp_mismatch' to true if the given response indicates
+  // there was a log-matching property mismatch on the remote, otherwise sets
+  // it to false.
   void UpdateExchangeStatus(TrackedPeer* peer, const TrackedPeer& prev_peer_state,
                             const ConsensusResponsePB& response, bool* lmp_mismatch);
 

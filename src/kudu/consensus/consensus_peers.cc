@@ -365,8 +365,7 @@ void Peer::DoProcessResponse() {
   VLOG_WITH_PREFIX_UNLOCKED(2) << "Response from peer " << peer_pb().permanent_uuid() << ": "
       << SecureShortDebugString(response_);
 
-  bool more_pending;
-  queue_->ResponseFromPeer(peer_pb_.permanent_uuid(), response_, &more_pending);
+  bool send_more_immediately = queue_->ResponseFromPeer(peer_pb_.permanent_uuid(), response_);
 
   {
     std::unique_lock<simple_spinlock> lock(peer_lock_);
@@ -377,7 +376,7 @@ void Peer::DoProcessResponse() {
   // We're OK to read the state_ without a lock here -- if we get a race,
   // the worst thing that could happen is that we'll make one more request before
   // noticing a close.
-  if (more_pending) {
+  if (send_more_immediately) {
     SendNextRequest(true);
   }
 }
