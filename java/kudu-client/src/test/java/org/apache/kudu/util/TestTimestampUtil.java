@@ -49,7 +49,7 @@ public class TestTimestampUtil {
   @Test
   public void testNonZuluTimestampConversion() throws Exception {
     SimpleDateFormat cst = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS");
-    cst.setTimeZone(TimeZone.getTimeZone("CST"));
+    cst.setTimeZone(TimeZone.getTimeZone("America/Chicago"));
 
     String timeString = "2016-08-19T12:12:12.121";
     Timestamp timestamp = new Timestamp(cst.parse(timeString).getTime());
@@ -63,7 +63,7 @@ public class TestTimestampUtil {
     assertEquals(timeString, formattedCST);
 
     SimpleDateFormat pst = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS");
-    pst.setTimeZone(TimeZone.getTimeZone("PST"));
+    pst.setTimeZone(TimeZone.getTimeZone("America/Los_Angeles"));
     String formattedPST = pst.format(fromMicros);
     assertEquals("2016-08-19T10:12:12.121", formattedPST);
 
