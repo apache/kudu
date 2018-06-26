@@ -191,29 +191,13 @@ public class ColumnSchema {
 
   @Override
   public boolean equals(Object o) {
-    if (this == o) {
-      return true;
-    }
-    if (o == null || getClass() != o.getClass()) {
-      return false;
-    }
-
+    if (this == o) return true;
+    if (o == null || getClass() != o.getClass()) return false;
     ColumnSchema that = (ColumnSchema) o;
-
-    if (key != that.key) {
-      return false;
-    }
-    if (!name.equals(that.name)) {
-      return false;
-    }
-    if (!type.equals(that.type)) {
-      return false;
-    }
-    if (!typeAttributes.equals(that.typeAttributes)) {
-      return false;
-    }
-
-    return true;
+    return Objects.equals(name, that.name) &&
+        Objects.equals(type, that.type) &&
+        Objects.equals(key, that.key) &&
+        Objects.equals(typeAttributes, that.typeAttributes);
   }
 
   @Override
