@@ -38,6 +38,7 @@ import org.apache.kudu.util.SecurityUtil;
 import org.hamcrest.CoreMatchers;
 import org.junit.After;
 import org.junit.Assert;
+import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -86,13 +87,13 @@ public class TestSecurity {
     client.listTabletServers();
   }
 
-  @BeforeClass
-  public static void setUpBeforeClass() throws Exception {
+  @Before
+  public void setUp() {
     FakeDNS.getInstance().install();
   }
 
   @After
-  public void reset() throws IOException, InterruptedException {
+  public void tearDown() throws IOException {
     if (client != null) {
       client.close();
     }

@@ -30,7 +30,6 @@ import org.apache.kudu.util.AssertHelpers.BooleanExpression;
 import org.apache.kudu.util.CapturingLogAppender;
 import org.junit.After;
 import org.junit.Before;
-import org.junit.BeforeClass;
 import org.junit.Test;
 
 import com.google.common.net.HostAndPort;
@@ -44,21 +43,9 @@ public class TestClientFailoverSupport extends BaseKuduTest {
     KILL
   }
 
-  @BeforeClass
-  public static void setUpBeforeClass() throws Exception {
-    final int NUM_TABLET_SERVERS = 3;
-    BaseKuduTest.doSetup(3, NUM_TABLET_SERVERS);
-  }
-
   @Before
   public void attachToLog() {
     claAttach = cla.attach();
-  }
-
-  @After
-  public void restartKilledMaster() throws IOException {
-    miniCluster.restartDeadMasters();
-    miniCluster.restartDeadTservers();
   }
 
   @After

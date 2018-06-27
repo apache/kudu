@@ -43,17 +43,7 @@ import org.apache.kudu.Type;
 
 public class TestKuduTable extends BaseKuduTest {
   private static final Schema BASIC_SCHEMA = getBasicSchema();
-  private String tableName;
-
-  @BeforeClass
-  public static void setUpBeforeClass() throws Exception {
-    BaseKuduTest.setUpBeforeClass();
-  }
-
-  @Before
-  public void setUp() {
-    tableName = getTestMethodNameWithTimestamp();
-  }
+  private static final String tableName = "TestKuduTable";
 
   @Test(timeout = 100000)
   public void testAlterColumn() throws Exception {
@@ -680,7 +670,7 @@ public class TestKuduTable extends BaseKuduTest {
     for (int i = 1; i <= 3; i++) {
       // Ignore even numbers.
       if (i % 2 != 0) {
-        String tableName = getTestMethodNameWithTimestamp() + "-" + i;
+        String tableName = "testNumReplicas" + "-" + i;
         CreateTableOptions options = getBasicCreateTableOptions();
         options.setNumReplicas(i);
         createTable(tableName, basicSchema, options);

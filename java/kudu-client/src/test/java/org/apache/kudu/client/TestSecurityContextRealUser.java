@@ -18,10 +18,7 @@
 package org.apache.kudu.client;
 
 import org.junit.Before;
-import org.junit.BeforeClass;
 import org.junit.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 
@@ -36,33 +33,30 @@ import static org.junit.Assert.fail;
  * SASL PLAIN negotiations, and is imported from the SecurityCredentialsPB.
  */
 public class TestSecurityContextRealUser extends BaseKuduTest {
-  private static final Logger LOG = LoggerFactory.getLogger(TestSecurityContextRealUser.class);
-
   private String tableName;
+
+  @Override
+  protected MiniKuduCluster.MiniKuduClusterBuilder getMiniClusterBuilder() {
+    return super.getMiniClusterBuilder()
+        // This test requires a delicate setup. We enable Kerberos, make
+        // authentication optional, and set the superuser ACL to test-admin so that
+        // the external mini-cluster is able to connect to the master while creating
+        // the cluster. The user ACL is scoped to a different user so that we can
+        // test real user name propagation.
+        .enableKerberos()
+        .addMasterFlag("--user-acl=token-user")
+        .addMasterFlag("--superuser-acl=test-admin")
+        .addMasterFlag("--rpc-authentication=optional")
+        .addMasterFlag("--rpc-trace-negotiation")
+        .addTserverFlag("--user-acl=token-user")
+        .addTserverFlag("--superuser-acl=test-admin")
+        .addTserverFlag("--rpc-authentication=optional")
+        .addTserverFlag("--rpc-trace-negotiation");
+  }
 
   @Before
   public void setTableName() {
     tableName = TestSecurityContextRealUser.class.getName() + "-" + System.currentTimeMillis();
-  }
-
-  @BeforeClass
-  public static void setUpBeforeClass() throws Exception {
-    // This test requires a delicate setup. We enable Kerberos, make
-    // authentication optional, and set the superuser ACL to test-admin so that
-    // the external mini-cluster is able to connect to the master while creating
-    // the cluster. The user ACL is scoped to a different user so that we can
-    // test real user name propagation.
-    miniClusterBuilder.enableKerberos()
-                      .addMasterFlag("--user-acl=token-user")
-                      .addMasterFlag("--superuser-acl=test-admin")
-                      .addMasterFlag("--rpc-authentication=optional")
-                      .addMasterFlag("--rpc-trace-negotiation")
-                      .addTserverFlag("--user-acl=token-user")
-                      .addTserverFlag("--superuser-acl=test-admin")
-                      .addTserverFlag("--rpc-authentication=optional")
-                      .addTserverFlag("--rpc-trace-negotiation");
-
-    BaseKuduTest.setUpBeforeClass();
   }
 
   @Test

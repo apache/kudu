@@ -37,12 +37,7 @@ import static org.junit.Assert.fail;
 
 public class TestScanToken extends BaseKuduTest {
 
-  private String testTableName;
-
-  @Before
-  public void setup() {
-    testTableName = getTestMethodNameWithTimestamp();
-  }
+  private static final String testTableName = "TestScanToken";
 
   /**
    * Tests scan tokens by creating a set of scan tokens, serializing them, and

@@ -58,6 +58,7 @@ import org.apache.flume.channel.MemoryChannel;
 import org.apache.flume.conf.Configurables;
 import org.apache.flume.event.EventBuilder;
 import org.apache.kudu.util.DecimalUtil;
+import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -72,17 +73,16 @@ public class AvroKuduOperationsProducerTest extends BaseKuduTest {
   private static final String schemaPath = "src/test/avro/testAvroKuduOperationsProducer.avsc";
   private static String schemaLiteral;
 
-  enum SchemaLocation {
-    GLOBAL, URL, LITERAL
-  }
-
-  @BeforeClass
-  public static void setupAvroSchemaBeforeClass() {
+  static {
     try {
       schemaLiteral = Files.toString(new File(schemaPath), UTF_8);
     } catch (IOException e) {
-      throw new FlumeException("Unable to read schema file!", e);
+      throw new RuntimeException(e);
     }
+  }
+
+  enum SchemaLocation {
+    GLOBAL, URL, LITERAL
   }
 
   @Test

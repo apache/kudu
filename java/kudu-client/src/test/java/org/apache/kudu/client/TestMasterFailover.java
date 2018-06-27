@@ -34,11 +34,6 @@ public class TestMasterFailover extends BaseKuduTest {
     SCAN_TABLE
   }
 
-  @After
-  public void restartDeadServers() throws Exception {
-    miniCluster.restartDeadMasters();
-  }
-
   @Test(timeout = 30000)
   public void testKillLeaderBeforeCreateClient() throws Exception {
     doTestKillLeader(KillBefore.CREATE_CLIENT);

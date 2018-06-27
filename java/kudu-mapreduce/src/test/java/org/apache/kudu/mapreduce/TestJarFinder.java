@@ -32,9 +32,9 @@ import java.util.jar.Manifest;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.logging.LogFactory;
-import org.junit.AfterClass;
+import org.junit.After;
 import org.junit.Assert;
-import org.junit.BeforeClass;
+import org.junit.Before;
 import org.junit.Test;
 
 /**
@@ -44,14 +44,14 @@ public class TestJarFinder {
 
   private static File testDir;
 
-  @BeforeClass
-  public static void setUpBeforeClass() throws Exception {
+  @Before
+  public void setUp() throws Exception {
     testDir = Files.createTempDirectory("test-dir").toFile();
     System.setProperty(JarFinder.FILE_DIR_PROPERTY, testDir.getAbsolutePath());
   }
 
-  @AfterClass
-  public static void tearDownAfterClass() throws Exception {
+  @After
+  public void tearDown() throws Exception {
     FileUtils.deleteDirectory(testDir);
   }
 

@@ -32,8 +32,8 @@ import com.google.common.collect.ImmutableList;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.util.GenericOptionsParser;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 
 import org.apache.kudu.ColumnSchema;
@@ -54,10 +54,7 @@ public class ITImportCsv extends BaseKuduTest {
 
   private static Schema schema;
 
-  @BeforeClass
-  public static void setUpBeforeClass() throws Exception {
-    BaseKuduTest.setUpBeforeClass();
-
+  static {
     ArrayList<ColumnSchema> columns = new ArrayList<ColumnSchema>(4);
     columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.INT32)
         .key(true)
@@ -72,18 +69,17 @@ public class ITImportCsv extends BaseKuduTest {
     columns.add(new ColumnSchema.ColumnSchemaBuilder("column4_b", Type.BOOL)
         .build());
     schema = new Schema(columns);
+  }
 
+  @Before
+  public void setUp() throws Exception {
     createTable(TABLE_NAME, schema,
                 new CreateTableOptions().setRangePartitionColumns(ImmutableList.of("key")));
   }
 
-  @AfterClass
-  public static void tearDownAfterClass() throws Exception {
-    try {
-      BaseKuduTest.tearDownAfterClass();
-    } finally {
-      HADOOP_UTIL.cleanup();
-    }
+  @After
+  public void tearDown() throws Exception {
+    HADOOP_UTIL.cleanup();
   }
 
   @Test

@@ -30,8 +30,7 @@ import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.lib.output.NullOutputFormat;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
+import org.junit.After;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,20 +48,11 @@ public class ITInputFormatJob extends BaseKuduTest {
   private static final HadoopTestingUtility HADOOP_UTIL = new HadoopTestingUtility();
 
   /** Counter enumeration to count the actual rows. */
-  private static enum Counters { ROWS }
+  private enum Counters { ROWS }
 
-  @BeforeClass
-  public static void setUpBeforeClass() throws Exception {
-    BaseKuduTest.setUpBeforeClass();
-  }
-
-  @AfterClass
-  public static void tearDownAfterClass() throws Exception {
-    try {
-      BaseKuduTest.tearDownAfterClass();
-    } finally {
-      HADOOP_UTIL.cleanup();
-    }
+  @After
+  public void tearDown() throws Exception {
+    HADOOP_UTIL.cleanup();
   }
 
   @Test

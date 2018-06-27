@@ -24,7 +24,7 @@ import java.util.concurrent.TimeUnit;
 
 import com.google.common.collect.ImmutableList;
 import org.junit.Assert;
-import org.junit.BeforeClass;
+import org.junit.Before;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -65,8 +65,8 @@ public class ITClient extends BaseKuduTest {
 
   private volatile long sharedWriteTimestamp;
 
-  @BeforeClass
-  public static void setUpBeforeClass() throws Exception {
+  @Before
+  public void setUp() throws Exception {
 
     String runtimeProp = System.getProperty(RUNTIME_PROPERTY_NAME);
     runtimeInSeconds = runtimeProp == null ? DEFAULT_RUNTIME_SECONDS : Long.parseLong(runtimeProp);
@@ -77,8 +77,6 @@ public class ITClient extends BaseKuduTest {
     }
 
     LOG.info ("Test running for {} seconds", runtimeInSeconds);
-
-    BaseKuduTest.setUpBeforeClass();
 
     // Client we're using has low tolerance for read timeouts but a
     // higher overall operation timeout.
@@ -206,7 +204,7 @@ public class ITClient extends BaseKuduTest {
      */
     private boolean restartTS() {
       try {
-        BaseKuduTest.restartTabletServer(table);
+        restartTabletServer(table);
       } catch (Exception e) {
         reportError("Couldn't restart a TS", e);
         return false;
@@ -220,7 +218,7 @@ public class ITClient extends BaseKuduTest {
      */
     private boolean restartMaster() {
       try {
-        BaseKuduTest.restartLeaderMaster();
+        restartLeaderMaster();
       } catch (Exception e) {
         reportError("Couldn't restart a master", e);
         return false;

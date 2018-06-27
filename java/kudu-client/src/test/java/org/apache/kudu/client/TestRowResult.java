@@ -26,7 +26,7 @@ import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.sql.Timestamp;
 
-import org.junit.BeforeClass;
+import org.junit.Before;
 import org.junit.Test;
 
 import org.apache.kudu.Type;
@@ -39,9 +39,8 @@ public class TestRowResult extends BaseKuduTest {
 
   private static KuduTable table;
 
-  @BeforeClass
-  public static void setUpBeforeClass() throws Exception {
-    BaseKuduTest.setUpBeforeClass();
+  @Before
+  public void setUp() throws Exception {
     createTable(TABLE_NAME, allTypesSchema, getAllTypesCreateTableOptions());
     table = openTable(TABLE_NAME);
   }

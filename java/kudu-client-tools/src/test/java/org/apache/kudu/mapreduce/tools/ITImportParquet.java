@@ -39,8 +39,8 @@ import org.apache.parquet.example.data.simple.SimpleGroupFactory;
 import org.apache.parquet.hadoop.ParquetWriter;
 import org.apache.parquet.hadoop.example.GroupWriteSupport;
 import org.apache.parquet.schema.MessageType;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 
 import org.apache.kudu.ColumnSchema;
@@ -60,36 +60,32 @@ public class ITImportParquet extends BaseKuduTest {
 
   private static Schema schema;
 
-  @BeforeClass
-  public static void setUpBeforeClass() throws Exception {
-    BaseKuduTest.setUpBeforeClass();
-
+  static {
     ArrayList<ColumnSchema> columns = new ArrayList<ColumnSchema>(4);
     columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.INT32)
-      .key(true)
-      .build());
+        .key(true)
+        .build());
     columns.add(new ColumnSchema.ColumnSchemaBuilder("column1_i", Type.INT32)
-      .build());
+        .build());
     columns.add(new ColumnSchema.ColumnSchemaBuilder("column2_d", Type.DOUBLE)
-      .build());
+        .build());
     columns.add(new ColumnSchema.ColumnSchemaBuilder("column3_s", Type.STRING)
-      .nullable(true)
-      .build());
+        .nullable(true)
+        .build());
     columns.add(new ColumnSchema.ColumnSchemaBuilder("column4_b", Type.BOOL)
-      .build());
+        .build());
     schema = new Schema(columns);
+  }
 
+  @Before
+  public void setUp() throws Exception {
     createTable(TABLE_NAME, schema,
       new CreateTableOptions().setRangePartitionColumns(ImmutableList.of("key")));
   }
 
-  @AfterClass
-  public static void tearDownAfterClass() throws Exception {
-    try {
-      BaseKuduTest.tearDownAfterClass();
-    } finally {
-      HADOOP_UTIL.cleanup();
-    }
+  @After
+  public void tearDown() throws Exception {
+    HADOOP_UTIL.cleanup();
   }
 
   @Test

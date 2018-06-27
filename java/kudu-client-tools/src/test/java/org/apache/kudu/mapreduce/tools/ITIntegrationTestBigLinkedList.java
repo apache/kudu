@@ -19,7 +19,7 @@ package org.apache.kudu.mapreduce.tools;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.util.ToolRunner;
-import org.junit.AfterClass;
+import org.junit.After;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -31,13 +31,9 @@ public class ITIntegrationTestBigLinkedList extends BaseKuduTest {
 
   private static final HadoopTestingUtility HADOOP_UTIL = new HadoopTestingUtility();
 
-  @AfterClass
-  public static void tearDownAfterClass() throws Exception {
-    try {
-      BaseKuduTest.tearDownAfterClass();
-    } finally {
-      HADOOP_UTIL.cleanup();
-    }
+  @After
+  public void tearDown() throws Exception {
+    HADOOP_UTIL.cleanup();
   }
 
   @Test

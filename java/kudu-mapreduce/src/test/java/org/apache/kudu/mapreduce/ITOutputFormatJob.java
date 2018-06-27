@@ -35,8 +35,8 @@ import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 
 import org.apache.kudu.client.AsyncKuduScanner;
@@ -54,19 +54,14 @@ public class ITOutputFormatJob extends BaseKuduTest {
 
   private static final HadoopTestingUtility HADOOP_UTIL = new HadoopTestingUtility();
 
-  @BeforeClass
-  public static void setUpBeforeClass() throws Exception {
-    BaseKuduTest.setUpBeforeClass();
+  @Before
+  public void setUp() throws Exception {
     createTable(TABLE_NAME, getBasicSchema(), getBasicCreateTableOptions());
   }
 
-  @AfterClass
-  public static void tearDownAfterClass() throws Exception {
-    try {
-      BaseKuduTest.tearDownAfterClass();
-    } finally {
-      HADOOP_UTIL.cleanup();
-    }
+  @After
+  public void tearDown() throws Exception {
+    HADOOP_UTIL.cleanup();
   }
 
   @Test

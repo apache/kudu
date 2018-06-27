@@ -24,7 +24,6 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
-import org.junit.BeforeClass;
 import org.junit.Test;
 
 /**
@@ -41,26 +40,23 @@ public class TestAuthnTokenReacquireOpen extends BaseKuduTest {
   private static final int OP_TIMEOUT_MS = 60 * TOKEN_TTL_SEC * 1000;
   private static final int KEEPALIVE_TIME_MS = 2 * OP_TIMEOUT_MS;
 
-  @BeforeClass
-  public static void setUpBeforeClass() throws Exception {
-    // Set appropriate TTL for authn token and connection keep-alive property, so the client could
-    // keep an open connection to the master when its authn token is already expired. Inject
-    // additional INVALID_AUTHENTICATION_TOKEN responses from the tablet server even for
-    // not-yet-expired tokens for an extra stress on the client.
-    miniClusterBuilder
+  @Override
+  protected MiniKuduCluster.MiniKuduClusterBuilder getMiniClusterBuilder() {
+    return super.getMiniClusterBuilder()
+        // We want to have a cluster with a single master.
+        .numMasters(1)
+        // Set appropriate TTL for authn token and connection keep-alive property, so the client could
+        // keep an open connection to the master when its authn token is already expired. Inject
+        // additional INVALID_AUTHENTICATION_TOKEN responses from the tablet server even for
+        // not-yet-expired tokens for an extra stress on the client.
         .enableKerberos()
         .addMasterFlag(String.format("--authn_token_validity_seconds=%d", TOKEN_TTL_SEC))
         .addMasterFlag(String.format("--rpc_default_keepalive_time_ms=%d", KEEPALIVE_TIME_MS))
         .addTserverFlag(String.format("--rpc_default_keepalive_time_ms=%d", KEEPALIVE_TIME_MS))
         .addTserverFlag("--rpc_inject_invalid_authn_token_ratio=0.5");
-
-    // We want to have a cluster with a single master.
-    final int NUM_MASTERS = 1;
-    final int NUM_TABLET_SERVERS = 3;
-    doSetup(NUM_MASTERS, NUM_TABLET_SERVERS);
   }
 
-  private static void dropConnections() {
+  private void dropConnections() {
     for (Connection c : client.getConnectionListCopy()) {
       c.disconnect();
     }

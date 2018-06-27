@@ -24,18 +24,11 @@ import static org.junit.Assert.assertTrue;
 
 import java.util.List;
 
-import org.junit.BeforeClass;
 import org.junit.Test;
 
 public class TestRowErrors extends BaseKuduTest {
 
   private static KuduTable table;
-
-  @BeforeClass
-  public static void setUpBeforeClass() throws Exception {
-    BaseKuduTest.setUpBeforeClass();
-
-  }
 
   @Test(timeout = 100000)
   public void singleTabletTest() throws Exception {

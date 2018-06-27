@@ -109,7 +109,6 @@ task integrationTest(type: Test, group: "Verification") {
   description = "Runs the integration tests."
   testClassesDirs = sourceSets.integrationTest.output.classesDirs
   classpath = sourceSets.integrationTest.runtimeClasspath
-  maxParallelForks = 1
   mustRunAfter test
 }
 check.dependsOn(integrationTest)

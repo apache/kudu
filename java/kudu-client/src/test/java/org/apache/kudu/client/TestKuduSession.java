@@ -35,12 +35,7 @@ import org.junit.Before;
 import org.junit.Test;
 
 public class TestKuduSession extends BaseKuduTest {
-  private String tableName;
-
-  @Before
-  public void setUp() {
-    tableName = getTestMethodNameWithTimestamp();
-  }
+  private static final String tableName = "TestKuduSession";
 
   @Test(timeout = 100000)
   public void testBasicOps() throws Exception {

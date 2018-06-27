@@ -21,10 +21,8 @@ import java.util.Date
 
 import scala.collection.JavaConverters._
 import scala.collection.immutable.IndexedSeq
-
 import org.apache.spark.SparkConf
-import org.scalatest.{BeforeAndAfterAll, Suite}
-
+import org.scalatest.{BeforeAndAfterEach, Suite}
 import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder
 import org.apache.kudu.ColumnTypeAttributes.ColumnTypeAttributesBuilder
 import org.apache.kudu.client.KuduClient.KuduClientBuilder
@@ -34,7 +32,7 @@ import org.apache.kudu.{Schema, Type}
 import org.apache.kudu.util.DecimalUtil
 import org.apache.spark.sql.SparkSession
 
-trait TestContext extends BeforeAndAfterAll { self: Suite =>
+trait TestContext extends BeforeAndAfterEach { self: Suite =>
 
   var ss: SparkSession = _
   var miniCluster: MiniKuduCluster = _
@@ -88,7 +86,7 @@ trait TestContext extends BeforeAndAfterAll { self: Suite =>
     set("spark.ui.enabled", "false").
     set("spark.app.id", appID)
 
-  override def beforeAll() {
+  override def beforeEach() {
     miniCluster = new MiniKuduClusterBuilder()
       .numMasters(1)
       .numTservers(1)
@@ -119,7 +117,7 @@ trait TestContext extends BeforeAndAfterAll { self: Suite =>
     kuduClient.createTable(simpleTableName, simpleSchema, simpleTableOptions)
   }
 
-  override def afterAll() {
+  override def afterEach() {
     if (kuduClient != null) kuduClient.shutdown()
     if (miniCluster != null) miniCluster.shutdown()
     if (ss != null) ss.stop()

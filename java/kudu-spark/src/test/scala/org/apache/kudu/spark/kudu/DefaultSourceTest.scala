@@ -19,28 +19,28 @@ package org.apache.kudu.spark.kudu
 import scala.collection.JavaConverters._
 import scala.collection.immutable.IndexedSeq
 import scala.util.control.NonFatal
-
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.{DataTypes, StructField, StructType}
 import org.junit.Assert._
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
-import org.scalatest.{BeforeAndAfter, FunSuite, Matchers}
-
+import org.scalatest.{BeforeAndAfterEach, FunSuite, Matchers}
 import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder
 import org.apache.kudu.client.CreateTableOptions
 import org.apache.kudu.{Schema, Type}
 
 @RunWith(classOf[JUnitRunner])
-class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfter with Matchers {
+class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEach with Matchers {
 
   val rowCount = 10
   var sqlContext : SQLContext = _
   var rows : IndexedSeq[(Int, Int, String, Long)] = _
   var kuduOptions : Map[String, String] = _
 
-  before {
+  override def beforeEach(): Unit = {
+    super.beforeEach()
+
     rows = insertRows(rowCount)
 
     sqlContext = ss.sqlContext

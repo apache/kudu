@@ -32,7 +32,6 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
-import org.junit.BeforeClass;
 import org.junit.Test;
 
 /**
@@ -45,26 +44,24 @@ public class TestAuthnTokenReacquire extends BaseKuduTest {
   private static final int TOKEN_TTL_SEC = 1;
   private static final int OP_TIMEOUT_MS = 60 * TOKEN_TTL_SEC * 1000;
 
-  @BeforeClass
-  public static void setUpBeforeClass() throws Exception {
+  @Override
+  protected MiniKuduCluster.MiniKuduClusterBuilder getMiniClusterBuilder() {
     // Inject additional INVALID_AUTHENTICATION_TOKEN responses from both the master and tablet
     // servers, even for not-yet-expired tokens.
-    miniClusterBuilder
+    return super.getMiniClusterBuilder()
         .enableKerberos()
         .addMasterFlag(String.format("--authn_token_validity_seconds=%d", TOKEN_TTL_SEC))
         .addMasterFlag("--rpc_inject_invalid_authn_token_ratio=0.5")
         .addTserverFlag("--rpc_inject_invalid_authn_token_ratio=0.5");
-
-    BaseKuduTest.setUpBeforeClass();
   }
 
-  private static void dropConnections() {
+  private void dropConnections() {
     for (Connection c : client.getConnectionListCopy()) {
       c.disconnect();
     }
   }
 
-  private static void dropConnectionsAndExpireToken() throws InterruptedException {
+  private void dropConnectionsAndExpireToken() throws InterruptedException {
     // Drop all connections from the client to Kudu servers.
     dropConnections();
     // Wait for authn token expiration.

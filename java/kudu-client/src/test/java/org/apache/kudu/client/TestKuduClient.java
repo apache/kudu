@@ -66,19 +66,19 @@ import org.apache.kudu.util.CapturingLogAppender;
 import org.apache.kudu.util.DecimalUtil;
 
 public class TestKuduClient extends BaseKuduTest {
-  private static final Logger LOG = LoggerFactory.getLogger(TestKuduClient.class);
-  private String tableName;
-
-  @Before
-  public void setUp() {
-    tableName = getTestMethodNameWithTimestamp();
-  }
+  private static final String tableName = "TestKuduClient";
 
   /**
    * Test setting and reading the most recent propagated timestamp.
    */
   @Test(timeout = 100000)
   public void testLastPropagatedTimestamps() throws Exception {
+    // Scan a table to ensure a timestamp is propagated.
+    KuduTable table = syncClient.createTable(tableName, basicSchema, getBasicCreateTableOptions());
+    syncClient.newScannerBuilder(table).build().nextRows().getNumRows();
+    assertTrue(syncClient.hasLastPropagatedTimestamp());
+    assertTrue(client.hasLastPropagatedTimestamp());
+
     long initial_ts = syncClient.getLastPropagatedTimestamp();
 
     // Check that the initial timestamp is consistent with the asynchronous client.
