@@ -734,4 +734,19 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEac
     val kuduRelation = kuduRelationFromDataFrame(dataFrame)
     assert(kuduRelation.scanRequestTimeoutMs == Some(1))
   }
+
+  /**
+    * Verify that the kudu.socketReadTimeoutMs parameter is parsed by the
+    * DefaultSource and makes it into the KuduRelation as a configuration
+    * parameter.
+    */
+  test("socket read timeout propagation") {
+    kuduOptions = Map(
+      "kudu.table" -> tableName,
+      "kudu.master" -> miniCluster.getMasterAddresses,
+      "kudu.socketReadTimeoutMs" -> "1")
+    val dataFrame = sqlContext.read.options(kuduOptions).kudu
+    val kuduRelation = kuduRelationFromDataFrame(dataFrame)
+    assert(kuduRelation.socketReadTimeoutMs == Some(1))
+  }
 }

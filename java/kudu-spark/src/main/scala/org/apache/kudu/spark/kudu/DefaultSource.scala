@@ -52,11 +52,16 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider
   val IGNORE_NULL = "kudu.ignoreNull"
   val IGNORE_DUPLICATE_ROW_ERRORS = "kudu.ignoreDuplicateRowErrors"
   val SCAN_REQUEST_TIMEOUT_MS = "kudu.scanRequestTimeoutMs"
+  val SOCKET_READ_TIMEOUT_MS = "kudu.socketReadTimeoutMs"
 
   def defaultMasterAddrs: String = InetAddress.getLocalHost.getCanonicalHostName
 
   def getScanRequestTimeoutMs(parameters: Map[String, String]): Option[Long] = {
     parameters.get(SCAN_REQUEST_TIMEOUT_MS).map(_.toLong)
+  }
+
+  def getSocketReadTimeoutMs(parameters: Map[String, String]): Option[Long] = {
+    parameters.get(SOCKET_READ_TIMEOUT_MS).map(_.toLong)
   }
 
   /**
@@ -82,8 +87,8 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider
     val writeOptions = new KuduWriteOptions(ignoreDuplicateRowErrors, ignoreNull)
 
     new KuduRelation(tableName, kuduMaster, faultTolerantScanner,
-      scanLocality, getScanRequestTimeoutMs(parameters), operationType, None,
-      writeOptions)(sqlContext)
+      scanLocality, getScanRequestTimeoutMs(parameters), getSocketReadTimeoutMs(parameters),
+      operationType, None, writeOptions)(sqlContext)
   }
 
   /**
@@ -119,7 +124,8 @@ class DefaultSource extends RelationProvider with CreatableRelationProvider
     val scanLocality = getScanLocalityType(parameters.getOrElse(SCAN_LOCALITY, "closest_replica"))
 
     new KuduRelation(tableName, kuduMaster, faultTolerantScanner,
-      scanLocality, getScanRequestTimeoutMs(parameters), operationType, Some(schema))(sqlContext)
+      scanLocality, getScanRequestTimeoutMs(parameters), getSocketReadTimeoutMs(parameters),
+      operationType, Some(schema))(sqlContext)
   }
 
   private def getOperationType(opParam: String): OperationType = {
@@ -163,6 +169,7 @@ class KuduRelation(private val tableName: String,
                    private val faultTolerantScanner: Boolean,
                    private val scanLocality: ReplicaSelection,
                    private[kudu] val scanRequestTimeoutMs: Option[Long],
+                   private[kudu] val socketReadTimeoutMs: Option[Long],
                    private val operationType: OperationType,
                    private val userSchema: Option[StructType],
                    private val writeOptions: KuduWriteOptions = new KuduWriteOptions)(
@@ -171,13 +178,13 @@ class KuduRelation(private val tableName: String,
     with PrunedFilteredScan
     with InsertableRelation {
 
-  import KuduRelation._
+  private val context: KuduContext = new KuduContext(masterAddrs, sqlContext.sparkContext,
+                                                     socketReadTimeoutMs)
 
-  private val context: KuduContext = new KuduContext(masterAddrs, sqlContext.sparkContext)
   private val table: KuduTable = context.syncClient.openTable(tableName)
 
   override def unhandledFilters(filters: Array[Filter]): Array[Filter] =
-    filters.filterNot(supportsFilter)
+    filters.filterNot(KuduRelation.supportsFilter)
 
   /**
     * Generates a SparkSQL schema object so SparkSQL knows what is being
@@ -200,7 +207,7 @@ class KuduRelation(private val tableName: String,
     val predicates = filters.flatMap(filterToPredicate)
     new KuduRDD(context, 1024 * 1024 * 20, requiredColumns, predicates,
                 table, faultTolerantScanner, scanLocality, scanRequestTimeoutMs,
-                sqlContext.sparkContext)
+                socketReadTimeoutMs, sqlContext.sparkContext)
   }
 
   /**

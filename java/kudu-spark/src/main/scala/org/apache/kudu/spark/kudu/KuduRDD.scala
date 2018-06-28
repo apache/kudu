@@ -28,7 +28,7 @@ import org.apache.kudu.{Type, client}
 /**
   * A Resilient Distributed Dataset backed by a Kudu table.
   *
-  * To construct a KuduRDD, use {@link KuduContext#kuduRdd} or a Kudu DataSource.
+  * To construct a KuduRDD, use [[KuduContext#kuduRDD]] or a Kudu DataSource.
   */
 class KuduRDD private[kudu] (val kuduContext: KuduContext,
                              @transient val batchSize: Integer,
@@ -38,6 +38,7 @@ class KuduRDD private[kudu] (val kuduContext: KuduContext,
                              @transient val isFaultTolerant: Boolean,
                              @transient val scanLocality: ReplicaSelection,
                              @transient val scanRequestTimeoutMs: Option[Long],
+                             @transient val socketReadTimeoutMs: Option[Long],
                              @transient val sc: SparkContext) extends RDD[Row](sc, Nil) {
 
   override protected def getPartitions: Array[Partition] = {
