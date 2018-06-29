@@ -158,20 +158,21 @@ Status AlterLegacyKuduTables(KuduClient* kudu_client,
       if (hms_table->parameters[HmsClient::kStorageHandlerKey] ==
           HmsClient::kLegacyKuduStorageHandler) {
         string new_table_name = Substitute("$0.$1", hms_table->dbName, hms_table->tableName);
-        bool exist;
-        RETURN_NOT_OK(kudu_client->TableExists(new_table_name, &exist));
-        if (!exist) {
-          // TODO(Hao): Use notification listener to avoid race conditions.
-          s = AlterKuduTableOnly(kudu_client, table_name, new_table_name).AndThen([&] {
-            return hms_catalog->UpgradeLegacyImpalaTable(kudu_table->id(),
-                hms_table->dbName, hms_table->tableName,
-                client::SchemaFromKuduSchema(kudu_table->schema()));
-          });
-        } else {
-          LOG(WARNING) << Substitute("Failed to upgrade legacy Impala table '$0.$1' "
-                                     "(Kudu table name: $2), because a Kudu table with "
-                                     "name '$0.$1' already exists'.", hms_table->dbName,
-                                      hms_table->tableName, table_name);
+        // Hive-compatible table name implies the table has been upgraded previously and
+        // then downgraded. In this case, we only upgrade the legacy Impala table.
+        if (table_name != new_table_name) {
+          s = AlterKuduTableOnly(kudu_client, table_name, new_table_name);
+          if (s.IsAlreadyPresent()) {
+            s = s.CloneAndPrepend(Substitute("Failed to upgrade legacy Impala table '$0.$1' "
+                                             "(Kudu table name: $2), because a Kudu table with "
+                                             "name '$0.$1' already exists'.", hms_table->dbName,
+                                             hms_table->tableName, table_name));
+          }
+        }
+        if (s.ok()) {
+          s = hms_catalog->UpgradeLegacyImpalaTable(
+                  kudu_table->id(), hms_table->dbName, hms_table->tableName,
+                  client::SchemaFromKuduSchema(kudu_table->schema()));
         }
       }
     } else {
