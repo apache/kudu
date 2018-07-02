@@ -209,7 +209,7 @@ set(UTIL_SRCS
 # optimized regardless of the default optimization options.
 set_source_files_properties(memory/overwrite.cc PROPERTIES COMPILE_FLAGS "-O3")
 
-if(NOT APPLE)
+if(HAVE_LIB_VMEM)
   set(UTIL_SRCS
     ${UTIL_SRCS}
     nvm_cache.cc)
@@ -233,7 +233,12 @@ if(NOT APPLE)
     ${UTIL_LIBS}
     breakpad_client
     dl
-    rt
+    rt)
+endif()
+
+if(HAVE_LIB_VMEM)
+  set(UTIL_LIBS
+    ${UTIL_LIBS}
     vmem)
 endif()
 
@@ -280,7 +285,7 @@ target_link_libraries(kudu_test_util
   gmock
   kudu_util)
 
-if(NOT APPLE)
+if(HAVE_LIB_VMEM)
   target_link_libraries(kudu_test_util
     vmem)
 endif()

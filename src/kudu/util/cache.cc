@@ -560,7 +560,7 @@ Cache* NewLRUCache(CacheType type, size_t capacity, const string& id) {
   switch (type) {
     case DRAM_CACHE:
       return new ShardedLRUCache(capacity, id);
-#if !defined(__APPLE__)
+#if defined(HAVE_LIB_VMEM)
     case NVM_CACHE:
       return NewLRUNvmCache(capacity, id);
 #endif

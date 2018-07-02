@@ -65,12 +65,12 @@ class CacheTest : public KuduTest,
 
   virtual void SetUp() OVERRIDE {
 
-#if defined(__linux__)
+#if defined(HAVE_LIB_VMEM)
     if (google::GetCommandLineFlagInfoOrDie("nvm_cache_path").is_default) {
       FLAGS_nvm_cache_path = GetTestPath("nvm-cache");
       ASSERT_OK(Env::Default()->CreateDir(FLAGS_nvm_cache_path));
     }
-#endif // defined(__linux__)
+#endif // defined(HAVE_LIB_VMEM)
 
     // Disable approximate tracking of cache memory since we make specific
     // assertions on the MemTracker in this test.

@@ -395,7 +395,7 @@ class TestCFileBothCacheTypes : public TestCFile,
                                 public ::testing::WithParamInterface<CacheType> {
  public:
   void SetUp() OVERRIDE {
-#if defined(__linux__)
+#if defined(HAVE_LIB_VMEM)
     // The NVM cache can run using any directory as its path -- it doesn't have
     // a lot of practical use outside of an actual NVM device, but for testing
     // purposes, we'll point it at our test dir, unless otherwise specified.
@@ -408,7 +408,7 @@ class TestCFileBothCacheTypes : public TestCFile,
       case DRAM_CACHE:
         FLAGS_block_cache_type = "DRAM";
         break;
-#if defined(__linux__)
+#if defined(HAVE_LIB_VMEM)
       case NVM_CACHE:
         FLAGS_block_cache_type = "NVM";
         break;
@@ -1029,7 +1029,7 @@ TEST_P(TestCFileBothCacheTypes, TestCacheKeysAreStable) {
   }
 }
 
-#if defined(__linux__)
+#if defined(HAVE_LIB_VMEM)
 // Inject failures in nvm allocation and ensure that we can still read a file.
 TEST_P(TestCFileBothCacheTypes, TestNvmAllocationFailure) {
   if (GetParam() != NVM_CACHE) return;

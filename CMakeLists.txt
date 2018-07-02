@@ -1153,6 +1153,11 @@ ADD_THIRDPARTY_LIB(pmemobj
   DEPS ${PMEMOBJ_DEPS})
 endif()
 
+if (EXISTS ${VMEM_SHARED_LIB})
+  set(HAVE_LIB_VMEM 1)
+  add_definitions(-DHAVE_LIB_VMEM=1)
+endif()
+
 ## curl
 find_package(CURL REQUIRED)
 

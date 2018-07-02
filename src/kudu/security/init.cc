@@ -270,7 +270,7 @@ Status KinitContext::DoRenewal() {
                                                             nullptr /* TKT service name */,
                                                             opts_),
                                  "Reacquire error: unable to login from keytab");
-#ifdef __APPLE__
+#if !defined(HAVE_KRB5_GET_INIT_CREDS_OPT_SET_OUT_CCACHE)
       // Heimdal krb5 doesn't have the 'krb5_get_init_creds_opt_set_out_ccache' option,
       // so use this alternate route.
       KRB5_RETURN_NOT_OK_PREPEND(krb5_cc_initialize(g_krb5_ctx, ccache_, principal_),
@@ -303,7 +303,7 @@ Status KinitContext::Kinit(const string& keytab_path, const string& principal) {
   KRB5_RETURN_NOT_OK_PREPEND(krb5_get_init_creds_opt_alloc(g_krb5_ctx, &opts_),
                              "unable to allocate get_init_creds_opt struct");
 
-#ifndef __APPLE__
+#if defined(HAVE_KRB5_GET_INIT_CREDS_OPT_SET_OUT_CCACHE)
   KRB5_RETURN_NOT_OK_PREPEND(krb5_get_init_creds_opt_set_out_ccache(g_krb5_ctx, opts_, ccache_),
                              "unable to set init_creds options");
 #endif
@@ -318,7 +318,7 @@ Status KinitContext::Kinit(const string& keytab_path, const string& principal) {
 
   ticket_end_timestamp_ = creds.times.endtime;
 
-#ifdef __APPLE__
+#if !defined(HAVE_KRB5_GET_INIT_CREDS_OPT_SET_OUT_CCACHE)
   // Heimdal krb5 doesn't have the 'krb5_get_init_creds_opt_set_out_ccache' option,
   // so use this alternate route.
   KRB5_RETURN_NOT_OK_PREPEND(krb5_cc_initialize(g_krb5_ctx, ccache_, principal_),
