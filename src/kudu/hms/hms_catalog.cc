@@ -209,17 +209,28 @@ Status HmsCatalog::DowngradeToLegacyImpalaTable(const std::string& name) {
   });
 }
 
-Status HmsCatalog::RetrieveTables(vector<hive::Table>* hms_tables) {
+Status HmsCatalog::GetKuduTables(vector<hive::Table>* kudu_tables) {
   return Execute([&] (HmsClient* client) {
     vector<string> database_names;
     RETURN_NOT_OK(client->GetAllDatabases(&database_names));
-    for (const auto &database_name : database_names) {
-      vector<string> table_names;
-      RETURN_NOT_OK(client->GetAllTables(database_name, &table_names));
-      for (const auto &table_name : table_names) {
-        hive::Table hms_table;
-        RETURN_NOT_OK(client->GetTable(database_name, table_name, &hms_table));
-        hms_tables->emplace_back(move(hms_table));
+    vector<string> table_names;
+    vector<hive::Table> tables;
+
+    for (const auto& database_name : database_names) {
+      table_names.clear();
+      tables.clear();
+      RETURN_NOT_OK(client->GetTableNames(
+            database_name,
+            Substitute("$0$1 = \"$2\" OR $0$1 = \"$3\"",
+              HmsClient::kHiveFilterFieldParams,
+              HmsClient::kStorageHandlerKey,
+              HmsClient::kKuduStorageHandler,
+              HmsClient::kLegacyKuduStorageHandler),
+            &table_names));
+
+      if (!table_names.empty()) {
+        RETURN_NOT_OK(client->GetTables(database_name, table_names, &tables));
+        std::move(tables.begin(), tables.end(), std::back_inserter(*kudu_tables));
       }
     }
 

@@ -31,6 +31,7 @@
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/hms/hive_metastore_types.h"
 #include "kudu/hms/mini_hms.h"
 #include "kudu/rpc/sasl_common.h"
@@ -48,6 +49,7 @@ using kudu::rpc::SaslProtection;
 using std::make_pair;
 using std::string;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 namespace hms {
@@ -146,7 +148,7 @@ TEST_P(HmsClientTest, TestHmsOperations) {
   std::sort(databases.begin(), databases.end());
   EXPECT_EQ(vector<string>({ "default", database_name }), databases) << "Databases: " << databases;
 
-  // Get a specific database..
+  // Get a specific database.
   hive::Database my_db;
   ASSERT_OK(client.GetDatabase(database_name, &my_db));
   EXPECT_EQ(database_name, my_db.name) << "my_db: " << my_db;
@@ -203,12 +205,36 @@ TEST_P(HmsClientTest, TestHmsOperations) {
   // Create a table with an illegal utf-8 name.
   ASSERT_TRUE(CreateTable(&client, database_name, "☃ sculptures 😉", table_id).IsInvalidArgument());
 
-  // Get all tables.
-  vector<string> tables;
-  ASSERT_OK(client.GetAllTables(database_name, &tables));
-  std::sort(tables.begin(), tables.end());
-  EXPECT_EQ(vector<string>({ new_table_name, "my_uppercase_table" }), tables)
-      << "Tables: " << tables;
+  // Create a non-Kudu table.
+  hive::Table non_kudu_table;
+  non_kudu_table.dbName = database_name;
+  non_kudu_table.tableName = "non_kudu_table";
+  non_kudu_table.parameters[HmsClient::kStorageHandlerKey] = "bogus.storage.Handler";
+  ASSERT_OK(client.CreateTable(non_kudu_table));
+
+  // Get all table names.
+  vector<string> table_names;
+  ASSERT_OK(client.GetTableNames(database_name, &table_names));
+  std::sort(table_names.begin(), table_names.end());
+  EXPECT_EQ(vector<string>({ new_table_name, "my_uppercase_table", "non_kudu_table" }), table_names)
+      << "table names: " << table_names;
+
+  // Get filtered table names.
+  table_names.clear();
+  string filter = Substitute(
+      "$0$1 = \"$2\"", HmsClient::kHiveFilterFieldParams,
+      HmsClient::kStorageHandlerKey, HmsClient::kKuduStorageHandler);
+  ASSERT_OK(client.GetTableNames(database_name, filter, &table_names))
+  std::sort(table_names.begin(), table_names.end());
+  EXPECT_EQ(vector<string>({ new_table_name, "my_uppercase_table" }), table_names)
+      << "table names: " << table_names;
+
+  // Get multiple tables.
+  vector<hive::Table> tables;
+  ASSERT_OK(client.GetTables(database_name, table_names, &tables));
+  ASSERT_EQ(2, tables.size());
+  EXPECT_EQ(new_table_name, tables[0].tableName);
+  EXPECT_EQ("my_uppercase_table", tables[1].tableName);
 
   // Check that the HMS rejects Kudu table drops with a bogus table ID.
   ASSERT_TRUE(DropTable(&client, database_name, new_table_name, "bogus-table-id").IsRemoteError());
@@ -232,15 +258,16 @@ TEST_P(HmsClientTest, TestHmsOperations) {
   vector<hive::NotificationEvent> events;
   ASSERT_OK(client.GetNotificationEvents(-1, 100, &events));
 
-  ASSERT_EQ(5, events.size());
+  ASSERT_EQ(6, events.size());
   EXPECT_EQ("CREATE_DATABASE", events[0].eventType);
   EXPECT_EQ("CREATE_TABLE", events[1].eventType);
   EXPECT_EQ("ALTER_TABLE", events[2].eventType);
   EXPECT_EQ("CREATE_TABLE", events[3].eventType);
-  EXPECT_EQ("DROP_TABLE", events[4].eventType);
+  EXPECT_EQ("CREATE_TABLE", events[4].eventType);
+  EXPECT_EQ("DROP_TABLE", events[5].eventType);
   // TODO(HIVE-17008)
-  //EXPECT_EQ("DROP_TABLE", events[5].eventType);
-  //EXPECT_EQ("DROP_DATABASE", events[6].eventType);
+  //EXPECT_EQ("DROP_TABLE", events[6].eventType);
+  //EXPECT_EQ("DROP_DATABASE", events[7].eventType);
 
   // Retrieve a specific notification log.
   events.clear();

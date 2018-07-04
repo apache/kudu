@@ -396,36 +396,39 @@ TEST_F(HmsCatalogTest, TestExternalTable) {
   NO_FATALS(CheckTableDoesNotExist("default", "bogus_table_name"));
 }
 
-TEST_F(HmsCatalogTest, TestRetrieveTables) {
+TEST_F(HmsCatalogTest, TestGetKuduTables) {
   const string kHmsDatabase = "db";
   const string kManagedTableName = "managed_table";
   const string kExternalTableName = "external_table";
+  const string kTableName = "external_table";
   const string kNonKuduTableName = "non_kudu_table";
 
-  // Create a Impala managed table, a external table and a non Kudu table.
+  // Create a legacy Impala managed table, a legacy Impala external table, a
+  // Kudu table, and a non Kudu table.
   hive::Database db;
-  db.name = kHmsDatabase;
+  db.name = "db";
   ASSERT_OK(hms_client_->CreateDatabase(db));
-  ASSERT_OK(CreateLegacyTable(kHmsDatabase,
-                              kManagedTableName,
-                              HmsClient::kManagedTable));
+  ASSERT_OK(CreateLegacyTable("db", "managed_table", HmsClient::kManagedTable));
   hive::Table table;
-  ASSERT_OK(hms_client_->GetTable(kHmsDatabase, kManagedTableName, &table));
-  ASSERT_OK(CreateLegacyTable(kHmsDatabase,
-                              kExternalTableName,
-                              HmsClient::kExternalTable));
-  ASSERT_OK(hms_client_->GetTable(kHmsDatabase, kExternalTableName, &table));
+  ASSERT_OK(hms_client_->GetTable(kHmsDatabase, "managed_table", &table));
+  ASSERT_OK(CreateLegacyTable("db", "external_table", HmsClient::kExternalTable));
+  ASSERT_OK(hms_client_->GetTable("db", "external_table", &table));
+
+  ASSERT_OK(hms_catalog_->CreateTable("fake-id", "db.table", Schema()));
 
   hive::Table non_kudu_table;
-  non_kudu_table.dbName = kHmsDatabase;
-  non_kudu_table.tableName = kNonKuduTableName;
+  non_kudu_table.dbName = "db";
+  non_kudu_table.tableName = "non_kudu_table";
   ASSERT_OK(hms_client_->CreateTable(non_kudu_table));
-  ASSERT_OK(hms_client_->GetTable(kHmsDatabase, kNonKuduTableName, &table));
+  ASSERT_OK(hms_client_->GetTable("db", "non_kudu_table", &table));
 
   // Retrieve all tables and ensure all entries are found.
-  vector<hive::Table> hms_tables;
-  ASSERT_OK(hms_catalog_->RetrieveTables(&hms_tables));
-  ASSERT_EQ(3, hms_tables.size());
+  vector<hive::Table> kudu_tables;
+  ASSERT_OK(hms_catalog_->GetKuduTables(&kudu_tables));
+  ASSERT_EQ(3, kudu_tables.size());
+  for (const auto& kudu_table : kudu_tables) {
+    ASSERT_FALSE(kudu_table.tableName == "non_kudu_table") << kudu_table;
+  }
 }
 
 // Checks that the HmsCatalog handles reconnecting to the metastore after a connection failure.

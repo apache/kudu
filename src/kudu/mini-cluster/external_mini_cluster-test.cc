@@ -198,7 +198,7 @@ TEST_P(ExternalMiniClusterTest, TestBasicOperation) {
     hms::HmsClient hms_client(cluster.hms()->address(), hms_client_opts);
     ASSERT_OK(hms_client.Start());
     vector<string> tables;
-    ASSERT_OK(hms_client.GetAllTables("default", &tables));
+    ASSERT_OK(hms_client.GetTableNames("default", &tables));
     ASSERT_TRUE(tables.empty()) << "tables: " << tables;
   }
 

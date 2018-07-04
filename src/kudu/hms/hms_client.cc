@@ -131,6 +131,7 @@ const char* const HmsClient::kExternalTableKey = "EXTERNAL";
 const char* const HmsClient::kStorageHandlerKey = "storage_handler";
 const char* const HmsClient::kKuduMetastorePlugin =
   "org.apache.kudu.hive.metastore.KuduMetastorePlugin";
+const char* const HmsClient::kHiveFilterFieldParams = "hive_filter_field_params__";
 
 const char* const HmsClient::kManagedTable = "MANAGED_TABLE";
 const char* const HmsClient::kExternalTable = "EXTERNAL_TABLE";
@@ -300,12 +301,23 @@ Status HmsClient::DropTable(const string& database_name,
   return Status::OK();
 }
 
-Status HmsClient::GetAllTables(const string& database_name,
-                               vector<string>* tables) {
-  DCHECK(tables);
+Status HmsClient::GetTableNames(const string& database_name,
+                                vector<string>* table_names) {
+  DCHECK(table_names);
   SCOPED_LOG_SLOW_EXECUTION(WARNING, kSlowExecutionWarningThresholdMs, "get all HMS tables");
-  HMS_RET_NOT_OK(client_.get_all_tables(*tables, database_name),
+  HMS_RET_NOT_OK(client_.get_all_tables(*table_names, database_name),
                  "failed to get Hive Metastore tables");
+  return Status::OK();
+}
+
+Status HmsClient::GetTableNames(const std::string& database_name,
+                                const std::string& filter,
+                                std::vector<std::string>* table_names) {
+  DCHECK(table_names);
+  SCOPED_LOG_SLOW_EXECUTION(WARNING, kSlowExecutionWarningThresholdMs, "get filtered HMS tables");
+  HMS_RET_NOT_OK(client_.get_table_names_by_filter(*table_names, database_name,
+                                                   filter, /*max_tables*/ -1),
+                 "failed to get filtered Hive Metastore tables");
   return Status::OK();
 }
 
@@ -316,6 +328,16 @@ Status HmsClient::GetTable(const string& database_name,
   SCOPED_LOG_SLOW_EXECUTION(WARNING, kSlowExecutionWarningThresholdMs, "get HMS table");
   HMS_RET_NOT_OK(client_.get_table(*table, database_name, table_name),
                  "failed to get Hive Metastore table");
+  return Status::OK();
+}
+
+Status HmsClient::GetTables(const string& database_name,
+                            const vector<string>& table_names,
+                            vector<hive::Table>* tables) {
+  DCHECK(tables);
+  SCOPED_LOG_SLOW_EXECUTION(WARNING, kSlowExecutionWarningThresholdMs, "get HMS tables");
+  HMS_RET_NOT_OK(client_.get_table_objects_by_name(*tables, database_name, table_names),
+                 "failed to get Hive Metastore tables");
   return Status::OK();
 }
 

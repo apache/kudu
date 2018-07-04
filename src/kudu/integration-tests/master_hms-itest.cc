@@ -327,7 +327,7 @@ TEST_F(MasterHmsTest, TestRenameTable) {
 
   // Check that the two tables still exist.
   vector<string> tables;
-  ASSERT_OK(hms_client_->GetAllTables("db", &tables));
+  ASSERT_OK(hms_client_->GetTableNames("db", &tables));
   std::sort(tables.begin(), tables.end());
   ASSERT_EQ(tables, vector<string>({ "b", "d" })) << tables;
 

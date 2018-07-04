@@ -2249,7 +2249,7 @@ TEST_F(ToolTest, TestHmsUpgrade) {
 
   {
     vector<string> table_names;
-    ASSERT_OK(hms_client.GetAllTables(kDatabaseName, &table_names));
+    ASSERT_OK(hms_client.GetTableNames(kDatabaseName, &table_names));
     ASSERT_EQ(2, table_names.size());
   }
 
@@ -2285,10 +2285,10 @@ TEST_F(ToolTest, TestHmsUpgrade) {
     vector<string> db_names;
     ASSERT_OK(hms_client.GetAllDatabases(&db_names));
     ASSERT_EQ(2, db_names.size());
-    ASSERT_OK(hms_client.GetAllTables(kDatabaseName, &table_names));
+    ASSERT_OK(hms_client.GetTableNames(kDatabaseName, &table_names));
     ASSERT_EQ(2, table_names.size());
     table_names.clear();
-    ASSERT_OK(hms_client.GetAllTables(kDefaultDatabaseName, &table_names));
+    ASSERT_OK(hms_client.GetTableNames(kDefaultDatabaseName, &table_names));
     ASSERT_EQ(6, table_names.size());
 
     string out;

@@ -103,17 +103,21 @@ class HmsCatalog {
   // Kudu table, or if the table entry in not in the HMS.
   Status DowngradeToLegacyImpalaTable(const std::string& name) WARN_UNUSED_RESULT;
 
-  // Retrieves all tables in the HMS.
+  // Retrieves all Kudu tables in the HMS.
+  //
+  // Tables are considered to be Kudu tables if their storage handler matches
+  // the legacy Kudu storage handler used by Impala, or the new Kudu storage
+  // handler.
   //
   // This method will fail if the HMS is unreachable.
-  Status RetrieveTables(std::vector<hive::Table>* hms_tables) WARN_UNUSED_RESULT;
+  Status GetKuduTables(std::vector<hive::Table>* kudu_tables) WARN_UNUSED_RESULT;
 
   // Retrieves notification log events from the HMS.
   //
   // The events will begin at id 'last_event_id + 1', and at most 'max_events'
   // events are returned.
   Status GetNotificationEvents(int64_t last_event_id, int max_events,
-                               std::vector<hive::NotificationEvent>* events);
+                               std::vector<hive::NotificationEvent>* events) WARN_UNUSED_RESULT;
 
   // Validates the hive_metastore_uris gflag.
   static bool ValidateUris(const char* flag_name, const std::string& metastore_uris);
@@ -145,7 +149,7 @@ class HmsCatalog {
   // Hive handles validating and canonicalizing table names in
   // org.apache.hadoop.hive.metastore.MetaStoreUtils.validateName and
   // org.apache.hadoop.hive.common.util.normalizeIdentifier.
-  static Status NormalizeTableName(std::string* table_name);
+  static Status NormalizeTableName(std::string* table_name) WARN_UNUSED_RESULT;
 
  private:
 

@@ -87,14 +87,11 @@ const char* const kInvalidNameError = "is not a valid object name";
 unordered_map<string, hive::Table> RetrieveTablesMap(vector<hive::Table> hms_tables) {
   unordered_map<string, hive::Table> hms_tables_map;
   for (auto& hms_table : hms_tables) {
-    if (hms_table.parameters[HmsClient::kStorageHandlerKey] ==
-        HmsClient::kLegacyKuduStorageHandler) {
-      hms_tables_map.emplace(hms_table.parameters[HmsClient::kLegacyKuduTableNameKey],
-                             hms_table);
-    } else if (hms_table.parameters[HmsClient::kStorageHandlerKey] ==
-               HmsClient::kKuduStorageHandler) {
-      hms_tables_map.emplace(Substitute("$0.$1", hms_table.dbName, hms_table.tableName),
-                             hms_table);
+    const string& storage_handler = hms_table.parameters[HmsClient::kStorageHandlerKey];
+    if (storage_handler == HmsClient::kLegacyKuduStorageHandler) {
+      hms_tables_map.emplace(hms_table.parameters[HmsClient::kLegacyKuduTableNameKey], hms_table);
+    } else if (storage_handler == HmsClient::kKuduStorageHandler) {
+      hms_tables_map.emplace(Substitute("$0.$1", hms_table.dbName, hms_table.tableName), hms_table);
     }
   }
   return hms_tables_map;
@@ -213,22 +210,20 @@ Status AlterLegacyKuduTables(KuduClient* kudu_client,
 Status Init(const RunnerContext& context,
             shared_ptr<KuduClient>* kudu_client,
             unique_ptr<HmsCatalog>* hms_catalog) {
-  const string& master_addresses_str = FindOrDie(context.required_args,
-                                                 kMasterAddressesArg);
-  vector<string> master_addresses = Split(master_addresses_str, ",");
+  const string& master_addresses = FindOrDie(context.required_args, kMasterAddressesArg);
 
   if (!hms::HmsCatalog::IsEnabled()) {
     return Status::IllegalState("HMS URIs cannot be empty!");
   }
 
   // Create Hms Catalog.
-  hms_catalog->reset(new hms::HmsCatalog(master_addresses_str));
+  hms_catalog->reset(new hms::HmsCatalog(master_addresses));
   RETURN_NOT_OK((*hms_catalog)->Start());
 
   // Create a Kudu Client.
   return KuduClientBuilder()
       .default_rpc_timeout(MonoDelta::FromMilliseconds(FLAGS_timeout_ms))
-      .master_server_addrs(master_addresses)
+      .master_server_addrs(Split(master_addresses, ","))
       .Build(kudu_client);
 }
 
@@ -270,7 +265,7 @@ Status HmsUpgrade(const RunnerContext& context) {
 
   // 1. Identify all Kudu tables in the HMS entries.
   vector<hive::Table> hms_tables;
-  RETURN_NOT_OK(hms_catalog->RetrieveTables(&hms_tables));
+  RETURN_NOT_OK(hms_catalog->GetKuduTables(&hms_tables));
 
   // 2. Rename all existing Kudu tables to have Hive-compatible table names.
   //    Also, correct all out of sync metadata in HMS entries.
@@ -286,7 +281,7 @@ Status HmsDowngrade(const RunnerContext& context) {
 
   // 1. Identify all Kudu tables in the HMS entries.
   vector<hive::Table> hms_tables;
-  RETURN_NOT_OK(hms_catalog->RetrieveTables(&hms_tables));
+  RETURN_NOT_OK(hms_catalog->GetKuduTables(&hms_tables));
 
   // 2. Downgrades all Kudu tables to legacy table format.
   for (auto& hms_table : hms_tables) {
@@ -301,14 +296,14 @@ Status HmsDowngrade(const RunnerContext& context) {
 }
 
 // Given a kudu table and a hms table, checks if their metadata is in sync.
-bool isSynced(const string& master_addresses,
-              const shared_ptr<KuduTable>& kudu_table,
+bool IsSynced(const string& master_addresses,
+              const KuduTable& kudu_table,
               const hive::Table& hms_table) {
-  Schema schema(client::SchemaFromKuduSchema(kudu_table->schema()));
+  Schema schema(client::SchemaFromKuduSchema(kudu_table.schema()));
   hive::Table hms_table_copy(hms_table);
-  Status s = HmsCatalog::PopulateTable(kudu_table->id(), kudu_table->name(),
+  Status s = HmsCatalog::PopulateTable(kudu_table.id(), kudu_table.name(),
                                        schema, master_addresses, &hms_table_copy);
-  return hms_table_copy == hms_table && s.ok();
+  return s.ok() && hms_table_copy == hms_table;
 }
 
 // Filter orphan tables from the unsynchronized tables map.
@@ -360,8 +355,7 @@ Status PrintUnsyncedTables(const string& master_addresses,
   return table.PrintTo(out);
 }
 
-Status PrintLegacyTables(const vector<hive::Table>& tables,
-                         ostream& out) {
+Status PrintLegacyTables(const vector<hive::Table>& tables, ostream& out) {
   cout << "Found legacy tables in the Hive Metastore, "
        << "use metadata upgrade tool first: 'kudu hms upgrade'."
        << endl;
@@ -375,25 +369,25 @@ Status PrintLegacyTables(const vector<hive::Table>& tables,
   return table.PrintTo(out);
 }
 
-Status RetrieveUnsyncedTables(const unique_ptr<HmsCatalog>& hms_catalog,
-                              const shared_ptr<KuduClient>& kudu_client,
-                              const string& master_addresses_str,
+Status RetrieveUnsyncedTables(HmsCatalog* hms_catalog,
+                              KuduClient* kudu_client,
+                              const string& master_addresses,
                               TablesMap* unsynced_tables_map,
                               vector<hive::Table>* legacy_tables) {
   // 1. Identify all Kudu table in the HMS entries.
   vector<hive::Table> hms_tables;
-  RETURN_NOT_OK(hms_catalog->RetrieveTables(&hms_tables));
+  RETURN_NOT_OK(hms_catalog->GetKuduTables(&hms_tables));
 
   // 2. Walk through all the Kudu tables in the HMS and identify any
   //    out of sync tables.
   for (auto& hms_table : hms_tables) {
-    string hms_table_id = hms_table.parameters[HmsClient::kKuduTableIdKey];
-    if (hms_table.parameters[HmsClient::kStorageHandlerKey] ==
-        HmsClient::kKuduStorageHandler) {
+    const string& storage_handler = hms_table.parameters[HmsClient::kStorageHandlerKey];
+    if (storage_handler == HmsClient::kKuduStorageHandler) {
+      const string& hms_table_id = hms_table.parameters[HmsClient::kKuduTableIdKey];
       string table_name = Substitute("$0.$1", hms_table.dbName, hms_table.tableName);
       shared_ptr<KuduTable> kudu_table;
       Status s = kudu_client->OpenTable(table_name, &kudu_table);
-      if (s.ok() && !isSynced(master_addresses_str, kudu_table, hms_table)) {
+      if (s.ok() && !IsSynced(master_addresses, *kudu_table.get(), hms_table)) {
         (*unsynced_tables_map)[kudu_table->id()].first = kudu_table;
         (*unsynced_tables_map)[hms_table_id].second.emplace_back(hms_table);
       } else if (s.IsNotFound()) {
@@ -404,8 +398,7 @@ Status RetrieveUnsyncedTables(const unique_ptr<HmsCatalog>& hms_catalog,
       } else {
         RETURN_NOT_OK(s);
       }
-    } else if (hms_table.parameters[HmsClient::kStorageHandlerKey] ==
-               HmsClient::kLegacyKuduStorageHandler) {
+    } else if (storage_handler == HmsClient::kLegacyKuduStorageHandler) {
       legacy_tables->push_back(hms_table);
     }
   }
@@ -430,16 +423,17 @@ Status RetrieveUnsyncedTables(const unique_ptr<HmsCatalog>& hms_catalog,
 }
 
 Status CheckHmsMetadata(const RunnerContext& context) {
-  const string& master_addresses_str = FindOrDie(context.required_args,
-                                                 kMasterAddressesArg);
+  const string& master_addresses = FindOrDie(context.required_args, kMasterAddressesArg);
   shared_ptr<KuduClient> kudu_client;
   unique_ptr<HmsCatalog> hms_catalog;
   Init(context, &kudu_client, &hms_catalog);
 
   TablesMap unsynced_tables_map;
   std::vector<hive::Table> legacy_tables;
-  RETURN_NOT_OK_PREPEND(RetrieveUnsyncedTables(hms_catalog, kudu_client,
-                                               master_addresses_str, &unsynced_tables_map,
+  RETURN_NOT_OK_PREPEND(RetrieveUnsyncedTables(hms_catalog.get(),
+                                               kudu_client.get(),
+                                               master_addresses,
+                                               &unsynced_tables_map,
                                                &legacy_tables),
                         "error fetching unsynchronized tables");
 
@@ -452,8 +446,7 @@ Status CheckHmsMetadata(const RunnerContext& context) {
   // Something went wrong.
   cout << "FAILED" << endl;
   if (!unsynced_tables_map.empty()) {
-    RETURN_NOT_OK_PREPEND(PrintUnsyncedTables(master_addresses_str,
-                                              unsynced_tables_map, cout),
+    RETURN_NOT_OK_PREPEND(PrintUnsyncedTables(master_addresses, unsynced_tables_map, cout),
                           "error printing inconsistent data");
     cout << endl;
   }
@@ -522,16 +515,16 @@ Status FixUnsyncedTables(KuduClient* kudu_client,
 }
 
 Status FixHmsMetadata(const RunnerContext& context) {
-  const string& master_addresses_str = FindOrDie(context.required_args,
-                                                 kMasterAddressesArg);
+  const string& master_addresses = FindOrDie(context.required_args, kMasterAddressesArg);
   shared_ptr<KuduClient> kudu_client;
   unique_ptr<HmsCatalog> hms_catalog;
   Init(context, &kudu_client, &hms_catalog);
 
   TablesMap unsynced_tables_map;
   std::vector<hive::Table> legacy_tables;
-  RETURN_NOT_OK_PREPEND(RetrieveUnsyncedTables(hms_catalog, kudu_client,
-                                               master_addresses_str,
+  RETURN_NOT_OK_PREPEND(RetrieveUnsyncedTables(hms_catalog.get(),
+                                               kudu_client.get(),
+                                               master_addresses,
                                                &unsynced_tables_map,
                                                &legacy_tables),
                         "error fetching unsynchronized tables");
