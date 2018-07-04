@@ -54,6 +54,12 @@ Status RunKuduTool(const vector<string>& args, string* out, string* err,
   total_args.emplace_back("--unlock_unsafe_flags");
   total_args.emplace_back("--never_fsync");
 
+  // Do not colorize glog's output (i.e. messages logged via LOG()) even
+  // if the GLOG_colorlogtostderr environment variable is set. This is to avoid
+  // failing of tests that depend on the exact output from the tool
+  // (e.g., the exact location of some substring/character in the output line).
+  total_args.emplace_back("--nocolorlogtostderr");
+
   total_args.insert(total_args.end(), args.begin(), args.end());
   return Subprocess::Call(total_args, in, out, err);
 }
