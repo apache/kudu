@@ -664,9 +664,10 @@ Status TestLoadGenerator(const RunnerContext& context) {
 
     unique_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
     table_creator->table_name(table_name)
-                  .schema(&schema)
-                  .num_replicas(FLAGS_table_num_replicas)
-                  .wait(true);
+                  .schema(&schema);
+    if (FLAGS_table_num_replicas > 0) {
+      table_creator->num_replicas(FLAGS_table_num_replicas);
+    }
     if (FLAGS_table_num_range_partitions > 1) {
       // Split the generated span for a sequential workload evenly across all
       // tablets. In case we're inserting in random mode, use unbounded range

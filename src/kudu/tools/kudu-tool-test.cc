@@ -1486,6 +1486,10 @@ TEST_F(ToolTest, TestLoadgenManualFlush) {
       "bench_manual_flush"));
 }
 
+TEST_F(ToolTest, TestLoadgenServerSideDefaultNumReplicas) {
+  NO_FATALS(RunLoadgen(3, { "--table_num_replicas=0" }));
+}
+
 // Run the loadgen, generating a few different partitioning schemas.
 TEST_F(ToolTest, TestLoadgenAutoGenTablePartitioning) {
   {
