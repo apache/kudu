@@ -97,13 +97,12 @@ unordered_map<string, hive::Table> RetrieveTablesMap(vector<hive::Table> hms_tab
   return hms_tables_map;
 }
 
-string RenameHiveIncompatibleTable(const string& name) {
-  string table_name(name);
+string RenameHiveIncompatibleTable(const string& table_name) {
   cout << Substitute("Table $0 is not hive compatible.", table_name) << endl;
   cout << "Please input a new table name: ";
-  getline(cin, table_name);
-
-  return table_name;
+  string new_table_name;
+  getline(cin, new_table_name);
+  return new_table_name;
 }
 
 // Only alter the table in Kudu but not in the Hive Metastore.
@@ -285,8 +284,7 @@ Status HmsDowngrade(const RunnerContext& context) {
 
   // 2. Downgrades all Kudu tables to legacy table format.
   for (auto& hms_table : hms_tables) {
-    if (hms_table.parameters[HmsClient::kStorageHandlerKey] ==
-        HmsClient::kKuduStorageHandler) {
+    if (hms_table.parameters[HmsClient::kStorageHandlerKey] == HmsClient::kKuduStorageHandler) {
       RETURN_NOT_OK(hms_catalog->DowngradeToLegacyImpalaTable(
           Substitute("$0.$1", hms_table.dbName, hms_table.tableName)));
     }
@@ -338,16 +336,22 @@ Status PrintUnsyncedTables(const string& master_addresses,
   DataTable table({ "TableID", "KuduTableName", "HmsDbName", "HmsTableName",
                     "KuduMasterAddresses", "HmsTableMasterAddresses"});
   for (const auto& entry : tables_map) {
-    string table_id = entry.first;
-    shared_ptr<KuduTable> kudu_table = entry.second.first;
-    vector<hive::Table> hms_tables = entry.second.second;
-    string kudu_table_name = kudu_table->name();
+    const string& table_id = entry.first;
+    const KuduTable& kudu_table = *entry.second.first.get();
+    const vector<hive::Table>& hms_tables = entry.second.second;
+    const string& kudu_table_name = kudu_table.name();
     if (hms_tables.empty()) {
       table.AddRow({ table_id, kudu_table_name, "", "", master_addresses, "" });
     } else {
-      for (hive::Table hms_table : hms_tables) {
-        table.AddRow({table_id, kudu_table_name, hms_table.dbName, hms_table.tableName,
-                     master_addresses, hms_table.parameters[HmsClient::kKuduMasterAddrsKey]});
+      for (const hive::Table& hms_table : hms_tables) {
+        table.AddRow({
+            table_id,
+            kudu_table_name,
+            hms_table.dbName,
+            hms_table.tableName,
+            master_addresses,
+            FindOrDie(hms_table.parameters, HmsClient::kKuduMasterAddrsKey),
+        });
       }
     }
   }
@@ -362,8 +366,8 @@ Status PrintLegacyTables(const vector<hive::Table>& tables, ostream& out) {
   DataTable table({ "HmsDbName", "HmsTableName", "KuduTableName",
                     "KuduMasterAddresses"});
   for (hive::Table t : tables) {
-    string kudu_table_name = t.parameters[HmsClient::kLegacyKuduTableNameKey];
-    string master_addresses = t.parameters[HmsClient::kKuduMasterAddrsKey];
+    const string& kudu_table_name = t.parameters[HmsClient::kLegacyKuduTableNameKey];
+    const string& master_addresses = t.parameters[HmsClient::kKuduMasterAddrsKey];
     table.AddRow({ t.dbName, t.tableName, kudu_table_name, master_addresses });
   }
   return table.PrintTo(out);
