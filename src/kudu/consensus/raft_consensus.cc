@@ -1320,6 +1320,16 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
 
     last_leader_communication_time_micros_ = GetMonoTimeMicros();
 
+    // Reset the 'failed_elections_since_stable_leader' metric now that we've
+    // accepted an update from the established leader. This is done in addition
+    // to the reset of the value in SetLeaderUuidUnlocked() because there is
+    // a potential race between resetting the failed elections count in
+    // SetLeaderUuidUnlocked() and incrementing after a failed election
+    // if another replica was elected leader in an election concurrent with
+    // the one called by this replica.
+    failed_elections_since_stable_leader_ = 0;
+    num_failed_elections_metric_->set_value(failed_elections_since_stable_leader_);
+
     // We update the lag metrics here in addition to after appending to the queue so the
     // metrics get updated even when the operation is rejected.
     queue_->UpdateLastIndexAppendedToLeader(request->last_idx_appended_to_leader());
