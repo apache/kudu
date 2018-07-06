@@ -507,9 +507,11 @@ Status RaftConsensus::StartElection(ElectionMode mode, ElectionReason reason) {
         queue_->GetLastOpIdInLog();
 
     election.reset(new LeaderElection(
-        active_config,
+        std::move(active_config),
+        // The RaftConsensus ref passed below ensures that this raw pointer
+        // remains safe to use for the entirety of LeaderElection's life.
         peer_proxy_factory_.get(),
-        request, std::move(counter), timeout,
+        std::move(request), std::move(counter), timeout,
         std::bind(&RaftConsensus::ElectionCallback,
                   shared_from_this(),
                   reason, std::placeholders::_1)));

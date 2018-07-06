@@ -21,6 +21,7 @@
 #include <mutex>
 #include <ostream>
 #include <type_traits>
+#include <vector>
 
 #include <boost/bind.hpp> // IWYU pragma: keep
 #include <glog/logging.h>
@@ -45,6 +46,7 @@ namespace kudu {
 namespace consensus {
 
 using std::string;
+using std::vector;
 using strings::Substitute;
 
 ///////////////////////////////////////////////////
@@ -159,47 +161,20 @@ string LeaderElection::VoterState::PeerInfo() const {
 // LeaderElection
 ///////////////////////////////////////////////////
 
-LeaderElection::LeaderElection(const RaftConfigPB& config,
+LeaderElection::LeaderElection(RaftConfigPB config,
                                PeerProxyFactory* proxy_factory,
-                               const VoteRequestPB& request,
+                               VoteRequestPB request,
                                gscoped_ptr<VoteCounter> vote_counter,
                                MonoDelta timeout,
                                ElectionDecisionCallback decision_callback)
     : has_responded_(false),
-      request_(request),
+      config_(std::move(config)),
+      proxy_factory_(proxy_factory),
+      request_(std::move(request)),
       vote_counter_(std::move(vote_counter)),
       timeout_(timeout),
       decision_callback_(std::move(decision_callback)),
       highest_voter_term_(0) {
-  for (const RaftPeerPB& peer : config.peers()) {
-    if (request.candidate_uuid() == peer.permanent_uuid()) {
-      DCHECK_EQ(peer.member_type(), RaftPeerPB::VOTER)
-          << Substitute("non-voter member $0 tried to start an election; "
-                        "Raft config {$1}",
-                        peer.permanent_uuid(),
-                        pb_util::SecureShortDebugString(config));
-      continue;
-    }
-    if (peer.member_type() != RaftPeerPB::VOTER) {
-      continue;
-    }
-    other_voter_uuids_.push_back(peer.permanent_uuid());
-
-    gscoped_ptr<VoterState> state(new VoterState());
-    state->peer_uuid = peer.permanent_uuid();
-    state->proxy_status = proxy_factory->NewProxy(peer, &state->proxy);
-    InsertOrDie(&voter_state_, peer.permanent_uuid(), state.release());
-  }
-
-  // Ensure that the candidate has already voted for itself.
-  CHECK_EQ(1, vote_counter_->GetTotalVotesCounted()) << "Candidate must vote for itself first";
-
-  // Ensure that existing votes + future votes add up to the expected total.
-  CHECK_EQ(vote_counter_->GetTotalVotesCounted() + other_voter_uuids_.size(),
-           vote_counter_->GetTotalExpectedVotes())
-      << "Expected different number of voters. Voter UUIDs: ["
-      << JoinStringsIterator(other_voter_uuids_.begin(), other_voter_uuids_.end(), ", ")
-      << "]; RaftConfig: {" << pb_util::SecureShortDebugString(config) << "}";
 }
 
 LeaderElection::~LeaderElection() {
@@ -211,12 +186,45 @@ LeaderElection::~LeaderElection() {
 void LeaderElection::Run() {
   VLOG_WITH_PREFIX(1) << "Running leader election.";
 
+  // Initialize voter state tracking.
+  vector<string> other_voter_uuids;
+  voter_state_.clear();
+  for (const RaftPeerPB& peer : config_.peers()) {
+    if (request_.candidate_uuid() == peer.permanent_uuid()) {
+      DCHECK_EQ(peer.member_type(), RaftPeerPB::VOTER)
+          << Substitute("non-voter member $0 tried to start an election; "
+                        "Raft config {$1}",
+                        peer.permanent_uuid(),
+                        pb_util::SecureShortDebugString(config_));
+      continue;
+    }
+    if (peer.member_type() != RaftPeerPB::VOTER) {
+      continue;
+    }
+    other_voter_uuids.emplace_back(peer.permanent_uuid());
+
+    gscoped_ptr<VoterState> state(new VoterState());
+    state->peer_uuid = peer.permanent_uuid();
+    state->proxy_status = proxy_factory_->NewProxy(peer, &state->proxy);
+    InsertOrDie(&voter_state_, peer.permanent_uuid(), state.release());
+  }
+
+  // Ensure that the candidate has already voted for itself.
+  CHECK_EQ(1, vote_counter_->GetTotalVotesCounted()) << "Candidate must vote for itself first";
+
+  // Ensure that existing votes + future votes add up to the expected total.
+  CHECK_EQ(vote_counter_->GetTotalVotesCounted() + other_voter_uuids.size(),
+           vote_counter_->GetTotalExpectedVotes())
+      << "Expected different number of voters. Voter UUIDs: ["
+      << JoinStringsIterator(other_voter_uuids.begin(), other_voter_uuids.end(), ", ")
+      << "]; RaftConfig: {" << pb_util::SecureShortDebugString(config_) << "}";
+
   // Check if we have already won the election (relevant if this is a
   // single-node configuration, since we always pre-vote for ourselves).
   CheckForDecision();
 
   // The rest of the code below is for a typical multi-node configuration.
-  for (const std::string& voter_uuid : other_voter_uuids_) {
+  for (const auto& voter_uuid : other_voter_uuids) {
     VoterState* state = nullptr;
     {
       std::lock_guard<Lock> guard(lock_);
