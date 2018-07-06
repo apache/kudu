@@ -16,7 +16,7 @@
 // under the License.
 package org.apache.kudu.backup
 
-import java.net.{URLEncoder}
+import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Path, Paths}
 

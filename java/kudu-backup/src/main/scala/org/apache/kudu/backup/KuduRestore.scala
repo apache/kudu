@@ -42,8 +42,9 @@ object KuduRestore {
 
     // TODO: Make parallel so each table isn't processed serially.
     options.tables.foreach { t =>
-      val tablePath = Paths.get(path).resolve(URLEncoder.encode(t, "UTF-8"))
-      val metadataPath = getMetadataPath(t, options)
+      val tableEncoded = URLEncoder.encode(t, "UTF-8")
+      val tablePath = Paths.get(path).resolve(tableEncoded)
+      val metadataPath = getMetadataPath(tableEncoded, options)
       val metadata = readTableMetadata(metadataPath, session)
       val restoreName = s"${metadata.getTableName}${options.tableSuffix}"
       val table =

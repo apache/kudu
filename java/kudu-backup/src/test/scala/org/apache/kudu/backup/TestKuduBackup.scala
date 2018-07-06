@@ -56,6 +56,23 @@ class TestKuduBackup extends FunSuite with TestContext with Matchers {
     assertTrue(partitionSchemasMatch(tA.getPartitionSchema, tB.getPartitionSchema))
   }
 
+  test("Simple Backup and Restore Table Name With Special Characters") {
+    // Use an Impala-style table name to verify url encoding/decoding of the table name works.
+    val impalaTableName = "impala::default.test"
+
+    val tableOptions = new CreateTableOptions()
+      .setRangePartitionColumns(List("key").asJava)
+      .setNumReplicas(1)
+
+    kuduClient.createTable(impalaTableName, simpleSchema, tableOptions)
+
+    backupAndRestore(impalaTableName)
+
+    val rdd = kuduContext.kuduRDD(ss.sparkContext, s"$impalaTableName-restore", List("key"))
+    // Only verifying the file contents could be read, the contents are expected to be empty.
+    assert(rdd.isEmpty())
+  }
+
   test("Random Backup and Restore") {
     Random.javaRandomToRandom(TestUtils.getRandom)
 
