@@ -231,7 +231,8 @@ scoped_refptr<LeaderElection> LeaderElectionTest::SetUpElectionWithHighTermVoter
   request.set_tablet_id(tablet_id_);
 
   scoped_refptr<LeaderElection> election(
-      new LeaderElection(config_, proxy_factory_.get(), request, std::move(counter),
+      new LeaderElection(config_, proxy_factory_.get(),
+                         std::move(request), std::move(counter),
                          MonoDelta::FromSeconds(kLeaderElectionTimeoutSecs),
                          std::bind(&LeaderElectionTest::ElectionCallback,
                                    this,
@@ -288,7 +289,8 @@ scoped_refptr<LeaderElection> LeaderElectionTest::SetUpElectionWithGrantDenyErro
   request.set_tablet_id(tablet_id_);
 
   scoped_refptr<LeaderElection> election(
-      new LeaderElection(config_, proxy_factory_.get(), request, std::move(counter),
+      new LeaderElection(config_, proxy_factory_.get(),
+                         std::move(request), std::move(counter),
                          MonoDelta::FromSeconds(kLeaderElectionTimeoutSecs),
                          std::bind(&LeaderElectionTest::ElectionCallback,
                                    this,
@@ -315,7 +317,8 @@ TEST_F(LeaderElectionTest, TestPerfectElection) {
     request.set_tablet_id(tablet_id_);
 
     scoped_refptr<LeaderElection> election(
-        new LeaderElection(config_, proxy_factory_.get(), request, std::move(counter),
+        new LeaderElection(config_, proxy_factory_.get(),
+                           std::move(request), std::move(counter),
                            MonoDelta::FromSeconds(kLeaderElectionTimeoutSecs),
                            std::bind(&LeaderElectionTest::ElectionCallback,
                                      this,
@@ -444,7 +447,8 @@ TEST_F(LeaderElectionTest, TestFailToCreateProxy) {
 
   gscoped_ptr<VoteCounter> counter = InitVoteCounter(kNumVoters, kMajoritySize);
   scoped_refptr<LeaderElection> election(
-      new LeaderElection(config_, proxy_factory_.get(), request, std::move(counter),
+      new LeaderElection(config_, proxy_factory_.get(),
+                         std::move(request), std::move(counter),
                          MonoDelta::FromSeconds(kLeaderElectionTimeoutSecs),
                          std::bind(&LeaderElectionTest::ElectionCallback,
                                    this,
