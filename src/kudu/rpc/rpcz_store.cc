@@ -32,6 +32,7 @@
 
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/rpc/inbound_call.h"
@@ -248,8 +249,11 @@ void RpczStore::LogTrace(InboundCall* call) {
     if (duration_ms > log_threshold) {
       // TODO: consider pushing this onto another thread since it may be slow.
       // The traces may also be too large to fit in a log message.
-      LOG(WARNING) << call->ToString() << " took " << duration_ms << "ms (client timeout "
-                   << call->header_.timeout_millis() << ").";
+      int64_t timeout_ms = call->header_.timeout_millis();
+      LOG(WARNING) << call->ToString() << " took " << duration_ms << " ms "
+                   << "(" << HumanReadableElapsedTime::ToShortString(duration_ms * .001) << "). "
+                   << "Client timeout " << timeout_ms << " ms "
+                   << "(" << HumanReadableElapsedTime::ToShortString(timeout_ms * .001) << ")";
       string s = call->trace()->DumpToString();
       if (!s.empty()) {
         LOG(WARNING) << "Trace:\n" << s;
