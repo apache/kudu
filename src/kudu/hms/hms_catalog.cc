@@ -151,13 +151,19 @@ Status HmsCatalog::CreateTable(const string& id,
 }
 
 Status HmsCatalog::DropTable(const string& id, const string& name) {
+  hive::EnvironmentContext env_ctx = EnvironmentContext();
+  env_ctx.properties.insert(make_pair(HmsClient::kKuduTableIdKey, id));
+  return DropTable(name, env_ctx);
+}
+
+Status HmsCatalog::DropLegacyTable(const string& name) {
+  return DropTable(name, EnvironmentContext());
+}
+
+Status HmsCatalog::DropTable(const string& name, const hive::EnvironmentContext& env_ctx) {
   Slice hms_database;
   Slice hms_table;
   RETURN_NOT_OK(ParseTableName(name, &hms_database, &hms_table));
-
-  hive::EnvironmentContext env_ctx = EnvironmentContext();
-  env_ctx.properties.insert(make_pair(HmsClient::kKuduTableIdKey, id));
-
   return Execute([&] (HmsClient* client) {
     return client->DropTable(hms_database.ToString(), hms_table.ToString(), env_ctx);
   });

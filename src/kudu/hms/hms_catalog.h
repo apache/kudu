@@ -75,8 +75,17 @@ class HmsCatalog {
   // This method will fail if the HMS is unreachable, if the table does not
   // exist in the HMS, or if the table entry in the HMS doesn't match the
   // specified Kudu table ID.
-  Status DropTable(const std::string& id,
-                   const std::string& name) WARN_UNUSED_RESULT;
+  Status DropTable(const std::string& id, const std::string& name) WARN_UNUSED_RESULT;
+
+  // Drops a legacy table from the HMS.
+  //
+  // This method will fail if the HMS is unreachable, or if the table does not
+  // exist in the HMS.
+  //
+  // Note: it's possible to drop a non-legacy table using this method, but that
+  // should be avoided, since it will skip the table ID checks in the Kudu HMS
+  // plugin.
+  Status DropLegacyTable(const std::string& name) WARN_UNUSED_RESULT;
 
   // Alters a table entry in the HMS.
   //
@@ -164,6 +173,10 @@ class HmsCatalog {
   // Reconnects hms_client_ to an HMS, or returns an error if all HMS instances
   // are unavailable.
   Status Reconnect();
+
+  // Drops a table entry from the HMS, supplying the provided environment context.
+  Status DropTable(const std::string& name,
+                   const hive::EnvironmentContext& env_ctx) WARN_UNUSED_RESULT;
 
   // Returns true if the RPC status is 'fatal', e.g. the Thrift connection on
   // which it occurred should be shut down.

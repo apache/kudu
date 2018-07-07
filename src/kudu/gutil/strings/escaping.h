@@ -142,7 +142,15 @@ bool CUnescape(const StringPiece& source, std::string* dest, std::string* error)
 
 // A version with no error reporting.
 inline bool CUnescape(const StringPiece& source, std::string* dest) {
-  return CUnescape(source, dest, NULL);
+  return CUnescape(source, dest, nullptr);
+}
+
+// A version which CHECK fails if the string can not be unescaped.
+inline std::string CUnescapeOrDie(const StringPiece& source) {
+  std::string dest;
+  std::string err;
+  CHECK(CUnescape(source, &dest, &err)) << err;
+  return dest;
 }
 
 // ----------------------------------------------------------------------

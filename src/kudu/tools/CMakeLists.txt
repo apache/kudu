@@ -154,11 +154,12 @@ target_link_libraries(kudu_tools_test_util
 #######################################
 
 set(KUDU_TEST_LINK_LIBS
-  ksck
-  kudu_tools_util
-  kudu_tools_test_util
-  kudu_tools_rebalance
   itest_util
+  ksck
+  kudu_hms
+  kudu_tools_rebalance
+  kudu_tools_test_util
+  kudu_tools_util
   mini_cluster
   ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(diagnostics_log_parser-test)
