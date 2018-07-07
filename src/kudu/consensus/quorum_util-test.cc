@@ -1490,6 +1490,23 @@ TEST_P(QuorumUtilHealthPolicyParamTest, MultipleReplicasWithReplaceAttribute) {
     }
     EXPECT_FALSE(ShouldAddReplica(config, 3, policy));
   }
+  {
+    RaftConfigPB config;
+    AddPeer(&config, "A", V, '+', {{"REPLACE", true}});
+    AddPeer(&config, "B", V, '+', {{"REPLACE", true}});
+    AddPeer(&config, "C", V, '+', {{"REPLACE", true}});
+    AddPeer(&config, "D", N, '+', {{"PROMOTE", true}});
+    AddPeer(&config, "E", N, '+', {{"PROMOTE", true}});
+    AddPeer(&config, "F", N, '+', {{"PROMOTE", true}});
+
+    for (const string& leader_replica : { "A", "B", "C" }) {
+      // All non-voters are in good shape and not a single one has been
+      // promoted yet.
+      ASSERT_FALSE(ShouldEvictReplica(config, leader_replica, 3, policy));
+    }
+    // No more replicas are needed for the replacement.
+    EXPECT_FALSE(ShouldAddReplica(config, 3, policy));
+  }
 }
 
 // Verify logic of the kudu::consensus::ShouldEvictReplica(), anticipating
@@ -1774,6 +1791,109 @@ TEST(QuorumUtilTest, ReplicaHealthFlapping) {
 
   RemovePeer(&config, "C");
   EXPECT_FALSE(ShouldEvictReplica(config, "D", kReplicationFactor, kPolicy));
+  EXPECT_FALSE(ShouldAddReplica(config, kReplicationFactor, kPolicy));
+}
+
+// A scenario to simulate the process of migrating all replicas of a tablet,
+// where all replicas are marked for replacement simultaneously. This is a
+// possible scenario when decommissioning multiple tablet servers/nodes at once.
+TEST(QuorumUtilTest, ReplaceAllTabletReplicas) {
+  constexpr auto kReplicationFactor = 3;
+  constexpr auto kPolicy = MajorityHealthPolicy::HONOR;
+
+  // The initial tablet report after the tablet replica 'A' has started and
+  // become the leader.
+  RaftConfigPB config;
+  AddPeer(&config, "A", V, '+', {{"REPLACE", true}});
+  AddPeer(&config, "B", V, '+', {{"REPLACE", true}});
+  AddPeer(&config, "C", V, '+', {{"REPLACE", true}});
+  EXPECT_FALSE(ShouldEvictReplica(config, "A", kReplicationFactor, kPolicy));
+  EXPECT_TRUE(ShouldAddReplica(config, kReplicationFactor, kPolicy));
+
+  // First non-voter replica added.
+  AddPeer(&config, "D", N, '?', {{"PROMOTE", true}});
+  EXPECT_FALSE(ShouldEvictReplica(config, "A", kReplicationFactor, kPolicy));
+  EXPECT_TRUE(ShouldAddReplica(config, kReplicationFactor, kPolicy));
+
+  // Second non-voter replica added.
+  AddPeer(&config, "E", N, '?', {{"PROMOTE", true}});
+  EXPECT_FALSE(ShouldEvictReplica(config, "A", kReplicationFactor, kPolicy));
+  EXPECT_TRUE(ShouldAddReplica(config, kReplicationFactor, kPolicy));
+
+  // Third non-voter replica added.
+  AddPeer(&config, "F", N, '?', {{"PROMOTE", true}});
+  EXPECT_FALSE(ShouldEvictReplica(config, "A", kReplicationFactor, kPolicy));
+  EXPECT_FALSE(ShouldAddReplica(config, kReplicationFactor, kPolicy));
+
+  SetPeerHealth(&config, "D", '+');
+  EXPECT_FALSE(ShouldEvictReplica(config, "A", kReplicationFactor, kPolicy));
+  EXPECT_FALSE(ShouldAddReplica(config, kReplicationFactor, kPolicy));
+
+  // Replica 'D' catches up with the leader's WAL and gets promoted.
+  PromotePeer(&config, "D");
+  string to_evict;
+  ASSERT_TRUE(ShouldEvictReplica(config, "A", kReplicationFactor, kPolicy, &to_evict));
+  EXPECT_TRUE(to_evict == "B" || to_evict == "C");
+  EXPECT_FALSE(ShouldAddReplica(config, kReplicationFactor, kPolicy));
+
+  // Evicting the replica selected by ShouldEvictReplica() above.
+  RemovePeer(&config, to_evict);
+  EXPECT_FALSE(ShouldEvictReplica(config, "A", kReplicationFactor, kPolicy));
+  EXPECT_FALSE(ShouldAddReplica(config, kReplicationFactor, kPolicy));
+
+  // Non-voter replica 'F' become unavailable.
+  SetPeerHealth(&config, "F", '-');
+  ASSERT_TRUE(ShouldEvictReplica(config, "A", kReplicationFactor, kPolicy, &to_evict));
+  ASSERT_EQ("F", to_evict);
+  EXPECT_TRUE(ShouldAddReplica(config, kReplicationFactor, kPolicy));
+
+  // Evicting the failed non-voter replica, selected by ShouldEvictReplica() above.
+  RemovePeer(&config, to_evict);
+  EXPECT_FALSE(ShouldEvictReplica(config, "A", kReplicationFactor, kPolicy));
+  EXPECT_TRUE(ShouldAddReplica(config, kReplicationFactor, kPolicy));
+
+  // Adding a new non-voter replica.
+  AddPeer(&config, "G", N, '?', {{"PROMOTE", true}});
+  EXPECT_FALSE(ShouldEvictReplica(config, "A", kReplicationFactor, kPolicy));
+  EXPECT_FALSE(ShouldAddReplica(config, kReplicationFactor, kPolicy));
+
+  // A newly added non-voter replica is in good shape.
+  SetPeerHealth(&config, "G", '+');
+  EXPECT_FALSE(ShouldEvictReplica(config, "A", kReplicationFactor, kPolicy));
+  EXPECT_FALSE(ShouldAddReplica(config, kReplicationFactor, kPolicy));
+
+  // Replica 'E' is reported in good health.
+  SetPeerHealth(&config, "E", '+');
+  EXPECT_FALSE(ShouldEvictReplica(config, "A", kReplicationFactor, kPolicy));
+  EXPECT_FALSE(ShouldAddReplica(config, kReplicationFactor, kPolicy));
+
+  // Replica 'E' catches up with the leader's WAL and gets promoted.
+  PromotePeer(&config, "E");
+  ASSERT_TRUE(ShouldEvictReplica(config, "A", kReplicationFactor, kPolicy, &to_evict));
+  EXPECT_TRUE(to_evict == "B" || to_evict == "C");
+  EXPECT_FALSE(ShouldAddReplica(config, kReplicationFactor, kPolicy));
+
+  // Evicting the replica selected by ShouldEvictReplica() above.
+  RemovePeer(&config, to_evict);
+  EXPECT_FALSE(ShouldEvictReplica(config, "A", kReplicationFactor, kPolicy));
+  EXPECT_FALSE(ShouldAddReplica(config, kReplicationFactor, kPolicy));
+
+  // Replica 'G' catches up, but replica 'A' cannot yet be evicted since it's
+  // a leader replica.
+  PromotePeer(&config, "G");
+  EXPECT_FALSE(ShouldEvictReplica(config, "A", kReplicationFactor, kPolicy));
+  EXPECT_FALSE(ShouldAddReplica(config, kReplicationFactor, kPolicy));
+
+  // Leadership changes from 'A' to 'G', so now it's possible to evict 'A'.
+  ASSERT_TRUE(ShouldEvictReplica(config, "G", kReplicationFactor, kPolicy, &to_evict));
+  ASSERT_EQ("A", to_evict);
+  EXPECT_FALSE(ShouldAddReplica(config, kReplicationFactor, kPolicy));
+
+  // Evicting the replica selected by ShouldEvictReplica() above. With that,
+  // the replacement process of all the marked replicas is complete; no further
+  // changes is necessary for the tablet's Raft configuration.
+  RemovePeer(&config, to_evict);
+  EXPECT_FALSE(ShouldEvictReplica(config, "G", kReplicationFactor, kPolicy));
   EXPECT_FALSE(ShouldAddReplica(config, kReplicationFactor, kPolicy));
 }
 
