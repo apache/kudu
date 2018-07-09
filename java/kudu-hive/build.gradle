@@ -32,13 +32,6 @@ dependencies {
   testCompile libs.slf4jLog4j12
 }
 
-test {
-  // This property is substituted into hive-site.xml.
-  systemProperty "testdata.dir", temporaryDir
-  // Configure the derby log file location.
-  systemProperty "derby.stream.error.file", "$temporaryDir/derby.log"
-}
-
 // kudu-hive has no public Javadoc.
 javadoc {
   enabled = false

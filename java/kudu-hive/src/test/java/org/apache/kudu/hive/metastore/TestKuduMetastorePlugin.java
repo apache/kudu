@@ -20,12 +20,15 @@ package org.apache.kudu.hive.metastore;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.UUID;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.HiveMetaStoreClient;
+import org.apache.hadoop.hive.metastore.MetaStoreEventListener;
 import org.apache.hadoop.hive.metastore.MetaStoreUtils;
 import org.apache.hadoop.hive.metastore.MockPartitionExpressionForMetastore;
 import org.apache.hadoop.hive.metastore.PartitionExpressionProxy;
@@ -39,38 +42,69 @@ import org.apache.hadoop.hive.metastore.api.hive_metastoreConstants;
 import org.apache.thrift.TException;
 import org.junit.After;
 import org.junit.Before;
-import org.junit.BeforeClass;
 import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class TestKuduMetastorePlugin {
-  private static HiveConf clientConf;
+  private static final Logger LOG = LoggerFactory.getLogger(TestKuduMetastorePlugin.class);
+
+  private HiveConf clientConf;
   private HiveMetaStoreClient client;
 
   private EnvironmentContext masterContext() {
     return new EnvironmentContext(ImmutableMap.of(KuduMetastorePlugin.KUDU_MASTER_EVENT, "true"));
   }
 
-  @BeforeClass
-  public static void startMetaStoreServer() throws Exception {
+  @Before
+  public void setUp() throws Exception {
     HiveConf metastoreConf = new HiveConf();
     // Avoids a dependency on the default partition expression class, which is
     // contained in the hive-exec jar.
     metastoreConf.setClass(HiveConf.ConfVars.METASTORE_EXPRESSION_PROXY_CLASS.varname,
                            MockPartitionExpressionForMetastore.class,
                            PartitionExpressionProxy.class);
+
+    // Add the KuduMetastorePlugin.
+    metastoreConf.setClass(HiveConf.ConfVars.METASTORE_TRANSACTIONAL_EVENT_LISTENERS.varname,
+                           KuduMetastorePlugin.class,
+                           MetaStoreEventListener.class);
+
+    // Auto create necessary schema on a startup if one doesn't exist.
+    metastoreConf.setBoolVar(HiveConf.ConfVars.METASTORE_AUTO_CREATE_ALL, true);
+    metastoreConf.setBoolVar(HiveConf.ConfVars.METASTORE_SCHEMA_VERIFICATION, false);
+
+    // Configure a temporary test state directory.
+    Path hiveTestDir = Files.createTempDirectory("hive");
+    hiveTestDir.toFile().deleteOnExit(); // Ensure we cleanup state.
+    LOG.info("Using temporary test state directory:" + hiveTestDir);
+
+    // Set the warehouse directory.
+    Path warehouseDir = hiveTestDir.resolve("warehouse");
+    metastoreConf.setVar(HiveConf.ConfVars.METASTOREWAREHOUSE, warehouseDir.toString());
+    // For some reason the maven tests fallback to the default warehouse directory
+    // and fail without this system property. However, the Gradle tests don't need it.
+    System.setProperty(HiveConf.ConfVars.METASTOREWAREHOUSE.varname, warehouseDir.toString());
+
+    // Set the metastore connection url.
+    Path metadb = hiveTestDir.resolve("metadb");
+    metastoreConf.setVar(HiveConf.ConfVars.METASTORECONNECTURLKEY,
+        "jdbc:derby:memory:" + metadb.toString() + ";create=true");
+    // Set the derby log file.
+    Path derbyLogFile = hiveTestDir.resolve("derby.log");
+    derbyLogFile.toFile().createNewFile();
+    System.setProperty("derby.stream.error.file", derbyLogFile.toString());
+
     int msPort = MetaStoreUtils.startMetaStore(metastoreConf);
 
     clientConf = new HiveConf();
     clientConf.setVar(HiveConf.ConfVars.METASTOREURIS, "thrift://localhost:" + msPort);
-  }
 
-  @Before
-  public void createClient() throws Exception {
     client = new HiveMetaStoreClient(clientConf);
   }
 
   @After
-  public void closeClient() {
+  public void tearDown() {
     if (client != null) {
       client.close();
     }
@@ -79,7 +113,7 @@ public class TestKuduMetastorePlugin {
   /**
    * @return a Kudu table descriptor given the storage handler type.
    */
-  private static Table newKuduTable(String name, String storageHandler) {
+  private Table newKuduTable(String name, String storageHandler) {
     Table table = new Table();
     table.setDbName("default");
     table.setTableName(name);
@@ -109,14 +143,14 @@ public class TestKuduMetastorePlugin {
   /**
    * @return a legacy Kudu table descriptor.
    */
-  private static Table newLegacyTable(String name) {
+  private Table newLegacyTable(String name) {
     return newKuduTable(name, KuduMetastorePlugin.LEGACY_KUDU_STORAGE_HANDLER);
   }
 
   /**
    * @return a valid Kudu table descriptor.
    */
-  private static Table newTable(String name) {
+  private Table newTable(String name) {
     return newKuduTable(name, KuduMetastorePlugin.KUDU_STORAGE_HANDLER);
   }
 

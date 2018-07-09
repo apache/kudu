@@ -89,18 +89,6 @@
     <build>
         <plugins>
             <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-                <configuration>
-                    <systemPropertyVariables>
-                        <!-- This property is substituted into hive-site.xml. -->
-                        <testdata.dir>${testdata.dir}</testdata.dir>
-                        <!-- Configure the derby log file location. -->
-                        <derby.stream.error.file>${testdata.dir}/derby.log</derby.stream.error.file>
-                    </systemPropertyVariables>
-                </configuration>
-            </plugin>
-            <plugin>
                 <!-- Skip publishing kudu-hive until it's ready to be supported long-term. -->
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-deploy-plugin</artifactId>
