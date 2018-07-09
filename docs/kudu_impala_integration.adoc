@@ -466,8 +466,7 @@ which address scenarios like the following:
   need to be added or removed, such as the introduction or elimination of a product
   type.
 
-Non-covering range partitions have some caveats. Be sure to read the
-link:/docs/schema_design.html [Schema Design guide].
+See link:schema_design.html[Schema Design] for the caveats of non-covering partitions.
 
 This example creates a tablet per year (5 tablets total), for storing log data.
 The table only accepts data from 2012 to 2016. Keys outside of these
