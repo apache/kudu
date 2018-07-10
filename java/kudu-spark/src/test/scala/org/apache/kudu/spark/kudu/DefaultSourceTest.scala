@@ -41,7 +41,7 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEac
   override def beforeEach(): Unit = {
     super.beforeEach()
 
-    rows = insertRows(rowCount)
+    rows = insertRows(table, rowCount)
 
     sqlContext = ss.sqlContext
 

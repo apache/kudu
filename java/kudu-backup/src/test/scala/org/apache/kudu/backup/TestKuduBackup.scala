@@ -42,7 +42,7 @@ class TestKuduBackup extends FunSuite with TestContext with Matchers {
   val log: Logger = LoggerFactory.getLogger(getClass)
 
   test("Simple Backup and Restore") {
-    insertRows(100) // Insert data into the default test table.
+    insertRows(table, 100) // Insert data into the default test table.
 
     backupAndRestore(tableName)
 
@@ -91,6 +91,26 @@ class TestKuduBackup extends FunSuite with TestContext with Matchers {
     assertEquals(tA.getNumReplicas, tB.getNumReplicas)
     assertTrue(schemasMatch(tA.getSchema, tB.getSchema))
     assertTrue(partitionSchemasMatch(tA.getPartitionSchema, tB.getPartitionSchema))
+  }
+
+  test("Backup and Restore Multiple Tables") {
+    val numRows = 1
+    val table1Name = "table1"
+    val table2Name = "table2"
+
+    val table1 = kuduClient.createTable(table1Name, schema, tableOptions)
+    val table2 = kuduClient.createTable(table2Name, schema, tableOptions)
+
+    insertRows(table1, numRows)
+    insertRows(table2, numRows)
+
+    backupAndRestore(table1Name, table2Name)
+
+    val rdd1 = kuduContext.kuduRDD(ss.sparkContext, s"$table1Name-restore", List("key"))
+    assertResult(numRows)(rdd1.count())
+
+    val rdd2 = kuduContext.kuduRDD(ss.sparkContext, s"$table2Name-restore", List("key"))
+    assertResult(numRows)(rdd2.count())
   }
 
   // TODO: Move to a Schema equals/equivalent method.
@@ -299,14 +319,14 @@ class TestKuduBackup extends FunSuite with TestContext with Matchers {
     }
   }
 
-  def backupAndRestore(tableName: String): Unit = {
+  def backupAndRestore(tableNames: String*): Unit = {
     val dir = Files.createTempDirectory("backup")
     val path = dir.toUri.toString
 
-    val backupOptions = new KuduBackupOptions(Seq(tableName), path, miniCluster.getMasterAddresses)
+    val backupOptions = new KuduBackupOptions(tableNames, path, miniCluster.getMasterAddresses)
     KuduBackup.run(backupOptions, ss)
 
-    val restoreOptions = new KuduRestoreOptions(Seq(tableName), path, miniCluster.getMasterAddresses)
+    val restoreOptions = new KuduRestoreOptions(tableNames, path, miniCluster.getMasterAddresses)
     KuduRestore.run(restoreOptions, ss)
 
     FileUtils.deleteDirectory(dir.toFile)

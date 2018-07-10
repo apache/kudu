@@ -25,7 +25,7 @@ import org.scalatest.{BeforeAndAfter, FunSuite}
 class KuduRDDTest extends FunSuite with TestContext with BeforeAndAfter {
 
   test("collect rows") {
-    insertRows(100)
+    insertRows(table, 100)
     val rdd = kuduContext.kuduRDD(ss.sparkContext, tableName, List("key"))
     assert(rdd.collect.length == 100)
   }

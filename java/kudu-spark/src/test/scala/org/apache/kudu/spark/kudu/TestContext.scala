@@ -98,23 +98,27 @@ trait TestContext extends BeforeAndAfterEach { self: Suite =>
 
     kuduContext = new KuduContext(miniCluster.getMasterAddresses, ss.sparkContext)
 
-    val bottom = schema.newPartialRow() // Unbounded.
-    val middle = schema.newPartialRow()
-    middle.addInt("key", 50)
-    val top = schema.newPartialRow() // Unbounded.
-
-    val tableOptions = new CreateTableOptions()
-      .setRangePartitionColumns(List("key").asJava)
-      .addRangePartition(bottom, middle)
-      .addRangePartition(middle, top)
-      .setNumReplicas(1)
     table = kuduClient.createTable(tableName, schema, tableOptions)
+
 
     val simpleTableOptions = new CreateTableOptions()
       .setRangePartitionColumns(List("key").asJava)
       .setNumReplicas(1)
 
     kuduClient.createTable(simpleTableName, simpleSchema, simpleTableOptions)
+  }
+
+  val tableOptions: CreateTableOptions = {
+    val bottom = schema.newPartialRow() // Unbounded.
+    val middle = schema.newPartialRow()
+    middle.addInt("key", 50)
+    val top = schema.newPartialRow() // Unbounded.
+
+    new CreateTableOptions()
+      .setRangePartitionColumns(List("key").asJava)
+      .addRangePartition(bottom, middle)
+      .addRangePartition(middle, top)
+      .setNumReplicas(1)
   }
 
   override def afterEach() {
@@ -130,11 +134,11 @@ trait TestContext extends BeforeAndAfterEach { self: Suite =>
     kuduSession.apply(delete)
   }
 
-  def insertRows(rowCount: Integer): IndexedSeq[(Int, Int, String, Long)] = {
+  def insertRows(targetTable: KuduTable, rowCount: Integer): IndexedSeq[(Int, Int, String, Long)] = {
     val kuduSession = kuduClient.newSession()
 
     val rows = Range(0, rowCount).map { i =>
-      val insert = table.newInsert
+      val insert = targetTable.newInsert
       val row = insert.getRow
       row.addInt(0, i)
       row.addInt(1, i)
