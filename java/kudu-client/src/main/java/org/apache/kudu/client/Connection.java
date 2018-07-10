@@ -261,7 +261,7 @@ class Connection extends SimpleChannelUpstreamHandler {
     lock.lock();
     try {
       if (connectFuture != null && connectFuture.getCause() != null) {
-        msg = connectFuture.getCause().getMessage();
+        msg = connectFuture.getCause().toString();
       }
     } finally {
       lock.unlock();
