@@ -272,15 +272,19 @@ TEST_F(TestRowSet, TestDelete) {
   vector<string> rows;
   Status s;
 
+  RowIteratorOptions opts;
+  opts.projection = &schema_;
   for (int i = 0; i < 2; i++) {
     // Reading the MVCC snapshot prior to deletion should show the row.
-    ASSERT_OK(DumpRowSet(*rs, schema_, snap_before_delete, &rows));
+    opts.snap_to_include = snap_before_delete;
+    ASSERT_OK(DumpRowSet(*rs, opts, &rows));
     ASSERT_EQ(2, rows.size());
     EXPECT_EQ(R"((string key="hello 000000000000000", uint32 val=0))", rows[0]);
     EXPECT_EQ(R"((string key="hello 000000000000001", uint32 val=1))", rows[1]);
 
     // Reading the MVCC snapshot after the deletion should hide the row.
-    ASSERT_OK(DumpRowSet(*rs, schema_, snap_after_delete, &rows));
+    opts.snap_to_include = snap_after_delete;
+    ASSERT_OK(DumpRowSet(*rs, opts, &rows));
     ASSERT_EQ(1, rows.size());
     EXPECT_EQ(R"((string key="hello 000000000000001", uint32 val=1))", rows[0]);
 

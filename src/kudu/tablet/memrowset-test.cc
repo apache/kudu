@@ -24,6 +24,7 @@
 #include <string>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -438,17 +439,22 @@ TEST_F(TestMemRowSet, TestDelete) {
             rows[0]);
 
   // Verify that iterating the rowset at the first snapshot shows the row.
-  ASSERT_OK(DumpRowSet(*mrs, schema_, snapshot_before_delete, &rows));
+  RowIteratorOptions opts;
+  opts.projection = &schema_;
+  opts.snap_to_include = snapshot_before_delete;
+  ASSERT_OK(DumpRowSet(*mrs, opts, &rows));
   ASSERT_EQ(1, rows.size());
   EXPECT_EQ(R"((string key="hello world", uint32 val=1))", rows[0]);
 
   // Verify that iterating the rowset at the snapshot where it's deleted
   // doesn't show the row.
-  ASSERT_OK(DumpRowSet(*mrs, schema_, snapshot_after_delete, &rows));
+  opts.snap_to_include = snapshot_after_delete;
+  ASSERT_OK(DumpRowSet(*mrs, opts, &rows));
   ASSERT_EQ(0, rows.size());
 
   // Verify that iterating the rowset after it's re-inserted shows the row.
-  ASSERT_OK(DumpRowSet(*mrs, schema_, snapshot_after_reinsert, &rows));
+  opts.snap_to_include = snapshot_after_reinsert;
+  ASSERT_OK(DumpRowSet(*mrs, opts, &rows));
   ASSERT_EQ(1, rows.size());
   EXPECT_EQ(R"((string key="hello world", uint32 val=2))", rows[0]);
 }
@@ -511,11 +517,14 @@ TEST_F(TestMemRowSet, TestInsertionMVCC) {
   ASSERT_OK(mrs->DebugDump(nullptr));
 
   ASSERT_EQ(5, snapshots.size());
+  RowIteratorOptions opts;
+  opts.projection = &schema_;
   for (int i = 0; i < 5; i++) {
     SCOPED_TRACE(i);
     // Each snapshot 'i' is taken after row 'i' was committed.
+    opts.snap_to_include = snapshots[i];
     vector<string> rows;
-    ASSERT_OK(kudu::tablet::DumpRowSet(*mrs, schema_, snapshots[i], &rows));
+    ASSERT_OK(DumpRowSet(*mrs, opts, &rows));
     ASSERT_EQ(1 + i, rows.size());
     string expected = StringPrintf(R"((string key="tx%d", uint32 val=%d))", i, i);
     ASSERT_EQ(expected, rows[i]);
@@ -552,10 +561,13 @@ TEST_F(TestMemRowSet, TestUpdateMVCC) {
 
   // Validate that each snapshot returns the expected value
   ASSERT_EQ(6, snapshots.size());
+  RowIteratorOptions opts;
+  opts.projection = &schema_;
   for (int i = 0; i <= 5; i++) {
     SCOPED_TRACE(i);
     vector<string> rows;
-    ASSERT_OK(kudu::tablet::DumpRowSet(*mrs, schema_, snapshots[i], &rows));
+    opts.snap_to_include = snapshots[i];
+    ASSERT_OK(DumpRowSet(*mrs, opts, &rows));
     ASSERT_EQ(1, rows.size());
 
     string expected = StringPrintf(R"((string key="my row", uint32 val=%d))", i);
@@ -563,6 +575,72 @@ TEST_F(TestMemRowSet, TestUpdateMVCC) {
               << rows[0];
     EXPECT_EQ(expected, rows[0]);
   }
+}
+
+TEST_F(TestMemRowSet, TestScanSnapToExclude) {
+  shared_ptr<MemRowSet> mrs;
+  ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+                              MemTracker::GetRootTracker(), &mrs));
+
+  // Sequence of operations:
+  // @1
+  // @2 INSERT key=row val=0
+  // @3 UPDATE key=row val=1
+  // @4 DELETE key=row
+  // @5 INSERT key=row val=2
+  vector<MvccSnapshot> snaps;
+  snaps.emplace_back(mvcc_);
+  ASSERT_OK(InsertRow(mrs.get(), "row", 0));
+  snaps.emplace_back(mvcc_);
+  OperationResultPB result;
+  ASSERT_OK(UpdateRow(mrs.get(), "row", 1, &result));
+  snaps.emplace_back(mvcc_);
+  ASSERT_OK(DeleteRow(mrs.get(), "row", &result));
+  snaps.emplace_back(mvcc_);
+  ASSERT_OK(InsertRow(mrs.get(), "row", 2));
+  snaps.emplace_back(mvcc_);
+
+  auto DumpAndCheck = [&](const MvccSnapshot& exclude,
+                          const MvccSnapshot& include,
+                          boost::optional<int> row_value = boost::none) {
+    RowIteratorOptions opts;
+    opts.projection = &schema_;
+    opts.snap_to_include = include;
+    opts.snap_to_exclude = exclude;
+    vector<string> rows;
+    ASSERT_OK(DumpRowSet(*mrs, opts, &rows));
+    if (row_value.is_initialized()) {
+      ASSERT_EQ(1, rows.size());
+      ASSERT_EQ(StringPrintf(R"((string key="row", uint32 val=%d))", row_value.get()), rows[0]);
+    } else {
+      ASSERT_TRUE(rows.empty());
+    }
+  };
+
+  // Captures zero rows; a snapshot range [x, x) does not include anything.
+  for (const auto& s : snaps) {
+    NO_FATALS(DumpAndCheck(s, s));
+  }
+
+  {
+    NO_FATALS(DumpAndCheck(snaps[0], snaps[1], 0)); // INSERT
+    NO_FATALS(DumpAndCheck(snaps[1], snaps[2], 1)); // UPDATE
+    NO_FATALS(DumpAndCheck(snaps[2], snaps[3])); // DELETE
+    NO_FATALS(DumpAndCheck(snaps[3], snaps[4], 2)); // REINSERT
+  }
+
+  {
+    NO_FATALS(DumpAndCheck(snaps[0], snaps[2], 1)); // INSERT, UPDATE
+    NO_FATALS(DumpAndCheck(snaps[1], snaps[3])); // UPDATE, DELETE
+    NO_FATALS(DumpAndCheck(snaps[2], snaps[4], 2)); // DELETE, REINSERT
+  }
+
+  {
+    NO_FATALS(DumpAndCheck(snaps[0], snaps[3])); // INSERT, UPDATE, DELETE
+    NO_FATALS(DumpAndCheck(snaps[1], snaps[4], 2)); // UPDATE, DELETE, REINSERT
+  }
+
+  NO_FATALS(DumpAndCheck(snaps[0], snaps[4], 2)); // INSERT, UPDATE, DELETE, REINSERT
 }
 
 } // namespace tablet

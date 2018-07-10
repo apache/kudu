@@ -542,11 +542,31 @@ class MemRowSet::Iterator : public RowwiseIterator {
   Iterator(const std::shared_ptr<const MemRowSet> &mrs,
            MemRowSet::MSBTIter *iter, RowIteratorOptions opts);
 
-  // Various helper functions called while getting the next RowBlock
+  // Retrieves a block of dst->nrows() rows from the MemRowSet.
+  //
+  // Writes the number of rows retrieved to 'fetched'.
   Status FetchRows(RowBlock* dst, size_t* fetched);
-  Status ApplyMutationsToProjectedRow(const Mutation *mutation_head,
-                                      RowBlockRow *dst_row,
-                                      Arena *dst_arena);
+
+  // Walks the mutations in 'mutation_head', applying relevant ones to 'dst_row'
+  // (performing any allocations out of 'dst_arena').
+  //
+  // On success, 'apply_status' summarizes the application process.
+  enum ApplyStatus {
+    // No mutations were applied to the row, either because none existed or
+    // because none were relevant.
+    NONE_APPLIED,
+
+    // At least one mutation was applied to the row.
+    APPLIED_AND_PRESENT,
+
+    // At least one mutation was applied to the row, and the row's final state
+    // was deleted (i.e. the last mutation was a DELETE).
+    APPLIED_AND_DELETED,
+  };
+  Status ApplyMutationsToProjectedRow(const Mutation* mutation_head,
+                                      RowBlockRow* dst_row,
+                                      Arena* dst_arena,
+                                      ApplyStatus* apply_status);
 
   const std::shared_ptr<const MemRowSet> memrowset_;
   gscoped_ptr<MemRowSet::MSBTIter> iter_;
