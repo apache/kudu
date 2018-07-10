@@ -235,7 +235,7 @@ static inline Status DumpRowSet(const RowSet &rs,
                                 int limit = INT_MAX) {
   RowIteratorOptions opts;
   opts.projection = &projection;
-  opts.snap = snap;
+  opts.snap_to_include = snap;
   gscoped_ptr<RowwiseIterator> iter;
   RETURN_NOT_OK(rs.NewRowIterator(opts, &iter));
   RETURN_NOT_OK(iter->Init(nullptr));

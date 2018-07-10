@@ -134,7 +134,7 @@ class TestDeltaMemStore : public KuduTest {
                                  0);
     RowIteratorOptions opts;
     opts.projection = &single_col_projection;
-    opts.snap = snapshot;
+    opts.snap_to_include = snapshot;
     DeltaIterator* raw_iter;
     Status s = dms_->NewDeltaIterator(opts, &raw_iter);
     if (s.IsNotFound()) {
@@ -452,7 +452,7 @@ TEST_F(TestDeltaMemStore, TestIteratorDoesUpdates) {
   RowIteratorOptions opts;
   opts.projection = &schema_;
   // TODO(todd): test snapshot reads from different points
-  opts.snap = MvccSnapshot(mvcc_);
+  opts.snap_to_include = MvccSnapshot(mvcc_);
   DeltaIterator* raw_iter;
   Status s = dms_->NewDeltaIterator(opts, &raw_iter);
   if (s.IsNotFound()) {
@@ -500,7 +500,7 @@ TEST_F(TestDeltaMemStore, TestCollectMutations) {
 
   RowIteratorOptions opts;
   opts.projection = &schema_;
-  opts.snap = MvccSnapshot(mvcc_);
+  opts.snap_to_include = MvccSnapshot(mvcc_);
   DeltaIterator* raw_iter;
   Status s =  dms_->NewDeltaIterator(opts, &raw_iter);
   if (s.IsNotFound()) {

@@ -416,7 +416,7 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
     SCOPED_TRACE(i);
     RowIteratorOptions opts;
     opts.projection = &schema_;
-    opts.snap = snaps[i];
+    opts.snap_to_include = snaps[i];
     gscoped_ptr<RowwiseIterator> iter;
     ASSERT_OK(rs->NewRowIterator(opts, &iter));
     string data = InitAndDumpIterator(std::move(iter));
@@ -431,7 +431,7 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
     SCOPED_TRACE(i);
     RowIteratorOptions opts;
     opts.projection = &schema_;
-    opts.snap = snaps[i];
+    opts.snap_to_include = snaps[i];
     gscoped_ptr<RowwiseIterator> iter;
     ASSERT_OK(rs->NewRowIterator(opts, &iter));
     string data = InitAndDumpIterator(std::move(iter));

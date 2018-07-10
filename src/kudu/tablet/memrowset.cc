@@ -496,7 +496,7 @@ Status MemRowSet::Iterator::FetchRows(RowBlock* dst, size_t* fetched) {
     iter_->GetCurrentEntry(&k, &v);
     MRSRow row(memrowset_.get(), v);
 
-    if (opts_.snap.IsCommitted(row.insertion_timestamp())) {
+    if (opts_.snap_to_include.IsCommitted(row.insertion_timestamp())) {
       if (has_upper_bound() && out_of_bounds(k)) {
         state_ = kFinished;
         break;
@@ -542,7 +542,7 @@ Status MemRowSet::Iterator::ApplyMutationsToProjectedRow(
   for (const Mutation *mut = mutation_head;
        mut != nullptr;
        mut = mut->acquire_next()) {
-    if (!opts_.snap.IsCommitted(mut->timestamp_)) {
+    if (!opts_.snap_to_include.IsCommitted(mut->timestamp_)) {
       // Transaction which wasn't committed yet in the reader's snapshot.
       continue;
     }

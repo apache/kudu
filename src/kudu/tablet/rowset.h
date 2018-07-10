@@ -25,6 +25,7 @@
 #include <string>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
 #include "kudu/common/common.pb.h"
@@ -72,7 +73,14 @@ struct RowIteratorOptions {
   // Transactions not committed in this snapshot will be ignored in the iteration.
   //
   // Defaults to a snapshot that includes all transactions.
-  MvccSnapshot snap;
+  MvccSnapshot snap_to_include;
+
+  // Transactions committed in this snapshot will be ignored in the iteration.
+  // This is stored in a boost::optional so that iterators can ignore it
+  // entirely if it is unset (the common case).
+  //
+  // Defaults to none.
+  boost::optional<MvccSnapshot> snap_to_exclude;
 
   // Whether iteration should be ordered by primary key. Only relevant to those
   // iterators that deal with primary key order.

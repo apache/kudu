@@ -317,22 +317,22 @@ Status DeltaFileReader::CloneForDebugging(FsManager* fs_manager,
 
 Status DeltaFileReader::NewDeltaIterator(const RowIteratorOptions& opts,
                                          DeltaIterator** iterator) const {
-  if (IsRelevantForSnapshot(opts.snap)) {
+  if (IsRelevantForSnapshot(opts.snap_to_include)) {
     if (VLOG_IS_ON(2)) {
       if (!init_once_.init_succeeded()) {
         TRACE_COUNTER_INCREMENT("delta_iterators_lazy_initted", 1);
 
         VLOG(2) << (delta_type_ == REDO ? "REDO" : "UNDO") << " delta " << ToString()
                 << " has no delta stats"
-                << ": can't cull for " << opts.snap.ToString();
+                << ": can't cull for " << opts.snap_to_include.ToString();
       } else if (delta_type_ == REDO) {
         VLOG(2) << "REDO delta " << ToString()
                 << " has min ts " << delta_stats_->min_timestamp().ToString()
-                << ": can't cull for " << opts.snap.ToString();
+                << ": can't cull for " << opts.snap_to_include.ToString();
       } else {
         VLOG(2) << "UNDO delta " << ToString()
                 << " has max ts " << delta_stats_->max_timestamp().ToString()
-                << ": can't cull for " << opts.snap.ToString();
+                << ": can't cull for " << opts.snap_to_include.ToString();
       }
     }
 
@@ -345,7 +345,7 @@ Status DeltaFileReader::NewDeltaIterator(const RowIteratorOptions& opts,
   }
   VLOG(2) << "Culling "
           << ((delta_type_ == REDO) ? "REDO":"UNDO")
-          << " delta " << ToString() << " for " << opts.snap.ToString();
+          << " delta " << ToString() << " for " << opts.snap_to_include.ToString();
   return Status::NotFound("MvccSnapshot outside the range of this delta.");
 }
 
@@ -433,7 +433,7 @@ Status DeltaFileIterator::SeekToOrdinal(rowid_t idx) {
   // that we are querying. We did this already before creating the
   // DeltaFileIterator, but due to lazy initialization, it's possible
   // that we weren't able to check at that time.
-  if (!dfr_->IsRelevantForSnapshot(opts_.snap)) {
+  if (!dfr_->IsRelevantForSnapshot(opts_.snap_to_include)) {
     exhausted_ = true;
     delta_blocks_.clear();
     return Status::OK();
@@ -713,7 +713,7 @@ template<>
 inline Status ApplyingVisitor<REDO>::Visit(const DeltaKey& key,
                                            const Slice& deltas,
                                            bool* continue_visit) {
-  if (IsRedoRelevant(dfi->opts_.snap, key.timestamp(), continue_visit)) {
+  if (IsRedoRelevant(dfi->opts_.snap_to_include, key.timestamp(), continue_visit)) {
     DVLOG(3) << "Applied redo delta";
     return ApplyMutation(key, deltas);
   }
@@ -725,7 +725,7 @@ template<>
 inline Status ApplyingVisitor<UNDO>::Visit(const DeltaKey& key,
                                            const Slice& deltas,
                                            bool* continue_visit) {
-  if (IsUndoRelevant(dfi->opts_.snap, key.timestamp(), continue_visit)) {
+  if (IsUndoRelevant(dfi->opts_.snap_to_include, key.timestamp(), continue_visit)) {
     DVLOG(3) << "Applied undo delta";
     return ApplyMutation(key, deltas);
   }
@@ -787,7 +787,7 @@ template<>
 inline Status LivenessVisitor<REDO>::Visit(const DeltaKey& key,
                                            const Slice& deltas,
                                            bool* continue_visit) {
-  if (IsRedoRelevant(dfi->opts_.snap, key.timestamp(), continue_visit)) {
+  if (IsRedoRelevant(dfi->opts_.snap_to_include, key.timestamp(), continue_visit)) {
     return ApplyDelete(key, deltas);
   }
   return Status::OK();
@@ -797,7 +797,7 @@ template<>
 inline Status LivenessVisitor<UNDO>::Visit(const DeltaKey& key,
                                            const Slice& deltas, bool*
                                            continue_visit) {
-  if (IsUndoRelevant(dfi->opts_.snap, key.timestamp(), continue_visit)) {
+  if (IsUndoRelevant(dfi->opts_.snap_to_include, key.timestamp(), continue_visit)) {
     return ApplyDelete(key, deltas);
   }
   return Status::OK();
@@ -843,7 +843,7 @@ template<>
 inline Status CollectingVisitor<REDO>::Visit(const DeltaKey& key,
                                            const Slice& deltas,
                                            bool* continue_visit) {
-  if (IsRedoRelevant(dfi->opts_.snap, key.timestamp(), continue_visit)) {
+  if (IsRedoRelevant(dfi->opts_.snap_to_include, key.timestamp(), continue_visit)) {
     return Collect(key, deltas);
   }
   return Status::OK();
@@ -853,7 +853,7 @@ template<>
 inline Status CollectingVisitor<UNDO>::Visit(const DeltaKey& key,
                                            const Slice& deltas, bool*
                                            continue_visit) {
-  if (IsUndoRelevant(dfi->opts_.snap, key.timestamp(), continue_visit)) {
+  if (IsUndoRelevant(dfi->opts_.snap_to_include, key.timestamp(), continue_visit)) {
     return Collect(key, deltas);
   }
   return Status::OK();

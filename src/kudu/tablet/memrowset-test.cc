@@ -192,7 +192,7 @@ class TestMemRowSet : public KuduTest {
   int ScanAndCount(MemRowSet* mrs, const MvccSnapshot& snap) {
     RowIteratorOptions opts;
     opts.projection = &schema_;
-    opts.snap = snap;
+    opts.snap_to_include = snap;
     gscoped_ptr<MemRowSet::Iterator> iter(mrs->NewIterator(opts));
     CHECK_OK(iter->Init(nullptr));
 

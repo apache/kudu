@@ -40,7 +40,7 @@ namespace tablet {
 
 RowIteratorOptions::RowIteratorOptions()
     : projection(nullptr),
-      snap(MvccSnapshot::CreateSnapshotIncludingAllTransactions()),
+      snap_to_include(MvccSnapshot::CreateSnapshotIncludingAllTransactions()),
       order(OrderMode::UNORDERED) {}
 
 DuplicatingRowSet::DuplicatingRowSet(RowSetVector old_rowsets,

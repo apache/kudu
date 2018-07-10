@@ -259,7 +259,7 @@ Status DMSIterator::PrepareBatch(size_t nrows, PrepareFlag flag) {
     DCHECK_GE(key.row_idx(), start_row);
     if (key.row_idx() > stop_row) break;
 
-    if (!opts_.snap.IsCommitted(key.timestamp())) {
+    if (!opts_.snap_to_include.IsCommitted(key.timestamp())) {
       // The transaction which applied this update is not yet committed
       // in this iterator's MVCC snapshot. Hence, skip it.
       iter_->Next();

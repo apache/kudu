@@ -150,7 +150,7 @@ class TestDeltaFile : public KuduTest {
                                          const shared_ptr<DeltaFileReader>& reader,
                                          gscoped_ptr<DeltaIterator>* out) {
     RowIteratorOptions opts;
-    opts.snap = type == REDO ?
+    opts.snap_to_include = type == REDO ?
                 MvccSnapshot::CreateSnapshotIncludingAllTransactions() :
                 MvccSnapshot::CreateSnapshotIncludingNoTransactions();
     opts.projection = &schema_;
@@ -341,8 +341,8 @@ TEST_F(TestDeltaFile, TestSkipsDeltasOutOfRange) {
   opts.projection = &schema_;
 
   // should skip
-  opts.snap = MvccSnapshot(Timestamp(9));
-  ASSERT_FALSE(opts.snap.MayHaveCommittedTransactionsAtOrAfter(Timestamp(10)));
+  opts.snap_to_include = MvccSnapshot(Timestamp(9));
+  ASSERT_FALSE(opts.snap_to_include.MayHaveCommittedTransactionsAtOrAfter(Timestamp(10)));
   DeltaIterator* raw_iter = nullptr;
   Status s = reader->NewDeltaIterator(opts, &raw_iter);
   ASSERT_TRUE(s.IsNotFound());
@@ -350,14 +350,14 @@ TEST_F(TestDeltaFile, TestSkipsDeltasOutOfRange) {
 
   // should include
   raw_iter = nullptr;
-  opts.snap = MvccSnapshot(Timestamp(15));
+  opts.snap_to_include = MvccSnapshot(Timestamp(15));
   ASSERT_OK(reader->NewDeltaIterator(opts, &raw_iter));
   ASSERT_TRUE(raw_iter != nullptr);
   iter.reset(raw_iter);
 
   // should include
   raw_iter = nullptr;
-  opts.snap = MvccSnapshot(Timestamp(21));
+  opts.snap_to_include = MvccSnapshot(Timestamp(21));
   ASSERT_OK(reader->NewDeltaIterator(opts, &raw_iter));
   ASSERT_TRUE(raw_iter != nullptr);
   iter.reset(raw_iter);

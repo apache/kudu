@@ -1739,7 +1739,7 @@ Status Tablet::CaptureConsistentIterators(
 
   RowIteratorOptions opts;
   opts.projection = projection;
-  opts.snap = snap;
+  opts.snap_to_include = snap;
   opts.order = order;
 
   // Grab the memrowset iterator.
