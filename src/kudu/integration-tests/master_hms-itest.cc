@@ -499,23 +499,16 @@ TEST_F(MasterHmsTest, TestUppercaseIdentifiers) {
     ASSERT_EQ(name, table->name());
   }
 
-  // Listing tables shows the preserved case.
+  // Listing tables shows the normalized case.
   vector<string> tables;
   ASSERT_OK(client_->ListTables(&tables));
-  ASSERT_EQ(tables, vector<string>({ "default.MyTable" }));
+  ASSERT_EQ(tables, vector<string>({ "default.mytable" }));
 
   // Rename the table to the same normalized name, but with a different case.
   unique_ptr<KuduTableAlterer> table_alterer;
   table_alterer.reset(client_->NewTableAlterer("default.mytable"));
-  ASSERT_OK(table_alterer->RenameTo("DEFAULT.MYTABLE")->Alter());
-  NO_FATALS(CheckTable("default", "MyTable"));
-  NO_FATALS(CheckTable("default", "mytable"));
-  NO_FATALS(CheckTable("default", "MYTABLE"));
-
-  // The master should retain the new case.
-  tables.clear();
-  ASSERT_OK(client_->ListTables(&tables));
-  ASSERT_EQ(tables, vector<string>({ "DEFAULT.MYTABLE" }));
+  Status s = table_alterer->RenameTo("DEFAULT.MYTABLE")->Alter();
+  ASSERT_TRUE(s.IsAlreadyPresent()) << s.ToString();
 
   // Rename the table to something different.
   table_alterer.reset(client_->NewTableAlterer("DEFAULT.MYTABLE"));
@@ -530,10 +523,10 @@ TEST_F(MasterHmsTest, TestUppercaseIdentifiers) {
     NO_FATALS(CheckTable("default", "AbC"));
   });
 
-  // Listing tables shows the preserved case.
+  // Listing tables shows the normalized case.
   tables.clear();
   ASSERT_OK(client_->ListTables(&tables));
-  ASSERT_EQ(tables, vector<string>({ "default.AbC" }));
+  ASSERT_EQ(tables, vector<string>({ "default.abc" }));
 
   // Drop the table.
   ASSERT_OK(client_->DeleteTable("DEFAULT.abc"));

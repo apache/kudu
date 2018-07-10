@@ -1363,10 +1363,9 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   // a. Validate the user request.
   Schema client_schema;
   RETURN_NOT_OK(SchemaFromPB(req.schema(), &client_schema));
-  const string& table_name = req.name();
-  string normalized_table_name = NormalizeTableName(table_name);
+  string normalized_table_name = NormalizeTableName(req.name());
 
-  RETURN_NOT_OK(SetupError(ValidateClientSchema(table_name, client_schema),
+  RETURN_NOT_OK(SetupError(ValidateClientSchema(normalized_table_name, client_schema),
                            resp, MasterErrorPB::INVALID_SCHEMA));
   if (client_schema.has_column_ids()) {
     return SetupError(Status::InvalidArgument("user requests should not have Column IDs"),
@@ -1493,7 +1492,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
         "tablet replica of the newly created table $0 in case of a replica "
         "failure: $1 tablet servers are needed, $2 are alive. "
         "Consider bringing up additional tablet server(s)$3",
-        table_name, num_ts_needed_for_rereplication, num_live_tservers,
+        normalized_table_name, num_ts_needed_for_rereplication, num_live_tservers,
         is_off_by_one ? " or running both the masters and all tablet servers"
                         " with --raft_prepare_replacement_before_eviction=false"
                         " flag (not recommended)." : ".");
@@ -1509,7 +1508,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
     table = FindPtrOrNull(normalized_table_names_map_, normalized_table_name);
     if (table != nullptr) {
       return SetupError(Status::AlreadyPresent(Substitute(
-              "table $0 already exists with id $1", table_name, table->id())),
+              "table $0 already exists with id $1", normalized_table_name, table->id())),
           resp, MasterErrorPB::TABLE_ALREADY_PRESENT);
     }
 
@@ -1521,7 +1520,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
       // in the case of an error. Instead, we force the client to retry at a
       // later time.
       return SetupError(Status::ServiceUnavailable(Substitute(
-              "new table name $0 is already reserved", table_name)),
+              "new table name $0 is already reserved", normalized_table_name)),
           resp, MasterErrorPB::TABLE_ALREADY_PRESENT);
     }
   }
@@ -1564,10 +1563,10 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   // It is critical that this step happen before writing the table to the sys catalog,
   // since this step validates that the table name is available in the HMS catalog.
   if (hms_catalog_) {
-    Status s = hms_catalog_->CreateTable(table->id(), req.name(), schema);
+    Status s = hms_catalog_->CreateTable(table->id(), normalized_table_name, schema);
     if (!s.ok()) {
       s = s.CloneAndPrepend(Substitute("an error occurred while creating table $0 in the HMS",
-                                       req.name()));
+                                       normalized_table_name));
       LOG(WARNING) << s.ToString();
       return SetupError(std::move(s), resp, MasterErrorPB::HIVE_METASTORE_ERROR);
     }
@@ -1577,7 +1576,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
       // TODO(dan): figure out how to test this.
       if (hms_catalog_) {
         TRACE("Rolling back HMS table creation");
-        WARN_NOT_OK(hms_catalog_->DropTable(table->id(), req.name()),
+        WARN_NOT_OK(hms_catalog_->DropTable(table->id(), normalized_table_name),
                     "an error occurred while attempting to delete orphaned HMS table entry");
       }
   });
@@ -1661,7 +1660,7 @@ scoped_refptr<TableInfo> CatalogManager::CreateTableInfo(const CreateTableReques
   table->mutable_metadata()->StartMutation();
   SysTablesEntryPB *metadata = &table->mutable_metadata()->mutable_dirty()->pb;
   metadata->set_state(SysTablesEntryPB::PREPARING);
-  metadata->set_name(req.name());
+  metadata->set_name(NormalizeTableName(req.name()));
   metadata->set_version(0);
   metadata->set_next_column_id(ColumnId(schema.max_col_id() + 1));
   metadata->set_num_replicas(req.num_replicas());
@@ -2163,15 +2162,16 @@ Status CatalogManager::AlterTableRpc(const AlterTableRequestPB& req,
     TableMetadataLock l;
     RETURN_NOT_OK(FindAndLockTable(req, resp, LockMode::READ, &table, &l));
     RETURN_NOT_OK(CheckIfTableDeletedOrNotRunning(&l, resp));
+    string normalized_new_table_name = NormalizeTableName(req.new_table_name());
 
     // The HMS allows renaming a table to the same name (ALTER TABLE t RENAME TO t),
     // however Kudu does not, so we must enforce this constraint ourselves before
     // altering the table in the HMS. The comparison is on the non-normalized
     // table names, since we want to allow changing the case of a table name.
-    if (l.data().name() == req.new_table_name()) {
+    if (l.data().name() == normalized_new_table_name) {
       return SetupError(
           Status::AlreadyPresent(Substitute("table $0 already exists with id $1",
-              req.new_table_name(), table->id())),
+              normalized_new_table_name, table->id())),
           resp, MasterErrorPB::TABLE_ALREADY_PRESENT);
     }
 
@@ -2180,7 +2180,7 @@ Status CatalogManager::AlterTableRpc(const AlterTableRequestPB& req,
 
     // Rename the table in the HMS.
     RETURN_NOT_OK(SetupError(hms_catalog_->AlterTable(
-            table->id(), l.data().name(), req.new_table_name(),
+            table->id(), l.data().name(), normalized_new_table_name,
             schema),
         resp, MasterErrorPB::HIVE_METASTORE_ERROR));
 
@@ -2262,7 +2262,6 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
   }
 
   string table_name = l.data().name();
-  string normalized_table_name = NormalizeTableName(table_name);
   *resp->mutable_table_id() = table->id();
 
   // 3. Calculate and validate new schema for the on-disk state, not persisted yet.
@@ -2287,55 +2286,45 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
         resp, MasterErrorPB::INVALID_SCHEMA));
 
   // 4. Validate and try to acquire the new table name.
-  bool do_cleanup = false;
   string normalized_new_table_name = NormalizeTableName(req.new_table_name());
   if (req.has_new_table_name()) {
     RETURN_NOT_OK(SetupError(
-          ValidateIdentifier(req.new_table_name()).CloneAndPrepend("invalid table name"),
+          ValidateIdentifier(normalized_new_table_name).CloneAndPrepend("invalid table name"),
           resp, MasterErrorPB::INVALID_SCHEMA));
 
     // Validate the new table name.
-    //
-    // Special case: the new table name and existing table names are different,
-    // but map to the same normalized name. In this case we don't need to
-    // reserve the new table name, since it's already reserved by way of
-    // existing in the by-name map.
-    if (!(table_name != req.new_table_name() &&
-          normalized_table_name == normalized_new_table_name)) {
-      std::lock_guard<LockType> catalog_lock(lock_);
-      TRACE("Acquired catalog manager lock");
+    std::lock_guard<LockType> catalog_lock(lock_);
+    TRACE("Acquired catalog manager lock");
 
-      // Verify that the table does not exist.
-      scoped_refptr<TableInfo> other_table = FindPtrOrNull(normalized_table_names_map_,
-                                                           normalized_new_table_name);
+    // Verify that the table does not exist.
+    scoped_refptr<TableInfo> other_table = FindPtrOrNull(normalized_table_names_map_,
+                                                         normalized_new_table_name);
 
-      if (other_table != nullptr) {
-        return SetupError(
-            Status::AlreadyPresent(Substitute("table $0 already exists with id $1",
-                req.new_table_name(), table->id())),
-            resp, MasterErrorPB::TABLE_ALREADY_PRESENT);
-      }
-
-      // Reserve the new table name if possible.
-      if (!InsertIfNotPresent(&reserved_normalized_table_names_, normalized_new_table_name)) {
-        // ServiceUnavailable will cause the client to retry the create table
-        // request. We don't want to outright fail the request with
-        // 'AlreadyPresent', because a table name reservation can be rolled back
-        // in the case of an error. Instead, we force the client to retry at a
-        // later time.
-        return SetupError(Status::ServiceUnavailable(Substitute(
-                "table name $0 is already reserved", req.new_table_name())),
-            resp, MasterErrorPB::TABLE_ALREADY_PRESENT);
-      }
-      do_cleanup = true;
+    if (other_table != nullptr) {
+      return SetupError(
+          Status::AlreadyPresent(Substitute("table $0 already exists with id $1",
+              normalized_new_table_name, table->id())),
+          resp, MasterErrorPB::TABLE_ALREADY_PRESENT);
     }
 
-    l.mutable_data()->pb.set_name(req.new_table_name());
+    // Reserve the new table name if possible.
+    if (!InsertIfNotPresent(&reserved_normalized_table_names_, normalized_new_table_name)) {
+      // ServiceUnavailable will cause the client to retry the create table
+      // request. We don't want to outright fail the request with
+      // 'AlreadyPresent', because a table name reservation can be rolled back
+      // in the case of an error. Instead, we force the client to retry at a
+      // later time.
+      return SetupError(Status::ServiceUnavailable(Substitute(
+              "table name $0 is already reserved", normalized_new_table_name)),
+          resp, MasterErrorPB::TABLE_ALREADY_PRESENT);
+    }
+
+    l.mutable_data()->pb.set_name(normalized_new_table_name);
   }
 
   // Ensure that we drop our reservation upon return.
   auto cleanup = MakeScopedCleanup([&] () {
-    if (do_cleanup) {
+    if (req.has_new_table_name()) {
       std::lock_guard<LockType> l(lock_);
       CHECK_EQ(1, reserved_normalized_table_names_.erase(normalized_new_table_name));
     }
@@ -2434,7 +2423,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
     // and tablets indices.
     std::lock_guard<LockType> lock(lock_);
     if (req.has_new_table_name()) {
-      if (normalized_table_names_map_.erase(normalized_table_name) != 1) {
+      if (normalized_table_names_map_.erase(table_name) != 1) {
         LOG(FATAL) << "Could not remove table " << table->ToString()
                    << " from map in response to AlterTable request: "
                    << SecureShortDebugString(req);
