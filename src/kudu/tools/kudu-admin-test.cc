@@ -1867,13 +1867,6 @@ TEST_P(ConcurrentRebalancersTest, TwoConcurrentRebalancers) {
   {
     string out;
     string err;
-    // TODO(aserbin): sometimes, when replica movement fails because of
-    //   concurrent rebalancers or other reasons, the REPLACE attribute is left
-    //   in replica's Raft config. In such cases, rebalancing fails because
-    //   it cannot make progress due to the semantics of the ChangeConfig()
-    //   method, returning error
-    //     'Invalid argument: must modify a field when calling MODIFY_PEER'
-    //   in attempt to set REPLACE attribute again.
     const auto s = RunKuduTool(tool_args, &out, &err);
     ASSERT_TRUE(s.ok()) << s.ToString() << ": " << err;
     ASSERT_STR_CONTAINS(out, "rebalancing is complete: cluster is balanced")

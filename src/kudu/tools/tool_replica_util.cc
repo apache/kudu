@@ -347,23 +347,44 @@ Status ScheduleReplicaMove(const vector<string>& master_addresses,
   // Get information on current replication scheme: the move scenario depends
   // on the replication scheme used.
   bool is_343_scheme;
+  ConsensusStatePB cstate;
   RETURN_NOT_OK(GetConsensusState(proxy, tablet_id, leader_uuid,
                                   client->default_admin_operation_timeout(),
-                                  nullptr, &is_343_scheme));
+                                  &cstate, &is_343_scheme));
+  // Sanity check: the target replica should not be present in the config.
+  // Anyway, ChangeConfig() RPC would return an error in that case, but this
+  // pre-condition allows us to short-circuit that.
+  for (const auto& peer : cstate.committed_config().peers()) {
+    if (peer.permanent_uuid() == to_ts_uuid) {
+      return Status::IllegalState(Substitute(
+          "tablet $0: replica $1 is already present", tablet_id, to_ts_uuid));
+    }
+  }
+
+  const auto cas_opid_idx = cstate.committed_config().opid_index();
+
   // The pre- KUDU-1097 way of moving a replica involves first adding a new
   // replica and then evicting the old one.
   if (!is_343_scheme) {
     return DoChangeConfig(master_addresses, tablet_id, to_ts_uuid,
-                          RaftPeerPB::VOTER, ADD_PEER);
+                          RaftPeerPB::VOTER, ADD_PEER, cas_opid_idx);
+  }
+
+  // Check whether the REPLACE attribute is already set for the source replica.
+  bool is_from_ts_uuid_replace_attr_set = false;
+  for (const auto& peer : cstate.committed_config().peers()) {
+    if (peer.permanent_uuid() == from_ts_uuid) {
+      is_from_ts_uuid_replace_attr_set = peer.attrs().replace();
+      break;
+    }
   }
 
   // In a post-KUDU-1097 world, the procedure to move a replica is to add the
   // replace=true attribute to the replica to remove while simultaneously
   // adding the replacement as a non-voter with promote=true.
   // The following code implements tablet movement in that paradigm.
-
   BulkChangeConfigRequestPB req;
-  {
+  if (!is_from_ts_uuid_replace_attr_set) {
     auto* change = req.add_config_changes();
     change->set_type(MODIFY_PEER);
     *change->mutable_peer()->mutable_permanent_uuid() = from_ts_uuid;
@@ -379,6 +400,7 @@ Status ScheduleReplicaMove(const vector<string>& master_addresses,
     RETURN_NOT_OK(GetRpcAddressForTS(client, to_ts_uuid, &hp));
     RETURN_NOT_OK(HostPortToPB(hp, change->mutable_peer()->mutable_last_known_addr()));
   }
+  req.set_cas_config_opid_index(cas_opid_idx);
 
   consensus::ChangeConfigResponsePB resp;
   RpcController rpc;
