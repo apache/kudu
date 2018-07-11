@@ -34,3 +34,9 @@ dependencies {
   testCompile project(path: ":kudu-client", configuration: "shadowTest")
   testCompile libs.junit
 }
+
+// Configure the Avro plugin to compile the schemas in the
+// resource directory so the schemas are available in tests.
+generateTestAvroJava {
+  source("src/test/resources")
+}

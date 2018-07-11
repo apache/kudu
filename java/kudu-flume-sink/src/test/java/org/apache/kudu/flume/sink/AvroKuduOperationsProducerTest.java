@@ -33,8 +33,9 @@ import static org.junit.Assert.assertEquals;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
-import java.io.IOException;
 import java.math.BigDecimal;
+import java.net.URL;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -51,15 +52,12 @@ import org.apache.avro.specific.SpecificDatumWriter;
 import org.apache.flume.Channel;
 import org.apache.flume.Context;
 import org.apache.flume.Event;
-import org.apache.flume.FlumeException;
 import org.apache.flume.Sink;
 import org.apache.flume.Transaction;
 import org.apache.flume.channel.MemoryChannel;
 import org.apache.flume.conf.Configurables;
 import org.apache.flume.event.EventBuilder;
 import org.apache.kudu.util.DecimalUtil;
-import org.junit.Before;
-import org.junit.BeforeClass;
 import org.junit.Test;
 
 import org.apache.kudu.ColumnSchema;
@@ -70,13 +68,17 @@ import org.apache.kudu.client.CreateTableOptions;
 import org.apache.kudu.client.KuduTable;
 
 public class AvroKuduOperationsProducerTest extends BaseKuduTest {
-  private static final String schemaPath = "src/test/avro/testAvroKuduOperationsProducer.avsc";
+  private static String schemaUriString;
   private static String schemaLiteral;
 
   static {
     try {
-      schemaLiteral = Files.toString(new File(schemaPath), UTF_8);
-    } catch (IOException e) {
+      String schemaPath = "/testAvroKuduOperationsProducer.avsc";
+      URL schemaUrl = AvroKuduOperationsProducerTest.class.getResource(schemaPath);
+      File schemaFile = Paths.get(schemaUrl.toURI()).toFile();
+      schemaUriString = schemaFile.getAbsoluteFile().toURI().toString();
+      schemaLiteral = Files.asCharSource(schemaFile, UTF_8).read();
+    } catch (Exception e) {
       throw new RuntimeException(e);
     }
   }
@@ -115,9 +117,8 @@ public class AvroKuduOperationsProducerTest extends BaseKuduTest {
     KuduTable table = createNewTable(
         String.format("test%sevents%s", eventCount, schemaLocation));
     String tableName = table.getName();
-    String schemaURI = new File(schemaPath).getAbsoluteFile().toURI().toString();
     Context ctx = schemaLocation != SchemaLocation.GLOBAL ? new Context()
-        : new Context(ImmutableMap.of(PRODUCER_PREFIX + SCHEMA_PROP, schemaURI));
+        : new Context(ImmutableMap.of(PRODUCER_PREFIX + SCHEMA_PROP, schemaUriString));
     KuduSink sink = createSink(tableName, ctx);
 
     Channel channel = new MemoryChannel();
@@ -190,8 +191,7 @@ public class AvroKuduOperationsProducerTest extends BaseKuduTest {
       encoder.flush();
       Event e = EventBuilder.withBody(out.toByteArray());
       if (schemaLocation == SchemaLocation.URL) {
-        String schemaURI = new File(schemaPath).getAbsoluteFile().toURI().toString();
-        e.setHeaders(ImmutableMap.of(SCHEMA_URL_HEADER, schemaURI));
+        e.setHeaders(ImmutableMap.of(SCHEMA_URL_HEADER, schemaUriString));
       } else if (schemaLocation == SchemaLocation.LITERAL) {
         e.setHeaders(ImmutableMap.of(SCHEMA_LITERAL_HEADER, schemaLiteral));
       }

@@ -17,7 +17,7 @@
 
 package org.apache.kudu.spark.tools
 
-import java.io.File
+import java.nio.file.Paths
 
 import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder
 import org.apache.kudu.{Schema, Type}
@@ -35,7 +35,7 @@ import scala.collection.JavaConverters._
 class TestImportExportFiles  extends FunSuite with TestContext with  Matchers {
 
   private val TABLE_NAME: String = "TestImportExportFiles"
-  private val TABLE_DATA_PATH: String = "src/test/resources/TestImportExportFiles.csv"
+  private val TABLE_DATA_PATH: String = "/TestImportExportFiles.csv"
 
   test("Spark Import Export") {
     val schema: Schema = {
@@ -51,12 +51,14 @@ class TestImportExportFiles  extends FunSuite with TestContext with  Matchers {
       .setNumReplicas(1)
     kuduClient.createTable(TABLE_NAME, schema, tableOptions)
 
-    val dataPath = new File(TABLE_DATA_PATH).getAbsolutePath
+    // Get the absolute path of the resource file.
+    val schemaResource = classOf[TestImportExportFiles].getResource(TABLE_DATA_PATH)
+    val dataPath = Paths.get(schemaResource.toURI).toAbsolutePath
 
     ImportExportFiles.testMain(Array("--operation=import",
       "--format=csv",
       s"--master-addrs=${miniCluster.getMasterAddresses}",
-      s"--path=$TABLE_DATA_PATH",
+      s"--path=$dataPath",
       s"--table-name=$TABLE_NAME",
       "--delimiter=,",
       "--header=true",

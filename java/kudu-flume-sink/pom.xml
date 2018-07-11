@@ -126,6 +126,9 @@
                 <goal>schema</goal>
               </goals>
               <configuration>
+                <!-- Configure the Avro plugin to compile the schemas in the
+                     resource directory so the schemas are available in tests. -->
+                <testSourceDirectory>${basedir}/src/test/resources</testSourceDirectory>
                 <enableDecimalLogicalType>true</enableDecimalLogicalType>
               </configuration>
           </execution>
