@@ -31,14 +31,14 @@ dependencies {
     // Make sure wrong Scala version is not pulled in.
     exclude group: "org.scala-lang", module: "scala-library"
   }
+  // TODO(KUDU-2500): Spark uses reflection which requires the annotations at runtime.
+  compile libs.yetusAnnotations
 
   provided libs.scalaLibrary
   provided libs.sparkAvro
   provided libs.sparkCore
   provided libs.sparkSql
   provided libs.slf4jApi
-
-  optional libs.yetusAnnotations
 
   testCompile project(path: ":kudu-client", configuration: "shadowTest")
   testCompile project(path: ":kudu-spark", configuration: "test")

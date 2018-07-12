@@ -22,14 +22,14 @@ dependencies {
   compile project(path: ":kudu-client", configuration: "shadow")
   compile project(path: ":kudu-client-tools", configuration: "shadow")
   compile project(path: ":kudu-spark", configuration: "shadow")
+  // TODO(KUDU-2500): Spark uses reflection which requires the annotations at runtime.
+  compile libs.yetusAnnotations
 
   provided libs.scalaLibrary
   provided libs.sparkAvro
   provided libs.sparkCore
   provided libs.sparkSql
   provided libs.slf4jApi
-
-  optional libs.yetusAnnotations
 
   testCompile project(path: ":kudu-client", configuration: "shadowTest")
   testCompile project(path: ":kudu-spark", configuration: "test")

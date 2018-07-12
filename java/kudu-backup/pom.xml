@@ -70,6 +70,12 @@
                 </exclusion>
             </exclusions>
         </dependency>
+        <!-- TODO(KUDU-2500): Spark uses reflection which requires the annotations at runtime. -->
+        <dependency>
+            <groupId>org.apache.yetus</groupId>
+            <artifactId>audience-annotations</artifactId>
+            <version>${yetus.version}</version>
+        </dependency>
 
         <dependency>
             <groupId>com.databricks</groupId>
@@ -101,14 +107,6 @@
             <version>${slf4j.version}</version>
             <scope>provided</scope>
         </dependency>
-
-        <dependency>
-            <groupId>org.apache.yetus</groupId>
-            <artifactId>audience-annotations</artifactId>
-            <version>${yetus.version}</version>
-            <optional>true</optional>
-        </dependency>
-
 
         <dependency>
             <groupId>org.apache.kudu</groupId>
