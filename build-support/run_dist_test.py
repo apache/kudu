@@ -28,6 +28,7 @@
 # uploaded by the test slave back.
 
 import glob
+import logging
 import optparse
 import os
 import re
@@ -37,6 +38,12 @@ import sys
 
 ME = os.path.abspath(__file__)
 ROOT = os.path.abspath(os.path.join(os.path.dirname(ME), ".."))
+
+with open(os.path.join(ROOT, "build-support", "java-home-candidates.txt"), 'r') as candidates:
+  JAVA_CANDIDATES = [x.strip() for x in candidates.readlines() if not x.startswith("#")]
+  # Ensure there aren't trailing comments in the path list.
+  for c in JAVA_CANDIDATES:
+    assert '#' not in c
 
 def is_elf_binary(path):
   """ Determine if the given path is an ELF binary (executable or shared library) """
@@ -90,6 +97,12 @@ def fixup_rpaths(root):
       if is_elf_binary(p):
         fix_rpath(p)
 
+def find_java():
+  for x in JAVA_CANDIDATES:
+    if os.path.exists(x):
+      logging.info("found JAVA_HOME: ", x)
+      return os.path.join(x, "bin", "java")
+
 def main():
   p = optparse.OptionParser(usage="usage: %prog [options] <test-name>")
   p.add_option("-e", "--env", dest="env", type="string", action="append",
@@ -98,13 +111,13 @@ def main():
   p.add_option("--collect-tmpdir", dest="collect_tmpdir", action="store_true",
                help="whether to collect the test tmpdir as an artifact if the test fails",
                default=False)
+  p.add_option("--test-language", dest="test_language", action="store",
+               help="java or cpp",
+               default="cpp")
   options, args = p.parse_args()
   if len(args) < 1:
     p.print_help(sys.stderr)
     sys.exit(1)
-  test_exe = args[0]
-  test_name, _ = os.path.splitext(os.path.basename(test_exe))
-  test_dir = os.path.dirname(test_exe)
 
   env = os.environ.copy()
   for env_pair in options.env:
@@ -130,8 +143,8 @@ def main():
   env['JAVA_HOME'] = glob.glob("/usr/lib/jvm/java-1.8.0-*")[0]
 
   env['LD_LIBRARY_PATH'] = ":".join(
-    [os.path.join(ROOT, "build/dist-test-system-libs/"),
-     os.path.abspath(os.path.join(test_dir, "..", "lib"))])
+    [os.path.join(ROOT, "build/dist-test-system-libs/")] +
+    glob.glob(os.path.abspath((os.path.join(ROOT, "build/*/lib")))))
 
   # Don't pollute /tmp in dist-test setting. If a test crashes, the dist-test slave
   # will clear up our working directory but won't be able to find and clean up things
@@ -140,8 +153,23 @@ def main():
   env['TEST_TMPDIR'] = test_tmpdir
 
   env['ASAN_SYMBOLIZER_PATH'] = os.path.join(ROOT, "thirdparty/installed/uninstrumented/bin/llvm-symbolizer")
-  rc = subprocess.call([os.path.join(ROOT, "build-support/run-test.sh")] + args,
-                       env=env)
+
+  stdout = None
+  stderr = None
+  if options.test_language == 'cpp':
+    cmd = [os.path.join(ROOT, "build-support/run-test.sh")] + args
+  elif options.test_language == 'java':
+    test_logdir = os.path.abspath(os.path.join(ROOT, "build/java/test-logs"))
+    if not os.path.exists(test_logdir):
+      os.makedirs(test_logdir)
+    cmd = [find_java()] + args
+    stdout = stderr = file(os.path.join(test_logdir, "test-output.txt"), "w")
+  else:
+    raise ValueError("invalid test language: " + options.test_language)
+  logging.info("Running command: ", cmd)
+  logging.info("in dir: ", os.getcwd())
+  logging.info("Running with env: ", repr(env))
+  rc = subprocess.call(cmd, env=env, stdout=stdout, stderr=stderr)
 
   if rc != 0 and options.collect_tmpdir:
     os.system("tar czf %s %s" % (os.path.join(test_dir, "..", "test-logs", "test_tmpdir.tgz"), test_tmpdir))

@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+import org.apache.kudu.gradle.DistTestTask
+
 // This file is the entry-point for the gradle build and contains
 // common logic for the various subprojects in the build.
 // Plugins and scripts are applied in the natural "build order"
@@ -66,4 +68,28 @@ task javadocAggregate(type: Javadoc, group: "Documentation") {
   source subprojects.collect { it.sourceSets.main.allJava }
   classpath = files(subprojects.collect { it.sourceSets.main.compileClasspath })
   destinationDir = file("${buildDir}/docs/javadoc")
+}
+
+// Copies all the dependency jars locally so that we can reference
+// them inside the project structure while running the distributed
+// tests instead of in the gradle cache which is in the users home
+// directory by default.
+task copyDistTestJars(type: Copy) {
+  into "$buildDir/jars/"
+  from subprojects.collect {
+    it.configurations.testRuntime
+  }
+  from subprojects.collect {
+    it.configurations.provided
+  }
+}
+
+// Task called by dist_test.py to generate the needed .isolate and .gen.json
+// files needed to run the distributed tests.
+task distTest(type: DistTestTask, dependsOn: copyDistTestJars) {
+  subprojects.each {
+    it.tasks.withType(Test).each {
+      addTestTask it
+    }
+  }
 }

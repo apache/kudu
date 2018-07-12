@@ -23,42 +23,8 @@
 #  JAVA_HOME, directory containing a Java installation
 #  JAVA_HOME_FOUND, whether JAVA_HOME has been found
 
-set(JAVA_HOME_CANDIDATES
-
-    # Oracle JDK 8 Candidates
-    /usr/java/jdk1.8
-    /usr/java/jre1.8
-    /usr/lib/jvm/j2sdk1.8-oracle
-    /usr/lib/jvm/j2sdk1.8-oracle/jre
-    /usr/lib/jvm/java-8-oracle
-    /usr/lib/jdk8-latest
-
-    # OpenJDK 8 Candidates
-    /usr/lib/jvm/java-1.8.0-openjdk-amd64
-    /usr/lib/jvm/java-1.8.0-openjdk-ppc64el
-    /usr/lib/jvm/java-1.8.0-openjdk
-    /usr/lib64/jvm/java-1.8.0-openjdk-1.8.0
-
-    # Oracle JDK 7 Candidates
-    /usr/java/jdk1.7
-    /usr/java/jre1.7
-    /usr/lib/jvm/j2sdk1.7-oracle
-    /usr/lib/jvm/j2sdk1.7-oracle/jre
-    /usr/lib/jvm/java-7-oracle
-    /usr/lib/jdk7-latest
-
-    # OpenJDK 7 Candidates
-    /usr/lib/jvm/java-1.7.0-openjdk
-    /usr/lib/jvm/java-7-openjdk-amd64
-    /usr/lib/jvm/java-7-openjdk
-
-    # Misc. Candidates
-    /usr/java/default
-    /usr/lib/jvm/java
-    /usr/lib/jvm/jre
-    /usr/lib/jvm/default-java
-    /usr/lib/jvm/java-openjdk
-    /usr/lib/jvm/jre-openjdk)
+file (STRINGS "${CMAKE_CURRENT_LIST_DIR}/../build-support/java-home-candidates.txt"
+      JAVA_HOME_CANDIDATES REGEX "^[^#].*")
 
 if (DEFINED ENV{JAVA_HOME})
   set(JAVA_HOME $ENV{JAVA_HOME})
