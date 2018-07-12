@@ -87,6 +87,11 @@ struct RowIteratorOptions {
   //
   // Defaults to UNORDERED.
   OrderMode order;
+
+  // Whether iteration should include rows whose last mutation was a DELETE.
+  //
+  // Defaults to false.
+  bool include_deleted_rows;
 };
 
 class RowSet {

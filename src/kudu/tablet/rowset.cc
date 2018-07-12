@@ -41,7 +41,8 @@ namespace tablet {
 RowIteratorOptions::RowIteratorOptions()
     : projection(nullptr),
       snap_to_include(MvccSnapshot::CreateSnapshotIncludingAllTransactions()),
-      order(OrderMode::UNORDERED) {}
+      order(OrderMode::UNORDERED),
+      include_deleted_rows(false) {}
 
 DuplicatingRowSet::DuplicatingRowSet(RowSetVector old_rowsets,
                                      RowSetVector new_rowsets)

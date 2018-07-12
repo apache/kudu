@@ -526,7 +526,7 @@ Status MemRowSet::Iterator::FetchRows(RowBlock* dst, size_t* fetched) {
       ApplyStatus apply_status;
       RETURN_NOT_OK(ApplyMutationsToProjectedRow(
           redo_head, &dst_row, dst->arena(), &apply_status));
-      unset_in_sel_vector = apply_status == APPLIED_AND_DELETED ||
+      unset_in_sel_vector = (apply_status == APPLIED_AND_DELETED && !opts_.include_deleted_rows) ||
                             (apply_status == NONE_APPLIED && insert_excluded);
     } else {
       // The insertion is too new; the entire row should be omitted.
