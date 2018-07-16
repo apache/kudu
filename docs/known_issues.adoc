@@ -179,9 +179,3 @@ to communicate only the most important known issues.
   to start up. It is recommended to limit the number of tablets per server to 100 or fewer.
   Consider this limitation when pre-splitting your tables. If you notice slow start-up times,
   you can monitor the number of tablets per server in the web UI.
-
-* Kerberos authentication does not function correctly on hosts which contain
-  capital letters in their hostname.
-
-* Kerberos authentication does not function correctly if `rdns = false` is configured
-  in `krb5.conf`.
