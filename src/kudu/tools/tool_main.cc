@@ -222,19 +222,14 @@ int RunTool(int argc, char** argv, bool show_help) {
 } // namespace tools
 } // namespace kudu
 
-static bool ParseCommandLineFlags(int* argc, char*** argv) {
-  // Hide the regular gflags help unless --helpfull is used.
-  //
-  // Inspired by https://github.com/gflags/gflags/issues/43#issuecomment-168280647.
-  bool show_help = false;
-  gflags::ParseCommandLineNonHelpFlags(argc, argv, true);
-
+static bool ParseCommandLineFlags(const char* prog_name) {
   // Leverage existing helpxml flag to print mode/action xml.
   if (FLAGS_helpxml) {
-    kudu::tools::DumpToolXML(*argv[0]);
+    kudu::tools::DumpToolXML(prog_name);
     exit(1);
   }
 
+  bool show_help = false;
   if (FLAGS_help ||
       FLAGS_helpshort ||
       !FLAGS_helpon.empty() ||
@@ -257,9 +252,15 @@ int main(int argc, char** argv) {
   CHECK_NE("",  google::SetCommandLineOptionWithMode(
       "redact", "", google::SET_FLAGS_DEFAULT));
 
-  FLAGS_logtostderr = true;
-  bool show_help = ParseCommandLineFlags(&argc, &argv);
+  // Hide the regular gflags help unless --helpfull is used.
+  //
+  // Inspired by https://github.com/gflags/gflags/issues/43#issuecomment-168280647.
+  gflags::ParseCommandLineNonHelpFlags(&argc, &argv, true);
 
-  kudu::InitGoogleLoggingSafe(argv[0]);
+  FLAGS_logtostderr = true;
+  const char* prog_name = argv[0];
+  kudu::InitGoogleLoggingSafe(prog_name);
+  bool show_help = ParseCommandLineFlags(prog_name);
+
   return kudu::tools::RunTool(argc, argv, show_help);
 }

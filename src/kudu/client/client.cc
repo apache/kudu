@@ -152,23 +152,27 @@ class ResourceMetrics;
 using internal::MetaCache;
 using sp::shared_ptr;
 
-static const char* kProgName = "kudu_client";
 const char* kVerboseEnvVar = "KUDU_CLIENT_VERBOSE";
+
+#if defined(kudu_client_exported_EXPORTS)
+static const char* kProgName = "kudu_client";
 
 // We need to reroute all logging to stderr when the client library is
 // loaded. GoogleOnceInit() can do that, but there are multiple entry
 // points into the client code, and it'd need to be called in each one.
 // So instead, let's use a constructor function.
 //
-// Should this be restricted to just the exported client build? Probably
-// not, as any application using the library probably wants stderr logging
-// more than file logging.
+// This is restricted to the exported client builds only. In case of linking
+// with non-exported kudu client library, logging must be initialized
+// from the main() function of the corresponding binary: usually, that's done
+// by calling InitGoogleLoggingSafe(argv[0]).
 __attribute__((constructor))
 static void InitializeBasicLogging() {
   InitGoogleLoggingSafeBasic(kProgName);
 
   SetVerboseLevelFromEnvVar();
 }
+#endif
 
 // Set Client logging verbose level from environment variable.
 void SetVerboseLevelFromEnvVar() {
