@@ -80,10 +80,16 @@ import org.apache.kudu.util.Pair;
 /**
  * A fully asynchronous and thread-safe client for Kudu.
  * <p>
- * A single Kudu client instance corresponds to a single remote Kudu cluster.
+ * A single Kudu client instance corresponds to a single remote Kudu cluster,
  * and can be used to read or write any number of tables within that cluster.
- * Separate client instances should be used in the case that a single
- * application needs to access multiple distinct Kudu clusters.
+ * An application should use exactly one Kudu client instance per distinct Kudu
+ * cluster it connects to.
+ *
+ * In rare cases where a single application needs multiple instances connected
+ * to the same cluster, or when many applications each using one or more Kudu
+ * client instances are running on the same machine, it may be necessary to
+ * adjust the instances to use less resources. See the options in
+ * {@link AsyncKuduClientBuilder}.
  *
  * <h1>Creating a client instance</h1> An {@link AsyncKuduClient} instance may
  * be created using the {@link AsyncKuduClient.AsyncKuduClientBuilder} class. If
@@ -2257,7 +2263,11 @@ public class AsyncKuduClient implements AutoCloseable {
     /**
      * Set the maximum number of worker threads.
      * Optional.
-     * If not provided, (2 * the number of available processors) is used.
+     * If not provided, (2 * the number of available processors) is used. If
+     * this client instance will be used on a machine running many client
+     * instances, it may be wise to lower this count, for example to avoid
+     * resource limits, at the possible cost of some performance of this client
+     * instance.
      */
     public AsyncKuduClientBuilder workerCount(int workerCount) {
       Preconditions.checkArgument(workerCount > 0, "workerCount should be greater than 0");
