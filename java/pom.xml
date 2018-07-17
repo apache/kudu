@@ -32,7 +32,6 @@
         <groupId>org.apache</groupId>
         <artifactId>apache</artifactId>
         <version>18</version>
-        <relativePath/>
     </parent>
 
     <name>Kudu</name>
