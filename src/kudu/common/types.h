@@ -22,9 +22,9 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <ctime>
-#include <cstdlib>
 #include <ostream>
 #include <string>
 
@@ -53,7 +53,7 @@ class TypeInfo;
 extern const TypeInfo* GetTypeInfo(DataType type);
 
 // Information about a given type.
-// This is a runtime equivalent of the TypeTraits template below.
+// This is a runtime equivalent of the DataTypeTraits template below.
 class TypeInfo {
  public:
   // Returns the type mentioned in the schema.
@@ -75,7 +75,7 @@ class TypeInfo {
   bool IsMaxValue(const void* value) const {
     return max_value_ != nullptr && Compare(value, max_value_) == 0;
   }
-
+  bool is_virtual() const { return is_virtual_; }
  private:
   friend class TypeInfoResolver;
   template<typename Type> explicit TypeInfo(Type t);
@@ -87,6 +87,8 @@ class TypeInfo {
   const void* const min_value_;
   // The maximum value of the type, or null if the type has no max value.
   const void* const max_value_;
+  // Whether or not the type may only be used in projections, not tablet schemas.
+  const bool is_virtual_;
 
   typedef void (*AppendDebugFunc)(const void *, std::string *);
   const AppendDebugFunc append_func_;
@@ -153,6 +155,9 @@ struct DataTypeTraits<UINT8> {
   static const cpp_type* max_value() {
     return &MathLimits<cpp_type>::kMax;
   }
+  static bool IsVirtual() {
+    return false;
+  }
 };
 
 template<>
@@ -176,6 +181,9 @@ struct DataTypeTraits<INT8> {
   }
   static const cpp_type* max_value() {
     return &MathLimits<cpp_type>::kMax;
+  }
+  static bool IsVirtual() {
+    return false;
   }
 };
 
@@ -201,6 +209,9 @@ struct DataTypeTraits<UINT16> {
   static const cpp_type* max_value() {
     return &MathLimits<cpp_type>::kMax;
   }
+  static bool IsVirtual() {
+    return false;
+  }
 };
 
 template<>
@@ -224,6 +235,9 @@ struct DataTypeTraits<INT16> {
   }
   static const cpp_type* max_value() {
     return &MathLimits<cpp_type>::kMax;
+  }
+  static bool IsVirtual() {
+    return false;
   }
 };
 
@@ -249,6 +263,9 @@ struct DataTypeTraits<UINT32> {
   static const cpp_type* max_value() {
     return &MathLimits<cpp_type>::kMax;
   }
+  static bool IsVirtual() {
+    return false;
+  }
 };
 
 template<>
@@ -272,6 +289,9 @@ struct DataTypeTraits<INT32> {
   }
   static const cpp_type* max_value() {
     return &MathLimits<cpp_type>::kMax;
+  }
+  static bool IsVirtual() {
+    return false;
   }
 };
 
@@ -297,6 +317,9 @@ struct DataTypeTraits<UINT64> {
   static const cpp_type* max_value() {
     return &MathLimits<cpp_type>::kMax;
   }
+  static bool IsVirtual() {
+    return false;
+  }
 };
 
 template<>
@@ -320,6 +343,9 @@ struct DataTypeTraits<INT64> {
   }
   static const cpp_type* max_value() {
     return &MathLimits<cpp_type>::kMax;
+  }
+  static bool IsVirtual() {
+    return false;
   }
 };
 
@@ -345,6 +371,9 @@ struct DataTypeTraits<INT128> {
   static const cpp_type* max_value() {
     return &INT128_MAX;
   }
+  static bool IsVirtual() {
+    return false;
+  }
 };
 
 template<>
@@ -369,6 +398,9 @@ struct DataTypeTraits<FLOAT> {
   static const cpp_type* max_value() {
     return &MathLimits<cpp_type>::kPosInf;
   }
+  static bool IsVirtual() {
+    return false;
+  }
 };
 
 template<>
@@ -392,6 +424,9 @@ struct DataTypeTraits<DOUBLE> {
   }
   static const cpp_type* max_value() {
     return &MathLimits<cpp_type>::kPosInf;
+  }
+  static bool IsVirtual() {
+    return false;
   }
 };
 
@@ -433,6 +468,9 @@ struct DataTypeTraits<BINARY> {
   static const cpp_type* max_value() {
     return nullptr;
   }
+  static bool IsVirtual() {
+    return false;
+  }
 };
 
 template<>
@@ -458,6 +496,9 @@ struct DataTypeTraits<BOOL> {
   static const cpp_type* max_value() {
     static bool b = true;
     return &b;
+  }
+  static bool IsVirtual() {
+    return false;
   }
 };
 
@@ -486,6 +527,9 @@ struct DerivedTypeTraits {
 
   static const cpp_type* max_value() {
     return DataTypeTraits<PhysicalType>::max_value();
+  }
+  static bool IsVirtual() {
+    return DataTypeTraits<PhysicalType>::IsVirtual();
   }
 };
 
@@ -575,6 +619,16 @@ struct DataTypeTraits<DECIMAL128> : public DerivedTypeTraits<INT128>{
   }
 };
 
+template<>
+struct DataTypeTraits<IS_DELETED> : public DerivedTypeTraits<BOOL>{
+  static const char* name() {
+    return "is_deleted";
+  }
+  static bool IsVirtual() {
+    return true;
+  }
+};
+
 // Instantiate this template to get static access to the type traits.
 template<DataType datatype>
 struct TypeTraits : public DataTypeTraits<datatype> {
@@ -616,6 +670,7 @@ class Variant {
     switch (type_) {
       case UNKNOWN_DATA:
         LOG(FATAL) << "Unreachable";
+      case IS_DELETED:
       case BOOL:
         numeric_.b1 = *static_cast<const bool *>(value);
         break;
@@ -705,6 +760,7 @@ class Variant {
   const void *value() const {
     switch (type_) {
       case UNKNOWN_DATA: LOG(FATAL) << "Attempted to access value of unknown data type";
+      case IS_DELETED:
       case BOOL:         return &(numeric_.b1);
       case INT8:         return &(numeric_.i8);
       case UINT8:        return &(numeric_.u8);

@@ -1315,13 +1315,20 @@ Status ValidateClientSchema(const optional<string>& name,
     }
   }
 
-  // Check that the encodings are valid for the specified types.
   for (int i = 0; i < schema.num_columns(); i++) {
     const auto& col = schema.column(i);
+    const auto* ti = col.type_info();
+
+    // Prohibit the creation of virtual columns.
+    if (ti->is_virtual()) {
+      return Status::InvalidArgument(Substitute(
+          "may not create virtual column of type '$0' (column '$1')",
+          ti->name(), col.name()));
+    }
+
+    // Check that the encodings are valid for the specified types.
     const TypeEncodingInfo *dummy;
-    Status s = TypeEncodingInfo::Get(col.type_info(),
-                                     col.attributes().encoding,
-                                     &dummy);
+    Status s = TypeEncodingInfo::Get(ti, col.attributes().encoding, &dummy);
     if (!s.ok()) {
       return s.CloneAndPrepend(Substitute("invalid encoding for column '$0'", col.name()));
     }

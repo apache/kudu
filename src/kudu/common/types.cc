@@ -37,6 +37,7 @@ TypeInfo::TypeInfo(TypeTraitsClass t)
     size_(TypeTraitsClass::size),
     min_value_(TypeTraitsClass::min_value()),
     max_value_(TypeTraitsClass::max_value()),
+    is_virtual_(TypeTraitsClass::IsVirtual()),
     append_func_(TypeTraitsClass::AppendDebugStringForValue),
     compare_func_(TypeTraitsClass::Compare),
     are_consecutive_func_(TypeTraitsClass::AreConsecutive) {
@@ -87,6 +88,7 @@ class TypeInfoResolver {
     AddMapping<DECIMAL32>();
     AddMapping<DECIMAL64>();
     AddMapping<DECIMAL128>();
+    AddMapping<IS_DELETED>();
   }
 
   template<DataType type> void AddMapping() {

@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/master/master.h"
+
 #include <algorithm>
 #include <cstdint>
 #include <map>
@@ -39,6 +41,7 @@
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row_operations.h"
 #include "kudu/common/schema.h"
+#include "kudu/common/types.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
@@ -52,7 +55,6 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/master/catalog_manager.h"
-#include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/master_options.h"
@@ -745,6 +747,29 @@ TEST_F(MasterTest, TestCreateTableInvalidSchema) {
   SCOPED_TRACE(SecureDebugString(resp));
   ASSERT_TRUE(resp.has_error());
   ASSERT_EQ("code: INVALID_ARGUMENT message: \"Duplicate column name: col\"",
+            SecureShortDebugString(resp.error().status()));
+}
+
+TEST_F(MasterTest, TestVirtualColumns) {
+  CreateTableRequestPB req;
+  CreateTableResponsePB resp;
+  RpcController controller;
+
+  req.set_name("table");
+  ColumnSchemaPB* col = req.mutable_schema()->add_columns();
+  col->set_name("foo");
+  col->set_type(INT8);
+  col->set_is_key(true);
+  col = req.mutable_schema()->add_columns();
+  col->set_name("bar");
+  col->set_type(IS_DELETED);
+
+  ASSERT_OK(proxy_->CreateTable(req, &resp, &controller));
+  SCOPED_TRACE(SecureDebugString(resp));
+  ASSERT_TRUE(resp.has_error());
+  ASSERT_EQ(Substitute(
+      "code: INVALID_ARGUMENT message: \"may not create virtual column of type "
+      "\\'$0\\' (column \\'bar\\')\"", GetTypeInfo(IS_DELETED)->name()),
             SecureShortDebugString(resp.error().status()));
 }
 

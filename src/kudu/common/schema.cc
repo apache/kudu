@@ -20,17 +20,19 @@
 #include <algorithm>
 #include <unordered_set>
 
+#include "kudu/common/row.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/strcat.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/malloc.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/status.h"
-#include "kudu/common/row.h"
 
 using std::string;
 using std::unordered_set;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 
@@ -63,17 +65,17 @@ string ColumnTypeAttributes::ToStringForType(DataType type) const {
     case DECIMAL32:
     case DECIMAL64:
     case DECIMAL128:
-      return strings::Substitute("($0, $1)", precision, scale);
+      return Substitute("($0, $1)", precision, scale);
     default:
       return "";
   }
 }
 
 string ColumnStorageAttributes::ToString() const {
-  return strings::Substitute("encoding=$0, compression=$1, cfile_block_size=$2",
-                             EncodingType_Name(encoding),
-                             CompressionType_Name(compression),
-                             cfile_block_size);
+  return Substitute("encoding=$0, compression=$1, cfile_block_size=$2",
+                    EncodingType_Name(encoding),
+                    CompressionType_Name(compression),
+                    cfile_block_size);
 }
 
 Status ColumnSchema::ApplyDelta(const ColumnSchemaDelta& col_delta) {
@@ -116,16 +118,16 @@ Status ColumnSchema::ApplyDelta(const ColumnSchemaDelta& col_delta) {
 // TODO(wdb): include attributes_.ToString() -- need to fix unit tests
 // first
 string ColumnSchema::ToString() const {
-  return strings::Substitute("$0[$1]",
-                             name_,
-                             TypeToString());
+  return Substitute("$0[$1]",
+                    name_,
+                    TypeToString());
 }
 
 string ColumnSchema::TypeToString() const {
-  return strings::Substitute("$0$1 $2",
-                             type_info_->name(),
-                             type_attributes().ToStringForType(type_info()->type()),
-                             is_nullable_ ? "NULLABLE" : "NOT NULL");
+  return Substitute("$0$1 $2",
+                    type_info_->name(),
+                    type_attributes().ToStringForType(type_info()->type()),
+                    is_nullable_ ? "NULLABLE" : "NOT NULL");
 }
 
 size_t ColumnSchema::memory_footprint_excluding_this() const {
@@ -139,7 +141,7 @@ size_t ColumnSchema::memory_footprint_including_this() const {
 
 Schema::Schema(const Schema& other)
   : name_to_index_bytes_(0),
-    // TODO: C++11 provides a single-arg constructor
+    // TODO(adar): C++11 provides a single-arg constructor
     name_to_index_(10,
                    NameToIndexMap::hasher(),
                    NameToIndexMap::key_equal(),
@@ -209,8 +211,8 @@ Status Schema::Reset(const vector<ColumnSchema>& cols,
   for (int i = 0; i < key_columns; ++i) {
     if (PREDICT_FALSE(cols_[i].is_nullable())) {
       return Status::InvalidArgument(
-        "Bad schema", strings::Substitute("Nullable key columns are not "
-                                          "supported: $0", cols_[i].name()));
+        "Bad schema", Substitute("Nullable key columns are not supported: $0",
+                                 cols_[i].name()));
     }
   }
 
@@ -368,7 +370,7 @@ string Schema::ToString() const {
   vector<string> col_strs;
   if (has_column_ids()) {
     for (int i = 0; i < cols_.size(); ++i) {
-      col_strs.push_back(strings::Substitute("$0:$1", col_ids_[i], cols_[i].ToString()));
+      col_strs.push_back(Substitute("$0:$1", col_ids_[i], cols_[i].ToString()));
     }
   } else {
     for (const ColumnSchema &col : cols_) {
@@ -396,8 +398,8 @@ Status Schema::DecodeRowKey(Slice encoded_key,
                                              is_last,
                                              arena,
                                              row.mutable_cell_ptr(col_idx)),
-                          strings::Substitute("Error decoding composite key component '$0'",
-                                              col.name()));
+                          Substitute("Error decoding composite key component '$0'",
+                                     col.name()));
   }
   return Status::OK();
 }
