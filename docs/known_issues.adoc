@@ -136,7 +136,8 @@
 * Recommended maximum amount of stored data, post-replication and post-compression,
   per tablet server is 8TB.
 
-* Recommended maximum number of tablets per tablet server is 2000, post-replication.
+* The maximum number of tablets per tablet server is 2000, post-replication,
+  but we recommend 1000 tablets or fewer per tablet server.
 
 * Maximum number of tablets per table for each tablet server is 60, post-replication,
   at table-creation time.
@@ -176,6 +177,7 @@ to communicate only the most important known issues.
   and clients will experience frequent timeouts, and the cluster may become unusable.
 
 * If a tablet server has a very large number of tablets, it may take several minutes
-  to start up. It is recommended to limit the number of tablets per server to 100 or fewer.
+  to start up. It is recommended to limit the number of tablets per server to 1000
+  or fewer. The maximum allowed number of tablets per server is 2000.
   Consider this limitation when pre-splitting your tables. If you notice slow start-up times,
   you can monitor the number of tablets per server in the web UI.
