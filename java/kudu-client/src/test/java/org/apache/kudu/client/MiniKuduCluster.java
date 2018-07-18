@@ -24,7 +24,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.file.Files;
-import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -115,13 +115,27 @@ public class MiniKuduCluster implements AutoCloseable {
       // If a cluster root was not set, create a  unique temp directory to use.
       // The mini cluster will clean this directory up on exit.
       try {
-        File tempRoot = Files.createTempDirectory("mini-kudu-cluster").toFile();
+        File tempRoot = getTempDirectory("mini-kudu-cluster");
         this.clusterRoot = tempRoot.toString();
       } catch (IOException ex) {
         throw new RuntimeException("Could not create cluster root directory", ex);
       }
     } else {
       this.clusterRoot = clusterRoot;
+    }
+  }
+
+  // Match the C++ MiniCluster test functionality for overriding the tmp directory used.
+  // See MakeClusterRoot in src/kudu/tools/tool_action_test.cc.
+  // If the TEST_TMPDIR environment variable is defined that directory will be used
+  // instead of the default temp directory.
+  private File getTempDirectory(String prefix) throws IOException  {
+    String testTmpdir = System.getenv("TEST_TMPDIR");
+    if (testTmpdir != null) {
+      LOG.info("Using the temp directory defined by TEST_TMPDIR: " + testTmpdir);
+      return Files.createTempDirectory(Paths.get(testTmpdir), prefix).toFile();
+    } else {
+      return Files.createTempDirectory(prefix).toFile();
     }
   }
 
