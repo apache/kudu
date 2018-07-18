@@ -43,6 +43,7 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/strings/strcat.h"
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/tablet-test-util.h"
@@ -68,6 +69,7 @@ using consensus::OpId;
 using log::LogAnchorRegistry;
 using std::shared_ptr;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 
 class TestMemRowSet : public KuduTest {
@@ -81,10 +83,15 @@ class TestMemRowSet : public KuduTest {
   }
 
   static Schema CreateSchema() {
-    SchemaBuilder builder;
-    CHECK_OK(builder.AddKeyColumn("key", STRING));
-    CHECK_OK(builder.AddColumn("val", UINT32));
-    return builder.Build();
+    unique_ptr<SchemaBuilder> sb(CreateSchemaBuilder());
+    return sb->Build();
+  }
+
+  static unique_ptr<SchemaBuilder> CreateSchemaBuilder() {
+    unique_ptr<SchemaBuilder> builder(new SchemaBuilder());
+    CHECK_OK(builder->AddKeyColumn("key", STRING));
+    CHECK_OK(builder->AddColumn("val", UINT32));
+    return builder;
   }
 
  protected:
@@ -202,6 +209,40 @@ class TestMemRowSet : public KuduTest {
       fetched += block.selection_vector()->CountSelected();
     }
     return fetched;
+  }
+
+  Status GenerateTestData(MemRowSet* mrs) {
+    // row 0 - insert
+    // row 1 - insert, update
+    // row 2 - insert, delete
+    // row 3 - insert, update, delete
+    // row 4 - insert, update, delete, reinsert
+    // row 5 - insert, update, update, delete, reinsert
+    // row 6 - insert, delete, reinsert, delete
+    RETURN_NOT_OK(InsertRow(mrs, "row 0", 0));
+    RETURN_NOT_OK(InsertRow(mrs, "row 1", 0));
+    OperationResultPB result;
+    RETURN_NOT_OK(UpdateRow(mrs, "row 1", 1, &result));
+    RETURN_NOT_OK(InsertRow(mrs, "row 2", 0));
+    RETURN_NOT_OK(DeleteRow(mrs, "row 2", &result));
+    RETURN_NOT_OK(InsertRow(mrs, "row 3", 0));
+    RETURN_NOT_OK(UpdateRow(mrs, "row 3", 1, &result));
+    RETURN_NOT_OK(DeleteRow(mrs, "row 3", &result));
+    RETURN_NOT_OK(InsertRow(mrs, "row 4", 0));
+    RETURN_NOT_OK(UpdateRow(mrs, "row 4", 1, &result));
+    RETURN_NOT_OK(DeleteRow(mrs, "row 4", &result));
+    RETURN_NOT_OK(InsertRow(mrs, "row 4", 2));
+    RETURN_NOT_OK(InsertRow(mrs, "row 5", 0));
+    RETURN_NOT_OK(UpdateRow(mrs, "row 5", 1, &result));
+    RETURN_NOT_OK(UpdateRow(mrs, "row 5", 2, &result));
+    RETURN_NOT_OK(DeleteRow(mrs, "row 5", &result));
+    RETURN_NOT_OK(InsertRow(mrs, "row 5", 3));
+    RETURN_NOT_OK(InsertRow(mrs, "row 6", 0));
+    RETURN_NOT_OK(DeleteRow(mrs, "row 6", &result));
+    RETURN_NOT_OK(InsertRow(mrs, "row 6", 1));
+    RETURN_NOT_OK(DeleteRow(mrs, "row 6", &result));
+
+    return Status::OK();
   }
 
   OpId op_id_;
@@ -578,13 +619,16 @@ TEST_F(TestMemRowSet, TestUpdateMVCC) {
 }
 
 class ParameterizedTestMemRowSet : public TestMemRowSet,
-                                   public ::testing::WithParamInterface<bool> {
+                                   public ::testing::WithParamInterface<std::tuple<bool, bool>> {
 };
 
 
-// Parameterized on opts.include_deleted_rows true or false.
-INSTANTIATE_TEST_CASE_P(IncludeDeletedRowsOrNot, ParameterizedTestMemRowSet,
-                        ::testing::Bool());
+// Tests the Cartesian product of two boolean parameters:
+// 1. Whether to include deleted rows in the scan.
+// 2. Whether to include the "is deleted" virtual column in the scan's projection.
+INSTANTIATE_TEST_CASE_P(RowIteratorOptionsPermutations, ParameterizedTestMemRowSet,
+                        ::testing::Combine(::testing::Bool(),
+                                           ::testing::Bool()));
 
 TEST_P(ParameterizedTestMemRowSet, TestScanSnapToExclude) {
   shared_ptr<MemRowSet> mrs;
@@ -609,19 +653,44 @@ TEST_P(ParameterizedTestMemRowSet, TestScanSnapToExclude) {
   ASSERT_OK(InsertRow(mrs.get(), "row", 2));
   snaps.emplace_back(mvcc_);
 
+  bool include_deleted_rows = std::get<0>(GetParam());
+  bool add_vc_is_deleted = std::get<1>(GetParam());
+
   auto DumpAndCheck = [&](const MvccSnapshot& exclude,
                           const MvccSnapshot& include,
-                          boost::optional<int> row_value) {
+                          boost::optional<int> row_value,
+                          bool is_deleted = false) {
+    // Set up the iterator options.
+    unique_ptr<SchemaBuilder> sb = CreateSchemaBuilder();
+    if (add_vc_is_deleted) {
+      const bool kFalse = false;
+      ASSERT_OK(sb->AddColumn("deleted", IS_DELETED,
+                              /*is_nullable=*/false,
+                              &kFalse, /*write_default=*/nullptr));
+    }
+    Schema projection = sb->Build();
     RowIteratorOptions opts;
-    opts.projection = &schema_;
+    opts.projection = &projection;
     opts.snap_to_include = include;
     opts.snap_to_exclude = exclude;
-    opts.include_deleted_rows = GetParam();
+    opts.include_deleted_rows = include_deleted_rows;
+
+    // Iterate.
     vector<string> rows;
     ASSERT_OK(DumpRowSet(*mrs, opts, &rows));
+
+    // Test the results.
     if (row_value.is_initialized()) {
       ASSERT_EQ(1, rows.size());
-      ASSERT_EQ(StringPrintf(R"((string key="row", uint32 val=%d))", row_value.get()), rows[0]);
+      string expected;
+      StrAppend(&expected, "(string key=\"row\", uint32 val=");
+      StrAppend(&expected, row_value.get());
+      if (add_vc_is_deleted) {
+        StrAppend(&expected, ", is_deleted deleted=");
+        StrAppend(&expected, is_deleted ? "true" : "false");
+      }
+      StrAppend(&expected, ")");
+      ASSERT_EQ(expected, rows[0]);
     } else {
       ASSERT_TRUE(rows.empty());
     }
@@ -634,23 +703,23 @@ TEST_P(ParameterizedTestMemRowSet, TestScanSnapToExclude) {
 
   // If we include deleted rows, the row's value will be 1 due to the UPDATE
   // that preceeded it.
-  boost::optional<int> deleted_v = GetParam() ? boost::optional<int>(1) : boost::none;
+  boost::optional<int> deleted_v = include_deleted_rows ? boost::optional<int>(1) : boost::none;
 
   {
     NO_FATALS(DumpAndCheck(snaps[0], snaps[1], 0)); // INSERT
     NO_FATALS(DumpAndCheck(snaps[1], snaps[2], 1)); // UPDATE
-    NO_FATALS(DumpAndCheck(snaps[2], snaps[3], deleted_v)); // DELETE
+    NO_FATALS(DumpAndCheck(snaps[2], snaps[3], deleted_v, true)); // DELETE
     NO_FATALS(DumpAndCheck(snaps[3], snaps[4], 2)); // REINSERT
   }
 
   {
     NO_FATALS(DumpAndCheck(snaps[0], snaps[2], 1)); // INSERT, UPDATE
-    NO_FATALS(DumpAndCheck(snaps[1], snaps[3], deleted_v)); // UPDATE, DELETE
+    NO_FATALS(DumpAndCheck(snaps[1], snaps[3], deleted_v, true)); // UPDATE, DELETE
     NO_FATALS(DumpAndCheck(snaps[2], snaps[4], 2)); // DELETE, REINSERT
   }
 
   {
-    NO_FATALS(DumpAndCheck(snaps[0], snaps[3], deleted_v)); // INSERT, UPDATE, DELETE
+    NO_FATALS(DumpAndCheck(snaps[0], snaps[3], deleted_v, true)); // INSERT, UPDATE, DELETE
     NO_FATALS(DumpAndCheck(snaps[1], snaps[4], 2)); // UPDATE, DELETE, REINSERT
   }
 
@@ -661,36 +730,7 @@ TEST_F(TestMemRowSet, TestScanIncludeDeletedRows) {
   shared_ptr<MemRowSet> mrs;
   ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
                               MemTracker::GetRootTracker(), &mrs));
-
-  // row 0 - insert
-  // row 1 - insert, update
-  // row 2 - insert, delete
-  // row 3 - insert, update, delete
-  // row 4 - insert, update, delete, reinsert
-  // row 5 - insert, update, update, delete, reinsert
-  // row 6 - insert, delete, reinsert, delete
-  ASSERT_OK(InsertRow(mrs.get(), "row 0", 0));
-  ASSERT_OK(InsertRow(mrs.get(), "row 1", 0));
-  OperationResultPB result;
-  ASSERT_OK(UpdateRow(mrs.get(), "row 1", 1, &result));
-  ASSERT_OK(InsertRow(mrs.get(), "row 2", 0));
-  ASSERT_OK(DeleteRow(mrs.get(), "row 2", &result));
-  ASSERT_OK(InsertRow(mrs.get(), "row 3", 0));
-  ASSERT_OK(UpdateRow(mrs.get(), "row 3", 1, &result));
-  ASSERT_OK(DeleteRow(mrs.get(), "row 3", &result));
-  ASSERT_OK(InsertRow(mrs.get(), "row 4", 0));
-  ASSERT_OK(UpdateRow(mrs.get(), "row 4", 1, &result));
-  ASSERT_OK(DeleteRow(mrs.get(), "row 4", &result));
-  ASSERT_OK(InsertRow(mrs.get(), "row 4", 2));
-  ASSERT_OK(InsertRow(mrs.get(), "row 5", 0));
-  ASSERT_OK(UpdateRow(mrs.get(), "row 5", 1, &result));
-  ASSERT_OK(UpdateRow(mrs.get(), "row 5", 2, &result));
-  ASSERT_OK(DeleteRow(mrs.get(), "row 5", &result));
-  ASSERT_OK(InsertRow(mrs.get(), "row 5", 3));
-  ASSERT_OK(InsertRow(mrs.get(), "row 6", 0));
-  ASSERT_OK(DeleteRow(mrs.get(), "row 6", &result));
-  ASSERT_OK(InsertRow(mrs.get(), "row 6", 1));
-  ASSERT_OK(DeleteRow(mrs.get(), "row 6", &result));
+  ASSERT_OK(GenerateTestData(mrs.get()));
 
   RowIteratorOptions opts;
   opts.projection = &schema_;
@@ -699,6 +739,36 @@ TEST_F(TestMemRowSet, TestScanIncludeDeletedRows) {
 
   opts.include_deleted_rows = true;
   ASSERT_EQ(7, ScanAndCount(mrs.get(), opts));
+}
+
+TEST_F(TestMemRowSet, TestScanVirtualColumnIsDeleted) {
+  shared_ptr<MemRowSet> mrs;
+  ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+                              MemTracker::GetRootTracker(), &mrs));
+  ASSERT_OK(GenerateTestData(mrs.get()));
+
+  SchemaBuilder sb;
+  ASSERT_OK(sb.AddKeyColumn("key", STRING));
+  ASSERT_OK(sb.AddColumn("val", UINT32));
+  const bool kFalse = false;
+  ASSERT_OK(sb.AddColumn("deleted", IS_DELETED,
+                         /*is_nullable=*/false,
+                         &kFalse, /*write_default=*/nullptr));
+  Schema projection = sb.Build();
+
+  RowIteratorOptions opts;
+  opts.projection = &projection;
+  opts.snap_to_include = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
+  opts.include_deleted_rows = true;
+  vector<string> rows;
+  ASSERT_OK(DumpRowSet(*mrs, opts, &rows));
+  ASSERT_EQ(7, rows.size());
+  for (const auto& row_idx_present : { 0, 1, 4, 5 }) {
+    ASSERT_STR_CONTAINS(rows[row_idx_present], "=false");
+  }
+  for (const auto& row_idx_deleted : { 2, 3, 6 }) {
+    ASSERT_STR_CONTAINS(rows[row_idx_deleted], "=true");
+  }
 }
 
 } // namespace tablet

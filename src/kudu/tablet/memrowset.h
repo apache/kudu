@@ -571,14 +571,21 @@ class MemRowSet::Iterator : public RowwiseIterator {
   const std::shared_ptr<const MemRowSet> memrowset_;
   gscoped_ptr<MemRowSet::MSBTIter> iter_;
 
-  RowIteratorOptions opts_;
+  const RowIteratorOptions opts_;
 
   // Mapping from projected column index back to memrowset column index.
   // Relies on the MRSRowProjector interface to abstract from the two
   // different implementations of the RowProjector, which may change
   // at runtime (using vs. not using code generation).
-  gscoped_ptr<MRSRowProjector> projector_;
+  const gscoped_ptr<MRSRowProjector> projector_;
   DeltaProjector delta_projector_;
+
+  // The index of the first IS_DELETED virtual column in the projection schema,
+  // or kColumnNotFound if one doesn't exist.
+  //
+  // The virtual column must not be nullable and must have a read default value.
+  // The process will crash if these constraints are not met.
+  int projection_vc_is_deleted_idx_;
 
   // Temporary buffer used for RowChangeList projection.
   faststring delta_buf_;

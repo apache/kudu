@@ -29,11 +29,13 @@
 #include "kudu/codegen/compilation_manager.h"
 #include "kudu/codegen/row_projector.h"
 #include "kudu/common/columnblock.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/encoded_key.h"
 #include "kudu/common/row.h"
 #include "kudu/common/row_changelist.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/common/scan_spec.h"
+#include "kudu/common/types.h"
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/gutil/dynamic_annotations.h"
@@ -397,6 +399,21 @@ MemRowSet::Iterator::Iterator(const std::shared_ptr<const MemRowSet>& mrs,
   // seek. Could make this lazy instead, or change the semantics so that
   // a seek is required (probably the latter)
   iter_->SeekToStart();
+
+  // Find the first IS_DELETED virtual column, if one exists.
+  projection_vc_is_deleted_idx_ = Schema::kColumnNotFound;
+  for (int i = 0; i < opts_.projection->num_columns(); i++) {
+    const auto& col = opts_.projection->column(i);
+    if (col.type_info()->type() == IS_DELETED) {
+      // Enforce some properties on the virtual column that simplify our
+      // implementation.
+      DCHECK(!col.is_nullable());
+      DCHECK(col.has_read_default());
+
+      projection_vc_is_deleted_idx_ = i;
+      break;
+    }
+  }
 }
 
 MemRowSet::Iterator::~Iterator() {}
@@ -517,13 +534,13 @@ Status MemRowSet::Iterator::FetchRows(RowBlock* dst, size_t* fetched) {
     bool insert_excluded = opts_.snap_to_exclude &&
                            opts_.snap_to_exclude->IsCommitted(row.insertion_timestamp());
     bool unset_in_sel_vector;
+    ApplyStatus apply_status;
     if (insert_excluded || opts_.snap_to_include.IsCommitted(row.insertion_timestamp())) {
       RETURN_NOT_OK(projector_->ProjectRowForRead(row, &dst_row, dst->arena()));
 
       // Roll-forward MVCC for committed updates.
       Mutation* redo_head = reinterpret_cast<Mutation*>(
           base::subtle::Acquire_Load(reinterpret_cast<AtomicWord*>(&row.header_->redo_head)));
-      ApplyStatus apply_status;
       RETURN_NOT_OK(ApplyMutationsToProjectedRow(
           redo_head, &dst_row, dst->arena(), &apply_status));
       unset_in_sel_vector = (apply_status == APPLIED_AND_DELETED && !opts_.include_deleted_rows) ||
@@ -544,6 +561,9 @@ Status MemRowSet::Iterator::FetchRows(RowBlock* dst, size_t* fetched) {
                                      "MVCCMVCCMVCCMVCCMVCCMVCC");
       }
       #endif
+    } else if (projection_vc_is_deleted_idx_ != Schema::kColumnNotFound) {
+      UnalignedStore(dst_row.mutable_cell_ptr(projection_vc_is_deleted_idx_),
+                     apply_status == APPLIED_AND_DELETED);
     }
 
     ++*fetched;
