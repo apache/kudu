@@ -579,4 +579,33 @@ TEST_F(MasterHmsUpgradeTest, TestConflictingNormalizedNames) {
   std::sort(tables.begin(), tables.end());
   ASSERT_EQ(tables, vector<string>({ "default.MyTable", "default.mytable-renamed" }));
 }
+
+// Checks that existing tables with HMS-incompatible names can be renamed post
+// upgrade using a Kudu-catalog only alter.
+TEST_F(MasterHmsUpgradeTest, TestRenameExistingTables) {
+  ASSERT_OK(CreateKuduTable("default", "UPPERCASE"));
+  ASSERT_OK(CreateKuduTable("default", "illegal-chars⁉"));
+
+  // Shutdown the masters and turn on the HMS integration
+  cluster_->ShutdownNodes(cluster::ClusterNodes::MASTERS_ONLY);
+  cluster_->EnableMetastoreIntegration();
+  ASSERT_OK(cluster_->Restart());
+
+  vector<string> tables;
+  ASSERT_OK(client_->ListTables(&tables));
+  std::sort(tables.begin(), tables.end());
+  ASSERT_EQ(tables, vector<string>({ "default.UPPERCASE", "default.illegal-chars⁉" }));
+
+  // Rename the tables using a Kudu catalog only rename.
+  unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer("default.UPPERCASE"));
+  ASSERT_OK(alterer->RenameTo("default.uppercase")->alter_external_catalogs(false)->Alter());
+
+  alterer.reset(client_->NewTableAlterer("default.illegal-chars⁉"));
+  ASSERT_OK(alterer->RenameTo("default.illegal_chars")->alter_external_catalogs(false)->Alter());
+
+  tables.clear();
+  client_->ListTables(&tables);
+  std::sort(tables.begin(), tables.end());
+  ASSERT_EQ(tables, vector<string>({ "default.illegal_chars", "default.uppercase" }));
+}
 } // namespace kudu

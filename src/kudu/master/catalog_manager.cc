@@ -2261,7 +2261,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
         resp, MasterErrorPB::TABLE_NOT_FOUND);
   }
 
-  string table_name = l.data().name();
+  string normalized_table_name = NormalizeTableName(l.data().name());
   *resp->mutable_table_id() = table->id();
 
   // 3. Calculate and validate new schema for the on-disk state, not persisted yet.
@@ -2288,22 +2288,27 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
   // 4. Validate and try to acquire the new table name.
   string normalized_new_table_name = NormalizeTableName(req.new_table_name());
   if (req.has_new_table_name()) {
-    RETURN_NOT_OK(SetupError(
-          ValidateIdentifier(normalized_new_table_name).CloneAndPrepend("invalid table name"),
-          resp, MasterErrorPB::INVALID_SCHEMA));
 
     // Validate the new table name.
+    RETURN_NOT_OK(SetupError(
+          ValidateIdentifier(req.new_table_name()).CloneAndPrepend("invalid table name"),
+          resp, MasterErrorPB::INVALID_SCHEMA));
+
     std::lock_guard<LockType> catalog_lock(lock_);
     TRACE("Acquired catalog manager lock");
 
-    // Verify that the table does not exist.
+    // Verify that a table does not already exist with the new name. This
+    // also disallows no-op renames (ALTER TABLE a RENAME TO a).
+    //
+    // Special case: if this is a rename of a table from a non-normalized to
+    // normalized name (ALTER TABLE A RENAME to a), then allow it.
     scoped_refptr<TableInfo> other_table = FindPtrOrNull(normalized_table_names_map_,
                                                          normalized_new_table_name);
-
-    if (other_table != nullptr) {
+    if (other_table &&
+        !(table.get() == other_table.get() && l.data().name() != normalized_new_table_name)) {
       return SetupError(
           Status::AlreadyPresent(Substitute("table $0 already exists with id $1",
-              normalized_new_table_name, table->id())),
+              normalized_new_table_name, other_table->id())),
           resp, MasterErrorPB::TABLE_ALREADY_PRESENT);
     }
 
@@ -2323,7 +2328,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
   }
 
   // Ensure that we drop our reservation upon return.
-  auto cleanup = MakeScopedCleanup([&] () {
+  SCOPED_CLEANUP({
     if (req.has_new_table_name()) {
       std::lock_guard<LockType> l(lock_);
       CHECK_EQ(1, reserved_normalized_table_names_.erase(normalized_new_table_name));
@@ -2423,7 +2428,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
     // and tablets indices.
     std::lock_guard<LockType> lock(lock_);
     if (req.has_new_table_name()) {
-      if (normalized_table_names_map_.erase(table_name) != 1) {
+      if (normalized_table_names_map_.erase(normalized_table_name) != 1) {
         LOG(FATAL) << "Could not remove table " << table->ToString()
                    << " from map in response to AlterTable request: "
                    << SecureShortDebugString(req);
@@ -2473,10 +2478,10 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
     // table rename, since we split out the rename portion into its own
     // 'transaction' which is serialized through the HMS.
     DCHECK(!req.has_new_table_name());
-    WARN_NOT_OK(hms_catalog_->AlterTable(table->id(), table_name, table_name, new_schema),
-                Substitute(
-                  "failed to alter HiveMetastore schema for table $0, "
-                  "HMS schema information will be stale", table->ToString()));
+    WARN_NOT_OK(hms_catalog_->AlterTable(
+          table->id(), normalized_table_name, normalized_table_name, new_schema),
+        Substitute("failed to alter HiveMetastore schema for table $0, "
+                   "HMS schema information will be stale", table->ToString()));
   }
 
   if (!tablets_to_add.empty() || has_metadata_changes) {
