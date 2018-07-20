@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/consensus/log-test-base.h"
+#include "kudu/tablet/tablet_bootstrap.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -35,7 +35,9 @@
 #include "kudu/clock/logical_clock.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/iterator.h"
+#include "kudu/common/partial_row.h"
 #include "kudu/common/partition.h"
+#include "kudu/common/row_operations.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/timestamp.h"
 #include "kudu/common/wire_protocol-test-util.h"
@@ -45,6 +47,7 @@
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus_meta_manager.h"
+#include "kudu/consensus/log-test-base.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/log_reader.h"
@@ -67,7 +70,6 @@
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet.pb.h"
-#include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/tserver.pb.h"
@@ -673,6 +675,75 @@ TEST_F(BootstrapTest, TestConsensusOnlyOperationOutOfOrderTimestamp) {
   vector<string> results;
   IterateTabletRows(tablet.get(), &results);
   ASSERT_EQ(1, results.size());
+}
+
+// Regression test for KUDU-2509. There was a use-after-free bug that sometimes
+// lead to SIGSEGV while replaying the WAL. This scenario would crash or
+// at least UB sanitizer would report a warning if such condition exists.
+TEST_F(BootstrapTest, TestKudu2509) {
+  ASSERT_OK(BuildLog());
+
+  consensus::ReplicateRefPtr replicate = consensus::make_scoped_refptr_replicate(
+      new consensus::ReplicateMsg());
+  replicate->get()->set_op_type(consensus::WRITE_OP);
+  tserver::WriteRequestPB* batch_request = replicate->get()->mutable_write_request();
+  ASSERT_OK(SchemaToPB(schema_, batch_request->mutable_schema()));
+  batch_request->set_tablet_id(log::kTestTablet);
+
+  // This appends Insert(1) with op 10.10
+  const OpId insert_opid = MakeOpId(10, 10);
+  replicate->get()->mutable_id()->CopyFrom(insert_opid);
+  replicate->get()->set_timestamp(clock_->Now().ToUint64());
+  AddTestRowToPB(RowOperationsPB::INSERT, schema_, 10, 1,
+                 "this is a test insert", batch_request->mutable_row_operations());
+  NO_FATALS(AppendReplicateBatch(replicate));
+
+  // This appends Mutate(1) with op 10.11. The operation would try to update
+  // a row having an extra column. This should fail since there hasn't been
+  // corresponding DDL operation committed yet.
+  const OpId mutate_opid = MakeOpId(10, 11);
+  batch_request->mutable_row_operations()->Clear();
+  replicate->get()->mutable_id()->CopyFrom(mutate_opid);
+  replicate->get()->set_timestamp(clock_->Now().ToUint64());
+  {
+    // Modify the existing schema to add an extra row.
+    SchemaBuilder builder(schema_);
+    ASSERT_OK(builder.AddNullableColumn("string_val_extra", STRING));
+    const auto schema = builder.BuildWithoutIds();
+    ASSERT_OK(SchemaToPB(schema, batch_request->mutable_schema()));
+
+    KuduPartialRow row(&schema);
+    ASSERT_OK(row.SetInt32("key", 100));
+    ASSERT_OK(row.SetInt32("int_val", 200));
+    ASSERT_OK(row.SetStringCopy("string_val", "300"));
+    ASSERT_OK(row.SetStringCopy("string_val_extra", "100500"));
+    RowOperationsPBEncoder enc(batch_request->mutable_row_operations());
+    enc.Add(RowOperationsPB::UPDATE, row);
+  }
+  NO_FATALS(AppendReplicateBatch(replicate));
+
+  // Now commit the mutate before the insert (in the log).
+  gscoped_ptr<consensus::CommitMsg> mutate_commit(new consensus::CommitMsg);
+  mutate_commit->set_op_type(consensus::WRITE_OP);
+  mutate_commit->mutable_commited_op_id()->CopyFrom(mutate_opid);
+  mutate_commit->mutable_result()->add_ops()->add_mutated_stores()->set_mrs_id(1);
+  NO_FATALS(AppendCommit(std::move(mutate_commit)));
+
+  gscoped_ptr<consensus::CommitMsg> insert_commit(new consensus::CommitMsg);
+  insert_commit->set_op_type(consensus::WRITE_OP);
+  insert_commit->mutable_commited_op_id()->CopyFrom(insert_opid);
+  insert_commit->mutable_result()->add_ops()->add_mutated_stores()->set_mrs_id(1);
+  NO_FATALS(AppendCommit(std::move(insert_commit)));
+
+  ConsensusBootstrapInfo boot_info;
+  shared_ptr<Tablet> tablet;
+  const auto s = BootstrapTestTablet(-1, -1, &tablet, &boot_info);
+  const auto& status_msg = s.ToString();
+  ASSERT_TRUE(s.IsInvalidArgument()) << status_msg;
+  ASSERT_STR_CONTAINS(status_msg,
+      "Unable to bootstrap test tablet: Failed log replay.");
+  ASSERT_STR_CONTAINS(status_msg,
+      "column string_val_extra[string NULLABLE] not present in tablet");
 }
 
 } // namespace tablet
