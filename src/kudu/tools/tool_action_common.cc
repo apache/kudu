@@ -428,6 +428,10 @@ Status SetServerFlag(const string& address, uint16_t default_port,
   }
 }
 
+void SetAlterExternalCatalogs(client::KuduTableAlterer* alterer, bool alter_external_catalogs) {
+  alterer->alter_external_catalogs(alter_external_catalogs);
+}
+
 Status PrintServerStatus(const string& address, uint16_t default_port) {
   ServerStatusPB status;
   RETURN_NOT_OK(GetServerStatus(address, default_port, &status));

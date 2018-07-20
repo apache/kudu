@@ -2013,6 +2013,10 @@ TEST_F(ToolTest, TestMasterList) {
 
 TEST_F(ToolTest, TestRenameTable) {
   NO_FATALS(StartExternalMiniCluster());
+  shared_ptr<KuduClient> client;
+  ASSERT_OK(cluster_->CreateClient(nullptr, &client));
+  string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+
   const string& kTableName = "kudu.table";
   const string& kNewTableName = "kudu_table";
 
@@ -2022,17 +2026,17 @@ TEST_F(ToolTest, TestRenameTable) {
   workload.set_num_replicas(1);
   workload.Setup();
 
-  string master_addr = cluster_->master()->bound_rpc_addr().ToString();
   string out;
   NO_FATALS(RunActionStdoutNone(Substitute("table rename_table $0 $1 $2",
                                            master_addr, kTableName,
                                            kNewTableName)));
-  shared_ptr<KuduClient> client;
-  ASSERT_OK(KuduClientBuilder()
-      .add_master_server_addr(master_addr)
-      .Build(&client));
   shared_ptr<KuduTable> table;
   ASSERT_OK(client->OpenTable(kNewTableName, &table));
+
+  NO_FATALS(RunActionStdoutNone(
+        Substitute("table rename_table $0 $1 $2 --noalter_external_catalogs",
+          master_addr, kNewTableName, kTableName)));
+  ASSERT_OK(client->OpenTable(kTableName, &table));
 }
 
 TEST_F(ToolTest, TestRenameColumn) {

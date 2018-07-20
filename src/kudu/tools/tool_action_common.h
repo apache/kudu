@@ -41,6 +41,7 @@ class faststring;
 
 namespace client {
 class KuduClient;
+class KuduTableAlterer;
 } // namespace client
 
 namespace master {
@@ -116,6 +117,9 @@ Status PrintServerFlags(const std::string& address, uint16_t default_port);
 // If 'address' does not contain a port, 'default_port' is used instead.
 Status SetServerFlag(const std::string& address, uint16_t default_port,
                      const std::string& flag, const std::string& value);
+
+// Set the non-public 'alter_external_catalogs' option on a KuduTableAlterer.
+void SetAlterExternalCatalogs(client::KuduTableAlterer* alterer, bool alter_external_catalogs);
 
 // A table of data to present to the user.
 //

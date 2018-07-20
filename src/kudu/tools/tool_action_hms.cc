@@ -110,8 +110,8 @@ Status AlterKuduTableOnly(KuduClient* kudu_client,
                           const string& name,
                           const string& new_name) {
   unique_ptr<KuduTableAlterer> alterer(kudu_client->NewTableAlterer(name));
+  SetAlterExternalCatalogs(alterer.get(), false);
   return alterer->RenameTo(new_name)
-                ->alter_external_catalogs(false)
                 ->Alter();
 }
 

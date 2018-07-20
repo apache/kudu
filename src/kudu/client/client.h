@@ -58,19 +58,17 @@ class PartitionSchema;
 class SecurityUnknownTskTest;
 
 namespace client {
-class KuduClient;
+class KuduTableAlterer;
 }
 
 namespace tools {
 class LeaderMasterProxy;
-
-Status AlterKuduTableOnly(client::KuduClient* kudu_client,
-                          const std::string& name,
-                          const std::string& new_name);
+void SetAlterExternalCatalogs(client::KuduTableAlterer*, bool);
 } // namespace tools
 
 namespace client {
 
+class KuduClient;
 class KuduDelete;
 class KuduInsert;
 class KuduLoggingCallback;
@@ -79,7 +77,6 @@ class KuduScanBatch;
 class KuduSession;
 class KuduStatusCallback;
 class KuduTable;
-class KuduTableAlterer;
 class KuduTableCreator;
 class KuduTablet;
 class KuduTabletServer;
@@ -1193,11 +1190,7 @@ class KUDU_EXPORT KuduTableAlterer {
 
   friend class KuduClient;
 
-  friend Status tools::AlterKuduTableOnly(
-      client::KuduClient* kudu_client,
-      const std::string& name,
-      const std::string& new_name);
-
+  friend void tools::SetAlterExternalCatalogs(KuduTableAlterer*, bool);
   FRIEND_TEST(kudu::MasterHmsTest, TestAlterTable);
   FRIEND_TEST(kudu::MasterHmsUpgradeTest, TestRenameExistingTables);
 
