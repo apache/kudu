@@ -975,7 +975,6 @@ Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntryPB* comm
   // ... if it does, we apply it and all the commits that immediately follow in the sequence.
   OpId last_applied = commit_entry->commit().commited_op_id();
   RETURN_NOT_OK(ApplyCommitMessage(state, commit_entry));
-  delete commit_entry;
 
   auto iter = state->pending_commits.begin();
   while (iter != state->pending_commits.end()) {
@@ -989,6 +988,7 @@ Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntryPB* comm
     break;
   }
 
+  delete commit_entry;
   return Status::OK();
 }
 
