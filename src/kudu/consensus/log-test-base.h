@@ -22,6 +22,7 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -32,6 +33,7 @@
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/log_reader.h"
+#include "kudu/consensus/log_util.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/fs/fs_manager.h"
@@ -164,7 +166,6 @@ class LogTestBase : public KuduTest {
 
   void TearDown() override {
     KuduTest::TearDown();
-    STLDeleteElements(&entries_);
   }
 
   Status BuildLog() {
@@ -196,7 +197,7 @@ class LogTestBase : public KuduTest {
   }
 
   void EntriesToIdList(std::vector<uint32_t>* ids) {
-    for (const LogEntryPB* entry : entries_) {
+    for (const auto& entry : entries_) {
       VLOG(2) << "Entry contents: " << pb_util::SecureDebugString(*entry);
       if (entry->type() == REPLICATE) {
         ids->push_back(entry->replicate().id().index());
@@ -381,7 +382,7 @@ class LogTestBase : public KuduTest {
   int64_t current_index_;
   LogOptions options_;
   // Reusable entries vector that deletes the entries on destruction.
-  std::vector<LogEntryPB* > entries_;
+  LogEntries entries_;
   scoped_refptr<LogAnchorRegistry> log_anchor_registry_;
   scoped_refptr<clock::Clock> clock_;
 };

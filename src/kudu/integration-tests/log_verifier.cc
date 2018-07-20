@@ -79,15 +79,15 @@ Status LogVerifier::ScanForCommittedOpIds(int ts_idx, const string& tablet_id,
                                 scoped_refptr<MetricEntity>(), &reader));
   log::SegmentSequence segs;
   RETURN_NOT_OK(reader->GetSegmentsSnapshot(&segs));
-  log::LogEntryPB entry;
+  unique_ptr<log::LogEntryPB> entry;
   for (const auto& seg : segs) {
     log::LogEntryReader reader(seg.get());
     while (true) {
       Status s = reader.ReadNextEntry(&entry);
       if (s.IsEndOfFile() || s.IsCorruption()) break;
       RETURN_NOT_OK(s);
-      if (entry.type() != log::COMMIT) continue;
-      const auto& op_id = entry.commit().commited_op_id();
+      if (entry->type() != log::COMMIT) continue;
+      const auto& op_id = entry->commit().commited_op_id();
 
       if (!InsertIfNotPresent(index_to_term, op_id.index(), op_id.term())) {
         return Status::Corruption(Substitute(

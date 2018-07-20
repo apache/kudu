@@ -18,6 +18,7 @@
 #include "kudu/consensus/log_reader.h"
 
 #include <algorithm>
+#include <memory>
 #include <mutex>
 #include <ostream>
 
@@ -57,6 +58,7 @@ using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
 using std::shared_ptr;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
@@ -235,7 +237,7 @@ scoped_refptr<ReadableLogSegment> LogReader::GetSegmentBySequenceNumber(int64_t 
 
 Status LogReader::ReadBatchUsingIndexEntry(const LogIndexEntry& index_entry,
                                            faststring* tmp_buf,
-                                           gscoped_ptr<LogEntryBatchPB>* batch) const {
+                                           unique_ptr<LogEntryBatchPB>* batch) const {
   const int64_t index = index_entry.op_id.index();
 
   scoped_refptr<ReadableLogSegment> segment = GetSegmentBySequenceNumber(
@@ -281,7 +283,7 @@ Status LogReader::ReadReplicatesInRange(int64_t starting_at,
   int64_t total_size = 0;
   bool limit_exceeded = false;
   faststring tmp_buf;
-  gscoped_ptr<LogEntryBatchPB> batch;
+  unique_ptr<LogEntryBatchPB> batch;
   for (int64_t index = starting_at; index <= up_to && !limit_exceeded; index++) {
     LogIndexEntry index_entry;
     RETURN_NOT_OK_PREPEND(log_index_->GetEntry(index, &index_entry),

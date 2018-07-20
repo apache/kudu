@@ -25,7 +25,6 @@
 #include <gtest/gtest_prod.h>
 
 #include "kudu/consensus/log_util.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/locks.h"
@@ -170,7 +169,7 @@ class LogReader : public enable_make_shared<LogReader> {
   // 'tmp_buf' is used as scratch space to avoid extra allocation.
   Status ReadBatchUsingIndexEntry(const LogIndexEntry& index_entry,
                                   faststring* tmp_buf,
-                                  gscoped_ptr<LogEntryBatchPB>* batch) const;
+                                  std::unique_ptr<LogEntryBatchPB>* batch) const;
 
   // Reads the headers of all segments in 'tablet_wal_path'.
   Status Init(const std::string& tablet_wal_path);

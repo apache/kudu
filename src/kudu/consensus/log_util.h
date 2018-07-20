@@ -32,7 +32,6 @@
 #include "kudu/consensus/log.pb.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/ref_counted_replicate.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/atomic.h"
@@ -55,6 +54,8 @@ namespace log {
 extern const size_t kEntryHeaderSizeV2;
 
 class ReadableLogSegment;
+
+typedef std::vector<std::unique_ptr<LogEntryPB>> LogEntries;
 
 // Options for the State Machine/Write Ahead Log
 struct LogOptions {
@@ -108,7 +109,7 @@ class LogEntryReader {
   // Read the next entry from the log, replacing the contents of 'entry'.
   //
   // When there are no more entries to read, returns Status::EndOfFile().
-  Status ReadNextEntry(LogEntryPB* entry);
+  Status ReadNextEntry(std::unique_ptr<LogEntryPB>* entry);
 
   // Return the offset of the next entry to be read from the file.
   int64_t offset() const {
@@ -206,7 +207,7 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
   // If the log is corrupted (i.e. the returned 'Status' is 'Corruption') all
   // the log entries read up to the corrupted one are returned in the 'entries'
   // vector.
-  Status ReadEntries(std::vector<LogEntryPB*>* entries);
+  Status ReadEntries(LogEntries* entries);
 
   // Rebuilds this segment's footer by scanning its entries.
   // This is an expensive operation as it reads and parses the whole segment
@@ -337,7 +338,7 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
   // If unsuccessful, '*offset' is not updated, and *status_detail will be updated
   // to indicate the cause of the error.
   Status ReadEntryHeaderAndBatch(int64_t* offset, faststring* tmp_buf,
-                                 gscoped_ptr<LogEntryBatchPB>* batch,
+                                 std::unique_ptr<LogEntryBatchPB>* batch,
                                  EntryHeaderStatus* status_detail);
 
   // Reads a log entry header from the segment.
@@ -357,10 +358,10 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
 
   // Reads a log entry batch from the provided readable segment, which gets decoded
   // into 'entry_batch' and increments 'offset' by the batch's length.
-  Status ReadEntryBatch(int64_t *offset,
+  Status ReadEntryBatch(int64_t* offset,
                         const EntryHeader& header,
                         faststring* tmp_buf,
-                        gscoped_ptr<LogEntryBatchPB>* entry_batch);
+                        std::unique_ptr<LogEntryBatchPB>* entry_batch);
 
   void UpdateReadableToOffset(int64_t readable_to_offset);
 

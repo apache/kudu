@@ -59,7 +59,6 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/result_tracker.h"
@@ -88,6 +87,7 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/stopwatch.h"
 
 DECLARE_int32(group_commit_queue_size_bytes);
@@ -100,36 +100,34 @@ TAG_FLAG(fault_crash_during_log_replay, unsafe);
 
 DECLARE_int32(max_clock_sync_error_usec);
 
-namespace kudu {
-namespace tablet {
-
-using clock::Clock;
-using consensus::ALTER_SCHEMA_OP;
-using consensus::CHANGE_CONFIG_OP;
-using consensus::CommitMsg;
-using consensus::ConsensusBootstrapInfo;
-using consensus::MinimumOpId;
-using consensus::NO_OP;
-using consensus::OpId;
-using consensus::OpIdEquals;
-using consensus::OpIdEqualsFunctor;
-using consensus::OpIdHashFunctor;
-using consensus::OpIdToString;
-using consensus::OperationType;
-using consensus::OperationType_Name;
-using consensus::RaftConfigPB;
-using consensus::ReplicateMsg;
-using consensus::WRITE_OP;
-using log::Log;
-using log::LogAnchorRegistry;
-using log::LogEntryPB;
-using log::LogIndex;
-using log::LogOptions;
-using log::LogReader;
-using log::ReadableLogSegment;
-using rpc::ResultTracker;
-using pb_util::SecureDebugString;
-using pb_util::SecureShortDebugString;
+using kudu::clock::Clock;
+using kudu::consensus::ALTER_SCHEMA_OP;
+using kudu::consensus::CHANGE_CONFIG_OP;
+using kudu::consensus::CommitMsg;
+using kudu::consensus::ConsensusBootstrapInfo;
+using kudu::consensus::MinimumOpId;
+using kudu::consensus::NO_OP;
+using kudu::consensus::OpId;
+using kudu::consensus::OpIdEquals;
+using kudu::consensus::OpIdToString;
+using kudu::consensus::OperationType;
+using kudu::consensus::OperationType_Name;
+using kudu::consensus::RaftConfigPB;
+using kudu::consensus::ReplicateMsg;
+using kudu::consensus::WRITE_OP;
+using kudu::log::Log;
+using kudu::log::LogAnchorRegistry;
+using kudu::log::LogEntryPB;
+using kudu::log::LogIndex;
+using kudu::log::LogOptions;
+using kudu::log::LogReader;
+using kudu::log::ReadableLogSegment;
+using kudu::pb_util::SecureDebugString;
+using kudu::pb_util::SecureShortDebugString;
+using kudu::rpc::ResultTracker;
+using kudu::tserver::AlterSchemaRequestPB;
+using kudu::tserver::WriteRequestPB;
+using kudu::tserver::WriteResponsePB;
 using std::map;
 using std::shared_ptr;
 using std::string;
@@ -137,10 +135,9 @@ using std::unique_ptr;
 using std::unordered_map;
 using std::vector;
 using strings::Substitute;
-using tserver::AlterSchemaRequestPB;
-using tserver::WriteRequestPB;
-using tserver::WriteResponsePB;
 
+namespace kudu {
+namespace tablet {
 
 struct ReplayState;
 
@@ -339,11 +336,19 @@ class TabletBootstrap {
 
   void DumpReplayStateToLog(const ReplayState& state);
 
+  Status HandleEntry(ReplayState* state,
+                     unique_ptr<LogEntryPB> entry,
+                     string* entry_debug_info);
+
   // Handlers for each type of message seen in the log during replay.
-  Status HandleEntry(ReplayState* state, LogEntryPB* entry);
-  Status HandleReplicateMessage(ReplayState* state, LogEntryPB* replicate_entry);
-  Status HandleCommitMessage(ReplayState* state, LogEntryPB* commit_entry);
-  Status ApplyCommitMessage(ReplayState* state, LogEntryPB* commit_entry);
+  Status HandleReplicateMessage(ReplayState* state,
+                                unique_ptr<LogEntryPB> entry,
+                                string* entry_debug_info);
+  Status HandleCommitMessage(ReplayState* state,
+                             unique_ptr<LogEntryPB> entry,
+                             string* entry_debug_info);
+
+  Status ApplyCommitMessage(ReplayState* state, LogEntryPB* entry);
   Status HandleEntryPair(LogEntryPB* replicate_entry, LogEntryPB* commit_entry);
 
   // Checks that an orphaned commit message is actually irrelevant, i.e that none
@@ -367,7 +372,7 @@ class TabletBootstrap {
   scoped_refptr<rpc::ResultTracker> result_tracker_;
   MetricRegistry* metric_registry_;
   scoped_refptr<TabletReplica> tablet_replica_;
-  gscoped_ptr<tablet::Tablet> tablet_;
+  unique_ptr<tablet::Tablet> tablet_;
   const scoped_refptr<log::LogAnchorRegistry> log_anchor_registry_;
   scoped_refptr<log::Log> log_;
   std::shared_ptr<log::LogReader> log_reader_;
@@ -461,17 +466,20 @@ static string DebugInfo(const string& tablet_id,
                         int segment_seqno,
                         int entry_idx,
                         const string& segment_path,
-                        const LogEntryPB& entry) {
+                        const string& entry_debug_info) {
   // Truncate the debug string to a reasonable length for logging.
   // Otherwise, glog will truncate for us and we may miss important
   // information which came after this long string.
-  string debug_str = SecureShortDebugString(entry);
+  string debug_str = entry_debug_info;
   if (debug_str.size() > 500) {
     debug_str.resize(500);
     debug_str.append("...");
   }
+  if (!debug_str.empty()) {
+    debug_str = Substitute(" Entry: $0", debug_str);
+  }
   return Substitute("Debug Info: Error playing entry $0 of segment $1 of tablet $2. "
-                    "Segment path: $3. Entry: $4", entry_idx, segment_seqno, tablet_id,
+                    "Segment path: $3.$4", entry_idx, segment_seqno, tablet_id,
                     segment_path, debug_str);
 }
 
@@ -613,18 +621,18 @@ Status TabletBootstrap::FinishBootstrap(const string& message,
 }
 
 Status TabletBootstrap::OpenTablet(bool* has_blocks) {
-  gscoped_ptr<Tablet> tablet(new Tablet(tablet_meta_,
-                                        clock_,
-                                        mem_tracker_,
-                                        metric_registry_,
-                                        log_anchor_registry_));
+  unique_ptr<Tablet> tablet(new Tablet(tablet_meta_,
+                                       clock_,
+                                       mem_tracker_,
+                                       metric_registry_,
+                                       log_anchor_registry_));
   // doing nothing for now except opening a tablet locally.
   {
     SCOPED_LOG_SLOW_EXECUTION_PREFIX(INFO, 100, LogPrefix(), "opening tablet");
     RETURN_NOT_OK(tablet->Open());
   }
   *has_blocks = tablet->num_rowsets() != 0;
-  tablet_.reset(tablet.release());
+  tablet_ = std::move(tablet);
   return Status::OK();
 }
 
@@ -729,18 +737,13 @@ Status TabletBootstrap::OpenNewLog() {
   return Status::OK();
 }
 
-typedef map<int64_t, LogEntryPB*> OpIndexToEntryMap;
+typedef map<int64_t, unique_ptr<LogEntryPB>> OpIndexToEntryMap;
 
 // State kept during replay.
 struct ReplayState {
   ReplayState()
-    : prev_op_id(MinimumOpId()),
-      committed_op_id(MinimumOpId()) {
-  }
-
-  ~ReplayState() {
-    STLDeleteValues(&pending_replicates);
-    STLDeleteValues(&pending_commits);
+      : prev_op_id(MinimumOpId()),
+        committed_op_id(MinimumOpId()) {
   }
 
   // Return true if 'b' is allowed to immediately follow 'a' in the log.
@@ -784,8 +787,8 @@ struct ReplayState {
   }
 
   void AddEntriesToStrings(const OpIndexToEntryMap& entries, vector<string>* strings) const {
-    for (const OpIndexToEntryMap::value_type& map_entry : entries) {
-      LogEntryPB* entry = DCHECK_NOTNULL(map_entry.second);
+    for (const auto& map_entry : entries) {
+      const LogEntryPB* entry = DCHECK_NOTNULL(map_entry.second.get());
       strings->push_back(Substitute("   $0", SecureShortDebugString(*entry)));
     }
   }
@@ -819,23 +822,26 @@ struct ReplayState {
   OpIndexToEntryMap pending_commits;
 };
 
-// Handle the given log entry. If OK is returned, then takes ownership of 'entry'.
-// Otherwise, caller frees.
-Status TabletBootstrap::HandleEntry(ReplayState* state, LogEntryPB* entry) {
+// Handle the given log entry.
+Status TabletBootstrap::HandleEntry(ReplayState* state,
+                                    unique_ptr<LogEntryPB> entry,
+                                    string* entry_debug_info) {
+  DCHECK(entry);
   if (VLOG_IS_ON(1)) {
     VLOG_WITH_PREFIX(1) << "Handling entry: " << SecureShortDebugString(*entry);
   }
 
-  switch (entry->type()) {
+  const auto entry_type = entry->type();
+  switch (entry_type) {
     case log::REPLICATE:
-      RETURN_NOT_OK(HandleReplicateMessage(state, entry));
+      RETURN_NOT_OK(HandleReplicateMessage(state, std::move(entry), entry_debug_info));
       break;
     case log::COMMIT:
       // check the unpaired ops for the matching replicate msg, abort if not found
-      RETURN_NOT_OK(HandleCommitMessage(state, entry));
+      RETURN_NOT_OK(HandleCommitMessage(state, std::move(entry), entry_debug_info));
       break;
     default:
-      return Status::Corruption(Substitute("Unexpected log entry type: $0", entry->type()));
+      return Status::Corruption(Substitute("unexpected log entry type: $0", entry_type));
   }
   MAYBE_FAULT(FLAGS_fault_crash_during_log_replay);
   return Status::OK();
@@ -860,64 +866,73 @@ void CheckAndRepairOpIdOverflow(OpId* opid) {
   }
 }
 
-// Takes ownership of 'replicate_entry' on OK status.
-Status TabletBootstrap::HandleReplicateMessage(ReplayState* state, LogEntryPB* replicate_entry) {
+Status TabletBootstrap::HandleReplicateMessage(ReplayState* state,
+                                               unique_ptr<LogEntryPB> entry,
+                                               string* entry_debug_info) {
+  auto info_collector = MakeScopedCleanup([&]() {
+    if (entry) {
+      *entry_debug_info = SecureShortDebugString(*entry);
+    }
+  });
+  DCHECK(entry->has_replicate())
+      << "not a replicate message: " << SecureDebugString(*entry);
   stats_.ops_read++;
 
-  DCHECK(replicate_entry->has_replicate());
-
   // Fix overflow if necessary (see KUDU-1933).
-  CheckAndRepairOpIdOverflow(replicate_entry->mutable_replicate()->mutable_id());
+  CheckAndRepairOpIdOverflow(entry->mutable_replicate()->mutable_id());
 
-  const ReplicateMsg& replicate = replicate_entry->replicate();
+  const ReplicateMsg& replicate = entry->replicate();
   RETURN_NOT_OK(state->CheckSequentialReplicateId(replicate));
   DCHECK(replicate.has_timestamp());
   CHECK_OK(UpdateClock(replicate.timestamp()));
 
   // Append the replicate message to the log as is
-  RETURN_NOT_OK(log_->Append(replicate_entry));
+  RETURN_NOT_OK(log_->Append(entry.get()));
 
-  int64_t index = replicate_entry->replicate().id().index();
-
-  LogEntryPB** existing_entry_ptr = InsertOrReturnExisting(
-      &state->pending_replicates, index, replicate_entry);
-
-  // If there was a entry with the same index we're overwriting then we need to delete
-  // that entry and all entries with higher indexes.
-  if (existing_entry_ptr) {
-    LogEntryPB* existing_entry = *existing_entry_ptr;
+  const int64_t index = replicate.id().index();
+  const auto existing_entry_iter = state->pending_replicates.find(index);
+  if (existing_entry_iter != state->pending_replicates.end()) {
+    // If there was a entry with the same index we're overwriting then we need
+    // to delete that entry and all entries with higher indexes.
+    const auto& existing_entry = existing_entry_iter->second;
 
     auto iter = state->pending_replicates.lower_bound(index);
-    DCHECK(OpIdEquals((*iter).second->replicate().id(), existing_entry->replicate().id()));
+    DCHECK(OpIdEquals(iter->second->replicate().id(), existing_entry->replicate().id()));
 
-    LogEntryPB* last_entry = (*state->pending_replicates.rbegin()).second;
-
+    const auto& last_entry = state->pending_replicates.rbegin()->second;
     LOG_WITH_PREFIX(INFO) << "Overwriting operations starting at: "
                           << existing_entry->replicate().id()
                           << " up to: " << last_entry->replicate().id()
-                          << " with operation: " << replicate_entry->replicate().id();
+                          << " with operation: " << replicate.id();
 
     while (iter != state->pending_replicates.end()) {
-      delete (*iter).second;
-      state->pending_replicates.erase(iter++);
+      iter = state->pending_replicates.erase(iter);
       stats_.ops_overwritten++;
     }
-
-    InsertOrDie(&state->pending_replicates, index, replicate_entry);
   }
+  EmplaceOrDie(&state->pending_replicates, index, std::move(entry));
+  info_collector.cancel();
+
   return Status::OK();
 }
 
-// Takes ownership of 'commit_entry' on OK status.
-Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntryPB* commit_entry) {
-  DCHECK(commit_entry->has_commit()) << "Not a commit message: "
-                                     << SecureDebugString(*commit_entry);
+// On returning OK, takes ownership of the pointer from the 'entry_ptr' wrapper.
+Status TabletBootstrap::HandleCommitMessage(ReplayState* state,
+                                            unique_ptr<LogEntryPB> entry,
+                                            string* entry_debug_info) {
+  auto info_collector = MakeScopedCleanup([&]() {
+    if (entry) {
+      *entry_debug_info = SecureShortDebugString(*entry);
+    }
+  });
+  DCHECK(entry->has_commit())
+      << "not a commit message: " << SecureDebugString(*entry);
 
   // Fix overflow if necessary (see KUDU-1933).
-  CheckAndRepairOpIdOverflow(commit_entry->mutable_commit()->mutable_commited_op_id());
+  CheckAndRepairOpIdOverflow(entry->mutable_commit()->mutable_commited_op_id());
 
   // Match up the COMMIT record with the original entry that it's applied to.
-  const OpId& committed_op_id = commit_entry->commit().commited_op_id();
+  const OpId& committed_op_id = entry->commit().commited_op_id();
   state->UpdateCommittedOpId(committed_op_id);
 
   // If there are no pending replicates, or if this commit's index is lower than the
@@ -925,9 +940,9 @@ Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntryPB* comm
   if (state->pending_replicates.empty() ||
       (*state->pending_replicates.begin()).first > committed_op_id.index()) {
     VLOG_WITH_PREFIX(2) << "Found orphaned commit for " << committed_op_id;
-    RETURN_NOT_OK(CheckOrphanedCommitDoesntNeedReplay(commit_entry->commit()));
+    RETURN_NOT_OK(CheckOrphanedCommitDoesntNeedReplay(entry->commit()));
     stats_.orphaned_commits++;
-    delete commit_entry;
+    info_collector.cancel();
     return Status::OK();
   }
 
@@ -936,30 +951,31 @@ Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntryPB* comm
   if ((*state->pending_replicates.begin()).first != committed_op_id.index()) {
     if (!ContainsKey(state->pending_replicates, committed_op_id.index())) {
       return Status::Corruption(Substitute("Could not find replicate for commit: $0",
-                                           SecureShortDebugString(*commit_entry)));
+                                           SecureShortDebugString(*entry)));
     }
     VLOG_WITH_PREFIX(2) << "Adding pending commit for " << committed_op_id;
-    InsertOrDie(&state->pending_commits, committed_op_id.index(), commit_entry);
+    EmplaceOrDie(&state->pending_commits, committed_op_id.index(), std::move(entry));
+    info_collector.cancel();
     return Status::OK();
   }
 
   // ... if it does, we apply it and all the commits that immediately follow in the sequence.
-  OpId last_applied = commit_entry->commit().commited_op_id();
-  RETURN_NOT_OK(ApplyCommitMessage(state, commit_entry));
+  OpId last_applied = committed_op_id;
+  RETURN_NOT_OK(ApplyCommitMessage(state, entry.get()));
 
   auto iter = state->pending_commits.begin();
   while (iter != state->pending_commits.end()) {
-    if ((*iter).first == last_applied.index() + 1) {
-      gscoped_ptr<LogEntryPB> buffered_commit_entry((*iter).second);
-      state->pending_commits.erase(iter++);
+    if (iter->first == last_applied.index() + 1) {
+      auto& buffered_commit_entry(iter->second);
       last_applied = buffered_commit_entry->commit().commited_op_id();
       RETURN_NOT_OK(ApplyCommitMessage(state, buffered_commit_entry.get()));
+      iter = state->pending_commits.erase(iter);
       continue;
     }
     break;
   }
 
-  delete commit_entry;
+  info_collector.cancel();
   return Status::OK();
 }
 
@@ -996,35 +1012,33 @@ Status TabletBootstrap::CheckOrphanedCommitDoesntNeedReplay(const CommitMsg& com
   return Status::OK();
 }
 
-Status TabletBootstrap::ApplyCommitMessage(ReplayState* state, LogEntryPB* commit_entry) {
-
-  const OpId& committed_op_id = commit_entry->commit().commited_op_id();
+Status TabletBootstrap::ApplyCommitMessage(ReplayState* state, LogEntryPB* entry) {
+  const OpId& committed_op_id = entry->commit().commited_op_id();
   VLOG_WITH_PREFIX(2) << "Applying commit for " << committed_op_id;
-  gscoped_ptr<LogEntryPB> pending_replicate_entry;
 
   // They should also have an associated replicate index (it may have been in a
   // deleted log segment though).
-  pending_replicate_entry.reset(EraseKeyReturnValuePtr(&state->pending_replicates,
-                                                       committed_op_id.index()));
-
-  if (pending_replicate_entry != nullptr) {
+  unique_ptr<LogEntryPB> pending_replicate_entry(EraseKeyReturnValuePtr(
+      &state->pending_replicates, committed_op_id.index()));
+  if (pending_replicate_entry) {
     // We found a replicate with the same index, make sure it also has the same
     // term.
-    if (!OpIdEquals(committed_op_id, pending_replicate_entry->replicate().id())) {
+    const auto& replicate = pending_replicate_entry->replicate();
+    if (!OpIdEquals(committed_op_id, replicate.id())) {
       string error_msg = Substitute("Committed operation's OpId: $0 didn't match the"
           "commit message's committed OpId: $1. Pending operation: $2, Commit message: $3",
-          SecureShortDebugString(pending_replicate_entry->replicate().id()),
+          SecureShortDebugString(replicate.id()),
           SecureShortDebugString(committed_op_id),
-          SecureShortDebugString(pending_replicate_entry->replicate()),
-          SecureShortDebugString(commit_entry->commit()));
+          SecureShortDebugString(replicate),
+          SecureShortDebugString(entry->commit()));
       LOG_WITH_PREFIX(DFATAL) << error_msg;
       return Status::Corruption(error_msg);
     }
-    RETURN_NOT_OK(HandleEntryPair(pending_replicate_entry.get(), commit_entry));
+    RETURN_NOT_OK(HandleEntryPair(pending_replicate_entry.get(), entry));
     stats_.ops_committed++;
   } else {
     stats_.orphaned_commits++;
-    RETURN_NOT_OK(CheckOrphanedCommitDoesntNeedReplay(commit_entry->commit()));
+    RETURN_NOT_OK(CheckOrphanedCommitDoesntNeedReplay(entry->commit()));
   }
 
   return Status::OK();
@@ -1143,36 +1157,36 @@ Status TabletBootstrap::PlaySegments(ConsensusBootstrapInfo* consensus_info) {
 
     int entry_count = 0;
     while (true) {
-      unique_ptr<LogEntryPB> entry(new LogEntryPB);
-
-      Status s = reader.ReadNextEntry(entry.get());
-      if (PREDICT_FALSE(!s.ok())) {
-        if (s.IsEndOfFile()) {
-          break;
+      {
+        unique_ptr<LogEntryPB> entry;
+        Status s = reader.ReadNextEntry(&entry);
+        if (PREDICT_FALSE(!s.ok())) {
+          if (s.IsEndOfFile()) {
+            break;
+          }
+          return Status::Corruption(
+              Substitute("Error reading Log Segment of tablet $0: $1 "
+                         "(Read up to entry $2 of segment $3, in path $4)",
+                         tablet_->tablet_id(),
+                         s.ToString(),
+                         entry_count,
+                         segment->header().sequence_number(),
+                         segment->path()));
         }
-        return Status::Corruption(Substitute("Error reading Log Segment of tablet $0: $1 "
-                                             "(Read up to entry $2 of segment $3, in path $4)",
-                                             tablet_->tablet_id(),
-                                             s.ToString(),
-                                             entry_count,
+        entry_count++;
+
+        string entry_debug_info;
+        s = HandleEntry(&state, std::move(entry), &entry_debug_info);
+        if (!s.ok()) {
+          DumpReplayStateToLog(state);
+          RETURN_NOT_OK_PREPEND(s, DebugInfo(tablet_->tablet_id(),
                                              segment->header().sequence_number(),
-                                             segment->path()));
-      }
-      entry_count++;
-
-      s = HandleEntry(&state, entry.get());
-      if (!s.ok()) {
-        DumpReplayStateToLog(state);
-        RETURN_NOT_OK_PREPEND(s, DebugInfo(tablet_->tablet_id(),
-                                           segment->header().sequence_number(),
-                                           entry_count, segment->path(),
-                                           *entry));
+                                             entry_count, segment->path(),
+                                             entry_debug_info));
+        }
       }
 
-      // If HandleEntry returns OK, then it has taken ownership of the entry.
-      entry.release();
-
-      auto now = MonoTime::Now();
+      const auto now = MonoTime::Now();
       if (now - last_status_update > kStatusUpdateInterval) {
         SetStatusMessage(Substitute("Bootstrap replaying log segment $0/$1 "
                                     "($2/$3 this segment, stats: $4)",

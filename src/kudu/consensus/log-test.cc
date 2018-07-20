@@ -193,11 +193,10 @@ TEST_P(LogTestOptionalCompression, TestMultipleEntriesInABatch) {
   // RollOver() the batch so that we have a properly formed footer.
   ASSERT_OK(log_->AllocateSegmentAndRollOver());
 
-  vector<LogEntryPB*> entries;
-  ElementDeleter deleter(&entries);
   SegmentSequence segments;
   ASSERT_OK(log_->reader()->GetSegmentsSnapshot(&segments));
 
+  LogEntries entries;
   ASSERT_OK(segments[0]->ReadEntries(&entries));
 
   ASSERT_EQ(2, entries.size());
@@ -285,14 +284,13 @@ TEST_P(LogTestOptionalCompression, TestLogNotTrimmed) {
 
   AppendNoOp(&opid);
 
-  vector<LogEntryPB*> entries;
-  ElementDeleter deleter(&entries);
   SegmentSequence segments;
   ASSERT_OK(log_->reader()->GetSegmentsSnapshot(&segments));
 
+  LogEntries entries;
   ASSERT_OK(segments[0]->ReadEntries(&entries));
   // Close after testing to ensure correct shutdown
-  // TODO : put this in TearDown() with a test on log state?
+  // TODO(unknown): put this in TearDown() with a test on log state?
   ASSERT_OK(log_->Close());
 }
 
@@ -306,15 +304,14 @@ TEST_P(LogTestOptionalCompression, TestBlankLogFile) {
   ASSERT_EQ(log_->reader()->num_segments(), 1);
 
   // ...and we're able to read from it.
-  vector<LogEntryPB*> entries;
-  ElementDeleter deleter(&entries);
   SegmentSequence segments;
   ASSERT_OK(log_->reader()->GetSegmentsSnapshot(&segments));
 
+  LogEntries entries;
   ASSERT_OK(segments[0]->ReadEntries(&entries));
 
   // ...It's just that it's empty.
-  ASSERT_EQ(entries.size(), 0);
+  ASSERT_TRUE(entries.empty());
 }
 
 void LogTest::DoCorruptionTest(CorruptionType type, CorruptionPosition place,
@@ -354,7 +351,7 @@ void LogTest::DoCorruptionTest(CorruptionType type, CorruptionPosition place,
   ASSERT_OK(reader->GetSegmentsSnapshot(&segments));
   Status s = segments[0]->ReadEntries(&entries_);
   ASSERT_EQ(s.CodeAsString(), expected_status.CodeAsString())
-    << "Got unexpected status: " << s.ToString();
+      << "Got unexpected status: " << s.ToString();
 
   // Last entry is ignored, but we should still see the previous ones.
   ASSERT_EQ(expected_entries, entries_.size());
@@ -440,12 +437,11 @@ TEST_F(LogTest, TestWriteAndReadToAndFromInProgressSegment) {
   ASSERT_GT(header_size, 0);
   readable_segment->UpdateReadableToOffset(header_size);
 
-  vector<LogEntryPB*> entries;
-
   // Reading the readable segment now should return OK but yield no
   // entries.
+  LogEntries entries;
   ASSERT_OK(readable_segment->ReadEntries(&entries));
-  ASSERT_EQ(entries.size(), 0);
+  ASSERT_TRUE(entries.empty());
 
   // Dummy add_entry to help us estimate the size of what
   // gets written to disk.
@@ -469,18 +465,18 @@ TEST_F(LogTest, TestWriteAndReadToAndFromInProgressSegment) {
   // Updating the readable segment with the offset of the first entry should
   // make it read a single entry even though there are several in the log.
   readable_segment->UpdateReadableToOffset(header_size + single_entry_size);
+  entries.clear();
   ASSERT_OK(readable_segment->ReadEntries(&entries));
-  ASSERT_EQ(entries.size(), 1);
-  STLDeleteElements(&entries);
+  ASSERT_EQ(1, entries.size());
 
   // Now append another entry so that the Log sets the correct readable offset
   // on the reader.
   ASSERT_OK(AppendNoOps(&op_id, 1, &written_entries_size));
 
   // Now the reader should be able to read all 5 entries.
+  entries.clear();
   ASSERT_OK(readable_segment->ReadEntries(&entries));
-  ASSERT_EQ(entries.size(), 5);
-  STLDeleteElements(&entries);
+  ASSERT_EQ(5, entries.size());
 
   // Offset should get updated for an additional entry.
   ASSERT_EQ(single_entry_size * (kNumEntries + 1) + header_size,
@@ -495,11 +491,11 @@ TEST_F(LogTest, TestWriteAndReadToAndFromInProgressSegment) {
   // Now that we closed the original segment. If we get a segment from the reader
   // again, we should get one with a footer and we should be able to read all entries.
   ASSERT_OK(log_->reader()->GetSegmentsSnapshot(&segments));
-  ASSERT_EQ(segments.size(), 2);
+  ASSERT_EQ(2, segments.size());
   readable_segment = segments[0];
+  entries.clear();
   ASSERT_OK(readable_segment->ReadEntries(&entries));
-  ASSERT_EQ(entries.size(), 5);
-  STLDeleteElements(&entries);
+  ASSERT_EQ(5, entries.size());
 
   // Offset should get updated for an additional entry, again.
   ASSERT_OK(AppendNoOp(&op_id, &written_entries_size));
@@ -653,7 +649,7 @@ TEST_P(LogTestOptionalCompression, TestWaitUntilAllFlushed) {
   ASSERT_OK(log_->reader()->GetSegmentsSnapshot(&segments));
 
   ASSERT_OK(segments[0]->ReadEntries(&entries_));
-  ASSERT_EQ(entries_.size(), 4);
+  ASSERT_EQ(4, entries_.size());
   for (int i = 0; i < 4 ; i++) {
     if (i % 2 == 0) {
       ASSERT_TRUE(entries_[i]->has_replicate());
@@ -761,7 +757,7 @@ TEST_P(LogTestOptionalCompression, TestWriteManyBatches) {
     ASSERT_OK(reader->GetSegmentsSnapshot(&segments));
 
     for (const scoped_refptr<ReadableLogSegment>& entry : segments) {
-      STLDeleteElements(&entries_);
+      entries_.clear();
       ASSERT_OK(entry->ReadEntries(&entries_));
       num_entries += entries_.size();
     }
@@ -817,8 +813,7 @@ TEST_P(LogTestOptionalCompression, TestLogReaderReturnsLatestSegmentIfIndexEmpty
   ASSERT_OK(log_->reader()->GetSegmentsSnapshot(&segments));
   ASSERT_EQ(segments.size(), 1);
 
-  vector<LogEntryPB*> entries;
-  ElementDeleter deleter(&entries);
+  LogEntries entries;
   ASSERT_OK(segments[0]->ReadEntries(&entries));
   ASSERT_EQ(2, entries.size());
 }

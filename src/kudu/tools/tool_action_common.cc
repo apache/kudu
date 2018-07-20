@@ -339,22 +339,24 @@ Status PrintSegment(const scoped_refptr<ReadableLogSegment>& segment) {
     RETURN_NOT_OK(SchemaFromPB(segment->header().schema(), &tablet_schema));
 
     LogEntryReader reader(segment.get());
-    LogEntryPB entry;
     while (true) {
+      unique_ptr<LogEntryPB> entry;
       Status s = reader.ReadNextEntry(&entry);
-      if (s.IsEndOfFile()) break;
+      if (s.IsEndOfFile()) {
+        break;
+      }
       RETURN_NOT_OK(s);
 
       if (print_type == PRINT_PB) {
         if (FLAGS_truncate_data > 0) {
-          pb_util::TruncateFields(&entry, FLAGS_truncate_data);
+          pb_util::TruncateFields(entry.get(), FLAGS_truncate_data);
         }
 
-        cout << "Entry:\n" << SecureDebugString(entry);
+        cout << "Entry:\n" << SecureDebugString(*entry);
       } else if (print_type == PRINT_DECODED) {
-        RETURN_NOT_OK(PrintDecoded(entry, tablet_schema));
+        RETURN_NOT_OK(PrintDecoded(*entry, tablet_schema));
       } else if (print_type == PRINT_ID) {
-        PrintIdOnly(entry);
+        PrintIdOnly(*entry);
       }
     }
   }
