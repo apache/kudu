@@ -54,6 +54,7 @@
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
+#include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.proxy.h" // IWYU pragma: keep
 #include "kudu/rpc/messenger.h"
@@ -367,7 +368,11 @@ Status PrintSegment(const scoped_refptr<ReadableLogSegment>& segment) {
   return Status::OK();
 }
 
-Status PrintServerFlags(const string& address, uint16_t default_port) {
+Status GetServerFlags(const std::string& address,
+                      uint16_t default_port,
+                      bool all_flags,
+                      const std::string& flag_tags,
+                      std::vector<server::GetFlagsResponsePB_Flag>* flags) {
   unique_ptr<GenericServiceProxy> proxy;
   RETURN_NOT_OK(BuildProxy(address, default_port, &proxy));
 
@@ -376,27 +381,35 @@ Status PrintServerFlags(const string& address, uint16_t default_port) {
   RpcController rpc;
   rpc.set_timeout(MonoDelta::FromMilliseconds(FLAGS_timeout_ms));
 
-  req.set_all_flags(FLAGS_all_flags);
-  vector<string> tags = strings::Split(FLAGS_flag_tags, ",", strings::SkipEmpty());
-  for (const auto& tag : tags) {
-    req.add_tags(tag);
+  req.set_all_flags(all_flags);
+  for (StringPiece tag : strings::Split(flag_tags, ",", strings::SkipEmpty())) {
+    req.add_tags(tag.as_string());
   }
   RETURN_NOT_OK(proxy->GetFlags(req, &resp, &rpc));
 
-  vector<GetFlagsResponsePB::Flag> flags(resp.flags().begin(), resp.flags().end());
+  flags->clear();
+  std::move(resp.flags().begin(), resp.flags().end(), std::back_inserter(*flags));
+  return Status::OK();
+}
+
+Status PrintServerFlags(const string& address, uint16_t default_port) {
+  vector<server::GetFlagsResponsePB_Flag> flags;
+  RETURN_NOT_OK(GetServerFlags(address, default_port, FLAGS_all_flags, FLAGS_flag_tags, &flags));
+
   std::sort(flags.begin(), flags.end(),
       [](const GetFlagsResponsePB::Flag& left,
          const GetFlagsResponsePB::Flag& right) -> bool {
         return left.name() < right.name();
       });
   DataTable table({ "flag", "value", "default value?", "tags" });
+  vector<string> tags;
   for (const auto& flag : flags) {
     tags.clear();
     std::copy(flag.tags().begin(), flag.tags().end(), std::back_inserter(tags));
     std::sort(tags.begin(), tags.end());
     table.AddRow({ flag.name(),
                    flag.value(),
-                   Substitute("$0", flag.is_default_value()),
+                   flag.is_default_value() ? "true" : "false",
                    JoinStrings(tags, ",") });
   }
   return table.PrintTo(cout);

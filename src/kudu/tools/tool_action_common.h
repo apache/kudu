@@ -57,6 +57,7 @@ class ReadableLogSegment;
 } // namespace log
 
 namespace server {
+class GetFlagsResponsePB_Flag;
 class ServerStatusPB;
 } // namespace server
 
@@ -105,6 +106,21 @@ Status PrintServerStatus(const std::string& address, uint16_t default_port);
 //
 // If 'address' does not contain a port, 'default_port' is used instead.
 Status PrintServerTimestamp(const std::string& address, uint16_t default_port);
+
+// Retrieve flags from a remote server.
+//
+// If 'address' does not contain a port, 'default_port' is used instead.
+//
+// 'all_flags' controls whether all flags are returned, or only flags which are
+// explicitly set.
+//
+// 'flag_tags' is a comma-separated list of tags used to restrict which flags
+// are returned. An empty value matches all tags.
+Status GetServerFlags(const std::string& address,
+                      uint16_t default_port,
+                      bool all_flags,
+                      const std::string& flag_tags,
+                      std::vector<server::GetFlagsResponsePB_Flag>* flags) WARN_UNUSED_RESULT;
 
 // Prints the values of the gflags set for the Kudu server running at 'address'.
 //

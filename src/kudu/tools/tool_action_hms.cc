@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <algorithm>
 #include <iostream>
 #include <map>
 #include <memory>
@@ -24,6 +25,7 @@
 #include <utility>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
@@ -38,6 +40,8 @@
 #include "kudu/hms/hive_metastore_types.h"
 #include "kudu/hms/hms_catalog.h"
 #include "kudu/hms/hms_client.h"
+#include "kudu/master/master.h"
+#include "kudu/server/server_base.pb.h"
 #include "kudu/tools/tool_action.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/util/monotime.h"
@@ -45,6 +49,7 @@
 #include "kudu/util/status.h"
 
 DECLARE_bool(force);
+DECLARE_bool(hive_metastore_sasl_enabled);
 DECLARE_int64(timeout_ms);
 DECLARE_string(hive_metastore_uris);
 
@@ -72,6 +77,7 @@ using client::KuduTableAlterer;
 using client::sp::shared_ptr;
 using hms::HmsCatalog;
 using hms::HmsClient;
+using server::GetFlagsResponsePB_Flag;
 using std::cout;
 using std::endl;
 using std::make_pair;
@@ -97,24 +103,46 @@ Status RenameTableInKuduCatalog(KuduClient* kudu_client,
 Status Init(const RunnerContext& context,
             shared_ptr<KuduClient>* kudu_client,
             unique_ptr<HmsCatalog>* hms_catalog) {
-  const string& master_addresses = FindOrDie(context.required_args, kMasterAddressesArg);
-
-  if (!hms::HmsCatalog::IsEnabled()) {
-    return Status::IllegalState("HMS URIs cannot be empty!");
-  }
-
-  // Create Hms Catalog.
-  hms_catalog->reset(new hms::HmsCatalog(master_addresses));
-  RETURN_NOT_OK((*hms_catalog)->Start());
+  const string& master_addrs_flag = FindOrDie(context.required_args, kMasterAddressesArg);
+  vector<string> master_addrs = Split(master_addrs_flag, ",");
 
   // Create a Kudu Client.
-  return KuduClientBuilder()
+  RETURN_NOT_OK(KuduClientBuilder()
       .default_rpc_timeout(MonoDelta::FromMilliseconds(FLAGS_timeout_ms))
-      .master_server_addrs(Split(master_addresses, ","))
-      .Build(kudu_client);
+      .master_server_addrs(master_addrs)
+      .Build(kudu_client));
+
+  if (FLAGS_hive_metastore_uris.empty()) {
+    // Lookup the HMS URIs and SASL config from the master configuration.
+    vector<GetFlagsResponsePB_Flag> flags;
+    RETURN_NOT_OK(GetServerFlags(master_addrs[0], master::Master::kDefaultPort, false, {}, &flags));
+
+    auto hms_uris = std::find_if(flags.begin(), flags.end(),
+        [] (const GetFlagsResponsePB_Flag& flag) {
+          return flag.name() == "hive_metastore_uris";
+        });
+    if (hms_uris == flags.end()) {
+      return Status::ConfigurationError(
+          "the Kudu master is not configured with the Hive Metastore integration", master_addrs[0]);
+    }
+    auto hms_sasl_enabled = std::find_if(flags.begin(), flags.end(),
+        [] (const GetFlagsResponsePB_Flag& flag) {
+          return flag.name() == "hive_metastore_sasl_enabled";
+        });
+
+    // Override the flag values.
+    FLAGS_hive_metastore_uris = hms_uris->value();
+    // SetCommandLineOption avoids needing to parse the value into a bool.
+    CHECK(!gflags::SetCommandLineOption(
+        "hive_metastore_sasl_enabled",
+        hms_sasl_enabled == flags.end() ? "false" : hms_sasl_enabled->value().c_str()).empty());
+  }
+
+  // Create HMS catalog.
+  hms_catalog->reset(new hms::HmsCatalog(master_addrs_flag));
+  return (*hms_catalog)->Start();
 }
 
-// TODO(dan): check that the HMS integration isn't enabled before running it.
 Status HmsDowngrade(const RunnerContext& context) {
   shared_ptr<KuduClient> kudu_client;
   unique_ptr<HmsCatalog> hms_catalog;
@@ -347,6 +375,8 @@ Status AnalyzeCatalogs(const string& master_addrs,
 }
 
 Status CheckHmsMetadata(const RunnerContext& context) {
+  // TODO(dan): check that the critical HMS configuration flags
+  // (--hive_metastore_uris, --hive_metastore_sasl_enabled) match on all masters.
   const string& master_addrs = FindOrDie(context.required_args, kMasterAddressesArg);
   shared_ptr<KuduClient> kudu_client;
   unique_ptr<HmsCatalog> hms_catalog;
@@ -625,16 +655,27 @@ Status FixHmsMetadata(const RunnerContext& context) {
 }
 
 unique_ptr<Mode> BuildHmsMode() {
+  const string kHmsUrisDesc =
+    "Address of the Hive Metastore instance(s). If not set, the configuration "
+    "from the Kudu master is used, so this flag should not be overriden in typical "
+    "situations. The provided port must be for the HMS Thrift service. "
+    "If a port is not provided, defaults to 9083. If the HMS is deployed in an "
+    "HA configuration, multiple comma-separated addresses should be supplied. "
+    "The configured value must match the Hive hive.metastore.uris configuration.";
 
-  // TODO(dan): automatically retrieve the HMS URIs and SASL config from the
-  // Kudu master instead of requiring them as an additional flag.
+  const string kHmsSaslEnabledDesc =
+    "Configures whether Thrift connections to the Hive Metastore use SASL "
+    "(Kerberos) security. Only takes effect when --hive_metastore_uris is set, "
+    "otherwise the configuration from the Kudu master is used. The configured "
+    "value must match the the hive.metastore.sasl.enabled option in the Hive "
+    "Metastore configuration.";
 
   unique_ptr<Action> hms_check =
       ActionBuilder("check", &CheckHmsMetadata)
           .Description("Check metadata consistency between Kudu and the Hive Metastore catalogs")
           .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
-          .AddOptionalParameter("hive_metastore_uris")
-          .AddOptionalParameter("hive_metastore_sasl_enabled")
+          .AddOptionalParameter("hive_metastore_sasl_enabled", boost::none, kHmsSaslEnabledDesc)
+          .AddOptionalParameter("hive_metastore_uris", boost::none, kHmsUrisDesc)
           .Build();
 
   unique_ptr<Action> hms_fix =
@@ -642,13 +683,13 @@ unique_ptr<Mode> BuildHmsMode() {
         .Description("Fix automatically-repairable metadata inconsistencies in the "
                      "Kudu and Hive Metastore catalogs")
         .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
-        .AddOptionalParameter("hive_metastore_uris")
-        .AddOptionalParameter("hive_metastore_sasl_enabled")
         .AddOptionalParameter("dryrun")
         .AddOptionalParameter("drop_orphan_hms_tables")
         .AddOptionalParameter("create_missing_hms_tables")
         .AddOptionalParameter("fix_inconsistent_tables")
         .AddOptionalParameter("upgrade_hms_tables")
+        .AddOptionalParameter("hive_metastore_sasl_enabled", boost::none, kHmsSaslEnabledDesc)
+        .AddOptionalParameter("hive_metastore_uris", boost::none, kHmsUrisDesc)
         .Build();
 
   // TODO(dan): add 'hms precheck' tool to check for overlapping normalized table names.
@@ -658,8 +699,8 @@ unique_ptr<Mode> BuildHmsMode() {
           .Description("Downgrade the metadata to legacy format for "
                        "Kudu and the Hive Metastores")
           .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
-          .AddOptionalParameter("hive_metastore_uris")
-          .AddOptionalParameter("hive_metastore_sasl_enabled")
+          .AddOptionalParameter("hive_metastore_sasl_enabled", boost::none, kHmsSaslEnabledDesc)
+          .AddOptionalParameter("hive_metastore_uris", boost::none, kHmsUrisDesc)
           .Build();
 
   return ModeBuilder("hms").Description("Operate on remote Hive Metastores")

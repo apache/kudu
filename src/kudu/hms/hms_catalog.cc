@@ -54,9 +54,9 @@ using strings::Substitute;
 
 DEFINE_string(hive_metastore_uris, "",
               "Address of the Hive Metastore instance(s). The provided port must be for the HMS "
-              "Thrift service. If a port isn't provided, defaults to 9083. If the HMS is deployed "
-              "in an HA configuration, multiple comma-separated addresses can be supplied. If not "
-              "set, the Kudu master will not send Kudu table catalog updates to Hive. The "
+              "Thrift service. If a port is not provided, defaults to 9083. If the HMS is deployed "
+              "in an HA configuration, multiple comma-separated addresses should be supplied. "
+              "If not set, the Kudu master will not send Kudu table catalog updates to Hive. The "
               "configured value must match the Hive hive.metastore.uris configuration.");
 DEFINE_validator(hive_metastore_uris, &kudu::hms::HmsCatalog::ValidateUris);
 TAG_FLAG(hive_metastore_uris, experimental);

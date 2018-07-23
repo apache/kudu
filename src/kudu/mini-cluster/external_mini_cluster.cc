@@ -392,8 +392,9 @@ Status ExternalMiniCluster::StartMasters() {
     opts.rpc_bind_address = master_rpc_addrs[i];
     if (opts_.hms_mode == HmsMode::ENABLE_METASTORE_INTEGRATION) {
       opts.extra_flags.emplace_back(Substitute("--hive_metastore_uris=$0", hms_->uris()));
-      opts.extra_flags.emplace_back(Substitute("--hive_metastore_sasl_enabled=$0",
-                                               opts_.enable_kerberos));
+      if (opts_.enable_kerberos) {
+        opts.extra_flags.emplace_back("--hive_metastore_sasl_enabled=true");
+      }
     }
     opts.logtostderr = opts_.logtostderr;
 
@@ -884,8 +885,7 @@ void ExternalDaemon::SetExePath(string exe) {
 void ExternalDaemon::SetMetastoreIntegration(const string& hms_uris,
                                              bool enable_kerberos) {
   opts_.extra_flags.emplace_back(Substitute("--hive_metastore_uris=$0", hms_uris));
-  opts_.extra_flags.emplace_back(Substitute("--hive_metastore_sasl_enabled=$0",
-                                            enable_kerberos));
+  opts_.extra_flags.emplace_back(Substitute("--hive_metastore_sasl_enabled=$0", enable_kerberos));
 }
 
 Status ExternalDaemon::Pause() {
