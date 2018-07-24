@@ -2486,7 +2486,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   vector<string> kudu_tables;
   kudu_client->ListTables(&kudu_tables);
   std::sort(kudu_tables.begin(), kudu_tables.end());
-  ASSERT_EQ(kudu_tables, vector<string>({
+  ASSERT_EQ(vector<string>({
     "default.control",
     "default.inconsistent_master_addrs",
     "default.inconsistent_name_hms",
@@ -2497,7 +2497,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
     "default.legacy_managed",
     "default.uppercase",
     "my_db.table",
-  }));
+  }), kudu_tables);
 }
 
 // Test HMS inconsistencies that must be manually fixed.
@@ -2624,14 +2624,85 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndManualFixHmsMetadata) {
   vector<string> kudu_tables;
   kudu_client->ListTables(&kudu_tables);
   std::sort(kudu_tables.begin(), kudu_tables.end());
-  ASSERT_EQ(kudu_tables, vector<string>({
+  ASSERT_EQ(vector<string>({
     "default.conflicting_legacy_table",
     "default.duplicate_hms_tables",
     "default.hive_compatible_name",
     "default.non_conflicting_legacy_table",
     "default.with_database",
     "non_existent_database.table",
-  }));
+  }), kudu_tables);
+}
+
+TEST_F(ToolTest, TestHmsPrecheck) {
+  ExternalMiniClusterOptions opts;
+  opts.hms_mode = HmsMode::ENABLE_HIVE_METASTORE;
+  NO_FATALS(StartExternalMiniCluster(std::move(opts)));
+
+  string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+
+  shared_ptr<KuduClient> client;
+  ASSERT_OK(cluster_->CreateClient(nullptr, &client));
+
+  // Create test tables.
+  for (const string& table_name : {
+      "a.b",
+      "foo.bar",
+      "FOO.bar",
+      "foo.BAR",
+      "fuzz",
+      "FUZZ",
+      "a.b!",
+      "A.B!",
+  }) {
+      ASSERT_OK(CreateKuduTable(client, table_name));
+  }
+
+  // Run the precheck tool. It should complain about the conflicting tables.
+  string out;
+  string err;
+  Status s = RunActionStdoutStderrString(Substitute("hms precheck $0", master_addr), &out, &err);
+  ASSERT_FALSE(s.ok());
+  ASSERT_STR_CONTAINS(err, "found tables in Kudu with case-conflicting names");
+  ASSERT_STR_CONTAINS(out, "foo.bar");
+  ASSERT_STR_CONTAINS(out, "FOO.bar");
+  ASSERT_STR_CONTAINS(out, "foo.BAR");
+
+  // It should not complain about tables which don't have conflicting names.
+  ASSERT_STR_NOT_CONTAINS(out, "a.b");
+
+  // It should not complain about tables which have Hive-incompatible names.
+  ASSERT_STR_NOT_CONTAINS(out, "fuzz");
+  ASSERT_STR_NOT_CONTAINS(out, "FUZZ");
+  ASSERT_STR_NOT_CONTAINS(out, "a.b!");
+  ASSERT_STR_NOT_CONTAINS(out, "A.B!");
+
+  // Rename the conflicting tables. Use the rename table tool to match the actual workflow.
+  NO_FATALS(RunActionStdoutNone(Substitute("table rename_table $0 FOO.bar foo.bar2", master_addr)));
+  NO_FATALS(RunActionStdoutNone(Substitute("table rename_table $0 foo.BAR foo.bar3", master_addr)));
+
+  // Precheck should now pass, and the cluster should upgrade succesfully.
+  NO_FATALS(RunActionStdoutNone(Substitute("hms precheck $0", master_addr)));
+
+  // Enable the HMS integration.
+  cluster_->ShutdownNodes(cluster::ClusterNodes::MASTERS_ONLY);
+  cluster_->EnableMetastoreIntegration();
+  ASSERT_OK(cluster_->Restart());
+
+  // Sanity-check the tables.
+  vector<string> tables;
+  ASSERT_OK(client->ListTables(&tables));
+  std::sort(tables.begin(), tables.end());
+  ASSERT_EQ(vector<string>({
+      "A.B!",
+      "FUZZ",
+      "a.b",
+      "a.b!",
+      "foo.bar",
+      "foo.bar2",
+      "foo.bar3",
+      "fuzz",
+  }), tables);
 }
 
 // This test is parameterized on the serialization mode and Kerberos.
