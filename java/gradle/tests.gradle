@@ -66,6 +66,11 @@ tasks.withType(Test) {
   filter {
     failOnNoMatchingTests = false
   }
+
+  // Force the tests to be rerun if the rerunTests property is set.
+  if (propertyExists("rerunTests")) {
+    outputs.upToDateWhen { false }
+  }
 }
 
 // Adds pattern based integration test support.
