@@ -19,18 +19,16 @@ package org.apache.kudu.spark.tools
 
 import org.apache.kudu.client.SessionConfiguration.FlushMode
 import org.apache.kudu.mapreduce.tools.BigLinkedListCommon._
-import org.apache.kudu.spark.kudu.TestContext
+import org.apache.kudu.spark.kudu.KuduTestSuite
 import org.junit.Assert._
-import org.junit.runner.RunWith
-import org.scalatest.junit.JUnitRunner
-import org.scalatest.{FunSuite, Matchers}
+import org.junit.Test
 
 import scala.collection.JavaConverters._
 
-@RunWith(classOf[JUnitRunner])
-class ITBigLinkedListTest extends FunSuite with TestContext with Matchers {
+class ITBigLinkedListTest extends KuduTestSuite {
 
-  test("Spark ITBLL") {
+  @Test
+  def testSparkITBLL() {
     Generator.testMain(Array("--tasks=2",
                              "--lists=2",
                              "--nodes=10000",

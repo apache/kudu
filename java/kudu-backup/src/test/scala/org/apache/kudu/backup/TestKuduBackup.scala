@@ -29,19 +29,20 @@ import org.apache.kudu.{ColumnSchema, Schema, Type}
 import org.apache.kudu.spark.kudu._
 import org.apache.kudu.util.DecimalUtil
 import org.junit.Assert._
+import org.junit.Test
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
-import org.scalatest.{FunSuite, Matchers}
 import org.slf4j.{Logger, LoggerFactory}
 
 import scala.collection.JavaConverters._
 import scala.util.Random
 
 @RunWith(classOf[JUnitRunner])
-class TestKuduBackup extends FunSuite with TestContext with Matchers {
+class TestKuduBackup extends KuduTestSuite {
   val log: Logger = LoggerFactory.getLogger(getClass)
 
-  test("Simple Backup and Restore") {
+  @Test
+  def testSimpleBackupAndRestore() {
     insertRows(table, 100) // Insert data into the default test table.
 
     backupAndRestore(tableName)
@@ -56,7 +57,8 @@ class TestKuduBackup extends FunSuite with TestContext with Matchers {
     assertTrue(partitionSchemasMatch(tA.getPartitionSchema, tB.getPartitionSchema))
   }
 
-  test("Simple Backup and Restore Table Name With Special Characters") {
+  @Test
+  def testSimpleBackupAndRestoreWithSpecialCharacters() {
     // Use an Impala-style table name to verify url encoding/decoding of the table name works.
     val impalaTableName = "impala::default.test"
 
@@ -73,7 +75,8 @@ class TestKuduBackup extends FunSuite with TestContext with Matchers {
     assert(rdd.isEmpty())
   }
 
-  test("Random Backup and Restore") {
+  @Test
+  def testRandomBackupAndRestore() {
     Random.javaRandomToRandom(TestUtils.getRandom)
 
     val table = createRandomTable()
@@ -93,7 +96,8 @@ class TestKuduBackup extends FunSuite with TestContext with Matchers {
     assertTrue(partitionSchemasMatch(tA.getPartitionSchema, tB.getPartitionSchema))
   }
 
-  test("Backup and Restore Multiple Tables") {
+  @Test
+  def testBackupAndRestoreMultipleTables() {
     val numRows = 1
     val table1Name = "table1"
     val table2Name = "table2"

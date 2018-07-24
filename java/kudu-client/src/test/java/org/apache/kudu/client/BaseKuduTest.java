@@ -66,15 +66,9 @@ public class BaseKuduTest {
   protected static final Schema allTypesSchema = getSchemaWithAllTypes();
 
   // Add a rule to rerun tests. We use this with Gradle because it doesn't support
-  // Surefire/Failsafe rerunFailingTestsCount like Maven does. We use the system
-  // property rerunFailingTestsCount to mimic the maven arguments closely.
-  private static final String RETRY_PROPERTY_NAME = "rerunFailingTestsCount";
-  private static final int DEFAULT_RETRY_COUNT = 0;
-  private static final String retryPropVal = System.getProperty(RETRY_PROPERTY_NAME);
-  private static final int retryCount =
-      retryPropVal != null ? Integer.parseInt(retryPropVal) : DEFAULT_RETRY_COUNT;
+  // Surefire/Failsafe rerunFailingTestsCount like Maven does.
   @Rule
-  public RetryRule retryRule = new RetryRule(retryCount);
+  public RetryRule retryRule = new RetryRule();
 
   @Before
   public void setUpBase() throws Exception {

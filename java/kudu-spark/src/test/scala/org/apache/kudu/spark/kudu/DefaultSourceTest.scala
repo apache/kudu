@@ -23,25 +23,22 @@ import org.apache.spark.sql.{DataFrame, SQLContext}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.{DataTypes, StructField, StructType}
 import org.junit.Assert._
-import org.junit.runner.RunWith
-import org.scalatest.junit.JUnitRunner
-import org.scalatest.{BeforeAndAfterEach, FunSuite, Matchers}
+import org.scalatest.Matchers
 import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder
 import org.apache.kudu.client.CreateTableOptions
 import org.apache.kudu.{Schema, Type}
 import org.apache.spark.sql.execution.datasources.LogicalRelation
+import org.junit.{Before, Test}
 
-@RunWith(classOf[JUnitRunner])
-class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEach with Matchers {
+class DefaultSourceTest extends KuduTestSuite with Matchers {
 
   val rowCount = 10
   var sqlContext : SQLContext = _
   var rows : IndexedSeq[(Int, Int, String, Long)] = _
   var kuduOptions : Map[String, String] = _
 
-  override def beforeEach(): Unit = {
-    super.beforeEach()
-
+  @Before
+  def setUp(): Unit = {
     rows = insertRows(table, rowCount)
 
     sqlContext = ss.sqlContext
@@ -53,7 +50,8 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEac
     sqlContext.read.options(kuduOptions).kudu.createOrReplaceTempView(tableName)
   }
 
-  test("table creation") {
+  @Test
+  def testTableCreation() {
     val tableName = "testcreatetable"
     if (kuduContext.tableExists(tableName)) {
       kuduContext.deleteTable(tableName)
@@ -78,7 +76,8 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEac
     assertFalse(kuduContext.tableExists(tableName))
   }
 
-  test("table creation with partitioning") {
+  @Test
+  def testTableCreationWithPartitioning() {
     val tableName = "testcreatepartitionedtable"
     if (kuduContext.tableExists(tableName)) {
       kuduContext.deleteTable(tableName)
@@ -113,7 +112,8 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEac
     assertFalse(kuduContext.tableExists(tableName))
   }
 
-  test("insertion") {
+  @Test
+  def testInsertion() {
     val df = sqlContext.read.options(kuduOptions).kudu
     val changedDF = df.limit(1).withColumn("key", df("key").plus(100)).withColumn("c2_s", lit("abc"))
     kuduContext.insertRows(changedDF, tableName)
@@ -125,7 +125,8 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEac
     deleteRow(100)
   }
 
-  test("insertion multiple") {
+  @Test
+  def testInsertionMultiple() {
     val df = sqlContext.read.options(kuduOptions).kudu
     val changedDF = df.limit(2).withColumn("key", df("key").plus(100)).withColumn("c2_s", lit("abc"))
     kuduContext.insertRows(changedDF, tableName)
@@ -141,7 +142,8 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEac
     deleteRow(101)
   }
 
-  test("insert ignore rows") {
+  @Test
+  def testInsertionIgnoreRows() {
     val df = sqlContext.read.options(kuduOptions).kudu
     val baseDF = df.limit(1) // filter down to just the first row
 
@@ -166,7 +168,8 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEac
     deleteRow(100)
   }
 
-  test("insert ignore rows using DefaultSource") {
+  @Test
+  def testInsertIgnoreRowsUsingDefaultSource() {
     val df = sqlContext.read.options(kuduOptions).kudu
     val baseDF = df.limit(1) // filter down to just the first row
 
@@ -194,7 +197,8 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEac
     deleteRow(100)
   }
 
-  test("insert ignore rows using DefaultSource with 'kudu.operation' = 'insert-ignore'") {
+  @Test
+  def testInsertIgnoreRowsWriteOption() {
     val df = sqlContext.read.options(kuduOptions).kudu
     val baseDF = df.limit(1) // filter down to just the first row
 
@@ -221,7 +225,8 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEac
     deleteRow(100)
   }
 
-  test("insert ignore rows with insertIgnoreRows(deprecated)") {
+  @Test
+  def testInsertIgnoreRowsMethod() {
     val df = sqlContext.read.options(kuduOptions).kudu
     val baseDF = df.limit(1) // filter down to just the first row
 
@@ -244,7 +249,8 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEac
     deleteRow(100)
   }
 
-  test("upsert rows") {
+  @Test
+  def testUpsertRows() {
     val df = sqlContext.read.options(kuduOptions).kudu
     val baseDF = df.limit(1) // filter down to just the first row
 
@@ -268,7 +274,8 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEac
     deleteRow(100)
   }
 
-  test("upsert rows ignore nulls") {
+  @Test
+  def testUpsertRowsIgnoreNulls() {
     val nonNullDF = sqlContext.createDataFrame(Seq((0, "foo"))).toDF("key", "val")
     kuduContext.insertRows(nonNullDF, simpleTableName)
 
@@ -294,7 +301,8 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEac
     kuduContext.deleteRows(deleteDF, simpleTableName)
   }
 
-  test("upsert rows ignore nulls using DefaultSource") {
+  @Test
+  def testUpsertRowsIgnoreNullsUsingDefaultSource() {
     val nonNullDF = sqlContext.createDataFrame(Seq((0, "foo"))).toDF("key", "val")
     kuduContext.insertRows(nonNullDF, simpleTableName)
 
@@ -320,7 +328,8 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEac
     kuduContext.deleteRows(deleteDF, simpleTableName)
   }
 
-  test("delete rows") {
+  @Test
+  def testDeleteRows() {
     val df = sqlContext.read.options(kuduOptions).kudu
     val deleteDF = df.filter("key = 0").select("key")
     kuduContext.deleteRows(deleteDF, tableName)
@@ -335,13 +344,15 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEac
     kuduContext.insertRows(insertDF, tableName)
   }
 
-  test("out of order selection") {
+  @Test
+  def testOutOfOrderSelection() {
     val df = sqlContext.read.options(kuduOptions).kudu.select( "c2_s", "c1_i", "key")
     val collected = df.collect()
     assert(collected(0).getString(0).equals("0"))
   }
 
-  test("table non fault tolerant scan") {
+  @Test
+  def testTableNonFaultTolerantScan() {
     val results = sqlContext.sql(s"SELECT * FROM $tableName").collectAsList()
     assert(results.size() == rowCount)
 
@@ -349,7 +360,8 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEac
     assert(results.get(1).isNullAt(2))
   }
 
-  test("table fault tolerant scan") {
+  @Test
+  def testTableFaultTolerantScan() {
     kuduOptions = Map(
       "kudu.table" -> tableName,
       "kudu.master" -> miniCluster.getMasterAddresses,
@@ -364,48 +376,63 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEac
     assert(results.get(1).isNullAt(2))
   }
 
-  test("table scan with projection") {
+  @Test
+  def testTableScanWithProjection() {
     assertEquals(10, sqlContext.sql(s"""SELECT key FROM $tableName""").count())
   }
 
-  test("table scan with projection and predicate double") {
+  @Test
+  def testTableScanWithProjectionAndPredicateDouble() {
     assertEquals(rows.count { case (key, i, s, ts) => i > 5 },
                  sqlContext.sql(s"""SELECT key, c3_double FROM $tableName where c3_double > "5.0"""").count())
   }
 
-  test("table scan with projection and predicate long") {
+  @Test
+  def testTableScanWithProjectionAndPredicateLong() {
     assertEquals(rows.count { case (key, i, s, ts) => i > 5 },
                  sqlContext.sql(s"""SELECT key, c4_long FROM $tableName where c4_long > "5"""").count())
-
   }
-  test("table scan with projection and predicate bool") {
+
+  @Test
+  def testTableScanWithProjectionAndPredicateBool() {
     assertEquals(rows.count { case (key, i, s, ts) => i % 2==0 },
                  sqlContext.sql(s"""SELECT key, c5_bool FROM $tableName where c5_bool = true""").count())
-
   }
-  test("table scan with projection and predicate short") {
+
+  @Test
+  def testTableScanWithProjectionAndPredicateShort() {
     assertEquals(rows.count { case (key, i, s, ts) => i > 5},
                  sqlContext.sql(s"""SELECT key, c6_short FROM $tableName where c6_short > 5""").count())
 
   }
-  test("table scan with projection and predicate float") {
+
+  @Test
+  def testTableScanWithProjectionAndPredicateFloat() {
     assertEquals(rows.count { case (key, i, s, ts) => i > 5},
                  sqlContext.sql(s"""SELECT key, c7_float FROM $tableName where c7_float > 5""").count())
 
   }
-  test("table scan with projection and predicate decimal32") {
+
+  @Test
+  def testTableScanWithProjectionAndPredicateDecimal32() {
     assertEquals(rows.count { case (key, i, s, ts) => i > 5},
       sqlContext.sql(s"""SELECT key, c11_decimal32 FROM $tableName where c11_decimal32 > 5""").count())
   }
-  test("table scan with projection and predicate decimal64") {
+
+  @Test
+  def testTableScanWithProjectionAndPredicateDecimal64() {
     assertEquals(rows.count { case (key, i, s, ts) => i > 5},
       sqlContext.sql(s"""SELECT key, c12_decimal64 FROM $tableName where c12_decimal64 > 5""").count())
   }
-  test("table scan with projection and predicate decimal128") {
+
+  @Test
+  def testTableScanWithProjectionAndPredicateDecimal128() {
     assertEquals(rows.count { case (key, i, s, ts) => i > 5},
       sqlContext.sql(s"""SELECT key, c13_decimal128 FROM $tableName where c13_decimal128 > 5""").count())
   }
-  test("table scan with projection and predicate ") {
+
+  @Test
+  def testTableScanWithProjectionAndPredicate() {
     assertEquals(rows.count { case (key, i, s, ts) => s != null && s > "5" },
       sqlContext.sql(s"""SELECT key FROM $tableName where c2_s > "5"""").count())
 
@@ -413,8 +440,8 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEac
       sqlContext.sql(s"""SELECT key, c2_s FROM $tableName where c2_s IS NOT NULL""").count())
   }
 
-
-  test("Test basic SparkSQL") {
+  @Test
+  def testBasicSparkSQL() {
     val results = sqlContext.sql("SELECT * FROM " + tableName).collectAsList()
     assert(results.size() == rowCount)
 
@@ -422,14 +449,16 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEac
     assert(!results.get(0).isNullAt(2))
   }
 
-  test("Test basic SparkSQL projection") {
+  @Test
+  def testBasicSparkSQLWithProjection() {
     val results = sqlContext.sql("SELECT key FROM " + tableName).collectAsList()
     assert(results.size() == rowCount)
     assert(results.get(0).size.equals(1))
     assert(results.get(0).getInt(0).equals(0))
   }
 
-  test("Test basic SparkSQL with predicate") {
+  @Test
+  def testBasicSparkSQLWithPredicate() {
     val results = sqlContext.sql("SELECT key FROM " + tableName + " where key=1").collectAsList()
     assert(results.size() == 1)
     assert(results.get(0).size.equals(1))
@@ -437,14 +466,16 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEac
 
   }
 
-  test("Test basic SparkSQL with two predicates") {
+  @Test
+  def testBasicSparkSQLWithTwoPredicates() {
     val results = sqlContext.sql("SELECT key FROM " + tableName + " where key=2 and c2_s='2'").collectAsList()
     assert(results.size() == 1)
     assert(results.get(0).size.equals(1))
     assert(results.get(0).getInt(0).equals(2))
   }
 
-  test("Test basic SparkSQL with in list predicate") {
+  @Test
+  def testBasicSparkSQLWithInListPredicate() {
     val keys = Array(1, 5, 7)
     val results = sqlContext.sql(s"SELECT key FROM $tableName where key in (${keys.mkString(", ")})").collectAsList()
     assert(results.size() == keys.length)
@@ -454,7 +485,8 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEac
     }
   }
 
-  test("Test basic SparkSQL with in list predicate on string") {
+  @Test
+  def testBasicSparkSQLWithInListPredicateOnString() {
     val keys = Array(1, 4, 6)
     val results = sqlContext.sql(s"SELECT key FROM $tableName where c2_s in (${keys.mkString("'", "', '", "'")})").collectAsList()
     assert(results.size() == keys.count(_ % 2 == 0))
@@ -464,7 +496,8 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEac
     }
   }
 
-  test("Test basic SparkSQL with in list and comparison predicate") {
+  @Test
+  def testBasicSparkSQLWithInListAndComparisonPredicate() {
     val keys = Array(1, 5, 7)
     val results = sqlContext.sql(s"SELECT key FROM $tableName where key>2 and key in (${keys.mkString(", ")})").collectAsList()
     assert(results.size() == keys.count(_>2))
@@ -474,19 +507,22 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEac
     }
   }
 
-  test("Test basic SparkSQL with two predicates negative") {
+  @Test
+  def testBasicSparkSQLWithTwoPredicatesNegative() {
     val results = sqlContext.sql("SELECT key FROM " + tableName + " where key=1 and c2_s='2'").collectAsList()
     assert(results.size() == 0)
   }
 
-  test("Test basic SparkSQL with two predicates including string") {
+  @Test
+  def testBasicSparkSQLWithTwoPredicatesIncludingString() {
     val results = sqlContext.sql("SELECT key FROM " + tableName + " where c2_s='2'").collectAsList()
     assert(results.size() == 1)
     assert(results.get(0).size.equals(1))
     assert(results.get(0).getInt(0).equals(2))
   }
 
-  test("Test basic SparkSQL with two predicates and projection") {
+  @Test
+  def testBasicSparkSQLWithTwoPredicatesAndProjection() {
     val results = sqlContext.sql("SELECT key, c2_s FROM " + tableName + " where c2_s='2'").collectAsList()
     assert(results.size() == 1)
     assert(results.get(0).size.equals(2))
@@ -494,7 +530,8 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEac
     assert(results.get(0).getString(1).equals("2"))
   }
 
-  test("Test basic SparkSQL with two predicates greater than") {
+  @Test
+  def testBasicSparkSQLWithTwoPredicatesGreaterThan() {
     val results = sqlContext.sql("SELECT key, c2_s FROM " + tableName + " where c2_s>='2'").collectAsList()
     assert(results.size() == 4)
     assert(results.get(0).size.equals(2))
@@ -502,7 +539,8 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEac
     assert(results.get(0).getString(1).equals("2"))
   }
 
-  test("Test SparkSQL StringStartsWith filters") {
+  @Test
+  def testSparkSQLStringStartsWithFilters() {
     // This test requires a special table.
     val testTableName = "startswith"
     val schema = new Schema(List(
@@ -542,7 +580,8 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEac
     }
   }
 
-  test("Test SparkSQL IS NULL predicate") {
+  @Test
+  def testSparkSQLIsNullPredicate() {
     var results = sqlContext.sql("SELECT key FROM " + tableName + " where c2_s IS NULL").collectAsList()
     assert(results.size() == 5)
 
@@ -550,7 +589,8 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEac
     assert(results.isEmpty())
   }
 
-  test("Test SparkSQL IS NOT NULL predicate") {
+  @Test
+  def testSparkSQLIsNotNullPredicate() {
     var results = sqlContext.sql("SELECT key FROM " + tableName + " where c2_s IS NOT NULL").collectAsList()
     assert(results.size() == 5)
 
@@ -558,7 +598,8 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEac
     assert(results.size() == 10)
   }
 
-  test("Test SQL: insert into") {
+  @Test
+  def testSQLInsertInto() {
     val insertTable = "insertintotest"
 
     // read 0 rows just to get the schema
@@ -577,7 +618,8 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEac
     assertEquals(10, results.size())
   }
 
-  test("Test SQL: insert overwrite unsupported") {
+  @Test
+  def testSQLInsertOverwriteUnsupported() {
     val insertTable = "insertoverwritetest"
 
     // read 0 rows just to get the schema
@@ -601,7 +643,8 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEac
     }
   }
 
-  test("Test write using DefaultSource") {
+  @Test
+  def testWriteUsingDefaultSource() {
     val df = sqlContext.read.options(kuduOptions).kudu
 
     val newTable = "testwritedatasourcetable"
@@ -620,8 +663,8 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEac
     assert(checkDf.count == 10)
   }
 
-  test("create relation with schema") {
-
+  @Test
+  def testCreateRelationWithSchema() {
     // user-supplied schema that is compatible with actual schema, but with the key at the end
     val userSchema: StructType = StructType(List(
       StructField("c4_long", DataTypes.LongType),
@@ -638,8 +681,8 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEac
     assertTrue(dfWithUserSchema.columns.deep == Array("c4_long", "key").deep)
   }
 
-  test("create relation with invalid schema") {
-
+  @Test
+  def testCreateRelationWithInvalidSchema() {
     // user-supplied schema that is NOT compatible with actual schema
     val userSchema: StructType = StructType(List(
       StructField("foo", DataTypes.LongType),
@@ -651,7 +694,8 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEac
     }.getMessage should include ("Unknown column: foo")
   }
 
-  test("scan locality") {
+  @Test
+  def testScanLocality() {
     kuduOptions = Map(
       "kudu.table" -> tableName,
       "kudu.master" -> miniCluster.getMasterAddresses,
@@ -668,7 +712,8 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEac
 
   // Verify that the propagated timestamp is properly updated inside
   // the same client.
-  test("timestamp propagation") {
+  @Test
+  def testTimestampPropagation() {
     val df = sqlContext.read.options(kuduOptions).kudu
     val insertDF = df.limit(1)
                       .withColumn("key", df("key")
@@ -725,7 +770,8 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEac
     * DefaultSource and makes it into the KuduRelation as a configuration
     * parameter.
     */
-  test("scan request timeout propagation") {
+  @Test
+  def testScanRequestTimeoutPropagation() {
     kuduOptions = Map(
       "kudu.table" -> tableName,
       "kudu.master" -> miniCluster.getMasterAddresses,
@@ -740,7 +786,8 @@ class DefaultSourceTest extends FunSuite with TestContext with BeforeAndAfterEac
     * DefaultSource and makes it into the KuduRelation as a configuration
     * parameter.
     */
-  test("socket read timeout propagation") {
+  @Test
+  def testSocketReadTimeoutPropagation() {
     kuduOptions = Map(
       "kudu.table" -> tableName,
       "kudu.master" -> miniCluster.getMasterAddresses,

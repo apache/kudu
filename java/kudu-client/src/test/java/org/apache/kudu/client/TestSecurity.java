@@ -30,6 +30,7 @@ import javax.security.auth.Subject;
 
 import org.apache.kudu.client.Client.AuthenticationCredentialsPB;
 import org.apache.kudu.client.MiniKuduCluster.MiniKuduClusterBuilder;
+import org.apache.kudu.junit.RetryRule;
 import org.apache.kudu.master.Master.ConnectToMasterResponsePB;
 import org.apache.kudu.util.AssertHelpers;
 import org.apache.kudu.util.AssertHelpers.BooleanExpression;
@@ -40,6 +41,7 @@ import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.BeforeClass;
+import org.junit.Rule;
 import org.junit.Test;
 
 import com.google.common.base.Preconditions;
@@ -86,6 +88,11 @@ public class TestSecurity {
     // in order to wait for the masters to elect a leader.
     client.listTabletServers();
   }
+
+  // Add a rule to rerun tests. We use this with Gradle because it doesn't support
+  // Surefire/Failsafe rerunFailingTestsCount like Maven does.
+  @Rule
+  public RetryRule retryRule = new RetryRule();
 
   @Before
   public void setUp() {

@@ -22,18 +22,20 @@ import java.util.Date
 import scala.collection.JavaConverters._
 import scala.collection.immutable.IndexedSeq
 import org.apache.spark.SparkConf
-import org.scalatest.{BeforeAndAfterEach, Suite}
 import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder
 import org.apache.kudu.ColumnTypeAttributes.ColumnTypeAttributesBuilder
 import org.apache.kudu.client.KuduClient.KuduClientBuilder
 import org.apache.kudu.client.MiniKuduCluster.MiniKuduClusterBuilder
 import org.apache.kudu.client.{CreateTableOptions, KuduClient, KuduTable, MiniKuduCluster}
+import org.apache.kudu.junit.RetryRule
 import org.apache.kudu.{Schema, Type}
 import org.apache.kudu.util.DecimalUtil
 import org.apache.spark.sql.SparkSession
+import org.junit.{After, Before, Rule}
+import org.scalatest.junit.JUnitSuite
 
-trait TestContext extends BeforeAndAfterEach { self: Suite =>
-
+// TODO (grant): Use BaseKuduTest for most of this.
+trait KuduTestSuite extends JUnitSuite {
   var ss: SparkSession = _
   var miniCluster: MiniKuduCluster = _
   var kuduClient: KuduClient = _
@@ -78,6 +80,19 @@ trait TestContext extends BeforeAndAfterEach { self: Suite =>
     new Schema(columns)
   }
 
+  val tableOptions: CreateTableOptions = {
+    val bottom = schema.newPartialRow() // Unbounded.
+    val middle = schema.newPartialRow()
+    middle.addInt("key", 50)
+    val top = schema.newPartialRow() // Unbounded.
+
+    new CreateTableOptions()
+      .setRangePartitionColumns(List("key").asJava)
+      .addRangePartition(bottom, middle)
+      .addRangePartition(middle, top)
+      .setNumReplicas(1)
+  }
+
   val appID: String = new Date().toString + math.floor(math.random * 10E4).toLong.toString
 
   val conf: SparkConf = new SparkConf().
@@ -86,7 +101,13 @@ trait TestContext extends BeforeAndAfterEach { self: Suite =>
     set("spark.ui.enabled", "false").
     set("spark.app.id", appID)
 
-  override def beforeEach() {
+  // Add a rule to rerun tests. We use this with Gradle because it doesn't support
+  // Surefire/Failsafe rerunFailingTestsCount like Maven does.
+  @Rule
+  def retryRule = new RetryRule()
+
+  @Before
+  def setUpBase(): Unit = {
     miniCluster = new MiniKuduClusterBuilder()
       .numMasters(1)
       .numTservers(1)
@@ -108,20 +129,8 @@ trait TestContext extends BeforeAndAfterEach { self: Suite =>
     kuduClient.createTable(simpleTableName, simpleSchema, simpleTableOptions)
   }
 
-  val tableOptions: CreateTableOptions = {
-    val bottom = schema.newPartialRow() // Unbounded.
-    val middle = schema.newPartialRow()
-    middle.addInt("key", 50)
-    val top = schema.newPartialRow() // Unbounded.
-
-    new CreateTableOptions()
-      .setRangePartitionColumns(List("key").asJava)
-      .addRangePartition(bottom, middle)
-      .addRangePartition(middle, top)
-      .setNumReplicas(1)
-  }
-
-  override def afterEach() {
+  @After
+  def tearDownBase() {
     if (kuduClient != null) kuduClient.shutdown()
     if (miniCluster != null) miniCluster.shutdown()
     if (ss != null) ss.stop()

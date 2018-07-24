@@ -17,14 +17,12 @@
 
 package org.apache.kudu.spark.kudu
 
-import org.junit.runner.RunWith
-import org.scalatest.junit.JUnitRunner
-import org.scalatest.{BeforeAndAfter, FunSuite}
+import org.junit.Test
 
-@RunWith(classOf[JUnitRunner])
-class KuduRDDTest extends FunSuite with TestContext with BeforeAndAfter {
+class KuduRDDTest extends KuduTestSuite {
 
-  test("collect rows") {
+  @Test
+  def testCollectRows() {
     insertRows(table, 100)
     val rdd = kuduContext.kuduRDD(ss.sparkContext, tableName, List("key"))
     assert(rdd.collect.length == 100)

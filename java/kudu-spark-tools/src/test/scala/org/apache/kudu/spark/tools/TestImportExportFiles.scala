@@ -24,20 +24,18 @@ import org.apache.kudu.{Schema, Type}
 import org.apache.kudu.client.CreateTableOptions
 import org.apache.kudu.spark.kudu._
 import org.junit.Assert._
-import org.junit.runner.RunWith
-import org.scalatest.junit.JUnitRunner
-import org.scalatest.{FunSuite, Matchers}
+import org.junit.Test
 import org.spark_project.guava.collect.ImmutableList
 
 import scala.collection.JavaConverters._
 
-@RunWith(classOf[JUnitRunner])
-class TestImportExportFiles  extends FunSuite with TestContext with  Matchers {
+class TestImportExportFiles extends KuduTestSuite {
 
   private val TABLE_NAME: String = "TestImportExportFiles"
   private val TABLE_DATA_PATH: String = "/TestImportExportFiles.csv"
 
-  test("Spark Import Export") {
+  @Test
+  def testSparkImportExport() {
     val schema: Schema = {
       val columns = ImmutableList.of(
         new ColumnSchemaBuilder("key", Type.STRING).key(true).build(),

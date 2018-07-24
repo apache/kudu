@@ -39,9 +39,11 @@ import org.apache.hadoop.hive.metastore.api.SerDeInfo;
 import org.apache.hadoop.hive.metastore.api.StorageDescriptor;
 import org.apache.hadoop.hive.metastore.api.Table;
 import org.apache.hadoop.hive.metastore.api.hive_metastoreConstants;
+import org.apache.kudu.junit.RetryRule;
 import org.apache.thrift.TException;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,6 +57,9 @@ public class TestKuduMetastorePlugin {
   private EnvironmentContext masterContext() {
     return new EnvironmentContext(ImmutableMap.of(KuduMetastorePlugin.KUDU_MASTER_EVENT, "true"));
   }
+
+  @Rule
+  public RetryRule retryRule = new RetryRule();
 
   @Before
   public void setUp() throws Exception {

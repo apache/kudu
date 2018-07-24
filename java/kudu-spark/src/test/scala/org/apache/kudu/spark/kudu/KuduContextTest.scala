@@ -22,12 +22,10 @@ import java.sql.Timestamp
 
 import org.apache.kudu.util.TimestampUtil
 import org.apache.spark.sql.functions.decode
-import org.junit.runner.RunWith
-import org.scalatest.junit.JUnitRunner
-import org.scalatest.{FunSuite, Matchers}
+import org.junit.Test
+import org.scalatest.Matchers
 
-@RunWith(classOf[JUnitRunner])
-class KuduContextTest extends FunSuite with TestContext with Matchers {
+class KuduContextTest extends KuduTestSuite with Matchers {
   val rowCount = 10
 
   private def serialize(value: Any): Array[Byte] = {
@@ -50,7 +48,8 @@ class KuduContextTest extends FunSuite with TestContext with Matchers {
     }
   }
 
-  test("Test KuduContext serialization") {
+  @Test
+  def testKuduContextSerialization() {
     val serialized = serialize(kuduContext)
     KuduClientCache.clearCacheForTests()
     val deserialized = deserialize(serialized).asInstanceOf[KuduContext]
@@ -59,7 +58,8 @@ class KuduContextTest extends FunSuite with TestContext with Matchers {
     deserialized.tableExists("foo")
   }
 
-  test("Test basic kuduRDD") {
+  @Test
+  def testBasicKuduRDD() {
     val rows = insertRows(table, rowCount)
     val scanList = kuduContext.kuduRDD(ss.sparkContext, "test", Seq("key", "c1_i", "c2_s", "c3_double",
         "c4_long", "c5_bool", "c6_short", "c7_float", "c8_binary", "c9_unixtime_micros", "c10_byte",
@@ -86,7 +86,8 @@ class KuduContextTest extends FunSuite with TestContext with Matchers {
     })
   }
 
-  test("Test kudu-spark DataFrame") {
+  @Test
+  def testKuduSparkDataFrame() {
     insertRows(table, rowCount)
     val sqlContext = ss.sqlContext
     val dataDF = sqlContext.read.options(Map("kudu.master" -> miniCluster.getMasterAddresses,

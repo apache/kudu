@@ -22,17 +22,19 @@ import org.junit.runners.model.Statement;
 
 /**
  * A JUnit rule to retry failed tests.
+ * We use this with Gradle because it doesn't support
+ * Surefire/Failsafe rerunFailingTestsCount like Maven does. We use the system
+ * property rerunFailingTestsCount to mimic the maven arguments closely.
  */
 public class RetryRule implements TestRule {
-  private int retryCount;
 
-  public RetryRule (int retryCount) {
-    this.retryCount = retryCount;
-  }
+  private static final int RETRY_COUNT = Integer.getInteger("rerunFailingTestsCount", 0);
+
+  public RetryRule () {}
 
   @Override
   public Statement apply(Statement base, Description description) {
-    return new RetryStatement(base, description, retryCount);
+    return new RetryStatement(base, description, RETRY_COUNT);
   }
 
   private static class RetryStatement extends Statement {
