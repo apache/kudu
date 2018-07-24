@@ -15,9 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/consensus/log.h"
+
 #include <algorithm>
 #include <cerrno>
-#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <memory>
@@ -36,7 +37,6 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/log-test-base.h"
-#include "kudu/consensus/log.h"
 #include "kudu/consensus/log.pb.h"
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/log_index.h"
@@ -408,7 +408,7 @@ TEST_P(LogTestOptionalCompression, TestSegmentRollover) {
   ASSERT_OK(log_->Close());
 
   shared_ptr<LogReader> reader;
-  ASSERT_OK(LogReader::Open(fs_manager_.get(), NULL, kTestTablet, NULL, &reader));
+  ASSERT_OK(LogReader::Open(fs_manager_.get(), nullptr, kTestTablet, nullptr, &reader));
   ASSERT_OK(reader->GetSegmentsSnapshot(&segments));
 
   ASSERT_TRUE(segments.back()->HasFooter());
@@ -589,7 +589,7 @@ TEST_P(LogTestOptionalCompression, TestGCWithLogRunning) {
   }
 
   ASSERT_OK(log_->Close());
-  CheckRightNumberOfSegmentFiles(2);
+  NO_FATALS(CheckRightNumberOfSegmentFiles(2));
 
   // We skip the first three, since we unregistered them above.
   for (int i = 3; i < kNumTotalSegments; i++) {
@@ -644,7 +644,7 @@ TEST_P(LogTestOptionalCompression, TestGCOfIndexChunks) {
 TEST_P(LogTestOptionalCompression, TestWaitUntilAllFlushed) {
   ASSERT_OK(BuildLog());
   // Append 2 replicate/commit pairs asynchronously
-  AppendReplicateBatchAndCommitEntryPairsToLog(2, APPEND_ASYNC);
+  ASSERT_OK(AppendReplicateBatchAndCommitEntryPairsToLog(2, APPEND_ASYNC));
 
   ASSERT_OK(log_->WaitUntilAllFlushed());
 
@@ -715,7 +715,7 @@ TEST_P(LogTestOptionalCompression, TestLogReopenAndGC) {
   retention.for_peers = 0;
   ASSERT_OK(log_->GC(retention, &num_gced_segments));
   ASSERT_EQ(0, num_gced_segments);
-  CheckRightNumberOfSegmentFiles(4);
+  NO_FATALS(CheckRightNumberOfSegmentFiles(4));
 
   // Set the max segments to retain so that, even though we have peers who need
   // the segments, we'll GC them.
@@ -729,7 +729,7 @@ TEST_P(LogTestOptionalCompression, TestLogReopenAndGC) {
   ASSERT_EQ(2, segments.size()) << DumpSegmentsToString(segments);
   ASSERT_OK(log_->Close());
 
-  CheckRightNumberOfSegmentFiles(2);
+  NO_FATALS(CheckRightNumberOfSegmentFiles(2));
 
   // Unregister the final anchor.
   ASSERT_OK(log_anchor_registry_->Unregister(anchors[3]));
@@ -745,7 +745,7 @@ TEST_P(LogTestOptionalCompression, TestWriteManyBatches) {
 
   LOG(INFO)<< "Starting to write " << num_batches << " to log";
   LOG_TIMING(INFO, "Wrote all batches to log") {
-    AppendReplicateBatchAndCommitEntryPairsToLog(num_batches);
+    ASSERT_OK(AppendReplicateBatchAndCommitEntryPairsToLog(num_batches));
   }
   ASSERT_OK(log_->Close());
   LOG(INFO) << "Done writing";
@@ -757,7 +757,7 @@ TEST_P(LogTestOptionalCompression, TestWriteManyBatches) {
     vector<scoped_refptr<ReadableLogSegment> > segments;
 
     shared_ptr<LogReader> reader;
-    ASSERT_OK(LogReader::Open(fs_manager_.get(), NULL, kTestTablet, NULL, &reader));
+    ASSERT_OK(LogReader::Open(fs_manager_.get(), nullptr, kTestTablet, nullptr, &reader));
     ASSERT_OK(reader->GetSegmentsSnapshot(&segments));
 
     for (const scoped_refptr<ReadableLogSegment>& entry : segments) {
@@ -810,8 +810,8 @@ TEST_P(LogTestOptionalCompression, TestLogReaderReturnsLatestSegmentIfIndexEmpty
   ASSERT_OK(BuildLog());
 
   OpId opid = MakeOpId(1, 1);
-  AppendCommit(opid, APPEND_ASYNC);
-  AppendReplicateBatch(opid, APPEND_SYNC);
+  ASSERT_OK(AppendCommit(opid, APPEND_ASYNC));
+  ASSERT_OK(AppendReplicateBatch(opid, APPEND_SYNC));
 
   SegmentSequence segments;
   ASSERT_OK(log_->reader()->GetSegmentsSnapshot(&segments));

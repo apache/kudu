@@ -65,10 +65,10 @@ constexpr bool APPEND_ASYNC = false;
 // If 'size' is not NULL, increments it by the expected increase in log size.
 // Increments 'op_id''s index once for each operation logged.
 inline Status AppendNoOpsToLogSync(const scoped_refptr<clock::Clock>& clock,
-                            Log* log,
-                            consensus::OpId* op_id,
-                            int count,
-                            int* size = NULL) {
+                                   Log* log,
+                                   consensus::OpId* op_id,
+                                   int count,
+                                   int* size = nullptr) {
 
   std::vector<consensus::ReplicateRefPtr> replicates;
   for (int i = 0; i < count; i++) {
@@ -103,9 +103,9 @@ inline Status AppendNoOpsToLogSync(const scoped_refptr<clock::Clock>& clock,
 }
 
 inline Status AppendNoOpToLogSync(const scoped_refptr<clock::Clock>& clock,
-                           Log* log,
-                           consensus::OpId* op_id,
-                           int* size = NULL) {
+                                  Log* log,
+                                  consensus::OpId* op_id,
+                                  int* size = nullptr) {
   return AppendNoOpsToLogSync(clock, log, op_id, 1, size);
 }
 
@@ -145,11 +145,11 @@ class LogTestBase : public KuduTest {
   typedef std::pair<int, int> DeltaId;
 
   LogTestBase()
-    : schema_(GetSimpleTestSchema()),
-      log_anchor_registry_(new LogAnchorRegistry()) {
+      : schema_(GetSimpleTestSchema()),
+        log_anchor_registry_(new LogAnchorRegistry) {
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     KuduTest::SetUp();
     current_index_ = kStartIndex;
     fs_manager_.reset(new FsManager(env_, GetTestPath("fs_root")));
@@ -162,7 +162,7 @@ class LogTestBase : public KuduTest {
     ASSERT_OK(clock_->Init());
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     KuduTest::TearDown();
     STLDeleteElements(&entries_);
   }
@@ -209,14 +209,15 @@ class LogTestBase : public KuduTest {
   }
 
   // Appends a batch with size 2 (1 insert, 1 mutate) to the log.
-  void AppendReplicateBatch(const consensus::OpId& opid, bool sync = APPEND_SYNC) {
+  Status AppendReplicateBatch(const consensus::OpId& opid,
+                              bool sync = APPEND_SYNC) {
     consensus::ReplicateRefPtr replicate =
         make_scoped_refptr_replicate(new consensus::ReplicateMsg());
     replicate->get()->set_op_type(consensus::WRITE_OP);
     replicate->get()->mutable_id()->CopyFrom(opid);
     replicate->get()->set_timestamp(clock_->Now().ToUint64());
     tserver::WriteRequestPB* batch_request = replicate->get()->mutable_write_request();
-    ASSERT_OK(SchemaToPB(schema_, batch_request->mutable_schema()));
+    RETURN_NOT_OK(SchemaToPB(schema_, batch_request->mutable_schema()));
     AddTestRowToPB(RowOperationsPB::INSERT, schema_,
                    opid.index(),
                    0,
@@ -228,22 +229,21 @@ class LogTestBase : public KuduTest {
                    "this is a test mutate",
                    batch_request->mutable_row_operations());
     batch_request->set_tablet_id(kTestTablet);
-    AppendReplicateBatch(replicate, sync);
+    return AppendReplicateBatch(replicate, sync);
   }
 
   // Appends the provided batch to the log.
-  void AppendReplicateBatch(const consensus::ReplicateRefPtr& replicate,
-                            bool sync = APPEND_SYNC) {
+  Status AppendReplicateBatch(const consensus::ReplicateRefPtr& replicate,
+                              bool sync = APPEND_SYNC) {
     if (sync) {
       Synchronizer s;
-      ASSERT_OK(log_->AsyncAppendReplicates({ replicate }, s.AsStatusCallback()));
-      ASSERT_OK(s.Wait());
-    } else {
-      // AsyncAppendReplicates does not free the ReplicateMsg on completion, so we
-      // need to pass it through to our callback.
-      ASSERT_OK(log_->AsyncAppendReplicates({ replicate },
-                                            Bind(&LogTestBase::CheckReplicateResult, replicate)));
+      RETURN_NOT_OK(log_->AsyncAppendReplicates({ replicate }, s.AsStatusCallback()));
+      return s.Wait();
     }
+    // AsyncAppendReplicates does not free the ReplicateMsg on completion, so we
+    // need to pass it through to our callback.
+    return log_->AsyncAppendReplicates(
+        { replicate }, Bind(&LogTestBase::CheckReplicateResult, replicate));
   }
 
   static void CheckCommitResult(const Status& s) {
@@ -252,21 +252,23 @@ class LogTestBase : public KuduTest {
 
   // Append a commit log entry containing one entry for the insert and one
   // for the mutate.
-  void AppendCommit(const consensus::OpId& original_opid,
-                    bool sync = APPEND_SYNC) {
+  Status AppendCommit(const consensus::OpId& original_opid,
+                      bool sync = APPEND_SYNC) {
     // The mrs id for the insert.
-    const int kTargetMrsId = 1;
+    constexpr int kTargetMrsId = 1;
 
     // The rs and delta ids for the mutate.
-    const int kTargetRsId = 0;
-    const int kTargetDeltaId = 0;
+    constexpr int kTargetRsId = 0;
+    constexpr int kTargetDeltaId = 0;
 
-    AppendCommit(original_opid, kTargetMrsId, kTargetRsId, kTargetDeltaId, sync);
+    return AppendCommit(original_opid, kTargetMrsId, kTargetRsId, kTargetDeltaId, sync);
   }
 
-  void AppendCommit(const consensus::OpId& original_opid,
-                    int mrs_id, int rs_id, int dms_id,
-                    bool sync = APPEND_SYNC) {
+  Status AppendCommit(const consensus::OpId& original_opid,
+                      int mrs_id,
+                      int rs_id,
+                      int dms_id,
+                      bool sync = APPEND_SYNC) {
     gscoped_ptr<consensus::CommitMsg> commit(new consensus::CommitMsg);
     commit->set_op_type(consensus::WRITE_OP);
 
@@ -281,16 +283,15 @@ class LogTestBase : public KuduTest {
     tablet::MemStoreTargetPB* target = mutate->add_mutated_stores();
     target->set_dms_id(dms_id);
     target->set_rs_id(rs_id);
-    AppendCommit(std::move(commit), sync);
+    return AppendCommit(std::move(commit), sync);
   }
 
   // Append a COMMIT message for 'original_opid', but with results
   // indicating that the associated writes failed due to
   // "NotFound" errors.
-  void AppendCommitWithNotFoundOpResults(const consensus::OpId& original_opid) {
+  Status AppendCommitWithNotFoundOpResults(const consensus::OpId& original_opid) {
     gscoped_ptr<consensus::CommitMsg> commit(new consensus::CommitMsg);
     commit->set_op_type(consensus::WRITE_OP);
-
     commit->mutable_commited_op_id()->CopyFrom(original_opid);
 
     tablet::TxResultPB* result = commit->mutable_result();
@@ -300,34 +301,36 @@ class LogTestBase : public KuduTest {
     tablet::OperationResultPB* mutate = result->add_ops();
     StatusToPB(Status::NotFound("fake failed write"), mutate->mutable_failed_status());
 
-    AppendCommit(std::move(commit));
+    return AppendCommit(std::move(commit));
   }
 
-  void AppendCommit(gscoped_ptr<consensus::CommitMsg> commit, bool sync = APPEND_SYNC) {
+  Status AppendCommit(gscoped_ptr<consensus::CommitMsg> commit,
+                      bool sync = APPEND_SYNC) {
     if (sync) {
       Synchronizer s;
-      ASSERT_OK(log_->AsyncAppendCommit(std::move(commit), s.AsStatusCallback()));
-      ASSERT_OK(s.Wait());
-    } else {
-      ASSERT_OK(log_->AsyncAppendCommit(std::move(commit),
-                                               Bind(&LogTestBase::CheckCommitResult)));
+      RETURN_NOT_OK(log_->AsyncAppendCommit(std::move(commit), s.AsStatusCallback()));
+      return s.Wait();
     }
+    return log_->AsyncAppendCommit(std::move(commit),
+                                   Bind(&LogTestBase::CheckCommitResult));
   }
 
     // Appends 'count' ReplicateMsgs and the corresponding CommitMsgs to the log
-  void AppendReplicateBatchAndCommitEntryPairsToLog(int count, bool sync = true) {
+  Status AppendReplicateBatchAndCommitEntryPairsToLog(int count,
+                                                      bool sync = APPEND_SYNC) {
     for (int i = 0; i < count; i++) {
       consensus::OpId opid = consensus::MakeOpId(1, current_index_);
-      AppendReplicateBatch(opid);
-      AppendCommit(opid, sync);
+      RETURN_NOT_OK(AppendReplicateBatch(opid));
+      RETURN_NOT_OK(AppendCommit(opid, sync));
       current_index_ += 1;
     }
+    return Status::OK();
   }
 
   // Append a single NO_OP entry. Increments op_id by one.
   // If non-NULL, and if the write is successful, 'size' is incremented
   // by the size of the written operation.
-  Status AppendNoOp(consensus::OpId* op_id, int* size = NULL) {
+  Status AppendNoOp(consensus::OpId* op_id, int* size = nullptr) {
     return AppendNoOpToLogSync(clock_, log_.get(), op_id, size);
   }
 
@@ -335,7 +338,7 @@ class LogTestBase : public KuduTest {
   // Increments op_id's index by the number of records written.
   // If non-NULL, 'size' keeps track of the size of the operations
   // successfully written.
-  Status AppendNoOps(consensus::OpId* op_id, int num, int* size = NULL) {
+  Status AppendNoOps(consensus::OpId* op_id, int num, int* size = nullptr) {
     for (int i = 0; i < num; i++) {
       RETURN_NOT_OK(AppendNoOp(op_id, size));
     }
