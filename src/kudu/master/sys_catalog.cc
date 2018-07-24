@@ -219,8 +219,8 @@ Status SysCatalogTable::Load(FsManager *fs_manager) {
       string msg = Substitute(
           "on-disk master list ($0) and provided master list ($1) differ. "
           "Their symmetric difference is: $2",
-          JoinStrings(peer_addrs_from_opts, ", "),
           JoinStrings(peer_addrs_from_disk, ", "),
+          JoinStrings(peer_addrs_from_opts, ", "),
           JoinStrings(symm_diff, ", "));
       return Status::InvalidArgument(msg);
     }
