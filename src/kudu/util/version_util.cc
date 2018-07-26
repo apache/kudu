@@ -17,15 +17,17 @@
 
 #include "kudu/util/version_util.h"
 
-#include <iostream>
+#include <iterator>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include <glog/logging.h>
 
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
+#include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/status.h"
 
@@ -45,7 +47,9 @@ bool Version::operator==(const Version& other) const {
 }
 
 string Version::ToString() const {
-  return raw_version;
+  return extra.empty()
+      ? Substitute("$0.$1.$2", major, minor, maintenance)
+      : Substitute("$0.$1.$2-$3", major, minor, maintenance, extra);
 }
 
 ostream& operator<<(ostream& os, const Version& v) {
@@ -54,29 +58,32 @@ ostream& operator<<(ostream& os, const Version& v) {
 
 Status ParseVersion(const string& version_str,
                     Version* v) {
-  CHECK(v);
+  static const char* const kDelimiter = "-";
+
+  DCHECK(v);
   const Status invalid_ver_err =
       Status::InvalidArgument("invalid version string", version_str);
-  Version temp_v;
-  const vector<string> main_and_extra = Split(version_str, "-");
-  if (main_and_extra.empty() || main_and_extra.size() > 2) {
+  auto v_str = version_str;
+  StripWhiteSpace(&v_str);
+  const vector<string> main_and_extra = Split(v_str, kDelimiter);
+  if (main_and_extra.empty()) {
     return invalid_ver_err;
   }
-  if (main_and_extra.size() == 2) {
-    temp_v.extra = main_and_extra[1];
-  }
-  const auto& main_ver_str = main_and_extra[0];
-  const vector<string> maj_min_maint = Split(main_ver_str, ".");
+  const vector<string> maj_min_maint = Split(main_and_extra.front(), ".");
   if (maj_min_maint.size() != 3) {
     return invalid_ver_err;
   }
+  Version temp_v;
   if (!SimpleAtoi(maj_min_maint[0], &temp_v.major) ||
       !SimpleAtoi(maj_min_maint[1], &temp_v.minor) ||
       !SimpleAtoi(maj_min_maint[2], &temp_v.maintenance)) {
     return invalid_ver_err;
   }
+  temp_v.extra = JoinStringsIterator(std::next(main_and_extra.begin()),
+                                     main_and_extra.end(), kDelimiter);
   temp_v.raw_version = version_str;
   *v = std::move(temp_v);
+
   return Status::OK();
 }
 

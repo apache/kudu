@@ -16,9 +16,10 @@
 // under the License.
 #pragma once
 
-#include <iostream>
+#include <iosfwd>
 #include <string>
 
+#include "kudu/gutil/port.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -27,7 +28,7 @@ namespace kudu {
 //
 //  <major>.<minor>.<maintenance>[-<extra>]
 //
-// e.g. 1.6.0 or 1.7.1-SNAPSHOT.
+// e.g. 1.6.0, 1.7.1-SNAPSHOT, 1.8.0-RC1-SNAPSHOT, etc.
 //
 // This struct can be used with versions reported by ksck to determine if and
 // how certain tools should function depending on what versions are running in
@@ -35,6 +36,10 @@ namespace kudu {
 struct Version {
   bool operator==(const Version& other) const;
 
+  // Return 'canonical' version string, i.e. the concatenation of the version
+  // components transformed back into the string representation. The parser
+  // implementation has its quirks, so the canonical version string does not
+  // always match the raw input string.
   std::string ToString() const;
 
   // The original version string.
@@ -53,6 +58,6 @@ std::ostream& operator<<(std::ostream& os, const Version& v);
 
 // Parse 'version_str' into 'v'. 'v' must not be null.
 Status ParseVersion(const std::string& version_str,
-                    Version* v);
+                    Version* v) WARN_UNUSED_RESULT;
 
 } // namespace kudu
