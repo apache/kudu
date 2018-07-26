@@ -762,7 +762,7 @@ removal of a directory across which tablets are configured to spread data. If
 `--force` is specified, all tablets configured to use that directory will fail
 upon starting up and be replicated elsewhere.
 
-NOTE: If the link:configuration.html$directory_configuration[metadata
+NOTE: If the link:configuration.html#directory_configuration[metadata
 directory] overlaps with a data directory, as was the default prior to Kudu
 1.7, or if a non-default metadata directory is configured, the
 `--fs_metadata_dir` configuration must be specified when running the `kudu fs
