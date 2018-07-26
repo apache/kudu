@@ -149,6 +149,9 @@
     </dependencies>
 
     <build>
+        <!-- set source dirs explicitly for the scalafmt plugin -->
+        <sourceDirectory>src/main/scala</sourceDirectory>
+        <testSourceDirectory>src/test/scala</testSourceDirectory>
         <extensions>
             <!-- Used in the protobuf plugin to find the right protoc artifact
                  with the property os.detected.classifier -->
@@ -222,6 +225,10 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
                 <version>${maven-shade-plugin.version}</version>
+            </plugin>
+            <plugin>
+                <groupId>org.antipathy</groupId>
+                <artifactId>mvn-scalafmt</artifactId>
             </plugin>
         </plugins>
 

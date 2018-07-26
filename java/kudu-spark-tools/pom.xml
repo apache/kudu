@@ -138,6 +138,9 @@
     </dependencies>
 
     <build>
+        <!-- set source dirs explicitly for the scalafmt plugin -->
+        <sourceDirectory>src/main/scala</sourceDirectory>
+        <testSourceDirectory>src/test/scala</testSourceDirectory>
         <plugins>
             <plugin>
                 <groupId>net.alchim31.maven</groupId>
@@ -190,6 +193,10 @@
                         </includes>
                     </artifactSet>
                 </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.antipathy</groupId>
+                <artifactId>mvn-scalafmt</artifactId>
             </plugin>
         </plugins>
     </build>

@@ -36,7 +36,8 @@ object KuduRestore {
   val log: Logger = LoggerFactory.getLogger(getClass)
 
   def run(options: KuduRestoreOptions, session: SparkSession): Unit = {
-    val context = new KuduContext(options.kuduMasterAddresses, session.sparkContext)
+    val context =
+      new KuduContext(options.kuduMasterAddresses, session.sparkContext)
     val path = options.path
     log.info(s"Restoring from path: $path")
 
@@ -58,20 +59,29 @@ object KuduRestore {
         }
 
       // TODO: Restrict format option.
-      val df = session.sqlContext.read.format(metadata.getDataFormat).load(tablePath.toString)
-      val writeOptions = new KuduWriteOptions(ignoreDuplicateRowErrors = false, ignoreNull = false)
+      val df = session.sqlContext.read
+        .format(metadata.getDataFormat)
+        .load(tablePath.toString)
+      val writeOptions = new KuduWriteOptions(
+        ignoreDuplicateRowErrors = false,
+        ignoreNull = false)
       // TODO: Use client directly for more control?
       // (session timeout, consistency mode, flush interval, mutation buffer space)
       context.insertRows(df, restoreName, writeOptions)
     }
   }
 
-  private def getMetadataPath(tableName: String, options: KuduRestoreOptions): Path = {
-    val rootPath = if (options.metadataPath.isEmpty) options.path else options.metadataPath
+  private def getMetadataPath(
+      tableName: String,
+      options: KuduRestoreOptions): Path = {
+    val rootPath =
+      if (options.metadataPath.isEmpty) options.path else options.metadataPath
     Paths.get(rootPath).resolve(tableName)
   }
 
-  private def readTableMetadata(path: Path, session: SparkSession): TableMetadataPB = {
+  private def readTableMetadata(
+      path: Path,
+      session: SparkSession): TableMetadataPB = {
     val conf = session.sparkContext.hadoopConfiguration
     val hPath = new HPath(path.resolve(TableMetadata.MetadataFileName).toString)
     val fs = hPath.getFileSystem(conf)
@@ -84,14 +94,16 @@ object KuduRestore {
   }
 
   def main(args: Array[String]): Unit = {
-    val options = KuduRestoreOptions.parse(args)
-      .getOrElse(throw new IllegalArgumentException("could not parse the arguments"))
+    val options = KuduRestoreOptions
+      .parse(args)
+      .getOrElse(
+        throw new IllegalArgumentException("could not parse the arguments"))
 
-    val session = SparkSession.builder()
+    val session = SparkSession
+      .builder()
       .appName("Kudu Table Restore")
       .getOrCreate()
 
     run(options, session)
   }
 }
-

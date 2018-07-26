@@ -20,16 +20,17 @@ package org.apache.kudu.spark.kudu
 import org.apache.yetus.audience.InterfaceStability
 
 /**
-  * KuduWriteOptions holds configuration of writes to Kudu tables.
-  *
-  * The instance of this class is passed to KuduContext write functions,
-  * such as insertRows, deleteRows, upsertRows, and updateRows.
-  *
-  * @param ignoreDuplicateRowErrors when inserting, ignore any new rows that
-  *                                 have a primary key conflict with existing rows
-  * @param ignoreNull update only non-Null columns if set true
-  */
+ * KuduWriteOptions holds configuration of writes to Kudu tables.
+ *
+ * The instance of this class is passed to KuduContext write functions,
+ * such as insertRows, deleteRows, upsertRows, and updateRows.
+ *
+ * @param ignoreDuplicateRowErrors when inserting, ignore any new rows that
+ *                                 have a primary key conflict with existing rows
+ * @param ignoreNull update only non-Null columns if set true
+ */
 @InterfaceStability.Unstable
 class KuduWriteOptions(
-  var ignoreDuplicateRowErrors: Boolean = false,
-  var ignoreNull: Boolean = false) extends Serializable
+    var ignoreDuplicateRowErrors: Boolean = false,
+    var ignoreNull: Boolean = false)
+    extends Serializable

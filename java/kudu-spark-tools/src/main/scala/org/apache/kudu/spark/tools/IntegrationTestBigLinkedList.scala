@@ -21,7 +21,10 @@ import java.net.InetAddress
 
 import org.apache.kudu.client.SessionConfiguration.FlushMode
 import org.apache.kudu.client.{KuduClient, KuduSession, KuduTable}
-import org.apache.kudu.mapreduce.tools.BigLinkedListCommon.{Xoroshiro128PlusRandom, _}
+import org.apache.kudu.mapreduce.tools.BigLinkedListCommon.{
+  Xoroshiro128PlusRandom,
+  _
+}
 import org.apache.kudu.spark.kudu.KuduContext
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.{SparkConf, TaskContext}
@@ -31,21 +34,23 @@ import org.slf4j.{Logger, LoggerFactory}
 import scala.util.Try
 
 /**
-  * Spark port of [[org.apache.kudu.mapreduce.tools.IntegrationTestBigLinkedList]].
-  *
-  * Major differences:
-  *   * Currently, only the generator and verifier jobs are implemented.
-  *   * The heads table is not written to during generate, and not used during verify.
-  *   * The generate job does not write in batches. Instead, it writes a head node,
-  *     followed by many tail nodes into the table, and then updates just the
-  *     head node to point at the final tail node. Writes use AUTO_FLUSH_BACKGROUND.
-  *     This is hopefully easier to understand, and has the advantage of stressing
-  *     slightly different code paths than the MR version.
-  */
+ * Spark port of [[org.apache.kudu.mapreduce.tools.IntegrationTestBigLinkedList]].
+ *
+ * Major differences:
+ *   * Currently, only the generator and verifier jobs are implemented.
+ *   * The heads table is not written to during generate, and not used during verify.
+ *   * The generate job does not write in batches. Instead, it writes a head node,
+ *     followed by many tail nodes into the table, and then updates just the
+ *     head node to point at the final tail node. Writes use AUTO_FLUSH_BACKGROUND.
+ *     This is hopefully easier to understand, and has the advantage of stressing
+ *     slightly different code paths than the MR version.
+ */
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
 object IntegrationTestBigLinkedList {
-  val LOG: Logger = LoggerFactory.getLogger(IntegrationTestBigLinkedList.getClass)
+
+  val LOG: Logger =
+    LoggerFactory.getLogger(IntegrationTestBigLinkedList.getClass)
 
   def usage: String =
     s"""
@@ -65,11 +70,13 @@ object IntegrationTestBigLinkedList {
     """.stripMargin
 
   def parseIntFlag(flag: String, num: String): Int = {
-    Try(num.toInt).getOrElse(fail(s"failed to parse $flag value as integer: $num"))
+    Try(num.toInt)
+      .getOrElse(fail(s"failed to parse $flag value as integer: $num"))
   }
 
   def parseLongFlag(flag: String, num: String): Long = {
-    Try(num.toLong).getOrElse(fail(s"failed to parse $flag value as integer: $num"))
+    Try(num.toLong)
+      .getOrElse(fail(s"failed to parse $flag value as integer: $num"))
   }
 
   def fail(msg: String): Nothing = {
@@ -100,7 +107,13 @@ object IntegrationTestBigLinkedList {
 }
 
 object Generator {
-  import IntegrationTestBigLinkedList.{LOG, defaultMasterAddrs, fail, nanosToHuman, parseIntFlag}
+  import IntegrationTestBigLinkedList.{
+    LOG,
+    defaultMasterAddrs,
+    fail,
+    nanosToHuman,
+    parseIntFlag
+  }
 
   def usage: String =
     s"""
@@ -118,14 +131,15 @@ object Generator {
        |      table-name: the name of the linked list table, default: $DEFAULT_TABLE_NAME
      """.stripMargin
 
-  case class Args(tasks: Int = 1,
-                  lists: Int = 1,
-                  nodes: Int = 10000000,
-                  hashPartitions: Int = 1,
-                  rangePartitions: Int = 1,
-                  replicas: Int = 1,
-                  masterAddrs: String = defaultMasterAddrs,
-                  tableName: String = DEFAULT_TABLE_NAME)
+  case class Args(
+      tasks: Int = 1,
+      lists: Int = 1,
+      nodes: Int = 10000000,
+      hashPartitions: Int = 1,
+      rangePartitions: Int = 1,
+      replicas: Int = 1,
+      masterAddrs: String = defaultMasterAddrs,
+      tableName: String = DEFAULT_TABLE_NAME)
 
   object Args {
     private def parseInner(options: Args, args: List[String]): Args = {
@@ -140,9 +154,12 @@ object Generator {
             case "--tasks" => options.copy(tasks = parseIntFlag(flag, value))
             case "--lists" => options.copy(lists = parseIntFlag(flag, value))
             case "--nodes" => options.copy(nodes = parseIntFlag(flag, value))
-            case "--hash-partitions" => options.copy(hashPartitions = parseIntFlag(flag, value))
-            case "--range-partitions" => options.copy(rangePartitions = parseIntFlag(flag, value))
-            case "--replicas" => options.copy(replicas = parseIntFlag(flag, value))
+            case "--hash-partitions" =>
+              options.copy(hashPartitions = parseIntFlag(flag, value))
+            case "--range-partitions" =>
+              options.copy(rangePartitions = parseIntFlag(flag, value))
+            case "--replicas" =>
+              options.copy(replicas = parseIntFlag(flag, value))
             case "--master-addrs" => options.copy(masterAddrs = value)
             case "--table-name" => options.copy(tableName = value)
             case _ => fail(s"unknown generate flag $flag")
@@ -163,40 +180,43 @@ object Generator {
     val client: KuduClient = kc.syncClient
     if (!client.tableExists(args.tableName)) {
       val schema = getTableSchema
-      val options = getCreateTableOptions(schema, args.replicas,
-        args.rangePartitions, args.hashPartitions)
+      val options = getCreateTableOptions(
+        schema,
+        args.replicas,
+        args.rangePartitions,
+        args.hashPartitions)
       client.createTable(args.tableName, getTableSchema, options)
     }
 
     // Run the generate tasks
-    ss.sparkContext.makeRDD(0 until args.tasks, args.tasks)
+    ss.sparkContext
+      .makeRDD(0 until args.tasks, args.tasks)
       .foreach(_ => generate(args, applicationId, kc))
   }
 
   def main(args: Array[String]): Unit = {
-    val conf = new SparkConf().setAppName("Integration Test Big Linked List Generator")
+    val conf =
+      new SparkConf().setAppName("Integration Test Big Linked List Generator")
     val ss = SparkSession.builder().config(conf).getOrCreate()
     run(Args.parse(args), ss)
   }
 
   /**
-    * Entry point for testing. SparkContext is a singleton,
-    * so tests must create and manage their own.
-    */
+   * Entry point for testing. SparkContext is a singleton,
+   * so tests must create and manage their own.
+   */
   @InterfaceAudience.LimitedPrivate(Array("Test"))
   def testMain(args: Array[String], ss: SparkSession): Unit = {
     run(Args.parse(args), ss)
   }
 
-  def generate(args: Args,
-               applicationId: String,
-               kc: KuduContext): Unit = {
+  def generate(args: Args, applicationId: String, kc: KuduContext): Unit = {
     val taskContext = TaskContext.get()
     val clientId = s"$applicationId-${taskContext.partitionId()}"
 
     val rand = new Xoroshiro128PlusRandom()
 
-    val client:KuduClient = kc.syncClient
+    val client: KuduClient = kc.syncClient
 
     val table: KuduTable = client.openTable(args.tableName)
     val session: KuduSession = client.newSession()
@@ -205,19 +225,21 @@ object Generator {
       for (_ <- 0 until args.lists) {
         val start = System.nanoTime()
         insertList(clientId, args, table, session, rand)
-        LOG.info(s"$clientId inserted ${args.nodes} node linked list in {}",
-                 nanosToHuman(System.nanoTime() - start))
+        LOG.info(
+          s"$clientId inserted ${args.nodes} node linked list in {}",
+          nanosToHuman(System.nanoTime() - start))
       }
     } finally {
       session.close()
     }
   }
 
-  def insertList(clientId: String,
-                 args: Args,
-                 table: KuduTable,
-                 session: KuduSession,
-                 rand: Xoroshiro128PlusRandom): Unit = {
+  def insertList(
+      clientId: String,
+      args: Args,
+      table: KuduTable,
+      session: KuduSession,
+      rand: Xoroshiro128PlusRandom): Unit = {
 
     // Write the head node to the table.
     val headKeyOne = rand.nextLong()
@@ -265,9 +287,10 @@ object Generator {
     session.flush()
     val errors = session.getPendingErrors
     if (errors.getRowErrors.length > 0) {
-      throw new RuntimeException(errors.getRowErrors
-        .map(_.getErrorStatus.toString)
-        .mkString("Row errors: [", ", ", "]"))
+      throw new RuntimeException(
+        errors.getRowErrors
+          .map(_.getErrorStatus.toString)
+          .mkString("Row errors: [", ", ", "]"))
     }
   }
 }
@@ -284,9 +307,10 @@ object Verifier {
        |      table-name: the name of the linked list table, default: $DEFAULT_TABLE_NAME
      """.stripMargin
 
-  case class Args(nodes: Option[Long] = None,
-                  masterAddrs: String = defaultMasterAddrs,
-                  tableName: String = DEFAULT_TABLE_NAME)
+  case class Args(
+      nodes: Option[Long] = None,
+      masterAddrs: String = defaultMasterAddrs,
+      tableName: String = DEFAULT_TABLE_NAME)
 
   object Args {
     private def parseInner(options: Args, args: List[String]): Args = {
@@ -298,7 +322,8 @@ object Verifier {
         case flag :: Nil => fail(s"flag $flag has no value\n$usage")
         case flag :: value :: tail =>
           val newOptions = flag match {
-            case "--nodes" => options.copy(nodes = Some(parseLongFlag(flag, value)))
+            case "--nodes" =>
+              options.copy(nodes = Some(parseLongFlag(flag, value)))
             case "--master-addrs" => options.copy(masterAddrs = value)
             case "--table-name" => options.copy(tableName = value)
             case _ => fail(s"unknown verify flag $flag")
@@ -312,21 +337,23 @@ object Verifier {
     }
   }
 
-  case class Counts(referenced: Long,
-                    unreferenced: Long,
-                    extrareferences: Long,
-                    undefined: Long)
+  case class Counts(
+      referenced: Long,
+      unreferenced: Long,
+      extrareferences: Long,
+      undefined: Long)
 
   /**
-    * Verifies the expected count against the count of nodes from a verification run.
-    * @param expected the expected node count
-    * @param counts the node counts returned by the verification job
-    * @return an error message, if the verification fails
-    */
+   * Verifies the expected count against the count of nodes from a verification run.
+   * @param expected the expected node count
+   * @param counts the node counts returned by the verification job
+   * @return an error message, if the verification fails
+   */
   def verify(expected: Option[Long], counts: Counts): Option[String] = {
     if (expected.exists(_ != counts.referenced)) {
-      Some(s"Found ${counts.referenced} referenced nodes, " +
-           s"which does not match the expected count of ${expected.get} nodes")
+      Some(
+        s"Found ${counts.referenced} referenced nodes, " +
+          s"which does not match the expected count of ${expected.get} nodes")
     } else if (counts.unreferenced > 0) {
       Some(s"Found ${counts.unreferenced} unreferenced nodes")
     } else if (counts.undefined > 0) {
@@ -342,14 +369,13 @@ object Verifier {
     val sql = ss.sqlContext
 
     sql.read
-       .option("kudu.master", args.masterAddrs)
-       .option("kudu.table", args.tableName)
-       .kudu
-       .createOrReplaceTempView("nodes")
+      .option("kudu.master", args.masterAddrs)
+      .option("kudu.table", args.tableName)
+      .kudu
+      .createOrReplaceTempView("nodes")
 
     // Get a table of all nodes and their ref count
-    sql.sql(
-      s"""
+    sql.sql(s"""
          | SELECT (SELECT COUNT(*)
          |         FROM nodes t2
          |         WHERE t1.$COLUMN_KEY_ONE = t2.$COLUMN_PREV_ONE
@@ -359,23 +385,20 @@ object Verifier {
 
     // Compress the ref counts down to 0, 1, or 2.  0 Indicates no references,
     // 1 indicates a single reference, and 2 indicates more than 1 reference.
-    sql.sql(
-      s"""
+    sql.sql(s"""
          | SELECT (CASE WHEN ref_count > 1 THEN 2 ELSE ref_count END) as ref_count
          | FROM ref_counts
        """.stripMargin).createOrReplaceTempView("ref_counts")
 
     // Aggregate the ref counts
-    sql.sql(
-      s"""
+    sql.sql(s"""
          | SELECT ref_count, COUNT(*) as nodes
          | FROM ref_counts
          | GROUP BY ref_count
        """.stripMargin).createOrReplaceTempView("ref_counts")
 
     // Transform the ref count to a state.
-    sql.sql(
-      s"""
+    sql.sql(s"""
          | SELECT CASE WHEN ref_count = 0 THEN "UNREFERENCED"
          |             WHEN ref_count = 1 THEN "REFERENCED"
          |             ELSE "EXTRAREFERENCES" END as state,
@@ -384,8 +407,7 @@ object Verifier {
        """.stripMargin).createOrReplaceTempView("ref_counts")
 
     // Find all referenced but undefined nodes.
-    sql.sql(
-      s"""
+    sql.sql(s"""
          | SELECT $COLUMN_CLIENT as list, "UNDEFINED" as state, COUNT(*) as nodes
          | FROM nodes t1
          | WHERE $COLUMN_PREV_ONE IS NOT NULL
@@ -398,8 +420,7 @@ object Verifier {
        """.stripMargin).createOrReplaceTempView("undefined")
 
     // Combine the ref counts and undefined counts tables.
-    val rows = sql.sql(
-      s"""
+    val rows = sql.sql(s"""
          | SELECT state, nodes FROM ref_counts
          | UNION ALL
          | SELECT state, nodes FROM undefined
@@ -425,7 +446,8 @@ object Verifier {
 
   def main(arguments: Array[String]): Unit = {
     val args = Args.parse(arguments)
-    val conf = new SparkConf().setAppName("Integration Test Big Linked List Generator")
+    val conf =
+      new SparkConf().setAppName("Integration Test Big Linked List Generator")
     val ss = SparkSession.builder().config(conf).getOrCreate()
 
     val counts = run(Args.parse(arguments), ss)
@@ -435,13 +457,15 @@ object Verifier {
 
 object Looper {
   import IntegrationTestBigLinkedList.{LOG, fail}
+
   def main(args: Array[String]): Unit = {
-    val conf = new SparkConf().setAppName("Integration Test Big Linked List Looper")
+    val conf =
+      new SparkConf().setAppName("Integration Test Big Linked List Looper")
     val ss = SparkSession.builder().config(conf).getOrCreate()
 
     val genArgs = Generator.Args.parse(args)
-    var verifyArgs = Verifier.Args(masterAddrs = genArgs.masterAddrs,
-                                   tableName = genArgs.tableName)
+    var verifyArgs = Verifier
+      .Args(masterAddrs = genArgs.masterAddrs, tableName = genArgs.tableName)
     val nodesPerLoop = genArgs.tasks * genArgs.lists * genArgs.nodes
 
     for (n <- Stream.from(1)) {
@@ -449,7 +473,8 @@ object Looper {
       val count = Verifier.run(verifyArgs, ss)
       val expected = verifyArgs.nodes.map(_ + nodesPerLoop)
       Verifier.verify(expected, count).map(fail)
-      verifyArgs = verifyArgs.copy(nodes = Some(expected.getOrElse(nodesPerLoop)))
+      verifyArgs =
+        verifyArgs.copy(nodes = Some(expected.getOrElse(nodesPerLoop)))
       LOG.info("*************************************************")
       LOG.info(s"Completed $n loops. Nodes verified: ${count.referenced}")
       LOG.info("*************************************************")

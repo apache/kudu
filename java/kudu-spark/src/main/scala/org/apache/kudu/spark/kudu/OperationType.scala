@@ -20,8 +20,8 @@ package org.apache.kudu.spark.kudu
 import org.apache.kudu.client.{KuduTable, Operation}
 
 /**
-  * OperationType enumerates the types of Kudu write operations.
-  */
+ * OperationType enumerates the types of Kudu write operations.
+ */
 private[kudu] sealed trait OperationType {
   def operation(table: KuduTable): Operation
 }

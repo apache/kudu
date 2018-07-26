@@ -36,3 +36,4 @@ gradle/wrapper/*.jar
 *.iml
 .idea/
 classes
+**/out

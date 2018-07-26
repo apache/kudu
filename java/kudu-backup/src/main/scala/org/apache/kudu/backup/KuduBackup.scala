@@ -35,7 +35,8 @@ object KuduBackup {
   val log: Logger = LoggerFactory.getLogger(getClass)
 
   def run(options: KuduBackupOptions, session: SparkSession): Unit = {
-    val context = new KuduContext(options.kuduMasterAddresses, session.sparkContext)
+    val context =
+      new KuduContext(options.kuduMasterAddresses, session.sparkContext)
     val path = options.path
     log.info(s"Backing up to path: $path")
 
@@ -45,7 +46,8 @@ object KuduBackup {
       val tablePath = Paths.get(path).resolve(URLEncoder.encode(t, "UTF-8"))
 
       val rdd = new KuduBackupRDD(table, options, context, session.sparkContext)
-      val df = session.sqlContext.createDataFrame(rdd, sparkSchema(table.getSchema))
+      val df =
+        session.sqlContext.createDataFrame(rdd, sparkSchema(table.getSchema))
       // TODO: Prefix path with the time? Maybe a backup "name" parameter defaulted to something?
       // TODO: Take parameter for the SaveMode.
       val writer = df.write.mode(SaveMode.ErrorIfExists)
@@ -59,7 +61,10 @@ object KuduBackup {
     }
   }
 
-  private def writeTableMetadata(metadata: TableMetadataPB, path: Path, session: SparkSession): Unit = {
+  private def writeTableMetadata(
+      metadata: TableMetadataPB,
+      path: Path,
+      session: SparkSession): Unit = {
     val conf = session.sparkContext.hadoopConfiguration
     val hPath = new HPath(path.resolve(TableMetadata.MetadataFileName).toString)
     val fs = hPath.getFileSystem(conf)
@@ -71,14 +76,16 @@ object KuduBackup {
   }
 
   def main(args: Array[String]): Unit = {
-    val options = KuduBackupOptions.parse(args)
-      .getOrElse(throw new IllegalArgumentException("could not parse the arguments"))
+    val options = KuduBackupOptions
+      .parse(args)
+      .getOrElse(
+        throw new IllegalArgumentException("could not parse the arguments"))
 
-    val session = SparkSession.builder()
+    val session = SparkSession
+      .builder()
       .appName("Kudu Table Backup")
       .getOrCreate()
 
     run(options, session)
   }
 }
-

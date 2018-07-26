@@ -38,4 +38,5 @@ dependencies {
   compile "net.ltgt.gradle:gradle-errorprone-plugin:0.0.14"
   compile "ru.vyarus:gradle-animalsniffer-plugin:1.4.3"
   compile 'com.google.code.gson:gson:2.8.5'
+  compile "cz.alenkacz:gradle-scalafmt:1.6.0"
 }
