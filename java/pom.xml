@@ -105,6 +105,7 @@
     </properties>
 
     <modules>
+        <module>kudu-backup</module>
         <module>kudu-client-tools</module>
         <module>kudu-client</module>
         <module>kudu-flume-sink</module>

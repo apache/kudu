@@ -17,13 +17,13 @@
 package org.apache.kudu.backup
 
 import java.math.BigDecimal
-import java.util.Base64
 
 import com.google.protobuf.StringValue
+import org.apache.commons.net.util.Base64
 import org.apache.kudu.backup.Backup._
 import org.apache.kudu.ColumnSchema.{ColumnSchemaBuilder, CompressionAlgorithm, Encoding}
 import org.apache.kudu.ColumnTypeAttributes.ColumnTypeAttributesBuilder
-import org.apache.kudu.client.{CreateTableOptions, KuduTable, PartialRow}
+import org.apache.kudu.client.{Bytes, CreateTableOptions, KuduTable, PartialRow}
 import org.apache.kudu.{ColumnSchema, Schema, Type}
 import org.apache.yetus.audience.{InterfaceAudience, InterfaceStability}
 
@@ -223,7 +223,7 @@ object TableMetadata {
       case Type.STRING =>
         value.asInstanceOf[String]
       case Type.BINARY =>
-        Base64.getEncoder.encodeToString(value.asInstanceOf[Array[Byte]])
+        Base64.encodeBase64String(value.asInstanceOf[Array[Byte]])
       case Type.DECIMAL =>
         value.asInstanceOf[BigDecimal].toString // TODO: Explicitly control print format
       case _ => throw new IllegalArgumentException(s"Unsupported column type: $colType")
@@ -240,7 +240,7 @@ object TableMetadata {
       case Type.FLOAT => value.toFloat
       case Type.DOUBLE => value.toDouble
       case Type.STRING => value
-      case Type.BINARY => Base64.getDecoder.decode(value)
+      case Type.BINARY => Base64.decodeBase64(value.asInstanceOf[Array[Byte]])
       case Type.DECIMAL => new BigDecimal(value) // TODO: Explicitly pass scale
       case _ => throw new IllegalArgumentException(s"Unsupported column type: $colType")
     }

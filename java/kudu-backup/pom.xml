@@ -116,6 +116,13 @@
             <scope>test</scope>
         </dependency>
         <dependency>
+            <groupId>org.apache.kudu</groupId>
+            <artifactId>kudu-client</artifactId>
+            <version>${project.version}</version>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
             <version>${junit.version}</version>
@@ -162,7 +169,7 @@
                          https://www.xolstice.org/protobuf-maven-plugin/usage.html -->
                     <checkStaleness>true</checkStaleness>
                     <protoSourceRoot>src/main/protobuf</protoSourceRoot>
-                    <protocArtifact>com.google.protobuf:protoc:${protoc.version}:exe:${os.detected.classifier}</protocArtifact>
+                    <protocArtifact>com.google.protobuf:protoc:${protobuf.version}:exe:${os.detected.classifier}</protocArtifact>
                 </configuration>
                 <executions>
                     <execution>
