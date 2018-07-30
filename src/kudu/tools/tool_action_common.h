@@ -137,6 +137,9 @@ Status SetServerFlag(const std::string& address, uint16_t default_port,
 // Set the non-public 'alter_external_catalogs' option on a KuduTableAlterer.
 void SetAlterExternalCatalogs(client::KuduTableAlterer* alterer, bool alter_external_catalogs);
 
+// Get the configured master addresses on the most recently connected to leader master.
+std::string GetMasterAddresses(const client::KuduClient& client);
+
 // A table of data to present to the user.
 //
 // Supports formatting based on the --format flag.

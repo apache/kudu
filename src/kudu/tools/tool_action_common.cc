@@ -445,6 +445,10 @@ void SetAlterExternalCatalogs(client::KuduTableAlterer* alterer, bool alter_exte
   alterer->alter_external_catalogs(alter_external_catalogs);
 }
 
+string GetMasterAddresses(const client::KuduClient& client) {
+  return HostPort::ToCommaSeparatedString(client.data_->master_hostports());
+}
+
 Status PrintServerStatus(const string& address, uint16_t default_port) {
   ServerStatusPB status;
   RETURN_NOT_OK(GetServerStatus(address, default_port, &status));

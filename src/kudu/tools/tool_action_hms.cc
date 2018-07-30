@@ -102,20 +102,27 @@ Status RenameTableInKuduCatalog(KuduClient* kudu_client,
 
 Status Init(const RunnerContext& context,
             shared_ptr<KuduClient>* kudu_client,
-            unique_ptr<HmsCatalog>* hms_catalog) {
+            unique_ptr<HmsCatalog>* hms_catalog,
+            string* master_addrs) {
   const string& master_addrs_flag = FindOrDie(context.required_args, kMasterAddressesArg);
-  vector<string> master_addrs = Split(master_addrs_flag, ",");
 
   // Create a Kudu Client.
   RETURN_NOT_OK(KuduClientBuilder()
       .default_rpc_timeout(MonoDelta::FromMilliseconds(FLAGS_timeout_ms))
-      .master_server_addrs(master_addrs)
+      .master_server_addrs(Split(master_addrs_flag, ","))
       .Build(kudu_client));
+
+  // Get the configured master addresses from the leader master. It's critical
+  // that the check and fix tools use the exact same master address
+  // configuration that the masters do, otherwise the HMS table entries will
+  // disagree on the master addresses property.
+  *master_addrs = GetMasterAddresses(**kudu_client);
 
   if (FLAGS_hive_metastore_uris.empty()) {
     // Lookup the HMS URIs and SASL config from the master configuration.
     vector<GetFlagsResponsePB_Flag> flags;
-    RETURN_NOT_OK(GetServerFlags(master_addrs[0], master::Master::kDefaultPort, false, {}, &flags));
+    RETURN_NOT_OK(GetServerFlags(vector<string>(Split(*master_addrs, ","))[0],
+                                 master::Master::kDefaultPort, false, {}, &flags));
 
     auto hms_uris = std::find_if(flags.begin(), flags.end(),
         [] (const GetFlagsResponsePB_Flag& flag) {
@@ -146,7 +153,8 @@ Status Init(const RunnerContext& context,
 Status HmsDowngrade(const RunnerContext& context) {
   shared_ptr<KuduClient> kudu_client;
   unique_ptr<HmsCatalog> hms_catalog;
-  Init(context, &kudu_client, &hms_catalog);
+  string master_addrs;
+  Init(context, &kudu_client, &hms_catalog, &master_addrs);
 
   // 1. Identify all Kudu tables in the HMS entries.
   vector<hive::Table> hms_tables;
@@ -377,10 +385,10 @@ Status AnalyzeCatalogs(const string& master_addrs,
 Status CheckHmsMetadata(const RunnerContext& context) {
   // TODO(dan): check that the critical HMS configuration flags
   // (--hive_metastore_uris, --hive_metastore_sasl_enabled) match on all masters.
-  const string& master_addrs = FindOrDie(context.required_args, kMasterAddressesArg);
   shared_ptr<KuduClient> kudu_client;
   unique_ptr<HmsCatalog> hms_catalog;
-  RETURN_NOT_OK(Init(context, &kudu_client, &hms_catalog));
+  string master_addrs;
+  RETURN_NOT_OK(Init(context, &kudu_client, &hms_catalog, &master_addrs));
 
   CatalogReport report;
   RETURN_NOT_OK(AnalyzeCatalogs(master_addrs, hms_catalog.get(), kudu_client.get(), &report));
@@ -467,10 +475,10 @@ string TableIdent(const KuduTable& table) {
 // failing due to duplicate table being present are logged and execution
 // continues.
 Status FixHmsMetadata(const RunnerContext& context) {
-  const string& master_addrs = FindOrDie(context.required_args, kMasterAddressesArg);
   shared_ptr<KuduClient> kudu_client;
   unique_ptr<HmsCatalog> hms_catalog;
-  RETURN_NOT_OK(Init(context, &kudu_client, &hms_catalog));
+  string master_addrs;
+  RETURN_NOT_OK(Init(context, &kudu_client, &hms_catalog, &master_addrs));
 
   CatalogReport report;
   RETURN_NOT_OK(AnalyzeCatalogs(master_addrs, hms_catalog.get(), kudu_client.get(), &report));

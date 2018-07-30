@@ -58,17 +58,18 @@ class PartitionSchema;
 class SecurityUnknownTskTest;
 
 namespace client {
+class KuduClient;
 class KuduTableAlterer;
 }
 
 namespace tools {
 class LeaderMasterProxy;
+std::string GetMasterAddresses(const client::KuduClient&);
 void SetAlterExternalCatalogs(client::KuduTableAlterer*, bool);
 } // namespace tools
 
 namespace client {
 
-class KuduClient;
 class KuduDelete;
 class KuduInsert;
 class KuduLoggingCallback;
@@ -538,6 +539,17 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
  private:
   class KUDU_NO_EXPORT Data;
 
+  friend class ClientTest;
+  friend class ConnectToClusterBaseTest;
+  friend class KuduClientBuilder;
+  friend class KuduPartitionerBuilder;
+  friend class KuduScanToken;
+  friend class KuduScanTokenBuilder;
+  friend class KuduScanner;
+  friend class KuduSession;
+  friend class KuduTable;
+  friend class KuduTableAlterer;
+  friend class KuduTableCreator;
   friend class internal::Batcher;
   friend class internal::GetTableSchemaRpc;
   friend class internal::LookupRpc;
@@ -545,19 +557,9 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   friend class internal::RemoteTablet;
   friend class internal::RemoteTabletServer;
   friend class internal::WriteRpc;
-  friend class ConnectToClusterBaseTest;
-  friend class ClientTest;
-  friend class KuduClientBuilder;
-  friend class KuduPartitionerBuilder;
-  friend class KuduScanner;
-  friend class KuduScanToken;
-  friend class KuduScanTokenBuilder;
-  friend class KuduSession;
-  friend class KuduTable;
-  friend class KuduTableAlterer;
-  friend class KuduTableCreator;
-  friend class ::kudu::SecurityUnknownTskTest;
+  friend class kudu::SecurityUnknownTskTest;
   friend class tools::LeaderMasterProxy;
+  friend std::string tools::GetMasterAddresses(const client::KuduClient&);
 
   FRIEND_TEST(kudu::ClientStressTest, TestUniqueClientIds);
   FRIEND_TEST(ClientTest, TestGetSecurityInfoFromMaster);
