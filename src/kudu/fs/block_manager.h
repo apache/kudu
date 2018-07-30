@@ -147,6 +147,9 @@ class ReadableBlock : public Block {
   // Destroys the in-memory representation of the block.
   virtual Status Close() = 0;
 
+  // Get a pointer back to this block's manager.
+  virtual BlockManager* block_manager() const = 0;
+
   // Returns the on-disk size of a written block.
   virtual Status Size(uint64_t* sz) const = 0;
 

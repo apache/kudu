@@ -439,6 +439,8 @@ class FileReadableBlock : public ReadableBlock {
 
   virtual Status Close() OVERRIDE;
 
+  virtual BlockManager* block_manager() const OVERRIDE;
+
   virtual const BlockId& id() const OVERRIDE;
 
   virtual Status Size(uint64_t* sz) const OVERRIDE;
@@ -502,6 +504,10 @@ Status FileReadableBlock::Close() {
   }
 
   return Status::OK();
+}
+
+BlockManager* FileReadableBlock::block_manager() const {
+  return block_manager_;
 }
 
 const BlockId& FileReadableBlock::id() const {

@@ -1557,6 +1557,8 @@ class LogReadableBlock : public ReadableBlock {
 
   virtual const BlockId& id() const OVERRIDE;
 
+  virtual BlockManager* block_manager() const OVERRIDE;
+
   virtual Status Size(uint64_t* sz) const OVERRIDE;
 
   virtual Status Read(uint64_t offset, Slice result) const OVERRIDE;
@@ -1604,6 +1606,10 @@ Status LogReadableBlock::Close() {
   }
 
   return Status::OK();
+}
+
+BlockManager* LogReadableBlock::block_manager() const {
+  return container_->block_manager();
 }
 
 const BlockId& LogReadableBlock::id() const {
