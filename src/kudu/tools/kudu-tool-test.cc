@@ -1496,6 +1496,23 @@ TEST_F(ToolTest, TestLoadgenServerSideDefaultNumReplicas) {
   NO_FATALS(RunLoadgen(3, { "--table_num_replicas=0" }));
 }
 
+TEST_F(ToolTest, TestLoadgenDatabaseName) {
+  NO_FATALS(RunLoadgen(1, { "--auto_database=foo", "--keep_auto_table=true" }));
+  string out;
+  NO_FATALS(RunActionStdoutString(Substitute("table list $0",
+      HostPort::ToCommaSeparatedString(cluster_->master_rpc_addrs())), &out));
+  ASSERT_STR_CONTAINS(out, "foo.loadgen_auto_");
+}
+
+TEST_F(ToolTest, TestLoadgenHmsEnabled) {
+  ExternalMiniClusterOptions opts;
+  opts.hms_mode = HmsMode::ENABLE_HIVE_METASTORE;
+  NO_FATALS(StartExternalMiniCluster(std::move(opts)));
+  string out;
+  NO_FATALS(RunActionStdoutString(Substitute("perf loadgen $0",
+      HostPort::ToCommaSeparatedString(cluster_->master_rpc_addrs())), &out));
+}
+
 // Run the loadgen, generating a few different partitioning schemas.
 TEST_F(ToolTest, TestLoadgenAutoGenTablePartitioning) {
   {

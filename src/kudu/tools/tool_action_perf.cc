@@ -289,6 +289,12 @@ DEFINE_string(string_fixed, "",
 DEFINE_int32(string_len, 32,
              "Length of strings to put into string and binary columns. This "
              "parameter is not in effect if '--string_fixed' is specified.");
+DEFINE_string(auto_database, "default",
+              "The database in which to create the automatically generated table. "
+              "If --table_name is set, this flag has no effect, since a table is "
+              "not created. This flag is useful primarily when the Hive Metastore "
+              "integration is enabled in the cluster. If empty, no database is "
+              "used.");
 DEFINE_string(table_name, "",
               "Name of an existing table to use for the test. The test will "
               "determine the structure of the table schema and "
@@ -654,7 +660,9 @@ Status TestLoadGenerator(const RunnerContext& context) {
     // The auto-created table case.
     is_auto_table = true;
     ObjectIdGenerator oid_generator;
-    table_name = "loadgen_auto_" + oid_generator.Next();
+    table_name = Substitute("$0loadgen_auto_$1",
+        FLAGS_auto_database.empty() ? "" : FLAGS_auto_database + ".",
+        oid_generator.Next());
     KuduSchema schema;
     KuduSchemaBuilder b;
     b.AddColumn(kKeyColumnName)->Type(KuduColumnSchema::INT64)->NotNull()->PrimaryKey();
@@ -757,6 +765,7 @@ unique_ptr<Mode> BuildPerfMode() {
           "Comma-separated list of master addresses to run against. "
           "Addresses are in 'hostname:port' form where port may be omitted "
           "if a master server listens at the default port." })
+      .AddOptionalParameter("auto_database")
       .AddOptionalParameter("buffer_flush_watermark_pct")
       .AddOptionalParameter("buffer_size_bytes")
       .AddOptionalParameter("buffers_num")
