@@ -80,7 +80,7 @@ esac
 
 
 if [ ! -e $APP_HOME/gradle/wrapper/gradle-wrapper.jar ]; then
-   curl -s -o $APP_HOME/gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v4.7.0/gradle/wrapper/gradle-wrapper.jar
+   curl -s -o $APP_HOME/gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v4.9.0/gradle/wrapper/gradle-wrapper.jar
 fi
 
 CLASSPATH=$APP_HOME/gradle/wrapper/gradle-wrapper.jar

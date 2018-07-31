@@ -31,12 +31,12 @@ dependencies {
   compile "com.commercehub.gradle.plugin:gradle-avro-plugin:0.14.2"
   compile "com.github.ben-manes:gradle-versions-plugin:0.20.0"
   compile "com.github.jengelman.gradle.plugins:shadow:2.0.4"
-  compile "com.google.protobuf:protobuf-gradle-plugin:0.8.5"
+  compile "com.google.protobuf:protobuf-gradle-plugin:0.8.6"
   compile "com.netflix.nebula:nebula-clojure-plugin:5.1.0"
   compile "gradle.plugin.com.github.spotbugs:spotbugs-gradle-plugin:1.6.2"
   compile "io.spring.gradle:propdeps-plugin:0.0.9.RELEASE"
-  compile "net.ltgt.gradle:gradle-errorprone-plugin:0.0.14"
-  compile "ru.vyarus:gradle-animalsniffer-plugin:1.4.3"
+  compile "net.ltgt.gradle:gradle-errorprone-plugin:0.0.16"
+  compile "ru.vyarus:gradle-animalsniffer-plugin:1.4.5"
   compile 'com.google.code.gson:gson:2.8.5'
   compile "cz.alenkacz:gradle-scalafmt:1.6.0"
 }
