@@ -99,6 +99,10 @@ DEFINE_bool(output_replica_distribution_details, false,
             "Whether to output details on per-table and per-server "
             "replica distribution");
 
+DEFINE_bool(report_only, false,
+            "Whether to report on table- and cluster-wide replica distribution "
+            "skew and exit without doing any actual rebalancing");
+
 static bool ValidateMoveSingleReplicas(const char* flag_name,
                                        const string& flag_value) {
   const vector<string> allowed_values = { "auto", "enabled", "disabled" };
@@ -263,6 +267,10 @@ Status RunRebalance(const RunnerContext& context) {
   // Print info on pre-rebalance distribution of replicas.
   RETURN_NOT_OK(rebalancer.PrintStats(cout));
 
+  if (FLAGS_report_only) {
+    return Status::OK();
+  }
+
   Rebalancer::RunStatus result_status;
   size_t moves_count;
   RETURN_NOT_OK(rebalancer.Run(&result_status, &moves_count));
@@ -345,6 +353,7 @@ unique_ptr<Mode> BuildClusterMode() {
         .AddOptionalParameter("max_staleness_interval_sec")
         .AddOptionalParameter("move_single_replicas")
         .AddOptionalParameter("output_replica_distribution_details")
+        .AddOptionalParameter("report_only")
         .AddOptionalParameter("tables")
         .Build();
     builder.AddAction(std::move(rebalance));

@@ -1339,6 +1339,44 @@ static string ToolRunInfo(const Status& s, const string& out, const string& err)
   return str.str();
 }
 
+TEST_F(AdminCliTest, RebalancerReportOnly) {
+  static const char kReferenceOutput[] =
+    R"***(Per-server replica distribution summary:
+       Statistic       |  Value
+-----------------------+----------
+ Minimum Replica Count | 0
+ Maximum Replica Count | 1
+ Average Replica Count | 0.600000
+
+Per-table replica distribution summary:
+ Replica Skew |  Value
+--------------+----------
+ Minimum      | 1
+ Maximum      | 1
+ Average      | 1.000000)***";
+
+  FLAGS_num_tablet_servers = 5;
+  NO_FATALS(BuildAndStart());
+
+  string out;
+  string err;
+  Status s = RunKuduTool({
+    "cluster",
+    "rebalance",
+    cluster_->master()->bound_rpc_addr().ToString(),
+    "--report_only",
+  }, &out, &err);
+  ASSERT_TRUE(s.ok()) << ToolRunInfo(s, out, err);
+  // The rebalancer should report on tablet replica distribution. The output
+  // should match the reference report: the distribution of the replicas
+  // is 100% repeatable given the number of tables created by the test,
+  // the replication factor and the number of tablet servers.
+  ASSERT_STR_CONTAINS(out, kReferenceOutput);
+  // The actual rebalancing should not run.
+  ASSERT_STR_NOT_CONTAINS(out, "rebalancing is complete:")
+      << ToolRunInfo(s, out, err);
+}
+
 // Make sure the rebalancer doesn't start if a tablet server is down.
 class RebalanceStartCriteriaTest :
     public AdminCliTest,
