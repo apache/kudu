@@ -20,10 +20,13 @@ import scala.collection.JavaConverters._
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.Row
-import org.apache.spark.{Partition, SparkContext, TaskContext}
+import org.apache.spark.Partition
+import org.apache.spark.SparkContext
+import org.apache.spark.TaskContext
 
 import org.apache.kudu.client._
-import org.apache.kudu.{Type, client}
+import org.apache.kudu.Type
+import org.apache.kudu.client
 
 /**
  * A Resilient Distributed Dataset backed by a Kudu table.
@@ -79,16 +82,13 @@ class KuduRDD private[kudu] (
         if (scanLocality == ReplicaSelection.LEADER_ONLY) {
           locations = Array(token.getTablet.getLeaderReplica.getRpcHost)
         } else {
-          locations =
-            token.getTablet.getReplicas.asScala.map(_.getRpcHost).toArray
+          locations = token.getTablet.getReplicas.asScala.map(_.getRpcHost).toArray
         }
         new KuduPartition(index, token.serialize(), locations)
     }.toArray
   }
 
-  override def compute(
-      part: Partition,
-      taskContext: TaskContext): Iterator[Row] = {
+  override def compute(part: Partition, taskContext: TaskContext): Iterator[Row] = {
     val client: KuduClient = kuduContext.syncClient
     val partition: KuduPartition = part.asInstanceOf[KuduPartition]
     val scanner =
@@ -115,9 +115,7 @@ private class KuduPartition(
  * @param scanner the wrapped scanner
  * @param kuduContext the kudu context
  */
-private class RowIterator(
-    private val scanner: KuduScanner,
-    private val kuduContext: KuduContext)
+private class RowIterator(private val scanner: KuduScanner, private val kuduContext: KuduContext)
     extends Iterator[Row] {
 
   private var currentIterator: RowResultIterator = null
@@ -131,8 +129,7 @@ private class RowIterator(
       currentIterator = scanner.nextRows()
       // Update timestampAccumulator with the client's last propagated
       // timestamp on each executor.
-      kuduContext.timestampAccumulator.add(
-        kuduContext.syncClient.getLastPropagatedTimestamp)
+      kuduContext.timestampAccumulator.add(kuduContext.syncClient.getLastPropagatedTimestamp)
     }
     currentIterator.hasNext
   }

@@ -19,16 +19,21 @@ package org.apache.kudu.backup
 import java.io.InputStreamReader
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
-import java.nio.file.{Path, Paths}
+import java.nio.file.Path
+import java.nio.file.Paths
 
 import com.google.common.io.CharStreams
 import com.google.protobuf.util.JsonFormat
-import org.apache.hadoop.fs.{FileSystem, Path => HPath}
+import org.apache.hadoop.fs.FileSystem
+import org.apache.hadoop.fs.{Path => HPath}
 import org.apache.kudu.backup.Backup.TableMetadataPB
-import org.apache.kudu.spark.kudu.{KuduContext, KuduWriteOptions}
+import org.apache.kudu.spark.kudu.KuduContext
+import org.apache.kudu.spark.kudu.KuduWriteOptions
 import org.apache.spark.sql.SparkSession
-import org.apache.yetus.audience.{InterfaceAudience, InterfaceStability}
-import org.slf4j.{Logger, LoggerFactory}
+import org.apache.yetus.audience.InterfaceAudience
+import org.apache.yetus.audience.InterfaceStability
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
@@ -62,26 +67,20 @@ object KuduRestore {
       val df = session.sqlContext.read
         .format(metadata.getDataFormat)
         .load(tablePath.toString)
-      val writeOptions = new KuduWriteOptions(
-        ignoreDuplicateRowErrors = false,
-        ignoreNull = false)
+      val writeOptions = new KuduWriteOptions(ignoreDuplicateRowErrors = false, ignoreNull = false)
       // TODO: Use client directly for more control?
       // (session timeout, consistency mode, flush interval, mutation buffer space)
       context.insertRows(df, restoreName, writeOptions)
     }
   }
 
-  private def getMetadataPath(
-      tableName: String,
-      options: KuduRestoreOptions): Path = {
+  private def getMetadataPath(tableName: String, options: KuduRestoreOptions): Path = {
     val rootPath =
       if (options.metadataPath.isEmpty) options.path else options.metadataPath
     Paths.get(rootPath).resolve(tableName)
   }
 
-  private def readTableMetadata(
-      path: Path,
-      session: SparkSession): TableMetadataPB = {
+  private def readTableMetadata(path: Path, session: SparkSession): TableMetadataPB = {
     val conf = session.sparkContext.hadoopConfiguration
     val hPath = new HPath(path.resolve(TableMetadata.MetadataFileName).toString)
     val fs = hPath.getFileSystem(conf)
@@ -96,8 +95,7 @@ object KuduRestore {
   def main(args: Array[String]): Unit = {
     val options = KuduRestoreOptions
       .parse(args)
-      .getOrElse(
-        throw new IllegalArgumentException("could not parse the arguments"))
+      .getOrElse(throw new IllegalArgumentException("could not parse the arguments"))
 
     val session = SparkSession
       .builder()

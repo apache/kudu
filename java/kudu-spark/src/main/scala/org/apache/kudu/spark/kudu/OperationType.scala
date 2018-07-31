@@ -17,7 +17,8 @@
 
 package org.apache.kudu.spark.kudu
 
-import org.apache.kudu.client.{KuduTable, Operation}
+import org.apache.kudu.client.KuduTable
+import org.apache.kudu.client.Operation
 
 /**
  * OperationType enumerates the types of Kudu write operations.

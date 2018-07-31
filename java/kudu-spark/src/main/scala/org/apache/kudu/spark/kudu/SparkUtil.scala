@@ -3,9 +3,13 @@ package org.apache.kudu.spark.kudu
 import java.util
 
 import org.apache.kudu.ColumnTypeAttributes.ColumnTypeAttributesBuilder
-import org.apache.kudu.{ColumnSchema, ColumnTypeAttributes, Schema, Type}
+import org.apache.kudu.ColumnSchema
+import org.apache.kudu.ColumnTypeAttributes
+import org.apache.kudu.Schema
+import org.apache.kudu.Type
 import org.apache.spark.sql.types._
-import org.apache.yetus.audience.{InterfaceAudience, InterfaceStability}
+import org.apache.yetus.audience.InterfaceAudience
+import org.apache.yetus.audience.InterfaceStability
 
 import scala.collection.JavaConverters._
 
@@ -66,9 +70,7 @@ object SparkUtil {
    * @param fields an optional column projection
    * @return the SparkSQL schema
    */
-  def sparkSchema(
-      kuduSchema: Schema,
-      fields: Option[Seq[String]] = None): StructType = {
+  def sparkSchema(kuduSchema: Schema, fields: Option[Seq[String]] = None): StructType = {
     val kuduColumns = fields match {
       case Some(fieldNames) => fieldNames.map(kuduSchema.getColumn)
       case None => kuduSchema.getColumns.asScala
@@ -96,8 +98,7 @@ object SparkUtil {
       kuduCols.add(col)
     }
     // now add the non-key columns
-    for (field <- sparkSchema.fields.filter(field =>
-        !keys.contains(field.name))) {
+    for (field <- sparkSchema.fields.filter(field => !keys.contains(field.name))) {
       val col = createColumnSchema(field, isKey = false)
       kuduCols.add(col)
     }
@@ -111,9 +112,7 @@ object SparkUtil {
    * @param isKey true if the column is a key
    * @return the Kudu column schema
    */
-  private def createColumnSchema(
-      field: StructField,
-      isKey: Boolean): ColumnSchema = {
+  private def createColumnSchema(field: StructField, isKey: Boolean): ColumnSchema = {
     val kt = sparkTypeToKuduType(field.dataType)
     val col = new ColumnSchema.ColumnSchemaBuilder(field.name, kt)
       .key(isKey)

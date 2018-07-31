@@ -25,8 +25,11 @@ import org.apache.kudu.spark.kudu.KuduContext
 import org.apache.kudu.util.HybridTimeUtil
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.Row
-import org.apache.spark.{Partition, SparkContext, TaskContext}
-import org.apache.yetus.audience.{InterfaceAudience, InterfaceStability}
+import org.apache.spark.Partition
+import org.apache.spark.SparkContext
+import org.apache.spark.TaskContext
+import org.apache.yetus.audience.InterfaceAudience
+import org.apache.yetus.audience.InterfaceStability
 
 import scala.collection.JavaConverters._
 
@@ -75,9 +78,7 @@ class KuduBackupRDD private[kudu] (
   // TODO: Do we need a custom spark partitioner for any guarantees?
   // override val partitioner = None
 
-  override def compute(
-      part: Partition,
-      taskContext: TaskContext): Iterator[Row] = {
+  override def compute(part: Partition, taskContext: TaskContext): Iterator[Row] = {
     val client: KuduClient = kuduContext.syncClient
     val partition: KuduBackupPartition = part.asInstanceOf[KuduBackupPartition]
     // TODO: Get deletes and updates for incremental backups.
@@ -91,10 +92,7 @@ class KuduBackupRDD private[kudu] (
   }
 }
 
-private case class KuduBackupPartition(
-    index: Int,
-    scanToken: Array[Byte],
-    locations: Array[String])
+private case class KuduBackupPartition(index: Int, scanToken: Array[Byte], locations: Array[String])
     extends Partition
 
 /**
@@ -105,8 +103,7 @@ private case class KuduBackupPartition(
  * that takes the job partitions and task context and expects to return an Iterator[Row].
  * This implementation facilitates that.
  */
-private class RowIterator(private val scanner: KuduScanner)
-    extends Iterator[Row] {
+private class RowIterator(private val scanner: KuduScanner) extends Iterator[Row] {
 
   private var currentIterator: RowResultIterator = _
 
@@ -138,8 +135,7 @@ private class RowIterator(private val scanner: KuduScanner)
         case Type.BINARY => rowResult.getBinaryCopy(i)
         case Type.DECIMAL => rowResult.getDecimal(i)
         case _ =>
-          throw new RuntimeException(
-            s"Unsupported column type: ${rowResult.getColumnType(i)}")
+          throw new RuntimeException(s"Unsupported column type: ${rowResult.getColumnType(i)}")
       }
   }
 

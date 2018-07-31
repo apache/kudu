@@ -22,17 +22,26 @@ import java.util
 
 import com.google.common.base.Objects
 import org.apache.commons.io.FileUtils
-import org.apache.kudu.ColumnSchema.{ColumnSchemaBuilder, CompressionAlgorithm, Encoding}
+import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder
+import org.apache.kudu.ColumnSchema.CompressionAlgorithm
+import org.apache.kudu.ColumnSchema.Encoding
 import org.apache.kudu.client.PartitionSchema.HashBucketSchema
-import org.apache.kudu.client.{CreateTableOptions, KuduTable, PartialRow, PartitionSchema, TestUtils}
-import org.apache.kudu.{ColumnSchema, Schema, Type}
+import org.apache.kudu.client.CreateTableOptions
+import org.apache.kudu.client.KuduTable
+import org.apache.kudu.client.PartialRow
+import org.apache.kudu.client.PartitionSchema
+import org.apache.kudu.client.TestUtils
+import org.apache.kudu.ColumnSchema
+import org.apache.kudu.Schema
+import org.apache.kudu.Type
 import org.apache.kudu.spark.kudu._
 import org.apache.kudu.util.DecimalUtil
 import org.junit.Assert._
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
-import org.slf4j.{Logger, LoggerFactory}
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 
 import scala.collection.JavaConverters._
 import scala.util.Random
@@ -47,7 +56,8 @@ class TestKuduBackup extends KuduTestSuite {
 
     backupAndRestore(tableName)
 
-    val rdd = kuduContext.kuduRDD(ss.sparkContext, s"$tableName-restore", List("key"))
+    val rdd =
+      kuduContext.kuduRDD(ss.sparkContext, s"$tableName-restore", List("key"))
     assert(rdd.collect.length == 100)
 
     val tA = kuduClient.openTable(tableName)
@@ -70,7 +80,8 @@ class TestKuduBackup extends KuduTestSuite {
 
     backupAndRestore(impalaTableName)
 
-    val rdd = kuduContext.kuduRDD(ss.sparkContext, s"$impalaTableName-restore", List("key"))
+    val rdd = kuduContext
+      .kuduRDD(ss.sparkContext, s"$impalaTableName-restore", List("key"))
     // Only verifying the file contents could be read, the contents are expected to be empty.
     assert(rdd.isEmpty())
   }
@@ -86,7 +97,8 @@ class TestKuduBackup extends KuduTestSuite {
     backupAndRestore(tableName)
 
     val backupRows = kuduContext.kuduRDD(ss.sparkContext, s"$tableName").collect
-    val restoreRows = kuduContext.kuduRDD(ss.sparkContext, s"$tableName-restore").collect
+    val restoreRows =
+      kuduContext.kuduRDD(ss.sparkContext, s"$tableName-restore").collect
     assertEquals(backupRows.length, restoreRows.length)
 
     val tA = kuduClient.openTable(tableName)
@@ -110,10 +122,12 @@ class TestKuduBackup extends KuduTestSuite {
 
     backupAndRestore(table1Name, table2Name)
 
-    val rdd1 = kuduContext.kuduRDD(ss.sparkContext, s"$table1Name-restore", List("key"))
+    val rdd1 =
+      kuduContext.kuduRDD(ss.sparkContext, s"$table1Name-restore", List("key"))
     assertResult(numRows)(rdd1.count())
 
-    val rdd2 = kuduContext.kuduRDD(ss.sparkContext, s"$table2Name-restore", List("key"))
+    val rdd2 =
+      kuduContext.kuduRDD(ss.sparkContext, s"$table2Name-restore", List("key"))
     assertResult(numRows)(rdd2.count())
   }
 
@@ -130,14 +144,15 @@ class TestKuduBackup extends KuduTestSuite {
   def columnsMatch(before: ColumnSchema, after: ColumnSchema): Boolean = {
     if (before eq after) return true
     Objects.equal(before.getName, after.getName) &&
-      Objects.equal(before.getType, after.getType) &&
-      Objects.equal(before.isKey, after.isKey) &&
-      Objects.equal(before.isNullable, after.isNullable) &&
-      defaultValuesMatch(before.getDefaultValue, after.getDefaultValue) &&
-      Objects.equal(before.getDesiredBlockSize, after.getDesiredBlockSize) &&
-      Objects.equal(before.getEncoding, after.getEncoding) &&
-      Objects.equal(before.getCompressionAlgorithm, after.getCompressionAlgorithm) &&
-      Objects.equal(before.getTypeAttributes, after.getTypeAttributes)
+    Objects.equal(before.getType, after.getType) &&
+    Objects.equal(before.isKey, after.isKey) &&
+    Objects.equal(before.isNullable, after.isNullable) &&
+    defaultValuesMatch(before.getDefaultValue, after.getDefaultValue) &&
+    Objects.equal(before.getDesiredBlockSize, after.getDesiredBlockSize) &&
+    Objects.equal(before.getEncoding, after.getEncoding) &&
+    Objects
+      .equal(before.getCompressionAlgorithm, after.getCompressionAlgorithm) &&
+    Objects.equal(before.getTypeAttributes, after.getTypeAttributes)
   }
 
   // Special handling because default values can be a byte array which is not
@@ -161,14 +176,14 @@ class TestKuduBackup extends KuduTestSuite {
       HashBucketSchemasMatch(beforeBuckets(i), afterBuckets(i))
     }
     hashBucketsMatch &&
-      Objects.equal(before.getRangeSchema.getColumnIds, after.getRangeSchema.getColumnIds)
+    Objects.equal(before.getRangeSchema.getColumnIds, after.getRangeSchema.getColumnIds)
   }
 
   def HashBucketSchemasMatch(before: HashBucketSchema, after: HashBucketSchema): Boolean = {
     if (before eq after) return true
     Objects.equal(before.getColumnIds, after.getColumnIds) &&
-      Objects.equal(before.getNumBuckets, after.getNumBuckets) &&
-      Objects.equal(before.getSeed, after.getSeed)
+    Objects.equal(before.getNumBuckets, after.getNumBuckets) &&
+    Objects.equal(before.getSeed, after.getSeed)
   }
 
   // TODO: Move to a test utility in kudu-client since it's generally useful.
@@ -177,8 +192,11 @@ class TestKuduBackup extends KuduTestSuite {
     val keyCount = Random.nextInt(columnCount) + 1 // At least one key.
 
     val types = Type.values()
-    val keyTypes = types.filter { t => !Array(Type.BOOL, Type.FLOAT, Type.DOUBLE).contains(t)}
-    val compressions = CompressionAlgorithm.values().filter(_ != CompressionAlgorithm.UNKNOWN)
+    val keyTypes = types.filter { t =>
+      !Array(Type.BOOL, Type.FLOAT, Type.DOUBLE).contains(t)
+    }
+    val compressions =
+      CompressionAlgorithm.values().filter(_ != CompressionAlgorithm.UNKNOWN)
     val blockSizes = Array(0, 4096, 524288, 1048576) // Default, min, middle, max.
 
     val columns = (0 until columnCount).map { i =>
@@ -189,18 +207,22 @@ class TestKuduBackup extends KuduTestSuite {
         types(Random.nextInt(types.length))
       }
       val precision = Random.nextInt(DecimalUtil.MAX_DECIMAL_PRECISION) + 1
-      val scale =  Random.nextInt(precision)
+      val scale = Random.nextInt(precision)
       val typeAttributes = DecimalUtil.typeAttributes(precision, scale)
       val nullable = Random.nextBoolean() && !key
       val compression = compressions(Random.nextInt(compressions.length))
       val blockSize = blockSizes(Random.nextInt(blockSizes.length))
       val encodings = t match {
-        case Type.INT8 | Type.INT16 | Type.INT32 |Type.INT64 | Type.UNIXTIME_MICROS =>
+        case Type.INT8 | Type.INT16 | Type.INT32 | Type.INT64 | Type.UNIXTIME_MICROS =>
           Array(Encoding.AUTO_ENCODING, Encoding.PLAIN_ENCODING, Encoding.BIT_SHUFFLE, Encoding.RLE)
-        case Type.FLOAT | Type.DOUBLE |Type.DECIMAL =>
+        case Type.FLOAT | Type.DOUBLE | Type.DECIMAL =>
           Array(Encoding.AUTO_ENCODING, Encoding.PLAIN_ENCODING, Encoding.BIT_SHUFFLE)
         case Type.STRING | Type.BINARY =>
-          Array(Encoding.AUTO_ENCODING, Encoding.PLAIN_ENCODING, Encoding.PREFIX_ENCODING, Encoding.DICT_ENCODING)
+          Array(
+            Encoding.AUTO_ENCODING,
+            Encoding.PLAIN_ENCODING,
+            Encoding.PREFIX_ENCODING,
+            Encoding.DICT_ENCODING)
         case Type.BOOL =>
           Array(Encoding.AUTO_ENCODING, Encoding.PLAIN_ENCODING, Encoding.RLE)
         case _ => throw new IllegalArgumentException(s"Unsupported type $t")
@@ -223,15 +245,18 @@ class TestKuduBackup extends KuduTestSuite {
           t match {
             case Type.BOOL => Random.nextBoolean()
             case Type.INT8 => Random.nextInt(Byte.MaxValue).asInstanceOf[Byte]
-            case Type.INT16 => Random.nextInt(Short.MaxValue).asInstanceOf[Short]
+            case Type.INT16 =>
+              Random.nextInt(Short.MaxValue).asInstanceOf[Short]
             case Type.INT32 => Random.nextInt()
             case Type.INT64 | Type.UNIXTIME_MICROS => Random.nextLong()
             case Type.FLOAT => Random.nextFloat()
             case Type.DOUBLE => Random.nextDouble()
             case Type.DECIMAL =>
-              DecimalUtil.minValue(typeAttributes.getPrecision, typeAttributes.getScale)
+              DecimalUtil
+                .minValue(typeAttributes.getPrecision, typeAttributes.getScale)
             case Type.STRING => Random.nextString(Random.nextInt(100))
-            case Type.BINARY => Random.nextString(Random.nextInt(100)).getBytes()
+            case Type.BINARY =>
+              Random.nextString(Random.nextInt(100)).getBytes()
             case _ => throw new IllegalArgumentException(s"Unsupported type $t")
           }
         builder.defaultValue(defaultValue)
@@ -249,7 +274,7 @@ class TestKuduBackup extends KuduTestSuite {
       val hashColumn = keyColumns(level)
       val hashBuckets = Random.nextInt(8) + 2 // Minimum of 2 hash buckets.
       val hashSeed = Random.nextInt()
-      options.addHashPartitions(List(hashColumn.getName).asJava,  hashBuckets, hashSeed)
+      options.addHashPartitions(List(hashColumn.getName).asJava, hashBuckets, hashSeed)
     }
     val hasRangePartition = Random.nextBoolean() && keyColumns.exists(_.getType == Type.INT64)
     if (hasRangePartition) {
@@ -307,7 +332,8 @@ class TestKuduBackup extends KuduTestSuite {
               row.addDouble(col.getName, Random.nextDouble())
             case Type.DECIMAL =>
               val attributes = col.getTypeAttributes
-              val max = DecimalUtil.maxValue(attributes.getPrecision, attributes.getScale)
+              val max = DecimalUtil
+                .maxValue(attributes.getPrecision, attributes.getScale)
               row.addDecimal(col.getName, max)
             case Type.STRING =>
               row.addString(col.getName, Random.nextString(Random.nextInt(100)))
@@ -327,10 +353,12 @@ class TestKuduBackup extends KuduTestSuite {
     val dir = Files.createTempDirectory("backup")
     val path = dir.toUri.toString
 
-    val backupOptions = new KuduBackupOptions(tableNames, path, miniCluster.getMasterAddresses)
+    val backupOptions =
+      new KuduBackupOptions(tableNames, path, miniCluster.getMasterAddresses)
     KuduBackup.run(backupOptions, ss)
 
-    val restoreOptions = new KuduRestoreOptions(tableNames, path, miniCluster.getMasterAddresses)
+    val restoreOptions =
+      new KuduRestoreOptions(tableNames, path, miniCluster.getMasterAddresses)
     KuduRestore.run(restoreOptions, ss)
 
     FileUtils.deleteDirectory(dir.toFile)

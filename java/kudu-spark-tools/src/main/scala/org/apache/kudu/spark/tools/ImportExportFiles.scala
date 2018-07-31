@@ -23,9 +23,11 @@ import org.apache.kudu.client.KuduClient
 import org.apache.kudu.spark.tools.ImportExportKudu.ArgsCls
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.SparkConf
-import org.slf4j.{Logger, LoggerFactory}
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 import org.apache.kudu.spark.kudu._
-import org.apache.yetus.audience.{InterfaceAudience, InterfaceStability}
+import org.apache.yetus.audience.InterfaceAudience
+import org.apache.yetus.audience.InterfaceStability
 
 @InterfaceAudience.Public
 @InterfaceStability.Unstable //TODO: Unstable due to KUDU-2454

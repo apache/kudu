@@ -62,8 +62,7 @@
         <maven-shade-plugin.version>3.1.1</maven-shade-plugin.version>
         <maven-surefire-plugin.version>2.21.0</maven-surefire-plugin.version>
         <scala-maven-plugin.version>3.3.2</scala-maven-plugin.version>
-        <mvn-scalafmt-plugin.version>0.7</mvn-scalafmt-plugin.version>
-        <scalafmt.version>1.4.0</scalafmt.version>
+        <mvn-scalafmt-plugin.version>0.7_1.4.0</mvn-scalafmt-plugin.version>
 
         <!-- Library dependencies -->
         <async.version>1.4.1</async.version>
@@ -184,10 +183,9 @@
                 <plugin>
                     <groupId>org.antipathy</groupId>
                     <artifactId>mvn-scalafmt</artifactId>
-                    <version>${mvn-scalafmt-plugin.version}_${scalafmt.version}</version>
+                    <version>${mvn-scalafmt-plugin.version}</version>
                     <configuration>
-                        <parameters>--diff</parameters>
-                        <configLocation>${user.dir}/.scalafmt.conf</configLocation>
+                        <configLocation>.scalafmt.conf</configLocation>
                     </configuration>
                     <executions>
                         <execution>

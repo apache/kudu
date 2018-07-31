@@ -29,14 +29,18 @@ class ITBigLinkedListTest extends KuduTestSuite {
 
   @Test
   def testSparkITBLL() {
-    Generator.testMain(Array("--tasks=2",
-                             "--lists=2",
-                             "--nodes=10000",
-                             "--hash-partitions=2",
-                             "--range-partitions=2",
-                             "--replicas=1",
-                            s"--master-addrs=${miniCluster.getMasterAddresses}"),
-                       ss)
+    Generator.testMain(
+      Array(
+        "--tasks=2",
+        "--lists=2",
+        "--nodes=10000",
+        "--hash-partitions=2",
+        "--range-partitions=2",
+        "--replicas=1",
+        s"--master-addrs=${miniCluster.getMasterAddresses}"
+      ),
+      ss
+    )
 
     // Insert bad nodes in order to test the verifier:
     //
@@ -51,9 +55,7 @@ class ITBigLinkedListTest extends KuduTestSuite {
     val session = kuduClient.newSession()
     session.setFlushMode(FlushMode.MANUAL_FLUSH)
 
-    for ((key1, key2, prev1, prev2) <- List((0, 0, -1, -1),
-                                            (0, 1, 0, 0),
-                                            (0, 2, 0, 0))) {
+    for ((key1, key2, prev1, prev2) <- List((0, 0, -1, -1), (0, 1, 0, 0), (0, 2, 0, 0))) {
       val insert = table.newInsert()
       insert.getRow.addLong(COLUMN_KEY_ONE_IDX, key1)
       insert.getRow.addLong(COLUMN_KEY_TWO_IDX, key2)
@@ -73,7 +75,8 @@ class ITBigLinkedListTest extends KuduTestSuite {
       }
     }
 
-    val counts = Verifier.testMain(Array(s"--master-addrs=${miniCluster.getMasterAddresses}"), ss)
+    val counts = Verifier
+      .testMain(Array(s"--master-addrs=${miniCluster.getMasterAddresses}"), ss)
     assertEquals(2 * 2 * 10000, counts.referenced)
     assertEquals(1, counts.extrareferences)
     assertEquals(2, counts.unreferenced)

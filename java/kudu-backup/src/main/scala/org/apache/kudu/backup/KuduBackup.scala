@@ -18,16 +18,20 @@ package org.apache.kudu.backup
 
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
-import java.nio.file.{Path, Paths}
+import java.nio.file.Path
+import java.nio.file.Paths
 
 import com.google.protobuf.util.JsonFormat
 import org.apache.hadoop.fs.{Path => HPath}
 import org.apache.kudu.backup.Backup.TableMetadataPB
 import org.apache.kudu.spark.kudu.KuduContext
 import org.apache.kudu.spark.kudu.SparkUtil._
-import org.apache.spark.sql.{SaveMode, SparkSession}
-import org.apache.yetus.audience.{InterfaceAudience, InterfaceStability}
-import org.slf4j.{Logger, LoggerFactory}
+import org.apache.spark.sql.SaveMode
+import org.apache.spark.sql.SparkSession
+import org.apache.yetus.audience.InterfaceAudience
+import org.apache.yetus.audience.InterfaceStability
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
@@ -78,8 +82,7 @@ object KuduBackup {
   def main(args: Array[String]): Unit = {
     val options = KuduBackupOptions
       .parse(args)
-      .getOrElse(
-        throw new IllegalArgumentException("could not parse the arguments"))
+      .getOrElse(throw new IllegalArgumentException("could not parse the arguments"))
 
     val session = SparkSession
       .builder()

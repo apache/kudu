@@ -18,7 +18,8 @@ package org.apache.kudu.backup
 
 import java.net.InetAddress
 
-import org.apache.yetus.audience.{InterfaceAudience, InterfaceStability}
+import org.apache.yetus.audience.InterfaceAudience
+import org.apache.yetus.audience.InterfaceStability
 import scopt.OptionParser
 
 @InterfaceAudience.Private
@@ -41,8 +42,7 @@ object KuduRestoreOptions {
     new OptionParser[KuduRestoreOptions]("KuduRestore") {
       opt[String]("path")
         .action((v, o) => o.copy(path = v))
-        .text(
-          "The root path to the backup data. Accepts any Spark compatible path.")
+        .text("The root path to the backup data. Accepts any Spark compatible path.")
         .optional()
 
       opt[String]("kuduMasterAddresses")
@@ -52,8 +52,7 @@ object KuduRestoreOptions {
 
       opt[Boolean]("createTables")
         .action((v, o) => o.copy(createTables = v))
-        .text(
-          "true to create tables during restore, false if they already exist.")
+        .text("true to create tables during restore, false if they already exist.")
         .optional()
 
       opt[String]("tableSuffix")

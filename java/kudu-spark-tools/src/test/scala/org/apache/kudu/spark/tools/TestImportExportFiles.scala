@@ -20,7 +20,8 @@ package org.apache.kudu.spark.tools
 import java.nio.file.Paths
 
 import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder
-import org.apache.kudu.{Schema, Type}
+import org.apache.kudu.Schema
+import org.apache.kudu.Type
 import org.apache.kudu.client.CreateTableOptions
 import org.apache.kudu.spark.kudu._
 import org.junit.Assert._
@@ -40,29 +41,39 @@ class TestImportExportFiles extends KuduTestSuite {
       val columns = ImmutableList.of(
         new ColumnSchemaBuilder("key", Type.STRING).key(true).build(),
         new ColumnSchemaBuilder("column1_i", Type.STRING).build(),
-        new ColumnSchemaBuilder("column2_d", Type.STRING).nullable(true).build(),
+        new ColumnSchemaBuilder("column2_d", Type.STRING)
+          .nullable(true)
+          .build(),
         new ColumnSchemaBuilder("column3_s", Type.STRING).build(),
-        new ColumnSchemaBuilder("column4_b", Type.STRING).build())
+        new ColumnSchemaBuilder("column4_b", Type.STRING).build()
+      )
       new Schema(columns)
     }
-    val tableOptions = new CreateTableOptions().setRangePartitionColumns(List("key").asJava)
+    val tableOptions = new CreateTableOptions()
+      .setRangePartitionColumns(List("key").asJava)
       .setNumReplicas(1)
     kuduClient.createTable(TABLE_NAME, schema, tableOptions)
 
     // Get the absolute path of the resource file.
-    val schemaResource = classOf[TestImportExportFiles].getResource(TABLE_DATA_PATH)
+    val schemaResource =
+      classOf[TestImportExportFiles].getResource(TABLE_DATA_PATH)
     val dataPath = Paths.get(schemaResource.toURI).toAbsolutePath
 
-    ImportExportFiles.testMain(Array("--operation=import",
-      "--format=csv",
-      s"--master-addrs=${miniCluster.getMasterAddresses}",
-      s"--path=$dataPath",
-      s"--table-name=$TABLE_NAME",
-      "--delimiter=,",
-      "--header=true",
-      "--inferschema=true"), ss)
+    ImportExportFiles.testMain(
+      Array(
+        "--operation=import",
+        "--format=csv",
+        s"--master-addrs=${miniCluster.getMasterAddresses}",
+        s"--path=$dataPath",
+        s"--table-name=$TABLE_NAME",
+        "--delimiter=,",
+        "--header=true",
+        "--inferschema=true"
+      ),
+      ss
+    )
     val rdd = kuduContext.kuduRDD(ss.sparkContext, TABLE_NAME, List("key"))
     assert(rdd.collect.length == 4)
-    assertEquals(rdd.collect().mkString(","),"[1],[2],[3],[4]")
+    assertEquals(rdd.collect().mkString(","), "[1],[2],[3],[4]")
   }
 }

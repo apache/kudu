@@ -21,15 +21,19 @@ import java.math.BigDecimal
 import com.google.protobuf.StringValue
 import org.apache.commons.net.util.Base64
 import org.apache.kudu.backup.Backup._
-import org.apache.kudu.ColumnSchema.{
-  ColumnSchemaBuilder,
-  CompressionAlgorithm,
-  Encoding
-}
+import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder
+import org.apache.kudu.ColumnSchema.CompressionAlgorithm
+import org.apache.kudu.ColumnSchema.Encoding
 import org.apache.kudu.ColumnTypeAttributes.ColumnTypeAttributesBuilder
-import org.apache.kudu.client.{Bytes, CreateTableOptions, KuduTable, PartialRow}
-import org.apache.kudu.{ColumnSchema, Schema, Type}
-import org.apache.yetus.audience.{InterfaceAudience, InterfaceStability}
+import org.apache.kudu.client.Bytes
+import org.apache.kudu.client.CreateTableOptions
+import org.apache.kudu.client.KuduTable
+import org.apache.kudu.client.PartialRow
+import org.apache.kudu.ColumnSchema
+import org.apache.kudu.Schema
+import org.apache.kudu.Type
+import org.apache.yetus.audience.InterfaceAudience
+import org.apache.yetus.audience.InterfaceStability
 
 import scala.collection.JavaConverters._
 
@@ -39,9 +43,7 @@ object TableMetadata {
 
   val MetadataFileName = ".kudu-metadata.json"
 
-  def getTableMetadata(
-      table: KuduTable,
-      options: KuduBackupOptions): TableMetadataPB = {
+  def getTableMetadata(table: KuduTable, options: KuduBackupOptions): TableMetadataPB = {
     val columns = table.getSchema.getColumns.asScala.map { col =>
       val builder = ColumnMetadataPB
         .newBuilder()
@@ -56,8 +58,7 @@ object TableMetadata {
         builder.setTypeAttributes(getTypeAttributesMetadata(col))
       }
       if (col.getDefaultValue != null) {
-        builder.setDefaultValue(
-          StringValue.of(valueToString(col.getDefaultValue, col.getType)))
+        builder.setDefaultValue(StringValue.of(valueToString(col.getDefaultValue, col.getType)))
       }
       builder.build()
     }
@@ -74,8 +75,7 @@ object TableMetadata {
       .build()
   }
 
-  private def getTypeAttributesMetadata(
-      col: ColumnSchema): ColumnTypeAttributesMetadataPB = {
+  private def getTypeAttributesMetadata(col: ColumnSchema): ColumnTypeAttributesMetadataPB = {
     val attributes = col.getTypeAttributes
     ColumnTypeAttributesMetadataPB
       .newBuilder()
@@ -94,8 +94,7 @@ object TableMetadata {
       .build()
   }
 
-  private def getHashPartitionsMetadata(
-      table: KuduTable): Seq[HashPartitionMetadataPB] = {
+  private def getHashPartitionsMetadata(table: KuduTable): Seq[HashPartitionMetadataPB] = {
     val tableSchema = table.getSchema
     val partitionSchema = table.getPartitionSchema
     partitionSchema.getHashBucketSchemas.asScala.map { hs =>
@@ -111,27 +110,19 @@ object TableMetadata {
     }
   }
 
-  private def getRangePartitionMetadata(
-      table: KuduTable): RangePartitionMetadataPB = {
+  private def getRangePartitionMetadata(table: KuduTable): RangePartitionMetadataPB = {
     val tableSchema = table.getSchema
     val partitionSchema = table.getPartitionSchema
-    val columnNames = partitionSchema.getRangeSchema.getColumnIds.asScala.map {
-      id =>
-        getColumnById(tableSchema, id).getName
+    val columnNames = partitionSchema.getRangeSchema.getColumnIds.asScala.map { id =>
+      getColumnById(tableSchema, id).getName
     }
 
     val bounds = table
       .getRangePartitions(table.getAsyncClient.getDefaultOperationTimeoutMs)
       .asScala
       .map { p =>
-        val lowerValues = getBoundValues(
-          p.getDecodedRangeKeyStart(table),
-          columnNames,
-          tableSchema)
-        val upperValues = getBoundValues(
-          p.getDecodedRangeKeyEnd(table),
-          columnNames,
-          tableSchema)
+        val lowerValues = getBoundValues(p.getDecodedRangeKeyStart(table), columnNames, tableSchema)
+        val upperValues = getBoundValues(p.getDecodedRangeKeyEnd(table), columnNames, tableSchema)
         RangeBoundsMetadataPB
           .newBuilder()
           .addAllUpperBounds(upperValues.asJava)
@@ -164,17 +155,11 @@ object TableMetadata {
     }
   }
 
-  private def getPartialRow(
-      values: Seq[ColumnValueMetadataPB],
-      schema: Schema): PartialRow = {
+  private def getPartialRow(values: Seq[ColumnValueMetadataPB], schema: Schema): PartialRow = {
     val row = schema.newPartialRow()
     values.foreach { v =>
       val colType = schema.getColumn(v.getColumnName).getType
-      addValue(
-        valueFromString(v.getValue, colType),
-        row,
-        v.getColumnName,
-        colType)
+      addValue(valueFromString(v.getValue, colType), row, v.getColumnName, colType)
     }
     row
   }
@@ -208,10 +193,7 @@ object TableMetadata {
     new Schema(columns.asJava)
   }
 
-  private def getValue(
-      row: PartialRow,
-      columnName: String,
-      colType: Type): Any = {
+  private def getValue(row: PartialRow, columnName: String, colType: Type): Any = {
     colType match {
       case Type.BOOL => row.getBoolean(columnName)
       case Type.INT8 => row.getByte(columnName)
@@ -228,11 +210,7 @@ object TableMetadata {
     }
   }
 
-  private def addValue(
-      value: Any,
-      row: PartialRow,
-      columnName: String,
-      colType: Type): Any = {
+  private def addValue(value: Any, row: PartialRow, columnName: String, colType: Type): Any = {
     colType match {
       case Type.BOOL => row.addBoolean(columnName, value.asInstanceOf[Boolean])
       case Type.INT8 => row.addByte(columnName, value.asInstanceOf[Byte])
@@ -309,11 +287,10 @@ object TableMetadata {
     val rangePartitionColumns =
       metadata.getPartitions.getRangePartitions.getColumnNamesList
     options.setRangePartitionColumns(rangePartitionColumns)
-    metadata.getPartitions.getRangePartitions.getBoundsList.asScala.foreach {
-      b =>
-        val lower = getPartialRow(b.getLowerBoundsList.asScala, schema)
-        val upper = getPartialRow(b.getUpperBoundsList.asScala, schema)
-        options.addRangePartition(lower, upper)
+    metadata.getPartitions.getRangePartitions.getBoundsList.asScala.foreach { b =>
+      val lower = getPartialRow(b.getLowerBoundsList.asScala, schema)
+      val upper = getPartialRow(b.getUpperBoundsList.asScala, schema)
+      options.addRangePartition(lower, upper)
     }
     options
   }

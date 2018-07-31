@@ -19,7 +19,8 @@ package org.apache.kudu.backup
 import java.net.InetAddress
 
 import org.apache.kudu.client.AsyncKuduClient
-import org.apache.yetus.audience.{InterfaceAudience, InterfaceStability}
+import org.apache.yetus.audience.InterfaceAudience
+import org.apache.yetus.audience.InterfaceStability
 import scopt.OptionParser
 
 @InterfaceAudience.Private
@@ -69,8 +70,7 @@ object KuduBackupOptions {
 
       opt[Int]("scanBatchSize")
         .action((v, o) => o.copy(scanBatchSize = v))
-        .text(
-          "The maximum number of bytes returned by the scanner, on each batch.")
+        .text("The maximum number of bytes returned by the scanner, on each batch.")
         .optional()
 
       opt[Int]("scanRequestTimeout")

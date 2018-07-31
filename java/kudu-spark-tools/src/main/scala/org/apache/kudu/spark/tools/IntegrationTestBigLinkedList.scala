@@ -20,16 +20,19 @@ package org.apache.kudu.spark.tools
 import java.net.InetAddress
 
 import org.apache.kudu.client.SessionConfiguration.FlushMode
-import org.apache.kudu.client.{KuduClient, KuduSession, KuduTable}
-import org.apache.kudu.mapreduce.tools.BigLinkedListCommon.{
-  Xoroshiro128PlusRandom,
-  _
-}
+import org.apache.kudu.client.KuduClient
+import org.apache.kudu.client.KuduSession
+import org.apache.kudu.client.KuduTable
+import org.apache.kudu.mapreduce.tools.BigLinkedListCommon.Xoroshiro128PlusRandom
+import org.apache.kudu.mapreduce.tools.BigLinkedListCommon._
 import org.apache.kudu.spark.kudu.KuduContext
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.{SparkConf, TaskContext}
-import org.apache.yetus.audience.{InterfaceAudience, InterfaceStability}
-import org.slf4j.{Logger, LoggerFactory}
+import org.apache.spark.SparkConf
+import org.apache.spark.TaskContext
+import org.apache.yetus.audience.InterfaceAudience
+import org.apache.yetus.audience.InterfaceStability
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 
 import scala.util.Try
 
@@ -107,13 +110,11 @@ object IntegrationTestBigLinkedList {
 }
 
 object Generator {
-  import IntegrationTestBigLinkedList.{
-    LOG,
-    defaultMasterAddrs,
-    fail,
-    nanosToHuman,
-    parseIntFlag
-  }
+  import IntegrationTestBigLinkedList.LOG
+  import IntegrationTestBigLinkedList.defaultMasterAddrs
+  import IntegrationTestBigLinkedList.fail
+  import IntegrationTestBigLinkedList.nanosToHuman
+  import IntegrationTestBigLinkedList.parseIntFlag
 
   def usage: String =
     s"""
@@ -180,11 +181,8 @@ object Generator {
     val client: KuduClient = kc.syncClient
     if (!client.tableExists(args.tableName)) {
       val schema = getTableSchema
-      val options = getCreateTableOptions(
-        schema,
-        args.replicas,
-        args.rangePartitions,
-        args.hashPartitions)
+      val options =
+        getCreateTableOptions(schema, args.replicas, args.rangePartitions, args.hashPartitions)
       client.createTable(args.tableName, getTableSchema, options)
     }
 
@@ -296,7 +294,9 @@ object Generator {
 }
 
 object Verifier {
-  import IntegrationTestBigLinkedList.{defaultMasterAddrs, fail, parseLongFlag}
+  import IntegrationTestBigLinkedList.defaultMasterAddrs
+  import IntegrationTestBigLinkedList.fail
+  import IntegrationTestBigLinkedList.parseLongFlag
 
   def usage: String =
     s"""
@@ -337,11 +337,7 @@ object Verifier {
     }
   }
 
-  case class Counts(
-      referenced: Long,
-      unreferenced: Long,
-      extrareferences: Long,
-      undefined: Long)
+  case class Counts(referenced: Long, unreferenced: Long, extrareferences: Long, undefined: Long)
 
   /**
    * Verifies the expected count against the count of nodes from a verification run.
@@ -456,7 +452,8 @@ object Verifier {
 }
 
 object Looper {
-  import IntegrationTestBigLinkedList.{LOG, fail}
+  import IntegrationTestBigLinkedList.LOG
+  import IntegrationTestBigLinkedList.fail
 
   def main(args: Array[String]): Unit = {
     val conf =
@@ -473,8 +470,7 @@ object Looper {
       val count = Verifier.run(verifyArgs, ss)
       val expected = verifyArgs.nodes.map(_ + nodesPerLoop)
       Verifier.verify(expected, count).map(fail)
-      verifyArgs =
-        verifyArgs.copy(nodes = Some(expected.getOrElse(nodesPerLoop)))
+      verifyArgs = verifyArgs.copy(nodes = Some(expected.getOrElse(nodesPerLoop)))
       LOG.info("*************************************************")
       LOG.info(s"Completed $n loops. Nodes verified: ${count.referenced}")
       LOG.info("*************************************************")

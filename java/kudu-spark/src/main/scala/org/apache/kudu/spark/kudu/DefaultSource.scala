@@ -26,7 +26,10 @@ import scala.util.Try
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{DataFrame, Row, SQLContext, SaveMode}
+import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.Row
+import org.apache.spark.sql.SQLContext
+import org.apache.spark.sql.SaveMode
 import org.apache.yetus.audience.InterfaceStability
 import org.apache.kudu.client.KuduPredicate.ComparisonOp
 import org.apache.kudu.client._
@@ -42,9 +45,7 @@ import org.apache.kudu.spark.kudu.SparkUtil._
  */
 @InterfaceStability.Unstable
 class DefaultSource
-    extends RelationProvider
-    with CreatableRelationProvider
-    with SchemaRelationProvider {
+    extends RelationProvider with CreatableRelationProvider with SchemaRelationProvider {
 
   val TABLE_KEY = "kudu.table"
   val KUDU_MASTER = "kudu.master"
@@ -81,15 +82,13 @@ class DefaultSource
       throw new IllegalArgumentException(
         s"Kudu table name must be specified in create options using key '$TABLE_KEY'"))
     val kuduMaster = parameters.getOrElse(KUDU_MASTER, defaultMasterAddrs)
-    val operationType = getOperationType(
-      parameters.getOrElse(OPERATION, "upsert"))
+    val operationType = getOperationType(parameters.getOrElse(OPERATION, "upsert"))
     val faultTolerantScanner =
       Try(parameters.getOrElse(FAULT_TOLERANT_SCANNER, "false").toBoolean)
         .getOrElse(false)
-    val scanLocality = getScanLocalityType(
-      parameters.getOrElse(SCAN_LOCALITY, "closest_replica"))
-    val ignoreDuplicateRowErrors = Try(
-      parameters(IGNORE_DUPLICATE_ROW_ERRORS).toBoolean).getOrElse(false) ||
+    val scanLocality = getScanLocalityType(parameters.getOrElse(SCAN_LOCALITY, "closest_replica"))
+    val ignoreDuplicateRowErrors = Try(parameters(IGNORE_DUPLICATE_ROW_ERRORS).toBoolean)
+      .getOrElse(false) ||
     Try(parameters(OPERATION) == "insert-ignore").getOrElse(false)
     val ignoreNull =
       Try(parameters.getOrElse(IGNORE_NULL, "false").toBoolean).getOrElse(false)
@@ -129,8 +128,7 @@ class DefaultSource
       case SaveMode.Append =>
         kuduRelation.asInstanceOf[KuduRelation].insert(data, false)
       case _ =>
-        throw new UnsupportedOperationException(
-          "Currently, only Append is supported")
+        throw new UnsupportedOperationException("Currently, only Append is supported")
     }
 
     kuduRelation
@@ -146,13 +144,11 @@ class DefaultSource
         s"Kudu table name must be specified in create options " +
           s"using key '$TABLE_KEY'"))
     val kuduMaster = parameters.getOrElse(KUDU_MASTER, defaultMasterAddrs)
-    val operationType = getOperationType(
-      parameters.getOrElse(OPERATION, "upsert"))
+    val operationType = getOperationType(parameters.getOrElse(OPERATION, "upsert"))
     val faultTolerantScanner =
       Try(parameters.getOrElse(FAULT_TOLERANT_SCANNER, "false").toBoolean)
         .getOrElse(false)
-    val scanLocality = getScanLocalityType(
-      parameters.getOrElse(SCAN_LOCALITY, "closest_replica"))
+    val scanLocality = getScanLocalityType(parameters.getOrElse(SCAN_LOCALITY, "closest_replica"))
 
     new KuduRelation(
       tableName,
@@ -174,8 +170,7 @@ class DefaultSource
       case "update" => Update
       case "delete" => Delete
       case _ =>
-        throw new IllegalArgumentException(
-          s"Unsupported operation type '$opParam'")
+        throw new IllegalArgumentException(s"Unsupported operation type '$opParam'")
     }
   }
 
@@ -184,8 +179,7 @@ class DefaultSource
       case "leader_only" => ReplicaSelection.LEADER_ONLY
       case "closest_replica" => ReplicaSelection.CLOSEST_REPLICA
       case _ =>
-        throw new IllegalArgumentException(
-          s"Unsupported replica selection type '$opParam'")
+        throw new IllegalArgumentException(s"Unsupported replica selection type '$opParam'")
     }
   }
 }
@@ -215,11 +209,8 @@ class KuduRelation(
     private[kudu] val socketReadTimeoutMs: Option[Long],
     private val operationType: OperationType,
     private val userSchema: Option[StructType],
-    private val writeOptions: KuduWriteOptions = new KuduWriteOptions)(
-    val sqlContext: SQLContext)
-    extends BaseRelation
-    with PrunedFilteredScan
-    with InsertableRelation {
+    private val writeOptions: KuduWriteOptions = new KuduWriteOptions)(val sqlContext: SQLContext)
+    extends BaseRelation with PrunedFilteredScan with InsertableRelation {
 
   private val context: KuduContext =
     new KuduContext(masterAddrs, sqlContext.sparkContext, socketReadTimeoutMs)
@@ -246,9 +237,7 @@ class KuduRelation(
    * @param filters         filters that are being applied by the requesting query
    * @return RDD will all the results from Kudu
    */
-  override def buildScan(
-      requiredColumns: Array[String],
-      filters: Array[Filter]): RDD[Row] = {
+  override def buildScan(requiredColumns: Array[String], filters: Array[Filter]): RDD[Row] = {
     val predicates = filters.flatMap(filterToPredicate)
     new KuduRDD(
       context,
@@ -287,8 +276,7 @@ class KuduRelation(
       case StringStartsWith(column, prefix) =>
         prefixInfimum(prefix) match {
           case None =>
-            Array(
-              comparisonPredicate(column, ComparisonOp.GREATER_EQUAL, prefix))
+            Array(comparisonPredicate(column, ComparisonOp.GREATER_EQUAL, prefix))
           case Some(inf) =>
             Array(
               comparisonPredicate(column, ComparisonOp.GREATER_EQUAL, prefix),
@@ -362,12 +350,8 @@ class KuduRelation(
    * @param values the values
    * @return the in list predicate
    */
-  private def inListPredicate(
-      column: String,
-      values: Array[Any]): KuduPredicate = {
-    KuduPredicate.newInListPredicate(
-      table.getSchema.getColumn(column),
-      values.toList.asJava)
+  private def inListPredicate(column: String, values: Array[Any]): KuduPredicate = {
+    KuduPredicate.newInListPredicate(table.getSchema.getColumn(column), values.toList.asJava)
   }
 
   /**
@@ -416,9 +400,8 @@ private[spark] object KuduRelation {
    */
   // formatter: off
   private def supportsFilter(filter: Filter): Boolean = filter match {
-    case EqualTo(_, _) | GreaterThan(_, _) | GreaterThanOrEqual(_, _) |
-        LessThan(_, _) | LessThanOrEqual(_, _) | In(_, _) |
-        StringStartsWith(_, _) | IsNull(_) | IsNotNull(_) =>
+    case EqualTo(_, _) | GreaterThan(_, _) | GreaterThanOrEqual(_, _) | LessThan(_, _) |
+        LessThanOrEqual(_, _) | In(_, _) | StringStartsWith(_, _) | IsNull(_) | IsNotNull(_) =>
       true
     case And(left, right) => supportsFilter(left) && supportsFilter(right)
     case _ => false

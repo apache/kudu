@@ -17,29 +17,35 @@
 
 package org.apache.kudu.spark.kudu
 
-import java.security.{AccessController, PrivilegedAction}
+import java.security.AccessController
+import java.security.PrivilegedAction
 
 import javax.security.auth.Subject
-import javax.security.auth.login.{
-  AppConfigurationEntry,
-  Configuration,
-  LoginContext
-}
+import javax.security.auth.login.AppConfigurationEntry
+import javax.security.auth.login.Configuration
+import javax.security.auth.login.LoginContext
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 import org.apache.hadoop.util.ShutdownHookManager
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.types.{DataType, DataTypes, DecimalType, StructType}
-import org.apache.spark.sql.{DataFrame, Row}
+import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.types.DataTypes
+import org.apache.spark.sql.types.DecimalType
+import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.Row
 import org.apache.spark.util.AccumulatorV2
-import org.apache.yetus.audience.{InterfaceAudience, InterfaceStability}
-import org.slf4j.{Logger, LoggerFactory}
+import org.apache.yetus.audience.InterfaceAudience
+import org.apache.yetus.audience.InterfaceStability
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 import org.apache.kudu.client.SessionConfiguration.FlushMode
 import org.apache.kudu.client._
 import org.apache.kudu.spark.kudu.SparkUtil._
-import org.apache.kudu.{Schema, Type}
+import org.apache.kudu.Schema
+import org.apache.kudu.Type
 
 /**
  * KuduContext is a serializable container for Kudu client connections.
@@ -49,10 +55,7 @@ import org.apache.kudu.{Schema, Type}
  * as a serializable field.
  */
 @InterfaceStability.Unstable
-class KuduContext(
-    val kuduMaster: String,
-    sc: SparkContext,
-    val socketReadTimeoutMs: Option[Long])
+class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeoutMs: Option[Long])
     extends Serializable {
 
   def this(kuduMaster: String, sc: SparkContext) = this(kuduMaster, sc, None)
@@ -190,10 +193,7 @@ class KuduContext(
    * @param options replication and partitioning options for the table
    * @return the KuduTable that was created
    */
-  def createTable(
-      tableName: String,
-      schema: Schema,
-      options: CreateTableOptions): KuduTable = {
+  def createTable(tableName: String, schema: Schema, options: CreateTableOptions): KuduTable = {
     syncClient.createTable(tableName, schema, options)
   }
 
@@ -372,8 +372,7 @@ class KuduContext(
               case DecimalType() =>
                 operation.getRow.addDecimal(kuduIdx, row.getDecimal(sparkIdx))
               case t =>
-                throw new IllegalArgumentException(
-                  s"No support for Spark SQL type $t")
+                throw new IllegalArgumentException(s"No support for Spark SQL type $t")
             }
           }
         }
@@ -419,8 +418,7 @@ private object KuduContext {
     Log.info(s"Logging in as principal $principal with keytab $keytab")
 
     val conf = new Configuration {
-      override def getAppConfigurationEntry(
-          name: String): Array[AppConfigurationEntry] = {
+      override def getAppConfigurationEntry(name: String): Array[AppConfigurationEntry] = {
         val options = Map(
           "principal" -> principal,
           "keyTab" -> keytab,
@@ -445,9 +443,7 @@ private object KuduContext {
 }
 
 private object KuduClientCache {
-  private case class CacheKey(
-      kuduMaster: String,
-      socketReadTimeoutMs: Option[Long])
+  private case class CacheKey(kuduMaster: String, socketReadTimeoutMs: Option[Long])
 
   /**
    * Set to
@@ -463,9 +459,7 @@ private object KuduClientCache {
   // Visible for testing.
   private[kudu] def clearCacheForTests() = clientCache.clear()
 
-  def getAsyncClient(
-      kuduMaster: String,
-      socketReadTimeoutMs: Option[Long]): AsyncKuduClient = {
+  def getAsyncClient(kuduMaster: String, socketReadTimeoutMs: Option[Long]): AsyncKuduClient = {
     val cacheKey = CacheKey(kuduMaster, socketReadTimeoutMs)
     clientCache.synchronized {
       if (!clientCache.contains(cacheKey)) {

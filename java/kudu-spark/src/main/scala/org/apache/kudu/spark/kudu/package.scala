@@ -16,7 +16,9 @@
  */
 package org.apache.kudu.spark
 
-import org.apache.spark.sql.{DataFrame, DataFrameReader, DataFrameWriter}
+import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.DataFrameReader
+import org.apache.spark.sql.DataFrameWriter
 
 package object kudu {
 
