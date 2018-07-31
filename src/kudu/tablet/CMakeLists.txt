@@ -84,7 +84,13 @@ target_link_libraries(tablet
   kudu_util
   consensus)
 
-SET_KUDU_TEST_LINK_LIBS(tablet)
+add_library(tablet_test_util
+  tablet-test-util.cc)
+target_link_libraries(tablet_test_util
+  kudu_common
+  log_proto)
+
+SET_KUDU_TEST_LINK_LIBS(tablet tablet_test_util)
 ADD_KUDU_TEST(all_types-scan-correctness-test NUM_SHARDS 8 PROCESSORS 2)
 ADD_KUDU_TEST(cfile_set-test)
 ADD_KUDU_TEST(compaction-test)

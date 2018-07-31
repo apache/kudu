@@ -23,6 +23,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>
@@ -44,14 +45,17 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/delta_key.h"
 #include "kudu/tablet/delta_stats.h"
 #include "kudu/tablet/delta_store.h"
 #include "kudu/tablet/mutation.h"
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/rowset.h"
+#include "kudu/tablet/tablet-test-util.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/memory/arena.h"
+#include "kudu/util/random.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -63,10 +67,12 @@ DEFINE_int32(n_verify, 1, "number of times to verify the updates"
              "(useful for benchmarks");
 
 using std::is_sorted;
+using std::pair;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 namespace tablet {
@@ -415,6 +421,42 @@ TEST_F(TestDeltaFile, TestEmptyFileIsAborted) {
   unique_ptr<ReadableBlock> rb;
   Status s = fs_manager_->OpenBlock(test_block_, &rb);
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+}
+
+template <typename T>
+class DeltaTypeTestDeltaFile : public TestDeltaFile {
+};
+
+using MyTypes = ::testing::Types<DeltaTypeSelector<REDO>, DeltaTypeSelector<UNDO>>;
+TYPED_TEST_CASE(DeltaTypeTestDeltaFile, MyTypes);
+
+// Generates a series of random deltas,  writes them to a DeltaFile, reads them
+// back using a DeltaFileIterator, and verifies the results.
+TYPED_TEST(DeltaTypeTestDeltaFile, TestFuzz) {
+  // Arbitrary constants to control the running time and coverage of the test.
+  const int kNumColumns = 100;
+  const int kNumRows = 1000;
+  const int kNumDeltas = 10000;
+  const std::pair<uint64_t, uint64_t> kTimestampRange(0, 100);
+
+  // Build a schema with kNumColumns columns.
+  SchemaBuilder sb;
+  for (int i = 0; i < kNumColumns; i++) {
+    ASSERT_OK(sb.AddColumn(Substitute("col$0", i), UINT32));
+  }
+  Schema schema(sb.Build());
+
+  Random r(SeedRandom());
+  MirroredDeltas<TypeParam> deltas(&schema);
+
+  shared_ptr<DeltaFileReader> reader;
+  ASSERT_OK(CreateRandomDeltaFile<TypeParam>(
+      schema, this->fs_manager_.get(), &r,
+      kNumDeltas, { 0, kNumRows }, kTimestampRange, &deltas, &reader));
+
+  NO_FATALS(RunDeltaFuzzTest<TypeParam>(
+      *reader, &r, &deltas, kTimestampRange,
+      /*test_filter_column_ids_and_collect_deltas=*/true));
 }
 
 } // namespace tablet

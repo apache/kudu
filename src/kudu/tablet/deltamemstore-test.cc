@@ -38,6 +38,7 @@
 #include "kudu/common/columnblock.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/row_changelist.h"
+#include "kudu/common/rowid.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/timestamp.h"
 #include "kudu/common/types.h"
@@ -50,15 +51,19 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/strings/substitute.h"
+#include "kudu/tablet/delta_key.h"
 #include "kudu/tablet/delta_stats.h"
 #include "kudu/tablet/delta_store.h"
 #include "kudu/tablet/deltafile.h"
 #include "kudu/tablet/mutation.h"
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/rowset.h"
+#include "kudu/tablet/tablet-test-util.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/memory/arena.h"
+#include "kudu/util/random.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
@@ -72,6 +77,7 @@ using std::string;
 using std::unique_ptr;
 using std::unordered_set;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 namespace tablet {
@@ -542,6 +548,34 @@ TEST_F(TestDeltaMemStore, TestCollectMutations) {
       EXPECT_EQ("[@2(SET col3=120)]", str);
     }
   }
+}
+
+// Generates a series of random deltas,  writes them to a DMS, reads them back
+// using a DMSIterator, and verifies the results.
+TEST_F(TestDeltaMemStore, TestFuzz) {
+  // Arbitrary constants to control the running time and coverage of the test.
+  const int kNumColumns = 100;
+  const int kNumRows = 1000;
+  const int kNumDeltas = 10000;
+  const std::pair<uint64_t, uint64_t> kTimestampRange(0, 100);
+
+  // Build a schema with kNumColumns columns.
+  SchemaBuilder sb;
+  for (int i = 0; i < kNumColumns; i++) {
+    ASSERT_OK(sb.AddColumn(Substitute("col$0", i), UINT32));
+  }
+  Schema schema(sb.Build());
+
+  Random r(SeedRandom());
+  MirroredDeltas<DeltaTypeSelector<REDO>> deltas(&schema);
+
+  shared_ptr<DeltaMemStore> dms;
+  ASSERT_OK(CreateRandomDMS(
+      schema, &r, kNumDeltas, { 0, kNumRows }, kTimestampRange, &deltas, &dms));
+
+  NO_FATALS(RunDeltaFuzzTest<DeltaTypeSelector<REDO>>(
+      *dms, &r, &deltas, kTimestampRange,
+      /*test_filter_column_ids_and_collect_deltas=*/false));
 }
 
 } // namespace tablet

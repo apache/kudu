@@ -17,8 +17,10 @@
 #ifndef KUDU_COMMON_COLUMNBLOCK_H
 #define KUDU_COMMON_COLUMNBLOCK_H
 
-#include "kudu/common/types.h"
+#include <string>
+
 #include "kudu/common/row.h"
+#include "kudu/common/types.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/util/bitmap.h"
 #include "kudu/util/memory/arena.h"
@@ -102,6 +104,21 @@ class ColumnBlock {
 
   const TypeInfo* type_info() const {
     return type_;
+  }
+
+  std::string ToString() const {
+    std::string s;
+    for (int i = 0; i < nrows(); i++) {
+      if (i > 0) {
+        s.append(" ");
+      }
+      if (is_nullable() && is_null(i)) {
+        s.append("NULL");
+      } else {
+        type_->AppendDebugStringForValue(cell_ptr(i), &s);
+      }
+    }
+    return s;
   }
 
  private:
@@ -247,17 +264,19 @@ class ScopedColumnBlock : public ColumnBlock {
  public:
   typedef typename TypeTraits<type>::cpp_type cpp_type;
 
-  explicit ScopedColumnBlock(size_t n_rows)
+  explicit ScopedColumnBlock(size_t n_rows, bool allow_nulls = true)
     : ColumnBlock(GetTypeInfo(type),
-                  new uint8_t[BitmapSize(n_rows)],
+                  allow_nulls ? new uint8_t[BitmapSize(n_rows)] : nullptr,
                   new cpp_type[n_rows],
                   n_rows,
                   new Arena(1024)),
       null_bitmap_(null_bitmap()),
       data_(reinterpret_cast<cpp_type *>(data())),
       arena_(arena()) {
-    // All rows begin null.
-    BitmapChangeBits(null_bitmap(), /*offset=*/ 0, n_rows, /*value=*/ false);
+    if (allow_nulls) {
+      // All rows begin null.
+      BitmapChangeBits(null_bitmap(), /*offset=*/ 0, n_rows, /*value=*/ false);
+    }
   }
 
   const cpp_type &operator[](size_t idx) const {

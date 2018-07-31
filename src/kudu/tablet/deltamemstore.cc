@@ -375,10 +375,7 @@ Status DMSIterator::FilterColumnIdsAndCollectDeltas(const vector<ColumnId>& col_
 }
 
 bool DMSIterator::HasNext() {
-  // TODO implement this if we ever want to include DeltaMemStore in minor
-  // delta compaction.
-  LOG(FATAL) << "Unimplemented";
-  return false;
+  return iter_->IsValid();
 }
 
 bool DMSIterator::MayHaveDeltas() {

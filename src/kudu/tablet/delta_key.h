@@ -140,6 +140,26 @@ inline int DeltaKey::CompareTo<UNDO>(const DeltaKey &other) const {
   return other.timestamp_.CompareTo(timestamp_);
 }
 
+template<DeltaType Type>
+struct DeltaKeyLessThanFunctor {
+  bool operator() (const DeltaKey& a, const DeltaKey& b) const {
+    return a.CompareTo<Type>(b) < 0;
+  }
+};
+
+template<DeltaType Type>
+struct DeltaKeyEqualToFunctor {
+  bool operator() (const DeltaKey& a, const DeltaKey& b) const {
+    return a.CompareTo<Type>(b) == 0;
+  }
+};
+
+struct DeltaKeyHashFunctor {
+  size_t operator() (const DeltaKey& key) const {
+    return (key.row_idx() * 31ULL) + key.timestamp().ToUint64();
+  }
+};
+
 } // namespace tablet
 } // namespace kudu
 

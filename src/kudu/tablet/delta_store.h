@@ -178,8 +178,9 @@ class DeltaIterator {
   // Iterate through all deltas, adding deltas for columns not
   // specified in 'col_ids' to 'out'.
   //
-  // The delta objects will be allocated out the provided Arena which
-  // must be non-NULL.
+  // Unlike CollectMutations, the iterator's MVCC snapshots are ignored; all
+  // deltas are considered relevant.
+  // The delta objects will be allocated out of the provided Arena, which must be non-Null.
   // Must have called PrepareBatch() with flag = PREPARE_FOR_COLLECT.
   virtual Status FilterColumnIdsAndCollectDeltas(const std::vector<ColumnId>& col_ids,
                                                  std::vector<DeltaKeyAndUpdate>* out,
