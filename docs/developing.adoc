@@ -109,7 +109,26 @@ on the link:http://kudu.apache.org/releases/[releases page].
 spark-shell --packages org.apache.kudu:kudu-spark2_2.11:1.10.0
 ----
 
-then import kudu-spark and create a dataframe:
+Below is a minimal Spark SQL "select" example for a Kudu table created with
+Impala in the "default" database. We first import the kudu spark package,
+then create a DataFrame, and then create a view from the DataFrame. After those
+steps, the table is accessible from Spark SQL.
+
+[source,scala]
+----
+import org.apache.kudu.spark.kudu._
+
+// Create a DataFrame that points to the Kudu table we want to query.
+val df = spark.read.options(Map("kudu.master" -> "master1.foo.com,master2.foo.com,master3.foo.com",
+                                "kudu.table" -> "default.my_table")).kudu
+// Create a view from the DataFrame to make it accessible from Spark SQL.
+df.createOrReplaceTempView("my_table")
+// Now we can run Spark SQL queries against our view of the Kudu table.
+spark.sql("select * from my_table").show()
+----
+
+Below is a more sophisticated example that includes both reads and writes:
+
 [source,scala]
 ----
 import org.apache.kudu.client._
@@ -124,14 +143,14 @@ val df = spark.read
 df.select("id").filter("id >= 5").show()
 
 // ...or register a temporary table and use SQL
-df.registerTempTable("kudu_table")
+df.createOrReplaceTempView("kudu_table")
 val filteredDF = spark.sql("select id from kudu_table where id >= 5").show()
 
 // Use KuduContext to create, delete, or write to Kudu tables
 val kuduContext = new KuduContext("kudu.master:7051", spark.sparkContext)
 
-// Create a new Kudu table from a dataframe schema
-// NB: No rows from the dataframe are inserted into the table
+// Create a new Kudu table from a DataFrame schema
+// NB: No rows from the DataFrame are inserted into the table
 kuduContext.createTable(
     "test_table", df.schema, Seq("key"),
     new CreateTableOptions()
@@ -170,15 +189,15 @@ kuduContext.deleteTable("unwanted_table")
 
 === Upsert option in Kudu Spark
 The upsert operation in kudu-spark supports an extra write option of `ignoreNull`. If set to true,
-it will avoid setting existing column values in Kudu table to Null if the corresponding dataframe
+it will avoid setting existing column values in Kudu table to Null if the corresponding DataFrame
 column values are Null. If unspecified, `ignoreNull` is false by default.
 [source,scala]
 ----
-val dataDF = spark.read
+val dataFrame = spark.read
   .options(Map("kudu.master" -> "kudu.master:7051", "kudu.table" -> simpleTableName))
   .format("kudu").load
-dataDF.registerTempTable(simpleTableName)
-dataDF.show()
+dataFrame.createOrReplaceTempView(simpleTableName)
+dataFrame.show()
 // Below is the original data in the table 'simpleTableName'
 +---+---+
 |key|val|
@@ -191,7 +210,7 @@ val nullDF = spark.createDataFrame(Seq((0, null.asInstanceOf[String]))).toDF("ke
 val wo = new KuduWriteOptions
 wo.ignoreNull = true
 kuduContext.upsertRows(nullDF, simpleTableName, wo)
-dataDF.show()
+dataFrame.show()
 // The val field stays unchanged
 +---+---+
 |key|val|
