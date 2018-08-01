@@ -390,6 +390,9 @@ if [ "$BUILD_JAVA" == "1" ]; then
   # Run the full Gradle build.
   if [ "$BUILD_GRADLE" == "1" ]; then
      GRADLE_FLAGS="$GRADLE_FLAGS --console=plain --no-daemon --continue -DrerunFailingTestsCount=3"
+     # KUDU-2524: temporarily disable scalafmt until we can work out its JDK
+     # incompatibility issue.
+     GRADLE_FLAGS="$GRADLE_FLAGS -DskipFormat"
      # TODO: Run `gradle check` in BUILD_TYPE DEBUG when static code analysis is fixed
      if ! ./gradlew $GRADLE_FLAGS clean test integrationTest ; then
        EXIT_STATUS=1
