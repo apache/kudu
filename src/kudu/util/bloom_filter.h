@@ -20,11 +20,13 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "kudu/common/common.pb.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/hash/city.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/util/bitmap.h"
+#include "kudu/util/hash_util.h"
 #include "kudu/util/slice.h"
 
 namespace kudu {
@@ -52,11 +54,22 @@ class BloomKeyProbe {
   //
   // NOTE: proper operation requires that the referenced memory remain
   // valid for the lifetime of this object.
-  explicit BloomKeyProbe(const Slice &key) : key_(key) {
-    uint64_t h = util_hash::CityHash64(
-      reinterpret_cast<const char *>(key.data()),
-      key.size());
-
+  explicit BloomKeyProbe(const Slice &key, HashAlgorithm hash_algorithm = CITY_HASH)
+      : key_(key) {
+    uint64_t h = 0;
+    switch (hash_algorithm) {
+      case MURMUR_HASH_2:
+        h = HashUtil::MurmurHash2_64(
+                reinterpret_cast<const char *>(key.data()),
+                key.size(),
+                /*seed=*/0);
+        break;
+      case CITY_HASH:
+      default:
+        h = util_hash::CityHash64(
+                reinterpret_cast<const char *>(key.data()),
+                key.size());
+    }
     // Use the top and bottom halves of the 64-bit hash
     // as the two independent hash functions for mixing.
     h_1_ = static_cast<uint32_t>(h);

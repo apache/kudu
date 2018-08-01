@@ -231,6 +231,7 @@ int PushUpperBoundKeyPredicates(ColIdxIter first,
         memcpy(row->mutable_cell_ptr(*col_idx_it), predicate->raw_lower(), size);
         pushed_predicates++;
         break;
+      case PredicateType::InBloomFilter:  // Upper in InBloomFilter processed as upper in Range.
       case PredicateType::Range:
         if (predicate->raw_upper() != nullptr) {
           memcpy(row->mutable_cell_ptr(*col_idx_it), predicate->raw_upper(), size);
@@ -297,6 +298,7 @@ int PushLowerBoundKeyPredicates(ColIdxIter first,
     size_t size = column.type_info()->size();
 
     switch (predicate->predicate_type()) {
+      case PredicateType::InBloomFilter: // Lower in InBloomFilter processed as lower in Range.
       case PredicateType::Range:
         if (predicate->raw_lower() == nullptr) {
           break_loop = true;

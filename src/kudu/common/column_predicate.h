@@ -17,6 +17,9 @@
 
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
+
 #include <algorithm>
 #include <ostream>
 #include <string>
@@ -28,6 +31,8 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
+#include "kudu/util/bloom_filter.h"
+#include "kudu/util/slice.h"
 
 namespace kudu {
 
@@ -56,6 +61,10 @@ enum class PredicateType {
   // A predicate which evaluates to true if the column value is present in
   // a value list.
   InList,
+
+  // A predicate which evaluates to true if the column value is present in
+  // a bloom filter.
+  InBloomFilter,
 };
 
 // A predicate which can be evaluated over a block of column values.
@@ -72,6 +81,8 @@ enum class PredicateType {
 // the client side), or a scan iterator (on the server side).
 class ColumnPredicate {
  public:
+
+  class BloomFilterInner;
 
   // Creates a new equality predicate on the column and value.
   //
@@ -130,6 +141,12 @@ class ColumnPredicate {
   // The InList will be simplified into an Equality, Range or None if possible.
   static ColumnPredicate InList(ColumnSchema column, std::vector<const void*>* values);
 
+  // Create a new BloomFilter predicate for the column.
+  //
+  // The values are not copied, and must outlive the returned predicate.
+  static ColumnPredicate InBloomFilter(ColumnSchema column, std::vector<BloomFilterInner>* bfs,
+                                       const void* lower, const void* upper);
+
   // Creates a new predicate which matches no values.
   static ColumnPredicate None(ColumnSchema column);
 
@@ -174,12 +191,13 @@ class ColumnPredicate {
       case PredicateType::Range: {
         if (lower_ == nullptr) {
           return DataTypeTraits<PhysicalType>::Compare(cell, this->upper_) < 0;
-        } else if (upper_ == nullptr) {
-          return DataTypeTraits<PhysicalType>::Compare(cell, this->lower_) >= 0;
-        } else {
-          return DataTypeTraits<PhysicalType>::Compare(cell, this->upper_) < 0 &&
-                 DataTypeTraits<PhysicalType>::Compare(cell, this->lower_) >= 0;
         }
+        if (upper_ == nullptr) {
+          return DataTypeTraits<PhysicalType>::Compare(cell, this->lower_) >= 0;
+        }
+        return DataTypeTraits<PhysicalType>::Compare(cell, this->upper_) < 0 &&
+               DataTypeTraits<PhysicalType>::Compare(cell, this->lower_) >= 0;
+
       };
       case PredicateType::Equality: {
         return DataTypeTraits<PhysicalType>::Compare(cell, this->lower_) == 0;
@@ -195,6 +213,9 @@ class ColumnPredicate {
                                   [] (const void* lhs, const void* rhs) {
                                     return DataTypeTraits<PhysicalType>::Compare(lhs, rhs) < 0;
                                   });
+      };
+      case PredicateType::InBloomFilter: {
+        return EvaluateCellForBloomFilter<PhysicalType>(cell);
       };
     }
     LOG(FATAL) << "unknown predicate type";
@@ -233,6 +254,64 @@ class ColumnPredicate {
   const std::vector<const void*>& raw_values() const {
     return values_;
   }
+  // Returns bloom filters if this is a bloom filter predicate.
+  const std::vector<BloomFilterInner>& bloom_filters() const {
+    return bloom_filters_;
+  }
+
+  // This class represents the bloom filter used in predicate.
+  class BloomFilterInner {
+   public:
+
+    BloomFilterInner(Slice bloom_data, size_t nhash, HashAlgorithm hash_algorithm) :
+            bloom_data_(bloom_data),
+            nhash_(nhash),
+            hash_algorithm_(hash_algorithm) {
+    }
+
+    BloomFilterInner() : nhash_(0), hash_algorithm_(CITY_HASH) {}
+
+    const Slice& bloom_data() const {
+      return bloom_data_;
+    }
+
+    size_t nhash() const {
+      return nhash_;
+    }
+
+    HashAlgorithm hash_algorithm() const {
+      return hash_algorithm_;
+    }
+
+    void set_nhash(size_t nhash) {
+      nhash_ = nhash;
+    }
+
+    void set_bloom_data(Slice bloom_data) {
+      bloom_data_ = bloom_data;
+    }
+
+    void set_hash_algorithm(HashAlgorithm hash_algorithm) {
+      hash_algorithm_ = hash_algorithm;
+    }
+
+    bool operator==(const BloomFilterInner& other) const {
+      return (bloom_data_ == other.bloom_data() &&
+              nhash_ == other.nhash() &&
+              hash_algorithm_ == other.hash_algorithm());
+    }
+
+   private:
+
+    // The slice of bloom filter.
+    Slice bloom_data_;
+
+    // The times of hash value used in bloom filter.
+    size_t nhash_;
+
+    // The hash algorithm used in bloom filter.
+    HashAlgorithm hash_algorithm_;
+  };
 
  private:
 
@@ -248,6 +327,13 @@ class ColumnPredicate {
   ColumnPredicate(PredicateType predicate_type,
                   ColumnSchema column,
                   std::vector<const void*>* values);
+
+  // Creates a new BloomFilter column predicate.
+  ColumnPredicate(PredicateType predicate_type,
+                  ColumnSchema column,
+                  std::vector<BloomFilterInner>* bfs,
+                  const void* lower,
+                  const void* upper);
 
   // Transition to a None predicate type.
   void SetToNone();
@@ -267,14 +353,49 @@ class ColumnPredicate {
   // Merge another predicate into this IS NULL predicate.
   void MergeIntoIsNull(const ColumnPredicate& other);
 
+  // Merge another predicate into this Bloom Fiter predicate.
+  void MergeIntoBloomFilter(const ColumnPredicate& other);
+
+  // Merge another predicate into this InList predicate.
+  void MergeIntoInList(const ColumnPredicate& other);
+
   // Templated evaluation to inline the dispatch of comparator. Templating this
   // allows dispatch to occur only once per batch.
   template <DataType PhysicalType>
   void EvaluateForPhysicalType(const ColumnBlock& block,
                                SelectionVector* sel) const;
 
-  // Merge another predicate into this InList predicate.
-  void MergeIntoInList(const ColumnPredicate& other);
+  // Evaluate the bloom filter and avoid the predicate type check on a single cell.
+  template <DataType PhysicalType>
+  bool EvaluateCellForBloomFilter(const void* cell) const {
+    typedef typename DataTypeTraits<PhysicalType>::cpp_type cpp_type;
+    size_t size = sizeof(cpp_type);
+    const void* data = cell;
+    if (PhysicalType == BINARY) {
+      const Slice *slice = reinterpret_cast<const Slice *>(cell);
+      size = slice->size();
+      data = slice->data();
+    }
+    Slice cell_slice(reinterpret_cast<const uint8_t*>(data), size);
+    for (const auto& bf : bloom_filters_) {
+      BloomKeyProbe probe(cell_slice, bf.hash_algorithm());
+      if (!BloomFilter(bf.bloom_data(), bf.nhash()).MayContainKey(probe)) {
+        return false;
+      }
+    }
+    // Check optional lower and upper bound.
+    if (lower_ != nullptr && upper_ != nullptr) {
+      return DataTypeTraits<PhysicalType>::Compare(cell, this->upper_) < 0 &&
+             DataTypeTraits<PhysicalType>::Compare(cell, this->lower_) >= 0;
+    }
+    if (upper_ != nullptr) {
+      return DataTypeTraits<PhysicalType>::Compare(cell, this->upper_) < 0;
+    }
+    if (lower_ != nullptr) {
+      return DataTypeTraits<PhysicalType>::Compare(cell, this->lower_) >= 0;
+    }
+    return true;
+  }
 
   // For a Range type predicate, this helper function checks
   // whether a given value is in the range.
@@ -283,6 +404,10 @@ class ColumnPredicate {
   // For an InList type predicate, this helper function checks
   // whether a given value is in the list.
   bool CheckValueInList(const void* value) const;
+
+  // For an BloomFilter type predicate, this helper function checks
+  // whether a given value is in the BloomFilter.
+  bool CheckValueInBloomFilter(const void* value) const;
 
   // The type of this predicate.
   PredicateType predicate_type_;
@@ -299,6 +424,9 @@ class ColumnPredicate {
 
   // The list of values to check column against if this is an InList predicate.
   std::vector<const void*> values_;
+
+  // The list of bloom filter in this predicate.
+  std::vector<BloomFilterInner> bloom_filters_;
 };
 
 // Compares predicates according to selectivity. Predicates that match fewer

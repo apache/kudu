@@ -30,8 +30,10 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/bloom_filter.h"
 #include "kudu/util/int128.h"
 #include "kudu/util/memory/arena.h"
+#include "kudu/util/random.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/test_util.h"
 
@@ -41,6 +43,7 @@ namespace kudu {
 
 class TestColumnPredicate : public KuduTest {
  public:
+  TestColumnPredicate() : rand_(SeedRandom()) {}
 
   // Test that when a is merged into b and vice versa, the result is equal to
   // expected, and the resulting type is equal to type.
@@ -66,6 +69,42 @@ class TestColumnPredicate : public KuduTest {
     ASSERT_EQ(expected.predicate_type(), type);
     ASSERT_EQ(a_base.predicate_type(), type);
     ASSERT_EQ(b_base.predicate_type(), type);
+  }
+
+  void FillBloomFilterAndValues(int n_keys,
+                                vector<uint64_t>* values,
+                                BloomFilterBuilder* bfb1,
+                                BloomFilterBuilder* bfb2) {
+    uint64_t current = 0;
+    for (int i = 0; i < 2; ++i) {
+      while (true) {
+        uint64_t key = rand_.Next();
+        if (key <= current) {
+          continue;
+        }
+        current = key;
+        Slice key_slice(reinterpret_cast<const uint8_t*>(&key), sizeof(key));
+        BloomKeyProbe probe(key_slice, MURMUR_HASH_2);
+        bfb1->AddKey(probe);
+        bfb2->AddKey(probe);
+        values->emplace_back(key);
+        break;
+      }
+    }
+    for (int i = 2; i < n_keys; ++i) {
+      while (true) {
+        uint64_t key = rand_.Next();
+        Slice key_slice(reinterpret_cast<const uint8_t*>(&key), sizeof(key));
+        BloomKeyProbe probe(key_slice, MURMUR_HASH_2);
+        BloomFilter bf(bfb1->slice(), bfb1->n_hashes());
+        if (!bf.MayContainKey(probe) && key > current) {
+          current = key;
+          values->emplace_back(key);
+          bfb2->AddKey(probe);
+          break;
+        }
+      }
+    }
   }
 
   template <typename T>
@@ -744,6 +783,184 @@ class TestColumnPredicate : public KuduTest {
               ColumnPredicate::IsNull(column),
               PredicateType::IsNull);
   }
+
+  template <typename T>
+  void TestMergeBloomFilterCombinations(const ColumnSchema& column,
+                                        vector<ColumnPredicate::BloomFilterInner>* bf,
+                                        vector<T> values) {
+    vector<ColumnPredicate::BloomFilterInner> orig_bloom_filters = *bf;
+    // BloomFilter AND
+    // NONE
+    // =
+    // NONE
+    TestMerge(ColumnPredicate::InBloomFilter(column, bf, nullptr, nullptr),
+              ColumnPredicate::None(column),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    // BloomFilter AND
+    // Equality
+    // =
+    // Equality
+    *bf = orig_bloom_filters;
+    TestMerge(ColumnPredicate::InBloomFilter(column, bf, nullptr, nullptr),
+              ColumnPredicate::Equality(column, &values[0]),
+              ColumnPredicate::Equality(column, &values[0]),
+              PredicateType::Equality);
+
+    // BloomFilter AND
+    // Equality
+    // =
+    // None
+    *bf = orig_bloom_filters;
+    TestMerge(ColumnPredicate::InBloomFilter(column, bf, nullptr, nullptr),
+              ColumnPredicate::Equality(column, &values[2]),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    // BloomFilter AND
+    // IS NOT NULL
+    // =
+    // BloomFilter
+    *bf = orig_bloom_filters;
+    vector<ColumnPredicate::BloomFilterInner> bf_copy = *bf;
+    TestMerge(ColumnPredicate::InBloomFilter(column, bf, nullptr, nullptr),
+              ColumnPredicate::IsNotNull(column),
+              ColumnPredicate::InBloomFilter(column, &bf_copy, nullptr, nullptr),
+              PredicateType::InBloomFilter);
+
+    // BloomFilter AND
+    // IS NULL
+    // =
+    // None
+    *bf = orig_bloom_filters;
+    TestMerge(ColumnPredicate::InBloomFilter(column, bf, nullptr, nullptr),
+              ColumnPredicate::IsNull(column),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    // BloomFilter AND
+    // InList
+    // =
+    // None(the value in list can not hit bloom filter)
+    *bf = orig_bloom_filters;
+    vector<const void*> in_list = { &values[2], &values[3], &values[4] };
+    vector<const void*> hit_list;
+    TestMerge(ColumnPredicate::InBloomFilter(column, bf, nullptr, nullptr),
+              ColumnPredicate::InList(column, &in_list),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    // BloomFilter AND
+    // InList
+    // =
+    // InList(the value in list all hits bloom filter)
+    in_list = { &values[0], &values[1] };
+    hit_list = { &values[0], &values[1] };
+    *bf = orig_bloom_filters;
+    TestMerge(ColumnPredicate::InBloomFilter(column, bf, nullptr, nullptr),
+              ColumnPredicate::InList(column, &in_list),
+              ColumnPredicate::InList(column, &hit_list),
+              PredicateType::InList);
+
+    // BloomFilter AND
+    // InList
+    // =
+    // InList(only the some values in list hits bloom filter)
+    in_list = { &values[0], &values[1], &values[2], &values[3] };
+    hit_list = { &values[0], &values[1]};
+    *bf = orig_bloom_filters;
+    TestMerge(ColumnPredicate::InBloomFilter(column, bf, nullptr, nullptr),
+              ColumnPredicate::InList(column, &in_list),
+              ColumnPredicate::InList(column, &hit_list),
+              PredicateType::InList);
+
+    // BloomFilter AND
+    // InList
+    // =
+    // Equality(only the first value in list hits bloom filter, so it simplify to Equality)
+    in_list = { &values[0], &values[2], &values[3] };
+    *bf = orig_bloom_filters;
+    TestMerge(ColumnPredicate::InBloomFilter(column, bf, nullptr, nullptr),
+              ColumnPredicate::InList(column, &in_list),
+              ColumnPredicate::Equality(column, &values[0]),
+              PredicateType::Equality);
+
+    // Range AND
+    // BloomFilter
+    // =
+    // BloomFilter with lower and upper bound
+    *bf = orig_bloom_filters;
+    bf_copy = *bf;
+    TestMerge(ColumnPredicate::Range(column, &values[0], &values[4]),
+              ColumnPredicate::InBloomFilter(column, bf, nullptr, nullptr),
+              ColumnPredicate::InBloomFilter(column, &bf_copy, &values[0], &values[4]),
+              PredicateType::InBloomFilter);
+
+    // BloomFilter with lower and upper bound AND
+    // Range
+    // =
+    // BloomFilter with lower and upper bound
+    *bf = orig_bloom_filters;
+    bf_copy = *bf;
+    TestMerge(ColumnPredicate::InBloomFilter(column, bf, &values[0], &values[4]),
+              ColumnPredicate::Range(column, &values[1], &values[3]),
+              ColumnPredicate::InBloomFilter(column, &bf_copy, &values[1], &values[3]),
+              PredicateType::InBloomFilter);
+
+    // BloomFilter with lower and upper bound AND
+    // Range
+    // =
+    // None
+    *bf = orig_bloom_filters;
+    bf_copy = *bf;
+    TestMerge(ColumnPredicate::InBloomFilter(column, bf, &values[0], &values[2]),
+              ColumnPredicate::Range(column, &values[2], &values[4]),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+
+    // BloomFilter AND
+    // BloomFilter with lower and upper bound
+    // =
+    // BloomFilter with lower and upper bound
+    *bf = orig_bloom_filters;
+    bf_copy = *bf;
+    vector<ColumnPredicate::BloomFilterInner> collect = *bf;
+    collect.insert(collect.end(), bf->begin(), bf->end());
+    TestMerge(ColumnPredicate::InBloomFilter(column, bf, nullptr, nullptr),
+              ColumnPredicate::InBloomFilter(column, &bf_copy, &values[0], &values[4]),
+              ColumnPredicate::InBloomFilter(column, &collect, &values[0], &values[4]),
+              PredicateType::InBloomFilter);
+
+    // BloomFilter with lower and upper bound AND
+    // BloomFilter with lower and upper bound
+    // =
+    // BloomFilter with lower and upper bound
+    *bf = orig_bloom_filters;
+    collect = *bf;
+    bf_copy = *bf;
+    collect.insert(collect.end(), bf->begin(), bf->end());
+    TestMerge(ColumnPredicate::InBloomFilter(column, bf, &values[1], &values[3]),
+              ColumnPredicate::InBloomFilter(column, &bf_copy, &values[0], &values[4]),
+              ColumnPredicate::InBloomFilter(column, &collect, &values[1], &values[3]),
+              PredicateType::InBloomFilter);
+
+    // BloomFilter with lower and upper bound AND
+    // BloomFilter with lower and upper bound
+    // =
+    // None
+    *bf = orig_bloom_filters;
+    collect = *bf;
+    bf_copy = *bf;
+    collect.insert(collect.end(), bf->begin(), bf->end());
+    TestMerge(ColumnPredicate::InBloomFilter(column, bf, &values[0], &values[2]),
+              ColumnPredicate::InBloomFilter(column, &bf_copy, &values[2], &values[4]),
+              ColumnPredicate::None(column),
+              PredicateType::None);
+  }
+
+ protected:
+  Random rand_;
 };
 
 TEST_F(TestColumnPredicate, TestMerge) {
@@ -1159,6 +1376,76 @@ TEST_F(TestColumnPredicate, TestRedaction) {
   ColumnSchema column_i32("a", INT32, true);
   int32_t one_32 = 1;
   ASSERT_EQ("a = <redacted>", ColumnPredicate::Equality(column_i32, &one_32).ToString());
+}
+
+TEST_F(TestColumnPredicate, TestBloomFilterMerge) {
+  int n_keys = 5; // 0 1 both hit bf1 and bf2, 2 3 4 only hit bf2.
+  // Test for UINT64 type.
+  BloomFilterBuilder bfb1(
+          BloomFilterSizing::ByCountAndFPRate(n_keys, 0.01));
+  double expected_fp_rate1 = bfb1.false_positive_rate();
+  ASSERT_NEAR(expected_fp_rate1, 0.01, 0.002);
+  ASSERT_EQ(9, bfb1.n_bits() / n_keys);
+  BloomFilterBuilder bfb2(
+          BloomFilterSizing::ByCountAndFPRate(n_keys, 0.01));
+  double expected_fp_rate2 = bfb2.false_positive_rate();
+  ASSERT_NEAR(expected_fp_rate2, 0.01, 0.002);
+  ASSERT_EQ(9, bfb2.n_bits() / n_keys);
+  vector<uint64_t> values_int;
+  FillBloomFilterAndValues(n_keys, &values_int, &bfb1, &bfb2);
+  const Slice slice1 = bfb1.slice();
+  const Slice slice2 = bfb2.slice();
+  ColumnPredicate::BloomFilterInner bf1(slice1, bfb1.n_hashes(), MURMUR_HASH_2);
+  ColumnPredicate::BloomFilterInner bf2(slice2, bfb2.n_hashes(), MURMUR_HASH_2);
+  vector<ColumnPredicate::BloomFilterInner> bfs;
+  bfs.emplace_back(bf1);
+  TestMergeBloomFilterCombinations(ColumnSchema("c", INT64, true), &bfs, values_int);
+  bfs.clear();
+  bfs.emplace_back(bf1);
+  bfs.emplace_back(bf2);
+  TestMergeBloomFilterCombinations(ColumnSchema("c", INT64, true), &bfs, values_int);
+
+  // Test for STRING type.
+  BloomFilterBuilder bfb3(
+          BloomFilterSizing::ByCountAndFPRate(n_keys, 0.01));
+  double expected_fp_rate3 = bfb3.false_positive_rate();
+  ASSERT_NEAR(expected_fp_rate3, 0.01, 0.002);
+  ASSERT_EQ(9, bfb3.n_bits() / n_keys);
+  // 0 1 both hit bf1 and bf2, 2 3 4 only hit bf2.
+  vector<std::string> keys = {"0", "00", "10", "100", "1100"};
+  vector<Slice> keys_slice;
+  for (int i = 0; i < keys.size(); ++i) {
+    Slice key_slice(keys[i]);
+    BloomKeyProbe probe(key_slice, MURMUR_HASH_2);
+    if (i < 2) {
+      bfb3.AddKey(probe);
+    }
+    keys_slice.emplace_back(key_slice);
+  }
+  bfs.clear();
+  bfs.emplace_back(bfb3.slice(), bfb3.n_hashes(), MURMUR_HASH_2);
+  TestMergeBloomFilterCombinations(ColumnSchema("c", STRING, true), &bfs, keys_slice);
+
+  // Test for BINARY type
+  BloomFilterBuilder bfb4(
+          BloomFilterSizing::ByCountAndFPRate(n_keys, 0.01));
+  double expected_fp_rate4 = bfb4.false_positive_rate();
+  ASSERT_NEAR(expected_fp_rate4, 0.01, 0.002);
+  ASSERT_EQ(9, bfb4.n_bits() / n_keys);
+  vector<Slice> binary_keys = { Slice("", 0),
+                                Slice("\0", 1),
+                                Slice("\0\0", 2),
+                                Slice("\0\0\0", 3),
+                                Slice("\0\0\0\0", 4) };
+  for (int i = 0; i < binary_keys.size(); ++i) {
+    BloomKeyProbe probe(binary_keys[i], MURMUR_HASH_2);
+    if (i < 2) {
+      bfb4.AddKey(probe);
+    }
+  }
+  bfs.clear();
+  bfs.emplace_back(bfb4.slice(), bfb4.n_hashes(), MURMUR_HASH_2);
+  TestMergeBloomFilterCombinations(ColumnSchema("c", STRING, true), &bfs, binary_keys);
 }
 
 } // namespace kudu

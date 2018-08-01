@@ -15,8 +15,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/common/wire_protocol.h"
+
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -29,9 +32,10 @@
 #include "kudu/common/row.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/common/schema.h"
-#include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
+#include "kudu/gutil/port.h"
 #include "kudu/util/bitmap.h"
+#include "kudu/util/bloom_filter.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/hexdump.h"
 #include "kudu/util/memory/arena.h"
@@ -43,6 +47,7 @@
 #include "kudu/util/test_util.h"
 
 using std::string;
+using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
@@ -499,4 +504,125 @@ TEST_F(WireProtocolTest, TestColumnPredicateInList) {
     ASSERT_TRUE(ColumnPredicateFromPB(schema, &arena, pb, &predicate).IsInvalidArgument());
   }
 }
+
+class BFWireProtocolTest : public KuduTest {
+ public:
+  BFWireProtocolTest()
+      : schema_({ ColumnSchema("col1", INT32)}, 1),
+        arena_(1024),
+        n_keys_(100) {
+    bfb1_.reset(new BloomFilterBuilder(BloomFilterSizing::ByCountAndFPRate(n_keys_, 0.01)));
+    bfb2_.reset(new BloomFilterBuilder(BloomFilterSizing::ByCountAndFPRate(n_keys_, 0.01)));
+  }
+
+  virtual void SetUp() OVERRIDE {
+    double expected_fp_rate1 = bfb1()->false_positive_rate();
+    ASSERT_NEAR(expected_fp_rate1, 0.01, 0.002);
+    ASSERT_EQ(9, bfb1()->n_bits() / n_keys_);
+    double expected_fp_rate2 = bfb2()->false_positive_rate();
+    ASSERT_NEAR(expected_fp_rate2, 0.01, 0.002);
+    ASSERT_EQ(9, bfb2()->n_bits() / n_keys_);
+    for (int i = 0; i < n_keys_; ++i) {
+      Slice key_slice(reinterpret_cast<const uint8_t*>(&i), sizeof(i));
+      BloomKeyProbe probe(key_slice, MURMUR_HASH_2);
+      bfb1()->AddKey(probe);
+      bfb2()->AddKey(probe);
+    }
+  }
+
+  BloomFilterBuilder* bfb1() const { return bfb1_.get(); }
+
+  BloomFilterBuilder* bfb2() const { return bfb1_.get(); }
+
+protected:
+  Schema schema_;
+  Arena arena_;
+  int n_keys_;
+  unique_ptr<BloomFilterBuilder> bfb1_;
+  unique_ptr<BloomFilterBuilder> bfb2_;
+};
+
+TEST_F(BFWireProtocolTest, TestColumnPredicateBloomFilter) {
+  boost::optional<ColumnPredicate> predicate;
+  ColumnSchema col1 = schema_.column(0);
+  { // Single BloomFilter predicate.
+    vector<kudu::ColumnPredicate::BloomFilterInner> bfs;
+    bfs.emplace_back(bfb1()->slice(), bfb1()->n_hashes(), MURMUR_HASH_2);
+    kudu::ColumnPredicate ibf = kudu::ColumnPredicate::InBloomFilter(col1, &bfs, nullptr, nullptr);
+    ColumnPredicatePB pb;
+    NO_FATALS(ColumnPredicateToPB(ibf, &pb));
+    ASSERT_OK(ColumnPredicateFromPB(schema_, &arena_, pb, &predicate));
+    ASSERT_EQ(predicate->predicate_type(), PredicateType::InBloomFilter);
+    ASSERT_EQ(predicate, ibf);
+  }
+
+  { // Multi BloomFilter predicate.
+    vector<kudu::ColumnPredicate::BloomFilterInner> bfs;
+    bfs.emplace_back(bfb1()->slice(), bfb1()->n_hashes(), MURMUR_HASH_2);
+    bfs.emplace_back(bfb2()->slice(), bfb2()->n_hashes(), MURMUR_HASH_2);
+    kudu::ColumnPredicate ibf = kudu::ColumnPredicate::InBloomFilter(col1, &bfs, nullptr, nullptr);
+    ColumnPredicatePB pb;
+    NO_FATALS(ColumnPredicateToPB(ibf, &pb));
+    ASSERT_OK(ColumnPredicateFromPB(schema_, &arena_, pb, &predicate));
+    ASSERT_EQ(predicate->predicate_type(), PredicateType::InBloomFilter);
+    ASSERT_EQ(predicate, ibf);
+  }
+}
+
+TEST_F(BFWireProtocolTest, TestColumnPredicateBloomFilterWithBound) {
+  boost::optional<ColumnPredicate> predicate;
+  ColumnSchema col1 = schema_.column(0);
+  { // Simply BloomFilter with lower bound.
+    int lower = 1;
+    vector<kudu::ColumnPredicate::BloomFilterInner> bfs;
+    bfs.emplace_back(bfb1()->slice(), bfb1()->n_hashes(), MURMUR_HASH_2);
+    kudu::ColumnPredicate ibf = kudu::ColumnPredicate::InBloomFilter(col1, &bfs, &lower, nullptr);
+    ColumnPredicatePB pb;
+    NO_FATALS(ColumnPredicateToPB(ibf, &pb));
+    ASSERT_OK(ColumnPredicateFromPB(schema_, &arena_, pb, &predicate));
+    ASSERT_EQ(predicate->predicate_type(), PredicateType::InBloomFilter);
+    ASSERT_EQ(predicate, ibf);
+  }
+
+  { // Single bloom filter with upper bound.
+    int upper = 4;
+    vector<kudu::ColumnPredicate::BloomFilterInner> bfs;
+    bfs.emplace_back(bfb1()->slice(), bfb1()->n_hashes(), MURMUR_HASH_2);
+    kudu::ColumnPredicate ibf = kudu::ColumnPredicate::InBloomFilter(col1, &bfs, nullptr, &upper);
+    ColumnPredicatePB pb;
+    NO_FATALS(ColumnPredicateToPB(ibf, &pb));
+    ASSERT_OK(ColumnPredicateFromPB(schema_, &arena_, pb, &predicate));
+    ASSERT_EQ(predicate->predicate_type(), PredicateType::InBloomFilter);
+    ASSERT_EQ(predicate, ibf);
+  }
+
+  { // Single bloom filter with both lower and upper bound.
+    int lower = 1;
+    int upper = 4;
+    vector<kudu::ColumnPredicate::BloomFilterInner> bfs;
+    bfs.emplace_back(bfb1()->slice(), bfb1()->n_hashes(), MURMUR_HASH_2);
+    kudu::ColumnPredicate ibf = kudu::ColumnPredicate::InBloomFilter(col1, &bfs, &lower, &upper);
+    ColumnPredicatePB pb;
+    NO_FATALS(ColumnPredicateToPB(ibf, &pb));
+    ASSERT_OK(ColumnPredicateFromPB(schema_, &arena_, pb, &predicate));
+    ASSERT_EQ(predicate->predicate_type(), PredicateType::InBloomFilter);
+    ASSERT_EQ(predicate, ibf);
+  }
+
+  { // Multi bloom filter with both lower and upper bound.
+    int lower = 1;
+    int upper = 4;
+    vector<kudu::ColumnPredicate::BloomFilterInner> bfs;
+    bfs.emplace_back(bfb1()->slice(), bfb1()->n_hashes(), MURMUR_HASH_2);
+    bfs.emplace_back(bfb2()->slice(), bfb2()->n_hashes(), MURMUR_HASH_2);
+    kudu::ColumnPredicate ibf = kudu::ColumnPredicate::InBloomFilter(col1, &bfs, &lower, &upper);
+    ColumnPredicatePB pb;
+    NO_FATALS(ColumnPredicateToPB(ibf, &pb));
+    ASSERT_OK(ColumnPredicateFromPB(schema_, &arena_, pb, &predicate));
+    ASSERT_EQ(predicate->predicate_type(), PredicateType::InBloomFilter);
+    ASSERT_EQ(predicate->bloom_filters().size(), ibf.bloom_filters().size());
+    ASSERT_EQ(predicate, ibf);
+  }
+}
+
 } // namespace kudu

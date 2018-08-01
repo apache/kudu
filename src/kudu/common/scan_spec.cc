@@ -193,6 +193,10 @@ void ScanSpec::PushPredicatesIntoPrimaryKeyBounds(const Schema& schema,
         // InList predicates should not be removed as the full constraints imposed by an InList
         // cannot be translated into only a single set of lower and upper bound primary keys
         break;
+      } else if (type == PredicateType::InBloomFilter) {
+        // InBloomFilter predicates should not be removed as the full constraints imposed by bloom
+        // filters cannot be translated into only a single set of lower and upper bound primary keys
+        break;
       } else {
         LOG(FATAL) << "Can not remove unknown predicate type";
       }
