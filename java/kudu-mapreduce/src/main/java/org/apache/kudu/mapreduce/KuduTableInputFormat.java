@@ -445,7 +445,16 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
         return;
       }
       try {
-        iterator = scanner.nextRows();
+        // scanner.nextRows() sometimes returns an empty RowResultIterator, but
+        // scanner.hasMoreRows() returns still true, so we need to continue
+        // iterating on the scanner until scanner.hasMoreRows() returns false.
+        //
+        // TODO (qqzhang) In future, the backend can guarantee that
+        // TabletService.Scan() would not return the empty results, we need to
+        // remove the loop.
+        do {
+          iterator = scanner.nextRows();
+        } while (!iterator.hasNext() && scanner.hasMoreRows());
       } catch (Exception e) {
         throw new IOException("Couldn't get scan data", e);
       }
