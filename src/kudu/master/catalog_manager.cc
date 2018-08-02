@@ -1363,7 +1363,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   // a. Validate the user request.
   Schema client_schema;
   RETURN_NOT_OK(SchemaFromPB(req.schema(), &client_schema));
-  string normalized_table_name = NormalizeTableName(req.name());
+  const string normalized_table_name = NormalizeTableName(req.name());
 
   RETURN_NOT_OK(SetupError(ValidateClientSchema(normalized_table_name, client_schema),
                            resp, MasterErrorPB::INVALID_SCHEMA));
@@ -1460,8 +1460,8 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   // of live tablet servers.
   TSDescriptorVector ts_descs;
   master_->ts_manager()->GetAllLiveDescriptors(&ts_descs);
-  int num_live_tservers = ts_descs.size();
-  int max_tablets = FLAGS_max_create_tablets_per_ts * num_live_tservers;
+  const auto num_live_tservers = ts_descs.size();
+  const auto max_tablets = FLAGS_max_create_tablets_per_ts * num_live_tservers;
   if (num_replicas > 1 && max_tablets > 0 && partitions.size() > max_tablets) {
     return SetupError(Status::InvalidArgument(Substitute(
             "the requested number of tablets is over the maximum permitted at creation time ($0), "
@@ -1485,18 +1485,13 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   const auto num_ts_needed_for_rereplication =
       num_replicas + (FLAGS_raft_prepare_replacement_before_eviction ? 1 : 0);
   if (num_replicas > 1 && num_ts_needed_for_rereplication > num_live_tservers) {
-    const bool is_off_by_one = FLAGS_raft_prepare_replacement_before_eviction &&
-        num_ts_needed_for_rereplication == num_live_tservers + 1;
-    const string msg = Substitute(
+    LOG(WARNING) << Substitute(
         "The number of live tablet servers is not enough to re-replicate a "
-        "tablet replica of the newly created table $0 in case of a replica "
-        "failure: $1 tablet servers are needed, $2 are alive. "
-        "Consider bringing up additional tablet server(s)$3",
-        normalized_table_name, num_ts_needed_for_rereplication, num_live_tservers,
-        is_off_by_one ? " or running both the masters and all tablet servers"
-                        " with --raft_prepare_replacement_before_eviction=false"
-                        " flag (not recommended)." : ".");
-    LOG(WARNING) << msg;
+        "tablet replica of the newly created table $0 in case of a server "
+        "failure: $1 tablet servers would be needed, $2 are available. "
+        "Consider bringing up more tablet servers.",
+        normalized_table_name, num_ts_needed_for_rereplication,
+        num_live_tservers);
   }
 
   scoped_refptr<TableInfo> table;
