@@ -1,0 +1,162 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+[[hive_metastore]]
+= Using the Hive Metastore with Kudu
+
+:author: Kudu Team
+:imagesdir: ./images
+:icons: font
+:toc: left
+:toclevels: 3
+:doctype: book
+:backend: html5
+:sectlinks:
+:experimental:
+
+Kudu has an optional feature which allows it to integrate its own catalog with
+the Hive Metastore (HMS). The HMS is the de-facto standard catalog and metadata
+provider in the Hadoop ecosystem. When the HMS integration is enabled, Kudu
+tables can be discovered and used by external HMS-aware tools, even if they are
+not otherwise aware of or integrated with Kudu. Additionally, these components
+can use the HMS to discover necessary information to connect to the Kudu
+cluster which owns the table, such as the Kudu master addresses.
+
+## Databases and Table Names
+
+With the Hive Metastore integration disabled, Kudu presents tables as a single
+flat namespace, with no hierarchy or concept of a database. Additionally,
+Kudu's only restriction on table names is that they be a valid UTF-8 encoded
+string. When the HMS integration is enabled in Kudu, both of these properties
+change in order to match the HMS model: the table name must indicate the
+table's membership of a Hive database, and table name identifiers (i.e. the
+table name and database name) are subject to the Hive table name identifier
+constraints.
+
+### Databases
+
+Hive has the concept of a database, which is a collection of individual tables.
+Each database forms its own independent namespace of table names. In order to
+fit into this model, Kudu tables must be assigned a database when the HMS
+integration is enabled. No new APIs have been added to create or delete
+databases, nor are there APIs to assign an existing Kudu table to a database.
+Instead, a new convention has been introduced that Kudu table names must be in
+the format `<hive-database-name>.<hive-table-name>`. Thus, databases are an
+implicit part of the Kudu table name. By including databases as an implicit
+part of the Kudu table name, existing applications that use Kudu tables can
+operate on non-HMS-integrated and HMS-integrated table names with minimal or no
+changes.
+
+Kudu provides no additional tooling to create or drop Hive databases.
+Administrators or users should use existing Hive tools such as the Beeline
+Shell or Impala to do so.
+
+### Naming Constraints
+
+When the Hive Metastore integration is enabled, the database and table names of
+Kudu tables must follow the Hive Metastore naming constraints. Namely, the
+database and table name must contain only alphanumeric ASCII characters and
+underscores (`_`).
+
+NOTE: When the `hive.support.special.characters.tablename` Hive configuration
+is `true`, the forward-slash (`/`) character in table name identifiers (i.e. the
+table name and database name) is also supported.
+
+Additionally, the Hive Metastore does not enforce case sensitivity for table
+name identifiers. As such, when enabled, Kudu will follow suit and disallow
+tables from being created when one already exists whose table name identifier
+differs only by case. Operations that open, alter, or drop tables will also be
+case-insensitive for the table name identifiers.
+
+WARNING: Given the case insensitivity upon enabling the integration, if
+multiple Kudu tables exist whose names only differ by case, the Kudu master(s)
+will fail to start up. Be sure to rename such conflicting tables before
+enabling the Hive Metastore integration.
+
+## Enabling the Hive Metastore Integration
+
+* Configure Hive to include the notification event listener and the Kudu HMS
+plugin, and to allow altering and dropping columns. Add the following values
+to the existing HMS configuration in `hive-site.xml`:
+
+```xml
+<property>
+  <name>hive.metastore.transactional.event.listeners</name>
+  <value>
+    org.apache.hive.hcatalog.listener.DbNotificationListener,
+    org.apache.kudu.hive.metastore.KuduMetastorePlugin
+  </value>
+</property>
+
+<property>
+  <name>hive.metastore.disallow.incompatible.col.type.changes</name>
+  <value>false</value>
+</property>
+```
+
+* After building Kudu from source, add the `hms-plugin.jar` found under the build
+directory (e.g. `build/release/bin`) to the HMS classpath.
+
+* Restart the HMS.
+
+* Enable the Hive Metastore integration in Kudu with the following
+configuration properties for the Kudu master(s):
+
+```
+--hive_metastore_uris=<HMS Thrift URI(s)>
+--hive_metastore_sasl_enabled=<match hive.metastore.sasl.enabled>
+```
+
+* Restart the Kudu master(s).
+
+## Upgrading Existing Tables
+
+When the Hive Metastore integration is enabled, Kudu will automatically synchronize
+changes to Kudu tables between Kudu and the HMS. As such, it is important to ensure
+that the Kudu and HMS start with a consistent view of existing tables, using the
+administrative tools described in the next section. This may entail renaming Kudu
+tables to conform to the Hive naming constraints described above. Failure to do
+so may result in metadata inconsistencies between Kudu and the HMS, such as existing
+Kudu tables not being present in the HMS and, thus, not being discoverable by external,
+HMS-aware components (e.g. Sentry). Moreover, the existing Impala tables will have
+outdated metadata in their HMS entries and may be rendered unusable.
+// TODO(hao): add a section about external table support
+
+## Administrative Tools
+
+Kudu provides the command line tools `kudu hms check` and `kudu hms fix` tools
+to allow administrators to find and fix any metadata inconsistencies between
+the internal Kudu catalog and the Hive Metastore catalog, during the upgrade
+process described above or normal work flow.
+
+### `kudu hms check`
+
+The `kudu hms check` tool scans the Kudu and Hive Metastore catalogs, and
+validates that the two catalogs agree on what Kudu tables exist. The tool will
+make suggestions on how to fix any inconsistencies that are found. Typically,
+the suggestion will be to run the `kudu hms fix` tool, however some certain
+inconsistencies require using a Hive-specific shell such as Beeline or Impala.
+
+### `kudu hms fix`
+
+The `kudu hms fix` tool analyzes the Kudu and HMS catalogs and attempts to fix
+any automatically-fixable issues, for instance, by creating a table entry in
+the HMS for each Kudu table that doesn't already have one. The `dryrun` option
+shows the proposed fix before actually executing it. When no automatic fix is
+available, it will make suggestions on how a manual fix can help.
+
+// TODO(hao): add a section about how to work with fine-grained authz.
