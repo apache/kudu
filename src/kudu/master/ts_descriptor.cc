@@ -18,6 +18,7 @@
 #include "kudu/master/ts_descriptor.h"
 
 #include <cmath>
+#include <cstdio>
 #include <mutex>
 #include <ostream>
 #include <unordered_set>
@@ -25,17 +26,24 @@
 #include <vector>
 
 #include <gflags/gflags.h>
+#include <glog/logging.h>
 
 #include "kudu/common/common.pb.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.proxy.h"
+#include "kudu/gutil/strings/charset.h"
+#include "kudu/gutil/strings/split.h"
+#include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/subprocess.h"
+#include "kudu/util/trace.h"
 
 DEFINE_int32(tserver_unresponsive_timeout_ms, 60 * 1000,
              "The period of time that a Master can go without receiving a heartbeat from a "
@@ -43,15 +51,83 @@ DEFINE_int32(tserver_unresponsive_timeout_ms, 60 * 1000,
              "selected when assigning replicas during table creation or re-replication.");
 TAG_FLAG(tserver_unresponsive_timeout_ms, advanced);
 
+DEFINE_string(location_mapping_cmd, "",
+              "A Unix command which takes a single argument, the IP address or "
+              "hostname of a tablet server or client, and returns the location "
+              "string for the tablet server. A location string begins with a / "
+              "and consists of /-separated tokens each of which contains only "
+              "characters from the set [a-zA-Z0-9_-.]. If the cluster is not "
+              "using location awareness features this flag should not be set.");
+TAG_FLAG(location_mapping_cmd, evolving);
+
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
 using std::make_shared;
 using std::shared_ptr;
 using std::string;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 namespace master {
+
+namespace {
+// Returns if 'location' is a valid location string, i.e. it begins with /
+// and consists of /-separated tokens each of which contains only characters
+// from the set [a-zA-Z0-9_-.].
+bool IsValidLocation(const string& location) {
+  if (location.empty() || location[0] != '/') {
+    return false;
+  }
+  const strings::CharSet charset("abcdefghijklmnopqrstuvwxyz"
+                                 "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                                 "0123456789"
+                                 "_-./");
+  for (const auto c : location) {
+    if (!charset.Test(c)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// Resolves 'host', which is the IP address or hostname of a tablet server or
+// client, into a location using the command 'cmd'. The result will be stored
+// in 'location', which must not be null. If there is an error running the
+// command or the output is invalid, an error Status will be returned.
+// TODO(wdberkeley): Eventually we may want to get multiple locations at once
+// by giving the script multiple arguments (like Hadoop).
+Status GetLocationFromLocationMappingCmd(const string& cmd,
+                                         const string& host,
+                                         string* location) {
+  DCHECK_NOTNULL(location);
+  vector<string> argv = strings::Split(cmd, " ", strings::SkipEmpty());
+  if (argv.empty()) {
+    return Status::RuntimeError("invalid empty location mapping command");
+  }
+  argv.push_back(host);
+  string stderr, location_temp;
+  Status s = Subprocess::Call(argv, /*stdin=*/"", &location_temp, &stderr);
+  if (!s.ok()) {
+    return Status::RuntimeError(
+        Substitute("failed to run location mapping command: $0", s.ToString()),
+        stderr);
+  }
+  StripWhiteSpace(&location_temp);
+  // Special case an empty location for a better error.
+  if (location_temp.empty()) {
+    return Status::RuntimeError(
+        "location mapping command returned invalid empty location");
+  }
+  if (!IsValidLocation(location_temp)) {
+    return Status::RuntimeError(
+        "location mapping command returned invalid location",
+        location_temp);
+  }
+  *location = std::move(location_temp);
+  return Status::OK();
+}
+} // anonymous namespace
 
 Status TSDescriptor::RegisterNew(const NodeInstancePB& instance,
                                  const ServerRegistrationPB& registration,
@@ -95,9 +171,8 @@ static bool HostPortPBsEqual(const google::protobuf::RepeatedPtrField<HostPortPB
   return hostports1 == hostports2;
 }
 
-Status TSDescriptor::Register(const NodeInstancePB& instance,
-                              const ServerRegistrationPB& registration) {
-  std::lock_guard<simple_spinlock> l(lock_);
+Status TSDescriptor::RegisterUnlocked(const NodeInstancePB& instance,
+                                      const ServerRegistrationPB& registration) {
   CHECK_EQ(instance.permanent_uuid(), permanent_uuid_);
 
   // TODO(KUDU-418): we don't currently support changing RPC addresses since the
@@ -137,6 +212,41 @@ Status TSDescriptor::Register(const NodeInstancePB& instance,
   registration_.reset(new ServerRegistrationPB(registration));
   ts_admin_proxy_.reset();
   consensus_proxy_.reset();
+  return Status::OK();
+}
+
+Status TSDescriptor::Register(const NodeInstancePB& instance,
+                              const ServerRegistrationPB& registration) {
+  // Do basic registration work under the lock.
+  {
+    std::lock_guard<simple_spinlock> l(lock_);
+    RETURN_NOT_OK(RegisterUnlocked(instance, registration));
+  }
+
+  // Resolve the location outside the lock. This involves calling the location
+  // mapping script.
+  const string& location_mapping_cmd = FLAGS_location_mapping_cmd;
+  if (!location_mapping_cmd.empty()) {
+    const auto& host = registration_->rpc_addresses(0).host();
+    string location;
+    TRACE("Assigning location");
+    Status s = GetLocationFromLocationMappingCmd(location_mapping_cmd,
+                                                 host,
+                                                 &location);
+    TRACE("Assigned location");
+
+    // Assign the location under the lock if location resolution succeeds. If
+    // it fails, log the error.
+    if (s.ok()) {
+      std::lock_guard<simple_spinlock> l(lock_);
+      location_.emplace(std::move(location));
+    } else {
+      KLOG_EVERY_N_SECS(ERROR, 60) << Substitute(
+          "Unable to assign location to tablet server $0: $1",
+          ToString(), s.ToString());
+      return s;
+    }
+  }
 
   return Status::OK();
 }

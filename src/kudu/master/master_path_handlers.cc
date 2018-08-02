@@ -32,6 +32,7 @@
 #include <vector>
 
 #include <boost/bind.hpp> // IWYU pragma: keep
+#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
 #include "kudu/common/common.pb.h"
@@ -90,8 +91,16 @@ MasterPathHandlers::~MasterPathHandlers() {
 void MasterPathHandlers::HandleTabletServers(const Webserver::WebRequest& /*req*/,
                                              Webserver::WebResponse* resp) {
   EasyJson* output = resp->output;
-  vector<std::shared_ptr<TSDescriptor>> descs;
+  vector<shared_ptr<TSDescriptor>> descs;
   master_->ts_manager()->GetAllDescriptors(&descs);
+
+  // Sort by UUID so the order remains consistent betweeen restarts.
+  std::sort(descs.begin(), descs.end(),
+            [](const shared_ptr<TSDescriptor>& left,
+               const shared_ptr<TSDescriptor>& right) {
+              DCHECK(left && right);
+              return left->permanent_uuid() < right->permanent_uuid();
+            });
 
   (*output)["num_ts"] = std::to_string(descs.size());
 
@@ -106,7 +115,7 @@ void MasterPathHandlers::HandleTabletServers(const Webserver::WebRequest& /*req*
   output->Set("live_tservers", EasyJson::kArray);
   output->Set("dead_tservers", EasyJson::kArray);
   map<string, array<int, 2>> version_counts;
-  for (const std::shared_ptr<TSDescriptor>& desc : descs) {
+  for (const auto& desc : descs) {
     string ts_key = desc->PresumedDead() ? "dead_tservers" : "live_tservers";
     EasyJson ts_json = (*output)[ts_key].PushBack(EasyJson::kObject);
 
@@ -121,6 +130,7 @@ void MasterPathHandlers::HandleTabletServers(const Webserver::WebRequest& /*req*
     }
     ts_json["time_since_hb"] = StringPrintf("%.1fs", desc->TimeSinceHeartbeat().ToSeconds());
     ts_json["registration"] = pb_util::SecureShortDebugString(reg);
+    ts_json["location"] = desc->location().get_value_or("<none>");
     version_counts[reg.software_version()][desc->PresumedDead() ? 1 : 0]++;
     has_no_live_ts &= desc->PresumedDead();
     has_no_dead_ts &= !desc->PresumedDead();
@@ -599,9 +609,9 @@ void MasterPathHandlers::HandleDumpEntities(const Webserver::WebRequest& /*req*/
 
   jw.String("tablet_servers");
   jw.StartArray();
-  vector<std::shared_ptr<TSDescriptor> > descs;
+  vector<shared_ptr<TSDescriptor> > descs;
   master_->ts_manager()->GetAllDescriptors(&descs);
-  for (const std::shared_ptr<TSDescriptor>& desc : descs) {
+  for (const auto& desc : descs) {
     jw.StartObject();
 
     jw.String("uuid");

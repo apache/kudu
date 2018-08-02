@@ -106,6 +106,7 @@ DECLARE_bool(raft_prepare_replacement_before_eviction);
 DECLARE_double(sys_catalog_fail_during_write);
 DECLARE_int32(diagnostics_log_stack_traces_interval_ms);
 DECLARE_int32(master_inject_latency_on_tablet_lookups_ms);
+DECLARE_string(location_mapping_cmd);
 
 namespace kudu {
 namespace master {
@@ -441,6 +442,42 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
         "at .*:[0-9]+ differs from the catalog manager's (.*); "
         "they must be run with the same scheme", kTsUUID);
     ASSERT_STR_MATCHES(s.ToString(), msg);
+  }
+
+  // Ensure that the TS doesn't register if location mapping fails.
+  {
+    // Set a command that always fails.
+    FLAGS_location_mapping_cmd = "false";
+
+    // Set a new UUID so registration is for the first time.
+    auto new_common = common;
+    new_common.mutable_ts_instance()->set_permanent_uuid("lmc-fail-ts");
+
+    TSHeartbeatRequestPB hb_req;
+    TSHeartbeatResponsePB hb_resp;
+    RpcController rpc;
+    hb_req.mutable_common()->CopyFrom(new_common);
+    hb_req.mutable_registration()->CopyFrom(fake_reg);
+    hb_req.mutable_replica_management_info()->CopyFrom(rmi);
+
+    // Registration should fail.
+    Status s = proxy_->TSHeartbeat(hb_req, &hb_resp, &rpc);
+    ASSERT_TRUE(s.IsRemoteError());
+    ASSERT_STR_CONTAINS(s.ToString(), "failed to run location mapping command");
+
+    // Make sure the tablet server isn't returned to clients.
+    ListTabletServersRequestPB list_ts_req;
+    ListTabletServersResponsePB list_ts_resp;
+    rpc.Reset();
+    ASSERT_OK(proxy_->ListTabletServers(list_ts_req, &list_ts_resp, &rpc));
+
+    LOG(INFO) << SecureDebugString(list_ts_resp);
+    ASSERT_FALSE(list_ts_resp.has_error());
+    ASSERT_EQ(1, list_ts_resp.servers_size());
+    ASSERT_EQ("my-ts-uuid", list_ts_resp.servers(0).instance_id().permanent_uuid());
+
+    // Reset the flag.
+    FLAGS_location_mapping_cmd = "";
   }
 }
 
