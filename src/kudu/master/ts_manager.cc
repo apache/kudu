@@ -109,13 +109,13 @@ Status TSManager::RegisterTS(const NodeInstancePB& instance,
   return Status::OK();
 }
 
-void TSManager::GetAllDescriptors(vector<shared_ptr<TSDescriptor>> *descs) const {
+void TSManager::GetAllDescriptors(TSDescriptorVector* descs) const {
   descs->clear();
   shared_lock<rw_spinlock> l(lock_);
   AppendValuesFromMap(servers_by_id_, descs);
 }
 
-void TSManager::GetAllLiveDescriptors(vector<shared_ptr<TSDescriptor>> *descs) const {
+void TSManager::GetAllLiveDescriptors(TSDescriptorVector* descs) const {
   descs->clear();
 
   shared_lock<rw_spinlock> l(lock_);

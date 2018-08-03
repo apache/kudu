@@ -46,8 +46,10 @@
 #include <cstdlib>
 #include <functional>
 #include <iterator>
+#include <map>
 #include <memory>
 #include <mutex>
+#include <numeric>
 #include <ostream>
 #include <set>
 #include <string>
@@ -99,6 +101,7 @@
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master_cert_authority.h"
+#include "kudu/master/placement_policy.h"
 #include "kudu/master/sys_catalog.h"
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/master/ts_manager.h"
@@ -281,6 +284,9 @@ using kudu::tablet::TabletDataState;
 using kudu::tablet::TabletReplica;
 using kudu::tablet::TabletStatePB;
 using kudu::tserver::TabletServerErrorPB;
+using std::accumulate;
+using std::inserter;
+using std::map;
 using std::pair;
 using std::set;
 using std::shared_ptr;
@@ -673,12 +679,12 @@ Status ProcessColumnPBDefaults(ColumnSchemaPB* col) {
 } // anonymous namespace
 
 CatalogManager::CatalogManager(Master* master)
-  : master_(master),
-    rng_(GetRandomSeed32()),
-    state_(kConstructed),
-    leader_ready_term_(-1),
-    hms_notification_log_event_id_(-1),
-    leader_lock_(RWMutex::Priority::PREFER_WRITING) {
+    : master_(master),
+      rng_(GetRandomSeed32()),
+      state_(kConstructed),
+      leader_ready_term_(-1),
+      hms_notification_log_event_id_(-1),
+      leader_lock_(RWMutex::Priority::PREFER_WRITING) {
   CHECK_OK(ThreadPoolBuilder("leader-initialization")
            // Presently, this thread pool must contain only a single thread
            // (to correctly serialize invocations of ElectedAsLeaderCb upon
@@ -3166,92 +3172,6 @@ class AsyncDeleteReplica : public RetrySpecificTSRpcTask {
   tserver::DeleteTabletResponsePB resp_;
 };
 
-namespace {
-
-// Given exactly two choices in 'two_choices', pick the better tablet server on
-// which to place a tablet replica. Ties are broken using 'rng'.
-shared_ptr<TSDescriptor> PickBetterReplicaLocation(const TSDescriptorVector& two_choices,
-                                                   ThreadSafeRandom* rng) {
-  DCHECK_EQ(two_choices.size(), 2);
-
-  const auto& a = two_choices[0];
-  const auto& b = two_choices[1];
-
-  // When creating replicas, we consider two aspects of load:
-  //   (1) how many tablet replicas are already on the server, and
-  //   (2) how often we've chosen this server recently.
-  //
-  // The first factor will attempt to put more replicas on servers that
-  // are under-loaded (eg because they have newly joined an existing cluster, or have
-  // been reformatted and re-joined).
-  //
-  // The second factor will ensure that we take into account the recent selection
-  // decisions even if those replicas are still in the process of being created (and thus
-  // not yet reported by the server). This is important because, while creating a table,
-  // we batch the selection process before sending any creation commands to the
-  // servers themselves.
-  //
-  // TODO(wdberkeley): in the future we may want to factor in other items such
-  // as available disk space, actual request load, etc.
-  double load_a = a->RecentReplicaCreations() + a->num_live_replicas();
-  double load_b = b->RecentReplicaCreations() + b->num_live_replicas();
-  if (load_a < load_b) {
-    return a;
-  }
-  if (load_b < load_a) {
-    return b;
-  }
-  // If the load is the same, we can just pick randomly.
-  return two_choices[rng->Uniform(2)];
-}
-
-// Given the tablet servers in 'ts_descs', use 'rng' to pick a tablet server to
-// host a tablet replica, excluding tablet servers in 'excluded'.
-// If there are no servers in 'ts_descs' that are not in 'excluded, return nullptr.
-shared_ptr<TSDescriptor> SelectReplica(const TSDescriptorVector& ts_descs,
-                                       const set<shared_ptr<TSDescriptor>>& excluded,
-                                       ThreadSafeRandom* rng) {
-  // The replica selection algorithm follows the idea from
-  // "Power of Two Choices in Randomized Load Balancing"[1]. For each replica,
-  // we randomly select two tablet servers, and then assign the replica to the
-  // less-loaded one of the two. This has some nice properties:
-  //
-  // 1) because the initial selection of two servers is random, we get good
-  //    spreading of replicas across the cluster. In contrast if we sorted by
-  //    load and always picked under-loaded servers first, we'd end up causing
-  //    all tablets of a new table to be placed on an empty server. This wouldn't
-  //    give good load balancing of that table.
-  //
-  // 2) because we pick the less-loaded of two random choices, we do end up with a
-  //    weighting towards filling up the underloaded one over time, without
-  //    the extreme scenario above.
-  //
-  // 3) because we don't follow any sequential pattern, every server is equally
-  //    likely to replicate its tablets to every other server. In contrast, a
-  //    round-robin design would enforce that each server only replicates to its
-  //    adjacent nodes in the TS sort order, limiting recovery bandwidth (see
-  //    KUDU-1317).
-  //
-  // [1] http://www.eecs.harvard.edu/~michaelm/postscripts/mythesis.pdf
-
-  // Pick two random servers, excluding those we've already picked.
-  // If we've only got one server left, 'two_choices' will actually
-  // just contain one element.
-  vector<shared_ptr<TSDescriptor>> two_choices;
-  rng->ReservoirSample(ts_descs, 2, excluded, &two_choices);
-
-  if (two_choices.size() == 2) {
-    // Pick the better of the two.
-    return PickBetterReplicaLocation(two_choices, rng);
-  }
-  if (two_choices.size() == 1) {
-    return two_choices[0];
-  }
-  return nullptr;
-}
-
-} // anonymous namespace
-
 // Send the "Alter Table" with the latest table schema to the leader replica
 // for the tablet.
 // Keeps retrying until we get an "ok" response.
@@ -3466,33 +3386,39 @@ bool AsyncAddReplicaTask::SendRequest(int attempt) {
   LOG(INFO) << Substitute("Sending $0 on tablet $1 (attempt $2)",
                           type_name(), tablet_->id(), attempt);
 
-  // Select the replica we wish to add to the config.
-  // Do not include current members of the config.
-  const auto& config = cstate_.committed_config();
-  set<shared_ptr<TSDescriptor>> excluded;
-  for (auto i = 0; i < config.peers_size(); ++i) {
-    shared_ptr<TSDescriptor> desc;
-    if (master_->ts_manager()->LookupTSByUUID(config.peers(i).permanent_uuid(),
-                                              &desc)) {
-      EmplaceOrDie(&excluded, std::move(desc));
+  Status s;
+  shared_ptr<TSDescriptor> extra_replica;
+  {
+    // Select the replica we wish to add to the config.
+    // Do not include current members of the config.
+    const auto& config = cstate_.committed_config();
+    TSDescriptorVector existing;
+    for (auto i = 0; i < config.peers_size(); ++i) {
+      shared_ptr<TSDescriptor> desc;
+      if (master_->ts_manager()->LookupTSByUUID(config.peers(i).permanent_uuid(),
+                                                &desc)) {
+        existing.emplace_back(std::move(desc));
+      }
     }
+
+    TSDescriptorVector ts_descs;
+    master_->ts_manager()->GetAllLiveDescriptors(&ts_descs);
+
+    // Some of the tablet servers hosting the current members of the config
+    // (see the 'existing' populated above) might be presumably dead.
+    // Inclusion of a presumably dead tablet server into 'existing' is OK:
+    // PlacementPolicy::PlaceExtraTabletReplica() does not require elements of
+    // 'existing' to be a subset of 'ts_descs', and 'ts_descs' contains only
+    // alive tablet servers. Essentially, the list of candidate tablet servers
+    // to host the extra replica is 'ts_descs' after blacklisting all elements
+    // common with 'existing'.
+    PlacementPolicy policy(std::move(ts_descs), rng_);
+    s = policy.PlaceExtraTabletReplica(std::move(existing), &extra_replica);
   }
-
-  TSDescriptorVector ts_descs;
-  master_->ts_manager()->GetAllLiveDescriptors(&ts_descs);
-
-  // Some of the tablet servers hosting the current members of the config
-  // (see the 'excluded' populated above) might be presumably dead.
-  // Inclusion of a presumably dead tablet server into 'excluded' is OK:
-  // SelectReplica() does not require elements of 'excluded' to be a subset of
-  // 'ts_descs', and 'ts_descs' contains only alive tablet servers. Essentially,
-  // the list of candidate tablet servers to host the extra replica
-  // is 'ts_descs' after blacklisting all elements common with 'excluded'.
-  auto extra_replica = SelectReplica(ts_descs, excluded, rng_);
-  if (PREDICT_FALSE(!extra_replica)) {
-    auto msg = Substitute("no extra replica candidate found for tablet $0",
-                          tablet_->ToString());
-    // Check whether it's a situation when an extra replica cannot be found
+  if (PREDICT_FALSE(!s.ok())) {
+    auto msg = Substitute("no extra replica candidate found for tablet $0: $1",
+                          tablet_->ToString(), s.ToString());
+    // Check whether it's a situation when a replacement replica cannot be found
     // due to an inconsistency in cluster configuration. If the tablet has the
     // replication factor of N, and the cluster is using the N->(N+1)->N
     // replica management scheme (see --raft_prepare_replacement_before_eviction
@@ -3520,6 +3446,7 @@ bool AsyncAddReplicaTask::SendRequest(int attempt) {
     return false;
   }
 
+  DCHECK(extra_replica);
   consensus::ChangeConfigRequestPB req;
   req.set_dest_uuid(target_ts_desc_->permanent_uuid());
   req.set_tablet_id(tablet_->id());
@@ -4276,7 +4203,7 @@ void CatalogManager::HandleTabletSchemaVersionReport(
 }
 
 Status CatalogManager::ProcessPendingAssignments(
-    const vector<scoped_refptr<TabletInfo> >& tablets) {
+    const vector<scoped_refptr<TabletInfo>>& tablets) {
   VLOG(1) << "Processing pending assignments";
 
   // Take write locks on all tablets to be processed, and ensure that they are
@@ -4330,15 +4257,18 @@ Status CatalogManager::ProcessPendingAssignments(
   }
 
   // For those tablets which need to be created in this round, assign replicas.
-  TSDescriptorVector ts_descs;
-  master_->ts_manager()->GetAllLiveDescriptors(&ts_descs);
-
-  for (const auto& tablet : deferred.needs_create_rpc) {
-    // NOTE: if we fail to select replicas on the first pass (due to
-    // insufficient Tablet Servers being online), we will still try
-    // again unless the tablet/table creation is cancelled.
-    RETURN_NOT_OK_PREPEND(SelectReplicasForTablet(ts_descs, tablet),
-                          Substitute("error selecting replicas for tablet $0", tablet->id()));
+  {
+    TSDescriptorVector ts_descs;
+    master_->ts_manager()->GetAllLiveDescriptors(&ts_descs);
+    PlacementPolicy policy(std::move(ts_descs), &rng_);
+    for (auto& tablet : deferred.needs_create_rpc) {
+      // NOTE: if we fail to select replicas on the first pass (due to
+      // insufficient Tablet Servers being online), we will still try
+      // again unless the tablet/table creation is cancelled.
+      RETURN_NOT_OK_PREPEND(SelectReplicasForTablet(policy, tablet.get()),
+                            Substitute("error selecting replicas for tablet $0",
+                                       tablet->id()));
+    }
   }
 
   // Update the sys catalog with the new set of tablets/metadata.
@@ -4384,8 +4314,9 @@ Status CatalogManager::ProcessPendingAssignments(
   return Status::OK();
 }
 
-Status CatalogManager::SelectReplicasForTablet(const TSDescriptorVector& ts_descs,
-                                               const scoped_refptr<TabletInfo>& tablet) {
+Status CatalogManager::SelectReplicasForTablet(const PlacementPolicy& policy,
+                                               TabletInfo* tablet) {
+  DCHECK(tablet);
   TableMetadataLock table_guard(tablet->table().get(), LockMode::READ);
 
   if (!table_guard.data().pb.IsInitialized()) {
@@ -4394,30 +4325,44 @@ Status CatalogManager::SelectReplicasForTablet(const TSDescriptorVector& ts_desc
                    tablet->id()));
   }
 
-  int nreplicas = table_guard.data().pb.num_replicas();
-
-  if (ts_descs.size() < nreplicas) {
+  const auto nreplicas = table_guard.data().pb.num_replicas();
+  if (policy.ts_num() < nreplicas) {
     return Status::InvalidArgument(
         Substitute("Not enough tablet servers are online for table '$0'. Need at least $1 "
                    "replicas, but only $2 tablet servers are available",
-                   table_guard.data().name(), nreplicas, ts_descs.size()));
+                   table_guard.data().name(), nreplicas, policy.ts_num()));
   }
+
+  ConsensusStatePB* cstate = tablet->mutable_metadata()->
+      mutable_dirty()->pb.mutable_consensus_state();
+  cstate->set_current_term(kMinimumTerm);
+  RaftConfigPB* config = cstate->mutable_committed_config();
+  DCHECK_EQ(0, config->peers_size()) << "RaftConfig not empty: "
+                                     << SecureShortDebugString(*config);
+  config->clear_peers();
+  // Maintain ability to downgrade Kudu to a version with LocalConsensus.
+  config->set_obsolete_local(nreplicas == 1);
+  config->set_opid_index(consensus::kInvalidOpIdIndex);
 
   // Select the set of replicas for the tablet.
-  ConsensusStatePB* cstate = tablet->mutable_metadata()->mutable_dirty()
-          ->pb.mutable_consensus_state();
-  cstate->set_current_term(kMinimumTerm);
-  RaftConfigPB *config = cstate->mutable_committed_config();
+  TSDescriptorVector descriptors;
+  RETURN_NOT_OK_PREPEND(policy.PlaceTabletReplicas(nreplicas, &descriptors),
+                        Substitute("failed to place replicas for tablet $0 "
+                                   "(table '$1')",
+                                   tablet->id(), table_guard.data().name()));
+  for (const auto& desc : descriptors) {
+    ServerRegistrationPB reg;
+    desc->GetRegistration(&reg);
 
-  // Maintain ability to downgrade Kudu to a version with LocalConsensus.
-  if (nreplicas == 1) {
-    config->set_obsolete_local(true);
-  } else {
-    config->set_obsolete_local(false);
+    RaftPeerPB* peer = config->add_peers();
+    peer->set_member_type(RaftPeerPB::VOTER);
+    peer->set_permanent_uuid(desc->permanent_uuid());
+
+    for (const HostPortPB& addr : reg.rpc_addresses()) {
+      peer->mutable_last_known_addr()->CopyFrom(addr);
+    }
   }
 
-  config->set_opid_index(consensus::kInvalidOpIdIndex);
-  SelectReplicas(ts_descs, nreplicas, config);
   return Status::OK();
 }
 
@@ -4432,42 +4377,6 @@ void CatalogManager::SendCreateTabletRequest(const scoped_refptr<TabletInfo>& ta
                                                       tablet, tablet_lock);
     tablet->table()->AddTask(task);
     WARN_NOT_OK(task->Run(), "Failed to send new tablet request");
-  }
-}
-
-void CatalogManager::SelectReplicas(const TSDescriptorVector& ts_descs,
-                                    int nreplicas,
-                                    RaftConfigPB *config) {
-  DCHECK_EQ(0, config->peers_size()) << "RaftConfig not empty: " << SecureShortDebugString(*config);
-  DCHECK_LE(nreplicas, ts_descs.size());
-
-  // Keep track of servers we've already selected, so that we don't attempt to
-  // put two replicas on the same host.
-  set<shared_ptr<TSDescriptor> > already_selected;
-  for (int i = 0; i < nreplicas; ++i) {
-    shared_ptr<TSDescriptor> ts = SelectReplica(ts_descs, already_selected, &rng_);
-    // We must be able to find a tablet server for the replica because of
-    // checks before this function is called.
-    DCHECK(ts) << "ts_descs: " << ts_descs.size()
-               << " already_sel: " << already_selected.size();
-    InsertOrDie(&already_selected, ts);
-
-    // Increment the number of pending replicas so that we take this selection into
-    // account when assigning replicas for other tablets of the same table. This
-    // value decays back to 0 over time.
-    ts->IncrementRecentReplicaCreations();
-
-    ServerRegistrationPB reg;
-    ts->GetRegistration(&reg);
-
-    RaftPeerPB *peer = config->add_peers();
-    peer->set_member_type(RaftPeerPB::VOTER);
-    peer->set_permanent_uuid(ts->permanent_uuid());
-
-    // TODO: This is temporary, we will use only UUIDs
-    for (const HostPortPB& addr : reg.rpc_addresses()) {
-      peer->mutable_last_known_addr()->CopyFrom(addr);
-    }
   }
 }
 

@@ -20,10 +20,10 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
-#include <vector>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/master/ts_descriptor.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
@@ -34,10 +34,6 @@ class NodeInstancePB;
 class ServerRegistrationPB;
 
 namespace master {
-
-class TSDescriptor;
-
-typedef std::vector<std::shared_ptr<TSDescriptor>> TSDescriptorVector;
 
 // Tracks the servers that the master has heard from, along with their
 // last heartbeat, etc.
@@ -76,11 +72,11 @@ class TSManager {
 
   // Return all of the currently registered TS descriptors into the provided
   // list.
-  void GetAllDescriptors(std::vector<std::shared_ptr<TSDescriptor>>* descs) const;
+  void GetAllDescriptors(TSDescriptorVector* descs) const;
 
   // Return all of the currently registered TS descriptors that have sent a
   // heartbeat recently, indicating that they're alive and well.
-  void GetAllLiveDescriptors(std::vector<std::shared_ptr<TSDescriptor>>* descs) const;
+  void GetAllLiveDescriptors(TSDescriptorVector* descs) const;
 
   // Get the TS count.
   int GetCount() const;

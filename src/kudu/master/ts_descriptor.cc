@@ -147,9 +147,6 @@ TSDescriptor::TSDescriptor(std::string perm_id)
       num_live_replicas_(0) {
 }
 
-TSDescriptor::~TSDescriptor() {
-}
-
 // Compares two repeated HostPortPB fields. Returns true if equal, false otherwise.
 static bool HostPortPBsEqual(const google::protobuf::RepeatedPtrField<HostPortPB>& pb1,
                              const google::protobuf::RepeatedPtrField<HostPortPB>& pb2) {
@@ -179,7 +176,7 @@ Status TSDescriptor::RegisterUnlocked(const NodeInstancePB& instance,
   // host/port is stored persistently in each tablet's metadata.
   if (registration_ &&
       !HostPortPBsEqual(registration_->rpc_addresses(), registration.rpc_addresses())) {
-    string msg = strings::Substitute(
+    string msg = Substitute(
         "Tablet server $0 is attempting to re-register with a different host/port. "
         "This is not currently supported. Old: {$1} New: {$2}",
         instance.permanent_uuid(),
@@ -196,11 +193,10 @@ Status TSDescriptor::RegisterUnlocked(const NodeInstancePB& instance,
   }
 
   if (instance.instance_seqno() < latest_seqno_) {
-    return Status::AlreadyPresent(
-      strings::Substitute("Cannot register with sequence number $0:"
-                          " Already have a registration from sequence number $1",
-                          instance.instance_seqno(),
-                          latest_seqno_));
+    return Status::AlreadyPresent(Substitute(
+        "Cannot register with sequence number $0:"
+        " Already have a registration from sequence number $1",
+        instance.instance_seqno(), latest_seqno_));
   } else if (instance.instance_seqno() == latest_seqno_) {
     // It's possible that the TS registered, but our response back to it
     // got lost, so it's trying to register again with the same sequence
@@ -396,7 +392,7 @@ Status TSDescriptor::GetConsensusProxy(const shared_ptr<rpc::Messenger>& messeng
 string TSDescriptor::ToString() const {
   std::lock_guard<simple_spinlock> l(lock_);
   const auto& addr = registration_->rpc_addresses(0);
-  return strings::Substitute("$0 ($1:$2)", permanent_uuid_, addr.host(), addr.port());
+  return Substitute("$0 ($1:$2)", permanent_uuid_, addr.host(), addr.port());
 }
 
 } // namespace master

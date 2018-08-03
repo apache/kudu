@@ -21,11 +21,13 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <vector>
 
 #include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest_prod.h>
 
+#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/locks.h"
@@ -35,8 +37,6 @@
 
 namespace kudu {
 
-class NodeInstancePB;
-class ServerRegistrationPB;
 class Sockaddr;
 
 namespace consensus {
@@ -63,7 +63,7 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
                             const ServerRegistrationPB& registration,
                             std::shared_ptr<TSDescriptor>* desc);
 
-  virtual ~TSDescriptor();
+  virtual ~TSDescriptor() = default;
 
   // Set the last-heartbeat time to now.
   void UpdateHeartbeatTime();
@@ -137,6 +137,7 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
 
  private:
   FRIEND_TEST(TestTSDescriptor, TestReplicaCreationsDecay);
+  friend class PlacementPolicyTest;
 
   Status RegisterUnlocked(const NodeInstancePB& instance,
                           const ServerRegistrationPB& registration);
@@ -174,6 +175,9 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
 
   DISALLOW_COPY_AND_ASSIGN(TSDescriptor);
 };
+
+// Alias for a vector of tablet server descriptors.
+typedef std::vector<std::shared_ptr<TSDescriptor>> TSDescriptorVector;
 
 } // namespace master
 } // namespace kudu

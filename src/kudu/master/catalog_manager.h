@@ -14,8 +14,8 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_MASTER_CATALOG_MANAGER_H
-#define KUDU_MASTER_CATALOG_MANAGER_H
+
+#pragma once
 
 #include <atomic>
 #include <cstdint>
@@ -41,7 +41,6 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/master/master.pb.h"
-#include "kudu/master/ts_manager.h"
 #include "kudu/tserver/tablet_replica_lookup.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/cow_object.h"
@@ -96,6 +95,7 @@ namespace master {
 class CatalogManagerBgTasks;
 class HmsNotificationLogListenerTask;
 class Master;
+class PlacementPolicy;
 class SysCatalogTable;
 class TSDescriptor;
 class TableInfo;
@@ -870,22 +870,12 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // Loops through the "not created" tablets and sends a CreateTablet() request.
   Status ProcessPendingAssignments(const std::vector<scoped_refptr<TabletInfo> >& tablets);
 
-  // Select N Replicas from online tablet servers (as specified by
-  // 'ts_descs') for the specified tablet and populate the consensus configuration
-  // object. If 'ts_descs' does not specify enough online tablet
-  // servers to select the N replicas, return Status::InvalidArgument.
-  //
-  // This method is called by "ProcessPendingAssignments()".
-  Status SelectReplicasForTablet(const TSDescriptorVector& ts_descs,
-                                 const scoped_refptr<TabletInfo>& tablet);
-
-  // Select N Replicas from the online tablet servers
-  // and populate the consensus configuration object.
-  //
-  // This method is called by "SelectReplicasForTablet".
-  void SelectReplicas(const TSDescriptorVector& ts_descs,
-                      int nreplicas,
-                      consensus::RaftConfigPB *config);
+  // Selects the tservers where the newly-created tablet's replicas will be
+  // placed, populating its consensus configuration in the process.
+  // Returns InvalidArgument if there are not enough live tservers to host
+  // the required number of replicas. 'tablet' must not be null.
+  Status SelectReplicasForTablet(const PlacementPolicy& policy,
+                                 TabletInfo* tablet);
 
   // Handles 'tablet' currently in the PREPARING state.
   //
@@ -1045,4 +1035,3 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
 
 } // namespace master
 } // namespace kudu
-#endif /* KUDU_MASTER_CATALOG_MANAGER_H */
