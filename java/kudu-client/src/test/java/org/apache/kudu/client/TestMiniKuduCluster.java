@@ -14,6 +14,8 @@
 package org.apache.kudu.client;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -82,6 +84,19 @@ public class TestMiniKuduCluster {
       KuduClient client = new KuduClientBuilder(cluster.getMasterAddresses()).build();
       ListTablesResponse resp = client.getTablesList();
       assertTrue(resp.getTablesList().isEmpty());
+      assertNull(client.getHiveMetastoreConfig());
+    }
+  }
+
+  @Test(timeout = 50000)
+  public void testHiveMetastoreIntegration() throws Exception {
+    try (MiniKuduCluster cluster = new MiniKuduCluster.MiniKuduClusterBuilder()
+                                                      .numMasters(NUM_MASTERS)
+                                                      .numTservers(NUM_TABLET_SERVERS)
+                                                      .enableHiveMetastoreIntegration()
+                                                      .build()) {
+      KuduClient client = new KuduClientBuilder(cluster.getMasterAddresses()).build();
+      assertNotNull(client.getHiveMetastoreConfig());
     }
   }
 

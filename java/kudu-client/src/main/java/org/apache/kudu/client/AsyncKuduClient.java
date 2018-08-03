@@ -294,6 +294,10 @@ public class AsyncKuduClient implements AutoCloseable {
   @GuardedBy("sessions")
   private final Set<AsyncKuduSession> sessions = new HashSet<>();
 
+  /** The Hive Metastore configuration of the most recently connected-to master. */
+  @GuardedBy("this")
+  private HiveMetastoreConfig hiveMetastoreConfig = null;
+
   // Since RPCs to the masters also go through RpcProxy, we need to treat them as if they were a
   // normal table. We'll use the following fake table name to identify places where we need special
   // handling.
@@ -815,13 +819,44 @@ public class AsyncKuduClient implements AutoCloseable {
     // We have no authn data -- connect to the master, which will fetch
     // new info.
     return getMasterTableLocationsPB(null)
-        .addCallback(new MasterLookupCB(masterTable, null, 1))
+        .addCallback(new MasterLookupCB(masterTable,
+                                        /* partitionKey */ null,
+                                        /* requestedBatchSize */ 1))
         .addCallback(new Callback<byte[], Object>() {
           @Override
           public byte[] call(Object ignored) {
             // Connecting to the cluster should have also fetched the
             // authn data.
             return securityContext.exportAuthenticationCredentials();
+          }
+        });
+  }
+
+  /**
+   * Get the Hive Metastore configuration of the most recently connected-to leader master, or
+   * {@code null} if the Hive Metastore integration is not enabled.
+   */
+  @InterfaceAudience.LimitedPrivate("Impala")
+  @InterfaceStability.Unstable
+  public Deferred<HiveMetastoreConfig> getHiveMetastoreConfig() {
+    // If we've already connected to the master, use the config we received when we connected.
+    if (hasConnectedToMaster) {
+      synchronized (this) {
+        return Deferred.fromResult(hiveMetastoreConfig);
+      }
+    }
+    // We have no Metastore config -- connect to the master, which will fetch new info.
+    return getMasterTableLocationsPB(null)
+        .addCallback(new MasterLookupCB(masterTable,
+                                        /* partitionKey */ null,
+                                        /* requestedBatchSize */ 1))
+        .addCallback(new Callback<HiveMetastoreConfig, Object>() {
+          @Override
+          public HiveMetastoreConfig call(Object ignored) {
+            // Connecting to the cluster should have also fetched the metastore config.
+            synchronized (AsyncKuduClient.this) {
+              return hiveMetastoreConfig;
+            }
           }
         });
   }
@@ -1543,6 +1578,19 @@ public class AsyncKuduClient implements AutoCloseable {
                         e.getMessage());
                   }
                 }
+
+                HiveMetastoreConfig hiveMetastoreConfig = null;
+                Master.ConnectToMasterResponsePB respPb = resp.getConnectResponse();
+                if (respPb.hasHmsConfig()) {
+                  Master.HiveMetastoreConfig metastoreConf = respPb.getHmsConfig();
+                  hiveMetastoreConfig = new HiveMetastoreConfig(metastoreConf.getHmsUris(),
+                                                                metastoreConf.getHmsSaslEnabled(),
+                                                                metastoreConf.getHmsUuid());
+                }
+                synchronized (AsyncKuduClient.this) {
+                  AsyncKuduClient.this.hiveMetastoreConfig = hiveMetastoreConfig;
+                }
+
                 hasConnectedToMaster = true;
 
                 // Translate the located master into a TableLocations

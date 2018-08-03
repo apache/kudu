@@ -36,6 +36,7 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.net.HostAndPort;
 
+import org.apache.kudu.Common;
 import org.apache.kudu.Common.HostPortPB;
 import org.apache.kudu.tools.Tool.ControlShellRequestPB;
 import org.apache.kudu.tools.Tool.ControlShellResponsePB;
@@ -96,6 +97,7 @@ public class MiniKuduCluster implements AutoCloseable {
   private final String clusterRoot;
 
   private MiniKdcOptionsPB kdcOptionsPb;
+  private final Common.HmsMode hmsMode;
 
   private MiniKuduCluster(boolean enableKerberos,
       int numMasters,
@@ -103,13 +105,15 @@ public class MiniKuduCluster implements AutoCloseable {
       List<String> extraTserverFlags,
       List<String> extraMasterFlags,
       MiniKdcOptionsPB kdcOptionsPb,
-      String clusterRoot) {
+      String clusterRoot,
+      Common.HmsMode hmsMode) {
     this.enableKerberos = enableKerberos;
     this.numMasters = numMasters;
     this.numTservers = numTservers;
     this.extraTserverFlags = ImmutableList.copyOf(extraTserverFlags);
     this.extraMasterFlags = ImmutableList.copyOf(extraMasterFlags);
     this.kdcOptionsPb = kdcOptionsPb;
+    this.hmsMode = hmsMode;
 
     if (clusterRoot == null) {
       // If a cluster root was not set, create a  unique temp directory to use.
@@ -205,6 +209,7 @@ public class MiniKuduCluster implements AutoCloseable {
             .setNumMasters(numMasters)
             .setNumTservers(numTservers)
             .setEnableKerberos(enableKerberos)
+            .setHmsMode(hmsMode)
             .addAllExtraMasterFlags(extraMasterFlags)
             .addAllExtraTserverFlags(extraTserverFlags)
             .setMiniKdcOptions(kdcOptionsPb)
@@ -531,8 +536,8 @@ public class MiniKuduCluster implements AutoCloseable {
     private final List<String> extraMasterFlags = new ArrayList<>();
     private String clusterRoot = null;
 
-    private MiniKdcOptionsPB.Builder kdcOptionsPb =
-        MiniKdcOptionsPB.newBuilder();
+    private MiniKdcOptionsPB.Builder kdcOptionsPb = MiniKdcOptionsPB.newBuilder();
+    private Common.HmsMode hmsMode = Common.HmsMode.NONE;
 
     public MiniKuduClusterBuilder numMasters(int numMasters) {
       this.numMasters = numMasters;
@@ -550,6 +555,11 @@ public class MiniKuduCluster implements AutoCloseable {
      */
     public MiniKuduClusterBuilder enableKerberos() {
       enableKerberos = true;
+      return this;
+    }
+
+    public MiniKuduClusterBuilder enableHiveMetastoreIntegration() {
+      hmsMode = Common.HmsMode.ENABLE_METASTORE_INTEGRATION;
       return this;
     }
 
@@ -600,7 +610,7 @@ public class MiniKuduCluster implements AutoCloseable {
           new MiniKuduCluster(enableKerberos,
               numMasters, numTservers,
               extraTserverFlags, extraMasterFlags,
-              kdcOptionsPb.build(), clusterRoot);
+              kdcOptionsPb.build(), clusterRoot, hmsMode);
       try {
         cluster.start();
       } catch (IOException e) {

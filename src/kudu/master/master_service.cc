@@ -33,6 +33,7 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/replica_management.pb.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/hms/hms_catalog.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
@@ -52,7 +53,9 @@
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 
+DECLARE_bool(hive_metastore_sasl_enabled);
 DECLARE_bool(raft_prepare_replacement_before_eviction);
+DECLARE_string(hive_metastore_uris);
 
 DEFINE_int32(master_inject_latency_on_tablet_lookups_ms, 0,
              "Number of milliseconds that the master will sleep before responding to "
@@ -507,6 +510,14 @@ void MasterServiceImpl::ConnectToMaster(const ConnectToMasterRequestPB* /*req*/,
       // TODO(todd): this might be a good spot for some auditing code?
       resp->mutable_authn_token()->Swap(&authn_token);
     }
+  }
+
+  // Add Hive Metastore information.
+  if (hms::HmsCatalog::IsEnabled()) {
+    auto* metastore_config = resp->mutable_hms_config();
+    metastore_config->set_hms_uris(FLAGS_hive_metastore_uris);
+    metastore_config->set_hms_sasl_enabled(FLAGS_hive_metastore_sasl_enabled);
+    // TODO(dan): set the hms_uuid field.
   }
 
   // Rather than consulting the current consensus role, instead base it

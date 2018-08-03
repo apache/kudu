@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <algorithm>
 #include <iostream>
 #include <map>
 #include <memory>
@@ -40,8 +39,6 @@
 #include "kudu/hms/hive_metastore_types.h"
 #include "kudu/hms/hms_catalog.h"
 #include "kudu/hms/hms_client.h"
-#include "kudu/master/master.h"
-#include "kudu/server/server_base.pb.h"
 #include "kudu/tools/tool_action.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/util/monotime.h"
@@ -68,6 +65,11 @@ DEFINE_bool(upgrade_hms_tables, true,
     "new Kudu metadata format.");
 
 namespace kudu {
+
+namespace server {
+class GetFlagsResponsePB_Flag;
+} // namespace server
+
 namespace tools {
 
 using client::KuduClient;
@@ -119,30 +121,16 @@ Status Init(const RunnerContext& context,
   *master_addrs = GetMasterAddresses(**kudu_client);
 
   if (FLAGS_hive_metastore_uris.empty()) {
-    // Lookup the HMS URIs and SASL config from the master configuration.
-    vector<GetFlagsResponsePB_Flag> flags;
-    RETURN_NOT_OK(GetServerFlags(vector<string>(Split(*master_addrs, ","))[0],
-                                 master::Master::kDefaultPort, false, {}, &flags));
-
-    auto hms_uris = std::find_if(flags.begin(), flags.end(),
-        [] (const GetFlagsResponsePB_Flag& flag) {
-          return flag.name() == "hive_metastore_uris";
-        });
-    if (hms_uris == flags.end()) {
+    string hive_metastore_uris = (*kudu_client)->GetHiveMetastoreUris();
+    if (hive_metastore_uris.empty()) {
       return Status::ConfigurationError(
-          "the Kudu master is not configured with the Hive Metastore integration", master_addrs[0]);
+          "the Kudu leader master is not configured with the Hive Metastore integration");
     }
-    auto hms_sasl_enabled = std::find_if(flags.begin(), flags.end(),
-        [] (const GetFlagsResponsePB_Flag& flag) {
-          return flag.name() == "hive_metastore_sasl_enabled";
-        });
+    bool hive_metastore_sasl_enabled = (*kudu_client)->GetHiveMetastoreSaslEnabled();
 
     // Override the flag values.
-    FLAGS_hive_metastore_uris = hms_uris->value();
-    // SetCommandLineOption avoids needing to parse the value into a bool.
-    CHECK(!gflags::SetCommandLineOption(
-        "hive_metastore_sasl_enabled",
-        hms_sasl_enabled == flags.end() ? "false" : hms_sasl_enabled->value().c_str()).empty());
+    FLAGS_hive_metastore_uris = hive_metastore_uris;
+    FLAGS_hive_metastore_sasl_enabled = hive_metastore_sasl_enabled;
   }
 
   // Create HMS catalog.

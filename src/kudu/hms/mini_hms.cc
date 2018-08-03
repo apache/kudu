@@ -75,6 +75,10 @@ void MiniHms::EnableKerberos(string krb5_conf,
   protection_ = protection;
 }
 
+void MiniHms::SetDataRoot(string data_root) {
+  data_root_ = data_root;
+}
+
 namespace {
 Status FindHomeDir(const char* name, const string& bin_dir, string* home_dir) {
   string name_upper;
@@ -110,10 +114,12 @@ Status MiniHms::Start() {
   RETURN_NOT_OK(FindHomeDir("hive", bin_dir, &hive_home));
   RETURN_NOT_OK(FindHomeDir("java", bin_dir, &java_home));
 
-  auto tmp_dir = GetTestDataDirectory();
+  if (data_root_.empty()) {
+    data_root_ = GetTestDataDirectory();
+  }
 
-  RETURN_NOT_OK(CreateHiveSite(tmp_dir));
-  RETURN_NOT_OK(CreateCoreSite(tmp_dir));
+  RETURN_NOT_OK(CreateHiveSite());
+  RETURN_NOT_OK(CreateCoreSite());
 
   // Comma-separated list of additional jars to add to the HMS classpath.
   string aux_jars = Substitute("$0/hms-plugin.jar,$1/hcatalog/share/hcatalog/*",
@@ -143,9 +149,9 @@ Status MiniHms::Start() {
       { "JAVA_HOME", java_home },
       { "HADOOP_HOME", hadoop_home },
       { "HIVE_AUX_JARS_PATH", aux_jars },
-      { "HIVE_CONF_DIR", tmp_dir },
+      { "HIVE_CONF_DIR", data_root_ },
       { "JAVA_TOOL_OPTIONS", java_options },
-      { "HADOOP_CONF_DIR", tmp_dir },
+      { "HADOOP_CONF_DIR", data_root_ },
   };
 
   // Start the HMS.
@@ -198,7 +204,7 @@ string MiniHms::uris() const {
   return Substitute("thrift://127.0.0.1:$0", port_);
 }
 
-Status MiniHms::CreateHiveSite(const string& tmp_dir) const {
+Status MiniHms::CreateHiveSite() const {
 
   // - datanucleus.schema.autoCreateAll
   // - hive.metastore.schema.verification
@@ -279,7 +285,7 @@ Status MiniHms::CreateHiveSite(const string& tmp_dir) const {
 
   string file_contents = strings::Substitute(kFileTemplate,
                                              notification_log_ttl_.ToSeconds(),
-                                             tmp_dir,
+                                             data_root_,
                                              !keytab_file_.empty(),
                                              keytab_file_,
                                              service_principal_,
@@ -287,10 +293,10 @@ Status MiniHms::CreateHiveSite(const string& tmp_dir) const {
 
   return WriteStringToFile(Env::Default(),
                            file_contents,
-                           JoinPathSegments(tmp_dir, "hive-site.xml"));
+                           JoinPathSegments(data_root_, "hive-site.xml"));
 }
 
-Status MiniHms::CreateCoreSite(const string& tmp_dir) const {
+Status MiniHms::CreateCoreSite() const {
 
   // - hadoop.security.authentication
   //     The HMS uses Hadoop's UGI contraption which will refuse to login a user
@@ -313,7 +319,7 @@ Status MiniHms::CreateCoreSite(const string& tmp_dir) const {
 
   return WriteStringToFile(Env::Default(),
                            file_contents,
-                           JoinPathSegments(tmp_dir, "core-site.xml"));
+                           JoinPathSegments(data_root_, "core-site.xml"));
 }
 
 } // namespace hms

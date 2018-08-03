@@ -191,7 +191,7 @@ class KuduClient::Data {
 
   HostPort leader_master_hostport() const;
 
-  const std::vector<HostPort>& master_hostports() const;
+  std::vector<HostPort> master_hostports() const;
 
   uint64_t GetLatestObservedTimestamp() const;
 
@@ -259,6 +259,13 @@ class KuduClient::Data {
   // The master RPC host ports as configured on the most recently connected to
   // leader master in ConnectedToClusterCb.
   std::vector<HostPort> master_hostports_;
+
+  // The Hive Metastore configuration of the most recently connected to leader
+  // master, or an empty string if the leader master is not configured to
+  // integrate with a Hive Metastore.
+  std::string hive_metastore_uris_;
+  bool hive_metastore_sasl_enabled_;
+  std::string hive_metastore_uuid_;
 
   // Proxy to the leader master.
   std::shared_ptr<master::MasterServiceProxy> master_proxy_;

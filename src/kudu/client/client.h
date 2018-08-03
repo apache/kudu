@@ -536,6 +536,25 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   /// @return Status object for the operation.
   Status ExportAuthenticationCredentials(std::string* authn_creds) const;
 
+  // @return the configured Hive Metastore URIs on the most recently connected to
+  //    leader master, or an empty string if the Hive Metastore integration is not
+  //    enabled.
+  std::string KUDU_NO_EXPORT GetHiveMetastoreUris() const;
+
+  // @return the configured Hive Metastore SASL (Kerberos) configuration on the most
+  //    recently connected to leader master, or an arbitrary value if the Hive
+  //    Metastore integration is not enabled.
+  bool KUDU_NO_EXPORT GetHiveMetastoreSaslEnabled() const;
+
+  // @return a unique ID which identifies the Hive Metastore instance, if the
+  //    cluster is configured with the Hive Metastore integration, or an
+  //    arbitrary value if the Hive Metastore integration is not enabled.
+  //
+  // @note this is provided on a best-effort basis, as not all Hive Metastore
+  //    versions which Kudu is compatible with include the necessary APIs. See
+  //    HIVE-16452 for more info.
+  std::string KUDU_NO_EXPORT GetHiveMetastoreUuid() const;
+
  private:
   class KUDU_NO_EXPORT Data;
 

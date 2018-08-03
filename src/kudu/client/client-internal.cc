@@ -357,7 +357,8 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
     vector<uint32_t> required_feature_flags);
 
 KuduClient::Data::Data()
-    : latest_observed_timestamp_(KuduClient::kNoTimestamp) {
+    : hive_metastore_sasl_enabled_(false),
+      latest_observed_timestamp_(KuduClient::kNoTimestamp) {
 }
 
 KuduClient::Data::~Data() {
@@ -707,6 +708,12 @@ void KuduClient::Data::ConnectedToClusterCb(
       for (const auto& hostport : connect_response.master_addrs()) {
         master_hostports_.emplace_back(HostPort(hostport.host(), hostport.port()));
       }
+
+      const auto& hive_config = connect_response.hms_config();
+      hive_metastore_uris_ = hive_config.hms_uris();
+      hive_metastore_sasl_enabled_ = hive_config.hms_sasl_enabled();
+      hive_metastore_uuid_ = hive_config.hms_uuid();
+
       master_proxy_.reset(new MasterServiceProxy(messenger_, leader_addr, leader_hostname));
       master_proxy_->set_user_credentials(user_credentials_);
     }
@@ -827,7 +834,7 @@ HostPort KuduClient::Data::leader_master_hostport() const {
   return leader_master_hostport_;
 }
 
-const vector<HostPort>& KuduClient::Data::master_hostports() const {
+vector<HostPort> KuduClient::Data::master_hostports() const {
   std::lock_guard<simple_spinlock> l(leader_master_lock_);
   return master_hostports_;
 }

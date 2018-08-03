@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Executor;
 
+import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
@@ -79,6 +80,19 @@ public class KuduClient implements AutoCloseable {
    */
   public boolean hasLastPropagatedTimestamp() {
     return asyncClient.hasLastPropagatedTimestamp();
+  }
+
+
+  /**
+   * Returns the Hive Metastore configuration of the cluster.
+   *
+   * @return the Hive Metastore configuration of the cluster
+   * @throws KuduException if the configuration can not be retrieved
+   */
+  @InterfaceAudience.LimitedPrivate("Impala")
+  @InterfaceStability.Unstable
+  public HiveMetastoreConfig getHiveMetastoreConfig() throws KuduException {
+    return joinAndHandleException(asyncClient.getHiveMetastoreConfig());
   }
 
   /**

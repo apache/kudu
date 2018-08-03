@@ -49,6 +49,10 @@ class MiniHms {
                       std::string keytab_file,
                       rpc::SaslProtection::Type protection);
 
+  // Configures the mini HMS to store its data in the provided path. If not set,
+  // it uses a test-only temporary directory.
+  void SetDataRoot(std::string data_root);
+
   // Starts the mini Hive metastore.
   //
   // If the MiniHms has already been started and stopped, it will be restarted
@@ -77,10 +81,10 @@ class MiniHms {
  private:
 
   // Creates a hive-site.xml for the mini HMS.
-  Status CreateHiveSite(const std::string& tmp_dir) const WARN_UNUSED_RESULT;
+  Status CreateHiveSite() const WARN_UNUSED_RESULT;
 
   // Creates a core-site.xml for the mini HMS.
-  Status CreateCoreSite(const std::string& tmp_dir) const WARN_UNUSED_RESULT;
+  Status CreateCoreSite() const WARN_UNUSED_RESULT;
 
   // Waits for the metastore process to bind to a port.
   Status WaitForHmsPorts() WARN_UNUSED_RESULT;
@@ -88,6 +92,8 @@ class MiniHms {
   std::unique_ptr<Subprocess> hms_process_;
   MonoDelta notification_log_ttl_ = MonoDelta::FromSeconds(86400);
   uint16_t port_ = 0;
+
+  std::string data_root_;
 
   // Kerberos configuration
   std::string krb5_conf_;
