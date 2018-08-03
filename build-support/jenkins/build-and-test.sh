@@ -70,6 +70,10 @@
 #     option is not mutually exclusive from BUILD_PYTHON. If both options
 #     are set (default), then both will be run.
 #
+#   PIP_INSTALL_FLAGS  Default: ""
+#     Extra flags which are passed to 'pip install' when setting up the build
+#     environment for the Python wrapper.
+#
 #   MVN_FLAGS          Default: ""
 #     Extra flags which are passed to 'mvn' when building and running Java
 #     tests. This can be useful, for example, to choose a different maven
@@ -377,27 +381,32 @@ if [ "$BUILD_JAVA" == "1" ]; then
 
   # Run the full Maven build.
   if [ "$BUILD_MAVEN" == "1" ]; then
-      MVN_FLAGS="$MVN_FLAGS -B"
-      MVN_FLAGS="$MVN_FLAGS -Dsurefire.rerunFailingTestsCount=3"
-      MVN_FLAGS="$MVN_FLAGS -Dfailsafe.rerunFailingTestsCount=3"
-      MVN_FLAGS="$MVN_FLAGS -Dmaven.javadoc.skip"
-      if ! mvn $MVN_FLAGS clean verify ; then
-        EXIT_STATUS=1
-        FAILURES="$FAILURES"$'Java Maven build/test failed\n'
-      fi
+    EXTRA_MVN_FLAGS="-B"
+    EXTRA_MVN_FLAGS="$EXTRA_MVN_FLAGS -Dsurefire.rerunFailingTestsCount=3"
+    EXTRA_MVN_FLAGS="$EXTRA_MVN_FLAGS -Dfailsafe.rerunFailingTestsCount=3"
+    EXTRA_MVN_FLAGS="$EXTRA_MVN_FLAGS -Dmaven.javadoc.skip"
+    EXTRA_MVN_FLAGS="$EXTRA_MVN_FLAGS $MVN_FLAGS"
+    if ! mvn $EXTRA_MVN_FLAGS clean verify ; then
+      EXIT_STATUS=1
+      FAILURES="$FAILURES"$'Java Maven build/test failed\n'
+    fi
   fi
 
   # Run the full Gradle build.
   if [ "$BUILD_GRADLE" == "1" ]; then
-     GRADLE_FLAGS="$GRADLE_FLAGS --console=plain --no-daemon --continue -DrerunFailingTestsCount=3"
-     # KUDU-2524: temporarily disable scalafmt until we can work out its JDK
-     # incompatibility issue.
-     GRADLE_FLAGS="$GRADLE_FLAGS -DskipFormat"
-     # TODO: Run `gradle check` in BUILD_TYPE DEBUG when static code analysis is fixed
-     if ! ./gradlew $GRADLE_FLAGS clean test integrationTest ; then
-       EXIT_STATUS=1
-       FAILURES="$FAILURES"$'Java Gradle build/test failed\n'
-     fi
+    EXTRA_GRADLE_FLAGS="--console=plain"
+    EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS --no-daemon"
+    EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS --continue"
+    EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS -DrerunFailingTestsCount=3"
+    # KUDU-2524: temporarily disable scalafmt until we can work out its JDK
+    # incompatibility issue.
+    EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS -DskipFormat"
+    EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS $GRADLE_FLAGS"
+    # TODO: Run `gradle check` in BUILD_TYPE DEBUG when static code analysis is fixed
+    if ! ./gradlew $EXTRA_GRADLE_FLAGS clean test integrationTest ; then
+      EXIT_STATUS=1
+      FAILURES="$FAILURES"$'Java Gradle build/test failed\n'
+    fi
   fi
 
   # Run a script to verify the contents of the JARs to ensure the shading and
@@ -437,20 +446,20 @@ if [ "$BUILD_PYTHON" == "1" ]; then
   # Beginning with pip 10, Python 2.6 is no longer supported. Attempting to
   # upgrade to pip 10 on Python 2.6 yields syntax errors. We don't need any new
   # pip features, so let's pin to the last pip version to support Python 2.6.
-  pip install -i https://pypi.python.org/simple --upgrade 'pip < 10.0.0b1'
+  pip install -i https://pypi.python.org/simple $PIP_INSTALL_FLAGS --upgrade 'pip < 10.0.0b1'
 
   # New versions of pip raise an exception when upgrading old versions of
   # setuptools (such as the one found in el6). The workaround is to upgrade
   # setuptools on its own, outside of requirements.txt, and with the pip version
   # check disabled.
-  pip install --disable-pip-version-check --upgrade 'setuptools >= 0.8'
+  pip install --disable-pip-version-check $PIP_INSTALL_FLAGS --upgrade 'setuptools >= 0.8'
 
   # We've got a new pip and new setuptools. We can now install the rest of the
   # Python client's requirements.
   #
   # Installing the Cython dependency may involve some compiler work, so we must
   # pass in the current values of CC and CXX.
-  CC=$CLANG CXX=$CLANG++ pip install -r requirements.txt
+  CC=$CLANG CXX=$CLANG++ pip install $PIP_INSTALL_FLAGS -r requirements.txt
 
   # Delete old Cython extensions to force them to be rebuilt.
   rm -Rf build kudu_python.egg-info kudu/*.so
@@ -495,20 +504,20 @@ if [ "$BUILD_PYTHON3" == "1" ]; then
   # recursively to transitive dependencies installed via a direct dependency's
   # "python setup.py" command. Therefore we have no choice but to upgrade to a
   # new version of pip to proceed.
-  pip install -i https://pypi.python.org/simple --upgrade pip
+  pip install -i https://pypi.python.org/simple $PIP_INSTALL_FLAGS --upgrade pip
 
   # New versions of pip raise an exception when upgrading old versions of
   # setuptools (such as the one found in el6). The workaround is to upgrade
   # setuptools on its own, outside of requirements.txt, and with the pip version
   # check disabled.
-  pip install --disable-pip-version-check --upgrade 'setuptools >= 0.8'
+  pip install --disable-pip-version-check $PIP_INSTALL_FLAGS --upgrade 'setuptools >= 0.8'
 
   # We've got a new pip and new setuptools. We can now install the rest of the
   # Python client's requirements.
   #
   # Installing the Cython dependency may involve some compiler work, so we must
   # pass in the current values of CC and CXX.
-  CC=$CLANG CXX=$CLANG++ pip install -r requirements.txt
+  CC=$CLANG CXX=$CLANG++ pip install $PIP_INSTALL_FLAGS -r requirements.txt
 
   # Delete old Cython extensions to force them to be rebuilt.
   rm -Rf build kudu_python.egg-info kudu/*.so
