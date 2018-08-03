@@ -552,8 +552,8 @@ Status RaftConsensus::StepDown(LeaderStepDownResponsePB* resp) {
     return Status::OK();
   }
   LOG_WITH_PREFIX_UNLOCKED(INFO) << "Received request to step down";
-  RETURN_NOT_OK(BecomeReplicaUnlocked());
-
+  RETURN_NOT_OK(HandleTermAdvanceUnlocked(CurrentTermUnlocked() + 1,
+                                          SKIP_FLUSH_TO_DISK));
   // Snooze the failure detector for an extra leader failure timeout.
   // This should ensure that a different replica is elected leader after this one steps down.
   SnoozeFailureDetector(string("explicit stepdown request"), MonoDelta::FromMilliseconds(

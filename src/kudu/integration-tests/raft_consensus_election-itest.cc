@@ -26,6 +26,7 @@
 #include <gtest/gtest.h>
 
 #include "kudu/common/wire_protocol.pb.h"
+#include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
@@ -59,8 +60,10 @@ METRIC_DECLARE_counter(transaction_memory_pressure_rejections);
 METRIC_DECLARE_gauge_int64(raft_term);
 
 using kudu::cluster::ExternalTabletServer;
+using kudu::consensus::ConsensusStatePB;
 using kudu::consensus::RaftPeerPB;
 using kudu::itest::AddServer;
+using kudu::itest::GetConsensusState;
 using kudu::itest::GetReplicaStatusAndCheckIfLeader;
 using kudu::itest::LeaderStepDown;
 using kudu::itest::RemoveServer;
@@ -278,6 +281,7 @@ TEST_F(RaftConsensusElectionITest, AutomaticLeaderElectionOneReplica) {
 }
 
 TEST_F(RaftConsensusElectionITest, LeaderStepDown) {
+  const auto kTimeout = MonoDelta::FromSeconds(10);
   const vector<string> kTsFlags = {
     "--enable_leader_failure_detection=false"
   };
@@ -293,25 +297,39 @@ TEST_F(RaftConsensusElectionITest, LeaderStepDown) {
   AppendValuesFromMap(tablet_servers_, &tservers);
 
   // Start with no leader.
-  Status s = GetReplicaStatusAndCheckIfLeader(tservers[0], tablet_id_, MonoDelta::FromSeconds(10));
+  const auto* ts = tservers[0];
+  Status s = GetReplicaStatusAndCheckIfLeader(ts, tablet_id_, kTimeout);
   ASSERT_TRUE(s.IsIllegalState()) << "TS #0 should not be leader yet: " << s.ToString();
 
   // Become leader.
-  ASSERT_OK(StartElection(tservers[0], tablet_id_, MonoDelta::FromSeconds(10)));
-  ASSERT_OK(WaitUntilLeader(tservers[0], tablet_id_, MonoDelta::FromSeconds(10)));
-  ASSERT_OK(WriteSimpleTestRow(tservers[0], tablet_id_, RowOperationsPB::INSERT,
-                               kTestRowKey, kTestRowIntVal, "foo", MonoDelta::FromSeconds(10)));
-  ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10), tablet_servers_, tablet_id_, 2));
+  ASSERT_OK(StartElection(ts, tablet_id_, kTimeout));
+  ASSERT_OK(WaitUntilLeader(ts, tablet_id_, kTimeout));
+  ASSERT_OK(WriteSimpleTestRow(ts, tablet_id_, RowOperationsPB::INSERT,
+                               kTestRowKey, kTestRowIntVal, "foo", kTimeout));
+  ASSERT_OK(WaitForServersToAgree(kTimeout, tablet_servers_, tablet_id_, 2));
+
+  // Get the Raft term from the newly established leader.
+  ConsensusStatePB cstate_before;
+  ASSERT_OK(GetConsensusState(ts, tablet_id_, kTimeout,
+                              consensus::EXCLUDE_HEALTH_REPORT, &cstate_before));
 
   // Step down and test that a 2nd stepdown returns the expected result.
-  ASSERT_OK(LeaderStepDown(tservers[0], tablet_id_, MonoDelta::FromSeconds(10)));
+  ASSERT_OK(LeaderStepDown(ts, tablet_id_, kTimeout));
+
+  // Get the Raft term from the leader that has just stepped down.
+  ConsensusStatePB cstate_after;
+  ASSERT_OK(GetConsensusState(ts, tablet_id_, kTimeout,
+                              consensus::EXCLUDE_HEALTH_REPORT, &cstate_after));
+  // The stepped-down leader should increment its run-time Raft term.
+  EXPECT_GT(cstate_after.current_term(), cstate_before.current_term());
+
   TabletServerErrorPB error;
-  s = LeaderStepDown(tservers[0], tablet_id_, MonoDelta::FromSeconds(10), &error);
+  s = LeaderStepDown(ts, tablet_id_, kTimeout, &error);
   ASSERT_TRUE(s.IsIllegalState()) << "TS #0 should not be leader anymore: " << s.ToString();
   ASSERT_EQ(TabletServerErrorPB::NOT_THE_LEADER, error.code()) << SecureShortDebugString(error);
 
-  s = WriteSimpleTestRow(tservers[0], tablet_id_, RowOperationsPB::INSERT,
-                         kTestRowKey, kTestRowIntVal, "foo", MonoDelta::FromSeconds(10));
+  s = WriteSimpleTestRow(ts, tablet_id_, RowOperationsPB::INSERT,
+                         kTestRowKey, kTestRowIntVal, "foo", kTimeout);
   ASSERT_TRUE(s.IsIllegalState()) << "TS #0 should not accept writes as follower: "
                                   << s.ToString();
 }
@@ -517,8 +535,7 @@ TEST_F(RaftConsensusElectionITest, TombstonedVoteAfterFailedTabletCopy) {
             "tablet_copy_fault_crash_on_fetch_all", "1.0"));
   auto* leader_ts = tablet_servers_[leader_uuid];
   auto* follower_ts = tablet_servers_[follower_uuid];
-  ASSERT_OK(itest::AddServer(leader_ts, tablet_id_, follower_ts, RaftPeerPB::VOTER,
-                             kTimeout));
+  ASSERT_OK(AddServer(leader_ts, tablet_id_, follower_ts, RaftPeerPB::VOTER, kTimeout));
   ASSERT_OK(cluster_->tablet_server_by_uuid(follower_uuid)->WaitForInjectedCrash(kTimeout));
 
   // Shut down the rest of the cluster, then only bring back the node we

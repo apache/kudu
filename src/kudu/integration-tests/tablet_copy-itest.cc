@@ -256,8 +256,7 @@ TEST_F(TabletCopyITest, TestRejectRogueLeader) {
   ASSERT_OK(cluster_->tablet_server(zombie_leader_index)->Resume());
 
   // Loop for a few seconds to ensure that the tablet doesn't transition to READY.
-  MonoTime deadline = MonoTime::Now();
-  deadline.AddDelta(MonoDelta::FromSeconds(5));
+  MonoTime deadline = MonoTime::Now() + MonoDelta::FromSeconds(5);
   while (MonoTime::Now() < deadline) {
     ASSERT_OK(itest::ListTablets(ts, timeout, &tablets));
     ASSERT_EQ(1, tablets.size());
@@ -267,13 +266,9 @@ TEST_F(TabletCopyITest, TestRejectRogueLeader) {
 
   LOG(INFO) << "the rogue leader was not able to tablet copy the tombstoned follower";
 
-  // Force the rogue leader to step down.
-  // Then, send a tablet copy start request from a "fake" leader that
-  // sends an up-to-date term in the RB request but the actual term stored
-  // in the copy source's consensus metadata would still be old.
-  LOG(INFO) << "forcing rogue leader T " << tablet_id << " P " << zombie_leader_uuid
-            << " to step down...";
-  ASSERT_OK(itest::LeaderStepDown(ts_map_[zombie_leader_uuid], tablet_id, timeout));
+  // Send a tablet copy start request from a "fake" leader that
+  // sends an up-to-date term in the tablet copy request but the actual term
+  // stored in the copy source's consensus metadata would still be old.
   ExternalTabletServer* zombie_ets = cluster_->tablet_server(zombie_leader_index);
   // It's not necessarily part of the API but this could return faliure due to
   // rejecting the remote. We intend to make that part async though, so ignoring
