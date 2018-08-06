@@ -403,7 +403,7 @@ if [ "$BUILD_JAVA" == "1" ]; then
     EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS -DskipFormat"
     EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS $GRADLE_FLAGS"
     # TODO: Run `gradle check` in BUILD_TYPE DEBUG when static code analysis is fixed
-    if ! ./gradlew $EXTRA_GRADLE_FLAGS clean test integrationTest ; then
+    if ! ./gradlew $EXTRA_GRADLE_FLAGS clean test ; then
       EXIT_STATUS=1
       FAILURES="$FAILURES"$'Java Gradle build/test failed\n'
     fi

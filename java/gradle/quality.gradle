@@ -35,7 +35,7 @@ checkstyle {
 
 // Create an aggregate checkstyle task.
 // This simplifies running checkstyle on all the code by only needing one task instead of multiple in your command.
-task checkstyle(dependsOn: [checkstyleMain, checkstyleTest, checkstyleIntegrationTest], group: "Verification") {
+task checkstyle(dependsOn: [checkstyleMain, checkstyleTest], group: "Verification") {
   description = "Run Checkstyle analysis."
 }
 
@@ -54,7 +54,7 @@ tasks.withType(com.github.spotbugs.SpotBugsTask) {
 
 // Create an aggregate spotbugs task.
 // This simplifies running spotbugs on all the code by only needing one task instead of multiple in your command.
-task spotbugs(dependsOn: [spotbugsMain, spotbugsTest, spotbugsIntegrationTest], group: "Verification") {
+task spotbugs(dependsOn: [spotbugsMain, spotbugsTest], group: "Verification") {
   description = "Run SpotBugs analysis."
 }
 
@@ -76,7 +76,7 @@ tasks.withType(ScalaCompile) {
 
 // Create an aggregate pmd task.
 // This simplifies running pmd on all the code by only needing one task instead of multiple in your command.
-task pmd(dependsOn: [pmdMain, pmdTest, pmdIntegrationTest], group: "Verification") {
+task pmd(dependsOn: [pmdMain, pmdTest], group: "Verification") {
   description = "Run PMD analysis."
 }
 
@@ -110,7 +110,7 @@ dependencies {
 
 // Create an aggregate animal-sniffer task.
 // This simplifies running animal-sniffer on all the code by only needing one task instead of multiple in your command.
-task animalsniffer(dependsOn: [animalsnifferMain, animalsnifferTest, animalsnifferIntegrationTest], group: "Verification") {
+task animalsniffer(dependsOn: [animalsnifferMain, animalsnifferTest], group: "Verification") {
   description = "Run animal-sniffer analysis."
 }
 
