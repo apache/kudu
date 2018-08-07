@@ -350,12 +350,12 @@ class TestScanner(TestScanBase):
         else:
             self.assertEqual(types[0], np.int64)
             self.assertEqual(types[1], 'datetime64[ns, UTC]')
-            self.assertEqual(types[3], np.object)
-            self.assertEqual(types[4], np.bool)
-            self.assertEqual(types[5], np.float64)
-            self.assertEqual(types[6], np.int8)
-            self.assertEqual(types[7], np.object)
-            self.assertEqual(types[8], np.float32)
+            self.assertEqual(types[2], np.object)
+            self.assertEqual(types[3], np.bool)
+            self.assertEqual(types[4], np.float64)
+            self.assertEqual(types[5], np.int8)
+            self.assertEqual(types[6], np.object)
+            self.assertEqual(types[7], np.float32)
 
     def test_scanner_to_pandas_row_count(self):
         """
