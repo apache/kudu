@@ -194,11 +194,16 @@ setup(
     # requirements.txt so that dependencies aren't downloaded at test-time
     # (when it's more difficult to override various pip installation options).
     #
-    # pytest 3.3 and pytest-timeout 1.2.1 dropped support for python 2.6.
+    # pytest 3.3 [1], pytest-timeout 1.2.1 [2], and pandas 0.18 [3] dropped
+    # support for python 2.6.
     #
-    # See https://docs.pytest.org/en/latest/changelog.html#id164 and
-    # https://pypi.org/project/pytest-timeout/#id5 for more details.
-    tests_require=['pytest >=2.8,<3.3', 'pytest-timeout >=1.1.0,<1.2.1', 'pandas <0.21'],
+    # 1. https://docs.pytest.org/en/latest/changelog.html#id164
+    # 2. https://pypi.org/project/pytest-timeout/#id5
+    # 3. https://pandas.pydata.org/pandas-docs/version/0.23.0/whatsnew.html#v0-18-0-march-13-2016
+    tests_require=['pytest >=2.8,<3.3',
+                   'pytest-timeout >=1.1.0,<1.2.1',
+                   'pandas <0.18'],
+
     install_requires=['cython >= 0.21', 'pytz', 'six'],
     description=DESCRIPTION,
     long_description=LONG_DESCRIPTION,

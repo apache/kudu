@@ -454,6 +454,20 @@ if [ "$BUILD_PYTHON" == "1" ]; then
   # check disabled.
   pip install --disable-pip-version-check $PIP_INSTALL_FLAGS --upgrade 'setuptools >= 0.8'
 
+  # One of our dependencies is pandas, installed via requirements.txt below. It
+  # depends on numpy, and if we don't install numpy directly, the pandas
+  # installation will install the latest numpy which is incompatible with Python 2.6.
+  #
+  # To work around this, we need to install a 2.6-compatible version of numpy
+  # before installing pandas. Listing such a numpy version in requirements.txt
+  # doesn't work; it needs to be explicitly installed here.
+  #
+  # Installing numpy may involve some compiler work, so we must pass in the
+  # current values of CC and CXX.
+  #
+  # See https://github.com/numpy/numpy/releases/tag/v1.12.0 for more details.
+  CC=$CLANG CXX=$CLANG++ pip install $PIP_INSTALL_FLAGS 'numpy <1.12.0'
+
   # We've got a new pip and new setuptools. We can now install the rest of the
   # Python client's requirements.
   #
