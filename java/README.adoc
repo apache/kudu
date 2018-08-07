@@ -1,0 +1,181 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+= Kudu Java Developer Documentation
+
+== System Requirements
+
+- Runtime
+    * Java 7+
+- Build time
+    * Java 8+
+- Test time
+    * Built Kudu Binaries
+    * MIT Kerberos (krb5)
+
+WARNING: Support for Java 7 is deprecated as of Kudu 1.5.0 and may be removed in
+the next major release.
+
+== Building Everything
+
+[source,bash]
+----
+$ ./gradlew assemble
+----
+
+== Building Just the Client
+
+[source,bash]
+----
+$ ./gradlew :kudu-client:assemble
+----
+
+The client jar can then be found at `kudu-client/build/libs`.
+
+== Running the Tests
+
+The tests may locate the master and tablet server
+binaries by looking in `build/latest/bin` from the root of
+the git repository. If you have recently built the C++ code
+for Kudu, those should be present already.
+
+If for some reason the binaries aren't in the expected location
+as shown above, you can pass
+`-DbinDir=/path/to/directory`.
+
+Once everything is setup correctly, run:
+
+[source,bash]
+----
+$ ./gradlew test
+----
+
+If you would like to force tests that were already run to re-run
+you can pass `-PrerunTests`.
+
+If you would like to run a subset of the tests or a single test
+you can pass the Gradle `--tests <pattern>` argument to filter
+the tests ran.
+See https://docs.gradle.org/current/userguide/java_testing.html#test_filtering[here]
+for detailed documentation of all pattern options.
+
+Single Test Class Example:
+
+[source,bash]
+----
+$ ./gradlew :kudu-client:test --tests org.apache.kudu.TestColumnSchema
+----
+
+Single Test Method Example:
+
+[source,bash]
+----
+$ ./gradlew :kudu-client:test --tests org.apache.kudu.TestColumnSchema.testEquals
+----
+
+Pattern Example:
+
+[source,bash]
+----
+$ ./gradlew test --tests *IT*
+----
+
+== Additional Gradle Commands
+
+=== Discovering Other Gradle Tasks
+
+[source,bash]
+----
+$ ./gradlew tasks
+----
+
+=== Clearing Build State
+
+[source,bash]
+----
+$ ./gradlew clean
+----
+
+Note: You generally don't need to run this task, but it can be useful
+to rule out any build issues.
+
+=== Installing Artifacts to the Local Maven Repository
+
+[source,bash]
+----
+$ ./gradlew install
+----
+
+=== Checking for Dependency Updates
+
+[source,bash]
+----
+./gradlew dependencyUpdates
+----
+
+NOTE: Additional Gradle command line flag options can be found
+https://docs.gradle.org/current/userguide/command_line_interface.html[here].
+
+== Building with Maven
+
+WARNING: The Maven build is deprecated and may be removed in
+a future release.
+
+Though the Gradle build is the preferred way to build,
+the Maven build still exists and can be used.
+
+=== Running a Full Build
+
+[source,bash]
+----
+$ mvn package -DskipTests
+----
+
+=== Running the Tests
+
+[source,bash]
+----
+$ mvn test
+----
+
+=== Running the Integration Tests
+
+[source,bash]
+----
+$ mvn verify
+----
+
+== Tips for IDEs
+
+=== IntelliJ
+
+Follow the standard instructions as laid out
+https://www.jetbrains.com/help/idea/gradle.html#gradle_import[here]
+to import the Gradle project.
+
+For the most consistent behavior on the command line and
+in the IDE, be sure to enable `Delegate IDE build/run actions to gradle`
+as described https://www.jetbrains.com/help/idea/gradle.html#delegate_build_gradle[here].
+
+=== Eclipse
+
+Follow the instructions as laid out
+http://www.vogella.com/tutorials/EclipseGradle/article.html#eclipse-gradle-support[here]
+to install the Eclipse Gradle (Buildship) tooling.
+Then follow the instruction on the same page
+http://www.vogella.com/tutorials/EclipseGradle/article.html#import-an-existing-gradle-project[here]
+to import an existing project.
