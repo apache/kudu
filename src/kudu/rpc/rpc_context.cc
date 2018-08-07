@@ -148,7 +148,7 @@ Status RpcContext::AddOutboundSidecar(unique_ptr<RpcSidecar> car, int* idx) {
   return call_->AddOutboundSidecar(std::move(car), idx);
 }
 
-Status RpcContext::GetInboundSidecar(int idx, Slice* slice) {
+Status RpcContext::GetInboundSidecar(int idx, Slice* slice) const {
   return call_->GetInboundSidecar(idx, slice);
 }
 

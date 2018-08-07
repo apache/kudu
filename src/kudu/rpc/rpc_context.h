@@ -163,7 +163,7 @@ class RpcContext {
 
   // Fills 'sidecar' with a sidecar sent by the client. Returns an error if 'idx' is out
   // of bounds.
-  Status GetInboundSidecar(int idx, Slice* slice);
+  Status GetInboundSidecar(int idx, Slice* slice) const;
 
   // Return the identity of remote user who made this call.
   const RemoteUser& remote_user() const;
