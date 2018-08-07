@@ -190,6 +190,10 @@ setup(
     },
     setup_requires=['pytest-runner'],
 
+    # Note: dependencies in tests_require should also be listed in
+    # requirements.txt so that dependencies aren't downloaded at test-time
+    # (when it's more difficult to override various pip installation options).
+    #
     # pytest 3.3 and pytest-timeout 1.2.1 dropped support for python 2.6.
     #
     # See https://docs.pytest.org/en/latest/changelog.html#id164 and
