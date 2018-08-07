@@ -67,13 +67,20 @@ fetch_and_expand() {
 
   FULL_URL="${CLOUDFRONT_URL_PREFIX}/${FILENAME}"
   SUCCESS=0
-  # Loop in case we encounter a corrupted archive and we need to re-download it.
-  for attempt in 1 2; do
+  # Loop in case we encounter an error.
+  for attempt in 1 2 3; do
     if [ -r "$FILENAME" ]; then
       echo "Archive $FILENAME already exists. Not re-downloading archive."
     else
       echo "Fetching $FILENAME from $FULL_URL"
-      curl --retry 3 -L -O "$FULL_URL"
+      if ! curl --retry 3 -L -O "$FULL_URL"; then
+        echo "Error downloading $FILENAME"
+        rm -f "$FILENAME"
+
+        # Pause for a bit before looping in case the server throttled us.
+        sleep 5
+        continue
+      fi
     fi
 
     echo "Unpacking $FILENAME to $SOURCE"
