@@ -1,6 +1,6 @@
 ---
 layout: post
-title: Getting Started with Kudu an O'Reilly Title
+title: Getting Started with Kudu - an O'Reilly Title
 author: Brock Noland
 ---
 
@@ -14,9 +14,7 @@ capabilities to successfully implement complex Lambda architectures or even
 simply implement continuous ingest. Updating or deleting data, were simplify
 nightmare. General Data Protection Regulation (GDPR) would have been an extreme
 challenge at that time.
-
-<!-- more -->
-
+<!--more-->
 In that context, on October 11th 2012 Todd Lipcon perform Apache Kudu's initial
 commit. The commit message was:
 
@@ -40,7 +38,7 @@ makes life much easier as both an operator of a Hadoop cluster and a developer p
 business value on the platform.
 
 Through this work, I was lucky enough to be a co-author of
-[Getting Started with Kudu(http://shop.oreilly.com/product/0636920065739.do).
+[Getting Started with Kudu](http://shop.oreilly.com/product/0636920065739.do).
 The book is a summation of mine and our co-authors, Jean-Marc Spaggiari, Mladen
 Kovacevic, and Ryan Bosshart,  learnings while cutting our teeth on early versions
 of Kudu. Specifically you will learn:
