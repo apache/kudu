@@ -11,7 +11,7 @@ blog with their permission.
 Five years ago, enabling Data Science and Advanced Analytics on the
 Hadoop platform was hard. Organizations required strong Software Engineering
 capabilities to successfully implement complex Lambda architectures or even
-simply implement continuous ingest. Updating or deleting data, were simplify
+simply implement continuous ingest. Updating or deleting data, were simply a
 nightmare. General Data Protection Regulation (GDPR) would have been an extreme
 challenge at that time.
 <!--more-->
