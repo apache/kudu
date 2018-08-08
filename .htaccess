@@ -25,4 +25,8 @@
   # Server should support REQUEST_SCHEME and should be running http or https.
   RewriteCond "%{REQUEST_SCHEME}" "^http"
   RewriteRule ^/?(.*)$ %{REQUEST_SCHEME}://kudu.apache.org/$1 [R=301,L]
+
+  # Redirect http to https
+  RewriteCond %{HTTPS} off
+  RewriteRule (.*) https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
 </IfModule>
