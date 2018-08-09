@@ -168,6 +168,7 @@ PeerMessageQueue::PeerMessageQueue(const scoped_refptr<MetricEntity>& metric_ent
     : raft_pool_observers_token_(std::move(raft_pool_observers_token)),
       local_peer_pb_(std::move(local_peer_pb)),
       tablet_id_(std::move(tablet_id)),
+      successor_watch_in_progress_(false),
       log_cache_(metric_entity, std::move(log), local_peer_pb_.permanent_uuid(), tablet_id_),
       metrics_(metric_entity),
       time_manager_(std::move(time_manager)) {
@@ -877,6 +878,18 @@ void PeerMessageQueue::AdvanceQueueWatermark(const char* type,
   }
 }
 
+void PeerMessageQueue::BeginWatchForSuccessor(
+    const boost::optional<string>& successor_uuid) {
+  std::lock_guard<simple_spinlock> l(queue_lock_);
+  successor_watch_in_progress_ = true;
+  designated_successor_uuid_ = successor_uuid;
+}
+
+void PeerMessageQueue::EndWatchForSuccessor() {
+  std::lock_guard<simple_spinlock> l(queue_lock_);
+  successor_watch_in_progress_ = false;
+}
+
 void PeerMessageQueue::UpdateFollowerWatermarks(int64_t committed_index,
                                                 int64_t all_replicated_index) {
   std::lock_guard<simple_spinlock> l(queue_lock_);
@@ -1035,6 +1048,42 @@ void PeerMessageQueue::PromoteIfNeeded(TrackedPeer* peer, const TrackedPeer& pre
   }
 }
 
+void PeerMessageQueue::TransferLeadershipIfNeeded(const TrackedPeer& peer,
+                                                  const ConsensusStatusPB& status) {
+  DCHECK(queue_lock_.is_locked());
+  if (!successor_watch_in_progress_) {
+    return;
+  }
+
+  if (designated_successor_uuid_ && peer.uuid() != designated_successor_uuid_.get()) {
+    return;
+  }
+
+  if (queue_state_.mode != PeerMessageQueue::LEADER ||
+      peer.last_exchange_status != PeerStatus::OK) {
+    return;
+  }
+
+  RaftPeerPB* peer_pb;
+  Status s = GetRaftConfigMember(DCHECK_NOTNULL(queue_state_.active_config.get()),
+                                 peer.uuid(), &peer_pb);
+  if (!s.ok() || peer_pb->member_type() != RaftPeerPB::VOTER) {
+    return;
+  }
+
+  bool peer_caught_up =
+      !OpIdEquals(status.last_received_current_leader(), MinimumOpId()) &&
+      OpIdEquals(status.last_received_current_leader(), queue_state_.last_appended);
+  if (!peer_caught_up) {
+    return;
+  }
+
+  VLOG(1) << "Successor watch: peer " << peer.uuid() << " is caught up to "
+          << "the leader at OpId " << OpIdToString(status.last_received_current_leader());
+  successor_watch_in_progress_ = false;
+  NotifyObserversOfSuccessor(peer.uuid());
+}
+
 bool PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
                                         const ConsensusResponsePB& response) {
   DCHECK(response.IsInitialized()) << "Error: Uninitialized: "
@@ -1100,6 +1149,7 @@ bool PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
       // Check if the peer is a NON_VOTER candidate ready for promotion.
       PromoteIfNeeded(peer, prev_peer_state, status);
 
+      TransferLeadershipIfNeeded(*peer, status);
     } else if (!OpIdEquals(status.last_received_current_leader(), MinimumOpId())) {
       // Their log may have diverged from ours, however we are in the process
       // of replicating our ops to them, so continue doing so. Eventually, we
@@ -1410,6 +1460,16 @@ void PeerMessageQueue::NotifyObserversOfPeerToPromote(const string& peer_uuid) {
              observer->NotifyPeerToPromote(peer_uuid);
            })),
       LogPrefixUnlocked() + "Unable to notify RaftConsensus of peer to promote.");
+}
+
+void PeerMessageQueue::NotifyObserversOfSuccessor(const string& peer_uuid) {
+  DCHECK(queue_lock_.is_locked());
+  WARN_NOT_OK(raft_pool_observers_token_->SubmitClosure(
+      Bind(&PeerMessageQueue::NotifyObserversTask, Unretained(this),
+           [=](PeerMessageQueueObserver* observer) {
+             observer->NotifyPeerToStartElection(peer_uuid);
+           })),
+      LogPrefixUnlocked() + "Unable to notify RaftConsensus of available successor.");
 }
 
 void PeerMessageQueue::NotifyObserversOfPeerHealthChange() {

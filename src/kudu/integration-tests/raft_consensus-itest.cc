@@ -112,6 +112,8 @@ using kudu::consensus::ConsensusRequestPB;
 using kudu::consensus::ConsensusResponsePB;
 using kudu::consensus::ConsensusServiceProxy;
 using kudu::consensus::EXCLUDE_HEALTH_REPORT;
+using kudu::consensus::LeaderStepDownRequestPB;
+using kudu::consensus::LeaderStepDownResponsePB;
 using kudu::consensus::MajoritySize;
 using kudu::consensus::MakeOpId;
 using kudu::consensus::OpId;
@@ -3046,5 +3048,71 @@ TEST_P(RaftConsensusParamReplicationModesITest, TestRestartWithDifferentUUID) {
     ASSERT_FALSE(files_in_wal_dir.empty());
   });
 }
+
+// Designating graceful leadership transfer to a follower that cannot catch up
+// should eventually fail.
+TEST_F(RaftConsensusITest, TestLeaderTransferWhenFollowerFallsBehindLeaderGC) {
+  if (!AllowSlowTests()) {
+    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
+    return;
+  }
+
+  vector<string> ts_flags = {
+    // Disable follower eviction.
+    "--evict_failed_followers=false",
+  };
+  vector<string> master_flags = {
+    // Prevent the master from evicting unrecoverably failed followers.
+    "--catalog_manager_evict_excess_replicas=false",
+  };
+  AddFlagsForLogRolls(&ts_flags); // For CauseFollowerToFallBehindLogGC().
+  NO_FATALS(BuildAndStart(ts_flags, master_flags));
+
+  string leader_uuid;
+  int64_t orig_term;
+  string follower_uuid;
+  NO_FATALS(CauseFollowerToFallBehindLogGC(
+      tablet_servers_, &leader_uuid, &orig_term, &follower_uuid));
+  SCOPED_TRACE(Substitute("leader: $0 follower: $1", leader_uuid, follower_uuid));
+
+  // Wait for remaining majority to agree.
+  TabletServerMap active_tablet_servers = tablet_servers_;
+  ASSERT_EQ(3, active_tablet_servers.size());
+  ASSERT_EQ(1, active_tablet_servers.erase(follower_uuid));
+  ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(30), active_tablet_servers,
+                                  tablet_id_, 1));
+
+  // Try to transfer leadership to the follower that has fallen behind log GC.
+  auto* leader_ts = FindOrDie(tablet_servers_, leader_uuid);
+  ConsensusServiceProxy* c_proxy = CHECK_NOTNULL(leader_ts->consensus_proxy.get());
+  LeaderStepDownRequestPB req;
+  LeaderStepDownResponsePB resp;
+  RpcController rpc;
+
+  req.set_dest_uuid(leader_uuid);
+  req.set_tablet_id(tablet_id_);
+  req.set_mode(consensus::LeaderStepDownMode::GRACEFUL);
+  req.set_new_leader_uuid(follower_uuid);
+
+  // The request should succeed.
+  ASSERT_OK(c_proxy->LeaderStepDown(req, &resp, &rpc));
+  ASSERT_FALSE(resp.has_error()) << SecureDebugString(resp);
+
+  // However, the leader will not be able to transfer leadership to the lagging
+  // follower, and eventually will resume normal operation. We check this by
+  // waiting for a write to succeed.
+  ASSERT_EVENTUALLY([&] {
+    WriteRequestPB w_req;
+    WriteResponsePB w_resp;
+    rpc.Reset();
+    rpc.set_timeout(MonoDelta::FromSeconds(30));
+    w_req.set_tablet_id(tablet_id_);
+    ASSERT_OK(SchemaToPB(schema_, w_req.mutable_schema()));
+    AddTestRowToPB(RowOperationsPB::INSERT, schema_, kTestRowKey, kTestRowIntVal,
+                   "hello world", w_req.mutable_row_operations());
+    ASSERT_OK(leader_ts->tserver_proxy->Write(w_req, &w_resp, &rpc));
+  });
+}
+
 }  // namespace tserver
 }  // namespace kudu

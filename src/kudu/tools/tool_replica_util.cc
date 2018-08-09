@@ -60,6 +60,7 @@ using kudu::consensus::GetConsensusStateRequestPB;
 using kudu::consensus::GetConsensusStateResponsePB;
 using kudu::consensus::GetLastOpIdRequestPB;
 using kudu::consensus::GetLastOpIdResponsePB;
+using kudu::consensus::LeaderStepDownMode;
 using kudu::consensus::MODIFY_PEER;
 using kudu::consensus::OpId;
 using kudu::consensus::REMOVE_PEER;
@@ -136,13 +137,24 @@ Status GetConsensusState(const unique_ptr<ConsensusServiceProxy>& proxy,
 Status DoLeaderStepDown(const string& tablet_id,
                         const string& leader_uuid,
                         const HostPort& leader_hp,
+                        LeaderStepDownMode mode,
+                        const boost::optional<string>& new_leader_uuid,
                         const MonoDelta& timeout) {
+  if (mode == LeaderStepDownMode::ABRUPT && new_leader_uuid) {
+    return Status::InvalidArgument(
+        "cannot specify a new leader uuid for an abrupt stepdown");
+  }
+
   unique_ptr<ConsensusServiceProxy> proxy;
   RETURN_NOT_OK(BuildProxy(leader_hp.host(), leader_hp.port(), &proxy));
 
   consensus::LeaderStepDownRequestPB req;
   req.set_dest_uuid(leader_uuid);
   req.set_tablet_id(tablet_id);
+  req.set_mode(mode);
+  if (new_leader_uuid) {
+    req.set_new_leader_uuid(new_leader_uuid.get());
+  }
 
   RpcController rpc;
   rpc.set_timeout(timeout);
@@ -202,6 +214,7 @@ Status CheckCompleteMove(const vector<string>& master_addresses,
   DCHECK(is_complete);
   DCHECK(completion_status);
   *is_complete = false;
+
   // Get the latest leader info. It may change later, due to our actions or
   // outside factors.
   string orig_leader_uuid;
@@ -276,6 +289,7 @@ Status CheckCompleteMove(const vector<string>& master_addresses,
           (is_343_scheme || DoKsckForTablet(master_addresses, tablet_id).ok())) {
         // The leader is the node we intend to remove; make it step down.
         ignore_result(DoLeaderStepDown(tablet_id, orig_leader_uuid, orig_leader_hp,
+                                       LeaderStepDownMode::GRACEFUL, boost::none,
                                        client->default_admin_operation_timeout()));
       }
       from_ts_uuid_in_config = true;

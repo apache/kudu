@@ -503,12 +503,28 @@ message RunLeaderElectionResponsePB {
   optional ServerErrorPB error = 1;
 }
 
+enum LeaderStepDownMode {
+  // The leader will immediately step down.
+  ABRUPT = 1;
+  // The leader will attempt to arrange for a successor to be elected ASAP.
+  // If it cannot do so, it remains leader.
+  GRACEFUL = 2;
+}
+
 message LeaderStepDownRequestPB {
-  // UUID of server this request is addressed to.
+  // UUID of the server this request is addressed to.
   optional bytes dest_uuid = 2;
 
   // The id of the tablet.
   required bytes tablet_id = 1;
+
+  // How the leader will attempt to relinquish its leadership.
+  optional LeaderStepDownMode mode = 3;
+
+  // The UUID of the peer that should be promoted to leader in GRACEFUL mode.
+  // If unset, the leader will select a successor.
+  // In ABRUPT mode, it is illegal to set this field.
+  optional bytes new_leader_uuid = 4;
 }
 
 message LeaderStepDownResponsePB {

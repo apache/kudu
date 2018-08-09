@@ -46,6 +46,7 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/quorum_util.h"
+#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/split.h"
@@ -88,6 +89,7 @@ using kudu::cluster::ExternalTabletServer;
 using kudu::consensus::COMMITTED_OPID;
 using kudu::consensus::ConsensusStatePB;
 using kudu::consensus::EXCLUDE_HEALTH_REPORT;
+using kudu::consensus::LeaderStepDownMode;
 using kudu::consensus::OpId;
 using kudu::itest::FindTabletFollowers;
 using kudu::itest::FindTabletLeader;
@@ -1206,50 +1208,312 @@ Status GetTermFromConsensus(const vector<TServerDetails*>& tservers,
       "No leader replica found for tablet $0", tablet_id));
 }
 
-TEST_F(AdminCliTest, TestLeaderStepDown) {
+TEST_F(AdminCliTest, TestAbruptLeaderStepDown) {
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(10);
+  const vector<string> kMasterFlags = {
+    "--catalog_manager_wait_for_new_tablets_to_elect_leader=false",
+  };
+  const vector<string> kTserverFlags = {
+    "--enable_leader_failure_detection=false",
+  };
   FLAGS_num_tablet_servers = 3;
   FLAGS_num_replicas = 3;
-  NO_FATALS(BuildAndStart());
+  NO_FATALS(BuildAndStart(kTserverFlags, kMasterFlags));
 
+  // Wait for the tablet to be running.
   vector<TServerDetails*> tservers;
   AppendValuesFromMap(tablet_servers_, &tservers);
   ASSERT_EQ(FLAGS_num_tablet_servers, tservers.size());
   for (auto& ts : tservers) {
-    ASSERT_OK(WaitUntilTabletRunning(ts,
-                                     tablet_id_,
-                                     MonoDelta::FromSeconds(10)));
+    ASSERT_OK(WaitUntilTabletRunning(ts, tablet_id_, kTimeout));
   }
 
-  int64_t current_term;
-  ASSERT_OK(GetTermFromConsensus(tservers, tablet_id_,
-                                 &current_term));
+  // Elect the leader and wait for the tservers and master to see the leader.
+  const auto* leader = tservers[0];
+  ASSERT_OK(StartElection(leader, tablet_id_, kTimeout));
+  ASSERT_OK(WaitForServersToAgree(kTimeout, tablet_servers_,
+                                  tablet_id_, /*minimum_index=*/1));
+  TServerDetails* master_observed_leader;
+  ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &master_observed_leader));
+  ASSERT_EQ(leader->uuid(), master_observed_leader->uuid());
 
-  // The leader for the given tablet may change anytime, resulting in
-  // the command returning an error code. Hence checking for term advancement
-  // only if the leader_step_down succeeds. It is also unsafe to check
-  // the term advancement without honoring status of the command since
-  // there may not have been another election in the meanwhile.
+  // Ask the leader to step down.
   string stderr;
   Status s = RunKuduTool({
+    "tablet",
+    "leader_step_down",
+    "--abrupt",
+    cluster_->master()->bound_rpc_addr().ToString(),
+    tablet_id_
+  }, nullptr, &stderr);
+
+  // There shouldn't be a leader now, since failure detection is disabled.
+  for (const auto* ts : tservers) {
+    s = GetReplicaStatusAndCheckIfLeader(ts, tablet_id_, kTimeout);
+    ASSERT_TRUE(s.IsIllegalState()) << "Expected IllegalState because replica "
+      "should not be the leader: " << s.ToString();
+  }
+}
+
+TEST_F(AdminCliTest, TestGracefulLeaderStepDown) {
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(10);
+  const vector<string> kMasterFlags = {
+    "--catalog_manager_wait_for_new_tablets_to_elect_leader=false",
+  };
+  const vector<string> kTserverFlags = {
+    "--enable_leader_failure_detection=false",
+  };
+  FLAGS_num_tablet_servers = 3;
+  FLAGS_num_replicas = 3;
+  NO_FATALS(BuildAndStart(kTserverFlags, kMasterFlags));
+
+  // Wait for the tablet to be running.
+  vector<TServerDetails*> tservers;
+  AppendValuesFromMap(tablet_servers_, &tservers);
+  ASSERT_EQ(FLAGS_num_tablet_servers, tservers.size());
+  for (auto& ts : tservers) {
+    ASSERT_OK(WaitUntilTabletRunning(ts, tablet_id_, kTimeout));
+  }
+
+  // Elect the leader and wait for the tservers and master to see the leader.
+  const auto* leader = tservers[0];
+  ASSERT_OK(StartElection(leader, tablet_id_, kTimeout));
+  ASSERT_OK(WaitForServersToAgree(kTimeout, tablet_servers_,
+                                  tablet_id_, /*minimum_index=*/1));
+  TServerDetails* master_observed_leader;
+  ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &master_observed_leader));
+  ASSERT_EQ(leader->uuid(), master_observed_leader->uuid());
+
+  // Ask the leader to transfer leadership to a specific peer.
+  const auto new_leader_uuid = tservers[1]->uuid();
+  string stderr;
+  Status s = RunKuduTool({
+    "tablet",
+    "leader_step_down",
+    Substitute("--new_leader_uuid=$0", new_leader_uuid),
+    cluster_->master()->bound_rpc_addr().ToString(),
+    tablet_id_
+  }, nullptr, &stderr);
+  ASSERT_TRUE(s.ok()) << s.ToString();
+
+  // Eventually, the chosen node should become leader.
+  ASSERT_EVENTUALLY([&]() {
+    ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &master_observed_leader));
+    ASSERT_EQ(new_leader_uuid, master_observed_leader->uuid());
+  });
+
+  // Ask the leader to transfer leadership.
+  s = RunKuduTool({
     "tablet",
     "leader_step_down",
     cluster_->master()->bound_rpc_addr().ToString(),
     tablet_id_
   }, nullptr, &stderr);
-  bool not_currently_leader = stderr.find(
-      Status::IllegalState("").CodeAsString()) != string::npos;
-  ASSERT_TRUE(s.ok() || not_currently_leader) << "stderr: " << stderr;
-  if (s.ok()) {
-    int64_t new_term;
-    ASSERT_EVENTUALLY([&]() {
-        ASSERT_OK(GetTermFromConsensus(tservers, tablet_id_,
-                                       &new_term));
-        ASSERT_GT(new_term, current_term);
-      });
+  ASSERT_TRUE(s.ok()) << s.ToString();
+
+  // Eventually, some other node should become leader.
+  const std::unordered_set<string> possible_new_leaders = { tservers[0]->uuid(),
+                                                            tservers[2]->uuid() };
+  ASSERT_EVENTUALLY([&]() {
+    ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &master_observed_leader));
+    ASSERT_TRUE(ContainsKey(possible_new_leaders, master_observed_leader->uuid()));
+  });
+}
+
+// Leader should reject requests to transfer leadership to a non-member of the
+// config.
+TEST_F(AdminCliTest, TestLeaderTransferToEvictedPeer) {
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(10);
+  // In this test, tablet leadership is manually controlled and the master
+  // should not rereplicate.
+  const vector<string> kMasterFlags = {
+    "--catalog_manager_wait_for_new_tablets_to_elect_leader=false",
+    "--master_add_server_when_underreplicated=false",
+  };
+  const vector<string> kTserverFlags = {
+    "--enable_leader_failure_detection=false",
+  };
+  FLAGS_num_tablet_servers = 3;
+  FLAGS_num_replicas = 3;
+  NO_FATALS(BuildAndStart(kTserverFlags, kMasterFlags));
+
+  // Wait for the tablet to be running.
+  vector<TServerDetails*> tservers;
+  AppendValuesFromMap(tablet_servers_, &tservers);
+  ASSERT_EQ(FLAGS_num_tablet_servers, tservers.size());
+  for (auto& ts : tservers) {
+    ASSERT_OK(WaitUntilTabletRunning(ts, tablet_id_, kTimeout));
+  }
+
+  // Elect the leader and wait for the tservers and master to see the leader.
+  const auto* leader = tservers[0];
+  ASSERT_OK(StartElection(leader, tablet_id_, kTimeout));
+  ASSERT_OK(WaitForServersToAgree(kTimeout, tablet_servers_,
+                                  tablet_id_, /*minimum_index=*/1));
+  TServerDetails* master_observed_leader;
+  ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &master_observed_leader));
+  ASSERT_EQ(leader->uuid(), master_observed_leader->uuid());
+
+  const string& master_addr = cluster_->master()->bound_rpc_addr().ToString();
+
+  // Evict the first follower.
+  string stderr;
+  const auto evicted_uuid = tservers[1]->uuid();
+  Status s = RunKuduTool({
+    "tablet",
+    "change_config",
+    "remove_replica",
+    master_addr,
+    tablet_id_,
+    evicted_uuid,
+  }, nullptr, &stderr);
+  ASSERT_TRUE(s.ok()) << s.ToString() << " stderr: " << stderr;
+
+  // Ask the leader to transfer leadership to the evicted peer.
+  stderr.clear();
+  s = RunKuduTool({
+    "tablet",
+    "leader_step_down",
+    Substitute("--new_leader_uuid=$0", evicted_uuid),
+    master_addr,
+    tablet_id_
+  }, nullptr, &stderr);
+  ASSERT_TRUE(s.IsRuntimeError()) << s.ToString() << " stderr: " << stderr;
+  ASSERT_STR_CONTAINS(stderr,
+                      Substitute("tablet server $0 is not a voter in the active config",
+                                 evicted_uuid));
+}
+
+// Leader should reject requests to transfer leadership to a non-voter of the
+// config.
+TEST_F(AdminCliTest, TestLeaderTransferToNonVoter) {
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(10);
+  // In this test, tablet leadership is manually controlled and the master
+  // should not rereplicate.
+  const vector<string> kMasterFlags = {
+    "--catalog_manager_wait_for_new_tablets_to_elect_leader=false",
+    "--master_add_server_when_underreplicated=false",
+  };
+  const vector<string> kTserverFlags = {
+    "--enable_leader_failure_detection=false",
+  };
+  FLAGS_num_tablet_servers = 3;
+  FLAGS_num_replicas = 3;
+  NO_FATALS(BuildAndStart(kTserverFlags, kMasterFlags));
+
+  // Wait for the tablet to be running.
+  vector<TServerDetails*> tservers;
+  AppendValuesFromMap(tablet_servers_, &tservers);
+  ASSERT_EQ(FLAGS_num_tablet_servers, tservers.size());
+  for (auto& ts : tservers) {
+    ASSERT_OK(WaitUntilTabletRunning(ts, tablet_id_, kTimeout));
+  }
+
+  // Elect the leader and wait for the tservers and master to see the leader.
+  const auto* leader = tservers[0];
+  ASSERT_OK(StartElection(leader, tablet_id_, kTimeout));
+  ASSERT_OK(WaitForServersToAgree(kTimeout, tablet_servers_,
+                                  tablet_id_, /*minimum_index=*/1));
+  TServerDetails* master_observed_leader;
+  ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &master_observed_leader));
+  ASSERT_EQ(leader->uuid(), master_observed_leader->uuid());
+
+  const string& master_addr = cluster_->master()->bound_rpc_addr().ToString();
+
+  // Demote the first follower to a non-voter.
+  string stderr;
+  const auto non_voter_uuid = tservers[1]->uuid();
+  Status s = RunKuduTool({
+    "tablet",
+    "change_config",
+    "change_replica_type",
+    master_addr,
+    tablet_id_,
+    non_voter_uuid,
+    "NON_VOTER",
+  }, nullptr, &stderr);
+  ASSERT_TRUE(s.ok()) << s.ToString() << " stderr: " << stderr;
+
+  // Ask the leader to transfer leadership to the non-voter.
+  stderr.clear();
+  s = RunKuduTool({
+    "tablet",
+    "leader_step_down",
+    Substitute("--new_leader_uuid=$0", non_voter_uuid),
+    master_addr,
+    tablet_id_
+  }, nullptr, &stderr);
+  ASSERT_TRUE(s.IsRuntimeError()) << s.ToString() << " stderr: " << stderr;
+  ASSERT_STR_CONTAINS(stderr,
+                      Substitute("tablet server $0 is not a voter in the active config",
+                                 non_voter_uuid));
+}
+
+// Leader transfer causes the tablet to stop accepting new writes. This test
+// tests that writes can still succeed even if lots of leader transfers and
+// abrupt stepdowns are happening, as long as the writes have long enough
+// timeouts to ride over the unstable leadership.
+TEST_F(AdminCliTest, TestSimultaneousLeaderTransferAndAbruptStepdown) {
+  if (!AllowSlowTests()) {
+    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
+    return;
+  }
+
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(10);
+  FLAGS_num_tablet_servers = 3;
+  FLAGS_num_replicas = 3;
+  NO_FATALS(BuildAndStart());
+
+  // Wait for the tablet to be running.
+  vector<TServerDetails*> tservers;
+  AppendValuesFromMap(tablet_servers_, &tservers);
+  ASSERT_EQ(FLAGS_num_tablet_servers, tservers.size());
+  for (auto& ts : tservers) {
+    ASSERT_OK(WaitUntilTabletRunning(ts, tablet_id_, kTimeout));
+  }
+
+  // Start a workload with long timeouts. Everything should eventually go
+  // through but it might take a while given the leadership changes.
+  TestWorkload workload(cluster_.get());
+  workload.set_table_name(kTableId);
+  workload.set_timeout_allowed(false);
+  workload.set_write_timeout_millis(60000);
+  workload.set_num_replicas(FLAGS_num_replicas);
+  workload.set_num_write_threads(1);
+  workload.set_write_batch_size(1);
+  workload.Setup();
+  workload.Start();
+
+  const string& master_addr = cluster_->master()->bound_rpc_addr().ToString();
+  while (workload.rows_inserted() < 1000) {
+    // Issue a graceful stepdown and then an abrupt stepdown, every second.
+    // The results are ignored because the tools might fail due to the
+    // constant leadership changes.
+    ignore_result(RunKuduTool({
+      "tablet",
+      "leader_step_down",
+      master_addr,
+      tablet_id_
+    }));
+    ignore_result(RunKuduTool({
+      "tablet",
+      "leader_step_down",
+      "--abrupt",
+      master_addr,
+      tablet_id_
+    }));
+    SleepFor(MonoDelta::FromMilliseconds(1000));
   }
 }
 
-TEST_F(AdminCliTest, TestLeaderStepDownWhenNotPresent) {
+class TestLeaderStepDown :
+    public AdminCliTest,
+    public ::testing::WithParamInterface<LeaderStepDownMode> {
+};
+INSTANTIATE_TEST_CASE_P(, TestLeaderStepDown,
+                        ::testing::Values(LeaderStepDownMode::ABRUPT,
+                                          LeaderStepDownMode::GRACEFUL));
+TEST_P(TestLeaderStepDown, TestLeaderStepDownWhenNotPresent) {
   FLAGS_num_tablet_servers = 3;
   FLAGS_num_replicas = 3;
   NO_FATALS(BuildAndStart(
@@ -1271,12 +1535,63 @@ TEST_F(AdminCliTest, TestLeaderStepDownWhenNotPresent) {
   ASSERT_OK(RunKuduTool({
     "tablet",
     "leader_step_down",
+    Substitute("--abrupt=$0", GetParam() == LeaderStepDownMode::ABRUPT),
     cluster_->master()->bound_rpc_addr().ToString(),
     tablet_id_
   }, &stdout));
   ASSERT_STR_CONTAINS(stdout,
                       Substitute("No leader replica found for tablet $0",
                                  tablet_id_));
+}
+
+TEST_P(TestLeaderStepDown, TestRepeatedLeaderStepDown) {
+  FLAGS_num_tablet_servers = 3;
+  FLAGS_num_replicas = 3;
+  // Speed up leader failure detection and shorten the leader transfer period.
+  NO_FATALS(BuildAndStart({ "--raft_heartbeat_interval_ms=50" }));
+  vector<TServerDetails*> tservers;
+  AppendValuesFromMap(tablet_servers_, &tservers);
+  ASSERT_EQ(FLAGS_num_tablet_servers, tservers.size());
+  for (auto& ts : tservers) {
+    ASSERT_OK(WaitUntilTabletRunning(ts,
+                                     tablet_id_,
+                                     MonoDelta::FromSeconds(10)));
+  }
+
+  // Start a workload.
+  TestWorkload workload(cluster_.get());
+  workload.set_table_name(kTableId);
+  workload.set_timeout_allowed(false);
+  workload.set_write_timeout_millis(30000);
+  workload.set_num_replicas(FLAGS_num_replicas);
+  workload.set_num_write_threads(4);
+  workload.set_write_batch_size(1);
+  workload.Setup();
+  workload.Start();
+
+  // Issue stepdown requests repeatedly. If we leave some time for an election,
+  // the workload should still make progress.
+  const string abrupt_flag = Substitute("--abrupt=$0",
+                                        GetParam() == LeaderStepDownMode::ABRUPT);
+  string stdout;
+  string stderr;
+  while (workload.rows_inserted() < 2000) {
+    stdout.clear();
+    stderr.clear();
+    Status s = RunKuduTool({
+      "tablet",
+      "leader_step_down",
+      abrupt_flag,
+      cluster_->master()->bound_rpc_addr().ToString(),
+      tablet_id_
+    }, &stdout, &stderr);
+    bool not_currently_leader = stderr.find(
+        Status::IllegalState("").CodeAsString()) != string::npos;
+    ASSERT_TRUE(s.ok() || not_currently_leader) << s.ToString();
+    SleepFor(MonoDelta::FromMilliseconds(1000));
+  }
+
+  ClusterVerifier(cluster_.get()).CheckCluster();
 }
 
 TEST_F(AdminCliTest, TestDeleteTable) {
