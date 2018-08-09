@@ -48,6 +48,7 @@
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stl_util.h"
@@ -190,6 +191,7 @@ RaftConsensus::RaftConsensus(
       raft_pool_(raft_pool),
       state_(kNew),
       rng_(GetRandomSeed32()),
+      leader_transfer_in_progress_(false),
       withhold_votes_until_(MonoTime::Min()),
       last_received_cur_leader_(MinimumOpId()),
       failed_elections_since_stable_leader_(0),
@@ -297,6 +299,18 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
         }
       },
       MinimumElectionTimeout());
+
+  PeriodicTimer::Options opts;
+  opts.one_shot = true;
+  transfer_period_timer_ = PeriodicTimer::Create(
+      peer_proxy_factory_->messenger(),
+      [w]() {
+        if (auto consensus = w.lock()) {
+          consensus->EndLeaderTransferPeriod();
+        }
+      },
+      MinimumElectionTimeout(),
+      opts);
 
   {
     ThreadRestrictions::AssertWaitAllowed();
@@ -561,6 +575,63 @@ Status RaftConsensus::StepDown(LeaderStepDownResponsePB* resp) {
   return Status::OK();
 }
 
+Status RaftConsensus::TransferLeadership(const boost::optional<string>& new_leader_uuid,
+                                         LeaderStepDownResponsePB* resp) {
+  TRACE_EVENT0("consensus", "RaftConsensus::TransferLeadership");
+  ThreadRestrictions::AssertWaitAllowed();
+  LockGuard l(lock_);
+  LOG_WITH_PREFIX_UNLOCKED(INFO) << "Received request to transfer leadership"
+                                 << (new_leader_uuid ?
+                                    Substitute(" to TS $0", *new_leader_uuid) :
+                                    "");
+  DCHECK((queue_->IsInLeaderMode() && cmeta_->active_role() == RaftPeerPB::LEADER) ||
+         (!queue_->IsInLeaderMode() && cmeta_->active_role() != RaftPeerPB::LEADER));
+  RETURN_NOT_OK(CheckRunningUnlocked());
+  if (cmeta_->active_role() != RaftPeerPB::LEADER) {
+    LOG_WITH_PREFIX_UNLOCKED(INFO) << "Rejecting request to transer leadership while not leader";
+    resp->mutable_error()->set_code(TabletServerErrorPB::NOT_THE_LEADER);
+    StatusToPB(Status::IllegalState("not currently leader"),
+               resp->mutable_error()->mutable_status());
+    // We return OK so that the tablet service won't overwrite the error code.
+    return Status::OK();
+  }
+  if (new_leader_uuid) {
+    if (*new_leader_uuid == peer_uuid()) {
+      // Short-circuit as we are transferring leadership to ourselves and we
+      // already checked that we are leader.
+      return Status::OK();
+    }
+    if (!IsRaftConfigVoter(*new_leader_uuid, cmeta_->ActiveConfig())) {
+      const string msg = Substitute("tablet server $0 is not a voter in the active config",
+                                    *new_leader_uuid);
+      LOG_WITH_PREFIX_UNLOCKED(INFO) << "Rejecting request to transfer leadership "
+                                     << "because " << msg;
+      return Status::InvalidArgument(msg);
+    }
+  }
+  return BeginLeaderTransferPeriodUnlocked(new_leader_uuid);
+}
+
+Status RaftConsensus::BeginLeaderTransferPeriodUnlocked(
+    const boost::optional<string>& successor_uuid) {
+  DCHECK(lock_.is_locked());
+  if (leader_transfer_in_progress_.CompareAndSwap(false, true)) {
+    return Status::ServiceUnavailable(
+        Substitute("leadership transfer for $0 already in progress",
+                   options_.tablet_id));
+  }
+  leader_transfer_in_progress_.Store(true, kMemOrderAcquire);
+  queue_->BeginWatchForSuccessor(successor_uuid);
+  transfer_period_timer_->Start();
+  return Status::OK();
+}
+
+void RaftConsensus::EndLeaderTransferPeriod() {
+  transfer_period_timer_->Stop();
+  queue_->EndWatchForSuccessor();
+  leader_transfer_in_progress_.Store(false, kMemOrderRelease);
+}
+
 scoped_refptr<ConsensusRound> RaftConsensus::NewRound(
     gscoped_ptr<ReplicateMsg> replicate_msg,
     ConsensusReplicatedCallback replicated_cb) {
@@ -599,6 +670,9 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
 
   // Don't vote for anyone if we're a leader.
   withhold_votes_until_ = MonoTime::Max();
+
+  // Leadership never starts in a transfer period.
+  EndLeaderTransferPeriod();
 
   queue_->RegisterObserver(this);
   RETURN_NOT_OK(RefreshConsensusQueueAndPeersUnlocked());
@@ -822,7 +896,14 @@ void RaftConsensus::NotifyPeerToPromote(const std::string& peer_uuid) {
                                                      shared_from_this(),
                                                      peer_uuid)),
               LogPrefixThreadSafe() + "Unable to start TryPromoteNonVoterTask");
+}
 
+void RaftConsensus::NotifyPeerToStartElection(const string& peer_uuid) {
+  LOG(INFO) << "Instructing follower " << peer_uuid << " to start an election";
+  WARN_NOT_OK(raft_pool_token_->SubmitFunc(std::bind(&RaftConsensus::TryStartElectionOnPeerTask,
+                                                     shared_from_this(),
+                                                     peer_uuid)),
+              LogPrefixThreadSafe() + "Unable to start TryStartElectionOnPeerTask");
 }
 
 void RaftConsensus::NotifyPeerHealthChange() {
@@ -894,6 +975,22 @@ void RaftConsensus::TryPromoteNonVoterTask(const std::string& peer_uuid) {
   boost::optional<TabletServerErrorPB::Code> error_code;
   WARN_NOT_OK(ChangeConfig(req, &DoNothingStatusCB, &error_code),
               LogPrefixThreadSafe() + Substitute("Unable to promote non-voter $0", peer_uuid));
+}
+
+void RaftConsensus::TryStartElectionOnPeerTask(const string& peer_uuid) {
+  ThreadRestrictions::AssertWaitAllowed();
+  LockGuard l(lock_);
+  // Double-check that the peer is a voter in the active config.
+  if (!IsRaftConfigVoter(peer_uuid, cmeta_->ActiveConfig())) {
+    LOG_WITH_PREFIX_UNLOCKED(INFO) << "Not signalling peer " << peer_uuid
+                                   << "to start an election: it's not a voter "
+                                   << "in the active config.";
+    return;
+  }
+  LOG_WITH_PREFIX_UNLOCKED(INFO) << "Signalling peer " << peer_uuid
+                                 << "to start an election";
+  WARN_NOT_OK(peer_manager_->StartElection(peer_uuid),
+              Substitute("unable to start election on peer $0", peer_uuid));
 }
 
 Status RaftConsensus::Update(const ConsensusRequestPB* request,
@@ -2823,6 +2920,9 @@ Status RaftConsensus::CheckActiveLeaderUnlocked() const {
       // Check for the consistency of the information in the consensus metadata
       // and the state of the consensus queue.
       DCHECK(queue_->IsInLeaderMode());
+      if (leader_transfer_in_progress_.Load()) {
+        return Status::ServiceUnavailable("leader transfer in progress");
+      }
       return Status::OK();
 
     default:

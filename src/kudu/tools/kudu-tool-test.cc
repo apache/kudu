@@ -594,7 +594,7 @@ TEST_F(ToolTest, TestModeHelp) {
   {
     const vector<string> kTabletModeRegexes = {
         "change_config.*Change.*Raft configuration",
-        "leader_step_down.*Force the tablet's leader replica to step down"
+        "leader_step_down.*Change.*tablet's leader"
     };
     NO_FATALS(RunTestHelp("tablet", kTabletModeRegexes));
   }

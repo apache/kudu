@@ -107,6 +107,18 @@ void PeerManager::SignalRequest(bool force_if_queue_empty) {
   }
 }
 
+Status PeerManager::StartElection(const std::string& uuid) {
+  std::shared_ptr<Peer> peer;
+  {
+    std::lock_guard<simple_spinlock> lock(lock_);
+    peer = FindPtrOrNull(peers_, uuid);
+  }
+  if (!peer) {
+    return Status::NotFound("unknown peer");
+  }
+  return peer->StartElection();
+}
+
 void PeerManager::Close() {
   {
     std::lock_guard<simple_spinlock> lock(lock_);

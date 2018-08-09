@@ -173,8 +173,31 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
     return failure_detector_;
   }
 
-  // Implement a LeaderStepDown() request.
+  // Performs an abrupt leader step down. This node, if the leader, becomes a
+  // follower immediately and sleeps its failure detector for an extra election
+  // timeout to decrease its chances of being reelected.
   Status StepDown(LeaderStepDownResponsePB* resp);
+
+  // Attempts to gracefully transfer leadership to the peer with uuid
+  // 'new_leader_uuid' or to the next up-to-date peer the leader gets
+  // a response from if 'new_leader_uuid' is boost::none. To allow peers time
+  // to catch up, the leader will not accept write or config change requests
+  // during a 'transfer period' that lasts one election timeout. If no
+  // successor is eligible by the end of the transfer period, leadership
+  // transfer fails and the leader resumes normal operation. The transfer is
+  // asynchronous: once the transfer period is started the method returns
+  // success.
+  // Additional calls to this method during the transfer period prolong it.
+  Status TransferLeadership(const boost::optional<std::string>& new_leader_uuid,
+                            LeaderStepDownResponsePB* resp);
+
+  // Begin or end a leadership transfer period. During a transfer period, a
+  // leader will not accept writes or config changes, but will continue updating
+  // followers. If a leader transfer period is already in progress,
+  // BeginLeaderTransferPeriodUnlocked returns ServiceUnavailable.
+  Status BeginLeaderTransferPeriodUnlocked(
+      const boost::optional<std::string>& successor_uuid);
+  void EndLeaderTransferPeriod();
 
   // Creates a new ConsensusRound, the entity that owns all the data
   // structures required for a consensus round, such as the ReplicateMsg
@@ -344,6 +367,8 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
                             const std::string& reason) override;
 
   void NotifyPeerToPromote(const std::string& peer_uuid) override;
+
+  void NotifyPeerToStartElection(const std::string& peer_uuid) override;
 
   void NotifyPeerHealthChange() override;
 
@@ -661,6 +686,8 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // Attempt to promote the given non-voter to a voter.
   void TryPromoteNonVoterTask(const std::string& peer_uuid);
 
+  void TryStartElectionOnPeerTask(const std::string& peer_uuid);
+
   // Called when the failure detector expires.
   // Submits ReportFailureDetectedTask() to a thread pool.
   void ReportFailureDetected();
@@ -821,6 +848,10 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   Random rng_;
 
   std::shared_ptr<rpc::PeriodicTimer> failure_detector_;
+
+  AtomicBool leader_transfer_in_progress_;
+  boost::optional<std::string> designated_successor_uuid_;
+  std::shared_ptr<rpc::PeriodicTimer> transfer_period_timer_;
 
   // Lock held while starting a failure-triggered election.
   //

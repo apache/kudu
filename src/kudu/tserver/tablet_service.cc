@@ -145,6 +145,7 @@ using kudu::consensus::ConsensusResponsePB;
 using kudu::consensus::GetLastOpIdRequestPB;
 using kudu::consensus::GetNodeInstanceRequestPB;
 using kudu::consensus::GetNodeInstanceResponsePB;
+using kudu::consensus::LeaderStepDownMode;
 using kudu::consensus::LeaderStepDownRequestPB;
 using kudu::consensus::LeaderStepDownResponsePB;
 using kudu::consensus::OpId;
@@ -1139,6 +1140,14 @@ void ConsensusServiceImpl::LeaderStepDown(const LeaderStepDownRequestPB* req,
                                           RpcContext* context) {
   LOG(INFO) << "Received LeaderStepDown RPC: " << SecureDebugString(*req)
             << " from " << context->requestor_string();
+  if (PREDICT_FALSE(!req->new_leader_uuid().empty() &&
+                    req->mode() == LeaderStepDownMode::ABRUPT)) {
+    Status s = Status::InvalidArgument(
+        "cannot specify a new leader uuid for an abrupt step down");
+    SetupErrorAndRespond(resp->mutable_error(), s,
+                         TabletServerErrorPB::UNKNOWN_ERROR,
+                         context);
+  }
   if (!CheckUuidMatchOrRespond(tablet_manager_, "LeaderStepDown", req, resp, context)) {
     return;
   }
@@ -1150,14 +1159,24 @@ void ConsensusServiceImpl::LeaderStepDown(const LeaderStepDownRequestPB* req,
 
   shared_ptr<RaftConsensus> consensus;
   if (!GetConsensusOrRespond(replica, resp, context, &consensus)) return;
-  Status s = consensus->StepDown(resp);
-  if (PREDICT_FALSE(!s.ok())) {
-    SetupErrorAndRespond(resp->mutable_error(), s,
-                         TabletServerErrorPB::UNKNOWN_ERROR,
-                         context);
-    return;
+  switch (req->mode()) {
+    case LeaderStepDownMode::ABRUPT:
+      HandleResponse(req, resp, context, consensus->StepDown(resp));
+      break;
+    case LeaderStepDownMode::GRACEFUL: {
+      const auto new_leader_uuid =
+        req->new_leader_uuid().empty() ?
+        boost::none :
+        boost::make_optional(req->new_leader_uuid());
+      Status s = consensus->TransferLeadership(new_leader_uuid, resp);
+      HandleResponse(req, resp, context, s);
+      break;
+    }
+    default:
+      Status s = Status::InvalidArgument(
+          Substitute("unknown LeaderStepDown mode: $0", req->mode()));
+      HandleUnknownError(s, resp, context);
   }
-  context->RespondSuccess();
 }
 
 void ConsensusServiceImpl::GetLastOpId(const consensus::GetLastOpIdRequestPB *req,

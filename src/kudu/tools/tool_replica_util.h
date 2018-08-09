@@ -54,11 +54,31 @@ Status GetConsensusState(
     consensus::ConsensusStatePB* consensus_state,
     bool* is_3_4_3_replication = nullptr);
 
-// Request current leader replica 'leader_uuid' to step down.
+// Request that the replica with UUID 'leader_uuid' step down.
+// In GRACEFUL mode:
+//   * If 'new_leader_uuid' is not boost::none, the leader will attempt
+//     to gracefully transfer leadership to the replica with that UUID.
+//   * If 'new_leader_uuid' is boost::none, the replica will choose its own
+//     successor, preferring to transfer leadership ASAP.
+// In ABRUPT mode, the replica will step down without arranging a successor.
+// 'new_leader_uuid' has no effect in this mode and must be provided as
+// boost::none.
+// Note that in neither mode does this function guarantee that leadership will
+// change, even if it returns OK. In ABRUPT mode, if the function succeeds,
+// the leader will step down, but it may be reelected again. In GRACEFUL mode,
+// the leader may not relinquish leadership at all, or it may and may be
+// reelected, even if the function succeeds. The advantage of GRACEFUL mode is
+// that it is on average less disruptive to tablet operations, particularly
+// when the leadership transfer fails.
+//
+// If a caller wants to ensure leadership changes, it must wait and see if
+// leadership changes as expected and, if not, retry.
 Status DoLeaderStepDown(
     const std::string& tablet_id,
     const std::string& leader_uuid,
     const HostPort& leader_hp,
+    consensus::LeaderStepDownMode mode,
+    const boost::optional<std::string>& new_leader_uuid,
     const MonoDelta& timeout);
 
 // Get information on the current leader replica for the specified tablet.

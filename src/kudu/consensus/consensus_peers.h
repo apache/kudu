@@ -78,6 +78,13 @@ class Peer : public std::enable_shared_from_this<Peer> {
   // status-only requests.
   Status SignalRequest(bool even_if_queue_empty = false);
 
+  // Synchronously starts a leader election on this peer.
+  // This method is ad hoc, using this instance's PeerProxy to send the
+  // StartElection request.
+  // The StartElection RPC does not count as the single outstanding request
+  // that this class tracks.
+  Status StartElection();
+
   const RaftPeerPB& peer_pb() const { return peer_pb_; }
 
   // Stop sending requests and periodic heartbeats.
@@ -208,11 +215,15 @@ class PeerProxy {
                                          rpc::RpcController* controller,
                                          const rpc::ResponseCallback& callback) = 0;
 
+  virtual Status StartElection(const RunLeaderElectionRequestPB* request,
+                               RunLeaderElectionResponsePB* response,
+                               rpc::RpcController* controller) = 0;
+
   // Instructs a peer to begin a tablet copy session.
-  virtual void StartTabletCopy(const StartTabletCopyRequestPB* request,
-                                    StartTabletCopyResponsePB* response,
-                                    rpc::RpcController* controller,
-                                    const rpc::ResponseCallback& callback) {
+  virtual void StartTabletCopyAsync(const StartTabletCopyRequestPB* /*request*/,
+                                    StartTabletCopyResponsePB* /*response*/,
+                                    rpc::RpcController* /*controller*/,
+                                    const rpc::ResponseCallback& /*callback*/) {
     LOG(DFATAL) << "Not implemented";
   }
 
@@ -249,10 +260,14 @@ class RpcPeerProxy : public PeerProxy {
                                  rpc::RpcController* controller,
                                  const rpc::ResponseCallback& callback) override;
 
-  void StartTabletCopy(const StartTabletCopyRequestPB* request,
-                       StartTabletCopyResponsePB* response,
-                       rpc::RpcController* controller,
-                       const rpc::ResponseCallback& callback) override;
+  Status StartElection(const RunLeaderElectionRequestPB* request,
+                       RunLeaderElectionResponsePB* response,
+                       rpc::RpcController* controller) override;
+
+  void StartTabletCopyAsync(const StartTabletCopyRequestPB* request,
+                            StartTabletCopyResponsePB* response,
+                            rpc::RpcController* controller,
+                            const rpc::ResponseCallback& callback) override;
 
   std::string PeerName() const override;
 

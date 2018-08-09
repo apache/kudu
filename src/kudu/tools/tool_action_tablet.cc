@@ -44,6 +44,19 @@
 #include "kudu/util/status.h"
 #include "kudu/util/string_case.h"
 
+DEFINE_bool(abrupt, false,
+            "Whether the leader should step down without attempting to "
+            "transfer leadership gracefully. A graceful transfer minimizes "
+            "delays in tablet operations, but will fail if the tablet cannot "
+            "arrange a successor.");
+DEFINE_string(new_leader_uuid, "",
+              "UUID of the server that leadership should be transferred to. "
+              "Leadership may only be transferred to a voting member of the "
+              "leader's active config. If the designated successor cannot "
+              "catch up to the leader within one election timeout, leadership "
+              "transfer will not occur. If blank, the leader chooses its own "
+              "successor, attempting to transfer leadership as soon as "
+              "possible. This cannot be set if --abrupt is set.");
 DEFINE_int64(move_copy_timeout_sec, 600,
              "Number of seconds to wait for tablet copy to complete when relocating a tablet");
 DEFINE_int64(move_leader_timeout_sec, 30,
@@ -51,16 +64,9 @@ DEFINE_int64(move_leader_timeout_sec, 30,
 
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
-using kudu::client::KuduTablet;
-using kudu::client::KuduTabletServer;
 using kudu::consensus::ADD_PEER;
-using kudu::consensus::BulkChangeConfigRequestPB;
 using kudu::consensus::ChangeConfigType;
-using kudu::consensus::ConsensusStatePB;
-using kudu::consensus::GetConsensusStateRequestPB;
-using kudu::consensus::GetConsensusStateResponsePB;
-using kudu::consensus::GetLastOpIdRequestPB;
-using kudu::consensus::GetLastOpIdResponsePB;
+using kudu::consensus::LeaderStepDownMode;
 using kudu::consensus::MODIFY_PEER;
 using kudu::consensus::RaftPeerPB;
 using kudu::master::MasterServiceProxy;
@@ -137,25 +143,48 @@ Status LeaderStepDown(const RunnerContext& context) {
                                                  kMasterAddressesArg);
   vector<string> master_addresses = Split(master_addresses_str, ",");
   const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
+  const LeaderStepDownMode mode = FLAGS_abrupt ? LeaderStepDownMode::ABRUPT :
+                                                 LeaderStepDownMode::GRACEFUL;
+  const boost::optional<string> new_leader_uuid =
+    FLAGS_new_leader_uuid.empty() ? boost::none :
+                                    boost::make_optional(FLAGS_new_leader_uuid);
+  if (mode == LeaderStepDownMode::ABRUPT && new_leader_uuid) {
+    return Status::InvalidArgument("cannot specify both --new_leader_uuid and --abrupt");
+  }
 
   client::sp::shared_ptr<KuduClient> client;
   RETURN_NOT_OK(KuduClientBuilder()
                 .master_server_addrs(master_addresses)
                 .Build(&client));
 
-  // If leader is not present, command can gracefully return.
   string leader_uuid;
   HostPort leader_hp;
-  bool is_no_leader = false;
+  bool no_leader = false;
   Status s = GetTabletLeader(client, tablet_id,
-                             &leader_uuid, &leader_hp, &is_no_leader);
-  if (s.IsNotFound() && is_no_leader) {
+                             &leader_uuid, &leader_hp, &no_leader);
+  if (s.IsNotFound() && no_leader) {
+    // If leadership should be transferred to a specific node, exit with an
+    // error if there's no leader since we can't orchestrate the transfer.
+    if (new_leader_uuid) {
+        return s.CloneAndPrepend(
+            Substitute("unable to transfer leadership to $0", new_leader_uuid.get()));
+    }
+    // Otherwise, a new election should happen soon, which will achieve
+    // something like what the client wanted, so we'll exit gracefully.
     cout << s.ToString() << endl;
     return Status::OK();
   }
   RETURN_NOT_OK(s);
 
+  // If the requested new leader is the leader, the command can short-circuit.
+  if (new_leader_uuid && (leader_uuid == new_leader_uuid.get())) {
+    cout << Substitute("Requested new leader $0 is already the leader",
+                       leader_uuid) << endl;
+    return Status::OK();
+  }
+
   return DoLeaderStepDown(tablet_id, leader_uuid, leader_hp,
+                          mode, new_leader_uuid,
                           client->default_admin_operation_timeout());
 }
 
@@ -288,9 +317,11 @@ unique_ptr<Mode> BuildTabletMode() {
 
   unique_ptr<Action> leader_step_down =
       ActionBuilder("leader_step_down", &LeaderStepDown)
-      .Description("Force the tablet's leader replica to step down")
+      .Description("Change the tablet's leader")
       .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
+      .AddOptionalParameter("abrupt")
+      .AddOptionalParameter("new_leader_uuid")
       .Build();
 
   unique_ptr<Mode> change_config =

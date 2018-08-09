@@ -358,6 +358,13 @@ class PeerMessageQueue {
 
   ~PeerMessageQueue();
 
+  // Begin or end the watch for an eligible successor. If 'successor_uuid' is
+  // boost::none, the queue will notify its observers when 'successor_uuid' is
+  // caught up to the leader. Otherwise, it will notify its observers
+  // with the UUID of the first voter that is caught up.
+  void BeginWatchForSuccessor(const boost::optional<std::string>& successor_uuid);
+  void EndWatchForSuccessor();
+
  private:
   FRIEND_TEST(ConsensusQueueTest, TestQueueAdvancesCommittedIndex);
   FRIEND_TEST(ConsensusQueueTest, TestQueueMovesWatermarksBackward);
@@ -458,6 +465,14 @@ class PeerMessageQueue {
   void PromoteIfNeeded(TrackedPeer* peer, const TrackedPeer& prev_peer_state,
                        const ConsensusStatusPB& status);
 
+  // If there is a graceful leadership change underway, notify queue observers
+  // to initiate leadership transfer to the specified peer under the following
+  // conditions:
+  // * 'peer' has fully caught up to the leader
+  // * 'peer' is the designated successor, or no successor was designated
+  void TransferLeadershipIfNeeded(const TrackedPeer& peer,
+                                  const ConsensusStatusPB& status);
+
   // Calculate a peer's up-to-date health status based on internal fields.
   static HealthReportPB::HealthStatus PeerHealthStatus(const TrackedPeer& peer);
 
@@ -469,6 +484,7 @@ class PeerMessageQueue {
                                        int64_t term,
                                        const std::string& reason);
   void NotifyObserversOfPeerToPromote(const std::string& peer_uuid);
+  void NotifyObserversOfSuccessor(const std::string& peer_uuid);
   void NotifyObserversOfPeerHealthChange();
 
   // Notify all PeerMessageQueueObservers using the given callback function.
@@ -541,7 +557,10 @@ class PeerMessageQueue {
 
   // The currently tracked peers.
   PeersMap peers_map_;
-  mutable simple_spinlock queue_lock_; // TODO: rename
+  mutable simple_spinlock queue_lock_; // TODO(todd): rename
+
+  bool successor_watch_in_progress_;
+  boost::optional<std::string> designated_successor_uuid_;
 
   // We assume that we never have multiple threads racing to append to the queue.
   // This fake mutex adds some extra assurance that this implementation property
@@ -574,6 +593,10 @@ class PeerMessageQueueObserver {
   // Notify the observer that the specified peer is ready to be promoted from
   // NON_VOTER to VOTER.
   virtual void NotifyPeerToPromote(const std::string& peer_uuid) = 0;
+
+  // Notify the observer that the specified peer is ready to become leader, and
+  // and it should be told to run an election.
+  virtual void NotifyPeerToStartElection(const std::string& peer_uuid) = 0;
 
   // Notify the observer that the health of one of the peers has changed.
   virtual void NotifyPeerHealthChange() = 0;

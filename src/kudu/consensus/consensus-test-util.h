@@ -227,6 +227,12 @@ class DelayablePeerProxy : public TestPeerProxy {
                                            this, kUpdate));
   }
 
+  virtual Status StartElection(const RunLeaderElectionRequestPB* /*request*/,
+                               RunLeaderElectionResponsePB* /*response*/,
+                               rpc::RpcController* /*controller*/) override {
+    return Status::OK();
+  }
+
   virtual void RequestConsensusVoteAsync(const VoteRequestPB* request,
                                          VoteResponsePB* response,
                                          rpc::RpcController* controller,
@@ -291,6 +297,12 @@ class MockedPeerProxy : public TestPeerProxy {
     return RegisterCallbackAndRespond(kRequestVote, callback);
   }
 
+  Status StartElection(const RunLeaderElectionRequestPB* /*request*/,
+                     RunLeaderElectionResponsePB* /*response*/,
+                     rpc::RpcController* /*controller*/) override {
+    return Status::OK();
+  }
+
   // Return the number of times that UpdateAsync() has been called.
   int update_count() const {
     std::lock_guard<simple_spinlock> l(lock_);
@@ -342,9 +354,15 @@ class NoOpTestPeerProxy : public TestPeerProxy {
     return RegisterCallbackAndRespond(kUpdate, callback);
   }
 
+  virtual Status StartElection(const RunLeaderElectionRequestPB* /*request*/,
+                             RunLeaderElectionResponsePB* /*response*/,
+                             rpc::RpcController* /*controller*/) override {
+    return Status::OK();
+  }
+
   virtual void RequestConsensusVoteAsync(const VoteRequestPB* request,
                                          VoteResponsePB* response,
-                                         rpc::RpcController* controller,
+                                         rpc::RpcController* /*controller*/,
                                          const rpc::ResponseCallback& callback) OVERRIDE {
     {
       std::lock_guard<simple_spinlock> lock(lock_);
@@ -464,9 +482,15 @@ class LocalTestPeerProxy : public TestPeerProxy {
                                            this, request, response)));
   }
 
+  Status StartElection(const RunLeaderElectionRequestPB* /*request*/,
+                       RunLeaderElectionResponsePB* /*response*/,
+                       rpc::RpcController* /*controller*/) override {
+    return Status::OK();
+  }
+
   virtual void RequestConsensusVoteAsync(const VoteRequestPB* request,
                                          VoteResponsePB* response,
-                                         rpc::RpcController* controller,
+                                         rpc::RpcController* /*controller*/,
                                          const rpc::ResponseCallback& callback) OVERRIDE {
     RegisterCallback(kRequestVote, callback);
     CHECK_OK(pool_->SubmitFunc(boost::bind(&LocalTestPeerProxy::SendVoteRequest,
