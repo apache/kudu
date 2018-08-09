@@ -74,11 +74,10 @@ add_dependencies(mini_hms hms-plugin)
 
 # Tests
 if (NOT NO_TESTS)
-  set(KUDU_TEST_LINK_LIBS
+  SET_KUDU_TEST_LINK_LIBS(
     kudu_hms
     mini_hms
-    mini_kdc
-    ${KUDU_MIN_TEST_LIBS})
+    mini_kdc)
 
   # These tests must run serially, otherwise starting the HMS can take a very long time.
   ADD_KUDU_TEST(hms_catalog-test RUN_SERIAL true NUM_SHARDS 4)

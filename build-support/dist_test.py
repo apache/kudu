@@ -76,8 +76,6 @@ DEPS_FOR_ALL = \
     ["build-support/stacktrace_addr2line.pl",
      "build-support/run-test.sh",
      "build-support/run_dist_test.py",
-     "build-support/tsan-suppressions.txt",
-     "build-support/lsan-suppressions.txt",
      "build-support/java-home-candidates.txt",
 
      # The LLVM symbolizer is necessary for suppressions to work

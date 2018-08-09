@@ -272,6 +272,29 @@ ADD_EXPORTABLE_LIBRARY(kudu_util_compression
   SRCS ${UTIL_COMPRESSION_SRCS}
   DEPS ${UTIL_COMPRESSION_LIBS})
 
+# See the comment in sanitizer_options.cc for details on this library's usage.
+# The top-level CMakeLists sets a ${SANITIZER_OPTIONS_OVERRIDE} variable which
+# should be linked first into all Kudu binaries.
+
+#######################################
+# sanitizer_options
+#######################################
+add_library(sanitizer_options STATIC sanitizer_options.cc)
+target_link_libraries(sanitizer_options gutil)
+if ("${KUDU_USE_ASAN}" OR "${KUDU_USE_TSAN}" OR "${KUDU_USE_UBSAN}")
+  # By default the sanitizers use addr2line utility to symbolize reports.
+  # llvm-symbolizer is faster, consumes less memory and produces much better reports.
+  # We set KUDU_EXTERNAL_SYMBOLIZER_PATH which is used in sanitizer_options.cc
+  # to set the default external_symbolizer_path.
+  SET(KUDU_LLVM_SYMBOLIZER_PATH ${THIRDPARTY_INSTALL_UNINSTRUMENTED_DIR}/bin/llvm-symbolizer)
+  if (EXISTS ${KUDU_LLVM_SYMBOLIZER_PATH})
+    target_compile_definitions(sanitizer_options PRIVATE KUDU_EXTERNAL_SYMBOLIZER_PATH=${KUDU_LLVM_SYMBOLIZER_PATH})
+  else()
+    message(SEND_ERROR
+      "Could not find llvm-symbolizer required for sanitizer builds at ${KUDU_LLVM_SYMBOLIZER_PATH}")
+  endif()
+endif()
+
 #######################################
 # kudu_test_util
 #######################################
@@ -335,7 +358,7 @@ target_link_libraries(protoc-gen-insertions gutil protobuf protoc ${KUDU_BASE_LI
 # Unit tests
 #######################################
 
-set(KUDU_TEST_LINK_LIBS kudu_util gutil ${KUDU_MIN_TEST_LIBS})
+SET_KUDU_TEST_LINK_LIBS(kudu_util gutil)
 ADD_KUDU_TEST(async_util-test)
 ADD_KUDU_TEST(atomic-test)
 ADD_KUDU_TEST(bit-util-test)

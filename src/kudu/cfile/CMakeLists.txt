@@ -55,7 +55,7 @@ target_link_libraries(cfile
   bitshuffle)
 
 # Tests
-set(KUDU_TEST_LINK_LIBS cfile ${KUDU_MIN_TEST_LIBS})
+SET_KUDU_TEST_LINK_LIBS(cfile)
 ADD_KUDU_TEST(index-test)
 ADD_KUDU_TEST(cfile-test NUM_SHARDS 4)
 ADD_KUDU_TEST(encoding-test LABELS no_tsan)

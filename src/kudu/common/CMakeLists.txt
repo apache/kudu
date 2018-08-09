@@ -76,7 +76,7 @@ ADD_EXPORTABLE_LIBRARY(kudu_common
   SRCS ${COMMON_SRCS}
   DEPS ${COMMON_LIBS})
 
-set(KUDU_TEST_LINK_LIBS kudu_common ${KUDU_MIN_TEST_LIBS})
+SET_KUDU_TEST_LINK_LIBS(kudu_common)
 ADD_KUDU_TEST(column_predicate-test)
 ADD_KUDU_TEST(encoded_key-test)
 ADD_KUDU_TEST(generic_iterators-test)

@@ -142,6 +142,7 @@ target_link_libraries(tserver
 
 add_executable(kudu-tserver tablet_server_main.cc)
 target_link_libraries(kudu-tserver
+  ${SANITIZER_OPTIONS_OVERRIDE}
   ${KRB5_REALM_OVERRIDE}
   tserver
   ${KUDU_BASE_LIBS})
@@ -158,19 +159,18 @@ if (NOT NO_TESTS)
 
   add_library(tserver_test_util ${TSERVER_TEST_UTIL_SRCS})
   target_link_libraries(tserver_test_util
-    tserver
-    ${KUDU_MIN_TEST_LIBS})
+    ${KUDU_MIN_TEST_LIBS}
+    tserver)
 endif()
 
 #########################################
 # tserver tests
 #########################################
 
-set(KUDU_TEST_LINK_LIBS
+SET_KUDU_TEST_LINK_LIBS(
   kudu_curl_util
   tserver
-  tserver_test_util
-  ${KUDU_MIN_TEST_LIBS})
+  tserver_test_util)
 ADD_KUDU_TEST(mini_tablet_server-test)
 ADD_KUDU_TEST(tablet_copy_client-test)
 ADD_KUDU_TEST(tablet_copy_source_session-test)

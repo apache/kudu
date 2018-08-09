@@ -84,7 +84,7 @@ target_link_libraries(tablet
   kudu_util
   consensus)
 
-set(KUDU_TEST_LINK_LIBS tablet ${KUDU_MIN_TEST_LIBS})
+SET_KUDU_TEST_LINK_LIBS(tablet)
 ADD_KUDU_TEST(all_types-scan-correctness-test NUM_SHARDS 8 PROCESSORS 2)
 ADD_KUDU_TEST(cfile_set-test)
 ADD_KUDU_TEST(compaction-test)
@@ -117,5 +117,5 @@ ADD_KUDU_TEST(tablet_throttle-test)
 ADD_KUDU_TEST(transactions/transaction_tracker-test)
 
 # Some tests don't have dependencies on other tablet stuff
-set(KUDU_TEST_LINK_LIBS kudu_util gutil ${KUDU_MIN_TEST_LIBS})
+SET_KUDU_TEST_LINK_LIBS(kudu_util gutil)
 ADD_KUDU_TEST(cbtree-test RUN_SERIAL true)

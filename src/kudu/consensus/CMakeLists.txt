@@ -117,15 +117,13 @@ target_link_libraries(consensus
   log
   protobuf)
 
-set(KUDU_TEST_LINK_LIBS
+SET_KUDU_TEST_LINK_LIBS(
   log
   consensus
   tserver_proto
   cfile
   tablet
-  kudu_util
-  ${KUDU_MIN_TEST_LIBS}
-)
+  kudu_util)
 
 ADD_KUDU_TEST(consensus_meta-test)
 ADD_KUDU_TEST(consensus_meta_manager-stress-test RUN_SERIAL true)

@@ -112,25 +112,6 @@ else
   pipe_cmd=cat
 fi
 
-# Suppressions require symbolization. We'll default to using the symbolizer in
-# thirdparty.
-if [ -z "$ASAN_SYMBOLIZER_PATH" ]; then
-  export ASAN_SYMBOLIZER_PATH=$SOURCE_ROOT/thirdparty/installed/uninstrumented/bin/llvm-symbolizer
-fi
-
-# Configure TSAN (ignored if this isn't a TSAN build).
-TSAN_OPTIONS="$TSAN_OPTIONS suppressions=$SOURCE_ROOT/build-support/tsan-suppressions.txt"
-TSAN_OPTIONS="$TSAN_OPTIONS history_size=7"
-#   Flush TSAN memory every 10 seconds - this prevents RSS blowup in unit tests
-#   which can cause tests to get killed by the OOM killer.
-TSAN_OPTIONS="$TSAN_OPTIONS flush_memory_ms=10000"
-TSAN_OPTIONS="$TSAN_OPTIONS external_symbolizer_path=$ASAN_SYMBOLIZER_PATH"
-export TSAN_OPTIONS
-
-# Set up suppressions for LeakSanitizer
-LSAN_OPTIONS="$LSAN_OPTIONS suppressions=$SOURCE_ROOT/build-support/lsan-suppressions.txt"
-export LSAN_OPTIONS
-
 # Set a 15-minute timeout for tests run via 'make test'.
 # This keeps our jenkins builds from hanging in the case that there's
 # a deadlock or anything.

@@ -256,11 +256,11 @@ endif()
 if(NOT "${KUDU_USE_ASAN}" AND NOT "${KUDU_USE_TSAN}")
   ADD_KUDU_TEST(client_examples-test.sh RUN_SERIAL true LABELS no_dist_test)
 endif()
-set(KUDU_TEST_LINK_LIBS
+
+SET_KUDU_TEST_LINK_LIBS(
   itest_util
   kudu_client
-  mini_cluster
-  ${KUDU_MIN_TEST_LIBS})
+  mini_cluster)
 ADD_KUDU_TEST(client-test NUM_SHARDS 8 PROCESSORS 2)
 ADD_KUDU_TEST(client-unittest)
 ADD_KUDU_TEST(predicate-test)

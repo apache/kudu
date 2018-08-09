@@ -48,5 +48,5 @@ add_dependencies(mini_cluster
   kudu-master)
 
 # Tests
-set(KUDU_TEST_LINK_LIBS mini_cluster kudu_hms ${KUDU_MIN_TEST_LIBS})
+SET_KUDU_TEST_LINK_LIBS(mini_cluster kudu_hms)
 ADD_KUDU_TEST(external_mini_cluster-test PROCESSORS 3)

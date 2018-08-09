@@ -376,7 +376,6 @@ if [ "$BUILD_JAVA" == "1" ]; then
   export JAVA_HOME=$JAVA8_HOME
   export PATH=$JAVA_HOME/bin:$PATH
   pushd $SOURCE_ROOT/java
-  export TSAN_OPTIONS="$TSAN_OPTIONS suppressions=$SOURCE_ROOT/build-support/tsan-suppressions.txt history_size=7"
   set -x
 
   # Run the full Maven build.

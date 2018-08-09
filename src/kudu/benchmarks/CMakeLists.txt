@@ -32,29 +32,29 @@ target_link_libraries(tpch
 # tpch1
 add_executable(tpch1 tpch/tpch1.cc)
 target_link_libraries(tpch1
-  tpch
-  ${KUDU_TEST_LINK_LIBS})
+  ${KUDU_MIN_TEST_LIBS}
+  tpch)
 
 # tpch_real_world
 add_executable(tpch_real_world tpch/tpch_real_world.cc)
 target_link_libraries(tpch_real_world
-  tpch
-  ${KUDU_TEST_LINK_LIBS})
+  ${KUDU_MIN_TEST_LIBS}
+  tpch)
 
 # rle
 add_executable(rle rle.cc)
 target_link_libraries(rle
-  kudu_util
-  ${KUDU_TEST_LINK_LIBS})
+  ${KUDU_MIN_TEST_LIBS}
+  kudu_util)
 
 # Disabled on macOS since it relies on fdatasync() and sync_file_range().
 if(NOT APPLE)
   add_executable(wal_hiccup wal_hiccup.cc)
   target_link_libraries(wal_hiccup
-    kudu_util
-    ${KUDU_TEST_LINK_LIBS})
+    ${KUDU_MIN_TEST_LIBS}
+    kudu_util)
 endif()
 
 # Tests
-set(KUDU_TEST_LINK_LIBS tpch ${KUDU_TEST_LINK_LIBS})
+SET_KUDU_TEST_LINK_LIBS(tpch)
 ADD_KUDU_TEST(tpch/rpc_line_item_dao-test)

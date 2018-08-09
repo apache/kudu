@@ -64,8 +64,7 @@ target_link_libraries(master
   tserver_service_proto)
 
 # Tests
-set(KUDU_TEST_LINK_LIBS
-  ${KUDU_MIN_TEST_LIBS}
+SET_KUDU_TEST_LINK_LIBS(
   kudu_client
   kudu_curl_util
   master
@@ -81,6 +80,7 @@ ADD_KUDU_TEST(sys_catalog-test RESOURCE_LOCK "master-web-port")
 # Actual master executable
 add_executable(kudu-master master_main.cc)
 target_link_libraries(kudu-master
+  ${SANITIZER_OPTIONS_OVERRIDE}
   ${KRB5_REALM_OVERRIDE}
   master
   ${KUDU_BASE_LIBS})

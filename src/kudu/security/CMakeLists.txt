@@ -125,11 +125,10 @@ if (NOT NO_TESTS)
     security)
 
   # Tests
-  set(KUDU_TEST_LINK_LIBS
+  SET_KUDU_TEST_LINK_LIBS(
     mini_kdc
     security
-    security_test_util
-    ${KUDU_MIN_TEST_LIBS})
+    security_test_util)
 
   ADD_KUDU_TEST(ca/cert_management-test)
   ADD_KUDU_TEST(cert-test)

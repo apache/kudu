@@ -190,6 +190,6 @@ target_link_libraries(codegen
 # Unit tests
 #######################################
 
-set(KUDU_TEST_LINK_LIBS codegen ${KUDU_MIN_TEST_LIBS})
+SET_KUDU_TEST_LINK_LIBS(codegen)
 
 ADD_KUDU_TEST(codegen-test)

@@ -51,7 +51,7 @@ add_dependencies(itest_util
   kudu-tserver)
 
 # Tests
-set(KUDU_TEST_LINK_LIBS itest_util ${KUDU_MIN_TEST_LIBS})
+SET_KUDU_TEST_LINK_LIBS(itest_util)
 ADD_KUDU_TEST(all_types-itest
   PROCESSORS 4
   NUM_SHARDS 8)

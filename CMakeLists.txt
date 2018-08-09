@@ -397,7 +397,7 @@ if (${KUDU_USE_TSAN})
 endif()
 
 
-if ("${KUDU_USE_UBSAN}" OR "${KUDU_USE_ASAN}" OR "${KUDU_USE_TSAN}")
+if ("${KUDU_USE_ASAN}" OR "${KUDU_USE_TSAN}" OR "${KUDU_USE_UBSAN}")
   # GCC 4.8 and 4.9 (latest as of this writing) don't allow you to specify a
   # sanitizer blacklist.
   if("${COMPILER_FAMILY}" STREQUAL "clang")
@@ -1211,13 +1211,14 @@ if (NOT NO_TESTS)
 endif()
 
 # The tests as well as any binaries which are run as subprocesses by tests (eg tserver,
-# master, and the 'kudu' CLI tool) need to link this in. We have to set it
-# here so it's accessible by all targets.
-#
-# OSX doesn't support the linker flag below, but also has a new enough krb5 that the
-# override library isn't necessary.
+# master, and the 'kudu' CLI tool) need to link these in. We have to set them
+# here so they are accessible by all targets.
 if (NOT APPLE)
-set(KRB5_REALM_OVERRIDE -Wl,--undefined=krb5_realm_override_loaded krb5_realm_override)
+  set(SANITIZER_OPTIONS_OVERRIDE -Wl,-u_sanitizer_options_link_helper sanitizer_options)
+  set(KRB5_REALM_OVERRIDE -Wl,--undefined=krb5_realm_override_loaded krb5_realm_override)
+else()
+  set(SANITIZER_OPTIONS_OVERRIDE -Wl,-U,_sanitizer_options_link_helper sanitizer_options)
+  set(KRB5_REALM_OVERRIDE -Wl,-U,krb5_realm_override_loaded krb5_realm_override)
 endif()
 
 ## Boost
@@ -1273,8 +1274,24 @@ endif()
 ############################################################
 # Linker setup
 ############################################################
-set(KUDU_MIN_TEST_LIBS kudu_test_main kudu_test_util ${KUDU_BASE_LIBS})
+
+set(KUDU_MIN_TEST_LIBS ${KUDU_BASE_LIBS} kudu_test_main kudu_test_util)
+# Prepend SANITIZER_OPTIONS_OVERRIDE if this is a sanitizer build.
+# SANITIZER_OPTIONS_OVERRIDE needs to be linked first so that it is statically
+# linked to the test binaries directly. Otherwise the weakly linked default
+# implementations coul be be used when running tests.
+if ("${KUDU_USE_ASAN}" OR "${KUDU_USE_TSAN}" OR "${KUDU_USE_UBSAN}")
+  list(INSERT KUDU_MIN_TEST_LIBS 0 ${SANITIZER_OPTIONS_OVERRIDE})
+endif()
 set(KUDU_TEST_LINK_LIBS ${KUDU_MIN_TEST_LIBS})
+
+# This macro initializes KUDU_MIN_TEST_LIBS to KUDU_MIN_TEST_LIBS and
+# appends the passed list of libraries to the end. This ensures that
+# KUDU_MIN_TEST_LIBS is linked first.
+macro(SET_KUDU_TEST_LINK_LIBS)
+  set(KUDU_TEST_LINK_LIBS ${KUDU_MIN_TEST_LIBS})
+  list(APPEND KUDU_TEST_LINK_LIBS ${ARGN})
+endmacro()
 
 # Use "thin archives" for our static libraries. We only use static libraries
 # internal to our own build, so thin ones are just as good and much smaller.

@@ -121,7 +121,8 @@ $ mkdir -p build/asan
 $ cd build/asan
 $ CC=../../thirdparty/clang-toolchain/bin/clang \
   CXX=../../thirdparty/clang-toolchain/bin/clang++ \
-  cmake -DKUDU_USE_ASAN=1 ../..
+  ./../thirdparty/installed/common/bin/cmake \
+  -DKUDU_USE_ASAN=1 ../..
 $ make -j8
 $ ctest -j8
 ----
@@ -173,33 +174,11 @@ $ mkdir -p build/tsan
 $ cd build/tsan
 $ CC=../../thirdparty/clang-toolchain/bin/clang \
     CXX=../../thirdparty/clang-toolchain/bin/clang++ \
-    cmake -DKUDU_USE_TSAN=1 ../..
+    ../../thirdparty/installed/common/bin/cmake \
+    -DKUDU_USE_TSAN=1 ../..
 $ make -j8
 $ ctest -j8
 ----
-
-. Enabling TSAN supressions while running tests
-[NOTE]
-====
-Note that we rely on a list of runtime suppressions in _build-support/tsan-suppressions.txt_.
-If you simply run a unit test like _build/tsan/bin/foo-test_, you won't get these suppressions.
-Instead, use a command like:
-
-[source,bash]
-----
-$ ctest -R foo-test
-----
-
-or
-
-[source,bash]
-----
-$ build-support/run-test.sh build/tsan/bin/foo-test [--test-arguments-here]
-----
-
-...and then view the logs in _build/tsan/test-logs/_
-
-====
 
 TSAN may truncate a few lines of the stack trace when reporting where the error
 is. This can be bewildering. It's documented for TSANv1 here:

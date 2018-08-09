@@ -136,6 +136,16 @@ def main():
   fixup_rpaths(os.path.join(ROOT, "build"))
   fixup_rpaths(os.path.join(ROOT, "thirdparty"))
 
+  # Override the external_symbolizer_path to use a valid path on the dist-test
+  # machine. The external_symbolizer_path defined during the build and
+  # used in sanitizer_options.cc is not valid because it's an absolute path on
+  # the build machine.
+  symbolizer_path = os.path.join(ROOT, "thirdparty/installed/uninstrumented/bin/llvm-symbolizer")
+  for sanitizer in ["ASAN", "LSAN", "MSAN", "TSAN", "UBSAN"]:
+    var_name = sanitizer + "_OPTIONS"
+    if "external_symbolizer_path=" not in os.environ.get(var_name, ""):
+      env[var_name] = os.environ.get(var_name, "") + " external_symbolizer_path=" + symbolizer_path
+
   # Add environment variables for Java dependencies. These environment variables
   # are used in mini_hms.cc.
   env['HIVE_HOME'] = glob.glob(os.path.join(ROOT, "thirdparty/src/hive-*"))[0]
@@ -151,8 +161,6 @@ def main():
   # left in /tmp.
   test_tmpdir = os.path.abspath(os.path.join(ROOT, "test-tmp"))
   env['TEST_TMPDIR'] = test_tmpdir
-
-  env['ASAN_SYMBOLIZER_PATH'] = os.path.join(ROOT, "thirdparty/installed/uninstrumented/bin/llvm-symbolizer")
 
   stdout = None
   stderr = None
