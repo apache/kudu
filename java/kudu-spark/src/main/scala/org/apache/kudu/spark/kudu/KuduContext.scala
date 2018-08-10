@@ -20,6 +20,8 @@ package org.apache.kudu.spark.kudu
 import java.security.AccessController
 import java.security.PrivilegedAction
 
+import java.sql.Timestamp
+
 import javax.security.auth.Subject
 import javax.security.auth.login.AppConfigurationEntry
 import javax.security.auth.login.Configuration
@@ -36,6 +38,8 @@ import org.apache.spark.sql.types.DecimalType
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.Row
+import org.apache.spark.sql.catalyst.CatalystTypeConverters
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.util.AccumulatorV2
 import org.apache.yetus.audience.InterfaceAudience
 import org.apache.yetus.audience.InterfaceStability
@@ -298,7 +302,7 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
     val schema = data.schema
     // Get the client's last propagated timestamp on the driver.
     val lastPropagatedTimestamp = syncClient.getLastPropagatedTimestamp
-    data.foreachPartition(iterator => {
+    data.queryExecution.toRdd.foreachPartition(iterator => {
       val pendingErrors = writePartitionRows(
         iterator,
         schema,
@@ -317,7 +321,7 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
   }
 
   private def writePartitionRows(
-      rows: Iterator[Row],
+      rows: Iterator[InternalRow],
       schema: StructType,
       tableName: String,
       operationType: OperationType,
@@ -334,8 +338,10 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
     val session: KuduSession = syncClient.newSession
     session.setFlushMode(FlushMode.AUTO_FLUSH_BACKGROUND)
     session.setIgnoreAllDuplicateRows(writeOptions.ignoreDuplicateRowErrors)
+    val typeConverter = CatalystTypeConverters.createToScalaConverter(schema)
     try {
-      for (row <- rows) {
+      for (internalRow <- rows) {
+        val row = typeConverter(internalRow).asInstanceOf[Row]
         val operation = operationType.operation(table)
         for ((sparkIdx, kuduIdx) <- indices) {
           if (row.isNullAt(sparkIdx)) {

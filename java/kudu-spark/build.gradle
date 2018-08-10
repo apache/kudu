@@ -24,6 +24,7 @@ dependencies {
   compile libs.yetusAnnotations
 
   provided libs.scalaLibrary
+  provided libs.scalap
   provided libs.sparkCore
   provided libs.sparkSql
   provided libs.slf4jApi
@@ -32,6 +33,7 @@ dependencies {
   testCompile project(path: ":kudu-client", configuration: "shadowTest")
   testCompile libs.junit
   testCompile libs.scalatest
+  testCompile libs.sparkSqlTest
 }
 
 // Adjust the artifact name to include the spark and scala base versions.
