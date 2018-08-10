@@ -400,6 +400,11 @@ class SequentialFile {
 };
 
 // A file abstraction for randomly reading the contents of a file.
+//
+// Note: this abstraction is safe to use in FileCache, which means all
+// implementations must ensure that any mutable state changes brought on by
+// instance destruction and recreation (i.e. triggered by cache eviction and
+// reloading events) do not affect correctness.
 class RandomAccessFile {
  public:
   RandomAccessFile() { }
@@ -535,6 +540,11 @@ struct RWFileOptions {
 // noted otherwise) bearing in mind the usual filesystem coherency guarantees
 // (e.g. two threads that write concurrently to the same file offset will
 // probably yield garbage).
+//
+// Note: this abstraction is safe to use in FileCache, which means all
+// implementations must ensure that any mutable state changes brought on by
+// instance destruction and recreation (i.e. triggered by cache eviction and
+// reloading events) do not affect correctness.
 class RWFile {
  public:
   enum FlushMode {

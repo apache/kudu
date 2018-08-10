@@ -331,11 +331,7 @@ class Descriptor<RWFile> : public RWFile {
     }
 
     // The file was evicted, reopen it.
-    //
-    // Because the file may be evicted at any time we must use 'sync_on_close'
-    // (note: sync is a no-op if the file isn't dirty).
     RWFileOptions opts;
-    opts.sync_on_close = true;
     opts.mode = Env::OPEN_EXISTING;
     unique_ptr<RWFile> f;
     RETURN_NOT_OK(base_.env()->NewRWFile(opts, base_.filename(), &f));
