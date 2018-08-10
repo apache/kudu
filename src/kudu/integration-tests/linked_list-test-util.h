@@ -283,7 +283,7 @@ class ScopedRowUpdater {
  private:
   void RowUpdaterThread() {
     client::sp::shared_ptr<client::KuduSession> session(table_->client()->NewSession());
-    session->SetTimeoutMillis(15000);
+    session->SetTimeoutMillis(60000 /* 60 seconds */);
     CHECK_OK(session->SetFlushMode(client::KuduSession::AUTO_FLUSH_BACKGROUND));
 
     int64_t next_key;
@@ -483,7 +483,7 @@ Status LinkedListTester::LoadLinkedList(
   MonoTime deadline = start + run_for;
 
   client::sp::shared_ptr<client::KuduSession> session = client_->NewSession();
-  session->SetTimeoutMillis(15000);
+  session->SetTimeoutMillis(60000 /* 60 seconds */);
   RETURN_NOT_OK_PREPEND(session->SetFlushMode(client::KuduSession::MANUAL_FLUSH),
                         "Couldn't set flush mode");
 
