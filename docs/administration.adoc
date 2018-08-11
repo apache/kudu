@@ -644,6 +644,88 @@ To verify that all masters are working properly, perform the following sanity ch
 * Run a Kudu system check (ksck) on the cluster using the `kudu` command line
   tool. See <<ksck>> for more details.
 
+=== Changing the master hostnames
+
+To prevent long maintenance windows when replacing dead masters, DNS aliases should be used. If the
+cluster was set up without aliases, changing the host names can be done by following the below
+steps.
+
+==== Prepare for the hostname change
+
+. Establish a maintenance window (one hour should be sufficient). During this time the Kudu cluster
+will be unavailable.
+
+. Note the UUID and RPC address of every master by visiting the `/masters` page of any master's web
+UI.
+
+. Stop all the Kudu processes in the entire cluster.
+
+. Set up the new hostnames to point to the masters and verify all servers and clients properly
+resolve them.
+
+==== Perform the hostname change
+
+. Rewrite each master’s Raft configuration with the following command, executed on all master hosts:
+----
+$ sudo -u kudu kudu local_replica cmeta rewrite_raft_config --fs_wal_dir=<master_wal_dir> [--fs_data_dirs=<master_data_dirs>] 00000000000000000000000000000000 <all_masters>
+----
+
+For example:
+
+----
+$ sudo -u kudu kudu local_replica cmeta rewrite_raft_config --fs_wal_dir=/data/kudu/master/wal --fs_data_dirs=/data/kudu/master/data 00000000000000000000000000000000 4aab798a69e94fab8d77069edff28ce0:new-master-name-1:7051 f5624e05f40649b79a757629a69d061e:new-master-name-2:7051 988d8ac6530f426cbe180be5ba52033d:new-master-name-3:7051
+----
+
+. Change the masters' gflagfile so the `master_addresses` parameter reflects the new hostnames.
+
+. Change the `tserver_master_addrs` parameter in the tablet servers' gflagfiles to the new
+hostnames.
+
+. Start up the masters.
+
+. To verify that all masters are working properly, perform the following sanity checks:
+
+.. Using a browser, visit each master's web UI. Look at the /masters page. All of the masters should
+  be listed there with one master in the LEADER role and the others in the FOLLOWER role. The
+  contents of /masters on each master should be the same.
+
+.. Run the below command to verify all masters are up and listening. The UUIDs
+should be the same and belong to the same master as before the hostname change:
++
+----
+$ sudo -u kudu kudu master list new-master-name-1:7051,new-master-name-2:7051,new-master-name-3:7051
+----
+
+. Start all of the tablet servers.
+
+. Run a Kudu system check (ksck) on the cluster using the `kudu` command line
+tool. See <<ksck>> for more details. After startup, some tablets may be
+unavailable as it takes some time to initialize all of them.
+
+. If you have Kudu tables that are accessed from Impala, update the HMS
+database manually in the underlying database that provides the storage for HMS.
+
+.. The following is an example SQL statement you should run in the HMS database:
++
+[source,sql]
+----
+UPDATE TABLE_PARAMS
+SET PARAM_VALUE =
+  'new-master-name-1:7051,new-master-name-2:7051,new-master-name-3:7051'
+WHERE PARAM_KEY = 'kudu.master_addresses'
+AND PARAM_VALUE = 'master-1:7051,master-2:7051,master-3:7051';
+----
++
+.. In `impala-shell`, run:
++
+[source,bash]
+----
+INVALIDATE METADATA;
+----
++
+.. Verify updating the metadata worked by running a simple `SELECT` query on a
+Kudu-backed Impala table.
+
 [[ksck]]
 === Checking Cluster Health with `ksck`
 
