@@ -443,6 +443,10 @@ message IsCreateTableDoneResponsePB {
 
 message DeleteTableRequestPB {
   required TableIdentifierPB table = 1;
+
+  // Whether to apply the deletion to external catalogs, such as the Hive Metastore,
+  // which the Kudu master has been configured to integrate with.
+  optional bool modify_external_catalogs = 2 [default = true];
 }
 
 message DeleteTableResponsePB {
@@ -567,7 +571,7 @@ message AlterTableRequestPB {
 
   // Whether to apply the alteration to external catalogs, such as the Hive Metastore,
   // which the Kudu master has been configured to integrate with.
-  optional bool alter_external_catalogs = 5 [default = true];
+  optional bool modify_external_catalogs = 5 [default = true];
 }
 
 message AlterTableResponsePB {

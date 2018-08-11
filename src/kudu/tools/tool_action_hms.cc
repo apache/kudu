@@ -97,8 +97,8 @@ Status RenameTableInKuduCatalog(KuduClient* kudu_client,
                                 const string& name,
                                 const string& new_name) {
   unique_ptr<KuduTableAlterer> alterer(kudu_client->NewTableAlterer(name));
-  SetAlterExternalCatalogs(alterer.get(), false);
   return alterer->RenameTo(new_name)
+                ->modify_external_catalogs(false)
                 ->Alter();
 }
 
@@ -392,7 +392,7 @@ Status CheckHmsMetadata(const RunnerContext& context) {
          << "Suggestion: rename the Kudu table(s) to be Hive-compatible, then run the fix tool:"
          << endl;
     for (const auto& table : report.invalid_name_tables) {
-      cout << "\t$ kudu table rename_table --alter_external_catalogs=false "
+      cout << "\t$ kudu table rename_table --modify_external_catalogs=false "
            << master_addrs << " " << table->name() << " <database-name>.<table-name>" << endl;
     }
     cout << endl;
@@ -585,7 +585,7 @@ Status FixHmsMetadata(const RunnerContext& context) {
                        << ", because a Kudu table with name" << hms_table_name
                        << " already exists";
             LOG(INFO) << "Suggestion: rename the conflicting table name manually:\n"
-                      << "\t$ kudu table rename_table --alter_external_catalogs=false "
+                      << "\t$ kudu table rename_table --modify_external_catalogs=false "
                       << master_addrs << " " << hms_table_name << " <database-name>.<table-name>'";
             success = false;
             continue;

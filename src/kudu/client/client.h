@@ -65,7 +65,6 @@ class KuduTableAlterer;
 namespace tools {
 class LeaderMasterProxy;
 std::string GetMasterAddresses(const client::KuduClient&);
-void SetAlterExternalCatalogs(client::KuduTableAlterer*, bool);
 } // namespace tools
 
 namespace client {
@@ -341,6 +340,17 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   ///   Name of the table to drop.
   /// @return Operation status.
   Status DeleteTable(const std::string& table_name);
+
+  /// Delete/drop a table in internal catalogs and possibly external catalogs.
+  ///
+  /// @param [in] table_name
+  ///   Name of the table to drop.
+  /// @param [in] modify_external_catalogs
+  ///   Whether to apply the deletion to external catalogs, such as the Hive Metastore,
+  ///   which the Kudu master has been configured to integrate with.
+  /// @return Operation status.
+  Status KUDU_NO_EXPORT DeleteTableInCatalogs(const std::string& table_name,
+                                              bool modify_external_catalogs);
 
   /// Create a KuduTableAlterer object.
   ///
@@ -1200,6 +1210,14 @@ class KUDU_EXPORT KuduTableAlterer {
   /// @return Raw pointer to this alterer object.
   KuduTableAlterer* wait(bool wait);
 
+  /// Whether to apply the alteration to external catalogs, such as the Hive
+  /// Metastore, which the Kudu master has been configured to integrate with.
+  ///
+  /// @param [in] modify_external_catalogs
+  ///   Whether to apply the alteration to external catalogs.
+  /// @return Raw pointer to this alterer object.
+  KuduTableAlterer* KUDU_NO_EXPORT modify_external_catalogs(bool modify_external_catalogs);
+
   /// @return Status of the ALTER TABLE operation. The return value
   ///   may indicate an error in the alter operation,
   ///   or a misuse of the builder (e.g. add_column() with default_value=NULL).
@@ -1211,17 +1229,11 @@ class KUDU_EXPORT KuduTableAlterer {
 
   friend class KuduClient;
 
-  friend void tools::SetAlterExternalCatalogs(KuduTableAlterer*, bool);
   FRIEND_TEST(kudu::MasterHmsTest, TestAlterTable);
   FRIEND_TEST(kudu::MasterHmsUpgradeTest, TestRenameExistingTables);
 
   KuduTableAlterer(KuduClient* client,
                    const std::string& name);
-
-  // Whether to apply the alteration to external catalogs, such as the Hive
-  // Metastore, which the Kudu master has been configured to integrate with.
-  // This method returns a raw pointer to this alterer object.
-  KuduTableAlterer* alter_external_catalogs(bool alter_external_catalogs);
 
   // Owned.
   Data* data_;

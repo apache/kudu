@@ -61,7 +61,7 @@ Status KuduTableAlterer::Data::ToRequest(AlterTableRequestPB* req) {
   }
 
   req->Clear();
-  req->set_alter_external_catalogs(alter_external_catalogs_);
+  req->set_modify_external_catalogs(modify_external_catalogs_);
   req->mutable_table()->set_table_name(table_name_);
   if (rename_to_.is_initialized()) {
     req->set_new_table_name(rename_to_.get());

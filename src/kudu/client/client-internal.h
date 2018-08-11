@@ -115,7 +115,8 @@ class KuduClient::Data {
 
   Status DeleteTable(KuduClient* client,
                      const std::string& table_name,
-                     const MonoTime& deadline);
+                     const MonoTime& deadline,
+                     bool modify_external_catalogs = true);
 
   Status AlterTable(KuduClient* client,
                     const master::AlterTableRequestPB& req,

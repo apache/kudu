@@ -398,8 +398,13 @@ Status KuduClient::IsCreateTableInProgress(const string& table_name,
 }
 
 Status KuduClient::DeleteTable(const string& table_name) {
+  return DeleteTableInCatalogs(table_name, true);
+}
+
+Status KuduClient::DeleteTableInCatalogs(const string& table_name,
+                                         bool modify_external_catalogs) {
   MonoTime deadline = MonoTime::Now() + default_admin_operation_timeout();
-  return data_->DeleteTable(this, table_name, deadline);
+  return data_->DeleteTable(this, table_name, deadline, modify_external_catalogs);
 }
 
 KuduTableAlterer* KuduClient::NewTableAlterer(const string& table_name) {
@@ -1161,9 +1166,9 @@ KuduTableAlterer* KuduTableAlterer::wait(bool wait) {
   return this;
 }
 
-KuduTableAlterer* KuduTableAlterer::alter_external_catalogs(
-    bool alter_external_catalogs) {
-  data_->alter_external_catalogs_ = alter_external_catalogs;
+KuduTableAlterer* KuduTableAlterer::modify_external_catalogs(
+    bool modify_external_catalogs) {
+  data_->modify_external_catalogs_ = modify_external_catalogs;
   return this;
 }
 

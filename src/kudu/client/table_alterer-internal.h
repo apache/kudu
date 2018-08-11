@@ -79,7 +79,7 @@ class KuduTableAlterer::Data {
 
   // Whether to apply the alteration to external catalogs, such as the Hive
   // Metastore. The default value is true.
-  bool alter_external_catalogs_ = true;
+  bool modify_external_catalogs_ = true;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(Data);

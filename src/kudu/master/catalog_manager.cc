@@ -1750,12 +1750,12 @@ Status CatalogManager::DeleteTableRpc(const DeleteTableRequestPB& req,
   leader_lock_.AssertAcquiredForReading();
   RETURN_NOT_OK(CheckOnline());
 
-  // If the HMS integration is enabled, then don't directly remove the table
-  // from the Kudu catalog. Instead, delete the table from the HMS and wait for
-  // the notification log listener to apply the corresponding event to the
-  // catalog. By 'serializing' the drop through the HMS, race conditions are
-  // avoided.
-  if (hms_catalog_) {
+  // If the HMS integration is enabled and the table should be deleted in the HMS,
+  // then don't directly remove the table from the Kudu catalog. Instead, delete
+  // the table from the HMS and wait for the notification log listener to apply
+  // the corresponding event to the catalog. By 'serializing' the drop through
+  // the HMS, race conditions are avoided.
+  if (hms_catalog_ && req.modify_external_catalogs()) {
     // Wait for the notification log listener to catch up. This reduces the
     // likelihood of attempting to delete a table which has just been deleted or
     // renamed in the HMS.
@@ -1781,8 +1781,8 @@ Status CatalogManager::DeleteTableRpc(const DeleteTableRequestPB& req,
     return WaitForNotificationLogListenerCatchUp(resp, rpc);
   }
 
-  // If the HMS integration isn't enabled, then delete the table directly from
-  // the Kudu catalog.
+  // If the HMS integration isn't enabled or the deletion should only happen in Kudu,
+  // then delete the table directly from the Kudu catalog.
   return DeleteTable(req, resp, boost::none);
 }
 
@@ -2158,7 +2158,7 @@ Status CatalogManager::AlterTableRpc(const AlterTableRequestPB& req,
   // in the HMS and wait for the notification log listener to apply
   // that event to the catalog. By 'serializing' the rename through the
   // HMS, race conditions are avoided.
-  if (hms_catalog_ && req.has_new_table_name() && req.alter_external_catalogs()) {
+  if (hms_catalog_ && req.has_new_table_name() && req.modify_external_catalogs()) {
     // Look up the table and lock it.
     scoped_refptr<TableInfo> table;
     TableMetadataLock l;

@@ -2147,7 +2147,7 @@ TEST_F(ToolTest, TestDeleteTable) {
   ASSERT_EQ(exist, true);
 
   // Delete the table.
-  NO_FATALS(RunActionStdoutNone(Substitute("table delete $0 $1",
+  NO_FATALS(RunActionStdoutNone(Substitute("table delete $0 $1 --nomodify_external_catalogs",
                                            master_addr, kTableName)));
 
   // Check that the table does not exist.
@@ -2178,7 +2178,7 @@ TEST_F(ToolTest, TestRenameTable) {
   ASSERT_OK(client->OpenTable(kNewTableName, &table));
 
   NO_FATALS(RunActionStdoutNone(
-        Substitute("table rename_table $0 $1 $2 --noalter_external_catalogs",
+        Substitute("table rename_table $0 $1 $2 --nomodify_external_catalogs",
           master_addr, kNewTableName, kTableName)));
   ASSERT_OK(client->OpenTable(kTableName, &table));
 }
@@ -2788,10 +2788,10 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndManualFixHmsMetadata) {
 
   // Rename the incompatible names.
   NO_FATALS(RunActionStdoutNone(Substitute(
-          "table rename-table --noalter-external-catalogs $0 "
+          "table rename-table --nomodify-external-catalogs $0 "
           "default.hive-incompatible-name default.hive_compatible_name", master_addr)));
   NO_FATALS(RunActionStdoutNone(Substitute(
-          "table rename-table --noalter-external-catalogs $0 "
+          "table rename-table --nomodify-external-catalogs $0 "
           "no_database default.with_database", master_addr)));
 
   // Create the missing database.
@@ -2801,7 +2801,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndManualFixHmsMetadata) {
 
   // Rename the conflicting table.
   NO_FATALS(RunActionStdoutNone(Substitute(
-          "table rename-table --noalter-external-catalogs $0 "
+          "table rename-table --nomodify-external-catalogs $0 "
           "default.conflicting_legacy_table default.non_conflicting_legacy_table", master_addr)));
 
   // Run the automatic fixer to create missing HMS table entries.

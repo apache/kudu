@@ -444,10 +444,6 @@ Status SetServerFlag(const string& address, uint16_t default_port,
   }
 }
 
-void SetAlterExternalCatalogs(client::KuduTableAlterer* alterer, bool alter_external_catalogs) {
-  alterer->alter_external_catalogs(alter_external_catalogs);
-}
-
 string GetMasterAddresses(const client::KuduClient& client) {
   return HostPort::ToCommaSeparatedString(client.data_->master_hostports());
 }

@@ -509,11 +509,13 @@ Status KuduClient::Data::WaitForCreateTableToFinish(
 
 Status KuduClient::Data::DeleteTable(KuduClient* client,
                                      const string& table_name,
-                                     const MonoTime& deadline) {
+                                     const MonoTime& deadline,
+                                     bool modify_external_catalogs) {
   DeleteTableRequestPB req;
   DeleteTableResponsePB resp;
 
   req.mutable_table()->set_table_name(table_name);
+  req.set_modify_external_catalogs(modify_external_catalogs);
   return SyncLeaderMasterRpc<DeleteTableRequestPB, DeleteTableResponsePB>(
       deadline, client, req, &resp,
       "DeleteTable", &MasterServiceProxy::DeleteTable, {});

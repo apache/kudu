@@ -38,9 +38,9 @@
 #include "kudu/util/status.h"
 
 DECLARE_string(tables);
-DEFINE_bool(alter_external_catalogs, true,
-            "Whether to alter external catalogs, such as the Hive Metastore, "
-            "when renaming a table.");
+DEFINE_bool(modify_external_catalogs, true,
+            "Whether to modify external catalogs, such as the Hive Metastore, "
+            "when renaming or dropping a table.");
 DEFINE_bool(list_tablets, false,
             "Include tablet and replica UUIDs in the output");
 
@@ -127,7 +127,7 @@ Status DeleteTable(const RunnerContext& context) {
   const string& table_name = FindOrDie(context.required_args, kTableNameArg);
   client::sp::shared_ptr<KuduClient> client;
   RETURN_NOT_OK(CreateKuduClient(context, &client));
-  return client->DeleteTable(table_name);
+  return client->DeleteTableInCatalogs(table_name, FLAGS_modify_external_catalogs);
 }
 
 Status RenameTable(const RunnerContext& context) {
@@ -137,8 +137,8 @@ Status RenameTable(const RunnerContext& context) {
   client::sp::shared_ptr<KuduClient> client;
   RETURN_NOT_OK(CreateKuduClient(context, &client));
   unique_ptr<KuduTableAlterer> alterer(client->NewTableAlterer(table_name));
-  SetAlterExternalCatalogs(alterer.get(), FLAGS_alter_external_catalogs);
   return alterer->RenameTo(new_table_name)
+                ->modify_external_catalogs(FLAGS_modify_external_catalogs)
                 ->Alter();
 }
 
@@ -168,6 +168,7 @@ unique_ptr<Mode> BuildTableMode() {
       .Description("Delete a table")
       .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTableNameArg, "Name of the table to delete" })
+      .AddOptionalParameter("modify_external_catalogs")
       .Build();
 
   unique_ptr<Action> rename_table =
@@ -176,7 +177,7 @@ unique_ptr<Mode> BuildTableMode() {
       .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTableNameArg, "Name of the table to rename" })
       .AddRequiredParameter({ kNewTableNameArg, "New table name" })
-      .AddOptionalParameter("alter_external_catalogs")
+      .AddOptionalParameter("modify_external_catalogs")
       .Build();
 
   unique_ptr<Action> rename_column =

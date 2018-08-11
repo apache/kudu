@@ -376,7 +376,7 @@ TEST_F(MasterHmsTest, TestAlterTable) {
 
   // Only alter the table in Kudu, the corresponding table in the HMS will not be altered.
   table_alterer.reset(client_->NewTableAlterer("default.a")->RenameTo("default.b")
-                             ->alter_external_catalogs(false));
+                             ->modify_external_catalogs(false));
   ASSERT_OK(table_alterer->Alter());
   bool exists;
   ASSERT_OK(client_->TableExists("default.b", &exists));
@@ -420,6 +420,17 @@ TEST_F(MasterHmsTest, TestDeleteTable) {
     ASSERT_OK(client_->DeleteTable("default.c"));
   });
   NO_FATALS(CheckTableDoesNotExist("default", "c"));
+
+  // Create a Kudu table, then only drop it from Kudu. Ensure the HMS
+  // entry is not removed.
+  ASSERT_OK(CreateKuduTable("default", "d"));
+  NO_FATALS(CheckTable("default", "d"));
+  hive::Table hms_table_d;
+  ASSERT_OK(hms_client_->GetTable("default", "d", &hms_table_d));
+  ASSERT_OK(client_->DeleteTableInCatalogs("default.d", false));
+  s = client_->OpenTable(Substitute("$0.$1", "default", "d"), &table);
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+  ASSERT_OK(hms_client_->GetTable("default", "d", &hms_table_d));
 }
 
 TEST_F(MasterHmsTest, TestNotificationLogListener) {
@@ -598,10 +609,10 @@ TEST_F(MasterHmsUpgradeTest, TestRenameExistingTables) {
 
   // Rename the tables using a Kudu catalog only rename.
   unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer("default.UPPERCASE"));
-  ASSERT_OK(alterer->RenameTo("default.uppercase")->alter_external_catalogs(false)->Alter());
+  ASSERT_OK(alterer->RenameTo("default.uppercase")->modify_external_catalogs(false)->Alter());
 
   alterer.reset(client_->NewTableAlterer("default.illegal-chars⁉"));
-  ASSERT_OK(alterer->RenameTo("default.illegal_chars")->alter_external_catalogs(false)->Alter());
+  ASSERT_OK(alterer->RenameTo("default.illegal_chars")->modify_external_catalogs(false)->Alter());
 
   tables.clear();
   client_->ListTables(&tables);
