@@ -630,3 +630,43 @@ of the tablet server web UI.
 The Raft consensus algorithm that Kudu uses for replication requires tombstones
 for correctness in certain rare situations. They consume minimal resources and
 hold no data. They must not be deleted.
+
+[[cfile_corruption]]
+=== Corruption: checksum error on CFile block
+
+If the data on disk becomes corrupt, users will encounter warnings containing
+"Corruption: checksum error on CFile block" in the tablet server logs and
+client side errors when trying to scan tablets with corrupt CFile blocks.
+Until link:https://issues.apache.org/jira/browse/KUDU-2469[KUDU-2469] is
+completed, fixing this corruption is a manual process.
+
+To fix the issue, users can first identify all the affected tablets by
+running a checksum scan on the affected tables or tablets using the
+`link:command_line_tools_reference.html#cluster-ksck[ksck]` tool.
+
+----
+sudo -u kudu kudu cluster ksck <master_addresses> -checksum_scan -tables=<tables>
+sudo -u kudu kudu cluster ksck <master_addresses> -checksum_scan -tablets=<tablets>
+----
+
+If there is at least one replica for each tablet that does not return a corruption
+error, you can repair the bad copies by deleting them and forcing them to be
+re-replicated from the leader using the
+`link:command_line_tools_reference.html#remote_replica-delete[remote_replica delete] tool`.
+
+----
+sudo -u kudu kudu remote_replica delete <tserver_address> <tablet_id> "Cfile Corruption"
+----
+
+If all of the replica are corrupt, then some data loss has occurred.
+Until link:https://issues.apache.org/jira/browse/KUDU-2526[KUDU-2526] is
+completed this can happen if the corrupt replica became the leader and the
+existing follower replicas are replaced.
+
+If data has been lost, you can repair the table by replacing the corrupt tablet
+with an empty one using the
+`link:command_line_tools_reference.html#tablet-unsafe_replace_tablet[unsafe_replace_tablet]` tool.
+
+----
+sudo -u kudu kudu tablet unsafe_replace_tablet <master_addresses> <tablet_id>
+----
