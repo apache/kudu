@@ -69,10 +69,16 @@ class RpcContext {
   // and is not a public API.
   RpcContext(InboundCall *call,
              const google::protobuf::Message *request_pb,
-             google::protobuf::Message *response_pb,
-             scoped_refptr<ResultTracker> result_tracker);
+             google::protobuf::Message *response_pb);
 
   ~RpcContext();
+
+  // Initialize a result tracker for the RPC.
+  //
+  // This is delayed until after the constructor in order to allow for RPCs to
+  // be validated and used prior to initializing the tracking (primarily for
+  // authorization).
+  void SetResultTracker(scoped_refptr<ResultTracker> result_tracker);
 
   // Return the trace buffer for this call.
   Trace* trace();

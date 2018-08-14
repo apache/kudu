@@ -110,20 +110,14 @@ void GeneratedServiceIf::Handle(InboundCall *call) {
   }
   Message* resp = method_info->resp_prototype->New();
 
-  bool track_result = call->header().has_request_id()
-                      && method_info->track_result
-                      && FLAGS_enable_exactly_once;
-  RpcContext* ctx = new RpcContext(call,
-                                   req.release(),
-                                   resp,
-                                   track_result ? result_tracker_ : nullptr);
+  RpcContext* ctx = new RpcContext(call, req.release(), resp);
   if (!method_info->authz_method(ctx->request_pb(), resp, ctx)) {
     // The authz_method itself should have responded to the RPC.
     return;
   }
 
-  if (track_result) {
-    RequestIdPB request_id(call->header().request_id());
+  if (call->header().has_request_id() && method_info->track_result && FLAGS_enable_exactly_once) {
+    ctx->SetResultTracker(result_tracker_);
     ResultTracker::RpcState state = ctx->result_tracker()->TrackRpc(
         call->header().request_id(),
         resp,
