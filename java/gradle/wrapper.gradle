@@ -52,13 +52,21 @@ task bootstrapWrapper() {
     // Add a trailing zero to the version if needed.
     def fullVersion = versions.gradle.count(".") == 1 ? "${versions.gradle}.0" : versions.gradle
     // Leverages the wrapper jar checked into the gradle project on github because the jar isn't available elsewhere.
-    def wrapperBaseUrl = "https://raw.githubusercontent.com/gradle/gradle/v$fullVersion/gradle/wrapper"
+    def wrapperBaseUrl = "https://github.com/gradle/gradle/raw/v$fullVersion/gradle/wrapper"
     def wrapperJarUrl = wrapperBaseUrl + "/gradle-wrapper.jar"
 
     def bootstrapString = """
-      if [ ! -e $wrapperJarPath ]; then
-         curl -s -o $wrapperJarPath $wrapperJarUrl
-      fi
+      # Loop in case we encounter an error.
+      for attempt in 1 2 3; do
+        if [ ! -e $wrapperJarPath ]; then
+          if ! curl -s -S --retry 3 -L -o "$wrapperJarPath" "$wrapperJarUrl"; then
+            rm -f "$wrapperJarPath"
+            # Pause for a bit before looping in case the server throttled us.
+            sleep 5
+            continue
+          fi
+        fi
+      done
       """.stripIndent()
 
     def wrapperScript = wrapper.scriptFile
