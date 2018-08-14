@@ -125,13 +125,13 @@ def gen_sha_file(tarball_path):
   """
   Create a sha checksum file of the tarball.
 
-  The output format is compatible with command line tools like 'sha1sum' so it
+  The output format is compatible with command line tools like 'sha512sum' so it
   can be used to verify the checksum.
   """
-  digest = checksum_file(hashlib.sha1(), tarball_path)
-  path = tarball_path + ".sha1"
+  digest = checksum_file(hashlib.sha512(), tarball_path)
+  path = tarball_path + ".sha512"
   with open(path, "w") as f:
-    f.write("%s\t%s\n" % (digest, os.path.basename(tarball_path)))
+      f.write("%s  %s\n" % (digest, os.path.basename(tarball_path)))
   print(Colors.GREEN + "Generated sha:\t\t" + Colors.RESET + path)
 
 
