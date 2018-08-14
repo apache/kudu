@@ -208,13 +208,35 @@ TEST_F(RpcStubTest, TestAuthorization) {
     p.set_user_credentials(creds);
 
     // Alice is disallowed by all RPCs.
-    RpcController controller;
-    WhoAmIRequestPB req;
-    WhoAmIResponsePB resp;
-    Status s = p.WhoAmI(req, &resp, &controller);
-    ASSERT_FALSE(s.ok());
-    ASSERT_EQ(s.ToString(),
-              "Remote error: Not authorized: alice is not allowed to call this method");
+    {
+      RpcController controller;
+      WhoAmIRequestPB req;
+      WhoAmIResponsePB resp;
+      Status s = p.WhoAmI(req, &resp, &controller);
+      ASSERT_FALSE(s.ok());
+      ASSERT_EQ(s.ToString(),
+                "Remote error: Not authorized: alice is not allowed to call this method");
+    }
+
+    // KUDU-2540: Authorization failures on exactly-once RPCs cause FATAL
+    {
+      RpcController controller;
+
+      unique_ptr<RequestIdPB> request_id(new RequestIdPB);
+      request_id->set_client_id("client-id");
+      request_id->set_attempt_no(0);
+      request_id->set_seq_no(0);
+      request_id->set_first_incomplete_seq_no(-1);
+      controller.SetRequestIdPB(std::move(request_id));
+
+      ExactlyOnceRequestPB req;
+      req.set_value_to_add(1);
+      ExactlyOnceResponsePB resp;
+      Status s = p.AddExactlyOnce(req, &resp, &controller);
+      ASSERT_FALSE(s.ok());
+      ASSERT_EQ(s.ToString(),
+                "Remote error: Not authorized: alice is not allowed to call this method");
+    }
   }
 
   // Try some calls as "bob".
