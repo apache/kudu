@@ -121,7 +121,7 @@ def proof(args):
      '--verbose',
      # Dont check the javadocs, old doc versions, or the configuration
      # reference files which are extremely large.
-     '--file-ignore', '/apidocs|releases|configuration_ref/',
+     '--file-ignore', '/apidocs|releases|configuration_ref|cpp-client-api/',
      # Don't check external links (too slow!)
      '--disable-external',
      # Don't be pedantic about having an alt tag on every image
