@@ -119,7 +119,7 @@ if [ -n "$OPT_JAVADOC" ]; then
   fi
 
   rm -Rf "$SITE_OUTPUT_DIR/$JAVADOC_SUBDIR"
-  cp -au "$SOURCE_ROOT/java/target/site/$JAVADOC_SUBDIR" "$SITE_OUTPUT_DIR/"
+  cp -a "$SOURCE_ROOT/java/target/site/$JAVADOC_SUBDIR" "$SITE_OUTPUT_DIR/"
 fi
 
 if [ -n "$OPT_DOXYGEN" ]; then

@@ -108,7 +108,7 @@ addresses for Master consensus-configuration. If not specified, assumes a standa
 |===
 
 For the full list of flags for masters, see the
-link:configuration_reference.html#master_configuration_reference[Kudu Master Configuration Reference].
+link:configuration_reference.html#kudu-master_supported[Kudu Master Configuration Reference].
 
 === Configuring Tablet Servers
 To see all available configuration options for the `kudu-tserver` executable,
@@ -133,7 +133,7 @@ do not read this flag.
 |===
 
 For the full list of flags for tablet servers, see the
-link:configuration_reference.html#tablet_server_configuration_reference[Kudu Tablet Server Configuration Reference].
+link:configuration_reference.html#kudu-tserver_supported[Kudu Tablet Server Configuration Reference].
 
 
 == Next Steps

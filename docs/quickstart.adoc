@@ -175,7 +175,7 @@ Fetched 1 row(s) in 5.75s
 ----
 +
 The created table uses a composite primary key. See
-<<kudu_impala_integration.adoc#kudu_impala,Kudu Impala Integration>> for a more detailed
+<<kudu_impala_integration.adoc#,Kudu Impala Integration>> for a more detailed
 introduction to the extended SQL syntax for Impala.
 
 == Read and Modify Data

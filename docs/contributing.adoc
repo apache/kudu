@@ -152,7 +152,9 @@ submit a patch to the review, even if you were not the original reviewer.
 Gerrit allows you to vote on a review. A vote of `+2` from at least one committer
 (besides the submitter) is required before the patch can be merged.
 
-== {cpp} Code Style
+== Code Style
+
+=== {cpp} Code Style
 
 Get familiar with these guidelines so that your contributions can be reviewed and
 integrated quickly and easily.
@@ -161,7 +163,7 @@ In general, Kudu follows the
 link:https://google.github.io/styleguide/cppguide.html[Google {cpp} Style Guide],
 with the following exceptions:
 
-=== Notes on {cpp} 11
+==== Notes on {cpp} 11
 
 Kudu uses {cpp} 11. Check out this handy guide to {cpp} 11 move semantics and rvalue
 references: https://www.chromium.org/rvalue-references
@@ -169,7 +171,7 @@ references: https://www.chromium.org/rvalue-references
 We aim to follow most of the same guidelines, such as, where possible, migrating
 away from `foo.Pass()` in favor of `std::move(foo)`.
 
-=== Limitations on `boost` Use
+==== Limitations on `boost` Use
 
 `boost` classes from header-only libraries can be used in cases where a suitable
 replacement does not exist in the Kudu code base. However:
@@ -188,12 +190,12 @@ replacement does not exist in the Kudu code base. However:
 When in doubt about introducing a new dependency on any `boost` functionality,
 it is best to email `dev@kudu.apache.org` to start a discussion.
 
-=== Line length
+==== Line length
 
 The Kudu team allows line lengths of 100 characters per line, rather than Google's standard of 80. Try to
 keep under 80 where possible, but you can spill over to 100 or so if necessary.
 
-=== Pointers
+==== Pointers
 
 .Smart Pointers and Singly-Owned Pointers
 
@@ -282,7 +284,7 @@ Since `scoped_refptr` is generally faster and smaller, try to use it
 rather than `shared_ptr` in new code. Existing code uses `shared_ptr`
 in many places. When interfacing with that code, you can continue to use `shared_ptr`.
 
-=== Function Binding and Callbacks
+==== Function Binding and Callbacks
 
 Existing code uses `boost::bind` and `boost::function` for function binding and
 callbacks. For new code, use the `Callback` and `Bind` classes in `gutil` instead.
@@ -295,7 +297,7 @@ and decremented when the `Callback` goes out of scope.
 See the large file comment in _gutil/callback.h_ for more details, and
 _util/callback_bind-test.cc_ for examples.
 
-=== GFlags
+==== GFlags
 
 Kudu uses gflags for both command-line and file-based configuration. Use these guidelines
 to add a new gflag. All new gflags must conform to these
@@ -356,9 +358,9 @@ comment in _flag_tags.h_ for guidelines.
   creating `foo_wal_dir` and `bar_wal_dir` gflags, better to have a single
   `kudu_wal_dir` gflag for use universally.
 
-== Java Code Style
+=== Java Code Style
 
-=== Preconditions vs assert in the Kudu Java client
+==== Preconditions vs assert in the Kudu Java client
 
 Use `assert` for verification of the static (i.e. non-runtime) internal
 invariants. Internal means the pre- and post-conditions which are
@@ -397,11 +399,11 @@ if (!isCriticalConditionSatisfied) {
 }
 ----
 
-==== References
+===== References
 * link:https://docs.oracle.com/javase/8/docs/technotes/guides/language/assert.html[Programming With Assertions]
 * link:https://github.com/google/guava/wiki/PreconditionsExplained[Guava Preconditions Explained]
 
-== `CMake` Style Guide
+=== `CMake` Style Guide
 
 `CMake` allows commands in lower, upper, or mixed case. To keep
 the CMake files consistent, please use the following guidelines:

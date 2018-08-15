@@ -31,11 +31,11 @@
 ****
 This is a brief introduction to Kudu's transaction and consistency semantics. For an
 in-depth technical exposition of most of what is mentioned here, and why it is correct,
-see the technical report <<1>>.
+see the technical report <<ht>>.
 ****
 
 Kudu's transactional semantics and architecture are inspired by state-of-the-art
-systems such as Spanner <<2>> and Calvin <<3>>. Kudu builds upon decades of database
+systems such as Spanner <<spanner>> and Calvin <<fdt>>. Kudu builds upon decades of database
 research. The core philosophy is to make the lives of developers easier by providing transactions with
 simple, strong semantics, without sacrificing performance or the ability to tune to different
 requirements.
@@ -74,8 +74,9 @@ may differ.
 
 == Single tablet write operations
 
-Kudu employs _Multiversion Concurrency Control (MVCC)_ and the _Raft consensus_ algorithm <<4>>.
-Each write operation in Kudu must go through the tablet's leader.
+Kudu employs _Multiversion Concurrency Control (MVCC)_ and the _Raft consensus_
+algorithm <<consensus>>. Each write operation in Kudu must go through the
+tablet's leader.
 
 . The leader acquires all locks for the rows that it will change.
 . The leader assigns the write a timestamp before the write is submitted for
@@ -114,7 +115,7 @@ independent write operation with its own timestamp. However, the client API prov
 the option to impose some constraints on the assigned timestamps and on how writes to
 different tablets can be observed by clients.
 
-Kudu, like Spanner, was designed to be externally consistent <<5>>, preserving consistency
+Kudu, like Spanner, was designed to be externally consistent <<consistency>>, preserving consistency
 when operations span multiple tablets and even multiple data centers. In practice this
 means that, if a write operation changes item _x_ at tablet _A_, and a following write
 operation changes item _y_ at tablet _B_, you might want to enforce that if
@@ -126,7 +127,7 @@ timestamps so that the causal relationship between them is captured.
 
 .`CLIENT_PROPAGATED` Consistency
 Kudu's default external consistency mode is called `CLIENT_PROPAGATED`.
-See <<1>> for an extensive explanation on how it works. In brief, this mode causes writes
+See <<ht>> for an extensive explanation on how it works. In brief, this mode causes writes
 from _a single client_ to be automatically externally consistent. In the clickstream scenario
 above, if the two clicks are submitted by different client instances, the application must
 manually propagate timestamps from one client to the other for the causal relationship
@@ -276,8 +277,8 @@ frequently.
 
 [bibliography]
 == References
-- [[[1]]] David Alves, Todd Lipcon and Vijay Garg. Technical Report: HybridTime - Accessible Global Consistency with High Clock Uncertainty. April, 2014. http://users.ece.utexas.edu/~garg/pdslab/david/hybrid-time-tech-report-01.pdf
-- [[[2]]] James C. Corbett, Jeffrey Dean, Michael Epstein, Andrew Fikes, Christopher Frost, J. J. Furman, Sanjay Ghemawat, Andrey Gubarev, Christopher Heiser, Peter Hochschild, Wilson Hsieh, Sebastian Kanthak, Eugene Kogan, Hongyi Li, Alexander Lloyd, Sergey Melnik, David Mwaura, David Nagle, Sean Quinlan, Rajesh Rao, Lindsay Rolig, Yasushi Saito, Michal Szymaniak, Christopher Taylor, Ruth Wang, and Dale Woodford. 2012. Spanner: Google's globally-distributed database. In Proceedings of the 10th USENIX conference on Operating Systems Design and Implementation (OSDI'12). USENIX Association, Berkeley, CA, USA, 251-264.
-- [[[3]]] Alexander Thomson, Thaddeus Diamond, Shu-Chun Weng, Kun Ren, Philip Shao, and Daniel J. Abadi. 2012. Calvin: fast distributed transactions for partitioned database systems. In Proceedings of the 2012 ACM SIGMOD International Conference on Management of Data (SIGMOD '12). ACM, New York, NY, USA, 1-12. DOI=10.1145/2213836.2213838 http://doi.acm.org/10.1145/2213836.2213838
-- [[[4]]] Diego Ongaro and John Ousterhout. 2014. In search of an understandable consensus algorithm. In Proceedings of the 2014 USENIX conference on USENIX Annual Technical Conference (USENIX ATC'14), Garth Gibson and Nickolai Zeldovich (Eds.). USENIX Association, Berkeley, CA, USA, 305-320.
-- [[[5]]] Kwei-Jay Lin, "Consistency issues in real-time database systems," in System Sciences, 1989. Vol.II: Software Track, Proceedings of the Twenty-Second Annual Hawaii International Conference on , vol.2, no., pp.654-661 vol.2, 3-6 Jan 1989 doi: 10.1109/HICSS.1989.48069
+- [[[ht,1]]] David Alves, Todd Lipcon and Vijay Garg. Technical Report: HybridTime - Accessible Global Consistency with High Clock Uncertainty. April, 2014. http://users.ece.utexas.edu/~garg/pdslab/david/hybrid-time-tech-report-01.pdf
+- [[[spanner,2]]] James C. Corbett, Jeffrey Dean, Michael Epstein, Andrew Fikes, Christopher Frost, J. J. Furman, Sanjay Ghemawat, Andrey Gubarev, Christopher Heiser, Peter Hochschild, Wilson Hsieh, Sebastian Kanthak, Eugene Kogan, Hongyi Li, Alexander Lloyd, Sergey Melnik, David Mwaura, David Nagle, Sean Quinlan, Rajesh Rao, Lindsay Rolig, Yasushi Saito, Michal Szymaniak, Christopher Taylor, Ruth Wang, and Dale Woodford. 2012. Spanner: Google's globally-distributed database. In Proceedings of the 10th USENIX conference on Operating Systems Design and Implementation (OSDI'12). USENIX Association, Berkeley, CA, USA, 251-264.
+- [[[fdt,3]]] Alexander Thomson, Thaddeus Diamond, Shu-Chun Weng, Kun Ren, Philip Shao, and Daniel J. Abadi. 2012. Calvin: fast distributed transactions for partitioned database systems. In Proceedings of the 2012 ACM SIGMOD International Conference on Management of Data (SIGMOD '12). ACM, New York, NY, USA, 1-12. DOI=10.1145/2213836.2213838 http://doi.acm.org/10.1145/2213836.2213838
+- [[[consensus,4]]] Diego Ongaro and John Ousterhout. 2014. In search of an understandable consensus algorithm. In Proceedings of the 2014 USENIX conference on USENIX Annual Technical Conference (USENIX ATC'14), Garth Gibson and Nickolai Zeldovich (Eds.). USENIX Association, Berkeley, CA, USA, 305-320.
+- [[[consistency,5]]] Kwei-Jay Lin, "Consistency issues in real-time database systems," in System Sciences, 1989. Vol.II: Software Track, Proceedings of the Twenty-Second Annual Hawaii International Conference on , vol.2, no., pp.654-661 vol.2, 3-6 Jan 1989 doi: 10.1109/HICSS.1989.48069

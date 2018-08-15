@@ -1573,8 +1573,6 @@ See also +++<a href="https://issues.apache.org/jira/issues/?jql=project%20%3D%20
 for Kudu 0.10.0</a>+++ and +++<a href="https://github.com/apache/kudu/compare/0.9.1...0.10.0">Git
 changes between 0.9.1 and 0.10.0</a>+++.
 
-To upgrade to Kudu 0.10.0, see <<rn_0.10.0_upgrade>>.
-
 [[rn_0.10.0_incompatible_changes]]
 === Incompatible changes and deprecated APIs in 0.10.0
 
@@ -1774,8 +1772,6 @@ See also +++<a href="https://issues.apache.org/jira/issues/?jql=project%20%3D%20
 %20AND%20fixVersion%20%3D%200.9.0">JIRAs resolved
 for Kudu 0.9.0</a>+++ and +++<a href="https://github.com/apache/kudu/compare/0.8.0...0.9.0">Git
 changes between 0.8.0 and 0.9.0</a>+++.
-
-To upgrade to Kudu 0.10.0, see <<rn_0.9.0_upgrade>>.
 
 [[rn_0.9.0_incompatible_changes]]
 === Incompatible changes

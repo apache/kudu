@@ -35,7 +35,7 @@ effective schema design philosophies for Kudu, paying particular attention to
 where they differ from approaches used for traditional RDBMS schemas.
 
 At a high level, there are three concerns when creating Kudu tables:
-<<column-design,column design>>, <<primary-key,primary key design>>, and
+<<column-design,column design>>, <<primary-keys,primary key design>>, and
 <<partitioning,partitioning design>>. Of these, only partitioning will be a new
 concept for those familiar with traditional non-distributed relational
 databases. The final sections discuss <<alter-schema,altering the schema>> of an
