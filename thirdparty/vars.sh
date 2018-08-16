@@ -30,6 +30,10 @@ TP_BUILD_DIR="$TP_DIR/build"
 # http://cloudera-thirdparty-libs.s3.amazonaws.com/
 CLOUDFRONT_URL_PREFIX=http://d3dr9sfxru4sde.cloudfront.net
 
+# Third party dependency downloading URL, default to the CloudFront
+# Distribution URL.
+DEPENDENCY_URL=${DEPENDENCY_URL:-$CLOUDFRONT_URL_PREFIX}
+
 PREFIX_COMMON=$TP_DIR/installed/common
 PREFIX_DEPS=$TP_DIR/installed/uninstrumented
 PREFIX_DEPS_TSAN=$TP_DIR/installed/tsan
