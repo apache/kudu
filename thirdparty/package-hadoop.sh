@@ -23,24 +23,81 @@
 # improves HMS startup time.
 #
 # Summary:
-# 1. Download and unpack the Hadoop binary tarball
+# 1. Download and unpack the Hadoop binary tarball (optional)
 # 2. Strip out unnecessary jars
-# 3. Repackage the tarball
-#
-# Usage:
-#  $ env VERSION=2.8.2 thirdparty/package-hadoop.sh
+# 3. Repackage the tarball (optional)
 
-set -eux
+set -ex
 
-ARTIFACT=hadoop-$VERSION
+function usage() {
+  cat <<EOF
+  Usage:
+    ${0} -h | --help
+    ${0} [-d] [-r] <ARTIFACT>
+    -h | --help - This message
+    -d | --download - Optional
+      Download and unpack the binary tarball.
+    -r | --repackage - Optional
+      Repackage the tarball.
+    <ARTIFACT> - Required
+      The artifact name.
+EOF
+}
 
-wget https://archive.apache.org/dist/hadoop/common/$ARTIFACT/$ARTIFACT.tar.gz
-tar xf $ARTIFACT.tar.gz
+OPTS=`getopt -o hdr -l "help,download,repackage" -n 'parse-options' -- "$@"`
+OPTS_RESULT=$?
+if [ ${OPTS_RESULT} != 0 ]; then
+  echo "Failed parsing options." >&2
+  exit ${OPTS_RESULT}
+fi
 
-for DIR in common/jdiff httpfs kms tools yarn; do
+while true; do
+  case "$1" in
+    -d | --download) DOWNLOAD=True; shift;;
+    -r | --repackage) REPACKAGE=True; shift;;
+    -h | --help) usage; exit;;
+    --) shift; break;;
+    *) break ;;
+  esac
+done
+
+ARTIFACT="${1}"
+
+if [ -z "${ARTIFACT}" ]; then
+  usage
+  exit
+fi
+
+if [ -n "${DOWNLOAD}" ]; then
+  curl --retry 3 -L -O https://archive.apache.org/dist/hadoop/common/$ARTIFACT/$ARTIFACT.tar.gz
+  tar xf $ARTIFACT.tar.gz
+fi
+
+DIRS="client"
+DIRS="$DIRS common/jdiff"
+DIRS="$DIRS common/sources"
+DIRS="$DIRS hdfs/sources"
+DIRS="$DIRS httpfs"
+DIRS="$DIRS kms"
+DIRS="$DIRS mapreduce/lib-examples"
+DIRS="$DIRS mapreduce/sources"
+DIRS="$DIRS tools"
+
+for DIR in $DIRS; do
   rm -rf $ARTIFACT/share/hadoop/$DIR
 done
 
+for PROJECT in avro commons-math3 snappy; do
+  rm -f $ARTIFACT/share/hadoop/common/lib/*$PROJECT*.jar
+  rm -f $ARTIFACT/share/hadoop/hdfs/lib/*$PROJECT*.jar
+done
+
+rm -f $ARTIFACT/share/hadoop/yarn/*.jar
+rm -rf $ARTIFACT/share/hadoop/yarn/lib
+rm -rf $ARTIFACT/share/hadoop/yarn/sources
+rm -rf $ARTIFACT/share/hadoop/yarn/timelineservice
 rm -rf $ARTIFACT/share/doc
 
-tar czf $ARTIFACT-stripped.tar.gz $ARTIFACT
+if [ -n "${REPACKAGE}" ]; then
+  tar czf $ARTIFACT-stripped.tar.gz $ARTIFACT
+fi

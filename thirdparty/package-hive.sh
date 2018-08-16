@@ -19,35 +19,105 @@
 
 # Packages Hive for inclusion in the Kudu thirdparty build.
 #
-# Strips jars unecessary for running the Hive Metastore. This makes the download
+# Strips jars unnecessary for running the Hive Metastore. This makes the download
 # smaller, and improves HMS startup time.
 #
 # Summary:
-# 1. Download and unpack the Hive binary tarball
+# 1. Download and unpack the Hive binary tarball (optional)
 # 2. Strip out unnecessary jars
-# 3. Repackage the tarball
-#
-# Usage:
-#  $ env VERSION=2.3.1 thirdparty/package-hive.sh
+# 3. Repackage the tarball (optional)
 
-set -eux
+set -ex
 
-ARTIFACT=apache-hive-$VERSION-bin
+function usage() {
+  cat <<EOF
+  Usage:
+    ${0} -h | --help
+    ${0} [-d] [-r] <ARTIFACT>
+    -h | --help - This message
+    -d | --download - Optional
+      Download and unpack the binary tarball.
+    -r | --repackage - Optional
+      Repackage the tarball.
+    -v | --version VERSION - Optional
+      The Hive version.
+    <ARTIFACT> - Required
+      The artifact name.
+EOF
+}
 
-curl --retry 3 -L -O https://archive.apache.org/dist/hive/hive-$VERSION/$ARTIFACT.tar.gz
-tar xf $ARTIFACT.tar.gz
+OPTS=`getopt -o hdrv: -l "help,download,repackage,version:" -n 'parse-options' -- "$@"`
+OPTS_RESULT=$?
+if [ ${OPTS_RESULT} != 0 ]; then
+  echo "Failed parsing options." >&2
+  exit ${OPTS_RESULT}
+fi
 
-for PROJECT in accumulo aether avatica calcite curator druid groovy hbase icu4j jetty jsp maven parquet zookeeper; do
-  rm $ARTIFACT/lib/*$PROJECT*.jar
+while true; do
+  case "$1" in
+    -d | --download) DOWNLOAD=True; shift;;
+    -r | --repackage) REPACKAGE=True; shift;;
+    -v | --version) VERSION=$2; shift; shift;;
+    -h | --help) usage; exit;;
+    --) shift; break;;
+    *) break ;;
+  esac
 done
 
-rm -rf $ARTIFACT/hcatalog
+ARTIFACT="${1}"
+
+if [ -z "${ARTIFACT}" ]; then
+  usage
+  exit
+fi
+
+if [ -n "${DOWNLOAD}" ]; then
+  curl --retry 3 -L -O https://archive.apache.org/dist/hive/hive-$VERSION/$ARTIFACT.tar.gz
+  tar xf $ARTIFACT.tar.gz
+fi
+
+PROJECTS="accumulo"
+PROJECTS="$PROJECTS aether"
+PROJECTS="$PROJECTS avatica"
+PROJECTS="$PROJECTS avro"
+PROJECTS="$PROJECTS calcite"
+PROJECTS="$PROJECTS curator"
+PROJECTS="$PROJECTS druid"
+PROJECTS="$PROJECTS ecj"
+PROJECTS="$PROJECTS fastutil"
+PROJECTS="$PROJECTS groovy"
+PROJECTS="$PROJECTS hbase"
+PROJECTS="$PROJECTS htrace"
+PROJECTS="$PROJECTS icu4j"
+PROJECTS="$PROJECTS jcodings"
+PROJECTS="$PROJECTS jersey"
+PROJECTS="$PROJECTS jetty"
+PROJECTS="$PROJECTS jsp"
+PROJECTS="$PROJECTS maven"
+PROJECTS="$PROJECTS parquet"
+PROJECTS="$PROJECTS slider"
+PROJECTS="$PROJECTS snappy"
+PROJECTS="$PROJECTS zookeeper"
+
+for PROJECT in $PROJECTS; do
+  rm -f $ARTIFACT/lib/*$PROJECT*.jar
+done
+
+rm -rf $ARTIFACT/auxlib
+rm -rf $ARTIFACT/hcatalog/bin
+rm -rf $ARTIFACT/hcatalog/etc
+rm -rf $ARTIFACT/hcatalog/libexec
+rm -rf $ARTIFACT/hcatalog/sbin
+rm -rf $ARTIFACT/hcatalog/share/doc
+rm -rf $ARTIFACT/hcatalog/share/webhcat
 rm -rf $ARTIFACT/jdbc
 rm -rf $ARTIFACT/lib/php
 rm -rf $ARTIFACT/lib/python
 rm -rf $ARTIFACT/lib/py
 
-# Remove the 'apache-' prefix and '-bin' suffix in order to normalize the
-# tarball with Hadoop and the rest of our thirdparty dependencies.
-mv $ARTIFACT hive-$VERSION
-tar czf hive-$VERSION-stripped.tar.gz hive-$VERSION
+if [ -n "${REPACKAGE}" ]; then
+  # Remove the 'apache-' prefix and '-bin' suffix in order to normalize the
+  # tarball with Hadoop and the rest of our thirdparty dependencies.
+  mv $ARTIFACT hive-$VERSION
+  tar czf hive-$VERSION-stripped.tar.gz hive-$VERSION
+fi
