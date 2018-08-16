@@ -116,7 +116,8 @@ Status MiniHms::Start() {
   RETURN_NOT_OK(CreateCoreSite(tmp_dir));
 
   // Comma-separated list of additional jars to add to the HMS classpath.
-  string aux_jars = Substitute("$0/hms-plugin.jar", bin_dir);
+  string aux_jars = Substitute("$0/hms-plugin.jar,$1/hcatalog/share/hcatalog/*",
+                               bin_dir, hive_home);
 
   // List of JVM environment options to pass to the HMS.
   string java_options =
