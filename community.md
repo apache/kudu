@@ -50,7 +50,11 @@ Get help using Kudu or contribute to the project on our mailing lists or our cha
 
 **Project information**
 
-* **<a href="{{site.github.url}}/committers.html">Apache Kudu Committers list</a>**
+* [**Apache Kudu Committers list**](/committers.html)
+* [**Security**](https://www.apache.org/security/)
+* [**Sponsorship**](https://www.apache.org/foundation/sponsorship.html)
+* [**Thanks**](https://www.apache.org/foundation/thanks.html)
+* [**License**](https://www.apache.org/licenses/)
 
 ### Contributions
 
@@ -227,4 +231,3 @@ with your content and we'll help drive traffic.
   [Zoomdata on top of Kudu](https://www.youtube.com/watch?v=ck_kRb6qLKE)
   demonstrating real-time and point-in-time analytic queries on Kudu while
   simultaneously running a streaming ingest workload.
-
