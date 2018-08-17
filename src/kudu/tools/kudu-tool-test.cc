@@ -361,6 +361,19 @@ class ToolTest : public KuduTest {
         stdout, Substitute("Total orphaned blocks: $0", expected_num_orphaned));
   }
 
+  Status HasAtLeastOneBackupFile(const string& dir, bool* found) {
+    vector<string> children;
+    RETURN_NOT_OK(env_->GetChildren(dir, &children));
+    *found = false;
+    for (const auto& child : children) {
+      if (child.find(".bak") != string::npos) {
+        *found = true;
+        break;
+      }
+    }
+    return Status::OK();
+  }
+
  protected:
   void RunLoadgen(int num_tservers = 1,
                   const vector<string>& tool_args = {},
@@ -835,21 +848,23 @@ TEST_F(ToolTest, TestPbcTools) {
   }
 
   // Utility to set the editor up based on the given shell command.
-  auto DoEdit = [&](const string& editor_shell, string* stdout, string* stderr = nullptr) {
+  auto DoEdit = [&](const string& editor_shell, string* stdout, string* stderr = nullptr,
+      const string& extra_flags = "") {
     const string editor_path = GetTestPath("editor");
     CHECK_OK(WriteStringToFile(Env::Default(),
                                StrCat("#!/usr/bin/env bash\n", editor_shell),
                                editor_path));
     chmod(editor_path.c_str(), 0755);
     setenv("EDITOR", editor_path.c_str(), /* overwrite */1);
-    return RunTool(Substitute("pbc edit $0/instance", kTestDir),
+    return RunTool(Substitute("pbc edit $0 $1/instance", extra_flags, kTestDir),
                    stdout, stderr, nullptr, nullptr);
   };
 
   // Test 'edit' by setting up EDITOR to be a sed script which performs a substitution.
   {
     string stdout;
-    ASSERT_OK(DoEdit("exec sed -i -e s/Formatted/Edited/ \"$@\"\n", &stdout));
+    ASSERT_OK(DoEdit("exec sed -i -e s/Formatted/Edited/ \"$@\"\n", &stdout, nullptr,
+                     "--nobackup"));
     ASSERT_EQ("", stdout);
 
     // Dump to make sure the edit took place.
@@ -857,6 +872,23 @@ TEST_F(ToolTest, TestPbcTools) {
         "pbc dump $0/instance --oneline", kTestDir), &stdout));
     ASSERT_STR_MATCHES(stdout, Substitute(
         "^0\tuuid: \"$0\" format_stamp: \"Edited at .*\"$$", uuid));
+
+    // Make sure no backup file was written.
+    bool found_backup;
+    ASSERT_OK(HasAtLeastOneBackupFile(kTestDir, &found_backup));
+    ASSERT_FALSE(found_backup);
+  }
+
+  // Test 'edit' with a backup.
+  {
+    string stdout;
+    ASSERT_OK(DoEdit("exec sed -i -e s/Formatted/Edited/ \"$@\"\n", &stdout));
+    ASSERT_EQ("", stdout);
+
+    // Make sure a backup file was written.
+    bool found_backup;
+    ASSERT_OK(HasAtLeastOneBackupFile(kTestDir, &found_backup));
+    ASSERT_TRUE(found_backup);
   }
 
   // Test 'edit' with an unsuccessful edit.
