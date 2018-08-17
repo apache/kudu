@@ -34,6 +34,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/env.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/oid_generator.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
 
@@ -50,9 +51,9 @@ namespace fs {
 class BlockManager;
 class ReadableBlock;
 class WritableBlock;
+struct CreateBlockOptions;
 struct FsReport;
 
-struct CreateBlockOptions;
 } // namespace fs
 
 namespace itest {
@@ -314,6 +315,9 @@ class FsManager {
   // configured umask, and tightens them as necessary if they do not.
   void CheckAndFixPermissions();
 
+  // Returns true if 'fname' is a valid tablet ID.
+  bool IsValidTabletId(const std::string& fname);
+
   static const char *kDataDirName;
   static const char *kTabletMetadataDirName;
   static const char *kWalDirName;
@@ -344,6 +348,8 @@ class FsManager {
   std::unique_ptr<fs::FsErrorManager> error_manager_;
   std::unique_ptr<fs::DataDirManager> dd_manager_;
   std::unique_ptr<fs::BlockManager> block_manager_;
+
+  ObjectIdGenerator oid_generator_;
 
   bool initted_;
 

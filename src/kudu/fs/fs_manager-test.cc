@@ -181,9 +181,17 @@ TEST_F(FsManagerTestBase, TestListTablets) {
   ASSERT_OK(env_->NewWritableFile(
       JoinPathSegments(path, "foo.kudutmp.abc123"), &writer));
   ASSERT_OK(env_->NewWritableFile(
-      JoinPathSegments(path, ".hidden"), &writer));
+      JoinPathSegments(path, "foo.bak"), &writer));
   ASSERT_OK(env_->NewWritableFile(
-      JoinPathSegments(path, "a_tablet_sort_of"), &writer));
+      JoinPathSegments(path, "foo.bak.abc123"), &writer));
+  ASSERT_OK(env_->NewWritableFile(
+      JoinPathSegments(path, ".hidden"), &writer));
+  // An uncanonicalized id.
+  ASSERT_OK(env_->NewWritableFile(
+      JoinPathSegments(path, "6ba7b810-9dad-11d1-80b4-00c04fd430c8"), &writer));
+  // 1 valid tablet id.
+  ASSERT_OK(env_->NewWritableFile(
+      JoinPathSegments(path, "922ff7ed14c14dbca4ee16331dfda42a"), &writer));
 
   ASSERT_OK(fs_manager()->ListTabletIds(&tablet_ids));
   ASSERT_EQ(1, tablet_ids.size()) << tablet_ids;

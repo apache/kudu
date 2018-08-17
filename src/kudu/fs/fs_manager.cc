@@ -57,6 +57,7 @@
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/scoped_cleanup.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/stopwatch.h"
 
 DEFINE_bool(enable_data_block_fsync, true,
@@ -569,13 +570,12 @@ Status FsManager::CreateFileSystemRoots(
 
 Status FsManager::CreateInstanceMetadata(boost::optional<string> uuid,
                                          InstanceMetadataPB* metadata) {
-  ObjectIdGenerator oid_generator;
   if (uuid) {
     string canonicalized_uuid;
-    RETURN_NOT_OK(oid_generator.Canonicalize(uuid.get(), &canonicalized_uuid));
+    RETURN_NOT_OK(oid_generator_.Canonicalize(uuid.get(), &canonicalized_uuid));
     metadata->set_uuid(canonicalized_uuid);
   } else {
-    metadata->set_uuid(oid_generator.Next());
+    metadata->set_uuid(oid_generator_.Next());
   }
 
   string time_str;
@@ -621,24 +621,31 @@ string FsManager::GetTabletMetadataPath(const string& tablet_id) const {
   return JoinPathSegments(GetTabletMetadataDir(), tablet_id);
 }
 
-namespace {
-// Return true if 'fname' is a valid tablet ID.
-bool IsValidTabletId(const string& fname) {
-  if (fname.find(kTmpInfix) != string::npos ||
-      fname.find(kOldTmpInfix) != string::npos) {
-    LOG(WARNING) << "Ignoring tmp file in tablet metadata dir: " << fname;
+bool FsManager::IsValidTabletId(const string& fname) {
+  // Prevent warning logs for hidden files or ./..
+  if (HasPrefixString(fname, ".")) {
+    VLOG(1) << "Ignoring hidden file in tablet metadata dir: " << fname;
     return false;
   }
 
-  if (HasPrefixString(fname, ".")) {
-    // Hidden file or ./..
-    VLOG(1) << "Ignoring hidden file in tablet metadata dir: " << fname;
+  string canonicalized_uuid;
+  Status s = oid_generator_.Canonicalize(fname, &canonicalized_uuid);
+
+  if (!s.ok()) {
+    LOG(WARNING) << "Ignoring file in tablet metadata dir: " << fname << ": " <<
+                 s.message().ToString();
+    return false;
+  }
+
+  if (fname != canonicalized_uuid) {
+    LOG(WARNING) << "Ignoring file in tablet metadata dir: " << fname << ": " <<
+                 Substitute("canonicalized uuid $0 does not match file name",
+                            canonicalized_uuid);
     return false;
   }
 
   return true;
 }
-} // anonymous namespace
 
 Status FsManager::ListTabletIds(vector<string>* tablet_ids) {
   string dir = GetTabletMetadataDir();
