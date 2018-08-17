@@ -64,6 +64,7 @@ DEFINE_int32(follower_unavailable_considered_failed_sec, 300,
              "follower after which the follower is considered to be failed and "
              "evicted from the config.");
 TAG_FLAG(follower_unavailable_considered_failed_sec, advanced);
+TAG_FLAG(follower_unavailable_considered_failed_sec, runtime);
 
 DEFINE_int32(consensus_inject_latency_ms_in_notifications, 0,
              "Injects a random sleep between 0 and this many milliseconds into "
