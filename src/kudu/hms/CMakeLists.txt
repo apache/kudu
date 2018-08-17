@@ -15,13 +15,22 @@
 # specific language governing permissions and limitations
 # under the License.
 
+##############################
+# hms_thrift
+##############################
+
 THRIFT_GENERATE_CPP(
   HMS_THRIFT_SRCS HMS_THRIFT_HDRS HMS_THRIFT_TGTS
-  THRIFT_FILES hive_metastore.thrift)
+  THRIFT_FILES hive_metastore.thrift
+  FB303)
 
 add_library(hms_thrift ${HMS_THRIFT_SRCS})
 target_link_libraries(hms_thrift thrift)
 add_dependencies(hms_thrift ${HMS_THRIFT_TGTS})
+
+##############################
+# kudu_hms
+##############################
 
 set(HMS_SRCS
   hms_catalog.cc
@@ -72,7 +81,10 @@ target_link_libraries(mini_hms
   kudu_util)
 add_dependencies(mini_hms hms-plugin)
 
-# Tests
+##############################
+# hms tests
+##############################
+
 if (NOT NO_TESTS)
   SET_KUDU_TEST_LINK_LIBS(
     kudu_hms

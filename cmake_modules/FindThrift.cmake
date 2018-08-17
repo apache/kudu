@@ -51,6 +51,8 @@
 #          custom targets; if SRCS/HDRS need to be used in multiple
 #          libraries, those libraries should depend on these targets
 #          in order to "serialize" the thrift invocations
+#   FB303 = Option which determines if the Thrift definitions depend on the
+#           FB303 support library.
 #  ====================================================================
 
 function(THRIFT_GENERATE_CPP SRCS HDRS TGTS)
@@ -59,7 +61,7 @@ function(THRIFT_GENERATE_CPP SRCS HDRS TGTS)
     return()
   endif(NOT ARGN)
 
-  set(options)
+  set(options FB303)
   set(one_value_args SOURCE_ROOT BINARY_ROOT)
   set(multi_value_args EXTRA_THRIFT_PATHS THRIFT_FILES)
   cmake_parse_arguments(ARG "${options}" "${one_value_args}" "${multi_value_args}" ${ARGN})
@@ -102,9 +104,13 @@ function(THRIFT_GENERATE_CPP SRCS HDRS TGTS)
       list(APPEND THRIFT_CC_OUT "${ARG_BINARY_ROOT}/${SERVICE}.cpp")
     endforeach()
 
-    # TODO(dan): Add the fb303 files manually. This is a complete hack.
-    list(APPEND ${SRCS} "${THRIFT_CC_OUT}" "fb303_types.cpp" "fb303_constants.cpp" "FacebookService.cpp")
-    list(APPEND ${HDRS} "${THRIFT_H_OUT}" "fb303_types.h" "fb303_constants.h" "FacebookService.h")
+    list(APPEND ${SRCS} "${THRIFT_CC_OUT}")
+    list(APPEND ${HDRS} "${THRIFT_H_OUT}")
+
+    if(ARG_FB303)
+      list(APPEND ${SRCS} fb303_types.cpp fb303_constants.cpp FacebookService.cpp)
+      list(APPEND ${HDRS} fb303_types.h fb303_constants.h FacebookService.h)
+    endif()
 
     add_custom_command(
       OUTPUT ${THRIFT_CC_OUT} ${THRIFT_H_OUT}
