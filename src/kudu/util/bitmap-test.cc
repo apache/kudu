@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/util/bitmap.h"
+
 #include <cstdint>
 #include <cstring>
 #include <vector>
@@ -22,7 +24,6 @@
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/strings/join.h"
-#include "kudu/util/bitmap.h"
 
 namespace kudu {
 
@@ -73,7 +74,7 @@ TEST(TestBitMap, TestIteration2) {
   ASSERT_EQ("1", JoinElements(read_back, ","));
 }
 
-TEST(TestBitmap, TestSetAndTestBits) {
+TEST(TestBitMap, TestSetAndTestBits) {
   uint8_t bm[1];
   memset(bm, 0, sizeof(bm));
 
@@ -225,6 +226,50 @@ TEST(TestBitMap, TestBitmapIteration) {
     i++;
   }
   ASSERT_EQ(expected_sizes[i], size);
+}
+
+TEST(TestBitMap, TestEquals) {
+  uint8_t bm1[8] = { 0 };
+  uint8_t bm2[8] = { 0 };
+  size_t num_bits = sizeof(bm1) * 8;
+  ASSERT_TRUE(BitmapEquals(bm1, bm2, num_bits));
+
+  // Loop over each bit starting from the end and going to the beginning. In
+  // each iteration, set the bit in one bitmap and verify that although the two
+  // bitmaps aren't equal, if we were to ignore the changed bits, they are still equal.
+  for (int i = num_bits - 1; i >= 0; i--) {
+    SCOPED_TRACE(i);
+    BitmapChange(bm1, i, true);
+    ASSERT_FALSE(BitmapEquals(bm1, bm2, num_bits));
+    ASSERT_TRUE(BitmapEquals(bm1, bm2, i));
+  }
+
+  // Now loop in the other direction, setting the second bitmap bit by bit.
+  // As before, if we consider the bitmaps in their entirety, they're not equal,
+  // but if we consider just the sequences where both are set, they are equal.
+  for (int i = 0; i < num_bits - 1; i++) {
+    SCOPED_TRACE(i);
+    BitmapChange(bm2, i, true);
+    ASSERT_FALSE(BitmapEquals(bm1, bm2, num_bits));
+    ASSERT_TRUE(BitmapEquals(bm1, bm2, i + 1));
+  }
+
+  // If we set the very last bit, both bitmaps are now equal in their entirety.
+  BitmapChange(bm2, num_bits - 1, true);
+  ASSERT_TRUE(BitmapEquals(bm1, bm2, num_bits));
+
+  // Test equality on overlapped bitmaps (i.e. a single underlying bitmap, two
+  // subsequences of which are considered to be two separate bitmaps).
+
+  // Set every third bit; the rest are unset.
+  uint8_t bm3[8] = { 0 };
+  for (int i = 0; i < num_bits; i += 3) {
+    BitmapChange(bm3, i, true);
+  }
+
+  ASSERT_TRUE(BitmapEquals(bm3, bm3, num_bits)); // fully overlapped
+  ASSERT_FALSE(BitmapEquals(bm3, bm3 + 1, num_bits - 8)); // off by one byte
+  ASSERT_TRUE(BitmapEquals(bm3, bm3 + 3, num_bits - 24)); // off by three bytes
 }
 
 } // namespace kudu

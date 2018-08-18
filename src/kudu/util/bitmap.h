@@ -28,6 +28,7 @@
 
 #include "kudu/gutil/bits.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/strings/fastmem.h"
 
 namespace kudu {
 
@@ -96,6 +97,26 @@ inline bool BitmapIsAllZero(const uint8_t *bitmap, size_t offset, size_t bitmap_
   DCHECK_LT(offset, bitmap_size);
   size_t idx;
   return !BitmapFindFirstSet(bitmap, offset, bitmap_size, &idx);
+}
+
+// Returns true if the two bitmaps are equal.
+//
+// It is assumed that both bitmaps have 'bitmap_size' number of bits.
+inline bool BitmapEquals(const uint8_t* bm1, const uint8_t* bm2, size_t bitmap_size) {
+  // Use memeq() to check all of the full bytes.
+  size_t num_full_bytes = bitmap_size >> 3;
+  if (!strings::memeq(bm1, bm2, num_full_bytes)) {
+    return false;
+  }
+
+  // Check any remaining bits in one extra operation.
+  size_t num_remaining_bits = bitmap_size - (num_full_bytes << 3);
+  if (num_remaining_bits == 0) {
+    return true;
+  }
+  DCHECK_LT(num_remaining_bits, 8);
+  uint8_t mask = (1 << num_remaining_bits) - 1;
+  return (bm1[num_full_bytes] & mask) == (bm2[num_full_bytes] & mask);
 }
 
 std::string BitmapToString(const uint8_t *bitmap, size_t num_bits);
