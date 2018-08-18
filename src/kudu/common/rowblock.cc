@@ -96,6 +96,17 @@ bool SelectionVector::AnySelected() const {
   return false;
 }
 
+bool operator==(const SelectionVector& a, const SelectionVector& b) {
+  if (a.nrows() != b.nrows()) {
+    return false;
+  }
+  return BitmapEquals(a.bitmap(), b.bitmap(), a.nrows());
+}
+
+bool operator!=(const SelectionVector& a, const SelectionVector& b) {
+  return !(a == b);
+}
+
 //////////////////////////////
 // RowBlock
 //////////////////////////////

@@ -120,8 +120,6 @@ class SelectionVector {
   size_t nrows() const { return n_rows_; }
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(SelectionVector);
-
   // The number of allocated bytes in bitmap_
   size_t bytes_capacity_;
 
@@ -129,7 +127,12 @@ class SelectionVector {
   size_t n_bytes_;
 
   gscoped_array<uint8_t> bitmap_;
+
+  DISALLOW_COPY_AND_ASSIGN(SelectionVector);
 };
+
+bool operator==(const SelectionVector& a, const SelectionVector& b);
+bool operator!=(const SelectionVector& a, const SelectionVector& b);
 
 // A SelectionVectorView keeps track of where in the selection vector a given
 // batch will start from. After processing a batch, Advance() should be called

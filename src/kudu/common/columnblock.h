@@ -123,6 +123,41 @@ class ColumnBlock {
   Arena *arena_;
 };
 
+inline bool operator==(const ColumnBlock& a, const ColumnBlock& b) {
+  // 1. Same number of rows.
+  if (a.nrows() != b.nrows()) {
+    return false;
+  }
+
+  // 2. Same nullability.
+  if (a.is_nullable() != b.is_nullable()) {
+    return false;
+  }
+
+  // 3. If nullable, same null bitmap contents.
+  if (a.is_nullable() &&
+      !BitmapEquals(a.null_bitmap(), b.null_bitmap(), a.nrows())) {
+    return false;
+  }
+
+  // 4. Same data. We can't just compare the raw data because some entries may
+  //    be pointers to the actual data elsewhere.
+  for (int i = 0; i < a.nrows(); i++) {
+    if (a.is_nullable() && a.is_null(i)) {
+      continue;
+    }
+    if (a.type_info()->Compare(a.cell_ptr(i), b.cell_ptr(i)) != 0) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+inline bool operator!=(const ColumnBlock& a, const ColumnBlock& b) {
+  return !(a == b);
+}
+
 // One of the cells in a ColumnBlock.
 class ColumnBlockCell {
  public:
@@ -221,6 +256,8 @@ class ScopedColumnBlock : public ColumnBlock {
       null_bitmap_(null_bitmap()),
       data_(reinterpret_cast<cpp_type *>(data())),
       arena_(arena()) {
+    // All rows begin null.
+    BitmapChangeBits(null_bitmap(), /*offset=*/ 0, n_rows, /*value=*/ false);
   }
 
   const cpp_type &operator[](size_t idx) const {
