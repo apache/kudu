@@ -120,6 +120,8 @@ Status MiniHms::Start() {
 
   // List of JVM environment options to pass to the HMS.
   string java_options =
+    // Ensure IPv4 is used.
+    "-Djava.net.preferIPv4Stack=true "
     // Make logging less verbose.
     "-Dhive.log.level=WARN "
     // Log to the console.
