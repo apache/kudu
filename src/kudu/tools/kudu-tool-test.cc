@@ -633,7 +633,7 @@ TEST_F(ToolTest, TestActionMissingRequiredArg) {
 
 TEST_F(ToolTest, TestFsCheck) {
   const string kTestDir = GetTestPath("test");
-  const string kTabletId = "test-tablet";
+  const string kTabletId = "ffffffffffffffffffffffffffffffff";
   const Schema kSchema(GetSimpleTestSchema());
   const Schema kSchemaWithIds(SchemaBuilder(kSchema).Build());
 
@@ -979,7 +979,7 @@ TEST_F(ToolTest, TestFsDumpBlock) {
 
 TEST_F(ToolTest, TestWalDump) {
   const string kTestDir = GetTestPath("test");
-  const string kTestTablet = "test-tablet";
+  const string kTestTablet = "ffffffffffffffffffffffffffffffff";
   const Schema kSchema(GetSimpleTestSchema());
   const Schema kSchemaWithIds(SchemaBuilder(kSchema).Build());
 
@@ -1095,7 +1095,7 @@ TEST_F(ToolTest, TestWalDump) {
 
 TEST_F(ToolTest, TestLocalReplicaDumpMeta) {
   const string kTestDir = GetTestPath("test");
-  const string kTestTablet = "test-tablet";
+  const string kTestTablet = "ffffffffffffffffffffffffffffffff";
   const string kTestTableId = "test-table";
   const string kTestTableName = "test-fs-meta-dump-table";
   const Schema kSchema(GetSimpleTestSchema());
@@ -1168,7 +1168,9 @@ TEST_F(ToolTest, TestFsDumpTree) {
 
 TEST_F(ToolTest, TestLocalReplicaOps) {
   const string kTestDir = GetTestPath("test");
-  const string kTestTablet = "test-tablet";
+
+  ObjectIdGenerator generator;
+  const string kTestTablet = "ffffffffffffffffffffffffffffffff";
   const int kRowId = 100;
   const Schema kSchema(GetSimpleTestSchema());
   const Schema kSchemaWithIds(SchemaBuilder(kSchema).Build());
@@ -1279,32 +1281,32 @@ TEST_F(ToolTest, TestLocalReplicaOps) {
     SCOPED_TRACE(stdout);
 
     string expected = R"(
-    table id     |  tablet id  | rowset id |    block type    | size
------------------+-------------+-----------+------------------+------
- KuduTableTestId | test-tablet | 0         | c10 (key)        | 164B
- KuduTableTestId | test-tablet | 0         | c11 (int_val)    | 113B
- KuduTableTestId | test-tablet | 0         | c12 (string_val) | 138B
- KuduTableTestId | test-tablet | 0         | REDO             | 0B
- KuduTableTestId | test-tablet | 0         | UNDO             | 169B
- KuduTableTestId | test-tablet | 0         | BLOOM            | 4.1K
- KuduTableTestId | test-tablet | 0         | PK               | 0B
- KuduTableTestId | test-tablet | 0         | *                | 4.6K
- KuduTableTestId | test-tablet | *         | c10 (key)        | 164B
- KuduTableTestId | test-tablet | *         | c11 (int_val)    | 113B
- KuduTableTestId | test-tablet | *         | c12 (string_val) | 138B
- KuduTableTestId | test-tablet | *         | REDO             | 0B
- KuduTableTestId | test-tablet | *         | UNDO             | 169B
- KuduTableTestId | test-tablet | *         | BLOOM            | 4.1K
- KuduTableTestId | test-tablet | *         | PK               | 0B
- KuduTableTestId | test-tablet | *         | *                | 4.6K
- KuduTableTestId | *           | *         | c10 (key)        | 164B
- KuduTableTestId | *           | *         | c11 (int_val)    | 113B
- KuduTableTestId | *           | *         | c12 (string_val) | 138B
- KuduTableTestId | *           | *         | REDO             | 0B
- KuduTableTestId | *           | *         | UNDO             | 169B
- KuduTableTestId | *           | *         | BLOOM            | 4.1K
- KuduTableTestId | *           | *         | PK               | 0B
- KuduTableTestId | *           | *         | *                | 4.6K
+    table id     |  tablet id                       | rowset id |    block type    | size
+-----------------+----------------------------------+-----------+------------------+------
+ KuduTableTestId | ffffffffffffffffffffffffffffffff | 0         | c10 (key)        | 164B
+ KuduTableTestId | ffffffffffffffffffffffffffffffff | 0         | c11 (int_val)    | 113B
+ KuduTableTestId | ffffffffffffffffffffffffffffffff | 0         | c12 (string_val) | 138B
+ KuduTableTestId | ffffffffffffffffffffffffffffffff | 0         | REDO             | 0B
+ KuduTableTestId | ffffffffffffffffffffffffffffffff | 0         | UNDO             | 169B
+ KuduTableTestId | ffffffffffffffffffffffffffffffff | 0         | BLOOM            | 4.1K
+ KuduTableTestId | ffffffffffffffffffffffffffffffff | 0         | PK               | 0B
+ KuduTableTestId | ffffffffffffffffffffffffffffffff | 0         | *                | 4.6K
+ KuduTableTestId | ffffffffffffffffffffffffffffffff | *         | c10 (key)        | 164B
+ KuduTableTestId | ffffffffffffffffffffffffffffffff | *         | c11 (int_val)    | 113B
+ KuduTableTestId | ffffffffffffffffffffffffffffffff | *         | c12 (string_val) | 138B
+ KuduTableTestId | ffffffffffffffffffffffffffffffff | *         | REDO             | 0B
+ KuduTableTestId | ffffffffffffffffffffffffffffffff | *         | UNDO             | 169B
+ KuduTableTestId | ffffffffffffffffffffffffffffffff | *         | BLOOM            | 4.1K
+ KuduTableTestId | ffffffffffffffffffffffffffffffff | *         | PK               | 0B
+ KuduTableTestId | ffffffffffffffffffffffffffffffff | *         | *                | 4.6K
+ KuduTableTestId | *                                | *         | c10 (key)        | 164B
+ KuduTableTestId | *                                | *         | c11 (int_val)    | 113B
+ KuduTableTestId | *                                | *         | c12 (string_val) | 138B
+ KuduTableTestId | *                                | *         | REDO             | 0B
+ KuduTableTestId | *                                | *         | UNDO             | 169B
+ KuduTableTestId | *                                | *         | BLOOM            | 4.1K
+ KuduTableTestId | *                                | *         | PK               | 0B
+ KuduTableTestId | *                                | *         | *                | 4.6K
 )";
     // Preprocess stdout and our expected table so that we are less
     // sensitive to small variations in encodings, id assignment, etc.
@@ -1341,7 +1343,7 @@ TEST_F(ToolTest, TestLocalReplicaOps) {
           &stdout));
 
     SCOPED_TRACE(stdout);
-    EXPECT_EQ(stdout, "KuduTableTest,test-tablet");
+    EXPECT_EQ(stdout, "KuduTableTest,ffffffffffffffffffffffffffffffff");
   }
 
   // Test 'kudu fs list' rowset group.
@@ -1353,7 +1355,7 @@ TEST_F(ToolTest, TestLocalReplicaOps) {
           &stdout));
 
     SCOPED_TRACE(stdout);
-    EXPECT_EQ(stdout, "KuduTableTest,test-tablet,0");
+    EXPECT_EQ(stdout, "KuduTableTest,ffffffffffffffffffffffffffffffff,0");
   }
   // Test 'kudu fs list' block group.
   {

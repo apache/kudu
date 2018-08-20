@@ -421,7 +421,7 @@ TEST_F(TabletServerTest, TestWebPages) {
 
     // Check that the tablet entry shows up.
     ASSERT_STR_CONTAINS(buf.ToString(), "\"type\": \"tablet\"");
-    ASSERT_STR_CONTAINS(buf.ToString(), "\"id\": \"TestTablet\"");
+    ASSERT_STR_CONTAINS(buf.ToString(), "\"id\": \"ffffffffffffffffffffffffffffffff\"");
     ASSERT_STR_CONTAINS(buf.ToString(), "\"partition\": \"RANGE (key) PARTITION UNBOUNDED");
 
 

@@ -71,7 +71,7 @@ using master::TabletReportPB;
 using pb_util::SecureShortDebugString;
 using tablet::TabletReplica;
 
-static const char* const kTabletId = "my-tablet-id";
+static const char* const kTabletId = "ffffffffffffffffffffffffffffffff";
 
 
 class TsTabletManagerTest : public KuduTest {

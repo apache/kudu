@@ -79,7 +79,7 @@ namespace kudu {
 namespace tserver {
 
 const char* TabletServerTestBase::kTableId = "TestTable";
-const char* TabletServerTestBase::kTabletId = "TestTablet";
+const char* TabletServerTestBase::kTabletId = "ffffffffffffffffffffffffffffffff";
 
 TabletServerTestBase::TabletServerTestBase()
     : schema_(GetSimpleTestSchema()),
