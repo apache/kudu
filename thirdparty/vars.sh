@@ -212,8 +212,8 @@ BISON_SOURCE=$TP_SOURCE_DIR/$BISON_NAME
 # are published. The SHA below is the current head of branch-2.
 # Note: The Hive release binary tarball is stripped of unnecessary jars before
 # being uploaded. See thirdparty/package-hive.sh for details.
-HIVE_VERSION=c0a57a33b44d73fbe0f95256f0a3822bd3720aa8
-HIVE_NAME=apache-hive-$HIVE_VERSION-bin
+HIVE_VERSION=498021fa15186aee8b282d3c032fbd2cede6bec4
+HIVE_NAME=hive-$HIVE_VERSION
 HIVE_SOURCE=$TP_SOURCE_DIR/$HIVE_NAME
 
 # Note: The Hadoop release tarball is stripped of unnecessary jars before being

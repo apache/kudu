@@ -138,7 +138,7 @@ def main():
 
   # Add environment variables for Java dependencies. These environment variables
   # are used in mini_hms.cc.
-  env['HIVE_HOME'] = glob.glob(os.path.join(ROOT, "thirdparty/src/apache-hive-*-bin"))[0]
+  env['HIVE_HOME'] = glob.glob(os.path.join(ROOT, "thirdparty/src/hive-*"))[0]
   env['HADOOP_HOME'] = glob.glob(os.path.join(ROOT, "thirdparty/src/hadoop-*"))[0]
   env['JAVA_HOME'] = glob.glob("/usr/lib/jvm/java-1.8.0-*")[0]
 

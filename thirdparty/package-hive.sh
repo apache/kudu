@@ -34,7 +34,7 @@ set -eux
 
 ARTIFACT=apache-hive-$VERSION-bin
 
-wget https://archive.apache.org/dist/hive/hive-$VERSION/$ARTIFACT.tar.gz
+curl --retry 3 -L -O https://archive.apache.org/dist/hive/hive-$VERSION/$ARTIFACT.tar.gz
 tar xf $ARTIFACT.tar.gz
 
 for PROJECT in accumulo aether avatica calcite curator druid groovy hbase icu4j jetty jsp maven parquet zookeeper; do
@@ -47,4 +47,7 @@ rm -rf $ARTIFACT/lib/php
 rm -rf $ARTIFACT/lib/python
 rm -rf $ARTIFACT/lib/py
 
-tar czf $ARTIFACT-stripped.tar.gz $ARTIFACT
+# Remove the 'apache-' prefix and '-bin' suffix in order to normalize the
+# tarball with Hadoop and the rest of our thirdparty dependencies.
+mv $ARTIFACT hive-$VERSION
+tar czf hive-$VERSION-stripped.tar.gz hive-$VERSION
