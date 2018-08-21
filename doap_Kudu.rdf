@@ -27,6 +27,8 @@
     <name>Apache Kudu</name>
     <homepage rdf:resource="https://kudu.apache.org" />
     <asfext:pmc rdf:resource="https://kudu.apache.org" />
+    <shortdesc>Columnar storage manager</shortdesc>
+    <description>Apache Kudu is a columnar storage manager developed for the Apache Hadoop platform.</description>
     <bug-database rdf:resource="https://issues.apache.org/jira/projects/KUDU/issues" />
     <mailing-list rdf:resource="https://kudu.apache.org/community.html" />
     <download-page rdf:resource="https://kudu.apache.org/releases/" />
