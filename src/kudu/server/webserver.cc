@@ -562,8 +562,10 @@ static const char* const kMainTemplate = R"(
     <title>Kudu</title>
     <meta charset='utf-8'/>
     <link href='/bootstrap/css/bootstrap.min.css' rel='stylesheet' media='screen' />
+    <link href='/bootstrap/css/bootstrap-table.min.css' rel='stylesheet' media='screen' />
     <script src='/jquery-3.2.1.min.js' defer></script>
     <script src='/bootstrap/js/bootstrap.min.js' defer></script>
+    <script src='/bootstrap/js/bootstrap-table.min.js' defer></script>
     <link href='/kudu.css' rel='stylesheet' />
   </head>
   <body>

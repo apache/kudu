@@ -61,7 +61,6 @@
 #include "kudu/util/easy_json.h"
 #include "kudu/util/maintenance_manager.h"
 #include "kudu/util/maintenance_manager.pb.h"
-#include "kudu/util/mem_tracker.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/url-coding.h"
@@ -346,8 +345,6 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& /*
       replica_json["table_name"] = status.table_name();
       if (tablet != nullptr) {
         replica_json["id_or_link"] = TabletLink(status.tablet_id());
-        replica_json["mem_bytes"] = HumanReadableNumBytes::ToString(
-            tablet->mem_tracker()->consumption());
       } else {
         replica_json["id_or_link"] = status.tablet_id();
       }
@@ -369,7 +366,6 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& /*
                                                                         local_uuid);
         }
       }
-      replica_json["last_status"] = status.last_status();
     }
   };
 

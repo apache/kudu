@@ -32,37 +32,30 @@ There are no tablet replicas.
     <tfoot><tr><td>Total</td><td>{{total_count}}</td><td></td></tfoot>
   </table>
   <h4>Detail</h4>
-  <a href='#detail_live' data-toggle='collapse'>(toggle)</a>
-  <div id='detail_live' class='collapse'>
-    <table class='table table-striped table-hover'>
-      <thead>
-        <tr>
-          <th>Table name</th>
-          <th>Tablet ID</th>
-          <th>Partition</th>
-          <th>State</th>
-          <th>Write buffer memory usage</th>
-          <th>On-disk size</th>
-          <th>RaftConfig</th>
-          <th>Last status</th>
-        </tr>
-      </thead>
-      <tbody>
-      {{#replicas}}
-        <tr>
-          <td>{{table_name}}</td>
-          <td>{{{id_or_link}}}</td>
-          <td>{{partition}}</td>
-          <td>{{state}}</td>
-          <td>{{mem_bytes}}</td>
-          <td>{{n_bytes}}</td>
-          <td>{{{consensus_state_html}}}</td>
-          <td>{{last_status}}</td>
-        </tr>
-      {{/replicas}}
-      </tbody>
-    </table>
-  </div>
+  <table data-toggle="table" data-pagination="true" data-search="true" class='table table-striped table-hover'>
+    <thead>
+      <tr>
+        <th>Table name</th>
+        <th>Tablet ID</th>
+        <th>Partition</th>
+        <th>State</th>
+        <th>On-disk size</th>
+        <th>RaftConfig</th>
+      </tr>
+    </thead>
+    <tbody>
+    {{#replicas}}
+      <tr>
+        <td>{{table_name}}</td>
+        <td>{{{id_or_link}}}</td>
+        <td>{{partition}}</td>
+        <td>{{state}}</td>
+        <td>{{n_bytes}}</td>
+        <td>{{{consensus_state_html}}}</td>
+      </tr>
+    {{/replicas}}
+    </tbody>
+  </table>
 {{/live_replicas}}
 
 {{#tombstoned_replicas}}
@@ -83,31 +76,27 @@ There are no tablet replicas.
     <tfoot><tr><td>Total</td><td>{{total_count}}</td><td></td></tfoot>
   </table>
   <h4>Detail</h4>
-  <a href='#detail_tombstoned' data-toggle='collapse'>(toggle)</a>
-  <div id='detail_tombstoned' class='collapse'>
-    <table class='table table-striped table-hover'>
-      <thead>
-        <tr>
-          <th>Table name</th>
-          <th>Tablet ID</th>
-          <th>Partition</th>
-          <th>State</th>
-          <th>On-disk size</th>
-          <th>Last status</th>
-        </tr>
-      </thead>
-      <tbody>
-      {{#replicas}}
-        <tr>
-          <td>{{table_name}}</td>
-          <td>{{{id_or_link}}}</td>
-          <td>{{partition}}</td>
-          <td>{{state}}</td>
-          <td>{{n_bytes}}</td>
-          <td>{{last_status}}</td>
-        </tr>
-      {{/replicas}}
-      </tbody>
-    </table>
-  </div>
+  <table data-toggle="table" data-pagination="true" data-search="true" class='table table-striped table-hover'>
+    <thead>
+      <tr>
+        <th>Table name</th>
+        <th>Tablet ID</th>
+        <th>Partition</th>
+        <th>State</th>
+        <th>On-disk size</th>
+        <th>Last status</th>
+      </tr>
+    </thead>
+    <tbody>
+    {{#replicas}}
+      <tr>
+        <td>{{table_name}}</td>
+        <td>{{{id_or_link}}}</td>
+        <td>{{partition}}</td>
+        <td>{{state}}</td>
+        <td>{{n_bytes}}</td>
+      </tr>
+    {{/replicas}}
+    </tbody>
+  </table>
 {{#tombstoned_replicas}}
