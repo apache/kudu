@@ -101,6 +101,16 @@ bool CompareByMemberType(const RaftPeerPB& a, const RaftPeerPB& b) {
   return a.member_type() < b.member_type();
 }
 
+string TabletLink(const string& id) {
+  return Substitute("<a href=\"/tablet?id=$0\">$1</a>",
+                    UrlEncodeToString(id),
+                    EscapeForHtmlToString(id));
+}
+
+bool IsTombstoned(const scoped_refptr<TabletReplica>& replica) {
+  return replica->data_state() == tablet::TABLET_DATA_TOMBSTONED;
+}
+
 string ConsensusStatePBToHtml(const ConsensusStatePB& cstate,
                               const string& local_uuid) {
   ostringstream html;
@@ -132,31 +142,36 @@ string ConsensusStatePBToHtml(const ConsensusStatePB& cstate,
 
 bool GetTabletID(const Webserver::WebRequest& req,
                  string* id,
-                 Webserver::PrerenderedWebResponse* resp) {
+                 Webserver::WebResponse* resp) {
   if (!FindCopy(req.parsed_args, "id", id)) {
     resp->status_code = HttpStatusCode::BadRequest;
-    *resp->output << "Tablet missing 'id' argument";
+    resp->output->Set("error", "Request missing 'id' argument");
     return false;
   }
   return true;
 }
 
-bool GetTabletReplica(TabletServer* tserver, const Webserver::WebRequest& /*req*/,
-                      scoped_refptr<TabletReplica>* replica, const string& tablet_id,
-                      Webserver::PrerenderedWebResponse* resp) {
+bool GetTabletReplica(TabletServer* tserver,
+                      const Webserver::WebRequest& /*req*/,
+                      scoped_refptr<TabletReplica>* replica,
+                      const string& tablet_id,
+                      Webserver::WebResponse* resp) {
   if (!tserver->tablet_manager()->LookupTablet(tablet_id, replica)) {
     resp->status_code = HttpStatusCode::NotFound;
-    *resp->output << "Tablet " << EscapeForHtmlToString(tablet_id) << " not found";
+    resp->output->Set("error",
+                      Substitute("Tablet $0 not found", tablet_id));
     return false;
   }
   return true;
 }
 
-bool TabletBootstrapping(const scoped_refptr<TabletReplica>& replica, const string& tablet_id,
-                         Webserver::PrerenderedWebResponse* resp) {
+bool TabletBootstrapping(const scoped_refptr<TabletReplica>& replica,
+                         const string& tablet_id,
+                         Webserver::WebResponse* resp) {
   if (replica->state() == tablet::BOOTSTRAPPING) {
     resp->status_code = HttpStatusCode::ServiceUnavailable;
-    *resp->output << "Tablet " << EscapeForHtmlToString(tablet_id) << " is still bootstrapping";
+    resp->output->Set("error",
+                      Substitute("Tablet $0 is still bootstrapping", tablet_id));
     return true;
   }
   return false;
@@ -167,7 +182,7 @@ bool TabletBootstrapping(const scoped_refptr<TabletReplica>& replica, const stri
 bool LoadTablet(TabletServer* tserver,
                 const Webserver::WebRequest& req,
                 string* tablet_id, scoped_refptr<TabletReplica>* replica,
-                Webserver::PrerenderedWebResponse* resp) {
+                Webserver::WebResponse* resp) {
   return GetTabletID(req, tablet_id, resp) &&
       GetTabletReplica(tserver, req, replica, *tablet_id, resp) &&
       !TabletBootstrapping(*replica, *tablet_id, resp);
@@ -187,7 +202,7 @@ Status TabletServerPathHandlers::Register(Webserver* server) {
     "/tablets", "Tablets",
     boost::bind(&TabletServerPathHandlers::HandleTabletsPage, this, _1, _2),
     true /* styled */, true /* is_on_nav_bar */);
-  server->RegisterPrerenderedPathHandler(
+  server->RegisterPathHandler(
     "/tablet", "",
     boost::bind(&TabletServerPathHandlers::HandleTabletPage, this, _1, _2),
     true /* styled */, false /* is_on_nav_bar */);
@@ -195,15 +210,15 @@ Status TabletServerPathHandlers::Register(Webserver* server) {
     "/transactions", "",
     boost::bind(&TabletServerPathHandlers::HandleTransactionsPage, this, _1, _2),
     true /* styled */, false /* is_on_nav_bar */);
-  server->RegisterPrerenderedPathHandler(
+  server->RegisterPathHandler(
     "/tablet-rowsetlayout-svg", "",
     boost::bind(&TabletServerPathHandlers::HandleTabletSVGPage, this, _1, _2),
     true /* styled */, false /* is_on_nav_bar */);
-  server->RegisterPrerenderedPathHandler(
+  server->RegisterPathHandler(
     "/tablet-consensus-status", "",
     boost::bind(&TabletServerPathHandlers::HandleConsensusStatusPage, this, _1, _2),
     true /* styled */, false /* is_on_nav_bar */);
-  server->RegisterPrerenderedPathHandler(
+  server->RegisterPathHandler(
     "/log-anchors", "",
     boost::bind(&TabletServerPathHandlers::HandleLogAnchorsPage, this, _1, _2),
     true /* styled */, false /* is_on_nav_bar */);
@@ -281,19 +296,6 @@ void TabletServerPathHandlers::HandleTransactionsPage(const Webserver::WebReques
     *output << "</tbody></table>\n";
   }
 }
-
-namespace {
-string TabletLink(const string& id) {
-  return Substitute("<a href=\"/tablet?id=$0\">$1</a>",
-                    UrlEncodeToString(id),
-                    EscapeForHtmlToString(id));
-}
-
-bool IsTombstoned(const scoped_refptr<TabletReplica>& replica) {
-  return replica->data_state() == tablet::TABLET_DATA_TOMBSTONED;
-}
-
-} // anonymous namespace
 
 void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& /*req*/,
                                                  Webserver::WebResponse* resp) {
@@ -392,8 +394,7 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& /*
 }
 
 void TabletServerPathHandlers::HandleTabletPage(const Webserver::WebRequest& req,
-                                                Webserver::PrerenderedWebResponse* resp) {
-  ostringstream* output = resp->output;
+                                                Webserver::WebResponse* resp) {
   string tablet_id;
   scoped_refptr<TabletReplica> replica;
   if (!LoadTablet(tserver_, req, &tablet_id, &replica, resp)) return;
@@ -405,87 +406,59 @@ void TabletServerPathHandlers::HandleTabletPage(const Webserver::WebRequest& req
     role = consensus->role();
   }
 
-  *output << "<h1>Tablet " << EscapeForHtmlToString(tablet_id)
-          << " (" << replica->HumanReadableState()
-          << "/" << RaftPeerPB::Role_Name(role) << ")</h1>\n";
-  *output << "<h3>Table " << EscapeForHtmlToString(table_name) << "</h3>";
+  EasyJson* output = resp->output;
+  output->Set("tablet_id", tablet_id);
+  output->Set("state", replica->HumanReadableState());
+  output->Set("role", RaftPeerPB::Role_Name(role));
+  output->Set("table_name", table_name);
 
-  // Output schema in tabular format.
-  *output << "<h2>Schema</h2>\n";
   const Schema& schema = replica->tablet_metadata()->schema();
-  HtmlOutputSchemaTable(schema, output);
-
-  *output << "<h2>Other Tablet Info Pages</h2>" << endl;
-
-  // List of links to various tablet-specific info pages
-  *output << "<ul>";
-
-  // Link to output svg of current DiskRowSet layout over keyspace.
-  *output << "<li>" << Substitute("<a href=\"/tablet-rowsetlayout-svg?id=$0\">$1</a>",
-                                  UrlEncodeToString(tablet_id),
-                                  "Rowset Layout Diagram")
-          << "</li>" << endl;
-
-  // Link to consensus status page.
-  *output << "<li>" << Substitute("<a href=\"/tablet-consensus-status?id=$0\">$1</a>",
-                                  UrlEncodeToString(tablet_id),
-                                  "Consensus Status")
-          << "</li>" << endl;
-
-  // Log anchors info page.
-  *output << "<li>" << Substitute("<a href=\"/log-anchors?id=$0\">$1</a>",
-                                  UrlEncodeToString(tablet_id),
-                                  "Tablet Log Anchors")
-          << "</li>" << endl;
-
-  // End list
-  *output << "</ul>\n";
+  SchemaToJson(schema, output);
 }
 
 void TabletServerPathHandlers::HandleTabletSVGPage(const Webserver::WebRequest& req,
-                                                   Webserver::PrerenderedWebResponse* resp) {
-  ostringstream* output = resp->output;
-  string id;
+                                                   Webserver::WebResponse* resp) {
+  string tablet_id;
   scoped_refptr<TabletReplica> replica;
-  if (!LoadTablet(tserver_, req, &id, &replica, resp)) return;
+  if (!LoadTablet(tserver_, req, &tablet_id, &replica, resp)) return;
   shared_ptr<Tablet> tablet = replica->shared_tablet();
+  auto* output = resp->output;
   if (!tablet) {
-    *output << "Tablet " << EscapeForHtmlToString(id) << " not running";
+    output->Set("error", Substitute("Tablet $0 is not running", tablet_id));
     return;
   }
 
-  *output << "<h1>Rowset Layout Diagram for Tablet "
-          << TabletLink(id) << "</h1>\n";
-  tablet->PrintRSLayout(output);
-
+  output->Set("tablet_id", tablet_id);
+  ostringstream oss;
+  tablet->PrintRSLayout(&oss);
+  output->Set("rowset_layout", oss.str());
 }
 
 void TabletServerPathHandlers::HandleLogAnchorsPage(const Webserver::WebRequest& req,
-                                                    Webserver::PrerenderedWebResponse* resp) {
-  ostringstream* output = resp->output;
+                                                    Webserver::WebResponse* resp) {
   string tablet_id;
   scoped_refptr<TabletReplica> replica;
   if (!LoadTablet(tserver_, req, &tablet_id, &replica, resp)) return;
 
-  *output << "<h1>Log Anchors for Tablet " << EscapeForHtmlToString(tablet_id) << "</h1>"
-          << std::endl;
-
-  string dump = replica->log_anchor_registry()->DumpAnchorInfo();
-  *output << "<pre>" << EscapeForHtmlToString(dump) << "</pre>" << std::endl;
+  auto* output = resp->output;
+  output->Set("tablet_id", tablet_id);
+  output->Set("log_anchors", replica->log_anchor_registry()->DumpAnchorInfo());
 }
 
 void TabletServerPathHandlers::HandleConsensusStatusPage(const Webserver::WebRequest& req,
-                                                         Webserver::PrerenderedWebResponse* resp) {
-  ostringstream* output = resp->output;
-  string id;
+                                                         Webserver::WebResponse* resp) {
+  string tablet_id;
   scoped_refptr<TabletReplica> replica;
-  if (!LoadTablet(tserver_, req, &id, &replica, resp)) return;
+  if (!LoadTablet(tserver_, req, &tablet_id, &replica, resp)) return;
   shared_ptr<consensus::RaftConsensus> consensus = replica->shared_consensus();
+  auto* output = resp->output;
   if (!consensus) {
-    *output << "Tablet " << EscapeForHtmlToString(id) << " not initialized";
+    output->Set("error", Substitute("Tablet $0 not initialized", tablet_id));
     return;
   }
-  consensus->DumpStatusHtml(*output);
+  ostringstream oss;
+  consensus->DumpStatusHtml(oss);
+  output->Set("consensus_status", oss.str());
 }
 
 namespace {

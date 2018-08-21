@@ -44,15 +44,15 @@ class TabletServerPathHandlers {
   void HandleTabletsPage(const Webserver::WebRequest& req,
                          Webserver::WebResponse* resp);
   void HandleTabletPage(const Webserver::WebRequest& req,
-                        Webserver::PrerenderedWebResponse* resp);
+                        Webserver::WebResponse* resp);
   void HandleTransactionsPage(const Webserver::WebRequest& req,
                               Webserver::PrerenderedWebResponse* resp);
   void HandleTabletSVGPage(const Webserver::WebRequest& req,
-                           Webserver::PrerenderedWebResponse* resp);
+                           Webserver::WebResponse* resp);
   void HandleLogAnchorsPage(const Webserver::WebRequest& req,
-                            Webserver::PrerenderedWebResponse* resp);
+                            Webserver::WebResponse* resp);
   void HandleConsensusStatusPage(const Webserver::WebRequest& req,
-                                 Webserver::PrerenderedWebResponse* resp);
+                                 Webserver::WebResponse* resp);
   void HandleDashboardsPage(const Webserver::WebRequest& req,
                             Webserver::PrerenderedWebResponse* resp);
   void HandleMaintenanceManagerPage(const Webserver::WebRequest& req,
