@@ -412,7 +412,12 @@ void TabletServerPathHandlers::HandleTabletPage(const Webserver::WebRequest& req
   output->Set("role", RaftPeerPB::Role_Name(role));
   output->Set("table_name", table_name);
 
-  const Schema& schema = replica->tablet_metadata()->schema();
+  const auto& tmeta = replica->tablet_metadata();
+  const Schema& schema = tmeta->schema();
+  output->Set("partition",
+              tmeta->partition_schema().PartitionDebugString(tmeta->partition(), schema));
+  output->Set("on_disk_size", HumanReadableNumBytes::ToString(replica->OnDiskSize()));
+
   SchemaToJson(schema, output);
 }
 
