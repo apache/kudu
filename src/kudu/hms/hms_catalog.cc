@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <functional>
 #include <iostream>
+#include <iterator>
 #include <map>
 #include <string>
 #include <type_traits>
@@ -34,6 +35,7 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/ascii_ctype.h"
 #include "kudu/gutil/strings/charset.h"
 #include "kudu/gutil/strings/split.h"

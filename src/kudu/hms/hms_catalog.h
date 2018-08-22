@@ -25,21 +25,16 @@
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
+#include "kudu/hms/hive_metastore_types.h"
 #include "kudu/hms/hms_client.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
 
-class StringPiece;
-
-namespace hive {
-class NotificationEvent;
-class Table;
-}
-
 namespace kudu {
 
 class Schema;
+class Slice;
 class ThreadPool;
 
 namespace hms {

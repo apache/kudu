@@ -23,17 +23,10 @@
 
 #include "kudu/gutil/port.h"
 #include "kudu/hms/ThriftHiveMetastore.h"
+#include "kudu/hms/hive_metastore_types.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
-
-namespace hive {
-class Database;
-class EnvironmentContext;
-class NotificationEvent;
-class Partition;
-class Table;
-}
 
 namespace kudu {
 
