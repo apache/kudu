@@ -105,16 +105,17 @@ public class DistTestTask extends DefaultTask {
     for (Test t : testTasks) {
       List<String> testClassNames = collectTestNames(t);
       for (String c : testClassNames) {
-        File isoFile = new File(outputDir, c + ".isolate");
+        File isolateFile = new File(outputDir, c + ".isolate");
+        File isolatedFile = new File(outputDir, c + ".isolated");
         File genJsonFile = new File(outputDir, c + ".gen.json");
 
-        Files.write(genIsolate(outputDir.toPath(), t, c, baseDeps), isoFile, UTF_8);
+        Files.write(genIsolate(outputDir.toPath(), t, c, baseDeps), isolateFile, UTF_8);
 
         // Write the gen.json
         GenJson gen = new GenJson();
         gen.args = ImmutableList.of(
-            "-i", isoFile.toString(),
-            "-s", isoFile.toString() + ".isolated");
+            "-i", isolateFile.toString(),
+            "-s", isolatedFile.toString());
         gen.dir = outputDir.toString();
         gen.name = c;
         Files.write(GSON.toJson(gen), genJsonFile, UTF_8);
