@@ -68,6 +68,7 @@ class OpId;
 
 namespace fs {
 class BlockCreationTransaction;
+struct IOContext;
 }
 
 namespace log {
@@ -312,6 +313,7 @@ class DiskRowSet : public RowSet {
   static Status Open(const std::shared_ptr<RowSetMetadata>& rowset_metadata,
                      log::LogAnchorRegistry* log_anchor_registry,
                      const TabletMemTrackers& mem_trackers,
+                     const fs::IOContext* io_context,
                      std::shared_ptr<DiskRowSet> *rowset);
 
   ////////////////////////////////////////////////////////////
@@ -319,12 +321,12 @@ class DiskRowSet : public RowSet {
   ////////////////////////////////////////////////////////////
 
   // Flush all accumulated delta data to disk.
-  Status FlushDeltas() override;
+  Status FlushDeltas(const fs::IOContext* io_context) override;
 
   // Perform delta store minor compaction.
   // This compacts the delta files down to a single one.
   // If there is already only a single delta file, this does nothing.
-  Status MinorCompactDeltaStores() override;
+  Status MinorCompactDeltaStores(const fs::IOContext* io_context) override;
 
   ////////////////////////////////////////////////////////////
   // RowSet implementation
@@ -341,12 +343,12 @@ class DiskRowSet : public RowSet {
                    const RowSetKeyProbe &probe,
                    const RowChangeList &update,
                    const consensus::OpId& op_id,
+                   const fs::IOContext* io_context,
                    ProbeStats* stats,
                    OperationResultPB* result) override;
 
-  Status CheckRowPresent(const RowSetKeyProbe &probe,
-                         bool *present,
-                         ProbeStats* stats) const override;
+  Status CheckRowPresent(const RowSetKeyProbe &probe, const fs::IOContext* io_context,
+                         bool *present, ProbeStats* stats) const override;
 
   ////////////////////
   // Read functions.
@@ -356,11 +358,12 @@ class DiskRowSet : public RowSet {
 
   virtual Status NewCompactionInput(const Schema* projection,
                                     const MvccSnapshot &snap,
+                                    const fs::IOContext* io_context,
                                     gscoped_ptr<CompactionInput>* out) const override;
 
   // Gets the number of rows in this rowset, checking 'num_rows_' first. If not
   // yet set, consults the base data and stores the result in 'num_rows_'.
-  Status CountRows(rowid_t *count) const final override;
+  Status CountRows(const fs::IOContext* io_context, rowid_t *count) const final override;
 
   // See RowSet::GetBounds(...)
   virtual Status GetBounds(std::string* min_encoded_key,
@@ -389,14 +392,15 @@ class DiskRowSet : public RowSet {
 
   Status InitUndoDeltas(Timestamp ancient_history_mark,
                         MonoTime deadline,
+                        const fs::IOContext* io_context,
                         int64_t* delta_blocks_initialized,
                         int64_t* bytes_in_ancient_undos) override;
 
-  Status DeleteAncientUndoDeltas(Timestamp ancient_history_mark,
+  Status DeleteAncientUndoDeltas(Timestamp ancient_history_mark, const fs::IOContext* io_context,
                                  int64_t* blocks_deleted, int64_t* bytes_deleted) override;
 
   // Major compacts all the delta files for all the columns.
-  Status MajorCompactDeltaStores(HistoryGcOpts history_gc_opts);
+  Status MajorCompactDeltaStores(const fs::IOContext* io_context, HistoryGcOpts history_gc_opts);
 
   std::mutex *compact_flush_lock() override {
     return &compact_flush_lock_;
@@ -444,15 +448,17 @@ class DiskRowSet : public RowSet {
              log::LogAnchorRegistry* log_anchor_registry,
              TabletMemTrackers mem_trackers);
 
-  Status Open();
+  Status Open(const fs::IOContext* io_context);
 
   // Create a new major delta compaction object to compact the specified columns.
   Status NewMajorDeltaCompaction(const std::vector<ColumnId>& col_ids,
                                  HistoryGcOpts history_gc_opts,
+                                 const fs::IOContext* io_context,
                                  gscoped_ptr<MajorDeltaCompaction>* out) const;
 
   // Major compacts all the delta files for the specified columns.
   Status MajorCompactDeltaStoresWithColumnIds(const std::vector<ColumnId>& col_ids,
+                                              const fs::IOContext* io_context,
                                               HistoryGcOpts history_gc_opts);
 
   std::shared_ptr<RowSetMetadata> rowset_metadata_;

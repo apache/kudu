@@ -37,6 +37,10 @@ namespace kudu {
 class Arena;
 class Schema;
 
+namespace fs {
+struct IOContext;
+}  // namespace fs
+
 namespace tablet {
 
 class DiskRowSet;
@@ -104,6 +108,7 @@ class CompactionInput {
   static Status Create(const DiskRowSet &rowset,
                        const Schema* projection,
                        const MvccSnapshot &snap,
+                       const fs::IOContext* io_context,
                        gscoped_ptr<CompactionInput>* out);
 
   // Create an input which reads from the given memrowset, yielding base rows and updates
@@ -151,6 +156,7 @@ class RowSetsInCompaction {
   // for the lifetime of the returned CompactionInput.
   Status CreateCompactionInput(const MvccSnapshot &snap,
                                const Schema* schema,
+                               const fs::IOContext* io_context,
                                std::shared_ptr<CompactionInput> *out) const;
 
   // Dump a log message indicating the chosen rowsets.
@@ -237,7 +243,7 @@ Status FlushCompactionInput(CompactionInput *input,
 //
 // After return of this function, this CompactionInput object is "used up" and will
 // yield no further rows.
-Status ReupdateMissedDeltas(const std::string &tablet_name,
+Status ReupdateMissedDeltas(const fs::IOContext* io_context,
                             CompactionInput *input,
                             const HistoryGcOpts& history_gc_opts,
                             const MvccSnapshot &snap_to_exclude,

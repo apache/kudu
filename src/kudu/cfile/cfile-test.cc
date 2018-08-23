@@ -118,7 +118,7 @@ class TestCFile : public CFileTestBase {
 
     BlockPointer ptr;
     gscoped_ptr<CFileIterator> iter;
-    ASSERT_OK(reader->NewIterator(&iter, CFileReader::CACHE_BLOCK));
+    ASSERT_OK(reader->NewIterator(&iter, CFileReader::CACHE_BLOCK, nullptr));
 
     ASSERT_OK(iter->SeekToOrdinal(5000));
     ASSERT_EQ(5000u, iter->GetCurrentOrdinal());
@@ -201,7 +201,7 @@ class TestCFile : public CFileTestBase {
     ASSERT_EQ(DataGeneratorType::kDataType, reader->type_info()->type());
 
     gscoped_ptr<CFileIterator> iter;
-    ASSERT_OK(reader->NewIterator(&iter, CFileReader::CACHE_BLOCK));
+    ASSERT_OK(reader->NewIterator(&iter, CFileReader::CACHE_BLOCK, nullptr));
 
     Arena arena(8192);
     ScopedColumnBlock<DataGeneratorType::kDataType> cb(10);
@@ -615,7 +615,7 @@ void TestCFile::TestReadWriteStrings(EncodingType encoding,
   BlockPointer ptr;
 
   gscoped_ptr<CFileIterator> iter;
-  ASSERT_OK(reader->NewIterator(&iter, CFileReader::CACHE_BLOCK));
+  ASSERT_OK(reader->NewIterator(&iter, CFileReader::CACHE_BLOCK, nullptr));
 
   Arena arena(1024);
 
@@ -970,10 +970,10 @@ TEST_P(TestCFileBothCacheTypes, TestLazyInit) {
 
   // But initializing it should (only the first time), and the reader's
   // memory usage should increase.
-  ASSERT_OK(reader->Init());
+  ASSERT_OK(reader->Init(nullptr));
   ASSERT_GT(bytes_read, 0);
   size_t bytes_read_after_init = bytes_read;
-  ASSERT_OK(reader->Init());
+  ASSERT_OK(reader->Init(nullptr));
   ASSERT_EQ(bytes_read_after_init, bytes_read);
   ASSERT_GT(tracker->consumption(), lazy_mem_usage);
 

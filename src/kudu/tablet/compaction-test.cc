@@ -225,6 +225,7 @@ class TestCompaction : public KuduRowSetTest {
                                 probe,
                                 RowChangeList(update_buf),
                                 op_id_,
+                                nullptr,
                                 &stats,
                                 &result));
   }
@@ -261,6 +262,7 @@ class TestCompaction : public KuduRowSetTest {
                                 probe,
                                 RowChangeList(update_buf),
                                 op_id_,
+                                nullptr,
                                 &stats,
                                 &result));
   }
@@ -297,7 +299,7 @@ class TestCompaction : public KuduRowSetTest {
       for (const shared_ptr<RowSetMetadata>& meta : metas) {
         shared_ptr<DiskRowSet> rs;
         ASSERT_OK(DiskRowSet::Open(meta, log_anchor_registry_.get(),
-                                   mem_trackers_, &rs));
+                                   mem_trackers_, nullptr, &rs));
         result_rowsets->push_back(rs);
       }
     }
@@ -310,7 +312,7 @@ class TestCompaction : public KuduRowSetTest {
     vector<shared_ptr<CompactionInput> > merge_inputs;
     for (const shared_ptr<DiskRowSet> &rs : rowsets) {
       gscoped_ptr<CompactionInput> input;
-      RETURN_NOT_OK(CompactionInput::Create(*rs, &projection, merge_snap, &input));
+      RETURN_NOT_OK(CompactionInput::Create(*rs, &projection, merge_snap, nullptr, &input));
       merge_inputs.push_back(shared_ptr<CompactionInput>(input.release()));
     }
     out->reset(CompactionInput::Merge(merge_inputs, &projection));
@@ -396,7 +398,7 @@ class TestCompaction : public KuduRowSetTest {
     // Verify the resulting compaction output has the right number
     // of rows.
     rowid_t count = 0;
-    ASSERT_OK(result_rs->CountRows(&count));
+    ASSERT_OK(result_rs->CountRows(nullptr, &count));
     ASSERT_EQ(1000 * schemas.size(), count);
   }
 
@@ -442,7 +444,7 @@ class TestCompaction : public KuduRowSetTest {
       for (const shared_ptr<RowSetMetadata>& meta : input_meta->rowsets()) {
         shared_ptr<DiskRowSet> rs;
         CHECK_OK(DiskRowSet::Open(meta, log_anchor_registry_.get(),
-                                  mem_trackers_, &rs));
+                                  mem_trackers_, nullptr, &rs));
         rowsets.push_back(rs);
       }
 
@@ -556,14 +558,14 @@ TEST_F(TestCompaction, TestRowSetInput) {
   UpdateRows(rs.get(), 10, 0, 1);
   UpdateRows(rs.get(), 10, 0, 2);
   // Flush DMS, update some more.
-  ASSERT_OK(rs->FlushDeltas());
+  ASSERT_OK(rs->FlushDeltas(nullptr));
   UpdateRows(rs.get(), 10, 0, 3);
   UpdateRows(rs.get(), 10, 0, 4);
 
   // Check compaction input
   vector<string> out;
   gscoped_ptr<CompactionInput> input;
-  ASSERT_OK(CompactionInput::Create(*rs, &schema_, MvccSnapshot(mvcc_), &input));
+  ASSERT_OK(CompactionInput::Create(*rs, &schema_, MvccSnapshot(mvcc_), nullptr, &input));
   IterateInput(input.get(), &out);
   ASSERT_EQ(10, out.size());
   EXPECT_EQ(R"(RowIdxInBlock: 0; Base: (string key="hello 00000000", int32 val=0, )"
@@ -635,6 +637,7 @@ TEST_F(TestCompaction, TestDuplicatedGhostRowsMerging) {
   ASSERT_OK(CompactionInput::Create(*result,
                                     &schema_,
                                     MvccSnapshot::CreateSnapshotIncludingAllTransactions(),
+                                    nullptr,
                                     &input));
   vector<string> out;
   IterateInput(input.get(), &out);
@@ -795,7 +798,7 @@ TEST_F(TestCompaction, TestDuplicatedRowsRandomCompaction) {
   vector<shared_ptr<CompactionInput>> inputs;
   for (auto& row_set : row_sets) {
     gscoped_ptr<CompactionInput> ci;
-    CHECK_OK(row_set->NewCompactionInput(&schema_, all_snap, &ci));
+    CHECK_OK(row_set->NewCompactionInput(&schema_, all_snap, nullptr, &ci));
     inputs.push_back(shared_ptr<CompactionInput>(ci.release()));
   }
 
@@ -816,7 +819,7 @@ TEST_F(TestCompaction, TestDuplicatedRowsRandomCompaction) {
 
   vector<string> out;
   gscoped_ptr<CompactionInput> ci;
-  CHECK_OK(row_sets[0]->NewCompactionInput(&schema_, all_snap, &ci));
+  CHECK_OK(row_sets[0]->NewCompactionInput(&schema_, all_snap, nullptr, &ci));
   IterateInput(ci.get(), &out);
 
   // Finally go through the final compaction input and through the expected one and make sure
@@ -865,10 +868,10 @@ TEST_F(TestCompaction, TestMRSCompactionDoesntOutputUnobservableRows) {
   MvccSnapshot all_snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
 
   gscoped_ptr<CompactionInput> rs1_input;
-  ASSERT_OK(CompactionInput::Create(*rs1, &schema_, all_snap, &rs1_input));
+  ASSERT_OK(CompactionInput::Create(*rs1, &schema_, all_snap, nullptr, &rs1_input));
 
   gscoped_ptr<CompactionInput> rs2_input;
-  ASSERT_OK(CompactionInput::Create(*rs2, &schema_, all_snap, &rs2_input));
+  ASSERT_OK(CompactionInput::Create(*rs2, &schema_, all_snap, nullptr, &rs2_input));
 
   vector<shared_ptr<CompactionInput>> to_merge;
   to_merge.push_back(shared_ptr<CompactionInput>(rs1_input.release()));
@@ -917,12 +920,12 @@ TEST_F(TestCompaction, TestOneToOne) {
 
   string dummy_name = "";
 
-  ASSERT_OK(ReupdateMissedDeltas(dummy_name, input.get(), HistoryGcOpts::Disabled(), snap, snap2,
+  ASSERT_OK(ReupdateMissedDeltas(nullptr, input.get(), HistoryGcOpts::Disabled(), snap, snap2,
                                  { rs }));
 
   // If we look at the contents of the DiskRowSet now, we should see the "re-updated" data.
   vector<string> out;
-  ASSERT_OK(CompactionInput::Create(*rs, &schema_, MvccSnapshot(mvcc_), &input));
+  ASSERT_OK(CompactionInput::Create(*rs, &schema_, MvccSnapshot(mvcc_), nullptr, &input));
   IterateInput(input.get(), &out);
   ASSERT_EQ(1000, out.size());
   EXPECT_EQ(R"(RowIdxInBlock: 0; Base: (string key="hello 00000000", int32 val=1, )"
@@ -933,7 +936,7 @@ TEST_F(TestCompaction, TestOneToOne) {
   // And compact (1 input to 1 output)
   MvccSnapshot snap3(mvcc_);
   gscoped_ptr<CompactionInput> compact_input;
-  ASSERT_OK(CompactionInput::Create(*rs, &schema_, snap3, &compact_input));
+  ASSERT_OK(CompactionInput::Create(*rs, &schema_, snap3, nullptr, &compact_input));
   DoFlushAndReopen(compact_input.get(), schema_, snap3, kLargeRollThreshold, nullptr);
 }
 
@@ -975,7 +978,7 @@ TEST_F(TestCompaction, TestKUDU102) {
   string dummy_name = "";
 
   // This would fail without KUDU-102
-  ASSERT_OK(ReupdateMissedDeltas(dummy_name, input.get(), HistoryGcOpts::Disabled(), snap, snap2,
+  ASSERT_OK(ReupdateMissedDeltas(nullptr, input.get(), HistoryGcOpts::Disabled(), snap, snap2,
                                  { rs, rs_b }));
 }
 

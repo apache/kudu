@@ -122,7 +122,7 @@ class TestMemRowSet : public KuduTest {
     RowSetKeyProbe probe(rb.row());
     ProbeStats stats;
 
-    return mrs.CheckRowPresent(probe, present, &stats);
+    return mrs.CheckRowPresent(probe, nullptr, present, &stats);
   }
 
   Status InsertRows(MemRowSet *mrs, int num_rows) {
@@ -169,6 +169,7 @@ class TestMemRowSet : public KuduTest {
                               probe,
                               RowChangeList(mutation_buf_),
                               op_id_,
+                              nullptr,
                               &stats,
                               result);
     tx.Commit();
@@ -191,6 +192,7 @@ class TestMemRowSet : public KuduTest {
                               probe,
                               RowChangeList(mutation_buf_),
                               op_id_,
+                              nullptr,
                               &stats,
                               result);
     tx.Commit();

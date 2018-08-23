@@ -45,6 +45,7 @@
 namespace kudu {
 namespace tablet {
 
+using fs::IOContext;
 using log::LogAnchorRegistry;
 using std::string;
 using std::shared_ptr;
@@ -85,7 +86,7 @@ DeltaMemStore::DeltaMemStore(int64_t id,
     disambiguator_sequence_number_(0) {
 }
 
-Status DeltaMemStore::Init() {
+Status DeltaMemStore::Init(const IOContext* /*io_context*/) {
   return Status::OK();
 }
 
@@ -151,7 +152,9 @@ Status DeltaMemStore::NewDeltaIterator(const RowIteratorOptions& opts,
   return Status::OK();
 }
 
-Status DeltaMemStore::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
+Status DeltaMemStore::CheckRowDeleted(rowid_t row_idx,
+                                      const IOContext* /*io_context*/,
+                                      bool *deleted) const {
   *deleted = false;
 
   DeltaKey key(row_idx, Timestamp(0));

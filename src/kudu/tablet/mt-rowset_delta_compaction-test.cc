@@ -93,7 +93,7 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
   void RowSetFlushThread(DiskRowSet *rs) {
     while (ShouldRun()) {
       if (rs->CountDeltaStores() < 5) {
-        CHECK_OK(rs->FlushDeltas());
+        CHECK_OK(rs->FlushDeltas(nullptr));
       } else {
         SleepFor(MonoDelta::FromMilliseconds(10));
       }
@@ -102,7 +102,7 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
 
   void RowSetDeltaCompactionThread(DiskRowSet *rs) {
     while (ShouldRun()) {
-      CHECK_OK(rs->MinorCompactDeltaStores());
+      CHECK_OK(rs->MinorCompactDeltaStores(nullptr));
     }
   }
 

@@ -106,7 +106,7 @@ class TestCFileSet : public KuduRowSetTest {
                        int32_t lower,
                        int32_t upper) {
     // Create iterator.
-    shared_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&schema_));
+    shared_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&schema_, nullptr));
     gscoped_ptr<RowwiseIterator> iter(new MaterializingIterator(cfile_iter));
 
     // Create a scan with a range predicate on the key column.
@@ -163,9 +163,9 @@ TEST_F(TestCFileSet, TestPartiallyMaterialize) {
   WriteTestRowSet(kNumRows);
 
   shared_ptr<CFileSet> fileset;
-  ASSERT_OK(CFileSet::Open(rowset_meta_, MemTracker::GetRootTracker(), &fileset));
+  ASSERT_OK(CFileSet::Open(rowset_meta_, MemTracker::GetRootTracker(), nullptr, &fileset));
 
-  gscoped_ptr<CFileSet::Iterator> iter(fileset->NewIterator(&schema_));
+  gscoped_ptr<CFileSet::Iterator> iter(fileset->NewIterator(&schema_, nullptr));
   ASSERT_OK(iter->Init(nullptr));
 
   Arena arena(4096);
@@ -243,11 +243,11 @@ TEST_F(TestCFileSet, TestIteratePartialSchema) {
   WriteTestRowSet(kNumRows);
 
   shared_ptr<CFileSet> fileset;
-  ASSERT_OK(CFileSet::Open(rowset_meta_, MemTracker::GetRootTracker(), &fileset));
+  ASSERT_OK(CFileSet::Open(rowset_meta_, MemTracker::GetRootTracker(), nullptr, &fileset));
 
   Schema new_schema;
   ASSERT_OK(schema_.CreateProjectionByNames({ "c0", "c2" }, &new_schema));
-  shared_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&new_schema));
+  shared_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&new_schema, nullptr));
   gscoped_ptr<RowwiseIterator> iter(new MaterializingIterator(cfile_iter));
 
   ASSERT_OK(iter->Init(nullptr));
@@ -276,10 +276,10 @@ TEST_F(TestCFileSet, TestRangeScan) {
   WriteTestRowSet(kNumRows);
 
   shared_ptr<CFileSet> fileset;
-  ASSERT_OK(CFileSet::Open(rowset_meta_, MemTracker::GetRootTracker(), &fileset));
+  ASSERT_OK(CFileSet::Open(rowset_meta_, MemTracker::GetRootTracker(), nullptr, &fileset));
 
   // Create iterator.
-  shared_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&schema_));
+  shared_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&schema_, nullptr));
   gscoped_ptr<RowwiseIterator> iter(new MaterializingIterator(cfile_iter));
   Schema key_schema = schema_.CreateKeyProjection();
   Arena arena(1024);
@@ -329,7 +329,7 @@ TEST_F(TestCFileSet, TestRangePredicates2) {
   WriteTestRowSet(kNumRows);
 
   shared_ptr<CFileSet> fileset;
-  ASSERT_OK(CFileSet::Open(rowset_meta_, MemTracker::GetRootTracker(), &fileset));
+  ASSERT_OK(CFileSet::Open(rowset_meta_, MemTracker::GetRootTracker(), nullptr, &fileset));
 
   // Range scan where rows match on both ends
   DoTestRangeScan(fileset, 2000, 2010);

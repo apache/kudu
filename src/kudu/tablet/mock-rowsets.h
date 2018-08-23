@@ -28,22 +28,29 @@
 #include "kudu/tablet/rowset_metadata.h"
 
 namespace kudu {
+
+namespace fs {
+struct IOContext;
+}  // namespace fs
+
 namespace tablet {
 
 // Mock implementation of RowSet which just aborts on every call.
 class MockRowSet : public RowSet {
  public:
-  virtual Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
-                                 ProbeStats* stats) const OVERRIDE {
+  virtual Status CheckRowPresent(const RowSetKeyProbe& /*probe*/,
+                                 const fs::IOContext* /*io_context*/,
+                                 bool* /*present*/, ProbeStats* /*stats*/) const OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }
-  virtual Status MutateRow(Timestamp timestamp,
-                           const RowSetKeyProbe &probe,
-                           const RowChangeList &update,
-                           const consensus::OpId& op_id_,
-                           ProbeStats* stats,
-                           OperationResultPB *result) OVERRIDE {
+  virtual Status MutateRow(Timestamp /*timestamp*/,
+                           const RowSetKeyProbe& /*probe*/,
+                           const RowChangeList& /*update*/,
+                           const consensus::OpId& /*op_id_*/,
+                           const fs::IOContext* /*io_context*/,
+                           ProbeStats* /*stats*/,
+                           OperationResultPB* /*result*/) OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }
@@ -52,13 +59,14 @@ class MockRowSet : public RowSet {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }
-  virtual Status NewCompactionInput(const Schema* projection,
-                                    const MvccSnapshot &snap,
-                                    gscoped_ptr<CompactionInput>* out) const OVERRIDE {
+  virtual Status NewCompactionInput(const Schema* /*projection*/,
+                                    const MvccSnapshot& /*snap*/,
+                                    const fs::IOContext* /*io_context*/,
+                                    gscoped_ptr<CompactionInput>* /*out*/) const OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }
-  virtual Status CountRows(rowid_t *count) const OVERRIDE {
+  virtual Status CountRows(const fs::IOContext* /*io_context*/, rowid_t* /*count*/) const OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }
@@ -66,7 +74,7 @@ class MockRowSet : public RowSet {
     LOG(FATAL) << "Unimplemented";
     return "";
   }
-  virtual Status DebugDump(std::vector<std::string> *lines = NULL) OVERRIDE {
+  virtual Status DebugDump(std::vector<std::string>* /*lines*/) OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }
@@ -116,18 +124,18 @@ class MockRowSet : public RowSet {
     return -1;
   }
 
-  virtual double DeltaStoresCompactionPerfImprovementScore(DeltaCompactionType type)
+  virtual double DeltaStoresCompactionPerfImprovementScore(DeltaCompactionType /*type*/)
       const OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return 0;
   }
 
-  virtual Status FlushDeltas() OVERRIDE {
+  virtual Status FlushDeltas(const fs::IOContext* /*io_context*/) OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }
 
-  virtual Status MinorCompactDeltaStores() OVERRIDE {
+  virtual Status MinorCompactDeltaStores(const fs::IOContext* /*io_context*/) OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }
@@ -140,6 +148,7 @@ class MockRowSet : public RowSet {
 
   virtual Status InitUndoDeltas(Timestamp /*ancient_history_mark*/,
                                 MonoTime /*deadline*/,
+                                const fs::IOContext* /*io_context*/,
                                 int64_t* /*delta_blocks_initialized*/,
                                 int64_t* /*bytes_in_ancient_undos*/) OVERRIDE {
     LOG(FATAL) << "Unimplemented";
@@ -147,6 +156,7 @@ class MockRowSet : public RowSet {
   }
 
   virtual Status DeleteAncientUndoDeltas(Timestamp /*ancient_history_mark*/,
+                                         const fs::IOContext* /*io_context*/,
                                          int64_t* /*blocks_deleted*/,
                                          int64_t* /*bytes_deleted*/) OVERRIDE {
     LOG(FATAL) << "Unimplemented";

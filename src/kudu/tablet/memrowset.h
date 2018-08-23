@@ -56,13 +56,17 @@ class RowChangeList;
 class ScanSpec;
 struct IteratorStats;
 
+namespace fs {
+struct IOContext;
+}  // namespace fs
+
 namespace tablet {
 class MvccSnapshot;
-} // namespace tablet
+}  // namespace tablet
 
 namespace consensus {
 class OpId;
-} // namespace consensus
+}  // namespace consensus
 
 namespace tablet {
 //
@@ -238,6 +242,7 @@ class MemRowSet : public RowSet,
                            const RowSetKeyProbe &probe,
                            const RowChangeList &delta,
                            const consensus::OpId& op_id,
+                           const fs::IOContext* io_context,
                            ProbeStats* stats,
                            OperationResultPB *result) override;
 
@@ -249,7 +254,7 @@ class MemRowSet : public RowSet,
   }
 
   // Conform entry_count to RowSet
-  Status CountRows(rowid_t *count) const override {
+  Status CountRows(const fs::IOContext* /*io_context*/, rowid_t *count) const override {
     *count = entry_count();
     return Status::OK();
   }
@@ -292,8 +297,8 @@ class MemRowSet : public RowSet,
   }
 
   // TODO(todd): unit test me
-  Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
-                         ProbeStats* stats) const override;
+  Status CheckRowPresent(const RowSetKeyProbe &probe, const fs::IOContext* io_context,
+                         bool *present, ProbeStats* stats) const override;
 
   // Return the memory footprint of this memrowset.
   // Note that this may be larger than the sum of the data
@@ -320,6 +325,7 @@ class MemRowSet : public RowSet,
   // Create compaction input.
   virtual Status NewCompactionInput(const Schema* projection,
                                     const MvccSnapshot& snap,
+                                    const fs::IOContext* io_context,
                                     gscoped_ptr<CompactionInput>* out) const override;
 
   // Return the Schema for the rows in this memrowset.
@@ -385,6 +391,7 @@ class MemRowSet : public RowSet,
 
   Status InitUndoDeltas(Timestamp /*ancient_history_mark*/,
                         MonoTime /*deadline*/,
+                        const fs::IOContext* /*io_context*/,
                         int64_t* delta_blocks_initialized,
                         int64_t* bytes_in_ancient_undos) override {
     if (delta_blocks_initialized) *delta_blocks_initialized = 0;
@@ -393,15 +400,17 @@ class MemRowSet : public RowSet,
   }
 
   Status DeleteAncientUndoDeltas(Timestamp /*ancient_history_mark*/,
+                                 const fs::IOContext* /*io_context*/,
                                  int64_t* blocks_deleted, int64_t* bytes_deleted) override {
     if (blocks_deleted) *blocks_deleted = 0;
     if (bytes_deleted) *bytes_deleted = 0;
     return Status::OK();
   }
 
-  Status FlushDeltas() override { return Status::OK(); }
+  Status FlushDeltas(const fs::IOContext* /*io_context*/) override { return Status::OK(); }
 
-  Status MinorCompactDeltaStores() override { return Status::OK(); }
+  Status MinorCompactDeltaStores(
+      const fs::IOContext* /*io_context*/) override { return Status::OK(); }
 
  private:
   friend class Iterator;

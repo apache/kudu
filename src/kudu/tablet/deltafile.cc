@@ -82,6 +82,7 @@ using cfile::IndexTreeIterator;
 using cfile::ReaderOptions;
 using fs::BlockCreationTransaction;
 using fs::BlockManager;
+using fs::IOContext;
 using fs::ReadableBlock;
 using fs::WritableBlock;
 
@@ -220,11 +221,12 @@ Status DeltaFileReader::Open(unique_ptr<ReadableBlock> block,
                              ReaderOptions options,
                              shared_ptr<DeltaFileReader>* reader_out) {
   shared_ptr<DeltaFileReader> df_reader;
+  const IOContext* io_context = options.io_context;
   RETURN_NOT_OK(DeltaFileReader::OpenNoInit(std::move(block),
                                             delta_type,
                                             std::move(options),
                                             &df_reader));
-  RETURN_NOT_OK(df_reader->Init());
+  RETURN_NOT_OK(df_reader->Init(io_context));
 
   *reader_out = df_reader;
   return Status::OK();
@@ -235,13 +237,14 @@ Status DeltaFileReader::OpenNoInit(unique_ptr<ReadableBlock> block,
                                    ReaderOptions options,
                                    shared_ptr<DeltaFileReader>* reader_out) {
   unique_ptr<CFileReader> cf_reader;
+  const IOContext* io_context = options.io_context;
   RETURN_NOT_OK(CFileReader::OpenNoInit(std::move(block),
                                         std::move(options),
                                         &cf_reader));
   gscoped_ptr<DeltaFileReader> df_reader(
       new DeltaFileReader(std::move(cf_reader), delta_type));
   if (!FLAGS_cfile_lazy_open) {
-    RETURN_NOT_OK(df_reader->Init());
+    RETURN_NOT_OK(df_reader->Init(io_context));
   }
 
   reader_out->reset(df_reader.release());
@@ -254,15 +257,15 @@ DeltaFileReader::DeltaFileReader(unique_ptr<CFileReader> cf_reader,
     : reader_(cf_reader.release()),
       delta_type_(delta_type) {}
 
-Status DeltaFileReader::Init() {
-  return init_once_.Init([this] { return InitOnce(); });
+Status DeltaFileReader::Init(const IOContext* io_context) {
+  return init_once_.Init([this, io_context] { return InitOnce(io_context); });
 }
 
-Status DeltaFileReader::InitOnce() {
+Status DeltaFileReader::InitOnce(const IOContext* io_context) {
   // Fully open the CFileReader if it was lazily opened earlier.
   //
   // If it's already initialized, this is a no-op.
-  RETURN_NOT_OK(reader_->Init());
+  RETURN_NOT_OK(reader_->Init(io_context));
 
   if (!reader_->has_validx()) {
     return Status::Corruption("file does not have a value index!");
@@ -349,9 +352,9 @@ Status DeltaFileReader::NewDeltaIterator(const RowIteratorOptions& opts,
   return Status::NotFound("MvccSnapshot outside the range of this delta.");
 }
 
-Status DeltaFileReader::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
-  RETURN_NOT_OK(const_cast<DeltaFileReader*>(this)->Init());
-
+Status DeltaFileReader::CheckRowDeleted(rowid_t row_idx, const IOContext* io_context,
+                                        bool* deleted) const {
+  RETURN_NOT_OK(const_cast<DeltaFileReader*>(this)->Init(io_context));
   // If there are no deletes in the delta file at all, we can short-circuit
   // the seek.
   if (delta_stats_->delete_count() == 0) {
@@ -365,6 +368,7 @@ Status DeltaFileReader::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
   Schema empty_schema;
   RowIteratorOptions opts;
   opts.projection = &empty_schema;
+  opts.io_context = io_context;
   DeltaIterator* raw_iter;
   Status s = NewDeltaIterator(opts, &raw_iter);
   if (s.IsNotFound()) {
@@ -427,7 +431,7 @@ Status DeltaFileIterator::SeekToOrdinal(rowid_t idx) {
   DCHECK(initted_) << "Must call Init()";
 
   // Finish the initialization of any lazily-initialized state.
-  RETURN_NOT_OK(dfr_->Init());
+  RETURN_NOT_OK(dfr_->Init(opts_.io_context));
 
   // Check again whether this delta file is relevant given the snapshot
   // that we are querying. We did this already before creating the

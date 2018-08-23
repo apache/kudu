@@ -70,6 +70,7 @@ namespace fs {
 class BlockCreationTransaction;
 class ReadableBlock;
 class WritableBlock;
+struct IOContext;
 } // namespace fs
 
 namespace tablet {
@@ -158,7 +159,7 @@ class DeltaFileReader : public DeltaStore,
                            cfile::ReaderOptions options,
                            std::shared_ptr<DeltaFileReader>* reader_out);
 
-  virtual Status Init() OVERRIDE;
+  virtual Status Init(const fs::IOContext* io_context) OVERRIDE;
 
   virtual bool Initted() OVERRIDE {
     return init_once_.init_succeeded();
@@ -169,7 +170,9 @@ class DeltaFileReader : public DeltaStore,
                           DeltaIterator** iterator) const OVERRIDE;
 
   // See DeltaStore::CheckRowDeleted
-  virtual Status CheckRowDeleted(rowid_t row_idx, bool *deleted) const OVERRIDE;
+  virtual Status CheckRowDeleted(rowid_t row_idx,
+                                 const fs::IOContext* io_context,
+                                 bool *deleted) const OVERRIDE;
 
   virtual uint64_t EstimateSize() const OVERRIDE;
 
@@ -209,7 +212,7 @@ class DeltaFileReader : public DeltaStore,
                   DeltaType delta_type);
 
   // Callback used in 'init_once_' to initialize this delta file.
-  Status InitOnce();
+  Status InitOnce(const fs::IOContext* io_context);
 
   Status ReadDeltaStats();
 

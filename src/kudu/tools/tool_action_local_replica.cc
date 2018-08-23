@@ -632,6 +632,7 @@ Status DumpRowSetInternal(const shared_ptr<RowSetMetadata>& rs_meta,
   RETURN_NOT_OK(DiskRowSet::Open(rs_meta,
                                  log_reg.get(),
                                  tablet::TabletMemTrackers(),
+                                 nullptr,
                                  &rs));
   vector<string> lines;
   RETURN_NOT_OK(rs->DebugDump(&lines));

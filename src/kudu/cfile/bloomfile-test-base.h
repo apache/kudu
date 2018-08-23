@@ -112,7 +112,7 @@ class BloomFileTestBase : public KuduTest {
 
         Slice s(reinterpret_cast<uint8_t *>(&key), sizeof(key));
         bool present;
-        CHECK_OK(bfr_->CheckKeyPresent(BloomKeyProbe(s), &present));
+        CHECK_OK(bfr_->CheckKeyPresent(BloomKeyProbe(s), nullptr, &present));
         if (present) count_present++;
       }
     }

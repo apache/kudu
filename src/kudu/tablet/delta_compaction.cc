@@ -56,6 +56,7 @@ namespace kudu {
 using fs::BlockCreationTransaction;
 using fs::BlockManager;
 using fs::CreateBlockOptions;
+using fs::IOContext;
 using fs::WritableBlock;
 using std::string;
 using std::unique_ptr;
@@ -109,10 +110,11 @@ string MajorDeltaCompaction::ColumnNamesToString() const {
   return result;
 }
 
-Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
+Status MajorDeltaCompaction::FlushRowSetAndDeltas(const IOContext* io_context) {
   CHECK_EQ(state_, kInitialized);
 
-  shared_ptr<ColumnwiseIterator> old_base_data_cwise(base_data_->NewIterator(&partial_schema_));
+  shared_ptr<ColumnwiseIterator> old_base_data_cwise(base_data_->NewIterator(&partial_schema_,
+                                                                             io_context));
   gscoped_ptr<RowwiseIterator> old_base_data_rwise(new MaterializingIterator(old_base_data_cwise));
 
   ScanSpec spec;
@@ -288,7 +290,7 @@ Status MajorDeltaCompaction::OpenUndoDeltaFileWriter() {
   return new_undo_delta_writer_->Start();
 }
 
-Status MajorDeltaCompaction::Compact() {
+Status MajorDeltaCompaction::Compact(const IOContext* io_context) {
   CHECK_EQ(state_, kInitialized);
 
   LOG(INFO) << "Starting major delta compaction for columns " << ColumnNamesToString();
@@ -300,7 +302,7 @@ Status MajorDeltaCompaction::Compact() {
 
   // We defer calling OpenRedoDeltaFileWriter() since we might not need to flush.
   RETURN_NOT_OK(OpenBaseDataWriter());
-  RETURN_NOT_OK(FlushRowSetAndDeltas());
+  RETURN_NOT_OK(FlushRowSetAndDeltas(io_context));
   LOG(INFO) << "Finished major delta compaction of columns " <<
       ColumnNamesToString();
   return Status::OK();
@@ -360,7 +362,8 @@ void MajorDeltaCompaction::CreateMetadataUpdate(
 // We're called under diskrowset's component_lock_ and delta_tracker's compact_flush_lock_
 // so both AtomicUpdateStores calls can be done separately and still be seen as one atomic
 // operation.
-Status MajorDeltaCompaction::UpdateDeltaTracker(DeltaTracker* tracker) {
+Status MajorDeltaCompaction::UpdateDeltaTracker(DeltaTracker* tracker,
+                                                const IOContext* io_context) {
   CHECK_EQ(state_, kFinished);
 
   // 1. Get all the necessary I/O out of the way. It's OK to fail here
@@ -376,14 +379,14 @@ Status MajorDeltaCompaction::UpdateDeltaTracker(DeltaTracker* tracker) {
     new_redo_blocks.push_back(new_redo_delta_block_);
   }
   SharedDeltaStoreVector new_redo_stores;
-  RETURN_NOT_OK(tracker->OpenDeltaReaders(new_redo_blocks, &new_redo_stores, REDO));
+  RETURN_NOT_OK(tracker->OpenDeltaReaders(new_redo_blocks, io_context, &new_redo_stores, REDO));
 
   // Create blocks for the new undo deltas.
   SharedDeltaStoreVector new_undo_stores;
   if (undo_delta_mutations_written_ > 0) {
     vector<BlockId> new_undo_blocks;
     new_undo_blocks.push_back(new_undo_delta_block_);
-    RETURN_NOT_OK(tracker->OpenDeltaReaders(new_undo_blocks, &new_undo_stores, UNDO));
+    RETURN_NOT_OK(tracker->OpenDeltaReaders(new_undo_blocks, io_context, &new_undo_stores, UNDO));
   }
 
   // 2. Only now that we cannot fail do we update the in-memory state.

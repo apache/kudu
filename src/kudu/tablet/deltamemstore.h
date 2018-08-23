@@ -57,6 +57,10 @@ namespace consensus {
 class OpId;
 }
 
+namespace fs {
+struct IOContext;
+}
+
 namespace tablet {
 
 class DeltaFileWriter;
@@ -78,7 +82,7 @@ class DeltaMemStore : public DeltaStore,
                        std::shared_ptr<MemTracker> parent_tracker,
                        std::shared_ptr<DeltaMemStore>* dms);
 
-  virtual Status Init() OVERRIDE;
+  virtual Status Init(const fs::IOContext* io_context) OVERRIDE;
 
   virtual bool Initted() OVERRIDE {
     return true;
@@ -122,7 +126,8 @@ class DeltaMemStore : public DeltaStore,
   virtual Status NewDeltaIterator(const RowIteratorOptions& opts,
                                   DeltaIterator** iterator) const OVERRIDE;
 
-  virtual Status CheckRowDeleted(rowid_t row_idx, bool *deleted) const OVERRIDE;
+  virtual Status CheckRowDeleted(rowid_t row_idx, const fs::IOContext* io_context,
+                                 bool* deleted) const OVERRIDE;
 
   virtual uint64_t EstimateSize() const OVERRIDE {
     return arena_->memory_footprint();

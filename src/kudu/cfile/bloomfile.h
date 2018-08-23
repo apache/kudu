@@ -35,6 +35,7 @@ namespace kudu {
 
 namespace fs {
 class BlockCreationTransaction;
+struct IOContext;
 class ReadableBlock;
 class WritableBlock;
 }
@@ -106,13 +107,14 @@ class BloomFileReader {
   // validating its contents.
   //
   // May be called multiple times; subsequent calls will no-op.
-  Status Init();
+  Status Init(const fs::IOContext* io_context);
 
   // Check if the given key may be present in the file.
   //
   // Sets *maybe_present to false if the key is definitely not
   // present, otherwise sets it to true to indicate maybe present.
-  Status CheckKeyPresent(const BloomKeyProbe &probe,
+  Status CheckKeyPresent(const BloomKeyProbe& probe,
+                         const fs::IOContext* io_context,
                          bool* maybe_present);
 
   // Can be called before Init().
@@ -135,7 +137,7 @@ class BloomFileReader {
                           Slice* bloom_data) const;
 
   // Callback used in 'init_once_' to initialize this bloom file.
-  Status InitOnce();
+  Status InitOnce(const fs::IOContext* io_context);
 
   // Returns the memory usage of this object including the object itself but
   // excluding the CFileReader, which is tracked independently.

@@ -21,6 +21,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -53,6 +54,10 @@ class CompressionCodec;
 class EncodedKey;
 class SelectionVector;
 class TypeInfo;
+
+namespace fs {
+struct IOContext;
+}  // namespace fs
 
 template <typename T> class ArrayView;
 
@@ -87,7 +92,7 @@ class CFileReader {
   // its contents.
   //
   // May be called multiple times; subsequent calls will no-op.
-  Status Init();
+  Status Init(const fs::IOContext* io_context);
 
   enum CacheControl {
     CACHE_BLOCK,
@@ -95,11 +100,14 @@ class CFileReader {
   };
 
   // Can be called before Init().
-  Status NewIterator(CFileIterator **iter, CacheControl cache_control);
-  Status NewIterator(gscoped_ptr<CFileIterator> *iter,
-                     CacheControl cache_control) {
-    CFileIterator *iter_ptr;
-    RETURN_NOT_OK(NewIterator(&iter_ptr, cache_control));
+  Status NewIterator(CFileIterator** iter,
+                     CacheControl cache_control,
+                     const fs::IOContext* io_context);
+  Status NewIterator(gscoped_ptr<CFileIterator>* iter,
+                     CacheControl cache_control,
+                     const fs::IOContext* io_context) {
+    CFileIterator* iter_ptr;
+    RETURN_NOT_OK(NewIterator(&iter_ptr, cache_control, io_context));
     (*iter).reset(iter_ptr);
     return Status::OK();
   }
@@ -191,7 +199,7 @@ class CFileReader {
               std::unique_ptr<fs::ReadableBlock> block);
 
   // Callback used in 'init_once_' to initialize this cfile.
-  Status InitOnce();
+  Status InitOnce(const fs::IOContext* io_context);
 
   Status ReadAndParseHeader();
   Status ReadAndParseFooter();
@@ -313,7 +321,8 @@ class DefaultColumnValueIterator : public ColumnIterator {
 class CFileIterator : public ColumnIterator {
  public:
   CFileIterator(CFileReader* reader,
-                CFileReader::CacheControl cache_control);
+                CFileReader::CacheControl cache_control,
+                const fs::IOContext* io_context);
   ~CFileIterator();
 
   // Seek to the first entry in the file. This works for both
@@ -497,6 +506,8 @@ class CFileIterator : public ColumnIterator {
   uint32_t last_prepare_count_;
 
   IteratorStats io_stats_;
+
+  const fs::IOContext* io_context_;
 
   // a temporary buffer for encoding
   faststring tmp_buf_;

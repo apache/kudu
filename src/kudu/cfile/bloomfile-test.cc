@@ -55,7 +55,7 @@ class BloomFileTest : public BloomFileTestBase {
       Slice s(reinterpret_cast<char *>(&i_byteswapped), sizeof(i));
 
       bool present = false;
-      ASSERT_OK_FAST(bfr_->CheckKeyPresent(BloomKeyProbe(s), &present));
+      ASSERT_OK_FAST(bfr_->CheckKeyPresent(BloomKeyProbe(s), nullptr, &present));
       ASSERT_TRUE(present);
     }
 
@@ -66,7 +66,7 @@ class BloomFileTest : public BloomFileTestBase {
       Slice s(reinterpret_cast<char *>(&key), sizeof(key));
 
       bool present = false;
-      ASSERT_OK_FAST(bfr_->CheckKeyPresent(BloomKeyProbe(s), &present));
+      ASSERT_OK_FAST(bfr_->CheckKeyPresent(BloomKeyProbe(s), nullptr, &present));
       if (present) {
         positive_count++;
       }
@@ -133,10 +133,10 @@ TEST_F(BloomFileTest, TestLazyInit) {
 
   // But initializing it should (only the first time), and the bloom's
   // memory usage should increase.
-  ASSERT_OK(reader->Init());
+  ASSERT_OK(reader->Init(nullptr));
   ASSERT_GT(bytes_read, 0);
   size_t bytes_read_after_init = bytes_read;
-  ASSERT_OK(reader->Init());
+  ASSERT_OK(reader->Init(nullptr));
   ASSERT_EQ(bytes_read_after_init, bytes_read);
   ASSERT_GT(tracker->consumption(), lazy_mem_usage);
 

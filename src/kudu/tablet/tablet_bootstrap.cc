@@ -53,6 +53,7 @@
 #include "kudu/fs/data_dirs.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/fs/io_context.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
@@ -115,6 +116,7 @@ using kudu::consensus::OperationType_Name;
 using kudu::consensus::RaftConfigPB;
 using kudu::consensus::ReplicateMsg;
 using kudu::consensus::WRITE_OP;
+using kudu::fs::IOContext;
 using kudu::log::Log;
 using kudu::log::LogAnchorRegistry;
 using kudu::log::LogEntryPB;
@@ -254,28 +256,29 @@ class TabletBootstrap {
   // Plays the log segments into the tablet being built.
   // The process of playing the segments generates a new log that can be continued
   // later on when then tablet is rebuilt and starts accepting writes from clients.
-  Status PlaySegments(ConsensusBootstrapInfo* results);
+  Status PlaySegments(const IOContext* io_context, ConsensusBootstrapInfo* consensus_info);
 
   // Append the given commit message to the log.
   // Does not support writing a TxResult.
   Status AppendCommitMsg(const CommitMsg& commit_msg);
 
-  Status PlayWriteRequest(ReplicateMsg* replicate_msg,
+  Status PlayWriteRequest(const IOContext* io_context, ReplicateMsg* replicate_msg,
                           const CommitMsg& commit_msg);
 
-  Status PlayAlterSchemaRequest(ReplicateMsg* replicate_msg,
+  Status PlayAlterSchemaRequest(const IOContext* io_context, ReplicateMsg* replicate_msg,
                                 const CommitMsg& commit_msg);
 
-  Status PlayChangeConfigRequest(ReplicateMsg* replicate_msg,
+  Status PlayChangeConfigRequest(const IOContext* io_context, ReplicateMsg* replicate_msg,
                                  const CommitMsg& commit_msg);
 
-  Status PlayNoOpRequest(ReplicateMsg* replicate_msg,
+  Status PlayNoOpRequest(const IOContext* io_context, ReplicateMsg* replicate_msg,
                          const CommitMsg& commit_msg);
 
   // Plays operations, skipping those that have already been flushed or have previously failed.
   // See ApplyRowOperations() for more details on how the decision of whether an operation
   // is applied or skipped is made.
-  Status PlayRowOperations(WriteTransactionState* tx_state,
+  Status PlayRowOperations(const IOContext* io_context,
+                           WriteTransactionState* tx_state,
                            const TxResultPB& orig_result,
                            TxResultPB* new_result);
 
@@ -294,7 +297,8 @@ class TabletBootstrap {
   // - if it was previously failed, mark as failed
   // - if it previously succeeded but was flushed, skip it.
   // - otherwise, re-apply to the tablet being bootstrapped.
-  Status ApplyOperations(WriteTransactionState* tx_state,
+  Status ApplyOperations(const IOContext* io_context,
+                         WriteTransactionState* tx_state,
                          const TxResultPB& orig_result,
                          TxResultPB* new_result);
 
@@ -336,7 +340,8 @@ class TabletBootstrap {
 
   void DumpReplayStateToLog(const ReplayState& state);
 
-  Status HandleEntry(ReplayState* state,
+  Status HandleEntry(const IOContext* io_context,
+                     ReplayState* state,
                      unique_ptr<LogEntryPB> entry,
                      string* entry_debug_info);
 
@@ -344,12 +349,13 @@ class TabletBootstrap {
   Status HandleReplicateMessage(ReplayState* state,
                                 unique_ptr<LogEntryPB> entry,
                                 string* entry_debug_info);
-  Status HandleCommitMessage(ReplayState* state,
+  Status HandleCommitMessage(const IOContext* io_context, ReplayState* state,
                              unique_ptr<LogEntryPB> entry,
                              string* entry_debug_info);
 
-  Status ApplyCommitMessage(ReplayState* state, LogEntryPB* entry);
-  Status HandleEntryPair(LogEntryPB* replicate_entry, LogEntryPB* commit_entry);
+  Status ApplyCommitMessage(const IOContext* io_context, ReplayState* state, LogEntryPB* entry);
+  Status HandleEntryPair(const IOContext* io_context, LogEntryPB* replicate_entry,
+                         LogEntryPB* commit_entry);
 
   // Checks that an orphaned commit message is actually irrelevant, i.e that none
   // of the data stores it refers to are live.
@@ -601,7 +607,8 @@ Status TabletBootstrap::RunBootstrap(shared_ptr<Tablet>* rebuilt_tablet,
                                            tablet_id));
   }
 
-  RETURN_NOT_OK_PREPEND(PlaySegments(consensus_info), "Failed log replay. Reason");
+  IOContext io_context({ tablet_meta_->table_id() });
+  RETURN_NOT_OK_PREPEND(PlaySegments(&io_context, consensus_info), "Failed log replay. Reason");
 
   RETURN_NOT_OK(Log::RemoveRecoveryDirIfExists(tablet_->metadata()->fs_manager(),
                                                tablet_->metadata()->tablet_id()))
@@ -823,7 +830,8 @@ struct ReplayState {
 };
 
 // Handle the given log entry.
-Status TabletBootstrap::HandleEntry(ReplayState* state,
+Status TabletBootstrap::HandleEntry(const IOContext* io_context,
+                                    ReplayState* state,
                                     unique_ptr<LogEntryPB> entry,
                                     string* entry_debug_info) {
   DCHECK(entry);
@@ -838,7 +846,8 @@ Status TabletBootstrap::HandleEntry(ReplayState* state,
       break;
     case log::COMMIT:
       // check the unpaired ops for the matching replicate msg, abort if not found
-      RETURN_NOT_OK(HandleCommitMessage(state, std::move(entry), entry_debug_info));
+      RETURN_NOT_OK(HandleCommitMessage(io_context, state,
+                                        std::move(entry), entry_debug_info));
       break;
     default:
       return Status::Corruption(Substitute("unexpected log entry type: $0", entry_type));
@@ -917,7 +926,7 @@ Status TabletBootstrap::HandleReplicateMessage(ReplayState* state,
 }
 
 // On returning OK, takes ownership of the pointer from the 'entry_ptr' wrapper.
-Status TabletBootstrap::HandleCommitMessage(ReplayState* state,
+Status TabletBootstrap::HandleCommitMessage(const IOContext* io_context, ReplayState* state,
                                             unique_ptr<LogEntryPB> entry,
                                             string* entry_debug_info) {
   auto info_collector = MakeScopedCleanup([&]() {
@@ -961,14 +970,14 @@ Status TabletBootstrap::HandleCommitMessage(ReplayState* state,
 
   // ... if it does, we apply it and all the commits that immediately follow in the sequence.
   OpId last_applied = committed_op_id;
-  RETURN_NOT_OK(ApplyCommitMessage(state, entry.get()));
+  RETURN_NOT_OK(ApplyCommitMessage(io_context, state, entry.get()));
 
   auto iter = state->pending_commits.begin();
   while (iter != state->pending_commits.end()) {
     if (iter->first == last_applied.index() + 1) {
       auto& buffered_commit_entry(iter->second);
       last_applied = buffered_commit_entry->commit().commited_op_id();
-      RETURN_NOT_OK(ApplyCommitMessage(state, buffered_commit_entry.get()));
+      RETURN_NOT_OK(ApplyCommitMessage(io_context, state, buffered_commit_entry.get()));
       iter = state->pending_commits.erase(iter);
       continue;
     }
@@ -1012,7 +1021,8 @@ Status TabletBootstrap::CheckOrphanedCommitDoesntNeedReplay(const CommitMsg& com
   return Status::OK();
 }
 
-Status TabletBootstrap::ApplyCommitMessage(ReplayState* state, LogEntryPB* entry) {
+Status TabletBootstrap::ApplyCommitMessage(const IOContext* io_context,
+                                           ReplayState* state, LogEntryPB* entry) {
   const OpId& committed_op_id = entry->commit().commited_op_id();
   VLOG_WITH_PREFIX(2) << "Applying commit for " << committed_op_id;
 
@@ -1034,7 +1044,7 @@ Status TabletBootstrap::ApplyCommitMessage(ReplayState* state, LogEntryPB* entry
       LOG_WITH_PREFIX(DFATAL) << error_msg;
       return Status::Corruption(error_msg);
     }
-    RETURN_NOT_OK(HandleEntryPair(pending_replicate_entry.get(), entry));
+    RETURN_NOT_OK(HandleEntryPair(io_context, pending_replicate_entry.get(), entry));
     stats_.ops_committed++;
   } else {
     stats_.orphaned_commits++;
@@ -1045,11 +1055,12 @@ Status TabletBootstrap::ApplyCommitMessage(ReplayState* state, LogEntryPB* entry
 }
 
 // Never deletes 'replicate_entry' or 'commit_entry'.
-Status TabletBootstrap::HandleEntryPair(LogEntryPB* replicate_entry, LogEntryPB* commit_entry) {
+Status TabletBootstrap::HandleEntryPair(const IOContext* io_context, LogEntryPB* replicate_entry,
+                                        LogEntryPB* commit_entry) {
   const char* error_fmt = "Failed to play $0 request. ReplicateMsg: { $1 }, CommitMsg: { $2 }";
 
-#define RETURN_NOT_OK_REPLAY(ReplayMethodName, replicate, commit)       \
-  RETURN_NOT_OK_PREPEND(ReplayMethodName(replicate, commit),            \
+#define RETURN_NOT_OK_REPLAY(ReplayMethodName, io_context, replicate, commit)       \
+  RETURN_NOT_OK_PREPEND(ReplayMethodName(io_context, replicate, commit),            \
                         Substitute(error_fmt, OperationType_Name(op_type), \
                                    SecureShortDebugString(*(replicate)), \
                                    SecureShortDebugString(commit)))
@@ -1060,19 +1071,19 @@ Status TabletBootstrap::HandleEntryPair(LogEntryPB* replicate_entry, LogEntryPB*
 
   switch (op_type) {
     case WRITE_OP:
-      RETURN_NOT_OK_REPLAY(PlayWriteRequest, replicate, commit);
+      RETURN_NOT_OK_REPLAY(PlayWriteRequest, io_context, replicate, commit);
       break;
 
     case ALTER_SCHEMA_OP:
-      RETURN_NOT_OK_REPLAY(PlayAlterSchemaRequest, replicate, commit);
+      RETURN_NOT_OK_REPLAY(PlayAlterSchemaRequest, io_context, replicate, commit);
       break;
 
     case CHANGE_CONFIG_OP:
-      RETURN_NOT_OK_REPLAY(PlayChangeConfigRequest, replicate, commit);
+      RETURN_NOT_OK_REPLAY(PlayChangeConfigRequest, io_context, replicate, commit);
       break;
 
     case NO_OP:
-      RETURN_NOT_OK_REPLAY(PlayNoOpRequest, replicate, commit);
+      RETURN_NOT_OK_REPLAY(PlayNoOpRequest, io_context, replicate, commit);
       break;
 
     default:
@@ -1124,7 +1135,8 @@ void TabletBootstrap::DumpReplayStateToLog(const ReplayState& state) {
   }
 }
 
-Status TabletBootstrap::PlaySegments(ConsensusBootstrapInfo* consensus_info) {
+Status TabletBootstrap::PlaySegments(const IOContext* io_context,
+                                     ConsensusBootstrapInfo* consensus_info) {
   ReplayState state;
   log::SegmentSequence segments;
   RETURN_NOT_OK(log_reader_->GetSegmentsSnapshot(&segments));
@@ -1176,7 +1188,7 @@ Status TabletBootstrap::PlaySegments(ConsensusBootstrapInfo* consensus_info) {
         entry_count++;
 
         string entry_debug_info;
-        s = HandleEntry(&state, std::move(entry), &entry_debug_info);
+        s = HandleEntry(io_context, &state, std::move(entry), &entry_debug_info);
         if (!s.ok()) {
           DumpReplayStateToLog(state);
           RETURN_NOT_OK_PREPEND(s, DebugInfo(tablet_->tablet_id(),
@@ -1324,7 +1336,8 @@ Status TabletBootstrap::DetermineSkippedOpsAndBuildResponse(const TxResultPB& or
   return Status::OK();
 }
 
-Status TabletBootstrap::PlayWriteRequest(ReplicateMsg* replicate_msg,
+Status TabletBootstrap::PlayWriteRequest(const IOContext* io_context,
+                                         ReplicateMsg* replicate_msg,
                                          const CommitMsg& commit_msg) {
   // Prepare the commit entry for the rewritten log.
   LogEntryPB commit_entry;
@@ -1394,7 +1407,7 @@ Status TabletBootstrap::PlayWriteRequest(ReplicateMsg* replicate_msg,
     // failure if we attempted to 'Abort()' after entering the applying stage. Allowing it to
     // Commit isn't problematic because we don't expose the results anyway, and the bad
     // Status returned below will cause us to fail the entire tablet bootstrap anyway.
-    play_status = PlayRowOperations(&tx_state, commit_msg.result(), new_result);
+    play_status = PlayRowOperations(io_context, &tx_state, commit_msg.result(), new_result);
 
     if (play_status.ok()) {
       // Replace the original commit message's result with the new one from the replayed operation.
@@ -1413,7 +1426,8 @@ Status TabletBootstrap::PlayWriteRequest(ReplicateMsg* replicate_msg,
   return Status::OK();
 }
 
-Status TabletBootstrap::PlayAlterSchemaRequest(ReplicateMsg* replicate_msg,
+Status TabletBootstrap::PlayAlterSchemaRequest(const IOContext* /*io_context*/,
+                                               ReplicateMsg* replicate_msg,
                                                const CommitMsg& commit_msg) {
   AlterSchemaRequestPB* alter_schema = replicate_msg->mutable_alter_schema_request();
 
@@ -1439,7 +1453,8 @@ Status TabletBootstrap::PlayAlterSchemaRequest(ReplicateMsg* replicate_msg,
   return AppendCommitMsg(commit_msg);
 }
 
-Status TabletBootstrap::PlayChangeConfigRequest(ReplicateMsg* replicate_msg,
+Status TabletBootstrap::PlayChangeConfigRequest(const IOContext* /*io_context*/,
+                                                ReplicateMsg* replicate_msg,
                                                 const CommitMsg& commit_msg) {
   // Invariant: The committed config change request is always locally persisted
   // in the consensus metadata before the commit message is written to the WAL.
@@ -1458,11 +1473,14 @@ Status TabletBootstrap::PlayChangeConfigRequest(ReplicateMsg* replicate_msg,
   return AppendCommitMsg(commit_msg);
 }
 
-Status TabletBootstrap::PlayNoOpRequest(ReplicateMsg* replicate_msg, const CommitMsg& commit_msg) {
+Status TabletBootstrap::PlayNoOpRequest(const IOContext* /*io_context*/,
+                                        ReplicateMsg* /*replicate_msg*/,
+                                        const CommitMsg& commit_msg) {
   return AppendCommitMsg(commit_msg);
 }
 
-Status TabletBootstrap::PlayRowOperations(WriteTransactionState* tx_state,
+Status TabletBootstrap::PlayRowOperations(const IOContext* io_context,
+                                          WriteTransactionState* tx_state,
                                           const TxResultPB& orig_result,
                                           TxResultPB* new_result) {
   Schema inserts_schema;
@@ -1477,17 +1495,19 @@ Status TabletBootstrap::PlayRowOperations(WriteTransactionState* tx_state,
   RETURN_NOT_OK_PREPEND(tablet_->AcquireRowLocks(tx_state),
                         "Failed to acquire row locks");
 
-  RETURN_NOT_OK(ApplyOperations(tx_state, orig_result, new_result));
+  RETURN_NOT_OK(ApplyOperations(io_context, tx_state, orig_result, new_result));
 
   return Status::OK();
 }
 
-Status TabletBootstrap::ApplyOperations(WriteTransactionState* tx_state,
+Status TabletBootstrap::ApplyOperations(const IOContext* io_context,
+                                        WriteTransactionState* tx_state,
                                         const TxResultPB& orig_result,
                                         TxResultPB* new_result) {
   DCHECK_EQ(tx_state->row_ops().size(), orig_result.ops_size());
   DCHECK_EQ(tx_state->row_ops().size(), new_result->ops_size());
   int32_t op_idx = 0;
+
   for (RowOp* op : tx_state->row_ops()) {
     int32_t curr_op_idx = op_idx++;
     // Increment the seen/ignored stats.
@@ -1530,7 +1550,7 @@ Status TabletBootstrap::ApplyOperations(WriteTransactionState* tx_state,
 
     // Actually apply it.
     ProbeStats stats; // we don't use this, but tablet internals require non-NULL.
-    RETURN_NOT_OK(tablet_->ApplyRowOperation(tx_state, op, &stats));
+    RETURN_NOT_OK(tablet_->ApplyRowOperation(io_context, tx_state, op, &stats));
     DCHECK(op->result != nullptr);
 
     // We expect that the above Apply() will always succeed, because we're

@@ -43,7 +43,7 @@
 namespace boost {
 template <class T>
 class optional;
-}
+}  // namespace boost
 
 namespace kudu {
 
@@ -55,7 +55,11 @@ struct IteratorStats;
 
 namespace cfile {
 class BloomFileReader;
-}
+}  // namespace cfile
+
+namespace fs {
+struct IOContext;
+}  // namespace fs
 
 namespace tablet {
 
@@ -72,13 +76,15 @@ class CFileSet : public std::enable_shared_from_this<CFileSet> {
 
   static Status Open(std::shared_ptr<RowSetMetadata> rowset_metadata,
                      std::shared_ptr<MemTracker> parent_mem_tracker,
+                     const fs::IOContext* io_context,
                      std::shared_ptr<CFileSet>* cfile_set);
 
   // Create an iterator with the given projection. 'projection' must remain valid
   // for the lifetime of the returned iterator.
-  virtual Iterator *NewIterator(const Schema *projection) const;
+  virtual Iterator* NewIterator(const Schema* projection,
+                                const fs::IOContext* io_context) const;
 
-  Status CountRows(rowid_t *count) const;
+  Status CountRows(const fs::IOContext* io_context, rowid_t *count) const;
 
   // See RowSet::GetBounds
   virtual Status GetBounds(std::string* min_encoded_key,
@@ -99,6 +105,7 @@ class CFileSet : public std::enable_shared_from_this<CFileSet> {
   // Determine the index of the given row key.
   // Sets *idx to boost::none if the row is not found.
   Status FindRow(const RowSetKeyProbe& probe,
+                 const fs::IOContext* io_context,
                  boost::optional<rowid_t>* idx,
                  ProbeStats* stats) const;
 
@@ -108,8 +115,8 @@ class CFileSet : public std::enable_shared_from_this<CFileSet> {
 
   // Check if the given row is present. If it is, sets *rowid to the
   // row's index.
-  Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
-                         rowid_t *rowid, ProbeStats* stats) const;
+  Status CheckRowPresent(const RowSetKeyProbe& probe, const fs::IOContext* io_context,
+                         bool* present, rowid_t* rowid, ProbeStats* stats) const;
 
   // Return true if there exists a CFile for the given column ID.
   bool has_data_for_column_id(ColumnId col_id) const {
@@ -126,15 +133,15 @@ class CFileSet : public std::enable_shared_from_this<CFileSet> {
   CFileSet(std::shared_ptr<RowSetMetadata> rowset_metadata,
            std::shared_ptr<MemTracker> parent_mem_tracker);
 
-  Status DoOpen();
-  Status OpenBloomReader();
-  Status OpenAdHocIndexReader();
-  Status LoadMinMaxKeys();
+  Status DoOpen(const fs::IOContext* io_context);
+  Status OpenBloomReader(const fs::IOContext* io_context);
+  Status LoadMinMaxKeys(const fs::IOContext* io_context);
 
   Status NewColumnIterator(ColumnId col_id,
                            cfile::CFileReader::CacheControl cache_blocks,
+                           const fs::IOContext* io_context,
                            cfile::CFileIterator **iter) const;
-  Status NewKeyIterator(cfile::CFileIterator** key_iter) const;
+  Status NewKeyIterator(const fs::IOContext* io_context, cfile::CFileIterator** key_iter) const;
 
   // Return the CFileReader responsible for reading the key index.
   // (the ad-hoc reader for composite keys, otherwise the key column reader)
@@ -210,12 +217,14 @@ class CFileSet::Iterator : public ColumnwiseIterator {
   friend class CFileSet;
 
   // 'projection' must remain valid for the lifetime of this object.
-  Iterator(std::shared_ptr<CFileSet const> base_data, const Schema *projection)
+  Iterator(std::shared_ptr<CFileSet const> base_data, const Schema* projection,
+           const fs::IOContext* io_context)
       : base_data_(std::move(base_data)),
         projection_(projection),
         initted_(false),
         cur_idx_(0),
-        prepared_count_(0) {}
+        prepared_count_(0),
+        io_context_(io_context) {}
 
   // Fill in col_iters_ for each of the requested columns.
   Status CreateColumnIterators(const ScanSpec* spec);
@@ -252,6 +261,7 @@ class CFileSet::Iterator : public ColumnwiseIterator {
   rowid_t lower_bound_idx_;
   rowid_t upper_bound_idx_;
 
+  const fs::IOContext* io_context_;
 
   // The underlying columns are prepared lazily, so that if a column is never
   // materialized, it doesn't need to be read off disk.

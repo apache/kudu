@@ -186,7 +186,7 @@ class TestRowSet : public KuduRowSetTest {
     ProbeStats stats;
     ScopedTransaction tx(&mvcc_, clock_->Now());
     tx.StartApplying();
-    Status s = rs->MutateRow(tx.timestamp(), probe, mutation, op_id_, &stats, result);
+    Status s = rs->MutateRow(tx.timestamp(), probe, mutation, op_id_, nullptr, &stats, result);
     tx.Commit();
     return s;
   }
@@ -196,7 +196,7 @@ class TestRowSet : public KuduRowSetTest {
     BuildRowKey(&rb, row_idx);
     RowSetKeyProbe probe(rb.row());
     ProbeStats stats;
-    return rs.CheckRowPresent(probe, present, &stats);
+    return rs.CheckRowPresent(probe, nullptr, present, &stats);
   }
 
   // Verify the contents of the given rowset.
@@ -327,6 +327,7 @@ class TestRowSet : public KuduRowSetTest {
     return DiskRowSet::Open(rowset_meta_,
                             new log::LogAnchorRegistry(),
                             TabletMemTrackers(),
+                            nullptr,
                             rowset);
   }
 

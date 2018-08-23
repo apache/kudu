@@ -121,7 +121,7 @@ TEST_F(TestRowSet, TestRowSetRoundTrip) {
     rb.AddString(Slice("h"));
     RowSetKeyProbe probe(rb.row());
     bool present;
-    ASSERT_OK(rs->CheckRowPresent(probe, &present, &stats));
+    ASSERT_OK(rs->CheckRowPresent(probe, nullptr, &present, &stats));
     ASSERT_FALSE(present);
   }
 
@@ -131,7 +131,7 @@ TEST_F(TestRowSet, TestRowSetRoundTrip) {
     rb.AddString(Slice("z"));
     RowSetKeyProbe probe(rb.row());
     bool present;
-    ASSERT_OK(rs->CheckRowPresent(probe, &present, &stats));
+    ASSERT_OK(rs->CheckRowPresent(probe, nullptr, &present, &stats));
     ASSERT_FALSE(present);
   }
 
@@ -142,7 +142,7 @@ TEST_F(TestRowSet, TestRowSetRoundTrip) {
     rb.AddString(Slice("hello 00000000000049x"));
     RowSetKeyProbe probe(rb.row());
     bool present;
-    ASSERT_OK(rs->CheckRowPresent(probe, &present, &stats));
+    ASSERT_OK(rs->CheckRowPresent(probe, nullptr, &present, &stats));
     ASSERT_FALSE(present);
   }
 
@@ -154,7 +154,7 @@ TEST_F(TestRowSet, TestRowSetRoundTrip) {
     rb.AddString(Slice(buf));
     RowSetKeyProbe probe(rb.row());
     bool present;
-    ASSERT_OK(rs->CheckRowPresent(probe, &present, &stats));
+    ASSERT_OK(rs->CheckRowPresent(probe, nullptr, &present, &stats));
     ASSERT_TRUE(present);
   }
 }
@@ -188,7 +188,7 @@ TEST_F(TestRowSet, TestRowSetUpdate) {
 
   OperationResultPB result;
   ProbeStats stats;
-  Status s = rs->MutateRow(timestamp, probe, enc.as_changelist(), op_id_, &stats, &result);
+  Status s = rs->MutateRow(timestamp, probe, enc.as_changelist(), op_id_, nullptr, &stats, &result);
   ASSERT_TRUE(s.IsNotFound());
   ASSERT_EQ(0, result.mutated_stores_size());
 
@@ -219,7 +219,7 @@ TEST_F(TestRowSet, TestErrorDuringUpdate) {
   // The mutation should result in an IOError.
   OperationResultPB result;
   ProbeStats stats;
-  Status s = rs->MutateRow(timestamp, probe, enc.as_changelist(), op_id_, &stats, &result);
+  Status s = rs->MutateRow(timestamp, probe, enc.as_changelist(), op_id_, nullptr, &stats, &result);
   LOG(INFO) << s.ToString();
   ASSERT_TRUE(s.IsIOError());
 }
@@ -307,7 +307,7 @@ TEST_F(TestRowSet, TestDelete) {
       // Flush DMS. The second pass through the loop will re-verify that the
       // externally visible state of the layer has not changed.
       // deletions now in a DeltaFile.
-      ASSERT_OK(rs->FlushDeltas());
+      ASSERT_OK(rs->FlushDeltas(nullptr));
     }
   }
 }
@@ -330,7 +330,7 @@ TEST_F(TestRowSet, TestDMSFlush) {
     ASSERT_EQ(static_cast<int>(n_rows_ * FLAGS_update_fraction),
               rs->delta_tracker_->dms_->Count());
 
-    ASSERT_OK(rs->FlushDeltas());
+    ASSERT_OK(rs->FlushDeltas(nullptr));
 
     // Check that the DiskRowSet's DMS has now been emptied.
     ASSERT_EQ(0, rs->delta_tracker_->dms_->Count());
@@ -403,6 +403,7 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
                                           probe,
                                           RowChangeList(update_buf),
                                           op_id_,
+                                          nullptr,
                                           &stats,
                                           &result));
       ASSERT_EQ(1, result.mutated_stores_size());
@@ -429,7 +430,7 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
 
   // Flush deltas to disk and ensure that the historical versions are still
   // accessible.
-  ASSERT_OK(rs->FlushDeltas());
+  ASSERT_OK(rs->FlushDeltas(nullptr));
 
   for (int i = 0; i < 5; i++) {
     SCOPED_TRACE(i);
@@ -469,7 +470,7 @@ TEST_F(TestRowSet, TestDeltaApplicationPerformance) {
       StringPrintf("Reading %zd rows with %.2f%% updates %d times (updates in DMS)",
                    n_rows_, FLAGS_update_fraction * 100.0f,
                    FLAGS_n_read_passes));
-    ASSERT_OK(rs->FlushDeltas());
+    ASSERT_OK(rs->FlushDeltas(nullptr));
 
     BenchmarkIterationPerformance(*rs.get(),
       StringPrintf("Reading %zd rows with %.2f%% updates %d times (updates on disk)",
@@ -505,15 +506,15 @@ TEST_F(TestRowSet, TestMakeDeltaIteratorMergerUnlocked) {
   shared_ptr<DiskRowSet> rs;
   ASSERT_OK(OpenTestRowSet(&rs));
   UpdateExistingRows(rs.get(), FLAGS_update_fraction, nullptr);
-  ASSERT_OK(rs->FlushDeltas());
+  ASSERT_OK(rs->FlushDeltas(nullptr));
   DeltaTracker *dt = rs->delta_tracker();
   int num_stores = dt->redo_delta_stores_.size();
   vector<shared_ptr<DeltaStore> > compacted_stores;
   vector<BlockId> compacted_blocks;
   unique_ptr<DeltaIterator> merge_iter;
-  ASSERT_OK(dt->MakeDeltaIteratorMergerUnlocked(0, num_stores - 1, &schema_,
-                                                       &compacted_stores,
-                                                       &compacted_blocks, &merge_iter));
+  ASSERT_OK(dt->MakeDeltaIteratorMergerUnlocked(nullptr, 0, num_stores - 1, &schema_,
+                                                &compacted_stores,
+                                                &compacted_blocks, &merge_iter));
   vector<string> results;
   ASSERT_OK(DebugDumpDeltaIterator(REDO, merge_iter.get(), schema_,
                                           ITERATE_OVER_ALL_ROWS,
@@ -550,7 +551,7 @@ TEST_F(TestRowSet, TestCompactStores) {
 
   // Write a first delta file.
   UpdateExistingRows(rs.get(), FLAGS_update_fraction, nullptr);
-  ASSERT_OK(rs->FlushDeltas());
+  ASSERT_OK(rs->FlushDeltas(nullptr));
   // One file isn't enough for minor compactions, but a major compaction can run.
   ASSERT_EQ(0, rs->DeltaStoresCompactionPerfImprovementScore(RowSet::MINOR_DELTA_COMPACTION));
   NO_FATALS(BetweenZeroAndOne(rs->DeltaStoresCompactionPerfImprovementScore(
@@ -558,7 +559,7 @@ TEST_F(TestRowSet, TestCompactStores) {
 
   // Write a second delta file.
   UpdateExistingRows(rs.get(), FLAGS_update_fraction, nullptr);
-  ASSERT_OK(rs->FlushDeltas());
+  ASSERT_OK(rs->FlushDeltas(nullptr));
   // Two files is enough for all delta compactions.
   NO_FATALS(BetweenZeroAndOne(rs->DeltaStoresCompactionPerfImprovementScore(
       RowSet::MINOR_DELTA_COMPACTION)));
@@ -567,7 +568,7 @@ TEST_F(TestRowSet, TestCompactStores) {
 
   // Write a third delta file.
   UpdateExistingRows(rs.get(), FLAGS_update_fraction, nullptr);
-  ASSERT_OK(rs->FlushDeltas());
+  ASSERT_OK(rs->FlushDeltas(nullptr));
   // We're hitting the max for minor compactions but not for major compactions.
   ASSERT_EQ(1, rs->DeltaStoresCompactionPerfImprovementScore(RowSet::MINOR_DELTA_COMPACTION));
   NO_FATALS(BetweenZeroAndOne(rs->DeltaStoresCompactionPerfImprovementScore(
@@ -578,7 +579,7 @@ TEST_F(TestRowSet, TestCompactStores) {
   int num_stores = dt->redo_delta_stores_.size();
   VLOG(1) << "Number of stores before compaction: " << num_stores;
   ASSERT_EQ(num_stores, 3);
-  ASSERT_OK(dt->CompactStores(0, num_stores - 1));
+  ASSERT_OK(dt->CompactStores(nullptr, 0, num_stores - 1));
   num_stores = dt->redo_delta_stores_.size();
   VLOG(1) << "Number of stores after compaction: " << num_stores;
   ASSERT_EQ(1,  num_stores);
@@ -591,7 +592,7 @@ TEST_F(TestRowSet, TestCompactStores) {
   vector<shared_ptr<DeltaStore> > compacted_stores;
   vector<BlockId> compacted_blocks;
   unique_ptr<DeltaIterator> merge_iter;
-  ASSERT_OK(dt->MakeDeltaIteratorMergerUnlocked(0, num_stores - 1, &schema_,
+  ASSERT_OK(dt->MakeDeltaIteratorMergerUnlocked(nullptr, 0, num_stores - 1, &schema_,
                                                 &compacted_stores,
                                                 &compacted_blocks, &merge_iter));
   vector<string> results;
@@ -619,19 +620,19 @@ TEST_F(TestRowSet, TestGCAncientStores) {
 
   // Write and flush a new REDO delta file.
   UpdateExistingRows(rs.get(), FLAGS_update_fraction, nullptr);
-  ASSERT_OK(rs->FlushDeltas());
+  ASSERT_OK(rs->FlushDeltas(nullptr));
   ASSERT_EQ(0, dt->CountUndoDeltaStores());
   ASSERT_EQ(1, dt->CountRedoDeltaStores());
 
   // Convert the REDO delta to an UNDO delta.
-  ASSERT_OK(rs->MajorCompactDeltaStores(HistoryGcOpts::Disabled()));
+  ASSERT_OK(rs->MajorCompactDeltaStores(nullptr, HistoryGcOpts::Disabled()));
   ASSERT_EQ(1, dt->CountUndoDeltaStores()); // From doing the major delta compaction.
   ASSERT_EQ(0, dt->CountRedoDeltaStores());
 
   // Delete all the UNDO deltas. There shouldn't be any delta stores left.
   int64_t blocks_deleted;
   int64_t bytes_deleted;
-  ASSERT_OK(dt->DeleteAncientUndoDeltas(clock_->Now(), &blocks_deleted, &bytes_deleted));
+  ASSERT_OK(dt->DeleteAncientUndoDeltas(clock_->Now(), nullptr, &blocks_deleted, &bytes_deleted));
   ASSERT_GT(blocks_deleted, 0);
   ASSERT_GT(bytes_deleted, 0);
   ASSERT_EQ(0, dt->CountUndoDeltaStores());
@@ -649,7 +650,7 @@ TEST_F(TestRowSet, TestDiskSizeEstimation) {
 
   // Write a first delta file.
   UpdateExistingRows(rs.get(), FLAGS_update_fraction, nullptr);
-  ASSERT_OK(rs->FlushDeltas());
+  ASSERT_OK(rs->FlushDeltas(nullptr));
 
   // The rowset consists of the cfile set and REDO deltas, so the rowset's
   // on-disk size and the sum of the cfile set and REDO sizes should equal.
@@ -659,7 +660,7 @@ TEST_F(TestRowSet, TestDiskSizeEstimation) {
   ASSERT_EQ(rs->OnDiskSize(), drss.CFileSetOnDiskSize() + drss.redo_deltas_size);
 
   // Convert the REDO delta to an UNDO delta.
-  ASSERT_OK(rs->MajorCompactDeltaStores(HistoryGcOpts::Disabled()));
+  ASSERT_OK(rs->MajorCompactDeltaStores(nullptr, HistoryGcOpts::Disabled()));
 
   // REDO size should be zero, but there should be UNDOs, so the on-disk size
   // of the rowset should be the sum of the cfile set and UNDO sizes.
@@ -669,7 +670,7 @@ TEST_F(TestRowSet, TestDiskSizeEstimation) {
 
   // Write a second delta file.
   UpdateExistingRows(rs.get(), FLAGS_update_fraction, nullptr);
-  ASSERT_OK(rs->FlushDeltas());
+  ASSERT_OK(rs->FlushDeltas(nullptr));
 
   // Now there's base data, REDOs, and UNDOs.
   rs->GetDiskRowSetSpaceUsage(&drss);

@@ -486,7 +486,7 @@ void TimeReadFile(FsManager* fs_manager, const BlockId& block_id, size_t *count_
   ASSERT_OK(CFileReader::Open(std::move(source), ReaderOptions(), &reader));
 
   gscoped_ptr<CFileIterator> iter;
-  ASSERT_OK(reader->NewIterator(&iter, CFileReader::CACHE_BLOCK));
+  ASSERT_OK(reader->NewIterator(&iter, CFileReader::CACHE_BLOCK, nullptr));
   ASSERT_OK(iter->SeekToOrdinal(0));
 
   Arena arena(8192);

@@ -33,6 +33,10 @@ namespace kudu {
 
 class FsManager;
 
+namespace fs {
+struct IOContext;
+}  // namespace fs
+
 namespace tablet {
 
 class CFileSet;
@@ -65,7 +69,7 @@ class MajorDeltaCompaction {
 
   // Executes the compaction.
   // This has no effect on the metadata of the tablet, etc.
-  Status Compact();
+  Status Compact(const fs::IOContext* io_context);
 
   // After a compaction is successful, prepares a metadata update which:
   // 1) swaps out the old columns for the new ones
@@ -74,7 +78,7 @@ class MajorDeltaCompaction {
   void CreateMetadataUpdate(RowSetMetadataUpdate* update);
 
   // Apply the changes to the given delta tracker.
-  Status UpdateDeltaTracker(DeltaTracker* tracker);
+  Status UpdateDeltaTracker(DeltaTracker* tracker, const fs::IOContext* io_context);
 
  private:
   std::string ColumnNamesToString() const;
@@ -93,7 +97,7 @@ class MajorDeltaCompaction {
   // Reads the current base data, applies the deltas, and then writes the new base data.
   // A new delta file is written if not all columns were selected for compaction and some
   // deltas need to be written back into a delta file.
-  Status FlushRowSetAndDeltas();
+  Status FlushRowSetAndDeltas(const fs::IOContext* io_context);
 
   FsManager* const fs_manager_;
 

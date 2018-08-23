@@ -60,6 +60,7 @@ using std::vector;
 namespace kudu { namespace tablet {
 
 using consensus::OpId;
+using fs::IOContext;
 using log::LogAnchorRegistry;
 using strings::Substitute;
 
@@ -221,6 +222,7 @@ Status MemRowSet::MutateRow(Timestamp timestamp,
                             const RowSetKeyProbe &probe,
                             const RowChangeList &delta,
                             const consensus::OpId& op_id,
+                            const IOContext* /*io_context*/,
                             ProbeStats* stats,
                             OperationResultPB *result) {
   {
@@ -259,8 +261,8 @@ Status MemRowSet::MutateRow(Timestamp timestamp,
   return Status::OK();
 }
 
-Status MemRowSet::CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
-                                  ProbeStats* stats) const {
+Status MemRowSet::CheckRowPresent(const RowSetKeyProbe &probe, const IOContext* /*io_context*/,
+                                  bool* present, ProbeStats* stats) const {
   // Use a PreparedMutation here even though we don't plan to mutate. Even though
   // this takes a lock rather than an optimistic copy, it should be a very short
   // critical section, and this call is only made on updates, which are rare.
@@ -307,6 +309,7 @@ Status MemRowSet::NewRowIterator(const RowIteratorOptions& opts,
 
 Status MemRowSet::NewCompactionInput(const Schema* projection,
                                      const MvccSnapshot& snap,
+                                     const IOContext* /*io_context*/,
                                      gscoped_ptr<CompactionInput>* out) const  {
   out->reset(CompactionInput::Create(*this, projection, snap));
   return Status::OK();

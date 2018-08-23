@@ -34,6 +34,7 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/iterator.h"
 #include "kudu/common/schema.h"
+#include "kudu/fs/io_context.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
@@ -181,7 +182,8 @@ class Tablet {
 
   // Apply a single row operation, which must already be prepared.
   // The result is set back into row_op->result.
-  Status ApplyRowOperation(WriteTransactionState* tx_state,
+  Status ApplyRowOperation(const fs::IOContext* io_context,
+                           WriteTransactionState* tx_state,
                            RowOp* row_op,
                            ProbeStats* stats) WARN_UNUSED_RESULT;
 
@@ -370,6 +372,8 @@ class Tablet {
   // Runs a major delta major compaction on columns with specified IDs.
   // NOTE: RowSet must presently be a DiskRowSet. (Perhaps the API should be
   // a shared_ptr API for now?)
+  //
+  // Only used in tests.
   Status DoMajorDeltaCompaction(const std::vector<ColumnId>& col_ids,
                                 const std::shared_ptr<RowSet>& input_rs);
 
@@ -511,18 +515,21 @@ class Tablet {
   // - the row lock is acquired
   // - the tablet components have been acquired
   // - the operation has been decoded
-  Status InsertOrUpsertUnlocked(WriteTransactionState *tx_state,
+  Status InsertOrUpsertUnlocked(const fs::IOContext* io_context,
+                                WriteTransactionState *tx_state,
                                 RowOp* op,
                                 ProbeStats* stats);
 
   // Same as above, but for UPDATE.
-  Status MutateRowUnlocked(WriteTransactionState *tx_state,
+  Status MutateRowUnlocked(const fs::IOContext* io_context,
+                           WriteTransactionState *tx_state,
                            RowOp* mutate,
                            ProbeStats* stats);
 
   // In the case of an UPSERT against a duplicate row, converts the UPSERT
   // into an internal UPDATE operation and performs it.
-  Status ApplyUpsertAsUpdate(WriteTransactionState *tx_state,
+  Status ApplyUpsertAsUpdate(const fs::IOContext* io_context,
+                             WriteTransactionState *tx_state,
                              RowOp* upsert,
                              RowSet* rowset,
                              ProbeStats* stats);
@@ -535,7 +542,8 @@ class Tablet {
   // For each of the operations in 'tx_state', check for the presence of their
   // row keys in the RowSets in the current RowSetTree (as determined by the transaction's
   // captured TabletComponents).
-  Status BulkCheckPresence(WriteTransactionState* tx_state) WARN_UNUSED_RESULT;
+  Status BulkCheckPresence(const fs::IOContext* io_context,
+                           WriteTransactionState* tx_state) WARN_UNUSED_RESULT;
 
   // Capture a set of iterators which, together, reflect all of the data in the tablet.
   //
@@ -545,11 +553,12 @@ class Tablet {
   //
   // The returned iterators are not Init()ed.
   // 'projection' must remain valid and unchanged for the lifetime of the returned iterators.
-  Status CaptureConsistentIterators(const Schema *projection,
-                                    const MvccSnapshot &snap,
-                                    const ScanSpec *spec,
+  Status CaptureConsistentIterators(const Schema* projection,
+                                    const MvccSnapshot& snap,
+                                    const ScanSpec* spec,
                                     OrderMode order,
-                                    std::vector<std::shared_ptr<RowwiseIterator> > *iters) const;
+                                    const fs::IOContext* io_context,
+                                    std::vector<std::shared_ptr<RowwiseIterator> >* iters) const;
 
   Status PickRowSetsToCompact(RowSetsInCompaction *picked,
                               CompactFlags flags) const;
@@ -762,12 +771,13 @@ class Tablet::Iterator : public RowwiseIterator {
   DISALLOW_COPY_AND_ASSIGN(Iterator);
 
   Iterator(const Tablet* tablet, const Schema& projection, MvccSnapshot snap,
-           const OrderMode order);
+           OrderMode order, fs::IOContext io_context);
 
   const Tablet *tablet_;
   Schema projection_;
   const MvccSnapshot snap_;
   const OrderMode order_;
+  const fs::IOContext io_context_;
   gscoped_ptr<RowwiseIterator> iter_;
 };
 

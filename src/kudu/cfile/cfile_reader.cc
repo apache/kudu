@@ -75,6 +75,7 @@ DEFINE_bool(cfile_verify_checksums, true,
             "Verify the checksum for each block on read if one exists");
 TAG_FLAG(cfile_verify_checksums, evolving);
 
+using kudu::fs::IOContext;
 using kudu::fs::ReadableBlock;
 using kudu::pb_util::SecureDebugString;
 using std::string;
@@ -134,10 +135,11 @@ Status CFileReader::Open(unique_ptr<ReadableBlock> block,
                          ReaderOptions options,
                          unique_ptr<CFileReader>* reader) {
   unique_ptr<CFileReader> reader_local;
+  const IOContext* io_context = options.io_context;
   RETURN_NOT_OK(OpenNoInit(std::move(block),
                            std::move(options),
                            &reader_local));
-  RETURN_NOT_OK(reader_local->Init());
+  RETURN_NOT_OK(reader_local->Init(io_context));
 
   *reader = std::move(reader_local);
   return Status::OK();
@@ -148,17 +150,18 @@ Status CFileReader::OpenNoInit(unique_ptr<ReadableBlock> block,
                                unique_ptr<CFileReader>* reader) {
   uint64_t block_size;
   RETURN_NOT_OK(block->Size(&block_size));
+  const IOContext* io_context = options.io_context;
   unique_ptr<CFileReader> reader_local(
       new CFileReader(std::move(options), block_size, std::move(block)));
   if (!FLAGS_cfile_lazy_open) {
-    RETURN_NOT_OK(reader_local->Init());
+    RETURN_NOT_OK(reader_local->Init(io_context));
   }
 
   *reader = std::move(reader_local);
   return Status::OK();
 }
 
-Status CFileReader::InitOnce() {
+Status CFileReader::InitOnce(const IOContext* io_context) {
   VLOG(1) << "Initializing CFile with ID " << block_->id().ToString();
   TRACE_COUNTER_INCREMENT("cfile_init", 1);
 
@@ -191,8 +194,8 @@ Status CFileReader::InitOnce() {
   return Status::OK();
 }
 
-Status CFileReader::Init() {
-  RETURN_NOT_OK_PREPEND(init_once_.Init([this] { return InitOnce(); }),
+Status CFileReader::Init(const IOContext* io_context) {
+  RETURN_NOT_OK_PREPEND(init_once_.Init([this, io_context] { return InitOnce(io_context); }),
                         Substitute("failed to init CFileReader for block $0",
                                    block_id().ToString()));
   return Status::OK();
@@ -571,8 +574,9 @@ bool CFileReader::GetMetadataEntry(const string &key, string *val) const {
   return false;
 }
 
-Status CFileReader::NewIterator(CFileIterator **iter, CacheControl cache_control) {
-  *iter = new CFileIterator(this, cache_control);
+Status CFileReader::NewIterator(CFileIterator** iter, CacheControl cache_control,
+                                const IOContext* io_context) {
+  *iter = new CFileIterator(this, cache_control, io_context);
   return Status::OK();
 }
 
@@ -655,13 +659,15 @@ Status DefaultColumnValueIterator::FinishBatch() {
 // Iterator
 ////////////////////////////////////////////////////////////
 CFileIterator::CFileIterator(CFileReader* reader,
-                             CFileReader::CacheControl cache_control)
+                             CFileReader::CacheControl cache_control,
+                             const IOContext* io_context)
   : reader_(reader),
     seeked_(nullptr),
     prepared_(false),
     cache_control_(cache_control),
     last_prepare_idx_(-1),
-    last_prepare_count_(-1) {
+    last_prepare_count_(-1),
+    io_context_(io_context) {
 }
 
 CFileIterator::~CFileIterator() {
@@ -846,7 +852,7 @@ Status CFileIterator::PrepareForNewSeek() {
   // Fully open the CFileReader if it was lazily opened earlier.
   //
   // If it's already initialized, this is a no-op.
-  RETURN_NOT_OK(reader_->Init());
+  RETURN_NOT_OK(reader_->Init(io_context_));
 
   // Create the index tree iterators if we haven't already done so.
   if (!posidx_iter_ && reader_->footer().has_posidx_info()) {

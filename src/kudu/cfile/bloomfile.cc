@@ -57,6 +57,7 @@ namespace cfile {
 
 using fs::BlockCreationTransaction;
 using fs::BlockManager;
+using fs::IOContext;
 using fs::ReadableBlock;
 using fs::WritableBlock;
 
@@ -199,9 +200,10 @@ Status BloomFileReader::Open(unique_ptr<ReadableBlock> block,
                              ReaderOptions options,
                              unique_ptr<BloomFileReader> *reader) {
   unique_ptr<BloomFileReader> bf_reader;
+  const IOContext* io_context = options.io_context;
   RETURN_NOT_OK(OpenNoInit(std::move(block),
                            std::move(options), &bf_reader));
-  RETURN_NOT_OK(bf_reader->Init());
+  RETURN_NOT_OK(bf_reader->Init(io_context));
 
   *reader = std::move(bf_reader);
   return Status::OK();
@@ -213,10 +215,11 @@ Status BloomFileReader::OpenNoInit(unique_ptr<ReadableBlock> block,
   unique_ptr<CFileReader> cf_reader;
   RETURN_NOT_OK(CFileReader::OpenNoInit(std::move(block),
                                         options, &cf_reader));
+  const IOContext* io_context = options.io_context;
   unique_ptr<BloomFileReader> bf_reader(new BloomFileReader(
       std::move(cf_reader), std::move(options)));
   if (!FLAGS_cfile_lazy_open) {
-    RETURN_NOT_OK(bf_reader->Init());
+    RETURN_NOT_OK(bf_reader->Init(io_context));
   }
 
   *reader = std::move(bf_reader);
@@ -232,15 +235,15 @@ BloomFileReader::BloomFileReader(unique_ptr<CFileReader> reader,
                        memory_footprint_excluding_reader()) {
 }
 
-Status BloomFileReader::Init() {
-  return init_once_.Init([this] { return InitOnce(); });
+Status BloomFileReader::Init(const IOContext* io_context) {
+  return init_once_.Init([this, io_context] { return InitOnce(io_context); });
 }
 
-Status BloomFileReader::InitOnce() {
+Status BloomFileReader::InitOnce(const IOContext* io_context) {
   // Fully open the CFileReader if it was lazily opened earlier.
   //
   // If it's already initialized, this is a no-op.
-  RETURN_NOT_OK(reader_->Init());
+  RETURN_NOT_OK(reader_->Init(io_context));
 
   if (reader_->is_compressed()) {
     return Status::Corruption("bloom file is compressed (compression not supported)",
@@ -283,6 +286,7 @@ Status BloomFileReader::ParseBlockHeader(const Slice &block,
 }
 
 Status BloomFileReader::CheckKeyPresent(const BloomKeyProbe &probe,
+                                        const IOContext* io_context,
                                         bool *maybe_present) {
   DCHECK(init_once_.init_succeeded());
 

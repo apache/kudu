@@ -36,6 +36,9 @@ using std::vector;
 using strings::Substitute;
 
 namespace kudu {
+
+using fs::IOContext;
+
 namespace tablet {
 
 RowIteratorOptions::RowIteratorOptions()
@@ -110,9 +113,10 @@ Status DuplicatingRowSet::NewRowIterator(const RowIteratorOptions& opts,
   return Status::OK();
 }
 
-Status DuplicatingRowSet::NewCompactionInput(const Schema* projection,
-                                             const MvccSnapshot &snap,
-                                             gscoped_ptr<CompactionInput>* out) const  {
+Status DuplicatingRowSet::NewCompactionInput(const Schema* /*projection*/,
+                                             const MvccSnapshot& /*snap*/,
+                                             const IOContext* /*io_context*/,
+                                             gscoped_ptr<CompactionInput>* /*out*/) const  {
   LOG(FATAL) << "duplicating rowsets do not act as compaction input";
   return Status::OK();
 }
@@ -122,6 +126,7 @@ Status DuplicatingRowSet::MutateRow(Timestamp timestamp,
                                     const RowSetKeyProbe &probe,
                                     const RowChangeList &update,
                                     const consensus::OpId& op_id,
+                                    const IOContext* io_context,
                                     ProbeStats* stats,
                                     OperationResultPB* result) {
   // Duplicate the update to both the relevant input rowset and the output rowset.
@@ -135,7 +140,7 @@ Status DuplicatingRowSet::MutateRow(Timestamp timestamp,
   // First mutate the relevant input rowset.
   bool updated = false;
   for (const shared_ptr<RowSet> &rowset : old_rowsets_) {
-    Status s = rowset->MutateRow(timestamp, probe, update, op_id, stats, result);
+    Status s = rowset->MutateRow(timestamp, probe, update, op_id, io_context, stats, result);
     if (s.ok()) {
       updated = true;
       break;
@@ -155,7 +160,7 @@ Status DuplicatingRowSet::MutateRow(Timestamp timestamp,
   // If it succeeded there, we also need to mirror into the new rowset.
   int mirrored_count = 0;
   for (const shared_ptr<RowSet> &new_rowset : new_rowsets_) {
-    Status s = new_rowset->MutateRow(timestamp, probe, update, op_id, stats, result);
+    Status s = new_rowset->MutateRow(timestamp, probe, update, op_id, io_context, stats, result);
     if (s.ok()) {
       mirrored_count++;
       #ifdef NDEBUG
@@ -176,11 +181,11 @@ Status DuplicatingRowSet::MutateRow(Timestamp timestamp,
   return Status::OK();
 }
 
-Status DuplicatingRowSet::CheckRowPresent(const RowSetKeyProbe &probe,
+Status DuplicatingRowSet::CheckRowPresent(const RowSetKeyProbe &probe, const IOContext* io_context,
                                           bool *present, ProbeStats* stats) const {
   *present = false;
   for (const shared_ptr<RowSet> &rowset : old_rowsets_) {
-    RETURN_NOT_OK(rowset->CheckRowPresent(probe, present, stats));
+    RETURN_NOT_OK(rowset->CheckRowPresent(probe, io_context, present, stats));
     if (*present) {
       return Status::OK();
     }
@@ -188,11 +193,11 @@ Status DuplicatingRowSet::CheckRowPresent(const RowSetKeyProbe &probe,
   return Status::OK();
 }
 
-Status DuplicatingRowSet::CountRows(rowid_t *count) const {
+Status DuplicatingRowSet::CountRows(const IOContext* io_context, rowid_t *count) const {
   int64_t accumulated_count = 0;
   for (const shared_ptr<RowSet> &rs : new_rowsets_) {
     rowid_t this_count;
-    RETURN_NOT_OK(rs->CountRows(&this_count));
+    RETURN_NOT_OK(rs->CountRows(io_context, &this_count));
     accumulated_count += this_count;
   }
 

@@ -37,6 +37,10 @@ class Schema;
 class SelectionVector;
 struct ColumnId;
 
+namespace fs {
+struct IOContext;
+}  // namespace fs
+
 namespace tablet {
 
 class DeltaFileWriter;
@@ -52,7 +56,7 @@ class DeltaStore {
  public:
   // Performs any post-construction work for the DeltaStore, which may
   // include additional I/O.
-  virtual Status Init() = 0;
+  virtual Status Init(const fs::IOContext* io_context) = 0;
 
   // Whether this delta store was initialized or not.
   virtual bool Initted() = 0;
@@ -72,7 +76,8 @@ class DeltaStore {
                                   DeltaIterator** iterator) const = 0;
 
   // Set *deleted to true if the latest update for the given row is a deletion.
-  virtual Status CheckRowDeleted(rowid_t row_idx, bool *deleted) const = 0;
+  virtual Status CheckRowDeleted(rowid_t row_idx, const fs::IOContext* io_context,
+                                 bool *deleted) const = 0;
 
   // Get the store's estimated size in bytes.
   virtual uint64_t EstimateSize() const = 0;

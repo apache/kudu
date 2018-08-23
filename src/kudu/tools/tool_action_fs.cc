@@ -270,7 +270,7 @@ Status DumpCFile(const RunnerContext& context) {
 
   if (FLAGS_print_rows) {
     gscoped_ptr<CFileIterator> it;
-    RETURN_NOT_OK(reader->NewIterator(&it, CFileReader::DONT_CACHE_BLOCK));
+    RETURN_NOT_OK(reader->NewIterator(&it, CFileReader::DONT_CACHE_BLOCK, nullptr));
     RETURN_NOT_OK(it->SeekToFirst());
 
     RETURN_NOT_OK(DumpIterator(*reader, it.get(), &cout, 0, 0));

@@ -53,6 +53,10 @@ namespace consensus {
 class OpId;
 }
 
+namespace fs {
+struct IOContext;
+}
+
 namespace tablet {
 
 class CompactionInput;
@@ -88,6 +92,11 @@ struct RowIteratorOptions {
   // Defaults to UNORDERED.
   OrderMode order;
 
+  // Context of IO.
+  //
+  // Defaults to nullptr.
+  const fs::IOContext* io_context;
+
   // Whether iteration should include rows whose last mutation was a DELETE.
   //
   // Defaults to false.
@@ -108,8 +117,8 @@ class RowSet {
   // If the row was once present in this rowset, but no longer present
   // due to a DELETE, then this should set *present = false, as if
   // it were never there.
-  virtual Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
-                                 ProbeStats* stats) const = 0;
+  virtual Status CheckRowPresent(const RowSetKeyProbe &probe, const fs::IOContext* io_context,
+                                 bool *present, ProbeStats* stats) const = 0;
 
   // Update/delete a row in this rowset.
   // The 'update_schema' is the client schema used to encode the 'update' RowChangeList.
@@ -120,6 +129,7 @@ class RowSet {
                            const RowSetKeyProbe &probe,
                            const RowChangeList &update,
                            const consensus::OpId& op_id,
+                           const fs::IOContext* io_context,
                            ProbeStats* stats,
                            OperationResultPB* result) = 0;
 
@@ -140,10 +150,11 @@ class RowSet {
   // will be projected into this Schema.
   virtual Status NewCompactionInput(const Schema* projection,
                                     const MvccSnapshot &snap,
+                                    const fs::IOContext* io_context,
                                     gscoped_ptr<CompactionInput>* out) const = 0;
 
   // Count the number of rows in this rowset.
-  virtual Status CountRows(rowid_t *count) const = 0;
+  virtual Status CountRows(const fs::IOContext* io_context, rowid_t *count) const = 0;
 
   // Return the bounds for this RowSet. 'min_encoded_key' and 'max_encoded_key'
   // are set to the first and last encoded keys for this RowSet.
@@ -192,10 +203,10 @@ class RowSet {
   virtual double DeltaStoresCompactionPerfImprovementScore(DeltaCompactionType type) const = 0;
 
   // Flush the DMS if there's one
-  virtual Status FlushDeltas() = 0;
+  virtual Status FlushDeltas(const fs::IOContext* io_context) = 0;
 
   // Compact delta stores if more than one.
-  virtual Status MinorCompactDeltaStores() = 0;
+  virtual Status MinorCompactDeltaStores(const fs::IOContext* io_context) = 0;
 
   // Estimate the number of bytes in ancient undo delta stores. This may be an
   // overestimate. The argument 'ancient_history_mark' must be valid (it may
@@ -223,6 +234,7 @@ class RowSet {
   // may be passed in as nullptr.
   virtual Status InitUndoDeltas(Timestamp ancient_history_mark,
                                 MonoTime deadline,
+                                const fs::IOContext* io_context,
                                 int64_t* delta_blocks_initialized,
                                 int64_t* bytes_in_ancient_undos) = 0;
 
@@ -244,6 +256,7 @@ class RowSet {
   // The out-parameters, 'blocks_deleted' and 'bytes_deleted', may be passed in
   // as nullptr.
   virtual Status DeleteAncientUndoDeltas(Timestamp ancient_history_mark,
+                                         const fs::IOContext* io_context,
                                          int64_t* blocks_deleted,
                                          int64_t* bytes_deleted) = 0;
 
@@ -366,20 +379,22 @@ class DuplicatingRowSet : public RowSet {
                            const RowSetKeyProbe &probe,
                            const RowChangeList &update,
                            const consensus::OpId& op_id,
+                           const fs::IOContext* io_context,
                            ProbeStats* stats,
                            OperationResultPB* result) OVERRIDE;
 
-  Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
-                         ProbeStats* stats) const OVERRIDE;
+  Status CheckRowPresent(const RowSetKeyProbe &probe, const fs::IOContext* io_context,
+                         bool *present, ProbeStats* stats) const OVERRIDE;
 
   virtual Status NewRowIterator(const RowIteratorOptions& opts,
                                 gscoped_ptr<RowwiseIterator>* out) const OVERRIDE;
 
   virtual Status NewCompactionInput(const Schema* projection,
                                     const MvccSnapshot &snap,
+                                    const fs::IOContext* io_context,
                                     gscoped_ptr<CompactionInput>* out) const OVERRIDE;
 
-  Status CountRows(rowid_t *count) const OVERRIDE;
+  Status CountRows(const fs::IOContext* io_context, rowid_t *count) const OVERRIDE;
 
   virtual Status GetBounds(std::string* min_encoded_key,
                            std::string* max_encoded_key) const OVERRIDE;
@@ -429,7 +444,7 @@ class DuplicatingRowSet : public RowSet {
 
   int64_t MinUnflushedLogIndex() const OVERRIDE { return -1; }
 
-  Status FlushDeltas() OVERRIDE {
+  Status FlushDeltas(const fs::IOContext* /*io_context*/) OVERRIDE {
     // It's important that DuplicatingRowSet does not FlushDeltas. This prevents
     // a bug where we might end up with out-of-order deltas. See the long
     // comment in Tablet::Flush(...)
@@ -445,6 +460,7 @@ class DuplicatingRowSet : public RowSet {
 
   Status InitUndoDeltas(Timestamp /*ancient_history_mark*/,
                         MonoTime /*deadline*/,
+                        const fs::IOContext* /*io_context*/,
                         int64_t* delta_blocks_initialized,
                         int64_t* bytes_in_ancient_undos) OVERRIDE {
     if (delta_blocks_initialized) *delta_blocks_initialized = 0;
@@ -453,13 +469,15 @@ class DuplicatingRowSet : public RowSet {
   }
 
   Status DeleteAncientUndoDeltas(Timestamp /*ancient_history_mark*/,
+                                 const fs::IOContext* /*io_context*/,
                                  int64_t* blocks_deleted, int64_t* bytes_deleted) OVERRIDE {
     if (blocks_deleted) *blocks_deleted = 0;
     if (bytes_deleted) *bytes_deleted = 0;
     return Status::OK();
   }
 
-  Status MinorCompactDeltaStores() OVERRIDE { return Status::OK(); }
+  Status MinorCompactDeltaStores(
+      const fs::IOContext* /*io_context*/) OVERRIDE { return Status::OK(); }
 
  private:
   friend class Tablet;

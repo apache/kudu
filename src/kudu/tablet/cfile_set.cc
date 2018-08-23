@@ -76,6 +76,7 @@ using cfile::CFileReader;
 using cfile::ColumnIterator;
 using cfile::ReaderOptions;
 using cfile::DefaultColumnValueIterator;
+using fs::IOContext;
 using fs::ReadableBlock;
 using std::shared_ptr;
 using std::string;
@@ -90,12 +91,14 @@ using strings::Substitute;
 static Status OpenReader(FsManager* fs,
                          shared_ptr<MemTracker> parent_mem_tracker,
                          const BlockId& block_id,
+                         const IOContext* io_context,
                          unique_ptr<CFileReader>* new_reader) {
   unique_ptr<ReadableBlock> block;
   RETURN_NOT_OK(fs->OpenBlock(block_id, &block));
 
   ReaderOptions opts;
   opts.parent_mem_tracker = std::move(parent_mem_tracker);
+  opts.io_context = io_context;
   return CFileReader::OpenNoInit(std::move(block),
                                  std::move(opts),
                                  new_reader);
@@ -116,17 +119,18 @@ CFileSet::~CFileSet() {
 
 Status CFileSet::Open(shared_ptr<RowSetMetadata> rowset_metadata,
                       shared_ptr<MemTracker> parent_mem_tracker,
+                      const IOContext* io_context,
                       shared_ptr<CFileSet>* cfile_set) {
   shared_ptr<CFileSet> cfs(new CFileSet(std::move(rowset_metadata),
                                         std::move(parent_mem_tracker)));
-  RETURN_NOT_OK(cfs->DoOpen());
+  RETURN_NOT_OK(cfs->DoOpen(io_context));
 
   cfile_set->swap(cfs);
   return Status::OK();
 }
 
-Status CFileSet::DoOpen() {
-  RETURN_NOT_OK(OpenBloomReader());
+Status CFileSet::DoOpen(const IOContext* io_context) {
+  RETURN_NOT_OK(OpenBloomReader(io_context));
 
   // Lazily open the column data cfiles. Each one will be fully opened
   // later, when the first iterator seeks for the first time.
@@ -139,6 +143,7 @@ Status CFileSet::DoOpen() {
     RETURN_NOT_OK(OpenReader(rowset_metadata_->fs_manager(),
                              parent_mem_tracker_,
                              rowset_metadata_->column_data_block_for_col_id(col_id),
+                             io_context,
                              &reader));
     readers_by_col_id_[col_id] = std::move(reader);
     VLOG(1) << "Successfully opened cfile for column id " << col_id
@@ -150,6 +155,7 @@ Status CFileSet::DoOpen() {
     RETURN_NOT_OK(OpenReader(rowset_metadata_->fs_manager(),
                              parent_mem_tracker_,
                              rowset_metadata_->adhoc_index_block(),
+                             io_context,
                              &ad_hoc_idx_reader_));
   }
 
@@ -159,7 +165,7 @@ Status CFileSet::DoOpen() {
     min_encoded_key_ = rowset_metadata_->min_encoded_key();
     max_encoded_key_ = rowset_metadata_->max_encoded_key();
   } else {
-    RETURN_NOT_OK(LoadMinMaxKeys());
+    RETURN_NOT_OK(LoadMinMaxKeys(io_context));
   }
   // Verify the loaded keys are valid.
   if (Slice(min_encoded_key_).compare(max_encoded_key_) > 0) {
@@ -172,13 +178,14 @@ Status CFileSet::DoOpen() {
   return Status::OK();
 }
 
-Status CFileSet::OpenBloomReader() {
+Status CFileSet::OpenBloomReader(const IOContext* io_context) {
   FsManager* fs = rowset_metadata_->fs_manager();
   unique_ptr<ReadableBlock> block;
   RETURN_NOT_OK(fs->OpenBlock(rowset_metadata_->bloom_block(), &block));
 
   ReaderOptions opts;
   opts.parent_mem_tracker = parent_mem_tracker_;
+  opts.io_context = io_context;
   Status s = BloomFileReader::OpenNoInit(std::move(block),
                                          std::move(opts),
                                          &bloom_reader_);
@@ -191,9 +198,9 @@ Status CFileSet::OpenBloomReader() {
   return Status::OK();
 }
 
-Status CFileSet::LoadMinMaxKeys() {
+Status CFileSet::LoadMinMaxKeys(const IOContext* io_context) {
   CFileReader* key_reader = key_index_reader();
-  RETURN_NOT_OK(key_index_reader()->Init());
+  RETURN_NOT_OK(key_index_reader()->Init(io_context));
   if (!key_reader->GetMetadataEntry(DiskRowSet::kMinKeyMetaEntryName, &min_encoded_key_)) {
     return Status::Corruption("No min key found", ToString());
   }
@@ -215,16 +222,18 @@ CFileReader* CFileSet::key_index_reader() const {
 }
 
 Status CFileSet::NewColumnIterator(ColumnId col_id, CFileReader::CacheControl cache_blocks,
-                                   CFileIterator **iter) const {
-  return FindOrDie(readers_by_col_id_, col_id)->NewIterator(iter, cache_blocks);
+                                   const fs::IOContext* io_context, CFileIterator **iter) const {
+  return FindOrDie(readers_by_col_id_, col_id)->NewIterator(iter, cache_blocks,
+                                                            io_context);
 }
 
-CFileSet::Iterator *CFileSet::NewIterator(const Schema *projection) const {
-  return new CFileSet::Iterator(shared_from_this(), projection);
+CFileSet::Iterator* CFileSet::NewIterator(const Schema* projection,
+                                          const IOContext* io_context) const {
+  return new CFileSet::Iterator(shared_from_this(), projection, io_context);
 }
 
-Status CFileSet::CountRows(rowid_t *count) const {
-  RETURN_NOT_OK(key_index_reader()->Init());
+Status CFileSet::CountRows(const IOContext* io_context, rowid_t *count) const {
+  RETURN_NOT_OK(key_index_reader()->Init(io_context));
   return key_index_reader()->CountRows(count);
 }
 
@@ -255,17 +264,18 @@ uint64_t CFileSet::OnDiskDataSize() const {
 }
 
 Status CFileSet::FindRow(const RowSetKeyProbe &probe,
+                         const IOContext* io_context,
                          boost::optional<rowid_t>* idx,
                          ProbeStats* stats) const {
   if (FLAGS_consult_bloom_filters) {
     // Fully open the BloomFileReader if it was lazily opened earlier.
     //
     // If it's already initialized, this is a no-op.
-    RETURN_NOT_OK(bloom_reader_->Init());
+    RETURN_NOT_OK(bloom_reader_->Init(io_context));
 
     stats->blooms_consulted++;
     bool present;
-    Status s = bloom_reader_->CheckKeyPresent(probe.bloom_probe(), &present);
+    Status s = bloom_reader_->CheckKeyPresent(probe.bloom_probe(), io_context, &present);
     if (s.ok() && !present) {
       *idx = boost::none;
       return Status::OK();
@@ -284,7 +294,7 @@ Status CFileSet::FindRow(const RowSetKeyProbe &probe,
 
   stats->keys_consulted++;
   CFileIterator *key_iter = nullptr;
-  RETURN_NOT_OK(NewKeyIterator(&key_iter));
+  RETURN_NOT_OK(NewKeyIterator(io_context, &key_iter));
 
   unique_ptr<CFileIterator> key_iter_scoped(key_iter); // free on return
 
@@ -300,10 +310,10 @@ Status CFileSet::FindRow(const RowSetKeyProbe &probe,
   return Status::OK();
 }
 
-Status CFileSet::CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
-                                 rowid_t *rowid, ProbeStats* stats) const {
+Status CFileSet::CheckRowPresent(const RowSetKeyProbe& probe, const IOContext* io_context,
+                                 bool* present, rowid_t* rowid, ProbeStats* stats) const {
   boost::optional<rowid_t> opt_rowid;
-  RETURN_NOT_OK(FindRow(probe, &opt_rowid, stats));
+  RETURN_NOT_OK(FindRow(probe, io_context, &opt_rowid, stats));
   *present = opt_rowid != boost::none;
   if (*present) {
     *rowid = *opt_rowid;
@@ -311,9 +321,9 @@ Status CFileSet::CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
   return Status::OK();
 }
 
-Status CFileSet::NewKeyIterator(CFileIterator **key_iter) const {
-  RETURN_NOT_OK(key_index_reader()->Init());
-  return key_index_reader()->NewIterator(key_iter, CFileReader::CACHE_BLOCK);
+Status CFileSet::NewKeyIterator(const IOContext* io_context, CFileIterator** key_iter) const {
+  RETURN_NOT_OK(key_index_reader()->Init(io_context));
+  return key_index_reader()->NewIterator(key_iter, CFileReader::CACHE_BLOCK, io_context);
 }
 
 ////////////////////////////////////////////////////////////
@@ -351,7 +361,7 @@ Status CFileSet::Iterator::CreateColumnIterators(const ScanSpec* spec) {
       continue;
     }
     CFileIterator *iter;
-    RETURN_NOT_OK_PREPEND(base_data_->NewColumnIterator(col_id, cache_blocks, &iter),
+    RETURN_NOT_OK_PREPEND(base_data_->NewColumnIterator(col_id, cache_blocks, io_context_, &iter),
                           Substitute("could not create iterator for column $0",
                                      projection_->column(proj_col_idx).ToString()));
     ret_iters.emplace_back(iter);
@@ -364,11 +374,11 @@ Status CFileSet::Iterator::CreateColumnIterators(const ScanSpec* spec) {
 Status CFileSet::Iterator::Init(ScanSpec *spec) {
   CHECK(!initted_);
 
-  RETURN_NOT_OK(base_data_->CountRows(&row_count_));
+  RETURN_NOT_OK(base_data_->CountRows(io_context_, &row_count_));
 
   // Setup Key Iterator
   CFileIterator *tmp;
-  RETURN_NOT_OK(base_data_->NewKeyIterator(&tmp));
+  RETURN_NOT_OK(base_data_->NewKeyIterator(io_context_, &tmp));
   key_iter_.reset(tmp);
 
   // Setup column iterators.

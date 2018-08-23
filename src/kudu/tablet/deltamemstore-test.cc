@@ -87,7 +87,7 @@ class TestDeltaMemStore : public KuduTest {
     CHECK_OK(DeltaMemStore::Create(0, 0,
                                    new log::LogAnchorRegistry(),
                                    MemTracker::GetRootTracker(), &dms_));
-    CHECK_OK(dms_->Init());
+    CHECK_OK(dms_->Init(nullptr));
   }
 
   void SetUp() OVERRIDE {

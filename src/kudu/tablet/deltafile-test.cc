@@ -380,10 +380,10 @@ TEST_F(TestDeltaFile, TestLazyInit) {
   ASSERT_EQ(0, bytes_read);
 
   // But initializing it should (only the first time).
-  ASSERT_OK(reader->Init());
+  ASSERT_OK(reader->Init(nullptr));
   ASSERT_GT(bytes_read, 0);
   size_t bytes_read_after_init = bytes_read;
-  ASSERT_OK(reader->Init());
+  ASSERT_OK(reader->Init(nullptr));
   ASSERT_EQ(bytes_read_after_init, bytes_read);
 
   // And let's test non-lazy open for good measure; it should yield the

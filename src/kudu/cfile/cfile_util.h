@@ -33,6 +33,10 @@ namespace kudu {
 class MemTracker;
 class faststring;
 
+namespace fs {
+struct IOContext;
+}  // namespace fs
+
 namespace cfile {
 
 class CFileReader;
@@ -90,6 +94,11 @@ struct WriterOptions {
 
 struct ReaderOptions {
   ReaderOptions();
+
+  // The IO context of this reader.
+  //
+  // Default: nullptr
+  const fs::IOContext* io_context;
 
   // The MemTracker that should account for this reader's memory consumption.
   //
