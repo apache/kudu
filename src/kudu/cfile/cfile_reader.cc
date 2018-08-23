@@ -192,7 +192,7 @@ Status CFileReader::InitOnce() {
 }
 
 Status CFileReader::Init() {
-  RETURN_NOT_OK_PREPEND(init_once_.Init(&CFileReader::InitOnce, this),
+  RETURN_NOT_OK_PREPEND(init_once_.Init([this] { return InitOnce(); }),
                         Substitute("failed to init CFileReader for block $0",
                                    block_id().ToString()));
   return Status::OK();

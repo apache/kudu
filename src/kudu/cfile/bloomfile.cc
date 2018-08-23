@@ -233,7 +233,7 @@ BloomFileReader::BloomFileReader(unique_ptr<CFileReader> reader,
 }
 
 Status BloomFileReader::Init() {
-  return init_once_.Init(&BloomFileReader::InitOnce, this);
+  return init_once_.Init([this] { return InitOnce(); });
 }
 
 Status BloomFileReader::InitOnce() {

@@ -255,7 +255,7 @@ DeltaFileReader::DeltaFileReader(unique_ptr<CFileReader> cf_reader,
       delta_type_(delta_type) {}
 
 Status DeltaFileReader::Init() {
-  return init_once_.Init(&DeltaFileReader::InitOnce, this);
+  return init_once_.Init([this] { return InitOnce(); });
 }
 
 Status DeltaFileReader::InitOnce() {

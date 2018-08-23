@@ -149,7 +149,7 @@ class BloomFileReader {
 
   std::unique_ptr<CFileReader> reader_;
 
-  KuduOnceDynamic init_once_;
+  KuduOnceLambda init_once_;
 
   ScopedTrackedConsumption mem_consumption_;
 };

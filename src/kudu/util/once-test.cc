@@ -26,6 +26,7 @@
 #include "kudu/util/once.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
 
 using std::vector;
@@ -35,15 +36,14 @@ namespace kudu {
 
 namespace {
 
+template<class KuduOnceType>
 struct Thing {
   explicit Thing(bool should_fail)
     : should_fail_(should_fail),
       value_(0) {
   }
 
-  Status Init() {
-    return once_.Init(&Thing::InitOnce, this);
-  }
+  Status Init();
 
   Status InitOnce() {
     if (should_fail_) {
@@ -55,14 +55,40 @@ struct Thing {
 
   const bool should_fail_;
   int value_;
-  KuduOnceDynamic once_;
+  KuduOnceType once_;
 };
 
-} // anonymous namespace
+template<>
+Status Thing<KuduOnceDynamic>::Init() {
+  return once_.Init(&Thing<KuduOnceDynamic>::InitOnce, this);
+}
 
-TEST(TestOnce, KuduOnceDynamicTest) {
+template<>
+Status Thing<KuduOnceLambda>::Init() {
+  return once_.Init([this] { return InitOnce(); });
+}
+
+template<class KuduOnceType>
+static void InitOrGetInitted(Thing<KuduOnceType>* t, int i) {
+  if (i % 2 == 0) {
+    LOG(INFO) << "Thread " << i << " initting";
+    t->Init();
+  } else {
+    LOG(INFO) << "Thread " << i << " value: " << t->once_.init_succeeded();
+  }
+}
+
+}  // anonymous namespace
+
+typedef ::testing::Types<KuduOnceDynamic, KuduOnceLambda> KuduOnceTypes;
+TYPED_TEST_CASE(TestOnce, KuduOnceTypes);
+
+template<class KuduOnceType>
+class TestOnce : public KuduTest {};
+
+TYPED_TEST(TestOnce, KuduOnceTest) {
   {
-    Thing t(false);
+    Thing<TypeParam> t(false);
     ASSERT_EQ(0, t.value_);
     ASSERT_FALSE(t.once_.init_succeeded());
 
@@ -74,7 +100,7 @@ TEST(TestOnce, KuduOnceDynamicTest) {
   }
 
   {
-    Thing t(true);
+    Thing<TypeParam> t(true);
     for (int i = 0; i < 2; i++) {
       ASSERT_TRUE(t.Init().IsIllegalState());
       ASSERT_EQ(0, t.value_);
@@ -83,17 +109,8 @@ TEST(TestOnce, KuduOnceDynamicTest) {
   }
 }
 
-static void InitOrGetInitted(Thing* t, int i) {
-  if (i % 2 == 0) {
-    LOG(INFO) << "Thread " << i << " initting";
-    t->Init();
-  } else {
-    LOG(INFO) << "Thread " << i << " value: " << t->once_.init_succeeded();
-  }
-}
-
-TEST(TestOnce, KuduOnceDynamicThreadSafeTest) {
-  Thing thing(false);
+TYPED_TEST(TestOnce, KuduOnceThreadSafeTest) {
+  Thing<TypeParam> thing(false);
 
   // The threads will read and write to thing.once_.initted. If access to
   // it is not synchronized, TSAN will flag the access as data races.
@@ -101,7 +118,7 @@ TEST(TestOnce, KuduOnceDynamicThreadSafeTest) {
   for (int i = 0; i < 10; i++) {
     scoped_refptr<Thread> t;
     ASSERT_OK(Thread::Create("test", Substitute("thread $0", i),
-                             &InitOrGetInitted, &thing, i, &t));
+                             &InitOrGetInitted<TypeParam>, &thing, i, &t));
     threads.push_back(t);
   }
 

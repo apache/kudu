@@ -214,7 +214,7 @@ class CFileReader {
   const TypeInfo *type_info_;
   const TypeEncodingInfo *type_encoding_info_;
 
-  KuduOnceDynamic init_once_;
+  KuduOnceLambda init_once_;
 
   ScopedTrackedConsumption mem_consumption_;
 };

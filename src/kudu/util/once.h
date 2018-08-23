@@ -14,10 +14,11 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_UTIL_ONCE_H
-#define KUDU_UTIL_ONCE_H
+#pragma once
 
 #include <stddef.h>
+
+#include <mutex>
 
 #include "kudu/gutil/once.h"
 #include "kudu/gutil/port.h"
@@ -111,6 +112,44 @@ class KuduOnceDynamic {
   Status status_;
 };
 
-} // namespace kudu
+// Similar to the KuduOnceDynamic class, but accepts a lambda function.
+class KuduOnceLambda {
+ public:
+  KuduOnceLambda()
+    : init_succeeded_(false) {}
 
-#endif
+  // If the underlying `once_flag` has yet to be invoked, invokes the provided
+  // lambda and stores its return value. Otherwise, returns the stored Status.
+  template<typename Fn>
+  Status Init(Fn fn) {
+    std::call_once(once_flag_, [this, fn] {
+      status_ = fn();
+      if (PREDICT_TRUE(status_.ok())) {
+        init_succeeded_.Store(true, kMemOrderRelease);
+      }
+    });
+    return status_;
+  }
+
+  // Similar to KuduOnceDynamic, kMemOrderAcquire here and kMemOrderRelease in
+  // Init(), taken together, mean that threads can safely synchronize on
+  // ini_succeeded_.
+  bool init_succeeded() const {
+    return init_succeeded_.Load(kMemOrderAcquire);
+  }
+
+  // Returns the memory usage of this object without the object itself. Should
+  // be used when embedded inside another object.
+  size_t memory_footprint_excluding_this() const;
+
+  // Returns the memory usage of this object including the object itself.
+  // Should be used when allocated on the heap.
+  size_t memory_footprint_including_this() const;
+
+ private:
+  AtomicBool init_succeeded_;
+  std::once_flag once_flag_;
+  Status status_;
+};
+
+} // namespace kudu
