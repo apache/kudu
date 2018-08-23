@@ -15,69 +15,41 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/fs/error_manager.h"
+
 #include <mutex>
-#include <ostream>
 #include <string>
 #include <utility>
 
-#include <glog/logging.h>
-
-#include "kudu/fs/error_manager.h"
 #include "kudu/gutil/bind.h"
+#include "kudu/gutil/map-util.h"
 
 using std::string;
 
 namespace kudu {
-
 namespace fs {
 
 // Default error-handling callback that no-ops.
 static void DoNothingErrorNotification(const string& /* uuid */) {}
 
-FsErrorManager::FsErrorManager() :
-  disk_cb_(Bind(DoNothingErrorNotification)),
-  tablet_cb_(Bind(DoNothingErrorNotification)) {}
+FsErrorManager::FsErrorManager() {
+  InsertOrDie(&callbacks_, ErrorHandlerType::DISK_ERROR, Bind(DoNothingErrorNotification));
+  InsertOrDie(&callbacks_, ErrorHandlerType::NO_AVAILABLE_DISKS, Bind(DoNothingErrorNotification));
+}
 
 void FsErrorManager::SetErrorNotificationCb(ErrorHandlerType e, ErrorNotificationCb cb) {
   std::lock_guard<Mutex> l(lock_);
-  switch (e) {
-    case ErrorHandlerType::DISK:
-      disk_cb_ = std::move(cb);
-      return;
-    case ErrorHandlerType::TABLET:
-      tablet_cb_ = std::move(cb);
-      return;
-    default:
-      LOG(FATAL) << "Unknown error handler type!";
-  }
+  EmplaceOrUpdate(&callbacks_, e, std::move(cb));
 }
 
 void FsErrorManager::UnsetErrorNotificationCb(ErrorHandlerType e) {
   std::lock_guard<Mutex> l(lock_);
-  switch (e) {
-    case ErrorHandlerType::DISK:
-      disk_cb_ = Bind(DoNothingErrorNotification);
-      return;
-    case ErrorHandlerType::TABLET:
-      tablet_cb_ = Bind(DoNothingErrorNotification);
-      return;
-    default:
-      LOG(FATAL) << "Unknown error handler type!";
-  }
+  EmplaceOrUpdate(&callbacks_, e, Bind(DoNothingErrorNotification));
 }
 
 void FsErrorManager::RunErrorNotificationCb(ErrorHandlerType e, const string& uuid) const {
   std::lock_guard<Mutex> l(lock_);
-  switch (e) {
-    case ErrorHandlerType::DISK:
-      disk_cb_.Run(uuid);
-      return;
-    case ErrorHandlerType::TABLET:
-      tablet_cb_.Run(uuid);
-      return;
-    default:
-      LOG(FATAL) << "Unknown error handler type!";
-  }
+  FindOrDie(callbacks_, e).Run(uuid);
 }
 
 }  // namespace fs

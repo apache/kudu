@@ -124,54 +124,54 @@ class FsErrorManagerTest : public KuduTest {
 // callbacks) of the error manager.
 TEST_F(FsErrorManagerTest, TestBasicRegistration) {
   // Before registering anything, there should be all '-1's in test_vec_.
-  ASSERT_EQ(-1, FindFirst(ErrorHandlerType::DISK));
-  ASSERT_EQ(-1, FindFirst(ErrorHandlerType::TABLET));
+  ASSERT_EQ(-1, FindFirst(ErrorHandlerType::DISK_ERROR));
+  ASSERT_EQ(-1, FindFirst(ErrorHandlerType::NO_AVAILABLE_DISKS));
 
   // Register a callback to update the first '-1' entry in test_vec_ to '0'
   // after waiting a random amount of time.
-  em()->SetErrorNotificationCb(ErrorHandlerType::DISK,
+  em()->SetErrorNotificationCb(ErrorHandlerType::DISK_ERROR,
       Bind(&FsErrorManagerTest::SleepAndWriteFirstEmptyCb,
-           Unretained(this), ErrorHandlerType::DISK));
-  em()->RunErrorNotificationCb(ErrorHandlerType::DISK, "");
-  ASSERT_EQ(0, FindFirst(ErrorHandlerType::DISK));
+           Unretained(this), ErrorHandlerType::DISK_ERROR));
+  em()->RunErrorNotificationCb(ErrorHandlerType::DISK_ERROR, "");
+  ASSERT_EQ(0, FindFirst(ErrorHandlerType::DISK_ERROR));
 
   // Running callbacks that haven't been registered should do nothing.
-  em()->RunErrorNotificationCb(ErrorHandlerType::TABLET, "");
-  ASSERT_EQ(0, FindFirst(ErrorHandlerType::DISK));
-  ASSERT_EQ(-1, FindFirst(ErrorHandlerType::TABLET));
+  em()->RunErrorNotificationCb(ErrorHandlerType::NO_AVAILABLE_DISKS, "");
+  ASSERT_EQ(0, FindFirst(ErrorHandlerType::DISK_ERROR));
+  ASSERT_EQ(-1, FindFirst(ErrorHandlerType::NO_AVAILABLE_DISKS));
 
   // Now register another callback.
-  em()->SetErrorNotificationCb(ErrorHandlerType::TABLET,
+  em()->SetErrorNotificationCb(ErrorHandlerType::NO_AVAILABLE_DISKS,
       Bind(&FsErrorManagerTest::SleepAndWriteFirstEmptyCb,
-           Unretained(this), ErrorHandlerType::TABLET));
-  em()->RunErrorNotificationCb(ErrorHandlerType::TABLET, "");
-  ASSERT_EQ(1, FindFirst(ErrorHandlerType::TABLET));
+           Unretained(this), ErrorHandlerType::NO_AVAILABLE_DISKS));
+  em()->RunErrorNotificationCb(ErrorHandlerType::NO_AVAILABLE_DISKS, "");
+  ASSERT_EQ(1, FindFirst(ErrorHandlerType::NO_AVAILABLE_DISKS));
 
   // Now unregister one of the callbacks. This should not affect the other.
-  em()->UnsetErrorNotificationCb(ErrorHandlerType::DISK);
-  em()->RunErrorNotificationCb(ErrorHandlerType::DISK, "");
-  em()->RunErrorNotificationCb(ErrorHandlerType::TABLET, "");
+  em()->UnsetErrorNotificationCb(ErrorHandlerType::DISK_ERROR);
+  em()->RunErrorNotificationCb(ErrorHandlerType::DISK_ERROR, "");
+  em()->RunErrorNotificationCb(ErrorHandlerType::NO_AVAILABLE_DISKS, "");
 
   LOG(INFO) << "Final state of the vector: " << test_vec_string();
   map<int, set<int>> positions = GetPositions();
   set<int> disk_set = { 0 };        // The first entry should be DISK...
-  set<int> tablet_set = { 1, 2 };   // ...followed by TABLET, TABLET.
-  ASSERT_EQ(disk_set, FindOrDie(positions, ErrorHandlerType::DISK));
-  ASSERT_EQ(tablet_set, FindOrDie(positions, ErrorHandlerType::TABLET));
+  set<int> tablet_set = { 1, 2 };   // ...followed by NO_AVAILABLE_DISKS, NO_AVAILABLE_DISKS.
+  ASSERT_EQ(disk_set, FindOrDie(positions, ErrorHandlerType::DISK_ERROR));
+  ASSERT_EQ(tablet_set, FindOrDie(positions, ErrorHandlerType::NO_AVAILABLE_DISKS));
 }
 
 // Test that the callbacks get run serially.
 TEST_F(FsErrorManagerTest, TestSerialization) {
-  em()->SetErrorNotificationCb(ErrorHandlerType::DISK,
+  em()->SetErrorNotificationCb(ErrorHandlerType::DISK_ERROR,
       Bind(&FsErrorManagerTest::SleepAndWriteFirstEmptyCb,
-           Unretained(this), ErrorHandlerType::DISK));
-  em()->SetErrorNotificationCb(ErrorHandlerType::TABLET,
+           Unretained(this), ErrorHandlerType::DISK_ERROR));
+  em()->SetErrorNotificationCb(ErrorHandlerType::NO_AVAILABLE_DISKS,
       Bind(&FsErrorManagerTest::SleepAndWriteFirstEmptyCb,
-           Unretained(this), ErrorHandlerType::TABLET));
+           Unretained(this), ErrorHandlerType::NO_AVAILABLE_DISKS));
 
   // Swap back and forth between error-handler type.
   const auto IntToEnum = [&] (int i) {
-    return i % 2 == 0 ? ErrorHandlerType::DISK : ErrorHandlerType::TABLET;
+    return i % 2 == 0 ? ErrorHandlerType::DISK_ERROR : ErrorHandlerType::NO_AVAILABLE_DISKS;
   };
 
   vector<thread> cb_threads;

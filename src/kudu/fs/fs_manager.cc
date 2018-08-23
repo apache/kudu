@@ -410,7 +410,7 @@ Status FsManager::Open(FsReport* report) {
   }
 
   // Set an initial error handler to mark data directories as failed.
-  error_manager_->SetErrorNotificationCb(ErrorHandlerType::DISK,
+  error_manager_->SetErrorNotificationCb(ErrorHandlerType::DISK_ERROR,
       Bind(&DataDirManager::MarkDataDirFailedByUuid, Unretained(dd_manager_.get())));
 
   // Finally, initialize and open the block manager.

@@ -18,6 +18,7 @@
 #pragma once
 
 #include <string>
+#include <unordered_map>
 
 #include <glog/logging.h>
 
@@ -72,11 +73,33 @@ typedef Callback<void(const std::string&)> ErrorNotificationCb;
 } while (0);
 
 enum ErrorHandlerType {
-  // For errors that affect a disk and all of its tablets (e.g. disk failure).
-  DISK,
+  // For disk failures.
+  DISK_ERROR,
 
-  // For errors that affect a single tablet (e.g. failure to create a block).
-  TABLET
+  // For errors that caused by no data dirs being available (e.g. if all disks
+  // are full or failed when creating a block).
+  //
+  // TODO(awong): Register an actual error-handling callback for
+  // NO_AVAILABLE_DISKS. Some errors may surface indirectly due to disk errors,
+  // but may not have touched disk, and thus may have not called the DISK_ERROR
+  // error handler.
+  //
+  // For example, if all of the disks in a tablet's directory group have
+  // already failed due to disk errors, the tablet would not be able to create
+  // a new block and return an error, despite CreateNewBlock() not actually
+  // touching disk and triggering running error handling. Callers of
+  // CreateNewBlock() will expect that if an error is returned, it has been
+  // handled, and may hit a CHECK failure otherwise. As such, before returning
+  // an error, CreateNewBlock() must wait for any in-flight error handling to
+  // finish.
+  //
+  // While this currently runs a no-op, it serves to enforce that any
+  // error-handling caused by ERROR1 that may have indirectly caused ERROR2
+  // (e.g. if ERROR1 is a disk error of the only disk on the server, and ERROR2
+  // is the subsequent failure to create a block because all disks have been
+  // marked as failed) must complete before ERROR2 can be returned to its
+  // caller.
+  NO_AVAILABLE_DISKS,
 };
 
 // When certain operations fail, the side effects of the error can span multiple
@@ -90,20 +113,6 @@ enum ErrorHandlerType {
 // knowing about the TSTabletManager.
 class FsErrorManager {
  public:
-  // TODO(awong): Register an actual error-handling function for tablet. Some
-  // errors may surface indirectly due to disk errors, but may not
-  // necessarily be caused by the failure of a specific disk.
-  //
-  // For example, if all of the disks in a tablet's directory group have
-  // already failed, the tablet would not be able to create a new block and
-  // return an error, despite CreateNewBlock() not actually touching disk.
-  // Before CreateNewBlock() returns, in order to satisfy various saftey
-  // checks surrounding the state of tablet post-failure, it must wait for
-  // disk failure handling of the failed disks to return.
-  //
-  // While this callback is a no-op, it serves to enforce that any
-  // error-handling caused by ERROR1 that may have indirectly caused ERROR2
-  // must complete before ERROR2 can be returned to its caller.
   FsErrorManager();
 
   // Sets the error notification callback.
@@ -123,14 +132,13 @@ class FsErrorManager {
 
   // Runs the error notification callback with the UUID of 'dir'.
   void RunErrorNotificationCb(ErrorHandlerType e, const DataDir* dir) const {
-    DCHECK_EQ(e, ErrorHandlerType::DISK);
+    DCHECK_EQ(e, ErrorHandlerType::DISK_ERROR);
     RunErrorNotificationCb(e, dir->instance()->metadata()->path_set().uuid());
   }
 
  private:
    // Callbacks to be run when an error occurs.
-  ErrorNotificationCb disk_cb_;
-  ErrorNotificationCb tablet_cb_;
+  std::unordered_map<ErrorHandlerType, ErrorNotificationCb, std::hash<int>> callbacks_;
 
    // Protects calls to notifications, enforcing that a single callback runs at
    // a time.

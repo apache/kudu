@@ -115,7 +115,7 @@ Status TabletServer::WaitInited() {
 Status TabletServer::Start() {
   CHECK(initted_);
 
-  fs_manager_->SetErrorNotificationCb(ErrorHandlerType::DISK,
+  fs_manager_->SetErrorNotificationCb(ErrorHandlerType::DISK_ERROR,
       Bind(&TSTabletManager::FailTabletsInDataDir, Unretained(tablet_manager_.get())));
 
   gscoped_ptr<ServiceIf> ts_service(new TabletServiceImpl(this));
@@ -149,7 +149,7 @@ void TabletServer::Shutdown() {
     // 2. Shut down the tserver's subsystems.
     maintenance_manager_->Shutdown();
     WARN_NOT_OK(heartbeater_->Stop(), "Failed to stop TS Heartbeat thread");
-    fs_manager_->UnsetErrorNotificationCb(ErrorHandlerType::DISK);
+    fs_manager_->UnsetErrorNotificationCb(ErrorHandlerType::DISK_ERROR);
     tablet_manager_->Shutdown();
 
     // 3. Shut down generic subsystems.

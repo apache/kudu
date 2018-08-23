@@ -1633,7 +1633,7 @@ TEST_F(LogBlockManagerTest, TestOpenWithFailedDirectories) {
       DataDirManagerOptions(), &dd_manager_));
 
   // Wire in a callback to fail data directories.
-  test_error_manager_->SetErrorNotificationCb(ErrorHandlerType::DISK,
+  test_error_manager_->SetErrorNotificationCb(ErrorHandlerType::DISK_ERROR,
       Bind(&DataDirManager::MarkDataDirFailedByUuid, Unretained(dd_manager_.get())));
   bm_.reset(CreateBlockManager(nullptr));
 

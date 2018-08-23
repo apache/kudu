@@ -447,6 +447,23 @@ bool EmplaceIfNotPresent(Collection* const collection,
   return collection->emplace(std::forward<Args>(args)...).second;
 }
 
+// Emplaces the given key-value pair into the collection. Returns true if the
+// given key didn't previously exist. If the given key already existed in the
+// map, its value is changed to the given "value" and false is returned.
+template <class Collection>
+bool EmplaceOrUpdate(Collection* const collection,
+                     const typename Collection::key_type& key,
+                     typename Collection::mapped_type&& value) {
+  typedef typename Collection::mapped_type mapped_type;
+  auto it = collection->find(key);
+  if (it == collection->end()) {
+    collection->emplace(key, std::forward<mapped_type>(value));
+    return true;
+  }
+  it->second = std::forward<mapped_type>(value);
+  return false;
+}
+
 template <class Collection, class... Args>
 void EmplaceOrDie(Collection* const collection,
                   Args&&... args) {
