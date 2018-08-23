@@ -423,5 +423,11 @@ fetch_and_patch \
  $HADOOP_SOURCE \
  $HADOOP_PATCHLEVEL
 
+SENTRY_PATCHLEVEL=0
+fetch_and_patch \
+ $SENTRY_NAME.tar.gz \
+ $SENTRY_SOURCE \
+ $SENTRY_PATCHLEVEL
+
 echo "---------------"
 echo "Thirdparty dependencies downloaded successfully"

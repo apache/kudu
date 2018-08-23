@@ -142,5 +142,14 @@ Status WaitForTcpBind(pid_t pid, uint16_t* port, MonoDelta timeout) WARN_UNUSED_
 // Waits for the subprocess to bind to any listening UDP port, and returns the port.
 Status WaitForUdpBind(pid_t pid, uint16_t* port, MonoDelta timeout) WARN_UNUSED_RESULT;
 
+// Find the home directory of a Java-style application, e.g. JAVA_HOME or
+// HADOOP_HOME.
+//
+// Checks the environment, or falls back to a symlink in the bin installation
+// directory.
+Status FindHomeDir(const std::string& name,
+                   const std::string& bin_dir,
+                   std::string* home_dir) WARN_UNUSED_RESULT;
+
 } // namespace kudu
 #endif

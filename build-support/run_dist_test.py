@@ -147,9 +147,10 @@ def main():
       env[var_name] = os.environ.get(var_name, "") + " external_symbolizer_path=" + symbolizer_path
 
   # Add environment variables for Java dependencies. These environment variables
-  # are used in mini_hms.cc.
+  # are used in mini_hms.cc and mini_sentry.cc.
   env['HIVE_HOME'] = glob.glob(os.path.join(ROOT, "thirdparty/src/hive-*"))[0]
   env['HADOOP_HOME'] = glob.glob(os.path.join(ROOT, "thirdparty/src/hadoop-*"))[0]
+  env['SENTRY_HOME'] = glob.glob(os.path.join(ROOT, "thirdparty/src/apache-sentry-*"))[0]
   env['JAVA_HOME'] = glob.glob("/usr/lib/jvm/java-1.8.0-*")[0]
 
   env['LD_LIBRARY_PATH'] = ":".join(

@@ -19,7 +19,6 @@
 
 #include <algorithm>
 #include <csignal>
-#include <cstdlib>
 #include <map>
 #include <memory>
 #include <ostream>
@@ -34,7 +33,6 @@
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
-#include "kudu/util/string_case.h"
 #include "kudu/util/subprocess.h"
 #include "kudu/util/test_util.h"
 
@@ -76,24 +74,8 @@ void MiniHms::EnableKerberos(string krb5_conf,
 }
 
 void MiniHms::SetDataRoot(string data_root) {
-  data_root_ = data_root;
+  data_root_ = std::move(data_root);
 }
-
-namespace {
-Status FindHomeDir(const char* name, const string& bin_dir, string* home_dir) {
-  string name_upper;
-  ToUpperCase(name, &name_upper);
-
-  string env_var = Substitute("$0_HOME", name_upper);
-  const char* env = std::getenv(env_var.c_str());
-  *home_dir = env == nullptr ? JoinPathSegments(bin_dir, Substitute("$0-home", name)) : env;
-
-  if (!Env::Default()->FileExists(*home_dir)) {
-    return Status::NotFound(Substitute("$0 directory does not exist", env_var), *home_dir);
-  }
-  return Status::OK();
-}
-} // anonymous namespace
 
 Status MiniHms::Start() {
   SCOPED_LOG_SLOW_EXECUTION(WARNING, kHmsStartTimeoutMs / 2, "Starting HMS");
@@ -292,13 +274,13 @@ Status MiniHms::CreateHiveSite() const {
 </configuration>
   )";
 
-  string file_contents = strings::Substitute(kFileTemplate,
-                                             notification_log_ttl_.ToSeconds(),
-                                             data_root_,
-                                             !keytab_file_.empty(),
-                                             keytab_file_,
-                                             service_principal_,
-                                             SaslProtection::name_of(protection_));
+  string file_contents = Substitute(kFileTemplate,
+                                    notification_log_ttl_.ToSeconds(),
+                                    data_root_,
+                                    !keytab_file_.empty(),
+                                    keytab_file_,
+                                    service_principal_,
+                                    SaslProtection::name_of(protection_));
 
   return WriteStringToFile(Env::Default(),
                            file_contents,
@@ -323,8 +305,7 @@ Status MiniHms::CreateCoreSite() const {
 </configuration>
   )";
 
-  string file_contents = strings::Substitute(kFileTemplate,
-                                             keytab_file_.empty() ? "simple" : "kerberos");
+  string file_contents = Substitute(kFileTemplate, keytab_file_.empty() ? "simple" : "kerberos");
 
   return WriteStringToFile(Env::Default(),
                            file_contents,

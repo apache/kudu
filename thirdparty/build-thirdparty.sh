@@ -99,6 +99,7 @@ else
       "bison")        F_BISON=1 ;;
       "hadoop")       F_HADOOP=1 ;;
       "hive")         F_HIVE=1 ;;
+      "sentry")       F_SENTRY=1 ;;
       *)              echo "Unknown module: $arg"; exit 1 ;;
     esac
   done
@@ -244,8 +245,8 @@ if [ -n "$F_COMMON" -o -n "$F_BISON" ]; then
   build_bison
 fi
 
-# Install Hadoop and Hive by symlinking their source directories (which are
-# pre-built) into $PREFIX/opt.
+# Install Hadoop, Hive, and Sentry by symlinking their source directories (which
+# are pre-built) into $PREFIX/opt.
 if [ -n "$F_COMMON" -o -n "$F_HADOOP" ]; then
   mkdir -p $PREFIX/opt
   ln -nsf $HADOOP_SOURCE $PREFIX/opt/hadoop
@@ -254,6 +255,11 @@ fi
 if [ -n "$F_COMMON" -o -n "$F_HIVE" ]; then
   mkdir -p $PREFIX/opt
   ln -nsf $HIVE_SOURCE $PREFIX/opt/hive
+fi
+
+if [ -n "$F_COMMON" -o -n "$F_SENTRY" ]; then
+  mkdir -p $PREFIX/opt
+  ln -nsf $SENTRY_SOURCE $PREFIX/opt/sentry
 fi
 
 ### Build C dependencies without instrumentation

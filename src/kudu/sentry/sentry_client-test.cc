@@ -15,12 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/sentry/sentry_client.h"
-
-#include <utility>
-
 #include <gtest/gtest.h>
 
+#include "kudu/sentry/mini_sentry.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 namespace kudu {
@@ -30,10 +28,15 @@ class SentryClientTest : public KuduTest {
  public:
 };
 
-TEST_F(SentryClientTest, ItWorks) {
-  SentryClient client;
-  std::move(client);
-}
+TEST_F(SentryClientTest, TestMiniSentryLifecycle) {
+  MiniSentry mini_sentry;
+  ASSERT_OK(mini_sentry.Start());
 
+  ASSERT_OK(mini_sentry.Stop());
+  ASSERT_OK(mini_sentry.Start());
+
+  ASSERT_OK(mini_sentry.Pause());
+  ASSERT_OK(mini_sentry.Resume());
+}
 } // namespace sentry
 } // namespace kudu

@@ -54,6 +54,7 @@
 #include "kudu/util/slice.h"
 #include "kudu/util/spinlock_profiling.h"
 #include "kudu/util/status.h"
+#include "kudu/util/string_case.h"
 #include "kudu/util/subprocess.h"
 
 DEFINE_string(test_leave_files, "on_failure",
@@ -441,6 +442,21 @@ Status WaitForTcpBind(pid_t pid, uint16_t* port, MonoDelta timeout) {
 
 Status WaitForUdpBind(pid_t pid, uint16_t* port, MonoDelta timeout) {
   return WaitForBind(pid, port, "4UDP", timeout);
+}
+
+Status FindHomeDir(const string& name, const string& bin_dir, string* home_dir) {
+  string name_upper;
+  ToUpperCase(name, &name_upper);
+
+  string env_var = Substitute("$0_HOME", name_upper);
+  const char* env = std::getenv(env_var.c_str());
+  string dir = env == nullptr ? JoinPathSegments(bin_dir, Substitute("$0-home", name)) : env;
+
+  if (!Env::Default()->FileExists(dir)) {
+    return Status::NotFound(Substitute("$0 directory does not exist", env_var), dir);
+  }
+  *home_dir = dir;
+  return Status::OK();
 }
 
 } // namespace kudu

@@ -45,6 +45,16 @@ target_link_libraries(kudu_sentry ${SENTRY_DEPS})
 # mini_sentry
 ##############################
 
+execute_process(COMMAND ln -nsf
+                "${CMAKE_SOURCE_DIR}/thirdparty/installed/common/opt/sentry"
+                "${EXECUTABLE_OUTPUT_PATH}/sentry-home")
+execute_process(COMMAND ln -nsf
+                "${CMAKE_SOURCE_DIR}/thirdparty/installed/common/opt/hadoop"
+                "${EXECUTABLE_OUTPUT_PATH}/hadoop-home")
+execute_process(COMMAND ln -nsf
+                "${JAVA_HOME}"
+                "${EXECUTABLE_OUTPUT_PATH}/java-home")
+
 set(MINI_SENTRY_SRCS
   mini_sentry.cc)
 
