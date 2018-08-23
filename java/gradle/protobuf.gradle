@@ -16,7 +16,7 @@
 // under the License.
 
 // This file contains the common protobuf plugin configuration.
-
+import org.gradle.plugins.ide.eclipse.model.SourceFolder
 apply plugin: "com.google.protobuf"
 
 // Use the maven protoc artifact instead of local.
@@ -30,5 +30,24 @@ protobuf {
 idea {
   module {
     generatedSourceDirs += file("${protobuf.generatedFilesBaseDir}/main/java")
+  }
+}
+
+// Configure Eclipse to see the generated classes.
+eclipse {
+  classpath {
+    file {
+      whenMerged {
+         // protobuf.generatedFilesBaseDir contains absolute path to the root project.
+         // Here we have to make the path relative to a subproject,
+         // because Buildship ignores absolute paths when it evaluates classpath entries.
+
+         // Passing 'null' as a second argument to SourceFolder constructor
+         // instructs Eclipse to not compile generated source files
+         def relPath = projectDir.toPath().relativize(
+           file("${protobuf.generatedFilesBaseDir}/main/java").toPath())
+         entries += new SourceFolder(relPath.toString(), null)
+      }
+    }
   }
 }
