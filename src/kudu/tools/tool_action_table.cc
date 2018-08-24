@@ -23,6 +23,7 @@
 #include <vector>
 
 #include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
 
 #include "kudu/client/client.h"
 #include "kudu/client/replica_controller-internal.h"
@@ -36,6 +37,7 @@
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/util/status.h"
 
+DECLARE_string(tables);
 DEFINE_bool(alter_external_catalogs, true,
             "Whether to alter external catalogs, such as the Hive Metastore, "
             "when renaming a table.");
@@ -73,7 +75,9 @@ class TableLister {
     vector<string> table_names;
     RETURN_NOT_OK(client->ListTables(&table_names));
 
+    vector<string> table_filters = Split(FLAGS_tables, ",", strings::SkipEmpty());
     for (const auto& tname : table_names) {
+      if (!MatchesAnyPattern(table_filters, tname)) continue;
       cout << tname << endl;
       if (!FLAGS_list_tablets) {
         continue;
@@ -186,8 +190,9 @@ unique_ptr<Mode> BuildTableMode() {
 
   unique_ptr<Action> list_tables =
       ActionBuilder("list", &ListTables)
-      .Description("List all tables")
+      .Description("List tables")
       .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
+      .AddOptionalParameter("tables")
       .AddOptionalParameter("list_tablets")
       .Build();
 

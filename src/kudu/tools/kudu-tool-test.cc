@@ -140,6 +140,8 @@ using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
 using kudu::client::KuduSchema;
 using kudu::client::KuduSchemaBuilder;
+using kudu::client::KuduScanToken;
+using kudu::client::KuduScanTokenBuilder;
 using kudu::client::KuduTable;
 using kudu::client::sp::shared_ptr;
 using kudu::cluster::ExternalMiniCluster;
@@ -176,6 +178,7 @@ using kudu::tserver::MiniTabletServer;
 using kudu::tserver::WriteRequestPB;
 using std::back_inserter;
 using std::copy;
+using std::map;
 using std::make_pair;
 using std::ostringstream;
 using std::pair;
@@ -581,7 +584,9 @@ TEST_F(ToolTest, TestModeHelp) {
   {
     const vector<string> kTableModeRegexes = {
         "delete.*Delete a table",
-        "list.*List all tables",
+        "rename_table.*Rename a table",
+        "rename_column.*Rename a column",
+        "list.*List tables",
     };
     NO_FATALS(RunTestHelp("table", kTableModeRegexes));
   }
@@ -2117,6 +2122,39 @@ TEST_F(ToolTest, TestMasterList) {
   ASSERT_STR_CONTAINS(out, master->bound_rpc_hostport().ToString());
 }
 
+// Operate on Kudu tables:
+// (1)delete a table
+// (2)rename a table
+// (3)rename a column
+// (4)list tables
+TEST_F(ToolTest, TestDeleteTable) {
+  NO_FATALS(StartExternalMiniCluster());
+  shared_ptr<KuduClient> client;
+  ASSERT_OK(cluster_->CreateClient(nullptr, &client));
+  string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+
+  const string& kTableName = "kudu.table";
+
+  // Create a table.
+  TestWorkload workload(cluster_.get());
+  workload.set_table_name(kTableName);
+  workload.set_num_replicas(1);
+  workload.Setup();
+
+  // Check that the table exists.
+  bool exist = false;
+  ASSERT_OK(client->TableExists(kTableName, &exist));
+  ASSERT_EQ(exist, true);
+
+  // Delete the table.
+  NO_FATALS(RunActionStdoutNone(Substitute("table delete $0 $1",
+                                           master_addr, kTableName)));
+
+  // Check that the table does not exist.
+  ASSERT_OK(client->TableExists(kTableName, &exist));
+  ASSERT_EQ(exist, false);
+}
+
 TEST_F(ToolTest, TestRenameTable) {
   NO_FATALS(StartExternalMiniCluster());
   shared_ptr<KuduClient> client;
@@ -2181,6 +2219,93 @@ TEST_F(ToolTest, TestRenameColumn) {
   shared_ptr<KuduTable> table;
   ASSERT_OK(client->OpenTable(kTableName, &table));
   ASSERT_STR_CONTAINS(table->schema().ToString(), kNewColumnName);
+}
+
+TEST_F(ToolTest, TestListTables) {
+  NO_FATALS(StartExternalMiniCluster());
+  shared_ptr<KuduClient> client;
+  ASSERT_OK(cluster_->CreateClient(nullptr, &client));
+  string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+
+  // Replica's format.
+  string ts_uuid = cluster_->tablet_server(0)->uuid();
+  string ts_addr = cluster_->tablet_server(0)->bound_rpc_addr().ToString();
+  string expect_replica = Substitute("    L $0 $1", ts_uuid, ts_addr);
+
+  // Create some tables.
+  const int kNumTables = 10;
+  vector<string> table_names;
+  for (int i = 0; i < kNumTables; ++i) {
+    string table_name = Substitute("kudu.table_$0", i);
+    table_names.push_back(table_name);
+
+    TestWorkload workload(cluster_.get());
+    workload.set_table_name(table_name);
+    workload.set_num_replicas(1);
+    workload.Setup();
+  }
+  std::sort(table_names.begin(), table_names.end());
+
+  const auto& ProcessTables = [&] (const int num) {
+    ASSERT_GE(num, 1);
+    ASSERT_LE(num, kNumTables);
+
+    vector<string> expected;
+    expected.insert(expected.end(), table_names.begin(), table_names.begin() + num);
+
+    string filter = "";
+    if (kNumTables != num) {
+      filter = Substitute("-tables=$0", JoinStrings(expected, ","));
+    }
+    vector<string> lines;
+    NO_FATALS(RunActionStdoutLines(
+        Substitute("table list $0 $1", master_addr, filter), &lines));
+
+    std::sort(lines.begin(), lines.end());
+    ASSERT_EQ(expected, lines);
+  };
+
+  const auto& ProcessTablets = [&] (const int num) {
+    ASSERT_GE(num, 1);
+    ASSERT_LE(num, kNumTables);
+
+    string filter = "";
+    if (kNumTables != num) {
+      filter = Substitute("-tables=$0",
+        JoinStringsIterator(table_names.begin(), table_names.begin() + num, ","));
+    }
+    vector<string> lines;
+    NO_FATALS(RunActionStdoutLines(
+        Substitute("table list $0 $1 -list_tablets", master_addr, filter), &lines));
+
+    map<string, pair<string, string>> output;
+    for (int i = 0; i < lines.size(); ++i) {
+      if (lines[i].empty()) continue;
+      ASSERT_LE(i + 2, lines.size());
+      output[lines[i]] = pair<string, string>(lines[i + 1], lines[i + 2]);
+      i += 2;
+    }
+
+    for (const auto& e : output) {
+      shared_ptr<KuduTable> table;
+      ASSERT_OK(client->OpenTable(e.first, &table));
+      vector<KuduScanToken*> tokens;
+      ElementDeleter deleter(&tokens);
+      KuduScanTokenBuilder builder(table.get());
+      ASSERT_OK(builder.Build(&tokens));
+      ASSERT_EQ(1, tokens.size()); // Only one partition(tablet) under table.
+      // Tablet's format.
+      string expect_tablet = Substitute("  T $0", tokens[0]->tablet().id());
+      ASSERT_EQ(expect_tablet, e.second.first);
+      ASSERT_EQ(expect_replica, e.second.second);
+    }
+  };
+
+  // List the tables and tablets.
+  for (int i = 1; i <= kNumTables; ++i) {
+    ProcessTables(i);
+    ProcessTablets(i);
+  }
 }
 
 Status CreateLegacyHmsTable(HmsClient* client,

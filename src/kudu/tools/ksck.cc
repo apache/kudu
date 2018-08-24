@@ -39,9 +39,9 @@
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/gutil/strings/util.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tools/color.h"
+#include "kudu/tools/tool_action_common.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/blocking_queue.h"
 #include "kudu/util/countdown_latch.h"
@@ -99,18 +99,6 @@ namespace kudu {
 namespace tools {
 
 namespace {
-// Return true if 'str' matches any of the patterns in 'patterns', or if
-// 'patterns' is empty.
-bool MatchesAnyPattern(const vector<string>& patterns, const string& str) {
-  // Consider no filter a wildcard.
-  if (patterns.empty()) return true;
-
-  for (const auto& p : patterns) {
-    if (MatchPattern(str, p)) return true;
-  }
-  return false;
-}
-
 void BuildKsckConsensusStateForConfigMember(const consensus::ConsensusStatePB& cstate,
                                             KsckConsensusState* ksck_cstate) {
   CHECK(ksck_cstate);

@@ -56,6 +56,7 @@
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/strings/util.h"
 #include "kudu/master/master.proxy.h" // IWYU pragma: keep
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
@@ -101,6 +102,8 @@ DEFINE_string(flag_tags, "", "Comma-separated list of tags used to restrict whic
                              "flags are returned. An empty value matches all tags");
 DEFINE_bool(all_flags, false, "Whether to return all flags, or only flags that "
                               "were explicitly set.");
+DEFINE_string(tables, "", "Tables to include (comma-separated list of table names)"
+                          "If not specified, includes all tables.");
 
 namespace boost {
 template <typename Signature>
@@ -447,6 +450,16 @@ void SetAlterExternalCatalogs(client::KuduTableAlterer* alterer, bool alter_exte
 
 string GetMasterAddresses(const client::KuduClient& client) {
   return HostPort::ToCommaSeparatedString(client.data_->master_hostports());
+}
+
+bool MatchesAnyPattern(const vector<string>& patterns, const string& str) {
+  // Consider no filter a wildcard.
+  if (patterns.empty()) return true;
+
+  for (const auto& p : patterns) {
+    if (MatchPattern(str, p)) return true;
+  }
+  return false;
 }
 
 Status PrintServerStatus(const string& address, uint16_t default_port) {

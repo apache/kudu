@@ -140,6 +140,10 @@ void SetAlterExternalCatalogs(client::KuduTableAlterer* alterer, bool alter_exte
 // Get the configured master addresses on the most recently connected to leader master.
 std::string GetMasterAddresses(const client::KuduClient& client);
 
+// Return true if 'str' matches any of the patterns in 'patterns', or if
+// 'patterns' is empty.
+bool MatchesAnyPattern(const std::vector<std::string>& patterns, const std::string& str);
+
 // A table of data to present to the user.
 //
 // Supports formatting based on the --format flag.

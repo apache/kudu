@@ -28,6 +28,7 @@
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/gutil/basictypes.h"
@@ -62,10 +63,7 @@ using strings::Substitute;
   } \
 } while (0);
 
-DEFINE_string(tables, "",
-              "Tables to check (comma-separated list of names). "
-              "If not specified, checks all tables.");
-
+DECLARE_string(tables);
 DEFINE_string(tablets, "",
               "Tablets to check (comma-separated list of IDs) "
               "If not specified, checks all tablets.");
