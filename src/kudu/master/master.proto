@@ -780,7 +780,7 @@ service MasterService {
   // TS->Master RPCs
   // ------------------------------------------------------------
   rpc TSHeartbeat(TSHeartbeatRequestPB) returns (TSHeartbeatResponsePB) {
-    option (kudu.rpc.authz_method) = "AuthorizeService";
+    option (kudu.rpc.authz_method) = "AuthorizeServiceUser";
   }
 
   // Client->Master RPCs
@@ -831,7 +831,7 @@ service MasterService {
     option (kudu.rpc.authz_method) = "AuthorizeClient";
   }
   rpc Ping(PingRequestPB) returns (PingResponsePB) {
-    option (kudu.rpc.authz_method) = "AuthorizeClientOrService";
+    option (kudu.rpc.authz_method) = "AuthorizeClientOrServiceUser";
   }
   rpc ReplaceTablet(ReplaceTabletRequestPB) returns (ReplaceTabletResponsePB) {
     option (kudu.rpc.authz_method) = "AuthorizeSuperUser";
@@ -844,6 +844,6 @@ service MasterService {
   // cluster.
   rpc GetMasterRegistration(GetMasterRegistrationRequestPB) returns
       (GetMasterRegistrationResponsePB) {
-    option (kudu.rpc.authz_method) = "AuthorizeClientOrService";
+    option (kudu.rpc.authz_method) = "AuthorizeClientOrServiceUser";
   }
 }

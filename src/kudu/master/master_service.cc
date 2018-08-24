@@ -115,18 +115,18 @@ bool MasterServiceImpl::AuthorizeClient(const Message* /*req*/,
   return server_->Authorize(context, ServerBase::SUPER_USER | ServerBase::USER);
 }
 
-bool MasterServiceImpl::AuthorizeService(const Message* /*req*/,
-                                         Message* /*resp*/,
-                                         rpc::RpcContext* context) {
+bool MasterServiceImpl::AuthorizeServiceUser(const Message* /*req*/,
+                                             Message* /*resp*/,
+                                             rpc::RpcContext* context) {
   // We don't allow superusers to pretend to be tablet servers -- there are no
   // operator tools that do anything like this and since we sign requests for
   // tablet servers, we should be extra tight here.
   return server_->Authorize(context, ServerBase::SERVICE_USER);
 }
 
-bool MasterServiceImpl::AuthorizeClientOrService(const Message* /*req*/,
-                                                 Message* /*resp*/,
-                                                 rpc::RpcContext* context) {
+bool MasterServiceImpl::AuthorizeClientOrServiceUser(const Message* /*req*/,
+                                                     Message* /*resp*/,
+                                                     rpc::RpcContext* context) {
   return server_->Authorize(context, ServerBase::SUPER_USER | ServerBase::USER |
                             ServerBase::SERVICE_USER);
 }

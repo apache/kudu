@@ -80,16 +80,16 @@ class MasterServiceImpl : public MasterServiceIf {
   // Authorize an RPC call which must be from a client.
   bool AuthorizeClient(const google::protobuf::Message* req,
                        google::protobuf::Message* resp,
-                       rpc::RpcContext *context) override;
+                       rpc::RpcContext* context) override;
 
   // Authorize an RPC call which must be from within the Kudu service.
-  bool AuthorizeService(const google::protobuf::Message* req,
-                        google::protobuf::Message* resp,
-                        rpc::RpcContext *context) override;
+  bool AuthorizeServiceUser(const google::protobuf::Message* req,
+                            google::protobuf::Message* resp,
+                            rpc::RpcContext* context) override;
 
-  bool AuthorizeClientOrService(const google::protobuf::Message* req,
-                                google::protobuf::Message* resp,
-                                rpc::RpcContext *context) override;
+  bool AuthorizeClientOrServiceUser(const google::protobuf::Message* req,
+                                    google::protobuf::Message* resp,
+                                    rpc::RpcContext* context) override;
 
   bool AuthorizeSuperUser(const google::protobuf::Message* req,
                           google::protobuf::Message* resp,

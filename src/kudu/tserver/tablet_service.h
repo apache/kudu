@@ -98,11 +98,11 @@ class TabletServiceImpl : public TabletServerServiceIf {
 
   bool AuthorizeClient(const google::protobuf::Message* req,
                        google::protobuf::Message* resp,
-                       rpc::RpcContext* rpc) override;
+                       rpc::RpcContext* context) override;
 
   bool AuthorizeClientOrServiceUser(const google::protobuf::Message* req,
                                     google::protobuf::Message* resp,
-                                    rpc::RpcContext* rpc) override;
+                                    rpc::RpcContext* context) override;
 
   virtual void Ping(const PingRequestPB* req,
                     PingResponsePB* resp,
@@ -174,7 +174,7 @@ class TabletServiceAdminImpl : public TabletServerAdminServiceIf {
 
   bool AuthorizeServiceUser(const google::protobuf::Message* req,
                             google::protobuf::Message* resp,
-                            rpc::RpcContext* rpc) override;
+                            rpc::RpcContext* context) override;
 
   virtual void CreateTablet(const CreateTabletRequestPB* req,
                             CreateTabletResponsePB* resp,
@@ -201,7 +201,7 @@ class ConsensusServiceImpl : public consensus::ConsensusServiceIf {
 
   bool AuthorizeServiceUser(const google::protobuf::Message* req,
                             google::protobuf::Message* resp,
-                            rpc::RpcContext* rpc) override;
+                            rpc::RpcContext* context) override;
 
   virtual void UpdateConsensus(const consensus::ConsensusRequestPB* req,
                                consensus::ConsensusResponsePB* resp,

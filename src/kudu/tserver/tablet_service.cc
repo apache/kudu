@@ -622,18 +622,17 @@ TabletServiceImpl::TabletServiceImpl(TabletServer* server)
 }
 
 bool TabletServiceImpl::AuthorizeClientOrServiceUser(const google::protobuf::Message* /*req*/,
-                                                 google::protobuf::Message* /*resp*/,
-                                                 rpc::RpcContext* rpc) {
-  return server_->Authorize(rpc, ServerBase::SUPER_USER | ServerBase::USER |
+                                                     google::protobuf::Message* /*resp*/,
+                                                     rpc::RpcContext* context) {
+  return server_->Authorize(context, ServerBase::SUPER_USER | ServerBase::USER |
                             ServerBase::SERVICE_USER);
 }
 
 bool TabletServiceImpl::AuthorizeClient(const google::protobuf::Message* /*req*/,
                                         google::protobuf::Message* /*resp*/,
-                                        rpc::RpcContext* rpc) {
-  return server_->Authorize(rpc, ServerBase::SUPER_USER | ServerBase::USER);
+                                        rpc::RpcContext* context) {
+  return server_->Authorize(context, ServerBase::SUPER_USER | ServerBase::USER);
 }
-
 
 void TabletServiceImpl::Ping(const PingRequestPB* /*req*/,
                              PingResponsePB* /*resp*/,
@@ -648,8 +647,8 @@ TabletServiceAdminImpl::TabletServiceAdminImpl(TabletServer* server)
 
 bool TabletServiceAdminImpl::AuthorizeServiceUser(const google::protobuf::Message* /*req*/,
                                                   google::protobuf::Message* /*resp*/,
-                                                  rpc::RpcContext* rpc) {
-  return server_->Authorize(rpc, ServerBase::SUPER_USER | ServerBase::SERVICE_USER);
+                                                  rpc::RpcContext* context) {
+  return server_->Authorize(context, ServerBase::SUPER_USER | ServerBase::SERVICE_USER);
 }
 
 void TabletServiceAdminImpl::AlterSchema(const AlterSchemaRequestPB* req,
