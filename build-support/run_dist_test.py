@@ -170,6 +170,8 @@ def main():
     test_logdir = os.path.abspath(os.path.join(ROOT, "build/java/test-logs"))
     if not os.path.exists(test_logdir):
       os.makedirs(test_logdir)
+    if not os.path.exists(test_tmpdir):
+      os.makedirs(test_tmpdir)
     cmd = [find_java()] + args
     stdout = stderr = file(os.path.join(test_logdir, "test-output.txt"), "w")
   else:

@@ -48,10 +48,11 @@
 #     reporting to work.
 #
 #   ENABLE_DIST_TEST  Default: 0
-#     If set to 1, will submit C++ tests to be run by the distributed
-#     test runner instead of running them locally. This requires that
-#     $DIST_TEST_HOME be set to a working dist_test checkout (and that
-#     dist_test itself be appropriately configured to point to a cluster)
+#     If set to 1, will submit C++ and Java tests to be run by the
+#     distributed test runner instead of running them locally.
+#     This requires that $DIST_TEST_HOME be set to a working dist_test
+#     checkout (and that dist_test itself be appropriately configured to
+#     point to a cluster)
 #
 #   BUILD_JAVA        Default: 1
 #     Build and test java code if this is set to 1.
@@ -331,17 +332,18 @@ fi
 EXIT_STATUS=0
 FAILURES=""
 
-# If we're running distributed tests, submit them asynchronously while
+# If we're running distributed C++ tests, submit them asynchronously while
 # we run the Java and Python tests.
 if [ "$ENABLE_DIST_TEST" == "1" ]; then
   echo
-  echo Submitting distributed-test job.
+  echo Submitting C++ distributed-test job.
   echo ------------------------------------------------------------
-  export DIST_TEST_JOB_PATH=$BUILD_ROOT/dist-test-job-id
+  # dist-test uses DIST_TEST_JOB_PATH to define where to output it's id file.
+  export DIST_TEST_JOB_PATH=$BUILD_ROOT/c-dist-test-job-id
   rm -f $DIST_TEST_JOB_PATH
   if ! $SOURCE_ROOT/build-support/dist_test.py --no-wait run ; then
     EXIT_STATUS=1
-    FAILURES="$FAILURES"$'Could not submit distributed test job\n'
+    FAILURES="$FAILURES"$'Could not submit C++ distributed test job\n'
   fi
   # Still need to run a few non-dist-test-capable tests locally.
   EXTRA_TEST_FLAGS="$EXTRA_TEST_FLAGS -L no_dist_test"
@@ -401,10 +403,24 @@ if [ "$BUILD_JAVA" == "1" ]; then
     # incompatibility issue.
     EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS -DskipFormat"
     EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS $GRADLE_FLAGS"
-    # TODO: Run `gradle check` in BUILD_TYPE DEBUG when static code analysis is fixed
-    if ! ./gradlew $EXTRA_GRADLE_FLAGS clean test ; then
-      EXIT_STATUS=1
-      FAILURES="$FAILURES"$'Java Gradle build/test failed\n'
+    # If we're running distributed Java tests, submit them asynchronously.
+    if [ "$ENABLE_DIST_TEST" == "1" ]; then
+      echo
+      echo Submitting Java distributed-test job.
+      echo ------------------------------------------------------------
+      # dist-test uses DIST_TEST_JOB_PATH to define where to output it's id file.
+      export DIST_TEST_JOB_PATH=$BUILD_ROOT/java-dist-test-job-id
+      rm -f $DIST_TEST_JOB_PATH
+      if ! $SOURCE_ROOT/build-support/dist_test.py --no-wait java run-all ; then
+        EXIT_STATUS=1
+        FAILURES="$FAILURES"$'Could not submit Java distributed test job\n'
+      fi
+    else
+      # TODO: Run `gradle check` in BUILD_TYPE DEBUG when static code analysis is fixed
+      if ! ./gradlew $EXTRA_GRADLE_FLAGS clean test ; then
+        EXIT_STATUS=1
+        FAILURES="$FAILURES"$'Java Gradle build/test failed\n'
+      fi
     fi
   fi
 
@@ -554,15 +570,16 @@ fi
 # If we submitted the tasks earlier, go fetch the results now
 if [ "$ENABLE_DIST_TEST" == "1" ]; then
   echo
-  echo Fetching previously submitted dist-test results...
+  echo Fetching previously submitted C++ dist-test results...
   echo ------------------------------------------------------------
-  if ! $DIST_TEST_HOME/bin/client watch ; then
+  C_DIST_TEST_ID=`cat $BUILD_ROOT/c-dist-test-job-id`
+  if ! $DIST_TEST_HOME/bin/client watch $C_DIST_TEST_ID ; then
     EXIT_STATUS=1
-    FAILURES="$FAILURES"$'Distributed tests failed\n'
+    FAILURES="$FAILURES"$'Distributed C++ tests failed\n'
   fi
   DT_DIR=$TEST_LOGDIR/dist-test-out
   rm -Rf $DT_DIR
-  $DIST_TEST_HOME/bin/client fetch --artifacts -d $DT_DIR
+  $DIST_TEST_HOME/bin/client fetch --artifacts -d $DT_DIR $C_DIST_TEST_ID
   # Fetching the artifacts expands each log into its own directory.
   # Move them back into the main log directory
   rm -f $DT_DIR/*zip
@@ -570,6 +587,27 @@ if [ "$ENABLE_DIST_TEST" == "1" ]; then
     mv $arch_dir/build/$BUILD_TYPE_LOWER/test-logs/* $TEST_LOGDIR
     rm -Rf $arch_dir
   done
+
+  if [ "$BUILD_GRADLE" == "1" ]; then
+    echo
+    echo Fetching previously submitted Java dist-test results...
+    echo ------------------------------------------------------------
+    JAVA_DIST_TEST_ID=`cat $BUILD_ROOT/java-dist-test-job-id`
+    if ! $DIST_TEST_HOME/bin/client watch $JAVA_DIST_TEST_ID ; then
+      EXIT_STATUS=1
+      FAILURES="$FAILURES"$'Distributed Java tests failed\n'
+    fi
+    DT_DIR=$TEST_LOGDIR/java-dist-test-out
+    rm -Rf $DT_DIR
+    $DIST_TEST_HOME/bin/client fetch --artifacts -d $DT_DIR $JAVA_DIST_TEST_ID
+    # Fetching the artifacts expands each log into its own directory.
+    # Move them back into the main log directory
+    rm -f $DT_DIR/*zip
+    for arch_dir in $DT_DIR/* ; do
+      mv $arch_dir/build/java/test-logs/* $TEST_LOGDIR
+      rm -Rf $arch_dir
+    done
+  fi
 fi
 
 if [ $EXIT_STATUS != 0 ]; then

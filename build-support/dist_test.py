@@ -58,6 +58,9 @@ MAX_TASKS_PER_JOB=10000
 # of retries, so we have to subtract 1.
 FLAKY_TEST_RETRIES = int(os.environ.get('KUDU_FLAKY_TEST_ATTEMPTS', 1)) - 1
 
+# Flags to include when running Gradle tasks
+GRADLE_FLAGS = os.environ.get('EXTRA_GRADLE_FLAGS', "")
+
 PATH_TO_REPO = "../"
 
 # Matches the command line listings in 'ctest -V -N'. For example:
@@ -365,7 +368,8 @@ def create_archive_input(staging, execution,
 
 def create_task_json(staging,
                      replicate_tasks=1,
-                     flaky_test_set=set()):
+                     flaky_test_set=set(),
+                     retry_all_tests=False):
   """
   Create a task JSON file suitable for submitting to the distributed
   test execution service.
@@ -385,7 +389,7 @@ def create_task_json(staging,
     # to get the test name
     test_name = ".".join(k.split(".")[:-1])
     max_retries = 0
-    if test_name in flaky_test_set:
+    if test_name in flaky_test_set or retry_all_tests:
       max_retries = FLAKY_TEST_RETRIES
 
     tasks += [{"isolate_hash": str(v),
@@ -528,11 +532,15 @@ def add_loop_test_subparser(subparsers):
 
 
 def run_java_tests(parser, options):
-  subprocess.check_call([rel_to_abs("java/gradlew"), "distTest"],
-      cwd=rel_to_abs("java"))
+  subprocess.check_call([rel_to_abs("java/gradlew")] + GRADLE_FLAGS.split() +
+                        ["distTest"],
+                        cwd=rel_to_abs("java"))
   staging = StagingDir(rel_to_abs("java/build/dist-test"))
   run_isolate(staging)
-  create_task_json(staging, 1)
+  # TODO(ghenke): Add Java tests to the flaky dashboard
+  # KUDU_FLAKY_TEST_LIST doesn't included Java tests.
+  # Instead we will retry all Java tests in case they are flaky.
+  create_task_json(staging, 1, retry_all_tests=True)
   submit_tasks(staging, options)
 
 def loop_java_test(parser, options):
@@ -541,9 +549,9 @@ def loop_java_test(parser, options):
   """
   if options.num_instances < 1:
     parser.error("--num-instances must be >= 1")
-  subprocess.check_call(
-      [rel_to_abs("java/gradlew"), "distTest", "--classes", "**/%s" % options.pattern],
-      cwd=rel_to_abs("java"))
+  subprocess.check_call([rel_to_abs("java/gradlew")] + GRADLE_FLAGS.split() +
+                        ["distTest", "--classes", "**/%s" % options.pattern],
+                        cwd=rel_to_abs("java"))
   staging = StagingDir(rel_to_abs("java/build/dist-test"))
   run_isolate(staging)
   create_task_json(staging, options.num_instances)
