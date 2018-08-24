@@ -53,10 +53,12 @@ shadowJar {
 // location across all modules.
 shadowJar {
   relocate "com.google.common", "org.apache.kudu.shaded.com.google.common"
+  relocate "com.google.gson", "org.apache.kudu.shaded.com.google.gson"
   relocate "com.google.protobuf", "org.apache.kudu.shaded.com.google.protobuf"
   relocate "com.google.thirdparty", "org.apache.kudu.shaded.com.google.thirdparty"
   relocate "com.sangupta", "org.apache.kudu.shaded.com.sangupta"
   relocate "org.jboss.netty", "org.apache.kudu.shaded.org.jboss.netty"
+  relocate "scopt", "org.apache.kudu.shaded.scopt"
 }
 
 // ------------------------------------------------------------------

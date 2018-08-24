@@ -34,8 +34,10 @@ my $pat_allow_non_java =
 # Allowed filenames of shaded dependencies in JARs.
 my $pat_allow_kudu_shaded =
     qr{^org/apache/kudu/shaded/
-        (?:org/jboss/netty|com/google/(?:common|protobuf|thirdparty/publicsuffix)|
-           com/sangupta/murmur)
+        (?:com/google/(?:common|gson|protobuf|thirdparty/publicsuffix)|
+           com/sangupta/murmur|
+           org/jboss/netty|
+           scopt)
       }x;
 
 # Allowed paths of unshaded Kudu dependencies in JARs.
@@ -44,9 +46,9 @@ my $pat_allow_kudu_unshaded = qr{^org/apache/kudu/.*};
 
 # Allowed paths of unshaded non-Kudu dependencies in JARs.
 my $pat_allow_nonkudu_unshaded = qr{^(?:com/databricks/spark/avro|
+                                        com/stumbleupon/async/|
                                         org/apache/parquet/|
-                                        org/apache/yetus/|
-                                        com/stumbleupon/async/)}x;
+                                        org/apache/yetus/)}x;
 
 if (scalar @ARGV != 1) {
   print STDERR "Usage: $0 <dest_dir>\n";
@@ -58,6 +60,7 @@ chdir($dest_dir) or die "cannot chdir to destination directory $dest_dir: $!";
 print "Checking jars in directory: " . `pwd`;
 
 chomp(my @jars = `find . -type f -name \*.jar |
+                         grep -v build/jars |
                          grep -v tests\.jar |
                          grep -v tests-shaded\.jar |
                          grep -v original |
