@@ -702,6 +702,7 @@ message ListTabletServersResponsePB {
     required NodeInstancePB instance_id = 1;
     optional ServerRegistrationPB registration = 2;
     optional int32 millis_since_heartbeat = 3;
+    optional string location = 4;
   }
   repeated Entry servers = 2;
 }

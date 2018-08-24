@@ -138,6 +138,11 @@ Status ListTServers(const RunnerContext& context) {
       for (const auto& server : servers) {
         values.emplace_back(strings::Substitute("$0ms", server.millis_since_heartbeat()));
       }
+    } else if (boost::iequals(column, "location")) {
+      for (const auto& server : servers) {
+        string loc = server.location();
+        values.emplace_back(loc.empty() ? "<none>" : std::move(loc));
+      }
     } else {
       return Status::InvalidArgument("unknown column (--columns)", column);
     }

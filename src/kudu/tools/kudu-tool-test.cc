@@ -2069,6 +2069,37 @@ TEST_F(ToolTest, TestTserverList) {
   }
 }
 
+TEST_F(ToolTest, TestTserverListLocationAssigned) {
+  const string kLocationCmdPath = JoinPathSegments(GetTestExecutableDirectory(),
+                                                   "testdata/first_argument.sh");
+  const string location = "/foo-bar0/BAAZ._9-quux";
+  ExternalMiniClusterOptions opts;
+  opts.extra_master_flags.emplace_back(
+        Substitute("--location_mapping_cmd=$0 $1", kLocationCmdPath, location));
+
+  NO_FATALS(StartExternalMiniCluster(opts));
+
+  string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+
+  string out;
+  NO_FATALS(RunActionStdoutString(
+        Substitute("tserver list $0 --columns=uuid,location --format=csv", master_addr), &out));
+
+  ASSERT_STR_CONTAINS(out, cluster_->tablet_server(0)->uuid() + "," + location);
+}
+
+TEST_F(ToolTest, TestTserverListLocationNotAssigned) {
+  NO_FATALS(StartExternalMiniCluster());
+
+  string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+
+  string out;
+  NO_FATALS(RunActionStdoutString(
+        Substitute("tserver list $0 --columns=uuid,location --format=csv", master_addr), &out));
+
+  ASSERT_STR_CONTAINS(out, cluster_->tablet_server(0)->uuid() + ",<none>");
+}
+
 TEST_F(ToolTest, TestMasterList) {
   ExternalMiniClusterOptions opts;
   opts.num_tablet_servers = 0;

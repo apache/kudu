@@ -171,7 +171,8 @@ ADD_KUDU_TEST_DEPENDENCIES(kudu-admin-test
   kudu)
 ADD_KUDU_TEST(kudu-tool-test
   NUM_SHARDS 4 PROCESSORS 3
-  DATA_FILES testdata/sample-diagnostics-log.txt testdata/bad-diagnostics-log.txt)
+  DATA_FILES testdata/sample-diagnostics-log.txt testdata/bad-diagnostics-log.txt
+  DATA_FILES testdata/first_argument.sh)
 ADD_KUDU_TEST_DEPENDENCIES(kudu-tool-test
   kudu)
 ADD_KUDU_TEST(kudu-ts-cli-test)
