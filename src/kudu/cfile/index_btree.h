@@ -30,6 +30,11 @@
 #include "kudu/util/status.h"
 
 namespace kudu {
+
+namespace fs {
+struct IOContext;
+}  // namespace fs
+
 namespace cfile {
 
 class BTreeInfoPB;
@@ -74,6 +79,7 @@ class IndexTreeBuilder {
 class IndexTreeIterator {
  public:
   explicit IndexTreeIterator(
+      const fs::IOContext* io_context,
       const CFileReader *reader,
       const BlockPointer &root_blockptr);
 
@@ -87,9 +93,10 @@ class IndexTreeIterator {
   const Slice GetCurrentKey() const;
   const BlockPointer &GetCurrentBlockPointer() const;
 
-  static IndexTreeIterator *Create(
-    const CFileReader *reader,
-    const BlockPointer &idx_root);
+  static IndexTreeIterator* Create(
+    const fs::IOContext* io_context,
+    const CFileReader* reader,
+    const BlockPointer& root_blockptr);
 
   const CFileReader* cfile_reader() const {
     return reader_;
@@ -100,7 +107,7 @@ class IndexTreeIterator {
   IndexBlockReader *BottomReader();
   IndexBlockIterator *seeked_iter(int depth);
   IndexBlockReader *seeked_reader(int depth);
-  Status LoadBlock(const BlockPointer &block, int dept);
+  Status LoadBlock(const BlockPointer &block, int depth);
   Status SeekDownward(const Slice &search_key, const BlockPointer &in_block,
                       int cur_depth);
   Status SeekToFirstDownward(const BlockPointer &in_block, int cur_depth);
@@ -124,6 +131,8 @@ class IndexTreeIterator {
   BlockPointer root_block_;
 
   std::vector<std::unique_ptr<SeekedIndex>> seeked_indexes_;
+
+  const fs::IOContext* io_context_;
 
   DISALLOW_COPY_AND_ASSIGN(IndexTreeIterator);
 };

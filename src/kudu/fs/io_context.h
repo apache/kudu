@@ -22,9 +22,26 @@
 namespace kudu {
 namespace fs {
 
-// An IOContext provides a single interface to pass state around during IO.
+// An IOContext provides a single interface to pass state around during IO. A
+// single IOContext should correspond to a single high-level operation that
+// does IO, e.g. a scan, a tablet bootstrap, etc.
+//
+// For each operation, there should exist one IOContext owned by the top-level
+// module. A pointer to the context should then be passed around by lower-level
+// modules. These lower-level modules should enforce that their access via
+// pointer to the IOContext is bounded by the lifetime of the IOContext itself.
+//
+// Examples:
+// - A Tablet::Iterator will do IO and own an IOContext. All sub-iterators may
+//   pass around and store pointers to this IOContext, under the assumption
+//   that they will not outlive the parent Tablet::Iterator.
+// - Tablet bootstrap will do IO and an IOContext will be created during
+//   bootstrap and passed around to lower-level modules (e.g. to the CFiles).
+//   The expectation is that, because the lower-level modules may outlive the
+//   bootstrap and its IOContext, they will not store the pointers to the
+//   context, but may use them as method arguments as needed.
 struct IOContext {
-  // The tablet_id associated with this IO.
+  // The tablet id associated with this IO.
   std::string tablet_id;
 };
 

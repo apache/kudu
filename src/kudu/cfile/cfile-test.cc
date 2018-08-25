@@ -53,6 +53,7 @@
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs-test-util.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/fs/io_context.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
@@ -290,7 +291,7 @@ class TestCFile : public CFileTestBase {
     }
 
     gscoped_ptr<IndexTreeIterator> iter;
-    iter.reset(IndexTreeIterator::Create(reader.get(), reader->posidx_root()));
+    iter.reset(IndexTreeIterator::Create(nullptr, reader.get(), reader->posidx_root()));
     ASSERT_OK(iter->SeekToFirst());
 
     uint8_t data[16];
@@ -301,7 +302,7 @@ class TestCFile : public CFileTestBase {
     do {
       BlockHandle dblk_data;
       BlockPointer blk_ptr = iter->GetCurrentBlockPointer();
-      ASSERT_OK(reader->ReadBlock(blk_ptr, CFileReader::CACHE_BLOCK, &dblk_data));
+      ASSERT_OK(reader->ReadBlock(nullptr, blk_ptr, CFileReader::CACHE_BLOCK, &dblk_data));
 
       memcpy(data + 12, &count, 4);
       ASSERT_EQ(expected_data, dblk_data.data());
@@ -375,13 +376,15 @@ class TestCFile : public CFileTestBase {
     unique_ptr<CFileReader> reader;
     RETURN_NOT_OK(CFileReader::Open(std::move(corrupt_source), ReaderOptions(), &reader));
     gscoped_ptr<IndexTreeIterator> iter;
-    iter.reset(IndexTreeIterator::Create(reader.get(), reader->posidx_root()));
+    const fs::IOContext io_context({ "corrupted-dummy-tablet" });
+    iter.reset(IndexTreeIterator::Create(&io_context, reader.get(), reader->posidx_root()));
     RETURN_NOT_OK(iter->SeekToFirst());
 
     do {
       BlockHandle dblk_data;
       BlockPointer blk_ptr = iter->GetCurrentBlockPointer();
-      RETURN_NOT_OK(reader->ReadBlock(blk_ptr, CFileReader::DONT_CACHE_BLOCK, &dblk_data));
+      RETURN_NOT_OK(reader->ReadBlock(&io_context, blk_ptr,
+          CFileReader::DONT_CACHE_BLOCK, &dblk_data));
     } while (iter->Next().ok());
 
     return Status::OK();
@@ -1013,11 +1016,11 @@ TEST_P(TestCFileBothCacheTypes, TestCacheKeysAreStable) {
     ASSERT_OK(CFileReader::Open(std::move(source), ReaderOptions(), &reader));
 
     gscoped_ptr<IndexTreeIterator> iter;
-    iter.reset(IndexTreeIterator::Create(reader.get(), reader->posidx_root()));
+    iter.reset(IndexTreeIterator::Create(nullptr, reader.get(), reader->posidx_root()));
     ASSERT_OK(iter->SeekToFirst());
 
     BlockHandle bh;
-    ASSERT_OK(reader->ReadBlock(iter->GetCurrentBlockPointer(),
+    ASSERT_OK(reader->ReadBlock(nullptr, iter->GetCurrentBlockPointer(),
                                 CFileReader::CACHE_BLOCK,
                                 &bh));
 

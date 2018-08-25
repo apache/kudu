@@ -44,6 +44,8 @@
 #include "kudu/common/key_encoder.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/common/types.h"
+#include "kudu/fs/error_manager.h"
+#include "kudu/fs/io_context.h"
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stringprintf.h"
@@ -55,6 +57,7 @@
 #include "kudu/util/compression/compression_codec.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/debug/trace_event.h"
+#include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/malloc.h"
@@ -75,6 +78,13 @@ DEFINE_bool(cfile_verify_checksums, true,
             "Verify the checksum for each block on read if one exists");
 TAG_FLAG(cfile_verify_checksums, evolving);
 
+DEFINE_double(cfile_inject_corruption, 0,
+              "Fraction of the time that read operations on CFiles will fail "
+              "with a corruption status");
+TAG_FLAG(cfile_inject_corruption, hidden);
+
+using kudu::fault_injection::MaybeTrue;
+using kudu::fs::ErrorHandlerType;
 using kudu::fs::IOContext;
 using kudu::fs::ReadableBlock;
 using kudu::pb_util::SecureDebugString;
@@ -166,9 +176,9 @@ Status CFileReader::InitOnce(const IOContext* io_context) {
   TRACE_COUNTER_INCREMENT("cfile_init", 1);
 
   // Parse Footer first to find unsupported features.
-  RETURN_NOT_OK(ReadAndParseFooter());
+  RETURN_NOT_OK_HANDLE_CORRUPTION(ReadAndParseFooter(), HandleCorruption(io_context));
 
-  RETURN_NOT_OK(ReadAndParseHeader());
+  RETURN_NOT_OK_HANDLE_CORRUPTION(ReadAndParseHeader(), HandleCorruption(io_context));
 
   if (PREDICT_FALSE(footer_->incompatible_features() & ~IncompatibleFeatures::SUPPORTED)) {
     return Status::NotSupported(Substitute(
@@ -324,7 +334,8 @@ Status CFileReader::VerifyChecksum(ArrayView<const Slice> data, const Slice& che
   for (auto& d : data) {
     checksum_value = crc::Crc32c(d.data(), d.size(), checksum_value);
   }
-  if (PREDICT_FALSE(checksum_value != expected_checksum)) {
+  if (PREDICT_FALSE(checksum_value != expected_checksum ||
+                    MaybeTrue(FLAGS_cfile_inject_corruption))) {
     return Status::Corruption(
         Substitute("Checksum does not match: $0 vs expected $1",
                    checksum_value, expected_checksum));
@@ -419,8 +430,8 @@ class ScratchMemory {
 };
 } // anonymous namespace
 
-Status CFileReader::ReadBlock(const BlockPointer &ptr, CacheControl cache_control,
-                              BlockHandle *ret) const {
+Status CFileReader::ReadBlock(const IOContext* io_context, const BlockPointer &ptr,
+                              CacheControl cache_control, BlockHandle *ret) const {
   DCHECK(init_once_.init_succeeded());
   CHECK(ptr.offset() > 0 &&
         ptr.offset() + ptr.size() < file_size_) <<
@@ -480,9 +491,13 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr, CacheControl cache_contro
                                    block_id().ToString(), ptr.ToString()));
 
   if (has_checksums() && FLAGS_cfile_verify_checksums) {
-    RETURN_NOT_OK_PREPEND(VerifyChecksum(ArrayView<const Slice>(&block, 1), checksum),
-                          Substitute("checksum error on CFile block $0 at $1",
-                                     block_id().ToString(), ptr.ToString()));
+    Status s = VerifyChecksum(ArrayView<const Slice>(&block, 1), checksum);
+    if (!s.ok()) {
+      RETURN_NOT_OK_HANDLE_CORRUPTION(
+          s.CloneAndPrepend(Substitute("checksum error on CFile block $0 at $1",
+                                       block_id().ToString(), ptr.ToString())),
+          HandleCorruption(io_context));
+    }
   }
 
   // Decompress the block
@@ -572,6 +587,13 @@ bool CFileReader::GetMetadataEntry(const string &key, string *val) const {
     }
   }
   return false;
+}
+
+void CFileReader::HandleCorruption(const fs::IOContext* io_context) const {
+  DCHECK(io_context);
+  LOG(ERROR) << "Encountered corrupted CFile in filesystem block: " << block_->id().ToString();
+  block_->block_manager()->error_manager()->RunErrorNotificationCb(
+      ErrorHandlerType::CFILE_CORRUPTION, io_context->tablet_id);
 }
 
 Status CFileReader::NewIterator(CFileIterator** iter, CacheControl cache_control,
@@ -857,11 +879,11 @@ Status CFileIterator::PrepareForNewSeek() {
   // Create the index tree iterators if we haven't already done so.
   if (!posidx_iter_ && reader_->footer().has_posidx_info()) {
     BlockPointer bp(reader_->footer().posidx_info().root_block());
-    posidx_iter_.reset(IndexTreeIterator::Create(reader_, bp));
+    posidx_iter_.reset(IndexTreeIterator::Create(io_context_, reader_, bp));
   }
   if (!validx_iter_ && reader_->footer().has_validx_info()) {
     BlockPointer bp(reader_->footer().validx_info().root_block());
-    validx_iter_.reset(IndexTreeIterator::Create(reader_, bp));
+    validx_iter_.reset(IndexTreeIterator::Create(io_context_, reader_, bp));
   }
 
   // Initialize the decoder for the dictionary block
@@ -870,8 +892,9 @@ Status CFileIterator::PrepareForNewSeek() {
     BlockPointer bp(reader_->footer().dict_block_ptr());
 
     // Cache the dictionary for performance
-    RETURN_NOT_OK_PREPEND(reader_->ReadBlock(bp, CFileReader::CACHE_BLOCK, &dict_block_handle_),
-                          "couldn't read dictionary block");
+    RETURN_NOT_OK_PREPEND(
+        reader_->ReadBlock(io_context_, bp, CFileReader::CACHE_BLOCK, &dict_block_handle_),
+        "couldn't read dictionary block");
 
     dict_decoder_.reset(new BinaryPlainBlockDecoder(dict_block_handle_.data()));
     RETURN_NOT_OK_PREPEND(dict_decoder_->ParseHeader(),
@@ -920,7 +943,8 @@ Status DecodeNullInfo(Slice *data_block, uint32_t *num_rows_in_block, Slice *nul
 Status CFileIterator::ReadCurrentDataBlock(const IndexTreeIterator &idx_iter,
                                            PreparedBlock *prep_block) {
   prep_block->dblk_ptr_ = idx_iter.GetCurrentBlockPointer();
-  RETURN_NOT_OK(reader_->ReadBlock(prep_block->dblk_ptr_, cache_control_, &prep_block->dblk_data_));
+  RETURN_NOT_OK(reader_->ReadBlock(io_context_, prep_block->dblk_ptr_,
+                                   cache_control_, &prep_block->dblk_data_));
 
   uint32_t num_rows_in_block = 0;
   Slice data_block = prep_block->dblk_data_.data();

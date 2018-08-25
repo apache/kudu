@@ -146,6 +146,7 @@ DECLARE_bool(crash_on_eio);
 DECLARE_bool(enable_maintenance_manager);
 DECLARE_bool(fail_dns_resolution);
 DECLARE_bool(rowset_metadata_store_keys);
+DECLARE_double(cfile_inject_corruption);
 DECLARE_double(env_inject_eio);
 DECLARE_int32(flush_threshold_mb);
 DECLARE_int32(flush_threshold_secs);
@@ -565,7 +566,13 @@ TEST_F(TabletServerTest, TestTombstonedTabletOnWebUI) {
   ASSERT_STR_NOT_CONTAINS(s, mini_server_->bound_rpc_addr().ToString());
 }
 
-class TabletServerDiskFailureTest : public TabletServerTestBase {
+enum class ErrorType {
+  DISK_FAILURE,
+  CFILE_CORRUPTION
+};
+
+class TabletServerDiskErrorTest : public TabletServerTestBase,
+                                  public testing::WithParamInterface<ErrorType> {
  public:
   virtual void SetUp() override {
     const int kNumDirs = 5;
@@ -582,9 +589,12 @@ class TabletServerDiskFailureTest : public TabletServerTestBase {
   }
 };
 
-// Test that applies random operations to a tablet with a non-zero disk-failure
-// injection rate.
-TEST_F(TabletServerDiskFailureTest, TestRandomOpSequence) {
+INSTANTIATE_TEST_CASE_P(ErrorType, TabletServerDiskErrorTest, ::testing::Values(
+    ErrorType::DISK_FAILURE, ErrorType::CFILE_CORRUPTION));
+
+// Test that applies random write operations to a tablet with a high
+// maintenance manager load and a non-zero error injection rate.
+TEST_P(TabletServerDiskErrorTest, TestRandomOpSequence) {
   if (!AllowSlowTests()) {
     LOG(INFO) << "Not running slow test. To run, use KUDU_ALLOW_SLOW_TESTS=1";
     return;
@@ -595,12 +605,14 @@ TEST_F(TabletServerDiskFailureTest, TestRandomOpSequence) {
                                         RowOperationsPB::DELETE };
   const int kMaxKey = 100000;
 
-  // Set these way up-front so we can change a single value to actually start
-  // injecting errors. Inject errors into all data dirs but one.
-  FLAGS_crash_on_eio = false;
-  const vector<string> failed_dirs = { mini_server_->options()->fs_opts.data_roots.begin() + 1,
-                                       mini_server_->options()->fs_opts.data_roots.end() };
-  FLAGS_env_inject_eio_globs = JoinStrings(JoinPathSegmentsV(failed_dirs, "**"), ",");
+  if (GetParam() == ErrorType::DISK_FAILURE) {
+    // Set these way up-front so we can change a single value to actually start
+    // injecting errors. Inject errors into all data dirs but one.
+    FLAGS_crash_on_eio = false;
+    const vector<string> failed_dirs = { mini_server_->options()->fs_opts.data_roots.begin() + 1,
+                                         mini_server_->options()->fs_opts.data_roots.end() };
+    FLAGS_env_inject_eio_globs = JoinStrings(JoinPathSegmentsV(failed_dirs, "**"), ",");
+  }
 
   set<int> keys;
   const auto GetRandomString = [] {
@@ -651,9 +663,16 @@ TEST_F(TabletServerDiskFailureTest, TestRandomOpSequence) {
     }
     ASSERT_OK(PerformOp());
   }
-  // At this point, a bunch of operations have gone through successfully. Fail
-  // one of the disks that the tablet lives on.
-  FLAGS_env_inject_eio = 0.01;
+  // At this point, a bunch of operations have gone through successfully. Start
+  // injecting errors.
+  switch (GetParam()) {
+    case ErrorType::DISK_FAILURE:
+      FLAGS_env_inject_eio = 0.01;
+      break;
+    case ErrorType::CFILE_CORRUPTION:
+      FLAGS_cfile_inject_corruption = 0.01;
+      break;
+  }
 
   // The tablet will eventually be failed and will not be able to accept
   // updates. Keep on inserting until that happens.
@@ -1640,17 +1659,26 @@ TEST_P(ScanCorruptedDeltasParamTest, Test) {
   ASSERT_OK(SchemaToColumnPBs(schema_, scan->mutable_projected_columns()));
 
   // Send the call. This first call should attempt to init the corrupted
-  // deltafiles and return with an error. The second call should see that the
-  // previous call to init failed and should return the failed status.
+  // deltafiles and return with an error. Subsequent calls should see that the
+  // previous call to init failed and should return an appropriate error.
   req.set_batch_size_bytes(10000);
+  SCOPED_TRACE(SecureDebugString(req));
+  ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
+  SCOPED_TRACE(SecureDebugString(resp));
+  ASSERT_TRUE(resp.has_error());
+  ASSERT_EQ(resp.error().status().code(), AppStatusPB::CORRUPTION);
+  ASSERT_STR_CONTAINS(resp.error().status().message(), "failed to init CFileReader");
+
+  // The tablet will end up transitioning to a failed state and yield "not
+  // running" errors.
   for (int i = 0; i < 2; i++) {
     rpc.Reset();
-    SCOPED_TRACE(SecureDebugString(req));
     ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
-    SCOPED_TRACE(SecureDebugString(resp));
+    SCOPED_TRACE(SecureDebugString(req));
     ASSERT_TRUE(resp.has_error());
-    ASSERT_EQ(resp.error().status().code(), AppStatusPB::CORRUPTION);
-    ASSERT_STR_CONTAINS(resp.error().status().message(), "failed to init CFileReader");
+    SCOPED_TRACE(SecureDebugString(resp));
+    ASSERT_EQ(resp.error().status().code(), AppStatusPB::ILLEGAL_STATE);
+    ASSERT_STR_CONTAINS(resp.error().status().message(), "Tablet not RUNNING");
   }
 }
 

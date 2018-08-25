@@ -90,10 +90,6 @@ namespace tablet {
 
 const char * const DeltaFileReader::kDeltaStatsEntryName = "deltafilestats";
 
-namespace {
-
-} // namespace
-
 DeltaFileWriter::DeltaFileWriter(unique_ptr<WritableBlock> block)
 #ifndef NDEBUG
  : has_appended_(false)
@@ -268,7 +264,7 @@ Status DeltaFileReader::InitOnce(const IOContext* io_context) {
   RETURN_NOT_OK(reader_->Init(io_context));
 
   if (!reader_->has_validx()) {
-    return Status::Corruption("file does not have a value index!");
+    return Status::NotSupported("file does not have a value index!");
   }
 
   // Initialize delta file stats
@@ -279,7 +275,7 @@ Status DeltaFileReader::InitOnce(const IOContext* io_context) {
 Status DeltaFileReader::ReadDeltaStats() {
   string filestats_pb_buf;
   if (!reader_->GetMetadataEntry(kDeltaStatsEntryName, &filestats_pb_buf)) {
-    return Status::Corruption("missing delta stats from the delta file metadata");
+    return Status::NotSupported("missing delta stats from the delta file metadata");
   }
 
   DeltaStatsPB deltastats_pb;
@@ -445,6 +441,7 @@ Status DeltaFileIterator::SeekToOrdinal(rowid_t idx) {
 
   if (!index_iter_) {
     index_iter_.reset(IndexTreeIterator::Create(
+        opts_.io_context,
         dfr_->cfile_reader().get(),
         dfr_->cfile_reader()->validx_root()));
   }
@@ -478,8 +475,8 @@ Status DeltaFileIterator::ReadCurrentBlockOntoQueue() {
 
   unique_ptr<PreparedDeltaBlock> pdb(new PreparedDeltaBlock());
   BlockPointer dblk_ptr = index_iter_->GetCurrentBlockPointer();
-  RETURN_NOT_OK(dfr_->cfile_reader()->ReadBlock(
-      dblk_ptr, cache_blocks_, &pdb->block_));
+  shared_ptr<CFileReader> reader = dfr_->cfile_reader();
+  RETURN_NOT_OK(reader->ReadBlock(opts_.io_context, dblk_ptr, cache_blocks_, &pdb->block_));
 
   // The data has been successfully read. Finish creating the decoder.
   pdb->prepared_block_start_idx_ = 0;

@@ -35,6 +35,7 @@ static void DoNothingErrorNotification(const string& /* uuid */) {}
 FsErrorManager::FsErrorManager() {
   InsertOrDie(&callbacks_, ErrorHandlerType::DISK_ERROR, Bind(DoNothingErrorNotification));
   InsertOrDie(&callbacks_, ErrorHandlerType::NO_AVAILABLE_DISKS, Bind(DoNothingErrorNotification));
+  InsertOrDie(&callbacks_, ErrorHandlerType::CFILE_CORRUPTION, Bind(DoNothingErrorNotification));
 }
 
 void FsErrorManager::SetErrorNotificationCb(ErrorHandlerType e, ErrorNotificationCb cb) {

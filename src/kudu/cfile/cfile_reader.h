@@ -112,10 +112,11 @@ class CFileReader {
     return Status::OK();
   }
 
-  // TODO: make this private? should only be used
-  // by the iterator and index tree readers, I think.
-  Status ReadBlock(const BlockPointer &ptr, CacheControl cache_control,
-                   BlockHandle *ret) const;
+  // Reads the data block pointed to by `ptr`. Will pull the data block from
+  // the block cache if it exists, and reads from the filesystem block
+  // otherwise.
+  Status ReadBlock(const fs::IOContext* io_context, const BlockPointer& ptr,
+                   CacheControl cache_control, BlockHandle* ret) const;
 
   // Return the number of rows in this cfile.
   // This is assumed to be reasonably fast (i.e does not scan
@@ -190,6 +191,10 @@ class CFileReader {
 
   // Can be called before Init().
   std::string ToString() const { return block_->id().ToString(); }
+
+  // Handles a corruption error. Functions that may return due to a CFile
+  // corruption should call this method before returning.
+  void HandleCorruption(const fs::IOContext* io_context) const;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(CFileReader);
