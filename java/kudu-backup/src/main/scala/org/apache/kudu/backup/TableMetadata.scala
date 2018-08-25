@@ -269,7 +269,7 @@ object TableMetadata {
       case Type.FLOAT => value.toFloat
       case Type.DOUBLE => value.toDouble
       case Type.STRING => value
-      case Type.BINARY => Base64.decodeBase64(value.asInstanceOf[Array[Byte]])
+      case Type.BINARY => Base64.decodeBase64(value)
       case Type.DECIMAL => new BigDecimal(value) // TODO: Explicitly pass scale
       case _ =>
         throw new IllegalArgumentException(s"Unsupported column type: $colType")

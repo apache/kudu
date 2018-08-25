@@ -38,15 +38,12 @@ import org.apache.kudu.spark.kudu._
 import org.apache.kudu.util.DecimalUtil
 import org.junit.Assert._
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.scalatest.junit.JUnitRunner
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
 import scala.collection.JavaConverters._
 import scala.util.Random
 
-@RunWith(classOf[JUnitRunner])
 class TestKuduBackup extends KuduTestSuite {
   val log: Logger = LoggerFactory.getLogger(getClass)
 
