@@ -65,7 +65,6 @@ public class TestSecurity {
   };
 
   private void startCluster(Set<Option> opts) throws IOException {
-    Preconditions.checkState(miniCluster == null);
     MiniKuduClusterBuilder mcb = new MiniKuduClusterBuilder();
     mcb.enableKerberos();
     if (opts.contains(Option.LONG_LEADER_ELECTION)) {
