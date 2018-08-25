@@ -395,7 +395,7 @@ if [ "$BUILD_JAVA" == "1" ]; then
 
   # Run the full Gradle build.
   if [ "$BUILD_GRADLE" == "1" ]; then
-    EXTRA_GRADLE_FLAGS="--console=plain"
+    export EXTRA_GRADLE_FLAGS="--console=plain"
     EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS --no-daemon"
     EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS --continue"
     EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS -DrerunFailingTestsCount=3"
