@@ -64,4 +64,19 @@ public class KuduSinkConfigurationConstants {
    * Whether to ignore duplicate primary key errors caused by inserts.
    */
   public static final String IGNORE_DUPLICATE_ROWS = "ignoreDuplicateRows";
+
+  /**
+   * Path to the keytab file used for authentication
+   */
+  public static final String KERBEROS_KEYTAB = "kerberosKeytab";
+
+  /**
+   * Kerberos principal used for authentication
+   */
+  public static final String KERBEROS_PRINCIPAL = "kerberosPrincipal";
+
+  /**
+   * The effective user if different from the kerberos principal
+   */
+  public static final String PROXY_USER = "proxyUser";
 }

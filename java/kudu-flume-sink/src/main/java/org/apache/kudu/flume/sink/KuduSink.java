@@ -21,11 +21,15 @@ package org.apache.kudu.flume.sink;
 
 import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.BATCH_SIZE;
 import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.IGNORE_DUPLICATE_ROWS;
+import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.KERBEROS_KEYTAB;
+import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.KERBEROS_PRINCIPAL;
 import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.MASTER_ADDRESSES;
 import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.PRODUCER;
+import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.PROXY_USER;
 import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.TABLE_NAME;
 import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.TIMEOUT_MILLIS;
 
+import java.security.PrivilegedAction;
 import java.util.List;
 
 import com.google.common.base.Preconditions;
@@ -35,6 +39,8 @@ import org.apache.flume.Event;
 import org.apache.flume.EventDeliveryException;
 import org.apache.flume.FlumeException;
 import org.apache.flume.Transaction;
+import org.apache.flume.auth.FlumeAuthenticationUtil;
+import org.apache.flume.auth.PrivilegedExecutor;
 import org.apache.flume.conf.Configurable;
 import org.apache.flume.instrumentation.SinkCounter;
 import org.apache.flume.sink.AbstractSink;
@@ -109,6 +115,7 @@ public class KuduSink extends AbstractSink implements Configurable {
   private KuduClient client;
   private KuduOperationsProducer operationsProducer;
   private SinkCounter sinkCounter;
+  private PrivilegedExecutor privilegedExecutor;
 
   public KuduSink() {
     this(null);
@@ -127,7 +134,15 @@ public class KuduSink extends AbstractSink implements Configurable {
 
     // Client is not null only inside tests.
     if (client == null) {
-      client = new KuduClient.KuduClientBuilder(masterAddresses).build();
+      // Creating client with FlumeAuthenticator.
+      client = privilegedExecutor.execute(
+        new PrivilegedAction<KuduClient>() {
+          @Override
+          public KuduClient run() {
+            return new KuduClient.KuduClientBuilder(masterAddresses).build();
+          }
+        }
+      );
     }
     session = client.newSession();
     session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
@@ -194,6 +209,12 @@ public class KuduSink extends AbstractSink implements Configurable {
     timeoutMillis = context.getLong(TIMEOUT_MILLIS, DEFAULT_TIMEOUT_MILLIS);
     ignoreDuplicateRows = context.getBoolean(IGNORE_DUPLICATE_ROWS, DEFAULT_IGNORE_DUPLICATE_ROWS);
     String operationProducerType = context.getString(PRODUCER);
+    String kerberosPrincipal = context.getString(KERBEROS_PRINCIPAL);
+    String kerberosKeytab = context.getString(KERBEROS_KEYTAB);
+    String proxyUser = context.getString(PROXY_USER);
+
+    privilegedExecutor = FlumeAuthenticationUtil.getAuthenticator(
+        kerberosPrincipal, kerberosKeytab).proxyAs(proxyUser);
 
     // Check for operations producer, if null set default operations producer type.
     if (operationProducerType == null || operationProducerType.isEmpty()) {
@@ -203,7 +224,7 @@ public class KuduSink extends AbstractSink implements Configurable {
 
     Context producerContext = new Context();
     producerContext.putAll(context.getSubProperties(
-            KuduSinkConfigurationConstants.PRODUCER_PREFIX));
+        KuduSinkConfigurationConstants.PRODUCER_PREFIX));
 
     try {
       Class<? extends KuduOperationsProducer> clazz =

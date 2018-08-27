@@ -300,6 +300,13 @@ public class BaseKuduTest {
   }
 
   /**
+   * @return path to the mini cluster root directory
+   */
+  protected String getClusterRoot() {
+    return miniCluster.getClusterRoot();
+  }
+
+  /**
    * Kills all the master servers.
    * Does nothing to the servers that are already dead.
    *

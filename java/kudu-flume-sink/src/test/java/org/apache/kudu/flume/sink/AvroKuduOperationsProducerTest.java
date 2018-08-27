@@ -23,10 +23,8 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.kudu.flume.sink.AvroKuduOperationsProducer.SCHEMA_LITERAL_HEADER;
 import static org.apache.kudu.flume.sink.AvroKuduOperationsProducer.SCHEMA_PROP;
 import static org.apache.kudu.flume.sink.AvroKuduOperationsProducer.SCHEMA_URL_HEADER;
-import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.MASTER_ADDRESSES;
 import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.PRODUCER;
 import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.PRODUCER_PREFIX;
-import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.TABLE_NAME;
 import static org.apache.kudu.util.ClientTestUtil.scanTableToStrings;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
@@ -38,7 +36,6 @@ import java.net.URL;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 
 import com.google.common.collect.ImmutableList;
@@ -49,15 +46,10 @@ import org.apache.avro.io.DatumWriter;
 import org.apache.avro.io.Encoder;
 import org.apache.avro.io.EncoderFactory;
 import org.apache.avro.specific.SpecificDatumWriter;
-import org.apache.flume.Channel;
 import org.apache.flume.Context;
 import org.apache.flume.Event;
-import org.apache.flume.Sink;
-import org.apache.flume.Transaction;
-import org.apache.flume.channel.MemoryChannel;
-import org.apache.flume.conf.Configurables;
 import org.apache.flume.event.EventBuilder;
-import org.apache.kudu.util.DecimalUtil;
+
 import org.junit.Test;
 
 import org.apache.kudu.ColumnSchema;
@@ -66,6 +58,7 @@ import org.apache.kudu.Type;
 import org.apache.kudu.client.BaseKuduTest;
 import org.apache.kudu.client.CreateTableOptions;
 import org.apache.kudu.client.KuduTable;
+import org.apache.kudu.util.DecimalUtil;
 
 public class AvroKuduOperationsProducerTest extends BaseKuduTest {
   private static String schemaUriString;
@@ -117,27 +110,13 @@ public class AvroKuduOperationsProducerTest extends BaseKuduTest {
     KuduTable table = createNewTable(
         String.format("test%sevents%s", eventCount, schemaLocation));
     String tableName = table.getName();
-    Context ctx = schemaLocation != SchemaLocation.GLOBAL ? new Context()
+    Context context = schemaLocation != SchemaLocation.GLOBAL ? new Context()
         : new Context(ImmutableMap.of(PRODUCER_PREFIX + SCHEMA_PROP, schemaUriString));
-    KuduSink sink = createSink(tableName, ctx);
+    context.put(PRODUCER, AvroKuduOperationsProducer.class.getName());
 
-    Channel channel = new MemoryChannel();
-    Configurables.configure(channel, new Context());
-    sink.setChannel(channel);
-    sink.start();
+    List<Event> events = generateEvents(eventCount, schemaLocation);
 
-    Transaction tx = channel.getTransaction();
-    tx.begin();
-    writeEventsToChannel(channel, eventCount, schemaLocation);
-    tx.commit();
-    tx.close();
-
-    Sink.Status status = sink.process();
-    if (eventCount == 0) {
-      assertEquals("incorrect status for empty channel", status, Sink.Status.BACKOFF);
-    } else {
-      assertEquals("incorrect status for non-empty channel", status, Sink.Status.READY);
-    }
+    KuduSinkTestUtil.processEventsCreatingSink(syncClient, context, tableName, events);
 
     List<String> answers = makeAnswers(eventCount);
     List<String> rows = scanTableToStrings(table);
@@ -146,11 +125,12 @@ public class AvroKuduOperationsProducerTest extends BaseKuduTest {
   }
 
   private KuduTable createNewTable(String tableName) throws Exception {
-    ArrayList<ColumnSchema> columns = new ArrayList<>(5);
+    List<ColumnSchema> columns = new ArrayList<>(5);
     columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.INT32).key(true).build());
     columns.add(new ColumnSchema.ColumnSchemaBuilder("longField", Type.INT64).build());
     columns.add(new ColumnSchema.ColumnSchemaBuilder("doubleField", Type.DOUBLE).build());
-    columns.add(new ColumnSchema.ColumnSchemaBuilder("nullableField", Type.STRING).nullable(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("nullableField", Type.STRING)
+        .nullable(true).build());
     columns.add(new ColumnSchema.ColumnSchemaBuilder("stringField", Type.STRING).build());
     columns.add(new ColumnSchema.ColumnSchemaBuilder("decimalField", Type.DECIMAL)
         .typeAttributes(DecimalUtil.typeAttributes(9, 1)).build());
@@ -160,21 +140,9 @@ public class AvroKuduOperationsProducerTest extends BaseKuduTest {
     return createTable(tableName, new Schema(columns), createOptions);
   }
 
-  private KuduSink createSink(String tableName, Context ctx) {
-    KuduSink sink = new KuduSink(syncClient);
-    HashMap<String, String> parameters = new HashMap<>();
-    parameters.put(TABLE_NAME, tableName);
-    parameters.put(MASTER_ADDRESSES, getMasterAddressesAsString());
-    parameters.put(PRODUCER, AvroKuduOperationsProducer.class.getName());
-    Context context = new Context(parameters);
-    context.putAll(ctx.getParameters());
-    Configurables.configure(sink, context);
-
-    return sink;
-  }
-
-  private void writeEventsToChannel(Channel channel, int eventCount,
-                                    SchemaLocation schemaLocation) throws Exception {
+  private List<Event> generateEvents(int eventCount,
+                                     SchemaLocation schemaLocation) throws Exception {
+    List<Event> events = new ArrayList<>();
     for (int i = 0; i < eventCount; i++) {
       AvroKuduOperationsProducerTestRecord record = new AvroKuduOperationsProducerTestRecord();
       record.setKey(10 * i);
@@ -195,8 +163,9 @@ public class AvroKuduOperationsProducerTest extends BaseKuduTest {
       } else if (schemaLocation == SchemaLocation.LITERAL) {
         e.setHeaders(ImmutableMap.of(SCHEMA_LITERAL_HEADER, schemaLiteral));
       }
-      channel.put(e);
+      events.add(e);
     }
+    return events;
   }
 
   private List<String> makeAnswers(int eventCount) {

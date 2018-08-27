@@ -183,6 +183,9 @@ Status ExternalMiniCluster::Start() {
     RETURN_NOT_OK_PREPEND(kdc_->CreateUserPrincipal("joe-interloper"),
                           "could not create unauthorized principal");
 
+    RETURN_NOT_OK_PREPEND(kdc_->CreateKeytabForExistingPrincipal("test-user"),
+                         "could not create client keytab");
+
     RETURN_NOT_OK_PREPEND(kdc_->Kinit("test-admin"),
                           "could not kinit as admin");
 

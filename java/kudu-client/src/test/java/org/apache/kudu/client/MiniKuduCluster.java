@@ -506,6 +506,13 @@ public class MiniKuduCluster implements AutoCloseable {
   }
 
   /**
+   * @return path to the mini cluster root directory
+   */
+  public String getClusterRoot() {
+    return clusterRoot;
+  }
+
+  /**
    * Helper runnable that receives stderr and logs it along with the process' identifier.
    */
   public static class ProcessInputStreamLogPrinterRunnable implements Runnable {

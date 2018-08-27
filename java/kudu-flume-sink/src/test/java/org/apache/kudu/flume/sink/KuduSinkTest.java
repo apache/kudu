@@ -16,11 +16,13 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.kudu.flume.sink;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.kudu.util.ClientTestUtil.scanTableToStrings;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -35,8 +37,8 @@ import org.apache.flume.Event;
 import org.apache.flume.EventDeliveryException;
 import org.apache.flume.FlumeException;
 import org.apache.flume.Sink;
+import org.apache.flume.Sink.Status;
 import org.apache.flume.Transaction;
-import org.apache.flume.channel.MemoryChannel;
 import org.apache.flume.conf.Configurables;
 import org.apache.flume.event.EventBuilder;
 import org.junit.Assert;
@@ -97,13 +99,10 @@ public class KuduSinkTest extends BaseKuduTest {
   }
 
   @Test(expected = FlumeException.class)
-  public void testMissingTable() throws Exception {
+  public void testMissingTable() {
     LOG.info("Testing missing table...");
 
-    KuduSink sink = createSink("missingTable");
-    Channel channel = new MemoryChannel();
-    Configurables.configure(channel, new Context());
-    sink.setChannel(channel);
+    KuduSink sink = KuduSinkTestUtil.createSink(syncClient, "missingTable", new Context());
     sink.start();
 
     LOG.info("Testing missing table finished successfully.");
@@ -140,12 +139,9 @@ public class KuduSinkTest extends BaseKuduTest {
     Context sinkContext = new Context();
     sinkContext.put(KuduSinkConfigurationConstants.IGNORE_DUPLICATE_ROWS,
                     Boolean.toString(ignoreDuplicateRows));
-    KuduSink sink = createSink(tableName, sinkContext);
-
-    Channel channel = new MemoryChannel();
-    Configurables.configure(channel, new Context());
-    sink.setChannel(channel);
+    KuduSink sink = KuduSinkTestUtil.createSink(syncClient, tableName, sinkContext);
     sink.start();
+    Channel channel = sink.getChannel();
 
     Transaction tx = channel.getTransaction();
     tx.begin();
@@ -163,7 +159,7 @@ public class KuduSinkTest extends BaseKuduTest {
       if (!ignoreDuplicateRows) {
         fail("Incorrectly ignored duplicate rows!");
       }
-      assertTrue("incorrect status for empty channel", status == Sink.Status.READY);
+      assertSame("incorrect status for empty channel", status, Status.READY);
     } catch (EventDeliveryException e) {
       if (ignoreDuplicateRows) {
         throw new AssertionError("Failed to ignore duplicate rows!", e);
@@ -189,31 +185,15 @@ public class KuduSinkTest extends BaseKuduTest {
 
     KuduTable table = createNewTable("test" + eventCount + "events");
     String tableName = table.getName();
-    KuduSink sink = createSink(tableName);
 
-    Channel channel = new MemoryChannel();
-    Configurables.configure(channel, new Context());
-    sink.setChannel(channel);
-    sink.start();
-
-    Transaction tx = channel.getTransaction();
-    tx.begin();
+    List<Event> events = new ArrayList<>();
 
     for (int i = 0; i < eventCount; i++) {
-      Event e = EventBuilder.withBody(String.format("payload body %s", i)
-          .getBytes(UTF_8));
-      channel.put(e);
+      Event e = EventBuilder.withBody(String.format("payload body %s", i).getBytes(UTF_8));
+      events.add(e);
     }
 
-    tx.commit();
-    tx.close();
-
-    Sink.Status status = sink.process();
-    if (eventCount == 0) {
-      assertTrue("incorrect status for empty channel", status == Sink.Status.BACKOFF);
-    } else {
-      assertTrue("incorrect status for non-empty channel", status != Sink.Status.BACKOFF);
-    }
+    KuduSinkTestUtil.processEventsCreatingSink(syncClient, new Context(), tableName, events);
 
     List<String> rows = scanTableToStrings(table);
     assertEquals(eventCount + " row(s) expected", eventCount, rows.size());
@@ -223,25 +203,5 @@ public class KuduSinkTest extends BaseKuduTest {
     }
 
     LOG.info("Testing {} events finished successfully.", eventCount);
-  }
-
-  private KuduSink createSink(String tableName) {
-    return createSink(tableName, new Context());
-  }
-
-  private KuduSink createSink(String tableName, Context ctx) {
-    LOG.info("Creating Kudu sink for '{}' table...", tableName);
-
-    KuduSink sink = new KuduSink(syncClient);
-    HashMap<String, String> parameters = new HashMap<>();
-    parameters.put(KuduSinkConfigurationConstants.TABLE_NAME, tableName);
-    parameters.put(KuduSinkConfigurationConstants.MASTER_ADDRESSES, getMasterAddressesAsString());
-    Context context = new Context(parameters);
-    context.putAll(ctx.getParameters());
-    Configurables.configure(sink, context);
-
-    LOG.info("Created Kudu sink for '{}' table.", tableName);
-
-    return sink;
   }
 }
