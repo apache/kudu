@@ -54,12 +54,12 @@ set(GUTIL_SRCS
 
 set(GUTIL_LIBS
   glog
-  unwind
   protobuf)
 
 if (NOT APPLE)
   set(GUTIL_LIBS
     ${GUTIL_LIBS}
+    unwind
     rt) # clock_gettime() requires -lrt
 endif()
 
