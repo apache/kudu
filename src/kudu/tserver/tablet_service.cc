@@ -1785,8 +1785,8 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
         }
         break;
       }
-      TRACE("Iterator created");
     }
+    TRACE("Iterator created");
   }
 
   // Make a copy of the optimized spec before it's passed to the iterator.
