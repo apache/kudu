@@ -23,11 +23,12 @@
 # If KUDU_COMPRESS_TEST_OUTPUT is non-empty, then the logs will be
 # gzip-compressed while they are written.
 #
-# If KUDU_FLAKY_TEST_ATTEMPTS is non-zero, and the test being run matches
-# one of the lines in the file KUDU_FLAKY_TEST_LIST, then the test will
-# be retried on failure up to the specified number of times. This can be
-# used in the gerrit workflow to prevent annoying false -1s caused by
-# tests that are known to be flaky in master.
+# If KUDU_FLAKY_TEST_ATTEMPTS is non-zero, and either the test being run
+# matches one of the lines in the file KUDU_FLAKY_TEST_LIST or
+# KUDU_RETRY_ALL_FAILED_TESTS is non-zero, then the test will be retried on
+# failure up to the specified number of times. This can be used in the gerrit
+# workflow to prevent annoying false -1s caused by tests that are known to be
+# flaky in master.
 #
 # If KUDU_REPORT_TEST_RESULTS is non-zero, then tests are reported to the
 # central test server.
@@ -70,21 +71,25 @@ else
   TEST_NAME=${SHORT_TEST_NAME}
 fi
 
-# Determine whether the test is a known flaky by comparing against the user-specified
-# list.
+# Determine whether the user has chosen to retry all failed tests, or whether
+# the test is a known flaky by comparing against the user-specified list.
 TEST_EXECUTION_ATTEMPTS=1
-if [ -n "$KUDU_FLAKY_TEST_LIST" ]; then
+if [ "$KUDU_RETRY_ALL_FAILED_TESTS" -gt 0 ]; then
+  echo "Will retry on failure"
+  TEST_IS_RETRYABLE=1
+elif [ -n "KUDU_FLAKY_TEST_LIST" ]; then
   if [ -f "$KUDU_FLAKY_TEST_LIST" ]; then
-    IS_KNOWN_FLAKY=$(grep --count --line-regexp "$SHORT_TEST_NAME" "$KUDU_FLAKY_TEST_LIST")
+    TEST_IS_RETRYABLE=$(grep --count --line-regexp "$SHORT_TEST_NAME" "$KUDU_FLAKY_TEST_LIST")
   else
     echo "Flaky test list file $KUDU_FLAKY_TEST_LIST missing"
-    IS_KNOWN_FLAKY=0
+    TEST_IS_RETRYABLE=0
   fi
-  if [ "$IS_KNOWN_FLAKY" -gt 0 ]; then
-    TEST_EXECUTION_ATTEMPTS=${KUDU_FLAKY_TEST_ATTEMPTS:-1}
-    echo $TEST_NAME is a known-flaky test. Will attempt running it
-    echo up to $TEST_EXECUTION_ATTEMPTS times.
-  fi
+fi
+
+if [ "$TEST_IS_RETRYABLE" -gt 0 ]; then
+  TEST_EXECUTION_ATTEMPTS=${KUDU_FLAKY_TEST_ATTEMPTS:-1}
+  echo $TEST_NAME is a retryable test. Will attempt running it
+  echo up to $TEST_EXECUTION_ATTEMPTS times.
 fi
 
 

@@ -58,6 +58,11 @@ MAX_TASKS_PER_JOB=10000
 # of retries, so we have to subtract 1.
 FLAKY_TEST_RETRIES = int(os.environ.get('KUDU_FLAKY_TEST_ATTEMPTS', 1)) - 1
 
+# Whether to retry all failed C++ tests, rather than just known flaky tests.
+# Since Java flaky tests are not reported by the test server, Java tests are
+# always retried, regardless of this value.
+RETRY_ALL_TESTS = int(os.environ.get('KUDU_RETRY_ALL_FAILED_TESTS', 0))
+
 # Flags to include when running Gradle tasks
 GRADLE_FLAGS = os.environ.get('EXTRA_GRADLE_FLAGS', "")
 
@@ -473,9 +478,11 @@ def run_tests(parser, options):
     create_archive_input(staging, execution,
                          collect_tmpdir=options.collect_tmpdir)
   run_isolate(staging)
+  retry_all = RETRY_ALL_TESTS > 0
   create_task_json(staging,
                    flaky_test_set=get_flakies(),
-                   replicate_tasks=options.num_instances)
+                   replicate_tasks=options.num_instances,
+                   retry_all_tests=retry_all)
   submit_tasks(staging, options)
 
 def add_run_subparser(subparsers):
