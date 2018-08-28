@@ -311,8 +311,8 @@ if ("${KUDU_USE_ASAN}" AND "${KUDU_USE_TSAN}")
   message(SEND_ERROR "Can only enable one of ASAN or TSAN at a time")
 endif()
 
-# Flag to enable clang address sanitizer
-# This will only build if clang or a recent enough gcc is the chosen compiler
+# Flag to enable clang address sanitizer (using it along with leak sanitizer).
+# This will only build if clang or a recent enough gcc is the chosen compiler.
 if (${KUDU_USE_ASAN})
   if(NOT (("${COMPILER_FAMILY}" STREQUAL "clang") OR
           ("${COMPILER_FAMILY}" STREQUAL "gcc" AND "${COMPILER_VERSION}" VERSION_GREATER "4.8")))
@@ -332,6 +332,7 @@ if (${KUDU_USE_ASAN})
     endif()
   endif()
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -DADDRESS_SANITIZER")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DLEAK_SANITIZER")
 endif()
 
 if (${KUDU_USE_XRAY})
@@ -355,6 +356,7 @@ if (${KUDU_USE_UBSAN})
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize-blacklist=${CMAKE_CURRENT_SOURCE_DIR}/build-support/ubsan-blacklist.txt")
   # Stop execution after UB or overflow is detected.
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-sanitize-recover")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DUNDEFINED_SANITIZER")
 endif ()
 
 # Flag to enable thread sanitizer (clang or gcc 4.8)
