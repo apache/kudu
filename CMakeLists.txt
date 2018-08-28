@@ -984,15 +984,21 @@ ADD_THIRDPARTY_LIB(gssapi_krb5
   SHARED_LIB "${GSSAPI_SHARED_LIB}"
   DEPS ${GSSAPI_LIB_DEPS})
 
-## GLog
+## GLog (depends on libunwind)
 find_package(GLog REQUIRED)
 include_directories(SYSTEM ${GLOG_INCLUDE_DIR})
+set(GLOG_DEPS)
+if (NOT APPLE)
+  set(GLOG_DEPS unwind)
+endif()
 ADD_THIRDPARTY_LIB(glog
   STATIC_LIB "${GLOG_STATIC_LIB}"
-  SHARED_LIB "${GLOG_SHARED_LIB}")
+  SHARED_LIB "${GLOG_SHARED_LIB}"
+  DEPS "${GLOG_DEPS}")
 list(APPEND KUDU_BASE_LIBS glog)
 
-## libunwind (dependent of glog)
+## libunwind
+##
 ## Doesn't build on OSX.
 if (NOT APPLE)
   find_package(LibUnwind REQUIRED)

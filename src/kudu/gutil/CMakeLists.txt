@@ -59,7 +59,6 @@ set(GUTIL_LIBS
 if (NOT APPLE)
   set(GUTIL_LIBS
     ${GUTIL_LIBS}
-    unwind
     rt) # clock_gettime() requires -lrt
 endif()
 
