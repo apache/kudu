@@ -109,7 +109,8 @@ ExternalMiniClusterOptions::ExternalMiniClusterOptions()
       enable_kerberos(false),
       hms_mode(HmsMode::NONE),
       logtostderr(true),
-      start_process_timeout(MonoDelta::FromSeconds(30)) {
+      start_process_timeout(MonoDelta::FromSeconds(30)),
+      rpc_negotiation_timeout(MonoDelta::FromSeconds(3)) {
 }
 
 ExternalMiniCluster::ExternalMiniCluster()
@@ -162,6 +163,8 @@ Status ExternalMiniCluster::Start() {
   RETURN_NOT_OK_PREPEND(rpc::MessengerBuilder("minicluster-messenger")
                         .set_num_reactors(1)
                         .set_max_negotiation_threads(1)
+                        .set_rpc_negotiation_timeout_ms(
+                            opts_.rpc_negotiation_timeout.ToMilliseconds())
                         .Build(&messenger_),
                         "Failed to start Messenger for minicluster");
 

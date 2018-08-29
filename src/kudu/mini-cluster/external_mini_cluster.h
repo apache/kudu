@@ -154,6 +154,12 @@ struct ExternalMiniClusterOptions {
   //
   // Default: 30s.
   MonoDelta start_process_timeout;
+
+  // Parameter for the cluster's RPC messenger: timeout interval after which
+  // an incomplete connection negotiation will timeout.
+  //
+  // Default: 3 seconds.
+  MonoDelta rpc_negotiation_timeout;
 };
 
 // A mini-cluster made up of subprocesses running each of the daemons

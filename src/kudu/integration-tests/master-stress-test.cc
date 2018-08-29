@@ -26,6 +26,7 @@
 #include <vector>
 
 #include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -58,6 +59,7 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+DECLARE_int64(timeout_ms);
 DEFINE_int32(num_create_table_threads, 4,
             "Number of threads that should create tables");
 DEFINE_int32(num_alter_table_threads, 2,
@@ -66,36 +68,40 @@ DEFINE_int32(num_delete_table_threads, 2,
             "Number of threads that should delete tables");
 DEFINE_int32(num_replace_tablet_threads, 2,
             "Number of threads that should replace tablets");
-DEFINE_int32(num_seconds_to_run, 5,
+DEFINE_int32(num_seconds_to_run, 10,
              "Number of seconds that the test should run");
 
-namespace kudu {
-
-using client::KuduClient;
-using client::KuduClientBuilder;
-using client::KuduColumnSchema;
-using client::KuduSchema;
-using client::KuduSchemaBuilder;
-using client::KuduTableAlterer;
-using client::KuduTableCreator;
-using cluster::ExternalMaster;
-using cluster::ExternalMiniCluster;
-using cluster::ExternalMiniClusterOptions;
-using master::MasterServiceProxy;
-using master::ListTablesRequestPB;
-using master::ListTablesResponsePB;
-using rpc::Messenger;
-using rpc::MessengerBuilder;
-using rpc::RpcController;
+using kudu::client::KuduClient;
+using kudu::client::KuduClientBuilder;
+using kudu::client::KuduColumnSchema;
+using kudu::client::KuduSchema;
+using kudu::client::KuduSchemaBuilder;
+using kudu::client::KuduTableAlterer;
+using kudu::client::KuduTableCreator;
+using kudu::cluster::ExternalMaster;
+using kudu::cluster::ExternalMiniCluster;
+using kudu::cluster::ExternalMiniClusterOptions;
+using kudu::itest::ListTablets;
+using kudu::master::ListTablesRequestPB;
+using kudu::master::ListTablesResponsePB;
+using kudu::master::ReplaceTabletRequestPB;
+using kudu::master::ReplaceTabletResponsePB;
+using kudu::master::MasterServiceProxy;
+using kudu::rpc::Messenger;
+using kudu::rpc::MessengerBuilder;
+using kudu::rpc::RpcController;
+using kudu::tools::LeaderMasterProxy;
 using std::shared_ptr;
 using std::string;
 using std::thread;
 using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
-using tools::LeaderMasterProxy;
+
+namespace kudu {
 
 static const MonoDelta kDefaultAdminTimeout = MonoDelta::FromSeconds(300);
+static const MonoDelta kTransientStateBackoff = MonoDelta::FromMilliseconds(50);
 
 class MasterStressTest : public KuduTest,
                          public ::testing::WithParamInterface<HmsMode> {
@@ -121,10 +127,19 @@ class MasterStressTest : public KuduTest,
     ExternalMiniClusterOptions opts;
     opts.num_masters = 3;
     opts.num_tablet_servers = 3;
+    // In case of concurrent activity or an inferior node, it might take longer
+    // time to start up a process or negotiate a connection. The default
+    // settings for connection negotiation and process startup timeouts are
+    // too short in that case.
+    opts.start_process_timeout = MonoDelta::FromSeconds(60);
+    opts.rpc_negotiation_timeout = MonoDelta::FromSeconds(30);
 
     opts.hms_mode = GetParam();
     // Tune down the notification log poll period in order to speed up catalog convergence.
     opts.extra_master_flags.emplace_back("--hive_metastore_notification_log_poll_period_seconds=1");
+
+    // Set max missed heartbeats periods to 1.0 (down from 3.0).
+    opts.extra_master_flags.emplace_back("--leader_failure_max_missed_heartbeat_periods=1.0");
 
     // Don't preallocate log segments, since we're creating many tablets here.
     // If each preallocates 64M or so, we use a ton of disk space in this
@@ -132,11 +147,17 @@ class MasterStressTest : public KuduTest,
     opts.extra_master_flags.emplace_back("--log_preallocate_segments=false");
     opts.extra_tserver_flags.emplace_back("--log_preallocate_segments=false");
 
+    // In case of address/thread sanitizer, the stress tests scenarios
+    // induce frequent retries and leader re-elections. To avoid overflowing
+    // RPC queues too often and allow the scenario to eventually complete,
+    // let's make the Raft heartbeat interval 2x times higher for address/thread
+    // sanitizer builds.
+#if defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER)
+    opts.extra_tserver_flags.emplace_back("--raft_heartbeat_interval_ms=1000");
+#endif
+
     // Reduce various timeouts below as to make the detection of leader master
     // failures (specifically, failures as result of long pauses) more rapid.
-
-    // Set max missed heartbeats periods to 1.0 (down from 3.0).
-    opts.extra_master_flags.emplace_back("--leader_failure_max_missed_heartbeat_periods=1.0");
 
     // Set the TS->master heartbeat timeout to 1 second (down from 15 seconds).
     opts.extra_tserver_flags.emplace_back("--heartbeat_rpc_timeout_ms=1000");
@@ -144,9 +165,10 @@ class MasterStressTest : public KuduTest,
     // Allow one TS heartbeat failure before retrying with back-off (down from 3).
     opts.extra_tserver_flags.emplace_back("--heartbeat_max_failures_before_backoff=1");
 
-    // Wait for 500 ms after 'max_consecutive_failed_heartbeats' before trying
-    // again (down from 1 second).
-    opts.extra_tserver_flags.emplace_back("--heartbeat_interval_ms=500");
+    // Set custom TS->master heartbeat interval. This is to allow for faster
+    // registration of tablet servers with recently restarted masters.
+    opts.extra_tserver_flags.emplace_back(
+        Substitute("--heartbeat_interval_ms=$0", kTsToMasterHbIntervalMs));
 
     cluster_.reset(new ExternalMiniCluster(std::move(opts)));
     ASSERT_OK(cluster_->Start());
@@ -161,7 +183,7 @@ class MasterStressTest : public KuduTest,
     // operations to alternate masters, which effectively reduces the admin
     // timeout to the RPC timeout. With HMS integration some DDL operations can
     // exceed the default 10s timeout.
-    builder.default_rpc_timeout(MonoDelta::FromSeconds(30));
+    builder.default_rpc_timeout(MonoDelta::FromSeconds(60));
 
     ASSERT_OK(cluster_->CreateClient(&builder, &client_));
 
@@ -294,16 +316,27 @@ class MasterStressTest : public KuduTest,
     vector<tserver::ListTabletsResponsePB_StatusAndSchemaPB> tablet_ids;
     while (done_.count()) {
       tablet_ids.clear();
-      CHECK_OK(ListTablets(ts, kDefaultAdminTimeout, &tablet_ids));
+      Status s = ListTablets(ts, kDefaultAdminTimeout, &tablet_ids);
+      // Network error is a legitimate case to retry -- the server might
+      // not be up yet.
+      if (s.IsNetworkError()) {
+        SleepFor(kTransientStateBackoff);
+        continue;
+      }
+      CHECK_OK(s);
+      // An empty list of tablets is a legitimate case to retry -- tablet
+      // server might not yet registered or at this point all tables are
+      // deleted.
       if (tablet_ids.empty()) {
+        SleepFor(kTransientStateBackoff);
         continue;
       }
       int idx = rand_.Uniform(tablet_ids.size());
       const string& tablet_id = tablet_ids[idx].tablet_status().tablet_id();
-      master::ReplaceTabletRequestPB req;
-      master::ReplaceTabletResponsePB resp;
+      ReplaceTabletRequestPB req;
+      ReplaceTabletResponsePB resp;
       req.set_tablet_id(tablet_id);
-      Status s = lm_proxy.SyncRpc<master::ReplaceTabletRequestPB, master::ReplaceTabletResponsePB>(
+      s = lm_proxy.SyncRpc<ReplaceTabletRequestPB, ReplaceTabletResponsePB>(
           req, &resp, "ReplaceTablet", &MasterServiceProxy::ReplaceTablet);
       // NotFound is OK because it means the tablet was already replaced or deleted.
       if (!s.IsNotFound()) {
@@ -344,7 +377,7 @@ class MasterStressTest : public KuduTest,
 
       // There was some kind of transient network error or the master isn't yet
       // ready. Sleep and retry.
-      SleepFor(MonoDelta::FromMilliseconds(50));
+      SleepFor(kTransientStateBackoff);
     }
     return Status::OK();
   }
@@ -364,7 +397,8 @@ class MasterStressTest : public KuduTest,
       master->Shutdown();
 
       // Give the rest of the test a chance to operate with the master down.
-      SleepFor(MonoDelta::FromMilliseconds(rand_.Uniform(500)));
+      SleepFor(MonoDelta::FromMilliseconds(
+          kTsToMasterHbIntervalMs + rand_.Uniform(kTsToMasterHbIntervalMs)));
 
       CHECK_OK(master->Restart());
 
@@ -377,12 +411,24 @@ class MasterStressTest : public KuduTest,
       CHECK_OK(WaitForMasterUpAndRunning(messenger, master));
       num_masters_restarted_.Increment();
 
-      SleepFor(MonoDelta::FromMilliseconds(rand_.Uniform(200)));
+      // Allow the tablet servers to send in heartbeats and clients to connect.
+      // Due to the way how Kudu client and SyncLeaderMasterRpc perform
+      // exponential back-off while retrying RPCs, it's crucial to keep the
+      // master up and running for about 2+ seconds to give those a better
+      // chance contacting the master (so, 1500 with the time spent by the
+      // WaitForMasterUpAndRunning does the trick). It's also important to let
+      // masters elect a new leader if the former one was shutdown, so the
+      // uptime interval for the restarted master should be a multiple
+      // of the master's Raft heartbeat interval (as of now it's 500ms).
+      SleepFor(MonoDelta::FromMilliseconds(
+          2000 + rand_.Uniform(kTsToMasterHbIntervalMs)));
       now = MonoTime::Now();
     }
   }
 
  protected:
+  static constexpr int kTsToMasterHbIntervalMs = 500;
+
   CountDownLatch done_;
   AtomicInt<uint64_t> num_tables_created_;
   AtomicInt<uint64_t> num_tables_altered_;
@@ -447,6 +493,9 @@ TEST_P(MasterStressTest, Test) {
   OverrideFlagForSlowTests("num_delete_table_threads", "5");
   OverrideFlagForSlowTests("num_replace_tablet_threads", "5");
   OverrideFlagForSlowTests("num_seconds_to_run", "30");
+
+  // This is for SyncRpc() calls using LeaderMasterProxy.
+  FLAGS_timeout_ms = kDefaultAdminTimeout.ToMilliseconds();
 
   // Start all of the threads.
   vector<thread> threads;
