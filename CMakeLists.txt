@@ -942,7 +942,7 @@ function(ADD_THIRDPARTY_LIB LIB_NAME)
   # A shared object exported variant will force any "leaf" library that
   # transitively depends on it to also depend on it at runtime; this is
   # desirable for some libraries (e.g. cyrus_sasl).
-  set(LIB_NAME_EXPORTED ${LIB_NAME}_exported)
+  set(LIB_NAME_EXPORTED "${LIB_NAME}_exported")
   if(ARG_STATIC_LIB)
     add_library(${LIB_NAME_EXPORTED} STATIC IMPORTED)
     set_target_properties(${LIB_NAME_EXPORTED}
@@ -953,8 +953,11 @@ function(ADD_THIRDPARTY_LIB LIB_NAME)
       PROPERTIES IMPORTED_LOCATION "${ARG_SHARED_LIB}")
   endif()
   if(ARG_DEPS)
+    foreach(DEP ${ARG_DEPS})
+      list(APPEND EXPORTED_DEPS "${DEP}_exported")
+    endforeach()
     set_target_properties(${LIB_NAME_EXPORTED}
-      PROPERTIES IMPORTED_LINK_INTERFACE_LIBRARIES "${ARG_DEPS}")
+      PROPERTIES IMPORTED_LINK_INTERFACE_LIBRARIES "${EXPORTED_DEPS}")
   endif()
 endfunction()
 
@@ -974,15 +977,13 @@ set(CMAKE_PREFIX_PATH
 find_package(CyrusSASL REQUIRED)
 include_directories(SYSTEM ${CYRUS_SASL_INCLUDE_DIR})
 ADD_THIRDPARTY_LIB(cyrus_sasl
-  SHARED_LIB "${CYRUS_SASL_SHARED_LIB}"
-  DEPS ${CYRUS_SASL_LIB_DEPS})
+  SHARED_LIB "${CYRUS_SASL_SHARED_LIB}")
 
 ## GSSAPI
 find_package(GSSAPI REQUIRED)
 include_directories(SYSTEM ${GSSAPI_INCLUDE_DIR})
 ADD_THIRDPARTY_LIB(gssapi_krb5
-  SHARED_LIB "${GSSAPI_SHARED_LIB}"
-  DEPS ${GSSAPI_LIB_DEPS})
+  SHARED_LIB "${GSSAPI_SHARED_LIB}")
 
 ## GLog (depends on libunwind)
 find_package(GLog REQUIRED)
@@ -1157,8 +1158,7 @@ ADD_THIRDPARTY_LIB(pmem
   SHARED_LIB "${PMEM_SHARED_LIB}")
 ADD_THIRDPARTY_LIB(pmemobj
   STATIC_LIB "${PMEMOBJ_STATIC_LIB}"
-  SHARED_LIB "${PMEMOBJ_SHARED_LIB}"
-  DEPS ${PMEMOBJ_DEPS})
+  SHARED_LIB "${PMEMOBJ_SHARED_LIB}")
 endif()
 
 if (EXISTS ${VMEM_SHARED_LIB})

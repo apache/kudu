@@ -21,7 +21,6 @@
 #  XXX_STATIC_LIBS, path to *.a
 #  XXX_SHARED_LIBS, path to *.so shared library
 #  PMEM_FOUND, whether PMEM libraries have been found
-#  PMEMOBJ_DEPS, dependencies required for using libpmemobj
 
 find_path(PMEM_INCLUDE_DIR libpmem.h
   NO_CMAKE_SYSTEM_PATH
