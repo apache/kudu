@@ -26,7 +26,6 @@
 
 #include <boost/range/adaptor/reversed.hpp>
 #include <glog/logging.h>
-#include <glog/stl_logging.h>
 
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/common/iterator.h"
@@ -405,8 +404,11 @@ Status DeltaTracker::CompactStores(const IOContext* io_context, int start_idx, i
   RowSetMetadataUpdate update;
   update.ReplaceRedoDeltaBlocks(compacted_blocks, new_blocks);
 
-  LOG_WITH_PREFIX(INFO) << "Flushing compaction of redo delta blocks { " << compacted_blocks
-                        << " } into block " << new_block_id;
+  LOG_WITH_PREFIX(INFO) << Substitute("Flushing compaction of $0 redo delta "
+                                      "blocks { $1 } into block $2",
+                                      compacted_blocks.size(),
+                                      BlockId::JoinStrings(compacted_blocks),
+                                      new_block_id.ToString());
   RETURN_NOT_OK_PREPEND(CommitDeltaStoreMetadataUpdate(update, compacted_stores, new_blocks,
                                                        io_context, REDO, FLUSH_METADATA),
                         "DeltaTracker: CompactStores: Unable to commit delta update");

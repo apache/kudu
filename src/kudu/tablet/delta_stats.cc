@@ -94,6 +94,14 @@ Status DeltaStats::UpdateStats(const Timestamp& timestamp,
   return Status::OK();
 }
 
+int64_t DeltaStats::UpdateCount() const {
+  int64_t ret = 0;
+  for (const auto& entry : update_counts_by_col_id_) {
+    ret += entry.second;
+  }
+  return ret;
+}
+
 string DeltaStats::ToString() const {
   return strings::Substitute(
       "ts range=[$0, $1], delete_count=[$2], reinsert_count=[$3], update_counts_by_col_id=[$4]",

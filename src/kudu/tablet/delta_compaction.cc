@@ -17,6 +17,7 @@
 
 #include "kudu/tablet/delta_compaction.h"
 
+#include <cstdint>
 #include <map>
 #include <ostream>
 #include <string>
@@ -36,6 +37,7 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/cfile_set.h"
 #include "kudu/tablet/compaction.h"
@@ -98,16 +100,17 @@ MajorDeltaCompaction::~MajorDeltaCompaction() {
 }
 
 string MajorDeltaCompaction::ColumnNamesToString() const {
-  std::string result;
+  vector<string> col_names;
+  col_names.reserve(column_ids_.size());
   for (ColumnId col_id : column_ids_) {
     int col_idx = base_schema_.find_column_by_id(col_id);
     if (col_idx != Schema::kColumnNotFound) {
-      result += base_schema_.column_by_id(col_id).ToString() + " ";
+      col_names.push_back(base_schema_.column_by_id(col_id).ToString());
     } else {
-      result += Substitute("[deleted column id $0]  ", col_id);
+      col_names.push_back(Substitute("[deleted column id $0]", col_id));
     }
   }
-  return result;
+  return JoinStrings(col_names, ", ");
 }
 
 Status MajorDeltaCompaction::FlushRowSetAndDeltas(const IOContext* io_context) {
@@ -290,21 +293,46 @@ Status MajorDeltaCompaction::OpenUndoDeltaFileWriter() {
   return new_undo_delta_writer_->Start();
 }
 
+namespace {
+string DeltaStoreStatsToString(const vector<shared_ptr<DeltaStore>>& stores) {
+  uint64_t delete_count = 0;
+  uint64_t reinsert_count = 0;
+  uint64_t update_count = 0;
+  for (const auto& store : stores) {
+    if (!store->Initted()) {
+      continue;
+    }
+    const auto& stats = store->delta_stats();
+    delete_count += stats.delete_count();
+    reinsert_count += stats.reinsert_count();
+    update_count += stats.UpdateCount();
+  }
+  return Substitute("delete_count=$0, reinsert_count=$1, update_count=$2",
+                    delete_count, reinsert_count, update_count);
+}
+} // anonymous namespace
+
 Status MajorDeltaCompaction::Compact(const IOContext* io_context) {
   CHECK_EQ(state_, kInitialized);
 
   LOG(INFO) << "Starting major delta compaction for columns " << ColumnNamesToString();
   RETURN_NOT_OK(base_schema_.CreateProjectionByIdsIgnoreMissing(column_ids_, &partial_schema_));
 
-  for (const shared_ptr<DeltaStore>& ds : included_stores_) {
-    LOG(INFO) << "Preparing to major compact delta file: " << ds->ToString();
+  if (VLOG_IS_ON(1)) {
+    for (const auto& ds : included_stores_) {
+      VLOG(1) << "Preparing to major compact delta file: " << ds->ToString();
+    }
   }
 
   // We defer calling OpenRedoDeltaFileWriter() since we might not need to flush.
   RETURN_NOT_OK(OpenBaseDataWriter());
   RETURN_NOT_OK(FlushRowSetAndDeltas(io_context));
-  LOG(INFO) << "Finished major delta compaction of columns " <<
-      ColumnNamesToString();
+
+  LOG(INFO) << Substitute("Finished major delta compaction of columns $0. "
+                          "Compacted $1 delta files. Overall stats: $2",
+                          ColumnNamesToString(),
+                          included_stores_.size(),
+                          DeltaStoreStatsToString(included_stores_));
   return Status::OK();
 }
 

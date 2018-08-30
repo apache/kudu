@@ -207,7 +207,7 @@ class RollingDiskRowSetWriter {
 
   Status Finish();
 
-  int64_t written_count() const { return written_count_; }
+  int64_t rows_written_count() const { return written_count_; }
 
   const Schema &schema() const { return schema_; }
 
@@ -216,6 +216,8 @@ class RollingDiskRowSetWriter {
   void GetWrittenRowSetMetadata(RowSetMetadataVector* metas) const;
 
   uint64_t written_size() const { return written_size_; }
+
+  int64_t drs_written_count() const { return written_drs_metas_.size(); }
 
  private:
   Status RollWriter();

@@ -85,6 +85,9 @@ class DeltaStats {
     min_timestamp_ = timestamp;
   }
 
+  // Returns the number of updates across all columns.
+  int64_t UpdateCount() const;
+
   std::string ToString() const;
 
   // Convert this object to the protobuf which is stored in the DeltaFile footer.

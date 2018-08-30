@@ -1482,10 +1482,10 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
                           "PostWriteSnapshot hook failed");
   }
 
-  // Though unlikely, it's possible that all of the input rows were actually
-  // GCed in this compaction. In that case, we don't actually want to reopen.
-  bool gced_all_input = drsw.written_count() == 0;
-  if (gced_all_input) {
+  // Though unlikely, it's possible that no rows were written because all of
+  // the input rows were GCed in this compaction. In that case, we don't
+  // actually want to reopen.
+  if (drsw.rows_written_count() == 0) {
     LOG_WITH_PREFIX(INFO) << op_name << " resulted in no output rows (all input rows "
                           << "were GCed!)  Removing all input rowsets.";
     return HandleEmptyCompactionOrFlush(input.rowsets(), mrs_being_flushed);
@@ -1648,8 +1648,11 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
   // their metadata was written to disk.
   AtomicSwapRowSets({ inprogress_rowset }, new_disk_rowsets);
 
-  LOG_WITH_PREFIX(INFO) << op_name << " successful on " << drsw.written_count()
-                        << " rows " << "(" << drsw.written_size() << " bytes)";
+  LOG_WITH_PREFIX(INFO) << Substitute("$0 successful on $1 rows ($2 rowsets, $3 bytes)",
+                                      op_name,
+                                      drsw.rows_written_count(),
+                                      drsw.drs_written_count(),
+                                      drsw.written_size());
 
   if (common_hooks_) {
     RETURN_NOT_OK_PREPEND(common_hooks_->PostSwapNewRowSet(),
