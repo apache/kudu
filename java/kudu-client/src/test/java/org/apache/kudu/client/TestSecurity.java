@@ -52,7 +52,7 @@ import com.stumbleupon.async.Deferred;
 public class TestSecurity {
   private static final String TABLE_NAME = "TestSecurity-table";
   private static final int TICKET_LIFETIME_SECS = 10;
-  private static final int RENEWABLE_LIFETIME_SECS = 30;
+  private static final int RENEWABLE_LIFETIME_SECS = 20;
 
   private final CapturingLogAppender cla = new CapturingLogAppender();
   private MiniKuduCluster miniCluster;
@@ -313,7 +313,7 @@ public class TestSecurity {
     try (Closeable c = cla.attach()) {
       for (Stopwatch sw = Stopwatch.createStarted();
            sw.elapsed(TimeUnit.SECONDS) < RENEWABLE_LIFETIME_SECS * 2;) {
-        if (timeSinceKinit.elapsed(TimeUnit.SECONDS) > TICKET_LIFETIME_SECS + 5) {
+        if (timeSinceKinit.elapsed(TimeUnit.SECONDS) > TICKET_LIFETIME_SECS + 2) {
           // We have gotten past the initial lifetime and well into the renewable
           // lifetime. If we haven't failed yet, that means that Kudu
           // successfully renewed the ticket.
@@ -324,7 +324,7 @@ public class TestSecurity {
           miniCluster.kinit("test-admin");
           timeSinceKinit.reset().start();
         }
-        Thread.sleep(5000);
+        Thread.sleep(1000);
         // Ensure that we don't use an authentication token to reconnect.
         client.asyncClient.securityContext.setAuthenticationToken(null);
         checkClientCanReconnect(client);
@@ -418,6 +418,7 @@ public class TestSecurity {
   @Test(timeout=300000)
   public void testExternallyProvidedSubjectRefreshedExternally() throws Exception {
     startCluster(ImmutableSet.of(Option.SHORT_TOKENS_AND_TICKETS));
+
     Subject subject = SecurityUtil.getSubjectFromTicketCacheOrNull();
     Assert.assertNotNull(subject);
     try (Closeable c = cla.attach()) {
@@ -427,7 +428,7 @@ public class TestSecurity {
       // are indeed picking up the new credentials.
       for (Stopwatch sw = Stopwatch.createStarted();
           sw.elapsed(TimeUnit.SECONDS) < RENEWABLE_LIFETIME_SECS + 5;
-          Thread.sleep(3000)) {
+          Thread.sleep(1000)) {
         miniCluster.kinit("test-admin");
 
         // Update the existing subject in-place by copying over the credentials from
