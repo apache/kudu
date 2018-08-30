@@ -1681,6 +1681,7 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
                                          rpc_context->requestor_string(),
                                          scan_pb.row_format_flags(),
                                          &scanner);
+  TRACE("Created scanner $0 for tablet $1", scanner->id(), scanner->tablet_id());
 
   // If we early-exit out of this function, automatically unregister
   // the scanner.
@@ -1912,7 +1913,7 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
 
   VLOG(2) << "Found existing scanner " << scanner->id() << " for request: "
           << SecureShortDebugString(*req);
-  TRACE("Found scanner $0", scanner->id());
+  TRACE("Found scanner $0 for tablet $1", scanner->id(), scanner->tablet_id());
 
   if (batch_size_bytes == 0 && req->close_scanner()) {
     *has_more_results = false;

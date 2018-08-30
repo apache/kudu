@@ -2314,9 +2314,9 @@ Status Tablet::Iterator::Init(ScanSpec *spec) {
   RETURN_NOT_OK(tablet_->GetMappedReadProjection(projection_, &projection_));
 
   vector<shared_ptr<RowwiseIterator>> iters;
-
   RETURN_NOT_OK(tablet_->CaptureConsistentIterators(&projection_, snap_, spec, order_,
                                                     &io_context_, &iters));
+  TRACE_COUNTER_INCREMENT("rowset_iterators", iters.size());
 
   switch (order_) {
     case ORDERED:
