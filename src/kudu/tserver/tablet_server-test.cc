@@ -169,6 +169,7 @@ METRIC_DECLARE_gauge_uint64(log_block_manager_containers);
 METRIC_DECLARE_counter(log_block_manager_holes_punched);
 METRIC_DECLARE_gauge_size(active_scanners);
 METRIC_DECLARE_gauge_size(tablet_active_scanners);
+METRIC_DECLARE_gauge_size(num_rowsets_on_disk);
 
 namespace kudu {
 
@@ -3321,6 +3322,24 @@ TEST_F(TabletServerTest, TestNoMetricsForTombstonedTablet) {
       ASSERT_STR_NOT_CONTAINS(buf.ToString(), "\"type\": \"tablet\"");
     }
   }
+}
+
+TEST_F(TabletServerTest, TestTabletNumberOfDiskRowSetsMetric) {
+  scoped_refptr<TabletReplica> tablet;
+  ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet));
+  ASSERT_TRUE(tablet->tablet()->GetMetricEntity());
+
+  // We don't care what the function is, since the metric is already instantiated.
+  auto num_diskrowsets = METRIC_num_rowsets_on_disk.InstantiateFunctionGauge(
+      tablet->tablet()->GetMetricEntity(), Callback<size_t(void)>());
+
+  // No data, no diskrowsets.
+  ASSERT_EQ(0, num_diskrowsets->value());
+
+  // Insert a row and flush. There should be 1 diskrowset.
+  ASSERT_NO_FATAL_FAILURE(InsertTestRowsRemote(0, 1, 1));
+  ASSERT_OK(tablet->tablet()->Flush());
+  ASSERT_EQ(1, num_diskrowsets->value());
 }
 
 // Test ensuring that when rowset min/max keys are stored with and read from

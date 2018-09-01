@@ -170,6 +170,9 @@ METRIC_DEFINE_gauge_size(tablet, memrowset_size, "MemRowSet Memory Usage",
 METRIC_DEFINE_gauge_size(tablet, on_disk_data_size, "Tablet Data Size On Disk",
                          kudu::MetricUnit::kBytes,
                          "Space used by this tablet's data blocks.");
+METRIC_DEFINE_gauge_size(tablet, num_rowsets_on_disk, "Tablet Number of Rowsets on Disk",
+                         kudu::MetricUnit::kUnits,
+                         "Number of diskrowsets in this tablet");
 
 using kudu::MaintenanceManager;
 using kudu::clock::HybridClock;
@@ -235,6 +238,9 @@ Tablet::Tablet(scoped_refptr<TabletMetadata> metadata,
       ->AutoDetach(&metric_detacher_);
     METRIC_on_disk_data_size.InstantiateFunctionGauge(
       metric_entity_, Bind(&Tablet::OnDiskDataSize, Unretained(this)))
+      ->AutoDetach(&metric_detacher_);
+    METRIC_num_rowsets_on_disk.InstantiateFunctionGauge(
+      metric_entity_, Bind(&Tablet::num_rowsets, Unretained(this)))
       ->AutoDetach(&metric_detacher_);
   }
 
@@ -2250,7 +2256,7 @@ int64_t Tablet::CountRedoDeltasForTests() const {
 
 size_t Tablet::num_rowsets() const {
   shared_lock<rw_spinlock> l(component_lock_);
-  return components_->rowsets->all_rowsets().size();
+  return components_ ? components_->rowsets->all_rowsets().size() : 0;
 }
 
 void Tablet::PrintRSLayout(ostream* o) {
