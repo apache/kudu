@@ -56,9 +56,35 @@ struct IntInterval {
         id(id) {
   }
 
-  bool Intersects(const IntInterval &other) const {
-    if (other.left > right) return false;
-    if (left > other.right) return false;
+  // boost::none means infinity.
+  // [left,  right] is closed interval.
+  // [lower, upper) is half-open interval, so the upper is exclusive.
+  bool Intersects(const boost::optional<int>& lower,
+                  const boost::optional<int>& upper) const {
+    if (lower == boost::none && upper == boost::none) {
+      //         [left, right]
+      //            |     |
+      // [-OO,                      +OO)
+    } else if (lower == boost::none) {
+      //         [left, right]
+      //            |
+      // [-OO,    upper)
+      if (*upper <= this->left) return false;
+    } else if (upper == boost::none) {
+      //         [left, right]
+      //                     \
+      //                      [lower, +OO)
+      if (*lower > this->right) return false;
+    } else {
+      //         [left, right]
+      //                     \
+      //                      [lower, upper)
+      if (*lower > this->right) return false;
+      //         [left, right]
+      //            |
+      // [lower,  upper)
+      if (*upper <= this->left) return false;
+    }
     return true;
   }
 
@@ -86,10 +112,10 @@ struct CountingQueryPoint {
 struct IntTraits {
   typedef int point_type;
   typedef IntInterval interval_type;
-  static point_type get_left(const IntInterval &x) {
+  static point_type get_left(const IntInterval& x) {
     return x.left;
   }
-  static point_type get_right(const IntInterval &x) {
+  static point_type get_right(const IntInterval& x) {
     return x.right;
   }
   static int compare(int a, int b) {
@@ -106,18 +132,33 @@ struct IntTraits {
     return -compare(b, a);
   }
 
+  static int compare(const boost::optional<int>& a,
+                     const int b,
+                     const EndpointIfNone& type) {
+    if (a == boost::none) {
+      return ((POSITIVE_INFINITY == type) ? 1 : -1);
+    }
+
+    return compare(*a, b);
+  }
+
+  static int compare(const int a,
+                     const boost::optional<int>& b,
+                     const EndpointIfNone& type) {
+    return -compare(b, a, type);
+  }
 };
 
 // Compare intervals in an arbitrary but consistent way - this is only
 // used for verifying that the two algorithms come up with the same results.
 // It's not necessary to define this to use an interval tree.
-static bool CompareIntervals(const IntInterval &a, const IntInterval &b) {
+static bool CompareIntervals(const IntInterval& a, const IntInterval& b) {
   return std::make_tuple(a.left, a.right, a.id) <
     std::make_tuple(b.left, b.right, b.id);
 }
 
 // Stringify a list of int intervals, for easy test error reporting.
-static string Stringify(const vector<IntInterval> &intervals) {
+static string Stringify(const vector<IntInterval>& intervals) {
   string ret;
   bool first = true;
   for (const IntInterval &interval : intervals) {
@@ -130,9 +171,9 @@ static string Stringify(const vector<IntInterval> &intervals) {
 }
 
 // Find any intervals in 'intervals' which contain 'query_point' by brute force.
-static void FindContainingBruteForce(const vector<IntInterval> &intervals,
+static void FindContainingBruteForce(const vector<IntInterval>& intervals,
                                      int query_point,
-                                     vector<IntInterval> *results) {
+                                     vector<IntInterval>* results) {
   for (const IntInterval &i : intervals) {
     if (query_point >= i.left && query_point <= i.right) {
       results->push_back(i);
@@ -142,11 +183,12 @@ static void FindContainingBruteForce(const vector<IntInterval> &intervals,
 
 
 // Find any intervals in 'intervals' which intersect 'query_interval' by brute force.
-static void FindIntersectingBruteForce(const vector<IntInterval> &intervals,
-                                       IntInterval query_interval,
-                                       vector<IntInterval> *results) {
-  for (const IntInterval &i : intervals) {
-    if (query_interval.Intersects(i)) {
+static void FindIntersectingBruteForce(const vector<IntInterval>& intervals,
+                                       const boost::optional<int>& lower,
+                                       const boost::optional<int>& upper,
+                                       vector<IntInterval>* results) {
+  for (const IntInterval& i : intervals) {
+    if (i.Intersects(lower, upper)) {
       results->push_back(i);
     }
   }
@@ -155,8 +197,8 @@ static void FindIntersectingBruteForce(const vector<IntInterval> &intervals,
 
 // Verify that IntervalTree::FindContainingPoint yields the same results as the naive
 // brute-force O(n) algorithm.
-static void VerifyFindContainingPoint(const vector<IntInterval> all_intervals,
-                                      const IntervalTree<IntTraits> &tree,
+static void VerifyFindContainingPoint(const vector<IntInterval>& all_intervals,
+                                      const IntervalTree<IntTraits>& tree,
                                       int query_point) {
   vector<IntInterval> results;
   tree.FindContainingPoint(query_point, &results);
@@ -166,26 +208,58 @@ static void VerifyFindContainingPoint(const vector<IntInterval> all_intervals,
   FindContainingBruteForce(all_intervals, query_point, &brute_force);
   std::sort(brute_force.begin(), brute_force.end(), CompareIntervals);
 
-  SCOPED_TRACE(Stringify(all_intervals) + StringPrintf(" (q=%d)", query_point));
+  SCOPED_TRACE(Stringify(all_intervals) + StringPrintf(" {q=%d}", query_point));
   EXPECT_EQ(Stringify(brute_force), Stringify(results));
 }
 
 // Verify that IntervalTree::FindIntersectingInterval yields the same results as the naive
 // brute-force O(n) algorithm.
-static void VerifyFindIntersectingInterval(const vector<IntInterval> all_intervals,
-                                           const IntervalTree<IntTraits> &tree,
-                                           const IntInterval &query_interval) {
-  vector<IntInterval> results;
-  tree.FindIntersectingInterval(query_interval, &results);
-  std::sort(results.begin(), results.end(), CompareIntervals);
+static void VerifyFindIntersectingInterval(const vector<IntInterval>& all_intervals,
+                                           const IntervalTree<IntTraits>& tree,
+                                           const IntInterval& query_interval) {
+  const auto& Process = [&] (const boost::optional<int>& lower,
+                             const boost::optional<int>& upper) {
+    vector<IntInterval> results;
+    tree.FindIntersectingInterval(lower, upper, &results);
+    std::sort(results.begin(), results.end(), CompareIntervals);
 
-  vector<IntInterval> brute_force;
-  FindIntersectingBruteForce(all_intervals, query_interval, &brute_force);
-  std::sort(brute_force.begin(), brute_force.end(), CompareIntervals);
+    vector<IntInterval> brute_force;
+    FindIntersectingBruteForce(all_intervals, lower, upper, &brute_force);
+    std::sort(brute_force.begin(), brute_force.end(), CompareIntervals);
+    EXPECT_EQ(Stringify(brute_force), Stringify(results));
+  };
 
-  SCOPED_TRACE(Stringify(all_intervals) +
-               StringPrintf(" (q=[%d,%d])", query_interval.left, query_interval.right));
-  EXPECT_EQ(Stringify(brute_force), Stringify(results));
+  {
+    // [lower, upper)
+    boost::optional<int> lower = query_interval.left;
+    boost::optional<int> upper = query_interval.right;
+    SCOPED_TRACE(Stringify(all_intervals) + StringPrintf(" {q=[%d, %d)}", *lower, *upper));
+    Process(lower, upper);
+  }
+
+  {
+    // [-OO, upper)
+    boost::optional<int> lower = boost::none;
+    boost::optional<int> upper = query_interval.right;
+    SCOPED_TRACE(Stringify(all_intervals) + StringPrintf(" {q=[-OO, %d)}", *upper));
+    Process(lower, upper);
+  }
+
+  {
+    // [lower, +OO)
+    boost::optional<int> lower = query_interval.left;
+    boost::optional<int> upper = boost::none;
+    SCOPED_TRACE(Stringify(all_intervals) + StringPrintf(" {q=[%d, +OO)}", *lower));
+    Process(lower, upper);
+  }
+
+  {
+    // [-OO, +OO)
+    boost::optional<int> lower = query_interval.left;
+    boost::optional<int> upper = boost::none;
+    SCOPED_TRACE(Stringify(all_intervals) + StringPrintf(" {q=[-OO, +OO)}"));
+    Process(lower, upper);
+  }
 }
 
 static vector<IntInterval> CreateRandomIntervals(int n = 100) {

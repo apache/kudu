@@ -36,6 +36,12 @@ template<class Traits>
 class ITNode;
 }
 
+// End point type when boost::none.
+enum EndpointIfNone {
+  POSITIVE_INFINITY,
+  NEGATIVE_INFINITY
+};
+
 // Implements an Interval Tree.
 //
 // An Interval Tree is a data structure which stores a set of intervals and supports
@@ -135,8 +141,10 @@ class IntervalTree {
   // Find all intervals in the tree which intersect the given interval.
   // The resulting intervals are added to the 'results' vector.
   // The vector is not cleared first.
-  void FindIntersectingInterval(const interval_type &query,
-                                IntervalVector *results) const;
+  template<class QueryPointType>
+  void FindIntersectingInterval(const QueryPointType& lower_bound,
+                                const QueryPointType& upper_bound,
+                                IntervalVector* results) const;
  private:
   static void Partition(const IntervalVector &in,
                         point_type *split_point,

@@ -101,6 +101,24 @@ struct RowSetIntervalTraits {
     return -compare(b, a);
   }
 
+  // When 'a' is boost::none:
+  //  (1)'a' is +OO when 'positive_direction' is true;
+  //  (2)'a' is -OO when 'positive_direction' is false.
+  static int compare(const boost::optional<Slice>& a,
+                     const Slice& b,
+                     const EndpointIfNone& type) {
+    if (a == boost::none) {
+      return ((POSITIVE_INFINITY == type) ? 1 : -1);
+    }
+
+    return compare(*a, b);
+  }
+
+  static int compare(const Slice& a,
+                     const boost::optional<Slice>& b,
+                     const EndpointIfNone& type) {
+    return -compare(b, a, type);
+  }
 };
 
 RowSetTree::RowSetTree()
@@ -173,9 +191,9 @@ Status RowSetTree::Reset(const RowSetVector &rowsets) {
   return Status::OK();
 }
 
-void RowSetTree::FindRowSetsIntersectingInterval(const Slice &lower_bound,
-                                                 const Slice &upper_bound,
-                                                 vector<RowSet *> *rowsets) const {
+void RowSetTree::FindRowSetsIntersectingInterval(const boost::optional<Slice>& lower_bound,
+                                                 const boost::optional<Slice>& upper_bound,
+                                                 vector<RowSet*>* rowsets) const {
   DCHECK(initted_);
 
   // All rowsets with unknown bounds need to be checked.
@@ -183,15 +201,9 @@ void RowSetTree::FindRowSetsIntersectingInterval(const Slice &lower_bound,
     rowsets->push_back(rs.get());
   }
 
-  // perf TODO: make it possible to query using raw Slices
-  // instead of copying to strings here
-  RowSetWithBounds query;
-  query.min_key = lower_bound.ToString();
-  query.max_key = upper_bound.ToString();
-
   vector<RowSetWithBounds *> from_tree;
   from_tree.reserve(all_rowsets_.size());
-  tree_->FindIntersectingInterval(&query, &from_tree);
+  tree_->FindIntersectingInterval(lower_bound, upper_bound, &from_tree);
   rowsets->reserve(rowsets->size() + from_tree.size());
   for (RowSetWithBounds *rs : from_tree) {
     rowsets->push_back(rs->rowset);

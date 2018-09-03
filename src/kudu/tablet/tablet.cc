@@ -30,6 +30,7 @@
 #include <utility>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -1778,16 +1779,13 @@ Status Tablet::CaptureConsistentIterators(
   opts.io_context = io_context;
 
   // Cull row-sets in the case of key-range queries.
-  if (spec != nullptr && spec->lower_bound_key() && spec->exclusive_upper_bound_key()) {
-    // TODO(todd): support open-ended intervals
-    // TODO(todd): the upper bound key is exclusive, but the RowSetTree
-    // function takes an inclusive interval. So, we might end up fetching one
-    // more rowset than necessary.
-    vector<RowSet *> interval_sets;
-    components_->rowsets->FindRowSetsIntersectingInterval(
-        spec->lower_bound_key()->encoded_key(),
-        spec->exclusive_upper_bound_key()->encoded_key(),
-        &interval_sets);
+  if (spec != nullptr && (spec->lower_bound_key() || spec->exclusive_upper_bound_key())) {
+    boost::optional<Slice> lower_bound = spec->lower_bound_key() ? \
+        boost::optional<Slice>(spec->lower_bound_key()->encoded_key()) : boost::none;
+    boost::optional<Slice> upper_bound = spec->exclusive_upper_bound_key() ? \
+        boost::optional<Slice>(spec->exclusive_upper_bound_key()->encoded_key()) : boost::none;
+    vector<RowSet*> interval_sets;
+    components_->rowsets->FindRowSetsIntersectingInterval(lower_bound, upper_bound, &interval_sets);
     for (const RowSet *rs : interval_sets) {
       gscoped_ptr<RowwiseIterator> row_it;
       RETURN_NOT_OK_PREPEND(rs->NewRowIterator(opts, &row_it),
@@ -1799,8 +1797,8 @@ Status Tablet::CaptureConsistentIterators(
     return Status::OK();
   }
 
-  // If there are no encoded predicates or they represent an open-ended range, then
-  // fall back to grabbing all rowset iterators
+  // If there are no encoded predicates of the primary keys, then
+  // fall back to grabbing all rowset iterators.
   for (const shared_ptr<RowSet> &rs : components_->rowsets->all_rowsets()) {
     gscoped_ptr<RowwiseIterator> row_it;
     RETURN_NOT_OK_PREPEND(rs->NewRowIterator(opts, &row_it),

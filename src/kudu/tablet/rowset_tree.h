@@ -22,6 +22,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
+
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/tablet/rowset.h"
@@ -85,9 +87,16 @@ class RowSetTree {
   void ForEachRowSetContainingKeys(const std::vector<Slice>& encoded_keys,
                                    const std::function<void(RowSet*, int)>& cb) const;
 
-  void FindRowSetsIntersectingInterval(const Slice &lower_bound,
-                                       const Slice &upper_bound,
-                                       std::vector<RowSet *> *rowsets) const;
+  // When 'lower_bound' is boost::none, it means negative infinity.
+  // When 'upper_bound' is boost::none, it means positive infinity.
+  // So the query interval can be one of below:
+  //  [-OO, +OO)
+  //  [-OO, upper_bound)
+  //  [lower_bound, +OO)
+  //  [lower_bound, upper_bound)
+  void FindRowSetsIntersectingInterval(const boost::optional<Slice>& lower_bound,
+                                       const boost::optional<Slice>& upper_bound,
+                                       std::vector<RowSet*>* rowsets) const;
 
   const RowSetVector &all_rowsets() const { return all_rowsets_; }
 

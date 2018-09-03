@@ -18,15 +18,19 @@
 #include <algorithm>
 #include <cstdlib>
 #include <memory>
-#include <unordered_set>
 #include <string>
+#include <string.h>
+#include <unordered_set>
+#include <utility>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/mock-rowsets.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/rowset_tree.h"
@@ -39,6 +43,7 @@ using std::shared_ptr;
 using std::string;
 using std::unordered_set;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu { namespace tablet {
 
@@ -87,29 +92,184 @@ TEST_F(TestRowSetTree, TestTree) {
   ASSERT_EQ(vec[0].get(), out[1]);
   ASSERT_EQ(vec[1].get(), out[2]);
 
-  // interval (2,4) overlaps 0-5, 3-5 and the MemRowSet
+  // interval [3,4) overlaps 0-5, 3-5 and the MemRowSet
   out.clear();
-  tree.FindRowSetsIntersectingInterval("3", "4", &out);
+  tree.FindRowSetsIntersectingInterval(Slice("3"), Slice("4"), &out);
   ASSERT_EQ(3, out.size());
   ASSERT_EQ(vec[3].get(), out[0]);
   ASSERT_EQ(vec[0].get(), out[1]);
   ASSERT_EQ(vec[1].get(), out[2]);
 
-  // interval (0,2) overlaps 0-5 and the MemRowSet
+  // interval [0,2) overlaps 0-5 and the MemRowSet
   out.clear();
-  tree.FindRowSetsIntersectingInterval("0", "2", &out);
+  tree.FindRowSetsIntersectingInterval(Slice("0"), Slice("2"), &out);
   ASSERT_EQ(2, out.size());
   ASSERT_EQ(vec[3].get(), out[0]);
   ASSERT_EQ(vec[0].get(), out[1]);
 
-  // interval (5,7) overlaps 0-5, 3-5, 5-9 and the MemRowSet
+  // interval [5,7) overlaps 0-5, 3-5, 5-9 and the MemRowSet
   out.clear();
-  tree.FindRowSetsIntersectingInterval("5", "7", &out);
+  tree.FindRowSetsIntersectingInterval(Slice("5"), Slice("7"), &out);
   ASSERT_EQ(4, out.size());
   ASSERT_EQ(vec[3].get(), out[0]);
   ASSERT_EQ(vec[0].get(), out[1]);
   ASSERT_EQ(vec[1].get(), out[2]);
   ASSERT_EQ(vec[2].get(), out[3]);
+
+  // "3" overlaps 0-5, 3-5, and the MemRowSet.
+  out.clear();
+  tree.FindRowSetsWithKeyInRange("3", &out);
+  ASSERT_EQ(3, out.size());
+  ASSERT_EQ(vec[3].get(), out[0]); // MemRowSet
+  ASSERT_EQ(vec[0].get(), out[1]);
+  ASSERT_EQ(vec[1].get(), out[2]);
+
+  // "5" overlaps 0-5, 3-5, 5-9, and the MemRowSet
+  out.clear();
+  tree.FindRowSetsWithKeyInRange("5", &out);
+  ASSERT_EQ(4, out.size());
+  ASSERT_EQ(vec[3].get(), out[0]); // MemRowSet
+  ASSERT_EQ(vec[0].get(), out[1]);
+  ASSERT_EQ(vec[1].get(), out[2]);
+  ASSERT_EQ(vec[2].get(), out[3]);
+
+  // interval [0,5) overlaps 0-5, 3-5, and the MemRowSet
+  out.clear();
+  tree.FindRowSetsIntersectingInterval(Slice("0"), Slice("5"), &out);
+  ASSERT_EQ(3, out.size());
+  ASSERT_EQ(vec[3].get(), out[0]);
+  ASSERT_EQ(vec[0].get(), out[1]);
+  ASSERT_EQ(vec[1].get(), out[2]);
+
+  // interval [3,5) overlaps 0-5, 3-5 and the MemRowSet
+  out.clear();
+  tree.FindRowSetsIntersectingInterval(Slice("3"), Slice("5"), &out);
+  ASSERT_EQ(3, out.size());
+  ASSERT_EQ(vec[3].get(), out[0]);
+  ASSERT_EQ(vec[0].get(), out[1]);
+  ASSERT_EQ(vec[1].get(), out[2]);
+
+  // interval [-OO,3) overlaps 0-5 and the MemRowSet
+  out.clear();
+  tree.FindRowSetsIntersectingInterval(boost::none, Slice("3"), &out);
+  ASSERT_EQ(2, out.size());
+  ASSERT_EQ(vec[3].get(), out[0]);
+  ASSERT_EQ(vec[0].get(), out[1]);
+
+  // interval [-OO,5) overlaps 0-5, 3-5 and the MemRowSet
+  out.clear();
+  tree.FindRowSetsIntersectingInterval(boost::none, Slice("5"), &out);
+  ASSERT_EQ(3, out.size());
+  ASSERT_EQ(vec[3].get(), out[0]);
+  ASSERT_EQ(vec[0].get(), out[1]);
+  ASSERT_EQ(vec[1].get(), out[2]);
+
+  // interval [-OO,99) overlaps 0-5, 3-5, 5-9 and the MemRowSet
+  out.clear();
+  tree.FindRowSetsIntersectingInterval(boost::none, Slice("99"), &out);
+  ASSERT_EQ(4, out.size());
+  ASSERT_EQ(vec[3].get(), out[0]);
+  ASSERT_EQ(vec[0].get(), out[1]);
+  ASSERT_EQ(vec[1].get(), out[2]);
+  ASSERT_EQ(vec[2].get(), out[3]);
+
+  // interval [6,+OO) overlaps 5-9 and the MemRowSet
+  out.clear();
+  tree.FindRowSetsIntersectingInterval(Slice("6"), boost::none, &out);
+  ASSERT_EQ(2, out.size());
+  ASSERT_EQ(vec[3].get(), out[0]);
+  ASSERT_EQ(vec[2].get(), out[1]);
+
+  // interval [5,+OO) overlaps 0-5, 3-5, 5-9 and the MemRowSet
+  out.clear();
+  tree.FindRowSetsIntersectingInterval(Slice("5"), boost::none, &out);
+  ASSERT_EQ(4, out.size());
+  ASSERT_EQ(vec[3].get(), out[0]);
+  ASSERT_EQ(vec[0].get(), out[1]);
+  ASSERT_EQ(vec[1].get(), out[2]);
+  ASSERT_EQ(vec[2].get(), out[3]);
+
+  // interval [4,+OO) overlaps 0-5, 3-5, 5-9 and the MemRowSet
+  out.clear();
+  tree.FindRowSetsIntersectingInterval(Slice("4"), boost::none, &out);
+  ASSERT_EQ(4, out.size());
+  ASSERT_EQ(vec[3].get(), out[0]);
+  ASSERT_EQ(vec[0].get(), out[1]);
+  ASSERT_EQ(vec[1].get(), out[2]);
+  ASSERT_EQ(vec[2].get(), out[3]);
+
+  // interval [-OO,+OO) overlaps 0-5, 3-5, 5-9 and the MemRowSet
+  out.clear();
+  tree.FindRowSetsIntersectingInterval(boost::none, boost::none, &out);
+  ASSERT_EQ(4, out.size());
+  ASSERT_EQ(vec[3].get(), out[0]);
+  ASSERT_EQ(vec[0].get(), out[1]);
+  ASSERT_EQ(vec[1].get(), out[2]);
+  ASSERT_EQ(vec[2].get(), out[3]);
+}
+
+TEST_F(TestRowSetTree, TestTreeRandomized) {
+  enum BoundOperator {
+    BOUND_LESS_THAN,
+    BOUND_LESS_EQUAL,
+    BOUND_GREATER_THAN,
+    BOUND_GREATER_EQUAL,
+    BOUND_EQUAL
+  };
+  const auto& GetStringPair = [] (const BoundOperator op) -> std::pair<string, string> {
+    while (true) {
+      string s1 = Substitute("$0", rand() % 100);
+      string s2 = Substitute("$0", rand() % 100);
+      int r = strcmp(s1.c_str(), s2.c_str());
+      switch (op) {
+      case BOUND_LESS_THAN:
+        if (r == 0) continue; // pass through.
+      case BOUND_LESS_EQUAL:
+        return std::pair<string, string>(std::min(s1, s2), std::max(s1, s2));
+      case BOUND_GREATER_THAN:
+        if (r == 0) continue; // pass through.
+      case BOUND_GREATER_EQUAL:
+        return std::pair<string, string>(std::max(s1, s2), std::min(s1, s2));
+      case BOUND_EQUAL:
+        return std::pair<string, string>(s1, s1);
+      }
+    }
+  };
+
+  SeedRandom();
+  RowSetVector vec;
+  for (int i = 0; i < 100; i++) {
+    std::pair<string, string> bound = GetStringPair(BOUND_LESS_EQUAL);
+    ASSERT_LE(bound.first, bound.second);
+    vec.push_back(shared_ptr<RowSet>(
+        new MockDiskRowSet(bound.first, bound.second)));
+  }
+  RowSetTree tree;
+  ASSERT_OK(tree.Reset(vec));
+
+  // When lower < upper.
+  vector<RowSet*> out;
+  for (int i = 0; i < 100; i++) {
+    out.clear();
+    std::pair<string, string> bound = GetStringPair(BOUND_LESS_THAN);
+    ASSERT_LT(bound.first, bound.second);
+    tree.FindRowSetsIntersectingInterval(
+        Slice(bound.first), Slice(bound.second), &out);
+    for (const auto& e : out) {
+      string min, max;
+      e->GetBounds(&min, &max);
+      if (min < bound.first) {
+        ASSERT_GE(max, bound.first);
+      } else {
+        ASSERT_LT(min, bound.second);
+      }
+      if (max >= bound.second) {
+        ASSERT_LT(min, bound.second);
+      } else {
+        ASSERT_GE(max, bound.first);
+      }
+    }
+  }
 }
 
 class TestRowSetTreePerformance : public TestRowSetTree,

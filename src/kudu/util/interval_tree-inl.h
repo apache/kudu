@@ -58,10 +58,12 @@ void IntervalTree<Traits>::ForEachIntervalContainingPoints(
 
 
 template<class Traits>
-void IntervalTree<Traits>::FindIntersectingInterval(const interval_type &query,
-                                                    IntervalVector *results) const {
+template<class QueryPointType>
+void IntervalTree<Traits>::FindIntersectingInterval(const QueryPointType& lower_bound,
+                                                    const QueryPointType& upper_bound,
+                                                    IntervalVector* results) const {
   if (root_) {
-    root_->FindIntersectingInterval(query, results);
+    root_->FindIntersectingInterval(lower_bound, upper_bound, results);
   }
 }
 
@@ -178,8 +180,10 @@ class ITNode {
                                        const Callback& cb) const;
 
   // See IntervalTree::FindIntersectingInterval(...)
-  void FindIntersectingInterval(const interval_type &query,
-                                IntervalVector *results) const;
+  template<class QueryPointType>
+  void FindIntersectingInterval(const QueryPointType& lower_bound,
+                                const QueryPointType& upper_bound,
+                                IntervalVector* results) const;
 
  private:
   // Comparators for sorting lists of intervals.
@@ -384,40 +388,42 @@ void ITNode<Traits>::FindContainingPoint(const QueryPointType &query,
 }
 
 template<class Traits>
-void ITNode<Traits>::FindIntersectingInterval(const interval_type &query,
-                                              IntervalVector *results) const {
-  if (Traits::compare(Traits::get_right(query), split_point_) < 0) {
-    // The interval is fully left of the split point. So, it may not overlap
-    // with any in 'right_'
+template<class QueryPointType>
+void ITNode<Traits>::FindIntersectingInterval(const QueryPointType& lower_bound,
+                                              const QueryPointType& upper_bound,
+                                              IntervalVector* results) const {
+  if (Traits::compare(upper_bound, split_point_, POSITIVE_INFINITY) <= 0) {
+    // The interval is fully left of the split point and with split point.
+    // So, it may not overlap with any in 'right_'
     if (left_ != NULL) {
-      left_->FindIntersectingInterval(query, results);
+      left_->FindIntersectingInterval(lower_bound, upper_bound, results);
     }
 
-    // Any intervals whose left edge is <= the query interval's right edge
+    // Any interval whose left edge is < the query interval's right edge
     // intersect the query interval. 'std::partition_point' returns the first
     // such interval which does not meet that criterion, so we insert all
     // up to that point.
     auto first_greater = std::partition_point(
         overlapping_by_asc_left_.cbegin(), overlapping_by_asc_left_.cend(),
         [&](const interval_type& interval) {
-          return Traits::compare(Traits::get_left(interval), Traits::get_right(query)) <= 0;
+          return Traits::compare(Traits::get_left(interval), upper_bound, POSITIVE_INFINITY) < 0;
         });
     results->insert(results->end(), overlapping_by_asc_left_.cbegin(), first_greater);
-  } else if (Traits::compare(Traits::get_left(query), split_point_) > 0) {
+  } else if (Traits::compare(lower_bound, split_point_, NEGATIVE_INFINITY) > 0) {
     // The interval is fully right of the split point. So, it may not overlap
     // with any in 'left_'.
     if (right_ != NULL) {
-      right_->FindIntersectingInterval(query, results);
+      right_->FindIntersectingInterval(lower_bound, upper_bound, results);
     }
 
-    // Any intervals whose right edge is >= the query interval's left edge
+    // Any interval whose right edge is >= the query interval's left edge
     // intersect the query interval. 'std::partition_point' returns the first
     // such interval which does not meet that criterion, so we insert all
     // up to that point.
     auto first_lesser = std::partition_point(
         overlapping_by_desc_right_.cbegin(), overlapping_by_desc_right_.cend(),
         [&](const interval_type& interval) {
-          return Traits::compare(Traits::get_right(interval), Traits::get_left(query)) >= 0;
+          return Traits::compare(Traits::get_right(interval), lower_bound, NEGATIVE_INFINITY) >= 0;
         });
     results->insert(results->end(), overlapping_by_desc_right_.cbegin(), first_lesser);
   } else {
@@ -428,10 +434,10 @@ void ITNode<Traits>::FindIntersectingInterval(const interval_type &query,
 
     // The query interval may _also_ intersect some in either child.
     if (left_ != NULL) {
-      left_->FindIntersectingInterval(query, results);
+      left_->FindIntersectingInterval(lower_bound, upper_bound, results);
     }
     if (right_ != NULL) {
-      right_->FindIntersectingInterval(query, results);
+      right_->FindIntersectingInterval(lower_bound, upper_bound, results);
     }
   }
 }
