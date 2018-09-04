@@ -70,6 +70,10 @@ namespace server {
 class ServerStatusPB;
 } // namespace server
 
+namespace tserver {
+class TabletServerServiceProxy;
+} // namespace tserver
+
 namespace cluster {
 
 class ExternalDaemon;
@@ -296,6 +300,7 @@ class ExternalMiniCluster : public MiniCluster {
   std::shared_ptr<rpc::Messenger> messenger() const override;
   std::shared_ptr<master::MasterServiceProxy> master_proxy() const override;
   std::shared_ptr<master::MasterServiceProxy> master_proxy(int idx) const override;
+  std::shared_ptr<tserver::TabletServerServiceProxy> tserver_proxy(int idx) const override;
 
   std::string block_manager_type() const {
     return opts_.block_manager_type;

@@ -685,6 +685,12 @@ std::shared_ptr<MasterServiceProxy> ExternalMiniCluster::master_proxy(int idx) c
   return std::make_shared<MasterServiceProxy>(messenger_, addr, addr.host());
 }
 
+std::shared_ptr<TabletServerServiceProxy> ExternalMiniCluster::tserver_proxy(int idx) const {
+  CHECK_LT(idx, tablet_servers_.size());
+  const auto& addr = CHECK_NOTNULL(tablet_server(idx))->bound_rpc_addr();
+  return std::make_shared<TabletServerServiceProxy>(messenger_, addr, addr.host());
+}
+
 Status ExternalMiniCluster::CreateClient(client::KuduClientBuilder* builder,
                                          client::sp::shared_ptr<client::KuduClient>* client) const {
   client::KuduClientBuilder defaults;

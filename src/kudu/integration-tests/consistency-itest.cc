@@ -113,6 +113,15 @@ class ConsistencyITest : public MiniClusterITestBase {
   virtual void SetUp() override {
     MiniClusterITestBase::SetUp();
     StartCluster(num_tablet_servers_);
+
+    // Since we're using mock NTP rather than the hybrid clock, it's possible
+    // that the first timestamp assigned to a tablet message is the initial
+    // timestamp (0). For correctness of scans, it is illegal to scan in this
+    // state. As such, we bump the clock up front so when we create tablets,
+    // they start out with more natural, non-0 values.
+    for (int i = 0; i < num_tablet_servers_; i++) {
+      cluster_->mini_tablet_server(i)->server()->clock()->Now();
+    }
   }
 
   void ScannerThread(KuduClient::ReplicaSelection selection,

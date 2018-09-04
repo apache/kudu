@@ -1868,6 +1868,17 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
   // tablet replica's shutdown is run concurrently with the code below.
   shared_ptr<Tablet> tablet;
   RETURN_NOT_OK(GetTabletRef(replica, &tablet, error_code));
+
+  // Ensure the tablet has a valid clean time.
+  s = tablet->mvcc_manager()->CheckIsSafeTimeInitialized();
+  if (!s.ok()) {
+    LOG(WARNING) << Substitute("Rejecting scan request for tablet $0: $1",
+                               tablet->tablet_id(), s.ToString());
+    // Return TABLET_NOT_RUNNING so the scan can be handled appropriately (fail
+    // over to another tablet server if fault-tolerant).
+    *error_code = TabletServerErrorPB::TABLET_NOT_RUNNING;
+    return s;
+  }
   {
     TRACE("Creating iterator");
     TRACE_EVENT0("tserver", "Create iterator");

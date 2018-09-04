@@ -37,21 +37,22 @@ class Status;
 namespace client {
 class KuduClient;
 class KuduClientBuilder;
-}
+} // namespace client
 
 namespace master {
 class MasterServiceProxy;
 class MiniMaster;
 class TSDescriptor;
-}
+} // namespace master
 
 namespace rpc {
 class Messenger;
-}
+} // namespace rpc
 
 namespace tserver {
 class MiniTabletServer;
-}
+class TabletServerServiceProxy;
+} // namespace tserver
 
 namespace cluster {
 
@@ -197,6 +198,7 @@ class InternalMiniCluster : public MiniCluster {
   std::shared_ptr<rpc::Messenger> messenger() const override;
   std::shared_ptr<master::MasterServiceProxy> master_proxy() const override;
   std::shared_ptr<master::MasterServiceProxy> master_proxy(int idx) const override;
+  std::shared_ptr<tserver::TabletServerServiceProxy> tserver_proxy(int idx) const override;
 
  private:
 
