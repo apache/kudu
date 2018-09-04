@@ -243,6 +243,7 @@ class DiskErrorITest : public ExternalMiniClusterITestBase,
       };
       return SetFlags(cluster_->tablet_server(i), recovery_flags);
     }
+    return Status::OK();
   }
 
   // Waits for the number of failed tablets on the tablet server to reach
