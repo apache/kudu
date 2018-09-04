@@ -19,6 +19,8 @@ package org.apache.kudu.junit;
 import org.junit.rules.TestRule;
 import org.junit.runner.Description;
 import org.junit.runners.model.Statement;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A JUnit rule to retry failed tests.
@@ -28,6 +30,7 @@ import org.junit.runners.model.Statement;
  */
 public class RetryRule implements TestRule {
 
+  private static final Logger LOG = LoggerFactory.getLogger(RetryRule.class);
   private static final int RETRY_COUNT = Integer.getInteger("rerunFailingTestsCount", 0);
 
   public RetryRule () {}
@@ -66,10 +69,10 @@ public class RetryRule implements TestRule {
           return;
         } catch (Throwable t) {
           lastException = t;
-          System.err.println(description.getDisplayName() + ": run " + (i + 1) + " failed.");
+          LOG.error(description.getDisplayName() + ": failed run " + (i + 1), t);
         }
       }
-      System.err.println(description.getDisplayName() + ": giving up after " + retryCount + " failures.");
+      LOG.error(description.getDisplayName() + ": giving up after " + retryCount + " failures");
       throw lastException;
     }
   }
