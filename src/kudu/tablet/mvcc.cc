@@ -55,6 +55,15 @@ MvccManager::MvccManager()
   cur_snap_.none_committed_at_or_after_ = Timestamp::kInitialTimestamp;
 }
 
+Status MvccManager::CheckIsSafeTimeInitialized() const {
+  // We initialize the MVCC safe time and clean time at the same time, so if
+  // clean time has not been updated, neither has safe time.
+  if (GetCleanTimestamp() == Timestamp::kInitialTimestamp) {
+    return Status::Uninitialized("safe time has not yet been initialized");
+  }
+  return Status::OK();
+}
+
 void MvccManager::StartTransaction(Timestamp timestamp) {
   MAYBE_INJECT_RANDOM_LATENCY(FLAGS_inject_latency_ms_before_starting_txn);
   std::lock_guard<LockType> l(lock_);

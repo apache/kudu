@@ -523,6 +523,23 @@ TEST_F(RandomizedTabletHistoryGcITest, TestRandomHistoryGCWorkload) {
   FLAGS_scanner_ttl_ms = 1000 * 60 * 60 * 24;
 
   StartCluster(1); // Start InternalMiniCluster with a single tablet server.
+  // Since we're using mock NTP rather than the hybrid clock, it's possible
+  // that if we created a tablet now, the first timestamp assigned to a tablet
+  // message would be the initial timestamp (0). For correctness of scans, it
+  // is illegal to scan in this state. As such, we bump the clock up front so
+  // when we create tablets, they start out with more natural, non-0 values.
+  MiniTabletServer* mts = cluster_->mini_tablet_server(0);
+
+  // Directly access the tserver so we can control compaction and the clock.
+  TabletServer* ts = mts->server();
+  clock_ = down_cast<HybridClock*>(ts->clock());
+
+  // Set initial clock time to 1000 seconds past 0, which is enough so that the
+  // AHM will not be negative.
+  const uint64_t kInitialMicroTime = 1L * 1000 * 1000 * 1000;
+  auto* ntp = down_cast<clock::MockNtp*>(clock_->time_service());
+  ntp->SetMockClockWallTimeForTests(kInitialMicroTime);
+
   TestWorkload workload(cluster_.get());
   workload.set_num_replicas(1);
   workload.Setup(); // Convenient way to create a table.
@@ -530,20 +547,10 @@ TEST_F(RandomizedTabletHistoryGcITest, TestRandomHistoryGCWorkload) {
   client::sp::shared_ptr<KuduTable> table;
   ASSERT_OK(client_->OpenTable(workload.table_name(), &table));
 
-  // Directly access the Tablet so we can control compaction and the clock.
-  MiniTabletServer* mts = cluster_->mini_tablet_server(0);
-  TabletServer* ts = mts->server();
-  clock_ = down_cast<HybridClock*>(ts->clock());
   std::vector<scoped_refptr<TabletReplica>> replicas;
   ts->tablet_manager()->GetTabletReplicas(&replicas);
   ASSERT_EQ(1, replicas.size());
   Tablet* tablet = replicas[0]->tablet();
-
-  // Set initial clock time to 1000 seconds past 0, which is enough so that the
-  // AHM will not be negative.
-  const uint64_t kInitialMicroTime = 1L * 1000 * 1000 * 1000;
-  auto* ntp = down_cast<clock::MockNtp*>(clock_->time_service());
-  ntp->SetMockClockWallTimeForTests(kInitialMicroTime);
 
   LOG(INFO) << "Seeding random number generator";
   Random random(SeedRandom());

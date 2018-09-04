@@ -185,6 +185,11 @@ class MvccManager {
  public:
   MvccManager();
 
+  // Returns an error if the current snapshot has not been adjusted past its
+  // initial state. While in this state, it is unsafe for the MvccManager to
+  // serve information about already-applied transactions.
+  Status CheckIsSafeTimeInitialized() const;
+
   // Begins a new transaction, which is assigned the provided timestamp.
   //
   // Requires that 'timestamp' is not committed.

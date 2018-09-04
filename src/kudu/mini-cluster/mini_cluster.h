@@ -42,6 +42,10 @@ namespace rpc {
 class Messenger;
 } // namespace rpc
 
+namespace tserver {
+class TabletServerServiceProxy;
+} // namespace tserver
+
 namespace cluster {
 
 // Mode to which node types a certain action (like Shutdown()) should apply.
@@ -152,6 +156,10 @@ class MiniCluster {
   // Returns an RPC proxy to the master at 'idx'. Requires that the
   // master at 'idx' is running.
   virtual std::shared_ptr<master::MasterServiceProxy> master_proxy(int idx) const = 0;
+
+  // Returns an RPC proxy to the tserver at 'idx'. Requires that the tserver at
+  // 'idx' is running.
+  virtual std::shared_ptr<tserver::TabletServerServiceProxy> tserver_proxy(int idx) const = 0;
 
   // Returns the UUID for the tablet server 'ts_idx'
   virtual std::string UuidForTS(int ts_idx) const = 0;

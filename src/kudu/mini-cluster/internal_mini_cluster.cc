@@ -38,6 +38,7 @@
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/tablet_server_options.h"
+#include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/env.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
@@ -65,6 +66,7 @@ using master::TSDescriptor;
 using std::shared_ptr;
 using tserver::MiniTabletServer;
 using tserver::TabletServer;
+using tserver::TabletServerServiceProxy;
 
 InternalMiniClusterOptions::InternalMiniClusterOptions()
   : num_masters(1),
@@ -393,6 +395,11 @@ std::shared_ptr<MasterServiceProxy> InternalMiniCluster::master_proxy() const {
 std::shared_ptr<MasterServiceProxy> InternalMiniCluster::master_proxy(int idx) const {
   const auto& addr = CHECK_NOTNULL(mini_master(idx))->bound_rpc_addr();
   return std::make_shared<MasterServiceProxy>(messenger_, addr, addr.host());
+}
+
+std::shared_ptr<TabletServerServiceProxy> InternalMiniCluster::tserver_proxy(int idx) const {
+  const auto& addr = CHECK_NOTNULL(mini_tablet_server(idx))->bound_rpc_addr();
+  return std::make_shared<TabletServerServiceProxy>(messenger_, addr, addr.host());
 }
 
 string InternalMiniCluster::WalRootForTS(int ts_idx) const {
