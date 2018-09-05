@@ -21,6 +21,7 @@ package org.apache.kudu.flume.sink;
 
 import java.math.BigDecimal;
 import java.nio.charset.Charset;
+import java.util.Arrays;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -100,7 +101,9 @@ import org.apache.kudu.client.Upsert;
  *   <td>producer.skipMissingColumn</td>
  *   <td>false</td>
  *   <td>No</td>
- *   <td>What to do if a column in the Kudu table has no corresponding capture group.
+ *   <td>
+ *   <b>@deprecated</b><br/> use {@code producer.missingColumnPolicy}
+ *   What to do if a column in the Kudu table has no corresponding capture group.
  *   If set to {@code true}, a warning message is logged and the operation is still attempted.
  *   If set to {@code false}, an exception is thrown and the sink will not process the
  *   {@code Event}, causing a Flume {@code Channel} rollback.
@@ -109,7 +112,9 @@ import org.apache.kudu.client.Upsert;
  *   <td>producer.skipBadColumnValue</td>
  *   <td>false</td>
  *   <td>No</td>
- *   <td>What to do if a value in the pattern match cannot be coerced to the required type.
+ *   <td>
+ *   <b>@deprecated</b><br/> use {@code producer.badColumnValuePolicy}
+ *   What to do if a value in the pattern match cannot be coerced to the required type.
  *   If set to {@code true}, a warning message is logged and the operation is still attempted.
  *   If set to {@code false}, an exception is thrown and the sink will not process the
  *   {@code Event}, causing a Flume {@code Channel} rollback.
@@ -118,8 +123,43 @@ import org.apache.kudu.client.Upsert;
  *   <td>producer.warnUnmatchedRows</td>
  *   <td>true</td>
  *   <td>No</td>
- *   <td>Whether to log a warning about payloads that do not match the pattern. If set to
+ *   <td>
+ *   <b>@deprecated</b><br/> use {@code producer.unmatchedRowPolicy}
+ *   Whether to log a warning about payloads that do not match the pattern. If set to
  *   {@code false}, event bodies with no matches will be silently dropped.</td>
+ * </tr>
+ * <tr>
+ *   <td>producer.missingColumnPolicy</td>
+ *   <td>REJECT</td>
+ *   <td>No</td>
+ *   <td>What to do if a column in the Kudu table has no corresponding capture group.<br/>
+ *   If set to {@code REJECT}, an exception is thrown and the sink will not process the
+ *   {@code Event}, causing a Flume {@code Channel} rollback.<br/>
+ *   If set to {@code WARN}, a warning message is logged and the operation is still produced.<br/>
+ *   If set to {@code IGNORE}, the operation is still produced without any log message.
+ * </tr>
+ * <tr>
+ *   <td>producer.badColumnValuePolicy</td>
+ *   <td>REJECT</td>
+ *   <td>No</td>
+ *   <td>What to do if a value in the pattern match cannot be coerced to the required type.<br/>
+ *   If set to {@code REJECT}, an exception is thrown and the sink will not process the
+ *   {@code Event}, causing a Flume {@code Channel} rollback.<br/>
+ *   If set to {@code WARN}, a warning message is logged and the operation is still produced,
+ *   but does not include the given column.<br/>
+ *   If set to {@code IGNORE}, the operation is still produced, but does not include the given
+ *   column and does not log any message.
+ * </tr>
+ * <tr>
+ *   <td>producer.unmatchedRowPolicy</td>
+ *   <td>WARN</td>
+ *   <td>No</td>
+ *   <td>What to do if a payload does not match the pattern.<br/>
+ *   If set to {@code REJECT}, an exception is thrown and the sink will not process the
+ *   {@code Event}, causing a Flume {@code Channel} rollback.<br/>
+ *   If set to {@code WARN}, a warning message is logged and the row is skipped,
+ *   not producing an operation.<br/>
+ *   If set to {@code IGNORE}, the row is skipped without any log message.
  * </tr>
  * </table>
  *
@@ -138,20 +178,32 @@ public class RegexpKuduOperationsProducer implements KuduOperationsProducer {
   public static final String DEFAULT_ENCODING = "utf-8";
   public static final String OPERATION_PROP = "operation";
   public static final String DEFAULT_OPERATION = UPSERT;
+  @Deprecated
   public static final String SKIP_MISSING_COLUMN_PROP = "skipMissingColumn";
+  @Deprecated
   public static final boolean DEFAULT_SKIP_MISSING_COLUMN = false;
+  @Deprecated
   public static final String SKIP_BAD_COLUMN_VALUE_PROP = "skipBadColumnValue";
+  @Deprecated
   public static final boolean DEFAULT_SKIP_BAD_COLUMN_VALUE = false;
+  @Deprecated
   public static final String WARN_UNMATCHED_ROWS_PROP = "skipUnmatchedRows";
+  @Deprecated
   public static final boolean DEFAULT_WARN_UNMATCHED_ROWS = true;
+  public static final String MISSING_COLUMN_POLICY_PROP = "missingColumnPolicy";
+  public static final ParseErrorPolicy DEFAULT_MISSING_COLUMN_POLICY = ParseErrorPolicy.REJECT;
+  public static final String BAD_COLUMN_VALUE_POLICY_PROP = "badColumnValuePolicy";
+  public static final ParseErrorPolicy DEFAULT_BAD_COLUMN_VALUE_POLICY = ParseErrorPolicy.REJECT;
+  public static final String UNMATCHED_ROW_POLICY_PROP = "unmatchedRowPolicy";
+  public static final ParseErrorPolicy DEFAULT_UNMATCHED_ROW_POLICY = ParseErrorPolicy.WARN;
 
   private KuduTable table;
   private Pattern pattern;
   private Charset charset;
   private String operation;
-  private boolean skipMissingColumn;
-  private boolean skipBadColumnValue;
-  private boolean warnUnmatchedRows;
+  private ParseErrorPolicy missingColumnPolicy;
+  private ParseErrorPolicy badColumnValuePolicy;
+  private ParseErrorPolicy unmatchedRowPolicy;
 
   public RegexpKuduOperationsProducer() {
   }
@@ -180,12 +232,22 @@ public class RegexpKuduOperationsProducer implements KuduOperationsProducer {
         validOperations.contains(operation),
         "Unrecognized operation '%s'",
         operation);
-    skipMissingColumn = context.getBoolean(SKIP_MISSING_COLUMN_PROP,
-        DEFAULT_SKIP_MISSING_COLUMN);
-    skipBadColumnValue = context.getBoolean(SKIP_BAD_COLUMN_VALUE_PROP,
-        DEFAULT_SKIP_BAD_COLUMN_VALUE);
-    warnUnmatchedRows = context.getBoolean(WARN_UNMATCHED_ROWS_PROP,
-        DEFAULT_WARN_UNMATCHED_ROWS);
+
+
+    missingColumnPolicy = getParseErrorPolicyCheckingDeprecatedProperty(
+      context, SKIP_MISSING_COLUMN_PROP, MISSING_COLUMN_POLICY_PROP,
+      ParseErrorPolicy.WARN, ParseErrorPolicy.REJECT, DEFAULT_MISSING_COLUMN_POLICY
+    );
+
+    badColumnValuePolicy = getParseErrorPolicyCheckingDeprecatedProperty(
+      context, SKIP_BAD_COLUMN_VALUE_PROP, BAD_COLUMN_VALUE_POLICY_PROP,
+      ParseErrorPolicy.WARN, ParseErrorPolicy.REJECT, DEFAULT_BAD_COLUMN_VALUE_POLICY
+    );
+
+    unmatchedRowPolicy = getParseErrorPolicyCheckingDeprecatedProperty(
+      context, WARN_UNMATCHED_ROWS_PROP, UNMATCHED_ROW_POLICY_PROP,
+      ParseErrorPolicy.WARN, ParseErrorPolicy.IGNORE, DEFAULT_UNMATCHED_ROW_POLICY
+    );
   }
 
   @Override
@@ -223,20 +285,21 @@ public class RegexpKuduOperationsProducer implements KuduOperationsProducer {
           String msg = String.format(
               "Raw value '%s' couldn't be parsed to type %s for column '%s'",
               raw, col.getType(), col.getName());
-          logOrThrow(skipBadColumnValue, msg, e);
+          logOrThrow(badColumnValuePolicy, msg, e);
         } catch (IllegalArgumentException e) {
           String msg = String.format(
               "Column '%s' has no matching group in '%s'",
               col.getName(), raw);
-          logOrThrow(skipMissingColumn, msg, e);
+          logOrThrow(missingColumnPolicy, msg, e);
         } catch (Exception e) {
           throw new FlumeException("Failed to create Kudu operation", e);
         }
       }
       ops.add(op);
     }
-    if (!match && warnUnmatchedRows) {
-      logger.warn("Failed to match the pattern '{}' in '{}'", pattern, raw);
+    if (!match) {
+      String msg = String.format("Failed to match the pattern '%s' in '%s'", pattern, raw);
+      logOrThrow(unmatchedRowPolicy, msg, null);
     }
     return ops;
   }
@@ -291,16 +354,52 @@ public class RegexpKuduOperationsProducer implements KuduOperationsProducer {
     }
   }
 
-  private void logOrThrow(boolean log, String msg, Exception e)
+  private void logOrThrow(ParseErrorPolicy policy, String msg, Exception e)
       throws FlumeException {
-    if (log) {
-      logger.warn(msg, e);
-    } else {
-      throw new FlumeException(msg, e);
+    switch (policy) {
+      case REJECT:
+        throw new FlumeException(msg, e);
+      case WARN:
+        logger.warn(msg, e);
+        break;
+      case IGNORE:
+        // Fall through
+      default:
     }
   }
 
   @Override
   public void close() {
+  }
+
+  private ParseErrorPolicy getParseErrorPolicyCheckingDeprecatedProperty(
+      Context context, String deprecatedPropertyName, String newPropertyName,
+      ParseErrorPolicy trueValue, ParseErrorPolicy falseValue, ParseErrorPolicy defaultValue) {
+    ParseErrorPolicy policy;
+    if (context.containsKey(deprecatedPropertyName)) {
+      logger.info("Configuration property {} is deprecated. Use {} instead.",
+          deprecatedPropertyName, newPropertyName);
+      Preconditions.checkArgument(!context.containsKey(newPropertyName),
+          "Both {} and {} specified. Use only one of them, preferably {}.",
+          deprecatedPropertyName, newPropertyName, newPropertyName);
+      policy = context.getBoolean(deprecatedPropertyName) ? trueValue : falseValue;
+    } else {
+      String policyString = context.getString(newPropertyName, defaultValue.name());
+      try {
+        policy = ParseErrorPolicy.valueOf(policyString.toUpperCase());
+      } catch (IllegalArgumentException e) {
+        throw new IllegalArgumentException(
+          "Unknown policy '" + policyString + "'. Use one of the following: " +
+              Arrays.toString(ParseErrorPolicy.values()), e);
+      }
+    }
+
+    return policy;
+  }
+
+  private enum ParseErrorPolicy {
+    WARN,
+    IGNORE,
+    REJECT
   }
 }
