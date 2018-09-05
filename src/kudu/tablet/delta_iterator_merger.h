@@ -23,7 +23,6 @@
 #include <vector>
 
 #include "kudu/common/rowid.h"
-#include "kudu/gutil/port.h"
 #include "kudu/tablet/delta_store.h"
 #include "kudu/util/status.h"
 
@@ -57,18 +56,27 @@ class DeltaIteratorMerger : public DeltaIterator {
   ////////////////////////////////////////////////////////////
   // Implementations of DeltaIterator
   ////////////////////////////////////////////////////////////
-  virtual Status Init(ScanSpec *spec) OVERRIDE;
-  virtual Status SeekToOrdinal(rowid_t idx) OVERRIDE;
-  virtual Status PrepareBatch(size_t nrows, PrepareFlag flag) OVERRIDE;
-  virtual Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) OVERRIDE;
-  virtual Status ApplyDeletes(SelectionVector *sel_vec) OVERRIDE;
-  virtual Status CollectMutations(std::vector<Mutation *> *dst, Arena *arena) OVERRIDE;
-  virtual Status FilterColumnIdsAndCollectDeltas(const std::vector<ColumnId>& col_ids,
-                                                 std::vector<DeltaKeyAndUpdate>* out,
-                                                 Arena* arena) OVERRIDE;
-  virtual bool HasNext() OVERRIDE;
-  bool MayHaveDeltas() override;
-  virtual std::string ToString() const OVERRIDE;
+  Status Init(ScanSpec* spec) override;
+
+  Status SeekToOrdinal(rowid_t idx) override;
+
+  Status PrepareBatch(size_t nrows, PrepareFlag flag) override;
+
+  Status ApplyUpdates(size_t col_to_apply, ColumnBlock* dst) override;
+
+  Status ApplyDeletes(SelectionVector* sel_vec) override;
+
+  Status CollectMutations(std::vector<Mutation*>* dst, Arena* arena) override;
+
+  Status FilterColumnIdsAndCollectDeltas(const std::vector<ColumnId>& col_ids,
+                                         std::vector<DeltaKeyAndUpdate>* out,
+                                         Arena* arena) override;
+
+  bool HasNext() override;
+
+  bool MayHaveDeltas() const override;
+
+  std::string ToString() const override;
 
  private:
   explicit DeltaIteratorMerger(std::vector<std::unique_ptr<DeltaIterator> > iters);

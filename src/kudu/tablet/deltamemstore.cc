@@ -17,29 +17,23 @@
 
 #include "kudu/tablet/deltamemstore.h"
 
-#include <cstring>
 #include <ostream>
 #include <utility>
 
 #include <glog/logging.h>
 
-#include "kudu/common/columnblock.h"
-#include "kudu/common/row.h"
 #include "kudu/common/row_changelist.h"
-#include "kudu/common/rowblock.h"
-#include "kudu/common/schema.h"
 #include "kudu/common/timestamp.h"
-#include "kudu/common/types.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/tablet/delta_key.h"
 #include "kudu/tablet/deltafile.h"
-#include "kudu/tablet/mutation.h"
-#include "kudu/tablet/mvcc.h"
-#include "kudu/util/debug-util.h"
+#include "kudu/tablet/rowset.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/memcmpable_varint.h"
 #include "kudu/util/memory/memory.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -201,12 +195,8 @@ void DeltaMemStore::DebugPrint() const {
 DMSIterator::DMSIterator(const shared_ptr<const DeltaMemStore>& dms,
                          RowIteratorOptions opts)
     : dms_(dms),
-      opts_(std::move(opts)),
+      preparer_(std::move(opts)),
       iter_(dms->tree_.NewIterator()),
-      initted_(false),
-      prepared_idx_(0),
-      prepared_count_(0),
-      prepared_for_(NOT_PREPARED),
       seeked_(false) {}
 
 Status DMSIterator::Init(ScanSpec* /*spec*/) {
@@ -221,9 +211,7 @@ Status DMSIterator::SeekToOrdinal(rowid_t row_idx) {
 
   bool exact; /* unused */
   iter_->SeekAtOrAfter(Slice(buf), &exact);
-  prepared_idx_ = row_idx;
-  prepared_count_ = 0;
-  prepared_for_ = NOT_PREPARED;
+  preparer_.Seek(row_idx);
   seeked_ = true;
   return Status::OK();
 }
@@ -242,17 +230,9 @@ Status DMSIterator::PrepareBatch(size_t nrows, PrepareFlag flag) {
   // copy here is instead a single copy of the data, so is likely faster.
   CHECK(seeked_);
   DCHECK(initted_) << "must init";
-  rowid_t start_row = prepared_idx_ + prepared_count_;
+  rowid_t start_row = preparer_.cur_prepared_idx();
   rowid_t stop_row = start_row + nrows - 1;
-
-  if (updates_by_col_.empty()) {
-    updates_by_col_.resize(opts_.projection->num_columns());
-  }
-  for (UpdatesForColumn& ufc : updates_by_col_) {
-    ufc.clear();
-  }
-  deleted_.clear();
-  prepared_deltas_.clear();
+  preparer_.Start(flag);
 
   while (iter_->IsValid()) {
     Slice key_slice, val;
@@ -261,133 +241,38 @@ Status DMSIterator::PrepareBatch(size_t nrows, PrepareFlag flag) {
     RETURN_NOT_OK(key.DecodeFrom(&key_slice));
     DCHECK_GE(key.row_idx(), start_row);
     if (key.row_idx() > stop_row) break;
-
-    if (!opts_.snap_to_include.IsCommitted(key.timestamp())) {
-      // The transaction which applied this update is not yet committed
-      // in this iterator's MVCC snapshot. Hence, skip it.
-      iter_->Next();
-      continue;
-    }
-
-    if (flag == PREPARE_FOR_APPLY) {
-      RowChangeListDecoder decoder((RowChangeList(val)));
-      decoder.InitNoSafetyChecks();
-      DCHECK(!decoder.is_reinsert()) << "Reinserts are not supported in the DeltaMemStore.";
-      if (decoder.is_delete()) {
-        deleted_.push_back(key.row_idx());
-      } else {
-        DCHECK(decoder.is_update());
-        while (decoder.HasNext()) {
-          RowChangeListDecoder::DecodedUpdate dec;
-          RETURN_NOT_OK(decoder.DecodeNext(&dec));
-          int col_idx;
-          const void* col_val;
-          RETURN_NOT_OK(dec.Validate(*opts_.projection, &col_idx, &col_val));
-          if (col_idx == -1) {
-            // This column isn't being projected.
-            continue;
-          }
-          int col_size = opts_.projection->column(col_idx).type_info()->size();
-
-          // If we already have an earlier update for the same column, we can
-          // just overwrite that one.
-          if (updates_by_col_[col_idx].empty() ||
-              updates_by_col_[col_idx].back().row_id != key.row_idx()) {
-            updates_by_col_[col_idx].emplace_back();
-          }
-
-          ColumnUpdate& cu = updates_by_col_[col_idx].back();
-          cu.row_id = key.row_idx();
-          if (col_val == nullptr) {
-            cu.new_val_ptr = nullptr;
-          } else {
-            memcpy(cu.new_val_buf, col_val, col_size);
-            // NOTE: we're constructing a pointer here to an element inside the deque.
-            // This is safe because deques never invalidate pointers to their elements.
-            cu.new_val_ptr = cu.new_val_buf;
-          }
-        }
-      }
-    } else {
-      DCHECK_EQ(flag, PREPARE_FOR_COLLECT);
-      PreparedDelta d;
-      d.key = key;
-      d.val = val;
-      prepared_deltas_.push_back(d);
-    }
-
+    RETURN_NOT_OK(preparer_.AddDelta(key, val));
     iter_->Next();
   }
-  prepared_idx_ = start_row;
-  prepared_count_ = nrows;
-  prepared_for_ = flag == PREPARE_FOR_APPLY ? PREPARED_FOR_APPLY : PREPARED_FOR_COLLECT;
+  preparer_.Finish(nrows);
   return Status::OK();
 }
 
-Status DMSIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
-  DCHECK_EQ(prepared_for_, PREPARED_FOR_APPLY);
-  DCHECK_EQ(prepared_count_, dst->nrows());
+Status DMSIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock* dst) {
+  return preparer_.ApplyUpdates(col_to_apply, dst);
+}
 
-  const ColumnSchema* col_schema = &opts_.projection->column(col_to_apply);
-  for (const ColumnUpdate& cu : updates_by_col_[col_to_apply]) {
-    int32_t idx_in_block = cu.row_id - prepared_idx_;
-    DCHECK_GE(idx_in_block, 0);
-    SimpleConstCell src(col_schema, cu.new_val_ptr);
-    ColumnBlock::Cell dst_cell = dst->cell(idx_in_block);
-    RETURN_NOT_OK(CopyCell(src, &dst_cell, dst->arena()));
-  }
-
-  return Status::OK();
+Status DMSIterator::ApplyDeletes(SelectionVector* sel_vec) {
+  return preparer_.ApplyDeletes(sel_vec);
 }
 
 
-Status DMSIterator::ApplyDeletes(SelectionVector *sel_vec) {
-  DCHECK_EQ(prepared_for_, PREPARED_FOR_APPLY);
-  DCHECK_EQ(prepared_count_, sel_vec->nrows());
-
-  for (auto& row_id : deleted_) {
-    uint32_t idx_in_block = row_id - prepared_idx_;
-    sel_vec->SetRowUnselected(idx_in_block);
-  }
-
-  return Status::OK();
-}
-
-
-Status DMSIterator::CollectMutations(vector<Mutation *> *dst, Arena *arena) {
-  DCHECK_EQ(prepared_for_, PREPARED_FOR_COLLECT);
-  for (const PreparedDelta& src : prepared_deltas_) {
-    DeltaKey key = src.key;;
-    RowChangeList changelist(src.val);
-    uint32_t rel_idx = key.row_idx() - prepared_idx_;
-
-    Mutation *mutation = Mutation::CreateInArena(arena, key.timestamp(), changelist);
-    mutation->PrependToList(&dst->at(rel_idx));
-  }
-  return Status::OK();
+Status DMSIterator::CollectMutations(vector<Mutation*>*dst, Arena* arena) {
+  return preparer_.CollectMutations(dst, arena);
 }
 
 Status DMSIterator::FilterColumnIdsAndCollectDeltas(const vector<ColumnId>& col_ids,
                                                     vector<DeltaKeyAndUpdate>* out,
                                                     Arena* arena) {
-  LOG(DFATAL) << "Attempt to call FilterColumnIdsAndCollectDeltas on DMS" << GetStackTrace();
-  return Status::InvalidArgument("FilterColumsAndAppend() is not supported by DMSIterator");
+  return preparer_.FilterColumnIdsAndCollectDeltas(col_ids, out, arena);
 }
 
 bool DMSIterator::HasNext() {
   return iter_->IsValid();
 }
 
-bool DMSIterator::MayHaveDeltas() {
-  if (!deleted_.empty()) {
-    return true;
-  }
-  for (auto& col: updates_by_col_) {
-    if (!col.empty()) {
-      return true;
-    }
-  }
-  return false;
+bool DMSIterator::MayHaveDeltas() const {
+  return preparer_.MayHaveDeltas();
 }
 
 string DMSIterator::ToString() const {

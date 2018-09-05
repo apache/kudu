@@ -19,7 +19,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <deque>
 #include <memory>
 #include <string>
 #include <vector>
@@ -33,13 +32,10 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/tablet/concurrent_btree.h"
-#include "kudu/tablet/delta_key.h"
 #include "kudu/tablet/delta_stats.h"
 #include "kudu/tablet/delta_store.h"
-#include "kudu/tablet/rowset.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/memory/arena.h"
-#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -55,16 +51,17 @@ struct ColumnId;
 
 namespace consensus {
 class OpId;
-}
+} // namespace consensus
 
 namespace fs {
 struct IOContext;
-}
+} // namespace fs
 
 namespace tablet {
 
 class DeltaFileWriter;
 class Mutation;
+struct RowIteratorOptions;
 
 struct DMSTreeTraits : public btree::BTreeTraits {
   typedef ThreadSafeMemoryTrackingArena ArenaType;
@@ -200,27 +197,27 @@ class DeltaMemStore : public DeltaStore,
 // functions.
 class DMSIterator : public DeltaIterator {
  public:
-  Status Init(ScanSpec *spec) OVERRIDE;
+  Status Init(ScanSpec* spec) override;
 
-  Status SeekToOrdinal(rowid_t row_idx) OVERRIDE;
+  Status SeekToOrdinal(rowid_t row_idx) override;
 
-  Status PrepareBatch(size_t nrows, PrepareFlag flag) OVERRIDE;
+  Status PrepareBatch(size_t nrows, PrepareFlag flag) override;
 
-  Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) OVERRIDE;
+  Status ApplyUpdates(size_t col_to_apply, ColumnBlock* dst) override;
 
-  Status ApplyDeletes(SelectionVector *sel_vec) OVERRIDE;
+  Status ApplyDeletes(SelectionVector* sel_vec) override;
 
-  Status CollectMutations(std::vector<Mutation *> *dst, Arena *arena) OVERRIDE;
+  Status CollectMutations(std::vector<Mutation*>* dst, Arena* arena) override;
 
   Status FilterColumnIdsAndCollectDeltas(const std::vector<ColumnId>& col_ids,
                                          std::vector<DeltaKeyAndUpdate>* out,
-                                         Arena* arena) OVERRIDE;
+                                         Arena* arena) override;
 
-  std::string ToString() const OVERRIDE;
+  std::string ToString() const override;
 
-  virtual bool HasNext() OVERRIDE;
+  bool HasNext() override;
 
-  bool MayHaveDeltas() override;
+  bool MayHaveDeltas() const override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(DMSIterator);
@@ -237,47 +234,14 @@ class DMSIterator : public DeltaIterator {
 
   const std::shared_ptr<const DeltaMemStore> dms_;
 
-  const RowIteratorOptions opts_;
+  DeltaPreparer preparer_;
 
   gscoped_ptr<DeltaMemStore::DMSTreeIter> iter_;
 
   bool initted_;
 
-  // The index at which the last PrepareBatch() call was made
-  rowid_t prepared_idx_;
-
-  // The number of rows for which the last PrepareBatch() call was made
-  uint32_t prepared_count_;
-
-  // Whether there are prepared blocks built through PrepareBatch().
-  enum PreparedFor {
-    NOT_PREPARED,
-    PREPARED_FOR_APPLY,
-    PREPARED_FOR_COLLECT
-  };
-  PreparedFor prepared_for_;
-
   // True if SeekToOrdinal() been called at least once.
   bool seeked_;
-
-  // State when prepared_for_ == PREPARED_FOR_APPLY
-  // ------------------------------------------------------------
-  struct ColumnUpdate {
-    rowid_t row_id;
-    void* new_val_ptr;
-    uint8_t new_val_buf[16];
-  };
-  typedef std::deque<ColumnUpdate> UpdatesForColumn;
-  std::vector<UpdatesForColumn> updates_by_col_;
-  std::deque<rowid_t> deleted_;
-
-  // State when prepared_for_ == PREPARED_FOR_COLLECT
-  // ------------------------------------------------------------
-  struct PreparedDelta {
-    DeltaKey key;
-    Slice val;
-  };
-  std::deque<PreparedDelta> prepared_deltas_;
 };
 
 } // namespace tablet

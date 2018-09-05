@@ -230,19 +230,27 @@ class DeltaFileReader : public DeltaStore,
 // See DeltaIterator for details.
 class DeltaFileIterator : public DeltaIterator {
  public:
-  Status Init(ScanSpec *spec) OVERRIDE;
+  Status Init(ScanSpec* spec) override;
 
-  Status SeekToOrdinal(rowid_t idx) OVERRIDE;
-  Status PrepareBatch(size_t nrows, PrepareFlag flag) OVERRIDE;
-  Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) OVERRIDE;
-  Status ApplyDeletes(SelectionVector *sel_vec) OVERRIDE;
-  Status CollectMutations(std::vector<Mutation *> *dst, Arena *arena) OVERRIDE;
+  Status SeekToOrdinal(rowid_t idx) override;
+
+  Status PrepareBatch(size_t nrows, PrepareFlag flag) override;
+
+  Status ApplyUpdates(size_t col_to_apply, ColumnBlock* dst) override;
+
+  Status ApplyDeletes(SelectionVector* sel_vec) override;
+
+  Status CollectMutations(std::vector<Mutation*>*dst, Arena* arena) override;
+
   Status FilterColumnIdsAndCollectDeltas(const std::vector<ColumnId>& col_ids,
                                          std::vector<DeltaKeyAndUpdate>* out,
-                                         Arena* arena) OVERRIDE;
-  std::string ToString() const OVERRIDE;
-  virtual bool HasNext() OVERRIDE;
-  bool MayHaveDeltas() override;
+                                         Arena* arena) override;
+
+  std::string ToString() const override;
+
+  bool HasNext() override;
+
+  bool MayHaveDeltas() const override;
 
  private:
   friend class DeltaFileReader;

@@ -43,7 +43,7 @@ DeltaIteratorMerger::DeltaIteratorMerger(
     vector<unique_ptr<DeltaIterator> > iters)
     : iters_(std::move(iters)) {}
 
-Status DeltaIteratorMerger::Init(ScanSpec *spec) {
+Status DeltaIteratorMerger::Init(ScanSpec* spec) {
   for (const unique_ptr<DeltaIterator> &iter : iters_) {
     RETURN_NOT_OK(iter->Init(spec));
   }
@@ -64,21 +64,21 @@ Status DeltaIteratorMerger::PrepareBatch(size_t nrows, PrepareFlag flag) {
   return Status::OK();
 }
 
-Status DeltaIteratorMerger::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
+Status DeltaIteratorMerger::ApplyUpdates(size_t col_to_apply, ColumnBlock* dst) {
   for (const unique_ptr<DeltaIterator> &iter : iters_) {
     RETURN_NOT_OK(iter->ApplyUpdates(col_to_apply, dst));
   }
   return Status::OK();
 }
 
-Status DeltaIteratorMerger::ApplyDeletes(SelectionVector *sel_vec) {
+Status DeltaIteratorMerger::ApplyDeletes(SelectionVector* sel_vec) {
   for (const unique_ptr<DeltaIterator> &iter : iters_) {
     RETURN_NOT_OK(iter->ApplyDeletes(sel_vec));
   }
   return Status::OK();
 }
 
-Status DeltaIteratorMerger::CollectMutations(vector<Mutation *> *dst, Arena *arena) {
+Status DeltaIteratorMerger::CollectMutations(vector<Mutation*>* dst, Arena* arena) {
   for (const unique_ptr<DeltaIterator> &iter : iters_) {
     RETURN_NOT_OK(iter->CollectMutations(dst, arena));
   }
@@ -117,7 +117,7 @@ bool DeltaIteratorMerger::HasNext() {
   return false;
 }
 
-bool DeltaIteratorMerger::MayHaveDeltas() {
+bool DeltaIteratorMerger::MayHaveDeltas() const {
   for (const unique_ptr<DeltaIterator>& iter : iters_) {
     if (iter->MayHaveDeltas()) {
       return true;

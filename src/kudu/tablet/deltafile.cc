@@ -411,7 +411,7 @@ DeltaFileIterator::DeltaFileIterator(shared_ptr<DeltaFileReader> dfr,
       delta_type_(delta_type),
       cache_blocks_(CFileReader::CACHE_BLOCK) {}
 
-Status DeltaFileIterator::Init(ScanSpec *spec) {
+Status DeltaFileIterator::Init(ScanSpec* spec) {
   DCHECK(!initted_) << "Already initted";
 
   if (spec) {
@@ -734,7 +734,7 @@ inline Status ApplyingVisitor<UNDO>::Visit(const DeltaKey& key,
   return Status::OK();
 }
 
-Status DeltaFileIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
+Status DeltaFileIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock* dst) {
   DCHECK_LE(prepared_count_, dst->nrows());
 
   if (delta_type_ == REDO) {
@@ -796,8 +796,8 @@ inline Status LivenessVisitor<REDO>::Visit(const DeltaKey& key,
 
 template<>
 inline Status LivenessVisitor<UNDO>::Visit(const DeltaKey& key,
-                                           const Slice& deltas, bool*
-                                           continue_visit) {
+                                           const Slice& deltas,
+                                           bool* continue_visit) {
   if (IsUndoRelevant(dfi->opts_.snap_to_include, key.timestamp(), continue_visit)) {
     return ApplyDelete(key, deltas);
   }
@@ -805,7 +805,7 @@ inline Status LivenessVisitor<UNDO>::Visit(const DeltaKey& key,
 }
 
 
-Status DeltaFileIterator::ApplyDeletes(SelectionVector *sel_vec) {
+Status DeltaFileIterator::ApplyDeletes(SelectionVector* sel_vec) {
   DCHECK_LE(prepared_count_, sel_vec->nrows());
   if (delta_type_ == REDO) {
     DVLOG(3) << "Applying REDO deletes";
@@ -842,8 +842,8 @@ struct CollectingVisitor {
 
 template<>
 inline Status CollectingVisitor<REDO>::Visit(const DeltaKey& key,
-                                           const Slice& deltas,
-                                           bool* continue_visit) {
+                                             const Slice& deltas,
+                                             bool* continue_visit) {
   if (IsRedoRelevant(dfi->opts_.snap_to_include, key.timestamp(), continue_visit)) {
     return Collect(key, deltas);
   }
@@ -852,32 +852,31 @@ inline Status CollectingVisitor<REDO>::Visit(const DeltaKey& key,
 
 template<>
 inline Status CollectingVisitor<UNDO>::Visit(const DeltaKey& key,
-                                           const Slice& deltas, bool*
-                                           continue_visit) {
+                                             const Slice& deltas,
+                                             bool* continue_visit) {
   if (IsUndoRelevant(dfi->opts_.snap_to_include, key.timestamp(), continue_visit)) {
     return Collect(key, deltas);
   }
   return Status::OK();
 }
 
-Status DeltaFileIterator::CollectMutations(vector<Mutation *> *dst, Arena *dst_arena) {
+Status DeltaFileIterator::CollectMutations(vector<Mutation*>* dst, Arena* arena) {
   DCHECK_LE(prepared_count_, dst->size());
   if (delta_type_ == REDO) {
-    CollectingVisitor<REDO> visitor = {this, dst, dst_arena};
-    return VisitMutations(&visitor);
-  } else {
-    CollectingVisitor<UNDO> visitor = {this, dst, dst_arena};
+    CollectingVisitor<REDO> visitor = {this, dst, arena};
     return VisitMutations(&visitor);
   }
+  CollectingVisitor<UNDO> visitor = {this, dst, arena};
+  return VisitMutations(&visitor);
 }
 
 bool DeltaFileIterator::HasNext() {
   return !exhausted_ || !delta_blocks_.empty();
 }
 
-bool DeltaFileIterator::MayHaveDeltas() {
-  // TODO: change the API to take in the col_to_apply and check for deltas on
-  // that column only.
+bool DeltaFileIterator::MayHaveDeltas() const {
+  // TODO(awong): change the API to take in the col_to_apply and check for
+  // deltas on that column only.
   DCHECK(prepared_) << "must Prepare";
   for (auto& block : delta_blocks_) {
     BinaryPlainBlockDecoder& bpd = *block->decoder_;
