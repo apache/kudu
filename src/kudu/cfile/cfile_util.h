@@ -98,7 +98,7 @@ struct ReaderOptions {
   // The IO context of this reader.
   //
   // Default: nullptr
-  const fs::IOContext* io_context;
+  const fs::IOContext* io_context = nullptr;
 
   // The MemTracker that should account for this reader's memory consumption.
   //

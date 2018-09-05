@@ -374,9 +374,11 @@ class TestCFile : public CFileTestBase {
     unique_ptr<ReadableBlock> corrupt_source;
     RETURN_NOT_OK(fs_manager_->OpenBlock(new_id, &corrupt_source));
     unique_ptr<CFileReader> reader;
-    RETURN_NOT_OK(CFileReader::Open(std::move(corrupt_source), ReaderOptions(), &reader));
-    gscoped_ptr<IndexTreeIterator> iter;
+    ReaderOptions opts;
     const fs::IOContext io_context({ "corrupted-dummy-tablet" });
+    opts.io_context = &io_context;
+    RETURN_NOT_OK(CFileReader::Open(std::move(corrupt_source), std::move(opts), &reader));
+    gscoped_ptr<IndexTreeIterator> iter;
     iter.reset(IndexTreeIterator::Create(&io_context, reader.get(), reader->posidx_root()));
     RETURN_NOT_OK(iter->SeekToFirst());
 
