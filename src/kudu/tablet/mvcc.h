@@ -111,6 +111,10 @@ class MvccSnapshot {
   // yet we need to construct a scanner that accurately represents that set.
   void AddCommittedTimestamps(const std::vector<Timestamp>& timestamps);
 
+  // Returns true if 'other' represents the same set of timestamps as this
+  // snapshot, false otherwise.
+  bool Equals(const MvccSnapshot& other) const;
+
  private:
   friend class MvccManager;
   FRIEND_TEST(MvccTest, TestMayHaveCommittedTransactionsAtOrAfter);

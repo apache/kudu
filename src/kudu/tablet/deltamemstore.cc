@@ -20,6 +20,7 @@
 #include <ostream>
 #include <utility>
 
+#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
 #include "kudu/common/row_changelist.h"
@@ -234,14 +235,40 @@ Status DMSIterator::PrepareBatch(size_t nrows, PrepareFlag flag) {
   rowid_t stop_row = start_row + nrows - 1;
   preparer_.Start(flag);
 
+  bool finished_row = false;
   while (iter_->IsValid()) {
     Slice key_slice, val;
     iter_->GetCurrentEntry(&key_slice, &val);
     DeltaKey key;
     RETURN_NOT_OK(key.DecodeFrom(&key_slice));
-    DCHECK_GE(key.row_idx(), start_row);
-    if (key.row_idx() > stop_row) break;
-    RETURN_NOT_OK(preparer_.AddDelta(key, val));
+    rowid_t cur_row = key.row_idx();
+    DCHECK_GE(cur_row, start_row);
+
+    // If this delta is for the same row as before, skip it if the previous
+    // AddDelta() call told us that we're done with this row.
+    if (preparer_.last_added_idx() &&
+        preparer_.last_added_idx() == cur_row &&
+        finished_row) {
+      iter_->Next();
+      continue;
+    }
+    finished_row = false;
+
+    if (cur_row > stop_row) {
+      // Delta is for a row which comes after the block we're processing.
+      break;
+    }
+
+    // Note: if AddDelta() sets 'finished_row' to true, we could skip the
+    // remaining deltas for this row by seeking the tree iterator. This trades
+    // off the cost of a seek against the cost of decoding some irrelevant delta
+    // keys. Experimentation with a microbenchmark revealed that only when ~50
+    // deltas were skipped was the seek cheaper than the decoding.
+    //
+    // Given that updates are expected to be uncommon and that most scans are
+    // _not_ historical, the current implementation eschews seeking in favor of
+    // skipping irrelevant deltas one by one.
+    RETURN_NOT_OK(preparer_.AddDelta(key, val, &finished_row));
     iter_->Next();
   }
   preparer_.Finish(nrows);

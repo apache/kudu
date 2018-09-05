@@ -333,11 +333,6 @@ static Status WriteRow(const Slice &row_slice, RowSetWriterClass *writer) {
   return writer->AppendBlock(block);
 }
 
-template <DeltaType Type>
-struct DeltaTypeSelector {
-  static constexpr DeltaType kTag = Type;
-};
-
 // Tracks encoded deltas and provides a DeltaIterator-like interface for
 // querying them.
 //

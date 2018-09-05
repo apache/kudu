@@ -23,8 +23,6 @@
 #include <string>
 #include <vector>
 
-#include <gtest/gtest_prod.h>
-
 #include "kudu/common/rowid.h"
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/gutil/atomicops.h"
@@ -221,8 +219,6 @@ class DMSIterator : public DeltaIterator {
 
  private:
   DISALLOW_COPY_AND_ASSIGN(DMSIterator);
-  FRIEND_TEST(TestDeltaMemStore, TestIteratorDoesUpdates);
-  FRIEND_TEST(TestDeltaMemStore, TestCollectMutations);
   friend class DeltaMemStore;
 
   // Initialize the iterator.
@@ -234,7 +230,7 @@ class DMSIterator : public DeltaIterator {
 
   const std::shared_ptr<const DeltaMemStore> dms_;
 
-  DeltaPreparer preparer_;
+  DeltaPreparer<DMSPreparerTraits> preparer_;
 
   gscoped_ptr<DeltaMemStore::DMSTreeIter> iter_;
 

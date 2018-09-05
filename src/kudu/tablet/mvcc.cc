@@ -511,6 +511,16 @@ void MvccSnapshot::AddCommittedTimestamp(Timestamp timestamp) {
   }
 }
 
+bool MvccSnapshot::Equals(const MvccSnapshot& other) const {
+  if (all_committed_before_ != other.all_committed_before_) {
+    return false;
+  }
+  if (none_committed_at_or_after_ != other.none_committed_at_or_after_) {
+    return false;
+  }
+  return committed_timestamps_ == other.committed_timestamps_;
+}
+
 ////////////////////////////////////////////////////////////
 // ScopedTransaction
 ////////////////////////////////////////////////////////////

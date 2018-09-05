@@ -24,6 +24,9 @@
 #include <string>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
+
+#include "kudu/common/row_changelist.h"
 #include "kudu/common/rowid.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/tablet/delta_key.h"
@@ -216,6 +219,26 @@ class DeltaIterator : public PreparedDeltas {
   virtual ~DeltaIterator() {}
 };
 
+// DeltaPreparer traits suited for a DMSIterator.
+struct DMSPreparerTraits {
+  static constexpr DeltaType kType = REDO;
+  static constexpr bool kAllowReinserts = false;
+  static constexpr bool kAllowFilterColumnIdsAndCollectDeltas = false;
+  static constexpr bool kInitializeDecodersWithSafetyChecks = false;
+};
+
+// DeltaPreparer traits suited for a DeltaFileIterator.
+//
+// This is just a partial specialization; the DeltaFileIterator is expected to
+// dictate the DeltaType.
+template<DeltaType Type>
+struct DeltaFilePreparerTraits {
+  static constexpr DeltaType kType = Type;
+  static constexpr bool kAllowReinserts = true;
+  static constexpr bool kAllowFilterColumnIdsAndCollectDeltas = true;
+  static constexpr bool kInitializeDecodersWithSafetyChecks = true;
+};
+
 // Encapsulates all logic and responsibility related to "delta preparation";
 // that is, the transformation of encoded deltas into an in-memory
 // representation more suitable for efficient service during iteration.
@@ -224,6 +247,7 @@ class DeltaIterator : public PreparedDeltas {
 // is responsible for loading encoded deltas from a backing store, passing them
 // to the DeltaPreparer to be transformed, and later, calling the DeltaPreparer
 // to serve the deltas.
+template <class Traits>
 class DeltaPreparer : public PreparedDeltas {
  public:
   explicit DeltaPreparer(RowIteratorOptions opts);
@@ -247,10 +271,14 @@ class DeltaPreparer : public PreparedDeltas {
 
   // Prepares the delta given by 'key' whose encoded changes are pointed to by 'val'.
   //
-  // Upon completion, it is safe for the memory behind 'val' to be destroyed.
+  // On success, the memory pointed to by 'val' can be destroyed. The
+  // 'finished_row' output parameter will be set if we can determine that all
+  // future deltas belonging to 'key.row_idx()' are irrelevant under the
+  // snapshot provided at preparer construction time; the caller can skip ahead
+  // to deltas belonging to the next row.
   //
   // Call when a new delta becomes available in DeltaIterator::PrepareBatch.
-  Status AddDelta(const DeltaKey& key, Slice val);
+  Status AddDelta(const DeltaKey& key, Slice val, bool* finished_row);
 
   Status ApplyUpdates(size_t col_to_apply, ColumnBlock* dst) override;
 
@@ -265,9 +293,24 @@ class DeltaPreparer : public PreparedDeltas {
   bool MayHaveDeltas() const override;
 
   rowid_t cur_prepared_idx() const { return cur_prepared_idx_; }
+  boost::optional<rowid_t> last_added_idx() const { return last_added_idx_; }
+  const RowIteratorOptions& opts() const { return opts_; }
 
  private:
-  // Options with which the DeltaPreparer was constructed.
+  // Checks whether we are done processing a row's deltas. If so, attempts to
+  // convert the row's latest deletion state into a saved deletion or
+  // reinsertion. By deferring this work to when a row is finished, we avoid
+  // creating unnecessary deletions and reinsertions for rows that are
+  // repeatedly deleted and reinserted.
+  //
+  // 'cur_row_idx' may be unset when there is no new row index, such as when
+  // called upon completion of an entire batch of deltas (i.e. from Finish()).
+  void MaybeProcessPreviousRowChange(boost::optional<rowid_t> cur_row_idx);
+
+  // Update the deletion state of the current row being processed based on 'op'.
+  void UpdateDeletionState(RowChangeList::ChangeType op);
+
+  // Options with which the DeltaPreparer's iterator was constructed.
   const RowIteratorOptions opts_;
 
   // The row index at which the most recent batch preparation ended.
@@ -276,6 +319,9 @@ class DeltaPreparer : public PreparedDeltas {
   // The value of 'cur_prepared_idx_' from the previous batch.
   rowid_t prev_prepared_idx_;
 
+  // The index of the row last added in AddDelta(), if one exists.
+  boost::optional<rowid_t> last_added_idx_;
+
   // Whether there are any prepared blocks.
   enum PreparedFor {
     // There are no prepared blocks. Attempts to call a PreparedDeltas function
@@ -283,9 +329,11 @@ class DeltaPreparer : public PreparedDeltas {
     NOT_PREPARED,
 
     // The DeltaPreparer has prepared a batch of deltas for applying. All deltas
-    // in the batch have been decoded. UPDATEs and REINSERTs have been coalesced
-    // into a column-major data structure suitable for ApplyUpdates. DELETES
-    // have been coalesced into a row-major data structure suitable for ApplyDeletes.
+    // in the batch have been decoded. Operations affecting row data (i.e.
+    // UPDATEs and REINSERTs) have been coalesced into a column-major data
+    // structure suitable for ApplyUpdates. Operations affecting row lifecycle
+    // (i.e. DELETES and REINSERTs) have been coalesced into a row-major data
+    // structure suitable for ApplyDeletes.
     //
     // ApplyUpdates and ApplyDeltas are now callable.
     PREPARED_FOR_APPLY,
@@ -308,6 +356,15 @@ class DeltaPreparer : public PreparedDeltas {
   typedef std::deque<ColumnUpdate> UpdatesForColumn;
   std::vector<UpdatesForColumn> updates_by_col_;
   std::deque<rowid_t> deleted_;
+  std::deque<rowid_t> reinserted_;
+
+  // The deletion state of the row last processed by AddDelta().
+  enum RowDeletionState {
+    UNKNOWN,
+    DELETED,
+    REINSERTED
+  };
+  RowDeletionState deletion_state_;
 
   // State when prepared_for_ == PREPARED_FOR_COLLECT
   // ------------------------------------------------------------

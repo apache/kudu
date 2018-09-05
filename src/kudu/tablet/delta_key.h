@@ -39,13 +39,28 @@ enum DeltaType {
   // are sorted by increasing transaction timestamp.
   REDO,
   // UNDO delta files contain the mutations that were applied
-  // prior to the time the base data was last/flushed compacted
+  // prior to the time the base data was last flushed/compacted
   // and allow to execute point-in-time snapshot scans. UNDO
   // deltas are sorted by decreasing transaction timestamp.
   UNDO
 };
 
 const char* DeltaType_Name(DeltaType t);
+
+// An alternate representation of the raw DeltaType. By templating on
+// DeltaTypeSelector instead of DeltaType, it's far easier to reference the
+// DeltaType at runtime. For example:
+//
+// template <typename T>
+// void Foo() {
+//   cout << T::kTag == REDO ? "REDO" : "UNDO" << endl;
+// }
+//
+// Foo<DeltaTypeSelector<REDO>>(); // prints 'REDO'
+template <DeltaType Type>
+struct DeltaTypeSelector {
+  static constexpr DeltaType kTag = Type;
+};
 
 // Each entry in the delta memrowset or delta files is keyed by the rowid
 // which has been updated, as well as the timestamp which performed the update.

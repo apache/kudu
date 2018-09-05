@@ -47,7 +47,6 @@
 #include "kudu/consensus/opid_util.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/casts.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
@@ -70,7 +69,13 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-DEFINE_int32(benchmark_num_passes, 100, "Number of passes to apply deltas in the benchmark");
+DEFINE_int32(benchmark_num_passes,
+#ifdef NDEBUG
+             100,
+#else
+             1,
+#endif
+             "Number of passes to apply deltas in the benchmark");
 
 using std::shared_ptr;
 using std::string;
@@ -290,6 +295,52 @@ TEST_F(TestDeltaMemStore, BenchmarkManyUpdatesToOneRow) {
   }
 }
 
+class TestDeltaMemStoreNumUpdates : public TestDeltaMemStore,
+                                    public ::testing::WithParamInterface<int> {
+};
+
+INSTANTIATE_TEST_CASE_P(DifferentNumUpdates,
+                        TestDeltaMemStoreNumUpdates, ::testing::Values(2, 20, 200));
+
+TEST_P(TestDeltaMemStoreNumUpdates, BenchmarkSnapshotScans) {
+  const int kNumRows = 100;
+
+  // Populate the DMS with kNumRows * GetParam() updates. For each row, every
+  // update is at a different timestamp.
+  faststring buf;
+  RowChangeListEncoder update(&buf);
+  LOG_TIMING(INFO, Substitute("updating $0 rows $1 times each", kNumRows, GetParam())) {
+    for (rowid_t row_idx = 0; row_idx < kNumRows; row_idx++) {
+      for (int ts_val = 0; ts_val < GetParam(); ts_val++) {
+        update.Reset();
+
+        Timestamp ts(ts_val);
+        uint32_t new_val = ts_val;
+        update.AddColumnUpdate(schema_.column(kIntColumn),
+                               schema_.column_id(kIntColumn), &new_val);
+        CHECK_OK(dms_->Update(ts, row_idx, RowChangeList(buf), op_id_));
+      }
+    }
+  }
+
+  // Now scan the DMS at each timestamp. The scans are repeated in a number of
+  // passes to stabilize the results.
+  ScopedColumnBlock<UINT32> ints(kNumRows);
+  LOG_TIMING(INFO, Substitute("running $0 scans for each timestamp",
+                              FLAGS_benchmark_num_passes)) {
+    for (int ts_val = 0; ts_val < GetParam(); ts_val++) {
+      LOG_TIMING(INFO, Substitute("running $0 scans at timestamp $1",
+                                  FLAGS_benchmark_num_passes, ts_val)) {
+        for (int pass = 0; pass < FLAGS_benchmark_num_passes; pass++) {
+          Timestamp ts(ts_val);
+          MvccSnapshot snap(ts);
+          NO_FATALS(ApplyUpdates(snap, 0, kIntColumn, &ints));
+        }
+      }
+    }
+  }
+}
+
 // Test when a slice column has been updated multiple times in the
 // memrowset that the referred to values properly end up in the
 // right arena.
@@ -466,7 +517,7 @@ TEST_F(TestDeltaMemStore, TestIteratorDoesUpdates) {
   }
   ASSERT_OK(s);
 
-  gscoped_ptr<DMSIterator> iter(down_cast<DMSIterator *>(raw_iter));
+  unique_ptr<DeltaIterator> iter(raw_iter);
   ASSERT_OK(iter->Init(nullptr));
 
   int block_start_row = 50;
@@ -514,8 +565,7 @@ TEST_F(TestDeltaMemStore, TestCollectMutations) {
   }
   ASSERT_OK(s);
 
-  gscoped_ptr<DMSIterator> iter(down_cast<DMSIterator *>(raw_iter));
-
+  unique_ptr<DeltaIterator> iter(raw_iter);
   ASSERT_OK(iter->Init(nullptr));
   ASSERT_OK(iter->SeekToOrdinal(0));
   ASSERT_OK(iter->PrepareBatch(kBatchSize, DeltaIterator::PREPARE_FOR_COLLECT));

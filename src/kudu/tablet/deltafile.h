@@ -26,12 +26,10 @@
 
 #include <glog/logging.h>
 
-#include "kudu/cfile/binary_plain_block.h"
 #include "kudu/cfile/block_handle.h"
 #include "kudu/cfile/block_pointer.h"
 #include "kudu/cfile/cfile_reader.h"
 #include "kudu/cfile/cfile_writer.h"
-#include "kudu/cfile/index_btree.h"
 #include "kudu/common/rowid.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
@@ -40,7 +38,6 @@
 #include "kudu/tablet/delta_key.h"
 #include "kudu/tablet/delta_stats.h"
 #include "kudu/tablet/delta_store.h"
-#include "kudu/tablet/rowset.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/once.h"
 #include "kudu/util/slice.h"
@@ -58,11 +55,9 @@ class ScanSpec;
 class SelectionVector;
 struct ColumnId;
 
-namespace tablet {
-class MvccSnapshot;
-} // namespace tablet
-
 namespace cfile {
+class BinaryPlainBlockDecoder;
+class IndexTreeIterator;
 struct ReaderOptions;
 } // namespace cfile
 
@@ -76,12 +71,8 @@ struct IOContext;
 namespace tablet {
 
 class Mutation;
-template<DeltaType Type>
-struct ApplyingVisitor;
-template<DeltaType Type>
-struct CollectingVisitor;
-template<DeltaType Type>
-struct LivenessVisitor;
+class MvccSnapshot;
+struct RowIteratorOptions;
 
 class DeltaFileWriter {
  public:
@@ -200,6 +191,7 @@ class DeltaFileReader : public DeltaStore,
                            std::shared_ptr<DeltaFileReader>* out) const;
 
  private:
+  template<DeltaType Type>
   friend class DeltaFileIterator;
 
   DISALLOW_COPY_AND_ASSIGN(DeltaFileReader);
@@ -228,6 +220,7 @@ class DeltaFileReader : public DeltaStore,
 // Iterator over the deltas contained in a delta file.
 //
 // See DeltaIterator for details.
+template <DeltaType Type>
 class DeltaFileIterator : public DeltaIterator {
  public:
   Status Init(ScanSpec* spec) override;
@@ -254,13 +247,6 @@ class DeltaFileIterator : public DeltaIterator {
 
  private:
   friend class DeltaFileReader;
-  friend struct ApplyingVisitor<REDO>;
-  friend struct ApplyingVisitor<UNDO>;
-  friend struct CollectingVisitor<REDO>;
-  friend struct CollectingVisitor<UNDO>;
-  friend struct LivenessVisitor<REDO>;
-  friend struct LivenessVisitor<UNDO>;
-  friend struct FilterAndAppendVisitor;
 
   DISALLOW_COPY_AND_ASSIGN(DeltaFileIterator);
 
@@ -303,8 +289,7 @@ class DeltaFileIterator : public DeltaIterator {
 
   // The pointers in 'opts' and 'dfr' must remain valid for the lifetime of the iterator.
   DeltaFileIterator(std::shared_ptr<DeltaFileReader> dfr,
-                    RowIteratorOptions opts,
-                    DeltaType delta_type);
+                    RowIteratorOptions opts);
 
   // Determine the row index of the first update in the block currently
   // pointed to by index_iter_.
@@ -318,10 +303,7 @@ class DeltaFileIterator : public DeltaIterator {
   // onto the end of the delta_blocks_ queue.
   Status ReadCurrentBlockOntoQueue();
 
-  // Visit all mutations in the currently prepared row range with the specified
-  // visitor class.
-  template<class Visitor>
-  Status VisitMutations(Visitor *visitor);
+  Status AddDeltas(rowid_t start_row, rowid_t stop_row);
 
   // Log a FATAL error message about a bad delta.
   void FatalUnexpectedDelta(const DeltaKey &key, const Slice &deltas,
@@ -329,13 +311,10 @@ class DeltaFileIterator : public DeltaIterator {
 
   std::shared_ptr<DeltaFileReader> dfr_;
 
-  const RowIteratorOptions opts_;
+  DeltaPreparer<DeltaFilePreparerTraits<Type>> preparer_;
 
   gscoped_ptr<cfile::IndexTreeIterator> index_iter_;
 
-  // TODO: add better comments here.
-  rowid_t prepared_idx_;
-  uint32_t prepared_count_;
   bool prepared_;
   bool exhausted_;
   bool initted_;
@@ -346,12 +325,6 @@ class DeltaFileIterator : public DeltaIterator {
 
   // Temporary buffer used in seeking.
   faststring tmp_buf_;
-
-  // Temporary buffer used for RowChangeList projection.
-  faststring delta_buf_;
-
-  // The type of this delta iterator, i.e. UNDO or REDO.
-  const DeltaType delta_type_;
 
   cfile::CFileReader::CacheControl cache_blocks_;
 };

@@ -459,5 +459,74 @@ TYPED_TEST(DeltaTypeTestDeltaFile, TestFuzz) {
       /*test_filter_column_ids_and_collect_deltas=*/true));
 }
 
+// Performance benchmark that simulates the work of a DeltaApplier:
+// - Seeks to the first row.
+// - Prepares a batch of deltas.
+// - Initializes a selection vector and calls ApplyDeletes on it.
+// - Calls ApplyUpdates for each column in the projection.
+//
+// The deltas are randomly generated, as is the projection used in iteration.
+TYPED_TEST(DeltaTypeTestDeltaFile, BenchmarkPrepareAndApply) {
+  const int kNumColumns = 100;
+  const int kNumColumnsToScan = 10;
+  const int kNumUpdates = 10000;
+  const int kMaxRow = 1000;
+  const int kMaxTimestamp = 100;
+  const int kNumScans = 10;
+
+  // Build a schema with kNumColumns columns.
+  SchemaBuilder sb;
+  for (int i = 0; i < kNumColumns; i++) {
+    ASSERT_OK(sb.AddColumn(Substitute("col$0", i), UINT32));
+  }
+  Schema schema(sb.Build());
+
+  Random prng(SeedRandom());
+  MirroredDeltas<TypeParam> deltas(&schema);
+
+  // Populate a delta file with random deltas.
+  shared_ptr<DeltaFileReader> reader;
+  ASSERT_OK(CreateRandomDeltaFile<TypeParam>(
+      schema, this->fs_manager_.get(), &prng,
+      kNumUpdates, { 0, kMaxRow },  { 0, kMaxTimestamp }, &deltas, &reader));
+
+  for (int i = 0; i < kNumScans; i++) {
+    // Create a random projection with kNumColumnsToScan columns.
+    Schema projection = GetRandomProjection(schema, &prng, kNumColumnsToScan);
+
+    // Create an iterator at a randomly chosen timestamp.
+    Timestamp ts = Timestamp(prng.Uniform(kMaxTimestamp));
+    RowIteratorOptions opts;
+    opts.projection = &projection;
+    opts.snap_to_include = MvccSnapshot(ts);
+    DeltaIterator* raw_iter;
+    Status s = reader->NewDeltaIterator(opts, &raw_iter);
+    if (s.IsNotFound()) {
+      ASSERT_STR_CONTAINS(s.ToString(), "MvccSnapshot outside the range of this delta");
+      continue;
+    }
+    ASSERT_OK(s);
+    unique_ptr<DeltaIterator> iter(raw_iter);
+    ASSERT_OK(iter->Init(nullptr));
+
+    // Scan from the iterator as if we were a DeltaApplier.
+    ASSERT_OK(iter->SeekToOrdinal(0));
+    ASSERT_OK(iter->PrepareBatch(kMaxRow, DeltaIterator::PREPARE_FOR_APPLY));
+    SelectionVector sel_vec(kMaxRow);
+    sel_vec.SetAllTrue();
+    ASSERT_OK(iter->ApplyDeletes(&sel_vec));
+    if (!sel_vec.AnySelected()) {
+      continue;
+    }
+    ScopedColumnBlock<UINT32> scb(kMaxRow);
+    for (int j = 0; j < kMaxRow; j++) {
+      scb[j] = 0;
+    }
+    for (int j = 0; j < projection.num_columns(); j++) {
+      ASSERT_OK(iter->ApplyUpdates(j, &scb));
+    }
+  }
+}
+
 } // namespace tablet
 } // namespace kudu
