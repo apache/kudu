@@ -48,6 +48,7 @@
 #include "kudu/util/slice.h"
 #include "kudu/util/threadpool.h"
 
+using boost::none;
 using boost::optional;
 using std::move;
 using std::string;
@@ -144,10 +145,11 @@ void HmsCatalog::Stop() {
 
 Status HmsCatalog::CreateTable(const string& id,
                                const string& name,
+                               optional<const string&> owner,
                                const Schema& schema) {
   return Execute([&] (HmsClient* client) {
       hive::Table table;
-      RETURN_NOT_OK(PopulateTable(id, name, schema, master_addresses_, &table));
+      RETURN_NOT_OK(PopulateTable(id, name, owner, schema, master_addresses_, &table));
       return client->CreateTable(table, EnvironmentContext());
   });
 }
@@ -172,8 +174,8 @@ Status HmsCatalog::DropTable(const string& name, const hive::EnvironmentContext&
 }
 
 Status HmsCatalog::UpgradeLegacyImpalaTable(const string& id,
-                                            const std::string& db_name,
-                                            const std::string& tb_name,
+                                            const string& db_name,
+                                            const string& tb_name,
                                             const Schema& schema) {
   return Execute([&] (HmsClient* client) {
     hive::Table table;
@@ -184,12 +186,12 @@ Status HmsCatalog::UpgradeLegacyImpalaTable(const string& id,
     }
 
     RETURN_NOT_OK(PopulateTable(id, Substitute("$0.$1", db_name, tb_name),
-                                schema, master_addresses_, &table));
+                                none, schema, master_addresses_, &table));
     return client->AlterTable(db_name, tb_name, table, EnvironmentContext());
   });
 }
 
-Status HmsCatalog::DowngradeToLegacyImpalaTable(const std::string& name) {
+Status HmsCatalog::DowngradeToLegacyImpalaTable(const string& name) {
   return Execute([&] (HmsClient* client) {
     Slice hms_database;
     Slice hms_table;
@@ -283,7 +285,7 @@ Status HmsCatalog::AlterTable(const string& id,
       }
 
       // Overwrite fields in the table that have changed, including the new name.
-      RETURN_NOT_OK(PopulateTable(id, new_name, schema, master_addresses_, &table));
+      RETURN_NOT_OK(PopulateTable(id, new_name, none, schema, master_addresses_, &table));
       return client->AlterTable(hms_database.ToString(), hms_table.ToString(),
                                 table, EnvironmentContext());
   });
@@ -482,6 +484,7 @@ void ToLowerCase(Slice s) {
 
 Status HmsCatalog::PopulateTable(const string& id,
                                  const string& name,
+                                 const optional<const string&>& owner,
                                  const Schema& schema,
                                  const string& master_addresses,
                                  hive::Table* table) {
@@ -490,6 +493,9 @@ Status HmsCatalog::PopulateTable(const string& id,
   RETURN_NOT_OK(ParseTableName(name, &hms_database_name, &hms_table_name));
   table->dbName = hms_database_name.ToString();
   table->tableName = hms_table_name.ToString();
+  if (owner) {
+    table->owner = *owner;
+  }
 
   // Add the Kudu-specific parameters. This intentionally avoids overwriting
   // other parameters.

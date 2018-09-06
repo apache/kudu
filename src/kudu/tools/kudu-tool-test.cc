@@ -133,15 +133,16 @@ DECLARE_string(hive_metastore_uris);
 METRIC_DECLARE_counter(bloom_lookups);
 METRIC_DECLARE_entity(tablet);
 
+using boost::optional;
 using kudu::cfile::CFileWriter;
 using kudu::cfile::StringDataGenerator;
 using kudu::cfile::WriterOptions;
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
-using kudu::client::KuduSchema;
-using kudu::client::KuduSchemaBuilder;
 using kudu::client::KuduScanToken;
 using kudu::client::KuduScanTokenBuilder;
+using kudu::client::KuduSchema;
+using kudu::client::KuduSchemaBuilder;
 using kudu::client::KuduTable;
 using kudu::client::sp::shared_ptr;
 using kudu::cluster::ExternalMiniCluster;
@@ -178,8 +179,8 @@ using kudu::tserver::MiniTabletServer;
 using kudu::tserver::WriteRequestPB;
 using std::back_inserter;
 using std::copy;
-using std::map;
 using std::make_pair;
+using std::map;
 using std::ostringstream;
 using std::pair;
 using std::string;
@@ -1910,7 +1911,7 @@ TEST_F(ToolTest, TestLocalReplicaTombstoneDelete) {
   // so that we can compare the size of the data on disk before and
   // after the deletion of local_replica to verify that the size-on-disk
   // is reduced after the tool operation.
-  boost::optional<OpId> last_logged_opid;
+  optional<OpId> last_logged_opid;
   string tablet_id;
   {
     vector<scoped_refptr<TabletReplica>> tablet_replicas;
@@ -1951,7 +1952,7 @@ TEST_F(ToolTest, TestLocalReplicaTombstoneDelete) {
     ASSERT_EQ(tablet_id, tablet_replicas[0]->tablet_id());
     ASSERT_EQ(TabletDataState::TABLET_DATA_TOMBSTONED,
               tablet_replicas[0]->tablet_metadata()->tablet_data_state());
-    boost::optional<OpId> tombstoned_opid =
+    optional<OpId> tombstoned_opid =
         tablet_replicas[0]->tablet_metadata()->tombstone_last_logged_opid();
     ASSERT_NE(boost::none, tombstoned_opid);
     ASSERT_NE(boost::none, last_logged_opid);
@@ -2313,11 +2314,15 @@ Status CreateLegacyHmsTable(HmsClient* client,
                             const string& hms_table_name,
                             const string& kudu_table_name,
                             const string& kudu_master_addrs,
-                            const string& table_type) {
+                            const string& table_type,
+                            const optional<const string&>& owner) {
   hive::Table table;
   table.dbName = hms_database_name;
   table.tableName = hms_table_name;
   table.tableType = table_type;
+  if (owner) {
+    table.owner = *owner;
+  }
 
   table.__set_parameters({
       make_pair(HmsClient::kStorageHandlerKey, HmsClient::kLegacyKuduStorageHandler),
@@ -2443,6 +2448,7 @@ TEST_P(ToolTestKerberosParameterized, TestHmsDowngrade) {
 // Test HMS inconsistencies that can be automatically fixed.
 // Kerberos is enabled in order to test the tools work in secure clusters.
 TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
+  string kUsername = "alice";
   ExternalMiniClusterOptions opts;
   opts.hms_mode = HmsMode::ENABLE_HIVE_METASTORE;
   opts.enable_kerberos = EnableKerberos();
@@ -2471,7 +2477,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   ASSERT_OK(CreateKuduTable(kudu_client, "default.control"));
   ASSERT_OK(kudu_client->OpenTable("default.control", &control));
   ASSERT_OK(hms_catalog.CreateTable(
-        control->id(), control->name(),
+        control->id(), control->name(), kUsername,
         client::SchemaFromKuduSchema(control->schema())));
 
   // Test case: Upper-case names are handled specially in a few places.
@@ -2479,7 +2485,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   ASSERT_OK(CreateKuduTable(kudu_client, "default.UPPERCASE"));
   ASSERT_OK(kudu_client->OpenTable("default.UPPERCASE", &test_uppercase));
   ASSERT_OK(hms_catalog.CreateTable(
-        test_uppercase->id(), test_uppercase->name(),
+        test_uppercase->id(), test_uppercase->name(), kUsername,
         client::SchemaFromKuduSchema(test_uppercase->schema())));
 
   // Test case: inconsistent schema.
@@ -2487,7 +2493,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   ASSERT_OK(CreateKuduTable(kudu_client, "default.inconsistent_schema"));
   ASSERT_OK(kudu_client->OpenTable("default.inconsistent_schema", &inconsistent_schema));
   ASSERT_OK(hms_catalog.CreateTable(
-        inconsistent_schema->id(), inconsistent_schema->name(),
+        inconsistent_schema->id(), inconsistent_schema->name(), kUsername,
         SchemaBuilder().Build()));
 
   // Test case: inconsistent name.
@@ -2495,7 +2501,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   ASSERT_OK(CreateKuduTable(kudu_client, "default.inconsistent_name"));
   ASSERT_OK(kudu_client->OpenTable("default.inconsistent_name", &inconsistent_name));
   ASSERT_OK(hms_catalog.CreateTable(
-        inconsistent_name->id(), "default.inconsistent_name_hms",
+        inconsistent_name->id(), "default.inconsistent_name_hms", kUsername,
         client::SchemaFromKuduSchema(inconsistent_name->schema())));
 
   // Test case: inconsistent master addresses.
@@ -2506,19 +2512,19 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   HmsCatalog invalid_hms_catalog("invalid-master-addrs");
   ASSERT_OK(invalid_hms_catalog.Start());
   ASSERT_OK(invalid_hms_catalog.CreateTable(
-        inconsistent_master_addrs->id(), inconsistent_master_addrs->name(),
+        inconsistent_master_addrs->id(), inconsistent_master_addrs->name(), kUsername,
         client::SchemaFromKuduSchema(inconsistent_master_addrs->schema())));
 
   // Test cases: orphan tables in the HMS.
   ASSERT_OK(hms_catalog.CreateTable(
-        "orphan-hms-table-id", "default.orphan_hms_table",
+        "orphan-hms-table-id", "default.orphan_hms_table", kUsername,
         SchemaBuilder().Build()));
   ASSERT_OK(CreateLegacyHmsTable(&hms_client, "default", "orphan_hms_table_legacy_external",
         "default.orphan_hms_table_legacy_external",
-        master_addr, HmsClient::kExternalTable));
+        master_addr, HmsClient::kExternalTable, kUsername));
   ASSERT_OK(CreateLegacyHmsTable(&hms_client, "default", "orphan_hms_table_legacy_managed",
         "impala::default.orphan_hms_table_legacy_managed",
-        master_addr, HmsClient::kExternalTable));
+        master_addr, HmsClient::kManagedTable, kUsername));
 
   // Test case: orphan table in Kudu.
   ASSERT_OK(CreateKuduTable(kudu_client, "default.kudu_orphan"));
@@ -2528,23 +2534,30 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   ASSERT_OK(CreateKuduTable(kudu_client, "default.legacy_external"));
   ASSERT_OK(kudu_client->OpenTable("default.legacy_external", &legacy_external));
   ASSERT_OK(CreateLegacyHmsTable(&hms_client, "default", "legacy_external",
-        "default.legacy_external",
-        master_addr, HmsClient::kExternalTable));
+        "default.legacy_external", master_addr, HmsClient::kExternalTable, kUsername));
 
   // Test case: legacy managed table.
   shared_ptr<KuduTable> legacy_managed;
   ASSERT_OK(CreateKuduTable(kudu_client, "impala::default.legacy_managed"));
   ASSERT_OK(kudu_client->OpenTable("impala::default.legacy_managed", &legacy_managed));
   ASSERT_OK(CreateLegacyHmsTable(&hms_client, "default", "legacy_managed",
-        "impala::default.legacy_managed", master_addr, HmsClient::kManagedTable));
+        "impala::default.legacy_managed", master_addr, HmsClient::kManagedTable, kUsername));
+
+  // Test case: legacy managed table with no owner.
+  shared_ptr<KuduTable> legacy_no_owner;
+  ASSERT_OK(CreateKuduTable(kudu_client, "impala::default.legacy_no_owner"));
+  ASSERT_OK(kudu_client->OpenTable("impala::default.legacy_no_owner", &legacy_no_owner));
+  ASSERT_OK(CreateLegacyHmsTable(&hms_client, "default", "legacy_no_owner",
+        "impala::default.legacy_no_owner", master_addr, HmsClient::kManagedTable, boost::none));
 
   // Test case: legacy external table with a Hive-incompatible name (no database).
   shared_ptr<KuduTable> legacy_external_hive_incompatible_name;
   ASSERT_OK(CreateKuduTable(kudu_client, "legacy_external_hive_incompatible_name"));
   ASSERT_OK(kudu_client->OpenTable("legacy_external_hive_incompatible_name",
-  &legacy_external_hive_incompatible_name));
+        &legacy_external_hive_incompatible_name));
   ASSERT_OK(CreateLegacyHmsTable(&hms_client, "default", "legacy_external_hive_incompatible_name",
-        "legacy_external_hive_incompatible_name", master_addr, HmsClient::kExternalTable));
+        "legacy_external_hive_incompatible_name", master_addr,
+        HmsClient::kExternalTable, kUsername));
 
   // Test case: Kudu table in non-default database.
   hive::Database db;
@@ -2572,6 +2585,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
     "default.kudu_orphan",
     "default.legacy_external",
     "default.legacy_managed",
+    "default.legacy_no_owner",
     "legacy_external_hive_incompatible_name",
     "my_db.table",
   };
@@ -2640,6 +2654,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   make_consistent({
     "default.legacy_external",
     "default.legacy_managed",
+    "default.legacy_no_owner",
     "legacy_external_hive_incompatible_name",
   });
   NO_FATALS(check());
@@ -2685,13 +2700,26 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
     "default.legacy_external",
     "default.legacy_external_hive_incompatible_name",
     "default.legacy_managed",
+    "default.legacy_no_owner",
     "default.uppercase",
     "my_db.table",
   }), kudu_tables);
+
+  // Check that table ownership is preserved in upgraded legacy tables.
+  for (auto p : vector<pair<string, string>>({
+        make_pair("legacy_external", kUsername),
+        make_pair("legacy_managed", kUsername),
+        make_pair("legacy_no_owner", ""),
+  })) {
+    hive::Table table;
+    ASSERT_OK(hms_client.GetTable("default", p.first, &table));
+    ASSERT_EQ(p.second, table.owner);
+  }
 }
 
 // Test HMS inconsistencies that must be manually fixed.
 TEST_P(ToolTestKerberosParameterized, TestCheckAndManualFixHmsMetadata) {
+  string kUsername = "alice";
   ExternalMiniClusterOptions opts;
   opts.hms_mode = HmsMode::ENABLE_HIVE_METASTORE;
   opts.enable_kerberos = EnableKerberos();
@@ -2720,14 +2748,14 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndManualFixHmsMetadata) {
   ASSERT_OK(CreateKuduTable(kudu_client, "default.duplicate_hms_tables"));
   ASSERT_OK(kudu_client->OpenTable("default.duplicate_hms_tables", &duplicate_hms_tables));
   ASSERT_OK(hms_catalog.CreateTable(
-        duplicate_hms_tables->id(), "default.duplicate_hms_tables",
+        duplicate_hms_tables->id(), "default.duplicate_hms_tables", kUsername,
         client::SchemaFromKuduSchema(duplicate_hms_tables->schema())));
   ASSERT_OK(hms_catalog.CreateTable(
-        duplicate_hms_tables->id(), "default.duplicate_hms_tables_2",
+        duplicate_hms_tables->id(), "default.duplicate_hms_tables_2", kUsername,
         client::SchemaFromKuduSchema(duplicate_hms_tables->schema())));
   ASSERT_OK(CreateLegacyHmsTable(&hms_client, "default", "duplicate_hms_tables_3",
         "default.duplicate_hms_tables",
-        master_addr, HmsClient::kExternalTable));
+        master_addr, HmsClient::kExternalTable, kUsername));
 
   // Test case: Kudu tables Hive-incompatible names.
   ASSERT_OK(CreateKuduTable(kudu_client, "default.hive-incompatible-name"));
@@ -2739,7 +2767,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndManualFixHmsMetadata) {
   // Test case: a legacy table with a Hive name which conflicts with another table in Kudu.
   ASSERT_OK(CreateLegacyHmsTable(&hms_client, "default", "conflicting_legacy_table",
         "impala::default.conflicting_legacy_table",
-        master_addr, HmsClient::kManagedTable));
+        master_addr, HmsClient::kManagedTable, kUsername));
   ASSERT_OK(CreateKuduTable(kudu_client, "impala::default.conflicting_legacy_table"));
   ASSERT_OK(CreateKuduTable(kudu_client, "default.conflicting_legacy_table"));
 

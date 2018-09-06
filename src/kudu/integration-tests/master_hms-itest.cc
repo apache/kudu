@@ -38,11 +38,13 @@
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/mini-cluster/mini_cluster.h"
+#include "kudu/security/test/mini_kdc.h"
 #include "kudu/util/decimal_util.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+#include "kudu/util/user.h"
 
 namespace kudu {
 
@@ -65,10 +67,6 @@ using strings::Substitute;
 class MasterHmsTest : public ExternalMiniClusterITestBase {
  public:
 
-  virtual HmsMode GetHmsMode() {
-    return HmsMode::ENABLE_METASTORE_INTEGRATION;
-  }
-
   void SetUp() override {
     ExternalMiniClusterITestBase::SetUp();
 
@@ -76,11 +74,14 @@ class MasterHmsTest : public ExternalMiniClusterITestBase {
     opts.hms_mode = GetHmsMode();
     opts.num_masters = 1;
     opts.num_tablet_servers = 1;
+    opts.enable_kerberos = EnableKerberos();
     // Tune down the notification log poll period in order to speed up catalog convergence.
     opts.extra_master_flags.emplace_back("--hive_metastore_notification_log_poll_period_seconds=1");
     StartClusterWithOpts(std::move(opts));
 
-    hms_client_.reset(new HmsClient(cluster_->hms()->address(), HmsClientOptions()));
+    HmsClientOptions hms_opts;
+    hms_opts.enable_kerberos = EnableKerberos();
+    hms_client_.reset(new HmsClient(cluster_->hms()->address(), hms_opts));
     ASSERT_OK(hms_client_->Start());
   }
 
@@ -180,6 +181,10 @@ class MasterHmsTest : public ExternalMiniClusterITestBase {
     hive::Table hms_table;
     ASSERT_OK(hms_client_->GetTable(database_name, table_name, &hms_table));
 
+    string username;
+    ASSERT_OK(GetLoggedInUser(&username));
+
+    ASSERT_EQ(hms_table.owner, username);
     ASSERT_EQ(schema.num_columns(), hms_table.sd.cols.size());
     for (int idx = 0; idx < schema.num_columns(); idx++) {
       ASSERT_EQ(schema.Column(idx).name(), hms_table.sd.cols[idx].name);
@@ -213,6 +218,16 @@ class MasterHmsTest : public ExternalMiniClusterITestBase {
  protected:
 
   unique_ptr<HmsClient> hms_client_;
+
+ private:
+
+  virtual HmsMode GetHmsMode() {
+    return HmsMode::ENABLE_METASTORE_INTEGRATION;
+  }
+
+  virtual bool EnableKerberos() {
+    return false;
+  }
 };
 
 TEST_F(MasterHmsTest, TestCreateTable) {
@@ -618,5 +633,26 @@ TEST_F(MasterHmsUpgradeTest, TestRenameExistingTables) {
   client_->ListTables(&tables);
   std::sort(tables.begin(), tables.end());
   ASSERT_EQ(tables, vector<string>({ "default.illegal_chars", "default.uppercase" }));
+}
+
+class MasterHmsKerberizedTest : public MasterHmsTest {
+ public:
+  bool EnableKerberos() override {
+    return true;
+  }
+};
+
+// Checks that table ownership in a Kerberized cluster is set to the user
+// short-name (instead of the full Kerberos principal).
+TEST_F(MasterHmsKerberizedTest, TestTableOwnership) {
+  // Log in as the test user and reset the client to pick up the change in user.
+  ASSERT_OK(cluster_->kdc()->Kinit("test-user"));
+  ASSERT_OK(cluster_->CreateClient(nullptr, &client_));
+
+  // Create a table as the user and ensure that the ownership is set correctly.
+  ASSERT_OK(CreateKuduTable("default", "my_table"));
+  hive::Table table;
+  ASSERT_OK(hms_client_->GetTable("default", "my_table", &table));
+  ASSERT_EQ("test-user", table.owner);
 }
 } // namespace kudu

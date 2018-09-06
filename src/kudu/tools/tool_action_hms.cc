@@ -165,7 +165,7 @@ bool IsSynced(const string& master_addresses,
               const hive::Table& hms_table) {
   Schema schema(client::SchemaFromKuduSchema(kudu_table.schema()));
   hive::Table hms_table_copy(hms_table);
-  Status s = HmsCatalog::PopulateTable(kudu_table.id(), kudu_table.name(),
+  Status s = HmsCatalog::PopulateTable(kudu_table.id(), kudu_table.name(), boost::none,
                                        schema, master_addresses, &hms_table_copy);
   return s.ok() && hms_table_copy == hms_table;
 }
@@ -513,7 +513,7 @@ Status FixHmsMetadata(const RunnerContext& context) {
       if (FLAGS_dryrun) {
         LOG(INFO) << "[dryrun] Creating HMS table for Kudu table " << TableIdent(*kudu_table);
       } else {
-        Status s = hms_catalog->CreateTable(table_id, table_name, schema);
+        Status s = hms_catalog->CreateTable(table_id, table_name, boost::none, schema);
         if (s.IsAlreadyPresent()) {
           LOG(ERROR) << "Failed to create HMS table for Kudu table "
                      << TableIdent(*kudu_table)

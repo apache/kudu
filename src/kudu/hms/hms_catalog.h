@@ -21,6 +21,7 @@
 #include <string>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <gtest/gtest_prod.h>
 
 #include "kudu/gutil/gscoped_ptr.h"
@@ -60,9 +61,14 @@ class HmsCatalog {
 
   // Creates a new table entry in the HMS.
   //
+  // If 'owner' is omitted the table will be created without an owner. This is
+  // useful in circumstances where the owner is not known, for example when
+  // creating an HMS table entry for an existing Kudu table.
+  //
   // Fails the HMS is unreachable, or a table with the same name is already present.
   Status CreateTable(const std::string& id,
                      const std::string& name,
+                     boost::optional<const std::string&> owner,
                      const Schema& schema) WARN_UNUSED_RESULT;
 
   // Drops a table entry from the HMS.
@@ -133,8 +139,11 @@ class HmsCatalog {
   static bool IsEnabled();
 
   // Sets the Kudu-specific fields in the table without overwriting unrelated fields.
+  //
+  // The table owner will not be overwritten if an owner is not provided.
   static Status PopulateTable(const std::string& id,
                               const std::string& name,
+                              const boost::optional<const std::string&>& owner,
                               const Schema& schema,
                               const std::string& master_addresses,
                               hive::Table* table) WARN_UNUSED_RESULT;
