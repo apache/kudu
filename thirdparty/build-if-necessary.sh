@@ -76,9 +76,6 @@ if [ -n "$IS_IN_GIT" ]; then
     fi
   fi
 
-  if [ -z "$NEEDS_BUILD" ]; then
-    echo "Not rebuilding thirdparty. No changes since last build."
-  fi
 else
   # If we aren't inside running inside a git repository (e.g. we are
   # part of a source distribution tarball) then we can't use git to find
@@ -102,6 +99,7 @@ else
 fi
 
 if [ -z "$NEEDS_BUILD" ]; then
+  echo "Not rebuilding thirdparty. No changes since last build."
   exit 0
 fi
 
