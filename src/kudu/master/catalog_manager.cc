@@ -3475,14 +3475,14 @@ bool AsyncAddReplicaTask::SendRequest(int attempt) {
 
   auto replacement_replica = SelectReplica(ts_descs, excluded, rng_);
   if (PREDICT_FALSE(!replacement_replica)) {
-    auto msg = Substitute("no candidate replacement replica found for tablet $0",
+    auto msg = Substitute("no extra replica candidate found for tablet $0",
                           tablet_->ToString());
-    // Check whether it's a situation when a replacement replica cannot be found
+    // Check whether it's a situation when an extra replica cannot be found
     // due to an inconsistency in cluster configuration. If the tablet has the
-    // replication factor of N, and the cluster is configured to use N->(N+1)->N
-    // replication scheme (see --raft_prepare_replacement_before_eviction flag),
-    // at least N+1 tablet servers should be registered to find a place
-    // for a replacement replica.
+    // replication factor of N, and the cluster is using the N->(N+1)->N
+    // replica management scheme (see --raft_prepare_replacement_before_eviction
+    // flag), at least N+1 tablet servers should be registered to find a place
+    // for an extra replica.
     TSDescriptorVector all_descriptors;
     master_->ts_manager()->GetAllDescriptors(&all_descriptors);
     const auto num_tservers_registered = all_descriptors.size();
@@ -3492,21 +3492,16 @@ bool AsyncAddReplicaTask::SendRequest(int attempt) {
       TableMetadataLock l(tablet_->table().get(), LockMode::READ);
       replication_factor = tablet_->table()->metadata().state().pb.num_replicas();
     }
-    DCHECK_GE(replication_factor, 0);
+    DCHECK_GE(replication_factor, 1);
     const auto num_tservers_needed =
         FLAGS_raft_prepare_replacement_before_eviction ? replication_factor + 1
                                                        : replication_factor;
     if (num_tservers_registered < num_tservers_needed) {
       msg += Substitute(
-          "; the total number of registered tablet servers ($0) does not allow "
-          "for replacement of the failed replica: at least $1 tablet servers "
-          "are required", num_tservers_registered, num_tservers_needed);
-      if (FLAGS_raft_prepare_replacement_before_eviction &&
-          num_tservers_registered == replication_factor) {
-        msg +=
-          "; consider either adding an additional tablet server or running "
-          "the cluster with --raft_prepare_replacement_before_eviction=false";
-      }
+          ": the total number of registered tablet servers ($0) does not allow "
+          "for adding an extra replica; consider bringing up more "
+          "to have at least $1 tablet servers up and running",
+          num_tservers_registered, num_tservers_needed);
     }
     KLOG_EVERY_N_SECS(WARNING, 60) << LogPrefix() << msg;
     return false;
