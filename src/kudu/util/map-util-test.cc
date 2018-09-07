@@ -123,4 +123,63 @@ TEST(EmplaceTest, TestEmplace) {
   ASSERT_EQ("foobar", *FindOrDie(my_map, key2));
 }
 
+TEST(LookupOrEmplaceTest, IntMap) {
+  const string key = "mega";
+  map<string, int> int_map;
+
+  {
+    const auto& val = LookupOrEmplace(&int_map, key, 0);
+    ASSERT_EQ(0, val);
+    auto* val_ptr = FindOrNull(int_map, key);
+    ASSERT_NE(nullptr, val_ptr);
+    ASSERT_EQ(0, *val_ptr);
+  }
+
+  {
+    auto& val = LookupOrEmplace(&int_map, key, 10);
+    ASSERT_EQ(0, val);
+    ++val;
+    auto* val_ptr = FindOrNull(int_map, key);
+    ASSERT_NE(nullptr, val_ptr);
+    ASSERT_EQ(1, *val_ptr);
+  }
+
+  {
+    LookupOrEmplace(&int_map, key, 100) += 1000;
+    auto* val_ptr = FindOrNull(int_map, key);
+    ASSERT_NE(nullptr, val_ptr);
+    ASSERT_EQ(1001, *val_ptr);
+  }
+}
+
+TEST(LookupOrEmplaceTest, UniquePtrMap) {
+  constexpr int key = 0;
+  const string ref_str = "turbo";
+  map<int, unique_ptr<string>> uptr_map;
+
+  {
+    unique_ptr<string> val(new string(ref_str));
+    const auto& lookup_val = LookupOrEmplace(&uptr_map, key, std::move(val));
+    ASSERT_EQ(nullptr, val.get());
+    ASSERT_NE(nullptr, lookup_val.get());
+    ASSERT_EQ(ref_str, *lookup_val);
+  }
+
+  {
+    unique_ptr<string> val(new string("giga"));
+    auto& lookup_val = LookupOrEmplace(&uptr_map, key, std::move(val));
+    ASSERT_NE(nullptr, lookup_val.get());
+    ASSERT_EQ(ref_str, *lookup_val);
+    // Update the stored value.
+    *lookup_val = "giga";
+  }
+
+  {
+    unique_ptr<string> val(new string(ref_str));
+    const auto& lookup_val = LookupOrEmplace(&uptr_map, key, std::move(val));
+    ASSERT_NE(nullptr, lookup_val.get());
+    ASSERT_EQ("giga", *lookup_val);
+  }
+}
+
 } // namespace kudu

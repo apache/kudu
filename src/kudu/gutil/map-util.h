@@ -495,6 +495,21 @@ LookupOrInsert(Collection* const collection,
       collection, typename Collection::value_type(key, value));
 }
 
+// It's similar to LookupOrInsert() but uses the emplace and r-value mechanics
+// to achieve the desired results. The constructor of the new element is called
+// with exactly the same arguments as supplied to emplace, forwarded via
+// std::forward<Args>(args). The element may be constructed even if there
+// already is an element with the same key in the container, in which case the
+// newly constructed element will be destroyed immediately.
+// For details, see
+//   https://en.cppreference.com/w/cpp/container/map/emplace
+//   https://en.cppreference.com/w/cpp/container/unordered_map/emplace
+template <class Collection, class... Args>
+typename Collection::mapped_type&
+LookupOrEmplace(Collection* const collection, Args&&... args) {
+  return collection->emplace(std::forward<Args>(args)...).first->second;
+}
+
 // Counts the number of equivalent elements in the given "sequence", and stores
 // the results in "count_map" with element as the key and count as the value.
 //
