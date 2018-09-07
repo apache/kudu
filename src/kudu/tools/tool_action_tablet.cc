@@ -242,7 +242,7 @@ unique_ptr<Mode> BuildTabletMode() {
       .AddRequiredParameter({ kTsUuidArg,
                               "UUID of the tablet server that should host the new replica" })
       .AddRequiredParameter(
-          { kReplicaTypeArg, "New replica's type. Must be VOTER or NON-VOTER."
+          { kReplicaTypeArg, "New replica's type. Must be VOTER or NON_VOTER."
           })
       .Build();
 
@@ -255,7 +255,7 @@ unique_ptr<Mode> BuildTabletMode() {
       .AddRequiredParameter({ kTsUuidArg,
                               "UUID of the tablet server hosting the existing replica" })
       .AddRequiredParameter(
-          { kReplicaTypeArg, "Existing replica's new type. Must be VOTER or NON-VOTER."
+          { kReplicaTypeArg, "Existing replica's new type. Must be VOTER or NON_VOTER."
           })
       .Build();
 
