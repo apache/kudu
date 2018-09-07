@@ -52,6 +52,7 @@
 #include "kudu/server/server_base.proxy.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tools/ksck.h"
+#include "kudu/tools/ksck_checksum.h"
 #include "kudu/tools/ksck_results.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/tserver.pb.h"
@@ -295,7 +296,7 @@ class ChecksumCallbackHandler {
 class ChecksumStepper {
  public:
   ChecksumStepper(string tablet_id, const Schema& schema, string server_uuid,
-                  ChecksumOptions options, ChecksumProgressCallbacks* callbacks,
+                  KsckChecksumOptions options, KsckChecksumProgressCallbacks* callbacks,
                   shared_ptr<tserver::TabletServerServiceProxy> proxy)
       : schema_(schema),
         tablet_id_(std::move(tablet_id)),
@@ -396,8 +397,8 @@ class ChecksumStepper {
 
   const string tablet_id_;
   const string server_uuid_;
-  const ChecksumOptions options_;
-  ChecksumProgressCallbacks* const callbacks_;
+  const KsckChecksumOptions options_;
+  KsckChecksumProgressCallbacks* const callbacks_;
   const shared_ptr<tserver::TabletServerServiceProxy> proxy_;
 
   uint32_t call_seq_id_;
@@ -416,8 +417,8 @@ void ChecksumCallbackHandler::Run() {
 void RemoteKsckTabletServer::RunTabletChecksumScanAsync(
         const string& tablet_id,
         const Schema& schema,
-        const ChecksumOptions& options,
-        ChecksumProgressCallbacks* callbacks) {
+        const KsckChecksumOptions& options,
+        KsckChecksumProgressCallbacks* callbacks) {
   gscoped_ptr<ChecksumStepper> stepper(
       new ChecksumStepper(tablet_id, schema, uuid(), options, callbacks, ts_proxy_));
   stepper->Start();

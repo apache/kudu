@@ -43,6 +43,7 @@
 #include "kudu/server/server_base.pb.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet.pb.h"
+#include "kudu/tools/ksck_checksum.h"
 #include "kudu/tools/ksck_results.h"
 #include "kudu/util/jsonreader.h"
 #include "kudu/util/scoped_cleanup.h"
@@ -144,8 +145,8 @@ class MockKsckTabletServer : public KsckTabletServer {
   virtual void RunTabletChecksumScanAsync(
       const std::string& /*tablet_id*/,
       const Schema& /*schema*/,
-      const ChecksumOptions& /*options*/,
-      ChecksumProgressCallbacks* callbacks) OVERRIDE {
+      const KsckChecksumOptions& /*options*/,
+      KsckChecksumProgressCallbacks* callbacks) OVERRIDE {
     callbacks->Progress(10, 20);
     callbacks->Finished(Status::OK(), 0);
   }

@@ -31,6 +31,7 @@
 #include "kudu/integration-tests/log_verifier.h"
 #include "kudu/mini-cluster/mini_cluster.h"
 #include "kudu/tools/ksck.h"
+#include "kudu/tools/ksck_checksum.h"
 #include "kudu/tools/ksck_remote.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
@@ -51,7 +52,6 @@ using tools::RemoteKsckCluster;
 
 ClusterVerifier::ClusterVerifier(MiniCluster* cluster)
     : cluster_(cluster),
-      checksum_options_(tools::ChecksumOptions()),
       operations_timeout_(MonoDelta::FromSeconds(60)) {
   checksum_options_.use_snapshot = false;
 }

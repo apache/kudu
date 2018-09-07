@@ -41,40 +41,17 @@
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet.pb.h"  // IWYU pragma: keep
 #include "kudu/tools/ksck_results.h"
-#include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
+
+class MonoDelta;
+
 namespace tools {
 
+class KsckChecksumProgressCallbacks;
 class KsckTable;
-
-// Options for checksum scans.
-struct ChecksumOptions {
- public:
-
-  ChecksumOptions();
-
-  ChecksumOptions(MonoDelta timeout,
-                  int scan_concurrency,
-                  bool use_snapshot,
-                  uint64_t snapshot_timestamp);
-
-  // The maximum total time to wait for results to come back from all replicas.
-  MonoDelta timeout;
-
-  // The maximum number of concurrent checksum scans to run per tablet server.
-  int scan_concurrency;
-
-  // Whether to use a snapshot checksum scanner.
-  bool use_snapshot;
-
-  // The snapshot timestamp to use for snapshot checksum scans.
-  uint64_t snapshot_timestamp;
-
-  // A timestamp indicating that the current time should be used for a checksum snapshot.
-  static const uint64_t kCurrentTimestamp;
-};
+struct KsckChecksumOptions;
 
 // Representation of a tablet replica on a tablet server.
 class KsckTabletReplica {
@@ -176,21 +153,6 @@ class KsckTable {
   const int num_replicas_;
   std::vector<std::shared_ptr<KsckTablet>> tablets_;
   DISALLOW_COPY_AND_ASSIGN(KsckTable);
-};
-
-// Interface for reporting progress on checksumming a single
-// replica.
-class ChecksumProgressCallbacks {
- public:
-  virtual ~ChecksumProgressCallbacks() {}
-
-  // Report incremental progress from the server side.
-  // 'disk_bytes_summed' only counts data read from DiskRowSets on the server side
-  // and does not count MRS bytes, etc.
-  virtual void Progress(int64_t delta_rows_summed, int64_t delta_disk_bytes_summed) = 0;
-
-  // The scan of the current tablet is complete.
-  virtual void Finished(const Status& status, uint64_t checksum) = 0;
 };
 
 // Enum representing the fetch status of a ksck master or tablet server.
@@ -336,8 +298,8 @@ class KsckTabletServer {
   virtual void RunTabletChecksumScanAsync(
                   const std::string& tablet_id,
                   const Schema& schema,
-                  const ChecksumOptions& options,
-                  ChecksumProgressCallbacks* callbacks) = 0;
+                  const KsckChecksumOptions& options,
+                  KsckChecksumProgressCallbacks* callbacks) = 0;
 
   virtual const std::string& uuid() const {
     return uuid_;
@@ -550,7 +512,7 @@ class Ksck {
 
   // Verifies data checksums on all tablets by doing a scan of the database on each replica.
   // Must first call FetchTableAndTabletInfo().
-  Status ChecksumData(const ChecksumOptions& options);
+  Status ChecksumData(const KsckChecksumOptions& opts);
 
   // Runs all the checks of ksck in the proper order, including checksum scans,
   // if enabled. Returns OK if and only if all checks succeed.

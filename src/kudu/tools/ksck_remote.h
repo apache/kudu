@@ -54,7 +54,9 @@ class TabletServerServiceProxy;
 
 namespace tools {
 
+class KsckChecksumProgressCallbacks;
 enum class KsckServerHealth;
+struct KsckChecksumOptions;
 
 // This implementation connects to a master via RPC.
 class RemoteKsckMaster : public KsckMaster {
@@ -106,8 +108,8 @@ class RemoteKsckTabletServer : public KsckTabletServer {
   void RunTabletChecksumScanAsync(
       const std::string& tablet_id,
       const Schema& schema,
-      const ChecksumOptions& options,
-      ChecksumProgressCallbacks* callbacks) override;
+      const KsckChecksumOptions& options,
+      KsckChecksumProgressCallbacks* callbacks) override;
 
   virtual std::string address() const override {
     return host_port_.ToString();

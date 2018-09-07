@@ -19,9 +19,9 @@
 #include <string>
 
 #include "kudu/gutil/macros.h"
-#include "kudu/tools/ksck.h"
-#include "kudu/util/status.h"
+#include "kudu/tools/ksck_checksum.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 
@@ -87,9 +87,9 @@ class ClusterVerifier {
                          int expected_row_count);
 
 
-  cluster::MiniCluster* cluster_;
+  tools::KsckChecksumOptions checksum_options_;
 
-  tools::ChecksumOptions checksum_options_;
+  cluster::MiniCluster* cluster_;
 
   MonoDelta operations_timeout_;
 

@@ -36,15 +36,14 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tools/color.h"
+#include "kudu/tools/ksck_checksum.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/blocking_queue.h"
-#include "kudu/util/countdown_latch.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/threadpool.h"
@@ -58,17 +57,6 @@
 
 DEFINE_bool(checksum_scan, false,
             "Perform a checksum scan on data in the cluster.");
-DEFINE_int32(checksum_timeout_sec, 3600,
-             "Maximum total seconds to wait for a checksum scan to complete "
-             "before timing out.");
-DEFINE_int32(checksum_scan_concurrency, 4,
-             "Number of concurrent checksum scans to execute per tablet server.");
-DEFINE_bool(checksum_snapshot, true, "Should the checksum scanner use a snapshot scan");
-DEFINE_uint64(checksum_snapshot_timestamp,
-              kudu::tools::ChecksumOptions::kCurrentTimestamp,
-              "timestamp to use for snapshot checksum scans, defaults to 0, which "
-              "uses the current timestamp of a tablet server involved in the scan");
-
 DEFINE_int32(fetch_replica_info_concurrency, 20,
              "Number of concurrent tablet servers to fetch replica info from.");
 
@@ -139,22 +127,6 @@ bool IsNonJSONFormat() {
 }
 
 } // anonymous namespace
-
-ChecksumOptions::ChecksumOptions()
-    : timeout(MonoDelta::FromSeconds(FLAGS_checksum_timeout_sec)),
-      scan_concurrency(FLAGS_checksum_scan_concurrency),
-      use_snapshot(FLAGS_checksum_snapshot),
-      snapshot_timestamp(FLAGS_checksum_snapshot_timestamp) {
-}
-
-ChecksumOptions::ChecksumOptions(MonoDelta timeout, int scan_concurrency,
-                                 bool use_snapshot, uint64_t snapshot_timestamp)
-    : timeout(timeout),
-      scan_concurrency(scan_concurrency),
-      use_snapshot(use_snapshot),
-      snapshot_timestamp(snapshot_timestamp) {}
-
-const uint64_t ChecksumOptions::kCurrentTimestamp = 0;
 
 tablet::TabletStatePB KsckTabletServer::ReplicaState(const std::string& tablet_id) const {
   CHECK_EQ(state_, KsckFetchState::FETCHED);
@@ -449,7 +421,7 @@ Status Ksck::Run() {
                       "table consistency check error");
 
   if (FLAGS_checksum_scan) {
-    PUSH_PREPEND_NOT_OK(ChecksumData(ChecksumOptions()),
+    PUSH_PREPEND_NOT_OK(ChecksumData(KsckChecksumOptions()),
                         results_.error_messages, "checksum scan error");
   }
 
@@ -558,146 +530,9 @@ Status Ksck::CheckTablesConsistency() {
   return Status::OK();
 }
 
-// Class to act as a collector of scan results.
-// Provides thread-safe accessors to update and read a hash table of results.
-class ChecksumResultReporter : public RefCountedThreadSafe<ChecksumResultReporter> {
- public:
-  typedef std::pair<Status, uint64_t> ResultPair;
-  typedef std::unordered_map<std::string, ResultPair> ReplicaResultMap;
-  typedef std::unordered_map<std::string, ReplicaResultMap> TabletResultMap;
-
-  // Initialize reporter with the number of replicas being queried.
-  explicit ChecksumResultReporter(int num_tablet_replicas)
-      : expected_count_(num_tablet_replicas),
-        responses_(num_tablet_replicas),
-        rows_summed_(0),
-        disk_bytes_summed_(0) {
-  }
-
-  void ReportProgress(int64_t delta_rows, int64_t delta_bytes) {
-    rows_summed_.IncrementBy(delta_rows);
-    disk_bytes_summed_.IncrementBy(delta_bytes);
-  }
-
-  // Write an entry to the result map indicating a response from the remote.
-  void ReportResult(const std::string& tablet_id,
-                    const std::string& replica_uuid,
-                    const Status& status,
-                    uint64_t checksum) {
-    std::lock_guard<simple_spinlock> guard(lock_);
-    unordered_map<string, ResultPair>& replica_results =
-        LookupOrInsert(&checksums_, tablet_id, unordered_map<string, ResultPair>());
-    InsertOrDie(&replica_results, replica_uuid, ResultPair(status, checksum));
-    responses_.CountDown();
-  }
-
-  // Blocks until either the number of results plus errors reported equals
-  // num_tablet_replicas (from the constructor), or until the timeout expires,
-  // whichever comes first. Progress messages are printed to 'out'.
-  // Returns false if the timeout expired before all responses came in.
-  // Otherwise, returns true.
-  bool WaitFor(const MonoDelta& timeout, std::ostream* out) const {
-    MonoTime start = MonoTime::Now();
-    MonoTime deadline = start + timeout;
-
-    bool done = false;
-    while (!done) {
-      MonoTime now = MonoTime::Now();
-      int rem_ms = (deadline - now).ToMilliseconds();
-      if (rem_ms <= 0) return false;
-
-      done = responses_.WaitFor(MonoDelta::FromMilliseconds(std::min(rem_ms, 5000)));
-      string status = done ? "finished in " : "running for ";
-      if (IsNonJSONFormat()) {
-        int run_time_sec = (MonoTime::Now() - start).ToSeconds();
-        (*out) << "Checksum " << status << run_time_sec << "s: "
-               << responses_.count() << "/" << expected_count_ << " replicas remaining ("
-               << HumanReadableNumBytes::ToString(disk_bytes_summed_.Load()) << " from disk, "
-               << HumanReadableInt::ToString(rows_summed_.Load()) << " rows summed)"
-               << endl;
-      }
-    }
-    return true;
-  }
-
-  // Returns true iff all replicas have reported in.
-  bool AllReported() const { return responses_.count() == 0; }
-
-  // Get reported results.
-  TabletResultMap checksums() const {
-    std::lock_guard<simple_spinlock> guard(lock_);
-    return checksums_;
-  }
-
- private:
-  friend class RefCountedThreadSafe<ChecksumResultReporter>;
-  ~ChecksumResultReporter() {}
-
-  // Report either a success or error response.
-  void HandleResponse(const std::string& tablet_id, const std::string& replica_uuid,
-                      const Status& status, uint64_t checksum);
-
-  const int expected_count_;
-  CountDownLatch responses_;
-
-  mutable simple_spinlock lock_; // Protects 'checksums_'.
-  // checksums_ is an unordered_map of { tablet_id : { replica_uuid : checksum } }.
-  TabletResultMap checksums_;
-
-  AtomicInt<int64_t> rows_summed_;
-  AtomicInt<int64_t> disk_bytes_summed_;
-};
-
-// Queue of tablet replicas for an individual tablet server.
-typedef shared_ptr<BlockingQueue<std::pair<Schema, std::string>>> SharedTabletQueue;
-
-// A set of callbacks which records the result of a tablet replica's checksum,
-// and then checks if the tablet server has any more tablets to checksum. If so,
-// a new async checksum scan is started.
-class TabletServerChecksumCallbacks : public ChecksumProgressCallbacks {
- public:
-  TabletServerChecksumCallbacks(
-    scoped_refptr<ChecksumResultReporter> reporter,
-    shared_ptr<KsckTabletServer> tablet_server,
-    SharedTabletQueue queue,
-    std::string tablet_id,
-    ChecksumOptions options) :
-      reporter_(std::move(reporter)),
-      tablet_server_(std::move(tablet_server)),
-      queue_(std::move(queue)),
-      options_(options),
-      tablet_id_(std::move(tablet_id)) {
-  }
-
-  void Progress(int64_t rows_summed, int64_t disk_bytes_summed) override {
-    reporter_->ReportProgress(rows_summed, disk_bytes_summed);
-  }
-
-  void Finished(const Status& status, uint64_t checksum) override {
-    reporter_->ReportResult(tablet_id_, tablet_server_->uuid(), status, checksum);
-
-    std::pair<Schema, std::string> table_tablet;
-    if (queue_->BlockingGet(&table_tablet)) {
-      const Schema& table_schema = table_tablet.first;
-      tablet_id_ = table_tablet.second;
-      tablet_server_->RunTabletChecksumScanAsync(tablet_id_, table_schema, options_, this);
-    } else {
-      delete this;
-    }
-  }
-
- private:
-  const scoped_refptr<ChecksumResultReporter> reporter_;
-  const shared_ptr<KsckTabletServer> tablet_server_;
-  const SharedTabletQueue queue_;
-  const ChecksumOptions options_;
-
-  std::string tablet_id_;
-};
-
-Status Ksck::ChecksumData(const ChecksumOptions& opts) {
+Status Ksck::ChecksumData(const KsckChecksumOptions& opts) {
   // Copy options so that local modifications can be made and passed on.
-  ChecksumOptions options = opts;
+  KsckChecksumOptions options = opts;
 
   typedef unordered_map<shared_ptr<KsckTablet>, shared_ptr<KsckTable>> TabletTableMap;
   TabletTableMap tablet_table_map;
@@ -762,7 +597,8 @@ Status Ksck::ChecksumData(const ChecksumOptions& opts) {
     }
   }
 
-  if (options.use_snapshot && options.snapshot_timestamp == ChecksumOptions::kCurrentTimestamp) {
+  if (options.use_snapshot &&
+      options.snapshot_timestamp == KsckChecksumOptions::kCurrentTimestamp) {
     // Set the snapshot timestamp to the current timestamp of the first healthy tablet server
     // we can find.
     for (const auto& ts : tablet_server_queues) {
@@ -771,7 +607,7 @@ Status Ksck::ChecksumData(const ChecksumOptions& opts) {
         break;
       }
     }
-    if (options.snapshot_timestamp == ChecksumOptions::kCurrentTimestamp) {
+    if (options.snapshot_timestamp == KsckChecksumOptions::kCurrentTimestamp) {
       return Status::ServiceUnavailable(
           "No tablet servers were available to fetch the current timestamp");
     }
@@ -798,7 +634,9 @@ Status Ksck::ChecksumData(const ChecksumOptions& opts) {
     }
   }
 
-  bool timed_out = !reporter->WaitFor(options.timeout, out_);
+  // Don't ruin JSON output by printing progress updates.
+  auto* out_for_progress_updates = IsNonJSONFormat() ? out_ : nullptr;
+  bool timed_out = !reporter->WaitFor(options.timeout, out_for_progress_updates);
 
   // Even if we timed out, for printing collate the checksum results that we did get.
   ChecksumResultReporter::TabletResultMap checksums = reporter->checksums();

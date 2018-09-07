@@ -66,6 +66,7 @@ target_link_libraries(kudu_tools_util
 
 add_library(ksck
     ksck.cc
+    ksck_checksum.cc
     ksck_remote.cc
     ksck_results.cc
 )
