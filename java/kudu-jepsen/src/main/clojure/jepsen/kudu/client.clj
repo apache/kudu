@@ -41,9 +41,9 @@
 (defn sync-client
   "Builds and returns a new synchronous Kudu client."
   [master-addresses]
-  (let [builder (new KuduClient$KuduClientBuilder master-addresses)
-        client (. builder build)]
-    client))
+  (let [builder (new KuduClient$KuduClientBuilder master-addresses)]
+    (.defaultAdminOperationTimeoutMs builder 120000)
+    (.build builder)))
 
 (defn close-client
   [sync-client]
