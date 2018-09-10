@@ -126,6 +126,34 @@ class Schema;
 
 namespace tools {
 
+  // Helper to format info when a tool action fails.
+static string ToolRunInfo(const Status& s, const string& out, const string& err) {
+  ostringstream str;
+  str << s.ToString() << endl;
+  str << "stdout: " << out << endl;
+  str << "stderr: " << err << endl;
+  return str.str();
+}
+
+// Helper macro for tool tests. Use as follows:
+//
+// ASSERT_TOOL_OK("cluster", "ksck", master_addrs);
+//
+// The failure Status result of RunKuduTool is usually useless, so this macro
+// also logs the stdout and stderr in case of failure, for easier diagnosis.
+// TODO(wdberkeley): Add a macro to retrieve stdout or stderr, or a macro for
+//                   when one of those should match a string.
+#define ASSERT_TOOL_OK(...) do { \
+  const vector<string>& _args{__VA_ARGS__}; \
+  string _out, _err; \
+  const Status& _s = RunKuduTool(_args, &_out, &_err); \
+  if (_s.ok()) { \
+    SUCCEED(); \
+  } else { \
+    FAIL() << ToolRunInfo(_s, _out, _err); \
+  } \
+} while (0);
+
 class AdminCliTest : public tserver::TabletServerIntegrationTestBase {
 };
 
@@ -195,7 +223,7 @@ TEST_F(AdminCliTest, TestChangeConfig) {
 
   LOG(INFO) << "Adding replica at tserver with UUID "
             << new_node->uuid() << " as VOTER...";
-  ASSERT_OK(RunKuduTool({
+  ASSERT_TOOL_OK(
     "tablet",
     "change_config",
     "add_replica",
@@ -203,7 +231,7 @@ TEST_F(AdminCliTest, TestChangeConfig) {
     tablet_id_,
     new_node->uuid(),
     "VOTER"
-  }));
+  );
 
   InsertOrDie(&active_tablet_servers, new_node->uuid(), new_node);
   ASSERT_OK(WaitUntilCommittedConfigNumVotersIs(active_tablet_servers.size(),
@@ -233,14 +261,14 @@ TEST_F(AdminCliTest, TestChangeConfig) {
   // Now remove the server.
   LOG(INFO) << "Removing replica at tserver with UUID "
             << new_node->uuid() << " from the config...";
-  ASSERT_OK(RunKuduTool({
+  ASSERT_TOOL_OK(
     "tablet",
     "change_config",
     "remove_replica",
     cluster_->master()->bound_rpc_addr().ToString(),
     tablet_id_,
     new_node->uuid()
-  }));
+  );
 
   ASSERT_EQ(1, active_tablet_servers.erase(new_node->uuid()));
   ASSERT_OK(WaitUntilCommittedConfigNumVotersIs(active_tablet_servers.size(),
@@ -333,13 +361,14 @@ TEST_P(MoveTabletParamTest, Test) {
       add,
     };
 
-    Status s = RunKuduTool(tool_command);
+    string stdout, stderr;
+    Status s = RunKuduTool(tool_command, &stdout, &stderr);
     if (downTS == DownTS::TabletPeer) {
       ASSERT_TRUE(s.IsRuntimeError());
       workload.StopAndJoin();
       return;
     }
-    ASSERT_OK(s);
+    ASSERT_TRUE(s.ok()) << ToolRunInfo(s, stdout, stderr);
 
     active_tservers.pop_front();
     active_tservers.push_back(add);
@@ -904,7 +933,7 @@ TEST_F(AdminCliTest, TestUnsafeChangeConfigFollowerWithPendingConfig) {
   }, nullptr, &stderr);
   bool not_currently_leader = stderr.find(
       Status::IllegalState("").CodeAsString()) != string::npos;
-  ASSERT_TRUE(s.ok() || not_currently_leader);
+  ASSERT_TRUE(s.ok() || not_currently_leader) << "stderr: " << stderr;
 
   LOG(INFO) << "Change Config Op timed out, Sending a Replace config "
             << "command when change config op is pending on the leader.";
@@ -1209,7 +1238,7 @@ TEST_F(AdminCliTest, TestLeaderStepDown) {
   }, nullptr, &stderr);
   bool not_currently_leader = stderr.find(
       Status::IllegalState("").CodeAsString()) != string::npos;
-  ASSERT_TRUE(s.ok() || not_currently_leader);
+  ASSERT_TRUE(s.ok() || not_currently_leader) << "stderr: " << stderr;
   if (s.ok()) {
     int64_t new_term;
     ASSERT_EVENTUALLY([&]() {
@@ -1261,12 +1290,12 @@ TEST_F(AdminCliTest, TestDeleteTable) {
             .add_master_server_addr(master_address)
             .Build(&client));
 
-  ASSERT_OK(RunKuduTool({
+  ASSERT_TOOL_OK(
     "table",
     "delete",
     master_address,
     kTableId
-  }));
+  );
 
   vector<string> tables;
   ASSERT_OK(client->ListTables(&tables));
@@ -1335,14 +1364,6 @@ TEST_F(AdminCliTest, TestListTablesDetail) {
     ASSERT_STR_CONTAINS(stdout, ts->uuid());
     ASSERT_STR_CONTAINS(stdout, ts->uuid());
   }
-}
-
-static string ToolRunInfo(const Status& s, const string& out, const string& err) {
-  ostringstream str;
-  str << s.ToString() << endl;
-  str << "stdout: " << out << endl;
-  str << "stderr: " << err << endl;
-  return str.str();
 }
 
 TEST_F(AdminCliTest, RebalancerReportOnly) {
@@ -1974,14 +1995,11 @@ TEST_P(TserverGoesDownDuringRebalancingTest, TserverDown) {
   // Pre-condition: 'kudu cluster ksck' should be happy with the cluster state
   // shortly after initial setup.
   ASSERT_EVENTUALLY([&]() {
-    string out;
-    string err;
-    const auto s = RunKuduTool({
+    ASSERT_TOOL_OK(
       "cluster",
       "ksck",
-      cluster_->master()->bound_rpc_addr().ToString(),
-    }, &out, &err);
-    ASSERT_TRUE(s.ok()) << ToolRunInfo(s, out, err);
+      cluster_->master()->bound_rpc_addr().ToString()
+    )
   });
 
   Random r(SeedRandom());
@@ -2227,14 +2245,11 @@ TEST_P(RebalancingDuringElectionStormTest, RoundRobin) {
   // etc. Eventually, the system should heal itself and 'kudu cluster ksck'
   // should report no issues.
   ASSERT_EVENTUALLY([&]() {
-    string out;
-    string err;
-    const auto s = RunKuduTool({
+    ASSERT_TOOL_OK(
       "cluster",
       "ksck",
-      cluster_->master()->bound_rpc_addr().ToString(),
-    }, &out, &err);
-    ASSERT_TRUE(s.ok()) << ToolRunInfo(s, out, err);
+      cluster_->master()->bound_rpc_addr().ToString()
+    )
   });
 
   // The rebalancer should successfully rebalance the cluster after ksck
@@ -2307,7 +2322,7 @@ TEST_P(RebalancerAndSingleReplicaTablets, SingleReplicasStayOrMove) {
               .add_hash_partitions({ "key" }, 3)
               .num_replicas(kRepFactor)
               .Create());
-    ASSERT_OK(RunKuduTool({
+    ASSERT_TOOL_OK(
       "perf",
       "loadgen",
       cluster_->master()->bound_rpc_addr().ToString(),
@@ -2315,7 +2330,7 @@ TEST_P(RebalancerAndSingleReplicaTablets, SingleReplicasStayOrMove) {
       // Don't need much data in there.
       "--num_threads=1",
       "--num_rows_per_thread=1",
-    }));
+    );
   }
   for (auto i = kRepFactor + 1; i < kNumTservers; ++i) {
     ASSERT_OK(cluster_->tablet_server(i)->Restart());
