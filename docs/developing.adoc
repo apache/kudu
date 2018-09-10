@@ -217,6 +217,23 @@ mode, the submitting user must have an active Kerberos ticket granted through
 name and keytab location must be provided through the `--principal` and
 `--keytab` arguments to `spark2-submit`.
 
+=== Spark Integration Best Practices
+
+==== Avoid multiple Kudu clients per cluster.
+
+One common Kudu-Spark coding error is instantiating extra `KuduClient` objects.
+In kudu-spark, a `KuduClient` is owned by the `KuduContext`. Spark application code
+should not create another `KuduClient` connecting to the same cluster. Instead,
+application code should use the `KuduContext` to access a `KuduClient` using
+`KuduContext#syncClient`.
+
+To diagnose multiple `KuduClient` instances in a Spark job, look for signs in
+the logs of the master being overloaded by many `GetTableLocations` or
+`GetTabletLocations` requests coming from different clients, usually around the
+same time. This symptom is especially likely in Spark Streaming code,
+where creating a `KuduClient` per task will result in periodic waves of master
+requests from new clients.
+
 === Spark Integration Known Issues and Limitations
 
 - Spark 2.2+ requires Java 8 at runtime even though Kudu Spark 2.x integration
