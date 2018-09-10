@@ -47,10 +47,11 @@ To build the library the following components are required:
 * JDK 8
 * Apache Maven version 3.3.6 or higher
 
-To build the project, run in the parent directory (i.e. `$KUDU_HOME/java`)
+To build the project and install necessary Java packages into the local mvn
+repository, run in the parent directory (i.e. `$KUDU_HOME/java`)
 [listing]
 ----
-$ mvn clean compile test-compile -Pjepsen
+$ mvn -Pjepsen -DskipTests clean install
 ----
 
 === Running
@@ -101,6 +102,10 @@ In the Jepsen terminology, Kudu master and tserver nodes are playing
 *Jepsen DB node* roles. The machine where the above mentioned maven command
 is run plays *Jepsen control node* role.
 
+=== A reference script to build Kudu and run Jepsen tests
+The following link:../../src/kudu/scripts/jepsen.sh[Bourne-again shell script]
+can be used as a reference to build Kudu from source and run Jepsen tests.
+
 === Troubleshooting
 When Jepsen's analysis doesn't find inconsistencies in the history of operations
 it outputs the following in the end of a test:
@@ -132,8 +137,16 @@ summary message below reports on 10 errors in 10 tests ran:
 21:41:42 0 failures, 10 errors.
 ----
 To get more details, take a closer look at the output of `mvn clojure:run`
-or at particular `jepsen.log` files under
-$KUDU_HOME/java/kudu-jepsen/store/rw-register/<test_timestamp> directories.
+or at particular `jepsen.log` files in
+`$KUDU_HOME/java/kudu-jepsen/store/rw-register/<test_timestamp>` directory. A
+quick way to locate the corresponding section in the error log is to search for
+`^ERROR in \(` regex pattern. An example of error message from Jepsen's output:
+[listing]
+----
+ERROR in (register-test-tserver-random-halves) (KuduException.java:110)
+expected: (:valid? (:results (jepsen/run! (tcasefun opts))))
+  actual: org.apache.kudu.client.NonRecoverableException: can not complete before timeout: KuduRpc(method=IsCreateTableDone, tablet=null, attempt=28, DeadlineTracker(timeout=30000, elapsed=28571), ...
+----
 
 The latter class represents more serious issue: a manifestation of
 non-linearizable history of operations. This is reported as _failure_ in the
@@ -154,7 +167,8 @@ Analysis invalid! (ﾉಥ益ಥ）ﾉ ┻━┻
 To troubleshoot, first it's necessary to find where the failed test stores
 the results: it should be one of the timestamp-named sub-directories
 (e.g. `20170109T071938.000-0800`) under
-`$KUDU_HOME/java/kudu-jepsen/store/rw-register`. One of the possible ways
+`$KUDU_HOME/java/kudu-jepsen/store/rw-register` in case of a linearizability
+failure in one of the `rw-register` test scenarios. One of the possible ways
 to find the directory:
 [listing]
 ----
