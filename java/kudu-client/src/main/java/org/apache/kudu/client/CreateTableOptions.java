@@ -19,6 +19,8 @@ package org.apache.kudu.client;
 
 import java.util.List;
 
+import com.google.common.base.Preconditions;
+import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import org.apache.yetus.audience.InterfaceAudience;
@@ -206,6 +208,27 @@ public class CreateTableOptions {
    */
   public CreateTableOptions setWait(boolean wait) {
     this.wait = wait;
+    return this;
+  }
+
+  /**
+   * Set the table owner as the provided username in configured external catalogs
+   * such as the Hive Metastore. Overrides the default of the currently logged-in
+   * username or Kerberos principal.
+   *
+   * This is an unstable method because it is not yet clear whether this should
+   * be supported directly in the long run, rather than requiring the table creator
+   * to re-assign ownership explicitly.
+   *
+   * @param owner the username to set as the table owner in external catalogs
+   * @return this instance
+   */
+  @InterfaceAudience.LimitedPrivate("Impala")
+  @InterfaceStability.Unstable
+  public CreateTableOptions setOwner(String owner) {
+    Preconditions.checkArgument(!Strings.isNullOrEmpty(owner),
+                                "table owner must not be null or empty");
+    pb.setOwner(owner);
     return this;
   }
 

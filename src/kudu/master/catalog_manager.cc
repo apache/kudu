@@ -1574,8 +1574,8 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   // It is critical that this step happen before writing the table to the sys catalog,
   // since this step validates that the table name is available in the HMS catalog.
   if (hms_catalog_) {
-    Status s = hms_catalog_->CreateTable(table->id(), normalized_table_name,
-                                         rpc->remote_user().username(), schema);
+    string owner = req.has_owner() ? req.owner() : rpc->remote_user().username();
+    Status s = hms_catalog_->CreateTable(table->id(), normalized_table_name, owner, schema);
     if (!s.ok()) {
       s = s.CloneAndPrepend(Substitute("an error occurred while creating table $0 in the HMS",
                                        normalized_table_name));
