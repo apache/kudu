@@ -22,6 +22,7 @@
 #include <ostream>
 #include <utility>
 
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 
 #include "kudu/gutil/map-util.h"
@@ -30,7 +31,16 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/debug/trace_event.h"
+#include "kudu/util/fault_injection.h"
+#include "kudu/util/flag_tags.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
+
+DEFINE_int32(inject_latency_ms_before_starting_txn, 0,
+             "Amount of latency in ms to inject before registering "
+             "a transaction with MVCC.");
+TAG_FLAG(inject_latency_ms_before_starting_txn, advanced);
+TAG_FLAG(inject_latency_ms_before_starting_txn, hidden);
 
 namespace kudu {
 namespace tablet {
@@ -46,6 +56,7 @@ MvccManager::MvccManager()
 }
 
 void MvccManager::StartTransaction(Timestamp timestamp) {
+  MAYBE_INJECT_RANDOM_LATENCY(FLAGS_inject_latency_ms_before_starting_txn);
   std::lock_guard<LockType> l(lock_);
   CHECK(!cur_snap_.IsCommitted(timestamp)) << "Trying to start a new txn at an already-committed"
                                            << " timestamp: " << timestamp.ToString()
@@ -53,7 +64,7 @@ void MvccManager::StartTransaction(Timestamp timestamp) {
   CHECK(InitTransactionUnlocked(timestamp)) << "There is already a transaction with timestamp: "
                                             << timestamp.value() << " in flight or this timestamp "
                                             << "is before than or equal to \"safe\" time."
-                                            << "Current Snapshot: " << cur_snap_.ToString()
+                                            << " Current Snapshot: " << cur_snap_.ToString()
                                             << " Current safe time: " << safe_time_;
 }
 
@@ -176,12 +187,11 @@ void MvccManager::AdjustSafeTime(Timestamp safe_time) {
     DVLOG(4) << "Adjusting safe time to: " << safe_time;
     safe_time_ = safe_time;
   } else {
-    // TODO(dralves) This shouldn't happen, the safe time passed to MvccManager should be
-    // monotically increasing. If if does though, the impact is on scan snapshot correctness,
-    // not on corruption of state and some test-only code sets this back (LocalTabletWriter).
-    // Note that we will still crash if a transaction comes in with a timestamp that is lower
-    // than 'cur_snap_.all_committed_before_'.
-    LOG_EVERY_N(ERROR, 10) << Substitute("Tried to move safe_time back from $0 to $1. "
+    // Note: Getting here means that we are about to apply a transaction out of
+    // order. This out-of-order applying is only safe because concurrrent
+    // transactions are guaranteed to not affect the same state based on locks
+    // taken before starting the transaction (e.g. row locks, schema locks).
+    KLOG_EVERY_N(INFO, 10) << Substitute("Tried to move safe_time back from $0 to $1. "
                                          "Current Snapshot: $2", safe_time_.ToString(),
                                          safe_time.ToString(), cur_snap_.ToString());
     return;

@@ -668,7 +668,7 @@ class TestDriver {
 };
 
 // A transaction factory for tests, usually this is implemented by TabletReplica.
-class TestTransactionFactory : public ReplicaTransactionFactory {
+class TestTransactionFactory : public ConsensusRoundHandler {
  public:
   explicit TestTransactionFactory(log::Log* log)
       : consensus_(nullptr),
@@ -681,7 +681,7 @@ class TestTransactionFactory : public ReplicaTransactionFactory {
     consensus_ = consensus;
   }
 
-  Status StartReplicaTransaction(const scoped_refptr<ConsensusRound>& round) OVERRIDE {
+  Status StartFollowerTransaction(const scoped_refptr<ConsensusRound>& round) override {
     auto txn = new TestDriver(pool_.get(), log_, round);
     txn->round_->SetConsensusReplicatedCallback(std::bind(
         &TestDriver::ReplicationFinished,
@@ -689,6 +689,8 @@ class TestTransactionFactory : public ReplicaTransactionFactory {
         std::placeholders::_1));
     return Status::OK();
   }
+
+  void FinishConsensusOnlyRound(ConsensusRound* /*round*/) override {}
 
   void ReplicateAsync(ConsensusRound* round) {
     CHECK_OK(consensus_->Replicate(round));

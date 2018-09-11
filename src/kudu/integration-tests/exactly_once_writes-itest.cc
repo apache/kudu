@@ -63,6 +63,9 @@ using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
+
+using strings::Substitute;
+
 namespace tserver {
 
 static const int kConsensusRpcTimeoutForTests = 50;
@@ -314,13 +317,22 @@ TEST_F(ExactlyOnceSemanticsITest, TestWritesWithExactlyOnceSemanticsWithCrashyNo
 TEST_F(ExactlyOnceSemanticsITest, TestWritesWithExactlyOnceSemanticsWithChurnyElections) {
   vector<string> ts_flags, master_flags;
 
+  int raft_heartbeat_interval;
 #if defined(THREAD_SANITIZER) || defined(ADDRESS_SANITIZER)
   // On TSAN/ASAN builds, we need to be a little bit less churny in order to make
   // any progress at all.
-  ts_flags.push_back("--raft_heartbeat_interval_ms=5");
+  raft_heartbeat_interval = 100;
 #else
-  ts_flags.emplace_back("--raft_heartbeat_interval_ms=2");
+  raft_heartbeat_interval = 50;
 #endif
+  // Inject random latency of up to the Raft heartbeat interval to ensure there
+  // will be missed heartbeats, triggering actual elections.
+  ts_flags = {
+    Substitute("--raft_heartbeat_interval_ms=$0", raft_heartbeat_interval),
+    Substitute("--consensus_inject_latency_ms_in_notifications=$0", raft_heartbeat_interval),
+    "--raft_enable_pre_election=false",
+    "--leader_failure_max_missed_heartbeat_periods=1",
+  };
 
   int num_batches = 200;
   if (AllowSlowTests()) {

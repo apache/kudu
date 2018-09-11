@@ -101,8 +101,10 @@ void RaftConsensusElectionITest::CreateClusterForChurnyElectionsTests(
   // On TSAN builds, we need to be a little bit less churny in order to make
   // any progress at all.
   ts_flags.push_back("--raft_heartbeat_interval_ms=5");
+  ts_flags.emplace_back("--inject_latency_ms_before_starting_txn=100");
 #else
   ts_flags.emplace_back("--raft_heartbeat_interval_ms=1");
+  ts_flags.emplace_back("--inject_latency_ms_before_starting_txn=1000");
 #endif
 
   ts_flags.insert(ts_flags.end(), extra_ts_flags.cbegin(), extra_ts_flags.cend());

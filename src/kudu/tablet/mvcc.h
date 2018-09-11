@@ -219,7 +219,8 @@ class MvccManager {
   // StartApplyingTransaction(), or else this logs a FATAL error.
   void CommitTransaction(Timestamp timestamp);
 
-  // Adjusts the safe time so that the MvccManager can trim state.
+  // Adjusts the safe time so that the MvccManager can trim state, provided
+  // 'safe_time' is higher than the current safe time.
   //
   // This must only be called when there is a guarantee that there won't be
   // any more transactions with timestamps equal to or lower than 'safe_time'.

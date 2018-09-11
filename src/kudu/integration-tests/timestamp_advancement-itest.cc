@@ -38,6 +38,7 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/internal_mini_cluster-itest-base.h"
 #include "kudu/integration-tests/test_workload.h"
@@ -230,6 +231,32 @@ TEST_F(TimestampAdvancementITest, TestNoOpAdvancesMvccSafeTimeOnBootstrap) {
   replica = tablet_replica_on_ts(kTserver);
   Timestamp cleantime = replica->tablet()->mvcc_manager()->GetCleanTimestamp();
   ASSERT_NE(cleantime, Timestamp::kInitialTimestamp);
+}
+
+// Test to ensure that MVCC's current snapshot gets updated via Raft no-ops, in
+// both the "normal" case and the single-replica case.
+TEST_F(TimestampAdvancementITest, TestTimestampsAdvancedFromRaftNoOp) {
+  const int kTserver = 0;
+  for (int num_replicas : { 1, 3 }) {
+    LOG(INFO) << strings::Substitute("Running with $0 replicas", num_replicas);
+    NO_FATALS(StartCluster(num_replicas));
+
+    // Create an empty tablet with a single replica.
+    TestWorkload create_tablet(cluster_.get());
+    create_tablet.set_num_replicas(num_replicas);
+    create_tablet.Setup();
+    scoped_refptr<TabletReplica> replica = tablet_replica_on_ts(kTserver);
+
+    // Despite there not being any writes, the replica will eventually bump its
+    // MVCC clean time on its own when a leader gets elected and replicates a
+    // no-op message.
+    ASSERT_EVENTUALLY([&] {
+      ASSERT_NE(replica->tablet()->mvcc_manager()->GetCleanTimestamp(),
+                Timestamp::kInitialTimestamp);
+    });
+    replica.reset();
+    StopCluster();
+  }
 }
 
 }  // namespace itest

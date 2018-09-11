@@ -227,7 +227,7 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
                             gscoped_ptr<PeerProxyFactory> peer_proxy_factory,
                             scoped_refptr<log::Log> log,
                             scoped_refptr<TimeManager> time_manager,
-                            ReplicaTransactionFactory* txn_factory,
+                            ConsensusRoundHandler* round_handler,
                             const scoped_refptr<MetricEntity>& metric_entity,
                             Callback<void(const std::string& reason)> mark_dirty_clbk) {
   DCHECK(metric_entity);
@@ -235,7 +235,7 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
   peer_proxy_factory_ = DCHECK_NOTNULL(std::move(peer_proxy_factory));
   log_ = DCHECK_NOTNULL(std::move(log));
   time_manager_ = DCHECK_NOTNULL(std::move(time_manager));
-  txn_factory_ = DCHECK_NOTNULL(txn_factory);
+  round_handler_ = DCHECK_NOTNULL(round_handler);
   mark_dirty_clbk_ = std::move(mark_dirty_clbk);
 
   term_metric_ = metric_entity->FindOrCreateGauge(&METRIC_raft_term, CurrentTerm());
@@ -328,7 +328,7 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info,
                                    << SecureShortDebugString(cmeta_->ActiveConfig());
     for (ReplicateMsg* replicate : info.orphaned_replicates) {
       ReplicateRefPtr replicate_ptr = make_scoped_refptr_replicate(new ReplicateMsg(*replicate));
-      RETURN_NOT_OK(StartReplicaTransactionUnlocked(replicate_ptr));
+      RETURN_NOT_OK(StartFollowerTransactionUnlocked(replicate_ptr));
     }
 
     // Set the initial committed opid for the PendingRounds only after
@@ -927,7 +927,7 @@ static bool IsConsensusOnlyOperation(OperationType op_type) {
   return op_type == NO_OP || op_type == CHANGE_CONFIG_OP;
 }
 
-Status RaftConsensus::StartReplicaTransactionUnlocked(const ReplicateRefPtr& msg) {
+Status RaftConsensus::StartFollowerTransactionUnlocked(const ReplicateRefPtr& msg) {
   DCHECK(lock_.is_locked());
 
   if (IsConsensusOnlyOperation(msg->get()->op_type())) {
@@ -943,7 +943,7 @@ Status RaftConsensus::StartReplicaTransactionUnlocked(const ReplicateRefPtr& msg
                                << SecureShortDebugString(msg->get()->id());
   scoped_refptr<ConsensusRound> round(new ConsensusRound(this, msg));
   ConsensusRound* round_ptr = round.get();
-  RETURN_NOT_OK(txn_factory_->StartReplicaTransaction(round));
+  RETURN_NOT_OK(round_handler_->StartFollowerTransaction(round));
   return AddPendingOperationUnlocked(round_ptr);
 }
 
@@ -1386,7 +1386,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     }
 
     while (iter != deduped_req.messages.end()) {
-      prepare_status = StartReplicaTransactionUnlocked(*iter);
+      prepare_status = StartFollowerTransactionUnlocked(*iter);
       if (PREDICT_FALSE(!prepare_status.ok())) {
         break;
       }
@@ -2636,6 +2636,7 @@ void RaftConsensus::NonTxRoundReplicationFinished(ConsensusRound* round,
   }
   VLOG_WITH_PREFIX_UNLOCKED(1) << "Committing " << op_type_str << " with op id "
                                << round->id();
+  round_handler_->FinishConsensusOnlyRound(round);
   gscoped_ptr<CommitMsg> commit_msg(new CommitMsg);
   commit_msg->set_op_type(round->replicate_msg()->op_type());
   *commit_msg->mutable_commited_op_id() = round->id();
