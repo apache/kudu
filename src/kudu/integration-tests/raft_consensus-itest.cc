@@ -256,7 +256,11 @@ void RaftConsensusITest::AddOpWithTypeAndKey(const OpId& id,
                                              ConsensusRequestPB* req) {
   ReplicateMsg* msg = req->add_ops();
   msg->mutable_id()->CopyFrom(id);
-  msg->set_timestamp(id.index());
+  // Set a somewhat realistic timestamp such that it is monotonically
+  // increasing per op and starts off higher than 1. This is required, as some
+  // test cases test the scenario where the WAL is replayed and no-ops and
+  // writes are expected to have monotonically increasing timestamps.
+  msg->set_timestamp(id.index() * 10000 + id.term());
   msg->set_op_type(consensus::WRITE_OP);
   WriteRequestPB* write_req = msg->mutable_write_request();
   CHECK_OK(SchemaToPB(schema_, write_req->mutable_schema()));

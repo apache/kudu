@@ -629,6 +629,7 @@ TEST_F(BootstrapTest, TestConsensusOnlyOperationOutOfOrderTimestamp) {
   noop_replicate->get()->set_op_type(consensus::NO_OP);
   *noop_replicate->get()->mutable_id() = MakeOpId(1, 1);
   noop_replicate->get()->set_timestamp(2);
+  noop_replicate->get()->mutable_noop_request()->set_timestamp_in_opid_order(false);
 
   ASSERT_OK(AppendReplicateBatch(noop_replicate));
 

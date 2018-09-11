@@ -229,6 +229,12 @@ message CommitMsg {
 message NoOpRequestPB {
  // Allows to set a dummy payload, for tests.
  optional bytes payload_for_tests = 1;
+
+ // Set to true if the op id for this request is expected to be monotonically
+ // increasing with the assigned timestamp. For no-ops that are sent by a
+ // leader marking a successful Raft election, this is true. If not set, it is
+ // assumed to be true.
+ optional bool timestamp_in_opid_order = 2;
 }
 
 // Status message received in the peer responses.

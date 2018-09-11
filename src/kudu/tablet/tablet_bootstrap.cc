@@ -1093,21 +1093,40 @@ Status TabletBootstrap::HandleEntryPair(const IOContext* io_context, LogEntryPB*
 
 #undef RETURN_NOT_OK_REPLAY
 
-  // Non-tablet operations should not advance the safe time, because they are
-  // not started serially and so may have timestamps that are out of order.
-  if (op_type == NO_OP || op_type == CHANGE_CONFIG_OP) {
+  // We should only advance MVCC's safe time based on a specific set of
+  // operations: those whose timestamps are guaranteed to be monotonically
+  // increasing with respect to their entries in the write-ahead log.
+  bool timestamp_assigned_in_opid_order = true;
+  switch (op_type) {
+    case CHANGE_CONFIG_OP:
+      timestamp_assigned_in_opid_order = false;
+      break;
+    case NO_OP: {
+      const auto& req = replicate->noop_request();
+      if (req.has_timestamp_in_opid_order()) {
+        timestamp_assigned_in_opid_order = req.timestamp_in_opid_order();
+      }
+      break;
+    }
+    default:
+      break;
+  }
+  if (!timestamp_assigned_in_opid_order) {
     return Status::OK();
   }
 
   // Handle safe time advancement:
   //
-  // If this operation has an external consistency mode other than COMMIT_WAIT, we know that no
-  // future transaction will have a timestamp that is lower than it, so we can just advance the
-  // safe timestamp to this operation's timestamp.
+  // If this message is a Raft election no-op, or is a transaction op that
+  // has an external consistency mode other than COMMIT_WAIT, we know that no
+  // future transaction will have a timestamp that is lower than it, so we can
+  // just advance the safe timestamp to the message's timestamp.
   //
-  // If the hybrid clock is disabled, all transactions will fall into this category.
+  // If the hybrid clock is disabled, all transactions will fall into this
+  // category.
   Timestamp safe_time;
-  if (replicate->write_request().external_consistency_mode() != COMMIT_WAIT) {
+  if (replicate->op_type() != consensus::WRITE_OP ||
+      replicate->write_request().external_consistency_mode() != COMMIT_WAIT) {
     safe_time = Timestamp(replicate->timestamp());
   // ... else we set the safe timestamp to be the transaction's timestamp minus the maximum clock
   // error. This opens the door for problems if the flags changed across reboots, but this is
