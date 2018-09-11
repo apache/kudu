@@ -100,7 +100,7 @@ bool IsValidLocation(const string& location) {
 Status GetLocationFromLocationMappingCmd(const string& cmd,
                                          const string& host,
                                          string* location) {
-  DCHECK_NOTNULL(location);
+  DCHECK(location);
   vector<string> argv = strings::Split(cmd, " ", strings::SkipEmpty());
   if (argv.empty()) {
     return Status::RuntimeError("invalid empty location mapping command");
