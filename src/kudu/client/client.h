@@ -51,8 +51,6 @@ namespace kudu {
 
 class ClientStressTest_TestUniqueClientIds_Test;
 class KuduPartialRow;
-class MasterHmsTest_TestAlterTable_Test;
-class MasterHmsUpgradeTest_TestRenameExistingTables_Test;
 class MonoDelta;
 class PartitionSchema;
 class SecurityUnknownTskTest;
@@ -1228,9 +1226,6 @@ class KUDU_EXPORT KuduTableAlterer {
   class KUDU_NO_EXPORT Data;
 
   friend class KuduClient;
-
-  FRIEND_TEST(kudu::MasterHmsTest, TestAlterTable);
-  FRIEND_TEST(kudu::MasterHmsUpgradeTest, TestRenameExistingTables);
 
   KuduTableAlterer(KuduClient* client,
                    const std::string& name);
