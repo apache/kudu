@@ -27,15 +27,14 @@
 
 #include <gtest/gtest_prod.h>
 
-#include "kudu/consensus/raft_consensus.h"
-#include "kudu/consensus/time_manager.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/metadata.pb.h"
+#include "kudu/consensus/raft_consensus.h"
+#include "kudu/consensus/time_manager.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/callback.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet.h"
@@ -86,7 +85,7 @@ class WriteTransactionState;
 // peers see the same updates in the same order. In addition to this, this
 // class also splits the work and coordinates multi-threaded execution.
 class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
-                      public consensus::ReplicaTransactionFactory {
+                      public consensus::ConsensusRoundHandler {
  public:
   TabletReplica(scoped_refptr<TabletMetadata> meta,
                 scoped_refptr<consensus::ConsensusMetadataManager> cmeta_manager,
@@ -153,8 +152,12 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
   void GetTabletStatusPB(TabletStatusPB* status_pb_out) const;
 
   // Used by consensus to create and start a new ReplicaTransaction.
-  virtual Status StartReplicaTransaction(
-      const scoped_refptr<consensus::ConsensusRound>& round) OVERRIDE;
+  virtual Status StartFollowerTransaction(
+      const scoped_refptr<consensus::ConsensusRound>& round) override;
+
+  // Used by consensus to notify the tablet replica that a consensus-only round
+  // has finished, advancing MVCC safe time as appropriate.
+  virtual void FinishConsensusOnlyRound(consensus::ConsensusRound* round) override;
 
   consensus::RaftConsensus* consensus() {
     std::lock_guard<simple_spinlock> lock(lock_);

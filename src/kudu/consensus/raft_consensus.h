@@ -72,10 +72,10 @@ namespace consensus {
 
 class ConsensusMetadataManager;
 class ConsensusRound;
+class ConsensusRoundHandler;
 class PeerManager;
 class PeerProxyFactory;
 class PendingRounds;
-class ReplicaTransactionFactory;
 struct ConsensusBootstrapInfo;
 struct ElectionResult;
 
@@ -148,7 +148,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
                gscoped_ptr<PeerProxyFactory> peer_proxy_factory,
                scoped_refptr<log::Log> log,
                scoped_refptr<TimeManager> time_manager,
-               ReplicaTransactionFactory* txn_factory,
+               ConsensusRoundHandler* round_handler,
                const scoped_refptr<MetricEntity>& metric_entity,
                Callback<void(const std::string& reason)> mark_dirty_clbk);
 
@@ -518,7 +518,7 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
 
   // Begin a replica transaction. If the type of message in 'msg' is not a type
   // that uses transactions, delegates to StartConsensusOnlyRoundUnlocked().
-  Status StartReplicaTransactionUnlocked(const ReplicateRefPtr& msg);
+  Status StartFollowerTransactionUnlocked(const ReplicateRefPtr& msg);
 
   // Returns true if this node is the only voter in the Raft configuration.
   bool IsSingleVoterConfig() const;
@@ -803,9 +803,10 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   scoped_refptr<TimeManager> time_manager_;
   gscoped_ptr<PeerProxyFactory> peer_proxy_factory_;
 
-  // When we receive a message from a remote peer telling us to start a transaction, we use
-  // this factory to start it.
-  ReplicaTransactionFactory* txn_factory_;
+  // When we receive a message from a remote peer telling us to start a
+  // transaction, or finish a round, we use this handler to handle it.
+  // This may update replica state (e.g. the tablet replica).
+  ConsensusRoundHandler* round_handler_;
 
   std::unique_ptr<PeerManager> peer_manager_;
 
@@ -896,32 +897,39 @@ struct ConsensusBootstrapInfo {
   DISALLOW_COPY_AND_ASSIGN(ConsensusBootstrapInfo);
 };
 
-// Factory for replica transactions.
-// An implementation of this factory must be registered prior to consensus
-// start, and is used to create transactions when the consensus implementation receives
-// messages from the leader.
+// Handler for consensus rounds.
+// An implementation of this handler must be registered prior to consensus
+// start, and is used to:
+// - Create transactions when the consensus implementation receives messages
+//   from the leader.
+// - Handle when the consensus implementation finishes a non-transaction round
 //
-// Replica transactions execute the following way:
+// Follower transactions execute the following way:
 //
 // - When a ReplicateMsg is first received from the leader, the RaftConsensus
-//   instance creates the ConsensusRound and calls StartReplicaTransaction().
-//   This will trigger the Prepare(). At the same time replica consensus
-//   instance immediately stores the ReplicateMsg in the Log. Once the replicate
+//   instance creates the ConsensusRound and calls StartFollowerTransaction().
+//   This will trigger the Prepare(). At the same time, the follower's consensus
+//   instance immediately stores the ReplicateMsg in the Log. Once the
 //   message is stored in stable storage an ACK is sent to the leader (i.e. the
 //   replica RaftConsensus instance does not wait for Prepare() to finish).
 //
-// - When the CommitMsg for a replicate is first received from the leader
-//   the replica waits for the corresponding Prepare() to finish (if it has
-//   not completed yet) and then proceeds to trigger the Apply().
+// - When the CommitMsg for a replicate is first received from the leader, the
+//   follower waits for the corresponding Prepare() to finish (if it has not
+//   completed yet) and then proceeds to trigger the Apply().
 //
-// - Once Apply() completes the ReplicaTransactionFactory is responsible for logging
+// - Once Apply() completes the ConsensusRoundHandler is responsible for logging
 //   a CommitMsg to the log to ensure that the operation can be properly restored
 //   on a restart.
-class ReplicaTransactionFactory {
+class ConsensusRoundHandler {
  public:
-  virtual Status StartReplicaTransaction(const scoped_refptr<ConsensusRound>& context) = 0;
+  virtual ~ConsensusRoundHandler() {}
 
-  virtual ~ReplicaTransactionFactory() {}
+  virtual Status StartFollowerTransaction(const scoped_refptr<ConsensusRound>& context) = 0;
+
+  // Consensus-only rounds complete when non-transaction ops finish
+  // replication. This can be used to trigger callbacks, akin to an Apply() for
+  // transaction ops.
+  virtual void FinishConsensusOnlyRound(ConsensusRound* round) = 0;
 };
 
 // Context for a consensus round on the LEADER side, typically created as an

@@ -93,10 +93,12 @@ DECLARE_int32(num_replicas);
 DECLARE_int32(num_tablet_servers);
 DECLARE_int32(rpc_timeout);
 
+METRIC_DECLARE_entity(server);
 METRIC_DECLARE_entity(tablet);
 METRIC_DECLARE_counter(transaction_memory_pressure_rejections);
 METRIC_DECLARE_gauge_int64(time_since_last_leader_heartbeat);
 METRIC_DECLARE_gauge_int64(failed_elections_since_stable_leader);
+METRIC_DECLARE_gauge_uint64(hybrid_clock_timestamp);
 
 using kudu::client::KuduInsert;
 using kudu::client::KuduSession;
@@ -161,6 +163,9 @@ class RaftConsensusITest : public RaftConsensusITestBase {
   RaftConsensusITest() {
   }
 
+  // Gets the current timestamp on the given server.
+  int64_t GetTimestampOnServer(TServerDetails* tserver) const;
+
   // Scan the given replica in a loop until the number of rows
   // is 'expected_count'. If it takes more than 10 seconds, then
   // fails the test.
@@ -169,9 +174,10 @@ class RaftConsensusITest : public RaftConsensusITestBase {
                        vector<string>* results);
 
   // Add an Insert operation to the given consensus request.
-  // The row to be inserted is generated based on the OpId.
-  void AddOp(const OpId& id, ConsensusRequestPB* req);
-  void AddOpWithTypeAndKey(const OpId& id,
+  // The row to be inserted is generated based on the OpId with a timestamp
+  // that is greater than 'base_ts'.
+  void AddOp(const OpId& id, int64_t base_ts, ConsensusRequestPB* req);
+  void AddOpWithTypeAndKey(const OpId& id, int64_t base_ts,
                            RowOperationsPB::Type op_type,
                            int32_t key,
                            ConsensusRequestPB* req);
@@ -223,6 +229,14 @@ class RaftConsensusITest : public RaftConsensusITestBase {
   vector<scoped_refptr<kudu::Thread> > threads_;
 };
 
+int64_t RaftConsensusITest::GetTimestampOnServer(TServerDetails* tserver) const {
+  int64_t ret;
+  ExternalTabletServer* ets = cluster_->tablet_server_by_uuid(tserver->uuid());
+  CHECK_OK(GetInt64Metric(ets->bound_http_hostport(), &METRIC_ENTITY_server,
+                          nullptr, &METRIC_hybrid_clock_timestamp, "value", &ret));
+  return ret;
+}
+
 void RaftConsensusITest::WaitForRowCount(TabletServerServiceProxy* replica_proxy,
                                          int expected_count,
                                          vector<string>* results) {
@@ -245,12 +259,12 @@ void RaftConsensusITest::WaitForRowCount(TabletServerServiceProxy* replica_proxy
          << ": rows: " << *results;
 }
 
-void RaftConsensusITest::AddOp(const OpId& id, ConsensusRequestPB* req) {
-  AddOpWithTypeAndKey(id, RowOperationsPB::INSERT,
+void RaftConsensusITest::AddOp(const OpId& id, int64_t base_ts, ConsensusRequestPB* req) {
+  AddOpWithTypeAndKey(id, base_ts, RowOperationsPB::INSERT,
                       id.index() * 10000 + id.term(), req);
 }
 
-void RaftConsensusITest::AddOpWithTypeAndKey(const OpId& id,
+void RaftConsensusITest::AddOpWithTypeAndKey(const OpId& id, int64_t base_ts,
                                              RowOperationsPB::Type op_type,
                                              int32_t key,
                                              ConsensusRequestPB* req) {
@@ -260,7 +274,7 @@ void RaftConsensusITest::AddOpWithTypeAndKey(const OpId& id,
   // increasing per op and starts off higher than 1. This is required, as some
   // test cases test the scenario where the WAL is replayed and no-ops and
   // writes are expected to have monotonically increasing timestamps.
-  msg->set_timestamp(id.index() * 10000 + id.term());
+  msg->set_timestamp(base_ts + id.index() * 10000 + id.term());
   msg->set_op_type(consensus::WRITE_OP);
   WriteRequestPB* write_req = msg->mutable_write_request();
   CHECK_OK(SchemaToPB(schema_, write_req->mutable_schema()));
@@ -595,8 +609,6 @@ void RaftConsensusITest::DoTestCrashyNodes(TestWorkload* workload, int max_rows_
 
 void RaftConsensusITest::SetupSingleReplicaTest(TServerDetails** replica_ts) {
   const vector<string> kTsFlags = {
-    // Don't use the hybrid clock as we set logical timestamps on ops.
-    "--use_hybrid_clock=false",
     "--enable_leader_failure_detection=false",
   };
   const vector<string> kMasterFlags = {
@@ -1060,10 +1072,12 @@ TEST_F(RaftConsensusITest, TestLMPMismatchOnRestartedReplica) {
   ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
   ASSERT_FALSE(resp.has_error()) << SecureDebugString(resp);
 
+  int64_t base_ts = GetTimestampOnServer(replica_ts);
+
   // Send operations 2.1 through 2.3, committing through 2.2.
-  AddOp(MakeOpId(2, 1), &req);
-  AddOp(MakeOpId(2, 2), &req);
-  AddOp(MakeOpId(2, 3), &req);
+  AddOp(MakeOpId(2, 1), base_ts, &req);
+  AddOp(MakeOpId(2, 2), base_ts, &req);
+  AddOp(MakeOpId(2, 3), base_ts, &req);
   req.set_committed_index(2);
   rpc.Reset();
   ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
@@ -1090,7 +1104,7 @@ TEST_F(RaftConsensusITest, TestLMPMismatchOnRestartedReplica) {
   req.set_caller_term(3);
   req.mutable_preceding_id()->CopyFrom(MakeOpId(3, 3));
   req.clear_ops();
-  AddOp(MakeOpId(3, 4), &req);
+  AddOp(MakeOpId(3, 4), base_ts, &req);
   ASSERT_EVENTUALLY([&]() {
       rpc.Reset();
       ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
@@ -1130,9 +1144,10 @@ TEST_F(RaftConsensusITest, TestReplaceOperationStuckInPrepareQueue) {
   req.set_caller_term(2);
   req.set_all_replicated_index(0);
   req.mutable_preceding_id()->CopyFrom(MakeOpId(1, 1));
-  AddOpWithTypeAndKey(MakeOpId(2, 2), RowOperationsPB::UPSERT, 1, &req);
-  AddOpWithTypeAndKey(MakeOpId(2, 3), RowOperationsPB::UPSERT, 1, &req);
-  AddOpWithTypeAndKey(MakeOpId(2, 4), RowOperationsPB::UPSERT, 1, &req);
+  int64_t base_ts = GetTimestampOnServer(replica_ts);
+  AddOpWithTypeAndKey(MakeOpId(2, 2), base_ts, RowOperationsPB::UPSERT, 1, &req);
+  AddOpWithTypeAndKey(MakeOpId(2, 3), base_ts, RowOperationsPB::UPSERT, 1, &req);
+  AddOpWithTypeAndKey(MakeOpId(2, 4), base_ts, RowOperationsPB::UPSERT, 1, &req);
   req.set_committed_index(2);
   rpc.Reset();
   ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
@@ -1142,8 +1157,8 @@ TEST_F(RaftConsensusITest, TestReplaceOperationStuckInPrepareQueue) {
   req.set_caller_term(3);
   req.mutable_preceding_id()->CopyFrom(MakeOpId(2, 3));
   req.clear_ops();
-  AddOpWithTypeAndKey(MakeOpId(3, 4), RowOperationsPB::UPSERT, 1, &req);
-  AddOpWithTypeAndKey(MakeOpId(3, 5), RowOperationsPB::UPSERT, 2, &req);
+  AddOpWithTypeAndKey(MakeOpId(3, 4), base_ts, RowOperationsPB::UPSERT, 1, &req);
+  AddOpWithTypeAndKey(MakeOpId(3, 5), base_ts, RowOperationsPB::UPSERT, 2, &req);
   rpc.Reset();
   rpc.set_timeout(MonoDelta::FromSeconds(5));
   ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
@@ -1205,9 +1220,10 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
 
   // Send some operations, but don't advance the commit index.
   // They should not commit.
-  AddOp(MakeOpId(2, 2), &req);
-  AddOp(MakeOpId(2, 3), &req);
-  AddOp(MakeOpId(2, 4), &req);
+  int64_t base_ts = GetTimestampOnServer(replica_ts);
+  AddOp(MakeOpId(2, 2), base_ts, &req);
+  AddOp(MakeOpId(2, 3), base_ts, &req);
+  AddOp(MakeOpId(2, 4), base_ts, &req);
   rpc.Reset();
   ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
   ASSERT_FALSE(resp.has_error()) << SecureDebugString(resp);
@@ -1223,7 +1239,7 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
   // request, and the replica should reject it.
   req.mutable_preceding_id()->CopyFrom(MakeOpId(2, 4));
   req.clear_ops();
-  AddOp(MakeOpId(2, 6), &req);
+  AddOp(MakeOpId(2, 6), base_ts, &req);
   rpc.Reset();
   ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
   ASSERT_TRUE(resp.has_error()) << SecureDebugString(resp);
@@ -1236,8 +1252,8 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
   // Send ops 3.5 and 2.6, then commit up to index 6, the replica
   // should fail because of the out-of-order terms.
   req.mutable_preceding_id()->CopyFrom(MakeOpId(2, 4));
-  AddOp(MakeOpId(3, 5), &req);
-  AddOp(MakeOpId(2, 6), &req);
+  AddOp(MakeOpId(3, 5), base_ts, &req);
+  AddOp(MakeOpId(2, 6), base_ts, &req);
   rpc.Reset();
   ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
   ASSERT_TRUE(resp.has_error()) << SecureDebugString(resp);
@@ -1255,7 +1271,7 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
   resp.Clear();
   req.clear_ops();
   req.mutable_preceding_id()->CopyFrom(MakeOpId(2, 2));
-  AddOp(MakeOpId(2, 3), &req);
+  AddOp(MakeOpId(2, 3), base_ts, &req);
   req.set_committed_index(4);
   rpc.Reset();
   ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
@@ -1273,8 +1289,8 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
   // Now send some more ops, and commit the earlier ones.
   req.set_committed_index(4);
   req.mutable_preceding_id()->CopyFrom(MakeOpId(2, 4));
-  AddOp(MakeOpId(2, 5), &req);
-  AddOp(MakeOpId(2, 6), &req);
+  AddOp(MakeOpId(2, 5), base_ts, &req);
+  AddOp(MakeOpId(2, 6), base_ts, &req);
   rpc.Reset();
   ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
   ASSERT_FALSE(resp.has_error()) << SecureDebugString(resp);
@@ -1324,8 +1340,8 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
     req.set_caller_uuid("new_leader");
     req.mutable_preceding_id()->CopyFrom(MakeOpId(2, 4));
     req.clear_ops();
-    AddOp(MakeOpId(leader_term, 5), &req);
-    AddOp(MakeOpId(leader_term, 6), &req);
+    AddOp(MakeOpId(leader_term, 5), base_ts, &req);
+    AddOp(MakeOpId(leader_term, 6), base_ts, &req);
     rpc.Reset();
     ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
     ASSERT_FALSE(resp.has_error()) << "Req: " << SecureShortDebugString(req)
@@ -1850,8 +1866,9 @@ TEST_F(RaftConsensusITest, TestEarlyCommitDespiteMemoryPressure) {
   req.set_committed_index(1);
   req.set_all_replicated_index(0);
   req.mutable_preceding_id()->CopyFrom(MakeOpId(1, 1));
+  int64_t base_ts = GetTimestampOnServer(replica_ts);
   for (int i = 0; i < kNumOps; i++) {
-    AddOp(MakeOpId(1, 2 + i), &req);
+    AddOp(MakeOpId(1, 2 + i), base_ts, &req);
   }
   OpId last_opid = MakeOpId(1, 2 + kNumOps - 1);
   ASSERT_OK(replica_ts->consensus_proxy->UpdateConsensus(req, &resp, &rpc));
@@ -1874,7 +1891,7 @@ TEST_F(RaftConsensusITest, TestEarlyCommitDespiteMemoryPressure) {
   req.mutable_preceding_id()->CopyFrom(last_opid);
   req.set_committed_index(last_opid.index());
   req.mutable_ops()->Clear();
-  AddOp(MakeOpId(1, last_opid.index() + 1), &req);
+  AddOp(MakeOpId(1, last_opid.index() + 1), base_ts, &req);
   rpc.Reset();
   Status s = replica_ts->consensus_proxy->UpdateConsensus(req, &resp, &rpc);
 
@@ -2579,8 +2596,9 @@ TEST_F(RaftConsensusITest, TestUpdateConsensusErrorNonePrepared) {
   req.set_committed_index(0);
   req.set_all_replicated_index(0);
   req.mutable_preceding_id()->CopyFrom(MakeOpId(0, 0));
+  int64_t base_ts = GetTimestampOnServer(replica_ts);
   for (int i = 0; i < kNumOps; i++) {
-    AddOp(MakeOpId(0, 1 + i), &req);
+    AddOp(MakeOpId(0, 1 + i), base_ts, &req);
   }
 
   ASSERT_OK(replica_ts->consensus_proxy->UpdateConsensus(req, &resp, &rpc));
