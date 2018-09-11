@@ -809,15 +809,15 @@ void RunDeltaFuzzTest(const DeltaStore& store,
     std::unique_ptr<DeltaIterator> iter(raw_iter);
     ASSERT_OK(iter->Init(nullptr));
 
-    // Run PREPARE_FOR_APPLY method tests in batches, in case there's some bug
-    // related to batching.
+    // Run tests in batches, in case there's some bug related to batching.
     ASSERT_OK(iter->SeekToOrdinal(0));
     rowid_t start_row_idx = 0;
     while (iter->HasNext()) {
       int batch_size = prng->Uniform(kMaxBatchSize) + 1;
-      SCOPED_TRACE(strings::Substitute("APPLY: batch starting at $0 ($1 rows)",
+      SCOPED_TRACE(strings::Substitute("batch starting at $0 ($1 rows)",
                                        start_row_idx, batch_size));
-      ASSERT_OK(iter->PrepareBatch(batch_size, DeltaIterator::PREPARE_FOR_APPLY));
+      ASSERT_OK(iter->PrepareBatch(batch_size, DeltaIterator::PREPARE_FOR_APPLY |
+                                               DeltaIterator::PREPARE_FOR_COLLECT));
 
       // Test ApplyDeletes: the selection vector is all true and a row is unset
       // if the last relevant update deleted it.
@@ -850,18 +850,6 @@ void RunDeltaFuzzTest(const DeltaStore& store,
             << "Expected column block: " << expected_scb.ToString()
             << "\nActual column block: " << actual_scb.ToString();
       }
-
-      start_row_idx += batch_size;
-    }
-
-    // Now run PREPARE_FOR_COLLECT method tests.
-    ASSERT_OK(iter->SeekToOrdinal(0));
-    start_row_idx = 0;
-    while (iter->HasNext()) {
-      int batch_size = prng->Uniform(kMaxBatchSize - 1) + 1;
-      SCOPED_TRACE(strings::Substitute("COLLECT: batch starting at $0 ($1 rows)",
-                                       start_row_idx, batch_size));
-      ASSERT_OK(iter->PrepareBatch(batch_size, DeltaIterator::PREPARE_FOR_COLLECT));
 
       // Test CollectMutations: all relevant updates are returned.
       {
@@ -917,6 +905,7 @@ void RunDeltaFuzzTest(const DeltaStore& store,
           ASSERT_EQ(expected_deltas[j].second, actual_deltas[j].cell);
         }
       }
+
       start_row_idx += batch_size;
     }
   }

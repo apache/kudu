@@ -199,7 +199,7 @@ class DMSIterator : public DeltaIterator {
 
   Status SeekToOrdinal(rowid_t row_idx) override;
 
-  Status PrepareBatch(size_t nrows, PrepareFlag flag) override;
+  Status PrepareBatch(size_t nrows, int prepare_flags) override;
 
   Status ApplyUpdates(size_t col_to_apply, ColumnBlock* dst,
                       const SelectionVector& filter) override;

@@ -217,7 +217,7 @@ Status DMSIterator::SeekToOrdinal(rowid_t row_idx) {
   return Status::OK();
 }
 
-Status DMSIterator::PrepareBatch(size_t nrows, PrepareFlag flag) {
+Status DMSIterator::PrepareBatch(size_t nrows, int prepare_flags) {
   // This current implementation copies the whole batch worth of deltas
   // into a buffer local to this iterator, after filtering out deltas which
   // aren't yet committed in the current MVCC snapshot. The theory behind
@@ -233,8 +233,8 @@ Status DMSIterator::PrepareBatch(size_t nrows, PrepareFlag flag) {
   DCHECK(initted_) << "must init";
   rowid_t start_row = preparer_.cur_prepared_idx();
   rowid_t stop_row = start_row + nrows - 1;
-  preparer_.Start(flag);
 
+  preparer_.Start(prepare_flags);
   bool finished_row = false;
   while (iter_->IsValid()) {
     Slice key_slice, val;

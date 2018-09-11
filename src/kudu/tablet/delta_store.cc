@@ -107,7 +107,7 @@ DeltaPreparer<Traits>::DeltaPreparer(RowIteratorOptions opts)
     : opts_(std::move(opts)),
       cur_prepared_idx_(0),
       prev_prepared_idx_(0),
-      prepared_for_(NOT_PREPARED),
+      prepared_flags_(DeltaIterator::PREPARE_NONE),
       deletion_state_(UNKNOWN) {
 }
 
@@ -115,11 +115,13 @@ template<class Traits>
 void DeltaPreparer<Traits>::Seek(rowid_t row_idx) {
   cur_prepared_idx_ = row_idx;
   prev_prepared_idx_ = row_idx;
-  prepared_for_ = NOT_PREPARED;
+  prepared_flags_ = DeltaIterator::PREPARE_NONE;
 }
 
 template<class Traits>
-void DeltaPreparer<Traits>::Start(DeltaIterator::PrepareFlag flag) {
+void DeltaPreparer<Traits>::Start(int prepare_flags) {
+  DCHECK_NE(prepare_flags, DeltaIterator::PREPARE_NONE);
+  prepared_flags_ = prepare_flags;
   if (updates_by_col_.empty()) {
     updates_by_col_.resize(opts_.projection->num_columns());
   }
@@ -130,16 +132,6 @@ void DeltaPreparer<Traits>::Start(DeltaIterator::PrepareFlag flag) {
   reinserted_.clear();
   prepared_deltas_.clear();
   deletion_state_ = UNKNOWN;
-  switch (flag) {
-    case DeltaIterator::PREPARE_FOR_APPLY:
-      prepared_for_ = PREPARED_FOR_APPLY;
-      break;
-    case DeltaIterator::PREPARE_FOR_COLLECT:
-      prepared_for_ = PREPARED_FOR_COLLECT;
-      break;
-    default:
-      LOG(FATAL) << "Unknown prepare flag: " << flag;
-  }
 }
 
 template<class Traits>
@@ -157,7 +149,7 @@ Status DeltaPreparer<Traits>::AddDelta(const DeltaKey& key, Slice val, bool* fin
   }
   MaybeProcessPreviousRowChange(key.row_idx());
 
-  if (prepared_for_ == PREPARED_FOR_APPLY) {
+  if (prepared_flags_ & DeltaIterator::PREPARE_FOR_APPLY) {
     RowChangeListDecoder decoder((RowChangeList(val)));
     if (Traits::kInitializeDecodersWithSafetyChecks) {
       RETURN_NOT_OK(decoder.Init());
@@ -201,8 +193,8 @@ Status DeltaPreparer<Traits>::AddDelta(const DeltaKey& key, Slice val, bool* fin
         }
       }
     }
-  } else {
-    DCHECK_EQ(prepared_for_, PREPARED_FOR_COLLECT);
+  }
+  if (prepared_flags_ & DeltaIterator::PREPARE_FOR_COLLECT) {
     PreparedDelta d;
     d.key = key;
     d.val = val;
@@ -216,7 +208,7 @@ Status DeltaPreparer<Traits>::AddDelta(const DeltaKey& key, Slice val, bool* fin
 template<class Traits>
 Status DeltaPreparer<Traits>::ApplyUpdates(size_t col_to_apply, ColumnBlock* dst,
                                            const SelectionVector& filter) {
-  DCHECK_EQ(prepared_for_, PREPARED_FOR_APPLY);
+  DCHECK(prepared_flags_ & DeltaIterator::PREPARE_FOR_APPLY);
   DCHECK_LE(cur_prepared_idx_ - prev_prepared_idx_, dst->nrows());
 
   const ColumnSchema* col_schema = &opts_.projection->column(col_to_apply);
@@ -236,7 +228,7 @@ Status DeltaPreparer<Traits>::ApplyUpdates(size_t col_to_apply, ColumnBlock* dst
 
 template<class Traits>
 Status DeltaPreparer<Traits>::ApplyDeletes(SelectionVector* sel_vec) {
-  DCHECK_EQ(prepared_for_, PREPARED_FOR_APPLY);
+  DCHECK(prepared_flags_ & DeltaIterator::PREPARE_FOR_APPLY);
   DCHECK_LE(cur_prepared_idx_ - prev_prepared_idx_, sel_vec->nrows());
 
   for (const auto& row_id : deleted_) {
@@ -254,7 +246,7 @@ Status DeltaPreparer<Traits>::ApplyDeletes(SelectionVector* sel_vec) {
 
 template<class Traits>
 Status DeltaPreparer<Traits>::CollectMutations(vector<Mutation*>* dst, Arena* arena) {
-  DCHECK_EQ(prepared_for_, PREPARED_FOR_COLLECT);
+  DCHECK(prepared_flags_ & DeltaIterator::PREPARE_FOR_COLLECT);
   DCHECK_LE(cur_prepared_idx_ - prev_prepared_idx_, dst->size());
   for (const PreparedDelta& src : prepared_deltas_) {
     DeltaKey key = src.key;
@@ -306,7 +298,7 @@ Status DeltaPreparer<Traits>::FilterColumnIdsAndCollectDeltas(
 
 template<class Traits>
 bool DeltaPreparer<Traits>::MayHaveDeltas() const {
-  DCHECK_EQ(prepared_for_, PREPARED_FOR_APPLY);
+  DCHECK(prepared_flags_ & DeltaIterator::PREPARE_FOR_APPLY);
   if (!deleted_.empty()) {
     return true;
   }
@@ -323,7 +315,7 @@ bool DeltaPreparer<Traits>::MayHaveDeltas() const {
 
 template<class Traits>
 void DeltaPreparer<Traits>::MaybeProcessPreviousRowChange(boost::optional<rowid_t> cur_row_idx) {
-  if (prepared_for_ == PREPARED_FOR_APPLY &&
+  if (prepared_flags_ & DeltaIterator::PREPARE_FOR_APPLY &&
       last_added_idx_ &&
       (!cur_row_idx || cur_row_idx != *last_added_idx_)) {
     switch (deletion_state_) {

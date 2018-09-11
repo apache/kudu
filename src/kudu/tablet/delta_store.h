@@ -198,22 +198,37 @@ class DeltaIterator : public PreparedDeltas {
   // block, and must be called at least once prior to PrepareBatch().
   virtual Status SeekToOrdinal(rowid_t idx) = 0;
 
-  // Argument to PrepareBatch(). See below.
-  enum PrepareFlag {
-    PREPARE_FOR_APPLY,
-    PREPARE_FOR_COLLECT
-  };
-
   // Prepare to apply deltas to a block of rows. This takes a consistent snapshot
   // of all updates to the next 'nrows' rows, so that subsequent calls to a
   // PreparedDeltas method will not cause any "tearing"/non-atomicity.
   //
-  // 'flag' denotes whether the batch will be used for collecting mutations or
-  // for applying them. Some implementations may choose to prepare differently.
+  // 'prepare_flags' is a bitfield describing what operation(s) the batch will
+  // be used for; some implementations may choose to prepare differently.
+  // PREPARE_NONE is an invalid value; it is only used internally.
   //
   // Each time this is called, the iterator is advanced by the full length
   // of the previously prepared block.
-  virtual Status PrepareBatch(size_t nrows, PrepareFlag flag) = 0;
+  enum {
+    // There are no prepared blocks. Attempts to call a PreparedDeltas function
+    // will fail.
+    PREPARE_NONE = 0,
+
+    // Prepare a batch of deltas for applying. All deltas in the batch will be
+    // decoded. Operations affecting row data (i.e. UPDATEs and REINSERTs) will
+    // be coalesced into a column-major data structure suitable for
+    // ApplyUpdates. Operations affecting row lifecycle (i.e. DELETES and
+    // REINSERTs) will be coalesced into a row-major data structure suitable for ApplyDeletes.
+    //
+    // On success, ApplyUpdates and ApplyDeltas will be callable.
+    PREPARE_FOR_APPLY = 1 << 0,
+
+    // Prepare a batch of deltas for collecting. Deltas will remain encoded and
+    // in the order that they were loaded from the backing store.
+    //
+    // On success, CollectMutations and FilterColumnIdsAndCollectDeltas will be callable.
+    PREPARE_FOR_COLLECT = 1 << 1
+  };
+  virtual Status PrepareBatch(size_t nrows, int prepare_flags) = 0;
 
   // Returns true if there are any more rows left in this iterator.
   virtual bool HasNext() = 0;
@@ -266,7 +281,7 @@ class DeltaPreparer : public PreparedDeltas {
   // on the part of a DeltaIterator.
   //
   // Call at the beginning of DeltaIterator::PrepareBatch.
-  void Start(DeltaIterator::PrepareFlag flag);
+  void Start(int prepare_flags);
 
   // Updates internal state to reflect the end of delta batch preparation on the
   // part of a DeltaIterator.
@@ -329,30 +344,9 @@ class DeltaPreparer : public PreparedDeltas {
   boost::optional<rowid_t> last_added_idx_;
 
   // Whether there are any prepared blocks.
-  enum PreparedFor {
-    // There are no prepared blocks. Attempts to call a PreparedDeltas function
-    // will fail.
-    NOT_PREPARED,
+  int prepared_flags_;
 
-    // The DeltaPreparer has prepared a batch of deltas for applying. All deltas
-    // in the batch have been decoded. Operations affecting row data (i.e.
-    // UPDATEs and REINSERTs) have been coalesced into a column-major data
-    // structure suitable for ApplyUpdates. Operations affecting row lifecycle
-    // (i.e. DELETES and REINSERTs) have been coalesced into a row-major data
-    // structure suitable for ApplyDeletes.
-    //
-    // ApplyUpdates and ApplyDeltas are now callable.
-    PREPARED_FOR_APPLY,
-
-    // The DeltaPreparer has prepared a batch of deltas for collecting. Deltas
-    // remain encoded and in the order that they were loaded from the backing store.
-    //
-    // CollectMutations and FilterColumnIdsAndCollectDeltas are now callable.
-    PREPARED_FOR_COLLECT
-  };
-  PreparedFor prepared_for_;
-
-  // State when prepared_for_ == PREPARED_FOR_APPLY
+  // State when prepared_flags_ & PREPARED_FOR_APPLY
   // ------------------------------------------------------------
   struct ColumnUpdate {
     rowid_t row_id;
@@ -372,7 +366,7 @@ class DeltaPreparer : public PreparedDeltas {
   };
   RowDeletionState deletion_state_;
 
-  // State when prepared_for_ == PREPARED_FOR_COLLECT
+  // State when prepared_flags_ & PREPARED_FOR_COLLECT
   // ------------------------------------------------------------
   struct PreparedDelta {
     DeltaKey key;

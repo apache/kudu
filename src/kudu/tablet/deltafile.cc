@@ -532,7 +532,7 @@ string DeltaFileIterator<Type>::PreparedDeltaBlock::ToString() const {
 }
 
 template<DeltaType Type>
-Status DeltaFileIterator<Type>::PrepareBatch(size_t nrows, PrepareFlag flag) {
+Status DeltaFileIterator<Type>::PrepareBatch(size_t nrows, int prepare_flags) {
   DCHECK(initted_) << "Must call Init()";
   DCHECK(exhausted_ || index_iter_) << "Must call SeekToOrdinal()";
 
@@ -587,7 +587,7 @@ Status DeltaFileIterator<Type>::PrepareBatch(size_t nrows, PrepareFlag flag) {
   #endif
   prepared_ = true;
 
-  preparer_.Start(flag);
+  preparer_.Start(prepare_flags);
   RETURN_NOT_OK(AddDeltas(start_row, stop_row));
   preparer_.Finish(nrows);
   return Status::OK();

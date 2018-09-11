@@ -57,9 +57,9 @@ Status DeltaIteratorMerger::SeekToOrdinal(rowid_t idx) {
   return Status::OK();
 }
 
-Status DeltaIteratorMerger::PrepareBatch(size_t nrows, PrepareFlag flag) {
+Status DeltaIteratorMerger::PrepareBatch(size_t nrows, int prepare_flags) {
   for (const unique_ptr<DeltaIterator> &iter : iters_) {
-    RETURN_NOT_OK(iter->PrepareBatch(nrows, flag));
+    RETURN_NOT_OK(iter->PrepareBatch(nrows, prepare_flags));
   }
   return Status::OK();
 }
