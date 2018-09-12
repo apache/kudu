@@ -61,8 +61,6 @@ _MUTED_FILES = set([
   "src/kudu/common/encoded_key-test.cc",
   "src/kudu/common/schema.h",
   "src/kudu/experiments/rwlock-perf.cc",
-  "src/kudu/master/catalog_manager.cc",
-  "src/kudu/master/catalog_manager.h",
   "src/kudu/rpc/reactor.cc",
   "src/kudu/rpc/reactor.h",
   "src/kudu/security/ca/cert_management.cc",

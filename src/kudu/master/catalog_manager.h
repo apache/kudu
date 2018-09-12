@@ -91,10 +91,6 @@ namespace hms {
 class HmsCatalog;
 } // namespace hms
 
-namespace hms {
-class HmsCatalog;
-}
-
 namespace master {
 
 class CatalogManagerBgTasks;
