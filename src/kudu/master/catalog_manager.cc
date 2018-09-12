@@ -3465,17 +3465,28 @@ bool AsyncAddReplicaTask::SendRequest(int attempt) {
 
   // Select the replica we wish to add to the config.
   // Do not include current members of the config.
-  TSDescriptorVector ts_descs;
-  master_->ts_manager()->GetAllLiveDescriptors(&ts_descs);
+  const auto& config = cstate_.committed_config();
   set<shared_ptr<TSDescriptor>> excluded;
-  for (const auto& ts_desc : ts_descs) {
-    if (IsRaftConfigMember(ts_desc->permanent_uuid(), cstate_.committed_config())) {
-      InsertOrDie(&excluded, ts_desc);
+  for (auto i = 0; i < config.peers_size(); ++i) {
+    shared_ptr<TSDescriptor> desc;
+    if (master_->ts_manager()->LookupTSByUUID(config.peers(i).permanent_uuid(),
+                                              &desc)) {
+      EmplaceOrDie(&excluded, std::move(desc));
     }
   }
 
-  auto replacement_replica = SelectReplica(ts_descs, excluded, rng_);
-  if (PREDICT_FALSE(!replacement_replica)) {
+  TSDescriptorVector ts_descs;
+  master_->ts_manager()->GetAllLiveDescriptors(&ts_descs);
+
+  // Some of the tablet servers hosting the current members of the config
+  // (see the 'excluded' populated above) might be presumably dead.
+  // Inclusion of a presumably dead tablet server into 'excluded' is OK:
+  // SelectReplica() does not require elements of 'excluded' to be a subset of
+  // 'ts_descs', and 'ts_descs' contains only alive tablet servers. Essentially,
+  // the list of candidate tablet servers to host the extra replica
+  // is 'ts_descs' after blacklisting all elements common with 'excluded'.
+  auto extra_replica = SelectReplica(ts_descs, excluded, rng_);
+  if (PREDICT_FALSE(!extra_replica)) {
     auto msg = Substitute("no extra replica candidate found for tablet $0",
                           tablet_->ToString());
     // Check whether it's a situation when an extra replica cannot be found
@@ -3484,9 +3495,7 @@ bool AsyncAddReplicaTask::SendRequest(int attempt) {
     // replica management scheme (see --raft_prepare_replacement_before_eviction
     // flag), at least N+1 tablet servers should be registered to find a place
     // for an extra replica.
-    TSDescriptorVector all_descriptors;
-    master_->ts_manager()->GetAllDescriptors(&all_descriptors);
-    const auto num_tservers_registered = all_descriptors.size();
+    const auto num_tservers_registered = master_->ts_manager()->GetCount();
 
     auto replication_factor = 0;
     {
@@ -3514,13 +3523,13 @@ bool AsyncAddReplicaTask::SendRequest(int attempt) {
   req.set_type(consensus::ADD_PEER);
   req.set_cas_config_opid_index(cstate_.committed_config().opid_index());
   RaftPeerPB* peer = req.mutable_server();
-  peer->set_permanent_uuid(replacement_replica->permanent_uuid());
+  peer->set_permanent_uuid(extra_replica->permanent_uuid());
   if (FLAGS_raft_prepare_replacement_before_eviction &&
       member_type_ == RaftPeerPB::NON_VOTER) {
     peer->mutable_attrs()->set_promote(true);
   }
   ServerRegistrationPB peer_reg;
-  replacement_replica->GetRegistration(&peer_reg);
+  extra_replica->GetRegistration(&peer_reg);
   CHECK_GT(peer_reg.rpc_addresses_size(), 0);
   *peer->mutable_last_known_addr() = peer_reg.rpc_addresses(0);
   peer->set_member_type(member_type_);
