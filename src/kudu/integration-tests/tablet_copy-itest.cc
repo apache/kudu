@@ -1472,7 +1472,7 @@ TEST_P(BadTabletCopyITest, TestBadCopy) {
   const int kMinRows = 10000;
   const int kMinBlocks = 10;
   const string& failure_flag = GetParam();
-  StartCluster(
+  NO_FATALS(StartCluster(
       {
         // Flush aggressively to create many blocks.
         "--flush_threshold_mb=0",
@@ -1483,7 +1483,7 @@ TEST_P(BadTabletCopyITest, TestBadCopy) {
       }, {
         // Wait only 5 seconds before master decides TS not eligible for a replica.
         "--tserver_unresponsive_timeout_ms=5000",
-      }, kNumTabletServers);
+      }, kNumTabletServers));
 
   // Don't allow TS 3 to get a copy of Table A.
   cluster_->tablet_server(3)->Shutdown();
@@ -1499,7 +1499,7 @@ TEST_P(BadTabletCopyITest, TestBadCopy) {
   ASSERT_OK(cluster_->tablet_server(3)->Restart());
 
   // Load Table A.
-  LoadTable(&workload1, kMinRows, kMinBlocks);
+  NO_FATALS(LoadTable(&workload1, kMinRows, kMinBlocks));
 
   // Don't allow TS 0 to get a copy of Table B.
   cluster_->tablet_server(0)->Shutdown();
@@ -1515,7 +1515,7 @@ TEST_P(BadTabletCopyITest, TestBadCopy) {
   ASSERT_OK(cluster_->tablet_server(0)->Restart());
 
   // Load Table B.
-  LoadTable(&workload2, kMinRows, kMinBlocks);
+  NO_FATALS(LoadTable(&workload2, kMinRows, kMinBlocks));
 
   // Shut down replica with only [A].
   cluster_->tablet_server(0)->Shutdown();
@@ -1546,7 +1546,7 @@ TEST_P(BadTabletCopyITest, TestBadCopy) {
 
   // Wait for TS 3 to tombstone the replica that failed to copy.
   TServerDetails* ts = ts_map_[cluster_->tablet_server(3)->uuid()];
-  AssertEventually([&] {
+  ASSERT_EVENTUALLY([&] {
     vector<tserver::ListTabletsResponsePB_StatusAndSchemaPB> tablets;
     ASSERT_OK(ListTablets(ts, MonoDelta::FromSeconds(10), &tablets));
     ASSERT_EQ(2, tablets.size());
@@ -1558,7 +1558,6 @@ TEST_P(BadTabletCopyITest, TestBadCopy) {
     }
     ASSERT_EQ(1, num_tombstoned);
   });
-  NO_FATALS();
 
   // Restart the whole cluster without failure injection so that it can finish
   // re-replicating.
