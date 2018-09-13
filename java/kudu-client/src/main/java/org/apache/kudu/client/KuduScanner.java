@@ -51,10 +51,31 @@ public class KuduScanner {
    * {@code Scanner} is done scanning), calling it again leads to an undefined
    * behavior.
    * @return a list of rows.
-   * @throws KuduException if anything went wrong
+   * @throws KuduException if anything went wrong.
    */
   public RowResultIterator nextRows() throws KuduException {
     return KuduClient.joinAndHandleException(asyncScanner.nextRows());
+  }
+
+  /**
+   * Keep the current remote scanner alive.
+   * <p>
+   * Keep the current remote scanner alive on the Tablet server for an
+   * additional time-to-live. This is useful if the interval in between
+   * nextRows() calls is big enough that the remote scanner might be garbage
+   * collected. The scanner time-to-live can be configured on the tablet
+   * server via the --scanner_ttl_ms configuration flag and has a default
+   * of 60 seconds.
+   * <p>
+   * This does not invalidate any previously fetched results.
+   * <p>
+   * Note that an exception thrown by this method should not be taken as indication
+   * that the scan has failed. Subsequent calls to nextRows() might still be successful,
+   * particularly if the scanner is configured to be fault tolerant.
+   * @throws KuduException if anything went wrong.
+   */
+  public final void keepAlive() throws KuduException {
+    KuduClient.joinAndHandleException(asyncScanner.keepAlive());
   }
 
   /**
@@ -62,7 +83,7 @@ public class KuduScanner {
    * <p>
    * Closing a scanner already closed has no effect.
    * @return a deferred object that indicates the completion of the request
-   * @throws KuduException if anything went wrong
+   * @throws KuduException if anything went wrong.
    */
   public RowResultIterator close() throws KuduException {
     return KuduClient.joinAndHandleException(asyncScanner.close());

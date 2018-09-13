@@ -1004,7 +1004,7 @@ public class AsyncKuduClient implements AutoCloseable {
 
   /**
    * Package-private access point for {@link AsyncKuduScanner}s to close themselves.
-   * @param scanner the scanner to close
+   * @param scanner the scanner to close.
    * @return a deferred object that indicates the completion of the request.
    * The {@link AsyncKuduScanner.Response} can contain rows that were left to scan.
    */
@@ -1024,6 +1024,34 @@ public class AsyncKuduClient implements AutoCloseable {
     closeRequest.attempt++;
     RpcProxy.sendRpc(this, connectionCache.getConnection(
         info, Connection.CredentialsPolicy.ANY_CREDENTIALS), closeRequest);
+    return d;
+  }
+
+  /**
+   * Package-private access point for {@link AsyncKuduScanner}s to keep themselves
+   * alive on tablet servers.
+   * @param scanner the scanner to keep alive.
+   * @return a deferred object that indicates the completion of the request.
+   */
+  Deferred<Void> keepAlive(final AsyncKuduScanner scanner) {
+    checkIsClosed();
+    final RemoteTablet tablet = scanner.currentTablet();
+    // Getting a null tablet here without being in a closed state means we were in between tablets.
+    // If there is no scanner to keep alive, we still return Status.OK().
+    if (tablet == null) {
+      return Deferred.fromResult(null);
+    }
+
+    final KuduRpc<Void> keepAliveRequest = scanner.getKeepAliveRequest();
+    final ServerInfo info = tablet.getReplicaSelectedServerInfo(keepAliveRequest.getReplicaSelection());
+    if (info == null) {
+      return Deferred.fromResult(null);
+    }
+
+    final Deferred<Void> d = keepAliveRequest.getDeferred();
+    keepAliveRequest.attempt++;
+    RpcProxy.sendRpc(this, connectionCache.getConnection(
+        info, Connection.CredentialsPolicy.ANY_CREDENTIALS), keepAliveRequest);
     return d;
   }
 

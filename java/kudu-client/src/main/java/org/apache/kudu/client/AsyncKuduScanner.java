@@ -43,6 +43,8 @@ import com.google.protobuf.Message;
 import com.google.protobuf.UnsafeByteOperations;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
+import org.apache.kudu.tserver.Tserver.ScannerKeepAliveRequestPB;
+import org.apache.kudu.tserver.Tserver.ScannerKeepAliveResponsePB;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 import org.slf4j.Logger;
@@ -662,14 +664,6 @@ public final class AsyncKuduScanner {
   }
 
   /**
-   * Sets the name of the tabletSlice that's hosting {@code this.start_key}.
-   * @param tablet The tabletSlice we're currently supposed to be scanning.
-   */
-  void setTablet(final RemoteTablet tablet) {
-    this.tablet = tablet;
-  }
-
-  /**
    * Invalidates this scanner and makes it assume it's no longer opened.
    * When a TabletServer goes away while we're scanning it, or some other type
    * of access problem happens, this method should be called so that the
@@ -704,6 +698,31 @@ public final class AsyncKuduScanner {
   }
 
   /**
+   * Keep the current remote scanner alive.
+   * <p>
+   * Keep the current remote scanner alive on the Tablet server for an
+   * additional time-to-live. This is useful if the interval in between
+   * nextRows() calls is big enough that the remote scanner might be garbage
+   * collected. The scanner time-to-live can be configured on the tablet
+   * server via the --scanner_ttl_ms configuration flag and has a default
+   * of 60 seconds.
+   * <p>
+   * This does not invalidate any previously fetched results.
+   * <p>
+   * Note that an error returned by this method should not be taken as indication
+   * that the scan has failed. Subsequent calls to nextRows() might still be successful,
+   * particularly if the scanner is configured to be fault tolerant.
+   * @return A deferred object that indicates the completion of the request.
+   * @throws IllegalStateException if the scanner is already closed.
+   */
+  public Deferred<Void> keepAlive() {
+    if (closed) {
+      throw new IllegalStateException("Scanner has already been closed");
+    }
+    return client.keepAlive(this);
+  }
+
+  /**
    * Returns an RPC to fetch the next rows.
    */
   KuduRpc<Response> getNextRowsRequest() {
@@ -715,6 +734,14 @@ public final class AsyncKuduScanner {
    */
   KuduRpc<Response> getCloseRequest() {
     return new ScanRequest(table, State.CLOSING, tablet);
+  }
+
+  /**
+   * Returns an RPC to keep this scanner alive on the tablet server.
+   * @return a new {@link KeepAliveRequest}
+   */
+  KuduRpc<Void> getKeepAliveRequest() {
+    return new KeepAliveRequest(table, tablet);
   }
 
   /**
@@ -793,6 +820,51 @@ public final class AsyncKuduScanner {
     OPENING,
     NEXT,
     CLOSING
+  }
+
+  /**
+   * RPC sent out to keep a scanner alive on a TabletServer.
+   */
+  final class KeepAliveRequest extends KuduRpc<Void> {
+
+    KeepAliveRequest(KuduTable table, RemoteTablet tablet) {
+      super(table);
+      setTablet(tablet);
+      this.setTimeoutMillis(scanRequestTimeout);
+    }
+
+    @Override
+    String serviceName() {
+      return TABLET_SERVER_SERVICE_NAME;
+    }
+
+    @Override
+    String method() {
+      return "ScannerKeepAlive";
+    }
+
+    @Override
+    ReplicaSelection getReplicaSelection() {
+      return replicaSelection;
+    }
+
+    /** Serializes this request.  */
+    @Override
+    Message createRequestPB() {
+      final ScannerKeepAliveRequestPB.Builder builder = ScannerKeepAliveRequestPB.newBuilder();
+      builder.setScannerId(UnsafeByteOperations.unsafeWrap(scannerId));
+      return builder.build();
+    }
+
+    @Override
+    Pair<Void, Object> deserialize(final CallResponse callResponse,
+                                   String tsUUID) throws KuduException {
+      ScannerKeepAliveResponsePB.Builder builder = ScannerKeepAliveResponsePB.newBuilder();
+      readProtobuf(callResponse.getPBMessage(), builder);
+      ScannerKeepAliveResponsePB resp = builder.build();
+      TabletServerErrorPB error = resp.hasError() ? resp.getError() : null;
+      return new Pair<Void, Object>(null, error);
+    }
   }
 
   /**

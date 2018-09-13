@@ -120,6 +120,27 @@ public class TestRemoteTablet {
         tablet.getReplicaSelectedServerInfo(ReplicaSelection.CLOSEST_REPLICA).getUuid());
   }
 
+  // AsyncKuduClient has methods like scanNextRows, keepAlive, and closeScanner that rely on
+  // RemoteTablet.getReplicaSelectedServerInfo to be deterministic given the same state.
+  // This ensures follow up calls are routed to the same server with the scanner open.
+  // This test ensures that remains true.
+  @Test
+  public void testGetReplicaSelectedServerInfoDeterminism() {
+    RemoteTablet tabletWithLocal = getTablet(0, 0);
+    verifyGetReplicaSelectedServerInfoDeterminism(tabletWithLocal);
+
+    RemoteTablet tabletWithRemote = getTablet(0, -1);
+    verifyGetReplicaSelectedServerInfoDeterminism(tabletWithRemote);
+  }
+
+  private void verifyGetReplicaSelectedServerInfoDeterminism(RemoteTablet tablet) {
+    String init = tablet.getReplicaSelectedServerInfo(ReplicaSelection.CLOSEST_REPLICA).getUuid();
+    for (int i = 0; i < 10; i++) {
+      String next = tablet.getReplicaSelectedServerInfo(ReplicaSelection.CLOSEST_REPLICA).getUuid();
+      assertEquals("getReplicaSelectedServerInfo was not deterministic", init, next);
+    }
+  }
+
   @Test
   public void testToString() {
     RemoteTablet tablet = getTablet(0, 1);

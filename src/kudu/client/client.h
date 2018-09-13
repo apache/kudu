@@ -1953,11 +1953,13 @@ class KUDU_EXPORT KuduScanner {
 
   /// Keep the current remote scanner alive.
   ///
-  /// Keep the current remote scanner alive on the Tablet server
-  /// for an additional time-to-live (set by a configuration flag on
-  /// the tablet server). This is useful if the interval in between
+  /// Keep the current remote scanner alive on the Tablet server for an
+  /// additional time-to-live. This is useful if the interval in between
   /// NextBatch() calls is big enough that the remote scanner might be garbage
-  /// collected (default TTL is set to 60 secs.).
+  /// collected. The scanner time-to-live can be configured on the tablet
+  /// server via the --scanner_ttl_ms configuration flag and has a default
+  /// of 60 seconds.
+  ///
   /// This does not invalidate any previously fetched results.
   ///
   /// @return Operation result status. In particular, this method returns
@@ -1965,7 +1967,8 @@ class KUDU_EXPORT KuduScanner {
   ///   TabletServer was unreachable, for any reason. Note that a non-OK
   ///   status returned by this method should not be taken as indication
   ///   that the scan has failed. Subsequent calls to NextBatch() might
-  ///   still be successful, particularly if SetFaultTolerant() has been called.
+  ///   still be successful, particularly if the scanner is configured to be
+  ///   fault tolerant.
   Status KeepAlive();
 
   /// Close the scanner.
