@@ -247,7 +247,7 @@ it and the vendor's instructions should be used instead as details may differ.
 +
 [source,bash]
 ----
-$ sudo -u kudu kudu fs dump uuid --fs_wal_dir=<master_wal_dir> [--fs_data_dirs=<master_data_dirs>] 2>/dev/null
+$ sudo -u kudu kudu fs dump uuid --fs_wal_dir=<master_wal_dir> [--fs_data_dirs=<master_data_dir>] 2>/dev/null
 ----
 master_data_dir:: existing master's previously recorded data directory
 +
@@ -302,8 +302,8 @@ the migration section for updating HMS.
 +
 [source,bash]
 ----
-$ sudo -u kudu kudu fs format --fs_wal_dir=<master_wal_dir> [--fs_data_dirs=<master_data_dirs>]
-$ sudo -u kudu kudu fs dump uuid --fs_wal_dir=<master_wal_dir> [--fs_data_dirs=<master_data_dirs>] 2>/dev/null
+$ sudo -u kudu kudu fs format --fs_wal_dir=<master_wal_dir> [--fs_data_dirs=<master_data_dir>]
+$ sudo -u kudu kudu fs dump uuid --fs_wal_dir=<master_wal_dir> [--fs_data_dirs=<master_data_dir>] 2>/dev/null
 ----
 +
 master_data_dir:: new master's previously recorded data directory
@@ -327,7 +327,7 @@ f5624e05f40649b79a757629a69d061e
 +
 [source,bash]
 ----
-$ sudo -u kudu kudu local_replica cmeta rewrite_raft_config --fs_wal_dir=<master_wal_dir> [--fs_data_dirs=<master_data_dirs>] <tablet_id> <all_masters>
+$ sudo -u kudu kudu local_replica cmeta rewrite_raft_config --fs_wal_dir=<master_wal_dir> [--fs_data_dirs=<master_data_dir>] <tablet_id> <all_masters>
 ----
 +
 master_data_dir:: existing master's previously recorded data directory
@@ -360,7 +360,7 @@ WARNING: If your Kudu cluster is secure, in addition to running as the Kudu UNIX
 +
 [source,bash]
 ----
-$ sudo -u kudu kudu local_replica copy_from_remote --fs_wal_dir=<master_wal_dir> [--fs_data_dirs=<master_data_dirs>] <tablet_id> <existing_master>
+$ sudo -u kudu kudu local_replica copy_from_remote --fs_wal_dir=<master_wal_dir> [--fs_data_dirs=<master_data_dir>] <tablet_id> <existing_master>
 ----
 +
 master_data_dir:: new master's previously recorded data directory
@@ -477,7 +477,7 @@ WARNING: All of the command line steps below should be executed as the Kudu UNIX
 +
 [source,bash]
 ----
-$ sudo -u kudu kudu fs dump uuid --fs_wal_dir=<master_wal_dir> [--fs_data_dirs=<master_data_dirs>] 2>/dev/null
+$ sudo -u kudu kudu fs dump uuid --fs_wal_dir=<master_wal_dir> [--fs_data_dirs=<master_data_dir>] 2>/dev/null
 ----
 master_data_dir:: live master's previously recorded data directory
 +
@@ -500,7 +500,7 @@ $ sudo -u kudu kudu fs dump uuid --fs_wal_dir=/data/kudu/master/wal --fs_data_di
 +
 [source,bash]
 ----
-$ sudo -u kudu kudu local_replica cmeta print_replica_uuids --fs_wal_dir=<master_wal_dir> [--fs_data_dirs=<master_data_dirs>] <tablet_id> 2>/dev/null
+$ sudo -u kudu kudu local_replica cmeta print_replica_uuids --fs_wal_dir=<master_wal_dir> [--fs_data_dirs=<master_data_dir>] <tablet_id> 2>/dev/null
 ----
 master_data_dir:: reference master's previously recorded data directory
 tablet_id:: must be the string `00000000000000000000000000000000`
@@ -523,7 +523,7 @@ $ sudo -u kudu kudu local_replica cmeta print_replica_uuids --fs_wal_dir=/data/k
 +
 [source,bash]
 ----
-$ sudo -u kudu kudu fs format --fs_wal_dir=<master_wal_dir> [--fs_data_dirs=<master_data_dirs>] --uuid=<uuid>
+$ sudo -u kudu kudu fs format --fs_wal_dir=<master_wal_dir> [--fs_data_dirs=<master_data_dir>] --uuid=<uuid>
 ----
 +
 master_data_dir:: replacement master's previously recorded data directory
@@ -543,7 +543,7 @@ WARNING: If your Kudu cluster is secure, in addition to running as the Kudu UNIX
 +
 [source,bash]
 ----
-$ sudo -u kudu kudu local_replica copy_from_remote --fs_wal_dir=<master_wal_dir> [--fs_data_dirs=<master_data_dirs>] <tablet_id> <reference_master>
+$ sudo -u kudu kudu local_replica copy_from_remote --fs_wal_dir=<master_wal_dir> [--fs_data_dirs=<master_data_dir>] <tablet_id> <reference_master>
 ----
 +
 master_data_dir:: replacement master's previously recorded data directory
@@ -667,7 +667,7 @@ resolve them.
 
 . Rewrite each master’s Raft configuration with the following command, executed on all master hosts:
 ----
-$ sudo -u kudu kudu local_replica cmeta rewrite_raft_config --fs_wal_dir=<master_wal_dir> [--fs_data_dirs=<master_data_dirs>] 00000000000000000000000000000000 <all_masters>
+$ sudo -u kudu kudu local_replica cmeta rewrite_raft_config --fs_wal_dir=<master_wal_dir> [--fs_data_dirs=<master_data_dir>] 00000000000000000000000000000000 <all_masters>
 ----
 
 For example:
