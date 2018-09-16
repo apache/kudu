@@ -17,11 +17,16 @@
 
 #pragma once
 
-#include <iostream>
+#include <cstddef>
+#include <cstdint>
+#include <fstream>
+#include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <type_traits>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <glog/logging.h>
@@ -36,16 +41,56 @@ namespace kudu {
 namespace tools {
 
 // One of the record types from the log.
-// TODO(KUDU-2353) support metrics records.
 enum class RecordType {
   kSymbols,
   kStacks,
+  kMetrics,
   kUnknown
 };
 
 const char* RecordTypeToString(RecordType r);
 
 std::ostream& operator<<(std::ostream& o, RecordType r);
+
+// A parsed line from the diagnostics log.
+//
+// Each line contains a timestamp, a record type, and some JSON data.
+class ParsedLine {
+ public:
+  explicit ParsedLine(std::string line)
+      : line_(std::move(line)) {
+  }
+
+  // Parse a line from the diagnostics log.
+  Status Parse();
+
+  Status ParseHeader();
+  Status ParseJson();
+
+  RecordType type() const { return type_; }
+
+  const rapidjson::Value* json() const {
+    CHECK(json_);
+    return json_->root();
+  }
+
+  std::string date_time() const;
+
+  int64_t timestamp() const { return timestamp_; }
+
+ private:
+  const std::string line_;
+  RecordType type_;
+
+  // date_ and time_ point to substrings of line_.
+  StringPiece date_;
+  StringPiece time_;
+  int64_t timestamp_;
+
+  // A JsonReader initialized from the most recent line.
+  // This will be 'none' before any lines have been read.
+  std::optional<JsonReader> json_;
+};
 
 // A stack sample from the log.
 struct StacksRecord {
@@ -56,6 +101,8 @@ struct StacksRecord {
     // The non-symbolized addresses forming the stack trace.
     std::vector<std::string> frame_addrs;
   };
+
+  Status FromParsedLine(const ParsedLine& pl);
 
   // The time the stack traces were collected.
   std::string date_time;
@@ -71,79 +118,177 @@ struct StacksRecord {
 class LogVisitor {
  public:
   virtual ~LogVisitor() {}
-  virtual void VisitSymbol(const std::string& addr, const std::string& symbol) = 0;
-  virtual void VisitStacksRecord(const StacksRecord& sr) = 0;
+  virtual Status ParseRecord(const ParsedLine& pl) = 0;
 };
 
-// LogVisitor implementation which dumps the parsed stack records to cout.
-class StackDumpingLogVisitor : public LogVisitor {
+enum class MetricType {
+  kUninitialized,
+  // A metric represented by a single value.
+  kPlain,
+  // A metric represented by counts of values.
+  kHistogram,
+};
+
+// A value that a metric can have. Depending on the type of metric this is for,
+// the underlying value may be represented by a single value or by many (e.g.
+// in the case of histograms).
+class MetricValue {
  public:
-  void VisitSymbol(const std::string& addr, const std::string& symbol) override;
+  MetricValue();
 
-  void VisitStacksRecord(const StacksRecord& sr) override;
+  // Sets the metric values based on the input 'metric_json'.
+  Status FromJson(const rapidjson::Value& metric_json);
 
- private:
-  // True when we have not yet output any data.
-  bool first_ = true;
-  // Map from symbols to name.
-  std::unordered_map<std::string, std::string> symbols_;
+  // The type of this metric value.
+  MetricType type() const { return type_; }
+ protected:
+  friend class MetricCollectingLogVisitor;
+  MetricType type_;
 
-  const std::string kUnknownSymbol = "<unknown>";
+  std::optional<int64_t> value_;
+  std::optional<std::map<int64_t, int>> counts_;
 };
 
-// A parsed line from the diagnostics log.
+// For a given metric, a collection of entity IDs and their metric values.
+typedef std::unordered_map<std::string, MetricValue> EntityIdToValue;
+
+// Mapping from a full metric name to the collection of entity IDs and their
+// metric values, i.e.
+//   { <entity type>.<metric name>:string =>
+//       { <entity id>:string => <metric value>:MetricValue } }
+typedef std::unordered_map<std::string, EntityIdToValue> MetricToEntities;
+
+struct MetricsCollectingOpts {
+  // Maps the full metric name to its display name.
+  // The full metric name refers to "<entity type>.<metric name>".
+  typedef std::unordered_map<std::string, std::string> NameMap;
+
+  // The metric names and display names of the metrics of interest.
+  NameMap simple_metric_names;
+  NameMap rate_metric_names;
+  NameMap hist_metric_names;
+
+  // Set of table IDs whose metrics that should be aggregated.
+  // If empty, all tables' metrics are aggregated.
+  std::set<std::string> table_ids;
+
+  // Set of tablet IDs whose metrics that should be aggregated.
+  // If empty, all tablets' metrics are aggregated.
+  std::set<std::string> tablet_ids;
+};
+
+// A record containing the metrics for a single line.
+struct MetricsRecord {
+  // Populate this record with the contents of 'pl', only considering metrics
+  // specified by 'opts'.
+  Status FromParsedLine(const MetricsCollectingOpts& opts, const ParsedLine& pl);
+
+  // Maps the full metric name to the mapping between entity ID and metric for
+  // that entity.
+  MetricToEntities metric_to_entities;
+
+  // The timestamp associated with this record.
+  int64_t timestamp;
+};
+
+// LogVisitor that collects metrics, tracking values, aggregating counts, etc.
+// and prints them out.
 //
-// Each line contains a timestamp, a record type, and some JSON data.
-class ParsedLine {
+// A single MetricsCollectingLogVisitor may be used by multiple LogFileParsers.
+class MetricCollectingLogVisitor : public LogVisitor {
  public:
-  // Parse a line from the diagnostics log.
-  Status Parse(std::string line);
+  // Initializes the internal map to include the metrics specified by 'opts'.
+  explicit MetricCollectingLogVisitor(MetricsCollectingOpts opts);
 
-  RecordType type() const { return type_; }
-
-  const rapidjson::Value* json() const {
-    CHECK(json_);
-    return json_->root();
-  }
-
-  std::string date_time() const;
-
+  // Takes a parsed line and parses its metric record if one exists. If 'pl'
+  // doesn't contain a metric record, this is a no-op.
+  Status ParseRecord(const ParsedLine& pl) override;
  private:
-  std::string line_;
-  RecordType type_;
+  // Prints the appropriate metrics from 'mr' and this visitor's internal maps.
+  Status VisitMetricsRecord(const MetricsRecord& mr);
 
-  // date_ and time_ point to substrings of line_.
-  StringPiece date_;
-  StringPiece time_;
+  // Updates the internal maps to include the metrics in 'mr'.
+  void UpdateWithMetricsRecord(const MetricsRecord& mr);
+
+  // Calculate the sum of the plain metric (i.e. non-histogram) specified by
+  // 'full_metric_name', based on the existing values in our internal map and
+  // including any new values for entities in 'mr'.
+  int64_t SumPlainWithMetricRecord(const MetricsRecord& mr,
+                                   const std::string& full_metric_name) const;
+
+  // Maps the full metric name to the mapping between entity IDs and their
+  // metric value. As the visitor visits new metrics records, this gets updated
+  // with the most up-to-date values.
+  //
+  // Note: we need to track per-entity metrics because, when logging, Kudu may
+  // omit metrics for entities if they don't change.
+  MetricToEntities metric_to_entities_;
+
+  // Maps the full metric name of a rate metric to the previous sum computed
+  // for that metric by this visitor.
+  std::map<std::string, int64_t> rate_metric_prev_sum_;
+
 
   // A JsonReader initialized from the most recent line.
   // This will be 'none' before any lines have been read.
   std::optional<JsonReader> json_;
+  //
+  // The timestamp of the last visited metrics record.
+  int64_t last_visited_timestamp_ = 0;
+
+  const MetricsCollectingOpts opts_;
 };
 
-// Parser for a metrics log.
-//
-// Each line should be fed to LogParser::ParseLine().
+struct SymbolsRecord {
+  Status FromParsedLine(const ParsedLine& pl);
+  std::unordered_map<std::string, std::string> addr_to_symbol;
+};
+
+// LogVisitor implementation which dumps the parsed stack records to std::cout.
+class StackDumpingLogVisitor : public LogVisitor {
+ public:
+  Status ParseRecord(const ParsedLine& pl) override;
+
+ private:
+  void VisitSymbolsRecord(const SymbolsRecord& sr);
+  void VisitStacksRecord(const StacksRecord& sr);
+  // True when we have not yet output any data.
+  bool first_ = true;
+  // Map from symbols to name.
+  std::unordered_map<std::string, std::string> symbols_;
+};
+
+// Parser for a diagnostic log files that may include stacks or metrics logs.
 //
 // This instance follows a 'SAX' model. As records are available, the appropriate
 // functions are invoked on the visitor provided in the constructor.
-class LogParser {
+class LogFileParser {
  public:
-  explicit LogParser(LogVisitor* visitor);
+  explicit LogFileParser(LogVisitor* lv, std::string path)
+      : path_(std::move(path)),
+        fstream_(path_),
+        log_visitor_(lv) {}
 
-  // Parse the next line of the log. This function may invoke the appropriate
-  // visitor functions zero or more times.
-  Status ParseLine(std::string line);
+  // Initializes internal state, e.g. the file stream for the log file.
+  Status Init();
+
+  // Returns whether or not the underlying file has more lines to parse.
+  bool HasNext();
+
+  // Parses the rest of the lines in the file.
+  Status Parse();
 
  private:
-  Status ParseSymbols(const ParsedLine& lf);
+  // Parses the next line in the file. Should only be called if HasNext()
+  // returns true.
+  Status ParseLine();
 
-  static Status ParseStackGroup(const rapidjson::Value& group_json,
-                                StacksRecord::Group* group);
+  size_t line_number_ = 0;
+  const std::string path_;
+  std::ifstream fstream_;
 
-  Status ParseStacks(const ParsedLine& lf);
-
-  LogVisitor* visitor_;
+  // Visitor for doing something with each parsed line.
+  LogVisitor* log_visitor_;
 };
 
 } // namespace tools

@@ -564,6 +564,26 @@ void AddTokenCounts(
   }
 }
 
+// Merges two count maps together.
+//
+// Example:
+//   vector<string> v1 = {"c"};
+//   map<string, int> m1;
+//   MergeTokenCounts(v1, 1, &m1);
+//   vector<string> v2 = {"c", "c"};
+//   map<string, int> m2;
+//   MergeTokenCounts(v2, 1, &m2);
+//   assert(m["c"] == 3);
+template <typename Collection>
+void MergeTokenCounts(Collection* const count_map,
+                      const Collection& counts_to_add) {
+  for (const auto& value_and_count : counts_to_add) {
+    typename Collection::mapped_type& value = LookupOrInsert(
+        count_map, value_and_count.first, typename Collection::mapped_type());
+    value += value_and_count.second;
+  }
+}
+
 // Helpers for LookupOrInsertNew(), needed to create a new value type when the
 // type itself is a pointer, i.e., these extract the actual type from a pointer.
 template <class T>

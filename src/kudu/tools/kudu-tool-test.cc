@@ -1235,6 +1235,7 @@ TEST_F(ToolTest, TestModeHelp) {
   {
     const vector<string> kDiagnoseModeRegexes = {
         "parse_stacks.*Parse sampled stack traces",
+        "parse_metrics.*Parse metrics out of a diagnostics log",
     };
     NO_FATALS(RunTestHelp("diagnose", kDiagnoseModeRegexes));
   }
@@ -7837,9 +7838,70 @@ TEST_F(ToolTest, TestParseStacks) {
   Status s = RunActionStderrString(
       Substitute("diagnose parse_stacks $0", kBadDataPath),
       &stderr);
-  ASSERT_TRUE(s.IsRuntimeError());
-  ASSERT_STR_MATCHES(stderr, "failed to parse stacks from .*: at line 1: "
+  ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
+  ASSERT_STR_MATCHES(stderr, "failed to parse stacks from .* line 1.*"
                              "invalid JSON payload.*Missing a closing quotation mark in string");
+}
+
+TEST_F(ToolTest, TestParseMetrics) {
+  const string kDataPath = JoinPathSegments(GetTestExecutableDirectory(),
+                                            "testdata/sample-diagnostics-log.txt");
+  const string kBadDataPath = JoinPathSegments(GetTestExecutableDirectory(),
+                                               "testdata/bad-diagnostics-log.txt");
+  // Check out tablet metrics.
+  {
+    string stdout;
+    NO_FATALS(RunActionStdoutString(
+        Substitute("diagnose parse_metrics $0 -simple-metrics=tablet.on_disk_size:size_bytes "
+                   "-rate-metrics=tablet.on_disk_size:bytes_rate", kDataPath),
+        &stdout));
+    // Spot check a few of the things that should be in the output.
+    ASSERT_STR_CONTAINS(stdout, "timestamp\tsize_bytes\tbytes_rate");
+    ASSERT_STR_CONTAINS(stdout, "1521053715220449\t69705682\t0");
+    ASSERT_STR_CONTAINS(stdout, "1521053775220513\t69705682\t0");
+    ASSERT_STR_CONTAINS(stdout, "1521053835220611\t69712809\t118.78313932087244");
+    ASSERT_STR_CONTAINS(stdout, "1521053895220710\t69712809\t0");
+    ASSERT_STR_CONTAINS(stdout, "1661840031227204\t69712809\t0");
+  }
+  // Check out table metrics.
+  {
+    string stdout;
+    NO_FATALS(RunActionStdoutString(
+        Substitute("diagnose parse_metrics $0 "
+                   "-simple-metrics=table.on_disk_size:size,table.live_row_count:row_count",
+                   kDataPath),
+        &stdout));
+    // Spot check a few of the things that should be in the output.
+    ASSERT_STR_CONTAINS(stdout, "timestamp\trow_count\tsize");
+    ASSERT_STR_CONTAINS(stdout, "1521053715220449\t0\t0");
+    ASSERT_STR_CONTAINS(stdout, "1521053775220513\t0\t0");
+    ASSERT_STR_CONTAINS(stdout, "1521053835220611\t0\t0");
+    ASSERT_STR_CONTAINS(stdout, "1521053895220710\t0\t0");
+    ASSERT_STR_CONTAINS(stdout, "1661840031227204\t228265\t78540528");
+  }
+  // Check out table metrics with default metric names.
+  {
+    string stdout;
+    NO_FATALS(RunActionStdoutString(
+        Substitute("diagnose parse_metrics $0 "
+                   "-simple-metrics=table.on_disk_size,table.live_row_count",
+                   kDataPath),
+        &stdout));
+    // Spot check a few of the things that should be in the output.
+    ASSERT_STR_CONTAINS(stdout, "timestamp\tlive_row_count\ton_disk_size");
+    ASSERT_STR_CONTAINS(stdout, "1521053715220449\t0\t0");
+    ASSERT_STR_CONTAINS(stdout, "1521053775220513\t0\t0");
+    ASSERT_STR_CONTAINS(stdout, "1521053835220611\t0\t0");
+    ASSERT_STR_CONTAINS(stdout, "1521053895220710\t0\t0");
+    ASSERT_STR_CONTAINS(stdout, "1661840031227204\t228265\t78540528");
+  }
+
+  string stderr;
+  ASSERT_OK(RunActionStderrString(
+      Substitute("diagnose parse_metrics $0 -simple-metrics=tablet.on_disk_size:size",
+      kBadDataPath), &stderr));
+  ASSERT_STR_MATCHES(stderr, "Skipping file.*invalid JSON payload.*Missing "
+                             "a closing quotation mark in string");
 }
 
 TEST_F(ToolTest, ClusterNameResolverEnvNotSet) {
