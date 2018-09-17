@@ -222,8 +222,7 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
           << "): " << s.ToString();
       if (client->IsMultiMaster()) {
         LOG(INFO) << "Determining the new leader Master and retrying...";
-        WARN_NOT_OK(ConnectToCluster(client, deadline),
-                    "Unable to determine the new leader Master");
+        ReconnectToCluster(client, deadline, ReconnectionReason::OTHER);
         continue;
       }
     }
@@ -233,14 +232,8 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
       if (err && err->has_code() &&
           err->code() == ErrorStatusPB::FATAL_INVALID_AUTHENTICATION_TOKEN) {
         // Assuming the token has expired: it's necessary to get a new one.
-        LOG(INFO) << "Reconnecting to the cluster for a new authn token";
-        const Status connect_status = ConnectToCluster(
-            client, deadline, CredentialsPolicy::PRIMARY_CREDENTIALS);
-        if (PREDICT_FALSE(!connect_status.ok())) {
-          KLOG_EVERY_N_SECS(WARNING, 1)
-              << "Unable to reconnect to the cluster for a new authn token: "
-              << connect_status.ToString();
-        }
+        ReconnectToCluster(client, deadline,
+                           ReconnectionReason::INVALID_AUTHN_TOKEN);
         continue;
       }
     }
@@ -252,8 +245,7 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
           << "): " << s.ToString();
       if (client->IsMultiMaster()) {
         LOG(INFO) << "Determining the new leader Master and retrying...";
-        WARN_NOT_OK(ConnectToCluster(client, deadline),
-                    "Unable to determine the new leader Master");
+        ReconnectToCluster(client, deadline, ReconnectionReason::OTHER);
       }
       continue;
     }
@@ -266,8 +258,7 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
             << "): " << s.ToString();
         if (client->IsMultiMaster()) {
           LOG(INFO) << "Determining the new leader Master and retrying...";
-          WARN_NOT_OK(ConnectToCluster(client, deadline),
-                      "Unable to determine the new leader Master");
+          ReconnectToCluster(client, deadline, ReconnectionReason::OTHER);
         }
         continue;
       } else {
@@ -282,8 +273,7 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
           resp->error().code() == MasterErrorPB::CATALOG_MANAGER_NOT_INITIALIZED) {
         if (client->IsMultiMaster()) {
           KLOG_EVERY_N_SECS(INFO, 1) << "Determining the new leader Master and retrying...";
-          WARN_NOT_OK(ConnectToCluster(client, deadline),
-                      "Unable to determine the new leader Master");
+          ReconnectToCluster(client, deadline, ReconnectionReason::OTHER);
         }
         continue;
       } else {
@@ -828,6 +818,40 @@ void KuduClient::Data::ConnectToClusterAsync(KuduClient* client,
     }
     l.unlock();
     rpc->SendRpc();
+  }
+}
+
+void KuduClient::Data::ReconnectToCluster(KuduClient* client,
+                                          const MonoTime& deadline,
+                                          ReconnectionReason reason) {
+  DCHECK(client);
+  DCHECK(reason == ReconnectionReason::OTHER ||
+         reason == ReconnectionReason::INVALID_AUTHN_TOKEN);
+  if (reason == ReconnectionReason::OTHER) {
+    const auto s = ConnectToCluster(client, deadline,
+                                    CredentialsPolicy::ANY_CREDENTIALS);
+    if (s.ok()) {
+      return;
+    }
+    if (!s.IsNotAuthorized()) {
+      // In case of NotAutorized() error, that's most likely due to invalid
+      // authentication token. That's the only case when it's worth trying
+      // to re-connect to the cluster using primary credentials.
+      //
+      // TODO(aserbin): refactor ConnectToCluster to purge cached master proxy
+      //                in case of NOT_THE_LEADER error and update it to
+      //                handle FATAL_INVALID_AUTHENTICATION_TOKEN error as well.
+      WARN_NOT_OK(s, "Unable to determine the new leader Master");
+      return;
+    }
+  }
+  LOG(INFO) << "Reconnecting to the cluster for a new authn token";
+  const auto connect_status = ConnectToCluster(
+      client, deadline, CredentialsPolicy::PRIMARY_CREDENTIALS);
+  if (PREDICT_FALSE(!connect_status.ok())) {
+    KLOG_EVERY_N_SECS(WARNING, 1)
+        << "Unable to reconnect to the cluster for a new authn token: "
+        << connect_status.ToString();
   }
 }
 

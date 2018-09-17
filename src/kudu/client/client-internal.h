@@ -188,6 +188,18 @@ class KuduClient::Data {
       const MonoTime& deadline,
       rpc::CredentialsPolicy creds_policy = rpc::CredentialsPolicy::ANY_CREDENTIALS);
 
+  // A wrapper around ConnectToCluster() to handle various errors in case
+  // if a call to thought-to-be-leader master fails. First, this method calls
+  // ConnectToCluster() with current client credentials unless
+  // INVALID_AUTHN_TOKEN reason is specified. If the ConnectToCluster() with the
+  // current client credentials fails, call ConnectToCluster() with primary
+  // credentials. The ReconnectionReason is a dedicated enumeration for the
+  // third parameter of the method.
+  enum class ReconnectionReason { INVALID_AUTHN_TOKEN, OTHER };
+  void ReconnectToCluster(KuduClient* client,
+                          const MonoTime& deadline,
+                          ReconnectionReason reason);
+
   std::shared_ptr<master::MasterServiceProxy> master_proxy() const;
 
   HostPort leader_master_hostport() const;

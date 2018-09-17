@@ -484,7 +484,7 @@ class MultiMasterIdleConnectionsITest : public AuthnTokenExpireITestBase {
 // authn token. Prior to the KUDU-2580 fix, it didn't, and the test was failing
 // when the client tried to open the test table after master leader re-election:
 //   Timed out: GetTableSchema timed out after deadline expired
-TEST_F(MultiMasterIdleConnectionsITest, DISABLED_ClientReacquiresAuthnToken) {
+TEST_F(MultiMasterIdleConnectionsITest, ClientReacquiresAuthnToken) {
   const string kTableName = "keep-connection-to-former-master-leader";
 
   if (!AllowSlowTests()) {
