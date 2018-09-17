@@ -84,7 +84,7 @@ def run_tidy(sha="HEAD", is_rev_range=False):
 def split_warnings(clang_output):
     accumulated = ""
     for l in clang_output.splitlines():
-        if l == "":
+        if l == "" or l == "No relevant changes found.":
             continue
         if l.startswith(ROOT) and re.search(r'(warning|error): ', l):
             if accumulated:
@@ -149,11 +149,15 @@ def post_comments(revision_url_base, gerrit_json_obj):
 class TestClangTidyGerrit(unittest.TestCase):
     TEST_INPUT = \
 """
+No relevant changes found.
+
 /home/todd/git/kudu/src/kudu/integration-tests/tablet_history_gc-itest.cc:579:55: warning: some warning [warning-name]
    some example line of code
 
 /home/todd/git/kudu/foo/../src/kudu/blah.cc:123:55: error: some error
    blah blah
+
+No relevant changes found.
 """
 
     def test_parse_clang_output(self):
