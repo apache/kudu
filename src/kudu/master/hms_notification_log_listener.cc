@@ -180,8 +180,12 @@ string EventDebugString(const hive::NotificationEvent& event) {
 // MessageFactory, this method is specialized to return the Document type. If
 // another MessageFactory instance becomes used in the future this method should
 // be updated to handle it accordingly.
+// Also because 'messageFormat' is an optional field introduced in HIVE-10562.
+// We consider message without this field valid, to be compatible with HIVE
+// distributions that do not include HIVE-10562 but still have the proper
+// JSONMessageFactory.
 Status ParseMessage(const hive::NotificationEvent& event, Document* message) {
-  if (event.messageFormat != "json-0.2") {
+  if (!event.messageFormat.empty() && event.messageFormat != "json-0.2") {
     return Status::NotSupported("unknown message format", event.messageFormat);
   }
   if (message->Parse<0>(event.message.c_str()).HasParseError()) {
