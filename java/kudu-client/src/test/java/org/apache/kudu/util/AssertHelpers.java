@@ -16,8 +16,13 @@
 // under the License.
 package org.apache.kudu.util;
 
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
+
 import static org.junit.Assert.assertTrue;
 
+@InterfaceAudience.Private
+@InterfaceStability.Unstable
 public class AssertHelpers {
   public interface BooleanExpression {
     boolean get() throws Exception;

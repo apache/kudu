@@ -30,6 +30,8 @@ import javax.annotation.concurrent.GuardedBy;
 
 import com.google.common.base.Throwables;
 import com.google.common.net.InetAddresses;
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
 
 /**
  * Fake DNS resolver which allows our tests to work well even though we use
@@ -45,6 +47,8 @@ import com.google.common.net.InetAddresses;
  * In the future this class might also be extended to test more interesting
  * DNS-related scenarios.
  */
+@InterfaceAudience.Private
+@InterfaceStability.Unstable
 public class FakeDNS {
   static FakeDNS instance = new FakeDNS();
 

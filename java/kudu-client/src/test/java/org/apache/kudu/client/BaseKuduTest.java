@@ -29,6 +29,8 @@ import com.google.common.base.Stopwatch;
 import com.google.common.net.HostAndPort;
 import com.stumbleupon.async.Deferred;
 import org.apache.kudu.junit.RetryRule;
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
@@ -40,6 +42,8 @@ import org.apache.kudu.Schema;
 import org.apache.kudu.client.LocatedTablet.Replica;
 import org.apache.kudu.master.Master;
 
+@InterfaceAudience.Private
+@InterfaceStability.Unstable
 public class BaseKuduTest {
 
   protected static final Logger LOG = LoggerFactory.getLogger(BaseKuduTest.class);

@@ -16,6 +16,8 @@
 // under the License.
 package org.apache.kudu.junit;
 
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
 import org.junit.rules.TestRule;
 import org.junit.runner.Description;
 import org.junit.runners.model.Statement;
@@ -28,6 +30,8 @@ import org.slf4j.LoggerFactory;
  * Surefire/Failsafe rerunFailingTestsCount like Maven does. We use the system
  * property rerunFailingTestsCount to mimic the maven arguments closely.
  */
+@InterfaceAudience.Private
+@InterfaceStability.Unstable
 public class RetryRule implements TestRule {
 
   private static final Logger LOG = LoggerFactory.getLogger(RetryRule.class);

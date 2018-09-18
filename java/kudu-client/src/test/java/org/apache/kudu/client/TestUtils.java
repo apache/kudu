@@ -28,6 +28,8 @@ import java.util.Set;
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableSet;
 import com.google.protobuf.ByteString;
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -38,6 +40,8 @@ import org.apache.kudu.master.Master;
 /**
  * A grouping of methods that help unit testing.
  */
+@InterfaceAudience.Private
+@InterfaceStability.Unstable
 public class TestUtils {
   private static final Logger LOG = LoggerFactory.getLogger(TestUtils.class);
 

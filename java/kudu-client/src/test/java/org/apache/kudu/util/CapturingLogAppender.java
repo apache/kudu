@@ -25,12 +25,16 @@ import org.apache.log4j.Layout;
 import org.apache.log4j.Logger;
 import org.apache.log4j.SimpleLayout;
 import org.apache.log4j.spi.LoggingEvent;
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
 
 /**
  * Test utility which wraps Log4j and captures all messages logged
  * while it is attached. This can be useful for asserting that a particular
  * message is (or is not) logged.
  */
+@InterfaceAudience.Private
+@InterfaceStability.Unstable
 public class CapturingLogAppender extends AppenderSkeleton {
   private StringBuilder appended = new StringBuilder();
   private static final Layout layout = new SimpleLayout();

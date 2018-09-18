@@ -41,6 +41,8 @@ import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.client.PartialRow;
 import org.apache.kudu.client.RowResult;
 import org.apache.kudu.client.RowResultIterator;
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -53,6 +55,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * Utilities useful for cluster testing.
  */
+@InterfaceAudience.Private
+@InterfaceStability.Unstable
 public abstract class ClientTestUtil {
 
   private static final Logger LOG = LoggerFactory.getLogger(ClientTestUtil.class);
