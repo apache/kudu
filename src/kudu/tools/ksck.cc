@@ -418,6 +418,19 @@ const KsckResults& Ksck::results() const {
   return results_;
 }
 
+void Ksck::set_print_sections(std::vector<std::string> sections) {
+  print_sections_ = 0;
+  for (const auto& s : sections) {
+    if (s == "MASTER_SUMMARIES") print_sections_ |= (int)PrintSections::MASTER_SUMMARIES;
+    if (s == "TSERVER_SUMMARIES") print_sections_ |= (int)PrintSections::TSERVER_SUMMARIES;
+    if (s == "VERSION_SUMMARIES") print_sections_ |= (int)PrintSections::VERSION_SUMMARIES;
+    if (s == "TABLET_SUMMARIES") print_sections_ |= (int)PrintSections::TABLET_SUMMARIES;
+    if (s == "TABLE_SUMMARIES") print_sections_ |= (int)PrintSections::TABLE_SUMMARIES;
+    if (s == "CHECKSUM_RESULTS") print_sections_ |= (int)PrintSections::CHECKSUM_RESULTS;
+    if (s == "TOTAL_COUNT") print_sections_ |= (int)PrintSections::TOTAL_COUNT;
+  }
+}
+
 Status Ksck::Run() {
   PUSH_PREPEND_NOT_OK(CheckMasterHealth(), results_.error_messages,
                       "error fetching info from masters");
@@ -461,9 +474,7 @@ Status Ksck::Run() {
                   [](const Status& s) { return s.IsNotAuthorized(); })) {
     return Status::NotAuthorized("re-run ksck with administrator privileges");
   }
-  if (!results_.error_messages.empty()) {
-    return Status::RuntimeError("ksck discovered errors");
-  }
+
   return Status::OK();
 }
 
@@ -529,7 +540,7 @@ Status Ksck::PrintResults() {
     return Status::InvalidArgument("unknown ksck format (--ksck_format)",
                                    FLAGS_ksck_format);
   }
-  return results_.PrintTo(mode, *out_);
+  return results_.PrintTo(mode, print_sections_, *out_);
 }
 
 Status Ksck::RunAndPrintResults() {
