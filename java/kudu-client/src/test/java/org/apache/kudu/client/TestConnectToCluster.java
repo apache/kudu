@@ -22,11 +22,8 @@ import static org.apache.kudu.consensus.Metadata.RaftPeerPB.Role.LEADER;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
-import java.util.List;
-
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
-import com.google.common.net.HostAndPort;
 import com.stumbleupon.async.Callback;
 
 import org.junit.Assert;
@@ -38,9 +35,9 @@ import org.hamcrest.CoreMatchers;
 public class TestConnectToCluster {
 
   private static final ImmutableList<HostAndPort> MASTERS = ImmutableList.of(
-      HostAndPort.fromParts("0", 9000),
-      HostAndPort.fromParts("1", 9000),
-      HostAndPort.fromParts("2", 9000));
+      new HostAndPort("0", 9000),
+      new HostAndPort("1", 9000),
+      new HostAndPort("2", 9000));
 
   /**
    * Test that the client properly falls back to the old GetMasterRegistration
@@ -56,7 +53,7 @@ public class TestConnectToCluster {
         .build();
     KuduClient c = null;
     try {
-      c = new KuduClient.KuduClientBuilder(cluster.getMasterAddresses())
+      c = new KuduClient.KuduClientBuilder(cluster.getMasterAddressesAsString())
           .build();
       // Call some method which uses the master. This forces us to connect
       // and verifies that the fallback works.
@@ -83,7 +80,7 @@ public class TestConnectToCluster {
         .build();
     int successes = 0;
     try {
-      String[] masterAddrs = cluster.getMasterAddresses().split(",", -1);
+      String[] masterAddrs = cluster.getMasterAddressesAsString().split(",", -1);
       assertEquals(3, masterAddrs.length);
       for (String masterAddr : masterAddrs) {
         KuduClient c = null;

@@ -62,12 +62,12 @@ public class TestSecurityContextRealUser extends BaseKuduTest {
   @Test
   public void test() throws Exception {
     // Clear out the Kerberos credentials in the environment.
-    miniCluster.kdestroy();
+    kdestroy();
 
     // Create a new client instance with the logged in user, and ensure that it
     // fails to connect (the logged in user is not in the user-acl).
     try (KuduClient client =
-             new KuduClient.KuduClientBuilder(miniCluster.getMasterAddresses()).build()) {
+             new KuduClient.KuduClientBuilder(getMasterAddressesAsString()).build()) {
       client.listTabletServers();
       fail();
     } catch (KuduException e) {
@@ -77,7 +77,7 @@ public class TestSecurityContextRealUser extends BaseKuduTest {
 
     // Try again with a correct real user.
     try (KuduClient client =
-             new KuduClient.KuduClientBuilder(miniCluster.getMasterAddresses()).build()) {
+             new KuduClient.KuduClientBuilder(getMasterAddressesAsString()).build()) {
       Client.AuthenticationCredentialsPB credentials =
           Client.AuthenticationCredentialsPB.newBuilder().setRealUser("token-user").build();
       client.importAuthenticationCredentials(credentials.toByteArray());

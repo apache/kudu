@@ -20,7 +20,6 @@ import static org.apache.kudu.util.ClientTestUtil.countRowsInScan;
 import static org.apache.kudu.util.ClientTestUtil.getBasicCreateTableOptions;
 import static org.junit.Assert.assertEquals;
 
-import org.junit.After;
 import org.junit.Test;
 
 /**
@@ -53,32 +52,31 @@ public class TestMasterFailover extends BaseKuduTest {
 
   private void doTestKillLeader(KillBefore killBefore) throws Exception {
     String tableName = "TestMasterFailover-killBefore=" + killBefore;
-    int countMasters = masterHostPorts.size();
+    int countMasters = getMasterServers().size();
     if (countMasters < 3) {
       throw new Exception("This test requires at least 3 master servers, but only "
         + countMasters + " are specified.");
     }
 
     if (killBefore == KillBefore.CREATE_CLIENT) {
-      killMasterLeader();
+      killLeaderMasterServer();
     }
-    try (KuduClient c = new KuduClient.KuduClientBuilder(miniCluster.getMasterAddresses())
-          .build()) {
+    try (KuduClient c = new KuduClient.KuduClientBuilder(getMasterAddressesAsString()).build()) {
       if (killBefore == KillBefore.CREATE_TABLE) {
-        killMasterLeader();
+        killLeaderMasterServer();
       }
 
       createTable(tableName, basicSchema, getBasicCreateTableOptions());
 
       if (killBefore == KillBefore.OPEN_TABLE) {
-        killMasterLeader();
+        killLeaderMasterServer();
       }
 
       // Test that we can open a previously created table after killing the leader master.
       KuduTable table = openTable(tableName);
 
       if (killBefore == KillBefore.SCAN_TABLE) {
-        killMasterLeader();
+        killLeaderMasterServer();
       }
       assertEquals(0, countRowsInScan(client.newScannerBuilder(table).build()));
     }

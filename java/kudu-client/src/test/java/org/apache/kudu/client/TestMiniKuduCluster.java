@@ -25,8 +25,6 @@ import java.net.Socket;
 import org.apache.kudu.client.KuduClient.KuduClientBuilder;
 import org.junit.Test;
 
-import com.google.common.net.HostAndPort;
-
 public class TestMiniKuduCluster {
 
   private static final int NUM_TABLET_SERVERS = 3;
@@ -39,19 +37,19 @@ public class TestMiniKuduCluster {
                                                       .numMasters(NUM_MASTERS)
                                                       .numTservers(NUM_TABLET_SERVERS)
                                                       .build()) {
-      assertEquals(NUM_MASTERS, cluster.getMasterHostPorts().size());
-      assertEquals(NUM_TABLET_SERVERS, cluster.getTserverHostPorts().size());
+      assertEquals(NUM_MASTERS, cluster.getMasterServers().size());
+      assertEquals(NUM_TABLET_SERVERS, cluster.getTabletServers().size());
 
       {
         // Kill the master.
-        HostAndPort masterHostPort = cluster.getMasterHostPorts().get(0);
+        HostAndPort masterHostPort = cluster.getMasterServers().get(0);
         testHostPort(masterHostPort, true);
-        cluster.killMasterOnHostPort(masterHostPort);
+        cluster.killMasterServer(masterHostPort);
 
         testHostPort(masterHostPort, false);
 
         // Restart the master.
-        cluster.restartDeadMasterOnHostPort(masterHostPort);
+        cluster.startMasterServer(masterHostPort);
 
         // Test we can reach it.
         testHostPort(masterHostPort, true);
@@ -59,14 +57,14 @@ public class TestMiniKuduCluster {
 
       {
         // Kill the first TS.
-        HostAndPort tsHostPort = cluster.getTserverHostPorts().get(0);
+        HostAndPort tsHostPort = cluster.getTabletServers().get(0);
         testHostPort(tsHostPort, true);
-        cluster.killTabletServerOnHostPort(tsHostPort);
+        cluster.killTabletServer(tsHostPort);
 
         testHostPort(tsHostPort, false);
 
         // Restart it.
-        cluster.restartDeadTabletServerOnHostPort(tsHostPort);
+        cluster.startTabletServer(tsHostPort);
 
         testHostPort(tsHostPort, true);
       }
@@ -81,7 +79,7 @@ public class TestMiniKuduCluster {
                                                       .numTservers(NUM_TABLET_SERVERS)
                                                       .enableKerberos()
                                                       .build()) {
-      KuduClient client = new KuduClientBuilder(cluster.getMasterAddresses()).build();
+      KuduClient client = new KuduClientBuilder(cluster.getMasterAddressesAsString()).build();
       ListTablesResponse resp = client.getTablesList();
       assertTrue(resp.getTablesList().isEmpty());
       assertNull(client.getHiveMetastoreConfig());
@@ -95,7 +93,7 @@ public class TestMiniKuduCluster {
                                                       .numTservers(NUM_TABLET_SERVERS)
                                                       .enableHiveMetastoreIntegration()
                                                       .build()) {
-      KuduClient client = new KuduClientBuilder(cluster.getMasterAddresses()).build();
+      KuduClient client = new KuduClientBuilder(cluster.getMasterAddressesAsString()).build();
       assertNotNull(client.getHiveMetastoreConfig());
     }
   }
@@ -106,7 +104,7 @@ public class TestMiniKuduCluster {
    * @param testIsOpen true if we should want it to be open, false if we want it closed
    */
   private static void testHostPort(HostAndPort hp,
-      boolean testIsOpen) throws InterruptedException {
+                                   boolean testIsOpen) throws InterruptedException {
     DeadlineTracker tracker = new DeadlineTracker();
     while (tracker.getElapsedMillis() < SLEEP_TIME_MS) {
       try {

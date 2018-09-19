@@ -43,7 +43,7 @@ public class ITIntegrationTestBigLinkedList extends BaseKuduTest {
         ITIntegrationTestBigLinkedList.class.getName(),conf).getAbsolutePath();
 
     String[] args = new String[] {
-        "-D" + CommandLineParser.MASTER_ADDRESSES_KEY + "=" + getMasterAddresses(),
+        "-D" + CommandLineParser.MASTER_ADDRESSES_KEY + "=" + getMasterAddressesAsString(),
         "Loop",
         "2", // Two iterations
         "1", // 1 mapper

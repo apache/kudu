@@ -795,7 +795,7 @@ public class TestKuduClient extends BaseKuduTest {
    */
   @Test(timeout = 100000)
   public void testAutoClose() throws Exception {
-    try (KuduClient localClient = new KuduClient.KuduClientBuilder(masterAddresses).build()) {
+    try (KuduClient localClient = new KuduClient.KuduClientBuilder(getMasterAddressesAsString()).build()) {
       localClient.createTable(TABLE_NAME, basicSchema, getBasicCreateTableOptions());
       KuduTable table = localClient.openTable(TABLE_NAME);
       KuduSession session = localClient.newSession();
@@ -818,7 +818,7 @@ public class TestKuduClient extends BaseKuduTest {
   public void testCloseShortlyAfterOpen() throws Exception {
     CapturingLogAppender cla = new CapturingLogAppender();
     try (Closeable c = cla.attach()) {
-      try (KuduClient localClient = new KuduClient.KuduClientBuilder(masterAddresses).build()) {
+      try (KuduClient localClient = new KuduClient.KuduClientBuilder(getMasterAddressesAsString()).build()) {
         // Force the client to connect to the masters.
         localClient.exportAuthenticationCredentials();
       }
@@ -837,8 +837,8 @@ public class TestKuduClient extends BaseKuduTest {
   public void testNoLogSpewOnConnectionRefused() throws Exception {
     CapturingLogAppender cla = new CapturingLogAppender();
     try (Closeable c = cla.attach()) {
-      miniCluster.killMasters();
-      try (KuduClient localClient = new KuduClient.KuduClientBuilder(masterAddresses).build()) {
+      killAllMasterServers();
+      try (KuduClient localClient = new KuduClient.KuduClientBuilder(getMasterAddressesAsString()).build()) {
         // Force the client to connect to the masters.
         localClient.exportAuthenticationCredentials();
         fail("Should have failed to connect.");
@@ -849,7 +849,7 @@ public class TestKuduClient extends BaseKuduTest {
                 ".*Connection refused.*"));
       }
     } finally {
-      miniCluster.restartDeadMasters();
+      startAllMasterServers();
     }
     // Ensure there is no log spew due to an unexpected lost connection.
     String logText = cla.getAppendedText();
@@ -862,7 +862,7 @@ public class TestKuduClient extends BaseKuduTest {
   @Test(timeout = 100000)
   public void testCustomNioExecutor() throws Exception {
     long startTime = System.nanoTime();
-    final KuduClient localClient = new KuduClient.KuduClientBuilder(masterAddresses)
+    final KuduClient localClient = new KuduClient.KuduClientBuilder(getMasterAddressesAsString())
         .nioExecutors(Executors.newFixedThreadPool(1), Executors.newFixedThreadPool(2))
         .bossCount(1)
         .workerCount(2)
@@ -922,7 +922,7 @@ public class TestKuduClient extends BaseKuduTest {
 
     // Add a range partition with a separate client. The new client is necessary
     // in order to avoid clearing the meta cache as part of the alter operation.
-    try (KuduClient alterClient = new KuduClient.KuduClientBuilder(masterAddresses)
+    try (KuduClient alterClient = new KuduClient.KuduClientBuilder(getMasterAddressesAsString())
                                                 .defaultAdminOperationTimeoutMs(DEFAULT_SLEEP)
                                                 .build()) {
       AlterTableOptions alter = new AlterTableOptions();

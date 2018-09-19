@@ -108,7 +108,7 @@ public class ITImportParquetPreCheck extends BaseKuduTest {
     }
     sb.deleteCharAt(sb.length() - 1);
     String[] args = new String[] { "-D" + CommandLineParser.MASTER_ADDRESSES_KEY + "=" +
-      getMasterAddresses(), TABLE_NAME, data.toString()};
+      getMasterAddressesAsString(), TABLE_NAME, data.toString()};
 
     thrown.expect(IllegalArgumentException.class);
     thrown.expectMessage("The column column1_i does not exist in Parquet schema");

@@ -25,7 +25,7 @@ import java.net.InetAddress;
 import java.util.Arrays;
 import java.util.List;
 
-import com.google.common.net.HostAndPort;
+import org.apache.kudu.client.HostAndPort;
 import org.junit.Test;
 
 /**
@@ -59,17 +59,18 @@ public class TestNetUtil {
     String testAddrs = "1.2.3.4.5,10.0.0.1:5555,127.0.0.1:7777";
     List<HostAndPort> hostsAndPorts = NetUtil.parseStrings(testAddrs, 3333);
     assertArrayEquals(hostsAndPorts.toArray(),
-                         new HostAndPort[] { HostAndPort.fromParts("1.2.3.4.5", 3333),
-                           HostAndPort.fromParts("10.0.0.1", 5555),
-                           HostAndPort.fromParts("127.0.0.1", 7777) }
+        new HostAndPort[] {
+            new HostAndPort("1.2.3.4.5", 3333),
+            new HostAndPort("10.0.0.1", 5555),
+            new HostAndPort("127.0.0.1", 7777)}
     );
   }
 
   @Test
   public void testHostsAndPortsToString() {
     List<HostAndPort> hostsAndPorts = Arrays.asList(
-        HostAndPort.fromParts("127.0.0.1", 1111),
-        HostAndPort.fromParts("1.2.3.4.5", 0)
+        new HostAndPort("127.0.0.1", 1111),
+        new HostAndPort("1.2.3.4.5", 0)
     );
     assertEquals(NetUtil.hostsAndPortsToString(hostsAndPorts), "127.0.0.1:1111,1.2.3.4.5:0");
   }

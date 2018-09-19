@@ -51,7 +51,6 @@ import javax.annotation.concurrent.GuardedBy;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
-import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
@@ -705,8 +704,8 @@ public class AsyncKuduClient implements AutoCloseable {
   /**
    * Gets a table's schema either by ID or by name. Note: the name must be
    * provided, even if the RPC should be sent by ID.
-   * @param name name of table
-   * @param id immutable ID of table
+   * @param tableName name of table
+   * @param tableId immutable ID of table
    * @param parent parent RPC (for tracing), if any
    * @return a deferred object that yields the schema
    */

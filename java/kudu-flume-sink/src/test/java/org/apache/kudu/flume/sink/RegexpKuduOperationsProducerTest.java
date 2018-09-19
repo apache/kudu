@@ -206,7 +206,7 @@ public class RegexpKuduOperationsProducerTest extends BaseKuduTest {
     KuduSink sink = new KuduSink(syncClient);
     HashMap<String, String> parameters = new HashMap<>();
     parameters.put(TABLE_NAME, tableName);
-    parameters.put(MASTER_ADDRESSES, getMasterAddresses());
+    parameters.put(MASTER_ADDRESSES, getMasterAddressesAsString());
     parameters.put(PRODUCER, RegexpKuduOperationsProducer.class.getName());
     parameters.put(PRODUCER_PREFIX + PATTERN_PROP, TEST_REGEXP);
     parameters.put(PRODUCER_PREFIX + OPERATION_PROP, operation);

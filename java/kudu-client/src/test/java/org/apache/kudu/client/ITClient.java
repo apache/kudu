@@ -80,7 +80,7 @@ public class ITClient extends BaseKuduTest {
 
     // Client we're using has low tolerance for read timeouts but a
     // higher overall operation timeout.
-    localAsyncClient = new AsyncKuduClient.AsyncKuduClientBuilder(masterAddresses)
+    localAsyncClient = new AsyncKuduClient.AsyncKuduClientBuilder(getMasterAddressesAsString())
         .defaultSocketReadTimeoutMs(500)
         .build();
     localClient = new KuduClient(localAsyncClient);

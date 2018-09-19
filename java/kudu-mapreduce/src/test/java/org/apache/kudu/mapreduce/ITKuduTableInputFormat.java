@@ -122,7 +122,7 @@ public class ITKuduTableInputFormat extends BaseKuduTest {
         List<KuduPredicate> predicates) throws IOException, InterruptedException {
     KuduTableInputFormat input = new KuduTableInputFormat();
     Configuration conf = new Configuration();
-    conf.set(KuduTableInputFormat.MASTER_ADDRESSES_KEY, getMasterAddresses());
+    conf.set(KuduTableInputFormat.MASTER_ADDRESSES_KEY, getMasterAddressesAsString());
     conf.set(KuduTableInputFormat.INPUT_TABLE_KEY, TABLE_NAME);
     if (columnProjection != null) {
       conf.set(KuduTableInputFormat.COLUMN_PROJECTION_KEY, columnProjection);

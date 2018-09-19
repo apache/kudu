@@ -135,9 +135,9 @@ trait KuduTestSuite extends JUnitSuite {
 
     ss = SparkSession.builder().config(conf).getOrCreate()
 
-    kuduClient = new KuduClientBuilder(miniCluster.getMasterAddresses).build()
+    kuduClient = new KuduClientBuilder(miniCluster.getMasterAddressesAsString).build()
 
-    kuduContext = new KuduContext(miniCluster.getMasterAddresses, ss.sparkContext)
+    kuduContext = new KuduContext(miniCluster.getMasterAddressesAsString, ss.sparkContext)
 
     table = kuduClient.createTable(tableName, schema, tableOptions)
 

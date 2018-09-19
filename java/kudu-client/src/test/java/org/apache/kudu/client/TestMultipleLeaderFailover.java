@@ -27,8 +27,6 @@ import java.util.List;
 import org.apache.kudu.util.AssertHelpers.BooleanExpression;
 import org.junit.Test;
 
-import com.google.common.net.HostAndPort;
-
 public class TestMultipleLeaderFailover extends BaseKuduTest {
 
   private void waitUntilRowCount(final KuduTable table, final int rowCount, long timeoutMs)
@@ -73,8 +71,7 @@ public class TestMultipleLeaderFailover extends BaseKuduTest {
     for (int i = 0; i < NUM_ITERATIONS; i++) {
       List<LocatedTablet> tablets = table.getTabletsLocations(DEFAULT_SLEEP);
       assertEquals(1, tablets.size());
-      HostAndPort hp = findLeaderTabletServerHostPort(tablets.get(0));
-      miniCluster.killTabletServerOnHostPort(hp);
+      killTabletLeader(tablets.get(0));
 
       for (int j = 0; j < ROWS_PER_ITERATION; j++) {
         OperationResponse resp = session.apply(createBasicSchemaInsert(table, currentRows));
@@ -84,7 +81,7 @@ public class TestMultipleLeaderFailover extends BaseKuduTest {
         currentRows++;
       }
 
-      miniCluster.restartDeadTabletServerOnHostPort(hp);
+      startAllTabletServers();
       // Read your writes hasn't been enabled, so we need to use a helper function to poll.
       waitUntilRowCount(table, currentRows, DEFAULT_SLEEP);
 

@@ -106,7 +106,7 @@ public class ITClientStress extends BaseKuduTest {
           @Override
           public Void call() throws Exception {
             try (AsyncKuduClient client =
-                  new AsyncKuduClient.AsyncKuduClientBuilder(masterAddresses)
+                  new AsyncKuduClient.AsyncKuduClientBuilder(getMasterAddressesAsString())
                   .defaultAdminOperationTimeoutMs(DEFAULT_SLEEP)
                   .build()) {
               KuduTable t = client.openTable(TABLE_NAME).join();

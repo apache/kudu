@@ -88,7 +88,7 @@ public class ITOutputFormatJob extends BaseKuduTest {
     new KuduTableMapReduceUtil.TableOutputFormatConfigurator(
         job,
         TABLE_NAME,
-        getMasterAddresses())
+        getMasterAddressesAsString())
         .operationTimeoutMs(DEFAULT_SLEEP)
         .addDependencies(false)
         .configure();

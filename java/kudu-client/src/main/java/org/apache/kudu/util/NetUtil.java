@@ -28,7 +28,7 @@ import com.google.common.base.Joiner;
 import com.google.common.base.Splitter;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
-import com.google.common.net.HostAndPort;
+import org.apache.kudu.client.HostAndPort;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -53,16 +53,19 @@ public class NetUtil {
   }
 
   /**
-   * Parse a "host:port" pair into a {@link HostAndPort} object. If there is no
-   * port specified in the string, then 'defaultPort' is used.
+   * Parse a "host:port" pair into a {@link HostAndPort} object.
+   * If there is no port specified in the string, then 'defaultPort' is used.
    *
    * @param addrString  A host or a "host:port" pair.
    * @param defaultPort Default port to use if no port is specified in addrString.
    * @return The HostAndPort object constructed from addrString.
    */
   public static HostAndPort parseString(String addrString, int defaultPort) {
-    return addrString.indexOf(':') == -1 ? HostAndPort.fromParts(addrString, defaultPort) :
-               HostAndPort.fromString(addrString);
+    // Use Guava's HostAndPort so we don't need to handle parsing ourselves.
+    com.google.common.net.HostAndPort hostAndPort = addrString.indexOf(':') == -1 ?
+        com.google.common.net.HostAndPort.fromParts(addrString, defaultPort) :
+        com.google.common.net.HostAndPort.fromString(addrString);
+    return new HostAndPort(hostAndPort.getHost(), hostAndPort.getPort());
   }
 
   /**

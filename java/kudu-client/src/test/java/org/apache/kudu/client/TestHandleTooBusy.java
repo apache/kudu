@@ -59,7 +59,7 @@ public class TestHandleTooBusy extends BaseKuduTest {
         @Override
         public Void call() throws Exception {
           for (int i = 0; i < 5; i++) {
-            try (KuduClient c = new KuduClient.KuduClientBuilder(miniCluster.getMasterAddresses())
+            try (KuduClient c = new KuduClient.KuduClientBuilder(getMasterAddressesAsString())
                 .build()) {
               KuduTable table = c.openTable(TABLE_NAME);
               for (int j = 0; j < 5; j++) {

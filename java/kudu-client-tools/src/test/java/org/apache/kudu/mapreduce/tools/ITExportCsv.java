@@ -57,7 +57,7 @@ public class ITExportCsv extends BaseKuduTest {
     // create a table with on empty tablet and 3 tablets of 3 rows each.
     createFourTabletsTableWithNineRows(client, TABLE_NAME, DEFAULT_SLEEP);
     String[] args = new String[] {
-      "-D" + CommandLineParser.MASTER_ADDRESSES_KEY + "=" + getMasterAddresses(),
+      "-D" + CommandLineParser.MASTER_ADDRESSES_KEY + "=" + getMasterAddressesAsString(),
       "*", TABLE_NAME, testHome + "/exportdata"};
 
     GenericOptionsParser parser = new GenericOptionsParser(conf, args);

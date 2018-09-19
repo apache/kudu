@@ -32,8 +32,6 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-import com.google.common.net.HostAndPort;
-
 public class TestClientFailoverSupport extends BaseKuduTest {
   private CapturingLogAppender cla = new CapturingLogAppender();
   private Closeable claAttach;
@@ -108,7 +106,7 @@ public class TestClientFailoverSupport extends BaseKuduTest {
     // Kill or restart the leader master.
     switch (failureType) {
     case KILL:
-      killMasterLeader();
+      killLeaderMasterServer();
       break;
     case RESTART:
       restartLeaderMaster();
@@ -121,8 +119,7 @@ public class TestClientFailoverSupport extends BaseKuduTest {
     // to the new one.
     List<LocatedTablet> tablets = table.getTabletsLocations(DEFAULT_SLEEP);
     assertEquals(1, tablets.size());
-    HostAndPort hp = findLeaderTabletServerHostPort(tablets.get(0));
-    miniCluster.killTabletServerOnHostPort(hp);
+    killTabletLeader(tablets.get(0));
 
     // Insert some more rows.
     for (int i = TOTAL_ROWS_TO_INSERT; i < 2*TOTAL_ROWS_TO_INSERT; i++) {

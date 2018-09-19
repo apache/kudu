@@ -51,7 +51,7 @@ public class ITRowCounter extends BaseKuduTest {
     createFourTabletsTableWithNineRows(client, TABLE_NAME, DEFAULT_SLEEP);
 
     String[] args = new String[] {
-        "-D" + CommandLineParser.MASTER_ADDRESSES_KEY + "=" + getMasterAddresses(), TABLE_NAME};
+        "-D" + CommandLineParser.MASTER_ADDRESSES_KEY + "=" + getMasterAddressesAsString(), TABLE_NAME};
     GenericOptionsParser parser = new GenericOptionsParser(conf, args);
     Job job = RowCounter.createSubmittableJob(parser.getConfiguration(), parser.getRemainingArgs());
     assertTrue("Job did not end properly", job.waitForCompletion(true));

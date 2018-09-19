@@ -27,7 +27,6 @@ import java.util.List;
 
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
-import com.google.common.net.HostAndPort;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.UnsafeByteOperations;
 import org.apache.yetus.audience.InterfaceAudience;
@@ -322,7 +321,7 @@ public class ProtobufHelper {
   }
 
   /**
-   * Convert a {@link com.google.common.net.HostAndPort} to
+   * Convert a {@link HostAndPort} to
    *     {@link org.apache.kudu.Common.HostPortPB}
    * protobuf message for serialization.
    * @param hostAndPort The host and port object. Both host and port must be specified.
@@ -337,13 +336,13 @@ public class ProtobufHelper {
 
   /**
    * Convert a {@link org.apache.kudu.Common.HostPortPB} to
-   *     {@link com.google.common.net.HostAndPort}.
-   * @param hostPortPB The fully initialized HostPortPB object. Must have both host and port
-   *                   specified.
+   *     {@link HostAndPort}.
+   * @param hostPortPB The fully initialized HostPortPB object.
+   *                   Must have both host and port specified.
    * @return An initialized initialized HostAndPort object.
    */
   public static HostAndPort hostAndPortFromPB(Common.HostPortPB hostPortPB) {
-    return HostAndPort.fromParts(hostPortPB.getHost(), hostPortPB.getPort());
+    return new HostAndPort(hostPortPB.getHost(), hostPortPB.getPort());
   }
 
   /**

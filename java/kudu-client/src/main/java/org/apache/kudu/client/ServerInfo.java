@@ -23,7 +23,6 @@ import java.net.UnknownHostException;
 import java.util.concurrent.ConcurrentHashMap;
 
 import com.google.common.base.Preconditions;
-import com.google.common.net.HostAndPort;
 import org.apache.yetus.audience.InterfaceAudience;
 
 import org.apache.kudu.util.NetUtil;

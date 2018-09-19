@@ -104,7 +104,7 @@ public class ITImportParquet extends BaseKuduTest {
       sb.append(",");
     }
     sb.deleteCharAt(sb.length() - 1);
-    String[] args = new String[] { "-D" + CommandLineParser.MASTER_ADDRESSES_KEY + "=" + getMasterAddresses(),
+    String[] args = new String[] { "-D" + CommandLineParser.MASTER_ADDRESSES_KEY + "=" + getMasterAddressesAsString(),
       TABLE_NAME, data.toString()};
 
     GenericOptionsParser parser = new GenericOptionsParser(conf, args);

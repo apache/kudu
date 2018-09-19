@@ -15,7 +15,6 @@ package org.apache.kudu.client;
 
 import java.net.InetAddress;
 
-import com.google.common.net.HostAndPort;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -31,7 +30,7 @@ public class TestServerInfo {
 
     ServerInfo serverInfo = new ServerInfo(
         "nevermind",
-        HostAndPort.fromParts("master2.example.com", 12345),
+        new HostAndPort("master2.example.com", 12345),
         InetAddress.getByName("10.1.2.3"));
 
     Assert.assertEquals("master2.example.com", serverInfo.getAndCanonicalizeHostname());
@@ -47,7 +46,7 @@ public class TestServerInfo {
 
     ServerInfo serverInfo = new ServerInfo(
         "abcdef", // uuid
-        HostAndPort.fromParts("master1.example.com", 12345),
+        new HostAndPort("master1.example.com", 12345),
         InetAddress.getByName("10.1.2.3"));
 
     Assert.assertEquals("server123.example.com", serverInfo.getAndCanonicalizeHostname());

@@ -37,7 +37,7 @@ class ITBigLinkedListTest extends KuduTestSuite {
         "--hash-partitions=2",
         "--range-partitions=2",
         "--replicas=1",
-        s"--master-addrs=${miniCluster.getMasterAddresses}"
+        s"--master-addrs=${miniCluster.getMasterAddressesAsString}"
       ),
       ss
     )
@@ -76,7 +76,7 @@ class ITBigLinkedListTest extends KuduTestSuite {
     }
 
     val counts = Verifier
-      .testMain(Array(s"--master-addrs=${miniCluster.getMasterAddresses}"), ss)
+      .testMain(Array(s"--master-addrs=${miniCluster.getMasterAddressesAsString}"), ss)
     assertEquals(2 * 2 * 10000, counts.referenced)
     assertEquals(1, counts.extrareferences)
     assertEquals(2, counts.unreferenced)

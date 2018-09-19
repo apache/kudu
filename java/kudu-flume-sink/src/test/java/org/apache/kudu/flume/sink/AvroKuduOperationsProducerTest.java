@@ -164,7 +164,7 @@ public class AvroKuduOperationsProducerTest extends BaseKuduTest {
     KuduSink sink = new KuduSink(syncClient);
     HashMap<String, String> parameters = new HashMap<>();
     parameters.put(TABLE_NAME, tableName);
-    parameters.put(MASTER_ADDRESSES, getMasterAddresses());
+    parameters.put(MASTER_ADDRESSES, getMasterAddressesAsString());
     parameters.put(PRODUCER, AvroKuduOperationsProducer.class.getName());
     Context context = new Context(parameters);
     context.putAll(ctx.getParameters());

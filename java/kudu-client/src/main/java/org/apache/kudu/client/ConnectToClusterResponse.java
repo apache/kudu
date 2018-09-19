@@ -17,7 +17,6 @@
 
 package org.apache.kudu.client;
 
-import com.google.common.net.HostAndPort;
 import com.google.protobuf.ByteString;
 
 import org.apache.kudu.Common.PartitionPB;
@@ -41,7 +40,7 @@ class ConnectToClusterResponse {
   private final ConnectToMasterResponsePB connectResponse;
 
   public ConnectToClusterResponse(HostAndPort hostAndPort,
-      ConnectToMasterResponsePB connectResponse) {
+                                  ConnectToMasterResponsePB connectResponse) {
     super();
     this.leaderHostAndPort = hostAndPort;
     this.connectResponse = connectResponse;

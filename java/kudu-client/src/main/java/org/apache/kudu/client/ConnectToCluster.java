@@ -28,7 +28,6 @@ import com.google.common.base.Functions;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
-import com.google.common.net.HostAndPort;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import org.apache.yetus.audience.InterfaceAudience;
@@ -188,8 +187,8 @@ final class ConnectToCluster {
   /**
    * Creates a callback for a ConnectToMaster RPC that was sent to 'hostAndPort'.
    * @see ConnectToMasterCB
-   * @param hostAndPort Host and part for the RPC we're attaching this to. Host and port must
-   *                    be valid.
+   * @param hostAndPort Host and port for the RPC we're attaching this to.
+   *                    Host and port must be valid.
    * @return The callback object that can be added to the RPC request.
    */
   @InterfaceAudience.LimitedPrivate("Test")
@@ -200,8 +199,8 @@ final class ConnectToCluster {
   /**
    * Creates an errback for a ConnectToMaster that was sent to 'hostAndPort'.
    * @see ConnectToMasterErrCB
-   * @param hostAndPort Host and port for the RPC we're attaching this to. Used for debugging
-   *                    purposes.
+   * @param hostAndPort Host and port for the RPC we're attaching this to.
+   *                Used for debugging purposes.
    * @return The errback object that can be added to the RPC request.
    */
   @InterfaceAudience.LimitedPrivate("Test")

@@ -92,7 +92,7 @@ public class ITInputFormatJob extends BaseKuduTest {
             job,
             TABLE_NAME,
             "*",
-            getMasterAddresses())
+            getMasterAddressesAsString())
             .operationTimeoutMs(DEFAULT_SLEEP)
             .addDependencies(false)
             .cacheBlocks(false)

@@ -27,7 +27,6 @@ import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.google.common.net.HostAndPort;
 import com.google.protobuf.ByteString;
 import org.junit.Test;
 
@@ -172,7 +171,7 @@ public class TestRemoteTablet {
 
       String uuid = kUuids[i];
       servers.add(new ServerInfo(uuid,
-                                 HostAndPort.fromParts("host", 1000 + i),
+                                 new HostAndPort("host", 1000 + i),
                                  addr));
       tabletPb.addReplicas(TestUtils.getFakeTabletReplicaPB(
           uuid, "host", i,

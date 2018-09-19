@@ -36,10 +36,8 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
-import com.google.common.net.HostAndPort;
 
 import org.apache.kudu.Common;
-import org.apache.kudu.Common.HostPortPB;
 import org.apache.kudu.tools.Tool.ControlShellRequestPB;
 import org.apache.kudu.tools.Tool.ControlShellResponsePB;
 import org.apache.kudu.tools.Tool.CreateClusterRequestPB.MiniKdcOptionsPB;
@@ -89,10 +87,10 @@ public class MiniKuduCluster implements AutoCloseable {
   }
 
   // Map of master addresses to daemon information.
-  private final Map<HostAndPort, DaemonInfo> masters = Maps.newHashMap();
+  private final Map<HostAndPort, DaemonInfo> masterServers = Maps.newHashMap();
 
   // Map of tserver addresses to daemon information.
-  private final Map<HostAndPort, DaemonInfo> tservers = Maps.newHashMap();
+  private final Map<HostAndPort, DaemonInfo> tabletServers = Maps.newHashMap();
 
   // Builder-provided cluster configuration state.
   private final boolean enableKerberos;
@@ -243,7 +241,7 @@ public class MiniKuduCluster implements AutoCloseable {
       }
     }
 
-    // Initialize the maps of masters and tservers.
+    // Initialize the maps of master and tablet servers.
     ControlShellResponsePB resp = sendRequestToCluster(
         ControlShellRequestPB.newBuilder()
         .setGetMasters(GetMastersRequestPB.newBuilder().build())
@@ -252,7 +250,7 @@ public class MiniKuduCluster implements AutoCloseable {
       DaemonInfo d = new DaemonInfo();
       d.id = info.getId();
       d.isRunning = true;
-      masters.put(hostAndPortFromPB(info.getBoundRpcAddress()), d);
+      masterServers.put(ProtobufHelper.hostAndPortFromPB(info.getBoundRpcAddress()), d);
     }
     resp = sendRequestToCluster(
         ControlShellRequestPB.newBuilder()
@@ -262,23 +260,44 @@ public class MiniKuduCluster implements AutoCloseable {
       DaemonInfo d = new DaemonInfo();
       d.id = info.getId();
       d.isRunning = true;
-      tservers.put(hostAndPortFromPB(info.getBoundRpcAddress()), d);
+      tabletServers.put(ProtobufHelper.hostAndPortFromPB(info.getBoundRpcAddress()), d);
     }
   }
 
   /**
-   * Restarts a master identified by hostname and port. The master must already be dead.
-   * @param hp unique hostname and port identifying the master
-   * @throws IOException if the master is believed to be alive
+   * @return comma-separated list of master server addresses
    */
-  public void restartDeadMasterOnHostPort(HostAndPort hp) throws IOException {
-    DaemonInfo d = masters.get(hp);
-    if (d == null) {
-      throw new IOException(String.format("Master %s not found", hp));
-    }
+  public String getMasterAddressesAsString() {
+    return Joiner.on(',').join(masterServers.keySet());
+  }
+
+  /**
+   * @return the list of master servers
+   */
+  public List<HostAndPort> getMasterServers() {
+    return new ArrayList(masterServers.keySet());
+  }
+
+  /**
+   * @return the list of tablet servers
+   */
+  public List<HostAndPort> getTabletServers() {
+    return new ArrayList(tabletServers.keySet());
+  }
+
+  /**
+   * Starts a master identified by a host and port.
+   * Does nothing if the server was already running.
+   *
+   * @param hp unique host and port identifying the server
+   * @throws IOException if something went wrong in transit
+   */
+  public void startMasterServer(HostAndPort hp) throws IOException {
+    DaemonInfo d = getMasterServer(hp);
     if (d.isRunning) {
-      throw new IOException(String.format("Master %s is already running", hp));
+      return;
     }
+    LOG.info("Starting master server {}", hp);
     sendRequestToCluster(ControlShellRequestPB.newBuilder()
         .setStartDaemon(StartDaemonRequestPB.newBuilder().setId(d.id).build())
         .build());
@@ -286,19 +305,18 @@ public class MiniKuduCluster implements AutoCloseable {
   }
 
   /**
-   * Kills a master identified by hostname and port. Does nothing if the master
-   * was already dead.
-   * @param hp unique hostname and port identifying the master
+   * Kills a master identified identified by an host and port.
+   * Does nothing if the master was already dead.
+   *
+   * @param hp unique host and port identifying the server
    * @throws IOException if something went wrong in transit
    */
-  public void killMasterOnHostPort(HostAndPort hp) throws IOException {
-    DaemonInfo d = masters.get(hp);
-    if (d == null) {
-      throw new IOException(String.format("Master %s not found", hp));
-    }
+  public void killMasterServer(HostAndPort hp) throws IOException {
+    DaemonInfo d = getMasterServer(hp);
     if (!d.isRunning) {
       return;
     }
+    LOG.info("Killing master server {}", hp);
     sendRequestToCluster(ControlShellRequestPB.newBuilder()
         .setStopDaemon(StopDaemonRequestPB.newBuilder().setId(d.id).build())
         .build());
@@ -306,18 +324,18 @@ public class MiniKuduCluster implements AutoCloseable {
   }
 
   /**
-   * Restarts a tserver identified by hostname and port. The tserver must already be dead.
-   * @param hp unique hostname and port identifying the tserver
-   * @throws IOException if the tserver is believed to be alive
+   * Starts a tablet server identified by an host and port.
+   * Does nothing if the server was already running.
+   *
+   * @param hp unique host and port identifying the server
+   * @throws IOException if something went wrong in transit
    */
-  public void restartDeadTabletServerOnHostPort(HostAndPort hp) throws IOException {
-    DaemonInfo d = tservers.get(hp);
-    if (d == null) {
-      throw new IOException(String.format("Tserver %s not found", hp));
-    }
+  public void startTabletServer(HostAndPort hp) throws IOException {
+    DaemonInfo d = getTabletServer(hp);
     if (d.isRunning) {
-      throw new IOException(String.format("Tserver %s is already running", hp));
+      return;
     }
+    LOG.info("Starting tablet server {}", hp);
     sendRequestToCluster(ControlShellRequestPB.newBuilder()
         .setStartDaemon(StartDaemonRequestPB.newBuilder().setId(d.id).build())
         .build());
@@ -325,20 +343,18 @@ public class MiniKuduCluster implements AutoCloseable {
   }
 
   /**
-   * Kills a tserver identified by hostname and port. Does nothing if the tserver
-   * was already dead.
-   * @param hp unique hostname and port identifying the tserver
+   * Kills a tablet server identified by an host and port.
+   * Does nothing if the tablet server was already dead.
+   *
+   * @param hp unique host and port identifying the server
    * @throws IOException if something went wrong in transit
    */
-  public void killTabletServerOnHostPort(HostAndPort hp) throws IOException {
-    DaemonInfo d = tservers.get(hp);
-    if (d == null) {
-      throw new IOException(String.format("Tserver %s not found", hp));
-    }
+  public void killTabletServer(HostAndPort hp) throws IOException {
+    DaemonInfo d = getTabletServer(hp);
     if (!d.isRunning) {
       return;
     }
-    LOG.info("Killing tserver {}", hp);
+    LOG.info("Killing tablet server {}", hp);
     sendRequestToCluster(ControlShellRequestPB.newBuilder()
         .setStopDaemon(StopDaemonRequestPB.newBuilder().setId(d.id).build())
         .build());
@@ -346,66 +362,50 @@ public class MiniKuduCluster implements AutoCloseable {
   }
 
   /**
-   * Kills all masters not already stopped.
+   * Kills all the master servers.
+   * Does nothing to the servers that are already dead.
+   *
    * @throws IOException if something went wrong in transit
    */
-  public void killMasters() throws IOException {
-    List<HostAndPort> toKill = Lists.newArrayList();
-    for (Map.Entry<HostAndPort, DaemonInfo> e : masters.entrySet()) {
-      if (e.getValue().isRunning) {
-        toKill.add(e.getKey());
-      }
-    }
-    for (HostAndPort hp : toKill) {
-      killMasterOnHostPort(hp);
+  public void killAllMasterServers() throws IOException {
+    for (Map.Entry<HostAndPort, DaemonInfo> e : masterServers.entrySet()) {
+      killMasterServer(e.getKey());
     }
   }
 
   /**
-   * Starts all currently stopped masters.
+   * Starts all the master servers.
+   * Does nothing to the servers that are already running.
+   *
    * @throws IOException if something went wrong in transit
    */
-  public void restartDeadMasters() throws IOException {
-    List<HostAndPort> toRestart = Lists.newArrayList();
-    for (Map.Entry<HostAndPort, DaemonInfo> e : masters.entrySet()) {
-      if (!e.getValue().isRunning) {
-        toRestart.add(e.getKey());
-      }
-    }
-    for (HostAndPort hp : toRestart) {
-      restartDeadMasterOnHostPort(hp);
+  public void startAllMasterServers() throws IOException {
+    for (Map.Entry<HostAndPort, DaemonInfo> e : masterServers.entrySet()) {
+      startMasterServer(e.getKey());
     }
   }
 
   /**
-   * Kills all tservers not already stopped.
+   * Kills all tablet servers.
+   * Does nothing to the servers that are already dead.
+   *
    * @throws IOException if something went wrong in transit
    */
-  public void killTservers() throws IOException {
-    List<HostAndPort> toKill = Lists.newArrayList();
-    for (Map.Entry<HostAndPort, DaemonInfo> e : tservers.entrySet()) {
-      if (e.getValue().isRunning) {
-        toKill.add(e.getKey());
-      }
-    }
-    for (HostAndPort hp : toKill) {
-      killTabletServerOnHostPort(hp);
+  public void killAllTabletServers() throws IOException {
+    for (Map.Entry<HostAndPort, DaemonInfo> e : tabletServers.entrySet()) {
+      killTabletServer(e.getKey());
     }
   }
 
   /**
-   * Starts all currently stopped tservers.
+   * Starts all the tablet servers.
+   * Does nothing to the servers that are already running.
+   *
    * @throws IOException if something went wrong in transit
    */
-  public void restartDeadTservers() throws IOException {
-    List<HostAndPort> toRestart = Lists.newArrayList();
-    for (Map.Entry<HostAndPort, DaemonInfo> e : tservers.entrySet()) {
-      if (!e.getValue().isRunning) {
-        toRestart.add(e.getKey());
-      }
-    }
-    for (HostAndPort hp : toRestart) {
-      restartDeadTabletServerOnHostPort(hp);
+  public void startAllTabletServers() throws IOException {
+    for (Map.Entry<HostAndPort, DaemonInfo> e : tabletServers.entrySet()) {
+      startTabletServer(e.getKey());
     }
   }
 
@@ -413,9 +413,10 @@ public class MiniKuduCluster implements AutoCloseable {
    * Removes all credentials for all principals from the Kerberos credential cache.
    */
   public void kdestroy() throws IOException {
+    LOG.info("Destroying all Kerberos credentials");
     sendRequestToCluster(ControlShellRequestPB.newBuilder()
-                                              .setKdestroy(KdestroyRequestPB.getDefaultInstance())
-                                              .build());
+        .setKdestroy(KdestroyRequestPB.getDefaultInstance())
+        .build());
   }
 
   /**
@@ -424,6 +425,7 @@ public class MiniKuduCluster implements AutoCloseable {
    * @param username the username to kinit as
    */
   public void kinit(String username) throws IOException {
+    LOG.info("Running kinit for user {}", username);
     sendRequestToCluster(ControlShellRequestPB.newBuilder()
         .setKinit(KinitRequestPB.newBuilder().setUsername(username).build())
         .build());
@@ -473,24 +475,33 @@ public class MiniKuduCluster implements AutoCloseable {
   }
 
   /**
-   * @return comma-separated list of master addresses
+   * Returns a master server identified by an address.
+   *
+   * @param hp unique host and port identifying the server
+   * @return the DaemonInfo of the server
+   * @throws RuntimeException if the server is not found
    */
-  public String getMasterAddresses() {
-    return Joiner.on(',').join(masters.keySet());
+  private DaemonInfo getMasterServer(HostAndPort hp) throws RuntimeException {
+    DaemonInfo d = masterServers.get(hp);
+    if (d == null) {
+      throw new RuntimeException(String.format("Master server %s not found", hp));
+    }
+    return d;
   }
 
   /**
-   * @return list of all masters, uniquely identified by hostname and port
+   * Returns a tablet server identified by an address.
+   *
+   * @param hp unique host and port identifying the server
+   * @return the DaemonInfo of the server
+   * @throws RuntimeException if the server is not found
    */
-  public List<HostAndPort> getMasterHostPorts() {
-    return new ArrayList<>(masters.keySet());
-  }
-
-  /**
-   * @return list of all tservers, uniquely identified by hostname and port
-   */
-  public List<HostAndPort> getTserverHostPorts() {
-    return new ArrayList<>(tservers.keySet());
+  private DaemonInfo getTabletServer(HostAndPort hp) throws RuntimeException {
+    DaemonInfo d = tabletServers.get(hp);
+    if (d == null) {
+      throw new RuntimeException(String.format("Tablet server %s not found", hp));
+    }
+    return d;
   }
 
   /**
@@ -520,14 +531,6 @@ public class MiniKuduCluster implements AutoCloseable {
         }
       }
     }
-  }
-
-  /**
-   * TODO(KUDU-2186): If used directly from {@link ProtobufHelper}, tests from
-   * other modules break when run by Gradle.
-   */
-  private static HostAndPort hostAndPortFromPB(HostPortPB hostPortPB) {
-    return HostAndPort.fromParts(hostPortPB.getHost(), hostPortPB.getPort());
   }
 
   /**

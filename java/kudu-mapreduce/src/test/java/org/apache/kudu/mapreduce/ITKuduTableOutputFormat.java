@@ -45,7 +45,7 @@ public class ITKuduTableOutputFormat extends BaseKuduTest {
 
     KuduTableOutputFormat output = new KuduTableOutputFormat();
     Configuration conf = new Configuration();
-    conf.set(KuduTableOutputFormat.MASTER_ADDRESSES_KEY, getMasterAddresses());
+    conf.set(KuduTableOutputFormat.MASTER_ADDRESSES_KEY, getMasterAddressesAsString());
     conf.set(KuduTableOutputFormat.OUTPUT_TABLE_KEY, TABLE_NAME);
     output.setConf(conf);
 

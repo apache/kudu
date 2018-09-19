@@ -165,7 +165,7 @@ public class TestAsyncKuduSession extends BaseKuduTest {
   /** Regression test for a failure to correctly handle a timeout when flushing a batch. */
   @Test
   public void testInsertIntoUnavailableTablet() throws Exception {
-    killTabletServers();
+    killAllTabletServers();
     try {
       AsyncKuduSession session = client.newSession();
       session.setTimeoutMillis(1);
@@ -180,7 +180,7 @@ public class TestAsyncKuduSession extends BaseKuduTest {
       assertEquals(1, responses.size());
       assertTrue(responses.get(0).getRowError().getErrorStatus().isTimedOut());
     } finally {
-      restartTabletServers();
+      startAllTabletServers();
     }
   }
 
@@ -210,8 +210,8 @@ public class TestAsyncKuduSession extends BaseKuduTest {
       int numClientsBefore = client.getConnectionListCopy().size();
 
       // Restart all the tablet servers.
-      killTabletServers();
-      restartTabletServers();
+      killAllTabletServers();
+      startAllTabletServers();
 
       // Perform another write, which will require reconnecting to the same
       // tablet server that we wrote to above.
@@ -221,7 +221,7 @@ public class TestAsyncKuduSession extends BaseKuduTest {
       int numClientsAfter = client.getConnectionListCopy().size();
       assertEquals(numClientsBefore, numClientsAfter);
     } finally {
-      restartTabletServers();
+      startAllTabletServers();
 
       client.deleteTable("non-replicated").join();
     }

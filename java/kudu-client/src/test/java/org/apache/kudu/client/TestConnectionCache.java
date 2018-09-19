@@ -22,7 +22,6 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertTrue;
 
-import com.google.common.net.HostAndPort;
 import com.stumbleupon.async.Deferred;
 import org.junit.Test;
 
@@ -37,13 +36,13 @@ public class TestConnectionCache {
       cluster = new MiniKuduCluster.MiniKuduClusterBuilder().numMasters(3).build();
 
       final AsyncKuduClient client =
-          new AsyncKuduClient.AsyncKuduClientBuilder(cluster.getMasterAddresses()).build();
+          new AsyncKuduClient.AsyncKuduClientBuilder(cluster.getMasterAddressesAsString()).build();
       // Below we ping the masters directly using RpcProxy, so if they aren't ready to process
       // RPCs we'll get an error. Here by listing the tables we make sure this won't happen since
       // it won't return until a master leader is found.
       client.getTablesList().join();
 
-      HostAndPort masterHostPort = cluster.getMasterHostPorts().get(0);
+      HostAndPort masterHostPort = cluster.getMasterServers().get(0);
       ServerInfo firstMaster = new ServerInfo("fake-uuid", masterHostPort,
           NetUtil.getInetAddress(masterHostPort.getHost()));
 

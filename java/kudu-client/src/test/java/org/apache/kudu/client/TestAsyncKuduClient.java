@@ -202,7 +202,7 @@ public class TestAsyncKuduClient extends BaseKuduTest {
     assertEquals(0, countRowsInScan(syncClient.newScannerBuilder(table).build()));
 
     // Make it impossible to use Kudu.
-    killTabletServers();
+    killAllTabletServers();
 
     // Create a scan with a short timeout.
     KuduScanner scanner = syncClient.newScannerBuilder(table).scanRequestTimeout(1000).build();

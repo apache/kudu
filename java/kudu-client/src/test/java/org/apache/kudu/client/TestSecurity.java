@@ -40,11 +40,9 @@ import org.hamcrest.CoreMatchers;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
-import org.junit.BeforeClass;
 import org.junit.Rule;
 import org.junit.Test;
 
-import com.google.common.base.Preconditions;
 import com.google.common.base.Stopwatch;
 import com.google.common.collect.ImmutableSet;
 import com.stumbleupon.async.Deferred;
@@ -79,7 +77,7 @@ public class TestSecurity {
         .numTservers(opts.contains(Option.START_TSERVERS) ? 3 : 0)
         .build();
     miniCluster.kinit("test-admin");
-    client = new KuduClient.KuduClientBuilder(miniCluster.getMasterAddresses()).build();
+    client = new KuduClient.KuduClientBuilder(miniCluster.getMasterAddressesAsString()).build();
 
     // TODO(todd): it seems that exportAuthenticationCredentials() doesn't properly retry
     // in the case that there is no leader, even though NoLeaderFoundException is a RecoverableException.
@@ -122,7 +120,7 @@ public class TestSecurity {
   }
 
   private KuduClient createClient() {
-    return new KuduClient.KuduClientBuilder(miniCluster.getMasterAddresses()).build();
+    return new KuduClient.KuduClientBuilder(miniCluster.getMasterAddressesAsString()).build();
   }
 
   private void checkClientCanReconnect(KuduClient client) throws IOException {
@@ -132,8 +130,8 @@ public class TestSecurity {
     // would continue to work even though our credentials might have
     // expired (we only authenticate when a connection is negotiated, not
     // for each call).
-    miniCluster.killMasters();
-    miniCluster.restartDeadMasters();
+    miniCluster.killAllMasterServers();
+    miniCluster.startAllMasterServers();
     client.listTabletServers();
   }
 
@@ -152,7 +150,7 @@ public class TestSecurity {
     System.clearProperty(SecurityUtil.KUDU_TICKETCACHE_PROPERTY);
     try {
       KuduClient newClient = new KuduClient.KuduClientBuilder(
-          miniCluster.getMasterAddresses()).build();
+          miniCluster.getMasterAddressesAsString()).build();
 
       // Test that a client with no credentials cannot list servers.
       try {
@@ -255,7 +253,7 @@ public class TestSecurity {
           new BooleanExpression() {
             @Override
             public boolean get() throws Exception {
-              ConnectToCluster connector = new ConnectToCluster(miniCluster.getMasterHostPorts());
+              ConnectToCluster connector = new ConnectToCluster(miniCluster.getMasterServers());
               List<Deferred<ConnectToMasterResponsePB>> deferreds =
                       connector.connectToMasters(newClient.asyncClient.getMasterTable(), null,
                       /* timeout = */50000,
@@ -293,8 +291,8 @@ public class TestSecurity {
       newClient.importAuthenticationCredentials(authnData);
       System.err.println("=> imported auth");
 
-      miniCluster.killMasters();
-      miniCluster.restartDeadMasters();
+      miniCluster.killAllMasterServers();
+      miniCluster.startAllMasterServers();
       newClient.listTabletServers();
       System.err.println("=> listTabletServers");
     } finally {
@@ -364,8 +362,8 @@ public class TestSecurity {
           @Override
           public boolean get() throws Exception {
             Thread.sleep(3000);
-            miniCluster.killMasters();
-            miniCluster.restartDeadMasters();
+            miniCluster.killAllMasterServers();
+            miniCluster.startAllMasterServers();
             try {
               client.listTabletServers();
             } catch (Exception e) {
