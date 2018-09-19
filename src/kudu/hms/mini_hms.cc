@@ -221,6 +221,10 @@ Status MiniHms::CreateHiveSite() const {
   //
   // - hive.metastore.disallow.incompatible.col.type.changes
   //     Configures the HMS to allow altering and dropping columns.
+  //
+  // - hive.support.special.characters.tablename
+  //     Configures the HMS to allow special characters such as '/' in table
+  //     names.
   static const string kFileTemplate = R"(
 <configuration>
   <property>
@@ -279,6 +283,11 @@ Status MiniHms::CreateHiveSite() const {
   <property>
     <name>hive.metastore.disallow.incompatible.col.type.changes</name>
     <value>false</value>
+  </property>
+
+  <property>
+    <name>hive.support.special.characters.tablename</name>
+    <value>true</value>
   </property>
 </configuration>
   )";
