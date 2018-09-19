@@ -216,7 +216,8 @@ public class TestKuduClient extends BaseKuduTest {
       scanner.nextRows();
       fail("Exception was not thrown when accessing an expired scanner");
     } catch (NonRecoverableException ex) {
-      assertThat(ex.getMessage(), containsString("Scanner not found"));
+      assertTrue("Expected Scanner not found error, got:\n" + ex.toString(),
+                 ex.getMessage().matches(".*Scanner .* not found.*"));
     }
 
     // Closing an expired scanner shouldn't throw an exception.

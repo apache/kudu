@@ -146,6 +146,7 @@ class TabletServiceImpl : public TabletServerServiceIf {
                               TabletServerErrorPB::Code* error_code);
 
   Status HandleContinueScanRequest(const ScanRequestPB* req,
+                                   const rpc::RpcContext* rpc_context,
                                    ScanResultCollector* result_collector,
                                    bool* has_more_results,
                                    TabletServerErrorPB::Code* error_code);

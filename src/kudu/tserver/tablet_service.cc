@@ -1265,7 +1265,11 @@ void TabletServiceImpl::ScannerKeepAlive(const ScannerKeepAliveRequestPB *req,
   SharedScanner scanner;
   if (!server_->scanner_manager()->LookupScanner(req->scanner_id(), &scanner)) {
     resp->mutable_error()->set_code(TabletServerErrorPB::SCANNER_EXPIRED);
-    StatusToPB(Status::NotFound("Scanner not found"), resp->mutable_error()->mutable_status());
+    Status s = Status::NotFound(Substitute("Scanner $0 not found (it may have expired)",
+                                           req->scanner_id()));
+    StatusToPB(s, resp->mutable_error()->mutable_status());
+    LOG(INFO) << Substitute("ScannerKeepAlive: $0: remote=$1",
+                            s.ToString(), context->requestor_string());
     context->RespondSuccess();
     return;
   }
@@ -1328,7 +1332,7 @@ void TabletServiceImpl::Scan(const ScanRequestPB* req,
       resp->set_snap_timestamp(scan_timestamp.ToUint64());
     }
   } else if (req->has_scanner_id()) {
-    Status s = HandleContinueScanRequest(req, &collector, &has_more_results, &error_code);
+    Status s = HandleContinueScanRequest(req, context, &collector, &has_more_results, &error_code);
     if (PREDICT_FALSE(!s.ok())) {
       SetupErrorAndRespond(resp->mutable_error(), s, error_code, context);
       return;
@@ -1544,7 +1548,7 @@ void TabletServiceImpl::Checksum(const ChecksumRequestPB* req,
     const ContinueChecksumRequestPB& continue_req = req->continue_request();
     collector.set_agg_checksum(continue_req.previous_checksum());
     scan_req.set_scanner_id(continue_req.scanner_id());
-    Status s = HandleContinueScanRequest(&scan_req, &collector, &has_more, &error_code);
+    Status s = HandleContinueScanRequest(&scan_req, context, &collector, &has_more, &error_code);
     if (PREDICT_FALSE(!s.ok())) {
       SetupErrorAndRespond(resp->mutable_error(), s, error_code, context);
       return;
@@ -1978,8 +1982,8 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
     // and call the second half directly
     ScanRequestPB continue_req(*req);
     continue_req.set_scanner_id(scanner->id());
-    RETURN_NOT_OK(HandleContinueScanRequest(&continue_req, result_collector, has_more_results,
-                                            error_code));
+    RETURN_NOT_OK(HandleContinueScanRequest(&continue_req, rpc_context, result_collector,
+                                            has_more_results, error_code));
   } else {
     // Increment the scanner call sequence ID. HandleContinueScanRequest handles
     // this in the non-empty scan case.
@@ -1990,6 +1994,7 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
 
 // Continue an existing scan request.
 Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
+                                                    const RpcContext* rpc_context,
                                                     ScanResultCollector* result_collector,
                                                     bool* has_more_results,
                                                     TabletServerErrorPB::Code* error_code) {
@@ -1999,18 +2004,22 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
 
   size_t batch_size_bytes = GetMaxBatchSizeBytesHint(req);
 
-  // TODO: need some kind of concurrency control on these scanner objects
+  // TODO(todd): need some kind of concurrency control on these scanner objects
   // in case multiple RPCs hit the same scanner at the same time. Probably
   // just a trylock and fail the RPC if it contends.
   SharedScanner scanner;
   if (!server_->scanner_manager()->LookupScanner(req->scanner_id(), &scanner)) {
     if (batch_size_bytes == 0 && req->close_scanner()) {
-      // A request to close a non-existent scanner.
+      // Silently ignore any request to close a non-existent scanner.
       return Status::OK();
-    } else {
-      *error_code = TabletServerErrorPB::SCANNER_EXPIRED;
-      return Status::NotFound("Scanner not found");
     }
+
+    *error_code = TabletServerErrorPB::SCANNER_EXPIRED;
+    Status s = Status::NotFound(Substitute("Scanner $0 not found (it may have expired)",
+                                           req->scanner_id()));
+    LOG(INFO) << Substitute("Scan: $0: call sequence id=$1, remote=$2",
+                            s.ToString(), req->call_seq_id(), rpc_context->requestor_string());
+    return s;
   }
 
   // Set the row format flags on the ScanResultCollector.

@@ -1505,7 +1505,8 @@ TEST_F(ClientTest, TestNonFaultTolerantScannerExpired) {
 
   // We should now get the appropriate error.
   s = scanner.NextBatch(&batch);
-  EXPECT_EQ("Not found: Scanner not found", s.ToString());
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+  ASSERT_STR_MATCHES(s.ToString(), "Scanner .* not found");
 
   // It should not have performed any retries. Since we restarted the server above,
   // we should see only one Scan RPC: the latest (failed) attempt above.

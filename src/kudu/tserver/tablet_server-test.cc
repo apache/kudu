@@ -95,6 +95,7 @@
 #include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/jsonwriter.h"
+#include "kudu/util/logging_test_util.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
@@ -1581,6 +1582,11 @@ TEST_P(ExpiredScannerParamTest, Test) {
   // Initially, there've been no scanners, so none of have expired.
   ASSERT_EQ(0, scanners_expired->value());
 
+  // Capture the glog output so we can ensure the scanner expiration message
+  // gets logged.
+  StringVectorSink capture_logs;
+  ScopedRegisterSink reg(&capture_logs);
+
   // Open a scanner but don't read from it.
   ScanResponsePB resp;
   ASSERT_NO_FATAL_FAILURE(OpenScannerWithAllColumns(&resp, mode));
@@ -1599,16 +1605,19 @@ TEST_P(ExpiredScannerParamTest, Test) {
   ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
   ASSERT_TRUE(resp.has_error());
   ASSERT_EQ(TabletServerErrorPB::SCANNER_EXPIRED, resp.error().code());
+  ASSERT_STR_MATCHES(resp.error().status().message(), "Scanner .* not found");
+
+  ASSERT_STRINGS_ANY_MATCH(capture_logs.logged_msgs(), "Scan: .* Scanner .* not found .* remote=");
 }
 
-const ReadMode read_modes[] = {
+static const ReadMode kReadModes[] = {
     READ_LATEST,
     READ_AT_SNAPSHOT,
     READ_YOUR_WRITES,
 };
 
 INSTANTIATE_TEST_CASE_P(Params, ExpiredScannerParamTest,
-                        testing::ValuesIn(read_modes));
+                        testing::ValuesIn(kReadModes));
 
 class ScanCorruptedDeltasParamTest :
     public TabletServerTest,
@@ -1682,7 +1691,7 @@ TEST_P(ScanCorruptedDeltasParamTest, Test) {
 }
 
 INSTANTIATE_TEST_CASE_P(Params, ScanCorruptedDeltasParamTest,
-                        testing::ValuesIn(read_modes));
+                        testing::ValuesIn(kReadModes));
 
 class ScannerOpenWhenServerShutsDownParamTest :
     public TabletServerTest,
@@ -1705,7 +1714,7 @@ TEST_P(ScannerOpenWhenServerShutsDownParamTest, Test) {
 }
 
 INSTANTIATE_TEST_CASE_P(Params, ScannerOpenWhenServerShutsDownParamTest,
-                        testing::ValuesIn(read_modes));
+                        testing::ValuesIn(kReadModes));
 
 TEST_F(TabletServerTest, TestSnapshotScan) {
   const int num_rows = AllowSlowTests() ? 1000 : 100;
@@ -2358,7 +2367,7 @@ TEST_P(InvalidScanRequest_NewScanAndScannerIDParamTest, Test) {
 }
 
 INSTANTIATE_TEST_CASE_P(Params, InvalidScanRequest_NewScanAndScannerIDParamTest,
-                        testing::ValuesIn(read_modes));
+                        testing::ValuesIn(kReadModes));
 
 // Test that passing a projection with fields not present in the tablet schema
 // throws an exception.
@@ -2426,7 +2435,7 @@ TEST_P(InvalidScanRequest_WithIdsParamTest, Test) {
 }
 
 INSTANTIATE_TEST_CASE_P(Params, InvalidScanRequest_WithIdsParamTest,
-                        testing::ValuesIn(read_modes));
+                        testing::ValuesIn(kReadModes));
 
 // Test scanning a tablet that has no entries.
 TEST_F(TabletServerTest, TestScan_NoResults) {
@@ -2503,11 +2512,14 @@ TEST_P(InvalidScanSeqIdParamTest, Test) {
 }
 
 INSTANTIATE_TEST_CASE_P(Params, InvalidScanSeqIdParamTest,
-                        testing::ValuesIn(read_modes));
+                        testing::ValuesIn(kReadModes));
 
 // Regression test for KUDU-1789: when ScannerKeepAlive is called on a non-existent
 // scanner, it should properly respond with an error.
 TEST_F(TabletServerTest, TestScan_KeepAliveExpiredScanner) {
+  StringVectorSink capture_logs;
+  ScopedRegisterSink reg(&capture_logs);
+
   ScannerKeepAliveRequestPB req;
   ScannerKeepAliveResponsePB resp;
   RpcController rpc;
@@ -2515,8 +2527,12 @@ TEST_F(TabletServerTest, TestScan_KeepAliveExpiredScanner) {
   rpc.set_timeout(MonoDelta::FromSeconds(5));
   req.set_scanner_id("does-not-exist");
   ASSERT_OK(proxy_->ScannerKeepAlive(req, &resp, &rpc));
-  ASSERT_TRUE(resp.has_error());
+  ASSERT_TRUE(resp.has_error()) << SecureShortDebugString(resp);
   ASSERT_EQ(resp.error().code(), TabletServerErrorPB::SCANNER_EXPIRED);
+  ASSERT_STR_MATCHES(resp.error().status().message(), "Scanner .* not found");
+
+  ASSERT_STRINGS_ANY_MATCH(capture_logs.logged_msgs(),
+                           "ScannerKeepAlive: .* Scanner .* not found .* remote=");
 }
 
 void TabletServerTest::ScanYourWritesTest(uint64_t propagated_timestamp,
