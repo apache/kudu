@@ -52,6 +52,7 @@ import org.apache.kudu.tools.Tool.KinitRequestPB;
 import org.apache.kudu.tools.Tool.StartClusterRequestPB;
 import org.apache.kudu.tools.Tool.StartDaemonRequestPB;
 import org.apache.kudu.tools.Tool.StopDaemonRequestPB;
+import org.apache.kudu.util.KuduBinaryLocator;
 import org.apache.kudu.util.SecurityUtil;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
@@ -187,7 +188,7 @@ public class MiniKuduCluster implements AutoCloseable {
 
     // Start the control shell and the communication channel to it.
     List<String> commandLine = Lists.newArrayList(
-        TestUtils.findBinary("kudu"),
+        KuduBinaryLocator.findBinary("kudu"),
         "test",
         "mini_cluster",
         "--serialization=pb");

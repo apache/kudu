@@ -185,7 +185,7 @@ public class DistTestTask extends DefaultTask {
     for (Map.Entry<String, Object> e : test.getSystemProperties().entrySet()) {
       cmd.add("-D" + e.getKey() + "=" + e.getValue());
     }
-    cmd.add("-DbinDir=" + isolateFileDir.relativize(binDir),
+    cmd.add("-DkuduBinDir=" + isolateFileDir.relativize(binDir),
             "org.junit.runner.JUnitCore",
             testClass);
 

@@ -151,6 +151,9 @@
                         <reuseForks>false</reuseForks>
                         <redirectTestOutputToFile>true</redirectTestOutputToFile>
                         <argLine>${testArgLine}</argLine>
+                        <systemPropertyVariables>
+                            <kuduBinDir>${project.basedir}/../../build/latest/bin</kuduBinDir>
+                        </systemPropertyVariables>
                     </configuration>
                 </plugin>
                 <plugin>
@@ -162,6 +165,9 @@
                         <reuseForks>false</reuseForks>
                         <redirectTestOutputToFile>true</redirectTestOutputToFile>
                         <argLine>${testArgLine}</argLine>
+                        <systemPropertyVariables>
+                            <kuduBinDir>${project.basedir}/../../build/latest/bin</kuduBinDir>
+                        </systemPropertyVariables>
                     </configuration>
                 </plugin>
                 <plugin>

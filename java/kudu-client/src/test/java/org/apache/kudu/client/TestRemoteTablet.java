@@ -28,6 +28,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.google.protobuf.ByteString;
+import org.apache.kudu.util.ProtobufUtils;
 import org.junit.Test;
 
 import org.apache.kudu.consensus.Metadata;
@@ -154,7 +155,7 @@ public class TestRemoteTablet {
   static RemoteTablet getTablet(int leaderIndex, int localReplicaIndex) {
     Master.TabletLocationsPB.Builder tabletPb = Master.TabletLocationsPB.newBuilder();
 
-    tabletPb.setPartition(TestUtils.getFakePartitionPB());
+    tabletPb.setPartition(ProtobufUtils.getFakePartitionPB());
     tabletPb.setTabletId(ByteString.copyFromUtf8("fake tablet"));
     List<ServerInfo> servers = new ArrayList<>();
     for (int i = 0; i < 3; i++) {
@@ -173,7 +174,7 @@ public class TestRemoteTablet {
       servers.add(new ServerInfo(uuid,
                                  new HostAndPort("host", 1000 + i),
                                  addr));
-      tabletPb.addReplicas(TestUtils.getFakeTabletReplicaPB(
+      tabletPb.addReplicas(ProtobufUtils.getFakeTabletReplicaPB(
           uuid, "host", i,
           leaderIndex == i ? Metadata.RaftPeerPB.Role.LEADER : Metadata.RaftPeerPB.Role.FOLLOWER));
     }

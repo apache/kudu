@@ -32,6 +32,7 @@ import java.util.concurrent.TimeUnit;
 import com.google.common.base.Stopwatch;
 import com.google.protobuf.ByteString;
 import com.stumbleupon.async.Deferred;
+import org.apache.kudu.util.ProtobufUtils;
 import org.junit.Test;
 
 import org.apache.kudu.ColumnSchema;
@@ -142,7 +143,7 @@ public class TestAsyncKuduClient extends BaseKuduTest {
       partition.setPartitionKeyEnd(ByteString.copyFrom("b" + i, UTF_8.name()));
       tabletPb.setPartition(partition);
       tabletPb.setTabletId(ByteString.copyFromUtf8("some id " + i));
-      tabletPb.addReplicas(TestUtils.getFakeTabletReplicaPB(
+      tabletPb.addReplicas(ProtobufUtils.getFakeTabletReplicaPB(
           "uuid", badHostname + i, i, Metadata.RaftPeerPB.Role.FOLLOWER));
       tabletLocations.add(tabletPb.build());
     }
@@ -177,9 +178,9 @@ public class TestAsyncKuduClient extends BaseKuduTest {
     // Fake a master lookup that only returns one follower for the tablet.
     List<Master.TabletLocationsPB> tabletLocations = new ArrayList<>();
     Master.TabletLocationsPB.Builder tabletPb = Master.TabletLocationsPB.newBuilder();
-    tabletPb.setPartition(TestUtils.getFakePartitionPB());
+    tabletPb.setPartition(ProtobufUtils.getFakePartitionPB());
     tabletPb.setTabletId(ByteString.copyFrom(tablet.getTabletId()));
-    tabletPb.addReplicas(TestUtils.getFakeTabletReplicaPB(
+    tabletPb.addReplicas(ProtobufUtils.getFakeTabletReplicaPB(
         "master", leader.getRpcHost(), leader.getRpcPort(), Metadata.RaftPeerPB.Role.FOLLOWER));
     tabletLocations.add(tabletPb.build());
     try {

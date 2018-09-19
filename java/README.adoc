@@ -55,7 +55,7 @@ for Kudu, those should be present already.
 
 If for some reason the binaries aren't in the expected location
 as shown above, you can pass
-`-DbinDir=/path/to/directory`.
+`-DkuduBinDir=/path/to/directory`.
 
 Once everything is setup correctly, run:
 

@@ -30,12 +30,12 @@ import org.apache.kudu.client.CreateTableOptions
 import org.apache.kudu.client.KuduTable
 import org.apache.kudu.client.PartialRow
 import org.apache.kudu.client.PartitionSchema
-import org.apache.kudu.client.TestUtils
 import org.apache.kudu.ColumnSchema
 import org.apache.kudu.Schema
 import org.apache.kudu.Type
 import org.apache.kudu.spark.kudu._
 import org.apache.kudu.util.DecimalUtil
+import org.apache.kudu.util.RandomUtils
 import org.junit.Assert._
 import org.junit.Test
 import org.slf4j.Logger
@@ -85,7 +85,7 @@ class TestKuduBackup extends KuduTestSuite {
 
   @Test
   def testRandomBackupAndRestore() {
-    Random.javaRandomToRandom(TestUtils.getRandom)
+    Random.javaRandomToRandom(RandomUtils.getRandom)
 
     val table = createRandomTable()
     val tableName = table.getName

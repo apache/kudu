@@ -28,6 +28,7 @@ import java.util.concurrent.TimeUnit;
 import com.google.common.base.Stopwatch;
 import com.stumbleupon.async.Deferred;
 import org.apache.kudu.junit.RetryRule;
+import org.apache.kudu.util.RandomUtils;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 import org.junit.After;
@@ -51,7 +52,7 @@ public class BaseKuduTest {
   // to complete, etc.
   protected static final int DEFAULT_SLEEP = 50000;
 
-  private final Random randomForTSRestart = TestUtils.getRandom();
+  private final Random randomForTSRestart = RandomUtils.getRandom();
 
   private static final int NUM_MASTERS = 3;
   private static final int NUM_TABLET_SERVERS = 3;
