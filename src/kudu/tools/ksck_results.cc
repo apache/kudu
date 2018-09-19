@@ -210,79 +210,93 @@ int ServerHealthScore(KsckServerHealth sh) {
   }
 }
 
-Status KsckResults::PrintTo(PrintMode mode, ostream& out) {
+Status KsckResults::PrintTo(PrintMode mode, int sections, ostream& out) {
   if (mode == PrintMode::JSON_PRETTY || mode == PrintMode::JSON_COMPACT) {
-    return PrintJsonTo(mode, out);
+    return PrintJsonTo(mode, sections, out);
   }
 
   // First, report on the masters and master tablet.
-  std::sort(master_summaries.begin(), master_summaries.end(), ServerByHealthComparator);
-  RETURN_NOT_OK(PrintServerHealthSummaries(KsckServerType::MASTER,
-                                           master_summaries,
-                                           out));
-  if (mode == PrintMode::PLAIN_FULL || master_consensus_conflict) {
-    RETURN_NOT_OK(PrintConsensusMatrix(master_uuids,
-                                       boost::none,
-                                       master_consensus_state_map,
-                                       out));
-  }
-  out << endl;
-
-  RETURN_NOT_OK(PrintFlagTable(KsckServerType::MASTER,
-                               master_summaries.size(),
-                               master_flag_to_servers_map,
-                               master_flag_tags_map,
-                               out));
-  if (!master_flag_to_servers_map.empty()) {
+  if (sections & (int)PrintSections::MASTER_SUMMARIES) {
+    std::sort(master_summaries.begin(), master_summaries.end(), ServerByHealthComparator);
+    RETURN_NOT_OK(PrintServerHealthSummaries(KsckServerType::MASTER,
+                                             master_summaries,
+                                             out));
+    if (mode == PrintMode::PLAIN_FULL || master_consensus_conflict) {
+      RETURN_NOT_OK(PrintConsensusMatrix(master_uuids,
+                                         boost::none,
+                                         master_consensus_state_map,
+                                         out));
+    }
     out << endl;
+
+    RETURN_NOT_OK(PrintFlagTable(KsckServerType::MASTER,
+                                 master_summaries.size(),
+                                 master_flag_to_servers_map,
+                                 master_flag_tags_map,
+                                 out));
+    if (!master_flag_to_servers_map.empty()) {
+      out << endl;
+    }
   }
 
   // Then, on the health of the tablet servers.
-  std::sort(tserver_summaries.begin(), tserver_summaries.end(), ServerByHealthComparator);
-  RETURN_NOT_OK(PrintServerHealthSummaries(KsckServerType::TABLET_SERVER,
-                                           tserver_summaries,
-                                           out));
-  if (!tserver_summaries.empty()) {
-    out << endl;
-  }
+  if (sections & (int)PrintSections::TSERVER_SUMMARIES) {
+    std::sort(tserver_summaries.begin(), tserver_summaries.end(), ServerByHealthComparator);
+    RETURN_NOT_OK(PrintServerHealthSummaries(KsckServerType::TABLET_SERVER,
+                                             tserver_summaries,
+                                             out));
+    if (!tserver_summaries.empty()) {
+      out << endl;
+    }
 
-  RETURN_NOT_OK(PrintFlagTable(KsckServerType::TABLET_SERVER,
-                               tserver_summaries.size(),
-                               tserver_flag_to_servers_map,
-                               tserver_flag_tags_map,
-                               out));
-  if (!tserver_flag_to_servers_map.empty()) {
-    out << endl;
+    RETURN_NOT_OK(PrintFlagTable(KsckServerType::TABLET_SERVER,
+                                 tserver_summaries.size(),
+                                 tserver_flag_to_servers_map,
+                                 tserver_flag_tags_map,
+                                 out));
+    if (!tserver_flag_to_servers_map.empty()) {
+      out << endl;
+    }
   }
 
   // Finally, in the "server section", print the version summary.
-  RETURN_NOT_OK(PrintVersionTable(master_summaries, tserver_summaries, out));
-  out << endl;
+  if (sections & (int)PrintSections::VERSION_SUMMARIES) {
+    RETURN_NOT_OK(PrintVersionTable(master_summaries, tserver_summaries, out));
+    out << endl;
+  }
 
   // Then, on each tablet.
-  RETURN_NOT_OK(PrintTabletSummaries(tablet_summaries, mode, out));
+  if (sections & (int)PrintSections::TABLET_SUMMARIES) {
+    RETURN_NOT_OK(PrintTabletSummaries(tablet_summaries, mode, out));
+  }
 
   // Then, summarize the tablets by table.
   // Sort the tables so unhealthy tables are easy to see at the bottom.
-  std::sort(table_summaries.begin(), table_summaries.end(),
-            [](const KsckTableSummary& left, const KsckTableSummary& right) {
-              return std::make_pair(left.TableStatus() != KsckCheckResult::HEALTHY, left.name) <
-                     std::make_pair(right.TableStatus() != KsckCheckResult::HEALTHY, right.name);
-            });
-  RETURN_NOT_OK(PrintTableSummaries(table_summaries, out));
-  if (!table_summaries.empty()) {
-    out << endl;
+  if (sections & (int)PrintSections::TABLE_SUMMARIES) {
+    std::sort(table_summaries.begin(), table_summaries.end(),
+              [](const KsckTableSummary &left, const KsckTableSummary &right) {
+                  return std::make_pair(left.TableStatus() != KsckCheckResult::HEALTHY, left.name) <
+                         std::make_pair(right.TableStatus() != KsckCheckResult::HEALTHY, right.name);
+              });
+    RETURN_NOT_OK(PrintTableSummaries(table_summaries, out));
+    if (!table_summaries.empty()) {
+      out << endl;
+    }
   }
 
   // Next, report on checksum scans.
-  RETURN_NOT_OK(PrintChecksumResults(checksum_results, out));
-  if (!checksum_results.tables.empty()) {
-    out << endl;
+  if (sections & (int)PrintSections::CHECKSUM_RESULTS) {
+    RETURN_NOT_OK(PrintChecksumResults(checksum_results, out));
+    if (!checksum_results.tables.empty()) {
+      out << endl;
+    }
   }
 
   // And, add a summary of all the things we checked.
-  RETURN_NOT_OK(PrintTotalCounts(*this, out));
-  out << endl;
+  if (sections & (int)PrintSections::TOTAL_COUNT) {
+    RETURN_NOT_OK(PrintTotalCounts(*this, out));
+    out << endl;
+  }
 
   // Penultimately, print the warnings.
   if (!warning_messages.empty()) {
@@ -712,39 +726,50 @@ void KsckChecksumResultsToPb(const KsckChecksumResults& results,
   }
 }
 
-void KsckResults::ToPb(KsckResultsPB* pb) const {
+void KsckResults::ToPb(KsckResultsPB* pb, int sections) const {
   for (const auto& error : error_messages) {
     pb->add_errors(error.ToString());
   }
 
-  for (const auto& master_summary : master_summaries) {
-    KsckServerHealthSummaryToPb(master_summary, pb->add_master_summaries());
-  }
-  for (const auto& tserver_summary : tserver_summaries) {
-    KsckServerHealthSummaryToPb(tserver_summary, pb->add_tserver_summaries());
-  }
-
-  for (const auto& master_uuid : master_uuids) {
-    pb->add_master_uuids(master_uuid);
-  }
-  pb->set_master_consensus_conflict(master_consensus_conflict);
-  for (const auto& entry : master_consensus_state_map) {
-    KsckConsensusStateToPb(entry.second, pb->add_master_consensus_states());
+  if (sections & (int)PrintSections::MASTER_SUMMARIES) {
+    for (const auto &master_summary : master_summaries) {
+      KsckServerHealthSummaryToPb(master_summary, pb->add_master_summaries());
+    }
+    for (const auto& master_uuid : master_uuids) {
+      pb->add_master_uuids(master_uuid);
+    }
+    pb->set_master_consensus_conflict(master_consensus_conflict);
+    for (const auto& entry : master_consensus_state_map) {
+      KsckConsensusStateToPb(entry.second, pb->add_master_consensus_states());
+    }
   }
 
-  for (const auto& tablet : tablet_summaries) {
-    KsckTabletSummaryToPb(tablet, pb->add_tablet_summaries());
-  }
-  for (const auto& table : table_summaries) {
-    KsckTableSummaryToPb(table, pb->add_table_summaries());
+  if (sections & (int)PrintSections::TSERVER_SUMMARIES) {
+    for (const auto &tserver_summary : tserver_summaries) {
+      KsckServerHealthSummaryToPb(tserver_summary, pb->add_tserver_summaries());
+    }
   }
 
-  if (!checksum_results.tables.empty()) {
-    KsckChecksumResultsToPb(checksum_results, pb->mutable_checksum_results());
+  if (sections & (int)PrintSections::TABLET_SUMMARIES) {
+    for (const auto &tablet : tablet_summaries) {
+      KsckTabletSummaryToPb(tablet, pb->add_tablet_summaries());
+    }
+  }
+
+  if (sections & (int)PrintSections::TABLE_SUMMARIES) {
+    for (const auto &table : table_summaries) {
+      KsckTableSummaryToPb(table, pb->add_table_summaries());
+    }
+  }
+
+  if (sections & (int)PrintSections::CHECKSUM_RESULTS) {
+    if (!checksum_results.tables.empty()) {
+      KsckChecksumResultsToPb(checksum_results, pb->mutable_checksum_results());
+    }
   }
 }
 
-Status KsckResults::PrintJsonTo(PrintMode mode, ostream& out) const {
+Status KsckResults::PrintJsonTo(PrintMode mode, int sections, ostream& out) const {
   CHECK(mode == PrintMode::JSON_PRETTY || mode == PrintMode::JSON_COMPACT);
   JsonWriter::Mode jw_mode = JsonWriter::Mode::PRETTY;
   if (mode == PrintMode::JSON_COMPACT) {
@@ -752,7 +777,7 @@ Status KsckResults::PrintJsonTo(PrintMode mode, ostream& out) const {
   }
 
   KsckResultsPB pb;
-  ToPb(&pb);
+  ToPb(&pb, sections);
   out << JsonWriter::ToJson(pb, jw_mode) << endl;
   return Status::OK();
 }
