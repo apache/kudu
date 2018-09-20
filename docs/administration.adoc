@@ -1178,6 +1178,14 @@ Per-table replica distribution summary:
  Average      | 1.000000
 ----
 
+If more details are needed in addition to the replica distribution summary,
+use the `--output_replica_distribution_details` flag. If added, the flag makes
+the tool print per-table and per-tablet server replica distribution statistics
+as well.
+
+Use the `--report_only` flag to get a report on table- and cluster-wide
+replica distribution statistics without starting any rebalancing activity.
+
 The rebalancer can also be restricted to run on a subset of the tables by
 supplying the `--tables` flag. Note that, when running on a subset of tables,
 the tool will not attempt to balance the cluster as a whole.
