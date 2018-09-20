@@ -1120,6 +1120,43 @@ a node onto another machine.
 
 . Start all Kudu processes in the cluster.
 
+[[minimizing_cluster_disruption_during_temporary_single_ts_downtime]]
+=== Minimizing cluster disruption during temporary planned downtime of a single tablet server
+
+If a single tablet server is brought down temporarily in a healthy cluster, all
+tablets will remain available and clients will function as normal, after
+potential short delays due to leader elections. However, if the downtime lasts
+for more than `--follower_unavailable_considered_failed_sec` (default 300)
+seconds, the tablet replicas on the down tablet server will be replaced by new
+replicas on available tablet servers. This will cause stress on the cluster
+as tablets re-replicate and, if the downtime lasts long enough, significant
+reduction in the number of replicas on the down tablet server. This may require
+the rebalancer to fix.
+
+To work around this, increase `--follower_unavailable_considered_failed_sec` on
+all tablet servers so the amount of time before re-replication will start is
+longer than the expected downtime of the tablet server, including the time it
+takes the tablet server to restart and bootstrap its tablet replicas. To do
+this, run the following command for each tablet server:
+
+[source,bash]
+----
+$ sudo -u kudu kudu tserver set_flag <tserver_address> follower_unavailable_considered_failed_sec <num_seconds>
+----
+
+where `<num_seconds>` is the number of seconds that will encompass the downtime.
+Once the downtime is finished, reset the flag to its original value.
+
+----
+$ sudo -u kudu kudu tserver set_flag <tserver_address> follower_unavailable_considered_failed_sec <original_value>
+----
+
+WARNING: Be sure to reset the value of `--follower_unavailable_considered_failed_sec`
+to its original value.
+
+NOTE: On Kudu versions prior to 1.8, the `--force` flag must be provided in the above
+commands.
+
 [[rebalancer_tool]]
 === Running the tablet rebalancing tool
 
