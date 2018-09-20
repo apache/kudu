@@ -88,6 +88,8 @@ DEFINE_string(print_entries, "decoded",
               "  true|1|yes|decoded = print them decoded\n"
               "  pb = print the raw protobuf\n"
               "  id = print only their ids");
+DEFINE_string(table_name, "",
+              "Restrict output to a specific table by name");
 DEFINE_int64(timeout_ms, 1000 * 60, "RPC timeout in milliseconds");
 DEFINE_int32(truncate_data, 100,
              "Truncate the data fields to the given number of bytes "

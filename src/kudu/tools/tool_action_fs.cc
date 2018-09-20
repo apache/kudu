@@ -88,7 +88,8 @@ DEFINE_bool(repair, false,
             "Repair any inconsistencies in the filesystem.");
 
 DEFINE_string(table_id, "",
-              "Restrict output to a specific table");
+              "Restrict output to a specific table by id");
+DECLARE_string(table_name);
 DEFINE_string(tablet_id, "",
               "Restrict output to a specific tablet");
 DEFINE_int64(rowset_id, -1,
@@ -728,6 +729,7 @@ Status List(const RunnerContext& /*context*/) {
     RETURN_NOT_OK(fs_manager.ListTabletIds(&tablet_ids));
   }
 
+  string table_name = FLAGS_table_name;
   string table_id = FLAGS_table_id;
   ToLowerCase(&table_id);
 
@@ -738,6 +740,10 @@ Status List(const RunnerContext& /*context*/) {
     scoped_refptr<TabletMetadata> tablet_metadata;
     RETURN_NOT_OK(TabletMetadata::Load(&fs_manager, tablet_id, &tablet_metadata));
     const TabletMetadata& tablet = *tablet_metadata.get();
+
+    if (!table_name.empty() && table_name != tablet.table_name()) {
+      continue;
+    }
 
     if (!table_id.empty() && table_id != tablet.table_id()) {
       continue;
@@ -892,6 +898,7 @@ unique_ptr<Mode> BuildFsMode() {
       .AddOptionalParameter("fs_metadata_dir")
       .AddOptionalParameter("fs_wal_dir")
       .AddOptionalParameter("table_id")
+      .AddOptionalParameter("table_name")
       .AddOptionalParameter("tablet_id")
       .AddOptionalParameter("rowset_id")
       .AddOptionalParameter("column_id")

@@ -174,7 +174,9 @@
 #include <unordered_map>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/client/client.h"
@@ -295,18 +297,7 @@ DEFINE_string(auto_database, "default",
               "not created. This flag is useful primarily when the Hive Metastore "
               "integration is enabled in the cluster. If empty, no database is "
               "used.");
-DEFINE_string(table_name, "",
-              "Name of an existing table to use for the test. The test will "
-              "determine the structure of the table schema and "
-              "populate it with data accordingly. If left empty, "
-              "the test automatically creates a table of pre-defined columnar "
-              "structure with unique name and uses it to insert "
-              "auto-generated data. The auto-created table is dropped "
-              "upon successful completion of the test if not overridden "
-              "by the '--keep_auto_table' flag. If running the test against "
-              "an already existing table, it's highly recommended to use a "
-              "dedicated table created just for testing purposes: "
-              "the existing table nor its data is never dropped/deleted.");
+DECLARE_string(table_name);
 DEFINE_int32(table_num_hash_partitions, 8,
              "The number of hash partitions to create when this tool creates "
              "a new table. Note: The total number of partitions must be "
@@ -779,7 +770,18 @@ unique_ptr<Mode> BuildPerfMode() {
       .AddOptionalParameter("show_first_n_errors")
       .AddOptionalParameter("string_fixed")
       .AddOptionalParameter("string_len")
-      .AddOptionalParameter("table_name")
+      .AddOptionalParameter("table_name", boost::none, string(
+            "Name of an existing table to use for the test. The test will "
+            "determine the structure of the table schema and "
+            "populate it with data accordingly. If left empty, "
+            "the test automatically creates a table of pre-defined columnar "
+            "structure with unique name and uses it to insert "
+            "auto-generated data. The auto-created table is dropped "
+            "upon successful completion of the test if not overridden "
+            "by the '--keep_auto_table' flag. If running the test against "
+            "an already existing table, it's highly recommended to use a "
+            "dedicated table created just for testing purposes: "
+            "the existing table nor its data is never dropped/deleted."))
       .AddOptionalParameter("table_num_hash_partitions")
       .AddOptionalParameter("table_num_range_partitions")
       .AddOptionalParameter("table_num_replicas")
