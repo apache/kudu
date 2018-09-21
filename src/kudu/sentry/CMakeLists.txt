@@ -35,6 +35,7 @@ set(SENTRY_SRCS
   sentry_client.cc)
 set(SENTRY_DEPS
   kudu_common
+  kudu_thrift
   kudu_util
   sentry_thrift)
 

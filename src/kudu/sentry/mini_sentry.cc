@@ -74,7 +74,7 @@ Status MiniSentry::Start() {
 
   auto tmp_dir = GetTestDataDirectory();
 
-  RETURN_NOT_OK(CreateSentrySite(tmp_dir));
+  RETURN_NOT_OK(CreateSentryConfigs(tmp_dir));
 
   map<string, string> env_vars {
       { "JAVA_HOME", java_home },
@@ -126,7 +126,7 @@ Status MiniSentry::Resume() {
   return Status::OK();
 }
 
-Status MiniSentry::CreateSentrySite(const string& tmp_dir) const {
+Status MiniSentry::CreateSentryConfigs(const string& tmp_dir) const {
 
   // - sentry.store.jdbc.url
   // - sentry.store.jdbc.password
@@ -136,6 +136,15 @@ Status MiniSentry::CreateSentrySite(const string& tmp_dir) const {
   // - datanucleus.schema.autoCreateAll
   // - sentry.verify.schema.version
   //     Allow Sentry to startup and run without first running the schemaTool.
+  //
+  // - sentry.store.group.mapping
+  //   sentry.store.group.mapping.resource
+  //     Production Sentry instances use Hadoop's UGI infrastructure to map users
+  //     to groups, but that's difficult to mock for tests, so we configure a
+  //     simpler static user/group mapping based on a generated INI file.
+  //
+  // - sentry.service.admin.group
+  //     Set up admin groups which have unrestricted privileges in Sentry.
   static const string kFileTemplate = R"(
 <configuration>
 
@@ -160,17 +169,45 @@ Status MiniSentry::CreateSentrySite(const string& tmp_dir) const {
   </property>
 
   <property>
-   <name>sentry.verify.schema.version</name>
+    <name>sentry.verify.schema.version</name>
     <value>false</value>
+  </property>
+
+  <property>
+    <name>sentry.store.group.mapping</name>
+    <value>org.apache.sentry.provider.file.LocalGroupMappingService</value>
+  </property>
+
+  <property>
+    <name>sentry.store.group.mapping.resource</name>
+    <value>$1</value>
+  </property>
+
+  <property>
+    <name>sentry.service.admin.group</name>
+    <value>admin</value>
   </property>
 </configuration>
   )";
 
-  string file_contents = Substitute(kFileTemplate, tmp_dir);
+  string users_ini_path = JoinPathSegments(tmp_dir, "users.ini");
+  string file_contents = Substitute(kFileTemplate, tmp_dir, users_ini_path);
+  RETURN_NOT_OK(WriteStringToFile(Env::Default(),
+                                  file_contents,
+                                  JoinPathSegments(tmp_dir, "sentry-site.xml")));
 
-  return WriteStringToFile(Env::Default(),
-                           file_contents,
-                           JoinPathSegments(tmp_dir, "sentry-site.xml"));
+  // Simple file format containing mapping of user to groups in INI syntax, see
+  // the LocalGroupMappingService class for more information.
+  static const string kUsers = R"(
+[users]
+test-admin=admin
+test-user=user
+kudu=admin
+joe-interloper=""
+)";
+
+  RETURN_NOT_OK(WriteStringToFile(Env::Default(), kUsers, users_ini_path));
+  return Status::OK();
 }
 
 } // namespace sentry

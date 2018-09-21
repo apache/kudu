@@ -61,8 +61,9 @@ class MiniSentry {
 
  private:
 
-  // Creates a sentry-site.xml for the mini Sentry.
-  Status CreateSentrySite(const std::string& tmp_dir) const WARN_UNUSED_RESULT;
+  // Creates a sentry-site.xml for the mini Sentry, and other supporting
+  // configuration files.
+  Status CreateSentryConfigs(const std::string& tmp_dir) const WARN_UNUSED_RESULT;
 
   // Waits for the metastore process to bind to a port.
   Status WaitForSentryPorts() WARN_UNUSED_RESULT;
