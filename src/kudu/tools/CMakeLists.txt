@@ -89,6 +89,7 @@ target_link_libraries(ksck
 add_library(kudu_tools_rebalance
   rebalancer.cc
   rebalance_algo.cc
+  placement_policy_util.cc
   tool_replica_util.cc
 )
 target_link_libraries(kudu_tools_rebalance
@@ -179,6 +180,7 @@ ADD_KUDU_TEST_DEPENDENCIES(kudu-tool-test
 ADD_KUDU_TEST(kudu-ts-cli-test)
 ADD_KUDU_TEST_DEPENDENCIES(kudu-ts-cli-test
   kudu)
+ADD_KUDU_TEST(placement_policy_util-test)
 ADD_KUDU_TEST(rebalance-test)
 ADD_KUDU_TEST(rebalance_algo-test)
 ADD_KUDU_TEST(rebalancer_tool-test

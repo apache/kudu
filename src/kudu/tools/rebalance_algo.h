@@ -19,7 +19,9 @@
 #include <cstdint>
 #include <map>
 #include <random>
+#include <set>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <gtest/gtest_prod.h>
@@ -33,8 +35,9 @@ template <class T> class optional;
 namespace kudu {
 namespace tools {
 
-// A map from a count of replicas to a server id. The "reversed" relationship
-// facilitates finding the servers with the maximum and minimum counts.
+// A map from a count of replicas to a server identifier. The "reversed"
+// relationship facilitates finding the servers with the maximum and minimum
+// replica counts.
 typedef std::multimap<int32_t, std::string> ServersByCountMap;
 
 // Balance information for a table.
@@ -59,11 +62,20 @@ struct ClusterBalanceInfo {
   // skew between them decreases, or when the skew decreases.
   std::multimap<int32_t, TableBalanceInfo> table_info_by_skew;
 
-  // Mapping total replica count -> tablet server.
+  // Mapping total replica count -> tablet server identifier.
   //
   // The total replica count of a tablet server is defined as the total number
   // of replicas hosted on the tablet server.
   ServersByCountMap servers_by_total_replica_count;
+};
+
+struct ClusterLocalityInfo {
+  // Location-related information: distribution of tablet servers by locations.
+  // Mapping 'location' --> 'identifiers of tablet servers in the location'.
+  std::unordered_map<std::string, std::set<std::string>> servers_by_location;
+
+  // Mapping 'tablet server identifier' --> 'location'.
+  std::unordered_map<std::string, std::string> location_by_ts_id;
 };
 
 // A directive to move some replica of a table between two tablet servers.

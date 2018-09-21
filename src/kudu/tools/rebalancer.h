@@ -28,12 +28,18 @@
 #include <vector>
 
 #include <boost/optional/optional.hpp>
-#include <gtest/gtest_prod.h>
 
 #include "kudu/client/shared_ptr.h"
+#include "kudu/tools/ksck_results.h"
 #include "kudu/tools/rebalance_algo.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
+
+namespace kudu {
+namespace tools {
+struct TabletsPlacementInfo;
+}  // namespace tools
+}  // namespace kudu
 
 namespace kudu {
 
@@ -45,6 +51,13 @@ namespace tools {
 
 class Ksck;
 struct KsckResults;
+
+// Sub-set of fields from KsckResult which are relevant to the rebalancing.
+struct ClusterRawInfo {
+  std::vector<KsckServerHealthSummary> tserver_summaries;
+  std::vector<KsckTableSummary> table_summaries;
+  std::vector<KsckTabletSummary> tablet_summaries;
+};
 
 // A class implementing logic for Kudu cluster rebalancing.
 class Rebalancer {
@@ -96,6 +109,7 @@ class Rebalancer {
     std::string tablet_uuid;
     std::string ts_uuid_from;
     std::string ts_uuid_to;
+    boost::optional<int64_t> config_opid_idx; // for CAS-enabled Raft changes
   };
 
   enum class RunStatus {
@@ -288,7 +302,6 @@ class Rebalancer {
 
   // Auxiliary Ksck object to get information on the cluster.
   std::shared_ptr<Ksck> ksck_;
-
 };
 
 } // namespace tools

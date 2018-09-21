@@ -142,6 +142,7 @@ int ServerHealthScore(KsckServerHealth sh);
 struct KsckServerHealthSummary {
   std::string uuid;
   std::string address;
+  std::string ts_location;
   boost::optional<std::string> version;
   KsckServerHealth health = KsckServerHealth::HEALTHY;
   Status status = Status::OK();
