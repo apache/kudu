@@ -291,31 +291,31 @@ Status HybridClock::WaitUntilAfter(const Timestamp& then,
 
   SleepFor(MonoDelta::FromMicroseconds(wait_for_usec));
 
-
   VLOG(1) << "WaitUntilAfter(): Incoming time(latest): " << then_latest_usec
           << " Now(earliest): " << now_earliest_usec << " error: " << error
           << " Waiting for: " << wait_for_usec;
-
   return Status::OK();
 }
 
 Status HybridClock::WaitUntilAfterLocally(const Timestamp& then,
                                           const MonoTime& deadline) {
-  while (true) {
-    Timestamp now;
-    uint64_t error;
-    {
-      std::lock_guard<simple_spinlock> lock(lock_);
-      NowWithError(&now, &error);
-    }
-    if (now > then) {
-      return Status::OK();
-    }
-    uint64_t wait_for_usec = GetPhysicalValueMicros(then) - GetPhysicalValueMicros(now);
-
-    // Check that sleeping wouldn't sleep longer than our deadline.
-    RETURN_NOT_OK(CheckDeadlineNotWithinMicros(deadline, wait_for_usec));
+  Timestamp now;
+  uint64_t error;
+  {
+    std::lock_guard<simple_spinlock> lock(lock_);
+    NowWithError(&now, &error);
   }
+  if (now > then) {
+    return Status::OK();
+  }
+  uint64_t wait_for_usec = GetPhysicalValueMicros(then) - GetPhysicalValueMicros(now);
+
+  // Check that sleeping wouldn't sleep longer than our deadline.
+  RETURN_NOT_OK(CheckDeadlineNotWithinMicros(deadline, wait_for_usec));
+
+  SleepFor(MonoDelta::FromMicroseconds(wait_for_usec));
+
+  return Status::OK();
 }
 
 bool HybridClock::IsAfter(Timestamp t) {
