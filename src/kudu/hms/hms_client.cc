@@ -20,55 +20,35 @@
 #include <algorithm>
 #include <exception>
 #include <memory>
-#include <mutex>
-#include <ostream>
 #include <string>
 #include <vector>
 
 #include <boost/algorithm/string/predicate.hpp>
-#include <gflags/gflags.h>
 #include <glog/logging.h>
-#include <thrift/TOutput.h>
 #include <thrift/Thrift.h>
-#include <thrift/protocol/TBinaryProtocol.h>
 #include <thrift/protocol/TJSONProtocol.h>
 #include <thrift/protocol/TProtocol.h>
 #include <thrift/transport/TBufferTransports.h>
-#include <thrift/transport/TSocket.h>
 #include <thrift/transport/TTransport.h>
 #include <thrift/transport/TTransportException.h>
 
-#include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/hms/ThriftHiveMetastore.h"
 #include "kudu/hms/hive_metastore_types.h"
-#include "kudu/hms/sasl_client_transport.h"
-#include "kudu/util/flag_tags.h"
-#include "kudu/util/net/net_util.h"
+#include "kudu/thrift/client.h"
+#include "kudu/thrift/sasl_client_transport.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 
-// Default to 100 MiB to match Thrift TSaslTransport.receiveSaslMessage and the
-// HMS metastore.server.max.message.size config.
-DEFINE_int32(hms_client_max_buf_size, 100 * 1024 * 1024,
-             "Maximum size of Hive Metastore objects that can be received by the "
-             "HMS client in bytes.");
-TAG_FLAG(hms_client_max_buf_size, experimental);
-// Note: despite being marked as a runtime flag, the new buf size value will
-// only take effect for new HMS clients.
-TAG_FLAG(hms_client_max_buf_size, runtime);
-
 using apache::thrift::TException;
-using apache::thrift::protocol::TBinaryProtocol;
 using apache::thrift::protocol::TJSONProtocol;
-using apache::thrift::transport::TBufferedTransport;
 using apache::thrift::transport::TMemoryBuffer;
-using apache::thrift::transport::TSocket;
-using apache::thrift::transport::TTransport;
 using apache::thrift::transport::TTransportException;
-using std::make_shared;
+using kudu::thrift::ClientOptions;
+using kudu::thrift::CreateClientProtocol;
+using kudu::thrift::SaslException;
 using std::shared_ptr;
 using std::string;
 using std::vector;
@@ -140,40 +120,8 @@ const uint16_t HmsClient::kDefaultHmsPort = 9083;
 
 const int kSlowExecutionWarningThresholdMs = 1000;
 
-namespace {
-// A logging callback for Thrift.
-//
-// Normally this would be defined in a more neutral location (e.g. Impala
-// defines it in thrift-util.cc), but since Hive is currently Kudu's only user
-// of Thrift, it's nice to have the log messsages originate from hms_client.cc.
-void ThriftOutputFunction(const char* output) {
-  LOG(INFO) << output;
-}
-} // anonymous namespace
-
-HmsClient::HmsClient(const HostPort& hms_address, const HmsClientOptions& options)
-      : client_(nullptr) {
-  static std::once_flag set_thrift_logging_callback;
-  std::call_once(set_thrift_logging_callback, [] {
-      apache::thrift::GlobalOutput.setOutputFunction(ThriftOutputFunction);
-  });
-
-  auto socket = make_shared<TSocket>(hms_address.host(), hms_address.port());
-  socket->setSendTimeout(options.send_timeout.ToMilliseconds());
-  socket->setRecvTimeout(options.recv_timeout.ToMilliseconds());
-  socket->setConnTimeout(options.conn_timeout.ToMilliseconds());
-  shared_ptr<TTransport> transport;
-
-  if (options.enable_kerberos) {
-    transport = make_shared<SaslClientTransport>(hms_address.host(),
-                                                 std::move(socket),
-                                                 FLAGS_hms_client_max_buf_size);
-  } else {
-    transport = make_shared<TBufferedTransport>(std::move(socket));
-  }
-
-  auto protocol = make_shared<TBinaryProtocol>(std::move(transport));
-  client_ = hive::ThriftHiveMetastoreClient(std::move(protocol));
+HmsClient::HmsClient(const HostPort& address, const ClientOptions& options)
+      : client_(hive::ThriftHiveMetastoreClient(CreateClientProtocol(address, options))) {
 }
 
 HmsClient::~HmsClient() {

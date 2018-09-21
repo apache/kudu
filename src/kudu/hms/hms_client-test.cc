@@ -36,6 +36,7 @@
 #include "kudu/hms/mini_hms.h"
 #include "kudu/rpc/sasl_common.h"
 #include "kudu/security/test/mini_kdc.h"
+#include "kudu/thrift/client.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
@@ -107,7 +108,7 @@ TEST_P(HmsClientTest, TestHmsOperations) {
   optional<SaslProtection::Type> protection = GetParam();
   MiniKdc kdc;
   MiniHms hms;
-  HmsClientOptions hms_client_opts;
+  thrift::ClientOptions hms_client_opts;
 
   if (protection) {
     ASSERT_OK(kdc.Start());
@@ -282,7 +283,7 @@ TEST_P(HmsClientTest, TestLargeObjects) {
 
   MiniKdc kdc;
   MiniHms hms;
-  HmsClientOptions hms_client_opts;
+  thrift::ClientOptions hms_client_opts;
 
   if (protection) {
     ASSERT_OK(kdc.Start());
@@ -352,7 +353,7 @@ TEST_F(HmsClientTest, TestHmsFaultHandling) {
   MiniHms hms;
   ASSERT_OK(hms.Start());
 
-  HmsClientOptions options;
+  thrift::ClientOptions options;
   options.recv_timeout = MonoDelta::FromMilliseconds(500),
   options.send_timeout = MonoDelta::FromMilliseconds(500);
   HmsClient client(hms.address(), options);
@@ -386,7 +387,7 @@ TEST_F(HmsClientTest, TestHmsConnect) {
   Sockaddr loopback;
   ASSERT_OK(loopback.ParseString("127.0.0.1", 0));
 
-  HmsClientOptions options;
+  thrift::ClientOptions options;
   options.recv_timeout = MonoDelta::FromMilliseconds(100),
   options.send_timeout = MonoDelta::FromMilliseconds(100);
   options.conn_timeout = MonoDelta::FromMilliseconds(100);
@@ -435,7 +436,7 @@ TEST_F(HmsClientTest, TestCaseSensitivity) {
   MiniHms hms;
   ASSERT_OK(hms.Start());
 
-  HmsClient client(hms.address(), HmsClientOptions());
+  HmsClient client(hms.address(), thrift::ClientOptions());
   ASSERT_OK(client.Start());
 
   // Create a database.

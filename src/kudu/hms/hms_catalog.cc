@@ -42,6 +42,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/hms/hive_metastore_types.h"
 #include "kudu/hms/hms_client.h"
+#include "kudu/thrift/client.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/net/net_util.h"
@@ -100,6 +101,14 @@ TAG_FLAG(hive_metastore_conn_timeout, advanced);
 TAG_FLAG(hive_metastore_conn_timeout, experimental);
 TAG_FLAG(hive_metastore_conn_timeout, runtime);
 
+DEFINE_int32(hive_metastore_max_message_size, 100 * 1024 * 1024,
+             "Maximum size of Hive Metastore objects that can be received by the "
+             "HMS client in bytes. Should match the metastore.server.max.message.size "
+             "configuration.");
+TAG_FLAG(hive_metastore_max_message_size, advanced);
+TAG_FLAG(hive_metastore_max_message_size, experimental);
+TAG_FLAG(hive_metastore_max_message_size, runtime);
+
 namespace kudu {
 namespace hms {
 
@@ -109,7 +118,7 @@ const char* const HmsCatalog::kInvalidTableError = "when the Hive Metastore inte
 
 HmsCatalog::HmsCatalog(string master_addresses)
     : master_addresses_(std::move(master_addresses)),
-      hms_client_(HostPort("", 0), hms_client_options_),
+      hms_client_(HostPort("", 0), thrift::ClientOptions()),
       reconnect_after_(MonoTime::Now()),
       reconnect_failure_(Status::OK()),
       consecutive_reconnect_failures_(0),
@@ -402,11 +411,12 @@ Status HmsCatalog::Execute(Task task) {
 Status HmsCatalog::Reconnect() {
   Status s;
 
-  HmsClientOptions options;
+  thrift::ClientOptions options;
   options.send_timeout = MonoDelta::FromSeconds(FLAGS_hive_metastore_send_timeout);
   options.recv_timeout = MonoDelta::FromSeconds(FLAGS_hive_metastore_recv_timeout);
   options.conn_timeout = MonoDelta::FromSeconds(FLAGS_hive_metastore_conn_timeout);
   options.enable_kerberos = FLAGS_hive_metastore_sasl_enabled;
+  options.max_buf_size = FLAGS_hive_metastore_max_message_size;
 
   // Try reconnecting to each HMS in sequence, returning the first one which
   // succeeds. In order to avoid getting 'stuck' on a partially failed HMS, we

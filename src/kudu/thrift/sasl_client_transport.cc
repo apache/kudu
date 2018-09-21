@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/hms/sasl_client_transport.h"
+#include "kudu/thrift/sasl_client_transport.h"
 
 #include <algorithm>
 #include <cstring>
@@ -48,7 +48,7 @@ namespace kudu {
 using rpc::SaslMechanism;
 using rpc::WrapSaslCall;
 
-namespace hms {
+namespace thrift {
 
 namespace {
 
@@ -398,5 +398,5 @@ void SaslClientTransport::ResetWriteBuf() {
   write_buf_.shrink_to_fit();
 }
 
-} // namespace hms
+} // namespace thrift
 } // namespace kudu

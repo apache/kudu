@@ -34,6 +34,7 @@
 #include "kudu/hms/mini_hms.h"
 #include "kudu/mini-cluster/mini_cluster.h"
 #include "kudu/security/test/mini_kdc.h"
+#include "kudu/thrift/client.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
@@ -193,7 +194,7 @@ TEST_P(ExternalMiniClusterTest, TestBasicOperation) {
 
   // Verify that the HMS is reachable.
   if (opts.hms_mode == HmsMode::ENABLE_HIVE_METASTORE) {
-    hms::HmsClientOptions hms_client_opts;
+    thrift::ClientOptions hms_client_opts;
     hms_client_opts.enable_kerberos = opts.enable_kerberos;
     hms::HmsClient hms_client(cluster.hms()->address(), hms_client_opts);
     ASSERT_OK(hms_client.Start());

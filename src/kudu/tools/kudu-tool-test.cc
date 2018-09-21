@@ -70,13 +70,13 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/escaping.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/gutil/strings/escaping.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/hms/hive_metastore_types.h"
 #include "kudu/hms/hms_catalog.h"
@@ -97,6 +97,7 @@
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_replica.h"
+#include "kudu/thrift/client.h"
 #include "kudu/tools/tool.pb.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/tools/tool_replica_util.h"
@@ -159,7 +160,6 @@ using kudu::fs::FsReport;
 using kudu::fs::WritableBlock;
 using kudu::hms::HmsCatalog;
 using kudu::hms::HmsClient;
-using kudu::hms::HmsClientOptions;
 using kudu::itest::MiniClusterFsInspector;
 using kudu::itest::TServerDetails;
 using kudu::log::Log;
@@ -2410,7 +2410,7 @@ TEST_P(ToolTestKerberosParameterized, TestHmsDowngrade) {
   NO_FATALS(StartExternalMiniCluster(std::move(opts)));
 
   string master_addr = cluster_->master()->bound_rpc_addr().ToString();
-  HmsClientOptions hms_opts;
+  thrift::ClientOptions hms_opts;
   hms_opts.enable_kerberos = EnableKerberos();
   HmsClient hms_client(cluster_->hms()->address(), hms_opts);
   ASSERT_OK(hms_client.Start());
@@ -2455,7 +2455,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   NO_FATALS(StartExternalMiniCluster(std::move(opts)));
 
   string master_addr = cluster_->master()->bound_rpc_addr().ToString();
-  HmsClientOptions hms_opts;
+  thrift::ClientOptions hms_opts;
   hms_opts.enable_kerberos = EnableKerberos();
   HmsClient hms_client(cluster_->hms()->address(), hms_opts);
   ASSERT_OK(hms_client.Start());
@@ -2726,7 +2726,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndManualFixHmsMetadata) {
   NO_FATALS(StartExternalMiniCluster(std::move(opts)));
 
   string master_addr = cluster_->master()->bound_rpc_addr().ToString();
-  HmsClientOptions hms_opts;
+  thrift::ClientOptions hms_opts;
   hms_opts.enable_kerberos = EnableKerberos();
   HmsClient hms_client(cluster_->hms()->address(), hms_opts);
   ASSERT_OK(hms_client.Start());

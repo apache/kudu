@@ -24,7 +24,6 @@
 #include "kudu/gutil/port.h"
 #include "kudu/hms/ThriftHiveMetastore.h"
 #include "kudu/hms/hive_metastore_types.h"
-#include "kudu/util/monotime.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
@@ -32,27 +31,16 @@ namespace kudu {
 
 class HostPort;
 
+namespace thrift {
+struct ClientOptions;
+}
+
 namespace hms {
 
 // Whether to drop child-objects when dropping an HMS object.
 enum class Cascade {
   kTrue,
   kFalse,
-};
-
-struct HmsClientOptions {
-
-  // Thrift socket send timeout
-  MonoDelta send_timeout = MonoDelta::FromSeconds(60);
-
-  // Thrift socket receive timeout.
-  MonoDelta recv_timeout = MonoDelta::FromSeconds(60);
-
-  // Thrift socket connect timeout.
-  MonoDelta conn_timeout = MonoDelta::FromSeconds(60);
-
-  // Whether to use SASL Kerberos authentication when connecting to the HMS.
-  bool enable_kerberos = false;
 };
 
 // A client for the Hive Metastore.
@@ -102,11 +90,8 @@ class HmsClient {
 
   static const uint16_t kDefaultHmsPort;
 
-  // Create an HmsClient connection to the proided HMS Thrift RPC address.
-  //
-  // The individual timeouts may be set to enforce per-operation
-  // (read/write/connect) timeouts.
-  HmsClient(const HostPort& hms_address, const HmsClientOptions& options);
+  // Create an HmsClient connection to the provided HMS Thrift RPC address.
+  HmsClient(const HostPort& address, const thrift::ClientOptions& options);
   ~HmsClient();
 
   // Starts the HMS client.

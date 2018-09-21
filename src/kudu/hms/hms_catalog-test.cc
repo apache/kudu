@@ -37,6 +37,7 @@
 #include "kudu/hms/mini_hms.h"
 #include "kudu/rpc/sasl_common.h"
 #include "kudu/security/test/mini_kdc.h"
+#include "kudu/thrift/client.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
@@ -161,7 +162,7 @@ class HmsCatalogTest : public KuduTest {
   void SetUp() override {
     bool enable_kerberos = EnableKerberos();
 
-    HmsClientOptions hms_client_opts;
+    thrift::ClientOptions hms_client_opts;
 
     hms_.reset(new hms::MiniHms());
     if (enable_kerberos) {

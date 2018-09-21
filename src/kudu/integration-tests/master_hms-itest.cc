@@ -39,6 +39,7 @@
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/mini-cluster/mini_cluster.h"
 #include "kudu/security/test/mini_kdc.h"
+#include "kudu/thrift/client.h"
 #include "kudu/util/decimal_util.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
@@ -57,7 +58,6 @@ using client::KuduTableCreator;
 using client::sp::shared_ptr;
 using cluster::ExternalMiniClusterOptions;
 using hms::HmsClient;
-using hms::HmsClientOptions;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -79,7 +79,7 @@ class MasterHmsTest : public ExternalMiniClusterITestBase {
     opts.extra_master_flags.emplace_back("--hive_metastore_notification_log_poll_period_seconds=1");
     StartClusterWithOpts(std::move(opts));
 
-    HmsClientOptions hms_opts;
+    thrift::ClientOptions hms_opts;
     hms_opts.enable_kerberos = EnableKerberos();
     hms_client_.reset(new HmsClient(cluster_->hms()->address(), hms_opts));
     ASSERT_OK(hms_client_->Start());

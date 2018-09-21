@@ -34,14 +34,14 @@ add_dependencies(hms_thrift ${HMS_THRIFT_TGTS})
 
 set(HMS_SRCS
   hms_catalog.cc
-  hms_client.cc
-  sasl_client_transport.cc)
+  hms_client.cc)
 set(HMS_DEPS
   gflags
   glog
   hms_thrift
   krpc
   kudu_common
+  kudu_thrift
   kudu_util)
 
 add_library(kudu_hms ${HMS_SRCS})

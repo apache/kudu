@@ -45,7 +45,7 @@ namespace kudu {
 namespace rpc {
 struct SaslDeleter;
 } // namespace rpc
-namespace hms {
+namespace thrift {
 
 // An exception representing a SASL or Kerberos failure.
 class SaslException : public apache::thrift::transport::TTransportException {
@@ -172,5 +172,5 @@ class SaslClientTransport
   faststring write_buf_;
 };
 
-} // namespace hms
+} // namespace thrift
 } // namespace kudu

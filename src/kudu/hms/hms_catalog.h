@@ -208,8 +208,6 @@ class HmsCatalog {
 
   // Fields only used by the threadpool thread:
 
-  // Options to use when creating the HMS client.
-  hms::HmsClientOptions hms_client_options_;
   // The HMS client.
   hms::HmsClient hms_client_;
 
