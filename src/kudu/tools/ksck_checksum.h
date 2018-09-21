@@ -24,8 +24,11 @@
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/tools/ksck_results.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/blocking_queue.h"
 #include "kudu/util/countdown_latch.h"
@@ -39,6 +42,9 @@ class Schema;
 
 namespace tools {
 
+class KsckCluster;
+class KsckTable;
+class KsckTablet;
 class KsckTabletServer;
 
 // Options for checksum scans.
@@ -49,10 +55,20 @@ struct KsckChecksumOptions {
 
   KsckChecksumOptions();
 
+  KsckChecksumOptions(std::vector<std::string> table_filters,
+                      std::vector<std::string> tablet_id_filters);
+
   KsckChecksumOptions(MonoDelta timeout,
                       int scan_concurrency,
                       bool use_snapshot,
                       uint64_t snapshot_timestamp);
+
+  KsckChecksumOptions(MonoDelta timeout,
+                      int scan_concurrency,
+                      bool use_snapshot,
+                      uint64_t snapshot_timestamp,
+                      std::vector<std::string> table_filters,
+                      std::vector<std::string> tablet_id_filters);
 
   // The maximum total time to wait for results to come back from all replicas.
   MonoDelta timeout;
@@ -65,6 +81,11 @@ struct KsckChecksumOptions {
 
   // The snapshot timestamp to use for snapshot checksum scans.
   uint64_t snapshot_timestamp;
+
+  // Filters for the table names and tablet ids whose contents should be
+  // checksummed.
+  std::vector<std::string> table_filters;
+  std::vector<std::string> tablet_id_filters;
 };
 
 // Interface for reporting progress on checksumming a single
@@ -152,12 +173,56 @@ class TabletServerChecksumCallbacks : public KsckChecksumProgressCallbacks {
   void Finished(const Status& status, uint64_t checksum) override;
 
  private:
+  ~TabletServerChecksumCallbacks() = default;
+
   const scoped_refptr<ChecksumResultReporter> reporter_;
   const std::shared_ptr<KsckTabletServer> tablet_server_;
   const SharedTabletQueue queue_;
   const KsckChecksumOptions options_;
 
   std::string tablet_id_;
+};
+
+// A class for performing checksum scans against a Kudu cluster.
+class KsckChecksummer {
+ public:
+   // 'cluster' must remain valid as long as this instance is alive.
+  explicit KsckChecksummer(KsckCluster* cluster);
+
+  // Checksum the data in the Kudu cluster according to the options provided in
+  // 'opts'. Results will be populated in the 'checksum_results'. If non-null,
+  // progress updates will be written to 'out_for_progress_updates'.
+  // NOTE: Even if this method returns a bad Status, 'checksum_results' will be
+  // populated with whatever checksum results were received.
+  Status ChecksumData(const KsckChecksumOptions& opts,
+                      KsckChecksumResults* checksum_results,
+                      std::ostream* out_for_progress_updates);
+
+ private:
+  typedef std::unordered_map<std::shared_ptr<KsckTablet>,
+                             std::shared_ptr<KsckTable>> TabletTableMap;
+
+  // Builds a mapping from tablet-to-be-checksummed to its table, which is
+  // used to create checksum callbacks. This mapping is returned in
+  // 'tablet_table_map' and the total number of replicas to be checksummed is
+  // returned in 'num_replicas'.
+  Status BuildTabletTableMap(const KsckChecksumOptions& opts,
+                             TabletTableMap* tablet_table_map,
+                             int* num_replicas) const;
+
+  // Collates the results of checksums into 'table_checksum_map', with the
+  // total number of results returned as 'num_results'.
+  // NOTE: Even if this function returns a bad Status, 'table_checksum_map'
+  // and 'num_results' will still be populated using whatever results are
+  // available.
+  Status CollateChecksumResults(
+      const ChecksumResultReporter::TabletResultMap& checksums,
+      KsckTableChecksumMap* table_checksum_map,
+      int* num_results) const;
+
+  KsckCluster* cluster_;
+
+  DISALLOW_COPY_AND_ASSIGN(KsckChecksummer);
 };
 } // namespace tools
 } // namespace kudu

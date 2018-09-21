@@ -412,15 +412,15 @@ class KsckCluster {
   // The table's tablet list is modified only if this method returns OK.
   virtual Status RetrieveTabletsList(const std::shared_ptr<KsckTable>& table) = 0;
 
-  const MasterList& masters() {
+  const MasterList& masters() const {
     return masters_;
   }
 
-  const TSMap& tablet_servers() {
+  const TSMap& tablet_servers() const {
     return tablet_servers_;
   }
 
-  const std::vector<std::shared_ptr<KsckTable>>& tables() {
+  const std::vector<std::shared_ptr<KsckTable>>& tables() const {
     return tables_;
   }
 

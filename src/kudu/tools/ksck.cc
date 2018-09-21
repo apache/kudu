@@ -35,7 +35,6 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
-#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/tablet.pb.h"
@@ -43,9 +42,7 @@
 #include "kudu/tools/ksck_checksum.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/util/atomic.h"
-#include "kudu/util/blocking_queue.h"
 #include "kudu/util/locks.h"
-#include "kudu/util/monotime.h"
 #include "kudu/util/threadpool.h"
 
 #define PUSH_PREPEND_NOT_OK(s, statuses, msg) do { \
@@ -421,8 +418,13 @@ Status Ksck::Run() {
                       "table consistency check error");
 
   if (FLAGS_checksum_scan) {
-    PUSH_PREPEND_NOT_OK(ChecksumData(KsckChecksumOptions()),
-                        results_.error_messages, "checksum scan error");
+    // Copy the filters because they are passed by-value.
+    auto table_filters_for_checksum_opts = table_filters_;
+    auto tablet_id_filters_for_checksum_opts = tablet_id_filters_;
+    PUSH_PREPEND_NOT_OK(
+        ChecksumData(KsckChecksumOptions(std::move(table_filters_for_checksum_opts),
+                                         std::move(tablet_id_filters_for_checksum_opts))),
+        results_.error_messages, "checksum scan error");
   }
 
   // Use a special-case error if there are auth errors. This makes it harder
@@ -531,180 +533,13 @@ Status Ksck::CheckTablesConsistency() {
 }
 
 Status Ksck::ChecksumData(const KsckChecksumOptions& opts) {
-  // Copy options so that local modifications can be made and passed on.
-  KsckChecksumOptions options = opts;
-
-  typedef unordered_map<shared_ptr<KsckTablet>, shared_ptr<KsckTable>> TabletTableMap;
-  TabletTableMap tablet_table_map;
-
-  int num_tables = 0;
-  int num_tablets = 0;
-  int num_tablet_replicas = 0;
-  for (const shared_ptr<KsckTable>& table : cluster_->tables()) {
-    VLOG(1) << "Table: " << table->name();
-    if (!MatchesAnyPattern(table_filters_, table->name())) continue;
-    num_tables += 1;
-    num_tablets += table->tablets().size();
-    for (const shared_ptr<KsckTablet>& tablet : table->tablets()) {
-      VLOG(1) << "Tablet: " << tablet->id();
-      if (!MatchesAnyPattern(tablet_id_filters_, tablet->id())) continue;
-      InsertOrDie(&tablet_table_map, tablet, table);
-      num_tablet_replicas += tablet->replicas().size();
-    }
-  }
-
-  if (num_tables == 0) {
-    string msg = "No table found.";
-    if (!table_filters_.empty()) {
-      msg += " Filter: table_filters=" + JoinStrings(table_filters_, ",");
-    }
-    return Status::NotFound(msg);
-  }
-
-  if (num_tablets > 0 && num_tablet_replicas == 0) {
-    // Warn if the table has tablets, but no replicas. The table may have no
-    // tablets if all range partitions have been dropped.
-    string msg = "No tablet replicas found.";
-    if (!table_filters_.empty() || !tablet_id_filters_.empty()) {
-      msg += " Filter: ";
-      if (!table_filters_.empty()) {
-        msg += "table_filters=" + JoinStrings(table_filters_, ",");
-      }
-      if (!tablet_id_filters_.empty()) {
-        msg += "tablet_id_filters=" + JoinStrings(tablet_id_filters_, ",");
-      }
-    }
-    return Status::NotFound(msg);
-  }
-
-  // Map of tablet servers to tablet queue.
-  typedef unordered_map<shared_ptr<KsckTabletServer>, SharedTabletQueue> TabletServerQueueMap;
-
-  TabletServerQueueMap tablet_server_queues;
-  scoped_refptr<ChecksumResultReporter> reporter(new ChecksumResultReporter(num_tablet_replicas));
-
-  // Create a queue of checksum callbacks grouped by the tablet server.
-  for (const TabletTableMap::value_type& entry : tablet_table_map) {
-    const shared_ptr<KsckTablet>& tablet = entry.first;
-    const shared_ptr<KsckTable>& table = entry.second;
-    for (const shared_ptr<KsckTabletReplica>& replica : tablet->replicas()) {
-      const shared_ptr<KsckTabletServer>& ts =
-          FindOrDie(cluster_->tablet_servers(), replica->ts_uuid());
-
-      const SharedTabletQueue& queue =
-          LookupOrInsertNewSharedPtr(&tablet_server_queues, ts, num_tablet_replicas);
-      CHECK_EQ(QUEUE_SUCCESS, queue->Put(make_pair(table->schema(), tablet->id())));
-    }
-  }
-
-  if (options.use_snapshot &&
-      options.snapshot_timestamp == KsckChecksumOptions::kCurrentTimestamp) {
-    // Set the snapshot timestamp to the current timestamp of the first healthy tablet server
-    // we can find.
-    for (const auto& ts : tablet_server_queues) {
-      if (ts.first->is_healthy()) {
-        options.snapshot_timestamp = ts.first->current_timestamp();
-        break;
-      }
-    }
-    if (options.snapshot_timestamp == KsckChecksumOptions::kCurrentTimestamp) {
-      return Status::ServiceUnavailable(
-          "No tablet servers were available to fetch the current timestamp");
-    }
-    results_.checksum_results.snapshot_timestamp = options.snapshot_timestamp;
-  }
-
-  // Kick off checksum scans in parallel. For each tablet server, we start
-  // scan_concurrency scans. Each callback then initiates one additional
-  // scan when it returns if the queue for that TS is not empty.
-  for (const TabletServerQueueMap::value_type& entry : tablet_server_queues) {
-    const shared_ptr<KsckTabletServer>& tablet_server = entry.first;
-    const SharedTabletQueue& queue = entry.second;
-    queue->Shutdown(); // Ensures that BlockingGet() will not block.
-    for (int i = 0; i < options.scan_concurrency; i++) {
-      std::pair<Schema, std::string> table_tablet;
-      if (queue->BlockingGet(&table_tablet)) {
-        const Schema& table_schema = table_tablet.first;
-        const std::string& tablet_id = table_tablet.second;
-        auto* cbs = new TabletServerChecksumCallbacks(
-            reporter, tablet_server, queue, tablet_id, options);
-        // 'cbs' deletes itself when complete.
-        tablet_server->RunTabletChecksumScanAsync(tablet_id, table_schema, options, cbs);
-      }
-    }
-  }
-
-  // Don't ruin JSON output by printing progress updates.
+  KsckChecksummer checksummer(cluster_.get());
+  auto* checksum_results = &results_.checksum_results;
+  // Don't ruin JSON output with ad hoc progress updates.
   auto* out_for_progress_updates = IsNonJSONFormat() ? out_ : nullptr;
-  bool timed_out = !reporter->WaitFor(options.timeout, out_for_progress_updates);
-
-  // Even if we timed out, for printing collate the checksum results that we did get.
-  ChecksumResultReporter::TabletResultMap checksums = reporter->checksums();
-
-  int num_errors = 0;
-  int num_mismatches = 0;
-  int num_results = 0;
-  KsckTableChecksumMap checksum_tables;
-  for (const shared_ptr<KsckTable>& table : cluster_->tables()) {
-    KsckTableChecksum table_checksum;
-    for (const shared_ptr<KsckTablet>& tablet : table->tablets()) {
-      if (ContainsKey(checksums, tablet->id())) {
-        KsckTabletChecksum tablet_checksum;
-        tablet_checksum.tablet_id = tablet->id();
-        bool seen_first_replica = false;
-        uint64_t first_checksum = 0;
-
-        for (const auto& r : FindOrDie(checksums, tablet->id())) {
-          KsckReplicaChecksum replica_checksum;
-          const string& replica_uuid = r.first;
-          shared_ptr<KsckTabletServer> ts = FindOrDie(cluster_->tablet_servers(), replica_uuid);
-          replica_checksum.ts_uuid = ts->uuid();
-          replica_checksum.ts_address = ts->address();
-
-          const ChecksumResultReporter::ResultPair& result = r.second;
-          const Status& status = result.first;
-          replica_checksum.checksum = result.second;
-          replica_checksum.status = status;
-          if (!status.ok()) {
-            num_errors++;
-          } else if (!seen_first_replica) {
-            seen_first_replica = true;
-            first_checksum = replica_checksum.checksum;
-          } else if (replica_checksum.checksum != first_checksum) {
-            num_mismatches++;
-            tablet_checksum.mismatch = true;
-          }
-          num_results++;
-          InsertOrDie(&tablet_checksum.replica_checksums,
-                      replica_checksum.ts_uuid,
-                      std::move(replica_checksum));
-        }
-        InsertOrDie(&table_checksum,
-                    tablet_checksum.tablet_id,
-                    std::move(tablet_checksum));
-      }
-    }
-    InsertOrDie(&checksum_tables, table->name(), std::move(table_checksum));
-  }
-  results_.checksum_results.tables.swap(checksum_tables);
-  if (timed_out) {
-    return Status::TimedOut(Substitute("Checksum scan did not complete within the timeout of $0: "
-                                       "Received results for $1 out of $2 expected replicas",
-                                       options.timeout.ToString(), num_results,
-                                       num_tablet_replicas));
-  }
-  CHECK_EQ(num_results, num_tablet_replicas)
-      << Substitute("Unexpected error: only got $0 out of $1 replica results",
-                    num_results, num_tablet_replicas);
-
-  if (num_mismatches != 0) {
-    return Status::Corruption(Substitute("$0 checksum mismatches were detected.", num_mismatches));
-  }
-  if (num_errors != 0) {
-    return Status::Aborted(Substitute("$0 errors were detected", num_errors));
-  }
-
-  return Status::OK();
+  return checksummer.ChecksumData(opts,
+                                  checksum_results,
+                                  out_for_progress_updates);
 }
 
 bool Ksck::VerifyTable(const shared_ptr<KsckTable>& table) {
