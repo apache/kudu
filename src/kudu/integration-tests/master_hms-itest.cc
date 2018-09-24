@@ -81,6 +81,7 @@ class MasterHmsTest : public ExternalMiniClusterITestBase {
 
     thrift::ClientOptions hms_opts;
     hms_opts.enable_kerberos = EnableKerberos();
+    hms_opts.service_principal = "hive";
     hms_client_.reset(new HmsClient(cluster_->hms()->address(), hms_opts));
     ASSERT_OK(hms_client_->Start());
   }

@@ -73,6 +73,12 @@ DEFINE_bool(hive_metastore_sasl_enabled, false,
             "When enabled, the --keytab_file flag must be provided.");
 TAG_FLAG(hive_metastore_sasl_enabled, experimental);
 
+DEFINE_string(hive_metastore_kerberos_principal, "hive",
+              "The service principal of the Hive Metastore server. Must match "
+              "the primary (user) portion of hive.metastore.kerberos.principal option "
+              "in the Hive Metastore configuration.");
+TAG_FLAG(hive_metastore_kerberos_principal, experimental);
+
 DEFINE_int32(hive_metastore_retry_count, 1,
              "The number of times that HMS operations will retry after "
              "encountering retriable failures, such as network errors.");
@@ -416,6 +422,7 @@ Status HmsCatalog::Reconnect() {
   options.recv_timeout = MonoDelta::FromSeconds(FLAGS_hive_metastore_recv_timeout);
   options.conn_timeout = MonoDelta::FromSeconds(FLAGS_hive_metastore_conn_timeout);
   options.enable_kerberos = FLAGS_hive_metastore_sasl_enabled;
+  options.service_principal = FLAGS_hive_metastore_kerberos_principal;
   options.max_buf_size = FLAGS_hive_metastore_max_message_size;
 
   // Try reconnecting to each HMS in sequence, returning the first one which

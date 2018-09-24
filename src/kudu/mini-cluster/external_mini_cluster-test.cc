@@ -196,6 +196,7 @@ TEST_P(ExternalMiniClusterTest, TestBasicOperation) {
   if (opts.hms_mode == HmsMode::ENABLE_HIVE_METASTORE) {
     thrift::ClientOptions hms_client_opts;
     hms_client_opts.enable_kerberos = opts.enable_kerberos;
+    hms_client_opts.service_principal = "hive";
     hms::HmsClient hms_client(cluster.hms()->address(), hms_client_opts);
     ASSERT_OK(hms_client.Start());
     vector<string> tables;

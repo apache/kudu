@@ -71,7 +71,9 @@ shared_ptr<TProtocol> CreateClientProtocol(const HostPort& address, const Client
   shared_ptr<TTransport> transport;
 
   if (options.enable_kerberos) {
-    transport = make_shared<SaslClientTransport>(address.host(),
+    DCHECK(!options.service_principal.empty());
+    transport = make_shared<SaslClientTransport>(options.service_principal,
+                                                 address.host(),
                                                  std::move(socket),
                                                  options.max_buf_size);
   } else {

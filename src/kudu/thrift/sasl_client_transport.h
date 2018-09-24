@@ -81,7 +81,8 @@ enum NegotiationStatus {
 class SaslClientTransport
     : public apache::thrift::transport::TVirtualTransport<SaslClientTransport> {
  public:
-  SaslClientTransport(const std::string& server_fqdn,
+  SaslClientTransport(std::string service_principal,
+                      const std::string& server_fqdn,
                       std::shared_ptr<TTransport> transport,
                       size_t max_recv_buf_size);
 
@@ -170,6 +171,9 @@ class SaslClientTransport
 
   // The write buffer.
   faststring write_buf_;
+
+  // The principal of the service being connected to.
+  std::string service_principal_;
 };
 
 } // namespace thrift

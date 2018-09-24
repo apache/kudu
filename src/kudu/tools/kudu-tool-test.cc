@@ -2412,6 +2412,7 @@ TEST_P(ToolTestKerberosParameterized, TestHmsDowngrade) {
   string master_addr = cluster_->master()->bound_rpc_addr().ToString();
   thrift::ClientOptions hms_opts;
   hms_opts.enable_kerberos = EnableKerberos();
+  hms_opts.service_principal = "hive";
   HmsClient hms_client(cluster_->hms()->address(), hms_opts);
   ASSERT_OK(hms_client.Start());
   ASSERT_TRUE(hms_client.IsConnected());
@@ -2457,6 +2458,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   string master_addr = cluster_->master()->bound_rpc_addr().ToString();
   thrift::ClientOptions hms_opts;
   hms_opts.enable_kerberos = EnableKerberos();
+  hms_opts.service_principal = "hive";
   HmsClient hms_client(cluster_->hms()->address(), hms_opts);
   ASSERT_OK(hms_client.Start());
   ASSERT_TRUE(hms_client.IsConnected());
@@ -2728,6 +2730,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndManualFixHmsMetadata) {
   string master_addr = cluster_->master()->bound_rpc_addr().ToString();
   thrift::ClientOptions hms_opts;
   hms_opts.enable_kerberos = EnableKerberos();
+  hms_opts.service_principal = "hive";
   HmsClient hms_client(cluster_->hms()->address(), hms_opts);
   ASSERT_OK(hms_client.Start());
   ASSERT_TRUE(hms_client.IsConnected());

@@ -92,7 +92,8 @@ int UserCb(void* /*context*/, int id, const char** result, unsigned* len) {
 }
 } // anonymous namespace
 
-SaslClientTransport::SaslClientTransport(const string& server_fqdn,
+SaslClientTransport::SaslClientTransport(string service_principal,
+                                         const string& server_fqdn,
                                          shared_ptr<TTransport> transport,
                                          size_t max_recv_buf_size)
     : transport_(std::move(transport)),
@@ -109,7 +110,8 @@ SaslClientTransport::SaslClientTransport(const string& server_fqdn,
       max_recv_buf_size_(max_recv_buf_size),
       // Set a reasonable max send buffer size for negotiation. Once negotiation
       // is complete the negotiated value will be used.
-      max_send_buf_size_(64 * 1024) {
+      max_send_buf_size_(64 * 1024),
+      service_principal_(std::move(service_principal)) {
   sasl_helper_.set_server_fqdn(server_fqdn);
   sasl_helper_.EnableGSSAPI();
   ResetWriteBuf();
@@ -373,8 +375,7 @@ void SaslClientTransport::SetupSaslContext() {
   sasl_conn_t* sasl_conn = nullptr;
   Status s = WrapSaslCall(nullptr /* no conn */, [&] {
       return sasl_client_new(
-          // TODO(dan): make the service name configurable.
-          "hive",                       // Registered name of the service using SASL. Required.
+          service_principal_.c_str(),   // Registered name of the service using SASL. Required.
           sasl_helper_.server_fqdn(),   // The fully qualified domain name of the remote server.
           nullptr,                      // Local and remote IP address strings. (we don't use
           nullptr,                      // any mechanisms which require this info.)

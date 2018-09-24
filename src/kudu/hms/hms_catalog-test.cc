@@ -184,6 +184,7 @@ class HmsCatalogTest : public KuduTest {
       ASSERT_OK(kdc_->Kinit("alice"));
       ASSERT_OK(kdc_->SetKrb5Environment());
       hms_client_opts.enable_kerberos = true;
+      hms_client_opts.service_principal = "hive";
 
       // Configure the HmsCatalog flags.
       FLAGS_hive_metastore_sasl_enabled = true;

@@ -21,6 +21,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
 
 #include "kudu/util/monotime.h"
 
@@ -52,6 +53,11 @@ struct ClientOptions {
 
   // Whether to use SASL Kerberos authentication.
   bool enable_kerberos = false;
+
+  // The registered name of the service (Kerberos principal).
+  //
+  // Must be set if kerberos is enabled.
+  std::string service_principal;
 
   // Maximum size of objects which can be received on the Thrift connection.
   // Defaults to 100MiB to match Thrift TSaslTransport.receiveSaslMessage.

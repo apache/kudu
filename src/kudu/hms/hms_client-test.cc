@@ -127,6 +127,7 @@ TEST_P(HmsClientTest, TestHmsOperations) {
     ASSERT_OK(kdc.Kinit("alice"));
     ASSERT_OK(kdc.SetKrb5Environment());
     hms_client_opts.enable_kerberos = true;
+    hms_client_opts.service_principal = "hive";
   }
 
   ASSERT_OK(hms.Start());
@@ -288,7 +289,8 @@ TEST_P(HmsClientTest, TestLargeObjects) {
   if (protection) {
     ASSERT_OK(kdc.Start());
 
-    string spn = "hive/127.0.0.1";
+    // Try a non-standard service principal to ensure it works correctly.
+    string spn = "hive_alternate_sp/127.0.0.1";
     string ktpath;
     ASSERT_OK(kdc.CreateServiceKeytab(spn, &ktpath));
 
@@ -302,6 +304,7 @@ TEST_P(HmsClientTest, TestLargeObjects) {
     ASSERT_OK(kdc.Kinit("alice"));
     ASSERT_OK(kdc.SetKrb5Environment());
     hms_client_opts.enable_kerberos = true;
+    hms_client_opts.service_principal = "hive_alternate_sp";
   }
 
   ASSERT_OK(hms.Start());
