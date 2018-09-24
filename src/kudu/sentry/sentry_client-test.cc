@@ -17,10 +17,13 @@
 
 #include "kudu/sentry/sentry_client.h"
 
+#include <map>
 #include <string>
 
 #include <gtest/gtest.h>
 
+#include "kudu/rpc/sasl_common.h"
+#include "kudu/security/test/mini_kdc.h"
 #include "kudu/sentry/mini_sentry.h"
 #include "kudu/sentry/sentry_policy_service_types.h"
 #include "kudu/thrift/client.h"
@@ -28,14 +31,21 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+using std::string;
+
 namespace kudu {
 namespace sentry {
 
-class SentryClientTest : public KuduTest {
+class SentryClientTest : public KuduTest,
+                         public ::testing::WithParamInterface<bool> {
  public:
+  bool KerberosEnabled() const {
+    return GetParam();
+  }
 };
+INSTANTIATE_TEST_CASE_P(KerberosEnabled, SentryClientTest, ::testing::Bool());
 
-TEST_F(SentryClientTest, TestMiniSentryLifecycle) {
+TEST_P(SentryClientTest, TestMiniSentryLifecycle) {
   MiniSentry mini_sentry;
   ASSERT_OK(mini_sentry.Start());
 
@@ -50,11 +60,30 @@ TEST_F(SentryClientTest, TestMiniSentryLifecycle) {
 // test of Sentry's role handling, but instead verification that the client can
 // communicate with the Sentry service, and errors are converted to Status
 // instances.
-TEST_F(SentryClientTest, TestCreateDropRole) {
-  MiniSentry mini_sentry;
-  ASSERT_OK(mini_sentry.Start());
+TEST_P(SentryClientTest, TestCreateDropRole) {
+  MiniKdc kdc;
+  MiniSentry sentry;
+  thrift::ClientOptions sentry_client_opts;
 
-  SentryClient client(mini_sentry.address(), thrift::ClientOptions());
+  if (KerberosEnabled()) {
+    ASSERT_OK(kdc.Start());
+
+    string spn = "sentry/127.0.0.1@KRBTEST.COM";
+    string ktpath;
+    ASSERT_OK(kdc.CreateServiceKeytab("sentry/127.0.0.1", &ktpath));
+
+    ASSERT_OK(rpc::SaslInit());
+    sentry.EnableKerberos(kdc.GetEnvVars()["KRB5_CONFIG"], spn, ktpath);
+
+    ASSERT_OK(kdc.CreateUserPrincipal("kudu"));
+    ASSERT_OK(kdc.Kinit("kudu"));
+    ASSERT_OK(kdc.SetKrb5Environment());
+    sentry_client_opts.enable_kerberos = true;
+    sentry_client_opts.service_principal = "sentry";
+  }
+  ASSERT_OK(sentry.Start());
+
+  SentryClient client(sentry.address(), sentry_client_opts);
   ASSERT_OK(client.Start());
 
   { // Create a role

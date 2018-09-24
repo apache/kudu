@@ -38,6 +38,11 @@ class MiniSentry {
 
   ~MiniSentry();
 
+  // Configures the mini Sentry service to use Kerberos.
+  void EnableKerberos(std::string krb5_conf,
+                      std::string service_principal,
+                      std::string keytab_file);
+
   // Starts the mini Sentry service.
   //
   // If the MiniSentry has already been started and stopped, it will be restarted
@@ -70,6 +75,11 @@ class MiniSentry {
 
   std::unique_ptr<Subprocess> sentry_process_;
   uint16_t port_ = 0;
+
+  // Kerberos configuration
+  std::string krb5_conf_;
+  std::string service_principal_;
+  std::string keytab_file_;
 };
 
 } // namespace sentry

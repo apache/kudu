@@ -72,6 +72,7 @@ target_link_libraries(mini_sentry
 if (NOT NO_TESTS)
   SET_KUDU_TEST_LINK_LIBS(
     kudu_sentry
+    mini_kdc
     mini_sentry)
 
   ADD_KUDU_TEST(sentry_client-test)

@@ -53,6 +53,18 @@ MiniSentry::~MiniSentry() {
   WARN_NOT_OK(Stop(), "Failed to stop MiniSentry");
 }
 
+void MiniSentry::EnableKerberos(std::string krb5_conf,
+                                std::string service_principal,
+                                std::string keytab_file) {
+  CHECK(!sentry_process_);
+  CHECK(!krb5_conf.empty());
+  CHECK(!service_principal.empty());
+  CHECK(!keytab_file.empty());
+  krb5_conf_ = std::move(krb5_conf);
+  service_principal_ = std::move(service_principal);
+  keytab_file_ = std::move(keytab_file);
+}
+
 Status MiniSentry::Start() {
   SCOPED_LOG_SLOW_EXECUTION(WARNING, kSentryStartTimeoutMs / 2, "Starting Sentry");
   CHECK(!sentry_process_);
@@ -76,9 +88,16 @@ Status MiniSentry::Start() {
 
   RETURN_NOT_OK(CreateSentryConfigs(tmp_dir));
 
+  // List of JVM environment options to pass to the Sentry service.
+  string java_options;
+  if (!krb5_conf_.empty()) {
+    java_options += Substitute(" -Djava.security.krb5.conf=$0", krb5_conf_);
+  }
+
   map<string, string> env_vars {
       { "JAVA_HOME", java_home },
       { "HADOOP_HOME", hadoop_home },
+      { "JAVA_TOOL_OPTIONS", java_options },
   };
 
   // Start Sentry.
@@ -145,17 +164,31 @@ Status MiniSentry::CreateSentryConfigs(const string& tmp_dir) const {
   //
   // - sentry.service.admin.group
   //     Set up admin groups which have unrestricted privileges in Sentry.
+  //
+  // - sentry.service.allow.connect
+  //     Set of Kerberos principals which is allowed to connect to Sentry when
+  //     the Kerberos security mode is enabled.
   static const string kFileTemplate = R"(
 <configuration>
 
   <property>
     <name>sentry.service.security.mode</name>
-    <value>none</value>
+    <value>$0</value>
+  </property>
+
+  <property>
+    <name>sentry.service.server.principal</name>
+    <value>$1</value>
+  </property>
+
+  <property>
+    <name>sentry.service.server.keytab</name>
+    <value>$2</value>
   </property>
 
   <property>
     <name>sentry.store.jdbc.url</name>
-    <value>jdbc:derby:$0/sentry;create=true</value>
+    <value>jdbc:derby:$3/sentry;create=true</value>
   </property>
 
   <property>
@@ -180,18 +213,30 @@ Status MiniSentry::CreateSentryConfigs(const string& tmp_dir) const {
 
   <property>
     <name>sentry.store.group.mapping.resource</name>
-    <value>$1</value>
+    <value>$4</value>
   </property>
 
   <property>
     <name>sentry.service.admin.group</name>
     <value>admin</value>
   </property>
+
+  <property>
+    <name>sentry.service.allow.connect</name>
+    <value>kudu</value>
+  </property>
+
 </configuration>
   )";
 
   string users_ini_path = JoinPathSegments(tmp_dir, "users.ini");
-  string file_contents = Substitute(kFileTemplate, tmp_dir, users_ini_path);
+  string file_contents = Substitute(
+      kFileTemplate,
+      keytab_file_.empty() ? "none" : "kerberos",
+      service_principal_,
+      keytab_file_,
+      tmp_dir,
+      users_ini_path);
   RETURN_NOT_OK(WriteStringToFile(Env::Default(),
                                   file_contents,
                                   JoinPathSegments(tmp_dir, "sentry-site.xml")));
