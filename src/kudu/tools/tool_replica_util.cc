@@ -202,23 +202,22 @@ Status CheckCompleteMove(const vector<string>& master_addresses,
   DCHECK(is_complete);
   DCHECK(completion_status);
   *is_complete = false;
-  // Get the latest leader info.
-  string leader_uuid;
-  HostPort leader_hp;
-  RETURN_NOT_OK(GetTabletLeader(client, tablet_id, &leader_uuid, &leader_hp));
+  // Get the latest leader info. It may change later, due to our actions or
+  // outside factors.
+  string orig_leader_uuid;
+  HostPort orig_leader_hp;
+  RETURN_NOT_OK(GetTabletLeader(client, tablet_id,
+                                &orig_leader_uuid, &orig_leader_hp));
   unique_ptr<ConsensusServiceProxy> proxy;
-  RETURN_NOT_OK(BuildProxy(leader_hp.host(), leader_hp.port(), &proxy));
+  RETURN_NOT_OK(BuildProxy(orig_leader_hp.host(), orig_leader_hp.port(), &proxy));
 
-  // Wait until 'from_ts_uuid' is no longer a member of the config.
+  // Check if the replica with UUID 'to_ts_uuid' is in the config, and if it has
+  // been promoted to voter.
   ConsensusStatePB cstate;
   bool is_343_scheme;
-  RETURN_NOT_OK(GetConsensusState(proxy, tablet_id, leader_uuid,
+  RETURN_NOT_OK(GetConsensusState(proxy, tablet_id, orig_leader_uuid,
                                   client->default_admin_operation_timeout(),
                                   &cstate, &is_343_scheme));
-  // In case if a leader replica is being replaced, there isn't much sense
-  // to make the leader stepping down when the newly added non-voter
-  // replica hasn't caught up yet. The stepped down leader replica will
-  // not be evicted until the newly added replica is promoted to voter.
   bool to_ts_uuid_in_config = false;
   bool to_ts_uuid_is_a_voter = false;
   for (const auto& peer : cstate.committed_config().peers()) {
@@ -231,8 +230,8 @@ Status CheckCompleteMove(const vector<string>& master_addresses,
     }
   }
 
-  // The failure case: the newly added replica is no longer in the config,
-  // it might be something wrong with the replica and the system kicked it out.
+  // The failure case: the newly added replica is no longer in the config.
+  // Maybe something was wrong with the replica and the system kicked it out?
   if (!to_ts_uuid_in_config) {
     *is_complete = true;
     *completion_status = Status::Incomplete(Substitute(
@@ -241,26 +240,42 @@ Status CheckCompleteMove(const vector<string>& master_addresses,
     return Status::OK();
   }
 
-  bool from_ts_uuid_in_config = false; // Is 'from_ts_uuid' still in the config?
+  // Check if the replica slated for removal (the one with UUID 'from_ts_uuid')
+  // is still in the config.
+  bool from_ts_uuid_in_config = false;
   for (const auto& peer : cstate.committed_config().peers()) {
     if (peer.permanent_uuid() == from_ts_uuid) {
       // Sanity check: in case of 3-4-3 replication mode, the source replica
       // must have the REPLACE attribute set. Otherwise, something has changed
       // in the middle and the source replica will never be evicted,
-      // so it does not make much sense awaiting for its removal.
+      // so it does not make sense to await its removal.
       if (is_343_scheme && !peer.attrs().replace()) {
         return Status::IllegalState(Substitute(
             "$0: source replica $1 does not have REPLACE attribute set",
             tablet_id, from_ts_uuid));
       }
-      // The information about the leader replica received by GetTabletLeader()
-      // might be stale and the actual leader might already be different. So,
-      // check that against the consensus information which is more up-to-date.
-      if (leader_uuid == from_ts_uuid && leader_uuid == cstate.leader_uuid() &&
+
+      // Handle the case when the replica-to-be-removed (the one with UUID
+      // 'from_ts_uuid') is the leader.
+      // - It's possible that leadership changed and 'orig_leader_uuid' is not
+      //   the leader's UUID by the time 'cstate' was collected. Let's
+      //   cross-reference the two sources and only act if they agree.
+      // - It doesn't make sense to have the leader step down if the newly-added
+      //   replica hasn't been promoted to a voter yet, since changing
+      //   leadership can only delay that process and the stepped-down leader
+      //   replica will not be evicted until the newly added replica is promoted
+      //   to voter.
+      // - When using the 3-4-3 replica management scheme, the leader master
+      //   will handle removing replicas, but when using the 3-2-3 scheme we
+      //   have to do it, so we only do the stepdown when the tablet is healthy
+      //   and we can proceed to kick out 'from_ts_uuid' once a new leader
+      //   is elected.
+      if (orig_leader_uuid == from_ts_uuid &&
+          orig_leader_uuid == cstate.leader_uuid() &&
           to_ts_uuid_is_a_voter &&
           (is_343_scheme || DoKsckForTablet(master_addresses, tablet_id).ok())) {
         // The leader is the node we intend to remove; make it step down.
-        ignore_result(DoLeaderStepDown(tablet_id, leader_uuid, leader_hp,
+        ignore_result(DoLeaderStepDown(tablet_id, orig_leader_uuid, orig_leader_hp,
                                        client->default_admin_operation_timeout()));
       }
       from_ts_uuid_in_config = true;
@@ -268,29 +283,46 @@ Status CheckCompleteMove(const vector<string>& master_addresses,
     }
   }
 
-  // In case of the 3-4-3 replica management scheme, once the newly added
-  // replica becomes a voter, the rest is taken care by the catalog manager (if
-  // the source replica is leader then it's also necessary to make make it step
-  // down). In contrast the 3-2-3 scheme requires explicitly removing the source
-  // replica since the catalog manager doesn't take care of
-  // over-replicated tablets.
-  if (!is_343_scheme && from_ts_uuid_in_config &&
+  // If we are operating under the 3-4-3 replica management scheme, the
+  // newly-added replica has been promoted to a voter, and (if it was leader)
+  // the replica-to-be-removed has stepped down as leader, then the move is
+  // complete. The leader master will take care of removing the extra replica.
+  if (is_343_scheme) {
+    if (to_ts_uuid_is_a_voter && !from_ts_uuid_in_config) {
+      *is_complete = true;
+      *completion_status = Status::OK();
+    }
+    return Status::OK();
+  }
+
+  // The 3-2-3 scheme requires explicitly removing the source replica since the
+  // leader master doesn't take care of over-replicated tablets. Once the newly
+  // added replica is caught up and ready (ksck returned OK), it's time to
+  // remove the source replica. Once the replica is gone, it will be detected
+  // next on the next retry of this function.
+  if (from_ts_uuid_in_config &&
       DoKsckForTablet(master_addresses, tablet_id).ok()) {
-    // Once the newly added replica is caught up and ready (ksck returned OK),
-    // it's time to remove the source replica. Once the replica is gone,
-    // that will be detected next cycle.
-    string leader_uuid;
-    HostPort leader_hp;
-    RETURN_NOT_OK(GetTabletLeader(client, tablet_id, &leader_uuid, &leader_hp));
-    if (from_ts_uuid != leader_uuid) {
+
+    // Re-find the leader in case it changed (we may have caused it to change).
+    string new_leader_uuid;
+    HostPort new_leader_hp;
+    RETURN_NOT_OK(GetTabletLeader(client, tablet_id,
+                                  &new_leader_uuid, &new_leader_hp));
+    // If leadership changed, we have to rebuild the proxy to the new leader.
+    if (new_leader_uuid != orig_leader_uuid) {
+      RETURN_NOT_OK(BuildProxy(new_leader_hp.host(), new_leader_hp.port(), &proxy));
+    }
+
+    // We can only act if the leader is not the replica being removed.
+    if (from_ts_uuid != new_leader_uuid) {
       // DoChangeConfig() might return InvalidState if the newly elected leader
       // hasn't yet committed a single operation on its term. Let's make sure
       // the current leader has asserted its leadership.
       ConsensusStatePB cstate;
-      RETURN_NOT_OK(GetConsensusState(proxy, tablet_id, leader_uuid,
+      RETURN_NOT_OK(GetConsensusState(proxy, tablet_id, new_leader_uuid,
                                       client->default_admin_operation_timeout(),
                                       &cstate));
-      if (!cstate.has_leader_uuid() || cstate.leader_uuid() != leader_uuid) {
+      if (!cstate.has_leader_uuid() || cstate.leader_uuid() != new_leader_uuid) {
         // Something has changed in the middle, the caller of this method
         // (i.e. the upper level) will need to retry.
         *is_complete = false;
@@ -301,7 +333,7 @@ Status CheckCompleteMove(const vector<string>& master_addresses,
       // Make sure the current leader has asserted its leadership before sending
       // it the ChangeConfig request.
       OpId opid;
-      RETURN_NOT_OK(GetLastCommittedOpId(tablet_id, leader_uuid, leader_hp,
+      RETURN_NOT_OK(GetLastCommittedOpId(tablet_id, new_leader_uuid, new_leader_hp,
                                          client->default_admin_operation_timeout(),
                                          &opid));
       if (opid.term() == cstate.current_term()) {
