@@ -234,6 +234,7 @@ TEST_F(TabletServerTest, TestStatus) {
     }
   });
   SCOPED_CLEANUP({
+    latch.CountDown();
     status_thread.join();
   });
 
@@ -244,9 +245,6 @@ TEST_F(TabletServerTest, TestStatus) {
     mini_server_->Shutdown();
     ASSERT_OK(mini_server_->Restart());
   }
-
-  // All done, stop the test thread.
-  latch.CountDown();
 }
 
 TEST_F(TabletServerTest, TestServerClock) {
