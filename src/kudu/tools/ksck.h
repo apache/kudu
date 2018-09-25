@@ -20,6 +20,7 @@
 #ifndef KUDU_TOOLS_KSCK_H
 #define KUDU_TOOLS_KSCK_H
 
+#include <atomic>
 #include <cstdint>
 #include <iosfwd>
 #include <map>
@@ -37,6 +38,7 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/rpc/messenger.h"
 #include "kudu/server/server_base.pb.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet.pb.h"  // IWYU pragma: keep
@@ -49,7 +51,7 @@ class MonoDelta;
 
 namespace tools {
 
-class KsckChecksumProgressCallbacks;
+class KsckChecksumManager;
 class KsckTable;
 struct KsckChecksumOptions;
 
@@ -293,13 +295,16 @@ class KsckTabletServer {
   // "Unusual" flags ares ones tagged hidden, experimental, or unsafe.
   virtual Status FetchUnusualFlags() = 0;
 
-  // Executes a checksum scan on the associated tablet, and runs the callback
-  // with the result. The callback must be threadsafe and non-blocking.
+  // Fetches and updates the current timestamp from the tablet server.
+  virtual void FetchCurrentTimestampAsync() = 0;
+  virtual Status FetchCurrentTimestamp() = 0;
+
+  // Executes a checksum scan on a tablet and reports the result to 'manager'.
   virtual void RunTabletChecksumScanAsync(
                   const std::string& tablet_id,
                   const Schema& schema,
                   const KsckChecksumOptions& options,
-                  KsckChecksumProgressCallbacks* callbacks) = 0;
+                  std::shared_ptr<KsckChecksumManager> manager) = 0;
 
   virtual const std::string& uuid() const {
     return uuid_;
@@ -370,7 +375,7 @@ class KsckTabletServer {
 
   // May be none if flag fetch fails.
   boost::optional<server::GetFlagsResponsePB> flags_;
-  uint64_t timestamp_;
+  std::atomic<uint64_t> timestamp_;
   const std::string uuid_;
 
  private:
@@ -422,6 +427,12 @@ class KsckCluster {
 
   const std::vector<std::shared_ptr<KsckTable>>& tables() const {
     return tables_;
+  }
+
+  // Returns a reference to the messenger used by this instance.
+  // Returns nullptr if no messenger is used.
+  virtual std::shared_ptr<rpc::Messenger> messenger() const {
+    return nullptr;
   }
 
  protected:

@@ -24,6 +24,8 @@
 #include <vector>
 
 #include "kudu/client/shared_ptr.h"
+#include "kudu/rpc/rpc_controller.h"
+#include "kudu/server/server_base.pb.h"
 #include "kudu/tools/ksck.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
@@ -54,7 +56,8 @@ class TabletServerServiceProxy;
 
 namespace tools {
 
-class KsckChecksumProgressCallbacks;
+class KsckChecksumManager;
+
 enum class KsckServerHealth;
 struct KsckChecksumOptions;
 
@@ -85,13 +88,14 @@ class RemoteKsckMaster : public KsckMaster {
 };
 
 // This implementation connects to a tablet server via RPC.
-class RemoteKsckTabletServer : public KsckTabletServer {
+class RemoteKsckTabletServer : public KsckTabletServer,
+                               public std::enable_shared_from_this<RemoteKsckTabletServer> {
  public:
   explicit RemoteKsckTabletServer(const std::string& id,
-                                  const HostPort host_port,
+                                  HostPort host_port,
                                   std::shared_ptr<rpc::Messenger> messenger)
       : KsckTabletServer(id),
-        host_port_(host_port),
+        host_port_(std::move(host_port)),
         messenger_(std::move(messenger)) {
   }
 
@@ -105,17 +109,38 @@ class RemoteKsckTabletServer : public KsckTabletServer {
 
   Status FetchUnusualFlags() override;
 
+  void FetchCurrentTimestampAsync() override;
+  Status FetchCurrentTimestamp() override;
+
   void RunTabletChecksumScanAsync(
       const std::string& tablet_id,
       const Schema& schema,
       const KsckChecksumOptions& options,
-      KsckChecksumProgressCallbacks* callbacks) override;
+      std::shared_ptr<KsckChecksumManager> manager) override;
 
   virtual std::string address() const override {
     return host_port_.ToString();
   }
 
  private:
+  // A callback to update the timestamp from the remote server.
+  struct ServerClockResponseCallback {
+   public:
+    explicit ServerClockResponseCallback(std::shared_ptr<RemoteKsckTabletServer> ts)
+        : ts(std::move(ts)) {}
+
+    void Run();
+
+    std::shared_ptr<RemoteKsckTabletServer> ts;
+    server::ServerClockRequestPB req;
+    server::ServerClockResponsePB resp;
+    rpc::RpcController rpc;
+
+   private:
+    // Prevent instances of this class from being allocated on the stack.
+    ~ServerClockResponseCallback() = default;
+  };
+
   const HostPort host_port_;
   const std::shared_ptr<rpc::Messenger> messenger_;
   std::shared_ptr<server::GenericServiceProxy> generic_proxy_;
@@ -136,6 +161,10 @@ class RemoteKsckCluster : public KsckCluster {
   virtual Status RetrieveTablesList() override;
 
   virtual Status RetrieveTabletsList(const std::shared_ptr<KsckTable>& table) override;
+
+  std::shared_ptr<rpc::Messenger> messenger() const override {
+    return messenger_;
+  }
 
  private:
   RemoteKsckCluster(std::vector<std::string> master_addresses,

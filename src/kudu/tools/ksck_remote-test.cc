@@ -60,6 +60,9 @@
 
 DECLARE_int32(heartbeat_interval_ms);
 DECLARE_int32(safe_time_max_lag_ms);
+DECLARE_int32(tablet_history_max_age_sec);
+DECLARE_int32(timestamp_update_period_ms);
+DECLARE_int32(wait_before_setting_snapshot_timestamp_ms);
 
 DEFINE_int32(experimental_flag_for_ksck_test, 0,
              "A flag marked experimental so it can be used to test ksck's "
@@ -319,7 +322,9 @@ TEST_F(RemoteKsckTest, TestChecksum) {
     ASSERT_OK(ksck_->FetchInfoFromTabletServers());
 
     err_stream_.str("");
-    s = ksck_->ChecksumData(KsckChecksumOptions(MonoDelta::FromSeconds(1), 16, false, 0));
+    s = ksck_->ChecksumData(KsckChecksumOptions(MonoDelta::FromSeconds(1),
+                                                MonoDelta::FromSeconds(1),
+                                                16, false, 0));
     if (s.ok()) {
       // Check the status message at the end of the checksum.
       // We expect '0B from disk' because we didn't write enough data to trigger a flush
@@ -343,7 +348,9 @@ TEST_F(RemoteKsckTest, TestChecksumTimeout) {
   ASSERT_OK(ksck_->FetchTableAndTabletInfo());
   ASSERT_OK(ksck_->FetchInfoFromTabletServers());
   // Use an impossibly low timeout value of zero!
-  Status s = ksck_->ChecksumData(KsckChecksumOptions(MonoDelta::FromNanoseconds(0), 16, false, 0));
+  Status s = ksck_->ChecksumData(KsckChecksumOptions(MonoDelta::FromNanoseconds(0),
+                                                     MonoDelta::FromSeconds(5),
+                                                     16, false, 0));
   ASSERT_TRUE(s.IsTimedOut()) << "Expected TimedOut Status, got: " << s.ToString();
 }
 
@@ -366,7 +373,9 @@ TEST_F(RemoteKsckTest, TestChecksumSnapshot) {
   ASSERT_OK(ksck_->CheckClusterRunning());
   ASSERT_OK(ksck_->FetchTableAndTabletInfo());
   ASSERT_OK(ksck_->FetchInfoFromTabletServers());
-  ASSERT_OK(ksck_->ChecksumData(KsckChecksumOptions(MonoDelta::FromSeconds(10), 16, true, ts)));
+  ASSERT_OK(ksck_->ChecksumData(KsckChecksumOptions(MonoDelta::FromSeconds(10),
+                                                    MonoDelta::FromSeconds(10),
+                                                    16, true, ts)));
   continue_writing.Store(false);
   ASSERT_OK(promise.Get());
   writer_thread->Join();
@@ -392,11 +401,83 @@ TEST_F(RemoteKsckTest, TestChecksumSnapshotCurrentTimestamp) {
   ASSERT_OK(ksck_->CheckClusterRunning());
   ASSERT_OK(ksck_->FetchTableAndTabletInfo());
   ASSERT_OK(ksck_->FetchInfoFromTabletServers());
-  ASSERT_OK(ksck_->ChecksumData(KsckChecksumOptions(MonoDelta::FromSeconds(10), 16, true,
+  ASSERT_OK(ksck_->ChecksumData(KsckChecksumOptions(MonoDelta::FromSeconds(10),
+                                                    MonoDelta::FromSeconds(10),
+                                                    16, true,
                                                     KsckChecksumOptions::kCurrentTimestamp)));
   continue_writing.Store(false);
   ASSERT_OK(promise.Get());
   writer_thread->Join();
+}
+
+// Regression test for KUDU-2179: If the checksum process takes long enough that
+// the snapshot timestamp falls behind the ancient history mark, new replica
+// checksums will fail.
+TEST_F(RemoteKsckTest, TestChecksumSnapshotLastingLongerThanAHM) {
+  // This test is really slow because -tablet_history_max_age_sec's lowest
+  // acceptable value is 1.
+  if (!AllowSlowTests()) {
+    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
+    return;
+  }
+
+  // This test relies on somewhat precise timing: the timestamp update must
+  // happen during the wait to start the checksum, for each tablet. It's likely
+  // this sometimes won't happen in builds that are slower, so we'll just
+  // disable the test for those builds.
+  #if defined(THREAD_SANITIZER) || defined(ADDRESS_SANITIZER)
+    LOG(WARNING) << "test is skipped in TSAN and ASAN builds";
+    return;
+  #endif
+
+  // Write something so we have rows to checksum, and because we need a valid
+  // timestamp from the client to use for a checksum scan.
+  constexpr uint64_t num_writes = 100;
+  LOG(INFO) << "Generating row writes...";
+  ASSERT_OK(GenerateRowWrites(num_writes));
+
+  // Update timestamps frequently.
+  FLAGS_timestamp_update_period_ms = 200;
+  // Keep history for 1 second. This means snapshot scans with a timestamp older
+  // than 1 second will be rejected.
+  FLAGS_tablet_history_max_age_sec = 1;
+  // Wait for the AHM to pass before assigning a timestamp.
+  FLAGS_wait_before_setting_snapshot_timestamp_ms = 1100;
+
+  ASSERT_OK(ksck_->CheckMasterHealth());
+  ASSERT_OK(ksck_->CheckMasterUnusualFlags());
+  ASSERT_OK(ksck_->CheckMasterConsensus());
+  ASSERT_OK(ksck_->CheckClusterRunning());
+  ASSERT_OK(ksck_->FetchTableAndTabletInfo());
+  ASSERT_OK(ksck_->FetchInfoFromTabletServers());
+
+  // Run a checksum scan at the latest timestamp known to the client. This
+  // should fail, since we will wait until after the AHM has passed to start
+  // any scans.
+  constexpr int timeout_sec = 30;
+  constexpr int scan_concurrency = 16;
+  constexpr bool use_snapshot = true;
+  uint64_t ts = client_->GetLatestObservedTimestamp();
+  Status s = ksck_->ChecksumData(KsckChecksumOptions(
+        MonoDelta::FromSeconds(timeout_sec),
+        MonoDelta::FromSeconds(timeout_sec),
+        scan_concurrency,
+        use_snapshot,
+        ts));
+  ASSERT_TRUE(s.IsAborted()) << s.ToString();
+  ASSERT_OK(ksck_->PrintResults());
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+                      "Invalid argument: Snapshot timestamp is earlier than "
+                      "the ancient history mark.");
+
+  // Now let's try again using the special current timestamp, which will run
+  // checksums using timestamps updated from the servers, and should succeed.
+  ASSERT_OK(ksck_->ChecksumData(KsckChecksumOptions(
+      MonoDelta::FromSeconds(timeout_sec),
+      MonoDelta::FromSeconds(timeout_sec),
+      scan_concurrency,
+      use_snapshot,
+      KsckChecksumOptions::kCurrentTimestamp)));
 }
 
 TEST_F(RemoteKsckTest, TestLeaderMasterDown) {

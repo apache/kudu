@@ -18,6 +18,7 @@
 #include "kudu/tools/ksck.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -38,7 +39,6 @@
 #include "kudu/common/schema.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/map-util.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/server/server_base.pb.h"
 #include "kudu/tablet/metadata.pb.h"
@@ -52,6 +52,8 @@
 #include "kudu/util/test_util.h"
 
 DECLARE_bool(checksum_scan);
+DECLARE_int32(checksum_idle_timeout_sec);
+DECLARE_int32(max_progress_report_wait_ms);
 DECLARE_string(color);
 DECLARE_string(ksck_format);
 DECLARE_uint32(truncate_server_csv_length);
@@ -142,22 +144,35 @@ class MockKsckTabletServer : public KsckTabletServer {
     return Status::OK();
   }
 
-  virtual void RunTabletChecksumScanAsync(
-      const std::string& /*tablet_id*/,
-      const Schema& /*schema*/,
-      const KsckChecksumOptions& /*options*/,
-      KsckChecksumProgressCallbacks* callbacks) OVERRIDE {
-    callbacks->Progress(10, 20);
-    callbacks->Finished(Status::OK(), 0);
+  void FetchCurrentTimestampAsync() override {}
+
+  Status FetchCurrentTimestamp() override {
+    return Status::OK();
   }
 
-  virtual std::string address() const OVERRIDE {
+  void RunTabletChecksumScanAsync(
+      const std::string& tablet_id,
+      const Schema& /*schema*/,
+      const KsckChecksumOptions& /*options*/,
+      shared_ptr<KsckChecksumManager> manager) override {
+    manager->ReportProgress(checksum_progress_, 2 * checksum_progress_);
+    if (checksum_progress_ > 0) {
+      manager->ReportResult(tablet_id, uuid_, Status::OK(), checksum_);
+    }
+  }
+
+  std::string address() const override {
     return address_;
   }
 
   // Public because the unit tests mutate these variables directly.
   Status fetch_info_status_;
   KsckServerHealth fetch_info_health_;
+  // The fake checksum for replicas on this mock server.
+  uint64_t checksum_ = 0;
+  // The fake progress amount for this mock server, used to mock checksum
+  // progress for this server.
+  int64_t checksum_progress_ = 10;
   using KsckTabletServer::flags_;
   using KsckTabletServer::version_;
 
@@ -1504,5 +1519,82 @@ TEST_F(KsckTest, TestChecksumScanJson) {
   ASSERT_OK(r.Init());
 }
 
+TEST_F(KsckTest, TestChecksumScanMismatch) {
+  CreateOneSmallReplicatedTable();
+  FLAGS_checksum_scan = true;
+
+  // Set one tablet server to return a non-zero checksum for its replicas.
+  // This will not match the checksums of replicas from other servers because
+  // they are zero by default.
+  auto ts = static_pointer_cast<MockKsckTabletServer>(
+      cluster_->tablet_servers_.begin()->second);
+  ts->checksum_ = 1;
+
+  ASSERT_TRUE(RunKsck().IsRuntimeError());
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+                      "Corruption: checksum scan error: 3 tablet(s) had "
+                      "checksum mismatches");
+}
+
+TEST_F(KsckTest, TestChecksumScanIdleTimeout) {
+  CreateOneTableOneTablet();
+  FLAGS_checksum_scan = true;
+
+  // Set an impossibly low idle timeout and tweak one of the servers to always
+  // report no progress on the checksum.
+  FLAGS_checksum_idle_timeout_sec = 0;
+  auto ts = static_pointer_cast<MockKsckTabletServer>(
+      cluster_->tablet_servers_.begin()->second);
+  ts->checksum_progress_ = 0;
+
+  // Make the progress report happen frequently so this test is fast.
+  FLAGS_max_progress_report_wait_ms = 10;
+  ASSERT_TRUE(RunKsck().IsRuntimeError());
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+                      "Timed out: checksum scan error: Checksum scan did not "
+                      "make progress within the idle timeout of 0.000s");
+}
+
+TEST_F(KsckTest, TestChecksumWithAllUnhealthyTabletServers) {
+  CreateOneTableOneTablet();
+  FLAGS_checksum_scan = true;
+
+  // Make all tablet servers unhealthy.
+  for (const auto& entry : cluster_->tablet_servers_) {
+    auto ts = static_pointer_cast<MockKsckTabletServer>(entry.second);
+    ts->fetch_info_status_ = Status::NetworkError("gremlins");
+    ts->fetch_info_health_ = KsckServerHealth::UNAVAILABLE;
+  }
+
+  // The checksum should short-circuit and fail because no tablet servers are
+  // available.
+  ASSERT_TRUE(RunKsck().IsRuntimeError());
+  ASSERT_STR_CONTAINS(err_stream_.str(), "no tablet servers are available");
+}
+
+TEST_F(KsckTest, TestChecksumWithAllPeersUnhealthy) {
+  CreateOneTableOneTablet();
+  FLAGS_checksum_scan = true;
+
+  // Make all tablet servers unhealthy except an extra one with no replica of
+  // the tablet.
+  for (const auto& entry : cluster_->tablet_servers_) {
+    auto ts = static_pointer_cast<MockKsckTabletServer>(entry.second);
+    ts->fetch_info_status_ = Status::NetworkError("gremlins");
+    ts->fetch_info_health_ = KsckServerHealth::UNAVAILABLE;
+  }
+  const char* const new_uuid = "new";
+  EmplaceOrDie(&cluster_->tablet_servers_,
+               new_uuid,
+               std::make_shared<MockKsckTabletServer>(new_uuid));
+
+  // The checksum should fail for tablet because none of its replicas are
+  // available to provide a timestamp.
+  ASSERT_TRUE(RunKsck().IsRuntimeError());
+  ASSERT_STR_CONTAINS(
+      err_stream_.str(),
+      "T tablet-id-1 P ts-id-0 (<mock>): Error: Aborted: "
+      "no healthy peer was available to provide a timestamp");
+}
 } // namespace tools
 } // namespace kudu

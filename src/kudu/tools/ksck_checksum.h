@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <iosfwd>
 #include <memory>
@@ -26,31 +27,35 @@
 #include <utility>
 #include <vector>
 
+#include "kudu/common/schema.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/ref_counted.h"
 #include "kudu/tools/ksck_results.h"
-#include "kudu/util/atomic.h"
-#include "kudu/util/blocking_queue.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/make_shared.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
+#include "kudu/util/threadpool.h"
 
 namespace kudu {
 
-class Schema;
+namespace rpc {
+class PeriodicTimer;
+class Messenger;
+} // namespace rpc
 
 namespace tools {
 
 class KsckCluster;
-class KsckTable;
 class KsckTablet;
 class KsckTabletServer;
 
 // Options for checksum scans.
 struct KsckChecksumOptions {
-  // A checksum with this special timestamp will use a timestamp selected by
-  // one of tablet servers performing the snapshot scan.
+  // A checksum with this snapshot timestamp will choose a timestamp for each
+  // tablet, from one of the tablet servers hosting a replica, at the
+  // time the checksums are started.
   static constexpr uint64_t kCurrentTimestamp = 0;
 
   KsckChecksumOptions();
@@ -59,11 +64,13 @@ struct KsckChecksumOptions {
                       std::vector<std::string> tablet_id_filters);
 
   KsckChecksumOptions(MonoDelta timeout,
+                      MonoDelta idle_timeout,
                       int scan_concurrency,
                       bool use_snapshot,
                       uint64_t snapshot_timestamp);
 
   KsckChecksumOptions(MonoDelta timeout,
+                      MonoDelta idle_timeout,
                       int scan_concurrency,
                       bool use_snapshot,
                       uint64_t snapshot_timestamp,
@@ -72,6 +79,10 @@ struct KsckChecksumOptions {
 
   // The maximum total time to wait for results to come back from all replicas.
   MonoDelta timeout;
+
+  // The maximum amount of time to wait for progress to be made. Progress
+  // means at least one additional row is checksummed.
+  MonoDelta idle_timeout;
 
   // The maximum number of concurrent checksum scans to run per tablet server.
   int scan_concurrency;
@@ -88,102 +99,175 @@ struct KsckChecksumOptions {
   std::vector<std::string> tablet_id_filters;
 };
 
-// Interface for reporting progress on checksumming a single
-// replica.
-class KsckChecksumProgressCallbacks {
- public:
-  virtual ~KsckChecksumProgressCallbacks() {}
+typedef std::pair<Status, uint64_t> ReplicaChecksumResult;
+typedef std::unordered_map<std::string, ReplicaChecksumResult> TabletChecksumResult;
+typedef std::unordered_map<std::string, TabletChecksumResult> TabletChecksumResultsMap;
 
-  // Report incremental progress from the server side.
-  // 'delta_disk_bytes_summed' only counts data read from DiskRowSets on the
-  // server side and does not count MRS bytes, etc.
-  virtual void Progress(int64_t delta_rows_summed, int64_t delta_disk_bytes_summed) = 0;
+// A convenience struct containing info needed to checksum a particular tablet.
+struct TabletChecksumInfo {
+  TabletChecksumInfo(std::shared_ptr<KsckTablet> tablet, Schema schema)
+    : tablet(std::move(tablet)),
+      schema(std::move(schema)) {}
 
-  // The scan of the current tablet is complete.
-  virtual void Finished(const Status& status, uint64_t checksum) = 0;
+  // The tablet to be checksummed.
+  std::shared_ptr<KsckTablet> tablet;
+
+  // The schema of the tablet's table.
+  Schema schema;
 };
 
-// Class to act as a collector of scan results.
-// Provides thread-safe accessors to update and read a hash table of results.
-class ChecksumResultReporter : public RefCountedThreadSafe<ChecksumResultReporter> {
+typedef std::unordered_map<std::string, TabletChecksumInfo> TabletInfoMap;
+
+// Map (tablet server UUID -> number of open slots available for checksum scans).
+typedef std::unordered_map<std::string, int> TabletServerChecksumScanSlotsMap;
+
+typedef std::vector<std::shared_ptr<KsckTabletServer>> TabletServerList;
+
+// Class to coordinate a checksum process. Checksums are started on all replicas
+// of a tablet at once while respecting per-tablet-server checksum scan
+// concurrency limits.
+class KsckChecksumManager : public std::enable_shared_from_this<KsckChecksumManager>,
+                            public enable_make_shared<KsckChecksumManager> {
  public:
-  typedef std::pair<Status, uint64_t> ResultPair;
-  typedef std::unordered_map<std::string, ResultPair> ReplicaResultMap;
-  typedef std::unordered_map<std::string, ReplicaResultMap> TabletResultMap;
+  // Return in 'manager' a new KsckChecksumManager created from the given
+  // parameters. All replicas of tablet in 'tablet_infos' must be on tablet
+  // servers in 'tservers'. Because its ownership is shared with callbacks that
+  // are part of the checksum process, a KsckChecksumManager should always be
+  // wrapped in a shared_ptr.
+  // If 'messenger' is non-null, it will be used by the instance; otherwise, a
+  // new messenger will be constructed.
+  static Status New(KsckChecksumOptions opts,
+                    TabletInfoMap tablet_infos,
+                    TabletServerList tservers,
+                    std::shared_ptr<rpc::Messenger> messenger,
+                    std::shared_ptr<KsckChecksumManager>* manager);
 
-  // Initialize reporter with the number of replicas being queried.
-  explicit ChecksumResultReporter(int num_tablet_replicas);
-
+  // Reports an increase in the number of rows and bytes from disk processed
+  // by checksums to this KsckChecksumManager. This information is used in
+  // progress messages.
   void ReportProgress(int64_t delta_rows, int64_t delta_bytes);
 
-  // Write an entry to the result map indicating a response from the remote.
+  // Reports the result of checksumming all the replicas of tablet to this
+  // KsckChecksumManager.
   void ReportResult(const std::string& tablet_id,
                     const std::string& replica_uuid,
                     const Status& status,
                     uint64_t checksum);
 
-  // Blocks until either the number of results plus errors reported equals
-  // num_tablet_replicas (from the constructor), or until the timeout expires,
-  // whichever comes first. Progress messages are printed to 'out'.
-  // Returns false if the timeout expired before all responses came in.
-  // Otherwise, returns true.
-  bool WaitFor(const MonoDelta& timeout, std::ostream* out) const;
+  // The possible final outcomes of a checksum process.
+  enum class Outcome {
+    // All replicas finished their checksums (either successfully or not).
+    FINISHED,
+    // The checksum process timed out.
+    TIMED_OUT,
+    // The checksum process went too long without making progress.
+    IDLE_TIMED_OUT,
+  };
 
-  // Returns true iff all replicas have reported in.
-  bool AllReported() const { return responses_.count() == 0; }
+  // Blocks until the number of replica results and errors reported equals
+  // the number of replicas that need to be processed, until the this instnce's
+  // timeout expires, or until the checksum process makes no progress for longer
+  // than this instance's idle timeout, whichever comes first. Progress messages
+  // are printed to 'out' if it is non-null.
+  Outcome WaitFor(std::ostream* out);
 
-  // Get reported results.
-  TabletResultMap checksums() const {
+  // Run the checksum process asynchronously.
+  // The caller should wait for results with WaitFor().
+  Status RunChecksumsAsync();
+
+  // Get a snapshot of results reported so far.
+  TabletChecksumResultsMap checksums() const {
     std::lock_guard<simple_spinlock> guard(lock_);
     return checksums_;
   }
 
- private:
-  friend class RefCountedThreadSafe<ChecksumResultReporter>;
-  ~ChecksumResultReporter() {}
+ protected:
+  KsckChecksumManager(int num_replicas,
+                      KsckChecksumOptions opts,
+                      TabletInfoMap tablet_infos,
+                      TabletServerList tservers,
+                      std::shared_ptr<rpc::Messenger> messenger);
 
-  const int expected_count_;
+ private:
+  // Perform post-construction initialization that may fail.
+  Status Init();
+
+  // Shutdown this manager.
+  void Shutdown();
+
+  // Start as many tablet checksums as possible, given the per-tablet-server
+  // concurrency limits on checksum scans.
+  // Since this uses a brute force method, it is fairly expensive, and therefore
+  // we run it on a threadpool instead of in the callback, which is run from a
+  // reactor thread.
+  void StartTabletChecksums();
+
+  // Are there enough checksum scan slots available on the tablet servers
+  // hosting replicas of 'tablet' to start a checksum scan on all of them?
+  // If so, return true and reserve the slots. Else, return false.
+  bool ReserveSlotsToChecksumUnlocked(const std::shared_ptr<KsckTablet>& tablet);
+
+  // Begin the checksum on the tablet named in 'tablet_info'.
+  void BeginTabletChecksum(const TabletChecksumInfo& tablet_info);
+
+  // Initialize 'ts_open_slots_map_'.
+  void InitializeTsSlotsMap();
+
+  // Release a checksum scan slot on each tserver in 'tserver_uuids'.
+  void ReleaseTsSlotsUnlocked(const std::vector<std::string>& ts_uuids);
+
+  // Are there any open slots at all?
+  bool HasOpenTsSlotsUnlocked() const;
+
+  // Returns a summary of checksum scan slot usage across tablet servers.
+  // This is useful as debug info to check how saturated the tablet servers are
+  // with checksum scans.
+  std::string OpenTsSlotSummaryString() const;
+
+  // The options for the checksum process.
+  const KsckChecksumOptions opts_;
+
+  // A map of information about tablets to be checksummed. As tablet checksums
+  // are started, entries are removed from this map.
+  TabletInfoMap tablet_infos_;
+
+  // Tracks the open slots for each tablet server that hosts a replica of the
+  // tablets in 'tablet_infos_'.
+  TabletServerChecksumScanSlotsMap ts_slots_open_map_;
+
+  // checksums_ is an unordered_map of { tablet_id : { replica_uuid : checksum } }.
+  TabletChecksumResultsMap checksums_;
+
+  // Protects 'tablet_infos_', 'ts_slots_map_', and 'checksums_'.
+  mutable simple_spinlock lock_;
+
+  // The list of tablet servers that checksum scans will be run on. Every
+  // replica of tablet to be checksummed must be located on one of these
+  // tablet servers.
+  const TabletServerList tservers_;
+
+  const int expected_replica_count_;
   CountDownLatch responses_;
 
-  mutable simple_spinlock lock_; // Protects 'checksums_'.
-  // checksums_ is an unordered_map of { tablet_id : { replica_uuid : checksum } }.
-  TabletResultMap checksums_;
+  // Used for the 'timestamp_update_timer_' periodic timer.
+  std::shared_ptr<rpc::Messenger> messenger_;
 
-  AtomicInt<int64_t> rows_summed_;
-  AtomicInt<int64_t> disk_bytes_summed_;
+  // A timer used to periodically refresh the timestamps of the tablet servers
+  // in 'tablet_servers_', so that snapshot timestamps don't fall behind the
+  // ancient history mark.
+  std::shared_ptr<rpc::PeriodicTimer> timestamp_update_timer_;
+
+  // A threadpool for running tasks that find additional tablets that can
+  // be checksummed based on available slots on tablet servers.
+  gscoped_ptr<ThreadPool> find_tablets_to_checksum_pool_;
+
+  std::atomic<int64_t> rows_summed_;
+  std::atomic<int64_t> disk_bytes_summed_;
+
+  DISALLOW_COPY_AND_ASSIGN(KsckChecksumManager);
 };
 
-// Queue of tablet replicas for an individual tablet server.
-typedef std::shared_ptr<BlockingQueue<std::pair<Schema, std::string>>> SharedTabletQueue;
-
-// A set of callbacks which records the result of a tablet replica's checksum,
-// and then checks if the tablet server has any more tablets to checksum. If so,
-// a new async checksum scan is started.
-class TabletServerChecksumCallbacks : public KsckChecksumProgressCallbacks {
- public:
-  TabletServerChecksumCallbacks(
-      scoped_refptr<ChecksumResultReporter> reporter,
-      std::shared_ptr<KsckTabletServer> tablet_server,
-      SharedTabletQueue queue,
-      std::string tablet_id,
-      KsckChecksumOptions options);
-
-  void Progress(int64_t rows_summed, int64_t disk_bytes_summed) override;
-
-  void Finished(const Status& status, uint64_t checksum) override;
-
- private:
-  ~TabletServerChecksumCallbacks() = default;
-
-  const scoped_refptr<ChecksumResultReporter> reporter_;
-  const std::shared_ptr<KsckTabletServer> tablet_server_;
-  const SharedTabletQueue queue_;
-  const KsckChecksumOptions options_;
-
-  std::string tablet_id_;
-};
-
-// A class for performing checksum scans against a Kudu cluster.
+// A class for performing checksums on a Kudu cluster.
 class KsckChecksummer {
  public:
    // 'cluster' must remain valid as long as this instance is alive.
@@ -199,24 +283,21 @@ class KsckChecksummer {
                       std::ostream* out_for_progress_updates);
 
  private:
-  typedef std::unordered_map<std::shared_ptr<KsckTablet>,
-                             std::shared_ptr<KsckTable>> TabletTableMap;
+  // Builds a map of tablets to-be-checksummed, given the options in 'opts' and
+  // the cluster 'cluster'. The resulting tablets are populated in 'tablet_infos'
+  // and the total number of replicas to be checksummed is set in 'num_replica'.
+  Status BuildTabletInfoMap(const KsckChecksumOptions& opts,
+                            TabletInfoMap* tablet_infos,
+                            int* num_replicas) const;
 
-  // Builds a mapping from tablet-to-be-checksummed to its table, which is
-  // used to create checksum callbacks. This mapping is returned in
-  // 'tablet_table_map' and the total number of replicas to be checksummed is
-  // returned in 'num_replicas'.
-  Status BuildTabletTableMap(const KsckChecksumOptions& opts,
-                             TabletTableMap* tablet_table_map,
-                             int* num_replicas) const;
-
-  // Collates the results of checksums into 'table_checksum_map', with the
-  // total number of results returned as 'num_results'.
+  // Collates the results of checksums that are reported in 'checksums' into
+  // 'table_checksum_map', with the total number of results returned as
+  // 'num_results'.
   // NOTE: Even if this function returns a bad Status, 'table_checksum_map'
   // and 'num_results' will still be populated using whatever results are
   // available.
   Status CollateChecksumResults(
-      const ChecksumResultReporter::TabletResultMap& checksums,
+      const TabletChecksumResultsMap& checksums,
       KsckTableChecksumMap* table_checksum_map,
       int* num_results) const;
 

@@ -17,6 +17,7 @@
 
 #include "kudu/tools/ksck_remote.h"
 
+#include <atomic>
 #include <cstdint>
 #include <map>
 #include <ostream>
@@ -218,19 +219,40 @@ Status RemoteKsckTabletServer::FetchInfo(KsckServerHealth* health) {
     }
   }
 
-  {
-    server::ServerClockRequestPB req;
-    server::ServerClockResponsePB resp;
-    RpcController rpc;
-    rpc.set_timeout(GetDefaultTimeout());
-    RETURN_NOT_OK_PREPEND(generic_proxy_->ServerClock(req, &resp, &rpc),
-                          "could not fetch timestamp");
-    CHECK(resp.has_timestamp());
-    timestamp_ = resp.timestamp();
-  }
+  RETURN_NOT_OK(FetchCurrentTimestamp());
 
   state_ = KsckFetchState::FETCHED;
   *health = KsckServerHealth::HEALTHY;
+  return Status::OK();
+}
+
+void RemoteKsckTabletServer::ServerClockResponseCallback::Run() {
+  if (rpc.status().ok()) {
+    ts->timestamp_ = resp.timestamp();
+  } else {
+    LOG(WARNING) << "Failed to retrieve timestamp from " << ts->uuid()
+                 << ": " << rpc.status().ToString();
+  }
+  delete this;
+}
+
+void RemoteKsckTabletServer::FetchCurrentTimestampAsync() {
+  // 'cb' deletes itself when complete.
+  auto* cb = new ServerClockResponseCallback(shared_from_this());
+  cb->rpc.set_timeout(GetDefaultTimeout());
+  generic_proxy_->ServerClockAsync(cb->req,
+                                   &cb->resp,
+                                   &cb->rpc,
+                                   boost::bind(&ServerClockResponseCallback::Run, cb));
+}
+
+Status RemoteKsckTabletServer::FetchCurrentTimestamp() {
+  server::ServerClockRequestPB req;
+  server::ServerClockResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(GetDefaultTimeout());
+  RETURN_NOT_OK(generic_proxy_->ServerClock(req, &resp, &rpc));
+  timestamp_ = resp.timestamp();
   return Status::OK();
 }
 
@@ -295,14 +317,17 @@ class ChecksumCallbackHandler {
 // After the ChecksumStepper reports its results to the reporter, it deletes itself.
 class ChecksumStepper {
  public:
-  ChecksumStepper(string tablet_id, const Schema& schema, string server_uuid,
-                  KsckChecksumOptions options, KsckChecksumProgressCallbacks* callbacks,
+  ChecksumStepper(string tablet_id,
+                  Schema schema,
+                  string server_uuid,
+                  KsckChecksumOptions options,
+                  shared_ptr<KsckChecksumManager> manager,
                   shared_ptr<tserver::TabletServerServiceProxy> proxy)
-      : schema_(schema),
+      : schema_(std::move(schema)),
         tablet_id_(std::move(tablet_id)),
         server_uuid_(std::move(server_uuid)),
-        options_(options),
-        callbacks_(callbacks),
+        options_(std::move(options)),
+        manager_(std::move(manager)),
         proxy_(std::move(proxy)),
         call_seq_id_(0),
         checksum_(0) {
@@ -313,7 +338,7 @@ class ChecksumStepper {
     Status s = SchemaToColumnPBs(schema_, &cols_,
                                  SCHEMA_PB_WITHOUT_IDS | SCHEMA_PB_WITHOUT_STORAGE_ATTRIBUTES);
     if (!s.ok()) {
-      callbacks_->Finished(s, 0);
+      manager_->ReportResult(tablet_id_, server_uuid_, s, 0);
     } else {
       SendRequest(kNewRequest);
     }
@@ -326,20 +351,20 @@ class ChecksumStepper {
       s = StatusFromPB(resp_.error().status());
     }
     if (!s.ok()) {
-      callbacks_->Finished(s, 0);
+      manager_->ReportResult(tablet_id_, server_uuid_, s, 0);
       return; // Deletes 'this'.
     }
     if (resp_.has_resource_metrics() || resp_.has_rows_checksummed()) {
       int64_t bytes = resp_.resource_metrics().cfile_cache_miss_bytes() +
           resp_.resource_metrics().cfile_cache_hit_bytes();
-      callbacks_->Progress(resp_.rows_checksummed(), bytes);
+      manager_->ReportProgress(resp_.rows_checksummed(), bytes);
     }
     DCHECK(resp_.has_checksum());
     checksum_ = resp_.checksum();
 
     // Report back with results.
     if (!resp_.has_more_results()) {
-      callbacks_->Finished(s, checksum_);
+      manager_->ReportResult(tablet_id_, server_uuid_, s, checksum_);
       return; // Deletes 'this'.
     }
 
@@ -398,7 +423,7 @@ class ChecksumStepper {
   const string tablet_id_;
   const string server_uuid_;
   const KsckChecksumOptions options_;
-  KsckChecksumProgressCallbacks* const callbacks_;
+  shared_ptr<KsckChecksumManager> const manager_;
   const shared_ptr<tserver::TabletServerServiceProxy> proxy_;
 
   uint32_t call_seq_id_;
@@ -418,9 +443,9 @@ void RemoteKsckTabletServer::RunTabletChecksumScanAsync(
         const string& tablet_id,
         const Schema& schema,
         const KsckChecksumOptions& options,
-        KsckChecksumProgressCallbacks* callbacks) {
+        shared_ptr<KsckChecksumManager> manager) {
   gscoped_ptr<ChecksumStepper> stepper(
-      new ChecksumStepper(tablet_id, schema, uuid(), options, callbacks, ts_proxy_));
+      new ChecksumStepper(tablet_id, schema, uuid(), options, manager, ts_proxy_));
   stepper->Start();
   ignore_result(stepper.release()); // Deletes self on callback.
 }
@@ -455,10 +480,10 @@ Status RemoteKsckCluster::RetrieveTabletServers() {
 
   TSMap tablet_servers;
   for (const auto* s : servers) {
-    shared_ptr<RemoteKsckTabletServer> ts(
-        new RemoteKsckTabletServer(s->uuid(),
-                                   HostPort(s->hostname(), s->port()),
-                                   messenger_));
+    auto ts = std::make_shared<RemoteKsckTabletServer>(
+        s->uuid(),
+        HostPort(s->hostname(), s->port()),
+        messenger_);
     RETURN_NOT_OK(ts->Init());
     InsertOrDie(&tablet_servers, ts->uuid(), ts);
   }
