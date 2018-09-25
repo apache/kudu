@@ -449,7 +449,7 @@ public class TestAsyncKuduSession extends BaseKuduTest {
     }
     session.flush().join(DEFAULT_SLEEP);
     assertEquals(20, countInRange(151, 171));
-    assertTrue(gotException);
+    assertTrue("Expected PleaseThrottleException, but it was never thrown", gotException);
   }
 
   private Insert createInsert(int key) {
