@@ -683,8 +683,8 @@ underlying Kudu table.
 
 .Rename the underlying Kudu table for an internal table
 
-If a table is an internal table, the underlying Kudu table may be renamed by
-changing the `kudu.table_name` property:
+In Impala 2.11 and lower, the underlying Kudu table may be renamed by changing
+the `kudu.table_name` property:
 
 [source,sql]
 ----
