@@ -93,7 +93,7 @@ public class RowResultIterator extends KuduRpcResponse implements Iterator<RowRe
   /**
    * @return an empty row result iterator
    */
-  static RowResultIterator empty() {
+  public static RowResultIterator empty() {
     return EMPTY;
   }
 

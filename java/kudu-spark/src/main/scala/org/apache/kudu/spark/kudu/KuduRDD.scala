@@ -118,11 +118,10 @@ private class KuduPartition(
 private class RowIterator(private val scanner: KuduScanner, private val kuduContext: KuduContext)
     extends Iterator[Row] {
 
-  private var currentIterator: RowResultIterator = null
+  private var currentIterator: RowResultIterator = RowResultIterator.empty
 
   override def hasNext: Boolean = {
-    while ((currentIterator != null && !currentIterator.hasNext && scanner.hasMoreRows) ||
-      (scanner.hasMoreRows && currentIterator == null)) {
+    while (!currentIterator.hasNext && scanner.hasMoreRows) {
       if (TaskContext.get().isInterrupted()) {
         throw new RuntimeException("Kudu task interrupted")
       }

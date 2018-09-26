@@ -105,11 +105,10 @@ private case class KuduBackupPartition(index: Int, scanToken: Array[Byte], locat
  */
 private class RowIterator(private val scanner: KuduScanner) extends Iterator[Row] {
 
-  private var currentIterator: RowResultIterator = _
+  private var currentIterator: RowResultIterator = RowResultIterator.empty
 
   override def hasNext: Boolean = {
-    while ((currentIterator != null && !currentIterator.hasNext && scanner.hasMoreRows) ||
-      (scanner.hasMoreRows && currentIterator == null)) {
+    while (!currentIterator.hasNext && scanner.hasMoreRows) {
       if (TaskContext.get().isInterrupted()) {
         throw new RuntimeException("KuduBackup spark task interrupted")
       }
