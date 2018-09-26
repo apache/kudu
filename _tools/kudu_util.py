@@ -60,10 +60,10 @@ def confirm_prompt(prompt):
   if the user confirms.
   """
   while True:
-    print prompt, "[Y/n]:",
+    print(prompt, "[Y/n]:",)
 
     if not os.isatty(sys.stdout.fileno()):
-      print "Not running interactively. Assuming 'N'."
+      print("Not running interactively. Assuming 'N'.")
       return False
       pass
 
