@@ -34,7 +34,7 @@ class StreamingTest extends KuduTestSuite {
   def setUp(): Unit = {
     sqlContext = ss.sqlContext
     kuduOptions =
-      Map("kudu.table" -> simpleTableName, "kudu.master" -> miniCluster.getMasterAddresses)
+      Map("kudu.table" -> simpleTableName, "kudu.master" -> miniCluster.getMasterAddressesAsString)
   }
 
   @Test
@@ -49,7 +49,7 @@ class StreamingTest extends KuduTestSuite {
       .toDF("key", "val")
       .writeStream
       .format(classOf[KuduSinkProvider].getCanonicalName)
-      .option("kudu.master", miniCluster.getMasterAddresses)
+      .option("kudu.master", miniCluster.getMasterAddressesAsString)
       .option("kudu.table", simpleTableName)
       .option("checkpointLocation", checkpointDir.toFile.getCanonicalPath)
       .outputMode(OutputMode.Update)
