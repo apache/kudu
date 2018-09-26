@@ -53,6 +53,7 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
@@ -359,9 +360,19 @@ TEST_F(CreateTableStressTest, TestConcurrentCreateTableAndReloadMetadata) {
       CHECK_OK(cluster_->mini_master()->master()->catalog_manager()->
           VisitTablesAndTablets());
 
-      // Give table creation a chance to run.
-      SleepFor(MonoDelta::FromMilliseconds(1 + rand() % 10));
+      // Give table creation a chance to run. TSAN is especially brutal; so
+      // let's sleep for longer in such environments.
+#ifdef THREAD_SANITIZER
+      int sleep_ms = 10 + rand() % 91;
+#else
+      int sleep_ms = 1 + rand() % 10;
+#endif
+      SleepFor(MonoDelta::FromMilliseconds(sleep_ms));
     }
+  });
+  SCOPED_CLEANUP({
+    stop.Store(true);
+    reload_metadata_thread.join();
   });
 
   for (int num_tables_created = 0; num_tables_created < 20;) {
@@ -388,6 +399,12 @@ TEST_F(CreateTableStressTest, TestConcurrentCreateTableAndReloadMetadata) {
       // it's hard do deduce the universal timeout constant and we prefer to
       // not introduce test flakiness.
       //
+      // Note: on timeout, we don't actually know with certainty whether the
+      // table was created or not. It's possible for the RPC to be accepted but
+      // processed very slowly by the master, for the client to eventually give
+      // up and time out the request, all while the master continues and
+      // eventually finishes creating the table.
+      //
       // TODO(aserbin): update the test keeping its racy essence but making it
       //                cleaner regarding this timeout&retry workaround.
       continue;
@@ -395,8 +412,6 @@ TEST_F(CreateTableStressTest, TestConcurrentCreateTableAndReloadMetadata) {
     ASSERT_OK(s);
     num_tables_created++;
   }
-  stop.Store(true);
-  reload_metadata_thread.join();
 }
 
 } // namespace kudu
