@@ -164,8 +164,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
 
     // change the c2 string to abc and insert
     val updateDF = baseDF.withColumn("c2_s", lit("abc"))
-    val kuduWriteOptions = new KuduWriteOptions
-    kuduWriteOptions.ignoreDuplicateRowErrors = true
+    val kuduWriteOptions = KuduWriteOptions(ignoreDuplicateRowErrors = true)
     kuduContext.insertRows(updateDF, tableName, kuduWriteOptions)
 
     // change the key and insert
@@ -320,14 +319,13 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
     val nullDF = sqlContext
       .createDataFrame(Seq((0, null.asInstanceOf[String])))
       .toDF("key", "val")
-    val kuduWriteOptions = new KuduWriteOptions
-    kuduWriteOptions.ignoreNull = true
-    kuduContext.upsertRows(nullDF, simpleTableName, kuduWriteOptions)
+    val ignoreNullOptions = KuduWriteOptions(ignoreNull = true)
+    kuduContext.upsertRows(nullDF, simpleTableName, ignoreNullOptions)
     assert(dataDF.collect.toList === nonNullDF.collect.toList)
 
-    kuduWriteOptions.ignoreNull = false
+    val respectNullOptions = KuduWriteOptions(ignoreNull = false)
     kuduContext.updateRows(nonNullDF, simpleTableName)
-    kuduContext.upsertRows(nullDF, simpleTableName, kuduWriteOptions)
+    kuduContext.upsertRows(nullDF, simpleTableName, respectNullOptions)
     assert(dataDF.collect.toList === nullDF.collect.toList)
 
     kuduContext.updateRows(nonNullDF, simpleTableName)
@@ -883,8 +881,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
         df("key")
           .plus(100))
       .withColumn("c2_s", lit("def"))
-    val kuduWriteOptions = new KuduWriteOptions
-    kuduWriteOptions.ignoreDuplicateRowErrors = true
+    val kuduWriteOptions = KuduWriteOptions(ignoreDuplicateRowErrors = true)
     kuduContext.insertRows(updateDF, tableName, kuduWriteOptions)
     assert(kuduContext.syncClient.getLastPropagatedTimestamp > prevTimestamp)
   }
@@ -914,7 +911,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
       "kudu.scanRequestTimeoutMs" -> "1")
     val dataFrame = sqlContext.read.options(kuduOptions).kudu
     val kuduRelation = kuduRelationFromDataFrame(dataFrame)
-    assert(kuduRelation.scanRequestTimeoutMs == Some(1))
+    assert(kuduRelation.readOptions.scanRequestTimeoutMs == Some(1))
   }
 
   /**
@@ -930,6 +927,6 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
       "kudu.socketReadTimeoutMs" -> "1")
     val dataFrame = sqlContext.read.options(kuduOptions).kudu
     val kuduRelation = kuduRelationFromDataFrame(dataFrame)
-    assert(kuduRelation.socketReadTimeoutMs == Some(1))
+    assert(kuduRelation.readOptions.socketReadTimeoutMs == Some(1))
   }
 }

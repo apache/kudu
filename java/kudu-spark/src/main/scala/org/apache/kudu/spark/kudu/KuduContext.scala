@@ -20,8 +20,6 @@ package org.apache.kudu.spark.kudu
 import java.security.AccessController
 import java.security.PrivilegedAction
 
-import java.sql.Timestamp
-
 import javax.security.auth.Subject
 import javax.security.auth.login.AppConfigurationEntry
 import javax.security.auth.login.Configuration
@@ -45,6 +43,7 @@ import org.apache.yetus.audience.InterfaceAudience
 import org.apache.yetus.audience.InterfaceStability
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+
 import org.apache.kudu.client.SessionConfiguration.FlushMode
 import org.apache.kudu.client._
 import org.apache.kudu.spark.kudu.SparkUtil._
@@ -58,7 +57,8 @@ import org.apache.kudu.Type
  * [[KuduContext]] should be created in the driver, and shared with executors
  * as a serializable field.
  */
-@InterfaceStability.Unstable
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeoutMs: Option[Long])
     extends Serializable {
 
@@ -137,19 +137,14 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
   def kuduRDD(
       sc: SparkContext,
       tableName: String,
-      columnProjection: Seq[String] = Nil): RDD[Row] = {
-    // TODO: provide an elegant way to pass various options (faultTolerantScan,
-    // TODO: localityScan, etc) to KuduRDD
+      columnProjection: Seq[String] = Nil,
+      options: KuduReadOptions = KuduReadOptions()): RDD[Row] = {
     new KuduRDD(
       this,
-      1024 * 1024 * 20,
+      syncClient.openTable(tableName),
       columnProjection.toArray,
       Array(),
-      syncClient.openTable(tableName),
-      false,
-      ReplicaSelection.LEADER_ONLY,
-      None,
-      None,
+      options,
       sc)
   }
 
@@ -246,8 +241,7 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
   @deprecated(
     "Use KuduContext.insertRows(data, tableName, new KuduWriteOptions(ignoreDuplicateRowErrors = true))")
   def insertIgnoreRows(data: DataFrame, tableName: String): Unit = {
-    val writeOptions = new KuduWriteOptions
-    writeOptions.ignoreDuplicateRowErrors = true
+    val writeOptions = KuduWriteOptions(ignoreDuplicateRowErrors = true)
     writeRows(data, tableName, Insert, writeOptions)
   }
 

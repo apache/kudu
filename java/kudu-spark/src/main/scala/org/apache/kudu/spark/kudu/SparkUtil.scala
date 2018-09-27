@@ -2,14 +2,15 @@ package org.apache.kudu.spark.kudu
 
 import java.util
 
+import org.apache.spark.sql.types._
+import org.apache.yetus.audience.InterfaceAudience
+import org.apache.yetus.audience.InterfaceStability
+
 import org.apache.kudu.ColumnTypeAttributes.ColumnTypeAttributesBuilder
 import org.apache.kudu.ColumnSchema
 import org.apache.kudu.ColumnTypeAttributes
 import org.apache.kudu.Schema
 import org.apache.kudu.Type
-import org.apache.spark.sql.types._
-import org.apache.yetus.audience.InterfaceAudience
-import org.apache.yetus.audience.InterfaceStability
 
 import scala.collection.JavaConverters._
 

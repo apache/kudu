@@ -30,9 +30,13 @@ import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.sql.SaveMode
+import org.apache.yetus.audience.InterfaceAudience
 import org.apache.yetus.audience.InterfaceStability
+
 import org.apache.kudu.client.KuduPredicate.ComparisonOp
 import org.apache.kudu.client._
+import org.apache.kudu.spark.kudu.KuduReadOptions._
+import org.apache.kudu.spark.kudu.KuduWriteOptions._
 import org.apache.kudu.spark.kudu.SparkUtil._
 
 /**
@@ -43,6 +47,7 @@ import org.apache.kudu.spark.kudu.SparkUtil._
  * `DefaultSource` when the user specifies the path of a source during DDL
  * operations through [[org.apache.spark.sql.DataFrameReader.format]].
  */
+@InterfaceAudience.Private
 @InterfaceStability.Unstable
 class DefaultSource
     extends RelationProvider with CreatableRelationProvider with SchemaRelationProvider {
@@ -56,16 +61,7 @@ class DefaultSource
   val IGNORE_DUPLICATE_ROW_ERRORS = "kudu.ignoreDuplicateRowErrors"
   val SCAN_REQUEST_TIMEOUT_MS = "kudu.scanRequestTimeoutMs"
   val SOCKET_READ_TIMEOUT_MS = "kudu.socketReadTimeoutMs"
-
-  def defaultMasterAddrs: String = InetAddress.getLocalHost.getCanonicalHostName
-
-  def getScanRequestTimeoutMs(parameters: Map[String, String]): Option[Long] = {
-    parameters.get(SCAN_REQUEST_TIMEOUT_MS).map(_.toLong)
-  }
-
-  def getSocketReadTimeoutMs(parameters: Map[String, String]): Option[Long] = {
-    parameters.get(SOCKET_READ_TIMEOUT_MS).map(_.toLong)
-  }
+  val BATCH_SIZE = "kudu.batchSize"
 
   /**
    * Construct a BaseRelation using the provided context and parameters.
@@ -77,33 +73,37 @@ class DefaultSource
   override def createRelation(
       sqlContext: SQLContext,
       parameters: Map[String, String]): BaseRelation = {
+    createRelation(sqlContext, parameters, null)
+  }
+
+  /**
+    * Construct a BaseRelation using the provided context, parameters and schema.
+    *
+    * @param sqlContext SparkSQL context
+    * @param parameters parameters given to us from SparkSQL
+    * @param schema     the schema used to select columns for the relation
+    * @return           a BaseRelation Object
+    */
+  override def createRelation(
+      sqlContext: SQLContext,
+      parameters: Map[String, String],
+      schema: StructType): BaseRelation = {
     val tableName = parameters.getOrElse(
       TABLE_KEY,
       throw new IllegalArgumentException(
         s"Kudu table name must be specified in create options using key '$TABLE_KEY'"))
     val kuduMaster = parameters.getOrElse(KUDU_MASTER, defaultMasterAddrs)
     val operationType = getOperationType(parameters.getOrElse(OPERATION, "upsert"))
-    val faultTolerantScanner =
-      Try(parameters.getOrElse(FAULT_TOLERANT_SCANNER, "false").toBoolean)
-        .getOrElse(false)
-    val scanLocality = getScanLocalityType(parameters.getOrElse(SCAN_LOCALITY, "closest_replica"))
-    val ignoreDuplicateRowErrors = Try(parameters(IGNORE_DUPLICATE_ROW_ERRORS).toBoolean)
-      .getOrElse(false) ||
-    Try(parameters(OPERATION) == "insert-ignore").getOrElse(false)
-    val ignoreNull =
-      Try(parameters.getOrElse(IGNORE_NULL, "false").toBoolean).getOrElse(false)
-    val writeOptions =
-      new KuduWriteOptions(ignoreDuplicateRowErrors, ignoreNull)
+    val schemaOption = Option(schema)
+    val readOptions = getReadOptions(parameters)
+    val writeOptions = getWriteOptions(parameters)
 
     new KuduRelation(
       tableName,
       kuduMaster,
-      faultTolerantScanner,
-      scanLocality,
-      getScanRequestTimeoutMs(parameters),
-      getSocketReadTimeoutMs(parameters),
       operationType,
-      None,
+      schemaOption,
+      readOptions,
       writeOptions
     )(sqlContext)
   }
@@ -130,36 +130,47 @@ class DefaultSource
       case _ =>
         throw new UnsupportedOperationException("Currently, only Append is supported")
     }
-
     kuduRelation
   }
 
-  override def createRelation(
-      sqlContext: SQLContext,
-      parameters: Map[String, String],
-      schema: StructType): BaseRelation = {
-    val tableName = parameters.getOrElse(
-      TABLE_KEY,
-      throw new IllegalArgumentException(
-        s"Kudu table name must be specified in create options " +
-          s"using key '$TABLE_KEY'"))
-    val kuduMaster = parameters.getOrElse(KUDU_MASTER, defaultMasterAddrs)
-    val operationType = getOperationType(parameters.getOrElse(OPERATION, "upsert"))
+  private def getReadOptions(parameters: Map[String, String]): KuduReadOptions = {
+    val batchSize = parameters.get(BATCH_SIZE).map(_.toInt).getOrElse(defaultBatchSize)
     val faultTolerantScanner =
-      Try(parameters.getOrElse(FAULT_TOLERANT_SCANNER, "false").toBoolean)
-        .getOrElse(false)
-    val scanLocality = getScanLocalityType(parameters.getOrElse(SCAN_LOCALITY, "closest_replica"))
+      parameters.get(FAULT_TOLERANT_SCANNER).map(_.toBoolean).getOrElse(defaultFaultTolerantScanner)
+    val scanLocality =
+      parameters.get(SCAN_LOCALITY).map(getScanLocalityType).getOrElse(defaultScanLocality)
+    val scanRequestTimeoutMs = parameters.get(SCAN_REQUEST_TIMEOUT_MS).map(_.toLong)
+    val socketReadTimeoutMs = parameters.get(SOCKET_READ_TIMEOUT_MS).map(_.toLong)
 
-    new KuduRelation(
-      tableName,
-      kuduMaster,
-      faultTolerantScanner,
+    KuduReadOptions(
+      batchSize,
       scanLocality,
-      getScanRequestTimeoutMs(parameters),
-      getSocketReadTimeoutMs(parameters),
-      operationType,
-      Some(schema)
-    )(sqlContext)
+      faultTolerantScanner,
+      scanRequestTimeoutMs,
+      socketReadTimeoutMs)
+  }
+
+  private def getWriteOptions(parameters: Map[String, String]): KuduWriteOptions = {
+    val ignoreDuplicateRowErrors =
+    Try(parameters(IGNORE_DUPLICATE_ROW_ERRORS).toBoolean).getOrElse(false) ||
+    Try(parameters(OPERATION) == "insert-ignore").getOrElse(false)
+    val ignoreNull =
+      parameters.get(IGNORE_NULL).map(_.toBoolean).getOrElse(defaultIgnoreNull)
+
+    Try(parameters.getOrElse(IGNORE_NULL, "false").toBoolean).getOrElse(false)
+
+    KuduWriteOptions(ignoreDuplicateRowErrors, ignoreNull)
+  }
+
+  private def defaultMasterAddrs: String = InetAddress.getLocalHost.getCanonicalHostName
+
+  private def getScanLocalityType(opParam: String): ReplicaSelection = {
+    opParam.toLowerCase match {
+      case "leader_only" => ReplicaSelection.LEADER_ONLY
+      case "closest_replica" => ReplicaSelection.CLOSEST_REPLICA
+      case _ =>
+        throw new IllegalArgumentException(s"Unsupported replica selection type '$opParam'")
+    }
   }
 
   private def getOperationType(opParam: String): OperationType = {
@@ -173,15 +184,6 @@ class DefaultSource
         throw new IllegalArgumentException(s"Unsupported operation type '$opParam'")
     }
   }
-
-  private def getScanLocalityType(opParam: String): ReplicaSelection = {
-    opParam.toLowerCase match {
-      case "leader_only" => ReplicaSelection.LEADER_ONLY
-      case "closest_replica" => ReplicaSelection.CLOSEST_REPLICA
-      case _ =>
-        throw new IllegalArgumentException(s"Unsupported replica selection type '$opParam'")
-    }
-  }
 }
 
 /**
@@ -189,31 +191,25 @@ class DefaultSource
  *
  * @param tableName Kudu table that we plan to read from
  * @param masterAddrs Kudu master addresses
- * @param faultTolerantScanner scanner type to be used. Fault tolerant if true,
- *                             otherwise, use non fault tolerant one
- * @param scanLocality If true scan locality is enabled, so that the scan will
- *                     take place at the closest replica.
- * @param scanRequestTimeoutMs Maximum time allowed per scan request, in milliseconds
  * @param operationType The default operation type to perform when writing to the relation
  * @param userSchema A schema used to select columns for the relation
+ * @param readOptions Kudu read options
  * @param writeOptions Kudu write options
  * @param sqlContext SparkSQL context
  */
+@InterfaceAudience.Private
 @InterfaceStability.Unstable
 class KuduRelation(
-    private val tableName: String,
-    private val masterAddrs: String,
-    private val faultTolerantScanner: Boolean,
-    private val scanLocality: ReplicaSelection,
-    private[kudu] val scanRequestTimeoutMs: Option[Long],
-    private[kudu] val socketReadTimeoutMs: Option[Long],
-    private val operationType: OperationType,
-    private val userSchema: Option[StructType],
-    private val writeOptions: KuduWriteOptions = new KuduWriteOptions)(val sqlContext: SQLContext)
+    val tableName: String,
+    val masterAddrs: String,
+    val operationType: OperationType,
+    val userSchema: Option[StructType],
+    val readOptions: KuduReadOptions = new KuduReadOptions,
+    val writeOptions: KuduWriteOptions = new KuduWriteOptions)(val sqlContext: SQLContext)
     extends BaseRelation with PrunedFilteredScan with InsertableRelation {
 
   private val context: KuduContext =
-    new KuduContext(masterAddrs, sqlContext.sparkContext, socketReadTimeoutMs)
+    new KuduContext(masterAddrs, sqlContext.sparkContext, readOptions.socketReadTimeoutMs)
 
   private val table: KuduTable = context.syncClient.openTable(tableName)
 
@@ -241,14 +237,10 @@ class KuduRelation(
     val predicates = filters.flatMap(filterToPredicate)
     new KuduRDD(
       context,
-      1024 * 1024 * 20,
+      table,
       requiredColumns,
       predicates,
-      table,
-      faultTolerantScanner,
-      scanLocality,
-      scanRequestTimeoutMs,
-      socketReadTimeoutMs,
+      readOptions,
       sqlContext.sparkContext
     )
   }

@@ -17,12 +17,13 @@
 package org.apache.kudu.spark.kudu
 
 import scala.collection.JavaConverters._
-
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.Row
 import org.apache.spark.Partition
 import org.apache.spark.SparkContext
 import org.apache.spark.TaskContext
+import org.apache.yetus.audience.InterfaceAudience
+import org.apache.yetus.audience.InterfaceStability
 
 import org.apache.kudu.client._
 import org.apache.kudu.Type
@@ -33,45 +34,42 @@ import org.apache.kudu.client
  *
  * To construct a KuduRDD, use [[KuduContext#kuduRDD]] or a Kudu DataSource.
  */
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 class KuduRDD private[kudu] (
     val kuduContext: KuduContext,
-    @transient val batchSize: Integer,
+    @transient val table: KuduTable,
     @transient val projectedCols: Array[String],
     @transient val predicates: Array[client.KuduPredicate],
-    @transient val table: KuduTable,
-    @transient val isFaultTolerant: Boolean,
-    @transient val scanLocality: ReplicaSelection,
-    @transient val scanRequestTimeoutMs: Option[Long],
-    @transient val socketReadTimeoutMs: Option[Long],
+    @transient val options: KuduReadOptions,
     @transient val sc: SparkContext)
     extends RDD[Row](sc, Nil) {
 
   override protected def getPartitions: Array[Partition] = {
     val builder = kuduContext.syncClient
       .newScanTokenBuilder(table)
-      .batchSizeBytes(batchSize)
+      .batchSizeBytes(options.batchSize)
       .setProjectedColumnNames(projectedCols.toSeq.asJava)
-      .setFaultTolerant(isFaultTolerant)
+      .setFaultTolerant(options.faultTolerantScanner)
       .cacheBlocks(true)
 
     // A scan is partitioned to multiple ones. If scan locality is enabled,
     // each will take place at the closet replica from the executor. In this
     // case, to ensure the consistency of such scan, we use READ_AT_SNAPSHOT
     // read mode without setting a timestamp.
-    if (scanLocality == ReplicaSelection.CLOSEST_REPLICA) {
-      builder
-        .replicaSelection(ReplicaSelection.CLOSEST_REPLICA)
-        .readMode(AsyncKuduScanner.ReadMode.READ_AT_SNAPSHOT)
+    builder.replicaSelection(options.scanLocality)
+    if (options.scanLocality == ReplicaSelection.CLOSEST_REPLICA) {
+      builder.readMode(AsyncKuduScanner.ReadMode.READ_AT_SNAPSHOT)
     }
 
-    scanRequestTimeoutMs match {
-      case Some(timeout) => builder.scanRequestTimeout(timeout)
-      case _ =>
+    options.scanRequestTimeoutMs.foreach { timeout =>
+      builder.scanRequestTimeout(timeout)
     }
 
     for (predicate <- predicates) {
       builder.addPredicate(predicate)
     }
+
     val tokens = builder.build().asScala
     tokens.zipWithIndex.map {
       case (token, index) =>
@@ -79,7 +77,7 @@ class KuduRDD private[kudu] (
         // replica selection policy is leader only, to take advantage
         // of scan locality.
         var locations: Array[String] = null
-        if (scanLocality == ReplicaSelection.LEADER_ONLY) {
+        if (options.scanLocality == ReplicaSelection.LEADER_ONLY) {
           locations = Array(token.getTablet.getLeaderReplica.getRpcHost)
         } else {
           locations = token.getTablet.getReplicas.asScala.map(_.getRpcHost).toArray
