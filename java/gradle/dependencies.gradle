@@ -32,18 +32,18 @@ versions += [
     commonsIo      : "2.6",
     errorprone     : "2.3.1",
     flume          : "1.8.0",
-    gradle         : "4.9",
+    gradle         : "4.10.2",
     // We use the android version instead of the jre version
     // to maintain Java 1.7 compatibility.
     guava          : "26.0-android",
-    hadoop         : "3.1.0",
+    hadoop         : "3.1.1",
     hamcrest       : "1.3",
     hive           : "2.3.3",
     jepsen         : "0.1.5",
     jsr305         : "3.0.2",
     junit          : "4.12",
     log4j          : "1.2.17",
-    mockito        : "2.21.0",
+    mockito        : "2.22.0",
     murmur         : "1.0.0",
     netty          : "3.10.6.Final",
     parquet        : "1.10.0",
@@ -53,10 +53,10 @@ versions += [
     scalatest      : "3.0.5",
     scopt          : "3.7.0",
     slf4j          : "1.7.25",
-    spark          : "2.3.1",
+    spark          : "2.3.2",
     sparkAvro      : "4.0.0",
     spotBugs       : "3.1.6",
-    yetus          : "0.7.0"
+    yetus          : "0.8.0"
 ]
 
 // Log the Gradle version used vs defined.
