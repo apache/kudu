@@ -225,12 +225,20 @@ else
   CMAKE_BUILD=$BUILD_TYPE
 fi
 
-# Assemble the cmake command line.
-CMAKE=
+# Assemble the cmake command line, starting with environment variables.
+
+# There's absolutely no reason to rebuild the thirdparty tree; we just ran
+# build-if-necessary.sh above.
+CMAKE="env NO_REBUILD_THIRDPARTY=1"
+
+# If using clang, we have to change the compiler via environment variables.
 if [ -n "$USE_CLANG" ]; then
-  CMAKE="env CC=$CLANG CXX=$CLANG++"
+  CMAKE="$CMAKE CC=$CLANG CXX=$CLANG++"
 fi
+
+# This will be a passthrough for systems without devtoolset.
 CMAKE="$CMAKE $SOURCE_ROOT/build-support/enable_devtoolset.sh"
+
 CMAKE="$CMAKE $THIRDPARTY_BIN/cmake"
 CMAKE="$CMAKE -DCMAKE_BUILD_TYPE=$CMAKE_BUILD"
 
