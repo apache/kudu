@@ -23,6 +23,7 @@
 #include <string>
 #include <tuple>  // IWYU pragma: keep
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <glog/logging.h> // IWYU pragma: keep
@@ -102,6 +103,65 @@ TEST_F(TestSchema, TestSchema) {
   EXPECT_EQ("uint32 NULLABLE", schema.column(1).TypeToString());
 }
 
+TEST_F(TestSchema, TestCopyAndMove) {
+  auto check_schema = [](const Schema& schema) {
+    ASSERT_EQ(sizeof(Slice) + sizeof(uint32_t) + sizeof(int32_t),
+              schema.byte_size());
+    ASSERT_EQ(3, schema.num_columns());
+    ASSERT_EQ(0, schema.column_offset(0));
+    ASSERT_EQ(sizeof(Slice), schema.column_offset(1));
+
+    EXPECT_EQ("Schema [\n"
+              "\tprimary key (key),\n"
+              "\tkey[string NOT NULL],\n"
+              "\tuint32val[uint32 NULLABLE],\n"
+              "\tint32val[int32 NOT NULL]\n"
+              "]",
+              schema.ToString());
+    EXPECT_EQ("key[string NOT NULL]", schema.column(0).ToString());
+    EXPECT_EQ("uint32 NULLABLE", schema.column(1).TypeToString());
+  };
+
+  ColumnSchema col1("key", STRING);
+  ColumnSchema col2("uint32val", UINT32, true);
+  ColumnSchema col3("int32val", INT32);
+
+  vector<ColumnSchema> cols = { col1, col2, col3 };
+  Schema schema(cols, 1);
+  check_schema(schema);
+
+  // Check copy- and move-assignment.
+  Schema moved_schema;
+  {
+    Schema copied_schema = schema;
+    check_schema(copied_schema);
+    ASSERT_TRUE(copied_schema.Equals(schema));
+
+    // Move-assign to 'moved_to_schema' from 'copied_schema' and then let
+    // 'copied_schema' go out of scope to make sure none of 'moved_to_schema''s
+    // resources are incorrectly freed.
+    moved_schema = std::move(copied_schema);
+
+    // 'copied_schema' is moved from so it should still be valid to call
+    // ToString(), though we can't expect any particular result.
+    NO_FATALS(copied_schema.ToString()); // NOLINT(*)
+  }
+  check_schema(moved_schema);
+  ASSERT_TRUE(moved_schema.Equals(schema));
+
+  // Check copy- and move-construction.
+  {
+    Schema copied_schema(schema);
+    check_schema(copied_schema);
+    ASSERT_TRUE(copied_schema.Equals(schema));
+
+    Schema moved_schema(std::move(copied_schema));
+    NO_FATALS(copied_schema.ToString()); // NOLINT(*)
+    check_schema(moved_schema);
+    ASSERT_TRUE(moved_schema.Equals(schema));
+  }
+}
+
 // Test basic functionality of Schema definition with decimal columns
 TEST_F(TestSchema, TestSchemaWithDecimal) {
   ColumnSchema col1("key", STRING);
@@ -163,21 +223,6 @@ TEST_F(TestSchema, TestSchemaEqualsWithDecimal) {
   EXPECT_FALSE(schema_18_10.Equals(schema_17_9));
 }
 
-TEST_F(TestSchema, TestSwap) {
-  Schema schema1({ ColumnSchema("col1", STRING),
-                   ColumnSchema("col2", STRING),
-                   ColumnSchema("col3", UINT32) },
-                 2);
-  Schema schema2({ ColumnSchema("col3", UINT32),
-                   ColumnSchema("col2", STRING) },
-                 1);
-  schema1.swap(schema2);
-  ASSERT_EQ(2, schema1.num_columns());
-  ASSERT_EQ(1, schema1.num_key_columns());
-  ASSERT_EQ(3, schema2.num_columns());
-  ASSERT_EQ(2, schema2.num_key_columns());
-}
-
 TEST_F(TestSchema, TestColumnSchemaEquals) {
   Slice default_str("read-write default");
   ColumnSchema col1("key", STRING);
@@ -233,11 +278,10 @@ TEST_F(TestSchema, TestReset) {
                          1));
   ASSERT_TRUE(schema.initialized());
 
-  // Swap the initialized schema with an uninitialized one.
+  // Move an uninitialized schema into the initialized schema.
   Schema schema2;
-  schema2.swap(schema);
+  schema = std::move(schema2);
   ASSERT_FALSE(schema.initialized());
-  ASSERT_TRUE(schema2.initialized());
 }
 
 // Test for KUDU-943, a bug where we suspected that Variant didn't behave

@@ -141,8 +141,7 @@ size_t ColumnSchema::memory_footprint_including_this() const {
 
 Schema::Schema(const Schema& other)
   : name_to_index_bytes_(0),
-    // TODO(adar): C++11 provides a single-arg constructor
-    name_to_index_(10,
+    name_to_index_(/*bucket_count=*/10,
                    NameToIndexMap::hasher(),
                    NameToIndexMap::key_equal(),
                    NameToIndexMapAllocator(&name_to_index_bytes_)) {
@@ -175,15 +174,45 @@ void Schema::CopyFrom(const Schema& other) {
   has_nullables_ = other.has_nullables_;
 }
 
-void Schema::swap(Schema& other) {
-  std::swap(num_key_columns_, other.num_key_columns_);
-  cols_.swap(other.cols_);
-  col_ids_.swap(other.col_ids_);
-  col_offsets_.swap(other.col_offsets_);
-  name_to_index_.swap(other.name_to_index_);
-  id_to_index_.swap(other.id_to_index_);
-  std::swap(has_nullables_, other.has_nullables_);
+Schema::Schema(Schema&& other) noexcept
+    : cols_(std::move(other.cols_)),
+      num_key_columns_(other.num_key_columns_),
+      col_ids_(std::move(other.col_ids_)),
+      col_offsets_(std::move(other.col_offsets_)),
+      name_to_index_bytes_(0),
+      name_to_index_(/*bucket_count=*/10,
+                     NameToIndexMap::hasher(),
+                     NameToIndexMap::key_equal(),
+                     NameToIndexMapAllocator(&name_to_index_bytes_)),
+      id_to_index_(std::move(other.id_to_index_)),
+      has_nullables_(other.has_nullables_) {
+  // 'name_to_index_' uses a customer allocator which holds a pointer to
+  // 'name_to_index_bytes_'. swap() will swap the contents but not the
+  // allocators; std::move will move the allocator[1], which will mean the moved
+  // to value will be holding a pointer to the moved-from's member, which is
+  // wrong and will likely lead to use-after-free. The 'name_to_index_bytes_'
+  // values should also be swapped so both schemas end up in a valid state.
+  //
+  // [1] STLCountingAllocator::propagate_on_container_move_assignment::value
+  //     is std::true_type, which it inherits from the default Allocator.
   std::swap(name_to_index_bytes_, other.name_to_index_bytes_);
+  name_to_index_.swap(other.name_to_index_);
+}
+
+Schema& Schema::operator=(Schema&& other) noexcept {
+  if (&other != this) {
+    cols_ = std::move(other.cols_);
+    num_key_columns_ = other.num_key_columns_;
+    col_ids_ = std::move(other.col_ids_);
+    col_offsets_ = std::move(other.col_offsets_);
+    id_to_index_ = std::move(other.id_to_index_);
+    has_nullables_ = other.has_nullables_;
+
+    // See the comment in the move constructor implementation for why we swap.
+    std::swap(name_to_index_bytes_, other.name_to_index_bytes_);
+    name_to_index_.swap(other.name_to_index_);
+  }
+  return *this;
 }
 
 Status Schema::Reset(const vector<ColumnSchema>& cols,

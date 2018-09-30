@@ -64,13 +64,6 @@ class IdMapping {
     clear();
   }
 
-  explicit IdMapping(const IdMapping& other)
-  : mask_(other.mask_),
-    entries_(other.entries_) {
-  }
-
-  ~IdMapping() {}
-
   void clear() {
     ClearMap(&entries_);
   }
@@ -82,12 +75,6 @@ class IdMapping {
     other.mask_ = mask_;
     mask_ = tmp;
     other.entries_.swap(entries_);
-  }
-
-  IdMapping& operator=(const IdMapping& other) {
-    mask_ = other.mask_;
-    entries_ = other.entries_;
-    return *this;
   }
 
   int operator[](int key) const {

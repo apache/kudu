@@ -400,10 +400,10 @@ class ColumnSchema {
 // which prefix of columns makes up the primary key.
 //
 // Note that, while Schema is copyable and assignable, it is a complex
-// object that is not inexpensive to copy. You should generally prefer
-// passing by pointer or reference, and functions that create new
+// object that is not inexpensive to copy. Prefer move semantics when
+// possible, or pass by pointer or reference. Functions that create new
 // Schemas should generally prefer taking a Schema pointer and using
-// Schema::swap() or Schema::Reset() rather than returning by value.
+// Schema::Reset() rather than returning by value.
 class Schema {
  public:
 
@@ -412,8 +412,10 @@ class Schema {
   Schema()
     : num_key_columns_(0),
       name_to_index_bytes_(0),
-      // TODO: C++11 provides a single-arg constructor
-      name_to_index_(10,
+      // TODO(wdberkeley): C++11 provides a single-argument constructor, but
+      // it's not supported in GCC < 4.9. This (and the other occurrences here
+      // and in schema.cc) can be fixed if we adopt C++14 or a later standard.
+      name_to_index_(/*bucket_count=*/10,
                      NameToIndexMap::hasher(),
                      NameToIndexMap::key_equal(),
                      NameToIndexMapAllocator(&name_to_index_bytes_)),
@@ -423,9 +425,8 @@ class Schema {
   Schema(const Schema& other);
   Schema& operator=(const Schema& other);
 
-  // TODO(todd) implement a move constructor
-
-  void swap(Schema& other); // NOLINT(build/include_what_you_use)
+  Schema(Schema&& other) noexcept;
+  Schema& operator=(Schema&& other) noexcept;
 
   void CopyFrom(const Schema& other);
 
@@ -438,8 +439,7 @@ class Schema {
   Schema(const std::vector<ColumnSchema>& cols,
          int key_columns)
     : name_to_index_bytes_(0),
-      // TODO: C++11 provides a single-arg constructor
-      name_to_index_(10,
+      name_to_index_(/*bucket_count=*/10,
                      NameToIndexMap::hasher(),
                      NameToIndexMap::key_equal(),
                      NameToIndexMapAllocator(&name_to_index_bytes_)) {
@@ -456,8 +456,7 @@ class Schema {
          const std::vector<ColumnId>& ids,
          int key_columns)
     : name_to_index_bytes_(0),
-      // TODO: C++11 provides a single-arg constructor
-      name_to_index_(10,
+      name_to_index_(/*bucket_count=*/10,
                      NameToIndexMap::hasher(),
                      NameToIndexMap::key_equal(),
                      NameToIndexMapAllocator(&name_to_index_bytes_)) {
@@ -857,7 +856,6 @@ class Schema {
   size_t memory_footprint_including_this() const;
 
  private:
-
   // Return a stringified version of the first 'num_columns' columns of the
   // row.
   template<class RowType>
@@ -906,8 +904,9 @@ class Schema {
   // Cached indicator whether any columns are nullable.
   bool has_nullables_;
 
-  // NOTE: if you add more members, make sure to add the appropriate
-  // code to swap() and CopyFrom() as well to prevent subtle bugs.
+  // NOTE: if you add more members, make sure to add the appropriate code to
+  // CopyFrom() and the move constructor and assignment operator as well, to
+  // prevent subtle bugs.
 };
 
 // Helper used for schema creation/editing.
