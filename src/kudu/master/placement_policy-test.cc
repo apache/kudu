@@ -482,7 +482,7 @@ TEST_F(PlacementPolicyTest, PlaceTabletReplicasBalancingLocations) {
     ASSERT_EQ(0, m.count("E_ts0"));
   }
 
-  // Place as many talbet replicas as possible given the number of tablet
+  // Place as many tablet replicas as possible given the number of tablet
   // servers in the cluster.
   {
     TSDescriptorVector result;
@@ -523,7 +523,8 @@ TEST_F(PlacementPolicyTest, PlaceExtraTabletReplicaViolatedPolicy) {
     ASSERT_TRUE(extra_ts);
     // Within location a replica is placed by the 'power of 2' algorithm.
     ASSERT_TRUE(extra_ts->permanent_uuid() == "C_ts0" ||
-                extra_ts->permanent_uuid() == "C_ts1");
+                extra_ts->permanent_uuid() == "C_ts1")
+        << extra_ts->permanent_uuid();
 
   }
 
@@ -537,17 +538,20 @@ TEST_F(PlacementPolicyTest, PlaceExtraTabletReplicaViolatedPolicy) {
     ASSERT_TRUE(extra_ts);
     // Within location a replica is placed by the 'power of 2' algorithm.
     ASSERT_TRUE(extra_ts->permanent_uuid() == "B_ts0" ||
-                extra_ts->permanent_uuid() == "B_ts1");
+                extra_ts->permanent_uuid() == "B_ts1")
+        << extra_ts->permanent_uuid();
   }
 }
 
 // Test for randomness while selecting among locations of the same load.
-TEST_F(PlacementPolicyTest, SelectLocationTest) {
+TEST_F(PlacementPolicyTest, SelectLocationRandomnessForExtraReplica) {
   const vector<LocationInfo> cluster_info = {
     { "A", { { "A_ts0", 1 }, { "A_ts1", 1 }, { "A_ts2", 1 }, } },
     { "B", { { "B_ts0", 1 }, { "B_ts1", 1 }, { "B_ts2", 1 }, } },
     { "C", { { "C_ts0", 1 }, { "C_ts1", 1 }, { "C_ts2", 1 }, } },
   };
+
+  // Information on replicas already slated for placement.
   const PlacementPolicy::ReplicaLocationsInfo info = {
     { "A", 1 }, { "B", 1 }, { "C", 1 },
   };
@@ -572,6 +576,197 @@ TEST_F(PlacementPolicyTest, SelectLocationTest) {
   EXPECT_GT(1500, locations_stats["B"]);
   EXPECT_LT(500, locations_stats["C"]);
   EXPECT_GT(1500, locations_stats["C"]);
+}
+
+// Place replicas into an empty cluster with 5 locations and 7 tablet servers.
+TEST_F(PlacementPolicyTest, PlaceTabletReplicasEmptyCluster_L5_TS7) {
+  const vector<LocationInfo> cluster_info = {
+    { "A", { { "A_ts0", 0 }, { "A_ts1", 0 }, } },
+    { "B", { { "B_ts0", 0 }, { "B_ts1", 0 }, } },
+    { "C", { { "C_ts0", 0 }, } },
+    { "D", { { "D_ts0", 0 }, } },
+    { "E", { { "E_ts0", 0 }, } },
+  };
+  ASSERT_OK(Prepare(cluster_info));
+
+  const auto& all = descriptors();
+  PlacementPolicy policy(all, rng());
+
+  // Less tablet replicas than available locations.
+  {
+    static constexpr auto num_replicas = 3;
+    TSDescriptorVector result;
+    ASSERT_OK(policy.PlaceTabletReplicas(num_replicas, &result));
+    ASSERT_EQ(num_replicas, result.size());
+    TSDescriptorsMap m;
+    // Make sure the placement of replicas conforms with the main constraint:
+    // no location should contain the majority of replicas, so no location
+    // should get two replicas.
+    ASSERT_OK(TSDescriptorVectorToMap(result, &m));
+    ASSERT_GE(1, m.count("A_ts0") + m.count("A_ts1"));
+    ASSERT_GE(1, m.count("B_ts0") + m.count("B_ts1"));
+    ASSERT_GE(1, m.count("C_ts0"));
+    ASSERT_GE(1, m.count("D_ts0"));
+    ASSERT_GE(1, m.count("E_ts0"));
+    ASSERT_EQ(num_replicas,
+              m.count("A_ts0") + m.count("A_ts1") +
+              m.count("B_ts0") + m.count("B_ts1") +
+              m.count("C_ts0") + m.count("D_ts0") + m.count("E_ts0"));
+  }
+
+  // Current location selection algorithm loads the locations evenly.
+  {
+    static constexpr auto num_replicas = 5;
+    TSDescriptorVector result;
+    ASSERT_OK(policy.PlaceTabletReplicas(num_replicas, &result));
+    ASSERT_EQ(num_replicas, result.size());
+    TSDescriptorsMap m;
+    ASSERT_OK(TSDescriptorVectorToMap(result, &m));
+    // Make sure the replicas are placed evently accross available locations.
+    ASSERT_EQ(1, m.count("A_ts0") + m.count("A_ts1"));
+    ASSERT_EQ(1, m.count("B_ts0") + m.count("B_ts1"));
+    ASSERT_EQ(1, m.count("C_ts0"));
+    ASSERT_EQ(1, m.count("D_ts0"));
+    ASSERT_EQ(1, m.count("E_ts0"));
+  }
+
+  // Place as many tablet replicas as possible given the number of tablet
+  // servers in the cluster.
+  {
+    static constexpr auto num_replicas = 7;
+    TSDescriptorVector result;
+    ASSERT_OK(policy.PlaceTabletReplicas(num_replicas, &result));
+    ASSERT_EQ(num_replicas, result.size());
+    TSDescriptorsMap m;
+    ASSERT_OK(TSDescriptorVectorToMap(result, &m));
+    for (const auto& uuid : { "A_ts0", "A_ts1", "B_ts0", "B_ts1",
+                              "C_ts0", "D_ts0", "E_ts0" }) {
+      ASSERT_EQ(1, m.count(uuid));
+    }
+  }
+
+  // Ask for number of replicas greater than the number of tablet servers.
+  {
+    static constexpr auto num_replicas = 9;
+    TSDescriptorVector result;
+    auto s = policy.PlaceTabletReplicas(num_replicas, &result);
+    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+    const string ref_msg = Substitute(
+        "could not find next location after placing 7 out of $0 tablet replicas",
+        num_replicas);
+    ASSERT_STR_CONTAINS(s.ToString(), ref_msg);
+    ASSERT_TRUE(result.empty());
+  }
+}
+
+// Verify the functionality of PlaceExtraTabletReplica() in the presence of more
+// than two locations when there is room to balance tablet replica distribution.
+// The use case behind is rebalancing the replica distribution location-wise.
+TEST_F(PlacementPolicyTest, PlaceExtraTablet_L5_TS10_RF5) {
+  const vector<LocationInfo> cluster_info = {
+    { "A", { { "A_ts0", 1 }, { "A_ts1", 1 }, { "A_ts2", 0 }, } },
+    { "B", { { "B_ts0", 2 }, { "B_ts1", 1 }, { "B_ts2", 1 }, { "B_ts3", 0 }, } },
+    { "C", { { "C_ts0", 1 }, } },
+    { "D", { { "D_ts0", 2 }, } },
+    { "E", { { "E_ts0", 3 }, } },
+  };
+  ASSERT_OK(Prepare(cluster_info));
+
+  const auto& all = descriptors();
+  PlacementPolicy policy(all, rng());
+
+  {
+    // A RF=5 tablet, with the 'ideal' replica distribution: one replica
+    // per location.
+    const auto existing = GetDescriptors(
+        { "A_ts0", "B_ts0", "C_ts0", "D_ts0", "E_ts0", });
+    shared_ptr<TSDescriptor> extra_ts;
+    ASSERT_OK(policy.PlaceExtraTabletReplica(existing, &extra_ts));
+    ASSERT_TRUE(extra_ts);
+    // The location with lowest load is selected for the extra replica.
+    ASSERT_EQ("A_ts2", extra_ts->permanent_uuid());
+  }
+  {
+    // A RF=5 tablet, with 'not ideal' replica distribution
+    // (where the 'ideal' distribution would be one replica per location).
+    const auto existing = GetDescriptors(
+        { "A_ts0", "A_ts1", "B_ts0", "B_ts1", "C_ts0", });
+    shared_ptr<TSDescriptor> extra_ts;
+    ASSERT_OK(policy.PlaceExtraTabletReplica(existing, &extra_ts));
+    ASSERT_TRUE(extra_ts);
+    // The location with lowest load is selected for the extra replica.
+    ASSERT_EQ("D_ts0", extra_ts->permanent_uuid());
+  }
+  {
+    // A RF=5 tablet, with the replica distribution violating the placement
+    // policy constraints.
+    const auto existing = GetDescriptors(
+        { "A_ts0", "B_ts0", "B_ts1", "B_ts2", "E_ts0", });
+    shared_ptr<TSDescriptor> extra_ts;
+    ASSERT_OK(policy.PlaceExtraTabletReplica(existing, &extra_ts));
+    ASSERT_TRUE(extra_ts);
+    // Among the locations where an additional replica can be placed,
+    // location A and location C have the least load. As for the preferences
+    // within location A, the replica is placed using power-of-two choices among
+    // the available servers (A_ts0 is not available since it hosts one replica
+    // already). The important thing is to make sure an extra replica is not put
+    // into location B, where it's already the majority of replicas for RF=5.
+    ASSERT_TRUE(
+        extra_ts->permanent_uuid() == "A_ts2" ||
+        extra_ts->permanent_uuid() == "C_ts0") << extra_ts->permanent_uuid();
+  }
+}
+
+// This test verifies how evenly an extra replica is placed among the available
+// tablet servers in the least loaded locations.
+TEST_F(PlacementPolicyTest, PlaceExtraTablet_L5_TS16_RF5) {
+  const vector<LocationInfo> cluster_info = {
+    { "A", { { "A_ts0", 1 }, { "A_ts1", 0 }, { "A_ts2", 0 }, { "A_ts3", 0 }, } },
+    { "B", { { "B_ts0", 1 }, { "B_ts1", 0 }, { "B_ts2", 0 }, { "B_ts3", 0 }, } },
+    { "C", { { "C_ts0", 1 }, { "C_ts1", 1 }, { "C_ts2", 0 }, } },
+    { "D", { { "D_ts0", 1 }, { "D_ts1", 1 }, { "D_ts2", 0 }, } },
+    { "E", { { "E_ts0", 1 }, { "E_ts1", 0 }, } },
+  };
+  ASSERT_OK(Prepare(cluster_info));
+
+  // Slightly non-optimal replica placement.
+  const auto existing = GetDescriptors(
+      { "C_ts0", "C_ts1", "D_ts0", "D_ts1", "E_ts0", });
+
+  const auto& all = descriptors();
+  PlacementPolicy policy(all, rng());
+
+  // Test for uniform distribution of the selected locations if selecting among
+  // locations of the same load.
+  map<string, int> placement_stats;
+  for (auto i = 0; i < 6000; ++i) {
+    shared_ptr<TSDescriptor> extra_ts;
+    ASSERT_OK(policy.PlaceExtraTabletReplica(existing, &extra_ts));
+    ASSERT_TRUE(extra_ts);
+    const auto& ts_uuid = extra_ts->permanent_uuid();
+    ASSERT_TRUE(ts_uuid == "A_ts1" ||
+                ts_uuid == "A_ts2" ||
+                ts_uuid == "A_ts3" ||
+                ts_uuid == "B_ts1" ||
+                ts_uuid == "B_ts2" ||
+                ts_uuid == "B_ts3")
+        << extra_ts->permanent_uuid();
+
+    ++placement_stats[ts_uuid];
+  }
+  ASSERT_EQ(6, placement_stats.size());
+  EXPECT_LT(500, placement_stats["A_ts1"]);
+  EXPECT_GT(1500, placement_stats["A_ts1"]);
+  EXPECT_LT(500, placement_stats["A_ts2"]);
+  EXPECT_GT(1500, placement_stats["A_ts2"]);
+  EXPECT_LT(500, placement_stats["A_ts3"]);
+  EXPECT_GT(1500, placement_stats["A_ts3"]);
+  EXPECT_LT(500, placement_stats["B_ts1"]);
+  EXPECT_GT(1500, placement_stats["B_ts1"]);
+  EXPECT_LT(500, placement_stats["B_ts2"]);
+  EXPECT_GT(1500, placement_stats["B_ts2"]);
+  EXPECT_LT(500, placement_stats["B_ts3"]);
+  EXPECT_GT(1500, placement_stats["B_ts3"]);
 }
 
 } // namespace master

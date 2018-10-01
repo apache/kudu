@@ -98,7 +98,7 @@ class PlacementPolicy {
   typedef std::unordered_map<std::string, int> ReplicaLocationsInfo;
 
   friend class PlacementPolicyTest;
-  FRIEND_TEST(PlacementPolicyTest, SelectLocationTest);
+  FRIEND_TEST(PlacementPolicyTest, SelectLocationRandomnessForExtraReplica);
 
   // Get the load of the location: a location with N tablet servers and
   // R replicas has load R/N.
