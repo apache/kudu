@@ -17,6 +17,7 @@
 
 package org.apache.kudu.mapreduce.tools;
 
+import static org.apache.kudu.test.KuduTestHarness.DEFAULT_SLEEP;
 import static org.apache.kudu.util.ClientTestUtil.createFourTabletsTableWithNineRows;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -24,19 +25,23 @@ import static org.junit.Assert.assertTrue;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.util.GenericOptionsParser;
+import org.apache.kudu.test.KuduTestHarness;
 import org.junit.After;
+import org.junit.Rule;
 import org.junit.Test;
 
-import org.apache.kudu.client.BaseKuduTest;
 import org.apache.kudu.mapreduce.CommandLineParser;
 import org.apache.kudu.mapreduce.HadoopTestingUtility;
 
-public class ITRowCounter extends BaseKuduTest {
+public class ITRowCounter {
 
   private static final String TABLE_NAME =
       ITRowCounter.class.getName() + "-" + System.currentTimeMillis();
 
   private static final HadoopTestingUtility HADOOP_UTIL = new HadoopTestingUtility();
+
+  @Rule
+  public KuduTestHarness harness = new KuduTestHarness();
 
   @After
   public void tearDown() throws Exception {
@@ -48,10 +53,10 @@ public class ITRowCounter extends BaseKuduTest {
     Configuration conf = new Configuration();
     HADOOP_UTIL.setupAndGetTestDir(ITRowCounter.class.getName(), conf).getAbsolutePath();
 
-    createFourTabletsTableWithNineRows(client, TABLE_NAME, DEFAULT_SLEEP);
+    createFourTabletsTableWithNineRows(harness.getAsyncClient(), TABLE_NAME, DEFAULT_SLEEP);
 
     String[] args = new String[] {
-        "-D" + CommandLineParser.MASTER_ADDRESSES_KEY + "=" + getMasterAddressesAsString(), TABLE_NAME};
+        "-D" + CommandLineParser.MASTER_ADDRESSES_KEY + "=" + harness.getMasterAddressesAsString(), TABLE_NAME};
     GenericOptionsParser parser = new GenericOptionsParser(conf, args);
     Job job = RowCounter.createSubmittableJob(parser.getConfiguration(), parser.getRemainingArgs());
     assertTrue("Job did not end properly", job.waitForCompletion(true));

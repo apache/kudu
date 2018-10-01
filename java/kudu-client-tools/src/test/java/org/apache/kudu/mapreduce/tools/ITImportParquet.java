@@ -33,6 +33,7 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.util.GenericOptionsParser;
 import org.apache.kudu.client.KuduTable;
+import org.apache.kudu.test.KuduTestHarness;
 import org.apache.parquet.column.ParquetProperties;
 import org.apache.parquet.example.data.Group;
 import org.apache.parquet.example.data.simple.SimpleGroupFactory;
@@ -41,17 +42,17 @@ import org.apache.parquet.hadoop.example.GroupWriteSupport;
 import org.apache.parquet.schema.MessageType;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
-import org.apache.kudu.client.BaseKuduTest;
 import org.apache.kudu.client.CreateTableOptions;
 import org.apache.kudu.mapreduce.CommandLineParser;
 import org.apache.kudu.mapreduce.HadoopTestingUtility;
 
-public class ITImportParquet extends BaseKuduTest {
+public class ITImportParquet {
 
   private static final String TABLE_NAME =
     ITImportParquet.class.getName() + "-" + System.currentTimeMillis();
@@ -77,9 +78,12 @@ public class ITImportParquet extends BaseKuduTest {
     schema = new Schema(columns);
   }
 
+  @Rule
+  public KuduTestHarness harness = new KuduTestHarness();
+
   @Before
   public void setUp() throws Exception {
-    createTable(TABLE_NAME, schema,
+    harness.getClient().createTable(TABLE_NAME, schema,
       new CreateTableOptions().setRangePartitionColumns(ImmutableList.of("key")));
   }
 
@@ -104,16 +108,16 @@ public class ITImportParquet extends BaseKuduTest {
       sb.append(",");
     }
     sb.deleteCharAt(sb.length() - 1);
-    String[] args = new String[] { "-D" + CommandLineParser.MASTER_ADDRESSES_KEY + "=" + getMasterAddressesAsString(),
-      TABLE_NAME, data.toString()};
+    String[] args = new String[] { "-D" + CommandLineParser.MASTER_ADDRESSES_KEY + "="
+        + harness.getMasterAddressesAsString(), TABLE_NAME, data.toString()};
 
     GenericOptionsParser parser = new GenericOptionsParser(conf, args);
     Job job = ImportParquet.createSubmittableJob(parser.getConfiguration(), parser.getRemainingArgs());
     assertTrue("Test job did not end properly", job.waitForCompletion(true));
 
-    KuduTable openTable = openTable(TABLE_NAME);
+    KuduTable openTable = harness.getClient().openTable(TABLE_NAME);
     assertEquals(4, countRowsInScan(
-      client.newScannerBuilder(openTable).build()));
+      harness.getAsyncClient().newScannerBuilder(openTable).build()));
     assertEquals("INT32 key=1, INT32 column1_i=3, DOUBLE column2_d=2.3, STRING column3_s=some string, " +
       "BOOL column4_b=true",scanTableToStrings(openTable).get(0));
   }

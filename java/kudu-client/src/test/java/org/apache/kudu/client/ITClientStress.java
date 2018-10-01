@@ -16,6 +16,7 @@
 // under the License.
 package org.apache.kudu.client;
 
+import static org.apache.kudu.test.KuduTestHarness.DEFAULT_SLEEP;
 import static org.apache.kudu.util.ClientTestUtil.createFourTabletsTableWithNineRows;
 import static org.apache.kudu.util.ClientTestUtil.getBasicCreateTableOptions;
 import static org.junit.Assert.assertFalse;
@@ -33,11 +34,23 @@ import java.util.concurrent.atomic.AtomicReference;
 import com.google.common.base.Stopwatch;
 import com.google.common.base.Supplier;
 
+import org.apache.kudu.Schema;
+import org.apache.kudu.test.KuduTestHarness;
+import org.apache.kudu.util.ClientTestUtil;
+import org.junit.Rule;
 import org.junit.Test;
 import org.apache.kudu.client.SessionConfiguration.FlushMode;
 import org.apache.kudu.util.CapturingLogAppender;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-public class ITClientStress extends BaseKuduTest {
+public class ITClientStress {
+  private static final Logger LOG = LoggerFactory.getLogger(ITClientStress.class);
+
+  private static final Schema basicSchema = ClientTestUtil.getBasicSchema();
+
+  @Rule
+  public KuduTestHarness harness = new KuduTestHarness();
 
   @SuppressWarnings("FutureReturnValueIgnored")
   private void runTasks(int numThreads, int secondsToRun,
@@ -97,7 +110,7 @@ public class ITClientStress extends BaseKuduTest {
     final String TABLE_NAME = "testManyClients";
     final int SECONDS_TO_RUN = 10;
     final int NUM_THREADS = 80;
-    createFourTabletsTableWithNineRows(client, TABLE_NAME, DEFAULT_SLEEP);
+    createFourTabletsTableWithNineRows(harness.getAsyncClient(), TABLE_NAME, DEFAULT_SLEEP);
 
     runTasks(NUM_THREADS, SECONDS_TO_RUN, new Supplier<Callable<Void>>() {
       @Override
@@ -106,7 +119,7 @@ public class ITClientStress extends BaseKuduTest {
           @Override
           public Void call() throws Exception {
             try (AsyncKuduClient client =
-                  new AsyncKuduClient.AsyncKuduClientBuilder(getMasterAddressesAsString())
+                  new AsyncKuduClient.AsyncKuduClientBuilder(harness.getMasterAddressesAsString())
                   .defaultAdminOperationTimeoutMs(DEFAULT_SLEEP)
                   .build()) {
               KuduTable t = client.openTable(TABLE_NAME).join();
@@ -128,7 +141,7 @@ public class ITClientStress extends BaseKuduTest {
     final String TABLE_NAME = "testMultipleSessions";
     final int SECONDS_TO_RUN = 10;
     final int NUM_THREADS = 60;
-    final KuduTable table = createTable(TABLE_NAME, basicSchema,
+    final KuduTable table = harness.getClient().createTable(TABLE_NAME, basicSchema,
         getBasicCreateTableOptions());
     final AtomicInteger numUpserted = new AtomicInteger(0);
     runTasks(NUM_THREADS, SECONDS_TO_RUN, new Supplier<Callable<Void>>() {
@@ -137,7 +150,7 @@ public class ITClientStress extends BaseKuduTest {
         return new Callable<Void>() {
           @Override
           public Void call() throws Exception {
-            KuduSession s = syncClient.newSession();
+            KuduSession s = harness.getClient().newSession();
             s.setFlushMode(FlushMode.AUTO_FLUSH_SYNC);
             try {
               for (int i = 0; i < 100; i++) {

@@ -18,20 +18,26 @@ package org.apache.kudu.client;
 
 import static org.apache.kudu.util.ClientTestUtil.countRowsInScan;
 import static org.apache.kudu.util.ClientTestUtil.getBasicCreateTableOptions;
+import static org.apache.kudu.util.ClientTestUtil.getBasicSchema;
 import static org.junit.Assert.assertEquals;
 
+import org.apache.kudu.test.KuduTestHarness;
+import org.junit.Rule;
 import org.junit.Test;
 
 /**
  * Tests {@link AsyncKuduClient} with multiple masters.
  */
-public class TestMasterFailover extends BaseKuduTest {
+public class TestMasterFailover {
   enum KillBefore {
     CREATE_CLIENT,
     CREATE_TABLE,
     OPEN_TABLE,
     SCAN_TABLE
   }
+
+  @Rule
+  public KuduTestHarness harness = new KuduTestHarness();
 
   @Test(timeout = 30000)
   public void testKillLeaderBeforeCreateClient() throws Exception {
@@ -52,33 +58,35 @@ public class TestMasterFailover extends BaseKuduTest {
 
   private void doTestKillLeader(KillBefore killBefore) throws Exception {
     String tableName = "TestMasterFailover-killBefore=" + killBefore;
-    int countMasters = getMasterServers().size();
+    int countMasters = harness.getMasterServers().size();
     if (countMasters < 3) {
       throw new Exception("This test requires at least 3 master servers, but only "
         + countMasters + " are specified.");
     }
 
     if (killBefore == KillBefore.CREATE_CLIENT) {
-      killLeaderMasterServer();
+      harness.killLeaderMasterServer();
     }
-    try (KuduClient c = new KuduClient.KuduClientBuilder(getMasterAddressesAsString()).build()) {
+    try (KuduClient c =
+             new KuduClient.KuduClientBuilder(harness.getMasterAddressesAsString()).build()) {
       if (killBefore == KillBefore.CREATE_TABLE) {
-        killLeaderMasterServer();
+        harness.killLeaderMasterServer();
       }
 
-      createTable(tableName, basicSchema, getBasicCreateTableOptions());
+      harness.getClient().createTable(tableName, getBasicSchema(), getBasicCreateTableOptions());
 
       if (killBefore == KillBefore.OPEN_TABLE) {
-        killLeaderMasterServer();
+        harness.killLeaderMasterServer();
       }
 
       // Test that we can open a previously created table after killing the leader master.
-      KuduTable table = openTable(tableName);
+      KuduTable table = harness.getClient().openTable(tableName);
 
       if (killBefore == KillBefore.SCAN_TABLE) {
-        killLeaderMasterServer();
+        harness.killLeaderMasterServer();
       }
-      assertEquals(0, countRowsInScan(client.newScannerBuilder(table).build()));
+      assertEquals(0,
+          countRowsInScan(harness.getAsyncClient().newScannerBuilder(table).build()));
     }
   }
 }

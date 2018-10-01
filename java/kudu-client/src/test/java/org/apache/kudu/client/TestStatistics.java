@@ -18,9 +18,12 @@ package org.apache.kudu.client;
 
 import static org.apache.kudu.util.ClientTestUtil.createBasicSchemaInsert;
 import static org.apache.kudu.util.ClientTestUtil.getBasicCreateTableOptions;
+import static org.apache.kudu.util.ClientTestUtil.getBasicSchema;
 import static org.junit.Assert.assertEquals;
 
+import org.apache.kudu.test.KuduTestHarness;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 
 import org.apache.kudu.client.Statistics.Statistic;
@@ -28,21 +31,25 @@ import org.apache.kudu.client.Statistics.Statistic;
 import java.util.ArrayList;
 import java.util.List;
 
-public class TestStatistics extends BaseKuduTest {
+public class TestStatistics {
 
   private static final String TABLE_NAME = TestStatistics.class.getName() + "-"
       + System.currentTimeMillis();
   private static KuduTable table;
 
+  @Rule
+  public KuduTestHarness harness = new KuduTestHarness();
+
   @Before
   public void setUp() throws Exception {
     CreateTableOptions options = getBasicCreateTableOptions().setNumReplicas(1);
-    table = createTable(TABLE_NAME, basicSchema, options);
+    table = harness.getClient().createTable(TABLE_NAME, getBasicSchema(), options);
   }
 
   @Test(timeout = 10000)
   public void test() throws Exception {
-    KuduSession session = syncClient.newSession();
+    KuduClient client = harness.getClient();
+    KuduSession session = client.newSession();
     session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
     int rowCount = 20;
     for (int i = 0; i < rowCount; i++) {
@@ -52,7 +59,7 @@ public class TestStatistics extends BaseKuduTest {
         session.flush();
       }
     }
-    Statistics statistics = syncClient.getStatistics();
+    Statistics statistics = client.getStatistics();
     assertEquals(rowCount / 2, statistics.getClientStatistic(Statistic.WRITE_RPCS));
     assertEquals(rowCount, statistics.getClientStatistic(Statistic.WRITE_OPS));
     assertEquals(0, statistics.getClientStatistic(Statistic.RPC_ERRORS));

@@ -16,7 +16,6 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
 package org.apache.kudu.flume.sink;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -37,6 +36,7 @@ import com.google.common.collect.ImmutableMap;
 import org.apache.flume.Context;
 import org.apache.flume.Event;
 import org.apache.flume.event.EventBuilder;
+import org.junit.Rule;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,12 +44,15 @@ import org.slf4j.LoggerFactory;
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
-import org.apache.kudu.client.BaseKuduTest;
 import org.apache.kudu.client.CreateTableOptions;
 import org.apache.kudu.client.KuduTable;
+import org.apache.kudu.test.KuduTestHarness;
 
-public class KeyedKuduOperationsProducerTest extends BaseKuduTest {
+public class KeyedKuduOperationsProducerTest {
   private static final Logger LOG = LoggerFactory.getLogger(KeyedKuduOperationsProducerTest.class);
+
+  @Rule
+  public KuduTestHarness harness = new KuduTestHarness();
 
   private KuduTable createNewTable(String tableName) throws Exception {
     LOG.info("Creating new table...");
@@ -64,7 +67,8 @@ public class KeyedKuduOperationsProducerTest extends BaseKuduTest {
     CreateTableOptions createOptions =
         new CreateTableOptions().setRangePartitionColumns(ImmutableList.of(KEY_COLUMN_DEFAULT))
                               .setNumReplicas(1);
-    KuduTable table = createTable(tableName, new Schema(columns), createOptions);
+    KuduTable table =
+        harness.getClient().createTable(tableName, new Schema(columns), createOptions);
 
     LOG.info("Created new table.");
 
@@ -111,7 +115,7 @@ public class KeyedKuduOperationsProducerTest extends BaseKuduTest {
         PRODUCER_PREFIX + OPERATION_PROP, "upsert",
         PRODUCER, SimpleKeyedKuduOperationsProducer.class.getName()
     ));
-    KuduSink sink = KuduSinkTestUtil.createSink(syncClient, tableName, ctx);
+    KuduSink sink = KuduSinkTestUtil.createSink(harness.getClient(), tableName, ctx);
     sink.start();
 
     int numRows = 3;
@@ -159,7 +163,7 @@ public class KeyedKuduOperationsProducerTest extends BaseKuduTest {
 
     List<Event> events = getEvents(eventCount);
 
-    KuduSinkTestUtil.processEventsCreatingSink(syncClient, context, tableName, events);
+    KuduSinkTestUtil.processEventsCreatingSink(harness.getClient(), context, tableName, events);
 
     List<String> rows = scanTableToStrings(table);
     assertEquals(eventCount + " row(s) expected", eventCount, rows.size());

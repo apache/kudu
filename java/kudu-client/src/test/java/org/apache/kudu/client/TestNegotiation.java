@@ -17,7 +17,9 @@
 
 package org.apache.kudu.client;
 
+import org.apache.kudu.junit.RetryRule;
 import org.apache.kudu.util.CapturingLogAppender;
+import org.junit.Rule;
 import org.junit.Test;
 
 import java.io.Closeable;
@@ -25,6 +27,9 @@ import java.io.Closeable;
 import static junit.framework.TestCase.assertTrue;
 
 public class TestNegotiation {
+
+  @Rule
+  public RetryRule retryRule = new RetryRule();
 
   /**
    * Test that a non-Kerberized client will use SASL PLAIN to connect to a
@@ -37,12 +42,12 @@ public class TestNegotiation {
     MiniKuduCluster.MiniKuduClusterBuilder clusterBuilder =
         new MiniKuduCluster.MiniKuduClusterBuilder();
 
-    clusterBuilder.numMasters(1)
-                  .numTservers(0)
+    clusterBuilder.numMasterServers(1)
+                  .numTabletServers(0)
                   .enableKerberos()
-                  .addMasterFlag("--rpc-authentication=optional")
-                  .addMasterFlag("--rpc-trace-negotiation")
-                  .addMasterFlag("--user-acl=*");
+                  .addMasterServerFlag("--rpc-authentication=optional")
+                  .addMasterServerFlag("--rpc-trace-negotiation")
+                  .addMasterServerFlag("--user-acl=*");
 
     CapturingLogAppender cla = new CapturingLogAppender();
     try (MiniKuduCluster cluster = clusterBuilder.build()) {

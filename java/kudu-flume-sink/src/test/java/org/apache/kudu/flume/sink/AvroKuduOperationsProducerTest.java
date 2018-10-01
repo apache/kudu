@@ -49,18 +49,18 @@ import org.apache.avro.specific.SpecificDatumWriter;
 import org.apache.flume.Context;
 import org.apache.flume.Event;
 import org.apache.flume.event.EventBuilder;
-
+import org.junit.Rule;
 import org.junit.Test;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
-import org.apache.kudu.client.BaseKuduTest;
 import org.apache.kudu.client.CreateTableOptions;
 import org.apache.kudu.client.KuduTable;
+import org.apache.kudu.test.KuduTestHarness;
 import org.apache.kudu.util.DecimalUtil;
 
-public class AvroKuduOperationsProducerTest extends BaseKuduTest {
+public class AvroKuduOperationsProducerTest {
   private static String schemaUriString;
   private static String schemaLiteral;
 
@@ -79,6 +79,9 @@ public class AvroKuduOperationsProducerTest extends BaseKuduTest {
   enum SchemaLocation {
     GLOBAL, URL, LITERAL
   }
+
+  @Rule
+  public KuduTestHarness harness = new KuduTestHarness();
 
   @Test
   public void testEmptyChannel() throws Exception {
@@ -116,7 +119,7 @@ public class AvroKuduOperationsProducerTest extends BaseKuduTest {
 
     List<Event> events = generateEvents(eventCount, schemaLocation);
 
-    KuduSinkTestUtil.processEventsCreatingSink(syncClient, context, tableName, events);
+    KuduSinkTestUtil.processEventsCreatingSink(harness.getClient(), context, tableName, events);
 
     List<String> answers = makeAnswers(eventCount);
     List<String> rows = scanTableToStrings(table);
@@ -137,7 +140,7 @@ public class AvroKuduOperationsProducerTest extends BaseKuduTest {
     CreateTableOptions createOptions =
         new CreateTableOptions().setRangePartitionColumns(ImmutableList.of("key"))
             .setNumReplicas(1);
-    return createTable(tableName, new Schema(columns), createOptions);
+    return harness.getClient().createTable(tableName, new Schema(columns), createOptions);
   }
 
   private List<Event> generateEvents(int eventCount,

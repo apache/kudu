@@ -38,6 +38,7 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 
 import org.apache.kudu.Common;
+import org.apache.kudu.test.KuduTestHarness;
 import org.apache.kudu.tools.Tool.ControlShellRequestPB;
 import org.apache.kudu.tools.Tool.ControlShellResponsePB;
 import org.apache.kudu.tools.Tool.CreateClusterRequestPB.MiniKdcOptionsPB;
@@ -61,8 +62,8 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Utility class to start and manipulate Kudu clusters. Depends on precompiled
- * kudu, kudu-master, and kudu-tserver binaries. {@link BaseKuduTest} should be
- * extended instead of directly using this class in almost all cases.
+ * kudu, kudu-master, and kudu-tserver binaries. {@link KuduTestHarness}
+ * should be used instead of directly using this class in almost all cases.
  */
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
@@ -546,23 +547,23 @@ public class MiniKuduCluster implements AutoCloseable {
    */
   public static class MiniKuduClusterBuilder {
 
-    private int numMasters = 1;
-    private int numTservers = 3;
+    private int numMasterServers = 1;
+    private int numTabletServers = 3;
     private boolean enableKerberos = false;
-    private final List<String> extraTserverFlags = new ArrayList<>();
-    private final List<String> extraMasterFlags = new ArrayList<>();
+    private final List<String> extraTabletServerFlags = new ArrayList<>();
+    private final List<String> extraMasterServerFlags = new ArrayList<>();
     private String clusterRoot = null;
 
     private MiniKdcOptionsPB.Builder kdcOptionsPb = MiniKdcOptionsPB.newBuilder();
     private Common.HmsMode hmsMode = Common.HmsMode.NONE;
 
-    public MiniKuduClusterBuilder numMasters(int numMasters) {
-      this.numMasters = numMasters;
+    public MiniKuduClusterBuilder numMasterServers(int numMasterServers) {
+      this.numMasterServers = numMasterServers;
       return this;
     }
 
-    public MiniKuduClusterBuilder numTservers(int numTservers) {
-      this.numTservers = numTservers;
+    public MiniKuduClusterBuilder numTabletServers(int numTabletServers) {
+      this.numTabletServers = numTabletServers;
       return this;
     }
 
@@ -584,8 +585,8 @@ public class MiniKuduCluster implements AutoCloseable {
      * Adds a new flag to be passed to the Tablet Server daemons on start.
      * @return this instance
      */
-    public MiniKuduClusterBuilder addTserverFlag(String flag) {
-      this.extraTserverFlags.add(flag);
+    public MiniKuduClusterBuilder addTabletServerFlag(String flag) {
+      this.extraTabletServerFlags.add(flag);
       return this;
     }
 
@@ -593,8 +594,8 @@ public class MiniKuduCluster implements AutoCloseable {
      * Adds a new flag to be passed to the Master daemons on start.
      * @return this instance
      */
-    public MiniKuduClusterBuilder addMasterFlag(String flag) {
-      this.extraMasterFlags.add(flag);
+    public MiniKuduClusterBuilder addMasterServerFlag(String flag) {
+      this.extraMasterServerFlags.add(flag);
       return this;
     }
 
@@ -625,8 +626,8 @@ public class MiniKuduCluster implements AutoCloseable {
     public MiniKuduCluster build() throws IOException {
       MiniKuduCluster cluster =
           new MiniKuduCluster(enableKerberos,
-              numMasters, numTservers,
-              extraTserverFlags, extraMasterFlags,
+              numMasterServers, numTabletServers,
+              extraTabletServerFlags, extraMasterServerFlags,
               kdcOptionsPb.build(), clusterRoot, hmsMode);
       try {
         cluster.start();

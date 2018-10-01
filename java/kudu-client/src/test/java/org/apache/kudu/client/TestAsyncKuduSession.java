@@ -16,6 +16,7 @@
 // under the License.
 package org.apache.kudu.client;
 
+import static org.apache.kudu.test.KuduTestHarness.DEFAULT_SLEEP;
 import static org.apache.kudu.util.ClientTestUtil.countRowsInScan;
 import static org.apache.kudu.util.ClientTestUtil.createBasicSchemaInsert;
 import static org.apache.kudu.util.ClientTestUtil.defaultErrorCB;
@@ -33,7 +34,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
+import org.apache.kudu.test.KuduTestHarness;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 
 import org.apache.kudu.Schema;
@@ -51,17 +54,23 @@ import org.apache.kudu.tserver.Tserver.TabletServerErrorPB;
  *
  * The test creates a table with a unique(ish) name which it deletes at the end.
  */
-public class TestAsyncKuduSession extends BaseKuduTest {
+public class TestAsyncKuduSession {
   // Generate a unique table name
   private static final String TABLE_NAME =
       TestAsyncKuduSession.class.getName()+"-"+System.currentTimeMillis();
 
-  private static Schema schema = getBasicSchema();
+  private static final Schema schema = getBasicSchema();
+
+  private static AsyncKuduClient client;
   private static KuduTable table;
+
+  @Rule
+  public KuduTestHarness harness = new KuduTestHarness();
 
   @Before
   public void setUp() throws Exception {
-    table = createTable(TABLE_NAME, schema, getBasicCreateTableOptions());
+    client = harness.getAsyncClient();
+    table = harness.getClient().createTable(TABLE_NAME, schema, getBasicCreateTableOptions());
   }
 
   @Test(timeout = 100000)
@@ -158,14 +167,14 @@ public class TestAsyncKuduSession extends BaseKuduTest {
       assertTrue(response.hasRowError());
       assertTrue(response.getRowError().getErrorStatus().isNotFound());
     } finally {
-      table = createTable(TABLE_NAME, schema, getBasicCreateTableOptions());
+      table = harness.getClient().createTable(TABLE_NAME, schema, getBasicCreateTableOptions());
     }
   }
 
   /** Regression test for a failure to correctly handle a timeout when flushing a batch. */
   @Test
   public void testInsertIntoUnavailableTablet() throws Exception {
-    killAllTabletServers();
+    harness.killAllTabletServers();
     try {
       AsyncKuduSession session = client.newSession();
       session.setTimeoutMillis(1);
@@ -180,7 +189,7 @@ public class TestAsyncKuduSession extends BaseKuduTest {
       assertEquals(1, responses.size());
       assertTrue(responses.get(0).getRowError().getErrorStatus().isTimedOut());
     } finally {
-      startAllTabletServers();
+      harness.startAllTabletServers();
     }
   }
 
@@ -195,9 +204,9 @@ public class TestAsyncKuduSession extends BaseKuduTest {
     // we're sure when we reconnect to the leader after restarting
     // the tablet servers, it's definitely the same leader we wrote
     // to before.
-    KuduTable nonReplicatedTable = createTable(
+    KuduTable nonReplicatedTable = harness.getClient().createTable(
         "non-replicated",
-        basicSchema,
+        schema,
         getBasicCreateTableOptions().setNumReplicas(1));
 
     try {
@@ -210,8 +219,8 @@ public class TestAsyncKuduSession extends BaseKuduTest {
       int numClientsBefore = client.getConnectionListCopy().size();
 
       // Restart all the tablet servers.
-      killAllTabletServers();
-      startAllTabletServers();
+      harness.killAllTabletServers();
+      harness.startAllTabletServers();
 
       // Perform another write, which will require reconnecting to the same
       // tablet server that we wrote to above.
@@ -221,7 +230,7 @@ public class TestAsyncKuduSession extends BaseKuduTest {
       int numClientsAfter = client.getConnectionListCopy().size();
       assertEquals(numClientsBefore, numClientsAfter);
     } finally {
-      startAllTabletServers();
+      harness.startAllTabletServers();
 
       client.deleteTable("non-replicated").join();
     }

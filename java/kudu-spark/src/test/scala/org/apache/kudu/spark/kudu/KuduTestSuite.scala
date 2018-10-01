@@ -129,8 +129,8 @@ trait KuduTestSuite extends JUnitSuite {
   @Before
   def setUpBase(): Unit = {
     miniCluster = new MiniKuduClusterBuilder()
-      .numMasters(1)
-      .numTservers(1)
+      .numMasterServers(1)
+      .numTabletServers(1)
       .build()
 
     ss = SparkSession.builder().config(conf).getOrCreate()

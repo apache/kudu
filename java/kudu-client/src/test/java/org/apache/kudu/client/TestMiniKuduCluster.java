@@ -23,6 +23,8 @@ import java.io.IOException;
 import java.net.Socket;
 
 import org.apache.kudu.client.KuduClient.KuduClientBuilder;
+import org.apache.kudu.junit.RetryRule;
+import org.junit.Rule;
 import org.junit.Test;
 
 public class TestMiniKuduCluster {
@@ -31,11 +33,14 @@ public class TestMiniKuduCluster {
   private static final int NUM_MASTERS = 1;
   private static final long SLEEP_TIME_MS = 10000;
 
+  @Rule
+  public RetryRule retryRule = new RetryRule();
+
   @Test(timeout = 50000)
   public void test() throws Exception {
     try (MiniKuduCluster cluster = new MiniKuduCluster.MiniKuduClusterBuilder()
-                                                      .numMasters(NUM_MASTERS)
-                                                      .numTservers(NUM_TABLET_SERVERS)
+                                                      .numMasterServers(NUM_MASTERS)
+                                                      .numTabletServers(NUM_TABLET_SERVERS)
                                                       .build()) {
       assertEquals(NUM_MASTERS, cluster.getMasterServers().size());
       assertEquals(NUM_TABLET_SERVERS, cluster.getTabletServers().size());
@@ -75,8 +80,8 @@ public class TestMiniKuduCluster {
   public void testKerberos() throws Exception {
     FakeDNS.getInstance().install();
     try (MiniKuduCluster cluster = new MiniKuduCluster.MiniKuduClusterBuilder()
-                                                      .numMasters(NUM_MASTERS)
-                                                      .numTservers(NUM_TABLET_SERVERS)
+                                                      .numMasterServers(NUM_MASTERS)
+                                                      .numTabletServers(NUM_TABLET_SERVERS)
                                                       .enableKerberos()
                                                       .build()) {
       KuduClient client = new KuduClientBuilder(cluster.getMasterAddressesAsString()).build();
@@ -89,8 +94,8 @@ public class TestMiniKuduCluster {
   @Test(timeout = 50000)
   public void testHiveMetastoreIntegration() throws Exception {
     try (MiniKuduCluster cluster = new MiniKuduCluster.MiniKuduClusterBuilder()
-                                                      .numMasters(NUM_MASTERS)
-                                                      .numTservers(NUM_TABLET_SERVERS)
+                                                      .numMasterServers(NUM_MASTERS)
+                                                      .numTabletServers(NUM_TABLET_SERVERS)
                                                       .enableHiveMetastoreIntegration()
                                                       .build()) {
       KuduClient client = new KuduClientBuilder(cluster.getMasterAddressesAsString()).build();

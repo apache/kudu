@@ -14,85 +14,146 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.apache.kudu.client;
+package org.apache.kudu.test;
 
-import static org.apache.kudu.util.ClientTestUtil.getBasicSchema;
-import static org.apache.kudu.util.ClientTestUtil.getSchemaWithAllTypes;
-import static org.junit.Assert.fail;
+import com.google.common.base.Stopwatch;
+import com.stumbleupon.async.Deferred;
+import org.apache.kudu.Common;
+import org.apache.kudu.client.AsyncKuduClient;
+import org.apache.kudu.client.AsyncKuduClient.AsyncKuduClientBuilder;
+import org.apache.kudu.client.DeadlineTracker;
+import org.apache.kudu.client.FakeDNS;
+import org.apache.kudu.client.HostAndPort;
+import org.apache.kudu.client.KuduClient;
+import org.apache.kudu.client.KuduException;
+import org.apache.kudu.client.KuduTable;
+import org.apache.kudu.client.LocatedTablet;
+import org.apache.kudu.client.MiniKuduCluster;
+import org.apache.kudu.client.MiniKuduCluster.MiniKuduClusterBuilder;
+import org.apache.kudu.client.RemoteTablet;
+import org.apache.kudu.junit.RetryRule;
+import org.apache.kudu.master.Master;
+import org.apache.kudu.util.RandomUtils;
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
+import org.junit.rules.ExternalResource;
+import org.junit.runner.Description;
+import org.junit.runners.model.Statement;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
 
-import com.google.common.base.Stopwatch;
-import com.stumbleupon.async.Deferred;
-import org.apache.kudu.junit.RetryRule;
-import org.apache.kudu.util.RandomUtils;
-import org.apache.yetus.audience.InterfaceAudience;
-import org.apache.yetus.audience.InterfaceStability;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Rule;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import static org.junit.Assert.fail;
 
-import org.apache.kudu.Common.HostPortPB;
-import org.apache.kudu.Schema;
-import org.apache.kudu.client.LocatedTablet.Replica;
-import org.apache.kudu.master.Master;
-
+/**
+ * A Junit Rule that manages a Kudu cluster and clients for testing.
+ * This rule also includes utility methods for the cluster
+ * and clients.
+ *
+ * <pre>
+ * public static class TestFoo {
+ *
+ *  &#064;Rule
+ *  public KuduTestHarness harness = new KuduTestHarness();
+ *
+ *  ...
+ * }
+ * </pre>
+ */
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
-public class BaseKuduTest {
+public class KuduTestHarness extends ExternalResource {
 
-  protected static final Logger LOG = LoggerFactory.getLogger(BaseKuduTest.class);
+  private static final Logger LOG = LoggerFactory.getLogger(KuduTestHarness.class);
 
-  // Default timeout/sleep interval for various client operations, waiting for various jobs/threads
-  // to complete, etc.
-  protected static final int DEFAULT_SLEEP = 50000;
+  private static final int NUM_MASTER_SERVERS = 3;
+  private static final int NUM_TABLET_SERVERS = 3;
+
+  // Default timeout/sleep interval for various client operations,
+  // waiting for various jobs/threads to complete, etc.
+  public static final int DEFAULT_SLEEP = 50000;
 
   private final Random randomForTSRestart = RandomUtils.getRandom();
 
-  private static final int NUM_MASTERS = 3;
-  private static final int NUM_TABLET_SERVERS = 3;
-
+  private MiniKuduClusterBuilder clusterBuilder;
   private MiniKuduCluster miniCluster;
 
-  // We create both versions of the client for ease of use.
-  protected AsyncKuduClient client;
-  protected KuduClient syncClient;
-  protected static final Schema basicSchema = getBasicSchema();
-  protected static final Schema allTypesSchema = getSchemaWithAllTypes();
+  // We create both versions of the asyncClient for ease of use.
+  private AsyncKuduClient asyncClient;
+  private KuduClient client;
 
-  // Add a rule to rerun tests. We use this with Gradle because it doesn't support
-  // Surefire/Failsafe rerunFailingTestsCount like Maven does.
-  @Rule
-  public RetryRule retryRule = new RetryRule();
-
-  @Before
-  public void setUpBase() throws Exception {
-    FakeDNS.getInstance().install();
-
-    LOG.info("Creating a new MiniKuduCluster...");
-
-    miniCluster = getMiniClusterBuilder().build();
-
-    LOG.info("Creating a new Kudu client...");
-    client = new AsyncKuduClient.AsyncKuduClientBuilder(miniCluster.getMasterAddressesAsString())
-        .defaultAdminOperationTimeoutMs(DEFAULT_SLEEP)
-        .build();
-    syncClient = client.syncClient();
+  public KuduTestHarness(final MiniKuduClusterBuilder clusterBuilder) {
+    this.clusterBuilder = clusterBuilder;
   }
 
-  @After
-  public void tearDownBase() throws Exception {
+  public KuduTestHarness() {
+    this.clusterBuilder = getBaseClusterBuilder();
+  }
+
+  /**
+   * Returns the base MiniKuduClusterBuilder used when creating a
+   * KuduTestHarness with the default constructor. This is useful
+   * if you want to add to the default cluster setup.
+   */
+  public static MiniKuduClusterBuilder getBaseClusterBuilder() {
+    return new MiniKuduClusterBuilder()
+        .numMasterServers(NUM_MASTER_SERVERS)
+        .numTabletServers(NUM_TABLET_SERVERS);
+  }
+
+  @Override
+  public Statement apply(Statement base, Description description) {
+    // Set any master server flags defined in the method level annotation.
+    MasterServerConfig masterServerConfig = description.getAnnotation(MasterServerConfig.class);
+    if (masterServerConfig != null) {
+      for (String flag : masterServerConfig.flags()) {
+        clusterBuilder.addMasterServerFlag(flag);
+      }
+    }
+    // Set any tablet server flags defined in the method level annotation.
+    TabletServerConfig tabletServerConfig = description.getAnnotation(TabletServerConfig.class);
+    if (tabletServerConfig != null) {
+      for (String flag : tabletServerConfig.flags()) {
+        clusterBuilder.addTabletServerFlag(flag);
+      }
+    }
+
+    // Generate the ExternalResource Statement.
+    Statement statement = super.apply(base, description);
+    // Wrap in the RetryRule to rerun flaky tests.
+    return new RetryRule().apply(statement, description);
+  }
+
+  @Override
+  public void before() throws Exception {
+    FakeDNS.getInstance().install();
+    LOG.info("Creating a new MiniKuduCluster...");
+    miniCluster = clusterBuilder.build();
+    LOG.info("Creating a new Kudu client...");
+    asyncClient = new AsyncKuduClientBuilder(miniCluster.getMasterAddressesAsString())
+        .defaultAdminOperationTimeoutMs(DEFAULT_SLEEP)
+        .build();
+    client = asyncClient.syncClient();
+  }
+
+  @Override
+  public void after() {
     try {
       if (client != null) {
-        syncClient.shutdown();
+        client.shutdown();
         // No need to explicitly shutdown the async client,
-        // shutting down the async client effectively does that.
+        // shutting down the sync client effectively does that.
       }
+    } catch (KuduException e) {
+      LOG.warn("Error while shutting down the test client");
     } finally {
       if (miniCluster != null) {
         miniCluster.shutdown();
@@ -100,31 +161,12 @@ public class BaseKuduTest {
     }
   }
 
-  /**
-   * Returns a MiniKuduClusterBuilder to use when starting the MiniKuduCluster.
-   * Override this method to adjust to the MiniKuduClusterBuilder settings.
-   */
-  protected MiniKuduCluster.MiniKuduClusterBuilder getMiniClusterBuilder() {
-    return new MiniKuduCluster.MiniKuduClusterBuilder()
-        .numMasters(NUM_MASTERS)
-        .numTservers(NUM_TABLET_SERVERS);
+  public KuduClient getClient() {
+    return client;
   }
 
-  protected KuduTable createTable(String tableName, Schema schema,
-                                         CreateTableOptions builder) throws KuduException {
-    LOG.info("Creating table: {}", tableName);
-    return client.syncClient().createTable(tableName, schema, builder);
-  }
-
-  /**
-   * Helper method to open a table. It sets the default sleep time when joining on the Deferred.
-   * @param name Name of the table
-   * @return A KuduTable
-   * @throws Exception MasterErrorException if the table doesn't exist
-   */
-  protected KuduTable openTable(String name) throws Exception {
-    Deferred<KuduTable> d = client.openTable(name);
-    return d.join(DEFAULT_SLEEP);
+  public AsyncKuduClient getAsyncClient() {
+    return asyncClient;
   }
 
   /**
@@ -136,11 +178,11 @@ public class BaseKuduTest {
    * @param table a KuduTable which will get its single tablet's leader killed.
    * @throws Exception
    */
-  protected void killTabletLeader(KuduTable table) throws Exception {
+  public void killTabletLeader(KuduTable table) throws Exception {
     List<LocatedTablet> tablets = table.getTabletsLocations(DEFAULT_SLEEP);
     if (tablets.isEmpty() || tablets.size() > 1) {
       fail("Currently only support killing leaders for tables containing 1 tablet, table " +
-      table.getName() + " has " + tablets.size());
+          table.getName() + " has " + tablets.size());
     }
     LocatedTablet tablet = tablets.get(0);
     if (tablet.getReplicas().size() == 1) {
@@ -160,7 +202,7 @@ public class BaseKuduTest {
    * @param tablet a RemoteTablet which will get its leader killed
    * @throws Exception
    */
-  protected void killTabletLeader(RemoteTablet tablet) throws Exception {
+  public void killTabletLeader(RemoteTablet tablet) throws Exception {
     killTabletLeader(new LocatedTablet(tablet));
   }
 
@@ -173,7 +215,7 @@ public class BaseKuduTest {
    * @param tablet a LocatedTablet which will get its leader killed
    * @throws Exception
    */
-  protected void killTabletLeader(LocatedTablet tablet) throws Exception {
+  public void killTabletLeader(LocatedTablet tablet) throws Exception {
     HostAndPort hp = findLeaderTabletServer(tablet);
     miniCluster.killTabletServer(hp);
   }
@@ -184,7 +226,7 @@ public class BaseKuduTest {
    * @return the host and port of the given tablet's leader tserver
    * @throws Exception if we are unable to find the leader tserver
    */
-  protected HostAndPort findLeaderTabletServer(LocatedTablet tablet)
+  public HostAndPort findLeaderTabletServer(LocatedTablet tablet)
       throws Exception {
     LocatedTablet.Replica leader = null;
     DeadlineTracker deadlineTracker = new DeadlineTracker();
@@ -210,7 +252,7 @@ public class BaseKuduTest {
    * This method is thread-safe.
    * @throws Exception if there is an error finding or killing the leader master.
    */
-  protected void killLeaderMasterServer() throws Exception {
+  public void killLeaderMasterServer() throws Exception {
     HostAndPort hp = findLeaderMasterServer();
     miniCluster.killMasterServer(hp);
   }
@@ -220,13 +262,13 @@ public class BaseKuduTest {
    * @return the host and port of the leader master
    * @throws Exception if we are unable to find the leader master
    */
-  protected HostAndPort findLeaderMasterServer() throws Exception {
+  public HostAndPort findLeaderMasterServer() throws Exception {
     Stopwatch sw = Stopwatch.createStarted();
     while (sw.elapsed(TimeUnit.MILLISECONDS) < DEFAULT_SLEEP) {
       Deferred<Master.GetTableLocationsResponsePB> masterLocD =
-          client.getMasterTableLocationsPB(null);
+          asyncClient.getMasterTableLocationsPB(null);
       Master.GetTableLocationsResponsePB r = masterLocD.join(DEFAULT_SLEEP);
-      HostPortPB pb = r.getTabletLocations(0)
+      Common.HostPortPB pb = r.getTabletLocations(0)
           .getReplicas(0)
           .getTsInfo()
           .getRpcAddresses(0);
@@ -242,14 +284,15 @@ public class BaseKuduTest {
    * @param table table to query for a TS to restart
    * @throws Exception
    */
-  protected void restartTabletServer(KuduTable table) throws Exception {
+  public void restartTabletServer(KuduTable table) throws Exception {
     List<LocatedTablet> tablets = table.getTabletsLocations(DEFAULT_SLEEP);
     if (tablets.isEmpty()) {
       fail("Table " + table.getName() + " doesn't have any tablets");
     }
 
     LocatedTablet tablet = tablets.get(0);
-    Replica replica = tablet.getReplicas().get(randomForTSRestart.nextInt(tablet.getReplicas().size()));
+    LocatedTablet.Replica replica =
+        tablet.getReplicas().get(randomForTSRestart.nextInt(tablet.getReplicas().size()));
     HostAndPort hp = new HostAndPort(replica.getRpcHost(), replica.getRpcPort());
     miniCluster.killTabletServer(hp);
     miniCluster.startTabletServer(hp);
@@ -260,7 +303,7 @@ public class BaseKuduTest {
    * @param tablet a RemoteTablet which will get its leader killed and restarted
    * @throws Exception
    */
-  protected void restartTabletServer(RemoteTablet tablet) throws Exception {
+  public void restartTabletServer(RemoteTablet tablet) throws Exception {
     HostAndPort hp = findLeaderTabletServer(new LocatedTablet(tablet));
     miniCluster.killTabletServer(hp);
     miniCluster.startTabletServer(hp);
@@ -270,7 +313,7 @@ public class BaseKuduTest {
    * Kills and restarts the leader master.
    * @throws Exception
    */
-  protected void restartLeaderMaster() throws Exception {
+  public void restartLeaderMaster() throws Exception {
     HostAndPort hp = findLeaderMasterServer();
     miniCluster.killMasterServer(hp);
     miniCluster.startMasterServer(hp);
@@ -281,7 +324,7 @@ public class BaseKuduTest {
    * config for this cluster.
    * @return The master config string.
    */
-  protected String getMasterAddressesAsString() {
+  public String getMasterAddressesAsString() {
     return miniCluster.getMasterAddressesAsString();
   }
 
@@ -302,7 +345,7 @@ public class BaseKuduTest {
   /**
    * @return path to the mini cluster root directory
    */
-  protected String getClusterRoot() {
+  public String getClusterRoot() {
     return miniCluster.getClusterRoot();
   }
 
@@ -312,7 +355,7 @@ public class BaseKuduTest {
    *
    * @throws IOException
    */
-  protected void killAllMasterServers() throws IOException {
+  public void killAllMasterServers() throws IOException {
     miniCluster.killAllMasterServers();
   }
 
@@ -322,7 +365,7 @@ public class BaseKuduTest {
    *
    * @throws IOException
    */
-  protected void startAllMasterServers() throws IOException {
+  public void startAllMasterServers() throws IOException {
     miniCluster.startAllMasterServers();
   }
 
@@ -332,7 +375,7 @@ public class BaseKuduTest {
    *
    * @throws IOException
    */
-  protected void killAllTabletServers() throws IOException {
+  public void killAllTabletServers() throws IOException {
     miniCluster.killAllTabletServers();
   }
 
@@ -342,14 +385,14 @@ public class BaseKuduTest {
    *
    * @throws IOException
    */
-  protected void startAllTabletServers() throws IOException {
+  public void startAllTabletServers() throws IOException {
     miniCluster.startAllTabletServers();
   }
 
   /**
    * Removes all credentials for all principals from the Kerberos credential cache.
    */
-  protected void kdestroy() throws IOException {
+  public void kdestroy() throws IOException {
     miniCluster.kdestroy();
   }
 
@@ -358,7 +401,7 @@ public class BaseKuduTest {
    * into the Kerberos credential cache.
    * @param username the username to kinit as
    */
-  protected void kinit(String username) throws IOException {
+  public void kinit(String username) throws IOException {
     miniCluster.kinit(username);
   }
 
@@ -366,11 +409,37 @@ public class BaseKuduTest {
    * Resets the clients so that their state is completely fresh, including meta
    * cache, connections, open tables, sessions and scanners, and propagated timestamp.
    */
-  protected void resetClients() throws IOException {
-    syncClient.shutdown();
-    client = new AsyncKuduClient.AsyncKuduClientBuilder(miniCluster.getMasterAddressesAsString())
-                                .defaultAdminOperationTimeoutMs(DEFAULT_SLEEP)
-                                .build();
-    syncClient = client.syncClient();
+  public void resetClients() throws IOException {
+    client.shutdown();
+    asyncClient = new AsyncKuduClientBuilder(miniCluster.getMasterAddressesAsString())
+        .defaultAdminOperationTimeoutMs(DEFAULT_SLEEP)
+        .build();
+    client = asyncClient.syncClient();
+  }
+
+  /**
+   * An annotation that can be added to each test method to
+   * define additional master server flags to be used when
+   * creating the test cluster.
+   *
+   * ex: @MasterServerConfig(flags = { "key1=valA", "key2=valB" })
+   */
+  @Retention(RetentionPolicy.RUNTIME)
+  @Target({ElementType.METHOD})
+  public @interface MasterServerConfig {
+    String[] flags();
+  }
+
+  /**
+   * An annotation that can be added to each test method to
+   * define additional tablet server flags to be used when
+   * creating the test cluster.
+   *
+   * ex: @TabletServerConfig(flags = { "key1=valA", "key2=valB" })
+   */
+  @Retention(RetentionPolicy.RUNTIME)
+  @Target({ElementType.METHOD})
+  public @interface TabletServerConfig {
+    String[] flags();
   }
 }

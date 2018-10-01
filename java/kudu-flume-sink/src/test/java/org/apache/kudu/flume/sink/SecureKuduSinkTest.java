@@ -33,7 +33,9 @@ import com.google.common.collect.ImmutableList;
 import org.apache.flume.Event;
 import org.apache.flume.EventDeliveryException;
 import org.apache.flume.event.EventBuilder;
+import org.apache.kudu.test.KuduTestHarness;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,28 +43,27 @@ import org.slf4j.LoggerFactory;
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
-import org.apache.kudu.client.BaseKuduTest;
 import org.apache.kudu.client.CreateTableOptions;
 import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.client.MiniKuduCluster.MiniKuduClusterBuilder;
 
-public class SecureKuduSinkTest extends BaseKuduTest {
+public class SecureKuduSinkTest {
   private static final Logger LOG = LoggerFactory.getLogger(SecureKuduSinkTest.class);
   private static final int TICKET_LIFETIME_SECONDS = 10;
   private static final int RENEWABLE_LIFETIME_SECONDS = 30;
+
+  private static final MiniKuduClusterBuilder clusterBuilder = KuduTestHarness.getBaseClusterBuilder()
+      .kdcTicketLifetime(TICKET_LIFETIME_SECONDS + "s")
+      .kdcRenewLifetime(RENEWABLE_LIFETIME_SECONDS + "s")
+      .enableKerberos();
+
+  @Rule
+  public KuduTestHarness harness = new KuduTestHarness(clusterBuilder);
 
   @Before
   public void clearTicketCacheProperty() {
     // Let Flume authenticate.
     System.clearProperty(KUDU_TICKETCACHE_PROPERTY);
-  }
-
-  @Override
-  protected MiniKuduClusterBuilder getMiniClusterBuilder() {
-    return super.getMiniClusterBuilder()
-      .kdcTicketLifetime(TICKET_LIFETIME_SECONDS + "s")
-      .kdcRenewLifetime(RENEWABLE_LIFETIME_SECONDS + "s")
-      .enableKerberos();
   }
 
   @Test
@@ -74,11 +75,11 @@ public class SecureKuduSinkTest extends BaseKuduTest {
         new CreateTableOptions().setRangePartitionColumns(ImmutableList.of("payload"))
         .setNumReplicas(1);
     String tableName = "test_long_lived_events";
-    KuduTable table = createTable(tableName, new Schema(columns), createOptions);
+    KuduTable table = harness.getClient().createTable(tableName, new Schema(columns), createOptions);
     LOG.info("Created new table.");
 
     KuduSink sink = KuduSinkTestUtil.createSecureSink(
-        tableName, getMasterAddressesAsString(), getClusterRoot());
+        tableName, harness.getMasterAddressesAsString(), harness.getClusterRoot());
     sink.start();
 
     LOG.info("Testing events at the beginning.");

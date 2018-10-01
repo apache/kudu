@@ -16,26 +16,36 @@
 // under the License.
 package org.apache.kudu.client;
 
+import static org.apache.kudu.test.KuduTestHarness.DEFAULT_SLEEP;
 import static org.apache.kudu.util.ClientTestUtil.createBasicSchemaInsert;
 import static org.apache.kudu.util.ClientTestUtil.createFourTabletsTableWithNineRows;
 import static org.apache.kudu.util.ClientTestUtil.getBasicCreateTableOptions;
+import static org.apache.kudu.util.ClientTestUtil.getBasicSchema;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import java.util.List;
 
+import org.apache.kudu.Schema;
+import org.apache.kudu.test.KuduTestHarness;
+import org.junit.Rule;
 import org.junit.Test;
 
-public class TestRowErrors extends BaseKuduTest {
+public class TestRowErrors {
+
+  private static final Schema basicSchema = getBasicSchema();
 
   private static KuduTable table;
+
+  @Rule
+  public KuduTestHarness harness = new KuduTestHarness();
 
   @Test(timeout = 100000)
   public void singleTabletTest() throws Exception {
     String tableName = TestRowErrors.class.getName() + "-" + System.currentTimeMillis();
-    createTable(tableName, basicSchema, getBasicCreateTableOptions());
-    table = openTable(tableName);
-    AsyncKuduSession session = client.newSession();
+    harness.getClient().createTable(tableName, basicSchema, getBasicCreateTableOptions());
+    table = harness.getClient().openTable(tableName);
+    AsyncKuduSession session = harness.getAsyncClient().newSession();
 
     // Insert 3 rows to play with.
     for (int i = 0; i < 3; i++) {
@@ -70,9 +80,9 @@ public class TestRowErrors extends BaseKuduTest {
   @Test(timeout = 100000)
   public void multiTabletTest() throws Exception {
     String tableName = TestRowErrors.class.getName() + "-" + System.currentTimeMillis();
-    createFourTabletsTableWithNineRows(client, tableName, DEFAULT_SLEEP);
-    table = openTable(tableName);
-    KuduSession session = syncClient.newSession();
+    createFourTabletsTableWithNineRows(harness.getAsyncClient(), tableName, DEFAULT_SLEEP);
+    table = harness.getClient().openTable(tableName);
+    KuduSession session = harness.getClient().newSession();
     session.setFlushMode(KuduSession.FlushMode.AUTO_FLUSH_BACKGROUND);
 
     int dupRows = 3;

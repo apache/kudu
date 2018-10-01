@@ -23,6 +23,11 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 import com.google.common.collect.Lists;
+import org.apache.kudu.Schema;
+import org.apache.kudu.client.MiniKuduCluster.MiniKuduClusterBuilder;
+import org.apache.kudu.test.KuduTestHarness;
+import org.apache.kudu.util.ClientTestUtil;
+import org.junit.Rule;
 import org.junit.Test;
 
 import static org.apache.kudu.util.ClientTestUtil.getBasicCreateTableOptions;
@@ -31,19 +36,21 @@ import static org.apache.kudu.util.ClientTestUtil.getBasicCreateTableOptions;
  * Tests which provoke RPC queue overflow errors on the server side
  * to ensure that we properly handle them in the client.
  */
-public class TestHandleTooBusy extends BaseKuduTest {
+public class TestHandleTooBusy {
   private static final String TABLE_NAME = "TestHandleTooBusy";
 
-  @Override
-  protected MiniKuduCluster.MiniKuduClusterBuilder getMiniClusterBuilder() {
-    return super.getMiniClusterBuilder()
-        // Short queue to provoke overflow.
-        .addMasterFlag("--rpc_service_queue_length=1")
-        // Low number of service threads, so things stay in the queue.
-        .addMasterFlag("--rpc_num_service_threads=3")
-        // inject latency so lookups process slowly.
-        .addMasterFlag("--master_inject_latency_on_tablet_lookups_ms=100");
-  }
+  private static final Schema basicSchema = ClientTestUtil.getBasicSchema();
+
+  private static final MiniKuduClusterBuilder clusterBuilder = KuduTestHarness.getBaseClusterBuilder()
+      // Short queue to provoke overflow.
+      .addMasterServerFlag("--rpc_service_queue_length=1")
+      // Low number of service threads, so things stay in the queue.
+      .addMasterServerFlag("--rpc_num_service_threads=3")
+      // inject latency so lookups process slowly.
+      .addMasterServerFlag("--master_inject_latency_on_tablet_lookups_ms=100");
+
+  @Rule
+  public KuduTestHarness harness = new KuduTestHarness(clusterBuilder);
 
   /**
    * Provoke overflows in the master RPC queue while connecting to the master
@@ -51,7 +58,7 @@ public class TestHandleTooBusy extends BaseKuduTest {
    */
   @Test(timeout=60000)
   public void testMasterLookupOverflow() throws Exception {
-    createTable(TABLE_NAME, basicSchema, getBasicCreateTableOptions());
+    harness.getClient().createTable(TABLE_NAME, basicSchema, getBasicCreateTableOptions());
     ExecutorService exec = Executors.newCachedThreadPool();
     List<Future<Void>> futures = Lists.newArrayList();
     for (int thr = 0; thr < 10; thr++) {
@@ -59,7 +66,7 @@ public class TestHandleTooBusy extends BaseKuduTest {
         @Override
         public Void call() throws Exception {
           for (int i = 0; i < 5; i++) {
-            try (KuduClient c = new KuduClient.KuduClientBuilder(getMasterAddressesAsString())
+            try (KuduClient c = new KuduClient.KuduClientBuilder(harness.getMasterAddressesAsString())
                 .build()) {
               KuduTable table = c.openTable(TABLE_NAME);
               for (int j = 0; j < 5; j++) {

@@ -18,15 +18,21 @@ package org.apache.kudu.client;
 
 import static org.apache.kudu.util.ClientTestUtil.createBasicSchemaInsert;
 import static org.apache.kudu.util.ClientTestUtil.getBasicCreateTableOptions;
+import static org.apache.kudu.util.ClientTestUtil.getBasicSchema;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import org.apache.kudu.test.KuduTestHarness;
+import org.junit.Rule;
 import org.junit.Test;
 
-public class TestTimeouts extends BaseKuduTest {
+public class TestTimeouts {
 
   private static final String TABLE_NAME =
       TestTimeouts.class.getName() + "-" + System.currentTimeMillis();
+
+  @Rule
+  public KuduTestHarness harness = new KuduTestHarness();
 
   /**
    * This test case tries different methods that should all timeout, while relying on the client to
@@ -35,7 +41,8 @@ public class TestTimeouts extends BaseKuduTest {
    */
   @Test(timeout = 100000)
   public void testLowTimeouts() throws Exception {
-    KuduClient lowTimeoutsClient = new KuduClient.KuduClientBuilder(getMasterAddressesAsString())
+    KuduClient lowTimeoutsClient =
+        new KuduClient.KuduClientBuilder(harness.getMasterAddressesAsString())
         .defaultAdminOperationTimeoutMs(1)
         .defaultOperationTimeoutMs(1)
         .build();
@@ -47,7 +54,7 @@ public class TestTimeouts extends BaseKuduTest {
       // Expected.
     }
 
-    createTable(TABLE_NAME, basicSchema, getBasicCreateTableOptions());
+    harness.getClient().createTable(TABLE_NAME, getBasicSchema(), getBasicCreateTableOptions());
     KuduTable table = lowTimeoutsClient.openTable(TABLE_NAME);
 
     KuduSession lowTimeoutSession = lowTimeoutsClient.newSession();

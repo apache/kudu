@@ -53,7 +53,7 @@ import org.apache.kudu.master.Master;
  */
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
-class RemoteTablet implements Comparable<RemoteTablet> {
+public class RemoteTablet implements Comparable<RemoteTablet> {
 
   private static final Logger LOG = LoggerFactory.getLogger(RemoteTablet.class);
 

@@ -16,6 +16,7 @@
 // under the License.
 package org.apache.kudu.mapreduce;
 
+import static org.apache.kudu.test.KuduTestHarness.DEFAULT_SLEEP;
 import static org.apache.kudu.util.ClientTestUtil.createFourTabletsTableWithNineRows;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -30,16 +31,19 @@ import org.apache.hadoop.mapred.JobConf;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.lib.output.NullOutputFormat;
+import org.apache.kudu.Schema;
+import org.apache.kudu.test.KuduTestHarness;
+import org.apache.kudu.util.ClientTestUtil;
 import org.junit.After;
+import org.junit.Rule;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.kudu.client.BaseKuduTest;
 import org.apache.kudu.client.KuduPredicate;
 import org.apache.kudu.client.RowResult;
 
-public class ITInputFormatJob extends BaseKuduTest {
+public class ITInputFormatJob {
   private static final Logger LOG = LoggerFactory.getLogger(ITInputFormatJob.class);
 
   private static final String TABLE_NAME =
@@ -47,8 +51,13 @@ public class ITInputFormatJob extends BaseKuduTest {
 
   private static final HadoopTestingUtility HADOOP_UTIL = new HadoopTestingUtility();
 
+  private static final Schema basicSchema = ClientTestUtil.getBasicSchema();
+
   /** Counter enumeration to count the actual rows. */
   private enum Counters { ROWS }
+
+  @Rule
+  public KuduTestHarness harness = new KuduTestHarness();
 
   @After
   public void tearDown() throws Exception {
@@ -59,7 +68,7 @@ public class ITInputFormatJob extends BaseKuduTest {
   @SuppressWarnings("deprecation")
   public void test() throws Exception {
 
-    createFourTabletsTableWithNineRows(client, TABLE_NAME, DEFAULT_SLEEP);
+    createFourTabletsTableWithNineRows(harness.getAsyncClient(), TABLE_NAME, DEFAULT_SLEEP);
 
     JobConf conf = new JobConf();
     HADOOP_UTIL.setupAndGetTestDir(ITInputFormatJob.class.getName(), conf).getAbsolutePath();
@@ -92,7 +101,7 @@ public class ITInputFormatJob extends BaseKuduTest {
             job,
             TABLE_NAME,
             "*",
-            getMasterAddressesAsString())
+            harness.getMasterAddressesAsString())
             .operationTimeoutMs(DEFAULT_SLEEP)
             .addDependencies(false)
             .cacheBlocks(false)

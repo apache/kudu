@@ -19,6 +19,7 @@ import com.google.common.collect.ImmutableList;
 import org.apache.flume.Context;
 import org.apache.flume.FlumeException;
 import org.apache.flume.event.EventBuilder;
+import org.apache.kudu.test.KuduTestHarness;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
@@ -27,12 +28,11 @@ import org.junit.rules.ExpectedException;
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
-import org.apache.kudu.client.BaseKuduTest;
 import org.apache.kudu.client.CreateTableOptions;
 import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.util.CapturingLogAppender;
 
-public class RegexpKuduOperationsProducerParseErrorTest extends BaseKuduTest {
+public class RegexpKuduOperationsProducerParseErrorTest {
   private static final String TEST_REGEXP = "(?<key>\\d+),(?<byteFld>\\d+),(?<stringFld>\\w+)";
   private static final String TEST_REGEXP_MISSING_COLUMN = "(?<key>\\d+),(?<byteFld>\\d+)";
   private static final String TEST_OPERATION = "insert";
@@ -52,6 +52,9 @@ public class RegexpKuduOperationsProducerParseErrorTest extends BaseKuduTest {
   private static final String POLICY_REJECT = "REJECT";
   private static final String POLICY_WARN = "WARN";
   private static final String POLICY_IGNORE = "IGNORE";
+
+  @Rule
+  public KuduTestHarness harness = new KuduTestHarness();
 
   @Rule
   public ExpectedException thrown = ExpectedException.none();
@@ -265,7 +268,7 @@ public class RegexpKuduOperationsProducerParseErrorTest extends BaseKuduTest {
     columns.add(new ColumnSchema.ColumnSchemaBuilder("stringFld", Type.STRING).build());
     CreateTableOptions createOptions =
         new CreateTableOptions().addHashPartitions(ImmutableList.of("key"), 3).setNumReplicas(1);
-    KuduTable table = createTable(tableName, new Schema(columns), createOptions);
+    KuduTable table = harness.getClient().createTable(tableName, new Schema(columns), createOptions);
     return table;
   }
 

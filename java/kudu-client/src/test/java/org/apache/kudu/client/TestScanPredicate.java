@@ -25,7 +25,10 @@ import java.util.TreeSet;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSortedSet;
+import org.apache.kudu.test.KuduTestHarness;
 import org.junit.Assert;
+import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 
 import org.apache.kudu.ColumnSchema;
@@ -34,7 +37,19 @@ import org.apache.kudu.Type;
 import org.apache.kudu.client.KuduPredicate.ComparisonOp;
 import org.apache.kudu.util.DecimalUtil;
 
-public class TestScanPredicate extends BaseKuduTest {
+public class TestScanPredicate {
+
+  private KuduClient client;
+  private AsyncKuduClient asyncClient;
+
+  @Rule
+  public KuduTestHarness harness = new KuduTestHarness();
+
+  @Before
+  public void setUp() {
+    client = harness.getClient();
+    asyncClient = harness.getAsyncClient();
+  }
 
   private Schema createTableSchema(Type type) {
     ColumnSchema key = new ColumnSchema.ColumnSchemaBuilder("key", Type.INT64).key(true).build();
@@ -47,7 +62,7 @@ public class TestScanPredicate extends BaseKuduTest {
   }
 
   private int countRows(KuduTable table, KuduPredicate... predicates) throws Exception {
-    KuduScanner.KuduScannerBuilder scanBuilder =  new KuduScanner.KuduScannerBuilder(client, table);
+    KuduScanner.KuduScannerBuilder scanBuilder =  new KuduScanner.KuduScannerBuilder(asyncClient, table);
     for (KuduPredicate predicate : predicates) {
       scanBuilder.addPredicate(predicate);
     }
@@ -255,11 +270,11 @@ public class TestScanPredicate extends BaseKuduTest {
   @Test
   public void testBoolPredicates() throws Exception {
     Schema schema = createTableSchema(Type.BOOL);
-    syncClient.createTable("bool-table", schema, createTableOptions());
-    KuduTable table = syncClient.openTable("bool-table");
+    client.createTable("bool-table", schema, createTableOptions());
+    KuduTable table = client.openTable("bool-table");
 
     NavigableSet<Boolean> values = ImmutableSortedSet.of(false, true);
-    KuduSession session = syncClient.newSession();
+    KuduSession session = client.newSession();
     session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
     long i = 0;
     for (boolean value : values) {
@@ -307,11 +322,11 @@ public class TestScanPredicate extends BaseKuduTest {
   @Test
   public void testBytePredicates() throws Exception {
     Schema schema = createTableSchema(Type.INT8);
-    syncClient.createTable("byte-table", schema, createTableOptions());
-    KuduTable table = syncClient.openTable("byte-table");
+    client.createTable("byte-table", schema, createTableOptions());
+    KuduTable table = client.openTable("byte-table");
 
     NavigableSet<Long> values = createIntegerValues(Type.INT8);
-    KuduSession session = syncClient.newSession();
+    KuduSession session = client.newSession();
     session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
     long i = 0;
     for (long value : values) {
@@ -332,13 +347,13 @@ public class TestScanPredicate extends BaseKuduTest {
   @Test
   public void testShortPredicates() throws Exception {
     Schema schema = createTableSchema(Type.INT16);
-    syncClient.createTable("short-table", schema,
+    client.createTable("short-table", schema,
                            new CreateTableOptions().setRangePartitionColumns(
                                ImmutableList.<String>of()));
-    KuduTable table = syncClient.openTable("short-table");
+    KuduTable table = client.openTable("short-table");
 
     NavigableSet<Long> values = createIntegerValues(Type.INT16);
-    KuduSession session = syncClient.newSession();
+    KuduSession session = client.newSession();
     session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
     long i = 0;
     for (long value : values) {
@@ -359,11 +374,11 @@ public class TestScanPredicate extends BaseKuduTest {
   @Test
   public void testIntPredicates() throws Exception {
     Schema schema = createTableSchema(Type.INT32);
-    syncClient.createTable("int-table", schema, createTableOptions());
-    KuduTable table = syncClient.openTable("int-table");
+    client.createTable("int-table", schema, createTableOptions());
+    KuduTable table = client.openTable("int-table");
 
     NavigableSet<Long> values = createIntegerValues(Type.INT32);
-    KuduSession session = syncClient.newSession();
+    KuduSession session = client.newSession();
     session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
     long i = 0;
     for (long value : values) {
@@ -384,13 +399,13 @@ public class TestScanPredicate extends BaseKuduTest {
   @Test
   public void testLongPredicates() throws Exception {
     Schema schema = createTableSchema(Type.INT64);
-    syncClient.createTable("long-table", schema,
+    client.createTable("long-table", schema,
                            new CreateTableOptions().setRangePartitionColumns(
                                ImmutableList.<String>of()));
-    KuduTable table = syncClient.openTable("long-table");
+    KuduTable table = client.openTable("long-table");
 
     NavigableSet<Long> values = createIntegerValues(Type.INT64);
-    KuduSession session = syncClient.newSession();
+    KuduSession session = client.newSession();
     session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
     long i = 0;
     for (long value : values) {
@@ -411,11 +426,11 @@ public class TestScanPredicate extends BaseKuduTest {
   @Test
   public void testTimestampPredicate() throws Exception {
     Schema schema = createTableSchema(Type.INT64);
-    syncClient.createTable("timestamp-table", schema, createTableOptions());
-    KuduTable table = syncClient.openTable("timestamp-table");
+    client.createTable("timestamp-table", schema, createTableOptions());
+    KuduTable table = client.openTable("timestamp-table");
 
     NavigableSet<Long> values = createIntegerValues(Type.INT64);
-    KuduSession session = syncClient.newSession();
+    KuduSession session = client.newSession();
     session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
     long i = 0;
     for (long value : values) {
@@ -436,12 +451,12 @@ public class TestScanPredicate extends BaseKuduTest {
   @Test
   public void testFloatPredicates() throws Exception {
     Schema schema = createTableSchema(Type.FLOAT);
-    syncClient.createTable("float-table", schema, createTableOptions());
-    KuduTable table = syncClient.openTable("float-table");
+    client.createTable("float-table", schema, createTableOptions());
+    KuduTable table = client.openTable("float-table");
 
     NavigableSet<Float> values = createFloatValues();
     List<Float> testValues = createFloatTestValues();
-    KuduSession session = syncClient.newSession();
+    KuduSession session = client.newSession();
     session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
     long i = 0;
     for (float value : values) {
@@ -495,12 +510,12 @@ public class TestScanPredicate extends BaseKuduTest {
   @Test
   public void testDoublePredicates() throws Exception {
     Schema schema = createTableSchema(Type.DOUBLE);
-    syncClient.createTable("double-table", schema, createTableOptions());
-    KuduTable table = syncClient.openTable("double-table");
+    client.createTable("double-table", schema, createTableOptions());
+    KuduTable table = client.openTable("double-table");
 
     NavigableSet<Double> values = createDoubleValues();
     List<Double> testValues = createDoubleTestValues();
-    KuduSession session = syncClient.newSession();
+    KuduSession session = client.newSession();
     session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
     long i = 0;
     for (double value : values) {
@@ -558,12 +573,12 @@ public class TestScanPredicate extends BaseKuduTest {
         .typeAttributes(DecimalUtil.typeAttributes(4, 2)).nullable(true).build();
     Schema schema = new Schema(ImmutableList.of(key, val));
 
-    syncClient.createTable("decimal-table", schema, createTableOptions());
-    KuduTable table = syncClient.openTable("decimal-table");
+    client.createTable("decimal-table", schema, createTableOptions());
+    KuduTable table = client.openTable("decimal-table");
 
     NavigableSet<BigDecimal> values = createDecimalValues();
     List<BigDecimal> testValues = createDecimalTestValues();
-    KuduSession session = syncClient.newSession();
+    KuduSession session = client.newSession();
     session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
     long i = 0;
     for (BigDecimal value : values) {
@@ -617,12 +632,12 @@ public class TestScanPredicate extends BaseKuduTest {
   @Test
   public void testStringPredicates() throws Exception {
     Schema schema = createTableSchema(Type.STRING);
-    syncClient.createTable("string-table", schema, createTableOptions());
-    KuduTable table = syncClient.openTable("string-table");
+    client.createTable("string-table", schema, createTableOptions());
+    KuduTable table = client.openTable("string-table");
 
     NavigableSet<String> values = createStringValues();
     List<String> testValues = createStringTestValues();
-    KuduSession session = syncClient.newSession();
+    KuduSession session = client.newSession();
     session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
     long i = 0;
     for (String value : values) {
@@ -676,12 +691,12 @@ public class TestScanPredicate extends BaseKuduTest {
   @Test
   public void testBinaryPredicates() throws Exception {
     Schema schema = createTableSchema(Type.BINARY);
-    syncClient.createTable("binary-table", schema, createTableOptions());
-    KuduTable table = syncClient.openTable("binary-table");
+    client.createTable("binary-table", schema, createTableOptions());
+    KuduTable table = client.openTable("binary-table");
 
     NavigableSet<String> values = createStringValues();
     List<String> testValues = createStringTestValues();
-    KuduSession session = syncClient.newSession();
+    KuduSession session = client.newSession();
     session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
     long i = 0;
     for (String value : values) {

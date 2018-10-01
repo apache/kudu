@@ -23,15 +23,17 @@ import static org.junit.Assert.assertTrue;
 import java.util.Random;
 
 import com.google.common.collect.Lists;
+import org.apache.kudu.test.KuduTestHarness;
 import org.junit.Before;
 
 import org.apache.kudu.Schema;
+import org.junit.Rule;
 
 /**
  * Integration test that inserts enough data to trigger flushes and getting multiple data
  * blocks.
  */
-public class ITScannerMultiTablet extends BaseKuduTest {
+public class ITScannerMultiTablet {
 
   private static final String TABLE_NAME =
       ITScannerMultiTablet.class.getName()+"-"+System.currentTimeMillis();
@@ -43,6 +45,9 @@ public class ITScannerMultiTablet extends BaseKuduTest {
 
   private static Random random = new Random(1234);
 
+  @Rule
+  public KuduTestHarness harness = new KuduTestHarness();
+
   @Before
   public void setUp() throws Exception {
     CreateTableOptions builder = new CreateTableOptions();
@@ -51,9 +56,9 @@ public class ITScannerMultiTablet extends BaseKuduTest {
         Lists.newArrayList(schema.getColumnByIndex(0).getName()),
         TABLET_COUNT);
 
-    table = createTable(TABLE_NAME, schema, builder);
+    table = harness.getClient().createTable(TABLE_NAME, schema, builder);
 
-    KuduSession session = syncClient.newSession();
+    KuduSession session = harness.getClient().newSession();
     session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_BACKGROUND);
 
     // Getting meaty rows.
@@ -90,7 +95,7 @@ public class ITScannerMultiTablet extends BaseKuduTest {
    */
   void serverFaultInjection(boolean restart, boolean isFaultTolerant,
       boolean finishFirstScan) throws Exception {
-    KuduScanner scanner = syncClient.newScannerBuilder(table)
+    KuduScanner scanner = harness.getClient().newScannerBuilder(table)
         .setFaultTolerant(isFaultTolerant)
         .batchSizeBytes(1)
         .setProjectedColumnIndexes(Lists.newArrayList(0)).build();
@@ -113,9 +118,9 @@ public class ITScannerMultiTablet extends BaseKuduTest {
 
       if (!finishFirstScan) {
         if (restart) {
-          restartTabletServer(scanner.currentTablet());
+          harness.restartTabletServer(scanner.currentTablet());
         } else {
-          killTabletLeader(scanner.currentTablet());
+          harness.killTabletLeader(scanner.currentTablet());
         }
       }
 
@@ -128,9 +133,9 @@ public class ITScannerMultiTablet extends BaseKuduTest {
             tableBoundariesCount++;
             if (finishFirstScan && !failureInjected) {
               if (restart) {
-                restartTabletServer(scanner.currentTablet());
+                harness.restartTabletServer(scanner.currentTablet());
               } else {
-                killTabletLeader(scanner.currentTablet());
+                harness.killTabletLeader(scanner.currentTablet());
               }
               failureInjected = true;
             }
@@ -155,7 +160,7 @@ public class ITScannerMultiTablet extends BaseKuduTest {
    * @throws Exception
    */
   void clientFaultInjection(boolean isFaultTolerant) throws KuduException {
-    KuduScanner scanner = syncClient.newScannerBuilder(table)
+    KuduScanner scanner = harness.getClient().newScannerBuilder(table)
         .setFaultTolerant(isFaultTolerant)
         .batchSizeBytes(1)
         .build();
@@ -171,7 +176,7 @@ public class ITScannerMultiTablet extends BaseKuduTest {
 
       // Forcefully disconnects the current connection and fails all outstanding RPCs
       // in the middle of scanning.
-      client.newRpcProxy(scanner.currentTablet().getReplicaSelectedServerInfo(
+      harness.getAsyncClient().newRpcProxy(scanner.currentTablet().getReplicaSelectedServerInfo(
           scanner.getReplicaSelection())).getConnection().disconnect();
 
       while (scanner.hasMoreRows()) {

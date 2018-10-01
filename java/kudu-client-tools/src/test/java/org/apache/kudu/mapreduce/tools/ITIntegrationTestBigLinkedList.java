@@ -19,17 +19,21 @@ package org.apache.kudu.mapreduce.tools;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.util.ToolRunner;
+import org.apache.kudu.test.KuduTestHarness;
 import org.junit.After;
 import org.junit.Assert;
+import org.junit.Rule;
 import org.junit.Test;
 
-import org.apache.kudu.client.BaseKuduTest;
 import org.apache.kudu.mapreduce.CommandLineParser;
 import org.apache.kudu.mapreduce.HadoopTestingUtility;
 
-public class ITIntegrationTestBigLinkedList extends BaseKuduTest {
+public class ITIntegrationTestBigLinkedList {
 
   private static final HadoopTestingUtility HADOOP_UTIL = new HadoopTestingUtility();
+
+  @Rule
+  public KuduTestHarness harness = new KuduTestHarness();
 
   @After
   public void tearDown() throws Exception {
@@ -43,7 +47,7 @@ public class ITIntegrationTestBigLinkedList extends BaseKuduTest {
         ITIntegrationTestBigLinkedList.class.getName(),conf).getAbsolutePath();
 
     String[] args = new String[] {
-        "-D" + CommandLineParser.MASTER_ADDRESSES_KEY + "=" + getMasterAddressesAsString(),
+        "-D" + CommandLineParser.MASTER_ADDRESSES_KEY + "=" + harness.getMasterAddressesAsString(),
         "Loop",
         "2", // Two iterations
         "1", // 1 mapper

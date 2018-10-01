@@ -16,18 +16,26 @@
 // under the License.
 package org.apache.kudu.client;
 
+import static org.apache.kudu.test.KuduTestHarness.DEFAULT_SLEEP;
 import static org.apache.kudu.util.AssertHelpers.assertEventuallyTrue;
 import static org.apache.kudu.util.ClientTestUtil.countRowsInScan;
 import static org.apache.kudu.util.ClientTestUtil.createBasicSchemaInsert;
 import static org.apache.kudu.util.ClientTestUtil.getBasicCreateTableOptions;
+import static org.apache.kudu.util.ClientTestUtil.getBasicSchema;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
 import java.util.List;
+
+import org.apache.kudu.test.KuduTestHarness;
 import org.apache.kudu.util.AssertHelpers.BooleanExpression;
+import org.junit.Rule;
 import org.junit.Test;
 
-public class TestMultipleLeaderFailover extends BaseKuduTest {
+public class TestMultipleLeaderFailover {
+
+  @Rule
+  public KuduTestHarness harness = new KuduTestHarness();
 
   private void waitUntilRowCount(final KuduTable table, final int rowCount, long timeoutMs)
       throws Exception {
@@ -35,7 +43,7 @@ public class TestMultipleLeaderFailover extends BaseKuduTest {
         new BooleanExpression() {
           @Override
           public boolean get() throws Exception {
-            AsyncKuduScanner scanner = client.newScannerBuilder(table).build();
+            AsyncKuduScanner scanner = harness.getAsyncClient().newScannerBuilder(table).build();
             int read_count = countRowsInScan(scanner);
             return read_count == rowCount;
           }
@@ -53,10 +61,10 @@ public class TestMultipleLeaderFailover extends BaseKuduTest {
     CreateTableOptions builder = getBasicCreateTableOptions();
     String tableName =
         TestMultipleLeaderFailover.class.getName() + "-" + System.currentTimeMillis();
-    createTable(tableName, basicSchema, builder);
+    harness.getClient().createTable(tableName, getBasicSchema(), builder);
 
-    table = openTable(tableName);
-    KuduSession session = syncClient.newSession();
+    table = harness.getClient().openTable(tableName);
+    KuduSession session = harness.getClient().newSession();
     final int ROWS_PER_ITERATION = 3;
     final int NUM_ITERATIONS = 10;
     final int TOTAL_ROWS_TO_INSERT = ROWS_PER_ITERATION + NUM_ITERATIONS * ROWS_PER_ITERATION;
@@ -71,7 +79,7 @@ public class TestMultipleLeaderFailover extends BaseKuduTest {
     for (int i = 0; i < NUM_ITERATIONS; i++) {
       List<LocatedTablet> tablets = table.getTabletsLocations(DEFAULT_SLEEP);
       assertEquals(1, tablets.size());
-      killTabletLeader(tablets.get(0));
+      harness.killTabletLeader(tablets.get(0));
 
       for (int j = 0; j < ROWS_PER_ITERATION; j++) {
         OperationResponse resp = session.apply(createBasicSchemaInsert(table, currentRows));
@@ -81,7 +89,7 @@ public class TestMultipleLeaderFailover extends BaseKuduTest {
         currentRows++;
       }
 
-      startAllTabletServers();
+      harness.startAllTabletServers();
       // Read your writes hasn't been enabled, so we need to use a helper function to poll.
       waitUntilRowCount(table, currentRows, DEFAULT_SLEEP);
 

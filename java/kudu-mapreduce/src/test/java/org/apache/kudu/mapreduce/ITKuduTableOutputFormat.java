@@ -25,27 +25,31 @@ import static org.junit.Assert.assertNotNull;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.mapreduce.RecordWriter;
+import org.apache.kudu.test.KuduTestHarness;
+import org.junit.Rule;
 import org.junit.Test;
 
 import org.apache.kudu.client.AsyncKuduScanner;
-import org.apache.kudu.client.BaseKuduTest;
 import org.apache.kudu.client.Insert;
 import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.client.Operation;
 import org.apache.kudu.client.PartialRow;
 
-public class ITKuduTableOutputFormat extends BaseKuduTest {
+public class ITKuduTableOutputFormat {
 
   private static final String TABLE_NAME =
       ITKuduTableOutputFormat.class.getName() + "-" + System.currentTimeMillis();
 
+  @Rule
+  public KuduTestHarness harness = new KuduTestHarness();
+
   @Test
   public void test() throws Exception {
-    createTable(TABLE_NAME, getBasicSchema(), getBasicCreateTableOptions());
+    harness.getClient().createTable(TABLE_NAME, getBasicSchema(), getBasicCreateTableOptions());
 
     KuduTableOutputFormat output = new KuduTableOutputFormat();
     Configuration conf = new Configuration();
-    conf.set(KuduTableOutputFormat.MASTER_ADDRESSES_KEY, getMasterAddressesAsString());
+    conf.set(KuduTableOutputFormat.MASTER_ADDRESSES_KEY, harness.getMasterAddressesAsString());
     conf.set(KuduTableOutputFormat.OUTPUT_TABLE_KEY, TABLE_NAME);
     output.setConf(conf);
 
@@ -64,7 +68,7 @@ public class ITKuduTableOutputFormat extends BaseKuduTest {
     RecordWriter<NullWritable, Operation> rw = output.getRecordWriter(null);
     rw.write(NullWritable.get(), insert);
     rw.close(null);
-    AsyncKuduScanner.AsyncKuduScannerBuilder builder = client.newScannerBuilder(table);
+    AsyncKuduScanner.AsyncKuduScannerBuilder builder = harness.getAsyncClient().newScannerBuilder(table);
     assertEquals(1, countRowsInScan(builder.build()));
   }
 }

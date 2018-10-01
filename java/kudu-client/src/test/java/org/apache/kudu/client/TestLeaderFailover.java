@@ -19,24 +19,29 @@ package org.apache.kudu.client;
 import static org.apache.kudu.util.ClientTestUtil.countRowsInScan;
 import static org.apache.kudu.util.ClientTestUtil.createBasicSchemaInsert;
 import static org.apache.kudu.util.ClientTestUtil.getBasicCreateTableOptions;
+import static org.apache.kudu.util.ClientTestUtil.getBasicSchema;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
+import org.apache.kudu.test.KuduTestHarness;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 
-public class TestLeaderFailover extends BaseKuduTest {
+public class TestLeaderFailover {
 
   private static final String TABLE_NAME =
       TestLeaderFailover.class.getName() + "-" + System.currentTimeMillis();
   private static KuduTable table;
 
+  @Rule
+  public KuduTestHarness harness = new KuduTestHarness();
+
   @Before
   public void setUp() throws Exception {
     CreateTableOptions builder = getBasicCreateTableOptions();
-    createTable(TABLE_NAME, basicSchema, builder);
-
-    table = openTable(TABLE_NAME);
+    harness.getClient().createTable(TABLE_NAME, getBasicSchema(), builder);
+    table = harness.getClient().openTable(TABLE_NAME);
   }
 
   /**
@@ -47,16 +52,16 @@ public class TestLeaderFailover extends BaseKuduTest {
    */
   @Test(timeout = 100000)
   public void testFailover() throws Exception {
-    KuduSession session = syncClient.newSession();
+    KuduSession session = harness.getClient().newSession();
     for (int i = 0; i < 3; i++) {
       session.apply(createBasicSchemaInsert(table, i));
     }
 
     // Make sure the rows are in there before messing things up.
-    AsyncKuduScanner scanner = client.newScannerBuilder(table).build();
+    AsyncKuduScanner scanner = harness.getAsyncClient().newScannerBuilder(table).build();
     assertEquals(3, countRowsInScan(scanner));
 
-    killTabletLeader(table);
+    harness.killTabletLeader(table);
 
     for (int i = 3; i < 6; i++) {
       OperationResponse resp = session.apply(createBasicSchemaInsert(table, i));
@@ -65,7 +70,7 @@ public class TestLeaderFailover extends BaseKuduTest {
       }
     }
 
-    scanner = client.newScannerBuilder(table).build();
+    scanner = harness.getAsyncClient().newScannerBuilder(table).build();
     assertEquals(6, countRowsInScan(scanner));
   }
 }

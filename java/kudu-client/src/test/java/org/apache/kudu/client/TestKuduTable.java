@@ -16,6 +16,7 @@
 // under the License.
 package org.apache.kudu.client;
 
+import static org.apache.kudu.test.KuduTestHarness.DEFAULT_SLEEP;
 import static org.apache.kudu.util.ClientTestUtil.createBasicSchemaInsert;
 import static org.apache.kudu.util.ClientTestUtil.getBasicCreateTableOptions;
 import static org.apache.kudu.util.ClientTestUtil.getBasicSchema;
@@ -33,17 +34,37 @@ import java.util.List;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
+import org.apache.kudu.test.KuduTestHarness;
+import org.apache.kudu.util.ClientTestUtil;
 import org.junit.Before;
-import org.junit.BeforeClass;
+import org.junit.Rule;
 import org.junit.Test;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-public class TestKuduTable extends BaseKuduTest {
+public class TestKuduTable {
+  private static final Logger LOG = LoggerFactory.getLogger(TestKuduTable.class);
+
   private static final Schema BASIC_SCHEMA = getBasicSchema();
   private static final String tableName = "TestKuduTable";
+
+  private static final Schema basicSchema = ClientTestUtil.getBasicSchema();
+
+  private KuduClient client;
+  private AsyncKuduClient asyncClient;
+
+  @Rule
+  public KuduTestHarness harness = new KuduTestHarness();
+
+  @Before
+  public void setUp() {
+    client = harness.getClient();
+    asyncClient = harness.getAsyncClient();
+  }
 
   @Test(timeout = 100000)
   public void testAlterColumn() throws Exception {
@@ -57,8 +78,8 @@ public class TestKuduTable extends BaseKuduTest {
             .encoding(ColumnSchema.Encoding.PLAIN_ENCODING)
             .compressionAlgorithm(ColumnSchema.CompressionAlgorithm.NO_COMPRESSION)
             .build());
-    KuduTable table = createTable(tableName, new Schema(columns), getBasicCreateTableOptions());
-    KuduSession session = syncClient.newSession();
+    KuduTable table = client.createTable(tableName, new Schema(columns), getBasicCreateTableOptions());
+    KuduSession session = client.newSession();
     // Insert a row before a default is defined and check the value is NULL.
     insertDefaultRow(table, session, 0);
     //ClientTestUtil.scanTa
@@ -67,7 +88,7 @@ public class TestKuduTable extends BaseKuduTest {
     assertEquals("wrong row", "INT32 key=0, STRING value=NULL", rows.get(0));
 
     // Add a default, checking new rows see the new default and old rows remain the same.
-    syncClient.alterTable(tableName, new AlterTableOptions().changeDefault("value", "pizza"));
+    client.alterTable(tableName, new AlterTableOptions().changeDefault("value", "pizza"));
 
     insertDefaultRow(table, session, 1);
     rows = scanTableToStrings(table);
@@ -76,7 +97,7 @@ public class TestKuduTable extends BaseKuduTest {
     assertEquals("wrong row", "INT32 key=1, STRING value=pizza", rows.get(1));
 
     // Change the default, checking new rows see the new default and old rows remain the same.
-    syncClient.alterTable(tableName, new AlterTableOptions().changeDefault("value", "taco"));
+    client.alterTable(tableName, new AlterTableOptions().changeDefault("value", "taco"));
 
     insertDefaultRow(table, session, 2);
 
@@ -87,7 +108,7 @@ public class TestKuduTable extends BaseKuduTest {
     assertEquals("wrong row", "INT32 key=2, STRING value=taco", rows.get(2));
 
     // Remove the default, checking that new rows default to NULL and old rows remain the same.
-    syncClient.alterTable(tableName, new AlterTableOptions().removeDefault("value"));
+    client.alterTable(tableName, new AlterTableOptions().removeDefault("value"));
 
     insertDefaultRow(table, session, 3);
 
@@ -109,12 +130,12 @@ public class TestKuduTable extends BaseKuduTest {
         ColumnSchema.CompressionAlgorithm.NO_COMPRESSION,
         table.getSchema().getColumn("value").getCompressionAlgorithm());
 
-    syncClient.alterTable(tableName, new AlterTableOptions()
+    client.alterTable(tableName, new AlterTableOptions()
         .changeDesiredBlockSize("value", 8192)
         .changeEncoding("value", ColumnSchema.Encoding.DICT_ENCODING)
         .changeCompressionAlgorithm("value", ColumnSchema.CompressionAlgorithm.SNAPPY));
 
-    KuduTable reopenedTable = syncClient.openTable(tableName);
+    KuduTable reopenedTable = client.openTable(tableName);
     assertEquals("wrong block size post alter",
         8192,
         reopenedTable.getSchema().getColumn("value").getDesiredBlockSize());
@@ -137,30 +158,30 @@ public class TestKuduTable extends BaseKuduTest {
 
   @Test(timeout = 100000)
   public void testAlterTable() throws Exception {
-    createTable(tableName, basicSchema, getBasicCreateTableOptions());
+    client.createTable(tableName, basicSchema, getBasicCreateTableOptions());
     try {
 
       // Add a col.
-      syncClient.alterTable(tableName,
+      client.alterTable(tableName,
           new AlterTableOptions().addColumn("testaddint", Type.INT32, 4));
 
       // Rename that col.
-      syncClient.alterTable(tableName,
+      client.alterTable(tableName,
           new AlterTableOptions().renameColumn("testaddint", "newtestaddint"));
 
       // Delete it.
-      syncClient.alterTable(tableName, new AlterTableOptions().dropColumn("newtestaddint"));
+      client.alterTable(tableName, new AlterTableOptions().dropColumn("newtestaddint"));
 
       String newTableName = tableName +"new";
 
       // Rename our table.
-      syncClient.alterTable(tableName, new AlterTableOptions().renameTable(newTableName));
+      client.alterTable(tableName, new AlterTableOptions().renameTable(newTableName));
 
       // Rename it back.
-      syncClient.alterTable(newTableName, new AlterTableOptions().renameTable(tableName));
+      client.alterTable(newTableName, new AlterTableOptions().renameTable(tableName));
 
       // Add 3 columns, where one has default value, nullable and Timestamp with default value
-      syncClient.alterTable(tableName, new AlterTableOptions()
+      client.alterTable(tableName, new AlterTableOptions()
           .addColumn("testaddmulticolnotnull", Type.INT32, 4)
           .addNullableColumn("testaddmulticolnull", Type.STRING)
           .addColumn("testaddmulticolTimestampcol", Type.UNIXTIME_MICROS,
@@ -169,14 +190,14 @@ public class TestKuduTable extends BaseKuduTest {
       // Try altering a table that doesn't exist.
       String nonExistingTableName = "table_does_not_exist";
       try {
-        syncClient.alterTable(nonExistingTableName, new AlterTableOptions());
+        client.alterTable(nonExistingTableName, new AlterTableOptions());
         fail("Shouldn't be able to alter a table that doesn't exist");
       } catch (KuduException ex) {
         assertTrue(ex.getStatus().isNotFound());
       }
 
       try {
-        syncClient.isAlterTableDone(nonExistingTableName);
+        client.isAlterTableDone(nonExistingTableName);
         fail("Shouldn't be able to query if an alter table is done here");
       } catch (KuduException ex) {
         assertTrue(ex.getStatus().isNotFound());
@@ -186,7 +207,7 @@ public class TestKuduTable extends BaseKuduTest {
       // when shutting down the mini cluster at the end of every test class.
       // However, testGetLocations below expects a certain table count, so
       // we'll delete our table to ensure there's no interaction between them.
-      syncClient.deleteTable(tableName);
+      client.deleteTable(tableName);
     }
   }
 
@@ -196,13 +217,13 @@ public class TestKuduTable extends BaseKuduTest {
    */
   @Test
   public void testGetLocations() throws Exception {
-    int initialTableCount = client.getTablesList().join(DEFAULT_SLEEP).getTablesList().size();
+    int initialTableCount = asyncClient.getTablesList().join(DEFAULT_SLEEP).getTablesList().size();
 
     final String NON_EXISTENT_TABLE = "NON_EXISTENT_TABLE";
 
     // Test a non-existing table
     try {
-      openTable(NON_EXISTENT_TABLE);
+      client.openTable(NON_EXISTENT_TABLE);
       fail("Should receive an exception since the table doesn't exist");
     } catch (Exception ex) {
       // expected
@@ -231,7 +252,7 @@ public class TestKuduTable extends BaseKuduTest {
               .defaultValue(defaultValue).build());
     }
     Schema schemaWithDefault = new Schema(columns);
-    KuduTable kuduTable = createTable(tableWithDefault, schemaWithDefault, builder);
+    KuduTable kuduTable = client.createTable(tableWithDefault, schemaWithDefault, builder);
     assertEquals(defaultInt, kuduTable.getSchema().getColumnByIndex(0).getDefaultValue());
     assertEquals(defaultString,
         kuduTable.getSchema().getColumnByIndex(columns.size() - 2).getDefaultValue());
@@ -242,7 +263,7 @@ public class TestKuduTable extends BaseKuduTest {
     assertTrue(kuduTable.getSchema().hasColumnIds());
 
     // Test we can open a table that was already created.
-    openTable(tableWithDefault);
+    client.openTable(tableWithDefault);
 
     String splitTablePrefix = tableName + "-Splits";
     // Test splitting and reading those splits
@@ -287,22 +308,23 @@ public class TestKuduTable extends BaseKuduTest {
     assertEquals(11, table.asyncGetTabletsLocations(getKeyInBytes(20), getKeyInBytes(10000), DEFAULT_SLEEP).join().size());
 
     // Test listing tables.
-    assertEquals(0, client.getTablesList(NON_EXISTENT_TABLE).join(DEFAULT_SLEEP).getTablesList().size());
-    assertEquals(1, client.getTablesList(tableWithDefault)
-                          .join(DEFAULT_SLEEP).getTablesList().size());
+    assertEquals(0, asyncClient.getTablesList(NON_EXISTENT_TABLE)
+        .join(DEFAULT_SLEEP).getTablesList().size());
+    assertEquals(1, asyncClient.getTablesList(tableWithDefault)
+        .join(DEFAULT_SLEEP).getTablesList().size());
     assertEquals(initialTableCount + 5,
-                 client.getTablesList().join(DEFAULT_SLEEP).getTablesList().size());
-    assertFalse(client.getTablesList(tableWithDefault).
+        asyncClient.getTablesList().join(DEFAULT_SLEEP).getTablesList().size());
+    assertFalse(asyncClient.getTablesList(tableWithDefault).
         join(DEFAULT_SLEEP).getTablesList().isEmpty());
 
-    assertFalse(client.tableExists(NON_EXISTENT_TABLE).join(DEFAULT_SLEEP));
-    assertTrue(client.tableExists(tableWithDefault).join(DEFAULT_SLEEP));
+    assertFalse(asyncClient.tableExists(NON_EXISTENT_TABLE).join(DEFAULT_SLEEP));
+    assertTrue(asyncClient.tableExists(tableWithDefault).join(DEFAULT_SLEEP));
   }
 
   @Test(timeout = 100000)
   public void testLocateTableNonCoveringRange() throws Exception {
-    syncClient.createTable(tableName, basicSchema, getBasicTableOptionsWithNonCoveredRange());
-    KuduTable table = syncClient.openTable(tableName);
+    client.createTable(tableName, basicSchema, getBasicTableOptionsWithNonCoveredRange());
+    KuduTable table = client.openTable(tableName);
 
     List<LocatedTablet> tablets;
 
@@ -347,9 +369,9 @@ public class TestKuduTable extends BaseKuduTest {
 
   @Test(timeout = 100000)
   public void testAlterTableNonCoveringRange() throws Exception {
-    syncClient.createTable(tableName, basicSchema, getBasicTableOptionsWithNonCoveredRange());
-    KuduTable table = syncClient.openTable(tableName);
-    KuduSession session = syncClient.newSession();
+    client.createTable(tableName, basicSchema, getBasicTableOptionsWithNonCoveredRange());
+    KuduTable table = client.openTable(tableName);
+    KuduSession session = client.newSession();
 
     AlterTableOptions ato = new AlterTableOptions();
     PartialRow bLowerBound = BASIC_SCHEMA.newPartialRow();
@@ -357,7 +379,7 @@ public class TestKuduTable extends BaseKuduTest {
     PartialRow bUpperBound = BASIC_SCHEMA.newPartialRow();
     bUpperBound.addInt("key", 400);
     ato.addRangePartition(bLowerBound, bUpperBound);
-    syncClient.alterTable(tableName, ato);
+    client.alterTable(tableName, ato);
 
     Insert insert = createBasicSchemaInsert(table, 301);
     session.apply(insert);
@@ -379,7 +401,7 @@ public class TestKuduTable extends BaseKuduTest {
     bUpperBound = BASIC_SCHEMA.newPartialRow();
     bUpperBound.addInt("key", 300);
     ato.dropRangePartition(bLowerBound, bUpperBound);
-    syncClient.alterTable(tableName, ato);
+    client.alterTable(tableName, ato);
 
     insert = createBasicSchemaInsert(table, 202);
     OperationResponse response = session.apply(insert);
@@ -433,10 +455,10 @@ public class TestKuduTable extends BaseKuduTest {
       builder.addRangePartition(lower, basicSchema.newPartialRow());
     }
 
-    syncClient.createTable(tableName, basicSchema, builder);
+    client.createTable(tableName, basicSchema, builder);
     assertEquals(
         expected,
-        syncClient.openTable(tableName).getFormattedRangePartitions(10000));
+        client.openTable(tableName).getFormattedRangePartitions(10000));
   }
 
   @Test(timeout = 100000)
@@ -482,10 +504,10 @@ public class TestKuduTable extends BaseKuduTest {
                                 RangePartitionBound.INCLUSIVE_BOUND);
     }
 
-    syncClient.createTable(tableName, schema, builder);
+    client.createTable(tableName, schema, builder);
     assertEquals(
         expected,
-        syncClient.openTable(tableName).getFormattedRangePartitions(10000));
+        client.openTable(tableName).getFormattedRangePartitions(10000));
   }
 
   @Test(timeout = 100000)
@@ -527,20 +549,20 @@ public class TestKuduTable extends BaseKuduTest {
       builder.addRangePartition(lower, schema.newPartialRow());
     }
 
-    syncClient.createTable(tableName, schema, builder);
+    client.createTable(tableName, schema, builder);
     assertEquals(
         expected,
-        syncClient.openTable(tableName).getFormattedRangePartitions(10000));
+        client.openTable(tableName).getFormattedRangePartitions(10000));
   }
 
   @Test(timeout = 100000)
   public void testFormatRangePartitionsUnbounded() throws Exception {
     CreateTableOptions builder = getBasicCreateTableOptions();
-    syncClient.createTable(tableName, basicSchema, builder);
+    client.createTable(tableName, basicSchema, builder);
 
     assertEquals(
         ImmutableList.of("UNBOUNDED"),
-        syncClient.openTable(tableName).getFormattedRangePartitions(10000));
+        client.openTable(tableName).getFormattedRangePartitions(10000));
   }
 
   private KuduTable createTableWithSplitsAndTest(String tableNamePrefix, int splitsCount)
@@ -555,7 +577,7 @@ public class TestKuduTable extends BaseKuduTest {
         builder.addSplitRow(row);
       }
     }
-    KuduTable table = createTable(newTableName, BASIC_SCHEMA, builder);
+    KuduTable table = client.createTable(newTableName, BASIC_SCHEMA, builder);
 
     List<LocatedTablet> tablets = table.getTabletsLocations(DEFAULT_SLEEP);
     assertEquals(splitsCount + 1, tablets.size());
@@ -587,7 +609,7 @@ public class TestKuduTable extends BaseKuduTest {
     builder.addRangePartition(bottom, middle);
     builder.addRangePartition(middle, upper);
 
-    KuduTable table = createTable(tableName, schema, builder);
+    KuduTable table = client.createTable(tableName, schema, builder);
 
     List<Partition> rangePartitions =
         table.getRangePartitions(client.getDefaultOperationTimeoutMs());
@@ -611,7 +633,7 @@ public class TestKuduTable extends BaseKuduTest {
   @Test(timeout = 100000)
   public void testGetRangePartitionsUnbounded() throws Exception {
     CreateTableOptions builder = getBasicCreateTableOptions();
-    KuduTable table = createTable(tableName, BASIC_SCHEMA, builder);
+    KuduTable table = client.createTable(tableName, BASIC_SCHEMA, builder);
 
     List<Partition> rangePartitions =
         table.getRangePartitions(client.getDefaultOperationTimeoutMs());
@@ -623,12 +645,12 @@ public class TestKuduTable extends BaseKuduTest {
 
   @Test(timeout = 100000)
   public void testAlterNoWait() throws Exception {
-    createTable(tableName, basicSchema, getBasicCreateTableOptions());
+    client.createTable(tableName, basicSchema, getBasicCreateTableOptions());
 
     String oldName = "column2_i";
     for (int i = 0; i < 10; i++) {
       String newName = String.format("foo%d", i);
-      syncClient.alterTable(tableName, new AlterTableOptions()
+      client.alterTable(tableName, new AlterTableOptions()
           .renameColumn(oldName, newName)
           .setWait(false));
 
@@ -636,7 +658,7 @@ public class TestKuduTable extends BaseKuduTest {
       // to still see 'oldName' and not yet see 'newName'. However, this is
       // timing dependent: if the alter finishes before we reload the schema,
       // loop and try again.
-      KuduTable table = syncClient.openTable(tableName);
+      KuduTable table = client.openTable(tableName);
       try {
         table.getSchema().getColumn(oldName);
       } catch (IllegalArgumentException e) {
@@ -652,8 +674,8 @@ public class TestKuduTable extends BaseKuduTest {
 
       // After waiting for the alter to finish and reloading the schema,
       // 'newName' should be visible and 'oldName' should be gone.
-      assertTrue(syncClient.isAlterTableDone(tableName));
-      table = syncClient.openTable(tableName);
+      assertTrue(client.isAlterTableDone(tableName));
+      table = client.openTable(tableName);
       try {
         table.getSchema().getColumn(oldName);
         fail(String.format("Old column name %s should not be visible", oldName));
@@ -673,8 +695,8 @@ public class TestKuduTable extends BaseKuduTest {
         String tableName = "testNumReplicas" + "-" + i;
         CreateTableOptions options = getBasicCreateTableOptions();
         options.setNumReplicas(i);
-        createTable(tableName, basicSchema, options);
-        KuduTable table = syncClient.openTable(tableName);
+        client.createTable(tableName, basicSchema, options);
+        KuduTable table = client.openTable(tableName);
         assertEquals(i, table.getNumReplicas());
       }
     }

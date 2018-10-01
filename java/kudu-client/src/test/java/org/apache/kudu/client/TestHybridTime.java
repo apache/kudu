@@ -31,7 +31,10 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import com.google.common.collect.ImmutableList;
+import org.apache.kudu.client.MiniKuduCluster.MiniKuduClusterBuilder;
+import org.apache.kudu.test.KuduTestHarness;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,33 +46,35 @@ import org.apache.kudu.Schema;
  * This only tests client propagation since it's the only thing that is client-specific.
  * All the work for commit wait is done and tested on the server-side.
  */
-public class TestHybridTime extends BaseKuduTest {
+public class TestHybridTime {
   private static final Logger LOG = LoggerFactory.getLogger(TestHybridTime.class);
 
   // Generate a unique table name
-  protected static final String TABLE_NAME =
+  private static final String TABLE_NAME =
     TestHybridTime.class.getName() + "-" + System.currentTimeMillis();
 
-  protected static final Schema schema = getSchema();
-  protected static KuduTable table;
+  private static final Schema schema = getSchema();
+  private static KuduTable table;
+  private KuduClient client;
 
-  @Override
-  protected MiniKuduCluster.MiniKuduClusterBuilder getMiniClusterBuilder() {
-    return super.getMiniClusterBuilder()
-        // Before starting the cluster, disable automatic safe time advancement in the
-        // absence of writes. This test does snapshot reads in the present and expects
-        // certain timestamps to be assigned to the scans. If safe time was allowed
-        // to move automatically the scans might not be assigned the expected timestamps.
-        .addTserverFlag("--safe_time_advancement_without_writes=false");
-  }
+  private static final MiniKuduClusterBuilder clusterBuilder = KuduTestHarness.getBaseClusterBuilder()
+      // Before starting the cluster, disable automatic safe time advancement in the
+      // absence of writes. This test does snapshot reads in the present and expects
+      // certain timestamps to be assigned to the scans. If safe time was allowed
+      // to move automatically the scans might not be assigned the expected timestamps.
+      .addTabletServerFlag("--safe_time_advancement_without_writes=false");
+
+  @Rule
+  public KuduTestHarness harness = new KuduTestHarness(clusterBuilder);
 
   @Before
   public void setUp() throws Exception {
+    client = harness.getClient();
     // Using multiple tablets doesn't work with the current way this test works since we could
     // jump from one TS to another which changes the logical clock.
     CreateTableOptions builder =
         new CreateTableOptions().setRangePartitionColumns(ImmutableList.of("key"));
-    table = createTable(TABLE_NAME, schema, builder);
+    table = client.createTable(TABLE_NAME, schema, builder);
   }
 
   private static Schema getSchema() {
@@ -89,7 +94,7 @@ public class TestHybridTime extends BaseKuduTest {
    */
   @Test(timeout = 100000)
   public void test() throws Exception {
-    KuduSession session = syncClient.newSession();
+    KuduSession session = client.newSession();
 
     // Test timestamp propagation with AUTO_FLUSH_SYNC flush mode.
     session.setFlushMode(KuduSession.FlushMode.AUTO_FLUSH_SYNC);
@@ -169,7 +174,7 @@ public class TestHybridTime extends BaseKuduTest {
   }
 
   private int scanAtSnapshot(long time) throws Exception {
-    AsyncKuduScanner.AsyncKuduScannerBuilder builder = client.newScannerBuilder(table)
+    AsyncKuduScanner.AsyncKuduScannerBuilder builder = harness.getAsyncClient().newScannerBuilder(table)
         .snapshotTimestampRaw(time)
         .readMode(AsyncKuduScanner.ReadMode.READ_AT_SNAPSHOT);
     return countRowsInScan(builder.build());

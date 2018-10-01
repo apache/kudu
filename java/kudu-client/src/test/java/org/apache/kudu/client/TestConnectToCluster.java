@@ -47,9 +47,9 @@ public class TestConnectToCluster {
   @Test(timeout=60000)
   public void testFallbackConnectRpc() throws Exception {
     MiniKuduCluster cluster = new MiniKuduCluster.MiniKuduClusterBuilder()
-        .addMasterFlag("--master_support_connect_to_master_rpc=0")
-        .numMasters(1)
-        .numTservers(0)
+        .addMasterServerFlag("--master_support_connect_to_master_rpc=0")
+        .numMasterServers(1)
+        .numTabletServers(0)
         .build();
     KuduClient c = null;
     try {
@@ -75,8 +75,8 @@ public class TestConnectToCluster {
   @Test(timeout=60000)
   public void testConnectToOneOfManyMasters() throws Exception {
     MiniKuduCluster cluster = new MiniKuduCluster.MiniKuduClusterBuilder()
-        .numMasters(3)
-        .numTservers(0)
+        .numMasterServers(3)
+        .numTabletServers(0)
         .build();
     int successes = 0;
     try {

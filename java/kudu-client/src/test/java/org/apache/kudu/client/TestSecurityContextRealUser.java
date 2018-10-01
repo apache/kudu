@@ -17,7 +17,10 @@
 
 package org.apache.kudu.client;
 
+import org.apache.kudu.client.MiniKuduCluster.MiniKuduClusterBuilder;
+import org.apache.kudu.test.KuduTestHarness;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 
 import java.util.ArrayList;
@@ -32,27 +35,27 @@ import static org.junit.Assert.fail;
  * Tests that the 'real user' field of the security context is used for
  * SASL PLAIN negotiations, and is imported from the SecurityCredentialsPB.
  */
-public class TestSecurityContextRealUser extends BaseKuduTest {
+public class TestSecurityContextRealUser {
   private String tableName;
 
-  @Override
-  protected MiniKuduCluster.MiniKuduClusterBuilder getMiniClusterBuilder() {
-    return super.getMiniClusterBuilder()
-        // This test requires a delicate setup. We enable Kerberos, make
-        // authentication optional, and set the superuser ACL to test-admin so that
-        // the external mini-cluster is able to connect to the master while creating
-        // the cluster. The user ACL is scoped to a different user so that we can
-        // test real user name propagation.
-        .enableKerberos()
-        .addMasterFlag("--user-acl=token-user")
-        .addMasterFlag("--superuser-acl=test-admin")
-        .addMasterFlag("--rpc-authentication=optional")
-        .addMasterFlag("--rpc-trace-negotiation")
-        .addTserverFlag("--user-acl=token-user")
-        .addTserverFlag("--superuser-acl=test-admin")
-        .addTserverFlag("--rpc-authentication=optional")
-        .addTserverFlag("--rpc-trace-negotiation");
-  }
+  private static final MiniKuduClusterBuilder clusterBuilder = KuduTestHarness.getBaseClusterBuilder()
+      // This test requires a delicate setup. We enable Kerberos, make
+      // authentication optional, and set the superuser ACL to test-admin so that
+      // the external mini-cluster is able to connect to the master while creating
+      // the cluster. The user ACL is scoped to a different user so that we can
+      // test real user name propagation.
+      .enableKerberos()
+      .addMasterServerFlag("--user-acl=token-user")
+      .addMasterServerFlag("--superuser-acl=test-admin")
+      .addMasterServerFlag("--rpc-authentication=optional")
+      .addMasterServerFlag("--rpc-trace-negotiation")
+      .addTabletServerFlag("--user-acl=token-user")
+      .addTabletServerFlag("--superuser-acl=test-admin")
+      .addTabletServerFlag("--rpc-authentication=optional")
+      .addTabletServerFlag("--rpc-trace-negotiation");
+
+  @Rule
+  public KuduTestHarness harness = new KuduTestHarness(clusterBuilder);
 
   @Before
   public void setTableName() {
@@ -62,12 +65,12 @@ public class TestSecurityContextRealUser extends BaseKuduTest {
   @Test
   public void test() throws Exception {
     // Clear out the Kerberos credentials in the environment.
-    kdestroy();
+    harness.kdestroy();
 
     // Create a new client instance with the logged in user, and ensure that it
     // fails to connect (the logged in user is not in the user-acl).
     try (KuduClient client =
-             new KuduClient.KuduClientBuilder(getMasterAddressesAsString()).build()) {
+             new KuduClient.KuduClientBuilder(harness.getMasterAddressesAsString()).build()) {
       client.listTabletServers();
       fail();
     } catch (KuduException e) {
@@ -77,7 +80,7 @@ public class TestSecurityContextRealUser extends BaseKuduTest {
 
     // Try again with a correct real user.
     try (KuduClient client =
-             new KuduClient.KuduClientBuilder(getMasterAddressesAsString()).build()) {
+             new KuduClient.KuduClientBuilder(harness.getMasterAddressesAsString()).build()) {
       Client.AuthenticationCredentialsPB credentials =
           Client.AuthenticationCredentialsPB.newBuilder().setRealUser("token-user").build();
       client.importAuthenticationCredentials(credentials.toByteArray());

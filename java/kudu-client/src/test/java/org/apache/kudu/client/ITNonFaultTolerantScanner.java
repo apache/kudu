@@ -33,7 +33,7 @@ public class ITNonFaultTolerantScanner extends ITScannerMultiTablet {
    */
   @Test(timeout = 100000)
   public void testKudu1343() throws Exception {
-    KuduScanner scanner = syncClient.newScannerBuilder(table)
+    KuduScanner scanner = harness.getClient().newScannerBuilder(table)
         .batchSizeBytes(1) // Just a hint, won't actually be that small
         .build();
 

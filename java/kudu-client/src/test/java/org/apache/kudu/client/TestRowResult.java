@@ -18,6 +18,7 @@ package org.apache.kudu.client;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.kudu.util.ClientTestUtil.getAllTypesCreateTableOptions;
+import static org.apache.kudu.util.ClientTestUtil.getSchemaWithAllTypes;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -26,23 +27,31 @@ import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.sql.Timestamp;
 
+import org.apache.kudu.Schema;
+import org.apache.kudu.test.KuduTestHarness;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 
 import org.apache.kudu.Type;
 
-public class TestRowResult extends BaseKuduTest {
+public class TestRowResult {
 
   // Generate a unique table name
   private static final String TABLE_NAME =
       TestRowResult.class.getName() + "-" + System.currentTimeMillis();
 
+  private static final Schema allTypesSchema = getSchemaWithAllTypes();
+
   private static KuduTable table;
+
+  @Rule
+  public KuduTestHarness harness = new KuduTestHarness();
 
   @Before
   public void setUp() throws Exception {
-    createTable(TABLE_NAME, allTypesSchema, getAllTypesCreateTableOptions());
-    table = openTable(TABLE_NAME);
+    harness.getClient().createTable(TABLE_NAME, allTypesSchema, getAllTypesCreateTableOptions());
+    table = harness.getClient().openTable(TABLE_NAME);
   }
 
   @Test(timeout = 10000)
@@ -66,10 +75,11 @@ public class TestRowResult extends BaseKuduTest {
     row.addTimestamp(11, new Timestamp(11));
     row.addDecimal(12, BigDecimal.valueOf(12345, 3));
 
-    KuduSession session = syncClient.newSession();
+    KuduClient client = harness.getClient();
+    KuduSession session = client.newSession();
     session.apply(insert);
 
-    KuduScanner scanner = syncClient.newScannerBuilder(table).build();
+    KuduScanner scanner = client.newScannerBuilder(table).build();
     while (scanner.hasMoreRows()) {
       RowResultIterator it = scanner.nextRows();
       assertTrue(it.hasNext());

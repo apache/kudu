@@ -31,17 +31,35 @@ import static org.junit.Assert.fail;
 import java.util.List;
 
 import com.google.common.collect.ImmutableList;
+import org.apache.kudu.Schema;
+import org.apache.kudu.test.KuduTestHarness;
+import org.apache.kudu.util.ClientTestUtil;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 
-public class TestKuduSession extends BaseKuduTest {
+public class TestKuduSession {
   private static final String tableName = "TestKuduSession";
+
+  private static final Schema basicSchema = ClientTestUtil.getBasicSchema();
+
+  private KuduClient client;
+  private AsyncKuduClient asyncClient;
+
+  @Rule
+  public KuduTestHarness harness = new KuduTestHarness();
+
+  @Before
+  public void setUp() {
+    client = harness.getClient();
+    asyncClient = harness.getAsyncClient();
+  }
 
   @Test(timeout = 100000)
   public void testBasicOps() throws Exception {
-    KuduTable table = createTable(tableName, basicSchema, getBasicCreateTableOptions());
+    KuduTable table = client.createTable(tableName, basicSchema, getBasicCreateTableOptions());
 
-    KuduSession session = syncClient.newSession();
+    KuduSession session = client.newSession();
     for (int i = 0; i < 10; i++) {
       session.apply(createInsert(table, i));
     }
@@ -61,9 +79,9 @@ public class TestKuduSession extends BaseKuduTest {
 
   @Test(timeout = 100000)
   public void testIgnoreAllDuplicateRows() throws Exception {
-    KuduTable table = createTable(tableName, basicSchema, getBasicCreateTableOptions());
+    KuduTable table = client.createTable(tableName, basicSchema, getBasicCreateTableOptions());
 
-    KuduSession session = syncClient.newSession();
+    KuduSession session = client.newSession();
     session.setIgnoreAllDuplicateRows(true);
     for (int i = 0; i < 10; i++) {
       session.apply(createInsert(table, i));
@@ -92,9 +110,9 @@ public class TestKuduSession extends BaseKuduTest {
 
   @Test(timeout = 100000)
   public void testBatchWithSameRow() throws Exception {
-    KuduTable table = createTable(tableName, basicSchema, getBasicCreateTableOptions());
+    KuduTable table = client.createTable(tableName, basicSchema, getBasicCreateTableOptions());
 
-    KuduSession session = syncClient.newSession();
+    KuduSession session = client.newSession();
     session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
 
     // Insert 25 rows, one per batch, along with 50 updates for each, and a delete at the end,
@@ -115,7 +133,7 @@ public class TestKuduSession extends BaseKuduTest {
       session.apply(del);
       session.flush();
       if (i % 2 == 0) {
-        client.emptyTabletsCacheForTable(table.getTableId());
+        asyncClient.emptyTabletsCacheForTable(table.getTableId());
       }
     }
     assertEquals(0, countRowsInScan(client.newScannerBuilder(table).build()));
@@ -128,7 +146,7 @@ public class TestKuduSession extends BaseKuduTest {
    */
   @Test(timeout = 100000)
   public void testEmptyFlush() throws Exception {
-    KuduSession session = syncClient.newSession();
+    KuduSession session = client.newSession();
     session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
     List<OperationResponse> result = session.flush();
     assertNotNull(result);
@@ -152,10 +170,10 @@ public class TestKuduSession extends BaseKuduTest {
       split.addInt(0, i * numRowsPerTablet);
       builder.addSplitRow(split);
     }
-    KuduTable table = createTable(tableName, basicSchema, builder);
+    KuduTable table = client.createTable(tableName, basicSchema, builder);
 
     // Configure the session to background flush as often as it can (every 1ms).
-    KuduSession session = syncClient.newSession();
+    KuduSession session = client.newSession();
     session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_BACKGROUND);
     session.setFlushInterval(1);
 
@@ -171,8 +189,8 @@ public class TestKuduSession extends BaseKuduTest {
 
   @Test(timeout = 10000)
   public void testOverWritingValues() throws Exception {
-    KuduTable table = createTable(tableName, basicSchema, getBasicCreateTableOptions());
-    KuduSession session = syncClient.newSession();
+    KuduTable table = client.createTable(tableName, basicSchema, getBasicCreateTableOptions());
+    KuduSession session = client.newSession();
     Insert insert = createInsert(table, 0);
     PartialRow row = insert.getRow();
 
@@ -189,7 +207,7 @@ public class TestKuduSession extends BaseKuduTest {
     assertEquals(5, row.getVarLengthData().size());
     session.apply(insert);
 
-    KuduScanner scanner = syncClient.newScannerBuilder(table).build();
+    KuduScanner scanner = client.newScannerBuilder(table).build();
     RowResult rr = scanner.nextRows().next();
     assertEquals(magicNumber, rr.getInt(1));
     assertEquals(magicNumber, rr.getInt(2));
@@ -207,8 +225,8 @@ public class TestKuduSession extends BaseKuduTest {
 
   @Test(timeout = 10000)
   public void testUpsert() throws Exception {
-    KuduTable table = createTable(tableName, basicSchema, getBasicCreateTableOptions());
-    KuduSession session = syncClient.newSession();
+    KuduTable table = client.createTable(tableName, basicSchema, getBasicCreateTableOptions());
+    KuduSession session = client.newSession();
 
     // Test an Upsert that acts as an Insert.
     assertFalse(session.apply(createUpsert(table, 1, 1, false)).hasRowError());
@@ -233,10 +251,10 @@ public class TestKuduSession extends BaseKuduTest {
   public void testInsertManualFlushNonCoveredRange() throws Exception {
     CreateTableOptions createOptions = getBasicTableOptionsWithNonCoveredRange();
     createOptions.setNumReplicas(1);
-    syncClient.createTable(tableName, basicSchema, createOptions);
-    KuduTable table = syncClient.openTable(tableName);
+    client.createTable(tableName, basicSchema, createOptions);
+    KuduTable table = client.openTable(tableName);
 
-    KuduSession session = syncClient.newSession();
+    KuduSession session = client.newSession();
     session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
 
     // Insert in reverse sorted order so that more table location lookups occur
@@ -272,10 +290,10 @@ public class TestKuduSession extends BaseKuduTest {
   public void testInsertManualFlushResponseOrder() throws Exception {
     CreateTableOptions createOptions = getBasicTableOptionsWithNonCoveredRange();
     createOptions.setNumReplicas(1);
-    syncClient.createTable(tableName, basicSchema, createOptions);
-    KuduTable table = syncClient.openTable(tableName);
+    client.createTable(tableName, basicSchema, createOptions);
+    KuduTable table = client.openTable(tableName);
 
-    KuduSession session = syncClient.newSession();
+    KuduSession session = client.newSession();
     session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
 
     // Insert a batch of some valid and some invalid.
@@ -302,10 +320,10 @@ public class TestKuduSession extends BaseKuduTest {
   public void testInsertAutoFlushSyncNonCoveredRange() throws Exception {
     CreateTableOptions createOptions = getBasicTableOptionsWithNonCoveredRange();
     createOptions.setNumReplicas(1);
-    syncClient.createTable(tableName, basicSchema, createOptions);
-    KuduTable table = syncClient.openTable(tableName);
+    client.createTable(tableName, basicSchema, createOptions);
+    KuduTable table = client.openTable(tableName);
 
-    KuduSession session = syncClient.newSession();
+    KuduSession session = client.newSession();
     session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_SYNC);
 
     List<Integer> nonCoveredKeys = ImmutableList.of(350, 300, 199, 150, 100, -1, -50);
@@ -320,10 +338,10 @@ public class TestKuduSession extends BaseKuduTest {
   public void testInsertAutoFlushBackgrounNonCoveredRange() throws Exception {
     CreateTableOptions createOptions = getBasicTableOptionsWithNonCoveredRange();
     createOptions.setNumReplicas(1);
-    syncClient.createTable(tableName, basicSchema, createOptions);
-    KuduTable table = syncClient.openTable(tableName);
+    client.createTable(tableName, basicSchema, createOptions);
+    KuduTable table = client.openTable(tableName);
 
-    AsyncKuduSession session = client.newSession();
+    AsyncKuduSession session = asyncClient.newSession();
     session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_BACKGROUND);
 
     List<Integer> nonCoveredKeys = ImmutableList.of(350, 300, 199, 150, 100, -1, -50);

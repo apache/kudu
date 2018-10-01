@@ -22,6 +22,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.google.common.collect.ImmutableList;
+import org.apache.kudu.test.KuduTestHarness;
+import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 
 import org.apache.kudu.ColumnSchema;
@@ -29,7 +32,17 @@ import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.client.KuduPredicate.ComparisonOp;
 
-public class TestPartitionPruner extends BaseKuduTest {
+public class TestPartitionPruner {
+
+  private KuduClient client;
+
+  @Rule
+  public KuduTestHarness harness = new KuduTestHarness();
+
+  @Before
+  public void setUp() {
+    client = harness.getClient();
+  }
 
   /**
    * Counts the partitions touched by a scan with optional primary key bounds.
@@ -46,7 +59,7 @@ public class TestPartitionPruner extends BaseKuduTest {
                                          List<Partition> partitions,
                                          byte[] lowerBoundPrimaryKey,
                                          byte[] upperBoundPrimaryKey) throws Exception {
-    KuduScanToken.KuduScanTokenBuilder scanBuilder = syncClient.newScanTokenBuilder(table);
+    KuduScanToken.KuduScanTokenBuilder scanBuilder = client.newScanTokenBuilder(table);
 
     if (lowerBoundPrimaryKey != null) {
       PartialRow lower = table.getSchema().newPartialRow();
@@ -120,7 +133,7 @@ public class TestPartitionPruner extends BaseKuduTest {
                                byte[] upperBoundPartitionKey,
                                KuduPredicate... predicates) {
     // Partition key bounds can't be applied to the ScanTokenBuilder.
-    KuduScanner.KuduScannerBuilder scanBuilder = syncClient.newScannerBuilder(table);
+    KuduScanner.KuduScannerBuilder scanBuilder = client.newScannerBuilder(table);
 
     for (KuduPredicate predicate : predicates) {
       scanBuilder.addPredicate(predicate);
@@ -146,7 +159,7 @@ public class TestPartitionPruner extends BaseKuduTest {
     // Check that the scan token builder comes up with the same amount.
     // The scan token builder does not allow for upper/lower partition keys.
     if (lowerBoundPartitionKey == null && upperBoundPartitionKey == null) {
-      KuduScanToken.KuduScanTokenBuilder tokenBuilder = syncClient.newScanTokenBuilder(table);
+      KuduScanToken.KuduScanTokenBuilder tokenBuilder = client.newScanTokenBuilder(table);
 
       for (KuduPredicate predicate : predicates) {
         tokenBuilder.addPredicate(predicate);
@@ -165,7 +178,7 @@ public class TestPartitionPruner extends BaseKuduTest {
    */
   private List<Partition> getTablePartitions(KuduTable table) {
     List<Partition> partitions = new ArrayList<>();
-    for (KuduScanToken token : syncClient.newScanTokenBuilder(table).build()) {
+    for (KuduScanToken token : client.newScanTokenBuilder(table).build()) {
       partitions.add(token.getTablet().getPartition());
     }
     return partitions;
@@ -202,8 +215,8 @@ public class TestPartitionPruner extends BaseKuduTest {
 
     String tableName = "testPrimaryKeyRangePruning-" + System.currentTimeMillis();
 
-    syncClient.createTable(tableName, schema, tableBuilder);
-    KuduTable table = syncClient.openTable(tableName);
+    client.createTable(tableName, schema, tableBuilder);
+    KuduTable table = client.openTable(tableName);
     List<Partition> partitions = getTablePartitions(table);
 
     byte min = Byte.MIN_VALUE;
@@ -289,8 +302,8 @@ public class TestPartitionPruner extends BaseKuduTest {
 
     String tableName = "testPrimaryKeyPrefixRangePruning-" + System.currentTimeMillis();
 
-    syncClient.createTable(tableName, schema, tableBuilder);
-    KuduTable table = syncClient.openTable(tableName);
+    client.createTable(tableName, schema, tableBuilder);
+    KuduTable table = client.openTable(tableName);
     List<Partition> partitions = getTablePartitions(table);
 
     byte min = Byte.MIN_VALUE;
@@ -372,8 +385,8 @@ public class TestPartitionPruner extends BaseKuduTest {
     tableBuilder.addSplitRow(split);
 
     String tableName = "testRangePartitionPruning-" + System.currentTimeMillis();
-    syncClient.createTable(tableName, schema, tableBuilder);
-    KuduTable table = syncClient.openTable(tableName);
+    client.createTable(tableName, schema, tableBuilder);
+    KuduTable table = client.openTable(tableName);
     List<Partition> partitions = getTablePartitions(table);
 
     // No Predicates
@@ -560,8 +573,8 @@ public class TestPartitionPruner extends BaseKuduTest {
     tableBuilder.addHashPartitions(ImmutableList.of("b", "c"), 2);
 
     String tableName = "testHashPartitionPruning-" + System.currentTimeMillis();
-    syncClient.createTable(tableName, schema, tableBuilder);
-    KuduTable table = syncClient.openTable(tableName);
+    client.createTable(tableName, schema, tableBuilder);
+    KuduTable table = client.openTable(tableName);
     List<Partition> partitions = getTablePartitions(table);
 
     // No Predicates
@@ -630,8 +643,8 @@ public class TestPartitionPruner extends BaseKuduTest {
     tableBuilder.addHashPartitions(ImmutableList.of("c"), 3);
 
     String tableName = "testInListHashPartitionPruning-" + System.currentTimeMillis();
-    syncClient.createTable(tableName, schema, tableBuilder);
-    KuduTable table = syncClient.openTable(tableName);
+    client.createTable(tableName, schema, tableBuilder);
+    KuduTable table = client.openTable(tableName);
     List<Partition> partitions = getTablePartitions(table);
 
     // a in [0, 1];
@@ -680,8 +693,8 @@ public class TestPartitionPruner extends BaseKuduTest {
     tableBuilder.addHashPartitions(ImmutableList.of("b", "c"), 3);
 
     String tableName = "testMultiColumnInListHashPartitionPruning-" + System.currentTimeMillis();
-    syncClient.createTable(tableName, schema, tableBuilder);
-    KuduTable table = syncClient.openTable(tableName);
+    client.createTable(tableName, schema, tableBuilder);
+    KuduTable table = client.openTable(tableName);
     List<Partition> partitions = getTablePartitions(table);
 
     // a in [0, 1];
@@ -753,8 +766,8 @@ public class TestPartitionPruner extends BaseKuduTest {
     tableBuilder.addHashPartitions(ImmutableList.of("host", "metric"), 2);
 
     String tableName = "testPruning-" + System.currentTimeMillis();
-    syncClient.createTable(tableName, schema, tableBuilder);
-    KuduTable table = syncClient.openTable(tableName);
+    client.createTable(tableName, schema, tableBuilder);
+    KuduTable table = client.openTable(tableName);
     List<Partition> partitions = getTablePartitions(table);
 
     // No Predicates

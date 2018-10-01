@@ -17,6 +17,7 @@
 package org.apache.kudu.mapreduce;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.apache.kudu.test.KuduTestHarness.DEFAULT_SLEEP;
 import static org.apache.kudu.util.ClientTestUtil.countRowsInScan;
 import static org.apache.kudu.util.ClientTestUtil.getBasicCreateTableOptions;
 import static org.apache.kudu.util.ClientTestUtil.getBasicSchema;
@@ -35,28 +36,31 @@ import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
+import org.apache.kudu.test.KuduTestHarness;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 
 import org.apache.kudu.client.AsyncKuduScanner;
-import org.apache.kudu.client.BaseKuduTest;
 import org.apache.kudu.client.Insert;
 import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.client.Operation;
 import org.apache.kudu.client.PartialRow;
 
-
-public class ITOutputFormatJob extends BaseKuduTest {
+public class ITOutputFormatJob {
 
   private static final String TABLE_NAME =
       ITOutputFormatJob.class.getName() + "-" + System.currentTimeMillis();
 
   private static final HadoopTestingUtility HADOOP_UTIL = new HadoopTestingUtility();
 
+  @Rule
+  public KuduTestHarness harness = new KuduTestHarness();
+
   @Before
   public void setUp() throws Exception {
-    createTable(TABLE_NAME, getBasicSchema(), getBasicCreateTableOptions());
+    harness.getClient().createTable(TABLE_NAME, getBasicSchema(), getBasicCreateTableOptions());
   }
 
   @After
@@ -88,7 +92,7 @@ public class ITOutputFormatJob extends BaseKuduTest {
     new KuduTableMapReduceUtil.TableOutputFormatConfigurator(
         job,
         TABLE_NAME,
-        getMasterAddressesAsString())
+        harness.getMasterAddressesAsString())
         .operationTimeoutMs(DEFAULT_SLEEP)
         .addDependencies(false)
         .configure();
@@ -96,9 +100,9 @@ public class ITOutputFormatJob extends BaseKuduTest {
     assertTrue("Test job did not end properly", job.waitForCompletion(true));
 
     // Make sure the data's there
-    KuduTable table = openTable(TABLE_NAME);
+    KuduTable table = harness.getClient().openTable(TABLE_NAME);
     AsyncKuduScanner.AsyncKuduScannerBuilder builder =
-        client.newScannerBuilder(table);
+        harness.getAsyncClient().newScannerBuilder(table);
     assertEquals(2, countRowsInScan(builder.build()));
   }
 

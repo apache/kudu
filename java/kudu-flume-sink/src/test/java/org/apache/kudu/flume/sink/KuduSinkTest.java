@@ -16,7 +16,6 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
 package org.apache.kudu.flume.sink;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -41,7 +40,9 @@ import org.apache.flume.Sink.Status;
 import org.apache.flume.Transaction;
 import org.apache.flume.conf.Configurables;
 import org.apache.flume.event.EventBuilder;
+import org.apache.kudu.test.KuduTestHarness;
 import org.junit.Assert;
+import org.junit.Rule;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,12 +50,14 @@ import org.slf4j.LoggerFactory;
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
-import org.apache.kudu.client.BaseKuduTest;
 import org.apache.kudu.client.CreateTableOptions;
 import org.apache.kudu.client.KuduTable;
 
-public class KuduSinkTest extends BaseKuduTest {
+public class KuduSinkTest {
   private static final Logger LOG = LoggerFactory.getLogger(KuduSinkTest.class);
+
+  @Rule
+  public KuduTestHarness harness = new KuduTestHarness();
 
   private KuduTable createNewTable(String tableName) throws Exception {
     LOG.info("Creating new table...");
@@ -64,7 +67,7 @@ public class KuduSinkTest extends BaseKuduTest {
     CreateTableOptions createOptions =
         new CreateTableOptions().setRangePartitionColumns(ImmutableList.of("payload"))
                                 .setNumReplicas(1);
-    KuduTable table = createTable(tableName, new Schema(columns), createOptions);
+    KuduTable table = harness.getClient().createTable(tableName, new Schema(columns), createOptions);
 
     LOG.info("Created new table.");
 
@@ -75,7 +78,7 @@ public class KuduSinkTest extends BaseKuduTest {
   public void testMandatoryParameters() {
     LOG.info("Testing mandatory parameters...");
 
-    KuduSink sink = new KuduSink(syncClient);
+    KuduSink sink = new KuduSink(harness.getClient());
 
     HashMap<String, String> parameters = new HashMap<>();
     Context context = new Context(parameters);
@@ -102,7 +105,7 @@ public class KuduSinkTest extends BaseKuduTest {
   public void testMissingTable() {
     LOG.info("Testing missing table...");
 
-    KuduSink sink = KuduSinkTestUtil.createSink(syncClient, "missingTable", new Context());
+    KuduSink sink = KuduSinkTestUtil.createSink(harness.getClient(), "missingTable", new Context());
     sink.start();
 
     LOG.info("Testing missing table finished successfully.");
@@ -139,7 +142,7 @@ public class KuduSinkTest extends BaseKuduTest {
     Context sinkContext = new Context();
     sinkContext.put(KuduSinkConfigurationConstants.IGNORE_DUPLICATE_ROWS,
                     Boolean.toString(ignoreDuplicateRows));
-    KuduSink sink = KuduSinkTestUtil.createSink(syncClient, tableName, sinkContext);
+    KuduSink sink = KuduSinkTestUtil.createSink(harness.getClient(), tableName, sinkContext);
     sink.start();
     Channel channel = sink.getChannel();
 
@@ -193,7 +196,7 @@ public class KuduSinkTest extends BaseKuduTest {
       events.add(e);
     }
 
-    KuduSinkTestUtil.processEventsCreatingSink(syncClient, new Context(), tableName, events);
+    KuduSinkTestUtil.processEventsCreatingSink(harness.getClient(), new Context(), tableName, events);
 
     List<String> rows = scanTableToStrings(table);
     assertEquals(eventCount + " row(s) expected", eventCount, rows.size());

@@ -32,20 +32,21 @@ import com.google.common.collect.ImmutableList;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.util.GenericOptionsParser;
+import org.apache.kudu.test.KuduTestHarness;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
-import org.apache.kudu.client.BaseKuduTest;
 import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.client.CreateTableOptions;
 import org.apache.kudu.mapreduce.CommandLineParser;
 import org.apache.kudu.mapreduce.HadoopTestingUtility;
 
-public class ITImportCsv extends BaseKuduTest {
+public class ITImportCsv {
 
   private static final String TABLE_NAME =
       ITImportCsv.class.getName() + "-" + System.currentTimeMillis();
@@ -71,10 +72,13 @@ public class ITImportCsv extends BaseKuduTest {
     schema = new Schema(columns);
   }
 
+  @Rule
+  public KuduTestHarness harness = new KuduTestHarness();
+
   @Before
   public void setUp() throws Exception {
-    createTable(TABLE_NAME, schema,
-                new CreateTableOptions().setRangePartitionColumns(ImmutableList.of("key")));
+    harness.getClient().createTable(TABLE_NAME, schema,
+        new CreateTableOptions().setRangePartitionColumns(ImmutableList.of("key")));
   }
 
   @After
@@ -99,16 +103,16 @@ public class ITImportCsv extends BaseKuduTest {
     }
     sb.deleteCharAt(sb.length() - 1);
     String[] args = new String[] {
-        "-D" + CommandLineParser.MASTER_ADDRESSES_KEY + "=" + getMasterAddressesAsString(),
+        "-D" + CommandLineParser.MASTER_ADDRESSES_KEY + "=" + harness.getMasterAddressesAsString(),
         sb.toString(), TABLE_NAME, data.toString()};
 
     GenericOptionsParser parser = new GenericOptionsParser(conf, args);
     Job job = ImportCsv.createSubmittableJob(parser.getConfiguration(), parser.getRemainingArgs());
     assertTrue("Test job did not end properly", job.waitForCompletion(true));
 
-    KuduTable openTable = openTable(TABLE_NAME);
+    KuduTable openTable = harness.getClient().openTable(TABLE_NAME);
     assertEquals(1, job.getCounters().findCounter(ImportCsv.Counters.BAD_LINES).getValue());
-    assertEquals(3, countRowsInScan(client.newScannerBuilder(openTable).build()));
+    assertEquals(3, countRowsInScan(harness.getAsyncClient().newScannerBuilder(openTable).build()));
     assertEquals("INT32 key=1, INT32 column1_i=3, DOUBLE column2_d=2.3, STRING column3_s=some " +
       "string, BOOL column4_b=true", scanTableToStrings(openTable).get(0));
   }

@@ -16,6 +16,7 @@
 // under the License.
 package org.apache.kudu.mapreduce;
 
+import static org.apache.kudu.test.KuduTestHarness.DEFAULT_SLEEP;
 import static org.apache.kudu.util.ClientTestUtil.getBasicCreateTableOptions;
 import static org.apache.kudu.util.ClientTestUtil.getBasicSchema;
 import static org.junit.Assert.assertEquals;
@@ -32,27 +33,31 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.mapreduce.InputSplit;
 import org.apache.hadoop.mapreduce.RecordReader;
+import org.apache.kudu.test.KuduTestHarness;
+import org.junit.Rule;
 import org.junit.Test;
 
 import org.apache.kudu.Schema;
 import org.apache.kudu.client.AsyncKuduSession;
-import org.apache.kudu.client.BaseKuduTest;
 import org.apache.kudu.client.Insert;
 import org.apache.kudu.client.KuduPredicate;
 import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.client.PartialRow;
 import org.apache.kudu.client.RowResult;
 
-public class ITKuduTableInputFormat extends BaseKuduTest {
+public class ITKuduTableInputFormat {
 
   private static final String TABLE_NAME =
       ITKuduTableInputFormat.class.getName() + "-" + System.currentTimeMillis();
 
+  @Rule
+  public KuduTestHarness harness = new KuduTestHarness();
+
   @Test
   public void test() throws Exception {
-    createTable(TABLE_NAME, getBasicSchema(), getBasicCreateTableOptions());
+    harness.getClient().createTable(TABLE_NAME, getBasicSchema(), getBasicCreateTableOptions());
 
-    KuduTable table = openTable(TABLE_NAME);
+    KuduTable table = harness.getClient().openTable(TABLE_NAME);
     Schema schema = getBasicSchema();
     Insert insert = table.newInsert();
     PartialRow row = insert.getRow();
@@ -61,7 +66,7 @@ public class ITKuduTableInputFormat extends BaseKuduTest {
     row.addInt(2, 3);
     row.addString(3, "a string");
     row.addBoolean(4, true);
-    AsyncKuduSession session = client.newSession();
+    AsyncKuduSession session = harness.getAsyncClient().newSession();
     session.apply(insert).join(DEFAULT_SLEEP);
     session.close().join(DEFAULT_SLEEP);
 
@@ -122,7 +127,7 @@ public class ITKuduTableInputFormat extends BaseKuduTest {
         List<KuduPredicate> predicates) throws IOException, InterruptedException {
     KuduTableInputFormat input = new KuduTableInputFormat();
     Configuration conf = new Configuration();
-    conf.set(KuduTableInputFormat.MASTER_ADDRESSES_KEY, getMasterAddressesAsString());
+    conf.set(KuduTableInputFormat.MASTER_ADDRESSES_KEY, harness.getMasterAddressesAsString());
     conf.set(KuduTableInputFormat.INPUT_TABLE_KEY, TABLE_NAME);
     if (columnProjection != null) {
       conf.set(KuduTableInputFormat.COLUMN_PROJECTION_KEY, columnProjection);

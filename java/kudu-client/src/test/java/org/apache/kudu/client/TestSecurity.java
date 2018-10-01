@@ -16,6 +16,7 @@ package org.apache.kudu.client;
 import static org.apache.kudu.util.AssertHelpers.assertEventuallyTrue;
 import static org.apache.kudu.util.ClientTestUtil.createBasicSchemaInsert;
 import static org.apache.kudu.util.ClientTestUtil.getBasicCreateTableOptions;
+import static org.apache.kudu.util.ClientTestUtil.getBasicSchema;
 import static org.junit.Assert.assertNotNull;
 
 import java.io.Closeable;
@@ -66,15 +67,15 @@ public class TestSecurity {
     MiniKuduClusterBuilder mcb = new MiniKuduClusterBuilder();
     mcb.enableKerberos();
     if (opts.contains(Option.LONG_LEADER_ELECTION)) {
-      mcb.addMasterFlag("--leader_failure_max_missed_heartbeat_periods=10.0");
+      mcb.addMasterServerFlag("--leader_failure_max_missed_heartbeat_periods=10.0");
     }
     if (opts.contains(Option.SHORT_TOKENS_AND_TICKETS)) {
-      mcb.addMasterFlag("--authn_token_validity_seconds=" + TICKET_LIFETIME_SECS)
+      mcb.addMasterServerFlag("--authn_token_validity_seconds=" + TICKET_LIFETIME_SECS)
          .kdcRenewLifetime(RENEWABLE_LIFETIME_SECS + "s")
          .kdcTicketLifetime(TICKET_LIFETIME_SECS + "s");
     }
-    miniCluster = mcb.numMasters(3)
-        .numTservers(opts.contains(Option.START_TSERVERS) ? 3 : 0)
+    miniCluster = mcb.numMasterServers(3)
+        .numTabletServers(opts.contains(Option.START_TSERVERS) ? 3 : 0)
         .build();
     miniCluster.kinit("test-admin");
     client = new KuduClient.KuduClientBuilder(miniCluster.getMasterAddressesAsString()).build();
@@ -167,7 +168,7 @@ public class TestSecurity {
       // If we import the authentication data from the old authenticated client,
       // we should now be able to perform all of the normal client operations.
       newClient.importAuthenticationCredentials(authnData);
-      KuduTable table = newClient.createTable(TABLE_NAME, BaseKuduTest.basicSchema,
+      KuduTable table = newClient.createTable(TABLE_NAME, getBasicSchema(),
           getBasicCreateTableOptions());
       KuduSession session = newClient.newSession();
       session.apply(createBasicSchemaInsert(table, 1));

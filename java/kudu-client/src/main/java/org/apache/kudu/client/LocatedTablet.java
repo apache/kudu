@@ -41,7 +41,8 @@ public class LocatedTablet {
 
   private final List<Replica> replicas;
 
-  LocatedTablet(RemoteTablet tablet) {
+  @InterfaceAudience.LimitedPrivate("Tests")
+  public LocatedTablet(RemoteTablet tablet) {
     partition = tablet.getPartition();
     tabletId = tablet.getTabletIdAsBytes();
     replicas = tablet.getReplicas();

@@ -31,6 +31,7 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.util.GenericOptionsParser;
 import org.apache.kudu.client.KuduTable;
+import org.apache.kudu.test.KuduTestHarness;
 import org.apache.parquet.column.ParquetProperties;
 import org.apache.parquet.example.data.Group;
 import org.apache.parquet.example.data.simple.SimpleGroupFactory;
@@ -46,12 +47,11 @@ import org.junit.rules.ExpectedException;
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
-import org.apache.kudu.client.BaseKuduTest;
 import org.apache.kudu.client.CreateTableOptions;
 import org.apache.kudu.mapreduce.CommandLineParser;
 import org.apache.kudu.mapreduce.HadoopTestingUtility;
 
-public class ITImportParquetPreCheck extends BaseKuduTest {
+public class ITImportParquetPreCheck {
 
   private static final String TABLE_NAME =
     ITImportParquet.class.getName() + "-" + System.currentTimeMillis();
@@ -78,11 +78,14 @@ public class ITImportParquetPreCheck extends BaseKuduTest {
   }
 
   @Rule
+  public KuduTestHarness harness = new KuduTestHarness();
+
+  @Rule
   public ExpectedException thrown = ExpectedException.none();
 
   @Before
   public void setUp() throws Exception {
-    createTable(TABLE_NAME, schema,
+    harness.getClient().createTable(TABLE_NAME, schema,
       new CreateTableOptions().setRangePartitionColumns(ImmutableList.of("key")));
   }
 
@@ -108,7 +111,7 @@ public class ITImportParquetPreCheck extends BaseKuduTest {
     }
     sb.deleteCharAt(sb.length() - 1);
     String[] args = new String[] { "-D" + CommandLineParser.MASTER_ADDRESSES_KEY + "=" +
-      getMasterAddressesAsString(), TABLE_NAME, data.toString()};
+      harness.getMasterAddressesAsString(), TABLE_NAME, data.toString()};
 
     thrown.expect(IllegalArgumentException.class);
     thrown.expectMessage("The column column1_i does not exist in Parquet schema");
@@ -117,8 +120,8 @@ public class ITImportParquetPreCheck extends BaseKuduTest {
     Job job = ImportParquet.createSubmittableJob(parser.getConfiguration(), parser.getRemainingArgs());
     job.waitForCompletion(true);
 
-    KuduTable openTable = openTable(TABLE_NAME);
-    assertEquals(0, countRowsInScan(client.newScannerBuilder(openTable).build()));
+    KuduTable openTable = harness.getClient().openTable(TABLE_NAME);
+    assertEquals(0, countRowsInScan(harness.getAsyncClient().newScannerBuilder(openTable).build()));
   }
 
   private void writeParquetFile(Path data,Configuration conf) throws IOException {

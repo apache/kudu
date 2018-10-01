@@ -23,17 +23,22 @@ import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertTrue;
 
 import com.stumbleupon.async.Deferred;
+import org.apache.kudu.junit.RetryRule;
+import org.junit.Rule;
 import org.junit.Test;
 
 import org.apache.kudu.util.NetUtil;
 
 public class TestConnectionCache {
 
+  @Rule
+  public RetryRule retryRule = new RetryRule();
+
   @Test(timeout = 50000)
   public void test() throws Exception {
     MiniKuduCluster cluster = null;
     try {
-      cluster = new MiniKuduCluster.MiniKuduClusterBuilder().numMasters(3).build();
+      cluster = new MiniKuduCluster.MiniKuduClusterBuilder().numMasterServers(3).build();
 
       final AsyncKuduClient client =
           new AsyncKuduClient.AsyncKuduClientBuilder(cluster.getMasterAddressesAsString()).build();

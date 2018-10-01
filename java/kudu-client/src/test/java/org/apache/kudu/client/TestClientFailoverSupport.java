@@ -16,6 +16,7 @@
 // under the License.
 package org.apache.kudu.client;
 
+import static org.apache.kudu.test.KuduTestHarness.DEFAULT_SLEEP;
 import static org.apache.kudu.util.AssertHelpers.assertEventuallyTrue;
 import static org.apache.kudu.util.ClientTestUtil.countRowsInScan;
 import static org.apache.kudu.util.ClientTestUtil.createBasicSchemaInsert;
@@ -26,13 +27,21 @@ import static org.junit.Assert.assertFalse;
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.List;
+
+import org.apache.kudu.Schema;
+import org.apache.kudu.test.KuduTestHarness;
 import org.apache.kudu.util.AssertHelpers.BooleanExpression;
 import org.apache.kudu.util.CapturingLogAppender;
+import org.apache.kudu.util.ClientTestUtil;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 
-public class TestClientFailoverSupport extends BaseKuduTest {
+public class TestClientFailoverSupport {
+
+  private static final Schema basicSchema = ClientTestUtil.getBasicSchema();
+
   private CapturingLogAppender cla = new CapturingLogAppender();
   private Closeable claAttach;
 
@@ -41,8 +50,16 @@ public class TestClientFailoverSupport extends BaseKuduTest {
     KILL
   }
 
+  private KuduClient client;
+  private AsyncKuduClient asyncClient;
+
+  @Rule
+  public KuduTestHarness harness = new KuduTestHarness();
+
   @Before
-  public void attachToLog() {
+  public void setUp() {
+    client = harness.getClient();
+    asyncClient = harness.getAsyncClient();
     claAttach = cla.attach();
   }
 
@@ -60,7 +77,7 @@ public class TestClientFailoverSupport extends BaseKuduTest {
         new BooleanExpression() {
           @Override
           public boolean get() throws Exception {
-            AsyncKuduScanner scanner = client.newScannerBuilder(table).build();
+            AsyncKuduScanner scanner = asyncClient.newScannerBuilder(table).build();
             int read_count = countRowsInScan(scanner);
             return read_count == rowCount;
           }
@@ -90,10 +107,10 @@ public class TestClientFailoverSupport extends BaseKuduTest {
   private void doTestMasterFailover(MasterFailureType failureType) throws Exception {
     final String TABLE_NAME = TestClientFailoverSupport.class.getName()
         + "-" + failureType;
-    createTable(TABLE_NAME, basicSchema, getBasicCreateTableOptions());
+    client.createTable(TABLE_NAME, basicSchema, getBasicCreateTableOptions());
 
-    KuduTable table = openTable(TABLE_NAME);
-    KuduSession session = syncClient.newSession();
+    KuduTable table = client.openTable(TABLE_NAME);
+    KuduSession session = client.newSession();
 
     final int TOTAL_ROWS_TO_INSERT = 10;
 
@@ -106,10 +123,10 @@ public class TestClientFailoverSupport extends BaseKuduTest {
     // Kill or restart the leader master.
     switch (failureType) {
     case KILL:
-      killLeaderMasterServer();
+      harness.killLeaderMasterServer();
       break;
     case RESTART:
-      restartLeaderMaster();
+      harness.restartLeaderMaster();
       break;
     }
 
@@ -119,14 +136,14 @@ public class TestClientFailoverSupport extends BaseKuduTest {
     // to the new one.
     List<LocatedTablet> tablets = table.getTabletsLocations(DEFAULT_SLEEP);
     assertEquals(1, tablets.size());
-    killTabletLeader(tablets.get(0));
+    harness.killTabletLeader(tablets.get(0));
 
     // Insert some more rows.
     for (int i = TOTAL_ROWS_TO_INSERT; i < 2*TOTAL_ROWS_TO_INSERT; i++) {
       session.apply(createBasicSchemaInsert(table, i));
     }
     waitUntilRowCount(table, 2*TOTAL_ROWS_TO_INSERT, DEFAULT_SLEEP);
-    syncClient.deleteTable(TABLE_NAME);
-    assertFalse(syncClient.tableExists(TABLE_NAME));
+    client.deleteTable(TABLE_NAME);
+    assertFalse(client.tableExists(TABLE_NAME));
   }
 }

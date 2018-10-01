@@ -31,7 +31,9 @@ import java.util.List;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
+import org.apache.kudu.test.KuduTestHarness;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 
 import org.apache.kudu.ColumnSchema;
@@ -41,11 +43,16 @@ import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.util.Pair;
 
-public class TestAlterTable extends BaseKuduTest {
+public class TestAlterTable {
   private String tableName;
+  private KuduClient client;
+
+  @Rule
+  public KuduTestHarness harness = new KuduTestHarness();
 
   @Before
-  public void setTableName() {
+  public void setUp() {
+    client = harness.getClient();
     tableName = TestKuduClient.class.getName() + "-" + System.currentTimeMillis();
   }
 
@@ -80,7 +87,7 @@ public class TestAlterTable extends BaseKuduTest {
       createOptions.addRangePartition(lower, upper);
     }
 
-    return createTable(tableName, schema, createOptions);
+    return client.createTable(tableName, schema, createOptions);
   }
 
   /**
@@ -91,7 +98,7 @@ public class TestAlterTable extends BaseKuduTest {
    * @param end the exclusive end key
    */
   private void insertRows(KuduTable table, int start, int end) throws KuduException {
-    KuduSession session = syncClient.newSession();
+    KuduSession session = client.newSession();
     session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_BACKGROUND);
     for (int i = start; i < end; i++) {
       Insert insert = table.newInsert();
@@ -111,17 +118,17 @@ public class TestAlterTable extends BaseKuduTest {
     insertRows(table, 0, 100);
     assertEquals(100, countRowsInTable(table));
 
-    syncClient.alterTable(tableName, new AlterTableOptions()
+    client.alterTable(tableName, new AlterTableOptions()
         .addColumn("addNonNull", Type.INT32, 100)
         .addNullableColumn("addNullable", Type.INT32)
         .addNullableColumn("addNullableDef", Type.INT32, 200));
 
     // Reopen table for the new schema.
-    table = syncClient.openTable(tableName);
+    table = client.openTable(tableName);
     assertEquals(5, table.getSchema().getColumnCount());
 
     // Add a row with addNullableDef=null
-    KuduSession session = syncClient.newSession();
+    KuduSession session = client.newSession();
     Insert insert = table.newInsert();
     PartialRow row = insert.getRow();
     row.addInt("c0", 101);
@@ -160,13 +167,13 @@ public class TestAlterTable extends BaseKuduTest {
     assertEquals(null, col.getDefaultValue());
 
     // Alter the table.
-    syncClient.alterTable(tableName, new AlterTableOptions()
+    client.alterTable(tableName, new AlterTableOptions()
         .changeCompressionAlgorithm(col.getName(), CompressionAlgorithm.SNAPPY)
         .changeEncoding(col.getName(), Encoding.RLE)
         .changeDefault(col.getName(), 0));
 
     // Check for new values.
-    table = syncClient.openTable(tableName);
+    table = client.openTable(tableName);
     col = table.getSchema().getColumns().get(1);
     assertEquals(CompressionAlgorithm.SNAPPY, col.getCompressionAlgorithm());
     assertEquals(Encoding.RLE, col.getEncoding());
@@ -179,12 +186,12 @@ public class TestAlterTable extends BaseKuduTest {
     insertRows(table, 0, 100);
     assertEquals(100, countRowsInTable(table));
 
-    syncClient.alterTable(tableName, new AlterTableOptions()
+    client.alterTable(tableName, new AlterTableOptions()
             .renameColumn("c0", "c0Key"));
 
     // scanning with the old schema
     try {
-      KuduScanner scanner = syncClient.newScannerBuilder(table)
+      KuduScanner scanner = client.newScannerBuilder(table)
               .setProjectedColumnNames(Lists.newArrayList("c0", "c1")).build();
       while (scanner.hasMoreRows()) {
         scanner.nextRows();
@@ -197,12 +204,12 @@ public class TestAlterTable extends BaseKuduTest {
     }
 
     // Reopen table for the new schema.
-    table = syncClient.openTable(tableName);
+    table = client.openTable(tableName);
     assertEquals("c0Key", table.getSchema().getPrimaryKeyColumns().get(0).getName());
     assertEquals(2, table.getSchema().getColumnCount());
 
     // Add a row
-    KuduSession session = syncClient.newSession();
+    KuduSession session = client.newSession();
     Insert insert = table.newInsert();
     PartialRow row = insert.getRow();
     row.addInt("c0Key", 101);
@@ -212,7 +219,7 @@ public class TestAlterTable extends BaseKuduTest {
     RowError[] rowErrors = session.getPendingErrors().getRowErrors();
     assertEquals(String.format("row errors: %s", Arrays.toString(rowErrors)), 0, rowErrors.length);
 
-    KuduScanner scanner = syncClient.newScannerBuilder(table)
+    KuduScanner scanner = client.newScannerBuilder(table)
             .setProjectedColumnNames(Lists.newArrayList("c0Key", "c1")).build();
     while (scanner.hasMoreRows()) {
       RowResultIterator it = scanner.nextRows();
@@ -232,13 +239,13 @@ public class TestAlterTable extends BaseKuduTest {
     assertEquals(100, countRowsInTable(table));
     PartialRow lower = schema.newPartialRow();
     PartialRow upper = schema.newPartialRow();
-    syncClient.alterTable(tableName, new AlterTableOptions().dropRangePartition(lower, upper));
+    client.alterTable(tableName, new AlterTableOptions().dropRangePartition(lower, upper));
     assertEquals(0, countRowsInTable(table));
 
     // Add new range partition and insert rows.
     lower.addInt("c0", 0);
     upper.addInt("c0", 100);
-    syncClient.alterTable(tableName, new AlterTableOptions().addRangePartition(lower, upper));
+    client.alterTable(tableName, new AlterTableOptions().addRangePartition(lower, upper));
     insertRows(table, 0, 100);
     assertEquals(100, countRowsInTable(table));
 
@@ -248,13 +255,13 @@ public class TestAlterTable extends BaseKuduTest {
     lower.addInt("c0", 50);
     upper.addInt("c0", 150);
     options.addRangePartition(lower, upper);
-    syncClient.alterTable(tableName, options);
+    client.alterTable(tableName, options);
     assertEquals(0, countRowsInTable(table));
     insertRows(table, 50, 125);
     assertEquals(75, countRowsInTable(table));
 
     // Replace the range partition with the same one.
-    syncClient.alterTable(tableName, new AlterTableOptions().dropRangePartition(lower, upper)
+    client.alterTable(tableName, new AlterTableOptions().dropRangePartition(lower, upper)
                                                             .addRangePartition(lower, upper));
     assertEquals(0, countRowsInTable(table));
     insertRows(table, 50, 125);
@@ -263,13 +270,13 @@ public class TestAlterTable extends BaseKuduTest {
     // Alter table partitioning + alter table schema
     lower.addInt("c0", 200);
     upper.addInt("c0", 300);
-    syncClient.alterTable(tableName, new AlterTableOptions().addRangePartition(lower, upper)
+    client.alterTable(tableName, new AlterTableOptions().addRangePartition(lower, upper)
                                                             .renameTable(tableName + "-renamed")
                                                             .addNullableColumn("c2", Type.INT32));
     tableName = tableName + "-renamed";
     insertRows(table, 200, 300);
     assertEquals(175, countRowsInTable(table));
-    assertEquals(3, openTable(tableName).getSchema().getColumnCount());
+    assertEquals(3, client.openTable(tableName).getSchema().getColumnCount());
 
     // Drop all range partitions + alter table schema. This also serves to test
     // specifying range bounds with a subset schema (since a column was
@@ -280,9 +287,9 @@ public class TestAlterTable extends BaseKuduTest {
     upper.addInt("c0", 150);
     options.dropRangePartition(lower, upper);
     options.dropColumn("c2");
-    syncClient.alterTable(tableName, options);
+    client.alterTable(tableName, options);
     assertEquals(0, countRowsInTable(table));
-    assertEquals(2, openTable(tableName).getSchema().getColumnCount());
+    assertEquals(2, client.openTable(tableName).getSchema().getColumnCount());
   }
 
   /**
@@ -314,11 +321,11 @@ public class TestAlterTable extends BaseKuduTest {
                                     RangePartitionBound.EXCLUSIVE_BOUND,
                                     RangePartitionBound.INCLUSIVE_BOUND);
 
-    KuduTable table = createTable(tableName, schema, createOptions);
+    KuduTable table = client.createTable(tableName, schema, createOptions);
 
     lower.addInt("c0", 199);
     upper.addInt("c0", 299);
-    syncClient.alterTable(tableName, new AlterTableOptions().addRangePartition(
+    client.alterTable(tableName, new AlterTableOptions().addRangePartition(
         lower, upper, RangePartitionBound.EXCLUSIVE_BOUND, RangePartitionBound.INCLUSIVE_BOUND));
 
     // Insert some rows, and then drop the partition and ensure that the table is empty.
@@ -337,7 +344,7 @@ public class TestAlterTable extends BaseKuduTest {
     alter.dropRangePartition(lower, upper,
                              RangePartitionBound.EXCLUSIVE_BOUND,
                              RangePartitionBound.INCLUSIVE_BOUND);
-    syncClient.alterTable(tableName, alter);
+    client.alterTable(tableName, alter);
 
     assertEquals(0, countRowsInTable(table));
   }
@@ -356,7 +363,7 @@ public class TestAlterTable extends BaseKuduTest {
     lower.addInt("c0", 0);
     upper.addInt("c0", 100);
     try {
-      syncClient.alterTable(tableName, new AlterTableOptions().addRangePartition(lower, upper));
+      client.alterTable(tableName, new AlterTableOptions().addRangePartition(lower, upper));
       fail();
     } catch (KuduException e) {
       assertTrue(e.getStatus().isInvalidArgument());
@@ -369,7 +376,7 @@ public class TestAlterTable extends BaseKuduTest {
     lower.addInt("c0", 50);
     upper.addInt("c0", 150);
     try {
-      syncClient.alterTable(tableName, new AlterTableOptions().addRangePartition(lower, upper));
+      client.alterTable(tableName, new AlterTableOptions().addRangePartition(lower, upper));
       fail();
     } catch (KuduException e) {
       assertTrue(e.getStatus().isInvalidArgument());
@@ -382,7 +389,7 @@ public class TestAlterTable extends BaseKuduTest {
     lower.addInt("c0", -50);
     upper.addInt("c0", 50);
     try {
-      syncClient.alterTable(tableName, new AlterTableOptions().addRangePartition(lower, upper));
+      client.alterTable(tableName, new AlterTableOptions().addRangePartition(lower, upper));
       fail();
     } catch (KuduException e) {
       assertTrue(e.getStatus().isInvalidArgument());
@@ -401,7 +408,7 @@ public class TestAlterTable extends BaseKuduTest {
     upper.addInt("c0", 150);
     options.addRangePartition(lower, upper);
     try {
-      syncClient.alterTable(tableName, options);
+      client.alterTable(tableName, options);
       fail();
     } catch (KuduException e) {
       assertTrue(e.getStatus().isInvalidArgument());
@@ -412,7 +419,7 @@ public class TestAlterTable extends BaseKuduTest {
 
     // DROP [<start>, <end>)
     try {
-      syncClient.alterTable(tableName,
+      client.alterTable(tableName,
                             new AlterTableOptions().dropRangePartition(schema.newPartialRow(),
                                                                        schema.newPartialRow()));
       fail();
@@ -428,7 +435,7 @@ public class TestAlterTable extends BaseKuduTest {
     lower.addInt("c0", 50);
     upper.addInt("c0", 150);
     try {
-      syncClient.alterTable(tableName, new AlterTableOptions().dropRangePartition(lower, upper)
+      client.alterTable(tableName, new AlterTableOptions().dropRangePartition(lower, upper)
                                                               .renameTable("foo"));
       fail();
     } catch (KuduException e) {
@@ -437,7 +444,7 @@ public class TestAlterTable extends BaseKuduTest {
           "No range partition found for drop range partition step"));
     }
     assertEquals(100, countRowsInTable(table));
-    assertFalse(syncClient.tableExists("foo"));
+    assertFalse(client.tableExists("foo"));
 
     // DROP [0, 100)
     // ADD  [100, 200)
@@ -463,7 +470,7 @@ public class TestAlterTable extends BaseKuduTest {
     upper.addInt("c0", 10);
     options.dropRangePartition(lower, upper);
     try {
-      syncClient.alterTable(tableName, options);
+      client.alterTable(tableName, options);
       fail();
     } catch (KuduException e) {
       assertTrue(e.getStatus().isInvalidArgument());

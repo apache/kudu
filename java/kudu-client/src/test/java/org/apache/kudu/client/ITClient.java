@@ -23,14 +23,18 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import com.google.common.collect.ImmutableList;
+import org.apache.kudu.test.KuduTestHarness;
 import org.junit.Assert;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static org.apache.kudu.test.KuduTestHarness.DEFAULT_SLEEP;
 import static org.apache.kudu.util.ClientTestUtil.countRowsInScan;
 import static org.apache.kudu.util.ClientTestUtil.createBasicSchemaInsert;
+import static org.apache.kudu.util.ClientTestUtil.getBasicSchema;
 
 /**
  * Integration test for the client. RPCs are sent to Kudu from multiple threads while processes
@@ -40,7 +44,7 @@ import static org.apache.kudu.util.ClientTestUtil.createBasicSchemaInsert;
  * in "itclient.runtime.seconds". For example:
  * "mvn test -Dtest=ITClient -Ditclient.runtime.seconds=120".
  */
-public class ITClient extends BaseKuduTest {
+public class ITClient {
 
   private static final Logger LOG = LoggerFactory.getLogger(ITClient.class);
 
@@ -65,6 +69,9 @@ public class ITClient extends BaseKuduTest {
 
   private volatile long sharedWriteTimestamp;
 
+  @Rule
+  public KuduTestHarness harness = new KuduTestHarness();
+
   @Before
   public void setUp() throws Exception {
 
@@ -80,14 +87,14 @@ public class ITClient extends BaseKuduTest {
 
     // Client we're using has low tolerance for read timeouts but a
     // higher overall operation timeout.
-    localAsyncClient = new AsyncKuduClient.AsyncKuduClientBuilder(getMasterAddressesAsString())
+    localAsyncClient = new AsyncKuduClient.AsyncKuduClientBuilder(harness.getMasterAddressesAsString())
         .defaultSocketReadTimeoutMs(500)
         .build();
     localClient = new KuduClient(localAsyncClient);
 
     CreateTableOptions builder = new CreateTableOptions().setNumReplicas(3);
     builder.setRangePartitionColumns(ImmutableList.of("key"));
-    table = localClient.createTable(TABLE_NAME, basicSchema, builder);
+    table = localClient.createTable(TABLE_NAME, getBasicSchema(), builder);
   }
 
   @Test(timeout = TEST_TIMEOUT_SECONDS)
@@ -175,7 +182,7 @@ public class ITClient extends BaseKuduTest {
 
     /**
      * Failure injection. Picks a random tablet server from the client's cache and force
-     * disconects it.
+     * disconnects it.
      * @return true if successfully completed or didn't find a server to disconnect, false it it
      * encountered a failure
      */
@@ -204,7 +211,7 @@ public class ITClient extends BaseKuduTest {
      */
     private boolean restartTS() {
       try {
-        restartTabletServer(table);
+        harness.restartTabletServer(table);
       } catch (Exception e) {
         reportError("Couldn't restart a TS", e);
         return false;
@@ -218,7 +225,7 @@ public class ITClient extends BaseKuduTest {
      */
     private boolean restartMaster() {
       try {
-        restartLeaderMaster();
+        harness.restartLeaderMaster();
       } catch (Exception e) {
         reportError("Couldn't restart a master", e);
         return false;

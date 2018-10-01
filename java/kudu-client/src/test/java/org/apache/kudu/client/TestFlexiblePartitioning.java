@@ -16,6 +16,7 @@
 // under the License.
 package org.apache.kudu.client;
 
+import static org.apache.kudu.test.KuduTestHarness.DEFAULT_SLEEP;
 import static org.junit.Assert.assertEquals;
 
 import java.util.ArrayList;
@@ -30,7 +31,9 @@ import com.google.common.base.Predicates;
 import com.google.common.collect.ComparisonChain;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Sets;
+import org.apache.kudu.test.KuduTestHarness;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,12 +42,18 @@ import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 
-public class TestFlexiblePartitioning extends BaseKuduTest {
+public class TestFlexiblePartitioning {
   private static final Logger LOG = LoggerFactory.getLogger(TestKuduClient.class);
   private String tableName;
 
+  private KuduClient client;
+
+  @Rule
+  public KuduTestHarness harness = new KuduTestHarness();
+
   @Before
-  public void setTableName() {
+  public void setUp() {
+    client = harness.getClient();
     tableName = TestFlexiblePartitioning.class.getName() + "-" + System.currentTimeMillis();
   }
 
@@ -71,7 +80,7 @@ public class TestFlexiblePartitioning extends BaseKuduTest {
   }
 
   private void insertRows(KuduTable table, Set<Row> rows) throws KuduException {
-    KuduSession session = syncClient.newSession();
+    KuduSession session = client.newSession();
     try {
       for (Row row : rows) {
         Insert insert = table.newInsert();
@@ -104,10 +113,10 @@ public class TestFlexiblePartitioning extends BaseKuduTest {
     Set<Row> rows = new HashSet<>();
     for (KuduScanToken token : scanTokens.build()) {
       LOG.debug("Scanning token: {}", KuduScanToken.stringifySerializedToken(token.serialize(),
-                                                                             syncClient));
+          client));
 
       int existingCount = rows.size();
-      Set<Row> newRows = collectRows(token.intoScanner(syncClient));
+      Set<Row> newRows = collectRows(token.intoScanner(client));
       rows.addAll(newRows);
       assertEquals(existingCount + newRows.size(), rows.size());
     }
@@ -117,15 +126,15 @@ public class TestFlexiblePartitioning extends BaseKuduTest {
   private void testPartitionSchema(CreateTableOptions tableBuilder) throws Exception {
     Schema schema = createSchema();
 
-    syncClient.createTable(tableName, schema, tableBuilder);
+    client.createTable(tableName, schema, tableBuilder);
 
-    KuduTable table = syncClient.openTable(tableName);
+    KuduTable table = client.openTable(tableName);
 
     Set<Row> rows = rows();
     insertRows(table, rows);
 
     // Full table scan
-    assertEquals(rows, collectRows(syncClient.newScannerBuilder(table).build()));
+    assertEquals(rows, collectRows(client.newScannerBuilder(table).build()));
 
     { // Lower bound
       Row minRow = new Row("1", "3", "5");
@@ -134,12 +143,12 @@ public class TestFlexiblePartitioning extends BaseKuduTest {
 
       Set<Row> expected = Sets.filter(rows, minRow.gtePred());
 
-      KuduScanner scanner = syncClient.newScannerBuilder(table).lowerBound(lowerBound).build();
+      KuduScanner scanner = client.newScannerBuilder(table).lowerBound(lowerBound).build();
       Set<Row> results = collectRows(scanner);
       assertEquals(expected, results);
 
       KuduScanToken.KuduScanTokenBuilder scanTokens =
-          syncClient.newScanTokenBuilder(table).lowerBound(lowerBound);
+          client.newScanTokenBuilder(table).lowerBound(lowerBound);
       Set<Row> tokenResults = collectRows(scanTokens);
       assertEquals(expected, tokenResults);
     }
@@ -151,14 +160,14 @@ public class TestFlexiblePartitioning extends BaseKuduTest {
 
       Set<Row> expected = Sets.filter(rows, maxRow.ltPred());
 
-      KuduScanner scanner = syncClient.newScannerBuilder(table)
+      KuduScanner scanner = client.newScannerBuilder(table)
                                       .exclusiveUpperBound(upperBound)
                                       .build();
       Set<Row> results = collectRows(scanner);
       assertEquals(expected, results);
 
       KuduScanToken.KuduScanTokenBuilder scanTokens =
-          syncClient.newScanTokenBuilder(table).exclusiveUpperBound(upperBound);
+          client.newScanTokenBuilder(table).exclusiveUpperBound(upperBound);
       Set<Row> tokenResults = collectRows(scanTokens);
       assertEquals(expected, tokenResults);
     }
@@ -173,7 +182,7 @@ public class TestFlexiblePartitioning extends BaseKuduTest {
 
       Set<Row> expected = Sets.filter(rows, Predicates.and(minRow.gtePred(), maxRow.ltPred()));
 
-      KuduScanner scanner = syncClient.newScannerBuilder(table)
+      KuduScanner scanner = client.newScannerBuilder(table)
                                       .lowerBound(lowerBound)
                                       .exclusiveUpperBound(upperBound)
                                       .build();
@@ -181,20 +190,20 @@ public class TestFlexiblePartitioning extends BaseKuduTest {
       assertEquals(expected, results);
 
       KuduScanToken.KuduScanTokenBuilder scanTokens =
-          syncClient.newScanTokenBuilder(table)
+          client.newScanTokenBuilder(table)
                     .lowerBound(lowerBound)
                     .exclusiveUpperBound(upperBound);
       Set<Row> tokenResults = collectRows(scanTokens);
       assertEquals(expected, tokenResults);
     }
 
-    List<LocatedTablet> tablets = table.getTabletsLocations(TestTimeouts.DEFAULT_SLEEP);
+    List<LocatedTablet> tablets = table.getTabletsLocations(DEFAULT_SLEEP);
 
     { // Per-tablet scan
       Set<Row> results = new HashSet<>();
 
       for (LocatedTablet tablet : tablets) {
-        KuduScanner scanner = syncClient.newScannerBuilder(table)
+        KuduScanner scanner = client.newScannerBuilder(table)
                                         .lowerBoundPartitionKeyRaw(tablet.getPartition().getPartitionKeyStart())
                                         .exclusiveUpperBoundPartitionKeyRaw(tablet.getPartition().getPartitionKeyEnd())
                                         .build();
@@ -219,7 +228,7 @@ public class TestFlexiblePartitioning extends BaseKuduTest {
       Set<Row> results = new HashSet<>();
 
       for (LocatedTablet tablet : tablets) {
-        KuduScanner scanner = syncClient.newScannerBuilder(table)
+        KuduScanner scanner = client.newScannerBuilder(table)
                                         .lowerBound(lowerBound)
                                         .exclusiveUpperBound(upperBound)
                                         .lowerBoundPartitionKeyRaw(tablet.getPartition().getPartitionKeyStart())

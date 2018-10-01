@@ -16,7 +16,6 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
 package org.apache.kudu.flume.sink;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -35,21 +34,25 @@ import com.google.common.collect.ImmutableList;
 import org.apache.flume.Context;
 import org.apache.flume.Event;
 import org.apache.flume.event.EventBuilder;
+import org.apache.kudu.test.KuduTestHarness;
+import org.junit.Rule;
 import org.junit.Test;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
-import org.apache.kudu.client.BaseKuduTest;
 import org.apache.kudu.client.CreateTableOptions;
 import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.util.DecimalUtil;
 
-public class RegexpKuduOperationsProducerTest extends BaseKuduTest {
+public class RegexpKuduOperationsProducerTest {
   private static final String TEST_REGEXP =
       "(?<key>\\d+),(?<byteFld>\\d+),(?<shortFld>\\d+),(?<intFld>\\d+)," +
       "(?<longFld>\\d+),(?<binaryFld>\\w+),(?<stringFld>\\w+),(?<boolFld>\\w+)," +
       "(?<floatFld>\\d+\\.\\d*),(?<doubleFld>\\d+.\\d*),(?<decimalFld>\\d+.\\d*)";
+
+  @Rule
+  public KuduTestHarness harness = new KuduTestHarness();
 
   private KuduTable createNewTable(String tableName) throws Exception {
     ArrayList<ColumnSchema> columns = new ArrayList<>(10);
@@ -67,7 +70,7 @@ public class RegexpKuduOperationsProducerTest extends BaseKuduTest {
         .typeAttributes(DecimalUtil.typeAttributes(9, 1)).build());
     CreateTableOptions createOptions =
         new CreateTableOptions().addHashPartitions(ImmutableList.of("key"), 3).setNumReplicas(1);
-    return createTable(tableName, new Schema(columns), createOptions);
+    return harness.getClient().createTable(tableName, new Schema(columns), createOptions);
   }
 
   @Test
@@ -116,7 +119,7 @@ public class RegexpKuduOperationsProducerTest extends BaseKuduTest {
 
     List<Event> events = generateEvents(eventCount, perEventRowCount, operation);
 
-    KuduSinkTestUtil.processEventsCreatingSink(syncClient, context, tableName, events);
+    KuduSinkTestUtil.processEventsCreatingSink(harness.getClient(), context, tableName, events);
 
     List<String> rows = scanTableToStrings(table);
     assertEquals(eventCount * perEventRowCount + " row(s) expected",

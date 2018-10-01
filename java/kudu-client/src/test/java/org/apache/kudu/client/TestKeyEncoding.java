@@ -25,6 +25,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.google.common.collect.ImmutableList;
+import org.apache.kudu.test.KuduTestHarness;
+import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 
 import org.apache.kudu.ColumnSchema;
@@ -36,7 +39,17 @@ import org.apache.kudu.client.PartitionSchema.HashBucketSchema;
 import org.apache.kudu.client.PartitionSchema.RangeSchema;
 import org.apache.kudu.util.DecimalUtil;
 
-public class TestKeyEncoding extends BaseKuduTest {
+public class TestKeyEncoding {
+
+  private KuduClient client;
+
+  @Rule
+  public KuduTestHarness harness = new KuduTestHarness();
+
+  @Before
+  public void setUp() {
+    client = harness.getClient();
+  }
 
   private static Schema buildSchema(ColumnSchemaBuilder... columns) {
     int i = 0;
@@ -372,9 +385,9 @@ public class TestKeyEncoding extends BaseKuduTest {
         new ColumnSchemaBuilder("float", Type.FLOAT),     // not primary key type
         new ColumnSchemaBuilder("double", Type.DOUBLE));  // not primary key type
 
-    KuduTable table = createTable("testAllPrimaryKeyTypes-" + System.currentTimeMillis(),
+    KuduTable table = client.createTable("testAllPrimaryKeyTypes-" + System.currentTimeMillis(),
         schema, defaultCreateTableOptions(schema));
-    KuduSession session = syncClient.newSession();
+    KuduSession session = client.newSession();
 
     Insert insert = table.newInsert();
     PartialRow row = insert.getRow();
@@ -394,7 +407,7 @@ public class TestKeyEncoding extends BaseKuduTest {
     session.apply(insert);
     session.close();
 
-    KuduScanner scanner = syncClient.newScannerBuilder(table).build();
+    KuduScanner scanner = client.newScannerBuilder(table).build();
     while (scanner.hasMoreRows()) {
       RowResultIterator it = scanner.nextRows();
       assertTrue(it.hasNext());

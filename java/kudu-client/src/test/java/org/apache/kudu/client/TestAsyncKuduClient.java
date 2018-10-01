@@ -17,6 +17,7 @@
 package org.apache.kudu.client;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.apache.kudu.test.KuduTestHarness.DEFAULT_SLEEP;
 import static org.apache.kudu.util.ClientTestUtil.countRowsInScan;
 import static org.apache.kudu.util.ClientTestUtil.createBasicSchemaInsert;
 import static org.apache.kudu.util.ClientTestUtil.getBasicCreateTableOptions;
@@ -32,7 +33,11 @@ import java.util.concurrent.TimeUnit;
 import com.google.common.base.Stopwatch;
 import com.google.protobuf.ByteString;
 import com.stumbleupon.async.Deferred;
+import org.apache.kudu.test.KuduTestHarness;
+import org.apache.kudu.util.ClientTestUtil;
 import org.apache.kudu.util.ProtobufUtils;
+import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 
 import org.apache.kudu.ColumnSchema;
@@ -42,13 +47,27 @@ import org.apache.kudu.Type;
 import org.apache.kudu.consensus.Metadata;
 import org.apache.kudu.master.Master;
 
-public class TestAsyncKuduClient extends BaseKuduTest {
+public class TestAsyncKuduClient {
+
+  private static final Schema basicSchema = ClientTestUtil.getBasicSchema();
+
+  private KuduClient client;
+  private AsyncKuduClient asyncClient;
+
+  @Rule
+  public KuduTestHarness harness = new KuduTestHarness();
+
+  @Before
+  public void setUp() {
+    client = harness.getClient();
+    asyncClient = harness.getAsyncClient();
+  }
 
   @Test(timeout = 100000)
   public void testDisconnect() throws Exception {
     // Set to 1 to always test disconnecting the right server.
     CreateTableOptions options = getBasicCreateTableOptions().setNumReplicas(1);
-    KuduTable table = createTable(
+    KuduTable table = client.createTable(
         "testDisconnect-" + System.currentTimeMillis(),
         basicSchema,
         options);
@@ -65,7 +84,7 @@ public class TestAsyncKuduClient extends BaseKuduTest {
 
     // Test that we can reconnect to a TS while scanning.
     // 1. Insert enough rows to have to call next() multiple times.
-    KuduSession session = syncClient.newSession();
+    KuduSession session = client.newSession();
     session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_BACKGROUND);
     int rowCount = 200;
     for (int i = 0; i < rowCount; i++) {
@@ -74,7 +93,7 @@ public class TestAsyncKuduClient extends BaseKuduTest {
     session.flush();
 
     // 2. Start a scanner with a small max num bytes.
-    AsyncKuduScanner scanner = client.newScannerBuilder(table)
+    AsyncKuduScanner scanner = asyncClient.newScannerBuilder(table)
         .batchSizeBytes(1)
         .build();
     Deferred<RowResultIterator> rri = scanner.nextRows();
@@ -92,15 +111,15 @@ public class TestAsyncKuduClient extends BaseKuduTest {
   }
 
   private void disconnectAndWait() throws InterruptedException {
-    for (Connection c : client.getConnectionListCopy()) {
+    for (Connection c : asyncClient.getConnectionListCopy()) {
       c.disconnect();
     }
     Stopwatch sw = Stopwatch.createStarted();
     boolean disconnected = false;
     while (sw.elapsed(TimeUnit.MILLISECONDS) < DEFAULT_SLEEP) {
       boolean sleep = false;
-      if (!client.getConnectionListCopy().isEmpty()) {
-        for (Connection c : client.getConnectionListCopy()) {
+      if (!asyncClient.getConnectionListCopy().isEmpty()) {
+        for (Connection c : asyncClient.getConnectionListCopy()) {
           if (!c.isTerminated()) {
             sleep = true;
             break;
@@ -150,9 +169,9 @@ public class TestAsyncKuduClient extends BaseKuduTest {
 
     // Test that a tablet full of unreachable replicas won't make us retry.
     try {
-      KuduTable badTable = new KuduTable(client, "Invalid table name",
+      KuduTable badTable = new KuduTable(asyncClient, "Invalid table name",
           "Invalid table ID", null, null, 3);
-      client.discoverTablets(badTable, null, requestBatchSize, tabletLocations, 1000);
+      asyncClient.discoverTablets(badTable, null, requestBatchSize, tabletLocations, 1000);
       fail("This should have failed quickly");
     } catch (NonRecoverableException ex) {
       assertTrue(ex.getMessage().contains(badHostname));
@@ -163,13 +182,13 @@ public class TestAsyncKuduClient extends BaseKuduTest {
   public void testNoLeader() throws Exception {
     final int requestBatchSize = 10;
     CreateTableOptions options = getBasicCreateTableOptions();
-    KuduTable table = createTable(
+    KuduTable table = client.createTable(
         "testNoLeader-" + System.currentTimeMillis(),
         basicSchema,
         options);
 
     // Lookup the current locations so that we can pass some valid information to discoverTablets.
-    List<LocatedTablet> tablets = client
+    List<LocatedTablet> tablets = asyncClient
         .locateTable(table, null, null, requestBatchSize, DEFAULT_SLEEP)
         .join(DEFAULT_SLEEP);
     LocatedTablet tablet = tablets.get(0);
@@ -184,7 +203,7 @@ public class TestAsyncKuduClient extends BaseKuduTest {
         "master", leader.getRpcHost(), leader.getRpcPort(), Metadata.RaftPeerPB.Role.FOLLOWER));
     tabletLocations.add(tabletPb.build());
     try {
-      client.discoverTablets(table, new byte[0], requestBatchSize, tabletLocations, 1000);
+      asyncClient.discoverTablets(table, new byte[0], requestBatchSize, tabletLocations, 1000);
       fail("discoverTablets should throw an exception if there's no leader");
     } catch (NoLeaderFoundException ex) {
       // Expected.
@@ -194,19 +213,19 @@ public class TestAsyncKuduClient extends BaseKuduTest {
   @Test
   public void testConnectionRefused() throws Exception {
     CreateTableOptions options = getBasicCreateTableOptions();
-    KuduTable table = createTable(
+    KuduTable table = client.createTable(
         "testConnectionRefused-" + System.currentTimeMillis(),
         basicSchema,
         options);
 
     // Warm up the caches.
-    assertEquals(0, countRowsInScan(syncClient.newScannerBuilder(table).build()));
+    assertEquals(0, countRowsInScan(client.newScannerBuilder(table).build()));
 
     // Make it impossible to use Kudu.
-    killAllTabletServers();
+    harness.killAllTabletServers();
 
     // Create a scan with a short timeout.
-    KuduScanner scanner = syncClient.newScannerBuilder(table).scanRequestTimeout(1000).build();
+    KuduScanner scanner = client.newScannerBuilder(table).scanRequestTimeout(1000).build();
 
     // Check it fails.
     try {
@@ -219,7 +238,7 @@ public class TestAsyncKuduClient extends BaseKuduTest {
     }
 
     // Try the same thing with an insert.
-    KuduSession session = syncClient.newSession();
+    KuduSession session = client.newSession();
     session.setTimeoutMillis(1000);
     OperationResponse response = session.apply(createBasicSchemaInsert(table, 1));
     assertTrue(response.hasRowError());
@@ -241,7 +260,7 @@ public class TestAsyncKuduClient extends BaseKuduTest {
     columns.add(new ColumnSchema.ColumnSchemaBuilder("column4_b", Type.BOOL).build());
     Schema schema = new Schema(columns);
     try {
-      client.createTable("testCreateTableOutOfOrderPrimaryKeys-" + System.currentTimeMillis(),
+      asyncClient.createTable("testCreateTableOutOfOrderPrimaryKeys-" + System.currentTimeMillis(),
           schema,
           getBasicCreateTableOptions()).join();
       fail();
