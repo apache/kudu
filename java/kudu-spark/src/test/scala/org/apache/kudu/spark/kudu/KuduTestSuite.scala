@@ -24,15 +24,12 @@ import scala.collection.immutable.IndexedSeq
 import org.apache.spark.SparkConf
 import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder
 import org.apache.kudu.ColumnTypeAttributes.ColumnTypeAttributesBuilder
-import org.apache.kudu.client.KuduClient.KuduClientBuilder
-import org.apache.kudu.client.MiniKuduCluster.MiniKuduClusterBuilder
 import org.apache.kudu.client.CreateTableOptions
 import org.apache.kudu.client.KuduClient
 import org.apache.kudu.client.KuduTable
-import org.apache.kudu.client.MiniKuduCluster
-import org.apache.kudu.junit.RetryRule
 import org.apache.kudu.Schema
 import org.apache.kudu.Type
+import org.apache.kudu.test.KuduTestHarness
 import org.apache.kudu.util.DecimalUtil
 import org.apache.spark.sql.SparkSession
 import org.junit.After
@@ -40,10 +37,10 @@ import org.junit.Before
 import org.junit.Rule
 import org.scalatest.junit.JUnitSuite
 
-// TODO (grant): Use BaseKuduTest for most of this.
+import scala.annotation.meta.getter
+
 trait KuduTestSuite extends JUnitSuite {
   var ss: SparkSession = _
-  var miniCluster: MiniKuduCluster = _
   var kuduClient: KuduClient = _
   var table: KuduTable = _
   var kuduContext: KuduContext = _
@@ -121,37 +118,28 @@ trait KuduTestSuite extends JUnitSuite {
     .set("spark.ui.enabled", "false")
     .set("spark.app.id", appID)
 
-  // Add a rule to rerun tests. We use this with Gradle because it doesn't support
-  // Surefire/Failsafe rerunFailingTestsCount like Maven does.
-  @Rule
-  def retryRule = new RetryRule()
+  // Ensure the annotation is applied to the getter and not the field
+  // or else Junit will complain that the Rule must be public.
+  @(Rule @getter)
+  val harness = new KuduTestHarness()
 
   @Before
   def setUpBase(): Unit = {
-    miniCluster = new MiniKuduClusterBuilder()
-      .numMasterServers(1)
-      .numTabletServers(1)
-      .build()
+    kuduClient = harness.getClient
 
     ss = SparkSession.builder().config(conf).getOrCreate()
-
-    kuduClient = new KuduClientBuilder(miniCluster.getMasterAddressesAsString).build()
-
-    kuduContext = new KuduContext(miniCluster.getMasterAddressesAsString, ss.sparkContext)
+    kuduContext = new KuduContext(harness.getMasterAddressesAsString, ss.sparkContext)
 
     table = kuduClient.createTable(tableName, schema, tableOptions)
 
     val simpleTableOptions = new CreateTableOptions()
       .setRangePartitionColumns(List("key").asJava)
       .setNumReplicas(1)
-
     kuduClient.createTable(simpleTableName, simpleSchema, simpleTableOptions)
   }
 
   @After
   def tearDownBase() {
-    if (kuduClient != null) kuduClient.shutdown()
-    if (miniCluster != null) miniCluster.shutdown()
     if (ss != null) ss.stop()
   }
 

@@ -114,7 +114,7 @@ class KuduContextTest extends KuduTestSuite with Matchers {
     insertRows(table, rowCount)
     val sqlContext = ss.sqlContext
     val dataDF = sqlContext.read
-      .options(Map("kudu.master" -> miniCluster.getMasterAddressesAsString, "kudu.table" -> "test"))
+      .options(Map("kudu.master" -> harness.getMasterAddressesAsString, "kudu.table" -> "test"))
       .kudu
     dataDF
       .sort("key")

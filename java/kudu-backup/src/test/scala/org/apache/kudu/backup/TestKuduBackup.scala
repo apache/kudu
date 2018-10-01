@@ -351,11 +351,11 @@ class TestKuduBackup extends KuduTestSuite {
     val path = dir.toUri.toString
 
     val backupOptions =
-      new KuduBackupOptions(tableNames, path, miniCluster.getMasterAddressesAsString)
+      new KuduBackupOptions(tableNames, path, harness.getMasterAddressesAsString)
     KuduBackup.run(backupOptions, ss)
 
     val restoreOptions =
-      new KuduRestoreOptions(tableNames, path, miniCluster.getMasterAddressesAsString)
+      new KuduRestoreOptions(tableNames, path, harness.getMasterAddressesAsString)
     KuduRestore.run(restoreOptions, ss)
 
     FileUtils.deleteDirectory(dir.toFile)

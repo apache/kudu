@@ -49,7 +49,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
     sqlContext = ss.sqlContext
 
     kuduOptions =
-      Map("kudu.table" -> tableName, "kudu.master" -> miniCluster.getMasterAddressesAsString)
+      Map("kudu.table" -> tableName, "kudu.master" -> harness.getMasterAddressesAsString)
 
     sqlContext.read.options(kuduOptions).kudu.createOrReplaceTempView(tableName)
   }
@@ -72,7 +72,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
 
     // now use new options to refer to the new table name
     val newOptions: Map[String, String] =
-      Map("kudu.table" -> tableName, "kudu.master" -> miniCluster.getMasterAddressesAsString)
+      Map("kudu.table" -> tableName, "kudu.master" -> harness.getMasterAddressesAsString)
     val checkDf = sqlContext.read.options(newOptions).kudu
 
     assert(checkDf.schema === df.schema)
@@ -110,7 +110,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
 
     // now use new options to refer to the new table name
     val newOptions: Map[String, String] =
-      Map("kudu.table" -> tableName, "kudu.master" -> miniCluster.getMasterAddressesAsString)
+      Map("kudu.table" -> tableName, "kudu.master" -> harness.getMasterAddressesAsString)
     val checkDf = sqlContext.read.options(newOptions).kudu
 
     assert(checkDf.schema === df.schema)
@@ -194,7 +194,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
     val updateDF = baseDF.withColumn("c2_s", lit("abc"))
     val newOptions: Map[String, String] = Map(
       "kudu.table" -> tableName,
-      "kudu.master" -> miniCluster.getMasterAddressesAsString,
+      "kudu.master" -> harness.getMasterAddressesAsString,
       "kudu.operation" -> "insert",
       "kudu.ignoreDuplicateRowErrors" -> "true")
     updateDF.write.options(newOptions).mode("append").kudu
@@ -226,7 +226,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
     val updateDF = baseDF.withColumn("c2_s", lit("abc"))
     val newOptions: Map[String, String] = Map(
       "kudu.table" -> tableName,
-      "kudu.master" -> miniCluster.getMasterAddressesAsString,
+      "kudu.master" -> harness.getMasterAddressesAsString,
       "kudu.operation" -> "insert-ignore")
     updateDF.write.options(newOptions).mode("append").kudu
 
@@ -311,9 +311,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
 
     val dataDF = sqlContext.read
       .options(
-        Map(
-          "kudu.master" -> miniCluster.getMasterAddressesAsString,
-          "kudu.table" -> simpleTableName))
+        Map("kudu.master" -> harness.getMasterAddressesAsString, "kudu.table" -> simpleTableName))
       .kudu
 
     val nullDF = sqlContext
@@ -344,9 +342,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
 
     val dataDF = sqlContext.read
       .options(
-        Map(
-          "kudu.master" -> miniCluster.getMasterAddressesAsString,
-          "kudu.table" -> simpleTableName))
+        Map("kudu.master" -> harness.getMasterAddressesAsString, "kudu.table" -> simpleTableName))
       .kudu
 
     val nullDF = sqlContext
@@ -354,14 +350,14 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
       .toDF("key", "val")
     val options_0: Map[String, String] = Map(
       "kudu.table" -> simpleTableName,
-      "kudu.master" -> miniCluster.getMasterAddressesAsString,
+      "kudu.master" -> harness.getMasterAddressesAsString,
       "kudu.ignoreNull" -> "true")
     nullDF.write.options(options_0).mode("append").kudu
     assert(dataDF.collect.toList === nonNullDF.collect.toList)
 
     kuduContext.updateRows(nonNullDF, simpleTableName)
     val options_1: Map[String, String] =
-      Map("kudu.table" -> simpleTableName, "kudu.master" -> miniCluster.getMasterAddressesAsString)
+      Map("kudu.table" -> simpleTableName, "kudu.master" -> harness.getMasterAddressesAsString)
     nullDF.write.options(options_1).mode("append").kudu
     assert(dataDF.collect.toList === nullDF.collect.toList)
 
@@ -406,7 +402,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
   def testTableFaultTolerantScan() {
     kuduOptions = Map(
       "kudu.table" -> tableName,
-      "kudu.master" -> miniCluster.getMasterAddressesAsString,
+      "kudu.master" -> harness.getMasterAddressesAsString,
       "kudu.faultTolerantScan" -> "true")
 
     val table = "faultTolerantScanTest"
@@ -659,7 +655,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
       kuduSession.apply(insert)
     }
     val options: Map[String, String] =
-      Map("kudu.table" -> testTableName, "kudu.master" -> miniCluster.getMasterAddressesAsString)
+      Map("kudu.table" -> testTableName, "kudu.master" -> harness.getMasterAddressesAsString)
     sqlContext.read.options(options).kudu.createOrReplaceTempView(testTableName)
 
     val checkPrefixCount = { prefix: String =>
@@ -722,7 +718,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
         .setNumReplicas(1))
 
     val newOptions: Map[String, String] =
-      Map("kudu.table" -> insertTable, "kudu.master" -> miniCluster.getMasterAddressesAsString)
+      Map("kudu.table" -> insertTable, "kudu.master" -> harness.getMasterAddressesAsString)
     sqlContext.read
       .options(newOptions)
       .kudu
@@ -749,7 +745,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
         .setNumReplicas(1))
 
     val newOptions: Map[String, String] =
-      Map("kudu.table" -> insertTable, "kudu.master" -> miniCluster.getMasterAddressesAsString)
+      Map("kudu.table" -> insertTable, "kudu.master" -> harness.getMasterAddressesAsString)
     sqlContext.read
       .options(newOptions)
       .kudu
@@ -779,7 +775,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
         .setNumReplicas(1))
 
     val newOptions: Map[String, String] =
-      Map("kudu.table" -> newTable, "kudu.master" -> miniCluster.getMasterAddressesAsString)
+      Map("kudu.table" -> newTable, "kudu.master" -> harness.getMasterAddressesAsString)
     df.write.options(newOptions).mode("append").kudu
 
     val checkDf = sqlContext.read.options(newOptions).kudu
@@ -826,7 +822,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
   def testScanLocality() {
     kuduOptions = Map(
       "kudu.table" -> tableName,
-      "kudu.master" -> miniCluster.getMasterAddressesAsString,
+      "kudu.master" -> harness.getMasterAddressesAsString,
       "kudu.scanLocality" -> "closest_replica")
 
     val table = "scanLocalityTest"
@@ -907,7 +903,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
   def testScanRequestTimeoutPropagation() {
     kuduOptions = Map(
       "kudu.table" -> tableName,
-      "kudu.master" -> miniCluster.getMasterAddressesAsString,
+      "kudu.master" -> harness.getMasterAddressesAsString,
       "kudu.scanRequestTimeoutMs" -> "1")
     val dataFrame = sqlContext.read.options(kuduOptions).kudu
     val kuduRelation = kuduRelationFromDataFrame(dataFrame)
@@ -923,7 +919,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
   def testSocketReadTimeoutPropagation() {
     kuduOptions = Map(
       "kudu.table" -> tableName,
-      "kudu.master" -> miniCluster.getMasterAddressesAsString,
+      "kudu.master" -> harness.getMasterAddressesAsString,
       "kudu.socketReadTimeoutMs" -> "1")
     val dataFrame = sqlContext.read.options(kuduOptions).kudu
     val kuduRelation = kuduRelationFromDataFrame(dataFrame)

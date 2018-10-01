@@ -63,7 +63,7 @@ class TestImportExportFiles extends KuduTestSuite {
       Array(
         "--operation=import",
         "--format=csv",
-        s"--master-addrs=${miniCluster.getMasterAddressesAsString}",
+        s"--master-addrs=${harness.getMasterAddressesAsString}",
         s"--path=$dataPath",
         s"--table-name=$TABLE_NAME",
         "--delimiter=,",
