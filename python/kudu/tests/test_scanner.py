@@ -328,6 +328,8 @@ class TestScanner(TestScanBase):
             self.assertEqual(sorted(scanner.read_all_tuples()),
                              sorted(self.tuples))
 
+    @pytest.mark.skipif(not (kudu.CLIENT_SUPPORTS_PANDAS),
+                        reason="Pandas required to run this test.")
     def test_scanner_to_pandas_types(self):
         """
         This test confirms that data types are converted as expected to Pandas.
@@ -357,6 +359,8 @@ class TestScanner(TestScanBase):
             self.assertEqual(types[6], np.object)
             self.assertEqual(types[7], np.float32)
 
+    @pytest.mark.skipif(not (kudu.CLIENT_SUPPORTS_PANDAS),
+                        reason="Pandas required to run this test.")
     def test_scanner_to_pandas_row_count(self):
         """
         This test confirms that the record counts match between Pandas and the scanner.
@@ -367,6 +371,8 @@ class TestScanner(TestScanBase):
         df = scanner.to_pandas()
         self.assertEqual(scanner_count, df.shape[0])
 
+    @pytest.mark.skipif(not (kudu.CLIENT_SUPPORTS_PANDAS),
+                        reason="Pandas required to run this test.")
     def test_scanner_to_pandas_index(self):
         """
         This test confirms that an index is correctly applied.
@@ -376,8 +382,9 @@ class TestScanner(TestScanBase):
         self.assertEqual(df.index.name, 'key')
         self.assertEqual(list(df.index), [1, 2])
 
-    @pytest.mark.skipif(not(kudu.CLIENT_SUPPORTS_DECIMAL),
-                        reason="Decimal is not supported on this client.")
+    @pytest.mark.skipif((not(kudu.CLIENT_SUPPORTS_PANDAS) and
+                        (not(kudu.CLIENT_SUPPORTS_DECIMAL))),
+                        reason="Pandas and Decimal support required to run this test.")
     def test_scanner_to_pandas_index(self):
         """
         This test confirms that a decimal column is coerced to a double when specified.

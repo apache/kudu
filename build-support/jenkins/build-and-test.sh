@@ -503,6 +503,14 @@ if [ "$BUILD_PYTHON" == "1" ]; then
   # pass in the current values of CC and CXX.
   CC=$CLANG CXX=$CLANG++ pip install $PIP_INSTALL_FLAGS -r requirements.txt
 
+  # We need to install Pandas manually since its not a required package but is needed
+  # to run all of the tests.
+  # pandas 0.18 dropped support for python 2.6.
+  #
+  # See https://pandas.pydata.org/pandas-docs/version/0.23.0/whatsnew.html#v0-18-0-march-13-2016
+  # for more details.
+  pip install $PIP_INSTALL_FLAGS "pandas<0.18"
+
   # Delete old Cython extensions to force them to be rebuilt.
   rm -Rf build kudu_python.egg-info kudu/*.so
 
@@ -560,6 +568,10 @@ if [ "$BUILD_PYTHON3" == "1" ]; then
   # Installing the Cython dependency may involve some compiler work, so we must
   # pass in the current values of CC and CXX.
   CC=$CLANG CXX=$CLANG++ pip install $PIP_INSTALL_FLAGS -r requirements.txt
+
+  # We need to install Pandas manually since its not a required package but is needed
+  # to run all of the tests.
+  pip install $PIP_INSTALL_FLAGS pandas
 
   # Delete old Cython extensions to force them to be rebuilt.
   rm -Rf build kudu_python.egg-info kudu/*.so

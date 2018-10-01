@@ -8,12 +8,6 @@ pytest >=2.8,<3.3
 # See https://pypi.org/project/pytest-timeout/#id5 for more details.
 pytest-timeout >=1.1.0,<1.2.1
 
-# pandas 0.18 dropped support for python 2.6.
-#
-# See https://pandas.pydata.org/pandas-docs/version/0.23.0/whatsnew.html#v0-18-0-march-13-2016
-# for more details.
-pandas <0.18
-
 cython ==0.26.1
 six
 unittest2
