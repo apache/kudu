@@ -112,6 +112,8 @@ const char* const HmsClient::kStorageHandlerKey = "storage_handler";
 const char* const HmsClient::kKuduMetastorePlugin =
   "org.apache.kudu.hive.metastore.KuduMetastorePlugin";
 const char* const HmsClient::kHiveFilterFieldParams = "hive_filter_field_params__";
+const char* const HmsClient::kNotificationAddThriftObjects =
+  "hive.metastore.notifications.add.thrift.objects";
 
 const char* const HmsClient::kManagedTable = "MANAGED_TABLE";
 const char* const HmsClient::kExternalTable = "EXTERNAL_TABLE";
@@ -174,9 +176,25 @@ Status HmsClient::Start() {
 
   if (boost::iequals(disallow_incompatible_column_type_changes, "true")) {
     return Status::IllegalState(Substitute(
-          "Hive Metastore configuration is invalid: $0 must be set to false",
-          kDisallowIncompatibleColTypeChanges));
+        "Hive Metastore configuration is invalid: $0 must be set to false",
+        kDisallowIncompatibleColTypeChanges));
   }
+
+  // Check that the HMS is configured to add the entire thrift Table/Partition
+  // objects to the HMS notifications, which is required to properly parse the
+  // HMS notification log. This is specific to the HMS version shipped in
+  // Cloudera's CDH.
+  string thrift_objects_config;
+  HMS_RET_NOT_OK(client_.get_config_value(thrift_objects_config,
+                                          kNotificationAddThriftObjects,
+                                          "true"),
+                 Substitute("failed to get Hive Metastore $0 configuration",
+                            kNotificationAddThriftObjects));
+  if (boost::iequals(thrift_objects_config, "false")) {
+    return Status::IllegalState(Substitute(
+        "Hive Metastore configuration is invalid: $0 must be set to true",
+        kNotificationAddThriftObjects));
+    }
 
   return Status::OK();
 }

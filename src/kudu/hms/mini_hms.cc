@@ -207,6 +207,10 @@ Status MiniHms::CreateHiveSite() const {
   // - hive.support.special.characters.tablename
   //     Configures the HMS to allow special characters such as '/' in table
   //     names.
+  //
+  // - hive.metastore.notifications.add.thrift.objects
+  //     Configured the HMS to add the entire thrift Table/Partition
+  //     objects to the HMS notifications.
   static const string kFileTemplate = R"(
 <configuration>
   <property>
@@ -269,6 +273,11 @@ Status MiniHms::CreateHiveSite() const {
 
   <property>
     <name>hive.support.special.characters.tablename</name>
+    <value>true</value>
+  </property>
+
+  <property>
+    <name>hive.metastore.notifications.add.thrift.objects</name>
     <value>true</value>
   </property>
 </configuration>

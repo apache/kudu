@@ -83,6 +83,7 @@ class HmsClient {
   static const char* const kDisallowIncompatibleColTypeChanges;
   static const char* const kDbNotificationListener;
   static const char* const kKuduMetastorePlugin;
+  static const char* const kNotificationAddThriftObjects;
 
   // See org.apache.hadoop.hive.metastore.TableType.
   static const char* const kManagedTable;
