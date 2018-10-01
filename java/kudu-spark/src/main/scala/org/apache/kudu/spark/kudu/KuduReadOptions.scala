@@ -31,6 +31,8 @@ import org.apache.kudu.spark.kudu.KuduReadOptions._
  *                     take place at the closest replica
  * @param faultTolerantScanner scanner type to be used. Fault tolerant if true,
  *                             otherwise, use non fault tolerant one
+ * @param keepAlivePeriodMs The period at which to send keep-alive requests to the tablet
+ *                          server to ensure that scanners do not time out
  * @param scanRequestTimeoutMs Maximum time allowed per scan request, in milliseconds
  * @param socketReadTimeoutMs Maximum time allowed when waiting on data from a socket
  */
@@ -40,6 +42,7 @@ case class KuduReadOptions(
     batchSize: Int = defaultBatchSize,
     scanLocality: ReplicaSelection = defaultScanLocality,
     faultTolerantScanner: Boolean = defaultFaultTolerantScanner,
+    keepAlivePeriodMs: Long = defaultKeepAlivePeriodMs,
     scanRequestTimeoutMs: Option[Long] = None,
     socketReadTimeoutMs: Option[Long] = None)
 
@@ -47,4 +50,5 @@ object KuduReadOptions {
   val defaultBatchSize: Int = 1024 * 1024 * 20 // TODO: Understand/doc this setting?
   val defaultScanLocality: ReplicaSelection = ReplicaSelection.CLOSEST_REPLICA
   val defaultFaultTolerantScanner: Boolean = false
+  val defaultKeepAlivePeriodMs: Long = 15000 // 25% of the default scanner ttl.
 }

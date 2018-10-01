@@ -79,6 +79,13 @@ public class KuduScanner {
   }
 
   /**
+   * @return true if the scanner has been closed.
+   */
+  public boolean isClosed() {
+    return asyncScanner.isClosed();
+  }
+
+  /**
    * Closes this scanner (don't forget to call this when you're done with it!).
    * <p>
    * Closing a scanner already closed has no effect.
@@ -135,7 +142,7 @@ public class KuduScanner {
    * Returns the RemoteTablet currently being scanned, if any.
    */
   @InterfaceAudience.LimitedPrivate("Test")
-  RemoteTablet currentTablet() {
+  public RemoteTablet currentTablet() {
     return asyncScanner.currentTablet();
   }
 

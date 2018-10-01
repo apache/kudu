@@ -62,6 +62,7 @@ class DefaultSource
   val SCAN_REQUEST_TIMEOUT_MS = "kudu.scanRequestTimeoutMs"
   val SOCKET_READ_TIMEOUT_MS = "kudu.socketReadTimeoutMs"
   val BATCH_SIZE = "kudu.batchSize"
+  val KEEP_ALIVE_PERIOD_MS = "kudu.keepAlivePeriodMs"
 
   /**
    * Construct a BaseRelation using the provided context and parameters.
@@ -77,13 +78,13 @@ class DefaultSource
   }
 
   /**
-    * Construct a BaseRelation using the provided context, parameters and schema.
-    *
-    * @param sqlContext SparkSQL context
-    * @param parameters parameters given to us from SparkSQL
-    * @param schema     the schema used to select columns for the relation
-    * @return           a BaseRelation Object
-    */
+   * Construct a BaseRelation using the provided context, parameters and schema.
+   *
+   * @param sqlContext SparkSQL context
+   * @param parameters parameters given to us from SparkSQL
+   * @param schema     the schema used to select columns for the relation
+   * @return           a BaseRelation Object
+   */
   override def createRelation(
       sqlContext: SQLContext,
       parameters: Map[String, String],
@@ -141,11 +142,14 @@ class DefaultSource
       parameters.get(SCAN_LOCALITY).map(getScanLocalityType).getOrElse(defaultScanLocality)
     val scanRequestTimeoutMs = parameters.get(SCAN_REQUEST_TIMEOUT_MS).map(_.toLong)
     val socketReadTimeoutMs = parameters.get(SOCKET_READ_TIMEOUT_MS).map(_.toLong)
+    val keepAlivePeriodMs =
+      parameters.get(KEEP_ALIVE_PERIOD_MS).map(_.toLong).getOrElse(defaultKeepAlivePeriodMs)
 
     KuduReadOptions(
       batchSize,
       scanLocality,
       faultTolerantScanner,
+      keepAlivePeriodMs,
       scanRequestTimeoutMs,
       socketReadTimeoutMs)
   }

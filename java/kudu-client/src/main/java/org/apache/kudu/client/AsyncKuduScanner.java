@@ -605,6 +605,13 @@ public final class AsyncKuduScanner {
   }
 
   /**
+   * @return true if the scanner has been closed.
+   */
+  public boolean isClosed() {
+    return closed;
+  }
+
+  /**
    * Closes this scanner (don't forget to call this when you're done with it!).
    * <p>
    * Closing a scanner already closed has no effect.  The deferred returned

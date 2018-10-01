@@ -24,7 +24,6 @@ import org.apache.spark.SparkContext
 import org.apache.spark.TaskContext
 import org.apache.yetus.audience.InterfaceAudience
 import org.apache.yetus.audience.InterfaceStability
-
 import org.apache.kudu.client._
 import org.apache.kudu.Type
 import org.apache.kudu.client
@@ -44,6 +43,9 @@ class KuduRDD private[kudu] (
     @transient val options: KuduReadOptions,
     @transient val sc: SparkContext)
     extends RDD[Row](sc, Nil) {
+
+  // Defined here because the options are transient.
+  private val keepAlivePeriodMs = options.keepAlivePeriodMs
 
   override protected def getPartitions: Array[Partition] = {
     val builder = kuduContext.syncClient
@@ -91,7 +93,7 @@ class KuduRDD private[kudu] (
     val partition: KuduPartition = part.asInstanceOf[KuduPartition]
     val scanner =
       KuduScanToken.deserializeIntoScanner(partition.scanToken, client)
-    new RowIterator(scanner, kuduContext)
+    new RowIterator(scanner, kuduContext, keepAlivePeriodMs)
   }
 
   override def getPreferredLocations(partition: Partition): Seq[String] = {
@@ -112,11 +114,27 @@ private class KuduPartition(
  * A Spark SQL [[Row]] iterator which wraps a [[KuduScanner]].
  * @param scanner the wrapped scanner
  * @param kuduContext the kudu context
+ * @param keepAlivePeriodMs the period in which to call the keepAlive on the scanners
  */
-private class RowIterator(private val scanner: KuduScanner, private val kuduContext: KuduContext)
+private class RowIterator(
+    val scanner: KuduScanner,
+    val kuduContext: KuduContext,
+    val keepAlivePeriodMs: Long)
     extends Iterator[Row] {
 
   private var currentIterator: RowResultIterator = RowResultIterator.empty
+  private var lastKeepAliveTimeMs = System.currentTimeMillis()
+
+  /**
+   * Calls the keepAlive API on the current scanner if the keepAlivePeriodMs has passed.
+   */
+  private def KeepKuduScannerAlive(): Unit = {
+    val now = System.currentTimeMillis
+    if (now >= lastKeepAliveTimeMs + keepAlivePeriodMs && !scanner.isClosed) {
+      scanner.keepAlive()
+      lastKeepAliveTimeMs = now
+    }
+  }
 
   override def hasNext: Boolean = {
     while (!currentIterator.hasNext && scanner.hasMoreRows) {
@@ -128,6 +146,7 @@ private class RowIterator(private val scanner: KuduScanner, private val kuduCont
       // timestamp on each executor.
       kuduContext.timestampAccumulator.add(kuduContext.syncClient.getLastPropagatedTimestamp)
     }
+    KeepKuduScannerAlive()
     currentIterator.hasNext
   }
 
