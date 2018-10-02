@@ -44,17 +44,16 @@ namespace sentry {
 //
 // SentryClient is not thread safe.
 //
-// SentryClient wraps a single TCP connection to a Sentry service instance, and
-// does not attempt to handle or retry on failure. It's expected that a
-// higher-level component will wrap SentryClient to provide retry, pooling, and
-// HA deployment features if necessary.
-//
-// Note: see HmsClient for why TSocketPool is not used for transparently
-// handling connections to Sentry HA instances.
+// SentryClient wraps a single TCP connection to an HMS, and does not attempt to
+// retry on failure. If higher-level features like thread-safety, retrying, and
+// HA support are needed then use thrift::HaClient<SentryClient> to wrap the HMS
+// client.
 class SentryClient {
  public:
 
   static const uint16_t kDefaultSentryPort;
+
+  static const char* const kServiceName;
 
   // Create a SentryClient connection to the provided Sentry service Thrift RPC address.
   SentryClient(const HostPort& address, const thrift::ClientOptions& options);

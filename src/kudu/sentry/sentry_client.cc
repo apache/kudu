@@ -51,6 +51,8 @@ namespace sentry {
 
 const uint16_t SentryClient::kDefaultSentryPort = 8038;
 
+const char* const SentryClient::kServiceName = "Sentry";
+
 const int kSlowExecutionWarningThresholdMs = 1000;
 
 namespace {

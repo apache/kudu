@@ -19,6 +19,7 @@
 
 #include <map>
 #include <string>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -27,11 +28,13 @@
 #include "kudu/sentry/mini_sentry.h"
 #include "kudu/sentry/sentry_policy_service_types.h"
 #include "kudu/thrift/client.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 using std::string;
+using std::vector;
 
 namespace kudu {
 namespace sentry {
@@ -45,15 +48,39 @@ class SentryClientTest : public KuduTest,
 };
 INSTANTIATE_TEST_CASE_P(KerberosEnabled, SentryClientTest, ::testing::Bool());
 
-TEST_P(SentryClientTest, TestMiniSentryLifecycle) {
+TEST_F(SentryClientTest, TestMiniSentryLifecycle) {
   MiniSentry mini_sentry;
   ASSERT_OK(mini_sentry.Start());
 
+  // Create an HA Sentry client and ensure it automatically reconnects after service interruption.
+  thrift::HaClient<SentryClient> client;
+
+  ASSERT_OK(client.Start(vector<HostPort>({ mini_sentry.address() }), thrift::ClientOptions()));
+
+  auto smoketest = [&] () -> Status {
+    return client.Execute([] (SentryClient* client) -> Status {
+        ::sentry::TCreateSentryRoleRequest create_req;
+        create_req.requestorUserName = "test-admin";
+        create_req.roleName = "test-role";
+        RETURN_NOT_OK(client->CreateRole(create_req));
+
+        ::sentry::TDropSentryRoleRequest drop_req;
+        drop_req.requestorUserName = "test-admin";
+        drop_req.roleName = "test-role";
+        RETURN_NOT_OK(client->DropRole(drop_req));
+        return Status::OK();
+    });
+  };
+
+  ASSERT_OK(smoketest());
+
   ASSERT_OK(mini_sentry.Stop());
   ASSERT_OK(mini_sentry.Start());
+  ASSERT_OK(smoketest());
 
   ASSERT_OK(mini_sentry.Pause());
   ASSERT_OK(mini_sentry.Resume());
+  ASSERT_OK(smoketest());
 }
 
 // Basic functionality test of the Sentry client. The goal is not an exhaustive

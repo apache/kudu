@@ -122,6 +122,8 @@ const uint16_t HmsClient::kDefaultHmsPort = 9083;
 
 const int kSlowExecutionWarningThresholdMs = 1000;
 
+const char* const HmsClient::kServiceName = "Hive Metastore";
+
 HmsClient::HmsClient(const HostPort& address, const ClientOptions& options)
       : client_(hive::ThriftHiveMetastoreClient(CreateClientProtocol(address, options))) {
 }

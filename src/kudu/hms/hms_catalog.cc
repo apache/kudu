@@ -17,8 +17,6 @@
 
 #include "kudu/hms/hms_catalog.h"
 
-#include <algorithm>
-#include <functional>
 #include <iostream>
 #include <iterator>
 #include <map>
@@ -43,11 +41,10 @@
 #include "kudu/hms/hive_metastore_types.h"
 #include "kudu/hms/hms_client.h"
 #include "kudu/thrift/client.h"
-#include "kudu/util/async_util.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/slice.h"
-#include "kudu/util/threadpool.h"
 
 using boost::none;
 using boost::optional;
@@ -123,12 +120,7 @@ const char* const HmsCatalog::kInvalidTableError = "when the Hive Metastore inte
     "identifier pair, each containing only ASCII alphanumeric characters, '_', and '/'";
 
 HmsCatalog::HmsCatalog(string master_addresses)
-    : master_addresses_(std::move(master_addresses)),
-      hms_client_(HostPort("", 0), thrift::ClientOptions()),
-      reconnect_after_(MonoTime::Now()),
-      reconnect_failure_(Status::OK()),
-      consecutive_reconnect_failures_(0),
-      reconnect_idx_(0) {
+    : master_addresses_(std::move(master_addresses)) {
 }
 
 HmsCatalog::~HmsCatalog() {
@@ -136,35 +128,32 @@ HmsCatalog::~HmsCatalog() {
 }
 
 Status HmsCatalog::Start() {
-  if (threadpool_) {
-    return Status::IllegalState("HMS Catalog is already started");
-  }
+  vector<HostPort> addresses;
+  RETURN_NOT_OK(ParseUris(FLAGS_hive_metastore_uris, &addresses));
 
-  RETURN_NOT_OK(ParseUris(FLAGS_hive_metastore_uris, &hms_addresses_));
+  thrift::ClientOptions options;
+  options.send_timeout = MonoDelta::FromSeconds(FLAGS_hive_metastore_send_timeout);
+  options.recv_timeout = MonoDelta::FromSeconds(FLAGS_hive_metastore_recv_timeout);
+  options.conn_timeout = MonoDelta::FromSeconds(FLAGS_hive_metastore_conn_timeout);
+  options.enable_kerberos = FLAGS_hive_metastore_sasl_enabled;
+  options.service_principal = FLAGS_hive_metastore_kerberos_principal;
+  options.max_buf_size = FLAGS_hive_metastore_max_message_size;
+  options.retry_count = FLAGS_hive_metastore_retry_count;
 
-  // The thread pool must be capped at one thread to ensure serialized access to
-  // the fields of HmsCatalog.
-  RETURN_NOT_OK(ThreadPoolBuilder("hms-catalog")
-      .set_min_threads(1)
-      .set_max_threads(1)
-      .Build(&threadpool_));
-
-  return Status::OK();
+  return ha_client_.Start(std::move(addresses), std::move(options));
 }
 
 void HmsCatalog::Stop() {
-  if (threadpool_) {
-    threadpool_->Shutdown();
-  }
+  ha_client_.Stop();
 }
 
 Status HmsCatalog::CreateTable(const string& id,
                                const string& name,
                                optional<const string&> owner,
                                const Schema& schema) {
-  return Execute([&] (HmsClient* client) {
-      hive::Table table;
-      RETURN_NOT_OK(PopulateTable(id, name, owner, schema, master_addresses_, &table));
+  hive::Table table;
+  RETURN_NOT_OK(PopulateTable(id, name, owner, schema, master_addresses_, &table));
+  return ha_client_.Execute([&] (HmsClient* client) {
       return client->CreateTable(table, EnvironmentContext());
   });
 }
@@ -183,7 +172,7 @@ Status HmsCatalog::DropTable(const string& name, const hive::EnvironmentContext&
   Slice hms_database;
   Slice hms_table;
   RETURN_NOT_OK(ParseTableName(name, &hms_database, &hms_table));
-  return Execute([&] (HmsClient* client) {
+  return ha_client_.Execute([&] (HmsClient* client) {
     return client->DropTable(hms_database.ToString(), hms_table.ToString(), env_ctx);
   });
 }
@@ -192,7 +181,7 @@ Status HmsCatalog::UpgradeLegacyImpalaTable(const string& id,
                                             const string& db_name,
                                             const string& tb_name,
                                             const Schema& schema) {
-  return Execute([&] (HmsClient* client) {
+  return ha_client_.Execute([&] (HmsClient* client) {
     hive::Table table;
     RETURN_NOT_OK(client->GetTable(db_name, tb_name, &table));
     if (table.parameters[HmsClient::kStorageHandlerKey] !=
@@ -207,11 +196,11 @@ Status HmsCatalog::UpgradeLegacyImpalaTable(const string& id,
 }
 
 Status HmsCatalog::DowngradeToLegacyImpalaTable(const string& name) {
-  return Execute([&] (HmsClient* client) {
-    Slice hms_database;
-    Slice hms_table;
-    RETURN_NOT_OK(ParseTableName(name, &hms_database, &hms_table));
+  Slice hms_database;
+  Slice hms_table;
+  RETURN_NOT_OK(ParseTableName(name, &hms_database, &hms_table));
 
+  return ha_client_.Execute([&] (HmsClient* client) {
     hive::Table table;
     RETURN_NOT_OK(client->GetTable(hms_database.ToString(), hms_table.ToString(), &table));
     if (table.parameters[HmsClient::kStorageHandlerKey] !=
@@ -235,7 +224,7 @@ Status HmsCatalog::DowngradeToLegacyImpalaTable(const string& name) {
 }
 
 Status HmsCatalog::GetKuduTables(vector<hive::Table>* kudu_tables) {
-  return Execute([&] (HmsClient* client) {
+  return ha_client_.Execute([&] (HmsClient* client) {
     vector<string> database_names;
     RETURN_NOT_OK(client->GetAllDatabases(&database_names));
     vector<string> table_names;
@@ -267,8 +256,11 @@ Status HmsCatalog::AlterTable(const string& id,
                               const string& name,
                               const string& new_name,
                               const Schema& schema) {
+  Slice hms_database;
+  Slice hms_table;
+  RETURN_NOT_OK(ParseTableName(name, &hms_database, &hms_table));
 
-  return Execute([&] (HmsClient* client) {
+  return ha_client_.Execute([&] (HmsClient* client) {
       // The HMS does not have a way to alter individual fields of a table
       // entry, so we must request the existing table entry from the HMS, update
       // the fields, and write it back. Otherwise we'd overwrite metadata fields
@@ -283,10 +275,6 @@ Status HmsCatalog::AlterTable(const string& id,
       // - The new table name isn't a valid Hive database/table pair
       // - The original table does not exist in the HMS
       // - The original table doesn't match the Kudu table being altered
-
-      Slice hms_database;
-      Slice hms_table;
-      RETURN_NOT_OK(ParseTableName(name, &hms_database, &hms_table));
 
       hive::Table table;
       RETURN_NOT_OK(client->GetTable(hms_database.ToString(), hms_table.ToString(), &table));
@@ -308,155 +296,9 @@ Status HmsCatalog::AlterTable(const string& id,
 
 Status HmsCatalog::GetNotificationEvents(int64_t last_event_id, int max_events,
                                          vector<hive::NotificationEvent>* events) {
-  return Execute([&] (HmsClient* client) {
+  return ha_client_.Execute([&] (HmsClient* client) {
     return client->GetNotificationEvents(last_event_id, max_events, events);
   });
-}
-
-template<typename Task>
-Status HmsCatalog::Execute(Task task) {
-  Synchronizer synchronizer;
-  auto callback = synchronizer.AsStdStatusCallback();
-
-  // TODO(todd): wrapping this in a TRACE_EVENT scope and a LOG_IF_SLOW and such
-  // would be helpful. Perhaps a TRACE message and/or a TRACE_COUNTER_INCREMENT
-  // too to keep track of how much time is spent in calls to HMS for a given
-  // CreateTable call. That will also require propagating the current Trace
-  // object into the 'Rpc' object. Note that the HmsClient class already has
-  // LOG_IF_SLOW calls internally.
-
-  RETURN_NOT_OK(threadpool_->SubmitFunc([=] {
-    // The main run routine of the threadpool thread. Runs the task with
-    // exclusive access to the HMS client. If the task fails, it will be
-    // retried, unless the failure type is non-retriable or the maximum number
-    // of retries has been exceeded. Also handles re-connecting the HMS client
-    // after a fatal error.
-    //
-    // Since every task submitted to the (single thread) pool runs this, it's
-    // essentially a single iteration of a run loop which handles HMS client
-    // reconnection and task processing.
-    //
-    // Notes on error handling:
-    //
-    // There are three separate error scenarios below:
-    //
-    // * Error while (re)connecting the HMS client - This is considered a
-    // 'non-recoverable' error. The current task is immediately failed. In order
-    // to avoid hot-looping and hammering the HMS with reconnect attempts on
-    // every queued task, we set a backoff period. Any tasks which subsequently
-    // run during this backoff period are also immediately failed.
-    //
-    // * Task results in a fatal error - a fatal error is any error caused by a
-    // network or IO fault (not an application level failure). The HMS client
-    // will attempt to reconnect, and the task will be retried (up to a limit).
-    //
-    // * Task results in a non-fatal error - a non-fatal error is an application
-    // level error, and causes the task to be failed immediately (no retries).
-
-    // Keep track of the first attempt's failure. Typically the first failure is
-    // the most informative.
-    Status first_failure;
-
-    for (int attempt = 0; attempt <= FLAGS_hive_metastore_retry_count; attempt++) {
-      if (!hms_client_.IsConnected()) {
-        if (reconnect_after_ > MonoTime::Now()) {
-          // Not yet ready to attempt reconnection; fail the task immediately.
-          DCHECK(!reconnect_failure_.ok());
-          return callback(reconnect_failure_);
-        }
-
-        // Attempt to reconnect.
-        Status reconnect_status = Reconnect();
-        if (!reconnect_status.ok()) {
-          // Reconnect failed; retry with exponential backoff capped at 10s and
-          // fail the task. We don't bother with jitter here because only the
-          // leader master should be attempting this in any given period per
-          // cluster.
-          consecutive_reconnect_failures_++;
-          reconnect_after_ = MonoTime::Now() +
-              std::min(MonoDelta::FromMilliseconds(100 << consecutive_reconnect_failures_),
-                       MonoDelta::FromSeconds(10));
-          reconnect_failure_ = std::move(reconnect_status);
-          return callback(reconnect_failure_);
-        }
-
-        consecutive_reconnect_failures_ = 0;
-      }
-
-      // Execute the task.
-      Status task_status = task(&hms_client_);
-
-      // If the task succeeds, or it's a non-retriable error, return the result.
-      if (task_status.ok() || !IsFatalError(task_status)) {
-        return callback(task_status);
-      }
-
-      // A fatal error occurred. Tear down the connection, and try again. We
-      // don't log loudly here because odds are the reconnection will fail if
-      // it's a true fault, at which point we do log loudly.
-      VLOG(1) << "Call to HMS failed: " << task_status.ToString();
-
-      if (attempt == 0) {
-        first_failure = std::move(task_status);
-      }
-
-      WARN_NOT_OK(hms_client_.Stop(), "Failed to stop Hive Metastore client");
-    }
-
-    // We've exhausted the allowed retries.
-    DCHECK(!first_failure.ok());
-    LOG(WARNING) << "Call to HMS failed after " << FLAGS_hive_metastore_retry_count
-                 << " retries: " << first_failure.ToString();
-
-    return callback(first_failure);
-  }));
-
-  return synchronizer.Wait();
-}
-
-Status HmsCatalog::Reconnect() {
-  Status s;
-
-  thrift::ClientOptions options;
-  options.send_timeout = MonoDelta::FromSeconds(FLAGS_hive_metastore_send_timeout);
-  options.recv_timeout = MonoDelta::FromSeconds(FLAGS_hive_metastore_recv_timeout);
-  options.conn_timeout = MonoDelta::FromSeconds(FLAGS_hive_metastore_conn_timeout);
-  options.enable_kerberos = FLAGS_hive_metastore_sasl_enabled;
-  options.service_principal = FLAGS_hive_metastore_kerberos_principal;
-  options.max_buf_size = FLAGS_hive_metastore_max_message_size;
-
-  // Try reconnecting to each HMS in sequence, returning the first one which
-  // succeeds. In order to avoid getting 'stuck' on a partially failed HMS, we
-  // remember which we connected to previously and try it last.
-  for (int i = 0; i < hms_addresses_.size(); i++) {
-    const auto& address = hms_addresses_[reconnect_idx_];
-    reconnect_idx_ = (reconnect_idx_ + 1) % hms_addresses_.size();
-
-    hms_client_ = HmsClient(address, options);
-    s = hms_client_.Start();
-    if (s.ok()) {
-      VLOG(1) << "Connected to Hive Metastore " << address.ToString();
-      return Status::OK();
-    }
-
-    WARN_NOT_OK(s, Substitute("Failed to connect to Hive Metastore ($0)", address.ToString()))
-  }
-
-  WARN_NOT_OK(hms_client_.Stop(), "Failed to stop Hive Metastore client");
-  return s;
-}
-
-bool HmsCatalog::IsFatalError(const Status& status) {
-  // Whitelist of errors which are not fatal. This errs on the side of
-  // considering an error fatal since the consequences are low; just an
-  // unnecessary reconnect. If a fatal error is not recognized it could cause
-  // another RPC to fail, since there is no way to check the status of the
-  // connection before sending an RPC.
-  return !(status.IsAlreadyPresent()
-        || status.IsNotFound()
-        || status.IsInvalidArgument()
-        || status.IsIllegalState()
-        || status.IsRemoteError());
 }
 
 namespace {

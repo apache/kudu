@@ -33,7 +33,7 @@ class HostPort;
 
 namespace thrift {
 struct ClientOptions;
-}
+} // namespace thrift
 
 namespace hms {
 
@@ -50,21 +50,9 @@ enum class Cascade {
 // HmsClient is not thread safe.
 //
 // HmsClient wraps a single TCP connection to an HMS, and does not attempt to
-// handle or retry on failure. It's expected that a higher-level component will
-// wrap HmsClient to provide retry, pooling, and HA deployment features if
-// necessary.
-//
-// Note: Thrift provides a handy TSocketPool class which could be useful in
-// allowing the HmsClient to transparently handle connecting to a pool of HA HMS
-// instances. However, because TSocketPool handles choosing the instance during
-// socket connect, it can't determine if the remote endpoint is actually an HMS,
-// or just a random listening TCP socket. Nor can it do application-level checks
-// like ensuring that the connected HMS is configured with the Kudu Metastore
-// plugin. So, it's better for a higher-level construct to handle connecting to
-// HA deployments by wrapping multiple HmsClient instances. HmsClient punts on
-// handling connection retries, because the higher-level construct which is
-// handling HA deployments will naturally want to retry across HMS instances as
-// opposed to retrying repeatedly on a single instance.
+// retry on failure. If higher-level features like thread-safety, retrying, and
+// HA support are needed then use thrift::HaClient<HmsClient> to wrap the HMS
+// client.
 class HmsClient {
  public:
 
@@ -90,6 +78,8 @@ class HmsClient {
   static const char* const kExternalTable;
 
   static const uint16_t kDefaultHmsPort;
+
+  static const char* const kServiceName;
 
   // Create an HmsClient connection to the provided HMS Thrift RPC address.
   HmsClient(const HostPort& address, const thrift::ClientOptions& options);
@@ -201,6 +191,5 @@ class HmsClient {
  private:
   hive::ThriftHiveMetastoreClient client_;
 };
-
 } // namespace hms
 } // namespace kudu

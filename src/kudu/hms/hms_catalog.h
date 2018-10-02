@@ -24,19 +24,17 @@
 #include <boost/optional/optional.hpp>
 #include <gtest/gtest_prod.h>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/hms/hive_metastore_types.h"
 #include "kudu/hms/hms_client.h"
-#include "kudu/util/monotime.h"
-#include "kudu/util/net/net_util.h"
+#include "kudu/thrift/client.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
 
+class HostPort;
 class Schema;
 class Slice;
-class ThreadPool;
 
 namespace hms {
 
@@ -170,21 +168,9 @@ class HmsCatalog {
   FRIEND_TEST(HmsCatalogStaticTest, TestParseTableNameSlices);
   FRIEND_TEST(HmsCatalogStaticTest, TestParseUris);
 
-  // Synchronously executes a task with exclusive access to the HMS client.
-  template<typename Task>
-  Status Execute(Task task) WARN_UNUSED_RESULT;
-
-  // Reconnects hms_client_ to an HMS, or returns an error if all HMS instances
-  // are unavailable.
-  Status Reconnect();
-
   // Drops a table entry from the HMS, supplying the provided environment context.
   Status DropTable(const std::string& name,
                    const hive::EnvironmentContext& env_ctx) WARN_UNUSED_RESULT;
-
-  // Returns true if the RPC status is 'fatal', e.g. the Thrift connection on
-  // which it occurred should be shut down.
-  static bool IsFatalError(const Status& status);
 
   // Parses a Kudu table name into a Hive database and table name.
   // Returns an error if the Kudu table name is not correctly formatted.
@@ -202,20 +188,7 @@ class HmsCatalog {
   // Kudu master addresses.
   const std::string master_addresses_;
 
-  // Initialized during Start().
-  std::vector<HostPort> hms_addresses_;
-  gscoped_ptr<ThreadPool> threadpool_;
-
-  // Fields only used by the threadpool thread:
-
-  // The HMS client.
-  hms::HmsClient hms_client_;
-
-  // Fields which track consecutive reconnection attempts and backoff.
-  MonoTime reconnect_after_;
-  Status reconnect_failure_;
-  int consecutive_reconnect_failures_;
-  int reconnect_idx_;
+  thrift::HaClient<hms::HmsClient> ha_client_;
 };
 
 } // namespace hms

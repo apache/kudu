@@ -20,7 +20,6 @@
 #include <memory>
 #include <mutex>
 #include <ostream>
-#include <utility>
 
 #include <glog/logging.h>
 #include <thrift/TOutput.h>
@@ -30,6 +29,7 @@
 
 #include "kudu/thrift/sasl_client_transport.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/status.h"
 
 namespace apache {
 namespace thrift {
@@ -44,8 +44,8 @@ using apache::thrift::protocol::TProtocol;
 using apache::thrift::transport::TBufferedTransport;
 using apache::thrift::transport::TSocket;
 using apache::thrift::transport::TTransport;
-using std::shared_ptr;
 using std::make_shared;
+using std::shared_ptr;
 
 namespace kudu {
 namespace thrift {
@@ -83,5 +83,17 @@ shared_ptr<TProtocol> CreateClientProtocol(const HostPort& address, const Client
   return make_shared<TBinaryProtocol>(std::move(transport));
 }
 
+bool IsFatalError(const Status& error) {
+  // Whitelist of errors which are not fatal. This errs on the side of
+  // considering an error fatal since the consequences are low; just an
+  // unnecessary reconnect. If a fatal error is not recognized it could cause
+  // another RPC to fail, since there is no way to check the status of the
+  // connection before sending an RPC.
+  return !(error.IsAlreadyPresent()
+        || error.IsNotFound()
+        || error.IsInvalidArgument()
+        || error.IsIllegalState()
+        || error.IsRemoteError());
+}
 } // namespace thrift
 } // namespace kudu
