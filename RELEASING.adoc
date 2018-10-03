@@ -117,40 +117,14 @@ Apache committer guide for setting up your GPG keys
 
 . Fix any issues it finds, such as RAT.
 
-. Add the following information to your `~/.m2/settings.xml` file in order to
-  be able to deploy artifacts to the ASF Maven repository:
-+
-----
-<settings>
-  <servers>
-    <server>
-      <id>apache.snapshots.https</id>
-      <username> <!-- YOUR APACHE LDAP USERNAME --> </username>
-      <password> <!-- YOUR APACHE LDAP PASSWORD (encrypted) --> </password>
-    </server>
-    <!-- To stage a release of some part of Maven -->
-    <server>
-      <id>apache.releases.https</id>
-      <username> <!-- YOUR APACHE LDAP USERNAME --> </username>
-      <password> <!-- YOUR APACHE LDAP PASSWORD (encrypted) --> </password>
-    </server>
-  </servers>
-</settings>
-----
-+
-If you don't want to keep your ASF password in plaintext on your local machine,
-you can link:http://maven.apache.org/guides/mini/guide-encryption.html[encrypt it].
-
 . Test the full Java build. This will sign and build everything without
   deploying any artifacts:
 +
 ----
-  # Run a gpg-agent if you don't normally. You may have to tweak it to get it
-  # to work with Maven, and this StackOverflow article might help:
-  # https://stackoverflow.com/questions/36506275/why-do-i-have-to-kill-gpg-agent-to-sign-my-commits
+  # Run a gpg-agent if you don't normally.
   gpg-agent --daemon
   cd java
-  mvn -DskipTests -Papache-release clean install
+  gradle clean install -PforceSigning
 ----
 +
 
@@ -184,7 +158,7 @@ you can link:http://maven.apache.org/guides/mini/guide-encryption.html[encrypt i
   # Run a gpg-agent if you don't normally
   gpg-agent --daemon
   cd java
-  mvn -DskipTests -Papache-release clean deploy
+  gradle clean uploadArchives -PmavenUsername="<APACHE-LDAP-USERNAME>" -PmavenPassword="<APACHE-LDAP-PASSWORD>"
 ----
 +
 Go to the link:https://repository.apache.org/\#stagingRepositories[staging repository]

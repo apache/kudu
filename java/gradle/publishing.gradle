@@ -30,8 +30,8 @@ ext {
           // Skip signing artifacts by default if -PskipSigning is passed.
           (!skipSigning
               // Sign artifacts if the version is not a snapshot, and we are uploading them to maven.
-              && !version.endsWith("SNAPSHOT") && gradle.taskGraph.hasTask("uploadArchives"))
-
+              && !version.endsWith("SNAPSHOT")
+              && project.gradle.startParameter.taskNames.any { it.contains("upload") })
   // These properties can be set in ~/.gradle/gradle.properties file,
   // though it would be open text. They can also be set on the cli via
   // -PmavenUsername and -PmavenPassword.

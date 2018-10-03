@@ -269,12 +269,28 @@
             </plugin>
         </plugins>
 
-        <!-- This big ol' block of nonsense tells the m2e Eclipse plugin what
-            to do with maven plugins that don't have m2e "extensions" available.
 
-            It doesn't affect the Maven build at all. -->
         <pluginManagement>
             <plugins>
+                <plugin>
+                    <!-- kudu-backup has no public Javadoc. -->
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-javadoc-plugin</artifactId>
+                    <configuration>
+                        <skip>true</skip>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <!-- Skip publishing kudu-backup until it's ready to be supported long-term. -->
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-deploy-plugin</artifactId>
+                    <configuration>
+                        <skip>true</skip>
+                    </configuration>
+                </plugin>
+                <!-- This big ol' block of nonsense tells the m2e Eclipse plugin what
+                     to do with maven plugins that don't have m2e "extensions" available.
+                     It doesn't affect the Maven build at all. -->
                 <plugin>
                     <groupId>org.eclipse.m2e</groupId>
                     <artifactId>lifecycle-mapping</artifactId>

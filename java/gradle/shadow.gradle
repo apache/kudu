@@ -75,10 +75,22 @@ configurations.create("compileUnshaded")
 configurations.shadow.extendsFrom(configurations.compileUnshaded)
 configurations.compile.extendsFrom(configurations.compileUnshaded)
 
-// Ensure compileUnshaded dependencies are not compiled into shadowJar.
 // We use afterEvaluate to add additional configuration once all the definitions
 // in the projects build script have been applied
 afterEvaluate {
+  // Ensure compileUnshaded dependencies are included in the pom.
+  [install, uploadArchives].each { task ->
+    task.repositories.each {
+      configure(it.pom.scopeMappings) {
+        // The priority value is arbitrary.
+        addMapping(
+            MavenPlugin.COMPILE_PRIORITY,
+            configurations.compileUnshaded,
+            Conf2ScopeMappingContainer.COMPILE)
+      }
+    }
+  }
+  // Ensure compileUnshaded dependencies are not compiled into shadowJar.
   project.configurations.compileUnshaded.dependencies.each { dep ->
     def depStr = "${dep.group}:${dep.name}:${dep.version}"
     logger.info "Excluding ${depStr} from being bundled into the shaded jar."

@@ -59,3 +59,11 @@ sourceSets {
 
 // Adjust the artifact name to match the maven build.
 archivesBaseName = "kudu-backup${versions.sparkBase}_${versions.scalaBase}"
+
+// kudu-backup has no public Javadoc.
+javadoc {
+  enabled = false
+}
+
+// Skip publishing kudu-backup until it's ready to be supported long-term.
+uploadArchives.enabled = false

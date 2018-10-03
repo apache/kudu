@@ -96,6 +96,14 @@
     <build>
         <plugins>
             <plugin>
+                <!-- kudu-hive has no public Javadoc. -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-javadoc-plugin</artifactId>
+                <configuration>
+                    <skip>true</skip>
+                </configuration>
+            </plugin>
+            <plugin>
                 <!-- Skip publishing kudu-hive until it's ready to be supported long-term. -->
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-deploy-plugin</artifactId>
