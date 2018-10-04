@@ -703,11 +703,10 @@ hold no data. They must not be deleted.
 [[cfile_corruption]]
 === Corruption: checksum error on CFile block
 
-If the data on disk becomes corrupt, users will encounter warnings containing
-"Corruption: checksum error on CFile block" in the tablet server logs and
-client side errors when trying to scan tablets with corrupt CFile blocks.
-Until link:https://issues.apache.org/jira/browse/KUDU-2469[KUDU-2469] is
-completed, fixing this corruption is a manual process.
+In versions prior to Kudu 1.8.0, if the data on disk becomes corrupt, users
+will encounter warnings containing "Corruption: checksum error on CFile block"
+in the tablet server logs and client side errors when trying to scan tablets
+with corrupt CFile blocks. Fixing this corruption is a manual process.
 
 To fix the issue, users can first identify all the affected tablets by
 running a checksum scan on the affected tables or tablets using the
@@ -739,3 +738,6 @@ with an empty one using the
 ----
 sudo -u kudu kudu tablet unsafe_replace_tablet <master_addresses> <tablet_id>
 ----
+
+From versions 1.8.0 onwards, Kudu will mark the affected replicas as failed,
+leading to their automatic re-replication elsewhere.
