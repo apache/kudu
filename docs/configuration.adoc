@@ -74,7 +74,11 @@ the latency of Kudu writes.
 The `--fs_data_dirs` configuration indicates where Kudu will write its data
 blocks. This is a comma-separated list of directories; if multiple values are
 specified, data will be striped across the directories. If not specified, data
-blocks will be placed in the directory specified by `--fs_wal_dir`.
+blocks will be placed in the directory specified by `--fs_wal_dir`. Note that
+while a single data directory backed by a RAID-0 array will outperform a single
+data directory backed by a single storage device, it is better to let Kudu
+manage its own striping over multiple devices rather than delegating the
+striping to a RAID-0 array.
 
 Additionally, `--fs_wal_dir` and `--fs_metadata_dir` may be the same as _one
 of_ the directories listed in `--fs_data_dirs`, but must not be sub-directories
