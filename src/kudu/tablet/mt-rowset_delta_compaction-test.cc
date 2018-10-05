@@ -157,9 +157,6 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
     for (const auto& thread : compaction_threads_) {
       ASSERT_OK(ThreadJoiner(thread.get()).Join());
     }
-    for (const auto& thread : alter_schema_threads_) {
-      ASSERT_OK(ThreadJoiner(thread.get()).Join());
-    }
   }
 
   void WriteTestRowSetWithZeros() {
@@ -197,7 +194,6 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
   vector<scoped_refptr<kudu::Thread> > update_threads_;
   vector<scoped_refptr<kudu::Thread> > flush_threads_;
   vector<scoped_refptr<kudu::Thread> > compaction_threads_;
-  vector<scoped_refptr<kudu::Thread> > alter_schema_threads_;
 };
 
 static void SetupFlagsForSlowTests() {
