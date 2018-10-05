@@ -55,6 +55,15 @@ elseif("${COMPILER_VERSION_FULL}" MATCHES ".*clang-9")
   set(COMPILER_FAMILY "clang")
   set(COMPILER_VERSION "4.0.0svn")
 
+# clang on macOS, XCode 10.
+#
+# TODO(wdberkeley): 6.0.0svn is also just a guess, for the same reason, and
+# generated from the same sources, particularly the comment
+# https://gist.github.com/yamaya/2924292#gistcomment-801888.
+elseif("${COMPILER_VERSION_FULL}" MATCHES ".*clang-10")
+  set(COMPILER_FAMILY "clang")
+  set(COMPILER_VERSION "6.0.0svn")
+
 # gcc
 elseif("${COMPILER_VERSION_FULL}" MATCHES ".*gcc version.*")
   set(COMPILER_FAMILY "gcc")
@@ -63,6 +72,7 @@ elseif("${COMPILER_VERSION_FULL}" MATCHES ".*gcc version.*")
 else()
   message(FATAL_ERROR "Unknown compiler. Version info:\n${COMPILER_VERSION_FULL}")
 endif()
+
 message("Selected compiler ${COMPILER_FAMILY} ${COMPILER_VERSION}")
 
 # gcc (and some varieties of clang) mention the path prefix where system headers
