@@ -67,7 +67,8 @@ TAG_FLAG(enable_data_block_fsync, unsafe);
 
 #if defined(__linux__)
 DEFINE_string(block_manager, "log", "Which block manager to use for storage. "
-              "Valid options are 'file' and 'log'.");
+              "Valid options are 'file' and 'log'. The file block manager is not suitable for "
+              "production use due to scaling limitations.");
 #else
 DEFINE_string(block_manager, "file", "Which block manager to use for storage. "
               "Only the file block manager is supported for non-Linux systems.");

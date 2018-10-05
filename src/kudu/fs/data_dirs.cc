@@ -136,8 +136,12 @@ const char kHolePunchErrorMsg[] =
     "filesystem with hole punching support such as ext4 or xfs. On el6, "
     "kernel version 2.6.32-358 or newer is required. To run without hole "
     "punching (at the cost of some efficiency and scalability), reconfigure "
-    "Kudu with --block_manager=file. Refer to the Kudu documentation for more "
-    "details. Raw error message follows";
+    "Kudu to use the file block manager. Refer to the Kudu documentation for "
+    "more details. WARNING: the file block manager is not suitable for "
+    "production use and should be used only for small-scale evaluation and "
+    "development on systems where hole-punching is not available. It's "
+    "impossible to switch between block managers after data is written to the "
+    "server. Raw error message follows";
 
 Status CheckHolePunch(Env* env, const string& path) {
   // Arbitrary constants.

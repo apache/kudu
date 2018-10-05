@@ -48,8 +48,12 @@ Error during hole punch test. The log block manager requires a
 filesystem with hole punching support such as ext4 or xfs. On el6,
 kernel version 2.6.32-358 or newer is required. To run without hole
 punching (at the cost of some efficiency and scalability), reconfigure
-Kudu with --block_manager=file. Refer to the Kudu documentation for more
-details. Raw error message follows.
+Kudu to use the file block manager. Refer to the Kudu documentation for
+more details. WARNING: the file block manager is not suitable for
+production use and should be used only for small-scale evaluation and
+development on systems where hole-punching is not available. It's
+impossible to switch between block managers after data is written to the
+server. Raw error message follows
 ----
 
 [NOTE]
@@ -70,8 +74,18 @@ adding the `--block_manager=file` flag to the commands you use to start the mast
 and tablet servers. The file block manager does not scale as well as the log block
 manager.
 
-WARNING: The file block manager is known to scale and perform poorly, and should
-only be used for small-scale evaluation and development.
+[WARNING]
+====
+The file block manager is known to scale and perform poorly, and should
+only be used for small-scale evaluation and development, and only on systems
+where hole punching is unavailable.
+
+The file block manager uses one file per block. As multiple blocks are written
+for each rowset, the number of blocks can be very high, especially for actively
+written tablets. This can cause performance issues compared to the log block
+manager even with a small amount of data and it's *impossible to switch between
+block managers* without wiping and reinitializing the tablet servers.
+====
 
 [[disk_issues]]
 === Already present: FS layout already exists
@@ -224,7 +238,7 @@ jitter, while `lpeers` lists dispersion.
 
 
 [NOTE]
-****
+====
 .Using `chrony` for time synchronization
 
 Some operating systems offer `chrony` as an alternative to `ntpd` for network time
@@ -233,7 +247,7 @@ synchronization. Kudu has been tested most thoroughly using `ntpd` and use of
 
 In order to use `chrony` for synchronization, `chrony.conf` must be configured
 with the `rtcsync` option.
-****
+====
 
 ==== NTP Configuration Best Practices
 
