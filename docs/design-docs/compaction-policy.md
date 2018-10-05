@@ -372,7 +372,7 @@ Computational complexity
 ----------------------------
 
 The algorithm contains `O(n^2)` calls to BestForPair, each of which contains one instance of the
-0-1 knapsack problem, which has complexity `O(n * max_budget). Thus, the total complexity is cubic
+0-1 knapsack problem, which has complexity `O(n * max_budget)`. Thus, the total complexity is cubic
 in the number of rowsets, which can become quite expensive when a given tablet may include on the
 order of a thousand rowsets.
 
