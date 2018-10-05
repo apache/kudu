@@ -222,10 +222,12 @@ HIVE_SOURCE=$TP_SOURCE_DIR/$HIVE_NAME
 
 # Note: The Hadoop release tarball is stripped of unnecessary jars before being
 # uploaded. See thirdparty/package-hadoop.sh for details.
-HADOOP_VERSION=2.8.2
+HADOOP_VERSION=2.8.5
 HADOOP_NAME=hadoop-$HADOOP_VERSION
 HADOOP_SOURCE=$TP_SOURCE_DIR/$HADOOP_NAME
 
-SENTRY_VERSION=2.0.1
+# TODO(dan): bump to a release version once SENTRY-2371 is published. The SHA
+# below is the current head of the master branch.
+SENTRY_VERSION=2c9a927a9e87cba0e4c0f34fc0b55887c6636927
 SENTRY_NAME=apache-sentry-$SENTRY_VERSION-bin
 SENTRY_SOURCE=$TP_SOURCE_DIR/$SENTRY_NAME

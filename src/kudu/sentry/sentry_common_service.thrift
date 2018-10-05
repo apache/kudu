@@ -19,7 +19,7 @@
  */
 
 # DO NOT MODIFY! Copied from
-# https://raw.githubusercontent.com/apache/sentry/release-2.0.1/sentry-provider/sentry-provider-db/src/main/resources/sentry_common_service.thrift
+# https://raw.githubusercontent.com/apache/sentry/2c9a927a9e87cba0e4c0f34fc0b55887c6636927/sentry-service/sentry-service-api/src/main/resources/sentry_common_service.thrift
 #
 # With edits:
 #   - Change cpp namespace to 'sentry' to match the Kudu codebase style.
@@ -47,4 +47,3 @@ struct TSentryResponseStatus {
 2: required string message
 3: optional string stack
 }
-
