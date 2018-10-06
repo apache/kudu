@@ -60,9 +60,14 @@ DEFINE_string(location_mapping_cmd, "",
               "using location awareness features this flag should not be set.");
 TAG_FLAG(location_mapping_cmd, evolving);
 
+DEFINE_bool(location_mapping_by_uuid, false,
+            "Whether the location command is given tablet server identifier "
+            "instead of hostname/IP address (for tests only).");
+TAG_FLAG(location_mapping_by_uuid, hidden);
+TAG_FLAG(location_mapping_by_uuid, unsafe);
+
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
-using std::make_shared;
 using std::shared_ptr;
 using std::string;
 using std::vector;
@@ -223,13 +228,18 @@ Status TSDescriptor::Register(const NodeInstancePB& instance,
   // mapping script.
   const string& location_mapping_cmd = FLAGS_location_mapping_cmd;
   if (!location_mapping_cmd.empty()) {
-    const auto& host = registration_->rpc_addresses(0).host();
+    // In some test scenarios the location is assigned per tablet server UUID.
+    // That's the case when multiple (or even all) tablet servers have the same
+    // IP address for their RPC endpoint.
+    const auto& cmd_arg = FLAGS_location_mapping_by_uuid
+        ? permanent_uuid() : registration_->rpc_addresses(0).host();
+    TRACE(Substitute("tablet server $0: assigning location", permanent_uuid()));
     string location;
-    TRACE("Assigning location");
     Status s = GetLocationFromLocationMappingCmd(location_mapping_cmd,
-                                                 host,
+                                                 cmd_arg,
                                                  &location);
-    TRACE("Assigned location");
+    TRACE(Substitute(
+        "tablet server $0: assigned location '$1'", permanent_uuid(), location));
 
     // Assign the location under the lock if location resolution succeeds. If
     // it fails, log the error.

@@ -79,6 +79,7 @@ struct TServerDetails {
   std::unique_ptr<tserver::TabletServerAdminServiceProxy> tserver_admin_proxy;
   std::unique_ptr<consensus::ConsensusServiceProxy> consensus_proxy;
   std::unique_ptr<server::GenericServiceProxy> generic_proxy;
+  std::string location;
 
   // Convenience function to get the UUID from the instance_id struct.
   const std::string& uuid() const;

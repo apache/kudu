@@ -223,7 +223,6 @@ Status ExternalMiniCluster::Start() {
   return Status::OK();
 }
 
-
 void ExternalMiniCluster::ShutdownNodes(ClusterNodes nodes) {
   if (nodes == ClusterNodes::ALL || nodes == ClusterNodes::TS_ONLY) {
     for (const scoped_refptr<ExternalTabletServer>& ts : tablet_servers_) {
@@ -376,6 +375,29 @@ Status ExternalMiniCluster::StartMasters() {
   if (num_masters > 1) {
     flags.emplace_back(Substitute("--master_addresses=$0",
                                   HostPort::ToCommaSeparatedString(master_rpc_addrs)));
+  }
+  if (!opts_.location_info.empty()) {
+    string bin_path;
+    RETURN_NOT_OK(DeduceBinRoot(&bin_path));
+    const auto mapping_script_path =
+        JoinPathSegments(bin_path, "scripts/assign-location.py");
+    const auto state_store_fpath =
+        JoinPathSegments(opts_.cluster_root, "location-assignment.state");
+    auto location_cmd = Substitute("$0 --state_store=$1",
+                                   mapping_script_path, state_store_fpath);
+    for (const auto& elem : opts_.location_info) {
+      // Per-location mapping rule specified as a pair 'location:num_servers',
+      // where 'location' is the location string and 'num_servers' is the number
+      // of tablet servers to be assigned the location.
+      location_cmd += Substitute(" --map $0:$1", elem.first, elem.second);
+    }
+    flags.emplace_back(Substitute("--location_mapping_cmd=$0", location_cmd));
+#   if defined(__APPLE__)
+    // On macOS, it's not possible to have unique loopback interfaces. To make
+    // location mapping working, a tablet server is identified by its UUID
+    // instead of IP address of its RPC end-point.
+    flags.emplace_back("--location_mapping_by_uuid");
+#   endif
   }
   string exe = GetBinaryPath(kMasterBinaryName);
 

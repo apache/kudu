@@ -308,6 +308,7 @@ Status CreateTabletServerMap(const shared_ptr<MasterServiceProxy>& master_proxy,
     unique_ptr<TServerDetails> peer(new TServerDetails);
     peer->instance_id.CopyFrom(entry.instance_id());
     peer->registration.CopyFrom(entry.registration());
+    peer->location = entry.location();
 
     CreateTsClientProxies(addresses[0],
                           messenger,

@@ -76,6 +76,9 @@ class ExternalDaemon;
 class ExternalMaster;
 class ExternalTabletServer;
 
+// Location --> number of tablet servers in location.
+typedef std::map<std::string, int> LocationInfo;
+
 struct ExternalMiniClusterOptions {
   ExternalMiniClusterOptions();
 
@@ -160,6 +163,13 @@ struct ExternalMiniClusterOptions {
   //
   // Default: 3 seconds.
   MonoDelta rpc_negotiation_timeout;
+
+  // Parameter to specify the layout of tablet servers across cluster locations
+  // in form of pairs { location, num_tablet_servers }. The empty container
+  // means no locations are configured for the cluster.
+  //
+  // Default: empty
+  LocationInfo location_info;
 };
 
 // A mini-cluster made up of subprocesses running each of the daemons
