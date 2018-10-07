@@ -157,13 +157,6 @@ DEFINE_int32(max_encoded_key_size_bytes, 16 * 1024,
              "result in an error.");
 TAG_FLAG(max_encoded_key_size_bytes, unsafe);
 
-DEFINE_bool(enable_undo_delta_block_gc, true,
-    "Whether to enable undo delta block garbage collection. "
-    "This only affects the undo delta block deletion background task, and "
-    "doesn't control whether compactions delete ancient history. "
-    "To change what is considered ancient history use --tablet_history_max_age_sec");
-TAG_FLAG(enable_undo_delta_block_gc, evolving);
-
 METRIC_DEFINE_entity(tablet);
 METRIC_DEFINE_gauge_size(tablet, memrowset_size, "MemRowSet Memory Usage",
                          kudu::MetricUnit::kBytes,
@@ -1422,11 +1415,9 @@ void Tablet::RegisterMaintenanceOps(MaintenanceManager* maint_mgr) {
   maint_mgr->RegisterOp(major_delta_compact_op.get());
   maintenance_ops.push_back(major_delta_compact_op.release());
 
-  if (FLAGS_enable_undo_delta_block_gc) {
-    gscoped_ptr<MaintenanceOp> undo_delta_block_gc_op(new UndoDeltaBlockGCOp(this));
-    maint_mgr->RegisterOp(undo_delta_block_gc_op.get());
-    maintenance_ops.push_back(undo_delta_block_gc_op.release());
-  }
+  gscoped_ptr<MaintenanceOp> undo_delta_block_gc_op(new UndoDeltaBlockGCOp(this));
+  maint_mgr->RegisterOp(undo_delta_block_gc_op.get());
+  maintenance_ops.push_back(undo_delta_block_gc_op.release());
 
   std::lock_guard<simple_spinlock> l(state_lock_);
   maintenance_ops_.swap(maintenance_ops);

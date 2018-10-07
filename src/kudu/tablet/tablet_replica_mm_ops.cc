@@ -29,10 +29,33 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/tablet_metrics.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/maintenance_manager.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
+
+DEFINE_bool(enable_flush_memrowset, true,
+    "Whether to enable memrowset flush. Disabling memrowset flush prevents "
+    "the tablet server from flushing writes to diskrowsets, resulting in "
+    "increasing memory and WAL disk space usage.");
+TAG_FLAG(enable_flush_memrowset, runtime);
+TAG_FLAG(enable_flush_memrowset, unsafe);
+
+DEFINE_bool(enable_flush_deltamemstores, true,
+    "Whether to enable deltamemstore flush. Disabling deltamemstore flush "
+    "prevents the tablet server from flushing updates to deltafiles, resulting "
+    "in increasing memory and WAL disk space usage for workloads involving "
+    "updates and deletes.");
+TAG_FLAG(enable_flush_deltamemstores, runtime);
+TAG_FLAG(enable_flush_deltamemstores, unsafe);
+
+DEFINE_bool(enable_log_gc, true,
+    "Whether to enable write-ahead log garbage collection. Disabling WAL "
+    "garbage collection will cause the tablet server to stop reclaiming space "
+    "from the WAL, leading to increasing WAL disk space usage.");
+TAG_FLAG(enable_log_gc, runtime);
+TAG_FLAG(enable_log_gc, unsafe);
 
 DEFINE_int32(flush_threshold_mb, 1024,
              "Size at which MemRowSet flushes are triggered. "
@@ -100,6 +123,13 @@ void FlushOpPerfImprovementPolicy::SetPerfImprovementForFlush(MaintenanceOpStats
 //
 
 void FlushMRSOp::UpdateStats(MaintenanceOpStats* stats) {
+  if (PREDICT_FALSE(!FLAGS_enable_flush_memrowset)) {
+    KLOG_EVERY_N_SECS(WARNING, 300)
+        << "Memrowset flush is disabled (check --enable_flush_memrowset)";
+    stats->set_runnable(false);
+    return;
+  }
+
   std::lock_guard<simple_spinlock> l(lock_);
 
   map<int64_t, int64_t> replay_size_map;
@@ -166,6 +196,13 @@ scoped_refptr<AtomicGauge<uint32_t> > FlushMRSOp::RunningGauge() const {
 //
 
 void FlushDeltaMemStoresOp::UpdateStats(MaintenanceOpStats* stats) {
+  if (PREDICT_FALSE(!FLAGS_enable_flush_deltamemstores)) {
+    KLOG_EVERY_N_SECS(WARNING, 300)
+        << "Deltamemstore flush is disabled (check --enable_flush_deltamemstores)";
+    stats->set_runnable(false);
+    return;
+  }
+
   std::lock_guard<simple_spinlock> l(lock_);
   int64_t dms_size;
   int64_t retention_size;
@@ -230,6 +267,13 @@ LogGCOp::LogGCOp(TabletReplica* tablet_replica)
       sem_(1) {}
 
 void LogGCOp::UpdateStats(MaintenanceOpStats* stats) {
+  if (PREDICT_FALSE(!FLAGS_enable_log_gc)) {
+    KLOG_EVERY_N_SECS(WARNING, 300)
+        << "Log GC is disabled (check --enable_log_gc)";
+    stats->set_runnable(false);
+    return;
+  }
+
   int64_t retention_size;
 
   if (!tablet_replica_->GetGCableDataSize(&retention_size).ok()) {

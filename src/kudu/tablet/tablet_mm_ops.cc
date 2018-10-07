@@ -18,6 +18,7 @@
 #include "kudu/tablet/tablet_mm_ops.h"
 
 #include <mutex>
+#include <ostream>
 #include <utility>
 
 #include <gflags/gflags.h>
@@ -40,6 +41,36 @@ DEFINE_int32(undo_delta_block_gc_init_budget_millis, 1000,
     "when they can be deleted.");
 TAG_FLAG(undo_delta_block_gc_init_budget_millis, evolving);
 TAG_FLAG(undo_delta_block_gc_init_budget_millis, advanced);
+
+DEFINE_bool(enable_major_delta_compaction, true,
+    "Whether to enable major delta compaction. Disabling major delta "
+    "compaction may worsen performance and increase disk space usage for "
+    "workloads involving updates and deletes.");
+TAG_FLAG(enable_major_delta_compaction, runtime);
+TAG_FLAG(enable_major_delta_compaction, unsafe);
+
+DEFINE_bool(enable_minor_delta_compaction, true,
+    "Whether to enable minor delta compaction. Disabling minor delta "
+    "compaction may worsen performance and increase disk space usage for "
+    "workloads involving updates and deletes.");
+TAG_FLAG(enable_minor_delta_compaction, runtime);
+TAG_FLAG(enable_minor_delta_compaction, unsafe);
+
+DEFINE_bool(enable_rowset_compaction, true,
+    "Whether to enable rowset compaction. Disabling rowset compaction "
+    "may worsen performance and increase disk space usage.");
+TAG_FLAG(enable_rowset_compaction, runtime);
+TAG_FLAG(enable_rowset_compaction, unsafe);
+
+DEFINE_bool(enable_undo_delta_block_gc, true,
+    "Whether to enable undo delta block garbage collection. Disabling undo "
+    "delta block garbage collection may worsen performance and increase disk "
+    "space usage for workloads involving updates and deletes. This only "
+    "affects the undo delta block deletion background task, and doesn't "
+    "control whether compactions delete ancient history. To change what is "
+    "considered ancient history use --tablet_history_max_age_sec");
+TAG_FLAG(enable_undo_delta_block_gc, runtime);
+TAG_FLAG(enable_undo_delta_block_gc, unsafe);
 
 using std::string;
 using strings::Substitute;
@@ -68,6 +99,13 @@ CompactRowSetsOp::CompactRowSetsOp(Tablet* tablet)
 }
 
 void CompactRowSetsOp::UpdateStats(MaintenanceOpStats* stats) {
+  if (PREDICT_FALSE(!FLAGS_enable_rowset_compaction)) {
+    KLOG_EVERY_N_SECS(WARNING, 300)
+        << "Rowset compaction is disabled (check --enable_rowset_compaction)";
+    stats->set_runnable(false);
+    return;
+  }
+
   std::lock_guard<simple_spinlock> l(lock_);
 
   // Any operation that changes the on-disk row layout invalidates the
@@ -132,6 +170,13 @@ MinorDeltaCompactionOp::MinorDeltaCompactionOp(Tablet* tablet)
 }
 
 void MinorDeltaCompactionOp::UpdateStats(MaintenanceOpStats* stats) {
+  if (PREDICT_FALSE(!FLAGS_enable_minor_delta_compaction)) {
+    KLOG_EVERY_N_SECS(WARNING, 300)
+        << "Minor delta compaction is disabled (check --enable_minor_delta_compaction)";
+    stats->set_runnable(false);
+    return;
+  }
+
   std::lock_guard<simple_spinlock> l(lock_);
 
   // Any operation that changes the number of REDO files invalidates the
@@ -204,6 +249,13 @@ MajorDeltaCompactionOp::MajorDeltaCompactionOp(Tablet* tablet)
 }
 
 void MajorDeltaCompactionOp::UpdateStats(MaintenanceOpStats* stats) {
+  if (PREDICT_FALSE(!FLAGS_enable_major_delta_compaction)) {
+    KLOG_EVERY_N_SECS(WARNING, 300)
+        << "Major delta compaction is disabled (check --enable_major_delta_compaction)";
+    stats->set_runnable(false);
+    return;
+  }
+
   std::lock_guard<simple_spinlock> l(lock_);
 
   // Any operation that changes the size of the on-disk data invalidates the
@@ -275,6 +327,13 @@ UndoDeltaBlockGCOp::UndoDeltaBlockGCOp(Tablet* tablet)
 }
 
 void UndoDeltaBlockGCOp::UpdateStats(MaintenanceOpStats* stats) {
+  if (PREDICT_FALSE(!FLAGS_enable_undo_delta_block_gc)) {
+    KLOG_EVERY_N_SECS(WARNING, 300)
+        << "Undo delta block GC is disabled (check --enable_undo_delta_block_gc)";
+    stats->set_runnable(false);
+    return;
+  }
+
   int64_t max_estimated_retained_bytes = 0;
   WARN_NOT_OK(tablet_->EstimateBytesInPotentiallyAncientUndoDeltas(&max_estimated_retained_bytes),
               "Unable to count bytes in potentially ancient undo deltas");
