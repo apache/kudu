@@ -441,7 +441,7 @@ Status FsManager::Open(FsReport* report) {
     LOG(INFO) << "New directories created while opening local filesystem: " <<
         JoinStrings(created_dirs, ", ");
   }
-  if (!created_dirs.empty()) {
+  if (!created_files.empty()) {
     LOG(INFO) << "New files created while opening local filesystem: " <<
         JoinStrings(created_files, ", ");
   }
