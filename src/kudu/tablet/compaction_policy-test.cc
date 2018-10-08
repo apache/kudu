@@ -21,6 +21,7 @@
 #include <string>
 #include <unordered_set>
 #include <vector>
+#include <utility>
 
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
@@ -33,6 +34,7 @@
 #include "kudu/tablet/compaction_policy.h"
 #include "kudu/tablet/mock-rowsets.h"
 #include "kudu/tablet/rowset.h"
+#include "kudu/tablet/rowset_info.h"
 #include "kudu/tablet/rowset_tree.h"
 #include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
@@ -276,5 +278,169 @@ TEST_F(TestCompactionPolicy, KUDU2251) {
   ASSERT_LT(quality, 2.0);
 }
 
+namespace {
+double ComputeAverageRowsetHeight(
+    const vector<std::pair<string, string>>& intervals) {
+  RowSetVector rowsets;
+  for (const auto& interval : intervals) {
+    rowsets.push_back(std::make_shared<MockDiskRowSet>(interval.first,
+                                                       interval.second));
+  }
+  RowSetTree tree;
+  CHECK_OK(tree.Reset(rowsets));
+
+  double avg_height;
+  RowSetInfo::ComputeCdfAndCollectOrdered(tree, &avg_height, nullptr, nullptr);
+  return avg_height;
+}
+} // anonymous namespace
+
+class KeySpaceCdfTest : public KuduTest {
+ protected:
+  static void AssertWithinEpsilon(double epsilon,
+                                  double expected,
+                                  double actual) {
+    ASSERT_GE(actual, expected - epsilon);
+    ASSERT_LE(actual, expected + epsilon);
+  }
+};
+
+// Test the computation of average rowset heights. This isn't strictly used in
+// compaction policy, but this is a convenient place to put it, for now.
+TEST_F(KeySpaceCdfTest, TestComputingAverageRowSetHeight) {
+  // No rowsets.
+  EXPECT_EQ(0.0, ComputeAverageRowsetHeight({ }));
+
+  /* A rowset that's one key wide.
+   * |
+   */
+  EXPECT_EQ(0.0, ComputeAverageRowsetHeight({ { "A", "A" } }));
+
+  /* A single rowset.
+   * [ --- ]
+   */
+  EXPECT_EQ(1.0, ComputeAverageRowsetHeight({ { "A", "B" } }));
+
+  /* Two rowsets with no empty space between.
+   * [ --- ][ --- ]
+   */
+  EXPECT_EQ(1.0, ComputeAverageRowsetHeight({ { "A", "B" }, { "B", "C" } }));
+
+
+  /* Three rowsets with no empty spaces between.
+   * [ --- ][ --- ][ --- ]
+   */
+  EXPECT_EQ(1.0, ComputeAverageRowsetHeight({ { "A", "B" },
+                                              { "B", "C" },
+                                              { "C", "D" } }));
+
+  /* Two rowsets with empty space between them.
+   * [ --- ]       [ --- ]
+   */
+  EXPECT_EQ(1.0, ComputeAverageRowsetHeight({ { "A", "B" }, { "C", "D" } }));
+
+  /* Three rowsets with empty space between them.
+   * [ --- ]       [ --- ]       [ --- ]
+   */
+  EXPECT_EQ(1.0, ComputeAverageRowsetHeight({ { "A", "B" },
+                                              { "C", "D" },
+                                              { "E", "F" } }));
+
+  /* Three rowsets with empty space between them, and one is a single key.
+   * [ --- ]       |       [ --- ]
+   */
+  EXPECT_EQ(1.0, ComputeAverageRowsetHeight({ { "A", "B" },
+                                              { "C", "C" },
+                                              { "D", "D" } }));
+
+  /* Two rowsets that completely overlap.
+   * [ --- ]
+   * [ --- ]
+   */
+  EXPECT_EQ(2.0, ComputeAverageRowsetHeight({ { "A", "B" }, { "A", "B" } }));
+
+  /* Three rowsets that completely overlap, but two are single keys, and the
+   * overlaps are on the boundaries.
+   * [ --- ]
+   * |     |
+   */
+  EXPECT_EQ(1.0, ComputeAverageRowsetHeight({ { "A", "B" },
+                                              { "A", "A" },
+                                              { "B", "B" } }));
+
+  /* Three rowsets that completely overlap.
+   * [ --- ]
+   * [ --- ]
+   * [ --- ]
+   */
+  EXPECT_EQ(3.0, ComputeAverageRowsetHeight({ { "A", "B" },
+                                              { "A", "B" },
+                                              { "A", "B" } }));
+
+  /* Three rowsets that completely overlap, but one is a single key.
+   * [ --- ]
+   * [ --- ]
+   *    |
+   */
+  EXPECT_EQ(2.0, ComputeAverageRowsetHeight({ { "A", "C" },
+                                              { "A", "C" },
+                                              { "B", "B" } }));
+
+  /* Two rowsets that partially overlap.
+   * [ --- ]
+   *    [ --- ]
+   */
+  EXPECT_EQ(1.5, ComputeAverageRowsetHeight({ { "A", "C" }, { "B", "D" } }));
+
+  // Now the numbers stop being round so we'll check for being within some small
+  // range of an expected number.
+  constexpr auto epsilon = 0.001;
+
+  /* Three rowsets that partially overlap.
+   * [ --- ]
+   *    [ --- ]
+   *       [ --- ]
+   */
+  AssertWithinEpsilon(epsilon,
+                      1.66667,
+                      ComputeAverageRowsetHeight({ { "A", "C" },
+                                                   { "B", "D" },
+                                                   { "C", "E" } }));
+
+  /* Three rowsets that partially overlap.
+   * [ --- ]
+   *    [ --- ]
+   * [ --- ]
+   */
+  AssertWithinEpsilon(epsilon,
+                      2.33333,
+                      ComputeAverageRowsetHeight({ { "A", "C" },
+                                                   { "B", "D" },
+                                                   { "A", "C" } }));
+
+  /* Five rowsets that partially overlap.
+   * [ --- ][ --- ]
+   *    [ --- ]
+   * [ --- ][ --- ]
+   */
+  AssertWithinEpsilon(epsilon,
+                      2.6,
+                      ComputeAverageRowsetHeight({ { "A", "C" }, { "C", "E" },
+                                                   { "B", "D" },
+                                                   { "A", "C" }, { "C", "E" } }));
+
+  /* A messy collection of rowsets overlapping in all kinds of ways.
+   * [ --- ][ --- ]       [ --- ]  [ --- ]
+   *    [ --- ]                 [ --- ]
+   * [ --- ]  |           [ --- ]     |
+   */
+  AssertWithinEpsilon(
+      epsilon,
+      2.3125,
+      ComputeAverageRowsetHeight(
+          { { "A", "C" }, { "C", "E" }, { "F", "G" }, { "H", "J" },
+            { "B", "D" }, { "F", "I" },
+            { "A", "C" }, { "D", "D" }, { "F", "G" }, { "I", "I" } }));
+}
 } // namespace tablet
 } // namespace kudu

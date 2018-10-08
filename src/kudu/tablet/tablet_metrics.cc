@@ -255,9 +255,14 @@ METRIC_DEFINE_counter(tablet, leader_memory_pressure_rejections,
   kudu::MetricUnit::kRequests,
   "Number of RPC requests rejected due to memory pressure while LEADER.");
 
+METRIC_DEFINE_gauge_double(tablet, average_diskrowset_height, "Average DiskRowSet Height",
+                           kudu::MetricUnit::kUnits,
+                           "Average height of the diskrowsets in this tablet "
+                           "replica. The larger the average height, the more "
+                           "uncompacted the tablet replica is.");
+
 using strings::Substitute;
 using std::unordered_map;
-
 
 namespace kudu {
 namespace tablet {
@@ -307,7 +312,8 @@ TabletMetrics::TabletMetrics(const scoped_refptr<MetricEntity>& entity)
     MINIT(undo_delta_block_gc_init_duration),
     MINIT(undo_delta_block_gc_delete_duration),
     MINIT(undo_delta_block_gc_perform_duration),
-    MINIT(leader_memory_pressure_rejections) {
+    MINIT(leader_memory_pressure_rejections),
+    GINIT(average_diskrowset_height) {
 }
 #undef MINIT
 #undef GINIT

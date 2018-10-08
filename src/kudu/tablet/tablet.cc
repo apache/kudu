@@ -290,7 +290,17 @@ Status Tablet::Open() {
 
   shared_ptr<RowSetTree> new_rowset_tree(new RowSetTree());
   CHECK_OK(new_rowset_tree->Reset(rowsets_opened));
-  // now that the current state is loaded, create the new MemRowSet with the next id
+  if (metrics_) {
+    // Compute the initial average height of the rowset tree.
+    double avg_height;
+    RowSetInfo::ComputeCdfAndCollectOrdered(*new_rowset_tree,
+                                            &avg_height,
+                                            nullptr,
+                                            nullptr);
+    metrics_->average_diskrowset_height->set_value(avg_height);
+  }
+
+  // Now that the current state is loaded, create the new MemRowSet with the next id.
   shared_ptr<MemRowSet> new_mrs;
   RETURN_NOT_OK(MemRowSet::Create(next_mrs_id_++, *schema(),
                                   log_anchor_registry_.get(),
@@ -1037,6 +1047,7 @@ void Tablet::ModifyRowSetTree(const RowSetTree& old_tree,
             rowsets_to_add.end(),
             std::back_inserter(post_swap));
 
+
   CHECK_OK(new_tree->Reset(post_swap));
 }
 
@@ -1055,6 +1066,19 @@ void Tablet::AtomicSwapRowSetsUnlocked(const RowSetVector &to_remove,
                    to_remove, to_add, new_tree.get());
 
   components_ = new TabletComponents(components_->memrowset, new_tree);
+
+  // Recompute the average rowset height.
+  // TODO(wdberkeley): We should be able to cache the computation of the CDF
+  // and average height and efficiently recompute it instead of doing it from
+  // scratch.
+  if (metrics_) {
+    double avg_height;
+    RowSetInfo::ComputeCdfAndCollectOrdered(*new_tree,
+                                            &avg_height,
+                                            nullptr,
+                                            nullptr);
+    metrics_->average_diskrowset_height->set_value(avg_height);
+  }
 }
 
 Status Tablet::DoMajorDeltaCompaction(const vector<ColumnId>& col_ids,
@@ -2296,8 +2320,9 @@ void Tablet::PrintRSLayout(ostream* o) {
     *o << "</p>";
   }
 
+  double avg_height;
   vector<RowSetInfo> min, max;
-  RowSetInfo::CollectOrdered(*rowsets_copy, &min, &max);
+  RowSetInfo::ComputeCdfAndCollectOrdered(*rowsets_copy, &avg_height, &min, &max);
   DumpCompactionSVG(min, picked, o, /*print_xml_header=*/false);
 
   // Compaction policy ignores rowsets unavailable for compaction. This is good,
@@ -2351,13 +2376,15 @@ void Tablet::PrintRSLayout(ostream* o) {
                      "  <tr><td>Median</td><td>$3</td></tr>"
                      "  <tr><td>Third quartile</td><td>$4</td></tr>"
                      "  <tr><td>Max</td><td>$5</td></tr>"
+                     "  <tr><td>Avg. Height</td><td>$6</td></tr>"
                      "<tbody>",
                      num_rowsets,
                      HumanReadableNumBytes::ToString(size_bytes_min),
                      HumanReadableNumBytes::ToString(size_bytes_first_quartile),
                      HumanReadableNumBytes::ToString(size_bytes_median),
                      HumanReadableNumBytes::ToString(size_bytes_third_quartile),
-                     HumanReadableNumBytes::ToString(size_bytes_max));
+                     HumanReadableNumBytes::ToString(size_bytes_max),
+                     avg_height);
     *o << "</table>" << endl;
   }
 

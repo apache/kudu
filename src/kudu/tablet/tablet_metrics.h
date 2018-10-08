@@ -43,7 +43,7 @@ struct TabletMetrics {
   // This allocates temporary scratch space from work_arena.
   void AddProbeStats(const ProbeStats* stats_array, int len, Arena* work_arena);
 
-  // Operation rates
+  // Operation rates.
   scoped_refptr<Counter> rows_inserted;
   scoped_refptr<Counter> rows_upserted;
   scoped_refptr<Counter> rows_updated;
@@ -51,7 +51,7 @@ struct TabletMetrics {
   scoped_refptr<Counter> insertions_failed_dup_key;
   scoped_refptr<Counter> upserts_as_updates;
 
-  // Scanner metrics
+  // Scanner metrics.
   scoped_refptr<Counter> scanner_rows_returned;
   scoped_refptr<Counter> scanner_cells_returned;
   scoped_refptr<Counter> scanner_bytes_returned;
@@ -61,7 +61,7 @@ struct TabletMetrics {
   scoped_refptr<Counter> scans_started;
   scoped_refptr<AtomicGauge<size_t>> tablet_active_scanners;
 
-  // Probe stats
+  // Probe stats.
   scoped_refptr<Counter> bloom_lookups;
   scoped_refptr<Counter> key_file_lookups;
   scoped_refptr<Counter> delta_file_lookups;
@@ -98,6 +98,9 @@ struct TabletMetrics {
   scoped_refptr<Histogram> undo_delta_block_gc_perform_duration;
 
   scoped_refptr<Counter> leader_memory_pressure_rejections;
+
+  // Compaction metrics.
+  scoped_refptr<AtomicGauge<double>> average_diskrowset_height;
 };
 
 } // namespace tablet

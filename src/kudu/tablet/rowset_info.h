@@ -44,11 +44,17 @@ class RowSetInfo {
 
   // Appends the rowsets in no order without the cdf values set.
   static void Collect(const RowSetTree& tree, std::vector<RowSetInfo>* rsvec);
-  // Appends the rowsets in min-key and max-key sorted order, with
-  // cdf values set.
-  static void CollectOrdered(const RowSetTree& tree,
-                             std::vector<RowSetInfo>* min_key,
-                             std::vector<RowSetInfo>* max_key);
+
+  // From the rowset tree 'tree', computes the keyspace cdf and collects rowset
+  // information in min-key- and max-key-sorted order into 'info_by_min_key'
+  // and 'info_by_max_key', respectively. The average value of the height of the
+  // rowset tree is set into 'average_height', if it is not nullptr.
+  // If one of 'info_by_min_key' and 'info_by_max_key' is nullptr, the other
+  // must be.
+  static void ComputeCdfAndCollectOrdered(const RowSetTree& tree,
+                                          double* average_height,
+                                          std::vector<RowSetInfo>* info_by_min_key,
+                                          std::vector<RowSetInfo>* info_by_max_key);
 
   // Split [start_key, stop_key) into primary key ranges by chunk size.
   //
@@ -100,8 +106,7 @@ class RowSetInfo {
  private:
   explicit RowSetInfo(RowSet* rs, double init_cdf);
 
-  static void FinalizeCDFVector(std::vector<RowSetInfo>* vec,
-                                double quot);
+  static void FinalizeCDFVector(double quot, std::vector<RowSetInfo>* vec);
 
   // The size in MB, already clamped so that all rowsets have size at least
   // 1MB. This is cached to avoid the branch during the selection hot path.

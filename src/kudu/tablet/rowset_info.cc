@@ -30,6 +30,7 @@
 
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/endian.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/rowset_tree.h"
@@ -188,36 +189,40 @@ void RowSetInfo::Collect(const RowSetTree& tree, vector<RowSetInfo>* rsvec) {
   }
 }
 
-void RowSetInfo::CollectOrdered(const RowSetTree& tree,
-                                vector<RowSetInfo>* min_key,
-                                vector<RowSetInfo>* max_key) {
-  // Resize
-  size_t len = tree.all_rowsets().size();
-  min_key->reserve(min_key->size() + len);
-  max_key->reserve(max_key->size() + len);
+void RowSetInfo::ComputeCdfAndCollectOrdered(const RowSetTree& tree,
+                                             double* average_height,
+                                             vector<RowSetInfo>* info_by_min_key,
+                                             vector<RowSetInfo>* info_by_max_key) {
+  DCHECK((info_by_min_key && info_by_max_key) ||
+         (!info_by_min_key && !info_by_max_key))
+      << "'info_by_min_key' and 'info_by_max_key' must both be non-null or both be null";
 
   // The collection process works as follows:
   // For each sorted endpoint, first we identify whether it is a
   // start or stop endpoint.
   //
   // At a start point, the associated rowset is added to the
-  // "active" rowset mapping, allowing us to keep track of the index
-  // of the rowset's RowSetInfo in the min_key vector.
+  // 'active' rowset mapping, allowing us to keep track of the index
+  // of the rowset's RowSetInfo in the 'info_by_min_key_tmp' vector.
   //
-  // At a stop point, the rowset is removed from the "active" map.
-  // Note that the "active" map allows access to the incomplete
-  // RowSetInfo that the RowSet maps to.
+  // At a stop point, the rowset is removed from the 'active' map.
+  // Note that the map allows access to the incomplete RowSetInfo that the
+  // RowSet maps to.
+  //
+  // The height of the tablet replica at the keys in between each successive
+  // pair of endpoints is active.size().
   //
   // The algorithm keeps track of its state - a "sliding window"
   // across the keyspace - by maintaining the previous key and current
   // value of the total width traversed over the intervals.
-  Slice prev;
+  Slice prev_key;
   unordered_map<RowSet*, RowSetInfo*> active;
-  double total_width = 0.0f;
+  double total_width = 0.0;
+  double weighted_height_sum = 0.0;
 
-  // We need to filter out the rowsets that aren't available before we process the endpoints,
-  // else there's a race since we see endpoints twice and a delta compaction might finish in
-  // between.
+  // We need to filter out the rowsets that aren't available before we process
+  // the endpoints, else there's a race since we see endpoints twice and a delta
+  // compaction might finish in between.
   RowSetVector available_rowsets;
   for (const auto& rs : tree.all_rowsets()) {
     if (rs->IsAvailableForCompaction()) {
@@ -225,50 +230,74 @@ void RowSetInfo::CollectOrdered(const RowSetTree& tree,
     }
   }
 
+  size_t len = available_rowsets.size();
+  vector<RowSetInfo> info_by_min_key_tmp;
+  vector<RowSetInfo> info_by_max_key_tmp;
+
+  // NB: Since the algorithm will store pointers to elements in these vectors
+  // while they grow, the reserve calls are necessary for correctness.
+  info_by_min_key_tmp.reserve(len);
+  info_by_max_key_tmp.reserve(len);
+
+
   RowSetTree available_rs_tree;
   available_rs_tree.Reset(available_rowsets);
-  for (const RowSetTree::RSEndpoint& rse :
-                available_rs_tree.key_endpoints()) {
+  for (const auto& rse : available_rs_tree.key_endpoints()) {
     RowSet* rs = rse.rowset_;
-    const Slice& next = rse.slice_;
-    double interval_width = WidthByDataSize(prev, next, active);
+    const Slice& next_key = rse.slice_;
+    double interval_width = WidthByDataSize(prev_key, next_key, active);
 
-    // Increment active rowsets in min_key by the interval_width.
+    // For each active rowset, update the cdf value at the max key and the
+    // running total of weighted heights. They will be divided by the
+    // appropriate denominators at the end.
     for (const auto& rs_rsi : active) {
       RowSetInfo& cdf_rs = *rs_rsi.second;
       cdf_rs.cdf_max_key_ += interval_width;
     }
+    weighted_height_sum += active.size() * interval_width;
 
     // Move sliding window
     total_width += interval_width;
-    prev = next;
+    prev_key = next_key;
 
     // Add/remove current RowSetInfo
     if (rse.endpoint_ == RowSetTree::START) {
-      min_key->push_back(RowSetInfo(rs, total_width));
+      info_by_min_key_tmp.push_back(RowSetInfo(rs, total_width));
       // Store reference from vector. This is safe b/c of reserve() above.
-      active.insert(std::make_pair(rs, &min_key->back()));
+      EmplaceOrDie(&active, rs, &info_by_min_key_tmp.back());
     } else if (rse.endpoint_ == RowSetTree::STOP) {
-      // If not in active set, then STOP before START in endpoint tree
-      RowSetInfo* cdf_rs = CHECK_NOTNULL(active[rs]);
+      // If the current rowset is not in the active set, then the rowset tree
+      // is inconsistent: an interval STOPs before it STARTs.
+      RowSetInfo* cdf_rs = FindOrDie(active, rs);
       CHECK_EQ(cdf_rs->rowset(), rs) << "Inconsistent key interval tree.";
-      CHECK_EQ(active.erase(rs), 1);
-      max_key->push_back(*cdf_rs);
+      CHECK_NOTNULL(EraseKeyReturnValuePtr(&active, rs));
+      info_by_max_key_tmp.push_back(*cdf_rs);
     } else {
       LOG(FATAL) << "Undefined RowSet endpoint type.\n"
                  << "\tExpected either RowSetTree::START=" << RowSetTree::START
                  << " or RowSetTree::STOP=" << RowSetTree::STOP << ".\n"
                  << "\tRecieved:\n"
                  << "\t\tRowSet=" << rs->ToString() << "\n"
-                 << "\t\tKey=" << KUDU_REDACT(next.ToDebugString()) << "\n"
+                 << "\t\tKey=" << KUDU_REDACT(next_key.ToDebugString()) << "\n"
                  << "\t\tEndpointType=" << rse.endpoint_;
     }
   }
 
-  CheckCollectOrderedCorrectness(*min_key, *max_key, total_width);
+  CheckCollectOrderedCorrectness(info_by_min_key_tmp,
+                                 info_by_max_key_tmp,
+                                 total_width);
+  FinalizeCDFVector(total_width, &info_by_min_key_tmp);
+  FinalizeCDFVector(total_width, &info_by_max_key_tmp);
 
-  FinalizeCDFVector(min_key, total_width);
-  FinalizeCDFVector(max_key, total_width);
+  if (average_height) {
+    *average_height = total_width > 0 ? weighted_height_sum / total_width
+                                      : 0.0;
+  }
+
+  if (info_by_min_key && info_by_max_key) {
+    *info_by_min_key = std::move(info_by_min_key_tmp);
+    *info_by_max_key = std::move(info_by_max_key_tmp);
+  }
 }
 
 void RowSetInfo::SplitKeyRange(const RowSetTree& tree,
@@ -370,8 +399,7 @@ uint64_t RowSetInfo::size_bytes(const ColumnId& col_id) const {
   return extra_->rowset->OnDiskBaseDataColumnSize(col_id);
 }
 
-void RowSetInfo::FinalizeCDFVector(vector<RowSetInfo>* vec,
-                                 double quot) {
+void RowSetInfo::FinalizeCDFVector(double quot, vector<RowSetInfo>* vec) {
   if (quot == 0) return;
   for (RowSetInfo& cdf_rs : *vec) {
     CHECK_GT(cdf_rs.size_mb_, 0) << "Expected file size to be at least 1MB "
@@ -380,8 +408,7 @@ void RowSetInfo::FinalizeCDFVector(vector<RowSetInfo>* vec,
                                  << " bytes.";
     cdf_rs.cdf_min_key_ /= quot;
     cdf_rs.cdf_max_key_ /= quot;
-    cdf_rs.density_ = (cdf_rs.cdf_max_key() - cdf_rs.cdf_min_key())
-      / cdf_rs.size_mb_;
+    cdf_rs.density_ = (cdf_rs.cdf_max_key() - cdf_rs.cdf_min_key()) / cdf_rs.size_mb_;
   }
 }
 
