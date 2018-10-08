@@ -17,8 +17,8 @@
 
 #include "kudu/tablet/svg_dump.h"
 
+#include <algorithm>
 #include <ctime>
-#include <fstream>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -26,13 +26,16 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/tablet/rowset_info.h"
+#include "kudu/util/env.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/slice.h"
+#include "kudu/util/status.h"
 
 // Flag to dump SVGs of every compaction decision.
 //
@@ -40,7 +43,6 @@
 // commands like:
 // $ for x in compaction-*svg ; do convert $x $x.png ; done
 // $ mencoder mf://compaction*png -mf fps=1 -ovc lavc -o compactions.avi
-
 DEFINE_string(compaction_policy_dump_svgs_pattern, "",
               "File path into which to dump SVG visualization of "
               "selected compactions. This is mostly useful in "
@@ -49,10 +51,12 @@ DEFINE_string(compaction_policy_dump_svgs_pattern, "",
               "with the compaction selection timestamp.");
 TAG_FLAG(compaction_policy_dump_svgs_pattern, hidden);
 
+using std::endl;
 using std::ostream;
 using std::string;
 using std::unordered_set;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 namespace tablet {
@@ -63,35 +67,30 @@ namespace {
 // distributes 'rowsets' into separate vectors in 'rows' such that
 // within any given row, none of the rowsets overlap in keyspace.
 void OrganizeSVGRows(const vector<RowSetInfo>& candidates,
-                     vector<vector<const RowSetInfo*> >* rows) {
-  rows->push_back(vector<const RowSetInfo *>());
-
-  for (const RowSetInfo &candidate : candidates) {
-    // Slot into the first row of the output which fits it
+                     vector<vector<const RowSetInfo*>>* rows) {
+  DCHECK(rows);
+  rows->clear();
+  for (const auto& candidate : candidates) {
+    // Slot into the first row which fits it.
     bool found_slot = false;
-    for (vector<const RowSetInfo *> &row : *rows) {
-      // If this candidate doesn't intersect any other candidates in this
-      // row, we can put it here.
-      bool fits_in_row = true;
-      for (const RowSetInfo *already_in_row : row) {
-        if (candidate.Intersects(*already_in_row)) {
-          fits_in_row = false;
-          break;
-        }
-      }
+    for (auto& row : *rows) {
+      // If this candidate doesn't intersect any other rowsets already in this
+      // row, we can put it in this row.
+      auto fits_in_row = std::none_of(row.begin(),
+                                      row.end(),
+                                      [&candidate](const RowSetInfo* already_in_row) {
+                                        return candidate.Intersects(*already_in_row);
+                                      });
       if (fits_in_row) {
         row.push_back(&candidate);
         found_slot = true;
         break;
       }
     }
-
     // If we couldn't find a spot in any existing row, add a new row
     // to the bottom of the SVG.
     if (!found_slot) {
-      vector<const RowSetInfo *> new_row;
-      new_row.push_back(&candidate);
-      rows->push_back(new_row);
+      rows->push_back({ &candidate });
     }
   }
 }
@@ -99,79 +98,62 @@ void OrganizeSVGRows(const vector<RowSetInfo>& candidates,
 void DumpSVG(const vector<RowSetInfo>& candidates,
              const unordered_set<RowSet*>& picked,
              ostream* outptr) {
-  CHECK(outptr) << "Dump SVG expects an ostream";
-  CHECK(outptr->good()) << "Dump SVG expects a good ostream";
-  using std::endl;
+  CHECK(outptr);
+  CHECK(outptr->good());
   ostream& out = *outptr;
 
-  vector<vector<const RowSetInfo*> > svg_rows;
+  vector<vector<const RowSetInfo*>> svg_rows;
   OrganizeSVGRows(candidates, &svg_rows);
 
-  const char *kPickedColor = "#f66";
-  const char *kDefaultColor = "#666";
-  const double kTotalWidth = 1200;
-  const int kRowHeight = 15;
-  const double kHeaderHeight = 60;
+  const char *kPickedColor = "#f66"; // Light red.
+  const char *kDefaultColor = "#666"; // Dark gray.
+  constexpr double kTotalWidth = 1200.0;
+  constexpr int kRowHeight = 15;
+  constexpr double kHeaderHeight = 60.0;
   const double kTotalHeight = kRowHeight * svg_rows.size() + kHeaderHeight;
 
-  out << "<svg version=\"1.1\" width=\"" << kTotalWidth << "\" height=\""
-      << kTotalHeight << "\""
-      << " viewBox=\"0 0 " << kTotalWidth << " " << kTotalHeight << "\""
-      << " xmlns=\"http://www.w3.org/2000/svg\" >" << endl;
+  out << Substitute(
+      R"(<svg version="1.1" width="$0" height="$1" viewBox="0 0 $0 $1" )"
+      R"(xmlns="http://www.w3.org/2000/svg">)",
+      kTotalWidth, kTotalHeight)
+      << endl;
 
-  // Background
-  out << "<rect x=\"0.0\" y=\"0\" width=\"1200.0\" height=\"" << kTotalHeight << "\""
-      << " fill=\"#fff\" />" << endl;
+  // Background.
+  out << Substitute(R"(<rect x="0" y="0" width="$0" height="$1" fill="#fff"/>)",
+                    kTotalWidth, kTotalHeight)
+      << endl;
 
-  for (int row_index = 0; row_index < svg_rows.size(); row_index++) {
+  for (auto row_index = 0; row_index < svg_rows.size(); row_index++) {
     const vector<const RowSetInfo *> &row = svg_rows[row_index];
 
-    int y = kRowHeight * row_index + kHeaderHeight;
+    const auto y = kRowHeight * row_index + kHeaderHeight;
     for (const RowSetInfo *cand : row) {
-      bool was_picked = ContainsKey(picked, cand->rowset());
-      const char *color = was_picked ? kPickedColor : kDefaultColor;
-
-      double x = cand->cdf_min_key() * kTotalWidth;
-      double width = cand->width() * kTotalWidth;
-      out << StringPrintf("<rect x=\"%f\" y=\"%d\" width=\"%f\" height=\"%d\" "
-                          "stroke=\"#000\" fill=\"%s\"/>",
-                          x, y, width, kRowHeight, color) << endl;
-      out << StringPrintf("<text x=\"%f\" y=\"%d\" width=\"%f\" height=\"%d\" "
-                          "fill=\"rgb(0,0,0)\">%dMB</text>",
-                          x, y + kRowHeight, width, kRowHeight, cand->size_mb()) << endl;
+      const char *color = ContainsKey(picked, cand->rowset()) ? kPickedColor :
+                                                                kDefaultColor;
+      const auto x = cand->cdf_min_key() * kTotalWidth;
+      const auto width = cand->width() * kTotalWidth;
+      out << Substitute(
+          R"(<rect x="$0" y="$1" width="$2" height="$3" stroke="#000" fill="$4"/>)",
+          x, y, width, kRowHeight, color)
+          << endl;
+      out << Substitute(R"+(<text x="$0" y="$1" width="$2" height="$3" )+"
+                        R"+(fill="rgb(0,0,0)">$4MB</text>)+",
+                        x, y + kRowHeight, width, kRowHeight, cand->size_mb())
+          << endl;
     }
   }
 
   out << "</svg>" << endl;
 }
 
-void PrintXMLHeader(ostream* o) {
-  CHECK(o) << "XML header printer expects an ostream";
-  CHECK(o->good()) << "XML header printer expects a good ostream";
-  *o << "<?xml version=\"1.0\" standalone=\"no\"?>" << std::endl;
-  *o << "<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" "
-     << "\"http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd\">" << std::endl;
-}
-
-// Prepares ofstream to default dump location.
-// In case any of the preparation fails or default pattern is empty,
-// NULL is returned.
-gscoped_ptr<ostream> PrepareOstream() {
-  using std::ofstream;
-  gscoped_ptr<ofstream> out;
-  // Get default file name
-  const string &pattern = FLAGS_compaction_policy_dump_svgs_pattern;
-  if (pattern.empty()) return gscoped_ptr<ostream>();
-  const string path = StringReplace(pattern, "TIME", StringPrintf("%ld", time(nullptr)), true);
-
-  // Open
-  out.reset(new ofstream(path.c_str()));
-  if (!out->is_open()) {
-    LOG(WARNING) << "Could not dump compaction output to " << path << ": file open failed";
-    return gscoped_ptr<ostream>();
-  }
-
-  return out.PassAs<ostream>();
+void PrintXMLHeader(ostream* out) {
+  CHECK(out);
+  CHECK(out->good());
+  *out << R"(<?xml version="1.0" standalone="no"?>)"
+       << endl
+       << R"(<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" )"
+       << R"("http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">)"
+       << endl;
 }
 
 } // anonymous namespace
@@ -179,22 +161,30 @@ gscoped_ptr<ostream> PrepareOstream() {
 void DumpCompactionSVG(const vector<RowSetInfo>& candidates,
                        const unordered_set<RowSet*>& picked,
                        ostream* out,
-                       bool print_xml) {
-  // Get the desired pointer to the ostream
-  gscoped_ptr<ostream> dfl;
-  if (!out) {
-    dfl = PrepareOstream();
-    out = dfl.get();
-    if (!out) return;
-  }
-
-  // Print out with the correct ostream
-  LOG(INFO) << "Dumping SVG of DiskRowSetLayout with"
-            << (print_xml ? "" : "out") << " XML header";
-  if (print_xml) {
+                       bool print_xml_header) {
+  CHECK(out);
+  VLOG(1) << "Dumping SVG of DiskRowSetLayout with"
+          << (print_xml_header ? "" : "out") << " XML header";
+  if (print_xml_header) {
     PrintXMLHeader(out);
   }
   DumpSVG(candidates, picked, out);
+}
+
+void DumpCompactionSVGToFile(const vector<RowSetInfo>& candidates,
+                             const unordered_set<RowSet*>& picked) {
+  const string& pattern = FLAGS_compaction_policy_dump_svgs_pattern;
+  if (pattern.empty()) {
+    return;
+  }
+  const string path = StringReplace(pattern,
+                                    "TIME",
+                                    StringPrintf("%ld", time(nullptr)),
+                                    /*replace_all=*/true);
+  std::ostringstream buf;
+  DumpCompactionSVG(candidates, picked, &buf, /*print_xml_header=*/true);
+  WARN_NOT_OK(WriteStringToFile(Env::Default(), buf.str(), path),
+              "unable to dump rowset compaction SVG to file");
 }
 
 } // namespace tablet

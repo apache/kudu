@@ -2306,7 +2306,7 @@ void Tablet::PrintRSLayout(ostream* o) {
 
   vector<RowSetInfo> min, max;
   RowSetInfo::CollectOrdered(*rowsets_copy, &min, &max);
-  DumpCompactionSVG(min, picked, o, false);
+  DumpCompactionSVG(min, picked, o, /*print_xml_header=*/false);
 
   *o << "<h2>Compaction policy log</h2>" << std::endl;
 

@@ -471,7 +471,7 @@ Status BudgetedCompactionPolicy::PickRowSets(const RowSetTree &tree,
   }
 
   picked->swap(best_solution.rowsets);
-  DumpCompactionSVG(asc_min_key, *picked);
+  DumpCompactionSVGToFile(asc_min_key, *picked);
 
   return Status::OK();
 }
