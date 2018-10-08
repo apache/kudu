@@ -1249,3 +1249,30 @@ table, "RF" stands for "replication factor".
 If the rebalancer is running against a cluster where rebalancing replication
 factor one tables is not supported, it will rebalance all the other tables
 and the cluster as if those singly-replicated tables did not exist.
+
+[[tablet_server_decommissioning]]
+.Decommissioning or Permanently Removing a Tablet Server From a Cluster
+
+Kudu does not currently have an automated way to remove a tablet server from
+a cluster permanently. Instead, use the following steps:
+
+. Ensure the cluster is in good health using `ksck`. See <<ksck>>.
+. If the tablet server contains any replicas of tables with replication factor
+  1, these replicas must be manually moved off the tablet server prior to
+  shutting it down. The `kudu tablet change_config move_replica` tool can be
+  used for this.
+. Shut down the tablet server. After
+  `-follower_unavailable_considered_failed_sec`, which defaults to 5 minutes,
+  Kudu will begin to re-replicate the tablet server's replicas to other servers.
+  Wait until the process is finished. Progress can be monitored using `ksck`.
+. Once all the copies are complete, `ksck` will continue to report the tablet
+  server as unavailable. The cluster will otherwise operate fine without the
+  tablet server. To completely remove it from the cluster so `ksck` shows the
+  cluster as completely healthy, restart the masters. In the case of a single
+  master, this will cause cluster downtime. With multimaster, restart the
+  masters in sequence to avoid cluster downtime.
+
+WARNING: Do not shut down multiple tablet servers at once. To remove multiple
+tablet servers from the cluster, follow the above instructions for each tablet
+server, ensuring that the previous tablet server is removed from the cluster and
+`ksck` is healthy before shutting down the next.
