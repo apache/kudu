@@ -86,6 +86,9 @@ class MiniHms {
   // Creates a core-site.xml for the mini HMS.
   Status CreateCoreSite() const WARN_UNUSED_RESULT;
 
+  // Creates a log4j2 configuration properties file for the mini HMS.
+  Status CreateLogConfig() const WARN_UNUSED_RESULT;
+
   // Waits for the metastore process to bind to a port.
   Status WaitForHmsPorts() WARN_UNUSED_RESULT;
 

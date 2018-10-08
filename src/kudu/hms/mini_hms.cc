@@ -102,6 +102,7 @@ Status MiniHms::Start() {
 
   RETURN_NOT_OK(CreateHiveSite());
   RETURN_NOT_OK(CreateCoreSite());
+  RETURN_NOT_OK(CreateLogConfig());
 
   // Comma-separated list of additional jars to add to the HMS classpath.
   string aux_jars = Substitute("$0/hms-plugin.jar,$1/hcatalog/share/hcatalog/*",
@@ -111,10 +112,6 @@ Status MiniHms::Start() {
   string java_options =
     // Ensure IPv4 is used.
     "-Djava.net.preferIPv4Stack=true "
-    // Make logging less verbose.
-    "-Dhive.log.level=WARN "
-    // Log to the console.
-    "-Dhive.root.logger=console "
     // Tune down the Derby deadlock timeout. The HMS's use of Derby with the
     // NOTIFICATION_SEQUENCE table is prone to deadlocks, at which point Derby
     // cancels a conflicting transaction after waiting out the timeout. This
@@ -321,5 +318,38 @@ Status MiniHms::CreateCoreSite() const {
                            JoinPathSegments(data_root_, "core-site.xml"));
 }
 
+Status MiniHms::CreateLogConfig() const {
+  // Configure the HMS to output ERROR messages to the stderr console, and INFO
+  // and above to hms.log in the data root. The console messages have a special
+  // 'HMS' tag included to disambiguate them from other Java component logs. The
+  // HMS automatically looks for a logging configuration named
+  // 'hive-log4j2.properties' in the configured HIVE_CONF_DIR.
+  static const string kFileTemplate = R"(
+appender.console.type = Console
+appender.console.name = console
+appender.console.target = SYSTEM_ERR
+appender.console.layout.type = PatternLayout
+appender.console.layout.pattern = %d{HH:mm:ss.SSS} [HMS - %p - %t] (%F:%L) %m%n
+appender.console.filter.threshold.type = ThresholdFilter
+appender.console.filter.threshold.level = ERROR
+
+appender.file.type = File
+appender.file.name = file
+appender.file.fileName = $0
+appender.file.layout.type = PatternLayout
+appender.file.layout.pattern = %d{HH:mm:ss.SSS} [%p - %t] (%F:%L) %m%n
+
+rootLogger.level = INFO
+rootLogger.appenderRefs = console, file
+rootLogger.appenderRef.console.ref = console
+rootLogger.appenderRef.file.ref = file
+  )";
+
+  string file_contents = Substitute(kFileTemplate, JoinPathSegments(data_root_, "hms.log"));
+
+  return WriteStringToFile(Env::Default(),
+                           file_contents,
+                           JoinPathSegments(data_root_, "hive-log4j2.properties"));
+}
 } // namespace hms
 } // namespace kudu

@@ -103,6 +103,7 @@ Status MiniSentry::Start() {
   // Start Sentry.
   sentry_process_.reset(new Subprocess({
       Substitute("$0/bin/sentry", sentry_home),
+      "--log4jConf", JoinPathSegments(tmp_dir, "log4j.properties"),
       "--command", "service",
       "--conffile", JoinPathSegments(tmp_dir, "sentry-site.xml"),
   }));
@@ -249,11 +250,35 @@ test-admin=admin
 test-user=user
 kudu=admin
 joe-interloper=""
-)";
+  )";
 
   RETURN_NOT_OK(WriteStringToFile(Env::Default(), kUsers, users_ini_path));
+
+  // Configure the Sentry service to output WARN messages to the stderr
+  // console, and INFO and above to sentry.log in the data root. The console
+  // messages have a special 'SENTRY' tag included to disambiguate them from other
+  // Java component logs.
+  static const string kLogPropertiesTemplate = R"(
+log4j.appender.console = org.apache.log4j.ConsoleAppender
+log4j.appender.console.layout = org.apache.log4j.PatternLayout
+log4j.appender.console.layout.ConversionPattern = %d{HH:mm:ss.SSS} [SENTRY - %p - %t] (%F:%L) %m%n
+log4j.appender.console.Threshold = WARN
+
+log4j.appender.file = org.apache.log4j.FileAppender
+log4j.appender.file.File = $0
+log4j.appender.file.layout = org.apache.log4j.PatternLayout
+log4j.appender.file.layout.ConversionPattern = %d{HH:mm:ss.SSS} [%p - %t] (%F:%L) %m%n
+
+log4j.rootLogger = INFO, console, file
+  )";
+  string log_properties = Substitute(
+      kLogPropertiesTemplate,
+      JoinPathSegments(tmp_dir, "sentry.log"));
+  RETURN_NOT_OK(WriteStringToFile(Env::Default(),
+                                  log_properties,
+                                  JoinPathSegments(tmp_dir, "log4j.properties")));
+
   return Status::OK();
 }
-
 } // namespace sentry
 } // namespace kudu
