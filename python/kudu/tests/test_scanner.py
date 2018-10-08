@@ -382,7 +382,7 @@ class TestScanner(TestScanBase):
         self.assertEqual(df.index.name, 'key')
         self.assertEqual(list(df.index), [1, 2])
 
-    @pytest.mark.skipif((not(kudu.CLIENT_SUPPORTS_PANDAS) and
+    @pytest.mark.skipif((not(kudu.CLIENT_SUPPORTS_PANDAS) or
                         (not(kudu.CLIENT_SUPPORTS_DECIMAL))),
                         reason="Pandas and Decimal support required to run this test.")
     def test_scanner_to_pandas_index(self):
