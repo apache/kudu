@@ -172,6 +172,7 @@ using kudu::MaintenanceManager;
 using kudu::clock::HybridClock;
 using kudu::fs::IOContext;
 using kudu::log::LogAnchorRegistry;
+using std::endl;
 using std::ostream;
 using std::pair;
 using std::shared_ptr;
@@ -2299,13 +2300,76 @@ void Tablet::PrintRSLayout(ostream* o) {
   RowSetInfo::CollectOrdered(*rowsets_copy, &min, &max);
   DumpCompactionSVG(min, picked, o, /*print_xml_header=*/false);
 
-  *o << "<h2>Compaction policy log</h2>" << std::endl;
+  // Compaction policy ignores rowsets unavailable for compaction. This is good,
+  // except it causes the SVG to be potentially missing rowsets. It's hard to
+  // take these presently-compacting rowsets into account because we are racing
+  // against the compaction finishing, and at the end of the compaction the
+  // rowsets might no longer exist (merge compaction) or their bounds may have
+  // changed (major delta compaction). So, let's just disclose how many of these
+  // rowsets there are.
+  int num_rowsets_unavailable_for_compaction = std::count_if(
+      rowsets_copy->all_rowsets().begin(),
+      rowsets_copy->all_rowsets().end(),
+      [](const shared_ptr<RowSet>& rowset) {
+        // The first condition excludes the memrowset.
+        return rowset->metadata() && !rowset->IsAvailableForCompaction();
+      });
+  *o << Substitute("<div><p>In addition to the rowsets pictured and listed, "
+                   "there are $0 rowset(s) currently undergoing compactions."
+                   "</p></div>",
+                   num_rowsets_unavailable_for_compaction)
+     << endl;
+
+  // Compute some summary statistics for the tablet's rowsets.
+  const auto num_rowsets = min.size();
+  if (num_rowsets > 0) {
+    vector<int64_t> rowset_sizes;
+    rowset_sizes.reserve(num_rowsets);
+    for (const auto& rsi : min) {
+      rowset_sizes.push_back(rsi.size_bytes());
+    }
+    *o << "<table class=\"table tablet-striped table-hover\">" << endl;
+    // Compute the stats quick'n'dirty by sorting and looking at approximately
+    // the right spot.
+    // TODO(wdberkeley): Could use an O(n) quickselect-based algorithm.
+    // TODO(wdberkeley): A bona fide box-and-whisker plot would be nice.
+    // d3.js can make really nice ones: https://bl.ocks.org/mbostock/4061502.
+    std::sort(rowset_sizes.begin(), rowset_sizes.end());
+    const auto size_bytes_min = rowset_sizes[0];
+    const auto size_bytes_first_quartile = rowset_sizes[num_rowsets / 4];
+    const auto size_bytes_median = rowset_sizes[num_rowsets / 2];
+    const auto size_bytes_third_quartile = rowset_sizes[3 * num_rowsets / 4];
+    const auto size_bytes_max = rowset_sizes[num_rowsets - 1];
+    *o << Substitute("<thead><tr>"
+                     "  <th>Statistic</th>"
+                     "  <th>Approximate Value</th>"
+                     "<tr></thead>"
+                     "<tbody>"
+                     "  <tr><td>Count</td><td>$0</td></tr>"
+                     "  <tr><td>Min</td><td>$1</td></tr>"
+                     "  <tr><td>First quartile</td><td>$2</td></tr>"
+                     "  <tr><td>Median</td><td>$3</td></tr>"
+                     "  <tr><td>Third quartile</td><td>$4</td></tr>"
+                     "  <tr><td>Max</td><td>$5</td></tr>"
+                     "<tbody>",
+                     num_rowsets,
+                     HumanReadableNumBytes::ToString(size_bytes_min),
+                     HumanReadableNumBytes::ToString(size_bytes_first_quartile),
+                     HumanReadableNumBytes::ToString(size_bytes_median),
+                     HumanReadableNumBytes::ToString(size_bytes_third_quartile),
+                     HumanReadableNumBytes::ToString(size_bytes_max));
+    *o << "</table>" << endl;
+  }
+
+  // TODO(wdberkeley): Should we even display this? It's one line per rowset
+  // and doesn't contain any useful information except each rowset's size.
+  *o << "<h2>Compaction policy log</h2>" << endl;
 
   *o << "<pre>" << std::endl;
   for (const string& s : log) {
-    *o << EscapeForHtmlToString(s) << std::endl;
+    *o << EscapeForHtmlToString(s) << endl;
   }
-  *o << "</pre>" << std::endl;
+  *o << "</pre>" << endl;
 }
 
 string Tablet::LogPrefix() const {

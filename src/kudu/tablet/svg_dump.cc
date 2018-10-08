@@ -136,10 +136,6 @@ void DumpSVG(const vector<RowSetInfo>& candidates,
           R"(<rect x="$0" y="$1" width="$2" height="$3" stroke="#000" fill="$4"/>)",
           x, y, width, kRowHeight, color)
           << endl;
-      out << Substitute(R"+(<text x="$0" y="$1" width="$2" height="$3" )+"
-                        R"+(fill="rgb(0,0,0)">$4MB</text>)+",
-                        x, y + kRowHeight, width, kRowHeight, cand->size_mb())
-          << endl;
     }
   }
 
