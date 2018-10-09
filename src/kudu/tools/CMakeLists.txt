@@ -181,4 +181,8 @@ ADD_KUDU_TEST_DEPENDENCIES(kudu-ts-cli-test
   kudu)
 ADD_KUDU_TEST(rebalance-test)
 ADD_KUDU_TEST(rebalance_algo-test)
+ADD_KUDU_TEST(rebalancer_tool-test
+  NUM_SHARDS 8 PROCESSORS 3)
+ADD_KUDU_TEST_DEPENDENCIES(rebalancer_tool-test
+  kudu)
 ADD_KUDU_TEST(tool_action-test)

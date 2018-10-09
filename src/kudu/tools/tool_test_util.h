@@ -27,6 +27,11 @@
 namespace kudu {
 namespace tools {
 
+enum class Kudu1097 {
+  Disable,
+  Enable,
+};
+
 // Get full path to the top-level 'kudu' tool binary.
 std::string GetKuduToolAbsolutePath();
 
