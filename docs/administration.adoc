@@ -1251,7 +1251,7 @@ factor one tables is not supported, it will rebalance all the other tables
 and the cluster as if those singly-replicated tables did not exist.
 
 [[tablet_server_decommissioning]]
-.Decommissioning or Permanently Removing a Tablet Server From a Cluster
+=== Decommissioning or Permanently Removing a Tablet Server From a Cluster
 
 Kudu does not currently have an automated way to remove a tablet server from
 a cluster permanently. Instead, use the following steps:
