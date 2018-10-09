@@ -25,7 +25,6 @@
                             Type])
   (:import [org.apache.kudu.client AbstractKuduScannerBuilder
                                    AsyncKuduScanner$ReadMode
-                                   BaseKuduTest
                                    CreateTableOptions
                                    KuduClient
                                    KuduClient$KuduClientBuilder
