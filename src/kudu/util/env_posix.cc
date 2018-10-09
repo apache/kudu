@@ -29,6 +29,7 @@
 #include <ostream>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>
@@ -1194,7 +1195,7 @@ class PosixEnv : public Env {
       result = IOError(fname, errno);
     }
     return result;
-  };
+  }
 
   virtual Status CreateDir(const string& name) OVERRIDE {
     TRACE_EVENT1("io", "PosixEnv::CreateDir", "path", name);
@@ -1205,7 +1206,7 @@ class PosixEnv : public Env {
       result = IOError(name, errno);
     }
     return result;
-  };
+  }
 
   virtual Status DeleteDir(const string& name) OVERRIDE {
     TRACE_EVENT1("io", "PosixEnv::DeleteDir", "path", name);
@@ -1216,7 +1217,7 @@ class PosixEnv : public Env {
       result = IOError(name, errno);
     }
     return result;
-  };
+  }
 
   Status GetCurrentWorkingDir(string* cwd) const override {
     TRACE_EVENT0("io", "PosixEnv::GetCurrentWorkingDir");
