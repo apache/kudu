@@ -152,5 +152,35 @@ Status SentryClient::DropRole(const ::sentry::TDropSentryRoleRequest& request) {
   return Status::OK();
 }
 
+Status SentryClient::ListPrivilegesByUser(
+    const ::sentry::TListSentryPrivilegesRequest& request,
+    ::sentry::TListSentryPrivilegesResponse* response)  {
+  SCOPED_LOG_SLOW_EXECUTION(WARNING, kSlowExecutionWarningThresholdMs,
+                            "list Sentry privilege by user");
+  SENTRY_RET_NOT_OK(client_.list_sentry_privileges_by_user_and_itsgroups(*response, request),
+                    response->status, "failed to list Sentry privilege by user");
+  return Status::OK();
+}
+
+Status SentryClient::AlterRoleAddGroups(
+    const ::sentry::TAlterSentryRoleAddGroupsRequest& request,
+    ::sentry::TAlterSentryRoleAddGroupsResponse* response)  {
+  SCOPED_LOG_SLOW_EXECUTION(WARNING, kSlowExecutionWarningThresholdMs,
+                            "alter Sentry role add groups");
+  SENTRY_RET_NOT_OK(client_.alter_sentry_role_add_groups(*response, request),
+                    response->status, "failed to alter Sentry role add groups");
+  return Status::OK();
+}
+
+Status SentryClient::AlterRoleGrantPrivilege(
+    const ::sentry::TAlterSentryRoleGrantPrivilegeRequest& request,
+    ::sentry::TAlterSentryRoleGrantPrivilegeResponse* response)  {
+  SCOPED_LOG_SLOW_EXECUTION(WARNING, kSlowExecutionWarningThresholdMs,
+                            "alter Sentry role grant privileges");
+  SENTRY_RET_NOT_OK(client_.alter_sentry_role_grant_privilege(*response, request),
+                    response->status, "failed to alter Sentry role grant privileges");
+  return Status::OK();
+}
+
 } // namespace sentry
 } // namespace kudu

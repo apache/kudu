@@ -24,8 +24,14 @@
 #include "kudu/util/status.h"
 
 namespace sentry {
+class TAlterSentryRoleAddGroupsRequest;
+class TAlterSentryRoleAddGroupsResponse;
+class TAlterSentryRoleGrantPrivilegeRequest;
+class TAlterSentryRoleGrantPrivilegeResponse;
 class TCreateSentryRoleRequest;
 class TDropSentryRoleRequest;
+class TListSentryPrivilegesRequest;
+class TListSentryPrivilegesResponse;
 }
 
 namespace kudu {
@@ -82,7 +88,19 @@ class SentryClient {
   // Drops a role in Sentry.
   Status DropRole(const ::sentry::TDropSentryRoleRequest& request) WARN_UNUSED_RESULT;
 
- private:
+  // List Sentry privileges by user.
+  Status ListPrivilegesByUser(const ::sentry::TListSentryPrivilegesRequest& request,
+      ::sentry::TListSentryPrivilegesResponse* response) WARN_UNUSED_RESULT;
+
+  // Alter role to add groups in Sentry.
+  Status AlterRoleAddGroups(const ::sentry::TAlterSentryRoleAddGroupsRequest& request,
+      ::sentry::TAlterSentryRoleAddGroupsResponse* response) WARN_UNUSED_RESULT;
+
+  // Alter role to grant privileges in Sentry.
+  Status AlterRoleGrantPrivilege(const ::sentry::TAlterSentryRoleGrantPrivilegeRequest& request,
+     ::sentry::TAlterSentryRoleGrantPrivilegeResponse* response) WARN_UNUSED_RESULT;
+
+private:
   ::sentry::SentryPolicyServiceClient client_;
 };
 

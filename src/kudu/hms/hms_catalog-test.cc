@@ -167,8 +167,8 @@ class HmsCatalogTest : public KuduTest {
   }
 
   void TearDown() override {
-    ASSERT_OK(hms_->Stop());
     ASSERT_OK(hms_client_->Stop());
+    ASSERT_OK(hms_->Stop());
   }
 
   Status StopHms() {
