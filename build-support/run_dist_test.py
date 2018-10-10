@@ -167,6 +167,10 @@ def main():
   stderr = None
   if options.test_language == 'cpp':
     cmd = [os.path.join(ROOT, "build-support/run-test.sh")] + args
+    # Get the grandparent directory of the test executable, which takes the
+    # form "../release/bin/foo-test", so we can get the build directory.
+    relative_build_dir = os.path.dirname(os.path.dirname(args[0]))
+    test_logdir = os.path.abspath(os.path.join(os.getcwd(), relative_build_dir, "test-logs"))
   elif options.test_language == 'java':
     test_logdir = os.path.abspath(os.path.join(ROOT, "build/java/test-logs"))
     if not os.path.exists(test_logdir):
@@ -183,7 +187,7 @@ def main():
   rc = subprocess.call(cmd, env=env, stdout=stdout, stderr=stderr)
 
   if rc != 0 and options.collect_tmpdir:
-    os.system("tar czf %s %s" % (os.path.join(test_dir, "..", "test-logs", "test_tmpdir.tgz"), test_tmpdir))
+    os.system("tar czf %s %s" % (os.path.join(test_logdir, "test_tmpdir.tgz"), test_tmpdir))
   sys.exit(rc)
 
 
