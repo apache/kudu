@@ -132,6 +132,11 @@ DEFINE_int32(scanner_inject_latency_on_each_batch_ms, 0,
              "Used for tests.");
 TAG_FLAG(scanner_inject_latency_on_each_batch_ms, unsafe);
 
+DEFINE_bool(scanner_inject_service_unavailable_on_continue_scan, false,
+           "If set, the scanner will return a ServiceUnavailable Status on "
+           "any Scan continuation RPC call. Used for tests.");
+TAG_FLAG(scanner_inject_service_unavailable_on_continue_scan, unsafe);
+
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 DECLARE_int32(memory_limit_warn_threshold_percentage);
 DECLARE_int32(tablet_history_max_age_sec);
@@ -2050,6 +2055,11 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
     LOG(INFO) << Substitute("Scan: $0: call sequence id=$1, remote=$2",
                             s.ToString(), req->call_seq_id(), rpc_context->requestor_string());
     return s;
+  }
+
+  if (PREDICT_FALSE(FLAGS_scanner_inject_service_unavailable_on_continue_scan)) {
+    return Status::ServiceUnavailable("Injecting service unavailable status on Scan due to "
+                                      "--scanner_inject_service_unavailable_on_continue_scan");
   }
 
   // Set the row format flags on the ScanResultCollector.

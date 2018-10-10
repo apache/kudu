@@ -114,6 +114,7 @@ DECLARE_bool(fail_dns_resolution);
 DECLARE_bool(log_inject_latency);
 DECLARE_bool(master_support_connect_to_master_rpc);
 DECLARE_bool(rpc_trace_negotiation);
+DECLARE_bool(scanner_inject_service_unavailable_on_continue_scan);
 DECLARE_int32(flush_threshold_mb);
 DECLARE_int32(flush_threshold_secs);
 DECLARE_int32(heartbeat_interval_ms);
@@ -5159,6 +5160,25 @@ TEST_F(ClientTest, TestLastErrorEmbeddedInScanTimeoutStatus) {
   Status s = scan.Open();
   ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "Illegal state: Tablet not RUNNING");
+}
+
+TEST_F(ClientTest, TestRetriesEmbeddedInScanTimeoutStatus) {
+  // For the random() calls that take place during scan retries.
+  SeedRandom();
+
+  NO_FATALS(InsertTestRows(client_table_.get(), FLAGS_test_scan_num_rows));
+
+  // Allow creating a scanner but fail all of the read calls.
+  FLAGS_scanner_inject_service_unavailable_on_continue_scan = true;
+
+  // The scanner will return a retriable error on read, and we will eventually
+  // observe a timeout.
+  KuduScanner scanner(client_table_.get());
+  ASSERT_OK(scanner.SetTimeoutMillis(1000));
+  Status s = scanner.Open();
+  ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "exceeded configured scan timeout of");
+  ASSERT_STR_CONTAINS(s.ToString(), "scan attempts");
 }
 
 TEST_F(ClientTest, TestNoDefaultPartitioning) {

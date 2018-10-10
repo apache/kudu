@@ -278,6 +278,10 @@ class KuduScanner::Data {
                                 const MonoTime& overall_deadline,
                                 const MonoTime& rpc_deadline);
 
+  // Add additional details to the status message, such as number of retries,
+  // original cause of the error, etc. Returns a cloned object.
+  Status EnrichStatusMessage(Status s) const;
+
   void UpdateResourceMetrics();
 
   DISALLOW_COPY_AND_ASSIGN(Data);

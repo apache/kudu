@@ -81,6 +81,20 @@ KuduScanner::Data::Data(KuduTable* table)
 KuduScanner::Data::~Data() {
 }
 
+Status KuduScanner::Data::EnrichStatusMessage(Status s) const {
+  if (scan_attempts_ > 1) {
+    s = s.CloneAndPrepend(Substitute("after $0 scan attempts", scan_attempts_));
+  }
+  if (s.IsTimedOut()) {
+    s = s.CloneAndPrepend(Substitute("exceeded configured scan timeout of $0",
+                                     configuration_.timeout().ToString()));
+  }
+  if (!last_error_.ok()) {
+    s = s.CloneAndAppend(last_error_.ToString());
+  }
+  return s;
+}
+
 Status KuduScanner::Data::HandleError(const ScanRpcStatus& err,
                                       const MonoTime& deadline,
                                       set<string>* blacklist,
@@ -92,10 +106,10 @@ Status KuduScanner::Data::HandleError(const ScanRpcStatus& err,
   // If we timed out because of the overall deadline, we're done.
   // We didn't wait a full RPC timeout, though, so don't mark the tserver as failed.
   if (err.result == ScanRpcStatus::OVERALL_DEADLINE_EXCEEDED) {
-      LOG(INFO) << "Scan of tablet " << remote_->tablet_id() << " at "
-          << ts_->ToString() << " deadline expired.";
-      return last_error_.ok()
-          ? err.status : err.status.CloneAndAppend(last_error_.ToString());
+    LOG(INFO) << "Scan of tablet " << remote_->tablet_id() << " at "
+              << ts_->ToString() << " deadline exceeded after "
+              << configuration_.timeout().ToString();
+    return EnrichStatusMessage(err.status);
   }
 
   UpdateLastError(err.status);
@@ -172,10 +186,7 @@ Status KuduScanner::Data::HandleError(const ScanRpcStatus& err,
         KuduClient::Data::ComputeExponentialBackoff(scan_attempts_);
     MonoTime now = MonoTime::Now() + sleep;
     if (deadline < now) {
-      Status ret = Status::TimedOut("unable to retry before timeout",
-                                    err.status.ToString());
-      return last_error_.ok() ?
-          ret : ret.CloneAndAppend(last_error_.ToString());
+      return EnrichStatusMessage(Status::TimedOut("unable to retry before timeout"));
     }
     VLOG(1) << "Error scanning on server " << ts_->ToString() << ": "
             << err.status.ToString() << ". Will retry after "
