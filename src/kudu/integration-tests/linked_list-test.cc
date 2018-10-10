@@ -131,7 +131,8 @@ class LinkedListTest : public tserver::TabletServerIntegrationTestBase {
       ts_flags.emplace_back("--log_segment_size_mb=1");
     }
 
-    NO_FATALS(CreateCluster("linked-list-cluster", ts_flags, common_flags));
+    NO_FATALS(CreateCluster("linked-list-cluster",
+                            std::move(ts_flags), std::move(common_flags)));
     ResetClientAndTester();
     ASSERT_OK(tester_->CreateLinkedListTable());
     WaitForTSAndReplicas();

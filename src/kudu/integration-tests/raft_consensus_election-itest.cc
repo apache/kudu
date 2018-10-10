@@ -19,6 +19,7 @@
 #include <ostream>
 #include <string>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags_declare.h>
@@ -106,7 +107,7 @@ void RaftConsensusElectionITest::CreateClusterForChurnyElectionsTests(
 
   ts_flags.insert(ts_flags.end(), extra_ts_flags.cbegin(), extra_ts_flags.cend());
 
-  NO_FATALS(CreateCluster("raft_consensus-itest-cluster", ts_flags, {}));
+  NO_FATALS(CreateCluster("raft_consensus-itest-cluster", std::move(ts_flags)));
 }
 
 void RaftConsensusElectionITest::DoTestChurnyElections(TestWorkload* workload,

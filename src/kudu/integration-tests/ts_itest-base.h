@@ -53,9 +53,9 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
                      std::vector<std::string>* flags);
 
   void CreateCluster(const std::string& data_root_path,
-                     const std::vector<std::string>& non_default_ts_flags,
-                     const std::vector<std::string>& non_default_master_flags,
-                     uint32_t num_data_dirs = 1);
+                     std::vector<std::string> non_default_ts_flags = {},
+                     std::vector<std::string> non_default_master_flags = {},
+                     cluster::LocationInfo location_info = {});
 
   // Creates TSServerDetails instance for each TabletServer and stores them
   // in 'tablet_servers_'.
@@ -116,11 +116,14 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
   // Create a table with a single tablet, with 'num_replicas'.
   void CreateTable(const std::string& table_id = kTableId);
 
-  // Starts an external cluster with a single tablet and a number of replicas equal
-  // to 'FLAGS_num_replicas'. The caller can pass 'ts_flags' to specify non-default
-  // flags to pass to the tablet servers.
-  void BuildAndStart(const std::vector<std::string>& ts_flags = {},
-                     const std::vector<std::string>& master_flags = {});
+  // Starts an external cluster with a single tablet and a number of replicas
+  // equal to 'FLAGS_num_replicas'. The caller can pass 'ts_flags' and
+  // 'master_flags' to specify non-default flags to pass to the tablet servers
+  // and masters respectively. For location-aware tests scenarios, location
+  // mapping rules can be passed using the 'location_info' parameter.
+  void BuildAndStart(std::vector<std::string> ts_flags = {},
+                     std::vector<std::string> master_flags = {},
+                     cluster::LocationInfo location_info = {});
 
   void AssertAllReplicasAgree(int expected_result_count);
 

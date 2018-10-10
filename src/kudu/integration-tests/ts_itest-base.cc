@@ -70,6 +70,7 @@ DEFINE_int32(num_replicas, 3, "Number of replicas per tablet server");
 using kudu::client::sp::shared_ptr;
 using kudu::itest::TServerDetails;
 using kudu::cluster::ExternalTabletServer;
+using kudu::cluster::LocationInfo;
 using std::pair;
 using std::set;
 using std::string;
@@ -84,8 +85,7 @@ namespace tserver {
 
 static const int kMaxRetries = 20;
 
-TabletServerIntegrationTestBase::
-TabletServerIntegrationTestBase()
+TabletServerIntegrationTestBase::TabletServerIntegrationTestBase()
     : random_(SeedRandom()) {
 }
 
@@ -105,10 +105,10 @@ void TabletServerIntegrationTestBase::AddExtraFlags(
 }
 
 void TabletServerIntegrationTestBase::CreateCluster(
-    const string& cluster_root_path,
-    const vector<string>& non_default_ts_flags,
-    const vector<string>& non_default_master_flags,
-    uint32_t num_data_dirs) {
+    const std::string& data_root_path,
+    vector<string> non_default_ts_flags,
+    vector<string> non_default_master_flags,
+    cluster::LocationInfo location_info) {
 
   LOG(INFO) << "Starting cluster with:";
   LOG(INFO) << "--------------";
@@ -118,8 +118,8 @@ void TabletServerIntegrationTestBase::CreateCluster(
 
   cluster::ExternalMiniClusterOptions opts;
   opts.num_tablet_servers = FLAGS_num_tablet_servers;
-  opts.cluster_root = GetTestPath(cluster_root_path);
-  opts.num_data_dirs = num_data_dirs;
+  opts.cluster_root = GetTestPath(data_root_path);
+  opts.location_info = std::move(location_info);
 
   // Enable exactly once semantics for tests.
 
@@ -131,12 +131,12 @@ void TabletServerIntegrationTestBase::CreateCluster(
         Substitute("--consensus_rpc_timeout_ms=$0",
                    FLAGS_consensus_rpc_timeout_ms));
   } else {
-    for (const string& flag : non_default_ts_flags) {
-      opts.extra_tserver_flags.push_back(flag);
+    for (auto& flag : non_default_ts_flags) {
+      opts.extra_tserver_flags.emplace_back(std::move(flag));
     }
   }
-  for (const string& flag : non_default_master_flags) {
-    opts.extra_master_flags.push_back(flag);
+  for (auto& flag : non_default_master_flags) {
+    opts.extra_master_flags.emplace_back(std::move(flag));
   }
 
   AddExtraFlags(FLAGS_ts_flags, &opts.extra_tserver_flags);
@@ -536,12 +536,13 @@ void TabletServerIntegrationTestBase::CreateTable(const string& table_id) {
   ASSERT_OK(client_->OpenTable(table_id, &table_));
 }
 
-// Starts an external cluster with a single tablet and a number of replicas equal
-// to 'FLAGS_num_replicas'. The caller can pass 'ts_flags' to specify non-default
-// flags to pass to the tablet servers.
 void TabletServerIntegrationTestBase::BuildAndStart(
-    const vector<string>& ts_flags, const vector<string>& master_flags) {
-  NO_FATALS(CreateCluster("raft_consensus-itest-cluster", ts_flags, master_flags));
+    vector<string> ts_flags,
+    vector<string> master_flags,
+    LocationInfo location_info) {
+  NO_FATALS(CreateCluster("raft_consensus-itest-cluster",
+                          std::move(ts_flags), std::move(master_flags),
+                          std::move(location_info)));
   NO_FATALS(CreateClient(&client_));
   NO_FATALS(CreateTable());
   WaitForTSAndReplicas();

@@ -538,7 +538,8 @@ void RaftConsensusITest::CreateClusterForCrashyNodesTests() {
   // log area.
   ts_flags.emplace_back("--log_preallocate_segments=false");
 
-  NO_FATALS(CreateCluster("raft_consensus-itest-crashy-nodes-cluster", ts_flags, {}));
+  NO_FATALS(CreateCluster("raft_consensus-itest-crashy-nodes-cluster",
+                          std::move(ts_flags)));
 }
 
 void RaftConsensusITest::DoTestCrashyNodes(TestWorkload* workload, int max_rows_to_insert) {
