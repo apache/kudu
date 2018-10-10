@@ -147,6 +147,7 @@ struct tm;
 
 namespace kudu {
 class simple_spinlock;
+
 namespace client {
 
 class ResourceMetrics;
@@ -1559,13 +1560,13 @@ Status KuduScanner::NextBatch(KuduScanBatch* batch) {
       bool needs_reopen = false;
       Status s = data_->HandleError(result, batch_deadline, &blacklist, &needs_reopen);
       if (!s.ok()) {
-        LOG(WARNING) << "Scan at tablet server " << data_->ts_->ToString() << " of tablet "
+        LOG(WARNING) << "Scan on tablet server " << data_->ts_->ToString() << " with "
                      << data_->DebugString() << " failed: " << result.status.ToString();
         return s;
       }
 
       if (data_->configuration().is_fault_tolerant()) {
-        LOG(WARNING) << "Attempting to retry scan of tablet " << data_->DebugString()
+        LOG(WARNING) << "Attempting to retry " << data_->DebugString()
                      << " elsewhere.";
         return data_->ReopenCurrentTablet(batch_deadline, &blacklist);
       }

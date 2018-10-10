@@ -30,6 +30,7 @@
 
 #include "kudu/client/client-internal.h"
 #include "kudu/client/meta_cache.h"
+#include "kudu/client/schema.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/encoded_key.h"
 #include "kudu/common/partition.h"
@@ -203,9 +204,17 @@ void KuduScanner::Data::UpdateResourceMetrics() {
   }
 }
 
+string KuduScanner::Data::DebugString() const {
+  return Substitute("Scanner { table: $0, tablet: $1, projection: $2, scan_spec: $3 }",
+                    table_->name(),
+                    remote_ ? remote_->tablet_id() : "<unknown>",
+                    configuration_.projection()->ToString(),
+                    configuration_.spec().ToString(*table_->schema().schema_));
+}
+
 ScanRpcStatus KuduScanner::Data::AnalyzeResponse(const Status& rpc_status,
                                                  const MonoTime& overall_deadline,
-                                                 const MonoTime& deadline) {
+                                                 const MonoTime& rpc_deadline) {
   if (rpc_status.ok() && !last_response_.has_error()) {
     return ScanRpcStatus{ScanRpcStatus::OK, Status::OK()};
   }
@@ -239,11 +248,10 @@ ScanRpcStatus KuduScanner::Data::AnalyzeResponse(const Status& rpc_status,
     }
 
     if (rpc_status.IsTimedOut()) {
-      if (overall_deadline == deadline) {
+      if (overall_deadline == rpc_deadline) {
         return ScanRpcStatus{ScanRpcStatus::OVERALL_DEADLINE_EXCEEDED, rpc_status};
-      } else {
-        return ScanRpcStatus{ScanRpcStatus::RPC_DEADLINE_EXCEEDED, rpc_status};
       }
+      return ScanRpcStatus{ScanRpcStatus::RPC_DEADLINE_EXCEEDED, rpc_status};
     }
     return ScanRpcStatus{ScanRpcStatus::RPC_ERROR, rpc_status};
   }

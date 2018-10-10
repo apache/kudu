@@ -32,15 +32,11 @@
 #include "kudu/client/row_result.h"
 #include "kudu/client/scan_batch.h"
 #include "kudu/client/scan_configuration.h"
-#include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
 #include "kudu/common/partition_pruner.h"
-#include "kudu/common/scan_spec.h"
-#include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/slice.h"
@@ -49,12 +45,15 @@
 namespace kudu {
 
 class MonoTime;
+class Schema;
 
 namespace tserver {
 class TabletServerServiceProxy;
-}
+} // tserver
 
 namespace client {
+
+class KuduSchema;
 
 namespace internal {
 class RemoteTablet;
@@ -260,12 +259,7 @@ class KuduScanner::Data {
   //
   // This method will not return sensitive predicate information, so it's
   // suitable for use in client-side logging (as opposed to Scanner::ToString).
-  std::string DebugString() const {
-    return strings::Substitute("Scanner { table: $0, projection: $1, scan_spec: $2 }",
-                               table_->name(),
-                               configuration_.projection()->ToString(),
-                               configuration_.spec().ToString(*table_->schema().schema_));
-  }
+  std::string DebugString() const;
 
  private:
   // Analyze the response of the last Scan RPC made by this scanner.
