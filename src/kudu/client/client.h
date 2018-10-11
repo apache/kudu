@@ -52,16 +52,19 @@ namespace kudu {
 class ClientStressTest_TestUniqueClientIds_Test;
 class KuduPartialRow;
 class MonoDelta;
+class Partition;
 class PartitionSchema;
 class SecurityUnknownTskTest;
 
 namespace client {
 class KuduClient;
-class KuduTableAlterer;
-}
+class KuduTable;
+} // namespace client
 
 namespace tools {
 class LeaderMasterProxy;
+Status ListPartitions(const client::sp::shared_ptr<client::KuduTable>& table,
+                      std::vector<Partition>* partitions);
 std::string GetMasterAddresses(const client::KuduClient&);
 } // namespace tools
 
@@ -75,6 +78,7 @@ class KuduScanBatch;
 class KuduSession;
 class KuduStatusCallback;
 class KuduTable;
+class KuduTableAlterer;
 class KuduTableCreator;
 class KuduTablet;
 class KuduTabletServer;
@@ -586,6 +590,9 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   friend class internal::WriteRpc;
   friend class kudu::SecurityUnknownTskTest;
   friend class tools::LeaderMasterProxy;
+  friend Status tools::ListPartitions(
+      const client::sp::shared_ptr<client::KuduTable>& table,
+      std::vector<Partition>* partitions);
   friend std::string tools::GetMasterAddresses(const client::KuduClient&);
 
   FRIEND_TEST(kudu::ClientStressTest, TestUniqueClientIds);

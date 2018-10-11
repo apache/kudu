@@ -37,10 +37,12 @@ class function;
 namespace kudu {
 
 class MonoDelta;
-class faststring;
+class Partition;
+class faststring; // NOLINT
 
 namespace client {
 class KuduClient;
+class KuduTable;
 } // namespace client
 
 namespace master {
@@ -139,6 +141,10 @@ std::string GetMasterAddresses(const client::KuduClient& client);
 // Return true if 'str' matches any of the patterns in 'patterns', or if
 // 'patterns' is empty.
 bool MatchesAnyPattern(const std::vector<std::string>& patterns, const std::string& str);
+
+// Populates `partitions` with the partitions of the table `table`.
+Status ListPartitions(const client::sp::shared_ptr<client::KuduTable>& table,
+                      std::vector<Partition>* partitions);
 
 // A table of data to present to the user.
 //

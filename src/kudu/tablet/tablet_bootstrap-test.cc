@@ -743,7 +743,7 @@ TEST_F(BootstrapTest, TestKudu2509) {
   ASSERT_STR_CONTAINS(status_msg,
       "Unable to bootstrap test tablet: Failed log replay.");
   ASSERT_STR_CONTAINS(status_msg,
-      "column string_val_extra[string NULLABLE] not present in tablet");
+      "column string_val_extra STRING NULLABLE not present in tablet");
 }
 
 } // namespace tablet

@@ -28,6 +28,7 @@
 #include "kudu/util/malloc.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/status.h"
+#include "kudu/util/string_case.h"
 
 using std::string;
 using std::unordered_set;
@@ -72,10 +73,12 @@ string ColumnTypeAttributes::ToStringForType(DataType type) const {
 }
 
 string ColumnStorageAttributes::ToString() const {
-  return Substitute("encoding=$0, compression=$1, cfile_block_size=$2",
+  const string cfile_block_size_str =
+      cfile_block_size == 0 ? "" : Substitute(" $0", cfile_block_size);
+  return Substitute("$0 $1$2",
                     EncodingType_Name(encoding),
                     CompressionType_Name(compression),
-                    cfile_block_size);
+                    cfile_block_size_str);
 }
 
 Status ColumnSchema::ApplyDelta(const ColumnSchemaDelta& col_delta) {
@@ -115,17 +118,17 @@ Status ColumnSchema::ApplyDelta(const ColumnSchemaDelta& col_delta) {
   return Status::OK();
 }
 
-// TODO(wdb): include attributes_.ToString() -- need to fix unit tests
-// first
 string ColumnSchema::ToString() const {
-  return Substitute("$0[$1]",
+  return Substitute("$0 $1",
                     name_,
                     TypeToString());
 }
 
 string ColumnSchema::TypeToString() const {
+  string type_name = type_info_->name();
+  ToUpperCase(type_name, &type_name);
   return Substitute("$0$1 $2",
-                    type_info_->name(),
+                    type_name,
                     type_attributes().ToStringForType(type_info()->type()),
                     is_nullable_ ? "NULLABLE" : "NOT NULL");
 }
@@ -389,7 +392,7 @@ Status Schema::GetMappedReadProjection(const Schema& projection,
 }
 
 string Schema::ToString(ToStringMode mode) const {
-  if (cols_.empty()) return "Schema []";
+  if (cols_.empty()) return "()";
 
   vector<string> pk_strs;
   for (int i = 0; i < num_key_columns_; i++) {
@@ -407,11 +410,13 @@ string Schema::ToString(ToStringMode mode) const {
     }
   }
 
-  return StrCat("Schema [\n\tprimary key (",
+  return StrCat("(\n    ",
+                JoinStrings(col_strs, ",\n    "),
+                ",\n    ",
+                "PRIMARY KEY (",
                 JoinStrings(pk_strs, ", "),
-                "),\n\t",
-                JoinStrings(col_strs, ",\n\t"),
-                "\n]");
+                ")",
+                "\n)");
 }
 
 Status Schema::DecodeRowKey(Slice encoded_key,

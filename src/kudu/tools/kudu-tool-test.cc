@@ -1241,9 +1241,9 @@ TEST_F(ToolTest, TestLocalReplicaOps) {
     ASSERT_STR_CONTAINS(stdout, tablet_out);
     ASSERT_STR_CONTAINS(stdout, "Rowset ");
     ASSERT_STR_MATCHES(stdout, "Column block for column ID .*");
-    ASSERT_STR_CONTAINS(stdout, "key[int32 NOT NULL]");
-    ASSERT_STR_CONTAINS(stdout, "int_val[int32 NOT NULL]");
-    ASSERT_STR_CONTAINS(stdout, "string_val[string NULLABLE]");
+    ASSERT_STR_CONTAINS(stdout, "key INT32 NOT NULL");
+    ASSERT_STR_CONTAINS(stdout, "int_val INT32 NOT NULL");
+    ASSERT_STR_CONTAINS(stdout, "string_val STRING NULLABLE");
   }
   {
     string stdout;

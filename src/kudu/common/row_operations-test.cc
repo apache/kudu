@@ -381,7 +381,7 @@ TEST_F(RowOperationsTest, ProjectionTestWholeSchemaSpecified) {
     KuduPartialRow client_row(&client_schema);
     CHECK_OK(client_row.SetInt32("key", 12345));
     EXPECT_EQ("error: Invalid argument: No value provided for required column: "
-              "int_val[int32 NOT NULL]",
+              "int_val INT32 NOT NULL",
               TestProjection(RowOperationsPB::INSERT, client_row, schema_));
   }
 
@@ -487,7 +487,7 @@ TEST_F(RowOperationsTest, ProjectionTestWithClientHavingValidSubset) {
     KuduPartialRow client_row(&client_schema);
     CHECK_OK(client_row.SetInt32("key", 12345));
     EXPECT_EQ("error: Invalid argument: No value provided for required column:"
-              " int_val[int32 NOT NULL]",
+              " int_val INT32 NOT NULL",
               TestProjection(RowOperationsPB::INSERT, client_row, server_schema));
   }
 
@@ -518,7 +518,7 @@ TEST_F(RowOperationsTest, ProjectionTestWithClientHavingInvalidSubset) {
     KuduPartialRow client_row(&client_schema);
     CHECK_OK(client_row.SetInt32("key", 12345));
     EXPECT_EQ("error: Invalid argument: Client missing required column:"
-              " int_val[int32 NOT NULL]",
+              " int_val INT32 NOT NULL",
               TestProjection(RowOperationsPB::INSERT, client_row, server_schema));
   }
 }
@@ -533,7 +533,7 @@ TEST_F(RowOperationsTest, TestProjectUpdates) {
 
   // Check without specifying any columns
   KuduPartialRow client_row(&client_schema);
-  EXPECT_EQ("error: Invalid argument: No value provided for key column: key[int32 NOT NULL]",
+  EXPECT_EQ("error: Invalid argument: No value provided for key column: key INT32 NOT NULL",
             TestProjection(RowOperationsPB::UPDATE, client_row, server_schema));
 
   // Specify the key and no columns to update
@@ -610,7 +610,7 @@ TEST_F(RowOperationsTest, TestClientMismatchedType) {
   ASSERT_OK(client_row.SetInt32("key", 12345));
   ASSERT_OK(client_row.SetInt8("int_val", 1));
   EXPECT_EQ("error: Invalid argument: The column 'int_val' must have type "
-            "int32 NOT NULL found int8 NOT NULL",
+            "INT32 NOT NULL found INT8 NOT NULL",
             TestProjection(RowOperationsPB::UPDATE, client_row, server_schema));
 }
 
@@ -623,12 +623,12 @@ TEST_F(RowOperationsTest, TestProjectDeletes) {
 
   KuduPartialRow client_row(&client_schema);
   // No columns set
-  EXPECT_EQ("error: Invalid argument: No value provided for key column: key[int32 NOT NULL]",
+  EXPECT_EQ("error: Invalid argument: No value provided for key column: key INT32 NOT NULL",
             TestProjection(RowOperationsPB::DELETE, client_row, server_schema));
 
   // Only half the key set
   ASSERT_OK(client_row.SetInt32("key", 12345));
-  EXPECT_EQ("error: Invalid argument: No value provided for key column: key_2[int32 NOT NULL]",
+  EXPECT_EQ("error: Invalid argument: No value provided for key column: key_2 INT32 NOT NULL",
             TestProjection(RowOperationsPB::DELETE, client_row, server_schema));
 
   // Whole key set (correct)
@@ -639,7 +639,7 @@ TEST_F(RowOperationsTest, TestProjectDeletes) {
   // Extra column set (incorrect)
   ASSERT_OK(client_row.SetStringNoCopy("string_val", "hello"));
   EXPECT_EQ("error: Invalid argument: DELETE should not have a value for column: "
-            "string_val[string NULLABLE]",
+            "string_val STRING NULLABLE",
             TestProjection(RowOperationsPB::DELETE, client_row, server_schema));
 }
 

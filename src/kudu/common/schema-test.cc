@@ -92,15 +92,15 @@ TEST_F(TestSchema, TestSchema) {
   ASSERT_GT(schema.memory_footprint_excluding_this(),
             empty_schema.memory_footprint_excluding_this());
 
-  EXPECT_EQ("Schema [\n"
-            "\tprimary key (key),\n"
-            "\tkey[string NOT NULL],\n"
-            "\tuint32val[uint32 NULLABLE],\n"
-            "\tint32val[int32 NOT NULL]\n"
-            "]",
+  EXPECT_EQ("(\n"
+            "    key STRING NOT NULL,\n"
+            "    uint32val UINT32 NULLABLE,\n"
+            "    int32val INT32 NOT NULL,\n"
+            "    PRIMARY KEY (key)\n"
+            ")",
             schema.ToString());
-  EXPECT_EQ("key[string NOT NULL]", schema.column(0).ToString());
-  EXPECT_EQ("uint32 NULLABLE", schema.column(1).TypeToString());
+  EXPECT_EQ("key STRING NOT NULL", schema.column(0).ToString());
+  EXPECT_EQ("UINT32 NULLABLE", schema.column(1).TypeToString());
 }
 
 TEST_F(TestSchema, TestSchemaToStringMode) {
@@ -108,10 +108,16 @@ TEST_F(TestSchema, TestSchemaToStringMode) {
   builder.AddKeyColumn("key", DataType::INT32);
   const auto schema = builder.Build();
   EXPECT_EQ(
-      Substitute("Schema [\n\tprimary key (key),\n\t$0:key[int32 NOT NULL]\n]",
+      Substitute("(\n"
+                 "    $0:key INT32 NOT NULL,\n"
+                 "    PRIMARY KEY (key)\n"
+                 ")",
                  schema.column_id(0)),
       schema.ToString());
-  EXPECT_EQ("Schema [\n\tprimary key (key),\n\tkey[int32 NOT NULL]\n]",
+  EXPECT_EQ("(\n"
+            "    key INT32 NOT NULL,\n"
+            "    PRIMARY KEY (key)\n"
+            ")",
             schema.ToString(Schema::ToStringMode::WITHOUT_COLUMN_IDS));
 }
 
@@ -123,15 +129,15 @@ TEST_F(TestSchema, TestCopyAndMove) {
     ASSERT_EQ(0, schema.column_offset(0));
     ASSERT_EQ(sizeof(Slice), schema.column_offset(1));
 
-    EXPECT_EQ("Schema [\n"
-              "\tprimary key (key),\n"
-              "\tkey[string NOT NULL],\n"
-              "\tuint32val[uint32 NULLABLE],\n"
-              "\tint32val[int32 NOT NULL]\n"
-              "]",
+    EXPECT_EQ("(\n"
+              "    key STRING NOT NULL,\n"
+              "    uint32val UINT32 NULLABLE,\n"
+              "    int32val INT32 NOT NULL,\n"
+              "    PRIMARY KEY (key)\n"
+              ")",
               schema.ToString());
-    EXPECT_EQ("key[string NOT NULL]", schema.column(0).ToString());
-    EXPECT_EQ("uint32 NULLABLE", schema.column(1).TypeToString());
+    EXPECT_EQ("key STRING NOT NULL", schema.column(0).ToString());
+    EXPECT_EQ("UINT32 NULLABLE", schema.column(1).TypeToString());
   };
 
   ColumnSchema col1("key", STRING);
@@ -194,18 +200,18 @@ TEST_F(TestSchema, TestSchemaWithDecimal) {
                 sizeof(int64_t) + sizeof(int128_t),
             schema.byte_size());
 
-  EXPECT_EQ("Schema [\n"
-                "\tprimary key (key),\n"
-                "\tkey[string NOT NULL],\n"
-                "\tdecimal32val[decimal(9, 4) NOT NULL],\n"
-                "\tdecimal64val[decimal(18, 10) NULLABLE],\n"
-                "\tdecimal128val[decimal(38, 2) NULLABLE]\n"
-                "]",
+  EXPECT_EQ("(\n"
+            "    key STRING NOT NULL,\n"
+            "    decimal32val DECIMAL(9, 4) NOT NULL,\n"
+            "    decimal64val DECIMAL(18, 10) NULLABLE,\n"
+            "    decimal128val DECIMAL(38, 2) NULLABLE,\n"
+            "    PRIMARY KEY (key)\n"
+            ")",
             schema.ToString());
 
-  EXPECT_EQ("decimal(9, 4) NOT NULL", schema.column(1).TypeToString());
-  EXPECT_EQ("decimal(18, 10) NULLABLE", schema.column(2).TypeToString());
-  EXPECT_EQ("decimal(38, 2) NULLABLE", schema.column(3).TypeToString());
+  EXPECT_EQ("DECIMAL(9, 4) NOT NULL", schema.column(1).TypeToString());
+  EXPECT_EQ("DECIMAL(18, 10) NULLABLE", schema.column(2).TypeToString());
+  EXPECT_EQ("DECIMAL(38, 2) NULLABLE", schema.column(3).TypeToString());
 }
 
 // Test Schema::Equals respects decimal column attributes
@@ -535,22 +541,22 @@ TEST_F(TestSchema, TestCreateProjection) {
 
   // By names, without IDs
   ASSERT_OK(schema.CreateProjectionByNames({ "col1", "col2", "col4" }, &partial_schema));
-  EXPECT_EQ("Schema [\n"
-            "\tprimary key (),\n"
-            "\tcol1[string NOT NULL],\n"
-            "\tcol2[string NOT NULL],\n"
-            "\tcol4[string NOT NULL]\n"
-            "]",
+  EXPECT_EQ("(\n"
+            "    col1 STRING NOT NULL,\n"
+            "    col2 STRING NOT NULL,\n"
+            "    col4 STRING NOT NULL,\n"
+            "    PRIMARY KEY ()\n"
+            ")",
             partial_schema.ToString());
 
   // By names, with IDS
   ASSERT_OK(schema_with_ids.CreateProjectionByNames({ "col1", "col2", "col4" }, &partial_schema));
-  EXPECT_EQ(Substitute("Schema [\n"
-                       "\tprimary key (),\n"
-                       "\t$0:col1[string NOT NULL],\n"
-                       "\t$1:col2[string NOT NULL],\n"
-                       "\t$2:col4[string NOT NULL]\n"
-                       "]",
+  EXPECT_EQ(Substitute("(\n"
+                       "    $0:col1 STRING NOT NULL,\n"
+                       "    $1:col2 STRING NOT NULL,\n"
+                       "    $2:col4 STRING NOT NULL,\n"
+                       "    PRIMARY KEY ()\n"
+                       ")",
                        schema_with_ids.column_id(0),
                        schema_with_ids.column_id(1),
                        schema_with_ids.column_id(3)),
@@ -566,12 +572,12 @@ TEST_F(TestSchema, TestCreateProjection) {
                                                                  ColumnId(1000), // missing column
                                                                  schema_with_ids.column_id(3) },
                                                                &partial_schema));
-  EXPECT_EQ(Substitute("Schema [\n"
-                       "\tprimary key (),\n"
-                       "\t$0:col1[string NOT NULL],\n"
-                       "\t$1:col2[string NOT NULL],\n"
-                       "\t$2:col4[string NOT NULL]\n"
-                       "]",
+  EXPECT_EQ(Substitute("(\n"
+                       "    $0:col1 STRING NOT NULL,\n"
+                       "    $1:col2 STRING NOT NULL,\n"
+                       "    $2:col4 STRING NOT NULL,\n"
+                       "    PRIMARY KEY ()\n"
+                       ")",
                        schema_with_ids.column_id(0),
                        schema_with_ids.column_id(1),
                        schema_with_ids.column_id(3)),

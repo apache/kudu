@@ -15,20 +15,24 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <algorithm>
+#include <cstdint>
 #include <iostream>
 #include <memory>
 #include <string>
 #include <unordered_map>
-#include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
 
+#include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
 #include "kudu/client/replica_controller-internal.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
+#include "kudu/common/partition.h"
+#include "kudu/common/schema.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/split.h"
@@ -130,6 +134,48 @@ Status DeleteTable(const RunnerContext& context) {
   return client->DeleteTableInCatalogs(table_name, FLAGS_modify_external_catalogs);
 }
 
+Status DescribeTable(const RunnerContext& context) {
+  client::sp::shared_ptr<KuduClient> client;
+  RETURN_NOT_OK(CreateKuduClient(context, &client));
+
+  const string& table_name = FindOrDie(context.required_args, kTableNameArg);
+  client::sp::shared_ptr<KuduTable> table;
+  RETURN_NOT_OK(client->OpenTable(table_name, &table));
+
+  // The schema.
+  const client::KuduSchema& schema = table->schema();
+  cout << "TABLE " << table_name << " " << schema.ToString() << endl;
+
+  // The partition schema with current range partitions.
+  vector<Partition> partitions;
+  RETURN_NOT_OK_PREPEND(ListPartitions(table, &partitions),
+                        "failed to retrieve current partitions");
+  const auto& schema_internal = client::SchemaFromKuduSchema(schema);
+  const auto& partition_schema = table->partition_schema();
+  vector<string> partition_strs;
+  for (const auto& partition : partitions) {
+    // Deduplicate by hash bucket to get a unique entry per range partition.
+    const auto& hash_buckets = partition.hash_buckets();
+    if (!std::all_of(hash_buckets.begin(),
+                     hash_buckets.end(),
+                     [](int32_t bucket) { return bucket == 0; })) {
+      continue;
+    }
+    auto range_partition_str =
+        partition_schema.RangePartitionDebugString(partition.range_key_start(),
+                                                   partition.range_key_end(),
+                                                   schema_internal);
+    partition_strs.push_back(std::move(range_partition_str));
+  }
+  cout << partition_schema.DisplayString(schema_internal, partition_strs)
+       << endl;
+
+  // Finally, the replication factor.
+  cout << "REPLICAS " << table->num_replicas() << endl;
+
+  return Status::OK();
+}
+
 Status RenameTable(const RunnerContext& context) {
   const string& table_name = FindOrDie(context.required_args, kTableNameArg);
   const string& new_table_name = FindOrDie(context.required_args, kNewTableNameArg);
@@ -171,23 +217,12 @@ unique_ptr<Mode> BuildTableMode() {
       .AddOptionalParameter("modify_external_catalogs")
       .Build();
 
-  unique_ptr<Action> rename_table =
-      ActionBuilder("rename_table", &RenameTable)
-      .Description("Rename a table")
+  unique_ptr<Action> describe_table =
+      ActionBuilder("describe", &DescribeTable)
+      .Description("Describe a table")
       .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
-      .AddRequiredParameter({ kTableNameArg, "Name of the table to rename" })
-      .AddRequiredParameter({ kNewTableNameArg, "New table name" })
-      .AddOptionalParameter("modify_external_catalogs")
+      .AddRequiredParameter({ kTableNameArg, "Name of the table to describe" })
       .Build();
-
-  unique_ptr<Action> rename_column =
-      ActionBuilder("rename_column", &RenameColumn)
-          .Description("Rename a column")
-          .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
-          .AddRequiredParameter({ kTableNameArg, "Name of the table to alter" })
-          .AddRequiredParameter({ kColumnNameArg, "Name of the table column to rename" })
-          .AddRequiredParameter({ kNewColumnNameArg, "New column name" })
-          .Build();
 
   unique_ptr<Action> list_tables =
       ActionBuilder("list", &ListTables)
@@ -197,12 +232,31 @@ unique_ptr<Mode> BuildTableMode() {
       .AddOptionalParameter("list_tablets")
       .Build();
 
+  unique_ptr<Action> rename_column =
+      ActionBuilder("rename_column", &RenameColumn)
+      .Description("Rename a column")
+      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
+      .AddRequiredParameter({ kTableNameArg, "Name of the table to alter" })
+      .AddRequiredParameter({ kColumnNameArg, "Name of the table column to rename" })
+      .AddRequiredParameter({ kNewColumnNameArg, "New column name" })
+      .Build();
+
+  unique_ptr<Action> rename_table =
+      ActionBuilder("rename_table", &RenameTable)
+      .Description("Rename a table")
+      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
+      .AddRequiredParameter({ kTableNameArg, "Name of the table to rename" })
+      .AddRequiredParameter({ kNewTableNameArg, "New table name" })
+      .AddOptionalParameter("modify_external_catalogs")
+      .Build();
+
   return ModeBuilder("table")
       .Description("Operate on Kudu tables")
       .AddAction(std::move(delete_table))
-      .AddAction(std::move(rename_table))
-      .AddAction(std::move(rename_column))
+      .AddAction(std::move(describe_table))
       .AddAction(std::move(list_tables))
+      .AddAction(std::move(rename_column))
+      .AddAction(std::move(rename_table))
       .Build();
 }
 

@@ -37,10 +37,15 @@
 #include <google/protobuf/util/json_util.h>
 
 #include "kudu/client/client-internal.h"  // IWYU pragma: keep
+#include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
+#include "kudu/client/meta_cache.h"
 #include "kudu/client/shared_ptr.h"
 #include "kudu/common/common.pb.h"
+#include "kudu/common/partition.h"
+#include "kudu/common/partition_pruner.h"
 #include "kudu/common/row_operations.h"
+#include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus.pb.h"
@@ -68,6 +73,7 @@
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_admin.proxy.h"   // IWYU pragma: keep
 #include "kudu/tserver/tserver_service.proxy.h" // IWYU pragma: keep
+#include "kudu/util/async_util.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/jsonwriter.h"
 #include "kudu/util/memory/arena.h"
@@ -127,9 +133,8 @@ namespace tools {
 
 using client::KuduClient;
 using client::KuduClientBuilder;
-using client::KuduTablet;
-using client::KuduTabletServer;
-using consensus::ConsensusServiceProxy;
+using client::KuduTable;
+using consensus::ConsensusServiceProxy; // NOLINT
 using consensus::ReplicateMsg;
 using log::LogEntryPB;
 using log::LogEntryReader;
@@ -853,5 +858,40 @@ Status ControlShellProtocol::SendMessage(const ControlShellRequestPB& message);
 template
 Status ControlShellProtocol::SendMessage(const ControlShellResponsePB& message);
 
+// The strategy for retrieving the partitions from the metacache is adapted
+// from KuduScanTokenBuilder::Data::Build.
+Status ListPartitions(const client::sp::shared_ptr<KuduTable>& table,
+                      vector<Partition>* partitions) {
+  DCHECK(table);
+  DCHECK(partitions);
+  auto* client = table->client();
+  const auto deadline = MonoTime::Now() + client->default_admin_operation_timeout();
+  PartitionPruner pruner;
+  const auto& schema_internal = SchemaFromKuduSchema(table->schema());
+  pruner.Init(schema_internal, table->partition_schema(), ScanSpec());
+  while (pruner.HasMorePartitionKeyRanges()) {
+    scoped_refptr<client::internal::RemoteTablet> tablet;
+    Synchronizer sync;
+    const string& partition_key = pruner.NextPartitionKey();
+    client->data_->meta_cache_->LookupTabletByKey(
+        table.get(),
+        partition_key,
+        deadline,
+        client::internal::MetaCache::LookupType::kLowerBound,
+        &tablet,
+        sync.AsStatusCallback());
+    Status s = sync.Wait();
+    if (s.IsNotFound()) {
+      // No more tablets.
+      break;
+    }
+    RETURN_NOT_OK(s);
+
+    partitions->emplace_back(tablet->partition());
+    pruner.RemovePartitionKeyRange(tablet->partition().partition_key_end());
+  }
+
+  return Status::OK();
+}
 } // namespace tools
 } // namespace kudu

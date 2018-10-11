@@ -3618,7 +3618,7 @@ TEST_F(ClientTest, TestWriteWithBadSchema) {
   unique_ptr<KuduError> error = GetSingleErrorFromSession(session.get());
   ASSERT_TRUE(error->status().IsInvalidArgument());
   ASSERT_STR_CONTAINS(error->status().ToString(),
-            "Client provided column int_val[int32 NOT NULL] "
+            "Client provided column int_val INT32 NOT NULL "
             "not present in tablet");
   ASSERT_EQ(error->failed_op().ToString(),
             R"(INSERT int32 key=12345, int32 int_val=12345, string string_val="x")");

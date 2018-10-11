@@ -39,6 +39,7 @@
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
 #include "kudu/common/common.pb.h"
+#include "kudu/common/partial_row.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/metadata.pb.h"
@@ -1357,5 +1358,125 @@ TEST_F(AdminCliTest, TestListTablesDetail) {
   }
 }
 
+TEST_F(AdminCliTest, TestDescribeTable) {
+  FLAGS_num_tablet_servers = 1;
+  FLAGS_num_replicas = 1;
+
+  NO_FATALS(BuildAndStart());
+
+  // The default table has a range partition with only one partition.
+  string stdout, stderr;
+  Status s = RunKuduTool({
+    "table",
+    "describe",
+    cluster_->master()->bound_rpc_addr().ToString(),
+    kTableId
+  }, &stdout, &stderr);
+  ASSERT_TRUE(s.ok()) << ToolRunInfo(s, stdout, stderr);
+
+  ASSERT_STR_CONTAINS(
+      stdout,
+      "(\n"
+      "    key INT32 NOT NULL,\n"
+      "    int_val INT32 NOT NULL,\n"
+      "    string_val STRING NULLABLE,\n"
+      "    PRIMARY KEY (key)\n"
+      ")\n"
+      "RANGE (key) (\n"
+      "    PARTITION UNBOUNDED"
+      "\n"
+      ")\n"
+      "REPLICAS 1");
+
+  // Test a table with all types in its schema, multiple hash partitioning
+  // levels, multiple range partitions, and non-covered ranges.
+  const string kAnotherTableId = "TestAnotherTable";
+  KuduSchema schema;
+
+  // Build the schema.
+  {
+    KuduSchemaBuilder builder;
+    builder.AddColumn("key_hash0")->Type(KuduColumnSchema::INT32)->NotNull();
+    builder.AddColumn("key_hash1")->Type(KuduColumnSchema::INT32)->NotNull();
+    builder.AddColumn("key_hash2")->Type(KuduColumnSchema::INT32)->NotNull();
+    builder.AddColumn("key_range")->Type(KuduColumnSchema::INT32)->NotNull();
+    builder.AddColumn("int8_val")->Type(KuduColumnSchema::INT8);
+    builder.AddColumn("int16_val")->Type(KuduColumnSchema::INT16);
+    builder.AddColumn("int32_val")->Type(KuduColumnSchema::INT32);
+    builder.AddColumn("int64_val")->Type(KuduColumnSchema::INT64);
+    builder.AddColumn("timestamp_val")->Type(KuduColumnSchema::UNIXTIME_MICROS);
+    builder.AddColumn("string_val")->Type(KuduColumnSchema::STRING);
+    builder.AddColumn("bool_val")->Type(KuduColumnSchema::BOOL);
+    builder.AddColumn("float_val")->Type(KuduColumnSchema::FLOAT);
+    builder.AddColumn("double_val")->Type(KuduColumnSchema::DOUBLE);
+    builder.AddColumn("binary_val")->Type(KuduColumnSchema::BINARY);
+    builder.AddColumn("decimal_val")->Type(KuduColumnSchema::DECIMAL)
+        ->Precision(10)
+        ->Scale(4);
+    builder.SetPrimaryKey({ "key_hash0", "key_hash1", "key_hash2", "key_range" });
+    ASSERT_OK(builder.Build(&schema));
+  }
+
+  // Set up partitioning and create the table.
+  {
+    unique_ptr<KuduPartialRow> lower_bound0(schema.NewRow());
+    ASSERT_OK(lower_bound0->SetInt32("key_range", 0));
+    unique_ptr<KuduPartialRow> upper_bound0(schema.NewRow());
+    ASSERT_OK(upper_bound0->SetInt32("key_range", 1));
+    unique_ptr<KuduPartialRow> lower_bound1(schema.NewRow());
+    ASSERT_OK(lower_bound1->SetInt32("key_range", 2));
+    unique_ptr<KuduPartialRow> upper_bound1(schema.NewRow());
+    ASSERT_OK(upper_bound1->SetInt32("key_range", 3));
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    ASSERT_OK(table_creator->table_name(kAnotherTableId)
+             .schema(&schema)
+             .add_hash_partitions({ "key_hash0" }, 2)
+             .add_hash_partitions({ "key_hash1", "key_hash2" }, 3)
+             .set_range_partition_columns({ "key_range" })
+             .add_range_partition(lower_bound0.release(), upper_bound0.release())
+             .add_range_partition(lower_bound1.release(), upper_bound1.release())
+             .num_replicas(FLAGS_num_replicas)
+             .Create());
+  }
+
+  // OK, all that busywork is done. Test the describe output.
+  stdout.clear();
+  stderr.clear();
+  s = RunKuduTool({
+    "table",
+    "describe",
+    cluster_->master()->bound_rpc_addr().ToString(),
+    kAnotherTableId
+  }, &stdout, &stderr);
+  ASSERT_TRUE(s.ok()) << ToolRunInfo(s, stdout, stderr);
+
+  ASSERT_STR_CONTAINS(
+      stdout,
+      "(\n"
+      "    key_hash0 INT32 NOT NULL,\n"
+      "    key_hash1 INT32 NOT NULL,\n"
+      "    key_hash2 INT32 NOT NULL,\n"
+      "    key_range INT32 NOT NULL,\n"
+      "    int8_val INT8 NULLABLE,\n"
+      "    int16_val INT16 NULLABLE,\n"
+      "    int32_val INT32 NULLABLE,\n"
+      "    int64_val INT64 NULLABLE,\n"
+      "    timestamp_val UNIXTIME_MICROS NULLABLE,\n"
+      "    string_val STRING NULLABLE,\n"
+      "    bool_val BOOL NULLABLE,\n"
+      "    float_val FLOAT NULLABLE,\n"
+      "    double_val DOUBLE NULLABLE,\n"
+      "    binary_val BINARY NULLABLE,\n"
+      "    decimal_val DECIMAL(10, 4) NULLABLE,\n"
+      "    PRIMARY KEY (key_hash0, key_hash1, key_hash2, key_range)\n"
+      ")\n"
+      "HASH (key_hash0) PARTITIONS 2,\n"
+      "HASH (key_hash1, key_hash2) PARTITIONS 3,\n"
+      "RANGE (key_range) (\n"
+      "    PARTITION 0 <= VALUES < 1,\n"
+      "    PARTITION 2 <= VALUES < 3\n"
+      ")\n"
+      "REPLICAS 1");
+}
 } // namespace tools
 } // namespace kudu

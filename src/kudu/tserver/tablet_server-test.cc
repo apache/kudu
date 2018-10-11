@@ -407,7 +407,7 @@ TEST_F(TabletServerTest, TestWebPages) {
   ASSERT_OK(c.FetchURL(Substitute("http://$0/tablet?id=$1", addr, kTabletId),
                        &buf));
   ASSERT_STR_CONTAINS(buf.ToString(), "key");
-  ASSERT_STR_CONTAINS(buf.ToString(), "string NULLABLE");
+  ASSERT_STR_CONTAINS(buf.ToString(), "STRING NULLABLE");
 
   // Test fetching metrics.
   // Fetching metrics has the side effect of retiring metrics, but not in a single pass.
@@ -719,7 +719,7 @@ TEST_F(TabletServerTest, TestInsert) {
     Status s = StatusFromPB(resp.error().status());
     EXPECT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(),
-                        "Client missing required column: key[int32 NOT NULL]");
+                        "Client missing required column: key INT32 NOT NULL");
     req.clear_row_operations();
   }
 
@@ -1117,7 +1117,7 @@ TEST_F(TabletServerTest, TestInvalidWriteRequest_BadSchema) {
     ASSERT_TRUE(resp.has_error());
     ASSERT_EQ(TabletServerErrorPB::MISMATCHED_SCHEMA, resp.error().code());
     ASSERT_STR_CONTAINS(resp.error().status().message(),
-                        "Client provided column col_doesnt_exist[int32 NOT NULL]"
+                        "Client provided column col_doesnt_exist INT32 NOT NULL"
                         " not present in tablet");
   }
 
@@ -2388,8 +2388,8 @@ TEST_F(TabletServerTest, TestInvalidScanRequest_BadProjectionTypes) {
                      0));
   VerifyScanRequestFailure(projection,
                            TabletServerErrorPB::MISMATCHED_SCHEMA,
-                           "The column 'int_val' must have type int32 NOT "
-                           "NULL found int32 NULLABLE");
+                           "The column 'int_val' must have type INT32 NOT "
+                           "NULL found INT32 NULLABLE");
 
   // Verify mismatched nullability for the nullable string field
   ASSERT_OK(
@@ -2397,8 +2397,8 @@ TEST_F(TabletServerTest, TestInvalidScanRequest_BadProjectionTypes) {
                      0));
   VerifyScanRequestFailure(projection,
                            TabletServerErrorPB::MISMATCHED_SCHEMA,
-                           "The column 'string_val' must have type string "
-                           "NULLABLE found string NOT NULL");
+                           "The column 'string_val' must have type STRING "
+                           "NULLABLE found STRING NOT NULL");
 
   // Verify mismatched type for the not-null int field
   ASSERT_OK(
@@ -2406,8 +2406,8 @@ TEST_F(TabletServerTest, TestInvalidScanRequest_BadProjectionTypes) {
                      0));
   VerifyScanRequestFailure(projection,
                            TabletServerErrorPB::MISMATCHED_SCHEMA,
-                           "The column 'int_val' must have type int32 NOT "
-                           "NULL found int16 NOT NULL");
+                           "The column 'int_val' must have type INT32 NOT "
+                           "NULL found INT16 NOT NULL");
 
   // Verify mismatched type for the nullable string field
   ASSERT_OK(projection.Reset(
@@ -2415,8 +2415,8 @@ TEST_F(TabletServerTest, TestInvalidScanRequest_BadProjectionTypes) {
         0));
   VerifyScanRequestFailure(projection,
                            TabletServerErrorPB::MISMATCHED_SCHEMA,
-                           "The column 'string_val' must have type string "
-                           "NULLABLE found int32 NULLABLE");
+                           "The column 'string_val' must have type STRING "
+                           "NULLABLE found INT32 NULLABLE");
 }
 
 // Test that passing a projection with Column IDs throws an exception.
