@@ -102,7 +102,7 @@ LogCache::LogCache(const scoped_refptr<MetricEntity>& metric_entity,
   // And create a child tracker with the per-tablet limit.
   tracker_ = MemTracker::CreateTracker(
       max_ops_size_bytes, Substitute("$0:$1:$2", kParentMemTrackerId,
-                                     local_uuid, tablet_id),
+                                     local_uuid_, tablet_id_),
       parent_tracker_);
 
   // Put a fake message at index 0, since this simplifies a lot of our
