@@ -1,17 +1,17 @@
 // Licensed to the Apache Software Foundation (ASF) under one
-// or more contributor license agreements.  See the NOTICE file
+// or more contributor license agreements. See the NOTICE file
 // distributed with this work for additional information
-// regarding copyright ownership.  The ASF licenses this file
+// regarding copyright ownership. The ASF licenses this file
 // to you under the Apache License, Version 2.0 (the
 // "License"); you may not use this file except in compliance
-// with the License.  You may obtain a copy of the License at
+// with the License. You may obtain a copy of the License at
 //
-//   http://www.apache.org/licenses/LICENSE-2.0
+//  http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing,
 // software distributed under the License is distributed on an
 // "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
-// KIND, either express or implied.  See the License for the
+// KIND, either express or implied. See the License for the
 // specific language governing permissions and limitations
 // under the License.
 
@@ -31,55 +31,259 @@
 [[rn_1.8.0_upgrade_notes]]
 == Upgrade Notes
 
-* Flume 1.8+ requires Java 8 at runtime even though the Kudu Flume integration
-  is Java 7 compatible. Flume 1.8 is the default dependency version as of
-  Kudu 1.8.0.
+- Upgrading directly from Kudu 1.7.0 is supported and no special upgrade steps are
+  required. A rolling upgrade may work, however it has not been tested. When upgrading
+  Kudu, it is recommended to first shut down all Kudu processes across the cluster, then
+  upgrade the software on all servers, then restart the Kudu processes on all servers in
+  the cluster.
 
-* Hadoop 3.0+ requires Java 8 at runtime even though the Kudu Hadoop integration
-  is Java 7 compatible. Hadoop 3.1 is the default dependency version as of
-  Kudu 1.8.0.
+- Kudu Flume Sink released with Kudu 1.8.0 is compiled against Apache Flume 1.8 and might
+  not function with earlier versions of Flume. Note that Flume 1.8 requires Java 1.8 or
+  higher.
+
+- Hadoop 3.0+ requires Java 8 at runtime even though the Kudu Hadoop integration is Java 7
+  compatible. Hadoop 3.1 is the default dependency version as of Kudu 1.8.0, used by
+  certain features in the Java client.
 
 [[rn_1.8.0_obsoletions]]
 == Obsoletions
 
+- The `-table_num_buckets` configuration option of the `kudu perf loadgen` tool is now
+  removed in favor of `-table_num_hash_partitions` and `-table_num_range_partitions`
+  (see link:https://issues.apache.org/jira/browse/KUDU-1861[KUDU-1861]).
 
 [[rn_1.8.0_deprecations]]
 == Deprecations
 
-* Support for Java 7 has been deprecated since Kudu 1.5.0 and may be removed in
-  the next major release.
+- Support for Java 7 has been deprecated since Kudu 1.5.0 and may be removed in the next
+  major release.
+
+- The `producer.skipMissingColumn`, `producer.skipBadColumnValue`, and
+  `producer.warnUnmatchedRows` Kudu Flume sink configuration parameters have been
+  deprecated in favor of `producer.missingColumnPolicy`, `producer.badColumnValuePolicy`,
+  and `producer.unmatchedRowPolicy` respectively (see
+  link:https://issues.apache.org/jira/browse/KUDU-1882[KUDU-1882]).
 
 [[rn_1.8.0_new_features]]
 == New features
 
+- Examples showcasing functionality in {cpp}, Java, and Python, previously
+  hosted in a separate repository have been added. They can be found in the
+  `link:https://github.com/apache/kudu/tree/master/examples[examples/]`
+  top-level subdirectory.
+
+- Added `kudu diagnose parse_stacks`, a tool to parse sampled stack traces out of a
+  diagnostics log (see link:https://issues.apache.org/jira/browse/KUDU-2353[KUDU-2353]).
+
+- Added support for `IS NULL` and `IS NOT NULL` predicates to the Kudu Python client (see
+  link:https://issues.apache.org/jira/browse/KUDU-2399[KUDU-2399]).
+
+- Introduced <<administration.adoc#rebalancer_tool,manual data rebalancer>> into the kudu
+  CLI tool. The rebalancer can be used to redistribute table replicas among tablet
+  servers. The rebalancer can be run via `kudu cluster rebalance` sub-command. Using the
+  new tool, it's possible to rebalance Kudu clusters of version 1.4.0 and newer.
+
+- Added `kudu tserver get_flags` and `kudu master get_flags`, two tools that allow
+  superusers to retrieve all the values of command line flags from remote Kudu processes.
+  The `get_flags` tools support filtering the returned flags by tag, and by default will
+  return only flags that were explicitly set.
+
+- Added `kudu tablet unsafe_replace_tablet`, a tool to replace a tablet with a new one.
+  This tool is meant to be used to recover a table when one of its tablets has permanently
+  lost all replicas. The data in the tablet that is replaced is lost, so this tool should
+  only be used as a last resort (see
+  link:https://issues.apache.org/jira/browse/KUDU-2290[KUDU-2290]).
 
 [[rn_1.8.0_improvements]]
 == Optimizations and improvements
 
+- There is a new metric for each tablet replica tracking the number of election failures
+  since the last successful election attempt and the time since the last heartbeat from
+  the leader (see link:https://issues.apache.org/jira/browse/KUDU-2287[KUDU-2287]).
+
+- Kudu now supports building and running on Ubuntu 18.04 (“Bionic Beaver”) (see
+  link:https://issues.apache.org/jira/browse/KUDU-2427[KUDU-2427]).
+
+- Kudu now supports building and running against OpenSSL 1.1 (see
+  link:https://issues.apache.org/jira/browse/KUDU-1889[KUDU-1889]).
+
+- Added Kerberos support to the Kudu Flume sink (see
+  link:https://issues.apache.org/jira/browse/KUDU-2012[KUDU-2012]).
+
+- The Kudu Spark connector now supports Spark Streaming DataFrames (see
+  link:https://issues.apache.org/jira/browse/KUDU-2539[KUDU-2539]).
+
+- Added `-tables` filtering argument to `kudu table list` (see
+  link:https://issues.apache.org/jira/browse/KUDU-2529[KUDU-2529]).
+
+- Clients now support setting a limit on the number of returned rows in scans (see
+  link:https://issues.apache.org/jira/browse/KUDU-16[KUDU-16]).
+
+- Added Pandas support to the Python client (see
+  link:https://issues.apache.org/jira/browse/KUDU-1276[KUDU-1276]).
+
+- Enabled configuration of mutation buffer in the Python client (see
+  link:https://issues.apache.org/jira/browse/KUDU-2441[KUDU-2441]).
+
+- Added a `keepAlive` API call to the `KuduScanner` and `AsyncKuduScanner` in the Java
+  client.  This API can be used to keep the scanners alive on the server when processing
+  of messages will take longer than the scanner TTL (see
+  link:https://issues.apache.org/jira/browse/KUDU-2095[KUDU-2095]).
+
+- The Kudu Spark integration now uses the keepAlive API when reading data. By default it
+  will call keepAlive on a scanner with a period of 15 seconds. This will ensure that
+  Spark jobs with large batch sizes or slow processing times do not fail with scanner not
+  found errors (see link:https://issues.apache.org/jira/browse/KUDU-2563[KUDU-2563]).
+
+- Number of reactor threads in the {cpp} client is now configurable (see
+  link:https://issues.apache.org/jira/browse/KUDU-2368[KUDU-2368]).
+
+- Added an optimization to reduce CPU consumption when performing hot metadata lookups in
+  the {cpp} client (see link:https://issues.apache.org/jira/browse/KUDU-1977[KUDU-1977]).
+
+- Added an optimization to avoid bottlenecks on `getpwuid_r()` in libnss during a Raft
+  leader election storm (see
+  link:https://issues.apache.org/jira/browse/KUDU-2395[KUDU-2395]).
+
+- Improved rowset tree pruning making scans with open-ended intervals on primary key (see
+  link:https://issues.apache.org/jira/browse/KUDU-2566[KUDU-2566]).
+
+- The `kudu perf loadgen` tool now supports generating range-partitioned tables. The
+  `-table_num_buckets` configuration is now removed in favor of
+  `-table_num_hash_partitions` and `-table_num_range_partitions` (see
+  link:https://issues.apache.org/jira/browse/KUDU-1861[KUDU-1861]).
+
+- CFile checksum failures will now cause the affected tablet replicas to be failed and
+  re-replicated elsewhere (see
+  link:https://issues.apache.org/jira/browse/KUDU-2469[KUDU-2469]).
+
+- Servers are now able to start up with data directories missing on disk (see
+  link:https://issues.apache.org/jira/browse/KUDU-2359[KUDU-2359]).
+
+- The `kudu perf loadgen` tool now creates tables with a period-separated database name,
+  for example `default.loadgen_auto_abc123`. This new behavior does not take effect if the
+  `--table` flag is provided. The database of the table can be changed using a new
+  `--auto_database` flag. This change is made in anticipation of an eventual Kudu/HMS
+  integration (see link:https://jira.apache.org/jira/browse/KUDU-2191[KUDU-2191]).
+
+- Introduced `FAILED_UNRECOVERABLE` replica health status. This is to mark replicas which
+  are not able to catch up with the leader due to GC-collected segments of WAL and other
+  unrecoverable cases like disk failure. With that, the replica management scheme becomes
+  hybrid: the system evicts replicas with `FAILED_UNRECOVERABLE` health status before
+  adding a replacement if it anticipates that it can commit the transaction, while in
+  other cases it first adds a non-voter replica and removes the failed one only after
+  promoting a newly added replica to voter role.
+
+- Two additional configuration parameters, `socketReadTimeoutMs`  and `scanRequestTimeout`
+  have been added to the Spark connector to allow better tuning to avoid scan timeouts
+  under high load.
+
+- The `kudu table` tool now supports two new options to rename tables and columns,
+  `rename_table` and `rename_column` respectively.
+
+- Kudu will now wait for the clock to become synchronized at startup, controlled by a new
+  flag `-ntp_initial_sync_wait_secs` (see
+  link:https://issues.apache.org/jira/browse/KUDU-2242[KUDU-2242]).
+
+- Tablet deletions are now throttled, which will help Kudu clusters remain stable even
+  when many tablets are deleted at once. The number of tablets that a tablet server will
+  delete at once is controlled by the new flag `-num_tablets_to_delete_simultaneously`
+  (see link:https://issues.apache.org/jira/browse/KUDU-2289[KUDU-2289]).
+
+- The `kudu cluster ksck` tool has been significantly enhanced. It now checks master
+  health and consensus status, displays any unsafe or hidden flags set in the cluster, and
+  produces a summary of the Kudu versions running on the master and tablet servers. In
+  addition, it now supports JSON output, both in pretty-printed and compact form. The
+  output format is controlled by the `-ksck_format` flag.
 
 [[rn_1.8.0_fixed_issues]]
 == Fixed Issues
 
+- When a tablet server was wiped and recreated with the same RPC address, `ksck` listed it
+  twice, both as healthy, even though only one of them was there. This bug is now fixed by
+  verifying the UUID of the server (see
+  link:https://issues.apache.org/jira/browse/KUDU-2364[KUDU-2364]).
+
+- Fixed an issue preventing Kudu from starting when using Vormetric's encrypted filesystem
+  (secfs2) on ext4 (see link:https://issues.apache.org/jira/browse/KUDU-2406[KUDU-2406]).
+
+- Fixed an issue where Kudu's block cache memory tracking (as seen on the `/mem-trackers`
+  web UI page) wasn’t accounting for all of the overhead of the cache itself (see
+  link:https://issues.apache.org/jira/browse/KUDU-972[KUDU-972]).
+
+- Fixed an issue where the {cpp} client would fail to reopen an expired scanner; instead,
+  the client would retry in a tight loop and eventually timeout (see
+  link:https://issues.apache.org/jira/browse/KUDU-2414[KUDU-2414]).
+
+- When a tablet is deleted, its write-ahead log recovery directory is also deleted, if it
+  exists (see link:https://issues.apache.org/jira/browse/KUDU-1038[KUDU-1038]).
+
+- Fixed a tablet server crash when a tablet is scanned with two predicates on its primary
+  key and the predicates do not overlap (see
+  link:https://issues.apache.org/jira/browse/KUDU-2447[KUDU-2447]).
+
+- Fixed an issue where the Kudu MapReduce connector's `KuduTableInputFormat` may exhaust
+  its scan too early (see
+  link:https://issues.apache.org/jira/browse/KUDU-2525[KUDU-2525]).
+
+- Fixed an issue with failed tablet copies that would cause subsequent tablet copies to
+  crash the tablet server (see
+  link:https://issues.apache.org/jira/browse/KUDU-2293[KUDU-2293]).
+
+- Reduced the likelihood of seeing a bug in which incorrect results would be returned in
+  scans following a server restart (see
+  link:https://issues.apache.org/jira/browse/KUDU-2463[KUDU-2463]).
+
+- Fixed a bug causing a tablet server crash when a write batch request from a client
+  failed coarse-grained authorization (see
+  link:https://issues.apache.org/jira/browse/KUDU-2540[KUDU-2540]).
+
+- Fixed use-after-free in case of WAL replay error (see
+  link:https://issues.apache.org/jira/browse/KUDU-2509[KUDU-2509]).
+
+- Fixed authentication token reacquisition in the {cpp} client (see
+  link:https://issues.apache.org/jira/browse/KUDU-2580[KUDU-2580]).
+
+- Fixed a bug where leader logged excessively when the followers fell behind (see
+  link:https://issues.apache.org/jira/browse/KUDU-2322[KUDU-2322]).
+
+- Fixed reporting of leader health during lifecycle transitions (see
+  link:https://issues.apache.org/jira/browse/KUDU-2335[KUDU-2335]).
+
+- Fixed moving single-replica tablets (see
+  link:https://issues.apache.org/jira/browse/KUDU-2443[KUDU-2443]).
+
+- Fixed an error that would cause the kudu CLI tool to unexpectedly exit when the
+  connection to the master or tserver was abruptly closed.
+
+- Fixed a rare issue where system failure could leave unexpected null bytes at the end of
+  metadata files, causing Kudu to be unable to restart (see
+  link:https://issues.apache.org/jira/browse/KUDU-2260[KUDU-2260]).
+
+- Fixed an issue where `kudu cluster ksck` running a snapshot checksum scan would use a
+  single snapshot timestamp for all tablets. This caused the checksum process to fail if
+  the checksum process took a long time and the number of tablets was sufficiently large.
+  The tool should now be able to checksum tables even if the process takes many hours.
+  (see link:https://issues.apache.org/jira/browse/KUDU-2179[KUDU-2179]).
 
 [[rn_1.8.0_wire_compatibility]]
 == Wire Protocol compatibility
 
 Kudu 1.8.0 is wire-compatible with previous versions of Kudu:
 
-* Kudu 1.8 clients may connect to servers running Kudu 1.0 or later. If the client uses
+- Kudu 1.8 clients may connect to servers running Kudu 1.0 or later. If the client uses
   features that are not available on the target server, an error will be returned.
-* Rolling upgrade between Kudu 1.7 and Kudu 1.8 servers is believed to be possible
-  though has not been sufficiently tested. Users are encouraged to shut down all nodes
-  in the cluster, upgrade the software, and then restart the daemons on the new version.
-* Kudu 1.0 clients may connect to servers running Kudu 1.8 with the exception of the
+
+- Kudu 1.0 clients may connect to servers running Kudu 1.8 with the exception of the
   below-mentioned restrictions regarding secure clusters.
 
-The authentication features introduced in Kudu 1.3 place the following limitations
-on wire compatibility between Kudu 1.8 and versions earlier than 1.3:
+The authentication features introduced in Kudu 1.3 place the following limitations on wire
+compatibility between Kudu 1.8 and versions earlier than 1.3:
 
-* If a Kudu 1.8 cluster is configured with authentication or encryption set to "required",
+- If a Kudu 1.8 cluster is configured with authentication or encryption set to "required",
   clients older than Kudu 1.3 will be unable to connect.
-* If a Kudu 1.8 cluster is configured with authentication and encryption set to "optional"
+
+- If a Kudu 1.8 cluster is configured with authentication and encryption set to "optional"
   or "disabled", older clients will still be able to connect.
 
 [[rn_1.8.0_incompatible_changes]]
@@ -89,19 +293,18 @@ on wire compatibility between Kudu 1.8 and versions earlier than 1.3:
 [[rn_1.8.0_client_compatibility]]
 === Client Library Compatibility
 
-* The Kudu 1.8 Java client library is API- and ABI-compatible with Kudu 1.7. Applications
+- The Kudu 1.8 Java client library is API- and ABI-compatible with Kudu 1.7. Applications
   written against Kudu 1.7 will compile and run against the Kudu 1.8 client library and
   vice-versa.
 
-* The Kudu 1.8 {cpp} client is API- and ABI-forward-compatible with Kudu 1.7.
+- The Kudu 1.8 {cpp} client is API- and ABI-forward-compatible with Kudu 1.7.
   Applications written and compiled against the Kudu 1.7 client library will run without
   modification against the Kudu 1.8 client library. Applications written and compiled
   against the Kudu 1.8 client library will run without modification against the Kudu 1.7
   client library.
 
-* The Kudu 1.8 Python client is API-compatible with Kudu 1.7. Applications
-  written against Kudu 1.7 will continue to run against the Kudu 1.8 client
-  and vice-versa.
+- The Kudu 1.8 Python client is API-compatible with Kudu 1.7. Applications written against
+  Kudu 1.7 will continue to run against the Kudu 1.8 client and vice-versa.
 
 [[rn_1.8.0_known_issues]]
 == Known Issues and Limitations
@@ -111,6 +314,26 @@ documentation.
 
 [[rn_1.8.0_contributors]]
 == Contributors
+
+Kudu 1.8 includes contributions from 40 people, including 15 first-time contributors:
+
+- Anupama Gupta
+- Attila Piros
+- Brian McDevitt
+- Fengling Wang
+- Ferenc Szabó
+- Greg Solovyev
+- Kiyoshi Mizumaru
+- Shriya Gupta
+- Thomas Tauber-Marshall
+- Tigerquoll
+- Yao Xu
+- ZhangYao
+- helifu
+- jinxing64
+- qqchang2nd
+
+Thank you for helping to make Kudu even better!
 
 [[resources_and_next_steps]]
 == Resources
