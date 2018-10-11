@@ -30,9 +30,9 @@
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
 #include "kudu/common/common.pb.h"
+#include "kudu/common/table_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/hms/hive_metastore_types.h"
-#include "kudu/hms/hms_catalog.h"
 #include "kudu/hms/hms_client.h"
 #include "kudu/hms/mini_hms.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
@@ -306,7 +306,7 @@ TEST_F(MasterHmsTest, TestRenameTable) {
   table_alterer.reset(client_->NewTableAlterer("db.a"));
   s = table_alterer->RenameTo("foo")->Alter();
   ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
-  ASSERT_STR_CONTAINS(s.ToString(), hms::HmsCatalog::kInvalidTableError);
+  ASSERT_STR_CONTAINS(s.ToString(), kInvalidTableError);
 
   // Attempt to rename the Kudu table to a non-existent database.
   table_alterer.reset(client_->NewTableAlterer("db.a"));

@@ -56,6 +56,7 @@ set(COMMON_SRCS
   row_operations.cc
   scan_spec.cc
   schema.cc
+  table_util.cc
   timestamp.cc
   types.cc
   wire_protocol.cc)
@@ -90,5 +91,6 @@ ADD_KUDU_TEST(row_changelist-test)
 ADD_KUDU_TEST(row_operations-test)
 ADD_KUDU_TEST(scan_spec-test)
 ADD_KUDU_TEST(schema-test)
+ADD_KUDU_TEST(table_util-test)
 ADD_KUDU_TEST(types-test)
 ADD_KUDU_TEST(wire_protocol-test)

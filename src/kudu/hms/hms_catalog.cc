@@ -31,11 +31,11 @@
 
 #include "kudu/common/common.pb.h"
 #include "kudu/common/schema.h"
+#include "kudu/common/table_util.h"
 #include "kudu/common/types.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/ascii_ctype.h"
-#include "kudu/gutil/strings/charset.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/hms/hive_metastore_types.h"
@@ -115,10 +115,6 @@ TAG_FLAG(hive_metastore_max_message_size, runtime);
 namespace kudu {
 namespace hms {
 
-const char* const HmsCatalog::kInvalidTableError = "when the Hive Metastore integration "
-    "is enabled, Kudu table names must be a period ('.') separated database and table name "
-    "identifier pair, each containing only ASCII alphanumeric characters, '_', and '/'";
-
 HmsCatalog::HmsCatalog(string master_addresses)
     : master_addresses_(std::move(master_addresses)) {
 }
@@ -171,7 +167,7 @@ Status HmsCatalog::DropLegacyTable(const string& name) {
 Status HmsCatalog::DropTable(const string& name, const hive::EnvironmentContext& env_ctx) {
   Slice hms_database;
   Slice hms_table;
-  RETURN_NOT_OK(ParseTableName(name, &hms_database, &hms_table));
+  RETURN_NOT_OK(ParseHiveTableIdentifier(name, &hms_database, &hms_table));
   return ha_client_.Execute([&] (HmsClient* client) {
     return client->DropTable(hms_database.ToString(), hms_table.ToString(), env_ctx);
   });
@@ -198,7 +194,7 @@ Status HmsCatalog::UpgradeLegacyImpalaTable(const string& id,
 Status HmsCatalog::DowngradeToLegacyImpalaTable(const string& name) {
   Slice hms_database;
   Slice hms_table;
-  RETURN_NOT_OK(ParseTableName(name, &hms_database, &hms_table));
+  RETURN_NOT_OK(ParseHiveTableIdentifier(name, &hms_database, &hms_table));
 
   return ha_client_.Execute([&] (HmsClient* client) {
     hive::Table table;
@@ -258,7 +254,7 @@ Status HmsCatalog::AlterTable(const string& id,
                               const Schema& schema) {
   Slice hms_database;
   Slice hms_table;
-  RETURN_NOT_OK(ParseTableName(name, &hms_database, &hms_table));
+  RETURN_NOT_OK(ParseHiveTableIdentifier(name, &hms_database, &hms_table));
 
   return ha_client_.Execute([&] (HmsClient* client) {
       // The HMS does not have a way to alter individual fields of a table
@@ -349,7 +345,7 @@ Status HmsCatalog::PopulateTable(const string& id,
                                  hive::Table* table) {
   Slice hms_database_name;
   Slice hms_table_name;
-  RETURN_NOT_OK(ParseTableName(name, &hms_database_name, &hms_table_name));
+  RETURN_NOT_OK(ParseHiveTableIdentifier(name, &hms_database_name, &hms_table_name));
   table->dbName = hms_database_name.ToString();
   table->tableName = hms_table_name.ToString();
   if (owner) {
@@ -387,41 +383,11 @@ Status HmsCatalog::NormalizeTableName(string* table_name) {
   CHECK_NOTNULL(table_name);
   Slice hms_database;
   Slice hms_table;
-  RETURN_NOT_OK(ParseTableName(*table_name, &hms_database, &hms_table));
+  RETURN_NOT_OK(ParseHiveTableIdentifier(*table_name, &hms_database, &hms_table));
 
   ToLowerCase(hms_database);
   ToLowerCase(hms_table);
 
-  return Status::OK();
-}
-
-Status HmsCatalog::ParseTableName(const string& table_name,
-                                  Slice* hms_database,
-                                  Slice* hms_table) {
-  const char kSeparator = '.';
-  strings::CharSet charset("abcdefghijklmnopqrstuvwxyz"
-                           "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-                           "0123456789"
-                           "_/");
-
-  optional<int> separator_idx;
-  for (int idx = 0; idx < table_name.size(); idx++) {
-    char c = table_name[idx];
-    if (!charset.Test(c)) {
-      if (c == kSeparator && !separator_idx) {
-        separator_idx = idx;
-      } else {
-        return Status::InvalidArgument(kInvalidTableError, table_name);
-      }
-    }
-  }
-  if (!separator_idx || *separator_idx == 0 || *separator_idx == table_name.size() - 1) {
-    return Status::InvalidArgument(kInvalidTableError, table_name);
-  }
-
-  *hms_database = Slice(table_name.data(), *separator_idx);
-  *hms_table = Slice(table_name.data() + *separator_idx + 1,
-                     table_name.size() - *separator_idx - 1);
   return Status::OK();
 }
 

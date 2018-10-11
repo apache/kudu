@@ -34,7 +34,6 @@ namespace kudu {
 
 class HostPort;
 class Schema;
-class Slice;
 
 namespace hms {
 
@@ -45,8 +44,6 @@ namespace hms {
 // This class is thread-safe after Start() is called.
 class HmsCatalog {
  public:
-
-  static const char* const kInvalidTableError;
 
   explicit HmsCatalog(std::string master_addresses);
   ~HmsCatalog();
@@ -171,13 +168,6 @@ class HmsCatalog {
   // Drops a table entry from the HMS, supplying the provided environment context.
   Status DropTable(const std::string& name,
                    const hive::EnvironmentContext& env_ctx) WARN_UNUSED_RESULT;
-
-  // Parses a Kudu table name into a Hive database and table name.
-  // Returns an error if the Kudu table name is not correctly formatted.
-  // The returned HMS database and table slices must not outlive 'table_name'.
-  static Status ParseTableName(const std::string& table_name,
-                               Slice* hms_database,
-                               Slice* hms_table) WARN_UNUSED_RESULT;
 
   // Parses a Hive Metastore URI string into a sequence of HostPorts.
   static Status ParseUris(const std::string& metastore_uris, std::vector<HostPort>* hostports);

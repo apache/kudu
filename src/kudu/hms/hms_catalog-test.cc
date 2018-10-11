@@ -39,7 +39,6 @@
 #include "kudu/security/test/mini_kdc.h"
 #include "kudu/thrift/client.h"
 #include "kudu/util/net/net_util.h"
-#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -56,39 +55,6 @@ using strings::Substitute;
 
 namespace kudu {
 namespace hms {
-
-TEST(HmsCatalogStaticTest, TestParseTableName) {
-  Slice db;
-  Slice tbl;
-  string table;
-
-  table = "foo.bar";
-  ASSERT_OK(HmsCatalog::ParseTableName(table, &db, &tbl));
-  EXPECT_EQ("foo", db);
-  EXPECT_EQ("bar", tbl);
-
-  table = "99bottles.my_awesome/table/22";
-  ASSERT_OK(HmsCatalog::ParseTableName(table, &db, &tbl));
-  EXPECT_EQ("99bottles", db);
-  EXPECT_EQ("my_awesome/table/22", tbl);
-
-  table = "_leading_underscore.trailing_underscore_";
-  ASSERT_OK(HmsCatalog::ParseTableName(table, &db, &tbl));
-  EXPECT_EQ("_leading_underscore", db);
-  EXPECT_EQ("trailing_underscore_", tbl);
-
-  EXPECT_TRUE(HmsCatalog::ParseTableName(".", &db, &tbl).IsInvalidArgument());
-  EXPECT_TRUE(HmsCatalog::ParseTableName("no-table", &db, &tbl).IsInvalidArgument());
-  EXPECT_TRUE(HmsCatalog::ParseTableName("lots.of.tables", &db, &tbl).IsInvalidArgument());
-  EXPECT_TRUE(HmsCatalog::ParseTableName("no-table", &db, &tbl).IsInvalidArgument());
-  EXPECT_TRUE(HmsCatalog::ParseTableName("lots.of.tables", &db, &tbl).IsInvalidArgument());
-  EXPECT_TRUE(HmsCatalog::ParseTableName(".no_table", &db, &tbl).IsInvalidArgument());
-  EXPECT_TRUE(HmsCatalog::ParseTableName(".no_database", &db, &tbl).IsInvalidArgument());
-  EXPECT_TRUE(HmsCatalog::ParseTableName("punctuation?.no", &db, &tbl).IsInvalidArgument());
-  EXPECT_TRUE(HmsCatalog::ParseTableName("white space.no", &db, &tbl).IsInvalidArgument());
-  EXPECT_TRUE(HmsCatalog::ParseTableName("unicode☃tables.no", &db, &tbl).IsInvalidArgument());
-  EXPECT_TRUE(HmsCatalog::ParseTableName(string("\0.\0", 3), &db, &tbl).IsInvalidArgument());
-}
 
 TEST(HmsCatalogStaticTest, TestNormalizeTableName) {
   string table = "foo.bar";
