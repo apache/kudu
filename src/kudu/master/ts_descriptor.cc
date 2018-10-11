@@ -58,7 +58,7 @@ DEFINE_string(location_mapping_cmd, "",
               "and consists of /-separated tokens each of which contains only "
               "characters from the set [a-zA-Z0-9_-.]. If the cluster is not "
               "using location awareness features this flag should not be set.");
-TAG_FLAG(location_mapping_cmd, evolving);
+TAG_FLAG(location_mapping_cmd, experimental);
 
 DEFINE_bool(location_mapping_by_uuid, false,
             "Whether the location command is given tablet server identifier "
