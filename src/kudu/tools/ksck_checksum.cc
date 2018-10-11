@@ -674,6 +674,8 @@ Status KsckChecksummer::ChecksumData(const KsckChecksumOptions& opts,
                       num_results, num_replicas);
       return s;
   }
+  LOG(FATAL) << "Reached unreachable section";
+  return Status::RuntimeError("Unreachable statement"); // Suppress compiler warnings.
 }
 
 } // namespace tools
