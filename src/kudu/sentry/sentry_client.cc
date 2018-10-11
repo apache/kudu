@@ -167,9 +167,9 @@ Status SentryClient::DropRole(const TDropSentryRoleRequest& request) {
 Status SentryClient::ListPrivilegesByUser(const TListSentryPrivilegesRequest& request,
                                           TListSentryPrivilegesResponse* response)  {
   SCOPED_LOG_SLOW_EXECUTION(WARNING, kSlowExecutionWarningThresholdMs,
-                            "list Sentry privilege by user");
+                            "list Sentry privileges by user");
   SENTRY_RET_NOT_OK(client_.list_sentry_privileges_by_user_and_itsgroups(*response, request),
-                    response->status, "failed to list Sentry privilege by user");
+                    response->status, "failed to list Sentry privileges by user");
   return Status::OK();
 }
 

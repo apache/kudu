@@ -77,7 +77,7 @@ class SentryAction {
   //      and any action implies METADATA.
   //
   // See org.apache.sentry.policy.common.CommonPrivilege.impliesAction.
-  bool Imply(const SentryAction& other) const;
+  bool Implies(const SentryAction& other) const;
 
  private:
   Action action_;

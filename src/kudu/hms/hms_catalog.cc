@@ -81,36 +81,31 @@ DEFINE_int32(hive_metastore_retry_count, 1,
              "encountering retriable failures, such as network errors.");
 TAG_FLAG(hive_metastore_retry_count, advanced);
 TAG_FLAG(hive_metastore_retry_count, experimental);
-TAG_FLAG(hive_metastore_retry_count, runtime);
 
-DEFINE_int32(hive_metastore_send_timeout, 60,
+DEFINE_int32(hive_metastore_send_timeout_seconds, 60,
              "Configures the socket send timeout, in seconds, for Thrift "
              "connections to the Hive Metastore.");
-TAG_FLAG(hive_metastore_send_timeout, advanced);
-TAG_FLAG(hive_metastore_send_timeout, experimental);
-TAG_FLAG(hive_metastore_send_timeout, runtime);
+TAG_FLAG(hive_metastore_send_timeout_seconds, advanced);
+TAG_FLAG(hive_metastore_send_timeout_seconds, experimental);
 
-DEFINE_int32(hive_metastore_recv_timeout, 60,
+DEFINE_int32(hive_metastore_recv_timeout_seconds, 60,
              "Configures the socket receive timeout, in seconds, for Thrift "
              "connections to the Hive Metastore.");
-TAG_FLAG(hive_metastore_recv_timeout, advanced);
-TAG_FLAG(hive_metastore_recv_timeout, experimental);
-TAG_FLAG(hive_metastore_recv_timeout, runtime);
+TAG_FLAG(hive_metastore_recv_timeout_seconds, advanced);
+TAG_FLAG(hive_metastore_recv_timeout_seconds, experimental);
 
-DEFINE_int32(hive_metastore_conn_timeout, 60,
+DEFINE_int32(hive_metastore_conn_timeout_seconds, 60,
              "Configures the socket connect timeout, in seconds, for Thrift "
              "connections to the Hive Metastore.");
-TAG_FLAG(hive_metastore_conn_timeout, advanced);
-TAG_FLAG(hive_metastore_conn_timeout, experimental);
-TAG_FLAG(hive_metastore_conn_timeout, runtime);
+TAG_FLAG(hive_metastore_conn_timeout_seconds, advanced);
+TAG_FLAG(hive_metastore_conn_timeout_seconds, experimental);
 
-DEFINE_int32(hive_metastore_max_message_size, 100 * 1024 * 1024,
+DEFINE_int32(hive_metastore_max_message_size_bytes, 100 * 1024 * 1024,
              "Maximum size of Hive Metastore objects that can be received by the "
              "HMS client in bytes. Should match the metastore.server.max.message.size "
              "configuration.");
-TAG_FLAG(hive_metastore_max_message_size, advanced);
-TAG_FLAG(hive_metastore_max_message_size, experimental);
-TAG_FLAG(hive_metastore_max_message_size, runtime);
+TAG_FLAG(hive_metastore_max_message_size_bytes, advanced);
+TAG_FLAG(hive_metastore_max_message_size_bytes, experimental);
 
 namespace kudu {
 namespace hms {
@@ -128,12 +123,12 @@ Status HmsCatalog::Start() {
   RETURN_NOT_OK(ParseUris(FLAGS_hive_metastore_uris, &addresses));
 
   thrift::ClientOptions options;
-  options.send_timeout = MonoDelta::FromSeconds(FLAGS_hive_metastore_send_timeout);
-  options.recv_timeout = MonoDelta::FromSeconds(FLAGS_hive_metastore_recv_timeout);
-  options.conn_timeout = MonoDelta::FromSeconds(FLAGS_hive_metastore_conn_timeout);
+  options.send_timeout = MonoDelta::FromSeconds(FLAGS_hive_metastore_send_timeout_seconds);
+  options.recv_timeout = MonoDelta::FromSeconds(FLAGS_hive_metastore_recv_timeout_seconds);
+  options.conn_timeout = MonoDelta::FromSeconds(FLAGS_hive_metastore_conn_timeout_seconds);
   options.enable_kerberos = FLAGS_hive_metastore_sasl_enabled;
   options.service_principal = FLAGS_hive_metastore_kerberos_principal;
-  options.max_buf_size = FLAGS_hive_metastore_max_message_size;
+  options.max_buf_size = FLAGS_hive_metastore_max_message_size_bytes;
   options.retry_count = FLAGS_hive_metastore_retry_count;
 
   return ha_client_.Start(std::move(addresses), std::move(options));

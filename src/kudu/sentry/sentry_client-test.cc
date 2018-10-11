@@ -17,7 +17,6 @@
 
 #include "kudu/sentry/sentry_client.h"
 
-#include <map>
 #include <memory>
 #include <set>
 #include <string>
@@ -25,15 +24,13 @@
 
 #include <gtest/gtest.h>
 
-#include "kudu/rpc/sasl_common.h"
-#include "kudu/security/test/mini_kdc.h"
 #include "kudu/sentry/mini_sentry.h"
+#include "kudu/sentry/sentry-test-base.h"
 #include "kudu/sentry/sentry_policy_service_types.h"
 #include "kudu/thrift/client.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
-#include "kudu/util/test_util.h"
 
 using sentry::TAlterSentryRoleAddGroupsRequest;
 using sentry::TAlterSentryRoleAddGroupsResponse;
@@ -48,59 +45,12 @@ using sentry::TSentryGroup;
 using sentry::TSentryPrivilege;
 using std::set;
 using std::string;
-using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
 namespace sentry {
 
-class SentryClientTest : public KuduTest,
-                         public ::testing::WithParamInterface<bool> {
- public:
-  bool KerberosEnabled() const {
-    return GetParam();
-  }
-
-  void SetUp() override {
-    bool enable_kerberos = KerberosEnabled();
-
-    thrift::ClientOptions sentry_client_opts;
-
-    sentry_.reset(new MiniSentry());
-    if (enable_kerberos) {
-      kdc_.reset(new MiniKdc());
-      ASSERT_OK(kdc_->Start());
-
-      // Create a service principal for Sentry, and configure it to use it.
-      string spn = "sentry/127.0.0.1@KRBTEST.COM";
-      string ktpath;
-      ASSERT_OK(kdc_->CreateServiceKeytab("sentry/127.0.0.1", &ktpath));
-
-      ASSERT_OK(rpc::SaslInit());
-      sentry_->EnableKerberos(kdc_->GetEnvVars()["KRB5_CONFIG"], spn, ktpath);
-
-      ASSERT_OK(kdc_->CreateUserPrincipal("kudu"));
-      ASSERT_OK(kdc_->Kinit("kudu"));
-      ASSERT_OK(kdc_->SetKrb5Environment());
-      sentry_client_opts.enable_kerberos = true;
-      sentry_client_opts.service_principal = "sentry";
-    }
-    ASSERT_OK(sentry_->Start());
-
-    sentry_client_.reset(new SentryClient(sentry_->address(),
-                                          sentry_client_opts));
-    ASSERT_OK(sentry_client_->Start());
-  }
-
-  void TearDown() override {
-    ASSERT_OK(sentry_client_->Stop());
-    ASSERT_OK(sentry_->Stop());
-  }
-
- protected:
-  unique_ptr<SentryClient> sentry_client_;
-  unique_ptr<MiniSentry> sentry_;
-  unique_ptr<MiniKdc> kdc_;
+class SentryClientTest : public SentryTestBase {
 };
 INSTANTIATE_TEST_CASE_P(KerberosEnabled, SentryClientTest, ::testing::Bool());
 
@@ -108,7 +58,7 @@ TEST_P(SentryClientTest, TestMiniSentryLifecycle) {
   // Create an HA Sentry client and ensure it automatically reconnects after service interruption.
   thrift::HaClient<SentryClient> client;
   thrift::ClientOptions sentry_client_opts;
-  if (KerberosEnabled()) {
+  if (kerberos_enabled_) {
     sentry_client_opts.enable_kerberos = true;
     sentry_client_opts.service_principal = "sentry";
   }
@@ -189,18 +139,22 @@ TEST_P(SentryClientTest, TestCreateDropRole) {
 // Similar to above test to verify that the client can communicate with the
 // Sentry service to list privileges, and errors are converted to Status
 // instances.
-TEST_P(SentryClientTest, TestListPrivilege) {
-  // Attempt to access Sentry privileges by a non admin user.
+TEST_P(SentryClientTest, TestListPrivileges) {
+  // Attempt to access Sentry privileges without setting the user/principal name.
   TSentryAuthorizable authorizable;
   authorizable.server = "server";
   authorizable.db = "db";
   authorizable.table = "table";
   TListSentryPrivilegesRequest request;
-  request.requestorUserName = "joe-interloper";
-  request.authorizableHierarchy = authorizable;
-  request.__set_principalName("viewer");
+  request.__set_requestorUserName("joe-interloper");
+  request.__set_authorizableHierarchy(authorizable);
   TListSentryPrivilegesResponse response;
   Status s = sentry_client_->ListPrivilegesByUser(request, &response);
+  ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+
+  // Attempt to access Sentry privileges by a non admin user.
+  request.__set_principalName("viewer");
+  s = sentry_client_->ListPrivilegesByUser(request, &response);
   ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
 
   // Attempt to access Sentry privileges by a user without
@@ -220,9 +174,10 @@ TEST_P(SentryClientTest, TestListPrivilege) {
 }
 
 // Similar to above test to verify that the client can communicate with the
-// Sentry service to grant roles, and errors are converted to Status
+// Sentry service to add roles to groups (this allows the users from the
+// groups have all privilege the role has), and errors are converted to Status
 // instances.
-TEST_P(SentryClientTest, TestGrantRole) {
+TEST_P(SentryClientTest, TestAlterRoleAddGroups) {
   // Attempt to alter role by a non admin user.
 
   TSentryGroup group;
@@ -232,22 +187,22 @@ TEST_P(SentryClientTest, TestGrantRole) {
 
   TAlterSentryRoleAddGroupsRequest group_request;
   TAlterSentryRoleAddGroupsResponse group_response;
-  group_request.requestorUserName = "joe-interloper";
-  group_request.roleName = "viewer";
-  group_request.groups = groups;
+  group_request.__set_requestorUserName("joe-interloper");
+  group_request.__set_roleName("viewer");
+  group_request.__set_groups(groups);
 
   Status s = sentry_client_->AlterRoleAddGroups(group_request, &group_response);
   ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
 
   // Attempt to alter a non-exist role.
-  group_request.requestorUserName = "test-admin";
+  group_request.__set_requestorUserName("test-admin");
   s = sentry_client_->AlterRoleAddGroups(group_request, &group_response);
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
 
   // Alter role 'viewer' to add group 'user'.
   TCreateSentryRoleRequest role_request;
-  role_request.requestorUserName = "test-admin";
-  role_request.roleName = "viewer";
+  role_request.__set_requestorUserName("test-admin");
+  role_request.__set_roleName("viewer");
   ASSERT_OK(sentry_client_->CreateRole(role_request));
   ASSERT_OK(sentry_client_->AlterRoleAddGroups(group_request, &group_response));
 }
@@ -265,37 +220,37 @@ TEST_P(SentryClientTest, TestGrantPrivilege) {
 
   TAlterSentryRoleAddGroupsRequest group_request;
   TAlterSentryRoleAddGroupsResponse group_response;
-  group_request.requestorUserName = "test-admin";
-  group_request.roleName = "viewer";
-  group_request.groups = groups;
+  group_request.__set_requestorUserName("test-admin");
+  group_request.__set_roleName("viewer");
+  group_request.__set_groups(groups);
 
   TCreateSentryRoleRequest role_request;
-  role_request.requestorUserName = "test-admin";
-  role_request.roleName = "viewer";
+  role_request.__set_requestorUserName("test-admin");
+  role_request.__set_roleName("viewer");
   ASSERT_OK(sentry_client_->CreateRole(role_request));
   ASSERT_OK(sentry_client_->AlterRoleAddGroups(group_request, &group_response));
 
   // Attempt to alter role by a non admin user.
   TAlterSentryRoleGrantPrivilegeRequest privilege_request;
   TAlterSentryRoleGrantPrivilegeResponse privilege_response;
-  privilege_request.requestorUserName = "joe-interloper";
-  privilege_request.roleName = "viewer";
+  privilege_request.__set_requestorUserName("joe-interloper");
+  privilege_request.__set_roleName("viewer");
   TSentryPrivilege privilege;
-  privilege.serverName = "server";
-  privilege.dbName = "db";
-  privilege.tableName = "table";
-  privilege.action = "SELECT";
+  privilege.__set_serverName("server");
+  privilege.__set_dbName("db");
+  privilege.__set_tableName("table");
+  privilege.__set_action("SELECT");
   privilege_request.__set_privilege(privilege);
   Status s = sentry_client_->AlterRoleGrantPrivilege(privilege_request, &privilege_response);
   ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
 
   // Attempt to alter a non-exist role.
-  privilege_request.requestorUserName = "test-admin";
-  privilege_request.roleName = "not-exist";
+  privilege_request.__set_requestorUserName("test-admin");
+  privilege_request.__set_roleName("not-exist");
   s = sentry_client_->AlterRoleGrantPrivilege(privilege_request, &privilege_response);
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
 
-  privilege_request.roleName = "viewer";
+  privilege_request.__set_roleName("viewer");
   ASSERT_OK(sentry_client_->AlterRoleGrantPrivilege(privilege_request, &privilege_response));
 }
 

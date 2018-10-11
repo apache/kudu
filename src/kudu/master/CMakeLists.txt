@@ -42,6 +42,7 @@ set(MASTER_SRCS
   master_service.cc
   mini_master.cc
   placement_policy.cc
+  sentry_authz_provider.cc
   sys_catalog.cc
   ts_descriptor.cc
   ts_manager.cc)
@@ -54,6 +55,8 @@ target_link_libraries(master
   kserver
   kudu_common
   kudu_hms
+  kudu_sentry
+  kudu_thrift
   kudu_util
   master_proto
   rpc_header_proto
@@ -70,13 +73,16 @@ SET_KUDU_TEST_LINK_LIBS(
   kudu_curl_util
   master
   master_proto
-  mini_hms)
+  mini_hms
+  mini_kdc
+  mini_sentry)
 
 ADD_KUDU_TEST(catalog_manager-test)
 ADD_KUDU_TEST(hms_notification_log_listener-test)
 ADD_KUDU_TEST(master-test RESOURCE_LOCK "master-web-port")
 ADD_KUDU_TEST(mini_master-test RESOURCE_LOCK "master-web-port")
 ADD_KUDU_TEST(placement_policy-test)
+ADD_KUDU_TEST(sentry_authz_provider-test)
 ADD_KUDU_TEST(sys_catalog-test RESOURCE_LOCK "master-web-port")
 ADD_KUDU_TEST(ts_descriptor-test DATA_FILES ../scripts/first_argument.sh)
 

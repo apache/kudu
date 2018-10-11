@@ -45,28 +45,28 @@ TEST(SentryActionTest, TestImplyAction) {
   SentryAction owner(SentryAction::Action::OWNER);
 
   // Different action cannot imply each other.
-  ASSERT_FALSE(insert.Imply(select));
-  ASSERT_FALSE(select.Imply(insert));
+  ASSERT_FALSE(insert.Implies(select));
+  ASSERT_FALSE(select.Implies(insert));
 
   vector<SentryAction> actions({ all, select, insert, update,
                                  del, alter, create, drop, owner });
 
   // Any action subsumes METADATA, not vice versa.
   for (const auto& action : actions) {
-    ASSERT_TRUE(action.Imply(metadata));
-    ASSERT_FALSE(metadata.Imply(action));
+    ASSERT_TRUE(action.Implies(metadata));
+    ASSERT_FALSE(metadata.Implies(action));
   }
 
   actions.emplace_back(metadata);
   for (const auto& action : actions) {
     // Action ALL implies all other actions.
-    ASSERT_TRUE(all.Imply(action));
+    ASSERT_TRUE(all.Implies(action));
 
     // Action OWNER equals to ALL, which implies all other actions.
-    ASSERT_TRUE(owner.Imply(action));
+    ASSERT_TRUE(owner.Implies(action));
 
     // Any action implies itself.
-    ASSERT_TRUE(action.Imply(action));
+    ASSERT_TRUE(action.Implies(action));
   }
 }
 
@@ -75,8 +75,8 @@ TEST(SentryActionTest, TestFromString) {
   SentryAction wildcard;
   ASSERT_OK(SentryAction::FromString(SentryAction::kWildCard, &wildcard));
   SentryAction all(SentryAction::Action::ALL);
-  ASSERT_TRUE(all.Imply(wildcard));
-  ASSERT_TRUE(wildcard.Imply(all));
+  ASSERT_TRUE(all.Implies(wildcard));
+  ASSERT_TRUE(wildcard.Implies(all));
 
   // Unsupported action, such as '+', throws invalid argument error.
   SentryAction invalid_action;

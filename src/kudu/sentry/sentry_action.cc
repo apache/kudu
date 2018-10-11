@@ -94,7 +94,7 @@ Status SentryAction::FromString(const string& str, SentryAction* action) {
   return Status::OK();
 }
 
-bool SentryAction::Imply(const SentryAction& other) const {
+bool SentryAction::Implies(const SentryAction& other) const {
   // Every action must be initialized.
   CHECK_NE(action(), Action::UNINITIALIZED);
   CHECK_NE(other.action(), Action::UNINITIALIZED);

@@ -98,9 +98,9 @@ class SentryClient {
 
   // Alter role to grant privileges in Sentry.
   Status AlterRoleGrantPrivilege(const ::sentry::TAlterSentryRoleGrantPrivilegeRequest& request,
-     ::sentry::TAlterSentryRoleGrantPrivilegeResponse* response) WARN_UNUSED_RESULT;
+      ::sentry::TAlterSentryRoleGrantPrivilegeResponse* response) WARN_UNUSED_RESULT;
 
-private:
+ private:
   ::sentry::SentryPolicyServiceClient client_;
 };
 
