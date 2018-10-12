@@ -25,12 +25,15 @@
 
 #include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
+#include <rapidjson/document.h>
 
 #include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
 #include "kudu/client/replica_controller-internal.h"
+#include "kudu/client/scan_predicate.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
+#include "kudu/client/value.h"
 #include "kudu/common/partition.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/map-util.h"
@@ -39,6 +42,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tools/tool_action.h"
 #include "kudu/tools/tool_action_common.h"
+#include "kudu/util/jsonreader.h"
 #include "kudu/util/status.h"
 
 DECLARE_string(tables);
@@ -53,6 +57,8 @@ namespace tools {
 
 using client::KuduClient;
 using client::KuduClientBuilder;
+using client::KuduColumnSchema;
+using client::KuduPredicate;
 using client::KuduScanToken;
 using client::KuduScanTokenBuilder;
 using client::KuduTable;
@@ -64,6 +70,7 @@ using std::string;
 using std::unique_ptr;
 using std::vector;
 using strings::Split;
+using strings::Substitute;
 
 // This class only exists so that ListTables() can easily be friended by
 // KuduReplica, KuduReplica::Data, and KuduClientBuilder.
@@ -98,7 +105,7 @@ class TableLister {
         for (const auto* replica : token->tablet().replicas()) {
           const bool is_voter = ReplicaController::is_voter(*replica);
           const bool is_leader = replica->is_leader();
-          cout << strings::Substitute("    $0 $1 $2:$3",
+          cout << Substitute("    $0 $1 $2:$3",
               is_leader ? "L" : (is_voter ? "V" : "N"), replica->ts().uuid(),
               replica->ts().hostname(), replica->ts().port()) << endl;
         }
@@ -116,6 +123,7 @@ const char* const kTableNameArg = "table_name";
 const char* const kNewTableNameArg = "new_table_name";
 const char* const kColumnNameArg = "column_name";
 const char* const kNewColumnNameArg = "new_column_name";
+const char* const kKeyArg = "primary_key";
 
 Status CreateKuduClient(const RunnerContext& context,
                         client::sp::shared_ptr<KuduClient>* client) {
@@ -176,6 +184,107 @@ Status DescribeTable(const RunnerContext& context) {
   return Status::OK();
 }
 
+Status LocateRow(const RunnerContext& context) {
+  client::sp::shared_ptr<KuduClient> client;
+  RETURN_NOT_OK(CreateKuduClient(context, &client));
+
+  const string& table_name = FindOrDie(context.required_args, kTableNameArg);
+  client::sp::shared_ptr<KuduTable> table;
+  RETURN_NOT_OK(client->OpenTable(table_name, &table));
+
+  // Create an equality predicate for each primary key column.
+  const string& row_str = FindOrDie(context.required_args, kKeyArg);
+  JsonReader reader(row_str);
+  RETURN_NOT_OK(reader.Init());
+  vector<const rapidjson::Value*> values;
+  RETURN_NOT_OK(reader.ExtractObjectArray(reader.root(), nullptr, &values));
+
+  const auto& schema = table->schema();
+  vector<int> key_indexes;
+  schema.GetPrimaryKeyColumnIndexes(&key_indexes);
+  if (values.size() != key_indexes.size()) {
+    return Status::InvalidArgument(
+        Substitute("wrong number of key columns specified: expected $0 but received $1",
+                   key_indexes.size(),
+                   values.size()));
+  }
+
+  vector<unique_ptr<KuduPredicate>> predicates;
+  for (int i = 0; i < values.size(); i++) {
+    const auto key_index = key_indexes[i];
+    const auto& column = schema.Column(key_index);
+    const auto& col_name = column.name();
+    const auto type = column.type();
+    switch (type) {
+      case KuduColumnSchema::INT8:
+      case KuduColumnSchema::INT16:
+      case KuduColumnSchema::INT32:
+      case KuduColumnSchema::INT64:
+      case KuduColumnSchema::UNIXTIME_MICROS: {
+        int64_t value;
+        RETURN_NOT_OK_PREPEND(
+            reader.ExtractInt64(values[i], nullptr, &value),
+            Substitute("unable to parse value for column '$0' of type $1",
+                       col_name,
+                       KuduColumnSchema::DataTypeToString(type)));
+        predicates.emplace_back(
+            table->NewComparisonPredicate(col_name,
+                                          client::KuduPredicate::EQUAL,
+                                          client::KuduValue::FromInt(value)));
+        break;
+      }
+      case KuduColumnSchema::BINARY:
+      case KuduColumnSchema::STRING: {
+        string value;
+        RETURN_NOT_OK_PREPEND(
+            reader.ExtractString(values[i], nullptr, &value),
+            Substitute("unable to parse value for column '$0' of type $1",
+                       col_name,
+                       KuduColumnSchema::DataTypeToString(type)));
+        predicates.emplace_back(
+            table->NewComparisonPredicate(col_name,
+                                          client::KuduPredicate::EQUAL,
+                                          client::KuduValue::CopyString(value)));
+        break;
+      }
+      case KuduColumnSchema::DECIMAL:
+        return Status::NotSupported(
+            Substitute("unsupported type $0 for key column '$1': "
+                       "$0 key columns are not supported by this tool",
+                       KuduColumnSchema::DataTypeToString(type),
+                       col_name));
+      default:
+        return Status::NotSupported(
+            Substitute("unsupported type $0 for key column '$1': "
+                       "is this tool out of date?",
+                       KuduColumnSchema::DataTypeToString(type),
+                       col_name));
+    }
+  }
+
+  // Find the tablet by constructing scan tokens for a scan with equality
+  // predicates on all key columns. At most one tablet will match, so there
+  // will be at most one token, and we can report the id of its tablet.
+  vector<KuduScanToken*> tokens;
+  ElementDeleter deleter(&tokens);
+  KuduScanTokenBuilder builder(table.get());
+  for (auto& predicate : predicates) {
+    RETURN_NOT_OK(builder.AddConjunctPredicate(predicate.release()));
+  }
+  RETURN_NOT_OK(builder.Build(&tokens));
+  if (tokens.empty()) {
+    // Must be in a non-covered range partition.
+    return Status::NotFound("row does not belong to any currently existing tablet");
+  }
+  if (tokens.size() > 1) {
+    // This should be impossible.
+    return Status::IllegalState(
+        "all primary key columns specified but more than one matching tablet?");
+  }
+  cout << tokens[0]->tablet().id() << endl;
+  return Status::OK();
+}
+
 Status RenameTable(const RunnerContext& context) {
   const string& table_name = FindOrDie(context.required_args, kTableNameArg);
   const string& new_table_name = FindOrDie(context.required_args, kNewTableNameArg);
@@ -232,6 +341,22 @@ unique_ptr<Mode> BuildTableMode() {
       .AddOptionalParameter("list_tablets")
       .Build();
 
+  unique_ptr<Action> locate_row =
+      ActionBuilder("locate_row", &LocateRow)
+      .Description("Locate which tablet a row belongs to")
+      .ExtraDescription("Provide the primary key as a JSON array of primary "
+                        "key values, e.g. '[1, \"foo\", 2, \"bar\"]'. The "
+                        "output will be the tablet id associated with the row "
+                        "key. If there is no such tablet, an error message "
+                        "will be printed and the command will return a "
+                        "non-zero status")
+      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
+      .AddRequiredParameter({ kTableNameArg, "Name of the table to look up against" })
+      .AddRequiredParameter({ kKeyArg,
+                              "String representation of the row's primary key "
+                              "as a JSON array" })
+      .Build();
+
   unique_ptr<Action> rename_column =
       ActionBuilder("rename_column", &RenameColumn)
       .Description("Rename a column")
@@ -255,6 +380,7 @@ unique_ptr<Mode> BuildTableMode() {
       .AddAction(std::move(delete_table))
       .AddAction(std::move(describe_table))
       .AddAction(std::move(list_tables))
+      .AddAction(std::move(locate_row))
       .AddAction(std::move(rename_column))
       .AddAction(std::move(rename_table))
       .Build();
