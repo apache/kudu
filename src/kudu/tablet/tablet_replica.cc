@@ -288,10 +288,6 @@ void TabletReplica::Stop() {
     WARN_NOT_OK(log_->Close(), "Error closing the Log.");
   }
 
-  if (VLOG_IS_ON(1)) {
-    VLOG(1) << "TabletReplica: tablet " << tablet_id() << " shut down!";
-  }
-
   if (tablet_) {
     tablet_->Shutdown();
   }
@@ -302,6 +298,8 @@ void TabletReplica::Stop() {
     tablet_.reset();
     set_state(STOPPED);
   }
+
+  VLOG(1) << "TabletReplica: tablet " << tablet_id() << " shut down!";
 }
 
 void TabletReplica::Shutdown() {
