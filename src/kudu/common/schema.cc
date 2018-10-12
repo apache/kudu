@@ -388,7 +388,7 @@ Status Schema::GetMappedReadProjection(const Schema& projection,
   return Status::OK();
 }
 
-string Schema::ToString() const {
+string Schema::ToString(ToStringMode mode) const {
   if (cols_.empty()) return "Schema []";
 
   vector<string> pk_strs;
@@ -397,7 +397,7 @@ string Schema::ToString() const {
   }
 
   vector<string> col_strs;
-  if (has_column_ids()) {
+  if (has_column_ids() && mode != ToStringMode::WITHOUT_COLUMN_IDS) {
     for (int i = 0; i < cols_.size(); ++i) {
       col_strs.push_back(Substitute("$0:$1", col_ids_[i], cols_[i].ToString()));
     }

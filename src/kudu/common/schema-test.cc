@@ -103,6 +103,18 @@ TEST_F(TestSchema, TestSchema) {
   EXPECT_EQ("uint32 NULLABLE", schema.column(1).TypeToString());
 }
 
+TEST_F(TestSchema, TestSchemaToStringMode) {
+  SchemaBuilder builder;
+  builder.AddKeyColumn("key", DataType::INT32);
+  const auto schema = builder.Build();
+  EXPECT_EQ(
+      Substitute("Schema [\n\tprimary key (key),\n\t$0:key[int32 NOT NULL]\n]",
+                 schema.column_id(0)),
+      schema.ToString());
+  EXPECT_EQ("Schema [\n\tprimary key (key),\n\tkey[int32 NOT NULL]\n]",
+            schema.ToString(Schema::ToStringMode::WITHOUT_COLUMN_IDS));
+}
+
 TEST_F(TestSchema, TestCopyAndMove) {
   auto check_schema = [](const Schema& schema) {
     ASSERT_EQ(sizeof(Slice) + sizeof(uint32_t) + sizeof(int32_t),
@@ -402,7 +414,6 @@ TEST_F(TestSchema, TestProjectRename) {
 
   ASSERT_EQ(row_projector.projection_defaults()[0], 2);      // non_present schema2
 }
-
 
 // Test that the schema can be used to compare and stringify rows.
 TEST_F(TestSchema, TestRowOperations) {
