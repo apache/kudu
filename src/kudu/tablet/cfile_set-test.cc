@@ -215,7 +215,7 @@ class TestCFileSet : public KuduRowSetTest {
                              vector<size_t> target) {
     LOG(INFO) << "predicates size: " << predicates.size();
     // Create iterator.
-    shared_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&schema_));
+    shared_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&schema_, nullptr));
     gscoped_ptr<RowwiseIterator> iter(new MaterializingIterator(cfile_iter));
     LOG(INFO) << "Target size: " << target.size();
     // Create a scan with a range predicate on the key column.
@@ -499,7 +499,7 @@ TEST_F(TestCFileSet, TestBloomFilterPredicates) {
                        &ret1_contain, &ret1_exclude, &ret2_contain, &ret2_exclude);
 
   shared_ptr<CFileSet> fileset;
-  ASSERT_OK(CFileSet::Open(rowset_meta_, MemTracker::GetRootTracker(), &fileset));
+  ASSERT_OK(CFileSet::Open(rowset_meta_, MemTracker::GetRootTracker(), nullptr, &fileset));
 
   vector<ColumnPredicate::BloomFilterInner> bfs;
   // BloomFilter of column 0 contain.
