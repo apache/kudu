@@ -665,7 +665,6 @@ Other libraries and headers are internal to Kudu and have no stability guarantee
 
 .Requirements
 - JDK 7 or JDK 8
-- Apache Maven 3.x
 
 WARNING: Support for Java 7 is deprecated as of Kudu 1.5.0 and may be removed in
 the next major release.
@@ -675,7 +674,7 @@ repository, change to the `java` directory, and issue the following command:
 
 [source,bash]
 ----
-$ mvn install -DskipTests
+$ ./gradlew assemble
 ----
 
 For more information about building the Java API, as well as Eclipse integration,

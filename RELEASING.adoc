@@ -85,13 +85,6 @@ branch with the same name and the previously-noted SHA1.
 
 . Check out the `master` branch and bump the version in `version.txt`.
 
-. Update the version for the Java client from within the `java` directory:
-+
-----
-  cd java
-  mvn versions:set -DnewVersion=1.x.y-SNAPSHOT
-----
-
 . Update the version in `java/gradle.properties`.
 
 . If the python API has changed since the previous release, bump the Python version

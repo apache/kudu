@@ -72,12 +72,12 @@ The following Maven `<dependency>` element is valid for the Apache Kudu public r
 <dependency>
   <groupId>org.apache.kudu</groupId>
   <artifactId>kudu-client</artifactId>
-  <version>1.1.0</version>
+  <version>1.8.0</version>
 </dependency>
 ----
 
 Convenience binary artifacts for the Java client and various Java integrations (e.g. Spark, Flume)
-are also now available via the link:http://repository.apache.org[ASF Maven repository] and
+are also available via the link:http://repository.apache.org[ASF Maven repository] and
 link:https://mvnrepository.com/artifact/org.apache.kudu[Maven Central repository].
 
 == Example Impala Commands With Kudu

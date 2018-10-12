@@ -105,13 +105,13 @@ fi
 if [ -n "$OPT_JAVADOC" ]; then
   JAVADOC_SUBDIR="apidocs"
   cd "$SOURCE_ROOT/java"
-  mvn clean install -DskipTests
-  if mvn clean javadoc:aggregate | tee /dev/stdout | fgrep -q "Javadoc Warnings"; then
+  ./gradlew clean assemble
+  if ./gradlew clean javadocAggregate | tee /dev/stdout | fgrep -q "Javadoc Warnings"; then
     echo "There are Javadoc warnings. Please fix them."
     exit 1
   fi
 
-  if [ -f "$SOURCE_ROOT/java/target/site/$JAVADOC_SUBDIR/index.html" ]; then
+  if [ -f "$SOURCE_ROOT/java/build/docs/javadoc/index.html" ]; then
     echo "Successfully built Javadocs."
   else
     echo "Javadocs failed to build."
@@ -119,7 +119,7 @@ if [ -n "$OPT_JAVADOC" ]; then
   fi
 
   rm -Rf "$SITE_OUTPUT_DIR/$JAVADOC_SUBDIR"
-  cp -a "$SOURCE_ROOT/java/target/site/$JAVADOC_SUBDIR" "$SITE_OUTPUT_DIR/"
+  cp -a "$SOURCE_ROOT/java/build/docs/javadoc/." "$SITE_OUTPUT_DIR/$JAVADOC_SUBDIR"
 fi
 
 if [ -n "$OPT_DOXYGEN" ]; then

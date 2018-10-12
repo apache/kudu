@@ -28,7 +28,7 @@ ROOT=$(cd $(dirname "$BASH_SOURCE")/../..; pwd)
 cd $ROOT
 
 # Note that we use simple shell commands instead of "make clean"
-# or "mvn clean". This is more foolproof even if something ends
+# or "gradle clean". This is more foolproof even if something ends
 # up partially compiling, etc.
 
 # Clean up intermediate object files in the src tree

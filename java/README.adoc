@@ -130,35 +130,6 @@ $ ./gradlew install
 NOTE: Additional Gradle command line flag options can be found
 https://docs.gradle.org/current/userguide/command_line_interface.html[here].
 
-== Building with Maven
-
-WARNING: The Maven build is deprecated and may be removed in
-a future release.
-
-Though the Gradle build is the preferred way to build,
-the Maven build still exists and can be used.
-
-=== Running a Full Build
-
-[source,bash]
-----
-$ mvn package -DskipTests
-----
-
-=== Running the Tests
-
-[source,bash]
-----
-$ mvn test
-----
-
-=== Running the Integration Tests
-
-[source,bash]
-----
-$ mvn verify
-----
-
 == Tips for IDEs
 
 === IntelliJ

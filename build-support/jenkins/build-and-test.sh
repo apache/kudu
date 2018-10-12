@@ -57,12 +57,6 @@
 #   BUILD_JAVA        Default: 1
 #     Build and test java code if this is set to 1.
 #
-#   BUILD_MAVEN       Default: 0
-#     When building java code, build with Maven if this is set to 1.
-#
-#   BUILD_GRADLE      Default: 1
-#     When building java code, build with Gradle if this is set to 1.
-#
 #   BUILD_PYTHON       Default: 1
 #     Build and test the Python wrapper of the client API.
 #
@@ -74,11 +68,6 @@
 #   PIP_INSTALL_FLAGS  Default: ""
 #     Extra flags which are passed to 'pip install' when setting up the build
 #     environment for the Python wrapper.
-#
-#   MVN_FLAGS          Default: ""
-#     Extra flags which are passed to 'mvn' when building and running Java
-#     tests. This can be useful, for example, to choose a different maven
-#     repository location.
 #
 #   GRADLE_FLAGS       Default: ""
 #     Extra flags which are passed to 'gradle' when running Gradle commands.
@@ -120,7 +109,6 @@ export KUDU_ALLOW_SLOW_TESTS=${KUDU_ALLOW_SLOW_TESTS:-$DEFAULT_ALLOW_SLOW_TESTS}
 export KUDU_COMPRESS_TEST_OUTPUT=${KUDU_COMPRESS_TEST_OUTPUT:-1}
 export TEST_TMPDIR=${TEST_TMPDIR:-/tmp/kudutest-$UID}
 BUILD_JAVA=${BUILD_JAVA:-1}
-BUILD_MAVEN=${BUILD_MAVEN:-0}
 BUILD_GRADLE=${BUILD_GRADLE:-1}
 BUILD_PYTHON=${BUILD_PYTHON:-1}
 BUILD_PYTHON3=${BUILD_PYTHON3:-1}
@@ -144,7 +132,6 @@ rm -rf $BUILD_ROOT
 mkdir -p $BUILD_ROOT
 
 # Same for the Java tests, which aren't inside BUILD_ROOT
-rm -rf $SOURCE_ROOT/java/*/target
 rm -rf $SOURCE_ROOT/java/*/build
 
 list_flaky_tests() {
@@ -165,11 +152,6 @@ cleanup() {
 # an exit handler which will clean up all of our build results.
 if [ -n "$BUILD_ID" ]; then
   trap cleanup EXIT
-fi
-
-export TOOLCHAIN_DIR=/opt/toolchain
-if [ -d "$TOOLCHAIN_DIR" ]; then
-  PATH=$TOOLCHAIN_DIR/apache-maven-3.0/bin:$PATH
 fi
 
 THIRDPARTY_TYPE=
@@ -393,47 +375,32 @@ if [ "$BUILD_JAVA" == "1" ]; then
   pushd $SOURCE_ROOT/java
   set -x
 
-  # Run the full Maven build.
-  if [ "$BUILD_MAVEN" == "1" ]; then
-    EXTRA_MVN_FLAGS="-B"
-    EXTRA_MVN_FLAGS="$EXTRA_MVN_FLAGS -Dsurefire.rerunFailingTestsCount=3"
-    EXTRA_MVN_FLAGS="$EXTRA_MVN_FLAGS -Dfailsafe.rerunFailingTestsCount=3"
-    EXTRA_MVN_FLAGS="$EXTRA_MVN_FLAGS -Dmaven.javadoc.skip"
-    EXTRA_MVN_FLAGS="$EXTRA_MVN_FLAGS $MVN_FLAGS"
-    if ! mvn $EXTRA_MVN_FLAGS clean verify ; then
-      TESTS_FAILED=1
-      FAILURES="$FAILURES"$'Java Maven build/test failed\n'
-    fi
-  fi
-
   # Run the full Gradle build.
-  if [ "$BUILD_GRADLE" == "1" ]; then
-    export EXTRA_GRADLE_FLAGS="--console=plain"
-    EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS --no-daemon"
-    EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS --continue"
-    EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS -DrerunFailingTestsCount=3"
-    # KUDU-2524: temporarily disable scalafmt until we can work out its JDK
-    # incompatibility issue.
-    EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS -DskipFormat"
-    EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS $GRADLE_FLAGS"
-    # If we're running distributed Java tests, submit them asynchronously.
-    if [ "$ENABLE_DIST_TEST" == "1" ]; then
-      echo
-      echo Submitting Java distributed-test job.
-      echo ------------------------------------------------------------
-      # dist-test uses DIST_TEST_JOB_PATH to define where to output it's id file.
-      export DIST_TEST_JOB_PATH=$BUILD_ROOT/java-dist-test-job-id
-      rm -f $DIST_TEST_JOB_PATH
-      if ! $SOURCE_ROOT/build-support/dist_test.py --no-wait java run-all ; then
-        EXIT_STATUS=1
-        FAILURES="$FAILURES"$'Could not submit Java distributed test job\n'
-      fi
-    else
-      # TODO: Run `gradle check` in BUILD_TYPE DEBUG when static code analysis is fixed
-      if ! ./gradlew $EXTRA_GRADLE_FLAGS clean test ; then
-        TESTS_FAILED=1
-        FAILURES="$FAILURES"$'Java Gradle build/test failed\n'
-      fi
+  export EXTRA_GRADLE_FLAGS="--console=plain"
+  EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS --no-daemon"
+  EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS --continue"
+  EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS -DrerunFailingTestsCount=3"
+  # KUDU-2524: temporarily disable scalafmt until we can work out its JDK
+  # incompatibility issue.
+  EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS -DskipFormat"
+  EXTRA_GRADLE_FLAGS="$EXTRA_GRADLE_FLAGS $GRADLE_FLAGS"
+  # If we're running distributed Java tests, submit them asynchronously.
+  if [ "$ENABLE_DIST_TEST" == "1" ]; then
+    echo
+    echo Submitting Java distributed-test job.
+    echo ------------------------------------------------------------
+    # dist-test uses DIST_TEST_JOB_PATH to define where to output it's id file.
+    export DIST_TEST_JOB_PATH=$BUILD_ROOT/java-dist-test-job-id
+    rm -f $DIST_TEST_JOB_PATH
+    if ! $SOURCE_ROOT/build-support/dist_test.py --no-wait java run-all ; then
+      EXIT_STATUS=1
+      FAILURES="$FAILURES"$'Could not submit Java distributed test job\n'
+    fi
+  else
+    # TODO: Run `gradle check` in BUILD_TYPE DEBUG when static code analysis is fixed
+    if ! ./gradlew $EXTRA_GRADLE_FLAGS clean test ; then
+      TESTS_FAILED=1
+      FAILURES="$FAILURES"$'Java Gradle build/test failed\n'
     fi
   fi
 
@@ -613,26 +580,24 @@ if [ "$ENABLE_DIST_TEST" == "1" ]; then
     rm -Rf $arch_dir
   done
 
-  if [ "$BUILD_GRADLE" == "1" ]; then
-    echo
-    echo Fetching previously submitted Java dist-test results...
-    echo ------------------------------------------------------------
-    JAVA_DIST_TEST_ID=`cat $BUILD_ROOT/java-dist-test-job-id`
-    if ! $DIST_TEST_HOME/bin/client watch $JAVA_DIST_TEST_ID ; then
-      TESTS_FAILED=1
-      FAILURES="$FAILURES"$'Distributed Java tests failed\n'
-    fi
-    DT_DIR=$TEST_LOGDIR/java-dist-test-out
-    rm -Rf $DT_DIR
-    $DIST_TEST_HOME/bin/client fetch --artifacts -d $DT_DIR $JAVA_DIST_TEST_ID
-    # Fetching the artifacts expands each log into its own directory.
-    # Move them back into the main log directory
-    rm -f $DT_DIR/*zip
-    for arch_dir in $DT_DIR/* ; do
-      mv $arch_dir/build/java/test-logs/* $TEST_LOGDIR
-      rm -Rf $arch_dir
-    done
+  echo
+  echo Fetching previously submitted Java dist-test results...
+  echo ------------------------------------------------------------
+  JAVA_DIST_TEST_ID=`cat $BUILD_ROOT/java-dist-test-job-id`
+  if ! $DIST_TEST_HOME/bin/client watch $JAVA_DIST_TEST_ID ; then
+    TESTS_FAILED=1
+    FAILURES="$FAILURES"$'Distributed Java tests failed\n'
   fi
+  DT_DIR=$TEST_LOGDIR/java-dist-test-out
+  rm -Rf $DT_DIR
+  $DIST_TEST_HOME/bin/client fetch --artifacts -d $DT_DIR $JAVA_DIST_TEST_ID
+  # Fetching the artifacts expands each log into its own directory.
+  # Move them back into the main log directory
+  rm -f $DT_DIR/*zip
+  for arch_dir in $DT_DIR/* ; do
+    mv $arch_dir/build/java/test-logs/* $TEST_LOGDIR
+    rm -Rf $arch_dir
+  done
 fi
 
 if [ "$TESTS_FAILED" != "0" -o "$EXIT_STATUS" != "0" ]; then
