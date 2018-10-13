@@ -106,6 +106,8 @@ class RemoteTabletServer {
   // Returns the remote server's uuid.
   const std::string& permanent_uuid() const;
 
+  const std::string& location() const;
+
  private:
   // Internal callback for DNS resolution.
   void DnsResolutionFinished(const HostPort& hp,
@@ -116,6 +118,8 @@ class RemoteTabletServer {
 
   mutable simple_spinlock lock_;
   const std::string uuid_;
+  // If not assigned, location_ will be an empty string.
+  const std::string location_;
 
   std::vector<HostPort> rpc_hostports_;
   std::shared_ptr<tserver::TabletServerServiceProxy> proxy_;

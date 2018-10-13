@@ -649,6 +649,15 @@ class KUDU_EXPORT KuduTabletServer {
   ///   is listening on.
   uint16_t port() const;
 
+  /// @cond PRIVATE_API
+  ///
+  /// Private API.
+  ///
+  /// @return The location of the tablet server.
+  ///   An empty string will be returned if the location is not assigned.
+  const std::string& location() const KUDU_NO_EXPORT;
+  /// @endcond
+
  private:
   class KUDU_NO_EXPORT Data;
 

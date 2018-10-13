@@ -27,8 +27,9 @@ using std::string;
 namespace kudu {
 namespace client {
 
-KuduTabletServer::Data::Data(string uuid, HostPort hp)
+KuduTabletServer::Data::Data(string uuid, HostPort hp, string location)
     : uuid_(std::move(uuid)),
+      location_(std::move(location)),
       hp_(std::move(hp)) {
 }
 

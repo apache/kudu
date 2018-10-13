@@ -87,7 +87,8 @@ namespace client {
 namespace internal {
 
 RemoteTabletServer::RemoteTabletServer(const master::TSInfoPB& pb)
-  : uuid_(pb.permanent_uuid()) {
+  : uuid_(pb.permanent_uuid()),
+    location_(pb.location()) {
 
   Update(pb);
 }
@@ -159,6 +160,10 @@ void RemoteTabletServer::Update(const master::TSInfoPB& pb) {
 
 const string& RemoteTabletServer::permanent_uuid() const {
   return uuid_;
+}
+
+const string& RemoteTabletServer::location() const {
+  return location_;
 }
 
 shared_ptr<TabletServerServiceProxy> RemoteTabletServer::proxy() const {

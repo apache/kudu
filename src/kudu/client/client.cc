@@ -457,7 +457,7 @@ Status KuduClient::ListTabletServers(vector<KuduTabletServer*>* tablet_servers) 
     HostPort hp;
     RETURN_NOT_OK(HostPortFromPB(e.registration().rpc_addresses(0), &hp));
     unique_ptr<KuduTabletServer> ts(new KuduTabletServer);
-    ts->data_ = new KuduTabletServer::Data(e.instance_id().permanent_uuid(), hp);
+    ts->data_ = new KuduTabletServer::Data(e.instance_id().permanent_uuid(), hp, e.location());
     tablet_servers->push_back(ts.release());
   }
   return Status::OK();
@@ -580,7 +580,7 @@ Status KuduClient::GetTablet(const string& tablet_id, KuduTablet** tablet) {
     HostPort hp;
     RETURN_NOT_OK(HostPortFromPB(ts_info.rpc_addresses(0), &hp));
     unique_ptr<KuduTabletServer> ts(new KuduTabletServer);
-    ts->data_ = new KuduTabletServer::Data(ts_info.permanent_uuid(), hp);
+    ts->data_ = new KuduTabletServer::Data(ts_info.permanent_uuid(), hp, ts_info.location());
 
     // TODO(aserbin): try to use member_type instead of role for metacache.
     bool is_leader = r.role() == consensus::RaftPeerPB::LEADER;
@@ -1647,7 +1647,8 @@ Status KuduScanner::GetCurrentServer(KuduTabletServer** server) {
   }
   unique_ptr<KuduTabletServer> client_server(new KuduTabletServer);
   client_server->data_ = new KuduTabletServer::Data(rts->permanent_uuid(),
-                                                    host_ports[0]);
+                                                    host_ports[0],
+                                                    rts->location());
   *server = client_server.release();
   return Status::OK();
 }
@@ -1819,6 +1820,10 @@ const string& KuduTabletServer::hostname() const {
 
 uint16_t KuduTabletServer::port() const {
   return data_->hp_.port();
+}
+
+const string& KuduTabletServer::location() const {
+  return data_->location_;
 }
 
 ////////////////////////////////////////////////////////////

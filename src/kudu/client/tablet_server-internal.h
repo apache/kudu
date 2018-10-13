@@ -28,10 +28,12 @@ namespace client {
 
 class KuduTabletServer::Data {
  public:
-  Data(std::string uuid, HostPort hp);
+  Data(std::string uuid, HostPort hp, std::string location);
   ~Data();
 
   const std::string uuid_;
+  // If not assigned, location_ will be an empty string.
+  const std::string location_;
   const HostPort hp_;
 
  private:
