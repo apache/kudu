@@ -50,8 +50,10 @@ class ConnectionId {
 
   const UserCredentials& user_credentials() const { return user_credentials_; }
 
-  // Copy state from another object to this one.
-  void CopyFrom(const ConnectionId& other);
+  // The network plane associated with this connection.
+  void set_network_plane(std::string network_plane);
+
+  const std::string& network_plane() const { return network_plane_; }
 
   // Returns a string representation of the object, not including the password field.
   std::string ToString() const;
@@ -68,6 +70,10 @@ class ConnectionId {
   std::string hostname_;
 
   UserCredentials user_credentials_;
+
+  // The name of the network plane adopted by this connection. Please see header comemnts
+  // at proxy.h for details.
+  std::string network_plane_;
 };
 
 class ConnectionIdHash {

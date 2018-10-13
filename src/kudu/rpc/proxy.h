@@ -50,6 +50,11 @@ class UserCredentials;
 // re-established as necessary by the messenger. Additionally, the messenger is
 // likely to multiplex many Proxy objects on the same connection.
 //
+// A proxy object can optionally specify the "network plane" it uses. This allows
+// proxies of N services to be multiplexed on M TCP connections so that a higher priority
+// service (e.g. a control channel) may use a different connection than other services,
+// avoiding the chance of being blocked by traffic of other services.
+//
 // Proxy objects are thread-safe after initialization only.
 // Setters on the Proxy are not thread-safe, and calling a setter after any RPC
 // request has started will cause a fatal error.
@@ -104,10 +109,16 @@ class Proxy {
                      RpcController* controller) const;
 
   // Set the user credentials which should be used to log in.
-  void set_user_credentials(const UserCredentials& user_credentials);
+  void set_user_credentials(UserCredentials user_credentials);
 
   // Get the user credentials which should be used to log in.
   const UserCredentials& user_credentials() const { return conn_id_.user_credentials(); }
+
+  // Set the network plane which this proxy uses.
+  void set_network_plane(std::string network_plane);
+
+  // Get the network plane which this proxy uses.
+  const std::string& network_plane() const { return conn_id_.network_plane(); }
 
   std::string ToString() const;
 

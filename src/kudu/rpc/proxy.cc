@@ -102,10 +102,16 @@ Status Proxy::SyncRequest(const string& method,
   return controller->status();
 }
 
-void Proxy::set_user_credentials(const UserCredentials& user_credentials) {
+void Proxy::set_user_credentials(UserCredentials user_credentials) {
   CHECK(base::subtle::NoBarrier_Load(&is_started_) == false)
     << "It is illegal to call set_user_credentials() after request processing has started";
-  conn_id_.set_user_credentials(user_credentials);
+  conn_id_.set_user_credentials(std::move(user_credentials));
+}
+
+void Proxy::set_network_plane(string network_plane) {
+  CHECK(base::subtle::NoBarrier_Load(&is_started_) == false)
+    << "It is illegal to call set_network_plane() after request processing has started";
+  conn_id_.set_network_plane(std::move(network_plane));
 }
 
 std::string Proxy::ToString() const {

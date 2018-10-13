@@ -630,13 +630,13 @@ TEST_P(TestRpc, TestCredentialsPolicy) {
   // Make an RPC call with ANY_CREDENTIALS policy.
   ASSERT_OK(DoTestSyncCall(p, GenericCalculatorService::kAddMethodName));
   ASSERT_OK(server_messenger_->reactors_[0]->GetMetrics(&metrics));
-  EXPECT_EQ(0, metrics.total_client_connections_);
-  EXPECT_EQ(1, metrics.total_server_connections_);
-  EXPECT_EQ(1, metrics.num_server_connections_);
-  EXPECT_OK(client_messenger->reactors_[0]->GetMetrics(&metrics));
-  EXPECT_EQ(1, metrics.total_client_connections_);
-  EXPECT_EQ(0, metrics.total_server_connections_);
-  EXPECT_EQ(1, metrics.num_client_connections_);
+  ASSERT_EQ(0, metrics.total_client_connections_);
+  ASSERT_EQ(1, metrics.total_server_connections_);
+  ASSERT_EQ(1, metrics.num_server_connections_);
+  ASSERT_OK(client_messenger->reactors_[0]->GetMetrics(&metrics));
+  ASSERT_EQ(1, metrics.total_client_connections_);
+  ASSERT_EQ(0, metrics.total_server_connections_);
+  ASSERT_EQ(1, metrics.num_client_connections_);
 
   // This is to allow all the data to be sent so the connection becomes idle.
   SleepFor(MonoDelta::FromMilliseconds(5));
@@ -647,13 +647,13 @@ TEST_P(TestRpc, TestCredentialsPolicy) {
   ASSERT_OK(DoTestSyncCall(p, GenericCalculatorService::kAddMethodName,
                            CredentialsPolicy::PRIMARY_CREDENTIALS));
   ASSERT_OK(server_messenger_->reactors_[0]->GetMetrics(&metrics));
-  EXPECT_EQ(0, metrics.total_client_connections_);
-  EXPECT_EQ(2, metrics.total_server_connections_);
-  EXPECT_EQ(1, metrics.num_server_connections_);
-  EXPECT_OK(client_messenger->reactors_[0]->GetMetrics(&metrics));
-  EXPECT_EQ(2, metrics.total_client_connections_);
-  EXPECT_EQ(0, metrics.total_server_connections_);
-  EXPECT_EQ(1, metrics.num_client_connections_);
+  ASSERT_EQ(0, metrics.total_client_connections_);
+  ASSERT_EQ(2, metrics.total_server_connections_);
+  ASSERT_EQ(1, metrics.num_server_connections_);
+  ASSERT_OK(client_messenger->reactors_[0]->GetMetrics(&metrics));
+  ASSERT_EQ(2, metrics.total_client_connections_);
+  ASSERT_EQ(0, metrics.total_server_connections_);
+  ASSERT_EQ(1, metrics.num_client_connections_);
 
   // Make another RPC call with ANY_CREDENTIALS policy. The already established
   // connection with PRIMARY_CREDENTIALS policy should be re-used because
@@ -661,13 +661,83 @@ TEST_P(TestRpc, TestCredentialsPolicy) {
   // the currently open connection has been established with.
   ASSERT_OK(DoTestSyncCall(p, GenericCalculatorService::kAddMethodName));
   ASSERT_OK(server_messenger_->reactors_[0]->GetMetrics(&metrics));
-  EXPECT_EQ(0, metrics.total_client_connections_);
-  EXPECT_EQ(2, metrics.total_server_connections_);
-  EXPECT_EQ(1, metrics.num_server_connections_);
-  EXPECT_OK(client_messenger->reactors_[0]->GetMetrics(&metrics));
-  EXPECT_EQ(2, metrics.total_client_connections_);
-  EXPECT_EQ(0, metrics.total_server_connections_);
-  EXPECT_EQ(1, metrics.num_client_connections_);
+  ASSERT_EQ(0, metrics.total_client_connections_);
+  ASSERT_EQ(2, metrics.total_server_connections_);
+  ASSERT_EQ(1, metrics.num_server_connections_);
+  ASSERT_OK(client_messenger->reactors_[0]->GetMetrics(&metrics));
+  ASSERT_EQ(2, metrics.total_client_connections_);
+  ASSERT_EQ(0, metrics.total_server_connections_);
+  ASSERT_EQ(1, metrics.num_client_connections_);
+}
+
+// Test that proxies with different network planes will open separate connections to server.
+TEST_P(TestRpc, TestConnectionNetworkPlane) {
+  // Only run one reactor per messenger, so we can grab the metrics from that
+  // one without having to check all.
+  n_server_reactor_threads_ = 1;
+
+  // Keep the connection alive all the time.
+  keepalive_time_ms_ = -1;
+
+  // Set up server.
+  Sockaddr server_addr;
+  bool enable_ssl = GetParam();
+  ASSERT_OK(StartTestServer(&server_addr, enable_ssl));
+
+  // Set up clients with default and non-default network planes.
+  LOG(INFO) << "Connecting to " << server_addr.ToString();
+  shared_ptr<Messenger> client_messenger;
+  ASSERT_OK(CreateMessenger("Client", &client_messenger, 1, enable_ssl));
+  Proxy p1(client_messenger, server_addr, server_addr.host(),
+           GenericCalculatorService::static_service_name());
+  Proxy p2(client_messenger, server_addr, server_addr.host(),
+           GenericCalculatorService::static_service_name());
+  p2.set_network_plane("control-channel");
+
+  // Verify the initial counters.
+  ReactorMetrics metrics;
+  ASSERT_OK(server_messenger_->reactors_[0]->GetMetrics(&metrics));
+  ASSERT_EQ(0, metrics.total_client_connections_);
+  ASSERT_EQ(0, metrics.total_server_connections_);
+  ASSERT_EQ(0, metrics.num_server_connections_);
+  ASSERT_OK(client_messenger->reactors_[0]->GetMetrics(&metrics));
+  ASSERT_EQ(0, metrics.total_client_connections_);
+  ASSERT_EQ(0, metrics.total_server_connections_);
+  ASSERT_EQ(0, metrics.num_client_connections_);
+
+  // Make an RPC call with the default network plane.
+  ASSERT_OK(DoTestSyncCall(p1, GenericCalculatorService::kAddMethodName));
+  ASSERT_OK(server_messenger_->reactors_[0]->GetMetrics(&metrics));
+  ASSERT_EQ(0, metrics.total_client_connections_);
+  ASSERT_EQ(1, metrics.total_server_connections_);
+  ASSERT_EQ(1, metrics.num_server_connections_);
+  ASSERT_OK(client_messenger->reactors_[0]->GetMetrics(&metrics));
+  ASSERT_EQ(1, metrics.total_client_connections_);
+  ASSERT_EQ(0, metrics.total_server_connections_);
+  ASSERT_EQ(1, metrics.num_client_connections_);
+
+  // Make an RPC call with the non-default network plane.
+  ASSERT_OK(DoTestSyncCall(p2, GenericCalculatorService::kAddMethodName));
+  ASSERT_OK(server_messenger_->reactors_[0]->GetMetrics(&metrics));
+  ASSERT_EQ(0, metrics.total_client_connections_);
+  ASSERT_EQ(2, metrics.total_server_connections_);
+  ASSERT_EQ(2, metrics.num_server_connections_);
+  ASSERT_OK(client_messenger->reactors_[0]->GetMetrics(&metrics));
+  ASSERT_EQ(2, metrics.total_client_connections_);
+  ASSERT_EQ(0, metrics.total_server_connections_);
+  ASSERT_EQ(2, metrics.num_client_connections_);
+
+  // Make an RPC call with the default network plane again and verify that
+  // there are no new connections.
+  ASSERT_OK(DoTestSyncCall(p1, GenericCalculatorService::kAddMethodName));
+  ASSERT_OK(server_messenger_->reactors_[0]->GetMetrics(&metrics));
+  ASSERT_EQ(0, metrics.total_client_connections_);
+  ASSERT_EQ(2, metrics.total_server_connections_);
+  ASSERT_EQ(2, metrics.num_server_connections_);
+  ASSERT_OK(client_messenger->reactors_[0]->GetMetrics(&metrics));
+  ASSERT_EQ(2, metrics.total_client_connections_);
+  ASSERT_EQ(0, metrics.total_server_connections_);
+  ASSERT_EQ(2, metrics.num_client_connections_);
 }
 
 // Test that a call which takes longer than the keepalive time

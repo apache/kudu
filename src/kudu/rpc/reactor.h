@@ -137,7 +137,8 @@ class ReactorThread {
   friend class Connection;
 
   // Client-side connection map. Multiple connections could be open to a remote
-  // server if multiple credential policies are used for individual RPCs.
+  // server if multiple credential policies or different network planes are used
+  // for individual RPCs.
   typedef std::unordered_multimap<ConnectionId, scoped_refptr<Connection>,
                                   ConnectionIdHash, ConnectionIdEqual>
       conn_multimap_t;
