@@ -18,9 +18,9 @@ package org.apache.kudu.mapreduce;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.kudu.test.KuduTestHarness.DEFAULT_SLEEP;
-import static org.apache.kudu.util.ClientTestUtil.countRowsInScan;
-import static org.apache.kudu.util.ClientTestUtil.getBasicCreateTableOptions;
-import static org.apache.kudu.util.ClientTestUtil.getBasicSchema;
+import static org.apache.kudu.test.ClientTestUtil.countRowsInScan;
+import static org.apache.kudu.test.ClientTestUtil.getBasicCreateTableOptions;
+import static org.apache.kudu.test.ClientTestUtil.getBasicSchema;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 

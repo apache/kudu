@@ -18,7 +18,7 @@ package org.apache.kudu.client;
 
 import static org.apache.kudu.Type.STRING;
 import static org.apache.kudu.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
-import static org.apache.kudu.util.ClientTestUtil.countRowsInScan;
+import static org.apache.kudu.test.ClientTestUtil.countRowsInScan;
 import static org.apache.kudu.util.HybridTimeUtil.HTTimestampToPhysicalAndLogical;
 import static org.apache.kudu.util.HybridTimeUtil.clockTimestampToHTTimestamp;
 import static org.apache.kudu.util.HybridTimeUtil.physicalAndLogicalToHTTimestamp;
@@ -31,7 +31,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import com.google.common.collect.ImmutableList;
-import org.apache.kudu.client.MiniKuduCluster.MiniKuduClusterBuilder;
+import org.apache.kudu.test.cluster.MiniKuduCluster.MiniKuduClusterBuilder;
 import org.apache.kudu.test.KuduTestHarness;
 import org.junit.Before;
 import org.junit.Rule;

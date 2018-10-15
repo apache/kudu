@@ -20,7 +20,7 @@
 package org.apache.kudu.flume.sink;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.apache.kudu.util.ClientTestUtil.scanTableToStrings;
+import static org.apache.kudu.test.ClientTestUtil.scanTableToStrings;
 import static org.apache.kudu.util.SecurityUtil.KUDU_TICKETCACHE_PROPERTY;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -45,7 +45,7 @@ import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.client.CreateTableOptions;
 import org.apache.kudu.client.KuduTable;
-import org.apache.kudu.client.MiniKuduCluster.MiniKuduClusterBuilder;
+import org.apache.kudu.test.cluster.MiniKuduCluster.MiniKuduClusterBuilder;
 
 public class SecureKuduSinkTest {
   private static final Logger LOG = LoggerFactory.getLogger(SecureKuduSinkTest.class);

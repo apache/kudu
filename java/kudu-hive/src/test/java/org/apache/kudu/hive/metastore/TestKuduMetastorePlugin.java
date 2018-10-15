@@ -39,7 +39,7 @@ import org.apache.hadoop.hive.metastore.api.SerDeInfo;
 import org.apache.hadoop.hive.metastore.api.StorageDescriptor;
 import org.apache.hadoop.hive.metastore.api.Table;
 import org.apache.hadoop.hive.metastore.api.hive_metastoreConstants;
-import org.apache.kudu.junit.RetryRule;
+import org.apache.kudu.test.junit.RetryRule;
 import org.apache.thrift.TException;
 import org.junit.After;
 import org.junit.Before;

@@ -30,7 +30,7 @@ dependencies {
 
   optional libs.yetusAnnotations
 
-  testCompile project(path: ":kudu-client", configuration: "shadowTest")
+  testCompile project(path: ":kudu-test-utils", configuration: "shadow")
   testCompile libs.commonsIo
   testCompile libs.junit
   testCompile libs.log4j

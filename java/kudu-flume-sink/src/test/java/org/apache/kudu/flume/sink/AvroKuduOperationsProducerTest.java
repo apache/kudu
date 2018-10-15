@@ -25,7 +25,7 @@ import static org.apache.kudu.flume.sink.AvroKuduOperationsProducer.SCHEMA_PROP;
 import static org.apache.kudu.flume.sink.AvroKuduOperationsProducer.SCHEMA_URL_HEADER;
 import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.PRODUCER;
 import static org.apache.kudu.flume.sink.KuduSinkConfigurationConstants.PRODUCER_PREFIX;
-import static org.apache.kudu.util.ClientTestUtil.scanTableToStrings;
+import static org.apache.kudu.test.ClientTestUtil.scanTableToStrings;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 

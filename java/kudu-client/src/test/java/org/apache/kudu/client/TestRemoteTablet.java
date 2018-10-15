@@ -28,7 +28,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.google.protobuf.ByteString;
-import org.apache.kudu.util.ProtobufUtils;
+import org.apache.kudu.test.ProtobufUtils;
 import org.junit.Test;
 
 import org.apache.kudu.consensus.Metadata;

@@ -17,7 +17,6 @@
 
 package org.apache.kudu.flume.sink;
 
-
 import static org.apache.kudu.flume.sink.RegexpKuduOperationsProducer.BAD_COLUMN_VALUE_POLICY_PROP;
 import static org.apache.kudu.flume.sink.RegexpKuduOperationsProducer.MISSING_COLUMN_POLICY_PROP;
 import static org.apache.kudu.flume.sink.RegexpKuduOperationsProducer.OPERATION_PROP;
@@ -47,7 +46,7 @@ import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.client.CreateTableOptions;
 import org.apache.kudu.client.KuduTable;
-import org.apache.kudu.util.CapturingLogAppender;
+import org.apache.kudu.test.CapturingLogAppender;
 
 public class RegexpKuduOperationsProducerParseErrorTest {
   private static final String TEST_REGEXP = "(?<key>\\d+),(?<byteFld>\\d+),(?<stringFld>\\w+)";

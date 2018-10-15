@@ -17,8 +17,8 @@
 
 package org.apache.kudu.mapreduce.tools;
 
-import static org.apache.kudu.util.ClientTestUtil.countRowsInScan;
-import static org.apache.kudu.util.ClientTestUtil.scanTableToStrings;
+import static org.apache.kudu.test.ClientTestUtil.countRowsInScan;
+import static org.apache.kudu.test.ClientTestUtil.scanTableToStrings;
 import static org.apache.parquet.hadoop.metadata.CompressionCodecName.UNCOMPRESSED;
 import static org.apache.parquet.schema.MessageTypeParser.parseMessageType;
 import static org.junit.Assert.assertEquals;

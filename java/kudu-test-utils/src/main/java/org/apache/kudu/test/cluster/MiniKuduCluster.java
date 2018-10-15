@@ -14,7 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-package org.apache.kudu.client;
+package org.apache.kudu.test.cluster;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
@@ -38,6 +38,8 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 
 import org.apache.kudu.Common;
+import org.apache.kudu.client.HostAndPort;
+import org.apache.kudu.client.ProtobufHelper;
 import org.apache.kudu.test.KuduTestHarness;
 import org.apache.kudu.tools.Tool.ControlShellRequestPB;
 import org.apache.kudu.tools.Tool.ControlShellResponsePB;
@@ -53,7 +55,6 @@ import org.apache.kudu.tools.Tool.KinitRequestPB;
 import org.apache.kudu.tools.Tool.StartClusterRequestPB;
 import org.apache.kudu.tools.Tool.StartDaemonRequestPB;
 import org.apache.kudu.tools.Tool.StopDaemonRequestPB;
-import org.apache.kudu.util.KuduBinaryLocator;
 import org.apache.kudu.util.SecurityUtil;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
@@ -175,7 +176,7 @@ public class MiniKuduCluster implements AutoCloseable {
 
     // Convert any error into an exception.
     if (resp.hasError()) {
-      throw new NonRecoverableException(Status.fromPB(resp.getError()));
+      throw new IOException(resp.getError().getMessage());
     }
     return resp;
   }

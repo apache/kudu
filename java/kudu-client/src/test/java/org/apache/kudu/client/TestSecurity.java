@@ -13,10 +13,10 @@
  */
 package org.apache.kudu.client;
 
-import static org.apache.kudu.util.AssertHelpers.assertEventuallyTrue;
-import static org.apache.kudu.util.ClientTestUtil.createBasicSchemaInsert;
-import static org.apache.kudu.util.ClientTestUtil.getBasicCreateTableOptions;
-import static org.apache.kudu.util.ClientTestUtil.getBasicSchema;
+import static org.apache.kudu.test.junit.AssertHelpers.assertEventuallyTrue;
+import static org.apache.kudu.test.ClientTestUtil.createBasicSchemaInsert;
+import static org.apache.kudu.test.ClientTestUtil.getBasicCreateTableOptions;
+import static org.apache.kudu.test.ClientTestUtil.getBasicSchema;
 import static org.junit.Assert.assertNotNull;
 
 import java.io.Closeable;
@@ -30,12 +30,14 @@ import java.util.concurrent.TimeUnit;
 import javax.security.auth.Subject;
 
 import org.apache.kudu.client.Client.AuthenticationCredentialsPB;
-import org.apache.kudu.client.MiniKuduCluster.MiniKuduClusterBuilder;
-import org.apache.kudu.junit.RetryRule;
+import org.apache.kudu.test.cluster.MiniKuduCluster;
+import org.apache.kudu.test.cluster.MiniKuduCluster.MiniKuduClusterBuilder;
+import org.apache.kudu.test.junit.RetryRule;
 import org.apache.kudu.master.Master.ConnectToMasterResponsePB;
-import org.apache.kudu.util.AssertHelpers;
-import org.apache.kudu.util.AssertHelpers.BooleanExpression;
-import org.apache.kudu.util.CapturingLogAppender;
+import org.apache.kudu.test.cluster.FakeDNS;
+import org.apache.kudu.test.junit.AssertHelpers;
+import org.apache.kudu.test.junit.AssertHelpers.BooleanExpression;
+import org.apache.kudu.test.CapturingLogAppender;
 import org.apache.kudu.util.SecurityUtil;
 import org.hamcrest.CoreMatchers;
 import org.junit.After;

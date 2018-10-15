@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-package org.apache.kudu.util;
+package org.apache.kudu.test;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterators;
@@ -41,6 +41,7 @@ import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.client.PartialRow;
 import org.apache.kudu.client.RowResult;
 import org.apache.kudu.client.RowResultIterator;
+import org.apache.kudu.util.DecimalUtil;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 import org.slf4j.Logger;

@@ -32,7 +32,7 @@ repositories {
 
 dependencies {
   compile project(path: ":kudu-client", configuration: "shadow")
-  compile project(path: ":kudu-client", configuration: "shadowTest")
+  compile project(path: ":kudu-test-utils", configuration: "shadow")
   compile libs.clojure
   compile libs.clojureToolsCli
   compile libs.jepsen

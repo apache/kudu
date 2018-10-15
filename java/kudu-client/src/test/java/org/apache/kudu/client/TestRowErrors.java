@@ -17,10 +17,10 @@
 package org.apache.kudu.client;
 
 import static org.apache.kudu.test.KuduTestHarness.DEFAULT_SLEEP;
-import static org.apache.kudu.util.ClientTestUtil.createBasicSchemaInsert;
-import static org.apache.kudu.util.ClientTestUtil.createFourTabletsTableWithNineRows;
-import static org.apache.kudu.util.ClientTestUtil.getBasicCreateTableOptions;
-import static org.apache.kudu.util.ClientTestUtil.getBasicSchema;
+import static org.apache.kudu.test.ClientTestUtil.createBasicSchemaInsert;
+import static org.apache.kudu.test.ClientTestUtil.createFourTabletsTableWithNineRows;
+import static org.apache.kudu.test.ClientTestUtil.getBasicCreateTableOptions;
+import static org.apache.kudu.test.ClientTestUtil.getBasicSchema;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 

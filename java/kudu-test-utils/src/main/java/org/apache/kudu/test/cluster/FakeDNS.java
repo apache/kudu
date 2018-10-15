@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-package org.apache.kudu.client;
+package org.apache.kudu.test.cluster;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationHandler;

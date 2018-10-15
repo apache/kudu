@@ -17,10 +17,10 @@
 package org.apache.kudu.client;
 
 import static org.apache.kudu.test.KuduTestHarness.DEFAULT_SLEEP;
-import static org.apache.kudu.util.AssertHelpers.assertEventuallyTrue;
-import static org.apache.kudu.util.ClientTestUtil.countRowsInScan;
-import static org.apache.kudu.util.ClientTestUtil.createBasicSchemaInsert;
-import static org.apache.kudu.util.ClientTestUtil.getBasicCreateTableOptions;
+import static org.apache.kudu.test.junit.AssertHelpers.assertEventuallyTrue;
+import static org.apache.kudu.test.ClientTestUtil.countRowsInScan;
+import static org.apache.kudu.test.ClientTestUtil.createBasicSchemaInsert;
+import static org.apache.kudu.test.ClientTestUtil.getBasicCreateTableOptions;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 
@@ -30,9 +30,9 @@ import java.util.List;
 
 import org.apache.kudu.Schema;
 import org.apache.kudu.test.KuduTestHarness;
-import org.apache.kudu.util.AssertHelpers.BooleanExpression;
-import org.apache.kudu.util.CapturingLogAppender;
-import org.apache.kudu.util.ClientTestUtil;
+import org.apache.kudu.test.junit.AssertHelpers.BooleanExpression;
+import org.apache.kudu.test.CapturingLogAppender;
+import org.apache.kudu.test.ClientTestUtil;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;

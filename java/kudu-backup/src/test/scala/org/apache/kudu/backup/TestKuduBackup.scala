@@ -34,8 +34,8 @@ import org.apache.kudu.ColumnSchema
 import org.apache.kudu.Schema
 import org.apache.kudu.Type
 import org.apache.kudu.spark.kudu._
+import org.apache.kudu.test.RandomUtils
 import org.apache.kudu.util.DecimalUtil
-import org.apache.kudu.util.RandomUtils
 import org.junit.Assert._
 import org.junit.Test
 import org.slf4j.Logger

@@ -18,20 +18,21 @@
 apply from: "$rootDir/gradle/shadow.gradle"
 
 dependencies {
-  compile project(":kudu-mapreduce")
+  compile project(path: ":kudu-client")
   compile libs.guava
 
-  provided libs.hadoopMRClientCommon
-  provided libs.hadoopCommon
-  provided libs.parquetHadoop
-  provided libs.slf4jApi
+  compileUnshaded libs.junit
+  compileUnshaded libs.slf4jApi
 
+  // Needed for CapturingLogAppender. Optional otherwise.
+  optional libs.log4j
+  optional libs.slf4jLog4j12
+
+  optional libs.jsr305
   optional libs.yetusAnnotations
+}
 
-  testCompile project(path: ":kudu-test-utils", configuration: "shadow")
-  testCompile project(path: ":kudu-mapreduce", configuration: "test")
-  testCompile libs.commonsIo
-  testCompile libs.junit
-  testCompile libs.log4j
-  testCompile libs.slf4jLog4j12
+// kudu-test-utils has no public Javadoc.
+javadoc {
+  enabled = false
 }

@@ -26,6 +26,7 @@ import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
 import com.stumbleupon.async.Callback;
 
+import org.apache.kudu.test.cluster.MiniKuduCluster;
 import org.junit.Assert;
 import org.junit.Test;
 import org.apache.kudu.consensus.Metadata;

@@ -31,10 +31,10 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.List;
 
-import static org.apache.kudu.util.ClientTestUtil.countScanTokenRows;
-import static org.apache.kudu.util.ClientTestUtil.createDefaultTable;
-import static org.apache.kudu.util.ClientTestUtil.createManyStringsSchema;
-import static org.apache.kudu.util.ClientTestUtil.loadDefaultTable;
+import static org.apache.kudu.test.ClientTestUtil.countScanTokenRows;
+import static org.apache.kudu.test.ClientTestUtil.createDefaultTable;
+import static org.apache.kudu.test.ClientTestUtil.createManyStringsSchema;
+import static org.apache.kudu.test.ClientTestUtil.loadDefaultTable;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;

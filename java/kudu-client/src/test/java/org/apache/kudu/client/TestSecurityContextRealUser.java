@@ -17,7 +17,7 @@
 
 package org.apache.kudu.client;
 
-import org.apache.kudu.client.MiniKuduCluster.MiniKuduClusterBuilder;
+import org.apache.kudu.test.cluster.MiniKuduCluster.MiniKuduClusterBuilder;
 import org.apache.kudu.test.KuduTestHarness;
 import org.junit.Before;
 import org.junit.Rule;
@@ -25,8 +25,8 @@ import org.junit.Test;
 
 import java.util.ArrayList;
 
-import static org.apache.kudu.util.ClientTestUtil.getBasicSchema;
-import static org.apache.kudu.util.ClientTestUtil.scanTableToStrings;
+import static org.apache.kudu.test.ClientTestUtil.getBasicSchema;
+import static org.apache.kudu.test.ClientTestUtil.scanTableToStrings;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;

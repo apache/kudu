@@ -11,7 +11,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License. See accompanying LICENSE file.
  */
-package org.apache.kudu.client;
+package org.apache.kudu.test;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -22,8 +22,14 @@ import static org.junit.Assert.fail;
 import java.io.IOException;
 import java.net.Socket;
 
+import org.apache.kudu.client.DeadlineTracker;
+import org.apache.kudu.client.HostAndPort;
+import org.apache.kudu.client.KuduClient;
 import org.apache.kudu.client.KuduClient.KuduClientBuilder;
-import org.apache.kudu.junit.RetryRule;
+import org.apache.kudu.client.ListTablesResponse;
+import org.apache.kudu.test.cluster.MiniKuduCluster;
+import org.apache.kudu.test.junit.RetryRule;
+import org.apache.kudu.test.cluster.FakeDNS;
 import org.junit.Rule;
 import org.junit.Test;
 

@@ -32,9 +32,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static org.apache.kudu.test.KuduTestHarness.DEFAULT_SLEEP;
-import static org.apache.kudu.util.ClientTestUtil.countRowsInScan;
-import static org.apache.kudu.util.ClientTestUtil.createBasicSchemaInsert;
-import static org.apache.kudu.util.ClientTestUtil.getBasicSchema;
+import static org.apache.kudu.test.ClientTestUtil.countRowsInScan;
+import static org.apache.kudu.test.ClientTestUtil.createBasicSchemaInsert;
+import static org.apache.kudu.test.ClientTestUtil.getBasicSchema;
 
 /**
  * Integration test for the client. RPCs are sent to Kudu from multiple threads while processes

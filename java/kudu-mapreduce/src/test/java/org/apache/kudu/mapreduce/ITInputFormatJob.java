@@ -16,8 +16,8 @@
 // under the License.
 package org.apache.kudu.mapreduce;
 
+import static org.apache.kudu.test.ClientTestUtil.createFourTabletsTableWithNineRows;
 import static org.apache.kudu.test.KuduTestHarness.DEFAULT_SLEEP;
-import static org.apache.kudu.util.ClientTestUtil.createFourTabletsTableWithNineRows;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -32,8 +32,8 @@ import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.lib.output.NullOutputFormat;
 import org.apache.kudu.Schema;
+import org.apache.kudu.test.ClientTestUtil;
 import org.apache.kudu.test.KuduTestHarness;
-import org.apache.kudu.util.ClientTestUtil;
 import org.junit.After;
 import org.junit.Rule;
 import org.junit.Test;

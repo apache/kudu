@@ -15,8 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
-
 apply from: "$rootDir/gradle/protobuf.gradle"
 apply from: "$rootDir/gradle/shadow.gradle"
 
@@ -37,6 +35,7 @@ dependencies {
   optional libs.jsr305
   optional libs.yetusAnnotations
 
+  testCompile project(":kudu-test-utils")
   testCompile libs.hamcrestCore
   testCompile libs.junit
   testCompile libs.log4j
@@ -53,17 +52,4 @@ sourceSets {
       exclude "**/*test*.proto"
     }
   }
-}
-
-// Configure a shaded test jar for use in the other modules.
-// We only do this for kudu-client because it has common test utilities.
-task shadowTestJar(type: ShadowJar) {
-  classifier = "tests-shaded"
-  from sourceSets.test.output
-  configurations = [project.configurations.testRuntime]
-}
-// Create a configuration so that the shaded test jar can be referenced in other modules.
-configurations.create("shadowTest")
-artifacts {
-  shadowTest shadowTestJar
 }

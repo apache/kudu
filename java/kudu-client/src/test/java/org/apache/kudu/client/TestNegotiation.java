@@ -17,8 +17,10 @@
 
 package org.apache.kudu.client;
 
-import org.apache.kudu.junit.RetryRule;
-import org.apache.kudu.util.CapturingLogAppender;
+import org.apache.kudu.test.cluster.MiniKuduCluster;
+import org.apache.kudu.test.junit.RetryRule;
+import org.apache.kudu.test.cluster.FakeDNS;
+import org.apache.kudu.test.CapturingLogAppender;
 import org.junit.Rule;
 import org.junit.Test;
 

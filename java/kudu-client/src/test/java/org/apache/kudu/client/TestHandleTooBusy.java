@@ -24,13 +24,13 @@ import java.util.concurrent.Future;
 
 import com.google.common.collect.Lists;
 import org.apache.kudu.Schema;
-import org.apache.kudu.client.MiniKuduCluster.MiniKuduClusterBuilder;
+import org.apache.kudu.test.cluster.MiniKuduCluster.MiniKuduClusterBuilder;
 import org.apache.kudu.test.KuduTestHarness;
-import org.apache.kudu.util.ClientTestUtil;
+import org.apache.kudu.test.ClientTestUtil;
 import org.junit.Rule;
 import org.junit.Test;
 
-import static org.apache.kudu.util.ClientTestUtil.getBasicCreateTableOptions;
+import static org.apache.kudu.test.ClientTestUtil.getBasicCreateTableOptions;
 
 /**
  * Tests which provoke RPC queue overflow errors on the server side

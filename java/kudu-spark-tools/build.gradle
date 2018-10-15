@@ -31,7 +31,7 @@ dependencies {
   provided libs.sparkSql
   provided libs.slf4jApi
 
-  testCompile project(path: ":kudu-client", configuration: "shadowTest")
+  testCompile project(path: ":kudu-test-utils", configuration: "shadow")
   testCompile project(path: ":kudu-spark", configuration: "test")
   testCompile libs.junit
   testCompile libs.log4j

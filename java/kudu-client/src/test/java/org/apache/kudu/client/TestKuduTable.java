@@ -17,11 +17,11 @@
 package org.apache.kudu.client;
 
 import static org.apache.kudu.test.KuduTestHarness.DEFAULT_SLEEP;
-import static org.apache.kudu.util.ClientTestUtil.createBasicSchemaInsert;
-import static org.apache.kudu.util.ClientTestUtil.getBasicCreateTableOptions;
-import static org.apache.kudu.util.ClientTestUtil.getBasicSchema;
-import static org.apache.kudu.util.ClientTestUtil.getBasicTableOptionsWithNonCoveredRange;
-import static org.apache.kudu.util.ClientTestUtil.scanTableToStrings;
+import static org.apache.kudu.test.ClientTestUtil.createBasicSchemaInsert;
+import static org.apache.kudu.test.ClientTestUtil.getBasicCreateTableOptions;
+import static org.apache.kudu.test.ClientTestUtil.getBasicSchema;
+import static org.apache.kudu.test.ClientTestUtil.getBasicTableOptionsWithNonCoveredRange;
+import static org.apache.kudu.test.ClientTestUtil.scanTableToStrings;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -35,7 +35,7 @@ import java.util.List;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import org.apache.kudu.test.KuduTestHarness;
-import org.apache.kudu.util.ClientTestUtil;
+import org.apache.kudu.test.ClientTestUtil;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;

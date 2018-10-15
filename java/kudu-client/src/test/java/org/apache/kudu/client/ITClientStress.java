@@ -17,8 +17,8 @@
 package org.apache.kudu.client;
 
 import static org.apache.kudu.test.KuduTestHarness.DEFAULT_SLEEP;
-import static org.apache.kudu.util.ClientTestUtil.createFourTabletsTableWithNineRows;
-import static org.apache.kudu.util.ClientTestUtil.getBasicCreateTableOptions;
+import static org.apache.kudu.test.ClientTestUtil.createFourTabletsTableWithNineRows;
+import static org.apache.kudu.test.ClientTestUtil.getBasicCreateTableOptions;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
@@ -36,11 +36,11 @@ import com.google.common.base.Supplier;
 
 import org.apache.kudu.Schema;
 import org.apache.kudu.test.KuduTestHarness;
-import org.apache.kudu.util.ClientTestUtil;
+import org.apache.kudu.test.ClientTestUtil;
 import org.junit.Rule;
 import org.junit.Test;
 import org.apache.kudu.client.SessionConfiguration.FlushMode;
-import org.apache.kudu.util.CapturingLogAppender;
+import org.apache.kudu.test.CapturingLogAppender;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

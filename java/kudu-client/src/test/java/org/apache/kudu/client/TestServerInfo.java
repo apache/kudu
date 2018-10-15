@@ -15,6 +15,7 @@ package org.apache.kudu.client;
 
 import java.net.InetAddress;
 
+import org.apache.kudu.test.cluster.FakeDNS;
 import org.junit.Assert;
 import org.junit.Test;
 
