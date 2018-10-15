@@ -228,6 +228,7 @@ message KsckServerHealthSummaryPB {
   optional ServerHealth health = 3;
   optional string status = 4;
   optional string version = 5;
+  optional string location = 6;
 }
 
 message KsckConsensusStatePB {

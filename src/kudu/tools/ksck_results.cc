@@ -34,6 +34,7 @@
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/join.h"
+#include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tools/color.h"
 #include "kudu/tools/tool.pb.h"
@@ -358,11 +359,35 @@ Status PrintServerHealthSummaries(KsckServerType type,
                                   const vector<KsckServerHealthSummary>& summaries,
                                   ostream& out) {
   out << ServerTypeToString(type) << " Summary" << endl;
-  DataTable table({ "UUID", "Address", "Status" });
-  for (const auto& s : summaries) {
-    table.AddRow({ s.uuid, s.address, ServerHealthToString(s.health) });
+  if (summaries.empty()) return Status::OK();
+
+  if (type == KsckServerType::TABLET_SERVER) {
+    DataTable table({ "UUID", "Address", "Status", "Location" });
+    unordered_map<string, int> location_counts;
+    for (const auto& s : summaries) {
+      string location = s.ts_location.empty() ? "<none>" : s.ts_location;
+      location_counts[location]++;
+      table.AddRow({ s.uuid, s.address, ServerHealthToString(s.health), std::move(location) });
+    }
+    RETURN_NOT_OK(table.PrintTo(out));
+
+    // Print location count table.
+    out << std::endl;
+    out << "Tablet Server Location Summary" << endl;
+    DataTable loc_stats_table({ "Location", "Count" });
+    for (const auto& loc_count : location_counts) {
+      loc_stats_table.AddRow({ loc_count.first, IntToString(loc_count.second) });
+    }
+    RETURN_NOT_OK(loc_stats_table.PrintTo(out));
+  } else {
+    DCHECK_EQ(ServerTypeToString(type), ServerTypeToString(KsckServerType::MASTER));
+    DataTable table({ "UUID", "Address", "Status" });
+    for (const auto& s : summaries) {
+      table.AddRow({ s.uuid, s.address, ServerHealthToString(s.health) });
+    }
+    RETURN_NOT_OK(table.PrintTo(out));
   }
-  RETURN_NOT_OK(table.PrintTo(out));
+
   // Print out the status message from each server with bad health.
   // This isn't done as part of the table because the messages can be quite long.
   for (const auto& s : summaries) {
@@ -579,6 +604,9 @@ void KsckServerHealthSummaryToPb(const KsckServerHealthSummary& summary,
     pb->set_version(*summary.version);
   }
   pb->set_status(summary.status.ToString());
+  if (!summary.ts_location.empty()) {
+    pb->set_location(summary.ts_location);
+  }
 }
 
 void KsckConsensusStateToPb(const KsckConsensusState& cstate,

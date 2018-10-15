@@ -165,7 +165,9 @@ SET_KUDU_TEST_LINK_LIBS(
   mini_cluster)
 ADD_KUDU_TEST(diagnostics_log_parser-test)
 ADD_KUDU_TEST(ksck-test)
-ADD_KUDU_TEST(ksck_remote-test PROCESSORS 3)
+ADD_KUDU_TEST(ksck_remote-test
+  PROCESSORS 3
+  DATA_FILES testdata/first_argument.sh)
 ADD_KUDU_TEST(kudu-admin-test
   NUM_SHARDS 8 PROCESSORS 3)
 ADD_KUDU_TEST_DEPENDENCIES(kudu-admin-test

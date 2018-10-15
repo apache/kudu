@@ -38,7 +38,6 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/rpc/messenger.h"
 #include "kudu/server/server_base.pb.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet.pb.h"  // IWYU pragma: keep
@@ -48,6 +47,9 @@
 namespace kudu {
 
 class MonoDelta;
+namespace rpc {
+class Messenger;
+} // namespace rpc
 
 namespace tools {
 
@@ -212,7 +214,6 @@ class KsckMaster {
     return version_;
   }
 
-
   virtual const boost::optional<consensus::ConsensusStatePB> cstate() const {
     CHECK_NE(KsckFetchState::UNINITIALIZED, state_);
     return cstate_;
@@ -273,7 +274,10 @@ class KsckTabletServer {
   typedef std::map
       <std::pair<std::string, std::string>, consensus::ConsensusStatePB> TabletConsensusStateMap;
 
-  explicit KsckTabletServer(std::string uuid) : uuid_(std::move(uuid)) {}
+  explicit KsckTabletServer(std::string uuid, std::string location = "")
+      : uuid_(std::move(uuid)),
+        location_(std::move(location)) {}
+
   virtual ~KsckTabletServer() { }
 
   // Connects to the configured tablet server and populates the fields of this class. 'health' must
@@ -308,6 +312,10 @@ class KsckTabletServer {
 
   virtual const std::string& uuid() const {
     return uuid_;
+  }
+
+  virtual const std::string& location() const {
+    return location_;
   }
 
   std::string ToString() const {
@@ -377,6 +385,7 @@ class KsckTabletServer {
   boost::optional<server::GetFlagsResponsePB> flags_;
   std::atomic<uint64_t> timestamp_;
   const std::string uuid_;
+  std::string location_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(KsckTabletServer);

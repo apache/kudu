@@ -174,6 +174,7 @@ class MockKsckTabletServer : public KsckTabletServer {
   // progress for this server.
   int64_t checksum_progress_ = 10;
   using KsckTabletServer::flags_;
+  using KsckTabletServer::location_;
   using KsckTabletServer::version_;
 
  private:
@@ -475,6 +476,9 @@ void CheckJsonVsServerHealthSummaries(const JsonReader& r,
     EXPECT_JSON_STRING_FIELD(r, server, "address", summary.address);
     EXPECT_JSON_STRING_FIELD(r, server, "health", ServerHealthToString(summary.health));
     EXPECT_JSON_STRING_FIELD(r, server, "status", summary.status.ToString());
+    if (!summary.ts_location.empty()) {
+      EXPECT_JSON_STRING_FIELD(r, server, "location", summary.ts_location);
+    }
   }
 }
 
@@ -755,11 +759,11 @@ TEST_F(KsckTest, TestServersOk) {
   // Tablet server health.
   ASSERT_STR_CONTAINS(err_string,
     "Tablet Server Summary\n"
-    "  UUID   | Address | Status\n"
-    "---------+---------+---------\n"
-    " ts-id-0 | <mock>  | HEALTHY\n"
-    " ts-id-1 | <mock>  | HEALTHY\n"
-    " ts-id-2 | <mock>  | HEALTHY\n");
+    "  UUID   | Address | Status  | Location\n"
+    "---------+---------+---------+----------\n"
+    " ts-id-0 | <mock>  | HEALTHY | <none>\n"
+    " ts-id-1 | <mock>  | HEALTHY | <none>\n"
+    " ts-id-2 | <mock>  | HEALTHY | <none>\n");
 
   CheckJsonStringVsKsckResults(KsckResultsToJsonString(), ksck_->results());
 }
@@ -946,11 +950,11 @@ TEST_F(KsckTest, TestWrongUUIDTabletServer) {
   ASSERT_OK(ksck_->PrintResults());
   ASSERT_STR_CONTAINS(err_stream_.str(),
     "Tablet Server Summary\n"
-    "  UUID   | Address |      Status\n"
-    "---------+---------+-------------------\n"
-    " ts-id-0 | <mock>  | HEALTHY\n"
-    " ts-id-2 | <mock>  | HEALTHY\n"
-    " ts-id-1 | <mock>  | WRONG_SERVER_UUID\n");
+    "  UUID   | Address |      Status       | Location\n"
+    "---------+---------+-------------------+----------\n"
+    " ts-id-0 | <mock>  | HEALTHY           | <none>\n"
+    " ts-id-2 | <mock>  | HEALTHY           | <none>\n"
+    " ts-id-1 | <mock>  | WRONG_SERVER_UUID | <none>\n");
 
   CheckJsonStringVsKsckResults(KsckResultsToJsonString(), ksck_->results());
 }
@@ -976,11 +980,11 @@ TEST_F(KsckTest, TestBadTabletServer) {
   ASSERT_STR_CONTAINS(
       err_stream_.str(),
       "Tablet Server Summary\n"
-      "  UUID   | Address |   Status\n"
-      "---------+---------+-------------\n"
-      " ts-id-0 | <mock>  | HEALTHY\n"
-      " ts-id-2 | <mock>  | HEALTHY\n"
-      " ts-id-1 | <mock>  | UNAVAILABLE\n");
+      "  UUID   | Address |   Status    | Location\n"
+      "---------+---------+-------------+----------\n"
+      " ts-id-0 | <mock>  | HEALTHY     | <none>\n"
+      " ts-id-2 | <mock>  | HEALTHY     | <none>\n"
+      " ts-id-1 | <mock>  | UNAVAILABLE | <none>\n");
   ASSERT_STR_CONTAINS(
       err_stream_.str(),
       "Error from <mock>: Network error: Network failure (UNAVAILABLE)\n");
@@ -1595,6 +1599,28 @@ TEST_F(KsckTest, TestChecksumWithAllPeersUnhealthy) {
       err_stream_.str(),
       "T tablet-id-1 P ts-id-0 (<mock>): Error: Aborted: "
       "no healthy peer was available to provide a timestamp");
+}
+
+TEST_F(KsckTest, TestTabletServerLocation) {
+  CreateOneTableOneTablet();
+  shared_ptr<MockKsckTabletServer> ts =
+        static_pointer_cast<MockKsckTabletServer>(cluster_->tablet_servers_["ts-id-1"]);
+  ts->location_ = "/foo";
+
+  ASSERT_OK(ksck_->CheckClusterRunning());
+  ASSERT_OK(ksck_->FetchTableAndTabletInfo());
+  ASSERT_OK(ksck_->FetchInfoFromTabletServers());
+  ASSERT_OK(ksck_->PrintResults());
+
+  ASSERT_STR_CONTAINS(err_stream_.str(),
+    "Tablet Server Summary\n"
+    "  UUID   | Address | Status  | Location\n"
+    "---------+---------+---------+----------\n"
+    " ts-id-0 | <mock>  | HEALTHY | <none>\n"
+    " ts-id-1 | <mock>  | HEALTHY | /foo\n"
+    " ts-id-2 | <mock>  | HEALTHY | <none>\n");
+
+  NO_FATALS(CheckJsonStringVsKsckResults(KsckResultsToJsonString(), ksck_->results()));
 }
 } // namespace tools
 } // namespace kudu

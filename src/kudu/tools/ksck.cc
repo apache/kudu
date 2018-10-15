@@ -336,6 +336,7 @@ Status Ksck::FetchInfoFromTabletServers() {
           KsckServerHealthSummary summary;
           summary.uuid = ts->uuid();
           summary.address = ts->address();
+          summary.ts_location = ts->location();
           summary.version = ts->version();
           summary.status = s;
           if (!s.ok()) {

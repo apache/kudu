@@ -51,6 +51,7 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
+#include "kudu/util/path_util.h"
 #include "kudu/util/promise.h"
 #include "kudu/util/random.h"
 #include "kudu/util/status.h"
@@ -63,6 +64,7 @@ DECLARE_int32(safe_time_max_lag_ms);
 DECLARE_int32(tablet_history_max_age_sec);
 DECLARE_int32(timestamp_update_period_ms);
 DECLARE_int32(wait_before_setting_snapshot_timestamp_ms);
+DECLARE_string(location_mapping_cmd);
 
 DEFINE_int32(experimental_flag_for_ksck_test, 0,
              "A flag marked experimental so it can be used to test ksck's "
@@ -280,10 +282,12 @@ TEST_F(RemoteKsckTest, TestTabletServerMismatchedUUID) {
   ASSERT_STR_CONTAINS(err_stream_.str(), strings::Substitute(match_string, address.ToString(),
                                                              new_uuid, old_uuid));
   tserver::MiniTabletServer* ts = mini_cluster_->mini_tablet_server(1);
-  ASSERT_STR_CONTAINS(err_stream_.str(), strings::Substitute("$0 | $1 | HEALTHY", ts->uuid(),
+  ASSERT_STR_CONTAINS(err_stream_.str(), strings::Substitute("$0 | $1 | HEALTHY           | <none>",
+                                                             ts->uuid(),
                                                              ts->bound_rpc_addr().ToString()));
   ts = mini_cluster_->mini_tablet_server(2);
-  ASSERT_STR_CONTAINS(err_stream_.str(), strings::Substitute("$0 | $1 | HEALTHY", ts->uuid(),
+  ASSERT_STR_CONTAINS(err_stream_.str(), strings::Substitute("$0 | $1 | HEALTHY           | <none>",
+                                                             ts->uuid(),
                                                              ts->bound_rpc_addr().ToString()));
 }
 
@@ -500,6 +504,52 @@ TEST_F(RemoteKsckTest, TestLeaderMasterDown) {
   // in order for the test to pass.
   ASSERT_OK(ksck_->FetchTableAndTabletInfo());
   ASSERT_OK(ksck_->FetchInfoFromTabletServers());
+}
+
+TEST_F(RemoteKsckTest, TestClusterWithLocation) {
+  // There is no location assigned for the existing three tablet servers.
+  // With the flag set, the newly added server will be assiged with location '/foo'.
+  const string location_cmd_path = JoinPathSegments(GetTestExecutableDirectory(),
+                                                   "testdata/first_argument.sh");
+  const string location = "/foo";
+  FLAGS_location_mapping_cmd = strings::Substitute("$0 $1", location_cmd_path, location);
+
+  ASSERT_OK(mini_cluster_->AddTabletServer());
+  ASSERT_EQ(4, mini_cluster_->num_tablet_servers());
+
+  ASSERT_OK(ksck_->CheckMasterHealth());
+  ASSERT_OK(ksck_->CheckMasterUnusualFlags());
+  ASSERT_OK(ksck_->CheckMasterConsensus());
+  ASSERT_OK(ksck_->CheckClusterRunning());
+  ASSERT_OK(ksck_->FetchTableAndTabletInfo());
+  ASSERT_OK(ksck_->FetchInfoFromTabletServers());
+
+  ASSERT_OK(ksck_->PrintResults());
+  string err_string = err_stream_.str();
+
+  // The existing tablet servers should have location '<none>' displayed.
+  for (int i = 0; i < 3; i++) {
+    auto *ts = mini_cluster_->mini_tablet_server(i);
+    ASSERT_STR_CONTAINS(err_string, strings::Substitute("$0 | $1 | HEALTHY | <none>",
+                                                               ts->uuid(),
+                                                               ts->bound_rpc_addr().ToString()));
+  }
+
+  // The newly added tablet server should have the assigned location displayed.
+  auto *ts = mini_cluster_->mini_tablet_server(3);
+  ASSERT_STR_CONTAINS(err_string, strings::Substitute("$0 | $1 | HEALTHY | $2",
+                                                             ts->uuid(),
+                                                             ts->bound_rpc_addr().ToString(),
+                                                             location));
+
+  ASSERT_STR_CONTAINS(err_string,
+    "Tablet Server Location Summary\n"
+    " Location |  Count\n"
+    "----------+---------\n");
+  ASSERT_STR_CONTAINS(err_string,
+    " <none>   |       3\n");
+  ASSERT_STR_CONTAINS(err_string,
+    " /foo     |       1\n");
 }
 
 } // namespace tools

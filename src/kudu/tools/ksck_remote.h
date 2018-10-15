@@ -93,8 +93,9 @@ class RemoteKsckTabletServer : public KsckTabletServer,
  public:
   explicit RemoteKsckTabletServer(const std::string& id,
                                   HostPort host_port,
-                                  std::shared_ptr<rpc::Messenger> messenger)
-      : KsckTabletServer(id),
+                                  std::shared_ptr<rpc::Messenger> messenger,
+                                  const std::string& location = "")
+      : KsckTabletServer(id, location),
         host_port_(std::move(host_port)),
         messenger_(std::move(messenger)) {
   }

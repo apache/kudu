@@ -483,7 +483,8 @@ Status RemoteKsckCluster::RetrieveTabletServers() {
     auto ts = std::make_shared<RemoteKsckTabletServer>(
         s->uuid(),
         HostPort(s->hostname(), s->port()),
-        messenger_);
+        messenger_,
+        s->location());
     RETURN_NOT_OK(ts->Init());
     InsertOrDie(&tablet_servers, ts->uuid(), ts);
   }
