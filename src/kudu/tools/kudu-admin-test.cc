@@ -39,6 +39,7 @@
 #include "kudu/client/client.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
+#include "kudu/client/write_op.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/wire_protocol.pb.h"
@@ -79,8 +80,10 @@ DECLARE_int32(num_tablet_servers);
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
 using kudu::client::KuduColumnSchema;
+using kudu::client::KuduInsert;
 using kudu::client::KuduSchema;
 using kudu::client::KuduSchemaBuilder;
+using kudu::client::KuduTable;
 using kudu::client::KuduTableAlterer;
 using kudu::client::KuduTableCreator;
 using kudu::client::sp::shared_ptr;
@@ -1741,6 +1744,73 @@ TEST_F(AdminCliTest, TestLocateRowMore) {
   ASSERT_TRUE(s.IsRuntimeError()) << ToolRunInfo(s, stdout, stderr);
   ASSERT_STR_CONTAINS(stderr,
                       "Wrong type during field extraction: expected object array");
+}
+
+TEST_F(AdminCliTest, TestLocateRowAndCheckRowPresence) {
+  FLAGS_num_tablet_servers = 1;
+  FLAGS_num_replicas = 1;
+
+  NO_FATALS(BuildAndStart());
+
+  // Grab list of tablet_ids from any tserver so we can check the output.
+  vector<TServerDetails*> tservers;
+  vector<string> tablet_ids;
+  AppendValuesFromMap(tablet_servers_, &tservers);
+  ListRunningTabletIds(tservers.front(),
+                       MonoDelta::FromSeconds(30),
+                       &tablet_ids);
+  ASSERT_EQ(1, tablet_ids.size());
+  const string& expected_tablet_id = tablet_ids[0];
+
+  // Test the case when the row does not exist.
+  string stdout, stderr;
+  Status s = RunKuduTool({
+    "table",
+    "locate_row",
+    cluster_->master()->bound_rpc_addr().ToString(),
+    kTableId,
+    "[0]",
+    "-check_row_existence",
+  }, &stdout, &stderr);
+  ASSERT_TRUE(s.IsRuntimeError()) << ToolRunInfo(s, stdout, stderr);
+  ASSERT_STR_CONTAINS(stdout, expected_tablet_id);
+  ASSERT_STR_CONTAINS(stderr, "row does not exist");
+
+  // Insert row with key = 0.
+  client::sp::shared_ptr<KuduClient> client;
+  CreateClient(&client);
+  client::sp::shared_ptr<KuduTable> table;
+  ASSERT_OK(client->OpenTable(kTableId, &table));
+  unique_ptr<KuduInsert> insert(table->NewInsert());
+  auto* row = insert->mutable_row();
+  ASSERT_OK(row->SetInt32("key", 0));
+  ASSERT_OK(row->SetInt32("int_val", 12345));
+  ASSERT_OK(row->SetString("string_val", "hello"));
+  const string row_str = row->ToString();
+  auto session = client->NewSession();
+  ASSERT_OK(session->Apply(insert.release()));
+  ASSERT_OK(session->Flush());
+  ASSERT_OK(session->Close());
+
+  // Test the case when the row exists. Since the scan is done by a subprocess
+  // using a different client instance, it's possible the scan will not
+  // immediately retrieve the row even though the write has already succeeded,
+  // so we ASSERT_EVENTUALLY.
+  ASSERT_EVENTUALLY([&]() {
+    stdout.clear();
+    stderr.clear();
+    s = RunKuduTool({
+      "table",
+      "locate_row",
+      cluster_->master()->bound_rpc_addr().ToString(),
+      kTableId,
+      "[0]",
+      "-check_row_existence",
+    }, &stdout, &stderr);
+    ASSERT_TRUE(s.ok()) << ToolRunInfo(s, stdout, stderr);
+    ASSERT_STR_CONTAINS(stdout, expected_tablet_id);
+    ASSERT_STR_CONTAINS(stdout, row_str);
+  });
 }
 } // namespace tools
 } // namespace kudu

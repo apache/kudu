@@ -38,6 +38,7 @@
 #include "kudu/common/schema.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tools/tool_action.h"
@@ -46,6 +47,11 @@
 #include "kudu/util/status.h"
 
 DECLARE_string(tables);
+DEFINE_bool(check_row_existence, false,
+            "Also check for the existence of the row on the leader replica of "
+            "the tablet. If found, the full row will be printed; if not found, "
+            "an error message will be printed and the command will return a "
+            "non-zero status.");
 DEFINE_bool(modify_external_catalogs, true,
             "Whether to modify external catalogs, such as the Hive Metastore, "
             "when renaming or dropping a table.");
@@ -59,6 +65,7 @@ using client::KuduClient;
 using client::KuduClientBuilder;
 using client::KuduColumnSchema;
 using client::KuduPredicate;
+using client::KuduScanner;
 using client::KuduScanToken;
 using client::KuduScanTokenBuilder;
 using client::KuduTable;
@@ -268,6 +275,8 @@ Status LocateRow(const RunnerContext& context) {
   vector<KuduScanToken*> tokens;
   ElementDeleter deleter(&tokens);
   KuduScanTokenBuilder builder(table.get());
+  // In case we go on to check for existence of the row.
+  RETURN_NOT_OK(builder.SetSelection(KuduClient::ReplicaSelection::LEADER_ONLY));
   for (auto& predicate : predicates) {
     RETURN_NOT_OK(builder.AddConjunctPredicate(predicate.release()));
   }
@@ -282,6 +291,25 @@ Status LocateRow(const RunnerContext& context) {
         "all primary key columns specified but more than one matching tablet?");
   }
   cout << tokens[0]->tablet().id() << endl;
+
+  if (FLAGS_check_row_existence) {
+    KuduScanner* scanner_ptr;
+    RETURN_NOT_OK(tokens[0]->IntoKuduScanner(&scanner_ptr));
+    unique_ptr<KuduScanner> scanner(scanner_ptr);
+    vector<string> row_str;
+    RETURN_NOT_OK(ScanToStrings(scanner.get(), &row_str));
+    if (row_str.empty()) {
+      return Status::NotFound("row does not exist");
+    }
+    // There should be exactly one result, but if somehow there are more, print
+    // them all before returning an error.
+    cout << JoinStrings(row_str, "\n") << endl;
+    if (row_str.size() != 1) {
+      // This should be impossible.
+      return Status::IllegalState(
+          Substitute("expected 1 row but received $0", row_str.size()));
+    }
+  }
   return Status::OK();
 }
 
@@ -355,6 +383,7 @@ unique_ptr<Mode> BuildTableMode() {
       .AddRequiredParameter({ kKeyArg,
                               "String representation of the row's primary key "
                               "as a JSON array" })
+      .AddOptionalParameter("check_row_existence")
       .Build();
 
   unique_ptr<Action> rename_column =
