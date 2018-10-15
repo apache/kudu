@@ -230,8 +230,8 @@
   crash the tablet server (see
   link:https://issues.apache.org/jira/browse/KUDU-2293[KUDU-2293]).
 
-- Reduced the likelihood of seeing a bug in which incorrect results would be returned in
-  scans following a server restart (see
+- Fixed a bug in which incorrect results would be returned in scans following a
+  server restart (see
   link:https://issues.apache.org/jira/browse/KUDU-2463[KUDU-2463]).
 
 - Fixed a bug causing a tablet server crash when a write batch request from a client
