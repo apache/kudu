@@ -66,6 +66,20 @@ Status JsonReader::ExtractInt32(const Value* object,
         "Wrong type during field extraction: expected int32 but got $0",
         val->GetType()));
   }
+  *result = val->GetInt();
+  return Status::OK();
+}
+
+Status JsonReader::ExtractUint32(const Value* object,
+                                 const char* field,
+                                 uint32_t* result) const {
+  const Value* val;
+  RETURN_NOT_OK(ExtractField(object, field, &val));
+  if (PREDICT_FALSE(!val->IsUint())) {
+    return Status::InvalidArgument(Substitute(
+        "Wrong type during field extraction: expected uint32 but got $0",
+        val->GetType()));
+  }
   *result = val->GetUint();
   return Status::OK();
 }
@@ -78,6 +92,19 @@ Status JsonReader::ExtractInt64(const Value* object,
   if (PREDICT_FALSE(!val->IsInt64())) {
     return Status::InvalidArgument(Substitute(
         "Wrong type during field extraction: expected int64 but got $0",
+        val->GetType()));  }
+  *result = val->GetInt64();
+  return Status::OK();
+}
+
+Status JsonReader::ExtractUint64(const Value* object,
+                                 const char* field,
+                                 uint64_t* result) const {
+  const Value* val;
+  RETURN_NOT_OK(ExtractField(object, field, &val));
+  if (PREDICT_FALSE(!val->IsUint64())) {
+    return Status::InvalidArgument(Substitute(
+        "Wrong type during field extraction: expected uint64 but got $0",
         val->GetType()));  }
   *result = val->GetUint64();
   return Status::OK();
