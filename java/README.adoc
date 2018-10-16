@@ -140,7 +140,8 @@ to import the Gradle project.
 
 For the most consistent behavior on the command line and
 in the IDE, be sure to enable `Delegate IDE build/run actions to gradle`
-as described https://www.jetbrains.com/help/idea/gradle.html#delegate_build_gradle[here].
+and run tests using the `Gradle Test Runner` as described
+https://www.jetbrains.com/help/idea/gradle.html#delegate_build_gradle[here].
 
 === Eclipse
 
