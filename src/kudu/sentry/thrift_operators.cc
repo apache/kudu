@@ -29,10 +29,18 @@
 
 namespace sentry {
 
+// Evaluates to a true expression if the optional field in 'this' is less than
+// the optional field in 'other', otherwise evaluates to a false expression.
+// Unset fields compare less than set fields.
+#define OPTIONAL_FIELD_LT(field) \
+  (this->__isset.field \
+    ? (other.__isset.field && this->field < other.field) \
+    : other.__isset.field)
+
 bool TSentryRole::operator<(const TSentryRole& other) const {
   return this->roleName < other.roleName
-      && this->groups < other.groups
-      && this->grantorPrincipal < other.grantorPrincipal;
+      || this->groups < other.groups
+      || this->grantorPrincipal < other.grantorPrincipal;
 }
 
 bool TSentryGroup::operator<(const TSentryGroup& other) const {
@@ -41,22 +49,24 @@ bool TSentryGroup::operator<(const TSentryGroup& other) const {
 
 bool TSentryPrivilege::operator<(const TSentryPrivilege& other) const {
   return this->privilegeScope < other.privilegeScope
-      && this->serverName < other.serverName
-      && this->dbName < other.dbName
-      && this->tableName < other.tableName
-      && this->URI < other.URI
-      && this->action < other.action
-      && this->createTime < other.createTime
-      && this->grantOption < other.grantOption
-      && this->columnName < other.columnName;
+      || this->serverName < other.serverName
+      || OPTIONAL_FIELD_LT(dbName)
+      || OPTIONAL_FIELD_LT(tableName)
+      || OPTIONAL_FIELD_LT(URI)
+      || this->action < other.action
+      || OPTIONAL_FIELD_LT(createTime)
+      || OPTIONAL_FIELD_LT(grantOption)
+      || OPTIONAL_FIELD_LT(columnName);
 }
 
 bool TSentryAuthorizable::operator<(const TSentryAuthorizable& other) const {
   return this->server < other.server
-      && this->uri < other.uri
-      && this->db < other.db
-      && this->table < other.table
-      && this->column < other.column;
+      || OPTIONAL_FIELD_LT(uri)
+      || OPTIONAL_FIELD_LT(db)
+      || OPTIONAL_FIELD_LT(table)
+      || OPTIONAL_FIELD_LT(column);
 }
+
+#undef OPTIONAL_FIELD_LT
 
 } // namespace sentry

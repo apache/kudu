@@ -78,4 +78,5 @@ if (NOT NO_TESTS)
 
   ADD_KUDU_TEST(sentry_action-test)
   ADD_KUDU_TEST(sentry_client-test)
+  ADD_KUDU_TEST(thrift_operators-test)
 endif()
