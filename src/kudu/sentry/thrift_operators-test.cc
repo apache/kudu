@@ -65,32 +65,48 @@ TEST(ThriftOperatorsTest, TestOperatorLt) {
   ASSERT_EQ(2, groups.size()) << groups;
 
   // TSentryPrivilege::operator<
+  const string kServer = "server1";
+  const string kDatabase = "db1";
+
   TSentryPrivilege db_priv;
-  db_priv.__set_serverName("server1");
-  db_priv.__set_dbName("db1");
+  db_priv.__set_serverName(kServer);
+  db_priv.__set_dbName(kDatabase);
 
-  TSentryPrivilege tbl_priv;
-  tbl_priv.__set_serverName("server1");
-  tbl_priv.__set_dbName("db1");
-  tbl_priv.__set_tableName("tbl1");
+  TSentryPrivilege tbl1_priv;
+  tbl1_priv.__set_serverName(kServer);
+  tbl1_priv.__set_dbName(kDatabase);
+  tbl1_priv.__set_tableName("tbl1");
 
-  NO_FATALS(AssertCompareRequirements(db_priv, tbl_priv));
-  set<TSentryPrivilege> privileges { db_priv, tbl_priv };
-  ASSERT_EQ(2, privileges.size()) << privileges;
+  TSentryPrivilege tbl2_priv;
+  tbl2_priv.__set_serverName(kServer);
+  tbl2_priv.__set_dbName(kDatabase);
+  tbl2_priv.__set_tableName("tbl2");
 
+  NO_FATALS(AssertCompareRequirements(db_priv, tbl1_priv));
+  NO_FATALS(AssertCompareRequirements(db_priv, tbl2_priv));
+  NO_FATALS(AssertCompareRequirements(tbl1_priv, tbl2_priv));
+  set<TSentryPrivilege> privileges { db_priv, tbl1_priv, tbl2_priv };
+  ASSERT_EQ(3, privileges.size()) << privileges;
 
   // TSentryAuthorizable::operator<
   TSentryAuthorizable db_authorizable;
-  db_authorizable.__set_server("server1");
-  db_authorizable.__set_db("db1");
+  db_authorizable.__set_server(kServer);
+  db_authorizable.__set_db(kDatabase);
 
-  TSentryAuthorizable tbl_authorizable;
-  tbl_authorizable.__set_server("server1");
-  tbl_authorizable.__set_db("db1");
-  tbl_authorizable.__set_table("tbl1");
+  TSentryAuthorizable tbl1_authorizable;
+  tbl1_authorizable.__set_server(kServer);
+  tbl1_authorizable.__set_db(kDatabase);
+  tbl1_authorizable.__set_table("tbl1");
 
-  NO_FATALS(AssertCompareRequirements(db_authorizable, tbl_authorizable));
-  set<TSentryAuthorizable> authorizables { db_authorizable, tbl_authorizable };
-  ASSERT_EQ(2, authorizables.size()) << authorizables;
+  TSentryAuthorizable tbl2_authorizable;
+  tbl2_authorizable.__set_server(kServer);
+  tbl2_authorizable.__set_db(kDatabase);
+  tbl2_authorizable.__set_table("tbl2");
+
+  NO_FATALS(AssertCompareRequirements(db_authorizable, tbl1_authorizable));
+  NO_FATALS(AssertCompareRequirements(db_authorizable, tbl2_authorizable));
+  NO_FATALS(AssertCompareRequirements(tbl1_authorizable, tbl2_authorizable));
+  set<TSentryAuthorizable> authorizables { db_authorizable, tbl1_authorizable, tbl2_authorizable };
+  ASSERT_EQ(3, authorizables.size()) << authorizables;
 }
 } // namespace sentry
