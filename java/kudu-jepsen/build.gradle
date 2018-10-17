@@ -17,15 +17,6 @@
 
 apply plugin: "nebula.clojure"
 
-// Skip kudu-jepsen module tasks unless "Jepsen" property is passed.
-if (!project.hasProperty("jepsen")) {
-  gradle.taskGraph.whenReady {
-    gradle.taskGraph.allTasks.each {
-      it.onlyIf { it.project != project }
-    }
-  }
-}
-
 repositories {
   maven { url "http://clojars.org/repo/" }
 }
