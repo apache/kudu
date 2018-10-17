@@ -44,6 +44,7 @@
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/tablet/local_tablet_writer.h"
+#include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/mini_tablet_server.h"
@@ -133,10 +134,22 @@ void TabletServerTestBase::StartTabletServer(int num_data_dirs) {
 Status TabletServerTestBase::WaitForTabletRunning(const char *tablet_id) {
   scoped_refptr<tablet::TabletReplica> tablet_replica;
   const auto* tablet_manager = mini_server_->server()->tablet_manager();
+  const auto kTimeout = MonoDelta::FromSeconds(10);
   RETURN_NOT_OK(tablet_manager->GetTabletReplica(tablet_id, &tablet_replica));
-  RETURN_NOT_OK(tablet_replica->WaitUntilConsensusRunning(MonoDelta::FromSeconds(10)));
+  RETURN_NOT_OK(tablet_replica->WaitUntilConsensusRunning(kTimeout));
   RETURN_NOT_OK(
-      tablet_replica->consensus()->WaitUntilLeaderForTests(MonoDelta::FromSeconds(10)));
+      tablet_replica->consensus()->WaitUntilLeaderForTests(kTimeout));
+
+  // KUDU-2463: Even though the tablet thinks its leader, for correctness, it
+  // must wait to finish replicating its no-op (even as a single replica)
+  // before being available to scans.
+  MonoTime deadline = MonoTime::Now() + kTimeout;
+  while (!tablet_replica->tablet()->mvcc_manager()->CheckIsSafeTimeInitialized().ok()) {
+    if (MonoTime::Now() >= deadline) {
+      return Status::TimedOut("mvcc did not advance safe time within timeout");
+    }
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
 
   // KUDU-2444: Even though the tablet replica is fully running, the tablet
   // manager may regard it as still transitioning to the running state.
