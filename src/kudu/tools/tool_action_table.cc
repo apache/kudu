@@ -71,6 +71,7 @@ using client::KuduScanTokenBuilder;
 using client::KuduTable;
 using client::KuduTableAlterer;
 using client::internal::ReplicaController;
+using std::cerr;
 using std::cout;
 using std::endl;
 using std::string;
@@ -204,7 +205,9 @@ Status LocateRow(const RunnerContext& context) {
   JsonReader reader(row_str);
   RETURN_NOT_OK(reader.Init());
   vector<const rapidjson::Value*> values;
-  RETURN_NOT_OK(reader.ExtractObjectArray(reader.root(), nullptr, &values));
+  RETURN_NOT_OK(reader.ExtractObjectArray(reader.root(),
+                                          /*field=*/nullptr,
+                                          &values));
 
   const auto& schema = table->schema();
   vector<int> key_indexes;
@@ -230,7 +233,7 @@ Status LocateRow(const RunnerContext& context) {
       case KuduColumnSchema::UNIXTIME_MICROS: {
         int64_t value;
         RETURN_NOT_OK_PREPEND(
-            reader.ExtractInt64(values[i], nullptr, &value),
+            reader.ExtractInt64(values[i], /*field=*/nullptr, &value),
             Substitute("unable to parse value for column '$0' of type $1",
                        col_name,
                        KuduColumnSchema::DataTypeToString(type)));
@@ -244,7 +247,7 @@ Status LocateRow(const RunnerContext& context) {
       case KuduColumnSchema::STRING: {
         string value;
         RETURN_NOT_OK_PREPEND(
-            reader.ExtractString(values[i], nullptr, &value),
+            reader.ExtractString(values[i], /*field=*/nullptr, &value),
             Substitute("unable to parse value for column '$0' of type $1",
                        col_name,
                        KuduColumnSchema::DataTypeToString(type)));
@@ -286,9 +289,14 @@ Status LocateRow(const RunnerContext& context) {
     return Status::NotFound("row does not belong to any currently existing tablet");
   }
   if (tokens.size() > 1) {
-    // This should be impossible.
-    return Status::IllegalState(
-        "all primary key columns specified but more than one matching tablet?");
+    // This should be impossible. But if it does happen, we'd like to know what
+    // all the matching tablets were.
+    for (const auto& token : tokens) {
+      cerr << token->tablet().id() << endl;
+    }
+    return Status::IllegalState(Substitute(
+          "all primary key columns specified but found $0 matching tablets!",
+          tokens.size()));
   }
   cout << tokens[0]->tablet().id() << endl;
 

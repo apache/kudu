@@ -1502,7 +1502,7 @@ TEST_F(AdminCliTest, TestLocateRow) {
   }, &stdout, &stderr);
   ASSERT_TRUE(s.ok()) << ToolRunInfo(s, stdout, stderr);
 
-  // Grab list of tablet_ids from any tserver and check the output.
+  // Grab list of tablet_ids from the tserver and check the output.
   vector<TServerDetails*> tservers;
   vector<string> tablet_ids;
   AppendValuesFromMap(tablet_servers_, &tservers);
@@ -1512,45 +1512,30 @@ TEST_F(AdminCliTest, TestLocateRow) {
   ASSERT_EQ(1, tablet_ids.size());
   ASSERT_STR_CONTAINS(stdout, tablet_ids[0]);
 
-  // Test a couple of error cases.
+  // Test a few error cases.
+  const auto check_bad_input = [&](const string& json, const string& error) {
+    string out, err;
+    Status s = RunKuduTool({
+      "table",
+      "locate_row",
+      cluster_->master()->bound_rpc_addr().ToString(),
+      kTableId,
+      json,
+    }, &out, &err);
+    ASSERT_TRUE(s.IsRuntimeError());
+    ASSERT_STR_CONTAINS(err, error);
+  };
+
   // String instead of int.
-  stdout.clear();
-  stderr.clear();
-  s = RunKuduTool({
-    "table",
-    "locate_row",
-    cluster_->master()->bound_rpc_addr().ToString(),
-    kTableId,
-    "[\"foo\"]"
-  }, &stdout, &stderr);
-  ASSERT_TRUE(s.IsRuntimeError());
-  ASSERT_STR_CONTAINS(stderr, "unable to parse");
+  NO_FATALS(check_bad_input("[\"foo\"]", "unable to parse"));
 
   // Float instead of int.
-  stdout.clear();
-  stderr.clear();
-  s = RunKuduTool({
-    "table",
-    "locate_row",
-    cluster_->master()->bound_rpc_addr().ToString(),
-    kTableId,
-    "[1.2]"
-  }, &stdout, &stderr);
-  ASSERT_TRUE(s.IsRuntimeError());
-  ASSERT_STR_CONTAINS(stderr, "unable to parse");
+  NO_FATALS(check_bad_input("[1.2]", "unable to parse"));
 
   // Overflow (recall the key is INT32).
-  stdout.clear();
-  stderr.clear();
-  s = RunKuduTool({
-    "table",
-    "locate_row",
-    cluster_->master()->bound_rpc_addr().ToString(),
-    kTableId,
-    Substitute("[$0]", std::to_string(std::numeric_limits<int64_t>::max()))
-  }, &stdout, &stderr);
-  ASSERT_TRUE(s.IsRuntimeError());
-  ASSERT_STR_CONTAINS(stderr, "out of range");
+  NO_FATALS(check_bad_input(
+      Substitute("[$0]", std::to_string(std::numeric_limits<int64_t>::max())),
+      "out of range"));
 }
 
 TEST_F(AdminCliTest, TestLocateRowMore) {
@@ -1608,7 +1593,7 @@ TEST_F(AdminCliTest, TestLocateRowMore) {
     "locate_row",
     cluster_->master()->bound_rpc_addr().ToString(),
     kAnotherTableId,
-    "[\"foo\",0]"
+    "[\"foo bar\",0]"
   }, &stdout, &stderr);
   ASSERT_TRUE(s.ok()) << ToolRunInfo(s, stdout, stderr);
   StripWhiteSpace(&stdout);
@@ -1633,117 +1618,50 @@ TEST_F(AdminCliTest, TestLocateRowMore) {
       << "expected to find tablet id " << tablet_id_for_2;
   ASSERT_NE(tablet_id_for_0, tablet_id_for_2);
 
+  // Test a few error cases.
+  const auto check_bad_input = [&](const string& json, const string& error) {
+    string out, err;
+    Status s = RunKuduTool({
+      "table",
+      "locate_row",
+      cluster_->master()->bound_rpc_addr().ToString(),
+      kAnotherTableId,
+      json,
+    }, &out, &err);
+    ASSERT_TRUE(s.IsRuntimeError());
+    ASSERT_STR_CONTAINS(err, error);
+  };
+
   // Test locating a row lying in a non-covered range.
-  stdout.clear();
-  stderr.clear();
-  s = RunKuduTool({
-    "table",
-    "locate_row",
-    cluster_->master()->bound_rpc_addr().ToString(),
-    kAnotherTableId,
-    "[\"foo\",1]"
-  }, &stdout, &stderr);
-  ASSERT_TRUE(s.IsRuntimeError()) << ToolRunInfo(s, stdout, stderr);
-  ASSERT_STR_CONTAINS(stderr, "row does not belong to any currently existing tablet");
+  NO_FATALS(check_bad_input(
+      "[\"foo\",1]",
+      "row does not belong to any currently existing tablet"));
 
   // Test providing a missing or incomplete primary key.
-  stdout.clear();
-  stderr.clear();
-  s = RunKuduTool({
-    "table",
-    "locate_row",
-    cluster_->master()->bound_rpc_addr().ToString(),
-    kAnotherTableId,
-    "[]"
-  }, &stdout, &stderr);
-  ASSERT_TRUE(s.IsRuntimeError()) << ToolRunInfo(s, stdout, stderr);
-  ASSERT_STR_CONTAINS(
-      stderr,
-      "wrong number of key columns specified: expected 2 but received 0");
-
-  stdout.clear();
-  stderr.clear();
-  s = RunKuduTool({
-    "table",
-    "locate_row",
-    cluster_->master()->bound_rpc_addr().ToString(),
-    kAnotherTableId,
-    "[\"foo\"]"
-  }, &stdout, &stderr);
-  ASSERT_TRUE(s.IsRuntimeError()) << ToolRunInfo(s, stdout, stderr);
-  ASSERT_STR_CONTAINS(
-      stderr,
-      "wrong number of key columns specified: expected 2 but received 1");
-
-  stdout.clear();
-  stderr.clear();
-  s = RunKuduTool({
-    "table",
-    "locate_row",
-    cluster_->master()->bound_rpc_addr().ToString(),
-    kAnotherTableId,
-    "[\"foo\",]"
-  }, &stdout, &stderr);
-  ASSERT_TRUE(s.IsRuntimeError()) << ToolRunInfo(s, stdout, stderr);
-  ASSERT_STR_CONTAINS(
-      stderr,
-      "JSON text is corrupt");
+  NO_FATALS(check_bad_input(
+      "[]",
+      "wrong number of key columns specified: expected 2 but received 0"));
+  NO_FATALS(check_bad_input(
+      "[\"foo\"]",
+      "wrong number of key columns specified: expected 2 but received 1"));
 
   // Test providing too many key column values.
-  stdout.clear();
-  stderr.clear();
-  s = RunKuduTool({
-    "table",
-    "locate_row",
-    cluster_->master()->bound_rpc_addr().ToString(),
-    kAnotherTableId,
-    "[\"foo\",2,\"bar\"]"
-  }, &stdout, &stderr);
-  ASSERT_TRUE(s.IsRuntimeError()) << ToolRunInfo(s, stdout, stderr);
-  ASSERT_STR_CONTAINS(
-      stderr,
-      "wrong number of key columns specified: expected 2 but received 3");
+  NO_FATALS(check_bad_input(
+      "[\"foo\",2,\"bar\"]",
+      "wrong number of key columns specified: expected 2 but received 3"));
 
   // Test providing an invalid value for a key column when there's multiple
   // key columns.
-  stdout.clear();
-  stderr.clear();
-  s = RunKuduTool({
-    "table",
-    "locate_row",
-    cluster_->master()->bound_rpc_addr().ToString(),
-    kAnotherTableId,
-    "[\"foo\",\"bar\"]"
-  }, &stdout, &stderr);
-  ASSERT_TRUE(s.IsRuntimeError()) << ToolRunInfo(s, stdout, stderr);
-  ASSERT_STR_CONTAINS(stderr, "unable to parse");
+  NO_FATALS(check_bad_input("[\"foo\",\"bar\"]", "unable to parse"));
 
   // Test providing bad json.
-  stdout.clear();
-  stderr.clear();
-  s = RunKuduTool({
-    "table",
-    "locate_row",
-    cluster_->master()->bound_rpc_addr().ToString(),
-    kAnotherTableId,
-    "["
-  }, &stdout, &stderr);
-  ASSERT_TRUE(s.IsRuntimeError()) << ToolRunInfo(s, stdout, stderr);
-  ASSERT_STR_CONTAINS(stderr, "JSON text is corrupt");
+  NO_FATALS(check_bad_input("[", "JSON text is corrupt"));
+  NO_FATALS(check_bad_input("[\"foo\",]", "JSON text is corrupt"));
 
   // Test providing valid JSON that's not an array.
-  stdout.clear();
-  stderr.clear();
-  s = RunKuduTool({
-    "table",
-    "locate_row",
-    cluster_->master()->bound_rpc_addr().ToString(),
-    kAnotherTableId,
-    "{ \"key_hash\" : \"foo\", \"key_range\" : 2 }"
-  }, &stdout, &stderr);
-  ASSERT_TRUE(s.IsRuntimeError()) << ToolRunInfo(s, stdout, stderr);
-  ASSERT_STR_CONTAINS(stderr,
-                      "Wrong type during field extraction: expected object array");
+  NO_FATALS(check_bad_input(
+      "{ \"key_hash\" : \"foo\", \"key_range\" : 2 }",
+      "Wrong type during field extraction: expected object array"));
 }
 
 TEST_F(AdminCliTest, TestLocateRowAndCheckRowPresence) {
@@ -1794,8 +1712,10 @@ TEST_F(AdminCliTest, TestLocateRowAndCheckRowPresence) {
 
   // Test the case when the row exists. Since the scan is done by a subprocess
   // using a different client instance, it's possible the scan will not
-  // immediately retrieve the row even though the write has already succeeded,
-  // so we ASSERT_EVENTUALLY.
+  // immediately retrieve the row even though the write has already succeeded.
+  // This use case is what timestamp propagation is for, but there's no way to
+  // propagate a timestamp to a tool (and there shouldn't be). Instead, we
+  // ASSERT_EVENTUALLY.
   ASSERT_EVENTUALLY([&]() {
     stdout.clear();
     stderr.clear();
