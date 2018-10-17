@@ -43,6 +43,19 @@ using apache::thrift::protocol::TMultiplexedProtocol;
 using apache::thrift::transport::TTransportException;
 using kudu::thrift::CreateClientProtocol;
 using kudu::thrift::SaslException;
+using sentry::SentryPolicyServiceClient;
+using sentry::TAlterSentryRoleAddGroupsRequest;
+using sentry::TAlterSentryRoleAddGroupsResponse;
+using sentry::TAlterSentryRoleGrantPrivilegeRequest;
+using sentry::TAlterSentryRoleGrantPrivilegeResponse;
+using sentry::TCreateSentryRoleRequest;
+using sentry::TCreateSentryRoleResponse;
+using sentry::TDropSentryRoleRequest;
+using sentry::TDropSentryRoleResponse;
+using sentry::TListSentryPrivilegesRequest;
+using sentry::TListSentryPrivilegesResponse;
+using sentry::TSentryResponseStatus;
+using sentry::g_sentry_common_service_constants;
 using std::make_shared;
 using strings::Substitute;
 
@@ -56,28 +69,27 @@ const char* const SentryClient::kServiceName = "Sentry";
 const int kSlowExecutionWarningThresholdMs = 1000;
 
 namespace {
-Status ConvertStatus(const ::sentry::TSentryResponseStatus& status) {
-  const auto& constants = ::sentry::g_sentry_common_service_constants;
+Status ConvertStatus(const TSentryResponseStatus& status) {
   // A switch isn't possible because these values aren't generated as real constants.
-  if (status.value == constants.TSENTRY_STATUS_OK) {
+  if (status.value == g_sentry_common_service_constants.TSENTRY_STATUS_OK) {
     return Status::OK();
   }
-  if (status.value == constants.TSENTRY_STATUS_ALREADY_EXISTS) {
+  if (status.value == g_sentry_common_service_constants.TSENTRY_STATUS_ALREADY_EXISTS) {
     return Status::AlreadyPresent(status.message, status.stack);
   }
-  if (status.value == constants.TSENTRY_STATUS_NO_SUCH_OBJECT) {
+  if (status.value == g_sentry_common_service_constants.TSENTRY_STATUS_NO_SUCH_OBJECT) {
     return Status::NotFound(status.message, status.stack);
   }
-  if (status.value == constants.TSENTRY_STATUS_RUNTIME_ERROR) {
+  if (status.value == g_sentry_common_service_constants.TSENTRY_STATUS_RUNTIME_ERROR) {
     return Status::RuntimeError(status.message, status.stack);
   }
-  if (status.value == constants.TSENTRY_STATUS_INVALID_INPUT) {
+  if (status.value == g_sentry_common_service_constants.TSENTRY_STATUS_INVALID_INPUT) {
     return Status::InvalidArgument(status.message, status.stack);
   }
-  if (status.value == constants.TSENTRY_STATUS_ACCESS_DENIED) {
+  if (status.value == g_sentry_common_service_constants.TSENTRY_STATUS_ACCESS_DENIED) {
     return Status::NotAuthorized(status.message, status.stack);
   }
-  if (status.value == constants.TSENTRY_STATUS_THRIFT_VERSION_MISMATCH) {
+  if (status.value == g_sentry_common_service_constants.TSENTRY_STATUS_THRIFT_VERSION_MISMATCH) {
     return Status::NotSupported(status.message, status.stack);
   }
   LOG(WARNING) << "Unknown error code in Sentry status: " << status;
@@ -109,7 +121,7 @@ Status ConvertStatus(const ::sentry::TSentryResponseStatus& status) {
   }
 
 SentryClient::SentryClient(const HostPort& address, const thrift::ClientOptions& options)
-      : client_(::sentry::SentryPolicyServiceClient(
+      : client_(SentryPolicyServiceClient(
             make_shared<TMultiplexedProtocol>(CreateClientProtocol(address, options),
                                               "SentryPolicyService"))) {
 }
@@ -136,25 +148,24 @@ bool SentryClient::IsConnected() {
   return client_.getInputProtocol()->getTransport()->isOpen();
 }
 
-Status SentryClient::CreateRole(const ::sentry::TCreateSentryRoleRequest& request) {
+Status SentryClient::CreateRole(const TCreateSentryRoleRequest& request) {
   SCOPED_LOG_SLOW_EXECUTION(WARNING, kSlowExecutionWarningThresholdMs, "create Sentry role");
-  ::sentry::TCreateSentryRoleResponse response;
+  TCreateSentryRoleResponse response;
   SENTRY_RET_NOT_OK(client_.create_sentry_role(response, request),
                     response.status, "failed to create Sentry role");
   return Status::OK();
 }
 
-Status SentryClient::DropRole(const ::sentry::TDropSentryRoleRequest& request) {
+Status SentryClient::DropRole(const TDropSentryRoleRequest& request) {
   SCOPED_LOG_SLOW_EXECUTION(WARNING, kSlowExecutionWarningThresholdMs, "drop Sentry role");
-  ::sentry::TDropSentryRoleResponse response;
+  TDropSentryRoleResponse response;
   SENTRY_RET_NOT_OK(client_.drop_sentry_role(response, request),
                     response.status, "failed to drop Sentry role");
   return Status::OK();
 }
 
-Status SentryClient::ListPrivilegesByUser(
-    const ::sentry::TListSentryPrivilegesRequest& request,
-    ::sentry::TListSentryPrivilegesResponse* response)  {
+Status SentryClient::ListPrivilegesByUser(const TListSentryPrivilegesRequest& request,
+                                          TListSentryPrivilegesResponse* response)  {
   SCOPED_LOG_SLOW_EXECUTION(WARNING, kSlowExecutionWarningThresholdMs,
                             "list Sentry privilege by user");
   SENTRY_RET_NOT_OK(client_.list_sentry_privileges_by_user_and_itsgroups(*response, request),
@@ -162,9 +173,8 @@ Status SentryClient::ListPrivilegesByUser(
   return Status::OK();
 }
 
-Status SentryClient::AlterRoleAddGroups(
-    const ::sentry::TAlterSentryRoleAddGroupsRequest& request,
-    ::sentry::TAlterSentryRoleAddGroupsResponse* response)  {
+Status SentryClient::AlterRoleAddGroups(const TAlterSentryRoleAddGroupsRequest& request,
+                                        TAlterSentryRoleAddGroupsResponse* response)  {
   SCOPED_LOG_SLOW_EXECUTION(WARNING, kSlowExecutionWarningThresholdMs,
                             "alter Sentry role add groups");
   SENTRY_RET_NOT_OK(client_.alter_sentry_role_add_groups(*response, request),
@@ -172,9 +182,8 @@ Status SentryClient::AlterRoleAddGroups(
   return Status::OK();
 }
 
-Status SentryClient::AlterRoleGrantPrivilege(
-    const ::sentry::TAlterSentryRoleGrantPrivilegeRequest& request,
-    ::sentry::TAlterSentryRoleGrantPrivilegeResponse* response)  {
+Status SentryClient::AlterRoleGrantPrivilege(const TAlterSentryRoleGrantPrivilegeRequest& request,
+                                             TAlterSentryRoleGrantPrivilegeResponse* response)  {
   SCOPED_LOG_SLOW_EXECUTION(WARNING, kSlowExecutionWarningThresholdMs,
                             "alter Sentry role grant privileges");
   SENTRY_RET_NOT_OK(client_.alter_sentry_role_grant_privilege(*response, request),

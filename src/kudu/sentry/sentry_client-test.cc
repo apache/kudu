@@ -35,6 +35,17 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+using sentry::TAlterSentryRoleAddGroupsRequest;
+using sentry::TAlterSentryRoleAddGroupsResponse;
+using sentry::TAlterSentryRoleGrantPrivilegeRequest;
+using sentry::TAlterSentryRoleGrantPrivilegeResponse;
+using sentry::TCreateSentryRoleRequest;
+using sentry::TDropSentryRoleRequest;
+using sentry::TListSentryPrivilegesRequest;
+using sentry::TListSentryPrivilegesResponse;
+using sentry::TSentryAuthorizable;
+using sentry::TSentryGroup;
+using sentry::TSentryPrivilege;
 using std::set;
 using std::string;
 using std::unique_ptr;
@@ -106,12 +117,12 @@ TEST_P(SentryClientTest, TestMiniSentryLifecycle) {
                          sentry_client_opts));
   auto smoketest = [&]() -> Status {
     return client.Execute([](SentryClient* client) -> Status {
-        ::sentry::TCreateSentryRoleRequest create_req;
+        TCreateSentryRoleRequest create_req;
         create_req.requestorUserName = "test-admin";
         create_req.roleName = "test-role";
         RETURN_NOT_OK(client->CreateRole(create_req));
 
-        ::sentry::TDropSentryRoleRequest drop_req;
+        TDropSentryRoleRequest drop_req;
         drop_req.requestorUserName = "test-admin";
         drop_req.roleName = "test-role";
         RETURN_NOT_OK(client->DropRole(drop_req));
@@ -137,7 +148,7 @@ TEST_P(SentryClientTest, TestMiniSentryLifecycle) {
 TEST_P(SentryClientTest, TestCreateDropRole) {
 
   { // Create a role
-    ::sentry::TCreateSentryRoleRequest req;
+    TCreateSentryRoleRequest req;
     req.requestorUserName = "test-admin";
     req.roleName = "viewer";
     ASSERT_OK(sentry_client_->CreateRole(req));
@@ -148,7 +159,7 @@ TEST_P(SentryClientTest, TestCreateDropRole) {
   }
 
   { // Attempt to create a role as a non-admin user.
-    ::sentry::TCreateSentryRoleRequest req;
+    TCreateSentryRoleRequest req;
     req.requestorUserName = "joe-interloper";
     req.roleName = "fuzz";
     Status s = sentry_client_->CreateRole(req);
@@ -156,7 +167,7 @@ TEST_P(SentryClientTest, TestCreateDropRole) {
   }
 
   { // Attempt to drop the role as a non-admin user.
-    ::sentry::TDropSentryRoleRequest req;
+    TDropSentryRoleRequest req;
     req.requestorUserName = "joe-interloper";
     req.roleName = "viewer";
     Status s = sentry_client_->DropRole(req);
@@ -164,7 +175,7 @@ TEST_P(SentryClientTest, TestCreateDropRole) {
   }
 
   { // Drop the role
-    ::sentry::TDropSentryRoleRequest req;
+    TDropSentryRoleRequest req;
     req.requestorUserName = "test-admin";
     req.roleName = "viewer";
     ASSERT_OK(sentry_client_->DropRole(req));
@@ -180,15 +191,15 @@ TEST_P(SentryClientTest, TestCreateDropRole) {
 // instances.
 TEST_P(SentryClientTest, TestListPrivilege) {
   // Attempt to access Sentry privileges by a non admin user.
-  ::sentry::TSentryAuthorizable authorizable;
+  TSentryAuthorizable authorizable;
   authorizable.server = "server";
   authorizable.db = "db";
   authorizable.table = "table";
-  ::sentry::TListSentryPrivilegesRequest request;
+  TListSentryPrivilegesRequest request;
   request.requestorUserName = "joe-interloper";
   request.authorizableHierarchy = authorizable;
   request.__set_principalName("viewer");
-  ::sentry::TListSentryPrivilegesResponse response;
+  TListSentryPrivilegesResponse response;
   Status s = sentry_client_->ListPrivilegesByUser(request, &response);
   ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
 
@@ -214,13 +225,13 @@ TEST_P(SentryClientTest, TestListPrivilege) {
 TEST_P(SentryClientTest, TestGrantRole) {
   // Attempt to alter role by a non admin user.
 
-  ::sentry::TSentryGroup group;
+  TSentryGroup group;
   group.groupName = "user";
-  set<::sentry::TSentryGroup> groups;
+  set<TSentryGroup> groups;
   groups.insert(group);
 
-  ::sentry::TAlterSentryRoleAddGroupsRequest group_request;
-  ::sentry::TAlterSentryRoleAddGroupsResponse group_response;
+  TAlterSentryRoleAddGroupsRequest group_request;
+  TAlterSentryRoleAddGroupsResponse group_response;
   group_request.requestorUserName = "joe-interloper";
   group_request.roleName = "viewer";
   group_request.groups = groups;
@@ -234,7 +245,7 @@ TEST_P(SentryClientTest, TestGrantRole) {
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
 
   // Alter role 'viewer' to add group 'user'.
-  ::sentry::TCreateSentryRoleRequest role_request;
+  TCreateSentryRoleRequest role_request;
   role_request.requestorUserName = "test-admin";
   role_request.roleName = "viewer";
   ASSERT_OK(sentry_client_->CreateRole(role_request));
@@ -247,29 +258,29 @@ TEST_P(SentryClientTest, TestGrantRole) {
 TEST_P(SentryClientTest, TestGrantPrivilege) {
   // Alter role 'viewer' to add group 'user'.
 
-  ::sentry::TSentryGroup group;
+  TSentryGroup group;
   group.groupName = "user";
-  set<::sentry::TSentryGroup> groups;
+  set<TSentryGroup> groups;
   groups.insert(group);
 
-  ::sentry::TAlterSentryRoleAddGroupsRequest group_request;
-  ::sentry::TAlterSentryRoleAddGroupsResponse group_response;
+  TAlterSentryRoleAddGroupsRequest group_request;
+  TAlterSentryRoleAddGroupsResponse group_response;
   group_request.requestorUserName = "test-admin";
   group_request.roleName = "viewer";
   group_request.groups = groups;
 
-  ::sentry::TCreateSentryRoleRequest role_request;
+  TCreateSentryRoleRequest role_request;
   role_request.requestorUserName = "test-admin";
   role_request.roleName = "viewer";
   ASSERT_OK(sentry_client_->CreateRole(role_request));
   ASSERT_OK(sentry_client_->AlterRoleAddGroups(group_request, &group_response));
 
   // Attempt to alter role by a non admin user.
-  ::sentry::TAlterSentryRoleGrantPrivilegeRequest privilege_request;
-  ::sentry::TAlterSentryRoleGrantPrivilegeResponse privilege_response;
+  TAlterSentryRoleGrantPrivilegeRequest privilege_request;
+  TAlterSentryRoleGrantPrivilegeResponse privilege_response;
   privilege_request.requestorUserName = "joe-interloper";
   privilege_request.roleName = "viewer";
-  ::sentry::TSentryPrivilege privilege;
+  TSentryPrivilege privilege;
   privilege.serverName = "server";
   privilege.dbName = "db";
   privilege.tableName = "table";
