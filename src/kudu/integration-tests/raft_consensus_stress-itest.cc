@@ -121,12 +121,6 @@ TEST_F(RaftConsensusStressITest, RemoveReplaceInCycle) {
   const MonoDelta kTimeout = MonoDelta::FromSeconds(60 * kBuildCfgFactor);
   const MonoDelta kShortTimeout = MonoDelta::FromSeconds(1 * kBuildCfgFactor);
 
-  // Translate the replicas-per-server parameter into the catalog manager's
-  // --max_create_tablets_per_ts flag. Current logic in the catalog manager
-  // does not take into account the replication factor, that's why the
-  // additional division by kReplicationFactor.
-  const int kMaxCreateTabletsPerTs = kNumTablets / kReplicationFactor;
-
   // This test scenario induces a lot of faults/errors and it runs multiple
   // iterations. Tablet servers and master are too chatty in this case, logging
   // a lot of information. Setting --minloglevel=2 allow for logging only of
@@ -134,7 +128,7 @@ TEST_F(RaftConsensusStressITest, RemoveReplaceInCycle) {
   const vector<string> kMasterFlags = {
     Substitute("--minloglevel=$0", FLAGS_test_minloglevel),
     Substitute("--raft_prepare_replacement_before_eviction=$0", is_343_scheme),
-    Substitute("--max_create_tablets_per_ts=$0", kMaxCreateTabletsPerTs),
+    Substitute("--max_create_tablets_per_ts=$0", kNumTablets),
   };
   const vector<string> kTserverFlags = {
     Substitute("--minloglevel=$0", FLAGS_test_minloglevel),

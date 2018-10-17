@@ -139,8 +139,8 @@
 * The maximum number of tablets per tablet server is 2000, post-replication,
   but we recommend 1000 tablets or fewer per tablet server.
 
-* Maximum number of tablets per table for each tablet server is 60, post-replication,
-  at table-creation time.
+* Maximum number of tablets per table for each tablet server is 60,
+  post-replication (assuming the default replication factor of 3), at table-creation time.
 
 == Replication and Backup Limitations
 

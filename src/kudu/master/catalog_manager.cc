@@ -191,8 +191,9 @@ DEFINE_int32(catalog_manager_bg_task_wait_ms, 1000,
              "between runs");
 TAG_FLAG(catalog_manager_bg_task_wait_ms, hidden);
 
-DEFINE_int32(max_create_tablets_per_ts, 20,
-             "The number of tablets per TS that can be requested for a new table.");
+DEFINE_int32(max_create_tablets_per_ts, 60,
+             "The number of tablet replicas per TS that can be requested for a "
+             "new table. If 0, no limit is enforced.");
 TAG_FLAG(max_create_tablets_per_ts, advanced);
 
 DEFINE_int32(master_failover_catchup_timeout_ms, 30 * 1000, // 30 sec
@@ -1472,28 +1473,41 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
         resp, MasterErrorPB::ILLEGAL_REPLICATION_FACTOR);
   }
 
-  // Verify that the total number of tablets is reasonable, relative to the number
-  // of live tablet servers.
+  // Verify that the number of replicas isn't larger than the number of live tablet
+  // servers.
   TSDescriptorVector ts_descs;
   master_->ts_manager()->GetAllLiveDescriptors(&ts_descs);
   const auto num_live_tservers = ts_descs.size();
-  const auto max_tablets = FLAGS_max_create_tablets_per_ts * num_live_tservers;
-  if (num_replicas > 1 && max_tablets > 0 && partitions.size() > max_tablets) {
-    return SetupError(Status::InvalidArgument(Substitute(
-            "the requested number of tablets is over the maximum permitted at creation time ($0), "
-            "additional tablets may be added by adding range partitions to the table post-creation",
-            max_tablets)),
-        resp, MasterErrorPB::TOO_MANY_TABLETS);
-  }
-
-  // Verify that the number of replicas isn't larger than the number of live tablet
-  // servers.
   if (FLAGS_catalog_manager_check_ts_count_for_create_table && num_replicas > num_live_tservers) {
     // Note: this error message is matched against in master-stress-test.
     return SetupError(Status::InvalidArgument(Substitute(
             "not enough live tablet servers to create a table with the requested replication "
             "factor $0; $1 tablet servers are alive", req.num_replicas(), num_live_tservers)),
         resp, MasterErrorPB::REPLICATION_FACTOR_TOO_HIGH);
+  }
+
+  // Verify that the total number of replicas is reasonable.
+  //
+  // Table creation can generate a fair amount of load, both in the form of RPC
+  // traffic (due to Raft leader elections) and disk I/O (due to durably writing
+  // several files during both replica creation and leader elections).
+  //
+  // Ideally we would have more effective ways of mitigating this load (such
+  // as more efficient on-disk metadata management), but in lieu of that, we
+  // employ this coarse-grained check that prohibits up-front creation of too
+  // many replicas.
+  //
+  // Note: non-replicated tables are exempt because, by not using replication,
+  // they do not generate much of the load described above.
+  const auto max_replicas_total = FLAGS_max_create_tablets_per_ts * num_live_tservers;
+  if (num_replicas > 1 &&
+      max_replicas_total > 0 &&
+      partitions.size() * num_replicas > max_replicas_total) {
+    return SetupError(Status::InvalidArgument(Substitute(
+        "the requested number of tablet replicas is over the maximum permitted "
+        "at creation time ($0), additional tablets may be added by adding "
+        "range partitions to the table post-creation", max_replicas_total)),
+                      resp, MasterErrorPB::TOO_MANY_TABLETS);
   }
 
   // Warn if the number of live tablet servers is not enough to re-replicate
