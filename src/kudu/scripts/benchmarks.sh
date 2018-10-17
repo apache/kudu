@@ -429,15 +429,29 @@ parse_and_record_all_results() {
     num_bytes=`grep log_block_manager_bytes_under_management $log | cut -d ":" -f 5 | tr -d ' '`
     num_containers=`grep log_block_manager_containers $log | cut -d ":" -f 5 | tr -d ' '`
     num_full_containers=`grep log_block_manager_full_containers $log | cut -d ":" -f 5 | tr -d ' '`
+
+    # For some inexplicable reason, these timing measurements are sometimes
+    # not emitted to the log file. Having spent a great deal of time trying to
+    # figure out why, let's just skip missing measurements.
+    #
+    # This may cause resulting graphs to look a little sharp, but that's better
+    # than failing the entire script.
+    set +e
     time_restarting_tserver=`grep "Time spent restarting tserver" $log | ./parse_real_out.sh`
     time_bootstrapping_tablets=`grep "Time spent bootstrapping tablets" $log | ./parse_real_out.sh`
+    set -e
     record_result $BUILD_IDENTIFIER ${DENSE_NODE_ITEST}_num_threads $i $num_threads
     record_result $BUILD_IDENTIFIER ${DENSE_NODE_ITEST}_num_blocks $i $num_blocks
     record_result $BUILD_IDENTIFIER ${DENSE_NODE_ITEST}_num_bytes $i $num_bytes
     record_result $BUILD_IDENTIFIER ${DENSE_NODE_ITEST}_num_containers $i $num_containers
     record_result $BUILD_IDENTIFIER ${DENSE_NODE_ITEST}_num_full_containers $i $num_full_containers
-    record_result $BUILD_IDENTIFIER ${DENSE_NODE_ITEST}_time_restarting_tserver $i $time_restarting_tserver
-    record_result $BUILD_IDENTIFIER ${DENSE_NODE_ITEST}_time_bootstrapping_tablets $i $time_bootstrapping_tablets
+    if [ -n "$time_restarting_tserver" ]; then
+      record_result $BUILD_IDENTIFIER ${DENSE_NODE_ITEST}_time_restarting_tserver $i $time_restarting_tserver
+    fi
+    if [ -n "$time_bootstrapping_tablets" ]; then
+      record_result $BUILD_IDENTIFIER ${DENSE_NODE_ITEST}_time_bootstrapping_tablets $i $time_bootstrapping_tablets
+    fi
+
   done
 
   popd
