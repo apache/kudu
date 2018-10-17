@@ -25,15 +25,7 @@
 #   JAVA8_HOME          Default: /usr/lib/jvm/java-8-openjdk-amd64
 #     Path to the JDK8 installation root.  Expecting to find 'java'
 #     in the 'bin' sub-directory.  Java 8 or higher is required for the
-#     maven-clojure-plugin.
-#
-#   M2_HOME             Default: /usr/share/maven
-#     Path to the maven (3.3.6 and newer is required).
-#
-#   MVN_FLAGS           Default: ""
-#     Extra flags which are passed to 'mvn' when building and running Java
-#     tests. This can be useful, for example, to choose a different maven
-#     repository location.
+#     nebula-clojure-plugin.
 #
 #   KUDU_MASTER_NODES   Default: ""
 #     Set of master nodes for the Kudu cluster to run the Jepsen consistency
@@ -72,8 +64,6 @@ NUM_PROCS=$(getconf _NPROCESSORS_ONLN)
 
 BUILD_TYPE=${BUILD_TYPE:-debug}
 JAVA8_HOME=${JAVA8_HOME:-/usr/lib/jvm/java-8-openjdk-amd64}
-M2_HOME=${M2_HOME:-/usr/share/maven}
-MVN_FLAGS=${MVN_FLAGS:-}
 KUDU_MASTER_NODES=${KUDU_MASTER_NODES:-}
 KUDU_TSERVER_NODES=${KUDU_TSERVER_NODES:-}
 SSH_KEY=${SSH_KEY:-}
@@ -116,20 +106,20 @@ $SRC_ROOT/build-support/enable_devtoolset.sh $THIRDPARTY_BIN/cmake \
 make -j$NUM_PROCS 2>&1 | tee build.log
 
 export JAVA_HOME=$JAVA8_HOME
-export PATH=$JAVA_HOME/bin:$M2_HOME/bin:$PATH
+export PATH=$JAVA_HOME/bin:$PATH
 set -x
 
 pushd $SRC_ROOT/java
 echo
-echo "Building Kudu Java packages and installing into local mvn repository"
+echo "Building Kudu Java packages"
 echo "--------------------------------------------------------------------"
-mvn $MVN_FLAGS -Pjepsen -DskipTests clean install
+./gradlew clean assemble
 
 echo
 echo "Building and running kudu-jepsen consistency tests"
 echo "--------------------------------------------------------------------"
 pushd kudu-jepsen
-mvn $MVN_FLAGS clojure:run \
+./gradlew runJepsen \
   -DmasterNodes="$KUDU_MASTER_NODES" \
   -DtserverNodes="$KUDU_TSERVER_NODES" \
   -DsshKeyPath="$SSH_KEY" \

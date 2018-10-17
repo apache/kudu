@@ -46,11 +46,10 @@ To build the library the following components are required:
 
 * JDK 8
 
-To build the project and install necessary Java packages into the local Maven
-repository, run in the parent directory (i.e. `$KUDU_HOME/java`)
+To build the project, run in the parent directory (i.e. `$KUDU_HOME/java`)
 [listing]
 ----
-$ ./gradlew -Pjepsen clean install
+$ ./gradlew clean assemble
 ----
 
 === Running
@@ -78,14 +77,14 @@ If using SSH authentication agent to hold the SSH key for DB nodes access,
 run in the current directory:
 [listing]
 ----
-$ ./gradlew -Pjepsen runJepsen -DtserverNodes="t0,t1,t2,t3,t4" -DmasterNodes="m0"
+$ ./gradlew runJepsen -DtserverNodes="t0,t1,t2,t3,t4" -DmasterNodes="m0"
 ----
 
 If not using SSH authentication agent, specify the SSH key location via the
 `sshKeyPath` property:
 [listing]
 ----
-$ ./gradlew -Pjepsen runJepsen -DtserverNodes="t0,t1,t2,t3,t4" -DmasterNodes="m0" -DsshKeyPath="./vm_root_id_rsa"
+$ ./gradlew runJepsen -DtserverNodes="t0,t1,t2,t3,t4" -DmasterNodes="m0" -DsshKeyPath="./vm_root_id_rsa"
 ----
 
 Note that commas (not spaces) are used to separate the names of the nodes. The
@@ -134,7 +133,7 @@ summary message below reports on 10 errors in 10 tests ran:
 21:41:42 Ran 10  tests containing 10 assertions.
 21:41:42 0 failures, 10 errors.
 ----
-To get more details, take a closer look at the output of `./gradlew -Pjepsen runJepsen`
+To get more details, take a closer look at the output of `./gradlew runJepsen`
 or at particular `jepsen.log` files in
 `$KUDU_HOME/java/kudu-jepsen/store/rw-register/<test_timestamp>` directory. A
 quick way to locate the corresponding section in the error log is to search for
