@@ -1976,7 +1976,7 @@ TEST_F(AdminCliTest, TestLocateRowMore) {
   // Test providing valid JSON that's not an array.
   NO_FATALS(check_bad_input(
       "{ \"key_hash\" : \"foo\", \"key_range\" : 2 }",
-      "Wrong type during field extraction: expected object array"));
+      "wrong type during field extraction: expected object array"));
 }
 
 TEST_F(AdminCliTest, TestLocateRowAndCheckRowPresence) {

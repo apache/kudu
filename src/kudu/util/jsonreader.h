@@ -72,6 +72,10 @@ class JsonReader {
                        const char* field,
                        std::string* result) const;
 
+  Status ExtractDouble(const rapidjson::Value* object,
+                       const char* field,
+                       double* result) const;
+
   // 'result' is only valid for as long as JsonReader is alive.
   Status ExtractObject(const rapidjson::Value* object,
                        const char* field,
