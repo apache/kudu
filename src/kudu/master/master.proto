@@ -377,6 +377,8 @@ message TSInfoPB {
   required bytes permanent_uuid = 1;
 
   repeated HostPortPB rpc_addresses = 2;
+
+  optional string location = 3;
 }
 
 // Selector to specify policy for listing tablet replicas in

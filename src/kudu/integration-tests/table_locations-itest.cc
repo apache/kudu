@@ -20,6 +20,7 @@
 #include <utility>
 #include <vector>
 
+#include <gflags/gflags_declare.h>
 #include <gtest/gtest.h>
 
 #include "kudu/common/common.pb.h"
@@ -28,6 +29,7 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/mini_master.h"
@@ -36,6 +38,7 @@
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
+#include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -53,6 +56,8 @@ using std::string;
 using std::unique_ptr;
 using std::vector;
 
+DECLARE_string(location_mapping_cmd);
+
 namespace kudu {
 namespace master {
 
@@ -66,6 +71,8 @@ class TableLocationsTest : public KuduTest {
 
   void SetUp() override {
     KuduTest::SetUp();
+
+    SetUpConfig();
 
     InternalMiniClusterOptions opts;
     opts.num_tablet_servers = kNumTabletServers;
@@ -88,10 +95,15 @@ class TableLocationsTest : public KuduTest {
     KuduTest::TearDown();
   }
 
+  virtual void SetUpConfig() {}
+
   Status CreateTable(const string& table_name,
                      const Schema& schema,
                      const vector<KuduPartialRow>& split_rows,
                      const vector<pair<KuduPartialRow, KuduPartialRow>>& bounds);
+
+  // Check that the master doesn't give back partial results while the table is being created.
+  void CheckMasterTableCreation(const string &table_name, int tablet_locations_size);
 
   shared_ptr<Messenger> client_messenger_;
   unique_ptr<InternalMiniCluster> cluster_;
@@ -100,9 +112,9 @@ class TableLocationsTest : public KuduTest {
 
 Status TableLocationsTest::CreateTable(const string& table_name,
                                        const Schema& schema,
-                                       const vector<KuduPartialRow>& split_rows,
+                                       const vector<KuduPartialRow>& split_rows = {},
                                        const vector<pair<KuduPartialRow,
-                                                          KuduPartialRow>>& bounds) {
+                                                         KuduPartialRow>>& bounds = {}) {
 
   CreateTableRequestPB req;
   CreateTableResponsePB resp;
@@ -121,6 +133,43 @@ Status TableLocationsTest::CreateTable(const string& table_name,
 
   return proxy_->CreateTable(req, &resp, &controller);
 }
+
+void TableLocationsTest::CheckMasterTableCreation(const string &table_name,
+                                                  int tablet_locations_size) {
+  GetTableLocationsRequestPB req;
+  GetTableLocationsResponsePB resp;
+  RpcController controller;
+  req.mutable_table()->set_table_name(table_name);
+
+  for (int i = 1; ; i++) {
+    if (i > 10) {
+      FAIL() << "Create table timed out";
+    }
+
+    controller.Reset();
+    ASSERT_OK(proxy_->GetTableLocations(req, &resp, &controller));
+    SCOPED_TRACE(SecureDebugString(resp));
+
+    if (resp.has_error()) {
+      ASSERT_EQ(MasterErrorPB::TABLET_NOT_RUNNING, resp.error().code());
+      SleepFor(MonoDelta::FromMilliseconds(i * i * 100));
+    } else {
+      ASSERT_EQ(tablet_locations_size, resp.tablet_locations().size());
+      break;
+    }
+  }
+}
+
+// Test the tablet server location is properly set in the master GetTableLocations RPC.
+class TableLocationsWithTSLocationTest : public TableLocationsTest {
+ public:
+  void SetUpConfig() override {
+    const string location_cmd_path = JoinPathSegments(GetTestExecutableDirectory(),
+                                                      "scripts/first_argument.sh");
+    const string location = "/foo";
+    FLAGS_location_mapping_cmd = strings::Substitute("$0 $1", location_cmd_path, location);
+  }
+};
 
 // Test that when the client requests table locations for a non-covered
 // partition range, the master returns the first tablet previous to the begin
@@ -147,30 +196,7 @@ TEST_F(TableLocationsTest, TestGetTableLocations) {
 
   ASSERT_OK(CreateTable(table_name, schema, splits, bounds));
 
-  { // Check that the master doesn't give back partial results while the table is being created.
-    GetTableLocationsRequestPB req;
-    GetTableLocationsResponsePB resp;
-    RpcController controller;
-    req.mutable_table()->set_table_name(table_name);
-
-    for (int i = 1; ; i++) {
-      if (i > 10) {
-        FAIL() << "Create table timed out";
-      }
-
-      controller.Reset();
-      ASSERT_OK(proxy_->GetTableLocations(req, &resp, &controller));
-      SCOPED_TRACE(SecureDebugString(resp));
-
-      if (resp.has_error()) {
-        ASSERT_EQ(MasterErrorPB::TABLET_NOT_RUNNING, resp.error().code());
-        SleepFor(MonoDelta::FromMilliseconds(i * i * 100));
-      } else {
-        ASSERT_EQ(8, resp.tablet_locations().size());
-        break;
-      }
-    }
-  }
+  NO_FATALS(CheckMasterTableCreation(table_name, 8));
 
   { // from "a"
     GetTableLocationsRequestPB req;
@@ -236,6 +262,47 @@ TEST_F(TableLocationsTest, TestGetTableLocations) {
     ASSERT_TRUE(!resp.has_error());
     ASSERT_EQ(1, resp.tablet_locations().size());
     EXPECT_EQ("cc", resp.tablet_locations(0).partition().partition_key_start());
+  }
+
+  { // Check that the tablet server location should be an empty string if not set.
+    GetTableLocationsRequestPB req;
+    GetTableLocationsResponsePB resp;
+    RpcController controller;
+    req.mutable_table()->set_table_name(table_name);
+    req.set_max_returned_locations(1);
+    ASSERT_OK(proxy_->GetTableLocations(req, &resp, &controller));
+    SCOPED_TRACE(SecureDebugString(resp));
+
+    ASSERT_TRUE(!resp.has_error());
+    ASSERT_EQ(1, resp.tablet_locations().size());
+    ASSERT_EQ(3, resp.tablet_locations(0).replicas_size());
+    for (int i = 0; i < 3; i++) {
+      EXPECT_EQ("", resp.tablet_locations(0).replicas(i).ts_info().location());
+    }
+  }
+}
+
+TEST_F(TableLocationsWithTSLocationTest, TestGetTSLocation) {
+  const string table_name = "test";
+  Schema schema({ ColumnSchema("key", STRING) }, 1);
+  ASSERT_OK(CreateTable(table_name, schema));
+
+  NO_FATALS(CheckMasterTableCreation(table_name, 1));
+
+  {
+    GetTableLocationsRequestPB req;
+    GetTableLocationsResponsePB resp;
+    RpcController controller;
+    req.mutable_table()->set_table_name(table_name);
+    ASSERT_OK(proxy_->GetTableLocations(req, &resp, &controller));
+    SCOPED_TRACE(SecureDebugString(resp));
+
+    ASSERT_TRUE(!resp.has_error());
+    ASSERT_EQ(1, resp.tablet_locations().size());
+    ASSERT_EQ(3, resp.tablet_locations(0).replicas_size());
+    for (int i = 0; i < 3; i++) {
+      ASSERT_EQ("/foo", resp.tablet_locations(0).replicas(i).ts_info().location());
+    }
   }
 }
 

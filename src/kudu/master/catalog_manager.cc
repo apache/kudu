@@ -4447,6 +4447,7 @@ Status CatalogManager::BuildLocationsForTablet(
       ServerRegistrationPB reg;
       ts_desc->GetRegistration(&reg);
       tsinfo_pb->mutable_rpc_addresses()->Swap(reg.mutable_rpc_addresses());
+      if (ts_desc->location()) tsinfo_pb->set_location(*(ts_desc->location()));
     } else {
       // If we've never received a heartbeat from the tserver, we'll fall back
       // to the last known RPC address in the RaftPeerPB.
