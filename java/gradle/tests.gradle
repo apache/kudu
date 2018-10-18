@@ -61,7 +61,7 @@ tasks.withType(Test) {
   systemProperty "rerunFailingTestsCount", propertyWithDefault("rerunFailingTestsCount", 0)
 
   // Set kuduBinDir to the binaries to use with the MiniKuduCluster.
-  systemProperty "kuduBinDir", "$project.rootDir/../build/latest/bin"
+  systemProperty "kuduBinDir", propertyWithDefault("kuduBinDir", "$project.rootDir/../build/latest/bin")
 
   // Don't fail the build if a --tests filter doesn't match any tests.
   // This is useful for filtering tests from the top of the project where some
