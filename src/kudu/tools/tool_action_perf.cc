@@ -16,11 +16,15 @@
 // under the License.
 
 //
-// This is a small load generation tool which pushes data to a tablet
-// server as fast as possible. The table is supposed to be created already,
-// and this tool populates it with generated data. As an option, it's possible
-// to run a post-scan over the inserted rows to get total table row count
-// as reported by the scan operation.
+// This is a small load generation tool which generates and pushes data
+// to a Kudu cluster as fast as possible. In each run, the tool inserts data
+// into a single table. The table might exist already, and the tool then
+// populates it with generated data in accordance with the table schema.
+// The tool can also create a dedicated temporary table with pre-defined
+// schema. By default, dedicated temporary tables are dropped upon successful
+// completion of the tool, but they can be optionally preserved. Also,
+// a post-insertion scan may be run on the table to verify that the count
+// of the inserted rows matches the expected number.
 //
 // See below for examples of usage.
 //
@@ -30,14 +34,13 @@
 // of length 64 for binary and string fields
 // with Kudu master server listening on the default port at localhost:
 //
-//   kudu perf loadgen \
+//   kudu perf loadgen 127.0.0.1 \
 //     --num_threads=1 \
 //     --num_rows_per_thread=8000000 \
 //     --string_len=64 \
 //     --buffer_size_bytes=33554432 \
 //     --buffers_num=0 \
 //     --flush_per_n_rows=2000 \
-//     127.0.0.1
 //
 //
 // Run in AUTO_FLUSH_BACKGROUND mode, 2 threads inserting 4M rows each inserting
@@ -46,31 +49,29 @@
 // using the specified pre-set string for binary and string fields
 // with Kudu master server listening on the default port at localhost:
 //
-//   kudu perf loadgen \
+//   kudu perf loadgen 127.0.0.1 \
 //     --num_threads=2 \
 //     --num_rows_per_thread=4000000 \
 //     --string_fixed=012345678901234567890123456789012 \
 //     --buffer_size_bytes=1048576 \
 //     --buffer_flush_watermark_pct=0.125 \
-//     --buffers_num=8 \
-//     127.0.0.1
+//     --buffers_num=8
 //
 //
 // Run in AUTO_FLUSH_BACKGROUND mode, 4 threads inserting 2M rows each inserting
 // into auto-created table, with limit of 4 buffers max 64KB in size total,
 // having 25% for buffer flush watermark,
 // using the specified pre-set string for binary and string fields
-// with Kudu master server listening at 127.0.0.1:8765
+// with Kudu master server listening at default master RPC port at 127.0.0.1:
 //
-//   kudu perf loadgen \
+//   kudu perf loadgen 127.0.0.1 \
 //     --num_threads=4 \
 //     --num_rows_per_thread=2000000 \
 //     --string_fixed=0123456789 \
 //     --buffer_size_bytes=65536 \
 //     --buffers_num=4 \
 //     --buffer_flush_watermark_pct=0.25 \
-//     --table_name=bench_02 \
-//     127.0.0.1:8765
+//     --table_name=bench_02
 //
 //
 // Run with default parameter values for data generation and batching,
@@ -79,9 +80,8 @@
 // plus run post-insertion row scan to verify
 // that the count of the inserted rows matches the expected number:
 //
-//   kudu perf loadgen \
-//     --run_scan=true \
-//     127.0.0.1
+//   kudu perf loadgen 127.0.0.1 \
+//     --run_scan=true
 //
 //
 // If running the tool against already existing table multiple times,
@@ -108,7 +108,8 @@
 // partitioning, or both. Below are a few examples of this.
 //
 //   kudu perf loadgen 127.0.0.1 --num_threads=8 --num_rows_per_thread=1000 \
-//     --table_num_hash_partitions=1 --table_num_range_partitions=8 --use_random=false
+//     --table_num_hash_partitions=1 --table_num_range_partitions=8 \
+//     --use_random=false
 //
 // In the above example, a table with eight range partitions will be created,
 // each partition will be in charge of 1000 rows worth of values; for a
@@ -118,12 +119,14 @@
 // into a single range partition.
 //
 //   kudu perf loadgen 127.0.0.1 --num_threads=8 --num_rows_per_thread=1000 \
-//     --table_num_hash_partitions=8 --table_num_range_partitions=1 --use_random=false
+//     --table_num_hash_partitions=8 --table_num_range_partitions=1 \
+//     --use_random=false
 //
 // In the above example, a table with 8 hash partitions will be created.
 //
 //   kudu perf loadgen 127.0.0.1 --num_threads=8 --num_rows_per_thread=1000 \
-//     --table_num_hash_partitions=8 --table_num_range_partitions=8 --use_random=false
+//     --table_num_hash_partitions=8 --table_num_range_partitions=8 \
+//     --use_random=false
 //
 // In the above example, a table with a total of 64 tablets will be created.
 // The range partitioning splits will be the same as those in the
@@ -255,8 +258,8 @@ DEFINE_bool(keep_auto_table, false,
             "finishes. By default, the auto-generated table is dropped "
             "after successfully finishing the test. NOTE: this parameter "
             "has no effect if using already existing table "
-            "(see the '--table_name' flag): the existing tables nor their data "
-            "are never dropped/deleted.");
+            "(see the '--table_name' flag): neither the existing table "
+            "nor its data is ever dropped/deleted.");
 DEFINE_uint64(num_rows_per_thread, 1000,
               "Number of rows each thread generates and inserts; "
               "0 means unlimited. All rows generated by a thread are inserted "
@@ -771,17 +774,18 @@ unique_ptr<Mode> BuildPerfMode() {
       .AddOptionalParameter("string_fixed")
       .AddOptionalParameter("string_len")
       .AddOptionalParameter("table_name", boost::none, string(
-            "Name of an existing table to use for the test. The test will "
-            "determine the structure of the table schema and "
-            "populate it with data accordingly. If left empty, "
-            "the test automatically creates a table of pre-defined columnar "
-            "structure with unique name and uses it to insert "
-            "auto-generated data. The auto-created table is dropped "
-            "upon successful completion of the test if not overridden "
-            "by the '--keep_auto_table' flag. If running the test against "
-            "an already existing table, it's highly recommended to use a "
-            "dedicated table created just for testing purposes: "
-            "the existing table nor its data is never dropped/deleted."))
+          "Name of an existing table to use for the test. The test will "
+          "determine the structure of the table schema and "
+          "populate it with data accordingly. If left empty, "
+          "the test automatically creates a table of pre-defined columnar "
+          "structure with unique name and uses it to insert "
+          "auto-generated data. The auto-created table is dropped "
+          "upon successful completion of the test if not overridden "
+          "by the '--keep_auto_table' flag. If running the test against "
+          "an already existing table, it's recommended to use a dedicated "
+          "table created just for testing purposes: the tool doesn't delete "
+          "the rows it inserted into the table. Neither the existing table "
+          "nor its data is ever dropped/deleted."))
       .AddOptionalParameter("table_num_hash_partitions")
       .AddOptionalParameter("table_num_range_partitions")
       .AddOptionalParameter("table_num_replicas")
