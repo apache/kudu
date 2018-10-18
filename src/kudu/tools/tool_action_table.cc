@@ -257,6 +257,38 @@ Status LocateRow(const RunnerContext& context) {
                                           client::KuduValue::CopyString(value)));
         break;
       }
+      case KuduColumnSchema::BOOL: {
+        // As of the writing of this tool, BOOL is not a supported key column
+        // type, but just in case it becomes one, we pre-load support for it.
+        bool value;
+        RETURN_NOT_OK_PREPEND(
+            reader.ExtractBool(values[i], /*field=*/nullptr, &value),
+            Substitute("unable to parse value for column '$0' of type $1",
+                       col_name,
+                       KuduColumnSchema::DataTypeToString(type)));
+        predicates.emplace_back(
+            table->NewComparisonPredicate(col_name,
+                                          client::KuduPredicate::EQUAL,
+                                          client::KuduValue::FromBool(value)));
+        break;
+      }
+      case KuduColumnSchema::FLOAT:
+      case KuduColumnSchema::DOUBLE: {
+        // Like BOOL, as of the writing of this tool, floating point types are
+        // not supported for key columns, but we can pre-load support for them
+        // in case they become supported.
+        double value;
+        RETURN_NOT_OK_PREPEND(
+            reader.ExtractDouble(values[i], /*field=*/nullptr, &value),
+            Substitute("unable to parse value for column '$0' of type $1",
+                       col_name,
+                       KuduColumnSchema::DataTypeToString(type)));
+        predicates.emplace_back(
+            table->NewComparisonPredicate(col_name,
+                                          client::KuduPredicate::EQUAL,
+                                          client::KuduValue::FromDouble(value)));
+        break;
+      }
       case KuduColumnSchema::DECIMAL:
         return Status::NotSupported(
             Substitute("unsupported type $0 for key column '$1': "
