@@ -48,6 +48,7 @@
 #include "kudu/gutil/once.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/env.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/kernel_stack_watchdog.h"
 #include "kudu/util/logging.h"
@@ -139,7 +140,7 @@ static uint64_t GetInVoluntaryContextSwitches() {
 
 class ThreadMgr;
 
-__thread Thread* Thread::tls_ = NULL;
+__thread Thread* Thread::tls_ = nullptr;
 
 // Singleton instance of ThreadMgr. Only visible in this file, used only by Thread.
 // The Thread class adds a reference to thread_manager while it is supervising a thread so
@@ -177,6 +178,9 @@ class ThreadMgr {
   // Removes a thread from the supplied category. If the thread has
   // already been removed, this is a no-op.
   void RemoveThread(const pthread_t& pthread_id, const string& category);
+
+  // Metric callback for number of threads running. Also used for error messages.
+  uint64_t ReadThreadsRunning();
 
  private:
   // Container class for any details we want to capture about a thread
@@ -219,9 +223,8 @@ class ThreadMgr {
   uint64_t threads_started_metric_;
   uint64_t threads_running_metric_;
 
-  // Metric callbacks.
+  // Metric callback for number of threads started.
   uint64_t ReadThreadsStarted();
-  uint64_t ReadThreadsRunning();
 
   // Webpage callback; prints all threads by category.
   void ThreadPathHandler(const WebCallbackRegistry::WebRequest& req,
@@ -475,7 +478,7 @@ Status ThreadJoiner::Join() {
       // Unconditionally join before returning, to guarantee that any TLS
       // has been destroyed (pthread_key_create() destructors only run
       // after a pthread's user method has returned).
-      int ret = pthread_join(thread_->thread_, NULL);
+      int ret = pthread_join(thread_->thread_, nullptr);
       CHECK_EQ(ret, 0);
       thread_->joinable_ = false;
       return Status::OK();
@@ -553,9 +556,18 @@ Status Thread::StartThread(const std::string& category, const std::string& name,
   {
     SCOPED_LOG_SLOW_EXECUTION_PREFIX(WARNING, 500 /* ms */, log_prefix, "creating pthread");
     SCOPED_WATCH_STACK((flags & NO_STACK_WATCHDOG) ? 0 : 250);
-    int ret = pthread_create(&t->thread_, NULL, &Thread::SuperviseThread, t.get());
+    int ret = pthread_create(&t->thread_, nullptr, &Thread::SuperviseThread, t.get());
     if (ret) {
-      return Status::RuntimeError("Could not create thread", strerror(ret), ret);
+      string msg = "";
+      if (ret == EAGAIN) {
+        uint64_t rlimit_nproc = Env::Default()->GetResourceLimit(
+            Env::ResourceLimitType::RUNNING_THREADS_PER_EUID);
+        uint64_t num_threads = thread_manager->ReadThreadsRunning();
+        msg = Substitute(" ($0 Kudu-managed threads running in this process, "
+                         "$1 max processes allowed for current user)",
+                         num_threads, rlimit_nproc);
+      }
+      return Status::RuntimeError(Substitute("Could not create thread$0", msg), strerror(ret), ret);
     }
   }
 
@@ -603,7 +615,7 @@ void* Thread::SuperviseThread(void* arg) {
   t->functor_();
   pthread_cleanup_pop(true);
 
-  return NULL;
+  return nullptr;
 }
 
 void Thread::FinishThread(void* arg) {
