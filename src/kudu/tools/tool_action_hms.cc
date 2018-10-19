@@ -118,7 +118,7 @@ Status Init(const RunnerContext& context,
   // that the check and fix tools use the exact same master address
   // configuration that the masters do, otherwise the HMS table entries will
   // disagree on the master addresses property.
-  *master_addrs = GetMasterAddresses(**kudu_client);
+  *master_addrs = (*kudu_client)->GetMasterAddresses();
 
   if (FLAGS_hive_metastore_uris.empty()) {
     string hive_metastore_uris = (*kudu_client)->GetHiveMetastoreUris();

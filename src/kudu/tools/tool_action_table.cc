@@ -164,7 +164,7 @@ Status DescribeTable(const RunnerContext& context) {
 
   // The partition schema with current range partitions.
   vector<Partition> partitions;
-  RETURN_NOT_OK_PREPEND(ListPartitions(table, &partitions),
+  RETURN_NOT_OK_PREPEND(table->ListPartitions(&partitions),
                         "failed to retrieve current partitions");
   const auto& schema_internal = client::SchemaFromKuduSchema(schema);
   const auto& partition_schema = table->partition_schema();
@@ -181,7 +181,7 @@ Status DescribeTable(const RunnerContext& context) {
         partition_schema.RangePartitionDebugString(partition.range_key_start(),
                                                    partition.range_key_end(),
                                                    schema_internal);
-    partition_strs.push_back(std::move(range_partition_str));
+    partition_strs.emplace_back(std::move(range_partition_str));
   }
   cout << partition_schema.DisplayString(schema_internal, partition_strs)
        << endl;

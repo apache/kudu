@@ -63,9 +63,6 @@ class KuduTable;
 
 namespace tools {
 class LeaderMasterProxy;
-Status ListPartitions(const client::sp::shared_ptr<client::KuduTable>& table,
-                      std::vector<Partition>* partitions);
-std::string GetMasterAddresses(const client::KuduClient&);
 } // namespace tools
 
 namespace client {
@@ -77,7 +74,6 @@ class KuduPartitioner;
 class KuduScanBatch;
 class KuduSession;
 class KuduStatusCallback;
-class KuduTable;
 class KuduTableAlterer;
 class KuduTableCreator;
 class KuduTablet;
@@ -452,6 +448,15 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   Status GetTablet(const std::string& tablet_id,
                    KuduTablet** tablet) KUDU_NO_EXPORT;
 
+  /// Get the master RPC addresses as configured on the last leader master this
+  /// client connected to, as a CSV. If the client has not connected to a leader
+  /// master, an empty string is returned.
+  ///
+  /// Private API.
+  ///
+  /// @return The master addresses as a CSV.
+  std::string GetMasterAddresses() const KUDU_NO_EXPORT;
+
   /// @endcond
 
   /// Policy with which to choose amongst multiple replicas.
@@ -590,10 +595,6 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   friend class internal::WriteRpc;
   friend class kudu::SecurityUnknownTskTest;
   friend class tools::LeaderMasterProxy;
-  friend Status tools::ListPartitions(
-      const client::sp::shared_ptr<client::KuduTable>& table,
-      std::vector<Partition>* partitions);
-  friend std::string tools::GetMasterAddresses(const client::KuduClient&);
 
   FRIEND_TEST(kudu::ClientStressTest, TestUniqueClientIds);
   FRIEND_TEST(ClientTest, TestGetSecurityInfoFromMaster);
@@ -1049,6 +1050,21 @@ class KUDU_EXPORT KuduTable : public sp::enable_shared_from_this<KuduTable> {
 
   /// @return The partition schema for the table.
   const PartitionSchema& partition_schema() const;
+
+  /// @cond false
+
+  /// List the partitions of this table in 'partitions'. This operation may
+  /// involve RPC roundtrips to the leader master, and has a timeout equal
+  /// to the table's client instance's default admin operation timeout.
+  ///
+  /// Private API.
+  ///
+  /// @param [out] partitions
+  ///   The list of partitions of the table.
+  /// @return Status object for the operation.
+  Status ListPartitions(std::vector<Partition>* partitions);
+
+  /// @end cond
 
  private:
   class KUDU_NO_EXPORT Data;

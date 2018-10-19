@@ -37,12 +37,10 @@ class function;
 namespace kudu {
 
 class MonoDelta;
-class Partition;
 class faststring; // NOLINT
 
 namespace client {
 class KuduClient;
-class KuduTable;
 } // namespace client
 
 namespace master {
@@ -135,16 +133,9 @@ Status PrintServerFlags(const std::string& address, uint16_t default_port);
 Status SetServerFlag(const std::string& address, uint16_t default_port,
                      const std::string& flag, const std::string& value);
 
-// Get the configured master addresses on the most recently connected to leader master.
-std::string GetMasterAddresses(const client::KuduClient& client);
-
 // Return true if 'str' matches any of the patterns in 'patterns', or if
 // 'patterns' is empty.
 bool MatchesAnyPattern(const std::vector<std::string>& patterns, const std::string& str);
-
-// Populates `partitions` with the partitions of the table `table`.
-Status ListPartitions(const client::sp::shared_ptr<client::KuduTable>& table,
-                      std::vector<Partition>* partitions);
 
 // A table of data to present to the user.
 //

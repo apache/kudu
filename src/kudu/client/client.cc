@@ -85,6 +85,7 @@
 #include "kudu/security/token.pb.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_service.proxy.h"
+#include "kudu/util/async_util.h"
 #include "kudu/util/debug-util.h"
 #include "kudu/util/init.h"
 #include "kudu/util/logging.h"
@@ -598,6 +599,10 @@ Status KuduClient::GetTablet(const string& tablet_id, KuduTablet** tablet) {
   return Status::OK();
 }
 
+string KuduClient::GetMasterAddresses() const {
+  return HostPort::ToCommaSeparatedString(data_->master_hostports());
+}
+
 bool KuduClient::IsMultiMaster() const {
   return data_->master_server_addrs_.size() > 1;
 }
@@ -924,6 +929,39 @@ KuduPredicate* KuduTable::NewIsNullPredicate(const Slice& col_name) {
   return data_->MakePredicate(col_name, [&](const ColumnSchema& col_schema) {
     return new KuduPredicate(new IsNullPredicateData(col_schema));
   });
+}
+
+// The strategy for retrieving the partitions from the metacache is adapted
+// from KuduScanTokenBuilder::Data::Build.
+Status KuduTable::ListPartitions(vector<Partition>* partitions) {
+  DCHECK(partitions);
+  partitions->clear();
+  auto& client = data_->client_;
+  const auto deadline = MonoTime::Now() + client->default_admin_operation_timeout();
+  PartitionPruner pruner;
+  pruner.Init(*data_->schema_.schema_, data_->partition_schema_, ScanSpec());
+  while (pruner.HasMorePartitionKeyRanges()) {
+    scoped_refptr<client::internal::RemoteTablet> tablet;
+    Synchronizer sync;
+    const string& partition_key = pruner.NextPartitionKey();
+    client->data_->meta_cache_->LookupTabletByKey(
+        this,
+        partition_key,
+        deadline,
+        client::internal::MetaCache::LookupType::kLowerBound,
+        &tablet,
+        sync.AsStatusCallback());
+    Status s = sync.Wait();
+    if (s.IsNotFound()) {
+      // No more tablets.
+      break;
+    }
+    RETURN_NOT_OK(s);
+
+    partitions->emplace_back(tablet->partition());
+    pruner.RemovePartitionKeyRange(tablet->partition().partition_key_end());
+  }
+  return Status::OK();
 }
 
 ////////////////////////////////////////////////////////////
