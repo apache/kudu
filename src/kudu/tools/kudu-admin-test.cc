@@ -1481,11 +1481,20 @@ TEST_F(AdminCliTest, TestSimultaneousLeaderTransferAndAbruptStepdown) {
   workload.Setup();
   workload.Start();
 
+  // Sometimes this test is flaky under ASAN and the writes are never able to
+  // complete, so we'll back off on how frequently we disrupt leadership to give
+  // time for progress to be made.
+  #if defined(ADDRESS_SANITIZER)
+    const auto leader_change_period_sec = MonoDelta::FromMilliseconds(5000);
+  #else
+    const auto leader_change_period_sec = MonoDelta::FromMilliseconds(1000);
+  #endif
+
   const string& master_addr = cluster_->master()->bound_rpc_addr().ToString();
   while (workload.rows_inserted() < 1000) {
-    // Issue a graceful stepdown and then an abrupt stepdown, every second.
-    // The results are ignored because the tools might fail due to the
-    // constant leadership changes.
+    // Issue a graceful stepdown and then an abrupt stepdown, every
+    // 'leader_change_period_sec' seconds. The results are ignored because the
+    // tools might fail due to the constant leadership changes.
     ignore_result(RunKuduTool({
       "tablet",
       "leader_step_down",
@@ -1499,7 +1508,7 @@ TEST_F(AdminCliTest, TestSimultaneousLeaderTransferAndAbruptStepdown) {
       master_addr,
       tablet_id_
     }));
-    SleepFor(MonoDelta::FromMilliseconds(1000));
+    SleepFor(leader_change_period_sec);
   }
 }
 
