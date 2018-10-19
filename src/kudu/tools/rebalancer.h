@@ -36,12 +36,6 @@
 #include "kudu/util/status.h"
 
 namespace kudu {
-namespace tools {
-struct TabletsPlacementInfo;
-}  // namespace tools
-}  // namespace kudu
-
-namespace kudu {
 
 namespace client {
 class KuduClient;
@@ -50,7 +44,6 @@ class KuduClient;
 namespace tools {
 
 class Ksck;
-struct KsckResults;
 
 // Sub-set of fields from KsckResult which are relevant to the rebalancing.
 struct ClusterRawInfo {
@@ -281,8 +274,8 @@ class Rebalancer {
                       const KsckResults& ksck_info,
                       std::vector<std::string>* tablet_ids) const;
 
-  // Reset ksck-related fields, preparing for a fresh ksck run.
-  Status ResetKsck();
+  // Reset ksck-related fields and run ksck against the cluster.
+  Status RefreshKsckResults();
 
   // Filter out move operations at the tablets which already have operations
   // in progress. The 'replica_moves' cannot be null.

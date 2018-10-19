@@ -100,8 +100,7 @@ Rebalancer::Rebalancer(const Config& config)
 
 Status Rebalancer::PrintStats(std::ostream& out) {
   // First, report on the current balance state of the cluster.
-  RETURN_NOT_OK(ResetKsck());
-  ignore_result(ksck_->Run());
+  RETURN_NOT_OK(RefreshKsckResults());
   const KsckResults& results = ksck_->results();
 
   ClusterBalanceInfo cbi;
@@ -314,7 +313,7 @@ Status Rebalancer::Run(RunStatus* result_status, size_t* moves_count) {
 // moves recommended at prior steps are still in progress.
 Status Rebalancer::KsckResultsToClusterBalanceInfo(
     const KsckResults& ksck_info,
-    const MovesInProgress& pending_moves,
+    const MovesInProgress& moves_in_progress,
     ClusterBalanceInfo* cbi) const {
   DCHECK(cbi);
 
@@ -360,7 +359,7 @@ Status Rebalancer::KsckResultsToClusterBalanceInfo(
     // Check if it's one of the tablets which are currently being rebalanced.
     // If so, interpret the move as successfully completed, updating the
     // replica counts correspondingly.
-    const auto it_pending_moves = pending_moves.find(tablet.id);
+    const auto it_pending_moves = moves_in_progress.find(tablet.id);
 
     for (const auto& ri : tablet.replicas) {
       // Increment total count of replicas at the tablet server.
@@ -375,7 +374,7 @@ Status Rebalancer::KsckResultsToClusterBalanceInfo(
         continue;
       }
       bool do_count_replica = true;
-      if (it_pending_moves != pending_moves.end() &&
+      if (it_pending_moves != moves_in_progress.end() &&
           tablet.result == KsckCheckResult::RECOVERING) {
         const auto& move_info = it_pending_moves->second;
         bool is_target_replica_present = false;
@@ -453,10 +452,9 @@ Status Rebalancer::KsckResultsToClusterBalanceInfo(
 // Run one step of the rebalancer. Due to the inherent restrictions of the
 // rebalancing engine, no more than one replica per tablet is moved during
 // one step of the rebalancing.
-Status Rebalancer::GetNextMoves(const MovesInProgress& pending_moves,
+Status Rebalancer::GetNextMoves(const MovesInProgress& moves_in_progress,
                                 vector<ReplicaMove>* replica_moves) {
-  RETURN_NOT_OK(ResetKsck());
-  ignore_result(ksck_->Run());
+  RETURN_NOT_OK(RefreshKsckResults());
   const auto& ksck_info = ksck_->results();
 
   // For simplicity, allow to run the rebalancing only when all tablet servers
@@ -480,8 +478,8 @@ Status Rebalancer::GetNextMoves(const MovesInProgress& pending_moves,
   vector<TableReplicaMove> moves;
   {
     ClusterBalanceInfo cbi;
-    RETURN_NOT_OK(KsckResultsToClusterBalanceInfo(ksck_info, pending_moves, &cbi));
-    RETURN_NOT_OK(algo_.GetNextMoves(std::move(cbi), max_moves, &moves));
+    RETURN_NOT_OK(KsckResultsToClusterBalanceInfo(ksck_info, moves_in_progress, &cbi));
+    RETURN_NOT_OK(algo_.GetNextMoves(cbi, max_moves, &moves));
   }
   if (moves.empty()) {
     // No suitable moves were found: the cluster described by 'cbi' is balanced,
@@ -489,7 +487,7 @@ Status Rebalancer::GetNextMoves(const MovesInProgress& pending_moves,
     return Status::OK();
   }
   unordered_set<string> tablets_in_move;
-  std::transform(pending_moves.begin(), pending_moves.end(),
+  std::transform(moves_in_progress.begin(), moves_in_progress.end(),
                  inserter(tablets_in_move, tablets_in_move.begin()),
                  [](const MovesInProgress::value_type& elem) {
                    return elem.first;
@@ -618,13 +616,14 @@ Status Rebalancer::FindReplicas(const TableReplicaMove& move,
   return Status::OK();
 }
 
-Status Rebalancer::ResetKsck() {
+Status Rebalancer::RefreshKsckResults() {
   shared_ptr<KsckCluster> cluster;
   RETURN_NOT_OK_PREPEND(
       RemoteKsckCluster::Build(config_.master_addresses, &cluster),
       "unable to build KsckCluster");
   ksck_.reset(new Ksck(cluster));
   ksck_->set_table_filters(config_.table_filters);
+  ignore_result(ksck_->Run());
   return Status::OK();
 }
 
