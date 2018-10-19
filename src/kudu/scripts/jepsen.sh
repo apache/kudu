@@ -118,13 +118,11 @@ echo "--------------------------------------------------------------------"
 echo
 echo "Building and running kudu-jepsen consistency tests"
 echo "--------------------------------------------------------------------"
-pushd kudu-jepsen
-./gradlew runJepsen \
+./gradlew :kudu-jepsen:runJepsen \
   -DmasterNodes="$KUDU_MASTER_NODES" \
   -DtserverNodes="$KUDU_TSERVER_NODES" \
   -DsshKeyPath="$SSH_KEY" \
   -DiterNum="$ITER_NUM"
-popd
 popd
 
 set +x
