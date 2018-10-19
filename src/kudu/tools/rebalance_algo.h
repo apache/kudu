@@ -69,6 +69,8 @@ struct ClusterBalanceInfo {
   ServersByCountMap servers_by_total_replica_count;
 };
 
+// Locality information for a cluster: distribution of tablet servers among
+// locations.
 struct ClusterLocalityInfo {
   // Location-related information: distribution of tablet servers by locations.
   // Mapping 'location' --> 'identifiers of tablet servers in the location'.
@@ -76,6 +78,13 @@ struct ClusterLocalityInfo {
 
   // Mapping 'tablet server identifier' --> 'location'.
   std::unordered_map<std::string, std::string> location_by_ts_id;
+};
+
+// Information on a cluster as input for various rebalancing algorithms.
+// As of now, contains only ClusterBalanceInfo, but ClusterLocalityInfo
+// is to be added once corresponding location-aware algorithms are implemented.
+struct ClusterInfo {
+  ClusterBalanceInfo balance;
 };
 
 // A directive to move some replica of a table between two tablet servers.
@@ -103,7 +112,7 @@ class RebalancingAlgo {
   // is considered balanced.
   //
   // 'moves' must be non-NULL.
-  virtual Status GetNextMoves(const ClusterBalanceInfo& cluster_info,
+  virtual Status GetNextMoves(const ClusterInfo& cluster_info,
                               int max_moves_num,
                               std::vector<TableReplicaMove>* moves);
  protected:
@@ -111,15 +120,13 @@ class RebalancingAlgo {
   // the 'move' output parameter is set to 'boost::none'.
   //
   // 'move' must be non-NULL.
-  virtual Status GetNextMove(const ClusterBalanceInfo& cluster_info,
+  virtual Status GetNextMove(const ClusterInfo& cluster_info,
                              boost::optional<TableReplicaMove>* move) = 0;
 
-  // Update the balance state in 'cluster_info' with the outcome of the move
-  // 'move'. 'cluster_info' is an in-out parameter.
-  //
-  // 'cluster_info' must be non-NULL.
+  // Update the balance state in 'balance_info' with the outcome of the move
+  // 'move'. 'balance_info' is an in-out parameter and must be non-NULL.
   static Status ApplyMove(const TableReplicaMove& move,
-                          ClusterBalanceInfo* cluster_info);
+                          ClusterBalanceInfo* balance_info);
 };
 
 // A two-dimensional greedy rebalancing algorithm. From among moves that
@@ -140,14 +147,14 @@ class TwoDimensionalGreedyAlgo : public RebalancingAlgo {
   explicit TwoDimensionalGreedyAlgo(
       EqualSkewOption opt = EqualSkewOption::PICK_RANDOM);
 
-  Status GetNextMove(const ClusterBalanceInfo& cluster_info,
+  Status GetNextMove(const ClusterInfo& cluster_info,
                      boost::optional<TableReplicaMove>* move) override;
 
  private:
   enum class ExtremumType { MAX, MIN, };
 
   FRIEND_TEST(RebalanceAlgoUnitTest, RandomizedTest);
-  FRIEND_TEST(RebalanceAlgoUnitTest, EmptyClusterBalanceInfoGetNextMove);
+  FRIEND_TEST(RebalanceAlgoUnitTest, EmptyClusterInfoGetNextMove);
 
   // Compute the intersection of the least or most loaded tablet servers for a
   // table with the least or most loaded tablet servers in the cluster:

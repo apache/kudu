@@ -103,9 +103,13 @@ Status Rebalancer::PrintStats(std::ostream& out) {
   RETURN_NOT_OK(RefreshKsckResults());
   const KsckResults& results = ksck_->results();
 
-  ClusterBalanceInfo cbi;
-  RETURN_NOT_OK(KsckResultsToClusterBalanceInfo(results, MovesInProgress(), &cbi));
+  ClusterRawInfo raw_info;
+  RETURN_NOT_OK(KsckResultsToClusterRawInfo(results, &raw_info));
 
+  ClusterInfo ci;
+  RETURN_NOT_OK(BuildClusterInfo(raw_info, MovesInProgress(), &ci));
+
+  auto& cbi = ci.balance;
   // Per-server replica distribution stats.
   {
     out << "Per-server replica distribution summary:" << endl;
@@ -215,6 +219,12 @@ Status Rebalancer::Run(RunStatus* result_status, size_t* moves_count) {
     deadline = MonoTime::Now() + MonoDelta::FromSeconds(config_.max_run_time_sec);
   }
 
+  ClusterRawInfo raw_info;
+  RETURN_NOT_OK(KsckResultsToClusterRawInfo(ksck_->results(), &raw_info));
+
+  ClusterInfo ci;
+  RETURN_NOT_OK(BuildClusterInfo(raw_info, MovesInProgress(), &ci));
+
   Runner runner(config_.max_moves_per_server, deadline);
   RETURN_NOT_OK(runner.Init(config_.master_addresses));
 
@@ -303,25 +313,28 @@ Status Rebalancer::Run(RunStatus* result_status, size_t* moves_count) {
   return Status::OK();
 }
 
-// Transform the information on the cluster returned by ksck into
-// ClusterBalanceInfo that could be consumed by the rebalancing algorithm,
-// taking into account pending replica movement operations. The pending
-// operations are evaluated against the state of the cluster in accordance with
-// the ksck results, and if the replica movement operations are still in
-// progress, then they are interpreted as successfully completed. The idea is to
-// prevent the algorithm outputting the same moves again while some of the
-// moves recommended at prior steps are still in progress.
-Status Rebalancer::KsckResultsToClusterBalanceInfo(
+Status Rebalancer::KsckResultsToClusterRawInfo(
     const KsckResults& ksck_info,
-    const MovesInProgress& moves_in_progress,
-    ClusterBalanceInfo* cbi) const {
-  DCHECK(cbi);
+    ClusterRawInfo* raw_info) {
+  DCHECK(raw_info);
+
+  raw_info->tserver_summaries = ksck_info.tserver_summaries;
+  raw_info->table_summaries = ksck_info.table_summaries;
+  raw_info->tablet_summaries = ksck_info.tablet_summaries;
+
+  return Status::OK();
+}
+
+Status Rebalancer::BuildClusterInfo(const ClusterRawInfo& raw_info,
+                                    const MovesInProgress& moves_in_progress,
+                                    ClusterInfo* info) const {
+  DCHECK(info);
 
   // tserver UUID --> total replica count of all table's tablets at the server
   typedef unordered_map<string, int32_t> TableReplicasAtServer;
 
-  // The result table balance information to build.
-  ClusterBalanceInfo balance_info;
+  // The result information to build.
+  ClusterInfo result_info;
 
   unordered_map<string, int32_t> tserver_replicas_count;
   unordered_map<string, TableReplicasAtServer> table_replicas_info;
@@ -329,14 +342,14 @@ Status Rebalancer::KsckResultsToClusterBalanceInfo(
   // Build a set of tables with RF=1 (single replica tables).
   unordered_set<string> rf1_tables;
   if (!config_.move_rf1_replicas) {
-    for (const auto& s : ksck_info.table_summaries) {
+    for (const auto& s : raw_info.table_summaries) {
       if (s.replication_factor == 1) {
         rf1_tables.emplace(s.id);
       }
     }
   }
 
-  for (const auto& s : ksck_info.tserver_summaries) {
+  for (const auto& s : raw_info.tserver_summaries) {
     if (s.health != KsckServerHealth::HEALTHY) {
       LOG(INFO) << Substitute("skipping tablet server $0 ($1) because of its "
                               "non-HEALTHY status ($2)",
@@ -347,7 +360,7 @@ Status Rebalancer::KsckResultsToClusterBalanceInfo(
     tserver_replicas_count.emplace(s.uuid, 0);
   }
 
-  for (const auto& tablet : ksck_info.tablet_summaries) {
+  for (const auto& tablet : raw_info.tablet_summaries) {
     if (!config_.move_rf1_replicas) {
       if (rf1_tables.find(tablet.table_id) != rf1_tables.end()) {
         LOG(INFO) << Substitute("tablet $0 of table '$0' ($1) has single replica, skipping",
@@ -377,6 +390,7 @@ Status Rebalancer::KsckResultsToClusterBalanceInfo(
       if (it_pending_moves != moves_in_progress.end() &&
           tablet.result == KsckCheckResult::RECOVERING) {
         const auto& move_info = it_pending_moves->second;
+        DCHECK(!move_info.ts_uuid_to.empty());
         bool is_target_replica_present = false;
         // Verify that the target replica is present in the config.
         for (const auto& tr : tablet.replicas) {
@@ -422,13 +436,13 @@ Status Rebalancer::KsckResultsToClusterBalanceInfo(
   }
 
   // Populate ClusterBalanceInfo::servers_by_total_replica_count
-  auto& servers_by_count = balance_info.servers_by_total_replica_count;
+  auto& servers_by_count = result_info.balance.servers_by_total_replica_count;
   for (const auto& elem : tserver_replicas_count) {
     servers_by_count.emplace(elem.second, elem.first);
   }
 
   // Populate ClusterBalanceInfo::table_info_by_skew
-  auto& table_info_by_skew = balance_info.table_info_by_skew;
+  auto& table_info_by_skew = result_info.balance.table_info_by_skew;
   for (const auto& elem : table_replicas_info) {
     const auto& table_id = elem.first;
     int32_t max_count = numeric_limits<int32_t>::min();
@@ -444,10 +458,11 @@ Status Rebalancer::KsckResultsToClusterBalanceInfo(
     }
     table_info_by_skew.emplace(max_count - min_count, std::move(tbi));
   }
-  *cbi = std::move(balance_info);
+  *info = std::move(result_info);
 
   return Status::OK();
 }
+
 
 // Run one step of the rebalancer. Due to the inherent restrictions of the
 // rebalancing engine, no more than one replica per tablet is moved during
@@ -474,16 +489,17 @@ Status Rebalancer::GetNextMoves(const MovesInProgress& moves_in_progress,
   const size_t max_moves = config_.max_moves_per_server *
       ksck_info.tserver_summaries.size() * 5;
 
+  ClusterRawInfo raw_info;
+  RETURN_NOT_OK(KsckResultsToClusterRawInfo(ksck_info, &raw_info));
+
   replica_moves->clear();
   vector<TableReplicaMove> moves;
-  {
-    ClusterBalanceInfo cbi;
-    RETURN_NOT_OK(KsckResultsToClusterBalanceInfo(ksck_info, moves_in_progress, &cbi));
-    RETURN_NOT_OK(algo_.GetNextMoves(cbi, max_moves, &moves));
-  }
+  ClusterInfo cluster_info;
+  RETURN_NOT_OK(BuildClusterInfo(raw_info, moves_in_progress, &cluster_info));
+  RETURN_NOT_OK(algo_.GetNextMoves(cluster_info, max_moves, &moves));
   if (moves.empty()) {
-    // No suitable moves were found: the cluster described by 'cbi' is balanced,
-    // assuming the pending moves, if any, will succeed.
+    // No suitable moves were found: the cluster is balanced,
+    // assuming all pending moves, if any, will succeed.
     return Status::OK();
   }
   unordered_set<string> tablets_in_move;

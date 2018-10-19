@@ -15,8 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/tools/rebalancer.h"
-
 #include <algorithm>
 #include <cstdint>
 #include <iostream>
@@ -31,6 +29,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tools/ksck_results.h"
 #include "kudu/tools/rebalance_algo.h"
+#include "kudu/tools/rebalancer.h"
 #include "kudu/util/test_macros.h"
 
 using std::inserter;
@@ -83,10 +82,10 @@ struct KsckResultsTestConfig {
   ClusterBalanceInfo ref_balance_info;
 };
 
-KsckResults GenerateKsckResults(KsckResultsInput input) {
-  KsckResults results;
+ClusterRawInfo GenerateRawClusterInfo(const KsckResultsInput& input) {
+  ClusterRawInfo raw_info;
   {
-    vector<KsckServerHealthSummary>& summaries = results.tserver_summaries;
+    vector<KsckServerHealthSummary>& summaries = raw_info.tserver_summaries;
     for (const auto& summary_input : input.tserver_summaries) {
       KsckServerHealthSummary summary;
       summary.uuid = summary_input.uuid;
@@ -94,7 +93,7 @@ KsckResults GenerateKsckResults(KsckResultsInput input) {
     }
   }
   {
-    vector<KsckTabletSummary>& summaries = results.tablet_summaries;
+    vector<KsckTabletSummary>& summaries = raw_info.tablet_summaries;
     for (const auto& summary_input : input.tablet_summaries) {
       KsckTabletSummary summary;
       summary.id = summary_input.id;
@@ -110,7 +109,7 @@ KsckResults GenerateKsckResults(KsckResultsInput input) {
     }
   }
   {
-    vector<KsckTableSummary>& summaries = results.table_summaries;
+    vector<KsckTableSummary>& summaries = raw_info.table_summaries;
     for (const auto& summary_input : input.table_summaries) {
       KsckTableSummary summary;
       summary.id = summary_input.id;
@@ -118,7 +117,7 @@ KsckResults GenerateKsckResults(KsckResultsInput input) {
       summaries.emplace_back(std::move(summary));
     }
   }
-  return results;
+  return raw_info;
 }
 
 // The order of the key-value pairs whose keys compare equivalent is the order
@@ -216,13 +215,14 @@ class KsckResultsToClusterBalanceInfoTest : public ::testing::Test {
     for (auto idx = 0; idx < test_configs.size(); ++idx) {
       SCOPED_TRACE(Substitute("test config index: $0", idx));
       const auto& cfg = test_configs[idx];
-      auto ksck_results = GenerateKsckResults(cfg.input);
+      auto raw_info = GenerateRawClusterInfo(cfg.input);
 
       Rebalancer rebalancer(rebalancer_cfg);
-      ClusterBalanceInfo cbi;
-      ASSERT_OK(rebalancer.KsckResultsToClusterBalanceInfo(
-          ksck_results, Rebalancer::MovesInProgress(), &cbi));
-      ASSERT_EQ(cfg.ref_balance_info, cbi);
+      ClusterInfo ci;
+      ASSERT_OK(rebalancer.BuildClusterInfo(
+          raw_info, Rebalancer::MovesInProgress(), &ci));
+
+      ASSERT_EQ(cfg.ref_balance_info, ci.balance);
     }
   }
 };

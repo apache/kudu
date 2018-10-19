@@ -21,12 +21,8 @@
 #include <iostream>
 #include <iterator>
 #include <limits>
-#include <map>
-#include <memory>
 #include <random>
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -38,18 +34,12 @@
 #include "kudu/util/status.h"
 
 using std::back_inserter;
-using std::cout;
-using std::endl;
-using std::make_pair;
-using std::multimap;
+using std::numeric_limits;
 using std::ostringstream;
 using std::set_intersection;
-using std::shared_ptr;
 using std::shuffle;
 using std::sort;
 using std::string;
-using std::unordered_map;
-using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
@@ -107,7 +97,7 @@ Status MoveOneReplica(const string& src,
 }
 } // anonymous namespace
 
-Status RebalancingAlgo::GetNextMoves(const ClusterBalanceInfo& cluster_info,
+Status RebalancingAlgo::GetNextMoves(const ClusterInfo& cluster_info,
                                      int max_moves_num,
                                      vector<TableReplicaMove>* moves) {
   DCHECK_LE(0, max_moves_num);
@@ -115,15 +105,16 @@ Status RebalancingAlgo::GetNextMoves(const ClusterBalanceInfo& cluster_info,
 
   // Value of '0' is a shortcut for 'the possible maximum'.
   if (max_moves_num == 0) {
-    max_moves_num = std::numeric_limits<decltype(max_moves_num)>::max();
+    max_moves_num = numeric_limits<decltype(max_moves_num)>::max();
   }
   moves->clear();
 
-  if (cluster_info.table_info_by_skew.empty()) {
+  const auto& balance = cluster_info.balance;
+  if (balance.table_info_by_skew.empty()) {
     // Check for the consistency of the 'cluster_info' parameter: if no
     // information is given on the table skew, table count for all the tablet
     // servers should be 0.
-    for (const auto& elem : cluster_info.servers_by_total_replica_count) {
+    for (const auto& elem : balance.servers_by_total_replica_count) {
       if (elem.first != 0) {
         return Status::InvalidArgument(Substitute(
             "non-zero table count ($0) on tablet server ($1) while no table "
@@ -135,7 +126,7 @@ Status RebalancingAlgo::GetNextMoves(const ClusterBalanceInfo& cluster_info,
   }
 
   // Copy cluster_info so we can apply moves to the copy.
-  ClusterBalanceInfo info(cluster_info);
+  ClusterInfo info(cluster_info);
   for (decltype(max_moves_num) i = 0; i < max_moves_num; ++i) {
     boost::optional<TableReplicaMove> move;
     RETURN_NOT_OK(GetNextMove(info, &move));
@@ -143,16 +134,16 @@ Status RebalancingAlgo::GetNextMoves(const ClusterBalanceInfo& cluster_info,
       // No replicas to move.
       break;
     }
-    RETURN_NOT_OK(ApplyMove(*move, &info));
+    RETURN_NOT_OK(ApplyMove(*move, &info.balance));
     moves->push_back(std::move(*move));
   }
   return Status::OK();
 }
 
 Status RebalancingAlgo::ApplyMove(const TableReplicaMove& move,
-                                  ClusterBalanceInfo* cluster_info) {
+                                  ClusterBalanceInfo* balance_info) {
   // Copy cluster_info so we can apply moves to the copy.
-  ClusterBalanceInfo info(*DCHECK_NOTNULL(cluster_info));
+  ClusterBalanceInfo info(*DCHECK_NOTNULL(balance_info));
 
   // Update the total counts.
   RETURN_NOT_OK_PREPEND(
@@ -190,7 +181,7 @@ Status RebalancingAlgo::ApplyMove(const TableReplicaMove& move,
 
   const int32_t skew = max_count - min_count;
   table_info_by_skew.emplace(skew, std::move(table_info));
-  std::swap(*cluster_info, info);
+  *balance_info = std::move(info);
 
   return Status::OK();
 }
@@ -202,23 +193,24 @@ TwoDimensionalGreedyAlgo::TwoDimensionalGreedyAlgo(EqualSkewOption opt)
 }
 
 Status TwoDimensionalGreedyAlgo::GetNextMove(
-    const ClusterBalanceInfo& cluster_info,
+    const ClusterInfo& cluster_info,
     boost::optional<TableReplicaMove>* move) {
   DCHECK(move);
   // Set the output to none: this fits the short-circuit cases when there is
   // an issue with the parameters or there aren't any moves to return.
   *move = boost::none;
 
+  const auto& balance_info = cluster_info.balance;
   // Due to the nature of the table_info_by_skew container, the very last
   // range represents the most unbalanced tables.
-  const auto& table_info_by_skew = cluster_info.table_info_by_skew;
+  const auto& table_info_by_skew = balance_info.table_info_by_skew;
   if (table_info_by_skew.empty()) {
     return Status::InvalidArgument("no table balance information");
   }
   const auto max_table_skew = table_info_by_skew.rbegin()->first;
 
   const auto& servers_by_total_replica_count =
-      cluster_info.servers_by_total_replica_count;
+      balance_info.servers_by_total_replica_count;
   if (servers_by_total_replica_count.empty()) {
     return Status::InvalidArgument("no per-server replica count information");
   }

@@ -238,18 +238,27 @@ class Rebalancer {
 
   friend class KsckResultsToClusterBalanceInfoTest;
 
-  // Convert ksck results into cluster balance information suitable for the
-  // input of the high-level rebalancing algorithm. The 'moves_in_progress'
-  // parameter contains information on the replica moves which have been
-  // scheduled by a caller and still in progress: those are considered
-  // as successfully completed and applied to the 'ksck_info' when building
-  // ClusterBalanceInfo for the specified 'ksck_info' input. The result
-  // cluster balance information is output into the 'cbi' parameter. The 'cbi'
-  // output parameter cannot be null.
-  Status KsckResultsToClusterBalanceInfo(
+  // Convert ksck results into information relevant to rebalancing the cluster.
+  // Basically, 'raw' information is just a sub-set of relevant fields of the
+  // KsckResults structure filtered to contain information only for the
+  // specified location.
+  static Status KsckResultsToClusterRawInfo(
       const KsckResults& ksck_info,
-      const MovesInProgress& moves_in_progress,
-      ClusterBalanceInfo* cbi) const;
+      ClusterRawInfo* raw_info);
+
+  // Convert the 'raw' information about the cluster into information suitable
+  // for the input of the high-level rebalancing algorithm.
+  // The 'moves_in_progress' parameter contains information on the replica moves
+  // which have been scheduled by a caller and still in progress: those are
+  // considered as successfully completed and applied to the 'raw_info' when
+  // building ClusterInfo for the specified 'raw_info' input. The idea
+  // is to prevent the algorithm outputting the same moves again while some
+  // of the moves recommended at prior steps are still in progress.
+  // The result cluster balance information is output into the 'info' parameter.
+  // The 'info' output parameter cannot be null.
+  Status BuildClusterInfo(const ClusterRawInfo& raw_info,
+                          const MovesInProgress& moves_in_progress,
+                          ClusterInfo* info) const;
 
   // Get next batch of replica moves from the rebalancing algorithm.
   // Essentially, it runs ksck against the cluster and feeds the data into the

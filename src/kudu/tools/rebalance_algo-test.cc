@@ -100,10 +100,10 @@ ostream& operator<<(ostream& o, const TableReplicaMove& move) {
   return o;
 }
 
-// Transform the definition of the test cluster into the ClusterBalanceInfo
+// Transform the definition of the test cluster into the ClusterInfo
 // that is consumed by the rebalancing algorithm.
-void ClusterConfigToClusterBalanceInfo(const TestClusterConfig& tcc,
-                                       ClusterBalanceInfo* cbi) {
+void ClusterConfigToClusterInfo(const TestClusterConfig& tcc,
+                                ClusterInfo* cluster_info) {
   // First verify that the configuration of the test cluster is valid.
   set<string> table_ids;
   for (const auto& table_replica_info : tcc.table_replicas) {
@@ -118,7 +118,8 @@ void ClusterConfigToClusterBalanceInfo(const TestClusterConfig& tcc,
     CHECK_EQ(tcc.tserver_uuids.size(), uuids.size());
   }
 
-  ClusterBalanceInfo result;
+  ClusterInfo result;
+  auto& balance = result.balance;
   for (size_t tserver_idx = 0; tserver_idx < tcc.tserver_uuids.size();
        ++tserver_idx) {
     // Total replica count at the tablet server.
@@ -126,10 +127,11 @@ void ClusterConfigToClusterBalanceInfo(const TestClusterConfig& tcc,
     for (const auto& table_replica_info: tcc.table_replicas) {
       count += table_replica_info.num_replicas_by_server[tserver_idx];
     }
-    result.servers_by_total_replica_count.emplace(count, tcc.tserver_uuids[tserver_idx]);
+    balance.servers_by_total_replica_count.emplace(
+        count, tcc.tserver_uuids[tserver_idx]);
   }
 
-  auto& table_info_by_skew = result.table_info_by_skew;
+  auto& table_info_by_skew = balance.table_info_by_skew;
   for (size_t table_idx = 0; table_idx < tcc.table_replicas.size(); ++table_idx) {
     // Replicas of the current table per tablet server.
     const vector<size_t>& replicas_count =
@@ -145,17 +147,18 @@ void ClusterConfigToClusterBalanceInfo(const TestClusterConfig& tcc,
     CHECK_GE(max_count, min_count);
     table_info_by_skew.emplace(max_count - min_count, std::move(info));
   }
-  *cbi = std::move(result);
+
+  *cluster_info = std::move(result);
 }
 
 void VerifyRebalancingMoves(const TestClusterConfig& cfg) {
   vector<TableReplicaMove> moves;
   {
-    ClusterBalanceInfo cbi;
-    ClusterConfigToClusterBalanceInfo(cfg, &cbi);
+    ClusterInfo ci;
+    ClusterConfigToClusterInfo(cfg, &ci);
     TwoDimensionalGreedyAlgo algo(
         TwoDimensionalGreedyAlgo::EqualSkewOption::PICK_FIRST);
-    ASSERT_OK(algo.GetNextMoves(std::move(cbi), 0, &moves));
+    ASSERT_OK(algo.GetNextMoves(ci, 0, &moves));
   }
   EXPECT_EQ(cfg.expected_moves, moves);
 }
@@ -190,9 +193,9 @@ string TestClusterConfigToDebugString(const TestClusterConfig& cfg) {
 }
 
 // Test the behavior of the algorithm when no input information is given.
-TEST(RebalanceAlgoUnitTest, EmptyClusterBalanceInfoGetNextMoves) {
+TEST(RebalanceAlgoUnitTest, EmptyClusterInfoGetNextMoves) {
   vector<TableReplicaMove> moves;
-  const ClusterBalanceInfo info;
+  const ClusterInfo info;
   ASSERT_OK(TwoDimensionalGreedyAlgo().GetNextMoves(info, 0, &moves));
   EXPECT_TRUE(moves.empty());
 }
@@ -202,14 +205,14 @@ TEST(RebalanceAlgoUnitTest, EmptyClusterBalanceInfoGetNextMoves) {
 TEST(RebalanceAlgoUnitTest, NoTableSkewInClusterBalanceInfoGetNextMoves) {
   {
     vector<TableReplicaMove> moves;
-    const ClusterBalanceInfo info = { {}, { { 0, "ts_0" } } };
+    const ClusterInfo info = { { {}, { { 0, "ts_0" } } } };
     ASSERT_OK(TwoDimensionalGreedyAlgo().GetNextMoves(info, 0, &moves));
     EXPECT_TRUE(moves.empty());
   }
 
   {
     vector<TableReplicaMove> moves;
-    const ClusterBalanceInfo info = { {}, { { 1, "ts_0" }, } };
+    const ClusterInfo info = { { {}, { { 1, "ts_0" }, } } };
     const auto s = TwoDimensionalGreedyAlgo().GetNextMoves(info, 0, &moves);
     ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_MATCHES(s.ToString(),
@@ -222,7 +225,7 @@ TEST(RebalanceAlgoUnitTest, NoTableSkewInClusterBalanceInfoGetNextMoves) {
 // GetNextMove() when no input information is given.
 TEST(RebalanceAlgoUnitTest, EmptyClusterBalanceInfoGetNextMove) {
   boost::optional<TableReplicaMove> move;
-  const ClusterBalanceInfo info;
+  const ClusterInfo info;
   const auto s = TwoDimensionalGreedyAlgo().GetNextMove(info, &move);
   ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
   EXPECT_EQ(boost::none, move);
@@ -668,8 +671,8 @@ TEST(RebalanceAlgoUnitTest, ManyMoves) {
   };
   constexpr size_t kExpectedMovesNum = 200;
 
-  ClusterBalanceInfo cbi;
-  ClusterConfigToClusterBalanceInfo(kConfig, &cbi);
+  ClusterInfo ci;
+  ClusterConfigToClusterInfo(kConfig, &ci);
 
   vector<TableReplicaMove> ref_moves;
   for (size_t i = 0; i < kExpectedMovesNum; ++i) {
@@ -683,7 +686,7 @@ TEST(RebalanceAlgoUnitTest, ManyMoves) {
   TwoDimensionalGreedyAlgo algo(
       TwoDimensionalGreedyAlgo::EqualSkewOption::PICK_FIRST);
   vector<TableReplicaMove> moves;
-  ASSERT_OK(algo.GetNextMoves(cbi, 0, &moves));
+  ASSERT_OK(algo.GetNextMoves(ci, 0, &moves));
   EXPECT_EQ(ref_moves, moves);
 }
 
@@ -725,8 +728,8 @@ TEST(RebalanceAlgoUnitTest, RandomizedTest) {
     // Make sure the rebalancing algorithm can balance the config.
     {
       SCOPED_TRACE(TestClusterConfigToDebugString(cfg));
-      ClusterBalanceInfo cbi;
-      ClusterConfigToClusterBalanceInfo(cfg, &cbi);
+      ClusterInfo ci;
+      ClusterConfigToClusterInfo(cfg, &ci);
       TwoDimensionalGreedyAlgo algo;
       boost::optional<TableReplicaMove> move;
       // Set a generous upper bound on the number of moves allowed before we
@@ -734,9 +737,9 @@ TEST(RebalanceAlgoUnitTest, RandomizedTest) {
       // We shouldn't need to do more moves than there are replicas.
       int num_moves_ub = num_tservers * num_tables * max_replicas_per_table_and_tserver;
       int num_moves = 0;
-      while (!IsBalanced(cbi)) {
-        ASSERT_OK(algo.GetNextMove(cbi, &move));
-        ASSERT_OK(TwoDimensionalGreedyAlgo::ApplyMove(*move, &cbi));
+      while (!IsBalanced(ci.balance)) {
+        ASSERT_OK(algo.GetNextMove(ci, &move));
+        ASSERT_OK(TwoDimensionalGreedyAlgo::ApplyMove(*move, &ci.balance));
         ASSERT_GE(num_moves_ub, ++num_moves) << "Too many moves! The algorithm is likely stuck";
       }
     }
