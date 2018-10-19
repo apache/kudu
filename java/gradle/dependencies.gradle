@@ -83,6 +83,7 @@ libs += [
     hadoopClient         : "org.apache.hadoop:hadoop-client:$versions.hadoop",
     hadoopCommon         : "org.apache.hadoop:hadoop-common:$versions.hadoop",
     hadoopMRClientCommon : "org.apache.hadoop:hadoop-mapreduce-client-common:$versions.hadoop",
+    hadoopMRClientCore   : "org.apache.hadoop:hadoop-mapreduce-client-core:$versions.hadoop",
     hamcrestCore         : "org.hamcrest:hamcrest-core:$versions.hamcrest",
     hiveMetastore        : "org.apache.hive:hive-metastore:$versions.hive",
     hiveMetastoreTest    : "org.apache.hive:hive-metastore:$versions.hive:tests",
