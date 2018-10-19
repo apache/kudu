@@ -57,7 +57,7 @@ TEST(SentryActionTest, TestImplyAction) {
     ASSERT_FALSE(metadata.Imply(action));
   }
 
-  actions.insert(actions.end(), metadata);
+  actions.emplace_back(metadata);
   for (const auto& action : actions) {
     // Action ALL implies all other actions.
     ASSERT_TRUE(all.Imply(action));
@@ -72,16 +72,15 @@ TEST(SentryActionTest, TestImplyAction) {
 
 TEST(SentryActionTest, TestFromString) {
   // Action '*' equals to ALL.
-  SentryAction wildcard_action;
-  ASSERT_OK(wildcard_action.FromString(SentryAction::kWildCard));
-  SentryAction wildcard(wildcard_action);
+  SentryAction wildcard;
+  ASSERT_OK(SentryAction::FromString(SentryAction::kWildCard, &wildcard));
   SentryAction all(SentryAction::Action::ALL);
   ASSERT_TRUE(all.Imply(wildcard));
   ASSERT_TRUE(wildcard.Imply(all));
 
   // Unsupported action, such as '+', throws invalid argument error.
   SentryAction invalid_action;
-  Status s = invalid_action.FromString("+");
+  Status s = SentryAction::FromString("+", &invalid_action);
   ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
 }
 

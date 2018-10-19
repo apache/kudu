@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include <iosfwd>
 #include <string>
 
 #include "kudu/util/status.h"
@@ -24,12 +25,15 @@
 namespace kudu {
 namespace sentry {
 
-// A replication of Sentry Action, which is the operation taken
-// on an authorizable/object. In this case, HiveSQL model is chosen
-// to define the actions. One action can imply another following rules
-// defined in Imply().
+// A carbon copy of Sentry Action, which is the operation taken
+// on an authorizable, and authorizable is linear hierarchical
+// structured resource. In this case, HiveSQL privilege model is
+// chosen to define authorizables (server → database → table → column)
+// and actions (create, drop, etc.) to authorize users' operations
+// (e.g. create a table, drop a database).
+// See org.apache.sentry.core.model.db.HivePrivilegeModel.
 //
-// This class is not thread-safe.
+// One action can imply another following rules defined in Imply().
 class SentryAction {
  public:
   static const char* const kWildCard;
@@ -37,7 +41,7 @@ class SentryAction {
   // Actions that are supported. All actions are independent,
   // except that ALL subsumes every other action, and every
   // action subsumes METADATA. OWNER is a special action that
-  // behaves like the ALL.
+  // behaves like ALL.
   // Note that 'UNINITIALIZED' is not an actual operation but
   // only to represent an action in uninitialized state.
   //
@@ -65,9 +69,9 @@ class SentryAction {
   }
 
   // Create an Action from string.
-  Status FromString(const std::string& action);
+  static Status FromString(const std::string& str, SentryAction* action);
 
-  // Check if an action implies the other. In general,
+  // Check if this action implies 'other'. In general,
   //   1. an action only implies itself.
   //   2. with the exceptions that ALL, OWNER imply all other actions,
   //      and any action implies METADATA.
@@ -78,6 +82,10 @@ class SentryAction {
  private:
   Action action_;
 };
+
+const char* ActionToString(SentryAction::Action action);
+
+std::ostream& operator<<(std::ostream& o, SentryAction::Action action);
 
 } // namespace sentry
 } // namespace kudu
