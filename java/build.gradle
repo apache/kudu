@@ -37,6 +37,9 @@ allprojects {
     mavenLocal()
   }
 
+  // Read the version.txt file to set the project version
+  project.version = file("$rootDir/../version.txt").text.trim()
+
   apply from: "$rootDir/gradle/docs.gradle"
 }
 

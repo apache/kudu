@@ -27,6 +27,7 @@ from setuptools import setup
 from distutils.command.clean import clean as _clean
 from distutils.extension import Extension
 import os
+import re
 import subprocess
 
 # Workaround a Python bug in which multiprocessing's atexit handler doesn't
@@ -37,30 +38,34 @@ import multiprocessing
 if Cython.__version__ < '0.21.0':
     raise Exception('Please upgrade to Cython 0.21.0 or newer')
 
-MAJOR = 1
-MINOR = 9
-MICRO = 0
-VERSION = '%d.%d.%d' % (MAJOR, MINOR, MICRO)
-ISRELEASED = True
-
 setup_dir = os.path.abspath(os.path.dirname(__file__))
 
+def find_version():
+    version_file = open(os.path.join(setup_dir, "version.txt")).read()
+    version_match = re.search(
+        # Matches versions in the format of major.minor.patch-optional-label.
+        # For example: 1.2.3 or 1.2.3-SNAPSHOT or 1.2.3-beta-SNAPSHOT
+        r"^(?P<version>\d+\.\d+\.\d+)(?:-(?P<label>.+))?",
+        version_file
+    )
+    if not version_match:
+        raise RuntimeError("Unable to parse version string " + version_file)
+    version = version_match.group("version")
+    if "SNAPSHOT" in version_match.group("label"):
+        version += '.dev0'
+    return version
 
-def write_version_py(filename=os.path.join(setup_dir, 'kudu/version.py')):
-    version = VERSION
-    if not ISRELEASED:
-        version += '.dev'
-
+def write_version_py(version, filename=os.path.join(setup_dir, 'kudu/version.py')):
+    is_release = "dev" not in version
     a = open(filename, 'w')
     file_content = "\n".join(["",
                               "# THIS FILE IS GENERATED FROM SETUP.PY",
                               "version = '%(version)s'",
                               "isrelease = '%(isrelease)s'"])
 
-    a.write(file_content % {'version': VERSION,
-                            'isrelease': str(ISRELEASED)})
+    a.write(file_content % {'version': version,
+                            'isrelease': str(is_release)})
     a.close()
-
 
 class clean(_clean):
     def run(self):
@@ -98,6 +103,8 @@ def generate_config_pxi(include_dirs):
       os.unlink(dst_tmp)
     else:
       os.rename(dst_tmp, dst)
+
+VERSION = find_version()
 
 # If we're in the context of the Kudu git repository, build against the
 # latest in-tree build artifacts
@@ -155,7 +162,7 @@ for submodule_name in ext_submodules:
 
 extensions = cythonize(extensions)
 
-write_version_py()
+write_version_py(VERSION)
 
 LONG_DESCRIPTION = open(os.path.join(setup_dir, "README.md")).read()
 DESCRIPTION = "Python interface to the Apache Kudu C++ Client API"
