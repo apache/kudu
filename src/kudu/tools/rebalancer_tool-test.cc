@@ -24,6 +24,7 @@
 #include <ostream>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -36,12 +37,16 @@
 #include "kudu/client/shared_ptr.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus.proxy.h"
+#include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/map-util.h"
+#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/integration-tests/ts_itest-base.h"
+#include "kudu/master/master.pb.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/tablet/tablet.pb.h"
@@ -70,6 +75,7 @@ using kudu::client::KuduSchema;
 using kudu::client::KuduSchemaBuilder;
 using kudu::client::KuduTableAlterer;
 using kudu::client::KuduTableCreator;
+using kudu::cluster::LocationInfo;
 using kudu::itest::TabletServerMap;
 using kudu::tserver::ListTabletsResponsePB;
 using std::atomic;
@@ -81,6 +87,7 @@ using std::string;
 using std::thread;
 using std::tuple;
 using std::unique_ptr;
+using std::unordered_map;
 using std::vector;
 using strings::Substitute;
 
@@ -211,7 +218,8 @@ static Status CreateUnbalancedTables(
     int rep_factor,
     int tserver_idx_from,
     int tserver_num,
-    int tserver_unresponsive_ms) {
+    int tserver_unresponsive_ms,
+    vector<string>* table_names = nullptr) {
   // Keep running only some tablet servers and shut down the rest.
   for (auto i = tserver_idx_from; i < tserver_num; ++i) {
     cluster->tablet_server(i)->Shutdown();
@@ -225,7 +233,7 @@ static Status CreateUnbalancedTables(
   // which are up and running.
   auto client_schema = KuduSchema::FromSchema(table_schema);
   for (auto i = 0; i < num_tables; ++i) {
-    const string table_name = Substitute(table_name_pattern, i);
+    string table_name = Substitute(table_name_pattern, i);
     unique_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
     RETURN_NOT_OK(table_creator->table_name(table_name)
                   .schema(&client_schema)
@@ -240,6 +248,9 @@ static Status CreateUnbalancedTables(
       Substitute("--table_num_replicas=$0", rep_factor),
       "--string_fixed=unbalanced_tables_test",
     }));
+    if (table_names) {
+      table_names->emplace_back(std::move(table_name));
+    }
   }
 
   for (auto i = tserver_idx_from; i < tserver_num; ++i) {
@@ -394,7 +405,9 @@ class RebalancingTest : public tserver::TabletServerIntegrationTestBase {
   static const char* const kTableNamePattern;
 
   void Prepare(const vector<string>& extra_tserver_flags = {},
-               const vector<string>& extra_master_flags = {}) {
+               const vector<string>& extra_master_flags = {},
+               const LocationInfo& location_info = {},
+               vector<string>* created_tables_names = nullptr) {
     const auto& scheme_flag = Substitute(
         "--raft_prepare_replacement_before_eviction=$0", is_343_scheme());
     master_flags_.push_back(scheme_flag);
@@ -407,12 +420,12 @@ class RebalancingTest : public tserver::TabletServerIntegrationTestBase {
 
     FLAGS_num_tablet_servers = num_tservers_;
     FLAGS_num_replicas = rep_factor_;
-    NO_FATALS(BuildAndStart(tserver_flags_, master_flags_));
+    NO_FATALS(BuildAndStart(tserver_flags_, master_flags_, location_info));
 
     ASSERT_OK(CreateUnbalancedTables(
         cluster_.get(), client_.get(), schema_, kTableNamePattern,
         num_tables_, rep_factor_, rep_factor_ + 1, num_tservers_,
-        tserver_unresponsive_ms_));
+        tserver_unresponsive_ms_, created_tables_names));
   }
 
   // When the rebalancer starts moving replicas, ksck detects corruption
@@ -1141,6 +1154,111 @@ TEST_P(RebalancerAndSingleReplicaTablets, SingleReplicasStayOrMove) {
   NO_FATALS(cluster_->AssertNoCrashes());
   ClusterVerifier v(cluster_.get());
   NO_FATALS(v.CheckCluster());
+}
+
+// Basic fixture for the rebalancer tests.
+class LocationAwareRebalancingBasicTest : public RebalancingTest {
+ public:
+  LocationAwareRebalancingBasicTest()
+      : RebalancingTest(/*num_tables=*/ 12,
+                        /*rep_factor=*/ 3,
+                        /*num_tservers=*/ 6) {
+  }
+
+  bool is_343_scheme() const override {
+    // These tests are for the 3-4-3 replica management scheme only.
+    return true;
+  }
+};
+
+// Verifying the very basic functionality of the location-aware rebalancer:
+// given the very simple cluster configuration of 6 tablet servers spread
+// among 3 locations (2+2+2) and 12 tables with RF=3, the initially
+// imbalanced distribution of the replicas should become more balanced
+// and the placement policy constraints should be reimposed after running
+// the rebalancer tool.
+TEST_F(LocationAwareRebalancingBasicTest, Basic) {
+  if (!AllowSlowTests()) {
+    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
+    return;
+  }
+
+  const LocationInfo location_info = { { "/A", 2 }, { "/B", 2 }, { "/C", 2 }, };
+  vector<string> table_names;
+  NO_FATALS(Prepare({}, {}, location_info, &table_names));
+
+  const vector<string> tool_args = {
+    "cluster",
+    "rebalance",
+    cluster_->master()->bound_rpc_addr().ToString(),
+  };
+
+  string out;
+  string err;
+  const auto s = RunKuduTool(tool_args, &out, &err);
+  ASSERT_TRUE(s.ok()) << ToolRunInfo(s, out, err);
+  ASSERT_STR_NOT_CONTAINS(s.ToString(), kExitOnSignalStr);
+
+  NO_FATALS(cluster_->AssertNoCrashes());
+  ClusterVerifier v(cluster_.get());
+  NO_FATALS(v.CheckCluster());
+
+  unordered_map<string, itest::TServerDetails*> ts_map;
+  ASSERT_OK(itest::CreateTabletServerMap(cluster_->master_proxy(0),
+                                         cluster_->messenger(),
+                                         &ts_map));
+  ValueDeleter deleter(&ts_map);
+
+  // Build tablet server UUID --> location map.
+  unordered_map<string, string> location_by_ts_id;
+  for (const auto& elem : ts_map) {
+    EmplaceOrDie(&location_by_ts_id, elem.first, elem.second->location);
+  }
+
+
+  for (const auto& table_name : table_names) {
+    master::GetTableLocationsResponsePB table_locations;
+    ASSERT_OK(itest::GetTableLocations(cluster_->master_proxy(),
+                                       table_name, MonoDelta::FromSeconds(30),
+                                       master::ANY_REPLICA,
+                                       &table_locations));
+    const auto tablet_num = table_locations.tablet_locations_size();
+    auto total_table_replica_count = 0;
+    unordered_map<string, int> total_count_per_location;
+    for (auto i = 0; i < tablet_num; ++i) {
+      const auto& location = table_locations.tablet_locations(i);
+      const auto& tablet_id = location.tablet_id();
+      unordered_map<string, int> count_per_location;
+      for (const auto& replica : location.replicas()) {
+        const auto& ts_id = replica.ts_info().permanent_uuid();
+        const auto& location = FindOrDie(location_by_ts_id, ts_id);
+        ++LookupOrEmplace(&count_per_location, location, 0);
+        ++LookupOrEmplace(&total_count_per_location, location, 0);
+        ++total_table_replica_count;
+      }
+
+      // Make sure no location has the majority of replicas for the tablet.
+      for (const auto& elem : count_per_location) {
+        const auto& location = elem.first;
+        const auto replica_count = elem.second;
+        ASSERT_GT(consensus::MajoritySize(rep_factor_), replica_count)
+            << Substitute("tablet $0 (table $1): $2 replicas out of $3 total "
+                          "are in location $4",
+                          tablet_id, table_name, replica_count, rep_factor_,
+                          location);
+
+      }
+
+      // Verify the overall replica distribution for the table.
+      double avg = static_cast<double>(total_table_replica_count) / location_info.size();
+      for (const auto& elem : total_count_per_location) {
+        const auto& location = elem.first;
+        const auto replica_num = elem.second;
+        ASSERT_GT(avg + 2, replica_num) << "at location " << location;
+        ASSERT_LT(avg - 2, replica_num) << "at location " << location;
+      }
+    }
+  }
 }
 
 } // namespace tools

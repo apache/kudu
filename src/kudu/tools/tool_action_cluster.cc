@@ -101,6 +101,25 @@ DEFINE_bool(report_only, false,
             "Whether to report on table- and cluster-wide replica distribution "
             "skew and exit without doing any actual rebalancing");
 
+DEFINE_bool(disable_policy_fixer, false,
+            "In case of multi-location cluster, whether to detect and fix "
+            "placement policy violations. Fixing placement policy violations "
+            "involves moving tablet replicas across different locations "
+            "of the cluster. "
+            "This setting is applicable to multi-location clusters only.");
+
+DEFINE_bool(disable_cross_location_rebalancing, false,
+            "In case of multi-location cluster, whether to move tablet "
+            "replicas between locations in attempt to spread tablet replicas "
+            "among location evenly (equalizing loads of locations throughout "
+            "the cluster). "
+            "This setting is applicable to multi-location clusters only.");
+
+DEFINE_bool(disable_intra_location_rebalancing, false,
+            "In case of multi-location cluster, whether to rebalance tablet "
+            "replica distribution within each location. "
+            "This setting is applicable to multi-location clusters only.");
+
 static bool ValidateMoveSingleReplicas(const char* flag_name,
                                        const string& flag_value) {
   const vector<string> allowed_values = { "auto", "enabled", "disabled" };
@@ -260,7 +279,10 @@ Status RunRebalance(const RunnerContext& context) {
       FLAGS_max_staleness_interval_sec,
       FLAGS_max_run_time_sec,
       move_single_replicas,
-      FLAGS_output_replica_distribution_details));
+      FLAGS_output_replica_distribution_details,
+      !FLAGS_disable_policy_fixer,
+      !FLAGS_disable_cross_location_rebalancing,
+      !FLAGS_disable_intra_location_rebalancing));
 
   // Print info on pre-rebalance distribution of replicas.
   RETURN_NOT_OK(rebalancer.PrintStats(cout));
@@ -346,6 +368,9 @@ unique_ptr<Mode> BuildClusterMode() {
         .Description(desc)
         .ExtraDescription(extra_desc)
         .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
+        .AddOptionalParameter("disable_policy_fixer")
+        .AddOptionalParameter("disable_cross_location_rebalancing")
+        .AddOptionalParameter("disable_intra_location_rebalancing")
         .AddOptionalParameter("max_moves_per_server")
         .AddOptionalParameter("max_run_time_sec")
         .AddOptionalParameter("max_staleness_interval_sec")

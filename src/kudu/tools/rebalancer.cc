@@ -38,6 +38,7 @@
 #include <glog/logging.h>
 
 #include "kudu/client/client.h"
+#include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
@@ -45,6 +46,7 @@
 #include "kudu/tools/ksck.h"
 #include "kudu/tools/ksck_remote.h"
 #include "kudu/tools/ksck_results.h"
+#include "kudu/tools/placement_policy_util.h"
 #include "kudu/tools/rebalance_algo.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/tools/tool_replica_util.h"
@@ -82,14 +84,20 @@ Rebalancer::Config::Config(
     size_t max_staleness_interval_sec,
     int64_t max_run_time_sec,
     bool move_rf1_replicas,
-    bool output_replica_distribution_details)
-        : master_addresses(std::move(master_addresses)),
-          table_filters(std::move(table_filters)),
-          max_moves_per_server(max_moves_per_server),
-          max_staleness_interval_sec(max_staleness_interval_sec),
-          max_run_time_sec(max_run_time_sec),
-          move_rf1_replicas(move_rf1_replicas),
-          output_replica_distribution_details(output_replica_distribution_details) {
+    bool output_replica_distribution_details,
+    bool run_policy_fixer,
+    bool run_cross_location_rebalancing,
+    bool run_intra_location_rebalancing)
+    : master_addresses(std::move(master_addresses)),
+      table_filters(std::move(table_filters)),
+      max_moves_per_server(max_moves_per_server),
+      max_staleness_interval_sec(max_staleness_interval_sec),
+      max_run_time_sec(max_run_time_sec),
+      move_rf1_replicas(move_rf1_replicas),
+      output_replica_distribution_details(output_replica_distribution_details),
+      run_policy_fixer(run_policy_fixer),
+      run_cross_location_rebalancing(run_cross_location_rebalancing),
+      run_intra_location_rebalancing(run_intra_location_rebalancing) {
   DCHECK_GE(max_moves_per_server, 0);
 }
 
@@ -103,7 +111,7 @@ Status Rebalancer::PrintStats(std::ostream& out) {
   const KsckResults& results = ksck_->results();
 
   ClusterRawInfo raw_info;
-  RETURN_NOT_OK(KsckResultsToClusterRawInfo(results, &raw_info));
+  RETURN_NOT_OK(KsckResultsToClusterRawInfo(boost::none, results, &raw_info));
 
   ClusterInfo ci;
   RETURN_NOT_OK(BuildClusterInfo(raw_info, MovesInProgress(), &ci));
@@ -218,29 +226,143 @@ Status Rebalancer::Run(RunStatus* result_status, size_t* moves_count) {
   }
 
   ClusterRawInfo raw_info;
-  RETURN_NOT_OK(KsckResultsToClusterRawInfo(ksck_->results(), &raw_info));
+  RETURN_NOT_OK(
+      KsckResultsToClusterRawInfo(boost::none, ksck_->results(), &raw_info));
 
   ClusterInfo ci;
   RETURN_NOT_OK(BuildClusterInfo(raw_info, MovesInProgress(), &ci));
 
-  TwoDimensionalGreedyRunner runner(this, config_.max_moves_per_server, deadline);
-  RETURN_NOT_OK(runner.Init(config_.master_addresses));
-  RETURN_NOT_OK(RunWith(&runner, result_status));
+  const auto& ts_id_by_location = ci.locality.servers_by_location;
+  if (ts_id_by_location.empty()) {
+    // Empty cluster: no tablet servers reported.
+    if (moves_count != nullptr) {
+      *moves_count = 0;
+    }
+    *result_status = RunStatus::CLUSTER_IS_BALANCED;
+    LOG(INFO) << "no tablet servers are reported: nothing to balance";
+    return Status::OK();
+  }
+
+  size_t moves_count_total = 0;
+  if (ts_id_by_location.size() == 1) {
+    const auto& location = ts_id_by_location.cbegin()->first;
+    LOG(INFO) << "running whole-cluster rebalancing";
+    IntraLocationRunner runner(
+        this, config_.max_moves_per_server, deadline, location);
+    RETURN_NOT_OK(runner.Init(config_.master_addresses));
+    RETURN_NOT_OK(RunWith(&runner, result_status));
+    moves_count_total += runner.moves_count();
+  } else {
+    // The essence of location-aware balancing:
+    //   1. Find tablets whose replicas placed in such a way that their
+    //      distribution violates the main constraint of the placement policy.
+    //      For each non-conforming tablet, move its replicas to restore
+    //      the placement policy restrictions. In other words, if a location has
+    //      more than the majority of replicas for some tablet,
+    //      move the replicas of the tablet to other locations.
+    //   2. For every tablet whose replica placement does not violate the
+    //      placement policy constraints, balance the load among locations.
+    //   3. Balance replica distribution within every location. This is a.k.a.
+    //      intra-location balancing. The intra-location balancing involves
+    //      moving replicas only within location, no replicas are moved between
+    //      locations.
+    if (config_.run_policy_fixer) {
+      // Fix placement policy violations, if any.
+      LOG(INFO) << "fixing placement policy violations";
+      PolicyFixer runner(this, config_.max_moves_per_server, deadline);
+      RETURN_NOT_OK(runner.Init(config_.master_addresses));
+      RETURN_NOT_OK(RunWith(&runner, result_status));
+      moves_count_total += runner.moves_count();
+    }
+    if (config_.run_cross_location_rebalancing) {
+      // Run the rebalancing across locations (inter-location rebalancing).
+      LOG(INFO) << "running cross-location rebalancing";
+      CrossLocationRunner runner(this, config_.max_moves_per_server, deadline);
+      RETURN_NOT_OK(runner.Init(config_.master_addresses));
+      RETURN_NOT_OK(RunWith(&runner, result_status));
+      moves_count_total += runner.moves_count();
+    }
+    if (config_.run_intra_location_rebalancing) {
+      // Run the rebalancing within every location (intra-location rebalancing).
+      for (const auto& elem : ts_id_by_location) {
+        const auto& location = elem.first;
+        // TODO(aserbin): it would be nice to run these rebalancers in parallel
+        LOG(INFO) << "running rebalancer within location '" << location << "'";
+        IntraLocationRunner runner(
+            this, config_.max_moves_per_server, deadline, location);
+        RETURN_NOT_OK(runner.Init(config_.master_addresses));
+        RETURN_NOT_OK(RunWith(&runner, result_status));
+        moves_count_total += runner.moves_count();
+      }
+    }
+  }
   if (moves_count != nullptr) {
-    *moves_count = runner.moves_count();
+    *moves_count = moves_count_total;
   }
 
   return Status::OK();
 }
 
 Status Rebalancer::KsckResultsToClusterRawInfo(
+    const boost::optional<string>& location,
     const KsckResults& ksck_info,
     ClusterRawInfo* raw_info) {
   DCHECK(raw_info);
 
-  raw_info->tserver_summaries = ksck_info.tserver_summaries;
-  raw_info->table_summaries = ksck_info.table_summaries;
-  raw_info->tablet_summaries = ksck_info.tablet_summaries;
+  // Filter out entities that are not relevant to the specified location.
+  vector<KsckServerHealthSummary> tserver_summaries;
+  tserver_summaries.reserve(ksck_info.tserver_summaries.size());
+
+  vector<KsckTabletSummary> tablet_summaries;
+  tablet_summaries.reserve(ksck_info.tablet_summaries.size());
+
+  vector<KsckTableSummary> table_summaries;
+  table_summaries.reserve(table_summaries.size());
+
+  if (!location) {
+    // Information on the whole cluster.
+    tserver_summaries = ksck_info.tserver_summaries;
+    tablet_summaries = ksck_info.tablet_summaries;
+    table_summaries = ksck_info.table_summaries;
+  } else {
+    // Information on the specified location only: filter out non-relevant info.
+    const auto& location_str =  *location;
+
+    unordered_set<string> ts_ids_at_location;
+    for (const auto& summary : ksck_info.tserver_summaries) {
+      if (summary.ts_location == location_str) {
+        tserver_summaries.push_back(summary);
+        InsertOrDie(&ts_ids_at_location, summary.uuid);
+      }
+    }
+
+    unordered_set<string> table_ids_at_location;
+    for (const auto& summary : ksck_info.tablet_summaries) {
+      const auto& replicas = summary.replicas;
+      decltype(summary.replicas) replicas_at_location;
+      replicas_at_location.reserve(replicas.size());
+      for (const auto& replica : replicas) {
+        if (ContainsKey(ts_ids_at_location, replica.ts_uuid)) {
+          replicas_at_location.push_back(replica);
+        }
+      }
+      if (!replicas_at_location.empty()) {
+        table_ids_at_location.insert(summary.table_id);
+      }
+      tablet_summaries.push_back(summary);
+      tablet_summaries.back().replicas = std::move(replicas_at_location);
+    }
+
+    for (const auto& summary : ksck_info.table_summaries) {
+      if (ContainsKey(table_ids_at_location, summary.id)) {
+        table_summaries.push_back(summary);
+      }
+    }
+  }
+
+  raw_info->tserver_summaries = std::move(tserver_summaries);
+  raw_info->table_summaries = std::move(table_summaries);
+  raw_info->tablet_summaries = std::move(tablet_summaries);
 
   return Status::OK();
 }
@@ -362,6 +484,60 @@ void Rebalancer::FilterMoves(const MovesInProgress& scheduled_moves,
   *replica_moves = std::move(filtered_replica_moves);
 }
 
+Status Rebalancer::FilterCrossLocationTabletCandidates(
+    const unordered_map<string, string>& location_by_ts_id,
+    const TabletsPlacementInfo& placement_info,
+    const TableReplicaMove& move,
+    vector<string>* tablet_ids) {
+  DCHECK(tablet_ids);
+
+  if (tablet_ids->empty()) {
+    // Nothing to filter.
+    return Status::OK();
+  }
+
+  const auto& dst_location = FindOrDie(location_by_ts_id, move.to);
+  const auto& src_location = FindOrDie(location_by_ts_id, move.from);
+
+  // Sanity check: the source and the destination tablet servers should be
+  // in different locations.
+  if (src_location == dst_location) {
+    return Status::InvalidArgument(Substitute(
+        "moving replicas of table $0: the same location '$1' for both "
+        "the source ($2) and the destination ($3) tablet servers",
+         move.table_id, src_location, move.from, move.to));
+  }
+
+  vector<string> tablet_ids_filtered;
+  for (auto& tablet_id : *tablet_ids) {
+    const auto& replica_count_info = FindOrDie(
+        placement_info.tablet_location_info, tablet_id);
+    const auto* count_ptr = FindOrNull(replica_count_info, dst_location);
+    if (count_ptr == nullptr) {
+      // Nothing else to clarify: not a single replica in the destnation
+      // location for this candidate tablet.
+      tablet_ids_filtered.emplace_back(std::move(tablet_id));
+      continue;
+    }
+    const auto location_replica_num = *count_ptr;
+    const auto& table_id = FindOrDie(placement_info.tablet_to_table_id, tablet_id);
+    const auto& table_info = FindOrDie(placement_info.tables_info, table_id);
+    const auto rf = table_info.replication_factor;
+    if (location_replica_num + 1 >= consensus::MajoritySize(rf)) {
+      VLOG(1) << Substitute("destination location '$0' for candidate tablet $1 "
+                            "already contains $2 of $3 replicas",
+                            dst_location, tablet_id, location_replica_num, rf);
+      continue;
+    }
+    // No majority of replicas in the destination location: it's OK candidate.
+    tablet_ids_filtered.emplace_back(std::move(tablet_id));
+  }
+
+  *tablet_ids = std::move(tablet_ids_filtered);
+
+  return Status::OK();
+}
+
 Status Rebalancer::BuildClusterInfo(const ClusterRawInfo& raw_info,
                                     const MovesInProgress& moves_in_progress,
                                     ClusterInfo* info) const {
@@ -384,6 +560,18 @@ Status Rebalancer::BuildClusterInfo(const ClusterRawInfo& raw_info,
         rf1_tables.emplace(s.id);
       }
     }
+  }
+
+  auto& ts_uuids_by_location = result_info.locality.servers_by_location;
+  auto& location_by_ts_uuid = result_info.locality.location_by_ts_id;
+  for (const auto& summary : raw_info.tserver_summaries) {
+    const auto& ts_id = summary.uuid;
+    const auto& ts_location = summary.ts_location;
+    VLOG(1) << Substitute("found tserver $0 at location '$1'", ts_id, ts_location);
+    EmplaceOrDie(&location_by_ts_uuid, ts_id, ts_location);
+    auto& ts_ids = LookupOrEmplace(&ts_uuids_by_location,
+                                   ts_location, set<string>());
+    InsertOrDie(&ts_ids, ts_id);
   }
 
   for (const auto& s : raw_info.tserver_summaries) {
@@ -495,6 +683,7 @@ Status Rebalancer::BuildClusterInfo(const ClusterRawInfo& raw_info,
     }
     table_info_by_skew.emplace(max_count - min_count, std::move(tbi));
   }
+  // TODO(aserbin): add sanity checks on the result.
   *info = std::move(result_info);
 
   return Status::OK();
@@ -577,9 +766,10 @@ Status Rebalancer::RunWith(Runner* runner, RunStatus* result_status) {
   return Status::OK();
 }
 
-Status Rebalancer::GetClusterRawInfo(ClusterRawInfo* raw_info) {
+Status Rebalancer::GetClusterRawInfo(const boost::optional<string>& location,
+                                     ClusterRawInfo* raw_info) {
   RETURN_NOT_OK(RefreshKsckResults());
-  return KsckResultsToClusterRawInfo(ksck_->results(), raw_info);
+  return KsckResultsToClusterRawInfo(location, ksck_->results(), raw_info);
 }
 
 Status Rebalancer::RefreshKsckResults() {
@@ -623,17 +813,21 @@ Status Rebalancer::BaseRunner::GetNextMoves(bool* has_moves) {
     return Status::OK();
   }
 
-  // Filter out moves for tablets which already have operations in progress.
-  // The idea is simple: no more than one move operation per tablet should
-  // ever be attempted.
+  // The GetNextMovesImpl() method prescribes replica movements using simplified
+  // logic that doesn't know about best practices of safe and robust Raft
+  // configuration changes. Here it's necessary to filter out moves for tablets
+  // which already have operations in progress. The idea is simple: don't start
+  // another operation for a tablet when there is still a pending operation
+  // for that tablet.
   Rebalancer::FilterMoves(scheduled_moves_, &replica_moves);
   LoadMoves(std::move(replica_moves));
 
-  // TODO(aserbin): now this method reports on presence of some moves even if
-  //                all of those are in progress and no fresh new are available.
-  //                Would it be more convenient for to report only on the
-  //                fresh new moves and check for the presence of the scheduled
-  //                moves at the upper level?
+  // TODO(aserbin): this method reports on availability of move operations
+  //                via the 'has_moves' parameter even if all of those were
+  //                actually filtered out by the FilterMoves() method.
+  //                Would it be more convenient to report only on the new,
+  //                not-yet-in-progress operations and check for the presence
+  //                of the scheduled moves at the upper level?
   *has_moves = true;
   return Status::OK();
 }
@@ -733,7 +927,6 @@ void Rebalancer::AlgoBasedRunner::LoadMoves(vector<ReplicaMove> replica_moves) {
   }
 }
 
-// Return true if replica move operation has been scheduled successfully.
 bool Rebalancer::AlgoBasedRunner::ScheduleNextMove(bool* has_errors,
                                                    bool* timed_out) {
   DCHECK(has_errors);
@@ -746,13 +939,13 @@ bool Rebalancer::AlgoBasedRunner::ScheduleNextMove(bool* has_errors,
     return false;
   }
 
-  // Only one move operation per step: it's necessary to update information
-  // in the ts_per_op_count_ right after scheduling a single operation
+  // Scheduling one operation per step. Once operation is scheduled, it's
+  // necessary to update the ts_per_op_count_ container right after scheduling
   // to avoid oversubscribing of the tablet servers.
   size_t op_idx;
   if (!FindNextMove(&op_idx)) {
-    // Nothing to schedule: unfruitful outcome. Need to wait until
-    // there is a slot at tablet server is available.
+    // Nothing to schedule yet: unfruitful outcome. Need to wait until there is
+    // an available slot at a tablet server.
     return false;
   }
 
@@ -853,8 +1046,9 @@ bool Rebalancer::AlgoBasedRunner::UpdateMovesInProgressStatus(
 // one step of the rebalancing.
 Status Rebalancer::AlgoBasedRunner::GetNextMovesImpl(
     vector<ReplicaMove>* replica_moves) {
+  const auto& loc = location();
   ClusterRawInfo raw_info;
-  RETURN_NOT_OK(rebalancer_->GetClusterRawInfo(&raw_info));
+  RETURN_NOT_OK(rebalancer_->GetClusterRawInfo(loc, &raw_info));
 
   // For simplicity, allow to run the rebalancing only when all tablet servers
   // are in good shape. Otherwise, the rebalancing might interfere with the
@@ -865,6 +1059,11 @@ Status Rebalancer::AlgoBasedRunner::GetNextMovesImpl(
           Substitute("tablet server $0 ($1): unacceptable health status $2",
                      s.uuid, s.address, ServerHealthToString(s.health)));
     }
+  }
+
+  TabletsPlacementInfo tpi;
+  if (!loc) {
+    RETURN_NOT_OK(BuildTabletsPlacementInfo(raw_info, &tpi));
   }
 
   // The number of operations to output by the algorithm. Those will be
@@ -893,6 +1092,14 @@ Status Rebalancer::AlgoBasedRunner::GetNextMovesImpl(
   for (const auto& move : moves) {
     vector<string> tablet_ids;
     RETURN_NOT_OK(FindReplicas(move, raw_info, &tablet_ids));
+    if (!loc) {
+      // In case of cross-location (a.k.a. inter-location) rebalancing it is
+      // necessary to make sure the majority of replicas would not end up
+      // at the same location after the move. If so, remove those tablets
+      // from the list of candidates.
+      RETURN_NOT_OK(FilterCrossLocationTabletCandidates(
+          cluster_info.locality.location_by_ts_id, tpi, move, &tablet_ids));
+    }
     // Shuffle the set of the tablet identifiers: that's to achieve even spread
     // of moves across tables with the same skew.
     std::shuffle(tablet_ids.begin(), tablet_ids.end(), random_generator_);
@@ -978,7 +1185,7 @@ void Rebalancer::AlgoBasedRunner::UpdateOnMoveScheduled(
     bool is_success) {
   if (is_success) {
     Rebalancer::ReplicaMove move_info = { tablet_uuid, src_ts_uuid, dst_ts_uuid };
-    auto ins = scheduled_moves_.emplace(tablet_uuid, std::move(move_info));
+    scheduled_moves_.emplace(tablet_uuid, std::move(move_info));
     // Only one replica of a tablet can be moved at a time.
     // TODO(aserbin): clarify on duplicates
     //DCHECK(ins.second);
@@ -1015,11 +1222,226 @@ void Rebalancer::AlgoBasedRunner::UpdateOnMoveScheduledImpl(
   }
 }
 
-Rebalancer::TwoDimensionalGreedyRunner::TwoDimensionalGreedyRunner(
+Rebalancer::IntraLocationRunner::IntraLocationRunner(
+    Rebalancer* rebalancer,
+    size_t max_moves_per_server,
+    boost::optional<MonoTime> deadline,
+    std::string location)
+    : AlgoBasedRunner(rebalancer, max_moves_per_server, std::move(deadline)),
+      location_(std::move(location)) {
+}
+
+Rebalancer::CrossLocationRunner::CrossLocationRunner(
     Rebalancer* rebalancer,
     size_t max_moves_per_server,
     boost::optional<MonoTime> deadline)
     : AlgoBasedRunner(rebalancer, max_moves_per_server, std::move(deadline)) {
+}
+
+Rebalancer::PolicyFixer::PolicyFixer(
+    Rebalancer* rebalancer,
+    size_t max_moves_per_server,
+    boost::optional<MonoTime> deadline)
+    : BaseRunner(rebalancer, max_moves_per_server, std::move(deadline)) {
+}
+
+Status Rebalancer::PolicyFixer::Init(vector<string> master_addresses) {
+  DCHECK(moves_to_schedule_.empty());
+  return BaseRunner::Init(std::move(master_addresses));
+}
+
+void Rebalancer::PolicyFixer::LoadMoves(
+    vector<ReplicaMove> replica_moves) {
+  // Replace the list of moves operations to schedule. Even if it's not empty,
+  // some elements of it might be irrelevant anyway, so there is no need to
+  // keep any since the new information is the most up-to-date. The input list
+  // is already filtered and should not contain any operations which are
+  // tracked as already scheduled ones.
+  moves_to_schedule_.clear();
+
+  for (auto& move_info : replica_moves) {
+    auto ts_uuid = move_info.ts_uuid_from;
+    DCHECK(!ts_uuid.empty());
+    moves_to_schedule_.emplace(std::move(ts_uuid), std::move(move_info));
+  }
+
+  // Refresh the helper containers.
+  for (const auto& elem : moves_to_schedule_) {
+    const auto& ts_uuid = elem.first;
+    DCHECK(!ts_uuid.empty());
+    if (op_count_per_ts_.emplace(ts_uuid, 0).second) {
+      // No operations for tablet server ts_uuid: add ts_per_op_count_ entry.
+      ts_per_op_count_.emplace(0, ts_uuid);
+    }
+  }
+}
+
+bool Rebalancer::PolicyFixer::ScheduleNextMove(bool* has_errors,
+                                               bool* timed_out) {
+  DCHECK(has_errors);
+  DCHECK(timed_out);
+  *has_errors = false;
+  *timed_out = false;
+
+  if (deadline_ && MonoTime::Now() >= *deadline_) {
+    *timed_out = true;
+    return false;
+  }
+
+  ReplicaMove move_info;
+  if (!FindNextMove(&move_info)) {
+    return false;
+  }
+
+  // Find a move that's doesn't have its tserver UUID in scheduled_moves_.
+  const auto s = SetReplace(client_,
+                            move_info.tablet_uuid,
+                            move_info.ts_uuid_from,
+                            move_info.config_opid_idx);
+  if (!s.ok()) {
+    *has_errors = true;
+    return false;
+  }
+
+  // Remove the element from moves_to_schedule_.
+  bool erased = false;
+  auto range = moves_to_schedule_.equal_range(move_info.ts_uuid_from);
+  for (auto it = range.first; it != range.second; ++it) {
+    if (move_info.tablet_uuid == it->second.tablet_uuid) {
+      moves_to_schedule_.erase(it);
+      erased = true;
+      break;
+    }
+  }
+  CHECK(erased) << Substitute("T $0 P $1: move information not found",
+                              move_info.tablet_uuid, move_info.ts_uuid_from);
+  LOG(INFO) << Substitute("tablet $0: $1 -> ? move scheduled",
+                          move_info.tablet_uuid, move_info.ts_uuid_from);
+  // Add information on scheduled move into the scheduled_moves_.
+  // Only one replica of a tablet can be moved at a time.
+  auto tablet_uuid = move_info.tablet_uuid;
+  EmplaceOrDie(&scheduled_moves_, std::move(tablet_uuid), std::move(move_info));
+  return true;
+}
+
+bool Rebalancer::PolicyFixer::UpdateMovesInProgressStatus(
+    bool* has_errors, bool* timed_out) {
+  DCHECK(has_errors);
+  DCHECK(timed_out);
+
+  auto has_updates = false;
+  auto error_count = 0;
+  auto out_of_time = false;
+  for (auto it = scheduled_moves_.begin(); it != scheduled_moves_.end(); ) {
+    if (deadline_ && MonoTime::Now() >= *deadline_) {
+      out_of_time = true;
+      break;
+    }
+    bool is_complete;
+    Status completion_status;
+    const auto& tablet_id = it->second.tablet_uuid;
+    const auto& ts_uuid = it->second.ts_uuid_from;
+    auto s = CheckCompleteReplace(client_, tablet_id, ts_uuid,
+                                  &is_complete, &completion_status);
+    if (!s.ok()) {
+      // Update on the movement status has failed: remove the move operation
+      // as if it didn't exist. Once the cluster status is re-synchronized,
+      // the corresponding operation will be scheduled again, if needed.
+      ++error_count;
+      LOG(INFO) << Substitute("tablet $0: $1 -> ? move is abandoned: $2",
+                              tablet_id, ts_uuid, s.ToString());
+      it = scheduled_moves_.erase(it);
+      continue;
+    }
+    DCHECK(s.ok());
+    if (is_complete) {
+      // The replacement has completed (success or failure): update the stats
+      // on the pending operations per server.
+      ++moves_count_;
+      has_updates = true;
+      LOG(INFO) << Substitute("tablet $0: $1 -> ? move completed: $2",
+                              tablet_id, ts_uuid, completion_status.ToString());
+      UpdateOnMoveCompleted(ts_uuid);
+      it = scheduled_moves_.erase(it);
+      continue;
+    }
+    ++it;
+  }
+
+  *timed_out = out_of_time;
+  *has_errors = (error_count > 0);
+  return has_updates;
+}
+
+Status Rebalancer::PolicyFixer::GetNextMovesImpl(
+    vector<ReplicaMove>* replica_moves) {
+  ClusterRawInfo raw_info;
+  RETURN_NOT_OK(rebalancer_->GetClusterRawInfo(boost::none, &raw_info));
+
+  // For simplicity, allow to run the rebalancing only when all tablet servers
+  // are in good shape. Otherwise, the rebalancing might interfere with the
+  // automatic re-replication or get unexpected errors while moving replicas.
+  // TODO(aserbin): move it somewhere else?
+  for (const auto& s : raw_info.tserver_summaries) {
+    if (s.health != KsckServerHealth::HEALTHY) {
+      return Status::IllegalState(
+          Substitute("tablet server $0 ($1): unacceptable health status $2",
+                     s.uuid, s.address, ServerHealthToString(s.health)));
+    }
+  }
+  ClusterInfo ci;
+  RETURN_NOT_OK(rebalancer_->BuildClusterInfo(raw_info, MovesInProgress(), &ci));
+
+  TabletsPlacementInfo placement_info;
+  RETURN_NOT_OK(BuildTabletsPlacementInfo(raw_info, &placement_info));
+
+  vector<PlacementPolicyViolationInfo> ppvi;
+  RETURN_NOT_OK(DetectPlacementPolicyViolations(placement_info, &ppvi));
+
+  // Filter out all reported violations which are already taken care of.
+  // The idea is to have not more than one pending operation per tablet.
+  {
+    decltype(ppvi) ppvi_filtered;
+    for (auto& info : ppvi) {
+      if (ContainsKey(scheduled_moves_, info.tablet_id)) {
+        continue;
+      }
+      ppvi_filtered.emplace_back(std::move(info));
+    }
+    ppvi = std::move(ppvi_filtered);
+  }
+
+  RETURN_NOT_OK(FindMovesToReimposePlacementPolicy(
+      placement_info, ci.locality, ppvi, replica_moves));
+
+  if (PREDICT_FALSE(VLOG_IS_ON(1))) {
+    for (const auto& info : ppvi) {
+      VLOG(1) << Substitute("policy violation at location '$0': tablet $1",
+                            info.majority_location, info.tablet_id);
+    }
+    for (const auto& move : *replica_moves) {
+      VLOG(1) << Substitute("policy fix for tablet $0: replica to remove $1",
+                            move.tablet_uuid, move.ts_uuid_from);
+    }
+  }
+
+  return Status::OK();
+}
+
+bool Rebalancer::PolicyFixer::FindNextMove(ReplicaMove* move) {
+  DCHECK(move);
+  // TODO(aserbin): use pessimistic /2 limit for max_moves_per_servers_
+  // since the desitnation servers for the move of the replica marked with
+  // the REPLACE attribute is not known.
+
+  // Load the least loaded (in terms of scheduled moves) tablet servers first.
+  for (const auto& elem : ts_per_op_count_) {
+    const auto& ts_uuid = elem.second;
+    if (FindCopy(moves_to_schedule_, ts_uuid, move)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 } // namespace tools

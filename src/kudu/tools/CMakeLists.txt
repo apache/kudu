@@ -185,7 +185,8 @@ ADD_KUDU_TEST(placement_policy_util-test)
 ADD_KUDU_TEST(rebalance-test)
 ADD_KUDU_TEST(rebalance_algo-test)
 ADD_KUDU_TEST(rebalancer_tool-test
-  NUM_SHARDS 8 PROCESSORS 3)
+  NUM_SHARDS 8 PROCESSORS 3
+  DATA_FILES ../scripts/assign-location.py)
 ADD_KUDU_TEST_DEPENDENCIES(rebalancer_tool-test
   kudu)
 ADD_KUDU_TEST(tool_action-test)

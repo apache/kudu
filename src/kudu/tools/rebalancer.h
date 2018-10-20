@@ -36,6 +36,12 @@
 #include "kudu/util/status.h"
 
 namespace kudu {
+namespace tools {
+struct TabletsPlacementInfo;
+}  // namespace tools
+}  // namespace kudu
+
+namespace kudu {
 
 namespace client {
 class KuduClient;
@@ -63,7 +69,10 @@ class Rebalancer {
            size_t max_staleness_interval_sec = 300,
            int64_t max_run_time_sec = 0,
            bool move_rf1_replicas = false,
-           bool output_replica_distribution_details = false);
+           bool output_replica_distribution_details = false,
+           bool run_policy_fixer = true,
+           bool run_cross_location_rebalancing = true,
+           bool run_intra_location_rebalancing = true);
 
     // Kudu masters' RPC endpoints.
     std::vector<std::string> master_addresses;
@@ -94,6 +103,23 @@ class Rebalancer {
     // Whether Rebalancer::PrintStats() should output per-table and per-server
     // replica distribution details.
     bool output_replica_distribution_details;
+
+    // In case of multi-location cluster, whether to detect and fix placement
+    // policy violations. Fixing placement policy violations involves moving
+    // tablet replicas across different locations in the cluster.
+    // This setting is applicable to multi-location clusters only.
+    bool run_policy_fixer = true;
+
+    // In case of multi-location cluster, whether to move tablet replicas
+    // between locations in attempt to spread tablet replicas among location
+    // evenly (equalizing loads of locations throughout the cluster).
+    // This setting is applicable to multi-location clusters only.
+    bool run_cross_location_rebalancing = true;
+
+    // In case of multi-location cluster, whether to rebalance tablet replica
+    // distribution within each location.
+    // This setting is applicable to multi-location clusters only.
+    bool run_intra_location_rebalancing = true;
   };
 
   // Represents a concrete move of a replica from one tablet server to another.
@@ -137,14 +163,16 @@ class Rebalancer {
     // the 'master_addresses' RPC endpoints.
     virtual Status Init(std::vector<std::string> master_addresses) = 0;
 
-    // Load information on prescribed replica movement operations. Also,
+    // Load information on the prescribed replica movement operations. Also,
     // populate helper containers and other auxiliary run-time structures
     // used by ScheduleNextMove(). This method is called with every batch
     // of move operations output by the rebalancing algorithm once previously
     // loaded moves have been scheduled.
     virtual void LoadMoves(std::vector<ReplicaMove> replica_moves) = 0;
 
-    // Schedule next replica move.
+    // Schedule next replica move. Returns 'true' if replica move operation
+    // has been scheduled successfully; otherwise returns 'false' and sets
+    // the 'has_errors' and 'timed_out' parameters accordingly.
     virtual bool ScheduleNextMove(bool* has_errors, bool* timed_out) = 0;
 
     // Update statuses and auxiliary information on in-progress replica move
@@ -229,7 +257,8 @@ class Rebalancer {
     // The 'max_moves_per_server' specifies the maximum number of operations
     // per tablet server (both the source and the destination are counted in).
     // The 'deadline' specifies the deadline for the run, 'boost::none'
-    // if no timeout is set.
+    // if no timeout is set. If 'location' is boost::none, rebalance across
+    // locations.
     AlgoBasedRunner(Rebalancer* rebalancer,
                     size_t max_moves_per_server,
                     boost::optional<MonoTime> deadline);
@@ -242,14 +271,19 @@ class Rebalancer {
 
     bool UpdateMovesInProgressStatus(bool* has_errors, bool* timed_out) override;
 
+    // Get the cluter location the runner is slated to run/running at.
+    // 'boost::none' means all the cluster.
+    virtual const boost::optional<std::string>& location() const = 0;
+
     // Rebalancing algorithm that running uses to find replica moves.
     virtual RebalancingAlgo* algorithm() = 0;
 
    protected:
     Status GetNextMovesImpl(std::vector<ReplicaMove>* replica_moves) override;
 
-    // Given the data in the helper containers, find the index describing
-    // the next replica move and output it into the 'op_idx' parameter.
+    // Using the helper containers src_op_indices_ and dst_op_indices_,
+    // find the index of the most optimal replica movement operation
+    // and output the index into the 'op_idx' parameter.
     bool FindNextMove(size_t* op_idx);
 
     // Update the helper containers once a move operation has been scheduled.
@@ -277,38 +311,107 @@ class Rebalancer {
     // tserver UUID (i.e. the key) as the destination of the move operation'.
     std::unordered_map<std::string, std::set<size_t>> dst_op_indices_;
 
+    // Information on scheduled replica movement operations; keys are
+    // tablet UUIDs, values are ReplicaMove structures.
+    MovesInProgress scheduled_moves_;
+
     // Random device and generator for selecting among multiple choices, when
     // appropriate.
     std::random_device random_device_;
     std::mt19937 random_generator_;
   }; // class AlgoBasedRunner
 
-  class TwoDimensionalGreedyRunner : public AlgoBasedRunner {
+  class IntraLocationRunner : public AlgoBasedRunner {
    public:
     // The 'max_moves_per_server' specifies the maximum number of operations
     // per tablet server (both the source and the destination are counted in).
     // The 'deadline' specifies the deadline for the run, 'boost::none'
-    // if no timeout is set.
-    TwoDimensionalGreedyRunner(Rebalancer* rebalancer,
-                               size_t max_moves_per_server,
-                               boost::optional<MonoTime> deadline);
+    // if no timeout is set. In case of non-location aware cluster or if there
+    // is just one location defined in the whole cluster, the whole cluster will
+    // be rebalanced.
+    IntraLocationRunner(Rebalancer* rebalancer,
+                        size_t max_moves_per_server,
+                        boost::optional<MonoTime> deadline,
+                        std::string location);
 
     RebalancingAlgo* algorithm() override {
       return &algorithm_;
     }
 
+    const boost::optional<std::string>& location() const override {
+      return location_;
+    }
+
    private:
+    const boost::optional<std::string> location_;
+
     // An instance of the balancing algorithm.
     TwoDimensionalGreedyAlgo algorithm_;
   };
 
+  class CrossLocationRunner : public AlgoBasedRunner {
+   public:
+    // The 'max_moves_per_server' specifies the maximum number of operations
+    // per tablet server (both the source and the destination are counted in).
+    // The 'deadline' specifies the deadline for the run, 'boost::none'
+    // if no timeout is set.
+    CrossLocationRunner(Rebalancer* rebalancer,
+                        size_t max_moves_per_server,
+                        boost::optional<MonoTime> deadline);
+
+    RebalancingAlgo* algorithm() override {
+      return &algorithm_;
+    }
+
+    const boost::optional<std::string>& location() const override {
+      return location_;
+    }
+
+   private:
+    const boost::optional<std::string> location_ = boost::none;
+
+    // An instance of the balancing algorithm.
+    LocationBalancingAlgo algorithm_;
+  };
+
+  class PolicyFixer : public BaseRunner {
+   public:
+    PolicyFixer(Rebalancer* rebalancer,
+                size_t max_moves_per_server,
+                boost::optional<MonoTime> deadline);
+
+    Status Init(std::vector<std::string> master_addresses) override;
+
+    void LoadMoves(std::vector<ReplicaMove> replica_moves) override;
+
+    bool ScheduleNextMove(bool* has_errors, bool* timed_out) override;
+
+    bool UpdateMovesInProgressStatus(bool* has_errors, bool* timed_out) override;
+
+   private:
+    // Key is tserver UUID which corresponds to value.ts_uuid_from.
+    typedef std::unordered_multimap<std::string, ReplicaMove> MovesToSchedule;
+
+    Status GetNextMovesImpl(std::vector<ReplicaMove>* replica_moves) override;
+
+    bool FindNextMove(ReplicaMove* move);
+
+    // An instance of the balancing algorithm.
+    LocationBalancingAlgo algorithm_;
+
+    // Moves yet to schedule.
+    MovesToSchedule moves_to_schedule_;
+  };
+
   friend class KsckResultsToClusterBalanceInfoTest;
 
-  // Convert ksck results into information relevant to rebalancing the cluster.
-  // Basically, 'raw' information is just a sub-set of relevant fields of the
-  // KsckResults structure filtered to contain information only for the
-  // specified location.
+  // Convert ksck results into information relevant to rebalancing the cluster
+  // at the location specified by 'location' parameter ('boost::none' for
+  // 'location' means that's about cross-location rebalancing). Basically,
+  // 'raw' information is just a sub-set of relevant fields of the KsckResults
+  // structure filtered to contain information only for the specified location.
   static Status KsckResultsToClusterRawInfo(
+      const boost::optional<std::string>& location,
       const KsckResults& ksck_info,
       ClusterRawInfo* raw_info);
 
@@ -330,12 +433,21 @@ class Rebalancer {
   static void FilterMoves(const MovesInProgress& scheduled_moves,
                           std::vector<ReplicaMove>* replica_moves);
 
+  // Filter the list of candidate tablets to make sure the location
+  // of the destination server would not contain the majority of replicas
+  // after the move. The 'tablet_ids' is an in-out parameter.
+  static Status FilterCrossLocationTabletCandidates(
+      const std::unordered_map<std::string, std::string>& location_by_ts_id,
+      const TabletsPlacementInfo& placement_info,
+      const TableReplicaMove& move,
+      std::vector<std::string>* tablet_ids);
+
   // Convert the 'raw' information about the cluster into information suitable
   // for the input of the high-level rebalancing algorithm.
   // The 'moves_in_progress' parameter contains information on the replica moves
   // which have been scheduled by a caller and still in progress: those are
   // considered as successfully completed and applied to the 'raw_info' when
-  // building ClusterInfo for the specified 'raw_info' input. The idea
+  // building ClusterBalanceInfo for the specified 'raw_info' input. The idea
   // is to prevent the algorithm outputting the same moves again while some
   // of the moves recommended at prior steps are still in progress.
   // The result cluster balance information is output into the 'info' parameter.
@@ -347,8 +459,10 @@ class Rebalancer {
   // Run rebalancing using the specified runner.
   Status RunWith(Runner* runner, RunStatus* result_status);
 
-  // Refresh the information on the cluster (involves running ksck).
-  Status GetClusterRawInfo(ClusterRawInfo* raw_info);
+  // Refresh the information on the cluster for the specified location
+  // (involves running ksck).
+  Status GetClusterRawInfo(const boost::optional<std::string>& location,
+                           ClusterRawInfo* raw_info);
 
   Status GetNextMoves(Runner* runner,
                       std::vector<ReplicaMove>* replica_moves);
@@ -358,14 +472,6 @@ class Rebalancer {
 
   // Configuration for the rebalancer.
   const Config config_;
-
-  // Random device and generator for selecting among multiple choices, when
-  // appropriate.
-  std::random_device random_device_;
-  std::mt19937 random_generator_;
-
-  // An instance of the balancing algorithm.
-  TwoDimensionalGreedyAlgo algo_;
 
   // Auxiliary Ksck object to get information on the cluster.
   std::shared_ptr<Ksck> ksck_;
