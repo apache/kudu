@@ -377,6 +377,140 @@ Status CheckCompleteMove(const vector<string>& master_addresses,
   return Status::OK();
 }
 
+Status SetReplace(const client::sp::shared_ptr<client::KuduClient>& client,
+                  const string& tablet_id,
+                  const string& ts_uuid,
+                  const boost::optional<int64_t>& cas_opid_idx,
+                  bool* cas_failed) {
+  // Safely set the 'cas_failed' output parameter to 'false' to cover an earlier
+  // return due to an error.
+  if (cas_failed) {
+    *cas_failed = false;
+  }
+  // Find this tablet's leader replica. We need its UUID and RPC address.
+  string leader_uuid;
+  HostPort leader_hp;
+  RETURN_NOT_OK(GetTabletLeader(client, tablet_id, &leader_uuid, &leader_hp));
+  unique_ptr<ConsensusServiceProxy> proxy;
+  RETURN_NOT_OK(BuildProxy(leader_hp.host(), leader_hp.port(), &proxy));
+
+  // Get information on current replication scheme: the move scenario depends
+  // on the replication scheme used.
+  bool is_343_scheme;
+  ConsensusStatePB cstate;
+  RETURN_NOT_OK(GetConsensusState(proxy, tablet_id, leader_uuid,
+                                  client->default_admin_operation_timeout(),
+                                  &cstate, &is_343_scheme));
+  // The 3-2-3 replica management scheme (pre-KUDU-1097) does not process
+  // the attribute as expected.
+  if (!is_343_scheme) {
+    return Status::ConfigurationError(
+        "cluster is running in 3-2-3 management scheme");
+  }
+
+  // Check whether the REPLACE attribute is already set for the source replica.
+  for (const auto& peer : cstate.committed_config().peers()) {
+    if (peer.permanent_uuid() == ts_uuid && peer.attrs().replace()) {
+      // The replica is already marked with the REPLACE attribute.
+      return Status::OK();
+    }
+  }
+
+  BulkChangeConfigRequestPB req;
+  auto* change = req.add_config_changes();
+  change->set_type(MODIFY_PEER);
+  *change->mutable_peer()->mutable_permanent_uuid() = ts_uuid;
+  change->mutable_peer()->mutable_attrs()->set_replace(true);
+  consensus::ChangeConfigResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(client->default_admin_operation_timeout());
+  req.set_dest_uuid(leader_uuid);
+  req.set_tablet_id(tablet_id);
+  if (cas_opid_idx) {
+    req.set_cas_config_opid_index(*cas_opid_idx);
+  }
+  RETURN_NOT_OK(proxy->BulkChangeConfig(req, &resp, &rpc));
+  if (resp.has_error()) {
+    if (resp.error().code() == tserver::TabletServerErrorPB::CAS_FAILED &&
+        cas_failed) {
+      *cas_failed = true;
+    }
+    return StatusFromPB(resp.error().status());
+  }
+  return Status::OK();
+}
+
+Status CheckCompleteReplace(const client::sp::shared_ptr<client::KuduClient>& client,
+                            const string& tablet_id,
+                            const string& ts_uuid,
+                            bool* is_complete,
+                            Status* completion_status) {
+  DCHECK(completion_status);
+  DCHECK(is_complete);
+  *is_complete = false;
+  // Get the latest leader info. It may change later, due to our actions or
+  // outside factors.
+  string leader_uuid;
+  HostPort leader_hp;
+  RETURN_NOT_OK(GetTabletLeader(client, tablet_id, &leader_uuid, &leader_hp));
+  unique_ptr<ConsensusServiceProxy> proxy;
+  RETURN_NOT_OK(BuildProxy(leader_hp.host(), leader_hp.port(), &proxy));
+
+  ConsensusStatePB cstate;
+  bool is_343_scheme;
+  RETURN_NOT_OK(GetConsensusState(proxy, tablet_id, leader_uuid,
+                                  client->default_admin_operation_timeout(),
+                                  &cstate, &is_343_scheme));
+  if (!is_343_scheme) {
+    return Status::ConfigurationError(
+        "cluster is not running in 3-4-3 replica management scheme");
+  }
+
+  bool is_all_voters = true;
+  for (const auto& peer : cstate.committed_config().peers()) {
+    if (peer.member_type() != RaftPeerPB::VOTER) {
+      is_all_voters = false;
+      break;
+    }
+  }
+
+  // Check if the replica slated for removal is still in the config.
+  bool ts_uuid_in_config = false;
+  for (const auto& peer : cstate.committed_config().peers()) {
+    if (peer.permanent_uuid() == ts_uuid) {
+      ts_uuid_in_config = true;
+      if (!peer.attrs().replace()) {
+        // Sanity check: the replica must have the REPLACE attribute set.
+        // Otherwise, something has changed in the middle and the replica will
+        // never be evicted, so it does not make sense to await its removal.
+        *is_complete = true;
+        *completion_status = Status::IllegalState(Substitute(
+            "$0: replica $1 does not have the REPLACE attribute set",
+            tablet_id, ts_uuid));
+      }
+      // There is not much sense demoting current leader if a newly added
+      // non-voter hasn't been promoted into voter role yet: the former leader
+      // replica will not be evicted prior the new non-voter replica becomes
+      // is promoted into voter. Demoting former leader too early might even
+      // delay promotion of already caught-up non-leader replica.
+      if (is_all_voters &&
+          leader_uuid == ts_uuid && leader_uuid == cstate.leader_uuid()) {
+        // The leader is the node we intend to remove; make it step down.
+        ignore_result(DoLeaderStepDown(tablet_id, leader_uuid, leader_hp,
+                                       LeaderStepDownMode::GRACEFUL, boost::none,
+                                       client->default_admin_operation_timeout()));
+      }
+      break;
+    }
+  }
+
+  if (!ts_uuid_in_config) {
+    *is_complete = true;
+    *completion_status = Status::OK();
+  }
+  return Status::OK();
+}
+
 
 Status ScheduleReplicaMove(const vector<string>& master_addresses,
                            const client::sp::shared_ptr<client::KuduClient>& client,

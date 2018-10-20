@@ -117,6 +117,29 @@ Status CheckCompleteMove(
     bool* is_complete,
     Status* completion_status);
 
+// Set the REPLACE attribute for the specified tablet replica. This is a no-op
+// if the replica already has the REPLACE attribute set.
+Status SetReplace(const client::sp::shared_ptr<client::KuduClient>& client,
+                  const std::string& tablet_id,
+                  const std::string& ts_uuid,
+                  const boost::optional<int64_t>& cas_opid_idx,
+                  bool* cas_failed = nullptr);
+
+// Check if the replica of the tablet 'tablet_id' previously hosted by tserver
+// identified by 'ts_uuid' is no longer hosted by the tablet server.
+// If there was a problem checking if the replica is in the config, non-OK
+// status is returned. On successful removal of the replica from the tablet
+// server, Status::OK() is returned and 'is_complete' output parameter
+// is set to 'true'. If the replica is still there but there was no error while
+// checking for the status of the replica in the config, Status::OK() is
+// returned and 'is_complete' is set to 'false'. The 'completion_status'
+// parameter contains valid information only if 'is_complete' is set to 'true'.
+Status CheckCompleteReplace(const client::sp::shared_ptr<client::KuduClient>& client,
+                            const std::string& tablet_id,
+                            const std::string& ts_uuid,
+                            bool* is_complete,
+                            Status* completion_status);
+
 // Schedule replica move operation for tablet with 'tablet_id', moving replica
 // from the tablet server 'from_ts_uuid' to tablet server 'to_ts_uuid'.
 Status ScheduleReplicaMove(
