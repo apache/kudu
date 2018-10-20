@@ -131,26 +131,21 @@ class Rebalancer {
   // and track already scheduled ones.
   class Runner {
    public:
-    // The 'max_moves_per_server' specifies the maximum number of operations
-    // per tablet server (both the source and the destination are counted in).
-    // The 'deadline' specifies the deadline for the run, 'boost::none'
-    // if no timeout is set.
-    Runner(size_t max_moves_per_server,
-           const boost::optional<MonoTime>& deadline);
+    virtual ~Runner() = default;
 
     // Initialize instance of Runner so it can run against Kudu cluster with
     // the 'master_addresses' RPC endpoints.
-    Status Init(std::vector<std::string> master_addresses);
+    virtual Status Init(std::vector<std::string> master_addresses) = 0;
 
     // Load information on prescribed replica movement operations. Also,
     // populate helper containers and other auxiliary run-time structures
     // used by ScheduleNextMove(). This method is called with every batch
     // of move operations output by the rebalancing algorithm once previously
     // loaded moves have been scheduled.
-    void LoadMoves(std::vector<ReplicaMove> replica_moves);
+    virtual void LoadMoves(std::vector<ReplicaMove> replica_moves) = 0;
 
     // Schedule next replica move.
-    bool ScheduleNextMove(bool* has_errors, bool* timed_out);
+    virtual bool ScheduleNextMove(bool* has_errors, bool* timed_out) = 0;
 
     // Update statuses and auxiliary information on in-progress replica move
     // operations. The 'timed_out' parameter is set to 'true' if not all
@@ -158,17 +153,101 @@ class Rebalancer {
     // the 'deadline_' member field. The method returns 'true' if it's necessary
     // to clear the state of the in-progress operations, i.e. 'forget'
     // those, starting from a clean state.
-    bool UpdateMovesInProgressStatus(bool* has_errors, bool* timed_out);
+    virtual bool UpdateMovesInProgressStatus(bool* has_errors, bool* timed_out) = 0;
 
-    uint32_t moves_count() const {
+    virtual Status GetNextMoves(bool* has_moves) = 0;
+
+    virtual uint32_t moves_count() const = 0;
+  }; // class Runner
+
+  // Common base for a few Runner implementations.
+  class BaseRunner : public Runner {
+   public:
+    BaseRunner(Rebalancer* rebalancer,
+               size_t max_moves_per_server,
+               boost::optional<MonoTime> deadline);
+
+    Status Init(std::vector<std::string> master_addresses) override;
+
+    Status GetNextMoves(bool* has_moves) override;
+
+    uint32_t moves_count() const override {
       return moves_count_;
     }
 
-    const MovesInProgress& scheduled_moves() const {
-      return scheduled_moves_;
-    }
+   protected:
+    // Get next batch of replica moves from the rebalancing algorithm.
+    // Essentially, it runs ksck against the cluster and feeds the data into the
+    // rebalancing algorithm along with the information on currently pending
+    // replica movement operations. The information returned by the high-level
+    // rebalancing algorithm is translated into particular replica movement
+    // instructions, which are used to populate the 'replica_moves' parameter
+    // (the container is cleared first).
+    virtual Status GetNextMovesImpl(std::vector<ReplicaMove>* moves) = 0;
 
-   private:
+    // Update the helper containers once a scheduled operation is complete
+    // (i.e. succeeded or failed).
+    void UpdateOnMoveCompleted(const std::string& ts_uuid);
+
+    // A pointer to the Rebalancer object.
+    Rebalancer* rebalancer_;
+
+    // Maximum allowed number of move operations per server. For a move
+    // operation, a source replica adds +1 at the source server and the target
+    // replica adds +1 at the destination server.
+    const size_t max_moves_per_server_;
+
+    // Deadline for the activity performed by the Runner class in
+    // ScheduleNextMoves() and UpadteMovesInProgressStatus() methods.
+    const boost::optional<MonoTime> deadline_;
+
+    // Client object to make queries to Kudu masters for various auxiliary info
+    // while scheduling move operations and monitoring their status.
+    client::sp::shared_ptr<client::KuduClient> client_;
+
+    // Information on scheduled replica movement operations; keys are
+    // tablet UUIDs, values are ReplicaMove structures.
+    MovesInProgress scheduled_moves_;
+
+    // Number of successfully completed replica moves operations.
+    uint32_t moves_count_;
+
+    // Kudu cluster RPC end-points.
+    std::vector<std::string> master_addresses_;
+
+    // Mapping 'tserver UUID' --> 'scheduled move operations count'.
+    std::unordered_map<std::string, int32_t> op_count_per_ts_;
+
+    // Mapping 'scheduled move operations count' --> 'tserver UUID'. That's
+    // just reversed 'op_count_per_ts_'.
+    std::multimap<int32_t, std::string> ts_per_op_count_;
+  }; // class BaseRunner
+
+  // Runner that leverages RebalancingAlgo interface for rebalancing.
+  class AlgoBasedRunner : public BaseRunner {
+   public:
+    // The 'max_moves_per_server' specifies the maximum number of operations
+    // per tablet server (both the source and the destination are counted in).
+    // The 'deadline' specifies the deadline for the run, 'boost::none'
+    // if no timeout is set.
+    AlgoBasedRunner(Rebalancer* rebalancer,
+                    size_t max_moves_per_server,
+                    boost::optional<MonoTime> deadline);
+
+    Status Init(std::vector<std::string> master_addresses) override;
+
+    void LoadMoves(std::vector<ReplicaMove> replica_moves) override;
+
+    bool ScheduleNextMove(bool* has_errors, bool* timed_out) override;
+
+    bool UpdateMovesInProgressStatus(bool* has_errors, bool* timed_out) override;
+
+    // Rebalancing algorithm that running uses to find replica moves.
+    virtual RebalancingAlgo* algorithm() = 0;
+
+   protected:
+    Status GetNextMovesImpl(std::vector<ReplicaMove>* replica_moves) override;
+
     // Given the data in the helper containers, find the index describing
     // the next replica move and output it into the 'op_idx' parameter.
     bool FindNextMove(size_t* op_idx);
@@ -187,25 +266,6 @@ class Rebalancer {
         bool is_success,
         std::unordered_map<std::string, std::set<size_t>>* op_indices);
 
-    // Update the helper containers once a scheduled operation is complete
-    // (i.e. succeeded or failed).
-    void UpdateOnMoveCompleted(const std::string& ts_uuid);
-
-    // Maximum allowed number of move operations per server. For a move
-    // operation, a source replica adds +1 at the source server and the target
-    // replica adds +1 at the destination server.
-    const size_t max_moves_per_server_;
-
-    // Deadline for the activity performed by the Runner class in
-    // ScheduleNextMoves() and UpadteMovesInProgressStatus() methods.
-    const boost::optional<MonoTime> deadline_;
-
-    // Number of successfully completed replica moves operations.
-    uint32_t moves_count_;
-
-    // Kudu cluster RPC end-points.
-    std::vector<std::string> master_addresses_;
-
     // The moves to schedule.
     std::vector<ReplicaMove> replica_moves_;
 
@@ -217,23 +277,29 @@ class Rebalancer {
     // tserver UUID (i.e. the key) as the destination of the move operation'.
     std::unordered_map<std::string, std::set<size_t>> dst_op_indices_;
 
-    // Mapping 'tserver UUID' --> 'scheduled move operations count'.
-    std::unordered_map<std::string, int32_t> op_count_per_ts_;
+    // Random device and generator for selecting among multiple choices, when
+    // appropriate.
+    std::random_device random_device_;
+    std::mt19937 random_generator_;
+  }; // class AlgoBasedRunner
 
-    // Mapping 'scheduled move operations count' --> 'tserver UUID'. That's
-    // just reversed 'op_count_per_ts_'. Having count as key helps with finding
-    // servers with minimum number of scheduled operations while scheduling
-    // replica movement operations (it's necessary to preserve the
-    // 'maximum-moves-per-server' constraint while doing so).
-    std::multimap<int32_t, std::string> ts_per_op_count_;
+  class TwoDimensionalGreedyRunner : public AlgoBasedRunner {
+   public:
+    // The 'max_moves_per_server' specifies the maximum number of operations
+    // per tablet server (both the source and the destination are counted in).
+    // The 'deadline' specifies the deadline for the run, 'boost::none'
+    // if no timeout is set.
+    TwoDimensionalGreedyRunner(Rebalancer* rebalancer,
+                               size_t max_moves_per_server,
+                               boost::optional<MonoTime> deadline);
 
-    // Information on scheduled replica movement operations; keys are
-    // tablet UUIDs, values are ReplicaMove structures.
-    MovesInProgress scheduled_moves_;
+    RebalancingAlgo* algorithm() override {
+      return &algorithm_;
+    }
 
-    // Client object to make queries to Kudu masters for various auxiliary info
-    // while scheduling move operations and monitoring their status.
-    client::sp::shared_ptr<client::KuduClient> client_;
+   private:
+    // An instance of the balancing algorithm.
+    TwoDimensionalGreedyAlgo algorithm_;
   };
 
   friend class KsckResultsToClusterBalanceInfoTest;
@@ -245,6 +311,24 @@ class Rebalancer {
   static Status KsckResultsToClusterRawInfo(
       const KsckResults& ksck_info,
       ClusterRawInfo* raw_info);
+
+  // Given high-level move-some-tablet-replica-for-a-table information from the
+  // rebalancing algorithm, find appropriate tablet replicas to move between the
+  // specified tablet servers. The set of result tablet UUIDs is output
+  // into the 'tablet_ids' container (note: the container is first cleared).
+  // The source and destination replicas are determined by the elements of the
+  // 'tablet_ids' container and tablet server UUIDs TableReplicaMove::from and
+  // TableReplica::to correspondingly. If no suitable tablet replicas are found,
+  // 'tablet_ids' will be empty with the result status of Status::OK().
+  static Status FindReplicas(const TableReplicaMove& move,
+                             const ClusterRawInfo& raw_info,
+                             std::vector<std::string>* tablet_ids);
+
+  // Filter move operations in 'replica_moves': remove all operations that would
+  // involve moving replicas of tablets which are in 'scheduled_moves'. The
+  // 'replica_moves' cannot be null.
+  static void FilterMoves(const MovesInProgress& scheduled_moves,
+                          std::vector<ReplicaMove>* replica_moves);
 
   // Convert the 'raw' information about the cluster into information suitable
   // for the input of the high-level rebalancing algorithm.
@@ -260,36 +344,17 @@ class Rebalancer {
                           const MovesInProgress& moves_in_progress,
                           ClusterInfo* info) const;
 
-  // Get next batch of replica moves from the rebalancing algorithm.
-  // Essentially, it runs ksck against the cluster and feeds the data into the
-  // rebalancing algorithm along with the information on currently pending
-  // replica movement operations. The information returned by the high-level
-  // rebalancing algorithm is translated into particular replica movement
-  // instructions, which are used to populate the 'replica_moves' parameter
-  // (the container is cleared first).
-  //
-  // The 'moves_in_progress' parameter contains information on pending moves.
-  // The results are output into 'replica_moves', which will be empty
-  // if no next steps are needed to make the cluster balanced.
-  Status GetNextMoves(const MovesInProgress& moves_in_progress,
-                      std::vector<ReplicaMove>* replica_moves);
+  // Run rebalancing using the specified runner.
+  Status RunWith(Runner* runner, RunStatus* result_status);
 
-  // Given information from the high-level rebalancing algorithm, find
-  // appropriate tablet replicas to move on the specified tablet servers.
-  // The set of result UUIDs is output into the 'tablet_ids' container (note:
-  // the output container is first cleared). If no suitable replicas are found,
-  // 'tablet_ids' will be empty with the result status of Status::OK().
-  Status FindReplicas(const TableReplicaMove& move,
-                      const KsckResults& ksck_info,
-                      std::vector<std::string>* tablet_ids) const;
+  // Refresh the information on the cluster (involves running ksck).
+  Status GetClusterRawInfo(ClusterRawInfo* raw_info);
+
+  Status GetNextMoves(Runner* runner,
+                      std::vector<ReplicaMove>* replica_moves);
 
   // Reset ksck-related fields and run ksck against the cluster.
   Status RefreshKsckResults();
-
-  // Filter out move operations at the tablets which already have operations
-  // in progress. The 'replica_moves' cannot be null.
-  void FilterMoves(const MovesInProgress& scheduled_moves,
-                   std::vector<ReplicaMove>* replica_moves);
 
   // Configuration for the rebalancer.
   const Config config_;
