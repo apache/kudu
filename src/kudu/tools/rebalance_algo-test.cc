@@ -25,6 +25,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -33,6 +34,7 @@
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/random.h"
 #include "kudu/util/status.h"
@@ -53,11 +55,20 @@ struct TestClusterConfig;
     } \
   } while (false)
 
+#define VERIFY_LOCATION_BALANCING_MOVES(test_config) \
+  do { \
+    for (auto idx = 0; idx < ARRAYSIZE((test_config)); ++idx) { \
+      SCOPED_TRACE(Substitute("test config index: $0", idx)); \
+      NO_FATALS(VerifyLocationRebalancingMoves((test_config)[idx])); \
+    } \
+  } while (false)
+
 using std::endl;
 using std::ostream;
 using std::ostringstream;
 using std::set;
 using std::string;
+using std::unordered_map;
 using std::vector;
 using strings::Substitute;
 
@@ -68,12 +79,19 @@ struct TablePerServerReplicas {
   const string table_id;
 
   // Number of replicas of this table on each server in the cluster.
+  // By definition, the indices in this container correspond to indices
+  // in TestClusterConfig::tserver_uuids.
   const vector<size_t> num_replicas_by_server;
 };
 
 // Structure to describe rebalancing-related state of the cluster expressively
 // enough for the tests.
 struct TestClusterConfig {
+  // Distribution of tablet servers by locations. If the map is empty, it's
+  // interpreted as if the cluster does not have any locations specified
+  // (i.e. all the tablet servers are all in the same unnamed location).
+  const unordered_map<string, set<string>> servers_by_location;
+
   // UUIDs of tablet servers; every element must be unique.
   const vector<string> tserver_uuids;
 
@@ -148,6 +166,17 @@ void ClusterConfigToClusterInfo(const TestClusterConfig& tcc,
     table_info_by_skew.emplace(max_count - min_count, std::move(info));
   }
 
+  // TODO(aserbin): add a consistency check on location-related fields.
+  auto& locality = result.locality;
+  locality.servers_by_location = tcc.servers_by_location;
+  for (const auto& elem : tcc.servers_by_location) {
+    const auto& location = elem.first;
+    const auto& server_ids = elem.second;
+    for (const auto& server_id : server_ids) {
+      EmplaceOrDie(&locality.location_by_ts_id, server_id, location);
+    }
+  }
+
   *cluster_info = std::move(result);
 }
 
@@ -158,6 +187,18 @@ void VerifyRebalancingMoves(const TestClusterConfig& cfg) {
     ClusterConfigToClusterInfo(cfg, &ci);
     TwoDimensionalGreedyAlgo algo(
         TwoDimensionalGreedyAlgo::EqualSkewOption::PICK_FIRST);
+    ASSERT_OK(algo.GetNextMoves(ci, 0, &moves));
+  }
+  EXPECT_EQ(cfg.expected_moves, moves);
+}
+
+// Similar to VerifyRebalancingMoves(), but related to locations rebalancing.
+void VerifyLocationRebalancingMoves(const TestClusterConfig& cfg) {
+  vector<TableReplicaMove> moves;
+  {
+    ClusterInfo ci;
+    ClusterConfigToClusterInfo(cfg, &ci);
+    LocationBalancingAlgo algo;
     ASSERT_OK(algo.GetNextMoves(ci, 0, &moves));
   }
   EXPECT_EQ(cfg.expected_moves, moves);
@@ -223,13 +264,17 @@ TEST(RebalanceAlgoUnitTest, NoTableSkewInClusterBalanceInfoGetNextMoves) {
 
 // Test the behavior of the internal (non-public) algorithm's method
 // GetNextMove() when no input information is given.
-TEST(RebalanceAlgoUnitTest, EmptyClusterBalanceInfoGetNextMove) {
+TEST(RebalanceAlgoUnitTest, EmptyBalanceInfoGetNextMove) {
   boost::optional<TableReplicaMove> move;
   const ClusterInfo info;
   const auto s = TwoDimensionalGreedyAlgo().GetNextMove(info, &move);
   ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
   EXPECT_EQ(boost::none, move);
 }
+
+// Workaround for older libstdc++ (like on RH/CentOS 6). In case of newer
+// libstdc++/libc++ '{}' works as needed for an empty unordered map.
+static const decltype(TestClusterConfig::servers_by_location) kNoLocations;
 
 // Various scenarios of balanced configurations where no moves are expected
 // to happen.
@@ -238,6 +283,7 @@ TEST(RebalanceAlgoUnitTest, AlreadyBalanced) {
   const TestClusterConfig kConfigs[] = {
     {
       // A single tablet server with a single replica of the only table.
+      kNoLocations,
       { "0", },
       {
         { "A", { 1 } },
@@ -245,6 +291,7 @@ TEST(RebalanceAlgoUnitTest, AlreadyBalanced) {
     },
     {
       // A single tablet server in the cluster that hosts all replicas.
+      kNoLocations,
       { "0", },
       {
         { "A", { 1 } },
@@ -254,6 +301,7 @@ TEST(RebalanceAlgoUnitTest, AlreadyBalanced) {
     },
     {
       // Single table and 2 TS: 100 and 99 replicas at each.
+      kNoLocations,
       { "0", "1", },
       {
         { "A", { 100, 99, } },
@@ -261,6 +309,7 @@ TEST(RebalanceAlgoUnitTest, AlreadyBalanced) {
     },
     {
       // Table- and cluster-wise balanced configuration with one-off skew.
+      kNoLocations,
       { "0", "1", },
       {
         { "A", { 1, 1, } },
@@ -271,6 +320,7 @@ TEST(RebalanceAlgoUnitTest, AlreadyBalanced) {
       // A configuration which has zero skew cluster-wise, while the table-wise
       // balance has one-off skew: the algorithm should not try to correct
       // the latter.
+      kNoLocations,
       { "0", "1", },
       {
         { "A", { 1, 2, } },
@@ -280,6 +330,7 @@ TEST(RebalanceAlgoUnitTest, AlreadyBalanced) {
       },
     },
     {
+      kNoLocations,
       { "0", "1", "2", },
       {
         { "A", { 1, 0, 0, } },
@@ -290,6 +341,7 @@ TEST(RebalanceAlgoUnitTest, AlreadyBalanced) {
     {
       // A simple balanced case: 3 tablet servers, 3 tables with
       // one replica per server.
+      kNoLocations,
       { "0", "1", "2", },
       {
         { "A", { 1, 1, 1, } },
@@ -298,6 +350,7 @@ TEST(RebalanceAlgoUnitTest, AlreadyBalanced) {
       },
     },
     {
+      kNoLocations,
       { "0", "1", "2", },
       {
         { "A", { 0, 1, 1, } },
@@ -306,6 +359,7 @@ TEST(RebalanceAlgoUnitTest, AlreadyBalanced) {
       },
     },
     {
+      kNoLocations,
       { "0", "1", "2", },
       {
         { "A", { 2, 1, 1, } },
@@ -314,6 +368,7 @@ TEST(RebalanceAlgoUnitTest, AlreadyBalanced) {
       },
     },
     {
+      kNoLocations,
       { "0", "1", "2", },
       {
         { "A", { 1, 1, 0, } },
@@ -325,6 +380,7 @@ TEST(RebalanceAlgoUnitTest, AlreadyBalanced) {
       },
     },
     {
+      kNoLocations,
       { "0", "1", "2", },
       {
         { "A", { 1, 0, 1, } },
@@ -332,6 +388,7 @@ TEST(RebalanceAlgoUnitTest, AlreadyBalanced) {
       },
     },
     {
+      kNoLocations,
       { "0", "1", "2", },
       {
         { "B", { 1, 0, 1, } },
@@ -339,6 +396,7 @@ TEST(RebalanceAlgoUnitTest, AlreadyBalanced) {
       },
     },
     {
+      kNoLocations,
       { "0", "1", "2", },
       {
         { "A", { 2, 2, 1, } },
@@ -346,6 +404,7 @@ TEST(RebalanceAlgoUnitTest, AlreadyBalanced) {
       },
     },
     {
+      kNoLocations,
       { "0", "1", "2", },
       {
         { "A", { 2, 2, 1, } },
@@ -353,6 +412,7 @@ TEST(RebalanceAlgoUnitTest, AlreadyBalanced) {
       },
     },
     {
+      kNoLocations,
       { "0", "1", "2", },
       {
         { "A", { 2, 2, 1, } },
@@ -361,6 +421,7 @@ TEST(RebalanceAlgoUnitTest, AlreadyBalanced) {
       },
     },
     {
+      kNoLocations,
       { "0", "1", "2", },
       {
         { "A", { 0, 1, 0, } },
@@ -378,6 +439,7 @@ TEST(RebalanceAlgoUnitTest, AlreadyBalanced) {
 TEST(RebalanceAlgoUnitTest, TableWiseBalanced) {
   const TestClusterConfig kConfigs[] = {
     {
+      kNoLocations,
       { "0", "1", },
       {
         { "A", { 100, 99, } },
@@ -386,6 +448,7 @@ TEST(RebalanceAlgoUnitTest, TableWiseBalanced) {
       { { "A", "0", "1" }, }
     },
     {
+      kNoLocations,
       { "0", "1", },
       {
         { "A", { 1, 2, } },
@@ -396,6 +459,7 @@ TEST(RebalanceAlgoUnitTest, TableWiseBalanced) {
       { { "A", "1", "0" }, }
     },
     {
+      kNoLocations,
       { "0", "1", "2", },
       {
         { "A", { 1, 0, 0, } },
@@ -405,6 +469,7 @@ TEST(RebalanceAlgoUnitTest, TableWiseBalanced) {
       { { "A", "0", "2" }, }
     },
     {
+      kNoLocations,
       { "0", "1", "2", },
       {
         { "A", { 1, 1, 1, } },
@@ -414,6 +479,7 @@ TEST(RebalanceAlgoUnitTest, TableWiseBalanced) {
       { { "B", "2", "0" }, }
     },
     {
+      kNoLocations,
       { "0", "1", "2", },
       {
         { "A", { 1, 1, 0, } },
@@ -423,6 +489,7 @@ TEST(RebalanceAlgoUnitTest, TableWiseBalanced) {
       { { "B", "0", "1" }, }
     },
     {
+      kNoLocations,
       { "0", "1", "2", },
       {
         { "C", { 1, 0, 1, } },
@@ -442,6 +509,7 @@ TEST(RebalanceAlgoUnitTest, OneMoveNoCycling) {
   // that's why multiples of virtually same configuration.
   const TestClusterConfig kConfigs[] = {
     {
+      kNoLocations,
       { "0", "1", "2", },
       {
         { "A", { 1, 0, 1, } },
@@ -451,6 +519,7 @@ TEST(RebalanceAlgoUnitTest, OneMoveNoCycling) {
       { { "A", "0", "1" }, }
     },
     {
+      kNoLocations,
       { "0", "1", "2", },
       {
         { "A", { 1, 0, 1, } },
@@ -460,6 +529,7 @@ TEST(RebalanceAlgoUnitTest, OneMoveNoCycling) {
       { { "A", "0", "1" }, }
     },
     {
+      kNoLocations,
       { "0", "1", "2", },
       {
         { "B", { 1, 0, 1, } },
@@ -469,6 +539,7 @@ TEST(RebalanceAlgoUnitTest, OneMoveNoCycling) {
       { { "B", "0", "1" }, }
     },
     {
+      kNoLocations,
       { "0", "1", "2", },
       {
         { "B", { 1, 0, 1, } },
@@ -478,6 +549,7 @@ TEST(RebalanceAlgoUnitTest, OneMoveNoCycling) {
       { { "B", "0", "1" }, }
     },
     {
+      kNoLocations,
       { "0", "1", "2", },
       {
         { "C", { 1, 0, 1, } },
@@ -487,6 +559,7 @@ TEST(RebalanceAlgoUnitTest, OneMoveNoCycling) {
       { { "C", "0", "1" }, }
     },
     {
+      kNoLocations,
       { "0", "1", "2", },
       {
         { "C", { 1, 0, 1, } },
@@ -505,6 +578,7 @@ TEST(RebalanceAlgoUnitTest, OneMoveNoCycling) {
 TEST(RebalanceAlgoUnitTest, ClusterWiseBalanced) {
   const TestClusterConfig kConfigs[] = {
     {
+      kNoLocations,
       { "0", "1", },
       {
         { "A", { 2, 0, } },
@@ -515,6 +589,7 @@ TEST(RebalanceAlgoUnitTest, ClusterWiseBalanced) {
       }
     },
     {
+      kNoLocations,
       { "0", "1", },
       {
         { "A", { 1, 2, } },
@@ -527,6 +602,7 @@ TEST(RebalanceAlgoUnitTest, ClusterWiseBalanced) {
       }
     },
     {
+      kNoLocations,
       { "0", "1", "2", },
       {
         { "A", { 2, 1, 0, } },
@@ -538,6 +614,7 @@ TEST(RebalanceAlgoUnitTest, ClusterWiseBalanced) {
       }
     },
     {
+      kNoLocations,
       { "0", "1", "2", },
       {
         { "A", { 2, 1, 0, } },
@@ -558,6 +635,7 @@ TEST(RebalanceAlgoUnitTest, ClusterWiseBalanced) {
 TEST(RebalanceAlgoUnitTest, FewMoves) {
   const TestClusterConfig kConfigs[] = {
     {
+      kNoLocations,
       { "0", "1", },
       {
         { "A", { 2, 0, } },
@@ -565,6 +643,7 @@ TEST(RebalanceAlgoUnitTest, FewMoves) {
       { { "A", "0", "1" }, }
     },
     {
+      kNoLocations,
       { "0", "1", },
       {
         { "A", { 3, 0, } },
@@ -572,6 +651,7 @@ TEST(RebalanceAlgoUnitTest, FewMoves) {
       { { "A", "0", "1" }, }
     },
     {
+      kNoLocations,
       { "0", "1", },
       {
         { "A", { 4, 0, } },
@@ -582,6 +662,7 @@ TEST(RebalanceAlgoUnitTest, FewMoves) {
       }
     },
     {
+      kNoLocations,
       { "0", "1", },
       {
         { "A", { 1, 2, } },
@@ -593,6 +674,7 @@ TEST(RebalanceAlgoUnitTest, FewMoves) {
       }
     },
     {
+      kNoLocations,
       { "0", "1", },
       {
         { "A", { 4, 0, } },
@@ -605,6 +687,7 @@ TEST(RebalanceAlgoUnitTest, FewMoves) {
       }
     },
     {
+      kNoLocations,
       { "0", "1", "2", },
       {
         { "A", { 4, 2, 0, } },
@@ -618,6 +701,7 @@ TEST(RebalanceAlgoUnitTest, FewMoves) {
       }
     },
     {
+      kNoLocations,
       { "0", "1", "2", },
       {
         { "A", { 2, 1, 0, } },
@@ -631,6 +715,7 @@ TEST(RebalanceAlgoUnitTest, FewMoves) {
       }
     },
     {
+      kNoLocations,
       { "0", "1", "2", },
       {
         { "A", { 5, 1, 0, } },
@@ -642,6 +727,7 @@ TEST(RebalanceAlgoUnitTest, FewMoves) {
       }
     },
     {
+      kNoLocations,
       { "0", "1", "2", },
       {
         { "A", { 5, 1, 0, } },
@@ -664,6 +750,7 @@ TEST(RebalanceAlgoUnitTest, FewMoves) {
 // make them balanced moving many replicas around.
 TEST(RebalanceAlgoUnitTest, ManyMoves) {
   const TestClusterConfig kConfig = {
+    kNoLocations,
     { "0", "1", "2", },
     {
       { "A", { 100, 400, 100, } },
@@ -720,6 +807,7 @@ TEST(RebalanceAlgoUnitTest, RandomizedTest) {
       });
     }
     TestClusterConfig cfg{
+      kNoLocations,
       std::move(tserver_uuids),
       std::move(table_replicas),
       {}  // This tests checks achievement of balance, not the path to it.
@@ -740,10 +828,235 @@ TEST(RebalanceAlgoUnitTest, RandomizedTest) {
       while (!IsBalanced(ci.balance)) {
         ASSERT_OK(algo.GetNextMove(ci, &move));
         ASSERT_OK(TwoDimensionalGreedyAlgo::ApplyMove(*move, &ci.balance));
-        ASSERT_GE(num_moves_ub, ++num_moves) << "Too many moves! The algorithm is likely stuck";
+        ASSERT_GE(num_moves_ub, ++num_moves)
+            << "Too many moves! The algorithm is likely stuck";
       }
     }
   }
+}
+
+// Location-based rebalancing, the case of few moves because of slight (if any)
+// location load imbalance.
+TEST(RebalanceAlgoUnitTest, LocationBalancingFewMoves) {
+  const TestClusterConfig kConfigs[] = {
+    {
+      {
+        { "L0", { "0", "1", }, },
+        { "L1", { "2", }, },
+      },
+      { "0", "1", "2", },
+      { { "A", { 1, 0, 0, } }, },
+      {}
+    },
+    {
+      {
+        { "L0", { "0", "1", }, },
+        { "L1", { "2", }, },
+      },
+      { "0", "1", "2", },
+      { { "A", { 0, 0, 1, } }, },
+      {}
+    },
+    {
+      {
+        { "L0", { "0", "1", }, },
+        { "L1", { "2", }, },
+      },
+      { "0", "1", "2", },
+      { { "A", { 1, 1, 0, } }, },
+      {}
+    },
+    {
+      {
+        { "L0", { "0", "1", }, },
+        { "L1", { "2", }, },
+      },
+      { "0", "1", "2", },
+      { { "A", { 1, 1, 1, } }, },
+      {}
+    },
+    {
+      {
+        { "L0", { "0", "1", }, },
+        { "L1", { "2", }, },
+      },
+      { "0", "1", "2", },
+      { { "A", { 2, 1, 0, } }, },
+      { { "A", "0", "2" }, }
+    },
+    {
+      {
+        { "L0", { "0", "1", }, },
+        { "L1", { "2", }, },
+      },
+      { "0", "1", "2", },
+      { { "A", { 1, 1, 2, } }, },
+      {}
+    },
+    {
+      {
+        { "L0", { "0", "1", }, },
+        { "L1", { "2", }, },
+      },
+      { "0", "1", "2", },
+      { { "A", { 2, 1, 3, } }, },
+      { { "A", "2", "1" }, }
+    },
+    {
+      {
+        { "L0", { "0", "1", }, },
+        { "L1", { "2", }, },
+      },
+      { "0", "1", "2", },
+      { { "A", { 2, 4, 0, } }, },
+      {
+        { "A", "1", "2" },
+        { "A", "1", "2" },
+      }
+    },
+    {
+      {
+        { "L0", { "0", "1", }, },
+        { "L1", { "2", "3", "4", "5", }, },
+      },
+      { "0", "1", "2", "3", "4", "5" },
+      { { "A", { 1, 1, 1, 1, 1, 1, } }, },
+      {}
+    },
+    {
+      {
+        { "L0", { "0", "1", }, },
+        { "L1", { "2", "3", "4", "5", }, },
+      },
+      { "0", "1", "2", "3", "4", "5" },
+      { { "A", { 2, 0, 4, 0, 0, 0, } }, },
+      {}
+    },
+    {
+      {
+        { "L0", { "0", }, },
+        { "L1", { "1", "2", "3", "4", "5", }, },
+      },
+      { "0", "1", "2", "3", "4", "5", },
+      { { "A", { 0, 1, 1, 1, 1, 1, } }, },
+      {}
+    },
+    {
+      {
+        { "L0", { "0", }, },
+        { "L1", { "1", "2", "3", "4", "5", }, },
+      },
+      { "0", "1", "2", "3", "4", "5", },
+      { { "A", { 0, 5, 0, 0, 0, 0, } }, },
+      {}
+    },
+    {
+      {
+        { "L0", { "0", }, },
+        { "L1", { "1", "2", "3", "4", "5", }, },
+      },
+      { "0", "1", "2", "3", "4", "5", },
+      { { "A", { 2, 1, 1, 1, 1, 0, } }, },
+      { { "A", "0", "5" }, }
+    },
+  };
+  VERIFY_LOCATION_BALANCING_MOVES(kConfigs);
+}
+
+// A simple location-based rebalancing scenario, a single table.
+TEST(RebalanceAlgoUnitTest, LocationBalancingSimpleST) {
+  const TestClusterConfig kConfigs[] = {
+    {
+      {
+        { "L0", { "0", }, },
+        { "L1", { "1", }, },
+        { "L2", { "2", }, },
+      },
+      { "0", "1", "2", },
+      { { "A", { 2, 1, 0, } }, },
+      { { "A", "0", "2" }, }
+    },
+    {
+      {
+        { "L0", { "0", }, },
+        { "L1", { "1", }, },
+        { "L2", { "2", }, },
+      },
+      { "0", "1", "2", },
+      { { "A", { 6, 0, 0, } }, },
+      // TODO(aserbin): what about ordering?
+      {
+        { "A", "0", "2" },
+        { "A", "0", "1" },
+        { "A", "0", "1" },
+        { "A", "0", "2" },
+      }
+    },
+    {
+      {
+        { "L0", { "0", }, },
+        { "L1", { "1", }, },
+        { "L2", { "2", }, },
+      },
+      { "0", "1", "2", },
+      {
+        { "A", { 1, 0, 0, } },
+      },
+      {}
+    },
+  };
+  VERIFY_LOCATION_BALANCING_MOVES(kConfigs);
+}
+
+// A simple location-based rebalancing scenario, multiple tables.
+TEST(RebalanceAlgoUnitTest, LocationBalancingSimpleMT) {
+  const TestClusterConfig kConfigs[] = {
+    {
+      {
+        { "L0", { "0", }, },
+        { "L1", { "1", }, },
+        { "L2", { "2", }, },
+      },
+      { "0", "1", "2", },
+      {
+        { "A", { 2, 1, 1, } },
+        { "B", { 0, 0, 2, } },
+      },
+      { { "B", "2", "1" }, }
+    },
+    {
+      {
+        { "L0", { "0", }, },
+        { "L1", { "1", }, },
+        { "L2", { "2", }, },
+      },
+      { "0", "1", "2", },
+      {
+        { "A", { 2, 1, 0, } },
+        { "B", { 0, 0, 3, } },
+      },
+      {
+        { "B", "2", "1" },
+        { "B", "2", "0" },
+        { "A", "0", "2" },
+      }
+    },
+    {
+      {
+        { "L0", { "0", }, },
+        { "L1", { "1", }, },
+        { "L2", { "2", }, },
+      },
+      { "0", "1", "2", },
+      {
+        { "A", { 1, 0, 0, } },
+        { "B", { 1, 1, 2, } },
+        { "C", { 10, 9, 10, } },
+      },
+      {}
+    },
+  };
+  VERIFY_LOCATION_BALANCING_MOVES(kConfigs);
 }
 
 } // namespace tools

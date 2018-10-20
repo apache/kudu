@@ -18,28 +18,35 @@
 #include "kudu/tools/rebalance_algo.h"
 
 #include <algorithm>
+#include <cmath>
+#include <functional>
 #include <iostream>
 #include <iterator>
 #include <limits>
 #include <random>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/status.h"
 
 using std::back_inserter;
+using std::endl;
+using std::multimap;
 using std::numeric_limits;
 using std::ostringstream;
 using std::set_intersection;
 using std::shuffle;
 using std::sort;
 using std::string;
+using std::unordered_map;
 using std::vector;
 using strings::Substitute;
 
@@ -392,6 +399,219 @@ Status TwoDimensionalGreedyAlgo::GetMinMaxLoadedServers(
                    return elem.second;
                  });
   *replica_count = count;
+
+  return Status::OK();
+}
+
+Status LocationBalancingAlgo::GetNextMove(
+    const ClusterInfo& cluster_info,
+    boost::optional<TableReplicaMove>* move) {
+  DCHECK(move);
+  *move = boost::none;
+
+  // Per-table information on locations load.
+  // TODO(aserbin): maybe, move this container into ClusterInfo?
+  unordered_map<string, multimap<double, string>> location_load_info_by_table;
+
+  // A dictionary to map location-wise load imbalance into table identifier.
+  // The most imbalanced tables come last.
+  multimap<double, string> table_id_by_load_imbalance;
+  for (const auto& elem : cluster_info.balance.table_info_by_skew) {
+    const auto& table_info = elem.second;
+    // Number of replicas of all tablets comprising the table, per location.
+    unordered_map<string, int32_t> replica_num_per_location;
+    for (const auto& elem : table_info.servers_by_replica_count) {
+      auto replica_count = elem.first;
+      const auto& ts_id = elem.second;
+      const auto& location =
+          FindOrDie(cluster_info.locality.location_by_ts_id, ts_id);
+      LookupOrEmplace(&replica_num_per_location, location, 0) += replica_count;
+    }
+    multimap<double, string> location_by_load;
+    for (const auto& elem : replica_num_per_location) {
+      const auto& location = elem.first;
+      double replica_num = static_cast<double>(elem.second);
+      auto ts_num = FindOrDie(cluster_info.locality.servers_by_location,
+                              location).size();
+      CHECK_NE(0, ts_num);
+      location_by_load.emplace(replica_num / ts_num, location);
+    }
+
+    const auto& table_id = table_info.table_id;
+    const auto load_min = location_by_load.cbegin()->first;
+    const auto load_max = location_by_load.crbegin()->first;
+    const auto imbalance = load_max - load_min;
+    DCHECK(!std::isnan(imbalance));
+    table_id_by_load_imbalance.emplace(imbalance, table_id);
+    EmplaceOrDie(&location_load_info_by_table,
+                 table_id, std::move(location_by_load));
+  }
+
+  string imbalanced_table_id;
+  if (!IsBalancingNeeded(table_id_by_load_imbalance, &imbalanced_table_id)) {
+    // Nothing to do: all tables are location-balanced enough.
+    return Status::OK();
+  }
+
+  // Work on the most location-wise unbalanced tables first.
+  const auto& load_info = FindOrDie(
+      location_load_info_by_table, imbalanced_table_id);
+
+  vector<string> loc_loaded_least;
+  {
+    const auto min_range = load_info.equal_range(load_info.cbegin()->first);
+    for (auto it = min_range.first; it != min_range.second; ++it) {
+      loc_loaded_least.push_back(it->second);
+    }
+  }
+  DCHECK(!loc_loaded_least.empty());
+
+  vector<string> loc_loaded_most;
+  {
+    const auto max_range = load_info.equal_range(load_info.crbegin()->first);
+    for (auto it = max_range.first; it != max_range.second; ++it) {
+      loc_loaded_most.push_back(it->second);
+    }
+  }
+  DCHECK(!loc_loaded_most.empty());
+
+  if (PREDICT_FALSE(VLOG_IS_ON(1))) {
+    ostringstream s;
+    s << "[ ";
+    for (const auto& loc : loc_loaded_least) {
+      s << loc << " ";
+    }
+    s << "]";
+    VLOG(1) << "loc_loaded_least: " << s.str();
+
+    s.str("");
+    s << "[ ";
+    for (const auto& loc : loc_loaded_most) {
+      s << loc << " ";
+    }
+    s << "]";
+    VLOG(1) << "loc_leaded_most: " << s.str();
+  }
+
+  return FindBestMove(imbalanced_table_id, loc_loaded_least, loc_loaded_most,
+                      cluster_info, move);
+}
+
+bool LocationBalancingAlgo::IsBalancingNeeded(
+    const TableByLoadImbalance& imbalance_info,
+    string* most_imbalanced_table_id) {
+  if (PREDICT_FALSE(VLOG_IS_ON(1))) {
+    ostringstream ss;
+    ss << "Table imbalance report: " << endl;
+    for (const auto& elem : imbalance_info) {
+      ss << "  " << elem.second << ": " << elem.first << endl;
+    }
+    VLOG(1) << ss.str();
+  }
+
+  if (imbalance_info.empty()) {
+    // Nothing to do -- an empty cluster.
+    return false;
+  }
+
+  // Evaluate the maximum existing imbalance: is it possible to move replicas
+  // between tablet servers in different locations to make the skew less?
+  //
+  // TODO(aserbin): detect 'good enough' vs ideal cases, like (b) vs (a) in
+  //                the class-wide comment. In other words, find the minimum
+  //                load imbalance down to which it makes sense to try
+  //                cross-location rebalancing. Probably, it should be a policy
+  //                wrt what to prefer: ideal location-wide balance or minimum
+  //                number of replica moves between locations?
+  //
+  // The information on the most imbalanced table is in the last element
+  // of the map.
+  const auto it = imbalance_info.crbegin();
+  const auto imbalance = it->first;
+  if (imbalance > 1) {
+    *most_imbalanced_table_id = it->second;
+    return true;
+  }
+  return false;
+}
+
+// Given the set of the most and the least table-wise loaded locations, choose
+// the source and destination tablet server to move a replica of the specified
+// tablet to improve per-table location load balance as much as possible.
+Status LocationBalancingAlgo::FindBestMove(
+    const string& table_id,
+    const vector<string>& loc_loaded_least,
+    const vector<string>& loc_loaded_most,
+    const ClusterInfo& cluster_info,
+    boost::optional<TableReplicaMove>* move) {
+  // Among the available candidate locations, prefer those having the most and
+  // least loaded tablet servers in terms of total number of hosted replicas.
+  // The rationale is that the per-table location load is a relative metric
+  // (i.e. number of table replicas / number of tablet servers), but it's
+  // always beneficial to have less loaded servers in absolute terms.
+  //
+  // If there are multiple candiate tablet servers with the same extremum load,
+  // choose among them randomly.
+  //
+  // TODO(aserbin): implement fine-grained logic to select the best move among
+  //                the available candidates, if multiple choices are available.
+  //                For example, among candidates with the same number of
+  //                replicas, prefer candidates where the movement from one
+  //                server to another also improves the table-wise skew within
+  //                the destination location.
+  //
+
+  // Building auxiliary containers.
+  // TODO(aserbin): refactor and move some of those into the ClusterBalanceInfo.
+  typedef std::unordered_map<std::string, int32_t> ServerLoadMap;
+  ServerLoadMap load_by_ts;
+  for (const auto& elem : cluster_info.balance.servers_by_total_replica_count) {
+    EmplaceOrDie(&load_by_ts, elem.second, elem.first);
+  }
+
+  // Least loaded tablet servers from the destination locations.
+  multimap<int32_t, string> ts_id_by_load_least;
+  for (const auto& loc : loc_loaded_least) {
+    const auto& loc_ts_ids =
+        FindOrDie(cluster_info.locality.servers_by_location, loc);
+    for (const auto& ts_id : loc_ts_ids) {
+      ts_id_by_load_least.emplace(FindOrDie(load_by_ts, ts_id), ts_id);
+    }
+  }
+  // TODO(aserbin): separate into a function or lambda.
+  const auto min_load = ts_id_by_load_least.cbegin()->first;
+  const auto min_range = ts_id_by_load_least.equal_range(min_load);
+  auto it_min = min_range.first;
+#if 0
+  // TODO(aserbin): add randomness
+  const auto distance_min = distance(min_range.first, min_range.second);
+  std::advance(it_min, Uniform(distance_min));
+  CHECK_NE(min_range.second, it_min);
+#endif
+  const auto& dst_ts_id = it_min->second;
+
+  // Most loaded tablet servers from the source locations.
+  multimap<int32_t, string, std::greater<int32_t>> ts_id_by_load_most;
+  for (const auto& loc : loc_loaded_most) {
+    const auto& loc_ts_ids =
+        FindOrDie(cluster_info.locality.servers_by_location, loc);
+    for (const auto& ts_id : loc_ts_ids) {
+      ts_id_by_load_most.emplace(FindOrDie(load_by_ts, ts_id), ts_id);
+    }
+  }
+  const auto max_load = ts_id_by_load_most.cbegin()->first;
+  const auto max_range = ts_id_by_load_most.equal_range(max_load);
+  auto it_max = max_range.first;
+#if 0
+  // TODO(aserbin): add randomness
+  const auto distance_max = distance(max_range.first, max_range.second);
+  std::advance(it_max, Uniform(distance_max));
+  CHECK_NE(max_range.second, it_max);
+#endif
+  const auto& src_ts_id = it_max->second;
+  CHECK_NE(src_ts_id, dst_ts_id);
+
+  *move = { table_id, src_ts_id, dst_ts_id };
 
   return Status::OK();
 }
