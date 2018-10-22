@@ -56,17 +56,21 @@ namespace kudu {
 namespace security {
 
 TokenSigner::TokenSigner(int64_t authn_token_validity_seconds,
+                         int64_t authz_token_validity_seconds,
                          int64_t key_rotation_seconds,
                          shared_ptr<TokenVerifier> verifier)
     : verifier_(verifier ? std::move(verifier)
                          : std::make_shared<TokenVerifier>()),
       authn_token_validity_seconds_(authn_token_validity_seconds),
+      authz_token_validity_seconds_(authz_token_validity_seconds),
       key_rotation_seconds_(key_rotation_seconds),
       // The TSK propagation interval is equal to the rotation interval.
-      key_validity_seconds_(2 * key_rotation_seconds_ + authn_token_validity_seconds_),
+      key_validity_seconds_(2 * key_rotation_seconds_ +
+          std::max(authn_token_validity_seconds_, authz_token_validity_seconds)),
       last_key_seq_num_(-1) {
   CHECK_GE(key_rotation_seconds_, 0);
   CHECK_GE(authn_token_validity_seconds_, 0);
+  CHECK_GE(authz_token_validity_seconds_, 0);
   CHECK(verifier_);
 }
 
@@ -134,6 +138,27 @@ Status TokenSigner::ImportKeys(const vector<TokenSigningPrivateKeyPB>& keys) {
   return Status::OK();
 }
 
+Status TokenSigner::GenerateAuthzToken(string username,
+                                       TablePrivilegePB privilege,
+                                       SignedTokenPB* signed_token) const {
+  if (username.empty()) {
+    return Status::InvalidArgument("no username provided for authz token");
+  }
+  TokenPB token;
+  token.set_expire_unix_epoch_seconds(WallTime_Now() + authz_token_validity_seconds_);
+  AuthzTokenPB* authz = token.mutable_authz();
+  authz->set_username(std::move(username));
+  *authz->mutable_table_privilege() = std::move(privilege);
+
+  SignedTokenPB ret;
+  if (!token.SerializeToString(ret.mutable_token_data())) {
+    return Status::RuntimeError("could not serialize authz token");
+  }
+  RETURN_NOT_OK(SignToken(&ret));
+  *signed_token = std::move(ret);
+  return Status::OK();
+}
+
 Status TokenSigner::GenerateAuthnToken(string username,
                                        SignedTokenPB* signed_token) const {
   if (username.empty()) {
@@ -162,7 +187,7 @@ Status TokenSigner::SignToken(SignedTokenPB* token) const {
     return Status::IllegalState("no token signing key");
   }
   const TokenSigningPrivateKey* key = tsk_deque_.front().get();
-  RETURN_NOT_OK_PREPEND(key->Sign(token), "could not sign authn token");
+  RETURN_NOT_OK_PREPEND(key->Sign(token), "could not sign token");
   return Status::OK();
 }
 
@@ -194,9 +219,10 @@ Status TokenSigner::CheckNeedKey(unique_ptr<TokenSigningPrivateKey>* tsk) const 
     // It's enough to have just one active key and next key ready to be
     // activated when it's time to do so.  However, it does not mean the
     // process of key refreshment is about to stop once there are two keys
-    // in the queue: the TryRotate() method (which should be called periodically
-    // along with CheckNeedKey()/AddKey() pair) will eventually pop the
-    // current key out of the keys queue once the key enters its inactive phase.
+    // in the queue: the TryRotateKey() method (which should be called
+    // periodically along with CheckNeedKey()/AddKey() pair) will eventually
+    // pop the current key out of the keys queue once the key enters its
+    // inactive phase.
     tsk->reset();
     return Status::OK();
   }

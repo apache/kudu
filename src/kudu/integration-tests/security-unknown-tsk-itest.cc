@@ -161,7 +161,7 @@ class SecurityUnknownTskTest : public KuduTest {
       return Status::RuntimeError("failed to serialize token data");
     }
 
-    TokenSigner forger(1, 1);
+    TokenSigner forger(1, 1, 1);
     RETURN_NOT_OK(forger.ImportKeys({ tsk }));
     return forger.SignToken(new_signed_token);
   }

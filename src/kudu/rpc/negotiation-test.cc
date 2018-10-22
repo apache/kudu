@@ -199,7 +199,9 @@ TEST_P(TestNegotiation, TestNegotiation) {
   FLAGS_rpc_encrypt_loopback_connections = desc.rpc_encrypt_loopback;
 
   // Generate an optional client token and server token verifier.
-  TokenSigner token_signer(60, 20, std::make_shared<TokenVerifier>());
+  // Note: the authz token validity period doesn't matter because we're only
+  // concerned with authenticating the connection.
+  TokenSigner token_signer(60, 0, 20, std::make_shared<TokenVerifier>());
   {
     unique_ptr<TokenSigningPrivateKey> key;
     ASSERT_OK(token_signer.CheckNeedKey(&key));

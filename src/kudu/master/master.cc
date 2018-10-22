@@ -79,6 +79,12 @@ DEFINE_int64(authn_token_validity_seconds, 60 * 60 * 24 * 7,
              "validity period expires.");
 TAG_FLAG(authn_token_validity_seconds, experimental);
 
+DEFINE_int64(authz_token_validity_seconds, 60 * 5,
+             "Period of time for which an issued authorization token is valid. "
+             "Clients will automatically attempt to reacquire a token after the "
+             "validity period expires.");
+TAG_FLAG(authz_token_validity_seconds, experimental);
+
 DECLARE_bool(hive_metastore_sasl_enabled);
 DECLARE_string(keytab_file);
 
@@ -160,6 +166,7 @@ Status Master::Init() {
   // The TokenSigner loads its keys during catalog manager initialization.
   token_signer_.reset(new TokenSigner(
       FLAGS_authn_token_validity_seconds,
+      FLAGS_authz_token_validity_seconds,
       FLAGS_tsk_rotation_seconds,
       messenger_->shared_token_verifier()));
   state_ = kInitialized;

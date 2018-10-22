@@ -153,6 +153,7 @@ class AuthnTokenExpireITest : public AuthnTokenExpireITestBase {
       // a new authn token re-acquisitions and retried RPCs.
       "--tsk_rotation_seconds=1",
       Substitute("--authn_token_validity_seconds=$0", token_validity_seconds_),
+      Substitute("--authz_token_validity_seconds=$0", token_validity_seconds_),
     };
 
     cluster_opts_.extra_tserver_flags = {
@@ -361,6 +362,7 @@ class TokenBasedConnectionITest : public AuthnTokenExpireITestBase {
           /*num_tablet_servers=*/ 3) {
     cluster_opts_.extra_master_flags = {
       Substitute("--authn_token_validity_seconds=$0", token_validity_seconds_),
+      Substitute("--authz_token_validity_seconds=$0", token_validity_seconds_),
     };
 
     cluster_opts_.extra_tserver_flags = {
@@ -430,6 +432,7 @@ class MultiMasterIdleConnectionsITest : public AuthnTokenExpireITestBase {
       // expiration of authn tokens, while the default authn expiration timeout
       // is 7 days. So, let's make the token validity interval really short.
       Substitute("--authn_token_validity_seconds=$0", token_validity_seconds_),
+      Substitute("--authz_token_validity_seconds=$0", token_validity_seconds_),
 
       // The default for leader_failure_max_missed_heartbeat_periods 3.0, but
       // 2.0 is enough to have master leadership stable enough and makes it

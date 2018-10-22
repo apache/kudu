@@ -43,6 +43,7 @@
 #include "kudu/util/test_util.h"
 
 DECLARE_int64(authn_token_validity_seconds);
+DECLARE_int64(authz_token_validity_seconds);
 DECLARE_int64(tsk_rotation_seconds);
 DECLARE_int32(heartbeat_interval_ms);
 
@@ -63,6 +64,7 @@ class TokenSignerITest : public KuduTest {
  public:
   TokenSignerITest() {
     FLAGS_authn_token_validity_seconds = authn_token_validity_seconds_;
+    FLAGS_authz_token_validity_seconds = authz_token_validity_seconds_;
     FLAGS_tsk_rotation_seconds = tsk_rotation_seconds_;
 
     opts_.num_masters = 3;
@@ -121,6 +123,7 @@ class TokenSignerITest : public KuduTest {
 
  protected:
   const int64_t authn_token_validity_seconds_ = 20;
+  const int64_t authz_token_validity_seconds_ = 20;
   const int64_t tsk_rotation_seconds_ = 20;
 
   InternalMiniClusterOptions opts_;
