@@ -50,6 +50,8 @@
 #include "kudu/server/server_base.pb.h"
 #include "kudu/server/server_base.proxy.h"
 #include "kudu/tablet/key_value_test_schema.h"
+#include "kudu/tserver/tserver.pb.h"
+#include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/env.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
@@ -127,6 +129,17 @@ class SecurityITest : public KuduTest {
     return proxy.TSHeartbeat(req, &resp, &rpc);
   }
 
+  Status TryListTablets() {
+    auto messenger = NewMessengerOrDie();
+    const auto& addr = cluster_->tablet_server(0)->bound_rpc_addr();
+    tserver::TabletServerServiceProxy proxy(messenger, addr, addr.host());
+
+    rpc::RpcController rpc;
+    tserver::ListTabletsRequestPB req;
+    tserver::ListTabletsResponsePB resp;
+    return proxy.ListTablets(req, &resp, &rpc);
+  }
+
  private:
   std::shared_ptr<Messenger> NewMessengerOrDie() {
     std::shared_ptr<Messenger> messenger;
@@ -172,6 +185,20 @@ void SecurityITest::SmokeTestCluster() {
 
   // Delete the table.
   ASSERT_OK(client->DeleteTable(kTableName));
+}
+
+// Test authorizing list tablets.
+TEST_F(SecurityITest, TestAuthorizationOnListTablets) {
+  // When enforcing access control, an operator of ListTablets must be
+  // superuser.
+  cluster_opts_.extra_tserver_flags.emplace_back("--tserver_enforce_access_control");
+  ASSERT_OK(StartCluster());
+  ASSERT_OK(cluster_->kdc()->Kinit("test-user"));
+  Status s = TryListTablets();
+  ASSERT_EQ("Remote error: Not authorized: unauthorized access to method: ListTablets",
+            s.ToString());
+  ASSERT_OK(cluster_->kdc()->Kinit("test-admin"));
+  ASSERT_OK(TryListTablets());
 }
 
 // Test creating a table, writing some data, reading data, and dropping

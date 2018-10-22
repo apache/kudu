@@ -42,7 +42,7 @@ service TabletServerService {
     option (kudu.rpc.authz_method) = "AuthorizeClient";
   }
   rpc ListTablets(ListTabletsRequestPB) returns (ListTabletsResponsePB) {
-    option (kudu.rpc.authz_method) = "AuthorizeClient";
+    option (kudu.rpc.authz_method) = "AuthorizeListTablets";
   }
   rpc SplitKeyRange(SplitKeyRangeRequestPB) returns (SplitKeyRangeResponsePB) {
     option (kudu.rpc.authz_method) = "AuthorizeClient";

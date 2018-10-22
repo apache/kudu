@@ -876,6 +876,15 @@ bool TabletServiceImpl::AuthorizeClientOrServiceUser(const google::protobuf::Mes
                             ServerBase::SERVICE_USER);
 }
 
+bool TabletServiceImpl::AuthorizeListTablets(const google::protobuf::Message* req,
+                                             google::protobuf::Message* resp,
+                                             rpc::RpcContext* context) {
+  if (FLAGS_tserver_enforce_access_control) {
+    return server_->Authorize(context, ServerBase::SUPER_USER);
+  }
+  return AuthorizeClient(req, resp, context);
+}
+
 bool TabletServiceImpl::AuthorizeClient(const google::protobuf::Message* /*req*/,
                                         google::protobuf::Message* /*resp*/,
                                         rpc::RpcContext* context) {

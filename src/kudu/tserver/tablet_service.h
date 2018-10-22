@@ -108,6 +108,15 @@ class TabletServiceImpl : public TabletServerServiceIf {
                                     google::protobuf::Message* resp,
                                     rpc::RpcContext* context) override;
 
+  // Note: we authorize ListTablets separately because our fine-grained access
+  // model is simpler when authorization is scoped to a single table, which
+  // isn't the case for ListTablets. Rather than authorizing multiple tables at
+  // once, if enforcing access control, we require the super-user role and omit
+  // checking table privileges, and authorize as a client otherwise.
+  bool AuthorizeListTablets(const google::protobuf::Message* req,
+                            google::protobuf::Message* resp,
+                            rpc::RpcContext* context) override;
+
   virtual void Ping(const PingRequestPB* req,
                     PingResponsePB* resp,
                     rpc::RpcContext* context) OVERRIDE;
