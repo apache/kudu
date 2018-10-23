@@ -690,17 +690,25 @@ struct MirrorTable {
   TableState ts_;
 };
 
-// Stress test for various alter table scenarios. This performs a random sequence of:
-//   - insert a row (using the latest schema)
-//   - delete a random row
-//   - update a row (all columns with the latest schema)
-//   - add a new column
-//   - drop a column
-//   - restart the tablet server
+// Stress test for various alter table scenarios. This performs a random
+// sequence of the following operations:
+//   - Restart the master
+//   - Restart a random tablet server
+//   - Alter the table
+//     - Add a column
+//     - Drop a column
+//     - Add a range partition
+//     - Drop a range partition
+//     - Rename a column (including primary key columns)
+//     - Change a column's default value
+//     - Change the encoding or compression of a column
+//   - Insert a row (using the latest schema)
+//   - Delete a random row
+//   - Update a row (all columns with the latest schema)
 //
-// During the sequence of operations, a "mirror" of the table in memory is kept up to
-// date. We periodically scan the actual table, and ensure that the data in Kudu
-// matches our in-memory "mirror".
+// During the sequence of operations, a "mirror" of the table in memory is kept
+// up to date. We periodically scan the actual table, and ensure that the data
+// in Kudu matches our in-memory "mirror".
 TEST_P(AlterTableRandomized, TestRandomSequence) {
   MirrorTable t(client_);
   ASSERT_OK(t.Create());

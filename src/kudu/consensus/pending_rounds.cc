@@ -17,6 +17,7 @@
 
 #include "kudu/consensus/pending_rounds.h"
 
+#include <iterator>
 #include <ostream>
 #include <utility>
 
@@ -62,11 +63,12 @@ Status PendingRounds::CancelPendingTransactions() {
 
   LOG_WITH_PREFIX(INFO) << "Trying to abort " << pending_txns_.size()
                         << " pending transactions.";
-  for (const auto& txn : pending_txns_) {
-    const scoped_refptr<ConsensusRound>& round = txn.second;
+  // Abort transactions in reverse index order. See KUDU-1678.
+  for (auto txn = pending_txns_.crbegin(); txn != pending_txns_.crend(); ++txn) {
+    const scoped_refptr<ConsensusRound>& round = txn->second;
     // We cancel only transactions whose applies have not yet been triggered.
     LOG_WITH_PREFIX(INFO) << "Aborting transaction as it isn't in flight: "
-                                   << SecureShortDebugString(*txn.second->replicate_msg());
+                          << SecureShortDebugString(*round->replicate_msg());
     round->NotifyReplicationFinished(Status::Aborted("Transaction aborted"));
   }
   return Status::OK();
