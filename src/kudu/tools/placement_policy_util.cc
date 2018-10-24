@@ -68,17 +68,42 @@ Status FindBestReplicaToReplace(
   }
 
   const auto& tablet_id = info.tablet_id;
+  const auto location_num = ts_id_by_location.size();
 
   // If a total number of locations is 2, it's impossible to make its replica
   // distribution conform with the placement policy constraints.
   const auto& table_id = FindOrDie(tablets_info.tablet_to_table_id, tablet_id);
   const auto& table_info = FindOrDie(tablets_info.tables_info, table_id);
-  if (ts_id_by_location.size() == 2 && table_info.replication_factor % 2 == 1) {
+
+  // There are a few edge cases which are most likely to occur, so let's have
+  // a special error message for those. In these cases there are too few
+  // locations relative to the replication factor, so it's impossible to find
+  // any replica movements to satisfy the placement policy constraints.
+  //
+  // One interesting case placing replicas of a tablet with RF=4 in a cluster
+  // with 3 locations. In that case, it's impossible to place the replicas to
+  // satisfy the placement policy's constraints, since any possible replicas
+  // placement does not allow to have the majority of the replicas online
+  // if any single location becomes unavailable. Below is the all the possible
+  // replica distributions for that case (modulo permutations of locations):
+  // if the first location becomes unavailable, the majority of the replicas
+  // is lost and the tablet becomes unavailable.
+  //
+  //   4 + 0 + 0
+  //   3 + 1 + 0
+  //   2 + 1 + 1
+  //
+  // Note that with 3 locations and higher replication factors (5, 6, etc.),
+  // there is always a way to place tablet replicas to conform with the
+  // restriction mentioned above.
+  if (location_num == 2 ||
+      (location_num == 3 && table_info.replication_factor == 4)) {
     return Status::ConfigurationError(Substitute(
         "tablet $0 (table name '$1'): replica distribution cannot conform "
         "with the placement policy constraints since its replication "
-        "factor is odd ($2) and there are two locations in the cluster",
-        tablet_id, table_info.name, table_info.replication_factor));
+        "factor is $2 and there are $3 locations in the cluster",
+        tablet_id, table_info.name,
+        table_info.replication_factor, location_num));
   }
 
   const auto& location = info.majority_location;

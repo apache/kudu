@@ -470,6 +470,24 @@ TEST_F(ClusterLocationTest, NoCandidateMovesToFixPolicyViolations) {
       { { "t0", "L0" }, },
       {},
     },
+    {
+      // One RF=6 tablet with replica placement violating the placement policy.
+      {
+        { "T0", 6, { "t0", } },
+      },
+      {
+        { "L0", { "A", "B", "C", } },
+        { "L1", { "D", "E", } },
+        { "L2", { "F", } },
+      },
+      {
+        { "A", { "t0", } }, { "B", { "t0", } }, { "C", { "t0", } },
+        { "D", { "t0", } }, { "E", { "t0", } },
+        { "F", { "t0", } },
+      },
+      { { "t0", "L0" }, },
+      {}
+    },
   };
   for (auto idx = 0; idx < configs.size(); ++idx) {
     SCOPED_TRACE(Substitute("test config index: $0", idx));
@@ -488,6 +506,182 @@ TEST_F(ClusterLocationTest, NoCandidateMovesToFixPolicyViolations) {
     ASSERT_TRUE(s.IsNotFound()) << s.ToString();
     ASSERT_TRUE(moves.empty());
   }
+}
+
+TEST_F(ClusterLocationTest, PlacementPolicyViolationsEvenRFEdgeCases) {
+  const vector<TestClusterConfig> configs = {
+    {
+      // One location, RF=2 and RF=4.
+      {
+        { "T0", 2, { "t0", } },
+        { "T1", 4, { "t1", } },
+      },
+      {
+        { "L0", { "A", "B", "C", "D", "E", } },
+      },
+      {
+        { "A", { "t0", "t1", } },
+        { "B", { "t0", "t1", } },
+        { "C", { "t1", } },
+        { "D", { "t1", } },
+      },
+      { { "t0", "L0" }, { "t1", "L0" }, },
+      {}
+    },
+    {
+      // Two locations, RF=2.
+      {
+        { "T0", 2, { "t0", "t1", } },
+      },
+      {
+        { "L0", { "A", "B", } },
+        { "L1", { "D", "E", } },
+      },
+      {
+        { "A", { "t0", } }, { "B", { "t0", } },
+        { "D", { "t1", } }, { "E", { "t1", } },
+      },
+      { { "t0", "L0" }, { "t1", "L1" }, },
+      {}
+    },
+    {
+      // Two locations, RF=2 and RF=4.
+      {
+        { "T0", 2, { "t0", } },
+        { "T1", 4, { "t1", } },
+      },
+      {
+        { "L0", { "A", "B", "C", } },
+        { "L1", { "D", "E", "F", } },
+      },
+      {
+        { "A", { "t0", "t1", } }, { "B", { "t0", "t1", } },
+        { "D", { "t1", } }, { "E", { "t1", } },
+      },
+      { { "t0", "L0" }, { "t1", "L1" }, },
+      {}
+    },
+    {
+      // Two locations, two tablets, RF=2.
+      {
+        { "T0", 2, { "t0", "t1", } },
+      },
+      {
+        { "L0", { "A", "B", } },
+        { "L1", { "C", "D", } },
+      },
+      {
+        { "A", { "t0", } }, { "B", { "t0", } },
+        { "C", { "t1", } }, { "D", { "t1", } },
+      },
+      { { "t0", "L0" }, { "t1", "L1" }, },
+      {}
+    },
+    {
+      // Three locations, RF=4.
+      {
+        { "T0", 4, { "t0", } },
+      },
+      {
+        { "L0", { "A", "B", } },
+        { "L1", { "D", "E", } },
+        { "L2", { "F", "G", } },
+      },
+      {
+        { "A", { "t0", } }, { "B", { "t0", } },
+        { "D", { "t0", } },
+        { "F", { "t0", } },
+      },
+      { { "t0", "L0" }, },
+      {}
+    },
+  };
+  NO_FATALS(RunTest(configs));
+}
+
+TEST_F(ClusterLocationTest, PlacementPolicyViolationsEvenRF) {
+  const vector<TestClusterConfig> configs = {
+    {
+      // Three locations, RF=6.
+      {
+        { "T0", 6, { "t0", } },
+      },
+      {
+        { "L0", { "A", "B", "C", } },
+        { "L1", { "D", "E", "F", } },
+        { "L2", { "G", "H", } },
+      },
+      {
+        { "A", { "t0", } }, { "B", { "t0", } }, { "C", { "t0", } },
+        { "D", { "t0", } }, { "F", { "t0", } },
+        { "H", { "t0", } },
+      },
+      { { "t0", "L0" }, },
+      { { "t0", "B" }, }
+    },
+    {
+      // Three locations, RF=8.
+      {
+        { "T0", 8, { "t0", } },
+      },
+      {
+        { "L0", { "A", "B", "C", } },
+        { "L1", { "D", "E", "F", "G", } },
+        { "L2", { "H", "J", } },
+      },
+      {
+        { "A", { "t0", } }, { "B", { "t0", } }, { "C", { "t0", } },
+        { "D", { "t0", } }, { "E", { "t0", } }, { "F", { "t0", } },
+        { "G", { "t0", } },
+        { "H", { "t0", } },
+      },
+      { { "t0", "L1" }, },
+      { { "t0", "D" }, }
+    },
+  };
+  NO_FATALS(RunTest(configs));
+}
+
+TEST_F(ClusterLocationTest, PlacementPolicyViolationsNoneEvenRF) {
+  const vector<TestClusterConfig> configs = {
+    {
+      // Three locations, RF=6.
+      {
+        { "T0", 6, { "t0", } },
+      },
+      {
+        { "L0", { "A", "B", "C", } },
+        { "L1", { "D", "E", "F", } },
+        { "L2", { "G", "H", } },
+      },
+      {
+        { "A", { "t0", } }, { "B", { "t0", } },
+        { "D", { "t0", } }, { "E", { "t0", } },
+        { "G", { "t0", } }, { "H", { "t0", } },
+      },
+      {},
+      {}
+    },
+    {
+      // Three locations, RF=8.
+      {
+        { "T0", 8, { "t0", } },
+      },
+      {
+        { "L0", { "A", "B", "C", } },
+        { "L1", { "D", "E", "F", } },
+        { "L2", { "G", "H", } },
+      },
+      {
+        { "A", { "t0", } }, { "B", { "t0", } }, { "C", { "t0", } },
+        { "D", { "t0", } }, { "E", { "t0", } }, { "F", { "t0", } },
+        { "G", { "t0", } }, { "H", { "t0", } },
+      },
+      {},
+      {}
+    },
+  };
+  NO_FATALS(RunTest(configs));
 }
 
 } // namespace tools
