@@ -299,6 +299,8 @@ Status PlacementPolicy::SelectLocation(
     string* location) const {
   DCHECK(location);
 
+  const auto num_locations = ltd_.size();
+
   // A pair of the location-per-load maps. The idea is to get a group to select
   // the best location based on the load, while not placing the majority of
   // replicas in same location, if possible. Using multimap (but not
@@ -317,11 +319,24 @@ Status PlacementPolicy::SelectLocation(
         // per tablet server.
         continue;
       }
-      if (location_replicas_num + 1 > num_replicas / 2) {
+      // When placing the replicas of a tablet, it's necessary to take into
+      // account number of available locations, since the maximum number
+      // of replicas per non-overflow location depends on that. For example,
+      // in case of 2 locations the best placement for 4 replicas would be
+      // (2 + 2), while in case of 4 and more locations that's (1 + 1 + 1 + 1).
+      // Similarly, in case of 2 locations and 6 replicas, the best placement
+      // is (3 + 3), while for 3 locations that's (2 + 2 + 2).
+      if ((num_locations == 2 && num_replicas % 2 == 0 &&
+           location_replicas_num + 1 > num_replicas / 2) ||
+          (num_locations > 2 &&
+           location_replicas_num + 1 >= (num_replicas + 1) / 2)) {
         // If possible, avoid placing the majority of the tablet's replicas
         // into a single location even if load-based criterion would favor that.
-        // So, if placing one extra replica will add up to the majority, place
-        // this location into the overflow group.
+        // Prefer such a distribution of replicas that will keep the majority
+        // of replicas alive if any single location fails. So, if placing one
+        // extra replica would add up to the majority in case of odd replication
+        // factor or add up to the half of all replicas in case of even
+        // replication factor, place this location into the overflow group.
         location_per_load_overflow.emplace(
             GetLocationLoad(location, locations_info), location);
         continue;

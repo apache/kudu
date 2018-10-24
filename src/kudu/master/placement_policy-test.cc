@@ -769,5 +769,121 @@ TEST_F(PlacementPolicyTest, PlaceExtraTablet_L5_TS16_RF5) {
   EXPECT_GT(1500, placement_stats["B_ts3"]);
 }
 
+// Even RF case: edge cases with 2 locaitons.
+TEST_F(PlacementPolicyTest, PlaceTabletReplicasEmptyCluster_L2_EvenRFEdgeCase) {
+  const vector<LocationInfo> cluster_info = {
+    { "A", { { "A_ts0", 10 }, { "A_ts1", 10 }, { "A_ts2", 10 }, } },
+    { "B", { { "B_ts0", 0 }, { "B_ts1", 0 }, { "B_ts2", 1 }, { "B_ts3", 10 }, } },
+  };
+  ASSERT_OK(Prepare(cluster_info));
+
+  const auto& all = descriptors();
+  PlacementPolicy policy(all, rng());
+
+  {
+    static constexpr auto num_replicas = 2;
+    TSDescriptorVector result;
+    ASSERT_OK(policy.PlaceTabletReplicas(num_replicas, &result));
+    ASSERT_EQ(num_replicas, result.size());
+    TSDescriptorsMap m;
+    ASSERT_OK(TSDescriptorVectorToMap(result, &m));
+    ASSERT_EQ(1, m.count("A_ts0") + m.count("A_ts1") + m.count("A_ts2"));
+    ASSERT_EQ(1, m.count("B_ts0") + m.count("B_ts1") + m.count("B_ts2"));
+  }
+  {
+    static constexpr auto num_replicas = 4;
+    TSDescriptorVector result;
+    ASSERT_OK(policy.PlaceTabletReplicas(num_replicas, &result));
+    ASSERT_EQ(num_replicas, result.size());
+    TSDescriptorsMap m;
+    ASSERT_OK(TSDescriptorVectorToMap(result, &m));
+    ASSERT_EQ(2, m.count("A_ts0") + m.count("A_ts1") + m.count("A_ts2"));
+    ASSERT_EQ(2, m.count("B_ts0") + m.count("B_ts1") + m.count("B_ts2"));
+  }
+  {
+    static constexpr auto num_replicas = 6;
+    TSDescriptorVector result;
+    ASSERT_OK(policy.PlaceTabletReplicas(num_replicas, &result));
+    ASSERT_EQ(num_replicas, result.size());
+    TSDescriptorsMap m;
+    ASSERT_OK(TSDescriptorVectorToMap(result, &m));
+    ASSERT_EQ(1, m.count("A_ts0"));
+    ASSERT_EQ(1, m.count("A_ts1"));
+    ASSERT_EQ(1, m.count("A_ts2"));
+    ASSERT_EQ(1, m.count("B_ts0"));
+    ASSERT_EQ(1, m.count("B_ts1"));
+    ASSERT_EQ(1, m.count("B_ts2") + m.count("B_ts3"));
+  }
+}
+
+// Even RF case: place tablet replicas into a cluster with 3 locations.
+TEST_F(PlacementPolicyTest, PlaceTabletReplicasEmptyCluster_L3_EvenRF) {
+  const vector<LocationInfo> cluster_info = {
+    { "A", { { "A_ts0", 10 }, { "A_ts1", 10 }, { "A_ts2", 10 }, } },
+    { "B", { { "B_ts0", 0 }, { "B_ts1", 0 }, { "B_ts2", 10 }, } },
+    { "C", { { "C_ts0", 0 }, { "C_ts1", 0 }, { "C_ts2", 10 }, } },
+  };
+  ASSERT_OK(Prepare(cluster_info));
+
+  const auto& all = descriptors();
+  PlacementPolicy policy(all, rng());
+
+  {
+    static constexpr auto num_replicas = 2;
+    TSDescriptorVector result;
+    ASSERT_OK(policy.PlaceTabletReplicas(num_replicas, &result));
+    ASSERT_EQ(num_replicas, result.size());
+    TSDescriptorsMap m;
+    ASSERT_OK(TSDescriptorVectorToMap(result, &m));
+    // Two location are to have one replica, one location to have none.
+    ASSERT_GE(1, m.count("A_ts0") + m.count("A_ts1") + m.count("A_ts2"));
+    ASSERT_GE(1, m.count("B_ts0") + m.count("B_ts1"));
+    ASSERT_GE(1, m.count("C_ts0") + m.count("C_ts1"));
+  }
+  {
+    static constexpr auto num_replicas = 4;
+    TSDescriptorVector result;
+    ASSERT_OK(policy.PlaceTabletReplicas(num_replicas, &result));
+    ASSERT_EQ(num_replicas, result.size());
+    TSDescriptorsMap m;
+    ASSERT_OK(TSDescriptorVectorToMap(result, &m));
+    // One location is to have two replicas, the rest are to have just one.
+    ASSERT_LE(1, m.count("A_ts0") + m.count("A_ts1") + m.count("A_ts2"));
+    ASSERT_GE(2, m.count("A_ts0") + m.count("A_ts1") + m.count("A_ts2"));
+    ASSERT_LE(1, m.count("B_ts0") + m.count("B_ts1"));
+    ASSERT_GE(2, m.count("B_ts0") + m.count("B_ts1"));
+    ASSERT_LE(1, m.count("C_ts0") + m.count("C_ts1"));
+    ASSERT_GE(2, m.count("C_ts0") + m.count("C_ts1"));
+  }
+  {
+    static constexpr auto num_replicas = 6;
+    TSDescriptorVector result;
+    ASSERT_OK(policy.PlaceTabletReplicas(num_replicas, &result));
+    ASSERT_EQ(num_replicas, result.size());
+    TSDescriptorsMap m;
+    ASSERT_OK(TSDescriptorVectorToMap(result, &m));
+    ASSERT_EQ(2, m.count("A_ts0") + m.count("A_ts1") + m.count("A_ts2"));
+    ASSERT_EQ(1, m.count("B_ts0"));
+    ASSERT_EQ(1, m.count("B_ts1"));
+    ASSERT_EQ(1, m.count("C_ts0"));
+    ASSERT_EQ(1, m.count("C_ts1"));
+  }
+  {
+    static constexpr auto num_replicas = 8;
+    TSDescriptorVector result;
+    ASSERT_OK(policy.PlaceTabletReplicas(num_replicas, &result));
+    ASSERT_EQ(num_replicas, result.size());
+    TSDescriptorsMap m;
+    ASSERT_OK(TSDescriptorVectorToMap(result, &m));
+    ASSERT_EQ(2, m.count("A_ts0") + m.count("A_ts1") + m.count("A_ts2"));
+    ASSERT_EQ(1, m.count("B_ts0"));
+    ASSERT_EQ(1, m.count("B_ts1"));
+    ASSERT_EQ(1, m.count("B_ts2"));
+    ASSERT_EQ(1, m.count("C_ts0"));
+    ASSERT_EQ(1, m.count("C_ts1"));
+    ASSERT_EQ(1, m.count("C_ts2"));
+  }
+}
+
 } // namespace master
 } // namespace kudu

@@ -113,7 +113,7 @@ class PlacementPolicy {
                          const ReplicaLocationsInfo& locations_info) const;
 
   // Select locations to place the given number of replicas ('nreplicas') for
-  // a new tablet. The locations are be chosen according to the placement
+  // a new tablet. The locations are chosen according to the placement
   // policies.
   //
   // TODO (aserbin): add the reference to the document once it's in the repo.
@@ -135,7 +135,8 @@ class PlacementPolicy {
 
   // Select location for next replica of a tablet with the specified replication
   // factor. In essence, the algorithm picks the least loaded location,
-  // making sure no location contains the majority of the replicas.
+  // making sure no location contains the majority of replicas of the tablet,
+  // if possible.
   //
   // Parameters:
   //   'num_replicas'   The total number of tablet replicas to place.
