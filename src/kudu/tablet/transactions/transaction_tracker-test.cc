@@ -38,6 +38,7 @@
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -240,14 +241,19 @@ TEST_F(TransactionTrackerTest, TestTooManyTransactions) {
   // carries an empty ReplicateMsg), so we'll just add as many as possible
   // and check that when we fail, it's because we've hit the limit.
   Status s;
-  vector<scoped_refptr<TransactionDriver> > drivers;
+  vector<scoped_refptr<TransactionDriver>> drivers;
+  SCOPED_CLEANUP({
+    for (const auto& d : drivers) {
+      d->Abort(Status::Aborted(""));
+    }
+  });
   for (int i = 0; s.ok();i++) {
     s = AddDrivers(1, &drivers);
   }
 
   LOG(INFO) << "Added " << drivers.size() << " drivers";
   ASSERT_TRUE(s.IsServiceUnavailable());
-  ASSERT_STR_CONTAINS(s.ToString(), "exceeded its limit");
+  ASSERT_STR_CONTAINS(s.ToString(), "exceeded its transaction memory limit");
   NO_FATALS(CheckMetrics(entity_, drivers.size(), 0, 1));
   NO_FATALS(CheckMemTracker(t));
 
@@ -262,10 +268,6 @@ TEST_F(TransactionTrackerTest, TestTooManyTransactions) {
   ASSERT_OK(AddDrivers(1, &drivers));
   NO_FATALS(CheckMemTracker(t));
 
-  // Clean up.
-  for (const scoped_refptr<TransactionDriver>& driver : drivers) {
-    driver->Abort(Status::Aborted(""));
-  }
 }
 
 } // namespace tablet
