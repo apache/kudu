@@ -253,7 +253,7 @@ TEST_F(TransactionTrackerTest, TestTooManyTransactions) {
 
   LOG(INFO) << "Added " << drivers.size() << " drivers";
   ASSERT_TRUE(s.IsServiceUnavailable());
-  ASSERT_STR_CONTAINS(s.ToString(), "exceeded its transaction memory limit");
+  ASSERT_STR_CONTAINS(s.ToString(), "exceeds the transaction memory limit");
   NO_FATALS(CheckMetrics(entity_, drivers.size(), 0, 1));
   NO_FATALS(CheckMemTracker(t));
 
