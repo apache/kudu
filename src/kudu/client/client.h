@@ -339,7 +339,11 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   /// @return Operation status.
   Status DeleteTable(const std::string& table_name);
 
+  /// @cond PRIVATE_API
+
   /// Delete/drop a table in internal catalogs and possibly external catalogs.
+  ///
+  /// Private API.
   ///
   /// @param [in] table_name
   ///   Name of the table to drop.
@@ -349,6 +353,7 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   /// @return Operation status.
   Status DeleteTableInCatalogs(const std::string& table_name,
                                bool modify_external_catalogs) KUDU_NO_EXPORT;
+  /// @endcond
 
   /// Create a KuduTableAlterer object.
   ///
@@ -431,7 +436,7 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   /// @return A new session object; caller is responsible for destroying it.
   sp::shared_ptr<KuduSession> NewSession();
 
-  /// @cond false
+  /// @cond PRIVATE_API
 
   /// Get tablet information for a tablet by ID.
   ///
@@ -544,24 +549,34 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   /// @return Status object for the operation.
   Status ExportAuthenticationCredentials(std::string* authn_creds) const;
 
-  // @return the configured Hive Metastore URIs on the most recently connected to
-  //    leader master, or an empty string if the Hive Metastore integration is not
-  //    enabled.
+  /// @cond PRIVATE_API
+
+  /// Private API.
+  ///
+  /// @return the configured Hive Metastore URIs on the most recently connected to
+  ///   leader master, or an empty string if the Hive Metastore integration is not
+  ///   enabled.
   std::string GetHiveMetastoreUris() const KUDU_NO_EXPORT;
 
-  // @return the configured Hive Metastore SASL (Kerberos) configuration on the most
-  //    recently connected to leader master, or an arbitrary value if the Hive
-  //    Metastore integration is not enabled.
+  /// Private API.
+  ///
+  /// @return the configured Hive Metastore SASL (Kerberos) configuration on the most
+  ///   recently connected to leader master, or an arbitrary value if the Hive
+  ///   Metastore integration is not enabled.
   bool GetHiveMetastoreSaslEnabled() const KUDU_NO_EXPORT;
 
-  // @return a unique ID which identifies the Hive Metastore instance, if the
-  //    cluster is configured with the Hive Metastore integration, or an
-  //    arbitrary value if the Hive Metastore integration is not enabled.
-  //
-  // @note this is provided on a best-effort basis, as not all Hive Metastore
-  //    versions which Kudu is compatible with include the necessary APIs. See
-  //    HIVE-16452 for more info.
+  /// Private API.
+  ///
+  /// @note this is provided on a best-effort basis, as not all Hive Metastore
+  ///   versions which Kudu is compatible with include the necessary APIs. See
+  ///   HIVE-16452 for more info.
+  ///
+  /// @return a unique ID which identifies the Hive Metastore instance, if the
+  ///   cluster is configured with the Hive Metastore integration, or an
+  ///   arbitrary value if the Hive Metastore integration is not enabled.
   std::string GetHiveMetastoreUuid() const KUDU_NO_EXPORT;
+
+  /// @endcond
 
  private:
   class KUDU_NO_EXPORT Data;
@@ -1208,13 +1223,19 @@ class KUDU_EXPORT KuduTableAlterer {
   /// @return Raw pointer to this alterer object.
   KuduTableAlterer* wait(bool wait);
 
+  /// @cond PRIVATE_API
+
   /// Whether to apply the alteration to external catalogs, such as the Hive
   /// Metastore, which the Kudu master has been configured to integrate with.
+  ///
+  /// Private API.
   ///
   /// @param [in] modify_external_catalogs
   ///   Whether to apply the alteration to external catalogs.
   /// @return Raw pointer to this alterer object.
   KuduTableAlterer* modify_external_catalogs(bool modify_external_catalogs) KUDU_NO_EXPORT;
+
+  /// @endcond
 
   /// @return Status of the ALTER TABLE operation. The return value
   ///   may indicate an error in the alter operation,
@@ -2122,6 +2143,7 @@ class KUDU_EXPORT KuduScanner {
   ///   data for further decoding. Using KuduScanBatch::Row() might yield incorrect/corrupt
   ///   results and might even cause the client to crash.
   static const uint64_t PAD_UNIXTIME_MICROS_TO_16_BYTES = 1 << 0;
+
   /// Optionally set row format modifier flags.
   ///
   /// If flags is RowFormatFlags::NO_FLAGS, then no modifications will be made to the row
@@ -2145,12 +2167,16 @@ class KUDU_EXPORT KuduScanner {
   ///     ... // Row data decoding and handling.
   ///   }
   /// @endcode
+  ///
+  /// @param [in] flags
+  ///   Row format modifier flags to set.
+  /// @return Operation result status.
   Status SetRowFormatFlags(uint64_t flags);
   ///@}
 
   /// Set the maximum number of rows the scanner should return.
   ///
-  /// @param [in] rows
+  /// @param [in] limit
   ///   Limit on the number of rows to return.
   /// @return Operation result status.
   Status SetLimit(int64_t limit) WARN_UNUSED_RESULT;
@@ -2370,6 +2396,10 @@ class KUDU_EXPORT KuduPartitionerBuilder {
   ~KuduPartitionerBuilder();
 
   /// Set the timeout used for building the Partitioner object.
+  ///
+  /// @param [in] timeout
+  ///   The timeout to set.
+  /// @return Pointer to the result object.
   KuduPartitionerBuilder* SetBuildTimeout(MonoDelta timeout);
 
   /// Create a KuduPartitioner object for the specified table.
@@ -2388,6 +2418,8 @@ class KUDU_EXPORT KuduPartitionerBuilder {
   /// This means that the resulting partitioner is not guaranteed to have
   /// up-to-date partition information in the case that there has been
   /// a recent change to the partitioning of the target table.
+  ///
+  /// @return Operation result status.
   Status Build(KuduPartitioner** partitioner);
  private:
   class KUDU_NO_EXPORT Data;
@@ -2412,9 +2444,9 @@ class KUDU_EXPORT KuduPartitioner {
  public:
   ~KuduPartitioner();
 
-  /// Return the number of partitions known by this partitioner.
-  /// The partition indices returned by @c PartitionRow are guaranteed
-  /// to be less than this value.
+  /// @return the number of partitions known by this partitioner.
+  ///   The partition indices returned by @c PartitionRow are guaranteed
+  ///   to be less than this value.
   int NumPartitions() const;
 
   /// Determine the partition index that the given row falls into.
@@ -2425,9 +2457,9 @@ class KUDU_EXPORT KuduPartitioner {
   ///   The resulting partition index, or -1 if the row falls into a
   ///   non-covered range. The result will be less than @c NumPartitioons().
   ///
-  /// @return Status OK if successful. May return a bad Status if the
-  /// provided row does not have all columns of the partition key
-  /// set.
+  /// @return Status::OK if successful. May return a bad Status if the
+  ///   provided row does not have all columns of the partition key
+  ///   set.
   Status PartitionRow(const KuduPartialRow& row, int* partition);
  private:
   class KUDU_NO_EXPORT Data;
