@@ -338,6 +338,8 @@ class KUDU_EXPORT KuduColumnSpec {
   ///
   /// The precision must be between 1 and 38.
   ///
+  /// @param [in] precision
+  ///   Desired precision to set.
   /// @return Pointer to the modified object.
   KuduColumnSpec* Precision(int8_t precision);
 
@@ -353,6 +355,8 @@ class KUDU_EXPORT KuduColumnSpec {
   /// The scale must be greater than 0 and less than the column's precision.
   /// If no scale is provided a default scale of 0 is used.
   ///
+  /// @param [in] scale
+  ///   Desired scale to set.
   /// @return Pointer to the modified object.
   KuduColumnSpec* Scale(int8_t scale);
   ///@}
@@ -589,8 +593,10 @@ class KUDU_EXPORT KuduSchema {
   friend class tools::RemoteKsckCluster;
   friend class tools::ReplicaDumper;
 
+  /// @cond
   friend KuduSchema KuduSchemaFromSchema(const Schema& schema);
   friend Schema SchemaFromKuduSchema(const KuduSchema& schema);
+  /// @endcond
 
   // For use by kudu tests.
   explicit KuduSchema(const Schema& schema);

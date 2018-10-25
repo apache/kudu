@@ -1414,7 +1414,7 @@ if (UNIX)
     set(DOXY_CLIENT_API_FOOTER ${DOXY_SUBDIR}/client_api.footer)
     set(DOXY_CLIENT_API_OUTDIR ${DOXY_SUBDIR}/client_api)
     list(APPEND DOXY_CLIENT_API_EXCLUDE
-      "share/doc/kuduClient/samples/sample.cc")
+      "share/doc/kuduClient/examples/example.cc")
     # NOTE: DOXY_CLIENT_API_OUTDIR and DOXY_CLIENT_API_FOOTER are used
     #       in client_api.doxy.in template file
     configure_file(docs/support/doxygen/client_api.doxy.in ${DOXY_CLIENT_API_CFG} @ONLY)
