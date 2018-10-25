@@ -1,0 +1,62 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+= Kudu-Spark example README
+:author: Kudu Team
+:homepage: https://kudu.apache.org/
+
+This is an example program that uses the Kudu-Spark integration to:
+
+- Create a table
+- Insert some rows
+- Upsert some rows
+- Scan some rows
+** Scan rows using RDD/DataFrame methods
+** Scan rows using SparkSQL
+- Delete the table
+
+To build the example, ensure maven is installed and execute
+the following from the 'spark-example' directory. This will create a Spark
+application jar in the 'target' directory:
+
+[source,bash]
+----
+$ mvn package
+----
+
+To configure the kudu-spark example, there are two Java system properties
+available:
+
+- kuduMasters: A comma-separated list of Kudu master addresses. 
+  Default: 'localhost:7051'.
+- tableName: The name of the table to use for the example program. This
+  table should not exist in Kudu. Default: 'spark_test'.
+
+The application can be run using `spark-submit`. For example, to run the
+example against a Spark cluster running on YARN, use a command like the
+following:
+
+[source.bash]
+----
+$ spark-submit --class org.apache.kudu.examples.SparkExample --master yarn \
+--driver-java-options \
+'-DkuduMasters=master1:7051,master2:7051,master3:7051 -DtableName=test_table' \
+target/kudu-spark-example-1.0-SNAPSHOT.jar
+----
+
+You will need the Kudu cluster to be up and running and Spark correctly
+configured for the example to work.
