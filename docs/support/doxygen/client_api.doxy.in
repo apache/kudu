@@ -60,3 +60,6 @@ WARN_NO_PARAMDOC       = YES
 
 # As for now, documentation in LaTeX format is not needed.
 GENERATE_LATEX         = NO
+
+# Do not output warnings on undocumented friend classes/structs/unions.
+HIDE_FRIEND_COMPOUNDS  = YES
