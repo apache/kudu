@@ -1062,7 +1062,7 @@ class KUDU_EXPORT KuduTable : public sp::enable_shared_from_this<KuduTable> {
   /// @param [out] partitions
   ///   The list of partitions of the table.
   /// @return Status object for the operation.
-  Status ListPartitions(std::vector<Partition>* partitions);
+  Status ListPartitions(std::vector<Partition>* partitions) KUDU_NO_EXPORT;
 
   /// @end cond
 
