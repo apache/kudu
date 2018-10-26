@@ -121,7 +121,7 @@ class ScopedDisableRedaction {
 // the given severity.
 //
 // The log message may include the special token 'THROTTLE_MSG' which expands
-// to either an empty string or '[suppressed <n> similar messages]'.
+// to either an empty string or ' [suppressed <n> similar messages]'.
 //
 // Example usage:
 //   KLOG_EVERY_N_SECS(WARNING, 1) << "server is low on memory" << THROTTLE_MSG;

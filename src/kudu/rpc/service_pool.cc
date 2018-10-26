@@ -126,7 +126,7 @@ void ServicePool::RejectTooBusy(InboundCall* c) {
                  c->remote_address().ToString(),
                  service_queue_.max_size());
   rpcs_queue_overflow_->Increment();
-  KLOG_EVERY_N_SECS(WARNING, 1) << err_msg;
+  KLOG_EVERY_N_SECS(WARNING, 1) << err_msg << THROTTLE_MSG;
   c->RespondFailure(ErrorStatusPB::ERROR_SERVER_TOO_BUSY,
                     Status::ServiceUnavailable(err_msg));
   DLOG(INFO) << err_msg << " Contents of service queue:\n"

@@ -100,6 +100,9 @@ using strings::Substitute;
 namespace kudu {
 namespace consensus {
 
+// The number of retries between failed requests whose failure is logged.
+constexpr auto kNumRetriesBetweenLoggingFailedRequest = 5;
+
 Status Peer::NewRemotePeer(RaftPeerPB peer_pb,
                            string tablet_id,
                            string leader_uuid,
@@ -444,12 +447,22 @@ void Peer::ProcessResponseError(const Status& status) {
                                TabletServerErrorPB::Code_Name(response_.error().code()),
                                response_.error().code());
   }
-  LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Couldn't send request to peer " << peer_pb_.permanent_uuid()
-      << " for tablet " << tablet_id_ << "."
-      << resp_err_info
-      << " Status: " << status.ToString() << "."
-      << " Retrying in the next heartbeat period."
-      << " Already tried " << failed_attempts_ << " times.";
+  // We log the warning at the first failure, then every
+  // 'kNumRetriesBetweenLoggingFailedRequest' retries.
+  // TODO(wdberkeley): If a use case comes up elsewhere, consider adding a
+  // KLOG_EVERY_N macro that supports an appropriate LogThrottler. For now,
+  // this class has 'failed_attempts_' available so it's overkill to add
+  // the throttler support.
+  if (failed_attempts_ % kNumRetriesBetweenLoggingFailedRequest == 1) {
+    LOG_WITH_PREFIX_UNLOCKED(WARNING) <<
+      Substitute("Couldn't send request to peer $0.$1 Status: $2. This is "
+                 "attempt $3: this message will repeat every $4th retry.",
+                 peer_pb_.permanent_uuid(),
+                 resp_err_info,
+                 status.ToString(),
+                 failed_attempts_,
+                 kNumRetriesBetweenLoggingFailedRequest);
+  }
   request_pending_ = false;
 }
 

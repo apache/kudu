@@ -189,12 +189,11 @@ class Peer : public std::enable_shared_from_this<Peer> {
   // Repeating timer responsible for scheduling heartbeats to this peer.
   std::shared_ptr<rpc::PeriodicTimer> heartbeater_;
 
-  // lock that protects Peer state changes, initialization, etc.
+  // Lock that protects Peer state changes, initialization, etc.
   mutable simple_spinlock peer_lock_;
   bool request_pending_ = false;
   bool closed_ = false;
   bool has_sent_first_request_ = false;
-
 };
 
 // A proxy to another peer. Usually a thin wrapper around an rpc proxy but can
