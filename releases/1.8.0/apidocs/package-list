@@ -1,0 +1,9 @@
+org.apache.kudu
+org.apache.kudu.backup
+org.apache.kudu.client
+org.apache.kudu.flume.sink
+org.apache.kudu.mapreduce
+org.apache.kudu.mapreduce.tools
+org.apache.kudu.security
+org.apache.kudu.tools
+org.apache.kudu.util

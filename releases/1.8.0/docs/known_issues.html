@@ -1,0 +1,409 @@
+---
+title: Known Issues and Limitations
+layout: default
+active_nav: docs
+last_updated: 'Last updated 2018-10-12 18:37:00 CEST'
+---
+<!--
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+
+<div class="container">
+  <div class="row">
+    <div class="col-md-9">
+
+<h1>Known Issues and Limitations</h1>
+      <div class="sect1">
+<h2 id="_schema"><a class="link" href="#_schema">Schema</a></h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="_primary_keys"><a class="link" href="#_primary_keys">Primary keys</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>The primary key may not be changed after the table is created.
+You must drop and recreate a table to select a new primary key.</p>
+</li>
+<li>
+<p>The columns which make up the primary key must be listed first in the schema.</p>
+</li>
+<li>
+<p>The primary key of a row may not be modified using the <code>UPDATE</code> functionality.
+To modify a row&#8217;s primary key, the row must be deleted and re-inserted with
+the modified key. Such a modification is non-atomic.</p>
+</li>
+<li>
+<p>Columns with <code>DOUBLE</code>, <code>FLOAT</code>, or <code>BOOL</code> types are not allowed as part of a
+primary key definition. Additionally, all columns that are part of a primary
+key definition must be <code>NOT NULL</code>.</p>
+</li>
+<li>
+<p>Auto-generated primary keys are not supported.</p>
+</li>
+<li>
+<p>Cells making up a composite primary key are limited to a total of 16KB after the internal
+composite-key encoding done by Kudu.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_columns"><a class="link" href="#_columns">Columns</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>CHAR, VARCHAR, DATE, and complex types like ARRAY are not supported.</p>
+</li>
+<li>
+<p>Type and nullability of existing columns cannot be changed by altering the table.</p>
+</li>
+<li>
+<p>The precision and scale of <code>DECIMAL</code> columns cannot be changed by altering the table.</p>
+</li>
+<li>
+<p>Tables can have a maximum of 300 columns.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_tables"><a class="link" href="#_tables">Tables</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>Tables must have an odd number of replicas, with a maximum of 7.</p>
+</li>
+<li>
+<p>Replication factor (set at table creation time) cannot be changed.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_cells_individual_values"><a class="link" href="#_cells_individual_values">Cells (individual values)</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>Cells cannot be larger than 64KB before encoding or compression.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_other_usage_limitations"><a class="link" href="#_other_usage_limitations">Other usage limitations</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>Kudu is primarily designed for analytic use cases. You are likely to encounter issues if
+a single row contains multiple kilobytes of data.</p>
+</li>
+<li>
+<p>Secondary indexes are not supported.</p>
+</li>
+<li>
+<p>Multi-row transactions are not supported.</p>
+</li>
+<li>
+<p>Relational features, like foreign keys, are not supported.</p>
+</li>
+<li>
+<p>Identifiers such as column and table names are restricted to be valid UTF-8 strings.
+Additionally, a maximum length of 256 characters is enforced.</p>
+</li>
+<li>
+<p>Dropping a column does not immediately reclaim space. Compaction must run first.</p>
+</li>
+<li>
+<p>There is no way to run compaction manually, but dropping the table will reclaim the
+space immediately.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_partitioning_limitations"><a class="link" href="#_partitioning_limitations">Partitioning Limitations</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Tables must be manually pre-split into tablets using simple or compound primary
+keys. Automatic splitting is not yet possible. Range partitions may be added
+or dropped after a table has been created. See
+<a href="schema_design.html">Schema Design</a> for more information.</p>
+</li>
+<li>
+<p>Data in existing tables cannot currently be automatically repartitioned. As a workaround,
+create a new table with the new partitioning and insert the contents of the old
+table.</p>
+</li>
+<li>
+<p>Tablets that lose a majority of replicas (such as 1 left out of 3) require manual
+intervention to be repaired.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_cluster_management"><a class="link" href="#_cluster_management">Cluster management</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Rack awareness is not supported.</p>
+</li>
+<li>
+<p>Multi-datacenter is not supported.</p>
+</li>
+<li>
+<p>Rolling restart is not supported.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_server_management"><a class="link" href="#_server_management">Server management</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Production deployments should configure a least 4GB of memory for tablet servers,
+and ideally more than 16GB when approaching the data and tablet <a href="#_scale">Scale</a> limits.</p>
+</li>
+<li>
+<p>Write ahead logs (WAL) can only be stored on one disk.</p>
+</li>
+<li>
+<p>Tablet servers cannot be gracefully decommissioned.</p>
+</li>
+<li>
+<p>Tablet servers can’t change address/port.</p>
+</li>
+<li>
+<p>Kudu has a hard requirement on having up-to-date NTP. Kudu masters and tablet servers
+will crash when out of sync.</p>
+</li>
+<li>
+<p>Kudu releases are only tested with NTP. Other time synchronization providers like Chrony
+may or may not work.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_scale"><a class="link" href="#_scale">Scale</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Recommended maximum number of tablet servers is 100.</p>
+</li>
+<li>
+<p>Recommended maximum number of masters is 3.</p>
+</li>
+<li>
+<p>Recommended maximum amount of stored data, post-replication and post-compression,
+per tablet server is 8TB.</p>
+</li>
+<li>
+<p>The maximum number of tablets per tablet server is 2000, post-replication,
+but we recommend 1000 tablets or fewer per tablet server.</p>
+</li>
+<li>
+<p>Maximum number of tablets per table for each tablet server is 60, post-replication,
+at table-creation time.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_replication_and_backup_limitations"><a class="link" href="#_replication_and_backup_limitations">Replication and Backup Limitations</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Kudu does not currently include any built-in features for backup and restore.
+Users are encouraged to use tools such as Spark or Impala to export or import
+tables as necessary.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_security_limitations"><a class="link" href="#_security_limitations">Security Limitations</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Authorization is only available at a system-wide, coarse-grained level. Table-level,
+column-level, and row-level authorization features are not available.</p>
+</li>
+<li>
+<p>Data encryption at rest is not directly built into Kudu. Encryption of
+Kudu data at rest can be achieved through the use of local block device
+encryption software such as <code>dmcrypt</code>.</p>
+</li>
+<li>
+<p>Kudu server Kerberos principals must follow the pattern <code>kudu/&lt;HOST&gt;@DEFAULT.REALM</code>.
+Configuring an alternate Kerberos principal is not supported.</p>
+</li>
+<li>
+<p>Kudu&#8217;s integration with Apache Flume does not support writing to Kudu clusters that
+require Kerberos authentication.</p>
+</li>
+<li>
+<p>Server certificates generated by Kudu IPKI are incompatible with
+<a href="https://www.bouncycastle.org/">bouncycastle</a> version 1.52 and earlier. See
+<a href="https://issues.apache.org/jira/browse/KUDU-2145">KUDU-2145</a> for details.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_other_known_issues"><a class="link" href="#_other_known_issues">Other Known Issues</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The following are known bugs and issues with the current release of Kudu. They will
+be addressed in later releases. Note that this list is not exhaustive, and is meant
+to communicate only the most important known issues.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>If the Kudu master is configured with the <code>-log_force_fsync_all</code> option, tablet servers
+and clients will experience frequent timeouts, and the cluster may become unusable.</p>
+</li>
+<li>
+<p>If a tablet server has a very large number of tablets, it may take several minutes
+to start up. It is recommended to limit the number of tablets per server to 1000
+or fewer. The maximum allowed number of tablets per server is 2000.
+Consider this limitation when pre-splitting your tables. If you notice slow start-up times,
+you can monitor the number of tablets per server in the web UI.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+    </div>
+    <div class="col-md-3">
+
+  <div id="toc" data-spy="affix" data-offset-top="70">
+  <ul>
+
+      <li>
+
+          <a href="index.html">Introducing Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="release_notes.html">Kudu Release Notes</a> 
+      </li> 
+      <li>
+
+          <a href="quickstart.html">Getting Started with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="installation.html">Installation Guide</a> 
+      </li> 
+      <li>
+
+          <a href="configuration.html">Configuring Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="kudu_impala_integration.html">Using Impala with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="administration.html">Administering Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="troubleshooting.html">Troubleshooting Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="developing.html">Developing Applications with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="schema_design.html">Kudu Schema Design</a> 
+      </li> 
+      <li>
+
+          <a href="scaling_guide.html">Kudu Scaling Guide</a> 
+      </li> 
+      <li>
+
+          <a href="security.html">Kudu Security</a> 
+      </li> 
+      <li>
+
+          <a href="transaction_semantics.html">Kudu Transaction Semantics</a> 
+      </li> 
+      <li>
+
+          <a href="background_tasks.html">Background Maintenance Tasks</a> 
+      </li> 
+      <li>
+
+          <a href="configuration_reference.html">Kudu Configuration Reference</a> 
+      </li> 
+      <li>
+
+          <a href="command_line_tools_reference.html">Kudu Command Line Tools Reference</a> 
+      </li> 
+      <li>
+<span class="active-toc">Known Issues and Limitations</span>
+            <ul class="sectlevel1">
+<li><a href="#_schema">Schema</a>
+<ul class="sectlevel2">
+<li><a href="#_primary_keys">Primary keys</a></li>
+<li><a href="#_columns">Columns</a></li>
+<li><a href="#_tables">Tables</a></li>
+<li><a href="#_cells_individual_values">Cells (individual values)</a></li>
+<li><a href="#_other_usage_limitations">Other usage limitations</a></li>
+</ul>
+</li>
+<li><a href="#_partitioning_limitations">Partitioning Limitations</a></li>
+<li><a href="#_cluster_management">Cluster management</a></li>
+<li><a href="#_server_management">Server management</a></li>
+<li><a href="#_scale">Scale</a></li>
+<li><a href="#_replication_and_backup_limitations">Replication and Backup Limitations</a></li>
+<li><a href="#_security_limitations">Security Limitations</a></li>
+<li><a href="#_other_known_issues">Other Known Issues</a></li>
+</ul> 
+      </li> 
+      <li>
+
+          <a href="contributing.html">Contributing to Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="export_control.html">Export Control Notice</a> 
+      </li> 
+  </ul>
+  </div>
+    </div>
+  </div>
+</div>

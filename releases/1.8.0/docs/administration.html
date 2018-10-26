@@ -1,0 +1,2330 @@
+---
+title: Apache Kudu Administration
+layout: default
+active_nav: docs
+last_updated: 'Last updated 2018-10-12 18:37:00 CEST'
+---
+<!--
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+
+<div class="container">
+  <div class="row">
+    <div class="col-md-9">
+
+<h1>Apache Kudu Administration</h1>
+      <div id="preamble">
+<div class="sectionbody">
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+Kudu is easier to manage with <a href="http://www.cloudera.com/content/www/en-us/products/cloudera-manager.html">Cloudera Manager</a>
+than in a standalone installation. See Cloudera&#8217;s
+<a href="http://www.cloudera.com/documentation/kudu/latest/topics/kudu_installation.html">Kudu documentation</a>
+for more details about using Kudu with Cloudera Manager.
+</td>
+</tr>
+</table>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_starting_and_stopping_kudu_processes"><a class="link" href="#_starting_and_stopping_kudu_processes">Starting and Stopping Kudu Processes</a></h2>
+<div class="sectionbody">
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+These instructions are relevant only when Kudu is installed using operating system packages
+(e.g. <code>rpm</code> or <code>deb</code>).
+</td>
+</tr>
+</table>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Start Kudu services using the following commands:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ sudo service kudu-master start
+$ sudo service kudu-tserver start</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>To stop Kudu services, use the following commands:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ sudo service kudu-master stop
+$ sudo service kudu-tserver stop</code></pre>
+</div>
+</div>
+</li>
+</ol>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_kudu_web_interfaces"><a class="link" href="#_kudu_web_interfaces">Kudu Web Interfaces</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu tablet servers and masters expose useful operational information on a built-in web interface,</p>
+</div>
+<div class="sect2">
+<h3 id="_kudu_master_web_interface"><a class="link" href="#_kudu_master_web_interface">Kudu Master Web Interface</a></h3>
+<div class="paragraph">
+<p>Kudu master processes serve their web interface on port 8051. The interface exposes several pages
+with information about the cluster state:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>A list of tablet servers, their host names, and the time of their last heartbeat.</p>
+</li>
+<li>
+<p>A list of tables, including schema and tablet location information for each.</p>
+</li>
+<li>
+<p>SQL code which you can paste into Impala Shell to add an existing table to Impala&#8217;s list of known data sources.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_kudu_tablet_server_web_interface"><a class="link" href="#_kudu_tablet_server_web_interface">Kudu Tablet Server Web Interface</a></h3>
+<div class="paragraph">
+<p>Each tablet server serves a web interface on port 8050. The interface exposes information
+about each tablet hosted on the server, its current state, and debugging information
+about maintenance background operations.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_common_web_interface_pages"><a class="link" href="#_common_web_interface_pages">Common Web Interface Pages</a></h3>
+<div class="paragraph">
+<p>Both Kudu masters and tablet servers expose a common set of information via their web interfaces:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>HTTP access to server logs.</p>
+</li>
+<li>
+<p>an <code>/rpcz</code> endpoint which lists currently running RPCs via JSON.</p>
+</li>
+<li>
+<p>pages giving an overview and detailed information on the memory usage of different
+components of the process.</p>
+</li>
+<li>
+<p>information on the current set of configuration flags.</p>
+</li>
+<li>
+<p>information on the currently running threads and their resource consumption.</p>
+</li>
+<li>
+<p>a JSON endpoint exposing metrics about the server.</p>
+</li>
+<li>
+<p>information on the deployed version number of the daemon.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>These interfaces are linked from the landing page of each daemon&#8217;s web UI.</p>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_kudu_metrics"><a class="link" href="#_kudu_metrics">Kudu Metrics</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu daemons expose a large number of metrics. Some metrics are associated with an entire
+server process, whereas others are associated with a particular tablet replica.</p>
+</div>
+<div class="sect2">
+<h3 id="_listing_available_metrics"><a class="link" href="#_listing_available_metrics">Listing available metrics</a></h3>
+<div class="paragraph">
+<p>The full set of available metrics for a Kudu server can be dumped via a special command
+line flag:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ kudu-tserver --dump_metrics_json
+$ kudu-master --dump_metrics_json</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This will output a large JSON document. Each metric indicates its name, label, description,
+units, and type. Because the output is JSON-formatted, this information can easily be
+parsed and fed into other tooling which collects metrics from Kudu servers.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_collecting_metrics_via_http"><a class="link" href="#_collecting_metrics_via_http">Collecting metrics via HTTP</a></h3>
+<div class="paragraph">
+<p>Metrics can be collected from a server process via its HTTP interface by visiting
+<code>/metrics</code>. The output of this page is JSON for easy parsing by monitoring services.
+This endpoint accepts several <code>GET</code> parameters in its query string:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>/metrics?metrics=&lt;substring1&gt;,&lt;substring2&gt;,&#8230;&#8203;</code> - limits the returned metrics to those which contain
+at least one of the provided substrings. The substrings also match entity names, so this
+may be used to collect metrics for a specific tablet.</p>
+</li>
+<li>
+<p><code>/metrics?include_schema=1</code> - includes metrics schema information such as unit, description,
+and label in the JSON output. This information is typically elided to save space.</p>
+</li>
+<li>
+<p><code>/metrics?compact=1</code> - eliminates unnecessary whitespace from the resulting JSON, which can decrease
+bandwidth when fetching this page from a remote host.</p>
+</li>
+<li>
+<p><code>/metrics?include_raw_histograms=1</code> - include the raw buckets and values for histogram metrics,
+enabling accurate aggregation of percentile metrics over time and across hosts.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>For example:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ curl -s 'http://example-ts:8050/metrics?include_schema=1&amp;metrics=connections_accepted'</code></pre>
+</div>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-json" data-lang="json">[
+    {
+        "type": "server",
+        "id": "kudu.tabletserver",
+        "attributes": {},
+        "metrics": [
+            {
+                "name": "rpc_connections_accepted",
+                "label": "RPC Connections Accepted",
+                "type": "counter",
+                "unit": "connections",
+                "description": "Number of incoming TCP connections made to the RPC server",
+                "value": 92
+            }
+        ]
+    }
+]</code></pre>
+</div>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ curl -s 'http://example-ts:8050/metrics?metrics=log_append_latency'</code></pre>
+</div>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-json" data-lang="json">[
+    {
+        "type": "tablet",
+        "id": "c0ebf9fef1b847e2a83c7bd35c2056b1",
+        "attributes": {
+            "table_name": "lineitem",
+            "partition": "hash buckets: (55), range: [(&lt;start&gt;), (&lt;end&gt;))",
+            "table_id": ""
+        },
+        "metrics": [
+            {
+                "name": "log_append_latency",
+                "total_count": 7498,
+                "min": 4,
+                "mean": 69.3649,
+                "percentile_75": 29,
+                "percentile_95": 38,
+                "percentile_99": 45,
+                "percentile_99_9": 95,
+                "percentile_99_99": 167,
+                "max": 367244,
+                "total_sum": 520098
+            }
+        ]
+    }
+]</code></pre>
+</div>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+All histograms and counters are measured since the server start time, and are not reset upon collection.
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_diagnostics_logging"><a class="link" href="#_diagnostics_logging">Diagnostics Logging</a></h3>
+<div class="paragraph">
+<p>Kudu may be configured to dump various diagnostics information to a local log file.
+The diagnostics log will be written to the same directory as the other Kudu log files, with a
+similar naming format, substituting <code>diagnostics</code> instead of a log level like <code>INFO</code>.
+After any diagnostics log file reaches 64MB uncompressed, the log will be rolled and
+the previous file will be gzip-compressed.</p>
+</div>
+<div class="paragraph">
+<p>Each line in the diagnostics log consists of the following components:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>A human-readable timestamp formatted in the same fashion as the other Kudu log files.</p>
+</li>
+<li>
+<p>The type of record. For example, a metrics record consists of the word <code>metrics</code>.</p>
+</li>
+<li>
+<p>A machine-readable timestamp, in microseconds since the Unix epoch.</p>
+</li>
+<li>
+<p>The record itself.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Currently, the only type of diagnostics record is a periodic dump of the server metrics.
+Each record is encoded in compact JSON format, and the server attempts to elide any metrics
+which have not changed since the previous record. In addition, counters which have never
+been incremented are elided. Otherwise, the format of the JSON record is identical to the
+format exposed by the HTTP endpoint above.</p>
+</div>
+<div class="paragraph">
+<p>The frequency with which metrics are dumped to the diagnostics log is configured using the
+<code>--metrics_log_interval_ms</code> flag. By default, Kudu logs metrics every 60 seconds.</p>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_common_kudu_workflows"><a class="link" href="#_common_kudu_workflows">Common Kudu workflows</a></h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="migrate_to_multi_master"><a class="link" href="#migrate_to_multi_master">Migrating to Multiple Kudu Masters</a></h3>
+<div class="paragraph">
+<p>For high availability and to avoid a single point of failure, Kudu clusters should be created with
+multiple masters. Many Kudu clusters were created with just a single master, either for simplicity
+or because Kudu multi-master support was still experimental at the time. This workflow demonstrates
+how to migrate to a multi-master configuration. It can also be used to migrate from two masters to
+three, with straightforward modifications. Note that the number of masters must be odd.</p>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+The workflow is unsafe for adding new masters to an existing configuration that already has
+three or more masters. Do not use it for that purpose.
+</td>
+</tr>
+</table>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+An even number of masters doesn&#8217;t provide any benefit over having one fewer masters.  This
+guide should always be used for migrating to three masters.
+</td>
+</tr>
+</table>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+All of the command line steps below should be executed as the Kudu UNIX user. The example
+commands assume the Kudu Unix user is <code>kudu</code>, which is typical.
+</td>
+</tr>
+</table>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+The workflow presupposes at least basic familiarity with Kudu configuration management. If
+using vendor-specific tools (e.g. Cloudera Manager) the workflow also presupposes familiarity with
+it and the vendor&#8217;s instructions should be used instead as details may differ.
+</td>
+</tr>
+</table>
+</div>
+<div class="sect3">
+<h4 id="_prepare_for_the_migration"><a class="link" href="#_prepare_for_the_migration">Prepare for the migration</a></h4>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Establish a maintenance window (one hour should be sufficient). During this time the Kudu cluster
+will be unavailable.</p>
+</li>
+<li>
+<p>Decide how many masters to use. The number of masters should be odd. Three or five node master
+configurations are recommended; they can tolerate one or two failures respectively.</p>
+</li>
+<li>
+<p>Perform the following preparatory steps for the existing master:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Identify and record the directories where the master&#8217;s write-ahead log (WAL) and data live. If
+using Kudu system packages, their default locations are /var/lib/kudu/master, but they may be
+customized via the <code>fs_wal_dir</code> and <code>fs_data_dirs</code> configuration parameters. The commands below
+assume that <code>fs_wal_dir</code> is /data/kudu/master/wal and <code>fs_data_dirs</code> is /data/kudu/master/data.
+Your configuration may differ. For more information on configuring these directories, see the
+<a href="configuration.html#directory_configuration">Kudu Configuration docs</a>.</p>
+</li>
+<li>
+<p>Identify and record the port the master is using for RPCs. The default port value is 7051, but it
+may have been customized using the <code>rpc_bind_addresses</code> configuration parameter.</p>
+</li>
+<li>
+<p>Identify the master&#8217;s UUID. It can be fetched using the following command:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ sudo -u kudu kudu fs dump uuid --fs_wal_dir=&lt;master_wal_dir&gt; [--fs_data_dirs=&lt;master_data_dir&gt;] 2&gt;/dev/null</code></pre>
+</div>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">master_data_dir</dt>
+<dd>
+<p>existing master&#8217;s previously recorded data directory</p>
+</dd>
+<dt class="hdlist1">Example</dt>
+<dd>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo -u kudu kudu fs dump uuid --fs_wal_dir=/data/kudu/master/wal --fs_data_dirs=/data/kudu/master/data 2&gt;/dev/null
+4aab798a69e94fab8d77069edff28ce0</pre>
+</div>
+</div>
+</dd>
+</dl>
+</div>
+</li>
+<li>
+<p>Optional: configure a DNS alias for the master. The alias could be a DNS cname (if the machine
+already has an A record in DNS), an A record (if the machine is only known by its IP address),
+or an alias in /etc/hosts. The alias should be an abstract representation of the master (e.g.
+<code>master-1</code>).</p>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+Without DNS aliases it is not possible to recover from permanent master failures without
+bringing the cluster down for maintenance, and as such, it is highly recommended.
+</td>
+</tr>
+</table>
+</div>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>If you have Kudu tables that are accessed from Impala, you must update
+the master addresses in the Apache Hive Metastore (HMS) database.</p>
+<div class="ulist">
+<ul>
+<li>
+<p>If you set up the DNS aliases, run the following statement in <code>impala-shell</code>,
+replacing <code>master-1</code>, <code>master-2</code>, and <code>master-3</code> with your actual aliases.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">ALTER TABLE table_name
+SET TBLPROPERTIES
+('kudu.master_addresses' = 'master-1,master-2,master-3');</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>If you do not have DNS aliases set up, see Step #11 in the Performing
+the migration section for updating HMS.</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Perform the following preparatory steps for each new master:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Choose an unused machine in the cluster. The master generates very little load so it can be
+colocated with other data services or load-generating processes, though not with another Kudu
+master from the same configuration.</p>
+</li>
+<li>
+<p>Ensure Kudu is installed on the machine, either via system packages (in which case the <code>kudu</code> and
+<code>kudu-master</code> packages should be installed), or via some other means.</p>
+</li>
+<li>
+<p>Choose and record the directory where the master&#8217;s data will live.</p>
+</li>
+<li>
+<p>Choose and record the port the master should use for RPCs.</p>
+</li>
+<li>
+<p>Optional: configure a DNS alias for the master (e.g. <code>master-2</code>, <code>master-3</code>, etc).</p>
+</li>
+</ul>
+</div>
+</li>
+</ol>
+</div>
+</div>
+<div class="sect3">
+<h4 id="perform-the-migration"><a class="link" href="#perform-the-migration">Perform the migration</a></h4>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Stop all the Kudu processes in the entire cluster.</p>
+</li>
+<li>
+<p>Format the data directory on each new master machine, and record the generated UUID. Use the
+following command sequence:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ sudo -u kudu kudu fs format --fs_wal_dir=&lt;master_wal_dir&gt; [--fs_data_dirs=&lt;master_data_dir&gt;]
+$ sudo -u kudu kudu fs dump uuid --fs_wal_dir=&lt;master_wal_dir&gt; [--fs_data_dirs=&lt;master_data_dir&gt;] 2&gt;/dev/null</code></pre>
+</div>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">master_data_dir</dt>
+<dd>
+<p>new master&#8217;s previously recorded data directory</p>
+</dd>
+<dt class="hdlist1">Example</dt>
+<dd>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo -u kudu kudu fs format --fs_wal_dir=/data/kudu/master/wal --fs_data_dirs=/data/kudu/master/data
+$ sudo -u kudu kudu fs dump uuid --fs_wal_dir=/data/kudu/master/wal --fs_data_dirs=/data/kudu/master/data 2&gt;/dev/null
+f5624e05f40649b79a757629a69d061e</pre>
+</div>
+</div>
+</dd>
+</dl>
+</div>
+</li>
+<li>
+<p>If using CM, add the new Kudu master roles now, but do not start them.</p>
+<div class="ulist">
+<ul>
+<li>
+<p>If using DNS aliases, override the empty value of the <code>Master Address</code> parameter for each role
+(including the existing master role) with that master&#8217;s alias.</p>
+</li>
+<li>
+<p>Add the port number (separated by a colon) if using a non-default RPC port value.</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Rewrite the master&#8217;s Raft configuration with the following command, executed on the existing
+master machine:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ sudo -u kudu kudu local_replica cmeta rewrite_raft_config --fs_wal_dir=&lt;master_wal_dir&gt; [--fs_data_dirs=&lt;master_data_dir&gt;] &lt;tablet_id&gt; &lt;all_masters&gt;</code></pre>
+</div>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">master_data_dir</dt>
+<dd>
+<p>existing master&#8217;s previously recorded data directory</p>
+</dd>
+<dt class="hdlist1">tablet_id</dt>
+<dd>
+<p>must be the string <code>00000000000000000000000000000000</code></p>
+</dd>
+<dt class="hdlist1">all_masters</dt>
+<dd>
+<p>space-separated list of masters, both new and existing. Each entry in the list must be
+a string of the form <code>&lt;uuid&gt;:&lt;hostname&gt;:&lt;port&gt;</code></p>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">uuid</dt>
+<dd>
+<p>master&#8217;s previously recorded UUID</p>
+</dd>
+<dt class="hdlist1">hostname</dt>
+<dd>
+<p>master&#8217;s previously recorded hostname or alias</p>
+</dd>
+<dt class="hdlist1">port</dt>
+<dd>
+<p>master&#8217;s previously recorded RPC port number</p>
+</dd>
+</dl>
+</div>
+</dd>
+<dt class="hdlist1">Example</dt>
+<dd>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo -u kudu kudu local_replica cmeta rewrite_raft_config --fs_wal_dir=/data/kudu/master/wal --fs_data_dirs=/data/kudu/master/data 00000000000000000000000000000000 4aab798a69e94fab8d77069edff28ce0:master-1:7051 f5624e05f40649b79a757629a69d061e:master-2:7051 988d8ac6530f426cbe180be5ba52033d:master-3:7051</pre>
+</div>
+</div>
+</dd>
+</dl>
+</div>
+</li>
+<li>
+<p>Modify the value of the <code>master_addresses</code> configuration parameter for both existing master and new masters.
+The new value must be a comma-separated list of all of the masters. Each entry is a string of the form <code>&lt;hostname&gt;:&lt;port&gt;</code></p>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">hostname</dt>
+<dd>
+<p>master&#8217;s previously recorded hostname or alias</p>
+</dd>
+<dt class="hdlist1">port</dt>
+<dd>
+<p>master&#8217;s previously recorded RPC port number</p>
+</dd>
+</dl>
+</div>
+</li>
+<li>
+<p>Start the existing master.</p>
+</li>
+<li>
+<p>Copy the master data to each new master with the following command, executed on each new master
+machine.</p>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+If your Kudu cluster is secure, in addition to running as the Kudu UNIX user, you must
+  authenticate as the Kudu service user prior to running this command.
+</td>
+</tr>
+</table>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ sudo -u kudu kudu local_replica copy_from_remote --fs_wal_dir=&lt;master_wal_dir&gt; [--fs_data_dirs=&lt;master_data_dir&gt;] &lt;tablet_id&gt; &lt;existing_master&gt;</code></pre>
+</div>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">master_data_dir</dt>
+<dd>
+<p>new master&#8217;s previously recorded data directory</p>
+</dd>
+<dt class="hdlist1">tablet_id</dt>
+<dd>
+<p>must be the string <code>00000000000000000000000000000000</code></p>
+</dd>
+<dt class="hdlist1">existing_master</dt>
+<dd>
+<p>RPC address of the existing master and must be a string of the form
+<code>&lt;hostname&gt;:&lt;port&gt;</code></p>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">hostname</dt>
+<dd>
+<p>existing master&#8217;s previously recorded hostname or alias</p>
+</dd>
+<dt class="hdlist1">port</dt>
+<dd>
+<p>existing master&#8217;s previously recorded RPC port number</p>
+</dd>
+</dl>
+</div>
+</dd>
+<dt class="hdlist1">Example</dt>
+<dd>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo -u kudu kudu local_replica copy_from_remote --fs_wal_dir=/data/kudu/master/wal --fs_data_dirs=/data/kudu/master/data 00000000000000000000000000000000 master-1:7051</pre>
+</div>
+</div>
+</dd>
+</dl>
+</div>
+</li>
+<li>
+<p>Start all of the new masters.</p>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+Skip the next step if using CM.
+</td>
+</tr>
+</table>
+</div>
+</li>
+<li>
+<p>Modify the value of the <code>tserver_master_addrs</code> configuration parameter for each tablet server.
+The new value must be a comma-separated list of masters where each entry is a string of the form
+<code>&lt;hostname&gt;:&lt;port&gt;</code></p>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">hostname</dt>
+<dd>
+<p>master&#8217;s previously recorded hostname or alias</p>
+</dd>
+<dt class="hdlist1">port</dt>
+<dd>
+<p>master&#8217;s previously recorded RPC port number</p>
+</dd>
+</dl>
+</div>
+</li>
+<li>
+<p>Start all of the tablet servers.</p>
+</li>
+<li>
+<p>If you have Kudu tables that are accessed from Impala and you didn&#8217;t set up
+DNS aliases, update the HMS database manually in the underlying database that
+provides the storage for HMS.</p>
+<div class="ulist">
+<ul>
+<li>
+<p>The following is an example SQL statement you should run in the HMS database:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">UPDATE TABLE_PARAMS
+SET PARAM_VALUE =
+  'master-1.example.com,master-2.example.com,master-3.example.com'
+WHERE PARAM_KEY = 'kudu.master_addresses' AND PARAM_VALUE = 'old-master';</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>In <code>impala-shell</code>, run:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">INVALIDATE METADATA;</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>==== Verify the migration was successful</p>
+</div>
+</li>
+</ul>
+</div>
+</li>
+</ol>
+</div>
+<div class="paragraph">
+<p>To verify that all masters are working properly, perform the following sanity checks:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Using a browser, visit each master&#8217;s web UI. Look at the /masters page. All of the masters should
+be listed there with one master in the LEADER role and the others in the FOLLOWER role. The
+contents of /masters on each master should be the same.</p>
+</li>
+<li>
+<p>Run a Kudu system check (ksck) on the cluster using the <code>kudu</code> command line
+tool. See <a href="#ksck">Checking Cluster Health with <code>ksck</code></a> for more details.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_recovering_from_a_dead_kudu_master_in_a_multi_master_deployment"><a class="link" href="#_recovering_from_a_dead_kudu_master_in_a_multi_master_deployment">Recovering from a dead Kudu Master in a Multi-Master Deployment</a></h3>
+<div class="paragraph">
+<p>Kudu multi-master deployments function normally in the event of a master loss. However, it is
+important to replace the dead master; otherwise a second failure may lead to a loss of availability,
+depending on the number of available masters. This workflow describes how to replace the dead
+master.</p>
+</div>
+<div class="paragraph">
+<p>Due to <a href="https://issues.apache.org/jira/browse/KUDU-1620">KUDU-1620</a>, it is not possible to perform
+this workflow without also restarting the live masters. As such, the workflow requires a
+maintenance window, albeit a potentially brief one if the cluster was set up with DNS aliases.</p>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+Kudu does not yet support live Raft configuration changes for masters. As such, it is only
+possible to replace a master if the deployment was created with DNS aliases or if every node in the
+cluster is first shut down. See the <a href="#migrate_to_multi_master">multi-master migration workflow</a> for
+more details on deploying with DNS aliases.
+</td>
+</tr>
+</table>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+The workflow presupposes at least basic familiarity with Kudu configuration management. If
+using vendor-specific tools (e.g. Cloudera Manager) the workflow also presupposes familiarity with
+it and the vendor&#8217;s instructions should be used instead as details may differ.
+</td>
+</tr>
+</table>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+All of the command line steps below should be executed as the Kudu UNIX user, typically
+<code>kudu</code>.
+</td>
+</tr>
+</table>
+</div>
+<div class="sect3">
+<h4 id="_prepare_for_the_recovery"><a class="link" href="#_prepare_for_the_recovery">Prepare for the recovery</a></h4>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>If the deployment was configured without DNS aliases perform the following steps:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Establish a maintenance window (one hour should be sufficient). During this time the Kudu cluster
+will be unavailable.</p>
+</li>
+<li>
+<p>Shut down all Kudu tablet server processes in the cluster.</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Ensure that the dead master is well and truly dead. Take whatever steps needed to prevent it from
+accidentally restarting; this can be quite dangerous for the cluster post-recovery.</p>
+</li>
+<li>
+<p>Choose one of the remaining live masters to serve as a basis for recovery. The rest of this
+workflow will refer to this master as the "reference" master.</p>
+</li>
+<li>
+<p>Choose an unused machine in the cluster where the new master will live. The master generates very
+little load so it can be colocated with other data services or load-generating processes, though
+not with another Kudu master from the same configuration. The rest of this workflow will refer to
+this master as the "replacement" master.</p>
+</li>
+<li>
+<p>Perform the following preparatory steps for the replacement master:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Ensure Kudu is installed on the machine, either via system packages (in which case the <code>kudu</code> and
+<code>kudu-master</code> packages should be installed), or via some other means.</p>
+</li>
+<li>
+<p>Choose and record the directory where the master&#8217;s data will live.</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Perform the following preparatory steps for each live master:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Identify and record the directory where the master&#8217;s data lives. If using Kudu system packages,
+the default value is /var/lib/kudu/master, but it may be customized via the <code>fs_wal_dir</code> and
+<code>fs_data_dirs</code> configuration parameters. Please note if you&#8217;ve set <code>fs_data_dirs</code> to some directories
+other than the value of <code>fs_wal_dir</code>, it should be explicitly included in every command below where
+<code>fs_wal_dir</code> is also included. For more information on configuring these directories, see the
+<a href="configuration.html#directory_configuration">Kudu Configuration docs</a>.</p>
+</li>
+<li>
+<p>Identify and record the master&#8217;s UUID. It can be fetched using the following command:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ sudo -u kudu kudu fs dump uuid --fs_wal_dir=&lt;master_wal_dir&gt; [--fs_data_dirs=&lt;master_data_dir&gt;] 2&gt;/dev/null</code></pre>
+</div>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">master_data_dir</dt>
+<dd>
+<p>live master&#8217;s previously recorded data directory</p>
+</dd>
+<dt class="hdlist1">Example</dt>
+<dd>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo -u kudu kudu fs dump uuid --fs_wal_dir=/data/kudu/master/wal --fs_data_dirs=/data/kudu/master/data 2&gt;/dev/null
+80a82c4b8a9f4c819bab744927ad765c</pre>
+</div>
+</div>
+</dd>
+</dl>
+</div>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Perform the following preparatory steps for the reference master:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Identify and record the directory where the master&#8217;s data lives. If using Kudu system packages,
+the default value is /var/lib/kudu/master, but it may be customized via the <code>fs_wal_dir</code> and
+<code>fs_data_dirs</code> configuration parameters. Please note if you&#8217;ve set <code>fs_data_dirs</code> to some directories
+other than the value of <code>fs_wal_dir</code>, it should be explicitly included in every command below where
+<code>fs_wal_dir</code> is also included. For more information on configuring these directories, see the
+<a href="configuration.html#directory_configuration">Kudu Configuration docs</a>.</p>
+</li>
+<li>
+<p>Identify and record the UUIDs of every master in the cluster, using the following command:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ sudo -u kudu kudu local_replica cmeta print_replica_uuids --fs_wal_dir=&lt;master_wal_dir&gt; [--fs_data_dirs=&lt;master_data_dir&gt;] &lt;tablet_id&gt; 2&gt;/dev/null</code></pre>
+</div>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">master_data_dir</dt>
+<dd>
+<p>reference master&#8217;s previously recorded data directory</p>
+</dd>
+<dt class="hdlist1">tablet_id</dt>
+<dd>
+<p>must be the string <code>00000000000000000000000000000000</code></p>
+</dd>
+<dt class="hdlist1">Example</dt>
+<dd>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo -u kudu kudu local_replica cmeta print_replica_uuids --fs_wal_dir=/data/kudu/master/wal --fs_data_dirs=/data/kudu/master/data 00000000000000000000000000000000 2&gt;/dev/null
+80a82c4b8a9f4c819bab744927ad765c 2a73eeee5d47413981d9a1c637cce170 1c3f3094256347528d02ec107466aef3</pre>
+</div>
+</div>
+</dd>
+</dl>
+</div>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Using the two previously-recorded lists of UUIDs (one for all live masters and one for all
+masters), determine and record (by process of elimination) the UUID of the dead master.</p>
+</li>
+</ol>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_perform_the_recovery"><a class="link" href="#_perform_the_recovery">Perform the recovery</a></h4>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Format the data directory on the replacement master machine using the previously recorded
+UUID of the dead master. Use the following command sequence:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ sudo -u kudu kudu fs format --fs_wal_dir=&lt;master_wal_dir&gt; [--fs_data_dirs=&lt;master_data_dir&gt;] --uuid=&lt;uuid&gt;</code></pre>
+</div>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">master_data_dir</dt>
+<dd>
+<p>replacement master&#8217;s previously recorded data directory</p>
+</dd>
+<dt class="hdlist1">uuid</dt>
+<dd>
+<p>dead master&#8217;s previously recorded UUID</p>
+</dd>
+<dt class="hdlist1">Example</dt>
+<dd>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo -u kudu kudu fs format --fs_wal_dir=/data/kudu/master/wal --fs_data_dirs=/data/kudu/master/data --uuid=80a82c4b8a9f4c819bab744927ad765c</pre>
+</div>
+</div>
+</dd>
+</dl>
+</div>
+</li>
+<li>
+<p>Copy the master data to the replacement master with the following command:</p>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+If your Kudu cluster is secure, in addition to running as the Kudu UNIX user, you must
+  authenticate as the Kudu service user prior to running this command.
+</td>
+</tr>
+</table>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ sudo -u kudu kudu local_replica copy_from_remote --fs_wal_dir=&lt;master_wal_dir&gt; [--fs_data_dirs=&lt;master_data_dir&gt;] &lt;tablet_id&gt; &lt;reference_master&gt;</code></pre>
+</div>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">master_data_dir</dt>
+<dd>
+<p>replacement master&#8217;s previously recorded data directory</p>
+</dd>
+<dt class="hdlist1">tablet_id</dt>
+<dd>
+<p>must be the string <code>00000000000000000000000000000000</code></p>
+</dd>
+<dt class="hdlist1">reference_master</dt>
+<dd>
+<p>RPC address of the reference master and must be a string of the form
+<code>&lt;hostname&gt;:&lt;port&gt;</code></p>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">hostname</dt>
+<dd>
+<p>reference master&#8217;s previously recorded hostname or alias</p>
+</dd>
+<dt class="hdlist1">port</dt>
+<dd>
+<p>reference master&#8217;s previously recorded RPC port number</p>
+</dd>
+</dl>
+</div>
+</dd>
+<dt class="hdlist1">Example</dt>
+<dd>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo -u kudu kudu local_replica copy_from_remote --fs_wal_dir=/data/kudu/master/wal --fs_data_dirs=/data/kudu/master/data 00000000000000000000000000000000 master-2:7051</pre>
+</div>
+</div>
+</dd>
+</dl>
+</div>
+</li>
+<li>
+<p>If using CM, add the replacement Kudu master role now, but do not start it.</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Override the empty value of the <code>Master Address</code> parameter for the new role with the replacement
+master&#8217;s alias.</p>
+</li>
+<li>
+<p>Add the port number (separated by a colon) if using a non-default RPC port value.</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>If the cluster was set up with DNS aliases, reconfigure the DNS alias for the dead master to point
+at the replacement master.</p>
+</li>
+<li>
+<p>If the cluster was set up without DNS aliases, perform the following steps:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Stop the remaining live masters.</p>
+</li>
+<li>
+<p>Rewrite the Raft configurations on these masters to include the replacement master. See Step 4 of
+<a href="#perform-the-migration">Perform the Migration</a> for more details.</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Start the replacement master.</p>
+</li>
+<li>
+<p>Restart the remaining masters in the new multi-master deployment. While the masters are shut down,
+there will be an availability outage, but it should last only as long as it takes for the masters
+to come back up.</p>
+</li>
+</ol>
+</div>
+<div class="paragraph">
+<p>Congratulations, the dead master has been replaced! To verify that all masters are working properly,
+consider performing the following sanity checks:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Using a browser, visit each master&#8217;s web UI. Look at the /masters page. All of the masters should
+be listed there with one master in the LEADER role and the others in the FOLLOWER role. The
+contents of /masters on each master should be the same.</p>
+</li>
+<li>
+<p>Run a Kudu system check (ksck) on the cluster using the <code>kudu</code> command line
+tool. See <a href="#ksck">Checking Cluster Health with <code>ksck</code></a> for more details.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_removing_kudu_masters_from_a_multi_master_deployment"><a class="link" href="#_removing_kudu_masters_from_a_multi_master_deployment">Removing Kudu Masters from a Multi-Master Deployment</a></h3>
+<div class="paragraph">
+<p>In the event that a multi-master deployment has been overallocated nodes, the following steps should
+be taken to remove the unwanted masters.</p>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+In planning the new multi-master configuration, keep in mind that the number of masters
+should be odd and that three or five node master configurations are recommended.
+</td>
+</tr>
+</table>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+Dropping the number of masters below the number of masters currently needed for a Raft
+majority can incur data loss. To mitigate this, ensure that the leader master is not removed during
+this process.
+</td>
+</tr>
+</table>
+</div>
+<div class="sect3">
+<h4 id="_prepare_for_the_removal"><a class="link" href="#_prepare_for_the_removal">Prepare for the removal</a></h4>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Establish a maintenance window (one hour should be sufficient). During this time the Kudu cluster
+will be unavailable.</p>
+</li>
+<li>
+<p>Identify the UUID and RPC address current leader of the multi-master deployment by visiting the
+<code>/masters</code> page of any master&#8217;s web UI. This master must not be removed during this process; its
+removal may result in severe data loss.</p>
+</li>
+<li>
+<p>Stop all the Kudu processes in the entire cluster.</p>
+</li>
+<li>
+<p>If using CM, remove the unwanted Kudu master.</p>
+</li>
+</ol>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_perform_the_removal"><a class="link" href="#_perform_the_removal">Perform the removal</a></h4>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Rewrite the Raft configuration on the remaining masters to include only the remaining masters. See
+Step 4 of <a href="#perform-the-migration">Perform the Migration</a> for more details.</p>
+</li>
+<li>
+<p>Remove the data directories and WAL directory on the unwanted masters. This is a precaution to
+ensure that they cannot start up again and interfere with the new multi-master deployment.</p>
+</li>
+<li>
+<p>Modify the value of the <code>master_addresses</code> configuration parameter for the masters of the new
+multi-master deployment. If migrating to a single-master deployment, the <code>master_addresses</code> flag
+should be omitted entirely.</p>
+</li>
+<li>
+<p>Start all of the masters that were not removed.</p>
+</li>
+<li>
+<p>Modify the value of the <code>tserver_master_addrs</code> configuration parameter for the tablet servers to
+remove any unwanted masters.</p>
+</li>
+<li>
+<p>Start all of the tablet servers.</p>
+</li>
+</ol>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_verify_the_migration_was_successful"><a class="link" href="#_verify_the_migration_was_successful">Verify the migration was successful</a></h4>
+<div class="paragraph">
+<p>To verify that all masters are working properly, perform the following sanity checks:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Using a browser, visit each master&#8217;s web UI. Look at the /masters page. All of the masters should
+be listed there with one master in the LEADER role and the others in the FOLLOWER role. The
+contents of /masters on each master should be the same.</p>
+</li>
+<li>
+<p>Run a Kudu system check (ksck) on the cluster using the <code>kudu</code> command line
+tool. See <a href="#ksck">Checking Cluster Health with <code>ksck</code></a> for more details.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_changing_the_master_hostnames"><a class="link" href="#_changing_the_master_hostnames">Changing the master hostnames</a></h3>
+<div class="paragraph">
+<p>To prevent long maintenance windows when replacing dead masters, DNS aliases should be used. If the
+cluster was set up without aliases, changing the host names can be done by following the below
+steps.</p>
+</div>
+<div class="sect3">
+<h4 id="_prepare_for_the_hostname_change"><a class="link" href="#_prepare_for_the_hostname_change">Prepare for the hostname change</a></h4>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Establish a maintenance window (one hour should be sufficient). During this time the Kudu cluster
+will be unavailable.</p>
+</li>
+<li>
+<p>Note the UUID and RPC address of every master by visiting the <code>/masters</code> page of any master&#8217;s web
+UI.</p>
+</li>
+<li>
+<p>Stop all the Kudu processes in the entire cluster.</p>
+</li>
+<li>
+<p>Set up the new hostnames to point to the masters and verify all servers and clients properly
+resolve them.</p>
+</li>
+</ol>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_perform_the_hostname_change"><a class="link" href="#_perform_the_hostname_change">Perform the hostname change</a></h4>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Rewrite each master’s Raft configuration with the following command, executed on all master hosts:</p>
+</li>
+</ol>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo -u kudu kudu local_replica cmeta rewrite_raft_config --fs_wal_dir=&lt;master_wal_dir&gt; [--fs_data_dirs=&lt;master_data_dir&gt;] 00000000000000000000000000000000 &lt;all_masters&gt;</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>For example:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo -u kudu kudu local_replica cmeta rewrite_raft_config --fs_wal_dir=/data/kudu/master/wal --fs_data_dirs=/data/kudu/master/data 00000000000000000000000000000000 4aab798a69e94fab8d77069edff28ce0:new-master-name-1:7051 f5624e05f40649b79a757629a69d061e:new-master-name-2:7051 988d8ac6530f426cbe180be5ba52033d:new-master-name-3:7051</pre>
+</div>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Change the masters' gflagfile so the <code>master_addresses</code> parameter reflects the new hostnames.</p>
+</li>
+<li>
+<p>Change the <code>tserver_master_addrs</code> parameter in the tablet servers' gflagfiles to the new
+hostnames.</p>
+</li>
+<li>
+<p>Start up the masters.</p>
+</li>
+<li>
+<p>To verify that all masters are working properly, perform the following sanity checks:</p>
+<div class="olist loweralpha">
+<ol class="loweralpha" type="a">
+<li>
+<p>Using a browser, visit each master&#8217;s web UI. Look at the /masters page. All of the masters should
+be listed there with one master in the LEADER role and the others in the FOLLOWER role. The
+contents of /masters on each master should be the same.</p>
+</li>
+<li>
+<p>Run the below command to verify all masters are up and listening. The UUIDs
+should be the same and belong to the same master as before the hostname change:</p>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo -u kudu kudu master list new-master-name-1:7051,new-master-name-2:7051,new-master-name-3:7051</pre>
+</div>
+</div>
+</li>
+</ol>
+</div>
+</li>
+<li>
+<p>Start all of the tablet servers.</p>
+</li>
+<li>
+<p>Run a Kudu system check (ksck) on the cluster using the <code>kudu</code> command line
+tool. See <a href="#ksck">Checking Cluster Health with <code>ksck</code></a> for more details. After startup, some tablets may be
+unavailable as it takes some time to initialize all of them.</p>
+</li>
+<li>
+<p>If you have Kudu tables that are accessed from Impala, update the HMS
+database manually in the underlying database that provides the storage for HMS.</p>
+<div class="olist loweralpha">
+<ol class="loweralpha" type="a">
+<li>
+<p>The following is an example SQL statement you should run in the HMS database:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">UPDATE TABLE_PARAMS
+SET PARAM_VALUE =
+  'new-master-name-1:7051,new-master-name-2:7051,new-master-name-3:7051'
+WHERE PARAM_KEY = 'kudu.master_addresses'
+AND PARAM_VALUE = 'master-1:7051,master-2:7051,master-3:7051';</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>In <code>impala-shell</code>, run:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">INVALIDATE METADATA;</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>Verify updating the metadata worked by running a simple <code>SELECT</code> query on a
+Kudu-backed Impala table.</p>
+</li>
+</ol>
+</div>
+</li>
+</ol>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="ksck"><a class="link" href="#ksck">Checking Cluster Health with <code>ksck</code></a></h3>
+<div class="paragraph">
+<p>The <code>kudu</code> CLI includes a tool named <code>ksck</code> that can be used for gathering
+information about the state of a Kudu cluster, including checking its health.
+<code>ksck</code> will identify issues such as under-replicated tablets, unreachable
+tablet servers, or tablets without a leader.</p>
+</div>
+<div class="paragraph">
+<p><code>ksck</code> should be run from the command line as the Kudu admin user, and requires
+the full list of master addresses to be specified:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ sudo -u kudu kudu cluster ksck master-01.example.com,master-02.example.com,master-03.example.com</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>To see a full list of the options available with <code>ksck</code>, use the <code>--help</code> flag.
+If the cluster is healthy, <code>ksck</code> will print information about the cluster, a
+success message, and return a zero (success) exit status.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>Master Summary
+               UUID               |       Address         | Status
+----------------------------------+-----------------------+---------
+ a811c07b99394df799e6650e7310f282 | master-01.example.com | HEALTHY
+ b579355eeeea446e998606bcb7e87844 | master-02.example.com | HEALTHY
+ cfdcc8592711485fad32ec4eea4fbfcd | master-02.example.com | HEALTHY
+
+Tablet Server Summary
+               UUID               |        Address         | Status
+----------------------------------+------------------------+---------
+ a598f75345834133a39c6e51163245db | tserver-01.example.com | HEALTHY
+ e05ca6b6573b4e1f9a518157c0c0c637 | tserver-02.example.com | HEALTHY
+ e7e53a91fe704296b3a59ad304e7444a | tserver-03.example.com | HEALTHY
+
+Version Summary
+ Version |      Servers
+---------+-------------------------
+  1.7.1  | all 6 server(s) checked
+
+Summary by table
+   Name   | RF | Status  | Total Tablets | Healthy | Recovering | Under-replicated | Unavailable
+----------+----+---------+---------------+---------+------------+------------------+-------------
+ my_table | 3  | HEALTHY | 8             | 8       | 0          | 0                | 0
+
+                | Total Count
+----------------+-------------
+ Masters        | 3
+ Tablet Servers | 3
+ Tables         | 1
+ Tablets        | 8
+ Replicas       | 24
+OK</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>If the cluster is unhealthy, for instance if a tablet server process has
+stopped, <code>ksck</code> will report the issue(s) and return a non-zero exit status, as
+shown in the abbreviated snippet of <code>ksck</code> output below:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>Tablet Server Summary
+               UUID               |        Address         |   Status
+----------------------------------+------------------------+-------------
+ a598f75345834133a39c6e51163245db | tserver-01.example.com | HEALTHY
+ e05ca6b6573b4e1f9a518157c0c0c637 | tserver-02.example.com | HEALTHY
+ e7e53a91fe704296b3a59ad304e7444a | tserver-03.example.com | UNAVAILABLE
+Error from 127.0.0.1:7150: Network error: could not get status from server: Client connection negotiation failed: client connection to 127.0.0.1:7150: connect: Connection refused (error 61) (UNAVAILABLE)
+
+... (full output elided)
+
+==================
+Errors:
+==================
+Network error: error fetching info from tablet servers: failed to gather info for all tablet servers: 1 of 3 had errors
+Corruption: table consistency check error: 1 out of 1 table(s) are not healthy
+
+FAILED
+Runtime error: ksck discovered errors</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>To verify data integrity, the optional <code>--checksum_scan</code> flag can be set, which
+will ensure the cluster has consistent data by scanning each tablet replica and
+comparing results. The <code>--tables</code> or <code>--tablets</code> flags can be used to limit the
+scope of the checksum scan to specific tables or tablets, respectively. For
+example, checking data integrity on the <code>my_table</code> table can be done with the
+following command:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ sudo -u kudu kudu cluster ksck --checksum_scan --tables my_table master-01.example.com,master-02.example.com,master-03.example.com</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>By default, <code>ksck</code> will attempt to use a snapshot scan of the table, so the
+checksum scan can be done while writes continue.</p>
+</div>
+<div class="paragraph">
+<p>Finally, <code>ksck</code> also supports output in JSON format using the <code>--ksck_format</code>
+flag. JSON output contains the same information as the plain text output, but
+in a format that can be used by other tools. See <code>kudu cluster ksck --help</code> for
+more information.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="change_dir_config"><a class="link" href="#change_dir_config">Changing Directory Configurations</a></h3>
+<div class="paragraph">
+<p>For higher read parallelism and larger volumes of storage per server, users may
+want to configure servers to store data in multiple directories on different
+devices. Once a server is started, users must go through the following steps
+to change the directory configuration.</p>
+</div>
+<div class="paragraph">
+<p>Users can add or remove data directories to an existing master or tablet server
+via the <code>kudu fs update_dirs</code> tool. Data is striped across data directories,
+and when a new data directory is added, new data will be striped across the
+union of the old and new directories.</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+Unless the <code>--force</code> flag is specified, Kudu will not allow for the
+removal of a directory across which tablets are configured to spread data. If
+<code>--force</code> is specified, all tablets configured to use that directory will fail
+upon starting up and be replicated elsewhere.
+</td>
+</tr>
+</table>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+If the <a href="configuration.html#directory_configuration">metadata
+directory</a> overlaps with a data directory, as was the default prior to Kudu
+1.7, or if a non-default metadata directory is configured, the
+<code>--fs_metadata_dir</code> configuration must be specified when running the <code>kudu fs
+update_dirs</code> tool.
+</td>
+</tr>
+</table>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+Only new tablet replicas (i.e. brand new tablets' replicas and replicas
+that are copied to the server for high availability) will use the new
+directory. Existing tablet replicas on the server will not be rebalanced across
+the new directory.
+</td>
+</tr>
+</table>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+All of the command line steps below should be executed as the Kudu
+UNIX user, typically <code>kudu</code>.
+</td>
+</tr>
+</table>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>The tool can only run while the server is offline, so establish a maintenance
+window to update the server. The tool itself runs quickly, so this offline
+window should be brief, and as such, only the server to update needs to be
+offline. However, if the server is offline for too long (see the
+<code>follower_unavailable_considered_failed_sec</code> flag), the tablet replicas on it
+may be evicted from their Raft groups. To avoid this, it may be desirable to
+bring the entire cluster offline while performing the update.</p>
+</li>
+<li>
+<p>Run the tool with the desired directory configuration flags. For example, if a
+cluster was set up with <code>--fs_wal_dir=/wals</code>, <code>--fs_metadata_dir=/meta</code>, and
+<code>--fs_data_dirs=/data/1,/data/2,/data/3</code>, and <code>/data/3</code> is to be removed (e.g.
+due to a disk error), run the command:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ sudo -u kudu kudu fs update_dirs --force --fs_wal_dir=/wals --fs_metadata_dir=/meta --fs_data_dirs=/data/1,/data/2</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>Modify the values of the <code>fs_data_dirs</code> flags for the updated sever. If using
+CM, make sure to only update the configurations of the updated server, rather
+than of the entire Kudu service.</p>
+</li>
+<li>
+<p>Once complete, the server process can be started. When Kudu is installed using
+system packages, <code>service</code> is typically used:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ sudo service kudu-tserver start</code></pre>
+</div>
+</div>
+</li>
+</ol>
+</div>
+</div>
+<div class="sect2">
+<h3 id="disk_failure_recovery"><a class="link" href="#disk_failure_recovery">Recovering from Disk Failure</a></h3>
+<div class="paragraph">
+<p>Kudu nodes can only survive failures of disks on which certain Kudu directories
+are mounted. For more information about the different Kudu directory types, see
+the section on <a href="configuration.html#directory_configuration">Kudu Directory
+Configurations</a>. Below describes this behavior across different Apache Kudu
+releases.</p>
+</div>
+<table id="disk_failure_behavior" class="tableblock frame-all grid-all spread">
+<caption class="title">Table 1. Kudu Disk Failure Behavior</caption>
+<colgroup>
+<col style="width: 33.3333%;">
+<col style="width: 33.3333%;">
+<col style="width: 33.3334%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Node Type</th>
+<th class="tableblock halign-left valign-top">Kudu Directory Type</th>
+<th class="tableblock halign-left valign-top">Kudu Releases that Crash on Disk Failure</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Master</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">All</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">All</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Tablet Server</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Directory containing WALs</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">All</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Tablet Server</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Directory containing tablet metadata</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">All</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Tablet Server</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Directory containing data blocks only</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Pre-1.6.0</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>When a disk failure occurs that does not lead to a crash, Kudu will stop using
+the affected directory, shut down tablets with blocks on the affected
+directories, and automatically re-replicate the affected tablets to other
+tablet servers. The affected server will remain alive and print messages to the
+log indicating the disk failure, for example:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>E1205 19:06:24.163748 27115 data_dirs.cc:1011] Directory /data/8/kudu/data marked as failed
+E1205 19:06:30.324795 27064 log_block_manager.cc:1822] Not using report from /data/8/kudu/data: IO error: Could not open container 0a6283cab82d4e75848f49772d2638fe: /data/8/kudu/data/0a6283cab82d4e75848f49772d2638fe.metadata: Read-only file system (error 30)
+E1205 19:06:33.564638 27220 ts_tablet_manager.cc:946] T 4957808439314e0d97795c1394348d80 P 70f7ee61ead54b1885d819f354eb3405: aborting tablet bootstrap: tablet has data in a failed directory</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>While in this state, the affected node will avoid using the failed disk,
+leading to lower storage volume and reduced read parallelism. The administrator
+should schedule a brief window to <a href="#change_dir_config">update the node&#8217;s
+directory configuration</a> to exclude the failed disk.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="disk_full_recovery"><a class="link" href="#disk_full_recovery">Recovering from Full Disks</a></h3>
+<div class="paragraph">
+<p>By default, Kudu reserves a small amount of space (1% by capacity) in its
+directories; Kudu considers a disk full if there is less free space available
+than the reservation. Kudu nodes can only tolerate running out of space on disks
+on which certain Kudu directories are mounted. For more information about the
+different Kudu directory types, see
+<a href="configuration.html#directory_configuration">Kudu Directory Configurations</a>.
+The table below describes this behavior for each type of directory. The behavior
+is uniform across masters and tablet servers.</p>
+</div>
+<table id="disk_full_behavior" class="tableblock frame-all grid-all spread">
+<caption class="title">Table 2. Kudu Full Disk Behavior</caption>
+<colgroup>
+<col style="width: 50%;">
+<col style="width: 50%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Kudu Directory Type</th>
+<th class="tableblock halign-left valign-top">Crash on a Full Disk?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Directory containing WALs</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Yes</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Directory containing tablet metadata</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Yes</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Directory containing data blocks only</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">No (see below)</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>Prior to Kudu 1.7.0, Kudu stripes tablet data across all directories, and will
+avoid writing data to full directories. Kudu will crash if all data directories
+are full.</p>
+</div>
+<div class="paragraph">
+<p>In 1.7.0 and later, new tablets are assigned a disk group consisting of
+-fs_target_data_dirs_per_tablet data dirs (default 3). If Kudu is not configured
+with enough data directories for a full disk group, all data directories are
+used. When a data directory is full, Kudu will stop writing new data to it and
+each tablet that uses that data directory will write new data to other data
+directories within its group. If all data directories for a tablet are full, Kudu
+will crash. Periodically, Kudu will check if full data directories are still
+full, and will resume writing to those data directories if space has become
+available.</p>
+</div>
+<div class="paragraph">
+<p>If Kudu does crash because its data directories are full, freeing space on the
+full directories will allow the affected daemon to restart and resume writing.
+Note that it may be possible for Kudu to free some space by running</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ sudo -u kudu kudu fs check --repair</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>but this command may also fail if there is too little space left.</p>
+</div>
+<div class="paragraph">
+<p>It&#8217;s also possible to allocate additional data directories to Kudu in order to
+increase the overall amount of storage available. See the documentation on
+<a href="#change_dir_config">updating a node&#8217;s directory configuration</a> for more
+information. Note that existing tablets will not use new data directories, so
+adding a new data directory does not resolve issues with full disks.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="tablet_majority_down_recovery"><a class="link" href="#tablet_majority_down_recovery">Bringing a tablet that has lost a majority of replicas back online</a></h3>
+<div class="paragraph">
+<p>If a tablet has permanently lost a majority of its replicas, it cannot recover
+automatically and operator intervention is required. If the tablet servers
+hosting a majority of the replicas are down (i.e. ones reported as "TS
+unavailable" by ksck), they should be recovered instead if possible.</p>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+The steps below may cause recent edits to the tablet to be lost,
+potentially resulting in permanent data loss. Only attempt the procedure below
+if it is impossible to bring a majority back online.
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>Suppose a tablet has lost a majority of its replicas. The first step in
+diagnosing and fixing the problem is to examine the tablet&#8217;s state using ksck:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ sudo -u kudu kudu cluster ksck --tablets=e822cab6c0584bc0858219d1539a17e6 master-00,master-01,master-02
+Connected to the Master
+Fetched info from all 5 Tablet Servers
+Tablet e822cab6c0584bc0858219d1539a17e6 of table 'my_table' is unavailable: 2 replica(s) not RUNNING
+  638a20403e3e4ae3b55d4d07d920e6de (tserver-00:7150): RUNNING
+  9a56fa85a38a4edc99c6229cba68aeaa (tserver-01:7150): bad state
+    State:       FAILED
+    Data state:  TABLET_DATA_READY
+    Last status: &lt;failure message&gt;
+  c311fef7708a4cf9bb11a3e4cbcaab8c (tserver-02:7150): bad state
+    State:       FAILED
+    Data state:  TABLET_DATA_READY
+    Last status: &lt;failure message&gt;</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This output shows that, for tablet <code>e822cab6c0584bc0858219d1539a17e6</code>, the two
+tablet replicas on <code>tserver-01</code> and <code>tserver-02</code> failed. The remaining replica
+is not the leader, so the leader replica failed as well. This means the chance
+of data loss is higher since the remaining replica on <code>tserver-00</code> may have
+been lagging. In general, to accept the potential data loss and restore the
+tablet from the remaining replicas, divide the tablet replicas into two groups:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Healthy replicas: Those in <code>RUNNING</code> state as reported by ksck</p>
+</li>
+<li>
+<p>Unhealthy replicas</p>
+</li>
+</ol>
+</div>
+<div class="paragraph">
+<p>For example, in the above ksck output, the replica on tablet server <code>tserver-00</code>
+is healthy, while the replicas on <code>tserver-01</code> and <code>tserver-02</code> are unhealthy.
+On each tablet server with a healthy replica, alter the consensus configuration
+to remove unhealthy replicas. In the typical case of 1 out of 3 surviving
+replicas, there will be only one healthy replica, so the consensus configuration
+will be rewritten to include only the healthy replica.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ sudo -u kudu kudu remote_replica unsafe_change_config tserver-00:7150 &lt;tablet-id&gt; &lt;tserver-00-uuid&gt;</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>where <code>&lt;tablet-id&gt;</code> is <code>e822cab6c0584bc0858219d1539a17e6</code> and
+<code>&lt;tserver-00-uuid&gt;</code> is the uuid of <code>tserver-00</code>,
+<code>638a20403e3e4ae3b55d4d07d920e6de</code>.</p>
+</div>
+<div class="paragraph">
+<p>Once the healthy replicas' consensus configurations have been forced to exclude
+the unhealthy replicas, the healthy replicas will be able to elect a leader.
+The tablet will become available for writes, though it will still be
+under-replicated. Shortly after the tablet becomes available, the leader master
+will notice that it is under-replicated, and will cause the tablet to
+re-replicate until the proper replication factor is restored. The unhealthy
+replicas will be tombstoned by the master, causing their remaining data to be
+deleted.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="rebuilding_kudu"><a class="link" href="#rebuilding_kudu">Rebuilding a Kudu Filesystem Layout</a></h3>
+<div class="paragraph">
+<p>In the event that critical files are lost, i.e. WALs or tablet-specific
+metadata, all Kudu directories on the server must be deleted and rebuilt to
+ensure correctness. Doing so will destroy the copy of the data for each tablet
+replica hosted on the local server. Kudu will automatically re-replicate tablet
+replicas removed in this way, provided the replication factor is at least three
+and all other servers are online and healthy.</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+These steps use a tablet server as an example, but the steps are the same
+for Kudu master servers.
+</td>
+</tr>
+</table>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+If multiple nodes need their FS layouts rebuilt, wait until all
+replicas previously hosted on each node have finished automatically
+re-replicating elsewhere before continuing. Failure to do so can result in
+permanent data loss.
+</td>
+</tr>
+</table>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+Before proceeding, ensure the contents of the directories are backed
+up, either as a copy or in the form of other tablet replicas.
+</td>
+</tr>
+</table>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>The first step to rebuilding a server with a new directory configuration is
+emptying all of the server&#8217;s existing directories. For example, if a tablet
+server is configured with <code>--fs_wal_dir=/data/0/kudu-tserver-wal</code>,
+<code>--fs_metadata_dir=/data/0/kudu-tserver-meta</code>, and
+<code>--fs_data_dirs=/data/1/kudu-tserver,/data/2/kudu-tserver</code>, the following
+commands will remove the WAL directory&#8217;s and data directories' contents:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash"># Note: this will delete all of the data from the local tablet server.
+$ rm -rf /data/0/kudu-tserver-wal/* /data/0/kudu-tserver-meta/* /data/1/kudu-tserver/* /data/2/kudu-tserver/*</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>If using CM, update the configurations for the rebuilt server to include only
+the desired directories. Make sure to only update the configurations of servers
+to which changes were applied, rather than of the entire Kudu service.</p>
+</li>
+<li>
+<p>After directories are deleted, the server process can be started with the new
+directory configuration. The appropriate sub-directories will be created by
+Kudu upon starting up.</p>
+</li>
+</ol>
+</div>
+</div>
+<div class="sect2">
+<h3 id="physical_backup"><a class="link" href="#physical_backup">Physical backups of an entire node</a></h3>
+<div class="paragraph">
+<p>As documented in the <a href="known_issues.html#_replication_and_backup_limitations">Known Issues and Limitations</a>,
+Kudu does not yet provide any built-in backup and restore functionality. However,
+it is possible to create a physical backup of a Kudu node (either tablet server
+or master) and restore it later.</p>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+The node to be backed up must be offline during the procedure, or else
+the backed up (or restored) data will be inconsistent.
+</td>
+</tr>
+</table>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+Certain aspects of the Kudu node (such as its hostname) are embedded in
+the on-disk data. As such, it&#8217;s not yet possible to restore a physical backup of
+a node onto another machine.
+</td>
+</tr>
+</table>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Stop all Kudu processes in the cluster. This prevents the tablets on the
+backed up node from being rereplicated elsewhere unnecessarily.</p>
+</li>
+<li>
+<p>If creating a backup, make a copy of the WAL, metadata, and data directories
+on each node to be backed up. It is important that this copy preserve all file
+attributes as well as sparseness.</p>
+</li>
+<li>
+<p>If restoring from a backup, delete the existing WAL, metadata, and data
+directories, then restore the backup via move or copy. As with creating a
+backup, it is important that the restore preserve all file attributes and
+sparseness.</p>
+</li>
+<li>
+<p>Start all Kudu processes in the cluster.</p>
+</li>
+</ol>
+</div>
+</div>
+<div class="sect2">
+<h3 id="minimizing_cluster_disruption_during_temporary_single_ts_downtime"><a class="link" href="#minimizing_cluster_disruption_during_temporary_single_ts_downtime">Minimizing cluster disruption during temporary planned downtime of a single tablet server</a></h3>
+<div class="paragraph">
+<p>If a single tablet server is brought down temporarily in a healthy cluster, all
+tablets will remain available and clients will function as normal, after
+potential short delays due to leader elections. However, if the downtime lasts
+for more than <code>--follower_unavailable_considered_failed_sec</code> (default 300)
+seconds, the tablet replicas on the down tablet server will be replaced by new
+replicas on available tablet servers. This will cause stress on the cluster
+as tablets re-replicate and, if the downtime lasts long enough, significant
+reduction in the number of replicas on the down tablet server. This may require
+the rebalancer to fix.</p>
+</div>
+<div class="paragraph">
+<p>To work around this, increase <code>--follower_unavailable_considered_failed_sec</code> on
+all tablet servers so the amount of time before re-replication will start is
+longer than the expected downtime of the tablet server, including the time it
+takes the tablet server to restart and bootstrap its tablet replicas. To do
+this, run the following command for each tablet server:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ sudo -u kudu kudu tserver set_flag &lt;tserver_address&gt; follower_unavailable_considered_failed_sec &lt;num_seconds&gt;</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>where <code>&lt;num_seconds&gt;</code> is the number of seconds that will encompass the downtime.
+Once the downtime is finished, reset the flag to its original value.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo -u kudu kudu tserver set_flag &lt;tserver_address&gt; follower_unavailable_considered_failed_sec &lt;original_value&gt;</pre>
+</div>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+Be sure to reset the value of <code>--follower_unavailable_considered_failed_sec</code>
+to its original value.
+</td>
+</tr>
+</table>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+On Kudu versions prior to 1.8, the <code>--force</code> flag must be provided in the above
+commands.
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect2">
+<h3 id="rebalancer_tool"><a class="link" href="#rebalancer_tool">Running the tablet rebalancing tool</a></h3>
+<div class="paragraph">
+<p>The <code>kudu</code> CLI contains a rebalancing tool that can be used to rebalance
+tablet replicas among tablet servers. For each table, the tool attempts to
+balance the number of replicas per tablet server. It will also, without
+unbalancing any table, attempt to even out the number of replicas per tablet
+server across the cluster as a whole. The rebalancing tool should be run as the
+Kudu admin user, specifying all master addresses:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">sudo -u kudu kudu cluster rebalance master-01.example.com,master-02.example.com,master-03.example.com</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>When run, the rebalancer will report on the initial tablet replica distribution
+in the cluster, log the replicas it moves, and print a final summary of the
+distribution when it terminates:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>Per-server replica distribution summary:
+       Statistic       |   Value
+-----------------------+-----------
+ Minimum Replica Count | 0
+ Maximum Replica Count | 24
+ Average Replica Count | 14.400000
+
+Per-table replica distribution summary:
+ Replica Skew |  Value
+--------------+----------
+ Minimum      | 8
+ Maximum      | 8
+ Average      | 8.000000
+
+I0613 14:18:49.905897 3002065792 rebalancer.cc:779] tablet e7ee9ade95b342a7a94649b7862b345d: 206a51de1486402bbb214b5ce97a633c -&gt; 3b4d9266ac8c45ff9a5d4d7c3e1cb326 move scheduled
+I0613 14:18:49.917578 3002065792 rebalancer.cc:779] tablet 5f03944529f44626a0d6ec8b1edc566e: 6e64c4165b864cbab0e67ccd82091d60 -&gt; ba8c22ab030346b4baa289d6d11d0809 move scheduled
+I0613 14:18:49.928683 3002065792 rebalancer.cc:779] tablet 9373fee3bfe74cec9054737371a3b15d: fab382adf72c480984c6cc868fdd5f0e -&gt; 3b4d9266ac8c45ff9a5d4d7c3e1cb326 move scheduled
+
+... (full output elided)
+
+I0613 14:19:01.162802 3002065792 rebalancer.cc:842] tablet f4c046f18b174cc2974c65ac0bf52767: 206a51de1486402bbb214b5ce97a633c -&gt; 3b4d9266ac8c45ff9a5d4d7c3e1cb326 move completed: OK
+
+rebalancing is complete: cluster is balanced (moved 28 replicas)
+Per-server replica distribution summary:
+       Statistic       |   Value
+-----------------------+-----------
+ Minimum Replica Count | 14
+ Maximum Replica Count | 15
+ Average Replica Count | 14.400000
+
+Per-table replica distribution summary:
+ Replica Skew |  Value
+--------------+----------
+ Minimum      | 1
+ Maximum      | 1
+ Average      | 1.000000</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>If more details are needed in addition to the replica distribution summary,
+use the <code>--output_replica_distribution_details</code> flag. If added, the flag makes
+the tool print per-table and per-tablet server replica distribution statistics
+as well.</p>
+</div>
+<div class="paragraph">
+<p>Use the <code>--report_only</code> flag to get a report on table- and cluster-wide
+replica distribution statistics without starting any rebalancing activity.</p>
+</div>
+<div class="paragraph">
+<p>The rebalancer can also be restricted to run on a subset of the tables by
+supplying the <code>--tables</code> flag. Note that, when running on a subset of tables,
+the tool will not attempt to balance the cluster as a whole.</p>
+</div>
+<div class="paragraph">
+<p>The length of time rebalancing is run for can be controlled with the flag
+<code>--max_run_time_sec</code>. By default, the rebalancer will run until the cluster is
+balanced. To control the amount of resources devoted to rebalancing, modify
+the flag <code>--max_moves_per_server</code>. See <code>kudu cluster rebalance --help</code> for more.</p>
+</div>
+<div class="paragraph">
+<p>The rebalancing tool can rebalance Kudu clusters running older versions as well,
+with some restrictions. Consult the following table for more information. In the
+table, "RF" stands for "replication factor".</p>
+</div>
+<table id="rebalancer_compatibility" class="tableblock frame-all grid-all spread">
+<caption class="title">Table 3. Kudu Rebalancing Tool Compatibility</caption>
+<colgroup>
+<col style="width: 33.3333%;">
+<col style="width: 33.3333%;">
+<col style="width: 33.3334%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Version Range</th>
+<th class="tableblock halign-left valign-top">Rebalances RF = 1 Tables?</th>
+<th class="tableblock halign-left valign-top">Rebalances RF &gt; 1 Tables?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">v &lt; 1.4.0</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">No</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">No</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">1.4.0 &lt;= v &lt; 1.7.1</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">No</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Yes</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">v &gt;= 1.7.1</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Yes</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Yes</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>If the rebalancer is running against a cluster where rebalancing replication
+factor one tables is not supported, it will rebalance all the other tables
+and the cluster as if those singly-replicated tables did not exist.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="tablet_server_decommissioning"><a class="link" href="#tablet_server_decommissioning">Decommissioning or Permanently Removing a Tablet Server From a Cluster</a></h3>
+<div class="paragraph">
+<p>Kudu does not currently have an automated way to remove a tablet server from
+a cluster permanently. Instead, use the following steps:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Ensure the cluster is in good health using <code>ksck</code>. See <a href="#ksck">Checking Cluster Health with <code>ksck</code></a>.</p>
+</li>
+<li>
+<p>If the tablet server contains any replicas of tables with replication factor
+1, these replicas must be manually moved off the tablet server prior to
+shutting it down. The <code>kudu tablet change_config move_replica</code> tool can be
+used for this.</p>
+</li>
+<li>
+<p>Shut down the tablet server. After
+<code>-follower_unavailable_considered_failed_sec</code>, which defaults to 5 minutes,
+Kudu will begin to re-replicate the tablet server&#8217;s replicas to other servers.
+Wait until the process is finished. Progress can be monitored using <code>ksck</code>.</p>
+</li>
+<li>
+<p>Once all the copies are complete, <code>ksck</code> will continue to report the tablet
+server as unavailable. The cluster will otherwise operate fine without the
+tablet server. To completely remove it from the cluster so <code>ksck</code> shows the
+cluster as completely healthy, restart the masters. In the case of a single
+master, this will cause cluster downtime. With multimaster, restart the
+masters in sequence to avoid cluster downtime.</p>
+</li>
+</ol>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+Do not shut down multiple tablet servers at once. To remove multiple
+tablet servers from the cluster, follow the above instructions for each tablet
+server, ensuring that the previous tablet server is removed from the cluster and
+<code>ksck</code> is healthy before shutting down the next.
+</td>
+</tr>
+</table>
+</div>
+</div>
+</div>
+</div>
+    </div>
+    <div class="col-md-3">
+
+  <div id="toc" data-spy="affix" data-offset-top="70">
+  <ul>
+
+      <li>
+
+          <a href="index.html">Introducing Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="release_notes.html">Kudu Release Notes</a> 
+      </li> 
+      <li>
+
+          <a href="quickstart.html">Getting Started with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="installation.html">Installation Guide</a> 
+      </li> 
+      <li>
+
+          <a href="configuration.html">Configuring Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="kudu_impala_integration.html">Using Impala with Kudu</a> 
+      </li> 
+      <li>
+<span class="active-toc">Administering Kudu</span>
+            <ul class="sectlevel1">
+<li><a href="#_starting_and_stopping_kudu_processes">Starting and Stopping Kudu Processes</a></li>
+<li><a href="#_kudu_web_interfaces">Kudu Web Interfaces</a>
+<ul class="sectlevel2">
+<li><a href="#_kudu_master_web_interface">Kudu Master Web Interface</a></li>
+<li><a href="#_kudu_tablet_server_web_interface">Kudu Tablet Server Web Interface</a></li>
+<li><a href="#_common_web_interface_pages">Common Web Interface Pages</a></li>
+</ul>
+</li>
+<li><a href="#_kudu_metrics">Kudu Metrics</a>
+<ul class="sectlevel2">
+<li><a href="#_listing_available_metrics">Listing available metrics</a></li>
+<li><a href="#_collecting_metrics_via_http">Collecting metrics via HTTP</a></li>
+<li><a href="#_diagnostics_logging">Diagnostics Logging</a></li>
+</ul>
+</li>
+<li><a href="#_common_kudu_workflows">Common Kudu workflows</a>
+<ul class="sectlevel2">
+<li><a href="#migrate_to_multi_master">Migrating to Multiple Kudu Masters</a>
+<ul class="sectlevel3">
+<li><a href="#_prepare_for_the_migration">Prepare for the migration</a></li>
+<li><a href="#perform-the-migration">Perform the migration</a></li>
+</ul>
+</li>
+<li><a href="#_recovering_from_a_dead_kudu_master_in_a_multi_master_deployment">Recovering from a dead Kudu Master in a Multi-Master Deployment</a>
+<ul class="sectlevel3">
+<li><a href="#_prepare_for_the_recovery">Prepare for the recovery</a></li>
+<li><a href="#_perform_the_recovery">Perform the recovery</a></li>
+</ul>
+</li>
+<li><a href="#_removing_kudu_masters_from_a_multi_master_deployment">Removing Kudu Masters from a Multi-Master Deployment</a>
+<ul class="sectlevel3">
+<li><a href="#_prepare_for_the_removal">Prepare for the removal</a></li>
+<li><a href="#_perform_the_removal">Perform the removal</a></li>
+<li><a href="#_verify_the_migration_was_successful">Verify the migration was successful</a></li>
+</ul>
+</li>
+<li><a href="#_changing_the_master_hostnames">Changing the master hostnames</a>
+<ul class="sectlevel3">
+<li><a href="#_prepare_for_the_hostname_change">Prepare for the hostname change</a></li>
+<li><a href="#_perform_the_hostname_change">Perform the hostname change</a></li>
+</ul>
+</li>
+<li><a href="#ksck">Checking Cluster Health with <code>ksck</code></a></li>
+<li><a href="#change_dir_config">Changing Directory Configurations</a></li>
+<li><a href="#disk_failure_recovery">Recovering from Disk Failure</a></li>
+<li><a href="#disk_full_recovery">Recovering from Full Disks</a></li>
+<li><a href="#tablet_majority_down_recovery">Bringing a tablet that has lost a majority of replicas back online</a></li>
+<li><a href="#rebuilding_kudu">Rebuilding a Kudu Filesystem Layout</a></li>
+<li><a href="#physical_backup">Physical backups of an entire node</a></li>
+<li><a href="#minimizing_cluster_disruption_during_temporary_single_ts_downtime">Minimizing cluster disruption during temporary planned downtime of a single tablet server</a></li>
+<li><a href="#rebalancer_tool">Running the tablet rebalancing tool</a></li>
+<li><a href="#tablet_server_decommissioning">Decommissioning or Permanently Removing a Tablet Server From a Cluster</a></li>
+</ul>
+</li>
+</ul> 
+      </li> 
+      <li>
+
+          <a href="troubleshooting.html">Troubleshooting Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="developing.html">Developing Applications with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="schema_design.html">Kudu Schema Design</a> 
+      </li> 
+      <li>
+
+          <a href="scaling_guide.html">Kudu Scaling Guide</a> 
+      </li> 
+      <li>
+
+          <a href="security.html">Kudu Security</a> 
+      </li> 
+      <li>
+
+          <a href="transaction_semantics.html">Kudu Transaction Semantics</a> 
+      </li> 
+      <li>
+
+          <a href="background_tasks.html">Background Maintenance Tasks</a> 
+      </li> 
+      <li>
+
+          <a href="configuration_reference.html">Kudu Configuration Reference</a> 
+      </li> 
+      <li>
+
+          <a href="command_line_tools_reference.html">Kudu Command Line Tools Reference</a> 
+      </li> 
+      <li>
+
+          <a href="known_issues.html">Known Issues and Limitations</a> 
+      </li> 
+      <li>
+
+          <a href="contributing.html">Contributing to Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="export_control.html">Export Control Notice</a> 
+      </li> 
+  </ul>
+  </div>
+    </div>
+  </div>
+</div>
