@@ -32,7 +32,7 @@ See the [Kudu 1.8.0 Release Notes](docs/release_notes.html).
 
 Downloads of Kudu 1.8.0 are available in the following formats:
 
-* [Kudu 1.8.0 source tarball](https://www.apache.org/closer.cgi?filename=kudu/1.8.0/apache-kudu-1.8.0.tar.gz&action=download)
+* [Kudu 1.8.0 source tarball](https://www.apache.org/dyn/closer.cgi/kudu/1.8.0/apache-kudu-1.8.0.tar.gz)
   ([SHA512](https://www.apache.org/dist/kudu/1.8.0/apache-kudu-1.8.0.tar.gz.sha512),
   [Signature](https://www.apache.org/dist/kudu/1.8.0/apache-kudu-1.8.0.tar.gz.asc))
 
