@@ -333,7 +333,7 @@ Status DetectPlacementPolicyViolations(
           tablet_id, max_replicas_num, rep_factor, max_replicas_location);
     }
     if (is_policy_violated) {
-      info.push_back({ tablet_id, max_replicas_location });
+      info.push_back({ tablet_id, max_replicas_location, max_replicas_num });
     }
   }
 

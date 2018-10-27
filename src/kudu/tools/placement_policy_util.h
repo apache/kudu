@@ -86,7 +86,6 @@ Status BuildTabletsPlacementInfo(const ClusterRawInfo& raw_info,
 struct PlacementPolicyViolationInfo {
   std::string tablet_id;
   std::string majority_location;
-  int replication_factor;
   int replicas_num_at_majority_location;
 };
 

@@ -57,6 +57,7 @@ using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
 using std::accumulate;
 using std::endl;
+using std::back_inserter;
 using std::inserter;
 using std::ostream;
 using std::map;
@@ -69,6 +70,7 @@ using std::shared_ptr;
 using std::sort;
 using std::string;
 using std::to_string;
+using std::transform;
 using std::unordered_map;
 using std::unordered_set;
 using std::vector;
@@ -105,7 +107,7 @@ Rebalancer::Rebalancer(const Config& config)
     : config_(config) {
 }
 
-Status Rebalancer::PrintStats(std::ostream& out) {
+Status Rebalancer::PrintStats(ostream& out) {
   // First, report on the current balance state of the cluster.
   RETURN_NOT_OK(RefreshKsckResults());
   const KsckResults& results = ksck_->results();
@@ -116,102 +118,48 @@ Status Rebalancer::PrintStats(std::ostream& out) {
   ClusterInfo ci;
   RETURN_NOT_OK(BuildClusterInfo(raw_info, MovesInProgress(), &ci));
 
-  // Per-server replica distribution stats.
-  {
-    out << "Per-server replica distribution summary:" << endl;
-    DataTable summary({"Statistic", "Value"});
-
-    const auto& servers_load_info = ci.balance.servers_by_total_replica_count;
-    if (servers_load_info.empty()) {
-      summary.AddRow({ "N/A", "N/A" });
-    } else {
-      const int64_t total_replica_count = accumulate(
-          servers_load_info.begin(), servers_load_info.end(), 0L,
-          [](int64_t sum, const pair<int32_t, string>& elem) {
-            return sum + elem.first;
-          });
-
-      const auto min_replica_count = servers_load_info.begin()->first;
-      const auto max_replica_count = servers_load_info.rbegin()->first;
-      const double avg_replica_count =
-          1.0 * total_replica_count / servers_load_info.size();
-
-      summary.AddRow({ "Minimum Replica Count", to_string(min_replica_count) });
-      summary.AddRow({ "Maximum Replica Count", to_string(max_replica_count) });
-      summary.AddRow({ "Average Replica Count", to_string(avg_replica_count) });
-    }
-    RETURN_NOT_OK(summary.PrintTo(out));
-    out << endl;
-
-    if (config_.output_replica_distribution_details) {
-      const auto& tserver_summaries = results.tserver_summaries;
-      unordered_map<string, string> tserver_endpoints;
-      for (const auto& summary : tserver_summaries) {
-        tserver_endpoints.emplace(summary.uuid, summary.address);
-      }
-
-      out << "Per-server replica distribution details:" << endl;
-      DataTable servers_info({ "UUID", "Address", "Replica Count" });
-      for (const auto& elem : servers_load_info) {
-        const auto& id = elem.second;
-        servers_info.AddRow({ id, tserver_endpoints[id], to_string(elem.first) });
-      }
-      RETURN_NOT_OK(servers_info.PrintTo(out));
-      out << endl;
-    }
+  const auto& ts_id_by_location = ci.locality.servers_by_location;
+  if (ts_id_by_location.empty()) {
+    // Nothing to report about: there are no tablet servers reported.
+    out << "an empty cluster" << endl;
+    return Status::OK();
   }
 
-  // Per-table replica distribution stats.
-  {
-    out << "Per-table replica distribution summary:" << endl;
-    DataTable summary({ "Replica Skew", "Value" });
-    const auto& table_skew_info = ci.balance.table_info_by_skew;
-    if (table_skew_info.empty()) {
-      summary.AddRow({ "N/A", "N/A" });
-    } else {
-      const auto min_table_skew = table_skew_info.begin()->first;
-      const auto max_table_skew = table_skew_info.rbegin()->first;
-      const int64_t sum_table_skew = accumulate(
-          table_skew_info.begin(), table_skew_info.end(), 0L,
-          [](int64_t sum, const pair<int32_t, TableBalanceInfo>& elem) {
-            return sum + elem.first;
-          });
-      double avg_table_skew = 1.0 * sum_table_skew / table_skew_info.size();
-
-      summary.AddRow({ "Minimum", to_string(min_table_skew) });
-      summary.AddRow({ "Maximum", to_string(max_table_skew) });
-      summary.AddRow({ "Average", to_string(avg_table_skew) });
-    }
-    RETURN_NOT_OK(summary.PrintTo(out));
-    out << endl;
-
-    if (config_.output_replica_distribution_details) {
-      const auto& table_summaries = results.table_summaries;
-      unordered_map<string, const KsckTableSummary*> table_info;
-      for (const auto& summary : table_summaries) {
-        table_info.emplace(summary.id, &summary);
-      }
-      out << "Per-table replica distribution details:" << endl;
-      DataTable skew(
-          { "Table Id", "Replica Count", "Replica Skew", "Table Name" });
-      for (const auto& elem : table_skew_info) {
-        const auto& table_id = elem.second.table_id;
-        const auto it = table_info.find(table_id);
-        const auto* table_summary =
-            (it == table_info.end()) ? nullptr : it->second;
-        const auto& table_name = table_summary ? table_summary->name : "";
-        const auto total_replica_count = table_summary
-            ? table_summary->replication_factor * table_summary->TotalTablets()
-            : 0;
-        skew.AddRow({ table_id,
-                      to_string(total_replica_count),
-                      to_string(elem.first),
-                      table_name });
-      }
-      RETURN_NOT_OK(skew.PrintTo(out));
-      out << endl;
-    }
+  if (ts_id_by_location.size() == 1) {
+    // That's about printing information about the whole cluster.
+    return PrintLocationBalanceStats(ts_id_by_location.begin()->first,
+                                     raw_info, ci, out);
   }
+
+  // The stats are more detailed in the case of a multi-location cluster.
+  DCHECK_GT(ts_id_by_location.size(), 1);
+
+  // 1. Print information about cross-location balance.
+  RETURN_NOT_OK(PrintCrossLocationBalanceStats(ci, out));
+
+  // 2. Iterating over locations in the cluster, print per-location balance
+  //    information. Since the ts_id_by_location is not sorted, let's first
+  //    create a sorted list of locations so the ouput would be sorted by
+  //    location.
+  vector<string> locations;
+  locations.reserve(ts_id_by_location.size());
+  transform(ts_id_by_location.cbegin(), ts_id_by_location.cend(),
+            back_inserter(locations),
+            [](const unordered_map<string, set<string>>::value_type& elem) {
+              return elem.first;
+            });
+  sort(locations.begin(), locations.end());
+
+  for (const auto& location : locations) {
+    ClusterRawInfo raw_info;
+    RETURN_NOT_OK(KsckResultsToClusterRawInfo(location, results, &raw_info));
+    ClusterInfo ci;
+    RETURN_NOT_OK(BuildClusterInfo(raw_info, MovesInProgress(), &ci));
+    RETURN_NOT_OK(PrintLocationBalanceStats(location, raw_info, ci, out));
+  }
+
+  // 3. Print information about placement policy violations.
+  RETURN_NOT_OK(PrintPolicyViolationInfo(raw_info, out));
 
   return Status::OK();
 }
@@ -534,6 +482,194 @@ Status Rebalancer::FilterCrossLocationTabletCandidates(
   }
 
   *tablet_ids = std::move(tablet_ids_filtered);
+
+  return Status::OK();
+}
+
+Status Rebalancer::PrintCrossLocationBalanceStats(const ClusterInfo& ci,
+                                                  ostream& out) const {
+  // Print location load information.
+  map<string, int64_t> replicas_num_by_location;
+  for (const auto& elem : ci.balance.servers_by_total_replica_count) {
+    const auto& location = FindOrDie(ci.locality.location_by_ts_id, elem.second);
+    LookupOrEmplace(&replicas_num_by_location, location, 0) += elem.first;
+  }
+  out << "Locations load summary:" << endl;
+  DataTable location_load_summary({"Location", "Load"});
+  for (const auto& elem : replicas_num_by_location) {
+    const auto& location = elem.first;
+    const auto servers_num =
+        FindOrDie(ci.locality.servers_by_location, location).size();
+    CHECK_GT(servers_num, 0);
+    double location_load = static_cast<double>(elem.second) / servers_num;
+    location_load_summary.AddRow({ location, to_string(location_load) });
+  }
+  RETURN_NOT_OK(location_load_summary.PrintTo(out));
+  out << endl;
+
+  return Status::OK();
+}
+
+Status Rebalancer::PrintLocationBalanceStats(const string& location,
+                                             const ClusterRawInfo& raw_info,
+                                             const ClusterInfo& ci,
+                                             ostream& out) const {
+  if (!location.empty()) {
+    out << "--------------------------------------------------" << endl;
+    out << "Location: " << location << endl;
+    out << "--------------------------------------------------" << endl;
+  }
+
+  // Per-server replica distribution stats.
+  {
+    out << "Per-server replica distribution summary:" << endl;
+    DataTable summary({"Statistic", "Value"});
+
+    const auto& servers_load_info = ci.balance.servers_by_total_replica_count;
+    if (servers_load_info.empty()) {
+      summary.AddRow({ "N/A", "N/A" });
+    } else {
+      const int64_t total_replica_count = accumulate(
+          servers_load_info.begin(), servers_load_info.end(), 0L,
+          [](int64_t sum, const pair<int32_t, string>& elem) {
+            return sum + elem.first;
+          });
+
+      const auto min_replica_count = servers_load_info.begin()->first;
+      const auto max_replica_count = servers_load_info.rbegin()->first;
+      const double avg_replica_count =
+          1.0 * total_replica_count / servers_load_info.size();
+
+      summary.AddRow({ "Minimum Replica Count", to_string(min_replica_count) });
+      summary.AddRow({ "Maximum Replica Count", to_string(max_replica_count) });
+      summary.AddRow({ "Average Replica Count", to_string(avg_replica_count) });
+    }
+    RETURN_NOT_OK(summary.PrintTo(out));
+    out << endl;
+
+    if (config_.output_replica_distribution_details) {
+      const auto& tserver_summaries = raw_info.tserver_summaries;
+      unordered_map<string, string> tserver_endpoints;
+      for (const auto& summary : tserver_summaries) {
+        tserver_endpoints.emplace(summary.uuid, summary.address);
+      }
+
+      out << "Per-server replica distribution details:" << endl;
+      DataTable servers_info({ "UUID", "Address", "Replica Count" });
+      for (const auto& elem : servers_load_info) {
+        const auto& id = elem.second;
+        servers_info.AddRow({ id, tserver_endpoints[id], to_string(elem.first) });
+      }
+      RETURN_NOT_OK(servers_info.PrintTo(out));
+      out << endl;
+    }
+  }
+
+  // Per-table replica distribution stats.
+  {
+    out << "Per-table replica distribution summary:" << endl;
+    DataTable summary({ "Replica Skew", "Value" });
+    const auto& table_skew_info = ci.balance.table_info_by_skew;
+    if (table_skew_info.empty()) {
+      summary.AddRow({ "N/A", "N/A" });
+    } else {
+      const auto min_table_skew = table_skew_info.begin()->first;
+      const auto max_table_skew = table_skew_info.rbegin()->first;
+      const int64_t sum_table_skew = accumulate(
+          table_skew_info.begin(), table_skew_info.end(), 0L,
+          [](int64_t sum, const pair<int32_t, TableBalanceInfo>& elem) {
+            return sum + elem.first;
+          });
+      double avg_table_skew = 1.0 * sum_table_skew / table_skew_info.size();
+
+      summary.AddRow({ "Minimum", to_string(min_table_skew) });
+      summary.AddRow({ "Maximum", to_string(max_table_skew) });
+      summary.AddRow({ "Average", to_string(avg_table_skew) });
+    }
+    RETURN_NOT_OK(summary.PrintTo(out));
+    out << endl;
+
+    if (config_.output_replica_distribution_details) {
+      const auto& table_summaries = raw_info.table_summaries;
+      unordered_map<string, const KsckTableSummary*> table_info;
+      for (const auto& summary : table_summaries) {
+        table_info.emplace(summary.id, &summary);
+      }
+      out << "Per-table replica distribution details:" << endl;
+      DataTable skew(
+          { "Table Id", "Replica Count", "Replica Skew", "Table Name" });
+      for (const auto& elem : table_skew_info) {
+        const auto& table_id = elem.second.table_id;
+        const auto it = table_info.find(table_id);
+        const auto* table_summary =
+            (it == table_info.end()) ? nullptr : it->second;
+        const auto& table_name = table_summary ? table_summary->name : "";
+        const auto total_replica_count = table_summary
+            ? table_summary->replication_factor * table_summary->TotalTablets()
+            : 0;
+        skew.AddRow({ table_id,
+                      to_string(total_replica_count),
+                      to_string(elem.first),
+                      table_name });
+      }
+      RETURN_NOT_OK(skew.PrintTo(out));
+      out << endl;
+    }
+  }
+
+  return Status::OK();
+}
+
+Status Rebalancer::PrintPolicyViolationInfo(const ClusterRawInfo& raw_info,
+                                            ostream& out) const {
+  TabletsPlacementInfo placement_info;
+  RETURN_NOT_OK(BuildTabletsPlacementInfo(raw_info, &placement_info));
+  vector<PlacementPolicyViolationInfo> ppvi;
+  RETURN_NOT_OK(DetectPlacementPolicyViolations(placement_info, &ppvi));
+  out << "Placement policy violations:" << endl;
+  if (ppvi.empty()) {
+    out << "  none" << endl << endl;;
+    return Status::OK();
+  }
+
+  if (config_.output_replica_distribution_details) {
+    DataTable stats(
+        { "Location", "Table Name", "Tablet", "RF", "Replicas at location" });
+    for (const auto& info : ppvi) {
+      const auto& table_id = FindOrDie(placement_info.tablet_to_table_id,
+                                       info.tablet_id);
+      const auto& table_info = FindOrDie(placement_info.tables_info, table_id);
+      stats.AddRow({ info.majority_location,
+                     table_info.name,
+                     info.tablet_id,
+                     to_string(table_info.replication_factor),
+                     to_string(info.replicas_num_at_majority_location) });
+    }
+    RETURN_NOT_OK(stats.PrintTo(out));
+  } else {
+    DataTable summary({ "Location",
+                        "Number of non-complying tables",
+                        "Number of non-complying tablets" });
+    typedef pair<unordered_set<string>, unordered_set<string>> TableTabletIds;
+    // Location --> sets of identifiers of tables and tablets hosted by the
+    // tablet servers at the location. The summary is sorted by location.
+    map<string, TableTabletIds> info_by_location;
+    for (const auto& info : ppvi) {
+      const auto& table_id = FindOrDie(placement_info.tablet_to_table_id,
+                                       info.tablet_id);
+      auto& elem = LookupOrEmplace(&info_by_location,
+                                   info.majority_location, TableTabletIds());
+      elem.first.emplace(table_id);
+      elem.second.emplace(info.tablet_id);
+    }
+    for (const auto& elem : info_by_location) {
+      summary.AddRow({ elem.first,
+                       to_string(elem.second.first.size()),
+                       to_string(elem.second.second.size()) });
+    }
+    RETURN_NOT_OK(summary.PrintTo(out));
+  }
+  out << endl;
 
   return Status::OK();
 }
@@ -1084,11 +1220,11 @@ Status Rebalancer::AlgoBasedRunner::GetNextMovesImpl(
     return Status::OK();
   }
   unordered_set<string> tablets_in_move;
-  std::transform(scheduled_moves_.begin(), scheduled_moves_.end(),
-                 inserter(tablets_in_move, tablets_in_move.begin()),
-                 [](const MovesInProgress::value_type& elem) {
-                   return elem.first;
-                 });
+  transform(scheduled_moves_.begin(), scheduled_moves_.end(),
+            inserter(tablets_in_move, tablets_in_move.begin()),
+            [](const MovesInProgress::value_type& elem) {
+              return elem.first;
+            });
   for (const auto& move : moves) {
     vector<string> tablet_ids;
     RETURN_NOT_OK(FindReplicas(move, raw_info, &tablet_ids));

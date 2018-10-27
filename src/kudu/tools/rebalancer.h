@@ -442,6 +442,21 @@ class Rebalancer {
       const TableReplicaMove& move,
       std::vector<std::string>* tablet_ids);
 
+  // Print information on the cross-location balance.
+  Status PrintCrossLocationBalanceStats(const ClusterInfo& ci,
+                                        std::ostream& out) const;
+
+  // Print statistics for the specified location. If 'location' is an empty
+  // string, that's about printing the cluster-wide stats for a cluster that
+  // doesn't have any locations defined.
+  Status PrintLocationBalanceStats(const std::string& location,
+                                   const ClusterRawInfo& raw_info,
+                                   const ClusterInfo& ci,
+                                   std::ostream& out) const;
+
+  Status PrintPolicyViolationInfo(const ClusterRawInfo& raw_info,
+                                  std::ostream& out) const;
+
   // Convert the 'raw' information about the cluster into information suitable
   // for the input of the high-level rebalancing algorithm.
   // The 'moves_in_progress' parameter contains information on the replica moves

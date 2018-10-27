@@ -139,19 +139,19 @@ void ClusterConfigToClusterPlacementInfo(const TestClusterConfig& tcc,
   *tpi = std::move(result_tpi);
 }
 
-// TODO(aserbin): is it needed at all?
 bool operator==(const PlacementPolicyViolationInfo& lhs,
                 const PlacementPolicyViolationInfo& rhs) {
   return lhs.tablet_id == rhs.tablet_id &&
       lhs.majority_location == rhs.majority_location &&
       lhs.replicas_num_at_majority_location ==
-          rhs.replicas_num_at_majority_location &&
-      lhs.replication_factor == rhs.replication_factor;
+          rhs.replicas_num_at_majority_location;
 }
 
 ostream& operator<<(ostream& s, const PlacementPolicyViolationInfo& info) {
   s << "{tablet_id: " << info.tablet_id
-    << ", location: " << info.majority_location << "}";
+    << ", location: " << info.majority_location
+    << ", replicas_num_at_majority_location: "
+    << info.replicas_num_at_majority_location << "}";
   return s;
 }
 
@@ -327,7 +327,7 @@ TEST_F(ClusterLocationTest, PlacementPolicyViolationsSimple) {
         { "D", {} },
         { "E", {} },
       },
-      { { "t0", "L0" }, },
+      { { "t0", "L0", 3 }, },
       { { "t0", "C" }, }
     },
 
@@ -345,7 +345,7 @@ TEST_F(ClusterLocationTest, PlacementPolicyViolationsSimple) {
         { "B", { "t0", } },
         { "C", { "t0", } },
       },
-      { { "t0", "L0" }, },
+      { { "t0", "L0", 2 }, },
       {},
     },
 
@@ -364,7 +364,7 @@ TEST_F(ClusterLocationTest, PlacementPolicyViolationsSimple) {
         { "C", { "t0", } },
         { "D", {} },
       },
-      { { "t0", "L0" }, },
+      { { "t0", "L0", 2 }, },
       { { "t0", "B" }, }
     },
   };
@@ -390,7 +390,7 @@ TEST_F(ClusterLocationTest, PlacementPolicyViolationsMixed) {
         { "D", { "t1", "x1", } }, { "E", { "t1", } },
         { "F", { "t1", } },
       },
-      { { "t0", "L0" }, { "t1", "L1" }, },
+      { { "t0", "L0", 3 }, { "t1", "L1", 2 }, },
       { { "t0", "B" }, { "t1", "E" } }
     },
 
@@ -410,7 +410,7 @@ TEST_F(ClusterLocationTest, PlacementPolicyViolationsMixed) {
         { "D", { "t1", "t2", } }, { "E", { "t1", "t3", } },
         { "F", { "t1", "t2", "t3", } },
       },
-      { { "t0", "L0" }, { "t1", "L1" }, },
+      { { "t0", "L0", 3 }, { "t1", "L1", 2 }, },
       { { "t0", "B" }, { "t1", "E" } }
     },
   };
@@ -441,7 +441,7 @@ TEST_F(ClusterLocationTest, NoCandidateMovesToFixPolicyViolations) {
         { "E", { "t0", } },
         { "F", { "t0", } },
       },
-      { { "t0", "L0" }, },
+      { { "t0", "L0", 3 }, },
       {},
     },
     // One RF=7 tablet with the distribution of its replica placement violating
@@ -467,7 +467,7 @@ TEST_F(ClusterLocationTest, NoCandidateMovesToFixPolicyViolations) {
         { "G", { "t0", } },
         { "H", { "t0", } },
       },
-      { { "t0", "L0" }, },
+      { { "t0", "L0", 4 }, },
       {},
     },
     {
@@ -485,7 +485,7 @@ TEST_F(ClusterLocationTest, NoCandidateMovesToFixPolicyViolations) {
         { "D", { "t0", } }, { "E", { "t0", } },
         { "F", { "t0", } },
       },
-      { { "t0", "L0" }, },
+      { { "t0", "L0", 3 }, },
       {}
     },
   };
@@ -525,7 +525,7 @@ TEST_F(ClusterLocationTest, PlacementPolicyViolationsEvenRFEdgeCases) {
         { "C", { "t1", } },
         { "D", { "t1", } },
       },
-      { { "t0", "L0" }, { "t1", "L0" }, },
+      { { "t0", "L0", 2 }, { "t1", "L0", 4 }, },
       {}
     },
     {
@@ -541,7 +541,7 @@ TEST_F(ClusterLocationTest, PlacementPolicyViolationsEvenRFEdgeCases) {
         { "A", { "t0", } }, { "B", { "t0", } },
         { "D", { "t1", } }, { "E", { "t1", } },
       },
-      { { "t0", "L0" }, { "t1", "L1" }, },
+      { { "t0", "L0", 2 }, { "t1", "L1", 2 }, },
       {}
     },
     {
@@ -558,7 +558,7 @@ TEST_F(ClusterLocationTest, PlacementPolicyViolationsEvenRFEdgeCases) {
         { "A", { "t0", "t1", } }, { "B", { "t0", "t1", } },
         { "D", { "t1", } }, { "E", { "t1", } },
       },
-      { { "t0", "L0" }, { "t1", "L1" }, },
+      { { "t0", "L0", 2 }, { "t1", "L1", 2 }, },
       {}
     },
     {
@@ -574,7 +574,7 @@ TEST_F(ClusterLocationTest, PlacementPolicyViolationsEvenRFEdgeCases) {
         { "A", { "t0", } }, { "B", { "t0", } },
         { "C", { "t1", } }, { "D", { "t1", } },
       },
-      { { "t0", "L0" }, { "t1", "L1" }, },
+      { { "t0", "L0", 2 }, { "t1", "L1", 2 }, },
       {}
     },
     {
@@ -592,7 +592,7 @@ TEST_F(ClusterLocationTest, PlacementPolicyViolationsEvenRFEdgeCases) {
         { "D", { "t0", } },
         { "F", { "t0", } },
       },
-      { { "t0", "L0" }, },
+      { { "t0", "L0", 2 }, },
       {}
     },
   };
@@ -616,7 +616,7 @@ TEST_F(ClusterLocationTest, PlacementPolicyViolationsEvenRF) {
         { "D", { "t0", } }, { "F", { "t0", } },
         { "H", { "t0", } },
       },
-      { { "t0", "L0" }, },
+      { { "t0", "L0", 3 }, },
       { { "t0", "B" }, }
     },
     {
@@ -635,7 +635,7 @@ TEST_F(ClusterLocationTest, PlacementPolicyViolationsEvenRF) {
         { "G", { "t0", } },
         { "H", { "t0", } },
       },
-      { { "t0", "L1" }, },
+      { { "t0", "L1", 4 }, },
       { { "t0", "D" }, }
     },
   };

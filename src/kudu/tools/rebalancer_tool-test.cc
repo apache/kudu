@@ -25,6 +25,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -88,6 +89,7 @@ using std::thread;
 using std::tuple;
 using std::unique_ptr;
 using std::unordered_map;
+using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
@@ -207,28 +209,14 @@ TEST_P(RebalanceStartCriteriaTest, TabletServerIsDown) {
   ASSERT_STR_MATCHES(err, err_msg_pattern);
 }
 
-// Create tables with unbalanced replica distribution: useful in
-// rebalancer-related tests.
-static Status CreateUnbalancedTables(
+static Status CreateTables(
     cluster::ExternalMiniCluster* cluster,
     client::KuduClient* client,
     const Schema& table_schema,
     const string& table_name_pattern,
     int num_tables,
     int rep_factor,
-    int tserver_idx_from,
-    int tserver_num,
-    int tserver_unresponsive_ms,
     vector<string>* table_names = nullptr) {
-  // Keep running only some tablet servers and shut down the rest.
-  for (auto i = tserver_idx_from; i < tserver_num; ++i) {
-    cluster->tablet_server(i)->Shutdown();
-  }
-
-  // Wait for the catalog manager to understand that not all tablet servers
-  // are available.
-  SleepFor(MonoDelta::FromMilliseconds(5 * tserver_unresponsive_ms / 4));
-
   // Create tables with their tablet replicas landing only on the tablet servers
   // which are up and running.
   auto client_schema = KuduSchema::FromSchema(table_schema);
@@ -253,6 +241,32 @@ static Status CreateUnbalancedTables(
     }
   }
 
+  return Status::OK();
+}
+
+// Create tables with unbalanced replica distribution: useful in
+// rebalancer-related tests.
+static Status CreateUnbalancedTables(
+    cluster::ExternalMiniCluster* cluster,
+    client::KuduClient* client,
+    const Schema& table_schema,
+    const string& table_name_pattern,
+    int num_tables,
+    int rep_factor,
+    int tserver_idx_from,
+    int tserver_num,
+    int tserver_unresponsive_ms,
+    vector<string>* table_names = nullptr) {
+  // Keep running only some tablet servers and shut down the rest.
+  for (auto i = tserver_idx_from; i < tserver_num; ++i) {
+    cluster->tablet_server(i)->Shutdown();
+  }
+
+  // Wait for the catalog manager to understand that not all tablet servers
+  // are available.
+  SleepFor(MonoDelta::FromMilliseconds(5 * tserver_unresponsive_ms / 4));
+  RETURN_NOT_OK(CreateTables(cluster, client, table_schema, table_name_pattern,
+                             num_tables, rep_factor, table_names));
   for (auto i = tserver_idx_from; i < tserver_num; ++i) {
     RETURN_NOT_OK(cluster->tablet_server(i)->Restart());
   }
@@ -404,9 +418,13 @@ class RebalancingTest : public tserver::TabletServerIntegrationTestBase {
   static const char* const kExitOnSignalStr;
   static const char* const kTableNamePattern;
 
+  // Working around limitations of older libstdc++.
+  static const unordered_set<string> kEmptySet;
+
   void Prepare(const vector<string>& extra_tserver_flags = {},
                const vector<string>& extra_master_flags = {},
                const LocationInfo& location_info = {},
+               const unordered_set<string>& empty_locations = kEmptySet,
                vector<string>* created_tables_names = nullptr) {
     const auto& scheme_flag = Substitute(
         "--raft_prepare_replacement_before_eviction=$0", is_343_scheme());
@@ -420,12 +438,60 @@ class RebalancingTest : public tserver::TabletServerIntegrationTestBase {
 
     FLAGS_num_tablet_servers = num_tservers_;
     FLAGS_num_replicas = rep_factor_;
-    NO_FATALS(BuildAndStart(tserver_flags_, master_flags_, location_info));
+    NO_FATALS(BuildAndStart(tserver_flags_, master_flags_, location_info,
+                            /*create_table=*/ false));
 
-    ASSERT_OK(CreateUnbalancedTables(
-        cluster_.get(), client_.get(), schema_, kTableNamePattern,
-        num_tables_, rep_factor_, rep_factor_ + 1, num_tservers_,
-        tserver_unresponsive_ms_, created_tables_names));
+    if (location_info.empty()) {
+      ASSERT_OK(CreateUnbalancedTables(
+          cluster_.get(), client_.get(), schema_, kTableNamePattern,
+          num_tables_, rep_factor_, rep_factor_ + 1, num_tservers_,
+          tserver_unresponsive_ms_, created_tables_names));
+    } else {
+      ASSERT_OK(CreateTablesExcludingLocations(empty_locations,
+                                               created_tables_names));
+    }
+  }
+
+  // Create tables placing their tablet replicas everywhere but not at the
+  // tablet servers in the specified locations. This is similar to
+  // CreateUnbalancedTables() but the set of tablet servers to avoid is defined
+  // by the set of the specified locations.
+  Status CreateTablesExcludingLocations(
+      const unordered_set<string>& excluded_locations,
+      vector<string>* table_names = nullptr) {
+    // Shutdown all tablet servers in the specified locations so no tablet
+    // replicas would be hosted by those servers.
+    unordered_set<string> seen_locations;
+    if (!excluded_locations.empty()) {
+      for (const auto& elem : tablet_servers_) {
+        auto* ts = elem.second;
+        if (ContainsKey(excluded_locations, ts->location)) {
+          cluster_->tablet_server_by_uuid(ts->uuid())->Shutdown();
+          EmplaceIfNotPresent(&seen_locations, ts->location);
+        }
+      }
+    }
+    // Sanity check: every specified location should have been seen, otherwise
+    // something is wrong with the tablet servers' registration.
+    CHECK_EQ(excluded_locations.size(), seen_locations.size());
+
+    // Wait for the catalog manager to understand that not all tablet servers
+    // are available.
+    SleepFor(MonoDelta::FromMilliseconds(5 * tserver_unresponsive_ms_ / 4));
+    RETURN_NOT_OK(CreateTables(cluster_.get(), client_.get(), schema_,
+                               kTableNamePattern, num_tables_, rep_factor_,
+                               table_names));
+    // Start tablet servers at the excluded locations.
+    if (!excluded_locations.empty()) {
+      for (const auto& elem : tablet_servers_) {
+        auto* ts = elem.second;
+        if (ContainsKey(excluded_locations, ts->location)) {
+          RETURN_NOT_OK(cluster_->tablet_server_by_uuid(ts->uuid())->Restart());
+        }
+      }
+    }
+
+    return Status::OK();
   }
 
   // When the rebalancer starts moving replicas, ksck detects corruption
@@ -454,6 +520,7 @@ class RebalancingTest : public tserver::TabletServerIntegrationTestBase {
 };
 const char* const RebalancingTest::kExitOnSignalStr = "kudu: process exited on signal";
 const char* const RebalancingTest::kTableNamePattern = "rebalance_test_table_$0";
+const unordered_set<string> RebalancingTest::kEmptySet = unordered_set<string>();
 
 typedef testing::WithParamInterface<Kudu1097> Kudu1097ParamTest;
 
@@ -1185,7 +1252,7 @@ TEST_F(LocationAwareRebalancingBasicTest, Basic) {
 
   const LocationInfo location_info = { { "/A", 2 }, { "/B", 2 }, { "/C", 2 }, };
   vector<string> table_names;
-  NO_FATALS(Prepare({}, {}, location_info, &table_names));
+  NO_FATALS(Prepare({}, {}, location_info, kEmptySet, &table_names));
 
   const vector<string> tool_args = {
     "cluster",
@@ -1259,6 +1326,105 @@ TEST_F(LocationAwareRebalancingBasicTest, Basic) {
       }
     }
   }
+}
+
+class LocationAwareBalanceInfoTest : public RebalancingTest {
+ public:
+  LocationAwareBalanceInfoTest()
+      : RebalancingTest(/*num_tables=*/ 1,
+                        /*rep_factor=*/ 3,
+                        /*num_tservers=*/ 5) {
+  }
+
+  bool is_343_scheme() const override {
+    // These tests are for the 3-4-3 replica management scheme only.
+    return true;
+  }
+};
+
+// Verify the output of the location-aware rebalancer against a cluster
+// that has multiple locations.
+TEST_F(LocationAwareBalanceInfoTest, ReportOnly) {
+  static const char kReferenceOutput[] =
+    R"***(Locations load summary:
+ Location |   Load
+----------+----------
+ /A       | 3.000000
+ /B       | 3.000000
+ /C       | 0.000000
+
+--------------------------------------------------
+Location: /A
+--------------------------------------------------
+Per-server replica distribution summary:
+       Statistic       |  Value
+-----------------------+----------
+ Minimum Replica Count | 3
+ Maximum Replica Count | 3
+ Average Replica Count | 3.000000
+
+Per-table replica distribution summary:
+ Replica Skew |  Value
+--------------+----------
+ Minimum      | 0
+ Maximum      | 0
+ Average      | 0.000000
+
+--------------------------------------------------
+Location: /B
+--------------------------------------------------
+Per-server replica distribution summary:
+       Statistic       |  Value
+-----------------------+----------
+ Minimum Replica Count | 3
+ Maximum Replica Count | 3
+ Average Replica Count | 3.000000
+
+Per-table replica distribution summary:
+ Replica Skew |  Value
+--------------+----------
+ Minimum      | 0
+ Maximum      | 0
+ Average      | 0.000000
+
+--------------------------------------------------
+Location: /C
+--------------------------------------------------
+Per-server replica distribution summary:
+       Statistic       |  Value
+-----------------------+----------
+ Minimum Replica Count | 0
+ Maximum Replica Count | 0
+ Average Replica Count | 0.000000
+
+Per-table replica distribution summary:
+ Replica Skew | Value
+--------------+-------
+ N/A          | N/A
+
+Placement policy violations:
+ Location | Number of non-complying tables | Number of non-complying tablets
+----------+--------------------------------+---------------------------------
+ /B       | 1                              | 3
+)***";
+
+  const LocationInfo location_info = { { "/A", 1 }, { "/B", 2 }, { "/C", 2 }, };
+  NO_FATALS(Prepare({}, {}, location_info, { "/C" }));
+
+  string out;
+  string err;
+  Status s = RunKuduTool({
+    "cluster",
+    "rebalance",
+    cluster_->master()->bound_rpc_addr().ToString(),
+    "--report_only",
+  }, &out, &err);
+  ASSERT_TRUE(s.ok()) << ToolRunInfo(s, out, err);
+  // The output should match the reference report.
+  ASSERT_STR_CONTAINS(out, kReferenceOutput);
+  // The actual rebalancing should not run.
+  ASSERT_STR_NOT_CONTAINS(out, "rebalancing is complete:")
+      << ToolRunInfo(s, out, err);
 }
 
 } // namespace tools
