@@ -28,7 +28,6 @@
 #include <gtest/gtest.h>
 
 #include "kudu/client/client-internal.h"
-#include "kudu/client/client-test-util.h"
 #include "kudu/client/error_collector.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/value.h"
@@ -284,7 +283,7 @@ TEST(ClientUnitTest, TestKuduSchemaToStringWithColumnIds) {
   SchemaBuilder builder;
   builder.AddKeyColumn("key", DataType::INT32);
   const auto schema = builder.Build();
-  const auto kudu_schema = KuduSchemaFromSchema(schema);
+  const auto kudu_schema = KuduSchema::FromSchema(schema);
 
   // The string version of the KuduSchema should not have column ids, even
   // though the default string version of the underlying Schema should.

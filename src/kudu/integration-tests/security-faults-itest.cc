@@ -122,7 +122,7 @@ class SecurityComponentsFaultsITest : public KuduTest {
     RETURN_NOT_OK(cluster_->CreateClient(nullptr, &client));
 
     // Create a table.
-    KuduSchema schema = client::KuduSchemaFromSchema(CreateKeyValueTestSchema());
+    KuduSchema schema = KuduSchema::FromSchema(CreateKeyValueTestSchema());
     gscoped_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
 
     RETURN_NOT_OK(table_creator->table_name(kTableName)

@@ -1476,7 +1476,7 @@ void ToolTest::RunLoadgen(int num_tservers,
 
     shared_ptr<KuduClient> client;
     ASSERT_OK(cluster_->CreateClient(nullptr, &client));
-    KuduSchema client_schema(client::KuduSchemaFromSchema(kSchema));
+    auto client_schema = KuduSchema::FromSchema(kSchema);
     unique_ptr<client::KuduTableCreator> table_creator(
         client->NewTableCreator());
     ASSERT_OK(table_creator->table_name(table_name)
@@ -2480,7 +2480,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   ASSERT_OK(kudu_client->OpenTable("default.control", &control));
   ASSERT_OK(hms_catalog.CreateTable(
         control->id(), control->name(), kUsername,
-        client::SchemaFromKuduSchema(control->schema())));
+        KuduSchema::ToSchema(control->schema())));
 
   // Test case: Upper-case names are handled specially in a few places.
   shared_ptr<KuduTable> test_uppercase;
@@ -2488,7 +2488,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   ASSERT_OK(kudu_client->OpenTable("default.UPPERCASE", &test_uppercase));
   ASSERT_OK(hms_catalog.CreateTable(
         test_uppercase->id(), test_uppercase->name(), kUsername,
-        client::SchemaFromKuduSchema(test_uppercase->schema())));
+        KuduSchema::ToSchema(test_uppercase->schema())));
 
   // Test case: inconsistent schema.
   shared_ptr<KuduTable> inconsistent_schema;
@@ -2504,7 +2504,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   ASSERT_OK(kudu_client->OpenTable("default.inconsistent_name", &inconsistent_name));
   ASSERT_OK(hms_catalog.CreateTable(
         inconsistent_name->id(), "default.inconsistent_name_hms", kUsername,
-        client::SchemaFromKuduSchema(inconsistent_name->schema())));
+        KuduSchema::ToSchema(inconsistent_name->schema())));
 
   // Test case: inconsistent master addresses.
   shared_ptr<KuduTable> inconsistent_master_addrs;
@@ -2515,7 +2515,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   ASSERT_OK(invalid_hms_catalog.Start());
   ASSERT_OK(invalid_hms_catalog.CreateTable(
         inconsistent_master_addrs->id(), inconsistent_master_addrs->name(), kUsername,
-        client::SchemaFromKuduSchema(inconsistent_master_addrs->schema())));
+        KuduSchema::ToSchema(inconsistent_master_addrs->schema())));
 
   // Test cases: orphan tables in the HMS.
   ASSERT_OK(hms_catalog.CreateTable(
@@ -2752,10 +2752,10 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndManualFixHmsMetadata) {
   ASSERT_OK(kudu_client->OpenTable("default.duplicate_hms_tables", &duplicate_hms_tables));
   ASSERT_OK(hms_catalog.CreateTable(
         duplicate_hms_tables->id(), "default.duplicate_hms_tables", kUsername,
-        client::SchemaFromKuduSchema(duplicate_hms_tables->schema())));
+        KuduSchema::ToSchema(duplicate_hms_tables->schema())));
   ASSERT_OK(hms_catalog.CreateTable(
         duplicate_hms_tables->id(), "default.duplicate_hms_tables_2", kUsername,
-        client::SchemaFromKuduSchema(duplicate_hms_tables->schema())));
+        KuduSchema::ToSchema(duplicate_hms_tables->schema())));
   ASSERT_OK(CreateLegacyHmsTable(&hms_client, "default", "duplicate_hms_tables_3",
         "default.duplicate_hms_tables",
         master_addr, HmsClient::kExternalTable, kUsername));

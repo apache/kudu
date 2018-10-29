@@ -50,7 +50,6 @@ target_link_libraries(kudu_tools_util
   consensus
   gutil
   kudu_client
-  kudu_client_test_util
   kudu_common
   kudu_fs
   kudu_util

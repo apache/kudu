@@ -30,7 +30,6 @@
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
@@ -66,6 +65,7 @@ METRIC_DECLARE_histogram(handler_latency_kudu_tserver_TabletServerAdminService_C
 
 namespace kudu {
 
+using client::KuduSchema;
 using cluster::ClusterNodes;
 
 const char* const kTableName = "test-table";
@@ -92,7 +92,7 @@ TEST_F(CreateTableITest, TestCreateWhenMajorityOfReplicasFailCreation) {
   // This won't succeed because we can't create enough replicas to get
   // a quorum.
   gscoped_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
-  client::KuduSchema client_schema(client::KuduSchemaFromSchema(GetSimpleTestSchema()));
+  auto client_schema = KuduSchema::FromSchema(GetSimpleTestSchema());
   ASSERT_OK(table_creator->table_name(kTableName)
             .schema(&client_schema)
             .set_range_partition_columns({ "key" })
@@ -157,7 +157,7 @@ TEST_F(CreateTableITest, TestSpreadReplicasEvenly) {
   NO_FATALS(StartCluster({}, {}, kNumServers));
 
   gscoped_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
-  client::KuduSchema client_schema(client::KuduSchemaFromSchema(GetSimpleTestSchema()));
+  auto client_schema = KuduSchema::FromSchema(GetSimpleTestSchema());
   ASSERT_OK(table_creator->table_name(kTableName)
             .schema(&client_schema)
             .set_range_partition_columns({ "key" })
@@ -220,7 +220,7 @@ static void LookUpRandomKeysLoop(std::shared_ptr<master::MasterServiceProxy> mas
                                  const char* table_name,
                                  AtomicBool* quit) {
   Schema schema(GetSimpleTestSchema());
-  client::KuduSchema client_schema(client::KuduSchemaFromSchema(schema));
+  auto client_schema = KuduSchema::FromSchema(GetSimpleTestSchema());
   gscoped_ptr<KuduPartialRow> r(client_schema.NewRow());
 
   while (!quit->Load()) {
@@ -288,7 +288,7 @@ TEST_F(CreateTableITest, TestCreateTableWithDeadTServers) {
   cluster_->ShutdownNodes(ClusterNodes::TS_ONLY);
 
   Schema schema(GetSimpleTestSchema());
-  client::KuduSchema client_schema(client::KuduSchemaFromSchema(schema));
+  auto client_schema = KuduSchema::FromSchema(GetSimpleTestSchema());
   gscoped_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
 
   // Don't bother waiting for table creation to finish; it'll never happen

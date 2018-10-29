@@ -22,12 +22,10 @@
 #include <thread>
 #include <vector>
 
-#include <glog/logging.h>
-
 #include <gflags/gflags_declare.h>
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
@@ -138,7 +136,7 @@ TEST_F(ClientFailoverOnNegotiationTimeoutITest, Kudu1580ConnectToTServer) {
           .default_rpc_timeout(MonoDelta::FromMilliseconds(kTimeoutMs)),
       &client));
   unique_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
-  KuduSchema schema(client::KuduSchemaFromSchema(CreateKeyValueTestSchema()));
+  KuduSchema schema(KuduSchema::FromSchema(CreateKeyValueTestSchema()));
   ASSERT_OK(table_creator->table_name(kTableName)
       .schema(&schema)
       .add_hash_partitions({ "key" }, kNumTabletServers)

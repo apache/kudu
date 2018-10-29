@@ -45,7 +45,7 @@ const int ScanConfiguration::kHtTimestampBitsToShift = 12;
 ScanConfiguration::ScanConfiguration(KuduTable* table)
     : table_(table),
       projection_(table->schema().schema_),
-      client_projection_(*table->schema().schema_),
+      client_projection_(KuduSchema::FromSchema(*table->schema().schema_)),
       has_batch_size_bytes_(false),
       batch_size_bytes_(0),
       selection_(KuduClient::CLOSEST_REPLICA),
@@ -88,7 +88,7 @@ Status ScanConfiguration::SetProjectedColumnIndexes(const vector<int>& col_index
   unique_ptr<Schema> s(new Schema());
   RETURN_NOT_OK(s->Reset(cols, 0));
   projection_ = pool_.Add(s.release());
-  client_projection_ = KuduSchema(*projection_);
+  client_projection_ = KuduSchema::FromSchema(*projection_);
   return Status::OK();
 }
 

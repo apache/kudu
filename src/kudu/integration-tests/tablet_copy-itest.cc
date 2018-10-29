@@ -32,7 +32,6 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
@@ -93,7 +92,6 @@ DEFINE_int32(test_delete_leader_num_writer_threads, 1,
              "Number of writer threads in TestDeleteLeaderDuringTabletCopyStressTest.");
 
 using kudu::client::KuduSchema;
-using kudu::client::KuduSchemaFromSchema;
 using kudu::client::KuduTableCreator;
 using kudu::cluster::ExternalMiniClusterOptions;
 using kudu::cluster::ExternalTabletServer;
@@ -633,7 +631,7 @@ TEST_F(TabletCopyITest, TestConcurrentTabletCopys) {
   // Create a table with several tablets. These will all be simultaneously
   // copied to a single target node from the same leader host.
   const int kNumTablets = 10;
-  KuduSchema client_schema(KuduSchemaFromSchema(GetSimpleTestSchema()));
+  KuduSchema client_schema(KuduSchema::FromSchema(GetSimpleTestSchema()));
   vector<const KuduPartialRow*> splits;
   for (int i = 0; i < kNumTablets - 1; i++) {
     KuduPartialRow* row = client_schema.NewRow();

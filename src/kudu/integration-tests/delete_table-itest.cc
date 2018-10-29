@@ -34,7 +34,6 @@
 #include <gtest/gtest.h>
 #include <rapidjson/document.h>
 
-#include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
 #include "kudu/client/scan_batch.h"
 #include "kudu/client/schema.h"
@@ -82,7 +81,6 @@ using kudu::client::KuduClient;
 using kudu::client::KuduScanner;
 using kudu::client::KuduScanBatch;
 using kudu::client::KuduSchema;
-using kudu::client::KuduSchemaFromSchema;
 using kudu::client::KuduTable;
 using kudu::client::KuduTableCreator;
 using kudu::cluster::ExternalTabletServer;
@@ -1122,7 +1120,7 @@ TEST_F(DeleteTableITest, TestUnknownTabletsAreNotDeleted) {
   NO_FATALS(StartCluster(extra_ts_flags, extra_master_flags, kNumTabletServers));
 
   Schema schema(GetSimpleTestSchema());
-  client::KuduSchema client_schema(client::KuduSchemaFromSchema(schema));
+  client::KuduSchema client_schema(client::KuduSchema::FromSchema(schema));
   unique_ptr<KuduTableCreator> creator(client_->NewTableCreator());
   ASSERT_OK(creator->table_name("test")
       .schema(&client_schema)
@@ -1376,7 +1374,7 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
   const int kNumTablets = 2;
   vector<const KuduPartialRow*> split_rows;
   Schema schema(GetSimpleTestSchema());
-  client::KuduSchema client_schema(client::KuduSchemaFromSchema(schema));
+  client::KuduSchema client_schema(client::KuduSchema::FromSchema(schema));
   KuduPartialRow* split_row = client_schema.NewRow();
   ASSERT_OK(split_row->SetInt32(0, numeric_limits<int32_t>::max() / kNumTablets));
   split_rows.push_back(split_row);

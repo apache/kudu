@@ -23,7 +23,6 @@
 
 #include <glog/logging.h>
 
-#include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
 #include "kudu/client/scan_batch.h"
 #include "kudu/client/schema.h"
@@ -48,7 +47,6 @@ using client::KuduInsert;
 using client::KuduScanBatch;
 using client::KuduScanner;
 using client::KuduSchema;
-using client::KuduSchemaFromSchema;
 using client::KuduSession;
 using client::KuduTable;
 using client::KuduTableCreator;
@@ -72,7 +70,7 @@ TestWorkload::TestWorkload(MiniCluster* cluster)
     not_found_allowed_(false),
     network_error_allowed_(false),
     remote_error_allowed_(false),
-    schema_(KuduSchemaFromSchema(GetSimpleTestSchema())),
+    schema_(KuduSchema::FromSchema(GetSimpleTestSchema())),
     num_replicas_(3),
     num_tablets_(1),
     table_name_(kDefaultTableName),

@@ -27,9 +27,9 @@
 #include <gflags/gflags_declare.h>
 #include <rapidjson/document.h>
 
-#include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
 #include "kudu/client/replica_controller-internal.h"
+#include "kudu/client/scan_batch.h"
 #include "kudu/client/scan_predicate.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
@@ -68,6 +68,7 @@ using client::KuduPredicate;
 using client::KuduScanner;
 using client::KuduScanToken;
 using client::KuduScanTokenBuilder;
+using client::KuduSchema;
 using client::KuduTable;
 using client::KuduTableAlterer;
 using client::internal::ReplicaController;
@@ -159,14 +160,14 @@ Status DescribeTable(const RunnerContext& context) {
   RETURN_NOT_OK(client->OpenTable(table_name, &table));
 
   // The schema.
-  const client::KuduSchema& schema = table->schema();
+  const KuduSchema& schema = table->schema();
   cout << "TABLE " << table_name << " " << schema.ToString() << endl;
 
   // The partition schema with current range partitions.
   vector<Partition> partitions;
   RETURN_NOT_OK_PREPEND(table->ListPartitions(&partitions),
                         "failed to retrieve current partitions");
-  const auto& schema_internal = client::SchemaFromKuduSchema(schema);
+  const auto& schema_internal = KuduSchema::ToSchema(schema);
   const auto& partition_schema = table->partition_schema();
   vector<string> partition_strs;
   for (const auto& partition : partitions) {
@@ -336,8 +337,15 @@ Status LocateRow(const RunnerContext& context) {
     KuduScanner* scanner_ptr;
     RETURN_NOT_OK(tokens[0]->IntoKuduScanner(&scanner_ptr));
     unique_ptr<KuduScanner> scanner(scanner_ptr);
+    RETURN_NOT_OK(scanner->Open());
     vector<string> row_str;
-    RETURN_NOT_OK(ScanToStrings(scanner.get(), &row_str));
+    client::KuduScanBatch batch;
+    while (scanner->HasMoreRows()) {
+      RETURN_NOT_OK(scanner->NextBatch(&batch));
+      for (const auto& row : batch) {
+        row_str.emplace_back(row.ToString());
+      }
+    }
     if (row_str.empty()) {
       return Status::NotFound("row does not exist");
     }

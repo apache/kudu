@@ -198,7 +198,7 @@ class FuzzTest : public KuduTest {
   }
 
   void CreateTabletAndStartClusterWithSchema(const Schema& schema) {
-    schema_ =  client::KuduSchemaFromSchema(schema);
+    schema_ =  KuduSchema::FromSchema(schema);
     KuduTest::SetUp();
 
     InternalMiniClusterOptions opts;

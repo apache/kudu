@@ -146,7 +146,7 @@ void SecurityITest::SmokeTestCluster() {
   ASSERT_OK(cluster_->CreateClient(nullptr, &client));
 
   // Create a table.
-  KuduSchema schema = client::KuduSchemaFromSchema(CreateKeyValueTestSchema());
+  KuduSchema schema = client::KuduSchema::FromSchema(CreateKeyValueTestSchema());
   gscoped_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
   ASSERT_OK(table_creator->table_name(kTableName)
             .set_range_partition_columns({ "key" })

@@ -22,16 +22,13 @@
 #include <string>
 #include <vector>
 
-#include "kudu/gutil/port.h"
 #include "kudu/client/client.h"
 #include "kudu/client/shared_ptr.h"
+#include "kudu/gutil/port.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
-class Schema;
-
 namespace client {
-class KuduSchema;
 
 // Log any pending errors in the given session, and then crash the current
 // process.
@@ -59,12 +56,6 @@ Status CountRowsWithRetries(KuduScanner* scanner, size_t* row_count);
 
 Status ScanToStrings(KuduScanner* scanner,
                      std::vector<std::string>* row_strings) WARN_UNUSED_RESULT;
-
-// Convert a kudu::Schema to a kudu::client::KuduSchema.
-KuduSchema KuduSchemaFromSchema(const Schema& schema);
-
-// Convert a kudu::client::KuduSchema to a kudu::Schema.
-Schema SchemaFromKuduSchema(const KuduSchema& schema);
 
 } // namespace client
 } // namespace kudu

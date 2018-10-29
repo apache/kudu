@@ -25,7 +25,6 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
@@ -107,7 +106,7 @@ class AuthnTokenExpireITestBase : public KuduTest {
       : token_validity_seconds_(token_validity_seconds),
         num_masters_(num_masters),
         num_tablet_servers_(num_tablet_servers),
-        schema_(client::KuduSchemaFromSchema(CreateKeyValueTestSchema())) {
+        schema_(KuduSchema::FromSchema(CreateKeyValueTestSchema())) {
     cluster_opts_.num_tablet_servers = num_tablet_servers_;
     cluster_opts_.num_masters = num_masters_;
     cluster_opts_.enable_kerberos = true;

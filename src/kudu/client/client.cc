@@ -1395,7 +1395,7 @@ Status KuduScanner::SetCacheBlocks(bool cache_blocks) {
 }
 
 KuduSchema KuduScanner::GetProjectionSchema() const {
-  return KuduSchema(*data_->configuration().projection());
+  return KuduSchema::FromSchema(*data_->configuration().projection());
 }
 
 Status KuduScanner::SetRowFormatFlags(uint64_t flags) {

@@ -35,7 +35,6 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
@@ -1649,7 +1648,7 @@ TEST_F(AdminCliTest, TestListTablesDetail) {
 
   // Add another table to test multiple tables output.
   const string kAnotherTableId = "TestAnotherTable";
-  KuduSchema client_schema(client::KuduSchemaFromSchema(schema_));
+  auto client_schema = KuduSchema::FromSchema(schema_);
   gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
   ASSERT_OK(table_creator->table_name(kAnotherTableId)
            .schema(&client_schema)

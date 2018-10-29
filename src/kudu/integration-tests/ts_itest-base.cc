@@ -32,7 +32,6 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
 #include "kudu/client/schema.h"
 #include "kudu/common/wire_protocol.pb.h"
@@ -526,7 +525,7 @@ void TabletServerIntegrationTestBase::CreateClient(shared_ptr<client::KuduClient
 void TabletServerIntegrationTestBase::CreateTable(const string& table_id) {
   // The tests here make extensive use of server schemas, but we need
   // a client schema to create the table.
-  client::KuduSchema client_schema(client::KuduSchemaFromSchema(schema_));
+  client::KuduSchema client_schema(client::KuduSchema::FromSchema(schema_));
   gscoped_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
   ASSERT_OK(table_creator->table_name(table_id)
            .schema(&client_schema)

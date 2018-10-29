@@ -31,7 +31,6 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
@@ -224,7 +223,7 @@ static Status CreateUnbalancedTables(
 
   // Create tables with their tablet replicas landing only on the tablet servers
   // which are up and running.
-  KuduSchema client_schema(client::KuduSchemaFromSchema(table_schema));
+  auto client_schema = KuduSchema::FromSchema(table_schema);
   for (auto i = 0; i < num_tables; ++i) {
     const string table_name = Substitute(table_name_pattern, i);
     unique_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
@@ -472,7 +471,7 @@ TEST_P(DDLDuringRebalancingTest, TablesCreatedAndDeletedDuringRebalancing) {
   CountDownLatch run_latch(1);
 
   thread creator([&]() {
-    KuduSchema client_schema(client::KuduSchemaFromSchema(schema_));
+    auto client_schema = KuduSchema::FromSchema(schema_);
     for (auto idx = 0; ; ++idx) {
       if (run_latch.WaitFor(MonoDelta::FromMilliseconds(500))) {
         break;
@@ -1091,7 +1090,7 @@ TEST_P(RebalancerAndSingleReplicaTablets, SingleReplicasStayOrMove) {
 
   // Create few tables with their tablet replicas landing only on those
   // (kRepFactor + 1) running tablet servers.
-  KuduSchema client_schema(client::KuduSchemaFromSchema(schema_));
+  auto client_schema = KuduSchema::FromSchema(schema_);
   for (auto i = 0; i < kNumTables; ++i) {
     const string table_name = Substitute(table_name_pattern, i);
     unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());

@@ -94,7 +94,7 @@ class SecurityUnknownTskTest : public KuduTest {
   SecurityUnknownTskTest()
       : num_tablet_servers_(3),
         heartbeat_interval_ms_(100),
-        schema_(client::KuduSchemaFromSchema(CreateKeyValueTestSchema())) {
+        schema_(KuduSchema::FromSchema(CreateKeyValueTestSchema())) {
 
     // Make the ts->master heartbeat interval shorter to run the test faster.
     FLAGS_heartbeat_interval_ms = heartbeat_interval_ms_;

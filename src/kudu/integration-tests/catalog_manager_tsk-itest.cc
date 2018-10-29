@@ -120,7 +120,7 @@ class CatalogManagerTskITest : public KuduTest {
     ASSERT_OK(cluster_->CreateClient(&builder, &client));
 
     // Create a table.
-    KuduSchema schema = client::KuduSchemaFromSchema(CreateKeyValueTestSchema());
+    auto schema = KuduSchema::FromSchema(CreateKeyValueTestSchema());
     gscoped_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
 
     ASSERT_OK(table_creator->table_name(kTableName)

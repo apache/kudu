@@ -742,5 +742,13 @@ string KuduSchema::ToString() const {
                  : "()";
 }
 
+KuduSchema KuduSchema::FromSchema(const Schema& schema) {
+  return KuduSchema(schema);
+}
+
+Schema KuduSchema::ToSchema(const KuduSchema& kudu_schema) {
+  return Schema(*kudu_schema.schema_);
+}
+
 } // namespace client
 } // namespace kudu
