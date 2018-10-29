@@ -110,9 +110,11 @@ rm -f $LOGFILE $LOGFILE.gz
 
 if [ -n "$KUDU_COMPRESS_TEST_OUTPUT" ] && [ "$KUDU_COMPRESS_TEST_OUTPUT" -ne 0 ] ; then
   pipe_cmd=gzip
+  grep_cmd=$(which zgrep)
   LOGFILE=${LOGFILE}.gz
 else
   pipe_cmd=cat
+  grep_cmd=$(which grep)
 fi
 
 # Set a 15-minute timeout for tests run via 'make test'.
@@ -234,10 +236,10 @@ for ATTEMPT_NUMBER in $(seq 1 $TEST_EXECUTION_ATTEMPTS) ; do
   fi
 done
 
-# If we have a LeakSanitizer report, and XML reporting is configured, add a new test
-# case result to the XML file for the leak report. Otherwise Jenkins won't show
-# us which tests had LSAN errors.
-if zgrep --silent "ERROR: LeakSanitizer: detected memory leaks" $LOGFILE ; then
+# If the tests failed, we have a LeakSanitizer report, and XML reporting is
+# configured, add a new test case result to the XML file for the leak report.
+# Otherwise Jenkins won't show us that the tests had LSAN errors.
+if [[ "$STATUS" -ne "0" ]] && $grep_cmd --silent "ERROR: LeakSanitizer: detected memory leaks" $LOGFILE ; then
     echo Test had memory leaks. Editing XML
     perl -p -i -e '
     if (m#</testsuite>#) {

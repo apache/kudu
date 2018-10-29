@@ -34,6 +34,7 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/strings/substitute.h" // IWYU pragma: keep
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/server/server_base.h"
 #include "kudu/server/server_base.pb.h"
@@ -178,7 +179,14 @@ void GenericServiceImpl::CheckLeaks(const CheckLeaksRequestPB* /*req*/,
   bool has_leaks = true;
   for (int i = 0; i < 5; i++) {
     has_leaks = __lsan_do_recoverable_leak_check();
-    if (!has_leaks) break;
+    if (!has_leaks) {
+      if (i > 0) {
+        LOG(WARNING) << strings::Substitute("LeakSanitizer found a leak that went away after $0 "
+                                            "retries.\n", i)
+                     << "Treating it as a false positive and ignoring it.";
+      }
+      break;
+    }
     SleepFor(MonoDelta::FromMilliseconds(5));
   }
 
