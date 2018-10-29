@@ -33,7 +33,8 @@ case class KuduBackupOptions(
     format: String = KuduBackupOptions.DefaultFormat,
     scanBatchSize: Int = KuduBackupOptions.DefaultScanBatchSize,
     scanRequestTimeout: Long = KuduBackupOptions.DefaultScanRequestTimeout,
-    scanPrefetching: Boolean = KuduBackupOptions.DefaultScanPrefetching)
+    scanPrefetching: Boolean = KuduBackupOptions.DefaultScanPrefetching,
+    keepAlivePeriodMs: Long = KuduBackupOptions.defaultKeepAlivePeriodMs)
 
 object KuduBackupOptions {
   val DefaultFormat: String = "parquet"
@@ -42,6 +43,7 @@ object KuduBackupOptions {
     AsyncKuduClient.DEFAULT_OPERATION_TIMEOUT_MS // 30 seconds
   val DefaultScanPrefetching
     : Boolean = false // TODO: Add a test per KUDU-1260 and enable by default?
+  val defaultKeepAlivePeriodMs: Long = 15000 // 25% of the default scanner ttl.
 
   // TODO: clean up usage output.
   // TODO: timeout configurations.
@@ -81,6 +83,12 @@ object KuduBackupOptions {
       opt[Unit]("scanPrefetching")
         .action((_, o) => o.copy(scanPrefetching = true))
         .text("An experimental flag to enable pre-fetching data.")
+        .optional()
+
+      opt[Long]("keepAlivePeriodMs")
+        .action((v, o) => o.copy(keepAlivePeriodMs = v))
+        .text("Sets the period at which to send keep-alive requests to the tablet server to ensure" +
+          " that scanners do not time out")
         .optional()
 
       arg[String]("<table>...")

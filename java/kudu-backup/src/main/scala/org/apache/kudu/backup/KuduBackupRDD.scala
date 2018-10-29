@@ -42,6 +42,9 @@ class KuduBackupRDD private[kudu] (
     @transient val sc: SparkContext)
     extends RDD[Row](sc, Nil) {
 
+  // Defined here because the options are transient.
+  private val keepAlivePeriodMs = options.keepAlivePeriodMs
+
   // TODO: Split large tablets into smaller scan tokens?
   override protected def getPartitions: Array[Partition] = {
     val client = kuduContext.syncClient
@@ -84,7 +87,7 @@ class KuduBackupRDD private[kudu] (
     // TODO: Get deletes and updates for incremental backups.
     val scanner =
       KuduScanToken.deserializeIntoScanner(partition.scanToken, client)
-    new RowIterator(scanner)
+    new RowIterator(scanner, keepAlivePeriodMs)
   }
 
   override def getPreferredLocations(partition: Partition): Seq[String] = {
@@ -103,9 +106,22 @@ private case class KuduBackupPartition(index: Int, scanToken: Array[Byte], locat
  * that takes the job partitions and task context and expects to return an Iterator[Row].
  * This implementation facilitates that.
  */
-private class RowIterator(private val scanner: KuduScanner) extends Iterator[Row] {
+private class RowIterator(private val scanner: KuduScanner, val keepAlivePeriodMs: Long)
+    extends Iterator[Row] {
 
   private var currentIterator: RowResultIterator = RowResultIterator.empty
+  private var lastKeepAliveTimeMs = System.currentTimeMillis()
+
+  /**
+   * Calls the keepAlive API on the current scanner if the keepAlivePeriodMs has passed.
+   */
+  private def KeepKuduScannerAlive(): Unit = {
+    val now = System.currentTimeMillis
+    if (now >= lastKeepAliveTimeMs + keepAlivePeriodMs && !scanner.isClosed) {
+      scanner.keepAlive()
+      lastKeepAliveTimeMs = now
+    }
+  }
 
   override def hasNext: Boolean = {
     while (!currentIterator.hasNext && scanner.hasMoreRows) {
@@ -114,6 +130,7 @@ private class RowIterator(private val scanner: KuduScanner) extends Iterator[Row
       }
       currentIterator = scanner.nextRows()
     }
+    KeepKuduScannerAlive()
     currentIterator.hasNext
   }
 
