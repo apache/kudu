@@ -87,8 +87,9 @@ object KuduBackupOptions {
 
       opt[Long]("keepAlivePeriodMs")
         .action((v, o) => o.copy(keepAlivePeriodMs = v))
-        .text("Sets the period at which to send keep-alive requests to the tablet server to ensure" +
-          " that scanners do not time out")
+        .text(
+          "Sets the period at which to send keep-alive requests to the tablet server to ensure" +
+            " that scanners do not time out")
         .optional()
 
       arg[String]("<table>...")

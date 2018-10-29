@@ -36,6 +36,7 @@ import org.apache.kudu.Type
 import org.apache.kudu.spark.kudu._
 import org.apache.kudu.test.RandomUtils
 import org.apache.kudu.util.DecimalUtil
+import org.apache.kudu.util.HybridTimeUtil
 import org.junit.Assert._
 import org.junit.Test
 import org.slf4j.Logger
@@ -349,9 +350,22 @@ class TestKuduBackup extends KuduTestSuite {
   def backupAndRestore(tableNames: String*): Unit = {
     val dir = Files.createTempDirectory("backup")
     val path = dir.toUri.toString
+    val nowMs = System.currentTimeMillis()
 
+    // Log the timestamps to simplify flaky debugging.
+    log.info(s"nowMs: ${System.currentTimeMillis()}")
+    val hts = HybridTimeUtil.HTTimestampToPhysicalAndLogical(kuduClient.getLastPropagatedTimestamp)
+    log.info(s"propagated physicalMicros: ${hts(0)}")
+    log.info(s"propagated logical: ${hts(1)}")
+
+    // Add one millisecond to our target snapshot time. This will ensure we read all of the records
+    // in the backup and prevent flaky off-by-one errors. The underlying reason for adding 1 ms is
+    // that we pass the timestamp in millisecond granularity but the snapshot time has microsecond
+    // granularity. This means if the test runs fast enough that data is inserted with the same
+    // millisecond value as nowMs (after truncating the micros) the records inserted in the
+    // microseconds after truncation could be unread.
     val backupOptions =
-      new KuduBackupOptions(tableNames, path, harness.getMasterAddressesAsString)
+      new KuduBackupOptions(tableNames, path, harness.getMasterAddressesAsString, nowMs + 1)
     KuduBackup.run(backupOptions, ss)
 
     val restoreOptions =

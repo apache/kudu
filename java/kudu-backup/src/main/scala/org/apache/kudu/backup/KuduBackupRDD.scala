@@ -87,7 +87,7 @@ class KuduBackupRDD private[kudu] (
     // TODO: Get deletes and updates for incremental backups.
     val scanner =
       KuduScanToken.deserializeIntoScanner(partition.scanToken, client)
-    new RowIterator(scanner, keepAlivePeriodMs)
+    new RowIterator(scanner, kuduContext, keepAlivePeriodMs)
   }
 
   override def getPreferredLocations(partition: Partition): Seq[String] = {
@@ -106,7 +106,10 @@ private case class KuduBackupPartition(index: Int, scanToken: Array[Byte], locat
  * that takes the job partitions and task context and expects to return an Iterator[Row].
  * This implementation facilitates that.
  */
-private class RowIterator(private val scanner: KuduScanner, val keepAlivePeriodMs: Long)
+private class RowIterator(
+    private val scanner: KuduScanner,
+    val kuduContext: KuduContext,
+    val keepAlivePeriodMs: Long)
     extends Iterator[Row] {
 
   private var currentIterator: RowResultIterator = RowResultIterator.empty
@@ -130,6 +133,9 @@ private class RowIterator(private val scanner: KuduScanner, val keepAlivePeriodM
       }
       currentIterator = scanner.nextRows()
     }
+    // Update timestampAccumulator with the client's last propagated
+    // timestamp on each executor.
+    kuduContext.timestampAccumulator.add(kuduContext.syncClient.getLastPropagatedTimestamp)
     KeepKuduScannerAlive()
     currentIterator.hasNext
   }

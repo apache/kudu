@@ -125,10 +125,11 @@ trait KuduTestSuite extends JUnitSuite {
 
   @Before
   def setUpBase(): Unit = {
-    kuduClient = harness.getClient
-
     ss = SparkSession.builder().config(conf).getOrCreate()
     kuduContext = new KuduContext(harness.getMasterAddressesAsString, ss.sparkContext)
+
+    // Spark tests should use the client from the kuduContext.
+    kuduClient = kuduContext.syncClient
 
     table = kuduClient.createTable(tableName, schema, tableOptions)
 
