@@ -727,6 +727,13 @@ Status CatalogManager::Init(bool is_first_run) {
         },
         ",");
 
+    // The leader_lock_ isn't really intended for this (it's for serializing
+    // new leadership initialization against regular catalog manager operations)
+    // but we need to use something to protect this hms_catalog_ write vis a vis
+    // the read in PrepareForLeadershipTask(), and that read is performed while
+    // holding leader_lock_, so this is the path of least resistance.
+    std::lock_guard<RWMutex> leader_lock_guard(leader_lock_);
+
     hms_catalog_.reset(new hms::HmsCatalog(std::move(master_addresses)));
     RETURN_NOT_OK_PREPEND(hms_catalog_->Start(),
                           "failed to start Hive Metastore catalog");
@@ -736,7 +743,6 @@ Status CatalogManager::Init(bool is_first_run) {
         "failed to initialize Hive Metastore notification log listener task");
   }
 
-  std::lock_guard<LockType> l(lock_);
   background_tasks_.reset(new CatalogManagerBgTasks(this));
   RETURN_NOT_OK_PREPEND(background_tasks_->Init(),
                         "Failed to initialize catalog manager background tasks");
