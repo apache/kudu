@@ -1406,10 +1406,13 @@ endif (UNIX)
 
 ############################################################
 # "make doxygen" target
-# Needs the doxygen system package to work.
+# Requires doxygen of version >= 1.8.11 to leverage the
+# WARN_AS_ERROR configuration parameter (introduced in
+# version 1.8.11) for spotting various issues in the Kudu
+# C++ client API documentation.
 ############################################################
 if (UNIX)
-  find_package(Doxygen)
+  find_package(Doxygen 1.8.11)
   if (NOT (DOXYGEN_FOUND AND DOXYGEN_DOT_FOUND))
     message(WARNING "Doxygen with Dot support (graphviz) not found: 'doxygen' target is not available")
   else ()
