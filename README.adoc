@@ -299,7 +299,8 @@ dependencies into `$HOME/.gems` using http://bundler.io/[bundler].
 === Updating the Kudu web site documentation
 
 To update the documentation that is integrated into the Kudu web site,
-including Javadoc documentation, you may run the following command:
+including Java and C++ client API documentation, you may run the following
+command:
 
 [source,bash]
 ----
@@ -308,10 +309,10 @@ $ ./docs/support/scripts/make_site.sh
 
 This script will use your local Git repository to check out a shallow clone of
 the 'gh-pages' branch and use `make_docs.sh` to generate the HTML documentation
-for the web site. It will also build the Javadoc documentation. These will be
-placed inside the checked-out web site, along with a tarball containing only
-the generated documentation (the _docs/_ and _apidocs/_ paths on the web site).
-Everything can be found in the _build/site_ subdirectory.
+for the web site. It will also build the Javadoc and Doxygen documentation.
+These will be placed inside the checked-out web site, along with a tarball
+containing only the generated documentation (the _docs/_ and _apidocs/_ paths
+on the web site). Everything can be found in the _build/site_ subdirectory.
 
 You can proceed to commit the changes in the pages repository and send a code
 review for your changes. In the future, this step may be automated whenever

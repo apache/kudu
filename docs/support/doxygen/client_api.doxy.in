@@ -51,6 +51,10 @@ HTML_FOOTER            = @DOXY_CLIENT_API_FOOTER@
 # the Kudu C++ client API documentation.
 OUTPUT_DIRECTORY       = @DOXY_CLIENT_API_OUTDIR@
 
+# Whether to treat warnings as errors. It makes sense to be more strict while
+# generating documentation targeted for broader audience (e.g., for releases).
+WARN_AS_ERROR          = @DOXY_CLIENT_API_WARN_AS_ERROR@
+
 # Do not be too verbose: QUIET is set to YES, so informational messages are off.
 QUIET                  = YES
 

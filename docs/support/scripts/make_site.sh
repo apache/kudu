@@ -75,10 +75,14 @@ echo "Successfully built third-party dependencies."
 mkdir -p "$BUILD_ROOT"
 cd "$BUILD_ROOT"
 rm -rf CMakeCache CMakeFiles/
+if [ -n "$OPT_DOXYGEN" ]; then
+  DOXYGEN_FLAGS="-DDOXYGEN_WARN_AS_ERROR=1"
+fi
 $SOURCE_ROOT/build-support/enable_devtoolset.sh \
     $SOURCE_ROOT/thirdparty/installed/common/bin/cmake \
     -DNO_TESTS=1 \
     -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
+    $DOXYGEN_FLAGS \
     $SOURCE_ROOT
 MAKE_TARGETS="kudu kudu-tserver kudu-master"
 if [ -n "$OPT_DOXYGEN" ]; then

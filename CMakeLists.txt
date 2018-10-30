@@ -1408,6 +1408,11 @@ if (UNIX)
   if (NOT (DOXYGEN_FOUND AND DOXYGEN_DOT_FOUND))
     message(WARNING "Doxygen with Dot support (graphviz) not found: 'doxygen' target is not available")
   else ()
+    if (DOXYGEN_WARN_AS_ERROR)
+      set(DOXY_CLIENT_API_WARN_AS_ERROR YES)
+    else()
+      set(DOXY_CLIENT_API_WARN_AS_ERROR NO)
+    endif()
     set(DOXY_SUBDIR ${CMAKE_CURRENT_BINARY_DIR}/docs/doxygen)
     set(DOXY_CLIENT_DESTDIR ${DOXY_SUBDIR}/tmp.client)
     set(DOXY_CLIENT_API_CFG ${DOXY_SUBDIR}/client_api.doxy)
@@ -1415,8 +1420,8 @@ if (UNIX)
     set(DOXY_CLIENT_API_OUTDIR ${DOXY_SUBDIR}/client_api)
     list(APPEND DOXY_CLIENT_API_EXCLUDE
       "share/doc/kuduClient/examples/example.cc")
-    # NOTE: DOXY_CLIENT_API_OUTDIR and DOXY_CLIENT_API_FOOTER are used
-    #       in client_api.doxy.in template file
+    # NOTE: DOXY_CLIENT_API_EXCLUDE, DOXY_CLIENT_API_OUTDIR, and
+    #       DOXY_CLIENT_API_FOOTER are used in client_api.doxy.in template file
     configure_file(docs/support/doxygen/client_api.doxy.in ${DOXY_CLIENT_API_CFG} @ONLY)
     configure_file(docs/support/doxygen/client_api.footer.in ${DOXY_CLIENT_API_FOOTER} @ONLY)
     add_custom_target(doxy_install_client_alt_destdir
