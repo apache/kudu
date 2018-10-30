@@ -33,14 +33,14 @@ class RowSetInfo;
 // null. If 'print_xml_header' is true, prints an XML header including the xml
 // tag and DOCTYPE. Otherwise, only the '<svg>...</svg>' section is printed.
 void DumpCompactionSVG(const std::vector<RowSetInfo>& candidates,
-                       const std::unordered_set<RowSet*>& picked,
+                       const std::unordered_set<const RowSet*>& picked,
                        std::ostream* out,
                        bool print_xml_header);
 
 // Like the above, but dumps the SVG to a file named according to the rules of
 // --compaction_policy_dump_svgs_pattern. See the flag definition in svg_dump.cc.
 void DumpCompactionSVGToFile(const std::vector<RowSetInfo>& candidates,
-                             const std::unordered_set<RowSet*>& picked);
+                             const std::unordered_set<const RowSet*>& picked);
 
 } // namespace tablet
 } // namespace kudu

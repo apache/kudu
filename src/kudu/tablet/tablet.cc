@@ -1349,7 +1349,7 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
   std::lock_guard<std::mutex> compact_lock(compact_select_lock_);
   CHECK_EQ(picked->num_rowsets(), 0);
 
-  unordered_set<RowSet*> picked_set;
+  unordered_set<const RowSet*> picked_set;
 
   if (flags & FORCE_COMPACT_ALL) {
     // Compact all rowsets, regardless of policy.
@@ -1360,8 +1360,11 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
     }
   } else {
     // Let the policy decide which rowsets to compact.
-    double quality = 0;
-    RETURN_NOT_OK(compaction_policy_->PickRowSets(*rowsets_copy, &picked_set, &quality, NULL));
+    double quality = 0.0;
+    RETURN_NOT_OK(compaction_policy_->PickRowSets(*rowsets_copy,
+                                                  &picked_set,
+                                                  &quality,
+                                                  /*log=*/nullptr));
     VLOG_WITH_PREFIX(2) << "Compaction quality: " << quality;
   }
 
@@ -1751,7 +1754,7 @@ void Tablet::UpdateCompactionStats(MaintenanceOpStats* stats) {
   // been in the last 5 minutes, and somehow scale the compaction quality
   // based on that, so we favor hot tablets.
   double quality = 0;
-  unordered_set<RowSet*> picked_set_ignored;
+  unordered_set<const RowSet*> picked_set_ignored;
 
   shared_ptr<RowSetTree> rowsets_copy;
   {
@@ -2296,6 +2299,9 @@ size_t Tablet::num_rowsets() const {
 }
 
 void Tablet::PrintRSLayout(ostream* o) {
+  DCHECK(o);
+  auto& out = *o;
+
   shared_ptr<RowSetTree> rowsets_copy;
   {
     shared_lock<rw_spinlock> l(component_lock_);
@@ -2305,19 +2311,19 @@ void Tablet::PrintRSLayout(ostream* o) {
   // Run the compaction policy in order to get its log and highlight those
   // rowsets which would be compacted next.
   vector<string> log;
-  unordered_set<RowSet*> picked;
+  unordered_set<const RowSet*> picked;
   double quality;
   Status s = compaction_policy_->PickRowSets(*rowsets_copy, &picked, &quality, &log);
   if (!s.ok()) {
-    *o << "<b>Error:</b> " << EscapeForHtmlToString(s.ToString());
+    out << "<b>Error:</b> " << EscapeForHtmlToString(s.ToString());
     return;
   }
 
   if (!picked.empty()) {
-    *o << "<p>";
-    *o << "Highlighted rowsets indicate those that would be compacted next if a "
-       << "compaction were to run on this tablet.";
-    *o << "</p>";
+    out << "<p>";
+    out << "Highlighted rowsets indicate those that would be compacted next if a "
+        << "compaction were to run on this tablet.";
+    out << "</p>";
   }
 
   double avg_height;
@@ -2339,11 +2345,11 @@ void Tablet::PrintRSLayout(ostream* o) {
         // The first condition excludes the memrowset.
         return rowset->metadata() && !rowset->IsAvailableForCompaction();
       });
-  *o << Substitute("<div><p>In addition to the rowsets pictured and listed, "
-                   "there are $0 rowset(s) currently undergoing compactions."
-                   "</p></div>",
-                   num_rowsets_unavailable_for_compaction)
-     << endl;
+  out << Substitute("<div><p>In addition to the rowsets pictured and listed, "
+                    "there are $0 rowset(s) currently undergoing compactions."
+                    "</p></div>",
+                    num_rowsets_unavailable_for_compaction)
+      << endl;
 
   // Compute some summary statistics for the tablet's rowsets.
   const auto num_rowsets = min.size();
@@ -2353,7 +2359,7 @@ void Tablet::PrintRSLayout(ostream* o) {
     for (const auto& rsi : min) {
       rowset_sizes.push_back(rsi.size_bytes());
     }
-    *o << "<table class=\"table tablet-striped table-hover\">" << endl;
+    out << "<table class=\"table tablet-striped table-hover\">" << endl;
     // Compute the stats quick'n'dirty by sorting and looking at approximately
     // the right spot.
     // TODO(wdberkeley): Could use an O(n) quickselect-based algorithm.
@@ -2365,38 +2371,38 @@ void Tablet::PrintRSLayout(ostream* o) {
     const auto size_bytes_median = rowset_sizes[num_rowsets / 2];
     const auto size_bytes_third_quartile = rowset_sizes[3 * num_rowsets / 4];
     const auto size_bytes_max = rowset_sizes[num_rowsets - 1];
-    *o << Substitute("<thead><tr>"
-                     "  <th>Statistic</th>"
-                     "  <th>Approximate Value</th>"
-                     "<tr></thead>"
-                     "<tbody>"
-                     "  <tr><td>Count</td><td>$0</td></tr>"
-                     "  <tr><td>Min</td><td>$1</td></tr>"
-                     "  <tr><td>First quartile</td><td>$2</td></tr>"
-                     "  <tr><td>Median</td><td>$3</td></tr>"
-                     "  <tr><td>Third quartile</td><td>$4</td></tr>"
-                     "  <tr><td>Max</td><td>$5</td></tr>"
-                     "  <tr><td>Avg. Height</td><td>$6</td></tr>"
-                     "<tbody>",
-                     num_rowsets,
-                     HumanReadableNumBytes::ToString(size_bytes_min),
-                     HumanReadableNumBytes::ToString(size_bytes_first_quartile),
-                     HumanReadableNumBytes::ToString(size_bytes_median),
-                     HumanReadableNumBytes::ToString(size_bytes_third_quartile),
-                     HumanReadableNumBytes::ToString(size_bytes_max),
-                     avg_height);
-    *o << "</table>" << endl;
+    out << Substitute("<thead><tr>"
+                      "  <th>Statistic</th>"
+                      "  <th>Approximate Value</th>"
+                      "<tr></thead>"
+                      "<tbody>"
+                      "  <tr><td>Count</td><td>$0</td></tr>"
+                      "  <tr><td>Min</td><td>$1</td></tr>"
+                      "  <tr><td>First quartile</td><td>$2</td></tr>"
+                      "  <tr><td>Median</td><td>$3</td></tr>"
+                      "  <tr><td>Third quartile</td><td>$4</td></tr>"
+                      "  <tr><td>Max</td><td>$5</td></tr>"
+                      "  <tr><td>Avg. Height</td><td>$6</td></tr>"
+                      "<tbody>",
+                      num_rowsets,
+                      HumanReadableNumBytes::ToString(size_bytes_min),
+                      HumanReadableNumBytes::ToString(size_bytes_first_quartile),
+                      HumanReadableNumBytes::ToString(size_bytes_median),
+                      HumanReadableNumBytes::ToString(size_bytes_third_quartile),
+                      HumanReadableNumBytes::ToString(size_bytes_max),
+                      avg_height);
+    out << "</table>" << endl;
   }
 
   // TODO(wdberkeley): Should we even display this? It's one line per rowset
   // and doesn't contain any useful information except each rowset's size.
-  *o << "<h2>Compaction policy log</h2>" << endl;
+  out << "<h2>Compaction policy log</h2>" << endl;
 
-  *o << "<pre>" << std::endl;
+  out << "<pre>" << std::endl;
   for (const string& s : log) {
-    *o << EscapeForHtmlToString(s) << endl;
+    out << EscapeForHtmlToString(s) << endl;
   }
-  *o << "</pre>" << endl;
+  out << "</pre>" << endl;
 }
 
 string Tablet::LogPrefix() const {

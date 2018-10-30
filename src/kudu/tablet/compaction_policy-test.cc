@@ -15,13 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/tablet/compaction_policy.h"
+
 #include <algorithm>
 #include <memory>
 #include <ostream>
 #include <string>
-#include <unordered_set>
-#include <vector>
 #include <utility>
+#include <vector>
 
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
@@ -31,7 +32,6 @@
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/tablet/compaction_policy.h"
 #include "kudu/tablet/mock-rowsets.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/rowset_info.h"
@@ -44,7 +44,6 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-using std::unordered_set;
 using std::string;
 using std::vector;
 
@@ -55,7 +54,7 @@ class TestCompactionPolicy : public KuduTest {
  protected:
   void RunTestCase(const RowSetVector& vec,
                    int size_budget_mb,
-                   unordered_set<RowSet*>* picked,
+                   CompactionSelection* picked,
                    double* quality) {
     RowSetTree tree;
     ASSERT_OK(tree.Reset(vec));
@@ -82,7 +81,7 @@ TEST_F(TestCompactionPolicy, TestBudgetedSelection) {
   };
 
   constexpr auto kBudgetMb = 1000; // Enough to select all rowsets.
-  unordered_set<RowSet*> picked;
+  CompactionSelection picked;
   double quality = 0.0;
   NO_FATALS(RunTestCase(rowsets, kBudgetMb, &picked, &quality));
   ASSERT_EQ(rowsets.size(), picked.size());
@@ -109,7 +108,7 @@ TEST_F(TestCompactionPolicy, TestNonOverlappingRowSets) {
         StringPrintf("%010d", i * 2 + 1)));
   }
   constexpr auto kBudgetMb = 128;
-  unordered_set<RowSet*> picked;
+  CompactionSelection picked;
   double quality = 0.0;
   NO_FATALS(RunTestCase(rowsets, kBudgetMb, &picked, &quality));
   ASSERT_EQ(quality, 0.0);
@@ -134,7 +133,7 @@ TEST_F(TestCompactionPolicy, TestTinyOverlapRowSets) {
         StringPrintf("%09d", i * 10000 + 11000)));
   }
   constexpr auto kBudgetMb = 128;
-  unordered_set<RowSet*> picked;
+  CompactionSelection picked;
   double quality = 0;
   NO_FATALS(RunTestCase(rowsets, kBudgetMb, &picked, &quality));
   // With such small overlaps, no compaction will be considered worthwhile.
@@ -161,7 +160,7 @@ TEST_F(TestCompactionPolicy, TestSignificantOverlap) {
         StringPrintf("%010d", (i + 2) * 10000)));
   }
   constexpr auto kBudgetMb = 64;
-  unordered_set<RowSet*> picked;
+  CompactionSelection picked;
   double quality = 0.0;
   NO_FATALS(RunTestCase(rowsets, kBudgetMb, &picked, &quality));
   // Each rowset is 1MB so the number of rowsets picked should be the number of
@@ -194,7 +193,7 @@ TEST_F(TestCompactionPolicy, TestSupportAdjust) {
     std::make_shared<MockDiskRowSet>("B", "C"),
   };
   constexpr auto kBudgetMb = 1000; // Enough to select all rowsets.
-  unordered_set<RowSet*> picked;
+  CompactionSelection picked;
   double quality = 0.0;
   NO_FATALS(RunTestCase(rowsets, kBudgetMb, &picked, &quality));
   ASSERT_EQ(2, picked.size());
@@ -239,7 +238,7 @@ TEST_F(TestCompactionPolicy, TestYcsbCompaction) {
   for (int budget_mb : {128, 256, 512, 1024}) {
     BudgetedCompactionPolicy policy(budget_mb);
 
-    unordered_set<RowSet*> picked;
+    CompactionSelection picked;
     double quality = 0.0;
     LOG_TIMING(INFO, strings::Substitute("computing compaction with $0MB budget",
                                          budget_mb)) {
@@ -270,7 +269,7 @@ TEST_F(TestCompactionPolicy, KUDU2251) {
   };
 
   constexpr auto kBudgetMb = 1L << 30; // Enough to select all rowsets.
-  unordered_set<RowSet*> picked;
+  CompactionSelection picked;
   double quality = 0.0;
   NO_FATALS(RunTestCase(rowsets, kBudgetMb, &picked, &quality));
   ASSERT_EQ(3, picked.size());

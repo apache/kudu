@@ -96,7 +96,7 @@ void OrganizeSVGRows(const vector<RowSetInfo>& candidates,
 }
 
 void DumpSVG(const vector<RowSetInfo>& candidates,
-             const unordered_set<RowSet*>& picked,
+             const unordered_set<const RowSet*>& picked,
              ostream* outptr) {
   CHECK(outptr);
   CHECK(outptr->good());
@@ -155,7 +155,7 @@ void PrintXMLHeader(ostream* out) {
 } // anonymous namespace
 
 void DumpCompactionSVG(const vector<RowSetInfo>& candidates,
-                       const unordered_set<RowSet*>& picked,
+                       const unordered_set<const RowSet*>& picked,
                        ostream* out,
                        bool print_xml_header) {
   CHECK(out);
@@ -168,7 +168,7 @@ void DumpCompactionSVG(const vector<RowSetInfo>& candidates,
 }
 
 void DumpCompactionSVGToFile(const vector<RowSetInfo>& candidates,
-                             const unordered_set<RowSet*>& picked) {
+                             const unordered_set<const RowSet*>& picked) {
   const string& pattern = FLAGS_compaction_policy_dump_svgs_pattern;
   if (pattern.empty()) {
     return;
