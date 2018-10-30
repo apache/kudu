@@ -1423,7 +1423,7 @@ TEST_F(ClientTest, TestScanFaultTolerance) {
 
   // Do an initial scan to determine the expected rows for later verification.
   vector<string> expected_rows;
-  ScanTableToStrings(table.get(), &expected_rows);
+  ASSERT_OK(ScanTableToStrings(table.get(), &expected_rows));
 
   // Iterate with no limit and with a lower limit than the expected rows.
   vector<int64_t> limits = { -1, static_cast<int64_t>(expected_rows.size() / 2) };
@@ -2057,7 +2057,7 @@ TEST_F(ClientTest, TestScanWithEncodedRangePredicate) {
   NO_FATALS(InsertTestRows(table.get(), 100));
 
   vector<string> all_rows;
-  NO_FATALS(ScanTableToStrings(table.get(), &all_rows));
+  ASSERT_OK(ScanTableToStrings(table.get(), &all_rows));
   ASSERT_EQ(100, all_rows.size());
 
   unique_ptr<KuduPartialRow> row(table->schema().NewRow());
@@ -2611,12 +2611,10 @@ TEST_F(ClientTest, TestMultipleMultiRowManualBatches) {
 
   // Verify the data looks right.
   vector<string> rows;
-  ScanTableToStrings(client_table_.get(), &rows);
-  std::sort(rows.begin(), rows.end());
+  ASSERT_OK(ScanTableToStrings(client_table_.get(), &rows, ScannedRowsOrder::kSorted));
   ASSERT_EQ(kNumRowsPerTablet, rows.size());
   ASSERT_EQ(R"((int32 key=0, int32 int_val=0, string string_val="hello world", )"
-            "int32 non_null_with_default=12345)"
-            , rows[0]);
+            "int32 non_null_with_default=12345)", rows[0]);
 }
 
 // Test a batch where one of the inserted rows succeeds while another fails.
@@ -2648,9 +2646,8 @@ TEST_F(ClientTest, TestBatchWithPartialErrorOfDuplicateKeys) {
 
   // Verify that the other row was successfully inserted
   vector<string> rows;
-  NO_FATALS(ScanTableToStrings(client_table_.get(), &rows));
+  ASSERT_OK(ScanTableToStrings(client_table_.get(), &rows, ScannedRowsOrder::kSorted));
   ASSERT_EQ(2, rows.size());
-  std::sort(rows.begin(), rows.end());
   ASSERT_EQ(R"((int32 key=1, int32 int_val=1, string string_val="original row", )"
             "int32 non_null_with_default=12345)", rows[0]);
   ASSERT_EQ(R"((int32 key=2, int32 int_val=1, string string_val="Should succeed", )"
@@ -2688,9 +2685,8 @@ TEST_F(ClientTest, TestBatchWithPartialErrorOfMissingRequiredColumn) {
 
   // Verify that the other row was successfully inserted
   vector<string> rows;
-  NO_FATALS(ScanTableToStrings(client_table_.get(), &rows));
+  ASSERT_OK(ScanTableToStrings(client_table_.get(), &rows));
   ASSERT_EQ(1, rows.size());
-  std::sort(rows.begin(), rows.end());
   ASSERT_EQ(R"((int32 key=1, int32 int_val=1, string string_val="Should succeed", )"
             "int32 non_null_with_default=1)", rows[0]);
 }
@@ -2725,9 +2721,8 @@ TEST_F(ClientTest, TestBatchWithPartialErrorOfNoFieldsUpdated) {
 
   // Verify that the other row was successfully updated.
   vector<string> rows;
-  NO_FATALS(ScanTableToStrings(client_table_.get(), &rows));
+  ASSERT_OK(ScanTableToStrings(client_table_.get(), &rows, ScannedRowsOrder::kSorted));
   ASSERT_EQ(2, rows.size());
-  std::sort(rows.begin(), rows.end());
   ASSERT_EQ(R"((int32 key=1, int32 int_val=1, string string_val="One", )"
             "int32 non_null_with_default=12345)", rows[0]);
   ASSERT_EQ(R"((int32 key=2, int32 int_val=22, string string_val="Two", )"
@@ -2763,9 +2758,8 @@ TEST_F(ClientTest, TestBatchWithPartialErrorOfNonKeyColumnSpecifiedDelete) {
 
   // Verify that the other row was successfully deleted.
   vector<string> rows;
-  NO_FATALS(ScanTableToStrings(client_table_.get(), &rows));
+  ASSERT_OK(ScanTableToStrings(client_table_.get(), &rows));
   ASSERT_EQ(1, rows.size());
-  std::sort(rows.begin(), rows.end());
   ASSERT_EQ(R"((int32 key=2, int32 int_val=2, string string_val="Two", )"
             "int32 non_null_with_default=12345)", rows[0]);
 }
@@ -2807,9 +2801,8 @@ TEST_F(ClientTest, TestBatchWithPartialErrorOfAllRowsFailed) {
 
   // Verify that no row was deleted.
   vector<string> rows;
-  NO_FATALS(ScanTableToStrings(client_table_.get(), &rows));
+  ASSERT_OK(ScanTableToStrings(client_table_.get(), &rows, ScannedRowsOrder::kSorted));
   ASSERT_EQ(2, rows.size());
-  std::sort(rows.begin(), rows.end());
   ASSERT_EQ(R"((int32 key=1, int32 int_val=1, string string_val="One", )"
             "int32 non_null_with_default=12345)", rows[0]);
   ASSERT_EQ(R"((int32 key=2, int32 int_val=2, string string_val="Two", )"
@@ -2875,8 +2868,8 @@ void ClientTest::DoApplyWithoutFlushTest(int sleep_micros) {
 
   // Should have no rows.
   vector<string> rows;
-  ScanTableToStrings(client_table_.get(), &rows);
-  ASSERT_EQ(0, rows.size());
+  ASSERT_OK(ScanTableToStrings(client_table_.get(), &rows));
+  ASSERT_TRUE(rows.empty());
 }
 
 
@@ -3330,8 +3323,8 @@ TEST_F(ClientTest, TestAutoFlushBackgroundDropSession) {
   // should notice that and do not perform flush, so no data is supposed
   // to appear in the table.
   vector<string> rows;
-  ScanTableToStrings(client_table_.get(), &rows);
-  EXPECT_TRUE(rows.empty());
+  ASSERT_OK(ScanTableToStrings(client_table_.get(), &rows));
+  ASSERT_TRUE(rows.empty());
 }
 
 // A test scenario for AUTO_FLUSH_BACKGROUND mode:
@@ -3617,7 +3610,7 @@ TEST_F(ClientTest, TestMutationsWork) {
   ASSERT_OK(ApplyUpdateToSession(session.get(), client_table_, 1, 2));
   FlushSessionOrDie(session);
   vector<string> rows;
-  ScanTableToStrings(client_table_.get(), &rows);
+  ASSERT_OK(ScanTableToStrings(client_table_.get(), &rows));
   ASSERT_EQ(1, rows.size());
   ASSERT_EQ(R"((int32 key=1, int32 int_val=2, string string_val="original row", )"
             "int32 non_null_with_default=12345)", rows[0]);
@@ -3625,8 +3618,8 @@ TEST_F(ClientTest, TestMutationsWork) {
 
   ASSERT_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
   FlushSessionOrDie(session);
-  ScanTableToStrings(client_table_.get(), &rows);
-  ASSERT_EQ(0, rows.size());
+  ASSERT_OK(ScanTableToStrings(client_table_.get(), &rows));
+  ASSERT_TRUE(rows.empty());
 }
 
 TEST_F(ClientTest, TestMutateDeletedRow) {
@@ -3637,8 +3630,8 @@ TEST_F(ClientTest, TestMutateDeletedRow) {
   FlushSessionOrDie(session);
   ASSERT_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
   FlushSessionOrDie(session);
-  ScanTableToStrings(client_table_.get(), &rows);
-  ASSERT_EQ(0, rows.size());
+  ASSERT_OK(ScanTableToStrings(client_table_.get(), &rows));
+  ASSERT_TRUE(rows.empty());
 
   // Attempt update deleted row
   ASSERT_OK(ApplyUpdateToSession(session.get(), client_table_, 1, 2));
@@ -3649,8 +3642,8 @@ TEST_F(ClientTest, TestMutateDeletedRow) {
   unique_ptr<KuduError> error = GetSingleErrorFromSession(session.get());
   ASSERT_EQ(error->failed_op().ToString(),
             "UPDATE int32 key=1, int32 int_val=2");
-  ScanTableToStrings(client_table_.get(), &rows);
-  ASSERT_EQ(0, rows.size());
+  ASSERT_OK(ScanTableToStrings(client_table_.get(), &rows));
+  ASSERT_TRUE(rows.empty());
 
   // Attempt delete deleted row
   ASSERT_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
@@ -3661,8 +3654,8 @@ TEST_F(ClientTest, TestMutateDeletedRow) {
   error = GetSingleErrorFromSession(session.get());
   ASSERT_EQ(error->failed_op().ToString(),
             "DELETE int32 key=1");
-  ScanTableToStrings(client_table_.get(), &rows);
-  ASSERT_EQ(0, rows.size());
+  ASSERT_OK(ScanTableToStrings(client_table_.get(), &rows));
+  ASSERT_TRUE(rows.empty());
 }
 
 TEST_F(ClientTest, TestMutateNonexistentRow) {
@@ -3679,8 +3672,8 @@ TEST_F(ClientTest, TestMutateNonexistentRow) {
   unique_ptr<KuduError> error = GetSingleErrorFromSession(session.get());
   ASSERT_EQ(error->failed_op().ToString(),
             "UPDATE int32 key=1, int32 int_val=2");
-  ScanTableToStrings(client_table_.get(), &rows);
-  ASSERT_EQ(0, rows.size());
+  ASSERT_OK(ScanTableToStrings(client_table_.get(), &rows));
+  ASSERT_TRUE(rows.empty());
 
   // Attempt delete nonexistent row
   ASSERT_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
@@ -3691,8 +3684,8 @@ TEST_F(ClientTest, TestMutateNonexistentRow) {
   error = GetSingleErrorFromSession(session.get());
   ASSERT_EQ(error->failed_op().ToString(),
             "DELETE int32 key=1");
-  ScanTableToStrings(client_table_.get(), &rows);
-  ASSERT_EQ(0, rows.size());
+  ASSERT_OK(ScanTableToStrings(client_table_.get(), &rows));
+  ASSERT_TRUE(rows.empty());
 }
 
 TEST_F(ClientTest, TestUpsert) {
@@ -3705,10 +3698,10 @@ TEST_F(ClientTest, TestUpsert) {
 
   {
     vector<string> rows;
-    ScanTableToStrings(client_table_.get(), &rows);
-    EXPECT_EQ(vector<string>({R"((int32 key=1, int32 int_val=1, string string_val="original row", )"
-              "int32 non_null_with_default=12345)"}),
-      rows);
+    ASSERT_OK(ScanTableToStrings(client_table_.get(), &rows));
+    ASSERT_EQ(1, rows.size());
+    EXPECT_EQ(R"((int32 key=1, int32 int_val=1, string string_val="original row", )"
+              "int32 non_null_with_default=12345)", rows[0]);
   }
 
   // Perform and verify UPSERT which acts as an UPDATE.
@@ -3717,10 +3710,10 @@ TEST_F(ClientTest, TestUpsert) {
 
   {
     vector<string> rows;
-    ScanTableToStrings(client_table_.get(), &rows);
-    EXPECT_EQ(vector<string>({R"((int32 key=1, int32 int_val=2, string string_val="upserted row", )"
-              "int32 non_null_with_default=12345)"}),
-        rows);
+    ASSERT_OK(ScanTableToStrings(client_table_.get(), &rows));
+    ASSERT_EQ(1, rows.size());
+    EXPECT_EQ(R"((int32 key=1, int32 int_val=2, string string_val="upserted row", )"
+              "int32 non_null_with_default=12345)", rows[0]);
   }
 
   // Apply an UPDATE including the column that has a default and verify it.
@@ -3735,10 +3728,10 @@ TEST_F(ClientTest, TestUpsert) {
   }
   {
     vector<string> rows;
-    ScanTableToStrings(client_table_.get(), &rows);
-    EXPECT_EQ(vector<string>({R"((int32 key=1, int32 int_val=2, string string_val="updated row", )"
-              "int32 non_null_with_default=999)"}),
-        rows);
+    ASSERT_OK(ScanTableToStrings(client_table_.get(), &rows));
+    ASSERT_EQ(1, rows.size());
+    EXPECT_EQ(R"((int32 key=1, int32 int_val=2, string string_val="updated row", )"
+              "int32 non_null_with_default=999)", rows[0]);
   }
 
   // Perform another UPSERT. This upsert doesn't specify the 'non_null_with_default'
@@ -3747,11 +3740,10 @@ TEST_F(ClientTest, TestUpsert) {
   FlushSessionOrDie(session);
   {
     vector<string> rows;
-    ScanTableToStrings(client_table_.get(), &rows);
-    EXPECT_EQ(vector<string>({
-          R"((int32 key=1, int32 int_val=3, string string_val="upserted row 2", )"
-          "int32 non_null_with_default=999)"}),
-        rows);
+    ASSERT_OK(ScanTableToStrings(client_table_.get(), &rows));
+    ASSERT_EQ(1, rows.size());
+    EXPECT_EQ(R"((int32 key=1, int32 int_val=3, string string_val="upserted row 2", )"
+              "int32 non_null_with_default=999)", rows[0]);
   }
 
   // Delete the row.
@@ -3759,8 +3751,8 @@ TEST_F(ClientTest, TestUpsert) {
   FlushSessionOrDie(session);
   {
     vector<string> rows;
-    ScanTableToStrings(client_table_.get(), &rows);
-    EXPECT_EQ(vector<string>({}), rows);
+    ASSERT_OK(ScanTableToStrings(client_table_.get(), &rows));
+    EXPECT_TRUE(rows.empty());
   }
 }
 
@@ -4118,7 +4110,7 @@ TEST_F(ClientTest, TestDeleteTable) {
   // Insert a few rows, and scan them back. This is to populate the MetaCache.
   NO_FATALS(InsertTestRows(client_.get(), client_table_.get(), 10));
   vector<string> rows;
-  ScanTableToStrings(client_table_.get(), &rows);
+  ASSERT_OK(ScanTableToStrings(client_table_.get(), &rows));
   ASSERT_EQ(10, rows.size());
 
   // Remove the table
@@ -4411,7 +4403,7 @@ TEST_F(ClientTest, TestSeveralRowMutatesPerBatch) {
   ASSERT_OK(ApplyUpdateToSession(session.get(), client_table_, 1, 2));
   FlushSessionOrDie(session);
   vector<string> rows;
-  ScanTableToStrings(client_table_.get(), &rows);
+  ASSERT_OK(ScanTableToStrings(client_table_.get(), &rows));
   ASSERT_EQ(1, rows.size());
   ASSERT_EQ(R"((int32 key=1, int32 int_val=2, string string_val="", )"
             "int32 non_null_with_default=12345)", rows[0]);
@@ -4423,7 +4415,7 @@ TEST_F(ClientTest, TestSeveralRowMutatesPerBatch) {
   ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 2, 1, ""));
   ASSERT_OK(ApplyDeleteToSession(session.get(), client_table_, 2));
   FlushSessionOrDie(session);
-  ScanTableToStrings(client_table_.get(), &rows);
+  ASSERT_OK(ScanTableToStrings(client_table_.get(), &rows));
   ASSERT_EQ(1, rows.size());
   ASSERT_EQ(R"((int32 key=1, int32 int_val=2, string string_val="", )"
             "int32 non_null_with_default=12345)", rows[0]);
@@ -4434,14 +4426,14 @@ TEST_F(ClientTest, TestSeveralRowMutatesPerBatch) {
   ASSERT_OK(ApplyUpdateToSession(session.get(), client_table_, 1, 1));
   ASSERT_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
   FlushSessionOrDie(session);
-  ScanTableToStrings(client_table_.get(), &rows);
-  ASSERT_EQ(0, rows.size());
+  ASSERT_OK(ScanTableToStrings(client_table_.get(), &rows));
+  ASSERT_TRUE(rows.empty());
 
   // Test delete/insert (insert a row first)
   LOG(INFO) << "Inserting row for delete/insert test, key " << 1 << ".";
   ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, ""));
   FlushSessionOrDie(session);
-  ScanTableToStrings(client_table_.get(), &rows);
+  ASSERT_OK(ScanTableToStrings(client_table_.get(), &rows));
   ASSERT_EQ(1, rows.size());
   ASSERT_EQ(R"((int32 key=1, int32 int_val=1, string string_val="", )"
             "int32 non_null_with_default=12345)", rows[0]);
@@ -4450,7 +4442,7 @@ TEST_F(ClientTest, TestSeveralRowMutatesPerBatch) {
   ASSERT_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
   ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 1, 2, ""));
   FlushSessionOrDie(session);
-  ScanTableToStrings(client_table_.get(), &rows);
+  ASSERT_OK(ScanTableToStrings(client_table_.get(), &rows));
   ASSERT_EQ(1, rows.size());
   ASSERT_EQ(R"((int32 key=1, int32 int_val=2, string string_val="", )"
             "int32 non_null_with_default=12345)", rows[0]);
@@ -4863,8 +4855,10 @@ TEST_F(ClientTest, TestInsertEmptyPK) {
   // Utility function to get the current value of the row.
   const auto ReadRowAsString = [&]() {
     vector<string> rows;
-    ScanTableToStrings(table.get(), &rows);
-    if (rows.empty()) return string("<none>");
+    CHECK_OK(ScanTableToStrings(table.get(), &rows));
+    if (rows.empty()) {
+      return string("<none>");
+    }
     CHECK_EQ(1, rows.size());
     return rows[0];
   };

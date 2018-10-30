@@ -505,9 +505,9 @@ void FlexPartitioningITest::InsertAndVerifyScans(const RangePartitionOptions& ra
   // First, ensure that we get back the same number we put in.
   {
     vector<string> rows;
-    ScanTableToStrings(table_.get(), &rows);
-    std::sort(rows.begin(), rows.end());
+    ASSERT_OK(ScanTableToStrings(table_.get(), &rows));
     ASSERT_EQ(row_count, rows.size());
+    std::sort(rows.begin(), rows.end());
   }
 
   // Perform some scans with predicates.

@@ -44,8 +44,15 @@ inline void FlushSessionOrDie(const sp::shared_ptr<KuduSession>& session) {
   }
 }
 
+enum class ScannedRowsOrder {
+  kAsIs,
+  kSorted,
+};
+
 // Scans in LEADER_ONLY mode, returning stringified rows in the given vector.
-void ScanTableToStrings(KuduTable* table, std::vector<std::string>* row_strings);
+Status ScanTableToStrings(KuduTable* table,
+                          std::vector<std::string>* row_strings,
+                          ScannedRowsOrder rows_order = ScannedRowsOrder::kAsIs);
 
 // Count the number of rows in the table in LEADER_ONLY mode.
 int64_t CountTableRows(KuduTable* table);

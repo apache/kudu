@@ -706,7 +706,7 @@ void AlterTableTest::UpdateRow(int32_t row_key,
 void AlterTableTest::ScanToStrings(vector<string>* rows) {
   shared_ptr<KuduTable> table;
   CHECK_OK(client_->OpenTable(kTableName, &table));
-  ScanTableToStrings(table.get(), rows);
+  CHECK_OK(ScanTableToStrings(table.get(), rows));
   std::sort(rows->begin(), rows->end());
 }
 
