@@ -40,7 +40,7 @@
 using std::vector;
 using strings::Substitute;
 
-DEFINE_int32(budgeted_compaction_target_rowset_size, 32*1024*1024,
+DEFINE_int64(budgeted_compaction_target_rowset_size, 32 * 1024 * 1024,
              "The target size in bytes for DiskRowSets produced by flushes or "
              "compactions when the budgeted compaction policy is used.");
 TAG_FLAG(budgeted_compaction_target_rowset_size, advanced);
@@ -62,24 +62,31 @@ TAG_FLAG(compaction_minimum_improvement, advanced);
 namespace kudu {
 namespace tablet {
 
-// Adjust the result downward slightly for wider solutions.
+// A constant factor used to penalize wider solutions when there is rowset
+// overlap.
 // Consider this input:
 //
 //  |-----A----||----C----|
 //  |-----B----|
 //
-// where A, B, and C are all 1MB, and the budget is 10MB.
+// where A, B, and C are all 30MiB, the budget is 100MiB, and the target rowset
+// size is 32MiB. Without this tweak, the decrease in tablet height from the
+// compaction selection {A, B, C} is the exact same as from {A, B}, since both
+// compactions would yield a tablet with average height 1. Taking the rowset
+// sizes into account, {A, B, C} is favored over {A, B}. However, including
+// C in the compaction is not greatly beneficial: there's 60MiB of extra I/O
+// in exchange for no benefit in average height over {A, B} and no decrease in
+// the number of rowsets, just a reorganization of the data into 2 rowsets of
+// size 32MiB and one of size 26MiB. On the other hand, if A, B, and C were all
+// 8MiB rowsets, then {A, B, C} is clearly a superior selection to {A, B}.
+// Furthermore, the arrangement
 //
-// Without this tweak, the solution {A, B, C} has the exact same
-// solution value as {A, B}, since both compactions would yield a
-// tablet with average height 1. Since both solutions fit within
-// the budget, either would be a valid pick, and it would be up
-// to chance which solution would be selected.
-// Intuitively, though, there's no benefit to including "C" in the
-// compaction -- it just uses up some extra IO. If we slightly
-// penalize wider solutions as a tie-breaker, then we'll pick {A, B}
-// here.
-static const double kSupportAdjust = 1.01;
+// |- A -| |- B -| |- C -|
+//
+// shouldn't be penalized based on total width at all. So this penalty is
+// applied only when there is overlap, and it is small so that a significant
+// benefit in reducing rowset count can overwhelm it.
+static const double kSupportAdjust = 1.003;
 
 ////////////////////////////////////////////////////////////
 // BudgetedCompactionPolicy
@@ -116,13 +123,14 @@ namespace {
 struct KnapsackTraits {
   typedef const RowSetInfo* item_type;
   typedef double value_type;
-  static int get_weight(const RowSetInfo* item) {
+  static int get_weight(item_type item) {
     return item->size_mb();
   }
-  static value_type get_value(const RowSetInfo* item) {
-    return item->width();
+  static value_type get_value(item_type item) {
+    return item->value();
   }
 };
+
 
 // Incremental calculator for lower and upper bounds on a knapsack solution,
 // given a set of items. The bounds are computed by solving the
@@ -172,11 +180,11 @@ class BoundCalculator {
                    fractional_solution_.end(),
                    compareByDescendingDensity);
     current_weight_ += candidate.size_mb();
-    current_value_ += candidate.width();
+    current_value_ += candidate.value();
     const RowSetInfo* top = fractional_solution_.front();
     while (current_weight_ - top->size_mb() > max_weight_) {
       current_weight_ -= top->size_mb();
-      current_value_ -= top->width();
+      current_value_ -= top->value();
       std::pop_heap(fractional_solution_.begin(),
                     fractional_solution_.end(),
                     compareByDescendingDensity);
@@ -203,7 +211,7 @@ class BoundCalculator {
     // - the value of the (N+1)th item alone, if it fits
     // This is a 2-approximation (i.e. no worse than 1/2 of the best solution).
     // See https://courses.engr.illinois.edu/cs598csc/sp2009/lectures/lecture_4.pdf
-    double lower_bound = std::max(current_value_ - top.width(), top.width());
+    double lower_bound = std::max(current_value_ - top.value(), top.value());
 
     // An upper bound for the integer problem is the solution to the fractional
     // problem since in the fractional problem we can add the fraction of the
@@ -233,7 +241,7 @@ class BoundCalculator {
     // See above: there are two choices for the lower-bound estimate,
     // and we need to return the one matching the bound we computed.
     const RowSetInfo* top = fractional_solution_.front();
-    if (current_value_ - top->width() > top->width()) {
+    if (current_value_ - top->value() > top->value()) {
       // The current solution less the top (minimum density) element.
       solution->assign(fractional_solution_.begin() + 1,
                        fractional_solution_.end());
@@ -256,6 +264,16 @@ class BoundCalculator {
   const int max_weight_;
   double top_density_;
 };
+
+// If 'sum_width' is no bigger than 'union_width', there is little or no overlap
+// between the rowsets relative to their total width. In this case, we don't
+// want to penalize the solution value for being wide, so that small rowset
+// compaction will work. If there is significant overlap, then we do want
+// to penalize wider solutions. See the comment about 'kSupportAdjust' above.
+double MaybePenalizeWideSolution(double sum_width, double union_width) {
+  return sum_width <= union_width ? sum_width - union_width :
+                                    sum_width - kSupportAdjust * union_width;
+}
 
 } // anonymous namespace
 
@@ -286,8 +304,8 @@ void BudgetedCompactionPolicy::RunApproximation(
 
       bound_calc.Add(rowset_b);
       auto bounds = bound_calc.ComputeLowerAndUpperBound();
-      double lower = bounds.first - union_width * kSupportAdjust;
-      double upper = bounds.second - union_width * kSupportAdjust;
+      double lower = MaybePenalizeWideSolution(bounds.first, union_width);
+      double upper = MaybePenalizeWideSolution(bounds.second, union_width);
       best_upper = std::max(upper, best_upper);
       if (lower > best_solution->value) {
         vector<const RowSetInfo*> approx_solution;
@@ -353,7 +371,8 @@ void BudgetedCompactionPolicy::RunExact(
 
       union_max = std::max(item->cdf_max_key(), union_max);
       DCHECK_GE(union_max, union_min);
-      double solution = best_value - (union_max - union_min) * kSupportAdjust;
+      double solution = MaybePenalizeWideSolution(best_value,
+                                                  union_max - union_min);
       if (solution > best_solution->value) {
         solver.TracePath(best_with_this_item, &chosen_indexes);
         best_solution->value = solution;
@@ -452,7 +471,7 @@ Status BudgetedCompactionPolicy::PickRowSets(
       *std::max_element(best_upper_bounds.begin(), best_upper_bounds.end()) <=
       FLAGS_compaction_minimum_improvement) {
     VLOG(1) << "Approximation algorithm short-circuited exact compaction calculation";
-    *quality = 0;
+    *quality = 0.0;
     return Status::OK();
   }
 

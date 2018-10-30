@@ -26,23 +26,51 @@
 #include <unordered_map>
 #include <utility>
 
+#include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
+#include "kudu/common/key_range.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/endian.h"
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/rowset_tree.h"
+#include "kudu/util/flag_tags.h"
+#include "kudu/util/flag_validators.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
-#include "kudu/common/key_range.h"
 
 using std::shared_ptr;
 using std::string;
 using std::unordered_map;
 using std::vector;
+
+DECLARE_double(compaction_minimum_improvement);
+DECLARE_int64(budgeted_compaction_target_rowset_size);
+
+DEFINE_bool(compaction_force_small_rowset_tradeoff, false,
+            "Whether to allow the compaction small rowset tradeoff factor to "
+            "be larger than the compaction minimum improvement score. Doing so "
+            "will have harmful effects on the performance of the tablet "
+            "server. Do not set this unless you know what you are doing.");
+TAG_FLAG(compaction_force_small_rowset_tradeoff, advanced);
+TAG_FLAG(compaction_force_small_rowset_tradeoff, experimental);
+TAG_FLAG(compaction_force_small_rowset_tradeoff, runtime);
+TAG_FLAG(compaction_force_small_rowset_tradeoff, unsafe);
+
+DEFINE_double(compaction_small_rowset_tradeoff, 0.009,
+              "The weight of small rowset compaction compared to "
+              "height-based compaction. This value must be less than "
+              "-compaction_minimum_improvement to prevent compaction loops. "
+              "Only change this if you know what you are doing.");
+TAG_FLAG(compaction_small_rowset_tradeoff, advanced);
+TAG_FLAG(compaction_small_rowset_tradeoff, experimental);
+TAG_FLAG(compaction_small_rowset_tradeoff, runtime);
 
 // Enforce a minimum size of 1MB, since otherwise the knapsack algorithm
 // will always pick up small rowsets no matter what.
@@ -52,6 +80,26 @@ namespace kudu {
 namespace tablet {
 
 namespace {
+
+bool ValidateSmallRowSetTradeoffVsMinScore() {
+  if (FLAGS_compaction_force_small_rowset_tradeoff) {
+    return true;
+  }
+  const auto tradeoff = FLAGS_compaction_small_rowset_tradeoff;
+  const auto min_score = FLAGS_compaction_minimum_improvement;
+  if (tradeoff >= min_score) {
+    LOG(ERROR) << strings::Substitute(
+        "-compaction_small_rowset_tradeoff=$0 must be less than "
+        "-compaction_minimum_improvement=$1 in order to prevent pointless "
+        "compactions; if you know what you are doing, pass "
+        "-compaction_force_small_rowset_tradeoff to permit this",
+        tradeoff, min_score);
+    return false;
+  }
+  return true;
+}
+GROUP_FLAG_VALIDATOR(compaction_small_rowset_tradeoff_and_min_score,
+                     &ValidateSmallRowSetTradeoffVsMinScore);
 
 // Less-than comparison by minimum key (both by actual encoded key and cdf)
 bool LessCDFAndRSMin(const RowSetInfo& a, const RowSetInfo& b) {
@@ -65,7 +113,7 @@ bool LessCDFAndRSMax(const RowSetInfo& a, const RowSetInfo& b) {
 
 // Debug-checks that min <= imin <= imax <= max
 void DCheckInside(const Slice& min, const Slice& max,
-                 const Slice& imin, const Slice& imax) {
+                  const Slice& imin, const Slice& imax) {
   DCHECK_LE(min.compare(max), 0);
   DCHECK_LE(imin.compare(imax), 0);
   DCHECK_LE(min.compare(imin), 0);
@@ -176,6 +224,17 @@ void CheckCollectOrderedCorrectness(const vector<RowSetInfo>& min_key,
   }
   DCHECK(std::is_sorted(min_key.begin(), min_key.end(), LessCDFAndRSMin));
   DCHECK(std::is_sorted(max_key.begin(), max_key.end(), LessCDFAndRSMax));
+}
+
+double ComputeRowsetValue(double width, uint64_t size_bytes) {
+  const auto gamma = FLAGS_compaction_small_rowset_tradeoff;
+  const auto target_size_bytes = FLAGS_budgeted_compaction_target_rowset_size;
+
+  // This is an approximation to the expected reduction in rowset count per
+  // input rowset. See the compaction policy design doc for more details.
+  const auto size_score =
+      1 - static_cast<double>(size_bytes) / target_size_bytes;
+  return width + gamma * size_score;
 }
 
 } // anonymous namespace
@@ -408,7 +467,8 @@ void RowSetInfo::FinalizeCDFVector(double quot, vector<RowSetInfo>* vec) {
                                  << " bytes.";
     cdf_rs.cdf_min_key_ /= quot;
     cdf_rs.cdf_max_key_ /= quot;
-    cdf_rs.density_ = (cdf_rs.cdf_max_key() - cdf_rs.cdf_min_key()) / cdf_rs.size_mb_;
+    cdf_rs.value_ = ComputeRowsetValue(cdf_rs.width(), cdf_rs.extra_->size_bytes);
+    cdf_rs.density_ = cdf_rs.value_ / cdf_rs.size_mb_;
   }
 }
 

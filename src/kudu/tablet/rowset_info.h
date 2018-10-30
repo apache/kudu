@@ -83,11 +83,16 @@ class RowSetInfo {
 
   // Return the "width" of the candidate rowset.
   //
-  // This is an estimate of the percentage of the tablet data which
-  // is spanned by this RowSet, calculated by integrating the
-  // probability distribution function across this rowset's keyrange.
+  // This is an estimate of the percentage of the tablet data which lies between
+  // the min and max key of this RowSet (including data not in this rowset but
+  // in overlapping ones), calculated by integrating the probability
+  // distribution function across this rowset's keyrange.
   double width() const {
     return cdf_max_key_ - cdf_min_key_;
+  }
+
+  double value() const {
+    return value_;
   }
 
   double density() const { return density_; }
@@ -113,6 +118,17 @@ class RowSetInfo {
   int size_mb_;
 
   double cdf_min_key_, cdf_max_key_;
+
+  // The value of the rowset is its value as an item in the compaction knapsack
+  // problem:
+  // value = width + tradeoff * (1 - size in bytes / target size in bytes).
+  double value_;
+
+  // The density is the density of the rowset as an item in compaction knapsack
+  // problems:
+  // density = value / size in MiB
+  // It doesn't matter if the size is in bytes or MiB since densities are only
+  // used to compare rowsets.
   double density_;
 
   // We move these out of the RowSetInfo object because the std::strings are relatively

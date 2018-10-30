@@ -18,12 +18,14 @@
 #include "kudu/tablet/compaction_policy.h"
 
 #include <algorithm>
+#include <limits>
 #include <memory>
 #include <ostream>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
@@ -47,6 +49,10 @@
 using std::string;
 using std::vector;
 
+DECLARE_double(compaction_minimum_improvement);
+DECLARE_double(compaction_small_rowset_tradeoff);
+DECLARE_int64(budgeted_compaction_target_rowset_size);
+
 namespace kudu {
 namespace tablet {
 
@@ -65,10 +71,13 @@ class TestCompactionPolicy : public KuduTest {
   }
 };
 
-
 // Simple test for budgeted compaction: with three rowsets which
 // mostly overlap, and a high budget, they should all be selected.
 TEST_F(TestCompactionPolicy, TestBudgetedSelection) {
+  // This tests the overlap-based part of compaction policy and not the
+  // rowset-size based policy.
+  FLAGS_compaction_small_rowset_tradeoff = 0.0;
+
   /*
    *   [C ------ c]
    *  [B ----- a]
@@ -96,6 +105,10 @@ TEST_F(TestCompactionPolicy, TestBudgetedSelection) {
 // overlap at all. This is likely to occur in workloads where the
 // primary key is always increasing (such as a timestamp).
 TEST_F(TestCompactionPolicy, TestNonOverlappingRowSets) {
+  // This tests the overlap-based part of compaction policy and not the
+  // rowset-size based policy.
+  FLAGS_compaction_small_rowset_tradeoff = 0.0;
+
   /* NB: Zero-padding of string keys omitted to save space.
    *
    * [0 - 1] [2 - 3] ... [198 - 199]
@@ -111,13 +124,17 @@ TEST_F(TestCompactionPolicy, TestNonOverlappingRowSets) {
   CompactionSelection picked;
   double quality = 0.0;
   NO_FATALS(RunTestCase(rowsets, kBudgetMb, &picked, &quality));
-  ASSERT_EQ(quality, 0.0);
+  ASSERT_EQ(0.0, quality);
   ASSERT_TRUE(picked.empty());
 }
 
 // Similar to the above, but with some small overlap between adjacent
 // rowsets.
 TEST_F(TestCompactionPolicy, TestTinyOverlapRowSets) {
+  // This tests the overlap-based part of compaction policy and not the
+  // rowset-size based policy.
+  FLAGS_compaction_small_rowset_tradeoff = 0.0;
+
   /* NB: Zero-padding of string keys omitted to save space.
    *
    * [0 - 11000]
@@ -137,13 +154,17 @@ TEST_F(TestCompactionPolicy, TestTinyOverlapRowSets) {
   double quality = 0;
   NO_FATALS(RunTestCase(rowsets, kBudgetMb, &picked, &quality));
   // With such small overlaps, no compaction will be considered worthwhile.
-  ASSERT_EQ(quality, 0.0);
+  ASSERT_EQ(0.0, quality);
   ASSERT_TRUE(picked.empty());
 }
 
 // Test case with 100 rowsets, each of which overlaps with its two
 // neighbors to the right.
 TEST_F(TestCompactionPolicy, TestSignificantOverlap) {
+  // This tests the overlap-based part of compaction policy and not the
+  // rowset-size based policy.
+  FLAGS_compaction_small_rowset_tradeoff = 0.0;
+
   /* NB: Zero-padding of string keys omitted to save space.
    *
    * [0 ------ 20000]
@@ -165,7 +186,7 @@ TEST_F(TestCompactionPolicy, TestSignificantOverlap) {
   NO_FATALS(RunTestCase(rowsets, kBudgetMb, &picked, &quality));
   // Each rowset is 1MB so the number of rowsets picked should be the number of
   // MB in the budget.
-  ASSERT_EQ(picked.size(), kBudgetMb);
+  ASSERT_EQ(kBudgetMb, picked.size());
 
   // In picking 64 of 100 equally-sized and -spaced rowsets, the union width is
   // about 0.64. Each rowset intersects the next in half its width, which makes
@@ -183,22 +204,38 @@ TEST_F(TestCompactionPolicy, TestSignificantOverlap) {
 //  [ -- B -- ]
 //            [ -- C -- ]
 //
-// compacting {A, B, C} results in the same quality score as {A, B}, 0.67, but
-// uses more budget. By penalizing the wider solution {A, B, C}, we ensure we
-// don't waste I/O.
+// compacting {A, B, C} results in the same reduction in average tablet height
+// as compacting {A, B}, but uses more I/O. We'd like to choose {A, B} if
+// A, B, and C are large, but {A, B, C} if A, B, and C are small.
 TEST_F(TestCompactionPolicy, TestSupportAdjust) {
-  const RowSetVector rowsets = {
-    std::make_shared<MockDiskRowSet>("A", "B"),
-    std::make_shared<MockDiskRowSet>("A", "B"),
-    std::make_shared<MockDiskRowSet>("B", "C"),
-  };
   constexpr auto kBudgetMb = 1000; // Enough to select all rowsets.
   CompactionSelection picked;
   double quality = 0.0;
-  NO_FATALS(RunTestCase(rowsets, kBudgetMb, &picked, &quality));
+
+  // For big rowsets, compaction should favor just compacting the two that
+  // overlap.
+  const auto big_rowset_size = FLAGS_budgeted_compaction_target_rowset_size * 0.9;
+  const RowSetVector big_rowsets = {
+    std::make_shared<MockDiskRowSet>("A", "B", big_rowset_size),
+    std::make_shared<MockDiskRowSet>("A", "B", big_rowset_size),
+    std::make_shared<MockDiskRowSet>("B", "C", big_rowset_size),
+  };
+  NO_FATALS(RunTestCase(big_rowsets, kBudgetMb, &picked, &quality));
   ASSERT_EQ(2, picked.size());
-  // The weights of A and B are both 0.67, so with the adjustment the quality
+  // The widths of A and B are both 0.67, so with the adjustment the quality
   // score should be a little less than 0.67.
+  ASSERT_GE(quality, 0.6);
+
+  // For small rowsets, compaction should favor compacting all three.
+  const auto small_rowset_size = FLAGS_budgeted_compaction_target_rowset_size * 0.3;
+  const RowSetVector small_rowsets = {
+    std::make_shared<MockDiskRowSet>("A", "B", small_rowset_size),
+    std::make_shared<MockDiskRowSet>("A", "B", small_rowset_size),
+    std::make_shared<MockDiskRowSet>("B", "C", small_rowset_size),
+  };
+  picked.clear();
+  NO_FATALS(RunTestCase(small_rowsets, kBudgetMb, &picked, &quality));
+  ASSERT_EQ(3, picked.size());
   ASSERT_GE(quality, 0.6);
 }
 
@@ -261,6 +298,10 @@ TEST_F(TestCompactionPolicy, TestYcsbCompaction) {
 // Regression test for KUDU-2251 which ensures that large (> 2GiB) rowsets don't
 // cause integer overflow in compaction planning.
 TEST_F(TestCompactionPolicy, KUDU2251) {
+  // Raise the target size to keep the quality score in the same range as for
+  // "normal size" rowsets.
+  FLAGS_budgeted_compaction_target_rowset_size = 1L << 34;
+
   // Same arrangement as in TestBudgetedSelection.
   const RowSetVector rowsets = {
     std::make_shared<MockDiskRowSet>("C", "c", 1L << 31),
@@ -272,9 +313,125 @@ TEST_F(TestCompactionPolicy, KUDU2251) {
   CompactionSelection picked;
   double quality = 0.0;
   NO_FATALS(RunTestCase(rowsets, kBudgetMb, &picked, &quality));
-  ASSERT_EQ(3, picked.size());
+  ASSERT_EQ(rowsets.size(), picked.size());
   ASSERT_GT(quality, 1.0);
   ASSERT_LT(quality, 2.0);
+}
+
+// Test that we don't compact together non-overlapping rowsets if doing so
+// doesn't actually reduce the number of rowsets.
+TEST_F(TestCompactionPolicy, TestSmallRowsetCompactionReducesRowsetCount) {
+  constexpr auto kBudgetMb = 1000000; // Enough to select all rowsets in all cases.
+  const auto num_rowsets = 100;
+  // Use rowsets close enough to the target size that 'num_rowsets' count of
+  // them compacted together does not reduce the count of rowsets.
+  const auto rowset_size =
+    FLAGS_budgeted_compaction_target_rowset_size * (1 - 1.0 / (num_rowsets - 1));
+  RowSetVector rowsets;
+  CompactionSelection picked;
+  double quality = 0.0;
+  for (int i = 0; i < num_rowsets; i++) {
+    picked.clear();
+
+    // [0 - 1][1 - 2] ... [98 - 99][99 - 100] built up over time.
+    rowsets.push_back(std::make_shared<MockDiskRowSet>(
+        StringPrintf("%010d", i),
+        StringPrintf("%010d", i + 1),
+        rowset_size));
+    NO_FATALS(RunTestCase(rowsets, kBudgetMb, &picked, &quality));
+
+    // There should never be a worthwhile compaction.
+    ASSERT_TRUE(picked.empty());
+    ASSERT_EQ(0.0, quality);
+  }
+}
+
+// Test that the score of compacting two rowsets decreases monotonically as the
+// size of the two rowsets increases, and that the tradeoff factor is set
+// correctly so that a compaction actually reduce the count of rowsets.
+TEST_F(TestCompactionPolicy, TestSmallRowsetTradeoffFactor) {
+  constexpr auto kBudgetMb = 1000; // Enough to select all rowsets in all cases.
+  CompactionSelection picked;
+  double quality = 0.0;
+  double prev_quality = std::numeric_limits<double>::max();
+
+  // Compact two equal-sized rowsets that are various fractions of the target
+  // rowset size.
+  const double target_size_bytes =
+      FLAGS_budgeted_compaction_target_rowset_size;
+  for (const auto divisor : { 32, 16, 8, 4, 2, 1 }) {
+    SCOPED_TRACE(strings::Substitute("divisor = $0", divisor));
+    picked.clear();
+    const auto size_bytes = target_size_bytes / divisor;
+    /*
+     * [A -- B][B -- C]
+     */
+    const RowSetVector rowsets = {
+      std::make_shared<MockDiskRowSet>("A", "B", size_bytes),
+      std::make_shared<MockDiskRowSet>("B", "C", size_bytes),
+    };
+    NO_FATALS(RunTestCase(rowsets, kBudgetMb, &picked, &quality));
+
+    // The quality score should monotonically decrease.
+    ASSERT_LE(quality, prev_quality);
+    prev_quality = quality;
+
+    // As a spot check of the prioritization, we should stop wanting to compact
+    // when the divisor is two or one.
+    if (divisor > 2) {
+      ASSERT_EQ(rowsets.size(), picked.size());
+    } else {
+      ASSERT_LT(quality, FLAGS_compaction_minimum_improvement);
+      ASSERT_TRUE(picked.empty());
+    }
+  }
+
+  // However, compacting a target rowset size's worth of data with it split
+  // between more than two rowsets should result in a compaction.
+  const auto size_bytes = target_size_bytes / 3;
+  /*
+   * [A -- B][B -- C][C -- D]
+   */
+  const RowSetVector rowsets = {
+    std::make_shared<MockDiskRowSet>("A", "B", size_bytes),
+    std::make_shared<MockDiskRowSet>("B", "C", size_bytes),
+    std::make_shared<MockDiskRowSet>("C", "D", size_bytes),
+  };
+  NO_FATALS(RunTestCase(rowsets, kBudgetMb, &picked, &quality));
+  ASSERT_EQ(rowsets.size(), picked.size());
+  ASSERT_GT(quality, FLAGS_compaction_minimum_improvement);
+}
+
+// Compaction policy is designed so that height-reducing compactions should
+// generally take priority over size-based compactions. So, in particular,
+// given a layout like
+//
+// [ -- 32MiB -- ]    [ 8MiB ][ 8 MiB ][8 MiB ][ 8MiB ]
+// [ -- 32MiB -- ]
+//
+// and a budget of 64MiB, the policy should choose to compact the two
+// overlapping rowsets despite the fact that that selection has a size-score
+// of 0, while compacting one or more of the 8MiB rowsets has a big size score.
+TEST_F(TestCompactionPolicy, TestHeightBasedDominatesSizeBased) {
+  constexpr auto kBigRowSetSizeBytes = 32 * 1024 * 1024;
+  constexpr auto kSmallRowSetSizeBytes = 8 * 1024 * 1024;
+  constexpr auto kBudgetMb = 64;
+  const RowSetVector rowsets = {
+    std::make_shared<MockDiskRowSet>("A", "B", kBigRowSetSizeBytes),
+    std::make_shared<MockDiskRowSet>("A", "B", kBigRowSetSizeBytes),
+    std::make_shared<MockDiskRowSet>("C", "D", kSmallRowSetSizeBytes),
+    std::make_shared<MockDiskRowSet>("D", "E", kSmallRowSetSizeBytes),
+    std::make_shared<MockDiskRowSet>("E", "F", kSmallRowSetSizeBytes),
+    std::make_shared<MockDiskRowSet>("F", "G", kSmallRowSetSizeBytes),
+  };
+
+  CompactionSelection picked;
+  double quality = 0.0;
+  NO_FATALS(RunTestCase(rowsets, kBudgetMb, &picked, &quality));
+  ASSERT_EQ(2, picked.size());
+  for (const auto* rowset : picked) {
+    ASSERT_EQ(kBigRowSetSizeBytes, rowset->OnDiskSize());
+  }
 }
 
 namespace {
