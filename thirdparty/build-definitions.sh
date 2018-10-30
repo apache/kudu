@@ -336,7 +336,27 @@ build_llvm() {
     $EXTRA_CMAKE_FLAGS \
     $LLVM_SOURCE
 
-  ${NINJA:-make} -j$PARALLEL $EXTRA_MAKEFLAGS install
+  # Retry the build a few times. Thanks to an LLVM bug[1], the build can fail
+  # sporadically when using certain values of $PARALLEL.
+  #
+  # 1. https://bugs.llvm.org/show_bug.cgi?id=26054
+  set +e
+  attempt_number=1
+  max_attempts=3
+  while true; do
+    ${NINJA:-make} -j$PARALLEL $EXTRA_MAKEFLAGS install
+    exit_status=$?
+    if [[ $exit_status -eq 0 ]]; then
+      break
+    elif [[ $attempt_number -lt $max_attempts ]]; then
+      echo "LLVM build failed, retrying"
+      attempt_number=$((attempt_number + 1))
+    else
+      echo "LLVM build failed $max_attempts times, aborting"
+      exit $exit_status
+    fi
+  done
+  set -e
 
   if [[ "$BUILD_TYPE" == "normal" ]]; then
     # Create a link from Clang to thirdparty/clang-toolchain. This path is used
