@@ -778,14 +778,11 @@ endfunction()
 #       set. See build-support/run-test.sh for more details.
 #
 #   DATA_FILES <file1> <file2> ...
-#       Specify data files that should be copied into the build directory
-#       next to test executable. These will also be automatically uploaded
-#       to the dist-test environment.
-#
-#       If the file is in a directory, an equivalent directory path will
-#       be made in the build directory. For example, 'testdata/foo' will
-#       ensure that an equivalent directory 'testdata/' is made in the
-#       build directory.
+#       Specify data files that should be copied into the build directory next
+#       to test executable into the 'testdata' sub-directory, i.e. into
+#       '<build_dir>/bin/testdata' with current layout of the test binaries.
+#       The path to the source file should be specified from the location
+#       of the corresponding CMakeLists.txt file.
 #
 # Any other arguments will be passed to set_tests_properties().
 function(ADD_KUDU_TEST REL_TEST_NAME)
@@ -832,16 +829,12 @@ function(ADD_KUDU_TEST REL_TEST_NAME)
   endif()
 
   # Copy data files into the build directory.
+  set(DATA_FILES_DST_SUBDIR testdata)
+  set(DST_DIR ${EXECUTABLE_OUTPUT_PATH}/${DATA_FILES_DST_SUBDIR})
+  set(DATA_FILES_LIST)
   foreach(DATA_FILE ${ARG_DATA_FILES})
-    get_filename_component(DST_DIR ${DATA_FILE} DIRECTORY)
-    set(DST_DIR ${EXECUTABLE_OUTPUT_PATH}/${DST_DIR})
-    # If there is a symlink there, replace it with a copy. This is to
-    # work around issues with incremental builds where earlier build
-    # setups had used symlinks into the build directory instead of
-    # copies.
-    if(IS_SYMLINK ${DST_DIR}/${DATA_FILE})
-      file(REMOVE ${DST_DIR}/${DATA_FILE})
-    endif()
+    get_filename_component(DATA_FILE_NAME ${DATA_FILE} NAME)
+    list(APPEND DATA_FILES_LIST ${DATA_FILES_DST_SUBDIR}/${DATA_FILE_NAME})
     file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/${DATA_FILE}
       # Copy with read and execute permissions, since tests should not modify
       # the data files in place, but data files may be scripts used by tests.
@@ -881,7 +874,7 @@ function(ADD_KUDU_TEST REL_TEST_NAME)
     # The only way we can pass information to dist-test is through the environment.
     # So, use a comma-delimited environment variable to pass the list of data files
     # that need to be uploaded.
-    string(REPLACE ";" "," DATA_FILES_ENV "${ARG_DATA_FILES}")
+    string(REPLACE ";" "," DATA_FILES_ENV "${DATA_FILES_LIST}")
     list(APPEND CUR_TEST_ENV "KUDU_DATA_FILES=${DATA_FILES_ENV}")
 
     set_tests_properties(${TARGET} PROPERTIES

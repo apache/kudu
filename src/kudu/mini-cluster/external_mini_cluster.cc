@@ -380,7 +380,7 @@ Status ExternalMiniCluster::StartMasters() {
     string bin_path;
     RETURN_NOT_OK(DeduceBinRoot(&bin_path));
     const auto mapping_script_path =
-        JoinPathSegments(bin_path, "scripts/assign-location.py");
+        JoinPathSegments(bin_path, "testdata/assign-location.py");
     const auto state_store_fpath =
         JoinPathSegments(opts_.cluster_root, "location-assignment.state");
     auto location_cmd = Substitute("$0 --state_store=$1",

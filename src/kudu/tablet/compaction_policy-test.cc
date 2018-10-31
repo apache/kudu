@@ -232,7 +232,7 @@ TEST_F(TestCompactionPolicy, TestYcsbCompaction) {
     LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
     return;
   }
-  const RowSetVector rowsets = LoadFile("ycsb-test-rowsets.tsv");
+  const RowSetVector rowsets = LoadFile("testdata/ycsb-test-rowsets.tsv");
   RowSetTree tree;
   ASSERT_OK(tree.Reset(rowsets));
   vector<double> qualities;

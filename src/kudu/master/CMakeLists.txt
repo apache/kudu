@@ -78,7 +78,7 @@ ADD_KUDU_TEST(master-test RESOURCE_LOCK "master-web-port")
 ADD_KUDU_TEST(mini_master-test RESOURCE_LOCK "master-web-port")
 ADD_KUDU_TEST(placement_policy-test)
 ADD_KUDU_TEST(sys_catalog-test RESOURCE_LOCK "master-web-port")
-ADD_KUDU_TEST(ts_descriptor-test DATA_FILES testdata/first_argument.sh)
+ADD_KUDU_TEST(ts_descriptor-test DATA_FILES ../scripts/first_argument.sh)
 
 # Actual master executable
 add_executable(kudu-master master_main.cc)

@@ -167,7 +167,7 @@ ADD_KUDU_TEST(diagnostics_log_parser-test)
 ADD_KUDU_TEST(ksck-test)
 ADD_KUDU_TEST(ksck_remote-test
   PROCESSORS 3
-  DATA_FILES testdata/first_argument.sh)
+  DATA_FILES ../scripts/first_argument.sh)
 ADD_KUDU_TEST(kudu-admin-test
   NUM_SHARDS 8 PROCESSORS 3)
 ADD_KUDU_TEST_DEPENDENCIES(kudu-admin-test
@@ -175,7 +175,7 @@ ADD_KUDU_TEST_DEPENDENCIES(kudu-admin-test
 ADD_KUDU_TEST(kudu-tool-test
   NUM_SHARDS 4 PROCESSORS 3
   DATA_FILES testdata/sample-diagnostics-log.txt testdata/bad-diagnostics-log.txt
-  DATA_FILES testdata/first_argument.sh)
+  DATA_FILES ../scripts/first_argument.sh)
 ADD_KUDU_TEST_DEPENDENCIES(kudu-tool-test
   kudu)
 ADD_KUDU_TEST(kudu-ts-cli-test)

@@ -165,7 +165,7 @@ class TableLocationsWithTSLocationTest : public TableLocationsTest {
  public:
   void SetUpConfig() override {
     const string location_cmd_path = JoinPathSegments(GetTestExecutableDirectory(),
-                                                      "scripts/first_argument.sh");
+                                                      "testdata/first_argument.sh");
     const string location = "/foo";
     FLAGS_location_mapping_cmd = strings::Substitute("$0 $1", location_cmd_path, location);
   }
