@@ -89,6 +89,9 @@ struct ScanRpcStatus {
     // the token has expired.
     RPC_INVALID_AUTHENTICATION_TOKEN,
 
+    // The requestor was not authorized to make the request.
+    SCAN_NOT_AUTHORIZED,
+
     // Another RPC-system error (e.g. NetworkError because the TS was down).
     RPC_ERROR,
 

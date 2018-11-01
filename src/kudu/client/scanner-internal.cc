@@ -243,6 +243,9 @@ ScanRpcStatus KuduScanner::Data::AnalyzeResponse(const Status& rpc_status,
         case rpc::ErrorStatusPB::ERROR_UNAVAILABLE:
           return ScanRpcStatus{
               ScanRpcStatus::SERVICE_UNAVAILABLE, rpc_status};
+        case rpc::ErrorStatusPB::FATAL_UNAUTHORIZED:
+          return ScanRpcStatus{
+              ScanRpcStatus::SCAN_NOT_AUTHORIZED, rpc_status};
         default:
           return ScanRpcStatus{ScanRpcStatus::RPC_ERROR, rpc_status};
       }

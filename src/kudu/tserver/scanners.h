@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TSERVER_SCANNERS_H
-#define KUDU_TSERVER_SCANNERS_H
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
@@ -34,7 +33,9 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/rpc/remote_user.h"
 #include "kudu/tablet/tablet_replica.h"
+#include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/auto_release_pool.h"
 #include "kudu/util/condition_variable.h"
 #include "kudu/util/locks.h"
@@ -55,9 +56,11 @@ class Thread;
 namespace tserver {
 
 class Scanner;
+
 enum class ScanState;
 struct ScanDescriptor;
 struct ScannerMetrics;
+
 typedef std::shared_ptr<Scanner> SharedScanner;
 
 // Manages the live scanners within a Tablet Server.
@@ -76,15 +79,22 @@ class ScannerManager {
   // Starts the expired scanner removal thread.
   Status StartRemovalThread();
 
-  // Create a new scanner with a unique ID, inserting it into the map.
+  // Create a new scanner with a unique ID, inserting it into the map. Further
+  // lookups for the scanner must provide the username associated with
+  // 'remote_user'.
   void NewScanner(const scoped_refptr<tablet::TabletReplica>& tablet_replica,
-                  const std::string& requestor_string,
+                  const rpc::RemoteUser& remote_user,
                   uint64_t row_format_flags,
                   SharedScanner* scanner);
 
-  // Lookup the given scanner by its ID.
-  // Returns true if the scanner is found successfully.
-  bool LookupScanner(const std::string& scanner_id, SharedScanner* scanner);
+  // Lookup the given scanner by its ID with the provided username, setting an
+  // appropriate error code.
+  // Returns NotFound if the scanner doesn't exist, or NotAuthorized if the
+  // scanner wasn't created by 'username'.
+  Status LookupScanner(const std::string& scanner_id,
+                       const std::string& username,
+                       TabletServerErrorPB::Code* error_code,
+                       SharedScanner* scanner);
 
   // Unregister the given scanner by its ID.
   // Returns true if unregistered successfully.
@@ -185,7 +195,7 @@ class Scanner {
  public:
   Scanner(std::string id,
           const scoped_refptr<tablet::TabletReplica>& tablet_replica,
-          std::string requestor_string, ScannerMetrics* metrics,
+          rpc::RemoteUser remote_user, ScannerMetrics* metrics,
           uint64_t row_format_flags);
   ~Scanner();
 
@@ -238,7 +248,7 @@ class Scanner {
 
   const scoped_refptr<tablet::TabletReplica>& tablet_replica() const { return tablet_replica_; }
 
-  const std::string& requestor_string() const { return requestor_string_; }
+  const rpc::RemoteUser& remote_user() const { return remote_user_; }
 
   // Returns the current call sequence ID of the scanner.
   uint32_t call_seq_id() const {
@@ -322,9 +332,9 @@ class Scanner {
   // Tablet associated with the scanner.
   const scoped_refptr<tablet::TabletReplica> tablet_replica_;
 
-  // Information about the requestor. Populated from
-  // RpcContext::requestor_string().
-  const std::string requestor_string_;
+  // The remote user making the request. Populated from the RemoteUser of the
+  // first request.
+  const rpc::RemoteUser remote_user_;
 
   // The last time that the scanner was accessed.
   MonoTime last_access_time_;
@@ -392,8 +402,8 @@ struct ScanDescriptor {
   // The scanner ID.
   std::string scanner_id;
 
-  // The scan requestor.
-  std::string requestor;
+  // The user that made the first request.
+  rpc::RemoteUser remote_user;
 
   // The table name.
   std::string table_name;
@@ -415,4 +425,3 @@ struct ScanDescriptor {
 } // namespace tserver
 } // namespace kudu
 
-#endif

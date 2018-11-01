@@ -70,6 +70,7 @@
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/rpc_header.pb.h"
+#include "kudu/rpc/user_credentials.h"
 #include "kudu/server/rpc_server.h"
 #include "kudu/server/server_base.pb.h"
 #include "kudu/server/server_base.proxy.h"
@@ -1529,7 +1530,9 @@ TEST_F(TabletServerTest, TestReadLatest) {
   ASSERT_TRUE(!scanner_id.empty());
   {
     SharedScanner junk;
-    ASSERT_TRUE(mini_server_->server()->scanner_manager()->LookupScanner(scanner_id, &junk));
+    TabletServerErrorPB::Code error_code;
+    ASSERT_OK(mini_server_->server()->scanner_manager()->LookupScanner(
+        scanner_id, proxy_->user_credentials().real_user(), &error_code, &junk));
   }
 
   // Ensure that the scanner shows up in the server and tablet's metrics.
@@ -1552,7 +1555,10 @@ TEST_F(TabletServerTest, TestReadLatest) {
   // from the scanner manager.
   {
     SharedScanner junk;
-    ASSERT_FALSE(mini_server_->server()->scanner_manager()->LookupScanner(scanner_id, &junk));
+    TabletServerErrorPB::Code error_code;
+    ASSERT_TRUE(mini_server_->server()->scanner_manager()->LookupScanner(
+        scanner_id, proxy_->user_credentials().real_user(), &error_code, &junk).IsNotFound());
+    ASSERT_EQ(TabletServerErrorPB::SCANNER_EXPIRED, error_code);
   }
 
   // Ensure that the metrics have been updated now that the scanner is unregistered.
@@ -3395,6 +3401,84 @@ TEST_F(TabletServerTest, TestKeysInRowsetMetadataPreventStartupSeeks) {
   // bytes should be read by the BM if storing keys in the rowset metadata).
   restart_server_and_check_bytes_read(/*keys_in_rowset_meta=*/ false);
   restart_server_and_check_bytes_read(/*keys_in_rowset_meta=*/ true);
+}
+
+// Test that each scanner can only be accessed by the user who created it.
+TEST_F(TabletServerTest, TestScannerCheckMatchingUser) {
+  rpc::UserCredentials user;
+  user.set_real_user("good-guy");
+  proxy_->set_user_credentials(user);
+
+  InsertTestRowsDirect(0, 100);
+  ScanResponsePB resp;
+  NO_FATALS(OpenScannerWithAllColumns(&resp));
+  const string& scanner_id = resp.scanner_id();
+  ASSERT_TRUE(!scanner_id.empty());
+
+  // Now do a checksum scan as the user.
+  string checksum_scanner_id;
+  int64_t checksum_val;
+  {
+    ChecksumRequestPB checksum_req;
+    ChecksumResponsePB checksum_resp;
+    RpcController rpc;
+    ASSERT_OK(FillNewScanRequest(READ_LATEST, checksum_req.mutable_new_request()));
+    // Set a batch size of 0 so we don't return rows and can expect the scanner
+    // to remain alive.
+    checksum_req.set_batch_size_bytes(0);
+    ASSERT_OK(proxy_->Checksum(checksum_req, &checksum_resp, &rpc));
+    SCOPED_TRACE(checksum_resp.DebugString());
+    ASSERT_FALSE(checksum_resp.has_error());
+    ASSERT_TRUE(checksum_resp.has_more_results());
+    checksum_scanner_id = checksum_resp.scanner_id();
+    checksum_val = checksum_resp.checksum();
+  }
+
+  constexpr auto verify_authz_error = [] (const Status& s) {
+    EXPECT_TRUE(s.IsRemoteError()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "Not authorized");
+  };
+
+  for (const string& other : { "", "bad-guy" }) {
+    TabletServerServiceProxy bad_proxy(
+        client_messenger_, mini_server_->bound_rpc_addr(),
+        mini_server_->bound_rpc_addr().host());
+    if (!other.empty()) {
+      rpc::UserCredentials other_user;
+      other_user.set_real_user(other);
+      bad_proxy.set_user_credentials(other_user);
+    }
+    // Other users and clients with no credentials will be bounced for scans,
+    // checksum scans, and keep-alive requests.
+    {
+      ScanRequestPB req;
+      RpcController rpc;
+      req.set_scanner_id(scanner_id);
+      Status s = bad_proxy.Scan(req, &resp, &rpc);
+      SCOPED_TRACE(resp.DebugString());
+      NO_FATALS(verify_authz_error(s));
+    }
+    {
+      ChecksumRequestPB req;
+      ContinueChecksumRequestPB* continue_req = req.mutable_continue_request();
+      continue_req->set_scanner_id(checksum_scanner_id);
+      continue_req->set_previous_checksum(checksum_val);
+      ChecksumResponsePB resp;
+      RpcController rpc;
+      Status s = bad_proxy.Checksum(req, &resp, &rpc);
+      SCOPED_TRACE(resp.DebugString());
+      NO_FATALS(verify_authz_error(s));
+    }
+    for (const string& id : { scanner_id, checksum_scanner_id }) {
+      ScannerKeepAliveRequestPB req;
+      req.set_scanner_id(id);
+      ScannerKeepAliveResponsePB resp;
+      RpcController rpc;
+      Status s = bad_proxy.ScannerKeepAlive(req, &resp, &rpc);
+      SCOPED_TRACE(resp.DebugString());
+      NO_FATALS(verify_authz_error(s));
+    }
+  }
 }
 
 } // namespace tserver

@@ -61,6 +61,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/rpc/remote_user.h"
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/rpc_sidecar.h"
@@ -367,6 +368,12 @@ static void SetupErrorAndRespond(TabletServerErrorPB* error,
                                  const Status& s,
                                  TabletServerErrorPB::Code code,
                                  rpc::RpcContext* context) {
+  // Non-authorized errors will drop the connection.
+  if (code == TabletServerErrorPB::NOT_AUTHORIZED) {
+    DCHECK(s.IsNotAuthorized());
+    context->RespondRpcFailure(rpc::ErrorStatusPB::FATAL_UNAUTHORIZED, s);
+    return;
+  }
   // Generic "service unavailable" errors will cause the client to retry later.
   if ((code == TabletServerErrorPB::UNKNOWN_ERROR ||
        code == TabletServerErrorPB::THROTTLED) && s.IsServiceUnavailable()) {
@@ -1287,14 +1294,23 @@ void TabletServiceImpl::ScannerKeepAlive(const ScannerKeepAliveRequestPB *req,
                                          rpc::RpcContext *context) {
   DCHECK(req->has_scanner_id());
   SharedScanner scanner;
-  if (!server_->scanner_manager()->LookupScanner(req->scanner_id(), &scanner)) {
-    resp->mutable_error()->set_code(TabletServerErrorPB::SCANNER_EXPIRED);
-    Status s = Status::NotFound(Substitute("Scanner $0 not found (it may have expired)",
-                                           req->scanner_id()));
+  TabletServerErrorPB::Code error_code = TabletServerErrorPB::UNKNOWN_ERROR;
+  Status s = server_->scanner_manager()->LookupScanner(req->scanner_id(),
+                                                       context->remote_user().username(),
+                                                       &error_code,
+                                                       &scanner);
+  if (!s.ok()) {
     StatusToPB(s, resp->mutable_error()->mutable_status());
     LOG(INFO) << Substitute("ScannerKeepAlive: $0: remote=$1",
                             s.ToString(), context->requestor_string());
-    context->RespondSuccess();
+    if (PREDICT_TRUE(s.IsNotFound())) {
+      resp->mutable_error()->set_code(error_code);
+      StatusToPB(s, resp->mutable_error()->mutable_status());
+      context->RespondSuccess();
+      return;
+    }
+    DCHECK(s.IsNotAuthorized());
+    SetupErrorAndRespond(resp->mutable_error(), s, error_code, context);
     return;
   }
   scanner->UpdateAccessTime();
@@ -1545,7 +1561,7 @@ void TabletServiceImpl::Checksum(const ChecksumRequestPB* req,
 
   ScanResultChecksummer collector;
   bool has_more = false;
-  TabletServerErrorPB::Code error_code;
+  TabletServerErrorPB::Code error_code = TabletServerErrorPB::UNKNOWN_ERROR;
   if (req->has_new_request()) {
     scan_req.mutable_new_scan_request()->CopyFrom(req->new_request());
     const NewScanRequestPB& new_req = req->new_request();
@@ -1814,7 +1830,7 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
 
   SharedScanner scanner;
   server_->scanner_manager()->NewScanner(replica,
-                                         rpc_context->requestor_string(),
+                                         rpc_context->remote_user(),
                                          scan_pb.row_format_flags(),
                                          &scanner);
   TRACE("Created scanner $0 for tablet $1", scanner->id(), scanner->tablet_id());
@@ -2043,17 +2059,19 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
   // in case multiple RPCs hit the same scanner at the same time. Probably
   // just a trylock and fail the RPC if it contends.
   SharedScanner scanner;
-  if (!server_->scanner_manager()->LookupScanner(req->scanner_id(), &scanner)) {
-    if (batch_size_bytes == 0 && req->close_scanner()) {
+  TabletServerErrorPB::Code code = TabletServerErrorPB::UNKNOWN_ERROR;
+  Status s = server_->scanner_manager()->LookupScanner(req->scanner_id(),
+                                                       rpc_context->remote_user().username(),
+                                                       &code,
+                                                       &scanner);
+  if (!s.ok()) {
+    if (s.IsNotFound() && batch_size_bytes == 0 && req->close_scanner()) {
       // Silently ignore any request to close a non-existent scanner.
       return Status::OK();
     }
-
-    *error_code = TabletServerErrorPB::SCANNER_EXPIRED;
-    Status s = Status::NotFound(Substitute("Scanner $0 not found (it may have expired)",
-                                           req->scanner_id()));
     LOG(INFO) << Substitute("Scan: $0: call sequence id=$1, remote=$2",
                             s.ToString(), req->call_seq_id(), rpc_context->requestor_string());
+    *error_code = code;
     return s;
   }
 
@@ -2146,7 +2164,7 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
   scoped_refptr<TabletReplica> replica = scanner->tablet_replica();
   shared_ptr<Tablet> tablet;
   TabletServerErrorPB::Code tablet_ref_error_code;
-  const Status s = GetTabletRef(replica, &tablet, &tablet_ref_error_code);
+  s = GetTabletRef(replica, &tablet, &tablet_ref_error_code);
   // If the tablet is not running, but the scan operation in progress
   // has reached this point, the tablet server has the necessary data to
   // send in response for the scan continuation request.

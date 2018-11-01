@@ -120,6 +120,10 @@ class TabletServerTestBase : public KuduTest {
   void OpenScannerWithAllColumns(ScanResponsePB* resp,
                                  ReadMode read_mode = READ_LATEST);
 
+  // Fills out a new scan request on all of the columns in the table with the
+  // given read mode.
+  Status FillNewScanRequest(ReadMode read_mode, NewScanRequestPB* scan) const;
+
  protected:
   static const char* kTableId;
   static const char* kTabletId;

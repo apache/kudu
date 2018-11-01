@@ -48,6 +48,7 @@
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/rpc/remote_user.h"
 #include "kudu/server/webui_util.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet.h"
@@ -536,7 +537,7 @@ void ScanToJson(const ScanDescriptor& scan, EasyJson* json) {
   json->Set("scanner_id", scan.scanner_id);
   json->Set("state", ScanStateToString(scan.state));
   json->Set("query", ScanQueryHtml(scan));
-  json->Set("requestor", scan.requestor);
+  json->Set("requestor", scan.remote_user.username());
 
   json->Set("duration", HumanReadableElapsedTime::ToShortString(duration.ToSeconds()));
   json->Set("time_since_start",

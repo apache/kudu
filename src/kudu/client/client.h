@@ -2224,6 +2224,7 @@ class KUDU_EXPORT KuduScanner {
   class KUDU_NO_EXPORT Data;
 
   friend class KuduScanToken;
+  FRIEND_TEST(ClientTest, TestBlockScannerHijackingAttempts);
   FRIEND_TEST(ClientTest, TestScanCloseProxy);
   FRIEND_TEST(ClientTest, TestScanFaultTolerance);
   FRIEND_TEST(ClientTest, TestScanNoBlockCaching);

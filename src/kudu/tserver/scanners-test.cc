@@ -24,42 +24,51 @@
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/rpc/remote_user.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/scanner_metrics.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/status.h"
+#include "kudu/util/test_macros.h"
 
 DECLARE_int32(scanner_ttl_ms);
 
 namespace kudu {
 
+using rpc::RemoteUser;
+using std::vector;
 using tablet::TabletReplica;
 
 namespace tserver {
 
-using std::vector;
+static const char* kUsername = "kudu-user";
 
 TEST(ScannersTest, TestManager) {
   scoped_refptr<TabletReplica> null_replica(nullptr);
   ScannerManager mgr(nullptr);
 
   // Create two scanners, make sure their ids are different.
+  RemoteUser user;
+  user.SetUnauthenticated(kUsername);
   SharedScanner s1, s2;
-  mgr.NewScanner(null_replica, "", RowFormatFlags::NO_FLAGS, &s1);
-  mgr.NewScanner(null_replica, "", RowFormatFlags::NO_FLAGS, &s2);
+  mgr.NewScanner(null_replica, user, RowFormatFlags::NO_FLAGS, &s1);
+  mgr.NewScanner(null_replica, user, RowFormatFlags::NO_FLAGS, &s2);
   ASSERT_NE(s1->id(), s2->id());
 
   // Check that they're both registered.
   SharedScanner result;
-  ASSERT_TRUE(mgr.LookupScanner(s1->id(), &result));
+  TabletServerErrorPB::Code error_code;
+  ASSERT_OK(mgr.LookupScanner(s1->id(), kUsername, &error_code, &result));
   ASSERT_EQ(result.get(), s1.get());
 
-  ASSERT_TRUE(mgr.LookupScanner(s2->id(), &result));
+  ASSERT_OK(mgr.LookupScanner(s2->id(), kUsername, &error_code, &result));
   ASSERT_EQ(result.get(), s2.get());
 
   // Check that looking up a bad scanner returns false.
-  ASSERT_FALSE(mgr.LookupScanner("xxx", &result));
+  ASSERT_TRUE(mgr.LookupScanner("xxx", kUsername, &error_code, &result).IsNotFound());
+  ASSERT_EQ(TabletServerErrorPB::SCANNER_EXPIRED, error_code);
 
   // Remove the scanners.
   ASSERT_TRUE(mgr.UnregisterScanner(s1->id()));
@@ -75,8 +84,8 @@ TEST(ScannerTest, TestExpire) {
   MetricRegistry registry;
   ScannerManager mgr(METRIC_ENTITY_server.Instantiate(&registry, "test"));
   SharedScanner s1, s2;
-  mgr.NewScanner(null_replica, "", RowFormatFlags::NO_FLAGS, &s1);
-  mgr.NewScanner(null_replica, "", RowFormatFlags::NO_FLAGS, &s2);
+  mgr.NewScanner(null_replica, RemoteUser(), RowFormatFlags::NO_FLAGS, &s1);
+  mgr.NewScanner(null_replica, RemoteUser(), RowFormatFlags::NO_FLAGS, &s2);
   SleepFor(MonoDelta::FromMilliseconds(200));
   s2->UpdateAccessTime();
   mgr.RemoveExpiredScanners();

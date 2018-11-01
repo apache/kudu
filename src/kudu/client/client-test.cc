@@ -5714,5 +5714,70 @@ TEST_F(ClientTest, TestAuthenticationCredentialsRealUser) {
   KuduScanner scanner(client_table_.get());
   ASSERT_OK(ScanToStrings(&scanner, &rows));
 }
+
+// Test that clients that aren't authenticated as the appropriate user will be
+// unable to hijack a specific scanner ID.
+TEST_F(ClientTest, TestBlockScannerHijackingAttempts) {
+  const string kUser = "token-user";
+  const string kBadGuy = "bad-guy";
+  const string table_name = client_table_->name();
+  FLAGS_user_acl = Substitute("$0,$1", kUser, kBadGuy);
+  cluster_->ShutdownNodes(cluster::ClusterNodes::ALL);
+  ASSERT_OK(cluster_->StartSync());
+
+  // Insert some rows to the table.
+  NO_FATALS(InsertTestRows(client_table_.get(), FLAGS_test_scan_num_rows));
+
+  // First authenticate as a user and create a scanner for the existing table.
+  const auto get_table_as_user = [&] (const string& user, shared_ptr<KuduTable>* table) {
+    KuduClientBuilder client_builder;
+    string authn_creds;
+    AuthenticationCredentialsPB pb;
+    pb.set_real_user(user);
+    ASSERT_TRUE(pb.SerializeToString(&authn_creds));
+    client_builder.import_authentication_credentials(authn_creds);
+
+    // Create the client and table for the user.
+    shared_ptr<KuduClient> user_client;
+    ASSERT_OK(cluster_->CreateClient(&client_builder, &user_client));
+    ASSERT_OK(user_client->OpenTable(table_name, table));
+  };
+
+  shared_ptr<KuduTable> user_table;
+  shared_ptr<KuduTable> bad_guy_table;
+  NO_FATALS(get_table_as_user(kUser, &user_table));
+  NO_FATALS(get_table_as_user(kBadGuy, &bad_guy_table));
+
+  // Test both fault-tolerant scanners and non-fault-tolerant scanners.
+  for (bool fault_tolerance : { true, false }) {
+    // Scan the table as the user to get a scanner ID, and set up a malicious
+    // scanner that will try to hijack that scanner ID. Set an initial batch
+    // size of 0 so the calls to Open() don't buffer any rows.
+    KuduScanner user_scanner(user_table.get());
+    ASSERT_OK(user_scanner.SetBatchSizeBytes(0));
+    KuduScanner bad_guy_scanner(bad_guy_table.get());
+    ASSERT_OK(bad_guy_scanner.SetBatchSizeBytes(0));
+    if (fault_tolerance) {
+      ASSERT_OK(user_scanner.SetFaultTolerant());
+      ASSERT_OK(bad_guy_scanner.SetFaultTolerant());
+    }
+    ASSERT_OK(user_scanner.Open());
+    ASSERT_OK(bad_guy_scanner.Open());
+    const string scanner_id = user_scanner.data_->next_req_.scanner_id();
+    ASSERT_FALSE(scanner_id.empty());
+
+    // Now attempt to get that scanner id as a different user.
+    LOG(INFO) << Substitute("Attempting to extract data from $0 scan $1 as $2",
+        fault_tolerance ? "fault-tolerant" : "non-fault-tolerant", scanner_id, kBadGuy);
+    bad_guy_scanner.data_->next_req_.set_scanner_id(scanner_id);
+    bad_guy_scanner.data_->last_response_.set_has_more_results(true);
+    KuduScanBatch batch;
+    Status s = bad_guy_scanner.NextBatch(&batch);
+    ASSERT_TRUE(s.IsRemoteError());
+    ASSERT_STR_CONTAINS(s.ToString(), "Not authorized");
+    ASSERT_EQ(0, batch.NumRows());
+  }
+}
+
 } // namespace client
 } // namespace kudu

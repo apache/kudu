@@ -34,6 +34,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/rpc/remote_user.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_metrics.h"
@@ -68,6 +69,7 @@ using strings::Substitute;
 
 namespace kudu {
 
+using rpc::RemoteUser;
 using tablet::TabletReplica;
 
 namespace tserver {
@@ -131,20 +133,16 @@ ScannerManager::ScannerMapStripe& ScannerManager::GetStripeByScannerId(const str
 }
 
 void ScannerManager::NewScanner(const scoped_refptr<TabletReplica>& tablet_replica,
-                                const std::string& requestor_string,
+                                const RemoteUser& remote_user,
                                 uint64_t row_format_flags,
                                 SharedScanner* scanner) {
   // Keep trying to generate a unique ID until we get one.
   bool success = false;
   while (!success) {
-    // TODO(KUDU-1918): are these UUIDs predictable? If so, we should
-    // probably generate random numbers instead, since we can safely
-    // just retry until we avoid a collision. Alternatively we could
-    // verify that the requestor userid does not change mid-scan.
     string id = oid_generator_.Next();
     scanner->reset(new Scanner(id,
                                tablet_replica,
-                               requestor_string,
+                               remote_user,
                                metrics_.get(),
                                row_format_flags));
 
@@ -154,10 +152,26 @@ void ScannerManager::NewScanner(const scoped_refptr<TabletReplica>& tablet_repli
   }
 }
 
-bool ScannerManager::LookupScanner(const string& scanner_id, SharedScanner* scanner) {
+Status ScannerManager::LookupScanner(const string& scanner_id,
+                                     const string& username,
+                                     TabletServerErrorPB::Code* error_code,
+                                     SharedScanner* scanner) {
+  SharedScanner ret;
   ScannerMapStripe& stripe = GetStripeByScannerId(scanner_id);
   shared_lock<RWMutex> l(stripe.lock_);
-  return FindCopy(stripe.scanners_by_id_, scanner_id, scanner);
+  bool found_scanner = FindCopy(stripe.scanners_by_id_, scanner_id, &ret);
+  if (!found_scanner) {
+    *error_code = TabletServerErrorPB::SCANNER_EXPIRED;
+    return Status::NotFound(Substitute("Scanner $0 not found (it may have expired)",
+                                       scanner_id));
+  }
+  if (username != ret->remote_user().username()) {
+    *error_code = TabletServerErrorPB::NOT_AUTHORIZED;
+    return Status::NotAuthorized(Substitute("User $0 doesn't own scanner $1",
+                                            username, scanner_id));
+  }
+  *scanner = std::move(ret);
+  return Status::OK();
 }
 
 bool ScannerManager::UnregisterScanner(const string& scanner_id) {
@@ -290,11 +304,11 @@ void ScannerManager::RecordCompletedScanUnlocked(ScanDescriptor descriptor) {
 const std::string Scanner::kNullTabletId = "null tablet";
 
 Scanner::Scanner(string id, const scoped_refptr<TabletReplica>& tablet_replica,
-                 string requestor_string, ScannerMetrics* metrics,
+                 RemoteUser remote_user, ScannerMetrics* metrics,
                  uint64_t row_format_flags)
     : id_(std::move(id)),
       tablet_replica_(tablet_replica),
-      requestor_string_(std::move(requestor_string)),
+      remote_user_(std::move(remote_user)),
       call_seq_id_(0),
       start_time_(MonoTime::Now()),
       metrics_(metrics),
@@ -353,7 +367,7 @@ ScanDescriptor Scanner::descriptor() const {
   ScanDescriptor descriptor;
   descriptor.tablet_id = tablet_id();
   descriptor.scanner_id = id();
-  descriptor.requestor = requestor_string();
+  descriptor.remote_user = remote_user();
   descriptor.start_time = start_time_;
 
   for (const auto& column : client_projection_schema()->columns()) {

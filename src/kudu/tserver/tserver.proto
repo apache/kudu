@@ -96,6 +96,9 @@ message TabletServerErrorPB {
 
     // The tablet needs to be evicted and reassigned.
     TABLET_FAILED = 20;
+
+    // The request is disallowed for the given user.
+    NOT_AUTHORIZED = 21;
   }
 
   // The error code.

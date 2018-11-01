@@ -458,6 +458,12 @@ void TabletServerTestBase::VerifyScanRequestFailure(
   }
 }
 
+Status TabletServerTestBase::FillNewScanRequest(ReadMode read_mode, NewScanRequestPB* scan) const {
+  scan->set_tablet_id(kTabletId);
+  scan->set_read_mode(read_mode);
+  return SchemaToColumnPBs(schema_, scan->mutable_projected_columns());
+}
+
 // Open a new scanner which scans all of the columns in the table.
 void TabletServerTestBase::OpenScannerWithAllColumns(ScanResponsePB* resp,
                                                      ReadMode read_mode) {
@@ -465,11 +471,7 @@ void TabletServerTestBase::OpenScannerWithAllColumns(ScanResponsePB* resp,
   RpcController rpc;
 
   // Set up a new request with no predicates, all columns.
-  const Schema& projection = schema_;
-  NewScanRequestPB* scan = req.mutable_new_scan_request();
-  scan->set_tablet_id(kTabletId);
-  scan->set_read_mode(read_mode);
-  ASSERT_OK(SchemaToColumnPBs(projection, scan->mutable_projected_columns()));
+  ASSERT_OK(FillNewScanRequest(read_mode, req.mutable_new_scan_request()));
   req.set_call_seq_id(0);
   req.set_batch_size_bytes(0); // so it won't return data right away
 
