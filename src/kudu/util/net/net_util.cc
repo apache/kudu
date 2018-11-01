@@ -138,12 +138,37 @@ Status HostPort::ParseString(const string& str, uint16_t default_port) {
     port = default_port;
   } else if (!SimpleAtoi(p.second, &port) ||
              port > 65535) {
-    return Status::InvalidArgument("Invalid port", str);
+    return Status::InvalidArgument("invalid port", str);
   }
 
   host_.swap(p.first);
   port_ = port;
   return Status::OK();
+}
+
+Status HostPort::ParseStringWithScheme(const string& str, uint16_t default_port) {
+  string str_copy(str);
+  const string kSchemeSeparator = "://";
+  const string kPathSeparator = "/";
+
+  auto scheme_idx = str_copy.find(kSchemeSeparator);
+
+  if (scheme_idx == 0) {
+    return Status::InvalidArgument("invalid scheme format", str_copy);
+  }
+
+  if (scheme_idx != string::npos) {
+    str_copy.erase(0, scheme_idx + kSchemeSeparator.size());
+    auto path_idx = str_copy.find(kPathSeparator);
+    if (path_idx == 0) {
+      return Status::InvalidArgument("invalid address format", str_copy);
+    }
+    if (path_idx != string::npos) {
+      str_copy.erase(path_idx, str_copy.size());
+    }
+  }
+
+  return ParseString(str_copy, default_port);
 }
 
 Status HostPort::ResolveAddresses(vector<Sockaddr>* addresses) const {
@@ -179,11 +204,29 @@ Status HostPort::ResolveAddresses(vector<Sockaddr>* addresses) const {
 Status HostPort::ParseStrings(const string& comma_sep_addrs,
                               uint16_t default_port,
                               vector<HostPort>* res) {
+  res->clear();
+
   vector<string> addr_strings = strings::Split(comma_sep_addrs, ",", strings::SkipEmpty());
+  res->reserve(addr_strings.size());
   for (const string& addr_string : addr_strings) {
     HostPort host_port;
     RETURN_NOT_OK(host_port.ParseString(addr_string, default_port));
-    res->push_back(host_port);
+    res->emplace_back(host_port);
+  }
+  return Status::OK();
+}
+
+Status HostPort::ParseStringsWithScheme(const string& comma_sep_addrs,
+                                        uint16_t default_port,
+                                        vector<HostPort>* res) {
+  res->clear();
+
+  vector<string> addr_strings = strings::Split(comma_sep_addrs, ",", strings::SkipEmpty());
+  res->reserve(addr_strings.size());
+  for (const string& addr_string : addr_strings) {
+    HostPort host_port;
+    RETURN_NOT_OK(host_port.ParseStringWithScheme(addr_string, default_port));
+    res->emplace_back(host_port);
   }
   return Status::OK();
 }

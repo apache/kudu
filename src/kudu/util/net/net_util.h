@@ -39,9 +39,19 @@ class HostPort {
     return !host_.empty();
   }
 
-  // Parse a "host:port" pair into this object.
+  // Parse a <host>:<port> pair into this object.
   // If there is no port specified in the string, then 'default_port' is used.
+  //
+  // Note that <host> cannot be in IPv6 address notation.
   Status ParseString(const std::string& str, uint16_t default_port);
+
+  // Similar to above but allow the address to have scheme and path, e.g.
+  //   <host>
+  //   <host>:<port>
+  //   <fs>://<host>:<port>/<path>
+  //
+  // Note that both scheme and path are ignored.
+  Status ParseStringWithScheme(const std::string& str, uint16_t default_port);
 
   // Resolve any addresses corresponding to this host:port pair.
   // Note that a host may resolve to more than one IP address.
@@ -65,6 +75,11 @@ class HostPort {
   // comma separated list, 'default_port' is used for that entry's
   // pair.
   static Status ParseStrings(
+      const std::string& comma_sep_addrs, uint16_t default_port, std::vector<HostPort>* res);
+
+  // Similar to above but allow the addresses to have scheme and path,
+  // which are ignored.
+  static Status ParseStringsWithScheme(
       const std::string& comma_sep_addrs, uint16_t default_port, std::vector<HostPort>* res);
 
   // Takes a vector of HostPort objects and returns a comma separated

@@ -76,13 +76,53 @@ TEST_F(NetUtilTest, TestParseAddresses) {
 
   // Test some invalid addresses.
   Status s = DoParseBindAddresses("0.0.0.0:xyz", &ret);
-  ASSERT_STR_CONTAINS(s.ToString(), "Invalid port");
+  ASSERT_STR_CONTAINS(s.ToString(), "invalid port");
 
   s = DoParseBindAddresses("0.0.0.0:100000", &ret);
-  ASSERT_STR_CONTAINS(s.ToString(), "Invalid port");
+  ASSERT_STR_CONTAINS(s.ToString(), "invalid port");
 
   s = DoParseBindAddresses("0.0.0.0:", &ret);
-  ASSERT_STR_CONTAINS(s.ToString(), "Invalid port");
+  ASSERT_STR_CONTAINS(s.ToString(), "invalid port");
+}
+
+TEST_F(NetUtilTest, TestParseAddressesWithScheme) {
+  vector<HostPort> hostports;
+  const uint16_t kDefaultPort = 12345;
+
+  EXPECT_OK(HostPort::ParseStringsWithScheme("", kDefaultPort, &hostports));
+  EXPECT_TRUE(hostports.empty());
+
+  EXPECT_OK(HostPort::ParseStringsWithScheme(",,,", kDefaultPort, &hostports));
+  EXPECT_TRUE(hostports.empty());
+
+  EXPECT_OK(HostPort::ParseStringsWithScheme("http://foo-bar-baz:1234", kDefaultPort, &hostports));
+  EXPECT_EQ(vector<HostPort>({ HostPort("foo-bar-baz", 1234) }), hostports);
+
+  EXPECT_OK(HostPort::ParseStringsWithScheme("http://foo-bar-baz:1234/path",
+                                             kDefaultPort, &hostports));
+  EXPECT_EQ(vector<HostPort>({ HostPort("foo-bar-baz", 1234) }), hostports);
+
+  EXPECT_OK(HostPort::ParseStringsWithScheme("http://abc:1234,xyz", kDefaultPort, &hostports));
+  EXPECT_EQ(vector<HostPort>({ HostPort("abc", 1234), HostPort("xyz", kDefaultPort) }),
+            hostports);
+
+  // Test some invalid addresses.
+  Status s = HostPort::ParseStringsWithScheme("abc:1234/path", kDefaultPort, &hostports);
+  EXPECT_TRUE(s.IsInvalidArgument());
+  ASSERT_STR_CONTAINS(s.ToString(), "invalid port");
+
+  s = HostPort::ParseStringsWithScheme("://scheme:12", kDefaultPort, &hostports);
+  EXPECT_TRUE(s.IsInvalidArgument());
+  ASSERT_STR_CONTAINS(s.ToString(), "invalid scheme format");
+
+  s = HostPort::ParseStringsWithScheme("http:///path", kDefaultPort, &hostports);
+  EXPECT_TRUE(s.IsInvalidArgument());
+  ASSERT_STR_CONTAINS(s.ToString(), "invalid address format");
+
+  s = HostPort::ParseStringsWithScheme("http://abc:1234,://scheme,xyz",
+                                       kDefaultPort, &hostports);
+  EXPECT_TRUE(s.IsInvalidArgument());
+  ASSERT_STR_CONTAINS(s.ToString(), "invalid scheme format");
 }
 
 TEST_F(NetUtilTest, TestResolveAddresses) {
