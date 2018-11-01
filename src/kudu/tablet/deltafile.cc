@@ -661,8 +661,9 @@ Status DeltaFileIterator<Type>::AddDeltas(rowid_t start_row, rowid_t stop_row) {
 }
 
 template<DeltaType Type>
-Status DeltaFileIterator<Type>::ApplyUpdates(size_t col_to_apply, ColumnBlock* dst) {
-  return preparer_.ApplyUpdates(col_to_apply, dst);
+Status DeltaFileIterator<Type>::ApplyUpdates(size_t col_to_apply, ColumnBlock* dst,
+                                             const SelectionVector& filter) {
+  return preparer_.ApplyUpdates(col_to_apply, dst, filter);
 }
 
 template<DeltaType Type>

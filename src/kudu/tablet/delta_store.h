@@ -137,10 +137,15 @@ class PreparedDeltas {
  public:
   // Applies the snapshotted updates to one of the columns.
   //
-  // 'dst' must be the same length as was previously passed to PrepareBatch()
+  // 'dst' must be the same length as was previously passed to PrepareBatch().
+  //
+  // Updates belonging to unselected rows in 'filter' will be skipped. This is
+  // intended as an optimization; if the caller knows with certainty that some
+  // rows are irrelevant (e.g. they've been deleted), we can avoid some copying.
   //
   // Deltas must have been prepared with the flag PREPARE_FOR_APPLY.
-  virtual Status ApplyUpdates(size_t col_to_apply, ColumnBlock* dst) = 0;
+  virtual Status ApplyUpdates(size_t col_to_apply, ColumnBlock* dst,
+                              const SelectionVector& filter) = 0;
 
   // Applies any deletes to the given selection vector.
   //
@@ -280,7 +285,8 @@ class DeltaPreparer : public PreparedDeltas {
   // Call when a new delta becomes available in DeltaIterator::PrepareBatch.
   Status AddDelta(const DeltaKey& key, Slice val, bool* finished_row);
 
-  Status ApplyUpdates(size_t col_to_apply, ColumnBlock* dst) override;
+  Status ApplyUpdates(size_t col_to_apply, ColumnBlock* dst,
+                      const SelectionVector& filter) override;
 
   Status ApplyDeletes(SelectionVector* sel_vec) override;
 

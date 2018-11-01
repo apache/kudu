@@ -38,6 +38,7 @@
 #include "kudu/common/columnblock.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/row_changelist.h"
+#include "kudu/common/rowblock.h"
 #include "kudu/common/rowid.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/timestamp.h"
@@ -48,7 +49,6 @@
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/delta_key.h"
@@ -101,14 +101,6 @@ class TestDeltaMemStore : public KuduTest {
     CHECK_OK(dms_->Init(nullptr));
   }
 
-  void SetUp() OVERRIDE {
-    KuduTest::SetUp();
-
-    fs_manager_.reset(new FsManager(env_, GetTestPath("fs_root")));
-    ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
-    ASSERT_OK(fs_manager_->Open());
-  }
-
   static Schema CreateSchema() {
     SchemaBuilder builder;
     CHECK_OK(builder.AddColumn("col1", STRING));
@@ -156,9 +148,11 @@ class TestDeltaMemStore : public KuduTest {
     ASSERT_OK(iter->Init(nullptr));
     ASSERT_OK(iter->SeekToOrdinal(row_idx));
     ASSERT_OK(iter->PrepareBatch(cb->nrows(), DeltaIterator::PREPARE_FOR_APPLY));
-    ASSERT_OK(iter->ApplyUpdates(0, cb));
+    SelectionVector filter(cb->nrows());
+    filter.SetAllTrue();
+    ASSERT_OK(iter->ApplyDeletes(&filter));
+    ASSERT_OK(iter->ApplyUpdates(0, cb, filter));
   }
-
 
  protected:
   static const int kStringColumn = 1;
@@ -170,7 +164,6 @@ class TestDeltaMemStore : public KuduTest {
   shared_ptr<DeltaMemStore> dms_;
   scoped_refptr<clock::Clock> clock_;
   MvccManager mvcc_;
-  gscoped_ptr<FsManager> fs_manager_;
 };
 
 static void GenerateRandomIndexes(uint32_t range, uint32_t count,
@@ -213,8 +206,12 @@ TEST_F(TestDeltaMemStore, TestUpdateCount) {
 
 
   // Flush the delta file so that the stats get updated.
+
+  FsManager fs(env_, GetTestPath("fs_root"));
+  ASSERT_OK(fs.CreateInitialFileSystemLayout());
+  ASSERT_OK(fs.Open());
   unique_ptr<WritableBlock> block;
-  ASSERT_OK(fs_manager_->CreateNewBlock({}, &block));
+  ASSERT_OK(fs.CreateNewBlock({}, &block));
   DeltaFileWriter dfw(std::move(block));
   ASSERT_OK(dfw.Start());
   gscoped_ptr<DeltaStats> stats;
@@ -337,6 +334,48 @@ TEST_P(TestDeltaMemStoreNumUpdates, BenchmarkSnapshotScans) {
           NO_FATALS(ApplyUpdates(snap, 0, kIntColumn, &ints));
         }
       }
+    }
+  }
+}
+
+class TestDeltaMemStoreNumDeletes : public TestDeltaMemStore,
+                                    public ::testing::WithParamInterface<int> {
+};
+
+INSTANTIATE_TEST_CASE_P(DifferentNumDeletes,
+                        TestDeltaMemStoreNumDeletes, ::testing::Values(0, 10, 100, 1000));
+
+TEST_P(TestDeltaMemStoreNumDeletes, BenchmarkScansWithVaryingNumberOfDeletes) {
+  const int kNumUpdates = 10000;
+
+  // Populate the DMS with kNumRows updates, one to each row.
+  faststring buf;
+  RowChangeListEncoder update(&buf);
+  rowid_t delete_stepping = GetParam() != 0 ? kNumUpdates / GetParam() : 0;
+  for (rowid_t row_idx = 0; row_idx < kNumUpdates; row_idx++) {
+    update.Reset();
+
+    uint32_t new_val = row_idx;
+    update.AddColumnUpdate(schema_.column(kIntColumn),
+                           schema_.column_id(kIntColumn), &new_val);
+    ASSERT_OK(dms_->Update(Timestamp(row_idx), row_idx, RowChangeList(buf), op_id_));
+
+    // When appropriate, add a DELETE too.
+    if (delete_stepping != 0 && row_idx % delete_stepping == 0) {
+      update.Reset();
+      update.SetToDelete();
+      ASSERT_OK(dms_->Update(Timestamp(row_idx + 1), row_idx, RowChangeList(buf), op_id_));
+    }
+  }
+
+  // Now scan the DMS. The scans are repeated in a number of passes to stabilize
+  // the results.
+  ScopedColumnBlock<UINT32> ints(kNumUpdates);
+  MvccSnapshot snap(MvccSnapshot::CreateSnapshotIncludingAllTransactions());
+  LOG_TIMING(INFO, Substitute("running $0 scans with $1 deletes",
+                              FLAGS_benchmark_num_passes, GetParam())) {
+    for (int pass = 0; pass < FLAGS_benchmark_num_passes; pass++) {
+      NO_FATALS(ApplyUpdates(snap, 0, kIntColumn, &ints));
     }
   }
 }
@@ -523,7 +562,9 @@ TEST_F(TestDeltaMemStore, TestIteratorDoesUpdates) {
   int block_start_row = 50;
   ASSERT_OK(iter->SeekToOrdinal(block_start_row));
   ASSERT_OK(iter->PrepareBatch(block.nrows(), DeltaIterator::PREPARE_FOR_APPLY));
-  ASSERT_OK(iter->ApplyUpdates(kIntColumn, &block));
+  SelectionVector sv(block.nrows());
+  sv.SetAllTrue();
+  ASSERT_OK(iter->ApplyUpdates(kIntColumn, &block, sv));
 
   for (int i = 0; i < 100; i++) {
     int actual_row = block_start_row + i;
@@ -533,7 +574,7 @@ TEST_F(TestDeltaMemStore, TestIteratorDoesUpdates) {
   // Apply the next block
   block_start_row += block.nrows();
   ASSERT_OK(iter->PrepareBatch(block.nrows(), DeltaIterator::PREPARE_FOR_APPLY));
-  ASSERT_OK(iter->ApplyUpdates(kIntColumn, &block));
+  ASSERT_OK(iter->ApplyUpdates(kIntColumn, &block, sv));
   for (int i = 0; i < 100; i++) {
     int actual_row = block_start_row + i;
     ASSERT_EQ(actual_row * 10, block[i]) << "at row " << actual_row;

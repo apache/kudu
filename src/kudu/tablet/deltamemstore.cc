@@ -275,8 +275,9 @@ Status DMSIterator::PrepareBatch(size_t nrows, PrepareFlag flag) {
   return Status::OK();
 }
 
-Status DMSIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock* dst) {
-  return preparer_.ApplyUpdates(col_to_apply, dst);
+Status DMSIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock* dst,
+                                 const SelectionVector& filter) {
+  return preparer_.ApplyUpdates(col_to_apply, dst, filter);
 }
 
 Status DMSIterator::ApplyDeletes(SelectionVector* sel_vec) {

@@ -62,7 +62,8 @@ class DeltaIteratorMerger : public DeltaIterator {
 
   Status PrepareBatch(size_t nrows, PrepareFlag flag) override;
 
-  Status ApplyUpdates(size_t col_to_apply, ColumnBlock* dst) override;
+  Status ApplyUpdates(size_t col_to_apply, ColumnBlock* dst,
+                      const SelectionVector& filter) override;
 
   Status ApplyDeletes(SelectionVector* sel_vec) override;
 

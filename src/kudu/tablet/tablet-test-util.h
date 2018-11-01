@@ -399,10 +399,13 @@ class MirroredDeltas {
 
   // Applies tracked UPDATE and REINSERT values to 'cb'.
   //
+  // Rows not set in 'filter' are skipped.
+  //
   // Deltas not relevant to 'ts' are skipped. The set of rows considered is
   // determined by 'start_row_idx' and the number of rows in 'cb'.
   Status ApplyUpdates(const Schema& projection, Timestamp ts,
-                      rowid_t start_row_idx, int col_idx, ColumnBlock* cb) {
+                      rowid_t start_row_idx, int col_idx, ColumnBlock* cb,
+                      const SelectionVector& filter) {
     for (int i = 0; i < cb->nrows(); i++) {
       rowid_t row_idx = start_row_idx + i;
       for (const auto& e : all_deltas_[row_idx]) {
@@ -410,6 +413,9 @@ class MirroredDeltas {
           // No need to keep iterating; all future deltas for this row will also
           // be irrelevant.
           break;
+        }
+        if (!filter.IsRowSelected(i)) {
+          continue;
         }
         RowChangeList changes(e.second);
         if (changes.is_delete()) {
@@ -813,6 +819,21 @@ void RunDeltaFuzzTest(const DeltaStore& store,
                                        start_row_idx, batch_size));
       ASSERT_OK(iter->PrepareBatch(batch_size, DeltaIterator::PREPARE_FOR_APPLY));
 
+      // Test ApplyDeletes: the selection vector is all true and a row is unset
+      // if the last relevant update deleted it.
+      //
+      // Note: we retain 'actual_deleted' for use as a filter in the
+      // ApplyUpdates test below.
+      SelectionVector actual_deleted(batch_size);
+      {
+        SelectionVector expected_deleted(batch_size);
+        expected_deleted.SetAllTrue();
+        actual_deleted.SetAllTrue();
+        ASSERT_OK(mirror->ApplyDeletes(ts, start_row_idx, &expected_deleted));
+        ASSERT_OK(iter->ApplyDeletes(&actual_deleted));
+        ASSERT_EQ(expected_deleted, actual_deleted);
+      }
+
       // Test ApplyUpdates: all relevant updates are applied to the column block.
       for (int j = 0; j < opts.projection->num_columns(); j++) {
         SCOPED_TRACE(strings::Substitute("Column $0", j));
@@ -823,24 +844,13 @@ void RunDeltaFuzzTest(const DeltaStore& store,
           actual_scb[k] = 0;
         }
         ASSERT_OK(mirror->ApplyUpdates(*opts.projection, ts, start_row_idx, j,
-                                       &expected_scb));
-        ASSERT_OK(iter->ApplyUpdates(j, &actual_scb));
+                                       &expected_scb, actual_deleted));
+        ASSERT_OK(iter->ApplyUpdates(j, &actual_scb, actual_deleted));
         ASSERT_EQ(expected_scb, actual_scb)
             << "Expected column block: " << expected_scb.ToString()
             << "\nActual column block: " << actual_scb.ToString();
       }
 
-      // Test ApplyDeletes: the selection vector is all true and a row is unset
-      // if the last relevant update deleted it.
-      {
-        SelectionVector expected_sv(batch_size);
-        SelectionVector actual_sv(batch_size);
-        expected_sv.SetAllTrue();
-        actual_sv.SetAllTrue();
-        ASSERT_OK(mirror->ApplyDeletes(ts, start_row_idx, &expected_sv));
-        ASSERT_OK(iter->ApplyDeletes(&actual_sv));
-        ASSERT_EQ(expected_sv, actual_sv);
-      }
       start_row_idx += batch_size;
     }
 

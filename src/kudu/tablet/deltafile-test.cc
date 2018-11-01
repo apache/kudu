@@ -193,8 +193,11 @@ class TestDeltaFile : public KuduTest {
       arena_.Reset();
 
       ASSERT_OK_FAST(it->PrepareBatch(block.nrows(), DeltaIterator::PREPARE_FOR_APPLY));
+      SelectionVector sv(block.nrows());
+      sv.SetAllTrue();
+      ASSERT_OK_FAST(it->ApplyDeletes(&sv));
       ColumnBlock dst_col = block.column_block(0);
-      ASSERT_OK_FAST(it->ApplyUpdates(0, &dst_col));
+      ASSERT_OK_FAST(it->ApplyUpdates(0, &dst_col, sv));
 
       for (int i = 0; i < block.nrows(); i++) {
         uint32_t row = start_row + i;
@@ -523,7 +526,7 @@ TYPED_TEST(DeltaTypeTestDeltaFile, BenchmarkPrepareAndApply) {
       scb[j] = 0;
     }
     for (int j = 0; j < projection.num_columns(); j++) {
-      ASSERT_OK(iter->ApplyUpdates(j, &scb));
+      ASSERT_OK(iter->ApplyUpdates(j, &scb, sel_vec));
     }
   }
 }

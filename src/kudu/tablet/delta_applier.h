@@ -18,8 +18,8 @@
 #define KUDU_TABLET_DELTA_APPLIER_H
 
 #include <cstddef>
-#include <string>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include <gtest/gtest_prod.h>

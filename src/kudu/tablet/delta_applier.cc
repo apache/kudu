@@ -109,7 +109,7 @@ Status DeltaApplier::MaterializeColumn(ColumnMaterializationContext *ctx) {
   if (delta_iter_->MayHaveDeltas()) {
     ctx->SetDecoderEvalNotSupported();
     RETURN_NOT_OK(base_iter_->MaterializeColumn(ctx));
-    RETURN_NOT_OK(delta_iter_->ApplyUpdates(ctx->col_idx(), ctx->block()));
+    RETURN_NOT_OK(delta_iter_->ApplyUpdates(ctx->col_idx(), ctx->block(), *ctx->sel()));
   } else {
     RETURN_NOT_OK(base_iter_->MaterializeColumn(ctx));
   }

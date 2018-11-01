@@ -214,7 +214,8 @@ Status DeltaPreparer<Traits>::AddDelta(const DeltaKey& key, Slice val, bool* fin
 }
 
 template<class Traits>
-Status DeltaPreparer<Traits>::ApplyUpdates(size_t col_to_apply, ColumnBlock* dst) {
+Status DeltaPreparer<Traits>::ApplyUpdates(size_t col_to_apply, ColumnBlock* dst,
+                                           const SelectionVector& filter) {
   DCHECK_EQ(prepared_for_, PREPARED_FOR_APPLY);
   DCHECK_LE(cur_prepared_idx_ - prev_prepared_idx_, dst->nrows());
 
@@ -222,6 +223,9 @@ Status DeltaPreparer<Traits>::ApplyUpdates(size_t col_to_apply, ColumnBlock* dst
   for (const ColumnUpdate& cu : updates_by_col_[col_to_apply]) {
     int32_t idx_in_block = cu.row_id - prev_prepared_idx_;
     DCHECK_GE(idx_in_block, 0);
+    if (!filter.IsRowSelected(idx_in_block)) {
+      continue;
+    }
     SimpleConstCell src(col_schema, cu.new_val_ptr);
     ColumnBlock::Cell dst_cell = dst->cell(idx_in_block);
     RETURN_NOT_OK(CopyCell(src, &dst_cell, dst->arena()));
