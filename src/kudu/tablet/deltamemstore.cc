@@ -234,7 +234,7 @@ Status DMSIterator::PrepareBatch(size_t nrows, int prepare_flags) {
   rowid_t start_row = preparer_.cur_prepared_idx();
   rowid_t stop_row = start_row + nrows - 1;
 
-  preparer_.Start(prepare_flags);
+  preparer_.Start(nrows, prepare_flags);
   bool finished_row = false;
   while (iter_->IsValid()) {
     Slice key_slice, val;
@@ -284,6 +284,9 @@ Status DMSIterator::ApplyDeletes(SelectionVector* sel_vec) {
   return preparer_.ApplyDeletes(sel_vec);
 }
 
+Status DMSIterator::SelectUpdates(SelectionVector* sel_vec) {
+  return preparer_.SelectUpdates(sel_vec);
+}
 
 Status DMSIterator::CollectMutations(vector<Mutation*>*dst, Arena* arena) {
   return preparer_.CollectMutations(dst, arena);

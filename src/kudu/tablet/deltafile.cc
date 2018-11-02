@@ -44,6 +44,7 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/tablet/delta_relevancy.h"
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/tablet.pb.h"
@@ -285,20 +286,30 @@ Status DeltaFileReader::ReadDeltaStats() {
   return Status::OK();
 }
 
-bool DeltaFileReader::IsRelevantForSnapshot(const MvccSnapshot& snap) const {
+bool DeltaFileReader::IsRelevantForSnapshots(
+    const boost::optional<MvccSnapshot>& snap_to_exclude,
+    const MvccSnapshot& snap_to_include) const {
   if (!init_once_.init_succeeded()) {
     // If we're not initted, it means we have no delta stats and must
     // assume that this file is relevant for every snapshot.
     return true;
   }
-  if (delta_type_ == REDO) {
-    return snap.MayHaveCommittedTransactionsAtOrAfter(delta_stats_->min_timestamp());
+
+  // We don't know whether the caller's intent is to apply deltas, to select
+  // them, or both. As such, we must be conservative and assume 'both', which
+  // means the file is relevant if any relevancy criteria is true.
+  bool relevant = delta_type_ == REDO ?
+                  IsDeltaRelevantForApply<REDO>(snap_to_include,
+                                                delta_stats_->min_timestamp()) :
+                  IsDeltaRelevantForApply<UNDO>(snap_to_include,
+                                                delta_stats_->max_timestamp());
+  if (snap_to_exclude) {
+    // The select criteria is the same regardless of delta_type_.
+    relevant |= IsDeltaRelevantForSelect(*snap_to_exclude, snap_to_include,
+                                         delta_stats_->min_timestamp(),
+                                         delta_stats_->max_timestamp());
   }
-  if (delta_type_ == UNDO) {
-    return snap.MayHaveUncommittedTransactionsAtOrBefore(delta_stats_->max_timestamp());
-  }
-  LOG(DFATAL) << "Cannot reach here";
-  return false;
+  return relevant;
 }
 
 Status DeltaFileReader::CloneForDebugging(FsManager* fs_manager,
@@ -313,7 +324,7 @@ Status DeltaFileReader::CloneForDebugging(FsManager* fs_manager,
 
 Status DeltaFileReader::NewDeltaIterator(const RowIteratorOptions& opts,
                                          DeltaIterator** iterator) const {
-  if (IsRelevantForSnapshot(opts.snap_to_include)) {
+  if (IsRelevantForSnapshots(opts.snap_to_exclude, opts.snap_to_include)) {
     if (VLOG_IS_ON(2)) {
       if (!init_once_.init_succeeded()) {
         TRACE_COUNTER_INCREMENT("delta_iterators_lazy_initted", 1);
@@ -429,11 +440,12 @@ Status DeltaFileIterator<Type>::SeekToOrdinal(rowid_t idx) {
   // Finish the initialization of any lazily-initialized state.
   RETURN_NOT_OK(dfr_->Init(preparer_.opts().io_context));
 
-  // Check again whether this delta file is relevant given the snapshot
+  // Check again whether this delta file is relevant given the snapshots
   // that we are querying. We did this already before creating the
   // DeltaFileIterator, but due to lazy initialization, it's possible
   // that we weren't able to check at that time.
-  if (!dfr_->IsRelevantForSnapshot(preparer_.opts().snap_to_include)) {
+  if (!dfr_->IsRelevantForSnapshots(preparer_.opts().snap_to_exclude,
+                                    preparer_.opts().snap_to_include)) {
     exhausted_ = true;
     delta_blocks_.clear();
     return Status::OK();
@@ -587,7 +599,7 @@ Status DeltaFileIterator<Type>::PrepareBatch(size_t nrows, int prepare_flags) {
   #endif
   prepared_ = true;
 
-  preparer_.Start(prepare_flags);
+  preparer_.Start(nrows, prepare_flags);
   RETURN_NOT_OK(AddDeltas(start_row, stop_row));
   preparer_.Finish(nrows);
   return Status::OK();
@@ -669,6 +681,11 @@ Status DeltaFileIterator<Type>::ApplyUpdates(size_t col_to_apply, ColumnBlock* d
 template<DeltaType Type>
 Status DeltaFileIterator<Type>::ApplyDeletes(SelectionVector* sel_vec) {
   return preparer_.ApplyDeletes(sel_vec);
+}
+
+template<DeltaType Type>
+Status DeltaFileIterator<Type>::SelectUpdates(SelectionVector* sel_vec) {
+  return preparer_.SelectUpdates(sel_vec);
 }
 
 template<DeltaType Type>

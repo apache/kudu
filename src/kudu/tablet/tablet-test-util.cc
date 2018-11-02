@@ -21,16 +21,29 @@ namespace kudu {
 namespace tablet {
 
 template<>
-bool MirroredDeltas<DeltaTypeSelector<REDO>>::IsDeltaRelevant(
+bool MirroredDeltas<DeltaTypeSelector<REDO>>::IsDeltaRelevantForApply(
     Timestamp to_include, Timestamp ts) const {
   return ts < to_include;
 }
 
 template<>
-bool MirroredDeltas<DeltaTypeSelector<UNDO>>::IsDeltaRelevant(
+bool MirroredDeltas<DeltaTypeSelector<UNDO>>::IsDeltaRelevantForApply(
     Timestamp to_include, Timestamp ts) const {
   return ts >= to_include;
 }
+
+template<typename T>
+bool MirroredDeltas<T>::IsDeltaRelevantForSelect(
+    Timestamp to_exclude, Timestamp to_include, Timestamp ts) const {
+  return ts >= to_exclude && ts < to_include;
+}
+
+template
+bool MirroredDeltas<DeltaTypeSelector<REDO>>::IsDeltaRelevantForSelect(
+    Timestamp to_exclude, Timestamp to_include, Timestamp ts) const;
+template
+bool MirroredDeltas<DeltaTypeSelector<UNDO>>::IsDeltaRelevantForSelect(
+    Timestamp to_exclude, Timestamp to_include, Timestamp ts) const;
 
 } // namespace tablet
 } // namespace kudu

@@ -155,6 +155,14 @@ class PreparedDeltas {
   // Deltas must have been prepared with the flag PREPARE_FOR_APPLY.
   virtual Status ApplyDeletes(SelectionVector* sel_vec) = 0;
 
+  // Updates the given selection vector to reflect the snapshotted updates.
+  //
+  // Rows which have been updated or deleted in the associated MVCC snapshot are
+  // set to 1 in the selection vector so that they show up in the output.
+  //
+  // Deltas must have been prepared with the flag PREPARE_FOR_SELECT.
+  virtual Status SelectUpdates(SelectionVector* sel_vec) = 0;
+
   // Collects the mutations associated with each row in the current prepared batch.
   //
   // Each entry in the vector will be treated as a singly linked list of Mutation
@@ -226,7 +234,14 @@ class DeltaIterator : public PreparedDeltas {
     // in the order that they were loaded from the backing store.
     //
     // On success, CollectMutations and FilterColumnIdsAndCollectDeltas will be callable.
-    PREPARE_FOR_COLLECT = 1 << 1
+    PREPARE_FOR_COLLECT = 1 << 1,
+
+    // Prepare a batch of deltas for selecting. All deltas in the batch will be
+    // decoded, and a data structure describing which rows had deltas will be
+    // populated.
+    //
+    // On success, SelectUpdates will be callable.
+    PREPARE_FOR_SELECT = 1 << 2
   };
   virtual Status PrepareBatch(size_t nrows, int prepare_flags) = 0;
 
@@ -281,7 +296,7 @@ class DeltaPreparer : public PreparedDeltas {
   // on the part of a DeltaIterator.
   //
   // Call at the beginning of DeltaIterator::PrepareBatch.
-  void Start(int prepare_flags);
+  void Start(size_t nrows, int prepare_flags);
 
   // Updates internal state to reflect the end of delta batch preparation on the
   // part of a DeltaIterator.
@@ -304,6 +319,8 @@ class DeltaPreparer : public PreparedDeltas {
                       const SelectionVector& filter) override;
 
   Status ApplyDeletes(SelectionVector* sel_vec) override;
+
+  Status SelectUpdates(SelectionVector* sel_vec) override;
 
   Status CollectMutations(std::vector<Mutation*>* dst, Arena* arena) override;
 
@@ -359,6 +376,9 @@ class DeltaPreparer : public PreparedDeltas {
   std::deque<rowid_t> reinserted_;
 
   // The deletion state of the row last processed by AddDelta().
+  //
+  // As a row's DELETEs and REINSERTs are processed, the deletion state
+  // alternates between the values below.
   enum RowDeletionState {
     UNKNOWN,
     DELETED,
@@ -373,6 +393,10 @@ class DeltaPreparer : public PreparedDeltas {
     Slice val;
   };
   std::deque<PreparedDelta> prepared_deltas_;
+
+  // State when prepared_for_ & PREPARED_FOR_SELECT
+  // ------------------------------------------------------------
+  std::unique_ptr<SelectionVector> selected_;
 
   DISALLOW_COPY_AND_ASSIGN(DeltaPreparer);
 };
