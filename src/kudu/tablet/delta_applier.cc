@@ -22,10 +22,13 @@
 #include <utility>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
 #include "kudu/common/column_materialization_context.h"
+#include "kudu/common/rowblock.h"
 #include "kudu/tablet/delta_store.h"
+#include "kudu/tablet/rowset.h"
 #include "kudu/util/status.h"
 
 using std::shared_ptr;
@@ -36,15 +39,16 @@ namespace kudu {
 
 class ScanSpec;
 class Schema;
-class SelectionVector;
 struct IteratorStats;
 
 namespace tablet {
 
   // Construct. The base_iter and delta_iter should not be Initted.
-DeltaApplier::DeltaApplier(shared_ptr<CFileSet::Iterator> base_iter,
+DeltaApplier::DeltaApplier(RowIteratorOptions opts,
+                           shared_ptr<CFileSet::Iterator> base_iter,
                            unique_ptr<DeltaIterator> delta_iter)
-    : base_iter_(std::move(base_iter)),
+    : opts_(std::move(opts)),
+      base_iter_(std::move(base_iter)),
       delta_iter_(std::move(delta_iter)),
       first_prepare_(true) {}
 
@@ -89,7 +93,12 @@ Status DeltaApplier::PrepareBatch(size_t *nrows) {
     first_prepare_ = false;
   }
   RETURN_NOT_OK(base_iter_->PrepareBatch(nrows));
-  RETURN_NOT_OK(delta_iter_->PrepareBatch(*nrows, DeltaIterator::PREPARE_FOR_APPLY));
+  int prepare_flags = DeltaIterator::PREPARE_FOR_APPLY;
+  if (opts_.snap_to_exclude) {
+    // See InitializeSelectionVector() below.
+    prepare_flags |= DeltaIterator::PREPARE_FOR_SELECT;
+  }
+  RETURN_NOT_OK(delta_iter_->PrepareBatch(*nrows, prepare_flags));
   return Status::OK();
 }
 
@@ -99,8 +108,23 @@ Status DeltaApplier::FinishBatch() {
 
 Status DeltaApplier::InitializeSelectionVector(SelectionVector *sel_vec) {
   DCHECK(!first_prepare_) << "PrepareBatch() must be called at least once";
-  RETURN_NOT_OK(base_iter_->InitializeSelectionVector(sel_vec));
-  return delta_iter_->ApplyDeletes(sel_vec);
+
+  // A diff scan will set both 'snap_to_exclude' and 'include_deleted_rows'.
+  // The result: it'll initialize the selection vector using any delta that
+  // meets the select criteria rather than just using a DELETE that meets the
+  // apply criteria.
+  //
+  // See delta_relevancy.h for more details.
+  if (opts_.snap_to_exclude) {
+    sel_vec->SetAllFalse();
+    RETURN_NOT_OK(delta_iter_->SelectUpdates(sel_vec));
+  } else {
+    RETURN_NOT_OK(base_iter_->InitializeSelectionVector(sel_vec));
+  }
+  if (!opts_.include_deleted_rows) {
+    RETURN_NOT_OK(delta_iter_->ApplyDeletes(sel_vec));
+  }
+  return Status::OK();
 }
 
 Status DeltaApplier::MaterializeColumn(ColumnMaterializationContext *ctx) {

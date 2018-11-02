@@ -52,8 +52,8 @@ class OpId;
 }
 
 namespace fs {
-struct IOContext;
 class WritableBlock;
+struct IOContext;
 }
 
 namespace log {

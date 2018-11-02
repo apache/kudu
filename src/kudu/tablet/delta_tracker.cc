@@ -607,7 +607,7 @@ Status DeltaTracker::WrapIterator(const shared_ptr<CFileSet::Iterator> &base,
   unique_ptr<DeltaIterator> iter;
   RETURN_NOT_OK(NewDeltaIterator(opts, &iter));
 
-  out->reset(new DeltaApplier(base, std::move(iter)));
+  out->reset(new DeltaApplier(opts, base, std::move(iter)));
   return Status::OK();
 }
 

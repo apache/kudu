@@ -18,6 +18,7 @@
 #include "kudu/tablet/diskrowset.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <ostream>
@@ -26,22 +27,32 @@
 #include <unordered_set>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
+#include <glog/stl_logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/clock/clock.h"
+#include "kudu/clock/logical_clock.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/iterator.h"
 #include "kudu/common/row.h"
 #include "kudu/common/row_changelist.h"
+#include "kudu/common/rowid.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/timestamp.h"
+#include "kudu/consensus/log_anchor_registry.h"
+#include "kudu/consensus/opid.pb.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/fs/block_id.h"
+#include "kudu/fs/io_context.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/stringpiece.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/compaction.h"
 #include "kudu/tablet/delta_key.h"
 #include "kudu/tablet/delta_store.h"
@@ -54,12 +65,15 @@
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet.pb.h"
+#include "kudu/tablet/tablet_mem_trackers.h"
 #include "kudu/util/bloom_filter.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/random.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
 
 DEFINE_double(update_fraction, 0.1f, "fraction of rows to update");
 DECLARE_bool(cfile_lazy_open);
@@ -70,11 +84,14 @@ DECLARE_double(tablet_delta_store_major_compact_min_ratio);
 DECLARE_int32(tablet_delta_store_minor_compact_max);
 
 using std::is_sorted;
+using std::make_tuple;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using std::unordered_set;
+using std::tuple;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 namespace tablet {
@@ -676,6 +693,246 @@ TEST_F(TestRowSet, TestDiskSizeEstimation) {
   rs->GetDiskRowSetSpaceUsage(&drss);
   ASSERT_GT(drss.undo_deltas_size, 0);
   ASSERT_GT(drss.redo_deltas_size, 0);
+}
+
+class DiffScanRowSetTest : public KuduRowSetTest,
+                           public ::testing::WithParamInterface<tuple<bool, bool>> {
+ public:
+  DiffScanRowSetTest()
+      : KuduRowSetTest(CreateTestSchema()),
+        op_id_(consensus::MaximumOpId()),
+        clock_(clock::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)) {
+  }
+
+ protected:
+  static Schema CreateTestSchema() {
+    SchemaBuilder builder;
+    CHECK_OK(builder.AddKeyColumn("key", UINT32));
+    CHECK_OK(builder.AddColumn("val1", UINT32));
+    CHECK_OK(builder.AddColumn("val2", UINT32));
+    return builder.BuildWithoutIds();
+  }
+
+  consensus::OpId op_id_;
+  scoped_refptr<clock::Clock> clock_;
+  MvccManager mvcc_;
+};
+
+// Tests the Cartesian product of two boolean parameters:
+// 1. Whether to include deleted rows in the scan.
+// 2. Whether to include the "is deleted" virtual column in the scan's projection.
+INSTANTIATE_TEST_CASE_P(RowIteratorOptionsPermutations, DiffScanRowSetTest,
+                        ::testing::Combine(::testing::Bool(),
+                                           ::testing::Bool()));
+
+// Tests diff scans on a diskrowset. The rowset is generated with only a handful
+// of rows, but we randomly flush/compact between each update operation so that
+// the test operates on a variety of different on-disk and in-memory layouts.
+TEST_P(DiffScanRowSetTest, TestFuzz) {
+  fs::IOContext test_context;
+
+  // Create and open a DRS with four rows.
+  shared_ptr<DiskRowSet> rs;
+  {
+    DiskRowSetWriter drsw(rowset_meta_.get(), &schema_,
+                          BloomFilterSizing::BySizeAndFPRate(32 * 1024, 0.01f));
+    ASSERT_OK(drsw.Open());
+
+    RowBuilder rb(schema_);
+    for (int i = 0; i < 4; i++) {
+      rb.Reset();
+      rb.AddUint32(i);
+      rb.AddUint32(i * 2);
+      rb.AddUint32(i * 3);
+      ASSERT_OK(WriteRow(rb.data(), &drsw));
+    }
+    ASSERT_OK(drsw.Finish());
+    ASSERT_OK(DiskRowSet::Open(rowset_meta_, new log::LogAnchorRegistry(),
+                               TabletMemTrackers(), &test_context, &rs));
+  }
+
+  // Run the diff scan test. Scan time boundaries are given by 'ts1_val' and
+  // 'ts2_val'. The expected results are given by 'expected_rows'.
+  using RowTuple = tuple<uint32_t, uint32_t, uint32_t, bool>;
+  auto run_test = [&](uint64_t ts1_val,
+                      uint64_t ts2_val,
+                      vector<RowTuple> expected_rows) {
+    bool include_deleted_rows = std::get<0>(GetParam());
+    bool add_vc_is_deleted = std::get<1>(GetParam());
+
+    // Create a projection of the schema, adding the IS_DELETED virtual
+    // column if desired.
+    vector<ColumnSchema> col_schemas;
+    vector<ColumnId> col_ids;
+    for (int i = 0; i < schema_.num_columns(); i++) {
+      col_schemas.push_back(schema_.column(i));
+      col_ids.push_back(schema_.column_id(i));
+    }
+    if (add_vc_is_deleted) {
+      bool read_default = false;
+      col_schemas.emplace_back("is_deleted", IS_DELETED, /*is_nullable=*/ false,
+                               &read_default);
+      col_ids.emplace_back(schema_.max_col_id() + 1);
+    }
+    Schema projection(col_schemas, col_ids, 1);
+
+    // Set up the iterator.
+    Timestamp ts1(ts1_val);
+    Timestamp ts2(ts2_val);
+    SCOPED_TRACE(Substitute("Scanning at $0,$1 with schema $2",
+                            ts1.ToString(), ts2.ToString(), projection.ToString()));
+    RowIteratorOptions opts;
+    opts.include_deleted_rows = include_deleted_rows;
+    opts.projection = &projection;
+    opts.snap_to_exclude = MvccSnapshot(ts1);
+    opts.snap_to_include = MvccSnapshot(ts2);
+    gscoped_ptr<RowwiseIterator> iter;
+    ASSERT_OK(rs->NewRowIterator(opts, &iter));
+    ASSERT_OK(iter->Init(nullptr));
+
+    // Scan the data out of the iterator and test it.
+    vector<string> lines;
+    ASSERT_OK(IterateToStringList(iter.get(), &lines));
+    if (!include_deleted_rows) {
+      vector<RowTuple> without_deleted_rows;
+      for (const auto& e : expected_rows) {
+        if (!std::get<3>(e)) {
+          without_deleted_rows.emplace_back(e);
+        }
+      }
+      expected_rows = without_deleted_rows;
+    }
+    ASSERT_EQ(expected_rows.size(), lines.size()) << lines;
+    for (int i = 0; i < expected_rows.size(); i++) {
+      string expected_is_deleted = add_vc_is_deleted ? Substitute(
+          ", is_deleted is_deleted=$0", std::get<3>(expected_rows[i])) : "";
+      string expected_line = Substitute("(uint32 key=$0, "
+                                        "uint32 val1=$1, "
+                                        "uint32 val2=$2$3)",
+                                        std::get<0>(expected_rows[i]),
+                                        std::get<1>(expected_rows[i]),
+                                        std::get<2>(expected_rows[i]),
+                                        expected_is_deleted);
+      ASSERT_EQ(expected_line, lines[i]);
+    }
+  };
+
+  // Mutate a particular column in the diskrowset given by 'row_idx' and
+  // 'col_idx'. If 'val' is unset, deletes the row.
+  auto mutate_row = [&](rowid_t row_idx,
+                        size_t col_idx,
+                        boost::optional<uint32_t> val) {
+    // Build the mutation.
+    faststring buf;
+    RowChangeListEncoder enc(&buf);
+    if (val) {
+      enc.AddColumnUpdate(schema_.column(col_idx),
+                          schema_.column_id(col_idx),
+                          val.get_ptr());
+    } else {
+      enc.SetToDelete();
+    }
+
+    // Build the row key.
+    RowBuilder rb(schema_.CreateKeyProjection());
+    rb.AddUint32(row_idx);
+    RowSetKeyProbe probe(rb.row());
+
+    // Apply the mutation.
+    ScopedTransaction tx(&mvcc_, clock_->Now());
+    tx.StartApplying();
+    ProbeStats stats;
+    OperationResultPB result;
+    ASSERT_OK(rs->MutateRow(tx.timestamp(), probe, enc.as_changelist(), op_id_,
+                            &test_context, &stats, &result));
+    tx.Commit();
+  };
+
+  Random prng(SeedRandom());
+
+  // Possibly apply a randomly chosen delta flush or compaction operation.
+  auto maybe_flush_compact = [&]() {
+    // 25% for a minor delta compaction.
+    // 25% for a major delta compaction.
+    // 50% for a DMS flush.
+    int r = prng.Uniform(4);
+    if (r == 0) {
+      ASSERT_OK(rs->MinorCompactDeltaStores(&test_context));
+    } else if (r == 1) {
+      ASSERT_OK(rs->MajorCompactDeltaStores(&test_context, HistoryGcOpts::Disabled()));
+    } else {
+      ASSERT_OK(rs->FlushDeltas(&test_context));
+    }
+  };
+
+  // Update the rows in the diskrowset.
+  NO_FATALS(maybe_flush_compact());
+  NO_FATALS(mutate_row(1, 2, 1000)); // ts 1
+  NO_FATALS(maybe_flush_compact());
+  NO_FATALS(mutate_row(1, 1, 200)); // ts 2
+  NO_FATALS(maybe_flush_compact());
+  NO_FATALS(mutate_row(2, 1, 300)); // ts 3
+  NO_FATALS(maybe_flush_compact());
+  NO_FATALS(mutate_row(3, 1, 400)); // ts 4
+  NO_FATALS(maybe_flush_compact());
+  NO_FATALS(mutate_row(3, 1, boost::none)); // ts 5
+  NO_FATALS(maybe_flush_compact());
+
+  // Run the diff scan test on every permutation of time bounds.
+  //
+  // Note: a regular DRS would include an UNDO DELETE for every INSERT by virtue
+  // of having been flushed from an MRS. That's not the case here, and as a
+  // result, the insertions themselves aren't associated with any timestamps and
+  // thus are not captured by these diff scans.
+
+  // The time bounds specify an empty range so nothing is captured.
+  for (int i = 0; i < 7; i++) {
+    NO_FATALS(run_test(i, i, {}));
+  }
+
+  NO_FATALS(run_test(0, 1, {}));
+  NO_FATALS(run_test(1, 2, { make_tuple(1, 2, 1000, false) }));
+  NO_FATALS(run_test(2, 3, { make_tuple(1, 200, 1000, false) }));
+  NO_FATALS(run_test(3, 4, { make_tuple(2, 300, 6, false) }));
+  NO_FATALS(run_test(4, 5, { make_tuple(3, 400, 9, false) }));
+  NO_FATALS(run_test(5, 6, { make_tuple(3, 400, 9, true) }));
+
+  NO_FATALS(run_test(0, 2, { make_tuple(1, 2, 1000, false) }));
+  NO_FATALS(run_test(1, 3, { make_tuple(1, 200, 1000, false) }));
+  NO_FATALS(run_test(2, 4, { make_tuple(1, 200, 1000, false),
+                             make_tuple(2, 300, 6, false) }));
+  NO_FATALS(run_test(3, 5, { make_tuple(2, 300, 6, false),
+                             make_tuple(3, 400, 9, false) }));
+  NO_FATALS(run_test(4, 6, { make_tuple(3, 400, 9, true) }));
+
+  NO_FATALS(run_test(0, 3, { make_tuple(1, 200, 1000, false) }));
+  NO_FATALS(run_test(1, 4, { make_tuple(1, 200, 1000, false),
+                             make_tuple(2, 300, 6, false) }));
+  NO_FATALS(run_test(2, 5, { make_tuple(1, 200, 1000, false),
+                             make_tuple(2, 300, 6, false),
+                             make_tuple(3, 400, 9, false) }));
+  NO_FATALS(run_test(3, 6, { make_tuple(2, 300, 6, false),
+                             make_tuple(3, 400, 9, true) }));
+
+  NO_FATALS(run_test(0, 4, { make_tuple(1, 200, 1000, false),
+                             make_tuple(2, 300, 6, false) }));
+  NO_FATALS(run_test(1, 5, { make_tuple(1, 200, 1000, false),
+                             make_tuple(2, 300, 6, false),
+                             make_tuple(3, 400, 9, false) }));
+  NO_FATALS(run_test(2, 6, { make_tuple(1, 200, 1000, false),
+                             make_tuple(2, 300, 6, false),
+                             make_tuple(3, 400, 9, true) }));
+
+  NO_FATALS(run_test(0, 5, { make_tuple(1, 200, 1000, false),
+                             make_tuple(2, 300, 6, false),
+                             make_tuple(3, 400, 9, false) }));
+  NO_FATALS(run_test(1, 6, { make_tuple(1, 200, 1000, false),
+                             make_tuple(2, 300, 6, false),
+                             make_tuple(3, 400, 9, true) }));
+
+  NO_FATALS(run_test(0, 6, { make_tuple(1, 200, 1000, false),
+                             make_tuple(2, 300, 6, false),
+                             make_tuple(3, 400, 9, true) }));
 }
 
 } // namespace tablet
