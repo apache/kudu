@@ -32,6 +32,7 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/timestamp.h"
 #include "kudu/common/types.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -65,6 +66,7 @@ string DeltaKeyAndUpdate::Stringify(DeltaType type, const Schema& schema, bool p
 template<class Traits>
 DeltaPreparer<Traits>::DeltaPreparer(RowIteratorOptions opts)
     : opts_(std::move(opts)),
+      projection_vc_is_deleted_idx_(opts_.projection->find_first_is_deleted_virtual_column()),
       cur_prepared_idx_(0),
       prev_prepared_idx_(0),
       prepared_flags_(DeltaIterator::PREPARE_NONE),
@@ -232,6 +234,30 @@ Status DeltaPreparer<Traits>::ApplyUpdates(size_t col_to_apply, ColumnBlock* dst
   DCHECK(prepared_flags_ & DeltaIterator::PREPARE_FOR_APPLY);
   DCHECK_LE(cur_prepared_idx_ - prev_prepared_idx_, dst->nrows());
 
+  // Special handling for the IS_DELETED virtual column: convert 'deleted_' and
+  // 'reinserted_' into true and false cell values.
+  if (col_to_apply == projection_vc_is_deleted_idx_) {
+    // See ApplyDeletes() to understand why we adjust the virtual column's value
+    // for both deleted and reinserted rows.
+    for (const auto& row_id : deleted_) {
+      uint32_t idx_in_block = row_id - prev_prepared_idx_;
+      if (filter.IsRowSelected(idx_in_block)) {
+        ColumnBlock::Cell cell = dst->cell(idx_in_block);
+        UnalignedStore(cell.mutable_ptr(), true);
+      }
+    }
+
+    for (const auto& row_id : reinserted_) {
+      uint32_t idx_in_block = row_id - prev_prepared_idx_;
+      if (filter.IsRowSelected(idx_in_block)) {
+        ColumnBlock::Cell cell = dst->cell(idx_in_block);
+        UnalignedStore(cell.mutable_ptr(), false);
+      }
+    }
+
+    return Status::OK();
+  }
+
   const ColumnSchema* col_schema = &opts_.projection->column(col_to_apply);
   for (const ColumnUpdate& cu : updates_by_col_[col_to_apply]) {
     int32_t idx_in_block = cu.row_id - prev_prepared_idx_;
@@ -252,6 +278,12 @@ Status DeltaPreparer<Traits>::ApplyDeletes(SelectionVector* sel_vec) {
   DCHECK(prepared_flags_ & DeltaIterator::PREPARE_FOR_APPLY);
   DCHECK_LE(cur_prepared_idx_ - prev_prepared_idx_, sel_vec->nrows());
 
+  // To understand why we must adjust sel_vec for both deleted_ and reinserted_,
+  // consider that DeltaIterators are often used en masse (i.e. via
+  // DeltaIteratorMerger). In such cases, it's possible for one DeltaPreparer to
+  // delete a row and for the next to reinsert it. Given that ApplyDeletes is
+  // called on each DeltaPreparer in order, we must "twiddle" sel_vec in either
+  // direction in order for the row's bit to hold the correct state at the end.
   for (const auto& row_id : deleted_) {
     uint32_t idx_in_block = row_id - prev_prepared_idx_;
     sel_vec->SetRowUnselected(idx_in_block);

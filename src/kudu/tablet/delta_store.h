@@ -351,6 +351,10 @@ class DeltaPreparer : public PreparedDeltas {
   // Options with which the DeltaPreparer's iterator was constructed.
   const RowIteratorOptions opts_;
 
+  // The index of the first IS_DELETED virtual column in the projection schema,
+  // or kColumnNotFound if one doesn't exist.
+  const int projection_vc_is_deleted_idx_;
+
   // The row index at which the most recent batch preparation ended.
   rowid_t cur_prepared_idx_;
 
@@ -372,6 +376,11 @@ class DeltaPreparer : public PreparedDeltas {
   };
   typedef std::deque<ColumnUpdate> UpdatesForColumn;
   std::vector<UpdatesForColumn> updates_by_col_;
+
+  // A row whose last relevant mutation was DELETE (or REINSERT).
+  //
+  // These deques are disjoint; a row that was both deleted and reinserted will
+  // not be in either.
   std::deque<rowid_t> deleted_;
   std::deque<rowid_t> reinserted_;
 

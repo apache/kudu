@@ -495,7 +495,8 @@ TYPED_TEST(DeltaTypeTestDeltaFile, BenchmarkPrepareAndApply) {
 
   for (int i = 0; i < kNumScans; i++) {
     // Create a random projection with kNumColumnsToScan columns.
-    Schema projection = GetRandomProjection(schema, &prng, kNumColumnsToScan);
+    Schema projection = GetRandomProjection(schema, &prng, kNumColumnsToScan,
+                                            AllowIsDeleted::NO);
 
     // Create an iterator at a randomly chosen timestamp.
     Timestamp ts = Timestamp(prng.Uniform(kMaxTimestamp));

@@ -862,6 +862,26 @@ class Schema {
   // Should be used when allocated on the heap.
   size_t memory_footprint_including_this() const;
 
+  // Returns the column index for the first IS_DELETED virtual column in the
+  // schema, or kColumnNotFound if one cannot be found.
+  //
+  // The virtual column must not be nullable and must have a read default value.
+  // The process will crash if these constraints are not met.
+  int find_first_is_deleted_virtual_column() const {
+    for (int idx = 0; idx < num_columns(); idx++) {
+      const auto& col = column(idx);
+      if (col.type_info()->type() == IS_DELETED) {
+        // Enforce some properties on the virtual column that simplify our
+        // implementation.
+        DCHECK(!col.is_nullable());
+        DCHECK(col.has_read_default());
+
+        return idx;
+      }
+    }
+    return kColumnNotFound;
+  }
+
  private:
   // Return a stringified version of the first 'num_columns' columns of the
   // row.

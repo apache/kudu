@@ -595,10 +595,7 @@ class MemRowSet::Iterator : public RowwiseIterator {
 
   // The index of the first IS_DELETED virtual column in the projection schema,
   // or kColumnNotFound if one doesn't exist.
-  //
-  // The virtual column must not be nullable and must have a read default value.
-  // The process will crash if these constraints are not met.
-  int projection_vc_is_deleted_idx_;
+  const int projection_vc_is_deleted_idx_;
 
   // Temporary buffer used for RowChangeList projection.
   faststring delta_buf_;

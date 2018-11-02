@@ -609,6 +609,13 @@ static inline std::vector<size_t> GetRandomIntegerSequence(
   return std::vector<size_t>(integers.begin(), integers.end());
 }
 
+// Generates random deltas conforming to 'schema' and stores them in 'mirror'.
+//
+// 'row_range' and 'ts_range' constrain the DeltaKeys used in the created deltas.
+//
+// If 'allow_reinserts' is true, REINSERT deltas may also be generated.
+// Otherwise, a row won't receive any more deltas after a DELETE has been
+// generated for it.
 template <typename T>
 void CreateRandomDeltas(const Schema& schema,
                         Random* prng,
@@ -703,9 +710,22 @@ void CreateRandomDeltas(const Schema& schema,
   }
 }
 
+// Create a random projection conforming to 'schema'.
+//
+// 'max_cols_to_project' defines the maximum number of columns that should be
+// allowed into the projection; the actual number of columns is randomly
+// generated.
+//
+// If 'allow' is true, an IS_DELETED virtual column may be randomly added to
+// the projection.
+enum class AllowIsDeleted {
+  YES,
+  NO
+};
 static inline Schema GetRandomProjection(const Schema& schema,
                                          Random* prng,
-                                         size_t max_cols_to_project) {
+                                         size_t max_cols_to_project,
+                                         AllowIsDeleted allow) {
   // Set up the projection.
   auto idxs_to_project = GetRandomIntegerSequence(prng,
                                                   schema.num_columns(),
@@ -715,6 +735,14 @@ static inline Schema GetRandomProjection(const Schema& schema,
   for (auto idx : idxs_to_project) {
     projected_cols.emplace_back(schema.column(idx));
     projected_col_ids.emplace_back(schema.column_id(idx));
+  }
+
+  // Add a IS_DELETED virtual column some of the time.
+  if (allow == AllowIsDeleted::YES && prng->Uniform(10) == 0) {
+    bool read_default = false;
+    projected_cols.emplace_back("is_deleted", IS_DELETED, /*is_nullable=*/ false,
+                                &read_default);
+    projected_col_ids.emplace_back(schema.max_col_id() + 1);
   }
   return Schema(projected_cols, projected_col_ids, 0);
 }
@@ -859,7 +887,11 @@ void RunDeltaFuzzTest(const DeltaStore& store,
 
     // Create and initialize the iterator. If none iterator is returned, it's
     // because all deltas in 'store' were irrelevant; verify this.
-    Schema projection = GetRandomProjection(*mirror->schema(), prng, kMaxColsToProject);
+    Schema projection = GetRandomProjection(*mirror->schema(), prng, kMaxColsToProject,
+                                            lower_ts ? AllowIsDeleted::YES :
+                                                       AllowIsDeleted::NO);
+    size_t projection_vc_is_deleted_idx =
+        projection.find_first_is_deleted_virtual_column();
     SCOPED_TRACE(strings::Substitute("Projection $0", projection.ToString()));
     RowIteratorOptions opts;
     opts.projection = &projection;
@@ -935,8 +967,19 @@ void RunDeltaFuzzTest(const DeltaStore& store,
           actual_scb[k] = 0;
         }
         const SelectionVector& filter = lower_ts ? actual_selected : actual_deleted;
-        ASSERT_OK(mirror->ApplyUpdates(*opts.projection, lower_ts, upper_ts,
-                                       start_row_idx, j, &expected_scb, filter));
+        if (j == projection_vc_is_deleted_idx) {
+          // Reconstruct the expected IS_DELETED state using 'actual_selected'
+          // and 'actual_deleted', which we've already verified above.
+          DCHECK(lower_ts);
+          for (int k = 0; k < batch_size; k++) {
+            if (actual_selected.IsRowSelected(k)) {
+              expected_scb[k] = !actual_deleted.IsRowSelected(k);
+            }
+          }
+        } else {
+          ASSERT_OK(mirror->ApplyUpdates(*opts.projection, lower_ts, upper_ts,
+                                         start_row_idx, j, &expected_scb, filter));
+        }
         ASSERT_OK(iter->ApplyUpdates(j, &actual_scb, filter));
         ASSERT_EQ(expected_scb, actual_scb)
             << "Expected column block: " << expected_scb.ToString()
