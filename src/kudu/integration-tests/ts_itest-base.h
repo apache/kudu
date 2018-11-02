@@ -85,8 +85,11 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
   itest::TServerDetails* GetReplicaWithUuidOrNull(const std::string& tablet_id,
                                                   const std::string& uuid);
 
-  // Gets the the locations of the consensus configuration and waits until all replicas
-  // are available for all tablets.
+  // Wait for tablet servers to start up.
+  void WaitForTabletServers();
+
+  // Wait for tablet servers to start and all replicas are available for all
+  // the test table's tablets.
   void WaitForTSAndReplicas(const std::string& table_id = kTableId);
 
   // Removes a set of servers from the replicas_ list.
@@ -123,7 +126,8 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
   // mapping rules can be passed using the 'location_info' parameter.
   void BuildAndStart(std::vector<std::string> ts_flags = {},
                      std::vector<std::string> master_flags = {},
-                     cluster::LocationInfo location_info = {});
+                     cluster::LocationInfo location_info = {},
+                     bool create_table = true);
 
   void AssertAllReplicasAgree(int expected_result_count);
 

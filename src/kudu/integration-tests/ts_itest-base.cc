@@ -372,11 +372,8 @@ TServerDetails* TabletServerIntegrationTestBase::GetReplicaWithUuidOrNull(
   return nullptr;
 }
 
-// Gets the the locations of the consensus configuration and waits until all replicas
-// are available for all tablets.
-void TabletServerIntegrationTestBase::WaitForTSAndReplicas(const string& table_id) {
+void TabletServerIntegrationTestBase::WaitForTabletServers() {
   int num_retries = 0;
-  // make sure the replicas are up and find the leader
   while (true) {
     if (num_retries >= kMaxRetries) {
       FAIL() << " Reached max. retries while looking up the config.";
@@ -391,6 +388,12 @@ void TabletServerIntegrationTestBase::WaitForTSAndReplicas(const string& table_i
     }
     break;
   }
+}
+
+// Gets the the locations of the consensus configuration and waits until all replicas
+// are available for all tablets.
+void TabletServerIntegrationTestBase::WaitForTSAndReplicas(const string& table_id) {
+  WaitForTabletServers();
   WaitForReplicasAndUpdateLocations(table_id);
 }
 
@@ -538,15 +541,20 @@ void TabletServerIntegrationTestBase::CreateTable(const string& table_id) {
 void TabletServerIntegrationTestBase::BuildAndStart(
     vector<string> ts_flags,
     vector<string> master_flags,
-    LocationInfo location_info) {
+    LocationInfo location_info,
+    bool create_table) {
   NO_FATALS(CreateCluster("raft_consensus-itest-cluster",
                           std::move(ts_flags), std::move(master_flags),
                           std::move(location_info)));
   NO_FATALS(CreateClient(&client_));
-  NO_FATALS(CreateTable());
-  WaitForTSAndReplicas();
-  ASSERT_FALSE(tablet_replicas_.empty());
-  tablet_id_ = (*tablet_replicas_.begin()).first;
+  if (create_table) {
+    NO_FATALS(CreateTable());
+    WaitForTSAndReplicas();
+    ASSERT_FALSE(tablet_replicas_.empty());
+    tablet_id_ = tablet_replicas_.begin()->first;
+  } else {
+    WaitForTabletServers();
+  }
 }
 
 void TabletServerIntegrationTestBase::AssertAllReplicasAgree(int expected_result_count) {
