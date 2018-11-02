@@ -30,6 +30,20 @@ ADD_EXPORTABLE_LIBRARY(util_compression_proto
   NONLINK_DEPS ${UTIL_COMPRESSION_PROTO_TGTS})
 
 #######################################
+# hash_proto
+#######################################
+
+PROTOBUF_GENERATE_CPP(
+  HASH_PROTO_SRCS HASH_PROTO_HDRS HASH_PROTO_TGTS
+  SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
+  BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
+  PROTO_FILES hash.proto)
+ADD_EXPORTABLE_LIBRARY(hash_proto
+  SRCS ${HASH_PROTO_SRCS}
+  DEPS protobuf
+  NONLINK_DEPS ${HASH_PROTO_TGTS})
+
+#######################################
 # histogram_proto
 #######################################
 
@@ -48,14 +62,14 @@ ADD_EXPORTABLE_LIBRARY(histogram_proto
 #######################################
 
 PROTOBUF_GENERATE_CPP(
-    MAINTENANCE_MANAGER_PROTO_SRCS MAINTENANCE_MANAGER_PROTO_HDRS MAINTENANCE_MANAGER_PROTO_TGTS
-    SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
-    BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
-    PROTO_FILES maintenance_manager.proto)
+  MAINTENANCE_MANAGER_PROTO_SRCS MAINTENANCE_MANAGER_PROTO_HDRS MAINTENANCE_MANAGER_PROTO_TGTS
+  SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
+  BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
+  PROTO_FILES maintenance_manager.proto)
 ADD_EXPORTABLE_LIBRARY(maintenance_manager_proto
-    SRCS ${MAINTENANCE_MANAGER_PROTO_SRCS}
-    DEPS protobuf
-    NONLINK_DEPS ${MAINTENANCE_MANAGER_PROTO_TGTS})
+  SRCS ${MAINTENANCE_MANAGER_PROTO_SRCS}
+  DEPS protobuf
+  NONLINK_DEPS ${MAINTENANCE_MANAGER_PROTO_TGTS})
 
 #######################################
 # pb_util_proto
@@ -220,6 +234,7 @@ set(UTIL_LIBS
   gflags
   glog
   gutil
+  hash_proto
   histogram_proto
   libev
   maintenance_manager_proto

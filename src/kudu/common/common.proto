@@ -29,6 +29,7 @@ package kudu;
 option java_package = "org.apache.kudu";
 
 import "kudu/util/compression/compression.proto";
+import "kudu/util/hash.proto";
 import "kudu/util/pb_util.proto";
 
 // If you add a new type keep in mind to add it to the end
@@ -283,13 +284,6 @@ enum ReplicaSelection {
   // Select the closest replica to the client, or a random one if all replicas
   // are equidistant.
   CLOSEST_REPLICA = 2;
-}
-
-// The hash algorithm used in bloom filter and hash bucket.
-enum HashAlgorithm {
-  UNKNOWN_HASH = 0;
-  MURMUR_HASH_2 = 1;
-  CITY_HASH = 2;
 }
 
 // The serialized format of a Kudu table partition schema.

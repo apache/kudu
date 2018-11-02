@@ -22,7 +22,7 @@ PROTOBUF_GENERATE_CPP(
   PROTO_FILES common.proto)
 ADD_EXPORTABLE_LIBRARY(kudu_common_proto
   SRCS ${COMMON_PROTO_SRCS}
-  DEPS pb_util_proto protobuf util_compression_proto
+  DEPS hash_proto pb_util_proto protobuf util_compression_proto
   NONLINK_DEPS ${COMMON_PROTO_TGTS})
 
 PROTOBUF_GENERATE_CPP(
@@ -68,11 +68,11 @@ if ("${COMPILER_FAMILY}" STREQUAL "clang")
 endif()
 
 set(COMMON_LIBS
-  kudu_common_proto
   consensus_metadata_proto
-  wire_protocol_proto
+  gutil
+  kudu_common_proto
   kudu_util
-  gutil)
+  wire_protocol_proto)
 
 ADD_EXPORTABLE_LIBRARY(kudu_common
   SRCS ${COMMON_SRCS}

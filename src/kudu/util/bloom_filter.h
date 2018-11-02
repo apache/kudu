@@ -20,12 +20,12 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "kudu/common/common.pb.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/hash/city.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/util/bitmap.h"
+#include "kudu/util/hash.pb.h"
 #include "kudu/util/hash_util.h"
 #include "kudu/util/slice.h"
 
