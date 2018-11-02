@@ -52,9 +52,11 @@ class TestScanToken(TestScanBase):
 
         # Begin process pool
         pool = Pool(len(input))
-        results = pool.map(_get_scan_token_results, input)
-        pool.close()
-        pool.join()
+        try:
+            results = pool.map(_get_scan_token_results, input)
+        finally:
+            pool.close()
+            pool.join()
 
         # Validate results
         actual_tuples = []
