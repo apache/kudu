@@ -17,6 +17,7 @@
 
 #include "kudu/tools/rebalance_algo.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
@@ -67,6 +68,7 @@ using std::endl;
 using std::ostream;
 using std::ostringstream;
 using std::set;
+using std::sort;
 using std::string;
 using std::unordered_map;
 using std::vector;
@@ -82,6 +84,23 @@ struct TablePerServerReplicas {
   // By definition, the indices in this container correspond to indices
   // in TestClusterConfig::tserver_uuids.
   const vector<size_t> num_replicas_by_server;
+};
+
+// Whether the order of the moves in the reference results should be verified
+// against the actual moves.
+enum class MovesOrderingComparison {
+  IGNORE,
+  VERIFY,
+};
+struct ReferenceComparisonOptions {
+  // Constructor to initialize the options by default.
+  // NOLINTNEXTLINE(google-explicit-constructor)
+  ReferenceComparisonOptions(MovesOrderingComparison moves_ordering =
+      MovesOrderingComparison::VERIFY)
+      : moves_ordering(moves_ordering) {
+  }
+
+  const MovesOrderingComparison moves_ordering;
 };
 
 // Structure to describe rebalancing-related state of the cluster expressively
@@ -104,6 +123,9 @@ struct TestClusterConfig {
   // The expected replica movements: the reference output of the algorithm
   // to compare with.
   const vector<TableReplicaMove> expected_moves;
+
+  // Options controlling how the reference and the actual results are compared.
+  const ReferenceComparisonOptions ref_comparison_options;
 };
 
 bool operator==(const TableReplicaMove& lhs, const TableReplicaMove& rhs) {
@@ -201,7 +223,40 @@ void VerifyLocationRebalancingMoves(const TestClusterConfig& cfg) {
     LocationBalancingAlgo algo;
     ASSERT_OK(algo.GetNextMoves(ci, 0, &moves));
   }
-  EXPECT_EQ(cfg.expected_moves, moves);
+  switch (cfg.ref_comparison_options.moves_ordering) {
+    case MovesOrderingComparison::IGNORE:
+      {
+        // The case when the order of moves is not important. For the
+        // rebalancing algorithms, it's natural to re-order contiguous moves
+        // of the same weight. This is because of:
+        //   a) randomly choosing among multiple options of the same weight
+        //   b) iterating over elements of a hash container keyed by the weight
+        //      of a move.
+        // Here it's necessary to normalize both the reference and the actual
+        // results before performing element-to-element comparison.
+        vector<TableReplicaMove> ref_moves(cfg.expected_moves);
+        constexpr auto kMovesComparator = [](const TableReplicaMove& lhs,
+                                             const TableReplicaMove& rhs) {
+          if (lhs.table_id != rhs.table_id) {
+            return lhs.table_id < rhs.table_id;
+          }
+          if (lhs.from != rhs.from) {
+            return lhs.from < rhs.from;
+          }
+          return lhs.to < rhs.to;
+        };
+        sort(ref_moves.begin(), ref_moves.end(), kMovesComparator);
+        sort(moves.begin(), moves.end(), kMovesComparator);
+        EXPECT_EQ(ref_moves, moves);
+      }
+      break;
+    case MovesOrderingComparison::VERIFY:
+      EXPECT_EQ(cfg.expected_moves, moves);
+      break;
+    default:
+      FAIL() << "unexpected reference comparison style";
+      break;
+  }
 }
 
 // Is 'cbi' balanced according to the two-dimensional greedy algorithm?
@@ -984,13 +1039,13 @@ TEST(RebalanceAlgoUnitTest, LocationBalancingSimpleST) {
       },
       { "0", "1", "2", },
       { { "A", { 6, 0, 0, } }, },
-      // TODO(aserbin): what about ordering?
       {
-        { "A", "0", "2" },
-        { "A", "0", "1" },
         { "A", "0", "1" },
         { "A", "0", "2" },
-      }
+        { "A", "0", "1" },
+        { "A", "0", "2" },
+      },
+      { MovesOrderingComparison::IGNORE }
     },
     {
       {
