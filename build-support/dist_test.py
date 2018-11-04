@@ -39,6 +39,7 @@ import shutil
 import subprocess
 import time
 
+from dep_extract import DependencyExtractor
 from kudu_util import init_logging
 
 TEST_TIMEOUT_SECS = int(os.environ.get('TEST_TIMEOUT_SECS', '900'))
@@ -75,10 +76,6 @@ TEST_COMMAND_RE = re.compile('Test command: (.+)$')
 # Matches the environment variable listings in 'ctest -V -N'. For example:
 #  262:  GTEST_TOTAL_SHARDS=1
 TEST_ENV_RE = re.compile('^\d+:  (\S+)=(.+)')
-
-# Matches the output lines of 'ldd'. For example:
-#   libcrypto.so.10 => /path/to/usr/lib64/libcrypto.so.10 (0x00007fb0cb0a5000)
-LDD_RE = re.compile(r'^\s+.+? => (\S+) \(0x.+\)')
 
 DEPS_FOR_ALL = \
     ["build-support/stacktrace_addr2line.pl",
@@ -219,14 +216,21 @@ def get_test_executions(tests_regex, extra_args=None):
   return execs
 
 
-def is_lib_blacklisted(lib):
+def is_lib_whitelisted(lib):
   # No need to ship things like libc, libstdcxx, etc.
   if lib.startswith("/lib") or lib.startswith("/usr"):
-    return True
-  return False
+    return False
+  return True
 
 
-def get_base_deps():
+def create_dependency_extractor():
+  dep_extractor = DependencyExtractor()
+  dep_extractor.set_library_filter(is_lib_whitelisted)
+  dep_extractor.set_expand_symlinks(True)
+  return dep_extractor
+
+
+def get_base_deps(dep_extractor):
   deps = []
   for d in DEPS_FOR_ALL:
     d = os.path.realpath(rel_to_abs(d))
@@ -236,7 +240,7 @@ def get_base_deps():
     # DEPS_FOR_ALL may include binaries whose dependencies are not dependencies
     # of the test executable. We must include those dependencies in the archive
     # for the binaries to be usable.
-    deps.extend(ldd_deps(d))
+    deps.extend(dep_extractor.extract_deps(d))
   return deps
 
 
@@ -265,51 +269,7 @@ def copy_system_library(lib):
     shutil.copy2(rel_to_abs(lib), dst)
   return dst
 
-LDD_CACHE={}
-def ldd_deps(exe):
-  """
-  Runs 'ldd' on the provided 'exe' path, returning a list of
-  any libraries it depends on. Blacklisted libraries are
-  removed from this list.
-
-  If the provided 'exe' is not a binary executable, returns
-  an empty list.
-  """
-  if (exe.endswith(".jar") or
-      exe.endswith(".pl") or
-      exe.endswith(".py") or
-      exe.endswith(".sh") or
-      exe.endswith(".txt") or
-      os.path.isdir(exe)):
-    return []
-  if exe not in LDD_CACHE:
-    p = subprocess.Popen(["ldd", exe], stdout=subprocess.PIPE)
-    out, err = p.communicate()
-    LDD_CACHE[exe] = (out, err, p.returncode)
-  out, err, rc = LDD_CACHE[exe]
-  if rc != 0:
-    logging.warning("failed to run ldd on %s", exe)
-    return []
-  ret = []
-  for l in out.splitlines():
-    m = LDD_RE.match(l)
-    if not m:
-      continue
-    lib = m.group(1)
-    if is_lib_blacklisted(lib):
-      continue
-    path = m.group(1)
-    ret.append(m.group(1))
-
-    # ldd will often point to symlinks. We need to upload the symlink
-    # as well as whatever it's pointing to, recursively.
-    while os.path.islink(path):
-      path = os.path.join(os.path.dirname(path), os.readlink(path))
-      ret.append(path)
-  return ret
-
-
-def create_archive_input(staging, execution,
+def create_archive_input(staging, execution, dep_extractor,
                          collect_tmpdir=False):
   """
   Generates .gen.json and .isolate files corresponding to the
@@ -325,8 +285,8 @@ def create_archive_input(staging, execution,
   argv[1] = rel_test_exe
   files = []
   files.append(rel_test_exe)
-  deps = ldd_deps(abs_test_exe)
-  deps.extend(get_base_deps())
+  deps = dep_extractor.extract_deps(abs_test_exe)
+  deps.extend(get_base_deps(dep_extractor))
 
   # Deduplicate dependencies included via DEPS_FOR_ALL.
   for d in set(deps):
@@ -480,8 +440,9 @@ def run_tests(parser, options):
     for e in executions:
       e.argv.extend(options.extra_args)
   staging = StagingDir.new()
+  dep_extractor = create_dependency_extractor()
   for execution in executions:
-    create_archive_input(staging, execution,
+    create_archive_input(staging, execution, dep_extractor,
                          collect_tmpdir=options.collect_tmpdir)
   run_isolate(staging)
   retry_all = RETRY_ALL_TESTS > 0
@@ -545,8 +506,9 @@ def loop_test(parser, options):
     e = executions[0]
     e.env["GTEST_TOTAL_SHARDS"] = 1
     e.env["GTEST_SHARD_INDEX"] = 0
+  dep_extractor = create_dependency_extractor()
   for execution in executions:
-    create_archive_input(staging, execution,
+    create_archive_input(staging, execution, dep_extractor,
                          collect_tmpdir=options.collect_tmpdir)
   run_isolate(staging)
   create_task_json(staging, options.num_instances)
@@ -616,7 +578,7 @@ def add_java_subparser(subparsers):
 
 
 def dump_base_deps(parser, options):
-  print json.dumps(get_base_deps())
+  print json.dumps(get_base_deps(create_dependency_extractor()))
 
 
 def add_internal_commands(subparsers):
