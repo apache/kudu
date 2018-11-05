@@ -1375,6 +1375,25 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
       continue;
     }
 
+    // For every rowset we pick, we have to take its compact_flush_lock. TSAN
+    // disallows taking more than 64 locks in a single thread[1], so for large
+    // compactions this can cause TSAN CHECK failures. To work around, limit the
+    // number of rowsets picked in TSAN to 32.
+    // [1]: https://github.com/google/sanitizers/issues/950
+    // TODO(wdberkeley): Experiment with a compact_flush lock table instead of
+    // a per-rowset compact_flush lock.
+    #if defined(THREAD_SANITIZER)
+      constexpr auto kMaxPickedUnderTsan = 32;
+      if (picked->num_rowsets() > kMaxPickedUnderTsan) {
+        LOG(WARNING) << Substitute("Limiting compaction to $0 rowsets under TSAN",
+                                   kMaxPickedUnderTsan);
+        // Clear 'picked_set' to indicate there's no more rowsets we expect
+        // to lock.
+        picked_set.clear();
+        break;
+      }
+    #endif
+
     // Grab the compact_flush_lock: this prevents any other concurrent
     // compaction from selecting this same rowset, and also ensures that
     // we don't select a rowset which is currently in the middle of being
