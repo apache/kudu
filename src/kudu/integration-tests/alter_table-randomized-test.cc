@@ -75,6 +75,7 @@ using std::pair;
 using std::string;
 using std::unique_ptr;
 using std::vector;
+using strings::Substitute;
 using strings::SubstituteAndAppend;
 
 const char* kTableName = "default.test_table";
@@ -117,12 +118,12 @@ class AlterTableRandomized : public KuduTest,
   }
 
   void RestartTabletServer(int idx) {
-    LOG(INFO) << "Restarting TS " << idx;
-    cluster_->tablet_server(idx)->Shutdown();
-    CHECK_OK(cluster_->tablet_server(idx)->Restart());
-    CHECK_OK(cluster_->WaitForTabletsRunning(cluster_->tablet_server(idx),
-                                             -1, MonoDelta::FromSeconds(60)));
-    LOG(INFO) << "TS " << idx << " Restarted";
+    auto* ts = cluster_->tablet_server(idx);
+    LOG(INFO) << Substitute("Restarting TS $0 (index $1)", ts->uuid(), idx);
+    ts->Shutdown();
+    CHECK_OK(ts->Restart());
+    CHECK_OK(cluster_->WaitForTabletsRunning(ts, -1, MonoDelta::FromSeconds(60)));
+    LOG(INFO) << Substitute("TS $0 (index $1) restarted", ts->uuid(), idx);
   }
 
   void RestartMaster() {
@@ -197,7 +198,7 @@ struct TableState {
 
   string GetRandomNewColumnName() {
     while (true) {
-      string name = strings::Substitute("c$0", rand_.Uniform(1000));
+      string name = Substitute("c$0", rand_.Uniform(1000));
       if (std::find(col_names_.begin(), col_names_.end(), name) == col_names_.end()) {
         return name;
       }
