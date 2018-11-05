@@ -86,6 +86,7 @@ using std::vector;
 using strings::Substitute;
 
 DECLARE_bool(enable_maintenance_manager);
+DECLARE_bool(enable_rowset_compaction);
 DECLARE_string(time_source);
 DECLARE_double(missed_heartbeats_before_rejecting_snapshot_scans);
 DECLARE_int32(flush_threshold_secs);
@@ -137,11 +138,13 @@ TEST_F(TabletHistoryGcITest, TestSnapshotScanBeforeAHM) {
 
 // Check that the maintenance manager op to delete undo deltas actually deletes them.
 TEST_F(TabletHistoryGcITest, TestUndoDeltaBlockGc) {
-  FLAGS_time_source = "mock"; // Allow moving the clock.
-  FLAGS_tablet_history_max_age_sec = 1000;
+  // Disable rowset compaction since it also does undo block GC.
+  FLAGS_enable_rowset_compaction = false;
   FLAGS_flush_threshold_secs = 0; // Flush as aggressively as possible.
-  FLAGS_maintenance_manager_polling_interval_ms = 1; // Spin on MM for a quick test.
   FLAGS_maintenance_manager_num_threads = 4; // Encourage concurrency.
+  FLAGS_maintenance_manager_polling_interval_ms = 1; // Spin on MM for a quick test.
+  FLAGS_tablet_history_max_age_sec = 1000;
+  FLAGS_time_source = "mock"; // Allow moving the clock.
 
   NO_FATALS(StartCluster(1)); // Single-node cluster.
 
