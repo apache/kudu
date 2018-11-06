@@ -318,10 +318,6 @@ class Rebalancer {
     // tserver UUID (i.e. the key) as the destination of the move operation'.
     std::unordered_map<std::string, std::set<size_t>> dst_op_indices_;
 
-    // Information on scheduled replica movement operations; keys are
-    // tablet UUIDs, values are ReplicaMove structures.
-    MovesInProgress scheduled_moves_;
-
     // Random device and generator for selecting among multiple choices, when
     // appropriate.
     std::random_device random_device_;

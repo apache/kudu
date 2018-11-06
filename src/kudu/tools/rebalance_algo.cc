@@ -552,7 +552,7 @@ Status LocationBalancingAlgo::FindBestMove(
   // (i.e. number of table replicas / number of tablet servers), but it's
   // always beneficial to have less loaded servers in absolute terms.
   //
-  // If there are multiple candiate tablet servers with the same extremum load,
+  // If there are multiple candidate tablet servers with the same extremum load,
   // choose among them randomly.
   //
   // TODO(aserbin): implement fine-grained logic to select the best move among
