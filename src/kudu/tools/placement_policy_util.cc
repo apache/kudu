@@ -209,8 +209,10 @@ Status FindBestReplicaToReplace(
 } // anonymous namespace
 
 
-Status BuildTabletsPlacementInfo(const ClusterRawInfo& raw_info,
-                                 TabletsPlacementInfo* info) {
+Status BuildTabletsPlacementInfo(
+    const ClusterRawInfo& raw_info,
+    const Rebalancer::MovesInProgress& moves_in_progress,
+    TabletsPlacementInfo* info) {
   DCHECK(info);
 
   unordered_map<string, TableInfo> tables_info;
@@ -236,11 +238,9 @@ Status BuildTabletsPlacementInfo(const ClusterRawInfo& raw_info,
   decltype(TabletsPlacementInfo::tablet_location_info) tablet_location_info;
   for (const auto& tablet_summary : raw_info.tablet_summaries) {
     const auto& tablet_id = tablet_summary.id;
-    if (tablet_summary.result != KsckCheckResult::HEALTHY) {
-      // TODO(aserbin): should this be reported as some transient condition
-      //                to be taken into account? E.g., a tablet might be
-      //                in process of copying data to a new replica to replace
-      //                another replica which violates the placement policy.
+    // TODO(aserbin): process RF=1 tablets as necessary
+    if (tablet_summary.result != KsckCheckResult::HEALTHY &&
+        tablet_summary.result != KsckCheckResult::RECOVERING) {
       VLOG(1) << Substitute("tablet $0: not considering replicas for movement "
                             "since the tablet's status is '$1'",
                             tablet_id,
@@ -249,31 +249,95 @@ Status BuildTabletsPlacementInfo(const ClusterRawInfo& raw_info,
     }
     EmplaceOrDie(&tablet_to_table_id, tablet_id, tablet_summary.table_id);
 
+    // Check if it's one of the tablets which are currently being rebalanced.
+    // If so, interpret the move as successfully completed, updating the replica
+    // counts correspondingly.
     TabletInfo tablet_info;
-    for (const auto& replica_info : tablet_summary.replicas) {
-      TabletReplicaInfo info;
-      info.ts_uuid = replica_info.ts_uuid;
-      if (replica_info.is_leader) {
-        info.role = ReplicaRole::LEADER;
-      } else {
-        info.role = replica_info.is_voter ? ReplicaRole::FOLLOWER_VOTER
-                                          : ReplicaRole::FOLLOWER_NONVOTER;
+    const auto it_pending_moves = moves_in_progress.find(tablet_id);
+    if (it_pending_moves != moves_in_progress.end()) {
+      const auto& move_info = it_pending_moves->second;
+      // Check if the target replica is present in the config.
+      bool is_target_replica_present = false;
+      for (const auto& tr : tablet_summary.replicas) {
+        if (tr.ts_uuid == move_info.ts_uuid_to) {
+          is_target_replica_present = true;
+          break;
+        }
       }
+      // If the target replica is present, it will be processed in the code
+      // below. Otherwise, it's necessary to pretend as if the target replica
+      // is in the config already: the idea is to count in the absent target
+      // replica as if the movement has successfully completed already.
+      //
+      // NOTE: an empty UUID for the target replica means the source replica
+      //       is being kicked out from the config and the system will
+      //       automatically add the replacement replica at the most appropriate
+      //       location.
+      if (!is_target_replica_present && !move_info.ts_uuid_to.empty()) {
+        ++LookupOrEmplace(&replica_num_by_ts_id, move_info.ts_uuid_to, 0);
+
+        // Populate ClusterLocationInfo::tablet_location_info.
+        auto& count_by_location = LookupOrEmplace(&tablet_location_info,
+                                                  tablet_id,
+                                                  unordered_map<string, int>());
+        const auto& location = FindOrDie(location_by_ts_id, move_info.ts_uuid_to);
+        ++LookupOrEmplace(&count_by_location, location, 0);
+
+        {
+          // Faking an appearance of a new voter replica in the config: that's
+          // to reflect the completion of the scheduled replica movement.
+          TabletReplicaInfo info;
+          info.ts_uuid = move_info.ts_uuid_to;
+          info.role = ReplicaRole::FOLLOWER_VOTER;
+          tablet_info.replicas_info.emplace_back(std::move(info));
+        }
+      }
+    }
+
+    for (const auto& replica_info : tablet_summary.replicas) {
       if (replica_info.is_leader && replica_info.consensus_state) {
         const auto& cstate = *replica_info.consensus_state;
         if (cstate.opid_index) {
           tablet_info.config_idx = *cstate.opid_index;
         }
       }
-      ++LookupOrEmplace(&replica_num_by_ts_id, replica_info.ts_uuid, 0);
+      bool do_count_replica = true;
+      if (it_pending_moves != moves_in_progress.end()) {
+        const auto& move_info = it_pending_moves->second;
+        if (move_info.ts_uuid_from == replica_info.ts_uuid) {
+          DCHECK(!replica_info.ts_uuid.empty());
+          // Do not count the source replica for the scheduled/in-progress
+          // replica movement. The idea is to consider pending replica movements
+          // as if they have already completed successfully.
+          do_count_replica = false;
+        }
+      }
+
+      auto& replica_count =
+          LookupOrEmplace(&replica_num_by_ts_id, replica_info.ts_uuid, 0);
+      if (do_count_replica) {
+        ++replica_count;
+      }
 
       // Populate ClusterLocationInfo::tablet_location_info.
       auto& count_by_location = LookupOrEmplace(&tablet_location_info,
                                                 tablet_id,
                                                 unordered_map<string, int>());
-      const auto& location = FindOrDie(location_by_ts_id, info.ts_uuid);
-      ++LookupOrEmplace(&count_by_location, location, 0);
-      tablet_info.replicas_info.emplace_back(std::move(info));
+      const auto& location = FindOrDie(location_by_ts_id, replica_info.ts_uuid);
+      auto& count = LookupOrEmplace(&count_by_location, location, 0);
+      if (do_count_replica) {
+        ++count;
+
+        TabletReplicaInfo info;
+        info.ts_uuid = replica_info.ts_uuid;
+        if (replica_info.is_leader) {
+          info.role = ReplicaRole::LEADER;
+        } else {
+          info.role = replica_info.is_voter ? ReplicaRole::FOLLOWER_VOTER
+                                            : ReplicaRole::FOLLOWER_NONVOTER;
+        }
+        tablet_info.replicas_info.emplace_back(std::move(info));
+      }
     }
     EmplaceOrDie(&tablets_info, tablet_id, std::move(tablet_info));
   }

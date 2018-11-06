@@ -76,9 +76,15 @@ struct TabletsPlacementInfo {
   std::unordered_map<std::string, int> replica_num_by_ts_id;
 };
 
-// Convert ClusterRawInfo into TabletsPlacementInfo.
-Status BuildTabletsPlacementInfo(const ClusterRawInfo& raw_info,
-                                 TabletsPlacementInfo* info);
+// Convert ClusterRawInfo into TabletsPlacementInfo. The 'moves_in_progress'
+// parameter contains information on the replica moves which have been scheduled
+// by a caller and still in progress: those are considered as successfully
+// completed and applied to the 'raw_info' when building TabletsPlacementInfo
+// for the specified 'raw_info' input.
+Status BuildTabletsPlacementInfo(
+    const ClusterRawInfo& raw_info,
+    const Rebalancer::MovesInProgress& moves_in_progress,
+    TabletsPlacementInfo* info);
 
 // Information on a violation of the basic placement policy constraint.
 // The basic constraint is: for any tablet, no location should contain

@@ -21,6 +21,8 @@
 #include <cstdlib>
 #include <iterator>
 #include <memory>
+#include <map>
+#include <numeric>
 #include <ostream>
 #include <string>
 #include <thread>
@@ -83,6 +85,7 @@ using std::atomic;
 using std::back_inserter;
 using std::copy;
 using std::endl;
+using std::ostream;
 using std::ostringstream;
 using std::string;
 using std::thread;
@@ -387,13 +390,16 @@ TEST_P(RebalanceParamTest, Rebalance) {
     ASSERT_TRUE(s.ok()) << ToolRunInfo(s, out, err);
     ASSERT_STR_CONTAINS(out, "rebalancing is complete: cluster is balanced")
         << "stderr: " << err;
-    // The cluster was un-balanced, so many replicas should have been moved.
+    // The cluster was unbalanced, so many replicas should have been moved.
     ASSERT_STR_NOT_CONTAINS(out, "(moved 0 replicas)");
   }
 
   NO_FATALS(cluster_->AssertNoCrashes());
   NO_FATALS(ClusterVerifier(cluster_.get()).CheckCluster());
 }
+
+// Working around limitations of older libstdc++.
+static const unordered_set<string> kEmptySet = unordered_set<string>();
 
 // Common base for the rebalancer-related test below.
 class RebalancingTest : public tserver::TabletServerIntegrationTestBase {
@@ -417,9 +423,6 @@ class RebalancingTest : public tserver::TabletServerIntegrationTestBase {
  protected:
   static const char* const kExitOnSignalStr;
   static const char* const kTableNamePattern;
-
-  // Working around limitations of older libstdc++.
-  static const unordered_set<string> kEmptySet;
 
   void Prepare(const vector<string>& extra_tserver_flags = {},
                const vector<string>& extra_master_flags = {},
@@ -520,7 +523,6 @@ class RebalancingTest : public tserver::TabletServerIntegrationTestBase {
 };
 const char* const RebalancingTest::kExitOnSignalStr = "kudu: process exited on signal";
 const char* const RebalancingTest::kTableNamePattern = "rebalance_test_table_$0";
-const unordered_set<string> RebalancingTest::kEmptySet = unordered_set<string>();
 
 typedef testing::WithParamInterface<Kudu1097> Kudu1097ParamTest;
 
@@ -1425,6 +1427,222 @@ Placement policy violations:
   // The actual rebalancing should not run.
   ASSERT_STR_NOT_CONTAINS(out, "rebalancing is complete:")
       << ToolRunInfo(s, out, err);
+}
+
+// Parameters for the location-aware rebalancing tests.
+typedef struct {
+  int replication_factor;
+  int tables_num;
+
+  // Information on the distribution of tablet servers among locations.
+  LocationInfo location_info;
+
+  // Locations where tablet servers are shutdown during tablet creation
+  // to achieve non-balanced tablet replica distribution.
+  unordered_set<string> excluded_locations;
+} LaRebalancingParams;
+
+const LaRebalancingParams kLaRebalancingParams[] = {
+  // RF=3, 1 table, 1 location, 3 tablet servers.
+  { 3, 1,
+    {
+      { { "/A" }, 3 }
+    },
+    kEmptySet },
+
+  // RF=3, 3 tables, 2 locations, 4 (3 + 1) tablet servers.
+  { 3, 3,
+    {
+      { { "/A" }, 3 },
+      { { "/B" }, 1 },
+    },
+    { "/B" }
+  },
+
+  // RF=3, 3 tables, 2 locations, 5 (3 + 2) tablet servers.
+  { 3, 3,
+    {
+      { { "/A" }, 3 },
+      { { "/B" }, 2 },
+    },
+    { "/B" }
+  },
+
+  // RF=3, 3 tables, 2 locations, 6 (3 + 3) tablet servers.
+  { 3, 3,
+    {
+      { { "/A" }, 3 },
+      { { "/B" }, 3 },
+    },
+    { "/B" }
+  },
+
+  // RF=3, 3 tables, 3 locations, 6 (3 + 2 + 1) tablet servers.
+  { 3, 3,
+    {
+      { { "/A" }, 3 },
+      { { "/B" }, 2 },
+      { { "/C" }, 1 },
+    },
+    { "/B" }
+  },
+
+  // RF=5, 3 locations, 4 tables, 8 (3 + 2 + 3) tablet servers.
+  { 5, 4,
+    {
+      { { "/A" }, 3 },
+      { { "/B" }, 2 },
+      { { "/C" }, 3 },
+    }, { "/C" }
+  },
+
+  // RF=7, 3 locations, 7 tables, 10 (3 + 4 + 3) tablet servers.
+  { 7, 7,
+    {
+      { { "/A" }, 3 },
+      { { "/B" }, 4 },
+      { { "/C" }, 3 },
+    }, { "/C" }
+  },
+  // RF=2, 4 locations, 4 (1 + 2 + 1) tablet servers.
+  { 2, 3,
+    {
+      { { "/A" }, 1 },
+      { { "/B" }, 2 },
+      { { "/C" }, 1 },
+    }, { "/B" }
+  },
+
+  // RF=4, 4 locations, 6 (3 + 1 + 1 + 1) tablet servers.
+  { 4, 8,
+    {
+      { { "/A" }, 3 },
+      { { "/B" }, 1 },
+      { { "/C" }, 1 },
+      { { "/D" }, 1 },
+    }, { "/B", "/D" }
+  },
+};
+
+// Custom name generator for LA rebalancing scenarios described by
+// LaRebalancingParams.
+static string LaRebalancingTestName(
+    const testing::TestParamInfo<LaRebalancingParams>& info) {
+  ostringstream str;
+  const auto& p = info.param;
+  str << "idx" << info.index
+      << "_rf" << p.replication_factor
+      << "_t" << p.tables_num
+      << "_l";
+  for (const auto& elem : p.location_info) {
+    str << "_" << elem.second;
+  }
+  return str.str();
+}
+
+// This is used by 'operator<<(ostream&, const LaRebalancingParams&)' below.
+ostream& operator <<(ostream& out, const LocationInfo& info) {
+  out << "{ ";
+  for (const auto& elem : info) {
+    out << elem.first << ":" << elem.second << " ";
+  }
+  out << "}";
+  return out;
+}
+
+// This is useful to print the configuration of a failed param test.
+ostream& operator <<(ostream& out, const LaRebalancingParams& info) {
+  out << "{ rep_factor: " << info.replication_factor;
+  out << ", num_tables: " << info.tables_num
+      << ", location_info: ";
+  out << info.location_info;
+  out << " }";
+  return out;
+}
+
+class LocationAwareRebalancingParamTest :
+    public RebalancingTest,
+    public ::testing::WithParamInterface<LaRebalancingParams> {
+ public:
+  LocationAwareRebalancingParamTest()
+      : RebalancingTest(GetParam().tables_num,
+                        GetParam().replication_factor,
+                        std::accumulate(GetParam().location_info.begin(),
+                                        GetParam().location_info.end(), 0,
+                                        [](int sum, const LocationInfo::value_type& e) {
+                                          return sum + e.second;
+                                        })) {
+  }
+
+  bool is_343_scheme() const override {
+    // These tests are for the 3-4-3 replica management scheme only.
+    return true;
+  }
+};
+INSTANTIATE_TEST_CASE_P(, LocationAwareRebalancingParamTest,
+                        ::testing::ValuesIn(kLaRebalancingParams),
+                        LaRebalancingTestName);
+TEST_P(LocationAwareRebalancingParamTest, Rebalance) {
+  if (!AllowSlowTests()) {
+    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
+    return;
+  }
+  const auto& param = GetParam();
+  const auto& location_info = param.location_info;
+  const auto& excluded_locations = param.excluded_locations;
+  const vector<string>& extra_master_flags = {
+    // In this test, the only users of the location assignment test script
+    // are the tablet servers: at this sub-class level it's hard to control
+    // when the test client connects to the external minicluster.
+    "--master_client_location_assignment_enabled=false",
+
+    // This test can exercise scenarios with even replication factor for tables.
+    "--allow_unsafe_replication_factor",
+  };
+  NO_FATALS(Prepare({}, extra_master_flags, location_info, excluded_locations));
+
+  const vector<string> tool_args = {
+    "cluster",
+    "rebalance",
+    cluster_->master()->bound_rpc_addr().ToString(),
+    "--output_replica_distribution_details=true",
+  };
+
+  // The run of the location-aware rebalancing tool should report the cluster
+  // as balanced.
+  {
+    string out;
+    string err;
+    const Status s = RunKuduTool(tool_args, &out, &err);
+    ASSERT_TRUE(s.ok()) << ToolRunInfo(s, out, err);
+    ASSERT_STR_CONTAINS(out, "rebalancing is complete: cluster is balanced")
+        << "stderr: " << err;
+    if (!param.excluded_locations.empty()) {
+      // In all location-aware cluster configurations where the replica were
+      // initially placed everywhere but some 'excluded locations', the cluster
+      // was unbalanced, so some replicas should have been moved.
+      ASSERT_STR_NOT_CONTAINS(out, "(moved 0 replicas)");
+    }
+    if (param.replication_factor == 2 || param.location_info.size() == 2 ||
+        (param.location_info.size() == 3 && param.replication_factor == 4)) {
+      // In case some cases it's impossible to satisfy the placement policy's
+      // constraints.
+      ASSERT_STR_CONTAINS(out, "Placement policy violations:\n");
+      ASSERT_STR_CONTAINS(out,
+          "Number of non-complying tables | Number of non-complying tablets\n")
+          << "stderr: " << err;
+      // The "--output_replica_distribution_details" flag is set: the tool
+      // should output details on the violations of the placement policy.
+      ASSERT_STR_CONTAINS(out, "Placement policy violation details:\n")
+          << "stderr: " << err;
+    } else if (param.location_info.size() > 1) {
+      // In other cases all the violations of the placement policy should be
+      // corrected (in the case of a single location the rebalancer does not
+      // check against placement policy violations because that case is treated
+      // the same as a location-unaware, whole cluster rebalancing).
+      ASSERT_STR_CONTAINS(out, "Placement policy violations:\n  none\n");
+    }
+  }
 }
 
 } // namespace tools

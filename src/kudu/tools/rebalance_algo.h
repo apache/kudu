@@ -167,7 +167,7 @@ class TwoDimensionalGreedyAlgo : public RebalancingAlgo {
   // output into the 'server_uuids' parameter. Whether to consider most or least
   // loaded servers is controlled by 'extremum'. An empty 'intersection' on
   // return means no intersection was found for the mentioned sets of the
-  // extremally loaded servers: in that case optimizing the load by table would
+  // extremely loaded servers: in that case optimizing the load by table would
   // not affect the extreme load by server.
   //
   // None of the output parameters may be NULL.
@@ -220,7 +220,7 @@ class TwoDimensionalGreedyAlgo : public RebalancingAlgo {
 //    a table T. Assume we have locations L_0, ..., L_n, where
 //    replica_num(T, L_0), ..., replica_num(T, L_n) are numbers of replicas
 //    of T's tablets at corresponding locations. We want to make the following
-//    ratios to devicate as less as possible:
+//    ratios to deviate as less as possible:
 //
 //    replica_num(T, L_0) / ts_num(L_0), ..., replica_num(T, L_n) / ts_num(L_n)
 //
