@@ -169,6 +169,10 @@ Status MiniSentry::CreateSentryConfigs(const string& tmp_dir) const {
   // - sentry.service.allow.connect
   //     Set of Kerberos principals which is allowed to connect to Sentry when
   //     the Kerberos security mode is enabled.
+  //
+  // - sentry.service.server.rpc-port
+  //     Port number that the Sentry service starts with.
+  //
   static const string kFileTemplate = R"(
 <configuration>
 
@@ -218,6 +222,11 @@ Status MiniSentry::CreateSentryConfigs(const string& tmp_dir) const {
   </property>
 
   <property>
+    <name>sentry.service.server.rpc-port</name>
+    <value>$5</value>
+  </property>
+
+  <property>
     <name>sentry.service.admin.group</name>
     <value>admin</value>
   </property>
@@ -237,7 +246,8 @@ Status MiniSentry::CreateSentryConfigs(const string& tmp_dir) const {
       service_principal_,
       keytab_file_,
       tmp_dir,
-      users_ini_path);
+      users_ini_path,
+      port_);
   RETURN_NOT_OK(WriteStringToFile(Env::Default(),
                                   file_contents,
                                   JoinPathSegments(tmp_dir, "sentry-site.xml")));

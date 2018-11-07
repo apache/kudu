@@ -74,6 +74,8 @@ class MiniSentry {
   Status WaitForSentryPorts() WARN_UNUSED_RESULT;
 
   std::unique_ptr<Subprocess> sentry_process_;
+
+  // Port number of the mini Sentry service. Default to 0.
   uint16_t port_ = 0;
 
   // Kerberos configuration
