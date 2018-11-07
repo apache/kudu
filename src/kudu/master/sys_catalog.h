@@ -186,7 +186,8 @@ class SysCatalogTable {
   Status AddTskEntry(const SysTskEntryPB& entry);
 
   // Remove TSK (Token Signing Key) entries with the specified entry identifiers
-  // (as in 'entry_id' column) from the system table.
+  // (as in 'entry_id' column) from the system table. The container of the
+  // entry identifiers must not be empty.
   Status RemoveTskEntries(const std::set<std::string>& entry_ids);
 
   // Return the underlying TabletReplica instance hosting the metadata.

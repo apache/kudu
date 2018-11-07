@@ -939,7 +939,10 @@ Status CatalogManager::InitTokenSigner() {
   set<string> expired_tsk_entry_ids;
   RETURN_NOT_OK(LoadTskEntries(&expired_tsk_entry_ids));
   RETURN_NOT_OK(TryGenerateNewTskUnlocked());
-  return DeleteTskEntries(expired_tsk_entry_ids);
+  if (!expired_tsk_entry_ids.empty()) {
+    return DeleteTskEntries(expired_tsk_entry_ids);
+  }
+  return Status::OK();
 }
 
 void CatalogManager::PrepareForLeadershipTask() {
@@ -4116,7 +4119,10 @@ Status CatalogManager::LoadTspkEntries(vector<TokenSigningPublicKeyPB>* keys) {
 
 Status CatalogManager::DeleteTskEntries(const set<string>& entry_ids) {
   leader_lock_.AssertAcquiredForWriting();
-  return sys_catalog_->RemoveTskEntries(entry_ids);
+  RETURN_NOT_OK(sys_catalog_->RemoveTskEntries(entry_ids));
+  LOG_WITH_PREFIX(INFO) << Substitute("Deleted TSKs: $0",
+                                      JoinStrings(entry_ids, ", "));
+  return Status::OK();
 }
 
 struct DeferredAssignmentActions {

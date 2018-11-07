@@ -851,7 +851,8 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   Status LoadTspkEntries(std::vector<security::TokenSigningPublicKeyPB>* keys);
 
   // Delete TSK entries with the specified entry identifiers
-  // (identifiers correspond to the 'entry_id' column).
+  // (identifiers correspond to the 'entry_id' column). The 'entry_ids'
+  // container must not be empty.
   Status DeleteTskEntries(const std::set<std::string>& entry_ids);
 
   Status ApplyAlterSchemaSteps(const SysTablesEntryPB& current_pb,

@@ -743,19 +743,19 @@ Status SysCatalogTable::AddTskEntry(const SysTskEntryPB& entry) {
 }
 
 Status SysCatalogTable::RemoveTskEntries(const set<string>& entry_ids) {
+  CHECK(!entry_ids.empty());
   WriteRequestPB req;
-  WriteResponsePB resp;
-
   req.set_tablet_id(kSysCatalogTabletId);
+  RowOperationsPBEncoder enc(req.mutable_row_operations());
   CHECK_OK(SchemaToPB(schema_, req.mutable_schema()));
   for (const auto& id : entry_ids) {
     KuduPartialRow row(&schema_);
     CHECK_OK(row.SetInt8(kSysCatalogTableColType, TSK_ENTRY));
     CHECK_OK(row.SetStringNoCopy(kSysCatalogTableColId, id));
-    RowOperationsPBEncoder enc(req.mutable_row_operations());
     enc.Add(RowOperationsPB::DELETE, row);
   }
 
+  WriteResponsePB resp;
   return SyncWrite(&req, &resp);
 }
 
