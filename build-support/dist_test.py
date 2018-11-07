@@ -162,14 +162,17 @@ def abs_to_rel(abs_path, staging):
   return rel
 
 
-def get_test_executions(options):
+def get_test_executions(tests_regex, extra_args=None):
   """
   Return an array of TestExecution objects.
+
+  :param tests_regex: Regexp for ctest's -R option to select particular tests
+  :param extra_args: Extra arguments to run the test binary with
   """
   ctest_bin = os.path.join(rel_to_abs("thirdparty/installed/common/bin/ctest"))
   ctest_argv = [ctest_bin, "-V", "-N", "-LE", "no_dist_test"]
-  if options.tests_regex:
-    ctest_argv.extend(['-R', options.tests_regex])
+  if tests_regex:
+    ctest_argv.extend(['-R', tests_regex])
   p = subprocess.Popen(ctest_argv,
                        stdout=subprocess.PIPE,
                        cwd=rel_to_abs("build/latest"))
@@ -198,6 +201,8 @@ def get_test_executions(options):
     if not m:
       break
     argv = shlex.split(m.group(1))
+    if extra_args:
+      argv.extend(extra_args)
     # Next line should b the 'Environment variables' heading
     l = lines.popleft()
     if "Environment variables:" not in l:
@@ -468,7 +473,7 @@ def run_tests(parser, options):
   Gets all of the test command lines from 'ctest', isolates them,
   creates a task list, and submits the tasks to the testing service.
   """
-  executions = get_test_executions(options)
+  executions = get_test_executions(options.tests_regex)
   if options.extra_args:
     if options.extra_args[0] == '--':
       del options.extra_args[0]
@@ -509,31 +514,60 @@ def add_run_subparser(subparsers):
 def loop_test(parser, options):
   """
   Runs many instances of a user-provided test case on the testing service.
+
+  To run the test, this function first builds corresponding list of
+  TestExecution objects using get_test_executions() to properly populate all
+  the necessary ctest environment variables for TestExecution instances.
+  Those environment variables are necessary for building proper dependencies
+  for test binaries: e.g., including all DATA_FILES.
   """
   if options.num_instances < 1:
     parser.error("--num-instances must be >= 1")
-  execution = TestExecution(["run-test.sh", options.cmd] + options.args)
+  # A regex to match ctest's name of the test suite provided by the binary,
+  # sharded and non-sharded. For example, sharded are 'client-test.0',
+  # 'client-test.1', ..., 'client-test.7'; non-sharded is
+  # 'ts_location_assignment-itest'.
+  tests_regex = "^" + os.path.basename(options.cmd) + "(\.[0-9]+)?$"
+  executions = get_test_executions(tests_regex, options.args)
   staging = StagingDir.new()
-  create_archive_input(staging, execution,
-                       collect_tmpdir=options.collect_tmpdir)
+  # The presence of the --gtest_filter flag means the user is interested in a
+  # particular subset of tests provided by the binary. In that case it doesn't
+  # make sense to shard the execution since only the shards containing the
+  # matching tests would produce interesting results, while the rest would
+  # yield noise. To avoid this, we disable sharding in this case.
+  filter_flags = [e for e in options.args
+      if e.find("--gtest_filter") == 0 or e.find("--gtest-filter") == 0]
+  if filter_flags and len(executions) > 1:
+    # If the test is sharded, avoid sharded execution by using only one
+    # TestExecution from the generated list (doesn't matter which one)
+    # and update shard-related environment variables.
+    executions = executions[:1]
+    e = executions[0]
+    e.env["GTEST_TOTAL_SHARDS"] = 1
+    e.env["GTEST_SHARD_INDEX"] = 0
+  for execution in executions:
+    create_archive_input(staging, execution,
+                         collect_tmpdir=options.collect_tmpdir)
   run_isolate(staging)
   create_task_json(staging, options.num_instances)
   submit_tasks(staging, options)
 
+
 def add_loop_test_subparser(subparsers):
-  p = subparsers.add_parser('loop',
-                            help='Run many instances of the same test, specified by its full path',
-                            epilog="NOTE: if you would like to loop an entire suite of tests, you may " +
-                            "prefer to use the 'run' command instead. The 'run' command will automatically " +
-                            "shard bigger test suites into more granular tasks based on the shard count " +
-                            "configured in CMakeLists.txt. For example: " +
-                            "dist_test.py run -R '^raft_consensus-itest' -n 1000")
-  p.add_argument("--num-instances", "-n", dest="num_instances", type=int,
-                 metavar="NUM",
-                 help="number of test instances to start. If passing arguments to the " +
-                 "test, you may want to use a '--' argument before <test-path>. " +
-                 "e.g: loop -- build/latest/bin/foo-test --gtest_opt=123",
-                 default=100)
+  p = subparsers.add_parser("loop",
+      help="Run many instances of the same test, specified by its full path",
+      epilog="NOTE: unless --gtest_filter=... flag is specified for the test "
+      "binary, the test scenarios are automatically sharded in accordance with "
+      "the shard count defined in CMakeLists.txt. Another way to loop an "
+      "entire suite of tests is to use the 'run' command instead. The 'run' "
+      "command will unconditionally shard bigger test suites into more "
+      "granular tasks based on the shard count configured in CMakeLists.txt. "
+      "For example: dist_test.py run -R '^raft_consensus-itest' -n 1000")
+  p.add_argument("--num-instances", "-n",
+      dest="num_instances", type=int, metavar="NUM", default=100,
+      help="number of test instances to start. If passing arguments to the "
+      "test, you may want to use a '--' argument before <test-path>. "
+      "e.g: loop -- build/latest/bin/foo-test --gtest_opt=123")
   p.add_argument("cmd", help="the path to the test binary (e.g. build/latest/bin/foo-test)")
   p.add_argument("args", nargs=argparse.REMAINDER, help="test arguments")
   p.set_defaults(func=loop_test)
