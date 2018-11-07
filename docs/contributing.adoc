@@ -63,11 +63,13 @@ git remote add gerrit ssh://<username>@gerrit.cloudera.org:29418/kudu
 ----
 
 . Run the following command to install the
-Gerrit `commit-msg` hook. Use the following command, replacing `<username>` with your
-Github username.
+Gerrit `commit-msg` hook. Use the following command:
 +
 ----
-gitdir=$(git rev-parse --git-dir); scp -p -P 29418 <username>@gerrit.cloudera.org:hooks/commit-msg ${gitdir}/hooks/
+cd kudu
+gitdir=$(git rev-parse --git-dir)
+curl -LSsf https://gerrit.cloudera.org/tools/hooks/commit-msg -o ${gitdir}/hooks/commit-msg
+chmod +x ${gitdir}/hooks/commit-msg
 ----
 
 . Be sure you have set the Kudu repository to use `pull --rebase` by default. You
