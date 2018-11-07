@@ -874,8 +874,10 @@ function(ADD_KUDU_TEST REL_TEST_NAME)
     # The only way we can pass information to dist-test is through the environment.
     # So, use a comma-delimited environment variable to pass the list of data files
     # that need to be uploaded.
-    string(REPLACE ";" "," DATA_FILES_ENV "${DATA_FILES_LIST}")
-    list(APPEND CUR_TEST_ENV "KUDU_DATA_FILES=${DATA_FILES_ENV}")
+    if(DATA_FILES_LIST)
+      string(REPLACE ";" "," DATA_FILES_ENV "${DATA_FILES_LIST}")
+      list(APPEND CUR_TEST_ENV "KUDU_DATA_FILES=${DATA_FILES_ENV}")
+    endif()
 
     set_tests_properties(${TARGET} PROPERTIES
       TIMEOUT ${EXTENDED_TIMEOUT}
