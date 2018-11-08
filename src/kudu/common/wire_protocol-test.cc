@@ -37,6 +37,7 @@
 #include "kudu/util/bitmap.h"
 #include "kudu/util/bloom_filter.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/hash.pb.h"
 #include "kudu/util/hexdump.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/pb_util.h"
@@ -445,6 +446,15 @@ TEST_F(WireProtocolTest, TestColumnDefaultValue) {
   ASSERT_TRUE(col5fpb.has_write_default());
   ASSERT_EQ(read_default_u32, *static_cast<const uint32_t *>(col5fpb.read_default_value()));
   ASSERT_EQ(write_default_u32, *static_cast<const uint32_t *>(col5fpb.write_default_value()));
+}
+
+// Regression test for KUDU-2378; the call to ColumnSchemaFromPB yielded a crash.
+TEST_F(WireProtocolTest, TestCrashOnAlignedLoadOf128BitReadDefault) {
+  ColumnSchemaPB pb;
+  pb.set_name("col");
+  pb.set_type(DECIMAL128);
+  pb.set_read_default_value(string(16, 'a'));
+  ColumnSchemaFromPB(pb);
 }
 
 TEST_F(WireProtocolTest, TestColumnPredicateInList) {

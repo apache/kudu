@@ -703,7 +703,7 @@ class Variant {
         break;
       case DECIMAL128:
       case INT128:
-        numeric_.i128 = *static_cast<const int128_t *>(value);
+        numeric_.i128 = UnalignedLoad<int128_t>(value);
         break;
       case FLOAT:
         numeric_.float_val = *static_cast<const float *>(value);
