@@ -63,6 +63,13 @@ tasks.withType(Test) {
   // Set kuduBinDir to the binaries to use with the MiniKuduCluster.
   systemProperty "kuduBinDir", propertyWithDefault("kuduBinDir", "$project.rootDir/../build/latest/bin")
 
+  // Set testRandomSeed to override the seed for the PRNG exposed in
+  // RandomUtils.java and used by various tests. This is useful when trying to
+  // reproduce a test failure for a test that uses the PRNG to generate state.
+  if (propertyExists("testRandomSeed")) {
+    systemProperty "testRandomSeed", propertyWithDefault("testRandomSeed", null)
+  }
+
   // Don't fail the build if a --tests filter doesn't match any tests.
   // This is useful for filtering tests from the top of the project where some
   // subprojects won't match the filter. Without this, those subprojects would fail.
