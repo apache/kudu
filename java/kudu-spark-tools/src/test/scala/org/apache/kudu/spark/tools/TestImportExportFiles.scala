@@ -17,14 +17,18 @@
 
 package org.apache.kudu.spark.tools
 
+import java.io.File
+import java.nio.file.Files
 import java.nio.file.Paths
 
 import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder
 import org.apache.kudu.Schema
 import org.apache.kudu.Type
 import org.apache.kudu.client.CreateTableOptions
+import org.apache.kudu.client.KuduTable
 import org.apache.kudu.spark.kudu._
 import org.junit.Assert._
+import org.junit.Before
 import org.junit.Test
 import org.spark_project.guava.collect.ImmutableList
 
@@ -32,31 +36,34 @@ import scala.collection.JavaConverters._
 
 class TestImportExportFiles extends KuduTestSuite {
 
-  private val TABLE_NAME: String = "TestImportExportFiles"
-  private val TABLE_DATA_PATH: String = "/TestImportExportFiles.csv"
+  private val TableDataPath = "/TestImportExportFiles.csv"
+  private val TableName = "TestImportExportFiles"
+  private val TableSchema = {
+    val columns = ImmutableList.of(
+      new ColumnSchemaBuilder("key", Type.STRING).key(true).build(),
+      new ColumnSchemaBuilder("column1_i", Type.STRING).build(),
+      new ColumnSchemaBuilder("column2_d", Type.STRING)
+        .nullable(true)
+        .build(),
+      new ColumnSchemaBuilder("column3_s", Type.STRING).build(),
+      new ColumnSchemaBuilder("column4_b", Type.STRING).build()
+    )
+    new Schema(columns)
+  }
+  private val options = new CreateTableOptions()
+    .setRangePartitionColumns(List("key").asJava)
+    .setNumReplicas(1)
+
+  @Before
+  def setUp(): Unit = {
+    kuduClient.createTable(TableName, TableSchema, options)
+  }
 
   @Test
-  def testSparkImportExport() {
-    val schema: Schema = {
-      val columns = ImmutableList.of(
-        new ColumnSchemaBuilder("key", Type.STRING).key(true).build(),
-        new ColumnSchemaBuilder("column1_i", Type.STRING).build(),
-        new ColumnSchemaBuilder("column2_d", Type.STRING)
-          .nullable(true)
-          .build(),
-        new ColumnSchemaBuilder("column3_s", Type.STRING).build(),
-        new ColumnSchemaBuilder("column4_b", Type.STRING).build()
-      )
-      new Schema(columns)
-    }
-    val tableOptions = new CreateTableOptions()
-      .setRangePartitionColumns(List("key").asJava)
-      .setNumReplicas(1)
-    kuduClient.createTable(TABLE_NAME, schema, tableOptions)
-
+  def testCSVImport() {
     // Get the absolute path of the resource file.
     val schemaResource =
-      classOf[TestImportExportFiles].getResource(TABLE_DATA_PATH)
+      classOf[TestImportExportFiles].getResource(TableDataPath)
     val dataPath = Paths.get(schemaResource.toURI).toAbsolutePath
 
     ImportExportFiles.testMain(
@@ -65,15 +72,79 @@ class TestImportExportFiles extends KuduTestSuite {
         "--format=csv",
         s"--master-addrs=${harness.getMasterAddressesAsString}",
         s"--path=$dataPath",
-        s"--table-name=$TABLE_NAME",
+        s"--table-name=$TableName",
         "--delimiter=,",
         "--header=true",
         "--inferschema=true"
       ),
       ss
     )
-    val rdd = kuduContext.kuduRDD(ss.sparkContext, TABLE_NAME, List("key"))
+    val rdd = kuduContext.kuduRDD(ss.sparkContext, TableName, List("key"))
     assert(rdd.collect.length == 4)
     assertEquals(rdd.collect().mkString(","), "[1],[2],[3],[4]")
+  }
+
+  @Test
+  def testRoundTrips(): Unit = {
+    val table = kuduClient.openTable(TableName)
+    loadSampleData(table, 50)
+    runRoundTripTest(TableName, s"$TableName-avro", "avro")
+    runRoundTripTest(TableName, s"$TableName-csv", "csv")
+    runRoundTripTest(TableName, s"$TableName-parquet", "parquet")
+  }
+
+  // TODO(KUDU-2454): Use random schemas and random data to ensure all type/values round-trip.
+  private def loadSampleData(table: KuduTable, numRows: Int): Unit = {
+    val session = kuduClient.newSession()
+    val rows = Range(0, numRows).map { i =>
+      val insert = table.newInsert
+      val row = insert.getRow
+      row.addString(0, i.toString)
+      row.addString(1, i.toString)
+      row.addString(3, i.toString)
+      row.addString(4, i.toString)
+      session.apply(insert)
+    }
+    session.close
+  }
+
+  private def runRoundTripTest(fromTable: String, toTable: String, format: String): Unit = {
+    val dir = Files.createTempDirectory("round-trip")
+    val path = new File(dir.toFile, s"$fromTable-$format").getAbsolutePath
+
+    // Export the data.
+    ImportExportFiles.testMain(
+      Array(
+        "--operation=export",
+        s"--format=$format",
+        s"--master-addrs=${harness.getMasterAddressesAsString}",
+        s"--path=$path",
+        s"--table-name=$fromTable",
+        s"--header=true"
+      ),
+      ss
+    )
+
+    // Create the target table.
+    kuduClient.createTable(toTable, TableSchema, options)
+
+    // Import the data.
+    ImportExportFiles.testMain(
+      Array(
+        "--operation=import",
+        s"--format=$format",
+        s"--master-addrs=${harness.getMasterAddressesAsString}",
+        s"--path=$path",
+        s"--table-name=$toTable",
+        s"--header=true"
+      ),
+      ss
+    )
+
+    // Verify the tables match.
+    // TODO(KUDU-2454): Verify every value to ensure all values round trip.
+    val rdd1 = kuduContext.kuduRDD(ss.sparkContext, fromTable, List("key"))
+    val rdd2 = kuduContext.kuduRDD(ss.sparkContext, toTable, List("key"))
+    assertResult(rdd1.count())(rdd2.count())
   }
 }

@@ -53,8 +53,7 @@ versions += [
     scalatest      : "3.0.5",
     scopt          : "3.7.0",
     slf4j          : "1.7.25",
-    spark          : "2.3.2",
-    sparkAvro      : "4.0.0",
+    spark          : "2.4.0",
     spotBugs       : "3.1.6",
     yetus          : "0.8.0"
 ]
@@ -104,7 +103,7 @@ libs += [
     scopt                : "com.github.scopt:scopt_$versions.scalaBase:$versions.scopt",
     slf4jApi             : "org.slf4j:slf4j-api:$versions.slf4j",
     slf4jLog4j12         : "org.slf4j:slf4j-log4j12:$versions.slf4j",
-    sparkAvro            : "com.databricks:spark-avro_$versions.scalaBase:$versions.sparkAvro",
+    sparkAvro            : "org.apache.spark:spark-avro_$versions.scalaBase:$versions.spark",
     sparkCore            : "org.apache.spark:spark-core_$versions.scalaBase:$versions.spark",
     sparkSql             : "org.apache.spark:spark-sql_$versions.scalaBase:$versions.spark",
     sparkSqlTest         : "org.apache.spark:spark-sql_$versions.scalaBase:$versions.spark:tests",
