@@ -904,10 +904,10 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
     kuduOptions = Map(
       "kudu.table" -> tableName,
       "kudu.master" -> harness.getMasterAddressesAsString,
-      "kudu.scanRequestTimeoutMs" -> "1")
+      "kudu.scanRequestTimeoutMs" -> "66666")
     val dataFrame = sqlContext.read.options(kuduOptions).kudu
     val kuduRelation = kuduRelationFromDataFrame(dataFrame)
-    assert(kuduRelation.readOptions.scanRequestTimeoutMs == Some(1))
+    assert(kuduRelation.readOptions.scanRequestTimeoutMs == Some(66666))
   }
 
   /**
@@ -920,9 +920,13 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
     kuduOptions = Map(
       "kudu.table" -> tableName,
       "kudu.master" -> harness.getMasterAddressesAsString,
-      "kudu.socketReadTimeoutMs" -> "1")
+      "kudu.socketReadTimeoutMs" -> "66666")
+    // Even though we're ostensibly just checking for option propagation, the
+    // construction of 'dataFrame' involves a connection to the Kudu cluster,
+    // which is affected by the value of socketReadTimeoutMs. Therefore we must
+    // choose a value that's high enough to actually support establishing a connection.
     val dataFrame = sqlContext.read.options(kuduOptions).kudu
     val kuduRelation = kuduRelationFromDataFrame(dataFrame)
-    assert(kuduRelation.readOptions.socketReadTimeoutMs == Some(1))
+    assert(kuduRelation.readOptions.socketReadTimeoutMs == Some(66666))
   }
 }
