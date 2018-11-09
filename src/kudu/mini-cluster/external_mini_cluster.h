@@ -591,8 +591,18 @@ class ExternalMaster : public ExternalDaemon {
   virtual Status Restart() override WARN_UNUSED_RESULT;
 
   // Blocks until the master's catalog manager is initialized and responding to
-  // RPCs.
-  Status WaitForCatalogManager() WARN_UNUSED_RESULT;
+  // RPCs. If 'wait_mode' is WAIT_FOR_LEADERSHIP, will further block until the
+  // master has been elected leader.
+  //
+  // WAIT_FOR_LEADERSHIP should only be used in single-master environments; the
+  // wait may time out in a multi-master environment as there's no guarantee
+  // that this particular master will be elected leader.
+  enum WaitMode {
+    WAIT_FOR_LEADERSHIP,
+    DONT_WAIT_FOR_LEADERSHIP
+  };
+  Status WaitForCatalogManager(
+      WaitMode wait_mode = DONT_WAIT_FOR_LEADERSHIP) WARN_UNUSED_RESULT;
 
  private:
   std::vector<std::string> GetCommonFlags() const;

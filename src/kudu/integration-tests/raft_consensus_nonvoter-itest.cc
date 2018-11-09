@@ -2055,7 +2055,7 @@ TEST_P(ReplicaBehindWalGcThresholdITest, ReplicaReplacement) {
           "--master_add_server_when_underreplicated=true");
       master->Shutdown();
       ASSERT_OK(master->Restart());
-      ASSERT_OK(master->WaitForCatalogManager());
+      ASSERT_OK(master->WaitForCatalogManager(ExternalMaster::WAIT_FOR_LEADERSHIP));
     }
   }
 

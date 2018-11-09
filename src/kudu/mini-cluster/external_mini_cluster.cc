@@ -1189,7 +1189,7 @@ Status ExternalMaster::Restart() {
   return StartProcess(flags);
 }
 
-Status ExternalMaster::WaitForCatalogManager() {
+Status ExternalMaster::WaitForCatalogManager(WaitMode wait_mode) {
   unique_ptr<MasterServiceProxy> proxy(new MasterServiceProxy(
       opts_.messenger, bound_rpc_addr(), bound_rpc_addr().host()));
   Stopwatch sw;
@@ -1206,10 +1206,13 @@ Status ExternalMaster::WaitForCatalogManager() {
       }
       s = StatusFromPB(resp.error().status());
       if (s.IsIllegalState()) {
-        // This master is not the leader but is otherwise up and running.
-        break;
-      }
-      if (!s.IsServiceUnavailable()) {
+        if (wait_mode == DONT_WAIT_FOR_LEADERSHIP) {
+          // This master is not the leader but is otherwise up and running.
+          break;
+        }
+        DCHECK_EQ(wait_mode, WAIT_FOR_LEADERSHIP);
+        // Continue to the sleep below.
+      } else if (!s.IsServiceUnavailable()) {
         // Unexpected error from master.
         return s;
       }
