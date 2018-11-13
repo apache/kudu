@@ -142,6 +142,7 @@ trait KuduTestSuite extends JUnitSuite {
   @After
   def tearDownBase() {
     if (ss != null) ss.stop()
+    KuduClientCache.clearCacheForTests()
   }
 
   def deleteRow(key: Int): Unit = {
