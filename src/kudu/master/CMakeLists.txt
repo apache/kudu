@@ -79,7 +79,8 @@ SET_KUDU_TEST_LINK_LIBS(
 
 ADD_KUDU_TEST(catalog_manager-test)
 ADD_KUDU_TEST(hms_notification_log_listener-test)
-ADD_KUDU_TEST(master-test RESOURCE_LOCK "master-web-port")
+ADD_KUDU_TEST(master-test RESOURCE_LOCK "master-web-port"
+                          DATA_FILES ../scripts/first_argument.sh)
 ADD_KUDU_TEST(mini_master-test RESOURCE_LOCK "master-web-port")
 ADD_KUDU_TEST(placement_policy-test)
 ADD_KUDU_TEST(sentry_authz_provider-test)

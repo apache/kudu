@@ -57,6 +57,7 @@
 DECLARE_bool(hive_metastore_sasl_enabled);
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 DECLARE_string(hive_metastore_uris);
+DECLARE_string(location_mapping_cmd);
 
 DEFINE_int32(master_inject_latency_on_tablet_lookups_ms, 0,
              "Number of milliseconds that the master will sleep before responding to "
@@ -520,6 +521,22 @@ void MasterServiceImpl::ConnectToMaster(const ConnectToMasterRequestPB* /*req*/,
     metastore_config->set_hms_uris(FLAGS_hive_metastore_uris);
     metastore_config->set_hms_sasl_enabled(FLAGS_hive_metastore_sasl_enabled);
     // TODO(dan): set the hms_uuid field.
+  }
+
+  // Assign a location to the client if needed.
+  if (!FLAGS_location_mapping_cmd.empty()) {
+    string location;
+    Status s = GetLocationFromLocationMappingCmd(FLAGS_location_mapping_cmd,
+                                                 rpc->remote_address().host(),
+                                                 &location);
+    if (s.ok()) {
+      resp->set_client_location(location);
+    } else {
+      LOG(WARNING) << Substitute("unable to assign location to client $0@$1: $2",
+                                 rpc->remote_user().ToString(),
+                                 rpc->remote_address().ToString(),
+                                 s.ToString());
+    }
   }
 
   // Rather than consulting the current consensus role, instead base it

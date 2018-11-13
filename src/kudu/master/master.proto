@@ -673,6 +673,9 @@ message ConnectToMasterResponsePB {
   // If the master is configured with the Hive Metastore integration enabled,
   // this field will include the configuration options.
   optional HiveMetastoreConfig hms_config = 6;
+
+  // The location of the client assigned by the master.
+  optional string client_location = 7;
 }
 
 // Hive Metastore integration options and configuration.

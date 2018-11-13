@@ -53,6 +53,18 @@ class TabletServerAdminServiceProxy;
 
 namespace master {
 
+// Resolves 'host', which is the IP address or hostname of a tablet server or
+// client, into a location using the command 'cmd'. The result will be stored
+// in 'location', which must not be null. If there is an error running the
+// command or the output is invalid, an error Status will be returned.
+// TODO(wdberkeley): Refactor into a separate class and implement a caching
+// policy.
+// TODO(wdberkeley): Eventually we may want to get multiple locations at once
+// by giving the script multiple arguments (like Hadoop).
+Status GetLocationFromLocationMappingCmd(const std::string& cmd,
+                                         const std::string& host,
+                                         std::string* location);
+
 // Master-side view of a single tablet server.
 //
 // Tracks the last heartbeat, status, instance identifier, location, etc.

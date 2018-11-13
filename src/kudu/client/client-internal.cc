@@ -706,6 +706,8 @@ void KuduClient::Data::ConnectedToClusterCb(
       hive_metastore_sasl_enabled_ = hive_config.hms_sasl_enabled();
       hive_metastore_uuid_ = hive_config.hms_uuid();
 
+      location_ = connect_response.client_location();
+
       master_proxy_.reset(new MasterServiceProxy(messenger_, leader_addr, leader_hostname));
       master_proxy_->set_user_credentials(user_credentials_);
     }

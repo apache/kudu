@@ -663,6 +663,11 @@ string KuduClient::GetHiveMetastoreUuid() const {
   return data_->hive_metastore_uuid_;
 }
 
+string KuduClient::location() const {
+  std::lock_guard<simple_spinlock> l(data_->leader_master_lock_);
+  return data_->location_;
+}
+
 ////////////////////////////////////////////////////////////
 // KuduTableCreator
 ////////////////////////////////////////////////////////////

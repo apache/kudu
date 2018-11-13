@@ -1619,6 +1619,50 @@ TEST_F(MasterTest, TestConnectToMaster) {
   ASSERT_EQ(1, resp.master_addrs_size());
   ASSERT_EQ("127.0.0.1", resp.master_addrs(0).host());
   ASSERT_NE(0, resp.master_addrs(0).port());
+
+  // The returned location should be empty because no location mapping command
+  // is defined.
+  ASSERT_TRUE(resp.client_location().empty());
+}
+
+TEST_F(MasterTest, TestConnectToMasterAndAssignLocation) {
+  // Test first with a valid location mapping command.
+  const string kLocationCmdPath = JoinPathSegments(GetTestExecutableDirectory(),
+                                                   "testdata/first_argument.sh");
+  const string location = "/foo";
+  FLAGS_location_mapping_cmd = Substitute("$0 $1", kLocationCmdPath, location);
+  {
+    ConnectToMasterRequestPB req;
+    ConnectToMasterResponsePB resp;
+    RpcController rpc;
+    ASSERT_OK(proxy_->ConnectToMaster(req, &resp, &rpc));
+    ASSERT_FALSE(resp.has_error());
+    ASSERT_EQ(location, resp.client_location());
+  }
+
+  // Now try again with an invalid command. The RPC should succeed but no
+  // location should be assigned.
+  FLAGS_location_mapping_cmd = "false";
+  {
+    ConnectToMasterRequestPB req;
+    ConnectToMasterResponsePB resp;
+    RpcController rpc;
+    ASSERT_OK(proxy_->ConnectToMaster(req, &resp, &rpc));
+    ASSERT_FALSE(resp.has_error());
+    ASSERT_TRUE(resp.client_location().empty());
+  }
+
+  // Finally, use a command returning a different location.
+  const string new_location = "/bar";
+  FLAGS_location_mapping_cmd = Substitute("$0 $1", kLocationCmdPath, new_location);
+  {
+    ConnectToMasterRequestPB req;
+    ConnectToMasterResponsePB resp;
+    RpcController rpc;
+    ASSERT_OK(proxy_->ConnectToMaster(req, &resp, &rpc));
+    ASSERT_FALSE(resp.has_error());
+    ASSERT_EQ(new_location, resp.client_location());
+  }
 }
 
 // Test that the master signs its on server certificate when it becomes the leader,

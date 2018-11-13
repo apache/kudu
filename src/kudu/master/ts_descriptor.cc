@@ -95,13 +95,8 @@ bool IsValidLocation(const string& location) {
   }
   return true;
 }
+} // anonymous namespace
 
-// Resolves 'host', which is the IP address or hostname of a tablet server or
-// client, into a location using the command 'cmd'. The result will be stored
-// in 'location', which must not be null. If there is an error running the
-// command or the output is invalid, an error Status will be returned.
-// TODO(wdberkeley): Eventually we may want to get multiple locations at once
-// by giving the script multiple arguments (like Hadoop).
 Status GetLocationFromLocationMappingCmd(const string& cmd,
                                          const string& host,
                                          string* location) {
@@ -132,7 +127,6 @@ Status GetLocationFromLocationMappingCmd(const string& cmd,
   *location = std::move(location_temp);
   return Status::OK();
 }
-} // anonymous namespace
 
 Status TSDescriptor::RegisterNew(const NodeInstancePB& instance,
                                  const ServerRegistrationPB& registration,
@@ -404,6 +398,5 @@ string TSDescriptor::ToString() const {
   const auto& addr = registration_->rpc_addresses(0);
   return Substitute("$0 ($1:$2)", permanent_uuid_, addr.host(), addr.port());
 }
-
 } // namespace master
 } // namespace kudu

@@ -130,6 +130,7 @@ DECLARE_int32(scanner_inject_latency_on_each_batch_ms);
 DECLARE_int32(scanner_max_batch_size_bytes);
 DECLARE_int32(scanner_ttl_ms);
 DECLARE_int32(table_locations_ttl_ms);
+DECLARE_string(location_mapping_cmd);
 DECLARE_string(superuser_acl);
 DECLARE_string(user_acl);
 DEFINE_int32(test_scan_num_rows, 1000, "Number of rows to insert and scan");
@@ -188,14 +189,16 @@ class ClientTest : public KuduTest {
     FLAGS_heartbeat_interval_ms = 10;
     FLAGS_scanner_gc_check_interval_us = 50 * 1000; // 50 milliseconds.
 
+    SetLocationMappingCmd();
+
     // Start minicluster and wait for tablet servers to connect to master.
     cluster_.reset(new InternalMiniCluster(env_, InternalMiniClusterOptions()));
     ASSERT_OK(cluster_->Start());
 
     // Connect to the cluster.
     ASSERT_OK(KuduClientBuilder()
-                     .add_master_server_addr(cluster_->mini_master()->bound_rpc_addr().ToString())
-                     .Build(&client_));
+        .add_master_server_addr(cluster_->mini_master()->bound_rpc_addr().ToString())
+        .Build(&client_));
 
     ASSERT_NO_FATAL_FAILURE(CreateTable(kTableName, 1, GenerateSplitRows(), {}, &client_table_));
   }
@@ -276,6 +279,10 @@ class ClientTest : public KuduTest {
 
   static const char *kTableName;
   static const int32_t kNoBound;
+
+  // Set the location mapping command for the test's masters. Overridden by
+  // derived classes to test client location assignment.
+  virtual void SetLocationMappingCmd() {}
 
   string GetFirstTabletId(KuduTable* table) {
     GetTableLocationsRequestPB req;
@@ -5779,5 +5786,25 @@ TEST_F(ClientTest, TestBlockScannerHijackingAttempts) {
   }
 }
 
+// Client test that assigns locations to clients and tablet servers.
+// For now, assigns a uniform location to all clients and tablet servers.
+class ClientWithLocationTest : public ClientTest {
+ protected:
+  void SetLocationMappingCmd() override {
+    const string location_cmd_path = JoinPathSegments(GetTestExecutableDirectory(),
+                                                      "testdata/first_argument.sh");
+    const string location = "/foo";
+    FLAGS_location_mapping_cmd = strings::Substitute("$0 $1",
+                                                     location_cmd_path, location);
+  }
+};
+
+TEST_F(ClientTest, TestClientLocationNoLocationMappingCmd) {
+  ASSERT_TRUE(client_->location().empty());
+}
+
+TEST_F(ClientWithLocationTest, TestClientLocation) {
+  ASSERT_EQ("/foo", client_->location());
+}
 } // namespace client
 } // namespace kudu

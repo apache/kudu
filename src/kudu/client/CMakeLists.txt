@@ -261,7 +261,8 @@ SET_KUDU_TEST_LINK_LIBS(
   itest_util
   kudu_client
   mini_cluster)
-ADD_KUDU_TEST(client-test NUM_SHARDS 8 PROCESSORS 2)
+ADD_KUDU_TEST(client-test NUM_SHARDS 8 PROCESSORS 2
+                          DATA_FILES ../scripts/first_argument.sh)
 ADD_KUDU_TEST(client-unittest)
 ADD_KUDU_TEST(predicate-test)
 ADD_KUDU_TEST(scan_token-test PROCESSORS 2)

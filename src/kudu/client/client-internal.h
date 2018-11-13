@@ -244,6 +244,10 @@ class KuduClient::Data {
   // The unique id of this client.
   std::string client_id_;
 
+  // The location of this client. This is an empty string if a location has not
+  // been assigned by the leader master. Protected by 'leader_master_lock_'.
+  std::string location_;
+
   // The user credentials of the client. This field is constant after the client
   // is built.
   rpc::UserCredentials user_credentials_;
@@ -292,7 +296,8 @@ class KuduClient::Data {
   std::vector<StatusCallback> leader_master_callbacks_primary_creds_;
 
   // Protects 'leader_master_rpc_{any,primary}_creds_',
-  // 'leader_master_hostport_', 'master_hostports_', and 'master_proxy_'.
+  // 'leader_master_hostport_', 'master_hostports_', 'master_proxy_', and
+  // 'location_'.
   //
   // See: KuduClient::Data::ConnectToClusterAsync for a more
   // in-depth explanation of why this is needed and how it works.
