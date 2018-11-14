@@ -74,17 +74,18 @@ that SSH keys are installed accordingly:
    via the `sshKeyPath` property.
 
 If using SSH authentication agent to hold the SSH key for DB nodes access,
-run in the current directory:
+run in the parent directory:
 [listing]
 ----
 $ ./gradlew runJepsen -DtserverNodes="t0,t1,t2,t3,t4" -DmasterNodes="m0"
 ----
 
-If not using SSH authentication agent, specify the SSH key location via the
-`sshKeyPath` property:
+If not using SSH authentication agent, specify the location of the file with
+SSH private key via the `sshKeyPath` property:
 [listing]
 ----
-$ ./gradlew runJepsen -DtserverNodes="t0,t1,t2,t3,t4" -DmasterNodes="m0" -DsshKeyPath="./vm_root_id_rsa"
+$ ./gradlew runJepsen -DtserverNodes="t0,t1,t2,t3,t4" -DmasterNodes="m0" \
+  -DsshKeyPath="/home/user/.ssh/vm_root_id_rsa"
 ----
 
 Note that commas (not spaces) are used to separate the names of the nodes. The
