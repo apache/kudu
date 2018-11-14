@@ -392,9 +392,6 @@ TEST_P(TsRecoveryITest, TestRestartWithOrphanedReplicates) {
 // successful operations.
 TEST_P(TsRecoveryITest, TestRestartWithPendingCommitFromFailedOp) {
   NO_FATALS(StartClusterOneTs());
-  ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(0),
-                              "fault_crash_before_append_commit", "0.01"));
-
   // Set up the workload to write many duplicate rows, and with only
   // one operation per batch. This means that by the time we crash
   // it's likely that most of the recently appended commit messages
@@ -409,6 +406,8 @@ TEST_P(TsRecoveryITest, TestRestartWithPendingCommitFromFailedOp) {
   work.set_write_batch_size(1);
   work.set_write_pattern(TestWorkload::INSERT_WITH_MANY_DUP_KEYS);
   work.Setup();
+  ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(0),
+                              "fault_crash_before_append_commit", "0.01"));
   work.Start();
 
   // Wait for the process to crash due to the injected fault.
