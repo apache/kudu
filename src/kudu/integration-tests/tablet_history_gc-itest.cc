@@ -72,6 +72,7 @@
 #include "kudu/util/test_util.h"
 
 using kudu::client::KuduScanner;
+using kudu::client::KuduSession;
 using kudu::client::KuduTable;
 using kudu::client::sp::shared_ptr;
 using kudu::clock::HybridClock;
@@ -79,7 +80,6 @@ using kudu::tablet::Tablet;
 using kudu::tablet::TabletReplica;
 using kudu::tserver::MiniTabletServer;
 using kudu::tserver::TabletServer;
-using kudu::tserver::TSTabletManager;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -154,10 +154,10 @@ TEST_F(TabletHistoryGcITest, TestUndoDeltaBlockGc) {
 
   shared_ptr<KuduTable> table;
   ASSERT_OK(client_->OpenTable(TestWorkload::kDefaultTableName, &table));
-  client::sp::shared_ptr<client::KuduSession> session = client_->NewSession();
+  shared_ptr<KuduSession> session = client_->NewSession();
 
   // Find the tablet.
-  tserver::MiniTabletServer* mts = cluster_->mini_tablet_server(0);
+  MiniTabletServer* mts = cluster_->mini_tablet_server(0);
   vector<scoped_refptr<TabletReplica>> tablet_replicas;
   mts->server()->tablet_manager()->GetTabletReplicas(&tablet_replicas);
   ASSERT_EQ(1, tablet_replicas.size());
@@ -514,10 +514,12 @@ class ReupdateHooks : public Tablet::FlushCompactCommonHooks {
 
 // Randomized test that attempts to test many arbitrary history GC use cases.
 TEST_F(RandomizedTabletHistoryGcITest, TestRandomHistoryGCWorkload) {
-  const int kSessionTimeoutMillis = 20000;
+  constexpr auto kSessionTimeoutMillis = 60000;
 
+# if !defined(THREAD_SANITIZER)
   OverrideFlagForSlowTests("test_num_rounds",
                            Substitute("$0", FLAGS_test_num_rounds * 5));
+# endif
 
   LOG(INFO) << "Running " << FLAGS_test_num_rounds << " rounds";
 
@@ -547,7 +549,7 @@ TEST_F(RandomizedTabletHistoryGcITest, TestRandomHistoryGCWorkload) {
   workload.set_num_replicas(1);
   workload.Setup(); // Convenient way to create a table.
 
-  client::sp::shared_ptr<KuduTable> table;
+  shared_ptr<KuduTable> table;
   ASSERT_OK(client_->OpenTable(workload.table_name(), &table));
 
   std::vector<scoped_refptr<TabletReplica>> replicas;
@@ -575,9 +577,9 @@ TEST_F(RandomizedTabletHistoryGcITest, TestRandomHistoryGCWorkload) {
         if (num_rows_to_insert == 0) continue;
         MaterializedTestTable snapshot = CloneLatestSnapshot();
 
-        client::sp::shared_ptr<client::KuduSession> session = client_->NewSession();
+        shared_ptr<KuduSession> session = client_->NewSession();
         session->SetTimeoutMillis(kSessionTimeoutMillis);
-        ASSERT_OK_FAST(session->SetFlushMode(client::KuduSession::MANUAL_FLUSH));
+        ASSERT_OK_FAST(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
 
         for (int32_t i = 0; i < num_rows_to_insert; i++) {
           int32_t row_key = rows_inserted;
@@ -640,9 +642,9 @@ TEST_F(RandomizedTabletHistoryGcITest, TestRandomHistoryGCWorkload) {
           ASSERT_OK(tablet->Compact(Tablet::FORCE_COMPACT_ALL));
           tablet->SetFlushCompactCommonHooksForTests(nullptr); // Clear the hook.
         } else {
-          client::sp::shared_ptr<client::KuduSession> session = client_->NewSession();
+          shared_ptr<KuduSession> session = client_->NewSession();
           session->SetTimeoutMillis(kSessionTimeoutMillis);
-          ASSERT_OK_FAST(session->SetFlushMode(client::KuduSession::MANUAL_FLUSH));
+          ASSERT_OK_FAST(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
 
           for (const MaterializedTestRow& test_row : updates) {
             unique_ptr<client::KuduUpdate> update(table->NewUpdate());
@@ -701,9 +703,9 @@ TEST_F(RandomizedTabletHistoryGcITest, TestRandomHistoryGCWorkload) {
           ASSERT_OK(tablet->Compact(Tablet::FORCE_COMPACT_ALL));
           tablet->SetFlushCompactCommonHooksForTests(nullptr); // Clear the hook.
         } else {
-          client::sp::shared_ptr<client::KuduSession> session = client_->NewSession();
+          shared_ptr<KuduSession> session = client_->NewSession();
           session->SetTimeoutMillis(kSessionTimeoutMillis);
-          ASSERT_OK_FAST(session->SetFlushMode(client::KuduSession::MANUAL_FLUSH));
+          ASSERT_OK_FAST(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
 
           for (int32_t row_key : deletes) {
             unique_ptr<client::KuduDelete> del(table->NewDelete());
@@ -770,9 +772,9 @@ TEST_F(RandomizedTabletHistoryGcITest, TestRandomHistoryGCWorkload) {
           ASSERT_OK(tablet->Compact(Tablet::FORCE_COMPACT_ALL));
           tablet->SetFlushCompactCommonHooksForTests(nullptr); // Clear the hook.
         } else {
-          client::sp::shared_ptr<client::KuduSession> session = client_->NewSession();
+          shared_ptr<KuduSession> session = client_->NewSession();
           session->SetTimeoutMillis(kSessionTimeoutMillis);
-          ASSERT_OK_FAST(session->SetFlushMode(client::KuduSession::MANUAL_FLUSH));
+          ASSERT_OK_FAST(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
 
           for (const MaterializedTestRow& test_row : reinserts) {
             unique_ptr<client::KuduInsert> reinsert(table->NewInsert());
