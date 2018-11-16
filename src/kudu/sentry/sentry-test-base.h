@@ -67,7 +67,9 @@ class SentryTestBase : public KuduTest,
   }
 
   void TearDown() override {
-    ASSERT_OK(sentry_client_->Stop());
+    if (sentry_client_) {
+      ASSERT_OK(sentry_client_->Stop());
+    }
     ASSERT_OK(sentry_->Stop());
     KuduTest::TearDown();
   }

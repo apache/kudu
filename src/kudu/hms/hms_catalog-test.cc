@@ -126,6 +126,7 @@ class HmsCatalogTest : public KuduTest {
   }
 
   void SetUp() override {
+    KuduTest::SetUp();
     bool enable_kerberos = EnableKerberos();
 
     thrift::ClientOptions hms_client_opts;
@@ -167,8 +168,11 @@ class HmsCatalogTest : public KuduTest {
   }
 
   void TearDown() override {
-    ASSERT_OK(hms_client_->Stop());
+    if (hms_client_) {
+      ASSERT_OK(hms_client_->Stop());
+    }
     ASSERT_OK(hms_->Stop());
+    KuduTest::TearDown();
   }
 
   Status StopHms() {
