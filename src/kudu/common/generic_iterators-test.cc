@@ -30,6 +30,7 @@
 #include <utility>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
@@ -41,6 +42,7 @@
 #include "kudu/common/columnblock.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/iterator.h"
+#include "kudu/common/key_encoder.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
@@ -61,6 +63,7 @@ DEFINE_int32(num_iters, 1, "Number of times to run merge");
 DECLARE_bool(materializing_iterator_do_pushdown);
 
 using std::map;
+using std::pair;
 using std::string;
 using std::unique_ptr;
 using std::unordered_set;
@@ -201,10 +204,12 @@ TEST(TestMergeIterator, TestMergeEmpty) {
   unique_ptr<RowwiseIterator> iter(
     NewMaterializingIterator(
         unique_ptr<ColumnwiseIterator>(new VectorIterator({}))));
-  vector<unique_ptr<RowwiseIterator>> input;
-  input.emplace_back(std::move(iter));
-  unique_ptr<RowwiseIterator> merger(
-      NewMergeIterator(MergeIteratorOptions(/*include_deleted_rows=*/false), std::move(input)));
+  vector<IterWithBounds> input;
+  IterWithBounds iwb;
+  iwb.iter = std::move(iter);
+  input.emplace_back(std::move(iwb));
+  unique_ptr<RowwiseIterator> merger(NewMergeIterator(
+      MergeIteratorOptions(/*include_deleted_rows=*/false), std::move(input)));
   ASSERT_OK(merger->Init(nullptr));
   ASSERT_FALSE(merger->HasNext());
 }
@@ -217,10 +222,12 @@ TEST(TestMergeIterator, TestMergeEmptyViaSelectionVector) {
   unique_ptr<VectorIterator> vec(new VectorIterator({ 1, 2, 3 }));
   vec->set_selection_vector(&sv);
   unique_ptr<RowwiseIterator> iter(NewMaterializingIterator(std::move(vec)));
-  vector<unique_ptr<RowwiseIterator>> input;
-  input.emplace_back(std::move(iter));
-  unique_ptr<RowwiseIterator> merger(
-      NewMergeIterator(MergeIteratorOptions(/*include_deleted_rows=*/false), std::move(input)));
+  vector<IterWithBounds> input;
+  IterWithBounds iwb;
+  iwb.iter = std::move(iter);
+  input.emplace_back(std::move(iwb));
+  unique_ptr<RowwiseIterator> merger(NewMergeIterator(
+      MergeIteratorOptions(/*include_deleted_rows=*/false), std::move(input)));
   ASSERT_OK(merger->Init(nullptr));
   ASSERT_FALSE(merger->HasNext());
 }
@@ -232,10 +239,16 @@ TEST(TestMergeIterator, TestNotConsumedCleanup) {
   unique_ptr<VectorIterator> vec2(new VectorIterator({ 2 }));
   unique_ptr<VectorIterator> vec3(new VectorIterator({ 3 }));
 
-  vector<unique_ptr<RowwiseIterator>> input;
-  input.emplace_back(NewMaterializingIterator(std::move(vec1)));
-  input.emplace_back(NewMaterializingIterator(std::move(vec2)));
-  input.emplace_back(NewMaterializingIterator(std::move(vec3)));
+  vector<IterWithBounds> input;
+  IterWithBounds iwb1;
+  iwb1.iter = NewMaterializingIterator(std::move(vec1));
+  input.emplace_back(std::move(iwb1));
+  IterWithBounds iwb2;
+  iwb2.iter = NewMaterializingIterator(std::move(vec2));
+  input.emplace_back(std::move(iwb2));
+  IterWithBounds iwb3;
+  iwb3.iter = NewMaterializingIterator(std::move(vec3));
+  input.emplace_back(std::move(iwb3));
   unique_ptr<RowwiseIterator> merger(NewMergeIterator(
       MergeIteratorOptions(/*include_deleted_rows=*/false), std::move(input)));
   ASSERT_OK(merger->Init(nullptr));
@@ -279,11 +292,13 @@ void TestMerge(const Schema& schema,
     vector<int64_t> ints;
     vector<uint8_t> is_deleted;
     unique_ptr<SelectionVector> sv;
+    boost::optional<pair<string, string>> encoded_bounds;
   };
 
   vector<List> all_ints;
   map<int64_t, bool> expected;
   unordered_set<int64_t> seen_live;
+  const auto& encoder = GetKeyEncoder<string>(GetTypeInfo(INT64));
   Random prng(SeedRandom());
 
   int64_t entry = 0;
@@ -291,6 +306,8 @@ void TestMerge(const Schema& schema,
     List list(FLAGS_num_rows);
     unordered_set<int64_t> seen_this_list;
 
+    boost::optional<int64_t> min_entry;
+    boost::optional<int64_t> max_entry;
     if (overlapping_ranges) {
       entry = 0;
     }
@@ -328,6 +345,13 @@ void TestMerge(const Schema& schema,
       list.ints.emplace_back(entry);
       list.is_deleted.emplace_back(is_deleted);
 
+      if (!max_entry || entry > max_entry) {
+        max_entry = entry;
+      }
+      if (!min_entry || entry < min_entry) {
+        min_entry = entry;
+      }
+
       // Some entries are randomly deselected in order to exercise the selection
       // vector logic in the MergeIterator. This is reflected both in the input
       // to the MergeIterator as well as the expected output (see below).
@@ -353,6 +377,17 @@ void TestMerge(const Schema& schema,
       }
     }
 
+    if (prng.Uniform(10) > 0) {
+      // Use the smallest and largest entries as bounds most of the time. They
+      // are randomly adjusted to reflect their inexactness in the real world.
+      list.encoded_bounds.emplace();
+      DCHECK(min_entry);
+      DCHECK(max_entry);
+      min_entry = *min_entry - prng.Uniform(5);
+      max_entry = *max_entry + prng.Uniform(5);
+      encoder.Encode(&(min_entry.get()), &list.encoded_bounds->first);
+      encoder.Encode(&(max_entry.get()), &list.encoded_bounds->second);
+    }
     all_ints.emplace_back(std::move(list));
   }
 
@@ -367,16 +402,23 @@ void TestMerge(const Schema& schema,
   const int kIsDeletedIndex = schema.find_first_is_deleted_virtual_column();
 
   for (int trial = 0; trial < FLAGS_num_iters; trial++) {
-    vector<unique_ptr<RowwiseIterator>> to_merge;
+    vector<IterWithBounds> to_merge;
     for (const auto& list : all_ints) {
       unique_ptr<VectorIterator> vec_it(new VectorIterator(list.ints, list.is_deleted, schema));
       vec_it->set_block_size(10);
       vec_it->set_selection_vector(list.sv.get());
       unique_ptr<RowwiseIterator> mat_it(NewMaterializingIterator(std::move(vec_it)));
-      vector<unique_ptr<RowwiseIterator>> input;
-      input.emplace_back(std::move(mat_it));
-      unique_ptr<RowwiseIterator> un_it(NewUnionIterator(std::move(input)));
-      to_merge.emplace_back(std::move(un_it));
+      IterWithBounds mat_iwb;
+      mat_iwb.iter = std::move(mat_it);
+      vector<IterWithBounds> un_input;
+      un_input.emplace_back(std::move(mat_iwb));
+      unique_ptr<RowwiseIterator> un_it(NewUnionIterator(std::move(un_input)));
+      IterWithBounds un_iwb;
+      un_iwb.iter = std::move(un_it);
+      if (list.encoded_bounds) {
+        un_iwb.encoded_bounds = list.encoded_bounds;
+      }
+      to_merge.emplace_back(std::move(un_iwb));
     }
 
     // Setup predicate exclusion
@@ -385,9 +427,8 @@ void TestMerge(const Schema& schema,
     LOG(INFO) << "Predicate: " << predicate.pred_.ToString();
 
     LOG_TIMING(INFO, "iterating merged lists") {
-      unique_ptr<RowwiseIterator> merger(
-          NewMergeIterator(MergeIteratorOptions(include_deleted_rows),
-                           std::move(to_merge)));
+      unique_ptr<RowwiseIterator> merger(NewMergeIterator(
+          MergeIteratorOptions(include_deleted_rows), std::move(to_merge)));
       ASSERT_OK(merger->Init(&spec));
 
       RowBlock dst(&schema, 100, nullptr);
@@ -472,7 +513,7 @@ TEST(TestMaterializingIterator, TestMaterializingPredicatePushdown) {
     ints[i] = i;
   }
 
-  unique_ptr<VectorIterator> colwise(new VectorIterator(std::move(ints)));
+  unique_ptr<VectorIterator> colwise(new VectorIterator(ints));
   unique_ptr<RowwiseIterator> materializing(NewMaterializingIterator(std::move(colwise)));
   ASSERT_OK(materializing->Init(&spec));
   ASSERT_EQ(0, spec.predicates().size()) << "Iterator should have pushed down predicate";
@@ -505,7 +546,7 @@ TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluation) {
 
   // Set up a MaterializingIterator with pushdown disabled, so that the
   // PredicateEvaluatingIterator will wrap it and do evaluation.
-  unique_ptr<VectorIterator> colwise(new VectorIterator(std::move(ints)));
+  unique_ptr<VectorIterator> colwise(new VectorIterator(ints));
   FLAGS_materializing_iterator_do_pushdown = false;
   unique_ptr<RowwiseIterator> materializing(
       NewMaterializingIterator(std::move(colwise)));

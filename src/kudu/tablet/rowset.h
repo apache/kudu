@@ -49,6 +49,7 @@ class RowwiseIterator;
 class Schema;
 class Slice;
 struct ColumnId;
+struct IterWithBounds;
 
 namespace consensus {
 class OpId;
@@ -134,7 +135,7 @@ class RowSet {
                            ProbeStats* stats,
                            OperationResultPB* result) = 0;
 
-  // Return a new RowIterator for this rowset, with the given options.
+  // Return a new iterator for this rowset, with the given options.
   //
   // Pointers in 'opts' must remain valid for the lifetime of the iterator.
   //
@@ -144,6 +145,11 @@ class RowSet {
   // The returned iterator is not Initted.
   virtual Status NewRowIterator(const RowIteratorOptions& opts,
                                 std::unique_ptr<RowwiseIterator>* out) const = 0;
+
+  // Like NewRowIterator, but returns the rowset's bounds (if they exist) along
+  // with the iterator.
+  Status NewRowIteratorWithBounds(const RowIteratorOptions& opts,
+                                  IterWithBounds* out) const;
 
   // Create the input to be used for a compaction.
   //

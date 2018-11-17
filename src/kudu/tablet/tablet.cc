@@ -1834,20 +1834,22 @@ Status Tablet::DebugDump(vector<string> *lines) {
 Status Tablet::CaptureConsistentIterators(
     const RowIteratorOptions& opts,
     const ScanSpec* spec,
-    vector<unique_ptr<RowwiseIterator>>* iters) const {
+    vector<IterWithBounds>* iters) const {
 
   shared_lock<rw_spinlock> l(component_lock_);
   RETURN_IF_STOPPED_OR_CHECK_STATE(kOpen);
 
   // Construct all the iterators locally first, so that if we fail
   // in the middle, we don't modify the output arguments.
-  vector<unique_ptr<RowwiseIterator>> ret;
+  vector<IterWithBounds> ret;
 
 
   // Grab the memrowset iterator.
   unique_ptr<RowwiseIterator> ms_iter;
   RETURN_NOT_OK(components_->memrowset->NewRowIterator(opts, &ms_iter));
-  ret.emplace_back(ms_iter.release());
+  IterWithBounds mrs_iwb;
+  mrs_iwb.iter = std::move(ms_iter);
+  ret.emplace_back(std::move(mrs_iwb));
 
 
   // Cull row-sets in the case of key-range queries.
@@ -1858,12 +1860,12 @@ Status Tablet::CaptureConsistentIterators(
         boost::optional<Slice>(spec->exclusive_upper_bound_key()->encoded_key()) : boost::none;
     vector<RowSet*> interval_sets;
     components_->rowsets->FindRowSetsIntersectingInterval(lower_bound, upper_bound, &interval_sets);
-    for (const RowSet *rs : interval_sets) {
-      unique_ptr<RowwiseIterator> row_it;
-      RETURN_NOT_OK_PREPEND(rs->NewRowIterator(opts, &row_it),
+    for (const auto* rs : interval_sets) {
+      IterWithBounds iwb;
+      RETURN_NOT_OK_PREPEND(rs->NewRowIteratorWithBounds(opts, &iwb),
                             Substitute("Could not create iterator for rowset $0",
                                        rs->ToString()));
-      ret.emplace_back(std::move(row_it));
+      ret.emplace_back(std::move(iwb));
     }
     *iters = std::move(ret);
     return Status::OK();
@@ -1871,12 +1873,12 @@ Status Tablet::CaptureConsistentIterators(
 
   // If there are no encoded predicates of the primary keys, then
   // fall back to grabbing all rowset iterators.
-  for (const shared_ptr<RowSet> &rs : components_->rowsets->all_rowsets()) {
-    unique_ptr<RowwiseIterator> row_it;
-    RETURN_NOT_OK_PREPEND(rs->NewRowIterator(opts, &row_it),
+  for (const shared_ptr<RowSet>& rs : components_->rowsets->all_rowsets()) {
+    IterWithBounds iwb;
+    RETURN_NOT_OK_PREPEND(rs->NewRowIteratorWithBounds(opts, &iwb),
                           Substitute("Could not create iterator for rowset $0",
                                      rs->ToString()));
-    ret.emplace_back(std::move(row_it));
+    ret.emplace_back(std::move(iwb));
   }
 
   // Swap results into the parameters.
@@ -2462,7 +2464,7 @@ Status Tablet::Iterator::Init(ScanSpec *spec) {
 
   RETURN_NOT_OK(tablet_->GetMappedReadProjection(projection_, &projection_));
 
-  vector<unique_ptr<RowwiseIterator>> iters;
+  vector<IterWithBounds> iters;
   RETURN_NOT_OK(tablet_->CaptureConsistentIterators(opts_, spec, &iters));
   TRACE_COUNTER_INCREMENT("rowset_iterators", iters.size());
 

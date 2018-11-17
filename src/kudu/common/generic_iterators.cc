@@ -103,13 +103,13 @@ static const int kMergeRowBuffer = 1000;
 // RowwiseIterator such that all returned rows are valid.
 class MergeIterState : public boost::intrusive::list_base_hook<> {
  public:
-  explicit MergeIterState(unique_ptr<RowwiseIterator> iter) :
-      iter_(std::move(iter)),
-      arena_(1024),
-      read_block_(&iter_->schema(), kMergeRowBuffer, &arena_),
-      next_row_idx_(0),
-      rows_advanced_(0),
-      rows_valid_(0)
+  explicit MergeIterState(IterWithBounds iwb)
+      : iwb_(std::move(iwb)),
+        arena_(1024),
+        read_block_(&schema(), kMergeRowBuffer, &arena_),
+        next_row_idx_(0),
+        rows_advanced_(0),
+        rows_valid_(0)
   {}
 
   // Fetch the next row from the iterator. Does not advance the iterator.
@@ -128,7 +128,7 @@ class MergeIterState : public boost::intrusive::list_base_hook<> {
 
   // Returns true if the underlying iterator is fully exhausted.
   bool IsFullyExhausted() const {
-    return rows_valid_ == 0 && !iter_->HasNext();
+    return rows_valid_ == 0 && !iwb_.iter->HasNext();
   }
 
   // Advance to the next row in the underlying iterator.
@@ -136,7 +136,7 @@ class MergeIterState : public boost::intrusive::list_base_hook<> {
 
   // Add statistics about the underlying iterator to the given vector.
   void AddStats(vector<IteratorStats>* stats) const {
-    AddIterStats(*iter_, stats);
+    AddIterStats(*iwb_.iter, stats);
   }
 
   // Returns the number of valid rows remaining in the current block.
@@ -146,7 +146,7 @@ class MergeIterState : public boost::intrusive::list_base_hook<> {
 
   // Returns the schema from the underlying iterator.
   const Schema& schema() const {
-    return iter_->schema();
+    return iwb_.iter->schema();
   }
 
  private:
@@ -158,8 +158,11 @@ class MergeIterState : public boost::intrusive::list_base_hook<> {
     return rows_advanced_ == rows_valid_;
   }
 
-  // Underlying iterator.
-  unique_ptr<RowwiseIterator> iter_;
+  // The iterator (and optional bounds) whose rows are to be merged with other
+  // iterators.
+  //
+  // Must already be Init'ed at MergeIterState construction time.
+  IterWithBounds iwb_;
 
   // Allocates memory for read_block_.
   Arena arena_;
@@ -207,8 +210,8 @@ Status MergeIterState::PullNextBlock() {
   CHECK_EQ(rows_advanced_, rows_valid_)
       << "should not pull next block until current block is exhausted";
 
-  while (iter_->HasNext()) {
-    RETURN_NOT_OK(iter_->NextBlock(&read_block_));
+  while (iwb_.iter->HasNext()) {
+    RETURN_NOT_OK(iwb_.iter->NextBlock(&read_block_));
     rows_advanced_ = 0;
     // Honor the selection vector of the read_block_, since not all rows are necessarily selected.
     SelectionVector *selection = read_block_.selection_vector();
@@ -246,7 +249,7 @@ class MergeIterator : public RowwiseIterator {
   //
   // Note: the iterators must be constructed using a projection that includes
   // all key columns; otherwise a CHECK will fire at initialization time.
-  MergeIterator(MergeIteratorOptions opts, vector<unique_ptr<RowwiseIterator>> iters);
+  MergeIterator(MergeIteratorOptions opts, vector<IterWithBounds> iters);
 
   virtual ~MergeIterator();
 
@@ -283,7 +286,7 @@ class MergeIterator : public RowwiseIterator {
 
   // Holds the subiterators until Init is called, at which point this is cleared.
   // This is required because we can't create a MergeIterState of an uninitialized iterator.
-  vector<unique_ptr<RowwiseIterator>> orig_iters_;
+  vector<IterWithBounds> orig_iters_;
 
   // See UnionIterator::iters_lock_ for details on locking. This follows the same
   // pattern.
@@ -308,7 +311,7 @@ class MergeIterator : public RowwiseIterator {
 };
 
 MergeIterator::MergeIterator(MergeIteratorOptions opts,
-                             vector<unique_ptr<RowwiseIterator>> iters)
+                             vector<IterWithBounds> iters)
     : opts_(opts),
       initted_(false),
       orig_iters_(std::move(iters)),
@@ -382,7 +385,7 @@ Status MergeIterator::InitSubIterators(ScanSpec *spec) {
   // Initialize all the sub iterators.
   for (auto& i : orig_iters_) {
     ScanSpec *spec_copy = spec != nullptr ? scan_spec_copies_.Construct(*spec) : nullptr;
-    RETURN_NOT_OK(InitAndMaybeWrap(&i, spec_copy));
+    RETURN_NOT_OK(InitAndMaybeWrap(&i.iter, spec_copy));
     unique_ptr<MergeIterState> state(new MergeIterState(std::move(i)));
     states_.push_back(*state.release());
   }
@@ -553,7 +556,7 @@ void MergeIterator::GetIteratorStats(vector<IteratorStats>* stats) const {
 }
 
 unique_ptr<RowwiseIterator> NewMergeIterator(
-    MergeIteratorOptions opts, vector<unique_ptr<RowwiseIterator>> iters) {
+    MergeIteratorOptions opts, vector<IterWithBounds> iters) {
   return unique_ptr<RowwiseIterator>(new MergeIterator(opts, std::move(iters)));
 }
 
@@ -577,7 +580,7 @@ class UnionIterator : public RowwiseIterator {
   // Constructs a UnionIterator of the given iterators.
   //
   // The iterators must have matching schemas and should not yet be initialized.
-  explicit UnionIterator(vector<unique_ptr<RowwiseIterator>> iters);
+  explicit UnionIterator(vector<IterWithBounds> iters);
 
   Status Init(ScanSpec *spec) OVERRIDE;
 
@@ -619,7 +622,7 @@ class UnionIterator : public RowwiseIterator {
   // it's the only thread which might write. However, it does need to acquire in write
   // mode when changing 'iters_'.
   mutable rw_spinlock iters_lock_;
-  deque<unique_ptr<RowwiseIterator>> iters_;
+  deque<IterWithBounds> iters_;
 
   // Statistics (keyed by projection column index) accumulated so far by any
   // fully-consumed sub-iterators.
@@ -632,7 +635,7 @@ class UnionIterator : public RowwiseIterator {
   ObjectPool<ScanSpec> scan_spec_copies_;
 };
 
-UnionIterator::UnionIterator(vector<unique_ptr<RowwiseIterator>> iters)
+UnionIterator::UnionIterator(vector<IterWithBounds> iters)
   : initted_(false),
     iters_(std::make_move_iterator(iters.begin()),
            std::make_move_iterator(iters.end())) {
@@ -650,14 +653,14 @@ Status UnionIterator::Init(ScanSpec *spec) {
   // It's important to do the verification after initializing the iterators, as
   // they may not know their own schemas until they've been initialized (in the
   // case of a union of unions).
-  schema_.reset(new Schema(iters_.front()->schema()));
+  schema_.reset(new Schema(iters_.front().iter->schema()));
   finished_iter_stats_by_col_.resize(schema_->num_columns());
 #ifndef NDEBUG
   for (const auto& i : iters_) {
-    if (!i->schema().Equals(*schema_)) {
+    if (!i.iter->schema().Equals(*schema_)) {
       return Status::InvalidArgument(
           Substitute("Schemas do not match: $0 vs. $1",
-                     schema_->ToString(), i->schema().ToString()));
+                     schema_->ToString(), i.iter->schema().ToString()));
     }
   }
 #endif
@@ -670,7 +673,11 @@ Status UnionIterator::Init(ScanSpec *spec) {
 Status UnionIterator::InitSubIterators(ScanSpec *spec) {
   for (auto& i : iters_) {
     ScanSpec *spec_copy = spec != nullptr ? scan_spec_copies_.Construct(*spec) : nullptr;
-    RETURN_NOT_OK(InitAndMaybeWrap(&i, spec_copy));
+    RETURN_NOT_OK(InitAndMaybeWrap(&i.iter, spec_copy));
+
+    // The union iterator doesn't care about these, so let's drop them now to
+    // free some memory.
+    i.encoded_bounds.reset();
   }
   // Since we handle predicates in all the wrapped iterators, we can clear
   // them here.
@@ -683,7 +690,7 @@ Status UnionIterator::InitSubIterators(ScanSpec *spec) {
 bool UnionIterator::HasNext() const {
   CHECK(initted_);
   for (const auto& i : iters_) {
-    if (i->HasNext()) return true;
+    if (i.iter->HasNext()) return true;
   }
 
   return false;
@@ -701,17 +708,17 @@ void UnionIterator::PrepareBatch() {
   CHECK(initted_);
 
   while (!iters_.empty() &&
-         !iters_.front()->HasNext()) {
+         !iters_.front().iter->HasNext()) {
     PopFront();
   }
 }
 
 Status UnionIterator::MaterializeBlock(RowBlock *dst) {
-  return iters_.front()->NextBlock(dst);
+  return iters_.front().iter->NextBlock(dst);
 }
 
 void UnionIterator::FinishBatch() {
-  if (!iters_.front()->HasNext()) {
+  if (!iters_.front().iter->HasNext()) {
     // Iterator exhausted, remove it.
     PopFront();
   }
@@ -719,15 +726,15 @@ void UnionIterator::FinishBatch() {
 
 void UnionIterator::PopFront() {
   std::lock_guard<rw_spinlock> l(iters_lock_);
-  AddIterStats(*iters_.front(), &finished_iter_stats_by_col_);
+  AddIterStats(*iters_.front().iter, &finished_iter_stats_by_col_);
   iters_.pop_front();
 }
 
 string UnionIterator::ToString() const {
   string s;
   s.append("Union(");
-  s += JoinMapped(iters_, [](const unique_ptr<RowwiseIterator>& it) {
-      return it->ToString();
+  s += JoinMapped(iters_, [](const IterWithBounds& i) {
+      return i.iter->ToString();
     }, ",");
   s.append(")");
   return s;
@@ -738,12 +745,11 @@ void UnionIterator::GetIteratorStats(vector<IteratorStats>* stats) const {
   shared_lock<rw_spinlock> l(iters_lock_);
   *stats = finished_iter_stats_by_col_;
   if (!iters_.empty()) {
-    AddIterStats(*iters_.front(), stats);
+    AddIterStats(*iters_.front().iter, stats);
   }
 }
 
-unique_ptr<RowwiseIterator> NewUnionIterator(
-    vector<unique_ptr<RowwiseIterator>> iters) {
+unique_ptr<RowwiseIterator> NewUnionIterator(vector<IterWithBounds> iters) {
   return unique_ptr<RowwiseIterator>(new UnionIterator(std::move(iters)));
 }
 

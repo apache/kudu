@@ -20,6 +20,7 @@
 #include <limits>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -47,6 +48,26 @@ RowIteratorOptions::RowIteratorOptions()
       snap_to_include(MvccSnapshot::CreateSnapshotIncludingAllTransactions()),
       order(OrderMode::UNORDERED),
       include_deleted_rows(false) {}
+
+Status RowSet::NewRowIteratorWithBounds(const RowIteratorOptions& opts,
+                                        IterWithBounds* out) const {
+  // Get the iterator.
+  unique_ptr<RowwiseIterator> iter;
+  RETURN_NOT_OK(NewRowIterator(opts, &iter));
+
+  // Get the bounds. Some rowsets (e.g. MRS) have no bounds; that's OK as the
+  // bounds aren't required.
+  string lower;
+  string upper;
+  Status s = GetBounds(&lower, &upper);
+  if (s.ok()) {
+    out->encoded_bounds = std::make_pair(std::move(lower), std::move(upper));
+  } else if (!s.IsNotSupported()) {
+    RETURN_NOT_OK(s);
+  }
+  out->iter = std::move(iter);
+  return Status::OK();
+}
 
 DuplicatingRowSet::DuplicatingRowSet(RowSetVector old_rowsets,
                                      RowSetVector new_rowsets)
@@ -92,13 +113,13 @@ Status DuplicatingRowSet::NewRowIterator(const RowIteratorOptions& opts,
   }
   // Union or merge between them
 
-  vector<unique_ptr<RowwiseIterator>> iters;
-  for (const shared_ptr<RowSet> &rowset : old_rowsets_) {
-    unique_ptr<RowwiseIterator> iter;
-    RETURN_NOT_OK_PREPEND(rowset->NewRowIterator(opts, &iter),
+  vector<IterWithBounds> iters;
+  for (const auto& rs : old_rowsets_) {
+    IterWithBounds iwb;
+    RETURN_NOT_OK_PREPEND(rs->NewRowIteratorWithBounds(opts, &iwb),
                           Substitute("Could not create iterator for rowset $0",
-                                     rowset->ToString()));
-    iters.emplace_back(std::move(iter));
+                                     rs->ToString()));
+    iters.emplace_back(std::move(iwb));
   }
 
   switch (opts.order) {

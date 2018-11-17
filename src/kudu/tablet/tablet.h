@@ -66,6 +66,7 @@ class RowBlock;
 class ScanSpec;
 class Throttler;
 class Timestamp;
+struct IterWithBounds;
 struct IteratorStats;
 
 namespace log {
@@ -583,7 +584,7 @@ class Tablet {
   // lifetime of the returned iterators.
   Status CaptureConsistentIterators(const RowIteratorOptions& opts,
                                     const ScanSpec* spec,
-                                    std::vector<std::unique_ptr<RowwiseIterator>>* iters) const;
+                                    std::vector<IterWithBounds>* iters) const;
 
   Status PickRowSetsToCompact(RowSetsInCompaction *picked,
                               CompactFlags flags) const;
