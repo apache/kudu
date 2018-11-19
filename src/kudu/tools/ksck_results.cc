@@ -275,6 +275,10 @@ Status KsckResults::PrintTo(PrintMode mode, ostream& out) {
     out << endl;
   }
 
+  // Add in a summary of the tablet replicas by tablet server, so it's easy to
+  // see if some tablet servers have too many replicas.
+  RETURN_NOT_OK(PrintReplicaCountByTserverSummary(mode, *this, out));
+
   // Next, report on checksum scans.
   RETURN_NOT_OK(PrintChecksumResults(checksum_results, out));
   if (!checksum_results.tables.empty()) {
@@ -521,6 +525,125 @@ Status PrintTabletSummaries(const vector<KsckTabletSummary>& tablet_summaries,
     RETURN_NOT_OK(PrintConsensusMatrix(ts_uuids, master_cstate, consensus_state_map, out));
     out << endl;
   }
+  return Status::OK();
+}
+
+Status PrintReplicaCountByTserverSummary(PrintMode mode,
+                                         const KsckResults& results,
+                                         std::ostream& out) {
+  DCHECK(mode == PrintMode::PLAIN_FULL || mode == PrintMode::PLAIN_CONCISE);
+
+  // Collate the counts by tablet servers. We populate the map with the UUIDs
+  // from 'tserver_summaries' so we don't miss empty tablet servers.
+  map<string, std::pair<string, int>> host_and_replica_count_by_tserver;
+  for (const auto& tserver : results.tserver_summaries) {
+    EmplaceIfNotPresent(&host_and_replica_count_by_tserver,
+                        tserver.uuid,
+                        std::make_pair(tserver.address, 0));
+  }
+  for (const auto& tablet : results.tablet_summaries) {
+    for (const auto& replica : tablet.replicas) {
+      const string address = replica.ts_address ? *replica.ts_address :
+                                                  "unavailable";
+      LookupOrEmplace(&host_and_replica_count_by_tserver,
+                      replica.ts_uuid,
+                      std::make_pair(address, 0)).second++;
+    }
+  }
+
+  if (host_and_replica_count_by_tserver.empty()) {
+    return Status::OK();
+  }
+
+  // Compute a 5-number summary and print that plus outliers.
+  typedef std::tuple<string, string, int> UuidHostCount;
+  vector<UuidHostCount> tservers_sorted_by_replica_count;
+  tservers_sorted_by_replica_count.reserve(host_and_replica_count_by_tserver.size());
+  for (const auto& entry : host_and_replica_count_by_tserver) {
+    tservers_sorted_by_replica_count.emplace_back(entry.first,
+                                                  entry.second.first,
+                                                  entry.second.second);
+  }
+
+  DataTable table({ "Statistic", "Replica Count" });
+  std::sort(tservers_sorted_by_replica_count.begin(),
+            tservers_sorted_by_replica_count.end(),
+            [](const UuidHostCount& left, const UuidHostCount& right) {
+              return std::get<2>(left) < std::get<2>(right);
+            });
+  const auto num_tservers = tservers_sorted_by_replica_count.size();
+  const auto min = std::get<2>(tservers_sorted_by_replica_count[0]);
+  const auto first_quartile =
+      std::get<2>(tservers_sorted_by_replica_count[num_tservers / 4]);
+  const auto median = std::get<2>(tservers_sorted_by_replica_count[num_tservers / 2]);
+  const auto third_quartile =
+      std::get<2>(tservers_sorted_by_replica_count[3 * num_tservers / 4]);
+  const auto max = std::get<2>(tservers_sorted_by_replica_count[num_tservers - 1]);
+  table.AddRow({ "Minimum", std::to_string(min) });
+  table.AddRow({ "First Quartile", std::to_string(first_quartile) });
+  table.AddRow({ "Median", std::to_string(median) });
+  table.AddRow({ "Third Quartile", std::to_string(third_quartile) });
+  table.AddRow({ "Maximum", std::to_string(max) });
+
+  out << "Tablet Replica Count Summary" << endl;
+  RETURN_NOT_OK(table.PrintTo(out));
+  out << endl;
+
+  // Now outliers, if there are any. We use a standard definition: an outlier
+  // is a value more than 1.5 * (third - first quartile) below the first or
+  // above the third quartile.
+  const auto interquartile_range = third_quartile - first_quartile;
+  const auto below_is_outlier = first_quartile - 1.5 * interquartile_range;
+  const auto above_is_outlier = third_quartile + 1.5 * interquartile_range;
+  auto small_outliers = std::partition_point(
+      tservers_sorted_by_replica_count.rbegin(),
+      tservers_sorted_by_replica_count.rend(),
+      [&](const UuidHostCount val) {
+        return std::get<2>(val) >= below_is_outlier;
+      });
+  auto big_outliers = std::partition_point(
+      tservers_sorted_by_replica_count.begin(),
+      tservers_sorted_by_replica_count.end(),
+      [&](const UuidHostCount val) {
+        return std::get<2>(val) <= above_is_outlier;
+      });
+
+  int num_outliers = 0;
+  DataTable outliers({ "Type", "UUID", "Host", "Replica Count" });
+  for (auto it = big_outliers; it != tservers_sorted_by_replica_count.end(); ++it) {
+    num_outliers++;
+    const auto& uuid = std::get<0>(*it);
+    const auto& host = std::get<1>(*it);
+    const auto& count = std::get<2>(*it);
+    outliers.AddRow({ "Big", uuid, host, std::to_string(count) });
+  }
+  for (auto it = small_outliers; it != tservers_sorted_by_replica_count.rend(); ++it) {
+    num_outliers++;
+    const auto& uuid = std::get<0>(*it);
+    const auto& host = std::get<1>(*it);
+    const auto& count = std::get<2>(*it);
+    outliers.AddRow({ "Small", uuid, host, std::to_string(count) });
+  }
+
+  if (num_outliers > 0) {
+    out << "Tablet Replica Count Outliers" << endl;
+    RETURN_NOT_OK(outliers.PrintTo(out));
+    out << endl;
+  }
+
+  // If we're in verbose mode, also dump all the info.
+  if (mode == PrintMode::PLAIN_FULL) {
+    out << "Tablet Replica Count by Tablet Server" << endl;
+    DataTable table({ "UUID", "Host", "Replica Count" });
+    for (const auto& entry : host_and_replica_count_by_tserver) {
+      table.AddRow({ entry.first,
+                     entry.second.first,
+                     std::to_string(entry.second.second) });
+    }
+    RETURN_NOT_OK(table.PrintTo(out));
+    out << endl;
+  }
+
   return Status::OK();
 }
 

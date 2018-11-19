@@ -353,6 +353,14 @@ Status PrintConsensusMatrix(const std::vector<std::string>& server_uuids,
                             const KsckConsensusStateMap& consensus_states,
                             std::ostream& out);
 
+// Print to 'out' a table summarizing the counts of tablet replicas in the
+// cluster. 'mode' must be PLAIN_FULL or PLAIN_CONCISE. In PLAIN_CONCISE mode,
+// summary information will be printed, while in PLAIN_FULL mode, the counts for
+// every tablet server will be printed as well.
+Status PrintReplicaCountByTserverSummary(PrintMode mode,
+                                         const KsckResults& results,
+                                         std::ostream& out);
+
 Status PrintChecksumResults(const KsckChecksumResults& checksum_results,
                             std::ostream& out);
 
