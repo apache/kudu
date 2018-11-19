@@ -103,7 +103,8 @@ class MiniCluster {
 
   enum DaemonType {
     MASTER,
-    TSERVER
+    TSERVER,
+    EXTERNAL_SERVER
   };
 
   static constexpr const char* const kWildcardIpAddr = "0.0.0.0";

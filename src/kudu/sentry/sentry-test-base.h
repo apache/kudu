@@ -19,6 +19,7 @@
 
 #include <string>
 
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/sasl_common.h"
 #include "kudu/security/test/mini_kdc.h"
 #include "kudu/sentry/mini_sentry.h"
@@ -43,12 +44,12 @@ class SentryTestBase : public KuduTest,
       ASSERT_OK(kdc_->Start());
 
       // Create a service principal for the Sentry, and configure it to use it.
-      std::string spn = "sentry/127.0.0.1@KRBTEST.COM";
+      std::string spn = strings::Substitute("sentry/$0", sentry_->address().host());
       std::string ktpath;
-      ASSERT_OK(kdc_->CreateServiceKeytab("sentry/127.0.0.1", &ktpath));
+      ASSERT_OK(kdc_->CreateServiceKeytab(spn, &ktpath));
 
       sentry_->EnableKerberos(kdc_->GetEnvVars()["KRB5_CONFIG"],
-                              spn,
+                              strings::Substitute("$0@KRBTEST.COM", spn),
                               ktpath);
 
       ASSERT_OK(rpc::SaslInit());

@@ -65,6 +65,22 @@ void MiniSentry::EnableKerberos(std::string krb5_conf,
   keytab_file_ = std::move(keytab_file);
 }
 
+void MiniSentry::EnableHms(string hms_uris) {
+  CHECK(!sentry_process_);
+  hms_uris_ = std::move(hms_uris);
+}
+
+void MiniSentry::SetDataRoot(string data_root) {
+  CHECK(!sentry_process_);
+  data_root_ = std::move(data_root);
+}
+
+void MiniSentry::SetAddress(const HostPort& address) {
+  CHECK(!sentry_process_);
+  ip_ = address.host();
+  port_ = address.port();
+}
+
 Status MiniSentry::Start() {
   SCOPED_LOG_SLOW_EXECUTION(WARNING, kSentryStartTimeoutMs / 2, "Starting Sentry");
   CHECK(!sentry_process_);
@@ -84,14 +100,22 @@ Status MiniSentry::Start() {
   RETURN_NOT_OK(FindHomeDir("sentry", bin_dir, &sentry_home));
   RETURN_NOT_OK(FindHomeDir("java", bin_dir, &java_home));
 
-  auto tmp_dir = GetTestDataDirectory();
+  if (data_root_.empty()) {
+    data_root_ = GetTestDataDirectory();
+  }
 
-  RETURN_NOT_OK(CreateSentryConfigs(tmp_dir));
+  RETURN_NOT_OK(CreateSentryConfigs(data_root_));
 
   // List of JVM environment options to pass to the Sentry service.
   string java_options;
   if (!krb5_conf_.empty()) {
     java_options += Substitute(" -Djava.security.krb5.conf=$0", krb5_conf_);
+  }
+  if (IsHmsEnabled()) {
+    java_options += Substitute(" -Dhive.metastore.uris=$0"
+        " -Dhive.metastore.sasl.enabled=$1"
+        " -Dhive.metastore.kerberos.principal=hive/127.0.0.1@KRBTEST.COM",
+        hms_uris_, IsKerberosEnabled());
   }
 
   map<string, string> env_vars {
@@ -103,9 +127,9 @@ Status MiniSentry::Start() {
   // Start Sentry.
   sentry_process_.reset(new Subprocess({
       Substitute("$0/bin/sentry", sentry_home),
-      "--log4jConf", JoinPathSegments(tmp_dir, "log4j.properties"),
+      "--log4jConf", JoinPathSegments(data_root_, "log4j.properties"),
       "--command", "service",
-      "--conffile", JoinPathSegments(tmp_dir, "sentry-site.xml"),
+      "--conffile", JoinPathSegments(data_root_, "sentry-site.xml"),
   }));
 
   sentry_process_->SetEnvVars(env_vars);
@@ -113,8 +137,13 @@ Status MiniSentry::Start() {
 
   // Wait for Sentry to start listening on its ports and commencing operation.
   VLOG(1) << "Waiting for Sentry ports";
-  Status wait = WaitForTcpBind(sentry_process_->pid(), &port_,
+
+  uint16_t orig_port = port_;
+  Status wait = WaitForTcpBind(sentry_process_->pid(), &port_, ip_,
                                MonoDelta::FromMilliseconds(kSentryStartTimeoutMs));
+  // Check that the port number only changed if the original port was 0
+  // (i.e. if we asked to bind to an ephemeral port)
+  CHECK(orig_port == 0 || port_ == orig_port);
   if (!wait.ok()) {
     WARN_NOT_OK(sentry_process_->Kill(SIGQUIT), "failed to send SIGQUIT to Sentry");
   }
@@ -173,6 +202,8 @@ Status MiniSentry::CreateSentryConfigs(const string& tmp_dir) const {
   // - sentry.service.server.rpc-port
   //     Port number that the Sentry service starts with.
   //
+  // - sentry.service.server.rpc-address
+  //     IP address that the Sentry service starts with.
   static const string kFileTemplate = R"(
 <configuration>
 
@@ -227,13 +258,18 @@ Status MiniSentry::CreateSentryConfigs(const string& tmp_dir) const {
   </property>
 
   <property>
+    <name>sentry.service.server.rpc-address</name>
+    <value>$6</value>
+  </property>
+
+  <property>
     <name>sentry.service.admin.group</name>
     <value>admin</value>
   </property>
 
   <property>
     <name>sentry.service.allow.connect</name>
-    <value>kudu</value>
+    <value>kudu,hive</value>
   </property>
 
 </configuration>
@@ -242,12 +278,13 @@ Status MiniSentry::CreateSentryConfigs(const string& tmp_dir) const {
   string users_ini_path = JoinPathSegments(tmp_dir, "users.ini");
   string file_contents = Substitute(
       kFileTemplate,
-      keytab_file_.empty() ? "none" : "kerberos",
+      IsKerberosEnabled() ? "kerberos" : "none",
       service_principal_,
       keytab_file_,
       tmp_dir,
       users_ini_path,
-      port_);
+      port_,
+      ip_);
   RETURN_NOT_OK(WriteStringToFile(Env::Default(),
                                   file_contents,
                                   JoinPathSegments(tmp_dir, "sentry-site.xml")));

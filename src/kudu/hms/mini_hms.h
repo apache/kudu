@@ -40,14 +40,16 @@ class MiniHms {
 
   ~MiniHms();
 
-  // Configures the notification log TTL. Must be called before Start().
-  void SetNotificationLogTtl(MonoDelta ttl);
-
   // Configures the mini HMS to use Kerberos.
   void EnableKerberos(std::string krb5_conf,
                       std::string service_principal,
                       std::string keytab_file,
                       rpc::SaslProtection::Type protection);
+
+  // Configures the mini HMS to enable the Sentry plugin, passing the
+  // Sentry service's principal to be used in Kerberos environment.
+  void EnableSentry(const HostPort& sentry_address,
+                    std::string sentry_service_principal);
 
   // Configures the mini HMS to store its data in the provided path. If not set,
   // it uses a test-only temporary directory.
@@ -74,9 +76,17 @@ class MiniHms {
     return HostPort("127.0.0.1", port_);
   }
 
-  /// Returns the Metastore URIs, in the format that the Hive
-  /// hive.metastore.uris configuration expects.
+  // Returns the Metastore URIs, in the format that the Hive
+  // hive.metastore.uris configuration expects.
   std::string uris() const;
+
+  // Returns true when Sentry as well as Kerberos is enabled.
+  bool IsAuthorizationEnabled() const;
+
+  // Returns true when Kerberos is enabled.
+  bool IsKerberosEnabled() const {
+    return !keytab_file_.empty();
+  }
 
  private:
 
@@ -89,9 +99,6 @@ class MiniHms {
   // Creates a log4j2 configuration properties file for the mini HMS.
   Status CreateLogConfig() const WARN_UNUSED_RESULT;
 
-  // Waits for the metastore process to bind to a port.
-  Status WaitForHmsPorts() WARN_UNUSED_RESULT;
-
   std::unique_ptr<Subprocess> hms_process_;
   MonoDelta notification_log_ttl_ = MonoDelta::FromSeconds(86400);
   uint16_t port_ = 0;
@@ -103,6 +110,10 @@ class MiniHms {
   std::string service_principal_;
   std::string keytab_file_;
   rpc::SaslProtection::Type protection_ = rpc::SaslProtection::kAuthentication;
+
+  // Sentry configuration
+  std::string sentry_address_;
+  std::string sentry_service_principal_;
 };
 
 } // namespace hms

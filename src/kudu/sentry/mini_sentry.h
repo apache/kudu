@@ -43,6 +43,17 @@ class MiniSentry {
                       std::string service_principal,
                       std::string keytab_file);
 
+  // Configures the mini Sentry service to connect to a Hive Metastore instance.
+  void EnableHms(std::string hms_uris);
+
+  // Configures the mini Sentry service to store its data in the provided path.
+  // If not set, it uses a test-only temporary directory.
+  void SetDataRoot(std::string data_root);
+
+  // Configures the mini Sentry service to start with the provided address.
+  // If not set, it uses the default Ip and port number.
+  void SetAddress(const HostPort& address);
+
   // Starts the mini Sentry service.
   //
   // If the MiniSentry has already been started and stopped, it will be restarted
@@ -58,10 +69,20 @@ class MiniSentry {
   // Unpause the Sentry service.
   Status Resume() WARN_UNUSED_RESULT;
 
-  // Returns the address of the Sentry service. Should only be called after the
+  // Returns the address of the mini Sentry service. Should only be called after the
   // Sentry service is started.
   HostPort address() const {
-    return HostPort("127.0.0.1", port_);
+    return HostPort(ip_, port_);
+  }
+
+  // Returns true when Kerberos is enabled.
+  bool IsKerberosEnabled() const {
+    return !keytab_file_.empty();
+  }
+
+  // Returns true when the HMS is enabled.
+  bool IsHmsEnabled() const {
+    return !hms_uris_.empty();
   }
 
  private:
@@ -70,18 +91,21 @@ class MiniSentry {
   // configuration files.
   Status CreateSentryConfigs(const std::string& tmp_dir) const WARN_UNUSED_RESULT;
 
-  // Waits for the metastore process to bind to a port.
-  Status WaitForSentryPorts() WARN_UNUSED_RESULT;
-
   std::unique_ptr<Subprocess> sentry_process_;
 
   // Port number of the mini Sentry service. Default to 0.
   uint16_t port_ = 0;
+  // Ip address of the mini Sentry service. Default to 0.0.0.0.
+  std::string ip_ = "0.0.0.0";
+  std::string data_root_;
 
   // Kerberos configuration
   std::string krb5_conf_;
   std::string service_principal_;
   std::string keytab_file_;
+
+  // HMS configuration
+  std::string hms_uris_;
 };
 
 } // namespace sentry

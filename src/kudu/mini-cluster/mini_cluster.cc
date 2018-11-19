@@ -49,7 +49,24 @@ string MiniCluster::GetBindIpForDaemon(DaemonType type, int index, BindMode bind
       uint32_t pid = getpid();
       CHECK_LT(pid, 1 << kPidBits) << Substitute(
           "PID $0 is more than $1 bits wide", pid, kPidBits);
-      int idx = (type == TSERVER) ? index + 1 : kServersMaxNum - index;
+      int idx;
+      // Partition the index space 'kServersMaxNum' into three portions, one for each
+      // daemon type, to get unique address. If a daemon index spans over the portion
+      // reserved for another type, then duplicate address can be generated. Though this
+      // should be enough for our current tests.
+      switch (type) {
+        case MASTER:
+          idx = index + 1;
+          break;
+        case TSERVER:
+          idx = kServersMaxNum - index;
+          break;
+        case EXTERNAL_SERVER:
+          idx = kServersMaxNum / 3 + index;
+          break;
+        default:
+          LOG(FATAL) << type;
+      }
       uint32_t ip = (pid << kServerIdxBits) | static_cast<uint32_t>(idx);
       uint8_t octets[] = {
           static_cast<uint8_t>((ip >> 16) & 0xff),

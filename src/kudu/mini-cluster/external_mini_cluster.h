@@ -66,6 +66,10 @@ namespace rpc {
 class Messenger;
 } // namespace rpc
 
+namespace sentry {
+class MiniSentry;
+} // namespace sentry
+
 namespace server {
 class ServerStatusPB;
 } // namespace server
@@ -151,6 +155,11 @@ struct ExternalMiniClusterOptions {
   // Default: HmsMode::NONE.
   HmsMode hms_mode;
 
+  // If true, set up a Sentry service as part of this ExternalMiniCluster.
+  //
+  // Default: false.
+  bool enable_sentry;
+
   // If true, sends logging output to stderr instead of a log file.
   //
   // Default: true.
@@ -214,6 +223,9 @@ class ExternalMiniCluster : public MiniCluster {
   // Same as above but for a master.
   std::string GetBindIpForMaster(int index) const;
 
+  // Same as above but for a external server, e.g. Sentry service or Hive Metastore.
+  std::string GetBindIpForExternalServer(int index) const;
+
   // Return a pointer to the running leader master. This may be NULL
   // if the cluster is not started.
   //
@@ -268,6 +280,10 @@ class ExternalMiniCluster : public MiniCluster {
 
   hms::MiniHms* hms() const {
     return hms_.get();
+  }
+
+  sentry::MiniSentry* sentry() const {
+    return sentry_.get();
   }
 
   const std::string& cluster_root() const {
@@ -385,6 +401,9 @@ class ExternalMiniCluster : public MiniCluster {
 
   Status StartMasters();
 
+  Status StartSentry();
+  Status StopSentry();
+
   Status DeduceBinRoot(std::string* ret);
   Status HandleOptions();
 
@@ -394,6 +413,7 @@ class ExternalMiniCluster : public MiniCluster {
   std::vector<scoped_refptr<ExternalTabletServer>> tablet_servers_;
   std::unique_ptr<MiniKdc> kdc_;
   std::unique_ptr<hms::MiniHms> hms_;
+  std::unique_ptr<sentry::MiniSentry> sentry_;
 
   std::shared_ptr<rpc::Messenger> messenger_;
 

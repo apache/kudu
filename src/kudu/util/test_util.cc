@@ -36,6 +36,7 @@
 #include <sys/param.h> // for MAXPATHLEN
 #endif
 
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest-spi.h>
@@ -43,6 +44,7 @@
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/strcat.h"
+#include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
@@ -63,6 +65,7 @@ DEFINE_string(test_leave_files, "on_failure",
 
 DEFINE_int32(test_random_seed, 0, "Random seed to use for randomized tests");
 
+using boost::optional;
 using std::string;
 using std::vector;
 using strings::Substitute;
@@ -379,7 +382,9 @@ int CountOpenFds(Env* env, const string& path_pattern) {
 }
 
 namespace {
-Status WaitForBind(pid_t pid, uint16_t* port, const char* kind, MonoDelta timeout) {
+Status WaitForBind(pid_t pid, uint16_t* port,
+                   const optional<const string&>& addr,
+                   const char* kind, MonoDelta timeout) {
   // In general, processes do not expose the port they bind to, and
   // reimplementing lsof involves parsing a lot of files in /proc/. So,
   // requiring lsof for tests and parsing its output seems more
@@ -395,15 +400,52 @@ Status WaitForBind(pid_t pid, uint16_t* port, const char* kind, MonoDelta timeou
     "-a", "-i", kind
   };
 
+  // The '-Ffn' flag gets lsof to output something like:
+  //   p5801
+  //   f548
+  //   n127.0.0.1:43954->127.0.0.1:43617
+  //   f549
+  //   n*:8038
+  //
+  // The first line is the pid. We ignore it.
+  // Subsequent lines come in pairs. In each pair, the first half of the pair
+  // is file descriptor number, we ignore it.
+  // The second half has the bind address and port.
+  //
+  // In this example, the first pair is an outbound TCP socket. We ignore it.
+  // The second pair is the listening TCP socket bind address and port.
+  //
+  // We use the first encountered listening TCP socket, since that's most likely
+  // to be the primary service port. When searching, we use the provided bind
+  // address if there is any, otherwise we use '*' (same as '0.0.0.0') which
+  // matches all addresses on the local machine.
+  string addr_pattern = Substitute("n$0:", (!addr || *addr == "0.0.0.0") ? "*" : *addr);
   MonoTime deadline = MonoTime::Now() + timeout;
   string lsof_out;
+  int32_t p = -1;
 
   for (int64_t i = 1; ; i++) {
     lsof_out.clear();
-    Status s = Subprocess::Call(cmd, "", &lsof_out);
+    Status s = Subprocess::Call(cmd, "", &lsof_out).AndThen([&] () {
+      StripTrailingNewline(&lsof_out);
+      vector<string> lines = strings::Split(lsof_out, "\n");
+      for (int index = 2; index < lines.size(); index += 2) {
+        StringPiece cur_line(lines[index]);
+        if (HasPrefixString(cur_line.ToString(), addr_pattern) &&
+            !cur_line.contains("->")) {
+          cur_line.remove_prefix(addr_pattern.size());
+          if (!safe_strto32(cur_line.data(), cur_line.size(), &p)) {
+            return Status::RuntimeError("unexpected lsof output", lsof_out);
+          }
+
+          return Status::OK();
+        }
+      }
+
+      return Status::RuntimeError("unexpected lsof output", lsof_out);
+    });
 
     if (s.ok()) {
-      StripTrailingNewline(&lsof_out);
       break;
     }
     if (deadline < MonoTime::Now()) {
@@ -413,22 +455,6 @@ Status WaitForBind(pid_t pid, uint16_t* port, const char* kind, MonoDelta timeou
     SleepFor(MonoDelta::FromMilliseconds(i * 10));
   }
 
-  // The '-Ffn' flag gets lsof to output something like:
-  //   p19730
-  //   f123
-  //   n*:41254
-  // The first line is the pid. We ignore it.
-  // The second line is the file descriptor number. We ignore it.
-  // The third line has the bind address and port.
-  // Subsequent lines show active connections.
-  vector<string> lines = strings::Split(lsof_out, "\n");
-  int32_t p = -1;
-  if (lines.size() < 3 ||
-      lines[2].substr(0, 3) != "n*:" ||
-      !safe_strto32(lines[2].substr(3), &p) ||
-      p <= 0) {
-    return Status::RuntimeError("unexpected lsof output", lsof_out);
-  }
   CHECK(p > 0 && p < std::numeric_limits<uint16_t>::max()) << "parsed invalid port: " << p;
   VLOG(1) << "Determined bound port: " << p;
   *port = p;
@@ -436,12 +462,16 @@ Status WaitForBind(pid_t pid, uint16_t* port, const char* kind, MonoDelta timeou
 }
 } // anonymous namespace
 
-Status WaitForTcpBind(pid_t pid, uint16_t* port, MonoDelta timeout) {
-  return WaitForBind(pid, port, "4TCP", timeout);
+Status WaitForTcpBind(pid_t pid, uint16_t* port,
+                      const optional<const string&>& addr,
+                      MonoDelta timeout) {
+  return WaitForBind(pid, port, addr, "4TCP", timeout);
 }
 
-Status WaitForUdpBind(pid_t pid, uint16_t* port, MonoDelta timeout) {
-  return WaitForBind(pid, port, "4UDP", timeout);
+Status WaitForUdpBind(pid_t pid, uint16_t* port,
+                      const optional<const string&>& addr,
+                      MonoDelta timeout) {
+  return WaitForBind(pid, port, addr, "4UDP", timeout);
 }
 
 Status FindHomeDir(const string& name, const string& bin_dir, string* home_dir) {

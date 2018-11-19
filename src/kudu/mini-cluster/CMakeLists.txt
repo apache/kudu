@@ -36,6 +36,7 @@ target_link_libraries(mini_cluster
   master_proto
   mini_hms
   mini_kdc
+  mini_sentry
   server_base_proto
   tablet_proto
   tserver
