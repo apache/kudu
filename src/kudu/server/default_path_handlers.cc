@@ -28,9 +28,7 @@
 #include <vector>
 
 #include <boost/algorithm/string/predicate.hpp>
-#include <boost/algorithm/string/replace.hpp>
 #include <boost/bind.hpp> // IWYU pragma: keep
-#include <boost/iterator/iterator_traits.hpp>
 #include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
@@ -50,7 +48,6 @@
 #include "kudu/util/array_view.h"
 #include "kudu/util/debug-util.h"
 #include "kudu/util/easy_json.h"
-#include "kudu/util/faststring.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/flags.h"
 #include "kudu/util/jsonwriter.h"
@@ -203,7 +200,7 @@ static void MemUsageHandler(const Webserver::WebRequest& req,
 #endif
 }
 
-// Registered to handle "/mem-trackers", and prints out to handle memory tracker information.
+// Registered to handle "/mem-trackers", and prints out memory tracker information.
 static void MemTrackersHandler(const Webserver::WebRequest& /*req*/,
                                Webserver::PrerenderedWebResponse* resp) {
   std::ostringstream* output = resp->output;
@@ -231,9 +228,20 @@ static void MemTrackersHandler(const Webserver::WebRequest& /*req*/,
 #endif
 
   *output << "<h1>Memory usage by subsystem</h1>\n";
-  *output << "<table class='table table-striped'>\n";
-  *output << "  <thead><tr><th>Id</th><th>Parent</th><th>Limit</th><th>Current Consumption</th>"
-      "<th>Peak consumption</th></tr></thead>\n";
+  *output << "<table data-toggle='table' "
+             "       data-pagination='true' "
+             "       data-search='true' "
+             "       class='table table-striped'>\n";
+  *output << "<thead><tr>"
+             "<th>Id</th>"
+             "<th>Parent</th>"
+             "<th>Limit</th>"
+             "<th data-sorter='bytesSorter' "
+             "    data-sortable='true' "
+             "'>Current Consumption</th>"
+             "<th data-sorter='bytesSorter' "
+             "    data-sortable='true' "
+             ">Peak Consumption</th>";
   *output << "<tbody>\n";
 
   vector<shared_ptr<MemTracker> > trackers;
@@ -244,7 +252,7 @@ static void MemTrackersHandler(const Webserver::WebRequest& /*req*/,
                        HumanReadableNumBytes::ToString(tracker->limit());
     string current_consumption_str = HumanReadableNumBytes::ToString(tracker->consumption());
     string peak_consumption_str = HumanReadableNumBytes::ToString(tracker->peak_consumption());
-    (*output) << Substitute("  <tr><td>$0</td><td>$1</td><td>$2</td>" // id, parent, limit
+    (*output) << Substitute("<tr><td>$0</td><td>$1</td><td>$2</td>" // id, parent, limit
                             "<td>$3</td><td>$4</td></tr>\n", // current, peak
                             tracker->id(), parent, limit_str, current_consumption_str,
                             peak_consumption_str);

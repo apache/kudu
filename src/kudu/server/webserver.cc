@@ -566,6 +566,7 @@ static const char* const kMainTemplate = R"(
     <script src='/jquery-3.2.1.min.js' defer></script>
     <script src='/bootstrap/js/bootstrap.min.js' defer></script>
     <script src='/bootstrap/js/bootstrap-table.min.js' defer></script>
+    <script src='/kudu.js' defer></script>
     <link href='/kudu.css' rel='stylesheet' />
   </head>
   <body>
