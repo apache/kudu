@@ -20,11 +20,14 @@
 #include <unistd.h>
 
 #include <ostream>
+#include <string>
 
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/once.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug/leakcheck_disabler.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/random.h"
@@ -54,7 +57,9 @@ void DoMaybeFault(const char* fault_str, double fraction) {
   if (PREDICT_TRUE(g_random->NextDoubleFraction() >= fraction)) {
     return;
   }
-  LOG(ERROR) << "Injecting fault: " << fault_str << " (process will exit)";
+  LOG(ERROR) << strings::Substitute(
+      "injecting fault for $0 (pid $1): $2 (process will exit)",
+      google::ProgramInvocationShortName(), getpid(), fault_str);
   // _exit will exit the program without running atexit handlers. This more
   // accurately simulates a crash.
   _exit(kExitStatus);
