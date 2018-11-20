@@ -25,6 +25,7 @@
 #include "kudu/sentry/mini_sentry.h"
 #include "kudu/sentry/sentry_client.h"
 #include "kudu/thrift/client.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
@@ -37,14 +38,18 @@ class SentryTestBase : public KuduTest,
 
   void SetUp() override {
     KuduTest::SetUp();
+
     thrift::ClientOptions sentry_client_opts;
     sentry_.reset(new MiniSentry());
+    std::string host = GetBindIpForDaemon(1, kDefaultBindMode);
+    HostPort address(host, 0);
+    sentry_->SetAddress(address);
     if (kerberos_enabled_) {
       kdc_.reset(new MiniKdc(MiniKdcOptions()));
       ASSERT_OK(kdc_->Start());
 
       // Create a service principal for the Sentry, and configure it to use it.
-      std::string spn = strings::Substitute("sentry/$0", sentry_->address().host());
+      std::string spn = strings::Substitute("sentry/$0", host);
       std::string ktpath;
       ASSERT_OK(kdc_->CreateServiceKeytab(spn, &ktpath));
 

@@ -28,6 +28,11 @@ namespace kudu {
 
 class Sockaddr;
 
+extern const int kServersMaxNum;
+
+static constexpr const char* const kWildcardIpAddr = "0.0.0.0";
+static constexpr const char* const kLoopbackIpAddr = "127.0.0.1";
+
 // A container for a host:port pair.
 class HostPort {
  public:
@@ -175,7 +180,56 @@ Status HostPortFromSockaddrReplaceWildcard(const Sockaddr& addr, HostPort* hp);
 //
 // Output is issued to the log at WARNING level, or appended to 'log' if it
 // is non-NULL (mostly useful for testing).
-void TryRunLsof(const Sockaddr& addr, std::vector<std::string>* log = NULL);
+void TryRunLsof(const Sockaddr& addr, std::vector<std::string>* log = nullptr);
+
+// BindMode lets you specify the socket binding mode for RPC and/or HTTP server.
+// A) LOOPBACK binds each server to loopback ip address "127.0.0.1".
+//
+// B) WILDCARD specifies "0.0.0.0" as the ip to bind to, which means sockets
+// can be bound to any interface on the local host.
+// For example, if a host has two interfaces with addresses
+// 192.168.0.10 and 192.168.0.11, the server process can accept connection
+// requests addressed to 192.168.0.10 or 192.168.0.11.
+//
+// C) UNIQUE_LOOPBACK binds each tablet server to a different loopback address.
+// This affects the server's RPC server, and also forces the server to
+// only use this IP address for outgoing socket connections as well.
+// This allows the use of iptables on the localhost to simulate network
+// partitions.
+//
+// The addresses used are 127.<A>.<B>.<C> where:
+// - <A,B> are the high and low bytes of the pid of the process running the
+//   test (not the daemon itself).
+// - <C> is the index of the server within the started test.
+//
+// This requires that the system is set up such that processes may bind
+// to any IP address in the localhost netblock (127.0.0.0/8). This seems
+// to be the case on common Linux distributions. You can verify by running
+// 'ip addr | grep 127.0.0.1' and checking that the address is listed as
+// '127.0.0.1/8'.
+//
+// Note: UNIQUE_LOOPBACK is not supported on macOS.
+//
+// Default: UNIQUE_LOOPBACK on Linux, LOOPBACK on macOS.
+enum class BindMode {
+  UNIQUE_LOOPBACK,
+  WILDCARD,
+  LOOPBACK
+};
+
+#if defined(__APPLE__)
+  static constexpr const BindMode kDefaultBindMode = BindMode::LOOPBACK;
+#else
+  static constexpr const BindMode kDefaultBindMode = BindMode::UNIQUE_LOOPBACK;
+#endif
+
+// Return the IP address that the daemon will bind to. If bind_mode is LOOPBACK,
+// this will be 127.0.0.1 and if it is WILDCARD it will be 0.0.0.0. Otherwise,
+// it is another IP in the local netblock indicated by the given index (which
+// should range from (0, 62]). In this UNIQUE_LOOPBACK mode, if the same index
+// is given twice, then the same IP address could return when the caller is from
+// the same process.
+std::string GetBindIpForDaemon(int index, BindMode bind_mode);
 
 } // namespace kudu
 #endif

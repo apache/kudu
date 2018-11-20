@@ -42,7 +42,6 @@
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/sys_catalog.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
-#include "kudu/mini-cluster/mini_cluster.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/security/test/mini_kdc.h"
@@ -52,6 +51,7 @@
 #include "kudu/tablet/key_value_test_schema.h"
 #include "kudu/util/env.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
@@ -315,7 +315,7 @@ TEST_F(SecurityITest, TestWorldReadablePrivateKey) {
 }
 
 struct AuthTokenIssuingTestParams {
-  const ExternalMiniCluster::BindMode bind_mode;
+  const BindMode bind_mode;
   const string rpc_authentication;
   const string rpc_encryption;
   const bool rpc_encrypt_loopback_connections;
@@ -327,23 +327,23 @@ class AuthTokenIssuingTest :
 };
 INSTANTIATE_TEST_CASE_P(, AuthTokenIssuingTest, ::testing::ValuesIn(
     vector<AuthTokenIssuingTestParams>{
-      { ExternalMiniCluster::BindMode::LOOPBACK, "required", "required", true,  true,  },
-      { ExternalMiniCluster::BindMode::LOOPBACK, "required", "required", false, true,  },
-      //ExternalMiniCluster::BindMode::LOOPBACK, "required", "disabled": non-acceptable
-      //ExternalMiniCluster::BindMode::LOOPBACK, "required", "disabled": non-acceptable
-      { ExternalMiniCluster::BindMode::LOOPBACK, "disabled", "required", true,  true,  },
-      { ExternalMiniCluster::BindMode::LOOPBACK, "disabled", "required", false, true,  },
-      { ExternalMiniCluster::BindMode::LOOPBACK, "disabled", "disabled", true,  false, },
-      { ExternalMiniCluster::BindMode::LOOPBACK, "disabled", "disabled", false, true,  },
+      { BindMode::LOOPBACK, "required", "required", true,  true,  },
+      { BindMode::LOOPBACK, "required", "required", false, true,  },
+      //BindMode::LOOPBACK, "required", "disabled": non-acceptable
+      //BindMode::LOOPBACK, "required", "disabled": non-acceptable
+      { BindMode::LOOPBACK, "disabled", "required", true,  true,  },
+      { BindMode::LOOPBACK, "disabled", "required", false, true,  },
+      { BindMode::LOOPBACK, "disabled", "disabled", true,  false, },
+      { BindMode::LOOPBACK, "disabled", "disabled", false, true,  },
 #if defined(__linux__)
-      { ExternalMiniCluster::BindMode::UNIQUE_LOOPBACK, "required", "required", true,  true,  },
-      { ExternalMiniCluster::BindMode::UNIQUE_LOOPBACK, "required", "required", false, true,  },
-      //ExternalMiniCluster::BindMode::UNIQUE_LOOPBACK, "required", "disabled": non-acceptable
-      //ExternalMiniCluster::BindMode::UNIQUE_LOOPBACK, "required", "disabled": non-acceptable
-      { ExternalMiniCluster::BindMode::UNIQUE_LOOPBACK, "disabled", "required", true,  true,  },
-      { ExternalMiniCluster::BindMode::UNIQUE_LOOPBACK, "disabled", "required", false, true,  },
-      { ExternalMiniCluster::BindMode::UNIQUE_LOOPBACK, "disabled", "disabled", true,  false, },
-      { ExternalMiniCluster::BindMode::UNIQUE_LOOPBACK, "disabled", "disabled", false, false, },
+      { BindMode::UNIQUE_LOOPBACK, "required", "required", true,  true,  },
+      { BindMode::UNIQUE_LOOPBACK, "required", "required", false, true,  },
+      //BindMode::UNIQUE_LOOPBACK, "required", "disabled": non-acceptable
+      //BindMode::UNIQUE_LOOPBACK, "required", "disabled": non-acceptable
+      { BindMode::UNIQUE_LOOPBACK, "disabled", "required", true,  true,  },
+      { BindMode::UNIQUE_LOOPBACK, "disabled", "required", false, true,  },
+      { BindMode::UNIQUE_LOOPBACK, "disabled", "disabled", true,  false, },
+      { BindMode::UNIQUE_LOOPBACK, "disabled", "disabled", false, false, },
 #endif
     }
 ));

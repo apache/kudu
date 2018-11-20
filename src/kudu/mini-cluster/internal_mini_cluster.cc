@@ -72,7 +72,7 @@ InternalMiniClusterOptions::InternalMiniClusterOptions()
   : num_masters(1),
     num_tablet_servers(1),
     num_data_dirs(1),
-    bind_mode(MiniCluster::kDefaultBindMode) {
+    bind_mode(kDefaultBindMode) {
 }
 
 InternalMiniCluster::InternalMiniCluster(Env* env, InternalMiniClusterOptions options)
@@ -132,7 +132,7 @@ Status InternalMiniCluster::StartMasters() {
     vector<HostPort> master_rpc_addrs;
     for (int i = 0; i < num_masters; i++) {
       unique_ptr<Socket> reserved_socket;
-      RETURN_NOT_OK_PREPEND(ReserveDaemonSocket(MiniCluster::MASTER, i, opts_.bind_mode,
+      RETURN_NOT_OK_PREPEND(ReserveDaemonSocket(DaemonType::MASTER, i, opts_.bind_mode,
                                                 &reserved_socket),
                             "failed to reserve master socket address");
 
@@ -198,7 +198,7 @@ Status InternalMiniCluster::AddTabletServer() {
     ts_rpc_port = opts_.tserver_rpc_ports[new_idx];
   }
 
-  string bind_ip = GetBindIpForDaemon(MiniCluster::TSERVER, new_idx, opts_.bind_mode);
+  string bind_ip = GetBindIpForDaemonWithType(MiniCluster::TSERVER, new_idx, opts_.bind_mode);
   gscoped_ptr<MiniTabletServer> tablet_server(new MiniTabletServer(GetTabletServerFsRoot(new_idx),
                                                                    HostPort(bind_ip, ts_rpc_port),
                                                                    opts_.num_data_dirs));

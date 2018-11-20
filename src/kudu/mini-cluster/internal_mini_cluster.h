@@ -27,11 +27,11 @@
 #include "kudu/client/shared_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/mini-cluster/mini_cluster.h"
+#include "kudu/util/net/net_util.h"
 
 namespace kudu {
 
 class Env;
-class HostPort;
 class Status;
 
 namespace client {
@@ -76,7 +76,7 @@ struct InternalMiniClusterOptions {
   // The default may only be used from a gtest unit test.
   std::string cluster_root;
 
-  MiniCluster::BindMode bind_mode;
+  BindMode bind_mode;
 
   // List of RPC ports for the tservers to run on.
   // Defaults to an empty list.

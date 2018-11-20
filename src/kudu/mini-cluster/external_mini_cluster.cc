@@ -105,7 +105,7 @@ static double kMasterCatalogManagerTimeoutSeconds = 60.0;
 ExternalMiniClusterOptions::ExternalMiniClusterOptions()
     : num_masters(1),
       num_tablet_servers(1),
-      bind_mode(MiniCluster::kDefaultBindMode),
+      bind_mode(kDefaultBindMode),
       num_data_dirs(1),
       enable_kerberos(false),
       hms_mode(HmsMode::NONE),
@@ -244,9 +244,9 @@ Status ExternalMiniCluster::Start() {
   if (opts_.enable_sentry) {
     sentry_.reset(new sentry::MiniSentry());
     string host = GetBindIpForExternalServer(0);
-    uint16_t port = opts_.bind_mode == UNIQUE_LOOPBACK ? 10000 : 0;
+    uint16_t port = opts_.bind_mode == BindMode::UNIQUE_LOOPBACK ? 10000 : 0;
     sentry_->SetAddress(HostPort(host, port));
-    if (opts_.bind_mode != UNIQUE_LOOPBACK) {
+    if (opts_.bind_mode != BindMode::UNIQUE_LOOPBACK) {
       RETURN_NOT_OK_PREPEND(StartSentry(), "Failed to start the Sentry service");
     }
   }
@@ -276,7 +276,7 @@ Status ExternalMiniCluster::Start() {
 
     // (Re)start Sentry with the HMS address.
     if (opts_.enable_sentry) {
-      if (opts_.bind_mode != UNIQUE_LOOPBACK) {
+      if (opts_.bind_mode != BindMode::UNIQUE_LOOPBACK) {
         RETURN_NOT_OK_PREPEND(StopSentry(),
                               "Failed to stop the Sentry service");
       }
@@ -434,7 +434,7 @@ Status ExternalMiniCluster::StartMasters() {
   } else {
     for (int i = 0; i < num_masters; i++) {
       unique_ptr<Socket> reserved_socket;
-      RETURN_NOT_OK_PREPEND(ReserveDaemonSocket(MiniCluster::MASTER, i, opts_.bind_mode,
+      RETURN_NOT_OK_PREPEND(ReserveDaemonSocket(DaemonType::MASTER, i, opts_.bind_mode,
                                                 &reserved_socket),
                             "failed to reserve master socket address");
       Sockaddr addr;
@@ -522,15 +522,18 @@ Status ExternalMiniCluster::StartMasters() {
 }
 
 string ExternalMiniCluster::GetBindIpForTabletServer(int index) const {
-  return MiniCluster::GetBindIpForDaemon(MiniCluster::TSERVER, index, opts_.bind_mode);
+  return MiniCluster::GetBindIpForDaemonWithType(MiniCluster::TSERVER, index,
+                                                 opts_.bind_mode);
 }
 
 string ExternalMiniCluster::GetBindIpForMaster(int index) const {
-  return MiniCluster::GetBindIpForDaemon(MiniCluster::MASTER, index, opts_.bind_mode);
+  return MiniCluster::GetBindIpForDaemonWithType(MiniCluster::MASTER, index,
+                                                 opts_.bind_mode);
 }
 
 string ExternalMiniCluster::GetBindIpForExternalServer(int index) const {
-  return MiniCluster::GetBindIpForDaemon(MiniCluster::EXTERNAL_SERVER, index, opts_.bind_mode);
+  return MiniCluster::GetBindIpForDaemonWithType(MiniCluster::EXTERNAL_SERVER,
+                                                 index, opts_.bind_mode);
 }
 
 Status ExternalMiniCluster::AddTabletServer() {
@@ -1105,13 +1108,13 @@ void ExternalDaemon::Shutdown() {
   // Before we kill the process, store the addresses. If we're told to
   // start again we'll reuse these. Store only the port if the
   // daemons were using wildcard address for binding.
-  if (rpc_bind_address().host() != MiniCluster::kWildcardIpAddr) {
+  if (rpc_bind_address().host() != kWildcardIpAddr) {
     bound_rpc_ = bound_rpc_hostport();
     bound_http_ = bound_http_hostport();
   } else {
-    bound_rpc_.set_host(MiniCluster::kWildcardIpAddr);
+    bound_rpc_.set_host(kWildcardIpAddr);
     bound_rpc_.set_port(bound_rpc_hostport().port());
-    bound_http_.set_host(MiniCluster::kWildcardIpAddr);
+    bound_http_.set_host(kWildcardIpAddr);
     bound_http_.set_port(bound_http_hostport().port());
   }
 

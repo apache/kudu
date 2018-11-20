@@ -32,7 +32,6 @@
 #include "kudu/gutil/strings/util.h" // IWYU pragma: keep
 #include "kudu/hms/hms_client.h"
 #include "kudu/hms/mini_hms.h"
-#include "kudu/mini-cluster/mini_cluster.h"
 #include "kudu/security/test/mini_kdc.h"
 #include "kudu/thrift/client.h"
 #include "kudu/util/monotime.h"
@@ -143,7 +142,7 @@ TEST_P(ExternalMiniClusterTest, TestBasicOperation) {
     ExternalMaster* master = CHECK_NOTNULL(cluster.master(i));
     HostPort master_rpc = master->bound_rpc_hostport();
     string expected_prefix = Substitute("$0:", cluster.GetBindIpForMaster(i));
-    if (cluster.bind_mode() == MiniCluster::UNIQUE_LOOPBACK) {
+    if (cluster.bind_mode() == BindMode::UNIQUE_LOOPBACK) {
       EXPECT_NE(expected_prefix, "127.0.0.1:") << "Should bind to unique per-server hosts";
     }
     EXPECT_TRUE(HasPrefixString(master_rpc.ToString(), expected_prefix)) << master_rpc.ToString();
@@ -158,7 +157,7 @@ TEST_P(ExternalMiniClusterTest, TestBasicOperation) {
     ExternalTabletServer* ts = CHECK_NOTNULL(cluster.tablet_server(i));
     HostPort ts_rpc = ts->bound_rpc_hostport();
     string expected_prefix = Substitute("$0:", cluster.GetBindIpForTabletServer(i));
-    if (cluster.bind_mode() == MiniCluster::UNIQUE_LOOPBACK) {
+    if (cluster.bind_mode() == BindMode::UNIQUE_LOOPBACK) {
       EXPECT_NE(expected_prefix, "127.0.0.1:") << "Should bind to unique per-server hosts";
     }
     EXPECT_TRUE(HasPrefixString(ts_rpc.ToString(), expected_prefix)) << ts_rpc.ToString();

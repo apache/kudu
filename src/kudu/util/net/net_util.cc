@@ -72,6 +72,12 @@ using strings::Substitute;
 
 namespace kudu {
 
+// Allow 18-bit PIDs, max PID up to 147456, for binding in UNIQUE_LOOPBACK mode.
+static const int kPidBits = 18;
+static const int kServerIdxBits = 24 - kPidBits;
+// The maximum allowed number of 'indexed servers' for binding in UNIQUE_LOOPBACK mode.
+const int kServersMaxNum = (1 << kServerIdxBits) - 2;
+
 namespace {
 
 using AddrInfo = unique_ptr<addrinfo, function<void(addrinfo*)>>;
@@ -440,6 +446,37 @@ void TryRunLsof(const Sockaddr& addr, vector<string>* log) {
     LOG_STRING(WARNING, log) << s.ToString();
   }
   LOG_STRING(WARNING, log) << results;
+}
+
+string GetBindIpForDaemon(int index, BindMode bind_mode) {
+  // The server index should range from (0, max_servers] since
+  // the range for last octet for a valid unicast IP address ranges is (0, 255).
+  CHECK(0 < index && index <= kServersMaxNum) << Substitute(
+      "server index $0 is not in range ($1, $2]", index, 0, kServersMaxNum);
+
+  switch (bind_mode) {
+    case BindMode::UNIQUE_LOOPBACK: {
+      uint32_t pid = getpid();
+      CHECK_LT(pid, 1 << kPidBits) << Substitute(
+          "PID $0 is more than $1 bits wide", pid, kPidBits);
+      uint32_t ip = (pid << kServerIdxBits) | static_cast<uint32_t>(index);
+      uint8_t octets[] = {
+          static_cast<uint8_t>((ip >> 16) & 0xff),
+          static_cast<uint8_t>((ip >>  8) & 0xff),
+          static_cast<uint8_t>((ip >>  0) & 0xff),
+      };
+      // Range for the last octet of a valid unicast IP address is (0, 255).
+      CHECK(0 < octets[2] && octets[2] < UINT8_MAX) << Substitute(
+          "last IP octet $0 is not in range ($1, $2)", octets[2], 0, UINT8_MAX);
+      return Substitute("127.$0.$1.$2", octets[0], octets[1], octets[2]);
+    }
+    case BindMode::WILDCARD:
+      return kWildcardIpAddr;
+    case BindMode::LOOPBACK:
+      return kLoopbackIpAddr;
+    default:
+      LOG(FATAL) << "unknown bind mode";;
+  }
 }
 
 } // namespace kudu

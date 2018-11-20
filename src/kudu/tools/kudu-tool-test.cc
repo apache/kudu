@@ -1713,7 +1713,7 @@ TEST_F(ToolTest, TestRemoteReplicaCopy) {
   // connect to tablet servers bound to wildcard ip addresses.
   ExternalMiniClusterOptions opts;
   opts.num_tablet_servers = kNumTservers;
-  opts.bind_mode = cluster::MiniCluster::WILDCARD;
+  opts.bind_mode = BindMode::WILDCARD;
   opts.extra_master_flags.emplace_back(
       "--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
   opts.extra_tserver_flags.emplace_back("--enable_leader_failure_detection=false");

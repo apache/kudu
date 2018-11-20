@@ -17,9 +17,6 @@
 
 #include "kudu/mini-cluster/mini_cluster.h"
 
-#include <unistd.h>
-
-#include <cstdint>
 #include <ostream>
 #include <string>
 #include <utility>
@@ -37,61 +34,35 @@ using strings::Substitute;
 namespace kudu {
 namespace cluster {
 
-string MiniCluster::GetBindIpForDaemon(DaemonType type, int index, BindMode bind_mode) {
-  static const int kPidBits = 18;
-  static const int kServerIdxBits = 24 - kPidBits;
-  static const int kServersMaxNum = (1 << kServerIdxBits) - 2;
-  CHECK(0 <= index && index < kServersMaxNum) << Substitute(
-      "server index $0 is not in range [$1, $2)", index, 0, kServersMaxNum);
-
-  switch (bind_mode) {
-    case UNIQUE_LOOPBACK: {
-      uint32_t pid = getpid();
-      CHECK_LT(pid, 1 << kPidBits) << Substitute(
-          "PID $0 is more than $1 bits wide", pid, kPidBits);
-      int idx;
-      // Partition the index space 'kServersMaxNum' into three portions, one for each
-      // daemon type, to get unique address. If a daemon index spans over the portion
-      // reserved for another type, then duplicate address can be generated. Though this
-      // should be enough for our current tests.
-      switch (type) {
-        case MASTER:
-          idx = index + 1;
-          break;
-        case TSERVER:
-          idx = kServersMaxNum - index;
-          break;
-        case EXTERNAL_SERVER:
-          idx = kServersMaxNum / 3 + index;
-          break;
-        default:
-          LOG(FATAL) << type;
-      }
-      uint32_t ip = (pid << kServerIdxBits) | static_cast<uint32_t>(idx);
-      uint8_t octets[] = {
-          static_cast<uint8_t>((ip >> 16) & 0xff),
-          static_cast<uint8_t>((ip >>  8) & 0xff),
-          static_cast<uint8_t>((ip >>  0) & 0xff),
-      };
-      // Range for the last octet of a valid unicast IP address is (0, 255).
-      CHECK(0 < octets[2] && octets[2] < UINT8_MAX) << Substitute(
-          "last IP octet $0 is not in range ($1, $2)", octets[2], 0, UINT8_MAX);
-      return Substitute("127.$0.$1.$2", octets[0], octets[1], octets[2]);
-    }
-    case WILDCARD:
-      return kWildcardIpAddr;
-    case LOOPBACK:
-      return kLoopbackIpAddr;
+string MiniCluster::GetBindIpForDaemonWithType(DaemonType type,
+                                               int index,
+                                               BindMode bind_mode) {
+  int idx;
+  // Partition the index space 'kServersMaxNum' into three portions, one for each
+  // daemon type, to get unique address. If a daemon index spans over the portion
+  // reserved for another type, then duplicate address can be generated. Though this
+  // should be enough for our current tests.
+  switch (type) {
+    case MASTER:
+      idx = kServersMaxNum - index;
+      break;
+    case TSERVER:
+      idx = index + 1;
+      break;
+    case EXTERNAL_SERVER:
+      idx = kServersMaxNum / 3 + index;
+      break;
     default:
-      LOG(FATAL) << bind_mode;
+      LOG(FATAL) << type;
   }
+  return GetBindIpForDaemon(idx, bind_mode);
 }
 
 Status MiniCluster::ReserveDaemonSocket(DaemonType type,
                                         int index,
                                         BindMode bind_mode,
                                         unique_ptr<Socket>* socket) {
-  string ip = GetBindIpForDaemon(type, index, bind_mode);
+  string ip = GetBindIpForDaemonWithType(type, index, bind_mode);
   Sockaddr sock_addr;
   RETURN_NOT_OK(sock_addr.ParseString(ip, 0));
 

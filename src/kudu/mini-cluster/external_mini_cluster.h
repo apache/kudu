@@ -110,7 +110,7 @@ struct ExternalMiniClusterOptions {
   // Default: "", which uses the current value of FLAGS_block_manager.
   std::string block_manager_type;
 
-  MiniCluster::BindMode bind_mode;
+  BindMode bind_mode;
 
   // The path where the kudu daemons should be run from.
   //

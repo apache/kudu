@@ -94,7 +94,7 @@ TEST_F(MasterMigrationTest, TestEndToEndMigration) {
   for (int i = 0; i < kNumMasters; i++) {
     unique_ptr<Socket> reserved_socket;
     ASSERT_OK(MiniCluster::ReserveDaemonSocket(MiniCluster::MASTER, i,
-                                               MiniCluster::kDefaultBindMode,
+                                               kDefaultBindMode,
                                                &reserved_socket));
     Sockaddr addr;
     ASSERT_OK(reserved_socket->GetSocketAddress(&addr));
@@ -105,7 +105,7 @@ TEST_F(MasterMigrationTest, TestEndToEndMigration) {
   ExternalMiniClusterOptions opts;
   opts.num_masters = 1;
   opts.master_rpc_addresses = { master_rpc_addresses[0] };
-  opts.bind_mode = cluster::MiniCluster::LOOPBACK;
+  opts.bind_mode = BindMode::LOOPBACK;
 
   unique_ptr<ExternalMiniCluster> cluster(new ExternalMiniCluster(opts));
   ASSERT_OK(cluster->Start());
