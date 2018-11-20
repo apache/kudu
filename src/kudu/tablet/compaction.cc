@@ -205,8 +205,7 @@ class DiskRowSetCompactionInput : public CompactionInput {
         arena_(32 * 1024),
         block_(base_iter_->schema(), kRowsPerBlock, &arena_),
         redo_mutation_block_(kRowsPerBlock, static_cast<Mutation *>(nullptr)),
-        undo_mutation_block_(kRowsPerBlock, static_cast<Mutation *>(nullptr)),
-        first_rowid_in_block_(0) {}
+        undo_mutation_block_(kRowsPerBlock, static_cast<Mutation *>(nullptr)) {}
 
   Status Init() override {
     ScanSpec spec;
@@ -246,7 +245,6 @@ class DiskRowSetCompactionInput : public CompactionInput {
       Mutation::ReverseMutationList(&input_row.undo_head);
     }
 
-    first_rowid_in_block_ += block_.nrows();
     return Status::OK();
   }
 
@@ -272,8 +270,6 @@ class DiskRowSetCompactionInput : public CompactionInput {
   RowBlock block_;
   vector<Mutation *> redo_mutation_block_;
   vector<Mutation *> undo_mutation_block_;
-
-  rowid_t first_rowid_in_block_;
 
   enum {
     kRowsPerBlock = 100
@@ -1221,12 +1217,6 @@ Status ReupdateMissedDeltas(const IOContext* io_context,
   vector<CompactionInputRow> rows;
   const Schema* schema = &input->schema();
   const Schema key_schema(input->schema().CreateKeyProjection());
-
-  // Arena and projector to store/project row keys for missed delta updates
-  Arena arena(1024);
-  RowProjector key_projector(schema, &key_schema);
-  RETURN_NOT_OK(key_projector.Init());
-  faststring buf;
 
   rowid_t output_row_offset = 0;
   while (input->HasMoreBlocks()) {
