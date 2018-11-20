@@ -1232,6 +1232,9 @@ The length of time rebalancing is run for can be controlled with the flag
 balanced. To control the amount of resources devoted to rebalancing, modify
 the flag `--max_moves_per_server`. See `kudu cluster rebalance --help` for more.
 
+It's safe to stop the rebalancer tool at any time. When restarted, the
+rebalancer will continue rebalancing the cluster.
+
 The rebalancing tool can rebalance Kudu clusters running older versions as well,
 with some restrictions. Consult the following table for more information. In the
 table, "RF" stands for "replication factor".
