@@ -1235,6 +1235,14 @@ the flag `--max_moves_per_server`. See `kudu cluster rebalance --help` for more.
 It's safe to stop the rebalancer tool at any time. When restarted, the
 rebalancer will continue rebalancing the cluster.
 
+The rebalancer requires all registered tablet servers to be up and running
+to proceed with the rebalancing process. That's to avoid possible conflicts
+and races with the automatic re-replication and keep replica placement optimal
+for current configuration of the cluster. If a tablet server becomes
+unavailable during the rebalancing session, the rebalancer will exit. As noted
+above, it's safe to restart the rebalancer after resolving the issue with
+unavailable tablet servers.
+
 The rebalancing tool can rebalance Kudu clusters running older versions as well,
 with some restrictions. Consult the following table for more information. In the
 table, "RF" stands for "replication factor".
