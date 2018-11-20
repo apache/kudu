@@ -200,7 +200,9 @@ Status CheckReplicas(const RunnerContext& context) {
   bool all_running = true;
   for (const auto& r : replicas) {
     const TabletStatusPB& rs = r.tablet_status();
-    if (rs.state() != tablet::RUNNING) {
+    // It's ok if the tablet replica isn't running if it's tombstoned.
+    if (rs.state() != tablet::RUNNING &&
+        rs.tablet_data_state() != tablet::TABLET_DATA_TOMBSTONED) {
       cerr << "Tablet id: " << rs.tablet_id() << " is "
            << tablet::TabletStatePB_Name(rs.state()) << endl;
       all_running = false;
@@ -208,10 +210,10 @@ Status CheckReplicas(const RunnerContext& context) {
   }
 
   if (all_running) {
-    cout << "All tablets are running" << endl;
+    cout << "All tablet replicas are running" << endl;
     return Status::OK();
   }
-  return Status::IllegalState("Not all tablets are running");
+  return Status::IllegalState("Not all tablet replicas are running");
 }
 
 Status DeleteReplica(const RunnerContext& context) {
@@ -394,7 +396,10 @@ Status UnsafeChangeConfig(const RunnerContext& context) {
 unique_ptr<Mode> BuildRemoteReplicaMode() {
   unique_ptr<Action> check_replicas =
       ActionBuilder("check", &CheckReplicas)
-      .Description("Check if all tablet replicas on a Kudu Tablet Server are running")
+      .Description("Check if all tablet replicas on a Kudu tablet server are "
+                   "running. Tombstoned replica do not count as not running, "
+                   "because they are just records of the previous existence of "
+                   "a replica.")
       .AddRequiredParameter({ kTServerAddressArg, kTServerAddressDesc })
       .Build();
 

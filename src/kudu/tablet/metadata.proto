@@ -165,7 +165,7 @@ enum TabletStatePB {
   // state Peers are available for client RPCs.
   RUNNING = 1;
 
-  // The tablet failed to for some reason. TabletReplica::error() will return
+  // The tablet failed for some reason. TabletReplica::error() will return
   // the reason for the failure.
   FAILED = 2;
 
