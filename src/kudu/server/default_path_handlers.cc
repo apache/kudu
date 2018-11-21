@@ -28,11 +28,14 @@
 #include <vector>
 
 #include <boost/algorithm/string/predicate.hpp>
-#include <boost/bind.hpp> // IWYU pragma: keep
+#include <boost/bind.hpp>
 #include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
+
 #ifdef TCMALLOC_ENABLED
+#include <boost/algorithm/string/replace.hpp>
+#include <boost/iterator/iterator_traits.hpp>
 #include <gperftools/malloc_extension.h>
 #endif
 
@@ -59,7 +62,13 @@
 #include "kudu/util/status.h"
 #include "kudu/util/web_callback_registry.h"
 
+#ifdef TCMALLOC_ENABLED
+#include "kudu/util/faststring.h"
+#endif
+
 using std::ifstream;
+using std::ostringstream;
+using std::shared_ptr;
 using std::string;
 using std::vector;
 using strings::Substitute;
@@ -76,8 +85,6 @@ DECLARE_string(rpc_authentication);
 DECLARE_string(webserver_certificate_file);
 
 namespace kudu {
-
-using std::shared_ptr;
 
 namespace {
 // Html/Text formatting tags
@@ -122,7 +129,7 @@ static void LogsHandler(const Webserver::WebRequest& req, Webserver::WebResponse
     // practice.
     log.seekg(seekpos);
     (*output)["web_log_bytes"] = FLAGS_web_log_bytes;
-    std::ostringstream ss;
+    ostringstream ss;
     ss << log.rdbuf();
     (*output)["log"] = ss.str();
   }
@@ -134,7 +141,7 @@ static void LogsHandler(const Webserver::WebRequest& req, Webserver::WebResponse
 // escaped if in the raw text mode, e.g. "/varz?raw".
 static void FlagsHandler(const Webserver::WebRequest& req,
                          Webserver::PrerenderedWebResponse* resp) {
-  std::ostringstream* output = resp->output;
+  ostringstream* output = resp->output;
   bool as_text = (req.parsed_args.find("raw") != req.parsed_args.end());
   Tags tags(as_text);
 
@@ -149,7 +156,7 @@ static void FlagsHandler(const Webserver::WebRequest& req,
 // Prints out the current stack trace of all threads in the process.
 static void StacksHandler(const Webserver::WebRequest& /*req*/,
                           Webserver::PrerenderedWebResponse* resp) {
-  std::ostringstream* output = resp->output;
+  ostringstream* output = resp->output;
 
   StackTraceSnapshot snap;
   auto start = MonoTime::Now();
@@ -182,7 +189,7 @@ static void StacksHandler(const Webserver::WebRequest& /*req*/,
 // Registered to handle "/memz", and prints out memory allocation statistics.
 static void MemUsageHandler(const Webserver::WebRequest& req,
                             Webserver::PrerenderedWebResponse* resp) {
-  std::ostringstream* output = resp->output;
+  ostringstream* output = resp->output;
   bool as_text = (req.parsed_args.find("raw") != req.parsed_args.end());
   Tags tags(as_text);
 
@@ -203,7 +210,7 @@ static void MemUsageHandler(const Webserver::WebRequest& req,
 // Registered to handle "/mem-trackers", and prints out memory tracker information.
 static void MemTrackersHandler(const Webserver::WebRequest& /*req*/,
                                Webserver::PrerenderedWebResponse* resp) {
-  std::ostringstream* output = resp->output;
+  ostringstream* output = resp->output;
   int64_t current_consumption = process_memory::CurrentConsumption();
   int64_t hard_limit = process_memory::HardLimit();
   *output << "<h1>Process memory usage</h1>\n";
@@ -238,7 +245,7 @@ static void MemTrackersHandler(const Webserver::WebRequest& /*req*/,
              "<th>Limit</th>"
              "<th data-sorter='bytesSorter' "
              "    data-sortable='true' "
-             "'>Current Consumption</th>"
+             ">Current Consumption</th>"
              "<th data-sorter='bytesSorter' "
              "    data-sortable='true' "
              ">Peak Consumption</th>";
@@ -320,7 +327,7 @@ void AddDefaultPathHandlers(Webserver* webserver) {
 static void WriteMetricsAsJson(const MetricRegistry* const metrics,
                                const Webserver::WebRequest& req,
                                Webserver::PrerenderedWebResponse* resp) {
-  std::ostringstream* output = resp->output;
+  ostringstream* output = resp->output;
   const string* requested_metrics_param = FindOrNull(req.parsed_args, "metrics");
   vector<string> requested_metrics;
   MetricJsonOptions opts;
