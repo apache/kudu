@@ -158,7 +158,7 @@ class BoundCalculator {
       return;
     }
 
-    constexpr auto compareByDescendingDensity =
+    const auto compareByDescendingDensity =
         [](const RowSetInfo* a, const RowSetInfo* b) {
           return a->density() > b->density();
         };

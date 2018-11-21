@@ -235,8 +235,8 @@ void VerifyLocationRebalancingMoves(const TestClusterConfig& cfg) {
         // Here it's necessary to normalize both the reference and the actual
         // results before performing element-to-element comparison.
         vector<TableReplicaMove> ref_moves(cfg.expected_moves);
-        constexpr auto kMovesComparator = [](const TableReplicaMove& lhs,
-                                             const TableReplicaMove& rhs) {
+        const auto kMovesComparator = [](const TableReplicaMove& lhs,
+                                         const TableReplicaMove& rhs) {
           if (lhs.table_id != rhs.table_id) {
             return lhs.table_id < rhs.table_id;
           }

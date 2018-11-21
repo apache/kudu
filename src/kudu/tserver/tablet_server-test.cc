@@ -3434,7 +3434,7 @@ TEST_F(TabletServerTest, TestScannerCheckMatchingUser) {
     checksum_val = checksum_resp.checksum();
   }
 
-  constexpr auto verify_authz_error = [] (const Status& s) {
+  const auto verify_authz_error = [] (const Status& s) {
     EXPECT_TRUE(s.IsRemoteError()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "Not authorized");
   };
