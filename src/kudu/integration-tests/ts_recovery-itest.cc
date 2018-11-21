@@ -149,18 +149,19 @@ void TsRecoveryITest::StartClusterOneTs(vector<string> extra_tserver_flags,
 // A subsequent tablet copy and tablet bootstrap should cause the replica to become healthy again.
 TEST_F(TsRecoveryITest, TestTabletRecoveryAfterSegmentDelete) {
   // Start a cluster with 3 tablet servers consisting of 1 tablet with 3 replicas.
+  // Configure a small log segment size to quickly create new log segments.
+  // Since we want to write as quickly as possible, we disable WAL compression.
   vector<string> flags;
-  // The log segment size and the number of log segments to retain is configured to be very small
-  // that is done to be able to quickly fill up the log segments in order to corrupt them
-  // in a way that exercises the necessary code paths for this regression test.
   flags.emplace_back("--log_segment_size_mb=1");
   flags.emplace_back("--log_min_segments_to_retain=3");
+  flags.emplace_back("--log_compression_codec=''");
   NO_FATALS(StartCluster(flags));
 
   const int kNumTablets = 1;
   const int kNumTs = 3;
   const int kTsIndex = 0; // Index of the tablet server we'll use for the test.
-  MonoDelta timeout = MonoDelta::FromSeconds(30);
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  const MonoDelta kLongTimeout = MonoDelta::FromSeconds(60);
 
   // Create a new tablet.
   TestWorkload write_workload(cluster_.get());
@@ -170,9 +171,9 @@ TEST_F(TsRecoveryITest, TestTabletRecoveryAfterSegmentDelete) {
   write_workload.Setup();
 
   // Retrieve tablet id.
-  TServerDetails *ts = ts_map_[cluster_->tablet_server(kTsIndex)->uuid()];
+  TServerDetails* ts = ts_map_[cluster_->tablet_server(kTsIndex)->uuid()];
   vector<tserver::ListTabletsResponsePB::StatusAndSchemaPB> tablets;
-  ASSERT_OK(WaitForNumTabletsOnTS(ts, 1, timeout, &tablets));
+  ASSERT_OK(WaitForNumTabletsOnTS(ts, 1, kTimeout, &tablets));
   string tablet_id = tablets[0].tablet_status().tablet_id();
 
   LOG(INFO) << "Starting workload...";
@@ -184,13 +185,13 @@ TEST_F(TsRecoveryITest, TestTabletRecoveryAfterSegmentDelete) {
   ASSERT_OK(inspect_->WaitForMinFilesInTabletWalDirOnTS(kTsIndex,
             tablet_id, /* num wal segments + index file */ 4));
 
-  auto *ets = cluster_->tablet_server(0);
+  const auto* ets = cluster_->tablet_server(0);
 
   write_workload.StopAndJoin();
 
   // Get the current consensus state.
   ConsensusStatePB orig_cstate;
-  ASSERT_OK(GetConsensusState(ts, tablet_id, timeout, EXCLUDE_HEALTH_REPORT, &orig_cstate));
+  ASSERT_OK(GetConsensusState(ts, tablet_id, kTimeout, EXCLUDE_HEALTH_REPORT, &orig_cstate));
 
   // Shutdown the cluster.
   cluster_->Shutdown();
@@ -221,14 +222,13 @@ TEST_F(TsRecoveryITest, TestTabletRecoveryAfterSegmentDelete) {
   // The master will evict and then re-add the FAILED tablet replica.
   for (unsigned i = 0; i < kNumTs; ++i) {
     TServerDetails *ts_details = ts_map_[cluster_->tablet_server(i)->uuid()];
-    // Timeout atleast 60s to avoid test being flaky on TSAN mode.
-    ASSERT_OK(WaitUntilTabletRunning(ts_details, tablet_id,
-              MonoDelta::FromSeconds(60)));
+    // Wait for a bit longer to avoid flakiness.
+    ASSERT_OK(WaitUntilTabletRunning(ts_details, tablet_id, kLongTimeout));
   }
 
   // Ensure that the config changed since we started (evicted, re-added).
   ConsensusStatePB new_cstate;
-  ASSERT_OK(GetConsensusState(ts, tablet_id, timeout, EXCLUDE_HEALTH_REPORT, &new_cstate));
+  ASSERT_OK(GetConsensusState(ts, tablet_id, kTimeout, EXCLUDE_HEALTH_REPORT, &new_cstate));
 
   ASSERT_GT(new_cstate.committed_config().opid_index(),
             orig_cstate.committed_config().opid_index());
