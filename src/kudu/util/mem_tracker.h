@@ -31,6 +31,8 @@
 
 namespace kudu {
 
+class MemTrackerPB;
+
 // A MemTracker tracks memory consumption; it contains an optional limit and is
 // arranged into a tree structure such that the consumption tracked by a
 // MemTracker is also tracked by its ancestors.
@@ -94,7 +96,10 @@ class MemTracker : public std::enable_shared_from_this<MemTracker> {
       int64_t byte_limit, const std::string& id);
 
   // Returns a list of all the valid trackers.
-  static void ListTrackers(std::vector<std::shared_ptr<MemTracker> >* trackers);
+  static void ListTrackers(std::vector<std::shared_ptr<MemTracker>>* trackers);
+
+  // Marshals the tracker tree into 'pb'.
+  static void TrackersToPb(MemTrackerPB* pb);
 
   // Gets a shared_ptr to the "root" tracker, creating it if necessary.
   static std::shared_ptr<MemTracker> GetRootTracker();

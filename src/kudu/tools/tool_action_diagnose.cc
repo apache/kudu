@@ -16,7 +16,6 @@
 // under the License.
 
 #include <algorithm>
-#include <array>
 #include <cerrno>
 #include <fstream> // IWYU pragma: keep
 #include <memory>
@@ -24,16 +23,20 @@
 #include <unordered_map>
 #include <vector>
 
+#include <gflags/gflags_declare.h>
+
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tools/diagnostics_log_parser.h"
 #include "kudu/tools/tool_action.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/status.h"
 
+DECLARE_int64(timeout_ms);
+DECLARE_string(format);
+
 namespace kudu {
 namespace tools {
 
-using std::array;
 using std::ifstream;
 using std::string;
 using std::unique_ptr;

@@ -31,7 +31,10 @@
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/jsonwriter.h"
+#include "kudu/util/mem_tracker.pb.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/test_util.h"
 
 namespace kudu {
@@ -115,6 +118,146 @@ TEST(MemTrackerTest, TrackerHierarchy) {
   EXPECT_FALSE(p->LimitExceeded());
   c1->Release(40);
   c2->Release(60);
+}
+
+TEST(MemTrackerTest, TestToPb) {
+  shared_ptr<MemTracker> p0 = MemTracker::CreateTracker(100, "p0");
+  shared_ptr<MemTracker> c00 = MemTracker::CreateTracker(80, "c00", p0);
+  shared_ptr<MemTracker> gc000 = MemTracker::CreateTracker(40, "c000", c00);
+  shared_ptr<MemTracker> c01 = MemTracker::CreateTracker(40, "c01", p0);
+  shared_ptr<MemTracker> p1 = MemTracker::CreateTracker(120, "p1");
+  shared_ptr<MemTracker> c10 = MemTracker::CreateTracker(70, "c10", p1);
+
+  MemTrackerPB pb;
+  MemTracker::TrackersToPb(&pb);
+  const auto expected = R"({
+    "id": "root",
+    "limit": -1,
+    "current_consumption": 0,
+    "peak_consumption": 110,
+    "child_trackers": [
+        {
+            "id": "p0",
+            "parent_id": "root",
+            "limit": 100,
+            "current_consumption": 0,
+            "peak_consumption": 0,
+            "child_trackers": [
+                {
+                    "id": "c00",
+                    "parent_id": "p0",
+                    "limit": 80,
+                    "current_consumption": 0,
+                    "peak_consumption": 0,
+                    "child_trackers": [
+                        {
+                            "id": "c000",
+                            "parent_id": "c00",
+                            "limit": 40,
+                            "current_consumption": 0,
+                            "peak_consumption": 0
+                        }
+                    ]
+                },
+                {
+                    "id": "c01",
+                    "parent_id": "p0",
+                    "limit": 40,
+                    "current_consumption": 0,
+                    "peak_consumption": 0
+                }
+            ]
+        },
+        {
+            "id": "p1",
+            "parent_id": "root",
+            "limit": 120,
+            "current_consumption": 0,
+            "peak_consumption": 0,
+            "child_trackers": [
+                {
+                    "id": "c10",
+                    "parent_id": "p1",
+                    "limit": 70,
+                    "current_consumption": 0,
+                    "peak_consumption": 0
+                }
+            ]
+        }
+    ]
+})";
+  ASSERT_EQ(expected, JsonWriter::ToJson(pb, JsonWriter::Mode::PRETTY));
+
+  // Tickle the 'consumption' and 'peak_consumption' values a bit.
+  gc000->Consume(40);
+  gc000->Release(20);
+
+  // Need to release all memory before the root MemTracker is destroyed, even
+  // if the test fails.
+  SCOPED_CLEANUP({
+      gc000->Release(20);
+    });
+
+  pb.Clear();
+  MemTracker::TrackersToPb(&pb);
+  const auto expected_post_tickling = R"({
+    "id": "root",
+    "limit": -1,
+    "current_consumption": 20,
+    "peak_consumption": 110,
+    "child_trackers": [
+        {
+            "id": "p0",
+            "parent_id": "root",
+            "limit": 100,
+            "current_consumption": 20,
+            "peak_consumption": 40,
+            "child_trackers": [
+                {
+                    "id": "c00",
+                    "parent_id": "p0",
+                    "limit": 80,
+                    "current_consumption": 20,
+                    "peak_consumption": 40,
+                    "child_trackers": [
+                        {
+                            "id": "c000",
+                            "parent_id": "c00",
+                            "limit": 40,
+                            "current_consumption": 20,
+                            "peak_consumption": 40
+                        }
+                    ]
+                },
+                {
+                    "id": "c01",
+                    "parent_id": "p0",
+                    "limit": 40,
+                    "current_consumption": 0,
+                    "peak_consumption": 0
+                }
+            ]
+        },
+        {
+            "id": "p1",
+            "parent_id": "root",
+            "limit": 120,
+            "current_consumption": 0,
+            "peak_consumption": 0,
+            "child_trackers": [
+                {
+                    "id": "c10",
+                    "parent_id": "p1",
+                    "limit": 70,
+                    "current_consumption": 0,
+                    "peak_consumption": 0
+                }
+            ]
+        }
+    ]
+})";
+  ASSERT_EQ(expected_post_tickling,
+            JsonWriter::ToJson(pb, JsonWriter::Mode::PRETTY));
 }
 
 class GcFunctionHelper {

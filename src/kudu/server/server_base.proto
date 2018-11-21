@@ -22,6 +22,7 @@ option java_package = "org.apache.kudu.server";
 import "kudu/common/common.proto";
 import "kudu/common/wire_protocol.proto";
 import "kudu/rpc/rpc_header.proto";
+import "kudu/util/mem_tracker.proto";
 import "kudu/util/version_info.proto";
 
 // The status information dumped by a server after it starts.
@@ -145,6 +146,12 @@ message SetServerWallClockForTestsResponsePB {
   required bool success = 1;
 }
 
+message DumpMemTrackersRequestPB {
+}
+message DumpMemTrackersResponsePB {
+  optional MemTrackerPB root_tracker = 1;
+}
+
 service GenericService {
   option (kudu.rpc.default_authz_method) = "AuthorizeSuperUser";
 
@@ -171,4 +178,7 @@ service GenericService {
   rpc GetStatus(GetStatusRequestPB) returns (GetStatusResponsePB) {
     option (kudu.rpc.authz_method) = "AuthorizeClient";
   }
+
+  rpc DumpMemTrackers(DumpMemTrackersRequestPB)
+    returns (DumpMemTrackersResponsePB);
 }

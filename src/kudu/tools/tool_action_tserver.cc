@@ -153,9 +153,23 @@ Status ListTServers(const RunnerContext& context) {
   return Status::OK();
 }
 
+Status TserverDumpMemTrackers(const RunnerContext& context) {
+  const auto& address = FindOrDie(context.required_args, kTServerAddressArg);
+  return DumpMemTrackers(address, tserver::TabletServer::kDefaultPort);
+}
+
 } // anonymous namespace
 
 unique_ptr<Mode> BuildTServerMode() {
+  unique_ptr<Action> dump_memtrackers =
+      ActionBuilder("dump_memtrackers", &TserverDumpMemTrackers)
+      .Description("Dump the memtrackers from a Kudu Tablet Server")
+      .AddRequiredParameter({ kTServerAddressArg, kTServerAddressDesc })
+      .AddOptionalParameter("format")
+      .AddOptionalParameter("memtracker_output")
+      .AddOptionalParameter("timeout_ms")
+      .Build();
+
   unique_ptr<Action> get_flags =
       ActionBuilder("get_flags", &TServerGetFlags)
       .Description("Get the gflags for a Kudu Tablet Server")
@@ -200,6 +214,7 @@ unique_ptr<Mode> BuildTServerMode() {
 
   return ModeBuilder("tserver")
       .Description("Operate on a Kudu Tablet Server")
+      .AddAction(std::move(dump_memtrackers))
       .AddAction(std::move(get_flags))
       .AddAction(std::move(set_flag))
       .AddAction(std::move(status))

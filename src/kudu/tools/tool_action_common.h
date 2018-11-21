@@ -133,6 +133,11 @@ Status PrintServerFlags(const std::string& address, uint16_t default_port);
 Status SetServerFlag(const std::string& address, uint16_t default_port,
                      const std::string& flag, const std::string& value);
 
+// Dump the memtrackers of the server at 'address'.
+//
+// If 'address' does not contain a port, 'default_port' will be used instead.
+Status DumpMemTrackers(const std::string& address, uint16_t default_port);
+
 // Return true if 'str' matches any of the patterns in 'patterns', or if
 // 'patterns' is empty.
 bool MatchesAnyPattern(const std::vector<std::string>& patterns, const std::string& str);

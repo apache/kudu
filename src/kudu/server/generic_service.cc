@@ -42,6 +42,7 @@
 #include "kudu/util/debug/leak_annotations.h" // IWYU pragma: keep
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/flags.h"
+#include "kudu/util/mem_tracker.h"
 #include "kudu/util/status.h"
 
 DECLARE_string(time_source);
@@ -248,6 +249,13 @@ void GenericServiceImpl::GetStatus(const GetStatusRequestPB* /*req*/,
   if (!s.ok()) {
     StatusToPB(s, resp->mutable_error());
   }
+  rpc->RespondSuccess();
+}
+
+void GenericServiceImpl::DumpMemTrackers(const DumpMemTrackersRequestPB* /*req*/,
+                                         DumpMemTrackersResponsePB* resp,
+                                         rpc::RpcContext* rpc) {
+  MemTracker::TrackersToPb(resp->mutable_root_tracker());
   rpc->RespondSuccess();
 }
 

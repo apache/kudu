@@ -72,6 +72,20 @@ ADD_EXPORTABLE_LIBRARY(maintenance_manager_proto
   NONLINK_DEPS ${MAINTENANCE_MANAGER_PROTO_TGTS})
 
 #######################################
+# mem_tracker_proto
+#######################################
+
+PROTOBUF_GENERATE_CPP(
+  MEM_TRACKER_PROTO_SRCS MEM_TRACKER_PROTO_HDRS MEM_TRACKER_PROTO_TGTS
+  SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
+  BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
+  PROTO_FILES mem_tracker.proto)
+ADD_EXPORTABLE_LIBRARY(mem_tracker_proto
+  SRCS ${MEM_TRACKER_PROTO_SRCS}
+  DEPS protobuf
+  NONLINK_DEPS ${MEM_TRACKER_PROTO_TGTS})
+
+#######################################
 # pb_util_proto
 #######################################
 
@@ -238,6 +252,7 @@ set(UTIL_LIBS
   histogram_proto
   libev
   maintenance_manager_proto
+  mem_tracker_proto
   pb_util_proto
   protobuf
   version_info_proto

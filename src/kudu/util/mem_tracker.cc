@@ -24,10 +24,13 @@
 #include <list>
 #include <memory>
 #include <ostream>
+#include <stack>
+#include <type_traits>
 
 #include "kudu/gutil/once.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/mem_tracker.pb.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/process_memory.h"
 
@@ -37,6 +40,7 @@ namespace kudu {
 // somewhat from kudu.
 
 using std::deque;
+using std::stack;
 using std::list;
 using std::shared_ptr;
 using std::string;
@@ -169,7 +173,7 @@ shared_ptr<MemTracker> MemTracker::FindOrCreateGlobalTracker(
 
 void MemTracker::ListTrackers(vector<shared_ptr<MemTracker>>* trackers) {
   trackers->clear();
-  deque<shared_ptr<MemTracker> > to_process;
+  deque<shared_ptr<MemTracker>> to_process;
   to_process.push_front(GetRootTracker());
   while (!to_process.empty()) {
     shared_ptr<MemTracker> t = to_process.back();
@@ -182,6 +186,35 @@ void MemTracker::ListTrackers(vector<shared_ptr<MemTracker>>* trackers) {
         shared_ptr<MemTracker> child = child_weak.lock();
         if (child) {
           to_process.emplace_back(std::move(child));
+        }
+      }
+    }
+  }
+}
+
+void MemTracker::TrackersToPb(MemTrackerPB* pb) {
+  CHECK(pb);
+  stack<std::pair<shared_ptr<MemTracker>, MemTrackerPB*>> to_process;
+  to_process.emplace(std::make_pair(GetRootTracker(), pb));
+  while (!to_process.empty()) {
+    auto tracker_and_pb = std::move(to_process.top());
+    to_process.pop();
+    auto& tracker = tracker_and_pb.first;
+    auto* tracker_pb = tracker_and_pb.second;
+    tracker_pb->set_id(tracker->id());
+    if (tracker->parent()) {
+      tracker_pb->set_parent_id(tracker->parent()->id());
+    }
+    tracker_pb->set_limit(tracker->limit());
+    tracker_pb->set_current_consumption(tracker->consumption());
+    tracker_pb->set_peak_consumption(tracker->peak_consumption());
+    {
+      MutexLock l(tracker->child_trackers_lock_);
+      for (const auto& child_weak : tracker->child_trackers_) {
+        shared_ptr<MemTracker> child = child_weak.lock();
+        if (child) {
+          auto* child_pb = tracker_pb->add_child_trackers();
+          to_process.emplace(std::make_pair(std::move(child), child_pb));
         }
       }
     }

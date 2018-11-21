@@ -57,11 +57,13 @@
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/integration-tests/ts_itest-base.h"
 #include "kudu/master/master.pb.h"
+#include "kudu/master/sys_catalog.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tools/tool_test_util.h"
 #include "kudu/tserver/tablet_server-test-base.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
@@ -2054,6 +2056,57 @@ TEST_F(AdminCliTest, TestLocateRowAndCheckRowPresence) {
     ASSERT_STR_CONTAINS(stdout, expected_tablet_id);
     ASSERT_STR_CONTAINS(stdout, row_str);
   });
+}
+
+TEST_F(AdminCliTest, TestDumpMemTrackers) {
+  FLAGS_num_tablet_servers = 1;
+  FLAGS_num_replicas = 1;
+
+  NO_FATALS(BuildAndStart());
+
+  // Grab list of tablet_ids from any tserver so we can check the output.
+  vector<TServerDetails*> tservers;
+  vector<string> tablet_ids;
+  AppendValuesFromMap(tablet_servers_, &tservers);
+  ListRunningTabletIds(tservers.front(),
+                       MonoDelta::FromSeconds(30),
+                       &tablet_ids);
+  ASSERT_EQ(1, tablet_ids.size());
+  const string& tablet_id = tablet_ids[0];
+
+  // The tool should work against the master.
+  string stdout, stderr;
+  Status s = RunKuduTool({
+    "master",
+    "dump_memtrackers",
+    cluster_->master()->bound_rpc_hostport().ToString(),
+    "-format=csv",
+  }, &stdout, &stderr);
+  ASSERT_TRUE(s.ok()) << ToolRunInfo(s, stdout, stderr);
+
+  // The memtrackers dump from the master should contain a tracker for the
+  // systablet that has 'server' as its parent.
+  ASSERT_STR_CONTAINS(
+      stdout,
+      Substitute("tablet-$0,server",
+                 master::SysCatalogTable::kSysCatalogTabletId));
+
+  // The tool should work against the tablet server.
+  stdout.clear();
+  stderr.clear();
+  s = RunKuduTool({
+    "tserver",
+    "dump_memtrackers",
+    cluster_->tablet_server(0)->bound_rpc_hostport().ToString(),
+    "-memtracker_output=json_compact",
+  }, &stdout, &stderr);
+  ASSERT_TRUE(s.ok()) << ToolRunInfo(s, stdout, stderr);
+
+  // The memtrackers dump from the tablet server should contain a tracker for
+  // the tablet and some tracker that is a child of that tracker.
+  const string tablet_tracker_id = Substitute("tablet-$0", tablet_id);
+  ASSERT_STR_CONTAINS(stdout, Substitute("\"id\":\"$0\"", tablet_tracker_id));
+  ASSERT_STR_CONTAINS(stdout, Substitute("\"parent_id\":\"$0\"", tablet_tracker_id));
 }
 } // namespace tools
 } // namespace kudu

@@ -154,9 +154,23 @@ Status ListMasters(const RunnerContext& context) {
   return Status::OK();
 }
 
+Status MasterDumpMemTrackers(const RunnerContext& context) {
+  const auto& address = FindOrDie(context.required_args, kMasterAddressArg);
+  return DumpMemTrackers(address, master::Master::kDefaultPort);
+}
+
 } // anonymous namespace
 
 unique_ptr<Mode> BuildMasterMode() {
+  unique_ptr<Action> dump_memtrackers =
+      ActionBuilder("dump_memtrackers", &MasterDumpMemTrackers)
+      .Description("Dump the memtrackers from a Kudu Master")
+      .AddRequiredParameter({ kMasterAddressArg, kMasterAddressDesc })
+      .AddOptionalParameter("format")
+      .AddOptionalParameter("memtracker_output")
+      .AddOptionalParameter("timeout_ms")
+      .Build();
+
   unique_ptr<Action> get_flags =
       ActionBuilder("get_flags", &MasterGetFlags)
       .Description("Get the gflags for a Kudu Master")
@@ -200,6 +214,7 @@ unique_ptr<Mode> BuildMasterMode() {
 
   return ModeBuilder("master")
       .Description("Operate on a Kudu Master")
+      .AddAction(std::move(dump_memtrackers))
       .AddAction(std::move(get_flags))
       .AddAction(std::move(set_flag))
       .AddAction(std::move(status))

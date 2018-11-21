@@ -27,6 +27,7 @@
 #include <iterator>
 #include <memory>
 #include <numeric>
+#include <stack>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -70,6 +71,7 @@
 #include "kudu/tserver/tserver_service.proxy.h" // IWYU pragma: keep
 #include "kudu/util/faststring.h"
 #include "kudu/util/jsonwriter.h"
+#include "kudu/util/mem_tracker.pb.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
@@ -106,6 +108,10 @@ DEFINE_bool(all_flags, false, "Whether to return all flags, or only flags that "
                               "were explicitly set.");
 DEFINE_string(tables, "", "Tables to include (comma-separated list of table names)"
                           "If not specified, includes all tables.");
+
+DEFINE_string(memtracker_output, "table",
+              "One of 'json', 'json_compact' or 'table'. Table output flattens "
+              "the memtracker hierarchy.");
 
 namespace boost {
 template <typename Signature>
@@ -476,6 +482,48 @@ Status PrintServerTimestamp(const string& address, uint16_t default_port) {
                               proxy->ToString());
   }
   cout << resp.timestamp() << endl;
+  return Status::OK();
+}
+
+Status DumpMemTrackers(const string& address, uint16_t default_port) {
+  unique_ptr<GenericServiceProxy> proxy;
+  RETURN_NOT_OK(BuildProxy(address, default_port, &proxy));
+
+  server::DumpMemTrackersRequestPB req;
+  server::DumpMemTrackersResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(MonoDelta::FromMilliseconds(FLAGS_timeout_ms));
+  RETURN_NOT_OK(proxy->DumpMemTrackers(req, &resp, &rpc));
+
+  if (boost::iequals(FLAGS_memtracker_output, "json")) {
+    cout << JsonWriter::ToJson(resp.root_tracker(), JsonWriter::Mode::PRETTY)
+         << endl;
+  } else if (boost::iequals(FLAGS_memtracker_output, "json_compact")) {
+    cout << JsonWriter::ToJson(resp.root_tracker(), JsonWriter::Mode::COMPACT)
+         << endl;
+  } else if (boost::iequals(FLAGS_memtracker_output, "table")) {
+    DataTable table({ "id", "parent_id", "limit",
+                      "current consumption", "peak_consumption" });
+    const auto& root = resp.root_tracker();
+    std::stack<const MemTrackerPB*> to_process;
+    to_process.push(&root);
+    while (!to_process.empty()) {
+      const auto* tracker = to_process.top();
+      to_process.pop();
+      table.AddRow({ tracker->id(),
+                     tracker->has_parent_id() ? tracker->parent_id() : "<none>",
+                     std::to_string(tracker->limit()),
+                     std::to_string(tracker->current_consumption()),
+                     std::to_string(tracker->peak_consumption()) });
+      for (const auto& child_tracker : tracker->child_trackers()) {
+        to_process.push(&child_tracker);
+      }
+    }
+    RETURN_NOT_OK(table.PrintTo(cout));
+  } else {
+    return Status::InvalidArgument("unknown output type (--memtracker_output)",
+                                   FLAGS_memtracker_output);
+  }
   return Status::OK();
 }
 

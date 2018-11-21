@@ -552,6 +552,7 @@ TEST_F(ToolTest, TestModeHelp) {
   }
   {
     const vector<string> kMasterModeRegexes = {
+        "dump_memtrackers.*Dump the memtrackers",
         "get_flags.*Get the gflags",
         "set_flag.*Change a gflag value",
         "status.*Get the status",
@@ -615,6 +616,7 @@ TEST_F(ToolTest, TestModeHelp) {
   }
   {
     const vector<string> kTServerModeRegexes = {
+        "dump_memtrackers.*Dump the memtrackers",
         "get_flags.*Get the gflags",
         "set_flag.*Change a gflag value",
         "status.*Get the status",
