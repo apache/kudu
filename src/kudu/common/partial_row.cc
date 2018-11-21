@@ -499,6 +499,22 @@ Status KuduPartialRow::Set<TypeTraits<BOOL> >(int col_idx,
                                               bool owned);
 
 template
+Status KuduPartialRow::Set<TypeTraits<DECIMAL32> >(int col_idx,
+                                                   const TypeTraits<DECIMAL32>::cpp_type& val,
+                                                   bool owned);
+
+template
+Status KuduPartialRow::Set<TypeTraits<DECIMAL64> >(int col_idx,
+                                                   const TypeTraits<DECIMAL64>::cpp_type& val,
+                                                   bool owned);
+
+template
+Status KuduPartialRow::Set<TypeTraits<DECIMAL128> >(int col_idx,
+                                                    const TypeTraits<DECIMAL128>::cpp_type& val,
+                                                    bool owned);
+
+
+template
 Status KuduPartialRow::Set<TypeTraits<INT8> >(const Slice& col_name,
                                               const TypeTraits<INT8>::cpp_type& val,
                                               bool owned);
@@ -553,6 +569,21 @@ template
 Status KuduPartialRow::Set<TypeTraits<BINARY> >(const Slice& col_name,
                                                 const TypeTraits<BINARY>::cpp_type& val,
                                                 bool owned);
+
+template
+Status KuduPartialRow::Set<TypeTraits<DECIMAL32> >(const Slice& col_name,
+                                                   const TypeTraits<DECIMAL32>::cpp_type& val,
+                                                   bool owned);
+
+template
+Status KuduPartialRow::Set<TypeTraits<DECIMAL64> >(const Slice& col_name,
+                                                   const TypeTraits<DECIMAL64>::cpp_type& val,
+                                                   bool owned);
+
+template
+Status KuduPartialRow::Set<TypeTraits<DECIMAL128> >(const Slice& col_name,
+                                                    const TypeTraits<DECIMAL128>::cpp_type& val,
+                                                    bool owned);
 
 //------------------------------------------------------------
 // Getters

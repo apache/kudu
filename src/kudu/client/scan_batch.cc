@@ -311,6 +311,15 @@ Status KuduScanBatch::RowPtr::Get<TypeTraits<STRING> >(int col_idx, Slice* val) 
 template
 Status KuduScanBatch::RowPtr::Get<TypeTraits<BINARY> >(int col_idx, Slice* val) const;
 
+template
+Status KuduScanBatch::RowPtr::Get<TypeTraits<DECIMAL32> >(int col_idx, int32_t* val) const;
+
+template
+Status KuduScanBatch::RowPtr::Get<TypeTraits<DECIMAL64> >(int col_idx, int64_t* val) const;
+
+template
+Status KuduScanBatch::RowPtr::Get<TypeTraits<DECIMAL128> >(int col_idx, int128_t* val) const;
+
 Status KuduScanBatch::RowPtr::GetUnscaledDecimal(int col_idx, int128_t* val) const {
   const ColumnSchema& col = schema_->column(col_idx);
   const DataType col_type = col.type_info()->type();
