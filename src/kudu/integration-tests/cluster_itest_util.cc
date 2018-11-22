@@ -212,15 +212,16 @@ Status WaitForOpFromCurrentTerm(TServerDetails* replica,
 Status WaitForServersToAgree(const MonoDelta& timeout,
                              const TabletServerMap& tablet_servers,
                              const string& tablet_id,
-                             int64_t minimum_index) {
+                             int64_t minimum_index,
+                             consensus::OpIdType op_id_type) {
   const MonoTime deadline = MonoTime::Now() + timeout;
 
+  vector<TServerDetails*> servers;
+  AppendValuesFromMap(tablet_servers, &servers);
   for (int i = 1; MonoTime::Now() < deadline; i++) {
-    vector<TServerDetails*> servers;
-    AppendValuesFromMap(tablet_servers, &servers);
     vector<OpId> ids;
-    Status s = GetLastOpIdForEachReplica(tablet_id, servers, consensus::RECEIVED_OPID, timeout,
-                                         &ids);
+    Status s = GetLastOpIdForEachReplica(
+        tablet_id, servers, op_id_type, timeout, &ids);
     if (s.ok()) {
       bool any_behind = false;
       bool any_disagree = false;
@@ -248,8 +249,9 @@ Status WaitForServersToAgree(const MonoDelta& timeout,
     LOG(INFO) << "Not converged past " << minimum_index << " yet: " << ids;
     SleepFor(MonoDelta::FromMilliseconds(min(i * 100, 1000)));
   }
-  return Status::TimedOut(Substitute("Index $0 not available on all replicas after $1. ",
-                                              minimum_index, timeout.ToString()));
+  return Status::TimedOut(
+      Substitute("index $0 not available on all replicas after $1",
+                 minimum_index, timeout.ToString()));
 }
 
 // Wait until all specified replicas have logged the given index.

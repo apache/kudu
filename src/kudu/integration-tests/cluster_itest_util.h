@@ -125,15 +125,19 @@ Status WaitForOpFromCurrentTerm(TServerDetails* replica,
                                 const MonoDelta& timeout,
                                 consensus::OpId* opid = nullptr);
 
-// Wait until all of the servers have converged on the same log index.
-// The converged index must be at least equal to 'minimum_index'.
+// Wait until all of the servers have converged on the same log index. The
+// converged index must be at least equal to 'minimum_index'. The 'op_id_type'
+// parameter is specify which kind of operations to watch for while tracking
+// their indexes.
 //
 // Requires that all servers are running. Returns Status::TimedOut if the
 // indexes do not converge within the given timeout.
-Status WaitForServersToAgree(const MonoDelta& timeout,
-                             const TabletServerMap& tablet_servers,
-                             const std::string& tablet_id,
-                             int64_t minimum_index);
+Status WaitForServersToAgree(
+    const MonoDelta& timeout,
+    const TabletServerMap& tablet_servers,
+    const std::string& tablet_id,
+    int64_t minimum_index,
+    consensus::OpIdType op_id_type = consensus::RECEIVED_OPID);
 
 // Wait until all specified replicas have logged at least the given index.
 // Unlike WaitForServersToAgree(), the servers do not actually have to converge
