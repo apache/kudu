@@ -589,6 +589,7 @@ TEST_F(ToolTest, TestModeHelp) {
         "rename_table.*Rename a table",
         "rename_column.*Rename a column",
         "list.*List tables",
+        "scan.*Scan rows from a table",
     };
     NO_FATALS(RunTestHelp("table", kTableModeRegexes));
   }
@@ -2130,6 +2131,7 @@ TEST_F(ToolTest, TestMasterList) {
 // (2)rename a table
 // (3)rename a column
 // (4)list tables
+// (5)scan a table
 TEST_F(ToolTest, TestDeleteTable) {
   NO_FATALS(StartExternalMiniCluster());
   shared_ptr<KuduClient> client;
@@ -2309,6 +2311,32 @@ TEST_F(ToolTest, TestListTables) {
     ProcessTables(i);
     ProcessTablets(i);
   }
+}
+
+TEST_F(ToolTest, TestScanTable) {
+  NO_FATALS(StartExternalMiniCluster());
+  shared_ptr<KuduClient> client;
+  ASSERT_OK(cluster_->CreateClient(nullptr, &client));
+  string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+
+  const string& kTableName = "kudu.table.scan";
+
+  // Create the src table and write some data to it.
+  TestWorkload ww(cluster_.get());
+  ww.set_table_name(kTableName);
+  ww.set_num_replicas(1);
+  ww.set_write_pattern(TestWorkload::INSERT_SEQUENTIAL_ROWS);
+  ww.Setup();
+  ww.Start();
+  ASSERT_EVENTUALLY([&](){
+    ASSERT_GE(ww.rows_inserted(), 10000);
+  });
+  ww.StopAndJoin();
+
+  string errout;
+  NO_FATALS((RunActionStderrString(
+              Substitute("table scan $0 $1", master_addr, kTableName), &errout)));
+  ASSERT_STR_CONTAINS(errout, Substitute("Total count: $0", ww.rows_inserted()));
 }
 
 Status CreateLegacyHmsTable(HmsClient* client,

@@ -19,7 +19,9 @@
 #include <cstdint>
 #include <iostream>
 #include <memory>
+#include <set>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -41,10 +43,15 @@
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/strtoint.h"
 #include "kudu/tools/tool_action.h"
 #include "kudu/tools/tool_action_common.h"
+#include "kudu/util/atomic.h"
 #include "kudu/util/jsonreader.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
+#include "kudu/util/stopwatch.h"
+#include "kudu/util/string_case.h"
 
 DECLARE_string(tables);
 DEFINE_bool(check_row_existence, false,
@@ -52,11 +59,30 @@ DEFINE_bool(check_row_existence, false,
             "the tablet. If found, the full row will be printed; if not found, "
             "an error message will be printed and the command will return a "
             "non-zero status.");
+DECLARE_string(columns);
+DEFINE_bool(list_tablets, false,
+            "Include tablet and replica UUIDs in the output");
 DEFINE_bool(modify_external_catalogs, true,
             "Whether to modify external catalogs, such as the Hive Metastore, "
             "when renaming or dropping a table.");
-DEFINE_bool(list_tablets, false,
-            "Include tablet and replica UUIDs in the output");
+DECLARE_int32(num_threads);
+DEFINE_string(predicates, "",
+              "Query predicates on columns, support three types of predicates, "
+              "include 'Comparison', 'InList' and 'WhetherNull'."
+              " *The 'Comparison' type support <=, <, ==, > and >=, "
+              "    which can be represented by one character '[', '(', '=', ')' or ']'"
+              " *The 'InList' type means values are in certain list, "
+              "    which can be represented by one character '@'"
+              " *The 'WhetherNull' type means whether the value is a NULL or not, "
+              "    which can be represented by one character 'i'(is) or '!'(is not)"
+              "One predicate entry can be represented as <column name>:<predicate type>:<value(s)>,"
+              "  e.g. 'col1:[:lower;col1:]:upper;col2:@:v1,v2,v3;col3:!:NULL'");
+DEFINE_int64(scan_count, 0,
+             "Count limit for scan rows, less than or equal to 0 mean no limit.");
+DEFINE_bool(show_value, false,
+            "Whether to show values of scanned rows.");
+DECLARE_string(tables);
+DECLARE_string(tablets);
 
 namespace kudu {
 namespace tools {
@@ -64,18 +90,29 @@ namespace tools {
 using client::KuduClient;
 using client::KuduClientBuilder;
 using client::KuduColumnSchema;
-using client::KuduPredicate;
-using client::KuduScanner;
 using client::KuduScanToken;
 using client::KuduScanTokenBuilder;
+using client::KuduError;
+using client::KuduPredicate;
+using client::KuduScanBatch;
+using client::KuduScanToken;
+using client::KuduScanTokenBuilder;
+using client::KuduScanner;
 using client::KuduSchema;
+using client::KuduSchemaBuilder;
+using client::KuduSession;
 using client::KuduTable;
 using client::KuduTableAlterer;
+using client::KuduValue;
 using client::internal::ReplicaController;
+using client::sp::shared_ptr;
 using std::cerr;
 using std::cout;
 using std::endl;
+using std::map;
+using std::set;
 using std::string;
+using std::thread;
 using std::unique_ptr;
 using std::vector;
 using strings::Split;
@@ -88,7 +125,7 @@ class TableLister {
   static Status ListTablets(const vector<string>& master_addresses) {
     KuduClientBuilder builder;
     ReplicaController::SetVisibility(&builder, ReplicaController::Visibility::ALL);
-    client::sp::shared_ptr<KuduClient> client;
+    shared_ptr<KuduClient> client;
     RETURN_NOT_OK(builder
                   .master_server_addrs(master_addresses)
                   .Build(&client));
@@ -102,7 +139,7 @@ class TableLister {
       if (!FLAGS_list_tablets) {
         continue;
       }
-      client::sp::shared_ptr<KuduTable> client_table;
+      shared_ptr<KuduTable> client_table;
       RETURN_NOT_OK(client->OpenTable(tname, &client_table));
       vector<KuduScanToken*> tokens;
       ElementDeleter deleter(&tokens);
@@ -134,8 +171,11 @@ const char* const kColumnNameArg = "column_name";
 const char* const kNewColumnNameArg = "new_column_name";
 const char* const kKeyArg = "primary_key";
 
+AtomicInt<uint64_t> total_count(0);
+AtomicInt<int32_t> worker_count(0);
+
 Status CreateKuduClient(const RunnerContext& context,
-                        client::sp::shared_ptr<KuduClient>* client) {
+                        shared_ptr<KuduClient>* client) {
   const string& master_addresses_str = FindOrDie(context.required_args,
                                                  kMasterAddressesArg);
   vector<string> master_addresses = Split(master_addresses_str, ",");
@@ -146,7 +186,7 @@ Status CreateKuduClient(const RunnerContext& context,
 
 Status DeleteTable(const RunnerContext& context) {
   const string& table_name = FindOrDie(context.required_args, kTableNameArg);
-  client::sp::shared_ptr<KuduClient> client;
+  shared_ptr<KuduClient> client;
   RETURN_NOT_OK(CreateKuduClient(context, &client));
   return client->DeleteTableInCatalogs(table_name, FLAGS_modify_external_catalogs);
 }
@@ -365,7 +405,7 @@ Status RenameTable(const RunnerContext& context) {
   const string& table_name = FindOrDie(context.required_args, kTableNameArg);
   const string& new_table_name = FindOrDie(context.required_args, kNewTableNameArg);
 
-  client::sp::shared_ptr<KuduClient> client;
+  shared_ptr<KuduClient> client;
   RETURN_NOT_OK(CreateKuduClient(context, &client));
   unique_ptr<KuduTableAlterer> alterer(client->NewTableAlterer(table_name));
   return alterer->RenameTo(new_table_name)
@@ -378,7 +418,7 @@ Status RenameColumn(const RunnerContext& context) {
   const string& column_name = FindOrDie(context.required_args, kColumnNameArg);
   const string& new_column_name = FindOrDie(context.required_args, kNewColumnNameArg);
 
-  client::sp::shared_ptr<KuduClient> client;
+  shared_ptr<KuduClient> client;
   RETURN_NOT_OK(CreateKuduClient(context, &client));
   unique_ptr<KuduTableAlterer> alterer(client->NewTableAlterer(table_name));
   alterer->AlterColumn(column_name)->RenameTo(new_column_name);
@@ -389,6 +429,298 @@ Status ListTables(const RunnerContext& context) {
   const string& master_addresses_str = FindOrDie(context.required_args,
                                                  kMasterAddressesArg);
   return TableLister::ListTablets(Split(master_addresses_str, ","));
+}
+
+void MonitorThread() {
+  MonoTime last_log_time = MonoTime::Now();
+  while (worker_count.Load() > 0) {
+    if (MonoTime::Now() - last_log_time >= MonoDelta::FromSeconds(5)) {
+      LOG(INFO) << "Scanned count: " << total_count.Load() << endl;
+      last_log_time = MonoTime::Now();
+    }
+    SleepFor(MonoDelta::FromMilliseconds(100));
+  }
+}
+
+KuduValue* ParseValue(KuduColumnSchema::DataType type,
+                      const string& str_value) {
+  switch (type) {
+    case KuduColumnSchema::DataType::INT8:
+    case KuduColumnSchema::DataType::INT16:
+    case KuduColumnSchema::DataType::INT32:
+    case KuduColumnSchema::DataType::INT64:
+      if (!str_value.empty()) {
+        return KuduValue::FromInt(atoi64(str_value));
+      }
+      break;
+    case KuduColumnSchema::DataType::STRING:
+      if (!str_value.empty()) {
+        return KuduValue::CopyString(str_value);
+      }
+      break;
+    case KuduColumnSchema::DataType::FLOAT:
+    case KuduColumnSchema::DataType::DOUBLE:
+      if (!str_value.empty()) {
+        return KuduValue::FromDouble(strtod(str_value.c_str(), nullptr));
+      }
+      break;
+    default:
+      CHECK(false) << Substitute("Unhandled type $0", type);
+  }
+
+  return nullptr;
+}
+
+Status NewComparisonPredicate(const shared_ptr<KuduTable>& table,
+                              const string& name,
+                              KuduColumnSchema::DataType type,
+                              char op,
+                              const string& value,
+                              KuduPredicate** predicate) {
+  KuduValue* lower = ParseValue(type, value);
+  client::KuduPredicate::ComparisonOp cop;
+  switch (op) {
+    case '[':
+      cop = client::KuduPredicate::ComparisonOp::GREATER_EQUAL;
+      break;
+    case '(':
+      cop = client::KuduPredicate::ComparisonOp::GREATER;
+      break;
+    case '=':
+      cop = client::KuduPredicate::ComparisonOp::EQUAL;
+      break;
+    case ')':
+      cop = client::KuduPredicate::ComparisonOp::LESS;
+      break;
+    case ']':
+      cop = client::KuduPredicate::ComparisonOp::LESS_EQUAL;
+      break;
+    default:
+      return Status::InvalidArgument(Substitute("invalid op: $0", op));
+  }
+  *predicate = table->NewComparisonPredicate(name, cop, lower);
+
+  return Status::OK();
+}
+
+Status NewInPredicate(const shared_ptr<KuduTable>& table,
+                      const string& name,
+                      KuduColumnSchema::DataType type,
+                      char op,
+                      const string& value,
+                      KuduPredicate** predicate) {
+  switch (op) {
+    case '@': {
+      std::vector<KuduValue *> values;
+      vector<string> str_values = Split(value, ",", strings::SkipEmpty());
+      for (const auto& str_value : str_values) {
+        values.emplace_back(ParseValue(type, str_value));
+      }
+      *predicate = table->NewInListPredicate(name, &values);
+      break;
+    }
+    default:
+      return Status::InvalidArgument(Substitute("invalid op: $0", op));
+  }
+
+  return Status::OK();
+}
+
+Status NewNullPredicate(const shared_ptr<KuduTable>& table,
+                        const string& name,
+                        char op,
+                        const string& value,
+                        KuduPredicate** predicate) {
+  std::string value_upper;
+  ToUpperCase(value, &value_upper);
+  if (value_upper != "NULL") {
+    return Status::OK();
+  }
+
+  switch (op) {
+    case 'i':
+      *predicate = table->NewIsNullPredicate(name);
+      break;
+    case '!':
+      *predicate = table->NewIsNotNullPredicate(name);
+      break;
+    default:
+      return Status::InvalidArgument(Substitute("invalid op: $0", op));
+  }
+
+  return Status::OK();
+}
+
+enum class PredicateType {
+  Invalid = 0,
+  Comparison,
+  InList,
+  WhetherNull
+};
+
+PredicateType ParsePredicateType(const string& op) {
+  if (op.size() != 1) {
+    return PredicateType::Invalid;
+  }
+
+  switch (op[0]) {
+    case '[':
+    case '(':
+    case '=':
+    case ')':
+    case ']':
+      return PredicateType::Comparison;
+    case '@':
+      return PredicateType::InList;
+    case 'i':
+    case '!':
+      return PredicateType::WhetherNull;
+    default:
+      return PredicateType::Invalid;
+  }
+
+  return PredicateType::Invalid;
+}
+
+Status AddPredicate(const shared_ptr<KuduTable>& table,
+                    const string& name,
+                    const string& op,
+                    const string& value,
+                    KuduScanTokenBuilder& builder) {
+  if (name.empty() || op.empty()) {
+    return Status::OK();
+  }
+
+  for (size_t i = 0; i < table->schema().num_columns(); ++i) {
+    if (table->schema().Column(i).name() == name) {
+      auto type = table->schema().Column(i).type();
+      KuduPredicate* predicate = nullptr;
+      PredicateType pt = ParsePredicateType(op);
+      switch (pt) {
+        case PredicateType::Comparison:
+          RETURN_NOT_OK(NewComparisonPredicate(table, name, type, op[0], value, &predicate));
+          break;
+        case PredicateType::InList:
+          RETURN_NOT_OK(NewInPredicate(table, name, type, op[0], value, &predicate));
+          break;
+        case PredicateType::WhetherNull:
+          RETURN_NOT_OK(NewNullPredicate(table, name, op[0], value, &predicate));
+          break;
+        default:
+          return Status::InvalidArgument("Invalid op: $1", op);
+      }
+      RETURN_NOT_OK(builder.AddConjunctPredicate(predicate));
+
+      return Status::OK();
+    }
+  }
+
+  return Status::OK();
+}
+
+Status AddPredicates(const shared_ptr<KuduTable>& table,
+                     const string& predicates,
+                     KuduScanTokenBuilder& builder) {
+  vector<string> column_predicates = Split(predicates, ";", strings::SkipWhitespace());
+  for (const auto& column_predicate : column_predicates) {
+    vector<string> name_op_value = Split(column_predicate, ":", strings::SkipWhitespace());
+    if (name_op_value.size() == 3) {
+      RETURN_NOT_OK(AddPredicate(table, name_op_value[0], name_op_value[1], name_op_value[2], builder));
+    }
+  }
+
+  return Status::OK();
+}
+
+void ScannerThread(const vector<KuduScanToken*>& tokens) {
+  for (auto token : tokens) {
+    Stopwatch sw(Stopwatch::THIS_THREAD);
+    sw.start();
+
+    KuduScanner *scanner_ptr;
+    DCHECK_OK(token->IntoKuduScanner(&scanner_ptr));
+    unique_ptr<KuduScanner> scanner(scanner_ptr);
+    DCHECK_OK(scanner->Open());
+
+    int count = 0;
+    while (scanner->HasMoreRows()) {
+      KuduScanBatch batch;
+      DCHECK_OK(scanner->NextBatch(&batch));
+      count += batch.NumRows();
+      if (FLAGS_show_value) {
+        for (auto it = batch.begin(); it != batch.end(); ++it) {
+          KuduScanBatch::RowPtr row(*it);
+          LOG(INFO) << row.ToString() << endl;
+        }
+      }
+      total_count.IncrementBy(batch.NumRows());
+      if (total_count.Load() >= FLAGS_scan_count && FLAGS_scan_count > 0) {   // TODO maybe larger than FLAGS_scan_count
+        LOG(INFO) << "Scanned count(maybe not the total count in specified range): " << count << endl;
+        return;
+      }
+    }
+    sw.stop();
+    LOG(INFO) << "T " << token->tablet().id() << " scanned count " << count
+    << " cost " << sw.elapsed().wall_seconds() << " seconds" << endl;
+  }
+}
+
+Status ScanRows(const shared_ptr<KuduTable>& table, const string& predicates, const string& columns) {
+  KuduScanTokenBuilder builder(table.get());
+  RETURN_NOT_OK(builder.SetCacheBlocks(false));
+  RETURN_NOT_OK(builder.SetTimeoutMillis(30000));
+  RETURN_NOT_OK(builder.SetSelection(KuduClient::LEADER_ONLY));
+  RETURN_NOT_OK(builder.SetReadMode(KuduScanner::READ_LATEST));
+  vector<string> projected_column_names = Split(columns, ",", strings::SkipWhitespace());
+  if (!projected_column_names.empty()) {
+    RETURN_NOT_OK(builder.SetProjectedColumnNames(projected_column_names));
+  }
+  RETURN_NOT_OK(AddPredicates(table, predicates, builder));
+  const set<string>& tablet_id_filters = Split(FLAGS_tablets, ",", strings::SkipEmpty());
+
+  vector<KuduScanToken*> tokens;
+  ElementDeleter DeleteTable(&tokens);
+  RETURN_NOT_OK(builder.Build(&tokens));
+
+  map<int, vector<KuduScanToken*>> thread_tokens;
+  int i = 0;
+  for (auto token : tokens) {
+    if (tablet_id_filters.empty() || ContainsKey(tablet_id_filters, token->tablet().id())) {
+      thread_tokens[i++ % FLAGS_num_threads].push_back(token);
+    }
+  }
+
+  worker_count.Store(FLAGS_num_threads);
+  vector<thread> threads;
+  Stopwatch sw(Stopwatch::THIS_THREAD);
+  sw.start();
+  for (i = 0; i < FLAGS_num_threads; ++i) {
+      threads.emplace_back(&ScannerThread, thread_tokens[i]);
+  }
+  threads.emplace_back(&MonitorThread);
+
+  for (auto& t : threads) {
+    t.join();
+    worker_count.IncrementBy(-1);
+  }
+
+  sw.stop();
+  LOG(INFO) << "Total count " << total_count.Load() << " cost " << sw.elapsed().wall_seconds() << " seconds";
+
+  return Status::OK();
+}
+
+Status ScanTable(const RunnerContext &context) {
+  const string& table_name = FindOrDie(context.required_args, kTableNameArg);
+  shared_ptr<KuduClient> client;
+  RETURN_NOT_OK(CreateKuduClient(context, &client));
+
+  shared_ptr<KuduTable> table;
+  RETURN_NOT_OK(client->OpenTable(table_name, &table));
+
+  RETURN_NOT_OK(ScanRows(table, FLAGS_predicates, FLAGS_columns));
+
+  return Status::OK();
 }
 
 } // anonymous namespace
@@ -452,6 +784,26 @@ unique_ptr<Mode> BuildTableMode() {
       .AddOptionalParameter("modify_external_catalogs")
       .Build();
 
+  unique_ptr<Action> scan_table =
+      ActionBuilder("scan", &ScanTable)
+      .Description("Scan rows from a table")
+      .ExtraDescription(
+          "Scan rows from an exist table, you can specify "
+          "one column's lower and upper bounds.")
+      .AddRequiredParameter({ kMasterAddressesArg,
+          "Comma-separated list of master addresses to run against. "
+          "Addresses are in 'hostname:port' form where port may be omitted "
+          "if a master server listens at the default port." })
+      .AddRequiredParameter({ kTableNameArg,
+          "Key column name of the existing table, which will be used "
+          "to limit the lower and upper bounds when scan rows."})
+      .AddOptionalParameter("tablets")
+      .AddOptionalParameter("predicates")
+      .AddOptionalParameter("columns")
+      .AddOptionalParameter("scan_count")
+      .AddOptionalParameter("show_value")
+      .Build();
+
   return ModeBuilder("table")
       .Description("Operate on Kudu tables")
       .AddAction(std::move(delete_table))
@@ -460,6 +812,7 @@ unique_ptr<Mode> BuildTableMode() {
       .AddAction(std::move(locate_row))
       .AddAction(std::move(rename_column))
       .AddAction(std::move(rename_table))
+      .AddAction(std::move(scan_table))
       .Build();
 }
 
