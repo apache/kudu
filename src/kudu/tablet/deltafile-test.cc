@@ -442,23 +442,27 @@ TYPED_TEST(DeltaTypeTestDeltaFile, TestFuzz) {
   const int kNumDeltas = 10000;
   const std::pair<uint64_t, uint64_t> kTimestampRange(0, 100);
 
-  // Build a schema with kNumColumns columns.
+  // Build a schema with kNumColumns columns, some of which are nullable.
+  Random prng(SeedRandom());
   SchemaBuilder sb;
   for (int i = 0; i < kNumColumns; i++) {
-    ASSERT_OK(sb.AddColumn(Substitute("col$0", i), UINT32));
+    if (prng.Uniform(10) == 0) {
+      ASSERT_OK(sb.AddNullableColumn(Substitute("col$0", i), UINT32));
+    } else {
+      ASSERT_OK(sb.AddColumn(Substitute("col$0", i), UINT32));
+    }
   }
   Schema schema(sb.Build());
 
-  Random r(SeedRandom());
   MirroredDeltas<TypeParam> deltas(&schema);
 
   shared_ptr<DeltaFileReader> reader;
   ASSERT_OK(CreateRandomDeltaFile<TypeParam>(
-      schema, this->fs_manager_.get(), &r,
+      schema, this->fs_manager_.get(), &prng,
       kNumDeltas, { 0, kNumRows }, kTimestampRange, &deltas, &reader));
 
   NO_FATALS(RunDeltaFuzzTest<TypeParam>(
-      *reader, &r, &deltas, kTimestampRange,
+      *reader, &prng, &deltas, kTimestampRange,
       /*test_filter_column_ids_and_collect_deltas=*/true));
 }
 

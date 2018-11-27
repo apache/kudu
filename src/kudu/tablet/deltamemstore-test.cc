@@ -650,22 +650,26 @@ TEST_F(TestDeltaMemStore, TestFuzz) {
   const int kNumDeltas = 10000;
   const std::pair<uint64_t, uint64_t> kTimestampRange(0, 100);
 
-  // Build a schema with kNumColumns columns.
+  // Build a schema with kNumColumns columns, some of which are nullable.
+  Random prng(SeedRandom());
   SchemaBuilder sb;
   for (int i = 0; i < kNumColumns; i++) {
-    ASSERT_OK(sb.AddColumn(Substitute("col$0", i), UINT32));
+    if (prng.Uniform(10) == 0) {
+      ASSERT_OK(sb.AddNullableColumn(Substitute("col$0", i), UINT32));
+    } else {
+      ASSERT_OK(sb.AddColumn(Substitute("col$0", i), UINT32));
+    }
   }
   Schema schema(sb.Build());
 
-  Random r(SeedRandom());
   MirroredDeltas<DeltaTypeSelector<REDO>> deltas(&schema);
 
   shared_ptr<DeltaMemStore> dms;
   ASSERT_OK(CreateRandomDMS(
-      schema, &r, kNumDeltas, { 0, kNumRows }, kTimestampRange, &deltas, &dms));
+      schema, &prng, kNumDeltas, { 0, kNumRows }, kTimestampRange, &deltas, &dms));
 
   NO_FATALS(RunDeltaFuzzTest<DeltaTypeSelector<REDO>>(
-      *dms, &r, &deltas, kTimestampRange,
+      *dms, &prng, &deltas, kTimestampRange,
       /*test_filter_column_ids_and_collect_deltas=*/false));
 }
 

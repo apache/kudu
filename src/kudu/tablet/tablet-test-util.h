@@ -692,10 +692,16 @@ void CreateRandomDeltas(const Schema& schema,
                                                      schema.num_columns(),
                                                      num_cols_to_update);
       for (auto idx : idxs_to_update) {
-        uint32_t u32_val = prng->Next();
+        // Pick a random value to assign to the UPDATE. NULL is an option if the
+        // schema supports it.
         auto col_id = schema.column_id(idx);
         const auto& col = schema.column(idx);
-        encoder.AddColumnUpdate(col, col_id, &u32_val);
+        if (col.is_nullable() && prng->Uniform(10) == 0) {
+          encoder.AddColumnUpdate(col, col_id, nullptr);
+        } else {
+          uint32_t u32_val = prng->Next();
+          encoder.AddColumnUpdate(col, col_id, &u32_val);
+        }
       }
       VLOG(3) << "UPDATE: " << k.row_idx() << "," << k.timestamp().ToString()
               << ": " << encoder.as_changelist().ToString(schema);
@@ -960,8 +966,9 @@ void RunDeltaFuzzTest(const DeltaStore& store,
       // Test ApplyUpdates: all relevant updates are applied to the column block.
       for (int j = 0; j < opts.projection->num_columns(); j++) {
         SCOPED_TRACE(strings::Substitute("Column $0", j));
-        ScopedColumnBlock<UINT32> expected_scb(batch_size, false);
-        ScopedColumnBlock<UINT32> actual_scb(batch_size, false);
+        bool col_is_nullable = opts.projection->column(j).is_nullable();
+        ScopedColumnBlock<UINT32> expected_scb(batch_size, col_is_nullable);
+        ScopedColumnBlock<UINT32> actual_scb(batch_size, col_is_nullable);
         for (int k = 0; k < batch_size; k++) {
           expected_scb[k] = 0;
           actual_scb[k] = 0;
