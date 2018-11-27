@@ -144,7 +144,7 @@ TEST(TestMergeIterator, TestMergeEmpty) {
   shared_ptr<RowwiseIterator> iter(
     new MaterializingIterator(
         shared_ptr<ColumnwiseIterator>(new VectorIterator({}))));
-  MergeIterator merger(kIntSchema, { std::move(iter) });
+  MergeIterator merger({ std::move(iter) });
   ASSERT_OK(merger.Init(nullptr));
   ASSERT_FALSE(merger.HasNext());
 }
@@ -206,7 +206,7 @@ void TestMerge(const TestIntRangePredicate &predicate) {
     LOG(INFO) << "Predicate: " << predicate.pred_.ToString();
 
     LOG_TIMING(INFO, "Iterate merged lists") {
-      MergeIterator merger(kIntSchema, std::move(to_merge));
+      MergeIterator merger(std::move(to_merge));
       ASSERT_OK(merger.Init(&spec));
 
       RowBlock dst(kIntSchema, 100, nullptr);

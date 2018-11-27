@@ -2464,7 +2464,7 @@ Status Tablet::Iterator::Init(ScanSpec *spec) {
 
   switch (opts_.order) {
     case ORDERED:
-      iter_.reset(new MergeIterator(projection_, std::move(iters)));
+      iter_.reset(new MergeIterator(std::move(iters)));
       break;
     case UNORDERED:
     default:

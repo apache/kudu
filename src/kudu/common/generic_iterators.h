@@ -34,7 +34,6 @@
 #include "kudu/common/iterator_stats.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/object_pool.h"
@@ -49,11 +48,14 @@ class RowBlock;
 // based on keys.
 class MergeIterator : public RowwiseIterator {
  public:
-  // TODO: clarify whether schema is just the projection, or must include the merge
-  // key columns. It should probably just be the required projection, which must be
-  // a subset of the columns in 'iters'.
-  MergeIterator(const Schema& schema,
-                std::vector<std::shared_ptr<RowwiseIterator>> iters);
+  // Constructs a MergeIterator of the given iterators.
+  //
+  // The iterators must have matching schemas and should not yet be initialized.
+  //
+  // Note: the iterators must be constructed using a projection that includes
+  // all key columns; otherwise a CHECK will fire at initialization time.
+  explicit MergeIterator(std::vector<std::shared_ptr<RowwiseIterator>> iters);
+
   virtual ~MergeIterator();
 
   // The passed-in iterators should be already initialized.
@@ -74,7 +76,8 @@ class MergeIterator : public RowwiseIterator {
   Status MaterializeBlock(RowBlock* dst);
   Status InitSubIterators(ScanSpec *spec);
 
-  const Schema schema_;
+  // Initialized during Init.
+  std::unique_ptr<Schema> schema_;
 
   bool initted_;
 
@@ -82,10 +85,10 @@ class MergeIterator : public RowwiseIterator {
   // This is required because we can't create a MergeIterState of an uninitialized iterator.
   std::vector<std::shared_ptr<RowwiseIterator>> orig_iters_;
 
-  // See UnionIterator::iters_lock_ for details on locking. This follows the same
+  // See UnionIterator::states_lock_ for details on locking. This follows the same
   // pattern.
-  mutable rw_spinlock iters_lock_;
-  std::vector<std::unique_ptr<MergeIterState>> iters_;
+  mutable rw_spinlock states_lock_;
+  std::vector<std::unique_ptr<MergeIterState>> states_;
 
   // Statistics (keyed by projection column index) accumulated so far by any
   // fully-consumed sub-iterators.
@@ -108,12 +111,9 @@ class MergeIterator : public RowwiseIterator {
 // part of the projection.
 class UnionIterator : public RowwiseIterator {
  public:
-  // Construct a union iterator of the given iterators.
-  // The iterators must have matching schemas.
-  // The passed-in iterators should not yet be initialized.
+  // Constructs a UnionIterator of the given iterators.
   //
-  // All passed-in iterators must be fully able to evaluate all predicates - i.e.
-  // calling iter->Init(spec) should remove all predicates from the spec.
+  // The iterators must have matching schemas and should not yet be initialized.
   explicit UnionIterator(std::vector<std::shared_ptr<RowwiseIterator>> iters);
 
   Status Init(ScanSpec *spec) OVERRIDE;
@@ -143,7 +143,8 @@ class UnionIterator : public RowwiseIterator {
   void PopFront();
 
   // Schema: initialized during Init()
-  gscoped_ptr<Schema> schema_;
+  std::unique_ptr<Schema> schema_;
+
   bool initted_;
 
   // Lock protecting 'iters_' and 'finished_iter_stats_by_col_'.
