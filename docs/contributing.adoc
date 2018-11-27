@@ -456,3 +456,100 @@ Commits which may affect performance should include before/after `perf-stat(1)` 
 See the
 link:https://github.com/apache/kudu/blob/master/docs/design-docs/doc-style-guide.adoc[Documentation Style Guide]
 for guidelines about contributing to the official Kudu documentation.
+
+== Blog posts
+
+=== Writing a post on the Kudu blog
+
+If you are using or integrating with Kudu, consider doing a write-up about your
+use case and your integration with Kudu and submitting it to be posted as an
+article on the Kudu blog. People in the community love to read about how Kudu
+is being used around the world.
+
+Consider checking with the project developers on the Kudu Slack instance or on
+mailto:dev@kudu.apache.org[dev@kudu.apache.org] if you have any questions about
+the content or the topic of a potential Kudu blog post.
+
+=== Submitting a blog post in Google Doc format
+
+If you don't have the time to learn Markdown or to submit a Gerrit change
+request, but you would still like to submit a post for the Kudu blog, feel free
+to write your post in Google Docs format and share the draft with us publicly
+on mailto:dev@kudu.apache.org[dev@kudu.apache.org] -- we'll be happy to review
+it and post it to the blog for you once it's ready to go.
+
+If you would like to submit the post directly to Gerrit for review in Markdown
+format (the developers will appreciate it if you do), please read below.
+
+=== How to format a Kudu blog post
+
+Blog posts live in the `gh-pages` branch under the `_posts` directory in
+Markdown format. They're automatically rendered by Jekyll so for those familiar
+with Markdown or Jekyll, submitting a blog post should be fairly
+straightforward.
+
+Each post is a separate file named in the following format:
+
+----
+YYYY-MM-DD-title-of-the-post.md
+----
+
+The `YYYY-MM-DD` part is the date which will be included in the link as
+`/YYYY-MM-DD`, then `title-of-the-post` is used verbatim. The words should be
+separated by dashes and should contain only lowercase letters of the English
+alphabet and numbers. Finally, the `.md` extension will be replaced with
+`.html`.
+
+The header contains the layout information (which is always "post"), the
+title and the author's name.
+
+----
+---
+layout: post
+title: Example Post
+author: John Doe
+---
+----
+
+The actual text of the blog post goes below this header, beginning with the
+"lead" which is a short excerpt that shows up in the index. This is separated
+by the `<!--more-\->` string from the rest of the post.
+
+=== How to check the rendering of a blog post
+
+Once you've finished the post, there is a command you can run to make sure it
+looks good called `site_tool` in the root of the `gh-pages` branch that can
+start up Jekyll and serve the rendered site locally. To run this, you need Ruby
+and Python to be installed on your machine, and you can start it with the below
+command.
+
+----
+$ ./site_tool jekyll serve
+----
+
+When starting, it will print the URL where you can reach the site, but it should
+be http://localhost:4000, or to reach the blog directly,
+http://localhost:4000/blog
+
+You should be able to see the title and lead of your post along with your name
+at the top of this page, and after clicking on the title or the "Read full
+post...", the whole post.
+
+=== How to submit a blog post
+
+To submit the post, you'll need to commit your change and push it to
+<<_contributing_patches_using_gerrit,Gerrit>> for review. If the post is deemed
+useful for the community and all comments are addressed, a committer can merge
+and publish your post.
+
+[TIP]
+====
+If you have a GitHub account, you can fork Kudu from
+https://github.com/apache/kudu and push the change to your fork too. GitHub will
+automatically render it on https://<yourname>.github.io/blog and you can link it
+directly on Gerrit.
+
+This way the reviewers can see that the post renders well without having to
+download it, which can speed up the review process.
+
+====
