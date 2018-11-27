@@ -193,16 +193,16 @@ Status MergeIterState::PullNextBlock() {
     DCHECK_EQ(selection->nrows(), read_block_.nrows());
     DCHECK_LE(selection->CountSelected(), read_block_.nrows());
     rows_valid_ = selection->CountSelected();
-    VLOG(2) << selection->CountSelected() << "/" << read_block_.nrows() << " rows selected";
-    // Seek next_row_ to the first selected row.
-    for (next_row_idx_ = 0; next_row_idx_ < read_block_.nrows(); next_row_idx_++) {
-      if (selection->IsRowSelected(next_row_idx_)) {
-        next_row_.Reset(&read_block_, next_row_idx_);
-        return Status::OK();
-      }
+    VLOG(2) << Substitute("$0/$1 rows selected", rows_valid_, read_block_.nrows());
+    if (rows_valid_ == 0) {
+      // Short-circuit: this block is entirely unselected and can be skipped.
+      continue;
     }
-    // The block may have had no selected rows, in which case we need to continue
-    // to the next block.
+
+    // Seek next_row_ to the first selected row.
+    CHECK(selection->FindFirstRowSelected(&next_row_idx_));
+    next_row_.Reset(&read_block_, next_row_idx_);
+    return Status::OK();
   }
 
   // The underlying iterator is fully exhausted.

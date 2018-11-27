@@ -42,7 +42,7 @@
 #include "kudu/common/types.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/mathlimits.h"
-#include "kudu/gutil/port.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/random.h"
 #include "kudu/util/status.h"
@@ -57,7 +57,9 @@ DEFINE_int32(num_iters, 1, "Number of times to run merge");
 using std::make_shared;
 using std::shared_ptr;
 using std::string;
+using std::unique_ptr;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 
@@ -72,7 +74,8 @@ class VectorIterator : public ColumnwiseIterator {
   explicit VectorIterator(vector<uint32_t> ints)
       : ints_(std::move(ints)),
         cur_idx_(0),
-        block_size_(ints_.size()) {
+        block_size_(ints_.size()),
+        sel_vec_(nullptr) {
   }
 
   // Set the number of rows that will be returned in each
@@ -81,11 +84,15 @@ class VectorIterator : public ColumnwiseIterator {
     block_size_ = block_size;
   }
 
-  Status Init(ScanSpec *spec) OVERRIDE {
+  void set_selection_vector(SelectionVector* sv) {
+    sel_vec_ = sv;
+  }
+
+  Status Init(ScanSpec* /*spec*/) override {
     return Status::OK();
   }
 
-  virtual Status PrepareBatch(size_t* nrows) OVERRIDE {
+  Status PrepareBatch(size_t* nrows) override {
     prepared_ = std::min<int64_t>({
         static_cast<int64_t>(ints_.size()) - cur_idx_,
         block_size_,
@@ -94,8 +101,20 @@ class VectorIterator : public ColumnwiseIterator {
     return Status::OK();
   }
 
-  virtual Status InitializeSelectionVector(SelectionVector *sel_vec) OVERRIDE {
-    sel_vec->SetAllTrue();
+  Status InitializeSelectionVector(SelectionVector* sv) override {
+    if (!sel_vec_) {
+      sv->SetAllTrue();
+      return Status::OK();
+    }
+    for (int i = 0; i < sv->nrows(); i++) {
+      size_t row_idx = cur_idx_ + i;
+      if (row_idx > sel_vec_->nrows() || !sel_vec_->IsRowSelected(row_idx)) {
+        sv->SetRowUnselected(i);
+      } else {
+        DCHECK(sel_vec_->IsRowSelected(row_idx));
+        sv->SetRowSelected(i);
+      }
+    }
     return Status::OK();
   }
 
@@ -105,30 +124,31 @@ class VectorIterator : public ColumnwiseIterator {
     DCHECK_LE(prepared_, ctx->block()->nrows());
 
     for (size_t i = 0; i < prepared_; i++) {
-      ctx->block()->SetCellValue(i, &(ints_[cur_idx_++]));
+      ctx->block()->SetCellValue(i, &(ints_[cur_idx_ + i]));
     }
 
     return Status::OK();
   }
 
-  virtual Status FinishBatch() OVERRIDE {
+  Status FinishBatch() override {
+    cur_idx_ += prepared_;
     prepared_ = 0;
     return Status::OK();
   }
 
-  virtual bool HasNext() const OVERRIDE {
+  bool HasNext() const override {
     return cur_idx_ < ints_.size();
   }
 
-  virtual string ToString() const OVERRIDE {
-    return string("VectorIterator");
+  string ToString() const override {
+    return Substitute("VectorIterator [$0,$1]", ints_[0], ints_[ints_.size() - 1]);
   }
 
-  virtual const Schema &schema() const OVERRIDE {
+  const Schema &schema() const override {
     return kIntSchema;
   }
 
-  virtual void GetIteratorStats(vector<IteratorStats>* stats) const OVERRIDE {
+  void GetIteratorStats(vector<IteratorStats>* stats) const override {
     stats->resize(schema().num_columns());
   }
 
@@ -137,6 +157,7 @@ class VectorIterator : public ColumnwiseIterator {
   int cur_idx_;
   int block_size_;
   size_t prepared_;
+  SelectionVector* sel_vec_;
 };
 
 // Test that empty input to a merger behaves correctly.
@@ -144,6 +165,19 @@ TEST(TestMergeIterator, TestMergeEmpty) {
   shared_ptr<RowwiseIterator> iter(
     new MaterializingIterator(
         shared_ptr<ColumnwiseIterator>(new VectorIterator({}))));
+  MergeIterator merger({ std::move(iter) });
+  ASSERT_OK(merger.Init(nullptr));
+  ASSERT_FALSE(merger.HasNext());
+}
+
+// Test that non-empty input to a merger with a zeroed selection vector
+// behaves correctly.
+TEST(TestMergeIterator, TestMergeEmptyViaSelectionVector) {
+  SelectionVector sv(3);
+  sv.SetAllFalse();
+  shared_ptr<VectorIterator> vec(new VectorIterator({ 1, 2, 3 }));
+  vec->set_selection_vector(&sv);
+  shared_ptr<RowwiseIterator> iter(new MaterializingIterator(std::move(vec)));
   MergeIterator merger({ std::move(iter) });
   ASSERT_OK(merger.Init(nullptr));
   ASSERT_FALSE(merger.HasNext());
@@ -161,40 +195,58 @@ class TestIntRangePredicate {
 };
 
 void TestMerge(const TestIntRangePredicate &predicate) {
-  vector<vector<uint32_t>> all_ints;
+  struct List {
+    vector<uint32_t> ints;
+    unique_ptr<SelectionVector> sv;
+  };
+  vector<List> all_ints;
   vector<uint32_t> expected;
   expected.reserve(FLAGS_num_rows * FLAGS_num_lists);
-
   Random prng(SeedRandom());
 
   for (int i = 0; i < FLAGS_num_lists; i++) {
     vector<uint32_t> ints;
     ints.reserve(FLAGS_num_rows);
+    unique_ptr<SelectionVector> sv(new SelectionVector(FLAGS_num_rows));
 
     uint32_t entry = 0;
     for (int j = 0; j < FLAGS_num_rows; j++) {
       entry += prng.Uniform(5);
       ints.emplace_back(entry);
-      // Evaluate the predicate before pushing to 'expected'.
-      if (entry >= predicate.lower_ && entry < predicate.upper_) {
+
+      // Some entries are randomly deselected in order to exercise the selection
+      // vector logic in the MergeIterator. This is reflected both in the input
+      // to the MeregIterator as well as the expected output (see below).
+      bool row_selected = prng.Uniform(8) > 0;
+      VLOG(2) << Substitute("Row $0 with value $1 selected? $2",
+                            j, entry, row_selected);
+      if (row_selected) {
+        sv->SetRowSelected(j);
+      } else {
+        sv->SetRowUnselected(j);
+      }
+
+      // Consider the predicate and the selection vector before pushing to 'expected'.
+      if (entry >= predicate.lower_ && entry < predicate.upper_ && row_selected) {
         expected.emplace_back(entry);
       }
     }
 
-    all_ints.emplace_back(std::move(ints));
+    all_ints.emplace_back(List{ std::move(ints), std::move(sv) });
   }
-
-  VLOG(1) << "Predicate expects " << expected.size() << " results: " << expected;
 
   LOG_TIMING(INFO, "std::sort the expected results") {
     std::sort(expected.begin(), expected.end());
   }
 
+  VLOG(1) << "Predicate expects " << expected.size() << " results: " << expected;
+
   for (int trial = 0; trial < FLAGS_num_iters; trial++) {
     vector<shared_ptr<RowwiseIterator>> to_merge;
-    for (const auto& ints : all_ints) {
-      shared_ptr<VectorIterator> vec_it(new VectorIterator(ints));
+    for (const auto& e : all_ints) {
+      shared_ptr<VectorIterator> vec_it(new VectorIterator(e.ints));
       vec_it->set_block_size(10);
+      vec_it->set_selection_vector(e.sv.get());
       shared_ptr<RowwiseIterator> mat_it(new MaterializingIterator(std::move(vec_it)));
       shared_ptr<RowwiseIterator> un_it(new UnionIterator({ std::move(mat_it) }));
       to_merge.emplace_back(std::move(un_it));
@@ -355,25 +407,25 @@ class DummyIterator : public RowwiseIterator {
     return Status::OK();
   }
 
-  virtual Status NextBlock(RowBlock* /*dst*/) override {
+  Status NextBlock(RowBlock* /*dst*/) override {
     LOG(FATAL) << "unimplemented!";
     return Status::OK();
   }
 
-  virtual bool HasNext() const override {
+  bool HasNext() const override {
     LOG(FATAL) << "unimplemented!";
     return false;
   }
 
-  virtual string ToString() const override {
+  string ToString() const override {
     return "DummyIterator";
   }
 
-  virtual const Schema& schema() const override {
+  const Schema& schema() const override {
     return schema_;
   }
 
-  virtual void GetIteratorStats(vector<IteratorStats>* stats) const override {
+  void GetIteratorStats(vector<IteratorStats>* stats) const override {
     stats->resize(schema().num_columns());
   }
 
