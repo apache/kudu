@@ -36,6 +36,7 @@ set(CLIENT_SRCS
   error_collector.cc
   error-internal.cc
   master_rpc.cc
+  master_proxy_rpc.cc
   meta_cache.cc
   partitioner-internal.cc
   scan_batch.cc

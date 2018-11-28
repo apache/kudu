@@ -39,6 +39,7 @@
 
 #include "kudu/client/client-internal.h"  // IWYU pragma: keep
 #include "kudu/client/client.h"
+#include "kudu/client/master_proxy_rpc.h"
 #include "kudu/client/shared_ptr.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/row_operations.h"
@@ -60,6 +61,8 @@
 #include "kudu/gutil/strings/util.h"
 #include "kudu/master/master.proxy.h" // IWYU pragma: keep
 #include "kudu/rpc/messenger.h"
+#include "kudu/rpc/response_callback.h"
+#include "kudu/rpc/rpc.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/server/server_base.pb.h"
@@ -69,6 +72,7 @@
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_admin.proxy.h"   // IWYU pragma: keep
 #include "kudu/tserver/tserver_service.proxy.h" // IWYU pragma: keep
+#include "kudu/util/async_util.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/jsonwriter.h"
 #include "kudu/util/mem_tracker.pb.h"
@@ -131,9 +135,9 @@ class ReplaceTabletResponsePB;
 
 namespace tools {
 
+using client::internal::AsyncLeaderMasterRpc;
 using client::KuduClient;
 using client::KuduClientBuilder;
-using client::KuduTable;
 using consensus::ConsensusServiceProxy; // NOLINT
 using consensus::ReplicateMsg;
 using log::LogEntryPB;
@@ -148,9 +152,11 @@ using master::ReplaceTabletRequestPB;
 using master::ReplaceTabletResponsePB;
 using pb_util::SecureDebugString;
 using pb_util::SecureShortDebugString;
+using rpc::BackoffType;
 using rpc::Messenger;
 using rpc::MessengerBuilder;
 using rpc::RequestIdPB;
+using rpc::ResponseCallback;
 using rpc::RpcController;
 using server::GenericServiceProxy;
 using server::GetFlagsRequestPB;
@@ -693,40 +699,47 @@ Status LeaderMasterProxy::Init(const RunnerContext& context) {
 template<typename Req, typename Resp>
 Status LeaderMasterProxy::SyncRpc(const Req& req,
                                   Resp* resp,
-                                  const char* func_name,
-                                  const boost::function<Status(master::MasterServiceProxy*,
-                                                               const Req&, Resp*,
-                                                               rpc::RpcController*)>& func) {
+                                  string func_name,
+                                  const boost::function<void(master::MasterServiceProxy*,
+                                                             const Req&, Resp*,
+                                                             rpc::RpcController*,
+                                                             const ResponseCallback&)>& func) {
   MonoTime deadline = MonoTime::Now() + MonoDelta::FromMilliseconds(FLAGS_timeout_ms);
-  return client_->data_->SyncLeaderMasterRpc(deadline, client_.get(), req, resp,
-                                             func_name, func, {});
+  Synchronizer sync;
+  AsyncLeaderMasterRpc<Req, Resp> rpc(deadline, client_.get(), BackoffType::EXPONENTIAL,
+      req, resp, func, std::move(func_name), sync.AsStatusCallback(), {});
+  rpc.SendRpc();
+  return sync.Wait();
 }
 
 // Explicit specializations for callers outside this compilation unit.
 template
 Status LeaderMasterProxy::SyncRpc(const ListTabletServersRequestPB& req,
                                   ListTabletServersResponsePB* resp,
-                                  const char* func_name,
-                                  const boost::function<Status(MasterServiceProxy*,
-                                                               const ListTabletServersRequestPB&,
-                                                               ListTabletServersResponsePB*,
-                                                               RpcController*)>& func);
+                                  string func_name,
+                                  const boost::function<void(MasterServiceProxy*,
+                                                             const ListTabletServersRequestPB&,
+                                                             ListTabletServersResponsePB*,
+                                                             RpcController*,
+                                                             const ResponseCallback&)>& func);
 template
 Status LeaderMasterProxy::SyncRpc(const ListMastersRequestPB& req,
                                   ListMastersResponsePB* resp,
-                                  const char* func_name,
-                                  const boost::function<Status(MasterServiceProxy*,
-                                                               const ListMastersRequestPB&,
-                                                               ListMastersResponsePB*,
-                                                               RpcController*)>& func);
+                                  string func_name,
+                                  const boost::function<void(MasterServiceProxy*,
+                                                             const ListMastersRequestPB&,
+                                                             ListMastersResponsePB*,
+                                                             RpcController*,
+                                                             const ResponseCallback&)>& func);
 template
 Status LeaderMasterProxy::SyncRpc(const ReplaceTabletRequestPB& req,
                                   ReplaceTabletResponsePB* resp,
-                                  const char* func_name,
-                                  const boost::function<Status(MasterServiceProxy*,
-                                                               const ReplaceTabletRequestPB&,
-                                                               ReplaceTabletResponsePB*,
-                                                               RpcController*)>& func);
+                                  string func_name,
+                                  const boost::function<void(MasterServiceProxy*,
+                                                             const ReplaceTabletRequestPB&,
+                                                             ReplaceTabletResponsePB*,
+                                                             RpcController*,
+                                                             const ResponseCallback&)>& func);
 
 const int ControlShellProtocol::kMaxMessageBytes = 1024 * 1024;
 

@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_RPC_RPC_H
-#define KUDU_RPC_RPC_H
+#pragma once
 
 #include <memory>
 #include <string>
@@ -35,9 +34,13 @@ namespace rpc {
 class Messenger;
 class Rpc;
 
+// Exponential backoff with jitter anchored between 10ms and 20ms, and an upper
+// bound between 2.5s and 5s.
+MonoDelta ComputeExponentialBackoff(int num_attempts);
+
 // Result status of a retriable Rpc.
 //
-// TODO Consider merging this with ScanRpcStatus.
+// TODO(todd): Consider merging this with ScanRpcStatus.
 struct RetriableRpcStatus {
   enum Result {
     // There was no error, i.e. the Rpc was successful.
@@ -104,29 +107,36 @@ class ServerPicker : public RefCountedThreadSafe<ServerPicker<Server>> {
   virtual void MarkResourceNotFound(Server *replica) = 0;
 };
 
-// Provides utilities for retrying failed RPCs.
-//
-// All RPCs should use HandleResponse() to retry certain generic errors.
+// Backoff strategy to use when retrying RPCs.
+enum class BackoffType {
+  // Backoff a small amount of jitter before retrying, roughly linear with the
+  // number of RPC attempts.
+  LINEAR,
+
+  // Backoff by a bounded amount of time that is otherwise exponential with the
+  // number of RPC attempts.
+  EXPONENTIAL,
+};
+
+// Provides utilities for retrying failed RPCs. The default implementation adds
+// a small amount of jitter before retrying, roughly linear with the number of
+// RPC attempts.
 class RpcRetrier {
  public:
-  RpcRetrier(MonoTime deadline, std::shared_ptr<rpc::Messenger> messenger)
+  RpcRetrier(MonoTime deadline, std::shared_ptr<rpc::Messenger> messenger,
+             BackoffType backoff)
       : attempt_num_(1),
         deadline_(deadline),
-        messenger_(std::move(messenger)) {
+        messenger_(std::move(messenger)),
+        backoff_(backoff) {
     if (deadline_.Initialized()) {
       controller_.set_deadline(deadline_);
     }
     controller_.Reset();
   }
 
-  // Tries to handle a failed RPC.
-  //
-  // If it was handled (e.g. scheduled for retry in the future), returns
-  // true. In this case, callers should ensure that 'rpc' remains alive.
-  //
-  // Otherwise, returns false and writes the controller status to
-  // 'out_status'.
-  bool HandleResponse(Rpc* rpc, Status* out_status);
+  // Computes an appropriate backoff time for the given attempt.
+  MonoDelta ComputeBackoff(int num_attempts) const;
 
   // Retries an RPC at some point in the near future. If 'why_status' is not OK,
   // records it as the most recent error causing the RPC to retry. This is
@@ -166,24 +176,27 @@ class RpcRetrier {
   // Messenger to use when sending the RPC.
   std::shared_ptr<Messenger> messenger_;
 
-  // RPC controller to use when sending the RPC.
-  RpcController controller_;
-
   // In case any retries have already happened, remembers the last error.
   // Errors from the server take precedence over timeout errors.
   Status last_error_;
 
+  // RPC controller to use when sending the RPC.
+  RpcController controller_;
+
+  // The type of backoff this retrier should employ.
+  const BackoffType backoff_;
+
   DISALLOW_COPY_AND_ASSIGN(RpcRetrier);
 };
 
-// An in-flight remote procedure call to some server.
+// Encapsulates an in-flight remote procedure call to some server, employing
+// the provided backoff type to retry when necessary.
 class Rpc {
  public:
   Rpc(const MonoTime& deadline,
-      std::shared_ptr<rpc::Messenger> messenger)
-      : retrier_(deadline, std::move(messenger)) {
-  }
-
+      std::shared_ptr<rpc::Messenger> messenger,
+      BackoffType backoff)
+      : retrier_(deadline, std::move(messenger), backoff) {}
   virtual ~Rpc() {}
 
   // Asynchronously sends the RPC to the remote end.
@@ -194,19 +207,20 @@ class Rpc {
   // Returns a string representation of the RPC.
   virtual std::string ToString() const = 0;
 
-  // Returns the number of times this RPC has been sent. Will always be at
+  // Returns the number of times this RPC has been sent. Should always be at
   // least one.
   int num_attempts() const { return retrier().attempt_num(); }
 
  protected:
+  // Used to retry some failed RPCs.
   const RpcRetrier& retrier() const { return retrier_; }
   RpcRetrier* mutable_retrier() { return &retrier_; }
 
  private:
   friend class RpcRetrier;
 
-  // Callback for SendRpc(). If 'status' is not OK, something failed
-  // before the RPC was sent.
+  // Callback for SendRpc(). If 'status' is not OK, something failed before the
+  // RPC was sent.
   virtual void SendRpcCb(const Status& status) = 0;
 
   // Used to retry some failed RPCs.
@@ -218,4 +232,3 @@ class Rpc {
 } // namespace rpc
 } // namespace kudu
 
-#endif // KUDU_RPC_RPC_H

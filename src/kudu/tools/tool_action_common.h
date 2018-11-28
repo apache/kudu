@@ -27,6 +27,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/rpc/response_callback.h"
 #include "kudu/util/status.h"
 
 namespace boost {
@@ -198,10 +199,11 @@ class LeaderMasterProxy {
   template<typename Req, typename Resp>
   Status SyncRpc(const Req& req,
                  Resp* resp,
-                 const char* func_name,
-                 const boost::function<Status(master::MasterServiceProxy*,
-                                              const Req&, Resp*,
-                                              rpc::RpcController*)>& func);
+                 std::string func_name,
+                 const boost::function<void(master::MasterServiceProxy*,
+                                            const Req&, Resp*,
+                                            rpc::RpcController*,
+                                            const rpc::ResponseCallback&)>& func);
 
  private:
   client::sp::shared_ptr<client::KuduClient> client_;

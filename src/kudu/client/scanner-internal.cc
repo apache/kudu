@@ -40,6 +40,7 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/connection.h"
+#include "kudu/rpc/rpc.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/tserver/tserver_service.proxy.h"
@@ -58,6 +59,7 @@ using std::vector;
 
 namespace kudu {
 
+using rpc::ComputeExponentialBackoff;
 using rpc::CredentialsPolicy;
 using rpc::RpcController;
 using strings::Substitute;
@@ -182,8 +184,7 @@ Status KuduScanner::Data::HandleError(const ScanRpcStatus& err,
   }
 
   if (backoff) {
-    MonoDelta sleep =
-        KuduClient::Data::ComputeExponentialBackoff(scan_attempts_);
+    MonoDelta sleep = ComputeExponentialBackoff(scan_attempts_);
     MonoTime now = MonoTime::Now() + sleep;
     if (deadline < now) {
       return EnrichStatusMessage(Status::TimedOut("unable to retry before timeout"));

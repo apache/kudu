@@ -311,7 +311,7 @@ TEST_F(SecurityUnknownTskTest, ErrorUnavailableCommonOperations) {
     const Status s = scanner.Open();
     const string err_msg = s.ToString();
     ASSERT_TRUE(s.IsTimedOut()) << err_msg;
-    ASSERT_STR_CONTAINS(err_msg, "GetTableLocations");
+    ASSERT_STR_CONTAINS(err_msg, "LookupRpc");
   }
 
   // In a separate thread, import our TSK into the master's TokenSigner. After

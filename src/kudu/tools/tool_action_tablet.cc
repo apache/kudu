@@ -248,7 +248,7 @@ Status ReplaceTablet(const RunnerContext& context) {
   ReplaceTabletResponsePB resp;
   req.set_tablet_id(tablet_id);
   Status s = proxy.SyncRpc<ReplaceTabletRequestPB, ReplaceTabletResponsePB>(
-      req, &resp, "ReplaceTablet", &MasterServiceProxy::ReplaceTablet);
+      req, &resp, "ReplaceTablet", &MasterServiceProxy::ReplaceTabletAsync);
   RETURN_NOT_OK(s);
 
   if (resp.has_error()) {

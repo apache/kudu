@@ -2464,9 +2464,9 @@ TEST_F(ClientTest, TestWriteTimeout) {
     const Status& status = error->status();
     ASSERT_TRUE(status.IsTimedOut()) << status.ToString();
     ASSERT_STR_CONTAINS(status.ToString(),
-                        "GetTableLocations { table: 'client-testtb', "
+                        "LookupRpc { table: 'client-testtb', "
                         "partition-key: (RANGE (key): 1), attempt: 1 } failed: "
-                        "timed out after deadline expired");
+                        "LookupRpc timed out after deadline expired");
   }
 
   // Next time out the actual write on the tablet server.

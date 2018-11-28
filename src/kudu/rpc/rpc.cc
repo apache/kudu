@@ -17,6 +17,8 @@
 
 #include "kudu/rpc/rpc.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <string>
 
@@ -26,9 +28,7 @@
 
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
-#include "kudu/rpc/rpc_header.pb.h"
 
-using std::shared_ptr;
 using std::string;
 using strings::Substitute;
 using strings::SubstituteAndAppend;
@@ -37,42 +37,29 @@ namespace kudu {
 
 namespace rpc {
 
-bool RpcRetrier::HandleResponse(Rpc* rpc, Status* out_status) {
-  DCHECK(rpc);
-  DCHECK(out_status);
-
-  // Always retry TOO_BUSY and UNAVAILABLE errors.
-  const Status controller_status = controller_.status();
-  if (controller_status.IsRemoteError()) {
-    const ErrorStatusPB* err = controller_.error_response();
-    if (err &&
-        err->has_code() &&
-        (err->code() == ErrorStatusPB::ERROR_SERVER_TOO_BUSY ||
-         err->code() == ErrorStatusPB::ERROR_UNAVAILABLE)) {
-      // The UNAVAILABLE code is a broader counterpart of the
-      // SERVER_TOO_BUSY. In both cases it's necessary to retry a bit later.
-      DelayedRetry(rpc, controller_status);
-      return true;
-    }
-  }
-
-  *out_status = controller_status;
-  return false;
+MonoDelta ComputeExponentialBackoff(int num_attempts) {
+  return MonoDelta::FromMilliseconds(
+      (10 + rand() % 10) * static_cast<int>(
+          std::pow(2.0, std::min(8, num_attempts - 1))));
 }
 
 void RpcRetrier::DelayedRetry(Rpc* rpc, const Status& why_status) {
   if (!why_status.ok() && (last_error_.ok() || last_error_.IsTimedOut())) {
     last_error_ = why_status;
   }
-  // Add some jitter to the retry delay.
-  //
   // If the delay causes us to miss our deadline, RetryCb will fail the
   // RPC on our behalf.
-  int num_ms = ++attempt_num_ + ((rand() % 5));
-  messenger_->ScheduleOnReactor(boost::bind(&RpcRetrier::DelayedRetryCb,
-                                            this,
-                                            rpc, _1),
-                                MonoDelta::FromMilliseconds(num_ms));
+  MonoDelta backoff = ComputeBackoff(attempt_num_++);
+  messenger_->ScheduleOnReactor(
+      boost::bind(&RpcRetrier::DelayedRetryCb, this, rpc, _1), backoff);
+}
+
+MonoDelta RpcRetrier::ComputeBackoff(int num_attempts) const {
+  if (backoff_ == BackoffType::LINEAR) {
+    return MonoDelta::FromMilliseconds(num_attempts + ((rand() % 5)));
+  }
+  DCHECK(BackoffType::EXPONENTIAL == backoff_);
+  return ComputeExponentialBackoff(num_attempts);
 }
 
 void RpcRetrier::DelayedRetryCb(Rpc* rpc, const Status& status) {

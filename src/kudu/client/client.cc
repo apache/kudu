@@ -36,6 +36,7 @@
 #include "kudu/client/client_builder-internal.h"
 #include "kudu/client/error-internal.h"
 #include "kudu/client/error_collector.h"
+#include "kudu/client/master_proxy_rpc.h"
 #include "kudu/client/meta_cache.h"
 #include "kudu/client/partitioner-internal.h"
 #include "kudu/client/replica-internal.h"
@@ -76,6 +77,8 @@
 #include "kudu/master/master.proxy.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/request_tracker.h"
+#include "kudu/rpc/response_callback.h"
+#include "kudu/rpc/rpc.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/sasl_common.h"
 #include "kudu/rpc/user_credentials.h"
@@ -117,6 +120,7 @@ using kudu::master::MasterServiceProxy;
 using kudu::master::TSInfoPB;
 using kudu::master::TableIdentifierPB;
 using kudu::master::TabletLocationsPB;
+using kudu::rpc::BackoffType;
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
@@ -153,6 +157,7 @@ namespace client {
 
 class ResourceMetrics;
 
+using internal::AsyncLeaderMasterRpc;
 using internal::MetaCache;
 using sp::shared_ptr;
 
@@ -439,16 +444,13 @@ Status KuduClient::ListTabletServers(vector<KuduTabletServer*>* tablet_servers) 
   ListTabletServersResponsePB resp;
 
   MonoTime deadline = MonoTime::Now() + default_admin_operation_timeout();
-  Status s =
-      data_->SyncLeaderMasterRpc<ListTabletServersRequestPB, ListTabletServersResponsePB>(
-          deadline,
-          this,
-          req,
-          &resp,
-          "ListTabletServers",
-          &MasterServiceProxy::ListTabletServers,
-          {});
-  RETURN_NOT_OK(s);
+  Synchronizer sync;
+  AsyncLeaderMasterRpc<ListTabletServersRequestPB, ListTabletServersResponsePB> rpc(
+      deadline, this, BackoffType::EXPONENTIAL, req, &resp,
+      &MasterServiceProxy::ListTabletServersAsync, "ListTabletServers",
+      sync.AsStatusCallback(), {});
+  rpc.SendRpc();
+  RETURN_NOT_OK(sync.Wait());
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
   }
@@ -472,16 +474,13 @@ Status KuduClient::ListTables(vector<string>* tables,
     req.set_name_filter(filter);
   }
   MonoTime deadline = MonoTime::Now() + default_admin_operation_timeout();
-  Status s =
-      data_->SyncLeaderMasterRpc<ListTablesRequestPB, ListTablesResponsePB>(
-          deadline,
-          this,
-          req,
-          &resp,
-          "ListTables",
-          &MasterServiceProxy::ListTables,
-          {});
-  RETURN_NOT_OK(s);
+  Synchronizer sync;
+  AsyncLeaderMasterRpc<ListTablesRequestPB, ListTablesResponsePB> rpc(
+      deadline, this, BackoffType::EXPONENTIAL, req, &resp,
+      &MasterServiceProxy::ListTablesAsync, "ListTables",
+      sync.AsStatusCallback(), {});
+  rpc.SendRpc();
+  RETURN_NOT_OK(sync.Wait());
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
   }
@@ -545,16 +544,13 @@ Status KuduClient::GetTablet(const string& tablet_id, KuduTablet** tablet) {
 
   req.add_tablet_ids(tablet_id);
   MonoTime deadline = MonoTime::Now() + default_admin_operation_timeout();
-  Status s =
-      data_->SyncLeaderMasterRpc<GetTabletLocationsRequestPB, GetTabletLocationsResponsePB>(
-          deadline,
-          this,
-          req,
-          &resp,
-          "GetTabletLocations",
-          &MasterServiceProxy::GetTabletLocations,
-          {});
-  RETURN_NOT_OK(s);
+  Synchronizer sync;
+  AsyncLeaderMasterRpc<GetTabletLocationsRequestPB, GetTabletLocationsResponsePB> rpc(
+      deadline, this, BackoffType::EXPONENTIAL, req, &resp,
+      &MasterServiceProxy::GetTabletLocationsAsync, "GetTabletLocations",
+      sync.AsStatusCallback(), {});
+  rpc.SendRpc();
+  RETURN_NOT_OK(sync.Wait());
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
   }

@@ -95,7 +95,7 @@ Status ListMasters(const RunnerContext& context) {
   ListMastersResponsePB resp;
 
   proxy.SyncRpc<ListMastersRequestPB, ListMastersResponsePB>(
-      req, &resp, "ListMasters", &MasterServiceProxy::ListMasters);
+      req, &resp, "ListMasters", &MasterServiceProxy::ListMastersAsync);
 
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());

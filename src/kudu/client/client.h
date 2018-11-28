@@ -85,6 +85,8 @@ class KuduWriteOperation;
 class ResourceMetrics;
 
 namespace internal {
+template <class ReqClass, class RespClass>
+class AsyncLeaderMasterRpc; // IWYU pragma: keep
 class Batcher;
 class ErrorCollector;
 class GetTableSchemaRpc;
@@ -596,6 +598,9 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
 
  private:
   class KUDU_NO_EXPORT Data;
+
+  template <class ReqClass, class RespClass>
+  friend class internal::AsyncLeaderMasterRpc;
 
   friend class ClientTest;
   friend class ConnectToClusterBaseTest;

@@ -337,7 +337,7 @@ class MasterStressTest : public KuduTest,
       ReplaceTabletResponsePB resp;
       req.set_tablet_id(tablet_id);
       s = lm_proxy.SyncRpc<ReplaceTabletRequestPB, ReplaceTabletResponsePB>(
-          req, &resp, "ReplaceTablet", &MasterServiceProxy::ReplaceTablet);
+          req, &resp, "ReplaceTablet", &MasterServiceProxy::ReplaceTabletAsync);
       // NotFound is OK because it means the tablet was already replaced or deleted.
       if (!s.IsNotFound()) {
         CHECK_OK(s);
@@ -412,7 +412,7 @@ class MasterStressTest : public KuduTest,
       num_masters_restarted_.Increment();
 
       // Allow the tablet servers to send in heartbeats and clients to connect.
-      // Due to the way how Kudu client and SyncLeaderMasterRpc perform
+      // Due to the way how Kudu client and AsyncLeaderMasterRpc perform
       // exponential back-off while retrying RPCs, it's crucial to keep the
       // master up and running for about 2+ seconds to give those a better
       // chance contacting the master (so, 1500 with the time spent by the

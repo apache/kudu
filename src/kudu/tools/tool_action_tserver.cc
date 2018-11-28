@@ -95,7 +95,7 @@ Status ListTServers(const RunnerContext& context) {
   ListTabletServersResponsePB resp;
 
   proxy.SyncRpc<ListTabletServersRequestPB, ListTabletServersResponsePB>(
-      req, &resp, "ListTabletServers", &MasterServiceProxy::ListTabletServers);
+      req, &resp, "ListTabletServers", &MasterServiceProxy::ListTabletServersAsync);
 
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());

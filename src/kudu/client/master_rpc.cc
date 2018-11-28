@@ -36,6 +36,7 @@
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.proxy.h"
+#include "kudu/rpc/rpc.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/util/net/sockaddr.h"
@@ -55,9 +56,12 @@ using kudu::master::GetMasterRegistrationRequestPB;
 using kudu::master::GetMasterRegistrationResponsePB;
 using kudu::master::MasterErrorPB;
 using kudu::master::MasterServiceProxy;
+using kudu::rpc::BackoffType;
 using kudu::rpc::CredentialsPolicy;
+using kudu::rpc::ErrorStatusPB;
 using kudu::rpc::Messenger;
 using kudu::rpc::Rpc;
+using kudu::rpc::RpcController;
 using strings::Substitute;
 
 namespace kudu {
@@ -70,7 +74,7 @@ namespace internal {
 namespace {
 
 // An RPC for trying to connect via a particular Master.
-class ConnectToMasterRpc : public rpc::Rpc {
+class ConnectToMasterRpc : public Rpc {
  public:
 
   // Create a wrapper object for a retriable ConnectToMaster RPC
@@ -122,7 +126,7 @@ ConnectToMasterRpc::ConnectToMasterRpc(StatusCallback user_cb,
     rpc::UserCredentials user_credentials,
     rpc::CredentialsPolicy creds_policy,
     ConnectToMasterResponsePB* out)
-      : Rpc(deadline, std::move(messenger)),
+      : Rpc(deadline, std::move(messenger), BackoffType::LINEAR),
         user_cb_(std::move(user_cb)),
         addr_with_name_(std::move(addr_with_name)),
         user_credentials_(std::move(user_credentials)),
@@ -162,17 +166,31 @@ string ConnectToMasterRpc::ToString() const {
 }
 
 void ConnectToMasterRpc::SendRpcCb(const Status& status) {
-  // NOTE: 'status' here is actually coming from the RpcRetrier. If we successfully
-  // send an RPC, it will be 'Status::OK'.
+  // NOTE: 'status' here may actually come from RpcRetrier::DelayedRetryCb if
+  // retrying from DelayedRetry() below. If we successfully send an RPC, it
+  // will be Status::OK.
+  //
   // TODO(todd): this is the most confusing code I've ever seen...
   gscoped_ptr<ConnectToMasterRpc> deleter(this);
   Status new_status = status;
-  if (new_status.ok() && mutable_retrier()->HandleResponse(this, &new_status)) {
-    ignore_result(deleter.release());
-    return;
-  }
 
   rpc::RpcController* rpc = mutable_retrier()->mutable_controller();
+  if (new_status.ok()) {
+    new_status = rpc->status();
+    if (new_status.IsRemoteError()) {
+      const ErrorStatusPB* err = rpc->error_response();
+      // The UNAVAILABLE code is a broader counterpart of the SERVER_TOO_BUSY.
+      // In both cases it's necessary to retry a bit later.
+      if (err && err->has_code() &&
+          (err->code() == ErrorStatusPB::ERROR_SERVER_TOO_BUSY ||
+           err->code() == ErrorStatusPB::ERROR_UNAVAILABLE)) {
+        mutable_retrier()->DelayedRetry(this, new_status);
+        ignore_result(deleter.release());
+        return;
+      }
+    }
+  }
+
   if (!trying_old_rpc_ &&
       new_status.IsRemoteError() &&
       rpc->error_response()->unsupported_feature_flags_size() > 0) {
@@ -224,7 +242,7 @@ ConnectToClusterRpc::ConnectToClusterRpc(LeaderCallback user_cb,
                                          shared_ptr<Messenger> messenger,
                                          rpc::UserCredentials user_credentials,
                                          rpc::CredentialsPolicy creds_policy)
-    : Rpc(deadline, std::move(messenger)),
+    : Rpc(deadline, std::move(messenger), BackoffType::LINEAR),
       user_cb_(std::move(user_cb)),
       addrs_with_names_(std::move(addrs_with_names)),
       user_credentials_(std::move(user_credentials)),

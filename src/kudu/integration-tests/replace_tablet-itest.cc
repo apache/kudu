@@ -79,7 +79,7 @@ class ReplaceTabletITest : public ExternalMiniClusterITestBase {
     ReplaceTabletResponsePB resp;
     req.set_tablet_id(tablet_id);
     return proxy->SyncRpc<ReplaceTabletRequestPB, ReplaceTabletResponsePB>(
-        req, &resp, "ReplaceTablet", &MasterServiceProxy::ReplaceTablet);
+        req, &resp, "ReplaceTablet", &MasterServiceProxy::ReplaceTabletAsync);
   }
 
  private:

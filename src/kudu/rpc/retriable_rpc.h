@@ -21,10 +21,11 @@
 
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/rpc/messenger.h"
 #include "kudu/rpc/request_tracker.h"
+#include "kudu/rpc/response_callback.h"
 #include "kudu/rpc/rpc.h"
 #include "kudu/rpc/rpc_header.pb.h"
-#include "kudu/rpc/messenger.h"
 #include "kudu/util/monotime.h"
 
 namespace kudu {
@@ -34,28 +35,31 @@ namespace internal {
 typedef rpc::RequestTracker::SequenceNumber SequenceNumber;
 }
 
-// A base class for retriable RPCs that handles replica picking and retry logic.
+// A base class for retriable RPCs to servers that handles replica picking and
+// retry logic.
 //
-// The 'Server' template parameter refers to the type of the server that will be looked up
-// and passed to the derived classes on Try(). For instance in the case of WriteRpc it's
-// RemoteTabletServer.
+// The 'Server' template parameter refers to the type of the server that will
+// be looked up and passed to the derived classes on Try(). For instance in the
+// case of WriteRpc it's RemoteTabletServer.
 //
-// TODO(unknown): merge RpcRetrier into this class? Can't be done right now as the retrier is used
-// independently elsewhere, but likely possible when all replicated RPCs have a ReplicaPicker.
+// Note: unlike the vanilla RpcRetrier, that provides the mechanism with which
+// to retry, RetriableRpc provides the interfaces to perform more complex
+// handling of error responses, also taking into account server locations, etc.
 //
 // TODO(unknown): allow to target replicas other than the leader, if needed.
 //
-// TODO(unknown): once we have retry handling on all the RPCs merge this with rpc::Rpc.
+// TODO(awong): there might be room to merge part of this with retry logic in
+// AsyncLeaderMasterRpc; namely, the generic error-handling in the RPC layer.
 template <class Server, class RequestPB, class ResponsePB>
 class RetriableRpc : public Rpc {
  public:
-  RetriableRpc(const scoped_refptr<ServerPicker<Server>>& server_picker,
-               const scoped_refptr<RequestTracker>& request_tracker,
+  RetriableRpc(scoped_refptr<ServerPicker<Server>> server_picker,
+               scoped_refptr<RequestTracker> request_tracker,
                const MonoTime& deadline,
                std::shared_ptr<Messenger> messenger)
-      : Rpc(deadline, std::move(messenger)),
-        server_picker_(server_picker),
-        request_tracker_(request_tracker),
+      : Rpc(deadline, std::move(messenger), BackoffType::LINEAR),
+        server_picker_(std::move(server_picker)),
+        request_tracker_(std::move(request_tracker)),
         sequence_number_(RequestTracker::kNoSeqNo),
         num_attempts_(0) {}
 
