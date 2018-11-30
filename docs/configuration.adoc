@@ -84,6 +84,11 @@ Additionally, `--fs_wal_dir` and `--fs_metadata_dir` may be the same as _one
 of_ the directories listed in `--fs_data_dirs`, but must not be sub-directories
 of any of them.
 
+WARNING: Each directory specified by a configuration flag on a given machine
+should be used by at most one Kudu process. If multiple Kudu processes on the
+same machine are configured to use the same directory, Kudu may refuse to start
+up.
+
 WARNING: Once `--fs_data_dirs` is set, extra tooling is required to change it.
 For more details, see the link:administration.html#change_dir_config[Kudu
 Administration docs].
