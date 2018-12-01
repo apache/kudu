@@ -44,6 +44,7 @@ RowOperationsPB_Type ToInternalWriteType(KuduWriteOperation::Type type) {
     case KuduWriteOperation::UPDATE: return RowOperationsPB_Type_UPDATE;
     case KuduWriteOperation::DELETE: return RowOperationsPB_Type_DELETE;
     case KuduWriteOperation::UPSERT: return RowOperationsPB_Type_UPSERT;
+    case KuduWriteOperation::INSERT_IGNORE: return RowOperationsPB_Type_INSERT_IGNORE;
     default: LOG(FATAL) << "Unexpected write operation type: " << type;
   }
 }
@@ -104,6 +105,14 @@ KuduInsert::KuduInsert(const shared_ptr<KuduTable>& table)
 }
 
 KuduInsert::~KuduInsert() {}
+
+// InsertIgnore -----------------------------------------------------------------
+
+KuduInsertIgnore::KuduInsertIgnore(const shared_ptr<KuduTable>& table)
+  : KuduWriteOperation(table) {
+}
+
+KuduInsertIgnore::~KuduInsertIgnore() {}
 
 // Update -----------------------------------------------------------------------
 

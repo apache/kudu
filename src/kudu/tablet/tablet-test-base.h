@@ -319,15 +319,23 @@ class TabletTestBase : public KuduTabletTest {
   void InsertTestRows(int64_t first_row,
                       int64_t count,
                       int32_t val,
-                      TimeSeries *ts = NULL) {
+                      TimeSeries *ts = nullptr) {
     InsertOrUpsertTestRows(RowOperationsPB::INSERT, first_row, count, val, ts);
+  }
+
+  // Insert "count" rows, ignoring duplicate key errors.
+  void InsertIgnoreTestRows(int64_t first_row,
+                            int64_t count,
+                            int32_t val,
+                            TimeSeries *ts = nullptr) {
+    InsertOrUpsertTestRows(RowOperationsPB::INSERT_IGNORE, first_row, count, val, ts);
   }
 
   // Upserts "count" rows.
   void UpsertTestRows(int64_t first_row,
                       int64_t count,
                       int32_t val,
-                      TimeSeries *ts = NULL) {
+                      TimeSeries *ts = nullptr) {
     InsertOrUpsertTestRows(RowOperationsPB::UPSERT, first_row, count, val, ts);
   }
 
@@ -335,7 +343,7 @@ class TabletTestBase : public KuduTabletTest {
                               int64_t first_row,
                               int64_t count,
                               int32_t val,
-                              TimeSeries *ts = NULL) {
+                              TimeSeries *ts = nullptr) {
     LocalTabletWriter writer(tablet().get(), &client_schema_);
     KuduPartialRow row(&client_schema_);
 
@@ -344,6 +352,8 @@ class TabletTestBase : public KuduTabletTest {
       setup_.BuildRow(&row, i, val);
       if (type == RowOperationsPB::INSERT) {
         CHECK_OK(writer.Insert(row));
+      } else if (type == RowOperationsPB::INSERT_IGNORE) {
+        CHECK_OK(writer.InsertIgnore(row));
       } else if (type == RowOperationsPB::UPSERT) {
         CHECK_OK(writer.Upsert(row));
       } else {

@@ -155,7 +155,7 @@ Status WriteTransaction::Prepare() {
   RETURN_NOT_OK_PREPEND(SchemaFromPB(state_->request()->schema(), &client_schema),
                         "Cannot decode client schema");
   if (client_schema.has_column_ids()) {
-    // TODO: we have this kind of code a lot - add a new SchemaFromPB variant which
+    // TODO(unknown): we have this kind of code a lot - add a new SchemaFromPB variant which
     // does this check inline.
     Status s = Status::InvalidArgument("User requests should not have Column IDs");
     state_->completion_callback()->set_error(s, TabletServerErrorPB::INVALID_SCHEMA);
@@ -262,9 +262,10 @@ void WriteTransaction::Finish(TransactionResult result) {
 
   TabletMetrics* metrics = state_->tablet_replica()->tablet()->metrics();
   if (metrics) {
-    // TODO: should we change this so it's actually incremented by the
+    // TODO(unknown): should we change this so it's actually incremented by the
     // Tablet code itself instead of this wrapper code?
     metrics->rows_inserted->IncrementBy(state_->metrics().successful_inserts);
+    metrics->insert_ignore_errors->IncrementBy(state_->metrics().insert_ignore_errors);
     metrics->rows_upserted->IncrementBy(state_->metrics().successful_upserts);
     metrics->rows_updated->IncrementBy(state_->metrics().successful_updates);
     metrics->rows_deleted->IncrementBy(state_->metrics().successful_deletes);
@@ -416,6 +417,13 @@ void WriteTransactionState::UpdateMetricsForOp(const RowOp& op) {
   switch (op.decoded_op.type) {
     case RowOperationsPB::INSERT:
       tx_metrics_.successful_inserts++;
+      break;
+    case RowOperationsPB::INSERT_IGNORE:
+      if (op.error_ignored) {
+        tx_metrics_.insert_ignore_errors++;
+      } else {
+        tx_metrics_.successful_inserts++;
+      }
       break;
     case RowOperationsPB::UPSERT:
       tx_metrics_.successful_upserts++;

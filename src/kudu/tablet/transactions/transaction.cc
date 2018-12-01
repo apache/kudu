@@ -72,6 +72,7 @@ TransactionCompletionCallback::~TransactionCompletionCallback() {}
 
 TransactionMetrics::TransactionMetrics()
   : successful_inserts(0),
+    insert_ignore_errors(0),
     successful_upserts(0),
     successful_updates(0),
     successful_deletes(0),
@@ -80,6 +81,7 @@ TransactionMetrics::TransactionMetrics()
 
 void TransactionMetrics::Reset() {
   successful_inserts = 0;
+  insert_ignore_errors = 0;
   successful_upserts = 0;
   successful_updates = 0;
   successful_deletes = 0;

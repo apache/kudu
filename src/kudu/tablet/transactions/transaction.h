@@ -60,6 +60,7 @@ struct TransactionMetrics {
   TransactionMetrics();
   void Reset();
   int successful_inserts;
+  int insert_ignore_errors;
   int successful_upserts;
   int successful_updates;
   int successful_deletes;

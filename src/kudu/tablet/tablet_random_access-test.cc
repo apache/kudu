@@ -26,7 +26,6 @@
 #include <boost/optional/optional.hpp>
 #include <boost/optional/optional_io.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -119,23 +118,34 @@ class TestRandomAccess : public KuduTabletTest {
     vector<LocalTabletWriter::Op> pending;
     for (int i = 0; i < 3; i++) {
       int new_val = rand();
+      int r = rand() % 3;
       if (cur_val == boost::none) {
         // If there is no row, then randomly insert or upsert.
-        if (rand() % 2 == 1) {
-          cur_val = InsertRow(key, new_val, &pending);
-        } else {
-          cur_val = UpsertRow(key, new_val, cur_val, &pending);
+        switch (r) {
+          case 1:
+            cur_val = InsertRow(key, new_val, &pending);
+            break;
+          case 2:
+            cur_val = InsertIgnoreRow(key, new_val, &pending);
+            break;
+          default:
+            cur_val = UpsertRow(key, new_val, cur_val, &pending);
         }
       } else {
         if (new_val % (FLAGS_update_delete_ratio + 1) == 0) {
           cur_val = DeleteRow(key, &pending);
         } else {
-          // If we are meant to update an existing row, randomly choose
-          // between update and upsert.
-          if (rand() % 2 == 1) {
-            cur_val = MutateRow(key, new_val, cur_val, &pending);
-          } else {
-            cur_val = UpsertRow(key, new_val, cur_val, &pending);
+          // If row already exists, randomly choose between an update,
+          // upsert, and insert ignore.
+          switch (r) {
+            case 1:
+              cur_val = MutateRow(key, new_val, cur_val, &pending);
+              break;
+            case 2:
+              InsertIgnoreRow(key, new_val, &pending); // won't change existing value
+              break;
+            default:
+              cur_val = UpsertRow(key, new_val, cur_val, &pending);
           }
         }
       }
@@ -186,10 +196,14 @@ class TestRandomAccess : public KuduTabletTest {
     }
   }
 
-  // Adds an insert for the given key/value pair to 'ops', returning the new stringified
-  // value of the row.
+  // Adds an insert for the given key/value pair to 'ops', returning the expected value
   optional<ExpectedKeyValueRow> InsertRow(int key, int val, vector<LocalTabletWriter::Op>* ops) {
     return DoRowOp(RowOperationsPB::INSERT, key, val, boost::none, ops);
+  }
+
+  optional<ExpectedKeyValueRow> InsertIgnoreRow(int key, int val,
+                                                vector<LocalTabletWriter::Op>* ops) {
+    return DoRowOp(RowOperationsPB::INSERT_IGNORE, key, val, boost::none, ops);
   }
 
   optional<ExpectedKeyValueRow> UpsertRow(int key,
@@ -199,8 +213,7 @@ class TestRandomAccess : public KuduTabletTest {
     return DoRowOp(RowOperationsPB::UPSERT, key, val, old_row, ops);
   }
 
-  // Adds an update of the given key/value pair to 'ops', returning the new stringified
-  // value of the row.
+  // Adds an update of the given key/value pair to 'ops', returning the expected value
   optional<ExpectedKeyValueRow> MutateRow(int key,
                                           uint32_t new_val,
                                           const optional<ExpectedKeyValueRow>& old_row,
@@ -223,6 +236,7 @@ class TestRandomAccess : public KuduTabletTest {
       case RowOperationsPB::UPSERT:
       case RowOperationsPB::UPDATE:
       case RowOperationsPB::INSERT:
+      case RowOperationsPB::INSERT_IGNORE:
         switch (val % 2) {
           case 0:
             CHECK_OK(row->SetNull(1));

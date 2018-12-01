@@ -353,10 +353,10 @@ class ClientTest : public KuduTest {
 
   // Inserts given number of tests rows into the specified table
   // in the context of the session.
-  void InsertTestRows(KuduTable* table, KuduSession* session,
+  static void InsertTestRows(KuduTable* table, KuduSession* session,
                       int num_rows, int first_row = 0) {
     for (int i = first_row; i < num_rows + first_row; ++i) {
-      unique_ptr<KuduInsert> insert(BuildTestRow(table, i));
+      unique_ptr<KuduInsert> insert(BuildTestInsert(table, i));
       ASSERT_OK(session->Apply(insert.release()));
     }
   }
@@ -401,17 +401,28 @@ class ClientTest : public KuduTest {
     NO_FATALS(CheckNoRpcOverflow());
   }
 
-  unique_ptr<KuduInsert> BuildTestRow(KuduTable* table, int index) {
+  static unique_ptr<KuduInsert> BuildTestInsert(KuduTable* table, int index) {
     unique_ptr<KuduInsert> insert(table->NewInsert());
     KuduPartialRow* row = insert->mutable_row();
+    PopulateDefaultRow(row, index);
+    return insert;
+  }
+
+  static unique_ptr<KuduInsertIgnore> BuildTestInsertIgnore(KuduTable* table, int index) {
+    unique_ptr<KuduInsertIgnore> insert(table->NewInsertIgnore());
+    KuduPartialRow* row = insert->mutable_row();
+    PopulateDefaultRow(row, index);
+    return insert;
+  }
+
+  static void PopulateDefaultRow(KuduPartialRow* row, int index) {
     CHECK_OK(row->SetInt32(0, index));
     CHECK_OK(row->SetInt32(1, index * 2));
     CHECK_OK(row->SetStringCopy(2, Slice(StringPrintf("hello %d", index))));
     CHECK_OK(row->SetInt32(3, index * 3));
-    return insert;
   }
 
-  unique_ptr<KuduUpdate> UpdateTestRow(KuduTable* table, int index) {
+  static unique_ptr<KuduUpdate> UpdateTestRow(KuduTable* table, int index) {
     unique_ptr<KuduUpdate> update(table->NewUpdate());
     KuduPartialRow* row = update->mutable_row();
     CHECK_OK(row->SetInt32(0, index));
@@ -420,13 +431,12 @@ class ClientTest : public KuduTest {
     return update;
   }
 
-  unique_ptr<KuduDelete> DeleteTestRow(KuduTable* table, int index) {
+  static unique_ptr<KuduDelete> DeleteTestRow(KuduTable* table, int index) {
     unique_ptr<KuduDelete> del(table->NewDelete());
     KuduPartialRow* row = del->mutable_row();
     CHECK_OK(row->SetInt32(0, index));
     return del;
   }
-
 
   void DoTestScanResourceMetrics() {
     KuduScanner scanner(client_table_.get());
@@ -1066,13 +1076,13 @@ TEST_P(ScanMultiTabletParamTest, Test) {
   session->SetTimeoutMillis(5000);
   for (int i = 1; i < kTabletsNum; ++i) {
     unique_ptr<KuduInsert> insert;
-    insert = BuildTestRow(table.get(), 2 + i * kRowsPerTablet);
+    insert = BuildTestInsert(table.get(), 2 + i * kRowsPerTablet);
     ASSERT_OK(session->Apply(insert.release()));
-    insert = BuildTestRow(table.get(), 3 + i * kRowsPerTablet);
+    insert = BuildTestInsert(table.get(), 3 + i * kRowsPerTablet);
     ASSERT_OK(session->Apply(insert.release()));
-    insert = BuildTestRow(table.get(), 5 + i * kRowsPerTablet);
+    insert = BuildTestInsert(table.get(), 5 + i * kRowsPerTablet);
     ASSERT_OK(session->Apply(insert.release()));
-    insert = BuildTestRow(table.get(), 7 + i * kRowsPerTablet);
+    insert = BuildTestInsert(table.get(), 7 + i * kRowsPerTablet);
     ASSERT_OK(session->Apply(insert.release()));
   }
   FlushSessionOrDie(session);
@@ -1608,13 +1618,13 @@ TEST_F(ClientTest, TestNonCoveringRangePartitions) {
   ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_SYNC));
   session->SetTimeoutMillis(60000);
   vector<unique_ptr<KuduInsert>> out_of_range_inserts;
-  out_of_range_inserts.emplace_back(BuildTestRow(table.get(), -50));
-  out_of_range_inserts.emplace_back(BuildTestRow(table.get(), -1));
-  out_of_range_inserts.emplace_back(BuildTestRow(table.get(), 100));
-  out_of_range_inserts.emplace_back(BuildTestRow(table.get(), 150));
-  out_of_range_inserts.emplace_back(BuildTestRow(table.get(), 199));
-  out_of_range_inserts.emplace_back(BuildTestRow(table.get(), 300));
-  out_of_range_inserts.emplace_back(BuildTestRow(table.get(), 350));
+  out_of_range_inserts.emplace_back(BuildTestInsert(table.get(), -50));
+  out_of_range_inserts.emplace_back(BuildTestInsert(table.get(), -1));
+  out_of_range_inserts.emplace_back(BuildTestInsert(table.get(), 100));
+  out_of_range_inserts.emplace_back(BuildTestInsert(table.get(), 150));
+  out_of_range_inserts.emplace_back(BuildTestInsert(table.get(), 199));
+  out_of_range_inserts.emplace_back(BuildTestInsert(table.get(), 300));
+  out_of_range_inserts.emplace_back(BuildTestInsert(table.get(), 350));
 
   for (auto& insert : out_of_range_inserts) {
     client_->data_->meta_cache_->ClearCache();
@@ -1728,7 +1738,7 @@ TEST_F(ClientTest, TestOpenTableClearsNonCoveringRangePartitions) {
   // Attempt to insert into the non-covered range, priming the meta cache.
   shared_ptr<KuduSession> session = client_->NewSession();
   ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_SYNC));
-  ASSERT_TRUE(session->Apply(BuildTestRow(table.get(), 1).release()).IsIOError());
+  ASSERT_TRUE(session->Apply(BuildTestInsert(table.get(), 1).release()).IsIOError());
   {
     vector<KuduError*> errors;
     ElementDeleter drop(&errors);
@@ -1758,7 +1768,7 @@ TEST_F(ClientTest, TestOpenTableClearsNonCoveringRangePartitions) {
 
   // Attempt to insert again into the non-covered range. It should still fail,
   // because the meta cache still contains the non-covered entry.
-  ASSERT_TRUE(session->Apply(BuildTestRow(table.get(), 1).release()).IsIOError());
+  ASSERT_TRUE(session->Apply(BuildTestInsert(table.get(), 1).release()).IsIOError());
   {
     vector<KuduError*> errors;
     ElementDeleter drop(&errors);
@@ -1772,7 +1782,7 @@ TEST_F(ClientTest, TestOpenTableClearsNonCoveringRangePartitions) {
   // Re-open the table, and attempt to insert again.  This time the meta cache
   // should clear non-covered entries, and the insert should succeed.
   ASSERT_OK(client_->OpenTable(kTableName, &table));
-  ASSERT_OK(session->Apply(BuildTestRow(table.get(), 1).release()));
+  ASSERT_OK(session->Apply(BuildTestInsert(table.get(), 1).release()));
 }
 
 TEST_F(ClientTest, TestExclusiveInclusiveRangeBounds) {
@@ -1814,13 +1824,13 @@ TEST_F(ClientTest, TestExclusiveInclusiveRangeBounds) {
   ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_SYNC));
   session->SetTimeoutMillis(60000);
   vector<unique_ptr<KuduInsert>> out_of_range_inserts;
-  out_of_range_inserts.emplace_back(BuildTestRow(table.get(), -50));
-  out_of_range_inserts.emplace_back(BuildTestRow(table.get(), -1));
-  out_of_range_inserts.emplace_back(BuildTestRow(table.get(), 100));
-  out_of_range_inserts.emplace_back(BuildTestRow(table.get(), 150));
-  out_of_range_inserts.emplace_back(BuildTestRow(table.get(), 199));
-  out_of_range_inserts.emplace_back(BuildTestRow(table.get(), 300));
-  out_of_range_inserts.emplace_back(BuildTestRow(table.get(), 350));
+  out_of_range_inserts.emplace_back(BuildTestInsert(table.get(), -50));
+  out_of_range_inserts.emplace_back(BuildTestInsert(table.get(), -1));
+  out_of_range_inserts.emplace_back(BuildTestInsert(table.get(), 100));
+  out_of_range_inserts.emplace_back(BuildTestInsert(table.get(), 150));
+  out_of_range_inserts.emplace_back(BuildTestInsert(table.get(), 199));
+  out_of_range_inserts.emplace_back(BuildTestInsert(table.get(), 300));
+  out_of_range_inserts.emplace_back(BuildTestInsert(table.get(), 350));
 
   for (auto& insert : out_of_range_inserts) {
     Status result = session->Apply(insert.release());
@@ -2411,10 +2421,58 @@ TEST_F(ClientTest, TestInsertSingleRowManualBatch) {
   // Retry
   ASSERT_OK(insert->mutable_row()->SetInt32("key", 12345));
   ASSERT_OK(session->Apply(insert.release()));
-  ASSERT_TRUE(insert == nullptr) << "Successful insert should take ownership";
   ASSERT_TRUE(session->HasPendingOperations()) << "Should be pending until we Flush";
 
   FlushSessionOrDie(session);
+}
+
+static void DoTestInsertIgnoreVerifyRows(const shared_ptr<KuduTable>& tbl, int num_rows) {
+  vector<string> rows;
+  KuduScanner scanner(tbl.get());
+  ASSERT_OK(ScanToStrings(&scanner, &rows));
+  ASSERT_EQ(num_rows, rows.size());
+  for (int i = 0; i < num_rows; i++) {
+    int key = i + 1;
+    ASSERT_EQ(StringPrintf("(int32 key=%d, int32 int_val=%d, string string_val=\"hello %d\", "
+        "int32 non_null_with_default=%d)", key, key*2, key, key*3), rows[i]);
+  }
+}
+
+TEST_F(ClientTest, TestInsertIgnore) {
+  shared_ptr<KuduSession> session = client_->NewSession();
+  session->SetTimeoutMillis(10000);
+  ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_SYNC));
+
+  {
+    unique_ptr<KuduInsert> insert(BuildTestInsert(client_table_.get(), 1));
+    ASSERT_OK(session->Apply(insert.release()));
+    DoTestInsertIgnoreVerifyRows(client_table_, 1);
+  }
+
+  {
+    // INSERT IGNORE results in no error on duplicate primary key
+    unique_ptr<KuduInsertIgnore> insert_ignore(BuildTestInsertIgnore(client_table_.get(), 1));
+    ASSERT_OK(session->Apply(insert_ignore.release()));
+    DoTestInsertIgnoreVerifyRows(client_table_, 1);
+  }
+
+  {
+    // INSERT IGNORE cannot update row
+    unique_ptr<KuduInsertIgnore> insert_ignore(client_table_->NewInsertIgnore());
+    ASSERT_OK(insert_ignore->mutable_row()->SetInt32("key", 1));
+    ASSERT_OK(insert_ignore->mutable_row()->SetInt32("int_val", 999));
+    ASSERT_OK(insert_ignore->mutable_row()->SetStringCopy("string_val", "hello world"));
+    ASSERT_OK(insert_ignore->mutable_row()->SetInt32("non_null_with_default", 999));
+    ASSERT_OK(session->Apply(insert_ignore.release())); // returns ok but results in no change
+    DoTestInsertIgnoreVerifyRows(client_table_, 1);
+  }
+
+  {
+    // INSERT IGNORE can insert new row
+    unique_ptr<KuduInsertIgnore> insert_ignore(BuildTestInsertIgnore(client_table_.get(), 2));
+    ASSERT_OK(session->Apply(insert_ignore.release()));
+    DoTestInsertIgnoreVerifyRows(client_table_, 2);
+  }
 }
 
 TEST_F(ClientTest, TestInsertAutoFlushSync) {
@@ -5089,7 +5147,7 @@ TEST_F(ClientTest, TestReadAtSnapshotNoTimestampSet) {
     shared_ptr<KuduSession> session(client_->NewSession());
     ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
     for (size_t i = 0; i < kTabletsNum * kRowsPerTablet; ++i) {
-      unique_ptr<KuduInsert> insert(BuildTestRow(table.get(), i));
+      unique_ptr<KuduInsert> insert(BuildTestInsert(table.get(), i));
       ASSERT_OK(session->Apply(insert.release()));
     }
     FlushSessionOrDie(session);

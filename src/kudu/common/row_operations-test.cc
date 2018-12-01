@@ -19,6 +19,7 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <initializer_list>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -124,7 +125,7 @@ void RowOperationsTest::CheckDecodeDoesntCrash(const Schema& client_schema,
 void RowOperationsTest::DoFuzzTest(const Schema& server_schema,
                                    const KuduPartialRow& row,
                                    int n_random_changes) {
-  for (int operation = 0; operation <= 8; operation++) {
+  for (int operation = 0; operation <= 9; operation++) {
     RowOperationsPB pb;
     RowOperationsPBEncoder enc(&pb);
 
@@ -155,6 +156,9 @@ void RowOperationsTest::DoFuzzTest(const Schema& server_schema,
         break;
       case 8:
         enc.Add(RowOperationsPB::INCLUSIVE_RANGE_UPPER_BOUND, row);
+        break;
+      case 9:
+        enc.Add(RowOperationsPB::INSERT_IGNORE, row);
         break;
     }
 

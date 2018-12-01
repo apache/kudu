@@ -65,6 +65,8 @@ string DecodedRowOperation::ToString(const Schema& schema) const {
       return "UNKNOWN";
     case RowOperationsPB::INSERT:
       return "INSERT " + schema.DebugRow(ConstContiguousRow(&schema, row_data));
+    case RowOperationsPB::INSERT_IGNORE:
+      return "INSERT IGNORE " + schema.DebugRow(ConstContiguousRow(&schema, row_data));
     case RowOperationsPB::UPSERT:
       return "UPSERT " + schema.DebugRow(ConstContiguousRow(&schema, row_data));
     case RowOperationsPB::UPDATE:
@@ -693,6 +695,7 @@ Status RowOperationsPBDecoder::DecodeOp<DecoderMode::WRITE_OPS>(
     case RowOperationsPB::UNKNOWN:
       return Status::NotSupported("Unknown row operation type");
     case RowOperationsPB::INSERT:
+    case RowOperationsPB::INSERT_IGNORE:
     case RowOperationsPB::UPSERT:
       RETURN_NOT_OK(DecodeInsertOrUpsert(prototype_row_storage, mapping, op));
       break;

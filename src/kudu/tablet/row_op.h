@@ -42,6 +42,7 @@ struct RowOp {
   // Only one of the following four functions must be called, at most once.
   void SetFailed(const Status& s);
   void SetInsertSucceeded(int mrs_id);
+  void SetErrorIgnored();
   void SetMutateSucceeded(gscoped_ptr<OperationResultPB> result);
   // Sets the result of a skipped operation on bootstrap.
   // TODO(dralves) Currently this performs a copy. Might be avoided with some refactoring.
@@ -91,6 +92,9 @@ struct RowOp {
   // 'present_in_rowset' is nullptr, then this indicates that the key
   // for this op does not exist in any RowSet.
   bool checked_present = false;
+
+  // True if an ignore op was ignored due to an error.
+  bool error_ignored = false;
 
   // The RowSet in which this op's key has been found present and alive.
   // This will be null if 'checked_present' is false, or if it has been

@@ -104,6 +104,8 @@ namespace tablet {
 enum TestOpType {
   TEST_INSERT,
   TEST_INSERT_PK_ONLY,
+  TEST_INSERT_IGNORE,
+  TEST_INSERT_IGNORE_PK_ONLY,
   TEST_UPSERT,
   TEST_UPSERT_PK_ONLY,
   TEST_UPDATE,
@@ -124,6 +126,8 @@ const char* kTableName = "table";
 const char* TestOpType_names[] = {
   "TEST_INSERT",
   "TEST_INSERT_PK_ONLY",
+  "TEST_INSERT_IGNORE",
+  "TEST_INSERT_IGNORE_PK_ONLY",
   "TEST_UPSERT",
   "TEST_UPSERT_PK_ONLY",
   "TEST_UPDATE",
@@ -172,6 +176,8 @@ struct TestOp {
         return strings::Substitute("{$0}", TestOpType_names[type]);
       case TEST_INSERT:
       case TEST_INSERT_PK_ONLY:
+      case TEST_INSERT_IGNORE:
+      case TEST_INSERT_IGNORE_PK_ONLY:
       case TEST_UPSERT:
       case TEST_UPSERT_PK_ONLY:
       case TEST_UPDATE:
@@ -214,6 +220,8 @@ struct Redo {
 
 const vector<TestOpType> kAllOps {TEST_INSERT,
                                   TEST_INSERT_PK_ONLY,
+                                  TEST_INSERT_IGNORE,
+                                  TEST_INSERT_IGNORE_PK_ONLY,
                                   TEST_UPSERT,
                                   TEST_UPSERT_PK_ONLY,
                                   TEST_UPDATE,
@@ -229,6 +237,7 @@ const vector<TestOpType> kAllOps {TEST_INSERT,
                                   TEST_DIFF_SCAN};
 
 const vector<TestOpType> kPkOnlyOps {TEST_INSERT_PK_ONLY,
+                                     TEST_INSERT_IGNORE_PK_ONLY,
                                      TEST_UPSERT_PK_ONLY,
                                      TEST_DELETE,
                                      TEST_FLUSH_OPS,
@@ -323,6 +332,8 @@ class FuzzTest : public KuduTest {
     unique_ptr<KuduWriteOperation> op;
     if (type == TEST_INSERT || type == TEST_INSERT_PK_ONLY) {
       op.reset(table_->NewInsert());
+    } else if (type == TEST_INSERT_IGNORE || type == TEST_INSERT_IGNORE_PK_ONLY) {
+      op.reset(table_->NewInsertIgnore());
     } else {
       op.reset(table_->NewUpsert());
     }
@@ -331,6 +342,7 @@ class FuzzTest : public KuduTest {
     ret.key = key;
     switch (type) {
       case TEST_INSERT:
+      case TEST_INSERT_IGNORE:
       case TEST_UPSERT: {
         if (val & 1) {
           CHECK_OK(row->SetNull(1));
@@ -338,13 +350,18 @@ class FuzzTest : public KuduTest {
           CHECK_OK(row->SetInt32(1, val));
           ret.val = val;
         }
+        if (type == TEST_INSERT_IGNORE && old_row) {
+          // insert ignore when the row already exists results in old value
+          ret.val = old_row->val;
+        }
         break;
       }
       case TEST_INSERT_PK_ONLY:
         break;
+      case TEST_INSERT_IGNORE_PK_ONLY:
       case TEST_UPSERT_PK_ONLY: {
-        // For "upsert PK only", we expect the row to keep its old value if
-        // the row existed, or NULL if there was no old row.
+        // For "upsert PK only" and "insert ignore PK only", we expect the row
+        // to keep its old value if the row existed, or NULL if there was no old row.
         ret.val = old_row ? old_row->val : boost::none;
         break;
       }
@@ -687,6 +704,8 @@ bool IsMutation(const TestOpType& op) {
   switch (op) {
     case TEST_INSERT:
     case TEST_INSERT_PK_ONLY:
+    case TEST_INSERT_IGNORE:
+    case TEST_INSERT_IGNORE_PK_ONLY:
     case TEST_UPSERT:
     case TEST_UPSERT_PK_ONLY:
     case TEST_UPDATE:
@@ -726,10 +745,20 @@ void GenerateTestCase(vector<TestOp>* ops, int len, TestOpSets sets = ALL) {
         ops_pending = true;
         data_in_mrs = true;
         break;
+      case TEST_INSERT_IGNORE:
+      case TEST_INSERT_IGNORE_PK_ONLY:
+        ops->emplace_back(r, row_key);
+        ops_pending = true;
+        // If the row doesn't currently exist, this will act like an insert
+        // and put it into MRS.
+        if (!exists[row_key]) {
+          data_in_mrs = true;
+        }
+        exists[row_key] = true;
+        break;
       case TEST_UPSERT:
       case TEST_UPSERT_PK_ONLY:
         ops->emplace_back(r, row_key);
-        exists[row_key] = true;
         ops_pending = true;
         // If the row doesn't currently exist, this will act like an insert
         // and put it into MRS.
@@ -740,6 +769,7 @@ void GenerateTestCase(vector<TestOp>* ops, int len, TestOpSets sets = ALL) {
           // a DMS.
           data_in_dms = true;
         }
+        exists[row_key] = true;
         break;
       case TEST_UPDATE:
         if (!exists[row_key]) continue;
@@ -849,6 +879,8 @@ void FuzzTest::ValidateFuzzCase(const vector<TestOp>& test_ops) {
         CHECK(!exists[test_op.val]) << "invalid case: inserting already-existing row";
         exists[test_op.val] = true;
         break;
+      case TEST_INSERT_IGNORE:
+      case TEST_INSERT_IGNORE_PK_ONLY:
       case TEST_UPSERT:
       case TEST_UPSERT_PK_ONLY:
         exists[test_op.val] = true;
@@ -888,17 +920,28 @@ void FuzzTest::RunFuzzCase(const vector<TestOp>& test_ops,
     switch (test_op.type) {
       case TEST_INSERT:
       case TEST_INSERT_PK_ONLY:
+      case TEST_INSERT_IGNORE:
+      case TEST_INSERT_IGNORE_PK_ONLY:
       case TEST_UPSERT:
       case TEST_UPSERT_PK_ONLY: {
         RedoType rtype = pending_val[test_op.val] ? UPDATE : INSERT;
         pending_val[test_op.val] = InsertOrUpsertRow(
             test_op.val, i++, pending_val[test_op.val], test_op.type);
 
-        // A PK-only UPSERT that is converted into an UPDATE will be dropped
-        // server-side. We must do the same.
-        if (test_op.type != TEST_UPSERT_PK_ONLY || rtype != UPDATE) {
-          pending_redos.emplace_back(rtype, test_op.val, pending_val[test_op.val]->val);
+        // An insert ignore on a row that already exists will be dropped server-side.
+        // We must do the same.
+        if ((test_op.type == TEST_INSERT_IGNORE || test_op.type == TEST_INSERT_IGNORE_PK_ONLY) &&
+            rtype == UPDATE) {
+          break;
         }
+
+        // An "upsert PK-only" that is converted into an update will be dropped server-side.
+        // We must do the same.
+        if (test_op.type == TEST_UPSERT_PK_ONLY && rtype == UPDATE) {
+          break;
+        }
+
+        pending_redos.emplace_back(rtype, test_op.val, pending_val[test_op.val]->val);
         break;
       }
       case TEST_UPDATE:

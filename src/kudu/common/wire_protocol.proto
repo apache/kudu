@@ -162,6 +162,7 @@ message RowOperationsPB {
     UPDATE = 2;
     DELETE = 3;
     UPSERT = 5;
+    INSERT_IGNORE = 10;
 
     // Used when specifying split rows on table creation.
     SPLIT_ROW = 4;

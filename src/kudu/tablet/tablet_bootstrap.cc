@@ -421,7 +421,8 @@ class TabletBootstrap {
     // Number of REPLICATE messages for which a matching COMMIT was found.
     int ops_committed;
 
-    // Number inserts/mutations seen and ignored.
+    // Number inserts/mutations seen and ignored. Note inserts_ignored does not refer
+    // to the INSERT_IGNORE operation. It refers to inserts ignored during log replay.
     int inserts_seen, inserts_ignored;
     int mutations_seen, mutations_ignored;
 
@@ -1553,8 +1554,9 @@ Status TabletBootstrap::ApplyOperations(const IOContext* io_context,
     // Increment the seen/ignored stats.
     switch (op->decoded_op.type) {
       case RowOperationsPB::INSERT:
+      case RowOperationsPB::INSERT_IGNORE:
       case RowOperationsPB::UPSERT: {
-        // TODO: should we have a separate counter for upserts?
+        // TODO(unknown): should we have a separate counter for upserts?
         stats_.inserts_seen++;
         if (op->has_result()) {
           stats_.inserts_ignored++;

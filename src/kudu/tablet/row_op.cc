@@ -52,6 +52,12 @@ void RowOp::SetInsertSucceeded(int mrs_id) {
   result->add_mutated_stores()->set_mrs_id(mrs_id);
 }
 
+void RowOp::SetErrorIgnored() {
+  DCHECK(!result) << SecureDebugString(*result);
+  result.reset(new OperationResultPB());
+  error_ignored = true;
+}
+
 void RowOp::SetMutateSucceeded(gscoped_ptr<OperationResultPB> result) {
   DCHECK(!this->result) << SecureDebugString(*result);
   this->result = std::move(result);

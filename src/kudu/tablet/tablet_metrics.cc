@@ -31,6 +31,11 @@ METRIC_DEFINE_counter(tablet, rows_inserted, "Rows Inserted",
     kudu::MetricUnit::kRows,
     "Number of rows inserted into this tablet since service start",
     kudu::MetricLevel::kInfo);
+METRIC_DEFINE_counter(tablet, insert_ignore_errors, "Insert Ignore Errors",
+    kudu::MetricUnit::kRows,
+    "Number of insert ignore operations for this tablet which were "
+    "ignored due to an error since service start",
+    kudu::MetricLevel::kDebug);
 METRIC_DEFINE_counter(tablet, rows_upserted, "Rows Upserted",
     kudu::MetricUnit::kRows,
     "Number of rows upserted into this tablet since service start",
@@ -326,6 +331,7 @@ TabletMetrics::TabletMetrics(const scoped_refptr<MetricEntity>& entity)
     MINIT(rows_upserted),
     MINIT(rows_updated),
     MINIT(rows_deleted),
+    MINIT(insert_ignore_errors),
     MINIT(insertions_failed_dup_key),
     MINIT(upserts_as_updates),
     MINIT(scanner_rows_returned),
