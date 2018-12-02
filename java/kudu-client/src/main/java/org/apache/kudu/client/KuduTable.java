@@ -167,6 +167,16 @@ public class KuduTable {
   }
 
   /**
+   * Get a new insert ignore configured with this table's schema. An insert ignore will
+   * ignore duplicate row errors. This is useful when the same insert may be sent multiple times.
+   * The returned object should not be reused.
+   * @return an insert ignore with this table's schema
+   */
+  public InsertIgnore newInsertIgnore() {
+    return new InsertIgnore(this);
+  }
+
+  /**
    * Asynchronously get all the tablets for this table.
    * @param deadline max time spent in milliseconds for the deferred result of this method to
    *         get called back, if deadline is reached, the deferred result will get erred back

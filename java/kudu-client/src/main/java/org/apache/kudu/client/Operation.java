@@ -72,7 +72,8 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
     EXCLUSIVE_RANGE_LOWER_BOUND(
         (byte) RowOperationsPB.Type.EXCLUSIVE_RANGE_LOWER_BOUND.getNumber()),
     INCLUSIVE_RANGE_UPPER_BOUND(
-        (byte) RowOperationsPB.Type.INCLUSIVE_RANGE_UPPER_BOUND.getNumber());
+        (byte) RowOperationsPB.Type.INCLUSIVE_RANGE_UPPER_BOUND.getNumber()),
+    INSERT_IGNORE((byte) RowOperationsPB.Type.INSERT_IGNORE.getNumber());
 
     ChangeType(byte encodedByte) {
       this.encodedByte = encodedByte;
