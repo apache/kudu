@@ -163,7 +163,10 @@ class TestClient(KuduTestBase, unittest.TestCase):
         table = self.client.table(self.ex_table)
         session = self.client.new_session()
         for i in range(nrows):
-            op = table.new_insert((i, i*2, 'hello_%d' % i))
+            if i % 2 == 0:
+                op = table.new_insert_ignore((i, i*2, 'hello_%d' % i))
+            else:
+                op = table.new_insert((i, i*2, 'hello_%d' % i))
             session.apply(op)
 
         # Cannot apply the same insert twice, C++ client does not indicate an
@@ -189,6 +192,11 @@ class TestClient(KuduTestBase, unittest.TestCase):
         session.apply(op)
         session.flush()
 
+        # Insert ignore existing row
+        op = table.new_insert_ignore((3, 1, 'hello_1'))
+        session.apply(op)
+
+
         scanner = table.scanner().open()
         rows = dict((t[0], t) for t in scanner.read_all_tuples())
         assert len(rows) == nrows
@@ -196,6 +204,7 @@ class TestClient(KuduTestBase, unittest.TestCase):
                            datetime.datetime(2016, 10, 30, 10, 12)
                            .replace(tzinfo=utc))
         assert rows[2] == (2, 222, 'upserted', None)
+        assert rows[3] == (3, 6, 'hello_3', None)
 
         # Delete the rows we just wrote
         for i in range(nrows):

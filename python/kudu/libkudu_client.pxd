@@ -458,6 +458,9 @@ cdef extern from "kudu/client/write_op.h" namespace "kudu::client" nogil:
     cdef cppclass KuduInsert(KuduWriteOperation):
         pass
 
+    cdef cppclass KuduInsertIgnore(KuduWriteOperation):
+        pass
+
     cdef cppclass KuduUpsert(KuduWriteOperation):
         pass
 
@@ -613,6 +616,7 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
         int num_replicas()
 
         KuduInsert* NewInsert()
+        KuduInsertIgnore* NewInsertIgnore()
         KuduUpsert* NewUpsert()
         KuduUpdate* NewUpdate()
         KuduDelete* NewDelete()
@@ -648,6 +652,7 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
 
         Status Apply(KuduWriteOperation* write_op)
         Status Apply(KuduInsert* write_op)
+        Status Apply(KuduInsertIgnore* write_op)
         Status Apply(KuduUpsert* write_op)
         Status Apply(KuduUpdate* write_op)
         Status Apply(KuduDelete* write_op)

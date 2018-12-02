@@ -16,7 +16,7 @@
 # under the License.
 
 from kudu.client import (Client, Table, Scanner, Session,  # noqa
-                         Insert, Update, Delete, Predicate,
+                         Insert, InsertIgnore, Update, Delete, Predicate,
                          TimeDelta, KuduError, ScanTokenBuilder,
                          ScanToken,
                          LEADER_ONLY,

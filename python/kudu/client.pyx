@@ -843,6 +843,24 @@ cdef class Table:
         """
         return Insert(self, record)
 
+    def new_insert_ignore(self, record=None):
+        """
+        Create a new InsertIgnore operation. Pass the completed InsertIgnore to a Session.
+        If a record is provided, a PartialRow will be initialized with values
+        from the input record. The record can be in the form of a tuple, dict,
+        or list. Dictionary keys can be either column names, indexes, or a
+        mix of both names and indexes.
+
+        Parameters
+        ----------
+        record : tuple/list/dict
+
+        Returns
+        -------
+        insertIgnore : InsertIgnore
+        """
+        return InsertIgnore(self, record)
+
     def new_upsert(self, record=None):
         """
         Create a new Upsert operation. Pass the completed Upsert to a Session.
@@ -2836,6 +2854,16 @@ cdef class WriteOperation:
 cdef class Insert(WriteOperation):
     def __cinit__(self, Table table, record=None):
         self.op = table.ptr().NewInsert()
+        self.py_row.row = self.op.mutable_row()
+        if record:
+            self.py_row.from_record(record)
+
+    def __dealloc__(self):
+        del self.op
+
+cdef class InsertIgnore(WriteOperation):
+    def __cinit__(self, Table table, record=None):
+        self.op = table.ptr().NewInsertIgnore()
         self.py_row.row = self.op.mutable_row()
         if record:
             self.py_row.from_record(record)
