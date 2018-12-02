@@ -43,7 +43,7 @@ for authorization checks. Authentication in Kudu is designed to interoperate
 with other secure Hadoop components by utilizing Kerberos.
 
 Authentication can be configured on Kudu servers using the
-`--rpc-authentication` flag, which can be set to `required`, `optional`, or
+`--rpc_authentication` flag, which can be set to `required`, `optional`, or
 `disabled`. By default, the flag is set to `optional`. When `required`, Kudu
 will reject connections from clients and servers who lack authentication
 credentials. When `optional`, Kudu will attempt to use strong authentication.
@@ -60,9 +60,9 @@ However, if network access is not otherwise restricted by a firewall,
 malicious users may be able to gain unauthorized access. This can be mitigated
 if authentication is configured to be required.
 
-WARNING: When the `--rpc-authentication` flag is set to `optional`,
+WARNING: When the `--rpc_authentication` flag is set to `optional`,
 the cluster does not prevent access from unauthenticated users. To secure a
-cluster, use `--rpc-authentication=required`.
+cluster, use `--rpc_authentication=required`.
 
 === Internal PKI
 
@@ -126,13 +126,13 @@ X.509 certificates to servers, and temporary authentication tokens to clients.
 Kudu allows all communications among servers and between clients and servers
 to be encrypted with TLS.
 
-Encryption can be configured on Kudu servers using the `--rpc-encryption` flag,
+Encryption can be configured on Kudu servers using the `--rpc_encryption` flag,
 which can be set to `required`, `optional`, or `disabled`. By default, the flag
 is set to `optional`. When `required`, Kudu will reject unencrypted connections.
 When `optional`, Kudu will attempt to use encryption. Same as authentication,
 when `disabled` or encryption fails for `optional`, Kudu will only allow
 unencrypted connections from trusted subnets and reject any unencrypted connections
-from publicly routable IPs. To secure a cluster, use `--rpc-encryption=required`.
+from publicly routable IPs. To secure a cluster, use `--rpc_encryption=required`.
 
 NOTE: Kudu will automatically turn off encryption on local loopback connections,
 since traffic from these connections is never exposed externally. This allows
@@ -181,7 +181,7 @@ web UI HTTPS configuration.
 To prevent sensitive data from being exposed in the web UI, all row data is
 redacted. Table metadata, such as table names, column names, and partitioning
 information is not redacted. The web UI can be completely disabled by setting
-the `--webserver-enabled=false` flag on Kudu servers.
+the `--webserver_enabled=false` flag on Kudu servers.
 
 WARNING: Disabling the web UI will also disable REST endpoints such as
 `/metrics`. Monitoring systems rely on these endpoints to gather metrics data.
@@ -204,19 +204,19 @@ tablet server) in order to ensure that a Kudu cluster is secure:
 ```
 # Connection Security
 #--------------------
---rpc-authentication=required
---rpc-encryption=required
---keytab-file=<path-to-kerberos-keytab>
+--rpc_authentication=required
+--rpc_encryption=required
+--keytab_file=<path-to-kerberos-keytab>
 
 # Web UI Security
 #--------------------
---webserver-certificate-file=<path-to-cert-pem>
---webserver-private-key-file=<path-to-key-pem>
+--webserver_certificate_file=<path-to-cert-pem>
+--webserver_private_key_file=<path-to-key-pem>
 # optional
---webserver-private-key-password-cmd=<password-cmd>
+--webserver_private_key_password_cmd=<password-cmd>
 
 # If you prefer to disable the web UI entirely:
---webserver-enabled=false
+--webserver_enabled=false
 
 # Coarse-grained authorization
 #--------------------------------
@@ -227,8 +227,8 @@ tablet server) in order to ensure that a Kudu cluster is secure:
 # tooling. Note that, by granting access to 'impala', other users
 # may access data in Kudu via the Impala service subject to its own
 # authorization rules.
---user-acl=impala,nightly_etl_service_account
---superuser-acl=hadoopadmin
+--user_acl=impala,nightly_etl_service_account
+--superuser_acl=hadoopadmin
 ```
 
 Further information about these flags can be found in the configuration
