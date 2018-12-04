@@ -29,6 +29,9 @@ tasks.withType(Test) {
     exceptionFormat = "full"
   }
 
+  // Break up the stdout and stderr logging by test case.
+  reports.junitXml.outputPerTestCase = true
+
   // Fork the jvm for every test class.
   // This takes more time and resources but ensures isolation.
   forkEvery 1
