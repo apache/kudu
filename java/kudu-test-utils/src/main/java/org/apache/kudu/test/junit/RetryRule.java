@@ -35,13 +35,20 @@ import org.slf4j.LoggerFactory;
 public class RetryRule implements TestRule {
 
   private static final Logger LOG = LoggerFactory.getLogger(RetryRule.class);
-  private static final int RETRY_COUNT = Integer.getInteger("rerunFailingTestsCount", 0);
+  private final int retryCount;
 
-  public RetryRule () {}
+  public RetryRule() {
+    this(Integer.getInteger("rerunFailingTestsCount", 0));
+  }
+
+  // Visible for testing.
+  RetryRule(int retryCount) {
+    this.retryCount = retryCount;
+  }
 
   @Override
   public Statement apply(Statement base, Description description) {
-    return new RetryStatement(base, description, RETRY_COUNT);
+    return new RetryStatement(base, description, retryCount);
   }
 
   private static class RetryStatement extends Statement {
@@ -50,7 +57,7 @@ public class RetryRule implements TestRule {
     private final Description description;
     private final int retryCount;
 
-    RetryStatement(final Statement base, final Description description, final int retryCount) {
+    RetryStatement(Statement base, Description description, int retryCount) {
       this.base = base;
       this.description = description;
       this.retryCount = retryCount;
@@ -58,25 +65,22 @@ public class RetryRule implements TestRule {
 
     @Override
     public void evaluate() throws Throwable {
-      // If there are no retries, just pass through to evaluate as usual.
-      if (retryCount == 0) {
-        base.evaluate();
-        return;
-      }
-
-      // To retry we catch the exception for the evaluate, log a message, and retry.
-      // We track and throw the last failure if all tries fail.
-      Throwable lastException = null;
-      for (int i = 0; i < retryCount; i++) {
+      Throwable lastException;
+      int attempt = 0;
+      do {
+        attempt++;
         try {
           base.evaluate();
           return;
+
         } catch (Throwable t) {
+          // To retry, we catch the exception from evaluate(), log an error, and loop.
+          // We retain and rethrow the last failure if all attempts fail.
           lastException = t;
-          LOG.error(description.getDisplayName() + ": failed run " + (i + 1), t);
+          LOG.error("{}: failed attempt {}", description.getDisplayName(), attempt, t);
         }
-      }
-      LOG.error(description.getDisplayName() + ": giving up after " + retryCount + " failures");
+      } while (attempt <= retryCount);
+      LOG.error("{}: giving up after {} attempts", description.getDisplayName(), attempt);
       throw lastException;
     }
   }
