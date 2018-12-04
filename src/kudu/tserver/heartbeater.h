@@ -15,12 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-
-// TODO(xiang88):
-// 当存在多个 Masters 时, TServer 并没有选择 "Master Leader" 注册.
-// 这导致 TServer 并没有被集群中的 Master Leader 识别.
-//
-
 #ifndef KUDU_TSERVER_HEARTBEATER_H
 #define KUDU_TSERVER_HEARTBEATER_H
 
