@@ -94,7 +94,7 @@ DEFINE_bool(heartbeat_incompatible_replica_management_is_fatal, true,
 TAG_FLAG(heartbeat_incompatible_replica_management_is_fatal, advanced);
 TAG_FLAG(heartbeat_incompatible_replica_management_is_fatal, runtime);
 
-DEFINE_uint32(heartbeat_inject_required_feature_flag, 0,
+DEFINE_int32(heartbeat_inject_required_feature_flag, 0,
               "Feature flag to inject while sending heartbeat to master "
               "(for testing only)");
 TAG_FLAG(heartbeat_inject_required_feature_flag, runtime);
@@ -148,7 +148,7 @@ Status MasterServiceProxyForHostPort(const HostPort& hostport,
 // This is basically the "PIMPL" pattern.
 class Heartbeater::Thread {
  public:
-  Thread(HostPort master_address, TabletServer* server);
+  Thread(std::vector<HostPort> master_addresses, TabletServer* server);
 
   Status Start();
   Status Stop();
@@ -172,12 +172,18 @@ class Heartbeater::Thread {
   void SetupCommonField(master::TSToMasterCommonPB* common);
   bool IsCurrentThread() const;
 
+  Status FindMasterLeader();
+
+
   // The host and port of the master that this thread will heartbeat to.
   //
   // We keep the HostPort around rather than a Sockaddr because the
   // master may change IP address, and we'd like to re-resolve on
   // every new attempt at connecting.
-  HostPort master_address_;
+
+  std::vector<HostPort> master_addresses_;
+  HostPort leader_addr_;
+
 
   // The server for which we are heartbeating.
   TabletServer* const server_;
@@ -239,90 +245,58 @@ class Heartbeater::Thread {
 
 Heartbeater::Heartbeater(const TabletServerOptions& opts, TabletServer* server) {
   DCHECK_GT(opts.master_addresses.size(), 0);
-
-  for (const auto& addr : opts.master_addresses) {
-    threads_.emplace_back(new Thread(addr, server));
-  }
+  thread_.reset(new Thread(opts.master_addresses, server));
 }
+
 Heartbeater::~Heartbeater() {
   WARN_NOT_OK(Stop(), "Unable to stop heartbeater thread");
 }
 
 Status Heartbeater::Start() {
-  for (int i = 0; i < threads_.size(); i++) {
-    Status first_failure = threads_[i]->Start();
-    if (!first_failure.ok()) {
-      // On error, stop whichever threads were started.
-      for (int j = 0; j < i; j++) {
-        // Ignore failures; we should try to stop every thread, and
-        // 'first_failure' is the most interesting status anyway.
-        threads_[j]->Stop();
-      }
-      return first_failure;
-    }
-  }
-
-  return Status::OK();
+  return thread_->Start();
 }
+
 Status Heartbeater::Stop() {
-  // Stop all threads and return the first failure (if there was one).
-  Status first_failure;
-  for (const auto& thread : threads_) {
-    Status s = thread->Stop();
-    if (!s.ok() && first_failure.ok()) {
-      first_failure = s;
-    }
-  }
-  return first_failure;
+  return thread_->Stop();
 }
 
 void Heartbeater::TriggerASAP() {
-  for (const auto& thread : threads_) {
-    thread->TriggerASAP();
-  }
+  thread_->TriggerASAP();
 }
 
 void Heartbeater::MarkTabletDirty(const string& tablet_id, const string& reason) {
-  for (const auto& thread : threads_) {
-    thread->MarkTabletDirty(tablet_id, reason);
-  }
+  thread_->MarkTabletDirty(tablet_id, reason);
 }
 
 vector<TabletReportPB> Heartbeater::GenerateIncrementalTabletReportsForTests() {
   vector<TabletReportPB> results;
-  for (const auto& thread : threads_) {
-    TabletReportPB report;
-    thread->GenerateIncrementalTabletReport(&report);
-    results.emplace_back(std::move(report));
-  }
+  TabletReportPB report;
+  thread_->GenerateIncrementalTabletReport(&report);
+  results.emplace_back(std::move(report));
   return results;
 }
 
 vector<TabletReportPB> Heartbeater::GenerateFullTabletReportsForTests() {
   vector<TabletReportPB>  results;
-  for (const auto& thread : threads_) {
-    TabletReportPB report;
-    thread->GenerateFullTabletReport(&report);
-    results.emplace_back(std::move(report));
-  }
+  TabletReportPB report;
+  thread_->GenerateFullTabletReport(&report);
+  results.emplace_back(std::move(report));
   return results;
 }
 
 void Heartbeater::MarkTabletReportsAcknowledgedForTests(
     const vector<TabletReportPB>& reports) {
-  CHECK_EQ(reports.size(), threads_.size());
+  CHECK_EQ(reports.size(), 1);
 
-  for (int i = 0; i < reports.size(); i++) {
-    threads_[i]->MarkTabletReportAcknowledged(reports[i]);
-  }
+  thread_->MarkTabletReportAcknowledged(reports[0]);
 }
 
 ////////////////////////////////////////////////////////////
 // Heartbeater::Thread
 ////////////////////////////////////////////////////////////
 
-Heartbeater::Thread::Thread(HostPort master_address, TabletServer* server)
-  : master_address_(std::move(master_address)),
+Heartbeater::Thread::Thread(vector<kudu::HostPort> master_addresses, kudu::tserver::TabletServer *server)
+  : master_addresses_(std::move(master_addresses)),
     server_(server),
     consecutive_failed_heartbeats_(0),
     next_report_seq_(0),
@@ -332,9 +306,50 @@ Heartbeater::Thread::Thread(HostPort master_address, TabletServer* server)
     send_full_tablet_report_(false) {
 }
 
+Status Heartbeater::Thread::FindMasterLeader() {
+  if (master_addresses_.size() == 0) {
+    return Status::NotFound("master addresses empty.");
+  }
+  if (master_addresses_.size() == 1) {
+    leader_addr_ = master_addresses_[0];
+    return Status::OK();
+  }
+
+  Status s;
+
+  for (auto& addr : master_addresses_) {
+
+    gscoped_ptr<MasterServiceProxy> new_proxy;
+    s = MasterServiceProxyForHostPort(addr, server_->messenger(), &new_proxy);
+    if (!s.ok()) {
+      continue;
+    }
+
+    master::ListMastersRequestPB req;
+    master::ListMastersResponsePB resp;
+    rpc::RpcController rpc;
+    rpc.set_timeout(MonoDelta::FromMilliseconds(FLAGS_heartbeat_rpc_timeout_ms));
+    s = new_proxy->ListMasters(req, &resp, &rpc);
+    if (!s.ok()) {
+      continue;
+    }
+
+    for (int i=0; i < resp.masters_size(); i++) {
+      auto master = resp.masters()[i];
+      if (master.role() == kudu::consensus::RaftPeerPB_Role_LEADER) {
+        leader_addr_.ParseString(master.registration().rpc_addresses(0).host(), master.registration().rpc_addresses(0).port());
+        return Status::OK();
+      }
+    }
+
+  }
+
+  return s;
+}
+
 Status Heartbeater::Thread::ConnectToMaster() {
   gscoped_ptr<MasterServiceProxy> new_proxy;
-  RETURN_NOT_OK(MasterServiceProxyForHostPort(master_address_, server_->messenger(), &new_proxy));
+  RETURN_NOT_OK(MasterServiceProxyForHostPort(leader_addr_, server_->messenger(), &new_proxy));
 
   // Ping the master to verify that it's alive.
   master::PingRequestPB req;
@@ -342,8 +357,8 @@ Status Heartbeater::Thread::ConnectToMaster() {
   RpcController rpc;
   rpc.set_timeout(MonoDelta::FromMilliseconds(FLAGS_heartbeat_rpc_timeout_ms));
   RETURN_NOT_OK_PREPEND(new_proxy->Ping(req, &resp, &rpc),
-                        Substitute("Failed to ping master at $0", master_address_.ToString()));
-  LOG(INFO) << "Connected to a master server at " << master_address_.ToString();
+                        Substitute("Failed to ping master at $0", leader_addr_.ToString()));
+  LOG(INFO) << "Connected to a master server at " << leader_addr_.ToString();
   proxy_.reset(new_proxy.release());
   return Status::OK();
 }
@@ -413,6 +428,9 @@ Status Heartbeater::Thread::DoHeartbeat(MasterErrorPB* error,
 
   if (!proxy_) {
     VLOG(1) << "No valid master proxy. Connecting...";
+    // xiang88
+    RETURN_NOT_OK(FindMasterLeader());
+    LOG(INFO) << "Found master leader address at: " << leader_addr_.ToString();
     RETURN_NOT_OK(ConnectToMaster());
     DCHECK(proxy_);
   }
@@ -466,7 +484,7 @@ Status Heartbeater::Thread::DoHeartbeat(MasterErrorPB* error,
   if (send_full_tablet_report_) {
     LOG(INFO) << Substitute(
         "Master $0 was elected leader, sending a full tablet report...",
-        master_address_.ToString());
+        leader_addr_.ToString());
     GenerateFullTabletReport(req.mutable_tablet_report());
     // Should the heartbeat fail, we'd want the next heartbeat to resend this
     // full tablet report. As such, send_full_tablet_report_ is only reset
@@ -474,11 +492,11 @@ Status Heartbeater::Thread::DoHeartbeat(MasterErrorPB* error,
   } else if (last_hb_response_.needs_full_tablet_report()) {
     LOG(INFO) << Substitute(
         "Master $0 requested a full tablet report, sending...",
-        master_address_.ToString());
+        leader_addr_.ToString());
     GenerateFullTabletReport(req.mutable_tablet_report());
   } else {
     VLOG(2) << Substitute("Sending an incremental tablet report to master $0...",
-                          master_address_.ToString());
+                          leader_addr_.ToString());
     GenerateIncrementalTabletReport(req.mutable_tablet_report());
   }
   req.set_num_live_tablets(server_->tablet_manager()->GetNumLiveTablets());
@@ -498,7 +516,7 @@ Status Heartbeater::Thread::DoHeartbeat(MasterErrorPB* error,
   }
 
   VLOG(2) << Substitute("Received heartbeat response from $0:\n$1",
-                        master_address_.ToString(), SecureDebugString(resp));
+                        leader_addr_.ToString(), SecureDebugString(resp));
 
   // If we've detected that our master was elected leader, send a full tablet
   // report in the next heartbeat.
@@ -547,7 +565,7 @@ Status Heartbeater::Thread::DoHeartbeat(MasterErrorPB* error,
 void Heartbeater::Thread::RunThread() {
   CHECK(IsCurrentThread());
   VLOG(1) << Substitute("Heartbeat thread (master $0) starting",
-                        master_address_.ToString());
+                        leader_addr_.ToString());
 
   // Set up a fake "last heartbeat response" which indicates that we
   // need to register -- since we've never registered before, we know
@@ -574,7 +592,7 @@ void Heartbeater::Thread::RunThread() {
 
       if (!should_run_) {
         VLOG(1) << Substitute("Heartbeat thread (master $0) finished",
-                              master_address_.ToString());
+                              leader_addr_.ToString());
         return;
       }
     }
@@ -585,7 +603,7 @@ void Heartbeater::Thread::RunThread() {
     if (!s.ok()) {
       const auto& err_msg = s.ToString();
       LOG(WARNING) << Substitute("Failed to heartbeat to $0: $1",
-                                 master_address_.ToString(), err_msg);
+                                 leader_addr_.ToString(), err_msg);
       consecutive_failed_heartbeats_++;
       // If we encountered a network error (e.g., connection
       // refused), try reconnecting.
