@@ -29,8 +29,9 @@ public class TestRetryRule {
   // an assertion exception.
   private int failures = 0;
 
+  // We skip flaky test reporting for this test because it is designed to fail.
   @Rule
-  public RetryRule retryRule = new RetryRule(MAX_FAILURES);
+  public RetryRule retryRule = new RetryRule(MAX_FAILURES, /*skipReporting=*/ true);
 
   // Ensure that the RetryRule prevents test failures as long as we don't exceed MAX_FAILURES
   // failures.

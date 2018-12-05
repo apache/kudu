@@ -21,6 +21,8 @@ dependencies {
   compile project(path: ":kudu-client")
   compile libs.commonsIo
   compile libs.guava
+  compile libs.httpClient
+  compile libs.httpMime
   compile libs.osdetector
 
   compileUnshaded libs.junit
@@ -32,6 +34,9 @@ dependencies {
 
   optional libs.jsr305
   optional libs.yetusAnnotations
+
+  testCompile libs.jetty
+  testCompile libs.jettyServlet
 }
 
 // kudu-test-utils has no public Javadoc.

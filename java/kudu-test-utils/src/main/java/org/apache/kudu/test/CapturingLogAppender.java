@@ -36,8 +36,9 @@ import org.apache.yetus.audience.InterfaceStability;
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
 public class CapturingLogAppender extends AppenderSkeleton {
+  private static final Layout LAYOUT = new SimpleLayout();
+
   private StringBuilder appended = new StringBuilder();
-  private static final Layout layout = new SimpleLayout();
 
   @Override
   public void close() {
@@ -50,13 +51,16 @@ public class CapturingLogAppender extends AppenderSkeleton {
 
   @Override
   protected void append(LoggingEvent event) {
-    appended.append(layout.format(event));
+    appended.append(LAYOUT.format(event));
     if (event.getThrowableInformation() != null) {
       appended.append(Throwables.getStackTraceAsString(
           event.getThrowableInformation().getThrowable())).append("\n");
     }
   }
 
+  /**
+   * @return all of the appended messages captured thus far, joined together.
+   */
   public String getAppendedText() {
     return appended.toString();
   }
