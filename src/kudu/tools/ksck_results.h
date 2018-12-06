@@ -257,6 +257,24 @@ enum class PrintMode {
   PLAIN_FULL,
 };
 
+// It's a convenient method to use `struct ... enum ...` here to keep
+// in a standalone namespace and support some bit operators on this type.
+struct PrintSections {
+  enum Values {
+    NONE = 0,
+    MASTER_SUMMARIES = 1 << 0,
+    TSERVER_SUMMARIES = 1 << 1,
+    VERSION_SUMMARIES = 1 << 2,
+    TABLET_SUMMARIES = 1 << 3,
+    TABLE_SUMMARIES = 1 << 4,
+    CHECKSUM_RESULTS = 1 << 5,
+    TOTAL_COUNT = 1 << 6,
+
+    // Print all sections above.
+    ALL_SECTIONS = 0b01111111
+  };
+};
+
 typedef std::map<std::string, KsckConsensusState> KsckConsensusStateMap;
 
 // A flag and its value.
@@ -267,6 +285,9 @@ typedef std::map<KsckFlag, std::vector<std::string>> KsckFlagToServersMap;
 
 // Convenience map flag name -> flag tags.
 typedef std::unordered_map<std::string, std::string> KsckFlagTagsMap;
+
+// Convenience map version -> servers.
+typedef std::map<std::string, std::vector<std::string>> KsckVersionToServersMap;
 
 // Container for all the results of a series of ksck checks.
 struct KsckResults {
@@ -283,6 +304,9 @@ struct KsckResults {
   // Health summaries for master and tablet servers.
   std::vector<KsckServerHealthSummary> master_summaries;
   std::vector<KsckServerHealthSummary> tserver_summaries;
+
+  // Version summaries for master and tablet servers.
+  KsckVersionToServersMap version_summaries;
 
   // Information about the flags of masters and tablet servers.
   KsckFlagToServersMap master_flag_to_servers_map;
@@ -303,14 +327,16 @@ struct KsckResults {
   // Collected results of the checksum scan.
   KsckChecksumResults checksum_results;
 
-  // Print this KsckResults to 'out', according to the PrintMode 'mode'.
-  Status PrintTo(PrintMode mode, std::ostream& out);
+  // Print this KsckResults to 'out' according to the PrintMode 'mode'.
+  // The sections printed will be limited according to the value of 'sections'.
+  Status PrintTo(PrintMode mode, int sections, std::ostream& out);
 
   // Print this KsckResults to 'out' in JSON format.
   // 'mode' must be PrintMode::JSON_PRETTY or PrintMode::JSON_COMPACT.
-  Status PrintJsonTo(PrintMode mode, std::ostream& out) const;
+  // The sections printed will be limited according to the value of 'sections'.
+  Status PrintJsonTo(PrintMode mode, int sections, std::ostream& out) const;
 
-  void ToPb(KsckResultsPB* pb) const;
+  void ToPb(KsckResultsPB* pb, int sections) const;
 };
 
 // Print a formatted health summary to 'out', given a list `summaries`
@@ -331,8 +357,8 @@ Status PrintFlagTable(KsckServerType type,
 // Print a summary of the Kudu versions running across all servers from which
 // information could be fetched. Servers are grouped by version to make the
 // table compact.
-Status PrintVersionTable(const std::vector<KsckServerHealthSummary>& masters,
-                         const std::vector<KsckServerHealthSummary>& tservers,
+Status PrintVersionTable(const KsckVersionToServersMap& version_summaries,
+                         int num_servers,
                          std::ostream& out);
 
 // Print a formatted summary of the tables in 'table_summaries' to 'out'.

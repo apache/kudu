@@ -43,6 +43,7 @@
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/string_case.h"
 #include "kudu/util/threadpool.h"
 
 #define PUSH_PREPEND_NOT_OK(s, statuses, msg) do { \
@@ -388,6 +389,39 @@ const KsckResults& Ksck::results() const {
   return results_;
 }
 
+void Ksck::set_print_sections(const std::vector<std::string>& sections) {
+  print_sections_flags_ = PrintSections::NONE;
+  for (const auto& section : sections) {
+    std::string section_upper;
+    ToUpperCase(section, &section_upper);
+    if (section_upper == "*") {
+      print_sections_flags_ = PrintSections::ALL_SECTIONS;
+      break;
+    }
+    if (section_upper == "MASTER_SUMMARIES") {
+      print_sections_flags_ |= PrintSections::MASTER_SUMMARIES;
+    }
+    if (section_upper == "TSERVER_SUMMARIES") {
+      print_sections_flags_ |= PrintSections::TSERVER_SUMMARIES;
+    }
+    if (section_upper == "VERSION_SUMMARIES") {
+      print_sections_flags_ |= PrintSections::VERSION_SUMMARIES;
+    }
+    if (section_upper == "TABLET_SUMMARIES") {
+      print_sections_flags_ |= PrintSections::TABLET_SUMMARIES;
+    }
+    if (section_upper == "TABLE_SUMMARIES") {
+      print_sections_flags_ |= PrintSections::TABLE_SUMMARIES;
+    }
+    if (section_upper == "CHECKSUM_RESULTS") {
+      print_sections_flags_ |= PrintSections::CHECKSUM_RESULTS;
+    }
+    if (section_upper == "TOTAL_COUNT") {
+      print_sections_flags_ |= PrintSections::TOTAL_COUNT;
+    }
+  }
+}
+
 Status Ksck::Run() {
   PUSH_PREPEND_NOT_OK(CheckMasterHealth(), results_.error_messages,
                       "error fetching info from masters");
@@ -470,22 +504,26 @@ Status Ksck::CheckTabletServerUnusualFlags() {
 }
 
 Status Ksck::CheckServerVersions() {
-  set<string> versions;
+  results_.version_summaries.clear();
   for (const auto& s : results_.master_summaries) {
     if (!s.version) continue;
-    InsertIfNotPresent(&versions, *s.version);
+    const auto& server = Substitute("master@$0", s.address);
+    auto& servers = LookupOrInsert(&results_.version_summaries, *s.version, {});
+    servers.push_back(server);
   }
   for (const auto& s : results_.tserver_summaries) {
     if (!s.version) continue;
-    InsertIfNotPresent(&versions, *s.version);
+    const auto& server = Substitute("tserver@$0", s.address);
+    auto& servers = LookupOrInsert(&results_.version_summaries, *s.version, {});
+    servers.push_back(server);
   }
-  if (versions.size() > 1) {
+  if (results_.version_summaries.size() > 1) {
     // This status seemed to fit best even though a version mismatch isn't an
     // error. In any case, ksck only prints the message for warnings.
     return Status::ConfigurationError(
         Substitute("not all servers are running the same version: "
                    "$0 different versions were seen",
-                   versions.size()));
+                   results_.version_summaries.size()));
   }
   return Status::OK();
 }
@@ -504,7 +542,7 @@ Status Ksck::PrintResults() {
     return Status::InvalidArgument("unknown ksck format (--ksck_format)",
                                    FLAGS_ksck_format);
   }
-  return results_.PrintTo(mode, *out_);
+  return results_.PrintTo(mode, print_sections_flags_, *out_);
 }
 
 Status Ksck::RunAndPrintResults() {

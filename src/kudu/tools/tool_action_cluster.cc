@@ -68,6 +68,13 @@ DEFINE_string(tablets, "",
               "Tablets to check (comma-separated list of IDs) "
               "If not specified, checks all tablets.");
 
+DEFINE_string(sections, "*",
+              "Sections to print (comma-separated list of sections, "
+              "available sections are: MASTER_SUMMARIES, TSERVER_SUMMARIES, "
+              "VERSION_SUMMARIES, TABLET_SUMMARIES, TABLE_SUMMARIES, "
+              "CHECKSUM_RESULTS and TOTAL_COUNT.) "
+              "If not specified, print all sections.");
+
 DEFINE_uint32(max_moves_per_server, 5,
               "Maximum number of replica moves to perform concurrently on one "
               "tablet server: 'move from' and 'move to' are counted "
@@ -156,6 +163,7 @@ Status RunKsck(const RunnerContext& context) {
 
   ksck->set_table_filters(Split(FLAGS_tables, ",", strings::SkipEmpty()));
   ksck->set_tablet_id_filters(Split(FLAGS_tablets, ",", strings::SkipEmpty()));
+  ksck->set_print_sections(Split(FLAGS_sections, ",", strings::SkipEmpty()));
 
   return ksck->RunAndPrintResults();
 }
@@ -349,6 +357,7 @@ unique_ptr<Mode> BuildClusterMode() {
         .AddOptionalParameter("color")
         .AddOptionalParameter("consensus")
         .AddOptionalParameter("ksck_format")
+        .AddOptionalParameter("sections")
         .AddOptionalParameter("tables")
         .AddOptionalParameter("tablets")
         .Build();

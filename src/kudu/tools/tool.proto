@@ -213,6 +213,8 @@ message KsckResultsPB {
   repeated KsckTableSummaryPB table_summaries = 8;
 
   optional KsckChecksumResultsPB checksum_results = 9;
+  repeated KsckVersionSummaryPB version_summaries = 10;
+  repeated KsckCountSummaryPB count_summaries = 11;
 }
 
 message KsckServerHealthSummaryPB {
@@ -310,4 +312,17 @@ message KsckReplicaChecksumPB {
   optional string ts_uuid = 2;
   optional string status = 3;
   optional fixed64 checksum = 4;
+}
+
+message KsckVersionSummaryPB {
+  optional string version = 1;
+  repeated string servers = 2;
+}
+
+message KsckCountSummaryPB {
+  optional int32 masters = 1;
+  optional int32 tservers = 2;
+  optional int32 tables = 3;
+  optional int32 tablets = 4;
+  optional int32 replicas = 5;
 }
