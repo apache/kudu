@@ -74,6 +74,9 @@
 #
 #   ERROR_ON_TEST_FAILURE    Default: 1
 #     Whether test failures will cause this script to return an error.
+#
+#   KUDU_REPORT_TEST_RESULTS Default: 0
+#     If non-zero, tests are reported to the central test server.
 
 # If a commit messages contains a line that says 'DONT_BUILD', exit
 # immediately.
@@ -291,6 +294,37 @@ $CMAKE
 # results in the build failing.
 mkdir -p Testing/Temporary
 mkdir -p $TEST_LOGDIR
+
+if [ -n "$KUDU_REPORT_TEST_RESULTS" ] && [ "$KUDU_REPORT_TEST_RESULTS" -ne 0 ]; then
+  # Export environment variables needed for flaky test reporting.
+  #
+  # The actual reporting happens in the test runners themselves.
+
+  # On Jenkins, we'll have this variable set. Otherwise,
+  # report the build tag as non-jenkins.
+  export BUILD_TAG=${BUILD_TAG:-non-jenkins}
+
+  # Figure out the current git revision, and append a "-dirty" tag if it's
+  # not a pristine checkout.
+  GIT_REVISION=$(cd $SOURCE_ROOT && git rev-parse HEAD)
+  if ! ( cd $SOURCE_ROOT && git diff --quiet .  && git diff --cached --quiet . ) ; then
+    GIT_REVISION="${GIT_REVISION}-dirty"
+  fi
+  export GIT_REVISION
+
+  # Parse out our "build config" - a space-separated list of tags
+  # which include the cmake build type as well as the list of configured
+  # sanitizers.
+
+  # Define BUILD_CONFIG for flaky test reporting.
+  BUILD_CONFIG="$CMAKE_BUILD"
+  if [ "$BUILD_TYPE" = "ASAN" ]; then
+    BUILD_CONFIG="$BUILD_CONFIG asan ubsan"
+  elif [ "$BUILD_TYPE" = "TSAN" ]; then
+    BUILD_CONFIG="$BUILD_CONFIG tsan"
+  fi
+  export BUILD_CONFIG
+fi
 
 # Short circuit for LINT builds.
 if [ "$BUILD_TYPE" = "LINT" ]; then

@@ -24,10 +24,24 @@
 #
 # Note that this may exit with a non-zero code if the network is flaky or the
 # test result server is down.
+#
+# Expects BUILD_TAG, GIT_REVISION, and BUILD_CONFIG environment variables to be set.
 
 set -e
 
-ROOT=$(dirname $BASH_SOURCE)/..
+# Verify required environment variables.
+if [ -z "$BUILD_TAG" ]; then
+  echo "BUILD_TAG environment variable must be set"
+  exit 1
+fi
+if [ -z "$GIT_REVISION" ]; then
+  echo "GIT_REVISION environment variable must be set"
+  exit 1
+fi
+if [ -z "$BUILD_CONFIG" ]; then
+  echo "BUILD_CONFIG environment variable must be set"
+  exit 1
+fi
 
 # Verify and parse command line and options
 if [ $# -ne 3 ]; then
@@ -42,35 +56,6 @@ LOGFILE=$2
 STATUS=$3
 TEST_RESULT_SERVER=${TEST_RESULT_SERVER:-localhost:8080}
 REPORT_TIMEOUT=${REPORT_TIMEOUT:-10}
-
-# On Jenkins, we'll have this variable set. Otherwise,
-# report the build ID as non-jenkins.
-BUILD_ID=${BUILD_TAG:-non-jenkins}
-
-# Figure out the current git revision, and append a "-dirty" tag if it's
-# not a pristine checkout
-REVISION=$(cd $ROOT && git rev-parse HEAD)
-if ! ( cd $ROOT && git diff --quiet .  && git diff --cached --quiet . ) ; then
-  REVISION="${REVISION}-dirty"
-fi
-
-BUILD_ROOT=$(dirname $TEST_EXECUTABLE)/..
-
-# Parse out our "build config" - a space-separated list of tags
-# which include the cmake build type as well as the list of configured
-# sanitizers
-
-CMAKECACHE=$BUILD_ROOT/CMakeCache.txt
-BUILD_CONFIG=$(grep '^CMAKE_BUILD_TYPE:' $CMAKECACHE | cut -f 2 -d=)
-if grep -q "KUDU_USE_ASAN:UNINITIALIZED=1" $CMAKECACHE ; then
-  BUILD_CONFIG="$BUILD_CONFIG asan"
-fi
-if grep -q "KUDU_USE_TSAN:UNINITIALIZED=1" $CMAKECACHE ; then
-  BUILD_CONFIG="$BUILD_CONFIG tsan"
-fi
-if grep -q "KUDU_USE_UBSAN:UNINITIALIZED=1" $CMAKECACHE ; then
-  BUILD_CONFIG="$BUILD_CONFIG ubsan"
-fi
 
 # We sometimes have flaky infrastructure where NTP is broken. In that case
 # do not report it as a failed test.
@@ -88,13 +73,15 @@ else
   LOG_PARAM=""
 fi
 
+# In the backend, the BUILD_TAG field is called 'build_id', but we can't use
+# that as an env variable because it'd collide with Jenkins' BUILD_ID.
 curl -s \
     --max-time $REPORT_TIMEOUT \
     $LOG_PARAM \
-    -F "build_id=$BUILD_ID" \
+    -F "build_id=$BUILD_TAG" \
     -F "hostname=$(hostname)" \
     -F "test_name=$(basename $TEST_EXECUTABLE)" \
     -F "status=$STATUS" \
-    -F "revision=$REVISION" \
+    -F "revision=$GIT_REVISION" \
     -F "build_config=$BUILD_CONFIG" \
     http://$TEST_RESULT_SERVER/add_result
