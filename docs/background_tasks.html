@@ -1,0 +1,227 @@
+---
+title: Apache Kudu Background Maintenance Tasks
+layout: default
+active_nav: docs
+last_updated: 'Last updated 2018-10-01 15:26:31 CEST'
+---
+<!--
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+
+<div class="container">
+  <div class="row">
+    <div class="col-md-9">
+
+<h1>Apache Kudu Background Maintenance Tasks</h1>
+      <div id="preamble">
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu relies on running background tasks for many important automatic
+maintenance activities. These tasks include flushing data from memory to disk,
+compacting data to improve performance, freeing up disk space, and more.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_maintenance_manager"><a class="link" href="#_maintenance_manager">Maintenance manager</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The maintenance manager schedules and runs background tasks. At any given point
+in time, the maintenance manager is prioritizing the next task based on the
+improvement needed at that moment, such as relieving memory pressure, improving
+read performance, or freeing up disk space. The number of worker threads
+dedicated to running background tasks can be controlled by setting
+<code>--maintenance_manager_num_threads</code>.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_flushing_data_to_disk"><a class="link" href="#_flushing_data_to_disk">Flushing data to disk</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Flushing data from memory to disk relieves memory pressure and can improve read
+performance by switching from a write-optimized, row-oriented in-memory format
+in the <code>MemRowSet</code> to a read-optimized, column-oriented format on disk.
+Background tasks that flush data include <code>FlushMRSOp</code> and
+<code>FlushDeltaMemStoresOp</code>.</p>
+</div>
+<div class="paragraph">
+<p>The metrics associated with these ops have the prefix <code>flush_mrs</code> and
+<code>flush_dms</code>, respectively.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_compacting_on_disk_data"><a class="link" href="#_compacting_on_disk_data">Compacting on-disk data</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu constantly performs several types of compaction tasks in order to maintain
+consistent read and write performance over time. A merging compaction, which combines
+multiple <code>DiskRowSets</code> together into a single <code>DiskRowSet</code>, is run by
+<code>CompactRowSetsOp</code>. There are two types of delta store compaction operations
+that may be run as well: <code>MinorDeltaCompactionOp</code> and <code>MajorDeltaCompactionOp</code>.</p>
+</div>
+<div class="paragraph">
+<p>For more information on what these different types of compaction operations do,
+please see the
+<a href="https://github.com/apache/kudu/blob/master/docs/design-docs/tablet.md">Kudu Tablet
+design document</a>.</p>
+</div>
+<div class="paragraph">
+<p>The metrics associated with these tasks have the prefix <code>compact_rs</code>,
+<code>delta_minor_compact_rs</code>, and <code>delta_major_compact_rs</code>, respectively.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_write_ahead_log_gc"><a class="link" href="#_write_ahead_log_gc">Write-ahead log GC</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu maintains a write-ahead log (WAL) per tablet that is split into discrete
+fixed-size segments. A tablet periodically rolls the WAL to a new log segment
+when the active segment reaches a configured size (controlled by
+<code>--log_segment_size_mb</code>). In order to save disk space and decrease startup
+time, a background task called <code>LogGCOp</code> attempts to garbage-collect (GC) old
+WAL segments by deleting them from disk once it is determined that they are no
+longer needed by the local node for durability.</p>
+</div>
+<div class="paragraph">
+<p>The metrics associated with this background task have the prefix <code>log_gc</code>.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_tablet_history_gc_and_the_ancient_history_mark"><a class="link" href="#_tablet_history_gc_and_the_ancient_history_mark">Tablet history GC and the ancient history mark</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Because Kudu uses a multiversion concurrency control (MVCC) mechanism to
+ensure that snapshot scans can proceeed isolated from new changes to a table,
+periodically old historical data should be garbage-collected (removed) to free
+up disk space. While Kudu never removes rows or data that are visible in the
+latest version of the data, Kudu does remove records of old changes that are no
+longer visible.</p>
+</div>
+<div class="paragraph">
+<p>The point in time in the past beyond which historical MVCC data becomes
+inaccessible and is free to be deleted is called the <em>ancient history mark</em>
+(AHM). The AHM can be configured by setting <code>--tablet_history_max_age_sec</code>.</p>
+</div>
+<div class="paragraph">
+<p>There are two background tasks that GC historical MVCC data older than the AHM:
+the one that runs the merging compaction, called <code>CompactRowSetsOp</code> (see
+above), and a separate background task that deletes old undo delta blocks,
+called <code>UndoDeltaBlockGCOp</code>. Running <code>UndoDeltaBlockGCOp</code> reduces disk space
+usage in all workloads, but particularly in those with a higher volume of
+updates or upserts.</p>
+</div>
+<div class="paragraph">
+<p>The metrics associated with this background task have the prefix
+<code>undo_delta_block</code>.</p>
+</div>
+</div>
+</div>
+    </div>
+    <div class="col-md-3">
+
+  <div id="toc" data-spy="affix" data-offset-top="70">
+  <ul>
+
+      <li>
+
+          <a href="index.html">Introducing Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="release_notes.html">Kudu Release Notes</a> 
+      </li> 
+      <li>
+
+          <a href="quickstart.html">Getting Started with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="installation.html">Installation Guide</a> 
+      </li> 
+      <li>
+
+          <a href="configuration.html">Configuring Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="kudu_impala_integration.html">Using Impala with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="administration.html">Administering Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="troubleshooting.html">Troubleshooting Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="developing.html">Developing Applications with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="schema_design.html">Kudu Schema Design</a> 
+      </li> 
+      <li>
+
+          <a href="scaling_guide.html">Kudu Scaling Guide</a> 
+      </li> 
+      <li>
+
+          <a href="security.html">Kudu Security</a> 
+      </li> 
+      <li>
+
+          <a href="transaction_semantics.html">Kudu Transaction Semantics</a> 
+      </li> 
+      <li>
+<span class="active-toc">Background Maintenance Tasks</span>
+            <ul class="sectlevel1">
+<li><a href="#_maintenance_manager">Maintenance manager</a></li>
+<li><a href="#_flushing_data_to_disk">Flushing data to disk</a></li>
+<li><a href="#_compacting_on_disk_data">Compacting on-disk data</a></li>
+<li><a href="#_write_ahead_log_gc">Write-ahead log GC</a></li>
+<li><a href="#_tablet_history_gc_and_the_ancient_history_mark">Tablet history GC and the ancient history mark</a></li>
+</ul> 
+      </li> 
+      <li>
+
+          <a href="configuration_reference.html">Kudu Configuration Reference</a> 
+      </li> 
+      <li>
+
+          <a href="command_line_tools_reference.html">Kudu Command Line Tools Reference</a> 
+      </li> 
+      <li>
+
+          <a href="known_issues.html">Known Issues and Limitations</a> 
+      </li> 
+      <li>
+
+          <a href="contributing.html">Contributing to Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="export_control.html">Export Control Notice</a> 
+      </li> 
+  </ul>
+  </div>
+    </div>
+  </div>
+</div>
