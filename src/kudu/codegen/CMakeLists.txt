@@ -89,6 +89,22 @@ set(IR_FLAGS
   ${PREFIXED_IR_PP_DEFS}
   ${PREFIXED_IR_INCLUDES})
 
+# /usr/include doesn't exist on macOS 10.14 (Mojave) with Xcode 10[1]. In this
+# case the --sysroot has to be set to the output of "xcrun --show-sdk-path" for
+# the thirdparty clang-6.0 to work correctly.
+#
+# [1] https://developer.apple.com/documentation/xcode_release_notes/xcode_10_release_notes
+if (APPLE AND NOT EXISTS /usr/include)
+  EXECUTE_PROCESS (COMMAND
+    xcrun --show-sdk-path
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    OUTPUT_VARIABLE SDKPATH)
+
+  set(IR_FLAGS
+    ${IR_FLAGS}
+    --sysroot="${SDKPATH}")
+endif()
+
 # Provide clang with any explicitly defined system prefix path. If there isn't
 # one, clang will search for it on its own.
 if(COMPILER_SYSTEM_PREFIX_PATH)
