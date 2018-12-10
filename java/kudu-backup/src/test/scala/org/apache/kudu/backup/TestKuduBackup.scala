@@ -22,9 +22,6 @@ import java.util
 
 import com.google.common.base.Objects
 import org.apache.commons.io.FileUtils
-import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder
-import org.apache.kudu.ColumnSchema.CompressionAlgorithm
-import org.apache.kudu.ColumnSchema.Encoding
 import org.apache.kudu.client.PartitionSchema.HashBucketSchema
 import org.apache.kudu.client.CreateTableOptions
 import org.apache.kudu.client.KuduTable
@@ -35,8 +32,11 @@ import org.apache.kudu.Schema
 import org.apache.kudu.Type
 import org.apache.kudu.spark.kudu._
 import org.apache.kudu.test.RandomUtils
+import org.apache.kudu.util.DataGenerator.DataGeneratorBuilder
+import org.apache.kudu.util.DataGenerator
 import org.apache.kudu.util.DecimalUtil
 import org.apache.kudu.util.HybridTimeUtil
+import org.apache.kudu.util.SchemaGenerator.SchemaGeneratorBuilder
 import org.junit.Assert._
 import org.junit.Before
 import org.junit.Test
@@ -49,11 +49,11 @@ import scala.util.Random
 class TestKuduBackup extends KuduTestSuite {
   val log: Logger = LoggerFactory.getLogger(getClass)
 
-  var random: Random = _
+  var random: util.Random = _
 
   @Before
   def setUp(): Unit = {
-    random = Random.javaRandomToRandom(RandomUtils.getRandom)
+    random = RandomUtils.getRandom
   }
 
   @Test
@@ -190,164 +190,32 @@ class TestKuduBackup extends KuduTestSuite {
     Objects.equal(before.getSeed, after.getSeed)
   }
 
-  // TODO: Move to a test utility in kudu-client since it's generally useful.
   def createRandomTable(): KuduTable = {
     val columnCount = random.nextInt(50) + 1 // At least one column.
-    val keyCount = random.nextInt(columnCount) + 1 // At least one key.
-
-    val types = Type.values()
-    val keyTypes = types.filter { t =>
-      !Array(Type.BOOL, Type.FLOAT, Type.DOUBLE).contains(t)
-    }
-    val compressions =
-      CompressionAlgorithm.values().filter(_ != CompressionAlgorithm.UNKNOWN)
-    val blockSizes = Array(0, 4096, 524288, 1048576) // Default, min, middle, max.
-
-    val columns = (0 until columnCount).map { i =>
-      val key = i < keyCount
-      val t = if (key) {
-        keyTypes(random.nextInt(keyTypes.length))
-      } else {
-        types(random.nextInt(types.length))
-      }
-      val precision = random.nextInt(DecimalUtil.MAX_DECIMAL_PRECISION) + 1
-      val scale = random.nextInt(precision)
-      val typeAttributes = DecimalUtil.typeAttributes(precision, scale)
-      val nullable = random.nextBoolean() && !key
-      val compression = compressions(random.nextInt(compressions.length))
-      val blockSize = blockSizes(random.nextInt(blockSizes.length))
-      val encodings = t match {
-        case Type.INT8 | Type.INT16 | Type.INT32 | Type.INT64 | Type.UNIXTIME_MICROS =>
-          Array(Encoding.AUTO_ENCODING, Encoding.PLAIN_ENCODING, Encoding.BIT_SHUFFLE, Encoding.RLE)
-        case Type.FLOAT | Type.DOUBLE | Type.DECIMAL =>
-          Array(Encoding.AUTO_ENCODING, Encoding.PLAIN_ENCODING, Encoding.BIT_SHUFFLE)
-        case Type.STRING | Type.BINARY =>
-          Array(
-            Encoding.AUTO_ENCODING,
-            Encoding.PLAIN_ENCODING,
-            Encoding.PREFIX_ENCODING,
-            Encoding.DICT_ENCODING)
-        case Type.BOOL =>
-          Array(Encoding.AUTO_ENCODING, Encoding.PLAIN_ENCODING, Encoding.RLE)
-        case _ => throw new IllegalArgumentException(s"Unsupported type $t")
-      }
-      val encoding = encodings(random.nextInt(encodings.length))
-
-      val builder = new ColumnSchemaBuilder(s"${t.getName}-$i", t)
-        .key(key)
-        .nullable(nullable)
-        .compressionAlgorithm(compression)
-        .desiredBlockSize(blockSize)
-        .encoding(encoding)
-      // Add type attributes to decimal columns.
-      if (t == Type.DECIMAL) {
-        builder.typeAttributes(typeAttributes)
-      }
-      // Half the columns have defaults.
-      if (random.nextBoolean()) {
-        val defaultValue =
-          t match {
-            case Type.BOOL => random.nextBoolean()
-            case Type.INT8 => random.nextInt(Byte.MaxValue).asInstanceOf[Byte]
-            case Type.INT16 =>
-              random.nextInt(Short.MaxValue).asInstanceOf[Short]
-            case Type.INT32 => random.nextInt()
-            case Type.INT64 | Type.UNIXTIME_MICROS => random.nextLong()
-            case Type.FLOAT => random.nextFloat()
-            case Type.DOUBLE => random.nextDouble()
-            case Type.DECIMAL =>
-              DecimalUtil
-                .minValue(typeAttributes.getPrecision, typeAttributes.getScale)
-            case Type.STRING => random.nextString(random.nextInt(100))
-            case Type.BINARY =>
-              random.nextString(random.nextInt(100)).getBytes()
-            case _ => throw new IllegalArgumentException(s"Unsupported type $t")
-          }
-        builder.defaultValue(defaultValue)
-      }
-      builder.build()
-    }
-    val keyColumns = columns.filter(_.isKey)
-
-    val schema = new Schema(columns.asJava)
-
-    val options = new CreateTableOptions().setNumReplicas(1)
-    // Add hash partitioning (Max out at 3 levels to avoid being excessive).
-    val hashPartitionLevels = random.nextInt(Math.min(keyCount, 3))
-    (0 to hashPartitionLevels).foreach { level =>
-      val hashColumn = keyColumns(level)
-      val hashBuckets = random.nextInt(8) + 2 // Minimum of 2 hash buckets.
-      val hashSeed = random.nextInt()
-      options.addHashPartitions(List(hashColumn.getName).asJava, hashBuckets, hashSeed)
-    }
-    val hasRangePartition = random.nextBoolean() && keyColumns.exists(_.getType == Type.INT64)
-    if (hasRangePartition) {
-      val rangeColumn = keyColumns.filter(_.getType == Type.INT64).head
-      options.setRangePartitionColumns(List(rangeColumn.getName).asJava)
-      val splits = random.nextInt(8)
-      val used = new util.ArrayList[Long]()
-      var i = 0
-      while (i < splits) {
-        val split = schema.newPartialRow()
-        val value = random.nextLong()
-        if (!used.contains(value)) {
-          used.add(value)
-          split.addLong(rangeColumn.getName, random.nextLong())
-          i = i + 1
-        }
-      }
-    }
-
+    val keyColumnCount = random.nextInt(columnCount) + 1 // At least one key.
+    val schemaGenerator = new SchemaGeneratorBuilder()
+      .random(random)
+      .columnCount(columnCount)
+      .keyColumnCount(keyColumnCount)
+      .build()
+    val schema = schemaGenerator.randomSchema()
+    val options = schemaGenerator.randomCreateTableOptions(schema)
+    options.setNumReplicas(1)
     val name = s"random-${System.currentTimeMillis()}"
     kuduClient.createTable(name, schema, options)
   }
 
   // TODO: Add updates and deletes when incremental backups are supported.
   def loadRandomData(table: KuduTable): IndexedSeq[PartialRow] = {
-    val rowCount = random.nextInt(200)
-
     val kuduSession = kuduClient.newSession()
+    val dataGenerator = new DataGeneratorBuilder()
+      .random(random)
+      .build()
+    val rowCount = random.nextInt(200)
     (0 to rowCount).map { i =>
       val upsert = table.newUpsert()
       val row = upsert.getRow
-      table.getSchema.getColumns.asScala.foreach { col =>
-        // Set nullable columns to null ~10% of the time.
-        if (col.isNullable && random.nextInt(10) == 0) {
-          row.setNull(col.getName)
-        }
-        // Use the column default value  ~10% of the time.
-        if (col.getDefaultValue != null && !col.isKey && random.nextInt(10) == 0) {
-          // Use the default value.
-        } else {
-          col.getType match {
-            case Type.BOOL =>
-              row.addBoolean(col.getName, random.nextBoolean())
-            case Type.INT8 =>
-              row.addByte(col.getName, random.nextInt(Byte.MaxValue).asInstanceOf[Byte])
-            case Type.INT16 =>
-              row.addShort(col.getName, random.nextInt(Short.MaxValue).asInstanceOf[Short])
-            case Type.INT32 =>
-              row.addInt(col.getName, random.nextInt())
-            case Type.INT64 | Type.UNIXTIME_MICROS =>
-              row.addLong(col.getName, random.nextLong())
-            case Type.FLOAT =>
-              row.addFloat(col.getName, random.nextFloat())
-            case Type.DOUBLE =>
-              row.addDouble(col.getName, random.nextDouble())
-            case Type.DECIMAL =>
-              val attributes = col.getTypeAttributes
-              val max = DecimalUtil
-                .maxValue(attributes.getPrecision, attributes.getScale)
-              row.addDecimal(col.getName, max)
-            case Type.STRING =>
-              row.addString(col.getName, random.nextString(random.nextInt(100)))
-            case Type.BINARY =>
-              row.addBinary(col.getName, random.nextString(random.nextInt(100)).getBytes())
-            case _ =>
-              throw new IllegalArgumentException(s"Unsupported type ${col.getType}")
-          }
-        }
-      }
+      dataGenerator.randomizeRow(row)
       kuduSession.apply(upsert)
       row
     }

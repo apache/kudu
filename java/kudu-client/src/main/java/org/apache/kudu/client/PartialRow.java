@@ -1516,7 +1516,7 @@ public class PartialRow {
    * Get the schema used for this row.
    * @return a schema that came from KuduTable
    */
-  Schema getSchema() {
+  public Schema getSchema() {
     return schema;
   }
 
