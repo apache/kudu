@@ -316,7 +316,7 @@ cd build/release
 make -j4
 ----
 
-. Optional: Install Kudu binaries, libraries, and headers.
+. Optional: Install Kudu client libraries and headers.
 If you do not specify an installation directory through the `DESTDIR`
 environment variable, `/usr/local/` is the default.
 +
@@ -324,7 +324,16 @@ environment variable, `/usr/local/` is the default.
 ----
 sudo make DESTDIR=/opt/kudu install
 ----
-
+NOTE: 'make install' does not copy Kudu binaries. You need to manually copy them
+as below:
+* Copy the `kudu-tserver`, `kudu-master`, and `kudu` binaries from within the `bin`
+subdirectory of your Kudu build directory.
+* We typically recommend putting `kudu` in the bin directory (e.g. `/usr/bin`)
+and the server binaries in the sbin directory (e.g. `/usr/sbin`).
+* However, if you use the default installation directory without specifying the
+`DESTDIR` environment variable, `make install` will install files into `/usr/local`,
+so you should copy the Kudu binaries to `/usr/local/bin` and `/usr/local/sbin`
+respectively.
 . Optional: Build the documentation. NOTE: This command builds local documentation that
 is not appropriate for uploading to the Kudu website.
 +
@@ -409,7 +418,7 @@ cd build/release
 make -j4
 ----
 
-. Optional: Install Kudu binaries, libraries, and headers.
+. Optional: Install Kudu client libraries and headers.
 If you do not specify an installation directory through the `DESTDIR`
 environment variable, `/usr/local/` is the default.
 +
@@ -417,6 +426,16 @@ environment variable, `/usr/local/` is the default.
 ----
 sudo make DESTDIR=/opt/kudu install
 ----
+NOTE: 'make install' does not copy Kudu binaries. You need to manually copy them
+as below:
+* Copy the `kudu-tserver`, `kudu-master`, and `kudu` binaries from within the `bin`
+subdirectory of your Kudu build directory.
+* We typically recommend putting `kudu` in the bin directory (e.g. `/usr/bin`)
+and the server binaries in the sbin directory (e.g. `/usr/sbin`).
+* However, if you use the default installation directory without specifying the
+`DESTDIR` environment variable, `make install` will install files into `/usr/local`,
+so you should copy the Kudu binaries to `/usr/local/bin` and `/usr/local/sbin`
+respectively.
 
 . Optional: Build the documentation. NOTE: This command builds local documentation that
 is not appropriate for uploading to the Kudu website.
@@ -492,7 +511,7 @@ cd build/release
 make -j4
 ----
 
-. Optional: Install Kudu binaries, libraries, and headers.
+. Optional: Install Kudu client libraries and headers.
 If you do not specify an installation directory through the `DESTDIR`
 environment variable, `/usr/local/` is the default.
 +
@@ -500,6 +519,16 @@ environment variable, `/usr/local/` is the default.
 ----
 sudo make DESTDIR=/opt/kudu install
 ----
+NOTE: 'make install' does not copy Kudu binaries. You need to manually copy them
+as below:
+* Copy the `kudu-tserver`, `kudu-master`, and `kudu` binaries from within the `bin`
+subdirectory of your Kudu build directory.
+* We typically recommend putting `kudu` in the bin directory (e.g. `/usr/bin`)
+and the server binaries in the sbin directory (e.g. `/usr/sbin`).
+* However, if you use the default installation directory without specifying the
+`DESTDIR` environment variable, `make install` will install files into `/usr/local`,
+so you should copy the Kudu binaries to `/usr/local/bin` and `/usr/local/sbin`
+respectively.
 
 .SLES Build Script
 ====
