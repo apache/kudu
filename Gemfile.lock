@@ -61,7 +61,7 @@ GEM
       listen (~> 3.0)
     json (1.8.6)
     kramdown (1.10.0)
-    libv8 (3.16.14.15)
+    libv8 (3.16.14.19)
     liquid (2.6.3)
     listen (3.0.6)
       rb-fsevent (>= 0.9.3)
