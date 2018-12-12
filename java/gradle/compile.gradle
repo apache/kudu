@@ -17,8 +17,8 @@
 
 // This file contains common compiler configurations.
 
-// Java Configuration
-tasks.withType(JavaCompile) {
+// JVM based compiler configuration
+tasks.withType(AbstractCompile) {
   sourceCompatibility = "1.$javaCompatibility"
   targetCompatibility = "1.$javaCompatibility"
   // --release is the recommended way to select the target release, but it's only supported in
@@ -33,17 +33,8 @@ tasks.withType(JavaCompile) {
   options.compilerArgs << '-proc:none' // Ignore leaked annotation processors on the compile classpath.
 }
 
-// Scala configuration
+// Scala compiler configuration
 tasks.withType(ScalaCompile) {
-  sourceCompatibility = "1.$javaCompatibility"
-  targetCompatibility = "1.$javaCompatibility"
-  // --release is the recommended way to select the target release, but it's only supported in
-  // Java 9+ so we also set -source and -target via `sourceCompatibility` and `targetCompatibility`.
-  // If/when Gradle supports `--release` natively (https://github.com/gradle/gradle/issues/2510),
-  // we should switch to that.
-  if (JavaVersion.current().isJava9Compatible()) {
-    options.compilerArgs << "--release" << "$javaCompatibility"
-  }
   scalaCompileOptions.encoding = encoding // make sure the encoding is defined by the project and not the system default.
   scalaCompileOptions.additionalParameters = [
       // Emit warning and location for usages of features that should be imported explicitly.

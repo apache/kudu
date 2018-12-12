@@ -28,15 +28,20 @@ repositories {
 // Manage plugin dependencies since the plugin block can't be used in included build scripts yet.
 // For more details see: https://docs.gradle.org/current/userguide/plugins.html#plugins_dsl_limitations
 dependencies {
-  compile "com.commercehub.gradle.plugin:gradle-avro-plugin:0.15.1"
+  compile "com.commercehub.gradle.plugin:gradle-avro-plugin:0.16.0"
   compile "com.github.ben-manes:gradle-versions-plugin:0.20.0"
-  compile "com.github.jengelman.gradle.plugins:shadow:2.0.4"
-  compile "com.google.protobuf:protobuf-gradle-plugin:0.8.6"
-  compile "com.netflix.nebula:nebula-clojure-plugin:6.0.2"
-  compile "gradle.plugin.com.github.spotbugs:spotbugs-gradle-plugin:1.6.4"
+  compile "com.github.jengelman.gradle.plugins:shadow:4.0.2"
+  compile "com.google.protobuf:protobuf-gradle-plugin:0.8.7"
+  compile "com.netflix.nebula:nebula-clojure-plugin:7.0.1"
+  compile "gradle.plugin.com.github.spotbugs:spotbugs-gradle-plugin:1.6.5"
   compile "io.spring.gradle:propdeps-plugin:0.0.9.RELEASE"
   compile "net.ltgt.gradle:gradle-errorprone-plugin:0.0.16"
   compile "ru.vyarus:gradle-animalsniffer-plugin:1.4.6"
   compile 'com.google.code.gson:gson:2.8.5'
   compile "cz.alenkacz:gradle-scalafmt:1.7.0"
+}
+
+// Compiler configuration
+tasks.withType(GroovyCompile) {
+  options.compilerArgs << '-proc:none' // Ignore leaked annotation processors on the compile classpath.
 }

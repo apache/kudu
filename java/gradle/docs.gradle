@@ -22,7 +22,7 @@ configurations {
 }
 
 dependencies {
-  doclet "org.apache.yetus:audience-annotations:0.7.0"
+  doclet libs.yetusAnnotations
 }
 
 // Javadoc Configuration

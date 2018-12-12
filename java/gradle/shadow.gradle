@@ -22,7 +22,8 @@ import org.gradle.api.internal.artifacts.publish.ArchivePublishArtifact
 
 apply plugin: "com.github.johnrengelman.shadow"
 
-tasks.remove(knows)  // Remove "easter egg" knows task.
+knows.enabled = false // Disable the "easter egg" knows task.
+knows.group = "" // Hide the "easter egg" knows task.
 shadowJar.group = "" // Hide shadowJar task since it's used by the default build.
 
 // Configure a shaded jar to replace the default jar
