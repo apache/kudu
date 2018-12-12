@@ -553,9 +553,12 @@ TYPED_TEST(TestTablet, TestRowIteratorOrdered) {
     for (int numBlocks = 1; numBlocks < 5; numBlocks*=2) {
       const int rowsPerBlock = kNumRows / numBlocks;
       // Make a new ordered iterator for the current snapshot.
+      RowIteratorOptions opts;
+      opts.projection = &this->client_schema_;
+      opts.snap_to_include = snap;
+      opts.order = ORDERED;
       gscoped_ptr<RowwiseIterator> iter;
-
-      ASSERT_OK(this->tablet()->NewRowIterator(this->client_schema_, snap, ORDERED, &iter));
+      ASSERT_OK(this->tablet()->NewRowIterator(std::move(opts), &iter));
       ASSERT_OK(iter->Init(nullptr));
 
       // Iterate the tablet collecting rows.

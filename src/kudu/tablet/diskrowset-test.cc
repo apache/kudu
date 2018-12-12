@@ -23,7 +23,6 @@
 #include <memory>
 #include <ostream>
 #include <string>
-#include <type_traits>
 #include <unordered_set>
 #include <vector>
 
@@ -441,7 +440,7 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
     opts.snap_to_include = snaps[i];
     gscoped_ptr<RowwiseIterator> iter;
     ASSERT_OK(rs->NewRowIterator(opts, &iter));
-    string data = InitAndDumpIterator(std::move(iter));
+    string data = InitAndDumpIterator(iter.get());
     EXPECT_EQ(StringPrintf(R"((string key="row", uint32 val=%d))", i + 1), data);
   }
 
@@ -456,7 +455,7 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
     opts.snap_to_include = snaps[i];
     gscoped_ptr<RowwiseIterator> iter;
     ASSERT_OK(rs->NewRowIterator(opts, &iter));
-    string data = InitAndDumpIterator(std::move(iter));
+    string data = InitAndDumpIterator(iter.get());
     EXPECT_EQ(StringPrintf(R"((string key="row", uint32 val=%d))", i + 1), data);
   }
 }

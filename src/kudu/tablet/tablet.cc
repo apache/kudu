@@ -400,25 +400,26 @@ void Tablet::SplitKeyRange(const EncodedKey* start_key,
                             column_ids, target_chunk_size, key_range_info);
 }
 
-Status Tablet::NewRowIterator(const Schema &projection,
-                              gscoped_ptr<RowwiseIterator> *iter) const {
+Status Tablet::NewRowIterator(const Schema& projection,
+                              gscoped_ptr<RowwiseIterator>* iter) const {
+  RowIteratorOptions opts;
   // Yield current rows.
-  MvccSnapshot snap(mvcc_);
-  return NewRowIterator(projection, snap, UNORDERED, iter);
+  opts.snap_to_include = MvccSnapshot(mvcc_);
+  opts.projection = &projection;
+  return NewRowIterator(std::move(opts), iter);
 }
 
-
-Status Tablet::NewRowIterator(const Schema &projection,
-                              const MvccSnapshot &snap,
-                              const OrderMode order,
-                              gscoped_ptr<RowwiseIterator> *iter) const {
+Status Tablet::NewRowIterator(RowIteratorOptions opts,
+                              gscoped_ptr<RowwiseIterator>* iter) const {
   RETURN_IF_STOPPED_OR_CHECK_STATE(kOpen);
   if (metrics_) {
     metrics_->scans_started->Increment();
   }
-  IOContext io_context({ tablet_id() });
-  VLOG_WITH_PREFIX(2) << "Created new Iterator under snap: " << snap.ToString();
-  iter->reset(new Iterator(this, projection, snap, order, std::move(io_context)));
+
+  VLOG_WITH_PREFIX(2) << "Created new Iterator for snapshot range: ("
+                      << (opts.snap_to_exclude ? opts.snap_to_exclude->ToString() : "-Inf")
+                      << ", " << opts.snap_to_include.ToString() << ")";
+  iter->reset(new Iterator(this, std::move(opts)));
   return Status::OK();
 }
 
@@ -1812,11 +1813,8 @@ Status Tablet::DebugDump(vector<string> *lines) {
 }
 
 Status Tablet::CaptureConsistentIterators(
-    const Schema* projection,
-    const MvccSnapshot& snap,
+    const RowIteratorOptions& opts,
     const ScanSpec* spec,
-    OrderMode order,
-    const IOContext* io_context,
     vector<shared_ptr<RowwiseIterator>>* iters) const {
 
   shared_lock<rw_spinlock> l(component_lock_);
@@ -1826,17 +1824,12 @@ Status Tablet::CaptureConsistentIterators(
   // in the middle, we don't modify the output arguments.
   vector<shared_ptr<RowwiseIterator>> ret;
 
-  RowIteratorOptions opts;
-  opts.projection = projection;
-  opts.snap_to_include = snap;
-  opts.order = order;
 
   // Grab the memrowset iterator.
   gscoped_ptr<RowwiseIterator> ms_iter;
   RETURN_NOT_OK(components_->memrowset->NewRowIterator(opts, &ms_iter));
   ret.emplace_back(ms_iter.release());
 
-  opts.io_context = io_context;
 
   // Cull row-sets in the case of key-range queries.
   if (spec != nullptr && (spec->lower_bound_key() || spec->exclusive_upper_bound_key())) {
@@ -2432,14 +2425,15 @@ string Tablet::LogPrefix() const {
 // Tablet::Iterator
 ////////////////////////////////////////////////////////////
 
-Tablet::Iterator::Iterator(const Tablet* tablet, const Schema& projection,
-                           MvccSnapshot snap, OrderMode order,
-                           IOContext io_context)
+Tablet::Iterator::Iterator(const Tablet* tablet,
+                           RowIteratorOptions opts)
     : tablet_(tablet),
-      projection_(projection),
-      snap_(std::move(snap)),
-      order_(order),
-      io_context_(std::move(io_context)) {}
+      io_context_({ tablet->tablet_id() }),
+      projection_(*CHECK_NOTNULL(opts.projection)),
+      opts_(std::move(opts)) {
+  opts_.io_context = &io_context_;
+  opts_.projection = &projection_;
+}
 
 Tablet::Iterator::~Iterator() {}
 
@@ -2450,11 +2444,10 @@ Status Tablet::Iterator::Init(ScanSpec *spec) {
   RETURN_NOT_OK(tablet_->GetMappedReadProjection(projection_, &projection_));
 
   vector<shared_ptr<RowwiseIterator>> iters;
-  RETURN_NOT_OK(tablet_->CaptureConsistentIterators(&projection_, snap_, spec, order_,
-                                                    &io_context_, &iters));
+  RETURN_NOT_OK(tablet_->CaptureConsistentIterators(opts_, spec, &iters));
   TRACE_COUNTER_INCREMENT("rowset_iterators", iters.size());
 
-  switch (order_) {
+  switch (opts_.order) {
     case ORDERED:
       iter_.reset(new MergeIterator(projection_, std::move(iters)));
       break;
@@ -2487,6 +2480,10 @@ string Tablet::Iterator::ToString() const {
     s.append(iter_->ToString());
   }
   return s;
+}
+
+const Schema& Tablet::Iterator::schema() const {
+  return *opts_.projection;
 }
 
 void Tablet::Iterator::GetIteratorStats(vector<IteratorStats>* stats) const {

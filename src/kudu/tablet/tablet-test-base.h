@@ -419,8 +419,11 @@ class TabletTestBase : public KuduTabletTest {
   void VerifyTestRowsWithTimestampAndVerifier(int32_t first_row, uint64_t expected_count,
                                               Timestamp timestamp,
                                               const boost::optional<TestRowVerifier>& verifier) {
+    RowIteratorOptions opts;
+    opts.projection = &client_schema_;
+    opts.snap_to_include = MvccSnapshot(timestamp);
     gscoped_ptr<RowwiseIterator> iter;
-    ASSERT_OK(tablet()->NewRowIterator(client_schema_, MvccSnapshot(timestamp), UNORDERED, &iter));
+    ASSERT_OK(tablet()->NewRowIterator(std::move(opts), &iter));
     VerifyTestRowsWithRowIteratorAndVerifier(first_row, expected_count, std::move(iter), verifier);
   }
 

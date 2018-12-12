@@ -112,7 +112,7 @@ class KuduTabletTest : public KuduTest {
     TabletHarness::Options opts(dir);
     opts.enable_metrics = true;
     opts.clock_type = clock_type_;
-    bool first_time = harness_ == NULL;
+    bool first_time = harness_ == nullptr;
     harness_.reset(new TabletHarness(schema_, opts));
     CHECK_OK(harness_->Create(first_time));
   }
@@ -146,7 +146,7 @@ class KuduTabletTest : public KuduTest {
     tserver::AlterSchemaRequestPB req;
     req.set_schema_version(tablet()->metadata()->schema_version() + 1);
 
-    AlterSchemaTransactionState tx_state(NULL, &req, NULL);
+    AlterSchemaTransactionState tx_state(nullptr, &req, nullptr);
     ASSERT_OK(tablet()->CreatePreparedAlterSchema(&tx_state, &schema));
     ASSERT_OK(tablet()->AlterSchema(&tx_state));
     tx_state.Finish();
@@ -239,9 +239,12 @@ static inline void CollectRowsForSnapshots(
     std::vector<std::vector<std::string>* >* collected_rows) {
   for (const MvccSnapshot& snapshot : snaps) {
     DVLOG(1) << "Snapshot: " <<  snapshot.ToString();
+    RowIteratorOptions opts;
+    opts.projection = &schema;
+    opts.snap_to_include = snapshot;
     gscoped_ptr<RowwiseIterator> iter;
-    ASSERT_OK(tablet->NewRowIterator(schema, snapshot, UNORDERED, &iter));
-    ASSERT_OK(iter->Init(NULL));
+    ASSERT_OK(tablet->NewRowIterator(std::move(opts), &iter));
+    ASSERT_OK(iter->Init(nullptr));
     auto collector = new std::vector<std::string>();
     ASSERT_OK(IterateToStringList(iter.get(), collector));
     for (const auto& mrs : *collector) {
@@ -262,12 +265,13 @@ static inline void VerifySnapshotsHaveSameResult(
   // Now iterate again and make sure we get the same thing.
   for (const MvccSnapshot& snapshot : snaps) {
     DVLOG(1) << "Snapshot: " <<  snapshot.ToString();
+
+    RowIteratorOptions opts;
+    opts.projection = &schema;
+    opts.snap_to_include = snapshot;
     gscoped_ptr<RowwiseIterator> iter;
-    ASSERT_OK(tablet->NewRowIterator(schema,
-                                            snapshot,
-                                            UNORDERED,
-                                            &iter));
-    ASSERT_OK(iter->Init(NULL));
+    ASSERT_OK(tablet->NewRowIterator(std::move(opts), &iter));
+    ASSERT_OK(iter->Init(nullptr));
     std::vector<std::string> collector;
     ASSERT_OK(IterateToStringList(iter.get(), &collector));
     ASSERT_EQ(collector.size(), expected_rows[idx]->size());
@@ -296,21 +300,21 @@ static inline Status DumpRowSet(const RowSet& rs,
 
 // Take an un-initialized iterator, Init() it, and iterate through all of its rows.
 // The resulting string contains a line per entry.
-static inline std::string InitAndDumpIterator(gscoped_ptr<RowwiseIterator> iter) {
-  CHECK_OK(iter->Init(NULL));
+static inline std::string InitAndDumpIterator(RowwiseIterator* iter) {
+  CHECK_OK(iter->Init(nullptr));
 
   std::vector<std::string> out;
-  CHECK_OK(IterateToStringList(iter.get(), &out));
+  CHECK_OK(IterateToStringList(iter, &out));
   return JoinStrings(out, "\n");
 }
 
 // Dump all of the rows of the tablet into the given vector.
 static inline Status DumpTablet(const Tablet& tablet,
-                         const Schema& projection,
-                         std::vector<std::string>* out) {
+                                const Schema& projection,
+                                std::vector<std::string>* out) {
   gscoped_ptr<RowwiseIterator> iter;
   RETURN_NOT_OK(tablet.NewRowIterator(projection, &iter));
-  RETURN_NOT_OK(iter->Init(NULL));
+  RETURN_NOT_OK(iter->Init(nullptr));
   std::vector<std::string> rows;
   RETURN_NOT_OK(IterateToStringList(iter.get(), &rows));
   std::sort(rows.begin(), rows.end());
@@ -325,10 +329,10 @@ static Status WriteRow(const Slice &row_slice, RowSetWriterClass *writer) {
   const Schema &schema = writer->schema();
   DCHECK_EQ(row_slice.size(), schema.byte_size());
 
-  RowBlock block(schema, 1, NULL);
+  RowBlock block(schema, 1, nullptr);
   ConstContiguousRow row(&schema, row_slice.data());
   RowBlockRow dst_row = block.row(0);
-  RETURN_NOT_OK(CopyRow(row, &dst_row, reinterpret_cast<Arena*>(NULL)));
+  RETURN_NOT_OK(CopyRow(row, &dst_row, static_cast<Arena*>(nullptr)));
 
   return writer->AppendBlock(block);
 }

@@ -69,6 +69,7 @@
 #include "kudu/tablet/compaction.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/mvcc.h"
+#include "kudu/tablet/rowset.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_metrics.h"
@@ -2291,7 +2292,11 @@ Status TabletServiceImpl::HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
   if (scan_pb.order_mode() == UNKNOWN_ORDER_MODE) {
     return Status::InvalidArgument("Unknown order mode specified");
   }
-  RETURN_NOT_OK(tablet->NewRowIterator(projection, snap, scan_pb.order_mode(), iter));
+  tablet::RowIteratorOptions opts;
+  opts.projection = &projection;
+  opts.snap_to_include = snap;
+  opts.order = scan_pb.order_mode();
+  RETURN_NOT_OK(tablet->NewRowIterator(std::move(opts), iter));
 
   // Return the picked snapshot timestamp for both READ_AT_SNAPSHOT
   // and READ_YOUR_WRITES mode.

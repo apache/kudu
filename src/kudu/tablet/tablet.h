@@ -31,7 +31,6 @@
 #include <gtest/gtest_prod.h>
 
 #include "kudu/clock/clock.h"
-#include "kudu/common/common.pb.h"
 #include "kudu/common/iterator.h"
 #include "kudu/common/schema.h"
 #include "kudu/fs/io_context.h"
@@ -193,14 +192,22 @@ class Tablet {
   // Create a new row iterator which yields the rows as of the current MVCC
   // state of this tablet.
   // The returned iterator is not initialized.
-  Status NewRowIterator(const Schema &projection,
-                        gscoped_ptr<RowwiseIterator> *iter) const;
+  Status NewRowIterator(const Schema& projection,
+                        gscoped_ptr<RowwiseIterator>* iter) const;
 
-  // Create a new row iterator for some historical snapshot.
-  Status NewRowIterator(const Schema &projection,
-                        const MvccSnapshot &snap,
-                        const OrderMode order,
-                        gscoped_ptr<RowwiseIterator> *iter) const;
+  // Create a new row iterator using specific iterator options.
+  //
+  // 'opts' contains the options desired from the iterator.
+  //
+  // Note: the Schema pointed to by the 'projection' field of the 'opts' struct
+  // will be copied, so that pointer only needs to remain valid during the call
+  // to NewRowIterator() and not after that.
+  // Similarly, the 'io_context' field of the 'opts' struct will be ignored and
+  // overwritten in the copy of the 'opts' struct used by the returned iterator
+  // because the iterator constructs and holds the relevant instance of that
+  // object as a member variable.
+  Status NewRowIterator(RowIteratorOptions opts,
+                        gscoped_ptr<RowwiseIterator>* iter) const;
 
   // Flush the current MemRowSet for this tablet to disk. This swaps
   // in a new (initially empty) MemRowSet in its place.
@@ -571,12 +578,10 @@ class Tablet {
   // of creation, and potentially newer data.
   //
   // The returned iterators are not Init()ed.
-  // 'projection' must remain valid and unchanged for the lifetime of the returned iterators.
-  Status CaptureConsistentIterators(const Schema* projection,
-                                    const MvccSnapshot& snap,
+  // The pointer fields of 'opts' must remain valid and unchanged for the
+  // lifetime of the returned iterators.
+  Status CaptureConsistentIterators(const RowIteratorOptions& opts,
                                     const ScanSpec* spec,
-                                    OrderMode order,
-                                    const fs::IOContext* io_context,
                                     std::vector<std::shared_ptr<RowwiseIterator> >* iters) const;
 
   Status PickRowSetsToCompact(RowSetsInCompaction *picked,
@@ -778,9 +783,7 @@ class Tablet::Iterator : public RowwiseIterator {
 
   std::string ToString() const OVERRIDE;
 
-  const Schema &schema() const OVERRIDE {
-    return projection_;
-  }
+  const Schema &schema() const OVERRIDE;
 
   virtual void GetIteratorStats(std::vector<IteratorStats>* stats) const OVERRIDE;
 
@@ -789,14 +792,22 @@ class Tablet::Iterator : public RowwiseIterator {
 
   DISALLOW_COPY_AND_ASSIGN(Iterator);
 
-  Iterator(const Tablet* tablet, const Schema& projection, MvccSnapshot snap,
-           OrderMode order, fs::IOContext io_context);
+  // Instantiate iterator with given projection and options.
+  //
+  // Note: the Schema pointed to by the 'projection' field of the 'opts' struct
+  // will be copied into projection_, so that pointer only needs to remain
+  // valid during the call to the constructor and not after that.
+  // Similarly, the 'io_context' field of the 'opts' struct will be ignored and
+  // overwritten in the copy of the 'opts' struct used by this class because
+  // this class constructs and holds the relevant instance of that object as a
+  // member variable.
+  Iterator(const Tablet* tablet,
+           RowIteratorOptions opts);
 
-  const Tablet *tablet_;
+  const Tablet* tablet_;
+  fs::IOContext io_context_;
   Schema projection_;
-  const MvccSnapshot snap_;
-  const OrderMode order_;
-  const fs::IOContext io_context_;
+  RowIteratorOptions opts_;
   gscoped_ptr<RowwiseIterator> iter_;
 };
 
