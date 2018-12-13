@@ -27,6 +27,8 @@ package object kudu {
    * the DataFrameReader.
    */
   implicit class KuduDataFrameReader(reader: DataFrameReader) {
+
+    @deprecated("Use `.format(\"kudu\").load` instead", "1.9.0")
     def kudu: DataFrame = reader.format("org.apache.kudu.spark.kudu").load
   }
 
@@ -35,6 +37,8 @@ package object kudu {
    * the DataFileWriter
    */
   implicit class KuduDataFrameWriter[T](writer: DataFrameWriter[T]) {
+
+    @deprecated("Use `.format(\"kudu\").save` instead", "1.9.0")
     def kudu = writer.format("org.apache.kudu.spark.kudu").save
   }
 }

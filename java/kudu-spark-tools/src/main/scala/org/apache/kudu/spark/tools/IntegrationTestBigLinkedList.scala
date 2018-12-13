@@ -361,13 +361,13 @@ object Verifier {
 
   @InterfaceAudience.LimitedPrivate(Array("Test"))
   def run(args: Args, ss: SparkSession): Counts = {
-    import org.apache.kudu.spark.kudu._
     val sql = ss.sqlContext
 
     sql.read
       .option("kudu.master", args.masterAddrs)
       .option("kudu.table", args.tableName)
-      .kudu
+      .format("kudu")
+      .load
       .createOrReplaceTempView("nodes")
 
     // Get a table of all nodes and their ref count

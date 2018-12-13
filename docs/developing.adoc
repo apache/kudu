@@ -72,7 +72,7 @@ The following Maven `<dependency>` element is valid for the Apache Kudu public r
 <dependency>
   <groupId>org.apache.kudu</groupId>
   <artifactId>kudu-client</artifactId>
-  <version>1.8.0</version>
+  <version>1.9.0</version>
 </dependency>
 ----
 
@@ -98,23 +98,27 @@ with Kudu, version 1.5.0 is the latest to go to.
 spark-shell --packages org.apache.kudu:kudu-spark_2.10:1.5.0
 ----
 
-Use kudu-spark2_2.11 artifact if using Spark 2 with Scala 2.11. Spark 2 artifacts are available
-up to version 1.7.0.
+Use kudu-spark2_2.11 artifact if using Spark 2 with Scala 2.11.
+
+NOTE: kudu-spark versions 1.8.0 and below have slightly different syntax.
+See the documentation of your version for a valid example. Versioned documentation can be found
+on the link:http://kudu.apache.org/releases/[releases page].
+
 [source]
 ----
-spark-shell --packages org.apache.kudu:kudu-spark2_2.11:1.7.0
+spark-shell --packages org.apache.kudu:kudu-spark2_2.11:1.9.0
 ----
 
 then import kudu-spark and create a dataframe:
 [source,scala]
 ----
-import org.apache.kudu.spark.kudu._
 import org.apache.kudu.client._
 import collection.JavaConverters._
 
 // Read a table from Kudu
-val df = spark.read.options(Map("kudu.master" -> "kudu.master:7051",
-                                "kudu.table" -> "kudu_table")).kudu
+val df = spark.read
+  .options(Map("kudu.master" -> "kudu.master:7051", "kudu.table" -> "kudu_table"))
+  .format("kudu").load
 
 // Query using the Spark API...
 df.select("id").filter("id >= 5").show()
@@ -152,8 +156,10 @@ kuduContext.updateRows(filteredRows, "test_table")
 // NB: The default is to upsert rows; to perform standard inserts instead, set operation = insert
 // in the options map
 // NB: Only mode Append is supported
-df.write.options(Map("kudu.master"-> "kudu.master:7051",
-                     "kudu.table"-> "test_table")).mode("append").kudu
+df.write
+  .options(Map("kudu.master"-> "kudu.master:7051", "kudu.table"-> "test_table"))
+  .mode("append")
+  .format("kudu").save
 
 // Check for the existence of a Kudu table
 kuduContext.tableExists("another_table")
@@ -168,8 +174,9 @@ it will avoid setting existing column values in Kudu table to Null if the corres
 column values are Null. If unspecified, `ignoreNull` is false by default.
 [source,scala]
 ----
-val dataDF = spark.read.options(Map("kudu.master" -> "kudu.master:7051",
-  "kudu.table" -> simpleTableName)).kudu
+val dataDF = spark.read
+  .options(Map("kudu.master" -> "kudu.master:7051", "kudu.table" -> simpleTableName))
+  .format("kudu").load
 dataDF.registerTempTable(simpleTableName)
 dataDF.show()
 // Below is the original data in the table 'simpleTableName'

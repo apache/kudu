@@ -115,7 +115,8 @@ class KuduContextTest extends KuduTestSuite with Matchers {
     val sqlContext = ss.sqlContext
     val dataDF = sqlContext.read
       .options(Map("kudu.master" -> harness.getMasterAddressesAsString, "kudu.table" -> "test"))
-      .kudu
+      .format("kudu")
+      .load
     dataDF
       .sort("key")
       .select("c8_binary")

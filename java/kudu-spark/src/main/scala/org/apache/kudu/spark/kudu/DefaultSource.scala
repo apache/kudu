@@ -32,7 +32,6 @@ import org.apache.spark.sql.SQLContext
 import org.apache.spark.sql.SaveMode
 import org.apache.yetus.audience.InterfaceAudience
 import org.apache.yetus.audience.InterfaceStability
-
 import org.apache.kudu.client.KuduPredicate.ComparisonOp
 import org.apache.kudu.client._
 import org.apache.kudu.spark.kudu.KuduReadOptions._
@@ -50,7 +49,8 @@ import org.apache.kudu.spark.kudu.SparkUtil._
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
 class DefaultSource
-    extends RelationProvider with CreatableRelationProvider with SchemaRelationProvider {
+    extends DataSourceRegister with RelationProvider with CreatableRelationProvider
+    with SchemaRelationProvider {
 
   val TABLE_KEY = "kudu.table"
   val KUDU_MASTER = "kudu.master"
@@ -63,6 +63,14 @@ class DefaultSource
   val SOCKET_READ_TIMEOUT_MS = "kudu.socketReadTimeoutMs"
   val BATCH_SIZE = "kudu.batchSize"
   val KEEP_ALIVE_PERIOD_MS = "kudu.keepAlivePeriodMs"
+
+  /**
+   * A nice alias for the data source so that when specifying the format
+   * "kudu" can be used in place of "org.apache.kudu.spark.kudu".
+   * Note: This class is discovered by Spark via the entry in
+   * `META-INF/services/org.apache.spark.sql.sources.DataSourceRegister`
+   */
+  override def shortName(): String = "kudu"
 
   /**
    * Construct a BaseRelation using the provided context and parameters.

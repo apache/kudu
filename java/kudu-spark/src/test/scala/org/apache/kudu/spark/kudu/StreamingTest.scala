@@ -56,7 +56,7 @@ class StreamingTest extends KuduTestSuite {
       .start()
 
     def verifyOutput(expectedData: Seq[(Int, String)]): Unit = {
-      val df = sqlContext.read.options(kuduOptions).kudu
+      val df = sqlContext.read.options(kuduOptions).format("kudu").load
       val actual = df.rdd
         .map { row =>
           (row.get(0), row.getString(1))

@@ -134,7 +134,7 @@ object ImportExportFiles {
           case _ => fail(args.format + s"unknown argument given ")
         }
       case "export" =>
-        val df = sqlContext.read.options(kuduOptions).kudu.select(args.columns)
+        val df = sqlContext.read.options(kuduOptions).format("kudu").load.select(args.columns)
         args.format match {
           case "csv" =>
             df.write

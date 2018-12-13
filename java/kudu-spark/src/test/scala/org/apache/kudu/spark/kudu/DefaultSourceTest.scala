@@ -51,7 +51,28 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
     kuduOptions =
       Map("kudu.table" -> tableName, "kudu.master" -> harness.getMasterAddressesAsString)
 
-    sqlContext.read.options(kuduOptions).kudu.createOrReplaceTempView(tableName)
+    sqlContext.read
+      .options(kuduOptions)
+      .format("kudu")
+      .load()
+      .createOrReplaceTempView(tableName)
+  }
+
+  /**
+   * A simple test to verify the legacy package reader/writer
+   * syntax still works. This should be removed when the
+   * deprecated `kudu` methods are removed.
+   */
+  @Test
+  def testPackageReaderAndWriter(): Unit = {
+    val df = sqlContext.read.options(kuduOptions).kudu
+    val baseDF = df.limit(1) // filter down to just the first row
+    // change the c2 string to abc and update
+    val updateDF = baseDF.withColumn("c2_s", lit("abc"))
+    updateDF.write.options(kuduOptions).mode("append").kudu
+
+    val newDf = sqlContext.read.options(kuduOptions).kudu
+    assertFalse(newDf.collect().isEmpty)
   }
 
   @Test
@@ -60,7 +81,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
     if (kuduContext.tableExists(tableName)) {
       kuduContext.deleteTable(tableName)
     }
-    val df = sqlContext.read.options(kuduOptions).kudu
+    val df = sqlContext.read.options(kuduOptions).format("kudu").load
     kuduContext.createTable(
       tableName,
       df.schema,
@@ -73,7 +94,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
     // now use new options to refer to the new table name
     val newOptions: Map[String, String] =
       Map("kudu.table" -> tableName, "kudu.master" -> harness.getMasterAddressesAsString)
-    val checkDf = sqlContext.read.options(newOptions).kudu
+    val checkDf = sqlContext.read.options(newOptions).format("kudu").load
 
     assert(checkDf.schema === df.schema)
     assertTrue(kuduContext.tableExists(tableName))
@@ -89,7 +110,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
     if (kuduContext.tableExists(tableName)) {
       kuduContext.deleteTable(tableName)
     }
-    val df = sqlContext.read.options(kuduOptions).kudu
+    val df = sqlContext.read.options(kuduOptions).format("kudu").load
 
     val kuduSchema = kuduContext.createSchema(df.schema, Seq("key"))
     val lower = kuduSchema.newPartialRow()
@@ -111,7 +132,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
     // now use new options to refer to the new table name
     val newOptions: Map[String, String] =
       Map("kudu.table" -> tableName, "kudu.master" -> harness.getMasterAddressesAsString)
-    val checkDf = sqlContext.read.options(newOptions).kudu
+    val checkDf = sqlContext.read.options(newOptions).format("kudu").load
 
     assert(checkDf.schema === df.schema)
     assertTrue(kuduContext.tableExists(tableName))
@@ -123,14 +144,14 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
 
   @Test
   def testInsertion() {
-    val df = sqlContext.read.options(kuduOptions).kudu
+    val df = sqlContext.read.options(kuduOptions).format("kudu").load
     val changedDF = df
       .limit(1)
       .withColumn("key", df("key").plus(100))
       .withColumn("c2_s", lit("abc"))
     kuduContext.insertRows(changedDF, tableName)
 
-    val newDF = sqlContext.read.options(kuduOptions).kudu
+    val newDF = sqlContext.read.options(kuduOptions).format("kudu").load
     val collected = newDF.filter("key = 100").collect()
     assertEquals("abc", collected(0).getAs[String]("c2_s"))
 
@@ -139,14 +160,14 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
 
   @Test
   def testInsertionMultiple() {
-    val df = sqlContext.read.options(kuduOptions).kudu
+    val df = sqlContext.read.options(kuduOptions).format("kudu").load
     val changedDF = df
       .limit(2)
       .withColumn("key", df("key").plus(100))
       .withColumn("c2_s", lit("abc"))
     kuduContext.insertRows(changedDF, tableName)
 
-    val newDF = sqlContext.read.options(kuduOptions).kudu
+    val newDF = sqlContext.read.options(kuduOptions).format("kudu").load
     val collected = newDF.filter("key = 100").collect()
     assertEquals("abc", collected(0).getAs[String]("c2_s"))
 
@@ -159,7 +180,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
 
   @Test
   def testInsertionIgnoreRows() {
-    val df = sqlContext.read.options(kuduOptions).kudu
+    val df = sqlContext.read.options(kuduOptions).format("kudu").load
     val baseDF = df.limit(1) // filter down to just the first row
 
     // change the c2 string to abc and insert
@@ -175,7 +196,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
     kuduContext.insertRows(insertDF, tableName, kuduWriteOptions)
 
     // read the data back
-    val newDF = sqlContext.read.options(kuduOptions).kudu
+    val newDF = sqlContext.read.options(kuduOptions).format("kudu").load
     val collectedUpdate = newDF.filter("key = 0").collect()
     assertEquals("0", collectedUpdate(0).getAs[String]("c2_s"))
     val collectedInsert = newDF.filter("key = 100").collect()
@@ -187,7 +208,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
 
   @Test
   def testInsertIgnoreRowsUsingDefaultSource() {
-    val df = sqlContext.read.options(kuduOptions).kudu
+    val df = sqlContext.read.options(kuduOptions).format("kudu").load
     val baseDF = df.limit(1) // filter down to just the first row
 
     // change the c2 string to abc and insert
@@ -197,17 +218,17 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
       "kudu.master" -> harness.getMasterAddressesAsString,
       "kudu.operation" -> "insert",
       "kudu.ignoreDuplicateRowErrors" -> "true")
-    updateDF.write.options(newOptions).mode("append").kudu
+    updateDF.write.options(newOptions).mode("append").format("kudu").save
 
     // change the key and insert
     val insertDF = df
       .limit(1)
       .withColumn("key", df("key").plus(100))
       .withColumn("c2_s", lit("def"))
-    insertDF.write.options(newOptions).mode("append").kudu
+    insertDF.write.options(newOptions).mode("append").format("kudu").save
 
     // read the data back
-    val newDF = sqlContext.read.options(kuduOptions).kudu
+    val newDF = sqlContext.read.options(kuduOptions).format("kudu").load
     val collectedUpdate = newDF.filter("key = 0").collect()
     assertEquals("0", collectedUpdate(0).getAs[String]("c2_s"))
     val collectedInsert = newDF.filter("key = 100").collect()
@@ -219,7 +240,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
 
   @Test
   def testInsertIgnoreRowsWriteOption() {
-    val df = sqlContext.read.options(kuduOptions).kudu
+    val df = sqlContext.read.options(kuduOptions).format("kudu").load
     val baseDF = df.limit(1) // filter down to just the first row
 
     // change the c2 string to abc and insert
@@ -228,17 +249,17 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
       "kudu.table" -> tableName,
       "kudu.master" -> harness.getMasterAddressesAsString,
       "kudu.operation" -> "insert-ignore")
-    updateDF.write.options(newOptions).mode("append").kudu
+    updateDF.write.options(newOptions).mode("append").format("kudu").save
 
     // change the key and insert
     val insertDF = df
       .limit(1)
       .withColumn("key", df("key").plus(100))
       .withColumn("c2_s", lit("def"))
-    insertDF.write.options(newOptions).mode("append").kudu
+    insertDF.write.options(newOptions).mode("append").format("kudu").save
 
     // read the data back
-    val newDF = sqlContext.read.options(kuduOptions).kudu
+    val newDF = sqlContext.read.options(kuduOptions).format("kudu").load
     val collectedUpdate = newDF.filter("key = 0").collect()
     assertEquals("0", collectedUpdate(0).getAs[String]("c2_s"))
     val collectedInsert = newDF.filter("key = 100").collect()
@@ -250,7 +271,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
 
   @Test
   def testInsertIgnoreRowsMethod() {
-    val df = sqlContext.read.options(kuduOptions).kudu
+    val df = sqlContext.read.options(kuduOptions).format("kudu").load
     val baseDF = df.limit(1) // filter down to just the first row
 
     // change the c2 string to abc and insert
@@ -265,7 +286,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
     kuduContext.insertIgnoreRows(insertDF, tableName)
 
     // read the data back
-    val newDF = sqlContext.read.options(kuduOptions).kudu
+    val newDF = sqlContext.read.options(kuduOptions).format("kudu").load
     val collectedUpdate = newDF.filter("key = 0").collect()
     assertEquals("0", collectedUpdate(0).getAs[String]("c2_s"))
     val collectedInsert = newDF.filter("key = 100").collect()
@@ -277,7 +298,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
 
   @Test
   def testUpsertRows() {
-    val df = sqlContext.read.options(kuduOptions).kudu
+    val df = sqlContext.read.options(kuduOptions).format("kudu").load
     val baseDF = df.limit(1) // filter down to just the first row
 
     // change the c2 string to abc and update
@@ -292,7 +313,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
     kuduContext.upsertRows(insertDF, tableName)
 
     // read the data back
-    val newDF = sqlContext.read.options(kuduOptions).kudu
+    val newDF = sqlContext.read.options(kuduOptions).format("kudu").load
     val collectedUpdate = newDF.filter("key = 0").collect()
     assertEquals("abc", collectedUpdate(0).getAs[String]("c2_s"))
     val collectedInsert = newDF.filter("key = 100").collect()
@@ -312,7 +333,8 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
     val dataDF = sqlContext.read
       .options(
         Map("kudu.master" -> harness.getMasterAddressesAsString, "kudu.table" -> simpleTableName))
-      .kudu
+      .format("kudu")
+      .load
 
     val nullDF = sqlContext
       .createDataFrame(Seq((0, null.asInstanceOf[String])))
@@ -343,7 +365,8 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
     val dataDF = sqlContext.read
       .options(
         Map("kudu.master" -> harness.getMasterAddressesAsString, "kudu.table" -> simpleTableName))
-      .kudu
+      .format("kudu")
+      .load
 
     val nullDF = sqlContext
       .createDataFrame(Seq((0, null.asInstanceOf[String])))
@@ -352,13 +375,13 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
       "kudu.table" -> simpleTableName,
       "kudu.master" -> harness.getMasterAddressesAsString,
       "kudu.ignoreNull" -> "true")
-    nullDF.write.options(options_0).mode("append").kudu
+    nullDF.write.options(options_0).mode("append").format("kudu").save
     assert(dataDF.collect.toList === nonNullDF.collect.toList)
 
     kuduContext.updateRows(nonNullDF, simpleTableName)
     val options_1: Map[String, String] =
       Map("kudu.table" -> simpleTableName, "kudu.master" -> harness.getMasterAddressesAsString)
-    nullDF.write.options(options_1).mode("append").kudu
+    nullDF.write.options(options_1).mode("append").format("kudu").save
     assert(dataDF.collect.toList === nullDF.collect.toList)
 
     val deleteDF = dataDF.filter("key = 0").select("key")
@@ -367,12 +390,12 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
 
   @Test
   def testDeleteRows() {
-    val df = sqlContext.read.options(kuduOptions).kudu
+    val df = sqlContext.read.options(kuduOptions).format("kudu").load
     val deleteDF = df.filter("key = 0").select("key")
     kuduContext.deleteRows(deleteDF, tableName)
 
     // read the data back
-    val newDF = sqlContext.read.options(kuduOptions).kudu
+    val newDF = sqlContext.read.options(kuduOptions).format("kudu").load
     val collectedDelete = newDF.filter("key = 0").collect()
     assertEquals(0, collectedDelete.length)
 
@@ -384,7 +407,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
   @Test
   def testOutOfOrderSelection() {
     val df =
-      sqlContext.read.options(kuduOptions).kudu.select("c2_s", "c1_i", "key")
+      sqlContext.read.options(kuduOptions).format("kudu").load.select("c2_s", "c1_i", "key")
     val collected = df.collect()
     assert(collected(0).getString(0).equals("0"))
   }
@@ -406,7 +429,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
       "kudu.faultTolerantScan" -> "true")
 
     val table = "faultTolerantScanTest"
-    sqlContext.read.options(kuduOptions).kudu.createOrReplaceTempView(table)
+    sqlContext.read.options(kuduOptions).format("kudu").load.createOrReplaceTempView(table)
     val results = sqlContext.sql(s"SELECT * FROM $table").collectAsList()
     assert(results.size() == rowCount)
 
@@ -656,7 +679,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
     }
     val options: Map[String, String] =
       Map("kudu.table" -> testTableName, "kudu.master" -> harness.getMasterAddressesAsString)
-    sqlContext.read.options(options).kudu.createOrReplaceTempView(testTableName)
+    sqlContext.read.options(options).format("kudu").load.createOrReplaceTempView(testTableName)
 
     val checkPrefixCount = { prefix: String =>
       val results = sqlContext.sql(s"SELECT key FROM $testTableName WHERE key LIKE '$prefix%'")
@@ -721,7 +744,8 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
       Map("kudu.table" -> insertTable, "kudu.master" -> harness.getMasterAddressesAsString)
     sqlContext.read
       .options(newOptions)
-      .kudu
+      .format("kudu")
+      .load
       .createOrReplaceTempView(insertTable)
 
     sqlContext.sql(s"INSERT INTO TABLE $insertTable SELECT * FROM $tableName")
@@ -748,7 +772,8 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
       Map("kudu.table" -> insertTable, "kudu.master" -> harness.getMasterAddressesAsString)
     sqlContext.read
       .options(newOptions)
-      .kudu
+      .format("kudu")
+      .load
       .createOrReplaceTempView(insertTable)
 
     try {
@@ -763,7 +788,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
 
   @Test
   def testWriteUsingDefaultSource() {
-    val df = sqlContext.read.options(kuduOptions).kudu
+    val df = sqlContext.read.options(kuduOptions).format("kudu").load
 
     val newTable = "testwritedatasourcetable"
     kuduContext.createTable(
@@ -776,9 +801,9 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
 
     val newOptions: Map[String, String] =
       Map("kudu.table" -> newTable, "kudu.master" -> harness.getMasterAddressesAsString)
-    df.write.options(newOptions).mode("append").kudu
+    df.write.options(newOptions).mode("append").format("kudu").save
 
-    val checkDf = sqlContext.read.options(newOptions).kudu
+    val checkDf = sqlContext.read.options(newOptions).format("kudu").load
     assert(checkDf.schema === df.schema)
     assertTrue(kuduContext.tableExists(newTable))
     assert(checkDf.count == 10)
@@ -793,11 +818,11 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
         StructField("key", DataTypes.IntegerType)
       ))
 
-    val dfDefaultSchema = sqlContext.read.options(kuduOptions).kudu
+    val dfDefaultSchema = sqlContext.read.options(kuduOptions).format("kudu").load
     assertEquals(14, dfDefaultSchema.schema.fields.length)
 
     val dfWithUserSchema =
-      sqlContext.read.options(kuduOptions).schema(userSchema).kudu
+      sqlContext.read.options(kuduOptions).schema(userSchema).format("kudu").load
     assertEquals(2, dfWithUserSchema.schema.fields.length)
 
     dfWithUserSchema.limit(10).collect()
@@ -814,7 +839,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
       ))
 
     intercept[IllegalArgumentException] {
-      sqlContext.read.options(kuduOptions).schema(userSchema).kudu
+      sqlContext.read.options(kuduOptions).schema(userSchema).format("kudu").load
     }.getMessage should include("Unknown column: foo")
   }
 
@@ -826,7 +851,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
       "kudu.scanLocality" -> "closest_replica")
 
     val table = "scanLocalityTest"
-    sqlContext.read.options(kuduOptions).kudu.createOrReplaceTempView(table)
+    sqlContext.read.options(kuduOptions).format("kudu").load.createOrReplaceTempView(table)
     val results = sqlContext.sql(s"SELECT * FROM $table").collectAsList()
     assert(results.size() == rowCount)
 
@@ -838,7 +863,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
   // the same client.
   @Test
   def testTimestampPropagation() {
-    val df = sqlContext.read.options(kuduOptions).kudu
+    val df = sqlContext.read.options(kuduOptions).format("kudu").load
     val insertDF = df
       .limit(1)
       .withColumn(
@@ -855,7 +880,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
 
     // Initiate a read via DataFrame, and verify that the client should
     // move the propagated timestamp further.
-    val newDF = sqlContext.read.options(kuduOptions).kudu
+    val newDF = sqlContext.read.options(kuduOptions).format("kudu").load
     val collected = newDF.filter("key = 100").collect()
     assertEquals("abc", collected(0).getAs[String]("c2_s"))
     assert(kuduContext.syncClient.getLastPropagatedTimestamp > prevTimestamp)
@@ -905,7 +930,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
       "kudu.table" -> tableName,
       "kudu.master" -> harness.getMasterAddressesAsString,
       "kudu.scanRequestTimeoutMs" -> "66666")
-    val dataFrame = sqlContext.read.options(kuduOptions).kudu
+    val dataFrame = sqlContext.read.options(kuduOptions).format("kudu").load
     val kuduRelation = kuduRelationFromDataFrame(dataFrame)
     assert(kuduRelation.readOptions.scanRequestTimeoutMs == Some(66666))
   }
@@ -925,7 +950,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
     // construction of 'dataFrame' involves a connection to the Kudu cluster,
     // which is affected by the value of socketReadTimeoutMs. Therefore we must
     // choose a value that's high enough to actually support establishing a connection.
-    val dataFrame = sqlContext.read.options(kuduOptions).kudu
+    val dataFrame = sqlContext.read.options(kuduOptions).format("kudu").load
     val kuduRelation = kuduRelationFromDataFrame(dataFrame)
     assert(kuduRelation.readOptions.socketReadTimeoutMs == Some(66666))
   }
