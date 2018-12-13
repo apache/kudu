@@ -30,7 +30,9 @@ versions += [
     clojure        : "1.9.0",
     clojureToolsCli: "0.4.1",
     commonsIo      : "2.6",
-    errorprone     : "2.3.2",
+    // errorprone 2.3.2+ has an issue on older JDKs see
+    // https://github.com/google/error-prone/issues/1140
+    errorprone     : "2.3.1",
     flume          : "1.8.0",
     gradle         : "5.0",
     // We use the android version instead of the jre version
