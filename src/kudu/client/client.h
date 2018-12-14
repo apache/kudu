@@ -144,7 +144,7 @@ void KUDU_EXPORT SetVerboseLogLevel(int level);
 /// @param [in] signum
 ///   Signal number to use for internal.
 /// @return Operation result status.
-Status KUDU_EXPORT SetInternalSignalNumber(int signum);
+Status KUDU_EXPORT SetInternalSignalNumber(int signum) WARN_UNUSED_RESULT;
 
 /// Disable initialization of the Cyrus SASL library. Clients should call this
 /// method before using the Kudu client if they are manually initializing Cyrus
@@ -157,7 +157,7 @@ Status KUDU_EXPORT SetInternalSignalNumber(int signum);
 /// NOTE: Kudu makes use of SASL from multiple threads. Thus, it's imperative
 /// that embedding applications use sasl_set_mutex(3) to provide a mutex
 /// implementation if they are choosing to handle SASL initialization manually.
-Status KUDU_EXPORT DisableSaslInitialization();
+Status KUDU_EXPORT DisableSaslInitialization() WARN_UNUSED_RESULT;
 
 
 /// Disable initialization of the OpenSSL library. Clients should call this
@@ -182,7 +182,7 @@ Status KUDU_EXPORT DisableSaslInitialization();
 ///   RAND_poll(); // or an equivalent RAND setup.
 ///   CRYPTO_set_locking_callback(MyAppLockingCallback);
 /// @endcode
-Status KUDU_EXPORT DisableOpenSSLInitialization();
+Status KUDU_EXPORT DisableOpenSSLInitialization() WARN_UNUSED_RESULT;
 
 /// @return Short version info, i.e. a single-line version string
 ///   identifying the Kudu client.
