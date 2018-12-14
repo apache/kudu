@@ -130,8 +130,11 @@ void DoInitializeOpenSSL() {
   auto ctx = ssl_make_unique(SSL_CTX_new(SSLv23_method()));
   if (ctx) {
     LOG(WARNING) << "It appears that OpenSSL has been previously initialized by "
-                 << "code outside of Kudu. Please use kudu::client::DisableOpenSSLInitialization() "
-                 << "to avoid potential crashes due to conflicting initialization.";
+                    "code outside of Kudu. Please first properly initialize "
+                    "OpenSSL for multi-threaded usage (setting thread callback "
+                    "functions for OpenSSL of versions earlier than 1.1.0) and "
+                    "then call kudu::client::DisableOpenSSLInitialization() "
+                    "to avoid potential crashes due to conflicting initialization.";
     // Continue anyway; all of the below is idempotent, except for the locking callback,
     // which we check before overriding. They aren't thread-safe, however -- that's why
     // we try to get embedding applications to do the right thing here rather than risk a
