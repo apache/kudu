@@ -107,18 +107,21 @@ struct StubsCompileAssert {
 // Use like:
 //   virtual void foo() OVERRIDE;
 #ifndef OVERRIDE
-#if defined(COMPILER_MSVC)
-#define OVERRIDE override
-#elif defined(__clang__)
-#define OVERRIDE override
-#elif defined(COMPILER_GCC) && __cplusplus >= 201103 && \
+# if defined(COMPILER_MSVC)
+#   define OVERRIDE override
+# elif defined(__clang__) && __cplusplus >= 201103
+    // LLVM/Clang supports explicit virtual overrides, but warns about C++11
+    // extensions if compiling in pre-C++11 mode since the '-Wc++11-extensions'
+    // option is enabled by default.
+#   define OVERRIDE override
+# elif defined(COMPILER_GCC) && __cplusplus >= 201103 && \
       (__GNUC__ * 10000 + __GNUC_MINOR__ * 100) >= 40700
-// GCC 4.7 supports explicit virtual overrides when C++11 support is enabled.
-#define OVERRIDE override
-#else
-#define OVERRIDE
-#endif
-#endif
+    // GCC 4.7 supports explicit virtual overrides when C++11 support is enabled.
+#   define OVERRIDE override
+# else
+#   define OVERRIDE
+# endif
+#endif // #ifndef OVERRIDE
 
 #ifndef DISALLOW_COPY_AND_ASSIGN
 #define DISALLOW_COPY_AND_ASSIGN(TypeName) \
