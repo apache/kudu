@@ -37,6 +37,8 @@ import org.apache.kudu.client._
 import org.apache.kudu.spark.kudu.KuduReadOptions._
 import org.apache.kudu.spark.kudu.KuduWriteOptions._
 import org.apache.kudu.spark.kudu.SparkUtil._
+import org.apache.spark.sql.execution.streaming.Sink
+import org.apache.spark.sql.streaming.OutputMode
 
 /**
  * Data source for integration with Spark's [[DataFrame]] API.
@@ -50,7 +52,7 @@ import org.apache.kudu.spark.kudu.SparkUtil._
 @InterfaceStability.Unstable
 class DefaultSource
     extends DataSourceRegister with RelationProvider with CreatableRelationProvider
-    with SchemaRelationProvider {
+    with SchemaRelationProvider with StreamSinkProvider {
 
   val TABLE_KEY = "kudu.table"
   val KUDU_MASTER = "kudu.master"
@@ -97,12 +99,9 @@ class DefaultSource
       sqlContext: SQLContext,
       parameters: Map[String, String],
       schema: StructType): BaseRelation = {
-    val tableName = parameters.getOrElse(
-      TABLE_KEY,
-      throw new IllegalArgumentException(
-        s"Kudu table name must be specified in create options using key '$TABLE_KEY'"))
-    val kuduMaster = parameters.getOrElse(KUDU_MASTER, defaultMasterAddrs)
-    val operationType = getOperationType(parameters.getOrElse(OPERATION, "upsert"))
+    val tableName = getTableName(parameters)
+    val kuduMaster = getMasterAddrs(parameters)
+    val operationType = getOperationType(parameters)
     val schemaOption = Option(schema)
     val readOptions = getReadOptions(parameters)
     val writeOptions = getWriteOptions(parameters)
@@ -142,6 +141,33 @@ class DefaultSource
     kuduRelation
   }
 
+  override def createSink(
+      sqlContext: SQLContext,
+      parameters: Map[String, String],
+      partitionColumns: Seq[String],
+      outputMode: OutputMode): Sink = {
+
+    val tableName = getTableName(parameters)
+    val masterAddrs = getMasterAddrs(parameters)
+    val operationType = getOperationType(parameters)
+    val readOptions = getReadOptions(parameters)
+    val writeOptions = getWriteOptions(parameters)
+
+    new KuduSink(
+      tableName,
+      masterAddrs,
+      operationType,
+      readOptions,
+      writeOptions
+    )(sqlContext)
+  }
+
+  private def getTableName(parameters: Map[String, String]): String = {
+    parameters.getOrElse(
+      TABLE_KEY,
+      throw new IllegalArgumentException(
+        s"Kudu table name must be specified in create options using key '$TABLE_KEY'"))
+  }
   private def getReadOptions(parameters: Map[String, String]): KuduReadOptions = {
     val batchSize = parameters.get(BATCH_SIZE).map(_.toInt).getOrElse(defaultBatchSize)
     val faultTolerantScanner =
@@ -174,7 +200,9 @@ class DefaultSource
     KuduWriteOptions(ignoreDuplicateRowErrors, ignoreNull)
   }
 
-  private def defaultMasterAddrs: String = InetAddress.getLocalHost.getCanonicalHostName
+  private def getMasterAddrs(parameters: Map[String, String]): String = {
+    parameters.getOrElse(KUDU_MASTER, InetAddress.getLocalHost.getCanonicalHostName)
+  }
 
   private def getScanLocalityType(opParam: String): ReplicaSelection = {
     opParam.toLowerCase match {
@@ -185,7 +213,11 @@ class DefaultSource
     }
   }
 
-  private def getOperationType(opParam: String): OperationType = {
+  private def getOperationType(parameters: Map[String, String]): OperationType = {
+    parameters.get(OPERATION).map(stringToOperationType).getOrElse(Upsert)
+  }
+
+  private def stringToOperationType(opParam: String): OperationType = {
     opParam.toLowerCase match {
       case "insert" => Insert
       case "insert-ignore" => Insert
@@ -411,4 +443,32 @@ private[spark] object KuduRelation {
     case _ => false
   }
   // formatter: on
+}
+
+/**
+ * Sinks provide at-least-once semantics by retrying failed batches,
+ * and provide a `batchId` interface to implement exactly-once-semantics.
+ * Since Kudu does not internally track batch IDs, this is ignored,
+ * and it is up to the user to specify an appropriate `operationType` to achieve
+ * the desired semantics when adding batches.
+ *
+ * The default `Upsert` allows for KuduSink to handle duplicate data and such retries.
+ *
+ * Insert ignore support (KUDU-1563) would be useful, but while that doesn't exist,
+ * using Upsert will work. Delete ignore would also be useful.
+ */
+class KuduSink(
+    val tableName: String,
+    val masterAddrs: String,
+    val operationType: OperationType,
+    val readOptions: KuduReadOptions = new KuduReadOptions,
+    val writeOptions: KuduWriteOptions)(val sqlContext: SQLContext)
+    extends Sink {
+
+  private val context: KuduContext =
+    new KuduContext(masterAddrs, sqlContext.sparkContext, readOptions.socketReadTimeoutMs)
+
+  override def addBatch(batchId: Long, data: DataFrame): Unit = {
+    context.writeRows(data, tableName, operationType, writeOptions)
+  }
 }

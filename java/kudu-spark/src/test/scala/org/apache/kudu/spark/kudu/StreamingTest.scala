@@ -16,11 +16,8 @@
  */
 package org.apache.kudu.spark.kudu
 
-import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.sql.execution.streaming._
-import org.apache.spark.sql.sources.DataSourceRegister
-import org.apache.spark.sql.sources.StreamSinkProvider
 import org.apache.spark.sql.streaming.OutputMode
 import org.junit.Before
 import org.junit.Test
@@ -48,7 +45,7 @@ class StreamingTest extends KuduTestSuite {
       .map(v => (v + 1, v.toString))
       .toDF("key", "val")
       .writeStream
-      .format(classOf[KuduSinkProvider].getCanonicalName)
+      .format("kudu")
       .option("kudu.master", harness.getMasterAddressesAsString)
       .option("kudu.table", simpleTableName)
       .option("checkpointLocation", checkpointDir.toFile.getCanonicalPath)
@@ -69,29 +66,5 @@ class StreamingTest extends KuduTestSuite {
     query.processAllAvailable()
     verifyOutput(expectedData = Seq((2, "1"), (3, "2"), (4, "3")))
     query.stop()
-  }
-}
-
-class KuduSinkProvider extends StreamSinkProvider with DataSourceRegister {
-
-  override def createSink(
-      sqlContext: SQLContext,
-      parameters: Map[String, String],
-      partitionColumns: Seq[String],
-      outputMode: OutputMode): Sink =
-    new KuduSink(sqlContext, parameters)
-
-  override def shortName(): String = "kudu"
-}
-
-class KuduSink(sqlContext: SQLContext, parameters: Map[String, String]) extends Sink {
-
-  private val kuduContext =
-    new KuduContext(parameters("kudu.master"), sqlContext.sparkContext)
-
-  private val tablename = parameters("kudu.table")
-
-  override def addBatch(batchId: Long, data: DataFrame): Unit = {
-    kuduContext.upsertRows(data, tablename)
   }
 }
