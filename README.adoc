@@ -121,7 +121,7 @@ $ mkdir -p build/asan
 $ cd build/asan
 $ CC=../../thirdparty/clang-toolchain/bin/clang \
   CXX=../../thirdparty/clang-toolchain/bin/clang++ \
-  ./../thirdparty/installed/common/bin/cmake \
+  ../../thirdparty/installed/common/bin/cmake \
   -DKUDU_USE_ASAN=1 ../..
 $ make -j8
 $ ctest -j8
