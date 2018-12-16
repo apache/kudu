@@ -41,6 +41,8 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.Closeable;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -853,7 +855,7 @@ public class TestKuduClient {
         // Force the client to connect to the masters.
         localClient.exportAuthenticationCredentials();
         fail("Should have failed to connect.");
-      } catch (NoLeaderFoundException e) {
+      } catch (NonRecoverableException e) {
         assertTrue("Bad exception string: " + e.getMessage(),
             e.getMessage().matches(".*Master config .+ has no leader. " +
                 "Exceptions received:.*Connection refused.*Connection refused" +
@@ -1110,5 +1112,45 @@ public class TestKuduClient {
     for (Future<Void> future : futures) {
       future.get();
     }
+  }
+
+  private void runTestCallDuringLeaderElection(String clientMethodName) throws Exception {
+    // This bit of reflection helps us avoid duplicating test code.
+    Method methodToInvoke = KuduClient.class.getMethod(clientMethodName);
+
+    for (int i = 0; i < 5; i++) {
+      KuduClient cl = new KuduClient.KuduClientBuilder(
+          harness.getMasterAddressesAsString()).build();
+      harness.restartLeaderMaster();
+
+      // There's a good chance that this executes while there's no leader
+      // master. It should retry until the leader election completes and a new
+      // leader master is elected.
+      methodToInvoke.invoke(cl);
+    }
+
+    // With all masters down, exportAuthenticationCredentials() should time out.
+    harness.killAllMasterServers();
+    KuduClient cl = new KuduClient.KuduClientBuilder(
+        harness.getMasterAddressesAsString())
+                    .defaultAdminOperationTimeoutMs(5000) // speed up the test
+                    .build();
+    try {
+      methodToInvoke.invoke(cl);
+    } catch (InvocationTargetException ex) {
+      assertTrue(ex.getTargetException() instanceof KuduException);
+      KuduException realEx = (KuduException)ex.getTargetException();
+      assertTrue(realEx.getStatus().isTimedOut());
+    }
+  }
+
+  @Test(timeout = 100000)
+  public void testExportAuthenticationCredentialsDuringLeaderElection() throws Exception {
+    runTestCallDuringLeaderElection("exportAuthenticationCredentials");
+  }
+
+  @Test(timeout = 100000)
+  public void testGetHiveMetastoreConfigDuringLeaderElection() throws Exception {
+    runTestCallDuringLeaderElection("getHiveMetastoreConfig");
   }
 }

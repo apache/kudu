@@ -809,26 +809,51 @@ public class AsyncKuduClient implements AutoCloseable {
    */
   @InterfaceStability.Unstable
   public Deferred<byte[]> exportAuthenticationCredentials() {
+    // This is basically just a hacky way to encapsulate the necessary bits to
+    // properly do exponential backoff on retry; there's no actual "RPC" to send.
+    KuduRpc<byte[]> fakeRpc = buildFakeRpc("exportAuthenticationCredentials", null);
+
+    // Store the Deferred locally; callback() or errback() on the RPC will
+    // reset it and we'd return a different, non-triggered Deferred.
+    Deferred<byte[]> fakeRpcD = fakeRpc.getDeferred();
+    doExportAuthenticationCredentials(fakeRpc);
+    return fakeRpcD;
+  }
+
+  private void doExportAuthenticationCredentials(
+      final KuduRpc<byte[]> fakeRpc) {
     // If we've already connected to the master, use the authentication
     // credentials that we received when we connected.
     if (hasConnectedToMaster) {
-      return Deferred.fromResult(
+      fakeRpc.callback(
           securityContext.exportAuthenticationCredentials());
+      return;
     }
+
     // We have no authn data -- connect to the master, which will fetch
     // new info.
-    return getMasterTableLocationsPB(null)
+    fakeRpc.attempt++;
+    getMasterTableLocationsPB(null)
         .addCallback(new MasterLookupCB(masterTable,
                                         /* partitionKey */ null,
                                         /* requestedBatchSize */ 1))
-        .addCallback(new Callback<byte[], Object>() {
+        .addCallback(new Callback<Void, Object>() {
           @Override
-          public byte[] call(Object ignored) {
-            // Connecting to the cluster should have also fetched the
-            // authn data.
-            return securityContext.exportAuthenticationCredentials();
+          public Void call(Object ignored) {
+            // Just call ourselves again; we're guaranteed to have the
+            // authentication credentials.
+            assert hasConnectedToMaster;
+            doExportAuthenticationCredentials(fakeRpc);
+            return null;
           }
-        });
+        })
+        .addErrback(new RetryTaskErrback<byte[]>(
+            fakeRpc, new TimerTask() {
+                @Override
+                public void run(final Timeout ignored) {
+                  doExportAuthenticationCredentials(fakeRpc);
+                }
+              }));
   }
 
   /**
@@ -838,26 +863,100 @@ public class AsyncKuduClient implements AutoCloseable {
   @InterfaceAudience.LimitedPrivate("Impala")
   @InterfaceStability.Unstable
   public Deferred<HiveMetastoreConfig> getHiveMetastoreConfig() {
+    // This is basically just a hacky way to encapsulate the necessary bits to
+    // properly do exponential backoff on retry; there's no actual "RPC" to send.
+    KuduRpc<HiveMetastoreConfig> fakeRpc = buildFakeRpc("getHiveMetastoreConfig", null);
+
+    // Store the Deferred locally; callback() or errback() on the RPC will
+    // reset it and we'd return a different, non-triggered Deferred.
+    Deferred<HiveMetastoreConfig> fakeRpcD = fakeRpc.getDeferred();
+    doGetHiveMetastoreConfig(fakeRpc);
+    return fakeRpcD;
+  }
+
+  private void doGetHiveMetastoreConfig(final KuduRpc<HiveMetastoreConfig> fakeRpc) {
     // If we've already connected to the master, use the config we received when we connected.
     if (hasConnectedToMaster) {
+      // Take a ref to the HMS config under the lock, but invoke the callback
+      // chain with the lock released.
+      HiveMetastoreConfig c;
       synchronized (this) {
-        return Deferred.fromResult(hiveMetastoreConfig);
+        c = hiveMetastoreConfig;
       }
+      fakeRpc.callback(c);
+      return;
     }
+
     // We have no Metastore config -- connect to the master, which will fetch new info.
-    return getMasterTableLocationsPB(null)
+    fakeRpc.attempt++;
+    getMasterTableLocationsPB(null)
         .addCallback(new MasterLookupCB(masterTable,
                                         /* partitionKey */ null,
                                         /* requestedBatchSize */ 1))
-        .addCallback(new Callback<HiveMetastoreConfig, Object>() {
+        .addCallback(new Callback<Void, Object>() {
           @Override
-          public HiveMetastoreConfig call(Object ignored) {
-            // Connecting to the cluster should have also fetched the metastore config.
-            synchronized (AsyncKuduClient.this) {
-              return hiveMetastoreConfig;
-            }
+          public Void call(Object ignored) {
+            // Just call ourselves again; we're guaranteed to have the HMS config.
+            assert hasConnectedToMaster;
+            doGetHiveMetastoreConfig(fakeRpc);
+            return null;
           }
-        });
+        })
+        .addErrback(new RetryTaskErrback<HiveMetastoreConfig>(
+            fakeRpc, new TimerTask() {
+                @Override
+                public void run(final Timeout ignored) {
+                  doGetHiveMetastoreConfig(fakeRpc);
+                }
+              }));
+  }
+
+  /**
+   * Errback for retrying a generic TimerTask. Retries RecoverableExceptions;
+   * signals fakeRpc's Deferred on a fatal error.
+   */
+  class RetryTaskErrback<R> implements Callback<Void, Exception> {
+    private final KuduRpc<R> fakeRpc;
+    private final TimerTask retryTask;
+
+    public RetryTaskErrback(KuduRpc<R> fakeRpc,
+                            TimerTask retryTask) {
+      this.fakeRpc = fakeRpc;
+      this.retryTask = retryTask;
+    }
+
+    @Override
+    public Void call(Exception arg) {
+      if (!(arg instanceof RecoverableException)) {
+        fakeRpc.errback(arg);
+        return null;
+      }
+
+      // Sleep and retry the entire operation.
+      RecoverableException ex = (RecoverableException)arg;
+      long sleepTime = getSleepTimeForRpcMillis(fakeRpc);
+      if (cannotRetryRequest(fakeRpc) ||
+          fakeRpc.deadlineTracker.wouldSleepingTimeoutMillis(sleepTime)) {
+        tooManyAttemptsOrTimeout(fakeRpc, ex); // invokes fakeRpc.Deferred
+        return null;
+      }
+      fakeRpc.addTrace(
+          new RpcTraceFrame.RpcTraceFrameBuilder(
+              fakeRpc.method(),
+              RpcTraceFrame.Action.SLEEP_THEN_RETRY)
+          .callStatus(ex.getStatus())
+          .build());
+      newTimeout(retryTask, sleepTime);
+      return null;
+
+      // fakeRpc.Deferred was not invoked; the user continues to wait until
+      // retryTask succeeds or fails with a fatal error.
+    }
+
+    @Override
+    public String toString() {
+      return "retry task after error";
+    }
   }
 
   /**

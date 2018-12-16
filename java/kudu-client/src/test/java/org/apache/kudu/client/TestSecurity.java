@@ -81,12 +81,6 @@ public class TestSecurity {
         .build();
     miniCluster.kinit("test-admin");
     client = new KuduClient.KuduClientBuilder(miniCluster.getMasterAddressesAsString()).build();
-
-    // TODO(todd): it seems that exportAuthenticationCredentials() doesn't properly retry
-    // in the case that there is no leader, even though NoLeaderFoundException is a RecoverableException.
-    // So, we have to use a hack of calling listTabletServers, which _does_ properly retry,
-    // in order to wait for the masters to elect a leader.
-    client.listTabletServers();
   }
 
   // Add a rule to rerun tests. We use this with Gradle because it doesn't support
