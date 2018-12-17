@@ -59,6 +59,8 @@ public class SchemaGenerator {
   private final List<CompressionAlgorithm> compressions;
   private final List<Integer> blockSizes;
   private final Float defaultRate;
+  private final int minPrecision;
+  private final int maxPrecision;
 
   private SchemaGenerator(final Random random,
                           final int columnCount,
@@ -68,7 +70,9 @@ public class SchemaGenerator {
                           final List<Encoding> encodings,
                           final List<CompressionAlgorithm> compressions,
                           final List<Integer> blockSizes,
-                          final Float defaultRate) {
+                          final Float defaultRate,
+                          final int minPrecision,
+                          final int maxPrecision) {
     this.random = random;
     this.columnCount = columnCount;
     this.keyColumnCount = keyColumnCount;
@@ -78,6 +82,8 @@ public class SchemaGenerator {
     this.compressions = compressions;
     this.blockSizes = blockSizes;
     this.defaultRate = defaultRate;
+    this.minPrecision = minPrecision;
+    this.maxPrecision = maxPrecision;
   }
 
   /**
@@ -111,8 +117,8 @@ public class SchemaGenerator {
 
     ColumnTypeAttributes typeAttributes = null;
     if (type == Type.DECIMAL) {
-      // TODO(ghenke): Make precision and scale configurable.
-      int precision = random.nextInt(DecimalUtil.MAX_DECIMAL_PRECISION) + 1;
+      int precision = random.nextInt((maxPrecision - minPrecision) + 1) + minPrecision;
+      // TODO(ghenke): Make scale configurable.
       int scale = random.nextInt(precision);
       typeAttributes = DecimalUtil.typeAttributes(precision, scale);
       builder.typeAttributes(typeAttributes);
@@ -278,6 +284,8 @@ public class SchemaGenerator {
     // Default, min, middle, max.
     private List<Integer> blockSizes = Arrays.asList(0, 4096, 524288, 1048576);
     private float defaultRate = 0.25f;
+    private int minPrecision = DecimalUtil.MIN_DECIMAL_PRECISION;
+    private int maxPrecision = DecimalUtil.MAX_DECIMAL_PRECISION;
 
     public SchemaGeneratorBuilder() {
       // Add all encoding options and remove any invalid ones.
@@ -329,6 +337,22 @@ public class SchemaGenerator {
     }
 
     /**
+     * Define the types that can *not* be used when randomly generating a column schema.
+     * @return this instance
+     */
+    public SchemaGeneratorBuilder excludeTypes(Type... types) {
+      List<Type> includedTypes = new ArrayList<>();
+      // Add all possible types.
+      includedTypes.addAll(Arrays.asList(Type.values()));
+      // Remove the excluded types.
+      for (Type type : types) {
+        includedTypes.remove(type);
+      }
+      this.types = includedTypes;
+      return this;
+    }
+
+    /**
      * Define the encoding options that can be used when randomly generating
      * a column schema.
      * @return this instance
@@ -360,6 +384,34 @@ public class SchemaGenerator {
       return this;
     }
 
+    /**
+     * Define the precision value to use when when randomly generating
+     * a column schema with a Decimal type.
+     * @return this instance
+     */
+    public SchemaGeneratorBuilder precision(int precision) {
+      return precisionRange(precision, precision);
+    }
+
+    /**
+     * Define the range of precision values to use when when randomly generating
+     * a column schema with a Decimal type.
+     * @return this instance
+     */
+    public SchemaGeneratorBuilder precisionRange(int minPrecision, int maxPrecision) {
+      Preconditions.checkArgument(minPrecision >= DecimalUtil.MIN_DECIMAL_PRECISION,
+          "minPrecision must be greater than or equal to " +
+              DecimalUtil.MIN_DECIMAL_PRECISION);
+      Preconditions.checkArgument(maxPrecision <= DecimalUtil.MAX_DECIMAL_PRECISION,
+          "maxPrecision must be less than or equal to " +
+              DecimalUtil.MAX_DECIMAL_PRECISION);
+      Preconditions.checkArgument(minPrecision <= maxPrecision,
+          "minPrecision must be less than or equal to " + maxPrecision);
+      this.minPrecision = minPrecision;
+      this.maxPrecision = maxPrecision;
+      return this;
+    }
+
     public SchemaGenerator build() {
       Preconditions.checkArgument(keyColumnCount <= columnCount,
           "keyColumnCount must be less than or equal to the columnCount");
@@ -379,7 +431,9 @@ public class SchemaGenerator {
           encodings,
           compressions,
           blockSizes,
-          defaultRate
+          defaultRate,
+          minPrecision,
+          maxPrecision
       );
     }
   }

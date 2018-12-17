@@ -46,6 +46,7 @@ public class DecimalUtil {
   public static final BigInteger MIN_UNSCALED_DECIMAL128 = MAX_UNSCALED_DECIMAL128.negate();
   public static final int DECIMAL128_SIZE = 128 / Byte.SIZE;
 
+  public static final int MIN_DECIMAL_PRECISION = 1;
   public static final int MAX_DECIMAL_PRECISION = MAX_DECIMAL128_PRECISION;
 
   /**
