@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 package org.apache.kudu.test.cluster;
 
 import com.google.common.io.CharStreams;
@@ -39,11 +40,11 @@ public class KuduBinaryLocator {
 
   /**
    * Find the binary directory within the build tree.
-   *
+   * <p>
    * Uses the following priority:
-   *    - If kuduBinDir system property is set, use that.
-   *    - If the `kudu` binary is found on the PATH using `which kudu`,
-   *      use its parent directory.
+   * - If kuduBinDir system property is set, use that.
+   * - If the `kudu` binary is found on the PATH using `which kudu`,
+   * use its parent directory.
    */
   private static String findBinaryDir() {
     // If kuduBinDir system property is set, use that.
@@ -60,7 +61,7 @@ public class KuduBinaryLocator {
       Process process = runtime.exec("which kudu");
       int errorCode = process.waitFor();
       if (errorCode == 0) {
-        try(Reader reader = new InputStreamReader(process.getInputStream(), UTF_8)) {
+        try (Reader reader = new InputStreamReader(process.getInputStream(), UTF_8)) {
           String kuduBinary = CharStreams.toString(reader);
           String kuduBinDir = new File(kuduBinary).getParent();
           LOG.info("Using Kudu binary directory found on path with 'which kudu': {}", kuduBinDir);
