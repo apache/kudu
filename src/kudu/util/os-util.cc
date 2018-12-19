@@ -29,7 +29,7 @@
 #include <unistd.h>
 
 #include <cstddef>
-#include <fstream>
+#include <ostream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -45,10 +45,8 @@
 #include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/status.h"
 
-using std::ifstream;
-using std::istreambuf_iterator;
-using std::ostringstream;
 using std::string;
 using std::vector;
 using strings::Split;
@@ -75,7 +73,7 @@ static const int64_t kIoWait = 41 - 2;
 // Largest offset we are interested in, to check we get a well formed stat file.
 static const int64_t kMaxOffset = kIoWait;
 
-Status ParseStat(const std::string& buffer, std::string* name, ThreadStats* stats) {
+Status ParseStat(const string& buffer, string* name, ThreadStats* stats) {
   DCHECK(stats != nullptr);
 
   // The thread name should be the only field with parentheses. But the name
@@ -117,18 +115,11 @@ Status GetThreadStats(int64_t tid, ThreadStats* stats) {
   if (kTicksPerSec <= 0) {
     return Status::NotSupported("ThreadStats not supported");
   }
+  faststring buf;
+  RETURN_NOT_OK(ReadFileToString(
+      Env::Default(), Substitute("/proc/self/task/$0/stat", tid), &buf));
 
-  ostringstream proc_path;
-  proc_path << "/proc/self/task/" << tid << "/stat";
-  ifstream proc_file(proc_path.str().c_str());
-  if (!proc_file.is_open()) {
-    return Status::IOError("Could not open ifstream");
-  }
-
-  string buffer((istreambuf_iterator<char>(proc_file)),
-      istreambuf_iterator<char>());
-
-  return ParseStat(buffer, nullptr, stats); // don't want the name
+  return ParseStat(buf.ToString(), nullptr, stats);
 }
 
 void DisableCoreDumps() {
