@@ -176,8 +176,7 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
   MonoDelta check_freq = MonoDelta::FromSeconds(1);
 #endif
 
-  PeriodicWebUIChecker checker(*cluster_.get(), tablet_id,
-                               check_freq);
+  PeriodicWebUIChecker checker(*cluster_, check_freq, tablet_id);
 
   bool can_kill_ts = FLAGS_num_tablet_servers > 1 && FLAGS_num_replicas > 2;
 

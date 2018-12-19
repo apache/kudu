@@ -16,9 +16,11 @@
 // under the License.
 
 #include <memory>
+#include <ostream>
 #include <string>
 #include <vector>
 
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/integration-tests/linked_list-test-util.h"
@@ -38,13 +40,22 @@ using std::vector;
 
 // Tests that pounding the web UI doesn't cause any crashes.
 TEST_F(KuduTest, TestWebUIDoesNotCrashCluster) {
+  if (!AllowSlowTests()) {
+    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
+    return;
+  }
+
 #if defined(THREAD_SANITIZER) || defined(ADDRESS_SANITIZER)
   // When using a sanitizer, checkers place a lot of load on the cluster.
-  const int kWebUICheckers = 1;
+  constexpr int kWebUICheckers = 1;
+  constexpr int kNumReadThreads = 16;
+  constexpr int kNumWriteThreads = 4;
 #else
-  const int kWebUICheckers = 10;
+  constexpr int kWebUICheckers = 10;
+  constexpr int kNumReadThreads = 64;
+  constexpr int kNumWriteThreads = 8;
 #endif
-  const int kNumTablets = 50;
+  constexpr int kNumTablets = 50;
 
   ExternalMiniClusterOptions opts;
 #ifdef __linux__
@@ -63,24 +74,29 @@ TEST_F(KuduTest, TestWebUIDoesNotCrashCluster) {
 
   // Start pounding the master and tserver's web UIs.
   vector<unique_ptr<PeriodicWebUIChecker>> checkers;
+  checkers.reserve(kWebUICheckers);
   for (int i = 0; i < kWebUICheckers; i++) {
     checkers.emplace_back(new PeriodicWebUIChecker(
         cluster,
-        "doesn't matter", // will ping a non-existent page
         MonoDelta::FromMilliseconds(1)));
   }
 
-  // Create a table and write to it. Just a few rows, so that there's something
-  // in the tablets' WALs.
+  // Create a table and write to it. Write some rows, so that there's something
+  // in the tablets' WALs. Also, run many read threads to induce many scan
+  // requests, so many threads would be spawned by tablet servers to handle
+  // those.
   TestWorkload work(&cluster);
   work.set_timeout_allowed(true);
   work.set_num_replicas(1);
+  work.set_num_read_threads(kNumReadThreads);
+  work.set_num_write_threads(kNumWriteThreads);
   work.set_num_tablets(kNumTablets);
   work.Setup();
   work.Start();
   while (work.rows_inserted() < 100) {
     SleepFor(MonoDelta::FromMilliseconds(10));
   }
+  SleepFor(MonoDelta::FromSeconds(5));
   work.StopAndJoin();
 
   // Restart the cluster.

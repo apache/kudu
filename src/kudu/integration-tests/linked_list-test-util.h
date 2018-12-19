@@ -307,47 +307,57 @@ class ScopedRowUpdater {
 class PeriodicWebUIChecker {
  public:
   PeriodicWebUIChecker(const cluster::ExternalMiniCluster& cluster,
-                       const std::string& tablet_id, MonoDelta period)
+                       MonoDelta period,
+                       const std::string& tablet_id = "")
       : period_(period), is_running_(true) {
-    // List of master and ts web pages to fetch
-    std::vector<std::string> master_pages, ts_pages;
+    // List of master web pages to fetch.
+    const std::vector<std::string> master_pages = {
+      "/dump-entities",
+      "/masters",
+      "/mem-trackers",
+      "/metrics",
+      "/stacks",
+      "/tables",
+      "/tablet-servers",
+      "/threadz",
+      "/threadz?group=all",
+    };
 
-    master_pages.emplace_back("/dump-entities");
-    master_pages.emplace_back("/masters");
-    master_pages.emplace_back("/mem-trackers");
-    master_pages.emplace_back("/metrics");
-    master_pages.emplace_back("/stacks");
-    master_pages.emplace_back("/tables");
-    master_pages.emplace_back("/tablet-servers");
-
-    ts_pages.emplace_back("/maintenance-manager");
-    ts_pages.emplace_back("/mem-trackers");
-    ts_pages.emplace_back("/metrics");
-    ts_pages.emplace_back("/scans");
-    ts_pages.emplace_back("/stacks");
-    ts_pages.emplace_back("/tablets");
-    if (!tablet_id.empty()) {
-      ts_pages.push_back(strings::Substitute("/transactions?tablet_id=$0",
-                                             tablet_id));
-    }
+    // List of tserver web pages to fetch.
+    const std::vector<std::string> ts_pages = {
+      "/maintenance-manager",
+      "/mem-trackers",
+      "/metrics",
+      "/scans",
+      "/stacks",
+      "/tablets",
+      "/threadz",
+      "/threadz?group=all",
+      tablet_id.empty()
+          ? "/transactions"
+          : strings::Substitute("/transactions?tablet_id=$0", tablet_id),
+    };
 
     // Generate list of urls for each master and tablet server
     for (int i = 0; i < cluster.num_masters(); i++) {
-      for (std::string page : master_pages) {
-        urls_.push_back(strings::Substitute(
+      for (const auto& page : master_pages) {
+        urls_.emplace_back(strings::Substitute(
             "http://$0$1",
             cluster.master(i)->bound_http_hostport().ToString(),
             page));
       }
     }
     for (int i = 0; i < cluster.num_tablet_servers(); i++) {
-      for (std::string page : ts_pages) {
-        urls_.push_back(strings::Substitute(
+      for (const auto& page : ts_pages) {
+        urls_.emplace_back(strings::Substitute(
             "http://$0$1",
             cluster.tablet_server(i)->bound_http_hostport().ToString(),
             page));
       }
     }
+    std::random_device rdev;
+    std::mt19937 gen(rdev());
+    std::shuffle(urls_.begin(), urls_.end(), gen);
     CHECK_OK(Thread::Create("linked_list-test", "checker",
                             &PeriodicWebUIChecker::CheckThread, this, &checker_));
   }
