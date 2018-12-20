@@ -392,19 +392,164 @@ static StdStatusCallback BindHandleResponse(
 
 typedef ListTabletsResponsePB::StatusAndSchemaPB StatusAndSchemaPB;
 
-// If the privilege has neither full scan privileges nor column-level scan
-// privileges, the user is definitely not authorized to perform a scan.
-bool MayHaveScanPrivileges(const security::TablePrivilegePB& privilege) {
-  if (privilege.scan_privilege()) {
+// Populates 'required_column_privileges' with the column-level privileges
+// required to perform the scan specified by 'scan_pb', consulting the column
+// IDs found in 'schema'.
+//
+// Users of NewScanRequestPB (e.g. Scans and Checksums) require the following
+// privileges:
+//   if no projected columns (i.e. a "counting" scan) ||
+//       projected columns has virtual column (e.g. "diff" scan):
+//     SCAN ON TABLE || foreach (column): SCAN ON COLUMN
+//   else:
+//     if uses pk (e.g. ORDERED scan, or primary key fields set):
+//       foreach(primary key column): SCAN ON COLUMN
+//     foreach(projected column): SCAN ON COLUMN
+//     foreach(predicated column): SCAN ON COLUMN
+//
+// Returns false if the request is malformed (e.g. unknown non-virtual column
+// name), and sends an error response via 'context' if so. 'req_type' is used
+// to add context in logs.
+static bool GetScanPrivilegesOrRespond(const NewScanRequestPB& scan_pb, const Schema& schema,
+                                       const string& req_type,
+                                       unordered_set<ColumnId>* required_column_privileges,
+                                       RpcContext* context) {
+  const auto respond_not_authorized = [&] (const string& col_name) {
+    LOG(WARNING) << Substitute("rejecting $0 request from $1: no column named '$2'",
+                               req_type, context->requestor_string(), col_name);
+    context->RespondRpcFailure(rpc::ErrorStatusPB::FATAL_UNAUTHORIZED,
+        Status::NotAuthorized(Substitute("not authorized to $0", req_type)));
+  };
+  // If there is no projection (i.e. this is a "counting" scan), the user
+  // needs full scan privileges on the table.
+  if (scan_pb.projected_columns_size() == 0) {
+    *required_column_privileges = unordered_set<ColumnId>(schema.column_ids().begin(),
+                                                          schema.column_ids().end());
     return true;
   }
+  unordered_set<ColumnId> required_privileges;
+  // Determine the scan's projected key column IDs.
+  for (int i = 0; i < scan_pb.projected_columns_size(); i++) {
+    const auto& projected_column = ColumnSchemaFromPB(scan_pb.projected_columns(i));
+    // A projection may contain virtual columns, which don't exist in the
+    // tablet schema. If we were to search for a virtual column, we would
+    // incorrectly get a "not found" error. To reconcile this with the fact
+    // that we want to return an authorization error if the user has requested
+    // a non-virtual column that doesn't exist, we require full scan privileges
+    // for virtual columns.
+    if (projected_column.type_info()->is_virtual()) {
+      *required_column_privileges = unordered_set<ColumnId>(schema.column_ids().begin(),
+                                                            schema.column_ids().end());
+      return true;
+    }
+    int col_idx = schema.find_column(projected_column.name());
+    if (col_idx == Schema::kColumnNotFound) {
+      respond_not_authorized(scan_pb.projected_columns(i).name());
+      return false;
+    }
+    EmplaceIfNotPresent(&required_privileges, schema.column_id(col_idx));
+  }
+  // Ordered scans and any scans that make use of the primary key require
+  // privileges to scan across all primary key columns.
+  if (scan_pb.order_mode() == ORDERED ||
+      scan_pb.has_start_primary_key() ||
+      scan_pb.has_stop_primary_key() ||
+      scan_pb.has_last_primary_key()) {
+    const auto& key_cols = schema.get_key_column_ids();
+    required_privileges.insert(key_cols.begin(), key_cols.end());
+  }
+  // Determine the scan's predicate column IDs.
+  for (int i = 0; i < scan_pb.column_predicates_size(); i++) {
+    int col_idx = schema.find_column(scan_pb.column_predicates(i).column());
+    if (col_idx == Schema::kColumnNotFound) {
+      respond_not_authorized(scan_pb.column_predicates(i).column());
+      return false;
+    }
+    EmplaceIfNotPresent(&required_privileges, schema.column_id(col_idx));
+  }
+  // Do the same for the DEPRECATED_range_predicates field. Even though this
+  // field is deprecated, it is still exposed as a part of our public API and
+  // thus needs to be taken into account.
+  for (int i = 0; i < scan_pb.deprecated_range_predicates_size(); i++) {
+    int col_idx = schema.find_column(scan_pb.deprecated_range_predicates(i).column().name());
+    if (col_idx == Schema::kColumnNotFound) {
+      respond_not_authorized(scan_pb.deprecated_range_predicates(i).column().name());
+      return false;
+    }
+    EmplaceIfNotPresent(&required_privileges, schema.column_id(col_idx));
+  }
+  *required_column_privileges = std::move(required_privileges);
+  return true;
+}
+
+// Checks the column-level privileges required to perform the scan specified by
+// 'scan_pb' against the authorized column IDs listed in
+// 'authorized_column_ids', consulting the column IDs found in 'schema'.
+//
+// Returns false if the scan isn't authorized and uses 'context' to send an
+// error response. 'req_type' is used for logging'.
+static bool CheckScanPrivilegesOrRespond(const NewScanRequestPB& scan_pb, const Schema& schema,
+                                         const unordered_set<ColumnId>& authorized_column_ids,
+                                         const string& req_type, RpcContext* context) {
+  unordered_set<ColumnId> required_column_privileges;
+  if (!GetScanPrivilegesOrRespond(scan_pb, schema, req_type,
+                                  &required_column_privileges, context)) {
+    return false;
+  }
+  for (const auto& required_col_id : required_column_privileges) {
+    if (!ContainsKey(authorized_column_ids, required_col_id)) {
+      LOG(WARNING) << Substitute("rejecting $0 request from $1: authz token doesn't "
+                                 "authorize column ID $2", req_type, context->requestor_string(),
+                                 required_col_id);
+      context->RespondRpcFailure(rpc::ErrorStatusPB::FATAL_UNAUTHORIZED,
+          Status::NotAuthorized(Substitute("not authorized to $0", req_type)));
+      return false;
+    }
+  }
+  return true;
+}
+
+// Returns false if the table ID of 'privilege' doesn't match 'table_id',
+// responding with an error via 'context' if so. Otherwise, returns true.
+// 'req_type' is used for logging purposes.
+static bool CheckMatchingTableId(const security::TablePrivilegePB& privilege,
+                                 const string& table_id, const string& req_type,
+                                 RpcContext* context) {
+  if (privilege.table_id() != table_id) {
+    LOG(WARNING) << Substitute("rejecting $0 request from $1: '$2', expected '$3'",
+                               req_type, context->requestor_string(),
+                               privilege.table_id(), table_id);
+    context->RespondRpcFailure(rpc::ErrorStatusPB::ERROR_INVALID_AUTHORIZATION_TOKEN,
+        Status::NotAuthorized("authorization token is for the wrong table ID"));
+    return false;
+  }
+  return true;
+}
+
+// Returns false if the privilege has neither full scan privileges nor any
+// column-level scan privileges, in which case any scan-like request should be
+// rejected. Otherwise returns true, and returns any column-level scan
+// privileges in 'privilege'.
+static bool CheckMayHaveScanPrivilegesOrRespond(const security::TablePrivilegePB& privilege,
+                                                const string& req_type,
+                                                unordered_set<ColumnId>* authorized_column_ids,
+                                                RpcContext* context) {
+  DCHECK(authorized_column_ids);
+  DCHECK(authorized_column_ids->empty());
   if (privilege.column_privileges_size() > 0) {
     for (const auto& col_id_and_privilege : privilege.column_privileges()) {
       if (col_id_and_privilege.second.scan_privilege()) {
-        return true;
+        EmplaceOrDie(authorized_column_ids, col_id_and_privilege.first);
       }
     }
   }
+  if (privilege.scan_privilege() || !authorized_column_ids->empty()) {
+    return true;
+  }
+  LOG(WARNING) << Substitute("rejecting $0 request from $1: no column privileges",
+                             req_type, context->requestor_string());
+  context->RespondRpcFailure(rpc::ErrorStatusPB::FATAL_UNAUTHORIZED,
+      Status::NotAuthorized(Substitute("not authorized to $0", req_type)));
   return false;
 }
 
@@ -443,29 +588,6 @@ static bool VerifyAuthzTokenOrRespond(const TokenVerifier& token_verifier,
     return false;
   }
   *token = std::move(token_pb);
-  return true;
-}
-
-// Verifies the given scan-like request (e.g. Scan, Checksum, SplitKeyRange)
-// 'req', checking for any scan privileges. Returns false if the request's
-// authz token is invalid or does not have any scan privileges, in which case,
-// 'context' will be used to respond with an error. Otherwise, returns true,
-// and the privileges in 'token' should be used to further verify the request.
-template <class AuthorizableScanRequest>
-static bool VerifyHasAnyScanPrivileges(const TokenVerifier& token_verifier,
-                                       const AuthorizableScanRequest& req,
-                                       const char* not_authorized_str,
-                                       rpc::RpcContext* context,
-                                       TokenPB* token) {
-  if (!VerifyAuthzTokenOrRespond(token_verifier, req, context, token)) {
-    return false;
-  }
-  const auto& privilege = token->authz().table_privilege();
-  if (!MayHaveScanPrivileges(privilege)) {
-    context->RespondRpcFailure(rpc::ErrorStatusPB::FATAL_UNAUTHORIZED,
-        Status::NotAuthorized(not_authorized_str));
-    return false;
-  }
   return true;
 }
 
@@ -1461,17 +1583,35 @@ void TabletServiceImpl::Scan(const ScanRequestPB* req,
   }
 
   // If this is a new scan request, we must enforce the appropriate privileges.
-  string authorized_table_id;
-  unordered_set<int> authorized_column_ids;
   TokenPB token;
   if (FLAGS_tserver_enforce_access_control && req->has_new_scan_request()) {
-    if (!VerifyHasAnyScanPrivileges(server_->token_verifier(), req->new_scan_request(),
-                                    "not authorized to scan", context, &token)) {
+    const auto& scan_pb = req->new_scan_request();
+    if (!VerifyAuthzTokenOrRespond(server_->token_verifier(),
+                                   req->new_scan_request(), context, &token)) {
       return;
     }
-    // TODO(awong): check the privileges required for the contents of the scan
-    // request by pulling out the columns and checking against individual
-    // column privileges.
+    scoped_refptr<TabletReplica> replica;
+    if (!LookupRunningTabletReplicaOrRespond(server_->tablet_manager(),
+        req->new_scan_request().tablet_id(), resp, context, &replica)) {
+      return;
+    }
+    const auto& privilege = token.authz().table_privilege();
+    if (!CheckMatchingTableId(privilege, replica->tablet_metadata()->table_id(), "Scan", context)) {
+      return;
+    }
+    unordered_set<ColumnId> authorized_column_ids;
+    if (!CheckMayHaveScanPrivilegesOrRespond(privilege, "Scan", &authorized_column_ids, context)) {
+      return;
+    }
+    // If the token doesn't have full scan privileges for the table, check
+    // for required privileges based on the scan request.
+    if (!privilege.scan_privilege()) {
+      const auto& schema = replica->tablet_metadata()->schema();
+      if (!CheckScanPrivilegesOrRespond(scan_pb, schema, authorized_column_ids,
+                                        "Scan", context)) {
+        return;
+      }
+    }
   }
 
   size_t batch_size_bytes = GetMaxBatchSizeBytesHint(req);
@@ -1575,13 +1715,65 @@ void TabletServiceImpl::SplitKeyRange(const SplitKeyRangeRequestPB* req,
   DVLOG(3) << "Received SplitKeyRange RPC: " << SecureDebugString(*req);
   TokenPB token;
   if (FLAGS_tserver_enforce_access_control) {
-    if (!VerifyHasAnyScanPrivileges(server_->token_verifier(), *req,
-                                    "not authorized to split key range", context, &token)) {
+    if (!VerifyAuthzTokenOrRespond(server_->token_verifier(), *req, context, &token)) {
       return;
     }
-    // TODO(awong): check the privileges required for the contents of the
-    // split-key request by pulling out the columns and checking against
-    // individual column privileges.
+    const auto& privilege = token.authz().table_privilege();
+    scoped_refptr<TabletReplica> replica;
+    if (!LookupRunningTabletReplicaOrRespond(server_->tablet_manager(), req->tablet_id(), resp,
+                                             context, &replica)) {
+      return;
+    }
+    if (!CheckMatchingTableId(privilege, replica->tablet_metadata()->table_id(),
+                              "SplitKeyRange", context)) {
+      return;
+    }
+    // Split-key requests require:
+    //   if uses pk (e.g. primary key fields set):
+    //     foreach(primary key column): SCAN ON COLUMN
+    //   foreach(requested column): SCAN ON COLUMN
+    //
+    // If the privilege doesn't have full scan privileges, or column-level scan
+    // privileges, the user is definitely not authorized to perform a scan.
+    unordered_set<ColumnId> authorized_column_ids;
+    if (!CheckMayHaveScanPrivilegesOrRespond(privilege, "SplitKeyRange",
+                                             &authorized_column_ids, context)) {
+      return;
+    }
+    if (!privilege.scan_privilege()) {
+      const auto& schema = replica->tablet_metadata()->schema();
+      unordered_set<ColumnId> required_column_privileges;
+      if (req->has_start_primary_key() || req->has_stop_primary_key()) {
+        const auto& key_cols = schema.get_key_column_ids();
+        required_column_privileges.insert(key_cols.begin(), key_cols.end());
+      }
+      bool is_authorized = true;
+      const string rejection_prefix = Substitute("rejecting SplitKeyRange request from $0",
+                                                 context->requestor_string());
+      for (int i = 0; i < req->columns_size(); i++) {
+        const auto& column_name = req->columns(i).name();
+        int col_idx = schema.find_column(req->columns(i).name());
+        if (col_idx == Schema::kColumnNotFound) {
+          LOG(WARNING) << Substitute("$0: no column named '$1'", rejection_prefix, column_name);
+          is_authorized = false;
+          break;
+        }
+        EmplaceIfNotPresent(&required_column_privileges, schema.column_id(col_idx));
+      }
+      for (const auto& required_col_id : required_column_privileges) {
+        if (!ContainsKey(authorized_column_ids, required_col_id)) {
+          LOG(WARNING) << Substitute("$0: authz token doesn't authorize column ID $1",
+                                     rejection_prefix, required_col_id);
+          is_authorized = false;
+          break;
+        }
+      }
+      if (!is_authorized) {
+        context->RespondRpcFailure(rpc::ErrorStatusPB::FATAL_UNAUTHORIZED,
+            Status::NotAuthorized("not authorized to SplitKeyRange"));
+        return;
+      }
+    }
   }
 
   scoped_refptr<TabletReplica> replica;
@@ -1589,7 +1781,6 @@ void TabletServiceImpl::SplitKeyRange(const SplitKeyRangeRequestPB* req,
                                            context, &replica)) {
     return;
   }
-
   shared_ptr<Tablet> tablet;
   TabletServerErrorPB::Code error_code;
   Status s = GetTabletRef(replica, &tablet, &error_code);
@@ -1707,19 +1898,41 @@ void TabletServiceImpl::Checksum(const ChecksumRequestPB* req,
   ScanResultChecksummer collector;
   bool has_more = false;
   TabletServerErrorPB::Code error_code = TabletServerErrorPB::UNKNOWN_ERROR;
-  if (req->has_new_request()) {
-    if (FLAGS_tserver_enforce_access_control) {
-      TokenPB token;
-      if (!VerifyHasAnyScanPrivileges(server_->token_verifier(), req->new_request(),
-                                      "not authorized to checksum", context, &token)) {
+  if (FLAGS_tserver_enforce_access_control && req->has_new_request()) {
+    const NewScanRequestPB& new_req = req->new_request();
+    TokenPB token;
+    if (!VerifyAuthzTokenOrRespond(server_->token_verifier(), req->new_request(),
+                                    context, &token)) {
+      return;
+    }
+    scoped_refptr<TabletReplica> replica;
+    if (!LookupRunningTabletReplicaOrRespond(server_->tablet_manager(), new_req.tablet_id(), resp,
+                                             context, &replica)) {
+      return;
+    }
+    const auto& privilege = token.authz().table_privilege();
+    if (!CheckMatchingTableId(privilege, replica->tablet_metadata()->table_id(),
+                              "Checksum", context)) {
+      return;
+    }
+    unordered_set<ColumnId> authorized_column_ids;
+    if (!CheckMayHaveScanPrivilegesOrRespond(privilege, "Checksum",
+                                             &authorized_column_ids, context)) {
+      return;
+    }
+    // If the token doesn't have full scan privileges for the table, check
+    // for required privileges based on the checksum request.
+    if (!privilege.scan_privilege()) {
+      const auto& schema = replica->tablet_metadata()->schema();
+      if (!CheckScanPrivilegesOrRespond(new_req, schema, authorized_column_ids,
+                                        "Checksum", context)) {
         return;
       }
-      // TODO(awong): check the privileges required for the contents of the
-      // checksum request by pulling out the columns and checking against
-      // individual column privileges.
     }
-    scan_req.mutable_new_scan_request()->CopyFrom(req->new_request());
+  }
+  if (req->has_new_request()) {
     const NewScanRequestPB& new_req = req->new_request();
+    scan_req.mutable_new_scan_request()->CopyFrom(req->new_request());
     scoped_refptr<TabletReplica> replica;
     if (!LookupRunningTabletReplicaOrRespond(server_->tablet_manager(), new_req.tablet_id(), resp,
                                              context, &replica)) {

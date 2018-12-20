@@ -529,23 +529,28 @@ class Schema {
   }
 
   // Return the ColumnSchema corresponding to the given column index.
-  inline const ColumnSchema &column(size_t idx) const {
+  const ColumnSchema &column(size_t idx) const {
     DCHECK_LT(idx, cols_.size());
     return cols_[idx];
   }
 
   // Return the ColumnSchema corresponding to the given column ID.
-  inline const ColumnSchema& column_by_id(ColumnId id) const {
+  const ColumnSchema& column_by_id(ColumnId id) const {
     int idx = find_column_by_id(id);
     DCHECK_GE(idx, 0);
     return cols_[idx];
   }
 
-  // Return the column ID corresponding to the given column index
+  // Return the column ID corresponding to the given column index.
   ColumnId column_id(size_t idx) const {
     DCHECK(has_column_ids());
     DCHECK_LT(idx, cols_.size());
     return col_ids_[idx];
+  }
+
+  // Return the column IDs, ordered by column index.
+  const std::vector<ColumnId>& column_ids() const {
+    return col_ids_;
   }
 
   // Return true if the schema contains an ID mapping for its columns.
@@ -582,6 +587,12 @@ class Schema {
   // Returns true if the specified column (by index) is a key
   bool is_key_column(size_t idx) const {
     return idx < num_key_columns_;
+  }
+
+  // Returns the list of primary key column IDs.
+  std::vector<ColumnId> get_key_column_ids() const {
+    return std::vector<ColumnId>(
+        col_ids_.begin(), col_ids_.begin() + num_key_columns_);
   }
 
   // Return true if this Schema is initialized and valid.
