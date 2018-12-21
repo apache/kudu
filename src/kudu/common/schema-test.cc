@@ -440,6 +440,38 @@ TEST_F(TestSchema, TestProjectRename) {
   ASSERT_EQ(row_projector.projection_defaults()[0], 2);      // non_present schema2
 }
 
+// Test that we can map a projection schema (no column ids) onto a tablet
+// schema (column ids).
+TEST_F(TestSchema, TestGetMappedReadProjection) {
+  Schema tablet_schema({ ColumnSchema("key", STRING),
+                         ColumnSchema("val", INT32) },
+                       { ColumnId(0),
+                         ColumnId(1) },
+                       1);
+  Schema projection({ ColumnSchema("key", STRING),
+                      ColumnSchema("deleted", IS_DELETED) },
+                    1);
+
+  Schema mapped;
+  ASSERT_OK(tablet_schema.GetMappedReadProjection(projection, &mapped));
+  ASSERT_EQ(1, mapped.num_key_columns());
+  ASSERT_EQ(2, mapped.num_columns());
+  ASSERT_TRUE(mapped.has_column_ids());
+  ASSERT_FALSE(mapped.Equals(projection, Schema::COMPARE_ALL));
+
+  // The column id for the 'key' column in the mapped projection should match
+  // the one from the tablet schema.
+  ASSERT_EQ("key", mapped.column(0).name());
+  ASSERT_EQ(0, mapped.column_id(0));
+
+  // Since 'deleted' is a virtual column and thus does not appear in the tablet
+  // schema, in the mapped schema it should have been assigned a higher column
+  // id than the highest column id in the tablet schema.
+  ASSERT_EQ("deleted", mapped.column(1).name());
+  ASSERT_GT(mapped.column_id(1), tablet_schema.column_id(1));
+  ASSERT_GT(mapped.max_col_id(), tablet_schema.max_col_id());
+}
+
 // Test that the schema can be used to compare and stringify rows.
 TEST_F(TestSchema, TestRowOperations) {
   Schema schema({ ColumnSchema("col1", STRING),

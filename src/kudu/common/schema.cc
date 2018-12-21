@@ -356,11 +356,16 @@ Status Schema::VerifyProjectionCompatibility(const Schema& projection) const {
 
   vector<string> missing_columns;
   for (const ColumnSchema& pcol : projection.columns()) {
+    if (pcol.type_info()->is_virtual()) {
+      // Virtual columns may appear in a projection without appearing in the
+      // schema being projected onto.
+      continue;
+    }
     int index = find_column(pcol.name());
     if (index < 0) {
       missing_columns.push_back(pcol.name());
     } else if (!pcol.EqualsType(cols_[index])) {
-      // TODO: We don't support query with type adaptors yet
+      // TODO(matteo): We don't support query with type adaptors yet.
       return Status::InvalidArgument("The column '" + pcol.name() + "' must have type " +
                                      cols_[index].TypeToString() + " found " + pcol.TypeToString());
     }
@@ -391,8 +396,16 @@ Status Schema::GetMappedReadProjection(const Schema& projection,
   mapped_cols.reserve(projection.num_columns());
   mapped_ids.reserve(projection.num_columns());
 
+  int32_t proj_max_col_id = max_col_id_;
   for (const ColumnSchema& col : projection.columns()) {
     int index = find_column(col.name());
+    if (col.type_info()->is_virtual()) {
+      DCHECK_EQ(kColumnNotFound, index) << "virtual column not expected in tablet schema";
+      mapped_cols.push_back(col);
+      // Generate a "fake" column id for virtual columns.
+      mapped_ids.emplace_back(++proj_max_col_id);
+      continue;
+    }
     DCHECK_GE(index, 0) << col.name();
     mapped_cols.push_back(cols_[index]);
     mapped_ids.push_back(col_ids_[index]);
