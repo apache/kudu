@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/fs/log_block_manager.h"
+
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
@@ -42,7 +44,6 @@
 #include "kudu/fs/fs.pb.h"
 #include "kudu/fs/fs_report.h"
 #include "kudu/fs/log_block_manager-test-util.h"
-#include "kudu/fs/log_block_manager.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/casts.h"
@@ -95,6 +96,7 @@ METRIC_DECLARE_gauge_uint64(log_block_manager_blocks_under_management);
 METRIC_DECLARE_counter(log_block_manager_holes_punched);
 METRIC_DECLARE_gauge_uint64(log_block_manager_containers);
 METRIC_DECLARE_gauge_uint64(log_block_manager_full_containers);
+METRIC_DECLARE_gauge_uint64(log_block_manager_dead_containers_deleted);
 
 namespace kudu {
 namespace fs {
@@ -292,7 +294,8 @@ TEST_F(LogBlockManagerTest, MetricsTest) {
         {0, &METRIC_log_block_manager_containers},
         {0, &METRIC_log_block_manager_full_containers} },
       { {0, &METRIC_log_block_manager_holes_punched},
-        {0, &METRIC_block_manager_total_blocks_deleted} }));
+        {0, &METRIC_block_manager_total_blocks_deleted},
+        {0, &METRIC_log_block_manager_dead_containers_deleted} }));
 
   // Lower the max container size so that we can more easily test full
   // container metrics.
@@ -307,7 +310,8 @@ TEST_F(LogBlockManagerTest, MetricsTest) {
         {1, &METRIC_log_block_manager_containers},
         {0, &METRIC_log_block_manager_full_containers} },
       { {0, &METRIC_log_block_manager_holes_punched},
-        {0, &METRIC_block_manager_total_blocks_deleted} }));
+        {0, &METRIC_block_manager_total_blocks_deleted},
+        {0, &METRIC_log_block_manager_dead_containers_deleted} }));
 
   // And when the block is closed, it becomes "under management".
   ASSERT_OK(writer->Close());
@@ -317,12 +321,14 @@ TEST_F(LogBlockManagerTest, MetricsTest) {
         {1, &METRIC_log_block_manager_containers},
         {0, &METRIC_log_block_manager_full_containers} },
       { {0, &METRIC_log_block_manager_holes_punched},
-        {0, &METRIC_block_manager_total_blocks_deleted} }));
+        {0, &METRIC_block_manager_total_blocks_deleted},
+        {0, &METRIC_log_block_manager_dead_containers_deleted} }));
 
   // Create 10 blocks concurrently. We reuse the existing container and
   // create 9 new ones. All of them get filled.
   BlockId saved_id;
   {
+    uint8_t data[1024];
     Random rand(SeedRandom());
     unique_ptr<BlockCreationTransaction> transaction = bm_->NewCreationTransaction();
     for (int i = 0; i < 10; i++) {
@@ -331,9 +337,8 @@ TEST_F(LogBlockManagerTest, MetricsTest) {
       if (saved_id.IsNull()) {
         saved_id = b->id();
       }
-      uint8_t data[1024];
-      for (int i = 0; i < sizeof(data); i += sizeof(uint32_t)) {
-        data[i] = rand.Next();
+      for (int j = 0; j < sizeof(data); j += sizeof(uint32_t)) {
+        data[j] = rand.Next();
       }
       b->Append(Slice(data, sizeof(data)));
       ASSERT_OK(b->Finalize());
@@ -346,7 +351,8 @@ TEST_F(LogBlockManagerTest, MetricsTest) {
           {10, &METRIC_log_block_manager_containers},
           {10, &METRIC_log_block_manager_full_containers} },
         { {0, &METRIC_log_block_manager_holes_punched},
-          {0, &METRIC_block_manager_total_blocks_deleted} }));
+          {0, &METRIC_block_manager_total_blocks_deleted},
+          {0, &METRIC_log_block_manager_dead_containers_deleted} }));
 
     ASSERT_OK(transaction->CommitCreatedBlocks());
     NO_FATALS(CheckLogMetrics(entity,
@@ -355,7 +361,8 @@ TEST_F(LogBlockManagerTest, MetricsTest) {
           {10, &METRIC_log_block_manager_containers},
           {10, &METRIC_log_block_manager_full_containers} },
         { {0, &METRIC_log_block_manager_holes_punched},
-          {0, &METRIC_block_manager_total_blocks_deleted} }));
+          {0, &METRIC_block_manager_total_blocks_deleted},
+          {0, &METRIC_log_block_manager_dead_containers_deleted} }));
   }
 
   // Reopen the block manager and test the metrics. They're all based on
@@ -369,7 +376,8 @@ TEST_F(LogBlockManagerTest, MetricsTest) {
         {10, &METRIC_log_block_manager_containers},
         {10, &METRIC_log_block_manager_full_containers} },
       { {0, &METRIC_log_block_manager_holes_punched},
-        {0, &METRIC_block_manager_total_blocks_deleted} }));
+        {0, &METRIC_block_manager_total_blocks_deleted},
+        {0, &METRIC_log_block_manager_dead_containers_deleted} }));
 
   // Delete a block. Its contents should no longer be under management.
   {
@@ -384,7 +392,8 @@ TEST_F(LogBlockManagerTest, MetricsTest) {
           {10, &METRIC_log_block_manager_containers},
           {10, &METRIC_log_block_manager_full_containers} },
         { {0, &METRIC_log_block_manager_holes_punched},
-          {1, &METRIC_block_manager_total_blocks_deleted} }));
+          {1, &METRIC_block_manager_total_blocks_deleted},
+          {0, &METRIC_log_block_manager_dead_containers_deleted} }));
   }
   // Wait for the actual hole punching to take place.
   for (const auto& data_dir : dd_manager_->data_dirs()) {
@@ -396,7 +405,8 @@ TEST_F(LogBlockManagerTest, MetricsTest) {
         {10, &METRIC_log_block_manager_containers},
         {10, &METRIC_log_block_manager_full_containers} },
       { {1, &METRIC_log_block_manager_holes_punched},
-        {1, &METRIC_block_manager_total_blocks_deleted} }));
+        {1, &METRIC_block_manager_total_blocks_deleted},
+        {0, &METRIC_log_block_manager_dead_containers_deleted} }));
 
   // Set the max container size to default so that we can create a bunch of blocks
   // in the same container. Delete those created blocks afterwards to verify only
@@ -429,7 +439,8 @@ TEST_F(LogBlockManagerTest, MetricsTest) {
           {11, &METRIC_log_block_manager_containers},
           {10, &METRIC_log_block_manager_full_containers} },
         { {1, &METRIC_log_block_manager_holes_punched},
-          {11, &METRIC_block_manager_total_blocks_deleted} }));
+          {11, &METRIC_block_manager_total_blocks_deleted},
+          {0, &METRIC_log_block_manager_dead_containers_deleted} }));
   }
   // Wait for the actual hole punching to take place.
   for (const auto& data_dir : dd_manager_->data_dirs()) {
@@ -441,7 +452,8 @@ TEST_F(LogBlockManagerTest, MetricsTest) {
         {11, &METRIC_log_block_manager_containers},
         {10, &METRIC_log_block_manager_full_containers} },
       { {2, &METRIC_log_block_manager_holes_punched},
-        {11, &METRIC_block_manager_total_blocks_deleted} }));
+        {11, &METRIC_block_manager_total_blocks_deleted},
+        {0, &METRIC_log_block_manager_dead_containers_deleted} }));
 }
 
 TEST_F(LogBlockManagerTest, ContainerPreallocationTest) {
@@ -1736,6 +1748,123 @@ TEST_F(LogBlockManagerTest, TestAbortBlock) {
   ASSERT_OK(writer->Abort());
   // Ensures the container is available after block's Abort().
   ASSERT_EQ(1, bm_->available_containers_by_data_dir_.begin()->second.size());
+}
+
+TEST_F(LogBlockManagerTest, TestDeleteDeadContainersByDeletionTransaction) {
+  const auto TestProcess = [&] (int block_num) {
+    ASSERT_GT(block_num, 0);
+    MetricRegistry registry;
+    scoped_refptr<MetricEntity> entity = METRIC_ENTITY_server.Instantiate(
+        &registry, Substitute("test-$0", block_num));
+
+    ASSERT_OK(ReopenBlockManager(entity));
+    NO_FATALS(CheckLogMetrics(entity,
+        { {0, &METRIC_log_block_manager_bytes_under_management},
+          {0, &METRIC_log_block_manager_blocks_under_management},
+          {0, &METRIC_log_block_manager_containers},
+          {0, &METRIC_log_block_manager_full_containers} },
+        { {0, &METRIC_log_block_manager_holes_punched},
+          {0, &METRIC_block_manager_total_blocks_deleted},
+          {0, &METRIC_log_block_manager_dead_containers_deleted} }));
+
+    // Create a bunch of blocks -> one container.
+    vector<BlockId> blocks;
+    for (int i = 0; i < block_num - 1; ++i) {
+      unique_ptr<WritableBlock> writer;
+      ASSERT_OK(bm_->CreateBlock(test_block_opts_, &writer));
+      blocks.emplace_back(writer->id());
+      ASSERT_OK(writer->Finalize());
+      ASSERT_OK(writer->Close());
+      NO_FATALS(CheckLogMetrics(entity,
+          { {0, &METRIC_log_block_manager_bytes_under_management},
+            {i + 1, &METRIC_log_block_manager_blocks_under_management},
+            {1, &METRIC_log_block_manager_containers},
+            {0, &METRIC_log_block_manager_full_containers} },
+          { {0, &METRIC_log_block_manager_holes_punched},
+            {0, &METRIC_block_manager_total_blocks_deleted},
+            {0, &METRIC_log_block_manager_dead_containers_deleted} }));
+    }
+    {
+      // The last block makes a full container.
+      FLAGS_log_container_max_size = 1;
+      unique_ptr<WritableBlock> writer;
+      ASSERT_OK(bm_->CreateBlock(test_block_opts_, &writer));
+      blocks.emplace_back(writer->id());
+      ASSERT_OK(writer->Append("a"));
+      ASSERT_OK(writer->Finalize());
+      ASSERT_OK(writer->Close());
+      NO_FATALS(CheckLogMetrics(entity,
+          { {1, &METRIC_log_block_manager_bytes_under_management},
+            {block_num, &METRIC_log_block_manager_blocks_under_management},
+            {1, &METRIC_log_block_manager_containers},
+            {1, &METRIC_log_block_manager_full_containers} },
+          { {0, &METRIC_log_block_manager_holes_punched},
+            {0, &METRIC_block_manager_total_blocks_deleted},
+            {0, &METRIC_log_block_manager_dead_containers_deleted} }));
+    }
+    ASSERT_EQ(block_num, blocks.size());
+
+    // Check the container files.
+    string data_file_name;
+    string metadata_file_name;
+    NO_FATALS(GetOnlyContainerDataFile(&data_file_name));
+    NO_FATALS(GetOnlyContainerMetadataFile(&metadata_file_name));
+
+    // Open the last block for reading.
+    unique_ptr<ReadableBlock> reader;
+    ASSERT_OK(bm_->OpenBlock(blocks[block_num-1], &reader));
+    uint64_t size;
+    ASSERT_OK(reader->Size(&size));
+    ASSERT_EQ(1, size);
+
+    // Delete all of the blocks, which makes a dead container.
+    {
+      vector<BlockId> deleted;
+      shared_ptr<BlockDeletionTransaction> deletion_transaction =
+        this->bm_->NewDeletionTransaction();
+      for (const auto& block : blocks) {
+        deletion_transaction->AddDeletedBlock(block);
+      }
+      ASSERT_OK(deletion_transaction->CommitDeletedBlocks(&deleted));
+      ASSERT_EQ(block_num, deleted.size());
+      NO_FATALS(CheckLogMetrics(entity,
+          { {0, &METRIC_log_block_manager_bytes_under_management},
+            {0, &METRIC_log_block_manager_blocks_under_management},
+            {1, &METRIC_log_block_manager_containers},
+            {1, &METRIC_log_block_manager_full_containers} },
+          { {0, &METRIC_log_block_manager_holes_punched},
+            {block_num, &METRIC_block_manager_total_blocks_deleted},
+            {0, &METRIC_log_block_manager_dead_containers_deleted} }));
+    }
+    // The container is still alive, because there is a opened block previously.
+    NO_FATALS(CheckLogMetrics(entity,
+        { {0, &METRIC_log_block_manager_bytes_under_management},
+          {0, &METRIC_log_block_manager_blocks_under_management},
+          {1, &METRIC_log_block_manager_containers},
+          {1, &METRIC_log_block_manager_full_containers} },
+        { {0, &METRIC_log_block_manager_holes_punched},
+          {block_num, &METRIC_block_manager_total_blocks_deleted},
+          {0, &METRIC_log_block_manager_dead_containers_deleted} }));
+
+    // After the reader is closed, the container is actually deleted.
+    reader->Close();
+    NO_FATALS(CheckLogMetrics(entity,
+        { {0, &METRIC_log_block_manager_bytes_under_management},
+          {0, &METRIC_log_block_manager_blocks_under_management},
+          {0, &METRIC_log_block_manager_containers},
+          {0, &METRIC_log_block_manager_full_containers} },
+        { {0, &METRIC_log_block_manager_holes_punched},
+          {block_num, &METRIC_block_manager_total_blocks_deleted},
+          {1, &METRIC_log_block_manager_dead_containers_deleted} }));
+
+    // The container files should have been deleted.
+    ASSERT_FALSE(env_->FileExists(data_file_name));
+    ASSERT_FALSE(env_->FileExists(metadata_file_name));
+  };
+
+  for (int i = 1; i < 4; ++i) {
+    NO_FATALS(TestProcess(i));
+  }
 }
 
 } // namespace fs

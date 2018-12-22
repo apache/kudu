@@ -264,10 +264,13 @@ class LogBlockManager : public BlockManager {
   void AddNewContainerUnlocked(const LogBlockContainerRefPtr& container);
 
   // Removes a previously added container from this block manager. The
-  // container must be full.
+  // container must be dead (i.e. full and without any live blocks).
   //
   // Must be called with 'lock_' held.
-  void RemoveFullContainerUnlocked(const std::string& container_name);
+  void RemoveDeadContainerUnlocked(const std::string& container_name);
+
+  // Variant of RemoveDeadContainerUnlocked that acquires 'lock_'.
+  void RemoveDeadContainer(const std::string& container_name);
 
   // Returns a container appropriate for the given CreateBlockOptions, creating
   // a new container if necessary.
@@ -339,7 +342,7 @@ class LogBlockManager : public BlockManager {
   Status Repair(DataDir* dir,
                 FsReport* report,
                 std::vector<LogBlockRefPtr> need_repunching,
-                std::vector<std::string> dead_containers,
+                std::vector<LogBlockContainerRefPtr> dead_containers,
                 std::unordered_map<
                     std::string,
                     std::vector<BlockRecordPB>> low_live_block_containers);
