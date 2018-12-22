@@ -59,6 +59,8 @@ service TabletServerService {
 
 message ChecksumRequestPB {
   // Only one of 'new_request' or 'continue_request' should be specified.
+  // NOTE: if 'new_request' is specified, it should also include an appropriate
+  // authorization token.
   optional NewScanRequestPB new_request = 1;
   optional ContinueChecksumRequestPB continue_request = 2;
 

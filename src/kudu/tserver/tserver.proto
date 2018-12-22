@@ -21,6 +21,7 @@ option java_package = "org.apache.kudu.tserver";
 
 import "kudu/common/common.proto";
 import "kudu/common/wire_protocol.proto";
+import "kudu/security/token.proto";
 import "kudu/tablet/tablet.proto";
 import "kudu/util/pb_util.proto";
 
@@ -136,6 +137,9 @@ message WriteRequestPB {
   // TODO crypto sign this and propagate the signature along with
   // the timestamp.
   optional fixed64 propagated_timestamp = 5;
+
+  // An authorization token with which to authorize this request.
+  optional security.SignedTokenPB authz_token = 6;
 }
 
 message WriteResponsePB {
@@ -284,6 +288,9 @@ message NewScanRequestPB {
   // The default value corresponds to RowFormatFlags::NO_FLAGS, which can't be set
   // as the actual default since the types differ.
   optional uint64 row_format_flags = 14 [default = 0];
+
+  // An authorization token with which to authorize this request.
+  optional security.SignedTokenPB authz_token = 15;
 }
 
 // A scan request. Initially, it should specify a scan. Later on, you
@@ -407,6 +414,9 @@ message SplitKeyRangeRequestPB {
   // should only include these columns. This can be used if a query will
   // only scan a certain subset of the columns.
   repeated ColumnSchemaPB columns = 5;
+
+  // An authorization token with which to authorize this request.
+  optional security.SignedTokenPB authz_token = 6;
 }
 
 message SplitKeyRangeResponsePB {

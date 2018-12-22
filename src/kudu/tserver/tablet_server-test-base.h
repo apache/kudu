@@ -124,10 +124,10 @@ class TabletServerTestBase : public KuduTest {
   // given read mode.
   Status FillNewScanRequest(ReadMode read_mode, NewScanRequestPB* scan) const;
 
- protected:
   static const char* kTableId;
   static const char* kTabletId;
 
+ protected:
   const Schema schema_;
   Schema key_schema_;
   std::unique_ptr<RowBuilder> rb_;

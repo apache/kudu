@@ -66,6 +66,9 @@
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/rpc_sidecar.h"
+#include "kudu/rpc/rpc_verification_util.h"
+#include "kudu/security/token.pb.h"
+#include "kudu/security/token_verifier.h"
 #include "kudu/server/server_base.h"
 #include "kudu/tablet/compaction.h"
 #include "kudu/tablet/metadata.pb.h"
@@ -89,6 +92,7 @@
 #include "kudu/util/crc.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/memory/arena.h"
@@ -140,6 +144,16 @@ DEFINE_bool(scanner_inject_service_unavailable_on_continue_scan, false,
            "any Scan continuation RPC call. Used for tests.");
 TAG_FLAG(scanner_inject_service_unavailable_on_continue_scan, unsafe);
 
+DEFINE_bool(tserver_enforce_access_control, false,
+            "If set, the server will apply fine-grained access control rules "
+            "to client RPCs.");
+TAG_FLAG(tserver_enforce_access_control, experimental);
+TAG_FLAG(tserver_enforce_access_control, runtime);
+
+DEFINE_double(tserver_inject_invalid_authz_token_ratio, 0.0,
+              "Fraction of the time that authz token validation will fail. Used for tests.");
+TAG_FLAG(tserver_inject_invalid_authz_token_ratio, hidden);
+
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 DECLARE_int32(memory_limit_warn_threshold_percentage);
 DECLARE_int32(tablet_history_max_age_sec);
@@ -167,10 +181,15 @@ using kudu::consensus::UnsafeChangeConfigRequestPB;
 using kudu::consensus::UnsafeChangeConfigResponsePB;
 using kudu::consensus::VoteRequestPB;
 using kudu::consensus::VoteResponsePB;
+using kudu::fault_injection::MaybeTrue;
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
+using kudu::rpc::ParseVerificationResult;
+using kudu::rpc::ErrorStatusPB;
 using kudu::rpc::RpcContext;
 using kudu::rpc::RpcSidecar;
+using kudu::security::TokenVerifier;
+using kudu::security::TokenPB;
 using kudu::server::ServerBase;
 using kudu::tablet::AlterSchemaTransactionState;
 using kudu::tablet::TABLET_DATA_COPYING;
@@ -365,6 +384,83 @@ static StdStatusCallback BindHandleResponse(
 } // namespace
 
 typedef ListTabletsResponsePB::StatusAndSchemaPB StatusAndSchemaPB;
+
+// If the privilege has neither full scan privileges nor column-level scan
+// privileges, the user is definitely not authorized to perform a scan.
+bool MayHaveScanPrivileges(const security::TablePrivilegePB& privilege) {
+  if (privilege.scan_privilege()) {
+    return true;
+  }
+  if (privilege.column_privileges_size() > 0) {
+    for (const auto& col_id_and_privilege : privilege.column_privileges()) {
+      if (col_id_and_privilege.second.scan_privilege()) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// Verifies the authorization token's correctness. Returns false and sends an
+// appropriate response if the request's authz token is invalid.
+template <class AuthorizableRequest>
+static bool VerifyAuthzTokenOrRespond(const TokenVerifier& token_verifier,
+                                      const AuthorizableRequest& req,
+                                      rpc::RpcContext* context,
+                                      TokenPB* token) {
+  DCHECK(token);
+  if (!req.has_authz_token()) {
+    context->RespondRpcFailure(rpc::ErrorStatusPB::ERROR_INVALID_AUTHORIZATION_TOKEN,
+        Status::NotAuthorized("no authorization token presented"));
+    return false;
+  }
+  TokenPB token_pb;
+  const auto result = token_verifier.VerifyTokenSignature(req.authz_token(), &token_pb);
+  ErrorStatusPB::RpcErrorCodePB error;
+  Status s = ParseVerificationResult(result,
+      ErrorStatusPB::ERROR_INVALID_AUTHORIZATION_TOKEN, &error);
+  if (!s.ok()) {
+    context->RespondRpcFailure(error, s.CloneAndPrepend("authz token verification failure"));
+    return false;
+  }
+  if (!token_pb.has_authz() ||
+      !token_pb.authz().has_table_privilege() ||
+      token_pb.authz().username() != context->remote_user().username()) {
+    context->RespondRpcFailure(ErrorStatusPB::ERROR_INVALID_AUTHORIZATION_TOKEN,
+        Status::NotAuthorized("invalid authorization token presented"));
+    return false;
+  }
+  if (MaybeTrue(FLAGS_tserver_inject_invalid_authz_token_ratio)) {
+    context->RespondRpcFailure(ErrorStatusPB::ERROR_INVALID_AUTHORIZATION_TOKEN,
+        Status::NotAuthorized("INJECTED FAILURE"));
+    return false;
+  }
+  *token = std::move(token_pb);
+  return true;
+}
+
+// Verifies the given scan-like request (e.g. Scan, Checksum, SplitKeyRange)
+// 'req', checking for any scan privileges. Returns false if the request's
+// authz token is invalid or does not have any scan privileges, in which case,
+// 'context' will be used to respond with an error. Otherwise, returns true,
+// and the privileges in 'token' should be used to further verify the request.
+template <class AuthorizableScanRequest>
+static bool VerifyHasAnyScanPrivileges(const TokenVerifier& token_verifier,
+                                       const AuthorizableScanRequest& req,
+                                       const char* not_authorized_str,
+                                       rpc::RpcContext* context,
+                                       TokenPB* token) {
+  if (!VerifyAuthzTokenOrRespond(token_verifier, req, context, token)) {
+    return false;
+  }
+  const auto& privilege = token->authz().table_privilege();
+  if (!MayHaveScanPrivileges(privilege)) {
+    context->RespondRpcFailure(rpc::ErrorStatusPB::FATAL_UNAUTHORIZED,
+        Status::NotAuthorized(not_authorized_str));
+    return false;
+  }
+  return true;
+}
 
 static void SetupErrorAndRespond(TabletServerErrorPB* error,
                                  const Status& s,
@@ -843,6 +939,22 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
                "tablet_id", req->tablet_id());
   DVLOG(3) << "Received Write RPC: " << SecureDebugString(*req);
 
+  if (FLAGS_tserver_enforce_access_control) {
+    TokenPB token;
+    if (!VerifyAuthzTokenOrRespond(server_->token_verifier(), *req, context, &token)) {
+      return;
+    }
+    const auto& privilege = token.authz().table_privilege();
+    if (!privilege.insert_privilege() &&
+        !privilege.update_privilege() &&
+        !privilege.delete_privilege()) {
+      context->RespondRpcFailure(rpc::ErrorStatusPB::FATAL_UNAUTHORIZED,
+          Status::NotAuthorized("not authorized to write"));
+      return;
+    }
+    // TODO(awong): check the privileges required for the contents of the write
+    // request by parsing out the op types in the request.
+  }
   scoped_refptr<TabletReplica> replica;
   if (!LookupRunningTabletReplicaOrRespond(server_->tablet_manager(), req->tablet_id(), resp,
                                            context, &replica)) {
@@ -1341,6 +1453,20 @@ void TabletServiceImpl::Scan(const ScanRequestPB* req,
     return;
   }
 
+  // If this is a new scan request, we must enforce the appropriate privileges.
+  string authorized_table_id;
+  unordered_set<int> authorized_column_ids;
+  TokenPB token;
+  if (FLAGS_tserver_enforce_access_control && req->has_new_scan_request()) {
+    if (!VerifyHasAnyScanPrivileges(server_->token_verifier(), req->new_scan_request(),
+                                    "not authorized to scan", context, &token)) {
+      return;
+    }
+    // TODO(awong): check the privileges required for the contents of the scan
+    // request by pulling out the columns and checking against individual
+    // column privileges.
+  }
+
   size_t batch_size_bytes = GetMaxBatchSizeBytesHint(req);
   unique_ptr<faststring> rows_data(new faststring(batch_size_bytes * 11 / 10));
   unique_ptr<faststring> indirect_data(new faststring(batch_size_bytes * 11 / 10));
@@ -1440,6 +1566,16 @@ void TabletServiceImpl::SplitKeyRange(const SplitKeyRangeRequestPB* req,
   TRACE_EVENT1("tserver", "TabletServiceImpl::SplitKeyRange",
                "tablet_id", req->tablet_id());
   DVLOG(3) << "Received SplitKeyRange RPC: " << SecureDebugString(*req);
+  TokenPB token;
+  if (FLAGS_tserver_enforce_access_control) {
+    if (!VerifyHasAnyScanPrivileges(server_->token_verifier(), *req,
+                                    "not authorized to split key range", context, &token)) {
+      return;
+    }
+    // TODO(awong): check the privileges required for the contents of the
+    // split-key request by pulling out the columns and checking against
+    // individual column privileges.
+  }
 
   scoped_refptr<TabletReplica> replica;
   if (!LookupRunningTabletReplicaOrRespond(server_->tablet_manager(), req->tablet_id(), resp,
@@ -1565,6 +1701,16 @@ void TabletServiceImpl::Checksum(const ChecksumRequestPB* req,
   bool has_more = false;
   TabletServerErrorPB::Code error_code = TabletServerErrorPB::UNKNOWN_ERROR;
   if (req->has_new_request()) {
+    if (FLAGS_tserver_enforce_access_control) {
+      TokenPB token;
+      if (!VerifyHasAnyScanPrivileges(server_->token_verifier(), req->new_request(),
+                                      "not authorized to checksum", context, &token)) {
+        return;
+      }
+      // TODO(awong): check the privileges required for the contents of the
+      // checksum request by pulling out the columns and checking against
+      // individual column privileges.
+    }
     scan_req.mutable_new_scan_request()->CopyFrom(req->new_request());
     const NewScanRequestPB& new_req = req->new_request();
     scoped_refptr<TabletReplica> replica;

@@ -313,6 +313,12 @@ message ErrorStatusPB {
     // time. The client may try again later.
     ERROR_UNAVAILABLE = 7;
 
+    // The authorization token is invalid or expired. Unlike
+    // FATAL_INVALID_AUTHENTICATION_TOKEN, receipt of this code does not mean
+    // that a reconnection attempt should be made; just that the client should
+    // obtain a new authz token.
+    ERROR_INVALID_AUTHORIZATION_TOKEN = 17;
+
     // FATAL_* errors indicate that the client should shut down the connection.
     //------------------------------------------------------------
     // The RPC server is already shutting down.
@@ -326,8 +332,9 @@ message ErrorStatusPB {
     // Auth failed.
     FATAL_UNAUTHORIZED = 15;
 
-    // The authentication token is invalid or expired;
-    // the client should obtain a new one.
+    // The authentication token is invalid or expired. The connection
+    // negotiation failed, and the client should obtain a new authn token and
+    // try to reconnect.
     FATAL_INVALID_AUTHENTICATION_TOKEN = 16;
   }
 

@@ -40,6 +40,7 @@
 #include "kudu/rpc/blocking_ops.h"
 #include "kudu/rpc/constants.h"
 #include "kudu/rpc/messenger.h"
+#include "kudu/rpc/rpc_verification_util.h"
 #include "kudu/rpc/serialization.h"
 #include "kudu/security/cert.h"
 #include "kudu/security/crypto.h"
@@ -657,33 +658,12 @@ Status ServerNegotiation::AuthenticateByToken(faststring* recv_buf) {
   // so it knows how to intelligently retry.
   security::TokenPB token;
   auto verification_result = token_verifier_->VerifyTokenSignature(pb.authn_token(), &token);
-  switch (verification_result) {
-    case security::VerificationResult::VALID: break;
-
-    case security::VerificationResult::INVALID_TOKEN:
-    case security::VerificationResult::INVALID_SIGNATURE:
-    case security::VerificationResult::EXPIRED_TOKEN:
-    case security::VerificationResult::EXPIRED_SIGNING_KEY: {
-      // These errors indicate the client should get a new token and try again.
-      Status s = Status::NotAuthorized(VerificationResultToString(verification_result));
-      RETURN_NOT_OK(SendError(ErrorStatusPB::FATAL_INVALID_AUTHENTICATION_TOKEN, s));
-      return s;
-    }
-
-    case security::VerificationResult::UNKNOWN_SIGNING_KEY: {
-      // The server doesn't recognize the signing key. This indicates that the
-      // server has not been updated with the most recent TSKs, so tell the
-      // client to try again later.
-      Status s = Status::NotAuthorized(VerificationResultToString(verification_result));
-      RETURN_NOT_OK(SendError(ErrorStatusPB::ERROR_UNAVAILABLE, s));
-      return s;
-    }
-    case security::VerificationResult::INCOMPATIBLE_FEATURE: {
-      Status s = Status::NotAuthorized(VerificationResultToString(verification_result));
-      // These error types aren't recoverable by having the client get a new token.
-      RETURN_NOT_OK(SendError(ErrorStatusPB::FATAL_UNAUTHORIZED, s));
-      return s;
-    }
+  ErrorStatusPB::RpcErrorCodePB error;
+  Status s = ParseVerificationResult(verification_result,
+      ErrorStatusPB::FATAL_INVALID_AUTHENTICATION_TOKEN, &error);
+  if (!s.ok()) {
+    RETURN_NOT_OK(SendError(error, s));
+    return s;
   }
 
   if (!token.has_authn()) {
