@@ -615,7 +615,7 @@ TEST_F(LogBlockManagerTest, TestMetadataTruncation) {
   // Start corrupting the metadata file in different ways.
 
   string path = LogBlockManager::ContainerPathForTests(
-      bm_->all_containers_by_name_.begin()->second);
+      bm_->all_containers_by_name_.begin()->second.get());
   string metadata_path = path + LogBlockManager::kContainerMetadataFileSuffix;
   string data_path = path + LogBlockManager::kContainerDataFileSuffix;
 
@@ -1704,7 +1704,7 @@ TEST_F(LogBlockManagerTest, TestLIFOContainerSelection) {
   // Create some other blocks, and finalize each block after write.
   // The first available container in the queue will be reused every time.
   internal::LogBlockContainer* container =
-      bm_->available_containers_by_data_dir_.begin()->second.front();
+      bm_->available_containers_by_data_dir_.begin()->second.front().get();
   for (int i = 0; i < 4; i++) {
     unique_ptr<WritableBlock> writer;
     ASSERT_OK(bm_->CreateBlock(test_block_opts_, &writer));
@@ -1713,7 +1713,7 @@ TEST_F(LogBlockManagerTest, TestLIFOContainerSelection) {
     // After finalizing the written block, the used container will be
     // available again and can be reused for the following created block.
     ASSERT_EQ(container,
-              bm_->available_containers_by_data_dir_.begin()->second.front());
+              bm_->available_containers_by_data_dir_.begin()->second.front().get());
     blocks.emplace_back(std::move(writer));
   }
   for (const auto& block : blocks) {

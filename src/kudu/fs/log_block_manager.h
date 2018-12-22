@@ -63,6 +63,9 @@ class LogWritableBlock;
 struct LogBlockManagerMetrics;
 } // namespace internal
 
+typedef scoped_refptr<internal::LogBlock> LogBlockRefPtr;
+typedef scoped_refptr<internal::LogBlockContainer> LogBlockContainerRefPtr;
+
 // A log-backed (i.e. sequentially allocated file) block storage
 // implementation.
 //
@@ -229,10 +232,10 @@ class LogBlockManager : public BlockManager {
   // Type for the actual block map used to store all live blocks.
   // We use sparse_hash_map<> here to reduce memory overhead.
   typedef MemTrackerAllocator<
-      std::pair<const BlockId, scoped_refptr<internal::LogBlock>>> BlockAllocator;
+      std::pair<const BlockId, LogBlockRefPtr>> BlockAllocator;
   typedef spp::sparse_hash_map<
       BlockId,
-      scoped_refptr<internal::LogBlock>,
+      LogBlockRefPtr,
       BlockIdHash,
       BlockIdEqual,
       BlockAllocator> BlockMap;
@@ -242,7 +245,7 @@ class LogBlockManager : public BlockManager {
   // Only used during startup.
   typedef std::unordered_map<
       const BlockId,
-      scoped_refptr<internal::LogBlock>,
+      LogBlockRefPtr,
       BlockIdHash,
       BlockIdEqual> UntrackedBlockMap;
 
@@ -255,17 +258,10 @@ class LogBlockManager : public BlockManager {
       BlockIdHash,
       BlockIdEqual> BlockRecordMap;
 
-  // Map used to aggregate BlockRecordMap instances across containers.
-  //
-  // Only used during startup.
-  typedef std::unordered_map<
-      std::string,
-      std::vector<BlockRecordPB>> BlockRecordsByContainerMap;
-
   // Adds an as of yet unseen container to this block manager.
   //
   // Must be called with 'lock_' held.
-  void AddNewContainerUnlocked(internal::LogBlockContainer* container);
+  void AddNewContainerUnlocked(const LogBlockContainerRefPtr& container);
 
   // Removes a previously added container from this block manager. The
   // container must be full.
@@ -280,12 +276,12 @@ class LogBlockManager : public BlockManager {
   // writing is finished, call MakeContainerAvailable() to make it
   // available to other writers.
   Status GetOrCreateContainer(const CreateBlockOptions& opts,
-                              internal::LogBlockContainer** container);
+                              LogBlockContainerRefPtr* container);
 
   // Indicate that this container is no longer in use and can be handed out
   // to other writers.
-  void MakeContainerAvailable(internal::LogBlockContainer* container);
-  void MakeContainerAvailableUnlocked(internal::LogBlockContainer* container);
+  void MakeContainerAvailable(LogBlockContainerRefPtr container);
+  void MakeContainerAvailableUnlocked(LogBlockContainerRefPtr container);
 
   // Synchronizes a container's dirty metadata to disk, taking care not to
   // sync more than is necessary (using 'dirty_dirs_').
@@ -301,8 +297,8 @@ class LogBlockManager : public BlockManager {
   //
   // Returns the created LogBlock if it was successfully added or nullptr if a
   // block with that ID was already present.
-  scoped_refptr<internal::LogBlock> AddLogBlock(
-      internal::LogBlockContainer* container,
+  LogBlockRefPtr AddLogBlock(
+      LogBlockContainerRefPtr container,
       const BlockId& block_id,
       int64_t offset,
       int64_t length);
@@ -311,7 +307,7 @@ class LogBlockManager : public BlockManager {
   // Must hold 'lock_'.
   //
   // Returns true if the LogBlock was successfully added, false if it was already present.
-  bool AddLogBlockUnlocked(scoped_refptr<internal::LogBlock> lb);
+  bool AddLogBlockUnlocked(LogBlockRefPtr lb);
 
   // Removes the given set of LogBlocks from in-memory data structures, and
   // appends the block deletion metadata to record the on-disk deletion.
@@ -321,7 +317,7 @@ class LogBlockManager : public BlockManager {
   //
   // Returns the first deletion failure that was seen, if any.
   Status RemoveLogBlocks(std::vector<BlockId> block_ids,
-                         std::vector<scoped_refptr<internal::LogBlock>>* log_blocks,
+                         std::vector<LogBlockRefPtr>* log_blocks,
                          std::vector<BlockId>* deleted);
 
   // Removes a LogBlock from in-memory data structures. Must hold 'lock_'.
@@ -329,7 +325,7 @@ class LogBlockManager : public BlockManager {
   //
   // Returns an error of LogBlock cannot be successfully removed.
   Status RemoveLogBlockUnlocked(const BlockId& block_id,
-                                scoped_refptr<internal::LogBlock>* lb);
+                                LogBlockRefPtr* lb);
 
   // Repairs any inconsistencies for 'dir' described in 'report'.
   //
@@ -342,7 +338,7 @@ class LogBlockManager : public BlockManager {
   // Returns an error if repairing a fatal inconsistency failed.
   Status Repair(DataDir* dir,
                 FsReport* report,
-                std::vector<scoped_refptr<internal::LogBlock>> need_repunching,
+                std::vector<LogBlockRefPtr> need_repunching,
                 std::vector<std::string> dead_containers,
                 std::unordered_map<
                     std::string,
@@ -434,14 +430,14 @@ class LogBlockManager : public BlockManager {
 
   // Holds (and owns) all containers loaded from disk.
   std::unordered_map<std::string,
-                     internal::LogBlockContainer*> all_containers_by_name_;
+                     LogBlockContainerRefPtr> all_containers_by_name_;
 
   // Holds only those containers that are currently available for writing,
   // excluding containers that are either in use or full.
   //
   // Does not own the containers.
   std::unordered_map<const DataDir*,
-                     std::deque<internal::LogBlockContainer*>> available_containers_by_data_dir_;
+                     std::deque<LogBlockContainerRefPtr>> available_containers_by_data_dir_;
 
   // Tracks dirty container directories.
   //
