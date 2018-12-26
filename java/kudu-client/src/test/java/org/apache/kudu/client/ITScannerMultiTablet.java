@@ -177,7 +177,7 @@ public class ITScannerMultiTablet {
       // Forcefully disconnects the current connection and fails all outstanding RPCs
       // in the middle of scanning.
       harness.getAsyncClient().newRpcProxy(scanner.currentTablet().getReplicaSelectedServerInfo(
-          scanner.getReplicaSelection())).getConnection().disconnect();
+          scanner.getReplicaSelection(), /* location= */"")).getConnection().disconnect();
 
       while (scanner.hasMoreRows()) {
         loopCount++;

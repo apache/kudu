@@ -35,6 +35,9 @@ import org.apache.kudu.consensus.Metadata;
 import org.apache.kudu.master.Master;
 
 public class TestRemoteTablet {
+  private static final String kClientLocation = "/fake-client";
+  private static final String kLocation = "/fake-noclient";
+  private static final String kNoLocation = "";
   private static final String[] kUuids = { "uuid-0", "uuid-1", "uuid-2" };
 
   @Test
@@ -97,27 +100,77 @@ public class TestRemoteTablet {
 
   @Test
   public void testLocalReplica() {
-    RemoteTablet tablet = getTablet(0, 0);
+    {
+      // Tablet with no replicas in the same location as the client.
+      RemoteTablet tablet = getTablet(0, 0, -1);
 
-    assertEquals(kUuids[0], tablet.getClosestServerInfo().getUuid());
+      // No location for the client.
+      assertEquals(kUuids[0], tablet.getClosestServerInfo(kNoLocation).getUuid());
+
+      // Client with location.
+      assertEquals(kUuids[0], tablet.getClosestServerInfo(kClientLocation).getUuid());
+    }
+
+    {
+      // Tablet with a non-local replica in the same location as the client.
+      RemoteTablet tablet = getTablet(0, 0, 1);
+
+      // No location for the client.
+      assertEquals(kUuids[0], tablet.getClosestServerInfo(kNoLocation).getUuid());
+
+      // Client with location. The local replica should be chosen.
+      assertEquals(kUuids[0], tablet.getClosestServerInfo(kClientLocation).getUuid());
+    }
+
+    {
+      // Tablet with a local replica in the same location as the client.
+      RemoteTablet tablet = getTablet(0, 0, 0);
+
+      // No location for the client.
+      assertEquals(kUuids[0], tablet.getClosestServerInfo(kNoLocation).getUuid());
+
+      // Client with location. The local replica should be chosen.
+      assertEquals(kUuids[0], tablet.getClosestServerInfo(kClientLocation).getUuid());
+    }
   }
 
   @Test
-  public void testNoLocalReplica() {
-    RemoteTablet tablet = getTablet(0, -1);
+  public void testNoLocalOrSameLocationReplica() {
+    RemoteTablet tablet = getTablet(0, -1, -1);
 
     // We just care about getting one back.
-    assertNotNull(tablet.getClosestServerInfo().getUuid());
+    assertNotNull(tablet.getClosestServerInfo(kClientLocation).getUuid());
   }
 
   @Test
   public void testReplicaSelection() {
-    RemoteTablet tablet = getTablet(0, 1);
+    {
+      RemoteTablet tablet = getTablet(0, 1, 2);
 
-    assertEquals(kUuids[0],
-        tablet.getReplicaSelectedServerInfo(ReplicaSelection.LEADER_ONLY).getUuid());
-    assertEquals(kUuids[1],
-        tablet.getReplicaSelectedServerInfo(ReplicaSelection.CLOSEST_REPLICA).getUuid());
+      // LEADER_ONLY picks the leader even if there's a local replica.
+      assertEquals(kUuids[0],
+          tablet.getReplicaSelectedServerInfo(ReplicaSelection.LEADER_ONLY, kClientLocation)
+              .getUuid());
+
+      // CLOSEST_REPLICA picks the local replica even if there's a replica in the same location.
+      assertEquals(kUuids[1],
+          tablet.getReplicaSelectedServerInfo(ReplicaSelection.CLOSEST_REPLICA, kClientLocation)
+              .getUuid());
+    }
+
+    {
+      RemoteTablet tablet = getTablet(0, -1, 1);
+
+      // LEADER_ONLY picks the leader even if there's a replica with the same location.
+      assertEquals(kUuids[0],
+          tablet.getReplicaSelectedServerInfo(ReplicaSelection.LEADER_ONLY, kClientLocation)
+              .getUuid());
+
+      // CLOSEST_REPLICA picks the replica in the same location.
+      assertEquals(kUuids[1],
+          tablet.getReplicaSelectedServerInfo(ReplicaSelection.CLOSEST_REPLICA, kClientLocation)
+              .getUuid());
+    }
   }
 
   // AsyncKuduClient has methods like scanNextRows, keepAlive, and closeScanner that rely on
@@ -126,33 +179,45 @@ public class TestRemoteTablet {
   // This test ensures that remains true.
   @Test
   public void testGetReplicaSelectedServerInfoDeterminism() {
-    RemoteTablet tabletWithLocal = getTablet(0, 0);
+    // There's a local leader replica.
+    RemoteTablet tabletWithLocal = getTablet(0, 0, 0);
     verifyGetReplicaSelectedServerInfoDeterminism(tabletWithLocal);
 
-    RemoteTablet tabletWithRemote = getTablet(0, -1);
+    // There's a leader in the same location as the client.
+    RemoteTablet tabletWithSameLocation = getTablet(0, -1, 0);
+    verifyGetReplicaSelectedServerInfoDeterminism(tabletWithSameLocation);
+
+    // There's no local replica or replica in the same location.
+    RemoteTablet tabletWithRemote = getTablet(0, -1, -1);
     verifyGetReplicaSelectedServerInfoDeterminism(tabletWithRemote);
   }
 
   private void verifyGetReplicaSelectedServerInfoDeterminism(RemoteTablet tablet) {
-    String init = tablet.getReplicaSelectedServerInfo(ReplicaSelection.CLOSEST_REPLICA).getUuid();
+    String init = tablet
+        .getReplicaSelectedServerInfo(ReplicaSelection.CLOSEST_REPLICA, kClientLocation)
+        .getUuid();
     for (int i = 0; i < 10; i++) {
-      String next = tablet.getReplicaSelectedServerInfo(ReplicaSelection.CLOSEST_REPLICA).getUuid();
+      String next = tablet
+          .getReplicaSelectedServerInfo(ReplicaSelection.CLOSEST_REPLICA, kClientLocation)
+          .getUuid();
       assertEquals("getReplicaSelectedServerInfo was not deterministic", init, next);
     }
   }
 
   @Test
   public void testToString() {
-    RemoteTablet tablet = getTablet(0, 1);
+    RemoteTablet tablet = getTablet(0, 1, -1);
     assertEquals("fake tablet@[uuid-0(host:1000)[L],uuid-1(host:1001),uuid-2(host:1002)]",
         tablet.toString());
   }
 
   private RemoteTablet getTablet(int leaderIndex) {
-    return getTablet(leaderIndex, -1);
+    return getTablet(leaderIndex, -1, -1);
   }
 
-  static RemoteTablet getTablet(int leaderIndex, int localReplicaIndex) {
+  static RemoteTablet getTablet(int leaderIndex,
+                                int localReplicaIndex,
+                                int sameLocationReplicaIndex) {
     Master.TabletLocationsPB.Builder tabletPb = Master.TabletLocationsPB.newBuilder();
 
     tabletPb.setPartition(ProtobufUtils.getFakePartitionPB());
@@ -171,10 +236,11 @@ public class TestRemoteTablet {
       }
 
       String uuid = kUuids[i];
+      String location = i == sameLocationReplicaIndex ? kClientLocation : kLocation;
       servers.add(new ServerInfo(uuid,
                                  new HostAndPort("host", 1000 + i),
                                  addr,
-                                 /*location=*/""));
+                                 location));
       tabletPb.addReplicas(ProtobufUtils.getFakeTabletReplicaPB(
           uuid, "host", i,
           leaderIndex == i ? Metadata.RaftPeerPB.Role.LEADER : Metadata.RaftPeerPB.Role.FOLLOWER));

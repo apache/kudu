@@ -45,7 +45,7 @@ public class TestTableLocationsCache {
 
   @Test
   public void testToString() {
-    RemoteTablet tablet = TestRemoteTablet.getTablet(0, 1);
+    RemoteTablet tablet = TestRemoteTablet.getTablet(0, 1, -1);
     List<RemoteTablet> tablets = ImmutableList.of(tablet);
     cache.cacheTabletLocations(tablets,
         tablet.getPartition().getPartitionKeyStart(),

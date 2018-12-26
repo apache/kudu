@@ -515,7 +515,7 @@ public class AsyncKuduClient implements AutoCloseable {
   /**
    * Returns a string representation of this client's location. If this
    * client was not assigned a location, returns the empty string.
-   * 
+   *
    * @return a string representation of this client's location
    */
   public String getLocationString() {
@@ -1111,7 +1111,8 @@ public class AsyncKuduClient implements AutoCloseable {
     // Important to increment the attempts before the next if statement since
     // getSleepTimeForRpc() relies on it if the client is null or dead.
     nextRequest.attempt++;
-    final ServerInfo info = tablet.getReplicaSelectedServerInfo(nextRequest.getReplicaSelection());
+    final ServerInfo info = tablet.getReplicaSelectedServerInfo(nextRequest.getReplicaSelection(),
+                                                                location);
     if (info == null) {
       return delayedSendRpcToTablet(nextRequest, new RecoverableException(Status.RemoteError(
           String.format("No information on servers hosting tablet %s, will retry later",
@@ -1137,7 +1138,8 @@ public class AsyncKuduClient implements AutoCloseable {
       return Deferred.fromResult(null);
     }
     final KuduRpc<AsyncKuduScanner.Response> closeRequest = scanner.getCloseRequest();
-    final ServerInfo info = tablet.getReplicaSelectedServerInfo(closeRequest.getReplicaSelection());
+    final ServerInfo info = tablet.getReplicaSelectedServerInfo(closeRequest.getReplicaSelection(),
+                                                                location);
     if (info == null) {
       return Deferred.fromResult(null);
     }
@@ -1165,7 +1167,8 @@ public class AsyncKuduClient implements AutoCloseable {
     }
 
     final KuduRpc<Void> keepAliveRequest = scanner.getKeepAliveRequest();
-    final ServerInfo info = tablet.getReplicaSelectedServerInfo(keepAliveRequest.getReplicaSelection());
+    final ServerInfo info = tablet.getReplicaSelectedServerInfo(keepAliveRequest.getReplicaSelection(),
+                                                                location);
     if (info == null) {
       return Deferred.fromResult(null);
     }
@@ -1218,7 +1221,8 @@ public class AsyncKuduClient implements AutoCloseable {
     // If we found a tablet, we'll try to find the TS to talk to.
     if (entry != null) {
       RemoteTablet tablet = entry.getTablet();
-      ServerInfo info = tablet.getReplicaSelectedServerInfo(request.getReplicaSelection());
+      ServerInfo info = tablet.getReplicaSelectedServerInfo(request.getReplicaSelection(),
+                                                            location);
       if (info != null) {
         Deferred<R> d = request.getDeferred();
         request.setTablet(tablet);

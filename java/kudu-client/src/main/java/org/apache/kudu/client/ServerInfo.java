@@ -94,11 +94,21 @@ public class ServerInfo {
   }
 
   /**
-   * Returns this server's location.
-   * @return the server's location, or the empty string if no location was assigned.
+   * Returns this server's location. If no location is assigned, returns an empty string.
+   * @return the server's location
    */
   public String getLocation() {
     return location;
+  }
+
+  /**
+   * Returns true if the server is in the same location as 'location'.
+   * @return true if the server is in 'location'.
+   */
+  public boolean inSameLocation(String loc) {
+    Preconditions.checkNotNull(loc);
+    return !loc.isEmpty() &&
+           loc.equals(location);
   }
 
   /**

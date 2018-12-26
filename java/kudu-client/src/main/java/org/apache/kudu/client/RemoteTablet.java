@@ -172,25 +172,45 @@ public class RemoteTablet implements Comparable<RemoteTablet> {
   }
 
   /**
-   * Get the information on the closest server. If none is closer than the others,
-   * return the information on a randomly picked server.
+   * Get the information on the closest server. Servers are ranked from closest to furthest as
+   * follows:
+   * - Local servers
+   * - Servers in the same location as the client
+   * - All other servers
    *
-   * @return the information on the closest server, which might be any if none is closer, or null
-   *   if this cache doesn't know any servers.
+   * @param location the location of the client
+   * @return the information for a closest server, or null if this cache doesn't know any servers.
    */
   @Nullable
-  ServerInfo getClosestServerInfo() {
+  ServerInfo getClosestServerInfo(String location) {
+    // TODO(KUDU-2348) this doesn't return a random server, but rather returns
+    // 1. whichever local server's hashcode places it first among local servers,
+    //    if there is a local server, or
+    // 2. whichever server in the same location has a hashcode that places it
+    //    first among servers in the same location, if there is a server in the
+    //    same location, or, finally,
+    // 3. whichever server's hashcode places it last.
+    // That might be the same "random" choice across all clients, which is not
+    // so good. Unfortunately, the client depends on this method returning the
+    // same tablet server given the same state. See
+    // testGetReplicaSelectedServerInfoDeterminism in TestRemoteTablet.java.
+    // TODO(wdberkeley): Eventually, the client might use the hierarchical
+    // structure of a location to determine proximity.
     synchronized (tabletServers) {
       ServerInfo last = null;
+      ServerInfo lastInSameLocation = null;
       for (ServerInfo e : tabletServers.values()) {
         last = e;
         if (e.isLocal()) {
           return e;
         }
+        if (e.inSameLocation(location)) {
+          lastInSameLocation = e;
+        }
       }
-      // TODO(KUDU-2348) this doesn't return a random server, but rather returns
-      // whichever one's hashcode places it last. That might be the same
-      // "random" choice across all clients, which is not so good.
+      if (lastInSameLocation != null) {
+        return lastInSameLocation;
+      }
       return last;
     }
   }
@@ -200,15 +220,16 @@ public class RemoteTablet implements Comparable<RemoteTablet> {
    * mechanism.
    *
    * @param replicaSelection replica selection mechanism to use
+   * @param location the location of the client
    * @return information on the server that matches the selection, can be null
    */
   @Nullable
-  ServerInfo getReplicaSelectedServerInfo(ReplicaSelection replicaSelection) {
+  ServerInfo getReplicaSelectedServerInfo(ReplicaSelection replicaSelection, String location) {
     switch (replicaSelection) {
       case LEADER_ONLY:
         return getLeaderServerInfo();
       case CLOSEST_REPLICA:
-        return getClosestServerInfo();
+        return getClosestServerInfo(location);
       default:
         throw new RuntimeException("unknown replica selection mechanism " + replicaSelection);
     }
