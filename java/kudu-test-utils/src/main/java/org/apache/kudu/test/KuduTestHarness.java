@@ -46,6 +46,7 @@ import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
@@ -115,6 +116,13 @@ public class KuduTestHarness extends ExternalResource {
     if (masterServerConfig != null) {
       for (String flag : masterServerConfig.flags()) {
         clusterBuilder.addMasterServerFlag(flag);
+      }
+    }
+    // Pass through any location mapping defined in the method level annotation.
+    LocationConfig locationConfig = description.getAnnotation(LocationConfig.class);
+    if (locationConfig != null) {
+      for (String location : locationConfig.locations()) {
+        clusterBuilder.addLocation(location);
       }
     }
     // Set any tablet server flags defined in the method level annotation.
@@ -440,5 +448,17 @@ public class KuduTestHarness extends ExternalResource {
   @Target({ElementType.METHOD})
   public @interface TabletServerConfig {
     String[] flags();
+  }
+
+  /**
+   * An annotation that can be added to each test method to
+   * define a location mapping for the cluster. Location
+   * mappings are defined as a series of 'location:number'
+   * pairs.
+   */
+  @Retention(RetentionPolicy.RUNTIME)
+  @Target({ElementType.METHOD})
+  public @interface LocationConfig {
+    String[] locations();
   }
 }

@@ -82,6 +82,15 @@ public class KuduClient implements AutoCloseable {
     return asyncClient.hasLastPropagatedTimestamp();
   }
 
+  /**
+   * Returns a string representation of this client's location. If this
+   * client was not assigned a location, returns the empty string.
+   *
+   * @return a string representation of this client's location
+   */
+  public String getLocationString() {
+    return asyncClient.getLocationString();
+  }
 
   /**
    * Returns the Hive Metastore configuration of the cluster.

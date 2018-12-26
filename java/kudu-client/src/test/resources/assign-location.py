@@ -1,0 +1,1 @@
+../../../../../src/kudu/scripts/assign-location.py

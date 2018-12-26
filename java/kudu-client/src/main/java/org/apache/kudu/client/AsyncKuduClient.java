@@ -323,6 +323,13 @@ public class AsyncKuduClient implements AutoCloseable {
   private volatile boolean hasConnectedToMaster = false;
 
   /**
+   * The location of this client as assigned by the leader master.
+   *
+   * If no location is assigned, will be an empty string.
+   */
+  private String location = "";
+
+  /**
    * Semaphore used to rate-limit master lookups
    * Once we have more than this number of concurrent master lookups, we'll
    * start to throttle ourselves slightly.
@@ -422,7 +429,11 @@ public class AsyncKuduClient implements AutoCloseable {
       return null;
     }
     return newRpcProxy(
-        new ServerInfo(getFakeMasterUuid(hostPort), hostPort, inetAddress), credentialsPolicy);
+        new ServerInfo(getFakeMasterUuid(hostPort),
+                       hostPort,
+                       inetAddress,
+                       /*locaton=*/""),
+        credentialsPolicy);
   }
 
   static String getFakeMasterUuid(HostAndPort hostPort) {
@@ -440,7 +451,7 @@ public class AsyncKuduClient implements AutoCloseable {
       }
 
       /**
-       * Report on the token re-acqusition results. The result authn token might be null: in that
+       * Report on the token re-acquisition results. The result authn token might be null: in that
        * case the SASL credentials will be used to negotiate future connections.
        */
       @Override
@@ -454,6 +465,9 @@ public class AsyncKuduClient implements AutoCloseable {
           LOG.warn("connect to master: received no authn token");
           securityContext.setAuthenticationToken(null);
           cb.call(false);
+        }
+        synchronized (AsyncKuduClient.this) {
+          location = masterResponsePB.getClientLocation();
         }
         return null;
       }
@@ -496,6 +510,16 @@ public class AsyncKuduClient implements AutoCloseable {
    */
   public synchronized boolean hasLastPropagatedTimestamp() {
     return lastPropagatedTimestamp != NO_TIMESTAMP;
+  }
+
+  /**
+   * Returns a string representation of this client's location. If this
+   * client was not assigned a location, returns the empty string.
+   * 
+   * @return a string representation of this client's location
+   */
+  public String getLocationString() {
+    return location;
   }
 
   /**
@@ -1716,6 +1740,7 @@ public class AsyncKuduClient implements AutoCloseable {
                 }
                 synchronized (AsyncKuduClient.this) {
                   AsyncKuduClient.this.hiveMetastoreConfig = hiveMetastoreConfig;
+                  location = respPb.getClientLocation();
                 }
 
                 hasConnectedToMaster = true;
@@ -1955,8 +1980,8 @@ public class AsyncKuduClient implements AutoCloseable {
       return null;
     }
 
-    // from meta_cache.cc
-    // TODO: if the TS advertises multiple host/ports, pick the right one
+    // From meta_cache.cc:
+    // TODO: If the TS advertises multiple host/ports, pick the right one
     // based on some kind of policy. For now just use the first always.
     final HostAndPort hostPort = ProtobufHelper.hostAndPortFromPB(addresses.get(0));
     final InetAddress inetAddress = NetUtil.getInetAddress(hostPort.getHost());
@@ -1964,7 +1989,7 @@ public class AsyncKuduClient implements AutoCloseable {
       throw new UnknownHostException(
           "Failed to resolve the IP of `" + addresses.get(0).getHost() + "'");
     }
-    return new ServerInfo(uuid, hostPort, inetAddress);
+    return new ServerInfo(uuid, hostPort, inetAddress, tsInfoPB.getLocation());
   }
 
   /** Callback executed when a master lookup completes.  */

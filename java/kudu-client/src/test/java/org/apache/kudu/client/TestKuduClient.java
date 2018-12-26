@@ -56,6 +56,7 @@ import com.google.common.collect.ImmutableList;
 import com.stumbleupon.async.Deferred;
 
 import org.apache.kudu.test.KuduTestHarness;
+import org.apache.kudu.test.KuduTestHarness.LocationConfig;
 import org.apache.kudu.test.KuduTestHarness.TabletServerConfig;
 import org.apache.kudu.test.ClientTestUtil;
 import org.apache.kudu.util.TimestampUtil;
@@ -1113,7 +1114,7 @@ public class TestKuduClient {
       future.get();
     }
   }
-
+  
   private void runTestCallDuringLeaderElection(String clientMethodName) throws Exception {
     // This bit of reflection helps us avoid duplicating test code.
     Method methodToInvoke = KuduClient.class.getMethod(clientMethodName);
@@ -1152,5 +1153,24 @@ public class TestKuduClient {
   @Test(timeout = 100000)
   public void testGetHiveMetastoreConfigDuringLeaderElection() throws Exception {
     runTestCallDuringLeaderElection("getHiveMetastoreConfig");
+  }
+  /**
+   * Test assignment of a location to the client.
+   */
+  @Test(timeout = 100000)
+  public void testClientLocationNoLocation() throws Exception {
+    // Do something that will cause the client to connect to the cluster.
+    client.listTabletServers();
+    assertEquals("", client.getLocationString());
+  }
+
+  @Test(timeout = 100000)
+  @LocationConfig(locations = {
+      "/L0:4",
+  })
+  public void testClientLocation() throws Exception {
+    // Do something that will cause the client to connect to the cluster.
+    client.listTabletServers();
+    assertEquals("/L0", client.getLocationString());
   }
 }

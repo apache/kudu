@@ -102,6 +102,7 @@ public class MiniKuduCluster implements AutoCloseable {
   private final int numTservers;
   private final ImmutableList<String> extraTserverFlags;
   private final ImmutableList<String> extraMasterFlags;
+  private final ImmutableList<String> locationInfo;
   private final String clusterRoot;
 
   private MiniKdcOptionsPB kdcOptionsPb;
@@ -112,6 +113,7 @@ public class MiniKuduCluster implements AutoCloseable {
       int numTservers,
       List<String> extraTserverFlags,
       List<String> extraMasterFlags,
+      List<String> locationInfo,
       MiniKdcOptionsPB kdcOptionsPb,
       String clusterRoot,
       Common.HmsMode hmsMode) {
@@ -120,11 +122,12 @@ public class MiniKuduCluster implements AutoCloseable {
     this.numTservers = numTservers;
     this.extraTserverFlags = ImmutableList.copyOf(extraTserverFlags);
     this.extraMasterFlags = ImmutableList.copyOf(extraMasterFlags);
+    this.locationInfo = ImmutableList.copyOf(locationInfo);
     this.kdcOptionsPb = kdcOptionsPb;
     this.hmsMode = hmsMode;
 
     if (clusterRoot == null) {
-      // If a cluster root was not set, create a  unique temp directory to use.
+      // If a cluster root was not set, create a unique temp directory to use.
       // The mini cluster will clean this directory up on exit.
       try {
         File tempRoot = TempDirUtils.getTempDirectory("mini-kudu-cluster");
@@ -196,19 +199,35 @@ public class MiniKuduCluster implements AutoCloseable {
     miniClusterErrorPrinter.setName("cluster stderr printer");
     miniClusterErrorPrinter.start();
 
+    CreateClusterRequestPB.Builder createClusterRequestBuilder = CreateClusterRequestPB.newBuilder()
+        .setNumMasters(numMasters)
+        .setNumTservers(numTservers)
+        .setEnableKerberos(enableKerberos)
+        .setHmsMode(hmsMode)
+        .addAllExtraMasterFlags(extraMasterFlags)
+        .addAllExtraTserverFlags(extraTserverFlags)
+        .setMiniKdcOptions(kdcOptionsPb)
+        .setClusterRoot(clusterRoot);
+
+    // Set up the location mapping command flag if there is location info.
+    if (!locationInfo.isEmpty()) {
+      List<String> locationMappingCmd = new ArrayList<>();
+      locationMappingCmd.add(getClass().getResource("/assign-location.py").getFile());
+      String locationMappingCmdPath =
+          Paths.get(clusterRoot, "location-assignment.state").toString();
+      locationMappingCmd.add("--state_store=" + locationMappingCmdPath);
+      for (String location : locationInfo) {
+        locationMappingCmd.add("--map " + location);
+      }
+      String locationMappingCmdFlag = "--location_mapping_cmd=" +
+          Joiner.on(" ").join(locationMappingCmd);
+      createClusterRequestBuilder.addExtraMasterFlags(locationMappingCmdFlag);
+    }
+
     // Create and start the cluster.
     sendRequestToCluster(
         ControlShellRequestPB.newBuilder()
-        .setCreateCluster(CreateClusterRequestPB.newBuilder()
-            .setNumMasters(numMasters)
-            .setNumTservers(numTservers)
-            .setEnableKerberos(enableKerberos)
-            .setHmsMode(hmsMode)
-            .addAllExtraMasterFlags(extraMasterFlags)
-            .addAllExtraTserverFlags(extraTserverFlags)
-            .setMiniKdcOptions(kdcOptionsPb)
-            .setClusterRoot(clusterRoot)
-            .build())
+        .setCreateCluster(createClusterRequestBuilder.build())
         .build());
     sendRequestToCluster(
         ControlShellRequestPB.newBuilder()
@@ -540,6 +559,7 @@ public class MiniKuduCluster implements AutoCloseable {
     private boolean enableKerberos = false;
     private final List<String> extraTabletServerFlags = new ArrayList<>();
     private final List<String> extraMasterServerFlags = new ArrayList<>();
+    private final List<String> locationInfo = new ArrayList<>();
     private String clusterRoot = null;
 
     private MiniKdcOptionsPB.Builder kdcOptionsPb = MiniKdcOptionsPB.newBuilder();
@@ -587,6 +607,21 @@ public class MiniKuduCluster implements AutoCloseable {
       return this;
     }
 
+    /**
+     * Adds one location to the minicluster configuration, consisting of a
+     * location and the total number of tablet servers and clients that
+     * can be assigned to the location. The 'location' string should be
+     * in the form 'location:number'. For example,
+     *     "/L0:2"
+     * will add a location "/L0" that will accept up to two clients or
+     * tablet servers registered in it.
+     * @return this instance
+     */
+    public MiniKuduClusterBuilder addLocation(String location) {
+      locationInfo.add(location);
+      return this;
+    }
+
     public MiniKuduClusterBuilder kdcTicketLifetime(String lifetime) {
       this.kdcOptionsPb.setTicketLifetime(lifetime);
       return this;
@@ -615,7 +650,7 @@ public class MiniKuduCluster implements AutoCloseable {
       MiniKuduCluster cluster =
           new MiniKuduCluster(enableKerberos,
               numMasterServers, numTabletServers,
-              extraTabletServerFlags, extraMasterServerFlags,
+              extraTabletServerFlags, extraMasterServerFlags, locationInfo,
               kdcOptionsPb.build(), clusterRoot, hmsMode);
       try {
         cluster.start();

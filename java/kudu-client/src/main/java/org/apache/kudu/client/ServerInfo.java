@@ -35,6 +35,7 @@ public class ServerInfo {
   private final String uuid;
   private final HostAndPort hostPort;
   private final InetSocketAddress resolvedAddr;
+  private final String location;
   private final boolean local;
   private static final ConcurrentHashMap<InetAddress, Boolean> isLocalAddressCache =
       new ConcurrentHashMap<>();
@@ -45,13 +46,17 @@ public class ServerInfo {
    * @param uuid server's UUID
    * @param hostPort server's hostname and port
    * @param resolvedAddr resolved address used to check if the server is local
+   * @param location the location assigned by the leader master, or an empty string if no location
+   *                 is assigned
    */
-  public ServerInfo(String uuid, HostAndPort hostPort, InetAddress resolvedAddr) {
+  public ServerInfo(String uuid, HostAndPort hostPort, InetAddress resolvedAddr, String location) {
     Preconditions.checkNotNull(uuid);
     Preconditions.checkArgument(hostPort.getPort() > 0);
+    Preconditions.checkNotNull(location);
     this.uuid = uuid;
     this.hostPort = hostPort;
     this.resolvedAddr = new InetSocketAddress(resolvedAddr, hostPort.getPort());
+    this.location = location;
     Boolean isLocal = isLocalAddressCache.get(resolvedAddr);
     if (isLocal == null) {
       isLocal = NetUtil.isLocalAddress(resolvedAddr);
@@ -86,6 +91,14 @@ public class ServerInfo {
    */
   public int getPort() {
     return hostPort.getPort();
+  }
+
+  /**
+   * Returns this server's location.
+   * @return the server's location, or the empty string if no location was assigned.
+   */
+  public String getLocation() {
+    return location;
   }
 
   /**

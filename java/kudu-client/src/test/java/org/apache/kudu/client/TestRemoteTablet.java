@@ -173,7 +173,8 @@ public class TestRemoteTablet {
       String uuid = kUuids[i];
       servers.add(new ServerInfo(uuid,
                                  new HostAndPort("host", 1000 + i),
-                                 addr));
+                                 addr,
+                                 /*location=*/""));
       tabletPb.addReplicas(ProtobufUtils.getFakeTabletReplicaPB(
           uuid, "host", i,
           leaderIndex == i ? Metadata.RaftPeerPB.Role.LEADER : Metadata.RaftPeerPB.Role.FOLLOWER));

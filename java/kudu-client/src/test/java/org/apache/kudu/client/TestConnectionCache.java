@@ -49,8 +49,10 @@ public class TestConnectionCache {
       client.getTablesList().join();
 
       HostAndPort masterHostPort = cluster.getMasterServers().get(0);
-      ServerInfo firstMaster = new ServerInfo("fake-uuid", masterHostPort,
-          NetUtil.getInetAddress(masterHostPort.getHost()));
+      ServerInfo firstMaster = new ServerInfo("fake-uuid",
+                                              masterHostPort,
+                                              NetUtil.getInetAddress(masterHostPort.getHost()),
+                                              /*location=*/"");
 
       // 3 masters in the cluster. Connections should have been cached since we forced
       // a cluster connection above.
