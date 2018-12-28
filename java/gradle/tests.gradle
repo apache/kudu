@@ -38,6 +38,8 @@ tasks.withType(Test) {
 
   // Enable assertions during tests.
   jvmArgs += "-enableassertions"
+  // Config 1g maximum java heap size for test JVMs.
+  jvmArgs += "-Xmx1g"
   // Hide the Java 9+ warnings about illegal reflective access
   if (JavaVersion.current().isJava9Compatible()) {
     jvmArgs += "--illegal-access=permit"
