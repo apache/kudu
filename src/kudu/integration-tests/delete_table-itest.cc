@@ -1379,12 +1379,15 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
   ASSERT_OK(split_row->SetInt32(0, numeric_limits<int32_t>::max() / kNumTablets));
   split_rows.push_back(split_row);
   gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
   ASSERT_OK(table_creator->table_name(TestWorkload::kDefaultTableName)
                           .split_rows(split_rows)
                           .schema(&client_schema)
                           .set_range_partition_columns({ "key" })
                           .num_replicas(3)
                           .Create());
+#pragma GCC diagnostic pop
 
   // Start a workload on the cluster, and run it until we find WALs on disk.
   TestWorkload workload(cluster_.get());

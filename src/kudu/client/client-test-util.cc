@@ -24,7 +24,6 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/client/row_result.h"
 #include "kudu/client/scan_batch.h"
 #include "kudu/client/write_op.h"
 #include "kudu/gutil/stl_util.h"
@@ -121,10 +120,10 @@ Status CountRowsWithRetries(KuduScanner* scanner, size_t* row_count) {
 
 Status ScanToStrings(KuduScanner* scanner, vector<string>* row_strings) {
   RETURN_NOT_OK(scanner->Open());
-  vector<KuduRowResult> rows;
+  KuduScanBatch batch;
   while (scanner->HasMoreRows()) {
-    RETURN_NOT_OK(scanner->NextBatch(&rows));
-    for (const KuduRowResult& row : rows) {
+    RETURN_NOT_OK(scanner->NextBatch(&batch));
+    for (const KuduScanBatch::RowPtr row : batch) {
       row_strings->push_back(row.ToString());
     }
   }

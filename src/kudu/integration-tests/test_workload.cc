@@ -269,12 +269,15 @@ void TestWorkload::Setup() {
 
     // Create the table.
     gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
     Status s = table_creator->table_name(table_name_)
         .schema(&schema_)
         .num_replicas(num_replicas_)
         .set_range_partition_columns({ "key" })
         .split_rows(splits)
         .Create();
+#pragma GCC diagnostic pop
     if (!s.ok()) {
       if (!s.IsAlreadyPresent() && !s.IsServiceUnavailable()) {
         // TODO(KUDU-1537): Should be fixed with Exactly Once semantics.

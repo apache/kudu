@@ -36,6 +36,7 @@
 #include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
 #include "kudu/client/row_result.h"
+#include "kudu/client/scan_batch.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
 #include "kudu/client/value.h"
@@ -77,37 +78,38 @@ DECLARE_int32(flush_threshold_mb);
 DECLARE_bool(use_hybrid_clock);
 DECLARE_bool(scanner_allow_snapshot_scans_with_logical_timestamps);
 
-namespace kudu {
-
-using client::CountTableRows;
-using client::KuduClient;
-using client::KuduClientBuilder;
-using client::KuduColumnSchema;
-using client::KuduDelete;
-using client::KuduError;
-using client::KuduInsert;
-using client::KuduRowResult;
-using client::KuduScanner;
-using client::KuduSchema;
-using client::KuduSchemaBuilder;
-using client::KuduSession;
-using client::KuduTable;
-using client::KuduTableAlterer;
-using client::KuduTableCreator;
-using client::KuduUpdate;
-using client::KuduValue;
-using client::sp::shared_ptr;
-using cluster::InternalMiniCluster;
-using cluster::InternalMiniClusterOptions;
-using master::AlterTableRequestPB;
-using master::AlterTableResponsePB;
+using kudu::client::CountTableRows;
+using kudu::client::KuduClient;
+using kudu::client::KuduClientBuilder;
+using kudu::client::KuduColumnSchema;
+using kudu::client::KuduDelete;
+using kudu::client::KuduError;
+using kudu::client::KuduInsert;
+using kudu::client::KuduRowResult;
+using kudu::client::KuduScanBatch;
+using kudu::client::KuduScanner;
+using kudu::client::KuduSchema;
+using kudu::client::KuduSchemaBuilder;
+using kudu::client::KuduSession;
+using kudu::client::KuduTable;
+using kudu::client::KuduTableAlterer;
+using kudu::client::KuduTableCreator;
+using kudu::client::KuduUpdate;
+using kudu::client::KuduValue;
+using kudu::client::sp::shared_ptr;
+using kudu::cluster::InternalMiniCluster;
+using kudu::cluster::InternalMiniClusterOptions;
+using kudu::master::AlterTableRequestPB;
+using kudu::master::AlterTableResponsePB;
+using kudu::tablet::TabletReplica;
 using std::atomic;
 using std::map;
 using std::pair;
 using std::string;
 using std::unique_ptr;
 using std::vector;
-using tablet::TabletReplica;
+
+namespace kudu {
 
 class AlterTableTest : public KuduTest {
  public:
@@ -256,12 +258,15 @@ class AlterTableTest : public KuduTest {
       split_rows.push_back(row);
     }
     gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
     return table_creator->table_name(table_name)
         .schema(&schema_)
         .set_range_partition_columns({ "c0" })
         .num_replicas(num_replicas())
         .split_rows(split_rows)
         .Create();
+#pragma GCC diagnostic pop
   }
 
   Status CreateTable(const string& table_name,
@@ -707,11 +712,11 @@ void AlterTableTest::VerifyRows(int start_row, int num_rows, VerifyPattern patte
   ASSERT_OK(scanner.Open());
 
   int verified = 0;
-  vector<KuduRowResult> results;
+  KuduScanBatch batch;
   while (scanner.HasMoreRows()) {
-    ASSERT_OK(scanner.NextBatch(&results));
+    ASSERT_OK(scanner.NextBatch(&batch));
 
-    for (const KuduRowResult& row : results) {
+    for (const KuduScanBatch::RowPtr row : batch) {
       int32_t key = 0;
       ASSERT_OK(row.GetInt32(0, &key));
       int32_t row_idx = bswap_32(key);
@@ -1157,10 +1162,10 @@ void AlterTableTest::ScannerThread() {
     uint32_t inserted_at_scanner_start = next_idx_;
     CHECK_OK(scanner.Open());
     int count = 0;
-    vector<KuduRowResult> results;
+    KuduScanBatch batch;
     while (scanner.HasMoreRows()) {
-      CHECK_OK(scanner.NextBatch(&results));
-      count += results.size();
+      CHECK_OK(scanner.NextBatch(&batch));
+      count += batch.NumRows();
     }
 
     LOG(INFO) << "Scanner saw " << count << " rows";

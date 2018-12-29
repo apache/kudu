@@ -33,6 +33,7 @@
 #include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
 #include "kudu/client/row_result.h"
+#include "kudu/client/scan_batch.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
 #include "kudu/client/write_op.h"
@@ -82,29 +83,29 @@ DEFINE_bool(perf_stat_scan, false, "Print \"perf stat\" results during "
             "scan to stdout, disabled by default");
 DECLARE_bool(enable_maintenance_manager);
 
+using kudu::client::KuduClient;
+using kudu::client::KuduClientBuilder;
+using kudu::client::KuduColumnSchema;
+using kudu::client::KuduInsert;
+using kudu::client::KuduRowResult;
+using kudu::client::KuduScanBatch;
+using kudu::client::KuduScanner;
+using kudu::client::KuduSchema;
+using kudu::client::KuduSchemaBuilder;
+using kudu::client::KuduSession;
+using kudu::client::KuduStatusMemberCallback;
+using kudu::client::KuduTable;
+using kudu::client::KuduTableCreator;
+using kudu::cluster::InternalMiniCluster;
+using kudu::cluster::InternalMiniClusterOptions;
 using std::string;
 using std::unique_ptr;
 using std::vector;
+using strings::Split;
+using strings::Substitute;
 
 namespace kudu {
 namespace tablet {
-
-using client::KuduClient;
-using client::KuduClientBuilder;
-using client::KuduColumnSchema;
-using client::KuduInsert;
-using client::KuduRowResult;
-using client::KuduScanner;
-using client::KuduSchema;
-using client::KuduSchemaBuilder;
-using client::KuduSession;
-using client::KuduStatusMemberCallback;
-using client::KuduTable;
-using client::KuduTableCreator;
-using cluster::InternalMiniCluster;
-using cluster::InternalMiniClusterOptions;
-using strings::Split;
-using strings::Substitute;
 
 class FullStackInsertScanTest : public KuduTest {
  protected:
@@ -396,19 +397,19 @@ void FullStackInsertScanTest::ScanProjection(const vector<string>& cols,
   {
     // Warmup codegen cache
     KuduScanner scanner(reader_table_.get());
-    ASSERT_OK(scanner.SetProjectedColumns(cols));
+    ASSERT_OK(scanner.SetProjectedColumnNames(cols));
     ASSERT_OK(scanner.Open());
     codegen::CompilationManager::GetSingleton()->Wait();
   }
   KuduScanner scanner(reader_table_.get());
-  ASSERT_OK(scanner.SetProjectedColumns(cols));
+  ASSERT_OK(scanner.SetProjectedColumnNames(cols));
   uint64_t nrows = 0;
   LOG_TIMING(INFO, msg) {
     ASSERT_OK(scanner.Open());
-    vector<KuduRowResult> rows;
+    KuduScanBatch batch;
     while (scanner.HasMoreRows()) {
-      ASSERT_OK(scanner.NextBatch(&rows));
-      nrows += rows.size();
+      ASSERT_OK(scanner.NextBatch(&batch));
+      nrows += batch.NumRows();
     }
   }
   ASSERT_EQ(nrows, kNumRows);

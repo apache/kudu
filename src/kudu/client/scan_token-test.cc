@@ -157,12 +157,15 @@ TEST_F(ScanTokenTest, TestScanTokens) {
     unique_ptr<KuduPartialRow> split(schema.NewRow());
     ASSERT_OK(split->SetInt64("col", 0));
     unique_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
     ASSERT_OK(table_creator->table_name("table")
                             .schema(&schema)
                             .add_hash_partitions({ "col" }, 4)
                             .split_rows({ split.release() })
                             .num_replicas(1)
                             .Create());
+#pragma GCC diagnostic pop
     ASSERT_OK(client_->OpenTable("table", &table));
   }
 
@@ -496,12 +499,15 @@ TEST_P(TimestampPropagationParamTest, Test) {
       unique_ptr<KuduPartialRow> split(schema.NewRow());
       ASSERT_OK(split->SetInt64(kKeyColumnName, 0));
       unique_ptr<client::KuduTableCreator> creator(client_->NewTableCreator());
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
       ASSERT_OK(creator->table_name(kTableName)
                 .schema(&schema)
                 .add_hash_partitions({ kKeyColumnName }, 2)
                 .split_rows({ split.release() })
                 .num_replicas(1)
                 .Create());
+#pragma GCC diagnostic pop
     }
   }
 

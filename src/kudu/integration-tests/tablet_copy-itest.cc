@@ -638,6 +638,8 @@ TEST_F(TabletCopyITest, TestConcurrentTabletCopys) {
     ASSERT_OK(row->SetInt32(0, std::numeric_limits<int32_t>::max() / kNumTablets * (i + 1)));
     splits.push_back(row);
   }
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
   gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
   ASSERT_OK(table_creator->table_name(TestWorkload::kDefaultTableName)
                           .split_rows(splits)
@@ -645,6 +647,7 @@ TEST_F(TabletCopyITest, TestConcurrentTabletCopys) {
                           .set_range_partition_columns({ "key" })
                           .num_replicas(3)
                           .Create());
+#pragma GCC diagnostic pop
 
   const int kTsIndex = 0; // We'll test with the first TS.
   TServerDetails* target_ts = ts_map_[cluster_->tablet_server(kTsIndex)->uuid()];

@@ -156,6 +156,8 @@ void CreateTableStressTest::CreateBigTable(const string& table_name, int num_tab
   }
 
   unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
   ASSERT_OK(table_creator->table_name(table_name)
             .schema(&schema_)
             .set_range_partition_columns({ "key" })
@@ -163,6 +165,7 @@ void CreateTableStressTest::CreateBigTable(const string& table_name, int num_tab
             .num_replicas(3)
             .wait(false)
             .Create());
+#pragma GCC diagnostic pop
 }
 
 TEST_F(CreateTableStressTest, CreateAndDeleteBigTable) {

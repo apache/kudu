@@ -59,30 +59,30 @@ DEFINE_int32(scan_timeout_ms, 120 * 1000,
              "Sets the scanner timeout. It may be necessary to increase the "
              "timeout if the number of rounds or rows is increased.");
 
+using kudu::client::KuduClient;
+using kudu::client::KuduClientBuilder;
+using kudu::client::KuduColumnSchema;
+using kudu::client::KuduInsert;
+using kudu::client::KuduPredicate;
+using kudu::client::KuduRowResult;
+using kudu::client::KuduScanBatch;
+using kudu::client::KuduScanner;
+using kudu::client::KuduSchema;
+using kudu::client::KuduSchemaBuilder;
+using kudu::client::KuduSession;
+using kudu::client::KuduTable;
+using kudu::client::KuduTableCreator;
+using kudu::client::KuduUpdate;
+using kudu::client::KuduValue;
+using kudu::client::sp::shared_ptr;
+using kudu::cluster::InternalMiniCluster;
+using kudu::cluster::InternalMiniClusterOptions;
 using std::string;
 using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
 namespace tablet {
-
-using client::KuduClient;
-using client::KuduClientBuilder;
-using client::KuduColumnSchema;
-using client::KuduInsert;
-using client::KuduPredicate;
-using client::KuduRowResult;
-using client::KuduScanner;
-using client::KuduSchema;
-using client::KuduSchemaBuilder;
-using client::KuduSession;
-using client::KuduTable;
-using client::KuduTableCreator;
-using client::KuduUpdate;
-using client::KuduValue;
-using client::sp::shared_ptr;
-using cluster::InternalMiniCluster;
-using cluster::InternalMiniClusterOptions;
 
 class HeavyUpdateCompactionITest : public KuduTest {
  protected:
@@ -233,11 +233,11 @@ TEST_F(HeavyUpdateCompactionITest, TestHeavyUpdateCompaction) {
 
   LOG_TIMING(INFO, "scanning") {
     ASSERT_OK(scanner.Open());
-    vector<KuduRowResult> rows;
     size_t final_values_offset = 0;
+    KuduScanBatch batch;
     while (scanner.HasMoreRows()) {
-      ASSERT_OK(scanner.NextBatch(&rows));
-      for (const auto& row : rows) {
+      ASSERT_OK(scanner.NextBatch(&batch));
+      for (const KuduScanBatch::RowPtr row : batch) {
         for (int idx = 1; idx <= FLAGS_num_columns; idx++) {
           ASSERT_GT(final_values.size(), final_values_offset);
           Slice actual_val;

@@ -134,9 +134,6 @@ set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wno-sign-compare")
 #     which appear in the Kudu source code due to the use of ASCII art and
 #     multi-line command line examples in comments.
 set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wno-comment")
-#  -Wno-deprecated: we currently have a number of places using deprecated functions
-#     (mostly our own functions). TODO(todd) remove or individually suppress call sites.
-set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wno-deprecated")
 #  -pthread: enable multithreaded malloc
 set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -pthread")
 #  -fno-strict-aliasing

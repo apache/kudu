@@ -469,6 +469,8 @@ std::vector<int64_t> LinkedListTester::GenerateSplitInts() {
 
 Status LinkedListTester::CreateLinkedListTable() {
   gscoped_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
   RETURN_NOT_OK_PREPEND(table_creator->table_name(table_name_)
                         .schema(&schema_)
                         .set_range_partition_columns({ kKeyColumnName })
@@ -476,6 +478,7 @@ Status LinkedListTester::CreateLinkedListTable() {
                         .num_replicas(num_replicas_)
                         .Create(),
                         "Failed to create table");
+#pragma GCC diagnostic pop
   return Status::OK();
 }
 
@@ -614,7 +617,7 @@ Status LinkedListTester::VerifyLinkedListRemote(
   }
 
   client::KuduScanner scanner(table.get());
-  RETURN_NOT_OK_PREPEND(scanner.SetProjectedColumns(verify_projection_), "Bad projection");
+  RETURN_NOT_OK_PREPEND(scanner.SetProjectedColumnNames(verify_projection_), "Bad projection");
   RETURN_NOT_OK(scanner.SetBatchSizeBytes(0)); // Force at least one NextBatch RPC.
   RETURN_NOT_OK(scanner.SetTimeoutMillis(60 * 1000 /* 60 seconds */));
 
@@ -639,7 +642,6 @@ Status LinkedListTester::VerifyLinkedListRemote(
   verifier.StartScanTimer();
 
   bool cb_called = false;
-  std::vector<client::KuduRowResult> rows;
   while (scanner.HasMoreRows()) {
     // If we're doing a snapshot scan with a big enough cluster, call the callback on the scanner's
     // tserver. Do this only once.
@@ -652,8 +654,9 @@ Status LinkedListTester::VerifyLinkedListRemote(
       RETURN_NOT_OK(cb(down_ts));
       cb_called = true;
     }
-    RETURN_NOT_OK_PREPEND(scanner.NextBatch(&rows), "Couldn't fetch next row batch");
-    for (const client::KuduRowResult& row : rows) {
+    client::KuduScanBatch batch;
+    RETURN_NOT_OK_PREPEND(scanner.NextBatch(&batch), "Couldn't fetch next row batch");
+    for (const client::KuduScanBatch::RowPtr row : batch) {
       int64_t key;
       int64_t link;
       bool updated;

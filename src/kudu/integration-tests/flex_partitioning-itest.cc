@@ -227,7 +227,10 @@ class FlexPartitioningITest : public KuduTest,
     }
 
     table_creator->set_range_partition_columns(range_partition.columns);
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
     table_creator->split_rows(split_rows);
+#pragma GCC diagnostic pop
 
     for (const auto& bound : range_partition.bounds) {
       KuduPartialRow* lower = schema.NewRow();

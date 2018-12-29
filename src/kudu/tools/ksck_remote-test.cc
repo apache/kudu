@@ -117,12 +117,15 @@ class RemoteKsckTest : public KuduTest {
 
     // Create one table.
     gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
     ASSERT_OK(table_creator->table_name(kTableName)
                      .schema(&schema_)
                      .num_replicas(3)
                      .set_range_partition_columns({ "key" })
                      .split_rows(GenerateSplitRows())
                      .Create());
+#pragma GCC diagnostic pop
     // Make sure we can open the table.
     shared_ptr<KuduTable> client_table;
     ASSERT_OK(client_->OpenTable(kTableName, &client_table));

@@ -408,7 +408,7 @@ class FuzzTest : public KuduTest {
     KuduScanner s(table_.get());
     ASSERT_OK(s.SetReadMode(KuduScanner::ReadMode::READ_AT_SNAPSHOT));
     ASSERT_OK(s.SetSnapshotRaw(timestamp));
-    ASSERT_OK(s.SetOrderMode(KuduScanner::OrderMode::ORDERED));
+    ASSERT_OK(s.SetFaultTolerant());
     ASSERT_OK(s.Open());
     vector<ExpectedKeyValueRow> found;
     while (s.HasMoreRows()) {

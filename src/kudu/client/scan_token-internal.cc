@@ -138,12 +138,15 @@ Status KuduScanToken::Data::PBIntoScanner(KuduClient* client,
     configuration->AddConjunctPredicate(std::move(*predicate));
   }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
   if (message.has_lower_bound_primary_key()) {
     RETURN_NOT_OK(scan_builder->AddLowerBoundRaw(message.lower_bound_primary_key()));
   }
   if (message.has_upper_bound_primary_key()) {
     RETURN_NOT_OK(scan_builder->AddExclusiveUpperBoundRaw(message.upper_bound_primary_key()));
   }
+#pragma GCC diagnostic pop
 
   if (message.has_lower_bound_partition_key()) {
     RETURN_NOT_OK(scan_builder->AddLowerBoundPartitionKeyRaw(message.lower_bound_partition_key()));

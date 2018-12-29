@@ -142,9 +142,12 @@ void RpcLineItemDAO::Init() {
         .schema(&schema)
         .num_replicas(1);
     if (partition_strategy_ == RANGE) {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
       table_creator
           ->set_range_partition_columns({tpch::kOrderKeyColName, tpch::kLineNumberColName })
           .split_rows(tablet_splits_);
+#pragma GCC diagnostic pop
     } else {
       table_creator->add_hash_partitions({ tpch::kOrderKeyColName }, num_buckets_);
     }
@@ -225,7 +228,7 @@ void RpcLineItemDAO::OpenScannerImpl(const vector<string>& columns,
   gscoped_ptr<Scanner> ret(new Scanner);
   ret->scanner_.reset(new KuduScanner(client_table_.get()));
   ret->scanner_->SetCacheBlocks(FLAGS_tpch_cache_blocks_when_scanning);
-  CHECK_OK(ret->scanner_->SetProjectedColumns(columns));
+  CHECK_OK(ret->scanner_->SetProjectedColumnNames(columns));
   for (KuduPredicate* pred : preds) {
     CHECK_OK(ret->scanner_->AddConjunctPredicate(pred));
   }
@@ -256,7 +259,10 @@ bool RpcLineItemDAO::Scanner::HasMore() {
 }
 
 void RpcLineItemDAO::Scanner::GetNext(vector<KuduRowResult> *rows) {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
   CHECK_OK(scanner_->NextBatch(rows));
+#pragma GCC diagnostic pop
 }
 
 } // namespace kudu

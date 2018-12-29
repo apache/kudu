@@ -367,10 +367,13 @@ Status KuduColumnSpec::ToColumnSchema(KuduColumnSchema* col) const {
     block_size = data_->block_size;
   }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
   *col = KuduColumnSchema(data_->name, data_->type, nullable,
                           default_val,
                           KuduColumnStorageAttributes(encoding, compression, block_size),
                           type_attrs);
+#pragma GCC diagnostic pop
 
   return Status::OK();
 }
@@ -548,7 +551,10 @@ Status KuduSchemaBuilder::Build(KuduSchema* schema) {
     num_key_cols = key_col_indexes.size();
   }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
   RETURN_NOT_OK(schema->Reset(cols, num_key_cols));
+#pragma GCC diagnostic pop
 
   return Status::OK();
 }
@@ -709,8 +715,11 @@ bool KuduSchema::Equals(const KuduSchema& other) const {
 
 KuduColumnSchema KuduSchema::Column(size_t idx) const {
   ColumnSchema col(schema_->column(idx));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
   KuduColumnStorageAttributes attrs(FromInternalEncodingType(col.attributes().encoding),
                                     FromInternalCompressionType(col.attributes().compression));
+#pragma GCC diagnostic pop
   KuduColumnTypeAttributes type_attrs(col.type_attributes().precision, col.type_attributes().scale);
   return KuduColumnSchema(col.name(), FromInternalDataType(col.type_info()->type()),
                           col.is_nullable(), col.read_default_value(),

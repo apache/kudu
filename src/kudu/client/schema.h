@@ -250,6 +250,11 @@ class KUDU_EXPORT KuduColumnSchema {
 
   KuduColumnSchema();
 
+#if defined(__clang__) || \
+  (defined(__GNUC__) && (__GNUC__ * 10000 + __GNUC_MINOR__ * 100) >= 40600)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
   /// This constructor is private because clients should use the Builder API.
   KuduColumnSchema(
       const std::string &name,
@@ -258,6 +263,10 @@ class KUDU_EXPORT KuduColumnSchema {
       const void* default_value = NULL, //NOLINT(modernize-use-nullptr)
       const KuduColumnStorageAttributes& storage_attributes = KuduColumnStorageAttributes(),
       const KuduColumnTypeAttributes& type_attributes = KuduColumnTypeAttributes());
+#if defined(__clang__) || \
+  (defined(__GNUC__) && (__GNUC__ * 10000 + __GNUC_MINOR__ * 100) >= 40600)
+#pragma GCC diagnostic pop
+#endif
 
   // Owned.
   ColumnSchema* col_;

@@ -142,6 +142,18 @@ METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetTableLocat
 METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetTabletLocations);
 METRIC_DECLARE_histogram(handler_latency_kudu_tserver_TabletServerService_Scan);
 
+using base::subtle::Atomic32;
+using base::subtle::NoBarrier_AtomicIncrement;
+using base::subtle::NoBarrier_Load;
+using base::subtle::NoBarrier_Store;
+using kudu::cluster::InternalMiniCluster;
+using kudu::cluster::InternalMiniClusterOptions;
+using kudu::master::CatalogManager;
+using kudu::master::GetTableLocationsRequestPB;
+using kudu::master::GetTableLocationsResponsePB;
+using kudu::client::sp::shared_ptr;
+using kudu::tablet::TabletReplica;
+using kudu::tserver::MiniTabletServer;
 using std::bind;
 using std::function;
 using std::map;
@@ -155,20 +167,6 @@ using strings::Substitute;
 
 namespace kudu {
 namespace client {
-
-using base::subtle::Atomic32;
-using base::subtle::NoBarrier_AtomicIncrement;
-using base::subtle::NoBarrier_Load;
-using base::subtle::NoBarrier_Store;
-using cluster::InternalMiniCluster;
-using cluster::InternalMiniClusterOptions;
-using master::CatalogManager;
-using master::GetTableLocationsRequestPB;
-using master::GetTableLocationsResponsePB;
-using master::TabletLocationsPB;
-using sp::shared_ptr;
-using tablet::TabletReplica;
-using tserver::MiniTabletServer;
 
 class ClientTest : public KuduTest {
  public:
@@ -412,7 +410,7 @@ class ClientTest : public KuduTest {
     string tablet_id = GetFirstTabletId(client_table_.get());
     // Flush to ensure we scan disk later
     FlushTablet(tablet_id);
-    ASSERT_OK(scanner.SetProjectedColumns({ "key" }));
+    ASSERT_OK(scanner.SetProjectedColumnNames({ "key" }));
     LOG_TIMING(INFO, "Scanning disk with no predicates") {
       ASSERT_OK(scanner.Open());
       ASSERT_TRUE(scanner.HasMoreRows());
@@ -471,7 +469,7 @@ class ClientTest : public KuduTest {
 
   void DoTestScanWithoutPredicates() {
     KuduScanner scanner(client_table_.get());
-    ASSERT_OK(scanner.SetProjectedColumns({ "key" }));
+    ASSERT_OK(scanner.SetProjectedColumnNames({ "key" }));
 
     LOG_TIMING(INFO, "Scanning with no predicates") {
       ASSERT_OK(scanner.Open());
@@ -570,7 +568,7 @@ class ClientTest : public KuduTest {
                           int32_t lower_bound, int32_t upper_bound) {
     KuduScanner scanner(table);
     CHECK_OK(scanner.SetSelection(selection));
-    CHECK_OK(scanner.SetProjectedColumns(vector<string>()));
+    CHECK_OK(scanner.SetProjectedColumnNames({}));
     if (lower_bound != kNoBound) {
       CHECK_OK(scanner.AddConjunctPredicate(
                    client_table_->NewComparisonPredicate("key", KuduPredicate::GREATER_EQUAL,
@@ -1115,7 +1113,7 @@ INSTANTIATE_TEST_CASE_P(Params, ScanMultiTabletParamTest,
 
 TEST_F(ClientTest, TestScanEmptyTable) {
   KuduScanner scanner(client_table_.get());
-  ASSERT_OK(scanner.SetProjectedColumns(vector<string>()));
+  ASSERT_OK(scanner.SetProjectedColumnNames({}));
   ASSERT_OK(scanner.Open());
 
   // There are two tablets in the table, both empty. Until we scan to
@@ -1135,7 +1133,7 @@ TEST_F(ClientTest, TestScanEmptyProjection) {
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(),
                                          FLAGS_test_scan_num_rows));
   KuduScanner scanner(client_table_.get());
-  ASSERT_OK(scanner.SetProjectedColumns(vector<string>()));
+  ASSERT_OK(scanner.SetProjectedColumnNames({}));
   ASSERT_EQ(scanner.GetProjectionSchema().num_columns(), 0);
   LOG_TIMING(INFO, "Scanning with no projected columns") {
     ASSERT_OK(scanner.Open());
@@ -1153,14 +1151,14 @@ TEST_F(ClientTest, TestScanEmptyProjection) {
 
 TEST_F(ClientTest, TestProjectInvalidColumn) {
   KuduScanner scanner(client_table_.get());
-  Status s = scanner.SetProjectedColumns({ "column-doesnt-exist" });
+  Status s = scanner.SetProjectedColumnNames({ "column-doesnt-exist" });
   ASSERT_EQ(R"(Not found: Column: "column-doesnt-exist" was not found in the table schema.)",
             s.ToString());
 
   // Test trying to use a projection where a column is used multiple times.
   // TODO: consider fixing this to support returning the column multiple
   // times, even though it's not very useful.
-  s = scanner.SetProjectedColumns({ "key", "key" });
+  s = scanner.SetProjectedColumnNames({ "key", "key" });
   ASSERT_EQ("Invalid argument: Duplicate column name: key", s.ToString());
 }
 
@@ -1170,7 +1168,7 @@ TEST_F(ClientTest, TestScanPredicateKeyColNotProjected) {
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(),
                                          FLAGS_test_scan_num_rows));
   KuduScanner scanner(client_table_.get());
-  ASSERT_OK(scanner.SetProjectedColumns({ "int_val" }));
+  ASSERT_OK(scanner.SetProjectedColumnNames({ "int_val" }));
   ASSERT_EQ(scanner.GetProjectionSchema().num_columns(), 1);
   ASSERT_EQ(scanner.GetProjectionSchema().Column(0).type(), KuduColumnSchema::INT32);
   ASSERT_OK(scanner.AddConjunctPredicate(
@@ -1217,7 +1215,7 @@ TEST_F(ClientTest, TestScanPredicateNonKeyColNotProjected) {
   size_t nrows = 0;
   int32_t curr_key = 10;
 
-  ASSERT_OK(scanner.SetProjectedColumns({ "key" }));
+  ASSERT_OK(scanner.SetProjectedColumnNames({ "key" }));
 
   LOG_TIMING(INFO, "Scanning with predicate columns not projected") {
     ASSERT_OK(scanner.Open());
@@ -1305,7 +1303,7 @@ TEST_F(ClientTest, TestRowPtrNoRedaction) {
 
   NO_FATALS(InsertTestRows(client_table_.get(), FLAGS_test_scan_num_rows));
   KuduScanner scanner(client_table_.get());
-  ASSERT_OK(scanner.SetProjectedColumns({ "key" }));
+  ASSERT_OK(scanner.SetProjectedColumnNames({ "key" }));
   ASSERT_OK(scanner.Open());
 
   ASSERT_TRUE(scanner.HasMoreRows());
@@ -2545,9 +2543,12 @@ TEST_F(ClientTest, TestAsyncFlushResponseAfterSessionDropped) {
   session = client_->NewSession();
   ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "row"));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
   ASSERT_EQ(1, session->CountBufferedOperations());
   session->FlushAsync(&cb);
   ASSERT_EQ(0, session->CountBufferedOperations());
+#pragma GCC diagnostic pop
   session.reset();
   ASSERT_FALSE(s.Wait().ok());
 }
@@ -2891,7 +2892,10 @@ TEST_F(ClientTest, TestSetSessionMutationBufferMaxNum) {
   // pending operations.
   ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 0, 0, "x"));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
   ASSERT_EQ(1, session->CountBufferedOperations());
+#pragma GCC diagnostic pop
   ASSERT_EQ(0, session->CountPendingErrors());
   ASSERT_TRUE(session->HasPendingOperations());
   Status s = session->SetMutationBufferMaxNum(3);
@@ -2924,7 +2928,10 @@ TEST_F(ClientTest, TestFlushNoCurrentBatcher) {
 
   ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 0, 0, "0"));
   ASSERT_TRUE(session->HasPendingOperations());
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
   ASSERT_EQ(1, session->CountBufferedOperations());
+#pragma GCC diagnostic pop
   ASSERT_EQ(0, session->CountPendingErrors());
   // OK, now the current batcher should be at place.
   ASSERT_OK(session->Flush());
@@ -4446,12 +4453,15 @@ TEST_F(ClientTest, TestCreateTableWithTooManyTablets) {
   ASSERT_OK(split2->SetInt32("key", 2));
 
   unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
   Status s = table_creator->table_name("foobar")
       .schema(&schema_)
       .set_range_partition_columns({ "key" })
       .split_rows({ split1, split2 })
       .num_replicas(3)
       .Create();
+#pragma GCC diagnostic pop
   ASSERT_TRUE(s.IsInvalidArgument());
   ASSERT_STR_CONTAINS(s.ToString(),
                       "the requested number of tablet replicas is over the "
@@ -5450,7 +5460,7 @@ TEST_F(ClientTest, TestGetSecurityInfoFromMaster) {
 struct ServiceUnavailableRetryParams {
   MonoDelta usurper_sleep;
   MonoDelta client_timeout;
-  std::function<bool(const Status&)> status_check;
+  function<bool(const Status&)> status_check;
 };
 
 class ServiceUnavailableRetryClientTest :
@@ -5664,7 +5674,7 @@ TEST_F(ClientTest, TestSubsequentScanRequestReturnsNoData) {
 
   // Set up a table scan.
   KuduScanner scanner(client_table_.get());
-  ASSERT_OK(scanner.SetProjectedColumns({ "key" }));
+  ASSERT_OK(scanner.SetProjectedColumnNames({ "key" }));
 
   // Ensure that the new scan RPC does not return the data.
   //

@@ -17,8 +17,8 @@
 
 #include <cstdint>
 #include <cstdlib>
-#include <ostream>
 #include <memory>
+#include <ostream>
 #include <string>
 #include <vector>
 
@@ -30,6 +30,7 @@
 #include "kudu/client/callbacks.h"
 #include "kudu/client/client.h"
 #include "kudu/client/row_result.h"
+#include "kudu/client/scan_batch.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
 #include "kudu/client/write_op.h"
@@ -61,29 +62,29 @@ DEFINE_int32(row_count, 2000, "How many rows will be used in this test for the b
 DEFINE_int32(seconds_to_run, 4,
              "How long this test runs for, after inserting the base data, in seconds");
 
+using kudu::client::KuduInsert;
+using kudu::client::KuduClient;
+using kudu::client::KuduClientBuilder;
+using kudu::client::KuduColumnSchema;
+using kudu::client::KuduRowResult;
+using kudu::client::KuduScanBatch;
+using kudu::client::KuduScanner;
+using kudu::client::KuduSchema;
+using kudu::client::KuduSchemaBuilder;
+using kudu::client::KuduSession;
+using kudu::client::KuduStatusCallback;
+using kudu::client::KuduStatusMemberCallback;
+using kudu::client::KuduTable;
+using kudu::client::KuduTableCreator;
+using kudu::client::KuduUpdate;
+using kudu::client::sp::shared_ptr;
+using kudu::cluster::InternalMiniCluster;
+using kudu::cluster::InternalMiniClusterOptions;
 using std::string;
 using std::vector;
 
 namespace kudu {
 namespace tablet {
-
-using client::KuduInsert;
-using client::KuduClient;
-using client::KuduClientBuilder;
-using client::KuduColumnSchema;
-using client::KuduRowResult;
-using client::KuduScanner;
-using client::KuduSchema;
-using client::KuduSchemaBuilder;
-using client::KuduSession;
-using client::KuduStatusCallback;
-using client::KuduStatusMemberCallback;
-using client::KuduTable;
-using client::KuduTableCreator;
-using client::KuduUpdate;
-using client::sp::shared_ptr;
-using cluster::InternalMiniCluster;
-using cluster::InternalMiniClusterOptions;
 
 // This integration test tries to trigger all the update-related bits while also serving as a
 // foundation for benchmarking. It first inserts 'row_count' rows and then starts two threads,
@@ -292,9 +293,9 @@ void UpdateScanDeltaCompactionTest::ScanRows(CountDownLatch* stop_latch) const {
     }
     LOG_TIMING(INFO, "Scan") {
       CHECK_OK(scanner.Open());
-      vector<KuduRowResult> rows;
+      KuduScanBatch batch;
       while (scanner.HasMoreRows()) {
-        CHECK_OK(scanner.NextBatch(&rows));
+        CHECK_OK(scanner.NextBatch(&batch));
       }
     }
   }

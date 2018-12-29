@@ -334,12 +334,15 @@ class AllTypesItest : public KuduTest {
       split_rows_.push_back(*row);
     }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
     RETURN_NOT_OK(table_creator->table_name("all-types-table")
                   .schema(&schema_)
                   .set_range_partition_columns({ "key" })
                   .split_rows(split_rows)
                   .num_replicas(kNumTabletServers)
                   .Create());
+#pragma GCC diagnostic pop
     return client_->OpenTable("all-types-table", &table_);
   }
 
