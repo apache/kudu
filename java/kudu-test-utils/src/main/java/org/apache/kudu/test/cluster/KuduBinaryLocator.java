@@ -18,6 +18,7 @@
 package org.apache.kudu.test.cluster;
 
 import com.google.common.io.CharStreams;
+import org.apache.kudu.test.TempDirUtils;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 import org.slf4j.Logger;
@@ -55,6 +56,17 @@ public class KuduBinaryLocator {
       return kuduBinDirProp;
     }
 
+    try {
+      KuduBinaryJarExtractor extractor = new KuduBinaryJarExtractor();
+      if (extractor.isKuduBinaryJarOnClasspath()) {
+        String testTmpDir = TempDirUtils.getTempDirectory("kudu-binary-jar").toString();
+        LOG.info("Using Kudu binary jar directory: {}", testTmpDir);
+        return extractor.extractKuduBinary(testTmpDir);
+      }
+    } catch (IOException ex) {
+      LOG.warn("Unable to extract a Kudu binary jar", ex);
+    }
+
     // If the `kudu` binary is found on the PATH using `which kudu`, use its parent directory.
     try {
       Runtime runtime = Runtime.getRuntime();
@@ -72,9 +84,8 @@ public class KuduBinaryLocator {
       throw new RuntimeException("Error while locating kudu binary", ex);
     }
 
-    throw new RuntimeException("Could not locate the kudu binary directory. " +
-        "Set the system variable " + KUDU_BIN_DIR_PROP +
-        " or ensure the `kudu` binary is on your path.");
+    throw new RuntimeException("Set the system variable " + KUDU_BIN_DIR_PROP + " or add the Kudu" +
+        " binary test jar to your classpath or ensure the `kudu` binary is on your path.");
   }
 
   /**

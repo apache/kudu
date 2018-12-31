@@ -20,6 +20,7 @@ apply from: "$rootDir/gradle/shadow.gradle"
 dependencies {
   compile project(path: ":kudu-client")
   compile libs.guava
+  compile libs.osdetector
 
   compileUnshaded libs.junit
   compileUnshaded libs.slf4jApi

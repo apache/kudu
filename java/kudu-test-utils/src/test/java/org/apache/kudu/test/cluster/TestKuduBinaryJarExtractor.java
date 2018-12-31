@@ -22,6 +22,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.io.OutputStream;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
@@ -37,6 +38,7 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Properties;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -46,11 +48,12 @@ public class TestKuduBinaryJarExtractor {
 
   private static final Logger LOG = LoggerFactory.getLogger(TestKuduBinaryJarExtractor.class);
 
-  private Path createKuduBinaryJar() throws IOException, URISyntaxException {
-    Path tempDir = Files.createTempDirectory("fake-kudu-binary-jar");
+  private Path createKuduBinaryJar(final String os) throws IOException, URISyntaxException {
+    String baseName = "fake-" + os + "-kudu-binary";
+    Path tempDir = Files.createTempDirectory(baseName);
 
     // convert the filename to a URI
-    final Path path = Paths.get(tempDir.toString(), "fake-kudu-binary.jar");
+    final Path path = Paths.get(tempDir.toString(), baseName + ".jar");
     LOG.info("Creating fake kudu binary jar at {}", path.toString());
     final URI uri = URI.create("jar:file:" + path.toUri().getPath());
 
@@ -78,14 +81,33 @@ public class TestKuduBinaryJarExtractor {
         final Path dirToCreate = zipFs.getPath(root.toString(),
             src.relativize(dir).toString());
         if (Files.notExists(dirToCreate)) {
-          System.out.printf("Creating directory %s\n", dirToCreate);
+          LOG.debug("Creating directory {}", dirToCreate);
           Files.createDirectories(dirToCreate);
         }
         return FileVisitResult.CONTINUE;
       }
     });
+
+    Path metaInf = zipFs.getPath(root.toString(), "META-INF");
+    Files.createDirectory(metaInf);
+    // Customize the properties file to enable positive and negative test scenarios.
+    Path propsPath = zipFs.getPath(metaInf.toString(), "apache-kudu-test-binary.properties");
+    OutputStream propsOutputStream = Files.newOutputStream(propsPath);
+    writeProperties(os, propsOutputStream);
+    propsOutputStream.close();
+
     zipFs.close();
     return path;
+  }
+
+  private static void writeProperties(String os, OutputStream out) throws IOException {
+    Properties properties = new Properties();
+    properties.setProperty("format.version", "1");
+    properties.setProperty("artifact.version", "1.9.0-SNAPSHOT");
+    properties.setProperty("artifact.prefix", "apache-kudu-1.9.0-SNAHSHOT");
+    properties.setProperty("artifact.os", os);
+    properties.setProperty("artifact.arch", "x86_64");
+    properties.store(out, "test");
   }
 
   /**
@@ -104,7 +126,7 @@ public class TestKuduBinaryJarExtractor {
 
   @Test
   public void testExtractJar() throws IOException, URISyntaxException {
-    Path binaryJar = createKuduBinaryJar();
+    Path binaryJar = createKuduBinaryJar("osx");
 
     Path extractedBinDir =
         KuduBinaryJarExtractor.extractJar(binaryJar,
@@ -120,8 +142,16 @@ public class TestKuduBinaryJarExtractor {
   public void testIsKuduBinaryJarOnClasspath() throws IOException, URISyntaxException {
     KuduBinaryJarExtractor extractor = new KuduBinaryJarExtractor();
     assertFalse(extractor.isKuduBinaryJarOnClasspath());
-    Path binaryJar = createKuduBinaryJar();
+
+    boolean isOsX = System.getProperty("os.name").replaceAll("\\s", "").equalsIgnoreCase("macosx");
+
+    Path binaryJar = createKuduBinaryJar(isOsX ? "linux" : "osx");
     ClassLoader childLoader = createChildClassLoader(new URL[] { binaryJar.toUri().toURL() });
+    Thread.currentThread().setContextClassLoader(childLoader);
+    assertFalse(extractor.isKuduBinaryJarOnClasspath());
+
+    binaryJar = createKuduBinaryJar(!isOsX ? "linux" : "osx");
+    childLoader = createChildClassLoader(new URL[] { binaryJar.toUri().toURL() });
     Thread.currentThread().setContextClassLoader(childLoader);
     assertTrue(extractor.isKuduBinaryJarOnClasspath());
   }

@@ -17,6 +17,7 @@
 
 package org.apache.kudu.test.cluster;
 
+import com.google.gradle.osdetector.OsDetector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,6 +49,7 @@ public class KuduBinaryJarExtractor {
   private static final Logger LOG = LoggerFactory.getLogger(KuduBinaryJarExtractor.class);
   private static final String KUDU_TEST_BIN_PROPS_PATH =
       "META-INF/apache-kudu-test-binary.properties";
+  private static final OsDetector DETECTOR = new OsDetector();
 
   public KuduBinaryJarExtractor() {}
 
@@ -60,14 +62,13 @@ public class KuduBinaryJarExtractor {
 
   private static Properties getBinaryProps() throws IOException {
     Enumeration<URL> resources = getCurrentClassLoader().getResources(KUDU_TEST_BIN_PROPS_PATH);
-    //TODO: normalize osName
-    //TODO: check for matching architecture
     while (resources.hasMoreElements()) {
       URL url = resources.nextElement();
       try {
-        Properties binaryProps = loadBinaryProps(url);
-        if (binaryProps != null && !binaryProps.isEmpty()) {
-          return binaryProps;
+        Properties props = loadBinaryProps(url);
+        if (DETECTOR.getOs().equals(props.getProperty("artifact.os")) &&
+              DETECTOR.getArch().equals(props.getProperty("artifact.arch"))) {
+          return props;
         }
       } catch (IOException ex) {
         LOG.warn("Unable to parse properties file from Kudu binary artifact", ex);
