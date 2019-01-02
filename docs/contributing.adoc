@@ -288,16 +288,28 @@ in many places. When interfacing with that code, you can continue to use `shared
 
 ==== Function Binding and Callbacks
 
-Existing code uses `boost::bind` and `boost::function` for function binding and
-callbacks. For new code, use the `Callback` and `Bind` classes in `gutil` instead.
-While less full-featured (`Bind` doesn't support argument
-place holders, wrapped function pointers, or function objects), they provide
-more options by the way of argument lifecycle management. For example, a
-bound argument whose class extends `RefCounted` will be incremented during `Bind`
-and decremented when the `Callback` goes out of scope.
+Existing code uses `boost::bind` and `boost::function` to capture and manage
+functors. For new code, use `std::bind` and `std::function`, which are
+functionally equivalent.
 
-See the large file comment in _gutil/callback.h_ for more details, and
-_util/callback_bind-test.cc_ for examples.
+Alternatively, the `Bind` and `Callback` classes in `gutil` may also be used to
+capture functors. See _gutil/callback.h_ for more details and
+_util/callback_bind-test.cc_ for examples. While less full-featured, they
+provide different options from their counterparts by the way of argument
+lifecycle management. The benefits of each are described below:
+
+.`std::bind` and `std::function`
+[none]
+* natively supports binding `shared_ptr` and `weak_ptr` objects, so a bound
+smartpointer argument will increment its count during `bind`, and decrement it
+when the `function` leaves scope
+* supports argument placeholders, wrapped function pointers, and function objects
+
+.`Bind` and `Callback`
+[none]
+* natively supports binding `RefCounted` objects, so a bound argument whose
+class extends `RefCounted` will increment its count during `Bind` and decrement
+it when the `Callback` goes out of scope
 
 ==== GFlags
 
