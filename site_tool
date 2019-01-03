@@ -40,12 +40,12 @@ from kudu_util import check_output
 
 # The repository and branch where we version the actual site source (jekyll
 # code, posts, etc)
-SITE_REPO = "https://git-wip-us.apache.org/repos/asf/kudu.git"
+SITE_REPO = "https://gitbox.apache.org/repos/asf/kudu.git"
 SITE_BRANCH = "gh-pages"
 
 # The repository and branch from which we publish the official ASF site.
 # Changes here are immediately visible to the world.
-PUBLISH_REPO = "https://git-wip-us.apache.org/repos/asf/kudu-site.git"
+PUBLISH_REPO = "https://gitbox.apache.org/repos/asf/kudu-site.git"
 PUBLISH_BRANCH = "asf-site"
 
 # The local directory in which we check out PUBLISH_REPO and build the site.
