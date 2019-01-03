@@ -154,26 +154,10 @@ if [ -n "$BUILD_ID" ]; then
   trap cleanup EXIT
 fi
 
-THIRDPARTY_TYPE=
-if [ "$BUILD_TYPE" = "TSAN" ]; then
-  THIRDPARTY_TYPE=tsan
-fi
-$SOURCE_ROOT/build-support/enable_devtoolset.sh thirdparty/build-if-necessary.sh $THIRDPARTY_TYPE
-
-THIRDPARTY_BIN=$(pwd)/thirdparty/installed/common/bin
-export PPROF_PATH=$THIRDPARTY_BIN/pprof
-
-if which ccache >/dev/null ; then
-  CLANG=$(pwd)/build-support/ccache-clang/clang
-else
-  CLANG=$(pwd)/thirdparty/clang-toolchain/bin/clang
-fi
-
 # Configure the build
 #
 # ASAN/TSAN can't build the Python bindings because the exported Kudu client
 # library (which the bindings depend on) is missing ASAN/TSAN symbols.
-cd $BUILD_ROOT
 if [ "$BUILD_TYPE" = "ASAN" ]; then
   USE_CLANG=1
   CMAKE_BUILD=fastdebug
@@ -207,6 +191,65 @@ else
   CMAKE_BUILD=$BUILD_TYPE
 fi
 
+# If we are supposed to be resistant to flaky tests or run just flaky tests,
+# we need to fetch the list.
+if [ "$RUN_FLAKY_ONLY" == "1" -o "$KUDU_FLAKY_TEST_ATTEMPTS" -gt 1 ]; then
+  export KUDU_FLAKY_TEST_LIST=$BUILD_ROOT/flaky-tests.txt
+  mkdir -p $(dirname $KUDU_FLAKY_TEST_LIST)
+  if list_flaky_tests > $KUDU_FLAKY_TEST_LIST; then
+    echo The list of flaky tests:
+    echo ------------------------------------------------------------
+    cat $KUDU_FLAKY_TEST_LIST
+    echo
+    echo ------------------------------------------------------------
+  else
+    echo "Could not fetch flaky tests list."
+    if [ "$RUN_FLAKY_ONLY" == "1" ]; then
+      exit 1
+    fi
+
+    echo No list of flaky tests, disabling the flaky test resistance.
+    export KUDU_FLAKY_TEST_ATTEMPTS=1
+  fi
+
+  if [ "$RUN_FLAKY_ONLY" == "1" ]; then
+    test_regex=$(perl -e '
+      chomp(my @lines = <>);
+      print join("|", map { "^" . quotemeta($_) } @lines);
+     ' $KUDU_FLAKY_TEST_LIST)
+    if [ -z "$test_regex" ]; then
+      echo No tests are flaky.
+      exit 0
+    fi
+
+    EXTRA_TEST_FLAGS="$EXTRA_TEST_FLAGS -R $test_regex"
+
+    # We don't support detecting java and python flaky tests at the moment.
+    echo "RUN_FLAKY_ONLY=1: running flaky tests only,"\
+         "disabling Java and python builds."
+    BUILD_PYTHON=0
+    BUILD_PYTHON3=0
+    BUILD_JAVA=0
+  elif [ "$KUDU_FLAKY_TEST_ATTEMPTS" -gt 1 ]; then
+    echo Will retry the flaky tests up to $KUDU_FLAKY_TEST_ATTEMPTS times.
+  fi
+fi
+
+THIRDPARTY_TYPE=
+if [ "$BUILD_TYPE" = "TSAN" ]; then
+  THIRDPARTY_TYPE=tsan
+fi
+$SOURCE_ROOT/build-support/enable_devtoolset.sh thirdparty/build-if-necessary.sh $THIRDPARTY_TYPE
+
+THIRDPARTY_BIN=$(pwd)/thirdparty/installed/common/bin
+export PPROF_PATH=$THIRDPARTY_BIN/pprof
+
+if which ccache >/dev/null ; then
+  CLANG=$(pwd)/build-support/ccache-clang/clang
+else
+  CLANG=$(pwd)/thirdparty/clang-toolchain/bin/clang
+fi
+
 # Assemble the cmake command line, starting with environment variables.
 
 # There's absolutely no reason to rebuild the thirdparty tree; we just ran
@@ -234,6 +277,7 @@ if [ -n "$EXTRA_BUILD_FLAGS" ]; then
   CMAKE="$CMAKE $EXTRA_BUILD_FLAGS"
 fi
 CMAKE="$CMAKE $SOURCE_ROOT"
+cd $BUILD_ROOT
 $CMAKE
 
 # Create empty test logs or else Jenkins fails to archive artifacts, which
@@ -259,24 +303,6 @@ if [ "$BUILD_TYPE" != "ASAN" ]; then
   export KUDU_TEST_ULIMIT_CORE=unlimited
 fi
 
-# If we are supposed to be resistant to flaky tests, we need to fetch the
-# list of tests to ignore
-if [ "$KUDU_FLAKY_TEST_ATTEMPTS" -gt 1 ]; then
-  echo Fetching flaky test list...
-  export KUDU_FLAKY_TEST_LIST=$BUILD_ROOT/flaky-tests.txt
-  mkdir -p $(dirname $KUDU_FLAKY_TEST_LIST)
-  echo -n > $KUDU_FLAKY_TEST_LIST
-    if [ -n "$TEST_RESULT_SERVER" ] && \
-        list_flaky_tests > $KUDU_FLAKY_TEST_LIST ; then
-    echo Will retry flaky tests up to $KUDU_FLAKY_TEST_ATTEMPTS times:
-    cat $KUDU_FLAKY_TEST_LIST
-    echo ----------
-  else
-    echo Unable to fetch flaky test list. Disabling flaky test resistance.
-    export KUDU_FLAKY_TEST_ATTEMPTS=1
-  fi
-fi
-
 # our tests leave lots of data lying around, clean up before we run
 if [ -d "$TEST_TMPDIR" ]; then
   rm -Rf $TEST_TMPDIR/*
@@ -291,37 +317,6 @@ make -j$NUM_PROCS 2>&1 | tee build.log
 
 # If compilation succeeds, try to run all remaining steps despite any failures.
 set +e
-
-# Run tests
-if [ "$RUN_FLAKY_ONLY" == "1" ] ; then
-  if [ -z "$TEST_RESULT_SERVER" ]; then
-    echo Must set TEST_RESULT_SERVER to use RUN_FLAKY_ONLY
-    exit 1
-  fi
-  echo
-  echo Running flaky tests only:
-  echo ------------------------------------------------------------
-  if ! ( set -o pipefail ;
-         list_flaky_tests | tee $BUILD_ROOT/flaky-tests.txt) ; then
-    echo Could not fetch flaky tests list.
-    exit 1
-  fi
-  test_regex=$(perl -e '
-    chomp(my @lines = <>);
-    print join("|", map { "^" . quotemeta($_) } @lines);
-   ' $BUILD_ROOT/flaky-tests.txt)
-  if [ -z "$test_regex" ]; then
-    echo No tests are flaky.
-    exit 0
-  fi
-  EXTRA_TEST_FLAGS="$EXTRA_TEST_FLAGS -R $test_regex"
-
-  # We don't support detecting java and python flaky tests at the moment.
-  echo Disabling Java and python build since RUN_FLAKY_ONLY=1
-  BUILD_PYTHON=0
-  BUILD_PYTHON3=0
-  BUILD_JAVA=0
-fi
 
 TESTS_FAILED=0
 EXIT_STATUS=0
