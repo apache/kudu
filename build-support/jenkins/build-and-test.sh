@@ -449,19 +449,16 @@ if [ "$BUILD_PYTHON" == "1" ]; then
   # check disabled.
   pip install --disable-pip-version-check $PIP_INSTALL_FLAGS --upgrade 'setuptools >= 0.8'
 
-  # One of our dependencies is pandas, installed via requirements.txt below. It
-  # depends on numpy, and if we don't install numpy directly, the pandas
-  # installation will install the latest numpy which is incompatible with Python 2.6.
+  # One of our dependencies is pandas, installed below. It depends on numpy, and
+  # if we don't install numpy directly, the pandas installation will install the
+  # latest numpy which is incompatible with Python 2.6.
   #
   # To work around this, we need to install a 2.6-compatible version of numpy
-  # before installing pandas. Listing such a numpy version in requirements.txt
-  # doesn't work; it needs to be explicitly installed here.
-  #
-  # Installing numpy may involve some compiler work, so we must pass in the
-  # current values of CC and CXX.
+  # before installing pandas. Installing numpy may involve some compiler work,
+  # so we must pass in the current values of CC and CXX.
   #
   # See https://github.com/numpy/numpy/releases/tag/v1.12.0 for more details.
-  CC=$CLANG CXX=$CLANG++ pip install $PIP_INSTALL_FLAGS 'numpy <1.12.0'
+  CC=$CLANG CXX=$CLANG++ pip install $PIP_INSTALL_FLAGS 'numpy < 1.12.0'
 
   # We've got a new pip and new setuptools. We can now install the rest of the
   # Python client's requirements.
@@ -470,13 +467,15 @@ if [ "$BUILD_PYTHON" == "1" ]; then
   # pass in the current values of CC and CXX.
   CC=$CLANG CXX=$CLANG++ pip install $PIP_INSTALL_FLAGS -r requirements.txt
 
-  # We need to install Pandas manually since its not a required package but is needed
-  # to run all of the tests.
-  # pandas 0.18 dropped support for python 2.6.
+  # We need to install Pandas manually because although it's not a required
+  # package, it is needed to run all of the tests.
   #
-  # See https://pandas.pydata.org/pandas-docs/version/0.23.0/whatsnew.html#v0-18-0-march-13-2016
+  # Installing pandas may involve some compiler work, so we must pass in the
+  # current values of CC and CXX.
+  #
+  # pandas 0.18 dropped support for python 2.6. See https://pandas.pydata.org/pandas-docs/version/0.23.0/whatsnew.html#v0-18-0-march-13-2016
   # for more details.
-  pip install $PIP_INSTALL_FLAGS "pandas<0.18"
+  CC=$CLANG CXX=$CLANG++ pip install $PIP_INSTALL_FLAGS 'pandas < 0.18'
 
   # Delete old Cython extensions to force them to be rebuilt.
   rm -Rf build kudu_python.egg-info kudu/*.so
@@ -485,8 +484,8 @@ if [ "$BUILD_PYTHON" == "1" ]; then
   CC=$CLANG CXX=$CLANG++ python setup.py build_ext
   set +e
 
-  # Run the Python tests.
-  if ! python setup.py test \
+  # Run the Python tests. This may also involve some compiler work.
+  if ! CC=$CLANG CXX=$CLANG++ python setup.py test \
       --addopts="kudu --junit-xml=$TEST_LOGDIR/python_client.xml" \
       2> $TEST_LOGDIR/python_client.log ; then
     TESTS_FAILED=1
@@ -529,6 +528,18 @@ if [ "$BUILD_PYTHON3" == "1" ]; then
   # check disabled.
   pip install --disable-pip-version-check $PIP_INSTALL_FLAGS --upgrade 'setuptools >= 0.8'
 
+  # One of our dependencies is pandas, installed below. It depends on numpy, and
+  # if we don't install numpy directly, the pandas installation will install the
+  # latest numpy which is incompatible with Python 3.4 (the version of Python 3
+  # shipped with Ubuntu 14.04).
+  #
+  # To work around this, we need to install a 3.4-compatible version of numpy
+  # before installing pandas. Installing numpy may involve some compiler work,
+  # so we must pass in the current values of CC and CXX.
+  #
+  # See https://github.com/numpy/numpy/releases/tag/v1.16.0rc1 for more details.
+  CC=$CLANG CXX=$CLANG++ pip install $PIP_INSTALL_FLAGS 'numpy < 1.16.0'
+
   # We've got a new pip and new setuptools. We can now install the rest of the
   # Python client's requirements.
   #
@@ -536,9 +547,12 @@ if [ "$BUILD_PYTHON3" == "1" ]; then
   # pass in the current values of CC and CXX.
   CC=$CLANG CXX=$CLANG++ pip install $PIP_INSTALL_FLAGS -r requirements.txt
 
-  # We need to install Pandas manually since its not a required package but is needed
-  # to run all of the tests.
-  pip install $PIP_INSTALL_FLAGS pandas
+  # We need to install Pandas manually because although it's not a required
+  # package, it is needed to run all of the tests.
+  #
+  # Installing pandas may involve some compiler work, so we must pass in the
+  # current values of CC and CXX.
+  CC=$CLANG CXX=$CLANG++ pip install $PIP_INSTALL_FLAGS pandas
 
   # Delete old Cython extensions to force them to be rebuilt.
   rm -Rf build kudu_python.egg-info kudu/*.so
@@ -547,8 +561,8 @@ if [ "$BUILD_PYTHON3" == "1" ]; then
   CC=$CLANG CXX=$CLANG++ python setup.py build_ext
   set +e
 
-  # Run the Python tests.
-  if ! python setup.py test \
+  # Run the Python tests. This may also involve some compiler work.
+  if ! CC=$CLANG CXX=$CLANG++ python setup.py test \
       --addopts="kudu --junit-xml=$TEST_LOGDIR/python3_client.xml" \
       2> $TEST_LOGDIR/python3_client.log ; then
     TESTS_FAILED=1
