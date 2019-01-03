@@ -42,7 +42,7 @@ import sys
 
 from kudu_util import check_output, confirm_prompt, Colors, get_my_email, init_logging
 
-APACHE_REPO = "https://git-wip-us.apache.org/repos/asf/kudu.git"
+APACHE_REPO = "https://gitbox.apache.org/repos/asf/kudu.git"
 GERRIT_URL = "ssh://<username>@gerrit.cloudera.org:29418/kudu"
 GERRIT_URL_RE = re.compile(r"ssh://.+@gerrit.cloudera.org:29418/kudu")
 

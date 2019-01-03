@@ -50,7 +50,7 @@ in `master`.
 ----
 
 . Push the branch to public remotes https://github.com/cloudera/kudu.git and
-https://git-wip-us.apache.org/repos/asf/kudu.git. The following example
+https://gitbox.apache.org/repos/asf/kudu.git. The following example
 assumes they are called `cloudera` and `apache`.
 +
 ----
