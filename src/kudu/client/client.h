@@ -49,6 +49,7 @@
 
 namespace kudu {
 
+class AuthzTokenTest;
 class ClientStressTest_TestUniqueClientIds_Test;
 class KuduPartialRow;
 class MonoDelta;
@@ -95,6 +96,7 @@ class MetaCache;
 class RemoteTablet;
 class RemoteTabletServer;
 class ReplicaController;
+class RetrieveAuthzTokenRpc;
 class WriteRpc;
 } // namespace internal
 
@@ -622,17 +624,21 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   friend class internal::MetaCache;
   friend class internal::RemoteTablet;
   friend class internal::RemoteTabletServer;
+  friend class internal::RetrieveAuthzTokenRpc;
   friend class internal::WriteRpc;
+  friend class kudu::AuthzTokenTest;
   friend class kudu::SecurityUnknownTskTest;
   friend class tools::LeaderMasterProxy;
 
   FRIEND_TEST(kudu::ClientStressTest, TestUniqueClientIds);
+  FRIEND_TEST(ClientTest, TestCacheAuthzTokens);
   FRIEND_TEST(ClientTest, TestGetSecurityInfoFromMaster);
   FRIEND_TEST(ClientTest, TestGetTabletServerBlacklist);
   FRIEND_TEST(ClientTest, TestMasterDown);
   FRIEND_TEST(ClientTest, TestMasterLookupPermits);
   FRIEND_TEST(ClientTest, TestMetaCacheExpiry);
   FRIEND_TEST(ClientTest, TestNonCoveringRangePartitions);
+  FRIEND_TEST(ClientTest, TestRetrieveAuthzTokenInParallel);
   FRIEND_TEST(ClientTest, TestReplicatedTabletWritesWithLeaderElection);
   FRIEND_TEST(ClientTest, TestScanFaultTolerance);
   FRIEND_TEST(ClientTest, TestScanTimeout);

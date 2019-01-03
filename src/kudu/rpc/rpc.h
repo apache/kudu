@@ -69,9 +69,12 @@ struct RetriableRpcStatus {
     RESOURCE_NOT_FOUND,
 
     // The authentication token supplied with the operation was found invalid
-    // by the server. Most likely, the token has expired. If so, get a new token
+    // by the server. The token has likely expired. If so, get a new token
     // using client credentials and retry the operation with it.
     INVALID_AUTHENTICATION_TOKEN,
+
+    // Similar to INVALID_AUTHENTICATION_TOKEN, but for authorization tokens.
+    INVALID_AUTHORIZATION_TOKEN,
   };
 
   Result result;

@@ -86,11 +86,17 @@ TAG_FLAG(master_client_location_assignment_enabled, hidden);
 TAG_FLAG(master_client_location_assignment_enabled, runtime);
 TAG_FLAG(master_client_location_assignment_enabled, unsafe);
 
+DEFINE_bool(master_support_authz_tokens, true,
+            "Whether the master supports generating authz tokens. Used for "
+            "testing version compatibility in the client.");
+TAG_FLAG(master_support_authz_tokens, hidden);
+
 using google::protobuf::Message;
 using kudu::consensus::ReplicaManagementInfoPB;
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
 using kudu::security::SignedTokenPB;
+using kudu::security::TablePrivilegePB;
 using kudu::server::ServerBase;
 using std::shared_ptr;
 using std::string;
@@ -416,6 +422,31 @@ void MasterServiceImpl::GetTableSchema(const GetTableSchemaRequestPB* req,
 
   Status s = server_->catalog_manager()->GetTableSchema(req, resp);
   CheckRespErrorOrSetUnknown(s, resp);
+  if (resp->has_error()) {
+    // If there was an application error, respond to the RPC.
+    rpc->RespondSuccess();
+    return;
+  }
+
+  // TODO(awong): fill this token in with actual privileges from the
+  // appropriate AuthzProvider. For now, assume the user has all privileges
+  // for the table.
+  if (PREDICT_TRUE(FLAGS_master_support_authz_tokens)) {
+    SignedTokenPB authz_token;
+    TablePrivilegePB table_privilege;
+    table_privilege.set_table_id(resp->table_id());
+    table_privilege.set_scan_privilege(true);
+    table_privilege.set_insert_privilege(true);
+    table_privilege.set_update_privilege(true);
+    table_privilege.set_delete_privilege(true);
+    s = server_->token_signer()->GenerateAuthzToken(rpc->remote_user().username(),
+                                                    std::move(table_privilege), &authz_token);
+    if (!s.ok()) {
+      rpc->RespondFailure(s);
+      return;
+    }
+    *resp->mutable_authz_token() = std::move(authz_token);
+  }
   rpc->RespondSuccess();
 }
 
@@ -579,6 +610,8 @@ bool MasterServiceImpl::SupportsFeature(uint32_t feature) const {
     case MasterFeatures::ADD_DROP_RANGE_PARTITIONS: FALLTHROUGH_INTENDED;
     case MasterFeatures::REPLICA_MANAGEMENT:
       return true;
+    case MasterFeatures::GENERATE_AUTHZ_TOKEN:
+      return FLAGS_master_support_authz_tokens;
     case MasterFeatures::CONNECT_TO_MASTER:
       return FLAGS_master_support_connect_to_master_rpc;
     default:

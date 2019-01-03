@@ -85,9 +85,13 @@ struct ScanRpcStatus {
     // on other hosts.
     RPC_DEADLINE_EXCEEDED,
 
-    // The authentication token supplied by the client is invalid. Most likely,
-    // the token has expired.
+    // The authentication token supplied by the client is invalid. The token
+    // has likely expired.
     RPC_INVALID_AUTHENTICATION_TOKEN,
+
+    // The authorization token supplied by the client is invalid. The token has
+    // likely expired.
+    RPC_INVALID_AUTHORIZATION_TOKEN,
 
     // The requestor was not authorized to make the request.
     SCAN_NOT_AUTHORIZED,

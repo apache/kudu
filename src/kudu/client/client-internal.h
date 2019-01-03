@@ -23,17 +23,22 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
+#include "kudu/client/authz_token_cache.h"
 #include "kudu/client/client.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/master/master.pb.h"
 #include "kudu/rpc/response_callback.h"
+#include "kudu/rpc/rpc.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/user_credentials.h"
+#include "kudu/security/token.pb.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
@@ -58,6 +63,7 @@ class AlterTableResponsePB;
 class ConnectToMasterResponsePB;
 class CreateTableRequestPB;
 class CreateTableResponsePB;
+class GetTableSchemaResponsePB;
 class MasterServiceProxy;
 class TableIdentifierPB;
 } // namespace master
@@ -72,6 +78,7 @@ namespace client {
 class KuduSchema;
 
 namespace internal {
+class AuthzTokenCache;
 class ConnectToClusterRpc;
 class MetaCache;
 class RemoteTablet;
@@ -188,6 +195,27 @@ class KuduClient::Data {
       const MonoTime& deadline,
       rpc::CredentialsPolicy creds_policy = rpc::CredentialsPolicy::ANY_CREDENTIALS);
 
+  // Asynchronously fetches an authz token from the master for the given table.
+  //
+  // Invokes 'cb' with the appropriate status when finished.
+  void RetrieveAuthzTokenAsync(const KuduTable* table,
+                               const StatusCallback& cb,
+                               const MonoTime& deadline);
+
+  // Synchronous version of RetrieveAuthzTokenAsync.
+  //
+  // NOTE: since this uses a Synchronizer, this may not be invoked by a method
+  // that's on a reactor thread.
+  Status RetrieveAuthzToken(const KuduTable* table, const MonoTime& deadline);
+
+  // Fetches the cached authz token for the given table ID, returning false if
+  // no such token exists.
+  bool FetchCachedAuthzToken(const std::string& table_id, security::SignedTokenPB* token);
+
+  // Stores the token into the cache, associating it with the given table ID.
+  void StoreAuthzToken(const std::string& table_id,
+                       const security::SignedTokenPB& token);
+
   std::shared_ptr<master::MasterServiceProxy> master_proxy() const;
 
   HostPort leader_master_hostport() const;
@@ -217,6 +245,11 @@ class KuduClient::Data {
   std::shared_ptr<rpc::Messenger> messenger_;
   gscoped_ptr<DnsResolver> dns_resolver_;
   scoped_refptr<internal::MetaCache> meta_cache_;
+
+  // Authorization tokens stored for each table, indexed by table ID. Note that
+  // these may be expired, and it is up to the user of a token to refresh it
+  // upon learning of its expiration.
+  internal::AuthzTokenCache authz_token_cache_;
 
   // Set of hostnames and IPs on the local host.
   // This is initialized at client startup.

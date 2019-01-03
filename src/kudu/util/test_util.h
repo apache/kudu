@@ -32,6 +32,13 @@
 #include "kudu/gutil/port.h"
 #include "kudu/util/monotime.h"
 
+#define SKIP_IF_SLOW_NOT_ALLOWED() do { \
+  if (!AllowSlowTests()) { \
+    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run"; \
+    return; \
+  } \
+} while (0)
+
 #define ASSERT_EVENTUALLY(expr) do { \
   AssertEventually(expr); \
   NO_PENDING_FATALS(); \

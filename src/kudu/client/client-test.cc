@@ -38,6 +38,7 @@
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
+#include <google/protobuf/util/message_differencer.h>
 #include <gtest/gtest.h>
 
 #include "kudu/client/callbacks.h"
@@ -84,6 +85,7 @@
 #include "kudu/rpc/service_pool.h"
 #include "kudu/security/tls_context.h"
 #include "kudu/security/token.pb.h"
+#include "kudu/security/token_signer.h"
 #include "kudu/server/rpc_server.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_metadata.h"
@@ -95,11 +97,13 @@
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/async_util.h"
+#include "kudu/util/barrier.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/locks.h"  // IWYU pragma: keep
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/semaphore.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
@@ -138,19 +142,22 @@ DEFINE_int32(test_scan_num_rows, 1000, "Number of rows to insert and scan");
 METRIC_DECLARE_counter(block_manager_total_bytes_read);
 METRIC_DECLARE_counter(rpcs_queue_overflow);
 METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetMasterRegistration);
-METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetTableLocations);
 METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetTabletLocations);
+METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetTableLocations);
+METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetTableSchema);
 METRIC_DECLARE_histogram(handler_latency_kudu_tserver_TabletServerService_Scan);
 
 using base::subtle::Atomic32;
 using base::subtle::NoBarrier_AtomicIncrement;
 using base::subtle::NoBarrier_Load;
 using base::subtle::NoBarrier_Store;
+using google::protobuf::util::MessageDifferencer;
 using kudu::cluster::InternalMiniCluster;
 using kudu::cluster::InternalMiniClusterOptions;
 using kudu::master::CatalogManager;
 using kudu::master::GetTableLocationsRequestPB;
 using kudu::master::GetTableLocationsResponsePB;
+using kudu::security::SignedTokenPB;
 using kudu::client::sp::shared_ptr;
 using kudu::tablet::TabletReplica;
 using kudu::tserver::MiniTabletServer;
@@ -5796,6 +5803,78 @@ TEST_F(ClientTest, TestBlockScannerHijackingAttempts) {
   }
 }
 
+// Basic functionality test for the client's authz token cache.
+TEST_F(ClientTest, TestCacheAuthzTokens) {
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  const string& table_id = client_table_->id();
+  KuduClient::Data* data = client_->data_;
+  // The client should have already gotten a token when it opened the table.
+  SignedTokenPB first_token;
+  ASSERT_TRUE(data->FetchCachedAuthzToken(table_id, &first_token));
+
+  // Retrieving a token from the master should overwrite what's in the cache.
+  // Wait some time to ensure the new token will be different than the one
+  // already in the cache (different expiration).
+  SleepFor(MonoDelta::FromSeconds(3));
+  SignedTokenPB new_token;
+  ASSERT_OK(data->RetrieveAuthzToken(client_table_.get(), MonoTime::Now() + kTimeout));
+  ASSERT_TRUE(data->FetchCachedAuthzToken(table_id, &new_token));
+  ASSERT_FALSE(MessageDifferencer::Equals(first_token, new_token));
+
+  // Now store the token directly into the cache of a new client.
+  shared_ptr<KuduClient> new_client;
+  ASSERT_OK(cluster_->CreateClient(nullptr, &new_client));
+  KuduClient::Data* new_data = new_client->data_;
+  SignedTokenPB cached_token;
+  ASSERT_FALSE(new_data->FetchCachedAuthzToken(table_id, &cached_token));
+  new_data->StoreAuthzToken(table_id, first_token);
+
+  // Check that we actually stored the token.
+  ASSERT_TRUE(new_data->FetchCachedAuthzToken(table_id, &cached_token));
+  ASSERT_TRUE(MessageDifferencer::Equals(first_token, cached_token));
+
+  // Storing tokens directly also overwrites existing ones.
+  new_data->StoreAuthzToken(table_id, new_token);
+  ASSERT_TRUE(new_data->FetchCachedAuthzToken(table_id, &cached_token));
+  ASSERT_TRUE(MessageDifferencer::Equals(new_token, cached_token));
+
+  // Sanity check that the operations on this new client didn't affect the
+  // tokens of the old client.
+  ASSERT_TRUE(data->FetchCachedAuthzToken(table_id, &cached_token));
+  ASSERT_TRUE(MessageDifferencer::Equals(new_token, cached_token));
+}
+
+// Test to ensure that we don't send calls to retrieve authz tokens when one is
+// already in-flight for the same table ID.
+TEST_F(ClientTest, TestRetrieveAuthzTokenInParallel) {
+  const int kThreads = 20;
+  const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  vector<Synchronizer> syncs(kThreads);
+  vector<thread> threads;
+  Barrier barrier(kThreads);
+  for (auto& s : syncs) {
+    threads.emplace_back([&] {
+      barrier.Wait();
+      client_->data_->RetrieveAuthzTokenAsync(client_table_.get(), s.AsStatusCallback(),
+                                              MonoTime::Now() + kTimeout);
+    });
+  }
+  for (int i = 0 ; i < kThreads; i++) {
+    syncs[i].Wait();
+    threads[i].join();
+  }
+  SignedTokenPB token;
+  ASSERT_TRUE(client_->data_->FetchCachedAuthzToken(client_table_->id(), &token));
+  // The authz token retrieval requests shouldn't send one request per table;
+  // rather they should group together.
+  auto ent = cluster_->mini_master()->master()->metric_entity();
+  int num_reqs = METRIC_handler_latency_kudu_master_MasterService_GetTableSchema
+      .Instantiate(ent)->TotalCount();
+  LOG(INFO) << Substitute("$0 concurrent threads sent $1 RPC(s) to get authz tokens",
+                          kThreads, num_reqs);
+  ASSERT_LT(num_reqs, kThreads);
+}
+
 // Client test that assigns locations to clients and tablet servers.
 // For now, assigns a uniform location to all clients and tablet servers.
 class ClientWithLocationTest : public ClientTest {
@@ -5816,5 +5895,6 @@ TEST_F(ClientTest, TestClientLocationNoLocationMappingCmd) {
 TEST_F(ClientWithLocationTest, TestClientLocation) {
   ASSERT_EQ("/foo", client_->location());
 }
+
 } // namespace client
 } // namespace kudu

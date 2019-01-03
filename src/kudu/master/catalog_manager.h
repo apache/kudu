@@ -53,6 +53,7 @@
 
 namespace kudu {
 
+class AuthzTokenTest_TestSingleMasterUnavailable_Test;;
 class CreateTableStressTest_TestConcurrentCreateTableAndReloadMetadata_Test;
 class MonitoredTask;
 class NodeInstancePB;
@@ -694,6 +695,7 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // These tests call ElectedAsLeaderCb() directly.
   FRIEND_TEST(MasterTest, TestShutdownDuringTableVisit);
   FRIEND_TEST(MasterTest, TestGetTableLocationsDuringRepeatedTableVisit);
+  FRIEND_TEST(kudu::AuthzTokenTest, TestSingleMasterUnavailable);
 
   // This test calls VisitTablesAndTablets() directly.
   FRIEND_TEST(kudu::CreateTableStressTest, TestConcurrentCreateTableAndReloadMetadata);

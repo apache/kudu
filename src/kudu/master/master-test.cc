@@ -102,6 +102,7 @@ using std::vector;
 using strings::Substitute;
 
 DECLARE_bool(catalog_manager_check_ts_count_for_create_table);
+DECLARE_bool(master_support_authz_tokens);
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 DECLARE_double(sys_catalog_fail_during_write);
 DECLARE_int32(diagnostics_log_stack_traces_interval_ms);
@@ -1733,6 +1734,41 @@ TEST_F(MasterTest, TestTableIdentifierWithIdAndName) {
     ASSERT_FALSE(resp.has_error()) << resp.error().DebugString();
   }
 }
+
+class AuthzTokenMasterTest : public MasterTest,
+                             public ::testing::WithParamInterface<bool> {};
+
+// Some basic verifications that we get authz tokens when we expect.
+TEST_P(AuthzTokenMasterTest, TestGenerateAuthzTokens) {
+  bool supports_authz = GetParam();
+  FLAGS_master_support_authz_tokens = supports_authz;
+  const char* kTableName = "testtb";
+  const Schema kTableSchema({ ColumnSchema("key", INT32) }, 1);
+  const auto send_req = [&] (GetTableSchemaResponsePB* resp) -> Status {
+    RpcController rpc;
+    GetTableSchemaRequestPB req;
+    req.mutable_table()->set_table_name(kTableName);
+    return proxy_->GetTableSchema(req, resp, &rpc);
+  };
+  // Send a request for which there is no table. Whether or not authz tokens are
+  // supported, the response should have an error.
+  {
+    GetTableSchemaResponsePB resp;
+    ASSERT_OK(send_req(&resp));
+    ASSERT_TRUE(resp.has_error());
+    const Status s = StatusFromPB(resp.error().status());
+    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+  }
+  // Now create the table and check that we only get tokens when we expect.
+  ASSERT_OK(CreateTable(kTableName, kTableSchema));
+  {
+    GetTableSchemaResponsePB resp;
+    ASSERT_OK(send_req(&resp));
+    ASSERT_EQ(supports_authz, resp.has_authz_token());
+  }
+}
+
+INSTANTIATE_TEST_CASE_P(SupportsAuthzTokens, AuthzTokenMasterTest, ::testing::Bool());
 
 } // namespace master
 } // namespace kudu

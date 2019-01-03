@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <ostream>
@@ -98,12 +99,14 @@ Status InsertTestRows(KuduClient* client, KuduTable* table,
 
 } // anonymous namespace
 
-class AuthnTokenExpireITestBase : public KuduTest {
+class AuthTokenExpireITestBase : public KuduTest {
  public:
-  AuthnTokenExpireITestBase(int64_t token_validity_seconds,
-                            int num_masters,
-                            int num_tablet_servers)
-      : token_validity_seconds_(token_validity_seconds),
+  AuthTokenExpireITestBase(int64_t authn_token_validity_seconds,
+                           int64_t authz_token_validity_seconds,
+                           int num_masters,
+                           int num_tablet_servers)
+      : authn_token_validity_seconds_(authn_token_validity_seconds),
+        authz_token_validity_seconds_(authz_token_validity_seconds),
         num_masters_(num_masters),
         num_tablet_servers_(num_tablet_servers),
         schema_(KuduSchema::FromSchema(CreateKeyValueTestSchema())) {
@@ -125,7 +128,8 @@ class AuthnTokenExpireITestBase : public KuduTest {
   }
 
  protected:
-  const int64_t token_validity_seconds_;
+  const int64_t authn_token_validity_seconds_;
+  const int64_t authz_token_validity_seconds_;
   const int num_masters_;
   const int num_tablet_servers_;
   KuduSchema schema_;
@@ -134,12 +138,14 @@ class AuthnTokenExpireITestBase : public KuduTest {
 };
 
 
-class AuthnTokenExpireITest : public AuthnTokenExpireITestBase {
+class AuthTokenExpireITest : public AuthTokenExpireITestBase {
  public:
-  explicit AuthnTokenExpireITest(int64_t token_validity_seconds = 2)
-      : AuthnTokenExpireITestBase(token_validity_seconds,
-                                  /*num_masters=*/ 1,
-                                  /*num_tablet_servers=*/ 3) {
+  explicit AuthTokenExpireITest(int64_t authn_token_validity_seconds = 2,
+                                int64_t authz_token_validity_seconds = 2)
+      : AuthTokenExpireITestBase(authn_token_validity_seconds,
+                                 authz_token_validity_seconds,
+                                 /*num_masters=*/ 1,
+                                 /*num_tablet_servers=*/ 3) {
     // Masters and tservers inject FATAL_INVALID_AUTHENTICATION_TOKEN errors.
     // The client should retry the operation again and eventually it should
     // succeed even with the high ratio of injected errors.
@@ -151,12 +157,19 @@ class AuthnTokenExpireITest : public AuthnTokenExpireITestBase {
       // as well (i.e. possible ERROR_UNAVAILABLE errors from tservers) upon
       // a new authn token re-acquisitions and retried RPCs.
       "--tsk_rotation_seconds=1",
-      Substitute("--authn_token_validity_seconds=$0", token_validity_seconds_),
-      Substitute("--authz_token_validity_seconds=$0", token_validity_seconds_),
+      Substitute("--authn_token_validity_seconds=$0", authn_token_validity_seconds_),
+      Substitute("--authz_token_validity_seconds=$0", authz_token_validity_seconds_),
     };
 
     cluster_opts_.extra_tserver_flags = {
       "--rpc_inject_invalid_authn_token_ratio=0.5",
+
+      // Tservers inject ERROR_INVALID_AUTHORIZATION_TOKEN errors, which will
+      // lead the client to retry the operation with after fetching a new authz
+      // token from the master.
+      "--tserver_inject_invalid_authz_token_ratio=0.5",
+
+      "--tserver_enforce_access_control=true",
 
       // Decreasing TS->master heartbeat interval speeds up the test.
       "--heartbeat_interval_ms=10",
@@ -164,7 +177,7 @@ class AuthnTokenExpireITest : public AuthnTokenExpireITestBase {
   }
 
   void SetUp() override {
-    AuthnTokenExpireITestBase::SetUp();
+    AuthTokenExpireITestBase::SetUp();
     ASSERT_OK(cluster_->Start());
   }
 };
@@ -172,7 +185,7 @@ class AuthnTokenExpireITest : public AuthnTokenExpireITestBase {
 
 // Make sure authn token is re-acquired on certain scenarios upon restarting
 // tablet servers.
-TEST_F(AuthnTokenExpireITest, RestartTabletServers) {
+TEST_F(AuthTokenExpireITest, RestartTabletServers) {
   const string table_name = "authn-token-expire-restart-tablet-servers";
 
   // Create and open one table, keeping it open over the component restarts.
@@ -191,11 +204,11 @@ TEST_F(AuthnTokenExpireITest, RestartTabletServers) {
     server->Shutdown();
     ASSERT_OK(server->Restart());
   }
-  SleepFor(MonoDelta::FromSeconds(token_validity_seconds_ + 1));
+  SleepFor(MonoDelta::FromSeconds(authn_token_validity_seconds_ + 1));
 
   ASSERT_OK(InsertTestRows(client.get(), table.get(),
                            num_tablet_servers_, num_tablet_servers_ * 1));
-  SleepFor(MonoDelta::FromSeconds(token_validity_seconds_ + 1));
+  SleepFor(MonoDelta::FromSeconds(authn_token_validity_seconds_ + 1));
   // Make sure to insert a row into all tablets to make an RPC call to every
   // tablet server hosting the table.
   ASSERT_OK(InsertTestRows(client.get(), table.get(),
@@ -204,7 +217,7 @@ TEST_F(AuthnTokenExpireITest, RestartTabletServers) {
 
 // Make sure authn token is re-acquired on certain scenarios upon restarting
 // both masters and tablet servers.
-TEST_F(AuthnTokenExpireITest, RestartCluster) {
+TEST_F(AuthTokenExpireITest, RestartCluster) {
   const string table_name = "authn-token-expire-restart-cluster";
 
   shared_ptr<KuduClient> client;
@@ -218,21 +231,31 @@ TEST_F(AuthnTokenExpireITest, RestartCluster) {
   // Restart all Kudu server-side components: masters and tablet servers.
   cluster_->Shutdown();
   ASSERT_OK(cluster_->Restart());
-  SleepFor(MonoDelta::FromSeconds(token_validity_seconds_ + 1));
+  SleepFor(MonoDelta::FromSeconds(authn_token_validity_seconds_ + 1));
 
   ASSERT_OK(InsertTestRows(client.get(), table.get(),
                            num_tablet_servers_, num_tablet_servers_ * 1));
-  SleepFor(MonoDelta::FromSeconds(token_validity_seconds_ + 1));
+  SleepFor(MonoDelta::FromSeconds(authn_token_validity_seconds_ + 1));
   // Make sure to insert a row into all tablets to make an RPC call to every
   // tablet server hosting the table.
   ASSERT_OK(InsertTestRows(client.get(), table.get(),
                            num_tablet_servers_, num_tablet_servers_ * 2));
 }
 
-class AuthnTokenExpireDuringWorkloadITest : public AuthnTokenExpireITest {
+struct AuthTokenParams {
+  int64_t authn_validity_secs;
+  int64_t authz_validity_secs;
+};
+
+constexpr AuthTokenParams kEvenValidity = { 5, 5 };
+constexpr AuthTokenParams kLongerAuthn = { 5, 3 };
+constexpr AuthTokenParams kLongerAuthz = { 3, 5 };
+
+class AuthTokenExpireDuringWorkloadITest : public AuthTokenExpireITest,
+                                           public ::testing::WithParamInterface<AuthTokenParams> {
  public:
-  AuthnTokenExpireDuringWorkloadITest()
-      : AuthnTokenExpireITest(5) {
+  AuthTokenExpireDuringWorkloadITest()
+      : AuthTokenExpireITest(GetParam().authn_validity_secs, GetParam().authz_validity_secs) {
     // Close an already established idle connection to the server and open
     // a new one upon making another call to the same server. This is to force
     // authn token verification at every RPC.
@@ -240,16 +263,22 @@ class AuthnTokenExpireDuringWorkloadITest : public AuthnTokenExpireITest {
   }
 
   void SetUp() override {
-    AuthnTokenExpireITestBase::SetUp();
+    AuthTokenExpireITestBase::SetUp();
     // Do not start the cluster as a part of setup phase. Don't waste time on
     // on that because the scenario contains a test which is marked slow and
     // will be skipped if KUDU_ALLOW_SLOW_TESTS environment variable is not set.
   }
+  const int64_t max_token_validity = std::max(GetParam().authn_validity_secs,
+                                              GetParam().authz_validity_secs);
 };
 
-// Run a mixed write/read test workload and check that client retries the
-// FATAL_INVALID_AUTH_TOKEN error, eventually succeeding with every issued RPC.
-TEST_F(AuthnTokenExpireDuringWorkloadITest, InvalidTokenDuringMixedWorkload) {
+INSTANTIATE_TEST_CASE_P(ValidityIntervals, AuthTokenExpireDuringWorkloadITest,
+    ::testing::Values(kEvenValidity, kLongerAuthn, kLongerAuthz));
+
+// Run a mixed write/read test workload and check that client retries upon
+// receiving the appropriate invalid token error, eventually succeeding with
+// every issued RPC.
+TEST_P(AuthTokenExpireDuringWorkloadITest, InvalidTokenDuringMixedWorkload) {
   static const int32_t kTimeoutMs = 10 * 60 * 1000;
 
   if (!AllowSlowTests()) {
@@ -272,7 +301,7 @@ TEST_F(AuthnTokenExpireDuringWorkloadITest, InvalidTokenDuringMixedWorkload) {
 
   w.Setup();
   w.Start();
-  SleepFor(MonoDelta::FromSeconds(8 * token_validity_seconds_));
+  SleepFor(MonoDelta::FromSeconds(8 * max_token_validity));
   w.StopAndJoin();
 
   ClusterVerifier v(cluster_.get());
@@ -284,13 +313,13 @@ TEST_F(AuthnTokenExpireDuringWorkloadITest, InvalidTokenDuringMixedWorkload) {
   NO_FATALS(cluster_->AssertNoCrashes());
 }
 
-// Run write-only and scan-only workloads and check that the client retries
-// the FATAL_INVALID_AUTH_TOKEN error, eventually succeeding with its RPCs.
-// There is also a test for the mixed workload (see above), but we are looking
-// at the implementation as a black box: it's impossible to guarantee that the
-// read paths are not affected by the write paths since the mixed workload uses
-// the same shared client instance for both the read and the write paths.
-TEST_F(AuthnTokenExpireDuringWorkloadITest, InvalidTokenDuringSeparateWorkloads) {
+// Run write-only and scan-only workloads and check that the client retries the
+// appropriate invalid token error, eventually succeeding with its RPCs. There
+// is also a test for the mixed workload (see above), but we are looking at the
+// implementation as a black box: it's impossible to guarantee that the read
+// paths are not affected by the write paths since the mixed workload uses the
+// same shared client instance for both the read and the write paths.
+TEST_P(AuthTokenExpireDuringWorkloadITest, InvalidTokenDuringSeparateWorkloads) {
   const string table_name = "authn-token-expire-separate-workloads";
   static const int32_t kTimeoutMs = 10 * 60 * 1000;
 
@@ -320,7 +349,7 @@ TEST_F(AuthnTokenExpireDuringWorkloadITest, InvalidTokenDuringSeparateWorkloads)
   w.set_write_pattern(TestWorkload::INSERT_SEQUENTIAL_ROWS);
   w.Setup();
   w.Start();
-  SleepFor(MonoDelta::FromSeconds(3 * token_validity_seconds_));
+  SleepFor(MonoDelta::FromSeconds(3 * max_token_validity));
   w.StopAndJoin();
 
   NO_FATALS(cluster_->AssertNoCrashes());
@@ -338,7 +367,7 @@ TEST_F(AuthnTokenExpireDuringWorkloadITest, InvalidTokenDuringSeparateWorkloads)
   r.set_num_write_threads(0);
   r.Setup();
   r.Start();
-  SleepFor(MonoDelta::FromSeconds(3 * token_validity_seconds_));
+  SleepFor(MonoDelta::FromSeconds(3 * max_token_validity));
   r.StopAndJoin();
 
   ClusterVerifier v(cluster_.get());
@@ -352,16 +381,20 @@ TEST_F(AuthnTokenExpireDuringWorkloadITest, InvalidTokenDuringSeparateWorkloads)
 // Scenarios to verify that the client automatically re-acquires authn token
 // when receiving ERROR_INVALID_AUTHENTICATION_TOKEN from the servers in case
 // if the client has established a token-based connection to masters.
-class TokenBasedConnectionITest : public AuthnTokenExpireITestBase {
+// Note: this test doesn't rely on authz tokens, but the TSK validity period is
+// determined based all token validity intervals, so for simplicity, set the
+// authz validity interval to be the same.
+class TokenBasedConnectionITest : public AuthTokenExpireITestBase {
  public:
   TokenBasedConnectionITest()
-      : AuthnTokenExpireITestBase(
-          /*token_validity_seconds=*/ 2,
+      : AuthTokenExpireITestBase(
+          /*authn_token_validity_seconds=*/ 2,
+          /*authz_token_validity_seconds=*/ 2,
           /*num_masters=*/ 1,
           /*num_tablet_servers=*/ 3) {
     cluster_opts_.extra_master_flags = {
-      Substitute("--authn_token_validity_seconds=$0", token_validity_seconds_),
-      Substitute("--authz_token_validity_seconds=$0", token_validity_seconds_),
+      Substitute("--authn_token_validity_seconds=$0", authn_token_validity_seconds_),
+      Substitute("--authz_token_validity_seconds=$0", authz_token_validity_seconds_),
     };
 
     cluster_opts_.extra_tserver_flags = {
@@ -371,7 +404,7 @@ class TokenBasedConnectionITest : public AuthnTokenExpireITestBase {
   }
 
   void SetUp() override {
-    AuthnTokenExpireITestBase::SetUp();
+    AuthTokenExpireITestBase::SetUp();
     ASSERT_OK(cluster_->Start());
   }
 };
@@ -405,7 +438,7 @@ TEST_F(TokenBasedConnectionITest, ReacquireAuthnToken) {
   ASSERT_OK(client->OpenTable(table_name, &table));
 
   // Let the authn token to expire.
-  SleepFor(MonoDelta::FromSeconds(token_validity_seconds_ + 1));
+  SleepFor(MonoDelta::FromSeconds(authn_token_validity_seconds_ + 1));
 
   // Here a new authn token should be automatically acquired upon receiving
   // FATAL_INVALID_AUTHENTICATION_TOKEN error. To get a new token it's necessary
@@ -418,11 +451,12 @@ TEST_F(TokenBasedConnectionITest, ReacquireAuthnToken) {
 // Test for scenarios involving multiple masters where
 // client-to-non-leader-master connections are closed due to inactivity,
 // but the connection to the former leader master is kept open.
-class MultiMasterIdleConnectionsITest : public AuthnTokenExpireITestBase {
+class MultiMasterIdleConnectionsITest : public AuthTokenExpireITestBase {
  public:
   MultiMasterIdleConnectionsITest()
-      : AuthnTokenExpireITestBase(
-          /*token_validity_seconds=*/ 3,
+      : AuthTokenExpireITestBase(
+          /*authn_token_validity_seconds=*/ 3,
+          /*authz_token_validity_seconds=*/ 3,
           /*num_masters=*/ 3,
           /*num_tablet_servers=*/ 3) {
 
@@ -430,8 +464,8 @@ class MultiMasterIdleConnectionsITest : public AuthnTokenExpireITestBase {
       // Custom validity interval for authn tokens. The scenario involves
       // expiration of authn tokens, while the default authn expiration timeout
       // is 7 days. So, let's make the token validity interval really short.
-      Substitute("--authn_token_validity_seconds=$0", token_validity_seconds_),
-      Substitute("--authz_token_validity_seconds=$0", token_validity_seconds_),
+      Substitute("--authn_token_validity_seconds=$0", authn_token_validity_seconds_),
+      Substitute("--authz_token_validity_seconds=$0", authz_token_validity_seconds_),
 
       // The default for leader_failure_max_missed_heartbeat_periods 3.0, but
       // 2.0 is enough to have master leadership stable enough and makes it
@@ -461,12 +495,12 @@ class MultiMasterIdleConnectionsITest : public AuthnTokenExpireITestBase {
   }
 
   void SetUp() override {
-    AuthnTokenExpireITestBase::SetUp();
+    AuthTokenExpireITestBase::SetUp();
     ASSERT_OK(cluster_->Start());
   }
 
  protected:
-  const int master_rpc_keepalive_time_ms_ = 3 * token_validity_seconds_ * 1000 / 2;
+  const int master_rpc_keepalive_time_ms_ = 3 * authn_token_validity_seconds_ * 1000 / 2;
   const int master_raft_hb_interval_ms_ = 250;
   const double master_leader_failure_max_missed_heartbeat_periods_ = 2.0;
 };
@@ -509,7 +543,7 @@ TEST_F(MultiMasterIdleConnectionsITest, ClientReacquiresAuthnToken) {
   //   2) connections to non-leader masters close
 
   const auto time_right_before_token_expiration = time_start +
-      MonoDelta::FromSeconds(token_validity_seconds_);
+      MonoDelta::FromSeconds(authn_token_validity_seconds_);
   while (MonoTime::Now() < time_right_before_token_expiration) {
     // Keep the connection to leader master open, time to time making requests
     // that go to the leader master, but not to other masters in the cluster.
@@ -526,11 +560,11 @@ TEST_F(MultiMasterIdleConnectionsITest, ClientReacquiresAuthnToken) {
   }
 
   // Given the relation between the master_rpc_keepalive_time_ms_ and
-  // token_validity_seconds_ parameters, the original authn token should expire
-  // and connections to follower masters should be torn down due to inactivity,
-  // but the connection to the leader master should be kept open after waiting
-  // for additional token expiration interval.
-  SleepFor(MonoDelta::FromSeconds(token_validity_seconds_));
+  // authn_token_validity_seconds_ parameters, the original authn token should
+  // expire and connections to follower masters should be torn down due to
+  // inactivity, but the connection to the leader master should be kept open
+  // after waiting for additional token expiration interval.
+  SleepFor(MonoDelta::FromSeconds(authn_token_validity_seconds_));
 
   {
     int former_leader_master_idx;

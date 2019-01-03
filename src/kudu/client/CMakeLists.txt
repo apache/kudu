@@ -29,6 +29,7 @@ ADD_EXPORTABLE_LIBRARY(client_proto
   NONLINK_DEPS ${CLIENT_PROTO_TGTS})
 
 set(CLIENT_SRCS
+  authz_token_cache.cc
   batcher.cc
   client.cc
   client_builder-internal.cc

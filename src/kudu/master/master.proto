@@ -633,13 +633,18 @@ message GetTableSchemaResponsePB {
 
   // The table name.
   optional string table_name = 7;
+
+  // A token that the client can use to authorize further access to the table.
+  // A token can always be expected with this response, unless the response is
+  // from an older version of Kudu or unless the request resulted in an error.
+  optional security.SignedTokenPB authz_token = 8;
 }
 
 message ConnectToMasterRequestPB {
 }
 
 message ConnectToMasterResponsePB {
-  // Set if there an error.
+  // Set if there is an error.
   optional MasterErrorPB error = 1;
 
   // The current role of the master.
@@ -783,6 +788,8 @@ enum MasterFeatures {
   // EVICT_FIRST (a.k.a. 3-2-3) and the PREPARE_REPLACEMENT_BEFORE_EVICTION
   // (a.k.a. 3-4-3) schemes.
   REPLICA_MANAGEMENT = 4;
+  // The master supports generating and dispensing authz tokens.
+  GENERATE_AUTHZ_TOKEN = 5;
 }
 
 service MasterService {

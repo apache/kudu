@@ -26,6 +26,7 @@
 #include <mutex>
 #include <ostream>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -33,6 +34,7 @@
 #include <boost/function.hpp>
 #include <glog/logging.h>
 
+#include "kudu/client/authz_token_cache.h"
 #include "kudu/client/master_proxy_rpc.h"
 #include "kudu/client/master_rpc.h"
 #include "kudu/client/meta_cache.h"
@@ -74,6 +76,10 @@ using std::vector;
 
 namespace kudu {
 
+namespace security {
+class SignedTokenPB;
+} // namespace security
+
 using master::AlterTableRequestPB;
 using master::AlterTableResponsePB;
 using master::CreateTableRequestPB;
@@ -91,6 +97,7 @@ using master::MasterServiceProxy;
 using master::TableIdentifierPB;
 using rpc::BackoffType;
 using rpc::CredentialsPolicy;
+using security::SignedTokenPB;
 using strings::Substitute;
 
 namespace client {
@@ -146,8 +153,7 @@ Status RetryFunc(const MonoTime& deadline,
 
 KuduClient::Data::Data()
     : hive_metastore_sasl_enabled_(false),
-      latest_observed_timestamp_(KuduClient::kNoTimestamp) {
-}
+      latest_observed_timestamp_(KuduClient::kNoTimestamp) {}
 
 KuduClient::Data::~Data() {
   // Workaround for KUDU-956: the user may close a KuduClient while a flush
@@ -427,6 +433,15 @@ bool KuduClient::Data::IsTabletServerLocal(const RemoteTabletServer& rts) const 
   return false;
 }
 
+void KuduClient::Data::StoreAuthzToken(const string& table_id,
+                                       const SignedTokenPB& token) {
+  authz_token_cache_.Put(table_id, token);
+}
+
+bool KuduClient::Data::FetchCachedAuthzToken(const string& table_id, SignedTokenPB* token) {
+  return authz_token_cache_.Fetch(table_id, token);
+}
+
 Status KuduClient::Data::GetTableSchema(KuduClient* client,
                                         const string& table_name,
                                         const MonoTime& deadline,
@@ -465,6 +480,11 @@ Status KuduClient::Data::GetTableSchema(KuduClient* client,
   }
   if (num_replicas) {
     *num_replicas = resp.num_replicas();
+  }
+  // Cache the authz token if the response came with one. It might not have one
+  // if running against an older master that does not support authz tokens.
+  if (resp.has_authz_token()) {
+    StoreAuthzToken(resp.table_id(), resp.authz_token());
   }
   return Status::OK();
 }
@@ -644,6 +664,20 @@ void KuduClient::Data::ConnectToClusterAsync(KuduClient* client,
     l.unlock();
     rpc->SendRpc();
   }
+}
+
+Status KuduClient::Data::RetrieveAuthzToken(const KuduTable* table,
+                                            const MonoTime& deadline) {
+  Synchronizer sync;
+  RetrieveAuthzTokenAsync(table, sync.AsStatusCallback(), deadline);
+  return sync.Wait();
+}
+
+void KuduClient::Data::RetrieveAuthzTokenAsync(const KuduTable* table,
+                                               const StatusCallback& cb,
+                                               const MonoTime& deadline) {
+  DCHECK(deadline.Initialized());
+  authz_token_cache_.RetrieveNewAuthzToken(table, cb, deadline);
 }
 
 HostPort KuduClient::Data::leader_master_hostport() const {

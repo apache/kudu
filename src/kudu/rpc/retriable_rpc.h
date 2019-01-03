@@ -72,11 +72,6 @@ class RetriableRpc : public Rpc {
   // Try() to actually send the request.
   void SendRpc() override;
 
-  // The callback to call upon retrieving (of failing to retrieve) a new authn
-  // token. This is the callback that subclasses should call in their custom
-  // implementation of the GetNewAuthnTokenAndRetry() method.
-  void GetNewAuthnTokenAndRetryCb(const Status& status);
-
  protected:
   // Subclasses implement this method to actually try the RPC.
   // The server been looked up and is ready to be used.
@@ -91,14 +86,29 @@ class RetriableRpc : public Rpc {
   // After this is called the RPC will be no longer retried.
   virtual void Finish(const Status& status) = 0;
 
-  // Returns 'true' if the RPC is to scheduled for retry with a new authn token,
-  // 'false' otherwise. For RPCs performed in the context of providing token
-  // for authentication it's necessary to implement this method. The default
-  // implementation returns 'false' meaning the calls returning
+  // Returns 'true' if the RPC is scheduled for retry with a new authn
+  // token, 'false' otherwise. For RPCs performed in the context of providing
+  // token for authentication it's necessary to implement this method. The
+  // default implementation returns 'false' meaning the calls returning
   // INVALID_AUTHENTICATION_TOKEN RPC status are not retried.
   virtual bool GetNewAuthnTokenAndRetry() {
     return false;
   }
+
+  // Similar to GetNewAuthnTokenAndRetry() but applied for authz tokens. The
+  // default implementation returns 'false', meaning the calls returning
+  // INVALID_AUTHORIZATION_TOKEN RPC status are not retried.
+  virtual bool GetNewAuthzTokenAndRetry() {
+    return false;
+  }
+
+  // The callback to call upon retrieving (or failing to retrieve) a new authn
+  // token. This is the callback that subclasses should call in their custom
+  // implementation of the GetNewAuthnTokenAndRetry() method.
+  virtual void GotNewAuthnTokenRetryCb(const Status& status);
+
+  // Like GotNewAuthnTokenRetryCb() but for authz tokens.
+  virtual void GotNewAuthzTokenRetryCb(const Status& status);
 
   // Request body.
   RequestPB req_;
@@ -108,6 +118,10 @@ class RetriableRpc : public Rpc {
 
  private:
   friend class CalculatorServiceRpc;
+
+  // The callback to call upon retrieving (or failing to retrieve) a new token.
+  // 'token_type' is used for logging.
+  void GotNewTokenRetryCb(const Status& status, const char* token_type);
 
   // Decides whether to retry the RPC, based on the result of AnalyzeResponse()
   // and retries if that is the case.
@@ -151,17 +165,33 @@ void RetriableRpc<Server, RequestPB, ResponsePB>::SendRpc()  {
 }
 
 template <class Server, class RequestPB, class ResponsePB>
-void RetriableRpc<Server, RequestPB, ResponsePB>::GetNewAuthnTokenAndRetryCb(
-    const Status& status) {
+void RetriableRpc<Server, RequestPB, ResponsePB>::GotNewTokenRetryCb(
+    const Status& status, const char* token_type) {
   if (status.ok()) {
-    // Perform the RPC call with the newly fetched authn token.
+    // Perform the RPC call with the newly-fetched token.
     mutable_retrier()->mutable_controller()->Reset();
     SendRpc();
+  } else if (status.IsNotSupported()) {
+    // If the token retrieval isn't supported by the cluster, don't retry.
+    FinishInternal();
+    Finish(status);
   } else {
     // Back to the retry sequence, hoping for better conditions after some time.
-    VLOG(1) << "Failed to get new authn token: " << status.ToString();
+    VLOG(1) << strings::Substitute("Failed to get new $0 token: $1", token_type, status.ToString());
     mutable_retrier()->DelayedRetry(this, status);
   }
+}
+
+template <class Server, class RequestPB, class ResponsePB>
+void RetriableRpc<Server, RequestPB, ResponsePB>::GotNewAuthnTokenRetryCb(
+    const Status& status) {
+  GotNewTokenRetryCb(status, "authn");
+}
+
+template <class Server, class RequestPB, class ResponsePB>
+void RetriableRpc<Server, RequestPB, ResponsePB>::GotNewAuthzTokenRetryCb(
+    const Status& status) {
+  GotNewTokenRetryCb(status, "authz");
 }
 
 template <class Server, class RequestPB, class ResponsePB>
@@ -207,13 +237,13 @@ bool RetriableRpc<Server, RequestPB, ResponsePB>::RetryIfNeeded(
     case RetriableRpcStatus::INVALID_AUTHENTICATION_TOKEN: {
       // This is a special case for retry: first it's necessary to get a new
       // authn token and then retry the operation with the new token.
-      if (GetNewAuthnTokenAndRetry()) {
-        // The RPC will be retried.
-        resp_.Clear();
-        return true;
-      }
-      // Do not retry.
-      return false;
+      return GetNewAuthnTokenAndRetry();
+    }
+
+    case RetriableRpcStatus::INVALID_AUTHORIZATION_TOKEN: {
+      // TODO(awong): It'd be nice if the response status that led us to
+      // retrieve a token and retry were propgated to the user.
+      return GetNewAuthzTokenAndRetry();
     }
 
     case RetriableRpcStatus::NON_RETRIABLE_ERROR:

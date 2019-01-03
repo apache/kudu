@@ -59,6 +59,7 @@
 #include "kudu/rpc/rpc.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/rpc/rpc_header.pb.h"
+#include "kudu/security/token.pb.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/logging.h"
@@ -91,9 +92,7 @@ using rpc::RequestTracker;
 using rpc::ResponseCallback;
 using rpc::RetriableRpc;
 using rpc::RetriableRpcStatus;
-using rpc::Rpc;
-using rpc::RpcController;
-using rpc::ServerPicker;
+using security::SignedTokenPB;
 using tserver::WriteRequestPB;
 using tserver::WriteResponsePB;
 using tserver::WriteResponsePB_PerRowErrorPB;
@@ -242,7 +241,24 @@ class WriteRpc : public RetriableRpc<RemoteTabletServer, WriteRequestPB, WriteRe
   void Finish(const Status& status) override;
   bool GetNewAuthnTokenAndRetry() override;
 
+  // Asynchonously attempts to retrieve a new authz token from the master, and
+  // runs GotNewAuthzTokenRetryCb on success.
+  bool GetNewAuthzTokenAndRetry() override;
+
+  // Callback to run after going through the steps to get a new authz token.
+  void GotNewAuthzTokenRetryCb(const Status& status) override;
+
  private:
+  // Fetches the appropriate authz token for this request from the client
+  // cache. Note that this doesn't get a new token from the master, but rather,
+  // it updates 'req_' with one from the cache in case the client has recently
+  // received one.
+  //
+  // If an appropriate authz token is not in the cache, e.g. because the client
+  // has been communicating with an older-versioned master that doesn't support
+  // authz tokens, this is a no-op.
+  void FetchCachedAuthzToken();
+
   // Pointer back to the batcher. Processes the write response when it
   // completes, regardless of success or failure.
   scoped_refptr<Batcher> batcher_;
@@ -290,6 +306,8 @@ WriteRpc::WriteRpc(const scoped_refptr<Batcher>& batcher,
   CHECK_OK(SchemaToPB(*schema, req_.mutable_schema(),
                       SCHEMA_PB_WITHOUT_STORAGE_ATTRIBUTES | SCHEMA_PB_WITHOUT_IDS));
 
+  // Pick up the authz token for the table.
+  FetchCachedAuthzToken();
   RowOperationsPB* requested = req_.mutable_row_operations();
 
   // Add the rows
@@ -362,11 +380,18 @@ RetriableRpcStatus WriteRpc::AnalyzeResponse(const Status& rpc_cb_status) {
   // Check for specific RPC errors.
   if (result.status.IsRemoteError()) {
     const ErrorStatusPB* err = mutable_retrier()->controller().error_response();
-    if (err && err->has_code() &&
-        (err->code() == ErrorStatusPB::ERROR_SERVER_TOO_BUSY ||
-         err->code() == ErrorStatusPB::ERROR_UNAVAILABLE)) {
-      result.result = RetriableRpcStatus::SERVICE_UNAVAILABLE;
-      return result;
+    if (err && err->has_code()) {
+      switch (err->code()) {
+        case ErrorStatusPB::ERROR_SERVER_TOO_BUSY:
+        case ErrorStatusPB::ERROR_UNAVAILABLE:
+          result.result = RetriableRpcStatus::SERVICE_UNAVAILABLE;
+          return result;
+        case ErrorStatusPB::ERROR_INVALID_AUTHORIZATION_TOKEN:
+          result.result = RetriableRpcStatus::INVALID_AUTHORIZATION_TOKEN;
+          return result;
+        default:
+          break;
+      }
     }
   }
 
@@ -442,13 +467,45 @@ RetriableRpcStatus WriteRpc::AnalyzeResponse(const Status& rpc_cb_status) {
 }
 
 bool WriteRpc::GetNewAuthnTokenAndRetry() {
+  // Since we know we may retry, clear the existing response.
+  resp_.Clear();
   // To get a new authn token it's necessary to authenticate with the master
   // using any other credentials but already existing authn token.
   KuduClient* c = batcher_->client_;
+  VLOG(1) << "Retrieving new authn token from master";
   c->data_->ConnectToClusterAsync(c, retrier().deadline(),
-      Bind(&RetriableRpc::GetNewAuthnTokenAndRetryCb, Unretained(this)),
+      Bind(&WriteRpc::GotNewAuthnTokenRetryCb, Unretained(this)),
       CredentialsPolicy::PRIMARY_CREDENTIALS);
   return true;
+}
+
+bool WriteRpc::GetNewAuthzTokenAndRetry() {
+  // Since we know we may retry, clear the existing response.
+  resp_.Clear();
+  KuduClient* c = batcher_->client_;
+  VLOG(1) << "Retrieving new authz token from master";
+  c->data_->RetrieveAuthzTokenAsync(table(),
+      Bind(&WriteRpc::GotNewAuthzTokenRetryCb, Unretained(this)),
+      retrier().deadline());
+  return true;
+}
+
+void WriteRpc::FetchCachedAuthzToken() {
+  SignedTokenPB signed_token;
+  if (batcher_->client_->data_->FetchCachedAuthzToken(table()->id(), &signed_token)) {
+    *req_.mutable_authz_token() = std::move(signed_token);
+  } else {
+    // Note: this is the expected path if communicating with an older-versioned
+    // master that does not support authz tokens.
+    VLOG(1) << "no authz token for table " << table()->id();
+  }
+}
+
+void WriteRpc::GotNewAuthzTokenRetryCb(const Status& status) {
+  if (status.ok()) {
+    FetchCachedAuthzToken();
+  }
+  RetriableRpc::GotNewAuthzTokenRetryCb(status);
 }
 
 Batcher::Batcher(KuduClient* client,
