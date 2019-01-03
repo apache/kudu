@@ -49,24 +49,25 @@ public class KuduBinaryJarExtractor {
   private static final String KUDU_TEST_BIN_PROPS_PATH =
       "META-INF/apache-kudu-test-binary.properties";
 
-  protected Properties binaryProps;
+  public KuduBinaryJarExtractor() {}
 
-  public KuduBinaryJarExtractor() throws IOException {
-    this.binaryProps = getBinaryProps();
+  /** Return the thread context classloader or the parent classloader for this class. */
+  private static ClassLoader getCurrentClassLoader() {
+    ClassLoader loader = Thread.currentThread().getContextClassLoader();
+    if (loader != null) return loader;
+    return KuduBinaryJarExtractor.class.getClassLoader();
   }
 
   private static Properties getBinaryProps() throws IOException {
-    Enumeration<URL> resources =
-        KuduBinaryJarExtractor.class.getClassLoader().getResources(KUDU_TEST_BIN_PROPS_PATH);
+    Enumeration<URL> resources = getCurrentClassLoader().getResources(KUDU_TEST_BIN_PROPS_PATH);
     //TODO: normalize osName
     //TODO: check for matching architecture
-    String osName = System.getProperties().getProperty("os.name").toLowerCase().replace(" ", "");
     while (resources.hasMoreElements()) {
       URL url = resources.nextElement();
       try {
-        Properties props = loadBinaryProps(url);
-        if (osName.startsWith(props.getProperty("artifact.os"))) {
-          return props;
+        Properties binaryProps = loadBinaryProps(url);
+        if (binaryProps != null && !binaryProps.isEmpty()) {
+          return binaryProps;
         }
       } catch (IOException ex) {
         LOG.warn("Unable to parse properties file from Kudu binary artifact", ex);
@@ -82,31 +83,43 @@ public class KuduBinaryJarExtractor {
   }
 
   /**
-   * Determine if the classpath has a Kudu binary jar that matches the system's OS and CPU
-   * architecture
+   * Determine if the classpath has a Kudu binary test jar compatible with the system architecture
+   * and operating system.
+   * If a Thread context ClassLoader is set, then that ClassLoader is searched.
+   * Otherwise, the ClassLoader that loaded this class is searched.
    *
-   * @return true if an appropriate Kudu binary jar is available, false otherwise
+   * <p>TODO: at the time of writing, OS and architecture checks are not yet implemented.
+   *
+   * @return {@code true} if an appropriate Kudu binary jar is available, {@code false} otherwise
    */
-  public boolean isKuduBinaryJarOnClasspath() {
-    return null != binaryProps;
+  public boolean isKuduBinaryJarOnClasspath() throws IOException {
+    Properties binaryProps = getBinaryProps();
+    return binaryProps != null;
   }
 
   /**
-   * Extract the Kudu binary jar found on the classpath.
+   * Extract the Kudu binary test jar found on the classpath to the specified location.
+   * If a Thread context ClassLoader is set, then that ClassLoader is searched.
+   * Otherwise, the ClassLoader that loaded this class is searched.
+   *
+   * <p>It is expected that
+   * {@link #isKuduBinaryJarOnClasspath()} should return {@code true} before this method is invoked.
    *
    * @param destDir path to a destination
-   * @return the absolute path to the directory containing extracted executables.
+   * @return the absolute path to the directory containing extracted executables,
    * eg. "/tmp/apache-kudu-1.9.0/bin"
-   * @throws IOException if any of the JAR extraction process throws an exception
+   * @throws FileNotFoundException if the binary JAR cannot not be located
+   * @throws IOException if the JAR extraction process fails
    */
   public String extractKuduBinary(String destDir) throws IOException {
+    Properties binaryProps = getBinaryProps();
     if (binaryProps == null) {
-      throw new IllegalStateException("Could not locate the Kudu binary jar");
+      throw new FileNotFoundException("Could not locate the Kudu binary test jar");
     }
 
     try {
       String prefix = binaryProps.getProperty("artifact.prefix");
-      URL kuduBinDir = KuduBinaryJarExtractor.class.getClassLoader().getResource(prefix);
+      URL kuduBinDir = getCurrentClassLoader().getResource(prefix);
       if (null == kuduBinDir) {
         throw new FileNotFoundException("Cannot find Kudu binary dir: " + prefix);
       }

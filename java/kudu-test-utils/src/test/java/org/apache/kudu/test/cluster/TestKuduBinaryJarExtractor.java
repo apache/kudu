@@ -24,6 +24,8 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.net.URL;
+import java.net.URLClassLoader;
 import java.nio.file.FileSystem;
 import java.nio.file.FileSystems;
 import java.nio.file.FileVisitResult;
@@ -36,6 +38,7 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.HashMap;
 import java.util.Map;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -48,7 +51,7 @@ public class TestKuduBinaryJarExtractor {
 
     // convert the filename to a URI
     final Path path = Paths.get(tempDir.toString(), "fake-kudu-binary.jar");
-    LOG.info("Creating kudu-fake-binar.jar at {}", path.toString());
+    LOG.info("Creating fake kudu binary jar at {}", path.toString());
     final URI uri = URI.create("jar:file:" + path.toUri().getPath());
 
     final Map<String, String> env = new HashMap<>();
@@ -85,6 +88,20 @@ public class TestKuduBinaryJarExtractor {
     return path;
   }
 
+  /**
+   * Create a ClassLoader. The parent of the ClassLoader will be the current thread context
+   * ClassLoader, if not set, or the ClassLoader that loaded this test class if not.
+   * @param jars an array of jars to include in the child class loader.
+   */
+  private ClassLoader createChildClassLoader(URL[] jars) {
+    ClassLoader parent = Thread.currentThread().getContextClassLoader();
+    if (parent == null) {
+      parent = TestKuduBinaryJarExtractor.class.getClassLoader();
+    }
+    assertNotNull(parent);
+    return URLClassLoader.newInstance(jars, parent);
+  }
+
   @Test
   public void testExtractJar() throws IOException, URISyntaxException {
     Path binaryJar = createKuduBinaryJar();
@@ -97,5 +114,15 @@ public class TestKuduBinaryJarExtractor {
 
     Path kuduTserver = Paths.get(extractedBinDir.toString(), "kudu-tserver");
     assertTrue(Files.exists(kuduTserver));
+  }
+
+  @Test
+  public void testIsKuduBinaryJarOnClasspath() throws IOException, URISyntaxException {
+    KuduBinaryJarExtractor extractor = new KuduBinaryJarExtractor();
+    assertFalse(extractor.isKuduBinaryJarOnClasspath());
+    Path binaryJar = createKuduBinaryJar();
+    ClassLoader childLoader = createChildClassLoader(new URL[] { binaryJar.toUri().toURL() });
+    Thread.currentThread().setContextClassLoader(childLoader);
+    assertTrue(extractor.isKuduBinaryJarOnClasspath());
   }
 }
