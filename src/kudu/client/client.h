@@ -470,8 +470,11 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
   enum ReplicaSelection {
     LEADER_ONLY,      ///< Select the LEADER replica.
 
-    CLOSEST_REPLICA,  ///< Select the closest replica to the client,
-                      ///< or a random one if all replicas are equidistant.
+    CLOSEST_REPLICA,  ///< Select the closest replica to the client.
+                      ///< Local replicas are considered the closest,
+                      ///< followed by replicas in the same location as the
+                      ///< client, followed by all other replicas. If there are
+                      ///< multiple closest replicas, one is chosen randomly.
 
     FIRST_REPLICA     ///< Select the first replica in the list.
   };

@@ -660,8 +660,7 @@ string KuduClient::GetHiveMetastoreUuid() const {
 }
 
 string KuduClient::location() const {
-  std::lock_guard<simple_spinlock> l(data_->leader_master_lock_);
-  return data_->location_;
+  return data_->location();
 }
 
 ////////////////////////////////////////////////////////////

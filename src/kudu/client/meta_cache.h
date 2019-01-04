@@ -106,7 +106,9 @@ class RemoteTabletServer {
   // Returns the remote server's uuid.
   const std::string& permanent_uuid() const;
 
-  const std::string& location() const;
+  // Return a copy of this tablet server's location, as assigned by the master.
+  // If no location is assigned, the returned string will be empty.
+  std::string location() const;
 
  private:
   // Internal callback for DNS resolution.
@@ -119,7 +121,7 @@ class RemoteTabletServer {
   mutable simple_spinlock lock_;
   const std::string uuid_;
   // If not assigned, location_ will be an empty string.
-  const std::string location_;
+  std::string location_;
 
   std::vector<HostPort> rpc_hostports_;
   std::shared_ptr<tserver::TabletServerServiceProxy> proxy_;

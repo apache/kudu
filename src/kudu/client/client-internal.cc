@@ -180,7 +180,7 @@ RemoteTabletServer* KuduClient::Data::SelectTServer(const scoped_refptr<RemoteTa
     case CLOSEST_REPLICA:
     case FIRST_REPLICA: {
       rt->GetRemoteTabletServers(candidates);
-      // Filter out all the blacklisted candidates.
+      // Exclude all the blacklisted candidates.
       vector<RemoteTabletServer*> filtered;
       for (RemoteTabletServer* rts : *candidates) {
         if (!ContainsKey(blacklist, rts->permanent_uuid())) {
@@ -193,23 +193,44 @@ RemoteTabletServer* KuduClient::Data::SelectTServer(const scoped_refptr<RemoteTa
         if (!filtered.empty()) {
           ret = filtered[0];
         }
-      } else if (selection == CLOSEST_REPLICA) {
-        // Choose a local replica.
-        for (RemoteTabletServer* rts : filtered) {
-          if (IsTabletServerLocal(*rts)) {
-            ret = rts;
-            break;
+        break;
+      }
+      // Choose a replica as follows:
+      // 1. If there is a replica local to the client, pick it. If there are
+      // multiple, pick a random one.
+      // 2. Otherwise, if there is a replica in the same location, pick it. If
+      // there are multiple, pick a random one.
+      // 3. If there are no local replicas or replicas in the same location,
+      // pick a random replica.
+      // TODO(wdberkeley): Eventually, the client might use the hierarchical
+      // structure of a location to determine proximity.
+      const string client_location = location();
+      vector<RemoteTabletServer*> local;
+      vector<RemoteTabletServer*> same_location;
+      local.reserve(filtered.size());
+      same_location.reserve(filtered.size());
+      for (RemoteTabletServer* rts : filtered) {
+        if (IsTabletServerLocal(*rts)) {
+          local.push_back(rts);
+        }
+        if (!client_location.empty()) {
+          const string replica_location = rts->location();
+          if (client_location == replica_location) {
+            same_location.push_back(rts);
           }
         }
-        // Fallback to a random replica if none are local.
-        if (ret == nullptr && !filtered.empty()) {
-          ret = filtered[rand() % filtered.size()];
-        }
+      }
+      if (!local.empty()) {
+        ret = local[rand() % local.size()];
+      } else if (!same_location.empty()) {
+        ret = same_location[rand() % same_location.size()];
+      } else if (!filtered.empty()) {
+        ret = filtered[rand() % filtered.size()];
       }
       break;
     }
     default: {
-      LOG(FATAL) << "Unknown ProxySelection value " << selection;
+      LOG(FATAL) << "Unknown ReplicaSelection value " << selection;
       break;
     }
   }
@@ -633,6 +654,11 @@ HostPort KuduClient::Data::leader_master_hostport() const {
 vector<HostPort> KuduClient::Data::master_hostports() const {
   std::lock_guard<simple_spinlock> l(leader_master_lock_);
   return master_hostports_;
+}
+
+string KuduClient::Data::location() const {
+  std::lock_guard<simple_spinlock> l(leader_master_lock_);
+  return location_;
 }
 
 shared_ptr<master::MasterServiceProxy> KuduClient::Data::master_proxy() const {

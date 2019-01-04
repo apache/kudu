@@ -82,9 +82,7 @@ namespace client {
 namespace internal {
 
 RemoteTabletServer::RemoteTabletServer(const master::TSInfoPB& pb)
-  : uuid_(pb.permanent_uuid()),
-    location_(pb.location()) {
-
+  : uuid_(pb.permanent_uuid()) {
   Update(pb);
 }
 
@@ -151,13 +149,15 @@ void RemoteTabletServer::Update(const master::TSInfoPB& pb) {
   for (const HostPortPB& hostport_pb : pb.rpc_addresses()) {
     rpc_hostports_.emplace_back(hostport_pb.host(), hostport_pb.port());
   }
+  location_ = pb.location();
 }
 
 const string& RemoteTabletServer::permanent_uuid() const {
   return uuid_;
 }
 
-const string& RemoteTabletServer::location() const {
+string RemoteTabletServer::location() const {
+  std::lock_guard<simple_spinlock> l(lock_);
   return location_;
 }
 

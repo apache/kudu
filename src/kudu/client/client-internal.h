@@ -147,8 +147,8 @@ class KuduClient::Data {
 
   bool IsTabletServerLocal(const internal::RemoteTabletServer& rts) const;
 
-  // Returns a non-failed replica of the specified tablet based on the provided selection criteria
-  // and tablet server blacklist.
+  // Returns a non-failed replica of the specified tablet based on the provided
+  // selection criteria and tablet server blacklist.
   //
   // Returns NULL if there are no valid tablet servers.
   internal::RemoteTabletServer* SelectTServer(
@@ -193,6 +193,8 @@ class KuduClient::Data {
   HostPort leader_master_hostport() const;
 
   std::vector<HostPort> master_hostports() const;
+
+  std::string location() const;
 
   uint64_t GetLatestObservedTimestamp() const;
 
