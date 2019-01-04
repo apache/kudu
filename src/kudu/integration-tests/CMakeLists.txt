@@ -115,7 +115,7 @@ ADD_KUDU_TEST(tombstoned_voting-imc-itest)
 ADD_KUDU_TEST(tombstoned_voting-itest)
 ADD_KUDU_TEST(tombstoned_voting-stress-test RUN_SERIAL true)
 ADD_KUDU_TEST(token_signer-itest)
-ADD_KUDU_TEST(ts_location_assignment-itest
+ADD_KUDU_TEST(location_assignment-itest
   DATA_FILES ../scripts/assign-location.py)
 ADD_KUDU_TEST(ts_recovery-itest PROCESSORS 4)
 ADD_KUDU_TEST(ts_tablet_manager-itest)
