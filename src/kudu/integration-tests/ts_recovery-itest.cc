@@ -254,6 +254,9 @@ TEST_P(TsRecoveryITest, TestNoBlockIDReuseIfMissingBlocks) {
     write_workload->set_table_name(table_name);
     write_workload->set_num_tablets(1);
     write_workload->set_num_replicas(1);
+    // We want to generate orphaned blocks, so use a workload that we expect to
+    // cause a lot of delta compaction.
+    write_workload->set_write_pattern(TestWorkload::UPDATE_ONE_ROW);
     write_workload->Setup();
     write_workload->Start();
     return write_workload;
