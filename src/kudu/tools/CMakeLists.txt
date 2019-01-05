@@ -42,6 +42,7 @@ add_library(kudu_tools_util
   color.cc
   data_gen_util.cc
   diagnostics_log_parser.cc
+  table_scanner.cc
   tool_action.cc
   tool_action_common.cc
 )

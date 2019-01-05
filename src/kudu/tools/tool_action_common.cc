@@ -96,6 +96,9 @@ DEFINE_string(print_entries, "decoded",
               "  id = print only their ids");
 DEFINE_string(table_name, "",
               "Restrict output to a specific table by name");
+DEFINE_string(tablets, "",
+              "Tablets to check (comma-separated list of IDs) "
+              "If not specified, checks all tablets.");
 DEFINE_int64(timeout_ms, 1000 * 60, "RPC timeout in milliseconds");
 DEFINE_int32(truncate_data, 100,
              "Truncate the data fields to the given number of bytes "
@@ -116,6 +119,9 @@ DEFINE_string(tables, "", "Tables to include (comma-separated list of table name
 DEFINE_string(memtracker_output, "table",
               "One of 'json', 'json_compact' or 'table'. Table output flattens "
               "the memtracker hierarchy.");
+DEFINE_int32(num_threads, 2,
+             "Number of threads to run. Each thread runs its own "
+             "KuduSession.");
 
 namespace boost {
 template <typename Signature>

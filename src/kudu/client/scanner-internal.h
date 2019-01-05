@@ -311,6 +311,9 @@ class KuduScanBatch::Data {
         << row_format_flags_;
     DCHECK_GE(idx, 0);
     DCHECK_LT(idx, num_rows());
+    if (direct_data_.empty()) {
+      return KuduRowResult(projection_, nullptr);
+    }
     int offset = idx * projected_row_size_;
     return KuduRowResult(projection_, &direct_data_[offset]);
   }

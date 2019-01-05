@@ -41,37 +41,23 @@
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/tools/table_scanner.h"
 #include "kudu/tools/tool_action.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/util/jsonreader.h"
 #include "kudu/util/status.h"
 
-DECLARE_string(tables);
-DEFINE_bool(check_row_existence, false,
-            "Also check for the existence of the row on the leader replica of "
-            "the tablet. If found, the full row will be printed; if not found, "
-            "an error message will be printed and the command will return a "
-            "non-zero status.");
-DEFINE_bool(modify_external_catalogs, true,
-            "Whether to modify external catalogs, such as the Hive Metastore, "
-            "when renaming or dropping a table.");
-DEFINE_bool(list_tablets, false,
-            "Include tablet and replica UUIDs in the output");
-
-namespace kudu {
-namespace tools {
-
-using client::KuduClient;
-using client::KuduClientBuilder;
-using client::KuduColumnSchema;
-using client::KuduPredicate;
-using client::KuduScanner;
-using client::KuduScanToken;
-using client::KuduScanTokenBuilder;
-using client::KuduSchema;
-using client::KuduTable;
-using client::KuduTableAlterer;
-using client::internal::ReplicaController;
+using kudu::client::KuduClient;
+using kudu::client::KuduClientBuilder;
+using kudu::client::KuduColumnSchema;
+using kudu::client::KuduPredicate;
+using kudu::client::KuduScanToken;
+using kudu::client::KuduScanTokenBuilder;
+using kudu::client::KuduScanner;
+using kudu::client::KuduSchema;
+using kudu::client::KuduTable;
+using kudu::client::KuduTableAlterer;
+using kudu::client::internal::ReplicaController;
 using std::cerr;
 using std::cout;
 using std::endl;
@@ -80,6 +66,21 @@ using std::unique_ptr;
 using std::vector;
 using strings::Split;
 using strings::Substitute;
+
+DEFINE_bool(check_row_existence, false,
+            "Also check for the existence of the row on the leader replica of "
+            "the tablet. If found, the full row will be printed; if not found, "
+            "an error message will be printed and the command will return a "
+            "non-zero status.");
+DEFINE_bool(list_tablets, false,
+            "Include tablet and replica UUIDs in the output");
+DEFINE_bool(modify_external_catalogs, true,
+            "Whether to modify external catalogs, such as the Hive Metastore, "
+            "when renaming or dropping a table.");
+DECLARE_string(tables);
+
+namespace kudu {
+namespace tools {
 
 // This class only exists so that ListTables() can easily be friended by
 // KuduReplica, KuduReplica::Data, and KuduClientBuilder.
@@ -391,6 +392,16 @@ Status ListTables(const RunnerContext& context) {
   return TableLister::ListTablets(Split(master_addresses_str, ","));
 }
 
+Status ScanTable(const RunnerContext &context) {
+  client::sp::shared_ptr<KuduClient> client;
+  RETURN_NOT_OK(CreateKuduClient(context, &client));
+
+  const string& table_name = FindOrDie(context.required_args, kTableNameArg);
+
+  TableScanner scanner(client, table_name);
+  return scanner.Run();
+}
+
 } // anonymous namespace
 
 unique_ptr<Mode> BuildTableMode() {
@@ -452,6 +463,21 @@ unique_ptr<Mode> BuildTableMode() {
       .AddOptionalParameter("modify_external_catalogs")
       .Build();
 
+  unique_ptr<Action> scan_table =
+      ActionBuilder("scan", &ScanTable)
+      .Description("Scan rows from a table")
+      .ExtraDescription("Scan rows from an existing table. See the help "
+                        "for the --predicates flag on how predicates can be specified.")
+      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
+      .AddRequiredParameter({ kTableNameArg, "Name of the table to scan"})
+      .AddOptionalParameter("columns")
+      .AddOptionalParameter("fill_cache")
+      .AddOptionalParameter("num_threads")
+      .AddOptionalParameter("predicates")
+      .AddOptionalParameter("show_value")
+      .AddOptionalParameter("tablets")
+      .Build();
+
   return ModeBuilder("table")
       .Description("Operate on Kudu tables")
       .AddAction(std::move(delete_table))
@@ -460,6 +486,7 @@ unique_ptr<Mode> BuildTableMode() {
       .AddAction(std::move(locate_row))
       .AddAction(std::move(rename_column))
       .AddAction(std::move(rename_table))
+      .AddAction(std::move(scan_table))
       .Build();
 }
 

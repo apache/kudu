@@ -47,6 +47,7 @@
 #include "kudu/client/client.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
+#include "kudu/client/write_op.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/partition.h"
@@ -140,10 +141,12 @@ using kudu::cfile::StringDataGenerator;
 using kudu::cfile::WriterOptions;
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
+using kudu::client::KuduInsert;
 using kudu::client::KuduScanToken;
 using kudu::client::KuduScanTokenBuilder;
 using kudu::client::KuduSchema;
 using kudu::client::KuduSchemaBuilder;
+using kudu::client::KuduSession;
 using kudu::client::KuduTable;
 using kudu::client::sp::shared_ptr;
 using kudu::cluster::ExternalMiniCluster;
@@ -181,9 +184,11 @@ using std::back_inserter;
 using std::copy;
 using std::make_pair;
 using std::map;
+using std::max;
 using std::ostringstream;
 using std::pair;
 using std::string;
+using std::to_string;
 using std::unique_ptr;
 using std::unordered_map;
 using std::unordered_set;
@@ -376,6 +381,41 @@ class ToolTest : public KuduTest {
       }
     }
     return Status::OK();
+  }
+
+  void RunScanTableCheck(const string& table_name,
+                         const string& predicates_json,
+                         int64_t min_value,
+                         int64_t max_value,
+                         const vector<pair<string, string>>& columns = {{"int32", "key"}}) {
+    vector<string> col_names;
+    for (const auto& column : columns) {
+      col_names.push_back(column.second);
+    }
+    const string projection = JoinStrings(col_names, ",");
+
+    vector<string> lines;
+    int64_t total = max(max_value - min_value + 1, 0L);
+    NO_FATALS(RunActionStdoutLines(
+                Substitute("table scan $0 $1 -show_value=true "
+                           "-columns=$2 -predicates=$3",
+                           cluster_->master()->bound_rpc_addr().ToString(),
+                           table_name, projection, predicates_json), &lines));
+    for (int64_t value = min_value; value <= max_value; ++value) {
+      // Check projection.
+      vector<string> kvs;
+      for (const auto& column : columns) {
+        // Check matched rows.
+        kvs.push_back(Substitute("$0 $1=$2",
+            column.first, column.second, column.second == "key" ? to_string(value) : ".*"));
+      }
+      string line_pattern(R"*(\()*");
+      line_pattern += JoinStrings(kvs, ", ");
+      line_pattern += (")");
+      ASSERT_STRINGS_ANY_MATCH(lines, line_pattern);
+    }
+    // Check total count.
+    ASSERT_STRINGS_ANY_MATCH(lines, Substitute("Total count $0 ", total));
   }
 
  protected:
@@ -589,6 +629,7 @@ TEST_F(ToolTest, TestModeHelp) {
         "rename_table.*Rename a table",
         "rename_column.*Rename a column",
         "list.*List tables",
+        "scan.*Scan rows from a table",
     };
     NO_FATALS(RunTestHelp("table", kTableModeRegexes));
   }
@@ -2130,6 +2171,7 @@ TEST_F(ToolTest, TestMasterList) {
 // (2)rename a table
 // (3)rename a column
 // (4)list tables
+// (5)scan a table
 TEST_F(ToolTest, TestDeleteTable) {
   NO_FATALS(StartExternalMiniCluster());
   shared_ptr<KuduClient> client;
@@ -2309,6 +2351,149 @@ TEST_F(ToolTest, TestListTables) {
     ProcessTables(i);
     ProcessTablets(i);
   }
+}
+
+TEST_F(ToolTest, TestScanTablePredicates) {
+  NO_FATALS(StartExternalMiniCluster());
+  string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+
+  const string kTableName = "kudu.table.scan.predicates";
+
+  // Create the src table and write some data to it.
+  TestWorkload ww(cluster_.get());
+  ww.set_table_name(kTableName);
+  ww.set_num_replicas(1);
+  ww.set_write_pattern(TestWorkload::INSERT_SEQUENTIAL_ROWS);
+  ww.set_num_write_threads(1);
+  ww.Setup();
+  ww.Start();
+  ASSERT_EVENTUALLY([&]() {
+    ASSERT_GE(ww.rows_inserted(), 10);
+  });
+  ww.StopAndJoin();
+  int64_t total_rows = ww.rows_inserted();
+
+  // Insert one more row with a NULL value column.
+  shared_ptr<KuduClient> client;
+  ASSERT_OK(cluster_->CreateClient(nullptr, &client));
+  shared_ptr<KuduSession> session = client->NewSession();
+  session->SetTimeoutMillis(20000);
+  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client->OpenTable(kTableName, &table));
+  unique_ptr<KuduInsert> insert(table->NewInsert());
+  ASSERT_OK(insert->mutable_row()->SetInt32("key", ++total_rows));
+  ASSERT_OK(insert->mutable_row()->SetInt32("int_val", 1));
+  ASSERT_OK(session->Apply(insert.release()));
+  ASSERT_OK(session->Flush());
+
+  // Check predicates.
+  RunScanTableCheck(kTableName, "", 1, total_rows);
+  RunScanTableCheck(kTableName, R"*(["AND",["=","key",1]])*", 1, 1);
+  int64_t mid = total_rows / 2;
+  RunScanTableCheck(kTableName,
+                    Substitute(R"*(["AND",[">","key",$0]])*", mid),
+                    mid + 1, total_rows);
+  RunScanTableCheck(kTableName,
+                    Substitute(R"*(["AND",[">=","key",$0]])*", mid),
+                    mid, total_rows);
+  RunScanTableCheck(kTableName,
+                    Substitute(R"*(["AND",["<","key",$0]])*", mid),
+                    1, mid - 1);
+  RunScanTableCheck(kTableName,
+                    Substitute(R"*(["AND",["<=","key",$0]])*", mid),
+                    1, mid);
+  RunScanTableCheck(kTableName,
+                    R"*(["AND",["IN","key",[1,2,3,4,5]]])*",
+                    1, 5);
+  RunScanTableCheck(kTableName,
+                    R"*(["AND",["NOTNULL","string_val"]])*",
+                    1, total_rows - 1);
+  RunScanTableCheck(kTableName,
+                    R"*(["AND",["NULL","string_val"]])*",
+                    total_rows, total_rows);
+  RunScanTableCheck(kTableName,
+                    R"*(["AND",["IN","key",[0,1,2,3]],)*"
+                    R"*(["<","key",8],[">=","key",1],["NOTNULL","key"],)*"
+                    R"*(["NOTNULL","string_val"]])*",
+                    1, 3);
+}
+
+TEST_F(ToolTest, TestScanTableProjection) {
+  NO_FATALS(StartExternalMiniCluster());
+  string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+
+  const string kTableName = "kudu.table.scan.projection";
+
+  // Create the src table and write some data to it.
+  TestWorkload ww(cluster_.get());
+  ww.set_table_name(kTableName);
+  ww.set_num_replicas(1);
+  ww.set_write_pattern(TestWorkload::INSERT_SEQUENTIAL_ROWS);
+  ww.set_num_write_threads(1);
+  ww.Setup();
+  ww.Start();
+  ASSERT_EVENTUALLY([&]() {
+    ASSERT_GE(ww.rows_inserted(), 10);
+  });
+  ww.StopAndJoin();
+
+  // Check projections.
+  string one_row_json = R"*(["AND",["=","key",1]])*";
+  RunScanTableCheck(kTableName, one_row_json, 1, 1, {});
+  RunScanTableCheck(kTableName, one_row_json, 1, 1, {{"int32", "key"}});
+  RunScanTableCheck(kTableName, one_row_json, 1, 1, {{"string", "string_val"}});
+  RunScanTableCheck(kTableName, one_row_json, 1, 1, {{"int32", "key"},
+                                                     {"string", "string_val"}});
+  RunScanTableCheck(kTableName, one_row_json, 1, 1, {{"int32", "key"},
+                                                     {"int32", "int_val"},
+                                                     {"string", "string_val"}});
+}
+
+TEST_F(ToolTest, TestScanTableMultiPredicates) {
+  NO_FATALS(StartExternalMiniCluster());
+  string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+
+  const string kTableName = "kudu.table.scan.multipredicates";
+
+  // Create the src table and write some data to it.
+  TestWorkload ww(cluster_.get());
+  ww.set_table_name(kTableName);
+  ww.set_num_replicas(1);
+  ww.set_write_pattern(TestWorkload::INSERT_SEQUENTIAL_ROWS);
+  ww.set_num_write_threads(1);
+  ww.Setup();
+  ww.Start();
+  ASSERT_EVENTUALLY([&]() {
+    ASSERT_GE(ww.rows_inserted(), 1000);
+  });
+  ww.StopAndJoin();
+  int64_t total_rows = ww.rows_inserted();
+  int64_t mid = total_rows / 2;
+
+  vector<string> lines;
+  NO_FATALS(RunActionStdoutLines(
+              Substitute("table scan $0 $1 -show_value=true "
+                         "-columns=key,string_val -predicates=$2",
+                         cluster_->master()->bound_rpc_addr().ToString(),
+                         kTableName,
+                         Substitute(R"*(["AND",[">","key",$0],)*"
+                                    R"*(["<=","key",$1],)*"
+                                    R"*([">=","string_val","a"],)*"
+                                    R"*(["<","string_val","b"]])*", mid, total_rows)),
+                         &lines));
+  for (auto line : lines) {
+    size_t pos1 = line.find("(int64 key=");
+    if (pos1 != string::npos) {
+      size_t pos2 = line.find(", string string_val=a", pos1);
+      ASSERT_NE(pos2, string::npos);
+      int32_t key;
+      ASSERT_TRUE(safe_strto32(line.substr(pos1, pos2).c_str(), &key));
+      ASSERT_GT(key, mid);
+      ASSERT_LE(key, total_rows);
+    }
+  }
+  ASSERT_LE(lines.size(), mid);
 }
 
 Status CreateLegacyHmsTable(HmsClient* client,

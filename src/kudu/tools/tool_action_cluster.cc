@@ -64,9 +64,7 @@ using strings::Substitute;
 } while (0);
 
 DECLARE_string(tables);
-DEFINE_string(tablets, "",
-              "Tablets to check (comma-separated list of IDs) "
-              "If not specified, checks all tablets.");
+DECLARE_string(tablets);
 
 DEFINE_string(sections, "*",
               "Sections to print (comma-separated list of sections, "
