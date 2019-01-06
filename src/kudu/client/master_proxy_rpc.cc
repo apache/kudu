@@ -182,10 +182,14 @@ void AsyncLeaderMasterRpc<ReqClass, RespClass>::ResetMasterLeaderAndRetry(
 template <class ReqClass, class RespClass>
 bool AsyncLeaderMasterRpc<ReqClass, RespClass>::RetryOrReconnectIfNecessary(
     Status* status) {
-  auto warn_on_retry = MakeScopedCleanup([&] {
-    KLOG_EVERY_N_SECS(WARNING, 1) <<
-        Substitute("Re-attempting $0 request to leader Master ($1)",
-            rpc_name_, client_->data_->leader_master_hostport().ToString());
+  const string retry_warning = Substitute("Re-attempting $0 request to leader Master ($1)",
+      rpc_name_, client_->data_->leader_master_hostport().ToString());
+  auto warn_on_retry = MakeScopedCleanup([&retry_warning] {
+    // NOTE: we pass in a ref to 'retry_warning' rather than evaluating it here
+    // because any of the below retries may end up completing and calling
+    // 'user_cb_', which may very well destroy this Rpc object and render
+    // 'rpc_name_' and 'client_' inaccessible.
+    KLOG_EVERY_N_SECS(WARNING, 1) << retry_warning;
   });
   // Pull out the RPC status.
   const bool is_multi_master = client_->IsMultiMaster();
