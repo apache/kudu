@@ -40,6 +40,7 @@ import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.Message;
 import com.google.protobuf.Message.Builder;
 import com.stumbleupon.async.Deferred;
+import org.apache.kudu.security.Token;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
@@ -114,6 +115,18 @@ public abstract class KuduRpc<R> {
    */
   byte[] partitionKey() {
     return null;
+  }
+
+  /**
+   * Binds the given authorization token to the request.
+   */
+  void bindAuthzToken(Token.SignedTokenPB token) {}
+
+  /**
+   * Whether the request needs to be authorized via authz token.
+   */
+  boolean needsAuthzToken() {
+    return false;
   }
 
   /**

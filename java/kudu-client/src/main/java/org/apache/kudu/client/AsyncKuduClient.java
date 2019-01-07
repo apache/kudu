@@ -56,6 +56,7 @@ import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
+import org.apache.kudu.security.Token;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 import org.jboss.netty.channel.socket.ClientSocketChannelFactory;
@@ -68,6 +69,7 @@ import org.jboss.netty.util.TimerTask;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.kudu.security.Token.SignedTokenPB;
 import org.apache.kudu.Common;
 import org.apache.kudu.Schema;
 import org.apache.kudu.master.Master;
@@ -116,8 +118,8 @@ import org.apache.kudu.util.Pair;
  * Authentication and Authorization Service</em> (JAAS) API provided by the JDK.
  * JAAS provides a common way for applications to initialize Kerberos
  * credentials, store these credentials in a {@link javax.security.auth.Subject}
- * instance, and associate the Subject the current thread of execution. The Kudu
- * client then accesses the Kerberos credentials in the
+ * instance, and associate the Subject with the current thread of execution.
+ * The Kudu client then accesses the Kerberos credentials in the
  * {@link javax.security.auth.Subject} and uses them to authenticate to the
  * remote cluster as necessary.
  * <p>
@@ -355,6 +357,9 @@ public class AsyncKuduClient implements AutoCloseable {
   /** A helper to facilitate re-acquiring of authentication token if current one expires. */
   private final AuthnTokenReacquirer tokenReacquirer;
 
+  /** A helper to facilitate retrieving authz tokens */
+  private final AuthzTokenCache authzTokenCache;
+
   private volatile boolean closed;
 
   private AsyncKuduClient(AsyncKuduClientBuilder b) {
@@ -373,6 +378,7 @@ public class AsyncKuduClient implements AutoCloseable {
     this.connectionCache = new ConnectionCache(
         securityContext, timer, channelFactory);
     this.tokenReacquirer = new AuthnTokenReacquirer(this);
+    this.authzTokenCache = new AuthzTokenCache(this);
   }
 
   /**
@@ -756,11 +762,14 @@ public class AsyncKuduClient implements AutoCloseable {
     Preconditions.checkNotNull(tableName);
 
     // Prefer a lookup by table ID over name, since the former is immutable.
+    // For backwards compatibility with older tservers, we don't require authz
+    // token support.
     GetTableSchemaRequest rpc = new GetTableSchemaRequest(this.masterTable,
                                                           tableId,
                                                           tableId != null ? null : tableName,
                                                           timer,
-                                                          defaultAdminOperationTimeoutMs);
+                                                          defaultAdminOperationTimeoutMs,
+                                                          /*requiresAuthzTokenSupport=*/false);
 
     rpc.setParentRpc(parent);
     return sendRpcToTablet(rpc).addCallback(new Callback<KuduTable, GetTableSchemaResponse>() {
@@ -772,6 +781,10 @@ public class AsyncKuduClient implements AutoCloseable {
         TableLocationsCache cache = tableLocations.get(resp.getTableId());
         if (cache != null) {
           cache.clearNonCoveredRangeEntries();
+        }
+        SignedTokenPB authzToken = resp.getAuthzToken();
+        if (authzToken != null) {
+          authzTokenCache.put(resp.getTableId(), authzToken);
         }
 
         LOG.debug("Opened table {}", resp.getTableId());
@@ -896,6 +909,11 @@ public class AsyncKuduClient implements AutoCloseable {
                   doExportAuthenticationCredentials(fakeRpc);
                 }
               }));
+  }
+
+  @InterfaceAudience.LimitedPrivate("Test")
+  public AuthzTokenCache getAuthzTokenCache() {
+    return this.authzTokenCache;
   }
 
   /**
@@ -1955,14 +1973,37 @@ public class AsyncKuduClient implements AutoCloseable {
   }
 
   /**
-   * Handle a RPC failed due to invalid authn token error. In short, connect to the Kudu cluster
+   * Handle an RPC failed due to invalid authn token error. In short, connect to the Kudu cluster
    * to acquire a new authentication token and retry the RPC once a new authentication token
    * is put into the {@link #securityContext}.
    *
-   * @param rpc the RPC which failed do to invalid authn token
+   * @param rpc the RPC which failed with an invalid authn token
    */
-  <R> void handleInvalidToken(KuduRpc<R> rpc) {
+  <R> void handleInvalidAuthnToken(KuduRpc<R> rpc) {
+    // TODO(awong): plumb the offending KuduException into the reacquirer.
     tokenReacquirer.handleAuthnTokenExpiration(rpc);
+  }
+
+  /**
+   * Handle an RPC that failed due to an invalid authorization token error. The
+   * RPC will be retried after fetching a new authz token.
+   *
+   * @param rpc the RPC that failed with an invalid authz token
+   * @param ex the KuduException that led to this handling
+   */
+  <R> void handleInvalidAuthzToken(KuduRpc<R> rpc, KuduException ex) {
+    authzTokenCache.retrieveAuthzToken(rpc, ex);
+  }
+
+  /**
+   * Gets an authorization token for the given table from the cache, or nullptr
+   * if none exists.
+   *
+   * @param tableId the table ID for which to get an authz token
+   * @return a signed authz token for the table
+   */
+  SignedTokenPB getAuthzToken(String tableId) {
+    return authzTokenCache.get(tableId);
   }
 
   /**

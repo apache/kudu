@@ -24,6 +24,7 @@ import java.util.List;
 import com.google.common.base.MoreObjects;
 import com.google.protobuf.Message;
 import com.google.protobuf.UnsafeByteOperations;
+import org.apache.kudu.security.Token;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.jboss.netty.util.Timer;
 
@@ -48,6 +49,9 @@ class Batch extends KuduRpc<BatchResponse> {
 
   /** The tablet this batch will be routed to. */
   private final LocatedTablet tablet;
+
+  /** The token with which to authorize this RPC. */
+  private Token.SignedTokenPB authzToken;
 
   /**
    * This size will be set when serialize is called. It stands for the size of rows in all
@@ -105,6 +109,16 @@ class Batch extends KuduRpc<BatchResponse> {
   }
 
   @Override
+  boolean needsAuthzToken() {
+    return true;
+  }
+
+  @Override
+  void bindAuthzToken(Token.SignedTokenPB token) {
+    authzToken = token;
+  }
+
+  @Override
   Message createRequestPB() {
     final Tserver.WriteRequestPB.Builder builder =
         Operation.createAndFillWriteRequestPB(operations);
@@ -112,6 +126,9 @@ class Batch extends KuduRpc<BatchResponse> {
                              (long)builder.getRowOperations().getIndirectData().size();
     builder.setTabletId(UnsafeByteOperations.unsafeWrap(getTablet().getTabletIdAsBytes()));
     builder.setExternalConsistencyMode(externalConsistencyMode.pbVersion());
+    if (authzToken != null) {
+      builder.setAuthzToken(authzToken);
+    }
     return builder.build();
   }
 

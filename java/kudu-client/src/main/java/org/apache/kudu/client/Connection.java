@@ -394,10 +394,16 @@ class Connection extends SimpleChannelUpstreamHandler {
     final RpcHeader.ErrorStatusPB.Builder errorBuilder = RpcHeader.ErrorStatusPB.newBuilder();
     KuduRpc.readProtobuf(response.getPBMessage(), errorBuilder);
     final RpcHeader.ErrorStatusPB error = errorBuilder.build();
-    if (error.getCode().equals(RpcHeader.ErrorStatusPB.RpcErrorCodePB.ERROR_SERVER_TOO_BUSY) ||
-        error.getCode().equals(RpcHeader.ErrorStatusPB.RpcErrorCodePB.ERROR_UNAVAILABLE)) {
+    RpcHeader.ErrorStatusPB.RpcErrorCodePB code = error.getCode();
+    if (code.equals(RpcHeader.ErrorStatusPB.RpcErrorCodePB.ERROR_SERVER_TOO_BUSY) ||
+        code.equals(RpcHeader.ErrorStatusPB.RpcErrorCodePB.ERROR_UNAVAILABLE)) {
       responseCbk.call(new CallResponseInfo(
           response, new RecoverableException(Status.ServiceUnavailable(error.getMessage()))));
+      return;
+    }
+    if (code.equals(RpcHeader.ErrorStatusPB.RpcErrorCodePB.ERROR_INVALID_AUTHORIZATION_TOKEN)) {
+      responseCbk.call(new CallResponseInfo(
+          response, new InvalidAuthzTokenException(Status.NotAuthorized(error.getMessage()))));
       return;
     }
 

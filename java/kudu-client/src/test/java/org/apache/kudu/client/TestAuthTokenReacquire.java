@@ -33,6 +33,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import org.apache.kudu.Schema;
+import org.apache.kudu.security.Token;
 import org.apache.kudu.test.cluster.MiniKuduCluster.MiniKuduClusterBuilder;
 import org.apache.kudu.test.KuduTestHarness;
 import org.apache.kudu.test.ClientTestUtil;
@@ -43,25 +44,30 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * This test contains scenarios to verify that client re-acquires authn token upon expiration
- * of the current one and automatically retries the call.
+ * This test contains scenarios to verify that clients re-acquire tokens upon
+ * expiration of the current one and automatically retries affected calls.
  */
-public class TestAuthnTokenReacquire {
-  private static final Logger LOG = LoggerFactory.getLogger(TestAuthnTokenReacquire.class);
+public class TestAuthTokenReacquire {
+  private static final Logger LOG = LoggerFactory.getLogger(TestAuthTokenReacquire.class);
 
-  private static final String TABLE_NAME = "TestAuthnTokenReacquire-table";
+  private static final String TABLE_NAME = "TestAuthTokenReacquire-table";
+
+  // Set a low token timeout.
   private static final int TOKEN_TTL_SEC = 1;
   private static final int OP_TIMEOUT_MS = 60 * TOKEN_TTL_SEC * 1000;
 
   private static final Schema basicSchema = ClientTestUtil.getBasicSchema();
 
-  // Inject additional INVALID_AUTHENTICATION_TOKEN responses from both the master and tablet
-  // servers, even for not-yet-expired tokens.
+  // Inject additional INVALID_AUTHENTICATION_TOKEN responses from both the
+  // master and tablet servers, even for not-yet-expired tokens.
   private static final MiniKuduClusterBuilder clusterBuilder = KuduTestHarness.getBaseClusterBuilder()
       .enableKerberos()
       .addMasterServerFlag(String.format("--authn_token_validity_seconds=%d", TOKEN_TTL_SEC))
+      .addMasterServerFlag(String.format("--authz_token_validity_seconds=%d", TOKEN_TTL_SEC))
       .addMasterServerFlag("--rpc_inject_invalid_authn_token_ratio=0.5")
-      .addTabletServerFlag("--rpc_inject_invalid_authn_token_ratio=0.5");
+      .addTabletServerFlag("--rpc_inject_invalid_authn_token_ratio=0.5")
+      .addTabletServerFlag("--tserver_enforce_access_control=true")
+      .addTabletServerFlag("--tserver_inject_invalid_authz_token_ratio=0.5");
 
   private KuduClient client;
   private AsyncKuduClient asyncClient;
@@ -81,11 +87,19 @@ public class TestAuthnTokenReacquire {
     }
   }
 
-  private void dropConnectionsAndExpireToken() throws InterruptedException {
+  private void dropConnectionsAndExpireTokens() throws InterruptedException {
     // Drop all connections from the client to Kudu servers.
     dropConnections();
-    // Wait for authn token expiration.
-    Thread.sleep(TOKEN_TTL_SEC * 1000);
+    // Wait for token expiration. Since we've just dropped all connections, this
+    // means that we'll need to get a new authn token upon sending the next RPC.
+    expireTokens();
+  }
+
+  private void expireTokens() throws InterruptedException {
+    // Sleep long enough for the authn/authz tokens to expire. Wait for just
+    // past the token TTL to avoid making this test flaky, e.g. in case the
+    // token just misses being considered expired.
+    Thread.sleep((TOKEN_TTL_SEC + 1) * 1000);
   }
 
   @Test
@@ -100,23 +114,23 @@ public class TestAuthnTokenReacquire {
         @Override
         @SuppressWarnings("AssertionFailureIgnored")
         public void run() {
-          final String tableName = "TestAuthnTokenReacquire-table-" + threadIdx;
+          final String tableName = "TestAuthTokenReacquire-table-" + threadIdx;
           try {
             ListTabletServersResponse response = client.listTabletServers();
             assertNotNull(response);
-            dropConnectionsAndExpireToken();
+            dropConnectionsAndExpireTokens();
 
             ListTablesResponse tableList = client.getTablesList(tableName);
             assertNotNull(tableList);
             assertTrue(tableList.getTablesList().isEmpty());
-            dropConnectionsAndExpireToken();
+            dropConnectionsAndExpireTokens();
 
             client.createTable(tableName, basicSchema, getBasicCreateTableOptions());
-            dropConnectionsAndExpireToken();
+            dropConnectionsAndExpireTokens();
 
             KuduTable table = client.openTable(tableName);
             assertEquals(basicSchema.getColumnCount(), table.getSchema().getColumnCount());
-            dropConnectionsAndExpireToken();
+            dropConnectionsAndExpireTokens();
 
             client.deleteTable(tableName);
             assertFalse(client.tableExists(tableName));
@@ -126,7 +140,7 @@ public class TestAuthnTokenReacquire {
           }
         }
       });
-      thread.run();
+      thread.start();
       threads.add(thread);
     }
     for (Thread thread : threads) {
@@ -140,29 +154,65 @@ public class TestAuthnTokenReacquire {
     }
   }
 
-  @Test
-  public void testBasicWorkflow() throws Exception {
-    KuduTable table = client.createTable(TABLE_NAME, basicSchema,
-        getBasicCreateTableOptions());
-    dropConnectionsAndExpireToken();
+  private int countRowsInTable(KuduTable table) throws Exception {
+    AsyncKuduScanner scanner = new AsyncKuduScanner.AsyncKuduScannerBuilder(asyncClient, table)
+        .scanRequestTimeout(OP_TIMEOUT_MS)
+        .build();
+    return countRowsInScan(scanner);
+  }
 
-    KuduSession session = client.newSession();
-    session.setTimeoutMillis(OP_TIMEOUT_MS);
-    session.apply(createBasicSchemaInsert(table, 1));
+  private void insertRowWithKey(KuduSession session, KuduTable table, int key) throws Exception {
+    session.apply(createBasicSchemaInsert(table, key));
     session.flush();
     RowErrorsAndOverflowStatus errors = session.getPendingErrors();
     assertFalse(errors.isOverflowed());
     assertEquals(0, session.countPendingErrors());
-    dropConnectionsAndExpireToken();
+  }
 
+
+  @Test
+  public void testBasicWorkflow() throws Exception {
+    KuduTable table = client.createTable(TABLE_NAME, basicSchema,
+        getBasicCreateTableOptions());
+    String tableId = table.getTableId();
+    int key = 0;
+
+    // Drop all connections so the first write needs to reconnect with a new authn token.
+    Token.SignedTokenPB originalToken = asyncClient.securityContext.getAuthenticationToken();
+    dropConnectionsAndExpireTokens();
+    KuduSession session = client.newSession();
+    session.setTimeoutMillis(OP_TIMEOUT_MS);
+    insertRowWithKey(session, table, ++key);
+
+    // Verify that we got a different authn token.
+    assertFalse(asyncClient.securityContext.getAuthenticationToken().equals(originalToken));
+
+    // Now wait for the authz token to expire and do a write.
+    originalToken = asyncClient.getAuthzToken(tableId);
+    expireTokens();
+    insertRowWithKey(session, table, ++key);
+
+    // Verify that we got a different authz token.
+    assertFalse(asyncClient.getAuthzToken(tableId).equals(originalToken));
+
+    // Drop all connections so the first scan needs to reconnect with a new authn token.
+    originalToken = asyncClient.securityContext.getAuthenticationToken();
+    dropConnectionsAndExpireTokens();
     KuduTable scanTable = client.openTable(TABLE_NAME);
-    AsyncKuduScanner scanner = new AsyncKuduScanner.AsyncKuduScannerBuilder(asyncClient, scanTable)
-        .scanRequestTimeout(OP_TIMEOUT_MS)
-        .build();
-    assertEquals(1, countRowsInScan(scanner));
-    dropConnectionsAndExpireToken();
+    assertEquals(key, countRowsInTable(scanTable));
+    assertFalse(asyncClient.securityContext.getAuthenticationToken().equals(originalToken));
 
+    // Now wait for the authz token to expire and do a scan.
+    originalToken = asyncClient.getAuthzToken(tableId);
+    expireTokens();
+    assertEquals(key, countRowsInTable(scanTable));
+    assertFalse(asyncClient.getAuthzToken(tableId).equals(originalToken));
+
+    // Force the client to get a new authn token and delete the table.
+    originalToken = asyncClient.securityContext.getAuthenticationToken();
+    dropConnectionsAndExpireTokens();
     client.deleteTable(TABLE_NAME);
     assertFalse(client.tableExists(TABLE_NAME));
+    assertFalse(asyncClient.securityContext.getAuthenticationToken().equals(originalToken));
   }
 }

@@ -32,6 +32,7 @@ import javax.annotation.Nonnull;
 import com.google.common.base.Preconditions;
 import com.google.protobuf.Message;
 import com.stumbleupon.async.Callback;
+import org.apache.kudu.security.Token;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 import org.slf4j.Logger;
@@ -181,6 +182,12 @@ class RpcProxy {
             RpcHeader.RemoteMethodPB.newBuilder()
                 .setServiceName(rpc.serviceName())
                 .setMethodName(rpc.method()));
+    // Before we create the request, get an authz token if needed. This is done
+    // regardless of whether the KuduRpc object already has a token; we may be
+    // a retrying due to an invalid token and the client may have a new token.
+    if (rpc.needsAuthzToken()) {
+      rpc.bindAuthzToken(client.getAuthzToken(rpc.getTable().getTableId()));
+    }
     final Message reqPB = rpc.createRequestPB();
     // TODO(wdberkeley): We should enforce that every RPC has a timeout.
     if (rpc.timeoutTracker.hasTimeout()) {
@@ -225,7 +232,11 @@ class RpcProxy {
             connection.getServerInfo());
     if (ex != null) {
       if (ex instanceof InvalidAuthnTokenException) {
-        client.handleInvalidToken(rpc);
+        client.handleInvalidAuthnToken(rpc);
+        return;
+      }
+      if (ex instanceof InvalidAuthzTokenException) {
+        client.handleInvalidAuthzToken(rpc, ex);
         return;
       }
       if (ex instanceof RecoverableException) {

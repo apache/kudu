@@ -27,6 +27,7 @@ import com.google.common.collect.ImmutableList;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
 import com.google.protobuf.UnsafeByteOperations;
+import org.apache.kudu.security.Token;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 import org.jboss.netty.util.Timer;
@@ -85,6 +86,8 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
   static final String METHOD = "Write";
 
   private PartialRow row;
+
+  private Token.SignedTokenPB authzToken;
 
   /** See {@link SessionConfiguration#setIgnoreAllDuplicateRows(boolean)} */
   boolean ignoreAllDuplicateRows = false;
@@ -149,6 +152,16 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
   }
 
   @Override
+  boolean needsAuthzToken() {
+    return true;
+  }
+
+  @Override
+  void bindAuthzToken(Token.SignedTokenPB token) {
+    authzToken = token;
+  }
+
+  @Override
   Message createRequestPB() {
     final Tserver.WriteRequestPB.Builder builder =
         createAndFillWriteRequestPB(ImmutableList.of(this));
@@ -158,6 +171,9 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
     builder.setExternalConsistencyMode(this.externalConsistencyMode.pbVersion());
     if (this.propagatedTimestamp != AsyncKuduClient.NO_TIMESTAMP) {
       builder.setPropagatedTimestamp(this.propagatedTimestamp);
+    }
+    if (authzToken != null) {
+      builder.setAuthzToken(authzToken);
     }
     return builder.build();
   }

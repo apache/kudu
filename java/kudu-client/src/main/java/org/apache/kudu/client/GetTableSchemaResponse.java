@@ -19,6 +19,7 @@ package org.apache.kudu.client;
 
 import org.apache.yetus.audience.InterfaceAudience;
 
+import org.apache.kudu.security.Token.SignedTokenPB;
 import org.apache.kudu.Schema;
 
 @InterfaceAudience.Private
@@ -28,6 +29,7 @@ public class GetTableSchemaResponse extends KuduRpcResponse {
   private final PartitionSchema partitionSchema;
   private final String tableId;
   private final int numReplicas;
+  private final SignedTokenPB authzToken;
 
   /**
    * @param elapsedMillis Time in milliseconds since RPC creation to now
@@ -36,18 +38,21 @@ public class GetTableSchemaResponse extends KuduRpcResponse {
    * @param tableId the UUID of the table in the response
    * @param numReplicas the table's replication factor
    * @param partitionSchema the table's partition schema
+   * @param authzToken an authorization token for use with this table
    */
   GetTableSchemaResponse(long elapsedMillis,
                          String tsUUID,
                          Schema schema,
                          String tableId,
                          int numReplicas,
-                         PartitionSchema partitionSchema) {
+                         PartitionSchema partitionSchema,
+                         SignedTokenPB authzToken) {
     super(elapsedMillis, tsUUID);
     this.schema = schema;
     this.partitionSchema = partitionSchema;
     this.tableId = tableId;
     this.numReplicas = numReplicas;
+    this.authzToken = authzToken;
   }
 
   /**
@@ -80,5 +85,13 @@ public class GetTableSchemaResponse extends KuduRpcResponse {
    */
   public int getNumReplicas() {
     return numReplicas;
+  }
+
+  /**
+   * Get the authorization token for the table.
+   * @return the table's authz token
+   */
+  public SignedTokenPB getAuthzToken() {
+    return authzToken;
   }
 }

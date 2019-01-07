@@ -41,6 +41,7 @@ import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.client.PartialRow;
 import org.apache.kudu.client.RowResult;
 import org.apache.kudu.client.RowResultIterator;
+import org.apache.kudu.client.Upsert;
 import org.apache.kudu.util.DecimalUtil;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
@@ -288,6 +289,17 @@ public abstract class ClientTestUtil {
     }
     session.flush();
     session.close();
+  }
+
+  public static Upsert createBasicSchemaUpsert(KuduTable table, int key) {
+    Upsert upsert = table.newUpsert();
+    PartialRow row = upsert.getRow();
+    row.addInt(0, key);
+    row.addInt(1, 3);
+    row.addInt(2, 4);
+    row.addString(3, "another string");
+    row.addBoolean(4, false);
+    return upsert;
   }
 
   public static Insert createBasicSchemaInsert(KuduTable table, int key) {

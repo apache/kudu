@@ -43,6 +43,7 @@ import com.google.protobuf.Message;
 import com.google.protobuf.UnsafeByteOperations;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
+import org.apache.kudu.security.Token;
 import org.apache.kudu.tserver.Tserver.ScannerKeepAliveRequestPB;
 import org.apache.kudu.tserver.Tserver.ScannerKeepAliveResponsePB;
 import org.apache.yetus.audience.InterfaceAudience;
@@ -886,6 +887,9 @@ public final class AsyncKuduScanner {
 
     State state;
 
+    /** The token with which to authorize this RPC. */
+    private Token.SignedTokenPB authzToken;
+
     ScanRequest(KuduTable table, State state, RemoteTablet tablet) {
       super(table, client.getTimer(), scanRequestTimeout);
       setTablet(tablet);
@@ -914,6 +918,16 @@ public final class AsyncKuduScanner {
     @Override
     ReplicaSelection getReplicaSelection() {
       return replicaSelection;
+    }
+
+    @Override
+    boolean needsAuthzToken() {
+      return true;
+    }
+
+    @Override
+    void bindAuthzToken(Token.SignedTokenPB token) {
+      authzToken = token;
     }
 
     /** Serializes this request.  */
@@ -967,6 +981,9 @@ public final class AsyncKuduScanner {
 
           for (KuduPredicate pred : predicates.values()) {
             newBuilder.addColumnPredicates(pred.toPB());
+          }
+          if (authzToken != null) {
+            newBuilder.setAuthzToken(authzToken);
           }
           builder.setNewScanRequest(newBuilder.build())
                  .setBatchSizeBytes(batchSizeBytes);
