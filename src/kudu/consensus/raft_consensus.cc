@@ -1012,9 +1012,9 @@ Status RaftConsensus::Update(const ConsensusRequestPB* request,
   Status s = UpdateReplica(request, response);
   if (PREDICT_FALSE(VLOG_IS_ON(1))) {
     if (request->ops().empty()) {
-      VLOG_WITH_PREFIX(1) << "Replica replied to status only request. Replica: "
-                          << ToString() << ". Response: "
-                          << SecureShortDebugString(*response);
+      VLOG_WITH_PREFIX(1)
+          << Substitute("Replica replied to status only request. Replica: $0. Response: $1",
+                        ToString(), SecureShortDebugString(*response));
     }
   }
   return s;

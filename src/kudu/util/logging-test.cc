@@ -246,4 +246,21 @@ TEST(LoggingTest, TestLogTiming) {
 
   ASSERT_EQ("hello", s2);
 }
+
+// Test that VLOG(n) does not evaluate its message if the verbose level is < n,
+// ensuring that it is perf-safe to write things like
+//
+//   VLOG(1) << Substitute("your foo is $0", compute_costly_bar_string());
+//
+// in hot code paths.
+TEST(LoggingTest, TestVlogDoesNotEvaluateMessage) {
+  if (VLOG_IS_ON(1)) {
+    LOG(INFO) << "Test skipped: verbose level is at least 1";
+    return;
+  }
+
+  int numVlogs = 0;
+  VLOG(1) << "This shouldn't be logged: " << numVlogs++;
+  ASSERT_EQ(0, numVlogs);
+}
 } // namespace kudu

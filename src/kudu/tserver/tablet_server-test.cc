@@ -1782,8 +1782,8 @@ TEST_F(TabletServerTest, TestSnapshotScan) {
     ASSERT_EQ(expected_num_rows, results.size());
 
     if (VLOG_IS_ON(2)) {
-      VLOG(2) << "Scanner: " << resp.scanner_id() << " performing a snapshot read at: "
-              << read_timestamp.ToString() << " got back: ";
+      VLOG(2) << Substitute("Scanner: $0 performing a snapshot read at $1 got back: ",
+                            resp.scanner_id(), read_timestamp.ToString());
       for (const string& result : results) {
         VLOG(2) << result;
       }

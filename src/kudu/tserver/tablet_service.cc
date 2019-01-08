@@ -1756,10 +1756,8 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
 
     auto pred = ColumnPredicate::InclusiveRange(col, lower_bound, upper_bound, scanner->arena());
     if (pred) {
-      if (VLOG_IS_ON(3)) {
-        VLOG(3) << "Parsed predicate " << pred->ToString()
-                << " from " << SecureShortDebugString(scan_pb);
-      }
+      VLOG(3) << Substitute("Parsed predicate $0 from $1",
+                            pred->ToString(), SecureShortDebugString(scan_pb));
       ret->AddPredicate(*pred);
     }
   }

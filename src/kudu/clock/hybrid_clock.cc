@@ -180,11 +180,10 @@ void HybridClock::NowWithError(Timestamp* timestamp, uint64_t* max_error_usec) {
     next_timestamp_ = candidate_phys_timestamp;
     *timestamp = Timestamp(next_timestamp_++);
     *max_error_usec = error_usec;
-    if (PREDICT_FALSE(VLOG_IS_ON(2))) {
-      VLOG(2) << "Current clock is higher than the last one. Resetting logical values."
-          << " Physical Value: " << now_usec << " usec Logical Value: 0  Error: "
-          << error_usec;
-    }
+    VLOG(2) << Substitute("Current clock is higher than the last one. "
+                          "Resetting logical values. Physical Value: $0 usec "
+                          "Logical Value: 0  Error: $1",
+                          now_usec, error_usec);
     return;
   }
 
@@ -208,10 +207,10 @@ void HybridClock::NowWithError(Timestamp* timestamp, uint64_t* max_error_usec) {
 
   *max_error_usec = (next_timestamp_ >> kBitsToShift) - (now_usec - error_usec);
   *timestamp = Timestamp(next_timestamp_++);
-  if (PREDICT_FALSE(VLOG_IS_ON(2))) {
-    VLOG(2) << "Current clock is lower than the last one. Returning last read and incrementing"
-        " logical values. Clock: " + Stringify(*timestamp) << " Error: " << *max_error_usec;
-  }
+  VLOG(2) << Substitute("Current clock is lower than the last one. Returning "
+                        "last read and incrementing logical values. "
+                        "Clock: $0 Error: $1",
+                        Stringify(*timestamp), *max_error_usec);
 }
 
 Status HybridClock::Update(const Timestamp& to_update) {

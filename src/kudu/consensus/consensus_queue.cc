@@ -750,13 +750,17 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
 
   if (PREDICT_FALSE(VLOG_IS_ON(2))) {
     if (request->ops_size() > 0) {
-      VLOG_WITH_PREFIX_UNLOCKED(2) << "Sending request with operations to Peer: " << uuid
-          << ". Size: " << request->ops_size()
-          << ". From: " << SecureShortDebugString(request->ops(0).id()) << ". To: "
-          << SecureShortDebugString(request->ops(request->ops_size() - 1).id());
+      VLOG_WITH_PREFIX_UNLOCKED(2)
+          << Substitute("Sending request with operations to Peer: $0. Size: $1. From: $2. To: $3",
+                        uuid,
+                        request->ops_size(),
+                        SecureShortDebugString(request->ops(0).id()),
+                        SecureShortDebugString(request->ops(request->ops_size() - 1).id()));
     } else {
-      VLOG_WITH_PREFIX_UNLOCKED(2) << "Sending status only request to Peer: " << uuid
-          << ": " << SecureDebugString(*request);
+      VLOG_WITH_PREFIX_UNLOCKED(2)
+          << Substitute("Sending status only request to Peer: $0: $1",
+                        uuid,
+                        SecureDebugString(*request));
     }
   }
 
@@ -797,12 +801,14 @@ void PeerMessageQueue::AdvanceQueueWatermark(const char* type,
                                              ReplicaTypes replica_types,
                                              const TrackedPeer* who_caused) {
 
-  if (VLOG_IS_ON(2)) {
-    VLOG_WITH_PREFIX_UNLOCKED(2) << "Updating " << type << " watermark: "
-        << "Peer (" << who_caused->ToString() << ") changed from "
-        << replicated_before << " to " << replicated_after << ". "
-                                 << "Current value: " << *watermark;
-  }
+  VLOG_WITH_PREFIX_UNLOCKED(2)
+      << Substitute("Updating $0 watermark: Peer ($1) changed from $2 to $3. "
+                    "Current value: $4",
+                    type,
+                    who_caused->ToString(),
+                    OpIdToString(replicated_before),
+                    OpIdToString(replicated_after),
+                    *watermark);
 
   // Go through the peer's watermarks, we want the highest watermark that
   // 'num_peers_required' of peers has replicated. To find this we do the
@@ -855,15 +861,16 @@ void PeerMessageQueue::AdvanceQueueWatermark(const char* type,
   int64_t old_watermark = *watermark;
   *watermark = new_watermark;
 
-  VLOG_WITH_PREFIX_UNLOCKED(1) << "Updated " << type << " watermark "
-      << "from " << old_watermark << " to " << new_watermark;
+  VLOG_WITH_PREFIX_UNLOCKED(1)
+      << Substitute("Updated $0 watermark from $1 to $2",
+                    type, old_watermark, new_watermark);
   if (VLOG_IS_ON(3)) {
     VLOG_WITH_PREFIX_UNLOCKED(3) << "Peers: ";
-    for (const PeersMap::value_type& peer : peers_map_) {
+    for (const auto& peer : peers_map_) {
       VLOG_WITH_PREFIX_UNLOCKED(3) << "Peer: " << peer.second->ToString();
     }
     VLOG_WITH_PREFIX_UNLOCKED(3) << "Sorted watermarks:";
-    for (int64_t watermark : watermarks) {
+    for (const auto watermark : watermarks) {
       VLOG_WITH_PREFIX_UNLOCKED(3) << "Watermark: " << watermark;
     }
   }
@@ -1176,10 +1183,9 @@ bool PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
       CHECK_LE(response.responder_term(), queue_state_.current_term);
     }
 
-    if (PREDICT_FALSE(VLOG_IS_ON(2))) {
-      VLOG_WITH_PREFIX_UNLOCKED(2) << "Received Response from Peer (" << peer->ToString() << "). "
-          << "Response: " << SecureShortDebugString(response);
-    }
+    VLOG_WITH_PREFIX_UNLOCKED(2)
+        << Substitute("Received Response from Peer ($0). Response: $1",
+                      peer->ToString(), SecureShortDebugString(response));
 
     mode_copy = queue_state_.mode;
 

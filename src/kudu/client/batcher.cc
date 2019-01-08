@@ -53,6 +53,7 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/connection.h"
+#include "kudu/rpc/request_tracker.h"
 #include "kudu/rpc/response_callback.h"
 #include "kudu/rpc/retriable_rpc.h"
 #include "kudu/rpc/rpc.h"
@@ -79,7 +80,6 @@ class Schema;
 
 namespace rpc {
 class Messenger;
-class RequestTracker;
 }
 
 using pb_util::SecureDebugString;
@@ -317,9 +317,8 @@ WriteRpc::WriteRpc(const scoped_refptr<Batcher>& batcher,
     VLOG(4) << ++ctr << ". Encoded row " << op->ToString();
   }
 
-  if (VLOG_IS_ON(3)) {
-    VLOG(3) << "Created batch for " << tablet_id << ":\n" << SecureShortDebugString(req_);
-  }
+  VLOG(3) << Substitute("Created batch for $0:\n$1",
+                        tablet_id, SecureShortDebugString(req_));
 }
 
 WriteRpc::~WriteRpc() {

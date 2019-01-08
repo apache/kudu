@@ -835,9 +835,7 @@ Status TabletBootstrap::HandleEntry(const IOContext* io_context,
                                     unique_ptr<LogEntryPB> entry,
                                     string* entry_debug_info) {
   DCHECK(entry);
-  if (VLOG_IS_ON(1)) {
-    VLOG_WITH_PREFIX(1) << "Handling entry: " << SecureShortDebugString(*entry);
-  }
+  VLOG_WITH_PREFIX(1) << "Handling entry: " << SecureShortDebugString(*entry);
 
   const auto entry_type = entry->type();
   switch (entry_type) {

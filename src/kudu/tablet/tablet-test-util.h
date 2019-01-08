@@ -81,6 +81,8 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+using strings::Substitute;
+
 namespace kudu {
 
 namespace clock {
@@ -418,8 +420,8 @@ class MirroredDeltas {
                       const SelectionVector& filter) {
     if (VLOG_IS_ON(3)) {
       std::string lower_ts_str = lower_ts ? lower_ts->ToString() : "INF";
-      VLOG(3) << "Begin applying for timestamps [" << lower_ts_str << ","
-              << upper_ts << ")";
+      VLOG(3) << Substitute("Begin applying for timestamps [$0, $1)",
+                            lower_ts_str, upper_ts.ToString());
     }
     for (int i = 0; i < cb->nrows(); i++) {
       rowid_t row_idx = start_row_idx + i;
@@ -902,14 +904,14 @@ void RunDeltaFuzzTest(const DeltaStore& store,
                                                        AllowIsDeleted::NO);
     size_t projection_vc_is_deleted_idx =
         projection.find_first_is_deleted_virtual_column();
-    SCOPED_TRACE(strings::Substitute("Projection $0", projection.ToString()));
+    SCOPED_TRACE(Substitute("Projection $0", projection.ToString()));
     RowIteratorOptions opts;
     opts.projection = &projection;
     if (lower_ts) {
       opts.snap_to_exclude = MvccSnapshot(*lower_ts);
     }
     opts.snap_to_include = MvccSnapshot(upper_ts);
-    SCOPED_TRACE(strings::Substitute("Timestamps: [$0,$1)",
+    SCOPED_TRACE(Substitute("Timestamps: [$0,$1)",
                                      lower_ts ? lower_ts->ToString() : "INF",
                                      upper_ts.ToString()));
     DeltaIterator* raw_iter;
@@ -928,7 +930,7 @@ void RunDeltaFuzzTest(const DeltaStore& store,
     rowid_t start_row_idx = 0;
     while (iter->HasNext()) {
       int batch_size = prng->Uniform(kMaxBatchSize) + 1;
-      SCOPED_TRACE(strings::Substitute("batch starting at $0 ($1 rows)",
+      SCOPED_TRACE(Substitute("batch starting at $0 ($1 rows)",
                                        start_row_idx, batch_size));
       int prepare_flags = DeltaIterator::PREPARE_FOR_APPLY |
                           DeltaIterator::PREPARE_FOR_COLLECT;
@@ -969,7 +971,7 @@ void RunDeltaFuzzTest(const DeltaStore& store,
 
       // Test ApplyUpdates: all relevant updates are applied to the column block.
       for (int j = 0; j < opts.projection->num_columns(); j++) {
-        SCOPED_TRACE(strings::Substitute("Column $0", j));
+        SCOPED_TRACE(Substitute("Column $0", j));
         bool col_is_nullable = opts.projection->column(j).is_nullable();
         ScopedColumnBlock<UINT32> expected_scb(batch_size, col_is_nullable);
         ScopedColumnBlock<UINT32> actual_scb(batch_size, col_is_nullable);

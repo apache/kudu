@@ -17,7 +17,6 @@
 
 #include <algorithm>
 #include <atomic>
-
 #include <cstdint>
 #include <memory>
 #include <ostream>
@@ -40,6 +39,7 @@
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/tablet/compaction.h"
@@ -49,6 +49,7 @@
 #include "kudu/tablet/rowset_metadata.h"
 #include "kudu/tablet/tablet-harness.h"
 #include "kudu/tablet/tablet-test-base.h"
+#include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_metrics.h"
@@ -540,11 +541,7 @@ TEST_F(TabletHistoryGcTest, TestGcWithConcurrentCompaction) {
   vector<string> rows;
   ASSERT_OK(IterateToStringList(&rows));
 
-  if (VLOG_IS_ON(2)) {
-    for (const string& r : rows) {
-      VLOG(2) << r;
-    }
-  }
+  VLOG(2) << JoinStrings(rows, "\n");
 
   vector<int32_t> expected_rows = { 1, 3, 5, 7, 9 };
   for (int i = 0; i < expected_rows.size(); i++) {

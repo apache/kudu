@@ -453,10 +453,8 @@ class TabletTestBase : public KuduTabletTest {
       ASSERT_OK_FAST(iter->NextBlock(&block));
 
       RowBlockRow rb_row = block.row(0);
-      if (VLOG_IS_ON(2)) {
-        VLOG(2) << "Fetched batch of " << block.nrows() << "\n"
-                << "First row: " << schema_.DebugRow(rb_row);
-      }
+      VLOG(2) << Substitute("Fetched batch of $0\nFirst row: $1",
+                            block.nrows(), schema_.DebugRow(rb_row));
 
       for (int i = 0; i < block.nrows(); i++) {
         rb_row.Reset(&block, i);
