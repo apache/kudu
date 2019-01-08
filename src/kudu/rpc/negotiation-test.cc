@@ -80,6 +80,13 @@
 #define KRB5_VERSION_LE_1_10
 #endif
 
+#if defined(__APPLE__)
+// Almost all functions in the SASL API are marked as deprecated
+// since macOS 10.11.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif // #if defined(__APPLE__)
+
 DEFINE_bool(is_test_child, false,
             "Used by tests which require clean processes. "
             "See TestDisableInit.");
@@ -1346,3 +1353,7 @@ TEST_F(TestDisableInit, TestMultipleSaslInit_NoMutexImpl) {
 
 } // namespace rpc
 } // namespace kudu
+
+#if defined(__APPLE__)
+#pragma GCC diagnostic pop
+#endif // #if defined(__APPLE__)

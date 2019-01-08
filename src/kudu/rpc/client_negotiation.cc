@@ -52,6 +52,13 @@
 #include "kudu/util/slice.h"
 #include "kudu/util/trace.h"
 
+#if defined(__APPLE__)
+// Almost all functions in the SASL API are marked as deprecated
+// since macOS 10.11.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif // #if defined(__APPLE__)
+
 using std::map;
 using std::set;
 using std::string;
@@ -851,3 +858,7 @@ Status ClientNegotiation::CheckGSSAPI() {
 
 } // namespace rpc
 } // namespace kudu
+
+#if defined(__APPLE__)
+#pragma GCC diagnostic pop
+#endif // #if defined(__APPLE__)

@@ -29,6 +29,11 @@ typedef int64_t Atomic64;
 
 #include <libkern/OSAtomic.h>
 
+// Almost all OSAtomicXxx functions used in this header are marked
+// as deprecated since macOS 10.12.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 #if !defined(__LP64__) && defined(__ppc__)
 
 // The Mac 64-bit OSAtomic implementations are not available for 32-bit PowerPC,
@@ -398,6 +403,8 @@ inline Atomic64 Release_Load(volatile const Atomic64 *ptr) {
 
 }   // namespace base::subtle
 }   // namespace base
+
+#pragma GCC diagnostic pop
 
 // NOTE(user): The following is also deprecated.  New callers should use
 // the base::subtle namespace.

@@ -48,6 +48,13 @@
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
 
+#if defined(__APPLE__)
+// Almost all functions in the krb5 API are marked as deprecated in favor
+// of GSS.framework in macOS.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif // #if defined(__APPLE__)
+
 #ifndef __APPLE__
 static constexpr bool kDefaultSystemAuthToLocal = true;
 #else
@@ -56,6 +63,7 @@ static constexpr bool kDefaultSystemAuthToLocal = true;
 // implementation.
 static constexpr bool kDefaultSystemAuthToLocal = false;
 #endif
+
 DEFINE_bool(use_system_auth_to_local, kDefaultSystemAuthToLocal,
             "When enabled, use the system krb5 library to map Kerberos principal "
             "names to local (short) usernames. If not enabled, the first component "
@@ -463,3 +471,7 @@ Status InitKerberosForServer(const std::string& raw_principal, const std::string
 
 } // namespace security
 } // namespace kudu
+
+#if defined(__APPLE__)
+#pragma GCC diagnostic pop
+#endif // #if defined(__APPLE__)
