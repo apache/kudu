@@ -23,6 +23,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -30,6 +31,7 @@
 #include "kudu/common/iterator.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/schema.h"
+#include "kudu/fs/io_context.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
@@ -41,6 +43,8 @@
 #include "kudu/tablet/tablet.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
+
+DECLARE_double(cfile_inject_corruption);
 
 using std::shared_ptr;
 using std::string;
@@ -175,6 +179,32 @@ class TestMajorDeltaCompaction : public KuduRowSetTest {
   MvccManager mvcc_;
   vector<ExpectedRow> expected_state_;
 };
+
+// Regression test for KUDU-2656, wherein a corruption during a major delta
+// compaction would lead to a failure in debug mode.
+TEST_F(TestMajorDeltaCompaction, TestKudu2656) {
+  constexpr int kNumRows = 100;
+  NO_FATALS(WriteTestTablet(kNumRows));
+  ASSERT_OK(tablet()->Flush());
+  vector<shared_ptr<RowSet>> all_rowsets;
+  tablet()->GetRowSetsForTests(&all_rowsets);
+  ASSERT_FALSE(all_rowsets.empty());
+  shared_ptr<RowSet> rs = all_rowsets.front();
+  // Create some on-disk deltas.
+  NO_FATALS(UpdateRows(kNumRows, /*even=*/false));
+  ASSERT_OK(tablet()->FlushBiggestDMS());
+
+  // Major compact some columns.
+  vector<ColumnId> col_ids = { schema_.column_id(1),
+                               schema_.column_id(3),
+                               schema_.column_id(4) };
+
+  // Injecting a failure should result in an error, not a crash.
+  FLAGS_cfile_inject_corruption = 1.0;
+  fs::IOContext io_context({ "test-tablet" });
+  Status s = tablet()->DoMajorDeltaCompaction(col_ids, rs, &io_context);
+  ASSERT_TRUE(s.IsCorruption()) << s.ToString();
+}
 
 // Tests a major delta compaction run.
 // Verifies that the output rowset accurately reflects the mutations, but keeps the

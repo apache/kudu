@@ -1083,10 +1083,11 @@ void Tablet::AtomicSwapRowSetsUnlocked(const RowSetVector &to_remove,
 }
 
 Status Tablet::DoMajorDeltaCompaction(const vector<ColumnId>& col_ids,
-                                      const shared_ptr<RowSet>& input_rs) {
+                                      const shared_ptr<RowSet>& input_rs,
+                                      const IOContext* io_context) {
   RETURN_IF_STOPPED_OR_CHECK_STATE(kOpen);
   Status s = down_cast<DiskRowSet*>(input_rs.get())
-      ->MajorCompactDeltaStoresWithColumnIds(col_ids, nullptr, GetHistoryGcOpts());
+      ->MajorCompactDeltaStoresWithColumnIds(col_ids, io_context, GetHistoryGcOpts());
   return s;
 }
 

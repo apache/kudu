@@ -195,6 +195,7 @@ class DeltaTracker {
                           std::vector<std::shared_ptr<DeltaStore>>* stores,
                           DeltaType type);
 
+#ifndef NDEBUG
   // Validates that 'first' may precede 'second' in an ordered list of deltas,
   // given a delta type of 'type'. This should only be run in DEBUG mode.
   //
@@ -202,6 +203,7 @@ class DeltaTracker {
   // validation could not be performed.
   Status ValidateDeltaOrder(const std::shared_ptr<DeltaStore>& first,
                             const std::shared_ptr<DeltaStore>& second,
+                            const fs::IOContext* io_context,
                             DeltaType type);
 
   // Validates the relative ordering of the deltas in the specified list. This
@@ -209,14 +211,20 @@ class DeltaTracker {
   //
   // Crashes if there is an ordering violation, and returns an error if the
   // validation could not be performed.
-  Status ValidateDeltasOrdered(const SharedDeltaStoreVector& list, DeltaType type);
+  Status ValidateDeltasOrdered(const SharedDeltaStoreVector& list,
+                               const fs::IOContext* io_context,
+                               DeltaType type);
+#endif // NDEBUG
 
   // Replaces the subsequence of stores that matches 'stores_to_replace' with
   // delta file readers corresponding to 'new_delta_blocks', which may be empty.
   // If 'stores_to_replace' is empty then the stores represented by
   // 'new_delta_blocks' are prepended to the relevant delta stores list.
+  //
+  // In DEBUG mode, this may do IO to validate the delta ordering.
   void AtomicUpdateStores(const SharedDeltaStoreVector& stores_to_replace,
                           const SharedDeltaStoreVector& new_stores,
+                          const fs::IOContext* io_context,
                           DeltaType type);
 
   // Get the delta MemStore's size in bytes, including pre-allocation.

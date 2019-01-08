@@ -421,12 +421,12 @@ Status MajorDeltaCompaction::UpdateDeltaTracker(DeltaTracker* tracker,
 
   // Even if we didn't create any new redo blocks, we still need to update the
   // tracker so it removes the included_stores_.
-  tracker->AtomicUpdateStores(included_stores_, new_redo_stores, REDO);
+  tracker->AtomicUpdateStores(included_stores_, new_redo_stores, io_context, REDO);
 
   // We only call AtomicUpdateStores() for UNDOs if we wrote UNDOs. We're not
   // removing stores so we don't need to call it otherwise.
   if (!new_undo_stores.empty()) {
-    tracker->AtomicUpdateStores({}, new_undo_stores, UNDO);
+    tracker->AtomicUpdateStores({}, new_undo_stores, io_context, UNDO);
   }
   return Status::OK();
 }

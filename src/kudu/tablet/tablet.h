@@ -385,7 +385,8 @@ class Tablet {
   //
   // Only used in tests.
   Status DoMajorDeltaCompaction(const std::vector<ColumnId>& col_ids,
-                                const std::shared_ptr<RowSet>& input_rs);
+                                const std::shared_ptr<RowSet>& input_rs,
+                                const fs::IOContext* io_context = nullptr);
 
   // Calculates the ancient history mark and returns true iff tablet history GC
   // is enabled, which requires the use of a HybridClock.
