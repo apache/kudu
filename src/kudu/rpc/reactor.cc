@@ -273,8 +273,8 @@ Status ReactorThread::GetMetrics(ReactorMetrics* metrics) {
   return Status::OK();
 }
 
-Status ReactorThread::DumpRunningRpcs(const DumpRunningRpcsRequestPB& req,
-                                      DumpRunningRpcsResponsePB* resp) {
+Status ReactorThread::DumpConnections(const DumpConnectionsRequestPB& req,
+                                      DumpConnectionsResponsePB* resp) {
   DCHECK(IsCurrentThread());
   for (const scoped_refptr<Connection>& conn : server_conns_) {
     RETURN_NOT_OK(conn->DumpPB(req, resp->add_inbound_connections()));
@@ -800,10 +800,10 @@ Status Reactor::RunOnReactorThread(const boost::function<Status()>& f) {
   return task.Wait();
 }
 
-Status Reactor::DumpRunningRpcs(const DumpRunningRpcsRequestPB& req,
-                                DumpRunningRpcsResponsePB* resp) {
-  return RunOnReactorThread(boost::bind(&ReactorThread::DumpRunningRpcs, &thread_,
-                                        boost::ref(req), resp));
+Status Reactor::DumpConnections(const DumpConnectionsRequestPB& req,
+                                DumpConnectionsResponsePB* resp) {
+  return RunOnReactorThread(boost::bind(&ReactorThread::DumpConnections,
+                                        &thread_, boost::ref(req), resp));
 }
 
 class RegisterConnectionTask : public ReactorTask {

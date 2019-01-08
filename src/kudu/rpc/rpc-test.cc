@@ -534,12 +534,25 @@ TEST_P(TestRpc, TestClientConnectionMetrics) {
     });
 
     // Test the OutboundTransfer queue.
-    DumpRunningRpcsRequestPB dump_req;
-    DumpRunningRpcsResponsePB dump_resp;
+    DumpConnectionsRequestPB dump_req;
+    DumpConnectionsResponsePB dump_resp;
     dump_req.set_include_traces(false);
-    ASSERT_OK(client_messenger->DumpRunningRpcs(dump_req, &dump_resp));
+    ASSERT_OK(client_messenger->DumpConnections(dump_req, &dump_resp));
     ASSERT_EQ(1, dump_resp.outbound_connections_size());
-    ASSERT_GT(dump_resp.outbound_connections(0).outbound_queue_size(), 0);
+    const auto& conn = dump_resp.outbound_connections(0);
+    ASSERT_GT(conn.outbound_queue_size(), 0);
+
+#ifdef __linux__
+    // Test that the socket statistics are present. We only assert on those that
+    // we know to be present on all kernel versions.
+    ASSERT_TRUE(conn.has_socket_stats());
+    ASSERT_GT(conn.socket_stats().rtt(), 0);
+    ASSERT_GT(conn.socket_stats().rttvar(), 0);
+    ASSERT_GT(conn.socket_stats().snd_cwnd(), 0);
+    ASSERT_GT(conn.socket_stats().send_bytes_per_sec(), 0);
+    ASSERT_TRUE(conn.socket_stats().has_send_queue_bytes());
+    ASSERT_TRUE(conn.socket_stats().has_receive_queue_bytes());
+#endif
 
     // Unblock all of the calls and wait for them to finish.
     latch.Wait();

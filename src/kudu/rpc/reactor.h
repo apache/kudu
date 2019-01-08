@@ -49,8 +49,8 @@ namespace rpc {
 
 typedef std::list<scoped_refptr<Connection>> conn_list_t;
 
-class DumpRunningRpcsRequestPB;
-class DumpRunningRpcsResponsePB;
+class DumpConnectionsRequestPB;
+class DumpConnectionsResponsePB;
 class OutboundCall;
 class Reactor;
 class ReactorThread;
@@ -149,8 +149,8 @@ class ReactorThread {
   Status Init();
 
   // Add any connections on this reactor thread into the given status dump.
-  Status DumpRunningRpcs(const DumpRunningRpcsRequestPB& req,
-                         DumpRunningRpcsResponsePB* resp);
+  Status DumpConnections(const DumpConnectionsRequestPB& req,
+                         DumpConnectionsResponsePB* resp);
 
   // Shuts down a reactor thread, optionally waiting for it to exit.
   // Reactor::Shutdown() must have been called already.
@@ -356,8 +356,8 @@ class Reactor {
   Status GetMetrics(ReactorMetrics *metrics);
 
   // Add any connections on this reactor thread into the given status dump.
-  Status DumpRunningRpcs(const DumpRunningRpcsRequestPB& req,
-                         DumpRunningRpcsResponsePB* resp);
+  Status DumpConnections(const DumpConnectionsRequestPB& req,
+                         DumpConnectionsResponsePB* resp);
 
   // Queue a new incoming connection. Takes ownership of the underlying fd from
   // 'socket', but not the Socket object itself.

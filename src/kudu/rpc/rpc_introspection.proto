@@ -50,6 +50,33 @@ message RpcCallInProgressPB {
   optional State state = 4;
 }
 
+// The SocketStatsPB message is used to report on socket-level information
+// for RPC-related TCP connections (Linux-only). Essentially, the message
+// contains some metrics and counters from Linux-specific 'tcp_info' structure
+// defined in /usr/include/linux/tcp.h. For more information on the TCP on
+// Linux, see http://man7.org/linux/man-pages/man7/tcp.7.html
+message SocketStatsPB {
+  optional uint32 rtt = 1;
+  optional uint32 rttvar = 2;
+  optional uint32 snd_cwnd = 3;
+  optional uint32 total_retrans = 4;
+
+  optional uint32 pacing_rate = 5;
+  optional uint32 max_pacing_rate = 6;
+
+  optional uint64 bytes_acked = 7;
+  optional uint64 bytes_received = 8;
+  optional uint32 segs_out = 9;
+  optional uint32 segs_in = 10;
+
+  optional uint64 send_queue_bytes = 11;
+  optional uint64 receive_queue_bytes = 12;
+
+  // Calculated sender throughput.
+  optional int32 send_bytes_per_sec = 13;
+};
+
+// Debugging information about a currently-open RPC connection.
 message RpcConnectionPB {
   enum StateType {
     UNKNOWN = 999;
@@ -63,13 +90,16 @@ message RpcConnectionPB {
   optional string remote_user_credentials = 3;
   repeated RpcCallInProgressPB calls_in_flight = 4;
   optional int64 outbound_queue_size = 5;
+
+  // Information on the actual TCP connection as reported by the kernel.
+  optional SocketStatsPB socket_stats = 6;
 }
 
-message DumpRunningRpcsRequestPB {
+message DumpConnectionsRequestPB {
   optional bool include_traces = 1 [ default = false ];
 }
 
-message DumpRunningRpcsResponsePB {
+message DumpConnectionsResponsePB {
   repeated RpcConnectionPB inbound_connections = 1;
   repeated RpcConnectionPB outbound_connections = 2;
 }

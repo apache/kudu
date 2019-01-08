@@ -50,12 +50,13 @@ namespace kudu {
 
 namespace rpc {
 
-class DumpRunningRpcsRequestPB;
+class DumpConnectionsRequestPB;
 class InboundCall;
 class OutboundCall;
 class RpcConnectionPB;
 class ReactorThread;
 class RpczStore;
+class SocketStatsPB;
 enum class CredentialsPolicy;
 
 //
@@ -193,7 +194,7 @@ class Connection : public RefCountedThreadSafe<Connection> {
   // Indicate that negotiation is complete and that the Reactor is now in control of the socket.
   void MarkNegotiationComplete();
 
-  Status DumpPB(const DumpRunningRpcsRequestPB& req,
+  Status DumpPB(const DumpConnectionsRequestPB& req,
                 RpcConnectionPB* resp);
 
   ReactorThread* reactor_thread() const { return reactor_thread_; }
@@ -297,6 +298,8 @@ class Connection : public RefCountedThreadSafe<Connection> {
   // Internal test function for injecting cancellation request when 'call'
   // reaches state specified in 'FLAGS_rpc_inject_cancellation_state'.
   void MaybeInjectCancellation(const std::shared_ptr<OutboundCall> &call);
+
+  Status GetSocketStatsPB(SocketStatsPB* pb) const;
 
   // The reactor thread that created this connection.
   ReactorThread* const reactor_thread_;

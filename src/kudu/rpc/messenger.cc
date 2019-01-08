@@ -449,11 +449,11 @@ Status Messenger::Init() {
   return Status::OK();
 }
 
-Status Messenger::DumpRunningRpcs(const DumpRunningRpcsRequestPB& req,
-                                  DumpRunningRpcsResponsePB* resp) {
+Status Messenger::DumpConnections(const DumpConnectionsRequestPB& req,
+                                  DumpConnectionsResponsePB* resp) {
   shared_lock<rw_spinlock> guard(lock_.get_lock());
   for (Reactor* reactor : reactors_) {
-    RETURN_NOT_OK(reactor->DumpRunningRpcs(req, resp));
+    RETURN_NOT_OK(reactor->DumpConnections(req, resp));
   }
   return Status::OK();
 }

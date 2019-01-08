@@ -55,7 +55,7 @@ namespace kudu {
 namespace rpc {
 
 class CallResponse;
-class DumpRunningRpcsRequestPB;
+class DumpConnectionsRequestPB;
 class RpcCallInProgressPB;
 class RpcController;
 class RpcSidecar;
@@ -154,7 +154,7 @@ class OutboundCall {
 
   std::string ToString() const;
 
-  void DumpPB(const DumpRunningRpcsRequestPB& req, RpcCallInProgressPB* resp);
+  void DumpPB(const DumpConnectionsRequestPB& req, RpcCallInProgressPB* resp);
 
   ////////////////////////////////////////////////////////////
   // Getters

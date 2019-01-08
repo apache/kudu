@@ -33,8 +33,8 @@
 #include "kudu/util/jsonwriter.h"
 #include "kudu/util/web_callback_registry.h"
 
-using kudu::rpc::DumpRunningRpcsRequestPB;
-using kudu::rpc::DumpRunningRpcsResponsePB;
+using kudu::rpc::DumpConnectionsRequestPB;
+using kudu::rpc::DumpConnectionsResponsePB;
 using kudu::rpc::DumpRpczStoreRequestPB;
 using kudu::rpc::DumpRpczStoreResponsePB;
 using kudu::rpc::Messenger;
@@ -49,14 +49,14 @@ namespace {
 void RpczPathHandler(const shared_ptr<Messenger>& messenger,
                      const Webserver::WebRequest& req,
                      Webserver::PrerenderedWebResponse* resp) {
-  DumpRunningRpcsResponsePB running_rpcs;
+  DumpConnectionsResponsePB running_rpcs;
   {
-    DumpRunningRpcsRequestPB dump_req;
+    DumpConnectionsRequestPB dump_req;
 
     string arg = FindWithDefault(req.parsed_args, "include_traces", "false");
     dump_req.set_include_traces(ParseLeadingBoolValue(arg.c_str(), false));
 
-    messenger->DumpRunningRpcs(dump_req, &running_rpcs);
+    messenger->DumpConnections(dump_req, &running_rpcs);
   }
   DumpRpczStoreResponsePB sampled_rpcs;
   {

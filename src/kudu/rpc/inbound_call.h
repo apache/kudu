@@ -54,7 +54,7 @@ class Trace;
 namespace rpc {
 
 class Connection;
-class DumpRunningRpcsRequestPB;
+class DumpConnectionsRequestPB;
 class RemoteUser;
 class RpcCallInProgressPB;
 class RpcSidecar;
@@ -135,7 +135,7 @@ class InboundCall {
 
   std::string ToString() const;
 
-  void DumpPB(const DumpRunningRpcsRequestPB& req, RpcCallInProgressPB* resp);
+  void DumpPB(const DumpConnectionsRequestPB& req, RpcCallInProgressPB* resp);
 
   const RemoteUser& remote_user() const;
 

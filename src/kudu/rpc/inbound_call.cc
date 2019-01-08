@@ -250,7 +250,7 @@ string InboundCall::ToString() const {
                       header_.call_id());
 }
 
-void InboundCall::DumpPB(const DumpRunningRpcsRequestPB& req,
+void InboundCall::DumpPB(const DumpConnectionsRequestPB& req,
                          RpcCallInProgressPB* resp) {
   resp->mutable_header()->CopyFrom(header_);
   if (req.include_traces() && trace_) {

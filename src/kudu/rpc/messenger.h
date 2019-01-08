@@ -60,8 +60,8 @@ using security::RpcAuthentication;
 using security::RpcEncryption;
 
 class AcceptorPool;
-class DumpRunningRpcsRequestPB;
-class DumpRunningRpcsResponsePB;
+class DumpConnectionsRequestPB;
+class DumpConnectionsResponsePB;
 class InboundCall;
 class Messenger;
 class OutboundCall;
@@ -265,9 +265,9 @@ class Messenger {
   // Take ownership of the socket via Socket::Release
   void RegisterInboundSocket(Socket *new_socket, const Sockaddr &remote);
 
-  // Dump the current RPCs into the given protobuf.
-  Status DumpRunningRpcs(const DumpRunningRpcsRequestPB& req,
-                         DumpRunningRpcsResponsePB* resp);
+  // Dump info on related TCP connections into the given protobuf.
+  Status DumpConnections(const DumpConnectionsRequestPB& req,
+                         DumpConnectionsResponsePB* resp);
 
   // Run 'func' on a reactor thread after 'when' time elapses.
   //

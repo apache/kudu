@@ -593,11 +593,11 @@ TEST_F(RpcStubTest, TestDumpCallsInFlight) {
                boost::bind(&CountDownLatch::CountDown, &sleep.latch));
 
   // Check the running RPC status on the client messenger.
-  DumpRunningRpcsRequestPB dump_req;
-  DumpRunningRpcsResponsePB dump_resp;
+  DumpConnectionsRequestPB dump_req;
+  DumpConnectionsResponsePB dump_resp;
   dump_req.set_include_traces(true);
 
-  ASSERT_OK(client_messenger_->DumpRunningRpcs(dump_req, &dump_resp));
+  ASSERT_OK(client_messenger_->DumpConnections(dump_req, &dump_resp));
   LOG(INFO) << "client messenger: " << SecureDebugString(dump_resp);
   ASSERT_EQ(1, dump_resp.outbound_connections_size());
   ASSERT_EQ(1, dump_resp.outbound_connections(0).calls_in_flight_size());
@@ -610,7 +610,7 @@ TEST_F(RpcStubTest, TestDumpCallsInFlight) {
   // asynchronously off of the main thread (ie the server may not be handling it yet)
   for (int i = 0; i < 100; i++) {
     dump_resp.Clear();
-    ASSERT_OK(server_messenger_->DumpRunningRpcs(dump_req, &dump_resp));
+    ASSERT_OK(server_messenger_->DumpConnections(dump_req, &dump_resp));
     if (dump_resp.inbound_connections_size() > 0 &&
         dump_resp.inbound_connections(0).calls_in_flight_size() > 0) {
       break;
