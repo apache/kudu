@@ -696,11 +696,12 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
       }
       if (s.IsIncomplete()) {
         // IsIncomplete() means that we tried to read beyond the head of the log
-        // (in the future). See KUDU-1078.
-        LOG_WITH_PREFIX_UNLOCKED(ERROR) << "Error trying to read ahead of the log "
-                                        << "while preparing peer request: "
-                                        << s.ToString() << ". Destination peer: "
-                                        << peer_copy.ToString();
+        // (in the future). This is usually a sign that this peer is under load
+        // and is about to step down as leader. See KUDU-1078.
+        LOG_WITH_PREFIX_UNLOCKED(INFO) << "Error trying to read ahead of the log "
+                                       << "while preparing peer request: "
+                                       << s.ToString() << ". Destination peer: "
+                                       << peer_copy.ToString();
         return s;
       }
       LOG_WITH_PREFIX_UNLOCKED(FATAL) << "Error reading the log while preparing peer request: "
