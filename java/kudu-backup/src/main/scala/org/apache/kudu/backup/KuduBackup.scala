@@ -40,7 +40,11 @@ object KuduBackup {
 
   def run(options: KuduBackupOptions, session: SparkSession): Unit = {
     val context =
-      new KuduContext(options.kuduMasterAddresses, session.sparkContext)
+      new KuduContext(options.kuduMasterAddresses, session.sparkContext,
+        // TODO: As a workaround for KUDU-1868 the socketReadTimeout is
+        // matched to the scanRequestTimeout. Without this
+        // "Invalid call sequence ID" errors can occur under heavy load.
+        Some(options.scanRequestTimeout))
     val path = options.path
     log.info(s"Backing up to path: $path")
 
