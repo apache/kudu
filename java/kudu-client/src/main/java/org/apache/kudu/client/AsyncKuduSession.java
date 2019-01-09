@@ -532,6 +532,11 @@ public class AsyncKuduSession implements SessionConfiguration {
     Preconditions.checkArgument(operation.getTable().getAsyncClient() == client,
         "Applied operations must be created from a KuduTable instance opened " +
         "from the same client that opened this KuduSession");
+    if (closed) {
+      // Ideally this would be a precondition, but that may break existing
+      // clients who have grown to rely on this unsafe behavior.
+      LOG.warn("Applying an operation in a closed session; this is unsafe");
+    }
 
     // Freeze the row so that the client can not concurrently modify it while it is in flight.
     operation.getRow().freeze();

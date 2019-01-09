@@ -1071,7 +1071,6 @@ public class TestKuduClient {
               session.apply(insert);
             }
             session.flush();
-            session.close();
 
             // Perform a bunch of READ_YOUR_WRITES scans to all the replicas
             // that count the rows. And verify that the count of the rows
@@ -1114,7 +1113,7 @@ public class TestKuduClient {
       future.get();
     }
   }
-  
+
   private void runTestCallDuringLeaderElection(String clientMethodName) throws Exception {
     // This bit of reflection helps us avoid duplicating test code.
     Method methodToInvoke = KuduClient.class.getMethod(clientMethodName);
@@ -1138,6 +1137,7 @@ public class TestKuduClient {
                     .build();
     try {
       methodToInvoke.invoke(cl);
+      fail();
     } catch (InvocationTargetException ex) {
       assertTrue(ex.getTargetException() instanceof KuduException);
       KuduException realEx = (KuduException)ex.getTargetException();
@@ -1154,6 +1154,7 @@ public class TestKuduClient {
   public void testGetHiveMetastoreConfigDuringLeaderElection() throws Exception {
     runTestCallDuringLeaderElection("getHiveMetastoreConfig");
   }
+
   /**
    * Test assignment of a location to the client.
    */
@@ -1172,5 +1173,27 @@ public class TestKuduClient {
     // Do something that will cause the client to connect to the cluster.
     client.listTabletServers();
     assertEquals("/L0", client.getLocationString());
+  }
+
+  @Test(timeout = 100000)
+  public void testSessionOnceClosed() throws Exception {
+    client.createTable(TABLE_NAME, basicSchema, getBasicCreateTableOptions());
+    KuduTable table = client.openTable(TABLE_NAME);
+    KuduSession session = client.newSession();
+
+    session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
+    Insert insert = createBasicSchemaInsert(table, 0);
+    session.apply(insert);
+    session.close();
+    assertTrue(session.isClosed());
+
+    insert = createBasicSchemaInsert(table, 1);
+    CapturingLogAppender cla = new CapturingLogAppender();
+    try (Closeable c = cla.attach()) {
+      session.apply(insert);
+    }
+    String loggedText = cla.getAppendedText();
+    assertTrue("Missing warning:\n" + loggedText,
+               loggedText.contains("this is unsafe"));
   }
 }
