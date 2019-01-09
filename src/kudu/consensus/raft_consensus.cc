@@ -2831,10 +2831,10 @@ void RaftConsensus::SnoozeFailureDetector(boost::optional<string> reason_for_log
                                           boost::optional<MonoDelta> delta) {
   if (PREDICT_TRUE(failure_detector_ && FLAGS_enable_leader_failure_detection)) {
     if (reason_for_log) {
-      LOG(INFO) << LogPrefixThreadSafe()
-                << Substitute("Snoozing failure detection for $0 ($1)",
-                              delta ? delta->ToString() : "election timeout",
-                              *reason_for_log);
+      VLOG(1) << LogPrefixThreadSafe()
+              << Substitute("Snoozing failure detection for $0 ($1)",
+                            delta ? delta->ToString() : "election timeout",
+                            *reason_for_log);
     }
 
     if (!delta) {

@@ -78,6 +78,9 @@ class VoteCounter {
   // Return true iff GetTotalVotesCounted() == num_voters_;
   bool AreAllVotesIn() const;
 
+  // Return a summary of the election so far, suitable for logging.
+  std::string GetElectionSummary() const;
+
  private:
   friend class VoteCounterTest;
 
