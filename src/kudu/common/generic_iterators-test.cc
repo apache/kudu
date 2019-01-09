@@ -22,6 +22,7 @@
 #include <cstdlib>
 #include <memory>
 #include <ostream>
+#include <random>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -197,7 +198,7 @@ class TestIntRangePredicate {
   ColumnPredicate pred_;
 };
 
-void TestMerge(const TestIntRangePredicate &predicate) {
+void TestMerge(const TestIntRangePredicate &predicate, bool overlapping_inputs = true) {
   struct List {
     vector<uint32_t> ints;
     unique_ptr<SelectionVector> sv;
@@ -207,12 +208,15 @@ void TestMerge(const TestIntRangePredicate &predicate) {
   expected.reserve(FLAGS_num_rows * FLAGS_num_lists);
   Random prng(SeedRandom());
 
+  uint32_t entry = 0;
   for (int i = 0; i < FLAGS_num_lists; i++) {
     vector<uint32_t> ints;
     ints.reserve(FLAGS_num_rows);
     unique_ptr<SelectionVector> sv(new SelectionVector(FLAGS_num_rows));
 
-    uint32_t entry = 0;
+    if (overlapping_inputs) {
+      entry = 0;
+    }
     for (int j = 0; j < FLAGS_num_rows; j++) {
       entry += prng.Uniform(5);
       ints.emplace_back(entry);
@@ -238,8 +242,14 @@ void TestMerge(const TestIntRangePredicate &predicate) {
     all_ints.emplace_back(List{ std::move(ints), std::move(sv) });
   }
 
-  LOG_TIMING(INFO, "std::sort the expected results") {
+  LOG_TIMING(INFO, "sorting the expected results") {
     std::sort(expected.begin(), expected.end());
+  }
+
+  LOG_TIMING(INFO, "shuffling the inputs") {
+    std::random_device rdev;
+    std::mt19937 gen(rdev());
+    std::shuffle(all_ints.begin(), all_ints.end(), gen);
   }
 
   VLOG(1) << "Predicate expects " << expected.size() << " results: " << expected;
@@ -262,7 +272,7 @@ void TestMerge(const TestIntRangePredicate &predicate) {
     spec.AddPredicate(predicate.pred_);
     LOG(INFO) << "Predicate: " << predicate.pred_.ToString();
 
-    LOG_TIMING(INFO, "Iterate merged lists") {
+    LOG_TIMING(INFO, "iterating merged lists") {
       unique_ptr<RowwiseIterator> merger(NewMergeIterator({ std::move(to_merge) }));
       ASSERT_OK(merger->Init(&spec));
 
@@ -285,6 +295,9 @@ void TestMerge(const TestIntRangePredicate &predicate) {
         }
       }
       ASSERT_EQ(total_idx, expected.size());
+
+      LOG(INFO) << "Total number of comparisons performed: "
+                << GetMergeIteratorNumComparisonsForTests(merger);
     }
   }
 }
@@ -292,6 +305,11 @@ void TestMerge(const TestIntRangePredicate &predicate) {
 TEST(TestMergeIterator, TestMerge) {
   TestIntRangePredicate predicate(0, MathLimits<uint32_t>::kMax);
   TestMerge(predicate);
+}
+
+TEST(TestMergeIterator, TestMergeNonOverlapping) {
+  TestIntRangePredicate predicate(0, MathLimits<uint32_t>::kMax);
+  TestMerge(predicate, /*overlapping_inputs=*/false);
 }
 
 TEST(TestMergeIterator, TestMergePredicate) {

@@ -252,6 +252,8 @@ class MergeIterator : public RowwiseIterator {
 
   virtual Status NextBlock(RowBlock* dst) OVERRIDE;
 
+  int64_t num_comparisons() const { return num_comparisons_; }
+
  private:
   void PrepareBatch(RowBlock* dst);
   Status MaterializeBlock(RowBlock* dst);
@@ -283,12 +285,16 @@ class MergeIterator : public RowwiseIterator {
   // The copies are allocated from this pool so they can be automatically freed
   // when the UnionIterator goes out of scope.
   ObjectPool<ScanSpec> scan_spec_copies_;
+
+  // The total number of comparisons performed by each call to MaterializeBlock.
+  int64_t num_comparisons_;
 };
 
 MergeIterator::MergeIterator(vector<unique_ptr<RowwiseIterator>> iters)
     : initted_(false),
       orig_iters_(std::move(iters)),
-      num_orig_iters_(orig_iters_.size()) {
+      num_orig_iters_(orig_iters_.size()),
+      num_comparisons_(0) {
   CHECK_GT(orig_iters_.size(), 0);
 }
 
@@ -408,10 +414,15 @@ Status MergeIterator::MaterializeBlock(RowBlock *dst) {
     for (size_t i = 0; i < states_.size(); i++) {
       unique_ptr<MergeIterState> &state = states_[i];
 
-      if (smallest == nullptr ||
-          schema_->Compare(state->next_row(), smallest->next_row()) < 0) {
+      if (PREDICT_FALSE(smallest == nullptr)) {
         smallest = state.get();
         smallest_idx = i;
+      } else {
+        num_comparisons_++;
+        if (schema_->Compare(state->next_row(), smallest->next_row()) < 0) {
+          smallest = state.get();
+          smallest_idx = i;
+        }
       }
     }
 
@@ -454,6 +465,12 @@ void MergeIterator::GetIteratorStats(vector<IteratorStats>* stats) const {
 unique_ptr<RowwiseIterator> NewMergeIterator(
     vector<unique_ptr<RowwiseIterator>> iters) {
   return unique_ptr<RowwiseIterator>(new MergeIterator(std::move(iters)));
+}
+
+int64_t GetMergeIteratorNumComparisonsForTests(
+    const unique_ptr<RowwiseIterator>& iter) {
+  MergeIterator* merge = down_cast<MergeIterator*>(iter.get());
+  return merge->num_comparisons();
 }
 
 ////////////////////////////////////////////////////////////

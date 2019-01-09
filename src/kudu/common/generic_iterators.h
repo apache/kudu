@@ -16,6 +16,7 @@
 // under the License.
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -59,6 +60,12 @@ Status InitAndMaybeWrap(std::unique_ptr<RowwiseIterator>* base_iter,
 //
 // Only for use by tests.
 const std::vector<ColumnPredicate>& GetIteratorPredicatesForTests(
+    const std::unique_ptr<RowwiseIterator>& iter);
+
+// Gets the number of comparisons performed by a MergeIterator.
+//
+// Only for use by tests.
+int64_t GetMergeIteratorNumComparisonsForTests(
     const std::unique_ptr<RowwiseIterator>& iter);
 
 } // namespace kudu
