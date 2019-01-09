@@ -1111,4 +1111,25 @@ public class TestKuduClient {
       future.get();
     }
   }
+
+  @Test(timeout = 100000)
+  public void testSessionOnceClosed() {
+    try (KuduClient localClient =
+                 new KuduClient.KuduClientBuilder(harness.getMasterAddressesAsString()).build()) {
+      localClient.createTable(TABLE_NAME, basicSchema, getBasicCreateTableOptions());
+      KuduTable table = localClient.openTable(TABLE_NAME);
+      KuduSession session = localClient.newSession();
+
+      session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
+      Insert insert = createBasicSchemaInsert(table, 0);
+      session.apply(insert);
+      session.close();
+      assertTrue(session.isClosed());
+      insert = createBasicSchemaInsert(table, 1);
+      session.apply(insert);
+      fail();
+    } catch (KuduException e) {
+      assertEquals("Session has been closed", e.getCause().getMessage());
+    }
+  }
 }

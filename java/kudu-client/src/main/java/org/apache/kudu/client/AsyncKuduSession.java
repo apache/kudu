@@ -528,6 +528,7 @@ public class AsyncKuduSession implements SessionConfiguration {
    * @see SessionConfiguration.FlushMode FlushMode
    */
   public Deferred<OperationResponse> apply(final Operation operation) throws KuduException {
+    Preconditions.checkArgument(!closed, "Session has been closed");
     Preconditions.checkNotNull(operation, "Can not apply a null operation");
     Preconditions.checkArgument(operation.getTable().getAsyncClient() == client,
         "Applied operations must be created from a KuduTable instance opened " +
