@@ -45,6 +45,10 @@ DEFINE_double(fault_crash_before_cmeta_flush, 0.0,
               "consensus metadata. (For testing only!)");
 TAG_FLAG(fault_crash_before_cmeta_flush, unsafe);
 
+DEFINE_bool(cmeta_force_fsync, false,
+            "Whether fsync() should be called when consensus metadata files are updated");
+TAG_FLAG(cmeta_force_fsync, advanced);
+
 namespace kudu {
 namespace consensus {
 
@@ -241,7 +245,12 @@ Status ConsensusMetadata::Flush(FlushMode flush_mode) {
       // essentially an extension of the primary durability mechanism of the
       // consensus subsystem: the WAL. Using the same flag ensures that the WAL
       // and the consensus metadata get the same durability guarantees.
-      FLAGS_log_force_fsync_all ? pb_util::SYNC : pb_util::NO_SYNC),
+      // We add FLAGS_cmeta_force_fsync to support an override in certain
+      // cases. Some filesystems such as ext4 are more forgiving to omitting an
+      // fsync() due to periodic commit with default settings, whereas other
+      // filesystems such as XFS will not commit as often and need the fsync to
+      // avoid significant data loss when a crash happens.
+      FLAGS_log_force_fsync_all || FLAGS_cmeta_force_fsync ? pb_util::SYNC : pb_util::NO_SYNC),
           Substitute("Unable to write consensus meta file for tablet $0 to path $1",
                      tablet_id_, meta_file_path));
   RETURN_NOT_OK(UpdateOnDiskSize());
