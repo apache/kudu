@@ -65,7 +65,7 @@ class KuduBackupRDD private[kudu] (
       .readMode(ReadMode.READ_AT_SNAPSHOT)
       .snapshotTimestampRaw(hybridTime)
       .batchSizeBytes(options.scanBatchSize)
-      .scanRequestTimeout(options.scanRequestTimeout)
+      .scanRequestTimeout(options.scanRequestTimeoutMs)
       .prefetching(options.scanPrefetching)
       .build()
 

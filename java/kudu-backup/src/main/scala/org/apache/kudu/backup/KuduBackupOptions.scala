@@ -32,14 +32,14 @@ case class KuduBackupOptions(
     timestampMs: Long = System.currentTimeMillis(),
     format: String = KuduBackupOptions.DefaultFormat,
     scanBatchSize: Int = KuduBackupOptions.DefaultScanBatchSize,
-    scanRequestTimeout: Long = KuduBackupOptions.DefaultScanRequestTimeout,
+    scanRequestTimeoutMs: Long = KuduBackupOptions.DefaultScanRequestTimeoutMs,
     scanPrefetching: Boolean = KuduBackupOptions.DefaultScanPrefetching,
     keepAlivePeriodMs: Long = KuduBackupOptions.defaultKeepAlivePeriodMs)
 
 object KuduBackupOptions {
   val DefaultFormat: String = "parquet"
   val DefaultScanBatchSize: Int = 1024 * 1024 * 20 // 20 MiB
-  val DefaultScanRequestTimeout: Long =
+  val DefaultScanRequestTimeoutMs: Long =
     AsyncKuduClient.DEFAULT_OPERATION_TIMEOUT_MS // 30 seconds
   val DefaultScanPrefetching
     : Boolean = false // TODO: Add a test per KUDU-1260 and enable by default?
@@ -75,9 +75,9 @@ object KuduBackupOptions {
         .text("The maximum number of bytes returned by the scanner, on each batch.")
         .optional()
 
-      opt[Int]("scanRequestTimeout")
-        .action((v, o) => o.copy(scanRequestTimeout = v))
-        .text("Sets how long each scan request to a server can last.")
+      opt[Int]("scanRequestTimeoutMs")
+        .action((v, o) => o.copy(scanRequestTimeoutMs = v))
+        .text("Sets how long in milliseconds each scan request to a server can last.")
         .optional()
 
       opt[Unit]("scanPrefetching")
