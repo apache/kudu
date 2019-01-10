@@ -41,21 +41,25 @@ $ mvn package
 To configure the kudu-spark example, there are two Java system properties
 available:
 
-- kuduMasters: A comma-separated list of Kudu master addresses. 
+- kuduMasters: A comma-separated list of Kudu master RPC endpoints, where
+  each endpoint is in form '<HostName|IPAddress>[:PortNumber]' (the port number
+  by default is 7051 if not specified).
   Default: 'localhost:7051'.
 - tableName: The name of the table to use for the example program. This
   table should not exist in Kudu. Default: 'spark_test'.
 
 The application can be run using `spark-submit`. For example, to run the
-example against a Spark cluster running on YARN, use a command like the
-following:
+example against a Spark cluster running on YARN with Kudu masters at nodes
+master1, master2, master3, use a command like the following:
 
 [source.bash]
 ----
-$ spark-submit --class org.apache.kudu.examples.SparkExample --master yarn \
---driver-java-options \
-'-DkuduMasters=master1:7051,master2:7051,master3:7051 -DtableName=test_table' \
-target/kudu-spark-example-1.0-SNAPSHOT.jar
+$ spark-submit \
+  --class org.apache.kudu.spark.examples.SparkExample \
+  --master yarn \
+  --driver-java-options \
+    '-DkuduMasters=master1,master2,master3 -DtableName=test_table' \
+  target/kudu-spark-example-1.0-SNAPSHOT.jar
 ----
 
 You will need the Kudu cluster to be up and running and Spark correctly
