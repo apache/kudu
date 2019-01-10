@@ -148,8 +148,8 @@ object DistributedDataGenerator {
     val sc = ss.sparkContext
     val context = new KuduContext(options.masterAddresses, sc)
     val metrics = GeneratorMetrics(sc)
-    sc.parallelize(0 until options.numTasks)
-      .foreach(taskNum => generateRows(context, options, taskNum, metrics))
+    sc.parallelize(0 until options.numTasks, numSlices = options.numTasks)
+      .foreachPartition(taskNum => generateRows(context, options, taskNum.next(), metrics))
     log.info(s"Rows written: ${metrics.rowsWritten.value}")
     log.info(s"Collisions: ${metrics.collisions.value}")
   }
