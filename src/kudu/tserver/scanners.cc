@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <ostream>
 
@@ -64,6 +65,7 @@ METRIC_DEFINE_gauge_size(server, active_scanners,
                          "Number of scanners that are currently active");
 
 using std::string;
+using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
@@ -341,11 +343,11 @@ void Scanner::UpdateAccessTime() {
   last_access_time_ = MonoTime::Now();
 }
 
-void Scanner::Init(gscoped_ptr<RowwiseIterator> iter,
+void Scanner::Init(unique_ptr<RowwiseIterator> iter,
                    gscoped_ptr<ScanSpec> spec) {
   std::lock_guard<simple_spinlock> l(lock_);
   CHECK(!iter_) << "Already initialized";
-  iter_.reset(iter.release());
+  iter_ = std::move(iter);
   spec_.reset(spec.release());
 }
 

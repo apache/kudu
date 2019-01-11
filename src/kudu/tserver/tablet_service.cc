@@ -56,6 +56,7 @@
 #include "kudu/consensus/replica_management.pb.h"
 #include "kudu/consensus/time_manager.h"
 #include "kudu/gutil/casts.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
@@ -1899,7 +1900,7 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
   }
   projection = projection_builder.BuildWithoutIds();
 
-  gscoped_ptr<RowwiseIterator> iter;
+  unique_ptr<RowwiseIterator> iter;
   // Preset the error code for when creating the iterator on the tablet fails
   TabletServerErrorPB::Code tmp_error_code = TabletServerErrorPB::MISMATCHED_SCHEMA;
 
@@ -2233,7 +2234,7 @@ Status TabletServiceImpl::HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
                                                const Schema& projection,
                                                Tablet* tablet,
                                                consensus::TimeManager* time_manager,
-                                               gscoped_ptr<RowwiseIterator>* iter,
+                                               unique_ptr<RowwiseIterator>* iter,
                                                Timestamp* snap_timestamp) {
   switch (scan_pb.read_mode()) {
     case READ_AT_SNAPSHOT: // Fallthrough intended

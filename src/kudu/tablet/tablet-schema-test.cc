@@ -29,7 +29,6 @@
 #include "kudu/common/iterator.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/schema.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/tablet-test-util.h"
@@ -41,6 +40,7 @@
 
 using std::pair;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
@@ -125,7 +125,7 @@ TEST_F(TestTabletSchema, TestRead) {
 
   InsertRows(client_schema_, 0, kNumRows);
 
-  gscoped_ptr<RowwiseIterator> iter;
+  unique_ptr<RowwiseIterator> iter;
   ASSERT_OK(tablet()->NewRowIterator(projection, &iter));
 
   Status s = iter->Init(nullptr);

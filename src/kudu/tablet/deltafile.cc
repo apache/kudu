@@ -323,7 +323,7 @@ Status DeltaFileReader::CloneForDebugging(FsManager* fs_manager,
 }
 
 Status DeltaFileReader::NewDeltaIterator(const RowIteratorOptions& opts,
-                                         DeltaIterator** iterator) const {
+                                         unique_ptr<DeltaIterator>* iterator) const {
   if (IsRelevantForSnapshots(opts.snap_to_exclude, opts.snap_to_include)) {
     if (VLOG_IS_ON(2)) {
       if (!init_once_.init_succeeded()) {
@@ -348,9 +348,9 @@ Status DeltaFileReader::NewDeltaIterator(const RowIteratorOptions& opts,
     // during its first seek.
     auto s_this = const_cast<DeltaFileReader*>(this)->shared_from_this();
     if (delta_type_ == REDO) {
-      *iterator = new DeltaFileIterator<REDO>(std::move(s_this), opts);
+      iterator->reset(new DeltaFileIterator<REDO>(std::move(s_this), opts));
     } else {
-      *iterator = new DeltaFileIterator<UNDO>(std::move(s_this), opts);
+      iterator->reset(new DeltaFileIterator<UNDO>(std::move(s_this), opts));
     }
     return Status::OK();
   }
@@ -377,16 +377,13 @@ Status DeltaFileReader::CheckRowDeleted(rowid_t row_idx, const IOContext* io_con
   RowIteratorOptions opts;
   opts.projection = &empty_schema;
   opts.io_context = io_context;
-  DeltaIterator* raw_iter;
-  Status s = NewDeltaIterator(opts, &raw_iter);
+  unique_ptr<DeltaIterator> iter;
+  Status s = NewDeltaIterator(opts, &iter);
   if (s.IsNotFound()) {
     *deleted = false;
     return Status::OK();
   }
   RETURN_NOT_OK(s);
-
-  gscoped_ptr<DeltaIterator> iter(raw_iter);
-
   ScanSpec spec;
   RETURN_NOT_OK(iter->Init(&spec));
   RETURN_NOT_OK(iter->SeekToOrdinal(row_idx));

@@ -177,6 +177,7 @@ using std::ostream;
 using std::pair;
 using std::shared_ptr;
 using std::string;
+using std::unique_ptr;
 using std::unordered_set;
 using std::vector;
 using strings::Substitute;
@@ -401,7 +402,7 @@ void Tablet::SplitKeyRange(const EncodedKey* start_key,
 }
 
 Status Tablet::NewRowIterator(const Schema& projection,
-                              gscoped_ptr<RowwiseIterator>* iter) const {
+                              unique_ptr<RowwiseIterator>* iter) const {
   RowIteratorOptions opts;
   // Yield current rows.
   opts.snap_to_include = MvccSnapshot(mvcc_);
@@ -410,7 +411,7 @@ Status Tablet::NewRowIterator(const Schema& projection,
 }
 
 Status Tablet::NewRowIterator(RowIteratorOptions opts,
-                              gscoped_ptr<RowwiseIterator>* iter) const {
+                              unique_ptr<RowwiseIterator>* iter) const {
   RETURN_IF_STOPPED_OR_CHECK_STATE(kOpen);
   if (metrics_) {
     metrics_->scans_started->Increment();
@@ -1830,18 +1831,18 @@ Status Tablet::DebugDump(vector<string> *lines) {
 Status Tablet::CaptureConsistentIterators(
     const RowIteratorOptions& opts,
     const ScanSpec* spec,
-    vector<shared_ptr<RowwiseIterator>>* iters) const {
+    vector<unique_ptr<RowwiseIterator>>* iters) const {
 
   shared_lock<rw_spinlock> l(component_lock_);
   RETURN_IF_STOPPED_OR_CHECK_STATE(kOpen);
 
   // Construct all the iterators locally first, so that if we fail
   // in the middle, we don't modify the output arguments.
-  vector<shared_ptr<RowwiseIterator>> ret;
+  vector<unique_ptr<RowwiseIterator>> ret;
 
 
   // Grab the memrowset iterator.
-  gscoped_ptr<RowwiseIterator> ms_iter;
+  unique_ptr<RowwiseIterator> ms_iter;
   RETURN_NOT_OK(components_->memrowset->NewRowIterator(opts, &ms_iter));
   ret.emplace_back(ms_iter.release());
 
@@ -1855,28 +1856,28 @@ Status Tablet::CaptureConsistentIterators(
     vector<RowSet*> interval_sets;
     components_->rowsets->FindRowSetsIntersectingInterval(lower_bound, upper_bound, &interval_sets);
     for (const RowSet *rs : interval_sets) {
-      gscoped_ptr<RowwiseIterator> row_it;
+      unique_ptr<RowwiseIterator> row_it;
       RETURN_NOT_OK_PREPEND(rs->NewRowIterator(opts, &row_it),
                             Substitute("Could not create iterator for rowset $0",
                                        rs->ToString()));
-      ret.emplace_back(row_it.release());
+      ret.emplace_back(std::move(row_it));
     }
-    ret.swap(*iters);
+    *iters = std::move(ret);
     return Status::OK();
   }
 
   // If there are no encoded predicates of the primary keys, then
   // fall back to grabbing all rowset iterators.
   for (const shared_ptr<RowSet> &rs : components_->rowsets->all_rowsets()) {
-    gscoped_ptr<RowwiseIterator> row_it;
+    unique_ptr<RowwiseIterator> row_it;
     RETURN_NOT_OK_PREPEND(rs->NewRowIterator(opts, &row_it),
                           Substitute("Could not create iterator for rowset $0",
                                      rs->ToString()));
-    ret.emplace_back(row_it.release());
+    ret.emplace_back(std::move(row_it));
   }
 
   // Swap results into the parameters.
-  ret.swap(*iters);
+  *iters = std::move(ret);
   return Status::OK();
 }
 
@@ -2458,7 +2459,7 @@ Status Tablet::Iterator::Init(ScanSpec *spec) {
 
   RETURN_NOT_OK(tablet_->GetMappedReadProjection(projection_, &projection_));
 
-  vector<shared_ptr<RowwiseIterator>> iters;
+  vector<unique_ptr<RowwiseIterator>> iters;
   RETURN_NOT_OK(tablet_->CaptureConsistentIterators(opts_, spec, &iters));
   TRACE_COUNTER_INCREMENT("rowset_iterators", iters.size());
 

@@ -214,7 +214,7 @@ class TestRowSet : public KuduRowSetTest {
     Schema proj_val = CreateProjection(schema_, { "val" });
     RowIteratorOptions opts;
     opts.projection = &proj_val;
-    gscoped_ptr<RowwiseIterator> row_iter;
+    std::unique_ptr<RowwiseIterator> row_iter;
     CHECK_OK(rs.NewRowIterator(opts, &row_iter));
     CHECK_OK(row_iter->Init(nullptr));
     Arena arena(1024);
@@ -262,7 +262,7 @@ class TestRowSet : public KuduRowSetTest {
 
     RowIteratorOptions opts;
     opts.projection = &schema_;
-    gscoped_ptr<RowwiseIterator> row_iter;
+    std::unique_ptr<RowwiseIterator> row_iter;
     CHECK_OK(rs.NewRowIterator(opts, &row_iter));
     CHECK_OK(row_iter->Init(&spec));
     std::vector<std::string> rows;
@@ -277,7 +277,7 @@ class TestRowSet : public KuduRowSetTest {
                                 int expected_rows, bool do_log = true) {
     RowIteratorOptions opts;
     opts.projection = &schema;
-    gscoped_ptr<RowwiseIterator> row_iter;
+    std::unique_ptr<RowwiseIterator> row_iter;
     CHECK_OK(rs.NewRowIterator(opts, &row_iter));
     CHECK_OK(row_iter->Init(nullptr));
 

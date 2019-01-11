@@ -25,10 +25,10 @@
 #include <boost/bind.hpp> // IWYU pragma: keep
 #include <boost/optional/optional.hpp>
 #include <boost/optional/optional_io.hpp>
-#include <glog/logging.h>
-#include <gtest/gtest.h>
 #include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
+#include <glog/logging.h>
+#include <gtest/gtest.h>
 
 #include "kudu/common/column_predicate.h"
 #include "kudu/common/common.pb.h"
@@ -64,6 +64,7 @@ DECLARE_int32(deltafile_default_block_size);
 
 using boost::optional;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
@@ -270,7 +271,7 @@ class TestRandomAccess : public KuduTabletTest {
   optional<ExpectedKeyValueRow> GetRow(int key) {
     ScanSpec spec;
     const Schema& schema = this->client_schema_;
-    gscoped_ptr<RowwiseIterator> iter;
+    unique_ptr<RowwiseIterator> iter;
     CHECK_OK(this->tablet()->NewRowIterator(schema, &iter));
     auto pred_one = ColumnPredicate::Equality(schema.column(0), &key);
     spec.AddPredicate(pred_one);

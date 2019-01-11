@@ -34,7 +34,6 @@
 #include "kudu/common/row.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/tablet-test-util.h"
@@ -47,6 +46,7 @@
 #include "kudu/util/test_util.h"
 
 using std::string;
+using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
@@ -107,7 +107,7 @@ class TabletPushdownTest : public KuduTabletTest,
     AutoReleasePool pool;
     spec.OptimizeScan(schema_, &arena, &pool, true);
 
-    gscoped_ptr<RowwiseIterator> iter;
+    unique_ptr<RowwiseIterator> iter;
     ASSERT_OK(tablet()->NewRowIterator(client_schema_, &iter));
     ASSERT_OK(iter->Init(&spec));
     ASSERT_TRUE(spec.predicates().empty()) << "Should have accepted all predicates";
@@ -175,7 +175,7 @@ class TabletPushdownTest : public KuduTabletTest,
     spec.OptimizeScan(schema_, &arena, &pool, true);
 
     Schema empty_schema(std::vector<ColumnSchema>(), 0);
-    gscoped_ptr<RowwiseIterator> iter;
+    unique_ptr<RowwiseIterator> iter;
     ASSERT_OK(tablet()->NewRowIterator(empty_schema, &iter));
     ASSERT_OK(iter->Init(&spec));
     ASSERT_TRUE(spec.predicates().empty()) << "Should have accepted all predicates";
@@ -266,7 +266,7 @@ TEST_F(TabletSparsePushdownTest, Kudu2231) {
   int32_t value = 50;
   spec.AddPredicate(ColumnPredicate::Equality(schema_.column(1), &value));
 
-  gscoped_ptr<RowwiseIterator> iter;
+  unique_ptr<RowwiseIterator> iter;
   ASSERT_OK(tablet()->NewRowIterator(client_schema_, &iter));
   ASSERT_OK(iter->Init(&spec));
   ASSERT_TRUE(spec.predicates().empty()) << "Should have accepted all predicates";

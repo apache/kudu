@@ -53,6 +53,7 @@ TAG_FLAG(mrs_use_codegen, hidden);
 
 using std::shared_ptr;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 
 namespace kudu { namespace tablet {
@@ -132,8 +133,8 @@ MemRowSet::~MemRowSet() {
 }
 
 Status MemRowSet::DebugDump(vector<string> *lines) {
-  gscoped_ptr<Iterator> iter(NewIterator());
-  RETURN_NOT_OK(iter->Init(NULL));
+  unique_ptr<Iterator> iter(NewIterator());
+  RETURN_NOT_OK(iter->Init(nullptr));
   while (iter->HasNext()) {
     MRSRow row = iter->GetCurrentRow();
     LOG_STRING(INFO, lines)
@@ -300,7 +301,7 @@ MemRowSet::Iterator *MemRowSet::NewIterator() const {
 }
 
 Status MemRowSet::NewRowIterator(const RowIteratorOptions& opts,
-                                 gscoped_ptr<RowwiseIterator>* out) const {
+                                 unique_ptr<RowwiseIterator>* out) const {
   out->reset(NewIterator(opts));
   return Status::OK();
 }

@@ -36,7 +36,6 @@
 #include "kudu/common/rowblock.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/local_tablet_writer.h"
@@ -56,10 +55,11 @@ DEFINE_int32(decoder_eval_test_lower, 0, "Lower bound on the predicate [lower, u
 DEFINE_int32(decoder_eval_test_upper, 50, "Upper bound on the predicate [lower, upper)");
 DEFINE_int32(decoder_eval_test_strlen, 10, "Number of strings per cell");
 
+using std::unique_ptr;
+using strings::Substitute;
+
 namespace kudu {
 namespace tablet {
-
-using strings::Substitute;
 
 enum Setup {
 #ifdef ADDRESS_SANITIZER
@@ -173,7 +173,7 @@ public:
     spec.AddPredicate(string_pred);
     spec.OptimizeScan(schema_, &arena, &pool, true);
     ScanSpec orig_spec = spec;
-    gscoped_ptr<RowwiseIterator> iter;
+    unique_ptr<RowwiseIterator> iter;
     ASSERT_OK(tablet()->NewRowIterator(client_schema_, &iter));
     spec = orig_spec;
     ASSERT_OK(iter->Init(&spec));
@@ -251,7 +251,7 @@ public:
     spec.AddPredicate(string_pred_b);
     spec.OptimizeScan(schema_, &arena, &pool, true);
     ScanSpec orig_spec = spec;
-    gscoped_ptr<RowwiseIterator> iter;
+    unique_ptr<RowwiseIterator> iter;
     ASSERT_OK(tablet()->NewRowIterator(client_schema_, &iter));
     spec = orig_spec;
     ASSERT_OK(iter->Init(&spec));

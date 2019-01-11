@@ -596,9 +596,10 @@ void CFileReader::HandleCorruption(const fs::IOContext* io_context) const {
       ErrorHandlerType::CFILE_CORRUPTION, io_context->tablet_id);
 }
 
-Status CFileReader::NewIterator(CFileIterator** iter, CacheControl cache_control,
+Status CFileReader::NewIterator(unique_ptr<CFileIterator>* iter,
+                                CacheControl cache_control,
                                 const IOContext* io_context) {
-  *iter = new CFileIterator(this, cache_control, io_context);
+  iter->reset(new CFileIterator(this, cache_control, io_context));
   return Status::OK();
 }
 

@@ -29,12 +29,12 @@
 #include "kudu/common/rowblock.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/atomicops.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/diskrowset-test-base.h"
 #include "kudu/tablet/diskrowset.h"
 #include "kudu/tablet/rowset.h"
+#include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/monotime.h"
@@ -56,6 +56,7 @@ DEFINE_int32(num_seconds_per_thread, kDefaultNumSecondsPerThread,
              "Minimum number of seconds each thread should work");
 
 using std::shared_ptr;
+using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
@@ -111,7 +112,7 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
     RowBlock dst(schema_, 1000, &arena);
     RowIteratorOptions opts;
     opts.projection = &schema_;
-    gscoped_ptr<RowwiseIterator> iter;
+    unique_ptr<RowwiseIterator> iter;
     ASSERT_OK(rs->NewRowIterator(opts, &iter));
     uint32_t expected = NoBarrier_Load(&update_counter_);
     ASSERT_OK(iter->Init(nullptr));

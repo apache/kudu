@@ -100,17 +100,9 @@ class CFileReader {
   };
 
   // Can be called before Init().
-  Status NewIterator(CFileIterator** iter,
+  Status NewIterator(std::unique_ptr<CFileIterator>* iter,
                      CacheControl cache_control,
                      const fs::IOContext* io_context);
-  Status NewIterator(gscoped_ptr<CFileIterator>* iter,
-                     CacheControl cache_control,
-                     const fs::IOContext* io_context) {
-    CFileIterator* iter_ptr;
-    RETURN_NOT_OK(NewIterator(&iter_ptr, cache_control, io_context));
-    (*iter).reset(iter_ptr);
-    return Status::OK();
-  }
 
   // Reads the data block pointed to by `ptr`. Will pull the data block from
   // the block cache if it exists, and reads from the filesystem block

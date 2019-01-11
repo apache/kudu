@@ -23,7 +23,6 @@
 #include <memory>
 #include <ostream>
 #include <string>
-#include <type_traits>
 #include <unordered_set>
 #include <vector>
 
@@ -181,7 +180,7 @@ class MemRowSetCompactionInput : public CompactionInput {
   DISALLOW_COPY_AND_ASSIGN(MemRowSetCompactionInput);
   gscoped_ptr<RowBlock> row_block_;
 
-  gscoped_ptr<MemRowSet::Iterator> iter_;
+  unique_ptr<MemRowSet::Iterator> iter_;
 
   // Arena used to store the projected undo/redo mutations of the current block.
   Arena arena_;
@@ -196,7 +195,7 @@ class MemRowSetCompactionInput : public CompactionInput {
 // CompactionInput yielding rows and mutations from an on-disk DiskRowSet.
 class DiskRowSetCompactionInput : public CompactionInput {
  public:
-  DiskRowSetCompactionInput(gscoped_ptr<RowwiseIterator> base_iter,
+  DiskRowSetCompactionInput(unique_ptr<RowwiseIterator> base_iter,
                             unique_ptr<DeltaIterator> redo_delta_iter,
                             unique_ptr<DeltaIterator> undo_delta_iter)
       : base_iter_(std::move(base_iter)),
@@ -260,7 +259,7 @@ class DiskRowSetCompactionInput : public CompactionInput {
 
  private:
   DISALLOW_COPY_AND_ASSIGN(DiskRowSetCompactionInput);
-  gscoped_ptr<RowwiseIterator> base_iter_;
+  unique_ptr<RowwiseIterator> base_iter_;
   unique_ptr<DeltaIterator> redo_delta_iter_;
   unique_ptr<DeltaIterator> undo_delta_iter_;
 
@@ -853,8 +852,8 @@ Status CompactionInput::Create(const DiskRowSet &rowset,
                                gscoped_ptr<CompactionInput>* out) {
   CHECK(projection->has_column_ids());
 
-  shared_ptr<ColumnwiseIterator> base_cwise(rowset.base_data_->NewIterator(projection, io_context));
-  gscoped_ptr<RowwiseIterator> base_iter(new MaterializingIterator(base_cwise));
+  unique_ptr<ColumnwiseIterator> base_cwise(rowset.base_data_->NewIterator(projection, io_context));
+  unique_ptr<RowwiseIterator> base_iter(new MaterializingIterator(std::move(base_cwise)));
 
   // Creates a DeltaIteratorMerger that will only include the relevant REDO deltas.
   RowIteratorOptions redo_opts;

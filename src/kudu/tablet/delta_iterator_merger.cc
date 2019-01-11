@@ -159,15 +159,15 @@ Status DeltaIteratorMerger::Create(
   vector<unique_ptr<DeltaIterator> > delta_iters;
 
   for (const shared_ptr<DeltaStore> &store : stores) {
-    DeltaIterator* raw_iter;
-    Status s = store->NewDeltaIterator(opts, &raw_iter);
+    unique_ptr<DeltaIterator> iter;
+    Status s = store->NewDeltaIterator(opts, &iter);
     if (s.IsNotFound()) {
       continue;
     }
     RETURN_NOT_OK_PREPEND(s, Substitute("Could not create iterator for store $0",
                                         store->ToString()));
 
-    delta_iters.push_back(unique_ptr<DeltaIterator>(raw_iter));
+    delta_iters.emplace_back(std::move(iter));
   }
 
   if (delta_iters.size() == 1) {

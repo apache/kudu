@@ -15,8 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include "kudu/tools/tool_action.h"
-
 #include <algorithm>
 #include <cstdint>
 #include <iostream>
@@ -66,6 +64,7 @@
 #include "kudu/tablet/rowset_metadata.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet_metadata.h"
+#include "kudu/tools/tool_action.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/util/compression/compression.pb.h"
 #include "kudu/util/env.h"
@@ -270,7 +269,7 @@ Status DumpCFile(const RunnerContext& context) {
   }
 
   if (FLAGS_print_rows) {
-    gscoped_ptr<CFileIterator> it;
+    unique_ptr<CFileIterator> it;
     RETURN_NOT_OK(reader->NewIterator(&it, CFileReader::DONT_CACHE_BLOCK, nullptr));
     RETURN_NOT_OK(it->SeekToFirst());
 

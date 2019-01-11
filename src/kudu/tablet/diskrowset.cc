@@ -656,17 +656,16 @@ Status DiskRowSet::NewMajorDeltaCompaction(const vector<ColumnId>& col_ids,
 }
 
 Status DiskRowSet::NewRowIterator(const RowIteratorOptions& opts,
-                                  gscoped_ptr<RowwiseIterator>* out) const {
+                                  unique_ptr<RowwiseIterator>* out) const {
   DCHECK(open_);
   shared_lock<rw_spinlock> l(component_lock_);
 
   shared_ptr<CFileSet::Iterator> base_iter(base_data_->NewIterator(opts.projection,
                                                                    opts.io_context));
-  gscoped_ptr<ColumnwiseIterator> col_iter;
+  unique_ptr<ColumnwiseIterator> col_iter;
   RETURN_NOT_OK(delta_tracker_->WrapIterator(base_iter, opts, &col_iter));
 
-  out->reset(new MaterializingIterator(
-      shared_ptr<ColumnwiseIterator>(col_iter.release())));
+  out->reset(new MaterializingIterator(std::move(col_iter)));
   return Status::OK();
 }
 

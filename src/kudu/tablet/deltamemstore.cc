@@ -17,6 +17,7 @@
 
 #include "kudu/tablet/deltamemstore.h"
 
+#include <memory>
 #include <ostream>
 #include <utility>
 
@@ -44,6 +45,7 @@ using fs::IOContext;
 using log::LogAnchorRegistry;
 using std::string;
 using std::shared_ptr;
+using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
@@ -142,8 +144,8 @@ Status DeltaMemStore::FlushToFile(DeltaFileWriter *dfw,
 }
 
 Status DeltaMemStore::NewDeltaIterator(const RowIteratorOptions& opts,
-                                       DeltaIterator** iterator) const {
-  *iterator = new DMSIterator(shared_from_this(), opts);
+                                       unique_ptr<DeltaIterator>* iterator) const {
+  iterator->reset(new DMSIterator(shared_from_this(), opts));
   return Status::OK();
 }
 

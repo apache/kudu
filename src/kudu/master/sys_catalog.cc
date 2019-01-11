@@ -622,7 +622,7 @@ Status SysCatalogTable::ProcessRows(
   ScanSpec spec;
   spec.AddPredicate(pred);
 
-  gscoped_ptr<RowwiseIterator> iter;
+  unique_ptr<RowwiseIterator> iter;
   RETURN_NOT_OK(tablet_replica_->tablet()->NewRowIterator(schema_, &iter));
   RETURN_NOT_OK(iter->Init(&spec));
 

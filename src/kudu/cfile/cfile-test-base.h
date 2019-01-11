@@ -18,12 +18,14 @@
 #ifndef KUDU_CFILE_TEST_BASE_H
 #define KUDU_CFILE_TEST_BASE_H
 
-#include <glog/logging.h>
 #include <algorithm>
+#include <cstdlib>
 #include <functional>
-#include <stdlib.h>
+#include <memory>
 #include <string>
 #include <vector>
+
+#include <glog/logging.h>
 
 #include "kudu/cfile/cfile.pb.h"
 #include "kudu/cfile/cfile_reader.h"
@@ -438,7 +440,7 @@ SumType FastSum(const Indexable &data, size_t n) {
 }
 
 template<DataType Type, typename SumType>
-void TimeReadFileForDataType(gscoped_ptr<CFileIterator> &iter, int &count) {
+void TimeReadFileForDataType(CFileIterator* iter, int* count) {
   ScopedColumnBlock<Type> cb(8192);
   SelectionVector sel(cb.nrows());
   ColumnMaterializationContext ctx(0, nullptr, &cb, &sel);
@@ -448,11 +450,11 @@ void TimeReadFileForDataType(gscoped_ptr<CFileIterator> &iter, int &count) {
     size_t n = cb.nrows();
     ASSERT_OK_FAST(iter->CopyNextValues(&n, &ctx));
     sum += FastSum<ScopedColumnBlock<Type>, SumType>(cb, n);
-    count += n;
+    *count += n;
     cb.arena()->Reset();
   }
   LOG(INFO)<< "Sum: " << sum;
-  LOG(INFO)<< "Count: " << count;
+  LOG(INFO)<< "Count: " << *count;
 }
 
 template<DataType Type>
@@ -485,7 +487,7 @@ void TimeReadFile(FsManager* fs_manager, const BlockId& block_id, size_t *count_
   std::unique_ptr<CFileReader> reader;
   ASSERT_OK(CFileReader::Open(std::move(source), ReaderOptions(), &reader));
 
-  gscoped_ptr<CFileIterator> iter;
+  std::unique_ptr<CFileIterator> iter;
   ASSERT_OK(reader->NewIterator(&iter, CFileReader::CACHE_BLOCK, nullptr));
   ASSERT_OK(iter->SeekToOrdinal(0));
 
@@ -494,57 +496,57 @@ void TimeReadFile(FsManager* fs_manager, const BlockId& block_id, size_t *count_
   switch (reader->type_info()->physical_type()) {
     case UINT8:
     {
-      TimeReadFileForDataType<UINT8, uint64_t>(iter, count);
+      TimeReadFileForDataType<UINT8, uint64_t>(iter.get(), &count);
       break;
     }
     case INT8:
     {
-      TimeReadFileForDataType<INT8, int64_t>(iter, count);
+      TimeReadFileForDataType<INT8, int64_t>(iter.get(), &count);
       break;
     }
     case UINT16:
     {
-      TimeReadFileForDataType<UINT16, uint64_t>(iter, count);
+      TimeReadFileForDataType<UINT16, uint64_t>(iter.get(), &count);
       break;
     }
     case INT16:
     {
-      TimeReadFileForDataType<INT16, int64_t>(iter, count);
+      TimeReadFileForDataType<INT16, int64_t>(iter.get(), &count);
       break;
     }
     case UINT32:
     {
-      TimeReadFileForDataType<UINT32, uint64_t>(iter, count);
+      TimeReadFileForDataType<UINT32, uint64_t>(iter.get(), &count);
       break;
     }
     case INT32:
     {
-      TimeReadFileForDataType<INT32, int64_t>(iter, count);
+      TimeReadFileForDataType<INT32, int64_t>(iter.get(), &count);
       break;
     }
     case UINT64:
     {
-      TimeReadFileForDataType<UINT64, uint64_t>(iter, count);
+      TimeReadFileForDataType<UINT64, uint64_t>(iter.get(), &count);
       break;
     }
     case INT64:
     {
-      TimeReadFileForDataType<INT64, int64_t>(iter, count);
+      TimeReadFileForDataType<INT64, int64_t>(iter.get(), &count);
       break;
     }
     case INT128:
     {
-      TimeReadFileForDataType<INT128, int128_t>(iter, count);
+      TimeReadFileForDataType<INT128, int128_t>(iter.get(), &count);
       break;
     }
     case FLOAT:
     {
-      TimeReadFileForDataType<FLOAT, float>(iter, count);
+      TimeReadFileForDataType<FLOAT, float>(iter.get(), &count);
       break;
     }
     case DOUBLE:
     {
-      TimeReadFileForDataType<DOUBLE, double>(iter, count);
+      TimeReadFileForDataType<DOUBLE, double>(iter.get(), &count);
       break;
     }
     case STRING:

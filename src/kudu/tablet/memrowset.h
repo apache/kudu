@@ -324,7 +324,7 @@ class MemRowSet : public RowSet,
 
   // Alias to conform to DiskRowSet interface
   virtual Status NewRowIterator(const RowIteratorOptions& opts,
-                                gscoped_ptr<RowwiseIterator>* out) const override;
+                                std::unique_ptr<RowwiseIterator>* out) const override;
 
   // Create compaction input.
   virtual Status NewCompactionInput(const Schema* projection,

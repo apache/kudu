@@ -91,7 +91,7 @@ class DeltaTracker {
 
   Status WrapIterator(const std::shared_ptr<CFileSet::Iterator> &base,
                       const RowIteratorOptions& opts,
-                      gscoped_ptr<ColumnwiseIterator>* out) const;
+                      std::unique_ptr<ColumnwiseIterator>* out) const;
 
   // Enum used for NewDeltaIterator() and CollectStores() below.
   // Determines whether all types of stores should be considered,

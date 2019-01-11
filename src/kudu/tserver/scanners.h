@@ -201,7 +201,7 @@ class Scanner {
 
   // Attach an actual iterator and a ScanSpec to this Scanner.
   // Takes ownership of 'iter' and 'spec'.
-  void Init(gscoped_ptr<RowwiseIterator> iter,
+  void Init(std::unique_ptr<RowwiseIterator> iter,
             gscoped_ptr<ScanSpec> spec);
 
   // Return true if the scanner has been initialized (i.e has an iterator).
@@ -364,7 +364,7 @@ class Scanner {
   // schema used by the iterator.
   gscoped_ptr<Schema> client_projection_schema_;
 
-  gscoped_ptr<RowwiseIterator> iter_;
+  std::unique_ptr<RowwiseIterator> iter_;
 
   AutoReleasePool autorelease_pool_;
 

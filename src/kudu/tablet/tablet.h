@@ -193,7 +193,7 @@ class Tablet {
   // state of this tablet.
   // The returned iterator is not initialized.
   Status NewRowIterator(const Schema& projection,
-                        gscoped_ptr<RowwiseIterator>* iter) const;
+                        std::unique_ptr<RowwiseIterator>* iter) const;
 
   // Create a new row iterator using specific iterator options.
   //
@@ -207,7 +207,7 @@ class Tablet {
   // because the iterator constructs and holds the relevant instance of that
   // object as a member variable.
   Status NewRowIterator(RowIteratorOptions opts,
-                        gscoped_ptr<RowwiseIterator>* iter) const;
+                        std::unique_ptr<RowwiseIterator>* iter) const;
 
   // Flush the current MemRowSet for this tablet to disk. This swaps
   // in a new (initially empty) MemRowSet in its place.
@@ -583,7 +583,7 @@ class Tablet {
   // lifetime of the returned iterators.
   Status CaptureConsistentIterators(const RowIteratorOptions& opts,
                                     const ScanSpec* spec,
-                                    std::vector<std::shared_ptr<RowwiseIterator> >* iters) const;
+                                    std::vector<std::unique_ptr<RowwiseIterator>>* iters) const;
 
   Status PickRowSetsToCompact(RowSetsInCompaction *picked,
                               CompactFlags flags) const;
@@ -809,7 +809,7 @@ class Tablet::Iterator : public RowwiseIterator {
   fs::IOContext io_context_;
   Schema projection_;
   RowIteratorOptions opts_;
-  gscoped_ptr<RowwiseIterator> iter_;
+  std::unique_ptr<RowwiseIterator> iter_;
 };
 
 // Structure which represents the components of the tablet's storage.

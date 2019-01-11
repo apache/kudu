@@ -32,6 +32,7 @@
 
 using std::shared_ptr;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
@@ -84,20 +85,20 @@ string DuplicatingRowSet::ToString() const {
 }
 
 Status DuplicatingRowSet::NewRowIterator(const RowIteratorOptions& opts,
-                                         gscoped_ptr<RowwiseIterator>* out) const {
+                                         unique_ptr<RowwiseIterator>* out) const {
   // Use the original rowset.
   if (old_rowsets_.size() == 1) {
     return old_rowsets_[0]->NewRowIterator(opts, out);
   }
   // Union or merge between them
 
-  vector<shared_ptr<RowwiseIterator> > iters;
+  vector<unique_ptr<RowwiseIterator>> iters;
   for (const shared_ptr<RowSet> &rowset : old_rowsets_) {
-    gscoped_ptr<RowwiseIterator> iter;
+    unique_ptr<RowwiseIterator> iter;
     RETURN_NOT_OK_PREPEND(rowset->NewRowIterator(opts, &iter),
                           Substitute("Could not create iterator for rowset $0",
                                      rowset->ToString()));
-    iters.push_back(shared_ptr<RowwiseIterator>(iter.release()));
+    iters.emplace_back(std::move(iter));
   }
 
   switch (opts.order) {

@@ -19,6 +19,7 @@
 #include <cinttypes>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <ostream>
 #include <string>
 #include <unordered_map>
@@ -34,7 +35,6 @@
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/local_tablet_writer.h"
@@ -46,6 +46,7 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 
+using std::unique_ptr;
 using strings::Substitute;
 
 namespace kudu {
@@ -305,7 +306,7 @@ public:
     AutoReleasePool pool;
     *count = 0;
     spec.OptimizeScan(schema, &arena, &pool, true);
-    gscoped_ptr<RowwiseIterator> iter;
+    unique_ptr<RowwiseIterator> iter;
     ASSERT_OK(tablet()->NewRowIterator(schema, &iter));
     ASSERT_OK(iter->Init(&spec));
     ASSERT_TRUE(spec.predicates().empty()) << "Should have accepted all predicate.";

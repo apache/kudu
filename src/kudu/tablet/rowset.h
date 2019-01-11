@@ -143,7 +143,7 @@ class RowSet {
   //
   // The returned iterator is not Initted.
   virtual Status NewRowIterator(const RowIteratorOptions& opts,
-                                gscoped_ptr<RowwiseIterator>* out) const = 0;
+                                std::unique_ptr<RowwiseIterator>* out) const = 0;
 
   // Create the input to be used for a compaction.
   //
@@ -391,7 +391,7 @@ class DuplicatingRowSet : public RowSet {
                          bool *present, ProbeStats* stats) const OVERRIDE;
 
   virtual Status NewRowIterator(const RowIteratorOptions& opts,
-                                gscoped_ptr<RowwiseIterator>* out) const OVERRIDE;
+                                std::unique_ptr<RowwiseIterator>* out) const OVERRIDE;
 
   virtual Status NewCompactionInput(const Schema* projection,
                                     const MvccSnapshot &snap,

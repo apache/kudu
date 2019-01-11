@@ -244,7 +244,7 @@ static inline void CollectRowsForSnapshots(
     RowIteratorOptions opts;
     opts.projection = &schema;
     opts.snap_to_include = snapshot;
-    gscoped_ptr<RowwiseIterator> iter;
+    std::unique_ptr<RowwiseIterator> iter;
     ASSERT_OK(tablet->NewRowIterator(std::move(opts), &iter));
     ASSERT_OK(iter->Init(nullptr));
     auto collector = new std::vector<std::string>();
@@ -271,7 +271,7 @@ static inline void VerifySnapshotsHaveSameResult(
     RowIteratorOptions opts;
     opts.projection = &schema;
     opts.snap_to_include = snapshot;
-    gscoped_ptr<RowwiseIterator> iter;
+    std::unique_ptr<RowwiseIterator> iter;
     ASSERT_OK(tablet->NewRowIterator(std::move(opts), &iter));
     ASSERT_OK(iter->Init(nullptr));
     std::vector<std::string> collector;
@@ -293,7 +293,7 @@ static inline void VerifySnapshotsHaveSameResult(
 static inline Status DumpRowSet(const RowSet& rs,
                                 const RowIteratorOptions& opts,
                                 std::vector<std::string>* out) {
-  gscoped_ptr<RowwiseIterator> iter;
+  std::unique_ptr<RowwiseIterator> iter;
   RETURN_NOT_OK(rs.NewRowIterator(opts, &iter));
   RETURN_NOT_OK(iter->Init(nullptr));
   RETURN_NOT_OK(IterateToStringList(iter.get(), out));
@@ -314,7 +314,7 @@ static inline std::string InitAndDumpIterator(RowwiseIterator* iter) {
 static inline Status DumpTablet(const Tablet& tablet,
                                 const Schema& projection,
                                 std::vector<std::string>* out) {
-  gscoped_ptr<RowwiseIterator> iter;
+  std::unique_ptr<RowwiseIterator> iter;
   RETURN_NOT_OK(tablet.NewRowIterator(projection, &iter));
   RETURN_NOT_OK(iter->Init(nullptr));
   std::vector<std::string> rows;
@@ -914,15 +914,14 @@ void RunDeltaFuzzTest(const DeltaStore& store,
     SCOPED_TRACE(Substitute("Timestamps: [$0,$1)",
                                      lower_ts ? lower_ts->ToString() : "INF",
                                      upper_ts.ToString()));
-    DeltaIterator* raw_iter;
-    Status s = store.NewDeltaIterator(opts, &raw_iter);
+    std::unique_ptr<DeltaIterator> iter;
+    Status s = store.NewDeltaIterator(opts, &iter);
     if (s.IsNotFound()) {
       ASSERT_STR_CONTAINS(s.ToString(), "MvccSnapshot outside the range of this delta");
       ASSERT_TRUE(mirror->CheckAllDeltasCulled(lower_ts, upper_ts));
       continue;
     }
     ASSERT_OK(s);
-    std::unique_ptr<DeltaIterator> iter(raw_iter);
     ASSERT_OK(iter->Init(nullptr));
 
     // Run tests in batches, in case there's some bug related to batching.

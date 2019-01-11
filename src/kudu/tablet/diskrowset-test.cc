@@ -438,7 +438,7 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
     RowIteratorOptions opts;
     opts.projection = &schema_;
     opts.snap_to_include = snaps[i];
-    gscoped_ptr<RowwiseIterator> iter;
+    unique_ptr<RowwiseIterator> iter;
     ASSERT_OK(rs->NewRowIterator(opts, &iter));
     string data = InitAndDumpIterator(iter.get());
     EXPECT_EQ(StringPrintf(R"((string key="row", uint32 val=%d))", i + 1), data);
@@ -453,7 +453,7 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
     RowIteratorOptions opts;
     opts.projection = &schema_;
     opts.snap_to_include = snaps[i];
-    gscoped_ptr<RowwiseIterator> iter;
+    unique_ptr<RowwiseIterator> iter;
     ASSERT_OK(rs->NewRowIterator(opts, &iter));
     string data = InitAndDumpIterator(iter.get());
     EXPECT_EQ(StringPrintf(R"((string key="row", uint32 val=%d))", i + 1), data);
@@ -785,7 +785,7 @@ TEST_P(DiffScanRowSetTest, TestFuzz) {
     opts.projection = &projection;
     opts.snap_to_exclude = MvccSnapshot(ts1);
     opts.snap_to_include = MvccSnapshot(ts2);
-    gscoped_ptr<RowwiseIterator> iter;
+    unique_ptr<RowwiseIterator> iter;
     ASSERT_OK(rs->NewRowIterator(opts, &iter));
     ASSERT_OK(iter->Init(nullptr));
 

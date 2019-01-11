@@ -20,7 +20,6 @@
 #include <memory>
 #include <ostream>
 #include <string>
-#include <unordered_set>
 #include <vector>
 
 #include <gflags/gflags_declare.h>
@@ -32,7 +31,6 @@
 #include "kudu/common/partial_row.h"
 #include "kudu/common/schema.h"
 #include "kudu/fs/io_context.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -48,7 +46,7 @@ DECLARE_double(cfile_inject_corruption);
 
 using std::shared_ptr;
 using std::string;
-using std::unordered_set;
+using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
@@ -160,7 +158,7 @@ class TestMajorDeltaCompaction : public KuduRowSetTest {
       RowIteratorOptions opts;
       opts.projection = &client_schema_;
       opts.snap_to_include = snap;
-      gscoped_ptr<RowwiseIterator> row_iter;
+      unique_ptr<RowwiseIterator> row_iter;
       ASSERT_OK(tablet()->NewRowIterator(std::move(opts), &row_iter));
       ASSERT_OK(row_iter->Init(nullptr));
 

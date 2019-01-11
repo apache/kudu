@@ -209,13 +209,12 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
 
   shared_ptr<DeltaFileReader> dfr;
   ASSERT_OK(GetDeltaFileReader(block_id, &dfr));
-  DeltaIterator* raw_iter;
-  ASSERT_OK(dfr->NewDeltaIterator(opts, &raw_iter));
-  gscoped_ptr<DeltaIterator> scoped_iter(raw_iter);
+  unique_ptr<DeltaIterator> iter;
+  ASSERT_OK(dfr->NewDeltaIterator(opts, &iter));
 
   vector<string> results;
-  ASSERT_OK(DebugDumpDeltaIterator(REDO, scoped_iter.get(), merge_schema,
-                                          ITERATE_OVER_ALL_ROWS, &results));
+  ASSERT_OK(DebugDumpDeltaIterator(REDO, iter.get(), merge_schema,
+                                   ITERATE_OVER_ALL_ROWS, &results));
   for (const string &str : results) {
     VLOG(1) << str;
   }

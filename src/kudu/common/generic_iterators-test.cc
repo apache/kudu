@@ -54,8 +54,6 @@ DEFINE_int32(num_lists, 3, "Number of lists to merge");
 DEFINE_int32(num_rows, 1000, "Number of entries per list");
 DEFINE_int32(num_iters, 1, "Number of times to run merge");
 
-using std::make_shared;
-using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using std::vector;
@@ -162,10 +160,12 @@ class VectorIterator : public ColumnwiseIterator {
 
 // Test that empty input to a merger behaves correctly.
 TEST(TestMergeIterator, TestMergeEmpty) {
-  shared_ptr<RowwiseIterator> iter(
-    new MaterializingIterator(
-        shared_ptr<ColumnwiseIterator>(new VectorIterator({}))));
-  MergeIterator merger({ std::move(iter) });
+  unique_ptr<RowwiseIterator> iter(
+      new MaterializingIterator(
+          unique_ptr<ColumnwiseIterator>(new VectorIterator({}))));
+  vector<unique_ptr<RowwiseIterator>> input;
+  input.emplace_back(std::move(iter));
+  MergeIterator merger(std::move(input));
   ASSERT_OK(merger.Init(nullptr));
   ASSERT_FALSE(merger.HasNext());
 }
@@ -175,10 +175,12 @@ TEST(TestMergeIterator, TestMergeEmpty) {
 TEST(TestMergeIterator, TestMergeEmptyViaSelectionVector) {
   SelectionVector sv(3);
   sv.SetAllFalse();
-  shared_ptr<VectorIterator> vec(new VectorIterator({ 1, 2, 3 }));
+  unique_ptr<VectorIterator> vec(new VectorIterator({ 1, 2, 3 }));
   vec->set_selection_vector(&sv);
-  shared_ptr<RowwiseIterator> iter(new MaterializingIterator(std::move(vec)));
-  MergeIterator merger({ std::move(iter) });
+  unique_ptr<RowwiseIterator> iter(new MaterializingIterator(std::move(vec)));
+  vector<unique_ptr<RowwiseIterator>> input;
+  input.emplace_back(std::move(iter));
+  MergeIterator merger(std::move(input));
   ASSERT_OK(merger.Init(nullptr));
   ASSERT_FALSE(merger.HasNext());
 }
@@ -242,13 +244,15 @@ void TestMerge(const TestIntRangePredicate &predicate) {
   VLOG(1) << "Predicate expects " << expected.size() << " results: " << expected;
 
   for (int trial = 0; trial < FLAGS_num_iters; trial++) {
-    vector<shared_ptr<RowwiseIterator>> to_merge;
+    vector<unique_ptr<RowwiseIterator>> to_merge;
     for (const auto& e : all_ints) {
-      shared_ptr<VectorIterator> vec_it(new VectorIterator(e.ints));
+      unique_ptr<VectorIterator> vec_it(new VectorIterator(e.ints));
       vec_it->set_block_size(10);
       vec_it->set_selection_vector(e.sv.get());
-      shared_ptr<RowwiseIterator> mat_it(new MaterializingIterator(std::move(vec_it)));
-      shared_ptr<RowwiseIterator> un_it(new UnionIterator({ std::move(mat_it) }));
+      unique_ptr<RowwiseIterator> mat_it(new MaterializingIterator(std::move(vec_it)));
+      vector<unique_ptr<RowwiseIterator>> to_union;
+      to_union.emplace_back(std::move(mat_it));
+      unique_ptr<RowwiseIterator> un_it(new UnionIterator(std::move(to_union)));
       to_merge.emplace_back(std::move(un_it));
     }
 
@@ -316,8 +320,8 @@ TEST(TestMaterializingIterator, TestMaterializingPredicatePushdown) {
     ints[i] = i;
   }
 
-  shared_ptr<VectorIterator> colwise(new VectorIterator(std::move(ints)));
-  MaterializingIterator materializing(colwise);
+  unique_ptr<VectorIterator> colwise(new VectorIterator(std::move(ints)));
+  MaterializingIterator materializing(std::move(colwise));
   ASSERT_OK(materializing.Init(&spec));
   ASSERT_EQ(0, spec.predicates().size()) << "Iterator should have pushed down predicate";
 
@@ -349,16 +353,18 @@ TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluation) {
 
   // Set up a MaterializingIterator with pushdown disabled, so that the
   // PredicateEvaluatingIterator will wrap it and do evaluation.
-  shared_ptr<VectorIterator> colwise(new VectorIterator(std::move(ints)));
-  MaterializingIterator *materializing = new MaterializingIterator(colwise);
+  unique_ptr<VectorIterator> colwise(new VectorIterator(std::move(ints)));
+  unique_ptr<MaterializingIterator> materializing(
+      new MaterializingIterator(std::move(colwise)));
   materializing->disallow_pushdown_for_tests_ = true;
 
   // Wrap it in another iterator to do the evaluation
-  shared_ptr<RowwiseIterator> outer_iter(materializing);
+  const MaterializingIterator* mat_iter_addr = materializing.get();
+  unique_ptr<RowwiseIterator> outer_iter(std::move(materializing));
   ASSERT_OK(PredicateEvaluatingIterator::InitAndMaybeWrap(&outer_iter, &spec));
 
   ASSERT_NE(reinterpret_cast<uintptr_t>(outer_iter.get()),
-            reinterpret_cast<uintptr_t>(materializing))
+            reinterpret_cast<uintptr_t>(mat_iter_addr))
     << "Iterator pointer should differ after wrapping";
 
   PredicateEvaluatingIterator *pred_eval = down_cast<PredicateEvaluatingIterator *>(
@@ -388,11 +394,15 @@ TEST(TestPredicateEvaluatingIterator, TestDontWrapWhenNoPredicates) {
   ScanSpec spec;
 
   vector<uint32_t> ints;
-  shared_ptr<VectorIterator> colwise(new VectorIterator(std::move(ints)));
-  shared_ptr<RowwiseIterator> materializing(new MaterializingIterator(colwise));
-  shared_ptr<RowwiseIterator> outer_iter(materializing);
+  unique_ptr<VectorIterator> colwise(new VectorIterator(std::move(ints)));
+  unique_ptr<MaterializingIterator> materializing(
+      new MaterializingIterator(std::move(colwise)));
+  const MaterializingIterator* mat_iter_addr = materializing.get();
+  unique_ptr<RowwiseIterator> outer_iter(std::move(materializing));
   ASSERT_OK(PredicateEvaluatingIterator::InitAndMaybeWrap(&outer_iter, &spec));
-  ASSERT_EQ(outer_iter, materializing) << "InitAndMaybeWrap should not have wrapped iter";
+  ASSERT_EQ(reinterpret_cast<uintptr_t>(outer_iter.get()),
+            reinterpret_cast<uintptr_t>(mat_iter_addr))
+      << "InitAndMaybeWrap should not have wrapped iter";
 }
 
 // Test row-wise iterator which does nothing.
@@ -451,7 +461,7 @@ TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluationOrder) {
     spec.AddPredicate(b_equality);
     spec.AddPredicate(c_equality);
 
-    shared_ptr<RowwiseIterator> iter = make_shared<DummyIterator>(schema);
+    unique_ptr<RowwiseIterator> iter(new DummyIterator(schema));
     ASSERT_OK(PredicateEvaluatingIterator::InitAndMaybeWrap(&iter, &spec));
 
     PredicateEvaluatingIterator* pred_eval = down_cast<PredicateEvaluatingIterator*>(iter.get());
@@ -465,7 +475,7 @@ TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluationOrder) {
     spec.AddPredicate(a_equality);
     spec.AddPredicate(c_equality);
 
-    shared_ptr<RowwiseIterator> iter = make_shared<DummyIterator>(schema);
+    unique_ptr<RowwiseIterator> iter(new DummyIterator(schema));
     ASSERT_OK(PredicateEvaluatingIterator::InitAndMaybeWrap(&iter, &spec));
 
     PredicateEvaluatingIterator* pred_eval = down_cast<PredicateEvaluatingIterator*>(iter.get());

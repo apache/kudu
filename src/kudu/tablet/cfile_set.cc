@@ -45,7 +45,6 @@
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/dynamic_annotations.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
@@ -221,15 +220,19 @@ CFileReader* CFileSet::key_index_reader() const {
   return FindOrDie(readers_by_col_id_, key_col_id).get();
 }
 
-Status CFileSet::NewColumnIterator(ColumnId col_id, CFileReader::CacheControl cache_blocks,
-                                   const fs::IOContext* io_context, CFileIterator **iter) const {
+Status CFileSet::NewColumnIterator(ColumnId col_id,
+                                   CFileReader::CacheControl cache_blocks,
+                                   const fs::IOContext* io_context,
+                                   unique_ptr<CFileIterator>* iter) const {
   return FindOrDie(readers_by_col_id_, col_id)->NewIterator(iter, cache_blocks,
                                                             io_context);
 }
 
-CFileSet::Iterator* CFileSet::NewIterator(const Schema* projection,
-                                          const IOContext* io_context) const {
-  return new CFileSet::Iterator(shared_from_this(), projection, io_context);
+unique_ptr<CFileSet::Iterator> CFileSet::NewIterator(
+    const Schema* projection,
+    const IOContext* io_context) const {
+  return unique_ptr<CFileSet::Iterator>(
+      new CFileSet::Iterator(shared_from_this(), projection, io_context));
 }
 
 Status CFileSet::CountRows(const IOContext* io_context, rowid_t *count) const {
@@ -297,10 +300,8 @@ Status CFileSet::FindRow(const RowSetKeyProbe &probe,
   }
 
   stats->keys_consulted++;
-  CFileIterator *key_iter = nullptr;
+  unique_ptr<CFileIterator> key_iter;
   RETURN_NOT_OK(NewKeyIterator(io_context, &key_iter));
-
-  unique_ptr<CFileIterator> key_iter_scoped(key_iter); // free on return
 
   bool exact;
   Status s = key_iter->SeekAtOrAfter(probe.encoded_key(), &exact);
@@ -325,7 +326,8 @@ Status CFileSet::CheckRowPresent(const RowSetKeyProbe& probe, const IOContext* i
   return Status::OK();
 }
 
-Status CFileSet::NewKeyIterator(const IOContext* io_context, CFileIterator** key_iter) const {
+Status CFileSet::NewKeyIterator(const IOContext* io_context,
+                                unique_ptr<CFileIterator>* key_iter) const {
   RETURN_NOT_OK(key_index_reader()->Init(io_context));
   return key_index_reader()->NewIterator(key_iter, CFileReader::CACHE_BLOCK, io_context);
 }
@@ -364,11 +366,11 @@ Status CFileSet::Iterator::CreateColumnIterators(const ScanSpec* spec) {
                                                             col_schema.read_default_value()));
       continue;
     }
-    CFileIterator *iter;
+    unique_ptr<CFileIterator> iter;
     RETURN_NOT_OK_PREPEND(base_data_->NewColumnIterator(col_id, cache_blocks, io_context_, &iter),
                           Substitute("could not create iterator for column $0",
                                      projection_->column(proj_col_idx).ToString()));
-    ret_iters.emplace_back(iter);
+    ret_iters.emplace_back(std::move(iter));
   }
 
   col_iters_.swap(ret_iters);
@@ -380,10 +382,8 @@ Status CFileSet::Iterator::Init(ScanSpec *spec) {
 
   RETURN_NOT_OK(base_data_->CountRows(io_context_, &row_count_));
 
-  // Setup Key Iterator
-  CFileIterator *tmp;
-  RETURN_NOT_OK(base_data_->NewKeyIterator(io_context_, &tmp));
-  key_iter_.reset(tmp);
+  // Setup key iterator.
+  RETURN_NOT_OK(base_data_->NewKeyIterator(io_context_, &key_iter_));
 
   // Setup column iterators.
   RETURN_NOT_OK(CreateColumnIterators(spec));

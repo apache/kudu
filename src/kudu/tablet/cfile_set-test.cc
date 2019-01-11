@@ -43,7 +43,6 @@
 #include "kudu/common/rowid.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
@@ -52,6 +51,7 @@
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/util/auto_release_pool.h"
 #include "kudu/util/bloom_filter.h"
+#include "kudu/util/hash.pb.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/slice.h"
@@ -62,6 +62,7 @@ DECLARE_int32(cfile_default_block_size);
 
 using std::shared_ptr;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
@@ -179,8 +180,8 @@ class TestCFileSet : public KuduRowSetTest {
                        int32_t lower,
                        int32_t upper) {
     // Create iterator.
-    shared_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&schema_, nullptr));
-    gscoped_ptr<RowwiseIterator> iter(new MaterializingIterator(cfile_iter));
+    unique_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&schema_, nullptr));
+    unique_ptr<RowwiseIterator> iter(new MaterializingIterator(std::move(cfile_iter)));
 
     // Create a scan with a range predicate on the key column.
     ScanSpec spec;
@@ -215,8 +216,8 @@ class TestCFileSet : public KuduRowSetTest {
                              vector<size_t> target) {
     LOG(INFO) << "predicates size: " << predicates.size();
     // Create iterator.
-    shared_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&schema_, nullptr));
-    gscoped_ptr<RowwiseIterator> iter(new MaterializingIterator(cfile_iter));
+    unique_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&schema_, nullptr));
+    unique_ptr<RowwiseIterator> iter(new MaterializingIterator(std::move(cfile_iter)));
     LOG(INFO) << "Target size: " << target.size();
     // Create a scan with a range predicate on the key column.
     ScanSpec spec;
@@ -279,7 +280,7 @@ TEST_F(TestCFileSet, TestPartiallyMaterialize) {
   shared_ptr<CFileSet> fileset;
   ASSERT_OK(CFileSet::Open(rowset_meta_, MemTracker::GetRootTracker(), nullptr, &fileset));
 
-  gscoped_ptr<CFileSet::Iterator> iter(fileset->NewIterator(&schema_, nullptr));
+  unique_ptr<CFileSet::Iterator> iter(fileset->NewIterator(&schema_, nullptr));
   ASSERT_OK(iter->Init(nullptr));
 
   Arena arena(4096);
@@ -361,8 +362,8 @@ TEST_F(TestCFileSet, TestIteratePartialSchema) {
 
   Schema new_schema;
   ASSERT_OK(schema_.CreateProjectionByNames({ "c0", "c2" }, &new_schema));
-  shared_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&new_schema, nullptr));
-  gscoped_ptr<RowwiseIterator> iter(new MaterializingIterator(cfile_iter));
+  unique_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&new_schema, nullptr));
+  unique_ptr<RowwiseIterator> iter(new MaterializingIterator(std::move(cfile_iter)));
 
   ASSERT_OK(iter->Init(nullptr));
 
@@ -393,8 +394,9 @@ TEST_F(TestCFileSet, TestRangeScan) {
   ASSERT_OK(CFileSet::Open(rowset_meta_, MemTracker::GetRootTracker(), nullptr, &fileset));
 
   // Create iterator.
-  shared_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&schema_, nullptr));
-  gscoped_ptr<RowwiseIterator> iter(new MaterializingIterator(cfile_iter));
+  unique_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&schema_, nullptr));
+  CFileSet::Iterator* cfile_iter_raw = cfile_iter.get();
+  unique_ptr<RowwiseIterator> iter(new MaterializingIterator(std::move(cfile_iter)));
   Schema key_schema = schema_.CreateKeyProjection();
   Arena arena(1024);
   AutoReleasePool pool;
@@ -411,8 +413,8 @@ TEST_F(TestCFileSet, TestRangeScan) {
   // Check that the bounds got pushed as index bounds.
   // Since the key column is the rowidx * 2, we need to divide the integer bounds
   // back down.
-  EXPECT_EQ(lower / 2, cfile_iter->lower_bound_idx_);
-  EXPECT_EQ(upper / 2, cfile_iter->upper_bound_idx_);
+  EXPECT_EQ(lower / 2, cfile_iter_raw->lower_bound_idx_);
+  EXPECT_EQ(upper / 2, cfile_iter_raw->upper_bound_idx_);
 
   // Read all the results.
   vector<string> results;

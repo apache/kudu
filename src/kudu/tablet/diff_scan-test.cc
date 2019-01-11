@@ -27,7 +27,6 @@
 #include "kudu/common/iterator.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/rowset.h"
@@ -38,6 +37,7 @@
 #include "kudu/util/test_macros.h"
 
 using std::string;
+using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
@@ -91,7 +91,7 @@ TEST_F(DiffScanTest, TestDiffScan) {
   auto projection = tablet->schema()->CopyWithoutColumnIds();
   opts.projection = &projection;
 
-  gscoped_ptr<RowwiseIterator> row_iterator;
+  unique_ptr<RowwiseIterator> row_iterator;
   ASSERT_OK(tablet->NewRowIterator(std::move(opts),
                                    &row_iterator));
   ASSERT_TRUE(row_iterator);

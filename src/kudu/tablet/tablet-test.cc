@@ -485,7 +485,7 @@ TYPED_TEST(TestTablet, TestRowIteratorSimple) {
   CHECK_OK(this->InsertTestRow(&writer, kInMemRowSet, 0));
 
   // Now iterate the tablet and make sure the rows show up
-  gscoped_ptr<RowwiseIterator> iter;
+  unique_ptr<RowwiseIterator> iter;
   ASSERT_OK(this->tablet()->NewRowIterator(this->client_schema_, &iter));
   ASSERT_OK(iter->Init(nullptr));
 
@@ -557,7 +557,7 @@ TYPED_TEST(TestTablet, TestRowIteratorOrdered) {
       opts.projection = &this->client_schema_;
       opts.snap_to_include = snap;
       opts.order = ORDERED;
-      gscoped_ptr<RowwiseIterator> iter;
+      unique_ptr<RowwiseIterator> iter;
       ASSERT_OK(this->tablet()->NewRowIterator(std::move(opts), &iter));
       ASSERT_OK(iter->Init(nullptr));
 
@@ -658,7 +658,7 @@ TYPED_TEST(TestTablet, TestRowIteratorComplex) {
   }
 
   // Now iterate the tablet and make sure the rows show up.
-  gscoped_ptr<RowwiseIterator> iter;
+  unique_ptr<RowwiseIterator> iter;
   const Schema& schema = this->client_schema_;
   ASSERT_OK(this->tablet()->NewRowIterator(schema, &iter));
   ASSERT_OK(iter->Init(nullptr));

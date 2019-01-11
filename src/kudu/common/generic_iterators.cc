@@ -66,7 +66,7 @@ TAG_FLAG(materializing_iterator_decoder_eval, runtime);
 namespace kudu {
 namespace {
 void AddIterStats(const RowwiseIterator& iter,
-                  std::vector<IteratorStats>* stats) {
+                  vector<IteratorStats>* stats) {
   vector<IteratorStats> iter_stats;
   iter.GetIteratorStats(&iter_stats);
   DCHECK_EQ(stats->size(), iter_stats.size());
@@ -88,7 +88,7 @@ static const int kMergeRowBuffer = 1000;
 // such that all returned rows are valid.
 class MergeIterState {
  public:
-  explicit MergeIterState(shared_ptr<RowwiseIterator> iter) :
+  explicit MergeIterState(unique_ptr<RowwiseIterator> iter) :
       iter_(std::move(iter)),
       arena_(1024),
       read_block_(iter_->schema(), kMergeRowBuffer, &arena_),
@@ -120,7 +120,7 @@ class MergeIterState {
   Status Advance();
 
   // Add statistics about the underlying iterator to the given vector.
-  void AddStats(std::vector<IteratorStats>* stats) const {
+  void AddStats(vector<IteratorStats>* stats) const {
     AddIterStats(*iter_, stats);
   }
 
@@ -143,7 +143,7 @@ class MergeIterState {
     return rows_advanced_ == rows_valid_;
   }
 
-  shared_ptr<RowwiseIterator> iter_;
+  unique_ptr<RowwiseIterator> iter_;
   Arena arena_;
   RowBlock read_block_;
 
@@ -211,9 +211,9 @@ Status MergeIterState::PullNextBlock() {
   return Status::OK();
 }
 
-MergeIterator::MergeIterator(vector<shared_ptr<RowwiseIterator>> iters)
+MergeIterator::MergeIterator(vector<unique_ptr<RowwiseIterator>> iters)
     : initted_(false),
-      orig_iters_(std::move(iters)),
+      orig_iters_(move(iters)),
       num_orig_iters_(orig_iters_.size()) {
   CHECK_GT(orig_iters_.size(), 0);
 }
@@ -382,7 +382,7 @@ void MergeIterator::GetIteratorStats(vector<IteratorStats>* stats) const {
 // Union iterator
 ////////////////////////////////////////////////////////////
 
-UnionIterator::UnionIterator(vector<shared_ptr<RowwiseIterator>> iters)
+UnionIterator::UnionIterator(vector<unique_ptr<RowwiseIterator>> iters)
   : initted_(false),
     iters_(std::make_move_iterator(iters.begin()),
            std::make_move_iterator(iters.end())) {
@@ -476,14 +476,14 @@ void UnionIterator::PopFront() {
 string UnionIterator::ToString() const {
   string s;
   s.append("Union(");
-  s += JoinMapped(iters_, [](const shared_ptr<RowwiseIterator>& it) {
+  s += JoinMapped(iters_, [](const unique_ptr<RowwiseIterator>& it) {
       return it->ToString();
     }, ",");
   s.append(")");
   return s;
 }
 
-void UnionIterator::GetIteratorStats(std::vector<IteratorStats>* stats) const {
+void UnionIterator::GetIteratorStats(vector<IteratorStats>* stats) const {
   CHECK(initted_);
   shared_lock<rw_spinlock> l(iters_lock_);
   *stats = finished_iter_stats_by_col_;
@@ -496,7 +496,7 @@ void UnionIterator::GetIteratorStats(std::vector<IteratorStats>* stats) const {
 // Materializing iterator
 ////////////////////////////////////////////////////////////
 
-MaterializingIterator::MaterializingIterator(shared_ptr<ColumnwiseIterator> iter)
+MaterializingIterator::MaterializingIterator(unique_ptr<ColumnwiseIterator> iter)
     : iter_(move(iter)),
       disallow_pushdown_for_tests_(!FLAGS_materializing_iterator_do_pushdown),
       disallow_decoder_eval_(!FLAGS_materializing_iterator_decoder_eval) {
@@ -631,19 +631,20 @@ string MaterializingIterator::ToString() const {
 // PredicateEvaluatingIterator
 ////////////////////////////////////////////////////////////
 
-PredicateEvaluatingIterator::PredicateEvaluatingIterator(shared_ptr<RowwiseIterator> base_iter)
+PredicateEvaluatingIterator::PredicateEvaluatingIterator(unique_ptr<RowwiseIterator> base_iter)
     : base_iter_(move(base_iter)) {
 }
 
 Status PredicateEvaluatingIterator::InitAndMaybeWrap(
-  shared_ptr<RowwiseIterator> *base_iter, ScanSpec *spec) {
+  unique_ptr<RowwiseIterator> *base_iter, ScanSpec *spec) {
   RETURN_NOT_OK((*base_iter)->Init(spec));
 
   if (spec != nullptr && !spec->predicates().empty()) {
     // Underlying iterator did not accept all predicates. Wrap it.
-    shared_ptr<RowwiseIterator> wrapper(new PredicateEvaluatingIterator(*base_iter));
+    unique_ptr<RowwiseIterator> wrapper(
+        new PredicateEvaluatingIterator(std::move(*base_iter)));
     CHECK_OK(wrapper->Init(spec));
-    base_iter->swap(wrapper);
+    *base_iter = std::move(wrapper);
   }
   return Status::OK();
 }

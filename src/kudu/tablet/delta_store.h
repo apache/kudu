@@ -77,7 +77,7 @@ class DeltaStore {
   // returns Status::NotFound if the mutations within this delta store
   // cannot include the snapshot.
   virtual Status NewDeltaIterator(const RowIteratorOptions& opts,
-                                  DeltaIterator** iterator) const = 0;
+                                  std::unique_ptr<DeltaIterator>* iterator) const = 0;
 
   // Set *deleted to true if the latest update for the given row is a deletion.
   virtual Status CheckRowDeleted(rowid_t row_idx, const fs::IOContext* io_context,

@@ -119,7 +119,7 @@ class DeltaMemStore : public DeltaStore,
   // returns Status::NotFound if the mutations within this delta store
   // cannot include the snapshot.
   virtual Status NewDeltaIterator(const RowIteratorOptions& opts,
-                                  DeltaIterator** iterator) const OVERRIDE;
+                                  std::unique_ptr<DeltaIterator>* iterator) const OVERRIDE;
 
   virtual Status CheckRowDeleted(rowid_t row_idx, const fs::IOContext* io_context,
                                  bool* deleted) const OVERRIDE;

@@ -693,10 +693,10 @@ Status LinkedListTester::VerifyLinkedListLocal(const tablet::Tablet* tablet,
   const Schema* tablet_schema = tablet->schema();
   // Cannot use schemas with col indexes in a scan (assertions fire).
   Schema projection(tablet_schema->columns(), tablet_schema->num_key_columns());
-  gscoped_ptr<RowwiseIterator> iter;
+  std::unique_ptr<RowwiseIterator> iter;
   RETURN_NOT_OK_PREPEND(tablet->NewRowIterator(projection, &iter),
                         "Cannot create new row iterator");
-  RETURN_NOT_OK_PREPEND(iter->Init(NULL), "Cannot initialize row iterator");
+  RETURN_NOT_OK_PREPEND(iter->Init(nullptr), "Cannot initialize row iterator");
 
   Arena arena(1024);
   RowBlock block(projection, 100, &arena);

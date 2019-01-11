@@ -623,7 +623,7 @@ Status DeltaTracker::NewDeltaFileIterator(
 
 Status DeltaTracker::WrapIterator(const shared_ptr<CFileSet::Iterator> &base,
                                   const RowIteratorOptions& opts,
-                                  gscoped_ptr<ColumnwiseIterator>* out) const {
+                                  unique_ptr<ColumnwiseIterator>* out) const {
   unique_ptr<DeltaIterator> iter;
   RETURN_NOT_OK(NewDeltaIterator(opts, &iter));
 

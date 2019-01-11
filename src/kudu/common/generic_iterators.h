@@ -54,7 +54,7 @@ class MergeIterator : public RowwiseIterator {
   //
   // Note: the iterators must be constructed using a projection that includes
   // all key columns; otherwise a CHECK will fire at initialization time.
-  explicit MergeIterator(std::vector<std::shared_ptr<RowwiseIterator>> iters);
+  explicit MergeIterator(std::vector<std::unique_ptr<RowwiseIterator>> iters);
 
   virtual ~MergeIterator();
 
@@ -83,7 +83,7 @@ class MergeIterator : public RowwiseIterator {
 
   // Holds the subiterators until Init is called, at which point this is cleared.
   // This is required because we can't create a MergeIterState of an uninitialized iterator.
-  std::vector<std::shared_ptr<RowwiseIterator>> orig_iters_;
+  std::vector<std::unique_ptr<RowwiseIterator>> orig_iters_;
 
   // See UnionIterator::states_lock_ for details on locking. This follows the same
   // pattern.
@@ -114,7 +114,7 @@ class UnionIterator : public RowwiseIterator {
   // Constructs a UnionIterator of the given iterators.
   //
   // The iterators must have matching schemas and should not yet be initialized.
-  explicit UnionIterator(std::vector<std::shared_ptr<RowwiseIterator>> iters);
+  explicit UnionIterator(std::vector<std::unique_ptr<RowwiseIterator>> iters);
 
   Status Init(ScanSpec *spec) OVERRIDE;
 
@@ -156,7 +156,7 @@ class UnionIterator : public RowwiseIterator {
   // it's the only thread which might write. However, it does need to acquire in write
   // mode when changing 'iters_'.
   mutable rw_spinlock iters_lock_;
-  std::deque<std::shared_ptr<RowwiseIterator>> iters_;
+  std::deque<std::unique_ptr<RowwiseIterator>> iters_;
 
   // Statistics (keyed by projection column index) accumulated so far by any
   // fully-consumed sub-iterators.
@@ -177,7 +177,7 @@ class UnionIterator : public RowwiseIterator {
 // batch, then other columns may avoid doing any IO.
 class MaterializingIterator : public RowwiseIterator {
  public:
-  explicit MaterializingIterator(std::shared_ptr<ColumnwiseIterator> iter);
+  explicit MaterializingIterator(std::unique_ptr<ColumnwiseIterator> iter);
 
   // Initialize the iterator, performing predicate pushdown as described above.
   Status Init(ScanSpec *spec) OVERRIDE;
@@ -202,7 +202,7 @@ class MaterializingIterator : public RowwiseIterator {
 
   Status MaterializeBlock(RowBlock *dst);
 
-  std::shared_ptr<ColumnwiseIterator> iter_;
+  std::unique_ptr<ColumnwiseIterator> iter_;
 
   // List of (column index, predicate) in order of most to least selective, with
   // ties broken by the index.
@@ -228,7 +228,7 @@ class PredicateEvaluatingIterator : public RowwiseIterator {
   //
   // POSTCONDITION: spec->predicates().empty()
   // POSTCONDITION: base_iter and its wrapper are initialized
-  static Status InitAndMaybeWrap(std::shared_ptr<RowwiseIterator> *base_iter,
+  static Status InitAndMaybeWrap(std::unique_ptr<RowwiseIterator> *base_iter,
                                  ScanSpec *spec);
 
   // Initialize the iterator.
@@ -254,12 +254,12 @@ class PredicateEvaluatingIterator : public RowwiseIterator {
   // Construct the evaluating iterator.
   // This is only called from ::InitAndMaybeWrap()
   // REQUIRES: base_iter is already Init()ed.
-  explicit PredicateEvaluatingIterator(std::shared_ptr<RowwiseIterator> base_iter);
+  explicit PredicateEvaluatingIterator(std::unique_ptr<RowwiseIterator> base_iter);
 
   FRIEND_TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluation);
   FRIEND_TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluationOrder);
 
-  std::shared_ptr<RowwiseIterator> base_iter_;
+  std::unique_ptr<RowwiseIterator> base_iter_;
 
   // List of predicates in order of most to least selective, with
   // ties broken by the column index.

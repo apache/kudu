@@ -35,13 +35,13 @@
 #include "kudu/common/rowblock.h"
 #include "kudu/common/rowid.h"
 #include "kudu/common/schema.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/tablet-harness.h"
 #include "kudu/tablet/tablet-test-base.h"
+#include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/faststring.h"
@@ -77,6 +77,7 @@ DEFINE_double(flusher_backoff, 2.0f, "Ratio to backoff the flusher thread");
 DEFINE_int32(flusher_initial_frequency_ms, 30, "Number of ms to wait between flushes");
 
 using std::shared_ptr;
+using std::unique_ptr;
 
 namespace kudu {
 namespace tablet {
@@ -95,7 +96,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
     superclass::SetUp();
 
     // Warm up code cache with all the projections we'll be using.
-    gscoped_ptr<RowwiseIterator> iter;
+    unique_ptr<RowwiseIterator> iter;
     CHECK_OK(tablet()->NewRowIterator(client_schema_, &iter));
     uint64_t count;
     CHECK_OK(tablet()->CountRows(&count));
@@ -152,9 +153,9 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
     KuduPartialRow row(&client_schema_);
 
     while (running_insert_count_.count() > 0) {
-      gscoped_ptr<RowwiseIterator> iter;
+      unique_ptr<RowwiseIterator> iter;
       CHECK_OK(tablet()->NewRowIterator(client_schema_, &iter));
-      CHECK_OK(iter->Init(NULL));
+      CHECK_OK(iter->Init(nullptr));
 
       while (iter->HasNext() && running_insert_count_.count() > 0) {
         tmp_arena.Reset();
@@ -220,9 +221,9 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
     int max_iters = FLAGS_num_insert_threads * max_rows / 10;
 
     while (running_insert_count_.count() > 0) {
-      gscoped_ptr<RowwiseIterator> iter;
+      unique_ptr<RowwiseIterator> iter;
       CHECK_OK(tablet()->NewRowIterator(client_schema_, &iter));
-      CHECK_OK(iter->Init(NULL));
+      CHECK_OK(iter->Init(nullptr));
 
       for (int i = 0; i < max_iters && iter->HasNext(); i++) {
         CHECK_OK(iter->NextBlock(&block));
@@ -254,9 +255,9 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
 
     int64_t sum = 0;
 
-    gscoped_ptr<RowwiseIterator> iter;
+    unique_ptr<RowwiseIterator> iter;
     CHECK_OK(tablet()->NewRowIterator(valcol_projection_, &iter));
-    CHECK_OK(iter->Init(NULL));
+    CHECK_OK(iter->Init(nullptr));
 
     while (iter->HasNext()) {
       arena.Reset();

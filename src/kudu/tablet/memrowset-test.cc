@@ -40,7 +40,6 @@
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/opid_util.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/strcat.h"
@@ -96,9 +95,9 @@ class TestMemRowSet : public KuduTest {
 
  protected:
   // Check that the given row in the memrowset contains the given data.
-  void CheckValue(const shared_ptr<MemRowSet> &mrs, string key,
-                  const string &expected_row) {
-    gscoped_ptr<MemRowSet::Iterator> iter(mrs->NewIterator());
+  void CheckValue(const shared_ptr<MemRowSet>& mrs, const string& key,
+                  const string& expected_row) {
+    unique_ptr<MemRowSet::Iterator> iter(mrs->NewIterator());
     ASSERT_OK(iter->Init(nullptr));
 
     Slice keystr_slice(key);
@@ -200,7 +199,7 @@ class TestMemRowSet : public KuduTest {
   }
 
   int ScanAndCount(MemRowSet* mrs, const RowIteratorOptions& opts) {
-    gscoped_ptr<MemRowSet::Iterator> iter(mrs->NewIterator(opts));
+    unique_ptr<MemRowSet::Iterator> iter(mrs->NewIterator(opts));
     CHECK_OK(iter->Init(nullptr));
 
     Arena arena(1024);
@@ -268,7 +267,7 @@ TEST_F(TestMemRowSet, TestInsertAndIterate) {
 
   ASSERT_EQ(2, mrs->entry_count());
 
-  gscoped_ptr<MemRowSet::Iterator> iter(mrs->NewIterator());
+  unique_ptr<MemRowSet::Iterator> iter(mrs->NewIterator());
   ASSERT_OK(iter->Init(nullptr));
 
   // The first row returned from the iterator should
@@ -337,7 +336,7 @@ TEST_F(TestMemRowSet, TestInsertAndIterateCompoundKey) {
 
   ASSERT_EQ(3, mrs->entry_count());
 
-  gscoped_ptr<MemRowSet::Iterator> iter(mrs->NewIterator());
+  unique_ptr<MemRowSet::Iterator> iter(mrs->NewIterator());
   ASSERT_OK(iter->Init(nullptr));
 
   // The first row returned from the iterator should

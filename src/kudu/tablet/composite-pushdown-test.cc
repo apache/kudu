@@ -32,7 +32,6 @@
 #include "kudu/common/partial_row.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/tablet/local_tablet_writer.h"
@@ -45,6 +44,7 @@
 #include "kudu/util/test_macros.h"
 
 using std::string;
+using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
@@ -115,7 +115,7 @@ class CompositePushdownTest : public KuduTabletTest {
   void ScanTablet(ScanSpec *spec, vector<string> *results, const char *descr) {
     SCOPED_TRACE(descr);
 
-    gscoped_ptr<RowwiseIterator> iter;
+    unique_ptr<RowwiseIterator> iter;
     ASSERT_OK(tablet()->NewRowIterator(client_schema_, &iter));
     ASSERT_OK(iter->Init(spec));
     ASSERT_TRUE(spec->predicates().empty()) << "Should have accepted all predicates";

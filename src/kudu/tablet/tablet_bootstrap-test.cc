@@ -198,11 +198,7 @@ class BootstrapTest : public LogTestBase {
 
   void IterateTabletRows(const Tablet* tablet,
                          vector<string>* results) {
-    gscoped_ptr<RowwiseIterator> iter;
-    // TODO: there seems to be something funny with timestamps in this test.
-    // Unless we explicitly scan at a snapshot including all timestamps, we don't
-    // see the bootstrapped operation. This is likely due to KUDU-138 -- perhaps
-    // we aren't properly setting up the clock after bootstrap.
+    unique_ptr<RowwiseIterator> iter;
     RowIteratorOptions opts;
     opts.projection = &schema_;
     ASSERT_OK(tablet->NewRowIterator(std::move(opts), &iter));

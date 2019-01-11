@@ -117,9 +117,10 @@ string MajorDeltaCompaction::ColumnNamesToString() const {
 Status MajorDeltaCompaction::FlushRowSetAndDeltas(const IOContext* io_context) {
   CHECK_EQ(state_, kInitialized);
 
-  shared_ptr<ColumnwiseIterator> old_base_data_cwise(base_data_->NewIterator(&partial_schema_,
+  unique_ptr<ColumnwiseIterator> old_base_data_cwise(base_data_->NewIterator(&partial_schema_,
                                                                              io_context));
-  gscoped_ptr<RowwiseIterator> old_base_data_rwise(new MaterializingIterator(old_base_data_cwise));
+  unique_ptr<RowwiseIterator> old_base_data_rwise(new MaterializingIterator(
+      std::move(old_base_data_cwise)));
 
   ScanSpec spec;
   spec.set_cache_blocks(false);

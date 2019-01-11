@@ -38,7 +38,6 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/raft_consensus.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
@@ -73,6 +72,7 @@ using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
 using kudu::rpc::RpcController;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 
@@ -402,9 +402,9 @@ Status TabletServerTestBase::ShutdownAndRebuildTablet(int num_data_dirs) {
 // Verifies that a set of expected rows (key, value) is present in the tablet.
 void TabletServerTestBase::VerifyRows(const Schema& schema,
                                       const vector<KeyValue>& expected) {
-  gscoped_ptr<RowwiseIterator> iter;
+  unique_ptr<RowwiseIterator> iter;
   ASSERT_OK(tablet_replica_->tablet()->NewRowIterator(schema, &iter));
-  ASSERT_OK(iter->Init(NULL));
+  ASSERT_OK(iter->Init(nullptr));
 
   int batch_size = std::max<int>(1,
      std::min<int>(expected.size() / 10,

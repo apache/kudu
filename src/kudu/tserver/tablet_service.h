@@ -18,10 +18,10 @@
 #define KUDU_TSERVER_TABLET_SERVICE_H
 
 #include <cstdint>
+#include <memory>
 #include <string>
 
 #include "kudu/consensus/consensus.service.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_admin.service.h"
@@ -156,7 +156,7 @@ class TabletServiceImpl : public TabletServerServiceIf {
                               const Schema& projection,
                               tablet::Tablet* tablet,
                               consensus::TimeManager* time_manager,
-                              gscoped_ptr<RowwiseIterator>* iter,
+                              std::unique_ptr<RowwiseIterator>* iter,
                               Timestamp* snap_timestamp);
 
   // Validates the given timestamp is not so far in the future that

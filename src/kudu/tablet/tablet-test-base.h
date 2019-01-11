@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <memory>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -411,7 +412,7 @@ class TabletTestBase : public KuduTabletTest {
 
   void VerifyTestRowsWithVerifier(int32_t first_row, uint64_t expected_count,
                                   const boost::optional<TestRowVerifier>& verifier) {
-    gscoped_ptr<RowwiseIterator> iter;
+    std::unique_ptr<RowwiseIterator> iter;
     ASSERT_OK(tablet()->NewRowIterator(client_schema_, &iter));
     VerifyTestRowsWithRowIteratorAndVerifier(first_row, expected_count, std::move(iter), verifier);
   }
@@ -422,15 +423,15 @@ class TabletTestBase : public KuduTabletTest {
     RowIteratorOptions opts;
     opts.projection = &client_schema_;
     opts.snap_to_include = MvccSnapshot(timestamp);
-    gscoped_ptr<RowwiseIterator> iter;
+    std::unique_ptr<RowwiseIterator> iter;
     ASSERT_OK(tablet()->NewRowIterator(std::move(opts), &iter));
     VerifyTestRowsWithRowIteratorAndVerifier(first_row, expected_count, std::move(iter), verifier);
   }
 
   void VerifyTestRowsWithRowIteratorAndVerifier(int32_t first_row, uint64_t expected_row_count,
-                                                gscoped_ptr<RowwiseIterator> iter,
+                                                std::unique_ptr<RowwiseIterator> iter,
                                                 const boost::optional<TestRowVerifier>& verifier) {
-    ASSERT_OK(iter->Init(NULL));
+    ASSERT_OK(iter->Init(nullptr));
     int batch_size = std::max<size_t>(1, std::min<size_t>(expected_row_count / 10,
                                                           4L * 1024 * 1024 / schema_.byte_size()));
     Arena arena(32*1024);
@@ -491,9 +492,9 @@ class TabletTestBase : public KuduTabletTest {
   // into the given vector. This is only useful in tests which insert
   // a very small number of rows.
   Status IterateToStringList(std::vector<std::string> *out) {
-    gscoped_ptr<RowwiseIterator> iter;
+    std::unique_ptr<RowwiseIterator> iter;
     RETURN_NOT_OK(this->tablet()->NewRowIterator(this->client_schema_, &iter));
-    RETURN_NOT_OK(iter->Init(NULL));
+    RETURN_NOT_OK(iter->Init(nullptr));
     return kudu::tablet::IterateToStringList(iter.get(), out);
   }
 

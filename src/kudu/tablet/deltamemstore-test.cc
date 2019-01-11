@@ -138,13 +138,12 @@ class TestDeltaMemStore : public KuduTest {
     RowIteratorOptions opts;
     opts.projection = &single_col_projection;
     opts.snap_to_include = snapshot;
-    DeltaIterator* raw_iter;
-    Status s = dms_->NewDeltaIterator(opts, &raw_iter);
+    unique_ptr<DeltaIterator> iter;
+    Status s = dms_->NewDeltaIterator(opts, &iter);
     if (s.IsNotFound()) {
       return;
     }
     ASSERT_OK(s);
-    gscoped_ptr<DeltaIterator> iter(raw_iter);
     ASSERT_OK(iter->Init(nullptr));
     ASSERT_OK(iter->SeekToOrdinal(row_idx));
     ASSERT_OK(iter->PrepareBatch(cb->nrows(), DeltaIterator::PREPARE_FOR_APPLY));
@@ -549,14 +548,13 @@ TEST_F(TestDeltaMemStore, TestIteratorDoesUpdates) {
   opts.projection = &schema_;
   // TODO(todd): test snapshot reads from different points
   opts.snap_to_include = MvccSnapshot(mvcc_);
-  DeltaIterator* raw_iter;
-  Status s = dms_->NewDeltaIterator(opts, &raw_iter);
+
+  unique_ptr<DeltaIterator> iter;
+  Status s = dms_->NewDeltaIterator(opts, &iter);
   if (s.IsNotFound()) {
     FAIL() << "Iterator fell outside of the range of the snapshot";
   }
   ASSERT_OK(s);
-
-  unique_ptr<DeltaIterator> iter(raw_iter);
   ASSERT_OK(iter->Init(nullptr));
 
   int block_start_row = 50;
@@ -599,14 +597,12 @@ TEST_F(TestDeltaMemStore, TestCollectMutations) {
   RowIteratorOptions opts;
   opts.projection = &schema_;
   opts.snap_to_include = MvccSnapshot(mvcc_);
-  DeltaIterator* raw_iter;
-  Status s =  dms_->NewDeltaIterator(opts, &raw_iter);
+  unique_ptr<DeltaIterator> iter;
+  Status s =  dms_->NewDeltaIterator(opts, &iter);
   if (s.IsNotFound()) {
     FAIL() << "Iterator fell outside of the range of the snapshot";
   }
   ASSERT_OK(s);
-
-  unique_ptr<DeltaIterator> iter(raw_iter);
   ASSERT_OK(iter->Init(nullptr));
   ASSERT_OK(iter->SeekToOrdinal(0));
   ASSERT_OK(iter->PrepareBatch(kBatchSize, DeltaIterator::PREPARE_FOR_COLLECT));

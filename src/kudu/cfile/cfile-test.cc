@@ -118,7 +118,7 @@ class TestCFile : public CFileTestBase {
     ASSERT_OK(CFileReader::Open(std::move(block), ReaderOptions(), &reader));
 
     BlockPointer ptr;
-    gscoped_ptr<CFileIterator> iter;
+    unique_ptr<CFileIterator> iter;
     ASSERT_OK(reader->NewIterator(&iter, CFileReader::CACHE_BLOCK, nullptr));
 
     ASSERT_OK(iter->SeekToOrdinal(5000));
@@ -201,7 +201,7 @@ class TestCFile : public CFileTestBase {
     ASSERT_OK(CFileReader::Open(std::move(block), ReaderOptions(), &reader));
     ASSERT_EQ(DataGeneratorType::kDataType, reader->type_info()->type());
 
-    gscoped_ptr<CFileIterator> iter;
+    unique_ptr<CFileIterator> iter;
     ASSERT_OK(reader->NewIterator(&iter, CFileReader::CACHE_BLOCK, nullptr));
 
     Arena arena(8192);
@@ -619,7 +619,7 @@ void TestCFile::TestReadWriteStrings(EncodingType encoding,
 
   BlockPointer ptr;
 
-  gscoped_ptr<CFileIterator> iter;
+  unique_ptr<CFileIterator> iter;
   ASSERT_OK(reader->NewIterator(&iter, CFileReader::CACHE_BLOCK, nullptr));
 
   Arena arena(1024);

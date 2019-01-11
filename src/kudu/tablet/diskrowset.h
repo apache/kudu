@@ -356,7 +356,7 @@ class DiskRowSet : public RowSet {
   // Read functions.
   ////////////////////
   virtual Status NewRowIterator(const RowIteratorOptions& opts,
-                                gscoped_ptr<RowwiseIterator>* out) const override;
+                                std::unique_ptr<RowwiseIterator>* out) const override;
 
   virtual Status NewCompactionInput(const Schema* projection,
                                     const MvccSnapshot &snap,
