@@ -38,11 +38,16 @@ for an overview of using Gerrit for code review.
 
 === Initial Setup for Gerrit
 
-. Sign in to link:http://gerrit.cloudera.org:8080[Gerrit] using your Github username.
+. Sign in to link:https://gerrit.cloudera.org/[Gerrit] using your Github username.
 
-. Go to link:http://gerrit.cloudera.org:8080/#/settings/[Settings]. Update your name
-and email address on the *Contact Information* page, and upload a SSH public key.
-If you do not update your name, it will show up as "Anonymous Coward" in Gerrit reviews.
+. Go to link:https://gerrit.cloudera.org/settings/[Settings]. Update your name
+and email address on the *Contact Information* page, and upload a SSH public
+key under *SSH Public Keys* if you would like to use SSH to connect to Gerrit.
+Generate an HTTP password under *HTTP Password* if you would like to use HTTP
+or HTTPS to connect to Gerrit. (Most Kudu developers use the SSH option.)
++
+NOTE: If you do not update your name, it will appear as "Anonymous Coward" in
+Gerrit reviews.
 
 . If you have not done so, clone the main Kudu repository. By default, the main remote
 is called `origin`. When you fetch or pull, you will do so from `origin`.
@@ -54,16 +59,40 @@ git clone https://github.com/apache/kudu
 
 . Change to the new `kudu` directory.
 
-. Add a `gerrit` remote. In the following command, substitute <username> with your
-Github username.
+. Add a `gerrit` remote.
++
+If using SSH to connect to Gerrit, use the following command to add the Gerrit
+remote (substitute <username> with your Github username):
 +
 [source,bash]
 ----
 git remote add gerrit ssh://<username>@gerrit.cloudera.org:29418/kudu
 ----
++
+If using HTTP or HTTPS to connect to Gerrit, use the following command to add
+the Gerrit remote (http:// also works):
++
+[source,bash]
+----
+git remote add gerrit https://gerrit.cloudera.org/a/kudu
+----
++
+[TIP]
+====
+If you are using Gerrit's HTTP or HTTPS endpoints and prefer not to type a
+username and password each time you submit a patch, you can put your login and
+password into a `.netrc` file located at `$HOME/.netrc` and Git will use it.
+The password is stored as plaintext and the file format is as follows:
 
-. Run the following command to install the
-Gerrit `commit-msg` hook. Use the following command:
+[source]
+----
+machine <hostname>
+  login <username>
+  password <password>
+----
+====
+
+. Run the following command to install the Gerrit `commit-msg` hook:
 +
 ----
 cd kudu
