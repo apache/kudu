@@ -202,6 +202,82 @@ format exposed by the HTTP endpoint above.
 The frequency with which metrics are dumped to the diagnostics log is configured using the
 `--metrics_log_interval_ms` flag. By default, Kudu logs metrics every 60 seconds.
 
+[[rack_awareness]]
+== Rack Awareness
+
+As of version 1.9, Kudu supports a rack awareness feature. Kudu's ordinary
+re-replication methods ensure the availability of the cluster in the event of a
+single node failure. However, clusters can be vulnerable to correlated failures
+of multiple nodes. For example, all of the physical hosts on the same rack in
+a datacenter may become unavailable simultaneously if the top-of-rack switch
+fails. Kudu's rack awareness feature provides protection from some kinds of
+correlated failures, like the failure of a single rack in a datacenter.
+
+The first element of Kudu's rack awareness feature is location assignment. When
+a tablet server or client registers with a master, the master assigns it a
+location. A location is a `/`-separated string that begins with a `/` and where
+each `/`-separated component consists of characters from the set
+`[a-zA-Z0-9_-.]`. For example, `/dc-0/rack-09` is a valid location, while
+`rack-04` and `/rack=1` are not valid locations. Thus location strings resemble
+absolute UNIX file paths where characters in directory and file names are
+restricted to the set `[a-zA-Z0-9_-.]`. Presently, Kudu does not use the
+hierarchical structure of locations, but it may in the future. Location
+assignment is done by a user-provided command, whose path should be specified
+using the `--location_mapping_cmd` master flag. The command should take a single
+argument, the IP address or hostname of a tablet server or client, and return
+the location for the tablet server or client. Make sure that all Kudu masters
+are using the same location mapping command.
+
+The second element of Kudu's rack awareness feature is the placement policy,
+which is
+
+  Do not place a majority of replicas of a tablet on tablet servers in the same location.
+
+The leader master, when placing newly created replicas on tablet servers and
+when re-replicating existing tablets, will attempt to place the replicas in a
+way that complies with the placement policy. For example, in a cluster with five
+tablet servers `A`, `B`, `C`, `D`, and `E`, with respective locations `/L0`,
+`/L0`, `/L1`, `/L1`, `/L2`, to comply with the placement policy a new 3x
+replicated tablet could have its replicas placed on `A`, `C`, and `E`, but not
+on `A`, `B`, and `C`, because then the tablet would have 2/3 replicas in
+location `/L0`. As another example, if a tablet has replicas on tablet servers
+`A`, `C`, and `E`, and then `C` fails, the replacement replica must be placed on
+`D` in order to comply with the placement policy.
+
+In the case where it is impossible to place replicas in a way that complies with
+the placement policy, Kudu will violate the policy and place a replica anyway.
+For example, using the setup described in the previous paragraph, if a tablet
+has replicas on tablet servers `A`, `C`, and `E`, and then `E` fails, Kudu will
+re-replicate the tablet onto one of `B` or `D`, violating the placement policy,
+rather than leaving the tablet under-replicated indefinitely. The
+`kudu cluster rebalance` tool can reestablish the placement policy if it is
+possible to do so. The `kudu cluster rebalance` tool can also be used to
+establish the placement policy on a cluster if the cluster has just been
+configured to use the rack awareness feature and existing replicas need to be
+moved to comply with the placement policy. See
+<<rebalancer_tool_with_rack_awareness,running the tablet rebalancing tool on a rack-aware cluster>>
+for more information.
+
+The third and final element of Kudu's rack awareness feature is the use of
+client locations to find "nearby" servers. As mentioned, the masters also
+assign a location to clients when they connect to the cluster. The client
+(whether Java, {cpp}, or Python) uses its own location and the locations of
+tablet servers in the cluster to prefer "nearby" replicas when scanning in
+`CLOSEST_REPLICA` mode. Clients choose replicas to scan in the following order:
+
+. Scan a replica on a tablet server on the same host, if there is one.
+. Scan a replica on a tablet server in the same location, if there is one.
+. Scan some replica.
+
+For example, using the cluster setup described above, if a client on the same
+host as tablet server `A` scans a tablet with replicas on tablet servers
+`A`, `C`, and `E` in `CLOSEST_REPLICA` mode, it will choose to scan from the
+replica on `A`, since the client and the replica on `A` are on the same host.
+If the client scans a tablet with replicas on tablet servers `B`, `C`, and `E`,
+it will choose to scan from the replica on `B`, since it is in the same
+location as the client, `/L0`. If there are multiple replicas meeting a
+criterion, one is chosen arbitrarily.
+
 == Common Kudu workflows
 
 [[migrate_to_multi_master]]
@@ -1260,6 +1336,30 @@ table, "RF" stands for "replication factor".
 If the rebalancer is running against a cluster where rebalancing replication
 factor one tables is not supported, it will rebalance all the other tables
 and the cluster as if those singly-replicated tables did not exist.
+
+[[rebalancer_tool_with_rack_awareness]]
+=== Running the tablet rebalancing tool on a rack-aware cluster
+
+As detailed in the <<rack_awareness, rack awareness>> section, it's possible
+to use the `kudu cluster rebalance` tool to establish the placement policy on a
+cluster. This might be necessary when the rack awareness feature is first
+configured or when re-replication violated the placement policy. The rebalancing
+tool breaks its work into three phases:
+
+. The rack-aware rebalancer tries to establish the placement policy. Use the
+  `--disable_policy_fixer` flag to skip this phase.
+. The rebalancer tries to balance load by location, moving tablet replicas
+  between locations in an attempt to spread tablet replicas among locations
+  evenly. The load of a location is measured as the total number of replicas in
+  the location divided by the number of tablet servers in the location. Use the
+  `--disable_cross_location_rebalancing` flag to skip this phase.
+. The rebalancer tries to balance the tablet replica distribution within each
+  location, as if the location were a cluster on its own. Use the
+  `--disable_intra_location_rebalancing` flag to skip this phase.
+
+By using the `--report_only` flag, it's also possible to check if all tablets in
+the cluster conform to the placement policy without attempting any replica
+movement.
 
 [[tablet_server_decommissioning]]
 === Decommissioning or Permanently Removing a Tablet Server From a Cluster
