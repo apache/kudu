@@ -665,7 +665,7 @@ Status DiskRowSet::NewRowIterator(const RowIteratorOptions& opts,
   unique_ptr<ColumnwiseIterator> col_iter;
   RETURN_NOT_OK(delta_tracker_->WrapIterator(base_iter, opts, &col_iter));
 
-  out->reset(new MaterializingIterator(std::move(col_iter)));
+  *out = NewMaterializingIterator(std::move(col_iter));
   return Status::OK();
 }
 

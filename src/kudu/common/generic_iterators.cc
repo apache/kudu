@@ -20,10 +20,13 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <iterator>
 #include <memory>
 #include <mutex>
+#include <ostream>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -34,18 +37,26 @@
 #include "kudu/common/column_materialization_context.h"
 #include "kudu/common/column_predicate.h"
 #include "kudu/common/columnblock.h"
+#include "kudu/common/iterator.h"
 #include "kudu/common/iterator_stats.h"
 #include "kudu/common/row.h"
 #include "kudu/common/rowblock.h"
+#include "kudu/common/scan_spec.h"
+#include "kudu/common/schema.h"
+#include "kudu/gutil/casts.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/memory/arena.h"
+#include "kudu/util/object_pool.h"
 
+using std::deque;
 using std::get;
-using std::move;
+using std::make_shared;
 using std::pair;
 using std::remove_if;
 using std::shared_ptr;
@@ -77,7 +88,7 @@ void AddIterStats(const RowwiseIterator& iter,
 } // anonymous namespace
 
 ////////////////////////////////////////////////////////////
-// Merge iterator
+// MergeIterator
 ////////////////////////////////////////////////////////////
 
 // TODO(todd): this should be sized by # bytes, not # rows.
@@ -211,9 +222,72 @@ Status MergeIterState::PullNextBlock() {
   return Status::OK();
 }
 
+// An iterator which merges the results of other iterators, comparing
+// based on keys.
+//
+// Note: the sub-iterators must be constructed using a projection that includes
+// key columns; otherwise the merge algorithm's key comparisons won't work.
+class MergeIterator : public RowwiseIterator {
+ public:
+  // Constructs a MergeIterator of the given iterators.
+  //
+  // The iterators must have matching schemas and should not yet be initialized.
+  //
+  // Note: the iterators must be constructed using a projection that includes
+  // all key columns; otherwise a CHECK will fire at initialization time.
+  explicit MergeIterator(vector<unique_ptr<RowwiseIterator>> iters);
+
+  virtual ~MergeIterator();
+
+  // The passed-in iterators should be already initialized.
+  Status Init(ScanSpec *spec) OVERRIDE;
+
+  virtual bool HasNext() const OVERRIDE;
+
+  virtual string ToString() const OVERRIDE;
+
+  virtual const Schema& schema() const OVERRIDE;
+
+  virtual void GetIteratorStats(vector<IteratorStats>* stats) const OVERRIDE;
+
+  virtual Status NextBlock(RowBlock* dst) OVERRIDE;
+
+ private:
+  void PrepareBatch(RowBlock* dst);
+  Status MaterializeBlock(RowBlock* dst);
+  Status InitSubIterators(ScanSpec *spec);
+
+  // Initialized during Init.
+  unique_ptr<Schema> schema_;
+
+  bool initted_;
+
+  // Holds the subiterators until Init is called, at which point this is cleared.
+  // This is required because we can't create a MergeIterState of an uninitialized iterator.
+  vector<unique_ptr<RowwiseIterator>> orig_iters_;
+
+  // See UnionIterator::states_lock_ for details on locking. This follows the same
+  // pattern.
+  mutable rw_spinlock states_lock_;
+  vector<unique_ptr<MergeIterState>> states_;
+
+  // Statistics (keyed by projection column index) accumulated so far by any
+  // fully-consumed sub-iterators.
+  vector<IteratorStats> finished_iter_stats_by_col_;
+
+  // The number of iterators, used by ToString().
+  const int num_orig_iters_;
+
+  // When the underlying iterators are initialized, each needs its own
+  // copy of the scan spec in order to do its own pushdown calculations, etc.
+  // The copies are allocated from this pool so they can be automatically freed
+  // when the UnionIterator goes out of scope.
+  ObjectPool<ScanSpec> scan_spec_copies_;
+};
+
 MergeIterator::MergeIterator(vector<unique_ptr<RowwiseIterator>> iters)
     : initted_(false),
-      orig_iters_(move(iters)),
+      orig_iters_(std::move(iters)),
       num_orig_iters_(orig_iters_.size()) {
   CHECK_GT(orig_iters_.size(), 0);
 }
@@ -277,7 +351,7 @@ Status MergeIterator::InitSubIterators(ScanSpec *spec) {
   // Initialize all the sub iterators.
   for (auto& i : orig_iters_) {
     ScanSpec *spec_copy = spec != nullptr ? scan_spec_copies_.Construct(*spec) : nullptr;
-    RETURN_NOT_OK(PredicateEvaluatingIterator::InitAndMaybeWrap(&i, spec_copy));
+    RETURN_NOT_OK(InitAndMaybeWrap(&i, spec_copy));
     states_.push_back(unique_ptr<MergeIterState>(new MergeIterState(std::move(i))));
   }
   orig_iters_.clear();
@@ -377,10 +451,79 @@ void MergeIterator::GetIteratorStats(vector<IteratorStats>* stats) const {
   }
 }
 
+unique_ptr<RowwiseIterator> NewMergeIterator(
+    vector<unique_ptr<RowwiseIterator>> iters) {
+  return unique_ptr<RowwiseIterator>(new MergeIterator(std::move(iters)));
+}
 
 ////////////////////////////////////////////////////////////
-// Union iterator
+// UnionIterator
 ////////////////////////////////////////////////////////////
+
+// An iterator which unions the results of other iterators.
+// This is different from MergeIterator in that it lays the results out end-to-end
+// rather than merging them based on keys. Hence it is more efficient since there is
+// no comparison needed, and the key column does not need to be read if it is not
+// part of the projection.
+class UnionIterator : public RowwiseIterator {
+ public:
+  // Constructs a UnionIterator of the given iterators.
+  //
+  // The iterators must have matching schemas and should not yet be initialized.
+  explicit UnionIterator(vector<unique_ptr<RowwiseIterator>> iters);
+
+  Status Init(ScanSpec *spec) OVERRIDE;
+
+  bool HasNext() const OVERRIDE;
+
+  string ToString() const OVERRIDE;
+
+  const Schema &schema() const OVERRIDE {
+    CHECK(initted_);
+    CHECK(schema_.get() != NULL) << "Bad schema in " << ToString();
+    return *CHECK_NOTNULL(schema_.get());
+  }
+
+  virtual void GetIteratorStats(vector<IteratorStats>* stats) const OVERRIDE;
+
+  virtual Status NextBlock(RowBlock* dst) OVERRIDE;
+
+ private:
+  void PrepareBatch();
+  Status MaterializeBlock(RowBlock* dst);
+  void FinishBatch();
+  Status InitSubIterators(ScanSpec *spec);
+
+  // Pop the front iterator from iters_ and accumulate its statistics into
+  // finished_iter_stats_by_col_.
+  void PopFront();
+
+  // Schema: initialized during Init()
+  unique_ptr<Schema> schema_;
+
+  bool initted_;
+
+  // Lock protecting 'iters_' and 'finished_iter_stats_by_col_'.
+  //
+  // Scanners are mostly accessed by the thread doing the scanning, but the HTTP endpoint
+  // which lists running scans may occasionally need to read as well.
+  //
+  // The "owner" thread of the scanner doesn't need to acquire this in read mode, since
+  // it's the only thread which might write. However, it does need to acquire in write
+  // mode when changing 'iters_'.
+  mutable rw_spinlock iters_lock_;
+  deque<unique_ptr<RowwiseIterator>> iters_;
+
+  // Statistics (keyed by projection column index) accumulated so far by any
+  // fully-consumed sub-iterators.
+  vector<IteratorStats> finished_iter_stats_by_col_;
+
+  // When the underlying iterators are initialized, each needs its own
+  // copy of the scan spec in order to do its own pushdown calculations, etc.
+  // The copies are allocated from this pool so they can be automatically freed
+  // when the UnionIterator goes out of scope.
+  ObjectPool<ScanSpec> scan_spec_copies_;
+};
 
 UnionIterator::UnionIterator(vector<unique_ptr<RowwiseIterator>> iters)
   : initted_(false),
@@ -420,7 +563,7 @@ Status UnionIterator::Init(ScanSpec *spec) {
 Status UnionIterator::InitSubIterators(ScanSpec *spec) {
   for (auto& i : iters_) {
     ScanSpec *spec_copy = spec != nullptr ? scan_spec_copies_.Construct(*spec) : nullptr;
-    RETURN_NOT_OK(PredicateEvaluatingIterator::InitAndMaybeWrap(&i, spec_copy));
+    RETURN_NOT_OK(InitAndMaybeWrap(&i, spec_copy));
   }
   // Since we handle predicates in all the wrapped iterators, we can clear
   // them here.
@@ -492,12 +635,61 @@ void UnionIterator::GetIteratorStats(vector<IteratorStats>* stats) const {
   }
 }
 
+unique_ptr<RowwiseIterator> NewUnionIterator(
+    vector<unique_ptr<RowwiseIterator>> iters) {
+  return unique_ptr<RowwiseIterator>(new UnionIterator(std::move(iters)));
+}
+
 ////////////////////////////////////////////////////////////
-// Materializing iterator
+// MaterializingIterator
 ////////////////////////////////////////////////////////////
 
+// An iterator which wraps a ColumnwiseIterator, materializing it into full rows.
+//
+// Column predicates are pushed down into this iterator. While materializing a
+// block, columns with associated predicates are materialized first, and the
+// predicates evaluated. If the predicates succeed in filtering out an entire
+// batch, then other columns may avoid doing any IO.
+class MaterializingIterator : public RowwiseIterator {
+ public:
+  explicit MaterializingIterator(unique_ptr<ColumnwiseIterator> iter);
+
+  // Initialize the iterator, performing predicate pushdown as described above.
+  Status Init(ScanSpec *spec) OVERRIDE;
+
+  bool HasNext() const OVERRIDE;
+
+  string ToString() const OVERRIDE;
+
+  const Schema &schema() const OVERRIDE {
+    return iter_->schema();
+  }
+
+  virtual void GetIteratorStats(std::vector<IteratorStats>* stats) const OVERRIDE {
+    iter_->GetIteratorStats(stats);
+  }
+
+  virtual Status NextBlock(RowBlock* dst) OVERRIDE;
+
+ private:
+  Status MaterializeBlock(RowBlock *dst);
+
+  unique_ptr<ColumnwiseIterator> iter_;
+
+  // List of (column index, predicate) in order of most to least selective, with
+  // ties broken by the index.
+  vector<std::pair<int32_t, ColumnPredicate>> col_idx_predicates_;
+
+  // List of column indexes without predicates to materialize.
+  vector<int32_t> non_predicate_column_indexes_;
+
+  // Set only by test code to disallow pushdown.
+  bool disallow_pushdown_for_tests_;
+  bool disallow_decoder_eval_;
+};
+
 MaterializingIterator::MaterializingIterator(unique_ptr<ColumnwiseIterator> iter)
-    : iter_(move(iter)),
+    : iter_(std::move(iter)),
       disallow_pushdown_for_tests_(!FLAGS_materializing_iterator_do_pushdown),
       disallow_decoder_eval_(!FLAGS_materializing_iterator_decoder_eval) {
 }
@@ -627,26 +819,55 @@ string MaterializingIterator::ToString() const {
   return s;
 }
 
+unique_ptr<RowwiseIterator> NewMaterializingIterator(
+    unique_ptr<ColumnwiseIterator> iter) {
+  return unique_ptr<RowwiseIterator>(
+      new MaterializingIterator(std::move(iter)));
+}
+
 ////////////////////////////////////////////////////////////
 // PredicateEvaluatingIterator
 ////////////////////////////////////////////////////////////
 
-PredicateEvaluatingIterator::PredicateEvaluatingIterator(unique_ptr<RowwiseIterator> base_iter)
-    : base_iter_(move(base_iter)) {
-}
+// An iterator which wraps another iterator and evaluates any predicates that the
+// wrapped iterator did not itself handle during push down.
+class PredicateEvaluatingIterator : public RowwiseIterator {
+ public:
+  // Construct the evaluating iterator.
+  // This is only called from ::InitAndMaybeWrap()
+  // REQUIRES: base_iter is already Init()ed.
+  explicit PredicateEvaluatingIterator(unique_ptr<RowwiseIterator> base_iter);
 
-Status PredicateEvaluatingIterator::InitAndMaybeWrap(
-  unique_ptr<RowwiseIterator> *base_iter, ScanSpec *spec) {
-  RETURN_NOT_OK((*base_iter)->Init(spec));
+  // Initialize the iterator.
+  // POSTCONDITION: spec->predicates().empty()
+  Status Init(ScanSpec *spec) OVERRIDE;
 
-  if (spec != nullptr && !spec->predicates().empty()) {
-    // Underlying iterator did not accept all predicates. Wrap it.
-    unique_ptr<RowwiseIterator> wrapper(
-        new PredicateEvaluatingIterator(std::move(*base_iter)));
-    CHECK_OK(wrapper->Init(spec));
-    *base_iter = std::move(wrapper);
+  virtual Status NextBlock(RowBlock *dst) OVERRIDE;
+
+  bool HasNext() const OVERRIDE;
+
+  string ToString() const OVERRIDE;
+
+  const Schema &schema() const OVERRIDE {
+    return base_iter_->schema();
   }
-  return Status::OK();
+
+  virtual void GetIteratorStats(std::vector<IteratorStats>* stats) const OVERRIDE {
+    base_iter_->GetIteratorStats(stats);
+  }
+
+  const vector<ColumnPredicate>& col_predicates() const { return col_predicates_; }
+
+ private:
+  unique_ptr<RowwiseIterator> base_iter_;
+
+  // List of predicates in order of most to least selective, with
+  // ties broken by the column index.
+  vector<ColumnPredicate> col_predicates_;
+};
+
+PredicateEvaluatingIterator::PredicateEvaluatingIterator(unique_ptr<RowwiseIterator> base_iter)
+    : base_iter_(std::move(base_iter)) {
 }
 
 Status PredicateEvaluatingIterator::Init(ScanSpec *spec) {
@@ -701,6 +922,26 @@ Status PredicateEvaluatingIterator::NextBlock(RowBlock *dst) {
 
 string PredicateEvaluatingIterator::ToString() const {
   return Substitute("PredicateEvaluating($0)", base_iter_->ToString());
+}
+
+Status InitAndMaybeWrap(unique_ptr<RowwiseIterator>* base_iter,
+                        ScanSpec *spec) {
+  RETURN_NOT_OK((*base_iter)->Init(spec));
+
+  if (spec != nullptr && !spec->predicates().empty()) {
+    // Underlying iterator did not accept all predicates. Wrap it.
+    unique_ptr<RowwiseIterator> wrapper(new PredicateEvaluatingIterator(std::move(*base_iter)));
+    RETURN_NOT_OK(wrapper->Init(spec));
+    *base_iter = std::move(wrapper);
+  }
+  return Status::OK();
+}
+
+const vector<ColumnPredicate>& GetIteratorPredicatesForTests(
+    const unique_ptr<RowwiseIterator>& iter) {
+  PredicateEvaluatingIterator* pred_eval =
+      down_cast<PredicateEvaluatingIterator*>(iter.get());
+  return pred_eval->col_predicates();
 }
 
 } // namespace kudu

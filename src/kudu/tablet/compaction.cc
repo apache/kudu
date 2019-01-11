@@ -853,7 +853,7 @@ Status CompactionInput::Create(const DiskRowSet &rowset,
   CHECK(projection->has_column_ids());
 
   unique_ptr<ColumnwiseIterator> base_cwise(rowset.base_data_->NewIterator(projection, io_context));
-  unique_ptr<RowwiseIterator> base_iter(new MaterializingIterator(std::move(base_cwise)));
+  unique_ptr<RowwiseIterator> base_iter(NewMaterializingIterator(std::move(base_cwise)));
 
   // Creates a DeltaIteratorMerger that will only include the relevant REDO deltas.
   RowIteratorOptions redo_opts;

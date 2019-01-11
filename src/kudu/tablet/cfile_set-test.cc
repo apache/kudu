@@ -181,7 +181,7 @@ class TestCFileSet : public KuduRowSetTest {
                        int32_t upper) {
     // Create iterator.
     unique_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&schema_, nullptr));
-    unique_ptr<RowwiseIterator> iter(new MaterializingIterator(std::move(cfile_iter)));
+    unique_ptr<RowwiseIterator> iter(NewMaterializingIterator(std::move(cfile_iter)));
 
     // Create a scan with a range predicate on the key column.
     ScanSpec spec;
@@ -217,7 +217,7 @@ class TestCFileSet : public KuduRowSetTest {
     LOG(INFO) << "predicates size: " << predicates.size();
     // Create iterator.
     unique_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&schema_, nullptr));
-    unique_ptr<RowwiseIterator> iter(new MaterializingIterator(std::move(cfile_iter)));
+    unique_ptr<RowwiseIterator> iter(NewMaterializingIterator(std::move(cfile_iter)));
     LOG(INFO) << "Target size: " << target.size();
     // Create a scan with a range predicate on the key column.
     ScanSpec spec;
@@ -363,7 +363,7 @@ TEST_F(TestCFileSet, TestIteratePartialSchema) {
   Schema new_schema;
   ASSERT_OK(schema_.CreateProjectionByNames({ "c0", "c2" }, &new_schema));
   unique_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&new_schema, nullptr));
-  unique_ptr<RowwiseIterator> iter(new MaterializingIterator(std::move(cfile_iter)));
+  unique_ptr<RowwiseIterator> iter(NewMaterializingIterator(std::move(cfile_iter)));
 
   ASSERT_OK(iter->Init(nullptr));
 
@@ -396,7 +396,7 @@ TEST_F(TestCFileSet, TestRangeScan) {
   // Create iterator.
   unique_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&schema_, nullptr));
   CFileSet::Iterator* cfile_iter_raw = cfile_iter.get();
-  unique_ptr<RowwiseIterator> iter(new MaterializingIterator(std::move(cfile_iter)));
+  unique_ptr<RowwiseIterator> iter(NewMaterializingIterator(std::move(cfile_iter)));
   Schema key_schema = schema_.CreateKeyProjection();
   Arena arena(1024);
   AutoReleasePool pool;

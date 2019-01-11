@@ -103,10 +103,10 @@ Status DuplicatingRowSet::NewRowIterator(const RowIteratorOptions& opts,
 
   switch (opts.order) {
     case ORDERED:
-      out->reset(new MergeIterator(std::move(iters)));
+      *out = NewMergeIterator(std::move(iters));
       break;
     case UNORDERED:
-      out->reset(new UnionIterator(std::move(iters)));
+      *out = NewUnionIterator(std::move(iters));
       break;
     default:
       LOG(FATAL) << "unknown order: " << opts.order;

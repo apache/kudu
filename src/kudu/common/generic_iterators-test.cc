@@ -27,6 +27,7 @@
 #include <vector>
 
 #include <gflags/gflags.h>
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
@@ -40,7 +41,6 @@
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
-#include "kudu/gutil/casts.h"
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/memory/arena.h"
@@ -53,6 +53,7 @@
 DEFINE_int32(num_lists, 3, "Number of lists to merge");
 DEFINE_int32(num_rows, 1000, "Number of entries per list");
 DEFINE_int32(num_iters, 1, "Number of times to run merge");
+DECLARE_bool(materializing_iterator_do_pushdown);
 
 using std::string;
 using std::unique_ptr;
@@ -161,13 +162,13 @@ class VectorIterator : public ColumnwiseIterator {
 // Test that empty input to a merger behaves correctly.
 TEST(TestMergeIterator, TestMergeEmpty) {
   unique_ptr<RowwiseIterator> iter(
-      new MaterializingIterator(
-          unique_ptr<ColumnwiseIterator>(new VectorIterator({}))));
+    NewMaterializingIterator(
+        unique_ptr<ColumnwiseIterator>(new VectorIterator({}))));
   vector<unique_ptr<RowwiseIterator>> input;
   input.emplace_back(std::move(iter));
-  MergeIterator merger(std::move(input));
-  ASSERT_OK(merger.Init(nullptr));
-  ASSERT_FALSE(merger.HasNext());
+  unique_ptr<RowwiseIterator> merger(NewMergeIterator(std::move(input)));
+  ASSERT_OK(merger->Init(nullptr));
+  ASSERT_FALSE(merger->HasNext());
 }
 
 // Test that non-empty input to a merger with a zeroed selection vector
@@ -177,12 +178,12 @@ TEST(TestMergeIterator, TestMergeEmptyViaSelectionVector) {
   sv.SetAllFalse();
   unique_ptr<VectorIterator> vec(new VectorIterator({ 1, 2, 3 }));
   vec->set_selection_vector(&sv);
-  unique_ptr<RowwiseIterator> iter(new MaterializingIterator(std::move(vec)));
+  unique_ptr<RowwiseIterator> iter(NewMaterializingIterator(std::move(vec)));
   vector<unique_ptr<RowwiseIterator>> input;
   input.emplace_back(std::move(iter));
-  MergeIterator merger(std::move(input));
-  ASSERT_OK(merger.Init(nullptr));
-  ASSERT_FALSE(merger.HasNext());
+  unique_ptr<RowwiseIterator> merger(NewMergeIterator(std::move(input)));
+  ASSERT_OK(merger->Init(nullptr));
+  ASSERT_FALSE(merger->HasNext());
 }
 
 class TestIntRangePredicate {
@@ -249,10 +250,10 @@ void TestMerge(const TestIntRangePredicate &predicate) {
       unique_ptr<VectorIterator> vec_it(new VectorIterator(e.ints));
       vec_it->set_block_size(10);
       vec_it->set_selection_vector(e.sv.get());
-      unique_ptr<RowwiseIterator> mat_it(new MaterializingIterator(std::move(vec_it)));
-      vector<unique_ptr<RowwiseIterator>> to_union;
-      to_union.emplace_back(std::move(mat_it));
-      unique_ptr<RowwiseIterator> un_it(new UnionIterator(std::move(to_union)));
+      unique_ptr<RowwiseIterator> mat_it(NewMaterializingIterator(std::move(vec_it)));
+      vector<unique_ptr<RowwiseIterator>> input;
+      input.emplace_back(std::move(mat_it));
+      unique_ptr<RowwiseIterator> un_it(NewUnionIterator(std::move(input)));
       to_merge.emplace_back(std::move(un_it));
     }
 
@@ -262,13 +263,13 @@ void TestMerge(const TestIntRangePredicate &predicate) {
     LOG(INFO) << "Predicate: " << predicate.pred_.ToString();
 
     LOG_TIMING(INFO, "Iterate merged lists") {
-      MergeIterator merger(std::move(to_merge));
-      ASSERT_OK(merger.Init(&spec));
+      unique_ptr<RowwiseIterator> merger(NewMergeIterator({ std::move(to_merge) }));
+      ASSERT_OK(merger->Init(&spec));
 
       RowBlock dst(kIntSchema, 100, nullptr);
       size_t total_idx = 0;
-      while (merger.HasNext()) {
-        ASSERT_OK(merger.NextBlock(&dst));
+      while (merger->HasNext()) {
+        ASSERT_OK(merger->NextBlock(&dst));
         ASSERT_GT(dst.nrows(), 0) <<
           "if HasNext() returns true, must return some rows";
 
@@ -321,13 +322,13 @@ TEST(TestMaterializingIterator, TestMaterializingPredicatePushdown) {
   }
 
   unique_ptr<VectorIterator> colwise(new VectorIterator(std::move(ints)));
-  MaterializingIterator materializing(std::move(colwise));
-  ASSERT_OK(materializing.Init(&spec));
+  unique_ptr<RowwiseIterator> materializing(NewMaterializingIterator(std::move(colwise)));
+  ASSERT_OK(materializing->Init(&spec));
   ASSERT_EQ(0, spec.predicates().size()) << "Iterator should have pushed down predicate";
 
   Arena arena(1024);
   RowBlock dst(kIntSchema, 100, &arena);
-  ASSERT_OK(materializing.NextBlock(&dst));
+  ASSERT_OK(materializing->NextBlock(&dst));
   ASSERT_EQ(dst.nrows(), 100);
 
   // Check that the resulting selection vector is correct (rows 20-29 selected)
@@ -354,25 +355,22 @@ TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluation) {
   // Set up a MaterializingIterator with pushdown disabled, so that the
   // PredicateEvaluatingIterator will wrap it and do evaluation.
   unique_ptr<VectorIterator> colwise(new VectorIterator(std::move(ints)));
-  unique_ptr<MaterializingIterator> materializing(
-      new MaterializingIterator(std::move(colwise)));
-  materializing->disallow_pushdown_for_tests_ = true;
+  FLAGS_materializing_iterator_do_pushdown = false;
+  unique_ptr<RowwiseIterator> materializing(
+      NewMaterializingIterator(std::move(colwise)));
 
   // Wrap it in another iterator to do the evaluation
-  const MaterializingIterator* mat_iter_addr = materializing.get();
+  const RowwiseIterator* mat_iter_addr = materializing.get();
   unique_ptr<RowwiseIterator> outer_iter(std::move(materializing));
-  ASSERT_OK(PredicateEvaluatingIterator::InitAndMaybeWrap(&outer_iter, &spec));
+  ASSERT_OK(InitAndMaybeWrap(&outer_iter, &spec));
 
   ASSERT_NE(reinterpret_cast<uintptr_t>(outer_iter.get()),
             reinterpret_cast<uintptr_t>(mat_iter_addr))
     << "Iterator pointer should differ after wrapping";
 
-  PredicateEvaluatingIterator *pred_eval = down_cast<PredicateEvaluatingIterator *>(
-    outer_iter.get());
-
   ASSERT_EQ(0, spec.predicates().size())
     << "Iterator tree should have accepted predicate";
-  ASSERT_EQ(1, pred_eval->col_predicates_.size())
+  ASSERT_EQ(1, GetIteratorPredicatesForTests(outer_iter).size())
     << "Predicate should be evaluated by the outer iterator";
 
   Arena arena(1024);
@@ -393,13 +391,12 @@ TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluation) {
 TEST(TestPredicateEvaluatingIterator, TestDontWrapWhenNoPredicates) {
   ScanSpec spec;
 
-  vector<uint32_t> ints;
-  unique_ptr<VectorIterator> colwise(new VectorIterator(std::move(ints)));
-  unique_ptr<MaterializingIterator> materializing(
-      new MaterializingIterator(std::move(colwise)));
-  const MaterializingIterator* mat_iter_addr = materializing.get();
+  unique_ptr<VectorIterator> colwise(new VectorIterator({}));
+  unique_ptr<RowwiseIterator> materializing(
+      NewMaterializingIterator(std::move(colwise)));
+  const RowwiseIterator* mat_iter_addr = materializing.get();
   unique_ptr<RowwiseIterator> outer_iter(std::move(materializing));
-  ASSERT_OK(PredicateEvaluatingIterator::InitAndMaybeWrap(&outer_iter, &spec));
+  ASSERT_OK(InitAndMaybeWrap(&outer_iter, &spec));
   ASSERT_EQ(reinterpret_cast<uintptr_t>(outer_iter.get()),
             reinterpret_cast<uintptr_t>(mat_iter_addr))
       << "InitAndMaybeWrap should not have wrapped iter";
@@ -462,11 +459,9 @@ TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluationOrder) {
     spec.AddPredicate(c_equality);
 
     unique_ptr<RowwiseIterator> iter(new DummyIterator(schema));
-    ASSERT_OK(PredicateEvaluatingIterator::InitAndMaybeWrap(&iter, &spec));
-
-    PredicateEvaluatingIterator* pred_eval = down_cast<PredicateEvaluatingIterator*>(iter.get());
-    ASSERT_TRUE(pred_eval->col_predicates_ ==
-                vector<ColumnPredicate>({ c_equality, b_equality, a_range }));
+    ASSERT_OK(InitAndMaybeWrap(&iter, &spec));
+    ASSERT_EQ(GetIteratorPredicatesForTests(iter),
+              vector<ColumnPredicate>({ c_equality, b_equality, a_range }));
   }
 
   { // Test that smaller columns come before larger ones, and ties are broken by idx.
@@ -476,11 +471,10 @@ TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluationOrder) {
     spec.AddPredicate(c_equality);
 
     unique_ptr<RowwiseIterator> iter(new DummyIterator(schema));
-    ASSERT_OK(PredicateEvaluatingIterator::InitAndMaybeWrap(&iter, &spec));
+    ASSERT_OK(InitAndMaybeWrap(&iter, &spec));
 
-    PredicateEvaluatingIterator* pred_eval = down_cast<PredicateEvaluatingIterator*>(iter.get());
-    ASSERT_TRUE(pred_eval->col_predicates_ ==
-                vector<ColumnPredicate>({ c_equality, a_equality, b_equality }));
+    ASSERT_EQ(GetIteratorPredicatesForTests(iter),
+              vector<ColumnPredicate>({ c_equality, a_equality, b_equality }));
   }
 }
 

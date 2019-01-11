@@ -119,8 +119,8 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas(const IOContext* io_context) {
 
   unique_ptr<ColumnwiseIterator> old_base_data_cwise(base_data_->NewIterator(&partial_schema_,
                                                                              io_context));
-  unique_ptr<RowwiseIterator> old_base_data_rwise(new MaterializingIterator(
-      std::move(old_base_data_cwise)));
+  unique_ptr<RowwiseIterator> old_base_data_rwise(
+      NewMaterializingIterator(std::move(old_base_data_cwise)));
 
   ScanSpec spec;
   spec.set_cache_blocks(false);
