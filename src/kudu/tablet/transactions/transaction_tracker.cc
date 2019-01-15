@@ -18,6 +18,7 @@
 #include "kudu/tablet/transactions/transaction_tracker.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <limits>
 #include <mutex>
 #include <ostream>
@@ -205,6 +206,7 @@ void TransactionTracker::WaitForAllToFinish() const {
 }
 
 Status TransactionTracker::WaitForAllToFinish(const MonoDelta& timeout) const {
+  static constexpr size_t kMaxTxnsToPrint = 50;
   int wait_time_us = 250;
   int num_complaints = 0;
   MonoTime start_time = MonoTime::Now();
@@ -228,9 +230,11 @@ Status TransactionTracker::WaitForAllToFinish(const MonoDelta& timeout) const {
     if (now > next_log_time) {
       LOG(WARNING) << Substitute("TransactionTracker waiting for $0 outstanding transactions to"
                                  " complete now for $1", txns.size(), diff.ToString());
-      LOG(INFO) << "Dumping currently running transactions: ";
-      for (const auto& driver : txns) {
-        LOG(INFO) << driver->ToString();
+      LOG(INFO) << Substitute("Dumping up to $0 currently running transactions: ",
+                              kMaxTxnsToPrint);
+      const auto num_txn_limit = std::min(txns.size(), kMaxTxnsToPrint);
+      for (auto i = 0; i < num_txn_limit; i++) {
+        LOG(INFO) << txns[i]->ToString();
       }
 
       num_complaints++;
