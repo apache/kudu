@@ -50,6 +50,7 @@
 #include "kudu/tablet/mvcc.h"
 #include "kudu/tablet/rowset_metadata.h"
 #include "kudu/util/memory/arena.h"
+#include "kudu/util/trace.h"
 
 using std::shared_ptr;
 
@@ -294,10 +295,22 @@ Status MajorDeltaCompaction::OpenUndoDeltaFileWriter() {
 }
 
 namespace {
-string DeltaStoreStatsToString(const vector<shared_ptr<DeltaStore>>& stores) {
-  uint64_t delete_count = 0;
-  uint64_t reinsert_count = 0;
-  uint64_t update_count = 0;
+struct DeltaStoreStats {
+  int64_t delete_count;
+  int64_t reinsert_count;
+  int64_t update_count;
+
+ public:
+  string ToString() const {
+    return Substitute("delete_count=$0, reinsert_count=$1, update_count=$2",
+                      delete_count, reinsert_count, update_count);
+  }
+};
+
+DeltaStoreStats ComputeDeltaStoreStats(const SharedDeltaStoreVector& stores) {
+  int64_t delete_count = 0;
+  int64_t reinsert_count = 0;
+  int64_t update_count = 0;
   for (const auto& store : stores) {
     if (!store->Initted()) {
       continue;
@@ -307,15 +320,14 @@ string DeltaStoreStatsToString(const vector<shared_ptr<DeltaStore>>& stores) {
     reinsert_count += stats.reinsert_count();
     update_count += stats.UpdateCount();
   }
-  return Substitute("delete_count=$0, reinsert_count=$1, update_count=$2",
-                    delete_count, reinsert_count, update_count);
+  return DeltaStoreStats{delete_count, reinsert_count, update_count};
 }
 } // anonymous namespace
 
 Status MajorDeltaCompaction::Compact(const IOContext* io_context) {
   CHECK_EQ(state_, kInitialized);
 
-  LOG(INFO) << "Starting major delta compaction for columns " << ColumnNamesToString();
+  VLOG(1) << "Starting major delta compaction for columns " << ColumnNamesToString();
   RETURN_NOT_OK(base_schema_.CreateProjectionByIdsIgnoreMissing(column_ids_, &partial_schema_));
 
   if (VLOG_IS_ON(1)) {
@@ -328,11 +340,16 @@ Status MajorDeltaCompaction::Compact(const IOContext* io_context) {
   RETURN_NOT_OK(OpenBaseDataWriter());
   RETURN_NOT_OK(FlushRowSetAndDeltas(io_context));
 
-  LOG(INFO) << Substitute("Finished major delta compaction of columns $0. "
-                          "Compacted $1 delta files. Overall stats: $2",
-                          ColumnNamesToString(),
-                          included_stores_.size(),
-                          DeltaStoreStatsToString(included_stores_));
+  TRACE_COUNTER_INCREMENT("delta_blocks_compacted", included_stores_.size());
+  const auto stats = ComputeDeltaStoreStats(included_stores_);
+  TRACE_COUNTER_INCREMENT("delete_count", stats.delete_count);
+  TRACE_COUNTER_INCREMENT("reinsert_count", stats.reinsert_count);
+  TRACE_COUNTER_INCREMENT("update_count", stats.update_count);
+  VLOG(1) << Substitute("Finished major delta compaction of columns $0. "
+                        "Compacted $1 delta files. Overall stats: $2",
+                        ColumnNamesToString(),
+                        included_stores_.size(),
+                        stats.ToString());
   return Status::OK();
 }
 

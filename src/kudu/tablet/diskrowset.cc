@@ -575,7 +575,7 @@ Status DiskRowSet::MajorCompactDeltaStores(const IOContext* io_context,
 Status DiskRowSet::MajorCompactDeltaStoresWithColumnIds(const vector<ColumnId>& col_ids,
                                                         const IOContext* io_context,
                                                         HistoryGcOpts history_gc_opts) {
-  LOG_WITH_PREFIX(INFO) << "Major compacting REDO delta stores (cols: " << col_ids << ")";
+  VLOG_WITH_PREFIX(1) << "Major compacting REDO delta stores (cols: " << col_ids << ")";
   TRACE_EVENT0("tablet", "DiskRowSet::MajorCompactDeltaStoresWithColumnIds");
   std::lock_guard<Mutex> l(*delta_tracker()->compact_flush_lock());
   RETURN_NOT_OK(delta_tracker()->CheckWritableUnlocked());

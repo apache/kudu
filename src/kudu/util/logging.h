@@ -351,7 +351,7 @@ std::ostream& operator<<(std::ostream &os, const PRIVATE_ThrottleMsg&);
 
 // Convenience macros to prefix log messages with some prefix, these are the unlocked
 // versions and should not obtain a lock (if one is required to obtain the prefix).
-// There must be a LogPrefixUnlocked()/LogPrefixLocked() method available in the current
+// There must be a LogPrefixUnlocked()/LogPrefix() method available in the current
 // scope in order to use these macros.
 #define LOG_WITH_PREFIX_UNLOCKED(severity) LOG(severity) << LogPrefixUnlocked()
 #define VLOG_WITH_PREFIX_UNLOCKED(verboselevel) LOG_IF(INFO, VLOG_IS_ON(verboselevel)) \

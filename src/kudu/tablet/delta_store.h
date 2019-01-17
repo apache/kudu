@@ -96,7 +96,7 @@ class DeltaStore {
   virtual ~DeltaStore() {}
 };
 
-typedef std::vector<std::shared_ptr<DeltaStore> > SharedDeltaStoreVector;
+typedef std::vector<std::shared_ptr<DeltaStore>> SharedDeltaStoreVector;
 
 // Iterator over deltas.
 // For each rowset, this iterator is constructed alongside the base data iterator,

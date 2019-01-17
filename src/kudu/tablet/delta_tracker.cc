@@ -52,6 +52,7 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
+#include "kudu/util/trace.h"
 
 namespace kudu {
 
@@ -164,13 +165,16 @@ Status DeltaTracker::DoOpen(const IOContext* io_context) {
 Status DeltaTracker::MakeDeltaIteratorMergerUnlocked(const IOContext* io_context,
                                                      size_t start_idx, size_t end_idx,
                                                      const Schema* projection,
-                                                     vector<shared_ptr<DeltaStore> > *target_stores,
+                                                     SharedDeltaStoreVector* target_stores,
                                                      vector<BlockId> *target_blocks,
-                                                     std::unique_ptr<DeltaIterator> *out) {
+                                                     std::unique_ptr<DeltaIterator>* out) {
   CHECK(open_);
   CHECK_LE(start_idx, end_idx);
   CHECK_LT(end_idx, redo_delta_stores_.size());
-  vector<shared_ptr<DeltaStore> > inputs;
+  SharedDeltaStoreVector inputs;
+  int64_t delete_count = 0;
+  int64_t reinsert_count = 0;
+  int64_t update_count = 0;
   for (size_t idx = start_idx; idx <= end_idx; ++idx) {
     shared_ptr<DeltaStore> &delta_store = redo_delta_stores_[idx];
 
@@ -179,12 +183,21 @@ Status DeltaTracker::MakeDeltaIteratorMergerUnlocked(const IOContext* io_context
     ignore_result(down_cast<DeltaFileReader*>(delta_store.get()));
     shared_ptr<DeltaFileReader> dfr = std::static_pointer_cast<DeltaFileReader>(delta_store);
 
-    LOG_WITH_PREFIX(INFO) << "Preparing to minor compact delta file: " << dfr->ToString();
+    if (dfr->Initted()) {
+      delete_count += dfr->delta_stats().delete_count();
+      reinsert_count += dfr->delta_stats().reinsert_count();
+      update_count += dfr->delta_stats().UpdateCount();
+    }
+    VLOG_WITH_PREFIX(1) << "Preparing to minor compact delta file: "
+                        << dfr->ToString();
 
     inputs.push_back(delta_store);
     target_stores->push_back(delta_store);
     target_blocks->push_back(dfr->block_id());
   }
+  TRACE_COUNTER_INCREMENT("delete_count", delete_count);
+  TRACE_COUNTER_INCREMENT("reinsert_count", reinsert_count);
+  TRACE_COUNTER_INCREMENT("update_count", update_count);
   RowIteratorOptions opts;
   opts.projection = projection;
   opts.io_context = io_context;
@@ -411,11 +424,13 @@ Status DeltaTracker::CompactStores(const IOContext* io_context, int start_idx, i
   RowSetMetadataUpdate update;
   update.ReplaceRedoDeltaBlocks(compacted_blocks, new_blocks);
 
-  LOG_WITH_PREFIX(INFO) << Substitute("Flushing compaction of $0 redo delta "
-                                      "blocks { $1 } into block $2",
-                                      compacted_blocks.size(),
-                                      BlockId::JoinStrings(compacted_blocks),
-                                      new_block_id.ToString());
+  const auto num_blocks_compacted = compacted_blocks.size();
+  TRACE_COUNTER_INCREMENT("delta_blocks_compacted", num_blocks_compacted);
+  VLOG_WITH_PREFIX(1) << Substitute("Flushing compaction of $0 redo delta "
+                                    "blocks { $1 } into block $2",
+                                    num_blocks_compacted,
+                                    BlockId::JoinStrings(compacted_blocks),
+                                    new_block_id.ToString());
   RETURN_NOT_OK_PREPEND(CommitDeltaStoreMetadataUpdate(update, compacted_stores, new_blocks,
                                                        io_context, REDO, FLUSH_METADATA),
                         "DeltaTracker: CompactStores: Unable to commit delta update");
@@ -536,7 +551,7 @@ Status DeltaTracker::DeleteAncientUndoDeltas(Timestamp ancient_history_mark,
 Status DeltaTracker::DoCompactStores(const IOContext* io_context,
                                      size_t start_idx, size_t end_idx,
                                      unique_ptr<WritableBlock> block,
-                                     vector<shared_ptr<DeltaStore> > *compacted_stores,
+                                     SharedDeltaStoreVector* compacted_stores,
                                      vector<BlockId> *compacted_blocks) {
   unique_ptr<DeltaIterator> inputs_merge;
 
@@ -548,14 +563,12 @@ Status DeltaTracker::DoCompactStores(const IOContext* io_context,
   RETURN_NOT_OK(MakeDeltaIteratorMergerUnlocked(io_context, start_idx, end_idx,
                                                 &empty_schema, compacted_stores,
                                                 compacted_blocks, &inputs_merge));
-  LOG_WITH_PREFIX(INFO) << "Compacting " << (end_idx - start_idx + 1) << " delta files.";
   DeltaFileWriter dfw(std::move(block));
   RETURN_NOT_OK(dfw.Start());
   RETURN_NOT_OK(WriteDeltaIteratorToFile<REDO>(inputs_merge.get(),
                                                ITERATE_OVER_ALL_ROWS,
                                                &dfw));
   RETURN_NOT_OK(dfw.Finish());
-  LOG_WITH_PREFIX(INFO) << "Succesfully compacted the specified delta files.";
   return Status::OK();
 }
 

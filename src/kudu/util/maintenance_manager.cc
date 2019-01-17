@@ -491,9 +491,10 @@ void MaintenanceManager::LaunchOp(MaintenanceOp* op) {
     op->Perform();
     sw.stop();
   }
-  LOG_WITH_PREFIX(INFO) << op->name() << " complete. "
-                        << "Timing: " << sw.elapsed().ToString()
-                        << " Metrics: " << trace->MetricsAsJSON();
+  LOG_WITH_PREFIX(INFO) << Substitute("$0 complete. Timing: $1 Metrics: $2",
+                                      op->name(),
+                                      sw.elapsed().ToString(),
+                                      trace->MetricsAsJSON());
 }
 
 void MaintenanceManager::GetMaintenanceManagerStatusDump(MaintenanceManagerStatusPB* out_pb) {
