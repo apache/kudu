@@ -81,7 +81,7 @@ class LocationAssignmentRule(object):
         self.total_count += 1
         self.locations.append(location)
     assert (len(set(seen_locations)) == len(seen_locations)), \
-        'duplicate locations specified: {}'.format(seen_locations)
+        'duplicate locations specified: {0}'.format(seen_locations)
 
   def get_location(self, idx):
     """
@@ -181,7 +181,7 @@ def get_location(fpath, rule, uid, relaxed):
     rule_specified = json.dumps(rule.location_mapping_rules)
     if rule_stored != rule_specified:
       raise Exception('stored and specified mapping rules mismatch: '
-                      '{} vs {}'.format(rule_stored, rule_specified))
+                      '{0} vs {1}'.format(rule_stored, rule_specified))
     mappings = state['mappings']
     location = mappings.get(uid, None)
     if location is None:
@@ -193,9 +193,9 @@ def get_location(fpath, rule, uid, relaxed):
     return location
 
   if not relaxed and rule.total_count != 0 and rule.total_count <= seq:
-    raise Exception('too many unique identifiers ({}) to assign next location '
-                    'using mapping rules {}'.format(
-                        seq + 1, rule.location_mapping_rules))
+    raise Exception('too many unique identifiers ({0}) to assign next location '
+            'to {1} using mapping rules {2}. State: {3}'.format(
+                        seq + 1, uid, rule.location_mapping_rules, json.dumps(state)))
 
   if relaxed and rule.total_count <= seq:
     return ""
