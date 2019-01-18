@@ -73,10 +73,15 @@
     } ) ? static_cast<void>(0) :                                      \
           google::LogMessageVoidify() & VLOG_AND_TRACE_INTERNAL(category, vlevel) // NOLINT(*)
 
+#define VLOG_AND_TRACE_WITH_PREFIX(category, vlevel) \
+  VLOG_AND_TRACE(category, vlevel) << LogPrefix()
 
 #define LOG_AND_TRACE(category, severity) \
   kudu::debug::TraceGLog(__FILE__, __LINE__, category, \
                         google::GLOG_ ## severity, /* send_to_log= */true).stream()
+
+#define LOG_AND_TRACE_WITH_PREFIX(category, severity) \
+  LOG_AND_TRACE(category, severity) << LogPrefix()
 
 namespace kudu {
 namespace debug {

@@ -68,12 +68,12 @@ class MaintenanceOpStats {
     runnable_ = runnable;
   }
 
-  uint64_t ram_anchored() const {
+  int64_t ram_anchored() const {
     DCHECK(valid_);
     return ram_anchored_;
   }
 
-  void set_ram_anchored(uint64_t ram_anchored) {
+  void set_ram_anchored(int64_t ram_anchored) {
     UpdateLastModified();
     ram_anchored_ = ram_anchored;
   }
@@ -132,9 +132,9 @@ class MaintenanceOpStats {
   bool runnable_;
 
   // The approximate amount of memory that not doing this operation keeps
-  // around.  This number is used to decide when to start freeing memory, so it
-  // should be fairly accurate.  May be 0.
-  uint64_t ram_anchored_;
+  // around. This number is used to decide when to start freeing memory, so it
+  // should be fairly accurate. May be 0.
+  int64_t ram_anchored_;
 
   // Approximate amount of disk space in WAL files that would be freed if this
   // operation ran. May be 0.
@@ -160,14 +160,15 @@ struct OpInstance {
   std::string name;
   // Time the operation took to run. Value is unitialized if instance is still running.
   MonoDelta duration;
+  // The time at which the operation was launched.
   MonoTime start_mono_time;
 
   MaintenanceManagerStatusPB_OpInstancePB DumpToPB() const;
 };
 
 // MaintenanceOp objects represent background operations that the
-// MaintenanceManager can schedule.  Once a MaintenanceOp is registered, the
-// manager will periodically poll it for statistics.  The registrant is
+// MaintenanceManager can schedule. Once a MaintenanceOp is registered, the
+// manager will periodically poll it for statistics. The registrant is
 // responsible for managing the memory associated with the MaintenanceOp object.
 // Op objects should be unregistered before being de-allocated.
 class MaintenanceOp {
@@ -186,20 +187,20 @@ class MaintenanceOp {
   // Unregister this op, if it is currently registered.
   void Unregister();
 
-  // Update the op statistics.  This will be called every scheduling period
+  // Update the op statistics. This will be called every scheduling period
   // (about a few times a second), so it should not be too expensive.  It's
   // possible for the returned statistics to be invalid; the caller should
-  // call MaintenanceOpStats::valid() before using them.  This will be run
+  // call MaintenanceOpStats::valid() before using them. This will be run
   // under the MaintenanceManager lock.
   virtual void UpdateStats(MaintenanceOpStats* stats) = 0;
 
-  // Prepare to perform the operation.  This will be run without holding the
-  // maintenance manager lock.  It should be short, since it is run from the
+  // Prepare to perform the operation. This will be run without holding the
+  // maintenance manager lock. It should be short, since it is run from the
   // context of the maintenance op scheduler thread rather than a worker thread.
   // If this returns false, we will abort the operation.
   virtual bool Prepare() = 0;
 
-  // Perform the operation.  This will be run without holding the maintenance
+  // Perform the operation. This will be run without holding the maintenance
   // manager lock, and may take a long time.
   virtual void Perform() = 0;
 
@@ -207,15 +208,15 @@ class MaintenanceOp {
   virtual scoped_refptr<Histogram> DurationHistogram() const = 0;
 
   // Returns the gauge for this op that tracks when this op is running. Cannot be NULL.
-  virtual scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() const = 0;
+  virtual scoped_refptr<AtomicGauge<uint32_t>> RunningGauge() const = 0;
 
   uint32_t running() { return running_; }
 
-  std::string name() const { return name_; }
+  const std::string& name() const { return name_; }
 
   IOUsage io_usage() const { return io_usage_; }
 
-  // Return true if the operation has been cancelled due to Unregister() pending.
+  // Return true if the operation has been cancelled due to a pending Unregister().
   bool cancelled() const {
     return cancel_.Load();
   }
@@ -234,7 +235,7 @@ class MaintenanceOp {
   // The name of the operation.  Op names must be unique.
   const std::string name_;
 
-  // The number of times that this op is currently running.
+  // The number of instances of this op that are currently running.
   uint32_t running_;
 
   // Set when we are trying to unregister the maintenance operation.
@@ -246,7 +247,7 @@ class MaintenanceOp {
   //
   // Note: 'cond_' is used with the MaintenanceManager's mutex. As such,
   // it only exists when the op is registered.
-  gscoped_ptr<ConditionVariable> cond_;
+  std::unique_ptr<ConditionVariable> cond_;
 
   // The MaintenanceManager with which this op is registered, or null
   // if it is not registered.
@@ -263,8 +264,8 @@ struct MaintenanceOpComparator {
 };
 
 // The MaintenanceManager manages the scheduling of background operations such
-// as flushes or compactions.  It runs these operations in the background, in a
-// thread pool.  It uses information provided in MaintenanceOpStats objects to
+// as flushes or compactions. It runs these operations in the background on a
+// thread pool. It uses information provided in MaintenanceOpStats objects to
 // decide which operations, if any, to run.
 class MaintenanceManager : public std::enable_shared_from_this<MaintenanceManager> {
  public:
@@ -322,7 +323,7 @@ class MaintenanceManager : public std::enable_shared_from_this<MaintenanceManage
 
   const std::string server_uuid_;
   const int32_t num_threads_;
-  OpMapTy ops_; // registered operations
+  OpMapTy ops_; // Registered operations.
   Mutex lock_;
   scoped_refptr<kudu::Thread> monitor_thread_;
   gscoped_ptr<ThreadPool> thread_pool_;
@@ -342,7 +343,7 @@ class MaintenanceManager : public std::enable_shared_from_this<MaintenanceManage
 
   // Running instances lock.
   //
-  // This is separate of lock_ so that worker threads don't need to take the
+  // This is separate from lock_ so that worker threads don't need to take the
   // global MM lock when beginning operations. When taking both
   // running_instances_lock_ and lock_, lock_ must be acquired first.
   Mutex running_instances_lock_;
