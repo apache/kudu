@@ -32,6 +32,7 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/substitute.h"
 
 namespace kudu {
 namespace tablet {
@@ -95,7 +96,8 @@ Status MultiColumnWriter::Open() {
     cfile_writers_.push_back(writer.release());
     block_ids_.push_back(block_id);
   }
-  LOG(INFO) << "Opened CFile writers for " << cfile_writers_.size() << " column(s)";
+  VLOG(1) << strings::Substitute("Opened CFile writers for $0 column(s)",
+                                 cfile_writers_.size());
 
   return Status::OK();
 }

@@ -919,11 +919,11 @@ Status RowSetsInCompaction::CreateCompactionInput(const MvccSnapshot &snap,
 }
 
 void RowSetsInCompaction::DumpToLog() const {
-  LOG(INFO) << "Selected " << rowsets_.size() << " rowsets to compact:";
+  VLOG(1) << "Selected " << rowsets_.size() << " rowsets to compact:";
   // Dump the selected rowsets to the log, and collect corresponding iterators.
   for (const shared_ptr<RowSet> &rs : rowsets_) {
-    LOG(INFO) << rs->ToString() << "(current size on disk: ~"
-              << rs->OnDiskSize() << " bytes)";
+    VLOG(1) << rs->ToString() << "(current size on disk: ~"
+            << rs->OnDiskSize() << " bytes)";
   }
 }
 

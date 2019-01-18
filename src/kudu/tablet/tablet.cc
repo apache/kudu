@@ -1213,16 +1213,17 @@ Status Tablet::FlushInternal(const RowSetsInCompaction& input,
                           "PostSwapNewMemRowSet hook failed");
   }
 
-  LOG_WITH_PREFIX(INFO) << "Flush: entering stage 1 (old memrowset already frozen for inserts)";
-  input.DumpToLog();
-  LOG_WITH_PREFIX(INFO) << "Memstore in-memory size: " << old_ms->memory_footprint() << " bytes";
+  VLOG_WITH_PREFIX(1) << Substitute("Flush: entering stage 1 (old memrowset"
+                                    "already frozen for inserts). Memstore"
+                                    "in-memory size: $0 bytes",
+                                    old_ms->memory_footprint());
 
   RETURN_NOT_OK(DoMergeCompactionOrFlush(input, mrs_being_flushed));
 
   // Sanity check that no insertions happened during our flush.
   CHECK_EQ(start_insert_count, old_ms->debug_insert_count())
     << "Sanity check failed: insertions continued in memrowset "
-    << "after flush was triggered! Aborting to prevent dataloss.";
+    << "after flush was triggered! Aborting to prevent data loss.";
 
   return Status::OK();
 }
@@ -1526,8 +1527,9 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
   const IOContext io_context({ tablet_id() });
 
   MvccSnapshot flush_snap(mvcc_);
-  LOG_WITH_PREFIX(INFO) << op_name << ": entering phase 1 (flushing snapshot). Phase 1 snapshot: "
-                        << flush_snap.ToString();
+  VLOG_WITH_PREFIX(1) << Substitute("$0: entering phase 1 (flushing snapshot). "
+                                    "Phase 1 snapshot: $1",
+                                    op_name, flush_snap.ToString());
 
   if (common_hooks_) {
     RETURN_NOT_OK_PREPEND(common_hooks_->PostTakeMvccSnapshot(),
@@ -1612,8 +1614,9 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
   //
   // The way that we avoid this case is that DuplicatingRowSet's FlushDeltas method is a
   // no-op.
-  LOG_WITH_PREFIX(INFO) << op_name << ": entering phase 2 (starting to duplicate updates "
-                        << "in new rowsets)";
+  VLOG_WITH_PREFIX(1) << Substitute("$0: entering phase 2 (starting to "
+                                    "duplicate updates in new rowsets)",
+                                    op_name);
   shared_ptr<DuplicatingRowSet> inprogress_rowset(
     new DuplicatingRowSet(input.rowsets(), new_disk_rowsets));
 
@@ -1667,9 +1670,9 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
 
   // Phase 2. Here we re-scan the compaction input, copying those missed updates into the
   // new rowset's DeltaTracker.
-  LOG_WITH_PREFIX(INFO) << op_name
-                        << " Phase 2: carrying over any updates which arrived during Phase 1";
-  LOG_WITH_PREFIX(INFO) << "Phase 2 snapshot: " << non_duplicated_txns_snap.ToString();
+  VLOG_WITH_PREFIX(1) << Substitute("$0: Phase 2: carrying over any updates "
+                                    "which arrived during Phase 1. Snapshot: $1",
+                                    op_name, non_duplicated_txns_snap.ToString());
   RETURN_NOT_OK_PREPEND(
       input.CreateCompactionInput(non_duplicated_txns_snap, schema(), &io_context, &merge),
           Substitute("Failed to create $0 inputs", op_name).c_str());
@@ -1717,11 +1720,17 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
   // their metadata was written to disk.
   AtomicSwapRowSets({ inprogress_rowset }, new_disk_rowsets);
 
-  LOG_WITH_PREFIX(INFO) << Substitute("$0 successful on $1 rows ($2 rowsets, $3 bytes)",
-                                      op_name,
-                                      drsw.rows_written_count(),
-                                      drsw.drs_written_count(),
-                                      drsw.written_size());
+  const auto rows_written = drsw.rows_written_count();
+  const auto drs_written = drsw.drs_written_count();
+  const auto bytes_written = drsw.written_size();
+  TRACE_COUNTER_INCREMENT("rows_written", rows_written);
+  TRACE_COUNTER_INCREMENT("drs_written", drs_written);
+  TRACE_COUNTER_INCREMENT("bytes_written", bytes_written);
+  VLOG_WITH_PREFIX(1) << Substitute("$0 successful on $1 rows ($2 rowsets, $3 bytes)",
+                                    op_name,
+                                    rows_written,
+                                    drs_written,
+                                    bytes_written);
 
   if (common_hooks_) {
     RETURN_NOT_OK_PREPEND(common_hooks_->PostSwapNewRowSet(),
@@ -1750,14 +1759,19 @@ Status Tablet::Compact(CompactFlags flags) {
   // Step 1. Capture the rowsets to be merged
   RETURN_NOT_OK_PREPEND(PickRowSetsToCompact(&input, flags),
                         "Failed to pick rowsets to compact");
-  LOG_WITH_PREFIX(INFO) << "Compaction: stage 1 complete, picked "
-                        << input.num_rowsets() << " rowsets to compact or flush";
+  const auto num_input_rowsets = input.num_rowsets();
+  TRACE_COUNTER_INCREMENT("num_input_rowsets", num_input_rowsets);
+  VLOG_WITH_PREFIX(1) << Substitute("Compaction: stage 1 complete, picked $0 "
+                                    "rowsets to compact or flush",
+                                    num_input_rowsets);
   if (compaction_hooks_) {
     RETURN_NOT_OK_PREPEND(compaction_hooks_->PostSelectIterators(),
                           "PostSelectIterators hook failed");
   }
 
-  input.DumpToLog();
+  if (VLOG_IS_ON(1)) {
+    input.DumpToLog();
+  }
 
   return DoMergeCompactionOrFlush(input, TabletMetadata::kNoMrsFlushed);
 }
