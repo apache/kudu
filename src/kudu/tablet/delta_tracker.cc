@@ -694,9 +694,16 @@ Status DeltaTracker::FlushDMS(DeltaMemStore* dms,
   gscoped_ptr<DeltaStats> stats;
   RETURN_NOT_OK(dms->FlushToFile(&dfw, &stats));
   RETURN_NOT_OK(dfw.Finish());
-  LOG_WITH_PREFIX(INFO) << "Flushed delta block " << block_id.ToString()
-                        << " (" << dfw.written_size() << " bytes on disk) "
-                        << "stats: " << stats->ToString();
+  const auto bytes_written = dfw.written_size();
+  TRACE_COUNTER_INCREMENT("bytes_written", bytes_written);
+  TRACE_COUNTER_INCREMENT("delete_count", stats->delete_count());
+  TRACE_COUNTER_INCREMENT("reinsert_count", stats->reinsert_count());
+  TRACE_COUNTER_INCREMENT("update_count", stats->UpdateCount());
+  VLOG_WITH_PREFIX(1) << Substitute("Flushed delta block $0 ($1 bytes on disk) "
+                                    "stats: $2",
+                                    block_id.ToString(),
+                                    bytes_written,
+                                    stats->ToString());
 
   // Now re-open for read
   unique_ptr<ReadableBlock> readable_block;
@@ -754,8 +761,9 @@ Status DeltaTracker::Flush(const IOContext* io_context, MetadataFlushType flush_
     redo_delta_stores_.push_back(old_dms);
   }
 
-  LOG_WITH_PREFIX(INFO) << "Flushing " << count << " deltas (" << old_dms->EstimateSize()
-                        << " bytes in memory) from DMS " << old_dms->id();
+  VLOG_WITH_PREFIX(1) << Substitute("Flushing $0 deltas ($1 bytes in memory) "
+                                    "from DMS $2",
+                                    count, old_dms->EstimateSize(), old_dms->id());
 
   // Now, actually flush the contents of the old DMS.
   //
