@@ -1867,5 +1867,249 @@ TEST_F(LogBlockManagerTest, TestDeleteDeadContainersByDeletionTransaction) {
   }
 }
 
+TEST_F(LogBlockManagerTest, TestHalfPresentContainer) {
+  BlockId block_id;
+  string data_file_name;
+  string metadata_file_name;
+  MetricRegistry registry;
+  scoped_refptr<MetricEntity> entity = METRIC_ENTITY_server.Instantiate(&registry, "test");
+
+  const auto CreateContainer = [&] (bool create_block = false) {
+    ASSERT_OK(ReopenBlockManager(entity));
+    unique_ptr<WritableBlock> writer;
+    ASSERT_OK(bm_->CreateBlock(test_block_opts_, &writer));
+    block_id = writer->id();
+    if (create_block) {
+      ASSERT_OK(writer->Append("a"));
+    }
+    ASSERT_OK(writer->Finalize());
+    ASSERT_OK(writer->Close());
+    NO_FATALS(GetOnlyContainerDataFile(&data_file_name));
+    NO_FATALS(GetOnlyContainerMetadataFile(&metadata_file_name));
+  };
+
+  const auto CreateMetadataFile = [&] () {
+    unique_ptr<WritableFile> metadata_file_writer;
+    ASSERT_OK(env_->NewWritableFile(metadata_file_name, &metadata_file_writer));
+    ASSERT_OK(metadata_file_writer->Append(Slice("a")));
+    metadata_file_writer->Close();
+  };
+
+  const auto CreateDataFile = [&] () {
+    unique_ptr<WritableFile> data_file_writer;
+    ASSERT_OK(env_->NewWritableFile(data_file_name, &data_file_writer));
+    data_file_writer->Close();
+  };
+
+  const auto DeleteBlock = [&] () {
+    vector<BlockId> deleted;
+    shared_ptr<BlockDeletionTransaction> transaction = bm_->NewDeletionTransaction();
+    transaction->AddDeletedBlock(block_id);
+    ASSERT_OK(transaction->CommitDeletedBlocks(&deleted));
+    transaction.reset();
+    for (const auto& data_dir : dd_manager_->data_dirs()) {
+      data_dir->WaitOnClosures();
+    }
+  };
+
+  const auto CheckOK = [&] () {
+    FsReport report;
+    ASSERT_OK(ReopenBlockManager(entity, &report));
+    ASSERT_FALSE(report.HasFatalErrors());
+    NO_FATALS(AssertEmptyReport(report));
+  };
+
+  const auto CheckFailed = [&] (const Status& expect) {
+    Status s = ReopenBlockManager(entity);
+    ASSERT_EQ(s.CodeAsString(), expect.CodeAsString());
+  };
+
+  const auto CheckRepaired = [&] () {
+    FsReport report;
+    ASSERT_OK(ReopenBlockManager(entity, &report));
+    ASSERT_FALSE(report.HasFatalErrors());
+    ASSERT_EQ(1, report.incomplete_container_check->entries.size());
+    report.incomplete_container_check->entries.clear();
+    NO_FATALS(AssertEmptyReport(report));
+  };
+
+  // Case1: the metadata file has gone missing and
+  //        the size of the existing data file is 0.
+  {
+    // Create a container.
+    NO_FATALS(CreateContainer());
+
+    // Delete the metadata file.
+    ASSERT_OK(env_->DeleteFile(metadata_file_name));
+
+    // The container has been repaired.
+    NO_FATALS(CheckRepaired());
+  }
+
+  // Case2: the metadata file has gone missing and
+  //        the size of the existing data file is >0.
+  {
+    // Create a container.
+    NO_FATALS(CreateContainer(true));
+
+    // Delete the metadata file.
+    ASSERT_OK(env_->DeleteFile(metadata_file_name));
+
+    // The metadata file has gone missing.
+    NO_FATALS(CheckFailed(Status::NotFound("")));
+
+    // Delete the data file to keep path clean.
+    ASSERT_OK(env_->DeleteFile(data_file_name));
+  }
+
+  // Case3: the size of the existing metadata file is <MIN and
+  //        the data file has gone missing.
+  {
+    // Create a container.
+    NO_FATALS(CreateContainer());
+
+    // Delete the data file&metadata file, and keep the path.
+    ASSERT_OK(env_->DeleteFile(data_file_name));
+    ASSERT_OK(env_->DeleteFile(metadata_file_name));
+
+    // Create a metadata file whose size is <MIN.
+    NO_FATALS(CreateMetadataFile());
+
+    // The container has been repaired.
+    NO_FATALS(CheckRepaired());
+  }
+
+  // Case4: the size of the existing metadata file is <MIN and
+  //        the size of the existing data file is 0.
+  {
+    // Create a container.
+    NO_FATALS(CreateContainer());
+
+    // Delete the metadata file.
+    ASSERT_OK(env_->DeleteFile(metadata_file_name));
+
+    // Create a metadata file whose size is <MIN.
+    NO_FATALS(CreateMetadataFile());
+
+    // The container has been repaired.
+    NO_FATALS(CheckRepaired());
+  }
+
+  // Case5: the size of the existing metadata file is <MIN and
+  //        the size of the existing data file is >0.
+  {
+    // Create a container.
+    NO_FATALS(CreateContainer(true));
+
+    // Delete the metadata file.
+    ASSERT_OK(env_->DeleteFile(metadata_file_name));
+
+    // Create a metadata file whose size is <MIN.
+    NO_FATALS(CreateMetadataFile());
+
+    // Check passed, but open metadata file failed at last.
+    NO_FATALS(CheckFailed(Status::Incomplete("")));
+
+    // Delete the data file and metadata file to keep path clean.
+    ASSERT_OK(env_->DeleteFile(data_file_name));
+    ASSERT_OK(env_->DeleteFile(metadata_file_name));
+  }
+
+  // Case6: the existing metadata file has no live blocks and
+  //        the data file has gone missing.
+  {
+    NO_FATALS(CreateContainer(true));
+
+    // Delete the only block.
+    NO_FATALS(DeleteBlock());
+
+    // Delete the data file.
+    ASSERT_OK(env_->DeleteFile(data_file_name));
+
+    // The container has been repaired.
+    NO_FATALS(CheckRepaired());
+  }
+
+  // Case7: the existing metadata file has no live blocks and
+  //        the size of the existing data file is 0.
+  {
+    NO_FATALS(CreateContainer(true));
+
+    // Delete the only block.
+    NO_FATALS(DeleteBlock());
+
+    // Delete the data file.
+    ASSERT_OK(env_->DeleteFile(data_file_name));
+
+    // Create an empty data file.
+    NO_FATALS(CreateDataFile());
+
+    // Check passed, but verify records failed at last(malformed records).
+    NO_FATALS(CheckFailed(Status::Corruption("")));
+
+    // Delete the data file and metadata file to keep path clean.
+    ASSERT_OK(env_->DeleteFile(data_file_name));
+    ASSERT_OK(env_->DeleteFile(metadata_file_name));
+  }
+
+  // Case8: the existing metadata file has no live blocks and
+  //        the size of the existing data file is >0.
+  {
+    NO_FATALS(CreateContainer(true));
+
+    // Delete the only block.
+    NO_FATALS(DeleteBlock());
+
+    // The container is ok.
+    NO_FATALS(CheckOK());
+  }
+
+  // Case9: the existing metadata file has live blocks and
+  //        the data file has gone missing.
+  {
+    // Create a container.
+    NO_FATALS(CreateContainer(true));
+
+    // Delete the data file.
+    ASSERT_OK(env_->DeleteFile(data_file_name));
+
+    // The data file has gone missing.
+    NO_FATALS(CheckFailed(Status::NotFound("")));
+
+    // Delete the metadata file to keep path clean.
+    ASSERT_OK(env_->DeleteFile(metadata_file_name));
+  }
+
+  // Case10: the existing metadata file has live blocks and
+  //         the size of the existing data file is 0.
+  {
+    // Create a container.
+    NO_FATALS(CreateContainer(true));
+
+    // Delete the data file.
+    ASSERT_OK(env_->DeleteFile(data_file_name));
+
+    // Create an empty data file.
+    NO_FATALS(CreateDataFile());
+
+    // Check passed, but verify records failed at last(malformed records).
+    NO_FATALS(CheckFailed(Status::Corruption("")));
+
+    // Delete the data file and metadata file to keep path clean.
+    ASSERT_OK(env_->DeleteFile(data_file_name));
+    ASSERT_OK(env_->DeleteFile(metadata_file_name));
+  }
+
+  // Case11: the existing metadata file has live blocks and
+  //         the size of the existing data file is >0.
+  {
+    // Create a container.
+    NO_FATALS(CreateContainer(true));
+
+    // The container is ok.
+    NO_FATALS(CheckOK());
+  }
+}
+
 } // namespace fs
 } // namespace kudu
