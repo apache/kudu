@@ -432,7 +432,7 @@ public class AsyncKuduClient implements AutoCloseable {
         new ServerInfo(getFakeMasterUuid(hostPort),
                        hostPort,
                        inetAddress,
-                       /*locaton=*/""),
+                       /* location= */""),
         credentialsPolicy);
   }
 

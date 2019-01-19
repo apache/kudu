@@ -122,7 +122,7 @@ class DefaultSource
    * @param sqlContext
    * @param mode Only Append mode is supported. It will upsert or insert data
    *             to an existing table, depending on the upsert parameter
-   * @param parameters Necessary parameters for kudu.table, kudu.master, etc..
+   * @param parameters Necessary parameters for kudu.table, kudu.master, etc...
    * @param data Dataframe to save into kudu
    * @return returns populated base relation
    */
@@ -401,10 +401,10 @@ class KuduRelation(
   }
 
   /**
-   * Creates a new `IS NULL` predicate for the column.
+   * Creates a new `IS NOT NULL` predicate for the column.
    *
    * @param column the column name
-   * @return the `IS NULL` predicate
+   * @return the `IS NOT NULL` predicate
    */
   private def isNotNullPredicate(column: String): KuduPredicate = {
     KuduPredicate.newIsNotNullPredicate(table.getSchema.getColumn(column))

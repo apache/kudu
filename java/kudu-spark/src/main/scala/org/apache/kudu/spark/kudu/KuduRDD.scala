@@ -17,13 +17,16 @@
 package org.apache.kudu.spark.kudu
 
 import scala.collection.JavaConverters._
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.Row
 import org.apache.spark.Partition
 import org.apache.spark.SparkContext
 import org.apache.spark.TaskContext
+import org.apache.spark.util.LongAccumulator
 import org.apache.yetus.audience.InterfaceAudience
 import org.apache.yetus.audience.InterfaceStability
+
 import org.apache.kudu.client._
 import org.apache.kudu.Type
 import org.apache.kudu.client
@@ -46,6 +49,10 @@ class KuduRDD private[kudu] (
 
   // Defined here because the options are transient.
   private val keepAlivePeriodMs = options.keepAlivePeriodMs
+
+  // A metric for the rows read from Kudu for this RDD.
+  // TODO(wdberkeley): Add bytes read if it becomes available from the Java client.
+  private[kudu] val rowsRead = sc.longAccumulator("kudu.rows_read")
 
   override protected def getPartitions: Array[Partition] = {
     val builder = kuduContext.syncClient
@@ -93,7 +100,7 @@ class KuduRDD private[kudu] (
     val partition: KuduPartition = part.asInstanceOf[KuduPartition]
     val scanner =
       KuduScanToken.deserializeIntoScanner(partition.scanToken, client)
-    new RowIterator(scanner, kuduContext, keepAlivePeriodMs)
+    new RowIterator(scanner, kuduContext, keepAlivePeriodMs, rowsRead)
   }
 
   override def getPreferredLocations(partition: Partition): Seq[String] = {
@@ -115,11 +122,13 @@ private class KuduPartition(
  * @param scanner the wrapped scanner
  * @param kuduContext the kudu context
  * @param keepAlivePeriodMs the period in which to call the keepAlive on the scanners
+ * @param rowsRead an accumulator to track the number of rows read from Kudu
  */
 private class RowIterator(
     val scanner: KuduScanner,
     val kuduContext: KuduContext,
-    val keepAlivePeriodMs: Long)
+    val keepAlivePeriodMs: Long,
+    val rowsRead: LongAccumulator)
     extends Iterator[Row] {
 
   private var currentIterator: RowResultIterator = RowResultIterator.empty
@@ -145,6 +154,7 @@ private class RowIterator(
       // Update timestampAccumulator with the client's last propagated
       // timestamp on each executor.
       kuduContext.timestampAccumulator.add(kuduContext.syncClient.getLastPropagatedTimestamp)
+      rowsRead.add(currentIterator.getNumRows)
     }
     KeepKuduScannerAlive()
     currentIterator.hasNext

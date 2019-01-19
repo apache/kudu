@@ -19,7 +19,6 @@ package org.apache.kudu.spark.kudu
 
 import java.security.AccessController
 import java.security.PrivilegedAction
-
 import javax.security.auth.Subject
 import javax.security.auth.login.AppConfigurationEntry
 import javax.security.auth.login.Configuration
@@ -27,6 +26,7 @@ import javax.security.auth.login.LoginContext
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
+
 import org.apache.hadoop.util.ShutdownHookManager
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
@@ -39,6 +39,7 @@ import org.apache.spark.sql.Row
 import org.apache.spark.sql.catalyst.CatalystTypeConverters
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.util.AccumulatorV2
+import org.apache.spark.util.LongAccumulator
 import org.apache.yetus.audience.InterfaceAudience
 import org.apache.yetus.audience.InterfaceStability
 import org.slf4j.Logger
@@ -63,6 +64,24 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
     extends Serializable {
 
   def this(kuduMaster: String, sc: SparkContext) = this(kuduMaster, sc, None)
+
+  /**
+   * A collection of accumulator metrics describing the usage of a KuduContext.
+   */
+  private[kudu] val numInserts: LongAccumulator = sc.longAccumulator("kudu.num_inserts")
+  private[kudu] val numUpserts: LongAccumulator = sc.longAccumulator("kudu.num_upserts")
+  private[kudu] val numUpdates: LongAccumulator = sc.longAccumulator("kudu.num_updates")
+  private[kudu] val numDeletes: LongAccumulator = sc.longAccumulator("kudu.num_deletes")
+
+  // Increments the appropriate metric given an OperationType and a count.
+  private def addForOperation(count: Long, opType: OperationType): Unit = {
+    opType match {
+      case Insert => numInserts.add(count)
+      case Upsert => numUpserts.add(count)
+      case Update => numUpdates.add(count)
+      case Delete => numDeletes.add(count)
+    }
+  }
 
   /**
    * TimestampAccumulator accumulates the maximum value of client's
@@ -333,6 +352,7 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
     session.setFlushMode(FlushMode.AUTO_FLUSH_BACKGROUND)
     session.setIgnoreAllDuplicateRows(writeOptions.ignoreDuplicateRowErrors)
     val typeConverter = CatalystTypeConverters.createToScalaConverter(schema)
+    var numRows = 0
     try {
       for (internalRow <- rows) {
         val row = typeConverter(internalRow).asInstanceOf[Row]
@@ -377,12 +397,14 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
           }
         }
         session.apply(operation)
+        numRows += 1
       }
     } finally {
       session.close()
       // Update timestampAccumulator with the client's last propagated
       // timestamp on each executor.
       timestampAccumulator.add(syncClient.getLastPropagatedTimestamp)
+      addForOperation(numRows, operationType)
     }
     session.getPendingErrors
   }

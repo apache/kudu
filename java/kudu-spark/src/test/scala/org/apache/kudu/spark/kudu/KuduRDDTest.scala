@@ -26,6 +26,7 @@ import org.apache.kudu.test.KuduTestHarness.TabletServerConfig
 import org.apache.spark.SparkException
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.Row
+import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class KuduRDDTest extends KuduTestSuite {
@@ -34,7 +35,8 @@ class KuduRDDTest extends KuduTestSuite {
   def testCollectRows() {
     insertRows(table, 100)
     val rdd = kuduContext.kuduRDD(ss.sparkContext, tableName, List("key"))
-    assert(rdd.collect.length == 100)
+    assertEquals(100, rdd.collect().length)
+    assertEquals(100L, rdd.asInstanceOf[KuduRDD].rowsRead.value)
   }
 
   @Test
