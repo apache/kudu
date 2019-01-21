@@ -418,6 +418,7 @@ unique_ptr<Mode> BuildTableMode() {
       .Description("Describe a table")
       .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddRequiredParameter({ kTableNameArg, "Name of the table to describe" })
+      .AddOptionalParameter("show_attributes")
       .Build();
 
   unique_ptr<Action> list_tables =

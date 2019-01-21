@@ -37,6 +37,7 @@
 #include "kudu/gutil/strings/escaping.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/util/int128.h"
+#include "kudu/util/int128_util.h"
 #include "kudu/util/slice.h"
 // IWYU pragma: no_include "kudu/util/status.h"
 

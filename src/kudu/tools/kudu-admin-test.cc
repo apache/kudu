@@ -38,6 +38,7 @@
 #include "kudu/client/client.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
+#include "kudu/client/value.h"
 #include "kudu/client/write_op.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
@@ -66,6 +67,7 @@
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -82,12 +84,14 @@ DECLARE_int32(num_tablet_servers);
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
 using kudu::client::KuduColumnSchema;
+using kudu::client::KuduColumnStorageAttributes;
 using kudu::client::KuduInsert;
 using kudu::client::KuduSchema;
 using kudu::client::KuduSchemaBuilder;
 using kudu::client::KuduTable;
 using kudu::client::KuduTableAlterer;
 using kudu::client::KuduTableCreator;
+using kudu::client::KuduValue;
 using kudu::client::sp::shared_ptr;
 using kudu::cluster::ExternalTabletServer;
 using kudu::consensus::COMMITTED_OPID;
@@ -1730,18 +1734,31 @@ TEST_F(AdminCliTest, TestDescribeTable) {
     builder.AddColumn("key_hash1")->Type(KuduColumnSchema::INT32)->NotNull();
     builder.AddColumn("key_hash2")->Type(KuduColumnSchema::INT32)->NotNull();
     builder.AddColumn("key_range")->Type(KuduColumnSchema::INT32)->NotNull();
-    builder.AddColumn("int8_val")->Type(KuduColumnSchema::INT8);
-    builder.AddColumn("int16_val")->Type(KuduColumnSchema::INT16);
-    builder.AddColumn("int32_val")->Type(KuduColumnSchema::INT32);
-    builder.AddColumn("int64_val")->Type(KuduColumnSchema::INT64);
+    builder.AddColumn("int8_val")->Type(KuduColumnSchema::INT8)
+      ->Compression(KuduColumnStorageAttributes::CompressionType::NO_COMPRESSION)
+      ->Encoding(KuduColumnStorageAttributes::EncodingType::PLAIN_ENCODING);
+    builder.AddColumn("int16_val")->Type(KuduColumnSchema::INT16)
+      ->Compression(KuduColumnStorageAttributes::CompressionType::SNAPPY)
+      ->Encoding(KuduColumnStorageAttributes::EncodingType::RLE);
+    builder.AddColumn("int32_val")->Type(KuduColumnSchema::INT32)
+      ->Compression(KuduColumnStorageAttributes::CompressionType::LZ4)
+      ->Encoding(KuduColumnStorageAttributes::EncodingType::BIT_SHUFFLE);
+    builder.AddColumn("int64_val")->Type(KuduColumnSchema::INT64)
+      ->Compression(KuduColumnStorageAttributes::CompressionType::ZLIB)
+      ->Default(KuduValue::FromInt(123));
     builder.AddColumn("timestamp_val")->Type(KuduColumnSchema::UNIXTIME_MICROS);
-    builder.AddColumn("string_val")->Type(KuduColumnSchema::STRING);
-    builder.AddColumn("bool_val")->Type(KuduColumnSchema::BOOL);
+    builder.AddColumn("string_val")->Type(KuduColumnSchema::STRING)
+      ->Encoding(KuduColumnStorageAttributes::EncodingType::PREFIX_ENCODING)
+      ->Default(KuduValue::CopyString(Slice("hello")));;
+    builder.AddColumn("bool_val")->Type(KuduColumnSchema::BOOL)
+      ->Default(KuduValue::FromBool(false));
     builder.AddColumn("float_val")->Type(KuduColumnSchema::FLOAT);
-    builder.AddColumn("double_val")->Type(KuduColumnSchema::DOUBLE);
-    builder.AddColumn("binary_val")->Type(KuduColumnSchema::BINARY);
+    builder.AddColumn("double_val")->Type(KuduColumnSchema::DOUBLE)
+      ->Default(KuduValue::FromDouble(123.4));
+    builder.AddColumn("binary_val")->Type(KuduColumnSchema::BINARY)
+      ->Encoding(KuduColumnStorageAttributes::EncodingType::DICT_ENCODING);
     builder.AddColumn("decimal_val")->Type(KuduColumnSchema::DECIMAL)
-        ->Precision(10)
+        ->Precision(30)
         ->Scale(4);
     builder.SetPrimaryKey({ "key_hash0", "key_hash1", "key_hash2", "key_range" });
     ASSERT_OK(builder.Build(&schema));
@@ -1776,7 +1793,7 @@ TEST_F(AdminCliTest, TestDescribeTable) {
     "table",
     "describe",
     cluster_->master()->bound_rpc_addr().ToString(),
-    kAnotherTableId
+    kAnotherTableId,
   }, &stdout, &stderr);
   ASSERT_TRUE(s.ok()) << ToolRunInfo(s, stdout, stderr);
 
@@ -1797,7 +1814,47 @@ TEST_F(AdminCliTest, TestDescribeTable) {
       "    float_val FLOAT NULLABLE,\n"
       "    double_val DOUBLE NULLABLE,\n"
       "    binary_val BINARY NULLABLE,\n"
-      "    decimal_val DECIMAL(10, 4) NULLABLE,\n"
+      "    decimal_val DECIMAL(30, 4) NULLABLE,\n"
+      "    PRIMARY KEY (key_hash0, key_hash1, key_hash2, key_range)\n"
+      ")\n"
+      "HASH (key_hash0) PARTITIONS 2,\n"
+      "HASH (key_hash1, key_hash2) PARTITIONS 3,\n"
+      "RANGE (key_range) (\n"
+      "    PARTITION 0 <= VALUES < 1,\n"
+      "    PARTITION 2 <= VALUES < 3\n"
+      ")\n"
+      "REPLICAS 1");
+
+  // Test the describe output with `-show_attributes=true`.
+  stdout.clear();
+  stderr.clear();
+  s = RunKuduTool({
+    "table",
+    "describe",
+    cluster_->master()->bound_rpc_addr().ToString(),
+    kAnotherTableId,
+    "-show_attributes=true"
+  }, &stdout, &stderr);
+  ASSERT_TRUE(s.ok()) << ToolRunInfo(s, stdout, stderr);
+
+  ASSERT_STR_CONTAINS(
+      stdout,
+      "(\n"
+      "    key_hash0 INT32 NOT NULL AUTO_ENCODING DEFAULT_COMPRESSION - -,\n"
+      "    key_hash1 INT32 NOT NULL AUTO_ENCODING DEFAULT_COMPRESSION - -,\n"
+      "    key_hash2 INT32 NOT NULL AUTO_ENCODING DEFAULT_COMPRESSION - -,\n"
+      "    key_range INT32 NOT NULL AUTO_ENCODING DEFAULT_COMPRESSION - -,\n"
+      "    int8_val INT8 NULLABLE PLAIN_ENCODING NO_COMPRESSION - -,\n"
+      "    int16_val INT16 NULLABLE RLE SNAPPY - -,\n"
+      "    int32_val INT32 NULLABLE BIT_SHUFFLE LZ4 - -,\n"
+      "    int64_val INT64 NULLABLE AUTO_ENCODING ZLIB 123 123,\n"
+      "    timestamp_val UNIXTIME_MICROS NULLABLE AUTO_ENCODING DEFAULT_COMPRESSION - -,\n"
+      "    string_val STRING NULLABLE PREFIX_ENCODING DEFAULT_COMPRESSION \"hello\" \"hello\",\n"
+      "    bool_val BOOL NULLABLE AUTO_ENCODING DEFAULT_COMPRESSION false false,\n"
+      "    float_val FLOAT NULLABLE AUTO_ENCODING DEFAULT_COMPRESSION - -,\n"
+      "    double_val DOUBLE NULLABLE AUTO_ENCODING DEFAULT_COMPRESSION 123.4 123.4,\n"
+      "    binary_val BINARY NULLABLE DICT_ENCODING DEFAULT_COMPRESSION - -,\n"
+      "    decimal_val DECIMAL(30, 4) NULLABLE AUTO_ENCODING DEFAULT_COMPRESSION - -,\n"
       "    PRIMARY KEY (key_hash0, key_hash1, key_hash2, key_range)\n"
       ")\n"
       "HASH (key_hash0) PARTITIONS 2,\n"

@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#pragma once
+
 #include "kudu/util/int128.h"
 
 #include <iostream>
@@ -36,4 +38,3 @@ inline std::ostream& operator<<(std::ostream& os, const unsigned __int128& val) 
 }
 
 } // namespace std
-

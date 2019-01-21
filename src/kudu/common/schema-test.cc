@@ -118,7 +118,7 @@ TEST_F(TestSchema, TestSchemaToStringMode) {
             "    key INT32 NOT NULL,\n"
             "    PRIMARY KEY (key)\n"
             ")",
-            schema.ToString(Schema::ToStringMode::WITHOUT_COLUMN_IDS));
+            schema.ToString(Schema::ToStringMode::BASE_INFO));
 }
 
 TEST_F(TestSchema, TestCopyAndMove) {

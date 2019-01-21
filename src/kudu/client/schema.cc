@@ -24,6 +24,7 @@
 #include <utility>
 
 #include <boost/optional/optional.hpp>
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 
 #include "kudu/client/schema-internal.h"
@@ -38,9 +39,13 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/decimal_util.h"
 #include "kudu/util/compression/compression.pb.h"
+#include "kudu/util/decimal_util.h"
 #include "kudu/util/slice.h"
+
+DEFINE_bool(show_attributes, false,
+            "Whether to show column attributes, including column encoding type, "
+            "compression type, and default read/write value.");
 
 MAKE_ENUM_LIMITS(kudu::client::KuduColumnStorageAttributes::EncodingType,
                  kudu::client::KuduColumnStorageAttributes::AUTO_ENCODING,
@@ -747,7 +752,9 @@ void KuduSchema::GetPrimaryKeyColumnIndexes(vector<int>* indexes) const {
 }
 
 string KuduSchema::ToString() const {
-  return schema_ ? schema_->ToString(Schema::ToStringMode::WITHOUT_COLUMN_IDS)
+  return schema_ ? schema_->ToString(FLAGS_show_attributes ?
+                                     Schema::ToStringMode::WITH_COLUMN_ATTRIBUTES
+                                     : Schema::ToStringMode::BASE_INFO)
                  : "()";
 }
 

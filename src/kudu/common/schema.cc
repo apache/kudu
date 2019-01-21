@@ -118,10 +118,11 @@ Status ColumnSchema::ApplyDelta(const ColumnSchemaDelta& col_delta) {
   return Status::OK();
 }
 
-string ColumnSchema::ToString() const {
-  return Substitute("$0 $1",
+string ColumnSchema::ToString(ToStringMode mode) const {
+  return Substitute("$0 $1$2",
                     name_,
-                    TypeToString());
+                    TypeToString(),
+                    mode == ToStringMode::WITH_ATTRIBUTES ? " " + AttrToString() : "");
 }
 
 string ColumnSchema::TypeToString() const {
@@ -131,6 +132,13 @@ string ColumnSchema::TypeToString() const {
                     type_name,
                     type_attributes().ToStringForType(type_info()->type()),
                     is_nullable_ ? "NULLABLE" : "NOT NULL");
+}
+
+string ColumnSchema::AttrToString() const {
+  return Substitute("$0 $1 $2",
+                    attributes_.ToString(),
+                    has_read_default() ? Stringify(read_default_value()) : "-",
+                    has_write_default() ? Stringify(write_default_value()) : "-");
 }
 
 size_t ColumnSchema::memory_footprint_excluding_this() const {
@@ -399,14 +407,18 @@ string Schema::ToString(ToStringMode mode) const {
     pk_strs.push_back(cols_[i].name());
   }
 
+  auto col_mode = ColumnSchema::ToStringMode::WITHOUT_ATTRIBUTES;
+  if (mode & ToStringMode::WITH_COLUMN_ATTRIBUTES) {
+    col_mode = ColumnSchema::ToStringMode::WITH_ATTRIBUTES;
+  }
   vector<string> col_strs;
-  if (has_column_ids() && mode != ToStringMode::WITHOUT_COLUMN_IDS) {
+  if (has_column_ids() && (mode & ToStringMode::WITH_COLUMN_IDS)) {
     for (int i = 0; i < cols_.size(); ++i) {
-      col_strs.push_back(Substitute("$0:$1", col_ids_[i], cols_[i].ToString()));
+      col_strs.push_back(Substitute("$0:$1", col_ids_[i], cols_[i].ToString(col_mode)));
     }
   } else {
     for (const ColumnSchema &col : cols_) {
-      col_strs.push_back(col.ToString());
+      col_strs.push_back(col.ToString(col_mode));
     }
   }
 
