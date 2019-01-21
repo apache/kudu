@@ -37,6 +37,7 @@
 #include "kudu/gutil/strings/escaping.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/util/int128.h"
+#include "kudu/util/int128_util.h"
 #include "kudu/util/slice.h"
 // IWYU pragma: no_include "kudu/util/status.h"
 
@@ -783,6 +784,40 @@ class Variant {
     }
     CHECK(false) << "not reached!";
     return NULL;
+  }
+
+  std::string ToString() const {
+    switch (type_) {
+      case UNKNOWN_DATA:
+        LOG(FATAL) << "Attempted to access value of unknown data type";
+      case IS_DELETED:
+      case BOOL:
+        return numeric_.b1 ? "true" : "false";
+      case INT8:         return std::to_string(numeric_.i8);
+      case UINT8:        return std::to_string(numeric_.u8);
+      case INT16:        return std::to_string(numeric_.i16);
+      case UINT16:       return std::to_string(numeric_.u16);
+      case DECIMAL32:
+      case INT32:        return std::to_string(numeric_.i32);
+      case UINT32:       return std::to_string(numeric_.u32);
+      case DECIMAL64:
+      case UNIXTIME_MICROS:
+      case INT64:        return std::to_string(numeric_.i64);
+      case UINT64:       return std::to_string(numeric_.u64);
+      case DECIMAL128:
+      case INT128: {
+        std::stringstream ss;
+        ss << numeric_.i128;
+        return ss.str();
+      }
+      case FLOAT:        return std::to_string(numeric_.float_val);
+      case DOUBLE:       return std::to_string(numeric_.double_val);
+      case STRING:
+      case BINARY:       return vstr_.ToString();
+      default: LOG(FATAL) << "Unknown data type: " << type_;
+    }
+    CHECK(false) << "not reached!";
+    return "";
   }
 
   bool Equals(const Variant *other) const {

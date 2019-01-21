@@ -127,10 +127,13 @@ string ColumnSchema::ToString() const {
 string ColumnSchema::TypeToString() const {
   string type_name = type_info_->name();
   ToUpperCase(type_name, &type_name);
-  return Substitute("$0$1 $2",
+  return Substitute("$0$1 $2 $3 $4 $5",
                     type_name,
-                    type_attributes().ToStringForType(type_info()->type()),
-                    is_nullable_ ? "NULLABLE" : "NOT NULL");
+                    type_attributes_.ToStringForType(type_info_->type()),
+                    is_nullable_ ? "NULLABLE" : "NOT NULL",
+                    attributes_.ToString(),
+                    has_read_default() ? read_default_->ToString() : "-",
+                    has_write_default() ? write_default_->ToString() : "-");
 }
 
 size_t ColumnSchema::memory_footprint_excluding_this() const {

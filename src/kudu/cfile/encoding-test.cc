@@ -51,7 +51,6 @@
 #include "kudu/util/group_varint-inl.h"
 #include "kudu/util/hexdump.h"
 #include "kudu/util/int128.h"
-#include "kudu/util/int128_util.h" // IWYU pragma: keep
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
