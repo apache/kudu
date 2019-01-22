@@ -62,6 +62,7 @@ import org.apache.kudu.Type
 @InterfaceStability.Evolving
 class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeoutMs: Option[Long])
     extends Serializable {
+  val log: Logger = LoggerFactory.getLogger(getClass)
 
   def this(kuduMaster: String, sc: SparkContext) = this(kuduMaster, sc, None)
 
@@ -242,7 +243,9 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
       data: DataFrame,
       tableName: String,
       writeOptions: KuduWriteOptions = new KuduWriteOptions): Unit = {
+    log.info(s"inserting into table '$tableName'")
     writeRows(data, tableName, Insert, writeOptions)
+    log.info(s"inserted ${numInserts.value} rows into table '$tableName'")
   }
 
   /**
@@ -261,7 +264,9 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
     "Use KuduContext.insertRows(data, tableName, new KuduWriteOptions(ignoreDuplicateRowErrors = true))")
   def insertIgnoreRows(data: DataFrame, tableName: String): Unit = {
     val writeOptions = KuduWriteOptions(ignoreDuplicateRowErrors = true)
+    log.info(s"inserting into table '$tableName'")
     writeRows(data, tableName, Insert, writeOptions)
+    log.info(s"inserted ${numInserts.value} rows into table '$tableName'")
   }
 
   /**
@@ -275,7 +280,9 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
       data: DataFrame,
       tableName: String,
       writeOptions: KuduWriteOptions = new KuduWriteOptions): Unit = {
+    log.info(s"upserting into table '$tableName'")
     writeRows(data, tableName, Upsert, writeOptions)
+    log.info(s"upserted ${numUpserts.value} rows into table '$tableName'")
   }
 
   /**
@@ -289,7 +296,9 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
       data: DataFrame,
       tableName: String,
       writeOptions: KuduWriteOptions = new KuduWriteOptions): Unit = {
+    log.info(s"updating rows in table '$tableName'")
     writeRows(data, tableName, Update, writeOptions)
+    log.info(s"updated ${numUpdates.value} rows in table '$tableName'")
   }
 
   /**
@@ -304,7 +313,9 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
       data: DataFrame,
       tableName: String,
       writeOptions: KuduWriteOptions = new KuduWriteOptions): Unit = {
+    log.info(s"deleting rows from table '$tableName'")
     writeRows(data, tableName, Delete, writeOptions)
+    log.info(s"deleted ${numDeletes.value} rows from table '$tableName'")
   }
 
   private[kudu] def writeRows(
@@ -337,7 +348,7 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
       rows: Iterator[InternalRow],
       schema: StructType,
       tableName: String,
-      operationType: OperationType,
+      opType: OperationType,
       lastPropagatedTimestamp: Long,
       writeOptions: KuduWriteOptions): RowErrorsAndOverflowStatus = {
     // Since each executor has its own KuduClient, update executor's propagated timestamp
@@ -353,10 +364,11 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
     session.setIgnoreAllDuplicateRows(writeOptions.ignoreDuplicateRowErrors)
     val typeConverter = CatalystTypeConverters.createToScalaConverter(schema)
     var numRows = 0
+    log.info(s"applying operations of type '${opType.toString}' to table '$tableName'")
     try {
       for (internalRow <- rows) {
         val row = typeConverter(internalRow).asInstanceOf[Row]
-        val operation = operationType.operation(table)
+        val operation = opType.operation(table)
         for ((sparkIdx, kuduIdx) <- indices) {
           if (row.isNullAt(sparkIdx)) {
             if (table.getSchema.getColumnByIndex(kuduIdx).isKey) {
@@ -404,7 +416,8 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
       // Update timestampAccumulator with the client's last propagated
       // timestamp on each executor.
       timestampAccumulator.add(syncClient.getLastPropagatedTimestamp)
-      addForOperation(numRows, operationType)
+      addForOperation(numRows, opType)
+      log.info(s"applied $numRows operations of type '${opType.toString()}' to table '$tableName'")
     }
     session.getPendingErrors
   }

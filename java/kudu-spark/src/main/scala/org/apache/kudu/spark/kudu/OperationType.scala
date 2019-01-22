@@ -25,16 +25,26 @@ import org.apache.kudu.client.Operation
  */
 private[kudu] sealed trait OperationType {
   def operation(table: KuduTable): Operation
+
+  def toString(): String
 }
 private[kudu] case object Insert extends OperationType {
   override def operation(table: KuduTable): Operation = table.newInsert()
+
+  override def toString(): String = "insert"
 }
 private[kudu] case object Update extends OperationType {
   override def operation(table: KuduTable): Operation = table.newUpdate()
+
+  override def toString(): String = "update"
 }
 private[kudu] case object Upsert extends OperationType {
   override def operation(table: KuduTable): Operation = table.newUpsert()
+
+  override def toString(): String = "upsert"
 }
 private[kudu] case object Delete extends OperationType {
   override def operation(table: KuduTable): Operation = table.newDelete()
+
+  override def toString(): String = "delete"
 }
