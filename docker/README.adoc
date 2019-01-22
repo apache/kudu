@@ -1,0 +1,80 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+= Kudu Docker Developer Documentation
+
+NOTE: All of this work is experimental and subject to change or removal.
+
+== Getting Started
+
+- Install docker following the instructions https://www.docker.com/get-started[here]
+
+== Building images
+
+NOTE: These sample commands assume running from the project root directory.
+
+Build all the images.
+[source,bash]
+----
+$ ./docker/docker-build.sh
+----
+
+== Running an image
+
+Run an image with a bash prompt and remove it on exit:
+[source,bash]
+----
+$ docker run -i -t --rm=true kudu-build /bin/bash
+----
+
+== Copying container files to the host
+
+It could be useful to copy files from a pre-built container to your host.
+For example, pre-built thirdparty or kudu binaries.
+
+[source,bash]
+----
+$ SOURCE=`docker create kudu-thirdparty`
+$ docker cp $SOURCE:/kudu/thirdparty /local/kudu/thirdparty
+----
+
+== Images
+
+=== kudu-base
+A base image that has all prerequisite libraries for development and runtime
+pre-installed.
+
+=== kudu-thirdparty
+An image that has Kudu's thirdparty dependencies built.
+Uses the kudu-base image as a base.
+
+=== kudu-build
+An image that has the Kudu source code pre-built.
+Uses the kudu-thirdparty image as a base.
+
+=== kudu-runtime
+A runtime image with the Kudu binaries and clients pre-installed.
+Copies the built artifacts and files from the kudu-build image.
+
+=== kudu-master
+A runtime image with kudu-master as the ENTRYPOINT.
+Uses the kudu-runtime image as a base.
+
+=== kudu-tserver
+A runtime image with kudu-tserver as the ENTRYPOINT.
+Uses the kudu-runtime image as a base.
+

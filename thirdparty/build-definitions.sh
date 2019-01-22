@@ -743,6 +743,7 @@ build_gcovr() {
 
 build_trace_viewer() {
   echo Installing trace-viewer into the www directory
+  mkdir -p $TP_DIR/../www/
   cp -a $TRACE_VIEWER_SOURCE/tracing.* $TP_DIR/../www/
 }
 
