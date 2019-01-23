@@ -1711,8 +1711,7 @@ public class AsyncKuduClient implements AutoCloseable {
    * fill a {@link Master.GetTabletLocationsResponsePB} object.
    * @return An initialized Deferred object to hold the response.
    */
-  @InterfaceAudience.LimitedPrivate("Test")
-  public Deferred<Master.GetTableLocationsResponsePB> getMasterTableLocationsPB(KuduRpc<?> parentRpc) {
+  Deferred<Master.GetTableLocationsResponsePB> getMasterTableLocationsPB(KuduRpc<?> parentRpc) {
     // TODO(todd): stop using this 'masterTable' hack.
     return ConnectToCluster.run(masterTable, masterAddresses, parentRpc,
         defaultAdminOperationTimeoutMs, Connection.CredentialsPolicy.ANY_CREDENTIALS).addCallback(

@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Executor;
 
+import com.google.common.base.Preconditions;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import org.apache.yetus.audience.InterfaceAudience;
@@ -364,6 +365,33 @@ public class KuduClient implements AutoCloseable {
    */
   public String getMasterAddressesAsString() {
     return asyncClient.getMasterAddressesAsString();
+  }
+
+  /**
+   * @return a HostAndPort describing the current leader master
+   * @throws KuduException if a leader master could not be found in time
+   */
+  @InterfaceAudience.LimitedPrivate("Test")
+  public HostAndPort findLeaderMasterServer() throws KuduException {
+    // Consult the cache to determine the current leader master.
+    //
+    // If one isn't found, issue an RPC that retries until the leader master
+    // is discovered. We don't need the RPC's results; it's just a simple way to
+    // wait until a leader master is elected.
+    TableLocationsCache.Entry entry = asyncClient.getTableLocationEntry(
+        AsyncKuduClient.MASTER_TABLE_NAME_PLACEHOLDER, null);
+    if (entry == null) {
+      // If there's no leader master, this will time out and throw an exception.
+      listTabletServers();
+
+      entry = asyncClient.getTableLocationEntry(
+          AsyncKuduClient.MASTER_TABLE_NAME_PLACEHOLDER, null);
+    }
+    Preconditions.checkNotNull(entry);
+    Preconditions.checkState(!entry.isNonCoveredRange());
+    ServerInfo info = entry.getTablet().getLeaderServerInfo();
+    Preconditions.checkNotNull(info);
+    return info.getHostAndPort();
   }
 
   // Helper method to handle joining and transforming the Exception we receive.

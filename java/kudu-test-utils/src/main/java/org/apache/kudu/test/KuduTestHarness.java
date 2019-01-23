@@ -16,9 +16,6 @@
 // under the License.
 package org.apache.kudu.test;
 
-import com.google.common.base.Stopwatch;
-import com.stumbleupon.async.Deferred;
-import org.apache.kudu.Common;
 import org.apache.kudu.client.AsyncKuduClient;
 import org.apache.kudu.client.AsyncKuduClient.AsyncKuduClientBuilder;
 import org.apache.kudu.client.DeadlineTracker;
@@ -28,7 +25,6 @@ import org.apache.kudu.client.KuduException;
 import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.client.LocatedTablet;
 import org.apache.kudu.client.RemoteTablet;
-import org.apache.kudu.master.Master;
 import org.apache.kudu.test.cluster.MiniKuduCluster;
 import org.apache.kudu.test.cluster.MiniKuduCluster.MiniKuduClusterBuilder;
 import org.apache.kudu.test.cluster.FakeDNS;
@@ -49,7 +45,6 @@ import java.lang.annotation.Target;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
-import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.fail;
 
@@ -270,20 +265,7 @@ public class KuduTestHarness extends ExternalResource {
    * @throws Exception if we are unable to find the leader master
    */
   public HostAndPort findLeaderMasterServer() throws Exception {
-    Stopwatch sw = Stopwatch.createStarted();
-    while (sw.elapsed(TimeUnit.MILLISECONDS) < DEFAULT_SLEEP) {
-      Deferred<Master.GetTableLocationsResponsePB> masterLocD =
-          asyncClient.getMasterTableLocationsPB(null);
-      Master.GetTableLocationsResponsePB r = masterLocD.join(DEFAULT_SLEEP);
-      Common.HostPortPB pb = r.getTabletLocations(0)
-          .getReplicas(0)
-          .getTsInfo()
-          .getRpcAddresses(0);
-      if (pb.getPort() != -1) {
-        return new HostAndPort(pb.getHost(), pb.getPort());
-      }
-    }
-    throw new IOException(String.format("No leader master found after %d ms", DEFAULT_SLEEP));
+    return client.findLeaderMasterServer();
   }
 
   /**

@@ -86,6 +86,14 @@ public class ServerInfo {
   }
 
   /**
+   * Returns this server's hostname and port.
+   * @return a HostAndPort that describes where this server can be reached.
+   */
+  public HostAndPort getHostAndPort() {
+    return hostPort;
+  }
+
+  /**
    * Returns this server's port.
    * @return a port number that this server is bound to
    */
