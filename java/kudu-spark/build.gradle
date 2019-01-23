@@ -20,6 +20,7 @@ apply from: "$rootDir/gradle/shadow.gradle"
 
 dependencies {
   compile project(path: ":kudu-client", configuration: "shadow")
+  compile libs.hdrhistogram
   // TODO(KUDU-2500): Spark uses reflection which requires the annotations at runtime.
   compile libs.yetusAnnotations
 

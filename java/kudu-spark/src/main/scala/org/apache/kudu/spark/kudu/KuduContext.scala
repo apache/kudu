@@ -122,6 +122,9 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
   val timestampAccumulator = new TimestampAccumulator()
   sc.register(timestampAccumulator)
 
+  val durationHistogram = new HdrHistogramAccumulator()
+  sc.register(durationHistogram, "kudu.write_duration")
+
   @Deprecated()
   def this(kuduMaster: String) {
     this(kuduMaster, new SparkContext())
@@ -342,6 +345,7 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
           s"failed to write $errorCount rows from DataFrame to Kudu; sample errors: $errors")
       }
     })
+    log.info(s"completed $operation ops: duration histogram: $durationHistogram")
   }
 
   private def writePartitionRows(
@@ -365,6 +369,7 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
     val typeConverter = CatalystTypeConverters.createToScalaConverter(schema)
     var numRows = 0
     log.info(s"applying operations of type '${opType.toString}' to table '$tableName'")
+    val startTime = System.currentTimeMillis()
     try {
       for (internalRow <- rows) {
         val row = typeConverter(internalRow).asInstanceOf[Row]
@@ -417,7 +422,9 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
       // timestamp on each executor.
       timestampAccumulator.add(syncClient.getLastPropagatedTimestamp)
       addForOperation(numRows, opType)
-      log.info(s"applied $numRows operations of type '${opType.toString()}' to table '$tableName'")
+      val elapsedTime = System.currentTimeMillis() - startTime
+      durationHistogram.add(elapsedTime)
+      log.info(s"applied $numRows ${opType}s to table '$tableName' in ${elapsedTime}ms")
     }
     session.getPendingErrors
   }
