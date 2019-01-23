@@ -1050,12 +1050,13 @@ ADD_THIRDPARTY_LIB(thrift
   STATIC_LIB "${THRIFT_STATIC_LIBRARY}"
   SHARED_LIB "${THRIFT_SHARED_LIBRARY}")
 
+#ifdef FB_DO_NOT_REMOVE
 # The mini-HMS relies on JAVA_HOME being set in order to run the HMS, and
 # JDK 1.7 or later for compiling the Kudu metastore plugin.
-find_package(JavaHome REQUIRED)
-find_package(Java 1.7 REQUIRED)
+##find_package(JavaHome REQUIRED)
+##find_package(Java 1.7 REQUIRED)
 # Defines the add_jar() CMake command.
-include(UseJava)
+##include(UseJava)
 
 ## Snappy
 find_package(Snappy REQUIRED)
@@ -1089,16 +1090,16 @@ ADD_THIRDPARTY_LIB(zlib
   SHARED_LIB "${ZLIB_SHARED_LIB}")
 
 ## Squeasel
-find_package(Squeasel REQUIRED)
-include_directories(SYSTEM ${SQUEASEL_INCLUDE_DIR})
-ADD_THIRDPARTY_LIB(squeasel
-  STATIC_LIB "${SQUEASEL_STATIC_LIB}")
+##find_package(Squeasel REQUIRED)
+##include_directories(SYSTEM ${SQUEASEL_INCLUDE_DIR})
+##ADD_THIRDPARTY_LIB(squeasel
+##  STATIC_LIB "${SQUEASEL_STATIC_LIB}")
 
 ## Mustache
-find_package(Mustache REQUIRED)
-include_directories(SYSTEM ${MUSTACHE_INCLUDE_DIR})
-ADD_THIRDPARTY_LIB(mustache
-  STATIC_LIB "${MUSTACHE_STATIC_LIB}")
+##find_package(Mustache REQUIRED)
+##include_directories(SYSTEM ${MUSTACHE_INCLUDE_DIR})
+##ADD_THIRDPARTY_LIB(mustache
+##  STATIC_LIB "${MUSTACHE_STATIC_LIB}")
 
 ## OpenSSL
 ##
@@ -1173,7 +1174,7 @@ if (EXISTS ${VMEM_SHARED_LIB})
 endif()
 
 ## curl
-find_package(CURL REQUIRED)
+##find_package(CURL REQUIRED)
 
 ## crcutil
 find_package(Crcutil REQUIRED)
@@ -1194,12 +1195,12 @@ endif()
 ## llvm
 # Note that llvm has a unique cmake setup. See kudu/codegen/CMakeLists.txt
 # for details.
-find_package(LLVM REQUIRED CONFIG)
-if(${LLVM_PACKAGE_VERSION} VERSION_LESS 3.4)
-  message(FATAL_ERROR "LLVM version (${LLVM_PACKAGE_VERSION}) must be at least 3.4")
-endif()
-message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
-message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
+##find_package(LLVM REQUIRED CONFIG)
+##if(${LLVM_PACKAGE_VERSION} VERSION_LESS 3.4)
+##  message(FATAL_ERROR "LLVM version (${LLVM_PACKAGE_VERSION}) must be at least 3.4")
+##endif()
+##message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
+##message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 
 ## librt
 if (NOT APPLE)
