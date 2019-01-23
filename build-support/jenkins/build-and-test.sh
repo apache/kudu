@@ -515,7 +515,14 @@ if [ "$BUILD_PYTHON3" == "1" ]; then
   # recursively to transitive dependencies installed via a direct dependency's
   # "python setup.py" command. Therefore we have no choice but to upgrade to a
   # new version of pip to proceed.
-  pip install -i https://pypi.python.org/simple $PIP_INSTALL_FLAGS --upgrade pip
+  #
+  # pip 19.1 doesn't support Python 3.4, which is the version of Python 3
+  # shipped with Ubuntu 14.04. However, there appears to be a bug[1] in pip 19.0
+  # preventing it from working properly with Python 3.4 as well. Therefore we
+  # must pin to a pip version from before 19.0.
+  #
+  # 1. https://github.com/pypa/pip/issues/6175
+  pip install -i https://pypi.python.org/simple $PIP_INSTALL_FLAGS --upgrade 'pip < 19.0'
 
   # New versions of pip raise an exception when upgrading old versions of
   # setuptools (such as the one found in el6). The workaround is to upgrade
