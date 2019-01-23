@@ -44,27 +44,34 @@ template <typename Element> class RepeatedPtrField;
 
 namespace kudu {
 
-class faststring;
-class HostPort;
-class Sockaddr;
-class AppStatusPB;
-class HostPortPB;
-class ServerEntryPB;
-
 #ifdef FB_DO_NOT_REMOVE
-class Slice;
 class Arena;
 class ColumnPredicate;
 class ColumnSchema;
+#endif
+class faststring;
+class HostPort;
+#ifdef FB_DO_NOT_REMOVE
 class RowBlock;
 class Schema;
+class Slice;
+#endif
+class Sockaddr;
+#ifdef FB_DO_NOT_REMOVE
 struct ColumnSchemaDelta;
+#endif
 
+class AppStatusPB;
+#ifdef FB_DO_NOT_REMOVE
 class ColumnPredicatePB;
 class ColumnSchemaDeltaPB;
 class ColumnSchemaPB;
+#endif
+class HostPortPB;
+#ifdef FB_DO_NOT_REMOVE
 class RowwiseRowBlockPB;
 class SchemaPB;
+class ServerEntryPB;
 #endif
 
 // Convert the given C++ Status object into the equivalent Protobuf.
@@ -79,6 +86,15 @@ Status HostPortToPB(const HostPort& host_port, HostPortPB* host_port_pb);
 // Returns the HostPort created from the specified protobuf.
 Status HostPortFromPB(const HostPortPB& host_port_pb, HostPort* host_port);
 
+#ifdef FB_DO_NOT_REMOVE
+// Convert the column schema delta `col_delta` to protobuf.
+void ColumnSchemaDeltaToPB(const ColumnSchemaDelta& col_delta, ColumnSchemaDeltaPB *pb);
+
+// Return the ColumnSchemaDelta created from the protobuf `pb`.
+// The protobuf must outlive the returned ColumnSchemaDelta.
+ColumnSchemaDelta ColumnSchemaDeltaFromPB(const ColumnSchemaDeltaPB& pb);
+#endif
+
   // Adds addresses in 'addrs' to 'pbs'. If an address is a wildcard
 // (e.g., "0.0.0.0"), then the local machine's hostname is used in
 // its place.
@@ -86,21 +102,6 @@ Status AddHostPortPBs(const std::vector<Sockaddr>& addrs,
                       google::protobuf::RepeatedPtrField<HostPortPB>* pbs);
 
 #ifdef FB_DO_NOT_REMOVE
-// Set 'leader_hostport' to the host/port of the leader server if one
-// can be found in 'entries'.
-//
-// Returns Status::NotFound if no leader is found.
-Status FindLeaderHostPort(const google::protobuf::RepeatedPtrField<ServerEntryPB>& entries,
-                          HostPort* leader_hostport);
-
-
-// Convert the column schema delta `col_delta` to protobuf.
-void ColumnSchemaDeltaToPB(const ColumnSchemaDelta& col_delta, ColumnSchemaDeltaPB *pb);
-
-// Return the ColumnSchemaDelta created from the protobuf `pb`.
-// The protobuf must outlive the returned ColumnSchemaDelta.
-ColumnSchemaDelta ColumnSchemaDeltaFromPB(const ColumnSchemaDeltaPB& pb);
-
 enum SchemaPBConversionFlags {
   SCHEMA_PB_WITHOUT_IDS = 1 << 0,
   SCHEMA_PB_WITHOUT_STORAGE_ATTRIBUTES = 1 << 1,
@@ -206,7 +207,14 @@ Status ExtractRowsFromRowBlockPB(const Schema& schema,
                                  const Slice& indirect_data,
                                  Slice* rows_data,
                                  std::vector<const uint8_t*>* rows);
-#endif
 
+// Set 'leader_hostport' to the host/port of the leader server if one
+// can be found in 'entries'.
+//
+// Returns Status::NotFound if no leader is found.
+Status FindLeaderHostPort(const google::protobuf::RepeatedPtrField<ServerEntryPB>& entries,
+                          HostPort* leader_hostport);
+
+#endif
 } // namespace kudu
 #endif

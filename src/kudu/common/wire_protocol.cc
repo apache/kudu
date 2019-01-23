@@ -209,27 +209,6 @@ Status AddHostPortPBs(const vector<Sockaddr>& addrs,
 }
 
 #ifdef FB_DO_NOT_REMOVE
-Status FindLeaderHostPort(const RepeatedPtrField<ServerEntryPB>& entries,
-                          HostPort* leader_hostport) {
-  for (const ServerEntryPB& entry : entries) {
-    if (entry.has_error()) {
-      LOG(WARNING) << "Error encountered for server entry " << SecureShortDebugString(entry)
-                   << ": " << StatusFromPB(entry.error()).ToString();
-      continue;
-    }
-    if (!entry.has_role()) {
-      return Status::IllegalState(
-          strings::Substitute("Every server in must have a role, but entry ($0) has no role.",
-                              SecureShortDebugString(entry)));
-    }
-    if (entry.role() == consensus::RaftPeerPB::LEADER) {
-      return HostPortFromPB(entry.registration().rpc_addresses(0), leader_hostport);
-    }
-  }
-  return Status::NotFound("No leader found.");
-}
-
-
 Status SchemaToPB(const Schema& schema, SchemaPB *pb, int flags) {
   pb->Clear();
   return SchemaToColumnPBs(schema, pb->mutable_columns(), flags);
@@ -721,6 +700,27 @@ Status ExtractRowsFromRowBlockPB(const Schema& schema,
   return Status::OK();
 }
 
+Status FindLeaderHostPort(const RepeatedPtrField<ServerEntryPB>& entries,
+                          HostPort* leader_hostport) {
+  for (const ServerEntryPB& entry : entries) {
+    if (entry.has_error()) {
+      LOG(WARNING) << "Error encountered for server entry " << SecureShortDebugString(entry)
+                   << ": " << StatusFromPB(entry.error()).ToString();
+      continue;
+    }
+    if (!entry.has_role()) {
+      return Status::IllegalState(
+          strings::Substitute("Every server in must have a role, but entry ($0) has no role.",
+                              SecureShortDebugString(entry)));
+    }
+    if (entry.role() == consensus::RaftPeerPB::LEADER) {
+      return HostPortFromPB(entry.registration().rpc_addresses(0), leader_hostport);
+    }
+  }
+  return Status::NotFound("No leader found.");
+}
+
+
 template<class RowType>
 void AppendRowToString(const RowType& row, string* buf);
 
@@ -887,5 +887,4 @@ void SerializeRowBlock(const RowBlock& block,
 }
 
 #endif
-
 } // namespace kudu
