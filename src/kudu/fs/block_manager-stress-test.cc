@@ -546,6 +546,11 @@ TYPED_TEST(BlockManagerStressTest, StressTest) {
   LOG(INFO) << "Running on fresh block manager";
   checker.Start();
   this->RunTest(FLAGS_test_duration_secs / kNumStarts);
+
+  // Quiesce the block manager before injecting inconsistencies so that the two
+  // don't interfere with one another.
+  this->bm_.reset();
+
   NO_FATALS(this->InjectNonFatalInconsistencies());
 
   for (int i = 1; i < kNumStarts; i++) {
