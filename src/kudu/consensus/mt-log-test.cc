@@ -15,6 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
+// **************   NOTICE  *******************************************
+// Facebook 2019 - Notice of Changes
+// This file has been modified to extract only the Raft implementation
+// out of Kudu into a fork known as kuduraft.
+// ********************************************************************
+
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
@@ -47,7 +53,7 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/tserver/tserver.pb.h"
+//#include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/locks.h"

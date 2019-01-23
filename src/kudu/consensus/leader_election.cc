@@ -15,6 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
+// **************   NOTICE  *******************************************
+// Facebook 2019 - Notice of Changes
+// This file has been modified to extract only the Raft implementation
+// out of Kudu into a fork known as kuduraft.
+// ********************************************************************
+
 #include "kudu/consensus/leader_election.h"
 
 #include <algorithm>
@@ -37,7 +43,7 @@
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/rpc_controller.h"
-#include "kudu/tserver/tserver.pb.h"
+//#include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
@@ -311,9 +317,11 @@ void LeaderElection::VoteResponseRpcCallback(const std::string& voter_uuid) {
 
     // Check for tablet errors.
     } else if (state->response.has_error()) {
+#ifdef FB_DO_NOT_REMOVE
       LOG_WITH_PREFIX(WARNING) << "Tablet error from VoteRequest() call to peer "
                                << state->PeerInfo() << ": "
                                << StatusFromPB(state->response.error().status()).ToString();
+#endif
       RecordVoteUnlocked(*state, VOTE_DENIED);
 
     // If the peer changed their IP address, we shouldn't count this vote since

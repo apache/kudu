@@ -15,6 +15,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
+// **************   NOTICE  *******************************************
+// Facebook 2019 - Notice of Changes
+// This file has been modified to extract only the Raft implementation
+// out of Kudu into a fork known as kuduraft.
+// ********************************************************************
 #include <cstddef>
 #include <cstdint>
 #include <ostream>
@@ -31,12 +36,14 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/timestamp.h"
+#ifdef FB_DO_NOT_REMOVE
 #include "kudu/common/wire_protocol-test-util.h"
+#include "kudu/consensus/log-test-base.h"
+#endif
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus-test-util.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus_queue.h"
-#include "kudu/consensus/log-test-base.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/log_util.h"
@@ -51,6 +58,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/metrics.h"
+METRIC_DEFINE_entity(tablet);
 #include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
@@ -74,7 +82,10 @@ static const char* kTestTablet = "test-tablet";
 class ConsensusQueueTest : public KuduTest {
  public:
   ConsensusQueueTest()
-      : schema_(GetSimpleTestSchema()),
+      : 
+#ifdef FB_DO_NOT_REMOVE
+        schema_(GetSimpleTestSchema()),
+#endif
         metric_entity_(METRIC_ENTITY_tablet.Instantiate(&metric_registry_, "queue-test")),
         registry_(new log::LogAnchorRegistry) {
   }
@@ -87,8 +98,10 @@ class ConsensusQueueTest : public KuduTest {
     CHECK_OK(log::Log::Open(log::LogOptions(),
                             fs_manager_.get(),
                             kTestTablet,
+#ifdef FB_DO_NOT_REMOVE
                             schema_,
                             0, // schema_version
+#endif
                             NULL,
                             &log_));
     clock_.reset(new clock::HybridClock());
@@ -223,7 +236,9 @@ class ConsensusQueueTest : public KuduTest {
   }
 
  protected:
+#ifdef FB_DO_NOT_REMOVE
   const Schema schema_;
+#endif
   gscoped_ptr<FsManager> fs_manager_;
   MetricRegistry metric_registry_;
   scoped_refptr<MetricEntity> metric_entity_;

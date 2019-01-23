@@ -15,6 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
+// **************   NOTICE  *******************************************
+// Facebook 2019 - Notice of Changes
+// This file has been modified to extract only the Raft implementation
+// out of Kudu into a fork known as kuduraft.
+// ********************************************************************
+
 #include "kudu/common/wire_protocol.h"
 
 #include <cstdint>
@@ -26,6 +32,7 @@
 #include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
+#ifdef FB_DO_NOT_REMOVE
 #include "kudu/common/columnblock.h"
 #include "kudu/common/column_predicate.h"
 #include "kudu/common/common.pb.h"
@@ -33,8 +40,12 @@
 #include "kudu/common/rowblock.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
+#endif
+
 #include "kudu/common/wire_protocol.pb.h"
+#ifdef FB_DO_NOT_REMOVE
 #include "kudu/consensus/metadata.pb.h"
+#endif
 #include "kudu/gutil/fixedarray.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/fastmem.h"
@@ -196,6 +207,28 @@ Status AddHostPortPBs(const vector<Sockaddr>& addrs,
   }
   return Status::OK();
 }
+
+#ifdef FB_DO_NOT_REMOVE
+Status FindLeaderHostPort(const RepeatedPtrField<ServerEntryPB>& entries,
+                          HostPort* leader_hostport) {
+  for (const ServerEntryPB& entry : entries) {
+    if (entry.has_error()) {
+      LOG(WARNING) << "Error encountered for server entry " << SecureShortDebugString(entry)
+                   << ": " << StatusFromPB(entry.error()).ToString();
+      continue;
+    }
+    if (!entry.has_role()) {
+      return Status::IllegalState(
+          strings::Substitute("Every server in must have a role, but entry ($0) has no role.",
+                              SecureShortDebugString(entry)));
+    }
+    if (entry.role() == consensus::RaftPeerPB::LEADER) {
+      return HostPortFromPB(entry.registration().rpc_addresses(0), leader_hostport);
+    }
+  }
+  return Status::NotFound("No leader found.");
+}
+
 
 Status SchemaToPB(const Schema& schema, SchemaPB *pb, int flags) {
   pb->Clear();
@@ -688,26 +721,6 @@ Status ExtractRowsFromRowBlockPB(const Schema& schema,
   return Status::OK();
 }
 
-Status FindLeaderHostPort(const RepeatedPtrField<ServerEntryPB>& entries,
-                          HostPort* leader_hostport) {
-  for (const ServerEntryPB& entry : entries) {
-    if (entry.has_error()) {
-      LOG(WARNING) << "Error encountered for server entry " << SecureShortDebugString(entry)
-                   << ": " << StatusFromPB(entry.error()).ToString();
-      continue;
-    }
-    if (!entry.has_role()) {
-      return Status::IllegalState(
-          strings::Substitute("Every server in must have a role, but entry ($0) has no role.",
-                              SecureShortDebugString(entry)));
-    }
-    if (entry.role() == consensus::RaftPeerPB::LEADER) {
-      return HostPortFromPB(entry.registration().rpc_addresses(0), leader_hostport);
-    }
-  }
-  return Status::NotFound("No leader found.");
-}
-
 template<class RowType>
 void AppendRowToString(const RowType& row, string* buf);
 
@@ -872,5 +885,7 @@ void SerializeRowBlock(const RowBlock& block,
   }
   rowblock_pb->set_num_rows(rowblock_pb->num_rows() + num_rows);
 }
+
+#endif
 
 } // namespace kudu

@@ -15,6 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
+// **************   NOTICE  *******************************************
+// Facebook 2019 - Notice of Changes
+// This file has been modified to extract only the Raft implementation
+// out of Kudu into a fork known as kuduraft.
+// ********************************************************************
+
 #include <functional>
 #include <map>
 #include <memory>
@@ -475,8 +481,8 @@ class LocalTestPeerProxy : public TestPeerProxy {
 
   template<class Response>
   void SetResponseError(const Status& status, Response* response) {
-    tserver::TabletServerErrorPB* error = response->mutable_error();
-    error->set_code(tserver::TabletServerErrorPB::UNKNOWN_ERROR);
+    ServerErrorPB* error = response->mutable_error();
+    error->set_code(ServerErrorPB::UNKNOWN_ERROR);
     StatusToPB(status, error->mutable_status());
   }
 
@@ -549,7 +555,9 @@ class LocalTestPeerProxy : public TestPeerProxy {
 
     if (s.ok()) {
       s = peer->RequestVote(&other_peer_req,
-                            TabletVotingState(boost::none, tablet::TABLET_DATA_READY),
+                            TabletVotingState(boost::none),
+                            // ANIRBAN
+                            //TabletVotingState(boost::none, tablet::TABLET_DATA_READY),
                             &other_peer_resp);
     }
     if (!s.ok()) {

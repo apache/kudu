@@ -15,6 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
+// **************   NOTICE  *******************************************
+// Facebook 2019 - Notice of Changes
+// This file has been modified to extract only the Raft implementation
+// out of Kudu into a fork known as kuduraft.
+// ********************************************************************
+
 #pragma once
 
 #include <atomic>
@@ -43,8 +49,12 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
+
+#ifdef FB_DO_NOT_REMOVE
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tserver/tserver.pb.h"
+#endif
+
 #include "kudu/util/atomic.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/make_shared.h"
@@ -85,11 +95,16 @@ struct ConsensusOptions {
 
 struct TabletVotingState {
   boost::optional<OpId> tombstone_last_logged_opid_;
-  tablet::TabletDataState data_state_;
-  TabletVotingState(boost::optional<OpId> tombstone_last_logged_opid,
-                    tablet::TabletDataState data_state)
-          : tombstone_last_logged_opid_(std::move(tombstone_last_logged_opid)),
-            data_state_(data_state) {}
+
+  // ANIRBAN
+  // tablet::TabletDataState data_state_;
+  TabletVotingState(boost::optional<OpId> tombstone_last_logged_opid)
+          : tombstone_last_logged_opid_(std::move(tombstone_last_logged_opid))
+            {}
+  //TabletVotingState(boost::optional<OpId> tombstone_last_logged_opid,
+                    //tablet::TabletDataState data_state)
+          //: tombstone_last_logged_opid_(std::move(tombstone_last_logged_opid)),
+            //data_state_(data_state) {}
 };
 
 typedef int64_t ConsensusTerm;
@@ -265,16 +280,16 @@ class RaftConsensus : public std::enable_shared_from_this<RaftConsensus>,
   // Implement a ChangeConfig() request.
   Status ChangeConfig(const ChangeConfigRequestPB& req,
                       StdStatusCallback client_cb,
-                      boost::optional<tserver::TabletServerErrorPB::Code>* error_code);
+                      boost::optional<ServerErrorPB::Code>* error_code);
 
   // Implement a BulkChangeConfig() request.
   Status BulkChangeConfig(const BulkChangeConfigRequestPB& req,
                           StdStatusCallback client_cb,
-                          boost::optional<tserver::TabletServerErrorPB::Code>* error_code);
+                          boost::optional<ServerErrorPB::Code>* error_code);
 
   // Implement an UnsafeChangeConfig() request.
   Status UnsafeChangeConfig(const UnsafeChangeConfigRequestPB& req,
-                            boost::optional<tserver::TabletServerErrorPB::Code>* error_code);
+                            boost::optional<ServerErrorPB::Code>* error_code);
 
   // Returns the last OpId (either received or committed, depending on the
   // 'type' argument) that the Consensus implementation knows about.

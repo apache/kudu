@@ -15,6 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
+// **************   NOTICE  *******************************************
+// Facebook 2019 - Notice of Changes
+// This file has been modified to extract only the Raft implementation
+// out of Kudu into a fork known as kuduraft.
+// ********************************************************************
+
 #include "kudu/consensus/consensus_peers.h"
 
 #include <algorithm>
@@ -45,7 +51,8 @@
 #include "kudu/rpc/periodic.h"
 #include "kudu/rpc/response_callback.h"
 #include "kudu/rpc/rpc_controller.h"
-#include "kudu/tserver/tserver.pb.h"
+// ANIRBAN
+//#include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
@@ -89,7 +96,7 @@ using kudu::pb_util::SecureShortDebugString;
 using kudu::rpc::Messenger;
 using kudu::rpc::PeriodicTimer;
 using kudu::rpc::RpcController;
-using kudu::tserver::TabletServerErrorPB;
+//using kudu::tserver::TabletServerErrorPB;
 using std::shared_ptr;
 using std::string;
 using std::vector;
@@ -230,6 +237,7 @@ void Peer::SendNextRequest(bool even_if_queue_empty) {
     return;
   }
 
+#ifdef FB_DO_NOT_REMOVE
   if (PREDICT_FALSE(needs_tablet_copy)) {
     Status s = PrepareTabletCopyRequest();
     if (s.ok()) {
@@ -249,6 +257,7 @@ void Peer::SendNextRequest(bool even_if_queue_empty) {
     }
     return;
   }
+#endif
 
   request_.set_tablet_id(tablet_id_);
   request_.set_caller_uuid(leader_uuid_);
@@ -316,10 +325,14 @@ void Peer::ProcessResponse() {
     return;
   }
 
+#ifdef FB_DO_NOT_REMOVE
   // Process tserver-level errors.
   if (response_.has_error()) {
     Status response_status = StatusFromPB(response_.error().status());
     PeerStatus ps;
+    ps = PeerStatus::REMOTE_ERROR;
+
+// ANIRBAN
     TabletServerErrorPB resp_error = response_.error();
     switch (response_.error().code()) {
       // We treat WRONG_SERVER_UUID as failed.
@@ -338,6 +351,7 @@ void Peer::ProcessResponse() {
     ProcessResponseError(response_status);
     return;
   }
+#endif
 
   // The queue's handling of the peer response may generate IO (reads against
   // the WAL) and SendNextRequest() may do the same thing. So we run the rest
@@ -381,6 +395,7 @@ void Peer::DoProcessResponse() {
   }
 }
 
+#ifdef FB_DO_NOT_REMOVE
 Status Peer::PrepareTabletCopyRequest() {
   if (!FLAGS_enable_tablet_copy) {
     failed_attempts_++;
@@ -421,15 +436,20 @@ void Peer::ProcessTabletCopyResponse() {
                                           controller_status.ToString());
   }
 }
+#endif
 
 void Peer::ProcessResponseError(const Status& status) {
   failed_attempts_++;
   string resp_err_info;
+
+#ifdef FB_DO_NOT_REMOVE
   if (response_.has_error()) {
     resp_err_info = Substitute(" Error code: $0 ($1).",
                                TabletServerErrorPB::Code_Name(response_.error().code()),
                                response_.error().code());
   }
+#endif
+
   LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Couldn't send request to peer " << peer_pb_.permanent_uuid()
       << " for tablet " << tablet_id_ << "."
       << resp_err_info
@@ -488,6 +508,7 @@ void RpcPeerProxy::RequestConsensusVoteAsync(const VoteRequestPB* request,
   consensus_proxy_->RequestConsensusVoteAsync(*request, response, controller, callback);
 }
 
+#ifdef FB_DO_NOT_REMOVE
 void RpcPeerProxy::StartTabletCopy(const StartTabletCopyRequestPB* request,
                                    StartTabletCopyResponsePB* response,
                                    rpc::RpcController* controller,
@@ -495,6 +516,7 @@ void RpcPeerProxy::StartTabletCopy(const StartTabletCopyRequestPB* request,
   controller->set_timeout(MonoDelta::FromMilliseconds(FLAGS_consensus_rpc_timeout_ms));
   consensus_proxy_->StartTabletCopyAsync(*request, response, controller, callback);
 }
+#endif
 
 string RpcPeerProxy::PeerName() const {
   return hostport_->ToString();

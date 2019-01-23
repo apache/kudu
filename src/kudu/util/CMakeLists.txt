@@ -15,6 +15,12 @@
 # specific language governing permissions and limitations
 # under the License.
 
+# **************   NOTICE  *******************************************
+# Facebook 2019 - Notice of Changes
+# This file has been modified to extract only the Raft implementation
+# out of Kudu into a fork known as kuduraft.
+# ********************************************************************
+
 #######################################
 # util_compression_proto
 #######################################
@@ -500,6 +506,6 @@ endif()
 ADD_KUDU_TEST(compression/compression-test)
 if(NOT NO_TESTS)
   target_link_libraries(compression-test
-    cfile
+#    cfile
     kudu_util_compression)
 endif()

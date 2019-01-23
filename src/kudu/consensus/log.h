@@ -15,6 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
+// **************   NOTICE  *******************************************
+// Facebook 2019 - Notice of Changes
+// This file has been modified to extract only the Raft implementation
+// out of Kudu into a fork known as kuduraft.
+// ********************************************************************
+
 #ifndef KUDU_CONSENSUS_LOG_H_
 #define KUDU_CONSENSUS_LOG_H_
 
@@ -95,8 +101,10 @@ class Log : public RefCountedThreadSafe<Log> {
   static Status Open(const LogOptions &options,
                      FsManager *fs_manager,
                      const std::string& tablet_id,
+#ifdef FB_DO_NOT_REMOVE
                      const Schema& schema,
                      uint32_t schema_version,
+#endif
                      const scoped_refptr<MetricEntity>& metric_entity,
                      scoped_refptr<Log> *log);
 
@@ -236,10 +244,13 @@ class Log : public RefCountedThreadSafe<Log> {
     log_hooks_ = hooks;
   }
 
+#ifdef FB_DO_NOT_REMOVE
   // Set the schema for the _next_ log segment.
   //
   // This method is thread-safe.
   void SetSchemaForNextLogSegment(const Schema& schema, uint32_t version);
+#endif
+
  private:
   friend class LogTest;
   friend class LogTestBase;
@@ -264,7 +275,10 @@ class Log : public RefCountedThreadSafe<Log> {
   };
 
   Log(LogOptions options, FsManager* fs_manager, std::string log_path,
-      std::string tablet_id, const Schema& schema, uint32_t schema_version,
+      std::string tablet_id, 
+#ifdef FB_DO_NOT_REMOVE
+      const Schema& schema, uint32_t schema_version,
+#endif
       scoped_refptr<MetricEntity> metric_entity);
 
   // Initializes a new one or continues an existing log.
@@ -344,10 +358,12 @@ class Log : public RefCountedThreadSafe<Log> {
   // Lock to protect modifications to schema_ and schema_version_.
   mutable rw_spinlock schema_lock_;
 
+#ifdef FB_DO_NOT_REMOVE
   // The current schema of the tablet this log is dedicated to.
   Schema schema_;
   // The schema version
   uint32_t schema_version_;
+#endif
 
   // The currently active segment being written.
   gscoped_ptr<WritableLogSegment> active_segment_;

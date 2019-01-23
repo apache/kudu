@@ -14,6 +14,13 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
+// **************   NOTICE  *******************************************
+// Facebook 2019 - Notice of Changes
+// This file has been modified to extract only the Raft implementation
+// out of Kudu into a fork known as kuduraft.
+// ********************************************************************
+
 #include "kudu/consensus/consensus_queue.h"
 
 #include <algorithm>
@@ -761,6 +768,8 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
   return Status::OK();
 }
 
+#ifdef FB_DO_NOT_REMOVE
+
 Status PeerMessageQueue::GetTabletCopyRequestForPeer(const string& uuid,
                                                      StartTabletCopyRequestPB* req) {
   TrackedPeer* peer = nullptr;
@@ -786,6 +795,7 @@ Status PeerMessageQueue::GetTabletCopyRequestForPeer(const string& uuid,
   req->set_caller_term(current_term);
   return Status::OK();
 }
+#endif
 
 void PeerMessageQueue::AdvanceQueueWatermark(const char* type,
                                              int64_t* watermark,
@@ -1029,7 +1039,9 @@ bool PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
                                         const ConsensusResponsePB& response) {
   DCHECK(response.IsInitialized()) << "Error: Uninitialized: "
       << response.InitializationErrorString() << ". Response: " << SecureShortDebugString(response);
+#ifdef FB_DO_NOT_REMOVE
   CHECK(!response.has_error());
+#endif
 
   bool send_more_immediately = false;
   boost::optional<int64_t> updated_commit_index;
@@ -1053,7 +1065,10 @@ bool PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
     DCHECK(response.has_responder_uuid() && !response.responder_uuid().empty())
         << "Got response from peer with empty UUID";
 
+#ifdef FB_DO_NOT_REMOVE
     DCHECK(!response.has_error()); // Application-level errors should be handled elsewhere.
+#endif
+
     DCHECK(response.has_status()); // Responses should always have a status.
     // The status must always have a last received op id and a last committed index.
     const ConsensusStatusPB& status = response.status();

@@ -15,6 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
+// **************   NOTICE  *******************************************
+// Facebook 2019 - Notice of Changes
+// This file has been modified to extract only the Raft implementation
+// out of Kudu into a fork known as kuduraft.
+// ********************************************************************
+
 #ifndef KUDU_CONSENSUS_CONSENSUS_PEERS_H_
 #define KUDU_CONSENSUS_CONSENSUS_PEERS_H_
 
@@ -129,6 +135,7 @@ class Peer : public std::enable_shared_from_this<Peer> {
   // Run on 'raft_pool_token'. Does response handling that requires IO or may block.
   void DoProcessResponse();
 
+#ifndef FB_DO_NOT_REMOVE
   // Fetch the desired tablet copy request from the queue and set up
   // tc_request_ appropriately.
   //
@@ -138,6 +145,7 @@ class Peer : public std::enable_shared_from_this<Peer> {
 
   // Handle RPC callback from initiating tablet copy.
   void ProcessTabletCopyResponse();
+#endif
 
   // Signals there was an error sending the request to the peer.
   void ProcessResponseError(const Status& status);
@@ -160,9 +168,11 @@ class Peer : public std::enable_shared_from_this<Peer> {
   ConsensusRequestPB request_;
   ConsensusResponsePB response_;
 
+#ifdef FB_DO_NOT_REMOVE
   // The latest tablet copy request and response.
   StartTabletCopyRequestPB tc_request_;
   StartTabletCopyResponsePB tc_response_;
+#endif
 
   // Reference-counted pointers to any ReplicateMsgs which are in-flight to the peer. We
   // may have loaded these messages from the LogCache, in which case we are potentially
@@ -208,6 +218,7 @@ class PeerProxy {
                                          rpc::RpcController* controller,
                                          const rpc::ResponseCallback& callback) = 0;
 
+#ifdef FB_DO_NOT_REMOVE
   // Instructs a peer to begin a tablet copy session.
   virtual void StartTabletCopy(const StartTabletCopyRequestPB* request,
                                     StartTabletCopyResponsePB* response,
@@ -215,6 +226,7 @@ class PeerProxy {
                                     const rpc::ResponseCallback& callback) {
     LOG(DFATAL) << "Not implemented";
   }
+#endif
 
   // Remote endpoint or description of the peer.
   virtual std::string PeerName() const = 0;
@@ -249,10 +261,12 @@ class RpcPeerProxy : public PeerProxy {
                                  rpc::RpcController* controller,
                                  const rpc::ResponseCallback& callback) override;
 
+#ifdef FB_DO_NOT_REMOVE
   void StartTabletCopy(const StartTabletCopyRequestPB* request,
                        StartTabletCopyResponsePB* response,
                        rpc::RpcController* controller,
                        const rpc::ResponseCallback& callback) override;
+#endif
 
   std::string PeerName() const override;
 

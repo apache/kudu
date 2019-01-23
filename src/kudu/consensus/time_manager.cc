@@ -15,6 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
+// **************   NOTICE  *******************************************
+// Facebook 2019 - Notice of Changes
+// This file has been modified to extract only the Raft implementation
+// out of Kudu into a fork known as kuduraft.
+// ********************************************************************
+
 #include <algorithm>
 #include <cstdint>
 #include <mutex>
@@ -29,7 +35,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/tserver/tserver.pb.h"
+//#include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/flag_tags.h"
 
@@ -66,9 +72,11 @@ ExternalConsistencyMode TimeManager::GetMessageConsistencyMode(const ReplicateMs
   // transactions. See KUDU-798.
   // TODO(dralves) Move external consistency mode to ReplicateMsg. This will be useful
   // for consistent alter table ops.
+#ifdef FB_DO_NOT_REMOVE
   if (PREDICT_TRUE(message.has_write_request())) {
     return message.write_request().external_consistency_mode();
   }
+#endif
   return CLIENT_PROPAGATED;
 }
 

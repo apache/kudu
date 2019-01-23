@@ -15,6 +15,12 @@
 # specific language governing permissions and limitations
 # under the License.
 
+# **************   NOTICE  *******************************************
+# Facebook 2019 - Notice of Changes
+# This file has been modified to extract only the Raft implementation
+# out of Kudu into a fork known as kuduraft.
+# ********************************************************************
+
 # Require cmake that can build LLVM [1].
 #
 # Note: cmake in thirdparty/ will always meet this minimum.
@@ -1456,28 +1462,29 @@ endif (UNIX)
 # Subdirectories
 ############################################################
 
-add_subdirectory(src/kudu/benchmarks)
-add_subdirectory(src/kudu/cfile)
-add_subdirectory(src/kudu/client)
+#FB_DO_NOT_REMOVE
+#add_subdirectory(src/kudu/benchmarks)
+#add_subdirectory(src/kudu/cfile)
+#add_subdirectory(src/kudu/client)
 add_subdirectory(src/kudu/clock)
-add_subdirectory(src/kudu/codegen)
+#add_subdirectory(src/kudu/codegen)
 add_subdirectory(src/kudu/common)
 add_subdirectory(src/kudu/consensus)
-add_subdirectory(src/kudu/experiments)
+#add_subdirectory(src/kudu/experiments)
 add_subdirectory(src/kudu/fs)
 # Google util libraries borrowed from supersonic, tcmalloc, Chromium, etc.
 add_subdirectory(src/kudu/gutil)
-add_subdirectory(src/kudu/hms)
-add_subdirectory(src/kudu/integration-tests)
-add_subdirectory(src/kudu/kserver)
-add_subdirectory(src/kudu/master)
-add_subdirectory(src/kudu/mini-cluster)
+#add_subdirectory(src/kudu/hms)
+#add_subdirectory(src/kudu/integration-tests)
+#add_subdirectory(src/kudu/kserver)
+#add_subdirectory(src/kudu/master)
+#add_subdirectory(src/kudu/mini-cluster)
 add_subdirectory(src/kudu/rpc)
 add_subdirectory(src/kudu/security)
-add_subdirectory(src/kudu/sentry)
-add_subdirectory(src/kudu/server)
-add_subdirectory(src/kudu/tablet)
-add_subdirectory(src/kudu/thrift)
-add_subdirectory(src/kudu/tools)
-add_subdirectory(src/kudu/tserver)
+#add_subdirectory(src/kudu/sentry)
+#add_subdirectory(src/kudu/server)
+#add_subdirectory(src/kudu/tablet)
+#add_subdirectory(src/kudu/thrift)
+#add_subdirectory(src/kudu/tools)
+#add_subdirectory(src/kudu/tserver)
 add_subdirectory(src/kudu/util)

@@ -16,6 +16,13 @@
 // under the License.
 //
 // Helpers for dealing with the protobufs defined in wire_protocol.proto.
+
+// **************   NOTICE  *******************************************
+// Facebook 2019 - Notice of Changes
+// This file has been modified to extract only the Raft implementation
+// out of Kudu into a fork known as kuduraft.
+// ********************************************************************
+
 #ifndef KUDU_COMMON_WIRE_PROTOCOL_H
 #define KUDU_COMMON_WIRE_PROTOCOL_H
 
@@ -37,25 +44,28 @@ template <typename Element> class RepeatedPtrField;
 
 namespace kudu {
 
+class faststring;
+class HostPort;
+class Sockaddr;
+class AppStatusPB;
+class HostPortPB;
+class ServerEntryPB;
+
+#ifdef FB_DO_NOT_REMOVE
+class Slice;
 class Arena;
 class ColumnPredicate;
 class ColumnSchema;
-class faststring;
-class HostPort;
 class RowBlock;
 class Schema;
-class Slice;
-class Sockaddr;
 struct ColumnSchemaDelta;
 
-class AppStatusPB;
 class ColumnPredicatePB;
 class ColumnSchemaDeltaPB;
 class ColumnSchemaPB;
-class HostPortPB;
 class RowwiseRowBlockPB;
 class SchemaPB;
-class ServerEntryPB;
+#endif
 
 // Convert the given C++ Status object into the equivalent Protobuf.
 void StatusToPB(const Status& status, AppStatusPB* pb);
@@ -69,18 +79,27 @@ Status HostPortToPB(const HostPort& host_port, HostPortPB* host_port_pb);
 // Returns the HostPort created from the specified protobuf.
 Status HostPortFromPB(const HostPortPB& host_port_pb, HostPort* host_port);
 
+  // Adds addresses in 'addrs' to 'pbs'. If an address is a wildcard
+// (e.g., "0.0.0.0"), then the local machine's hostname is used in
+// its place.
+Status AddHostPortPBs(const std::vector<Sockaddr>& addrs,
+                      google::protobuf::RepeatedPtrField<HostPortPB>* pbs);
+
+#ifdef FB_DO_NOT_REMOVE
+// Set 'leader_hostport' to the host/port of the leader server if one
+// can be found in 'entries'.
+//
+// Returns Status::NotFound if no leader is found.
+Status FindLeaderHostPort(const google::protobuf::RepeatedPtrField<ServerEntryPB>& entries,
+                          HostPort* leader_hostport);
+
+
 // Convert the column schema delta `col_delta` to protobuf.
 void ColumnSchemaDeltaToPB(const ColumnSchemaDelta& col_delta, ColumnSchemaDeltaPB *pb);
 
 // Return the ColumnSchemaDelta created from the protobuf `pb`.
 // The protobuf must outlive the returned ColumnSchemaDelta.
 ColumnSchemaDelta ColumnSchemaDeltaFromPB(const ColumnSchemaDeltaPB& pb);
-
-  // Adds addresses in 'addrs' to 'pbs'. If an address is a wildcard
-// (e.g., "0.0.0.0"), then the local machine's hostname is used in
-// its place.
-Status AddHostPortPBs(const std::vector<Sockaddr>& addrs,
-                      google::protobuf::RepeatedPtrField<HostPortPB>* pbs);
 
 enum SchemaPBConversionFlags {
   SCHEMA_PB_WITHOUT_IDS = 1 << 0,
@@ -187,13 +206,7 @@ Status ExtractRowsFromRowBlockPB(const Schema& schema,
                                  const Slice& indirect_data,
                                  Slice* rows_data,
                                  std::vector<const uint8_t*>* rows);
-
-// Set 'leader_hostport' to the host/port of the leader server if one
-// can be found in 'entries'.
-//
-// Returns Status::NotFound if no leader is found.
-Status FindLeaderHostPort(const google::protobuf::RepeatedPtrField<ServerEntryPB>& entries,
-                          HostPort* leader_hostport);
+#endif
 
 } // namespace kudu
 #endif

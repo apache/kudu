@@ -20,13 +20,20 @@
 // which are exclusively used on the wire. If a protobuf is persisted on
 // disk and not used as part of the wire protocol, it belongs in another
 // place such as common/common.proto or within cfile/, server/, etc.
+
+// **************   NOTICE  *******************************************
+// Facebook 2019 - Notice of Changes
+// This file has been modified to extract only the Raft implementation
+// out of Kudu into a fork known as kuduraft.
+// ********************************************************************
+
 syntax = "proto2";
 package kudu;
 
 option java_package = "org.apache.kudu";
 
 import "kudu/common/common.proto";
-import "kudu/consensus/metadata.proto";
+//import "kudu/consensus/metadata.proto";
 import "kudu/util/pb_util.proto";
 
 // Error status returned by any RPC method.
@@ -95,6 +102,7 @@ message ServerRegistrationPB {
   optional bool https_enabled = 4;
 }
 
+/*
 message ServerEntryPB {
   // If there is an error communicating with the server (or retrieving
   // the server registration on the server itself), this field will be
@@ -111,6 +119,7 @@ message ServerEntryPB {
   // may be not be set.
   optional consensus.RaftPeerPB.Role role = 4;
 }
+
 
 // A row block in which each row is stored contiguously.
 message RowwiseRowBlockPB {
@@ -200,3 +209,5 @@ message RowOperationsPB {
   optional bytes rows = 2 [(kudu.REDACT) = true];
   optional bytes indirect_data = 3 [(kudu.REDACT) = true];
 }
+
+*/

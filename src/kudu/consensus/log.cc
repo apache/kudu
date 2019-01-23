@@ -15,6 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
+// **************   NOTICE  *******************************************
+// Facebook 2019 - Notice of Changes
+// This file has been modified to extract only the Raft implementation
+// out of Kudu into a fork known as kuduraft.
+// ********************************************************************
+
 #include "kudu/consensus/log.h"
 
 #include <cerrno>
@@ -437,8 +443,10 @@ const uint64_t Log::kInitialLogSegmentSequenceNumber = 0L;
 Status Log::Open(const LogOptions &options,
                  FsManager *fs_manager,
                  const std::string& tablet_id,
+#ifdef FB_DO_NOT_REMOVE
                  const Schema& schema,
                  uint32_t schema_version,
+#endif
                  const scoped_refptr<MetricEntity>& metric_entity,
                  scoped_refptr<Log>* log) {
 
@@ -450,8 +458,10 @@ Status Log::Open(const LogOptions &options,
                                      fs_manager,
                                      tablet_wal_path,
                                      tablet_id,
+#ifdef FB_DO_NOT_REMOVE
                                      schema,
                                      schema_version,
+#endif
                                      metric_entity));
   RETURN_NOT_OK(new_log->Init());
   log->swap(new_log);
@@ -459,14 +469,19 @@ Status Log::Open(const LogOptions &options,
 }
 
 Log::Log(LogOptions options, FsManager* fs_manager, string log_path,
-         string tablet_id, const Schema& schema, uint32_t schema_version,
+         string tablet_id,
+#ifdef FB_DO_NOT_REMOVE
+         const Schema& schema, uint32_t schema_version,
+#endif
          scoped_refptr<MetricEntity> metric_entity)
     : options_(options),
       fs_manager_(fs_manager),
       log_dir_(std::move(log_path)),
       tablet_id_(std::move(tablet_id)),
+#ifdef FB_DO_NOT_REMOVE
       schema_(schema),
       schema_version_(schema_version),
+#endif
       active_segment_sequence_number_(0),
       log_state_(kLogInitialized),
       max_segment_size_(options_.segment_size_mb * 1024 * 1024),
@@ -929,12 +944,15 @@ int64_t Log::OnDiskSize() {
   return ret;
 }
 
+#ifdef FB_DO_NOT_REMOVE
+
 void Log::SetSchemaForNextLogSegment(const Schema& schema,
                                      uint32_t version) {
   std::lock_guard<rw_spinlock> l(schema_lock_);
   schema_ = schema;
   schema_version_ = version;
 }
+#endif
 
 Status Log::Close() {
   allocation_pool_->Shutdown();
@@ -1083,12 +1101,14 @@ Status Log::SwitchToAllocatedSegment() {
   footer_builder_.set_num_entries(0);
 
 
+#ifdef FB_DO_NOT_REMOVE
   // Set the new segment's schema.
   {
     shared_lock<rw_spinlock> l(schema_lock_);
     RETURN_NOT_OK(SchemaToPB(schema_, header.mutable_schema()));
     header.set_schema_version(schema_version_);
   }
+#endif
 
   RETURN_NOT_OK(new_segment->WriteHeaderAndOpen(header));
 

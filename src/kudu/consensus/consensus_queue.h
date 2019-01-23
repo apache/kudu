@@ -15,6 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
+// **************   NOTICE  *******************************************
+// Facebook 2019 - Notice of Changes
+// This file has been modified to extract only the Raft implementation
+// out of Kudu into a fork known as kuduraft.
+// ********************************************************************
+
 #ifndef KUDU_CONSENSUS_CONSENSUS_QUEUE_H_
 #define KUDU_CONSENSUS_CONSENSUS_QUEUE_H_
 
@@ -60,7 +66,9 @@ class ConsensusResponsePB;
 class ConsensusStatusPB;
 class PeerMessageQueueObserver;
 class TimeManager;
+#ifdef FB_DO_NOT_REMOVE
 class StartTabletCopyRequestPB;
+#endif
 
 // The id for the server-wide consensus queue MemTracker.
 extern const char kConsensusQueueParentTrackerId[];
@@ -273,11 +281,13 @@ class PeerMessageQueue {
                         std::vector<ReplicateRefPtr>* msg_refs,
                         bool* needs_tablet_copy);
 
+#ifdef FB_DO_NOT_REMOVE
   // Fill in a StartTabletCopyRequest for the specified peer.
   // If that peer should not initiate Tablet Copy, returns a non-OK status.
   // On success, also internally resets peer->needs_tablet_copy to false.
   Status GetTabletCopyRequestForPeer(const std::string& uuid,
                                      StartTabletCopyRequestPB* req);
+#endif
 
   // Inform the queue of a new status known for one of its peers.
   // 'ps' indicates an interpretation of the status, while 'status'

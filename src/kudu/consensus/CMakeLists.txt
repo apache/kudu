@@ -15,6 +15,12 @@
 # specific language governing permissions and limitations
 # under the License.
 
+# **************   NOTICE  *******************************************
+# Facebook 2019 - Notice of Changes
+# This file has been modified to extract only the Raft implementation
+# out of Kudu into a fork known as kuduraft.
+# ********************************************************************
+
 #########################################
 # consensus_metadata_proto
 #########################################
@@ -29,12 +35,15 @@ PROTOBUF_GENERATE_CPP(
     replica_management.proto)
 set(METADATA_PROTO_LIBS
   kudu_common_proto
-  fs_proto
   protobuf)
 ADD_EXPORTABLE_LIBRARY(consensus_metadata_proto
   SRCS ${METADATA_PROTO_SRCS}
   DEPS ${METADATA_PROTO_LIBS}
   NONLINK_DEPS ${METADATA_PROTO_TGTS})
+
+# ANIRBAN
+# this was found to be not used in METADATA_PROTO_LIBS
+# fs_proto
 
 #########################################
 # consensus_proto
@@ -47,16 +56,17 @@ KRPC_GENERATE(
   PROTO_FILES consensus.proto)
 list(APPEND CONSENSUS_KRPC_SRCS opid_util.cc)
 set(CONSENSUS_KRPC_LIBS
-  cfile_proto
   consensus_metadata_proto
   krpc
   kudu_common_proto
   rpc_header_proto
   protobuf
-  tablet_proto
-  tserver_admin_proto
   wire_protocol_proto)
 
+#ANIRBAN
+# cfile_proto
+# tablet_proto
+# tserver_admin_proto
 ADD_EXPORTABLE_LIBRARY(consensus_proto
   SRCS ${CONSENSUS_KRPC_SRCS}
   DEPS ${CONSENSUS_KRPC_LIBS}
@@ -118,32 +128,40 @@ target_link_libraries(consensus
   protobuf)
 
 SET_KUDU_TEST_LINK_LIBS(
-  log
-  consensus
-  tserver_proto
-  cfile
-  tablet
-  kudu_util)
+log
+consensus
+kudu_util
+)
+# cfile
 
-ADD_KUDU_TEST(consensus_meta-test)
-ADD_KUDU_TEST(consensus_meta_manager-stress-test RUN_SERIAL true)
-ADD_KUDU_TEST(consensus_meta_manager-test)
-ADD_KUDU_TEST(consensus_peers-test)
-ADD_KUDU_TEST(consensus_queue-test)
-ADD_KUDU_TEST(leader_election-test)
-ADD_KUDU_TEST(log-test)
-ADD_KUDU_TEST(log_anchor_registry-test)
-ADD_KUDU_TEST(log_cache-test PROCESSORS 2)
-ADD_KUDU_TEST(log_index-test)
-ADD_KUDU_TEST(mt-log-test PROCESSORS 5)
-ADD_KUDU_TEST(quorum_util-test)
-ADD_KUDU_TEST(raft_consensus_quorum-test)
+#SET_KUDU_TEST_LINK_LIBS(
+#log
+#consensus
+#tserver_proto
+#cfile
+#tablet
+#kudu_util)
+
+#ADD_KUDU_TEST(log-test)
 ADD_KUDU_TEST(time_manager-test)
+ADD_KUDU_TEST(leader_election-test)
+ADD_KUDU_TEST(log_index-test)
+ADD_KUDU_TEST(quorum_util-test)
+ADD_KUDU_TEST(consensus_meta-test)
+ADD_KUDU_TEST(log_anchor_registry-test)
+ADD_KUDU_TEST(consensus_meta_manager-test)
+ADD_KUDU_TEST(consensus_meta_manager-stress-test RUN_SERIAL true)
+ADD_KUDU_TEST(raft_consensus_quorum-test)
+#ADD_KUDU_TEST(consensus_queue-test)
+
+ADD_KUDU_TEST(consensus_peers-test)
+#ADD_KUDU_TEST(log_cache-test PROCESSORS 2)
+#ADD_KUDU_TEST(mt-log-test PROCESSORS 5)
 
 # Our current version of gmock overrides virtual functions without adding
 # the 'override' keyword which, since our move to c++11, make the compiler
 # issue warnings. This suppresses those warnings.
 # TODO This problem has been resolved in recent versions of gtest/gmock (now
 # googletest). Remove this when we upgrade.
-set_source_files_properties(raft_consensus-test.cc
-    PROPERTIES COMPILE_FLAGS -Wno-inconsistent-missing-override)
+#set_source_files_properties(raft_consensus-test.cc
+#    PROPERTIES COMPILE_FLAGS -Wno-inconsistent-missing-override)

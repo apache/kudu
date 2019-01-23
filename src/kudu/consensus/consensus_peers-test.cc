@@ -15,6 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
+// **************   NOTICE  *******************************************
+// Facebook 2019 - Notice of Changes
+// This file has been modified to extract only the Raft implementation
+// out of Kudu into a fork known as kuduraft.
+// ********************************************************************
+
 #include <cstddef>
 #include <memory>
 #include <string>
@@ -26,9 +32,9 @@
 
 #include "kudu/clock/clock.h"
 #include "kudu/clock/hybrid_clock.h"
-#include "kudu/common/schema.h"
+//#include "kudu/common/schema.h"
 #include "kudu/common/timestamp.h"
-#include "kudu/common/wire_protocol-test-util.h"
+//#include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus-test-util.h"
 #include "kudu/consensus/consensus.pb.h"
@@ -45,8 +51,9 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/messenger.h"
-#include "kudu/tserver/tserver.pb.h"
+//#include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/metrics.h"
+METRIC_DEFINE_entity(tablet);
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -73,8 +80,11 @@ const char* kFollowerUuid = "peer-1";
 class ConsensusPeersTest : public KuduTest {
  public:
   ConsensusPeersTest()
-    : metric_entity_(METRIC_ENTITY_tablet.Instantiate(&metric_registry_, "peer-test")),
-      schema_(GetSimpleTestSchema()) {
+    : metric_entity_(METRIC_ENTITY_tablet.Instantiate(&metric_registry_, "peer-test"))
+#ifdef FB_DO_NOT_REMOVE
+      , schema_(GetSimpleTestSchema()) 
+#endif
+     {
     CHECK_OK(ThreadPoolBuilder("test-raft-pool").Build(&raft_pool_));
     raft_pool_token_ = raft_pool_->NewToken(ThreadPool::ExecutionMode::CONCURRENT);
   }
@@ -87,8 +97,10 @@ class ConsensusPeersTest : public KuduTest {
     ASSERT_OK(Log::Open(options_,
                        fs_manager_.get(),
                        kTabletId,
+#ifdef FB_DO_NOT_REMOVE
                        schema_,
                        0, // schema_version
+#endif
                        NULL,
                        &log_));
     clock_.reset(new clock::HybridClock());
@@ -163,7 +175,9 @@ class ConsensusPeersTest : public KuduTest {
   scoped_refptr<Log> log_;
   gscoped_ptr<ThreadPool> raft_pool_;
   gscoped_ptr<PeerMessageQueue> message_queue_;
+#ifdef FB_DO_NOT_REMOVE
   const Schema schema_;
+#endif
   LogOptions options_;
   unique_ptr<ThreadPoolToken> raft_pool_token_;
   scoped_refptr<clock::Clock> clock_;
@@ -337,7 +351,7 @@ TEST_F(ConsensusPeersTest, TestDontSendOneRpcPerWriteWhenPeerIsDown) {
 
   // Set up the peer to respond with an error.
   ConsensusResponsePB error_resp;
-  error_resp.mutable_error()->set_code(tserver::TabletServerErrorPB::UNKNOWN_ERROR);
+  error_resp.mutable_error()->set_code(ServerErrorPB::UNKNOWN_ERROR);
   StatusToPB(Status::NotFound("fake error"), error_resp.mutable_error()->mutable_status());
   mock_proxy->set_update_response(error_resp);
 

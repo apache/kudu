@@ -14,12 +14,19 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
+// **************   NOTICE  *******************************************
+// Facebook 2019 - Notice of Changes
+// This file has been modified to extract only the Raft implementation
+// out of Kudu into a fork known as kuduraft.
+// ********************************************************************
+
 syntax = "proto2";
 package kudu.log;
 
 option java_package = "org.apache.kudu.log";
 
-import "kudu/common/common.proto";
+//import "kudu/common/common.proto";
 import "kudu/consensus/consensus.proto";
 import "kudu/consensus/metadata.proto";
 import "kudu/util/compression/compression.proto";
@@ -80,8 +87,8 @@ message LogSegmentHeaderPB {
   required uint64 sequence_number = 6;
 
   // Schema used when appending entries to this log, and its version.
-  required SchemaPB schema = 7;
-  optional uint32 schema_version = 8;
+  // required SchemaPB schema = 7;
+  // optional uint32 schema_version = 8;
 
   // Compression codec used for log entries.
   optional CompressionType compression_codec = 9 [ default = NO_COMPRESSION ];

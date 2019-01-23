@@ -15,6 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
+// **************   NOTICE  *******************************************
+// Facebook 2019 - Notice of Changes
+// This file has been modified to extract only the Raft implementation
+// out of Kudu into a fork known as kuduraft.
+// ********************************************************************
+
 #include "kudu/consensus/leader_election.h"
 
 #include <functional>
@@ -41,7 +47,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/tserver/tserver.pb.h"
+//#include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
@@ -270,7 +276,9 @@ scoped_refptr<LeaderElection> LeaderElectionTest::SetUpElectionWithGrantDenyErro
           response.mutable_consensus_error()->mutable_status());
       --num_deny;
     } else if (num_error > 0) {
+#ifdef FB_DO_NOT_REMOVE
       response.mutable_error()->set_code(tserver::TabletServerErrorPB::TABLET_NOT_FOUND);
+#endif
       StatusToPB(Status::NotFound("Unknown Tablet"),
           response.mutable_error()->mutable_status());
       --num_error;

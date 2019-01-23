@@ -14,6 +14,13 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
+// **************   NOTICE  *******************************************
+// Facebook 2019 - Notice of Changes
+// This file has been modified to extract only the Raft implementation
+// out of Kudu into a fork known as kuduraft.
+// ********************************************************************
+
 #ifndef KUDU_CONSENSUS_LOG_TEST_BASE_H
 #define KUDU_CONSENSUS_LOG_TEST_BASE_H
 
@@ -30,7 +37,7 @@
 #include "kudu/clock/clock.h"
 #include "kudu/clock/hybrid_clock.h"
 #include "kudu/common/timestamp.h"
-#include "kudu/common/wire_protocol-test-util.h"
+//#include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/log_reader.h"
 #include "kudu/consensus/log_util.h"
@@ -42,7 +49,7 @@
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
-#include "kudu/tserver/tserver.pb.h"
+//#include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/metrics.h"

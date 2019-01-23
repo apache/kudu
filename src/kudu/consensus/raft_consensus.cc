@@ -15,6 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
+// **************   NOTICE  *******************************************
+// Facebook 2019 - Notice of Changes
+// This file has been modified to extract only the Raft implementation
+// out of Kudu into a fork known as kuduraft.
+// ********************************************************************
+
 #include "kudu/consensus/raft_consensus.h"
 
 #include <algorithm>
@@ -168,7 +174,7 @@ using boost::optional;
 using google::protobuf::util::MessageDifferencer;
 using kudu::pb_util::SecureShortDebugString;
 using kudu::rpc::PeriodicTimer;
-using kudu::tserver::TabletServerErrorPB;
+//using kudu::ServerErrorPB;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
@@ -545,7 +551,7 @@ Status RaftConsensus::StepDown(LeaderStepDownResponsePB* resp) {
   RETURN_NOT_OK(CheckRunningUnlocked());
   if (cmeta_->active_role() != RaftPeerPB::LEADER) {
     LOG_WITH_PREFIX_UNLOCKED(INFO) << "Rejecting request to step down while not leader";
-    resp->mutable_error()->set_code(TabletServerErrorPB::NOT_THE_LEADER);
+    resp->mutable_error()->set_code(ServerErrorPB::NOT_THE_LEADER);
     StatusToPB(Status::IllegalState("Not currently leader"),
                resp->mutable_error()->mutable_status());
     // We return OK so that the tablet service won't overwrite the error code.
@@ -839,7 +845,7 @@ void RaftConsensus::TryRemoveFollowerTask(const string& uuid,
   req.set_cas_config_opid_index(committed_config.opid_index());
   LOG(INFO) << LogPrefixThreadSafe() << "Attempting to remove follower "
             << uuid << " from the Raft config. Reason: " << reason;
-  boost::optional<TabletServerErrorPB::Code> error_code;
+  boost::optional<ServerErrorPB::Code> error_code;
   WARN_NOT_OK(ChangeConfig(req, &DoNothingStatusCB, &error_code),
               LogPrefixThreadSafe() + "Unable to remove follower " + uuid);
 }
@@ -891,7 +897,7 @@ void RaftConsensus::TryPromoteNonVoterTask(const std::string& peer_uuid) {
   req.set_cas_config_opid_index(current_committed_config_index);
   LOG(INFO) << LogPrefixThreadSafe() << "attempting to promote NON_VOTER "
             << peer_uuid << " to VOTER";
-  boost::optional<TabletServerErrorPB::Code> error_code;
+  boost::optional<ServerErrorPB::Code> error_code;
   WARN_NOT_OK(ChangeConfig(req, &DoNothingStatusCB, &error_code),
               LogPrefixThreadSafe() + Substitute("Unable to promote non-voter $0", peer_uuid));
 }
@@ -1596,6 +1602,7 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request,
         return Status::IllegalState("must be running to vote when tombstoned voting is disabled");
       }
       local_last_logged_opid = *(tablet_voting_state.tombstone_last_logged_opid_);
+#ifdef FB_DO_NOT_REMOVE
       if (tablet_voting_state.data_state_ == tablet::TABLET_DATA_COPYING) {
         LOG_WITH_PREFIX_UNLOCKED(INFO) << "voting while copying based on last-logged opid "
                                        << local_last_logged_opid;
@@ -1603,6 +1610,7 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request,
         LOG_WITH_PREFIX_UNLOCKED(INFO) << "voting while tombstoned based on last-logged opid "
                                        << local_last_logged_opid;
       }
+#endif
       break;
   }
   DCHECK(local_last_logged_opid.IsInitialized());
@@ -1682,7 +1690,7 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request,
 
 Status RaftConsensus::ChangeConfig(const ChangeConfigRequestPB& req,
                                    StdStatusCallback client_cb,
-                                   boost::optional<TabletServerErrorPB::Code>* error_code) {
+                                   boost::optional<ServerErrorPB::Code>* error_code) {
   TRACE_EVENT2("consensus", "RaftConsensus::ChangeConfig",
                "peer", peer_uuid(),
                "tablet", options_.tablet_id);
@@ -1709,7 +1717,7 @@ Status RaftConsensus::ChangeConfig(const ChangeConfigRequestPB& req,
 
 Status RaftConsensus::BulkChangeConfig(const BulkChangeConfigRequestPB& req,
                                        StdStatusCallback client_cb,
-                                       boost::optional<TabletServerErrorPB::Code>* error_code) {
+                                       boost::optional<ServerErrorPB::Code>* error_code) {
   TRACE_EVENT2("consensus", "RaftConsensus::BulkChangeConfig",
                "peer", peer_uuid(),
                "tablet", options_.tablet_id);
@@ -1732,7 +1740,7 @@ Status RaftConsensus::BulkChangeConfig(const BulkChangeConfigRequestPB& req,
     // Support atomic ChangeConfig requests.
     if (req.has_cas_config_opid_index()) {
       if (committed_config.opid_index() != req.cas_config_opid_index()) {
-        *error_code = TabletServerErrorPB::CAS_FAILED;
+        *error_code = ServerErrorPB::CAS_FAILED;
         return Status::IllegalState(Substitute("Request specified cas_config_opid_index "
                                                "of $0 but the committed config has opid_index "
                                                "of $1",
@@ -1756,12 +1764,12 @@ Status RaftConsensus::BulkChangeConfig(const BulkChangeConfigRequestPB& req,
 
     for (const auto& item : req.config_changes()) {
       if (PREDICT_FALSE(!item.has_type())) {
-        *error_code = TabletServerErrorPB::INVALID_CONFIG;
+        *error_code = ServerErrorPB::INVALID_CONFIG;
         return Status::InvalidArgument("Must specify 'type' argument",
                                        SecureShortDebugString(req));
       }
       if (PREDICT_FALSE(!item.has_peer())) {
-        *error_code = TabletServerErrorPB::INVALID_CONFIG;
+        *error_code = ServerErrorPB::INVALID_CONFIG;
         return Status::InvalidArgument("Must specify 'peer' argument",
                                        SecureShortDebugString(req));
       }
@@ -1900,14 +1908,14 @@ Status RaftConsensus::BulkChangeConfig(const BulkChangeConfigRequestPB& req,
 
 Status RaftConsensus::UnsafeChangeConfig(
     const UnsafeChangeConfigRequestPB& req,
-    boost::optional<tserver::TabletServerErrorPB::Code>* error_code) {
+    boost::optional<ServerErrorPB::Code>* error_code) {
   if (PREDICT_FALSE(!req.has_new_config())) {
-    *error_code = TabletServerErrorPB::INVALID_CONFIG;
+    *error_code = ServerErrorPB::INVALID_CONFIG;
     return Status::InvalidArgument("Request must contain 'new_config' argument "
                                    "to UnsafeChangeConfig()", SecureShortDebugString(req));
   }
   if (PREDICT_FALSE(!req.has_caller_id())) {
-    *error_code = TabletServerErrorPB::INVALID_CONFIG;
+    *error_code = ServerErrorPB::INVALID_CONFIG;
     return Status::InvalidArgument("Must specify 'caller_id' argument to UnsafeChangeConfig()",
                                    SecureShortDebugString(req));
   }
@@ -1951,7 +1959,7 @@ Status RaftConsensus::UnsafeChangeConfig(
     const string& peer_uuid = new_peer.permanent_uuid();
     retained_peer_uuids.insert(peer_uuid);
     if (!IsRaftConfigMember(peer_uuid, committed_config)) {
-      *error_code = TabletServerErrorPB::INVALID_CONFIG;
+      *error_code = ServerErrorPB::INVALID_CONFIG;
       return Status::InvalidArgument(Substitute("Peer with uuid $0 is not in the committed  "
                                                 "config on this replica, rejecting the  "
                                                 "unsafe config change request for tablet $1. "
@@ -1973,7 +1981,7 @@ Status RaftConsensus::UnsafeChangeConfig(
   // in the committed config, it is rare and a replica without itself
   // in the latest config is definitely not caught up with the latest leader's log.
   if (!IsRaftConfigVoter(peer_uuid(), new_config)) {
-    *error_code = TabletServerErrorPB::INVALID_CONFIG;
+    *error_code = ServerErrorPB::INVALID_CONFIG;
     return Status::InvalidArgument(Substitute("Local replica uuid $0 is not "
                                               "a VOTER in the new config, "
                                               "rejecting the unsafe config "
@@ -1989,7 +1997,7 @@ Status RaftConsensus::UnsafeChangeConfig(
   // Sanity check the new config. 'type' is irrelevant here.
   Status s = VerifyRaftConfig(new_config);
   if (!s.ok()) {
-    *error_code = TabletServerErrorPB::INVALID_CONFIG;
+    *error_code = ServerErrorPB::INVALID_CONFIG;
     return Status::InvalidArgument(Substitute("The resulting new config for tablet $0  "
                                               "from passed parameters has failed raft "
                                               "config sanity check: $1",

@@ -15,6 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
+// **************   NOTICE  *******************************************
+// Facebook 2019 - Notice of Changes
+// This file has been modified to extract only the Raft implementation
+// out of Kudu into a fork known as kuduraft.
+// ********************************************************************
+
 #include <algorithm>
 #include <cstdint>
 #include <memory>
@@ -33,9 +39,9 @@
 #include "kudu/clock/clock.h"
 #include "kudu/clock/logical_clock.h"
 #include "kudu/common/common.pb.h"
-#include "kudu/common/schema.h"
+//#include "kudu/common/schema.h"
 #include "kudu/common/timestamp.h"
-#include "kudu/common/wire_protocol-test-util.h"
+//#include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus-test-util.h"
 #include "kudu/consensus/consensus.pb.h"
@@ -63,10 +69,11 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/tablet/metadata.pb.h"
+//#include "kudu/tablet/metadata.pb.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
+METRIC_DEFINE_entity(tablet);
 #include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
@@ -120,8 +127,11 @@ class RaftConsensusQuorumTest : public KuduTest {
 
   RaftConsensusQuorumTest()
     : clock_(clock::LogicalClock::CreateStartingAt(Timestamp(1))),
-      metric_entity_(METRIC_ENTITY_tablet.Instantiate(&metric_registry_, "raft-test")),
-      schema_(GetSimpleTestSchema()) {
+      metric_entity_(METRIC_ENTITY_tablet.Instantiate(&metric_registry_, "raft-test"))
+#ifdef FB_DO_NOT_REMOVE
+      , schema_(GetSimpleTestSchema())
+#endif
+                                       {
     options_.tablet_id = kTestTablet;
     FLAGS_enable_leader_failure_detection = false;
     CHECK_OK(ThreadPoolBuilder("raft").Build(&raft_pool_));
@@ -159,8 +169,10 @@ class RaftConsensusQuorumTest : public KuduTest {
       RETURN_NOT_OK(Log::Open(LogOptions(),
                               fs_manager.get(),
                               kTestTablet,
+#ifdef FB_DO_NOT_REMOVE
                               schema_,
                               0, // schema_version
+#endif
                               nullptr,
                               &log));
       logs_.emplace_back(std::move(log));
@@ -586,7 +598,9 @@ class RaftConsensusQuorumTest : public KuduTest {
   scoped_refptr<clock::Clock> clock_;
   MetricRegistry metric_registry_;
   scoped_refptr<MetricEntity> metric_entity_;
+#ifdef FB_DO_NOT_REMOVE
   const Schema schema_;
+#endif
   std::unordered_map<ConsensusRound*, Synchronizer*> syncs_;
 };
 
@@ -1027,7 +1041,7 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   request.set_candidate_uuid(fs_managers_[0]->uuid());
   request.set_candidate_term(last_op_id.term() + 1);
   ASSERT_OK(peer->RequestVote(&request,
-                              TabletVotingState(boost::none, tablet::TABLET_DATA_READY),
+                              TabletVotingState(boost::none /* , tablet::TABLET_DATA_READY */),
                               &response));
   ASSERT_FALSE(response.vote_granted());
   ASSERT_EQ(ConsensusErrorPB::LEADER_IS_ALIVE, response.consensus_error().code());
@@ -1041,7 +1055,7 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   flush_count_before = flush_count();
   request.set_ignore_live_leader(true);
   ASSERT_OK(peer->RequestVote(&request,
-                              TabletVotingState(boost::none, tablet::TABLET_DATA_READY),
+                              TabletVotingState(boost::none /* , tablet::TABLET_DATA_READY */),
                               &response));
   ASSERT_TRUE(response.vote_granted());
   ASSERT_EQ(last_op_id.term() + 1, response.responder_term());
@@ -1054,7 +1068,7 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   response.Clear();
   flush_count_before = flush_count();
   ASSERT_OK(peer->RequestVote(&request,
-                              TabletVotingState(boost::none, tablet::TABLET_DATA_READY),
+                              TabletVotingState(boost::none /* , tablet::TABLET_DATA_READY */),
                               &response));
   ASSERT_TRUE(response.vote_granted());
   ASSERT_EQ(0, flush_count() - flush_count_before)
@@ -1065,7 +1079,7 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   response.Clear();
   request.set_candidate_uuid(fs_managers_[2]->uuid());
   ASSERT_OK(peer->RequestVote(&request,
-                              TabletVotingState(boost::none, tablet::TABLET_DATA_READY),
+                              TabletVotingState(boost::none /* , tablet::TABLET_DATA_READY */),
                               &response));
   ASSERT_FALSE(response.vote_granted());
   ASSERT_TRUE(response.has_consensus_error());
@@ -1087,7 +1101,7 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   request.set_candidate_term(last_op_id.term() + 2);
   response.Clear();
   ASSERT_OK(peer->RequestVote(&request,
-                              TabletVotingState(boost::none, tablet::TABLET_DATA_READY),
+                              TabletVotingState(boost::none /* , tablet::TABLET_DATA_READY */),
                               &response));
   ASSERT_TRUE(response.vote_granted());
   ASSERT_EQ(last_op_id.term() + 2, response.responder_term());
@@ -1103,7 +1117,7 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   request.set_candidate_term(last_op_id.term() + 1);
   response.Clear();
   ASSERT_OK(peer->RequestVote(&request,
-                              TabletVotingState(boost::none, tablet::TABLET_DATA_READY),
+                              TabletVotingState(boost::none /* , tablet::TABLET_DATA_READY */),
                               &response));
   ASSERT_FALSE(response.vote_granted());
   ASSERT_TRUE(response.has_consensus_error());
@@ -1121,7 +1135,7 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   request.set_is_pre_election(true);
   response.Clear();
   ASSERT_OK(peer->RequestVote(&request,
-                              TabletVotingState(boost::none, tablet::TABLET_DATA_READY),
+                              TabletVotingState(boost::none /* , tablet::TABLET_DATA_READY */),
                               &response));
   ASSERT_TRUE(response.vote_granted());
   ASSERT_FALSE(response.has_consensus_error());
@@ -1142,7 +1156,7 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   request.mutable_candidate_status()->mutable_last_received()->CopyFrom(MinimumOpId());
   response.Clear();
   ASSERT_OK(peer->RequestVote(&request,
-                              TabletVotingState(boost::none, tablet::TABLET_DATA_READY),
+                              TabletVotingState(boost::none /* , tablet::TABLET_DATA_READY */),
                               &response));
   ASSERT_FALSE(response.vote_granted());
   ASSERT_TRUE(response.has_consensus_error());
