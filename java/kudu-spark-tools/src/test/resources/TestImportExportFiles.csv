@@ -1,5 +1,0 @@
-key,column1_i,column2_d,column3_s,column4_b
-1,3,2.3,some string,true
-2,5,4.5,some more,false
-3,7,1.2,wait this is not a double bad row,true
-4,9,10.1,trailing separator isn't bad mkay?,true
