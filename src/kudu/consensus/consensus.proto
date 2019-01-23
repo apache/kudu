@@ -32,7 +32,7 @@ import "kudu/consensus/metadata.proto";
 import "kudu/consensus/opid.proto";
 import "kudu/consensus/replica_management.proto";
 import "kudu/rpc/rpc_header.proto";
-//ANIRBAN
+// NOTE: anirbanr-fb
 //import "kudu/tablet/metadata.proto";
 //import "kudu/tablet/tablet.proto";
 //import "kudu/tserver/tserver_admin.proto";
@@ -251,7 +251,7 @@ message ReplicateMsg {
   // optional ExternalConsistencyMode external_consistency_mode = 3 [default = NO_CONSISTENCY];
   required OperationType op_type = 4;
 
-  // ANIRBAN
+  // anirbanr-fb
   //optional tserver.WriteRequestPB write_request = 5;
   //optional tserver.AlterSchemaRequestPB alter_schema_request = 6;
   optional ChangeConfigRecordPB change_config_record = 7;
@@ -270,7 +270,7 @@ message CommitMsg {
   // the id of the message this commit pertains to
   optional OpId commited_op_id = 2;
 
-  // ANIRBAN
+  // anirbanr-fb
   // The operations that were applied and/or failed in this transaction.
   //optional tablet.TxResultPB result = 3;
 }
@@ -513,7 +513,7 @@ message LeaderStepDownRequestPB {
 
 message LeaderStepDownResponsePB {
   // A generic error message (such as tablet not found).
-  // ANIRBAN
+  // anirbanr-fb
   optional ServerErrorPB error = 1;
 }
 

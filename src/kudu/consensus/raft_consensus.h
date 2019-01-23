@@ -96,15 +96,19 @@ struct ConsensusOptions {
 struct TabletVotingState {
   boost::optional<OpId> tombstone_last_logged_opid_;
 
-  // ANIRBAN
-  // tablet::TabletDataState data_state_;
-  TabletVotingState(boost::optional<OpId> tombstone_last_logged_opid)
+#ifdef FB_DO_NOT_REMOVE
+  tablet::TabletDataState data_state_;
+#endif
+  TabletVotingState(boost::optional<OpId> tombstone_last_logged_opid
+#ifdef FB_DO_NOT_REMOVE
+                    //, tablet::TabletDataState data_state
+#endif
+                   )
           : tombstone_last_logged_opid_(std::move(tombstone_last_logged_opid))
+#ifdef FB_DO_NOT_REMOVE
+            //, data_state_(data_state)
+#endif
             {}
-  //TabletVotingState(boost::optional<OpId> tombstone_last_logged_opid,
-                    //tablet::TabletDataState data_state)
-          //: tombstone_last_logged_opid_(std::move(tombstone_last_logged_opid)),
-            //data_state_(data_state) {}
 };
 
 typedef int64_t ConsensusTerm;

@@ -556,7 +556,7 @@ class LocalTestPeerProxy : public TestPeerProxy {
     if (s.ok()) {
       s = peer->RequestVote(&other_peer_req,
                             TabletVotingState(boost::none),
-                            // ANIRBAN
+                            // anirban-fb
                             //TabletVotingState(boost::none, tablet::TABLET_DATA_READY),
                             &other_peer_resp);
     }

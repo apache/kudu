@@ -41,7 +41,7 @@ ADD_EXPORTABLE_LIBRARY(consensus_metadata_proto
   DEPS ${METADATA_PROTO_LIBS}
   NONLINK_DEPS ${METADATA_PROTO_TGTS})
 
-# ANIRBAN
+# NOTE: anirbanr-fb
 # this was found to be not used in METADATA_PROTO_LIBS
 # fs_proto
 
@@ -63,7 +63,7 @@ set(CONSENSUS_KRPC_LIBS
   protobuf
   wire_protocol_proto)
 
-#ANIRBAN
+# NOTE: anirbanr-fb
 # cfile_proto
 # tablet_proto
 # tserver_admin_proto

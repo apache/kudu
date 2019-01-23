@@ -51,8 +51,9 @@
 #include "kudu/rpc/periodic.h"
 #include "kudu/rpc/response_callback.h"
 #include "kudu/rpc/rpc_controller.h"
-// ANIRBAN
-//#include "kudu/tserver/tserver.pb.h"
+#ifdef FB_DO_NOT_REMOVE
+#include "kudu/tserver/tserver.pb.h"
+#endif
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
