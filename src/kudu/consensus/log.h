@@ -36,7 +36,9 @@
 #include <glog/logging.h>
 #include <gtest/gtest_prod.h>
 
+#ifdef FB_DO_NOT_REMOVE
 #include "kudu/common/schema.h"
+#endif
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/log.pb.h"
 #include "kudu/consensus/log_util.h"
