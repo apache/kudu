@@ -1,0 +1,9 @@
+Changes :
+
+1. 1.8.x was the baseline branch.
+
+2. We extracted Raft piece from it to have a barebones
+   Raft C++ implementation.
+
+3. We added some implementations from 1.8.x..master back
+   to Raft, key among them was Graceful Leadership transfer.
