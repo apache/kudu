@@ -835,11 +835,12 @@ public class TestKuduClient {
         // Force the client to connect to the masters.
         localClient.exportAuthenticationCredentials();
       }
+      // Wait a little for exceptions to come in from threads that don't get
+      // synchronously joined by client.close().
+      Thread.sleep(500);
     }
     // Ensure there is no log spew due to an unexpected lost connection.
-    String exception_text = cla.getAppendedText();
-    assertFalse("Unexpected exception:\n" + exception_text,
-               exception_text.contains("lost connection to peer"));
+    assertFalse(cla.getAppendedText(), cla.getAppendedText().contains("Exception"));
   }
 
   /**
