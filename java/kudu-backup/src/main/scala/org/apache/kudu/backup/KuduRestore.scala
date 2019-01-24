@@ -70,7 +70,9 @@ object KuduRestore {
       val writeOptions = new KuduWriteOptions(ignoreDuplicateRowErrors = false, ignoreNull = false)
       // TODO: Use client directly for more control?
       // (session timeout, consistency mode, flush interval, mutation buffer space)
-      context.insertRows(df, restoreName, writeOptions)
+
+      // Upsert so that Spark task retries do not fail.
+      context.upsertRows(df, restoreName, writeOptions)
     }
   }
 
