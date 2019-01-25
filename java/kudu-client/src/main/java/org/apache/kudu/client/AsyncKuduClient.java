@@ -1821,7 +1821,12 @@ public class AsyncKuduClient implements AutoCloseable {
       // When lookup completes, the tablet (or non-covered range) for the next
       // partition key will be located and added to the client's cache.
       final byte[] lookupKey = partitionKey;
-      return locateTablet(table, key, fetchBatchSize, null).addCallbackDeferring(
+
+      // Build a fake RPC to encapsulate and propagate the timeout. There's no actual "RPC" to send.
+      KuduRpc fakeRpc = buildFakeRpc("loopLocateTable", null);
+      fakeRpc.setTimeoutMillis(deadlineTracker.getMillisBeforeDeadline());
+
+      return locateTablet(table, key, fetchBatchSize, fakeRpc).addCallbackDeferring(
           new Callback<Deferred<List<LocatedTablet>>, GetTableLocationsResponsePB>() {
             @Override
             public Deferred<List<LocatedTablet>> call(GetTableLocationsResponsePB resp) {
@@ -2143,15 +2148,27 @@ public class AsyncKuduClient implements AutoCloseable {
     return cache.get(partitionKey);
   }
 
+  enum LookupType {
+    // The lookup should only return a tablet which actually covers the
+    // requested partition key.
+    POINT,
+    // The lookup should return the next tablet after the requested
+    // partition key if the requested key does not fall within a covered
+    // range.
+    LOWER_BOUND
+  }
+
   /**
    * Returns a deferred containing the located tablet which covers the partition key in the table.
    * @param table the table
    * @param partitionKey the partition key of the tablet to look up in the table
+   * @param lookupType the type of lookup to use
    * @param deadline deadline in milliseconds for this lookup to finish
    * @return a deferred containing the located tablet
    */
   Deferred<LocatedTablet> getTabletLocation(final KuduTable table,
                                             final byte[] partitionKey,
+                                            final LookupType lookupType,
                                             long deadline) {
 
     // Locate the tablet at the partition key by locating tablets between
@@ -2167,6 +2184,8 @@ public class AsyncKuduClient implements AutoCloseable {
       endPartitionKey = Arrays.copyOf(partitionKey, partitionKey.length + 1);
     }
 
+    final DeadlineTracker deadlineTracker = new DeadlineTracker();
+    deadlineTracker.setDeadline(deadline);
     Deferred<List<LocatedTablet>> locatedTablets = locateTable(
         table, startPartitionKey, endPartitionKey, FETCH_TABLETS_PER_POINT_LOOKUP, deadline);
 
@@ -2191,9 +2210,16 @@ public class AsyncKuduClient implements AutoCloseable {
                     "Table location expired before it could be processed")));
               }
               if (entry.isNonCoveredRange()) {
-                return Deferred.fromError(
-                    new NonCoveredRangeException(entry.getLowerBoundPartitionKey(),
-                                                 entry.getUpperBoundPartitionKey()));
+                if (lookupType == LookupType.POINT
+                    || entry.getUpperBoundPartitionKey().length == 0) {
+                  return Deferred.fromError(
+                      new NonCoveredRangeException(entry.getLowerBoundPartitionKey(),
+                          entry.getUpperBoundPartitionKey()));
+                }
+                // This is a LOWER_BOUND lookup, get the tablet location from the upper bound key
+                // of the non-covered range to return the next valid tablet location.
+                return getTabletLocation(table, entry.getUpperBoundPartitionKey(),
+                    LookupType.POINT, deadlineTracker.getMillisBeforeDeadline());
               }
               return Deferred.fromResult(new LocatedTablet(entry.getTablet()));
             }

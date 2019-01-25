@@ -2503,7 +2503,7 @@ class KUDU_EXPORT KuduPartitioner {
   ///   The row to be partitioned.
   /// @param [out] partition
   ///   The resulting partition index, or -1 if the row falls into a
-  ///   non-covered range. The result will be less than @c NumPartitioons().
+  ///   non-covered range. The result will be less than @c NumPartitions().
   ///
   /// @return Status::OK if successful. May return a bad Status if the
   ///   provided row does not have all columns of the partition key

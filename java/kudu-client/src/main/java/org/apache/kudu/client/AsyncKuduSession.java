@@ -38,6 +38,7 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Range;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
+import org.apache.kudu.client.AsyncKuduClient.LookupType;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 import org.jboss.netty.util.Timeout;
@@ -566,6 +567,7 @@ public class AsyncKuduSession implements SessionConfiguration {
     // Kick off a location lookup.
     Deferred<LocatedTablet> tablet = client.getTabletLocation(operation.getTable(),
                                                               operation.partitionKey(),
+                                                              LookupType.POINT,
                                                               timeoutMs);
 
     // Holds a buffer that should be flushed outside the synchronized block, if necessary.

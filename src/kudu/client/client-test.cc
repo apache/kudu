@@ -5541,9 +5541,9 @@ TEST_F(ClientTest, TestPartitioner) {
   //             hash bucket
   //   key     0      1     2
   //         -----------------
-  //  <3000    x      x     x
-  // 3000-7000 x      x     x
-  //  >=7000   x      x     x
+  //  <3333    x      x     x
+  // 3333-6666 x      x     x
+  //  >=6666   x      x     x
   int num_ranges = 3;
   const int kNumHashPartitions = 3;
   const char* kTableName = "TestPartitioner";
