@@ -58,6 +58,9 @@ class SentryAuthzProvider : public AuthzProvider {
 
   void Stop() override;
 
+  // Returns true if the SentryAuthzProvider should be enabled.
+  static bool IsEnabled();
+
   // The following authorizing methods will fail if:
   //   - the operation is not authorized
   //   - the Sentry service is unreachable

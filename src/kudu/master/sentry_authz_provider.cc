@@ -158,6 +158,10 @@ void SentryAuthzProvider::Stop() {
   ha_client_.Stop();
 }
 
+bool SentryAuthzProvider::IsEnabled() {
+  return !FLAGS_sentry_service_rpc_addresses.empty();
+}
+
 namespace {
 
 // Returns an authorizable based on the table name and the given scope.
@@ -283,7 +287,7 @@ Status SentryAuthzProvider::Authorize(const TSentryAuthorizable& authorizable,
   for (const auto& privilege : response.privileges) {
     // A grant option cannot imply the other if the former is set
     // but the latter is not.
-    if (grant_option && privilege.grantOption != TSentryGrantOption::TRUE) {
+    if (grant_option && privilege.grantOption != TSentryGrantOption::ENABLED) {
       continue;
     }
 

@@ -23,6 +23,8 @@
 #
 # With edits:
 #   - Change cpp namespace to 'sentry' to match the Kudu codebase style.
+#   - Rename enum TSentryGrantOption.TRUE and TSentryGrantOption.FALSE
+#     to avoid conflict with the macro definition in the macOS system header.
 
 #
 # Thrift Service that the MetaStore is built on
@@ -35,8 +37,8 @@ namespace php sentry.api.service.thrift
 namespace cpp sentry
 
 enum TSentryGrantOption {
-  TRUE = 1,
-  FALSE = 0,
+  ENABLED = 1,
+  DISABLED = 0,
   # UNSET is used for revoke privilege, the component like 'hive'
   # didn't support getting grant option, so use UNSET is stand
   # for revoke both privileges with grant option and without grant
@@ -59,7 +61,7 @@ struct TSentryPrivilege {
 6: optional string URI = "",
 7: required string action = "",
 8: optional i64 createTime, # Set on server side
-9: optional TSentryGrantOption grantOption = TSentryGrantOption.FALSE
+9: optional TSentryGrantOption grantOption = TSentryGrantOption.DISABLED
 10: optional string columnName = "",
 }
 

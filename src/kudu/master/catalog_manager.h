@@ -92,6 +92,7 @@ class HmsCatalog;
 
 namespace master {
 
+class AuthzProvider;
 class CatalogManagerBgTasks;
 class HmsNotificationLogListenerTask;
 class Master;
@@ -984,6 +985,8 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
 
   std::unique_ptr<hms::HmsCatalog> hms_catalog_;
   std::unique_ptr<HmsNotificationLogListenerTask> hms_notification_log_listener_;
+
+  std::unique_ptr<master::AuthzProvider> authz_provider_;
 
   enum State {
     kConstructed,

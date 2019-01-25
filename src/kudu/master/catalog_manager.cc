@@ -97,11 +97,14 @@
 #include "kudu/gutil/utf/utf.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/hms/hms_catalog.h"
+#include "kudu/master/authz_provider.h"
+#include "kudu/master/default_authz_provider.h"
 #include "kudu/master/hms_notification_log_listener.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master_cert_authority.h"
 #include "kudu/master/placement_policy.h"
+#include "kudu/master/sentry_authz_provider.h"
 #include "kudu/master/sys_catalog.h"
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/master/ts_manager.h"
@@ -716,6 +719,8 @@ Status CatalogManager::Init(bool is_first_run) {
   RETURN_NOT_OK_PREPEND(sys_catalog_->WaitUntilRunning(),
                         "Failed waiting for the catalog tablet to run");
 
+  authz_provider_.reset(new master::DefaultAuthzProvider());
+
   if (hms::HmsCatalog::IsEnabled()) {
     vector<HostPortPB> master_addrs_pb;
     RETURN_NOT_OK(master_->GetMasterHostPorts(&master_addrs_pb));
@@ -741,6 +746,11 @@ Status CatalogManager::Init(bool is_first_run) {
     hms_notification_log_listener_.reset(new HmsNotificationLogListenerTask(this));
     RETURN_NOT_OK_PREPEND(hms_notification_log_listener_->Init(),
         "failed to initialize Hive Metastore notification log listener task");
+
+    // Use SentryAuthzProvider when both Sentry and the HMS integration are enabled.
+    if (SentryAuthzProvider::IsEnabled()) {
+      authz_provider_.reset(new master::SentryAuthzProvider());
+    }
   }
 
   background_tasks_.reset(new CatalogManagerBgTasks(this));

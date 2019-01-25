@@ -159,13 +159,13 @@ TEST_P(SentryAuthzProviderTest, TestAuthorizeCreateTable) {
   // Don't authorize create table on a user without required privileges.
   const string role_name = "developer";
   ASSERT_OK(CreateRoleAndAddToGroups(role_name, kUserGroup));
-  TSentryPrivilege privilege = GetDatabasePrivilege("db", "DROP", TSentryGrantOption::FALSE);
+  TSentryPrivilege privilege = GetDatabasePrivilege("db", "DROP", TSentryGrantOption::DISABLED);
   ASSERT_OK(AlterRoleGrantPrivilege(role_name, privilege));
   s = sentry_authz_provider_->AuthorizeCreateTable("db.table", kTestUser, kTestUser);
   ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
 
   // Authorize create table on a user with proper privileges.
-  privilege = GetDatabasePrivilege("db", "CREATE", TSentryGrantOption::FALSE);
+  privilege = GetDatabasePrivilege("db", "CREATE", TSentryGrantOption::DISABLED);
   ASSERT_OK(AlterRoleGrantPrivilege(role_name, privilege));
   ASSERT_OK(sentry_authz_provider_->AuthorizeCreateTable("db.table", kTestUser, kTestUser));
 
@@ -173,7 +173,7 @@ TEST_P(SentryAuthzProviderTest, TestAuthorizeCreateTable) {
   // requires the creating user have 'ALL on DATABASE' with grant.
   s = sentry_authz_provider_->AuthorizeCreateTable("db.table", kTestUser, "diff-user");
   ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
-  privilege = GetDatabasePrivilege("db", "ALL", TSentryGrantOption::TRUE);
+  privilege = GetDatabasePrivilege("db", "ALL", TSentryGrantOption::ENABLED);
   ASSERT_OK(AlterRoleGrantPrivilege(role_name, privilege));
   ASSERT_OK(sentry_authz_provider_->AuthorizeCreateTable("db.table", kTestUser, "diff-user"));
 }
@@ -182,13 +182,13 @@ TEST_P(SentryAuthzProviderTest, TestAuthorizeDropTable) {
   // Don't authorize delete table on a user without required privileges.
   const string role_name = "developer";
   ASSERT_OK(CreateRoleAndAddToGroups(role_name, kUserGroup));
-  TSentryPrivilege privilege = GetDatabasePrivilege("db", "SELECT", TSentryGrantOption::FALSE);
+  TSentryPrivilege privilege = GetDatabasePrivilege("db", "SELECT", TSentryGrantOption::DISABLED);
   ASSERT_OK(AlterRoleGrantPrivilege(role_name, privilege));
   Status s = sentry_authz_provider_->AuthorizeDropTable("db.table", kTestUser);
   ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
 
   // Authorize delete table on a user with proper privileges.
-  privilege = GetDatabasePrivilege("db", "DROP", TSentryGrantOption::FALSE);
+  privilege = GetDatabasePrivilege("db", "DROP", TSentryGrantOption::DISABLED);
   ASSERT_OK(AlterRoleGrantPrivilege(role_name, privilege));
   ASSERT_OK(sentry_authz_provider_->AuthorizeDropTable("db.table", kTestUser));
 }
@@ -197,13 +197,14 @@ TEST_P(SentryAuthzProviderTest, TestAuthorizeAlterTable) {
   // Don't authorize alter table on a user without required privileges.
   const string role_name = "developer";
   ASSERT_OK(CreateRoleAndAddToGroups(role_name, kUserGroup));
-  TSentryPrivilege db_privilege = GetDatabasePrivilege("db", "SELECT", TSentryGrantOption::FALSE);
+  TSentryPrivilege db_privilege = GetDatabasePrivilege("db", "SELECT",
+                                                       TSentryGrantOption::DISABLED);
   ASSERT_OK(AlterRoleGrantPrivilege(role_name, db_privilege));
   Status s = sentry_authz_provider_->AuthorizeAlterTable("db.table", "db.table", kTestUser);
   ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
 
   // Authorize alter table without rename on a user with proper privileges.
-  db_privilege = GetDatabasePrivilege("db", "ALTER", TSentryGrantOption::FALSE);
+  db_privilege = GetDatabasePrivilege("db", "ALTER", TSentryGrantOption::DISABLED);
   ASSERT_OK(AlterRoleGrantPrivilege(role_name, db_privilege));
   ASSERT_OK(sentry_authz_provider_->AuthorizeAlterTable("db.table", "db.table", kTestUser));
 
@@ -213,10 +214,10 @@ TEST_P(SentryAuthzProviderTest, TestAuthorizeAlterTable) {
   ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
 
   // Authorize alter table without rename on a user with proper privileges.
-  db_privilege = GetDatabasePrivilege("new_db", "CREATE", TSentryGrantOption::FALSE);
+  db_privilege = GetDatabasePrivilege("new_db", "CREATE", TSentryGrantOption::DISABLED);
   ASSERT_OK(AlterRoleGrantPrivilege(role_name, db_privilege));
   TSentryPrivilege table_privilege = GetTablePrivilege("db", "table", "ALL",
-                                                       TSentryGrantOption::FALSE);
+                                                       TSentryGrantOption::DISABLED);
   ASSERT_OK(AlterRoleGrantPrivilege(role_name, table_privilege));
   ASSERT_OK(sentry_authz_provider_->AuthorizeAlterTable("db.table",
                                                         "new_db.new_table",
@@ -231,7 +232,7 @@ TEST_P(SentryAuthzProviderTest, TestAuthorizeGetTableMetadata) {
   ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
 
   // Authorize delete table on a user with proper privileges.
-  TSentryPrivilege privilege = GetDatabasePrivilege("db", "SELECT", TSentryGrantOption::FALSE);
+  TSentryPrivilege privilege = GetDatabasePrivilege("db", "SELECT", TSentryGrantOption::DISABLED);
   ASSERT_OK(AlterRoleGrantPrivilege(role_name, privilege));
   ASSERT_OK(sentry_authz_provider_->AuthorizeGetTableMetadata("db.table", kTestUser));
 }
@@ -251,7 +252,8 @@ TEST_P(SentryAuthzProviderTest, TestReconnect) {
 
   const string role_name = "developer";
   ASSERT_OK(CreateRoleAndAddToGroups(role_name, kUserGroup));
-  TSentryPrivilege privilege = GetDatabasePrivilege("db", "METADATA", TSentryGrantOption::FALSE);
+  TSentryPrivilege privilege = GetDatabasePrivilege("db", "METADATA",
+                                                    TSentryGrantOption::DISABLED);
   ASSERT_OK(AlterRoleGrantPrivilege(role_name, privilege));
   ASSERT_OK(sentry_authz_provider_->AuthorizeGetTableMetadata("db.table", kTestUser));
 
@@ -271,7 +273,7 @@ TEST_P(SentryAuthzProviderTest, TestReconnect) {
         "db.table", kTestUser));
   });
 
-  privilege = GetDatabasePrivilege("db", "DROP", TSentryGrantOption::FALSE);
+  privilege = GetDatabasePrivilege("db", "DROP", TSentryGrantOption::DISABLED);
   ASSERT_OK(AlterRoleGrantPrivilege(role_name, privilege));
   ASSERT_OK(sentry_authz_provider_->AuthorizeDropTable("db.table", kTestUser));
 
