@@ -25,14 +25,17 @@ import java.util.List;
 
 import com.google.protobuf.Message;
 import org.apache.yetus.audience.InterfaceAudience;
+import org.jboss.netty.util.Timer;
 
 import org.apache.kudu.util.Pair;
 
 @InterfaceAudience.Private
 public class ListTabletServersRequest extends KuduRpc<ListTabletServersResponse> {
 
-  public ListTabletServersRequest(KuduTable masterTable) {
-    super(masterTable);
+  public ListTabletServersRequest(KuduTable masterTable,
+                                  Timer timer,
+                                  long timeoutMillis) {
+    super(masterTable, timer, timeoutMillis);
   }
 
   @Override
@@ -61,8 +64,11 @@ public class ListTabletServersRequest extends KuduRpc<ListTabletServersResponse>
     for (ListTabletServersResponsePB.Entry entry : respBuilder.getServersList()) {
       servers.add(entry.getRegistration().getRpcAddresses(0).getHost());
     }
-    ListTabletServersResponse response = new ListTabletServersResponse(deadlineTracker
-        .getElapsedMillis(), tsUUID, serversCount, servers);
+    ListTabletServersResponse response =
+        new ListTabletServersResponse(deadlineTracker.getElapsedMillis(),
+                                      tsUUID,
+                                      serversCount,
+                                      servers);
     return new Pair<ListTabletServersResponse, Object>(
         response, respBuilder.hasError() ? respBuilder.getError() : null);
   }

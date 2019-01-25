@@ -19,6 +19,8 @@ package org.apache.kudu.client;
 
 import com.google.protobuf.Message;
 import org.apache.yetus.audience.InterfaceAudience;
+import org.jboss.netty.util.Timer;
+
 import org.apache.kudu.master.Master.IsCreateTableDoneRequestPB;
 import org.apache.kudu.master.Master.IsCreateTableDoneResponsePB;
 import org.apache.kudu.master.Master.TableIdentifierPB;
@@ -31,8 +33,11 @@ import org.apache.kudu.util.Pair;
 class IsCreateTableDoneRequest extends KuduRpc<IsCreateTableDoneResponse> {
   private final TableIdentifierPB.Builder tableId;
 
-  IsCreateTableDoneRequest(KuduTable masterTable, TableIdentifierPB.Builder tableId) {
-    super(masterTable);
+  IsCreateTableDoneRequest(KuduTable masterTable,
+                           TableIdentifierPB.Builder tableId,
+                           Timer timer,
+                           long timeoutMillis) {
+    super(masterTable, timer, timeoutMillis);
     this.tableId = tableId;
   }
 
@@ -54,7 +59,8 @@ class IsCreateTableDoneRequest extends KuduRpc<IsCreateTableDoneResponse> {
     readProtobuf(callResponse.getPBMessage(), builder);
     IsCreateTableDoneResponse resp =
         new IsCreateTableDoneResponse(deadlineTracker.getElapsedMillis(),
-        tsUUID, builder.getDone());
+                                      tsUUID,
+                                      builder.getDone());
     return new Pair<IsCreateTableDoneResponse, Object>(
         resp, builder.hasError() ? builder.getError() : null);
   }

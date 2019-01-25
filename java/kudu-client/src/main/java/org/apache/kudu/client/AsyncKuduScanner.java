@@ -835,9 +835,8 @@ public final class AsyncKuduScanner {
   final class KeepAliveRequest extends KuduRpc<Void> {
 
     KeepAliveRequest(KuduTable table, RemoteTablet tablet) {
-      super(table);
+      super(table, client.getTimer(), scanRequestTimeout);
       setTablet(tablet);
-      this.setTimeoutMillis(scanRequestTimeout);
     }
 
     @Override
@@ -882,10 +881,9 @@ public final class AsyncKuduScanner {
     State state;
 
     ScanRequest(KuduTable table, State state, RemoteTablet tablet) {
-      super(table);
+      super(table, client.getTimer(), scanRequestTimeout);
       setTablet(tablet);
       this.state = state;
-      this.setTimeoutMillis(scanRequestTimeout);
     }
 
     @Override
@@ -1017,8 +1015,7 @@ public final class AsyncKuduScanner {
         }
       }
       RowResultIterator iterator = RowResultIterator.makeRowResultIterator(
-          deadlineTracker.getElapsedMillis(), tsUUID, schema, resp.getData(),
-          callResponse);
+          deadlineTracker.getElapsedMillis(), tsUUID, schema, resp.getData(), callResponse);
 
       boolean hasMore = resp.getHasMoreResults();
       if (id.length != 0 && scannerId != null && !Bytes.equals(scannerId, id)) {

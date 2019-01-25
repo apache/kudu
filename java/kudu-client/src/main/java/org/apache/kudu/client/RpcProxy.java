@@ -120,9 +120,6 @@ class RpcProxy {
               .serverInfo(connection.getServerInfo())
               .build());
 
-      if (!rpc.deadlineTracker.hasDeadline()) {
-        LOG.warn("{} sending RPC with no timeout {}", connection.getLogPrefix(), rpc);
-      }
       connection.enqueueMessage(rpcToMessage(client, rpc),
           new Callback<Void, Connection.CallResponseInfo>() {
             @Override
@@ -164,11 +161,10 @@ class RpcProxy {
                 .setServiceName(rpc.serviceName())
                 .setMethodName(rpc.method()));
     final Message reqPB = rpc.createRequestPB();
-
+    // TODO(wdberkeley): We should enforce that every RPC has a timeout.
     if (rpc.deadlineTracker.hasDeadline()) {
       headerBuilder.setTimeoutMillis((int) rpc.deadlineTracker.getMillisBeforeDeadline());
     }
-
     if (rpc.isRequestTracked()) {
       RpcHeader.RequestIdPB.Builder requestIdBuilder = RpcHeader.RequestIdPB.newBuilder();
       final RequestTracker requestTracker = client.getRequestTracker();

@@ -43,6 +43,9 @@ import com.stumbleupon.async.Deferred;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
+import org.jboss.netty.util.Timeout;
+import org.jboss.netty.util.Timer;
+import org.jboss.netty.util.TimerTask;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -129,8 +132,12 @@ public abstract class KuduRpc<R> {
 
   final DeadlineTracker deadlineTracker;
 
-  protected long propagatedTimestamp = -1;
-  protected ExternalConsistencyMode externalConsistencyMode = CLIENT_PROPAGATED;
+  // 'timeoutTask' is a handle to the timer task that will time out the RPC. It is
+  // null if and only if the task has no timeout.
+  Timeout timeoutTask;
+
+  long propagatedTimestamp = -1;
+  ExternalConsistencyMode externalConsistencyMode = CLIENT_PROPAGATED;
 
   /**
    * How many times have we retried this RPC?.
@@ -146,9 +153,15 @@ public abstract class KuduRpc<R> {
    */
   private long sequenceId = RequestTracker.NO_SEQ_NO;
 
-  KuduRpc(KuduTable table) {
+  KuduRpc(KuduTable table, Timer timer, long timeoutMillis) {
     this.table = table;
     this.deadlineTracker = new DeadlineTracker();
+    deadlineTracker.setDeadline(timeoutMillis);
+    if (timer != null) {
+      this.timeoutTask = AsyncKuduClient.newTimeout(timer,
+                                                    new RpcTimeoutTask(),
+                                                    timeoutMillis);
+    }
   }
 
   /**
@@ -241,6 +254,9 @@ public abstract class KuduRpc<R> {
       table.getAsyncClient().getRequestTracker().rpcCompleted(sequenceId);
       sequenceId = RequestTracker.NO_SEQ_NO;
     }
+    if (timeoutTask != null) {
+      timeoutTask.cancel();
+    }
     deadlineTracker.reset();
     traces.clear();
     parentRpc = null;
@@ -276,8 +292,8 @@ public abstract class KuduRpc<R> {
    * @param parentRpc RPC that will also receive traces from this RPC
    */
   void setParentRpc(KuduRpc<?> parentRpc) {
-    assert (this.parentRpc == null);
-    assert (this.parentRpc != this);
+    assert(this.parentRpc == null);
+    assert(this != parentRpc);
     this.parentRpc = parentRpc;
   }
 
@@ -323,10 +339,6 @@ public abstract class KuduRpc<R> {
 
   public KuduTable getTable() {
     return table;
-  }
-
-  void setTimeoutMillis(long timeout) {
-    deadlineTracker.setDeadline(timeout);
   }
 
   /**
@@ -419,5 +431,16 @@ public abstract class KuduRpc<R> {
     }
     chanBuf.writerIndex(buf.length);
     return chanBuf;
+  }
+
+  /**
+   * A netty TimerTask for timing out a KuduRpc.
+   */
+  final class RpcTimeoutTask implements TimerTask {
+    @Override
+    public void run(final Timeout timeout) {
+      Status statusTimedOut = Status.TimedOut("can not complete before timeout: " + KuduRpc.this);
+      KuduRpc.this.errback(new NonRecoverableException(statusTimedOut));
+    }
   }
 }

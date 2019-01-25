@@ -63,6 +63,7 @@ import org.jboss.netty.channel.socket.nio.NioClientSocketChannelFactory;
 import org.jboss.netty.channel.socket.nio.NioWorkerPool;
 import org.jboss.netty.util.HashedWheelTimer;
 import org.jboss.netty.util.Timeout;
+import org.jboss.netty.util.Timer;
 import org.jboss.netty.util.TimerTask;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -523,6 +524,16 @@ public class AsyncKuduClient implements AutoCloseable {
   }
 
   /**
+   * Returns the {@link Timer} instance held by this client. This timer should
+   * be used everywhere for scheduling tasks after a delay, e.g., for
+   * timeouts.
+   * @return the time instance held by this client
+   */
+  Timer getTimer() {
+    return timer;
+  }
+
+  /**
    * Returns a synchronous {@link KuduClient} which wraps this asynchronous client.
    * Calling {@link KuduClient#close} on the returned client will close this client.
    * If this asynchronous client should outlive the returned synchronous client,
@@ -558,9 +569,12 @@ public class AsyncKuduClient implements AutoCloseable {
     }
 
     // Send the CreateTable RPC.
-    final CreateTableRequest create = new CreateTableRequest(
-        this.masterTable, name, schema, builder);
-    create.setTimeoutMillis(defaultAdminOperationTimeoutMs);
+    final CreateTableRequest create = new CreateTableRequest(this.masterTable,
+                                                             name,
+                                                             schema,
+                                                             builder,
+                                                             timer,
+                                                             defaultAdminOperationTimeoutMs);
     Deferred<CreateTableResponse> createTableD = sendRpcToTablet(create);
 
     // Add a callback that converts the response into a KuduTable.
@@ -607,9 +621,10 @@ public class AsyncKuduClient implements AutoCloseable {
       @Nonnull TableIdentifierPB.Builder table,
       @Nullable KuduRpc<?> parent) {
     checkIsClosed();
-    IsCreateTableDoneRequest request = new IsCreateTableDoneRequest(
-        this.masterTable, table);
-    request.setTimeoutMillis(defaultAdminOperationTimeoutMs);
+    IsCreateTableDoneRequest request = new IsCreateTableDoneRequest(this.masterTable,
+                                                                    table,
+                                                                    timer,
+                                                                    defaultAdminOperationTimeoutMs);
     if (parent != null) {
       request.setParentRpc(parent);
     }
@@ -623,8 +638,10 @@ public class AsyncKuduClient implements AutoCloseable {
    */
   public Deferred<DeleteTableResponse> deleteTable(String name) {
     checkIsClosed();
-    DeleteTableRequest delete = new DeleteTableRequest(this.masterTable, name);
-    delete.setTimeoutMillis(defaultAdminOperationTimeoutMs);
+    DeleteTableRequest delete = new DeleteTableRequest(this.masterTable,
+                                                       name,
+                                                       timer,
+                                                       defaultAdminOperationTimeoutMs);
     return sendRpcToTablet(delete);
   }
 
@@ -637,8 +654,11 @@ public class AsyncKuduClient implements AutoCloseable {
    */
   public Deferred<AlterTableResponse> alterTable(String name, AlterTableOptions ato) {
     checkIsClosed();
-    final AlterTableRequest alter = new AlterTableRequest(this.masterTable, name, ato);
-    alter.setTimeoutMillis(defaultAdminOperationTimeoutMs);
+    final AlterTableRequest alter = new AlterTableRequest(this.masterTable,
+                                                          name,
+                                                          ato,
+                                                          timer,
+                                                          defaultAdminOperationTimeoutMs);
     Deferred<AlterTableResponse> responseD = sendRpcToTablet(alter);
 
     if (ato.hasAddDropRangePartitions()) {
@@ -705,12 +725,11 @@ public class AsyncKuduClient implements AutoCloseable {
       @Nonnull TableIdentifierPB.Builder table,
       @Nullable KuduRpc<?> parent) {
     checkIsClosed();
-    IsAlterTableDoneRequest request = new IsAlterTableDoneRequest(
-        this.masterTable, table);
-    request.setTimeoutMillis(defaultAdminOperationTimeoutMs);
-    if (parent != null) {
-      request.setParentRpc(parent);
-    }
+    IsAlterTableDoneRequest request = new IsAlterTableDoneRequest(this.masterTable,
+                                                                  table,
+                                                                  timer,
+                                                                  defaultAdminOperationTimeoutMs);
+    request.setParentRpc(parent);
     return sendRpcToTablet(request);
   }
 
@@ -720,8 +739,9 @@ public class AsyncKuduClient implements AutoCloseable {
    */
   public Deferred<ListTabletServersResponse> listTabletServers() {
     checkIsClosed();
-    ListTabletServersRequest rpc = new ListTabletServersRequest(this.masterTable);
-    rpc.setTimeoutMillis(defaultAdminOperationTimeoutMs);
+    ListTabletServersRequest rpc = new ListTabletServersRequest(this.masterTable,
+                                                                timer,
+                                                                defaultAdminOperationTimeoutMs);
     return sendRpcToTablet(rpc);
   }
 
@@ -740,13 +760,13 @@ public class AsyncKuduClient implements AutoCloseable {
     Preconditions.checkNotNull(tableName);
 
     // Prefer a lookup by table ID over name, since the former is immutable.
-    GetTableSchemaRequest rpc = new GetTableSchemaRequest(
-        this.masterTable, tableId, tableId != null ? null : tableName);
+    GetTableSchemaRequest rpc = new GetTableSchemaRequest(this.masterTable,
+                                                          tableId,
+                                                          tableId != null ? null : tableName,
+                                                          timer,
+                                                          defaultAdminOperationTimeoutMs);
 
-    if (parent != null) {
-      rpc.setParentRpc(parent);
-    }
-    rpc.setTimeoutMillis(defaultAdminOperationTimeoutMs);
+    rpc.setParentRpc(parent);
     return sendRpcToTablet(rpc).addCallback(new Callback<KuduTable, GetTableSchemaResponse>() {
       @Override
       public KuduTable call(GetTableSchemaResponse resp) throws Exception {
@@ -784,8 +804,10 @@ public class AsyncKuduClient implements AutoCloseable {
    * @return a deferred that yields the list of table names
    */
   public Deferred<ListTablesResponse> getTablesList(String nameFilter) {
-    ListTablesRequest rpc = new ListTablesRequest(this.masterTable, nameFilter);
-    rpc.setTimeoutMillis(defaultAdminOperationTimeoutMs);
+    ListTablesRequest rpc = new ListTablesRequest(this.masterTable,
+                                                  nameFilter,
+                                                  timer,
+                                                  defaultAdminOperationTimeoutMs);
     return sendRpcToTablet(rpc);
   }
 
@@ -970,7 +992,7 @@ public class AsyncKuduClient implements AutoCloseable {
               RpcTraceFrame.Action.SLEEP_THEN_RETRY)
           .callStatus(ex.getStatus())
           .build());
-      newTimeout(retryTask, sleepTime);
+      newTimeout(timer, retryTask, sleepTime);
       return null;
 
       // fakeRpc.Deferred was not invoked; the user continues to wait until
@@ -1347,12 +1369,14 @@ public class AsyncKuduClient implements AutoCloseable {
    * @param method fake RPC method (shows up in RPC traces)
    * @param parent parent RPC (for tracing), if any
    * @param <R> the expected return type of the fake RPC
+   * @param timeoutMs the timeout in milliseconds for the fake RPC
    * @return created fake RPC
    */
   private <R> KuduRpc<R> buildFakeRpc(
       @Nonnull final String method,
-      @Nullable final KuduRpc<?> parent) {
-    KuduRpc<R> rpc = new KuduRpc<R>(null) {
+      @Nullable final KuduRpc<?> parent,
+      long timeoutMs) {
+    KuduRpc<R> rpc = new KuduRpc<R>(null, timer, timeoutMs) {
       @Override
       Message createRequestPB() {
         return null;
@@ -1374,11 +1398,22 @@ public class AsyncKuduClient implements AutoCloseable {
         return null;
       }
     };
-    rpc.setTimeoutMillis(defaultAdminOperationTimeoutMs);
-    if (parent != null) {
-      rpc.setParentRpc(parent);
-    }
+    rpc.setParentRpc(parent);
     return rpc;
+  }
+
+  /**
+   * Creates an RPC that will never be sent, and will instead be used
+   * exclusively for timeouts.
+   * @param method fake RPC method (shows up in RPC traces)
+   * @param parent parent RPC (for tracing), if any
+   * @param <R> the expected return type of the fake RPC
+   * @return created fake RPC
+   */
+  private <R> KuduRpc<R> buildFakeRpc(
+      @Nonnull final String method,
+      @Nullable final KuduRpc<?> parent) {
+    return buildFakeRpc(method, parent, defaultAdminOperationTimeoutMs);
   }
 
   /**
@@ -1550,7 +1585,7 @@ public class AsyncKuduClient implements AutoCloseable {
       tooManyAttemptsOrTimeout(rpc, null);
       return;
     }
-    newTimeout(new RetryTimer(), sleepTimeMillis);
+    newTimeout(timer, new RetryTimer(), sleepTimeMillis);
   }
 
   /**
@@ -1580,7 +1615,7 @@ public class AsyncKuduClient implements AutoCloseable {
       tooManyAttemptsOrTimeout(rpc, null);
       return;
     }
-    newTimeout(new RetryTimer(), sleepTimeMillis);
+    newTimeout(timer, new RetryTimer(), sleepTimeMillis);
   }
 
   private final class ReleaseMasterLookupPermit<T> implements Callback<T, T> {
@@ -1688,15 +1723,18 @@ public class AsyncKuduClient implements AutoCloseable {
     if (isMasterTable(tableId)) {
       d = getMasterTableLocationsPB(parentRpc);
     } else {
+      long timeoutMillis = parentRpc == null ? defaultAdminOperationTimeoutMs :
+                                               parentRpc.deadlineTracker.getMillisBeforeDeadline();
       // Leave the end of the partition key range empty in order to pre-fetch tablet locations.
       GetTableLocationsRequest rpc =
-          new GetTableLocationsRequest(masterTable, partitionKey, null, tableId, fetchBatchSize);
-      if (parentRpc != null) {
-        rpc.setTimeoutMillis(parentRpc.deadlineTracker.getMillisBeforeDeadline());
-        rpc.setParentRpc(parentRpc);
-      } else {
-        rpc.setTimeoutMillis(defaultAdminOperationTimeoutMs);
-      }
+          new GetTableLocationsRequest(masterTable,
+                                       partitionKey,
+                                       null,
+                                       tableId,
+                                       fetchBatchSize,
+                                       timer,
+                                       timeoutMillis);
+      rpc.setParentRpc(parentRpc);
       d = sendRpcToTablet(rpc);
     }
     d.addCallback(new MasterLookupCB(table, partitionKey, fetchBatchSize));
@@ -1823,15 +1861,20 @@ public class AsyncKuduClient implements AutoCloseable {
       final byte[] lookupKey = partitionKey;
 
       // Build a fake RPC to encapsulate and propagate the timeout. There's no actual "RPC" to send.
-      KuduRpc fakeRpc = buildFakeRpc("loopLocateTable", null);
-      fakeRpc.setTimeoutMillis(deadlineTracker.getMillisBeforeDeadline());
+      KuduRpc fakeRpc = buildFakeRpc("loopLocateTable",
+                                     null,
+                                     deadlineTracker.getMillisBeforeDeadline());
 
       return locateTablet(table, key, fetchBatchSize, fakeRpc).addCallbackDeferring(
           new Callback<Deferred<List<LocatedTablet>>, GetTableLocationsResponsePB>() {
             @Override
             public Deferred<List<LocatedTablet>> call(GetTableLocationsResponsePB resp) {
-              return loopLocateTable(table, lookupKey, endPartitionKey, fetchBatchSize,
-                                     ret, deadlineTracker);
+              return loopLocateTable(table,
+                                     lookupKey,
+                                     endPartitionKey,
+                                     fetchBatchSize,
+                                     ret,
+                                     deadlineTracker);
             }
 
             @Override
@@ -1865,8 +1908,12 @@ public class AsyncKuduClient implements AutoCloseable {
     final List<LocatedTablet> ret = Lists.newArrayList();
     final DeadlineTracker deadlineTracker = new DeadlineTracker();
     deadlineTracker.setDeadline(deadline);
-    return loopLocateTable(table, startPartitionKey, endPartitionKey, fetchBatchSize,
-                           ret, deadlineTracker);
+    return loopLocateTable(table,
+                           startPartitionKey,
+                           endPartitionKey,
+                           fetchBatchSize,
+                           ret,
+                           deadlineTracker);
   }
 
   /**
@@ -1952,11 +1999,12 @@ public class AsyncKuduClient implements AutoCloseable {
             .build());
 
     long sleepTime = getSleepTimeForRpcMillis(rpc);
-    if (cannotRetryRequest(rpc) || rpc.deadlineTracker.wouldSleepingTimeoutMillis(sleepTime)) {
+    if (cannotRetryRequest(rpc) ||
+        rpc.deadlineTracker.wouldSleepingTimeoutMillis(sleepTime)) {
       // Don't let it retry.
       return tooManyAttemptsOrTimeout(rpc, ex);
     }
-    newTimeout(new RetryTimer(), sleepTime);
+    newTimeout(timer, new RetryTimer(), sleepTime);
     return rpc.getDeferred();
   }
 
@@ -2345,16 +2393,29 @@ public class AsyncKuduClient implements AutoCloseable {
     return MASTER_TABLE_NAME_PLACEHOLDER == tableId;
   }
 
-  void newTimeout(final TimerTask task, final long timeoutMs) {
+  /**
+   * Utility function to register a timeout task 'task' on timer 'timer' that
+   * will fire after 'timeoutMillis' milliseconds. Returns a handle to the
+   * scheduled timeout, which can be used to cancel the task and release its
+   * resources.
+   * @param timer the timer on which the task is scheduled
+   * @param task the task that will be run when the timeout hits
+   * @param timeoutMillis the timeout, in milliseconds
+   * @return a handle to the scheduled timeout
+   */
+  static Timeout newTimeout(final Timer timer,
+                            final TimerTask task,
+                            final long timeoutMillis) {
+    Preconditions.checkNotNull(timer);
     try {
-      timer.newTimeout(task, timeoutMs, MILLISECONDS);
+      return timer.newTimeout(task, timeoutMillis, MILLISECONDS);
     } catch (IllegalStateException e) {
       // This can happen if the timer fires just before shutdown()
       // is called from another thread, and due to how threads get
       // scheduled we tried to call newTimeout() after timer.stop().
-      LOG.warn("Failed to schedule timer." +
-          " Ignore this if we're shutting down.", e);
+      LOG.warn("Failed to schedule timer. Ignore this if we're shutting down.", e);
     }
+    return null;
   }
 
   /**

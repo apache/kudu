@@ -22,6 +22,7 @@ import java.util.List;
 
 import com.google.protobuf.Message;
 import org.apache.yetus.audience.InterfaceAudience;
+import org.jboss.netty.util.Timer;
 
 import org.apache.kudu.tserver.Tserver;
 import org.apache.kudu.util.Pair;
@@ -29,8 +30,8 @@ import org.apache.kudu.util.Pair;
 @InterfaceAudience.Private
 class ListTabletsRequest extends KuduRpc<ListTabletsResponse> {
 
-  ListTabletsRequest() {
-    super(null);
+  ListTabletsRequest(Timer timer, long timeoutMillis) {
+    super(null, timer, timeoutMillis);
   }
 
   @Override
@@ -61,7 +62,8 @@ class ListTabletsRequest extends KuduRpc<ListTabletsResponse> {
       tablets.add(info.getTabletStatus().getTabletId());
     }
     ListTabletsResponse response = new ListTabletsResponse(deadlineTracker.getElapsedMillis(),
-                                                         tsUUID, tablets);
+                                                           tsUUID,
+                                                           tablets);
     return new Pair<ListTabletsResponse, Object>(
         response, respBuilder.hasError() ? respBuilder.getError() : null);
   }

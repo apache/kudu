@@ -153,7 +153,7 @@ public class TestAsyncKuduSession {
       client.deleteTable(TABLE_NAME).join();
       // Wait until tablet is deleted on TS.
       while (true) {
-        ListTabletsRequest req = new ListTabletsRequest();
+        ListTabletsRequest req = new ListTabletsRequest(client.getTimer(), 10000);
         Deferred<ListTabletsResponse> d = req.getDeferred();
         proxy.sendRpc(req);
         ListTabletsResponse resp = d.join();

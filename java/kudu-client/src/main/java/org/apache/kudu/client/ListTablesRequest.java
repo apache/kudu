@@ -22,6 +22,7 @@ import java.util.List;
 
 import com.google.protobuf.Message;
 import org.apache.yetus.audience.InterfaceAudience;
+import org.jboss.netty.util.Timer;
 
 import org.apache.kudu.master.Master;
 import org.apache.kudu.util.Pair;
@@ -31,8 +32,11 @@ class ListTablesRequest extends KuduRpc<ListTablesResponse> {
 
   private final String nameFilter;
 
-  ListTablesRequest(KuduTable masterTable, String nameFilter) {
-    super(masterTable);
+  ListTablesRequest(KuduTable masterTable,
+                    String nameFilter,
+                    Timer timer,
+                    long timeoutMillis) {
+    super(masterTable, timer, timeoutMillis);
     this.nameFilter = nameFilter;
   }
 
@@ -68,7 +72,8 @@ class ListTablesRequest extends KuduRpc<ListTablesResponse> {
       tables.add(info.getName());
     }
     ListTablesResponse response = new ListTablesResponse(deadlineTracker.getElapsedMillis(),
-                                                         tsUUID, tables);
+                                                         tsUUID,
+                                                         tables);
     return new Pair<ListTablesResponse, Object>(
         response, respBuilder.hasError() ? respBuilder.getError() : null);
   }

@@ -25,6 +25,7 @@ import com.google.common.base.Preconditions;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
 import org.apache.yetus.audience.InterfaceAudience;
+import org.jboss.netty.util.Timer;
 
 import org.apache.kudu.Schema;
 import org.apache.kudu.master.Master.TableIdentifierPB.Builder;
@@ -39,8 +40,12 @@ public class GetTableSchemaRequest extends KuduRpc<GetTableSchemaResponse> {
   private final String name;
 
 
-  GetTableSchemaRequest(KuduTable masterTable, String id, String name) {
-    super(masterTable);
+  GetTableSchemaRequest(KuduTable masterTable,
+                        String id,
+                        String name,
+                        Timer timer,
+                        long timeoutMillis) {
+    super(masterTable, timer, timeoutMillis);
     Preconditions.checkArgument(id != null ^ name != null,
         "Only one of table ID or the table name should be provided");
     this.id = id;

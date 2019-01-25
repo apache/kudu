@@ -23,6 +23,7 @@ import static org.apache.kudu.master.Master.TableIdentifierPB;
 
 import com.google.protobuf.Message;
 import org.apache.yetus.audience.InterfaceAudience;
+import org.jboss.netty.util.Timer;
 
 import org.apache.kudu.util.Pair;
 
@@ -33,8 +34,11 @@ import org.apache.kudu.util.Pair;
 class IsAlterTableDoneRequest extends KuduRpc<IsAlterTableDoneResponse> {
   private final TableIdentifierPB.Builder tableId;
 
-  IsAlterTableDoneRequest(KuduTable masterTable, TableIdentifierPB.Builder tableId) {
-    super(masterTable);
+  IsAlterTableDoneRequest(KuduTable masterTable,
+                          TableIdentifierPB.Builder tableId,
+                          Timer timer,
+                          long timeoutMillis) {
+    super(masterTable, timer, timeoutMillis);
     this.tableId = tableId;
   }
 
@@ -62,7 +66,8 @@ class IsAlterTableDoneRequest extends KuduRpc<IsAlterTableDoneResponse> {
     final IsAlterTableDoneResponsePB.Builder respBuilder = IsAlterTableDoneResponsePB.newBuilder();
     readProtobuf(callResponse.getPBMessage(), respBuilder);
     IsAlterTableDoneResponse resp = new IsAlterTableDoneResponse(deadlineTracker.getElapsedMillis(),
-        tsUUID, respBuilder.getDone());
+                                                                 tsUUID,
+                                                                 respBuilder.getDone());
     return new Pair<IsAlterTableDoneResponse, Object>(
         resp, respBuilder.hasError() ? respBuilder.getError() : null);
   }

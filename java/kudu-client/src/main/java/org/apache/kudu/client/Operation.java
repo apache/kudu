@@ -29,6 +29,7 @@ import com.google.protobuf.Message;
 import com.google.protobuf.UnsafeByteOperations;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
+import org.jboss.netty.util.Timer;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
@@ -93,8 +94,25 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
    * @param table table with the schema to use for this operation
    */
   Operation(KuduTable table) {
-    super(table);
+    super(table, null, 0);
     this.row = table.getSchema().newPartialRow();
+  }
+
+  /**
+   * Reset the timeout of this batch.
+   *
+   * TODO(wdberkeley): The fact we have to do this is a sign an Operation should not subclass
+   * KuduRpc.
+   *
+   * @param timeoutMillis the new timeout of the batch in milliseconds
+   */
+  void resetTimeoutMillis(Timer timer, long timeoutMillis) {
+    deadlineTracker.reset();
+    deadlineTracker.setDeadline(timeoutMillis);
+    if (timeoutTask != null) {
+      timeoutTask.cancel();
+    }
+    timeoutTask = AsyncKuduClient.newTimeout(timer, new RpcTimeoutTask(), timeoutMillis);
   }
 
   /** See {@link SessionConfiguration#setIgnoreAllDuplicateRows(boolean)} */
@@ -157,8 +175,11 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
         error = null;
       }
     }
-    OperationResponse response = new OperationResponse(deadlineTracker.getElapsedMillis(), tsUUID,
-                                                       builder.getTimestamp(), this, error);
+    OperationResponse response = new OperationResponse(deadlineTracker.getElapsedMillis(),
+                                                       tsUUID,
+                                                       builder.getTimestamp(),
+                                                       this,
+                                                       error);
     return new Pair<OperationResponse, Object>(
         response, builder.hasError() ? builder.getError() : null);
   }

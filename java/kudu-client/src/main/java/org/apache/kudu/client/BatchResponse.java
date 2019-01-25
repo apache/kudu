@@ -46,9 +46,12 @@ public class BatchResponse extends KuduRpcResponse {
    * @param operations the list of operations which created this response
    * @param indexes the list of operations' order index
    */
-  BatchResponse(long elapsedMillis, String tsUUID, long writeTimestamp,
+  BatchResponse(long elapsedMillis,
+                String tsUUID,
+                long writeTimestamp,
                 List<Tserver.WriteResponsePB.PerRowErrorPB> errorsPB,
-                List<Operation> operations, List<Integer> indexes) {
+                List<Operation> operations,
+                List<Integer> indexes) {
     super(elapsedMillis, tsUUID);
     this.writeTimestamp = writeTimestamp;
     individualResponses = new ArrayList<>(operations.size());
@@ -75,8 +78,11 @@ public class BatchResponse extends KuduRpcResponse {
         currentErrorIndex++;
       }
       individualResponses.add(
-          new OperationResponse(currentOperation.deadlineTracker.getElapsedMillis(), tsUUID,
-              writeTimestamp, currentOperation, rowError));
+          new OperationResponse(currentOperation.deadlineTracker.getElapsedMillis(),
+                                tsUUID,
+                                writeTimestamp,
+                                currentOperation,
+                                rowError));
     }
     assert (rowErrors.size() == errorsPB.size());
     assert (individualResponses.size() == operations.size());

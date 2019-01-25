@@ -117,6 +117,6 @@ public class TestConnectionCache {
     PingRequest ping = PingRequest.makeMasterPingRequest();
     Deferred<PingResponse> d = ping.getDeferred();
     proxy.sendRpc(ping);
-    d.join();
+    d.join(10000);
   }
 }

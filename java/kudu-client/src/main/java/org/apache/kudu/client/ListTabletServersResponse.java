@@ -30,13 +30,13 @@ public class ListTabletServersResponse extends KuduRpcResponse {
   private final List<String> tabletServersList;
 
   /**
-   * @param ellapsedMillis Time in milliseconds since RPC creation to now.
+   * @param elapsedMillis Time in milliseconds since RPC creation to now.
    * @param tabletServersCount How many tablet servers the master is reporting.
    * @param tabletServersList List of tablet servers.
    */
-  ListTabletServersResponse(long ellapsedMillis, String tsUUID,
+  ListTabletServersResponse(long elapsedMillis, String tsUUID,
                             int tabletServersCount, List<String> tabletServersList) {
-    super(ellapsedMillis, tsUUID);
+    super(elapsedMillis, tsUUID);
     this.tabletServersCount = tabletServersCount;
     this.tabletServersList = tabletServersList;
   }

@@ -25,9 +25,9 @@ import org.apache.yetus.audience.InterfaceStability;
 public class DeleteTableResponse extends KuduRpcResponse {
 
   /**
-   * @param ellapsedMillis Time in milliseconds since RPC creation to now.
+   * @param elapsedMillis Time in milliseconds since RPC creation to now.
    */
-  DeleteTableResponse(long ellapsedMillis, String tsUUID) {
-    super(ellapsedMillis, tsUUID);
+  DeleteTableResponse(long elapsedMillis, String tsUUID) {
+    super(elapsedMillis, tsUUID);
   }
 }

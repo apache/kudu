@@ -19,6 +19,7 @@ package org.apache.kudu.client;
 
 import com.google.protobuf.Message;
 import org.apache.yetus.audience.InterfaceAudience;
+import org.jboss.netty.util.Timer;
 
 import org.apache.kudu.master.Master;
 import org.apache.kudu.util.Pair;
@@ -33,8 +34,11 @@ class DeleteTableRequest extends KuduRpc<DeleteTableResponse> {
 
   private final String name;
 
-  DeleteTableRequest(KuduTable table, String name) {
-    super(table);
+  DeleteTableRequest(KuduTable table,
+                     String name,
+                     Timer timer,
+                     long timeoutMillis) {
+    super(table, timer, timeoutMillis);
     this.name = name;
   }
 

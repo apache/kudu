@@ -27,10 +27,10 @@ public class AlterTableResponse extends KuduRpcResponse {
   private String tableId;
 
   /**
-   * @param ellapsedMillis Time in milliseconds since RPC creation to now.
+   * @param elapsedMillis Time in milliseconds since RPC creation to now.
    */
-  AlterTableResponse(long ellapsedMillis, String tsUUID, String tableId) {
-    super(ellapsedMillis, tsUUID);
+  AlterTableResponse(long elapsedMillis, String tsUUID, String tableId) {
+    super(elapsedMillis, tsUUID);
     this.tableId = tableId;
   }
 

@@ -25,6 +25,7 @@ import com.google.common.base.MoreObjects;
 import com.google.protobuf.Message;
 import com.google.protobuf.UnsafeByteOperations;
 import org.apache.yetus.audience.InterfaceAudience;
+import org.jboss.netty.util.Timer;
 
 import org.apache.kudu.WireProtocol;
 import org.apache.kudu.client.Statistics.Statistic;
@@ -57,11 +58,27 @@ class Batch extends KuduRpc<BatchResponse> {
   /** See {@link SessionConfiguration#setIgnoreAllDuplicateRows(boolean)} */
   private final boolean ignoreAllDuplicateRows;
 
-
   Batch(KuduTable table, LocatedTablet tablet, boolean ignoreAllDuplicateRows) {
-    super(table);
+    super(table, null, 0);
     this.ignoreAllDuplicateRows = ignoreAllDuplicateRows;
     this.tablet = tablet;
+  }
+
+  /**
+   * Reset the timeout of this batch.
+   *
+   * TODO(wdberkeley): The fact we have to do this is a sign an Operation should not subclass
+   * KuduRpc.
+   *
+   * @param timeoutMillis the new timeout of the batch in milliseconds
+   */
+  void resetTimeoutMillis(Timer timer, long timeoutMillis) {
+    deadlineTracker.reset();
+    deadlineTracker.setDeadline(timeoutMillis);
+    if (timeoutTask != null) {
+      timeoutTask.cancel();
+    }
+    timeoutTask = AsyncKuduClient.newTimeout(timer, new RpcTimeoutTask(), timeoutMillis);
   }
 
   /**
@@ -128,8 +145,11 @@ class Batch extends KuduRpc<BatchResponse> {
       }
     }
 
-    BatchResponse response = new BatchResponse(deadlineTracker.getElapsedMillis(), tsUUID,
-                                               builder.getTimestamp(), errorsPB, operations,
+    BatchResponse response = new BatchResponse(deadlineTracker.getElapsedMillis(),
+                                               tsUUID,
+                                               builder.getTimestamp(),
+                                               errorsPB,
+                                               operations,
                                                operationIndexes);
 
     if (injectedError != null) {

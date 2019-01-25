@@ -25,6 +25,7 @@ import java.util.Collections;
 
 import com.google.protobuf.Message;
 import org.apache.yetus.audience.InterfaceAudience;
+import org.jboss.netty.util.Timer;
 
 import org.apache.kudu.master.Master.ConnectToMasterResponsePB;
 import org.apache.kudu.master.Master.MasterFeatures;
@@ -51,8 +52,10 @@ public class ConnectToMasterRequest extends KuduRpc<ConnectToMasterResponsePB> {
    */
   private String method = CONNECT_TO_MASTER;
 
-  public ConnectToMasterRequest(KuduTable masterTable) {
-    super(masterTable);
+  public ConnectToMasterRequest(KuduTable masterTable,
+                                Timer timer,
+                                long timeoutMillis) {
+    super(masterTable, timer, timeoutMillis);
     // TODO(todd): get rid of 'masterTable' hack
   }
 

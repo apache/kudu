@@ -21,6 +21,7 @@ import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
 import com.google.protobuf.UnsafeByteOperations;
 import org.apache.yetus.audience.InterfaceAudience;
+import org.jboss.netty.util.Timer;
 
 import org.apache.kudu.master.Master;
 import org.apache.kudu.util.Pair;
@@ -36,10 +37,14 @@ class GetTableLocationsRequest extends KuduRpc<Master.GetTableLocationsResponseP
   private final String tableId;
   private final int maxReturnedLocations;
 
-  GetTableLocationsRequest(KuduTable table, byte[] startPartitionKey,
-                           byte[] endPartitionKey, String tableId,
-                           int maxReturnedLocations) {
-    super(table);
+  GetTableLocationsRequest(KuduTable table,
+                           byte[] startPartitionKey,
+                           byte[] endPartitionKey,
+                           String tableId,
+                           int maxReturnedLocations,
+                           Timer timer,
+                           long timeoutMillis) {
+    super(table, timer, timeoutMillis);
     if (startPartitionKey != null && endPartitionKey != null &&
         Bytes.memcmp(startPartitionKey, endPartitionKey) > 0) {
       throw new IllegalArgumentException(

@@ -20,6 +20,7 @@ package org.apache.kudu.client;
 import com.google.protobuf.Message;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
+import org.jboss.netty.util.Timer;
 
 import org.apache.kudu.master.Master;
 import org.apache.kudu.util.Pair;
@@ -34,15 +35,15 @@ class PingRequest extends KuduRpc<PingResponse> {
   private final String serviceName;
 
   static PingRequest makeMasterPingRequest() {
-    return new PingRequest(MASTER_SERVICE_NAME);
+    return new PingRequest(MASTER_SERVICE_NAME, null, 0);
   }
 
   static PingRequest makeTabletServerPingRequest() {
-    return new PingRequest(TABLET_SERVER_SERVICE_NAME);
+    return new PingRequest(TABLET_SERVER_SERVICE_NAME, null, 0);
   }
 
-  private PingRequest(String serviceName) {
-    super(null);
+  private PingRequest(String serviceName, Timer timer, long timeoutMillis) {
+    super(null, timer, timeoutMillis);
     this.serviceName = serviceName;
   }
 
@@ -67,8 +68,7 @@ class PingRequest extends KuduRpc<PingResponse> {
     final Master.PingResponsePB.Builder respBuilder =
         Master.PingResponsePB.newBuilder();
     readProtobuf(callResponse.getPBMessage(), respBuilder);
-    PingResponse response = new PingResponse(deadlineTracker.getElapsedMillis(),
-        tsUUID);
+    PingResponse response = new PingResponse(deadlineTracker.getElapsedMillis(), tsUUID);
     return new Pair<>(response, null);
   }
 }

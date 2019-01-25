@@ -26,8 +26,8 @@ public class ListTabletsResponse extends KuduRpcResponse {
 
   private final List<String> tabletsList;
 
-  ListTabletsResponse(long ellapsedMillis, String tsUUID, List<String> tabletsList) {
-    super(ellapsedMillis, tsUUID);
+  ListTabletsResponse(long elapsedMillis, String tsUUID, List<String> tabletsList) {
+    super(elapsedMillis, tsUUID);
     this.tabletsList = tabletsList;
   }
 

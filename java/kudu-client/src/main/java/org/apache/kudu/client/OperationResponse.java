@@ -40,8 +40,11 @@ public class OperationResponse extends KuduRpcResponse {
    * @param operation the operation that created this response
    * @param errorPB a row error in pb format, can be null
    */
-  OperationResponse(long elapsedMillis, String tsUUID, long writeTimestamp,
-                    Operation operation, Tserver.WriteResponsePB.PerRowErrorPB errorPB) {
+  OperationResponse(long elapsedMillis,
+                    String tsUUID,
+                    long writeTimestamp,
+                    Operation operation,
+                    Tserver.WriteResponsePB.PerRowErrorPB errorPB) {
     super(elapsedMillis, tsUUID);
     this.writeTimestamp = writeTimestamp;
     this.rowError = errorPB == null ? null : RowError.fromRowErrorPb(errorPB, operation, tsUUID);
@@ -55,8 +58,11 @@ public class OperationResponse extends KuduRpcResponse {
    * @param operation the operation that created this response
    * @param rowError a parsed row error, can be null
    */
-  OperationResponse(long elapsedMillis, String tsUUID, long writeTimestamp,
-                    Operation operation, RowError rowError) {
+  OperationResponse(long elapsedMillis,
+                    String tsUUID,
+                    long writeTimestamp,
+                    Operation operation,
+                    RowError rowError) {
     super(elapsedMillis, tsUUID);
     this.writeTimestamp = writeTimestamp;
     this.rowError = rowError;

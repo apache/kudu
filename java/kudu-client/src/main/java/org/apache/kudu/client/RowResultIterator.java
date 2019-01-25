@@ -48,16 +48,20 @@ public class RowResultIterator extends KuduRpcResponse implements Iterator<RowRe
 
   /**
    * Package private constructor, only meant to be instantiated from AsyncKuduScanner.
-   * @param ellapsedMillis time in milliseconds since RPC creation to now
+   * @param elapsedMillis time in milliseconds since RPC creation to now
    * @param tsUUID UUID of the tablet server that handled our request
    * @param schema schema used to parse the rows
    * @param numRows how many rows are contained in the bs slice
    * @param bs normal row data
    * @param indirectBs indirect row data
    */
-  private RowResultIterator(long ellapsedMillis, String tsUUID, Schema schema,
-                            int numRows, Slice bs, Slice indirectBs) {
-    super(ellapsedMillis, tsUUID);
+  private RowResultIterator(long elapsedMillis,
+                            String tsUUID,
+                            Schema schema,
+                            int numRows,
+                            Slice bs,
+                            Slice indirectBs) {
+    super(elapsedMillis, tsUUID);
     this.schema = schema;
     this.bs = bs;
     this.indirectBs = indirectBs;
@@ -66,13 +70,14 @@ public class RowResultIterator extends KuduRpcResponse implements Iterator<RowRe
     this.rowResult = numRows == 0 ? null : new RowResult(this.schema, this.bs, this.indirectBs);
   }
 
-  static RowResultIterator makeRowResultIterator(long ellapsedMillis, String tsUUID,
+  static RowResultIterator makeRowResultIterator(long elapsedMillis,
+                                                 String tsUUID,
                                                  Schema schema,
                                                  WireProtocol.RowwiseRowBlockPB data,
                                                  final CallResponse callResponse)
       throws KuduException {
     if (data == null || data.getNumRows() == 0) {
-      return new RowResultIterator(ellapsedMillis, tsUUID, schema, 0, null, null);
+      return new RowResultIterator(elapsedMillis, tsUUID, schema, 0, null, null);
     }
 
     Slice bs = callResponse.getSidecar(data.getRowsSidecar());
@@ -87,7 +92,7 @@ public class RowResultIterator extends KuduRpcResponse implements Iterator<RowRe
           " bytes of data but expected " + expectedSize + " for " + numRows + " rows");
       throw new NonRecoverableException(statusIllegalState);
     }
-    return new RowResultIterator(ellapsedMillis, tsUUID, schema, numRows, bs, indirectBs);
+    return new RowResultIterator(elapsedMillis, tsUUID, schema, numRows, bs, indirectBs);
   }
 
   /**

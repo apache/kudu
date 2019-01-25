@@ -126,7 +126,7 @@ public class AsyncKuduSession implements SessionConfiguration {
   private int mutationBufferLowWatermark;
   private FlushMode flushMode;
   private ExternalConsistencyMode consistencyMode;
-  private long timeoutMs;
+  private long timeoutMillis;
 
   /**
    * Protects internal state from concurrent access. {@code AsyncKuduSession} is not threadsafe
@@ -188,7 +188,7 @@ public class AsyncKuduSession implements SessionConfiguration {
     this.client = client;
     flushMode = FlushMode.AUTO_FLUSH_SYNC;
     consistencyMode = CLIENT_PROPAGATED;
-    timeoutMs = client.getDefaultOperationTimeoutMs();
+    timeoutMillis = client.getDefaultOperationTimeoutMs();
     inactiveBuffers.add(bufferA);
     inactiveBuffers.add(bufferB);
     errorCollector = new ErrorCollector(mutationBufferSpace);
@@ -257,12 +257,12 @@ public class AsyncKuduSession implements SessionConfiguration {
 
   @Override
   public void setTimeoutMillis(long timeout) {
-    this.timeoutMs = timeout;
+    this.timeoutMillis = timeout;
   }
 
   @Override
   public long getTimeoutMillis() {
-    return this.timeoutMs;
+    return this.timeoutMillis;
   }
 
   @Override
@@ -390,9 +390,8 @@ public class AsyncKuduSession implements SessionConfiguration {
       }
 
       for (Batch batch : batches.values()) {
-        if (timeoutMs != 0) {
-          batch.deadlineTracker.reset();
-          batch.setTimeoutMillis(timeoutMs);
+        if (timeoutMillis != 0) {
+          batch.resetTimeoutMillis(client.getTimer(), timeoutMillis);
         }
         addBatchCallbacks(batch);
         batchResponses.add(client.sendRpcToTablet(batch));
@@ -544,8 +543,8 @@ public class AsyncKuduSession implements SessionConfiguration {
 
     // If immediate flush mode, send the operation directly.
     if (flushMode == FlushMode.AUTO_FLUSH_SYNC) {
-      if (timeoutMs != 0) {
-        operation.setTimeoutMillis(timeoutMs);
+      if (timeoutMillis != 0) {
+        operation.resetTimeoutMillis(client.getTimer(), timeoutMillis);
       }
       operation.setExternalConsistencyMode(this.consistencyMode);
       operation.setIgnoreAllDuplicateRows(ignoreAllDuplicateRows);
@@ -568,7 +567,7 @@ public class AsyncKuduSession implements SessionConfiguration {
     Deferred<LocatedTablet> tablet = client.getTabletLocation(operation.getTable(),
                                                               operation.partitionKey(),
                                                               LookupType.POINT,
-                                                              timeoutMs);
+                                                              timeoutMillis);
 
     // Holds a buffer that should be flushed outside the synchronized block, if necessary.
     Buffer fullBuffer = null;
@@ -646,7 +645,7 @@ public class AsyncKuduSession implements SessionConfiguration {
             activeBufferSize = 0;
           } else if (activeBufferSize == 0) {
             // If this is the first operation in the buffer, start a background flush timer.
-            client.newTimeout(activeBuffer.getFlusherTask(), interval);
+            AsyncKuduClient.newTimeout(client.getTimer(), activeBuffer.getFlusherTask(), interval);
           }
         }
       }
