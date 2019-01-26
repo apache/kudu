@@ -32,7 +32,6 @@ import com.stumbleupon.async.Deferred;
 
 import org.apache.kudu.test.KuduTestHarness;
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 
@@ -274,10 +273,7 @@ public class TestScannerMultiTablet {
   // Scanning a never-written-to tablet from a fresh client with no propagated
   // timestamp in "read-your-writes' mode should not fail.
   @Test(timeout = 100000)
-  @Ignore("TODO(KUDU-2415)") // not fixed yet!
   public void testReadYourWritesFreshClientFreshTable() throws Exception {
-    // NOTE: this test fails because the first tablet in the table
-    // is empty and has never been written to.
 
     // Perform scan in READ_YOUR_WRITES mode. Before the scan, verify that the
     // propagated timestamp is unset, since this is a fresh client.
@@ -289,7 +285,14 @@ public class TestScannerMultiTablet {
     assertEquals(AsyncKuduClient.NO_TIMESTAMP, asyncClient.getLastPropagatedTimestamp());
     assertEquals(AsyncKuduClient.NO_TIMESTAMP, scanner.getSnapshotTimestamp());
 
-    assertEquals(9, countRowsInScan(syncScanner));
+    // Since there isn't any write performed from the client, the count
+    // should range from [0, 9].
+    int count = countRowsInScan(syncScanner);
+    assertTrue(count >= 0);
+    assertTrue(count <= 9);
+
+    assertNotEquals(AsyncKuduClient.NO_TIMESTAMP, asyncClient.getLastPropagatedTimestamp());
+    assertNotEquals(AsyncKuduClient.NO_TIMESTAMP, scanner.getSnapshotTimestamp());
   }
 
   // Test multi tablets scan in READ_YOUR_WRITES mode for both AUTO_FLUSH_SYNC
