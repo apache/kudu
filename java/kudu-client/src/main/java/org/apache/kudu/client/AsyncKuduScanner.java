@@ -421,8 +421,8 @@ public final class AsyncKuduScanner {
               resp.scanTimestamp != AsyncKuduClient.NO_TIMESTAMP) {
             // If the server-assigned timestamp is present in the tablet
             // server's response, store it in the scanner. The stored value
-            // is used for read operations at other tablet servers in the
-            // context of the same scan.
+            // is used for read operations in READ_AT_SNAPSHOT mode at
+            // other tablet servers in the context of the same scan.
             htTimestamp = resp.scanTimestamp;
           }
 

@@ -1056,11 +1056,17 @@ public class TestKuduClient {
       Callable<Void> callable = new Callable<Void>() {
         @Override
         public Void call() throws Exception {
+          // Create a new client.
+          AsyncKuduClient asyncKuduClient = new AsyncKuduClient
+                  .AsyncKuduClientBuilder(harness.getMasterAddressesAsString())
+                  .defaultAdminOperationTimeoutMs(harness.DEFAULT_SLEEP)
+                  .build();
           // From the same client continuously performs inserts to a tablet
           // in the given flush mode.
-          KuduSession session = client.newSession();
+          KuduClient kuduClient = asyncKuduClient.syncClient();
+          KuduSession session = kuduClient.newSession();
           session.setFlushMode(flushMode);
-          KuduTable table = client.openTable(TABLE_NAME);
+          KuduTable table = kuduClient.openTable(TABLE_NAME);
           for (int i = 0; i < 3; i++) {
             for (int j = 100 * i; j < 100 * (i + 1); j++) {
               Insert insert = table.newInsert();
@@ -1079,14 +1085,13 @@ public class TestKuduClient {
             // reads will not "go back in time" regarding writes that other
             // clients have done.
             for (int k = 0; k < 3; k++) {
-              AsyncKuduScanner scanner = asyncClient.newScannerBuilder(table)
+              AsyncKuduScanner scanner = asyncKuduClient.newScannerBuilder(table)
                       .readMode(AsyncKuduScanner.ReadMode.READ_YOUR_WRITES)
                       .replicaSelection(replicaSelection)
                       .build();
               KuduScanner syncScanner = new KuduScanner(scanner);
-              long preTs = asyncClient.getLastPropagatedTimestamp();
-              assertNotEquals(AsyncKuduClient.NO_TIMESTAMP,
-                  asyncClient.getLastPropagatedTimestamp());
+              long preTs = asyncKuduClient.getLastPropagatedTimestamp();
+              assertNotEquals(AsyncKuduClient.NO_TIMESTAMP, preTs);
 
               long row_count = countRowsInScan(syncScanner);
               long expected_count = 100L * (i + 1);
@@ -1100,6 +1105,8 @@ public class TestKuduClient {
               syncScanner.close();
             }
           }
+
+          kuduClient.close();
           return null;
         }
       };
