@@ -1168,7 +1168,7 @@ public class TestKuduClient {
 
   @Test(timeout = 100000)
   @LocationConfig(locations = {
-      "/L0:4",
+      "/L0:6", // 3 masters, 1 client, 3 tablet servers: 3 * 1 + 3 = 6.
   })
   public void testClientLocation() throws Exception {
     // Do something that will cause the client to connect to the cluster.

@@ -437,6 +437,17 @@ public class KuduTestHarness extends ExternalResource {
    * define a location mapping for the cluster. Location
    * mappings are defined as a series of 'location:number'
    * pairs.
+   *
+   * Note that, in many Kudu tests, multiple masters will be run, each
+   * on their own network interface within the same machine, and client
+   * connections will appear to come from the same interface as the
+   * master being connected to. So, for example, if there are two
+   * clients, three masters, and three tablet servers, nine locations
+   * will be assigned: each client will get a location from each
+   * master (from a different IP), and each tablet server will get a
+   * location. The easiest way to work around this for our simple
+   * Java client tests is to set the number of mappings to be something
+   * at least (# masters) * (# clients) + (# tablet servers)
    */
   @Retention(RetentionPolicy.RUNTIME)
   @Target({ElementType.METHOD})
