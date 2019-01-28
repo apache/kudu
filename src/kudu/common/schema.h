@@ -420,7 +420,7 @@ class ColumnSchema {
 class Schema {
  public:
 
-  static const int kColumnNotFound = -1;
+  static const int kColumnNotFound;
 
   Schema()
     : num_key_columns_(0),

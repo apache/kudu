@@ -103,7 +103,7 @@ Status DuplicatingRowSet::NewRowIterator(const RowIteratorOptions& opts,
 
   switch (opts.order) {
     case ORDERED:
-      *out = NewMergeIterator(std::move(iters));
+      *out = NewMergeIterator(MergeIteratorOptions(opts.include_deleted_rows), std::move(iters));
       break;
     case UNORDERED:
       *out = NewUnionIterator(std::move(iters));

@@ -150,9 +150,11 @@ size_t ColumnSchema::memory_footprint_including_this() const {
   return kudu_malloc_usable_size(this) + memory_footprint_excluding_this();
 }
 
+const int Schema::kColumnNotFound = -1;
+
 Schema::Schema(const Schema& other)
   : name_to_index_bytes_(0),
-    name_to_index_(/*bucket_count=*/10,
+    name_to_index_(/*bucket_count*/ 10,
                    NameToIndexMap::hasher(),
                    NameToIndexMap::key_equal(),
                    NameToIndexMapAllocator(&name_to_index_bytes_)) {
