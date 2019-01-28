@@ -751,7 +751,6 @@ Status Rebalancer::BuildClusterInfo(const ClusterRawInfo& raw_info,
       if (it_pending_moves != moves_in_progress.end() &&
           tablet.result == KsckCheckResult::RECOVERING) {
         const auto& move_info = it_pending_moves->second;
-        DCHECK(!move_info.ts_uuid_to.empty());
         bool is_target_replica_present = false;
         // Verify that the target replica is present in the config.
         for (const auto& tr : tablet.replicas) {
@@ -1095,9 +1094,8 @@ bool Rebalancer::AlgoBasedRunner::ScheduleNextMove(bool* has_errors,
   Status s = ScheduleReplicaMove(master_addresses_, client_,
                                  tablet_id, src_ts_uuid, dst_ts_uuid);
   if (s.ok()) {
-    UpdateOnMoveScheduled(op_idx, info.tablet_uuid,
-                          info.ts_uuid_from, info.ts_uuid_to, true);
-    LOG(INFO) << Substitute("tablet $0: $1 -> $2 move scheduled",
+    UpdateOnMoveScheduled(op_idx, tablet_id, src_ts_uuid, dst_ts_uuid, true);
+    LOG(INFO) << Substitute("tablet $0: '$1' -> '$2' move scheduled",
                             tablet_id, src_ts_uuid, dst_ts_uuid);
     // Successfully scheduled move operation.
     return true;
@@ -1108,10 +1106,9 @@ bool Rebalancer::AlgoBasedRunner::ScheduleNextMove(bool* has_errors,
   // or the tablet does not exit anymore. The replica might already
   // moved because of some other concurrent activity, e.g.
   // re-replication, another rebalancing session in progress, etc.
-  LOG(INFO) << Substitute("tablet $0: $1 -> $2 move ignored: $3",
+  LOG(INFO) << Substitute("tablet $0: '$1' -> '$2' move ignored: $3",
                           tablet_id, src_ts_uuid, dst_ts_uuid, s.ToString());
-  UpdateOnMoveScheduled(op_idx, info.tablet_uuid,
-                        info.ts_uuid_from, info.ts_uuid_to, false);
+  UpdateOnMoveScheduled(op_idx, tablet_id, src_ts_uuid, dst_ts_uuid, false);
   // Failed to schedule move operation due to an error.
   *has_errors = true;
   return false;
@@ -1149,7 +1146,7 @@ bool Rebalancer::AlgoBasedRunner::UpdateMovesInProgressStatus(
       // this situation after returning from this method, re-synchronizing
       // the state of the cluster.
       ++error_count;
-      LOG(INFO) << Substitute("tablet $0: $1 -> $2 move is abandoned: $3",
+      LOG(INFO) << Substitute("tablet $0: '$1' -> '$2' move is abandoned: $3",
                               tablet_id, src_ts_uuid, dst_ts_uuid, s.ToString());
       // Erase the element and advance the iterator.
       it = scheduled_moves_.erase(it);
@@ -1162,7 +1159,7 @@ bool Rebalancer::AlgoBasedRunner::UpdateMovesInProgressStatus(
       ++moves_count_;
       UpdateOnMoveCompleted(it->second.ts_uuid_from);
       UpdateOnMoveCompleted(it->second.ts_uuid_to);
-      LOG(INFO) << Substitute("tablet $0: $1 -> $2 move completed: $3",
+      LOG(INFO) << Substitute("tablet $0: '$1' -> '$2' move completed: $3",
                               tablet_id, src_ts_uuid, dst_ts_uuid,
                               move_status.ToString());
       // Erase the element and advance the iterator.
@@ -1200,6 +1197,30 @@ Status Rebalancer::AlgoBasedRunner::GetNextMovesImpl(
   TabletsPlacementInfo tpi;
   if (!loc) {
     RETURN_NOT_OK(BuildTabletsPlacementInfo(raw_info, &tpi));
+  }
+
+  // Build 'tablet_id' --> 'target tablet replication factor' map.
+  struct TabletExtraInfo {
+    int replication_factor;
+    int num_voters;
+  };
+  unordered_map<string, TabletExtraInfo> extra_info_by_tablet_id;
+  {
+    unordered_map<string, int> replication_factors_by_table;
+    for (const auto& s : raw_info.table_summaries) {
+      EmplaceOrDie(&replication_factors_by_table, s.id, s.replication_factor);
+    }
+    for (const auto& s : raw_info.tablet_summaries) {
+      int num_voters = 0;
+      for (const auto& rs : s.replicas) {
+        if (rs.is_voter) {
+          ++num_voters;
+        }
+      }
+      const auto rf = FindOrDie(replication_factors_by_table, s.table_id);
+      EmplaceOrDie(&extra_info_by_tablet_id,
+                   s.id, TabletExtraInfo{rf, num_voters});
+    }
   }
 
   // The number of operations to output by the algorithm. Those will be
@@ -1255,11 +1276,21 @@ Status Rebalancer::AlgoBasedRunner::GetNextMovesImpl(
           "from server $1 to server $2", move.table_id, move.from, move.to);
       continue;
     }
-    ReplicaMove info;
-    info.tablet_uuid = move_tablet_id;
-    info.ts_uuid_from = move.from;
-    info.ts_uuid_to = move.to;
-    replica_moves->emplace_back(std::move(info));
+    ReplicaMove move_info;
+    move_info.tablet_uuid = move_tablet_id;
+    move_info.ts_uuid_from = move.from;
+    const auto& extra_info = FindOrDie(extra_info_by_tablet_id, move_tablet_id);
+    if (extra_info.replication_factor < extra_info.num_voters) {
+      // The number of voter replicas is greater than the target replication
+      // factor. It might happen the replica distribution would be better
+      // if just removing the source replica. Anyway, once a replica is removed,
+      // the system will automatically add a new one, if needed, where the new
+      // replica will be placed to have balanced replica distribution.
+      move_info.ts_uuid_to = "";
+    } else {
+      move_info.ts_uuid_to = move.to;
+    }
+    replica_moves->emplace_back(std::move(move_info));
     // Mark the tablet as 'has a replica in move'.
     tablets_in_move.emplace(move_tablet_id);
   }
@@ -1484,7 +1515,7 @@ bool Rebalancer::PolicyFixer::UpdateMovesInProgressStatus(
       // as if it didn't exist. Once the cluster status is re-synchronized,
       // the corresponding operation will be scheduled again, if needed.
       ++error_count;
-      LOG(INFO) << Substitute("tablet $0: $1 -> ? move is abandoned: $2",
+      LOG(INFO) << Substitute("tablet $0: '$1' -> '?' move is abandoned: $2",
                               tablet_id, ts_uuid, s.ToString());
       it = scheduled_moves_.erase(it);
       continue;
@@ -1495,7 +1526,7 @@ bool Rebalancer::PolicyFixer::UpdateMovesInProgressStatus(
       // on the pending operations per server.
       ++moves_count_;
       has_updates = true;
-      LOG(INFO) << Substitute("tablet $0: $1 -> ? move completed: $2",
+      LOG(INFO) << Substitute("tablet $0: '$1' -> '?' move completed: $2",
                               tablet_id, ts_uuid, completion_status.ToString());
       UpdateOnMoveCompleted(ts_uuid);
       it = scheduled_moves_.erase(it);

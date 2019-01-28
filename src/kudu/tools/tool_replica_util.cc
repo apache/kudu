@@ -245,7 +245,7 @@ Status CheckCompleteMove(const vector<string>& master_addresses,
 
   // The failure case: the newly added replica is no longer in the config.
   // Maybe something was wrong with the replica and the system kicked it out?
-  if (!to_ts_uuid_in_config) {
+  if (!to_ts_uuid.empty() && !to_ts_uuid_in_config) {
     *is_complete = true;
     *completion_status = Status::Incomplete(Substitute(
         "tablet $0, TS $1 -> TS $2 move failed, target replica disappeared",
@@ -285,7 +285,7 @@ Status CheckCompleteMove(const vector<string>& master_addresses,
       //   is elected.
       if (orig_leader_uuid == from_ts_uuid &&
           orig_leader_uuid == cstate.leader_uuid() &&
-          to_ts_uuid_is_a_voter &&
+          (to_ts_uuid_is_a_voter || to_ts_uuid.empty()) &&
           (is_343_scheme || DoKsckForTablet(master_addresses, tablet_id).ok())) {
         // The leader is the node we intend to remove; make it step down.
         ignore_result(DoLeaderStepDown(tablet_id, orig_leader_uuid, orig_leader_hp,
@@ -302,7 +302,8 @@ Status CheckCompleteMove(const vector<string>& master_addresses,
   // the replica-to-be-removed has stepped down as leader, then the move is
   // complete. The leader master will take care of removing the extra replica.
   if (is_343_scheme) {
-    if (to_ts_uuid_is_a_voter && !from_ts_uuid_in_config) {
+    if (!from_ts_uuid_in_config &&
+        (to_ts_uuid_is_a_voter || to_ts_uuid.empty())) {
       *is_complete = true;
       *completion_status = Status::OK();
     }
@@ -369,7 +370,8 @@ Status CheckCompleteMove(const vector<string>& master_addresses,
 
   // The success case: the source replica has gone from the config and the
   // target replica is present as a full-fledged voter.
-  if (!from_ts_uuid_in_config && to_ts_uuid_is_a_voter) {
+  if (!from_ts_uuid_in_config &&
+      (to_ts_uuid_is_a_voter || to_ts_uuid.empty())) {
     *is_complete = true;
     *completion_status = Status::OK();
   }
@@ -546,6 +548,9 @@ Status ScheduleReplicaMove(const vector<string>& master_addresses,
   // The pre- KUDU-1097 way of moving a replica involves first adding a new
   // replica and then evicting the old one.
   if (!is_343_scheme) {
+    if (to_ts_uuid.empty()) {
+      return Status::OK();
+    }
     return DoChangeConfig(master_addresses, tablet_id, to_ts_uuid,
                           RaftPeerPB::VOTER, ADD_PEER, cas_opid_idx);
   }
@@ -557,6 +562,14 @@ Status ScheduleReplicaMove(const vector<string>& master_addresses,
       is_from_ts_uuid_replace_attr_set = peer.attrs().replace();
       break;
     }
+  }
+  if (is_from_ts_uuid_replace_attr_set && to_ts_uuid.empty()) {
+    // Nothing to do: the REPLACE attribute is already set for the source
+    // replica and the target tablet server is not specified. So, that pure
+    // 'remove replica' configuration change has already been applied. That
+    // might happen due to concurrent activity or requesting the same
+    // replica movement again.
+    return Status::OK();
   }
 
   // In a post-KUDU-1097 world, the procedure to move a replica is to add the
@@ -570,7 +583,7 @@ Status ScheduleReplicaMove(const vector<string>& master_addresses,
     *change->mutable_peer()->mutable_permanent_uuid() = from_ts_uuid;
     change->mutable_peer()->mutable_attrs()->set_replace(true);
   }
-  {
+  if (!to_ts_uuid.empty()) {
     auto* change = req.add_config_changes();
     change->set_type(ADD_PEER);
     *change->mutable_peer()->mutable_permanent_uuid() = to_ts_uuid;
@@ -578,7 +591,8 @@ Status ScheduleReplicaMove(const vector<string>& master_addresses,
     change->mutable_peer()->mutable_attrs()->set_promote(true);
     HostPort hp;
     RETURN_NOT_OK(GetRpcAddressForTS(client, to_ts_uuid, &hp));
-    RETURN_NOT_OK(HostPortToPB(hp, change->mutable_peer()->mutable_last_known_addr()));
+    RETURN_NOT_OK(
+        HostPortToPB(hp, change->mutable_peer()->mutable_last_known_addr()));
   }
   req.set_cas_config_opid_index(cas_opid_idx);
 

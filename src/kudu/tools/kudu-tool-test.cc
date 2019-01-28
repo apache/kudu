@@ -395,7 +395,7 @@ class ToolTest : public KuduTest {
     const string projection = JoinStrings(col_names, ",");
 
     vector<string> lines;
-    int64_t total = max(max_value - min_value + 1, 0L);
+    int64_t total = max<int64_t>(max_value - min_value + 1, 0);
     NO_FATALS(RunActionStdoutLines(
                 Substitute("table scan $0 $1 -show_value=true "
                            "-columns=$2 -predicates=$3",

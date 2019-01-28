@@ -385,10 +385,6 @@ Status Ksck::FetchInfoFromTabletServers() {
                  bad_servers.Load(), servers_count));
 }
 
-const KsckResults& Ksck::results() const {
-  return results_;
-}
-
 void Ksck::set_print_sections(const std::vector<std::string>& sections) {
   print_sections_flags_ = PrintSections::NONE;
   for (const auto& section : sections) {

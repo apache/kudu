@@ -489,7 +489,9 @@ class Ksck {
 
   void set_print_sections(const std::vector<std::string>& sections);
 
-  const KsckResults& results() const;
+  const KsckResults& results() const {
+    return results_;
+  }
 
   // Check that all masters are healthy.
   Status CheckMasterHealth();
