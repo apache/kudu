@@ -43,7 +43,7 @@ Status ParseHiveTableIdentifier(const string& table_name,
                            "0123456789"
                            "_/");
 
-  optional<int> separator_idx;
+  auto separator_idx = boost::make_optional<int>(false, 0);
   for (int idx = 0; idx < table_name.size(); idx++) {
     char c = table_name[idx];
     if (!charset.Test(c)) {

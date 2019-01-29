@@ -710,7 +710,7 @@ Status List(const RunnerContext& /*context*/) {
   vector<Field> fields;
   vector<string> columns;
   for (StringPiece name : strings::Split(FLAGS_columns, ",", strings::SkipEmpty())) {
-    Field field;
+    Field field = Field::kTable;
     RETURN_NOT_OK(ParseField(name.ToString(), &field));
     fields.push_back(field);
     columns.emplace_back(ToString(field));

@@ -321,7 +321,11 @@ Status CFileSet::CheckRowPresent(const RowSetKeyProbe& probe, const IOContext* i
   RETURN_NOT_OK(FindRow(probe, io_context, &opt_rowid, stats));
   *present = opt_rowid != boost::none;
   if (*present) {
+  // Suppress false positive about 'opt_rowid' used when uninitialized.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
     *rowid = *opt_rowid;
+#pragma GCC diagnostic pop
   }
   return Status::OK();
 }

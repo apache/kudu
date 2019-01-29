@@ -110,6 +110,9 @@ Status BShufBlockDecoder<UINT32>::SeekAtOrAfterValue(const void* value_void, boo
         mid_key = Decode<uint32_t>(&decoded_[mid * size_of_elem_]);
         break;
       }
+      default: {
+        LOG(FATAL) << "unreachable";
+      }
     }
     if (mid_key == target) {
       cur_idx_ = mid;

@@ -653,12 +653,12 @@ void CreateRandomDeltas(const Schema& schema,
 
   // Randomly generate deltas using the keys.
   //
-  // Because the timestamps are sorted sorted in DeltaType order, we can track
+  // Because the timestamps are sorted in DeltaType order, we can track
   // the deletion status of each row directly.
   faststring buf;
   RowChangeListEncoder encoder(&buf);
-  bool is_deleted;
-  boost::optional<rowid_t> prev_row_idx;
+  bool is_deleted = false;
+  auto prev_row_idx = boost::make_optional<rowid_t>(false, 0);
   for (i = 0; i < sorted_keys.size(); i++) {
     encoder.Reset();
     const auto& k = sorted_keys[i];

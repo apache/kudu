@@ -1931,7 +1931,7 @@ std::string TraceLog::EventToConsoleMessage(unsigned char phase,
   // TRACE_EVENT_PHASE_BEGIN or TRACE_EVENT_END.
   DCHECK(phase != TRACE_EVENT_PHASE_COMPLETE);
 
-  MicrosecondsInt64 duration;
+  MicrosecondsInt64 duration = 0;
   int thread_id = trace_event ?
       trace_event->thread_id() : Thread::UniqueThreadId();
   if (phase == TRACE_EVENT_PHASE_END) {

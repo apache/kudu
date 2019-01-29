@@ -721,7 +721,7 @@ Status TestLoadGenerator(const RunnerContext& context) {
 
   if (FLAGS_run_scan) {
     // Run a table scan to count inserted rows.
-    uint64_t count;
+    uint64_t count = 0;
     RETURN_NOT_OK(CountTableRows(client, table_name, &count));
     cout << endl << "Scanner report" << endl
          << "  expected rows: " << total_row_count << endl

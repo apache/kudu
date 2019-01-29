@@ -377,7 +377,7 @@ class RleIntBlockDecoder final : public BlockDecoder {
     CppType target = UnalignedLoad<CppType>(value_void);
 
     while (cur_idx_ < num_elems_) {
-      CppType cur_elem;
+      CppType cur_elem = 0;
       if (!rle_decoder_.Get(&cur_elem)) {
         break;
       }

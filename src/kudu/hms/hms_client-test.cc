@@ -105,7 +105,9 @@ INSTANTIATE_TEST_CASE_P(ProtectionTypes,
                                           ));
 
 TEST_P(HmsClientTest, TestHmsOperations) {
-  optional<SaslProtection::Type> protection = GetParam();
+  auto protection = boost::make_optional<SaslProtection::Type>(false, SaslProtection::kIntegrity);
+  protection = GetParam();
+
   MiniKdc kdc;
   MiniHms hms;
   thrift::ClientOptions hms_client_opts;
@@ -280,7 +282,8 @@ TEST_P(HmsClientTest, TestHmsOperations) {
 }
 
 TEST_P(HmsClientTest, TestLargeObjects) {
-  optional<SaslProtection::Type> protection = GetParam();
+  auto protection = boost::make_optional<SaslProtection::Type>(false, SaslProtection::kIntegrity);
+  protection = GetParam();
 
   MiniKdc kdc;
   MiniHms hms;

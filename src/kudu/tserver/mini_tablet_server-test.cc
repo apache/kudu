@@ -64,7 +64,7 @@ TEST_F(MiniTabletServerTest, TestFsLayoutEndToEnd) {
   // and data dir.
   const int kNumDataDirs = 2;
   unique_ptr<MiniTabletServer> mini_server;
-  FsManager* fs_manager;
+  FsManager* fs_manager = nullptr;
   const auto& reset_mini_tserver = [&] {
     mini_server.reset(new MiniTabletServer(GetTestPath("TServer"),
         HostPort("127.0.0.1", 0), kNumDataDirs));

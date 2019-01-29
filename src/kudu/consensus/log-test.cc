@@ -336,6 +336,8 @@ void LogTest::DoCorruptionTest(CorruptionType type, CorruptionPosition place,
     case IN_ENTRY:
       offset = entry.offset_in_segment + kEntryHeaderSizeV2 + 1;
       break;
+    default:
+      LOG(FATAL) << "unreachable";
   }
   ASSERT_OK(CorruptLogFile(env_, log_->ActiveSegmentPathForTests(), type, offset));
 

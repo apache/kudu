@@ -1381,7 +1381,7 @@ Status TabletBootstrap::PlayWriteRequest(const IOContext* io_context,
 
   // If the results are being tracked and this write has a request id, register
   // it with the result tracker.
-  ResultTracker::RpcState state;
+  ResultTracker::RpcState state = ResultTracker::RpcState::NEW;
   if (tracking_results) {
     VLOG(1) << result_tracker_.get() << " Boostrapping request for tablet: "
         << write->tablet_id() << ". State: " << 0 << " id: "

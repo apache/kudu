@@ -6,6 +6,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <ostream>
 
 #include <glog/logging.h>
 
@@ -105,6 +106,8 @@ std::string Status::CodeAsString() const {
     case kEndOfFile:
       type = "End of file";
       break;
+    default:
+      LOG(FATAL) << "unreachable";
   }
   return std::string(type);
 }

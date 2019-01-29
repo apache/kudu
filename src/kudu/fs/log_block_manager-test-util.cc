@@ -108,7 +108,7 @@ Status LBMCorruptor::Init() {
 
 Status LBMCorruptor::PreallocateFullContainer() {
   const int kPreallocateBytes = 16 * 1024;
-  const Container* c;
+  const Container* c = nullptr;
   RETURN_NOT_OK(GetRandomContainer(FULL, &c));
 
   // Pick one of the preallocation modes at random; both are recoverable.
@@ -142,7 +142,7 @@ Status LBMCorruptor::PreallocateFullContainer() {
 }
 
 Status LBMCorruptor::AddUnpunchedBlockToFullContainer() {
-  const Container* c;
+  const Container* c = nullptr;
   RETURN_NOT_OK(GetRandomContainer(FULL, &c));
 
   uint64_t fs_block_size;

@@ -114,7 +114,7 @@ Status GetTracingOptions(const std::string& json_base64,
 Status BeginRecording(const Webserver::WebRequest& req,
                       TraceLog::Mode mode) {
   string filter_str;
-  int options;
+  int options = 0;
   RETURN_NOT_OK(GetTracingOptions(req.query_string, &filter_str, &options));
 
   kudu::debug::TraceLog::GetInstance()->SetEnabled(

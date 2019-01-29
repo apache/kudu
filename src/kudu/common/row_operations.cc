@@ -329,8 +329,8 @@ class ClientServerMapping {
 Status RowOperationsPBDecoder::DecodeInsertOrUpsert(const uint8_t* prototype_row_storage,
                                                     const ClientServerMapping& mapping,
                                                     DecodedRowOperation* op) {
-  const uint8_t* client_isset_map;
-  const uint8_t* client_null_map;
+  const uint8_t* client_isset_map = nullptr;
+  const uint8_t* client_null_map = nullptr;
 
   // Read the null and isset bitmaps for the client-provided row.
   RETURN_NOT_OK(ReadIssetBitmap(&client_isset_map));
@@ -402,8 +402,8 @@ Status RowOperationsPBDecoder::DecodeUpdateOrDelete(const ClientServerMapping& m
                                                     DecodedRowOperation* op) {
   int rowkey_size = tablet_schema_->key_byte_size();
 
-  const uint8_t* client_isset_map;
-  const uint8_t* client_null_map;
+  const uint8_t* client_isset_map = nullptr;
+  const uint8_t* client_null_map = nullptr;
 
   // Read the null and isset bitmaps for the client-provided row.
   RETURN_NOT_OK(ReadIssetBitmap(&client_isset_map));

@@ -454,7 +454,7 @@ class MergeCompactionInput : public CompactionInput {
 
     while (true) {
       int smallest_idx = -1;
-      CompactionInputRow* smallest;
+      CompactionInputRow* smallest = nullptr;
 
       // Iterate over the inputs to find the one with the smallest next row.
       // It may seem like an O(n lg k) merge using a heap would be more efficient,

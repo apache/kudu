@@ -160,6 +160,9 @@ string VoteCounter::GetElectionSummary() const {
 // ElectionResult
 ///////////////////////////////////////////////////
 
+// Suppress false positive about 'decision' used while uninitialized.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 ElectionResult::ElectionResult(VoteRequestPB vote_request, ElectionVote decision,
                                ConsensusTerm highest_voter_term, const std::string& message)
   : vote_request(std::move(vote_request)),
@@ -168,6 +171,7 @@ ElectionResult::ElectionResult(VoteRequestPB vote_request, ElectionVote decision
     message(message) {
   DCHECK(!message.empty());
 }
+#pragma GCC diagnostic pop
 
 ///////////////////////////////////////////////////
 // LeaderElection::VoterState
