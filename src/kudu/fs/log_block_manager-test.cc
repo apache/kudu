@@ -1867,6 +1867,71 @@ TEST_F(LogBlockManagerTest, TestDeleteDeadContainersByDeletionTransaction) {
   }
 }
 
+// Test for KUDU-2665 to ensure that once the container is full and has no live
+// blocks but with a reference by WritableBlock, it will not be deleted.
+TEST_F(LogBlockManagerTest, TestDoNotDeleteFakeDeadContainer) {
+  // Lower the max container size.
+  FLAGS_log_container_max_size = 64 * 1024;
+
+  const auto Process = [&] (bool close_block) {
+    // Create a bunch of blocks on the same container.
+    vector<BlockId> blocks;
+    for (int i = 0; i < 10; ++i) {
+      unique_ptr<BlockCreationTransaction> transaction = bm_->NewCreationTransaction();
+      unique_ptr<WritableBlock> writer;
+      ASSERT_OK(bm_->CreateBlock(test_block_opts_, &writer));
+      blocks.emplace_back(writer->id());
+      ASSERT_OK(writer->Append("a"));
+      ASSERT_OK(writer->Finalize());
+      transaction->AddCreatedBlock(std::move(writer));
+      ASSERT_OK(transaction->CommitCreatedBlocks());
+    }
+
+    // Create a special block.
+    unique_ptr<WritableBlock> writer;
+    ASSERT_OK(bm_->CreateBlock(test_block_opts_, &writer));
+    BlockId block_id = writer->id();
+    unique_ptr<uint8_t[]> data(new uint8_t[FLAGS_log_container_max_size]);
+    ASSERT_OK(writer->Append({ data.get(), FLAGS_log_container_max_size }));
+    ASSERT_OK(writer->Finalize());
+    // Do not close and reset the writer.
+    // Now the container is full and has no live blocks.
+
+    // Delete the bunch of blocks.
+    {
+      vector<BlockId> deleted;
+      shared_ptr<BlockDeletionTransaction> transaction = bm_->NewDeletionTransaction();
+      for (const auto& e : blocks) {
+        transaction->AddDeletedBlock(e);
+      }
+      ASSERT_OK(transaction->CommitDeletedBlocks(&deleted));
+      transaction.reset();
+      for (const auto& data_dir : dd_manager_->data_dirs()) {
+        data_dir->WaitOnClosures();
+      }
+    }
+
+    // Close and reset the writer.
+    // It's going to test Abort() when 'close_block' is false.
+    if (close_block) {
+      ASSERT_OK(writer->Close());
+    }
+    writer.reset();
+
+    // Open the special block after restart.
+    ASSERT_OK(ReopenBlockManager());
+    unique_ptr<ReadableBlock> block;
+    if (close_block) {
+      ASSERT_OK(bm_->OpenBlock(block_id, &block));
+    } else {
+      ASSERT_TRUE(bm_->OpenBlock(block_id, &block).IsNotFound());
+    }
+  };
+
+  Process(true);
+  Process(false);
+}
+
 TEST_F(LogBlockManagerTest, TestHalfPresentContainer) {
   BlockId block_id;
   string data_file_name;

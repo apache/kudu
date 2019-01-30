@@ -520,22 +520,45 @@ class LogBlockContainer: public RefCountedThreadSafe<LogBlockContainer> {
   int64_t live_bytes() const { return live_bytes_.Load(); }
   int64_t live_bytes_aligned() const { return live_bytes_aligned_.Load(); }
   int64_t live_blocks() const { return live_blocks_.Load(); }
+  int32_t blocks_being_written() const { return blocks_being_written_.Load(); }
   bool full() const {
     return next_block_offset() >= FLAGS_log_container_max_size ||
         (max_num_blocks_ && (total_blocks() >= max_num_blocks_));
   }
+  bool dead() const { return dead_.Load(); }
   const LogBlockManagerMetrics* metrics() const { return metrics_; }
   DataDir* data_dir() const { return data_dir_; }
   const PathInstanceMetadataPB* instance() const { return data_dir_->instance()->metadata(); }
 
-  // Tries to mark the container as 'dead'. A dead container is one that is full
-  // and has no live blocks; it is deleted when the container goes out of scope.
+  // Adjusts the number of blocks being written.
+  // Positive means increase, negative means decrease.
+  int32_t blocks_being_written_incr(int32_t value) {
+    return blocks_being_written_.IncrementBy(value);
+  }
+
+  // Check that the container meets the death condition.
+  //
+  // Although this code looks like a TOCTOU violation, it is safe because of
+  // some additional LBM invariants:
+  // 1) When a container becomes full, it stays full for the process' lifetime.
+  // 2) A full container will never accrue another live block. Meaning, losing
+  //    its last live block is a terminal state for a full container.
+  // 3) The only exception to #2 is if the container currently has a finalized
+  //    but not-yet-closed WritableBlock. In this case the container became full
+  //    when the WritableBlock was finalized, but the live block counter only
+  //    reflects the new block when it is closed.
+  bool check_death_condition() const {
+    return (full() && live_blocks() == 0 && blocks_being_written() == 0);
+  }
+
+  // Tries to mark the container as 'dead', which means it will be deleted
+  // when it goes out of scope. Can only be set dead once.
   //
   // If successful, returns true; otherwise returns false.
-  bool TrySetDead();
-
-  // Returns whether the container has been marked as dead.
-  bool dead() { return dead_.Load(); }
+  bool TrySetDead() {
+    if (dead()) return false;
+    return dead_.CompareAndSet(false, true);
+  }
 
  private:
   LogBlockContainer(LogBlockManager* block_manager, DataDir* data_dir,
@@ -630,6 +653,9 @@ class LogBlockContainer: public RefCountedThreadSafe<LogBlockContainer> {
   // The number of not-yet-deleted blocks in the container.
   AtomicInt<int64_t> live_blocks_;
 
+  // The number of LogWritableBlocks currently open for this container.
+  AtomicInt<int32_t> blocks_being_written_;
+
   // Whether or not this container has been marked as dead.
   AtomicBool dead_;
 
@@ -670,6 +696,7 @@ LogBlockContainer::LogBlockContainer(
       live_bytes_(0),
       live_bytes_aligned_(0),
       live_blocks_(0),
+      blocks_being_written_(0),
       dead_(false),
       metrics_(block_manager->metrics()) {
 }
@@ -1290,18 +1317,6 @@ void LogBlockContainer::ContainerDeletionAsync(int64_t offset, int64_t length) {
                             data_dir()->dir()));
 }
 
-bool LogBlockContainer::TrySetDead() {
-  // Although this code looks like a TOCTOU violation, it is safe because of
-  // some additional LBM invariants:
-  // 1. When a container becomes full, it stays full for the process' lifetime.
-  // 2. A full container will never accrue another live block. Meaning, losing
-  //    its last live block is a terminal state for a full container.
-  if (full() && live_blocks() == 0) {
-    return dead_.CompareAndSet(false, true);
-  }
-  return false;
-}
-
 ///////////////////////////////////////////////////////////
 // LogBlockCreationTransaction
 ////////////////////////////////////////////////////////////
@@ -1407,7 +1422,7 @@ LogBlockDeletionTransaction::~LogBlockDeletionTransaction() {
     // For the full and dead containers, it is much cheaper
     // to delete the container files outright, rather than
     // punching holes.
-    if (container->full() && container->live_blocks() == 0) {
+    if (container->check_death_condition()) {
       // Mark the container as deleted and remove it from the global map.
       //
       // It's possible for multiple deletion transactions to end up here. For
@@ -1523,6 +1538,7 @@ LogWritableBlock::LogWritableBlock(LogBlockContainerRefPtr container,
       state_(CLEAN) {
   DCHECK_GE(block_offset, 0);
   DCHECK_EQ(0, block_offset % container_->instance()->filesystem_block_size_bytes());
+  container_->blocks_being_written_incr(1);
   if (container_->metrics()) {
     container_->metrics()->generic_metrics.blocks_open_writing->Increment();
     container_->metrics()->generic_metrics.total_writable_blocks->Increment();
@@ -1530,6 +1546,9 @@ LogWritableBlock::LogWritableBlock(LogBlockContainerRefPtr container,
 }
 
 LogWritableBlock::~LogWritableBlock() {
+  // Put the decrement 'blocks_being_written_' at the beginning of this
+  // function can help to avoid unnecessary hole punch.
+  container_->blocks_being_written_incr(-1);
   if (state_ != CLOSED) {
     WARN_NOT_OK(Abort(), Substitute("Failed to abort block $0",
                                     id().ToString()));
