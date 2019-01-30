@@ -74,7 +74,7 @@ make -j$NUM_PROCS $TARGETS
 # Relocate the binaries.
 $SOURCE_ROOT/build-support/relocate_binaries_for_mini_cluster.py $BUILD_ROOT $TARGETS
 
-ARTIFACT_NAME=$(ls -d apache-kudu-* | sed 's#/##' | head -1)
+ARTIFACT_NAME=$(ls -d kudu-binary* | sed 's#/##' | head -1)
 
 # Strip everything to minimize the size of the tarball we generate.
 echo Stripping symbols...

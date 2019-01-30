@@ -184,11 +184,18 @@ def get_dep_library_paths_macos(binary_path):
 
 def get_artifact_name():
   """
-  Read the Kudu version to create an archive with an appropriate name.
+  Create an archive with an appropriate name. Including version, OS, and architecture.
   """
+  if IS_LINUX:
+    os_str = "linux"
+  elif IS_MACOS:
+    os_str = "osx"
+  else:
+    raise NotImplementedError("Unsupported platform")
+  arch = os.uname()[4]
   with open(os.path.join(SOURCE_ROOT, "version.txt"), 'r') as version:
     version = version.readline().strip().decode("utf-8")
-  artifact_name = "apache-kudu-%s" % (version, )
+  artifact_name = "kudu-binary-%s-%s-%s" % (version, os_str, arch)
   return artifact_name
 
 def mkconfig(build_root, artifact_root):
