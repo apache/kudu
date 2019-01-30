@@ -49,7 +49,7 @@ public class Example {
   private static final Double DEFAULT_DOUBLE = 12.345;
   private static final String KUDU_MASTERS = System.getProperty("kuduMasters", "localhost:7051");
 
-  private static void createExampleTable(KuduClient client, String tableName)  throws KuduException {
+  static void createExampleTable(KuduClient client, String tableName)  throws KuduException {
     // Set up a simple schema.
     List<ColumnSchema> columns = new ArrayList<>(2);
     columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.INT32)
@@ -73,7 +73,7 @@ public class Example {
     System.out.println("Created table " + tableName);
   }
 
-  private static void insertRows(KuduClient client, String tableName, int numRows) throws KuduException {
+  static void insertRows(KuduClient client, String tableName, int numRows) throws KuduException {
     // Open the newly-created table and create a KuduSession.
     KuduTable table = client.openTable(tableName);
     KuduSession session = client.newSession();
@@ -115,7 +115,7 @@ public class Example {
     System.out.println("Inserted " + numRows + " rows");
   }
 
-  private static void scanTableAndCheckResults(KuduClient client, String tableName, int numRows) throws KuduException {
+  static void scanTableAndCheckResults(KuduClient client, String tableName, int numRows) throws KuduException {
     KuduTable table = client.openTable(tableName);
     Schema schema = table.getSchema();
 
