@@ -61,6 +61,7 @@
 #include "kudu/tablet/delta_stats.h"
 #include "kudu/tablet/deltafile.h"
 #include "kudu/tablet/diskrowset.h"
+#include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/rowset_metadata.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet_metadata.h"
@@ -119,6 +120,7 @@ using std::unordered_map;
 using std::vector;
 using strings::Substitute;
 using tablet::RowSetMetadata;
+using tablet::TabletDataState;
 using tablet::TabletMetadata;
 
 namespace {
@@ -331,9 +333,15 @@ Status CheckForTabletsThatWillFailWithUpdate() {
     scoped_refptr<TabletMetadata> meta;
     RETURN_NOT_OK(TabletMetadata::Load(&fs, t, &meta));
     DataDirGroupPB group;
-    RETURN_NOT_OK_PREPEND(
-        fs.dd_manager()->GetDataDirGroupPB(t, &group),
-        "at least one tablet is configured to use removed data directory. "
+    Status s = fs.dd_manager()->GetDataDirGroupPB(t, &group);
+    if (meta->tablet_data_state() == TabletDataState::TABLET_DATA_TOMBSTONED) {
+      // If we just loaded a tombstoned tablet, there should be no in-memory
+      // data dir group for the tablet, and the staged directory config won't
+      // affect this tablet.
+      DCHECK(s.IsNotFound()) << s.ToString();
+      continue;
+    }
+    RETURN_NOT_OK_PREPEND(s, "at least one tablet is configured to use removed data directory. "
         "Retry with --force to override this");
   }
   return Status::OK();

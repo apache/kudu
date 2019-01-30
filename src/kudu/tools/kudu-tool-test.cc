@@ -178,6 +178,7 @@ using kudu::tserver::DeleteTabletRequestPB;
 using kudu::tserver::DeleteTabletResponsePB;
 using kudu::tserver::ListTabletsResponsePB;
 using kudu::tserver::MiniTabletServer;
+using kudu::tserver::TabletServerErrorPB;
 using kudu::tserver::WriteRequestPB;
 using std::back_inserter;
 using std::copy;
@@ -3510,6 +3511,41 @@ TEST_F(ToolTest, TestFsSwappingDirectoriesFailsGracefully) {
   NO_FATALS(RunActionStdoutNone(Substitute(
       "fs update_dirs --fs_wal_dir=$0 --fs_data_dirs=$1",
       wal_root, JoinStrings(new_data_roots, ","))));
+}
+
+TEST_F(ToolTest, TestFsRemoveDataDirWithTombstone) {
+  if (FLAGS_block_manager == "file") {
+    LOG(INFO) << "Skipping test, only log block manager is supported";
+    return;
+  }
+
+  // Start a cluster whose tserver has multiple data directories and create a
+  // tablet on it.
+  InternalMiniClusterOptions opts;
+  opts.num_data_dirs = 2;
+  NO_FATALS(StartMiniCluster(std::move(opts)));
+  NO_FATALS(CreateTableWithFlushedData("tablename", mini_cluster_.get()));
+
+  // Tombstone the tablet.
+  MiniTabletServer* mts = mini_cluster_->mini_tablet_server(0);
+  vector<string> tablet_ids = mts->ListTablets();
+  ASSERT_EQ(1, tablet_ids.size());
+  TabletServerErrorPB::Code error;
+  ASSERT_OK(mts->server()->tablet_manager()->DeleteTablet(
+      tablet_ids[0], TabletDataState::TABLET_DATA_TOMBSTONED, boost::none, &error));
+
+  // Set things up so we can restart with one fewer directory.
+  string data_root = mts->options()->fs_opts.data_roots[0];
+  mts->options()->fs_opts.data_roots = { data_root };
+  mts->Shutdown();
+  // KUDU-2680: tombstones shouldn't prevent us from removing a directory.
+  NO_FATALS(RunActionStdoutNone(Substitute(
+      "fs update_dirs --fs_wal_dir=$0 --fs_data_dirs=$1",
+      mts->options()->fs_opts.wal_root, data_root)));
+
+  ASSERT_OK(mts->Start());
+  ASSERT_OK(mts->WaitStarted());
+  ASSERT_EQ(0, mts->server()->tablet_manager()->GetNumLiveTablets());
 }
 
 TEST_F(ToolTest, TestFsAddRemoveDataDirEndToEnd) {
