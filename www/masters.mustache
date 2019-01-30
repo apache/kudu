@@ -32,6 +32,7 @@ under the License.
     <thead><tr>
       <th>UUID</th>
       <th>Role</th>
+      <th>Start time</th>
       <th>Registration</th>
     </tr></thead>
     <tbody>
@@ -39,6 +40,7 @@ under the License.
       <tr>
           <td>{{#target}}<a href="{{.}}">{{/target}}{{uuid}}{{#target}}</a>{{/target}}</td>
           <td>{{role}}</td>
+          <td>{{start_time}}</td>
           <td><pre><code>{{registration}}</code></pre></td>
       </tr>
     {{/masters}}

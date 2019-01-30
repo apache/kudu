@@ -30,6 +30,7 @@
 #include <google/protobuf/message.h>
 #include <gtest/gtest_prod.h>
 
+#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/debug/trace_event_impl.h"
@@ -115,6 +116,9 @@ std::string SecureDebugString(const google::protobuf::Message& msg);
 
 // Same as SecureDebugString() above, but equivalent to Message::ShortDebugString.
 std::string SecureShortDebugString(const google::protobuf::Message& msg);
+
+// Parse 'start_time' in ServerRegistrationPB, return localtime or '<unknown>'.
+std::string ParseStartTime(const ServerRegistrationPB& reg);
 
 // A protobuf "container" has the following format (all integers in
 // little-endian byte order).

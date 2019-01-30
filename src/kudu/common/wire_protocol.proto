@@ -93,6 +93,9 @@ message ServerRegistrationPB {
   // In this case, https:// URLs should be generated for the above
   // 'http_addresses' field.
   optional bool https_enabled = 4;
+
+  // Seconds since the epoch.
+  optional int64 start_time = 5;
 }
 
 message ServerEntryPB {

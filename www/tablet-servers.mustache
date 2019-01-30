@@ -47,6 +47,7 @@ under the License.
       <th>UUID</th>
       <th>Location</th>
       <th>Time since heartbeat</th>
+      <th>Start time</th>
       <th>Registration</th>
     </tr></thead>
     <tbody>
@@ -55,6 +56,7 @@ under the License.
         <td>{{#target}}<a href="{{.}}">{{/target}}{{uuid}}{{#target}}</a>{{/target}}</td>
         <td>{{location}}</td>
         <td>{{time_since_hb}}</td>
+        <td>{{start_time}}</td>
         <td><pre><code>{{registration}}</code></pre></td>
       </tr>
     {{/live_tservers}}

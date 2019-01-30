@@ -17,6 +17,8 @@
 
 #include "kudu/master/master.h"
 
+#include <time.h>
+
 #include <algorithm>
 #include <cstdint>
 #include <map>
@@ -54,6 +56,7 @@
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
+#include "kudu/gutil/walltime.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
@@ -209,6 +212,7 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
   MakeHostPortPB("localhost", 1000, fake_reg.add_rpc_addresses());
   MakeHostPortPB("localhost", 2000, fake_reg.add_http_addresses());
   fake_reg.set_software_version(VersionInfo::GetVersionInfo());
+  fake_reg.set_start_time(10000);
 
   // Information on replica management scheme.
   ReplicaManagementInfoPB rmi;
@@ -377,6 +381,9 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
     ASSERT_EQ(true, tablet_server["live"].GetBool());
     ASSERT_STREQ(VersionInfo::GetVersionInfo().c_str(),
         tablet_server["version"].GetString());
+    string start_time;
+    StringAppendStrftime(&start_time, "%Y-%m-%d %H:%M:%S %Z", (time_t)10000, true);
+    ASSERT_STREQ(start_time.c_str(), tablet_server["start_time"].GetString());
   }
 
   // Ensure that trying to re-register with a different version is OK.
@@ -391,6 +398,22 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
     // the numeric portion will match.
     req.mutable_registration()->set_software_version(Substitute("kudu $0 (rev SOME_NON_GIT_HASH)",
                                                                 KUDU_VERSION_STRING));
+
+    ASSERT_OK(proxy_->TSHeartbeat(req, &resp, &rpc));
+    ASSERT_FALSE(resp.has_error());
+  }
+
+  // Ensure that trying to re-register with a different start_time is OK.
+  {
+    TSHeartbeatRequestPB req;
+    TSHeartbeatResponsePB resp;
+    RpcController rpc;
+    req.mutable_common()->CopyFrom(common);
+    req.mutable_registration()->CopyFrom(fake_reg);
+    req.mutable_replica_management_info()->CopyFrom(rmi);
+    // 10 minutes later.
+    req.mutable_registration()->set_start_time(10600);
+
     ASSERT_OK(proxy_->TSHeartbeat(req, &resp, &rpc));
     ASSERT_FALSE(resp.has_error());
   }
