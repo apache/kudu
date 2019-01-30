@@ -20,6 +20,7 @@
 #define KUDU_COMMON_WIRE_PROTOCOL_H
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include "kudu/util/status.h"
@@ -56,6 +57,7 @@ class HostPortPB;
 class RowwiseRowBlockPB;
 class SchemaPB;
 class ServerEntryPB;
+class ServerRegistrationPB;
 
 // Convert the given C++ Status object into the equivalent Protobuf.
 void StatusToPB(const Status& status, AppStatusPB* pb);
@@ -195,5 +197,8 @@ Status ExtractRowsFromRowBlockPB(const Schema& schema,
 Status FindLeaderHostPort(const google::protobuf::RepeatedPtrField<ServerEntryPB>& entries,
                           HostPort* leader_hostport);
 
+// Extract 'start_time' in ServerRegistrationPB, and convert it to localtime as a string
+// or '<unknown>' if lack this field.
+std::string StartTimeToString(const ServerRegistrationPB& reg);
 } // namespace kudu
 #endif

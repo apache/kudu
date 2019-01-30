@@ -107,6 +107,10 @@ class ServerBase {
   // Return a PB describing the status of the server (version info, bound ports, etc)
   Status GetStatusPB(ServerStatusPB* status) const;
 
+  int64_t start_time() const {
+    return start_time_;
+  }
+
   enum {
     SUPER_USER = 1,
     USER = 1 << 1,
@@ -161,6 +165,8 @@ class ServerBase {
   void LogUnauthorizedAccess(rpc::RpcContext* rpc) const;
 
   const std::string name_;
+  // Seconds since the epoch.
+  int64_t start_time_;
 
   std::unique_ptr<MinidumpExceptionHandler> minidump_handler_;
   std::shared_ptr<MemTracker> mem_tracker_;

@@ -67,6 +67,7 @@ void SetupBasicRegistrationInfo(const string& uuid,
   http_hostport->set_port(54321);
   registration->set_software_version("1.0.0");
   registration->set_https_enabled(false);
+  registration->set_start_time(10000);
 }
 
 TEST(TSDescriptorTest, TestRegistration) {

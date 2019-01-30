@@ -649,7 +649,6 @@ string SecureShortDebugString(const Message& msg) {
   return debug_string;
 }
 
-
 WritablePBContainerFile::WritablePBContainerFile(shared_ptr<RWFile> writer)
   : state_(FileState::NOT_INITIALIZED),
     offset_(0),

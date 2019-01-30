@@ -293,6 +293,7 @@ Status Master::InitMasterRegistration() {
     reg.set_https_enabled(web_server()->IsSecure());
   }
   reg.set_software_version(VersionInfo::GetVersionInfo());
+  reg.set_start_time(start_time_);
 
   registration_.Swap(&reg);
   registration_initialized_.store(true);

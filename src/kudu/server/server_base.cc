@@ -43,6 +43,7 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/walltime.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/remote_user.h"
 #include "kudu/rpc/result_tracker.h"
@@ -678,6 +679,8 @@ Status ServerBase::Start() {
     RETURN_NOT_OK_PREPEND(DumpServerInfo(options_.dump_info_path, options_.dump_info_format),
                           "Failed to dump server info to " + options_.dump_info_path);
   }
+
+  start_time_ = WallTime_Now();
 
   return Status::OK();
 }

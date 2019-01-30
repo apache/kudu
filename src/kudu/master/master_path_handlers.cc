@@ -129,6 +129,8 @@ void MasterPathHandlers::HandleTabletServers(const Webserver::WebRequest& /*req*
                                      reg.http_addresses(0).port());
     }
     ts_json["time_since_hb"] = StringPrintf("%.1fs", desc->TimeSinceHeartbeat().ToSeconds());
+    ts_json["start_time"] = StartTimeToString(reg);
+    reg.clear_start_time();  // Clear 'start_time' before dumping to string.
     ts_json["registration"] = pb_util::SecureShortDebugString(reg);
     ts_json["location"] = desc->location().get_value_or("<none>");
     version_counts[reg.software_version()][desc->PresumedDead() ? 1 : 0]++;
@@ -458,7 +460,7 @@ void MasterPathHandlers::HandleMasters(const Webserver::WebRequest& /*req*/,
       continue;
     }
     EasyJson master_json = (*output)["masters"].PushBack(EasyJson::kObject);
-    const ServerRegistrationPB& reg = master.registration();
+    ServerRegistrationPB reg = master.registration();
     master_json["uuid"] = master.instance_id().permanent_uuid();
     if (!reg.http_addresses().empty()) {
       master_json["target"] = Substitute("$0://$1:$2/",
@@ -467,7 +469,9 @@ void MasterPathHandlers::HandleMasters(const Webserver::WebRequest& /*req*/,
                                          reg.http_addresses(0).port());
     }
     master_json["role"] = master.has_role() ? RaftPeerPB_Role_Name(master.role()) : "N/A";
-    master_json["registration"] = pb_util::SecureShortDebugString(master.registration());
+    master_json["start_time"] = StartTimeToString(reg);
+    reg.clear_start_time();  // Clear 'start_time' before dumping to string.
+    master_json["registration"] = pb_util::SecureShortDebugString(reg);
   }
 }
 
@@ -644,6 +648,9 @@ void MasterPathHandlers::HandleDumpEntities(const Webserver::WebRequest& /*req*/
 
     jw.String("version");
     jw.String(reg.software_version());
+
+    jw.String("start_time");
+    jw.String(StartTimeToString(reg));
 
     jw.EndObject();
   }

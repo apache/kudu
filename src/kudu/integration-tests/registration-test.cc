@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <stdint.h>
+
 #include <algorithm>
 #include <memory>
 #include <ostream>
@@ -32,6 +34,7 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/walltime.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master-test-util.h"
 #include "kudu/master/master.h"
@@ -143,6 +146,7 @@ class RegistrationTest : public KuduTest {
   void SetUp() override {
     // Make heartbeats faster to speed test runtime.
     FLAGS_heartbeat_interval_ms = 10;
+    setup_time_ = WallTime_Now();
 
     KuduTest::SetUp();
 
@@ -209,6 +213,7 @@ class RegistrationTest : public KuduTest {
  protected:
   gscoped_ptr<InternalMiniCluster> cluster_;
   Schema schema_;
+  int64_t setup_time_;
 };
 
 TEST_F(RegistrationTest, TestTSRegisters) {
@@ -250,6 +255,21 @@ TEST_F(RegistrationTest, TestMasterSoftwareVersion) {
     ASSERT_TRUE(reg.has_software_version());
     ASSERT_STR_CONTAINS(reg.software_version(),
                         VersionInfo::GetVersionInfo());
+    ASSERT_LE(setup_time_, reg.start_time());
+    ASSERT_LE(reg.start_time(), WallTime_Now());
+  }
+}
+
+TEST_F(RegistrationTest, TestServerStartTime) {
+  ServerRegistrationPB reg;
+  cluster_->mini_master()->master()->GetMasterRegistration(&reg);
+  ASSERT_LE(setup_time_, reg.start_time());
+  ASSERT_LE(reg.start_time(), WallTime_Now());
+
+  for (int i = 0; i < cluster_->num_tablet_servers(); ++i) {
+    auto start_time = cluster_->mini_tablet_server(i)->server()->start_time();
+    ASSERT_LE(setup_time_, start_time);
+    ASSERT_LE(start_time, WallTime_Now());
   }
 }
 

@@ -17,6 +17,8 @@
 
 #include "kudu/common/wire_protocol.h"
 
+#include <time.h>
+
 #include <cstdint>
 #include <cstring>
 #include <ostream>
@@ -26,8 +28,8 @@
 #include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
-#include "kudu/common/columnblock.h"
 #include "kudu/common/column_predicate.h"
+#include "kudu/common/columnblock.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/row.h"
 #include "kudu/common/rowblock.h"
@@ -39,9 +41,11 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/fastmem.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/walltime.h"
 #include "kudu/util/bitmap.h"
 #include "kudu/util/compression/compression.pb.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/hash.pb.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
@@ -946,6 +950,19 @@ void SerializeRowBlock(const RowBlock& block,
     }
   }
   rowblock_pb->set_num_rows(rowblock_pb->num_rows() + num_rows);
+}
+
+std::string StartTimeToString(const ServerRegistrationPB& reg) {
+  string start_time;
+  if (reg.has_start_time()) {
+    // Convert epoch time to localtime.
+    StringAppendStrftime(&start_time, "%Y-%m-%d %H:%M:%S %Z",
+                         static_cast<time_t>(reg.start_time()), true);
+  } else {
+    start_time = "<unknown>";
+  }
+
+  return start_time;
 }
 
 } // namespace kudu

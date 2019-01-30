@@ -31,8 +31,8 @@
 #include <gtest/gtest_prod.h>
 
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/util/mutex.h"
 #include "kudu/util/debug/trace_event_impl.h"
+#include "kudu/util/mutex.h"
 
 namespace google {
 namespace protobuf {
@@ -47,11 +47,11 @@ class SimpleDescriptorDatabase;
 namespace kudu {
 
 class Env;
+class RWFile;
 class RandomAccessFile;
 class SequentialFile;
 class Slice;
 class Status;
-class RWFile;
 class faststring;
 
 namespace pb_util {
