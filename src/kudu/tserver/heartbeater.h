@@ -14,14 +14,16 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_TSERVER_HEARTBEATER_H
-#define KUDU_TSERVER_HEARTBEATER_H
+#pragma once
 
 #include <memory>
 #include <string>
 #include <vector>
 
+#include <gtest/gtest_prod.h>
+
 #include "kudu/gutil/macros.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -33,13 +35,12 @@ class TabletReportPB;
 namespace tserver {
 
 class TabletServer;
-struct TabletServerOptions;
 
 // Component of the Tablet Server which is responsible for heartbeating to all
 // of the masters.
 class Heartbeater {
  public:
-  Heartbeater(const TabletServerOptions& options, TabletServer* server);
+  Heartbeater(UnorderedHostPortSet master_addrs, TabletServer* server);
 
   // Start heartbeating to every master.
   Status Start();
@@ -69,10 +70,12 @@ class Heartbeater {
 
  private:
   class Thread;
+
+  FRIEND_TEST(TsTabletManagerITest, TestDeduplicateMasterAddrsForHeartbeaters);
+
   std::vector<std::unique_ptr<Thread>> threads_;
   DISALLOW_COPY_AND_ASSIGN(Heartbeater);
 };
 
 } // namespace tserver
 } // namespace kudu
-#endif /* KUDU_TSERVER_HEARTBEATER_H */

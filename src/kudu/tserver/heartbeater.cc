@@ -52,7 +52,6 @@
 #include "kudu/server/rpc_server.h"
 #include "kudu/server/webserver.h"
 #include "kudu/tserver/tablet_server.h"
-#include "kudu/tserver/tablet_server_options.h"
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/util/condition_variable.h"
 #include "kudu/util/flag_tags.h"
@@ -237,11 +236,11 @@ class Heartbeater::Thread {
 // Heartbeater
 ////////////////////////////////////////////////////////////
 
-Heartbeater::Heartbeater(const TabletServerOptions& opts, TabletServer* server) {
-  DCHECK_GT(opts.master_addresses.size(), 0);
+Heartbeater::Heartbeater(UnorderedHostPortSet master_addrs, TabletServer* server) {
+  DCHECK_GT(master_addrs.size(), 0);
 
-  for (const auto& addr : opts.master_addresses) {
-    threads_.emplace_back(new Thread(addr, server));
+  for (auto addr : master_addrs) {
+    threads_.emplace_back(new Thread(std::move(addr), server));
   }
 }
 Heartbeater::~Heartbeater() {

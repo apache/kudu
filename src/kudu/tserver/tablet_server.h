@@ -85,8 +85,6 @@ class TabletServer : public kserver::KuduServer {
  private:
   friend class TabletServerTestBase;
 
-  Status ValidateMasterAddressResolution() const;
-
   bool initted_;
 
   // If true, all heartbeats will be seen as failed.

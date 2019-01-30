@@ -52,8 +52,10 @@
 #include "kudu/tserver/heartbeater.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
+#include "kudu/tserver/tablet_server_options.h"
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
@@ -532,6 +534,29 @@ TEST_F(TsTabletManagerITest, ReportOnReplicaHealthStatus) {
       }
     }
   }
+}
+
+TEST_F(TsTabletManagerITest, TestDeduplicateMasterAddrsForHeartbeaters) {
+  InternalMiniClusterOptions cluster_opts;
+  NO_FATALS(StartCluster(std::move(cluster_opts)));
+  // Set up the tablet server so it points to a single master, but that master
+  // is specified multiple times.
+  int kNumDupes = 20;
+  const Sockaddr& master_addr = cluster_->mini_master()->bound_rpc_addr();
+  tserver::MiniTabletServer* mini_tserver = cluster_->mini_tablet_server(0);
+  tserver::TabletServerOptions* opts = cluster_->mini_tablet_server(0)->options();
+  opts->master_addresses.clear();
+  for (int i = 0; i < kNumDupes; i++) {
+    opts->master_addresses.emplace_back(master_addr.host(), master_addr.port());
+  }
+  mini_tserver->Shutdown();
+  ASSERT_OK(mini_tserver->Restart());
+  ASSERT_OK(mini_tserver->WaitStarted());
+
+  // The master addresses should be deduplicated and only one heartbeater
+  // thread should exist.
+  tserver::Heartbeater* hb = mini_tserver->server()->heartbeater();
+  ASSERT_EQ(1, hb->threads_.size());
 }
 
 } // namespace tserver

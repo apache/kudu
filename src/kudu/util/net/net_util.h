@@ -14,12 +14,12 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_UTIL_NET_NET_UTIL_H
-#define KUDU_UTIL_NET_NET_UTIL_H
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "kudu/util/status.h"
@@ -112,6 +112,9 @@ struct HostPortEqualityPredicate {
     return hp1 == hp2;
   }
 };
+
+typedef std::unordered_set<HostPort, HostPortHasher, HostPortEqualityPredicate>
+    UnorderedHostPortSet;
 
 // A container for addr:mask pair.
 // Both addr and netmask are in big-endian byte order
@@ -232,4 +235,3 @@ enum class BindMode {
 std::string GetBindIpForDaemon(int index, BindMode bind_mode);
 
 } // namespace kudu
-#endif

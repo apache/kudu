@@ -17,10 +17,10 @@
 
 #include "kudu/tserver/tablet_server.h"
 
-#include <cstddef>
 #include <ostream>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include <glog/logging.h>
 
@@ -42,10 +42,26 @@
 #include "kudu/util/status.h"
 
 using std::string;
+using std::vector;
 using kudu::fs::ErrorHandlerType;
 using kudu::rpc::ServiceIf;
 
 namespace kudu {
+
+namespace {
+
+Status ValidateMasterAddressResolution(const UnorderedHostPortSet& master_addrs) {
+  for (const HostPort& addr : master_addrs) {
+    RETURN_NOT_OK_PREPEND(addr.ResolveAddresses(nullptr),
+                          strings::Substitute(
+                          "Couldn't resolve master service address '$0'",
+                          addr.ToString()));
+  }
+  return Status::OK();
+}
+
+} // anonymous namespace
+
 namespace tserver {
 
 TabletServer::TabletServer(const TabletServerOptions& opts)
@@ -67,26 +83,29 @@ string TabletServer::ToString() const {
   return "TabletServer";
 }
 
-Status TabletServer::ValidateMasterAddressResolution() const {
-  for (const HostPort& master_addr : opts_.master_addresses) {
-    RETURN_NOT_OK_PREPEND(master_addr.ResolveAddresses(NULL),
-                          strings::Substitute(
-                              "Couldn't resolve master service address '$0'",
-                              master_addr.ToString()));
-  }
-  return Status::OK();
-}
-
 Status TabletServer::Init() {
   CHECK(!initted_);
 
   cfile::BlockCache::GetSingleton()->StartInstrumentation(metric_entity());
 
+  UnorderedHostPortSet master_addrs;
+  for (auto addr : opts_.master_addresses) {
+    master_addrs.emplace(std::move(addr));
+  }
+  // If we deduplicated some masters addresses, log something about it.
+  if (master_addrs.size() < opts_.master_addresses.size()) {
+    vector<HostPort> addr_list;
+    for (const auto& addr : master_addrs) {
+      addr_list.emplace_back(addr);
+    }
+    LOG(INFO) << "deduplicated master addresses: "
+              << HostPort::ToCommaSeparatedString(addr_list);
+  }
   // Validate that the passed master address actually resolves.
   // We don't validate that we can connect at this point -- it should
   // be allowed to start the TS and the master in whichever order --
   // our heartbeat thread will loop until successfully connecting.
-  RETURN_NOT_OK(ValidateMasterAddressResolution());
+  RETURN_NOT_OK(ValidateMasterAddressResolution(master_addrs));
 
   RETURN_NOT_OK(KuduServer::Init());
   if (web_server_) {
@@ -96,7 +115,7 @@ Status TabletServer::Init() {
   maintenance_manager_.reset(new MaintenanceManager(
       MaintenanceManager::kDefaultOptions, fs_manager_->uuid()));
 
-  heartbeater_.reset(new Heartbeater(opts_, this));
+  heartbeater_.reset(new Heartbeater(std::move(master_addrs), this));
 
   RETURN_NOT_OK_PREPEND(tablet_manager_->Init(),
                         "Could not init Tablet Manager");
