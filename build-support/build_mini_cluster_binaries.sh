@@ -17,12 +17,53 @@
 # specific language governing permissions and limitations
 # under the License.
 ################################################################################
+#
+# Minicluster test binaries
+# -------------------------
+#
 # This script generates optimized, dynamically-linked, stripped, fully
 # relocatable Kudu server binaries for easy use by integration tests using a
 # mini cluster. The resulting binaries should never be deployed to run an
 # actual Kudu service, whether in production or development, because all
 # security dependencies are copied from the build system and will not be
 # updated if the operating system on the runtime host is patched.
+#
+# Properties file
+# ---------------
+#
+# The JAR that is generated contains a properties file in META-INF that allows
+# it to be located by Java code at runtime if the JAR is on the classpath.
+# The location of that file in the archive is:
+#
+# META-INF/apache-kudu-test-binary.properties
+#
+# The following properties are supported:
+#
+# * format.version: The format of the artifact, in case we need to extend it
+#   later and be able to tell the difference between the archive formats.
+# * artifact.version: The version of the release (or snapshot, i.e.
+#   1.9.0-SNAPSHOT) in order for the format to support support multiple
+#   versions on the classpath or to allow a client to be able to request a
+#   specific release version.
+# * artifact.prefix: The directory name at the root of the JAR under which the
+#   binary files can be found (similar to ./configure --prefix in autoconf).
+# * artifact.os: The operating system name using the same convention as
+#   https://github.com/trustin/os-maven-plugin for ${os.detected.name}.
+#   Practically speaking for Kudu at the time of writing, that is either
+#   'linux' or 'osx'.
+# * artifact.arch: The target system architecture using the same convention as
+#   os-maven-plugin for ${os.detected.arch}. Practically speaking for Kudu, at
+#   the time of writing this will always be set to x86_64.
+#
+# Example:
+#
+# $ cat META-INF/apache-kudu-test-binary.properties
+# format.version=1
+# artifact.version=1.8.0
+# artifact.prefix=kudu-binary-1.8.0-linux-x86_64
+# artifact.os=linux
+# artifact.arch=x86_64
+#
 ################################################################################
 set -e
 
@@ -91,6 +132,27 @@ if [ -z "$MACOS" ]; then
   done
 fi
 
+# Generate the properties file that allows us to find this archive on the
+# classpath at runtime. See above for the specification.
+PROP_DIR="META-INF"
+PROP_FILE="$PROP_DIR/apache-kudu-test-binary.properties"
+FORMAT_VERSION=1
+ARTIFACT_VERSION=$(cat $SOURCE_ROOT/version.txt)
+ARTIFACT_OS="linux"
+if [ $MACOS ]; then
+  ARTIFACT_OS="osx"
+fi
+ARTIFACT_ARCH=$(uname -m)
+rm -rf $PROP_DIR
+mkdir -p $PROP_DIR
+cat <<EOF > $PROP_FILE
+format.version=$FORMAT_VERSION
+artifact.os=$ARTIFACT_OS
+artifact.arch=$ARTIFACT_ARCH
+artifact.prefix=$ARTIFACT_NAME
+artifact.version=$ARTIFACT_VERSION
+EOF
+
 # Include the basic legal files.
 for file in LICENSE.txt NOTICE.txt; do
   cp -p $SOURCE_ROOT/$file $ARTIFACT_NAME/
@@ -112,5 +174,5 @@ EOF
 
 echo Creating archive...
 ARTIFACT_FILE=$ARTIFACT_NAME.jar
-jar cf $ARTIFACT_FILE $ARTIFACT_NAME/
+jar cf $ARTIFACT_FILE $PROP_DIR/ $ARTIFACT_NAME/
 echo "Binary test artifact: $(pwd)/$ARTIFACT_FILE"
