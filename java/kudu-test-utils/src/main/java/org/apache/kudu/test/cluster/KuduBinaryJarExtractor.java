@@ -17,6 +17,7 @@
 
 package org.apache.kudu.test.cluster;
 
+import com.google.common.base.Preconditions;
 import com.google.gradle.osdetector.OsDetector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,6 +39,7 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.PosixFilePermission;
 import java.util.Enumeration;
 import java.util.HashMap;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
@@ -126,7 +128,7 @@ public class KuduBinaryJarExtractor {
       }
 
       final Path target = Paths.get(destDir);
-      return extractJar(Paths.get(kuduBinDir.toURI()), target, prefix).toString();
+      return extractJar(kuduBinDir.toURI(), target, prefix).toString();
     } catch (URISyntaxException e) {
       throw new IOException("Cannot unpack Kudu binary jar", e);
     }
@@ -135,13 +137,14 @@ public class KuduBinaryJarExtractor {
   /**
    * Accessible for testing only.
    */
-  static Path extractJar(Path src, final Path target, String prefix) throws IOException {
+  static Path extractJar(URI src, final Path target, String prefix) throws IOException {
+    Preconditions.checkArgument("jar".equals(src.getScheme()), "src URI must use a 'jar' scheme");
     if (Files.notExists(target)) {
       Files.createDirectory(target);
     }
-    URI srcJar = URI.create("jar:" + src.toUri().toString());
-    try (FileSystem zipFileSystem =
-             FileSystems.newFileSystem(srcJar, new HashMap<String, String>())) {
+
+    Map<String, String> env = new HashMap<>();
+    try (FileSystem zipFileSystem = FileSystems.newFileSystem(src, env)) {
 
       Path root = zipFileSystem.getPath(prefix);
       Files.walkFileTree(root, new SimpleFileVisitor<Path>() {

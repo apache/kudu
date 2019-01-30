@@ -104,7 +104,7 @@ public class TestKuduBinaryJarExtractor {
     Properties properties = new Properties();
     properties.setProperty("format.version", "1");
     properties.setProperty("artifact.version", "1.9.0-SNAPSHOT");
-    properties.setProperty("artifact.prefix", "apache-kudu-1.9.0-SNAHSHOT");
+    properties.setProperty("artifact.prefix", "apache-kudu-1.9.0-SNAPSHOT");
     properties.setProperty("artifact.os", os);
     properties.setProperty("artifact.arch", "x86_64");
     properties.store(out, "test");
@@ -126,8 +126,9 @@ public class TestKuduBinaryJarExtractor {
 
   @Test
   public void testExtractJar() throws IOException, URISyntaxException {
-    Path binaryJar = createKuduBinaryJar("osx");
+    URI binaryJar = createKuduBinaryJar("osx").toUri();
 
+    binaryJar = URI.create("jar:" + binaryJar.toString());
     Path extractedBinDir =
         KuduBinaryJarExtractor.extractJar(binaryJar,
             Files.createTempDirectory("kudu-test"),
