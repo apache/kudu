@@ -1,6 +1,115 @@
---- a/cpplint/cpplint.py	2017-09-19 22:24:22.000000000 -0700
-+++ b/cpplint/cpplint.py	2017-09-19 22:24:52.000000000 -0700
-@@ -5488,7 +5488,7 @@
+--- a/cpplint/cpplint.py	2019-01-29 19:51:49.000000000 -0800
++++ b/cpplint/cpplint.py	2019-01-30 15:19:26.000000000 -0800
+@@ -207,6 +207,7 @@
+     'readability/todo',
+     'readability/utf8',
+     'runtime/arrays',
++    'runtime/broken_libstdcpp_regex',
+     'runtime/casting',
+     'runtime/explicit',
+     'runtime/int',
+@@ -251,7 +252,7 @@
+ # flag. By default all errors are on, so only add here categories that should be
+ # off by default (i.e., categories that must be enabled by the --filter= flags).
+ # All entries here should start with a '-' or '+', as in the --filter= flag.
+-_DEFAULT_FILTERS = ['-build/include_alpha']
++_DEFAULT_FILTERS = ['-build/include_alpha','-runtime/broken_libstdcpp_regex']
+ 
+ # We used to check for high-bit characters, but after much discussion we
+ # decided those were OK, as long as they were in UTF-8 and didn't represent
+@@ -1934,6 +1935,91 @@
+             '...) for improved thread safety.')
+ 
+ 
++# (broken-std::regex-stuff, libc-alternative, validation pattern)
++#
++# See the inline documentation for the CheckBrokenLibStdCppRegex() function
++# for details.
++_STDCPP_REGEX_PREFIX = r'(\s|[<({;,?:]\s*)(std::)?'
++_STDCPP_REGEX_LIST = (
++    ('basic_regex', 'regex_t', _STDCPP_REGEX_PREFIX + r'basic_regex\s*<'),
++    ('regex', 'regex_t', _STDCPP_REGEX_PREFIX + r'[w]?regex([&*]|\s+)'),
++    ('match_results', 'regmatch_t',
++        _STDCPP_REGEX_PREFIX + r'match_results\s*<'),
++    ('[cs]match', 'regmatch_t',
++        _STDCPP_REGEX_PREFIX + r'[w]?[cs]match([&*]|\s+)'),
++    ('sub_match', 'regmatch_t', _STDCPP_REGEX_PREFIX + r'sub_match\s*<'),
++    ('[cs]sub_match', 'regmatch_t',
++        _STDCPP_REGEX_PREFIX + r'[w]?[cs]sub_match([&*]|\s+)'),
++    ('regex_iterator', 'regmatch_t',
++        _STDCPP_REGEX_PREFIX + r'regex_iterator([&*]|\s+)'),
++    ('regex_token_iterator', 'regmatch_t',
++        _STDCPP_REGEX_PREFIX + r'regex_token_iterator([&*]|\s+)'),
++    ('regex_search()', 'regexec()',
++        _STDCPP_REGEX_PREFIX + r'regex_search\s*\([^)]+\)'),
++    ('regex_match()', 'regexec()',
++        _STDCPP_REGEX_PREFIX + r'regex_match\s*\([^)]+\)'),
++    )
++
++def CheckBrokenLibStdCppRegex(filename, clean_lines, linenum, error):
++  """Checks for broken std::regex and friends in older libstdc++.
++
++  With older g++ and libstdc++ (version < 4.9) it's possible to successfully
++  build (i.e. compile and link) a binary from C++ code using std::regex and
++  friends. However, the code will throw unexpected std::regex_error exception
++  while compiling the regex even if the regex is valid. The same code works
++  perfectly fine if built with newer g++/libstdc++ (version >= 4.9) or
++  with clang/libc++. See the snippet below for an example.
++
++-----------------------------------------------------------------------------
++$ cat regex-test.cc
++#include <regex>
++#include <string>
++
++bool fun(const std::string& version_str) {
++  static const std::regex kVersionRegex(
++      "^[vV]([[:digit:]]+\\.[[:digit:]]+\\.[[:digit:]]+)");
++
++  std::smatch match;
++  if (!std::regex_search(version_str, match, kVersionRegex)) {
++    return false;
++  }
++  if (match.size() != 2) {
++    return false;
++  }
++  return true;
++}
++
++int main() {
++  return fun("v1.2.3") ? 0 : -1;
++}
++$ c++ -std=c++11 regex-test.cc -o regex-test
++$ ./regex-test
++$ echo $?
++-----------------------------------------------------------------------------
++
++  As it turns out, that's documented: see section 28 'Regular Expressions' at
++  https://gcc.gnu.org/onlinedocs/gcc-4.8.2/libstdc++/manual/manual/status.html#status.iso.2011
++
++  Even if documented, that behavior is completely bogus and unexpected.
++  Projects that use C++11 features and need to be compiled at systems with
++  g++/libstdc++ of versions prior 4.9 should not use broken std::regex and
++  friends since their run-time behavior is unpredictable.
++
++  Args:
++    filename: The name of the current file.
++    clean_lines: A CleansedLines instance containing the file.
++    linenum: The number of the line to check.
++    error: The function to call with any errors found.
++  """
++  line = clean_lines.elided[linenum]
++  for regex_entity, libc_alternative, pattern in _STDCPP_REGEX_LIST:
++    if Search(pattern, line):
++      error(filename, linenum, 'runtime/broken_libstdcpp_regex', 4,
++            'Consider using libc alternative \'' + libc_alternative +
++            '\' instead of broken \'' + regex_entity +
++            '\' in libstdc++ version < 4.9')
++
++
+ def CheckVlogArguments(filename, clean_lines, linenum, error):
+   """Checks that VLOG() is only used for defining a logging level.
+ 
+@@ -5488,7 +5574,7 @@
      ('<stack>', ('stack',)),
      ('<string>', ('char_traits', 'basic_string',)),
      ('<tuple>', ('tuple',)),
@@ -9,7 +118,7 @@
      ('<vector>', ('vector',)),
  
      # gcc extensions.
-@@ -5501,8 +5501,7 @@
+@@ -5501,8 +5587,7 @@
  _RE_PATTERN_STRING = re.compile(r'\bstring\b')
  
  _re_pattern_algorithm_header = []
@@ -19,3 +128,11 @@
    # Match max<type>(..., ...), max(..., ...), but not foo->max, foo.max or
    # type::max().
    _re_pattern_algorithm_header.append(
+@@ -5940,6 +6025,7 @@
+                                 nesting_state, error)
+   CheckVlogArguments(filename, clean_lines, line, error)
+   CheckPosixThreading(filename, clean_lines, line, error)
++  CheckBrokenLibStdCppRegex(filename, clean_lines, line, error)
+   CheckInvalidIncrement(filename, clean_lines, line, error)
+   CheckMakePairUsesDeduction(filename, clean_lines, line, error)
+   CheckDefaultLambdaCaptures(filename, clean_lines, line, error)

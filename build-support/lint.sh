@@ -47,11 +47,12 @@ else
   FILES=$(find $ROOT/src -name '*.cc' -or -name '*.h' | grep -v "\.pb\.\|\.service\.\|\.proxy\.\|\.krpc\.\|gutil\|trace_event\|kudu_export\.h\|x509_check_host")
 fi
 
-cd $ROOT
+cpplint_filter="+runtime/broken_libstdcpp_regex,-whitespace/comments,-readability/todo,-readability/inheritance,-build/header_guard,-build/include_order,-legal/copyright,-build/c++11,-readability/nolint"
 
+cd $ROOT
 $ROOT/thirdparty/installed/common/bin/cpplint.py \
   --verbose=4 \
-  --filter=-whitespace/comments,-readability/todo,-readability/inheritance,-build/header_guard,-build/include_order,-legal/copyright,-build/c++11,-readability/nolint \
+  --filter=$cpplint_filter \
   $FILES 2>&1 | grep -v 'Done processing' | tee $TMP
 
 NUM_ERRORS=$(grep "Total errors found" $TMP | awk '{print $4}')
