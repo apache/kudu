@@ -217,12 +217,11 @@ def prep_artifact_dirs(config):
 
 def copy_file(src, dest):
   """
-  Copy the file with path 'src' to path 'dest', including the file mode.
+  Copy the file with path 'src' to path 'dest'.
   If 'src' is a symlink, the link will be followed and 'dest' will be written
   as a plain file.
   """
   shutil.copyfile(src, dest)
-  shutil.copymode(src, dest)
 
 def chrpath(target, new_rpath):
   """
@@ -344,6 +343,9 @@ def main():
 
   artifact_name = get_artifact_name()
   artifact_root = os.path.join(build_root, artifact_name)
+  # Clear the artifact root to ensure a clean build.
+  if os.path.exists(artifact_root):
+    shutil.rmtree(artifact_root)
 
   logging.info("Including targets and their dependencies in archive...")
   config = mkconfig(build_root, artifact_root)
