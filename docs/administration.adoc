@@ -1005,6 +1005,32 @@ leading to lower storage volume and reduced read parallelism. The administrator
 should schedule a brief window to <<change_dir_config,update the node's
 directory configuration>> to exclude the failed disk.
 
+When the disk is repaired, remounted, and ready to be reused by Kudu, take the
+following steps:
+
+. Make sure that the Kudu portion of the disk is completely empty.
+. Stop the tablet server.
+. Run the `update_dirs` tool. For example, to add `/data/3`, run the following:
++
+[source,bash]
+----
+$ sudo -u kudu kudu fs update_dirs --force --fs_wal_dir=/wals --fs_data_dirs=/data/1,/data/2, /data/3
+----
++
+
+. Start the tablet server.
+. Run `ksck` to verify cluster health.
++
+[source,bash]
+----
+sudo -u kudu kudu cluster ksck master-01.example.com
+----
++
+
+
+Note that existing tablets will not stripe to the restored disk, but any new tablets
+will stripe to the restored disk.
+
 [[disk_full_recovery]]
 === Recovering from Full Disks
 By default, Kudu reserves a small amount of space (1% by capacity) in its
