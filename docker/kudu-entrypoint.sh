@@ -1,4 +1,5 @@
 #!/bin/bash
+################################################################################
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
 # distributed with this work for additional information
@@ -15,14 +16,49 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-
+################################################################################
+#
 # This script follows the pattern described in the docker best practices here:
 # https://docs.docker.com/develop/develop-images/dockerfile_best-practices/#entrypoint
-#
-# KUDU_FLAGS can be set by users to do more configuration of the
-# kudu-master and kudu-tserver.
+################################################################################
+set -e
 
-set -xe
+function print_help {
+  echo "Supported commands:"
+  echo "   master     - Start a Kudu Master"
+  echo "   tserver    - Start a Kudu TServer"
+  echo "   kudu       - Run the Kudu CLI"
+  echo "   help       - print useful information and exit"
+  echo ""
+  echo "Other commands can be specified to run shell commands."
+  echo ""
+  echo "Environment variables:"
+  echo "KUDU_MASTERS:"
+  echo "  Defines the kudu-master and kudu-tserver configured master addresses."
+  echo "  Defaults to localhost."
+  echo "DATA_DIR:"
+  echo "  Defines the root data directory to use."
+  echo "  Defaults to /var/lib/kudu."
+  echo "MASTER_ARGS:"
+  echo "  Defines the arguments passed to kudu-master. Defaults to DEFAULT_ARGS"
+  echo "TSERVER_ARGS:"
+  echo "  Defines the arguments passed to kudu-tserver. Defaults to DEFAULT_ARGS"
+  echo "DEFAULT_ARGS:"
+  echo "  Defines a recommended base set of arguments."
+  exit 0
+}
+
+# Define the defaults environment variables.
+KUDU_MASTERS=${KUDU_MASTERS:=""}
+DATA_DIR=${DATA_DIR:="/var/lib/kudu"}
+SERVICE_DIR="$DATA_DIR/$1"
+ # TODO: Remove use_hybrid_clock=false when ntpd is setup.
+DEFAULT_ARGS="--fs_wal_dir=$SERVICE_DIR \
+ --webserver_doc_root=/opt/kudu/www \
+ --logtostderr \
+ --use_hybrid_clock=false"
+MASTER_ARGS=${MASTER_ARGS:="$DEFAULT_ARGS"}
+TSERVER_ARGS=${TSERVER_ARGS:="$DEFAULT_ARGS"}
 
 # Wait until the master hosts can be resolved.
 #
@@ -32,13 +68,13 @@ set -xe
 # Gives a maximum of 5 attempts/seconds to each host. On failure
 # falls through without failing to still give Kudu a chance to startup
 # or fail on it's own.
-wait_for_master_hosts() {
+function wait_for_master_hosts() {
   IFS=","
-  for HOST in $KUDU_MASTERS
+  for HOST in "$KUDU_MASTERS"
   do
     MAX_ATTEMPTS=5
     ATTEMPTS=0
-    until `ping -c1 $HOST &>/dev/null;` || [ $ATTEMPTS -eq $MAX_ATTEMPTS ]; do
+    until `ping -c1 "$HOST" &>/dev/null;` || [[ "$ATTEMPTS" -eq "$MAX_ATTEMPTS" ]]; do
       ATTEMPTS=$((ATTEMPTS + 1))
       sleep 1;
     done
@@ -46,30 +82,31 @@ wait_for_master_hosts() {
   unset IFS
 }
 
-if [[ "$1" = 'kudu-master' ]]; then
-    # Create the data directory.
-    mkdir -p /var/lib/kudu/master
-    # TODO: Remove use_hybrid_clock=false when ntpd is setup
-    KUDU_OPTS="--master_addresses=$KUDU_MASTERS
-         --fs_wal_dir=/var/lib/kudu/master \
-         --webserver_doc_root=/opt/kudu/www \
-         --logtostderr \
-         --use_hybrid_clock=false \
-         $KUDU_FLAGS"
-    wait_for_master_hosts
-    exec kudu-master $KUDU_OPTS
-elif [[ "$1" = 'kudu-tserver' ]]; then
-    # Create the data directory.
-    mkdir -p /var/lib/kudu/tserver
-    # TODO: Remove use_hybrid_clock=false when ntpd is setup
-    KUDU_OPTS="--tserver_master_addrs=$KUDU_MASTERS
-      --fs_wal_dir=/var/lib/kudu/tserver \
-      --webserver_doc_root=/opt/kudu/www \
-      --logtostderr \
-      --use_hybrid_clock=false \
-      $KUDU_FLAGS"
-    wait_for_master_hosts
-    exec kudu-tserver $KUDU_OPTS
+# If no arguments are passed, print the help.
+if [[ -z "$1" ]]; then
+  print_help
+fi
+
+# Note: we use "master" and "tserver" here so the kudu-master and kudu-tserver
+# binaries can be manually invoked if needed.
+if [[ "$1" == "master" ]]; then
+  mkdir -p "$SERVICE_DIR"
+  wait_for_master_hosts
+  if [[ -n "$KUDU_MASTERS" ]]; then
+    MASTER_ARGS="--master_addresses=$KUDU_MASTERS $MASTER_ARGS"
+  fi
+  exec kudu-master ${MASTER_ARGS}
+elif [[ "$1" == "tserver" ]]; then
+  mkdir -p "$SERVICE_DIR"
+  wait_for_master_hosts
+  if [[ -n "$KUDU_MASTERS" ]]; then
+    TSERVER_ARGS="--tserver_master_addrs=$KUDU_MASTERS $TSERVER_ARGS"
+  else
+    TSERVER_ARGS="--tserver_master_addrs=localhost $TSERVER_ARGS"
+  fi
+  exec kudu-tserver ${TSERVER_ARGS}
+elif [[ "$1" == "help" ]]; then
+  print_help
 fi
 
 # Support calling anything else in the container.

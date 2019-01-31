@@ -31,8 +31,8 @@
 # TODO: Consider a separate runtime-base and buildtime-base to make
 #   runtime images smaller.
 #
-ARG BASE_OS=ubuntu:xenial
-FROM $BASE_OS as kudu-base
+ARG BASE_OS
+FROM $BASE_OS as base
 
 COPY ./docker/bootstrap-env.sh /
 RUN ./bootstrap-env.sh && rm bootstrap-env.sh
@@ -63,7 +63,7 @@ LABEL org.label-schema.name="Apache Kudu Base" \
 # This is done in its own stage so that docker can cache it and only
 # run it when thirdparty has changes.
 #
-FROM kudu-base AS kudu-thirdparty
+FROM base AS thirdparty
 
 WORKDIR /kudu
 # We only copy the needed files for thirdparty so docker can handle caching.
@@ -84,6 +84,7 @@ RUN build-support/enable_devtoolset.sh \
   && find thirdparty/build/* -maxdepth 0 -type d ! -name 'llvm-*' -prune -exec rm -rf {} \;
 
 # Common label arguments.
+# VCS_REF is not specified to improve docker caching.
 ARG DOCKERFILE
 ARG MAINTAINER
 ARG URL
@@ -98,7 +99,6 @@ LABEL name="Apache Kudu Thirdparty" \
       org.label-schema.dockerfile=$DOCKERFILE \
       org.label-schema.maintainer=$MAINTAINER \
       org.label-schema.url=$URL \
-      org.label-schema.vcs-ref=$VCS_REF \
       org.label-schema.vcs-type=$VCS_TYPE \
       org.label-schema.vcs-url=$VCS_URL \
       org.label-schema.version=$VERSION
@@ -109,7 +109,7 @@ LABEL name="Apache Kudu Thirdparty" \
 # This is useful for generating a runtime image, but can also be a
 # useful base development image.
 #
-FROM kudu-thirdparty AS kudu-build
+FROM thirdparty AS build
 
 # TODO: Support other buildtypes.
 ARG BUILD_TYPE=release
@@ -177,16 +177,16 @@ LABEL name="Apache Kudu Build" \
       org.label-schema.version=$VERSION
 
 #
-# ---- Runtime ----
+# ---- Kudu ----
 # Builds a runtime image with the Kudu binaries and clients pre-installed.
 #
-FROM kudu-base AS kudu-runtime
+FROM base AS kudu
 
 ARG INSTALL_DIR="/opt/kudu"
 
 # Copy the binaries.
 WORKDIR $INSTALL_DIR/bin
-COPY --from=kudu-build \
+COPY --from=build \
   /kudu/build/latest/bin/kudu \
   /kudu/build/latest/bin/kudu-master \
   /kudu/build/latest/bin/kudu-tserver \
@@ -196,14 +196,14 @@ ENV PATH=$INSTALL_DIR/bin/:$PATH
 
 # Copy the python files and install.
 WORKDIR $INSTALL_DIR/python
-COPY --from=kudu-build /usr/local /usr/local/
+COPY --from=build /usr/local /usr/local/
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib64
-COPY --from=kudu-build /kudu/python/dist/kudu-python-*.tar.gz .
+COPY --from=build /kudu/python/dist/kudu-python-*.tar.gz .
 RUN pip install kudu-python-*.tar.gz
 
 # Copy the Java application jars.
 WORKDIR $INSTALL_DIR/java
-COPY --from=kudu-build \
+COPY --from=build \
  /kudu/java/kudu-backup/build/libs/*.jar \
  /kudu/java/kudu-client-tools/build/libs/*.jar \
  /kudu/java/kudu-spark-tools/build/libs/*.jar \
@@ -211,49 +211,16 @@ COPY --from=kudu-build \
 
 WORKDIR $INSTALL_DIR
 # Copy the lib files.
-COPY --from=kudu-build /kudu/build/latest/lib ./lib
+COPY --from=build /kudu/build/latest/lib ./lib
 # Copy the web files.
-COPY --from=kudu-build /kudu/www ./www
-# Copy the examples files for convenience.
-COPY --from=kudu-build /kudu/examples ./examples
-
-# Common label arguments.
-ARG DOCKERFILE
-ARG MAINTAINER
-ARG URL
-ARG VCS_REF
-ARG VCS_TYPE
-ARG VCS_URL
-ARG VERSION
-
-LABEL name="Apache Kudu Runtime" \
-      description="A runtime image with the Kudu binaries and clients pre-installed." \
-      org.apache.kudu.build.type=$BUILD_TYPE \
-      # Common labels.
-      org.label-schema.dockerfile=$DOCKERFILE \
-      org.label-schema.maintainer=$MAINTAINER \
-      org.label-schema.url=$URL \
-      org.label-schema.vcs-ref=$VCS_REF \
-      org.label-schema.vcs-type=$VCS_TYPE \
-      org.label-schema.vcs-url=$VCS_URL \
-      org.label-schema.version=$VERSION
-
-#
-# ---- kudu-master ----
-# Builds a runtime image with kudu-master as the ENTRYPOINT.
-#
-FROM kudu-runtime AS kudu-master
-
-# RPC port and web interface port.
-EXPOSE 7051 8051
-
-# TODO: Add healthchecks
-
+COPY --from=build /kudu/www ./www
 COPY ./docker/kudu-entrypoint.sh /
+
+# Add the entrypoint.
 ENTRYPOINT ["/kudu-entrypoint.sh"]
+CMD ["help"]
 
 # Common label arguments.
-ARG BUILD_TYPE
 ARG DOCKERFILE
 ARG MAINTAINER
 ARG URL
@@ -262,8 +229,8 @@ ARG VCS_TYPE
 ARG VCS_URL
 ARG VERSION
 
-LABEL name="Apache Kudu Master" \
-      description="A runtime image with kudu-master as the ENTRYPOINT" \
+LABEL name="Apache Kudu" \
+      description="An image with the Kudu binaries and clients pre-installed." \
       org.apache.kudu.build.type=$BUILD_TYPE \
       # Common labels.
       org.label-schema.dockerfile=$DOCKERFILE \
@@ -273,43 +240,3 @@ LABEL name="Apache Kudu Master" \
       org.label-schema.vcs-type=$VCS_TYPE \
       org.label-schema.vcs-url=$VCS_URL \
       org.label-schema.version=$VERSION
-
-CMD ["kudu-master"]
-
-#
-# ---- kudu-tserver ----
-# Builds a runtime image with kudu-tserver as the ENTRYPOINT.
-#
-FROM kudu-runtime AS kudu-tserver
-
-# RPC port and web interface port.
-EXPOSE 7050 8050
-
-# TODO: Add healthchecks
-
-COPY ./docker/kudu-entrypoint.sh /
-ENTRYPOINT ["/kudu-entrypoint.sh"]
-
-# Common label arguments.
-ARG BUILD_TYPE
-ARG DOCKERFILE
-ARG MAINTAINER
-ARG URL
-ARG VCS_REF
-ARG VCS_TYPE
-ARG VCS_URL
-ARG VERSION
-
-LABEL name="Apache Kudu Tserver" \
-      description="A runtime image with kudu-tserver as the ENTRYPOINT" \
-      org.apache.kudu.build.type=$BUILD_TYPE \
-      # Common labels.
-      org.label-schema.dockerfile=$DOCKERFILE \
-      org.label-schema.maintainer=$MAINTAINER \
-      org.label-schema.url=$URL \
-      org.label-schema.vcs-ref=$VCS_REF \
-      org.label-schema.vcs-type=$VCS_TYPE \
-      org.label-schema.vcs-url=$VCS_URL \
-      org.label-schema.version=$VERSION
-
-CMD ["kudu-tserver"]

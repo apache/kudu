@@ -27,7 +27,7 @@ NOTE: All of this work is experimental and subject to change or removal.
 
 NOTE: These sample commands assume running from the project root directory.
 
-Build all the images.
+Build all the images for the default OS:
 [source,bash]
 ----
 $ ./docker/docker-build.sh
@@ -38,7 +38,7 @@ $ ./docker/docker-build.sh
 Run an image with a bash prompt and remove it on exit:
 [source,bash]
 ----
-$ docker run -i -t --rm=true kudu-build /bin/bash
+$ docker run -it --rm apache/kudu:latest /bin/bash
 ----
 
 == Copying container files to the host
@@ -48,33 +48,86 @@ For example, pre-built thirdparty or kudu binaries.
 
 [source,bash]
 ----
-$ SOURCE=`docker create kudu-thirdparty`
+$ SOURCE=`docker create kudu:thirdparty-xenial-latest`
 $ docker cp $SOURCE:/kudu/thirdparty /local/kudu/thirdparty
 ----
 
 == Images
 
-=== kudu-base
-A base image that has all prerequisite libraries for development and runtime
-pre-installed.
+=== apache/kudu:[OS]-[VERSION]
+A runtime image with the Kudu binaries and clients pre-installed
+and an entrypoint script that enables easily starting Kudu
+masters and tservers along with executing other commands.
+Copies the built artifacts and files from the kudu-build image.
 
-=== kudu-thirdparty
-An image that has Kudu's thirdparty dependencies built.
-Uses the kudu-base image as a base.
-
-=== kudu-build
+=== apache/kudu:build-[OS]-[VERSION]
 An image that has the Kudu source code pre-built.
 Uses the kudu-thirdparty image as a base.
 
-=== kudu-runtime
-A runtime image with the Kudu binaries and clients pre-installed.
-Copies the built artifacts and files from the kudu-build image.
+=== apache/kudu:thirdparty-[OS]-[VERSION]
+An image that has Kudu's thirdparty dependencies built.
+Uses the kudu-base image as a base.
 
-=== kudu-master
-A runtime image with kudu-master as the ENTRYPOINT.
-Uses the kudu-runtime image as a base.
+=== apache/kudu:base-[OS]-[VERSION]
+A base image that has all prerequisite libraries for development and runtime
+pre-installed.
 
-=== kudu-tserver
-A runtime image with kudu-tserver as the ENTRYPOINT.
-Uses the kudu-runtime image as a base.
+== Tips and Troubleshooting
+
+=== Ensure enough resources are allocated to docker
+If your docker build fails with an unusual or unclear error a
+good first step is to ensure docker has enough resources.
+A good place to start is 4 CPUs, 4 GiB of memory, and 32 GiB of disk.
+
+=== Free up disk space
+If you don't clean up your environment periodically, you will likely
+run out of disk space. Use the following commands clean up after builds.
+
+Clean all stopped containers, all dangling images, all dangling build cache
+and all unused networks:
+[source,bash]
+----
+$ docker system prune
+----
+
+Remove all stopped containers:
+[source,bash]
+----
+$ docker container prune
+----
+
+Remove all dangling images:
+[source,bash]
+----
+$ docker image prune
+----
+
+Remove all Kudu images :
+[source,bash]
+----
+$ docker rmi -f $(docker images -q apache/kudu)
+----
+
+Remove specific images:
+[source,bash]
+----
+$ docker rmi [IMAGE...]
+----
+
+=== Using the cache from pre-built images
+You can tell docker to considered remote or local images in your build
+as cache sources. This can be especially useful when the base or
+thirdparty images have not changed as those builds can take a very
+long time.
+
+To do this use the `--cache-from` flag when executing `docker build`
+commands.
+
+=== Use multiple workspaces
+The docker builds can take a long time to run. During that
+time you may want to continue other work in the git repo. Use
+`git worktree` to specify a worktree in another directory and
+run the docker build from there. Read more about `git worktree`
+https://git-scm.com/docs/git-worktree[here].
+
 
