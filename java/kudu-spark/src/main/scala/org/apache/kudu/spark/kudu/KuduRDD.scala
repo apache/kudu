@@ -74,6 +74,10 @@ class KuduRDD private[kudu] (
       builder.scanRequestTimeout(timeout)
     }
 
+    options.splitSizeBytes.foreach { size =>
+      builder.setSplitSizeBytes(size)
+    }
+
     for (predicate <- predicates) {
       builder.addPredicate(predicate)
     }

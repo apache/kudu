@@ -34,6 +34,7 @@ import org.apache.kudu.Schema
 import org.apache.kudu.Type
 import org.apache.kudu.test.RandomUtils
 import org.apache.kudu.spark.kudu.SparkListenerUtil.withJobTaskCounter
+import org.apache.kudu.test.KuduTestHarness.TabletServerConfig
 import org.apache.spark.sql.execution.datasources.LogicalRelation
 import org.junit.Before
 import org.junit.Test
@@ -1022,5 +1023,28 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
     val dataFrame = sqlContext.read.options(kuduOptions).format("kudu").load
     val kuduRelation = kuduRelationFromDataFrame(dataFrame)
     assert(kuduRelation.readOptions.scanRequestTimeoutMs == Some(66666))
+  }
+
+  @Test
+  @TabletServerConfig(
+    flags = Array(
+      "--flush_threshold_mb=1",
+      "--flush_threshold_secs=1"
+    ))
+  def testScanWithKeyRange() {
+    upsertRowsWithRowDataSize(table, rowCount * 100, 32 * 1024)
+    kuduOptions = Map(
+      "kudu.table" -> tableName,
+      "kudu.master" -> harness.getMasterAddressesAsString,
+      "kudu.splitSizeBytes" -> "1024")
+
+    // count the number of tasks that end.
+    val actualNumTasks = withJobTaskCounter(ss.sparkContext) { _ =>
+      val t = "scanWithKeyRangeTest"
+      sqlContext.read.options(kuduOptions).format("kudu").load.createOrReplaceTempView(t)
+      val results = sqlContext.sql(s"SELECT * FROM $t").collectAsList()
+      assertEquals(rowCount * 100, results.size())
+    }
+    assert(actualNumTasks >= 2)
   }
 }

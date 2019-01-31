@@ -35,6 +35,9 @@ import org.apache.kudu.spark.kudu.KuduReadOptions._
  *                          server to ensure that scanners do not time out
  * @param scanRequestTimeoutMs Maximum time allowed per scan request, in milliseconds
  * @param socketReadTimeoutMs This parameter is deprecated and has no effect
+ * @param splitSizeBytes Sets the target number of bytes per spark task. If set, tablet's
+ *                       primary key range will be split to generate uniform task sizes instead of
+ *                       the default of 1 task per tablet.
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
@@ -44,7 +47,8 @@ case class KuduReadOptions(
     faultTolerantScanner: Boolean = defaultFaultTolerantScanner,
     keepAlivePeriodMs: Long = defaultKeepAlivePeriodMs,
     scanRequestTimeoutMs: Option[Long] = None,
-    socketReadTimeoutMs: Option[Long] = None)
+    socketReadTimeoutMs: Option[Long] = None,
+    splitSizeBytes: Option[Long] = None)
 
 object KuduReadOptions {
   val defaultBatchSize: Int = 1024 * 1024 * 20 // TODO: Understand/doc this setting?

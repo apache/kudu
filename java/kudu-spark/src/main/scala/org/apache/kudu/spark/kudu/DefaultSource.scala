@@ -67,6 +67,7 @@ class DefaultSource
   val SOCKET_READ_TIMEOUT_MS = "kudu.socketReadTimeoutMs"
   val BATCH_SIZE = "kudu.batchSize"
   val KEEP_ALIVE_PERIOD_MS = "kudu.keepAlivePeriodMs"
+  val SPLIT_SIZE_BYTES = "kudu.splitSizeBytes"
 
   /**
    * A nice alias for the data source so that when specifying the format
@@ -179,6 +180,7 @@ class DefaultSource
     val scanRequestTimeoutMs = parameters.get(SCAN_REQUEST_TIMEOUT_MS).map(_.toLong)
     val keepAlivePeriodMs =
       parameters.get(KEEP_ALIVE_PERIOD_MS).map(_.toLong).getOrElse(defaultKeepAlivePeriodMs)
+    val splitSizeBytes = parameters.get(SPLIT_SIZE_BYTES).map(_.toLong)
 
     KuduReadOptions(
       batchSize,
@@ -186,7 +188,8 @@ class DefaultSource
       faultTolerantScanner,
       keepAlivePeriodMs,
       scanRequestTimeoutMs,
-      /* socketReadTimeoutMs= */ None)
+      /* socketReadTimeoutMs= */ None,
+      splitSizeBytes)
   }
 
   private def getWriteOptions(parameters: Map[String, String]): KuduWriteOptions = {

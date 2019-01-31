@@ -190,4 +190,43 @@ trait KuduTestSuite extends JUnitSuite {
     }
     rows
   }
+
+  def upsertRowsWithRowDataSize(
+      targetTable: KuduTable,
+      rowCount: Integer,
+      rowDataSize: Integer): IndexedSeq[(Int, Int, String, Long)] = {
+    val kuduSession = kuduClient.newSession()
+
+    val rows = Range(0, rowCount).map { i =>
+      val upsert = targetTable.newUpsert
+      val row = upsert.getRow
+      row.addInt(0, i)
+      row.addInt(1, i)
+      row.addDouble(3, i.toDouble)
+      row.addLong(4, i.toLong)
+      row.addBoolean(5, i % 2 == 1)
+      row.addShort(6, i.toShort)
+      row.addFloat(7, i.toFloat)
+      row.addBinary(8, (s"*" * rowDataSize).getBytes())
+      val ts = System.currentTimeMillis() * 1000
+      row.addLong(9, ts)
+      row.addByte(10, i.toByte)
+      row.addDecimal(11, BigDecimal.valueOf(i))
+      row.addDecimal(12, BigDecimal.valueOf(i))
+      row.addDecimal(13, BigDecimal.valueOf(i))
+
+      // Sprinkling some nulls so that queries see them.
+      val s = if (i % 2 == 0) {
+        row.addString(2, i.toString)
+        i.toString
+      } else {
+        row.setNull(2)
+        null
+      }
+
+      kuduSession.apply(upsert)
+      (i, i, s, ts)
+    }
+    rows
+  }
 }

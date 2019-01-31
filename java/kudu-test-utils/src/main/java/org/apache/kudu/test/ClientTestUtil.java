@@ -43,6 +43,7 @@ import org.apache.kudu.client.RowResult;
 import org.apache.kudu.client.RowResultIterator;
 import org.apache.kudu.client.Upsert;
 import org.apache.kudu.util.DecimalUtil;
+import org.apache.kudu.util.StringUtil;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 import org.slf4j.Logger;
@@ -299,6 +300,23 @@ public abstract class ClientTestUtil {
     return upsert;
   }
 
+  public static Upsert createBasicSchemaUpsertWithDataSize(KuduTable table, int key, int dataSize) {
+    Upsert upsert = table.newUpsert();
+    PartialRow row = upsert.getRow();
+    row.addInt(0, key);
+    row.addInt(1, 3);
+    row.addInt(2, 4);
+
+    StringBuilder builder = new StringBuilder();
+    for (int i = 0; i < dataSize; i++) {
+      builder.append("*");
+    }
+    String val = builder.toString();
+    row.addString(3, val);
+    row.addBoolean(4, false);
+    return upsert;
+  }
+
   public static Insert createBasicSchemaInsert(KuduTable table, int key) {
     Insert insert = table.newInsert();
     PartialRow row = insert.getRow();
@@ -337,6 +355,31 @@ public abstract class ClientTestUtil {
         row.addBoolean(4, true);
         session.apply(insert).join(timeoutMs);
       }
+    }
+    session.close().join(timeoutMs);
+    return table;
+  }
+
+  public static KuduTable createTableWithOneThousandRows(AsyncKuduClient client,
+                                                         String tableName,
+                                                         final int rowDataSize,
+                                                         final long timeoutMs)
+      throws Exception {
+    final int[] KEYS = new int[] { 250, 500, 750 };
+    final Schema basicSchema = getBasicSchema();
+    CreateTableOptions builder = getBasicCreateTableOptions();
+    for (int i : KEYS) {
+      PartialRow splitRow = basicSchema.newPartialRow();
+      splitRow.addInt(0, i);
+      builder.addSplitRow(splitRow);
+    }
+    KuduTable table = client.syncClient().createTable(tableName, basicSchema, builder);
+    AsyncKuduSession session = client.newSession();
+
+    // create a table with on 4 tablets of 250 rows each
+    for (int key = 0; key < 1000; key++) {
+      Upsert upsert = createBasicSchemaUpsertWithDataSize(table, key, rowDataSize);
+      session.apply(upsert).join(timeoutMs);
     }
     session.close().join(timeoutMs);
     return table;

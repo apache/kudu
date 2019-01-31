@@ -1941,7 +1941,139 @@ public class AsyncKuduClient implements AutoCloseable {
                            endPartitionKey,
                            fetchBatchSize,
                            ret,
-        timeoutTracker);
+                           timeoutTracker);
+  }
+
+  /**
+   * Sends a splitKeyRange RPC to split the tablet's primary key range into smaller ranges.
+   * This RPC doesn't change the layout of the tablet.
+   * @param table table to lookup
+   * @param startPrimaryKey the primary key to begin splitting at (inclusive), pass null to
+   *                        start splitting at the beginning of the tablet
+   * @param endPrimaryKey the primary key to stop splitting at (exclusive), pass null to
+   *                      stop splitting at the end of the tablet
+   * @param partitionKey the partition key of the tablet to find
+   * @param splitSizeBytes the size of the data in each key range.
+   *                       This is a hint: The tablet server may return a key range
+   *                       larger or smaller than this value.
+   * @param parentRpc RPC that prompted the split key range request, can be null
+   * @return Deferred to track the progress
+   */
+  private Deferred<SplitKeyRangeResponse> getTabletKeyRanges(final KuduTable table,
+                                                             final byte[] startPrimaryKey,
+                                                             final byte[] endPrimaryKey,
+                                                             final byte[] partitionKey,
+                                                             long splitSizeBytes,
+                                                             KuduRpc<?> parentRpc) {
+    long timeoutMillis = parentRpc == null ? defaultAdminOperationTimeoutMs :
+                                             parentRpc.timeoutTracker.getMillisBeforeTimeout();
+
+    SplitKeyRangeRequest rpc =
+        new SplitKeyRangeRequest(table,
+                                 startPrimaryKey,
+                                 endPrimaryKey,
+                                 partitionKey,
+                                 splitSizeBytes,
+                                 timer,
+                                 timeoutMillis);
+    rpc.setParentRpc(parentRpc);
+    return sendRpcToTablet(rpc);
+  }
+
+  /**
+   * Get all or some key range for a given table. This may query the master multiple times if there
+   * are a lot of tablets, and query each tablet to split the tablet's primary key range into
+   * smaller ranges. This doesn't change the layout of the tablet.
+   * @param table the table to get key ranges from
+   * @param startPrimaryKey the primary key to begin splitting at (inclusive), pass null to
+   *                        start splitting at the beginning of the tablet
+   * @param endPrimaryKey the primary key to stop splitting at (exclusive), pass null to
+   *                      stop splitting at the end of the tablet
+   * @param startPartitionKey where to start in the table, pass null to start at the beginning
+   * @param endPartitionKey where to stop in the table, pass null to get all the tablets until the
+   *                        end of the table
+   * @param fetchBatchSize the number of tablets to fetch per round trip from the master
+   * @param splitSizeBytes the size of the data in each key range.
+   *                       This is a hint: The tablet server may return the size of key range
+   *                       larger or smaller than this value. If unset or <= 0, the key range
+   *                       includes all the data of the tablet.
+   * @param deadline deadline in milliseconds for this method to finish
+   * @return a {@code Deferred} object that yields a list of the key ranges in the table
+   */
+  Deferred<List<KeyRange>> getTableKeyRanges(final KuduTable table,
+                                             final byte[] startPrimaryKey,
+                                             final byte[] endPrimaryKey,
+                                             final byte[] startPartitionKey,
+                                             final byte[] endPartitionKey,
+                                             int fetchBatchSize,
+                                             long splitSizeBytes,
+                                             long deadline) {
+    final TimeoutTracker timeoutTracker = new TimeoutTracker();
+    timeoutTracker.setTimeout(deadline);
+
+    Callback<Deferred<List<KeyRange>>, List<LocatedTablet>> locateTabletCB =
+        new Callback<Deferred<List<KeyRange>>, List<LocatedTablet>>() {
+      @Override
+      public Deferred<List<KeyRange>> call(List<LocatedTablet> tablets) {
+        if (splitSizeBytes <= 0) {
+          final List<KeyRange> keyRanges = Lists.newArrayList();
+          for (LocatedTablet tablet : tablets) {
+            keyRanges.add(new KeyRange(tablet, startPrimaryKey, endPrimaryKey, -1));
+          }
+          return Deferred.fromResult(keyRanges);
+        } else {
+          List<Deferred<List<KeyRange>>> deferreds = new ArrayList<>();
+          for (LocatedTablet tablet : tablets) {
+            // Build a fake RPC to encapsulate and propagate the timeout.
+            // There's no actual "RPC" to send.
+            KuduRpc fakeRpc = buildFakeRpc("getTableKeyRanges",
+                                           null,
+                                           timeoutTracker.getMillisBeforeTimeout());
+            deferreds.add(getTabletKeyRanges(table,
+                                             startPrimaryKey,
+                                             endPrimaryKey,
+                                             tablet.getPartition().getPartitionKeyStart(),
+                                             splitSizeBytes,
+                                             fakeRpc).addCallbackDeferring(
+                new Callback<Deferred<List<KeyRange>>, SplitKeyRangeResponse>() {
+                  @Override
+                  public Deferred<List<KeyRange>> call(SplitKeyRangeResponse resp) {
+                    final List<KeyRange> ranges = Lists.newArrayList();
+                    for (Common.KeyRangePB pb : resp.getKeyRanges()) {
+                      KeyRange newRange = new KeyRange(tablet,
+                                                       pb.getStartPrimaryKey().toByteArray(),
+                                                       pb.getStopPrimaryKey().toByteArray(),
+                                                       pb.getSizeBytesEstimates());
+                      ranges.add(newRange);
+                      LOG.debug("Add key range {}", newRange);
+                    }
+                    return Deferred.fromResult(ranges);
+                  }
+                }));
+          }
+          // Must preserve the order.
+          return Deferred.groupInOrder(deferreds).addCallbackDeferring(
+              new Callback<Deferred<List<KeyRange>>, ArrayList<List<KeyRange>>>() {
+                @Override
+                public Deferred<List<KeyRange>> call(ArrayList<List<KeyRange>> rangeLists) {
+                  final List<KeyRange> ret = Lists.newArrayList();
+                  for (List<KeyRange> ranges : rangeLists) {
+                    ret.addAll(ranges);
+                  }
+                  return Deferred.fromResult(ret);
+                }
+              });
+        }
+      }
+    };
+
+    final List<LocatedTablet> tablets = Lists.newArrayList();
+    return loopLocateTable(table,
+                           startPartitionKey,
+                           endPartitionKey,
+                           fetchBatchSize,
+                           tablets,
+                           timeoutTracker).addCallbackDeferring(locateTabletCB);
   }
 
   /**

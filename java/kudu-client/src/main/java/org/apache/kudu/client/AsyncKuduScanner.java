@@ -722,6 +722,16 @@ public final class AsyncKuduScanner {
     buf.append(", tablet=").append(tablet);
     buf.append(", scannerId=").append(Bytes.pretty(scannerId));
     buf.append(", scanRequestTimeout=").append(scanRequestTimeout);
+    if (startPrimaryKey.length > 0) {
+      buf.append(", startPrimaryKey=").append(Bytes.hex(startPrimaryKey));
+    } else {
+      buf.append(", startPrimaryKey=<start>");
+    }
+    if (endPrimaryKey.length > 0) {
+      buf.append(", endPrimaryKey=").append(Bytes.hex(endPrimaryKey));
+    } else {
+      buf.append(", endPrimaryKey=<end>");
+    }
     buf.append(')');
     return buf.toString();
   }

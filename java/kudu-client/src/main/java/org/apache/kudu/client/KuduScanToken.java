@@ -289,7 +289,12 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
   public static class KuduScanTokenBuilder
       extends AbstractKuduScannerBuilder<KuduScanTokenBuilder, List<KuduScanToken>> {
 
+    private static final int DEFAULT_SPLIT_SIZE_BYTES = -1;
+
     private long timeout;
+
+    // By default, a scan token is created for each tablet to be scanned.
+    private long splitSizeBytes = DEFAULT_SPLIT_SIZE_BYTES;
 
     KuduScanTokenBuilder(AsyncKuduClient client, KuduTable table) {
       super(client, table);
@@ -303,6 +308,18 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
      */
     public KuduScanTokenBuilder setTimeout(long timeoutMs) {
       timeout = timeoutMs;
+      return this;
+    }
+
+    /**
+     * Sets the data size of key range. It is used to split tablet's primary key range
+     * into smaller ranges. The split doesn't change the layout of the tablet. This is a hint:
+     * The tablet server may return the size of key range larger or smaller than this value.
+     * If unset or <= 0, the key range includes all the data of the tablet.
+     * @param splitSizeBytes the data size of key range.
+     */
+    public KuduScanTokenBuilder setSplitSizeBytes(long splitSizeBytes) {
+      this.splitSizeBytes = splitSizeBytes;
       return this;
     }
 
@@ -388,32 +405,44 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
 
       try {
         PartitionPruner pruner = PartitionPruner.create(this);
-        List<LocatedTablet> tablets = new ArrayList<>();
+        List<KeyRange> keyRanges = new ArrayList<>();
         while (pruner.hasMorePartitionKeyRanges()) {
           Pair<byte[], byte[]> partitionRange = pruner.nextPartitionKeyRange();
-          List<LocatedTablet> newTablets = table.getTabletsLocations(
+          List<KeyRange> newKeyRanges = client.getTableKeyRanges(
+              table,
+              proto.getLowerBoundPrimaryKey().toByteArray(),
+              proto.getUpperBoundPrimaryKey().toByteArray(),
               partitionRange.getFirst().length == 0 ? null : partitionRange.getFirst(),
               partitionRange.getSecond().length == 0 ? null : partitionRange.getSecond(),
-              timeout);
+              AsyncKuduClient.FETCH_TABLETS_PER_RANGE_LOOKUP,
+              splitSizeBytes,
+              timeout).join();
 
-          if (newTablets.isEmpty()) {
+          if (newKeyRanges.isEmpty()) {
             pruner.removePartitionKeyRange(partitionRange.getSecond());
           } else {
-            pruner.removePartitionKeyRange(newTablets.get(newTablets.size() - 1)
-                                                     .getPartition()
-                                                     .getPartitionKeyEnd());
+            pruner.removePartitionKeyRange(newKeyRanges.get(newKeyRanges.size() - 1)
+                                                       .getPartitionKeyEnd());
           }
-          tablets.addAll(newTablets);
+          keyRanges.addAll(newKeyRanges);
         }
 
-        List<KuduScanToken> tokens = new ArrayList<>(tablets.size());
-        for (LocatedTablet tablet : tablets) {
+        List<KuduScanToken> tokens = new ArrayList<>(keyRanges.size());
+        for (KeyRange keyRange : keyRanges) {
           Client.ScanTokenPB.Builder builder = proto.clone();
           builder.setLowerBoundPartitionKey(
-              UnsafeByteOperations.unsafeWrap(tablet.getPartition().getPartitionKeyStart()));
+              UnsafeByteOperations.unsafeWrap(keyRange.getPartitionKeyStart()));
           builder.setUpperBoundPartitionKey(
-              UnsafeByteOperations.unsafeWrap(tablet.getPartition().getPartitionKeyEnd()));
-          tokens.add(new KuduScanToken(tablet, builder.build()));
+              UnsafeByteOperations.unsafeWrap(keyRange.getPartitionKeyEnd()));
+          byte[] primaryKeyStart = keyRange.getPrimaryKeyStart();
+          if (primaryKeyStart != null && primaryKeyStart.length > 0) {
+            builder.setLowerBoundPrimaryKey(UnsafeByteOperations.unsafeWrap(primaryKeyStart));
+          }
+          byte[] primaryKeyEnd = keyRange.getPrimaryKeyEnd();
+          if (primaryKeyEnd != null && primaryKeyEnd.length > 0) {
+            builder.setUpperBoundPrimaryKey(UnsafeByteOperations.unsafeWrap(primaryKeyEnd));
+          }
+          tokens.add(new KuduScanToken(keyRange.getTablet(), builder.build()));
         }
         return tokens;
       } catch (Exception e) {
