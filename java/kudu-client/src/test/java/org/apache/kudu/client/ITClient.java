@@ -24,6 +24,7 @@ import java.util.concurrent.TimeUnit;
 
 import com.google.common.collect.ImmutableList;
 import org.apache.kudu.test.KuduTestHarness;
+import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Rule;
@@ -57,15 +58,16 @@ public class ITClient {
 
   private static final String TABLE_NAME =
       ITClient.class.getName() + "-" + System.currentTimeMillis();
-  // One error and we stop the test.
-  private static final CountDownLatch KEEP_RUNNING_LATCH = new CountDownLatch(1);
-  // Latch used to track if an error occurred and we need to stop the test early.
-  private static final CountDownLatch ERROR_LATCH = new CountDownLatch(1);
 
-  private static KuduClient localClient;
-  private static AsyncKuduClient localAsyncClient;
-  private static KuduTable table;
-  private static long runtimeInSeconds;
+  // One error and we stop the test.
+  private final CountDownLatch keepRunningLatch = new CountDownLatch(1);
+  // Latch used to track if an error occurred and we need to stop the test early.
+  private final CountDownLatch errorLatch = new CountDownLatch(1);
+
+  private KuduClient localClient;
+  private AsyncKuduClient localAsyncClient;
+  private KuduTable table;
+  private long runtimeInSeconds;
 
   private volatile long sharedWriteTimestamp;
 
@@ -97,6 +99,15 @@ public class ITClient {
     table = localClient.createTable(TABLE_NAME, getBasicSchema(), builder);
   }
 
+  @After
+  public void tearDown() throws Exception {
+    if (localClient != null) {
+      localClient.shutdown();
+      // No need to explicitly shutdown the async client,
+      // shutting down the sync client effectively does that.
+    }
+  }
+
   @Test(timeout = TEST_TIMEOUT_SECONDS)
   public void test() throws Exception {
 
@@ -117,11 +128,11 @@ public class ITClient {
     }
 
     // await() returns yes if the latch reaches 0, we don't want that.
-    Assert.assertFalse("Look for the last ERROR line in the log that comes from ITCLient",
-        ERROR_LATCH.await(runtimeInSeconds, TimeUnit.SECONDS));
+    Assert.assertFalse("Look for the last ERROR line in the log that comes from ITClient",
+        errorLatch.await(runtimeInSeconds, TimeUnit.SECONDS));
 
     // Indicate we want to stop, then wait a little bit for it to happen.
-    KEEP_RUNNING_LATCH.countDown();
+    keepRunningLatch.countDown();
 
     for (Thread thread : threads) {
       // Give plenty of time for threads to stop.
@@ -140,7 +151,7 @@ public class ITClient {
    */
   private void reportError(String message, Exception exception) {
     LOG.error(message, exception);
-    ERROR_LATCH.countDown();
+    errorLatch.countDown();
   }
 
   /**
@@ -153,11 +164,11 @@ public class ITClient {
     @Override
     public void run() {
       try {
-        KEEP_RUNNING_LATCH.await(2, TimeUnit.SECONDS);
+        keepRunningLatch.await(2, TimeUnit.SECONDS);
       } catch (InterruptedException e) {
         return;
       }
-      while (KEEP_RUNNING_LATCH.getCount() > 0) {
+      while (keepRunningLatch.getCount() > 0) {
         try {
           boolean shouldContinue;
           int randomInt = random.nextInt(3);
@@ -172,7 +183,7 @@ public class ITClient {
           if (!shouldContinue) {
             return;
           }
-          KEEP_RUNNING_LATCH.await(5, TimeUnit.SECONDS);
+          keepRunningLatch.await(5, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
           return;
         }
@@ -195,7 +206,7 @@ public class ITClient {
         connections.get(random.nextInt(connections.size())).disconnect();
 
       } catch (Exception e) {
-        if (KEEP_RUNNING_LATCH.getCount() == 0) {
+        if (keepRunningLatch.getCount() == 0) {
           // Likely shutdown() related.
           return false;
         }
@@ -248,7 +259,7 @@ public class ITClient {
     @Override
     public void run() {
       session.setExternalConsistencyMode(ExternalConsistencyMode.CLIENT_PROPAGATED);
-      while (KEEP_RUNNING_LATCH.getCount() > 0) {
+      while (keepRunningLatch.getCount() > 0) {
         try {
           OperationResponse resp = session.apply(createBasicSchemaInsert(table, currentRowKey));
           if (hasRowErrorAndReport(resp)) {
@@ -276,7 +287,7 @@ public class ITClient {
             }
           }
         } catch (Exception e) {
-          if (KEEP_RUNNING_LATCH.getCount() == 0) {
+          if (keepRunningLatch.getCount() == 0) {
             // Likely shutdown() related.
             return;
           }
@@ -315,7 +326,7 @@ public class ITClient {
 
     @Override
     public void run() {
-      while (KEEP_RUNNING_LATCH.getCount() > 0) {
+      while (keepRunningLatch.getCount() > 0) {
 
         boolean shouldContinue;
 
@@ -335,7 +346,7 @@ public class ITClient {
 
         if (lastRowCount == 0) {
           try {
-            KEEP_RUNNING_LATCH.await(50, TimeUnit.MILLISECONDS);
+            keepRunningLatch.await(50, TimeUnit.MILLISECONDS);
           } catch (InterruptedException e) {
             // Test is stopping.
             return;
@@ -390,7 +401,7 @@ public class ITClient {
       DeadlineTracker deadlineTracker = new DeadlineTracker();
       deadlineTracker.setDeadline(DEFAULT_SLEEP);
 
-      while (KEEP_RUNNING_LATCH.getCount() > 0 && !deadlineTracker.timedOut()) {
+      while (keepRunningLatch.getCount() > 0 && !deadlineTracker.timedOut()) {
         KuduScanner scanner = getScannerBuilder().build();
 
         try {
@@ -406,13 +417,13 @@ public class ITClient {
           }
           return true;
         } else {
-          reportError("Row count unexpectedly decreased from " + lastRowCount + "to " + rowCount,
+          reportError("Row count unexpectedly decreased from " + lastRowCount + " to " + rowCount,
               null);
         }
 
         // Due to the lack of KUDU-430, we need to loop for a while.
         try {
-          KEEP_RUNNING_LATCH.await(50, TimeUnit.MILLISECONDS);
+          keepRunningLatch.await(50, TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
           // No need to do anything, we'll exit the loop once we test getCount() in the condition.
         }
@@ -462,7 +473,7 @@ public class ITClient {
     @Override
     public void uncaughtException(Thread t, Throwable e) {
       // Only report an error if we're still running, else we'll spam the log.
-      if (KEEP_RUNNING_LATCH.getCount() != 0) {
+      if (keepRunningLatch.getCount() != 0) {
         reportError("Uncaught exception", new Exception(e));
       }
     }
