@@ -89,8 +89,8 @@ public class TestMiniKuduCluster {
                                                       .numMasterServers(NUM_MASTERS)
                                                       .numTabletServers(NUM_TABLET_SERVERS)
                                                       .enableKerberos()
-                                                      .build()) {
-      KuduClient client = new KuduClientBuilder(cluster.getMasterAddressesAsString()).build();
+                                                      .build();
+         KuduClient client = new KuduClientBuilder(cluster.getMasterAddressesAsString()).build()) {
       ListTablesResponse resp = client.getTablesList();
       assertTrue(resp.getTablesList().isEmpty());
       assertNull(client.getHiveMetastoreConfig());
@@ -103,8 +103,8 @@ public class TestMiniKuduCluster {
                                                       .numMasterServers(NUM_MASTERS)
                                                       .numTabletServers(NUM_TABLET_SERVERS)
                                                       .enableHiveMetastoreIntegration()
-                                                      .build()) {
-      KuduClient client = new KuduClientBuilder(cluster.getMasterAddressesAsString()).build();
+                                                      .build();
+         KuduClient client = new KuduClientBuilder(cluster.getMasterAddressesAsString()).build()) {
       assertNotNull(client.getHiveMetastoreConfig());
     }
   }

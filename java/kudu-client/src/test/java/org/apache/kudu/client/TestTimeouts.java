@@ -41,34 +41,34 @@ public class TestTimeouts {
    */
   @Test(timeout = 100000)
   public void testLowTimeouts() throws Exception {
-    KuduClient lowTimeoutsClient =
-        new KuduClient.KuduClientBuilder(harness.getMasterAddressesAsString())
-        .defaultAdminOperationTimeoutMs(1)
-        .defaultOperationTimeoutMs(1)
-        .build();
+    try (KuduClient lowTimeoutsClient =
+         new KuduClient.KuduClientBuilder(harness.getMasterAddressesAsString())
+         .defaultAdminOperationTimeoutMs(1)
+         .defaultOperationTimeoutMs(1)
+         .build()) {
+      try {
+        lowTimeoutsClient.listTabletServers();
+        fail("Should have timed out");
+      } catch (KuduException ex) {
+        // Expected.
+      }
 
-    try {
-      lowTimeoutsClient.listTabletServers();
-      fail("Should have timed out");
-    } catch (KuduException ex) {
-      // Expected.
-    }
+      harness.getClient().createTable(TABLE_NAME, getBasicSchema(), getBasicCreateTableOptions());
+      KuduTable table = lowTimeoutsClient.openTable(TABLE_NAME);
 
-    harness.getClient().createTable(TABLE_NAME, getBasicSchema(), getBasicCreateTableOptions());
-    KuduTable table = lowTimeoutsClient.openTable(TABLE_NAME);
+      KuduSession lowTimeoutSession = lowTimeoutsClient.newSession();
 
-    KuduSession lowTimeoutSession = lowTimeoutsClient.newSession();
+      OperationResponse response = lowTimeoutSession.apply(createBasicSchemaInsert(table, 1));
+      assertTrue(response.hasRowError());
+      assertTrue(response.getRowError().getErrorStatus().isTimedOut());
 
-    OperationResponse response = lowTimeoutSession.apply(createBasicSchemaInsert(table, 1));
-    assertTrue(response.hasRowError());
-    assertTrue(response.getRowError().getErrorStatus().isTimedOut());
-
-    KuduScanner lowTimeoutScanner = lowTimeoutsClient.newScannerBuilder(table).build();
-    try {
-      lowTimeoutScanner.nextRows();
-      fail("Should have timed out");
-    } catch (KuduException ex) {
-      assertTrue(ex.getStatus().isTimedOut());
+      KuduScanner lowTimeoutScanner = lowTimeoutsClient.newScannerBuilder(table).build();
+      try {
+        lowTimeoutScanner.nextRows();
+        fail("Should have timed out");
+      } catch (KuduException ex) {
+        assertTrue(ex.getStatus().isTimedOut());
+      }
     }
   }
 }

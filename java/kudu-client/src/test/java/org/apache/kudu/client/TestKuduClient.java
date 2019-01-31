@@ -877,40 +877,40 @@ public class TestKuduClient {
   @Test(timeout = 100000)
   public void testCustomNioExecutor() throws Exception {
     long startTime = System.nanoTime();
-    final KuduClient localClient = new KuduClient.KuduClientBuilder(harness.getMasterAddressesAsString())
-        .nioExecutors(Executors.newFixedThreadPool(1), Executors.newFixedThreadPool(2))
-        .bossCount(1)
-        .workerCount(2)
-        .build();
-    long buildTime = (System.nanoTime() - startTime) / 1000000000L;
-    assertTrue("Building KuduClient is slow, maybe netty get stuck", buildTime < 3);
-    localClient.createTable(TABLE_NAME, basicSchema, getBasicCreateTableOptions());
-    Thread[] threads = new Thread[4];
-    for (int t = 0; t < 4; t++) {
-      final int id = t;
-      threads[t] = new Thread(new Runnable() {
-        @Override
-        public void run() {
-          try {
-            KuduTable table = localClient.openTable(TABLE_NAME);
-            KuduSession session = localClient.newSession();
-            session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_SYNC);
-            for (int i = 0; i < 100; i++) {
-              Insert insert = createBasicSchemaInsert(table, id * 100 + i);
-              session.apply(insert);
+    try (KuduClient localClient = new KuduClient.KuduClientBuilder(harness.getMasterAddressesAsString())
+         .nioExecutors(Executors.newFixedThreadPool(1), Executors.newFixedThreadPool(2))
+         .bossCount(1)
+         .workerCount(2)
+         .build()) {
+      long buildTime = (System.nanoTime() - startTime) / 1000000000L;
+      assertTrue("Building KuduClient is slow, maybe netty get stuck", buildTime < 3);
+      localClient.createTable(TABLE_NAME, basicSchema, getBasicCreateTableOptions());
+      Thread[] threads = new Thread[4];
+      for (int t = 0; t < 4; t++) {
+        final int id = t;
+        threads[t] = new Thread(new Runnable() {
+          @Override
+          public void run() {
+            try {
+              KuduTable table = localClient.openTable(TABLE_NAME);
+              KuduSession session = localClient.newSession();
+              session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_SYNC);
+              for (int i = 0; i < 100; i++) {
+                Insert insert = createBasicSchemaInsert(table, id * 100 + i);
+                session.apply(insert);
+              }
+              session.close();
+            } catch (Exception e) {
+              fail("insert thread should not throw exception: " + e);
             }
-            session.close();
-          } catch (Exception e) {
-            fail("insert thread should not throw exception: " + e);
           }
-        }
-      });
-      threads[t].start();
+        });
+        threads[t].start();
+      }
+      for (int t = 0; t< 4;t++) {
+        threads[t].join();
+      }
     }
-    for (int t = 0; t< 4;t++) {
-      threads[t].join();
-    }
-    localClient.shutdown();
   }
 
   @Test(expected=IllegalArgumentException.class)
@@ -1063,50 +1063,49 @@ public class TestKuduClient {
                   .build();
           // From the same client continuously performs inserts to a tablet
           // in the given flush mode.
-          KuduClient kuduClient = asyncKuduClient.syncClient();
-          KuduSession session = kuduClient.newSession();
-          session.setFlushMode(flushMode);
-          KuduTable table = kuduClient.openTable(TABLE_NAME);
-          for (int i = 0; i < 3; i++) {
-            for (int j = 100 * i; j < 100 * (i + 1); j++) {
-              Insert insert = table.newInsert();
-              PartialRow row = insert.getRow();
-              row.addString("key", String.format("key_%02d", j));
-              row.addString("c1", "c1_" + j);
-              row.addString("c2", "c2_" + j);
-              row.addString("c3", "c3_" + j);
-              session.apply(insert);
-            }
-            session.flush();
+          try (KuduClient kuduClient = asyncKuduClient.syncClient()) {
+            KuduSession session = kuduClient.newSession();
+            session.setFlushMode(flushMode);
+            KuduTable table = kuduClient.openTable(TABLE_NAME);
+            for (int i = 0; i < 3; i++) {
+              for (int j = 100 * i; j < 100 * (i + 1); j++) {
+                Insert insert = table.newInsert();
+                PartialRow row = insert.getRow();
+                row.addString("key", String.format("key_%02d", j));
+                row.addString("c1", "c1_" + j);
+                row.addString("c2", "c2_" + j);
+                row.addString("c3", "c3_" + j);
+                session.apply(insert);
+              }
+              session.flush();
 
-            // Perform a bunch of READ_YOUR_WRITES scans to all the replicas
-            // that count the rows. And verify that the count of the rows
-            // never go down from what previously observed, to ensure subsequent
-            // reads will not "go back in time" regarding writes that other
-            // clients have done.
-            for (int k = 0; k < 3; k++) {
-              AsyncKuduScanner scanner = asyncKuduClient.newScannerBuilder(table)
-                      .readMode(AsyncKuduScanner.ReadMode.READ_YOUR_WRITES)
-                      .replicaSelection(replicaSelection)
-                      .build();
-              KuduScanner syncScanner = new KuduScanner(scanner);
-              long preTs = asyncKuduClient.getLastPropagatedTimestamp();
-              assertNotEquals(AsyncKuduClient.NO_TIMESTAMP, preTs);
+              // Perform a bunch of READ_YOUR_WRITES scans to all the replicas
+              // that count the rows. And verify that the count of the rows
+              // never go down from what previously observed, to ensure subsequent
+              // reads will not "go back in time" regarding writes that other
+              // clients have done.
+              for (int k = 0; k < 3; k++) {
+                AsyncKuduScanner scanner = asyncKuduClient.newScannerBuilder(table)
+                                           .readMode(AsyncKuduScanner.ReadMode.READ_YOUR_WRITES)
+                                           .replicaSelection(replicaSelection)
+                                           .build();
+                KuduScanner syncScanner = new KuduScanner(scanner);
+                long preTs = asyncKuduClient.getLastPropagatedTimestamp();
+                assertNotEquals(AsyncKuduClient.NO_TIMESTAMP, preTs);
 
-              long row_count = countRowsInScan(syncScanner);
-              long expected_count = 100L * (i + 1);
-              assertTrue(expected_count <= row_count);
+                long row_count = countRowsInScan(syncScanner);
+                long expected_count = 100L * (i + 1);
+                assertTrue(expected_count <= row_count);
 
-              // After the scan, verify that the chosen snapshot timestamp is
-              // returned from the server and it is larger than the previous
-              // propagated timestamp.
-              assertNotEquals(AsyncKuduClient.NO_TIMESTAMP, scanner.getSnapshotTimestamp());
-              assertTrue(preTs < scanner.getSnapshotTimestamp());
-              syncScanner.close();
+                // After the scan, verify that the chosen snapshot timestamp is
+                // returned from the server and it is larger than the previous
+                // propagated timestamp.
+                assertNotEquals(AsyncKuduClient.NO_TIMESTAMP, scanner.getSnapshotTimestamp());
+                assertTrue(preTs < scanner.getSnapshotTimestamp());
+                syncScanner.close();
+              }
             }
           }
-
-          kuduClient.close();
           return null;
         }
       };
@@ -1127,29 +1126,31 @@ public class TestKuduClient {
     Method methodToInvoke = KuduClient.class.getMethod(clientMethodName);
 
     for (int i = 0; i < 5; i++) {
-      KuduClient cl = new KuduClient.KuduClientBuilder(
-          harness.getMasterAddressesAsString()).build();
-      harness.restartLeaderMaster();
+      try (KuduClient cl = new KuduClient.KuduClientBuilder(
+          harness.getMasterAddressesAsString()).build()) {
+        harness.restartLeaderMaster();
 
-      // There's a good chance that this executes while there's no leader
-      // master. It should retry until the leader election completes and a new
-      // leader master is elected.
-      methodToInvoke.invoke(cl);
+        // There's a good chance that this executes while there's no leader
+        // master. It should retry until the leader election completes and a new
+        // leader master is elected.
+        methodToInvoke.invoke(cl);
+      }
     }
 
     // With all masters down, exportAuthenticationCredentials() should time out.
     harness.killAllMasterServers();
-    KuduClient cl = new KuduClient.KuduClientBuilder(
+    try (KuduClient cl = new KuduClient.KuduClientBuilder(
         harness.getMasterAddressesAsString())
-                    .defaultAdminOperationTimeoutMs(5000) // speed up the test
-                    .build();
-    try {
-      methodToInvoke.invoke(cl);
-      fail();
-    } catch (InvocationTargetException ex) {
-      assertTrue(ex.getTargetException() instanceof KuduException);
-      KuduException realEx = (KuduException)ex.getTargetException();
-      assertTrue(realEx.getStatus().isTimedOut());
+         .defaultAdminOperationTimeoutMs(5000) // speed up the test
+         .build()) {
+      try {
+        methodToInvoke.invoke(cl);
+        fail();
+      } catch (InvocationTargetException ex) {
+        assertTrue(ex.getTargetException() instanceof KuduException);
+        KuduException realEx = (KuduException)ex.getTargetException();
+        assertTrue(realEx.getStatus().isTimedOut());
+      }
     }
   }
 

@@ -95,11 +95,14 @@ public class TestSecurity {
 
   @After
   public void tearDown() throws IOException {
-    if (client != null) {
-      client.close();
-    }
-    if (miniCluster != null) {
-      miniCluster.shutdown();
+    try {
+      if (client != null) {
+        client.close();
+      }
+    } finally {
+      if (miniCluster != null) {
+        miniCluster.shutdown();
+      }
     }
   }
 
@@ -145,9 +148,8 @@ public class TestSecurity {
     assertNotNull(authnData);
     String oldTicketCache = System.getProperty(SecurityUtil.KUDU_TICKETCACHE_PROPERTY);
     System.clearProperty(SecurityUtil.KUDU_TICKETCACHE_PROPERTY);
-    try {
-      KuduClient newClient = new KuduClient.KuduClientBuilder(
-          miniCluster.getMasterAddressesAsString()).build();
+    try (KuduClient newClient = new KuduClient.KuduClientBuilder(
+        miniCluster.getMasterAddressesAsString()).build()) {
 
       // Test that a client with no credentials cannot list servers.
       try {
@@ -206,8 +208,7 @@ public class TestSecurity {
 
     String oldTicketCache = System.getProperty(SecurityUtil.KUDU_TICKETCACHE_PROPERTY);
     System.clearProperty(SecurityUtil.KUDU_TICKETCACHE_PROPERTY);
-    try {
-      KuduClient newClient = createClient();
+    try (KuduClient newClient = createClient()) {
       newClient.importAuthenticationCredentials(authnData);
 
       // We shouldn't be able to connect because we have no appropriate CA cert.
@@ -240,8 +241,7 @@ public class TestSecurity {
     assertNotNull(authnData);
     String oldTicketCache = System.getProperty(SecurityUtil.KUDU_TICKETCACHE_PROPERTY);
     System.clearProperty(SecurityUtil.KUDU_TICKETCACHE_PROPERTY);
-    try {
-      final KuduClient newClient = createClient();
+    try (final KuduClient newClient = createClient()) {
       newClient.importAuthenticationCredentials(authnData);
 
       // Try to connect to all the masters and assert there is no
@@ -283,8 +283,7 @@ public class TestSecurity {
     assertNotNull(authnData);
     String oldTicketCache = System.getProperty(SecurityUtil.KUDU_TICKETCACHE_PROPERTY);
     System.clearProperty(SecurityUtil.KUDU_TICKETCACHE_PROPERTY);
-    try {
-      KuduClient newClient = createClient();
+    try (KuduClient newClient = createClient()) {
       newClient.importAuthenticationCredentials(authnData);
       System.err.println("=> imported auth");
 
@@ -384,17 +383,13 @@ public class TestSecurity {
     startCluster(ImmutableSet.of(Option.SHORT_TOKENS_AND_TICKETS));
     Subject subject = SecurityUtil.getSubjectFromTicketCacheOrNull();
     Assert.assertNotNull(subject);
-    try (Closeable c = cla.attach()) {
-      // Create a client attached to our own subject.
-      KuduClient newClient = createClientFromSubject(subject);
+    try (Closeable c = cla.attach();
+         // Create a client attached to our own subject.
+         KuduClient newClient = createClientFromSubject(subject)) {
       // It should not get auto-refreshed.
-      try {
-        assertEventualAuthenticationFailure(newClient,
-            "server requires authentication, but " +
-            "client Kerberos credentials (TGT) have expired");
-      } finally {
-        newClient.close();
-      }
+      assertEventualAuthenticationFailure(newClient,
+          "server requires authentication, but " +
+          "client Kerberos credentials (TGT) have expired");
     }
     Assert.assertThat(cla.getAppendedText(), CoreMatchers.containsString(
         "Using caller-provided subject with Kerberos principal test-admin@KRBTEST.COM."));
@@ -416,9 +411,9 @@ public class TestSecurity {
 
     Subject subject = SecurityUtil.getSubjectFromTicketCacheOrNull();
     Assert.assertNotNull(subject);
-    try (Closeable c = cla.attach()) {
-      // Create a client attached to our own subject.
-      KuduClient newClient = createClientFromSubject(subject);
+    try (Closeable c = cla.attach();
+         // Create a client attached to our own subject.
+         KuduClient newClient = createClientFromSubject(subject)) {
       // Run for longer than the renewable lifetime - this ensures that we
       // are indeed picking up the new credentials.
       for (Stopwatch sw = Stopwatch.createStarted();

@@ -155,7 +155,7 @@ public class KuduTestHarness extends ExternalResource {
         // shutting down the sync client effectively does that.
       }
     } catch (KuduException e) {
-      LOG.warn("Error while shutting down the test client");
+      LOG.warn("Error while shutting down the test client", e);
     } finally {
       if (miniCluster != null) {
         miniCluster.shutdown();

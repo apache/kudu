@@ -47,23 +47,16 @@ public class TestConnectToCluster {
    */
   @Test(timeout=60000)
   public void testFallbackConnectRpc() throws Exception {
-    MiniKuduCluster cluster = new MiniKuduCluster.MiniKuduClusterBuilder()
-        .addMasterServerFlag("--master_support_connect_to_master_rpc=0")
-        .numMasterServers(1)
-        .numTabletServers(0)
-        .build();
-    KuduClient c = null;
-    try {
-      c = new KuduClient.KuduClientBuilder(cluster.getMasterAddressesAsString())
-          .build();
+    try (MiniKuduCluster cluster = new MiniKuduCluster.MiniKuduClusterBuilder()
+         .addMasterServerFlag("--master_support_connect_to_master_rpc=0")
+         .numMasterServers(1)
+         .numTabletServers(0)
+         .build();
+         KuduClient c = new KuduClient.KuduClientBuilder(cluster.getMasterAddressesAsString())
+         .build()) {
       // Call some method which uses the master. This forces us to connect
       // and verifies that the fallback works.
       c.listTabletServers();
-    } finally {
-      if (c != null) {
-        c.close();
-      }
-      cluster.shutdown();
     }
   }
 
@@ -75,18 +68,15 @@ public class TestConnectToCluster {
    */
   @Test(timeout=60000)
   public void testConnectToOneOfManyMasters() throws Exception {
-    MiniKuduCluster cluster = new MiniKuduCluster.MiniKuduClusterBuilder()
-        .numMasterServers(3)
-        .numTabletServers(0)
-        .build();
     int successes = 0;
-    try {
+    try (MiniKuduCluster cluster = new MiniKuduCluster.MiniKuduClusterBuilder()
+         .numMasterServers(3)
+         .numTabletServers(0)
+         .build()) {
       String[] masterAddrs = cluster.getMasterAddressesAsString().split(",", -1);
       assertEquals(3, masterAddrs.length);
       for (String masterAddr : masterAddrs) {
-        KuduClient c = null;
-        try {
-          c = new KuduClient.KuduClientBuilder(masterAddr).build();
+        try (KuduClient c = new KuduClient.KuduClientBuilder(masterAddr).build()) {
           // Call some method which uses the master. This forces us to connect.
           c.listTabletServers();
           successes++;
@@ -98,15 +88,10 @@ public class TestConnectToCluster {
                   "\\(.+?,.+?,.+?\\).*"));
           Assert.assertThat(Joiner.on("\n").join(e.getStackTrace()),
               CoreMatchers.containsString("testConnectToOneOfManyMasters"));
-        } finally {
-          if (c != null) {
-            c.close();
-          }
         }
       }
-    } finally {
-      cluster.shutdown();
     }
+
     // Typically, one of the connections will have succeeded. However, it's possible
     // that 0 succeeded in the case that the masters were slow at electing
     // themselves.

@@ -478,7 +478,10 @@ private object KuduContext {
 }
 
 private object KuduClientCache {
+  val Log: Logger = LoggerFactory.getLogger(KuduClientCache.getClass)
+
   private case class CacheKey(kuduMaster: String, socketReadTimeoutMs: Option[Long])
+  private case class CacheValue(kuduClient: AsyncKuduClient, shutdownHookHandle: Runnable)
 
   /**
    * Set to
@@ -489,10 +492,24 @@ private object KuduClientCache {
    */
   private val ShutdownHookPriority = 100
 
-  private val clientCache = new mutable.HashMap[CacheKey, AsyncKuduClient]()
+  private val clientCache = new mutable.HashMap[CacheKey, CacheValue]()
 
   // Visible for testing.
-  private[kudu] def clearCacheForTests() = clientCache.clear()
+  private[kudu] def clearCacheForTests() = {
+    clientCache.values.foreach {
+      case cacheValue =>
+        try {
+          cacheValue.kuduClient.close()
+        } catch {
+          case e: Exception => Log.warn("Error while shutting down the test client", e);
+        }
+
+        // A client may only be closed once, so once we've close this client,
+        // we mustn't close it again at shutdown time.
+        ShutdownHookManager.get().removeShutdownHook(cacheValue.shutdownHookHandle)
+    }
+    clientCache.clear()
+  }
 
   def getAsyncClient(kuduMaster: String, socketReadTimeoutMs: Option[Long]): AsyncKuduClient = {
     val cacheKey = CacheKey(kuduMaster, socketReadTimeoutMs)
@@ -505,14 +522,14 @@ private object KuduClientCache {
         }
 
         val asyncClient = builder.build()
-        ShutdownHookManager
-          .get()
-          .addShutdownHook(new Runnable {
-            override def run(): Unit = asyncClient.close()
-          }, ShutdownHookPriority)
-        clientCache.put(cacheKey, asyncClient)
+        val hookHandle = new Runnable {
+          override def run(): Unit = asyncClient.close()
+        }
+        ShutdownHookManager.get().addShutdownHook(hookHandle, ShutdownHookPriority)
+        val cacheValue = CacheValue(asyncClient, hookHandle)
+        clientCache.put(cacheKey, cacheValue)
       }
-      return clientCache(cacheKey)
+      return clientCache(cacheKey).kuduClient
     }
   }
 }

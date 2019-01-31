@@ -143,13 +143,15 @@ public class TestAsyncKuduClient {
     final int requestBatchSize = 10;
 
     // Test that a bad hostname for the master makes us error out quickly.
-    AsyncKuduClient invalidClient = new AsyncKuduClient.AsyncKuduClientBuilder(badHostname).build();
-    try {
-      invalidClient.listTabletServers().join(1000);
-      fail("This should have failed quickly");
-    } catch (Exception ex) {
-      assertTrue(ex instanceof NonRecoverableException);
-      assertTrue(ex.getMessage().contains(badHostname));
+    try (AsyncKuduClient invalidClient =
+           new AsyncKuduClient.AsyncKuduClientBuilder(badHostname).build()) {
+      try {
+        invalidClient.listTabletServers().join(1000);
+        fail("This should have failed quickly");
+      } catch (Exception ex) {
+        assertTrue(ex instanceof NonRecoverableException);
+        assertTrue(ex.getMessage().contains(badHostname));
+      }
     }
 
     List<Master.TabletLocationsPB> tabletLocations = new ArrayList<>();

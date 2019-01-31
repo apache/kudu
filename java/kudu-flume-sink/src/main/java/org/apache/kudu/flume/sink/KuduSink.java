@@ -178,13 +178,14 @@ public class KuduSink extends AbstractSink implements Configurable {
       if (client != null) {
         client.shutdown();
       }
-      client = null;
-      table = null;
-      session = null;
     } catch (Exception e) {
       ex = e;
       logger.error("Error closing client", e);
     }
+    client = null;
+    table = null;
+    session = null;
+
     sinkCounter.incrementConnectionClosedCount();
     sinkCounter.stop();
     if (ex != null) {

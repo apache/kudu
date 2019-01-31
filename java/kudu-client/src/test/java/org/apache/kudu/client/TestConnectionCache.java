@@ -37,12 +37,11 @@ public class TestConnectionCache {
 
   @Test(timeout = 50000)
   public void test() throws Exception {
-    MiniKuduCluster cluster = null;
-    try {
-      cluster = new MiniKuduCluster.MiniKuduClusterBuilder().numMasterServers(3).build();
-
-      final AsyncKuduClient client =
-          new AsyncKuduClient.AsyncKuduClientBuilder(cluster.getMasterAddressesAsString()).build();
+    try (MiniKuduCluster cluster = new MiniKuduCluster.MiniKuduClusterBuilder()
+                                                      .numMasterServers(3)
+                                                      .build();
+         AsyncKuduClient client = new AsyncKuduClient.AsyncKuduClientBuilder(
+             cluster.getMasterAddressesAsString()).build()) {
       // Below we ping the masters directly using RpcProxy, so if they aren't ready to process
       // RPCs we'll get an error. Here by listing the tables we make sure this won't happen since
       // it won't return until a master leader is found.
@@ -94,10 +93,6 @@ public class TestConnectionCache {
         waitForConnectionToTerminate(c);
       }
       assertTrue(allConnectionsTerminated(client));
-    } finally {
-      if (cluster != null) {
-        cluster.shutdown();
-      }
     }
   }
 
