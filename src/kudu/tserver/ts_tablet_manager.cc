@@ -653,6 +653,7 @@ void TSTabletManager::RunTabletCopy(
               s.CloneAndPrepend(Substitute("Unable to delete on-disk data from tablet $0",
                                            tablet_id)));
         }
+        TRACE("Shutdown and deleted data from running replica");
         break;
       }
       default:
@@ -722,6 +723,7 @@ void TSTabletManager::RunTabletCopy(
   RegisterTabletReplicaMode mode = replacing_tablet ? REPLACEMENT_REPLICA : NEW_REPLICA;
   scoped_refptr<TabletReplica> replica;
   CALLBACK_RETURN_NOT_OK(CreateAndRegisterTabletReplica(meta, mode, &replica));
+  TRACE("Replica registered.");
 
   // Now we invoke the StartTabletCopy callback and respond success to the
   // remote caller, since StartTabletCopy() is an asynchronous RPC call. Then
