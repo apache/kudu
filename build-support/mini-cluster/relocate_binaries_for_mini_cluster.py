@@ -34,6 +34,10 @@ import shutil
 import subprocess
 import sys
 
+SOURCE_ROOT = os.path.join(os.path.dirname(__file__), "../..")
+# Add the build-support dir to the system path so we can import kudu-util.
+sys.path.append(os.path.join(SOURCE_ROOT, "build-support"))
+
 from kudu_util import check_output, Colors, init_logging
 from dep_extract import DependencyExtractor
 
@@ -65,8 +69,6 @@ BUILD_BIN_DIR = 'build_bin_dir'
 ARTIFACT_ROOT = 'artifact_root'
 ARTIFACT_BIN_DIR = 'artifact_bin_dir'
 ARTIFACT_LIB_DIR = 'artifact_lib_dir'
-
-SOURCE_ROOT = os.path.join(os.path.dirname(__file__), "..")
 
 IS_MACOS = os.uname()[0] == "Darwin"
 IS_LINUX = os.uname()[0] == "Linux"

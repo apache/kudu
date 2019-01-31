@@ -18,7 +18,7 @@
 # under the License.
 ################################################################################
 #
-# Minicluster test binaries
+# Mini cluster test binaries
 # -------------------------
 #
 # This script generates optimized, dynamically-linked, stripped, fully
@@ -67,8 +67,8 @@
 ################################################################################
 set -e
 
-SOURCE_ROOT=$(cd $(dirname $0)/..; pwd)
-BUILD_ROOT=$SOURCE_ROOT/build/minicluster
+SOURCE_ROOT=$(cd $(dirname $0)/../..; pwd)
+BUILD_ROOT=$SOURCE_ROOT/build/mini-cluster
 TARGETS="kudu kudu-tserver kudu-master"
 
 cd $SOURCE_ROOT
@@ -113,7 +113,7 @@ NUM_PROCS=$(getconf _NPROCESSORS_ONLN)
 make -j$NUM_PROCS $TARGETS
 
 # Relocate the binaries.
-$SOURCE_ROOT/build-support/relocate_binaries_for_mini_cluster.py $BUILD_ROOT $TARGETS
+$SOURCE_ROOT/build-support/mini-cluster/relocate_binaries_for_mini_cluster.py $BUILD_ROOT $TARGETS
 
 ARTIFACT_NAME=$(ls -d kudu-binary* | sed 's#/##' | head -1)
 
