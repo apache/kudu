@@ -40,12 +40,13 @@ function print_help {
   echo "  Defines the root data directory to use."
   echo "  Defaults to /var/lib/kudu."
   echo "MASTER_ARGS:"
-  echo "  Defines the arguments passed to kudu-master. Defaults to DEFAULT_ARGS"
+  echo "  Defines the arguments passed to kudu-master."
+  echo "  Defaults to the value of the DEFAULT_ARGS environment variable."
   echo "TSERVER_ARGS:"
-  echo "  Defines the arguments passed to kudu-tserver. Defaults to DEFAULT_ARGS"
+  echo "  Defines the arguments passed to kudu-tserver."
+  echo "  Defaults to the value of the DEFAULT_ARGS environment variable."
   echo "DEFAULT_ARGS:"
   echo "  Defines a recommended base set of arguments."
-  exit 0
 }
 
 # Define the defaults environment variables.
@@ -85,6 +86,7 @@ function wait_for_master_hosts() {
 # If no arguments are passed, print the help.
 if [[ -z "$1" ]]; then
   print_help
+  exit 1
 fi
 
 # Note: we use "master" and "tserver" here so the kudu-master and kudu-tserver
@@ -107,6 +109,7 @@ elif [[ "$1" == "tserver" ]]; then
   exec kudu-tserver ${TSERVER_ARGS}
 elif [[ "$1" == "help" ]]; then
   print_help
+  exit 0
 fi
 
 # Support calling anything else in the container.

@@ -41,6 +41,38 @@ Run an image with a bash prompt and remove it on exit:
 $ docker run -it --rm apache/kudu:latest /bin/bash
 ----
 
+== Running a Kudu cluster with docker-compose
+
+Below is a brief example of using Kudu with docker compose. For more advanced
+guidance please see the docker-compose documentation
+https://docs.docker.com/compose/[here].
+
+Start a Kudu cluster with the following command:
+(This cluster has 3 masters and 3 tablet servers)
+[source,bash]
+----
+docker-compose -f docker/docker-compose.yml up --scale kudu-tserver=3 -d
+----
+
+Find the web UI url for kudu-master-1:
+[source,bash]
+----
+docker ps -q --filter=name=.*kudu-master-1.* | xargs -L1 docker port \
+  | grep "^8051" | cut -d":" -f2 | sed 's/.*/http\:\/\/localhost\:&/'
+----
+
+You can adjust the number of tablet servers up or down by adjusting the scale:
+[source,bash]
+----
+docker-compose -f docker/docker-compose.yml up --scale kudu-tserver=<scale> -d
+----
+
+Shutdown the cluster:
+[source,bash]
+----
+docker-compose -f docker/docker-compose.yml down
+----
+
 == Copying container files to the host
 
 It could be useful to copy files from a pre-built container to your host.
@@ -58,15 +90,15 @@ $ docker cp $SOURCE:/kudu/thirdparty /local/kudu/thirdparty
 A runtime image with the Kudu binaries and clients pre-installed
 and an entrypoint script that enables easily starting Kudu
 masters and tservers along with executing other commands.
-Copies the built artifacts and files from the kudu-build image.
+Copies the built artifacts and files from the kudu:build image.
 
 === apache/kudu:build-[OS]-[VERSION]
 An image that has the Kudu source code pre-built.
-Uses the kudu-thirdparty image as a base.
+Uses the kudu:thirdparty image as a base.
 
 === apache/kudu:thirdparty-[OS]-[VERSION]
 An image that has Kudu's thirdparty dependencies built.
-Uses the kudu-base image as a base.
+Uses the kudu:base image as a base.
 
 === apache/kudu:base-[OS]-[VERSION]
 A base image that has all prerequisite libraries for development and runtime
@@ -102,7 +134,7 @@ Remove all dangling images:
 $ docker image prune
 ----
 
-Remove all Kudu images :
+Remove all Kudu images:
 [source,bash]
 ----
 $ docker rmi -f $(docker images -q apache/kudu)
