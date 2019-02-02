@@ -182,7 +182,10 @@ LABEL name="Apache Kudu Build" \
 #
 FROM base AS kudu
 
+ARG UID=1000
+ARG GID=1000
 ARG INSTALL_DIR="/opt/kudu"
+ARG DATA_DIR="/var/lib/kudu"
 
 # Copy the binaries.
 WORKDIR $INSTALL_DIR/bin
@@ -215,6 +218,13 @@ COPY --from=build /kudu/build/latest/lib ./lib
 # Copy the web files.
 COPY --from=build /kudu/www ./www
 COPY ./docker/kudu-entrypoint.sh /
+
+# Setup the kudu user and create the neccessary directories.
+RUN groupadd -g ${GID} kudu || groupmod -n kudu $(getent group ${GID} | cut -d: -f1) \
+    && useradd --shell /bin/bash -u ${UID} -g ${GID} -m kudu \
+    && chown -R kudu:kudu ${INSTALL_DIR} \
+    && mkdir -p ${DATA_DIR} && chown -R kudu:kudu ${DATA_DIR}
+USER kudu
 
 # Add the entrypoint.
 ENTRYPOINT ["/kudu-entrypoint.sh"]

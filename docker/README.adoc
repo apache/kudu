@@ -114,6 +114,13 @@ Remove specific images:
 $ docker rmi [IMAGE...]
 ----
 
+Remove images by tag pattern:
+[source,bash]
+----
+$ TAG_PATTERN="apache/kudu:*"
+$ docker rmi $(docker images -q "$TAG_PATTERN" --format "{{.Repository}}:{{.Tag}}")
+----
+
 === Using the cache from pre-built images
 You can tell docker to considered remote or local images in your build
 as cache sources. This can be especially useful when the base or
