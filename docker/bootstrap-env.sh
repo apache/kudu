@@ -21,16 +21,36 @@
 # This script handles bootstrapping a base OS for
 # the Apache Kudu base docker images.
 #
-# TODO: Consider pre-installing nscd to avoid the issue here:
-#   https://kudu.apache.org/docs/troubleshooting.html#slow_dns_nscd
-#
 ##########################################################
 
 set -xe
 
+function install_python_packages() {
+  PYTHON_VERSION=$(python --version 2>&1 | cut -d' ' -f2)
+  PYTHON_MAJOR=$(echo "$PYTHON_VERSION" | cut -d'.' -f1)
+  PYTHON_MINOR=$(echo "$PYTHON_VERSION" | cut -d'.' -f2)
+
+  # We use get-pip.py to bootstrap pip outside of system packages.
+  # This prevents issues with the platform package manager knowing
+  # about only some of the python packages.
+  if [[ "$PYTHON_MAJOR" == "2" && "$PYTHON_MINOR" == "6" ]]; then
+    # Beginning with pip 10, Python 2.6 is no longer supported.
+    curl https://bootstrap.pypa.io/2.6/get-pip.py | python
+  else
+    # Use a stable version of pip that works with the remaining
+    # versions of Python 2 and 3. pip 19.1 doesn't support Python 3.4,
+    # which is the version of Python 3 shipped with Ubuntu 14.04.
+    curl https://bootstrap.pypa.io/get-pip.py | python - "pip < 19.0"
+  fi
+  pip install --upgrade \
+      cython \
+      setuptools \
+      setuptools_scm
+}
+
 # Install the prerequisite libraries, if they are not installed.
 # CentOS/RHEL
-if [[ -n $(which yum) ]]; then
+if [[ -f "/usr/bin/yum" ]]; then
   # Update the repo.
   yum update -y
 
@@ -51,6 +71,8 @@ if [[ -n $(which yum) ]]; then
     krb5-workstation \
     libtool \
     make \
+    nscd \
+    ntp \
     openssl-devel \
     patch \
     pkgconfig \
@@ -69,15 +91,10 @@ if [[ -n $(which yum) ]]; then
     ruby-devel \
     zlib-devel
 
-  # Install and upgrade pip for python development.
+  # Install python development packages.
   yum install -y epel-release
-  yum install -y \
-    python-devel \
-    python-pip
-  pip install --upgrade \
-    cython \
-    pip \
-    setuptools
+  yum install -y python-devel
+  install_python_packages
 
   # To build on a version older than 7.0, the Red Hat Developer Toolset
   # must be installed (in order to have access to a C++11 capable compiler).
@@ -94,17 +111,31 @@ if [[ -n $(which yum) ]]; then
   yum clean all
   rm -rf /var/cache/yum /tmp/* /var/tmp/*
 # Ubuntu/Debian
-elif [[ -n $(which apt-get) ]]; then
+elif [[ -f "/usr/bin/apt-get" ]]; then
   # Ensure the Debian frontend is noninteractive.
   export DEBIAN_FRONTEND=noninteractive
 
   # Update the repo.
   apt-get update -y
 
-  # Add the PPA repository for openjdk-8-jdk on ubuntu:trusty
-  apt-get install -y --no-install-recommends software-properties-common
-  add-apt-repository ppa:openjdk-r/ppa
-  apt-get update -y
+  # Install lsb-release so we can reliably detect the release.
+  apt-get install -y --no-install-recommends lsb-release
+  VERSION_NAME=$(lsb_release -c | cut -d":" -f2 | tr -d '[:blank:]')
+
+  # Install OpenJDK 8.
+  if [[ "$VERSION_NAME" == "jessie" ]]; then
+    apt-get install -y --no-install-recommends software-properties-common
+    add-apt-repository "deb http://http.debian.net/debian jessie-backports main"
+    apt-get update -y
+    apt-get install -y --no-install-recommends -t jessie-backports openjdk-8-jdk
+  elif [[ "$VERSION_NAME" == "trusty" ]]; then
+    apt-get install -y --no-install-recommends software-properties-common
+    add-apt-repository ppa:openjdk-r/ppa
+    apt-get update -y
+    apt-get install -y --no-install-recommends openjdk-8-jdk
+  else
+    apt-get install -y --no-install-recommends openjdk-8-jdk
+  fi
 
   # Install core build libraries.
   # --no-install-recommends keeps the install smaller
@@ -128,8 +159,8 @@ elif [[ -n $(which apt-get) ]]; then
     libtool \
     lsb-release \
     make \
+    nscd \
     ntp \
-    openjdk-8-jdk \
     openssl \
     patch \
     pkg-config \
@@ -147,14 +178,9 @@ elif [[ -n $(which apt-get) ]]; then
     xsltproc \
     zlib1g-dev
 
-  # Install and upgrade pip for python development.
-  apt-get install -y --no-install-recommends \
-    python-dev \
-    python-pip
-  pip install --upgrade \
-    cython \
-    pip \
-    setuptools
+  # Install python development packages.
+  apt-get install -y --no-install-recommends python-dev
+  install_python_packages
 
   # Reduce the image size by cleaning up after the install.
   apt-get clean
