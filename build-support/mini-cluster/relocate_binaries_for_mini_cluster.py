@@ -61,8 +61,33 @@ PAT_LINUX_LIB_EXCLUDE = re.compile(r"""(libpthread|
 
 # We don't want to ship libSystem because it includes kernel and thread
 # routines that we assume may not be portable between macOS versions.
-# TODO(mpercy): consider excluding libc++ as well.
-PAT_MACOS_LIB_EXCLUDE = re.compile(r"libSystem")
+# Also do not ship core libraries that come with the default macOS install
+# unless we know that we need to for ABI reasons.
+PAT_MACOS_LIB_EXCLUDE = re.compile(r"""(AppleFSCompression$|
+                                        CFNetwork$|
+                                        CoreFoundation$|
+                                        CoreServices$|
+                                        DiskArbitration$|
+                                        IOKit$|
+                                        Foundation$|
+                                        Security$|
+                                        SystemConfiguration$|
+                                        libCRFSuite|
+                                        libDiagnosticMessagesClient|
+                                        libSystem|
+                                        libapple_nghttp2|
+                                        libarchive|
+                                        libc\+\+|
+                                        libenergytrace|
+                                        libicucore|
+                                        libncurses|
+                                        libnetwork|
+                                        libobjc|
+                                        libresolv|
+                                        libsasl2|
+                                        libxar
+                                       )""",
+                                       re.VERBOSE)
 
 # Config keys.
 BUILD_ROOT = 'build_root'
