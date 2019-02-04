@@ -742,7 +742,8 @@ KsckCheckResult Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet,
                         tablet_str, Color(AnsiCode::RED, "unavailable"));
   } else if (conflicting_states > 0) {
     result = KsckCheckResult::CONSENSUS_MISMATCH;
-    status = Substitute("$0 is $1: $0 replicas' active configs disagree with the master's",
+    status = Substitute("$0 is $1: $2 replicas' active configs disagree with the "
+                        "leader master's",
                         tablet_str,
                         Color(AnsiCode::YELLOW, "conflicted"),
                         conflicting_states);

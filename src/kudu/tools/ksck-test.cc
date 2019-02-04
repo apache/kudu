@@ -1285,7 +1285,10 @@ TEST_F(KsckTest, TestConsensusConflictExtraPeer) {
   ASSERT_EQ(1, error_messages.size());
   ASSERT_EQ("Corruption: table consistency check error: 1 out of 1 table(s) are not healthy",
             error_messages[0].ToString());
-  ASSERT_STR_CONTAINS(err_stream_.str(),
+  const string err_str = err_stream_.str();
+  ASSERT_STR_CONTAINS(err_str, "Tablet tablet-id-0 of table 'test' is conflicted: "
+                               "3 replicas' active configs disagree with the leader master's");
+  ASSERT_STR_CONTAINS(err_str,
       "The consensus matrix is:\n"
       " Config source |     Replicas     | Current term | Config index | Committed?\n"
       "---------------+------------------+--------------+--------------+------------\n"
@@ -1293,7 +1296,7 @@ TEST_F(KsckTest, TestConsensusConflictExtraPeer) {
       " A             | A*  B   C   D    | 0            |              | Yes\n"
       " B             | A*  B   C        | 0            |              | Yes\n"
       " C             | A*  B   C        | 0            |              | Yes");
-  ASSERT_STR_CONTAINS(err_stream_.str(),
+  ASSERT_STR_CONTAINS(err_str,
                       ExpectedKsckTableSummary("test",
                                                /*replication_factor=*/ 3,
                                                /*healthy_tablets=*/ 2,
