@@ -31,6 +31,7 @@
 #include <utility>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -72,6 +73,7 @@ class Schema;
 DECLARE_int32(num_replicas);
 DECLARE_int32(num_tablet_servers);
 
+using boost::none;
 using kudu::client::KuduClient;
 using kudu::client::KuduColumnSchema;
 using kudu::client::KuduSchema;
@@ -1290,6 +1292,7 @@ TEST_F(LocationAwareRebalancingBasicTest, Basic) {
     ASSERT_OK(itest::GetTableLocations(cluster_->master_proxy(),
                                        table_name, MonoDelta::FromSeconds(30),
                                        master::ANY_REPLICA,
+                                       /*table_id=*/none,
                                        &table_locations));
     const auto tablet_num = table_locations.tablet_locations_size();
     auto total_table_replica_count = 0;

@@ -18,6 +18,7 @@
 #pragma once
 
 #include <string>
+#include <unordered_set>
 
 #include "kudu/gutil/port.h"
 #include "kudu/util/status.h"
@@ -28,6 +29,8 @@ namespace master {
 // An interface for handling authorizations on Kudu operations.
 class AuthzProvider {
  public:
+
+  AuthzProvider();
 
   // Starts the AuthzProvider instance.
   virtual Status Start() = 0;
@@ -69,6 +72,13 @@ class AuthzProvider {
                                            const std::string& user) WARN_UNUSED_RESULT = 0;
 
   virtual ~AuthzProvider() {}
+
+  // Checks if the given user is trusted and thus can be exempted from
+  // authorization validation.
+  bool IsTrustedUser(const std::string& user);
+
+ private:
+  std::unordered_set<std::string> trusted_users_;
 };
 
 } // namespace master

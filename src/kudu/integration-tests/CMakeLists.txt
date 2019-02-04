@@ -24,6 +24,7 @@ set(INTEGRATION_TESTS_SRCS
   cluster_itest_util.cc
   cluster_verifier.cc
   external_mini_cluster-itest-base.cc
+  hms_itest-base.cc
   internal_mini_cluster-itest-base.cc
   log_verifier.cc
   mini_cluster_fs_inspector.cc
@@ -89,7 +90,7 @@ ADD_KUDU_TEST(master_migration-itest)
 ADD_KUDU_TEST_DEPENDENCIES(master_migration-itest
   kudu)
 ADD_KUDU_TEST(master_replication-itest)
-ADD_KUDU_TEST(master_sentry-itest RUN_SERIAL true PROCESSORS 4)
+ADD_KUDU_TEST(master_sentry-itest RUN_SERIAL true NUM_SHARDS 8 PROCESSORS 4)
 ADD_KUDU_TEST(master-stress-test RUN_SERIAL true)
 ADD_KUDU_TEST(multidir_cluster-itest)
 ADD_KUDU_TEST(open-readonly-fs-itest PROCESSORS 4)

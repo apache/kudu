@@ -49,6 +49,7 @@ TEST(TestTableUtil, TestParseHiveTableIdentifier) {
   EXPECT_EQ("_leading_underscore", db);
   EXPECT_EQ("trailing_underscore_", tbl);
 
+  EXPECT_TRUE(ParseHiveTableIdentifier("", &db, &tbl).IsInvalidArgument());
   EXPECT_TRUE(ParseHiveTableIdentifier(".", &db, &tbl).IsInvalidArgument());
   EXPECT_TRUE(ParseHiveTableIdentifier("no-table", &db, &tbl).IsInvalidArgument());
   EXPECT_TRUE(ParseHiveTableIdentifier("lots.of.tables", &db, &tbl).IsInvalidArgument());

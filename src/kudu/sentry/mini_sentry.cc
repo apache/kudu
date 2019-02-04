@@ -204,6 +204,12 @@ Status MiniSentry::CreateSentryConfigs(const string& tmp_dir) const {
   //
   // - sentry.service.server.rpc-address
   //     IP address that the Sentry service starts with.
+  //
+  // - sentry.db.policy.store.owner.as.privilege
+  //    Configures Sentry to enable owner privileges feature which automatically
+  //    derives OWNER/ALL privileges from object's ownership. 'all' indicates an
+  //    object owner has OWNER/ALL privilege on the object, but cannot transfer
+  //    owner privileges to another user or role.
   static const string kFileTemplate = R"(
 <configuration>
 
@@ -270,6 +276,11 @@ Status MiniSentry::CreateSentryConfigs(const string& tmp_dir) const {
   <property>
     <name>sentry.service.allow.connect</name>
     <value>kudu,hive</value>
+  </property>
+
+  <property>
+    <name>sentry.db.policy.store.owner.as.privilege</name>
+    <value>all</value>
   </property>
 
 </configuration>

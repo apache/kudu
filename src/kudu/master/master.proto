@@ -81,6 +81,9 @@ message MasterErrorPB {
 
     // An operation involving the Hive Metastore failed.
     HIVE_METASTORE_ERROR = 13;
+
+    // The caller is not authorized to perform the attempted operation.
+    NOT_AUTHORIZED = 14;
   }
 
   // The error code.

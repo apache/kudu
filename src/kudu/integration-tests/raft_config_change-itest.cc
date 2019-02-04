@@ -47,6 +47,7 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
+using boost::none;
 using kudu::consensus::ADD_PEER;
 using kudu::consensus::COMMITTED_OPID;
 using kudu::consensus::ConsensusStatePB;
@@ -124,7 +125,7 @@ TEST_F(RaftConfigChangeITest, TestKudu2147) {
   ASSERT_OK(inspect_->WaitForReplicaCount(3));
   master::GetTableLocationsResponsePB table_locations;
   ASSERT_OK(GetTableLocations(cluster_->master_proxy(), TestWorkload::kDefaultTableName,
-                              kTimeout, VOTER_REPLICA, &table_locations));
+                              kTimeout, VOTER_REPLICA, /*table_id=*/none, &table_locations));
   ASSERT_EQ(1, table_locations.tablet_locations_size()); // Only 1 tablet.
   ASSERT_EQ(3, table_locations.tablet_locations().begin()->replicas_size()); // 3 replicas.
   string tablet_id = table_locations.tablet_locations().begin()->tablet_id();
@@ -189,7 +190,7 @@ TEST_F(RaftConfigChangeITest, TestNonVoterPromotion) {
   ASSERT_OK(inspect_->WaitForReplicaCount(3));
   master::GetTableLocationsResponsePB table_locations;
   ASSERT_OK(GetTableLocations(cluster_->master_proxy(), TestWorkload::kDefaultTableName,
-                              kTimeout, VOTER_REPLICA, &table_locations));
+                              kTimeout, VOTER_REPLICA, /*table_id=*/none, &table_locations));
   ASSERT_EQ(1, table_locations.tablet_locations_size()); // Only 1 tablet.
   ASSERT_EQ(3, table_locations.tablet_locations().begin()->replicas_size()); // 3 replicas.
   string tablet_id = table_locations.tablet_locations().begin()->tablet_id();
@@ -247,7 +248,7 @@ TEST_F(RaftConfigChangeITest, TestBulkChangeConfig) {
   ASSERT_OK(inspect_->WaitForReplicaCount(kNumInitialReplicas));
   master::GetTableLocationsResponsePB table_locations;
   ASSERT_OK(GetTableLocations(cluster_->master_proxy(), TestWorkload::kDefaultTableName,
-                              kTimeout, VOTER_REPLICA, &table_locations));
+                              kTimeout, VOTER_REPLICA, /*table_id=*/none, &table_locations));
   ASSERT_EQ(1, table_locations.tablet_locations_size()); // Only 1 tablet.
   ASSERT_EQ(kNumInitialReplicas, table_locations.tablet_locations().begin()->replicas_size());
   string tablet_id = table_locations.tablet_locations().begin()->tablet_id();

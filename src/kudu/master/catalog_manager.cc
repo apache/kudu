@@ -260,6 +260,8 @@ DECLARE_int64(tsk_rotation_seconds);
 
 using base::subtle::NoBarrier_CompareAndSwap;
 using base::subtle::NoBarrier_Load;
+using boost::make_optional;
+using boost::none;
 using boost::optional;
 using kudu::cfile::TypeEncodingInfo;
 using kudu::consensus::ConsensusServiceProxy;
@@ -753,6 +755,8 @@ Status CatalogManager::Init(bool is_first_run) {
     }
   }
 
+  RETURN_NOT_OK_PREPEND(authz_provider_->Start(), "failed to start Authz Provider");
+
   background_tasks_.reset(new CatalogManagerBgTasks(this));
   RETURN_NOT_OK_PREPEND(background_tasks_->Init(),
                         "Failed to initialize catalog manager background tasks");
@@ -1231,6 +1235,10 @@ void CatalogManager::Shutdown() {
     background_tasks_->Shutdown();
   }
 
+  if (authz_provider_) {
+    authz_provider_->Stop();
+  }
+
   if (hms_catalog_) {
     hms_notification_log_listener_->Shutdown();
     hms_catalog_->Stop();
@@ -1322,7 +1330,7 @@ Status ValidateIdentifier(const string& id) {
 // Validate the client-provided schema and name.
 Status ValidateClientSchema(const optional<string>& name,
                             const Schema& schema) {
-  if (name != boost::none) {
+  if (name) {
     RETURN_NOT_OK_PREPEND(ValidateIdentifier(name.get()), "invalid table name");
   }
   for (int i = 0; i < schema.num_columns(); i++) {
@@ -1397,9 +1405,17 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   }
 
   // a. Validate the user request.
+  const string& normalized_table_name = NormalizeTableName(req.name());
+  if (rpc) {
+    const string& user = rpc->remote_user().username();
+    const string& owner = req.has_owner() ? req.owner() : user;
+    RETURN_NOT_OK(SetupError(
+        authz_provider_->AuthorizeCreateTable(normalized_table_name, user, owner),
+        resp, MasterErrorPB::NOT_AUTHORIZED));
+  }
+
   Schema client_schema;
   RETURN_NOT_OK(SchemaFromPB(req.schema(), &client_schema));
-  const string normalized_table_name = NormalizeTableName(req.name());
 
   RETURN_NOT_OK(SetupError(ValidateClientSchema(normalized_table_name, client_schema),
                            resp, MasterErrorPB::INVALID_SCHEMA));
@@ -1607,7 +1623,8 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   // It is critical that this step happen before writing the table to the sys catalog,
   // since this step validates that the table name is available in the HMS catalog.
   if (hms_catalog_) {
-    string owner = req.has_owner() ? req.owner() : rpc->remote_user().username();
+    CHECK(rpc);
+    const string& owner = req.has_owner() ? req.owner() : rpc->remote_user().username();
     Status s = hms_catalog_->CreateTable(table->id(), normalized_table_name, owner, schema);
     if (!s.ok()) {
       s = s.CloneAndPrepend(Substitute("an error occurred while creating table $0 in the HMS",
@@ -1680,14 +1697,21 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
 }
 
 Status CatalogManager::IsCreateTableDone(const IsCreateTableDoneRequestPB* req,
-                                         IsCreateTableDoneResponsePB* resp) {
+                                         IsCreateTableDoneResponsePB* resp,
+                                         optional<const string&> user) {
   leader_lock_.AssertAcquiredForReading();
   RETURN_NOT_OK(CheckOnline());
 
-  // 1. Lookup the table and verify if it exists
+  // 1. Lookup the table, verify if it exists, and then check that
+  //    the user is authorized to operate on the table.
   scoped_refptr<TableInfo> table;
   TableMetadataLock l;
-  RETURN_NOT_OK(FindAndLockTable(*req, resp, LockMode::READ, &table, &l));
+  auto authz_func = [&] (const string& username, const string& table_name) {
+    return SetupError(authz_provider_->AuthorizeGetTableMetadata(table_name, username),
+                      resp, MasterErrorPB::NOT_AUTHORIZED);
+  };
+  RETURN_NOT_OK(FindLockAndAuthorizeTable(*req, resp, LockMode::READ, authz_func, user,
+                                          &table, &l));
   RETURN_NOT_OK(CheckIfTableDeletedOrNotRunning(&l, resp));
 
   // 2. Verify if the create is in-progress
@@ -1727,22 +1751,49 @@ scoped_refptr<TabletInfo> CatalogManager::CreateTabletInfo(const scoped_refptr<T
   return tablet;
 }
 
-template<typename ReqClass, typename RespClass>
-Status CatalogManager::FindAndLockTable(const ReqClass& request,
-                                        RespClass* response,
-                                        LockMode lock_mode,
-                                        scoped_refptr<TableInfo>* table_info,
-                                        TableMetadataLock* table_lock) {
-  TRACE("Looking up and locking table");
+template<typename ReqClass, typename RespClass, typename F>
+Status CatalogManager::FindLockAndAuthorizeTable(
+    const ReqClass& request,
+    RespClass* response,
+    LockMode lock_mode,
+    F authz_func,
+    optional<const string&> user,
+    scoped_refptr<TableInfo>* table_info,
+    TableMetadataLock* table_lock) {
+  TRACE("Looking up, locking, and authorizing table");
   const TableIdentifierPB& table_identifier = request.table();
 
+  // For authorization, depends on whether the request contains table ID/name,
+  // below is the name of the table to validate against.
+  // *----------------*--------------*---------------------*-----------------*
+  // | HAS TABLE NAME | HAS TABLE ID | TABLE NAME/ID MATCH | AUTHZ NAME      |
+  // *----------------*--------------*---------------------*-----------------*
+  // | YES            | YES          | YES                 | TABLE NAME      |
+  // *----------------*--------------*---------------------*-----------------*
+  // | YES            | YES          | NO                  | TABLE NAME/ID   |
+  // *----------------*--------------*---------------------*-----------------*
+  // | YES            | NO           | N/A                 | TABLE NAME      |
+  // *----------------*--------------*---------------------*-----------------*
+  // | NO             | YES          | N/A                 | TABLE ID        |
+  // *----------------*--------------*---------------------*-----------------*
+  // | NO             | NO           | N/A                 | InvalidArgument |
+  // *----------------*--------------*---------------------*-----------------*
+  auto authorize = [&] (const string& name) {
+    if (user) {
+      return authz_func(*user, name);
+    }
+    return Status::OK();
+  };
+
   auto tnf_error = [&] {
-    return SetupError(Status::NotFound(
-          "the table does not exist", SecureShortDebugString(table_identifier)),
+    return SetupError(
+        Status::NotFound("the table does not exist", SecureShortDebugString(table_identifier)),
         response, MasterErrorPB::TABLE_NOT_FOUND);
   };
 
   scoped_refptr<TableInfo> table;
+  // Set to true if the client-provided table name and ID refer to different tables.
+  bool mismatched_table = false;
   {
     shared_lock<LockType> l(lock_);
     if (table_identifier.has_table_id()) {
@@ -1753,7 +1804,7 @@ Status CatalogManager::FindAndLockTable(const ReqClass& request,
       if (table_identifier.has_table_name() &&
           table.get() != FindPtrOrNull(normalized_table_names_map_,
                                        NormalizeTableName(table_identifier.table_name())).get()) {
-        return tnf_error();
+        mismatched_table = true;
       }
     } else if (table_identifier.has_table_name()) {
       table = FindPtrOrNull(normalized_table_names_map_,
@@ -1765,15 +1816,41 @@ Status CatalogManager::FindAndLockTable(const ReqClass& request,
   }
 
   // If the table doesn't exist, don't attempt to lock it.
+  //
+  // If the request contains table name and the user is authorized to operate
+  // on the table, then return TABLE_NOT_FOUND error. Otherwise, return
+  // NOT_AUTHORIZED error, to avoid leaking table existence.
   if (!table) {
+    if (table_identifier.has_table_name()) {
+      RETURN_NOT_OK(authorize(NormalizeTableName(table_identifier.table_name())));
+    }
     return tnf_error();
   }
 
-  // Acquire the table lock.
+  // Acquire the table lock. And validate if the operation on the table
+  // found is authorized.
   TableMetadataLock lock(table.get(), lock_mode);
+  string table_name = NormalizeTableName(lock.data().name());
+  RETURN_NOT_OK(authorize(table_name));
+
+  // If the table name and table ID refer to different tables, for example,
+  //   1. the ID maps to table A.
+  //   2. the name maps to table B.
+  //
+  // Authorize user against both tables, then return TABLE_NOT_FOUND error to
+  // avoid leaking table existence.
+  if (mismatched_table) {
+    RETURN_NOT_OK(authorize(NormalizeTableName(table_identifier.table_name())));
+    return SetupError(
+        Status::NotFound(
+            Substitute("the table ID refers to a different table '$0' than '$1'",
+                       table_name, table_identifier.table_name()),
+            SecureShortDebugString(table_identifier)),
+        response, MasterErrorPB::TABLE_NOT_FOUND);
+  }
 
   if (table_identifier.has_table_name() &&
-      NormalizeTableName(table_identifier.table_name()) != NormalizeTableName(lock.data().name())) {
+      NormalizeTableName(table_identifier.table_name()) != table_name) {
     // We've encountered the table while it's in the process of being renamed;
     // pretend it doesn't yet exist.
     return tnf_error();
@@ -1793,6 +1870,9 @@ Status CatalogManager::DeleteTableRpc(const DeleteTableRequestPB& req,
   leader_lock_.AssertAcquiredForReading();
   RETURN_NOT_OK(CheckOnline());
 
+  optional<const string&> user = rpc ?
+      make_optional<const string&>(rpc->remote_user().username()) : none;
+
   // If the HMS integration is enabled and the table should be deleted in the HMS,
   // then don't directly remove the table from the Kudu catalog. Instead, delete
   // the table from the HMS and wait for the notification log listener to apply
@@ -1804,10 +1884,16 @@ Status CatalogManager::DeleteTableRpc(const DeleteTableRequestPB& req,
     // renamed in the HMS.
     RETURN_NOT_OK(WaitForNotificationLogListenerCatchUp(resp, rpc));
 
-    // Look up and lock the table.
+    // Look up the table, lock it and then check that the user is authorized
+    // to operate on the table.
     scoped_refptr<TableInfo> table;
     TableMetadataLock l;
-    RETURN_NOT_OK(FindAndLockTable(req, resp, LockMode::READ, &table, &l));
+    auto authz_func = [&](const string& username, const string& table_name) {
+      return SetupError(authz_provider_->AuthorizeDropTable(table_name, username),
+                        resp, MasterErrorPB::NOT_AUTHORIZED);
+    };
+    RETURN_NOT_OK(FindLockAndAuthorizeTable(req, resp, LockMode::READ, authz_func, user,
+                                            &table, &l));
     if (l.data().is_deleted()) {
       return SetupError(Status::NotFound("the table was deleted", l.data().pb.state_msg()),
           resp, MasterErrorPB::TABLE_NOT_FOUND);
@@ -1826,7 +1912,7 @@ Status CatalogManager::DeleteTableRpc(const DeleteTableRequestPB& req,
 
   // If the HMS integration isn't enabled or the deletion should only happen in Kudu,
   // then delete the table directly from the Kudu catalog.
-  return DeleteTable(req, resp, boost::none);
+  return DeleteTable(req, resp, /*hms_notification_log_event_id=*/none, user);
 }
 
 Status CatalogManager::DeleteTableHms(const string& table_name,
@@ -1842,7 +1928,10 @@ Status CatalogManager::DeleteTableHms(const string& table_name,
   req.mutable_table()->set_table_name(table_name);
   req.mutable_table()->set_table_id(table_id);
 
-  RETURN_NOT_OK(DeleteTable(req, &resp, notification_log_event_id));
+  // Use empty user to skip the authorization validation since the operation
+  // originates from catalog manager. Moreover, this avoids duplicate effort,
+  // because we already perform authorization before making any changes to the HMS.
+  RETURN_NOT_OK(DeleteTable(req, &resp, notification_log_event_id, /*user=*/none));
 
   // Update the cached HMS notification log event ID, if it changed.
   DCHECK_GT(notification_log_event_id, hms_notification_log_event_id_);
@@ -1853,14 +1942,21 @@ Status CatalogManager::DeleteTableHms(const string& table_name,
 
 Status CatalogManager::DeleteTable(const DeleteTableRequestPB& req,
                                    DeleteTableResponsePB* resp,
-                                   optional<int64_t> hms_notification_log_event_id) {
+                                   optional<int64_t> hms_notification_log_event_id,
+                                   optional<const string&> user) {
   leader_lock_.AssertAcquiredForReading();
   RETURN_NOT_OK(CheckOnline());
 
-  // 1. Look up the table, lock it, and mark it as removed.
+  // 1. Look up the table, lock it, and then check that the user is authorized
+  //    to operate on the table. Last, mark it as removed.
   scoped_refptr<TableInfo> table;
   TableMetadataLock l;
-  RETURN_NOT_OK(FindAndLockTable(req, resp, LockMode::WRITE, &table, &l));
+  auto authz_func = [&] (const string& username, const string& table_name) {
+    return SetupError(authz_provider_->AuthorizeDropTable(table_name, username),
+                      resp, MasterErrorPB::NOT_AUTHORIZED);
+  };
+  RETURN_NOT_OK(FindLockAndAuthorizeTable(req, resp, LockMode::WRITE, authz_func, user,
+                                          &table, &l));
   if (l.data().is_deleted()) {
     return SetupError(Status::NotFound("the table was deleted", l.data().pb.state_msg()),
         resp, MasterErrorPB::TABLE_NOT_FOUND);
@@ -2195,6 +2291,9 @@ Status CatalogManager::AlterTableRpc(const AlterTableRequestPB& req,
   LOG(INFO) << Substitute("Servicing AlterTable request from $0:\n$1",
                           RequestorString(rpc), SecureShortDebugString(req));
 
+  optional<const string&> user = rpc ?
+      make_optional<const string&>(rpc->remote_user().username()) : none;
+
   // If the HMS integration is enabled, the alteration includes a table
   // rename and the table should be altered in the HMS, then don't directly
   // rename the table in the Kudu catalog. Instead, rename the table
@@ -2202,12 +2301,21 @@ Status CatalogManager::AlterTableRpc(const AlterTableRequestPB& req,
   // that event to the catalog. By 'serializing' the rename through the
   // HMS, race conditions are avoided.
   if (hms_catalog_ && req.has_new_table_name() && req.modify_external_catalogs()) {
-    // Look up the table and lock it.
+    // Look up the table, lock it and then check that the user is authorized
+    // to operate on the table.
     scoped_refptr<TableInfo> table;
     TableMetadataLock l;
-    RETURN_NOT_OK(FindAndLockTable(req, resp, LockMode::READ, &table, &l));
-    RETURN_NOT_OK(CheckIfTableDeletedOrNotRunning(&l, resp));
     string normalized_new_table_name = NormalizeTableName(req.new_table_name());
+    auto authz_func = [&](const string& username,
+                          const string& table_name) {
+      return SetupError(authz_provider_->AuthorizeAlterTable(table_name,
+                                                             normalized_new_table_name,
+                                                             username),
+                        resp, MasterErrorPB::NOT_AUTHORIZED);
+    };
+    RETURN_NOT_OK(FindLockAndAuthorizeTable(req, resp, LockMode::READ, authz_func, user,
+                                            &table, &l));
+    RETURN_NOT_OK(CheckIfTableDeletedOrNotRunning(&l, resp));
 
     // The HMS allows renaming a table to the same name (ALTER TABLE t RENAME TO t),
     // however Kudu does not, so we must enforce this constraint ourselves before
@@ -2237,15 +2345,24 @@ Status CatalogManager::AlterTableRpc(const AlterTableRequestPB& req,
     // Finally, apply the remaining schema and partitioning alterations to the
     // local catalog. Since Kudu holds the canonical version of table schemas
     // and partitions the HMS is not updated first.
+    //
+    // Note that we pass empty user to AlterTable() to skip the authorization
+    // validation since we already perform authorization before making any
+    // changes to the HMS. Moreover, even though a table renaming could happen
+    // before the remaining schema and partitioning alterations taking place,
+    // it is ideal from the users' point of view, to not authorize against the
+    // new table name arose from other RPCs.
     AlterTableRequestPB r(req);
     r.mutable_table()->clear_table_name();
     r.mutable_table()->set_table_id(table->id());
     r.clear_new_table_name();
 
-    return AlterTable(r, resp, boost::none);
+    return AlterTable(r, resp,
+                      /*hms_notification_log_event_id=*/none,
+                      /*user=*/none);
   }
 
-  return AlterTable(req, resp, boost::none);
+  return AlterTable(req, resp, /*hms_notification_log_event_id=*/ none, user);
 }
 
 Status CatalogManager::RenameTableHms(const string& table_id,
@@ -2258,7 +2375,10 @@ Status CatalogManager::RenameTableHms(const string& table_id,
   req.mutable_table()->set_table_name(table_name);
   req.set_new_table_name(new_table_name);
 
-  RETURN_NOT_OK(AlterTable(req, &resp, notification_log_event_id));
+  // Use empty user to skip the authorization validation since the operation
+  // originates from catalog manager. Moreover, this avoids duplicate effort,
+  // because we already perform authorization before making any changes to the HMS.
+  RETURN_NOT_OK(AlterTable(req, &resp, notification_log_event_id, /*user=*/none));
 
   // Update the cached HMS notification log event ID.
   DCHECK_GT(notification_log_event_id, hms_notification_log_event_id_);
@@ -2269,7 +2389,8 @@ Status CatalogManager::RenameTableHms(const string& table_id,
 
 Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
                                   AlterTableResponsePB* resp,
-                                  optional<int64_t> hms_notification_log_event_id) {
+                                  optional<int64_t> hms_notification_log_event_id,
+                                  optional<const string&> user) {
   leader_lock_.AssertAcquiredForReading();
   RETURN_NOT_OK(CheckOnline());
 
@@ -2296,10 +2417,19 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
     }
   }
 
-  // 2. Lookup the table, verify if it exists, and lock it for modification.
+  // 2. Lookup the table, verify if it exists, lock it for modification, and then
+  //    checks that the user is authorized to operate on the table.
   scoped_refptr<TableInfo> table;
   TableMetadataLock l;
-  RETURN_NOT_OK(FindAndLockTable(req, resp, LockMode::WRITE, &table, &l));
+  auto authz_func = [&] (const string& username,
+                         const string& table_name) {
+    const string new_table = req.has_new_table_name() ?
+        NormalizeTableName(req.new_table_name()) : table_name;
+    return SetupError(authz_provider_->AuthorizeAlterTable(table_name, new_table, username),
+                      resp, MasterErrorPB::NOT_AUTHORIZED);
+  };
+  RETURN_NOT_OK(FindLockAndAuthorizeTable(req, resp, LockMode::WRITE, authz_func, user,
+                                          &table, &l));
   if (l.data().is_deleted()) {
     return SetupError(
         Status::NotFound("the table was deleted", l.data().pb.state_msg()),
@@ -2327,7 +2457,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
 
   // Just validate the schema, not the name (validated below).
   RETURN_NOT_OK(SetupError(
-        ValidateClientSchema(boost::none, new_schema),
+        ValidateClientSchema(none, new_schema),
         resp, MasterErrorPB::INVALID_SCHEMA));
 
   // 4. Validate and try to acquire the new table name.
@@ -2547,14 +2677,20 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
 
 Status CatalogManager::IsAlterTableDone(const IsAlterTableDoneRequestPB* req,
                                         IsAlterTableDoneResponsePB* resp,
-                                        rpc::RpcContext* rpc) {
+                                        optional<const string&> user) {
   leader_lock_.AssertAcquiredForReading();
   RETURN_NOT_OK(CheckOnline());
 
-  // 1. Lookup the table and verify if it exists
+  // 1. Lookup the table, verify if it exists, and then check that
+  //    the user is authorized to operate on the table.
   scoped_refptr<TableInfo> table;
   TableMetadataLock l;
-  RETURN_NOT_OK(FindAndLockTable(*req, resp, LockMode::READ, &table, &l));
+  auto authz_func = [&] (const string& username, const string& table_name) {
+    return SetupError(authz_provider_->AuthorizeGetTableMetadata(table_name, username),
+                      resp, MasterErrorPB::NOT_AUTHORIZED);
+  };
+  RETURN_NOT_OK(FindLockAndAuthorizeTable(*req, resp, LockMode::READ, authz_func, user,
+                                          &table, &l));
   RETURN_NOT_OK(CheckIfTableDeletedOrNotRunning(&l, resp));
 
   // 2. Verify if the alter is in-progress
@@ -2566,14 +2702,22 @@ Status CatalogManager::IsAlterTableDone(const IsAlterTableDoneRequestPB* req,
 }
 
 Status CatalogManager::GetTableSchema(const GetTableSchemaRequestPB* req,
-                                      GetTableSchemaResponsePB* resp) {
+                                      GetTableSchemaResponsePB* resp,
+                                      optional<const string&> user) {
   leader_lock_.AssertAcquiredForReading();
   RETURN_NOT_OK(CheckOnline());
 
-  // Lookup the table and verify if it exists
+  // Lookup the table, verify if it exists, and then check that
+  // the user is authorized to operate on the table.
   scoped_refptr<TableInfo> table;
   TableMetadataLock l;
-  RETURN_NOT_OK(FindAndLockTable(*req, resp, LockMode::READ, &table, &l));
+
+  auto authz_func = [&] (const string& username, const string& table_name) {
+    return SetupError(authz_provider_->AuthorizeGetTableMetadata(table_name, username),
+                      resp, MasterErrorPB::NOT_AUTHORIZED);
+  };
+  RETURN_NOT_OK(FindLockAndAuthorizeTable(*req, resp, LockMode::READ, authz_func, user,
+                                          &table, &l));
   RETURN_NOT_OK(CheckIfTableDeletedOrNotRunning(&l, resp));
 
   if (l.data().pb.has_fully_applied_schema()) {
@@ -2594,25 +2738,43 @@ Status CatalogManager::GetTableSchema(const GetTableSchemaRequestPB* req,
 }
 
 Status CatalogManager::ListTables(const ListTablesRequestPB* req,
-                                  ListTablesResponsePB* resp) {
+                                  ListTablesResponsePB* resp,
+                                  optional<const string&> user) {
   leader_lock_.AssertAcquiredForReading();
   RETURN_NOT_OK(CheckOnline());
 
-  shared_lock<LockType> l(lock_);
+  vector<scoped_refptr<TableInfo>> tables_info;
+  {
+    shared_lock<LockType> l(lock_);
+    for (const TableInfoMap::value_type &entry : normalized_table_names_map_) {
+      tables_info.emplace_back(entry.second);
+    }
+  }
 
-  for (const TableInfoMap::value_type& entry : normalized_table_names_map_) {
-    TableMetadataLock ltm(entry.second.get(), LockMode::READ);
+  for (const auto& table_info : tables_info) {
+    TableMetadataLock ltm(table_info.get(), LockMode::READ);
     if (!ltm.data().is_running()) continue; // implies !is_deleted() too
 
+    const string table_name = ltm.data().name();
     if (req->has_name_filter()) {
-      size_t found = ltm.data().name().find(req->name_filter());
+      size_t found = table_name.find(req->name_filter());
       if (found == string::npos) {
         continue;
       }
     }
 
+    // TODO(hao): need to improve the performance before enabling authz by default
+    // for cases there are a lot of tables.
+    if (user) {
+      Status s = authz_provider_->AuthorizeGetTableMetadata(NormalizeTableName(table_name),
+                                                            *user);
+      if (!s.ok()) {
+        continue;
+      }
+    }
+
     ListTablesResponsePB::TableInfo* table = resp->add_tables();
-    table->set_id(entry.second->id());
+    table->set_id(table_info->id());
     table->set_name(ltm.data().name());
   }
 
@@ -3672,7 +3834,7 @@ Status CatalogManager::ProcessTabletReport(
       // where that might be possible (tablet creation timeout & replacement).
       rpcs.emplace_back(new AsyncDeleteReplica(
           master_, ts_desc->permanent_uuid(), table, tablet_id,
-          TABLET_DATA_DELETED, boost::none, msg));
+          TABLET_DATA_DELETED, none, msg));
       continue;
     }
 
@@ -4033,7 +4195,7 @@ void CatalogManager::SendDeleteTabletRequest(const scoped_refptr<TabletInfo>& ta
   for (const auto& peer : cstate.committed_config().peers()) {
     AsyncDeleteReplica* call = new AsyncDeleteReplica(
         master_, peer.permanent_uuid(), tablet->table(), tablet->id(),
-        TABLET_DATA_DELETED, boost::none, deletion_msg);
+        TABLET_DATA_DELETED, none, deletion_msg);
     tablet->table()->AddTask(call);
     WARN_NOT_OK(call->Run(), Substitute(
         "Failed to send DeleteReplica request for tablet $0", tablet->id()));
@@ -4490,7 +4652,8 @@ Status CatalogManager::BuildLocationsForTablet(
 
 Status CatalogManager::GetTabletLocations(const string& tablet_id,
                                           master::ReplicaTypeFilter filter,
-                                          TabletLocationsPB* locs_pb) {
+                                          TabletLocationsPB* locs_pb,
+                                          optional<const string&> user) {
   leader_lock_.AssertAcquiredForReading();
   RETURN_NOT_OK(CheckOnline());
 
@@ -4498,9 +4661,18 @@ Status CatalogManager::GetTabletLocations(const string& tablet_id,
   scoped_refptr<TabletInfo> tablet_info;
   {
     shared_lock<LockType> l(lock_);
+    // It's OK to return NOT_FOUND back to the client, even with authorization enabled,
+    // because tablet IDs are randomly generated and don't carry user data.
     if (!FindCopy(tablet_map_, tablet_id, &tablet_info)) {
       return Status::NotFound(Substitute("Unknown tablet $0", tablet_id));
     }
+  }
+  if (user) {
+    // Acquire the table lock and then check that the user is authorized to operate on
+    // the table that the tablet belongs to.
+    TableMetadataLock table_lock(tablet_info->table().get(), LockMode::READ);
+    RETURN_NOT_OK(authz_provider_->AuthorizeGetTableMetadata(
+        NormalizeTableName(table_lock.data().name()), *user));
   }
 
   return BuildLocationsForTablet(tablet_info, filter, locs_pb);
@@ -4591,7 +4763,8 @@ Status CatalogManager::ReplaceTablet(const string& tablet_id, ReplaceTabletRespo
 }
 
 Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
-                                         GetTableLocationsResponsePB* resp) {
+                                         GetTableLocationsResponsePB* resp,
+                                         optional<const string&> user) {
   // If start-key is > end-key report an error instead of swapping the two
   // since probably there is something wrong app-side.
   if (req->has_partition_key_start() && req->has_partition_key_end()
@@ -4605,10 +4778,16 @@ Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
   leader_lock_.AssertAcquiredForReading();
   RETURN_NOT_OK(CheckOnline());
 
-  // Lookup the table and verify if it exists
+  // Lookup the table, verify if it exists, and then check that
+  // the user is authorized to operate on the table.
   scoped_refptr<TableInfo> table;
   TableMetadataLock l;
-  RETURN_NOT_OK(FindAndLockTable(*req, resp, LockMode::READ, &table, &l));
+  auto authz_func = [&] (const string& username, const string& table_name) {
+    return SetupError(authz_provider_->AuthorizeGetTableMetadata(table_name, username),
+                      resp, MasterErrorPB::NOT_AUTHORIZED);
+  };
+  RETURN_NOT_OK(FindLockAndAuthorizeTable(*req, resp, LockMode::READ, authz_func, user,
+                                          &table, &l));
   RETURN_NOT_OK(CheckIfTableDeletedOrNotRunning(&l, resp));
 
   vector<scoped_refptr<TabletInfo>> tablets_in_range;
@@ -4728,6 +4907,7 @@ template<typename RespClass>
 Status CatalogManager::WaitForNotificationLogListenerCatchUp(RespClass* resp,
                                                              rpc::RpcContext* rpc) {
   if (hms_catalog_) {
+    CHECK(rpc);
     Status s = hms_notification_log_listener_->WaitForCatchUp(rpc->GetClientDeadline());
     // ServiceUnavailable indicates the master has lost leadership.
     MasterErrorPB::Code code = s.IsServiceUnavailable() ?

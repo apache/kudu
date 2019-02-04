@@ -33,6 +33,7 @@ ADD_EXPORTABLE_LIBRARY(master_proto
   NONLINK_DEPS ${MASTER_KRPC_TGTS})
 
 set(MASTER_SRCS
+  authz_provider.cc
   catalog_manager.cc
   hms_notification_log_listener.cc
   location_cache.cc

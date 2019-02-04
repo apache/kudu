@@ -349,7 +349,7 @@ TEST_F(AlterTableTest, TestAddNotNullableColumnWithoutDefaults) {
         cluster_->mini_master()->master()->catalog_manager();
     master::CatalogManager::ScopedLeaderSharedLock l(catalog);
     ASSERT_OK(l.first_failed_status());
-    Status s = catalog->AlterTableRpc(req, &resp, nullptr);
+    Status s = catalog->AlterTableRpc(req, &resp, /*rpc=*/nullptr);
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(), "column `c2`: NOT NULL columns must have a default");
   }

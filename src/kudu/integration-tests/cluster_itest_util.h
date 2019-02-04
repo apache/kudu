@@ -342,11 +342,13 @@ Status GetTabletLocations(const std::shared_ptr<master::MasterServiceProxy>& mas
                           master::ReplicaTypeFilter filter,
                           master::TabletLocationsPB* tablet_locations);
 
-// Get the list of tablet locations for all tablets in the specified table from the Master.
+// Get the list of tablet locations for all tablets in the specified table via the given
+// table name (and table ID if provided) from the Master.
 Status GetTableLocations(const std::shared_ptr<master::MasterServiceProxy>& master_proxy,
                          const std::string& table_name,
                          const MonoDelta& timeout,
                          master::ReplicaTypeFilter filter,
+                         boost::optional<const std::string&> table_id,
                          master::GetTableLocationsResponsePB* table_locations);
 
 // Wait for the specified number of voters to be reported to the config on the

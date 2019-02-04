@@ -65,6 +65,7 @@
 namespace kudu {
 namespace itest {
 
+using boost::optional;
 using client::KuduSchema;
 using client::KuduSchemaBuilder;
 using consensus::BulkChangeConfigRequestPB;
@@ -921,9 +922,13 @@ Status GetTableLocations(const shared_ptr<MasterServiceProxy>& master_proxy,
                          const string& table_name,
                          const MonoDelta& timeout,
                          master::ReplicaTypeFilter filter,
+                         optional<const string&> table_id,
                          master::GetTableLocationsResponsePB* table_locations) {
   master::GetTableLocationsRequestPB req;
   req.mutable_table()->set_table_name(table_name);
+  if (table_id) {
+    req.mutable_table()->set_table_id(*table_id);
+  }
   req.set_replica_type_filter(filter);
   req.set_max_returned_locations(1000);
   rpc::RpcController rpc;

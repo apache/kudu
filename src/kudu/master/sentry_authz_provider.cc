@@ -268,6 +268,10 @@ Status SentryAuthzProvider::Authorize(SentryAuthorizableScope::Scope scope,
                                       const string& user,
                                       bool require_grant_option) {
 
+  if (AuthzProvider::IsTrustedUser(user)) {
+    return Status::OK();
+  }
+
   TSentryAuthorizable authorizable;
   RETURN_NOT_OK(GetAuthorizable(table_ident, scope, &authorizable));
 

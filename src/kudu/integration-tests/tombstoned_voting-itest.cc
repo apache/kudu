@@ -21,6 +21,7 @@
 #include <string>
 #include <unordered_map>
 
+#include <boost/optional/optional.hpp>
 #include <gtest/gtest.h>
 
 #include "kudu/consensus/consensus-test-util.h"
@@ -42,6 +43,7 @@
 
 METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_TSHeartbeat);
 
+using boost::none;
 using kudu::cluster::ExternalMaster;
 using kudu::cluster::ExternalTabletServer;
 using kudu::consensus::MakeOpId;
@@ -90,7 +92,8 @@ TEST_F(TombstonedVotingITest, TestTombstonedReplicaWithoutCMetaCanVote) {
   ASSERT_OK(inspect_->WaitForReplicaCount(3));
   master::GetTableLocationsResponsePB table_locations;
   ASSERT_OK(itest::GetTableLocations(cluster_->master_proxy(), TestWorkload::kDefaultTableName,
-                                     kTimeout, master::VOTER_REPLICA, &table_locations));
+                                     kTimeout, master::VOTER_REPLICA, /*table_id=*/none,
+                                     &table_locations));
   ASSERT_EQ(1, table_locations.tablet_locations_size());
   string tablet_id = table_locations.tablet_locations(0).tablet_id();
   set<string> replica_uuids;

@@ -23,6 +23,7 @@
 #include <string>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -67,6 +68,7 @@ DECLARE_int32(heartbeat_interval_ms);
 METRIC_DECLARE_counter(rows_inserted);
 METRIC_DECLARE_counter(rows_updated);
 
+using boost::none;
 using std::shared_ptr;
 using std::string;
 using std::vector;
@@ -114,7 +116,7 @@ void CreateTableForTesting(MiniMaster* mini_master,
     {
       CatalogManager::ScopedLeaderSharedLock l(catalog);
       ASSERT_OK(l.first_failed_status());
-      ASSERT_OK(catalog->IsCreateTableDone(&req, &resp));
+      ASSERT_OK(catalog->IsCreateTableDone(&req, &resp, /*user=*/none));
     }
     if (resp.done()) {
       is_table_created = true;
@@ -198,7 +200,7 @@ class RegistrationTest : public KuduTest {
           break;  // exiting out of the 'do {...} while (false)' scope
         }
         RETURN_NOT_OK(ls);
-        s = catalog->GetTabletLocations(tablet_id, master::VOTER_REPLICA, &loc);
+        s = catalog->GetTabletLocations(tablet_id, master::VOTER_REPLICA, &loc, /*user=*/none);
       } while (false);
       if (s.ok() && loc.replicas_size() == expected_count) {
         if (locations) {

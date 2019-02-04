@@ -21,6 +21,7 @@
 #include <string>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -68,6 +69,7 @@ DECLARE_int32(max_clock_sync_error_usec);
 DECLARE_int32(scanner_gc_check_interval_us);
 DECLARE_string(time_source);
 
+using boost::none;
 using kudu::client::ScanConfiguration;
 using kudu::client::sp::shared_ptr;
 using kudu::master::CatalogManager;
@@ -246,7 +248,7 @@ class ConsistencyITest : public MiniClusterITestBase {
     GetTableLocationsResponsePB resp;
     CatalogManager::ScopedLeaderSharedLock l(catalog);
     RETURN_NOT_OK(l.first_failed_status());
-    RETURN_NOT_OK(catalog->GetTableLocations(&req, &resp));
+    RETURN_NOT_OK(catalog->GetTableLocations(&req, &resp, /*user=*/none));
     if (resp.tablet_locations_size() < 1) {
       return Status::NotFound(Substitute("$0: no tablets for key", key_value));
     }

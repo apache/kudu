@@ -74,9 +74,6 @@ class SentryAuthzProvider : public AuthzProvider {
   Status AuthorizeGetTableMetadata(const std::string& table_name,
                                    const std::string& user) override WARN_UNUSED_RESULT;
 
-  // Validates the sentry_service_rpc_addresses gflag.
-  static bool ValidateAddresses(const char* flag_name, const std::string& addresses);
-
  private:
   FRIEND_TEST(TestAuthzHierarchy, TestAuthorizableScope);
 
@@ -86,6 +83,8 @@ class SentryAuthzProvider : public AuthzProvider {
   // 'TABLE' scope.
   //
   // If the operation is not authorized, returns Status::NotAuthorized().
+  // Note that the authorization process is case insensitive for the
+  // authorizables.
   Status Authorize(sentry::SentryAuthorizableScope::Scope scope,
                    sentry::SentryAction::Action action,
                    const std::string& table_ident,

@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <string>
 
+#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
 #include "kudu/common/schema.h"
@@ -53,7 +54,7 @@ Status WaitForRunningTabletCount(MiniMaster* mini_master,
     {
       CatalogManager::ScopedLeaderSharedLock l(catalog);
       RETURN_NOT_OK(l.first_failed_status());
-      RETURN_NOT_OK(catalog->GetTableLocations(&req, resp));
+      RETURN_NOT_OK(catalog->GetTableLocations(&req, resp, /*user=*/boost::none));
     }
     if (resp->tablet_locations_size() >= expected_count) {
       return Status::OK();

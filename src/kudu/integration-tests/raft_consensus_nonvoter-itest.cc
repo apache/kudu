@@ -25,6 +25,7 @@
 #include <utility>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -66,6 +67,7 @@ DECLARE_double(leader_failure_max_missed_heartbeat_periods);
 METRIC_DECLARE_gauge_int32(tablet_copy_open_client_sessions);
 METRIC_DECLARE_gauge_int32(tablet_copy_open_source_sessions);
 
+using boost::none;
 using kudu::client::sp::shared_ptr;
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
@@ -275,7 +277,8 @@ TEST_F(RaftConsensusNonVoterITest, GetTableAndTabletLocations) {
   {
     GetTableLocationsResponsePB table_locations;
     ASSERT_OK(GetTableLocations(cluster_->master_proxy(), table_->name(),
-                                kTimeout, VOTER_REPLICA, &table_locations));
+                                kTimeout, VOTER_REPLICA, /*table_id=*/none,
+                                &table_locations));
     ASSERT_EQ(1, table_locations.tablet_locations().size());
     const TabletLocationsPB& locations = table_locations.tablet_locations(0);
     ASSERT_EQ(tablet_id_, locations.tablet_id());
@@ -288,7 +291,8 @@ TEST_F(RaftConsensusNonVoterITest, GetTableAndTabletLocations) {
   {
     GetTableLocationsResponsePB table_locations;
     ASSERT_OK(GetTableLocations(cluster_->master_proxy(), table_->name(),
-                                kTimeout, ANY_REPLICA, &table_locations));
+                                kTimeout, ANY_REPLICA, /*table_id=*/none,
+                                &table_locations));
     ASSERT_EQ(1, table_locations.tablet_locations().size());
     const TabletLocationsPB& locations = table_locations.tablet_locations(0);
     ASSERT_EQ(tablet_id_, locations.tablet_id());
