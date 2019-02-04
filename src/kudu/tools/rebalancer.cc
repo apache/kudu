@@ -632,7 +632,31 @@ Status Rebalancer::PrintPolicyViolationInfo(const ClusterRawInfo& raw_info,
     return Status::OK();
   }
 
+  DataTable summary({ "Location",
+                      "Number of non-complying tables",
+                      "Number of non-complying tablets" });
+  typedef pair<unordered_set<string>, unordered_set<string>> TableTabletIds;
+  // Location --> sets of identifiers of tables and tablets hosted by the
+  // tablet servers at the location. The summary is sorted by location.
+  map<string, TableTabletIds> info_by_location;
+  for (const auto& info : ppvi) {
+    const auto& table_id = FindOrDie(placement_info.tablet_to_table_id,
+                                     info.tablet_id);
+    auto& elem = LookupOrEmplace(&info_by_location,
+                                 info.majority_location, TableTabletIds());
+    elem.first.emplace(table_id);
+    elem.second.emplace(info.tablet_id);
+  }
+  for (const auto& elem : info_by_location) {
+    summary.AddRow({ elem.first,
+                     to_string(elem.second.first.size()),
+                     to_string(elem.second.second.size()) });
+  }
+  RETURN_NOT_OK(summary.PrintTo(out));
+  out << endl;
+  // If requested, print details on detected policy violations.
   if (config_.output_replica_distribution_details) {
+    out << "Placement policy violation details:" << endl;
     DataTable stats(
         { "Location", "Table Name", "Tablet", "RF", "Replicas at location" });
     for (const auto& info : ppvi) {
@@ -646,30 +670,8 @@ Status Rebalancer::PrintPolicyViolationInfo(const ClusterRawInfo& raw_info,
                      to_string(info.replicas_num_at_majority_location) });
     }
     RETURN_NOT_OK(stats.PrintTo(out));
-  } else {
-    DataTable summary({ "Location",
-                        "Number of non-complying tables",
-                        "Number of non-complying tablets" });
-    typedef pair<unordered_set<string>, unordered_set<string>> TableTabletIds;
-    // Location --> sets of identifiers of tables and tablets hosted by the
-    // tablet servers at the location. The summary is sorted by location.
-    map<string, TableTabletIds> info_by_location;
-    for (const auto& info : ppvi) {
-      const auto& table_id = FindOrDie(placement_info.tablet_to_table_id,
-                                       info.tablet_id);
-      auto& elem = LookupOrEmplace(&info_by_location,
-                                   info.majority_location, TableTabletIds());
-      elem.first.emplace(table_id);
-      elem.second.emplace(info.tablet_id);
-    }
-    for (const auto& elem : info_by_location) {
-      summary.AddRow({ elem.first,
-                       to_string(elem.second.first.size()),
-                       to_string(elem.second.second.size()) });
-    }
-    RETURN_NOT_OK(summary.PrintTo(out));
+    out << endl;
   }
-  out << endl;
 
   return Status::OK();
 }
