@@ -49,13 +49,16 @@ KEY_CMD = 'cmd'
 KEY_NAME = 'name'
 KEY_PATH = 'path'
 
-# Exclude libraries that are GPL-licensed and libraries that are not portable
-# across Linux kernel versions.
+PAT_SASL_LIBPLAIN = re.compile(r'libplain')
+
+# Exclude libraries that are (L)GPL-licensed and libraries that are not
+# portable across Linux kernel versions.
 PAT_LINUX_LIB_EXCLUDE = re.compile(r"""(libpthread|
                                         libc|
                                         libstdc\+\+|
                                         librt|
                                         libdl|
+                                        libresolv|
                                         libgcc.*
                                        )\.so""", re.VERBOSE)
 
@@ -260,6 +263,16 @@ def copy_file(src, dest):
   """
   shutil.copyfile(src, dest)
 
+def copy_file_preserve_links(src, dest):
+  """
+  Same as copy_file but preserves symlinks.
+  """
+  if not os.path.islink(src):
+    copy_file(src, dest)
+    return
+  link_target = os.readlink(src)
+  os.symlink(link_target, dest)
+
 def chrpath(target, new_rpath):
   """
   Change the RPATH or RUNPATH for the specified target. See man chrpath(1).
@@ -278,6 +291,16 @@ def chrpath(target, new_rpath):
   except subprocess.CalledProcessError as err:
     logging.warning("Failed to chrpath for target %s", target)
     raise err
+
+def get_resolved_deps(target):
+  """
+  Return a list of resolved library dependencies for the given target.
+  """
+  if IS_LINUX:
+    return DependencyExtractor().extract_deps(target)
+  if IS_MACOS:
+    return get_resolved_dep_library_paths_macos(target).values()
+  raise NotImplementedError("not implemented")
 
 def relocate_deps_linux(target_src, target_dst, config):
   """
@@ -360,25 +383,50 @@ def relocate_deps(target_src, target_dst, config):
     return relocate_deps_macos(target_src, target_dst, config)
   raise NotImplementedError("Unsupported platform")
 
-def relocate_target(target, config):
+def relocate_sasl2(target_src, config):
   """
-  Copy all dependencies of the executable referenced by 'target' from the
-  build directory into the artifact directory, and change the rpath of the
-  executable so that the copied dependencies will be found when the executable
-  is invoked.
+  Relocate the sasl2 dynamically loaded modules.
+  Returns False if the modules could not be found.
+  Returns True if the modules were found and relocated.
+  Raises an error if there is a problem during relocation of the sasl2 modules.
   """
 
-  # Create artifact directories, if needed.
-  prep_artifact_dirs(config)
+  # Find the libsasl2 module in our dependencies.
+  deps = get_resolved_deps(target_src);
+  sasl_lib = None
+  for dep in deps:
+    if re.search('libsasl2', dep):
+      sasl_lib = dep
+      break
 
-  # Copy the target into the artifact directory.
-  target_src = os.path.join(config[BUILD_BIN_DIR], target)
-  target_dst = os.path.join(config[ARTIFACT_BIN_DIR], target)
-  copy_file(target_src, target_dst)
+  # Look for libplain in potential sasl2 module paths, which is required for
+  # Kudu's basic operation.
+  sasl_path = None
+  if sasl_lib:
+    path = os.path.join(os.path.dirname(sasl_lib), "sasl2")
+    if os.path.exists(path):
+      children = os.listdir(path)
+      for child in children:
+        if PAT_SASL_LIBPLAIN.search(child):
+          sasl_path = path
+          break
 
-  # Make the target relocatable and copy all of its dependencies into the
-  # artifact directory.
-  return relocate_deps(target_src, target_dst, config)
+  if not sasl_path:
+    return False
+
+  dest_dir = os.path.join(config[ARTIFACT_LIB_DIR], 'sasl2')
+  os.mkdir(dest_dir)
+
+  to_relocate = []
+  for dirpath, subdirs, files in os.walk(sasl_path):
+    for f in files:
+      file_src = os.path.join(dirpath, f)
+      file_dst = os.path.join(dest_dir, f)
+      copy_file_preserve_links(file_src, file_dst)
+      if os.path.islink(file_src): continue
+      relocate_deps(file_src, file_dst, config)
+
+  return True
 
 def main():
   if len(sys.argv) < 3:
@@ -397,14 +445,34 @@ def main():
 
   artifact_name = get_artifact_name()
   artifact_root = os.path.join(build_root, artifact_name)
+  config = mkconfig(build_root, artifact_root)
+
   # Clear the artifact root to ensure a clean build.
   if os.path.exists(artifact_root):
     shutil.rmtree(artifact_root)
 
-  logging.info("Including targets and their dependencies in archive...")
-  config = mkconfig(build_root, artifact_root)
+  # Create artifact directories, if needed.
+  prep_artifact_dirs(config)
+
+  relocated_sasl = False
   for target in targets:
-    relocate_target(target, config)
+    logging.info("Including target '%s' and its dependencies in archive...", target)
+    # Copy the target into the artifact directory.
+    target_src = os.path.join(config[BUILD_BIN_DIR], target)
+    target_dst = os.path.join(config[ARTIFACT_BIN_DIR], target)
+    copy_file(target_src, target_dst)
+
+    if IS_LINUX and not relocated_sasl:
+      # We only relocate sasl2 on Linux because macOS appears to ship sasl2 with
+      # the default distribution and we've observed ABI compatibility issues
+      # involving calls from libsasl2 into libSystem when shipping libsasl2 with
+      # the binary artifact.
+      logging.info("Attempting to relocate sasl2 modules...")
+      relocated_sasl = relocate_sasl2(target_src, config)
+
+    # Make the target relocatable and copy all of its dependencies into the
+    # artifact directory.
+    relocate_deps(target_src, target_dst, config)
 
 if __name__ == "__main__":
   main()

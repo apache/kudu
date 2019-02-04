@@ -127,9 +127,7 @@ done
 # TODO(mpercy): Deal with detecting signed libraries and indirect symbol table
 # entries on macOS.
 if [ -z "$MACOS" ]; then
-  for file in $ARTIFACT_NAME/lib/*; do
-    strip $file
-  done
+  find $ARTIFACT_NAME/lib -type f -exec strip {} \;
 fi
 
 # Generate the properties file that allows us to find this archive on the
