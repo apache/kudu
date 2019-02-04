@@ -423,6 +423,7 @@ TEST_F(FsManagerTestBase, TestOpenWithNoBlockManagerInstances) {
   const string wal_path = GetTestPath("wals");
   FsManagerOpts opts;
   opts.wal_root = wal_path;
+  const auto block_manager_type = opts.block_manager_type;
   ReinitFsManagerWithOpts(std::move(opts));
   ASSERT_OK(fs_manager()->CreateInitialFileSystemLayout());
   ASSERT_OK(fs_manager()->Open());
@@ -444,7 +445,15 @@ TEST_F(FsManagerTestBase, TestOpenWithNoBlockManagerInstances) {
     // Once we supply the WAL directory as a data directory, we can open successfully.
     new_opts.data_roots.emplace_back(wal_path);
     ReinitFsManagerWithOpts(std::move(new_opts));
-    ASSERT_OK(fs_manager()->Open());
+    s = fs_manager()->Open();
+    if (block_manager_type == "file" &&
+        check_behavior == ConsistencyCheckBehavior::UPDATE_ON_DISK) {
+      ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+      ASSERT_STR_CONTAINS(s.ToString(),
+          "file block manager may not add or remove data directories");
+    } else {
+      ASSERT_OK(s);
+    }
   }
 }
 
@@ -459,9 +468,17 @@ TEST_F(FsManagerTestBase, TestOpenWithUnhealthyDataDir) {
   opts.data_roots = { fs_root_, new_root };
   opts.consistency_check = ConsistencyCheckBehavior::UPDATE_ON_DISK;
   ReinitFsManagerWithOpts(opts);
-  ASSERT_OK(fs_manager()->Open());
   string new_root_uuid;
-  ASSERT_TRUE(fs_manager()->dd_manager()->FindUuidByRoot(new_root, &new_root_uuid));
+  auto s = fs_manager()->Open();
+  if (opts.block_manager_type == "file") {
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(),
+        "file block manager may not add or remove data directories");
+  } else {
+    ASSERT_OK(s);
+    ASSERT_TRUE(fs_manager()->dd_manager()->FindUuidByRoot(new_root,
+                                                           &new_root_uuid));
+  }
 
   // Fail the new directory. Kudu should have no problem starting up with this
   // and should list one as failed.
@@ -469,7 +486,15 @@ TEST_F(FsManagerTestBase, TestOpenWithUnhealthyDataDir) {
   FLAGS_env_inject_eio = 1.0;
   opts.consistency_check = ConsistencyCheckBehavior::ENFORCE_CONSISTENCY;
   ReinitFsManagerWithOpts(opts);
-  ASSERT_OK(fs_manager()->Open());
+  s = fs_manager()->Open();
+  if (opts.block_manager_type == "file") {
+    ASSERT_TRUE(s.IsIOError()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "could not verify integrity of files");
+    LOG(INFO) << "Skipping the rest of test, file block manager not supported";
+    return;
+  }
+
+  ASSERT_OK(s);
   ASSERT_EQ(1, fs_manager()->dd_manager()->GetFailedDataDirs().size());
 
   // Now remove the new directory on disk. Similarly, Kudu should have no
@@ -501,7 +526,7 @@ TEST_F(FsManagerTestBase, TestOpenWithUnhealthyDataDir) {
   FLAGS_env_inject_eio = 1.0;
   opts.consistency_check = ConsistencyCheckBehavior::ENFORCE_CONSISTENCY;
   ReinitFsManagerWithOpts(opts);
-  Status s = fs_manager()->Open();
+  s = fs_manager()->Open();
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "could not find a healthy instance file");
 
@@ -564,7 +589,16 @@ TEST_F(FsManagerTestBase, TestOpenWithCanonicalizationFailure) {
   // one. Until that happens, we won't be able to update the data dirs.
   opts.consistency_check = ConsistencyCheckBehavior::UPDATE_ON_DISK;
   ReinitFsManagerWithOpts(opts);
-  Status s = fs_manager()->Open();
+
+  const auto s = fs_manager()->Open();
+  if (opts.block_manager_type == "file") {
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(),
+        "file block manager may not add or remove data directories");
+    LOG(INFO) << "Skipping the rest of test, file block manager not supported";
+    return;
+  }
+
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "could not add new data directories");
 
