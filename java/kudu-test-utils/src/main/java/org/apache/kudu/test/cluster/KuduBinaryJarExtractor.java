@@ -53,8 +53,6 @@ public class KuduBinaryJarExtractor {
       "META-INF/apache-kudu-test-binary.properties";
   private static final OsDetector DETECTOR = new OsDetector();
 
-  public KuduBinaryJarExtractor() {}
-
   /** Return the thread context classloader or the parent classloader for this class. */
   private static ClassLoader getCurrentClassLoader() {
     ClassLoader loader = Thread.currentThread().getContextClassLoader();
@@ -109,35 +107,52 @@ public class KuduBinaryJarExtractor {
    * {@link #isKuduBinaryJarOnClasspath()} should return {@code true} before this method is invoked.
    *
    * @param destDir path to a destination
-   * @return the absolute path to the directory containing extracted executables,
-   * eg. "/tmp/apache-kudu-1.9.0/bin"
+   * @return information about the extracted artifact
    * @throws FileNotFoundException if the binary JAR cannot not be located
    * @throws IOException if the JAR extraction process fails
    */
-  public String extractKuduBinary(String destDir) throws IOException {
+  public KuduBinaryInfo extractKuduBinaryArtifact(String destDir) throws IOException {
     Properties binaryProps = getBinaryProps();
     if (binaryProps == null) {
       throw new FileNotFoundException("Could not locate the Kudu binary test jar");
     }
 
+    String prefix = binaryProps.getProperty("artifact.prefix");
+    URL artifactPrefix = getCurrentClassLoader().getResource(prefix);
+    if (artifactPrefix == null) {
+      throw new FileNotFoundException("Cannot find Kudu artifact prefix dir: " + prefix);
+    }
+
     try {
-      String prefix = binaryProps.getProperty("artifact.prefix");
-      URL kuduBinDir = getCurrentClassLoader().getResource(prefix);
-      if (null == kuduBinDir) {
-        throw new FileNotFoundException("Cannot find Kudu binary dir: " + prefix);
+      Path artifactRoot = extractJar(artifactPrefix.toURI(), prefix, Paths.get(destDir));
+      Path binDir = Paths.get(artifactRoot.toString(), "bin");
+      if (!binDir.toFile().exists()) {
+        throw new FileNotFoundException("Cannot find Kudu artifact bin dir: " + binDir.toString());
       }
 
-      final Path target = Paths.get(destDir);
-      return extractJar(kuduBinDir.toURI(), target, prefix).toString();
+      // Only set the saslDir property if we find it in the artifact, since that affects whether
+      // the caller needs to set SASL_PATH when executing the binaries.
+      Path saslDir = Paths.get(artifactRoot.toString(), "lib", "sasl2");
+      String saslDirString = null;
+      if (saslDir.toFile().exists()) {
+        saslDirString = saslDir.toAbsolutePath().toString();
+      }
+
+      return new KuduBinaryInfo(binDir.toString(), saslDirString);
     } catch (URISyntaxException e) {
       throw new IOException("Cannot unpack Kudu binary jar", e);
     }
   }
 
   /**
+   * Extracts the given prefix of the given jar into the target directory.
    * Accessible for testing only.
+   * @param src URI of the source jar
+   * @param prefix prefix of the jar to extract into the destination directory
+   * @param target destination directory
+   * @return an absolute path to the extracted artifact, including the prefix portion
    */
-  static Path extractJar(URI src, final Path target, String prefix) throws IOException {
+  static Path extractJar(URI src, String prefix, final Path target) throws IOException {
     Preconditions.checkArgument("jar".equals(src.getScheme()), "src URI must use a 'jar' scheme");
     if (Files.notExists(target)) {
       Files.createDirectory(target);
@@ -172,6 +187,6 @@ public class KuduBinaryJarExtractor {
         }
       });
     }
-    return Paths.get(target.toString(), prefix, "bin");
+    return Paths.get(target.toString(), prefix).toAbsolutePath();
   }
 }

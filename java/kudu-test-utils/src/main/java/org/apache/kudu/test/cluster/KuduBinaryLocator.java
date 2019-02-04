@@ -17,6 +17,7 @@
 
 package org.apache.kudu.test.cluster;
 
+import com.google.common.base.Preconditions;
 import com.google.common.io.CharStreams;
 import org.apache.kudu.test.TempDirUtils;
 import org.apache.yetus.audience.InterfaceAudience;
@@ -29,15 +30,38 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.Reader;
+import java.util.HashMap;
+import java.util.Map;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
 public class KuduBinaryLocator {
+
+  private static final String SASL_PATH_NAME = "SASL_PATH";
+  private static final String KUDU_BIN_DIR_PROP = "kuduBinDir";
   private static final Logger LOG = LoggerFactory.getLogger(KuduBinaryLocator.class);
 
-  private static final String KUDU_BIN_DIR_PROP = "kuduBinDir";
+  @InterfaceAudience.Private
+  @InterfaceStability.Unstable
+  public static class ExecutableInfo {
+    private final String exePath;
+    private final Map<String, String> env;
+
+    public ExecutableInfo(String exePath, Map<String, String> env) {
+      Preconditions.checkNotNull(exePath);
+      Preconditions.checkNotNull(env);
+      this.exePath = exePath;
+      this.env = env;
+    }
+
+    /** Path to the executable. */
+    public String exePath() { return exePath; }
+
+    /** Any environment variables that should be set when running the executable. */
+    public Map<String, String> environment() { return env; }
+  }
 
   /**
    * Find the binary directory within the build tree.
@@ -47,13 +71,13 @@ public class KuduBinaryLocator {
    * - If the `kudu` binary is found on the PATH using `which kudu`,
    * use its parent directory.
    */
-  private static String findBinaryDir() {
+  private static KuduBinaryInfo findBinaryLocation() {
     // If kuduBinDir system property is set, use that.
     String kuduBinDirProp = System.getProperty(KUDU_BIN_DIR_PROP);
     if (kuduBinDirProp != null) {
       LOG.info("Using Kudu binary directory specified by system property '{}': {}",
           KUDU_BIN_DIR_PROP, kuduBinDirProp);
-      return kuduBinDirProp;
+      return new KuduBinaryInfo(kuduBinDirProp);
     }
 
     try {
@@ -61,7 +85,7 @@ public class KuduBinaryLocator {
       if (extractor.isKuduBinaryJarOnClasspath()) {
         String testTmpDir = TempDirUtils.getTempDirectory("kudu-binary-jar").toString();
         LOG.info("Using Kudu binary jar directory: {}", testTmpDir);
-        return extractor.extractKuduBinary(testTmpDir);
+        return extractor.extractKuduBinaryArtifact(testTmpDir);
       }
     } catch (IOException ex) {
       LOG.warn("Unable to extract a Kudu binary jar", ex);
@@ -77,7 +101,7 @@ public class KuduBinaryLocator {
           String kuduBinary = CharStreams.toString(reader);
           String kuduBinDir = new File(kuduBinary).getParent();
           LOG.info("Using Kudu binary directory found on path with 'which kudu': {}", kuduBinDir);
-          return kuduBinDir;
+          return new KuduBinaryInfo(kuduBinDir);
         }
       }
     } catch (IOException | InterruptedException ex) {
@@ -89,18 +113,24 @@ public class KuduBinaryLocator {
   }
 
   /**
-   * @param binName the binary to look for (eg 'kudu-tserver')
+   * @param exeName the binary to look for (eg 'kudu-tserver')
    * @return the absolute path of that binary
    * @throws FileNotFoundException if no such binary is found
    */
-  public static String findBinary(String binName) throws FileNotFoundException {
-    String binDir = findBinaryDir();
+  public static ExecutableInfo findBinary(String exeName) throws FileNotFoundException {
+    KuduBinaryInfo artifactInfo = findBinaryLocation();
 
-    File candidate = new File(binDir, binName);
-    if (candidate.canExecute()) {
-      return candidate.getAbsolutePath();
+    File executable = new File(artifactInfo.getBinDir(), exeName);
+    if (!executable.exists() || !executable.canExecute()) {
+      throw new FileNotFoundException("Cannot find executable " + exeName +
+          " in binary directory " + artifactInfo.getBinDir());
     }
-    throw new FileNotFoundException("Cannot find binary " + binName +
-        " in binary directory " + binDir);
+
+    Map<String, String> env = new HashMap<>();
+    if (artifactInfo.getSaslDir() != null) {
+      env.put(SASL_PATH_NAME, artifactInfo.getSaslDir());
+    }
+
+    return new ExecutableInfo(executable.getAbsolutePath(), env);
   }
 }

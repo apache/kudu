@@ -179,13 +179,15 @@ public class MiniKuduCluster implements AutoCloseable {
     Preconditions.checkArgument(numMasters > 0, "Need at least one master");
 
     // Start the control shell and the communication channel to it.
-    List<String> commandLine = Lists.newArrayList(
-        KuduBinaryLocator.findBinary("kudu"),
-        "test",
-        "mini_cluster",
-        "--serialization=pb");
+    KuduBinaryLocator.ExecutableInfo exeInfo = KuduBinaryLocator.findBinary("kudu");
+    List<String> commandLine = Lists.newArrayList(exeInfo.exePath(),
+                                                  "test",
+                                                  "mini_cluster",
+                                                  "--serialization=pb");
     LOG.info("Starting process: {}", commandLine);
     ProcessBuilder processBuilder = new ProcessBuilder(commandLine);
+    processBuilder.environment().putAll(exeInfo.environment());
+
     miniCluster = processBuilder.start();
     miniClusterStdin = new DataOutputStream(miniCluster.getOutputStream());
     miniClusterStdout = new DataInputStream(miniCluster.getInputStream());

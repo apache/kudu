@@ -129,11 +129,11 @@ public class TestKuduBinaryJarExtractor {
     URI binaryJar = createKuduBinaryJar("osx").toUri();
 
     binaryJar = URI.create("jar:" + binaryJar.toString());
-    Path extractedBinDir =
-        KuduBinaryJarExtractor.extractJar(binaryJar,
-            Files.createTempDirectory("kudu-test"),
-            "apache-kudu-1.9.0-SNAPSHOT");
-    assertNotNull(extractedBinDir);
+    Path extractedDir = KuduBinaryJarExtractor.extractJar(binaryJar,
+                                                          "apache-kudu-1.9.0-SNAPSHOT",
+                                                          Files.createTempDirectory("kudu-test"));
+    Path extractedBinDir = Paths.get(extractedDir.toString(), "bin");
+    assertTrue(extractedBinDir.toFile().exists());
 
     Path kuduTserver = Paths.get(extractedBinDir.toString(), "kudu-tserver");
     assertTrue(Files.exists(kuduTserver));
