@@ -83,9 +83,10 @@ public class KuduBinaryLocator {
     try {
       KuduBinaryJarExtractor extractor = new KuduBinaryJarExtractor();
       if (extractor.isKuduBinaryJarOnClasspath()) {
-        String testTmpDir = TempDirUtils.getTempDirectory("kudu-binary-jar").toString();
-        LOG.info("Using Kudu binary jar directory: {}", testTmpDir);
-        return extractor.extractKuduBinaryArtifact(testTmpDir);
+        File testTmpDir = TempDirUtils.makeTempDirectory("kudu-binary-jar",
+            TempDirUtils.DeleteOnExit.DELETE_RECURSIVELY_ON_EXIT);
+        LOG.info("Using Kudu binary jar directory: {}", testTmpDir.getAbsolutePath());
+        return extractor.extractKuduBinaryArtifact(testTmpDir.getAbsolutePath());
       }
     } catch (IOException ex) {
       LOG.warn("Unable to extract a Kudu binary jar", ex);

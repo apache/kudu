@@ -17,18 +17,32 @@
 
 package org.apache.kudu.test;
 
+import org.apache.commons.io.FileUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 
 /**
  * Utilities for retrieving and creating temp directories.
  */
 public class TempDirUtils {
+
+  /**
+   * An enum to control whether a temporary directory created by
+   * {@link #makeTempDirectory(String, DeleteOnExit)} is recursively deleted on JVM exit,
+   * including the contents of the directory.
+   */
+  public enum DeleteOnExit {
+    /** Do not delete the directory on exit. */
+    NO_DELETE_ON_EXIT,
+    /** Recursively delete the directory and its contents on exit. */
+    DELETE_RECURSIVELY_ON_EXIT,
+  }
 
   private static final Logger LOG = LoggerFactory.getLogger(TempDirUtils.class);
 
@@ -40,16 +54,43 @@ public class TempDirUtils {
    *
    * @param prefix a directory name to be created, in environment variable TEST_TMPDIR if defined,
    *               else within the java.io.tmpdir system property
+   * @param deleteRecursivelyOnExit whether to recursively delete the directory and all its
+   *                                contents on JVM exit
    * @return temp directory as a file
    * @throws IOException if a temp directory cannot be created
    */
-  public static File getTempDirectory(String prefix) throws IOException {
+  public static File makeTempDirectory(String prefix, DeleteOnExit deleteRecursivelyOnExit)
+      throws IOException {
     String testTmpdir = System.getenv("TEST_TMPDIR");
+    File newDir;
     if (testTmpdir != null) {
       LOG.info("Using the temp directory defined by TEST_TMPDIR: " + testTmpdir);
-      return Files.createTempDirectory(Paths.get(testTmpdir), prefix).toFile();
+      newDir = Files.createTempDirectory(Paths.get(testTmpdir), prefix).toFile();
     } else {
-      return Files.createTempDirectory(prefix).toFile();
+      newDir = Files.createTempDirectory(prefix).toFile();
     }
+    if (deleteRecursivelyOnExit == DeleteOnExit.DELETE_RECURSIVELY_ON_EXIT) {
+      registerToRecursivelyDeleteOnShutdown(newDir.toPath());
+    }
+    return newDir;
+  }
+
+  /**
+   * Register a JVM shutdown hook to recursively delete the specified directory on JVM shutdown.
+   * @param path directory to delete on shutdown
+   */
+  private static void registerToRecursivelyDeleteOnShutdown(Path path) {
+    final Path absPath = path.toAbsolutePath();
+    Runtime.getRuntime().addShutdownHook(new Thread() {
+      public void run() {
+        File dir = absPath.toFile();
+        if (!dir.exists()) return;
+        try {
+          FileUtils.deleteDirectory(dir);
+        } catch (IOException exc) {
+          LOG.warn("Unable to remove directory tree " + absPath.toString(), exc);
+        }
+      }
+    });
   }
 }

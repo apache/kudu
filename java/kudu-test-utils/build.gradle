@@ -19,6 +19,7 @@ apply from: "$rootDir/gradle/shadow.gradle"
 
 dependencies {
   compile project(path: ":kudu-client")
+  compile libs.commonsIo
   compile libs.guava
   compile libs.osdetector
 
