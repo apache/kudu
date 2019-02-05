@@ -65,7 +65,7 @@ public class ListTabletServersRequest extends KuduRpc<ListTabletServersResponse>
       servers.add(entry.getRegistration().getRpcAddresses(0).getHost());
     }
     ListTabletServersResponse response =
-        new ListTabletServersResponse(deadlineTracker.getElapsedMillis(),
+        new ListTabletServersResponse(timeoutTracker.getElapsedMillis(),
                                       tsUUID,
                                       serversCount,
                                       servers);

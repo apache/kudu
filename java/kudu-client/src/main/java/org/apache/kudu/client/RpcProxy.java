@@ -183,8 +183,8 @@ class RpcProxy {
                 .setMethodName(rpc.method()));
     final Message reqPB = rpc.createRequestPB();
     // TODO(wdberkeley): We should enforce that every RPC has a timeout.
-    if (rpc.deadlineTracker.hasDeadline()) {
-      headerBuilder.setTimeoutMillis((int) rpc.deadlineTracker.getMillisBeforeDeadline());
+    if (rpc.timeoutTracker.hasTimeout()) {
+      headerBuilder.setTimeoutMillis((int) rpc.timeoutTracker.getMillisBeforeTimeout());
     }
     if (rpc.isRequestTracked()) {
       RpcHeader.RequestIdPB.Builder requestIdBuilder = RpcHeader.RequestIdPB.newBuilder();

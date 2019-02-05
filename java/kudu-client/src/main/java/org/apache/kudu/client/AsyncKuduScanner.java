@@ -1021,7 +1021,7 @@ public final class AsyncKuduScanner {
         }
       }
       RowResultIterator iterator = RowResultIterator.makeRowResultIterator(
-          deadlineTracker.getElapsedMillis(), tsUUID, schema, resp.getData(), callResponse);
+          timeoutTracker.getElapsedMillis(), tsUUID, schema, resp.getData(), callResponse);
 
       boolean hasMore = resp.getHasMoreResults();
       if (id.length != 0 && scannerId != null && !Bytes.equals(scannerId, id)) {

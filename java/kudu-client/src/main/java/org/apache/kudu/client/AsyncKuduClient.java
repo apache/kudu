@@ -978,7 +978,7 @@ public class AsyncKuduClient implements AutoCloseable {
       RecoverableException ex = (RecoverableException)arg;
       long sleepTime = getSleepTimeForRpcMillis(fakeRpc);
       if (cannotRetryRequest(fakeRpc) ||
-          fakeRpc.deadlineTracker.wouldSleepingTimeoutMillis(sleepTime)) {
+          fakeRpc.timeoutTracker.wouldSleepingTimeoutMillis(sleepTime)) {
         tooManyAttemptsOrTimeout(fakeRpc, ex); // invokes fakeRpc.Deferred
         return null;
       }
@@ -1579,7 +1579,7 @@ public class AsyncKuduClient implements AutoCloseable {
     }
 
     long sleepTimeMillis = getSleepTimeForRpcMillis(rpc);
-    if (rpc.deadlineTracker.wouldSleepingTimeoutMillis(sleepTimeMillis)) {
+    if (rpc.timeoutTracker.wouldSleepingTimeoutMillis(sleepTimeMillis)) {
       tooManyAttemptsOrTimeout(rpc, null);
       return;
     }
@@ -1609,7 +1609,7 @@ public class AsyncKuduClient implements AutoCloseable {
     }
 
     long sleepTimeMillis = getSleepTimeForRpcMillis(rpc);
-    if (rpc.deadlineTracker.wouldSleepingTimeoutMillis(sleepTimeMillis)) {
+    if (rpc.timeoutTracker.wouldSleepingTimeoutMillis(sleepTimeMillis)) {
       tooManyAttemptsOrTimeout(rpc, null);
       return;
     }
@@ -1664,7 +1664,7 @@ public class AsyncKuduClient implements AutoCloseable {
    * {@code false} otherwise (in which case it's OK to retry once more)
    */
   private static boolean cannotRetryRequest(final KuduRpc<?> rpc) {
-    return rpc.deadlineTracker.timedOut() || rpc.attempt > MAX_RPC_ATTEMPTS;
+    return rpc.timeoutTracker.timedOut() || rpc.attempt > MAX_RPC_ATTEMPTS;
   }
 
   /**
@@ -1722,7 +1722,7 @@ public class AsyncKuduClient implements AutoCloseable {
       d = getMasterTableLocationsPB(parentRpc);
     } else {
       long timeoutMillis = parentRpc == null ? defaultAdminOperationTimeoutMs :
-                                               parentRpc.deadlineTracker.getMillisBeforeDeadline();
+                                               parentRpc.timeoutTracker.getMillisBeforeTimeout();
       // Leave the end of the partition key range empty in order to pre-fetch tablet locations.
       GetTableLocationsRequest rpc =
           new GetTableLocationsRequest(masterTable,
@@ -1818,7 +1818,7 @@ public class AsyncKuduClient implements AutoCloseable {
                                                         final byte[] endPartitionKey,
                                                         final int fetchBatchSize,
                                                         final List<LocatedTablet> ret,
-                                                        final DeadlineTracker deadlineTracker) {
+                                                        final TimeoutTracker timeoutTracker) {
     // We rely on the keys initially not being empty.
     Preconditions.checkArgument(startPartitionKey == null || startPartitionKey.length > 0,
                                 "use null for unbounded start partition key");
@@ -1846,9 +1846,9 @@ public class AsyncKuduClient implements AutoCloseable {
         continue;
       }
 
-      if (deadlineTracker.timedOut()) {
+      if (timeoutTracker.timedOut()) {
         Status statusTimedOut = Status.TimedOut("Took too long getting the list of tablets, " +
-            deadlineTracker);
+            timeoutTracker);
         return Deferred.fromError(new NonRecoverableException(statusTimedOut));
       }
 
@@ -1861,7 +1861,7 @@ public class AsyncKuduClient implements AutoCloseable {
       // Build a fake RPC to encapsulate and propagate the timeout. There's no actual "RPC" to send.
       KuduRpc fakeRpc = buildFakeRpc("loopLocateTable",
                                      null,
-                                     deadlineTracker.getMillisBeforeDeadline());
+                                     timeoutTracker.getMillisBeforeTimeout());
 
       return locateTablet(table, key, fetchBatchSize, fakeRpc).addCallbackDeferring(
           new Callback<Deferred<List<LocatedTablet>>, GetTableLocationsResponsePB>() {
@@ -1872,7 +1872,7 @@ public class AsyncKuduClient implements AutoCloseable {
                                      endPartitionKey,
                                      fetchBatchSize,
                                      ret,
-                                     deadlineTracker);
+                  timeoutTracker);
             }
 
             @Override
@@ -1904,14 +1904,14 @@ public class AsyncKuduClient implements AutoCloseable {
                                             int fetchBatchSize,
                                             long deadline) {
     final List<LocatedTablet> ret = Lists.newArrayList();
-    final DeadlineTracker deadlineTracker = new DeadlineTracker();
-    deadlineTracker.setDeadline(deadline);
+    final TimeoutTracker timeoutTracker = new TimeoutTracker();
+    timeoutTracker.setTimeout(deadline);
     return loopLocateTable(table,
                            startPartitionKey,
                            endPartitionKey,
                            fetchBatchSize,
                            ret,
-                           deadlineTracker);
+        timeoutTracker);
   }
 
   /**
@@ -1998,7 +1998,7 @@ public class AsyncKuduClient implements AutoCloseable {
 
     long sleepTime = getSleepTimeForRpcMillis(rpc);
     if (cannotRetryRequest(rpc) ||
-        rpc.deadlineTracker.wouldSleepingTimeoutMillis(sleepTime)) {
+        rpc.timeoutTracker.wouldSleepingTimeoutMillis(sleepTime)) {
       // Don't let it retry.
       return tooManyAttemptsOrTimeout(rpc, ex);
     }
@@ -2215,7 +2215,7 @@ public class AsyncKuduClient implements AutoCloseable {
   Deferred<LocatedTablet> getTabletLocation(final KuduTable table,
                                             final byte[] partitionKey,
                                             final LookupType lookupType,
-                                            long deadline) {
+                                            long timeout) {
 
     // Locate the tablet at the partition key by locating tablets between
     // the partition key (inclusive), and the incremented partition key (exclusive).
@@ -2230,10 +2230,10 @@ public class AsyncKuduClient implements AutoCloseable {
       endPartitionKey = Arrays.copyOf(partitionKey, partitionKey.length + 1);
     }
 
-    final DeadlineTracker deadlineTracker = new DeadlineTracker();
-    deadlineTracker.setDeadline(deadline);
+    final TimeoutTracker timeoutTracker = new TimeoutTracker();
+    timeoutTracker.setTimeout(timeout);
     Deferred<List<LocatedTablet>> locatedTablets = locateTable(
-        table, startPartitionKey, endPartitionKey, FETCH_TABLETS_PER_POINT_LOOKUP, deadline);
+        table, startPartitionKey, endPartitionKey, FETCH_TABLETS_PER_POINT_LOOKUP, timeout);
 
     // Then pick out the single tablet result from the list.
     return locatedTablets.addCallbackDeferring(
@@ -2265,7 +2265,7 @@ public class AsyncKuduClient implements AutoCloseable {
                 // This is a LOWER_BOUND lookup, get the tablet location from the upper bound key
                 // of the non-covered range to return the next valid tablet location.
                 return getTabletLocation(table, entry.getUpperBoundPartitionKey(),
-                    LookupType.POINT, deadlineTracker.getMillisBeforeDeadline());
+                    LookupType.POINT, timeoutTracker.getMillisBeforeTimeout());
               }
               return Deferred.fromResult(new LocatedTablet(entry.getTablet()));
             }

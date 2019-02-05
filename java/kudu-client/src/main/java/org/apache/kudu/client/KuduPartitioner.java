@@ -143,8 +143,8 @@ public class KuduPartitioner {
      * @return a new {@link KuduPartitioner}
      */
     public KuduPartitioner build() throws KuduException {
-      final DeadlineTracker deadlineTracker = new DeadlineTracker();
-      deadlineTracker.setDeadline(timeoutMillis);
+      final TimeoutTracker timeoutTracker = new TimeoutTracker();
+      timeoutTracker.setTimeout(timeoutMillis);
       NavigableMap<BytesKey, Integer> partitionByStartKey = new TreeMap<>();
       // Insert a sentinel for the beginning of the table, in case a user
       // queries for any row which falls before the first partition.
@@ -157,7 +157,7 @@ public class KuduPartitioner {
           tablet = KuduClient.joinAndHandleException(
               table.getAsyncClient().getTabletLocation(table,
                   nextPartKey.bytes, AsyncKuduClient.LookupType.LOWER_BOUND,
-                  deadlineTracker.getMillisBeforeDeadline()));
+                  timeoutTracker.getMillisBeforeTimeout()));
         } catch (NonCoveredRangeException ncr) {
           // No more tablets
           break;

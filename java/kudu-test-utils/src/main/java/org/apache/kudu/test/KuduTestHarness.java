@@ -18,13 +18,13 @@ package org.apache.kudu.test;
 
 import org.apache.kudu.client.AsyncKuduClient;
 import org.apache.kudu.client.AsyncKuduClient.AsyncKuduClientBuilder;
-import org.apache.kudu.client.DeadlineTracker;
 import org.apache.kudu.client.HostAndPort;
 import org.apache.kudu.client.KuduClient;
 import org.apache.kudu.client.KuduException;
 import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.client.LocatedTablet;
 import org.apache.kudu.client.RemoteTablet;
+import org.apache.kudu.client.TimeoutTracker;
 import org.apache.kudu.test.cluster.MiniKuduCluster;
 import org.apache.kudu.test.cluster.MiniKuduCluster.MiniKuduClusterBuilder;
 import org.apache.kudu.test.cluster.FakeDNS;
@@ -42,7 +42,6 @@ import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
 
@@ -231,17 +230,17 @@ public class KuduTestHarness extends ExternalResource {
   public HostAndPort findLeaderTabletServer(LocatedTablet tablet)
       throws Exception {
     LocatedTablet.Replica leader = null;
-    DeadlineTracker deadlineTracker = new DeadlineTracker();
-    deadlineTracker.setDeadline(DEFAULT_SLEEP);
+    TimeoutTracker timeoutTracker = new TimeoutTracker();
+    timeoutTracker.setTimeout(DEFAULT_SLEEP);
     while (leader == null) {
-      if (deadlineTracker.timedOut()) {
+      if (timeoutTracker.timedOut()) {
         fail("Timed out while trying to find a leader for this table");
       }
 
       leader = tablet.getLeaderReplica();
       if (leader == null) {
         LOG.info("Sleeping while waiting for a tablet LEADER to arise, currently slept {} ms",
-            deadlineTracker.getElapsedMillis());
+            timeoutTracker.getElapsedMillis());
         Thread.sleep(50);
       }
     }

@@ -78,7 +78,7 @@ public class BatchResponse extends KuduRpcResponse {
         currentErrorIndex++;
       }
       individualResponses.add(
-          new OperationResponse(currentOperation.deadlineTracker.getElapsedMillis(),
+          new OperationResponse(currentOperation.timeoutTracker.getElapsedMillis(),
                                 tsUUID,
                                 writeTimestamp,
                                 currentOperation,

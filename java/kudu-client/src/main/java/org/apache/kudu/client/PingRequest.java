@@ -68,7 +68,7 @@ class PingRequest extends KuduRpc<PingResponse> {
     final Master.PingResponsePB.Builder respBuilder =
         Master.PingResponsePB.newBuilder();
     readProtobuf(callResponse.getPBMessage(), respBuilder);
-    PingResponse response = new PingResponse(deadlineTracker.getElapsedMillis(), tsUUID);
+    PingResponse response = new PingResponse(timeoutTracker.getElapsedMillis(), tsUUID);
     return new Pair<>(response, null);
   }
 }

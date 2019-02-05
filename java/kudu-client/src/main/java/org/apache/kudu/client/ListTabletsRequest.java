@@ -61,7 +61,7 @@ class ListTabletsRequest extends KuduRpc<ListTabletsResponse> {
         : respBuilder.getStatusAndSchemaList()) {
       tablets.add(info.getTabletStatus().getTabletId());
     }
-    ListTabletsResponse response = new ListTabletsResponse(deadlineTracker.getElapsedMillis(),
+    ListTabletsResponse response = new ListTabletsResponse(timeoutTracker.getElapsedMillis(),
                                                            tsUUID,
                                                            tablets);
     return new Pair<ListTabletsResponse, Object>(

@@ -80,7 +80,7 @@ class AlterTableRequest extends KuduRpc<AlterTableResponse> {
     final AlterTableResponsePB.Builder respBuilder = AlterTableResponsePB.newBuilder();
     readProtobuf(callResponse.getPBMessage(), respBuilder);
     AlterTableResponse response = new AlterTableResponse(
-        deadlineTracker.getElapsedMillis(),
+        timeoutTracker.getElapsedMillis(),
         tsUUID,
         respBuilder.hasTableId() ? respBuilder.getTableId().toStringUtf8() : null);
 

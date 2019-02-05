@@ -107,8 +107,8 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
    * @param timeoutMillis the new timeout of the batch in milliseconds
    */
   void resetTimeoutMillis(Timer timer, long timeoutMillis) {
-    deadlineTracker.reset();
-    deadlineTracker.setDeadline(timeoutMillis);
+    timeoutTracker.reset();
+    timeoutTracker.setTimeout(timeoutMillis);
     if (timeoutTask != null) {
       timeoutTask.cancel();
     }
@@ -175,7 +175,7 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
         error = null;
       }
     }
-    OperationResponse response = new OperationResponse(deadlineTracker.getElapsedMillis(),
+    OperationResponse response = new OperationResponse(timeoutTracker.getElapsedMillis(),
                                                        tsUUID,
                                                        builder.getTimestamp(),
                                                        this,

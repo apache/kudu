@@ -100,7 +100,7 @@ final class ConnectToCluster {
     // TODO: Handle the situation when multiple in-flight RPCs all want to query the masters,
     // basically reuse in some way the master permits.
     long timeoutMillis = parentRpc == null ? defaultTimeoutMs :
-                                             parentRpc.deadlineTracker.getMillisBeforeDeadline();
+                                             parentRpc.timeoutTracker.getMillisBeforeTimeout();
     final ConnectToMasterRequest rpc = new ConnectToMasterRequest(masterTable, timer, timeoutMillis);
     rpc.setParentRpc(parentRpc);
     Deferred<ConnectToMasterResponsePB> d = rpc.getDeferred();

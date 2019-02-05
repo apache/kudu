@@ -73,8 +73,8 @@ class Batch extends KuduRpc<BatchResponse> {
    * @param timeoutMillis the new timeout of the batch in milliseconds
    */
   void resetTimeoutMillis(Timer timer, long timeoutMillis) {
-    deadlineTracker.reset();
-    deadlineTracker.setDeadline(timeoutMillis);
+    timeoutTracker.reset();
+    timeoutTracker.setTimeout(timeoutMillis);
     if (timeoutTask != null) {
       timeoutTask.cancel();
     }
@@ -145,7 +145,7 @@ class Batch extends KuduRpc<BatchResponse> {
       }
     }
 
-    BatchResponse response = new BatchResponse(deadlineTracker.getElapsedMillis(),
+    BatchResponse response = new BatchResponse(timeoutTracker.getElapsedMillis(),
                                                tsUUID,
                                                builder.getTimestamp(),
                                                errorsPB,

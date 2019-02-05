@@ -26,7 +26,7 @@ import com.google.common.base.Stopwatch;
 import com.google.common.base.Ticker;
 import org.junit.Test;
 
-public class TestDeadlineTracker {
+public class TestTimeoutTracker {
 
   @Test
   public void testTimeout() {
@@ -40,37 +40,37 @@ public class TestDeadlineTracker {
     Stopwatch stopwatch = Stopwatch.createUnstarted(ticker);
 
     // no timeout set
-    DeadlineTracker tracker = new DeadlineTracker(stopwatch);
-    tracker.setDeadline(0);
-    assertFalse(tracker.hasDeadline());
+    TimeoutTracker tracker = new TimeoutTracker(stopwatch);
+    tracker.setTimeout(0);
+    assertFalse(tracker.hasTimeout());
     assertFalse(tracker.timedOut());
 
     // 500ms timeout set
     tracker.reset();
-    tracker.setDeadline(500);
-    assertTrue(tracker.hasDeadline());
+    tracker.setTimeout(500);
+    assertTrue(tracker.hasTimeout());
     assertFalse(tracker.timedOut());
     assertFalse(tracker.wouldSleepingTimeoutMillis(499));
     assertTrue(tracker.wouldSleepingTimeoutMillis(500));
     assertTrue(tracker.wouldSleepingTimeoutMillis(501));
-    assertEquals(500, tracker.getMillisBeforeDeadline());
+    assertEquals(500, tracker.getMillisBeforeTimeout());
 
     // fast forward 200ms
     timeToReturn.set(200 * 1000000);
-    assertTrue(tracker.hasDeadline());
+    assertTrue(tracker.hasTimeout());
     assertFalse(tracker.timedOut());
     assertFalse(tracker.wouldSleepingTimeoutMillis(299));
     assertTrue(tracker.wouldSleepingTimeoutMillis(300));
     assertTrue(tracker.wouldSleepingTimeoutMillis(301));
-    assertEquals(300, tracker.getMillisBeforeDeadline());
+    assertEquals(300, tracker.getMillisBeforeTimeout());
 
     // fast forward another 400ms, so the RPC timed out
     timeToReturn.set(600 * 1000000);
-    assertTrue(tracker.hasDeadline());
+    assertTrue(tracker.hasTimeout());
     assertTrue(tracker.timedOut());
     assertTrue(tracker.wouldSleepingTimeoutMillis(299));
     assertTrue(tracker.wouldSleepingTimeoutMillis(300));
     assertTrue(tracker.wouldSleepingTimeoutMillis(301));
-    assertEquals(1, tracker.getMillisBeforeDeadline());
+    assertEquals(1, tracker.getMillisBeforeTimeout());
   }
 }

@@ -130,7 +130,7 @@ public abstract class KuduRpc<R> {
 
   final KuduTable table;
 
-  final DeadlineTracker deadlineTracker;
+  final TimeoutTracker timeoutTracker;
 
   // 'timeoutTask' is a handle to the timer task that will time out the RPC. It is
   // null if and only if the task has no timeout.
@@ -155,8 +155,8 @@ public abstract class KuduRpc<R> {
 
   KuduRpc(KuduTable table, Timer timer, long timeoutMillis) {
     this.table = table;
-    this.deadlineTracker = new DeadlineTracker();
-    deadlineTracker.setDeadline(timeoutMillis);
+    this.timeoutTracker = new TimeoutTracker();
+    timeoutTracker.setTimeout(timeoutMillis);
     if (timer != null) {
       this.timeoutTask = AsyncKuduClient.newTimeout(timer,
                                                     new RpcTimeoutTask(),
@@ -257,7 +257,7 @@ public abstract class KuduRpc<R> {
     if (timeoutTask != null) {
       timeoutTask.cancel();
     }
-    deadlineTracker.reset();
+    timeoutTracker.reset();
     traces.clear();
     parentRpc = null;
     d.callback(result);
@@ -383,7 +383,7 @@ public abstract class KuduRpc<R> {
       buf.append(tablet.getTabletId());
     }
     buf.append(", attempt=").append(attempt);
-    buf.append(", ").append(deadlineTracker);
+    buf.append(", ").append(timeoutTracker);
     buf.append(", ").append(RpcTraceFrame.getHumanReadableStringForTraces(traces));
     // Cheating a bit, we're not actually logging but we'll augment the information provided by
     // this method if DEBUG is enabled.

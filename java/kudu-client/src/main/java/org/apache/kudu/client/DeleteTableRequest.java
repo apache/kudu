@@ -67,7 +67,7 @@ class DeleteTableRequest extends KuduRpc<DeleteTableResponse> {
     final Master.DeleteTableResponsePB.Builder builder = Master.DeleteTableResponsePB.newBuilder();
     readProtobuf(callResponse.getPBMessage(), builder);
     DeleteTableResponse response =
-        new DeleteTableResponse(deadlineTracker.getElapsedMillis(), tsUUID);
+        new DeleteTableResponse(timeoutTracker.getElapsedMillis(), tsUUID);
     return new Pair<DeleteTableResponse, Object>(
         response, builder.hasError() ? builder.getError() : null);
   }

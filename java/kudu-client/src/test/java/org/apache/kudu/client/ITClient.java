@@ -380,10 +380,10 @@ public class ITClient {
      */
     private boolean fullScan() {
       int rowCount;
-      DeadlineTracker deadlineTracker = new DeadlineTracker();
-      deadlineTracker.setDeadline(DEFAULT_SLEEP);
+      TimeoutTracker timeoutTracker = new TimeoutTracker();
+      timeoutTracker.setTimeout(DEFAULT_SLEEP);
 
-      while (keepRunningLatch.getCount() > 0 && !deadlineTracker.timedOut()) {
+      while (keepRunningLatch.getCount() > 0 && !timeoutTracker.timedOut()) {
         KuduScanner scanner = getScannerBuilder().build();
 
         try {
@@ -410,7 +410,7 @@ public class ITClient {
           // No need to do anything, we'll exit the loop once we test getCount() in the condition.
         }
       }
-      return !deadlineTracker.timedOut();
+      return !timeoutTracker.timedOut();
     }
 
     private KuduScanner.KuduScannerBuilder getScannerBuilder() {

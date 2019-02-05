@@ -71,7 +71,7 @@ class ListTablesRequest extends KuduRpc<ListTablesResponse> {
     for (Master.ListTablesResponsePB.TableInfo info : respBuilder.getTablesList()) {
       tables.add(info.getName());
     }
-    ListTablesResponse response = new ListTablesResponse(deadlineTracker.getElapsedMillis(),
+    ListTablesResponse response = new ListTablesResponse(timeoutTracker.getElapsedMillis(),
                                                          tsUUID,
                                                          tables);
     return new Pair<ListTablesResponse, Object>(

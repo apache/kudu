@@ -84,7 +84,7 @@ public class GetTableSchemaRequest extends KuduRpc<GetTableSchemaResponse> {
     readProtobuf(callResponse.getPBMessage(), respBuilder);
     Schema schema = ProtobufHelper.pbToSchema(respBuilder.getSchema());
     GetTableSchemaResponse response = new GetTableSchemaResponse(
-        deadlineTracker.getElapsedMillis(),
+        timeoutTracker.getElapsedMillis(),
         tsUUID,
         schema,
         respBuilder.getTableId().toStringUtf8(),

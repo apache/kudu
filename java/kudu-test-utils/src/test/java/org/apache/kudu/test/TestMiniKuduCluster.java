@@ -22,11 +22,11 @@ import static org.junit.Assert.fail;
 import java.io.IOException;
 import java.net.Socket;
 
-import org.apache.kudu.client.DeadlineTracker;
 import org.apache.kudu.client.HostAndPort;
 import org.apache.kudu.client.KuduClient;
 import org.apache.kudu.client.KuduClient.KuduClientBuilder;
 import org.apache.kudu.client.ListTablesResponse;
+import org.apache.kudu.client.TimeoutTracker;
 import org.apache.kudu.test.cluster.MiniKuduCluster;
 import org.apache.kudu.test.junit.RetryRule;
 import org.apache.kudu.test.cluster.FakeDNS;
@@ -116,7 +116,7 @@ public class TestMiniKuduCluster {
    */
   private static void testHostPort(HostAndPort hp,
                                    boolean testIsOpen) throws InterruptedException {
-    DeadlineTracker tracker = new DeadlineTracker();
+    TimeoutTracker tracker = new TimeoutTracker();
     while (tracker.getElapsedMillis() < SLEEP_TIME_MS) {
       try {
         Socket socket = new Socket(hp.getHost(), hp.getPort());

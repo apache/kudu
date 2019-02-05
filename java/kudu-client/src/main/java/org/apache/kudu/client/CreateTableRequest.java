@@ -78,7 +78,7 @@ class CreateTableRequest extends KuduRpc<CreateTableResponse> {
     readProtobuf(callResponse.getPBMessage(), builder);
     CreateTableResponse response =
         new CreateTableResponse(
-            deadlineTracker.getElapsedMillis(),
+            timeoutTracker.getElapsedMillis(),
             tsUUID,
             builder.getTableId().toStringUtf8());
     return new Pair<CreateTableResponse, Object>(

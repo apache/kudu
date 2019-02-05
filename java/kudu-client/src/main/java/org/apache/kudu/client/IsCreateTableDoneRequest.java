@@ -58,7 +58,7 @@ class IsCreateTableDoneRequest extends KuduRpc<IsCreateTableDoneResponse> {
         IsCreateTableDoneResponsePB.newBuilder();
     readProtobuf(callResponse.getPBMessage(), builder);
     IsCreateTableDoneResponse resp =
-        new IsCreateTableDoneResponse(deadlineTracker.getElapsedMillis(),
+        new IsCreateTableDoneResponse(timeoutTracker.getElapsedMillis(),
                                       tsUUID,
                                       builder.getDone());
     return new Pair<IsCreateTableDoneResponse, Object>(

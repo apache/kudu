@@ -106,9 +106,9 @@ public class TestConnectionCache {
   }
 
   private void waitForConnectionToTerminate(Connection c) throws InterruptedException {
-    DeadlineTracker deadlineTracker = new DeadlineTracker();
-    deadlineTracker.setDeadline(5000);
-    while (!c.isTerminated() && !deadlineTracker.timedOut()) {
+    TimeoutTracker timeoutTracker = new TimeoutTracker();
+    timeoutTracker.setTimeout(5000);
+    while (!c.isTerminated() && !timeoutTracker.timedOut()) {
       Thread.sleep(250);
     }
   }
