@@ -47,8 +47,7 @@ public class CommandLineParser {
       AsyncKuduClient.DEFAULT_OPERATION_TIMEOUT_MS;
   public static final String ADMIN_OPERATION_TIMEOUT_MS_KEY = "kudu.admin.operation.timeout.ms";
   public static final String SOCKET_READ_TIMEOUT_MS_KEY = "kudu.socket.read.timeout.ms";
-  public static final long SOCKET_READ_TIMEOUT_MS_DEFAULT =
-      AsyncKuduClient.DEFAULT_SOCKET_READ_TIMEOUT_MS;
+  public static final long SOCKET_READ_TIMEOUT_MS_DEFAULT = 0;
   public static final String NUM_REPLICAS_KEY = "kudu.num.replicas";
   public static final int NUM_REPLICAS_DEFAULT = 3;
 
@@ -86,11 +85,13 @@ public class CommandLineParser {
   }
 
   /**
-   * Get the configured timeout for socket reads.
+   * Socket read timeouts are no longer used in the Java client.
+   * This method always returns 0, which previously indicated no socket read timeout.
    * @return a long that represents the passed timeout, or the default value
+   * @deprecated socket read timeouts no longer have any effect
    */
-  public long getSocketReadTimeoutMs() {
-    return conf.getLong(SOCKET_READ_TIMEOUT_MS_KEY, SOCKET_READ_TIMEOUT_MS_DEFAULT);
+  @Deprecated public long getSocketReadTimeoutMs() {
+    return 0;
   }
 
   /**
@@ -109,7 +110,6 @@ public class CommandLineParser {
     return new AsyncKuduClient.AsyncKuduClientBuilder(getMasterAddresses())
         .defaultOperationTimeoutMs(getOperationTimeoutMs())
         .defaultAdminOperationTimeoutMs(getAdminOperationTimeoutMs())
-        .defaultSocketReadTimeoutMs(getSocketReadTimeoutMs())
         .build();
   }
 
@@ -121,7 +121,6 @@ public class CommandLineParser {
     KuduClient c = new KuduClient.KuduClientBuilder(getMasterAddresses())
         .defaultOperationTimeoutMs(getOperationTimeoutMs())
         .defaultAdminOperationTimeoutMs(getAdminOperationTimeoutMs())
-        .defaultSocketReadTimeoutMs(getSocketReadTimeoutMs())
         .build();
     KuduTableMapReduceUtil.importCredentialsFromCurrentSubject(c);
     return c;

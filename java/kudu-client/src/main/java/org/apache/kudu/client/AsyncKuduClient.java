@@ -263,7 +263,6 @@ public class AsyncKuduClient implements AutoCloseable {
   public static final byte[] EMPTY_ARRAY = new byte[0];
   public static final long NO_TIMESTAMP = -1;
   public static final long DEFAULT_OPERATION_TIMEOUT_MS = 30000;
-  public static final long DEFAULT_SOCKET_READ_TIMEOUT_MS = 10000;
   private static final long MAX_RPC_ATTEMPTS = 100;
 
   /**
@@ -344,8 +343,6 @@ public class AsyncKuduClient implements AutoCloseable {
 
   private final long defaultAdminOperationTimeoutMs;
 
-  private final long defaultSocketReadTimeoutMs;
-
   private final Statistics statistics;
 
   private final boolean statisticsDisabled;
@@ -367,7 +364,6 @@ public class AsyncKuduClient implements AutoCloseable {
         MASTER_TABLE_NAME_PLACEHOLDER, null, null, 1);
     this.defaultOperationTimeoutMs = b.defaultOperationTimeoutMs;
     this.defaultAdminOperationTimeoutMs = b.defaultAdminOperationTimeoutMs;
-    this.defaultSocketReadTimeoutMs = b.defaultSocketReadTimeoutMs;
     this.statisticsDisabled = b.statisticsDisabled;
     this.statistics = statisticsDisabled ? null : new Statistics();
     this.timer = b.timer;
@@ -375,7 +371,7 @@ public class AsyncKuduClient implements AutoCloseable {
 
     this.securityContext = new SecurityContext();
     this.connectionCache = new ConnectionCache(
-        securityContext, defaultSocketReadTimeoutMs, timer, channelFactory);
+        securityContext, timer, channelFactory);
     this.tokenReacquirer = new AuthnTokenReacquirer(this);
   }
 
@@ -1039,12 +1035,14 @@ public class AsyncKuduClient implements AutoCloseable {
   }
 
   /**
-   * Get the timeout used when waiting to read data from a socket. Will be triggered when nothing
-   * has been read on a socket connected to a tablet server for {@code timeout} milliseconds.
+   * Socket read timeouts are no longer used in the Java client and have no effect.
+   * This method always returns 0, as that previously indicated no socket read timeout.
    * @return a timeout in milliseconds
+   * @deprecated socket read timeouts are no longer used
    */
-  public long getDefaultSocketReadTimeoutMs() {
-    return defaultSocketReadTimeoutMs;
+  @Deprecated public long getDefaultSocketReadTimeoutMs() {
+    LOG.info("getDefaultSocketReadTimeoutMs is deprecated");
+    return 0;
   }
 
   /**
@@ -2440,7 +2438,6 @@ public class AsyncKuduClient implements AutoCloseable {
     private final List<HostAndPort> masterAddresses;
     private long defaultAdminOperationTimeoutMs = DEFAULT_OPERATION_TIMEOUT_MS;
     private long defaultOperationTimeoutMs = DEFAULT_OPERATION_TIMEOUT_MS;
-    private long defaultSocketReadTimeoutMs = DEFAULT_SOCKET_READ_TIMEOUT_MS;
 
     private final HashedWheelTimer timer =
         new HashedWheelTimer(new ThreadFactoryBuilder().setDaemon(true).build(), 20, MILLISECONDS);
@@ -2512,15 +2509,14 @@ public class AsyncKuduClient implements AutoCloseable {
     }
 
     /**
-     * Sets the default timeout to use when waiting on data from a socket.
-     * Optional.
-     * If not provided, defaults to 10s.
-     * A value of 0 disables the timeout.
+     * Socket read timeouts are no longer used in the Java client and have no effect.
+     * Setting this has no effect.
      * @param timeoutMs a timeout in milliseconds
      * @return this builder
+     * @deprecated this option no longer has any effect
      */
-    public AsyncKuduClientBuilder defaultSocketReadTimeoutMs(long timeoutMs) {
-      this.defaultSocketReadTimeoutMs = timeoutMs;
+    @Deprecated public AsyncKuduClientBuilder defaultSocketReadTimeoutMs(long timeoutMs) {
+      LOG.info("defaultSocketReadTimeoutMs is deprecated");
       return this;
     }
 

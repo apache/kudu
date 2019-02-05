@@ -64,8 +64,6 @@ public class ITClient {
   // Latch used to track if an error occurred and we need to stop the test early.
   private final CountDownLatch errorLatch = new CountDownLatch(1);
 
-  private KuduClient localClient;
-  private AsyncKuduClient localAsyncClient;
   private KuduTable table;
   private long runtimeInSeconds;
 
@@ -87,25 +85,9 @@ public class ITClient {
 
     LOG.info ("Test running for {} seconds", runtimeInSeconds);
 
-    // Client we're using has low tolerance for read timeouts but a
-    // higher overall operation timeout.
-    localAsyncClient = new AsyncKuduClient.AsyncKuduClientBuilder(harness.getMasterAddressesAsString())
-        .defaultSocketReadTimeoutMs(500)
-        .build();
-    localClient = new KuduClient(localAsyncClient);
-
     CreateTableOptions builder = new CreateTableOptions().setNumReplicas(3);
     builder.setRangePartitionColumns(ImmutableList.of("key"));
-    table = localClient.createTable(TABLE_NAME, getBasicSchema(), builder);
-  }
-
-  @After
-  public void tearDown() throws Exception {
-    if (localClient != null) {
-      localClient.shutdown();
-      // No need to explicitly shutdown the async client,
-      // shutting down the sync client effectively does that.
-    }
+    table = harness.getClient().createTable(TABLE_NAME, getBasicSchema(), builder);
   }
 
   @Test(timeout = TEST_TIMEOUT_SECONDS)
@@ -139,7 +121,7 @@ public class ITClient {
       thread.join(DEFAULT_SLEEP);
     }
 
-    AsyncKuduScanner scannerBuilder = localAsyncClient.newScannerBuilder(table).build();
+    AsyncKuduScanner scannerBuilder = harness.getAsyncClient().newScannerBuilder(table).build();
     int rowCount = countRowsInScan(scannerBuilder);
     Assert.assertTrue(rowCount + " should be higher than 0", rowCount > 0);
   }
@@ -199,7 +181,7 @@ public class ITClient {
      */
     private boolean disconnectNode() {
       try {
-        final List<Connection> connections = localAsyncClient.getConnectionListCopy();
+        final List<Connection> connections = harness.getAsyncClient().getConnectionListCopy();
         if (connections.isEmpty()) {
           return true;
         }
@@ -252,7 +234,7 @@ public class ITClient {
    */
   class WriterThread implements Runnable {
 
-    private final KuduSession session = localClient.newSession();
+    private final KuduSession session = harness.getClient().newSession();
     private final Random random = new Random();
     private int currentRowKey = 0;
 
@@ -432,7 +414,7 @@ public class ITClient {
     }
 
     private KuduScanner.KuduScannerBuilder getScannerBuilder() {
-      return localClient.newScannerBuilder(table)
+      return harness.getClient().newScannerBuilder(table)
           .readMode(AsyncKuduScanner.ReadMode.READ_AT_SNAPSHOT)
           .snapshotTimestampRaw(sharedWriteTimestamp)
           .setFaultTolerant(true);

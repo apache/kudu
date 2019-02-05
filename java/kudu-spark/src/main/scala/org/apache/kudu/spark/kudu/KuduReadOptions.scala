@@ -34,7 +34,7 @@ import org.apache.kudu.spark.kudu.KuduReadOptions._
  * @param keepAlivePeriodMs The period at which to send keep-alive requests to the tablet
  *                          server to ensure that scanners do not time out
  * @param scanRequestTimeoutMs Maximum time allowed per scan request, in milliseconds
- * @param socketReadTimeoutMs Maximum time allowed when waiting on data from a socket
+ * @param socketReadTimeoutMs This parameter is deprecated and has no effect
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving

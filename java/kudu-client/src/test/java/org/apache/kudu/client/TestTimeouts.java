@@ -24,7 +24,9 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import org.apache.kudu.test.KuduTestHarness;
+import org.apache.kudu.test.KuduTestHarness.MasterServerConfig;
 import org.apache.kudu.test.KuduTestHarness.TabletServerConfig;
+import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 
@@ -94,32 +96,47 @@ public class TestTimeouts {
         .apply(createBasicSchemaInsert(table, 0))
         .hasRowError());
 
-    // Create a new client with no socket read timeout (0 means do not set a read timeout).
-    try (KuduClient noRecvTimeoutClient =
+    // Do a non-scan operation to cache information from the master.
+    client.getTablesList();
+
+    // Scan with a short timeout.
+    KuduScanner scanner = client
+        .newScannerBuilder(table)
+        .scanRequestTimeout(1000)
+        .build();
+
+    // The server will not respond for the lifetime of the test, so we expect the
+    // operation to time out.
+    try {
+      scanner.nextRows();
+      fail("should not have completed nextRows");
+    } catch (NonRecoverableException e) {
+      assertTrue(e.getStatus().isTimedOut());
+    }
+  }
+
+  /**
+   * KUDU-1868: This tests that negotiation can time out on the client side. It passes if the
+   * hardcoded negotiation timeout is lowered to 500ms. In general it is hard to get it to work
+   * right because injecting latency to negotiation server side affects all client connections,
+   * including the harness's Java client, the kudu tool used to create the test cluster, and the
+   * other members of the test cluster. There isn't a way to configure the kudu tool's
+   * negotiation timeout within a Java test, presently.
+   */
+  @Test(timeout = 100000)
+  @Ignore
+  @MasterServerConfig(flags = { "--rpc_negotiation_inject_delay_ms=1000" })
+  public void testClientNegotiationTimeout() throws Exception {
+    // Make a new client so we can turn down the operation timeout-- otherwise this test takes 50s!
+    try (KuduClient lowTimeoutsClient =
              new KuduClient.KuduClientBuilder(harness.getMasterAddressesAsString())
-                 .defaultSocketReadTimeoutMs(0)
+                 .defaultAdminOperationTimeoutMs(5000)
                  .build()) {
-      // Propagate the timestamp to be sure we should see the row that was
-      // inserted by another client.
-      noRecvTimeoutClient.updateLastPropagatedTimestamp(client.getLastPropagatedTimestamp());
-      KuduTable noRecvTimeoutTable = noRecvTimeoutClient.openTable(TABLE_NAME);
-
-      // Do something besides a scan to cache table and tablet lookup.
-      noRecvTimeoutClient.getTablesList();
-
-      // Scan with a short timeout.
-      KuduScanner scanner = noRecvTimeoutClient
-          .newScannerBuilder(noRecvTimeoutTable)
-          .scanRequestTimeout(1000)
-          .build();
-
-      // The server will not respond for the lifetime of the test, so we expect
-      // the operation to time out.
       try {
-        scanner.nextRows();
-        fail("should not have completed nextRows");
+        lowTimeoutsClient.getTablesList();
+        fail("should not have completed getTablesList");
       } catch (NonRecoverableException e) {
-        assertTrue(e.getStatus().isTimedOut());
+        // Good.
       }
     }
   }

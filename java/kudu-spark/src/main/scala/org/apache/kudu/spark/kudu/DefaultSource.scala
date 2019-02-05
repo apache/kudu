@@ -175,7 +175,6 @@ class DefaultSource
     val scanLocality =
       parameters.get(SCAN_LOCALITY).map(getScanLocalityType).getOrElse(defaultScanLocality)
     val scanRequestTimeoutMs = parameters.get(SCAN_REQUEST_TIMEOUT_MS).map(_.toLong)
-    val socketReadTimeoutMs = parameters.get(SOCKET_READ_TIMEOUT_MS).map(_.toLong)
     val keepAlivePeriodMs =
       parameters.get(KEEP_ALIVE_PERIOD_MS).map(_.toLong).getOrElse(defaultKeepAlivePeriodMs)
 
@@ -185,7 +184,7 @@ class DefaultSource
       faultTolerantScanner,
       keepAlivePeriodMs,
       scanRequestTimeoutMs,
-      socketReadTimeoutMs)
+      /* socketReadTimeoutMs= */ None)
   }
 
   private def getWriteOptions(parameters: Map[String, String]): KuduWriteOptions = {
@@ -253,7 +252,7 @@ class KuduRelation(
     extends BaseRelation with PrunedFilteredScan with InsertableRelation {
 
   private val context: KuduContext =
-    new KuduContext(masterAddrs, sqlContext.sparkContext, readOptions.socketReadTimeoutMs)
+    new KuduContext(masterAddrs, sqlContext.sparkContext)
 
   private val table: KuduTable = context.syncClient.openTable(tableName)
 
@@ -466,7 +465,7 @@ class KuduSink(
     extends Sink {
 
   private val context: KuduContext =
-    new KuduContext(masterAddrs, sqlContext.sparkContext, readOptions.socketReadTimeoutMs)
+    new KuduContext(masterAddrs, sqlContext.sparkContext)
 
   override def addBatch(batchId: Long, data: DataFrame): Unit = {
     context.writeRows(data, tableName, operationType, writeOptions)

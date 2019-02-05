@@ -133,7 +133,7 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
   @transient lazy val syncClient: KuduClient = asyncClient.syncClient()
 
   @transient lazy val asyncClient: AsyncKuduClient = {
-    val c = KuduClientCache.getAsyncClient(kuduMaster, socketReadTimeoutMs)
+    val c = KuduClientCache.getAsyncClient(kuduMaster)
     if (authnCredentials != null) {
       c.importAuthenticationCredentials(authnCredentials)
     }
@@ -445,7 +445,6 @@ private object KuduContext {
 private object KuduClientCache {
   val Log: Logger = LoggerFactory.getLogger(KuduClientCache.getClass)
 
-  private case class CacheKey(kuduMaster: String, socketReadTimeoutMs: Option[Long])
   private case class CacheValue(kuduClient: AsyncKuduClient, shutdownHookHandle: Runnable)
 
   /**
@@ -457,7 +456,7 @@ private object KuduClientCache {
    */
   private val ShutdownHookPriority = 100
 
-  private val clientCache = new mutable.HashMap[CacheKey, CacheValue]()
+  private val clientCache = new mutable.HashMap[String, CacheValue]()
 
   // Visible for testing.
   private[kudu] def clearCacheForTests() = {
@@ -476,25 +475,18 @@ private object KuduClientCache {
     clientCache.clear()
   }
 
-  def getAsyncClient(kuduMaster: String, socketReadTimeoutMs: Option[Long]): AsyncKuduClient = {
-    val cacheKey = CacheKey(kuduMaster, socketReadTimeoutMs)
+  def getAsyncClient(kuduMaster: String): AsyncKuduClient = {
     clientCache.synchronized {
-      if (!clientCache.contains(cacheKey)) {
-        val builder = new AsyncKuduClient.AsyncKuduClientBuilder(kuduMaster)
-        socketReadTimeoutMs match {
-          case Some(timeout) => builder.defaultSocketReadTimeoutMs(timeout)
-          case None =>
-        }
-
-        val asyncClient = builder.build()
+      if (!clientCache.contains(kuduMaster)) {
+        val asyncClient = new AsyncKuduClient.AsyncKuduClientBuilder(kuduMaster).build()
         val hookHandle = new Runnable {
           override def run(): Unit = asyncClient.close()
         }
         ShutdownHookManager.get().addShutdownHook(hookHandle, ShutdownHookPriority)
         val cacheValue = CacheValue(asyncClient, hookHandle)
-        clientCache.put(cacheKey, cacheValue)
+        clientCache.put(kuduMaster, cacheValue)
       }
-      return clientCache(cacheKey).kuduClient
+      return clientCache(kuduMaster).kuduClient
     }
   }
 }

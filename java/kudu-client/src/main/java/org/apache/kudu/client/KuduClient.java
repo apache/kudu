@@ -468,15 +468,14 @@ public class KuduClient implements AutoCloseable {
     }
 
     /**
-     * Sets the default timeout to use when waiting on data from a socket.
-     * Optional.
-     * If not provided, defaults to 10s.
-     * A value of 0 disables the timeout.
+     * Socket read timeouts are no longer used in the Java client and have no effect.
+     * Setting this has no effect.
      * @param timeoutMs a timeout in milliseconds
      * @return this builder
+     * @deprecated socket read timeouts are no longer used
      */
-    public KuduClientBuilder defaultSocketReadTimeoutMs(long timeoutMs) {
-      clientBuilder.defaultSocketReadTimeoutMs(timeoutMs);
+    @Deprecated public KuduClientBuilder defaultSocketReadTimeoutMs(long timeoutMs) {
+      LOG.info("defaultSocketReadTimeoutMs is deprecated");
       return this;
     }
 

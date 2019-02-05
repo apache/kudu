@@ -75,8 +75,6 @@ import org.apache.kudu.rpc.RpcHeader.RpcFeatureFlag;
  * Acquiring the monitor on an object of this class will prevent it from
  * accepting write requests as well as buffering requests if the underlying
  * channel isn't connected.
- *
- * TODO(aserbin) clarify on the socketReadTimeoutMs and using per-RPC timeout settings.
  */
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
@@ -106,9 +104,6 @@ class Connection extends SimpleChannelUpstreamHandler {
   /** Security context to use for connection negotiation. */
   private final SecurityContext securityContext;
 
-  /** Read timeout for the connection (used by Netty's ReadTimeoutHandler). */
-  private final long socketReadTimeoutMs;
-
   /** Timer to monitor read timeouts for the connection (used by Netty's ReadTimeoutHandler). */
   private final HashedWheelTimer timer;
 
@@ -135,6 +130,9 @@ class Connection extends SimpleChannelUpstreamHandler {
       0,
       0
   };
+
+  private static final String NEGOTIATION_TIMEOUT_HANDLER = "negotiation-timeout-handler";
+  private static final long NEGOTIATION_TIMEOUT_MS = 10000;
 
   /** Lock to guard access to some of the fields below. */
   private final ReentrantLock lock = new ReentrantLock();
@@ -178,7 +176,6 @@ class Connection extends SimpleChannelUpstreamHandler {
    *
    * @param serverInfo the destination server
    * @param securityContext security context to use for connection negotiation
-   * @param socketReadTimeoutMs timeout for the read operations on the socket
    * @param timer timer to set up read timeout on the corresponding Netty channel
    * @param channelFactory Netty factory to create corresponding Netty channel
    * @param credentialsPolicy policy controlling which credentials to use while negotiating on the
@@ -188,14 +185,12 @@ class Connection extends SimpleChannelUpstreamHandler {
    */
   Connection(ServerInfo serverInfo,
              SecurityContext securityContext,
-             long socketReadTimeoutMs,
              HashedWheelTimer timer,
              ClientSocketChannelFactory channelFactory,
              CredentialsPolicy credentialsPolicy) {
     this.serverInfo = serverInfo;
     this.securityContext = securityContext;
     this.state = State.NEW;
-    this.socketReadTimeoutMs = socketReadTimeoutMs;
     this.timer = timer;
     this.credentialsPolicy = credentialsPolicy;
 
@@ -319,6 +314,10 @@ class Connection extends SimpleChannelUpstreamHandler {
         Preconditions.checkState(state == State.NEGOTIATING);
 
         queuedMessages = null;
+
+        // Drop the negotiation timeout handler from the pipeline.
+        ctx.getPipeline().remove(NEGOTIATION_TIMEOUT_HANDLER);
+
         // Set the state to READY -- that means the incoming messages should be no longer put into
         // the queuedMessages, but sent to wire right away (see the enqueueMessage() for details).
         state = State.READY;
@@ -532,11 +531,9 @@ class Connection extends SimpleChannelUpstreamHandler {
       headerBuilder.setCallId(callId);
 
       // Amend the timeout for the call, if necessary.
-      if (socketReadTimeoutMs > 0) {
-        final int timeoutMs = headerBuilder.getTimeoutMillis();
-        if (timeoutMs > 0) {
-          headerBuilder.setTimeoutMillis((int) Math.min(timeoutMs, socketReadTimeoutMs));
-        }
+      final int timeoutMs = headerBuilder.getTimeoutMillis();
+      if (timeoutMs > 0) {
+        headerBuilder.setTimeoutMillis(timeoutMs);
       }
 
       // If the connection hasn't been negotiated yet, add the message into the queuedMessages list.
@@ -801,10 +798,10 @@ class Connection extends SimpleChannelUpstreamHandler {
           4 /* strip the length prefix */));
       super.addLast("decode-inbound", new CallResponse.Decoder());
       super.addLast("encode-outbound", new RpcOutboundMessage.Encoder());
-      if (Connection.this.socketReadTimeoutMs > 0) {
-        super.addLast("timeout-handler", new ReadTimeoutHandler(
-            Connection.this.timer, Connection.this.socketReadTimeoutMs, TimeUnit.MILLISECONDS));
-      }
+      // Add a socket read timeout handler to function as a timeout for negotiation.
+      // The handler will be removed once the connection is negotiated.
+      super.addLast(NEGOTIATION_TIMEOUT_HANDLER, new ReadTimeoutHandler(
+          Connection.this.timer, NEGOTIATION_TIMEOUT_MS, TimeUnit.MILLISECONDS));
       super.addLast("kudu-handler", Connection.this);
     }
   }
