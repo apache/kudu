@@ -49,15 +49,30 @@
 # will be generated when the default operating system is used.
 #
 # Environment variables may be used to customize operation:
-#   BASE_OS: Default: ubuntu:xenial
-#     The base image to use.
 #
-#   REPOSITORY: Default: apache/kudu
+#   BASES: Default: "ubuntu:xenial"
+#     A csv string with the list of base operating systems to build with.
+#
+#   TARGETS: Default: "kudu"
+#     A csv string with the list of targets to build and tag.
+#     These targets are defined in the Dockerfile.
+#     Dependent targets of a passed image will be build, but not
+#     tagged. Note that if a target is not tagged it is subject
+#     removal by dockers system and image pruning.
+#
+#   REPOSITORY: Default: "apache/kudu"
 #     The repository string to use when tagging the image.
 #
-#   TAG_LATEST: Default: 1
+#   TAG_LATEST: Default: "1"
 #     If set to 1, adds a tag using `-latest` along with the
 #     versioned tag.
+#
+#   TAG_HASH: Default: "0"
+#     If set to 1, keeps the tags using the short git hash as
+#     the version for non-release builds. Leaving this as 0
+#     ensures the tags containing the short git hash are removed
+#     which keeps the `docker images` list cleaner when only the
+#     latest image is relevant.
 #
 #   DOCKER_CACHE_FROM:
 #      Optional images passed to the `docker build` commands
@@ -76,39 +91,16 @@ ROOT=$(cd $(dirname "$BASH_SOURCE")/.. ; pwd)
 #   ubuntu:trusty
 #   ubuntu:xenial
 #   ubuntu:bionic
-DEFAULTS_OS="ubuntu:xenial"
-BASE_OS=${BASE_OS:="$DEFAULTS_OS"}
+DEFAULT_OS="ubuntu:xenial"
+BASES=${BASES:="$DEFAULT_OS"}
+TARGETS=${TARGETS:="kudu"}
 REPOSITORY=${REPOSITORY:="apache/kudu"}
 TAG_LATEST=${TAG_LATEST:=1}
+TAG_HASH=${TAG_HASH:=0}
 DOCKER_CACHE_FROM=${DOCKER_CACHE_FROM:=""}
-TARGETS=("base" "thirdparty" "build" "kudu")
 
-VERSION=$(cat $ROOT/version.txt)
+VERSION=$(cat "$ROOT/version.txt")
 VCS_REF=$(git rev-parse --short HEAD)
-
-BUILD_ARGS=(
-  --build-arg BASE_OS="$BASE_OS"
-  --build-arg DOCKERFILE="docker/Dockerfile"
-  --build-arg MAINTAINER="Apache Kudu <dev@kudu.apache.org>"
-  --build-arg URL="https://kudu.apache.org"
-  --build-arg VERSION=$VERSION
-  --build-arg VCS_REF=$VCS_REF
-  --build-arg VCS_TYPE="git"
-  --build-arg VCS_URL="https://gitbox.apache.org/repos/asf/kudu.git"
-)
-
-if [[ -n "$DOCKER_CACHE_FROM" ]]; then
-  BUILD_ARGS+=(--cache-from "$DOCKER_CACHE_FROM")
-fi
-
-# Create the OS_TAG.
-OS_NAME=$(echo "$BASE_OS" | cut -d':' -f1)
-OS_VERSION=$(echo "$BASE_OS" | cut -d':' -f2)
-if [[ "$OS_VERSION" == [[:digit:]]* ]]; then
-  OS_TAG="$OS_NAME$OS_VERSION"
-else
-  OS_TAG="$OS_VERSION"
-fi
 
 # Create the VERSION_TAG.
 if [[ "$VERSION" == *-SNAPSHOT ]]; then
@@ -119,6 +111,21 @@ else
   VERSION_TAG="$VERSION"
   MINOR_VERSION_TAG=$(echo "$VERSION" | sed "s/.[^.]*$//")
 fi
+
+# Constructs an OS tag based on the passed BASE_IMAGE.
+# The operating system is described with the version name.
+# If the operating system version is numeric, the version
+# will also be appended.
+function get_os_tag() {
+  local BASE_IMAGE=$1
+  local OS_NAME=$(echo "$BASE_IMAGE" | cut -d':' -f1)
+  local OS_VERSION=$(echo "$BASE_IMAGE" | cut -d':' -f2)
+  if [[ "$OS_VERSION" == [[:digit:]]* ]]; then
+    echo "$OS_NAME$OS_VERSION"
+  else
+    echo "$OS_VERSION"
+  fi
+}
 
 # Constructs a tag, excluding the OS_TAG if it is empty.
 # Additionally ignores the target when it is the default target "kudu".
@@ -144,33 +151,57 @@ function get_tag() {
   echo "$REPOSITORY:$TAG"
 }
 
-for TARGET in "${TARGETS[@]}"; do
-  FULL_TAG=$(get_tag "$TARGET" "$VERSION_TAG" "$OS_TAG")
-
-  # Build the target and tag with the full tag.
-  docker build "${BUILD_ARGS[@]}" -f $ROOT/docker/Dockerfile \
-    --target "$TARGET" -t "$FULL_TAG" ${ROOT}
-
-  # If this is the default OS, also tag it without the OS-specific tag.
-  if [[ "$BASE_OS" == "$DEFAULTS_OS" ]]; then
-    docker tag "$FULL_TAG" "$(get_tag "$TARGET" "$VERSION_TAG" "")"
+for BASE_OS in $(echo "$BASES" | tr ',' '\n'); do
+  # Generate the arguments to pass to the docker build.
+  BUILD_ARGS=(
+    --build-arg BASE_OS="$BASE_OS"
+    --build-arg DOCKERFILE="docker/Dockerfile"
+    --build-arg MAINTAINER="Apache Kudu <dev@kudu.apache.org>"
+    --build-arg URL="https://kudu.apache.org"
+    --build-arg VERSION="$VERSION"
+    --build-arg VCS_REF="$VCS_REF"
+    --build-arg VCS_TYPE="git"
+    --build-arg VCS_URL="https://gitbox.apache.org/repos/asf/kudu.git"
+  )
+  if [[ -n "$DOCKER_CACHE_FROM" ]]; then
+    BUILD_ARGS+=(--cache-from "$DOCKER_CACHE_FROM")
   fi
+  OS_TAG=$(get_os_tag "$BASE_OS")
 
-  # Add the minor version tag if this is a release version.
-  if [[ "$IS_RELEASE_VERSION" == "1" ]]; then
-    docker tag "$FULL_TAG" "$(get_tag "$TARGET" "$MINOR_VERSION_TAG" "$OS_TAG")"
-    # Add the default OS tag.
-    if [[ "$BASE_OS" == "$DEFAULTS_OS" ]]; then
-      docker tag "$FULL_TAG" "$(get_tag "$TARGET" "$MINOR_VERSION_TAG" "")"
+  for TARGET in $(echo "$TARGETS" | tr ',' '\n'); do
+    FULL_TAG=$(get_tag "$TARGET" "$VERSION_TAG" "$OS_TAG")
+
+    # Build the target and tag with the full tag.
+    docker build "${BUILD_ARGS[@]}" -f "$ROOT/docker/Dockerfile" \
+      --target "$TARGET" -t "$FULL_TAG" ${ROOT}
+
+    # If this is the default OS, also tag it without the OS-specific tag.
+    if [[ "$BASE_OS" == "$DEFAULT_OS" ]]; then
+      docker tag "$FULL_TAG" "$(get_tag "$TARGET" "$VERSION_TAG" "")"
     fi
-  fi
 
-  # Add the latest version tags.
-  if [[ "$TAG_LATEST" == "1" ]]; then
-    docker tag "$FULL_TAG" "$(get_tag "$TARGET" "latest" "$OS_TAG")"
-    # Add the default OS tag.
-    if [[ "$BASE_OS" == "$DEFAULTS_OS" ]]; then
-      docker tag "$FULL_TAG" "$(get_tag "$TARGET" "latest" "")"
+    # Add the minor version tag if this is a release version.
+    if [[ "$IS_RELEASE_VERSION" == "1" ]]; then
+      docker tag "$FULL_TAG" "$(get_tag "$TARGET" "$MINOR_VERSION_TAG" "$OS_TAG")"
+      # Add the default OS tag.
+      if [[ "$BASE_OS" == "$DEFAULT_OS" ]]; then
+        docker tag "$FULL_TAG" "$(get_tag "$TARGET" "$MINOR_VERSION_TAG" "")"
+      fi
     fi
-  fi
+
+    # Add the latest version tags.
+    if [[ "$TAG_LATEST" == "1" ]]; then
+      docker tag "$FULL_TAG" "$(get_tag "$TARGET" "latest" "$OS_TAG")"
+      # Add the default OS tag.
+      if [[ "$BASE_OS" == "$DEFAULT_OS" ]]; then
+        docker tag "$FULL_TAG" "$(get_tag "$TARGET" "latest" "")"
+      fi
+    fi
+
+    # Remove the hash tags if the aren't wanted.
+    if [[ "$TAG_HASH" != "1" && "$IS_RELEASE_VERSION" ]]; then
+      HASH_TAG_PATTERN="$REPOSITORY:*$VCS_REF*"
+      docker rmi $(docker images -q "$HASH_TAG_PATTERN" --format "{{.Repository}}:{{.Tag}}")
+    fi
+  done
 done

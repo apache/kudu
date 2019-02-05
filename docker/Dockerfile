@@ -25,17 +25,14 @@
 #   http://label-schema.org/rc1/
 
 #
-# ---- Base ----
-# Builds a base image that has all prerequisite libraries for
-# development and runtime pre-installed.
-# TODO: Consider a separate runtime-base and buildtime-base to make
-#   runtime images smaller.
+# ---- Runtime ----
+# Builds a base image that has all the runtime libraries for Kudu pre-installed.
 #
 ARG BASE_OS
-FROM $BASE_OS as base
+FROM $BASE_OS as runtime
 
-COPY ./docker/bootstrap-env.sh /
-RUN ./bootstrap-env.sh && rm bootstrap-env.sh
+COPY ./docker/bootstrap-runtime-env.sh /
+RUN ./bootstrap-runtime-env.sh && rm bootstrap-runtime-env.sh
 
 # Common label arguments.
 # VCS_REF is not specified to improve docker caching.
@@ -46,9 +43,39 @@ ARG VCS_TYPE
 ARG VCS_URL
 ARG VERSION
 
-LABEL org.label-schema.name="Apache Kudu Base" \
-      org.label-schema.description="A base image that has all prerequisite \
-        libraries for development and runtime pre-installed." \
+LABEL org.label-schema.name="Apache Kudu Runtime Base" \
+      org.label-schema.description="A base image that has all the runtime \
+        libraries for Kudu pre-installed." \
+      # Common labels.
+      org.label-schema.dockerfile=$DOCKERFILE \
+      org.label-schema.maintainer=$MAINTAINER \
+      org.label-schema.url=$URL \
+      org.label-schema.vcs-type=$VCS_TYPE \
+      org.label-schema.vcs-url=$VCS_URL \
+      org.label-schema.version=$VERSION
+
+#
+# ---- Dev ----
+# Builds a base image that has all the development libraries for Kudu pre-installed.
+#
+ARG BASE_OS
+FROM $BASE_OS as dev
+
+COPY ./docker/bootstrap-dev-env.sh /
+RUN ./bootstrap-dev-env.sh && rm bootstrap-dev-env.sh
+
+# Common label arguments.
+# VCS_REF is not specified to improve docker caching.
+ARG DOCKERFILE
+ARG MAINTAINER
+ARG URL
+ARG VCS_TYPE
+ARG VCS_URL
+ARG VERSION
+
+LABEL org.label-schema.name="Apache Kudu Development Base" \
+      org.label-schema.description="A base image that has all the development \
+        libraries for Kudu pre-installed." \
       # Common labels.
       org.label-schema.dockerfile=$DOCKERFILE \
       org.label-schema.maintainer=$MAINTAINER \
@@ -63,7 +90,7 @@ LABEL org.label-schema.name="Apache Kudu Base" \
 # This is done in its own stage so that docker can cache it and only
 # run it when thirdparty has changes.
 #
-FROM base AS thirdparty
+FROM dev AS thirdparty
 
 WORKDIR /kudu
 # We only copy the needed files for thirdparty so docker can handle caching.
@@ -111,9 +138,15 @@ LABEL name="Apache Kudu Thirdparty" \
 #
 FROM thirdparty AS build
 
-# TODO: Support other buildtypes.
 ARG BUILD_TYPE=release
+ARG LINK_TYPE=static
+ARG STRIP=1
 ARG PARALLEL=4
+# This is a common label argument, but also used in the build invocation.
+ARG VCS_REF
+
+# Use the bash shell for all RUN commands.
+SHELL ["/bin/bash", "-c"]
 
 WORKDIR /kudu
 # Copy the C++ build source.
@@ -132,12 +165,19 @@ ENV NO_REBUILD_THIRDPARTY=1
 RUN ../../build-support/enable_devtoolset.sh \
   ../../thirdparty/installed/common/bin/cmake \
   -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
+  -DKUDU_LINK=$LINK_TYPE \
+  -DKUDU_GIT_HASH=$VCS_REF \
   # The release build is massive with tests built.
   -DNO_TESTS=1 \
   ../.. \
   && make -j${PARALLEL} \
   # Install the client libraries for the python build to use.
-  && make install
+  # TODO: Use custom install location when the python build can be configured to use it.
+  && make install \
+  # Strip the binaries to reduce the images size.
+  && if [ "$STRIP" == "1" ]; then find "bin" -name "kudu*" -type f -exec strip {} \;; fi \
+  # Strip the client libraries to reduce the images size
+  && if [[ "$STRIP" == "1" ]]; then find "/usr/local" -name "libkudu*" -type f -exec strip {} \;; fi
 
 # Copy the java build source.
 COPY ./java /kudu/java
@@ -159,7 +199,6 @@ COPY . /kudu
 ARG DOCKERFILE
 ARG MAINTAINER
 ARG URL
-ARG VCS_REF
 ARG VCS_TYPE
 ARG VCS_URL
 ARG VERSION
@@ -167,6 +206,8 @@ ARG VERSION
 LABEL name="Apache Kudu Build" \
       description="An image that has the Kudu source code pre-built." \
       org.apache.kudu.build.type=$BUILD_TYPE \
+      org.apache.kudu.build.link=$LINK_TYPE \
+      org.apache.kudu.build.stripped=$STRIP \
       # Common labels.
       org.label-schema.dockerfile=$DOCKERFILE \
       org.label-schema.maintainer=$MAINTAINER \
@@ -178,9 +219,9 @@ LABEL name="Apache Kudu Build" \
 
 #
 # ---- Kudu ----
-# Builds a runtime image with the Kudu binaries and clients pre-installed.
+# Builds a runtime image with the Kudu binaries pre-installed.
 #
-FROM base AS kudu
+FROM runtime AS kudu
 
 ARG UID=1000
 ARG GID=1000
@@ -197,24 +238,7 @@ COPY --from=build \
 # Add to the binaries to the path.
 ENV PATH=$INSTALL_DIR/bin/:$PATH
 
-# Copy the python files and install.
-WORKDIR $INSTALL_DIR/python
-COPY --from=build /usr/local /usr/local/
-ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib64
-COPY --from=build /kudu/python/dist/kudu-python-*.tar.gz .
-RUN pip install kudu-python-*.tar.gz
-
-# Copy the Java application jars.
-WORKDIR $INSTALL_DIR/java
-COPY --from=build \
- /kudu/java/kudu-backup/build/libs/*.jar \
- /kudu/java/kudu-client-tools/build/libs/*.jar \
- /kudu/java/kudu-spark-tools/build/libs/*.jar \
- ./
-
 WORKDIR $INSTALL_DIR
-# Copy the lib files.
-COPY --from=build /kudu/build/latest/lib ./lib
 # Copy the web files.
 COPY --from=build /kudu/www ./www
 COPY ./docker/kudu-entrypoint.sh /

@@ -24,7 +24,8 @@
 !version.txt
 
 # Docker files.
-!docker/bootstrap-env.sh
+!docker/bootstrap-dev-env.sh
+!docker/bootstrap-runtime-env.sh
 !docker/kudu-entrypoint.sh
 
 # Docs files.
