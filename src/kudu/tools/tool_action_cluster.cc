@@ -125,6 +125,22 @@ DEFINE_bool(disable_intra_location_rebalancing, false,
             "replica distribution within each location. "
             "This setting is applicable to multi-location clusters only.");
 
+DEFINE_double(load_imbalance_threshold,
+              kudu::tools::Rebalancer::Config::kLoadImbalanceThreshold,
+              "The threshold for the per-table location load imbalance. "
+              "The threshold is used during the cross-location rebalancing "
+              "phase. If the measured cross-location load imbalance for a "
+              "table is greater than the specified threshold, the rebalancer "
+              "tries to move table's replicas to reduce the imbalance. "
+              "The recommended range for the threshold is [0.5, ...) with the "
+              "default value of 1.0. The threshold represents a policy "
+              "wrt what to prefer: either ideal balance of the cross-location "
+              "load on per-table basis (lower threshold value) or minimum "
+              "number of replica movements between locations "
+              "(greater threshold value). The default value is empirically "
+              "proven to be a good choice between 'ideal' and 'good enough' "
+              "replica distributions.");
+
 static bool ValidateMoveSingleReplicas(const char* flag_name,
                                        const string& flag_value) {
   const vector<string> allowed_values = { "auto", "enabled", "disabled" };
@@ -288,7 +304,8 @@ Status RunRebalance(const RunnerContext& context) {
       FLAGS_output_replica_distribution_details,
       !FLAGS_disable_policy_fixer,
       !FLAGS_disable_cross_location_rebalancing,
-      !FLAGS_disable_intra_location_rebalancing));
+      !FLAGS_disable_intra_location_rebalancing,
+      FLAGS_load_imbalance_threshold));
 
   // Print info on pre-rebalance distribution of replicas.
   RETURN_NOT_OK(rebalancer.PrintStats(cout));
@@ -378,6 +395,7 @@ unique_ptr<Mode> BuildClusterMode() {
         .AddOptionalParameter("disable_policy_fixer")
         .AddOptionalParameter("disable_cross_location_rebalancing")
         .AddOptionalParameter("disable_intra_location_rebalancing")
+        .AddOptionalParameter("load_imbalance_threshold")
         .AddOptionalParameter("max_moves_per_server")
         .AddOptionalParameter("max_run_time_sec")
         .AddOptionalParameter("max_staleness_interval_sec")

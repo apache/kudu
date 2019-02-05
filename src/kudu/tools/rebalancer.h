@@ -63,6 +63,8 @@ class Rebalancer {
  public:
   // Configuration parameters for the rebalancer aggregated into a struct.
   struct Config {
+    static constexpr double kLoadImbalanceThreshold = 1.0;
+
     Config(std::vector<std::string> master_addresses = {},
            std::vector<std::string> table_filters = {},
            size_t max_moves_per_server = 5,
@@ -72,7 +74,8 @@ class Rebalancer {
            bool output_replica_distribution_details = false,
            bool run_policy_fixer = true,
            bool run_cross_location_rebalancing = true,
-           bool run_intra_location_rebalancing = true);
+           bool run_intra_location_rebalancing = true,
+           double load_imbalance_threshold = kLoadImbalanceThreshold);
 
     // Kudu masters' RPC endpoints.
     std::vector<std::string> master_addresses;
@@ -108,18 +111,22 @@ class Rebalancer {
     // policy violations. Fixing placement policy violations involves moving
     // tablet replicas across different locations in the cluster.
     // This setting is applicable to multi-location clusters only.
-    bool run_policy_fixer = true;
+    bool run_policy_fixer;
 
     // In case of multi-location cluster, whether to move tablet replicas
     // between locations in attempt to spread tablet replicas among location
     // evenly (equalizing loads of locations throughout the cluster).
     // This setting is applicable to multi-location clusters only.
-    bool run_cross_location_rebalancing = true;
+    bool run_cross_location_rebalancing;
 
     // In case of multi-location cluster, whether to rebalance tablet replica
     // distribution within each location.
     // This setting is applicable to multi-location clusters only.
-    bool run_intra_location_rebalancing = true;
+    bool run_intra_location_rebalancing;
+
+    // The per-table location load imbalance threshold for the cross-location
+    // balancing algorithm.
+    double load_imbalance_threshold;
   };
 
   // Represents a concrete move of a replica from one tablet server to another.
@@ -353,10 +360,13 @@ class Rebalancer {
    public:
     // The 'max_moves_per_server' specifies the maximum number of operations
     // per tablet server (both the source and the destination are counted in).
+    // The 'load_imbalance_threshold' specified the threshold for the
+    // balancing algorithm used for finding the most optimal replica movements.
     // The 'deadline' specifies the deadline for the run, 'boost::none'
     // if no timeout is set.
     CrossLocationRunner(Rebalancer* rebalancer,
                         size_t max_moves_per_server,
+                        double load_imbalance_threshold,
                         boost::optional<MonoTime> deadline);
 
     RebalancingAlgo* algorithm() override {
@@ -395,9 +405,6 @@ class Rebalancer {
     Status GetNextMovesImpl(std::vector<ReplicaMove>* replica_moves) override;
 
     bool FindNextMove(ReplicaMove* move);
-
-    // An instance of the balancing algorithm.
-    LocationBalancingAlgo algorithm_;
 
     // Moves yet to schedule.
     MovesToSchedule moves_to_schedule_;
