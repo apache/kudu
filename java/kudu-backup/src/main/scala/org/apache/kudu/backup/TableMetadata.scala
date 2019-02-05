@@ -276,7 +276,7 @@ object TableMetadata {
     }
   }
 
-  def getCreateTableOptions(metadata: TableMetadataPB): CreateTableOptions = {
+  def getCreateTableOptionsWithoutRangePartitions(metadata: TableMetadataPB): CreateTableOptions = {
     val schema = getKuduSchema(metadata)
     val options = new CreateTableOptions()
     options.setNumReplicas(metadata.getNumReplicas)
@@ -287,12 +287,15 @@ object TableMetadata {
     val rangePartitionColumns =
       metadata.getPartitions.getRangePartitions.getColumnNamesList
     options.setRangePartitionColumns(rangePartitionColumns)
-    metadata.getPartitions.getRangePartitions.getBoundsList.asScala.foreach { b =>
-      val lower = getPartialRow(b.getLowerBoundsList.asScala, schema)
-      val upper = getPartialRow(b.getUpperBoundsList.asScala, schema)
-      options.addRangePartition(lower, upper)
-    }
     options
   }
 
+  def getRangeBoundPartialRows(metadata: TableMetadataPB): Seq[(PartialRow, PartialRow)] = {
+    val schema = getKuduSchema(metadata)
+    metadata.getPartitions.getRangePartitions.getBoundsList.asScala.map { b =>
+      val lower = getPartialRow(b.getLowerBoundsList.asScala, schema)
+      val upper = getPartialRow(b.getUpperBoundsList.asScala, schema)
+      (lower, upper)
+    }
+  }
 }

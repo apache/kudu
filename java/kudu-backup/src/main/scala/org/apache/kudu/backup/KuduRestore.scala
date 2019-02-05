@@ -24,9 +24,10 @@ import java.nio.file.Paths
 
 import com.google.common.io.CharStreams
 import com.google.protobuf.util.JsonFormat
-import org.apache.hadoop.fs.FileSystem
 import org.apache.hadoop.fs.{Path => HPath}
+
 import org.apache.kudu.backup.Backup.TableMetadataPB
+import org.apache.kudu.client.AlterTableOptions
 import org.apache.kudu.spark.kudu.KuduContext
 import org.apache.kudu.spark.kudu.KuduWriteOptions
 import org.apache.spark.sql.SparkSession
@@ -55,10 +56,7 @@ object KuduRestore {
       val restoreName = s"${metadata.getTableName}${options.tableSuffix}"
       val table =
         if (options.createTables) {
-          // Read the metadata and generate a schema.
-          val schema = TableMetadata.getKuduSchema(metadata)
-          val createTableOptions = TableMetadata.getCreateTableOptions(metadata)
-          context.createTable(restoreName, schema, createTableOptions)
+          createTableRangePartitionByRangePartition(restoreName, metadata, context)
         } else {
           context.syncClient.openTable(restoreName)
         }
@@ -92,6 +90,34 @@ object KuduRestore {
     val builder = TableMetadataPB.newBuilder()
     JsonFormat.parser().merge(json, builder)
     builder.build()
+  }
+
+  // Kudu isn't good at creating a lot of tablets at once, and by default tables may only be created
+  // with at most 60 tablets. Additional tablets can be added later by adding range partitions. So,
+  // to restore tables with more tablets than that, we need to create the table piece-by-piece. This
+  // does so in the simplest way: creating the table with the first range partition, if there is
+  // one, and then altering it to add the rest of the partitions, one partition at a time.
+  private def createTableRangePartitionByRangePartition(
+      restoreName: String,
+      metadata: TableMetadataPB,
+      context: KuduContext): Unit = {
+    // Create the table with the first range partition (or none if there are none).
+    val schema = TableMetadata.getKuduSchema(metadata)
+    val options = TableMetadata.getCreateTableOptionsWithoutRangePartitions(metadata)
+    val bounds = TableMetadata.getRangeBoundPartialRows(metadata)
+    bounds.headOption.foreach(bound => {
+      val (lower, upper) = bound
+      options.addRangePartition(lower, upper)
+    })
+    context.createTable(restoreName, schema, options)
+
+    // Add the rest of the range partitions through alters.
+    bounds.tail.foreach(bound => {
+      val (lower, upper) = bound
+      val options = new AlterTableOptions()
+      options.addRangePartition(lower, upper)
+      context.syncClient.alterTable(restoreName, options)
+    })
   }
 
   def main(args: Array[String]): Unit = {

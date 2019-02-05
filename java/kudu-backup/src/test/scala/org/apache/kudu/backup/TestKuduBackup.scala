@@ -22,11 +22,9 @@ import java.util
 
 import com.google.common.base.Objects
 import org.apache.commons.io.FileUtils
+
 import org.apache.kudu.client.PartitionSchema.HashBucketSchema
-import org.apache.kudu.client.CreateTableOptions
-import org.apache.kudu.client.KuduTable
-import org.apache.kudu.client.PartialRow
-import org.apache.kudu.client.PartitionSchema
+import org.apache.kudu.client._
 import org.apache.kudu.ColumnSchema
 import org.apache.kudu.Schema
 import org.apache.kudu.Type
@@ -42,7 +40,6 @@ import org.junit.Before
 import org.junit.Test
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-
 import scala.collection.JavaConverters._
 import scala.util.Random
 
@@ -133,6 +130,57 @@ class TestKuduBackup extends KuduTestSuite {
     val rdd2 =
       kuduContext.kuduRDD(ss.sparkContext, s"$table2Name-restore", List("key"))
     assertResult(numRows)(rdd2.count())
+  }
+
+  @Test
+  def testBackupAndRestoreTableWithManyPartitions(): Unit = {
+    val kNumPartitions = 100
+    val tableName = "many-partitions-table"
+
+    val options = new CreateTableOptions()
+      .setRangePartitionColumns(List("key").asJava)
+      .setNumReplicas(1)
+
+    // Add one range partition and create the table. Separate the range partition
+    // from the ones added later so there's a bounded, non-covered range.
+    val initialLower = schema.newPartialRow()
+    initialLower.addInt("key", -5)
+    val initialUpper = schema.newPartialRow()
+    initialUpper.addInt("key", -4)
+    options.addRangePartition(initialLower, initialUpper)
+    val table = kuduClient.createTable(tableName, schema, options)
+
+    // Add the rest of the partitions via alter.
+    for (i <- 0 to kNumPartitions) {
+      val alterOptions = new AlterTableOptions()
+      val lower = schema.newPartialRow()
+      lower.addInt("key", i)
+      val upper = schema.newPartialRow()
+      upper.addInt("key", i + 1)
+      alterOptions.addRangePartition(lower, upper)
+      kuduClient.alterTable(tableName, alterOptions)
+    }
+
+    // Insert some rows. Note that each row will go into a different range
+    // partition, and the initial partition will be empty.
+    insertRows(table, kNumPartitions)
+
+    // Now backup and restore the table.
+    backupAndRestore(tableName)
+  }
+
+  @Test
+  def testBackupAndRestoreTableWithNoRangePartitions(): Unit = {
+    val tableName = "only-hash-partitions-table"
+
+    val options = new CreateTableOptions()
+      .addHashPartitions(List("key").asJava, 2)
+      .setNumReplicas(1)
+    val table1 = kuduClient.createTable(tableName, schema, options)
+
+    insertRows(table1, 100)
+
+    backupAndRestore(tableName)
   }
 
   // TODO: Move to a Schema equals/equivalent method.
