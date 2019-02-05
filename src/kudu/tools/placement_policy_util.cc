@@ -75,6 +75,18 @@ Status FindBestReplicaToReplace(
   const auto& table_id = FindOrDie(tablets_info.tablet_to_table_id, tablet_id);
   const auto& table_info = FindOrDie(tablets_info.tables_info, table_id);
 
+  // The replication factor of 2 is a special case: any possible replica
+  // distribution is a violation of placement policy, and it's impossible
+  // to fix it regardless of number of locations in the cluster.
+  if (table_info.replication_factor == 2) {
+    return Status::ConfigurationError(Substitute(
+        "tablet $0 (table name '$1'): replica distribution cannot conform "
+        "with the placement policy constraints since its replication "
+        "factor is $2",
+        tablet_id, table_info.name,
+        table_info.replication_factor));
+  }
+
   // There are a few edge cases which are most likely to occur, so let's have
   // a special error message for those. In these cases there are too few
   // locations relative to the replication factor, so it's impossible to find
