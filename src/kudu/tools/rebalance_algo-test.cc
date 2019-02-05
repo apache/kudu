@@ -220,7 +220,7 @@ void VerifyLocationRebalancingMoves(const TestClusterConfig& cfg) {
   {
     ClusterInfo ci;
     ClusterConfigToClusterInfo(cfg, &ci);
-    LocationBalancingAlgo algo;
+    LocationBalancingAlgo algo(1.0);
     ASSERT_OK(algo.GetNextMoves(ci, 0, &moves));
   }
   switch (cfg.ref_comparison_options.moves_ordering) {

@@ -403,6 +403,10 @@ Status TwoDimensionalGreedyAlgo::GetMinMaxLoadedServers(
   return Status::OK();
 }
 
+LocationBalancingAlgo::LocationBalancingAlgo(double load_imbalance_threshold)
+    : load_imbalance_threshold_(load_imbalance_threshold) {
+}
+
 Status LocationBalancingAlgo::GetNextMove(
     const ClusterInfo& cluster_info,
     boost::optional<TableReplicaMove>* move) {
@@ -499,7 +503,7 @@ Status LocationBalancingAlgo::GetNextMove(
 
 bool LocationBalancingAlgo::IsBalancingNeeded(
     const TableByLoadImbalance& imbalance_info,
-    string* most_imbalanced_table_id) {
+    string* most_imbalanced_table_id) const {
   if (PREDICT_FALSE(VLOG_IS_ON(1))) {
     ostringstream ss;
     ss << "Table imbalance report: " << endl;
@@ -517,18 +521,16 @@ bool LocationBalancingAlgo::IsBalancingNeeded(
   // Evaluate the maximum existing imbalance: is it possible to move replicas
   // between tablet servers in different locations to make the skew less?
   //
-  // TODO(aserbin): detect 'good enough' vs ideal cases, like (b) vs (a) in
-  //                the class-wide comment. In other words, find the minimum
-  //                load imbalance down to which it makes sense to try
-  //                cross-location rebalancing. Probably, it should be a policy
-  //                wrt what to prefer: ideal location-wide balance or minimum
-  //                number of replica moves between locations?
+  // Empirically, the imbalance threshold is to detect 'good enough' vs 'ideal'
+  // cases, like (b) vs (a) in the class-wide comment. In other words, this
+  // delta if the minimum load imbalance down to which it makes sense to try
+  // cross-location rebalancing.
   //
   // The information on the most imbalanced table is in the last element
   // of the map.
   const auto it = imbalance_info.crbegin();
   const auto imbalance = it->first;
-  if (imbalance > 1) {
+  if (imbalance > load_imbalance_threshold_) {
     *most_imbalanced_table_id = it->second;
     return true;
   }

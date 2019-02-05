@@ -89,7 +89,8 @@ Rebalancer::Config::Config(
     bool output_replica_distribution_details,
     bool run_policy_fixer,
     bool run_cross_location_rebalancing,
-    bool run_intra_location_rebalancing)
+    bool run_intra_location_rebalancing,
+    double load_imbalance_threshold)
     : master_addresses(std::move(master_addresses)),
       table_filters(std::move(table_filters)),
       max_moves_per_server(max_moves_per_server),
@@ -99,7 +100,8 @@ Rebalancer::Config::Config(
       output_replica_distribution_details(output_replica_distribution_details),
       run_policy_fixer(run_policy_fixer),
       run_cross_location_rebalancing(run_cross_location_rebalancing),
-      run_intra_location_rebalancing(run_intra_location_rebalancing) {
+      run_intra_location_rebalancing(run_intra_location_rebalancing),
+      load_imbalance_threshold(load_imbalance_threshold) {
   DCHECK_GE(max_moves_per_server, 0);
 }
 
@@ -225,7 +227,10 @@ Status Rebalancer::Run(RunStatus* result_status, size_t* moves_count) {
     if (config_.run_cross_location_rebalancing) {
       // Run the rebalancing across locations (inter-location rebalancing).
       LOG(INFO) << "running cross-location rebalancing";
-      CrossLocationRunner runner(this, config_.max_moves_per_server, deadline);
+      CrossLocationRunner runner(this,
+                                 config_.max_moves_per_server,
+                                 config_.load_imbalance_threshold,
+                                 deadline);
       RETURN_NOT_OK(runner.Init(config_.master_addresses));
       RETURN_NOT_OK(RunWith(&runner, result_status));
       moves_count_total += runner.moves_count();
@@ -1400,11 +1405,12 @@ Rebalancer::IntraLocationRunner::IntraLocationRunner(
       location_(std::move(location)) {
 }
 
-Rebalancer::CrossLocationRunner::CrossLocationRunner(
-    Rebalancer* rebalancer,
+Rebalancer::CrossLocationRunner::CrossLocationRunner(Rebalancer* rebalancer,
     size_t max_moves_per_server,
+    double load_imbalance_threshold,
     boost::optional<MonoTime> deadline)
-    : AlgoBasedRunner(rebalancer, max_moves_per_server, std::move(deadline)) {
+    : AlgoBasedRunner(rebalancer, max_moves_per_server, std::move(deadline)),
+      algorithm_(load_imbalance_threshold) {
 }
 
 Rebalancer::PolicyFixer::PolicyFixer(

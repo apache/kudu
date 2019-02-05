@@ -254,6 +254,9 @@ class TwoDimensionalGreedyAlgo : public RebalancingAlgo {
 // We want to move replicas to make the distribution (c) more balanced;
 // 2 movements gives us the 'ideal' location-wise replica placement.
 class LocationBalancingAlgo : public RebalancingAlgo {
+ public:
+  explicit LocationBalancingAlgo(double load_imbalance_threshold);
+
  protected:
   Status GetNextMove(const ClusterInfo& cluster_info,
                      boost::optional<TableReplicaMove>* move) override;
@@ -266,9 +269,8 @@ class LocationBalancingAlgo : public RebalancingAlgo {
   // if rebalancing is needed, 'false' otherwise. Upon returning 'true',
   // the identifier of the most cross-location imbalanced table is output into
   // the 'most_imbalanced_table_id' parameter (which must not be null).
-  static bool IsBalancingNeeded(
-      const TableByLoadImbalance& imbalance_info,
-      std::string* most_imbalanced_table_id);
+  bool IsBalancingNeeded(const TableByLoadImbalance& imbalance_info,
+                         std::string* most_imbalanced_table_id) const;
 
   // Given the set of the most and the least table-wise loaded locations, choose
   // the source and destination tablet server to move a replica of the specified
@@ -280,6 +282,8 @@ class LocationBalancingAlgo : public RebalancingAlgo {
       const std::vector<std::string>& loc_loaded_most,
       const ClusterInfo& cluster_info,
       boost::optional<TableReplicaMove>* move);
+
+  const double load_imbalance_threshold_;
 };
 
 } // namespace tools
