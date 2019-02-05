@@ -111,6 +111,13 @@ DEFINE_bool(log_block_manager_test_hole_punching, true,
 TAG_FLAG(log_block_manager_test_hole_punching, advanced);
 TAG_FLAG(log_block_manager_test_hole_punching, unsafe);
 
+DEFINE_bool(log_block_manager_delete_dead_container, false,
+            "When enabled, full and dead log block containers will be deleted "
+            "at runtime, which can potentially help improving log block manager "
+            "startup time");
+TAG_FLAG(log_block_manager_delete_dead_container, advanced);
+TAG_FLAG(log_block_manager_delete_dead_container, experimental);
+
 METRIC_DEFINE_gauge_uint64(server, log_block_manager_bytes_under_management,
                            "Bytes Under Management",
                            kudu::MetricUnit::kBytes,
@@ -548,7 +555,8 @@ class LogBlockContainer: public RefCountedThreadSafe<LogBlockContainer> {
   //    when the WritableBlock was finalized, but the live block counter only
   //    reflects the new block when it is closed.
   bool check_death_condition() const {
-    return (full() && live_blocks() == 0 && blocks_being_written() == 0);
+    return (full() && live_blocks() == 0 && blocks_being_written() == 0 &&
+            FLAGS_log_block_manager_delete_dead_container);
   }
 
   // Tries to mark the container as 'dead', which means it will be deleted

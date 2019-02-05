@@ -77,6 +77,7 @@ using strings::Substitute;
 
 DECLARE_bool(cache_force_single_shard);
 DECLARE_bool(crash_on_eio);
+DECLARE_bool(log_block_manager_delete_dead_container);
 DECLARE_double(env_inject_eio);
 DECLARE_double(log_container_excess_space_before_cleanup_fraction);
 DECLARE_double(log_container_live_metadata_before_compact_ratio);
@@ -1751,6 +1752,9 @@ TEST_F(LogBlockManagerTest, TestAbortBlock) {
 }
 
 TEST_F(LogBlockManagerTest, TestDeleteDeadContainersByDeletionTransaction) {
+  // Enable deleting full and dead containers at runtime.
+  FLAGS_log_block_manager_delete_dead_container = true;
+
   const auto TestProcess = [&] (int block_num) {
     ASSERT_GT(block_num, 0);
     MetricRegistry registry;
@@ -1870,6 +1874,9 @@ TEST_F(LogBlockManagerTest, TestDeleteDeadContainersByDeletionTransaction) {
 // Test for KUDU-2665 to ensure that once the container is full and has no live
 // blocks but with a reference by WritableBlock, it will not be deleted.
 TEST_F(LogBlockManagerTest, TestDoNotDeleteFakeDeadContainer) {
+  // Enable deleting full and dead containers at runtime.
+  FLAGS_log_block_manager_delete_dead_container = true;
+
   // Lower the max container size.
   FLAGS_log_container_max_size = 64 * 1024;
 
@@ -1933,6 +1940,9 @@ TEST_F(LogBlockManagerTest, TestDoNotDeleteFakeDeadContainer) {
 }
 
 TEST_F(LogBlockManagerTest, TestHalfPresentContainer) {
+  // Enable deleting full and dead containers at runtime.
+  FLAGS_log_block_manager_delete_dead_container = true;
+
   BlockId block_id;
   string data_file_name;
   string metadata_file_name;
