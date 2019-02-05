@@ -376,7 +376,7 @@ public abstract class KuduRpc<R> {
     // Cheating a bit, we're not actually logging but we'll augment the information provided by
     // this method if DEBUG is enabled.
     if (LOG.isDebugEnabled()) {
-      buf.append(", ").append(deferred);
+      buf.append(", deferred=").append(deferred);
     }
     buf.append(')');
     return buf.toString();

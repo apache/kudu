@@ -33,26 +33,24 @@ class RpcTraceFrame {
     SEND_TO_SERVER {
       @Override
       void appendToStringBuilder(RpcTraceFrame trace, StringBuilder sb) {
-        sb.append("sending RPC to server ");
-        sb.append(trace.getServer().getUuid());
+        sb.append(String.format("sending RPC to server %s",
+                                trace.getServer().getUuid()));
       }
     },
     // Just after parsing the response from the server.
     RECEIVE_FROM_SERVER {
       @Override
       void appendToStringBuilder(RpcTraceFrame trace, StringBuilder sb) {
-        sb.append("received from server ");
-        sb.append(trace.getServer().getUuid());
-        sb.append(" response ");
-        sb.append(trace.getStatus());
+        sb.append(String.format("received response from server %s: %s",
+                                trace.getServer().getUuid(),
+                                trace.getStatus()));
       }
     },
     // Just before sleeping and then retrying.
     SLEEP_THEN_RETRY {
       @Override
       void appendToStringBuilder(RpcTraceFrame trace, StringBuilder sb) {
-        sb.append("delaying RPC due to ");
-        sb.append(trace.getStatus());
+        sb.append(String.format("delaying RPC due to: %s", trace.getStatus()));
       }
     },
     // Waiting for a new authn token to re-send the request.
@@ -67,14 +65,15 @@ class RpcTraceFrame {
     QUERY_MASTER {
       @Override
       void appendToStringBuilder(RpcTraceFrame trace, StringBuilder sb) {
-        sb.append("querying master");
+        sb.append("refreshing cache from master");
       }
     },
     // Once the trace becomes too large, will be the last trace object in the list.
     TRACE_TRUNCATED {
       @Override
       void appendToStringBuilder(RpcTraceFrame trace, StringBuilder sb) {
-        sb.append("trace too long, truncated");
+        sb.append(String.format("too many traces: truncated at %d traces",
+                                KuduRpc.MAX_TRACES_SIZE));
       }
     };
 
@@ -135,9 +134,7 @@ class RpcTraceFrame {
       sb.append("ms] ");
 
       if (!rootMethod.equals(trace.getRpcMethod())) {
-        sb.append("Sub rpc: ");
-        sb.append(trace.getRpcMethod());
-        sb.append(" ");
+        sb.append(String.format("Sub RPC %s: ", trace.getRpcMethod()));
       }
 
       trace.getAction().appendToStringBuilder(trace, sb);

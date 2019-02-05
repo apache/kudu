@@ -18,6 +18,7 @@ package org.apache.kudu.client;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 import java.util.List;
@@ -64,30 +65,30 @@ public class TestRpcTraces {
     // Son's daughter => son => parent.
     RpcTraceFrame trace = getTrace();
     sonsDaughter.addTrace(trace);
-    assertTrue(son.getImmutableTraces().get(0) == trace);
+    assertSame(trace, son.getImmutableTraces().get(0));
     assertTrue(parent.getImmutableTraces().get(0) == trace);
     assertTrue(daughter.getImmutableTraces().isEmpty());
 
     // Son => parent.
     trace = getTrace();
     son.addTrace(trace);
-    assertTrue(son.getImmutableTraces().get(1) == trace);
-    assertTrue(parent.getImmutableTraces().get(1) == trace);
+    assertSame(trace, son.getImmutableTraces().get(1));
+    assertSame(trace, parent.getImmutableTraces().get(1));
     assertTrue(daughter.getImmutableTraces().isEmpty());
     assertEquals(1, sonsDaughter.getImmutableTraces().size());
 
     // Daughter => parent.
     trace = getTrace();
     daughter.addTrace(trace);
-    assertTrue(daughter.getImmutableTraces().get(0) == trace);
-    assertTrue(parent.getImmutableTraces().get(2) == trace);
+    assertSame(trace, daughter.getImmutableTraces().get(0));
+    assertSame(trace, parent.getImmutableTraces().get(2));
     assertEquals(2, son.getImmutableTraces().size());
     assertEquals(1, sonsDaughter.getImmutableTraces().size());
 
     // Parent alone.
     trace = getTrace();
     parent.addTrace(trace);
-    assertTrue(parent.getImmutableTraces().get(3) == trace);
+    assertSame(trace, parent.getImmutableTraces().get(3));
     assertEquals(1, daughter.getImmutableTraces().size());
     assertEquals(2, son.getImmutableTraces().size());
     assertEquals(1, sonsDaughter.getImmutableTraces().size());

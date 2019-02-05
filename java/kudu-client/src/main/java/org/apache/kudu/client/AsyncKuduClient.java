@@ -1647,7 +1647,7 @@ public class AsyncKuduClient implements AutoCloseable {
     if (request.attempt > MAX_RPC_ATTEMPTS) {
       message = "too many attempts: ";
     } else {
-      message = "can not complete before timeout: ";
+      message = "cannot complete before timeout: ";
     }
     Status statusTimedOut = Status.TimedOut(message + request);
     LOG.debug("Cannot continue with RPC because of: {}", statusTimedOut);
