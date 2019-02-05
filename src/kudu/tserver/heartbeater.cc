@@ -583,8 +583,9 @@ void Heartbeater::Thread::RunThread() {
     const auto& s = DoHeartbeat(&error, &error_status);
     if (!s.ok()) {
       const auto& err_msg = s.ToString();
-      LOG(WARNING) << Substitute("Failed to heartbeat to $0: $1",
-                                 master_address_.ToString(), err_msg);
+      KLOG_EVERY_N_SECS(WARNING, 60)
+          << Substitute("Failed to heartbeat to $0 ($1 consecutive failures): $2",
+                        master_address_.ToString(), consecutive_failed_heartbeats_, err_msg);
       consecutive_failed_heartbeats_++;
       // If we encountered a network error (e.g., connection
       // refused), try reconnecting.
