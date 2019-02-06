@@ -16,7 +16,7 @@
 // under the License.
 
 [[release_notes]]
-= Apache Kudu 1.9.0 Release Notes
+= Apache Kudu 1.10.0 Release Notes
 
 :author: Kudu Team
 :imagesdir: ./images
@@ -28,7 +28,7 @@
 :sectlinks:
 :experimental:
 
-[[rn_1.9.0_upgrade_notes]]
+[[rn_1.10.0_upgrade_notes]]
 == Upgrade Notes
 
 * Flume 1.8+ requires Java 8 at runtime even though the Kudu Flume integration
@@ -39,77 +39,77 @@
   is Java 7 compatible. Hadoop 3.1 is the default dependency version as of
   Kudu 1.8.0.
 
-[[rn_1.9.0_obsoletions]]
+[[rn_1.10.0_obsoletions]]
 == Obsoletions
 
 
-[[rn_1.9.0_deprecations]]
+[[rn_1.10.0_deprecations]]
 == Deprecations
 
 * Support for Java 7 has been deprecated since Kudu 1.5.0 and may be removed in
   the next major release.
 
-[[rn_1.9.0_new_features]]
+[[rn_1.10.0_new_features]]
 == New features
 
 
-[[rn_1.9.0_improvements]]
+[[rn_1.10.0_improvements]]
 == Optimizations and improvements
 
 
-[[rn_1.9.0_fixed_issues]]
+[[rn_1.10.0_fixed_issues]]
 == Fixed Issues
 
 
-[[rn_1.9.0_wire_compatibility]]
+[[rn_1.10.0_wire_compatibility]]
 == Wire Protocol compatibility
 
-Kudu 1.9.0 is wire-compatible with previous versions of Kudu:
+Kudu 1.10.0 is wire-compatible with previous versions of Kudu:
 
-* Kudu 1.9 clients may connect to servers running Kudu 1.0 or later. If the client uses
+* Kudu 1.10 clients may connect to servers running Kudu 1.0 or later. If the client uses
   features that are not available on the target server, an error will be returned.
-* Rolling upgrade between Kudu 1.8 and Kudu 1.9 servers is believed to be possible
+* Rolling upgrade between Kudu 1.9 and Kudu 1.10 servers is believed to be possible
   though has not been sufficiently tested. Users are encouraged to shut down all nodes
   in the cluster, upgrade the software, and then restart the daemons on the new version.
-* Kudu 1.0 clients may connect to servers running Kudu 1.9 with the exception of the
+* Kudu 1.0 clients may connect to servers running Kudu 1.10 with the exception of the
   below-mentioned restrictions regarding secure clusters.
 
 The authentication features introduced in Kudu 1.3 place the following limitations
-on wire compatibility between Kudu 1.9 and versions earlier than 1.3:
+on wire compatibility between Kudu 1.10 and versions earlier than 1.3:
 
-* If a Kudu 1.9 cluster is configured with authentication or encryption set to "required",
+* If a Kudu 1.10 cluster is configured with authentication or encryption set to "required",
   clients older than Kudu 1.3 will be unable to connect.
-* If a Kudu 1.9 cluster is configured with authentication and encryption set to "optional"
+* If a Kudu 1.10 cluster is configured with authentication and encryption set to "optional"
   or "disabled", older clients will still be able to connect.
 
-[[rn_1.9.0_incompatible_changes]]
-== Incompatible Changes in Kudu 1.9.0
+[[rn_1.10.0_incompatible_changes]]
+== Incompatible Changes in Kudu 1.10.0
 
 
-[[rn_1.9.0_client_compatibility]]
+[[rn_1.10.0_client_compatibility]]
 === Client Library Compatibility
 
-* The Kudu 1.9 Java client library is API- and ABI-compatible with Kudu 1.8. Applications
-  written against Kudu 1.8 will compile and run against the Kudu 1.9 client library and
+* The Kudu 1.10 Java client library is API- and ABI-compatible with Kudu 1.9. Applications
+  written against Kudu 1.9 will compile and run against the Kudu 1.10 client library and
   vice-versa.
 
-* The Kudu 1.9 {cpp} client is API- and ABI-forward-compatible with Kudu 1.8.
-  Applications written and compiled against the Kudu 1.8 client library will run without
-  modification against the Kudu 1.9 client library. Applications written and compiled
-  against the Kudu 1.9 client library will run without modification against the Kudu 1.7
+* The Kudu 1.9 {cpp} client is API- and ABI-forward-compatible with Kudu 1.9.
+  Applications written and compiled against the Kudu 1.9 client library will run without
+  modification against the Kudu 1.10 client library. Applications written and compiled
+  against the Kudu 1.10 client library will run without modification against the Kudu 1.9
   client library.
 
-* The Kudu 1.9 Python client is API-compatible with Kudu 1.8. Applications
-  written against Kudu 1.7 will continue to run against the Kudu 1.9 client
+* The Kudu 1.10 Python client is API-compatible with Kudu 1.9. Applications
+  written against Kudu 1.9 will continue to run against the Kudu 1.10 client
   and vice-versa.
 
-[[rn_1.9.0_known_issues]]
+[[rn_1.10.0_known_issues]]
 == Known Issues and Limitations
 
 Please refer to the link:known_issues.html[Known Issues and Limitations] section of the
 documentation.
 
-[[rn_1.9.0_contributors]]
+[[rn_1.10.0_contributors]]
 == Contributors
 
 [[resources_and_next_steps]]

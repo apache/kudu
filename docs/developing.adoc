@@ -72,7 +72,7 @@ The following Maven `<dependency>` element is valid for the Apache Kudu public r
 <dependency>
   <groupId>org.apache.kudu</groupId>
   <artifactId>kudu-client</artifactId>
-  <version>1.9.0</version>
+  <version>1.10.0</version>
 </dependency>
 ----
 
@@ -106,7 +106,7 @@ on the link:http://kudu.apache.org/releases/[releases page].
 
 [source]
 ----
-spark-shell --packages org.apache.kudu:kudu-spark2_2.11:1.9.0
+spark-shell --packages org.apache.kudu:kudu-spark2_2.11:1.10.0
 ----
 
 then import kudu-spark and create a dataframe:
