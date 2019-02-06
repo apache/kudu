@@ -57,6 +57,7 @@ elif [[ -f "/usr/bin/apt-get" ]]; then
     krb5-admin-server \
     krb5-kdc \
     krb5-user \
+    libsasl2-2 \
     libsasl2-modules \
     libsasl2-modules-gssapi-mit \
     nscd \
