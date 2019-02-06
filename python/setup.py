@@ -51,7 +51,8 @@ def find_version():
     if not version_match:
         raise RuntimeError("Unable to parse version string " + version_file)
     version = version_match.group("version")
-    if "SNAPSHOT" in version_match.group("label"):
+    label = version_match.group("label")
+    if label is not None and "SNAPSHOT" in label:
         version += '.dev0'
     return version
 
