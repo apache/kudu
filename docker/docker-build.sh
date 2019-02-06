@@ -63,6 +63,10 @@
 #   REPOSITORY: Default: "apache/kudu"
 #     The repository string to use when tagging the image.
 #
+#   PUBLISH: Default: "0"
+#     If set to 1, the tagged images will be pushed to the docker repository.
+#     Only release versions can be published.
+#
 #   TAG_LATEST: Default: "1"
 #     If set to 1, adds a tag using `-latest` along with the
 #     versioned tag.
@@ -95,6 +99,7 @@ DEFAULT_OS="ubuntu:xenial"
 BASES=${BASES:="$DEFAULT_OS"}
 TARGETS=${TARGETS:="kudu"}
 REPOSITORY=${REPOSITORY:="apache/kudu"}
+PUBLISH=${PUBLISH:=0}
 TAG_LATEST=${TAG_LATEST:=1}
 TAG_HASH=${TAG_HASH:=0}
 DOCKER_CACHE_FROM=${DOCKER_CACHE_FROM:=""}
@@ -151,6 +156,7 @@ function get_tag() {
   echo "$REPOSITORY:$TAG"
 }
 
+TAGS=()
 for BASE_OS in $(echo "$BASES" | tr ',' '\n'); do
   # Generate the arguments to pass to the docker build.
   BUILD_ARGS=(
@@ -174,34 +180,57 @@ for BASE_OS in $(echo "$BASES" | tr ',' '\n'); do
     # Build the target and tag with the full tag.
     docker build "${BUILD_ARGS[@]}" -f "$ROOT/docker/Dockerfile" \
       --target "$TARGET" -t "$FULL_TAG" ${ROOT}
+    TAGS+=("$FULL_TAG")
 
     # If this is the default OS, also tag it without the OS-specific tag.
     if [[ "$BASE_OS" == "$DEFAULT_OS" ]]; then
-      docker tag "$FULL_TAG" "$(get_tag "$TARGET" "$VERSION_TAG" "")"
+      DEFAULT_OS_TAG=$(get_tag "$TARGET" "$VERSION_TAG" "")
+      docker tag "$FULL_TAG" "$DEFAULT_OS_TAG"
+      TAGS+=("$DEFAULT_OS_TAG")
     fi
 
     # Add the minor version tag if this is a release version.
     if [[ "$IS_RELEASE_VERSION" == "1" ]]; then
-      docker tag "$FULL_TAG" "$(get_tag "$TARGET" "$MINOR_VERSION_TAG" "$OS_TAG")"
+      MINOR_TAG=$(get_tag "$TARGET" "$MINOR_VERSION_TAG" "$OS_TAG")
+      docker tag "$FULL_TAG" "$MINOR_TAG"
+      TAGS+=("$MINOR_TAG")
+
       # Add the default OS tag.
       if [[ "$BASE_OS" == "$DEFAULT_OS" ]]; then
-        docker tag "$FULL_TAG" "$(get_tag "$TARGET" "$MINOR_VERSION_TAG" "")"
+        MINOR_DEFAULT_OS_TAG=$(get_tag "$TARGET" "$MINOR_VERSION_TAG" "")
+        docker tag "$FULL_TAG" "$MINOR_DEFAULT_OS_TAG"
+        TAGS+=("$MINOR_DEFAULT_OS_TAG")
       fi
     fi
 
     # Add the latest version tags.
     if [[ "$TAG_LATEST" == "1" ]]; then
-      docker tag "$FULL_TAG" "$(get_tag "$TARGET" "latest" "$OS_TAG")"
+      LATEST_TAG=$(get_tag "$TARGET" "latest" "$OS_TAG")
+      docker tag "$FULL_TAG" "$LATEST_TAG"
+      TAGS+=("$LATEST_TAG")
+
       # Add the default OS tag.
       if [[ "$BASE_OS" == "$DEFAULT_OS" ]]; then
-        docker tag "$FULL_TAG" "$(get_tag "$TARGET" "latest" "")"
+        LATEST_DEFAULT_OS_TAG=$(get_tag "$TARGET" "latest" "")
+        docker tag "$FULL_TAG" "$LATEST_DEFAULT_OS_TAG"
+        TAGS+=("$LATEST_DEFAULT_OS_TAG")
       fi
     fi
 
     # Remove the hash tags if the aren't wanted.
-    if [[ "$TAG_HASH" != "1" && "$IS_RELEASE_VERSION" ]]; then
+    if [[ "$TAG_HASH" != "1" && "$IS_RELEASE_VERSION" != "1" ]]; then
       HASH_TAG_PATTERN="$REPOSITORY:*$VCS_REF*"
       docker rmi $(docker images -q "$HASH_TAG_PATTERN" --format "{{.Repository}}:{{.Tag}}")
     fi
   done
 done
+
+if [[ "$PUBLISH" == 1 ]]; then
+  if [[ "$IS_RELEASE_VERSION" != "1" ]]; then
+    echo "ERROR: Only release versions can be published. Found version $VERSION ($VCS_REF)"
+    exit 1
+  fi
+  for TAG in "${TAGS[@]}"; do
+    docker push "${TAG}"
+  done
+fi
