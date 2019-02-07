@@ -15,19 +15,19 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#ifndef KUDU_TABLET_ALTER_SCHEMA_TRANSACTION_H_
-#define KUDU_TABLET_ALTER_SCHEMA_TRANSACTION_H_
+#pragma once
 
-#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <mutex>
 #include <string>
 
+#include <boost/optional/optional.hpp>
+
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/port.h"
+#include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/transactions/transaction.h"
 #include "kudu/tserver/tserver_admin.pb.h"
 #include "kudu/util/status.h"
@@ -52,13 +52,13 @@ class AlterSchemaTransactionState : public TransactionState {
                               const tserver::AlterSchemaRequestPB* request,
                               tserver::AlterSchemaResponsePB* response)
       : TransactionState(tablet_replica),
-        schema_(NULL),
+        schema_(nullptr),
         request_(request),
         response_(response) {
   }
 
-  const tserver::AlterSchemaRequestPB* request() const OVERRIDE { return request_; }
-  tserver::AlterSchemaResponsePB* response() const OVERRIDE { return response_; }
+  const tserver::AlterSchemaRequestPB* request() const override { return request_; }
+  tserver::AlterSchemaResponsePB* response() const override { return response_; }
 
   void set_schema(const Schema* schema) { schema_ = schema; }
   const Schema* schema() const { return schema_; }
@@ -81,15 +81,22 @@ class AlterSchemaTransactionState : public TransactionState {
   // Crashes if the lock was not already acquired.
   void ReleaseSchemaLock();
 
-  // Note: request_ and response_ are set to NULL after this method returns.
+  // Note: request_ and response_ are set to null after this method returns.
   void Finish() {
-    // Make the request NULL since after this transaction commits
+    // Make the request null since after this transaction commits
     // the request may be deleted at any moment.
-    request_ = NULL;
-    response_ = NULL;
+    request_ = nullptr;
+    response_ = nullptr;
   }
 
-  virtual std::string ToString() const OVERRIDE;
+  // Sets the fact that the alter had an error.
+  void SetError(const Status& s);
+
+  boost::optional<OperationResultPB> error() const {
+    return error_;
+  }
+
+  std::string ToString() const override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(AlterSchemaTransactionState);
@@ -103,35 +110,36 @@ class AlterSchemaTransactionState : public TransactionState {
 
   // The lock held on the tablet's schema_lock_.
   std::unique_lock<rw_semaphore> schema_lock_;
+
+  // The error result of this alter schema transaction. May be empty if the
+  // transaction hasn't been applied or if the alter succeeded.
+  boost::optional<OperationResultPB> error_;
 };
 
 // Executes the alter schema transaction,.
 class AlterSchemaTransaction : public Transaction {
  public:
-  AlterSchemaTransaction(std::unique_ptr<AlterSchemaTransactionState> tx_state,
+  AlterSchemaTransaction(std::unique_ptr<AlterSchemaTransactionState> state,
                          consensus::DriverType type);
 
-  virtual AlterSchemaTransactionState* state() OVERRIDE { return state_.get(); }
-  virtual const AlterSchemaTransactionState* state() const OVERRIDE { return state_.get(); }
+  AlterSchemaTransactionState* state() override { return state_.get(); }
+  const AlterSchemaTransactionState* state() const override { return state_.get(); }
 
-  void NewReplicateMsg(gscoped_ptr<consensus::ReplicateMsg>* replicate_msg) OVERRIDE;
+  void NewReplicateMsg(gscoped_ptr<consensus::ReplicateMsg>* replicate_msg) override;
 
   // Executes a Prepare for the alter schema transaction.
-  //
-  // TODO: need a schema lock?
-
-  virtual Status Prepare() OVERRIDE;
+  Status Prepare() override;
 
   // Starts the AlterSchemaTransaction by assigning it a timestamp.
-  virtual Status Start() OVERRIDE;
+  Status Start() override;
 
   // Executes an Apply for the alter schema transaction
-  virtual Status Apply(gscoped_ptr<consensus::CommitMsg>* commit_msg) OVERRIDE;
+  Status Apply(gscoped_ptr<consensus::CommitMsg>* commit_msg) override;
 
   // Actually commits the transaction.
-  virtual void Finish(TransactionResult result) OVERRIDE;
+  void Finish(TransactionResult result) override;
 
-  virtual std::string ToString() const OVERRIDE;
+  std::string ToString() const override;
 
  private:
   std::unique_ptr<AlterSchemaTransactionState> state_;
@@ -141,4 +149,3 @@ class AlterSchemaTransaction : public Transaction {
 }  // namespace tablet
 }  // namespace kudu
 
-#endif /* KUDU_TABLET_ALTER_SCHEMA_TRANSACTION_H_ */

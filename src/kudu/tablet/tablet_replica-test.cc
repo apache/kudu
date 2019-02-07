@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/tablet/tablet_replica.h"
+
 #include <cstdint>
 #include <memory>
 #include <ostream>
@@ -35,6 +37,7 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus_meta_manager.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_anchor_registry.h"
@@ -49,20 +52,21 @@
 #include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/result_tracker.h"
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet.h"
+#include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/tablet_metadata.h"
-#include "kudu/tablet/tablet_replica.h"
 #include "kudu/tablet/tablet_replica_mm_ops.h"
+#include "kudu/tablet/transactions/alter_schema_transaction.h"
 #include "kudu/tablet/transactions/transaction.h"
 #include "kudu/tablet/transactions/transaction_driver.h"
 #include "kudu/tablet/transactions/transaction_tracker.h"
 #include "kudu/tablet/transactions/write_transaction.h"
 #include "kudu/tserver/tserver.pb.h"
+#include "kudu/tserver/tserver_admin.pb.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/maintenance_manager.h"
 #include "kudu/util/metrics.h"
@@ -78,10 +82,14 @@ METRIC_DECLARE_entity(tablet);
 DECLARE_int32(flush_threshold_mb);
 
 namespace kudu {
+
+class MemTracker;
+
 namespace tablet {
 
 using consensus::CommitMsg;
 using consensus::ConsensusBootstrapInfo;
+using consensus::ConsensusMetadata;
 using consensus::ConsensusMetadataManager;
 using consensus::OpId;
 using consensus::RECEIVED_OPID;
@@ -93,9 +101,12 @@ using log::LogOptions;
 using pb_util::SecureDebugString;
 using pb_util::SecureShortDebugString;
 using rpc::Messenger;
+using rpc::ResultTracker;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
+using tserver::AlterSchemaRequestPB;;
+using tserver::AlterSchemaResponsePB;;
 using tserver::WriteRequestPB;
 using tserver::WriteResponsePB;
 
@@ -111,17 +122,8 @@ class TabletReplicaTest : public KuduTabletTest {
       delete_counter_(0) {
   }
 
-  virtual void SetUp() OVERRIDE {
-    KuduTabletTest::SetUp();
-
-    ASSERT_OK(ThreadPoolBuilder("prepare").Build(&prepare_pool_));
-    ASSERT_OK(ThreadPoolBuilder("apply").Build(&apply_pool_));
-    ASSERT_OK(ThreadPoolBuilder("raft").Build(&raft_pool_));
-
-    rpc::MessengerBuilder builder(CURRENT_TEST_NAME());
-    ASSERT_OK(builder.Build(&messenger_));
-
-    metric_entity_ = METRIC_ENTITY_tablet.Instantiate(&metric_registry_, "test-tablet");
+  void SetUpReplica(bool new_replica = true) {
+    ASSERT_TRUE(tablet_replica_.get() == nullptr);
 
     RaftConfigPB config;
     config.set_opid_index(consensus::kInvalidOpIdIndex);
@@ -132,15 +134,15 @@ class TabletReplicaTest : public KuduTabletTest {
     config_peer->mutable_last_known_addr()->set_port(0);
     config_peer->set_member_type(RaftPeerPB::VOTER);
 
-    scoped_refptr<ConsensusMetadataManager> cmeta_manager(
-        new ConsensusMetadataManager(tablet()->metadata()->fs_manager()));
 
-    ASSERT_OK(cmeta_manager->Create(tablet()->tablet_id(), config, consensus::kMinimumTerm));
+    if (new_replica) {
+      ASSERT_OK(cmeta_manager_->Create(tablet()->tablet_id(), config, consensus::kMinimumTerm));
+    }
 
     // "Bootstrap" and start the TabletReplica.
     tablet_replica_.reset(
       new TabletReplica(tablet()->shared_metadata(),
-                        cmeta_manager,
+                        cmeta_manager_,
                         *config_peer,
                         apply_pool_.get(),
                         Bind(&TabletReplicaTest::TabletReplicaStateChangedCallback,
@@ -154,6 +156,22 @@ class TabletReplicaTest : public KuduTabletTest {
     tablet_replica_->log_anchor_registry_ = tablet()->log_anchor_registry_;
   }
 
+  virtual void SetUp() override {
+    KuduTabletTest::SetUp();
+
+    ASSERT_OK(ThreadPoolBuilder("prepare").Build(&prepare_pool_));
+    ASSERT_OK(ThreadPoolBuilder("apply").Build(&apply_pool_));
+    ASSERT_OK(ThreadPoolBuilder("raft").Build(&raft_pool_));
+
+    rpc::MessengerBuilder builder(CURRENT_TEST_NAME());
+    ASSERT_OK(builder.Build(&messenger_));
+
+    cmeta_manager_.reset(new ConsensusMetadataManager(fs_manager()));
+
+    metric_entity_ = METRIC_ENTITY_tablet.Instantiate(&metric_registry_, "test-tablet");
+    NO_FATALS(SetUpReplica());
+  }
+
   Status StartReplica(const ConsensusBootstrapInfo& info) {
     scoped_refptr<Log> log;
     RETURN_NOT_OK(Log::Open(LogOptions(), fs_manager(), tablet()->tablet_id(),
@@ -164,7 +182,7 @@ class TabletReplicaTest : public KuduTabletTest {
                                   tablet(),
                                   clock(),
                                   messenger_,
-                                  scoped_refptr<rpc::ResultTracker>(),
+                                  scoped_refptr<ResultTracker>(),
                                   log,
                                   prepare_pool_.get());
   }
@@ -179,22 +197,55 @@ class TabletReplicaTest : public KuduTabletTest {
     LOG(INFO) << "Tablet replica state changed for tablet " << tablet_id << ". Reason: " << reason;
   }
 
-  virtual void TearDown() OVERRIDE {
+  virtual void TearDown() override {
     tablet_replica_->Shutdown();
     prepare_pool_->Shutdown();
     apply_pool_->Shutdown();
     KuduTabletTest::TearDown();
   }
 
+  void RestartReplica() {
+    tablet_replica_->Shutdown();
+    tablet_replica_.reset();
+    NO_FATALS(SetUpReplica(/*new_replica=*/ false));
+    scoped_refptr<ConsensusMetadata> cmeta;
+    ASSERT_OK(cmeta_manager_->Load(tablet_replica_->tablet_id(), &cmeta));
+    shared_ptr<Tablet> tablet;
+    scoped_refptr<Log> log;
+    ConsensusBootstrapInfo bootstrap_info;
+
+    tablet_replica_->SetBootstrapping();
+    ASSERT_OK(BootstrapTablet(tablet_replica_->tablet_metadata(),
+                              cmeta->CommittedConfig(),
+                              clock(),
+                              shared_ptr<MemTracker>(),
+                              scoped_refptr<ResultTracker>(),
+                              &metric_registry_,
+                              tablet_replica_,
+                              &tablet,
+                              &log,
+                              tablet_replica_->log_anchor_registry(),
+                              &bootstrap_info));
+    ASSERT_OK(tablet_replica_->Start(bootstrap_info,
+                                     tablet,
+                                     clock(),
+                                     messenger_,
+                                     scoped_refptr<ResultTracker>(),
+                                     log,
+                                     prepare_pool_.get()));
+  }
+
  protected:
   // Generate monotonic sequence of key column integers.
-  Status GenerateSequentialInsertRequest(WriteRequestPB* write_req) {
-    Schema schema(GetTestSchema());
+  Status GenerateSequentialInsertRequest(const Schema& schema,
+                                         WriteRequestPB* write_req) {
     write_req->set_tablet_id(tablet()->tablet_id());
-    CHECK_OK(SchemaToPB(schema, write_req->mutable_schema()));
+    RETURN_NOT_OK(SchemaToPB(schema, write_req->mutable_schema()));
 
     KuduPartialRow row(&schema);
-    CHECK_OK(row.SetInt32("key", insert_counter_++));
+    for (int i = 0; i < schema.num_columns(); i++) {
+      RETURN_NOT_OK(row.SetInt32(i, insert_counter_++));
+    }
 
     RowOperationsPBEncoder enc(write_req->mutable_row_operations());
     enc.Add(RowOperationsPB::INSERT, row);
@@ -217,9 +268,9 @@ class TabletReplicaTest : public KuduTabletTest {
     return Status::OK();
   }
 
-  Status ExecuteWriteAndRollLog(TabletReplica* tablet_replica, const WriteRequestPB& req) {
-    gscoped_ptr<WriteResponsePB> resp(new WriteResponsePB());
-    unique_ptr<WriteTransactionState> tx_state(new WriteTransactionState(tablet_replica,
+  Status ExecuteWrite(TabletReplica* replica, const WriteRequestPB& req) {
+    unique_ptr<WriteResponsePB> resp(new WriteResponsePB());
+    unique_ptr<WriteTransactionState> tx_state(new WriteTransactionState(replica,
                                                                          &req,
                                                                          nullptr, // No RequestIdPB
                                                                          resp.get()));
@@ -228,18 +279,50 @@ class TabletReplicaTest : public KuduTabletTest {
     tx_state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
         new LatchTransactionCompletionCallback<WriteResponsePB>(&rpc_latch, resp.get())));
 
-    CHECK_OK(tablet_replica->SubmitWrite(std::move(tx_state)));
+    RETURN_NOT_OK(replica->SubmitWrite(std::move(tx_state)));
     rpc_latch.Wait();
     CHECK(!resp->has_error())
         << "\nReq:\n" << SecureDebugString(req) << "Resp:\n" << SecureDebugString(*resp);
+    return Status::OK();
+  }
+
+  Status UpdateSchema(const SchemaPB& schema, int schema_version) {
+    AlterSchemaRequestPB alter;
+    alter.set_dest_uuid(tablet()->metadata()->fs_manager()->uuid());
+    alter.set_tablet_id(tablet()->tablet_id());
+    alter.set_schema_version(schema_version);
+    *alter.mutable_schema() = schema;
+    return ExecuteAlter(tablet_replica_.get(), alter);
+  }
+
+  Status ExecuteAlter(TabletReplica* replica, const AlterSchemaRequestPB& req) {
+    unique_ptr<AlterSchemaResponsePB> resp(new AlterSchemaResponsePB());
+    unique_ptr<AlterSchemaTransactionState> tx_state(
+        new AlterSchemaTransactionState(replica, &req, resp.get()));
+    CountDownLatch rpc_latch(1);
+    tx_state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
+          new LatchTransactionCompletionCallback<AlterSchemaResponsePB>(&rpc_latch, resp.get())));
+    RETURN_NOT_OK(replica->SubmitAlterSchema(std::move(tx_state)));
+    rpc_latch.Wait();
+    CHECK(!resp->has_error())
+        << "\nReq:\n" << SecureDebugString(req) << "Resp:\n" << SecureDebugString(*resp);
+    return Status::OK();
+  }
+
+  Status RollLog(TabletReplica* replica) {
+    RETURN_NOT_OK(replica->log_->WaitUntilAllFlushed());
+    return replica->log_->AllocateSegmentAndRollOver();
+  }
+
+  Status ExecuteWriteAndRollLog(TabletReplica* tablet_replica, const WriteRequestPB& req) {
+    RETURN_NOT_OK(ExecuteWrite(tablet_replica, req));
 
     // Roll the log after each write.
     // Usually the append thread does the roll and no additional sync is required. However in
     // this test the thread that is appending is not the same thread that is rolling the log
     // so we must make sure the Log's queue is flushed before we roll or we might have a race
     // between the appender thread and the thread executing the test.
-    CHECK_OK(tablet_replica->log_->WaitUntilAllFlushed());
-    CHECK_OK(tablet_replica->log_->AllocateSegmentAndRollOver());
+    CHECK_OK(RollLog(tablet_replica));
     return Status::OK();
   }
 
@@ -247,7 +330,7 @@ class TabletReplicaTest : public KuduTabletTest {
   Status ExecuteInsertsAndRollLogs(int num_inserts) {
     for (int i = 0; i < num_inserts; i++) {
       gscoped_ptr<WriteRequestPB> req(new WriteRequestPB());
-      RETURN_NOT_OK(GenerateSequentialInsertRequest(req.get()));
+      RETURN_NOT_OK(GenerateSequentialInsertRequest(GetTestSchema(), req.get()));
       RETURN_NOT_OK(ExecuteWriteAndRollLog(tablet_replica_.get(), *req));
     }
 
@@ -298,6 +381,8 @@ class TabletReplicaTest : public KuduTabletTest {
   gscoped_ptr<ThreadPool> apply_pool_;
   gscoped_ptr<ThreadPool> raft_pool_;
 
+  scoped_refptr<ConsensusMetadataManager> cmeta_manager_;
+
   // Must be destroyed before thread pools.
   scoped_refptr<TabletReplica> tablet_replica_;
 };
@@ -313,7 +398,7 @@ class DelayedApplyTransaction : public WriteTransaction {
         apply_continue_(DCHECK_NOTNULL(apply_continue)) {
   }
 
-  virtual Status Apply(gscoped_ptr<CommitMsg>* commit_msg) OVERRIDE {
+  virtual Status Apply(gscoped_ptr<CommitMsg>* commit_msg) override {
     apply_started_->CountDown();
     LOG(INFO) << "Delaying apply...";
     apply_continue_->Wait();
@@ -597,6 +682,85 @@ TEST_F(TabletReplicaTest, TestFlushOpsPerfImprovements) {
   ASSERT_LT(0.7, stats.perf_improvement());
   ASSERT_GT(1.0, stats.perf_improvement());
   stats.Clear();
+}
+
+// Test that the schema of a tablet will be rolled forward upon replaying an
+// alter schema request.
+TEST_F(TabletReplicaTest, TestRollLogSegmentSchemaOnAlter) {
+  ConsensusBootstrapInfo info;
+  ASSERT_OK(StartReplicaAndWaitUntilLeader(info));
+  SchemaPB orig_schema_pb;
+  ASSERT_OK(SchemaToPB(SchemaBuilder(tablet()->metadata()->schema()).Build(), &orig_schema_pb));
+  const int orig_schema_version = tablet()->metadata()->schema_version();
+
+  // Add a new column.
+  SchemaBuilder builder(tablet()->metadata()->schema());
+  ASSERT_OK(builder.AddColumn("new_col", INT32));
+  Schema new_client_schema = builder.BuildWithoutIds();
+  SchemaPB new_schema;
+  ASSERT_OK(SchemaToPB(builder.Build(), &new_schema));
+  ASSERT_OK(UpdateSchema(new_schema, orig_schema_version + 1));
+
+  const auto write = [&] {
+    unique_ptr<WriteRequestPB> req(new WriteRequestPB());
+    ASSERT_OK(GenerateSequentialInsertRequest(new_client_schema, req.get()));
+    ASSERT_OK(ExecuteWrite(tablet_replica_.get(), *req));
+  };
+  // Upon restarting, our log segment header schema should have "new_col".
+  NO_FATALS(write());
+  NO_FATALS(RestartReplica());
+
+  // Get rid of the alter in the WALs.
+  NO_FATALS(write());
+  ASSERT_OK(RollLog(tablet_replica_.get()));
+  NO_FATALS(write());
+  tablet_replica_->tablet()->Flush();
+  ASSERT_OK(tablet_replica_->RunLogGC());
+
+  // Now write some more and restart. If our segment header schema previously
+  // didn't have "new_col", bootstrapping would fail, complaining about a
+  // mismatch between the segment header schema and the write request schema.
+  NO_FATALS(write());
+  NO_FATALS(RestartReplica());
+}
+
+// Regression test for KUDU-2690, wherein a alter schema request that failed
+// (e.g. because of an invalid schema) would roll forward the log segment
+// header schema, causing a failure or crash upon bootstrapping.
+TEST_F(TabletReplicaTest, Kudu2690Test) {
+  ConsensusBootstrapInfo info;
+  ASSERT_OK(StartReplicaAndWaitUntilLeader(info));
+  SchemaPB orig_schema_pb;
+  ASSERT_OK(SchemaToPB(SchemaBuilder(tablet()->metadata()->schema()).Build(), &orig_schema_pb));
+  const int orig_schema_version = tablet()->metadata()->schema_version();
+
+  // First things first, add a new column.
+  SchemaBuilder builder(tablet()->metadata()->schema());
+  ASSERT_OK(builder.AddColumn("new_col", INT32));
+  Schema new_client_schema = builder.BuildWithoutIds();
+  SchemaPB new_schema;
+  ASSERT_OK(SchemaToPB(builder.Build(), &new_schema));
+  ASSERT_OK(UpdateSchema(new_schema, orig_schema_version + 1));
+
+  // Try to update the schema to an older version. Before the fix for
+  // KUDU-2690, this would revert the schema in the next log segment header
+  // upon rolling the log below.
+  ASSERT_OK(UpdateSchema(orig_schema_pb, orig_schema_version));
+
+  // Roll onto a new segment so we can begin filling a new segment. This allows
+  // us to GC the first segment.
+  ASSERT_OK(RollLog(tablet_replica_.get()));
+  {
+    unique_ptr<WriteRequestPB> req(new WriteRequestPB());
+    ASSERT_OK(GenerateSequentialInsertRequest(new_client_schema, req.get()));
+    ASSERT_OK(ExecuteWrite(tablet_replica_.get(), *req));
+  }
+  ASSERT_OK(tablet_replica_->RunLogGC());
+
+  // Before KUDU-2960 was fixed, bootstrapping would fail, complaining that the
+  // write requests contained a column that was not in the log segment header's
+  // schema.
+  NO_FATALS(RestartReplica());
 }
 
 } // namespace tablet
