@@ -1246,9 +1246,9 @@ Status Tablet::CreatePreparedAlterSchema(AlterSchemaTransactionState *tx_state,
   return Status::OK();
 }
 
-Status Tablet::AlterSchema(AlterSchemaTransactionState *tx_state) {
-  DCHECK(key_schema_.KeyTypeEquals(*DCHECK_NOTNULL(tx_state->schema()))) <<
-    "Schema keys cannot be altered(except name)";
+Status Tablet::AlterSchema(AlterSchemaTransactionState* tx_state) {
+  DCHECK(key_schema_.KeyTypeEquals(*DCHECK_NOTNULL(tx_state->schema())))
+      << "Schema keys cannot be altered(except name)";
 
   // Prevent any concurrent flushes. Otherwise, we run into issues where
   // we have an MRS in the rowset tree, and we can't alter its schema
@@ -1258,8 +1258,11 @@ Status Tablet::AlterSchema(AlterSchemaTransactionState *tx_state) {
   // If the current version >= new version, there is nothing to do.
   bool same_schema = schema()->Equals(*tx_state->schema());
   if (metadata_->schema_version() >= tx_state->schema_version()) {
-    LOG_WITH_PREFIX(INFO) << "Already running schema version " << metadata_->schema_version()
-                          << " got alter request for version " << tx_state->schema_version();
+    const string msg =
+        Substitute("Skipping requested alter to schema version $0, tablet already "
+                   "version $1", tx_state->schema_version(), metadata_->schema_version());
+    LOG_WITH_PREFIX(INFO) << msg;
+    tx_state->SetError(Status::InvalidArgument(msg));
     return Status::OK();
   }
 

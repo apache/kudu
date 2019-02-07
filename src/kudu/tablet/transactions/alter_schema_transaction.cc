@@ -18,6 +18,7 @@
 #include "kudu/tablet/transactions/alter_schema_transaction.h"
 
 #include <memory>
+#include <ostream>
 #include <utility>
 
 #include <glog/logging.h>
@@ -26,8 +27,10 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/timestamp.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/raft_consensus.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_replica.h"
@@ -47,16 +50,6 @@ using std::string;
 using std::unique_ptr;
 using strings::Substitute;
 using tserver::TabletServerErrorPB;
-using tserver::AlterSchemaRequestPB;
-using tserver::AlterSchemaResponsePB;
-
-string AlterSchemaTransactionState::ToString() const {
-  return Substitute("AlterSchemaTransactionState "
-                    "[timestamp=$0, schema=$1, request=$2]",
-                    has_timestamp() ? timestamp().ToString() : "<unassigned>",
-                    schema_ == nullptr ? "(none)" : schema_->ToString(),
-                    request_ == nullptr ? "(none)" : SecureShortDebugString(*request_));
-}
 
 void AlterSchemaTransactionState::AcquireSchemaLock(rw_semaphore* l) {
   TRACE("Acquiring schema lock in exclusive mode");
@@ -68,6 +61,21 @@ void AlterSchemaTransactionState::ReleaseSchemaLock() {
   CHECK(schema_lock_.owns_lock());
   schema_lock_ = std::unique_lock<rw_semaphore>();
   TRACE("Released schema lock");
+}
+
+void AlterSchemaTransactionState::SetError(const Status& s) {
+  CHECK(!s.ok()) << "Expected an error status";
+  error_ = OperationResultPB();
+  StatusToPB(s, error_->mutable_failed_status());
+}
+
+string AlterSchemaTransactionState::ToString() const {
+  return Substitute("AlterSchemaTransactionState "
+                    "[timestamp=$0, schema=$1, request=$2, error=$3]",
+                    has_timestamp() ? timestamp().ToString() : "<unassigned>",
+                    schema_ == nullptr ? "(none)" : schema_->ToString(),
+                    request_ == nullptr ? "(none)" : SecureShortDebugString(*request_),
+                    error_ ? "(none)" : SecureShortDebugString(error_->failed_status()));
 }
 
 AlterSchemaTransaction::AlterSchemaTransaction(unique_ptr<AlterSchemaTransactionState> state,
@@ -115,6 +123,18 @@ Status AlterSchemaTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
 
   Tablet* tablet = state_->tablet_replica()->tablet();
   RETURN_NOT_OK(tablet->AlterSchema(state()));
+
+  commit_msg->reset(new CommitMsg());
+  (*commit_msg)->set_op_type(ALTER_SCHEMA_OP);
+
+  // If there was a logical error (e.g. bad schema version) with the alter,
+  // record the error and exit.
+  if (state_->error()) {
+    TxResultPB* result = (*commit_msg)->mutable_result();
+    *result->add_ops() = std::move(*state_->error());
+    return Status::OK();
+  }
+
   state_->tablet_replica()->log()
     ->SetSchemaForNextLogSegment(*DCHECK_NOTNULL(state_->schema()),
                                                  state_->schema_version());
@@ -122,9 +142,6 @@ Status AlterSchemaTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
   // Altered tablets should be included in the next tserver heartbeat so that
   // clients waiting on IsAlterTableDone() are unblocked promptly.
   state_->tablet_replica()->MarkTabletDirty("Alter schema finished");
-
-  commit_msg->reset(new CommitMsg());
-  (*commit_msg)->set_op_type(ALTER_SCHEMA_OP);
   return Status::OK();
 }
 

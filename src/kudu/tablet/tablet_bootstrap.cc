@@ -27,6 +27,7 @@
 #include <utility>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
@@ -1446,6 +1447,29 @@ Status TabletBootstrap::PlayWriteRequest(const IOContext* io_context,
 Status TabletBootstrap::PlayAlterSchemaRequest(const IOContext* /*io_context*/,
                                                ReplicateMsg* replicate_msg,
                                                const CommitMsg& commit_msg) {
+  // There are three potential outcomes to expect with this replay:
+  // 1. There is no 'result' in the commit message. The alter succeeds, and the
+  //    log updates its schema.
+  // 2. There is no 'result' in the commit message. The alter fails, and the
+  //    log doesn't update its schema. This can happen if trying to replay an
+  //    invalid alter schema request from before we started putting the results
+  //    in the commit message. Note that we'll leave the commit message as is;
+  //    it's harmless since replaying the operation should be a no-op anyway.
+  // 3. The commit message contains a 'result', which should only happen if the
+  //    alter resulted in a failure. Exit out without attempting the alter.
+  if (commit_msg.has_result()) {
+    // If we put a result in the commit message, it should be an error and we
+    // don't need to replay it. In case, in the future, we decide to put
+    // positive results in the commit messages, just filter ops that have
+    // failed statuses instead of D/CHECKing.
+    DCHECK_EQ(1, commit_msg.result().ops_size());
+    const OperationResultPB& op = commit_msg.result().ops(0);
+    if (op.has_failed_status()) {
+      Status error = StatusFromPB(op.failed_status());
+      VLOG(1) << "Played a failed alter request: " << error.ToString();
+      return AppendCommitMsg(commit_msg);
+    }
+  }
   AlterSchemaRequestPB* alter_schema = replicate_msg->mutable_alter_schema_request();
 
   // Decode schema
@@ -1453,19 +1477,16 @@ Status TabletBootstrap::PlayAlterSchemaRequest(const IOContext* /*io_context*/,
   RETURN_NOT_OK(SchemaFromPB(alter_schema->schema(), &schema));
 
   AlterSchemaTransactionState tx_state(nullptr, alter_schema, nullptr);
-
-  // TODO(KUDU-860): we should somehow distinguish if an alter table failed on its original
-  // attempt (e.g due to being an invalid request, or a request with a too-early
-  // schema version).
-
   RETURN_NOT_OK(tablet_->CreatePreparedAlterSchema(&tx_state, &schema));
 
   // Apply the alter schema to the tablet
   RETURN_NOT_OK_PREPEND(tablet_->AlterSchema(&tx_state), "Failed to AlterSchema:");
 
-  // Also update the log information. Normally, the AlterSchema() call above
-  // takes care of this, but our new log isn't hooked up to the tablet yet.
-  log_->SetSchemaForNextLogSegment(schema, tx_state.schema_version());
+  if (!tx_state.error()) {
+    // If the alter completed successfully, update the log segment header. Note
+    // that our new log isn't hooked up to the tablet yet.
+    log_->SetSchemaForNextLogSegment(schema, tx_state.schema_version());
+  }
 
   return AppendCommitMsg(commit_msg);
 }

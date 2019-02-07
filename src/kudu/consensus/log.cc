@@ -933,6 +933,8 @@ int64_t Log::OnDiskSize() {
 
 void Log::SetSchemaForNextLogSegment(const Schema& schema,
                                      uint32_t version) {
+  VLOG_WITH_PREFIX(2) << Substitute("Setting schema version $0 for next log segment $1",
+                                    version, schema.ToString());
   std::lock_guard<rw_spinlock> l(schema_lock_);
   schema_ = schema;
   schema_version_ = version;
