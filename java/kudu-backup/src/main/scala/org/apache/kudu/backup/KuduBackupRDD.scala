@@ -140,27 +140,6 @@ private class RowIterator(
     currentIterator.hasNext
   }
 
-  // TODO: Use a more "raw" encoding for efficiency?
-  private def get(rowResult: RowResult, i: Int): Any = {
-    if (rowResult.isNull(i)) null
-    else
-      rowResult.getColumnType(i) match {
-        case Type.BOOL => rowResult.getBoolean(i)
-        case Type.INT8 => rowResult.getByte(i)
-        case Type.INT16 => rowResult.getShort(i)
-        case Type.INT32 => rowResult.getInt(i)
-        case Type.INT64 => rowResult.getLong(i)
-        case Type.UNIXTIME_MICROS => rowResult.getTimestamp(i)
-        case Type.FLOAT => rowResult.getFloat(i)
-        case Type.DOUBLE => rowResult.getDouble(i)
-        case Type.STRING => rowResult.getString(i)
-        case Type.BINARY => rowResult.getBinaryCopy(i)
-        case Type.DECIMAL => rowResult.getDecimal(i)
-        case _ =>
-          throw new RuntimeException(s"Unsupported column type: ${rowResult.getColumnType(i)}")
-      }
-  }
-
   // TODO: There may be an old KuduRDD implementation where we did some
   // sort of zero copy/object pool pattern for performance (we could use that here).
   override def next(): Row = {
@@ -168,7 +147,7 @@ private class RowIterator(
     val columnCount = rowResult.getColumnProjection.getColumnCount
     val columns = Array.ofDim[Any](columnCount)
     for (i <- 0 until columnCount) {
-      columns(i) = get(rowResult, i)
+      columns(i) = rowResult.getObject(i)
     }
     Row.fromSeq(columns)
   }

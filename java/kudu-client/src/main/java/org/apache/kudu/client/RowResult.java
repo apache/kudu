@@ -20,12 +20,7 @@ package org.apache.kudu.client;
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.sql.Timestamp;
-import java.text.DateFormat;
-import java.text.FieldPosition;
-import java.text.SimpleDateFormat;
 import java.util.BitSet;
-import java.util.Date;
-import java.util.TimeZone;
 
 import org.apache.kudu.util.TimestampUtil;
 import org.apache.yetus.audience.InterfaceAudience;
@@ -522,6 +517,76 @@ public class RowResult {
     }
     return schema.getColumnByIndex(columnIndex).isNullable() &&
         nullsBitSet.get(columnIndex);
+  }
+
+  /**
+   * Get the specified column's value as an Object.
+   *
+   * This method is useful when you don't care about autoboxing
+   * and your existing type handling logic is based on Java types.
+   *
+   * The Object type is based on the column's {@link Type}:
+   *  Type.BOOL -> java.lang.Boolean
+   *  Type.INT8 -> java.lang.Byte
+   *  Type.INT16 -> java.lang.Short
+   *  Type.INT32 -> java.lang.Integer
+   *  Type.INT64 -> java.lang.Long
+   *  Type.UNIXTIME_MICROS -> java.sql.Timestamp
+   *  Type.FLOAT -> java.lang.Float
+   *  Type.DOUBLE -> java.lang.Double
+   *  Type.STRING -> java.lang.String
+   *  Type.BINARY -> byte[]
+   *  Type.DECIMAL -> java.math.BigDecimal
+   *
+   * @param columnName name of the column in the schema
+   * @return the column's value as an Object, null if the value is null
+   * @throws IndexOutOfBoundsException if the column doesn't exist
+   */
+  public Object getObject(String columnName) {
+    return getObject(this.schema.getColumnIndex(columnName));
+  }
+
+  /**
+   * Get the specified column's value as an Object.
+   *
+   * This method is useful when you don't care about autoboxing
+   * and your existing type handling logic is based on Java types.
+   *
+   * The Object type is based on the column's {@link Type}:
+   *  Type.BOOL -> java.lang.Boolean
+   *  Type.INT8 -> java.lang.Byte
+   *  Type.INT16 -> java.lang.Short
+   *  Type.INT32 -> java.lang.Integer
+   *  Type.INT64 -> java.lang.Long
+   *  Type.UNIXTIME_MICROS -> java.sql.Timestamp
+   *  Type.FLOAT -> java.lang.Float
+   *  Type.DOUBLE -> java.lang.Double
+   *  Type.STRING -> java.lang.String
+   *  Type.BINARY -> byte[]
+   *  Type.DECIMAL -> java.math.BigDecimal
+   *
+   * @param columnIndex Column index in the schema
+   * @return the column's value as an Object, null if the value is null
+   * @throws IndexOutOfBoundsException if the column doesn't exist
+   */
+  public Object getObject(int columnIndex) {
+    checkValidColumn(columnIndex);
+    if (isNull(columnIndex)) return null;
+    Type type = schema.getColumnByIndex(columnIndex).getType();
+    switch (type) {
+      case BOOL: return getBoolean(columnIndex);
+      case INT8: return getByte(columnIndex);
+      case INT16: return getShort(columnIndex);
+      case INT32: return getInt(columnIndex);
+      case INT64: return getLong(columnIndex);
+      case UNIXTIME_MICROS: return getTimestamp(columnIndex);
+      case FLOAT: return getFloat(columnIndex);
+      case DOUBLE: return getDouble(columnIndex);
+      case STRING: return getString(columnIndex);
+      case BINARY: return getBinaryCopy(columnIndex);
+      case DECIMAL: return getDecimal(columnIndex);
+      default: throw new UnsupportedOperationException("Unsupported type: " + type);
+    }
   }
 
   /**

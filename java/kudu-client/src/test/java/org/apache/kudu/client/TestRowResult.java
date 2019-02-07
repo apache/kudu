@@ -21,6 +21,7 @@ import static org.apache.kudu.test.ClientTestUtil.getAllTypesCreateTableOptions;
 import static org.apache.kudu.test.ClientTestUtil.getSchemaWithAllTypes;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.math.BigDecimal;
@@ -86,30 +87,39 @@ public class TestRowResult {
       RowResult rr = it.next();
 
       assertEquals((byte) 1, rr.getByte(0));
+      assertEquals((byte) 1, rr.getObject(0));
       assertEquals((byte) 1, rr.getByte(allTypesSchema.getColumnByIndex(0).getName()));
 
       assertEquals((short) 2, rr.getShort(1));
+      assertEquals((short) 2, rr.getObject(1));
       assertEquals((short) 2, rr.getShort(allTypesSchema.getColumnByIndex(1).getName()));
 
       assertEquals(3, rr.getInt(2));
+      assertEquals(3, rr.getObject(2));
       assertEquals(3, rr.getInt(allTypesSchema.getColumnByIndex(2).getName()));
 
-      assertEquals(4, rr.getLong(3));
-      assertEquals(4, rr.getLong(allTypesSchema.getColumnByIndex(3).getName()));
+      assertEquals((long) 4, rr.getLong(3));
+      assertEquals((long) 4, rr.getObject(3));
+      assertEquals((long) 4, rr.getLong(allTypesSchema.getColumnByIndex(3).getName()));
 
       assertEquals(true, rr.getBoolean(4));
+      assertEquals(true, rr.getObject(4));
       assertEquals(true, rr.getBoolean(allTypesSchema.getColumnByIndex(4).getName()));
 
       assertEquals(5.6f, rr.getFloat(5), .001f);
+      assertEquals(5.6f, (float) rr.getObject(5), .001f);
       assertEquals(5.6f, rr.getFloat(allTypesSchema.getColumnByIndex(5).getName()), .001f);
 
       assertEquals(7.8, rr.getDouble(6), .001);
+      assertEquals(7.8, (double) rr.getObject(6), .001);
       assertEquals(7.8, rr.getDouble(allTypesSchema.getColumnByIndex(6).getName()), .001f);
 
       assertEquals("string-value", rr.getString(7));
+      assertEquals("string-value", rr.getObject(7));
       assertEquals("string-value", rr.getString(allTypesSchema.getColumnByIndex(7).getName()));
 
       assertArrayEquals("binary-array".getBytes(UTF_8), rr.getBinaryCopy(8));
+      assertArrayEquals("binary-array".getBytes(UTF_8), (byte[]) rr.getObject(8));
       assertArrayEquals("binary-array".getBytes(UTF_8),
           rr.getBinaryCopy(allTypesSchema.getColumnByIndex(8).getName()));
 
@@ -122,12 +132,15 @@ public class TestRowResult {
       assertArrayEquals("bytebuffer".getBytes(UTF_8), rr.getBinaryCopy(9));
 
       assertEquals(true, rr.isNull(10));
+      assertNull(rr.getObject(10));
       assertEquals(true, rr.isNull(allTypesSchema.getColumnByIndex(10).getName()));
 
       assertEquals(new Timestamp(11), rr.getTimestamp(11));
+      assertEquals(new Timestamp(11), rr.getObject(11));
       assertEquals(new Timestamp(11), rr.getTimestamp(allTypesSchema.getColumnByIndex(11).getName()));
 
       assertEquals(BigDecimal.valueOf(12345, 3), rr.getDecimal(12));
+      assertEquals(BigDecimal.valueOf(12345, 3), rr.getObject(12));
       assertEquals(BigDecimal.valueOf(12345, 3), rr.getDecimal(allTypesSchema.getColumnByIndex(12).getName()));
 
       // We test with the column name once since it's the same method for all types, unlike above.

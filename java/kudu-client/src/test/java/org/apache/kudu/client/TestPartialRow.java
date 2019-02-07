@@ -21,6 +21,7 @@ import static org.apache.kudu.test.ClientTestUtil.getSchemaWithAllTypes;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -55,6 +56,36 @@ public class TestPartialRow {
     assertTrue(partialRow.isSet("null"));
     assertTrue(partialRow.isNull("null"));
     assertEquals(BigDecimal.valueOf(12345, 3), partialRow.getDecimal("decimal"));
+  }
+
+  @Test
+  public void testGetObject() {
+    PartialRow partialRow = getPartialRowWithAllTypes();
+    assertTrue(partialRow.getObject("bool") instanceof Boolean);
+    assertEquals(true, partialRow.getObject("bool"));
+    assertTrue(partialRow.getObject("int8") instanceof Byte);
+    assertEquals((byte) 42, partialRow.getObject("int8"));
+    assertTrue(partialRow.getObject("int16") instanceof Short);
+    assertEquals((short)43, partialRow.getObject("int16"));
+    assertTrue(partialRow.getObject("int32") instanceof Integer);
+    assertEquals(44, partialRow.getObject("int32"));
+    assertTrue(partialRow.getObject("int64") instanceof Long);
+    assertEquals((long) 45, partialRow.getObject("int64"));
+    assertTrue(partialRow.getObject("timestamp") instanceof Timestamp);
+    assertEquals(new Timestamp(1234567890), partialRow.getObject("timestamp"));
+    assertTrue(partialRow.getObject("float") instanceof Float);
+    assertEquals(52.35F, (float) partialRow.getObject("float"), 0.0f);
+    assertTrue(partialRow.getObject("double") instanceof Double);
+    assertEquals(53.35, (double) partialRow.getObject("double"), 0.0);
+    assertTrue(partialRow.getObject("string") instanceof String);
+    assertEquals("fun with ütf\0", partialRow.getObject("string"));
+    assertTrue(partialRow.getObject("binary-array") instanceof byte[]);
+    assertArrayEquals(new byte[] { 0, 1, 2, 3, 4 }, partialRow.getBinaryCopy("binary-array"));
+    assertTrue(partialRow.getObject("binary-bytebuffer") instanceof byte[]);
+    assertEquals(ByteBuffer.wrap(new byte[] { 5, 6, 7, 8, 9 }), partialRow.getBinary("binary-bytebuffer"));
+    assertNull(partialRow.getObject("null"));
+    assertTrue(partialRow.getObject("decimal") instanceof BigDecimal);
+    assertEquals(BigDecimal.valueOf(12345, 3), partialRow.getObject("decimal"));
   }
 
   @Test(expected = IllegalArgumentException.class)
