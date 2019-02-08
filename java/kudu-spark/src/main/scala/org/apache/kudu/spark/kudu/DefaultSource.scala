@@ -61,6 +61,8 @@ class DefaultSource
   val SCAN_LOCALITY = "kudu.scanLocality"
   val IGNORE_NULL = "kudu.ignoreNull"
   val IGNORE_DUPLICATE_ROW_ERRORS = "kudu.ignoreDuplicateRowErrors"
+  val REPARTITION = "kudu.repartition"
+  val REPARTITION_SORT = "kudu.repartition.sort"
   val SCAN_REQUEST_TIMEOUT_MS = "kudu.scanRequestTimeoutMs"
   val SOCKET_READ_TIMEOUT_MS = "kudu.socketReadTimeoutMs"
   val BATCH_SIZE = "kudu.batchSize"
@@ -193,10 +195,11 @@ class DefaultSource
     Try(parameters(OPERATION) == "insert-ignore").getOrElse(false)
     val ignoreNull =
       parameters.get(IGNORE_NULL).map(_.toBoolean).getOrElse(defaultIgnoreNull)
-
-    Try(parameters.getOrElse(IGNORE_NULL, "false").toBoolean).getOrElse(false)
-
-    KuduWriteOptions(ignoreDuplicateRowErrors, ignoreNull)
+    val repartition =
+      parameters.get(REPARTITION).map(_.toBoolean).getOrElse(defaultRepartition)
+    val repartitionSort =
+      parameters.get(REPARTITION_SORT).map(_.toBoolean).getOrElse(defaultRepartitionSort)
+    KuduWriteOptions(ignoreDuplicateRowErrors, ignoreNull, repartition, repartitionSort)
   }
 
   private def getMasterAddrs(parameters: Map[String, String]): String = {

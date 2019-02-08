@@ -19,6 +19,7 @@ package org.apache.kudu.spark.kudu
 
 import java.security.AccessController
 import java.security.PrivilegedAction
+
 import javax.security.auth.Subject
 import javax.security.auth.login.AppConfigurationEntry
 import javax.security.auth.login.Configuration
@@ -26,25 +27,22 @@ import javax.security.auth.login.LoginContext
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
-
 import org.apache.hadoop.util.ShutdownHookManager
+import org.apache.spark.Partitioner
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.types.DataType
-import org.apache.spark.sql.types.DataTypes
-import org.apache.spark.sql.types.DecimalType
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.catalyst.util.TypeUtils
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.Row
-import org.apache.spark.sql.catalyst.CatalystTypeConverters
-import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.types.DataType
+import org.apache.spark.sql.types.StructType
 import org.apache.spark.util.AccumulatorV2
+import org.apache.spark.util.CollectionAccumulator
 import org.apache.spark.util.LongAccumulator
 import org.apache.yetus.audience.InterfaceAudience
 import org.apache.yetus.audience.InterfaceStability
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-
 import org.apache.kudu.client.SessionConfiguration.FlushMode
 import org.apache.kudu.client._
 import org.apache.kudu.spark.kudu.SparkUtil._
@@ -65,6 +63,12 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
   val log: Logger = LoggerFactory.getLogger(getClass)
 
   def this(kuduMaster: String, sc: SparkContext) = this(kuduMaster, sc, None)
+
+  // An accumulator that collects all the rows written to Kudu for testing only.
+  // Enabled by setting captureRows = true.
+  private[kudu] var captureRows = false
+  private[kudu] var rowsAccumulator: CollectionAccumulator[Row] =
+    sc.collectionAccumulator[Row]("kudu.rows")
 
   /**
    * A collection of accumulator metrics describing the usage of a KuduContext.
@@ -329,7 +333,21 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
     val schema = data.schema
     // Get the client's last propagated timestamp on the driver.
     val lastPropagatedTimestamp = syncClient.getLastPropagatedTimestamp
-    data.queryExecution.toRdd.foreachPartition(iterator => {
+
+    // Convert to an RDD and map the InternalRows to Rows.
+    // This avoids any corruption as reported in SPARK-26880.
+    var rdd = data.queryExecution.toRdd.mapPartitions { rows =>
+      val table = syncClient.openTable(tableName)
+      val converter = new RowConverter(table.getSchema, schema, writeOptions.ignoreNull)
+      rows.map(converter.toRow)
+    }
+
+    if (writeOptions.repartition) {
+      rdd = repartitionRows(rdd, tableName, schema, writeOptions)
+    }
+
+    // Write the rows for each Spark partition.
+    rdd.foreachPartition(iterator => {
       val pendingErrors = writePartitionRows(
         iterator,
         schema,
@@ -348,8 +366,55 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
     log.info(s"completed $operation ops: duration histogram: $durationHistogram")
   }
 
+  private def repartitionRows(
+      rdd: RDD[Row],
+      tableName: String,
+      schema: StructType,
+      writeOptions: KuduWriteOptions): RDD[Row] = {
+    val partitionCount = getPartitionCount(tableName)
+    val sparkPartitioner = new Partitioner {
+      override def numPartitions: Int = partitionCount
+      override def getPartition(key: Any): Int = {
+        key.asInstanceOf[(Int, Row)]._1
+      }
+    }
+
+    // Key the rows by the Kudu partition index using the KuduPartitioner and the
+    // table's primary key. This allows us to re-partition and sort the columns.
+    val keyedRdd = rdd.mapPartitions { rows =>
+      val table = syncClient.openTable(tableName)
+      val converter = new RowConverter(table.getSchema, schema, writeOptions.ignoreNull)
+      val partitioner = new KuduPartitioner.KuduPartitionerBuilder(table).build()
+      rows.map { row =>
+        val partialRow = converter.toPartialRow(row)
+        val partitionIndex = partitioner.partitionRow(partialRow)
+        ((partitionIndex, partialRow.encodePrimaryKey()), row)
+      }
+    }
+
+    // Define an implicit Ordering trait for the encoded primary key
+    // to enable rdd sorting functions below.
+    implicit val byteArrayOrdering: Ordering[Array[Byte]] = new Ordering[Array[Byte]] {
+      def compare(x: Array[Byte], y: Array[Byte]): Int = {
+        TypeUtils.compareBinary(x, y)
+      }
+    }
+
+    // Partition the rows by the Kudu partition index to ensure the Spark partitions
+    // match the Kudu partitions. This will make the number of Spark tasks match the number
+    // of Kudu partitions. Optionally sort while repartitioning.
+    // TODO: At some point we may want to support more or less tasks while still partitioning.
+    val shuffledRDD = if (writeOptions.repartitionSort) {
+      keyedRdd.repartitionAndSortWithinPartitions(sparkPartitioner)
+    } else {
+      keyedRdd.partitionBy(sparkPartitioner)
+    }
+    // Drop the partitioning key.
+    shuffledRDD.map { case (_, row) => row }
+  }
+
   private def writePartitionRows(
-      rows: Iterator[InternalRow],
+      rows: Iterator[Row],
       schema: StructType,
       tableName: String,
       opType: OperationType,
@@ -367,8 +432,11 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
     log.info(s"applying operations of type '${opType.toString}' to table '$tableName'")
     val startTime = System.currentTimeMillis()
     try {
-      for (internalRow <- rows) {
-        val partialRow = rowConverter.toPartialRow(internalRow)
+      for (row <- rows) {
+        if (captureRows) {
+          rowsAccumulator.add(row)
+        }
+        val partialRow = rowConverter.toPartialRow(row)
         val operation = opType.operation(table)
         operation.setRow(partialRow)
         session.apply(operation)
@@ -385,6 +453,12 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
       log.info(s"applied $numRows ${opType}s to table '$tableName' in ${elapsedTime}ms")
     }
     session.getPendingErrors
+  }
+
+  private def getPartitionCount(tableName: String): Int = {
+    val table = syncClient.openTable(tableName)
+    val partitioner = new KuduPartitioner.KuduPartitionerBuilder(table).build()
+    partitioner.numPartitions()
   }
 }
 

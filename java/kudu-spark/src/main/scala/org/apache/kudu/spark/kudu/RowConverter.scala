@@ -40,11 +40,10 @@ class RowConverter(kuduSchema: Schema, schema: StructType, ignoreNull: Boolean) 
   })
 
   /**
-   * Converts a Spark internal row to a Kudu PartialRow.
+   * Converts a Spark internalRow to a Spark Row.
    */
-  def toPartialRow(internalRow: InternalRow): PartialRow = {
-    val row = typeConverter(internalRow).asInstanceOf[Row]
-    toPartialRow(row)
+  def toRow(internalRow: InternalRow): Row = {
+    typeConverter(internalRow).asInstanceOf[Row]
   }
 
   /**

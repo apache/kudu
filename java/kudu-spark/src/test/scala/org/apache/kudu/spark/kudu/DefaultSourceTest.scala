@@ -20,6 +20,7 @@ import scala.collection.JavaConverters._
 import scala.collection.immutable.IndexedSeq
 import scala.util.control.NonFatal
 import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.Row
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.DataTypes
@@ -31,12 +32,16 @@ import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder
 import org.apache.kudu.client.CreateTableOptions
 import org.apache.kudu.Schema
 import org.apache.kudu.Type
+import org.apache.kudu.test.RandomUtils
+import org.apache.spark.scheduler.SparkListener
+import org.apache.spark.scheduler.SparkListenerTaskEnd
 import org.apache.spark.sql.execution.datasources.LogicalRelation
 import org.junit.Before
 import org.junit.Test
 
-class DefaultSourceTest extends KuduTestSuite with Matchers {
+import scala.util.Random
 
+class DefaultSourceTest extends KuduTestSuite with Matchers {
   val rowCount = 10
   var sqlContext: SQLContext = _
   var rows: IndexedSeq[(Int, Int, String, Long)] = _
@@ -400,6 +405,79 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
 
     val deleteDF = dataDF.filter("key = 0").select("key")
     kuduContext.deleteRows(deleteDF, simpleTableName)
+  }
+
+  @Test
+  def testRepartition(): Unit = {
+    runRepartitionTest(false)
+  }
+
+  @Test
+  def testRepartitionAndSort(): Unit = {
+    runRepartitionTest(true)
+  }
+
+  def runRepartitionTest(repartitionSort: Boolean): Unit = {
+    // Create a simple table with 2 range partitions split on the value 100.
+    val tableName = "testRepartition"
+    val splitValue = 100
+    val split = simpleSchema.newPartialRow()
+    split.addInt("key", splitValue)
+    val options = new CreateTableOptions()
+    options.setRangePartitionColumns(List("key").asJava)
+    options.addSplitRow(split)
+    val table = kuduClient.createTable(tableName, simpleSchema, options)
+
+    // Add a SparkListener to count the number of tasks that end.
+    var actualNumTasks = 0
+    val listener = new SparkListener {
+      override def onTaskEnd(taskEnd: SparkListenerTaskEnd): Unit = {
+        actualNumTasks += 1
+      }
+    }
+    ss.sparkContext.addSparkListener(listener)
+
+    val random = Random.javaRandomToRandom(RandomUtils.getRandom)
+    val data = random.shuffle(
+      Seq(
+        Row.fromSeq(Seq(0, "0")),
+        Row.fromSeq(Seq(25, "25")),
+        Row.fromSeq(Seq(50, "50")),
+        Row.fromSeq(Seq(75, "75")),
+        Row.fromSeq(Seq(99, "99")),
+        Row.fromSeq(Seq(100, "100")),
+        Row.fromSeq(Seq(101, "101")),
+        Row.fromSeq(Seq(125, "125")),
+        Row.fromSeq(Seq(150, "150")),
+        Row.fromSeq(Seq(175, "175")),
+        Row.fromSeq(Seq(199, "199"))
+      ))
+    val dataRDD = ss.sparkContext.parallelize(data, numSlices = 2)
+    val schema = SparkUtil.sparkSchema(table.getSchema)
+    val dataDF = ss.sqlContext.createDataFrame(dataRDD, schema)
+
+    // Capture the rows so we can validate the insert order.
+    kuduContext.captureRows = true
+
+    kuduContext.insertRows(
+      dataDF,
+      tableName,
+      new KuduWriteOptions(repartition = true, repartitionSort = repartitionSort))
+    // 2 tasks from the parallelize call, and 2 from the repartitioning.
+    assertEquals(4, actualNumTasks)
+    val rows = kuduContext.rowsAccumulator.value.asScala
+    assertEquals(data.size, rows.size)
+    assertEquals(data.map(_.getInt(0)).sorted, rows.map(_.getInt(0)).sorted)
+
+    // If repartitionSort is true, verify the rows were sorted while repartitioning.
+    if (repartitionSort) {
+      def isSorted(rows: Seq[Int]): Boolean = {
+        rows.sliding(2).forall(p => (p.size == 1) || p.head < p.tail.head)
+      }
+      val (bottomRows, topRows) = rows.map(_.getInt(0)).partition(_ < splitValue)
+      assertTrue(isSorted(bottomRows))
+      assertTrue(isSorted(topRows))
+    }
   }
 
   @Test
