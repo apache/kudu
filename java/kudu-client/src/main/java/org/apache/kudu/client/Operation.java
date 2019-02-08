@@ -22,6 +22,7 @@ import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
@@ -82,7 +83,7 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
 
   static final String METHOD = "Write";
 
-  private final PartialRow row;
+  private PartialRow row;
 
   /** See {@link SessionConfiguration#setIgnoreAllDuplicateRows(boolean)} */
   boolean ignoreAllDuplicateRows = false;
@@ -178,6 +179,28 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
    */
   public PartialRow getRow() {
     return this.row;
+  }
+
+  /**
+   * Set the underlying row.
+   *
+   * Note: The schema of the underlying row and the table must be equal by reference.
+   * To ensure they are equal, create the partial row from the table's schema.
+   *
+   * <pre>{@code
+   *   KuduTable table = client.openTable("my-table");
+   *   PartialRow row = table.getSchema().newPartialRow();
+   *   ...
+   *   Operation op = table.newInsert();
+   *   op.setRow(row);
+   * }</pre>
+   *
+   * @param row the row to set
+   */
+  public void setRow(PartialRow row) {
+    Preconditions.checkArgument(row.getSchema() == table.getSchema(),
+        "The row's schema must be equal by reference to the table schema");
+    this.row = row;
   }
 
   @Override
