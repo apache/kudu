@@ -552,6 +552,7 @@ TEST_F(ToolTest, TestModeHelp) {
   {
     const vector<string> kLocalReplicaDumpModeRegexes = {
         "block_ids.*Dump the IDs of all blocks",
+        "data_dirs.*Dump the data directories",
         "meta.*Dump the metadata",
         "rowset.*Dump the rowset contents",
         "wals.*Dump all WAL"
@@ -1172,6 +1173,47 @@ TEST_F(ToolTest, TestWalDump) {
       ASSERT_STR_NOT_MATCHES(stdout, "Footer:");
     }
   }
+}
+
+TEST_F(ToolTest, TestLocalReplicaDumpDataDirs) {
+  const string kTestTablet = "ffffffffffffffffffffffffffffffff";
+  const string kTestTableId = "test-table";
+  const string kTestTableName = "test-fs-data-dirs-dump-table";
+  const Schema kSchema(GetSimpleTestSchema());
+  const Schema kSchemaWithIds(SchemaBuilder(kSchema).Build());
+
+  FsManagerOpts opts;
+  opts.wal_root = GetTestPath("wal");
+  opts.data_roots = {
+    GetTestPath("data0"),
+    GetTestPath("data1"),
+    GetTestPath("data2"),
+  };
+  FsManager fs(env_, opts);
+  ASSERT_OK(fs.CreateInitialFileSystemLayout());
+  ASSERT_OK(fs.Open());
+
+  pair<PartitionSchema, Partition> partition = tablet::CreateDefaultPartition(
+        kSchemaWithIds);
+  scoped_refptr<TabletMetadata> meta;
+  ASSERT_OK(TabletMetadata::CreateNew(
+      &fs, kTestTablet, kTestTableName, kTestTableId,
+      kSchemaWithIds, partition.first, partition.second,
+      tablet::TABLET_DATA_READY,
+      /*tombstone_last_logged_opid=*/ boost::none,
+      &meta));
+  string stdout;
+  NO_FATALS(RunActionStdoutString(Substitute("local_replica dump data_dirs $0 "
+                                             "--fs_wal_dir=$1 "
+                                             "--fs_data_dirs=$2",
+                                             kTestTablet, opts.wal_root,
+                                             JoinStrings(opts.data_roots, ",")),
+                                  &stdout));
+  vector<string> expected;
+  for (const auto& data_root : opts.data_roots) {
+    expected.emplace_back(JoinPathSegments(data_root, "data"));
+  }
+  ASSERT_EQ(JoinStrings(expected, "\n"), stdout);
 }
 
 TEST_F(ToolTest, TestLocalReplicaDumpMeta) {

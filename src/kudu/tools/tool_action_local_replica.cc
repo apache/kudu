@@ -46,6 +46,7 @@
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
+#include "kudu/fs/data_dirs.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
@@ -681,7 +682,23 @@ Status DumpMeta(const RunnerContext& context) {
   unique_ptr<FsManager> fs_manager;
   RETURN_NOT_OK(FsInit(&fs_manager));
   const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
-  RETURN_NOT_OK(DumpTabletMeta(fs_manager.get(), tablet_id, 0));
+  return DumpTabletMeta(fs_manager.get(), tablet_id, 0);
+}
+
+Status DumpDataDirs(const RunnerContext& context) {
+  unique_ptr<FsManager> fs_manager;
+  RETURN_NOT_OK(FsInit(&fs_manager));
+  const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
+  // Load the tablet meta to make sure the tablet's data directories are loaded
+  // into the manager.
+  scoped_refptr<TabletMetadata> unused_meta;
+  RETURN_NOT_OK(TabletMetadata::Load(fs_manager.get(), tablet_id, &unused_meta));
+  vector<string> data_dirs;
+  RETURN_NOT_OK(fs_manager->dd_manager()->FindDataDirsByTabletId(tablet_id,
+                                                                 &data_dirs));
+  for (const auto& dir : data_dirs) {
+    cout << dir << endl;
+  }
   return Status::OK();
 }
 
@@ -689,6 +706,15 @@ unique_ptr<Mode> BuildDumpMode() {
   unique_ptr<Action> dump_block_ids =
       ActionBuilder("block_ids", &DumpBlockIdsForLocalReplica)
       .Description("Dump the IDs of all blocks belonging to a local replica")
+      .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
+      .AddOptionalParameter("fs_data_dirs")
+      .AddOptionalParameter("fs_metadata_dir")
+      .AddOptionalParameter("fs_wal_dir")
+      .Build();
+
+  unique_ptr<Action> dump_data_dirs =
+      ActionBuilder("data_dirs", &DumpDataDirs)
+      .Description("Dump the data directories where the replica's data is stored")
       .AddRequiredParameter({ kTabletIdArg, kTabletIdArgDesc })
       .AddOptionalParameter("fs_data_dirs")
       .AddOptionalParameter("fs_metadata_dir")
@@ -733,6 +759,7 @@ unique_ptr<Mode> BuildDumpMode() {
   return ModeBuilder("dump")
       .Description("Dump a Kudu filesystem")
       .AddAction(std::move(dump_block_ids))
+      .AddAction(std::move(dump_data_dirs))
       .AddAction(std::move(dump_meta))
       .AddAction(std::move(dump_rowset))
       .AddAction(std::move(dump_wals))

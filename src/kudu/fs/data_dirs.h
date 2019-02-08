@@ -335,6 +335,11 @@ class DataDirManager {
   // returns a copy, returning an empty set if none are found.
   std::set<std::string> FindTabletsByDataDirUuidIdx(int uuid_idx) const;
 
+  // Returns in 'data_dirs' a sorted list of the directory names for the data
+  // dirs of the tablet specified by 'tablet_id'.
+  Status FindDataDirsByTabletId(const std::string& tablet_id,
+                                std::vector<std::string>* data_dirs) const;
+
   // ==========================================================================
   // Directory Health
   // ==========================================================================

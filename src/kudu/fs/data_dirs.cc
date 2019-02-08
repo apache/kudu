@@ -1093,6 +1093,31 @@ set<string> DataDirManager::FindTabletsByDataDirUuidIdx(int uuid_idx) const {
   return {};
 }
 
+Status DataDirManager::FindDataDirsByTabletId(const string& tablet_id,
+                                              vector<string>* data_dirs) const {
+  CHECK(data_dirs);
+  DataDirGroupPB group;
+  RETURN_NOT_OK(GetDataDirGroupPB(tablet_id, &group));
+  vector<string> data_dirs_tmp;
+  data_dirs_tmp.reserve(group.uuids_size());
+  for (const auto& uuid : group.uuids()) {
+    int uuid_idx;
+    if (!FindUuidIndexByUuid(uuid, &uuid_idx)) {
+      return Status::NotFound("unable to find index for UUID", uuid);
+    }
+    const auto* data_dir = FindDataDirByUuidIndex(uuid_idx);
+    if (!data_dir) {
+      return Status::NotFound(
+          Substitute("unable to find data dir for UUID $0 with index $1",
+                     uuid, uuid_idx));
+    }
+    data_dirs_tmp.emplace_back(data_dir->dir());
+  }
+  std::sort(data_dirs_tmp.begin(), data_dirs_tmp.end());
+  *data_dirs = std::move(data_dirs_tmp);
+  return Status::OK();
+}
+
 void DataDirManager::MarkDataDirFailedByUuid(const string& uuid) {
   int uuid_idx;
   CHECK(FindUuidIndexByUuid(uuid, &uuid_idx));
