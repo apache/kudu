@@ -170,6 +170,7 @@ void Schema::CopyFrom(const Schema& other) {
   num_key_columns_ = other.num_key_columns_;
   cols_ = other.cols_;
   col_ids_ = other.col_ids_;
+  max_col_id_ = other.max_col_id_;
   col_offsets_ = other.col_offsets_;
   id_to_index_ = other.id_to_index_;
 
@@ -189,9 +190,10 @@ Schema::Schema(Schema&& other) noexcept
     : cols_(std::move(other.cols_)),
       num_key_columns_(other.num_key_columns_),
       col_ids_(std::move(other.col_ids_)),
+      max_col_id_(other.max_col_id_),
       col_offsets_(std::move(other.col_offsets_)),
       name_to_index_bytes_(0),
-      name_to_index_(/*bucket_count=*/10,
+      name_to_index_(/*bucket_count*/ 10,
                      NameToIndexMap::hasher(),
                      NameToIndexMap::key_equal(),
                      NameToIndexMapAllocator(&name_to_index_bytes_)),
@@ -215,6 +217,7 @@ Schema& Schema::operator=(Schema&& other) noexcept {
     cols_ = std::move(other.cols_);
     num_key_columns_ = other.num_key_columns_;
     col_ids_ = std::move(other.col_ids_);
+    max_col_id_ = other.max_col_id_;
     col_offsets_ = std::move(other.col_offsets_);
     id_to_index_ = std::move(other.id_to_index_);
     has_nullables_ = other.has_nullables_;

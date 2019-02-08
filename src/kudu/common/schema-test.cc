@@ -121,7 +121,18 @@ TEST_F(TestSchema, TestSchemaToStringMode) {
             schema.ToString(Schema::ToStringMode::BASE_INFO));
 }
 
-TEST_F(TestSchema, TestCopyAndMove) {
+enum IncludeColumnIds {
+  INCLUDE_COL_IDS,
+  NO_COL_IDS
+};
+
+class ParameterizedSchemaTest : public KuduTest,
+                                public ::testing::WithParamInterface<IncludeColumnIds> {};
+
+INSTANTIATE_TEST_CASE_P(SchemaTypes, ParameterizedSchemaTest,
+                        ::testing::Values(INCLUDE_COL_IDS, NO_COL_IDS));
+
+TEST_P(ParameterizedSchemaTest, TestCopyAndMove) {
   auto check_schema = [](const Schema& schema) {
     ASSERT_EQ(sizeof(Slice) + sizeof(uint32_t) + sizeof(int32_t),
               schema.byte_size());
@@ -129,12 +140,15 @@ TEST_F(TestSchema, TestCopyAndMove) {
     ASSERT_EQ(0, schema.column_offset(0));
     ASSERT_EQ(sizeof(Slice), schema.column_offset(1));
 
-    EXPECT_EQ("(\n"
-              "    key STRING NOT NULL,\n"
-              "    uint32val UINT32 NULLABLE,\n"
-              "    int32val INT32 NOT NULL,\n"
-              "    PRIMARY KEY (key)\n"
-              ")",
+    EXPECT_EQ(Substitute("(\n"
+                         "    $0key STRING NOT NULL,\n"
+                         "    $1uint32val UINT32 NULLABLE,\n"
+                         "    $2int32val INT32 NOT NULL,\n"
+                         "    PRIMARY KEY (key)\n"
+                         ")",
+                         schema.has_column_ids() ? "0:" : "",
+                         schema.has_column_ids() ? "1:" : "",
+                         schema.has_column_ids() ? "2:" : ""),
               schema.ToString());
     EXPECT_EQ("key STRING NOT NULL", schema.column(0).ToString());
     EXPECT_EQ("UINT32 NULLABLE", schema.column(1).TypeToString());
@@ -145,38 +159,44 @@ TEST_F(TestSchema, TestCopyAndMove) {
   ColumnSchema col3("int32val", INT32);
 
   vector<ColumnSchema> cols = { col1, col2, col3 };
-  Schema schema(cols, 1);
-  check_schema(schema);
+  vector<ColumnId> ids = { ColumnId(0), ColumnId(1), ColumnId(2) };
+  const int kNumKeyCols = 1;
+
+  Schema schema = GetParam() == INCLUDE_COL_IDS ?
+                      Schema(cols, ids, kNumKeyCols) :
+                      Schema(cols, kNumKeyCols);
+
+  NO_FATALS(check_schema(schema));
 
   // Check copy- and move-assignment.
   Schema moved_schema;
   {
     Schema copied_schema = schema;
-    check_schema(copied_schema);
-    ASSERT_TRUE(copied_schema.Equals(schema));
+    NO_FATALS(check_schema(copied_schema));
+    ASSERT_TRUE(copied_schema.Equals(schema, Schema::COMPARE_ALL));
 
     // Move-assign to 'moved_to_schema' from 'copied_schema' and then let
-    // 'copied_schema' go out of scope to make sure none of 'moved_to_schema''s
+    // 'copied_schema' go out of scope to make sure none of the 'moved_schema'
     // resources are incorrectly freed.
     moved_schema = std::move(copied_schema);
 
     // 'copied_schema' is moved from so it should still be valid to call
     // ToString(), though we can't expect any particular result.
-    NO_FATALS(copied_schema.ToString()); // NOLINT(*)
+    copied_schema.ToString(); // NOLINT(*)
   }
-  check_schema(moved_schema);
-  ASSERT_TRUE(moved_schema.Equals(schema));
+  NO_FATALS(check_schema(moved_schema));
+  ASSERT_TRUE(moved_schema.Equals(schema, Schema::COMPARE_ALL));
 
   // Check copy- and move-construction.
   {
     Schema copied_schema(schema);
-    check_schema(copied_schema);
-    ASSERT_TRUE(copied_schema.Equals(schema));
+    NO_FATALS(check_schema(copied_schema));
+    ASSERT_TRUE(copied_schema.Equals(schema, Schema::COMPARE_ALL));
 
     Schema moved_schema(std::move(copied_schema));
-    NO_FATALS(copied_schema.ToString()); // NOLINT(*)
-    check_schema(moved_schema);
-    ASSERT_TRUE(moved_schema.Equals(schema));
+    copied_schema.ToString(); // NOLINT(*)
+    NO_FATALS(check_schema(moved_schema));
+    ASSERT_TRUE(moved_schema.Equals(schema, Schema::COMPARE_ALL));
   }
 }
 

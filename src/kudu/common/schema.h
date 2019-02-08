@@ -747,15 +747,33 @@ class Schema {
   // so should only be used when necessary for output.
   std::string ToString(ToStringMode mode = ToStringMode::WITH_COLUMN_IDS) const;
 
+  // Compare column ids in Equals() method.
+  enum SchemaComparisonType {
+    COMPARE_COLUMNS = 1 << 0,
+    COMPARE_COLUMN_IDS = 1 << 1,
+
+    COMPARE_ALL = COMPARE_COLUMNS | COMPARE_COLUMN_IDS
+  };
+
   // Return true if the schemas have exactly the same set of columns
   // and respective types.
-  bool Equals(const Schema &other) const {
+  bool Equals(const Schema& other, SchemaComparisonType flags = COMPARE_COLUMNS) const {
     if (this == &other) return true;
-    if (this->num_key_columns_ != other.num_key_columns_) return false;
-    if (this->num_columns() != other.num_columns()) return false;
 
-    for (size_t i = 0; i < other.num_columns(); i++) {
-      if (!this->cols_[i].Equals(other.cols_[i])) return false;
+    if (flags & COMPARE_COLUMNS) {
+      if (this->num_key_columns_ != other.num_key_columns_) return false;
+      if (this->num_columns() != other.num_columns()) return false;
+      for (size_t i = 0; i < other.num_columns(); i++) {
+        if (!this->cols_[i].Equals(other.cols_[i])) return false;
+      }
+    }
+
+    if (flags & COMPARE_COLUMN_IDS) {
+      if (this->has_column_ids() != other.has_column_ids()) return false;
+      if (this->has_column_ids()) {
+        if (this->col_ids_ != other.col_ids_) return false;
+        if (this->max_col_id() != other.max_col_id()) return false;
+      }
     }
 
     return true;
@@ -918,8 +936,8 @@ class Schema {
 
   std::vector<ColumnSchema> cols_;
   size_t num_key_columns_;
-  ColumnId max_col_id_;
   std::vector<ColumnId> col_ids_;
+  ColumnId max_col_id_;
   std::vector<size_t> col_offsets_;
 
   // The keys of this map are StringPiece references to the actual name members of the
