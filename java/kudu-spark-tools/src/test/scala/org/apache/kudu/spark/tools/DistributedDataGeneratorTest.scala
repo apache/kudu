@@ -17,11 +17,14 @@
 package org.apache.kudu.spark.tools
 
 import org.apache.kudu.Type
+import org.apache.kudu.client.KuduPartitioner
 import org.apache.kudu.spark.kudu.KuduTestSuite
 import org.apache.kudu.test.RandomUtils
 import org.apache.kudu.util.DecimalUtil
 import org.apache.kudu.util.SchemaGenerator
 import org.apache.spark.rdd.RDD
+import org.apache.spark.scheduler.SparkListener
+import org.apache.spark.scheduler.SparkListenerTaskEnd
 import org.apache.spark.sql.Row
 import org.junit.Test
 import org.junit.Assert.assertEquals
@@ -51,7 +54,9 @@ class DistributedDataGeneratorTest extends KuduTestSuite {
       randomTableName,
       harness.getMasterAddressesAsString)
     val rdd = runGeneratorTest(args)
-    assertEquals(numRows, rdd.collect.length)
+    val collisions = ss.sparkContext.longAccumulator("row_collisions").value
+    // Collisions could cause the number of row to be less than the number set.
+    assertEquals(numRows - collisions, rdd.collect.length)
   }
 
   @Test
@@ -65,6 +70,73 @@ class DistributedDataGeneratorTest extends KuduTestSuite {
       harness.getMasterAddressesAsString)
     val rdd = runGeneratorTest(args)
     assertEquals(numRows, rdd.collect.length)
+  }
+
+  @Test
+  def testRepartitionData() {
+    val numRows = 100
+    val args = Array(
+      s"--num-rows=$numRows",
+      "--num-tasks=10",
+      "--type=sequential",
+      "--repartition=true",
+      randomTableName,
+      harness.getMasterAddressesAsString)
+    val rdd = runGeneratorTest(args)
+    assertEquals(numRows, rdd.collect.length)
+  }
+
+  @Test
+  def testNumTasks() {
+    // Add a SparkListener to count the number of tasks that end.
+    var actualNumTasks = 0
+    val listener = new SparkListener {
+      override def onTaskEnd(taskEnd: SparkListenerTaskEnd): Unit = {
+        actualNumTasks += 1
+      }
+    }
+    ss.sparkContext.addSparkListener(listener)
+
+    val numTasks = 8
+    val numRows = 100
+    val args = Array(
+      s"--num-rows=$numRows",
+      s"--num-tasks=$numTasks",
+      randomTableName,
+      harness.getMasterAddressesAsString)
+    runGeneratorTest(args)
+
+    assertEquals(numTasks, actualNumTasks)
+  }
+
+  @Test
+  def testNumTasksRepartition(): Unit = {
+    // Add a SparkListener to count the number of tasks that end.
+    var actualNumTasks = 0
+    val listener = new SparkListener {
+      override def onTaskEnd(taskEnd: SparkListenerTaskEnd): Unit = {
+        actualNumTasks += 1
+      }
+    }
+    ss.sparkContext.addSparkListener(listener)
+
+    val numTasks = 8
+    val numRows = 100
+    val args = Array(
+      s"--num-rows=$numRows",
+      s"--num-tasks=$numTasks",
+      "--repartition=true",
+      randomTableName,
+      harness.getMasterAddressesAsString)
+    runGeneratorTest(args)
+
+    val table = kuduContext.syncClient.openTable(randomTableName)
+    val numPartitions = new KuduPartitioner.KuduPartitionerBuilder(table).build().numPartitions()
+
+    // We expect the number of tasks to be equal to numTasks + numPartitions because numTasks tasks
+    // are run to generate the data then we repartition the data to match the table partitioning
+    // and numPartitions tasks load the data.
+    assertEquals(numTasks + numPartitions, actualNumTasks)
   }
 
   def runGeneratorTest(args: Array[String]): RDD[Row] = {

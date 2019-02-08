@@ -366,7 +366,7 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
     log.info(s"completed $operation ops: duration histogram: $durationHistogram")
   }
 
-  private def repartitionRows(
+  private[spark] def repartitionRows(
       rdd: RDD[Row],
       tableName: String,
       schema: StructType,
