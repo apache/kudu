@@ -19,6 +19,8 @@ package org.apache.kudu.test.cluster;
 
 import com.google.common.base.Preconditions;
 import com.google.gradle.osdetector.OsDetector;
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,6 +48,8 @@ import java.util.Set;
 /**
  * Class to find and extract Kudu binary jars from the classpath
  */
+@InterfaceAudience.Private
+@InterfaceStability.Unstable
 public class KuduBinaryJarExtractor {
 
   private static final Logger LOG = LoggerFactory.getLogger(KuduBinaryJarExtractor.class);

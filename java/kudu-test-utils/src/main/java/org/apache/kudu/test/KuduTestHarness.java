@@ -63,8 +63,8 @@ import static org.junit.Assert.fail;
  * }
  * </pre>
  */
-@InterfaceAudience.Private
-@InterfaceStability.Unstable
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 public class KuduTestHarness extends ExternalResource {
 
   private static final Logger LOG = LoggerFactory.getLogger(KuduTestHarness.class);
