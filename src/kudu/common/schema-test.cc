@@ -448,8 +448,10 @@ TEST_F(TestSchema, TestGetMappedReadProjection) {
                        { ColumnId(0),
                          ColumnId(1) },
                        1);
+  const bool kReadDefault = false;
   Schema projection({ ColumnSchema("key", STRING),
-                      ColumnSchema("deleted", IS_DELETED) },
+                      ColumnSchema("deleted", IS_DELETED,
+                                   /*is_nullable=*/false, /*read_default=*/&kReadDefault) },
                     1);
 
   Schema mapped;
@@ -470,6 +472,26 @@ TEST_F(TestSchema, TestGetMappedReadProjection) {
   ASSERT_EQ("deleted", mapped.column(1).name());
   ASSERT_GT(mapped.column_id(1), tablet_schema.column_id(1));
   ASSERT_GT(mapped.max_col_id(), tablet_schema.max_col_id());
+
+  // Ensure that virtual columns that are nullable or that do not have read
+  // defaults are rejected.
+  Schema nullable_projection({ ColumnSchema("key", STRING),
+                               ColumnSchema("deleted", IS_DELETED,
+                                            /*is_nullable=*/true,
+                                            /*read_default=*/&kReadDefault) },
+                          1);
+  Status s = tablet_schema.GetMappedReadProjection(nullable_projection, &mapped);
+  ASSERT_FALSE(s.ok());
+  ASSERT_STR_CONTAINS(s.ToString(), "must not be nullable");
+
+  Schema no_default_projection({ ColumnSchema("key", STRING),
+                                 ColumnSchema("deleted", IS_DELETED,
+                                              /*is_nullable=*/false,
+                                              /*read_default=*/nullptr) },
+                               1);
+  s = tablet_schema.GetMappedReadProjection(no_default_projection, &mapped);
+  ASSERT_FALSE(s.ok());
+  ASSERT_STR_CONTAINS(s.ToString(), "must have a default value for read");
 }
 
 // Test that the schema can be used to compare and stringify rows.

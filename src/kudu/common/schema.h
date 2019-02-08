@@ -904,6 +904,7 @@ class Schema {
       if (col.type_info()->type() == IS_DELETED) {
         // Enforce some properties on the virtual column that simplify our
         // implementation.
+        // TODO(KUDU-2692): Consider removing these requirements.
         DCHECK(!col.is_nullable());
         DCHECK(col.has_read_default());
 

@@ -401,6 +401,15 @@ Status Schema::GetMappedReadProjection(const Schema& projection,
     int index = find_column(col.name());
     if (col.type_info()->is_virtual()) {
       DCHECK_EQ(kColumnNotFound, index) << "virtual column not expected in tablet schema";
+      if (col.is_nullable()) {
+        return Status::InvalidArgument(Substitute("Virtual column $0 $1 must not be nullable",
+                                                  col.name(), col.TypeToString()));
+      }
+      if (!col.has_read_default()) {
+        return Status::InvalidArgument(Substitute("Virtual column $0 $1 must "
+                                                  "have a default value for read",
+                                                  col.name(), col.TypeToString()));
+      }
       mapped_cols.push_back(col);
       // Generate a "fake" column id for virtual columns.
       mapped_ids.emplace_back(++proj_max_col_id);
