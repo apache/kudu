@@ -358,61 +358,19 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
     // Since each executor has its own KuduClient, update executor's propagated timestamp
     // based on the last one on the driver.
     syncClient.updateLastPropagatedTimestamp(lastPropagatedTimestamp)
-    val table: KuduTable = syncClient.openTable(tableName)
-    val indices: Array[(Int, Int)] = schema.fields.zipWithIndex.map({
-      case (field, sparkIdx) =>
-        sparkIdx -> table.getSchema.getColumnIndex(field.name)
-    })
+    val table = syncClient.openTable(tableName)
+    val rowConverter = new RowConverter(table.getSchema, schema, writeOptions.ignoreNull)
     val session: KuduSession = syncClient.newSession
     session.setFlushMode(FlushMode.AUTO_FLUSH_BACKGROUND)
     session.setIgnoreAllDuplicateRows(writeOptions.ignoreDuplicateRowErrors)
-    val typeConverter = CatalystTypeConverters.createToScalaConverter(schema)
     var numRows = 0
     log.info(s"applying operations of type '${opType.toString}' to table '$tableName'")
     val startTime = System.currentTimeMillis()
     try {
       for (internalRow <- rows) {
-        val row = typeConverter(internalRow).asInstanceOf[Row]
+        val partialRow = rowConverter.toPartialRow(internalRow)
         val operation = opType.operation(table)
-        for ((sparkIdx, kuduIdx) <- indices) {
-          if (row.isNullAt(sparkIdx)) {
-            if (table.getSchema.getColumnByIndex(kuduIdx).isKey) {
-              val key_name = table.getSchema.getColumnByIndex(kuduIdx).getName
-              throw new IllegalArgumentException(
-                s"Can't set primary key column '$key_name' to null")
-            }
-            if (!writeOptions.ignoreNull) operation.getRow.setNull(kuduIdx)
-          } else {
-            schema.fields(sparkIdx).dataType match {
-              case DataTypes.StringType =>
-                operation.getRow.addString(kuduIdx, row.getString(sparkIdx))
-              case DataTypes.BinaryType =>
-                operation.getRow
-                  .addBinary(kuduIdx, row.getAs[Array[Byte]](sparkIdx))
-              case DataTypes.BooleanType =>
-                operation.getRow.addBoolean(kuduIdx, row.getBoolean(sparkIdx))
-              case DataTypes.ByteType =>
-                operation.getRow.addByte(kuduIdx, row.getByte(sparkIdx))
-              case DataTypes.ShortType =>
-                operation.getRow.addShort(kuduIdx, row.getShort(sparkIdx))
-              case DataTypes.IntegerType =>
-                operation.getRow.addInt(kuduIdx, row.getInt(sparkIdx))
-              case DataTypes.LongType =>
-                operation.getRow.addLong(kuduIdx, row.getLong(sparkIdx))
-              case DataTypes.FloatType =>
-                operation.getRow.addFloat(kuduIdx, row.getFloat(sparkIdx))
-              case DataTypes.DoubleType =>
-                operation.getRow.addDouble(kuduIdx, row.getDouble(sparkIdx))
-              case DataTypes.TimestampType =>
-                operation.getRow
-                  .addTimestamp(kuduIdx, row.getTimestamp(sparkIdx))
-              case DecimalType() =>
-                operation.getRow.addDecimal(kuduIdx, row.getDecimal(sparkIdx))
-              case t =>
-                throw new IllegalArgumentException(s"No support for Spark SQL type $t")
-            }
-          }
-        }
+        operation.setRow(partialRow)
         session.apply(operation)
         numRows += 1
       }
