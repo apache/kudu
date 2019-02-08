@@ -29,9 +29,8 @@ namespace clock {
 
 Status MockNtp::WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) {
   std::lock_guard<simple_spinlock> lock(lock_);
-  VLOG(1) << "Current clock time: " << mock_clock_time_usec_ << " error: "
-          << mock_clock_max_error_usec_ << ". Updating to time: " << now_usec
-          << " and error: " << error_usec;
+  VLOG(1) << "Current clock time: " << mock_clock_time_usec_
+          << " error: " << mock_clock_max_error_usec_;
   *now_usec = mock_clock_time_usec_;
   *error_usec = mock_clock_max_error_usec_;
   return Status::OK();
@@ -39,12 +38,14 @@ Status MockNtp::WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) {
 
 void MockNtp::SetMockClockWallTimeForTests(uint64_t now_usec) {
   std::lock_guard<simple_spinlock> lock(lock_);
+  VLOG(1) << "Updating to time: " << now_usec;
   CHECK_GE(now_usec, mock_clock_time_usec_);
   mock_clock_time_usec_ = now_usec;
 }
 
 void MockNtp::SetMockMaxClockErrorForTests(uint64_t max_error_usec) {
   std::lock_guard<simple_spinlock> lock(lock_);
+  VLOG(1) << "Updating to error: " << max_error_usec;
   mock_clock_max_error_usec_ = max_error_usec;
 }
 

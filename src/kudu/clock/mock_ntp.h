@@ -34,13 +34,13 @@ class MockNtp : public TimeService {
   MockNtp() = default;
   virtual ~MockNtp() = default;
 
-  virtual Status Init() override {
+  Status Init() override {
     return Status::OK();
   }
 
-  virtual Status WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) override;
+  Status WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) override;
 
-  virtual int64_t skew_ppm() const override {
+  int64_t skew_ppm() const override {
     // Just return the same constant as the default configuration for NTP:
     // the local clock frequency may accumulate error at a max rate of
     // 500us per second.
