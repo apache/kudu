@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <arpa/inet.h>
 #include <sys/socket.h>
 #include <ifaddrs.h>
 #include <limits.h>
@@ -249,6 +250,16 @@ string HostPort::ToCommaSeparatedString(const vector<HostPort>& hostports) {
   return JoinStrings(hostport_strs, ",");
 }
 
+bool HostPort::IsLoopback(uint32_t addr) {
+    return (NetworkByteOrder::FromHost32(addr) >> 24) == 127;
+}
+
+string HostPort::AddrToString(uint32_t addr) {
+  char str[INET_ADDRSTRLEN];
+  ::inet_ntop(AF_INET, &addr, str, INET_ADDRSTRLEN);
+  return str;
+}
+
 Network::Network()
   : addr_(0),
     netmask_(0) {
@@ -291,6 +302,14 @@ Status Network::ParseCIDRStrings(const string& comma_sep_addrs,
     res->push_back(network);
   }
   return Status::OK();
+}
+
+bool Network::IsLoopback() const {
+  return HostPort::IsLoopback(addr_);
+}
+
+string Network::GetAddrAsString() const {
+  return HostPort::AddrToString(addr_);
 }
 
 bool IsPrivilegedPort(uint16_t port) {

@@ -19,6 +19,7 @@
 
 #include <cstdio>
 #include <memory>
+#include <ostream>
 #include <string>
 #include <vector>
 
@@ -54,6 +55,7 @@
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/path_util.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/subprocess.h"
 #include "kudu/util/test_macros.h"
@@ -314,36 +316,124 @@ TEST_F(SecurityITest, TestWorldReadablePrivateKey) {
       credentials_name));
 }
 
+Status AssignIPToClient(bool external) {
+  // If the test does not require an external IP address
+  // assign loopback IP to FLAGS_local_ip_for_outbound_sockets.
+  if (!external) {
+    FLAGS_local_ip_for_outbound_sockets = "127.0.0.1";
+    return Status::OK();
+  }
+
+  // Try finding an external IP address to assign to
+  // FLAGS_local_ip_for_outbound_sockets.
+  vector<Network> local_networks;
+  RETURN_NOT_OK(GetLocalNetworks(&local_networks));
+
+  for (const auto& network : local_networks) {
+    if (!network.IsLoopback()) {
+      FLAGS_local_ip_for_outbound_sockets = network.GetAddrAsString();
+      // Found and assigned an external IP.
+      return Status::OK();
+    }
+  }
+
+  // Could not find an external IP.
+  return Status::NotFound("Could not find an external IP.");
+}
+
+// Descriptive constants for test parameters.
+const bool LOOPBACK_ENCRYPTED = true;
+const bool LOOPBACK_PLAIN = false;
+const bool TOKEN_PRESENT = true;
+const bool TOKEN_MISSING = false;
+const bool LOOPBACK_CLIENT_IP = false;
+const bool EXTERNAL_CLIENT_IP = true;
+const char* const AUTH_REQUIRED = "required";
+const char* const AUTH_DISABLED = "disabled";
+const char* const ENCRYPTION_REQUIRED = "required";
+const char* const ENCRYPTION_DISABLED = "disabled";
+
 struct AuthTokenIssuingTestParams {
   const BindMode bind_mode;
   const string rpc_authentication;
   const string rpc_encryption;
   const bool rpc_encrypt_loopback_connections;
+  const bool force_external_client_ip;
   const bool authn_token_present;
 };
+
 class AuthTokenIssuingTest :
     public SecurityITest,
     public ::testing::WithParamInterface<AuthTokenIssuingTestParams> {
 };
+
 INSTANTIATE_TEST_CASE_P(, AuthTokenIssuingTest, ::testing::ValuesIn(
     vector<AuthTokenIssuingTestParams>{
-      { BindMode::LOOPBACK, "required", "required", true,  true,  },
-      { BindMode::LOOPBACK, "required", "required", false, true,  },
-      //BindMode::LOOPBACK, "required", "disabled": non-acceptable
-      //BindMode::LOOPBACK, "required", "disabled": non-acceptable
-      { BindMode::LOOPBACK, "disabled", "required", true,  true,  },
-      { BindMode::LOOPBACK, "disabled", "required", false, true,  },
-      { BindMode::LOOPBACK, "disabled", "disabled", true,  false, },
-      { BindMode::LOOPBACK, "disabled", "disabled", false, true,  },
+      // The following 3 test cases cover passing authn token over an
+      // encrypted loopback connection.
+      // Note: AUTH_REQUIRED with ENCRYPTION_DISABLED is not
+      // an acceptable configuration.
+      { BindMode::LOOPBACK, AUTH_REQUIRED, ENCRYPTION_REQUIRED,
+        LOOPBACK_ENCRYPTED, LOOPBACK_CLIENT_IP, TOKEN_PRESENT, },
+
+      { BindMode::LOOPBACK, AUTH_DISABLED, ENCRYPTION_REQUIRED,
+        LOOPBACK_ENCRYPTED, LOOPBACK_CLIENT_IP, TOKEN_PRESENT, },
+
+      { BindMode::LOOPBACK, AUTH_DISABLED, ENCRYPTION_DISABLED,
+        LOOPBACK_ENCRYPTED, LOOPBACK_CLIENT_IP, TOKEN_MISSING, },
+
+      // The following 3 test cases cover passing authn token over an
+      // unencrypted loopback connection.
+      { BindMode::LOOPBACK, AUTH_REQUIRED, ENCRYPTION_REQUIRED,
+        LOOPBACK_PLAIN, LOOPBACK_CLIENT_IP, TOKEN_PRESENT, },
+
+      { BindMode::LOOPBACK, AUTH_DISABLED, ENCRYPTION_REQUIRED,
+        LOOPBACK_PLAIN, LOOPBACK_CLIENT_IP, TOKEN_PRESENT, },
+
+      { BindMode::LOOPBACK, AUTH_DISABLED, ENCRYPTION_DISABLED,
+        LOOPBACK_PLAIN, LOOPBACK_CLIENT_IP, TOKEN_PRESENT, },
+
+      // The following 3 test cases cover passing authn token over an
+      // external connection.
+      { BindMode::LOOPBACK, AUTH_REQUIRED, ENCRYPTION_REQUIRED,
+        LOOPBACK_PLAIN, EXTERNAL_CLIENT_IP, TOKEN_PRESENT, },
+
+      { BindMode::LOOPBACK, AUTH_DISABLED, ENCRYPTION_REQUIRED,
+        LOOPBACK_PLAIN, EXTERNAL_CLIENT_IP, TOKEN_PRESENT, },
+
+      { BindMode::LOOPBACK, AUTH_DISABLED, ENCRYPTION_DISABLED,
+        LOOPBACK_PLAIN, EXTERNAL_CLIENT_IP, TOKEN_MISSING, },
+
+      // The following 3 test cases verify that enforcement of encryption
+      // for loopback connections does not affect external connections.
+      { BindMode::LOOPBACK, AUTH_REQUIRED, ENCRYPTION_REQUIRED,
+        LOOPBACK_ENCRYPTED, EXTERNAL_CLIENT_IP, TOKEN_PRESENT, },
+
+      { BindMode::LOOPBACK, AUTH_DISABLED, ENCRYPTION_REQUIRED,
+        LOOPBACK_ENCRYPTED, EXTERNAL_CLIENT_IP, TOKEN_PRESENT, },
+
+      { BindMode::LOOPBACK, AUTH_DISABLED, ENCRYPTION_DISABLED,
+        LOOPBACK_ENCRYPTED, EXTERNAL_CLIENT_IP, TOKEN_MISSING, },
 #if defined(__linux__)
-      { BindMode::UNIQUE_LOOPBACK, "required", "required", true,  true,  },
-      { BindMode::UNIQUE_LOOPBACK, "required", "required", false, true,  },
-      //BindMode::UNIQUE_LOOPBACK, "required", "disabled": non-acceptable
-      //BindMode::UNIQUE_LOOPBACK, "required", "disabled": non-acceptable
-      { BindMode::UNIQUE_LOOPBACK, "disabled", "required", true,  true,  },
-      { BindMode::UNIQUE_LOOPBACK, "disabled", "required", false, true,  },
-      { BindMode::UNIQUE_LOOPBACK, "disabled", "disabled", true,  false, },
-      { BindMode::UNIQUE_LOOPBACK, "disabled", "disabled", false, false, },
+      // The following 6 test cases verify that a connection from 127.0.0.1
+      // to another loopback address is treated as a loopback connection.
+      { BindMode::UNIQUE_LOOPBACK, AUTH_REQUIRED, ENCRYPTION_REQUIRED,
+        LOOPBACK_ENCRYPTED, LOOPBACK_CLIENT_IP, TOKEN_PRESENT, },
+
+      { BindMode::UNIQUE_LOOPBACK, AUTH_DISABLED, ENCRYPTION_REQUIRED,
+        LOOPBACK_ENCRYPTED, LOOPBACK_CLIENT_IP, TOKEN_PRESENT, },
+
+      { BindMode::UNIQUE_LOOPBACK, AUTH_DISABLED, ENCRYPTION_DISABLED,
+        LOOPBACK_ENCRYPTED, LOOPBACK_CLIENT_IP, TOKEN_MISSING, },
+
+      { BindMode::UNIQUE_LOOPBACK, AUTH_REQUIRED, ENCRYPTION_REQUIRED,
+        LOOPBACK_PLAIN, LOOPBACK_CLIENT_IP, TOKEN_PRESENT, },
+
+      { BindMode::UNIQUE_LOOPBACK, AUTH_DISABLED, ENCRYPTION_REQUIRED,
+        LOOPBACK_PLAIN, LOOPBACK_CLIENT_IP, TOKEN_PRESENT, },
+
+      { BindMode::UNIQUE_LOOPBACK, AUTH_DISABLED, ENCRYPTION_DISABLED,
+        LOOPBACK_PLAIN, LOOPBACK_CLIENT_IP, TOKEN_PRESENT, },
 #endif
     }
 ));
@@ -355,24 +445,34 @@ TEST_P(AuthTokenIssuingTest, ChannelConfidentiality) {
   cluster_opts_.num_masters = 1;
   cluster_opts_.num_tablet_servers = 0;
   // --user-acl: just restoring back the default setting.
-  cluster_opts_.extra_master_flags.emplace_back("--user-acl=*");
+  cluster_opts_.extra_master_flags.emplace_back("--user_acl=*");
 
   const auto& params = GetParam();
+
+  // When testing external connections, make sure the client connects from
+  // an external IP, so that the connection is not considered to be local.
+  // When testing local connections, make sure that the client
+  // connects from standard loopback IP.
+  // Skip tests that require an external connection
+  // if the host does not have a non-loopback interface.
+  Status s = AssignIPToClient(params.force_external_client_ip);
+  if (s.IsNotFound()) {
+    LOG(WARNING) << s.message().ToString() << "\nSkipping external connection test.";
+    return;
+  }
+  // Fail if GetLocalNetworks failed to determine network interfaces.
+  ASSERT_OK(s);
+
+  // Set flags and start cluster.
   cluster_opts_.bind_mode = params.bind_mode;
   cluster_opts_.extra_master_flags.emplace_back(
-      Substitute("--rpc-authentication=$0", params.rpc_authentication));
+      Substitute("--rpc_authentication=$0", params.rpc_authentication));
   cluster_opts_.extra_master_flags.emplace_back(
-      Substitute("--rpc-encryption=$0", params.rpc_encryption));
+      Substitute("--rpc_encryption=$0", params.rpc_encryption));
   cluster_opts_.extra_master_flags.emplace_back(
       Substitute("--rpc_encrypt_loopback_connections=$0",
                  params.rpc_encrypt_loopback_connections));
   ASSERT_OK(StartCluster());
-
-  // Make sure the client always connects from the standard loopback address.
-  // This is crucial when the master is running with UNIQUE_LOOPBACK mode: the
-  // test scenario expects the client connects from other than 127.0.0.1 address
-  // so the connection is not considered a 'loopback' one.
-  FLAGS_local_ip_for_outbound_sockets = "127.0.0.1";
 
   // In current implementation, KuduClientBuilder calls ConnectToCluster() on
   // the newly created instance of the KuduClient.

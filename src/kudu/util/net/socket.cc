@@ -299,8 +299,11 @@ bool Socket::IsLoopbackConnection() const {
   Sockaddr local, remote;
   if (!GetSocketAddress(&local).ok()) return false;
   if (!GetPeerAddress(&remote).ok()) return false;
-
-  // Compare without comparing ports.
+  // Check if remote address is in 127.0.0.0/8 subnet.
+  if (remote.IsAnyLocalAddress()) {
+    return true;
+  }
+  // Compare local and remote addresses without comparing ports.
   local.set_port(0);
   remote.set_port(0);
   return local == remote;

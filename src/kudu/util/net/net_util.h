@@ -92,6 +92,12 @@ class HostPort {
   // "inverse" of ParseStrings().
   static std::string ToCommaSeparatedString(const std::vector<HostPort>& host_ports);
 
+  // Returns true if addr is within 127.0.0.0/8 range.
+  static bool IsLoopback(uint32_t addr);
+
+  // Returns dotted-decimal ('1.2.3.4') representation of IP address in addr.
+  static std::string AddrToString(uint32_t addr);
+
  private:
   std::string host_;
   uint16_t port_;
@@ -130,6 +136,12 @@ class Network {
 
   // Returns true if the address is within network.
   bool WithinNetwork(const Sockaddr& addr) const;
+
+  // Returns true if the network is within 127.0.0.0/8 range.
+  bool IsLoopback() const;
+
+  // Returns addr part of addr:mask pair as string.
+  std::string GetAddrAsString() const;
 
   // Parses a "addr/netmask" (CIDR notation) pair into this object.
   Status ParseCIDRString(const std::string& addr);

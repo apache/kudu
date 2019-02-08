@@ -25,7 +25,6 @@
 #include <cstring>
 #include <string>
 
-#include "kudu/gutil/endian.h"
 #include "kudu/gutil/hash/builtin_type_hash.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -89,9 +88,7 @@ int Sockaddr::port() const {
 }
 
 std::string Sockaddr::host() const {
-  char str[INET_ADDRSTRLEN];
-  ::inet_ntop(AF_INET, &addr_.sin_addr, str, INET_ADDRSTRLEN);
-  return str;
+  return HostPort::AddrToString(addr_.sin_addr.s_addr);
 }
 
 const struct sockaddr_in& Sockaddr::addr() const {
@@ -107,7 +104,7 @@ bool Sockaddr::IsWildcard() const {
 }
 
 bool Sockaddr::IsAnyLocalAddress() const {
-  return (NetworkByteOrder::FromHost32(addr_.sin_addr.s_addr) >> 24) == 127;
+  return HostPort::IsLoopback(addr_.sin_addr.s_addr);
 }
 
 Status Sockaddr::LookupHostname(string* hostname) const {
