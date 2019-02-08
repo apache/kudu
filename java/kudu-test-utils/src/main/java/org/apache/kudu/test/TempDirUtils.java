@@ -18,6 +18,8 @@
 package org.apache.kudu.test;
 
 import org.apache.commons.io.FileUtils;
+import org.apache.yetus.audience.InterfaceAudience;
+import org.apache.yetus.audience.InterfaceStability;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -30,6 +32,8 @@ import java.nio.file.Paths;
 /**
  * Utilities for retrieving and creating temp directories.
  */
+@InterfaceAudience.Private
+@InterfaceStability.Unstable
 public class TempDirUtils {
 
   /**
