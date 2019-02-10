@@ -59,7 +59,14 @@ PAT_LINUX_LIB_EXCLUDE = re.compile(r"""(libpthread|
                                         librt|
                                         libdl|
                                         libresolv|
-                                        libgcc.*
+                                        libgcc.*|
+                                        libcrypt|
+                                        libm|
+                                        libkeyutils|
+                                        libcom_err|
+                                        libdb-[\d.]+|
+                                        libselinux|
+                                        libtinfo|
                                        )\.so""", re.VERBOSE)
 
 # We don't want to ship libSystem because it includes kernel and thread
@@ -73,6 +80,7 @@ PAT_MACOS_LIB_EXCLUDE = re.compile(r"""(AppleFSCompression$|
                                         DiskArbitration$|
                                         IOKit$|
                                         Foundation$|
+                                        Kerberos$|
                                         Security$|
                                         SystemConfiguration$|
                                         libCRFSuite|

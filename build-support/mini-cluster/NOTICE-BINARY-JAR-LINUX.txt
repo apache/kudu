@@ -1,0 +1,13 @@
+===========================================================
+Notices for Linux binary test jar distribution dependencies
+===========================================================
+
+OpenSSL:
+
+  This product includes software developed by the OpenSSL Project
+  for use in the OpenSSL Toolkit (http://www.openssl.org/)
+
+Cyrus SASL:
+
+  This product includes software developed by Computing Services
+  at Carnegie Mellon University (http://www.cmu.edu/computing/).

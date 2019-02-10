@@ -69,6 +69,7 @@ set -e
 
 SOURCE_ROOT=$(cd $(dirname $0)/../..; pwd)
 BUILD_ROOT=$SOURCE_ROOT/build/mini-cluster
+MINI_CLUSTER_SRCDIR=$SOURCE_ROOT/build-support/mini-cluster
 TARGETS="kudu kudu-tserver kudu-master"
 
 cd $SOURCE_ROOT
@@ -113,7 +114,7 @@ NUM_PROCS=$(getconf _NPROCESSORS_ONLN)
 make -j$NUM_PROCS $TARGETS
 
 # Relocate the binaries.
-$SOURCE_ROOT/build-support/mini-cluster/relocate_binaries_for_mini_cluster.py $BUILD_ROOT $TARGETS
+$MINI_CLUSTER_SRCDIR/relocate_binaries_for_mini_cluster.py $BUILD_ROOT $TARGETS
 
 ARTIFACT_NAME=$(ls -d kudu-binary* | sed 's#/##' | head -1)
 
@@ -152,9 +153,24 @@ artifact.version=$ARTIFACT_VERSION
 EOF
 
 # Include the basic legal files.
-for file in LICENSE.txt NOTICE.txt; do
-  cp -p $SOURCE_ROOT/$file $ARTIFACT_NAME/
-done
+# Create a platform-specific NOTICE file.
+JAR_NOTICE=$MINI_CLUSTER_SRCDIR/NOTICE-BINARY-JAR-LINUX.txt
+if [ $MACOS ]; then
+  JAR_NOTICE=$MINI_CLUSTER_SRCDIR/NOTICE-BINARY-JAR-OSX.txt
+fi
+cat $SOURCE_ROOT/NOTICE.txt \
+    $JAR_NOTICE \
+    > $ARTIFACT_NAME/NOTICE.txt
+
+# Create a platform-specific LICENSE file.
+JAR_LICENSE=$MINI_CLUSTER_SRCDIR/LICENSE-BINARY-JAR-LINUX.txt
+if [ $MACOS ]; then
+  JAR_LICENSE=$MINI_CLUSTER_SRCDIR/LICENSE-BINARY-JAR-OSX.txt
+fi
+cat $SOURCE_ROOT/LICENSE.txt \
+    $SOURCE_ROOT/thirdparty/LICENSE.txt \
+    $JAR_LICENSE \
+    > $ARTIFACT_NAME/LICENSE.txt
 
 # Include the web UI template files.
 cp -Rp $SOURCE_ROOT/www $ARTIFACT_NAME/
@@ -165,10 +181,13 @@ This archive contains Kudu binaries for use in a "mini cluster" environment for
 TESTING ONLY.
 
 The binaries in this archive should never be deployed to run an actual Kudu
-service, whether in production or development, because all security
-dependencies are copied from the build system and will not be updated if the
+service, whether in production or development, because many security-related
+dependencies are copied from the build system and will not be patched when the
 operating system on the runtime host is patched.
 EOF
+
+echo "Running license check on artifact..."
+$SOURCE_ROOT/build-support/mini-cluster/check-license.pl $ARTIFACT_NAME
 
 echo Creating archive...
 ARTIFACT_FILE=$ARTIFACT_NAME.jar
