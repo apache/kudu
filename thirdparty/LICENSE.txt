@@ -1,6 +1,13 @@
+==========================================================
+License information for Kudu third-party dependencies
+==========================================================
+
 This directory contains scripts which download and install several third-party
-dependencies of Kudu. Most of these dependencies are statically linked into
-Kudu binaries, though a few are used only at build-time.
+dependencies of Kudu. In production builds of Kudu, most of these dependencies
+are statically linked into the Kudu binaries, while in the Kudu binary test
+jar, some of these libraries are distributed as dynamically-linked shared
+objects. A few of these dependencies are used only at build time and are noted
+as such.
 
 --------------------------------------------------------------------------------
 thirdparty/lz4-svn/: BSD 2-clause license
@@ -35,6 +42,7 @@ Source: https://github.com/Cyan4973/lz4
 
 --------------------------------------------------------------------------------
 thirdparty/gflags-*/: BSD 3-clause dependency
+libraries: libgflags
 source: https://github.com/gflags/gflags
 
   Copyright (c) 2006, Google Inc.
@@ -68,6 +76,7 @@ source: https://github.com/gflags/gflags
 
 --------------------------------------------------------------------------------
 thirdparty/glog-*/: BSD 3-clause license
+libraries: libglog
 Source: https://github.com/google/glog
 
   Copyright (c) 2008, Google Inc.
@@ -137,6 +146,7 @@ Source: https://github.com/google/glog
 
 --------------------------------------------------------------------------------
 thirdparty/gperftools-*/: BSD 3-clause
+libraries: libprofiler, libtcmalloc
 Source: https://github.com/gperftools/gperftools
 
   Copyright (c) 2005, Google Inc.
@@ -170,6 +180,7 @@ Source: https://github.com/gperftools/gperftools
 
 --------------------------------------------------------------------------------
 thirdparty/libev-*/: BSD 2-clause
+libraries: libev
 Source: http://software.schmorp.de/pkg/libev.html
 
   All files in libev are
@@ -245,6 +256,7 @@ Source: https://github.com/henryr/cpp-mustache
 
 --------------------------------------------------------------------------------
 thirdparty/protobuf-*/: BSD 3-clause
+libraries: libprotobuf
 Source: https://github.com/google/protobuf
 
   Copyright 2008, Google Inc.
@@ -307,6 +319,7 @@ Source: https://github.com/miloyip/rapidjson
 
 --------------------------------------------------------------------------------
 thirdparty/snappy-*/: BSD 3-clause
+libraries: libsnappy
 Source: https://github.com/google/snappy
 
   Copyright 2011, Google Inc.
@@ -398,6 +411,7 @@ Source: https://github.com/catapult-project/catapult
 
 --------------------------------------------------------------------------------
 thirdparty/zlib-*/: Zlib license
+libraries: libz
 Source: http://www.zlib.net/
 
  (C) 1995-2013 Jean-loup Gailly and Mark Adler
@@ -497,10 +511,12 @@ Source: http://curl.haxx.se/
 
 --------------------------------------------------------------------------------
 thirdparty/crcutil-*/: Apache 2.0 license
+libraries: libcrcutil
 Source: https://code.google.com/archive/p/crcutil/
 
 --------------------------------------------------------------------------------
 thirdparty/libunwind-*/: X11 License
+libraries: libunwind
 Source: http://savannah.nongnu.org/projects/libunwind/
 
   Permission is hereby granted, free of charge, to any person obtaining
@@ -524,6 +540,7 @@ Source: http://savannah.nongnu.org/projects/libunwind/
 
 --------------------------------------------------------------------------------
 thirdparty/nvml-*/: BSD 3-clause license
+libraries: libvmem
 Source: https://github.com/pmem/nvml
 
   Copyright (c) 2014-2015, Intel Corporation
@@ -621,6 +638,7 @@ Source: http://www.boost.org/
 
 --------------------------------------------------------------------------------
 thirdparty/thrift-*/: Apache License v2.0
+libraries: libthrift
 Source: https://thrift.apache.org
 
 ================================================================================
@@ -644,8 +662,10 @@ NOTE: optional build-time dependency
 
 --------------------------------------------------------------------------------
 thirdparty/gmock-*/: BSD 3-clause
+libraries: libgmock
 Source: https://github.com/google/googletest
 NOTE: build-time dependency
+TODO(KUDU-2696): gmock is unnecessarily linked into the kudu cli binary
 
 --------------------------------------------------------------------------------
 thirdparty/google-styleguide-*/: CC-By 3.0 (http://creativecommons.org/licenses/by/3.0/)

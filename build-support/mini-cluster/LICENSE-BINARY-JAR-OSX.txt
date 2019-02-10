@@ -1,0 +1,12 @@
+=======================================================================
+License information for macOS binary test jar distribution dependencies
+=======================================================================
+
+In addition to dependencies described elsewhere, the below dependencies are
+distributed with the macOS version of the Kudu binary test jar.
+
+--------------------------------------------------------------------------------
+OpenSSL: OpenSSL software license
+libraries: libssl, libcrypto
+Source: Homebrew repository
+
