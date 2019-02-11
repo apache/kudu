@@ -82,25 +82,49 @@ void LockingCB(int mode, int type, const char* /*file*/, int /*line*/) {
 #endif
 
 Status CheckOpenSSLInitialized() {
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+  // Starting with OpenSSL 1.1.0, the old thread API became obsolete
+  // (see changelist 2e52e7df5 in the OpenSSL upstream repo), and
+  // CRYPTO_get_locking_callback() always returns nullptr. Also, the library
+  // always initializes its internals for multi-threaded usage.
+  // Another point is that starting with version 1.1.0, SSL_CTX_new()
+  // initializes the OpenSSL library under the hood, so SSL_CTX_new() would
+  // not return nullptr unless there was an error during the initialization
+  // of the library. That makes this code in CheckOpenSSLInitialized() obsolete
+  // starting with OpenSSL version 1.1.0.
+  //
+  // Starting with OpenSSL 1.1.0, there isn't a straightforward way to
+  // determine whether the library has already been initialized if using just
+  // the API (well, there is CRYPTO_secure_malloc_initialized() but that's just
+  // for the crypto library and it's implementation-dependent). But from the
+  // other side, the whole idea that this method should check whether the
+  // library has already been initialized is not relevant anymore: even if it's
+  // not yet initialized, the first call to SSL_CTX_new() (from, say,
+  // TlsContext::Init()) will initialize the library under the hood, so the
+  // library will be ready for multi-thread usage by Kudu.
   if (!CRYPTO_get_locking_callback()) {
     return Status::RuntimeError("Locking callback not initialized");
   }
   auto ctx = ssl_make_unique(SSL_CTX_new(SSLv23_method()));
   if (!ctx) {
     ERR_clear_error();
-    return Status::RuntimeError("SSL library appears uninitialized (cannot create SSL_CTX)");
+    return Status::RuntimeError(
+        "SSL library appears uninitialized (cannot create SSL_CTX)");
   }
+#endif
   return Status::OK();
 }
 
 void DoInitializeOpenSSL() {
-#if OPENSSL_VERSION_NUMBER > 0x10100000L
+#if OPENSSL_VERSION_NUMBER >= 0x10100000L
   // The OPENSSL_init_ssl manpage [1] says "As of version 1.1.0 OpenSSL will
   // automatically allocate all resources it needs so no explicit initialisation
   // is required." However, eliding library initialization leads to a memory
-  // leak in some versions of OpenSSL 1.1 when the first OpenSSL is
-  // ERR_peek_error [2]. In Kudu this is often the
-  // case due to prolific application of SCOPED_OPENSSL_NO_PENDING_ERRORS.
+  // leak in some versions of OpenSSL 1.1 when the first OpenSSL call is
+  // ERR_peek_error (see [2] for details; the issue was addressed in OpenSSL
+  // 1.1.0i (OPENSSL_VERSION_NUMBER 0x1010009f)). In Kudu this is often the
+  // case due to prolific application of the SCOPED_OPENSSL_NO_PENDING_ERRORS
+  // macro.
   //
   // Rather than determine whether this particular OpenSSL instance is
   // leak-free, we'll initialize the library explicitly.
