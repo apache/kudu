@@ -133,7 +133,8 @@ TEST_F(TabletHistoryGcITest, TestSnapshotScanBeforeAHM) {
   ASSERT_OK(scanner.SetReadMode(KuduScanner::READ_AT_SNAPSHOT));
   Status s = scanner.Open();
   ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
-  ASSERT_STR_CONTAINS(s.ToString(), "Snapshot timestamp is earlier than the ancient history mark");
+  ASSERT_STR_CONTAINS(s.ToString(),
+                      "snapshot scan end timestamp is earlier than the ancient history mark");
 }
 
 // Check that the maintenance manager op to delete undo deltas actually deletes them.

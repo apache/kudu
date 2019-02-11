@@ -75,7 +75,9 @@ message TabletServerErrorPB {
     // The tablet is hosted on this server, but not in RUNNING state.
     TABLET_NOT_RUNNING = 12;
 
-    // Client requested a snapshot read but the snapshot was invalid.
+    // Client requested a snapshot read but the snapshot was invalid. The
+    // client may be able to respond to this error by choosing a different
+    // start or end timestamp for the snapshot.
     INVALID_SNAPSHOT = 13;
 
     // An invalid scan call sequence ID was specified.
@@ -258,8 +260,31 @@ message NewScanRequestPB {
   // See common.proto for further information about read modes.
   optional ReadMode read_mode = 5 [default = READ_LATEST];
 
-  // The requested snapshot timestamp. This is only used
-  // when the read mode is set to READ_AT_SNAPSHOT.
+  // The start timestamp of a diff scan. If set, 'snap_timestamp' must also be
+  // specified and the read mode must be set to READ_AT_SNAPSHOT. Specifying
+  // this field turns the scan into a diff scan, where all changes between the
+  // start and end timestamp are returned.
+  //
+  // Diff Scans
+  // ==========
+  //
+  // When starting a diff scan, a column of type IS_DELETED (known as a virtual
+  // column) must also be included in the scan projection schema. The results
+  // of a diff scan include all values in the projection.
+  // Any row deleted between the start and end timestamps will have its
+  // IS_DELETED column set to true. In this case, any non-primary key column
+  // values in the result are undefined (they are not guaranteed to be the
+  // latest value before the row was deleted) and should be ignored. If the
+  // IS_DELETED column is set to false, then the row was inserted or updated
+  // betweeen the start and end timestamps. There is currently no way to tell
+  // whether a row returned from a diff scan with the IS_DELETED column set to
+  // false was included with the results because it was inserted or because it
+  // was updated.
+  optional fixed64 snap_start_timestamp = 16;
+
+  // The requested snapshot timestamp. This is only used when the read mode is
+  // set to READ_AT_SNAPSHOT. When 'snap_start_timestamp' is specified then
+  // this is the "end" timestamp of a diff scan.
   optional fixed64 snap_timestamp = 6;
 
   // Sent by clients which previously executed CLIENT_PROPAGATED writes.
