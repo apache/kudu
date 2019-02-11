@@ -38,6 +38,7 @@
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/raft_consensus.h"
+#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/port.h"
@@ -436,11 +437,23 @@ void TabletReplica::GetTabletStatusPB(TabletStatusPB* status_pb_out) const {
     status_pb_out->set_state(state_);
     status_pb_out->set_last_status(last_status_);
   }
-  status_pb_out->set_tablet_id(meta_->tablet_id());
+  const string& tablet_id = meta_->tablet_id();
+  status_pb_out->set_tablet_id(tablet_id);
   status_pb_out->set_table_name(meta_->table_name());
   meta_->partition().ToPB(status_pb_out->mutable_partition());
   status_pb_out->set_tablet_data_state(meta_->tablet_data_state());
   status_pb_out->set_estimated_on_disk_size(OnDiskSize());
+  // There are circumstances where the call to 'FindDataDirsByTabletId' may
+  // fail, like if the tablet is tombstoned or failed. It's alright to return
+  // an empty 'data_dirs' in this case-- the state and last status will inform
+  // the caller.
+  vector<string> data_dirs;
+  ignore_result(
+      meta_->fs_manager()->dd_manager()->FindDataDirsByTabletId(tablet_id,
+                                                                &data_dirs));
+  for (auto& dir : data_dirs) {
+    status_pb_out->add_data_dirs(std::move(dir));
+  }
 }
 
 Status TabletReplica::RunLogGC() {

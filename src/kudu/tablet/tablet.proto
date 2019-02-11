@@ -101,4 +101,5 @@ message TabletStatusPB {
   optional bytes end_key = 6;
   optional PartitionPB partition = 9;
   optional int64 estimated_on_disk_size = 7;
+  repeated bytes data_dirs = 10;
 }

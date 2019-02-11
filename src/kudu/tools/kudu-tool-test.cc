@@ -1893,6 +1893,53 @@ TEST_F(ToolTest, TestRemoteReplicaCopy) {
                                    tablet::RUNNING, kTimeout));
 }
 
+// Test the 'kudu remote_replica list' tool.
+TEST_F(ToolTest, TestRemoteReplicaList) {
+  MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+  const int kNumTservers = 1;
+  const int kNumTablets = 1;
+  ExternalMiniClusterOptions opts;
+  opts.num_data_dirs = 3;
+  opts.num_tablet_servers = kNumTservers;
+  NO_FATALS(StartExternalMiniCluster(std::move(opts)));
+
+  // TestWorkLoad.Setup() internally generates a table.
+  TestWorkload workload(cluster_.get());
+  workload.set_num_tablets(kNumTablets);
+  workload.set_num_replicas(kNumTservers);
+  workload.Setup();
+
+  TServerDetails* ts = ts_map_[cluster_->tablet_server(0)->uuid()];
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  ASSERT_OK(WaitForNumTabletsOnTS(ts, kNumTablets, kTimeout, &tablets));
+  const string& ts_addr = cluster_->tablet_server(0)->bound_rpc_addr().ToString();
+  string stdout;
+  NO_FATALS(RunActionStdoutString(
+        Substitute("remote_replica list $0", ts_addr), &stdout));
+  const auto& tablet_status = tablets[0].tablet_status();
+
+  // Some fields like state or estimated on disk size may vary. Just check a
+  // few whose values we should know exactly.
+  ASSERT_STR_CONTAINS(stdout,
+                      Substitute("Tablet id: $0", tablet_status.tablet_id()));
+  ASSERT_STR_CONTAINS(stdout,
+                      Substitute("Table name: $0", workload.table_name()));
+  ASSERT_STR_CONTAINS(stdout,
+      Substitute("Data dirs: $0", JoinStrings(tablet_status.data_dirs(), ", ")));
+
+  // Tombstone the replica and try again.
+  ASSERT_OK(DeleteTablet(ts, tablet_status.tablet_id(),
+                         TabletDataState::TABLET_DATA_TOMBSTONED, kTimeout));
+  NO_FATALS(RunActionStdoutString(
+        Substitute("remote_replica list $0", ts_addr), &stdout));
+  ASSERT_STR_CONTAINS(stdout,
+                      Substitute("Tablet id: $0", tablet_status.tablet_id()));
+  ASSERT_STR_CONTAINS(stdout,
+                      Substitute("Table name: $0", workload.table_name()));
+  ASSERT_STR_CONTAINS(stdout,
+      Substitute("Data dirs: $0", JoinStrings(tablet_status.data_dirs(), ", ")));
+}
+
 // Test 'kudu local_replica delete' tool with --clean_unsafe flag for
 // deleting the tablet from the tablet server.
 TEST_F(ToolTest, TestLocalReplicaDelete) {

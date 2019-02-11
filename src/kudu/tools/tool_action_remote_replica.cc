@@ -43,6 +43,7 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/human_readable.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/server/server_base.pb.h"
@@ -304,6 +305,11 @@ Status ListReplicas(const RunnerContext& context) {
     if (rs.has_estimated_on_disk_size()) {
       cout << "Estimated on disk size: "
            << HumanReadableNumBytes::ToString(rs.estimated_on_disk_size()) << endl;
+    }
+    if (rs.data_dirs_size() != 0) {
+      cout << "Data dirs: " << JoinStrings(rs.data_dirs(), ", ") << endl;
+    } else {
+      cout << "Data dirs: <not available>" << endl;
     }
     cout << "Schema: " << schema.ToString() << endl;
   }
