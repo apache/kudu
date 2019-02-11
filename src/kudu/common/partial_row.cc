@@ -650,6 +650,10 @@ Status KuduPartialRow::GetFloat(const Slice& col_name, float* val) const {
 Status KuduPartialRow::GetDouble(const Slice& col_name, double* val) const {
   return Get<TypeTraits<DOUBLE> >(col_name, val);
 }
+Status KuduPartialRow::GetUnscaledDecimal(const Slice &col_name, int128_t *val) {
+  // Call the const version of the function.
+  return const_cast<const KuduPartialRow*>(this)->GetUnscaledDecimal(col_name, val);
+}
 Status KuduPartialRow::GetUnscaledDecimal(const Slice &col_name, int128_t *val) const {
   int col_idx;
   RETURN_NOT_OK(FindColumn(*schema_, col_name, &col_idx));
@@ -685,6 +689,10 @@ Status KuduPartialRow::GetFloat(int col_idx, float* val) const {
 }
 Status KuduPartialRow::GetDouble(int col_idx, double* val) const {
   return Get<TypeTraits<DOUBLE> >(col_idx, val);
+}
+Status KuduPartialRow::GetUnscaledDecimal(int col_idx, int128_t *val) {
+  // Call the const version of the function.
+  return const_cast<const KuduPartialRow*>(this)->GetUnscaledDecimal(col_idx, val);
 }
 Status KuduPartialRow::GetUnscaledDecimal(int col_idx, int128_t *val) const {
   const ColumnSchema& col = schema_->column(col_idx);

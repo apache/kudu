@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/common/partial_row.h"
+
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -22,8 +24,8 @@
 #include <gtest/gtest.h>
 
 #include "kudu/common/common.pb.h"
-#include "kudu/common/partial_row.h"
 #include "kudu/common/schema.h"
+#include "kudu/util/int128.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -213,6 +215,17 @@ TEST_F(PartialRowTest, UnitTest) {
   EXPECT_OK(row.SetUnscaledDecimal("decimal_val", 123456));
   EXPECT_TRUE(row.IsColumnSet(4));
   EXPECT_EQ("decimal decimal_val=123456_D32", row.ToString());
+
+  // Get a decimal value using the const version of the function.
+  int128_t decValFromConst;
+  EXPECT_OK(const_cast<const KuduPartialRow&>(row).GetUnscaledDecimal("decimal_val",
+      &decValFromConst));
+  EXPECT_EQ(123456, decValFromConst);
+
+  // Get a decimal value the backward compatible non-const version of the function.
+  int128_t decValFromNonConst;
+  EXPECT_OK(row.GetUnscaledDecimal("decimal_val", &decValFromNonConst));
+  EXPECT_EQ(123456, decValFromNonConst);
 
   // Set the max decimal value for the decimal_val column
   EXPECT_OK(row.SetUnscaledDecimal("decimal_val", 999999));
