@@ -301,10 +301,8 @@ Status KuduPartialRow::SetFloat(int col_idx, float val) {
 Status KuduPartialRow::SetDouble(int col_idx, double val) {
   return Set<TypeTraits<DOUBLE> >(col_idx, val);
 }
-Status KuduPartialRow::SetUnscaledDecimal(int col_idx, int128_t val) {
-  const ColumnSchema& col = schema_->column(col_idx);
-  const DataType col_type = col.type_info()->type();
 
+Status CheckDecimalValueInRange(ColumnSchema col, int128_t val) {
   int128_t max_val = MaxUnscaledDecimal(col.type_attributes().precision);
   int128_t min_val = -max_val;
   if (val < min_val || val > max_val) {
@@ -312,16 +310,25 @@ Status KuduPartialRow::SetUnscaledDecimal(int col_idx, int128_t val) {
         Substitute("value $0 out of range for decimal column '$1'",
                    DecimalToString(val, col.type_attributes().scale), col.name()));
   }
+  return Status::OK();
+}
+
+Status KuduPartialRow::SetUnscaledDecimal(int col_idx, int128_t val) {
+  const ColumnSchema& col = schema_->column(col_idx);
+  const DataType col_type = col.type_info()->type();
   switch (col_type) {
     case DECIMAL32:
+      RETURN_NOT_OK(CheckDecimalValueInRange(col, val))
       return Set<TypeTraits<DECIMAL32> >(col_idx, static_cast<int32_t>(val));
     case DECIMAL64:
+      RETURN_NOT_OK(CheckDecimalValueInRange(col, val))
       return Set<TypeTraits<DECIMAL64> >(col_idx, static_cast<int64_t>(val));
     case DECIMAL128:
+      RETURN_NOT_OK(CheckDecimalValueInRange(col, val))
       return Set<TypeTraits<DECIMAL128> >(col_idx, static_cast<int128_t>(val));
     default:
       return Status::InvalidArgument(
-          Substitute("invalid type $0 provided for column '$1' (expected DECIMAL)",
+          Substitute("invalid type $0 provided for column '$1' (expected decimal)",
                      col.type_info()->name(), col.name()));
   }
 }
@@ -700,7 +707,7 @@ Status KuduPartialRow::GetUnscaledDecimal(int col_idx, int128_t *val) const {
       return Status::OK();
     default:
       return Status::InvalidArgument(
-          Substitute("invalid type $0 provided for column '$1' (expected DECIMAL)",
+          Substitute("invalid type $0 provided for column '$1' (expected decimal)",
                      col.type_info()->name(), col.name()));
   }
 }
