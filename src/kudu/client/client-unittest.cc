@@ -26,6 +26,7 @@
 #include <boost/bind.hpp>
 #include <boost/function.hpp>
 #include <gtest/gtest.h>
+#include <openssl/opensslv.h>
 
 #include "kudu/client/client-internal.h"
 #include "kudu/client/error_collector.h"
@@ -168,10 +169,20 @@ TEST(ClientUnitTest, TestSchemaBuilder_CompoundKey_BadColumnName) {
 }
 
 TEST(ClientUnitTest, TestDisableSslFailsIfNotInitialized) {
-  // If we try to disable SSL initialization without setting up SSL properly,
-  // it should return an error.
-  Status s = DisableOpenSSLInitialization();
+  const auto s = DisableOpenSSLInitialization();
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+  // With the pre-1.1.0 OpenSSL library, if we try to disable SSL
+  // initialization without setting up SSL properly, it should return an error.
   ASSERT_STR_MATCHES(s.ToString(), "Locking callback not initialized");
+#else
+  // Starting with OpenSSL 1.1.0, the library can be implicitly initialized
+  // upon calling the relevant methods of the API (e.g. SSL_CTX_new()) and
+  // overall there is no reliable non-intrusive way to determine that the
+  // library has already been initialized. So, the requirement to have
+  // the library initialized before calling DisableOpenSSLInitialization()
+  // is gone since OpenSSL 1.1.0.
+  ASSERT_TRUE(s.ok()) << s.ToString();
+#endif
 }
 
 namespace {
