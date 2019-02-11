@@ -96,7 +96,8 @@ PAT_MACOS_LIB_EXCLUDE = re.compile(r"""(AppleFSCompression$|
                                         libobjc|
                                         libresolv|
                                         libsasl2|
-                                        libxar
+                                        libxar|
+                                        libz
                                        )""",
                                        re.VERBOSE)
 
