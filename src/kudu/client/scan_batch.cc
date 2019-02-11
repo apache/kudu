@@ -341,7 +341,7 @@ Status KuduScanBatch::RowPtr::GetUnscaledDecimal(int col_idx, int128_t* val) con
       return Status::OK();
     default:
       return Status::InvalidArgument(
-          Substitute("invalid type $0 provided for column '$1' (expected DECIMAL)",
+          Substitute("invalid type $0 provided for column '$1' (expected decimal)",
                      col.type_info()->name(), col.name()));
   }
 }

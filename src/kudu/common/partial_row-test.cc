@@ -232,6 +232,12 @@ TEST_F(PartialRowTest, UnitTest) {
   EXPECT_EQ("Invalid argument: value -10000.00 out of range for decimal column 'decimal_val'",
             s.ToString());
 
+  // Set a decimal value on a non decimal column.
+  s = row.SetUnscaledDecimal("string_val", 123456);
+  EXPECT_EQ("Invalid argument: invalid type string provided for column "
+            "'string_val' (expected decimal)",
+            s.ToString());
+
   // Even though the storage is actually the same at the moment, we shouldn't be
   // able to set string columns with SetBinary and vice versa.
   EXPECT_FALSE(row.SetBinaryCopy("string_val", "oops").ok());
