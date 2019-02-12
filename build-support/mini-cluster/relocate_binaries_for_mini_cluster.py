@@ -66,7 +66,7 @@ PAT_LINUX_LIB_EXCLUDE = re.compile(r"""(libpthread|
                                         libcom_err|
                                         libdb-[\d.]+|
                                         libselinux|
-                                        libtinfo|
+                                        libtinfo
                                        )\.so""", re.VERBOSE)
 
 # We don't want to ship libSystem because it includes kernel and thread
