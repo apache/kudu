@@ -84,5 +84,5 @@ scanner.add_predicate(table['ts_val'] == datetime(2017, 1, 1))
 
 # Open scanner and print all tuples.
 # Note: This doesn't scale for large scans
-# Output: [(1, datetime.datetime(2017, 1, 1, 0, 0, tzinfo=<UTC>))]
+# The expected output: [(1, datetime.datetime(2017, 1, 1, 0, 0, tzinfo=<UTC>))]
 print(scanner.open().read_all_tuples())
