@@ -741,7 +741,7 @@ Status Rebalancer::BuildClusterInfo(const ClusterRawInfo& raw_info,
   for (const auto& tablet : raw_info.tablet_summaries) {
     if (!config_.move_rf1_replicas) {
       if (rf1_tables.find(tablet.table_id) != rf1_tables.end()) {
-        LOG(INFO) << Substitute("tablet $0 of table '$0' ($1) has single replica, skipping",
+        LOG(INFO) << Substitute("tablet $0 of table '$1' ($2) has single replica, skipping",
                                 tablet.id, tablet.table_name, tablet.table_id);
         continue;
       }
