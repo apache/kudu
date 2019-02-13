@@ -2060,7 +2060,7 @@ Status LogBlockManager::OpenBlock(const BlockId& block_id,
     return Status::NotFound("Can't find block", block_id.ToString());
   }
 
-  VLOG(3) << "Opened block " << (*block)->id()
+  VLOG(3) << "Opened block " << block_id
           << " from container " << lb->container()->ToString();
   block->reset(new internal::LogReadableBlock(std::move(lb)));
   return Status::OK();
