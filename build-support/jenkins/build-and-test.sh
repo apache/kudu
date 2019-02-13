@@ -22,7 +22,7 @@
 #
 # Environment variables may be used to customize operation:
 #   BUILD_TYPE: Default: DEBUG
-#     Maybe be one of ASAN|TSAN|DEBUG|RELEASE|COVERAGE|LINT|IWYU
+#     Maybe be one of ASAN|TSAN|DEBUG|RELEASE|COVERAGE|LINT|IWYU|TIDY
 #
 #   KUDU_ALLOW_SLOW_TESTS   Default: 1
 #     Runs the "slow" version of the unit tests. Set to 0 to
@@ -186,6 +186,13 @@ elif [ "$BUILD_TYPE" = "LINT" ]; then
 elif [ "$BUILD_TYPE" = "IWYU" ]; then
   USE_CLANG=1
   CMAKE_BUILD=debug
+elif [ "$BUILD_TYPE" = "TIDY" ]; then
+  USE_CLANG=1
+  CMAKE_BUILD=debug
+  BUILD_JAVA=0
+  BUILD_PYTHON=0
+  BUILD_PYTHON3=0
+  BUILD_GRADLE=0
 else
   # Must be DEBUG or RELEASE
   CMAKE_BUILD=$BUILD_TYPE
@@ -295,6 +302,15 @@ fi
 # modified since the last committed changelist committed upstream.
 if [ "$BUILD_TYPE" = "IWYU" ]; then
   make iwyu | tee $TEST_LOGDIR/iwyu.log
+  exit $?
+fi
+
+# Short circuit for TIDY builds: run the clang-tidy tool on the C++ source
+# files in the HEAD revision for the gerrit branch.
+if [ "$BUILD_TYPE" = "TIDY" ]; then
+  make -j$NUM_PROCS generated-headers 2>&1 | tee $TEST_LOGDIR/tidy.log
+  $SOURCE_ROOT/build-support/clang_tidy_gerrit.py HEAD 2>&1 | \
+      tee -a $TEST_LOGDIR/tidy.log
   exit $?
 fi
 

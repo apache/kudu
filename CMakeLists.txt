@@ -1363,15 +1363,21 @@ if (UNIX)
 endif (UNIX)
 
 ############################################################
+# "generated-headers" target
+############################################################
+if (UNIX)
+  add_custom_target(generated-headers
+    DEPENDS pb-gen krpc-gen hms_thrift sentry_thrift)
+endif (UNIX)
+
+############################################################
 # "make iwyu" and "make iwyu-fix" target
 ############################################################
 if (UNIX)
-  add_custom_target(iwyu-generated-headers
-    DEPENDS pb-gen krpc-gen hms_thrift sentry_thrift)
   add_custom_target(iwyu ${BUILD_SUPPORT_DIR}/iwyu.py --from-git
-    DEPENDS iwyu-generated-headers)
+    DEPENDS generated-headers)
   add_custom_target(iwyu-fix ${BUILD_SUPPORT_DIR}/iwyu.py --fix --from-git
-    DEPENDS iwyu-generated-headers)
+    DEPENDS generated-headers)
 endif (UNIX)
 
 ############################################################
@@ -1379,7 +1385,7 @@ endif (UNIX)
 ############################################################
 if (UNIX)
   add_custom_target(tidy ${BUILD_SUPPORT_DIR}/tidy.sh)
-  add_dependencies(tidy pb-gen krpc-gen)
+  add_dependencies(tidy generated-headers)
 endif (UNIX)
 
 ############################################################
