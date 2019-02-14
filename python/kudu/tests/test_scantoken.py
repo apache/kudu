@@ -20,7 +20,6 @@ from kudu.compat import unittest
 from kudu.tests.util import TestScanBase
 from kudu.tests.common import KuduTestBase
 import kudu
-from multiprocessing import Pool
 import datetime
 import time
 
@@ -44,21 +43,13 @@ class TestScanToken(TestScanBase):
 
     def _subtest_serialize_thread_and_verify(self, tokens, expected_tuples, count_only=False):
         """
-        Given the input serialized tokens, spawn new threads,
-        execute them and validate the results
+        Given the input serialized tokens, hydrate the scanners, execute the
+        scans, and validate the results
         """
-        input =  [(token.serialize(), self.master_hosts, self.master_ports)
-                for token in tokens]
-
-        # Begin process pool
-        pool = Pool(len(input))
-        try:
-            results = pool.map(_get_scan_token_results, input)
-        finally:
-            pool.close()
-            pool.join()
+        input = [(token.serialize(), self.master_hosts, self.master_ports) for token in tokens]
 
         # Validate results
+        results = [_get_scan_token_results(i) for i in input]
         actual_tuples = []
         for result in results:
             actual_tuples += result
