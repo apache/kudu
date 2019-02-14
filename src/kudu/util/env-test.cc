@@ -771,10 +771,15 @@ TEST_F(TestEnv, TestWalkBadPermissions) {
     PCHECK(chmod(kTestPath.c_str(), stat_buf.st_mode) == 0);
   });
 
-  // A walk on a directory without execute permission should fail.
+  // A walk on a directory without execute permission should fail,
+  // unless the calling process has super-user's effective ID.
   Status s = env_->Walk(kTestPath, Env::PRE_ORDER, Bind(&NoopTestWalkCb));
-  ASSERT_TRUE(s.IsIOError());
-  ASSERT_STR_CONTAINS(s.ToString(), "One or more errors occurred");
+  if (geteuid() == 0) {
+    ASSERT_TRUE(s.ok()) << s.ToString();
+  } else {
+    ASSERT_TRUE(s.IsIOError()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(), "One or more errors occurred");
+  }
 }
 
 static Status TestWalkErrorCb(int* num_calls,
@@ -836,7 +841,11 @@ TEST_F(TestEnv, TestGlobPermissionDenied) {
     });
   vector<string> matches;
   Status s = env_->Glob(JoinPathSegments(dir, "*"), &matches);
-  ASSERT_STR_MATCHES(s.ToString(), "IO error: glob failed for /.*: Permission denied");
+  if (geteuid() == 0) {
+    ASSERT_TRUE(s.ok()) << s.ToString();
+  } else {
+    ASSERT_STR_MATCHES(s.ToString(), "IO error: glob failed for /.*: Permission denied");
+  }
 }
 
 TEST_F(TestEnv, TestGetBlockSize) {

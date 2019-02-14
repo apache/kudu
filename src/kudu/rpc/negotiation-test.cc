@@ -1166,10 +1166,15 @@ TEST_F(TestNegotiation, TestPreflight) {
   // Try with an inaccessible keytab.
   CHECK_ERR(chmod(kt_path.c_str(), 0000));
   s = ServerNegotiation::PreflightCheckGSSAPI("kudu");
-  ASSERT_FALSE(s.ok());
+  if (geteuid() == 0) {
+    // The super-user can acess the 'inaccessible' keytab file anyway.
+    ASSERT_TRUE(s.ok()) << s.ToString();
+  } else {
+    ASSERT_FALSE(s.ok()) << s.ToString();
 #ifndef KRB5_VERSION_LE_1_10
-  ASSERT_STR_MATCHES(s.ToString(), "error accessing keytab: Permission denied");
+    ASSERT_STR_MATCHES(s.ToString(), "error accessing keytab: Permission denied");
 #endif
+  }
   CHECK_ERR(unlink(kt_path.c_str()));
 
   // Try with a keytab that has the wrong credentials.
