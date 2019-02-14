@@ -124,7 +124,7 @@ struct KnapsackTraits {
   typedef const RowSetInfo* item_type;
   typedef double value_type;
   static int get_weight(item_type item) {
-    return item->size_mb();
+    return item->base_and_redos_size_mb();
   }
   static value_type get_value(item_type item) {
     return item->value();
@@ -179,11 +179,11 @@ class BoundCalculator {
     std::push_heap(fractional_solution_.begin(),
                    fractional_solution_.end(),
                    compareByDescendingDensity);
-    current_weight_ += candidate.size_mb();
+    current_weight_ += candidate.base_and_redos_size_mb();
     current_value_ += candidate.value();
     const RowSetInfo* top = fractional_solution_.front();
-    while (current_weight_ - top->size_mb() > max_weight_) {
-      current_weight_ -= top->size_mb();
+    while (current_weight_ - top->base_and_redos_size_mb() > max_weight_) {
+      current_weight_ -= top->base_and_redos_size_mb();
       current_value_ -= top->value();
       std::pop_heap(fractional_solution_.begin(),
                     fractional_solution_.end(),
