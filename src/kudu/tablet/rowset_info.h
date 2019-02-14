@@ -69,8 +69,11 @@ class RowSetInfo {
                             std::vector<KeyRange>* ranges);
 
   uint64_t size_bytes(const ColumnId& col_id) const;
+  uint64_t base_and_redos_size_bytes() const {
+    return extra_->base_and_redos_size_bytes;
+  }
   uint64_t size_bytes() const { return extra_->size_bytes; }
-  int size_mb() const { return size_mb_; }
+  int base_and_redos_size_mb() const { return base_and_redos_size_mb_; }
 
   // Return the value of the CDF at the minimum key of this candidate.
   double cdf_min_key() const { return cdf_min_key_; }
@@ -113,9 +116,10 @@ class RowSetInfo {
 
   static void FinalizeCDFVector(double quot, std::vector<RowSetInfo>* vec);
 
-  // The size in MB, already clamped so that all rowsets have size at least
-  // 1MB. This is cached to avoid the branch during the selection hot path.
-  int size_mb_;
+  // The size of the base data and redos in MB, already clamped so that all
+  // rowsets have size at least 1MB. This is cached to avoid the branch during
+  // the selection hot path.
+  int base_and_redos_size_mb_;
 
   double cdf_min_key_, cdf_max_key_;
 
@@ -139,6 +143,9 @@ class RowSetInfo {
   // These are ref-counted so that RowSetInfo is copyable.
   struct ExtraData : public RefCounted<ExtraData> {
     // Cached version of rowset_->OnDiskBaseDataSizeWithRedos().
+    uint64_t base_and_redos_size_bytes;
+
+    // Cached version of rowset_->OnDiskSize().
     uint64_t size_bytes;
 
     // True if the RowSet has known bounds.
