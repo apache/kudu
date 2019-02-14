@@ -268,9 +268,9 @@ def main(argv):
   # For correct results, IWYU depends on the generated header files.
   logging.info("Ensuring IWYU dependencies are built...")
   if os.path.exists('Makefile'):
-    subprocess.check_call(['make', 'iwyu-generated-headers'])
+    subprocess.check_call(['make', 'generated-headers'])
   elif os.path.exists('build.ninja'):
-    subprocess.check_call(['ninja', 'iwyu-generated-headers'])
+    subprocess.check_call(['ninja', 'generated-headers'])
   else:
     logging.error('No Makefile or build.ninja found in build directory %s',
                   _BUILD_DIR)
