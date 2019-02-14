@@ -34,7 +34,7 @@ from source. To run Kudu without installing anything, use the link:quickstart.ht
 NOTE: Cloudera Manager users can install and manage Kudu with
 link:http://www.cloudera.com/content/www/en-us/products/cloudera-manager.html[Cloudera Manager],
 instead of following these instructions. For more information, see Cloudera's
-link:http://www.cloudera.com/documentation/kudu/latest/topics/kudu_installation.html[Kudu documentation].
+link:http://www.cloudera.com/documentation/enterprise/latest/topics/kudu_install_upgrade_intro.html[Kudu documentation].
 
 .Upgrading Kudu
 To upgrade Kudu from a previous version, see <<upgrade>>.
@@ -573,7 +573,7 @@ $ sudo xcode-select --install
 .macOS Known Issues
 ====
 Kudu support for macOS is experimental, and should only be used for development.
-See link:https://issues.apache.org/browse/KUDU-1219[macOS Limitations & Known Issues]
+See link:https://issues.apache.org/jira/browse/KUDU-1219[macOS Limitations & Known Issues]
 for more information.
 ====
 
