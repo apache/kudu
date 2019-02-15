@@ -117,6 +117,7 @@ namespace kudu {
 
 using sentry::SentryAction;
 using sentry::SentryClient;
+using sentry::SentryAuthorizableScope;
 
 namespace master {
 
@@ -164,28 +165,35 @@ bool SentryAuthzProvider::IsEnabled() {
 
 namespace {
 
-// Returns an authorizable based on the table name and the given scope.
-Status GetAuthorizable(const string& table_name,
-                       SentryAuthzProvider::AuthorizableScope scope,
+// Returns an authorizable based on the table identifier (in the format
+// <database-name>.<table-name>) and the given scope.
+Status GetAuthorizable(const string& table_ident,
+                       SentryAuthorizableScope::Scope scope,
                        TSentryAuthorizable* authorizable) {
   Slice database;
   Slice table;
+  // Authorizable scope for table authorizable type must be equal or higher than
+  // 'TABLE'.
+  DCHECK_NE(scope, SentryAuthorizableScope::Scope::COLUMN);
   switch (scope) {
-    case SentryAuthzProvider::AuthorizableScope::TABLE:
-      RETURN_NOT_OK(ParseHiveTableIdentifier(table_name, &database, &table));
+    case SentryAuthorizableScope::Scope::TABLE:
+      RETURN_NOT_OK(ParseHiveTableIdentifier(table_ident, &database, &table));
+      DCHECK(!table.empty());
       authorizable->__set_table(table.ToString());
       FALLTHROUGH_INTENDED;
-    case SentryAuthzProvider::AuthorizableScope::DATABASE:
+    case SentryAuthorizableScope::Scope::DATABASE:
       if (database.empty() && table.empty()) {
-        RETURN_NOT_OK(ParseHiveTableIdentifier(table_name, &database, &table));
+        RETURN_NOT_OK(ParseHiveTableIdentifier(table_ident, &database, &table));
       }
+      DCHECK(!database.empty());
       authorizable->__set_db(database.ToString());
       FALLTHROUGH_INTENDED;
-    case SentryAuthzProvider::AuthorizableScope::SERVER:
+    case SentryAuthorizableScope::Scope::SERVER:
       authorizable->__set_server(FLAGS_server_name);
       break;
     default:
-      LOG(FATAL) << "unsupported authorizable scope";
+      LOG(FATAL) << "unsupported SentryAuthorizableScope: "
+                 << sentry::ScopeToString(scope);
       break;
   }
 
@@ -202,27 +210,25 @@ Status SentryAuthzProvider::AuthorizeCreateTable(const string& table_name,
   // design doc in [SENTRY-2151](https://issues.apache.org/jira/browse/SENTRY-2151).
   //
   // Otherwise, table creation requires 'CREATE ON DATABASE' privilege.
-  TSentryAuthorizable authorizable;
-  RETURN_NOT_OK(GetAuthorizable(table_name, AuthorizableScope::DATABASE, &authorizable));
-  SentryAction action;
+  SentryAction::Action action;
   bool grant_option;
   if (user == owner) {
-    action = SentryAction(SentryAction::Action::CREATE);
+    action = SentryAction::Action::CREATE;
     grant_option = false;
   } else {
-    action = SentryAction(SentryAction::Action::ALL);
+    action = SentryAction::Action::ALL;
     grant_option = true;
   }
-  return Authorize(authorizable, action, user, grant_option);
+  return Authorize(SentryAuthorizableScope::Scope::DATABASE, action,
+                   table_name, user, grant_option);
 }
 
 Status SentryAuthzProvider::AuthorizeDropTable(const string& table_name,
                                                const string& user) {
   // Table deletion requires 'DROP ON TABLE' privilege.
-  TSentryAuthorizable authorizable;
-  RETURN_NOT_OK(GetAuthorizable(table_name, AuthorizableScope::TABLE, &authorizable));
-  SentryAction action = SentryAction(SentryAction::Action::DROP);
-  return Authorize(authorizable, action, user);
+  return Authorize(SentryAuthorizableScope::Scope::TABLE,
+                   SentryAction::Action::DROP,
+                   table_name, user);
 }
 
 Status SentryAuthzProvider::AuthorizeAlterTable(const string& old_table,
@@ -235,43 +241,56 @@ Status SentryAuthzProvider::AuthorizeAlterTable(const string& old_table,
   //  2. 'CREATE ON DATABASE <new-database>'.
   // See [SENTRY-2264](https://issues.apache.org/jira/browse/SENTRY-2264).
   // TODO(hao): add inline hierarchy validation to avoid multiple RPCs.
-  TSentryAuthorizable table_authorizable;
-  RETURN_NOT_OK(GetAuthorizable(old_table, AuthorizableScope::TABLE, &table_authorizable));
   if (old_table == new_table) {
-    SentryAction action = SentryAction(SentryAction::Action::ALTER);
-    return Authorize(table_authorizable, action, user);
+    return Authorize(SentryAuthorizableScope::Scope::TABLE,
+                     SentryAction::Action::ALTER,
+                     old_table, user);
   }
-
-  SentryAction table_action = SentryAction(SentryAction::Action::ALL);
-  RETURN_NOT_OK(Authorize(table_authorizable, table_action, user));
-  TSentryAuthorizable db_authorizable;
-  RETURN_NOT_OK(GetAuthorizable(new_table, AuthorizableScope::DATABASE, &db_authorizable));
-  SentryAction db_action = SentryAction(SentryAction::Action::CREATE);
-  return Authorize(db_authorizable, db_action, user);
+  RETURN_NOT_OK(Authorize(SentryAuthorizableScope::Scope::TABLE,
+                          SentryAction::Action::ALL,
+                          old_table, user));
+  return Authorize(SentryAuthorizableScope::Scope::DATABASE,
+                   SentryAction::Action::CREATE,
+                   new_table, user);
 }
 
 Status SentryAuthzProvider::AuthorizeGetTableMetadata(const std::string& table_name,
                                                       const std::string& user) {
   // Retrieving table metadata requires 'METADATA ON TABLE' privilege.
-  TSentryAuthorizable authorizable;
-  RETURN_NOT_OK(GetAuthorizable(table_name, AuthorizableScope::TABLE, &authorizable));
-  SentryAction action = SentryAction(SentryAction::Action::METADATA);
-  return Authorize(authorizable, action, user);
+  return Authorize(SentryAuthorizableScope::Scope::TABLE,
+                   SentryAction::Action::METADATA,
+                   table_name, user);
 }
 
-Status SentryAuthzProvider::Authorize(const TSentryAuthorizable& authorizable,
-                                      const SentryAction& action,
+Status SentryAuthzProvider::Authorize(SentryAuthorizableScope::Scope scope,
+                                      SentryAction::Action action,
+                                      const string& table_ident,
                                       const string& user,
-                                      bool grant_option) {
+                                      bool require_grant_option) {
 
-  // In general, a privilege implies another when the authorizable from
-  // the former implies the authorizable from the latter, the action
-  // from the former implies the action from the latter, and grant option
-  // from the former implies the grant option from the latter.
+  TSentryAuthorizable authorizable;
+  RETURN_NOT_OK(GetAuthorizable(table_ident, scope, &authorizable));
+
+  // In general, a privilege implies another when:
+  // 1. the authorizable from the former implies the authorizable from the latter
+  //    (authorizable with a higher scope on the hierarchy can imply authorizables
+  //    with a lower scope on the hierarchy, but not vice versa), and
+  // 2. the action from the former implies the action from the latter, and
+  // 3. grant option from the former implies the grant option from the latter.
   //
-  // ListPrivilegesByUser returns all privileges granted to the user that
-  // imply the given authorizable. Therefore, we only need to validate if
-  // the granted actions can imply the required one.
+  // See org.apache.sentry.policy.common.CommonPrivilege. Note that policy validation
+  // in CommonPrivilege also allows wildcard authorizable matching. For example,
+  // authorizable 'server=server1->db=*' can imply authorizable 'server=server1'.
+  // However, wildcard authorizable granting is neither practical nor useful (semantics
+  // of granting such privilege are not supported in Apache Hive, Impala and Hue. And
+  // 'server=server1->db=*' has exactly the same meaning as 'server=server1'). Therefore,
+  // wildcard authorizable matching is dropped in this implementation.
+  //
+  // Moreover, because ListPrivilegesByUser lists all Sentry privileges granted to the
+  // user that match the authorizable of each scope in the input authorizable hierarchy,
+  // privileges with lower scope will also be returned in the response. This contradicts
+  // rule (1) mentioned above. Therefore, we need to validate privilege scope, in addition
+  // to action and grant option. Otherwise, privilege escalation can happen.
 
   TListSentryPrivilegesRequest request;
   request.__set_requestorUserName(FLAGS_kudu_service_name);
@@ -284,26 +303,45 @@ Status SentryAuthzProvider::Authorize(const TSentryAuthorizable& authorizable,
         return client->ListPrivilegesByUser(request, &response);
       }));
 
+  SentryAction required_action(action);
+  SentryAuthorizableScope required_scope(scope);
   for (const auto& privilege : response.privileges) {
-    // A grant option cannot imply the other if the former is set
-    // but the latter is not.
-    if (grant_option && privilege.grantOption != TSentryGrantOption::ENABLED) {
+    // A grant option cannot imply the other if the latter is set
+    // but the former is not.
+    if (require_grant_option && privilege.grantOption != TSentryGrantOption::ENABLED) {
       continue;
     }
 
     SentryAction granted_action;
     Status s = SentryAction::FromString(privilege.action, &granted_action);
-    WARN_NOT_OK(s, Substitute("failed to construct sentry action from $0", privilege.action));
-    if (s.ok() && granted_action.Implies(action)) {
+    if (!s.ok()) {
+      LOG(WARNING) << s.ToString();
+      continue;
+    }
+
+    SentryAuthorizableScope granted_scope;
+    s = SentryAuthorizableScope::FromString(privilege.privilegeScope, &granted_scope);
+    if (!s.ok()) {
+      LOG(WARNING) << s.ToString();
+      continue;
+    }
+
+    // Both privilege scope and action need to imply the other.
+    if (granted_action.Implies(required_action) &&
+        granted_scope.Implies(required_scope)) {
       return Status::OK();
     }
   }
 
-  // Logs an error if the action is not authorized for debugging purpose, and
+  // Logs a warning if the action is not authorized for debugging purpose, and
   // only returns generic error back to the users to avoid side channel leak,
   // e.g. 'whether table A exists'.
-  LOG(ERROR) << "Action <" << action.action() << "> on authorizable <"
-             << authorizable << "> is not permitted for user <" << user << ">";
+  LOG(WARNING) << Substitute("Action <$0> on table <$1> with authorizable scope "
+                             "<$2> is not permitted for user <$3>",
+                             sentry::ActionToString(action),
+                             table_ident,
+                             sentry::ScopeToString(scope),
+                             user);
   return Status::NotAuthorized("unauthorized action");
 }
 

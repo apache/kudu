@@ -17,6 +17,8 @@
 
 #include "kudu/sentry/sentry_action.h"
 
+#include <cstdint>
+
 #include <ostream>
 #include <string>
 
@@ -34,18 +36,19 @@ namespace sentry {
 const char* ActionToString(SentryAction::Action action) {
   switch (action) {
     case SentryAction::Action::UNINITIALIZED: return "UNINITIALIZED";
-    case SentryAction::Action::ALL: return "ALL";
-    case SentryAction::Action::METADATA: return "METADATA";
-    case SentryAction::Action::SELECT: return "SELECT";
-    case SentryAction::Action::INSERT: return "INSERT";
-    case SentryAction::Action::UPDATE: return "UPDATE";
-    case SentryAction::Action::DELETE: return "DELETE";
-    case SentryAction::Action::ALTER: return "ALTER";
-    case SentryAction::Action::CREATE: return "CREATE";
-    case SentryAction::Action::DROP: return "DROP";
-    case SentryAction::Action::OWNER: return "OWNER";
+    case SentryAction::Action::ALL: return kActionAll;
+    case SentryAction::Action::METADATA: return kActionMetadata;
+    case SentryAction::Action::SELECT: return kActionSelect;
+    case SentryAction::Action::INSERT: return kActionInsert;
+    case SentryAction::Action::UPDATE: return kActionUpdate;
+    case SentryAction::Action::DELETE: return kActionDelete;
+    case SentryAction::Action::ALTER: return kActionAlter;
+    case SentryAction::Action::CREATE: return kActionCreate;
+    case SentryAction::Action::DROP: return kActionDrop;
+    case SentryAction::Action::OWNER: return kActionOwner;
   }
-  return "<cannot reach here>";
+  LOG(FATAL) << static_cast<uint16_t>(action) << ": unknown action";
+  return nullptr;
 }
 
 std::ostream& operator<<(std::ostream& o, SentryAction::Action action) {
@@ -67,25 +70,25 @@ Status SentryAction::FromString(const string& str, SentryAction* action) {
   // Java Sentry client.
   //
   // See org.apache.sentry.api.service.thrift.SentryPolicyServiceClientDefaultImpl.
-  if (boost::iequals(str, "ALL") || str == kWildCard) {
+  if (boost::iequals(str, kActionAll) || str == kWildCard) {
     action->action_ = Action::ALL;
-  } else if (boost::iequals(str, "METADATA")) {
+  } else if (boost::iequals(str, kActionMetadata)) {
     action->action_ = Action::METADATA;
-  } else if (boost::iequals(str, "SELECT")) {
+  } else if (boost::iequals(str, kActionSelect)) {
     action->action_ = Action::SELECT;
-  } else if (boost::iequals(str, "INSERT")) {
+  } else if (boost::iequals(str, kActionInsert)) {
     action->action_ = Action::INSERT;
-  } else if (boost::iequals(str, "UPDATE")) {
+  } else if (boost::iequals(str, kActionUpdate)) {
     action->action_ = Action::UPDATE;
-  } else if (boost::iequals(str, "DELETE")) {
+  } else if (boost::iequals(str, kActionDelete)) {
     action->action_ = Action::DELETE;
-  } else if (boost::iequals(str, "ALTER")) {
+  } else if (boost::iequals(str, kActionAlter)) {
     action->action_ = Action::ALTER;
-  } else if (boost::iequals(str, "CREATE")) {
+  } else if (boost::iequals(str, kActionCreate)) {
     action->action_ = Action::CREATE;
-  } else if (boost::iequals(str, "DROP")) {
+  } else if (boost::iequals(str, kActionDrop)) {
     action->action_ = Action::DROP;
-  } else if (boost::iequals(str, "OWNER")) {
+  } else if (boost::iequals(str, kActionOwner)) {
     action->action_ = Action::OWNER;
   } else {
     return Status::InvalidArgument(Substitute("unknown SentryAction: $0", str));

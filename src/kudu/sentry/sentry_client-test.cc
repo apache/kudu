@@ -50,15 +50,21 @@ using std::vector;
 namespace kudu {
 namespace sentry {
 
-class SentryClientTest : public SentryTestBase {
+class SentryClientTest : public SentryTestBase,
+                         public ::testing::WithParamInterface<bool> {
+ public:
+  bool KerberosEnabled() const {
+    return GetParam();
+  }
 };
+
 INSTANTIATE_TEST_CASE_P(KerberosEnabled, SentryClientTest, ::testing::Bool());
 
 TEST_P(SentryClientTest, TestMiniSentryLifecycle) {
   // Create an HA Sentry client and ensure it automatically reconnects after service interruption.
   thrift::HaClient<SentryClient> client;
   thrift::ClientOptions sentry_client_opts;
-  if (kerberos_enabled_) {
+  if (KerberosEnabled()) {
     sentry_client_opts.enable_kerberos = true;
     sentry_client_opts.service_principal = "sentry";
   }

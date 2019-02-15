@@ -19,21 +19,17 @@
 
 #include <string>
 
+#include <gtest/gtest_prod.h>
+
 #include "kudu/gutil/port.h"
 #include "kudu/master/authz_provider.h"
+#include "kudu/sentry/sentry_action.h"
+#include "kudu/sentry/sentry_authorizable_scope.h"
 #include "kudu/sentry/sentry_client.h"
 #include "kudu/thrift/client.h"
 #include "kudu/util/status.h"
 
-namespace sentry {
-class TSentryAuthorizable;
-} // namespace sentry
-
 namespace kudu {
-
-namespace sentry {
-class SentryAction;
-} // namespace sentry
 
 namespace master {
 
@@ -44,12 +40,6 @@ namespace master {
 // This class is thread-safe after Start() is called.
 class SentryAuthzProvider : public AuthzProvider {
  public:
-
-  enum class AuthorizableScope {
-    SERVER,
-    DATABASE,
-    TABLE,
-  };
 
   ~SentryAuthzProvider();
 
@@ -88,13 +78,19 @@ class SentryAuthzProvider : public AuthzProvider {
   static bool ValidateAddresses(const char* flag_name, const std::string& addresses);
 
  private:
+  FRIEND_TEST(TestAuthzHierarchy, TestAuthorizableScope);
 
-  // Checks if the user can perform an action on the given authorizable.
+  // Checks if the user can perform an action on the table identifier (in the format
+  // <database-name>.<table-name>), based on the given authorizable scope and the
+  // grant option. Note that the authorizable scope should be equal or higher than
+  // 'TABLE' scope.
+  //
   // If the operation is not authorized, returns Status::NotAuthorized().
-  Status Authorize(const ::sentry::TSentryAuthorizable& authorizable,
-                   const sentry::SentryAction& action,
+  Status Authorize(sentry::SentryAuthorizableScope::Scope scope,
+                   sentry::SentryAction::Action action,
+                   const std::string& table_ident,
                    const std::string& user,
-                   bool grant_option = false);
+                   bool require_grant_option = false);
 
   thrift::HaClient<sentry::SentryClient> ha_client_;
 };

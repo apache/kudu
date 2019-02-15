@@ -32,8 +32,7 @@
 namespace kudu {
 namespace sentry {
 
-class SentryTestBase : public KuduTest,
-                       public ::testing::WithParamInterface<bool> {
+class SentryTestBase : public KuduTest {
  public:
 
   void SetUp() override {
@@ -44,7 +43,7 @@ class SentryTestBase : public KuduTest,
     std::string host = GetBindIpForDaemon(1, kDefaultBindMode);
     HostPort address(host, 0);
     sentry_->SetAddress(address);
-    if (kerberos_enabled_) {
+    if (KerberosEnabled()) {
       kdc_.reset(new MiniKdc(MiniKdcOptions()));
       ASSERT_OK(kdc_->Start());
 
@@ -80,8 +79,9 @@ class SentryTestBase : public KuduTest,
     KuduTest::TearDown();
   }
 
+  virtual bool KerberosEnabled() const = 0;
+
  protected:
-  const bool kerberos_enabled_ = GetParam();
   std::unique_ptr<MiniKdc> kdc_;
   std::unique_ptr<MiniSentry> sentry_;
   std::unique_ptr<SentryClient> sentry_client_;

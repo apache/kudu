@@ -88,7 +88,16 @@ class SentryClient {
   // Drops a role in Sentry.
   Status DropRole(const ::sentry::TDropSentryRoleRequest& request) WARN_UNUSED_RESULT;
 
-  // List Sentry privileges by user.
+  // Given an authorizable, list Sentry privileges granted to the user that match
+  // the authorizable in each privilege scope on the hierarchy (regardless of the
+  // action).
+  //
+  // For example, for authorizable 'server=server1->db=db1', it returns any privileges
+  // granted to the user that matches:
+  //   server == "server1" && (db == "db1" || db == NULL)
+  //
+  // If the user is granted both 'ALL on SERVER server1' and 'SELECT on TABLE db1.a'
+  // privileges, then both privileges are returned.
   Status ListPrivilegesByUser(const ::sentry::TListSentryPrivilegesRequest& request,
       ::sentry::TListSentryPrivilegesResponse* response) WARN_UNUSED_RESULT;
 

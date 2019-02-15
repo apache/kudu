@@ -20,6 +20,7 @@
 #include <iosfwd>
 #include <string>
 
+#include "kudu/gutil/port.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -33,7 +34,7 @@ namespace sentry {
 // (e.g. create a table, drop a database).
 // See org.apache.sentry.core.model.db.HivePrivilegeModel.
 //
-// One action can imply another following rules defined in Imply().
+// One action can imply another following rules defined in Implies().
 class SentryAction {
  public:
   static const char* const kWildCard;
@@ -60,6 +61,8 @@ class SentryAction {
     OWNER,
   };
 
+  // The default constructor is useful when creating an Action
+  // from string.
   SentryAction();
 
   explicit SentryAction(Action action);
@@ -69,7 +72,8 @@ class SentryAction {
   }
 
   // Create an Action from string.
-  static Status FromString(const std::string& str, SentryAction* action);
+  static Status FromString(const std::string& str,
+                           SentryAction* action) WARN_UNUSED_RESULT;
 
   // Check if this action implies 'other'. In general,
   //   1. an action only implies itself.
@@ -82,6 +86,17 @@ class SentryAction {
  private:
   Action action_;
 };
+
+static constexpr const char* const kActionAll = "ALL";
+static constexpr const char* const kActionMetadata = "METADATA";
+static constexpr const char* const kActionSelect = "SELECT";
+static constexpr const char* const kActionInsert = "INSERT";
+static constexpr const char* const kActionUpdate = "UPDATE";
+static constexpr const char* const kActionDelete = "DELETE";
+static constexpr const char* const kActionAlter = "ALTER";
+static constexpr const char* const kActionCreate = "CREATE";
+static constexpr const char* const kActionDrop = "DROP";
+static constexpr const char* const kActionOwner = "OWNER";
 
 const char* ActionToString(SentryAction::Action action);
 

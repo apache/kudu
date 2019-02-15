@@ -33,6 +33,7 @@ add_dependencies(sentry_thrift ${SENTRY_THRIFT_TGTS})
 
 set(SENTRY_SRCS
   sentry_action.cc
+  sentry_authorizable_scope.cc
   sentry_client.cc)
 set(SENTRY_DEPS
   kudu_common
@@ -77,6 +78,7 @@ if (NOT NO_TESTS)
     mini_sentry)
 
   ADD_KUDU_TEST(sentry_action-test)
+  ADD_KUDU_TEST(sentry_authorizable_scope-test)
   ADD_KUDU_TEST(sentry_client-test)
   ADD_KUDU_TEST(thrift_operators-test)
 endif()
