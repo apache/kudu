@@ -907,10 +907,10 @@ Status TabletBootstrap::HandleReplicateMessage(ReplayState* state,
     DCHECK(OpIdEquals(iter->second->replicate().id(), existing_entry->replicate().id()));
 
     const auto& last_entry = state->pending_replicates.rbegin()->second;
-    LOG_WITH_PREFIX(INFO) << "Overwriting operations starting at: "
-                          << existing_entry->replicate().id()
-                          << " up to: " << last_entry->replicate().id()
-                          << " with operation: " << replicate.id();
+    VLOG_WITH_PREFIX(1) << "Overwriting operations starting at: "
+                        << existing_entry->replicate().id()
+                        << " up to: " << last_entry->replicate().id()
+                        << " with operation: " << replicate.id();
 
     while (iter != state->pending_replicates.end()) {
       iter = state->pending_replicates.erase(iter);
