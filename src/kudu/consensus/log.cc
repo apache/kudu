@@ -573,7 +573,8 @@ Status Log::RollOver() {
 
   RETURN_NOT_OK(SwitchToAllocatedSegment());
 
-  LOG_WITH_PREFIX(INFO) << "Rolled over to a new log segment at " << active_segment_->path();
+  VLOG_WITH_PREFIX(1) << "Rolled over to a new log segment at "
+                      << active_segment_->path();
   return Status::OK();
 }
 
@@ -646,10 +647,11 @@ Status Log::DoAppend(LogEntryBatch* entry_batch) {
   // if the size of this entry overflows the current segment, get a new one
   if (allocation_state() == kAllocationNotStarted) {
     if ((active_segment_->Size() + entry_batch_bytes + 4) > max_segment_size_) {
-      LOG_WITH_PREFIX(INFO) << "Max segment size reached. Starting new segment allocation";
+      VLOG_WITH_PREFIX(1) << "Max segment size reached. Starting new segment allocation";
       RETURN_NOT_OK(AsyncAllocateSegment());
       if (!options_.async_preallocate_segments) {
         LOG_SLOW_EXECUTION(WARNING, 50, Substitute("$0Log roll took a long time", LogPrefix())) {
+          TRACE_COUNTER_SCOPE_LATENCY_US("log_roll");
           RETURN_NOT_OK(RollOver());
         }
       }
@@ -1038,7 +1040,6 @@ Status Log::PreAllocateNewSegment() {
                        Status::IOError("Injected IOError in Log::PreAllocateNewSegment()"));
 
   if (options_.preallocate_segments) {
-    TRACE("Preallocating $0 byte segment in $1", max_segment_size_, next_segment_path_);
     RETURN_NOT_OK(env_util::VerifySufficientDiskSpace(fs_manager_->env(),
                                                       next_segment_path_,
                                                       max_segment_size_,
