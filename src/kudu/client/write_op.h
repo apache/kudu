@@ -115,6 +115,7 @@ class KUDU_EXPORT KuduWriteOperation {
   friend class internal::Batcher;
   friend class internal::WriteRpc;
   friend class internal::ErrorCollector;
+  friend class KuduSession;
 
   // Create and encode the key for this write (key must be set)
   //

@@ -31,12 +31,14 @@
 #include "kudu/client/shared_ptr.h" // IWYU pragma: keep
 #include "kudu/client/write_op.h"
 #include "kudu/common/partial_row.h"
+#include "kudu/common/schema.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/util/logging.h"
 
 using std::unique_ptr;
+using strings::Substitute;
 
 namespace kudu {
 
@@ -166,8 +168,8 @@ Status KuduSession::Data::SetBufferBytesLimit(size_t size) {
 Status KuduSession::Data::SetBufferFlushWatermark(int watermark_pct) {
   if (watermark_pct < 0 || watermark_pct > 100) {
     return Status::InvalidArgument(
-        strings::Substitute("$0: watermark must be between 0 and 100 inclusive",
-                            watermark_pct));
+        Substitute("$0: watermark must be between 0 and 100 inclusive",
+                   watermark_pct));
   }
   std::lock_guard<Mutex> l(mutex_);
   if (HasPendingOperationsUnlocked()) {
@@ -326,6 +328,57 @@ MonoDelta KuduSession::Data::FlushCurrentBatcher(const MonoDelta& max_age) {
   return time_left;
 }
 
+namespace {
+// Check if the primary key is set for the write operation.
+Status CheckForPrimaryKey(const KuduWriteOperation& op) {
+  if (PREDICT_FALSE(!op.row().IsKeySet())) {
+    return Status::IllegalState("Key not specified", KUDU_REDACT(op.ToString()));
+  }
+  return Status::OK();
+}
+
+// Check if the values for the non-nullable columns are present.
+Status CheckForNonNullableColumns(const KuduWriteOperation& op) {
+  const auto& row = op.row();
+  const auto* schema = row.schema();
+  const auto num_columns = schema->num_columns();
+  for (auto idx = 0; idx < num_columns; ++idx) {
+    const ColumnSchema& col = schema->column(idx);
+    if (!col.is_nullable() && !col.has_write_default() &&
+        !row.IsColumnSet(idx)) {
+      return Status::IllegalState(Substitute(
+          "non-nullable column '$0' is not set", schema->column(idx).name()),
+          KUDU_REDACT(op.ToString()));
+    }
+  }
+  return Status::OK();
+}
+} // anonymous namespace
+
+#define RETURN_NOT_OK_ADD_ERROR(_func, _op, _error_collector) \
+  do { \
+    const auto& s = (_func)(*(_op)); \
+    if (PREDICT_FALSE(!s.ok())) { \
+      (_error_collector)->AddError( \
+          unique_ptr<KuduError>(new KuduError((_op), s))); \
+      return s; \
+    } \
+  } while (false)
+
+Status KuduSession::Data::ValidateWriteOperation(KuduWriteOperation* op) const {
+  RETURN_NOT_OK_ADD_ERROR(CheckForPrimaryKey, op, error_collector_);
+  switch (op->type()) {
+    case KuduWriteOperation::INSERT:
+    case KuduWriteOperation::UPSERT:
+      RETURN_NOT_OK_ADD_ERROR(CheckForNonNullableColumns, op, error_collector_);
+      break;
+    default:
+      // Nothing else to validate for other types of write operations.
+      break;
+  }
+  return Status::OK();
+}
+
 // This method takes ownership over the specified write operation. On the return
 // from this this method, the operation must end up either in the corresponding
 // batcher (success path) or in the error collector (failure path). Otherwise
@@ -334,11 +387,8 @@ Status KuduSession::Data::ApplyWriteOp(KuduWriteOperation* write_op) {
   if (PREDICT_FALSE(!write_op)) {
     return Status::InvalidArgument("NULL operation");
   }
-  if (PREDICT_FALSE(!write_op->row().IsKeySet())) {
-    Status status = Status::IllegalState("Key not specified", KUDU_REDACT(write_op->ToString()));
-    error_collector_->AddError(unique_ptr<KuduError>(new KuduError(write_op, status)));
-    return status;
-  }
+
+  RETURN_NOT_OK(ValidateWriteOperation(write_op));
 
   // Get 'wire size' of the write operation.
   const int64_t required_size = Batcher::GetOperationSizeInBuffer(write_op);
@@ -358,7 +408,7 @@ Status KuduSession::Data::ApplyWriteOp(KuduWriteOperation* write_op) {
   // verify that the single operation can fit into an empty buffer
   // given the restriction on the buffer size.
   if (PREDICT_FALSE(required_size > max_size)) {
-    Status s = Status::Incomplete(strings::Substitute(
+    Status s = Status::Incomplete(Substitute(
           "buffer size limit is too small to fit operation: "
           "required $0, size limit $1",
           required_size, max_size));
@@ -403,7 +453,7 @@ Status KuduSession::Data::ApplyWriteOp(KuduWriteOperation* write_op) {
         condition_.Wait();
       }
     } else if (PREDICT_FALSE(buffer_bytes_used_ + required_size > max_size)) {
-      Status s = Status::Incomplete(strings::Substitute(
+      Status s = Status::Incomplete(Substitute(
           "not enough mutation buffer space remaining for operation: "
           "required additional $0 when $1 of $2 already used",
           required_size, buffer_bytes_used_, max_size));

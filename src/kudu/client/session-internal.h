@@ -155,6 +155,10 @@ class KuduSession::Data {
   // This method is used by tests only.
   size_t GetBatchersCountForTests() const;
 
+  // Run sanity checks on a write operation: check for the presence of the
+  // primary key and perform other validations with regard to the column schema.
+  Status ValidateWriteOperation(KuduWriteOperation* op) const;
+
   // This constant represents a meaningful name for the first argument in
   // expressions like FlushCurrentBatcher(1, cbk): this is the watermark
   // corresponding to 1 byte of data. This watermark level is the minimum

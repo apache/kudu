@@ -5875,6 +5875,93 @@ TEST_F(ClientTest, TestRetrieveAuthzTokenInParallel) {
   ASSERT_LT(num_reqs, kThreads);
 }
 
+// This test verifies that rows with column schema violations such as
+// unset non-nullable columns (with no default value) are detected at the client
+// side while calling Apply() for corresponding write operations. So, that sort
+// of schema violations can be detected prior sending an RPC to a tablet server.
+TEST_F(ClientTest, WritingRowsWithUnsetNonNullableColumns) {
+  // Make sure if all non-nullable columns (without defaults) are set for an
+  // insert operation, the operation should be successfully applied and flushed.
+  {
+    shared_ptr<KuduSession> session = client_->NewSession();
+    ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_SYNC));
+    unique_ptr<KuduInsert> op(client_table_->NewInsert());
+    auto* row = op->mutable_row();
+    ASSERT_OK(row->SetInt32("key", 0));
+    // Set the non-nullable column without default.
+    ASSERT_OK(row->SetInt32("int_val", 1));
+    // Even if the non-nullable column with default 'non_null_with_default'
+    // is not set, apply (and underlying Flush()) should succeed.
+    ASSERT_OK(session->Apply(op.release()));
+  }
+
+  // Of course, update write operations do not have to have all non-nullable
+  // columns specified.
+  {
+    shared_ptr<KuduSession> session = client_->NewSession();
+    ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_SYNC));
+    unique_ptr<KuduUpdate> op(client_table_->NewUpdate());
+    auto* row = op->mutable_row();
+    ASSERT_OK(row->SetInt32("key", 0));
+    ASSERT_OK(row->SetInt32("non_null_with_default", 1));
+    ASSERT_OK(session->Apply(op.release()));
+  }
+
+  // Make sure if a non-nullable column (without defaults) is not set for an
+  // insert operation, the operation cannot be applied.
+  {
+    shared_ptr<KuduSession> session = client_->NewSession();
+    ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+    unique_ptr<KuduInsert> op(client_table_->NewInsert());
+    auto* row = op->mutable_row();
+    ASSERT_OK(row->SetInt32("key", 1));
+    // The non-nullable column with default 'non_null_with_default' is set.
+    ASSERT_OK(row->SetInt32("non_null_with_default", 1));
+    // The non-nullable column 'int_val' without default is not set, so
+    // Apply() should fail.
+    const auto apply_status = session->Apply(op.release());
+    ASSERT_TRUE(apply_status.IsIllegalState()) << apply_status.ToString();
+    ASSERT_STR_CONTAINS(apply_status.ToString(),
+                        "non-nullable column 'int_val' is not set");
+    // Flush() should return an error.
+    const auto flush_status = session->Flush();
+    ASSERT_TRUE(flush_status.IsIOError()) << flush_status.ToString();
+    ASSERT_STR_CONTAINS(flush_status.ToString(),
+                        "IO error: Some errors occurred");
+  }
+
+  // Make sure if a non-nullable column (without defaults) is not set for an
+  // upsert operation, the operation cannot be applied.
+  {
+    shared_ptr<KuduSession> session(client_->NewSession());
+    ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+    unique_ptr<KuduUpsert> op(client_table_->NewUpsert());
+    auto* row = op->mutable_row();
+    ASSERT_OK(row->SetInt32("key", 1));
+    // The non-nullable column 'int_val' without default is not set, so
+    // Apply() should fail.
+    const auto apply_status = session->Apply(op.release());
+    ASSERT_TRUE(apply_status.IsIllegalState()) << apply_status.ToString();
+    ASSERT_STR_CONTAINS(apply_status.ToString(),
+                        "non-nullable column 'int_val' is not set");
+    // Of course, Flush() should fail as well.
+    const auto flush_status = session->Flush();
+    ASSERT_TRUE(flush_status.IsIOError()) << flush_status.ToString();
+    ASSERT_STR_CONTAINS(flush_status.ToString(),
+                        "IO error: Some errors occurred");
+  }
+
+  // Do delete a row, only the key is necessary.
+  {
+    shared_ptr<KuduSession> session = client_->NewSession();
+    ASSERT_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_SYNC));
+    unique_ptr<KuduDelete> op(client_table_->NewDelete());
+    auto* row = op->mutable_row();
+    ASSERT_OK(row->SetInt32("key", 0));
+    ASSERT_OK(session->Apply(op.release()));
+  }
+}
+
 // Client test that assigns locations to clients and tablet servers.
 // For now, assigns a uniform location to all clients and tablet servers.
 class ClientWithLocationTest : public ClientTest {
