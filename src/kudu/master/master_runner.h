@@ -14,37 +14,18 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+#pragma once
 
-#include <iostream>
-
-#include <glog/logging.h>
-
-#include "kudu/master/master_runner.h"
-#include "kudu/util/flags.h"
-#include "kudu/util/init.h"
-#include "kudu/util/logging.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
 namespace master {
 
-static int MasterMain(int argc, char** argv) {
-  RETURN_MAIN_NOT_OK(InitKudu(), "InitKudu() failed", 1);
-  SetMasterFlagDefaults();
-  ParseCommandLineFlags(&argc, &argv, true);
-  if (argc != 1) {
-    std::cerr << "usage: " << argv[0] << std::endl;
-    return 2;
-  }
-  InitGoogleLoggingSafe(argv[0]);
-  RETURN_MAIN_NOT_OK(RunMasterServer(), "RunMasterServer() failed", 3);
+// Adjusts the default values of some gflags for use with the master server.
+void SetMasterFlagDefaults();
 
-  return 0;
-}
+// Initialize and start a master server. Will run until interrupted.
+Status RunMasterServer();
 
 } // namespace master
 } // namespace kudu
-
-int main(int argc, char** argv) {
-  return kudu::master::MasterMain(argc, argv);
-}

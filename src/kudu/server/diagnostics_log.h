@@ -39,7 +39,7 @@ namespace server {
 
 class DiagnosticsLog {
  public:
-  DiagnosticsLog(std::string log_dir, MetricRegistry* metric_registry);
+  DiagnosticsLog(std::string log_dir, std::string program_name, MetricRegistry* metric_registry);
   ~DiagnosticsLog();
 
   void SetMetricsLogInterval(MonoDelta interval);
@@ -68,6 +68,7 @@ class DiagnosticsLog {
   MonoTime ComputeNextWakeup(DiagnosticsLog::WakeupType type) const;
 
   const std::string log_dir_;
+  const std::string program_name_;
   const MetricRegistry* metric_registry_;
 
   scoped_refptr<Thread> thread_;

@@ -15,18 +15,18 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/util/flags.h"
+
 #include <string>
 #include <vector>
 
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/env.h"
-#include "kudu/util/flags.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/slice.h"
@@ -53,9 +53,6 @@ namespace kudu {
 class FlagsTest : public KuduTest {};
 
 TEST_F(FlagsTest, TestNonDefaultFlags) {
-  // Memorize the default flags
-  GFlagsMap default_flags = GetFlagsMap();
-
   std::string flagfile_path(GetTestPath("test_nondefault_flags"));
   std::string flagfile_contents = "--test_nondefault_ff=nondefault\n"
                                   "--test_default_ff=default";
@@ -92,7 +89,7 @@ TEST_F(FlagsTest, TestNonDefaultFlags) {
   // a redacted value.
   FLAGS_test_sensitive_flag = true;
   kudu::g_should_redact = kudu::RedactContext::LOG;
-  std::string result = GetNonDefaultFlags(default_flags);
+  std::string result = GetNonDefaultFlags();
 
   for (const auto& expected : expected_flags) {
     ASSERT_STR_CONTAINS(result, expected);

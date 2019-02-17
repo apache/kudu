@@ -57,6 +57,7 @@ static constexpr bool kMinidumpPlatformSupported = false;
 #endif // defined(__linux__)
 
 DECLARE_string(log_dir);
+DECLARE_string(log_filename);
 
 DEFINE_bool(enable_minidumps, kMinidumpPlatformSupported,
             "Whether to enable minidump generation upon process crash or SIGUSR1. "
@@ -208,11 +209,14 @@ Status MinidumpExceptionHandler::InitMinidumpExceptionHandler() {
   RETURN_NOT_OK_PREPEND(CreateDirIfMissing(env, minidump_dir_),
                         "Error creating top-level minidump directory");
 
-  // Add the executable name to the path where minidumps will be written. This makes
-  // identification easier and prevents name collisions between the files.
+  // Add the program_name to the path where minidumps will be written.
+  // This makes identification easier and prevents name collisions between the files.
   // This is also consistent with how Impala organizes its minidump files.
-  const char* exe_name = gflags::ProgramInvocationShortName();
-  minidump_dir_ = JoinPathSegments(minidump_dir_, exe_name);
+  // The log_filename flag will be used if non-empty, otherwise the executable name
+  // will be used.
+  const char* program_name = FLAGS_log_filename.empty() ? gflags::ProgramInvocationShortName() :
+          FLAGS_log_filename.c_str();
+  minidump_dir_ = JoinPathSegments(minidump_dir_, program_name);
 
   // Create the directory if it is not there. The minidump doesn't get written if there is
   // no directory.

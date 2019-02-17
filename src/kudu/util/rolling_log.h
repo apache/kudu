@@ -41,7 +41,8 @@ class WritableFile;
 //
 // <log_dir>/<program-name>.<hostname>.<user-name>.<log-name>.<timestamp>.<sequence>.<pid>
 //   log_dir:      the log_dir specified in the constructor
-//   program-name: argv[0], as determined by google::ProgramInvocationShortName()
+//   program-name: the name of the program specified in the constructor. If unset, defaults
+//                 to argv[0], as determined by google::ProgramInvocationShortName().
 //   hostname:     the local machine hostname
 //   user-name:    the current user name
 //   log-name:     the log_name specified in the constructor
@@ -55,7 +56,7 @@ class WritableFile;
 // This class is not thread-safe and must be externally synchronized.
 class RollingLog {
  public:
-  RollingLog(Env* env, std::string log_dir, std::string log_name);
+  RollingLog(Env* env, std::string log_dir, std::string program_name, std::string log_name);
 
   ~RollingLog();
 
@@ -111,6 +112,7 @@ class RollingLog {
 
   Env* const env_;
   const std::string log_dir_;
+  const std::string program_name_;
   const std::string log_name_;
 
   int64_t roll_threshold_bytes_;

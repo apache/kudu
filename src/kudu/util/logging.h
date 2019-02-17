@@ -25,6 +25,7 @@
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/logging_callback.h"
 #include "kudu/util/status.h"

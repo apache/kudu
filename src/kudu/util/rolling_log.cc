@@ -24,10 +24,10 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <type_traits>
 #include <utility>
 
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <zlib.h>
 
@@ -53,9 +53,11 @@ DECLARE_int32(max_log_files);
 
 namespace kudu {
 
-RollingLog::RollingLog(Env* env, string log_dir, string log_name)
+RollingLog::RollingLog(Env* env, string log_dir, string program_name, string log_name)
     : env_(env),
       log_dir_(std::move(log_dir)),
+      program_name_(program_name.empty() ?
+        google::ProgramInvocationShortName() : std::move(program_name)),
       log_name_(std::move(log_name)),
       roll_threshold_bytes_(kDefaultRollThresholdBytes),
       max_num_segments_(FLAGS_max_log_files),
@@ -121,7 +123,7 @@ string FormattedTimestamp() {
 
 string RollingLog::GetLogFileName(int sequence) const {
   return Substitute("$0.$1.$2.$3.$4.$5.$6",
-                    google::ProgramInvocationShortName(),
+                    program_name_,
                     HostnameOrUnknown(),
                     UsernameOrUnknown(),
                     log_name_,
@@ -132,7 +134,7 @@ string RollingLog::GetLogFileName(int sequence) const {
 
 string RollingLog::GetLogFilePattern() const {
   return Substitute("$0.$1.$2.$3.$4.$5.$6",
-                    google::ProgramInvocationShortName(),
+                    program_name_,
                     HostnameOrUnknown(),
                     UsernameOrUnknown(),
                     log_name_,

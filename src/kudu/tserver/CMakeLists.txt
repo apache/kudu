@@ -112,6 +112,7 @@ set(TSERVER_SRCS
   tablet_copy_source_session.cc
   tablet_server.cc
   tablet_server_options.cc
+  tablet_server_runner.cc
   tablet_service.cc
   ts_tablet_manager.cc
   tserver_path_handlers.cc

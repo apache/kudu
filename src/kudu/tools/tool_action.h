@@ -204,6 +204,13 @@ class ActionBuilder {
   // action's help following Description().
   ActionBuilder& ExtraDescription(const std::string& extra_description);
 
+  // Sets the program name to use when running this action. If unset,
+  // argv0 is used.
+  //
+  // This will ensure logging is initialized as if the program binary name was
+  // the passed `program_name`.
+  ActionBuilder& ProgramName(const std::string& program_name);
+
   // Add a new required parameter to this builder.
   //
   // This parameter will be parsed as a positional argument following the name
@@ -247,6 +254,8 @@ class ActionBuilder {
 
   boost::optional<std::string> extra_description_;
 
+  boost::optional<std::string> program_name_;
+
   ActionRunner runner_;
 
   ActionArgsDescriptor args_;
@@ -284,6 +293,10 @@ class Action {
     return extra_description_;
   }
 
+  const boost::optional<std::string>& program_name() const {
+    return program_name_;
+  }
+
   const ActionArgsDescriptor& args() const { return args_; }
 
  private:
@@ -300,6 +313,8 @@ class Action {
   std::string description_;
 
   boost::optional<std::string> extra_description_;
+
+  boost::optional<std::string> program_name_;
 
   ActionRunner runner_;
 

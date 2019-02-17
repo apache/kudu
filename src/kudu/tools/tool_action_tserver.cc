@@ -24,7 +24,7 @@
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
+#include <glog/logging.h>
 
 #include "kudu/common/common.pb.h"
 #include "kudu/common/wire_protocol.h"
@@ -38,6 +38,8 @@
 #include "kudu/tools/tool_action.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/tserver/tablet_server.h"
+#include "kudu/tserver/tablet_server_runner.h"
+#include "kudu/util/init.h"
 #include "kudu/util/status.h"
 
 DEFINE_bool(allow_missing_tserver, false, "If true, performs the action on the "
@@ -59,6 +61,7 @@ using master::ListTabletServersRequestPB;
 using master::ListTabletServersResponsePB;
 using master::MasterServiceProxy;
 using master::TServerStateChangePB;
+using tserver::TabletServer;
 
 namespace tools {
 namespace {
@@ -75,6 +78,18 @@ const char* const kValueArg = "value";
 Status TServerGetFlags(const RunnerContext& context) {
   const string& address = FindOrDie(context.required_args, kTServerAddressArg);
   return PrintServerFlags(address, tserver::TabletServer::kDefaultPort);
+}
+
+Status TServerRun(const RunnerContext& context) {
+  RETURN_NOT_OK(InitKudu());
+
+  // Enable redaction by default. Unlike most tools, we don't want user data
+  // printed to the console/log to be shown by default.
+  CHECK_NE("", google::SetCommandLineOptionWithMode("redact",
+      "all", google::FlagSettingMode::SET_FLAGS_DEFAULT));
+
+  tserver::SetTabletServerFlagDefaults();
+  return tserver::RunTabletServer();
 }
 
 Status TServerSetFlag(const RunnerContext& context) {
@@ -229,6 +244,29 @@ unique_ptr<Mode> BuildTServerMode() {
       .AddOptionalParameter("flag_tags")
       .Build();
 
+  unique_ptr<Action> run =
+      ActionBuilder("run", &TServerRun)
+      .ProgramName("kudu-tserver")
+      .Description("Runs a Kudu Tablet Server")
+      .ExtraDescription("Note: The tablet server is started in this process and "
+                        "runs until interrupted.\n\n"
+                        "The most common configuration flags are described below. "
+                        "For all the configuration options pass --helpfull or see "
+                        "https://kudu.apache.org/docs/configuration_reference.html"
+                        "#kudu-tserver_supported")
+      .AddOptionalParameter("tserver_master_addrs")
+      // Even though fs_wal_dir is required, we don't want it to be positional argument.
+      .AddOptionalParameter("fs_wal_dir")
+      .AddOptionalParameter("fs_data_dirs")
+      .AddOptionalParameter("fs_metadata_dir")
+      .AddOptionalParameter("block_cache_capacity_mb")
+      .AddOptionalParameter("memory_limit_hard_bytes")
+      .AddOptionalParameter("log_dir")
+      // Unlike most tools we don't log to stderr by default to match the
+      // kudu-tserver binary as closely as possible.
+      .AddOptionalParameter("logtostderr", string("false"))
+      .Build();
+
   unique_ptr<Action> set_flag =
       ActionBuilder("set_flag", &TServerSetFlag)
       .Description("Change a gflag value on a Kudu Tablet Server")
@@ -291,6 +329,7 @@ unique_ptr<Mode> BuildTServerMode() {
       .Description("Operate on a Kudu Tablet Server")
       .AddAction(std::move(dump_memtrackers))
       .AddAction(std::move(get_flags))
+      .AddAction(std::move(run))
       .AddAction(std::move(set_flag))
       .AddAction(std::move(status))
       .AddAction(std::move(timestamp))

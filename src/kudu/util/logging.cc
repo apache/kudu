@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 #include "kudu/util/logging.h"
 
 #include <unistd.h>
@@ -23,10 +24,12 @@
 #include <cstdlib>
 #include <ctime>
 #include <fstream>
+#include <initializer_list>
 #include <mutex>
 #include <utility>
 
 #include <boost/uuid/random_generator.hpp>
+#include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_io.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -217,13 +220,12 @@ void InitGoogleLoggingSafe(const char* arg) {
     }
   }
 
-  // This forces our logging to use /tmp rather than looking for a
+  // This forces our logging to default to /tmp rather than looking for a
   // temporary directory if none is specified. This is done so that we
   // can reliably construct the log file name without duplicating the
   // complex logic that glog uses to guess at a temporary dir.
-  if (FLAGS_log_dir.empty()) {
-    FLAGS_log_dir = "/tmp";
-  }
+  CHECK_NE("", google::SetCommandLineOptionWithMode("log_dir",
+     "/tmp", google::FlagSettingMode::SET_FLAGS_DEFAULT));
 
   if (!FLAGS_logtostderr) {
     // Verify that a log file can be created in log_dir by creating a tmp file.

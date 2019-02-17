@@ -33,6 +33,8 @@
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/flags.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/url-coding.h"
 
 using std::pair;
@@ -213,6 +215,12 @@ ActionBuilder& ActionBuilder::ExtraDescription(const string& extra_description) 
   return *this;
 }
 
+ActionBuilder& ActionBuilder::ProgramName(const string& program_name) {
+  CHECK(!program_name_.is_initialized());
+  program_name_ = program_name;
+  return *this;
+}
+
 ActionBuilder& ActionBuilder::AddRequiredParameter(
     const ActionArgsDescriptor::Arg& arg) {
   args_.required.push_back(arg);
@@ -246,6 +254,7 @@ unique_ptr<Action> ActionBuilder::Build() {
   action->name_ = name_;
   action->description_ = description_;
   action->extra_description_ = extra_description_;
+  action->program_name_ = program_name_;
   action->runner_ = runner_;
   action->args_ = args_;
   return action;
@@ -255,6 +264,18 @@ Status Action::Run(const vector<Mode*>& chain,
                    const unordered_map<string, string>& required_args,
                    const vector<string>& variadic_args) const {
   SetOptionalParameterDefaultValues();
+
+  // If `program_name_` is defined,  initialize the logging as if the
+  // program binary name was `program_name_`, otherwise fallback to the
+  // default behavior of using argv0.
+  if (program_name_) {
+    CHECK_NE("", google::SetCommandLineOptionWithMode("log_filename",
+        program_name_->c_str(),
+        google::FlagSettingMode::SET_FLAGS_DEFAULT));
+  }
+  kudu::InitGoogleLoggingSafe(program_name_.get_value_or(gflags::GetArgv0()).c_str());
+  kudu::ValidateFlags();
+
   return runner_({ chain, this, required_args, variadic_args });
 }
 
@@ -396,9 +417,9 @@ string Action::BuildHelpXML(const vector<Mode*>& chain) const {
 void Action::SetOptionalParameterDefaultValues() const {
   for (const auto& param : args_.optional) {
     if (param.default_value) {
-      google::SetCommandLineOptionWithMode(param.name.c_str(),
-                                           param.default_value->c_str(),
-                                           google::FlagSettingMode::SET_FLAGS_DEFAULT);
+      CHECK_NE("", google::SetCommandLineOptionWithMode(param.name.c_str(),
+          param.default_value->c_str(),
+          google::FlagSettingMode::SET_FLAGS_DEFAULT));
     }
   }
 }

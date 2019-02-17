@@ -78,7 +78,7 @@ class RollingLogTest : public KuduTest {
 
 // Test with compression off.
 TEST_F(RollingLogTest, TestLog) {
-  RollingLog log(env_, log_dir_, "mylog");
+  RollingLog log(env_, log_dir_, "rolling_log-test", "mylog");
   log.SetCompressionEnabled(false);
   log.SetRollThresholdBytes(100);
 
@@ -107,7 +107,7 @@ TEST_F(RollingLogTest, TestLog) {
 
 // Test with compression on.
 TEST_F(RollingLogTest, TestCompression) {
-  RollingLog log(env_, log_dir_, "mylog");
+  RollingLog log(env_, log_dir_, "rolling_log-test", "mylog");
   ASSERT_OK(log.Open());
 
   StringPiece data = "Hello world\n";
@@ -130,7 +130,7 @@ TEST_F(RollingLogTest, TestCompression) {
 }
 
 TEST_F(RollingLogTest, TestFileCountLimit) {
-  RollingLog log(env_, log_dir_, "mylog");
+  RollingLog log(env_, log_dir_, "rolling_log-test", "mylog");
   ASSERT_OK(log.Open());
   log.SetRollThresholdBytes(100);
   log.SetMaxNumSegments(3);

@@ -45,6 +45,7 @@ class TabletServer : public kserver::KuduServer {
   // this constant as well.
   static const uint16_t kDefaultPort = 7050;
   static const uint16_t kDefaultWebPort = 8050;
+  static const uint16_t kDefaultNumServiceThreads = 20;
 
   explicit TabletServer(const TabletServerOptions& opts);
   ~TabletServer();

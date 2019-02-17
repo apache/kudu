@@ -327,11 +327,11 @@ class ToolTest : public KuduTest {
     ASSERT_TRUE(stdout.empty());
     ASSERT_FALSE(stderr.empty());
 
-    // If it was an invalid command, the usage string is on the third line.
-    int usage_idx = 1;
+    // If it was an invalid command, the usage string is on the second line.
+    int usage_idx = 0;
     if (!expected_status.ok()) {
-      ASSERT_EQ(expected_status.ToString(), stderr[1]);
-      usage_idx = 2;
+      ASSERT_EQ(expected_status.ToString(), stderr[0]);
+      usage_idx = 1;
     }
     ASSERT_EQ(0, stderr[usage_idx].find("Usage: "));
 
@@ -354,8 +354,8 @@ class ToolTest : public KuduTest {
     vector<string> err_lines;
     RunTool(arg_str, nullptr, nullptr, nullptr, /* stderr_lines = */ &err_lines);
     ASSERT_GE(err_lines.size(), 3) << err_lines;
-    ASSERT_EQ(expected_status.ToString(), err_lines[1]);
-    ASSERT_STR_MATCHES(err_lines[3], "Usage: kudu.*");
+    ASSERT_EQ(expected_status.ToString(), err_lines[0]);
+    ASSERT_STR_MATCHES(err_lines[2], "Usage: kudu.*");
   }
 
   void RunFsCheck(const string& arg_str,

@@ -17,21 +17,20 @@
 
 #include "kudu/util/flags.h"
 
+#include <sys/stat.h>
+#include <unistd.h> // IWYU pragma: keep
 
 #include <cstdlib>
 #include <functional>
 #include <iostream>
+#include <map>
 #include <string>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
-#include <sys/stat.h>
-#include <unistd.h> // IWYU pragma: keep
-
 #include <boost/algorithm/string/predicate.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #ifdef TCMALLOC_ENABLED
 #include <gperftools/heap-profiler.h>
@@ -481,6 +480,7 @@ int ParseCommandLineFlags(int* argc, char*** argv, bool remove_flags) {
 
   int ret = google::ParseCommandLineNonHelpFlags(argc, argv, remove_flags);
   HandleCommonFlags();
+  ValidateFlags();
   return ret;
 }
 
@@ -497,8 +497,6 @@ void HandleCommonFlags() {
   }
 
   google::HandleCommandLineHelpFlags();
-  CheckFlagsAllowed();
-  RunCustomValidators();
 
   if (FLAGS_disable_core_dumps) {
     DisableCoreDumps();
@@ -527,6 +525,11 @@ void HandleCommonFlags() {
 #endif
 }
 
+void ValidateFlags() {
+  CheckFlagsAllowed();
+  RunCustomValidators();
+}
+
 string CommandlineFlagsIntoString(EscapeMode mode) {
   string ret_value;
   vector<CommandLineFlagInfo> flags;
@@ -546,20 +549,15 @@ string CommandlineFlagsIntoString(EscapeMode mode) {
   return ret_value;
 }
 
-string GetNonDefaultFlags(const GFlagsMap& default_flags) {
+string GetNonDefaultFlags() {
   ostringstream args;
   vector<CommandLineFlagInfo> flags;
   GetAllFlags(&flags);
   for (const auto& flag : flags) {
     if (!flag.is_default) {
-      // This only means that the flag has been rewritten. It doesn't
-      // mean that this has been done in the command line, or even
-      // that it's truly different from the default value.
-      // Next, we try to check both.
-      const auto& default_flag = default_flags.find(flag.name);
-      // it's very unlikely, but still possible that we don't have the flag in defaults
-      if (default_flag == default_flags.end() ||
-          flag.current_value != default_flag->second.current_value) {
+      // This only means that the flag has been rewritten.
+      // We need to check that the value is different from the default value.
+      if (flag.current_value != flag.default_value) {
         if (!args.str().empty()) {
           args << '\n';
         }

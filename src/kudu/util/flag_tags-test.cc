@@ -15,18 +15,18 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/util/flag_tags.h"
+
 #include <string>
 #include <unordered_set>
 #include <vector>
 
-#include <gtest/gtest.h>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
+#include <gtest/gtest.h>
 
-#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/flag_tags.h"
 #include "kudu/util/flags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/logging_test_util.h"
@@ -83,7 +83,7 @@ TEST_F(FlagTagsTest, TestUnlockFlags) {
   {
     gflags::FlagSaver s;
     gflags::SetCommandLineOption("test_unsafe_flag", "true");
-    ASSERT_DEATH({ HandleCommonFlags(); },
+    ASSERT_DEATH({ ValidateFlags(); },
                  "Flag --test_unsafe_flag is unsafe and unsupported.*"
                  "Use --unlock_unsafe_flags to proceed");
   }
@@ -95,7 +95,7 @@ TEST_F(FlagTagsTest, TestUnlockFlags) {
     gflags::FlagSaver s;
     gflags::SetCommandLineOption("test_unsafe_flag", "true");
     gflags::SetCommandLineOption("unlock_unsafe_flags", "true");
-    HandleCommonFlags();
+    ValidateFlags();
     ASSERT_EQ(1, sink.logged_msgs().size());
     ASSERT_STR_CONTAINS(sink.logged_msgs()[0], "Enabled unsafe flag: --test_unsafe_flag");
   }
@@ -104,7 +104,7 @@ TEST_F(FlagTagsTest, TestUnlockFlags) {
   {
     gflags::FlagSaver s;
     gflags::SetCommandLineOption("test_experimental_flag", "true");
-    ASSERT_DEATH({ HandleCommonFlags(); },
+    ASSERT_DEATH({ ValidateFlags(); },
                  "Flag --test_experimental_flag is experimental and unsupported.*"
                  "Use --unlock_experimental_flags to proceed");
   }
@@ -116,7 +116,7 @@ TEST_F(FlagTagsTest, TestUnlockFlags) {
     gflags::FlagSaver s;
     gflags::SetCommandLineOption("test_experimental_flag", "true");
     gflags::SetCommandLineOption("unlock_experimental_flags", "true");
-    HandleCommonFlags();
+    ValidateFlags();
     ASSERT_EQ(1, sink.logged_msgs().size());
     ASSERT_STR_CONTAINS(sink.logged_msgs()[0],
                         "Enabled experimental flag: --test_experimental_flag");

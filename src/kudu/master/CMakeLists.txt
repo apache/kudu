@@ -41,6 +41,7 @@ set(MASTER_SRCS
   master_cert_authority.cc
   master_options.cc
   master_path_handlers.cc
+  master_runner.cc
   master_service.cc
   mini_master.cc
   placement_policy.cc

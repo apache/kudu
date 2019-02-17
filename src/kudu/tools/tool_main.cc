@@ -26,7 +26,6 @@
 
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/gutil/map-util.h"
@@ -34,7 +33,6 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tools/tool_action.h"
 #include "kudu/util/flags.h"
-#include "kudu/util/logging.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
 
@@ -252,14 +250,16 @@ int main(int argc, char** argv) {
   CHECK_NE("",  google::SetCommandLineOptionWithMode(
       "redact", "", google::SET_FLAGS_DEFAULT));
 
+  // Set logtostderr by default given these are command line tools.
+  CHECK_NE("",  google::SetCommandLineOptionWithMode(
+      "logtostderr", "true", google::SET_FLAGS_DEFAULT));
+
   // Hide the regular gflags help unless --helpfull is used.
   //
   // Inspired by https://github.com/gflags/gflags/issues/43#issuecomment-168280647.
   gflags::ParseCommandLineNonHelpFlags(&argc, &argv, true);
 
-  FLAGS_logtostderr = true;
   const char* prog_name = argv[0];
-  kudu::InitGoogleLoggingSafe(prog_name);
   bool show_help = ParseCommandLineFlags(prog_name);
 
   return kudu::tools::RunTool(argc, argv, show_help);

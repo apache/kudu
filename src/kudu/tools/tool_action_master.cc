@@ -28,7 +28,7 @@
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/optional/optional.hpp>
-#include <gflags/gflags_declare.h>
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 
 #include "kudu/common/common.pb.h"
@@ -43,9 +43,11 @@
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
+#include "kudu/master/master_runner.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/tools/tool_action.h"
 #include "kudu/tools/tool_action_common.h"
+#include "kudu/util/init.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 
@@ -85,6 +87,18 @@ const char* const kValueArg = "value";
 Status MasterGetFlags(const RunnerContext& context) {
   const string& address = FindOrDie(context.required_args, kMasterAddressArg);
   return PrintServerFlags(address, Master::kDefaultPort);
+}
+
+Status MasterRun(const RunnerContext& context) {
+  RETURN_NOT_OK(InitKudu());
+
+  // Enable redaction by default. Unlike most tools, we don't want user data
+  // printed to the console/log to be shown by default.
+  CHECK_NE("", google::SetCommandLineOptionWithMode("redact",
+      "all", google::FlagSettingMode::SET_FLAGS_DEFAULT));
+
+  master::SetMasterFlagDefaults();
+  return master::RunMasterServer();
 }
 
 Status MasterSetFlag(const RunnerContext& context) {
@@ -341,6 +355,30 @@ unique_ptr<Mode> BuildMasterMode() {
         .AddOptionalParameter("flag_tags")
         .Build();
     builder.AddAction(std::move(get_flags));
+  }
+  {
+    unique_ptr<Action> run =
+        ActionBuilder("run", &MasterRun)
+        .ProgramName("kudu-master")
+        .Description("Runs a Kudu Master")
+        .ExtraDescription("Note: The master server is started in this process and "
+                          "runs until interrupted.\n\n"
+                          "The most common configuration flags are described below. "
+                          "For all the configuration options pass --helpfull or see "
+                          "https://kudu.apache.org/docs/configuration_reference.html"
+                          "#kudu-master_supported")
+        .AddOptionalParameter("master_addresses")
+        // Even though fs_wal_dir is required, we don't want it to be positional argument.
+        // This allows it to be passed as a standard flag.
+        .AddOptionalParameter("fs_wal_dir")
+        .AddOptionalParameter("fs_data_dirs")
+        .AddOptionalParameter("fs_metadata_dir")
+        .AddOptionalParameter("log_dir")
+        // Unlike most tools we don't log to stderr by default to match the
+        // kudu-master binary as closely as possible.
+        .AddOptionalParameter("logtostderr", string("false"))
+        .Build();
+    builder.AddAction(std::move(run));
   }
   {
     unique_ptr<Action> set_flag =

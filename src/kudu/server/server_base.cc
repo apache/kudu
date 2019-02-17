@@ -225,6 +225,7 @@ DECLARE_bool(use_hybrid_clock);
 DECLARE_int32(dns_resolver_max_threads_num);
 DECLARE_uint32(dns_resolver_cache_capacity_mb);
 DECLARE_uint32(dns_resolver_cache_ttl_sec);
+DECLARE_string(log_filename);
 
 METRIC_DECLARE_gauge_size(merged_entities_count_of_server);
 
@@ -691,7 +692,8 @@ Status ServerBase::StartMetricsLogging() {
     LOG(INFO) << "Not starting metrics log since no log directory was specified.";
     return Status::OK();
   }
-  unique_ptr<DiagnosticsLog> l(new DiagnosticsLog(FLAGS_log_dir, metric_registry_.get()));
+  unique_ptr<DiagnosticsLog> l(new DiagnosticsLog(FLAGS_log_dir, FLAGS_log_filename,
+      metric_registry_.get()));
   l->SetMetricsLogInterval(MonoDelta::FromMilliseconds(options_.metrics_log_interval_ms));
   RETURN_NOT_OK(l->Start());
   diag_log_ = std::move(l);

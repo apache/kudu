@@ -116,6 +116,7 @@ DECLARE_int32(master_inject_latency_on_tablet_lookups_ms);
 DECLARE_int64(live_row_count_for_testing);
 DECLARE_int64(on_disk_size_for_testing);
 DECLARE_string(location_mapping_cmd);
+DECLARE_string(log_filename);
 
 namespace kudu {
 namespace master {
@@ -913,6 +914,7 @@ TEST_F(MasterTest, TestDumpStacksOnRpcQueueOverflow) {
   // Use a new log directory so that the tserver and master don't share the
   // same one. This allows us to isolate the diagnostics log from the master.
   FLAGS_log_dir = JoinPathSegments(GetTestDataDirectory(), "master-logs");
+  FLAGS_log_filename = "kudu-master";
   Status s = env_->CreateDir(FLAGS_log_dir);
   ASSERT_TRUE(s.ok() || s.IsAlreadyPresent()) << s.ToString();
   mini_master_->Shutdown();
