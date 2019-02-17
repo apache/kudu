@@ -52,16 +52,20 @@ using kudu::client::KuduColumnSchema;
 using kudu::client::KuduPredicate;
 using kudu::client::KuduScanBatch;
 using kudu::client::KuduScanner;
+using kudu::client::KuduScanToken;
 using kudu::client::KuduScanTokenBuilder;
 using kudu::client::KuduSchema;
 using kudu::client::KuduTable;
 using kudu::client::KuduValue;
 using strings::Substitute;
-using std::cout;
 using std::endl;
 using std::map;
+using std::ostream;
+using std::ostringstream;
 using std::set;
+using std::string;
 using std::unique_ptr;
+using std::vector;
 
 DECLARE_string(columns);
 DEFINE_bool(fill_cache, true,
@@ -87,7 +91,7 @@ DEFINE_string(predicates, "",
               "For example,\n"
               R"*(   ["AND", [">=", "col1", "value"], ["NOTNULL", "col2"]])*""\n"
               "The only supported predicate operator is `AND`.");
-DEFINE_bool(show_value, false,
+DEFINE_bool(show_values, false,
             "Whether to show values of scanned rows.");
 DECLARE_string(tablets);
 
@@ -302,19 +306,19 @@ void TableScanner::ScannerTask(const vector<KuduScanToken *>& tokens) {
       CHECK_OK(scanner->NextBatch(&batch));
       count += batch.NumRows();
       total_count_.IncrementBy(batch.NumRows());
-      if (FLAGS_show_value) {
+      if (out_ && FLAGS_show_values) {
         MutexLock l(output_lock_);
         for (const auto& row : batch) {
-          cout << row.ToString() << endl;
+          *out_ << row.ToString() << endl;
         }
       }
     }
     delete scanner;
 
     sw.stop();
-    {
+    if (out_) {
       MutexLock l(output_lock_);
-      cout << "T " << token->tablet().id() << " scanned count " << count
+      *out_ << "T " << token->tablet().id() << " scanned count " << count
            << " cost " << sw.elapsed().wall_seconds() << " seconds" << endl;
     }
   }
@@ -331,14 +335,23 @@ void TableScanner::MonitorTask() {
   }
 }
 
+void TableScanner::SetOutput(ostream* out) {
+  out_ = out;
+}
+
+void TableScanner::SetReadMode(KuduScanner::ReadMode mode) {
+  mode_ = mode;
+}
+
 Status TableScanner::Run() {
- client::sp::shared_ptr<KuduTable> table;
+  client::sp::shared_ptr<KuduTable> table;
   RETURN_NOT_OK(client_->OpenTable(table_name_, &table));
 
   KuduScanTokenBuilder builder(table.get());
   RETURN_NOT_OK(builder.SetCacheBlocks(FLAGS_fill_cache));
-  RETURN_NOT_OK(builder.SetSelection(KuduClient::LEADER_ONLY));
-  RETURN_NOT_OK(builder.SetReadMode(KuduScanner::READ_LATEST));
+  if (mode_) {
+    RETURN_NOT_OK(builder.SetReadMode(mode_.get()));
+  }
   RETURN_NOT_OK(builder.SetTimeoutMillis(30000));
 
   vector<string> projected_column_names = Split(FLAGS_columns, ",", strings::SkipEmpty());
@@ -374,8 +387,10 @@ Status TableScanner::Run() {
   thread_pool_->Shutdown();
 
   sw.stop();
-  cout << "Total count " << total_count_.Load()
-      << " cost " << sw.elapsed().wall_seconds() << " seconds" << endl;
+  if (out_) {
+    *out_ << "Total count " << total_count_.Load()
+        << " cost " << sw.elapsed().wall_seconds() << " seconds" << endl;
+  }
 
   return Status::OK();
 }

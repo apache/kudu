@@ -183,7 +183,6 @@
 #include <glog/logging.h>
 
 #include "kudu/client/client.h"
-#include "kudu/client/scan_batch.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
 #include "kudu/client/write_op.h"
@@ -193,9 +192,9 @@
 #include "kudu/common/types.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
-#include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/tools/table_scanner.h"
 #include "kudu/tools/tool_action.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/util/decimal_util.h"
@@ -211,11 +210,9 @@ using kudu::KuduPartialRow;
 using kudu::Stopwatch;
 using kudu::TypeInfo;
 using kudu::client::KuduClient;
-using kudu::client::KuduClientBuilder;
 using kudu::client::KuduColumnSchema;
 using kudu::client::KuduError;
 using kudu::client::KuduInsert;
-using kudu::client::KuduScanBatch;
 using kudu::client::KuduScanner;
 using kudu::client::KuduSchema;
 using kudu::client::KuduSchemaBuilder;
@@ -282,6 +279,7 @@ DEFINE_int32(show_first_n_errors, 0,
              "effective number of errors in the output. If so, consider "
              "increasing the size of the error buffer using the "
              "'--error_buffer_size_bytes' flag.");
+DECLARE_bool(show_values);
 DEFINE_string(string_fixed, "",
               "Pre-defined string to write into binary and string columns. "
               "Client generates more data per second using pre-defined string "
@@ -574,74 +572,20 @@ Status GenerateInsertRows(const shared_ptr<KuduClient>& client,
 // and output their total count.
 Status CountTableRows(const shared_ptr<KuduClient>& client,
                       const string& table_name, uint64_t* count) {
-  // It's assumed that all writing activity has stopped at this point.
-  const uint64_t snapshot_timestamp = client->GetLatestObservedTimestamp();
-
-  shared_ptr<KuduTable> table;
-  RETURN_NOT_OK(client->OpenTable(table_name, &table));
-
-  // It's necessary to have read-what-you-write behavior here. Since
-  // tablet leader can change and there might be replica propagation delays,
-  // set the snapshot to the latest observed one to get correct row count.
-  // Due to KUDU-1656, there might be timeouts due to tservers catching up with
-  // the requested snapshot. The simple workaround: if the timeout error occurs,
-  // retry the row count operation.
-  Status row_count_status;
-  uint64_t row_count = 0;
-  for (size_t i = 0; i < 3; ++i) {
-    KuduScanner scanner(table.get());
-    // NOTE: +1 is due to the current implementation of the scanner.
-    RETURN_NOT_OK(scanner.SetSnapshotRaw(snapshot_timestamp + 1));
-    RETURN_NOT_OK(scanner.SetReadMode(KuduScanner::READ_AT_SNAPSHOT));
-    RETURN_NOT_OK(scanner.SetSelection(KuduClient::LEADER_ONLY));
-    row_count_status = scanner.Open();
-    if (!row_count_status.ok()) {
-      if (row_count_status.IsTimedOut()) {
-        // Retry condition: start the row count over again.
-        continue;
-      }
-      return row_count_status;
-    }
-    row_count = 0;
-    while (scanner.HasMoreRows()) {
-      KuduScanBatch batch;
-      row_count_status = scanner.NextBatch(&batch);
-      if (!row_count_status.ok()) {
-        if (row_count_status.IsTimedOut()) {
-          // Retry condition: start the row count over again.
-          break;
-        }
-        return row_count_status;
-      }
-      row_count += batch.NumRows();
-    }
-    if (row_count_status.ok()) {
-      // If it reaches this point with success,
-      // stop the retry cycle since the result is ready.
-      break;
-    }
-  }
-  RETURN_NOT_OK(row_count_status);
+  TableScanner scanner(client, table_name);
+  scanner.SetReadMode(KuduScanner::ReadMode::READ_YOUR_WRITES);
+  RETURN_NOT_OK(scanner.Run());
   if (count != nullptr) {
-    *count = row_count;
+    *count = scanner.TotalScannedCount();
   }
 
   return Status::OK();
 }
 
 Status TestLoadGenerator(const RunnerContext& context) {
-  const string& master_addresses_str =
-      FindOrDie(context.required_args, kMasterAddressesArg);
-
-  vector<string> master_addrs(strings::Split(master_addresses_str, ","));
-  if (master_addrs.empty()) {
-    return Status::InvalidArgument(
-        "At least one master address must be specified");
-  }
   shared_ptr<KuduClient> client;
-  RETURN_NOT_OK(KuduClientBuilder()
-                .master_server_addrs(master_addrs)
-                .Build(&client));
+  RETURN_NOT_OK(CreateKuduClient(context, &client));
+
   string table_name;
   bool is_auto_table = false;
   if (!FLAGS_table_name.empty()) {
@@ -742,10 +686,22 @@ Status TestLoadGenerator(const RunnerContext& context) {
   return Status::OK();
 }
 
+Status TableScan(const RunnerContext &context) {
+  client::sp::shared_ptr<KuduClient> client;
+  RETURN_NOT_OK(CreateKuduClient(context, &client));
+
+  const string& table_name = FindOrDie(context.required_args, kTableNameArg);
+
+  FLAGS_show_values = false;
+  TableScanner scanner(client, table_name);
+  scanner.SetOutput(&cout);
+  return scanner.Run();
+}
+
 } // anonymous namespace
 
 unique_ptr<Mode> BuildPerfMode() {
-  unique_ptr<Action> insert =
+  unique_ptr<Action> loadgen =
       ActionBuilder("loadgen", &TestLoadGenerator)
       .Description("Run load generation with optional scan afterwards")
       .ExtraDescription(
@@ -790,9 +746,25 @@ unique_ptr<Mode> BuildPerfMode() {
       .AddOptionalParameter("use_random")
       .Build();
 
+  unique_ptr<Action> table_scan =
+      ActionBuilder("table_scan", &TableScan)
+      .Description("Show row count and scanning time cost of tablets in a table")
+      .ExtraDescription("Show row count and scanning time of tablets in a table. "
+          "This can be useful to check for row count skew across different tablets, "
+          "or whether there is a long latency tail when scanning different tables.")
+      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
+      .AddRequiredParameter({ kTableNameArg, "Name of the table to scan"})
+      .AddOptionalParameter("columns")
+      .AddOptionalParameter("fill_cache")
+      .AddOptionalParameter("num_threads")
+      .AddOptionalParameter("predicates")
+      .AddOptionalParameter("tablets")
+      .Build();
+
   return ModeBuilder("perf")
       .Description("Measure the performance of a Kudu cluster")
-      .AddAction(std::move(insert))
+      .AddAction(std::move(loadgen))
+      .AddAction(std::move(table_scan))
       .Build();
 }
 

@@ -183,14 +183,16 @@ using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using std::vector;
+using strings::Split;
 using strings::Substitute;
-using tserver::TabletServerAdminServiceProxy;
-using tserver::TabletServerServiceProxy;
+using tserver::TabletServerAdminServiceProxy; // NOLINT
+using tserver::TabletServerServiceProxy; // NOLINT
 using tserver::WriteRequestPB;
 
 const char* const kMasterAddressesArg = "master_addresses";
 const char* const kMasterAddressesArgDesc = "Comma-separated list of Kudu "
     "Master addresses where each address is of form 'hostname:port'";
+const char* const kTableNameArg = "table_name";
 const char* const kTabletIdArg = "tablet_id";
 const char* const kTabletIdArgDesc = "Tablet Identifier";
 
@@ -471,6 +473,16 @@ bool MatchesAnyPattern(const vector<string>& patterns, const string& str) {
     if (MatchPattern(str, p)) return true;
   }
   return false;
+}
+
+Status CreateKuduClient(const RunnerContext& context,
+                        client::sp::shared_ptr<KuduClient>* client) {
+  const string& master_addresses_str = FindOrDie(context.required_args,
+                                                 kMasterAddressesArg);
+  vector<string> master_addresses = Split(master_addresses_str, ",");
+  return KuduClientBuilder()
+          .master_server_addrs(master_addresses)
+          .Build(client);
 }
 
 Status PrintServerStatus(const string& address, uint16_t default_port) {

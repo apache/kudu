@@ -128,6 +128,7 @@
 #include "kudu/util/url-coding.h"
 
 DECLARE_bool(hive_metastore_sasl_enabled);
+DECLARE_bool(show_values);
 DECLARE_string(block_manager);
 DECLARE_string(hive_metastore_uris);
 
@@ -387,8 +388,10 @@ class ToolTest : public KuduTest {
                          const string& predicates_json,
                          int64_t min_value,
                          int64_t max_value,
-                         const vector<pair<string, string>>& columns = {{"int32", "key"}}) {
+                         const vector<pair<string, string>>& columns = {{"int32", "key"}},
+                         const string& action = "table scan") {
     vector<string> col_names;
+    col_names.reserve(columns.size());
     for (const auto& column : columns) {
       col_names.push_back(column.second);
     }
@@ -397,25 +400,46 @@ class ToolTest : public KuduTest {
     vector<string> lines;
     int64_t total = max<int64_t>(max_value - min_value + 1, 0);
     NO_FATALS(RunActionStdoutLines(
-                Substitute("table scan $0 $1 -show_value=true "
-                           "-columns=$2 -predicates=$3",
+                Substitute("$0 $1 $2 "
+                           "-columns=$3 -predicates=$4 -num_threads=1",
+                           action,
                            cluster_->master()->bound_rpc_addr().ToString(),
-                           table_name, projection, predicates_json), &lines));
-    for (int64_t value = min_value; value <= max_value; ++value) {
-      // Check projection.
-      vector<string> kvs;
-      for (const auto& column : columns) {
+                           table_name, projection, predicates_json),
+                &lines));
+    size_t line_count = 0;
+    int64_t value = min_value;
+    for (const auto& line : lines) {
+      if (line.find('(') != string::npos) {
         // Check matched rows.
-        kvs.push_back(Substitute("$0 $1=$2",
-            column.first, column.second, column.second == "key" ? to_string(value) : ".*"));
+        vector<string> kvs;
+        kvs.reserve(columns.size());
+        for (const auto& column : columns) {
+          // Check projected columns.
+          kvs.push_back(Substitute("$0 $1=$2",
+              column.first, column.second, column.second == "key" ? to_string(value) : ".*"));
+        }
+        string line_pattern(R"*(\()*");
+        line_pattern += JoinStrings(kvs, ", ");
+        line_pattern += (")");
+        ASSERT_STR_MATCHES(line, line_pattern);
+        ++line_count;
+        ++value;
+      } else if (line.find("scanned count") != string::npos) {
+        // Check tablet scan statistic.
+        ASSERT_STR_MATCHES(line, "T .* scanned count .* cost .* seconds");
+        ++line_count;
+      } else {
+        // Check whole table scan statistic.
+        ++line_count;
+        ASSERT_STR_MATCHES(line, Substitute("Total count $0 cost .* seconds", total));
+        // This is the last line of the output.
+        ASSERT_EQ(line_count, lines.size());
+        break;
       }
-      string line_pattern(R"*(\()*");
-      line_pattern += JoinStrings(kvs, ", ");
-      line_pattern += (")");
-      ASSERT_STRINGS_ANY_MATCH(lines, line_pattern);
     }
-    // Check total count.
-    ASSERT_STRINGS_ANY_MATCH(lines, Substitute("Total count $0 ", total));
+    if (action == "table scan") {
+      ASSERT_EQ(value, max_value + 1);
+    }
   }
 
  protected:
@@ -610,6 +634,7 @@ TEST_F(ToolTest, TestModeHelp) {
   {
     const vector<string> kPerfRegexes = {
         "loadgen.*Run load generation with optional scan afterwards",
+        "table_scan.*Show row count and scanning time cost of tablets in a table"
     };
     NO_FATALS(RunTestHelp("perf", kPerfRegexes));
   }
@@ -1779,6 +1804,12 @@ TEST_F(ToolTest, TestNonRandomWorkloadLoadgen) {
   ASSERT_EQ(0, bloom_lookups);
 }
 
+TEST_F(ToolTest, TestPerfTableScan) {
+  const string& kTableName = "perf.table_scan";
+  NO_FATALS(RunLoadgen(1, { "--keep_auto_table=true", "--run_scan" }, kTableName));
+  NO_FATALS(RunScanTableCheck(kTableName, "", 1, 2000, {}, "perf table_scan"));
+}
+
 // Test 'kudu remote_replica copy' tool when the destination tablet server is online.
 // 1. Test the copy tool when the destination replica is healthy
 // 2. Test the copy tool when the destination replica is tombstoned
@@ -2618,7 +2649,7 @@ TEST_F(ToolTest, TestScanTableMultiPredicates) {
 
   vector<string> lines;
   NO_FATALS(RunActionStdoutLines(
-              Substitute("table scan $0 $1 -show_value=true "
+              Substitute("table scan $0 $1 "
                          "-columns=key,string_val -predicates=$2",
                          cluster_->master()->bound_rpc_addr().ToString(),
                          kTableName,

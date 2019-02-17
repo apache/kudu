@@ -17,12 +17,15 @@
 
 #pragma once
 
-#include <stdint.h>
-
+#include <cstdint>
+#include <iosfwd>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
+
+#include "kudu/client/client.h"
 #include "kudu/client/shared_ptr.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/util/atomic.h"
@@ -31,40 +34,42 @@
 #include "kudu/util/threadpool.h"
 
 namespace kudu {
-namespace client {
-class KuduClient;
-class KuduScanToken;
-}  // namespace client
-}  // namespace kudu
-
-using kudu::client::KuduClient;
-using kudu::client::KuduScanToken;
-using std::string;
-using std::vector;
-
-namespace kudu {
 namespace tools {
 class TableScanner {
-public:
-  TableScanner(client::sp::shared_ptr<KuduClient> client, string table_name):
+ public:
+  TableScanner(client::sp::shared_ptr<kudu::client::KuduClient> client, std::string table_name):
     total_count_(0),
     client_(std::move(client)),
-    table_name_(std::move(table_name)) {
+    table_name_(std::move(table_name)),
+    out_(nullptr) {
   }
+
+  // Set output stream of this tool, or disable output if not set.
+  // 'out' must remain valid for the lifetime of this class.
+  void SetOutput(std::ostream* out);
+
+  // Set read mode, see KuduScanner::SetReadMode().
+  void SetReadMode(kudu::client::KuduScanner::ReadMode mode);
 
   Status Run();
 
-private:
-  void ScannerTask(const vector<KuduScanToken *>& tokens);
+  uint64_t TotalScannedCount() const {
+    return total_count_.Load();
+  }
+
+ private:
+  void ScannerTask(const std::vector<kudu::client::KuduScanToken *>& tokens);
   void MonitorTask();
 
+  boost::optional<kudu::client::KuduScanner::ReadMode> mode_;
   AtomicInt<uint64_t> total_count_;
-  client::sp::shared_ptr<KuduClient> client_;
+  client::sp::shared_ptr<kudu::client::KuduClient> client_;
   std::string table_name_;
   gscoped_ptr<ThreadPool> thread_pool_;
 
-  // Protects output to stdout so that rows don't get interleaved.
+  // Protects output to 'out_' so that rows don't get interleaved.
   Mutex output_lock_;
+  std::ostream* out_;
 };
 } // namespace tools
 } // namespace kudu

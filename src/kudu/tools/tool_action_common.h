@@ -68,6 +68,7 @@ struct RunnerContext;
 // Constants for parameters and descriptions.
 extern const char* const kMasterAddressesArg;
 extern const char* const kMasterAddressesArgDesc;
+extern const char* const kTableNameArg;
 extern const char* const kTabletIdArg;
 extern const char* const kTabletIdArgDesc;
 
@@ -142,6 +143,11 @@ Status DumpMemTrackers(const std::string& address, uint16_t default_port);
 // Return true if 'str' matches any of the patterns in 'patterns', or if
 // 'patterns' is empty.
 bool MatchesAnyPattern(const std::vector<std::string>& patterns, const std::string& str);
+
+// Creates a Kudu client connected to the cluster whose master addresses are defined by
+// the kMasterAddressesArg argument in 'context'.
+Status CreateKuduClient(const RunnerContext& context,
+                        client::sp::shared_ptr<client::KuduClient>* client);
 
 // A table of data to present to the user.
 //
