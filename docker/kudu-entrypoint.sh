@@ -97,7 +97,7 @@ if [[ "$1" == "master" ]]; then
   if [[ -n "$KUDU_MASTERS" ]]; then
     MASTER_ARGS="--master_addresses=$KUDU_MASTERS $MASTER_ARGS"
   fi
-  exec kudu-master ${MASTER_ARGS}
+  exec kudu master run ${MASTER_ARGS}
 elif [[ "$1" == "tserver" ]]; then
   mkdir -p "$SERVICE_DIR"
   wait_for_master_hosts
@@ -106,7 +106,7 @@ elif [[ "$1" == "tserver" ]]; then
   else
     TSERVER_ARGS="--tserver_master_addrs=localhost $TSERVER_ARGS"
   fi
-  exec kudu-tserver ${TSERVER_ARGS}
+  exec kudu tserver run ${TSERVER_ARGS}
 elif [[ "$1" == "help" ]]; then
   print_help
   exit 0

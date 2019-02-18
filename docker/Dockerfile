@@ -267,11 +267,7 @@ ARG DATA_DIR="/var/lib/kudu"
 
 # Copy the binaries.
 WORKDIR $INSTALL_DIR/bin
-COPY --from=build \
-  /kudu/build/latest/bin/kudu \
-  /kudu/build/latest/bin/kudu-master \
-  /kudu/build/latest/bin/kudu-tserver \
-  ./
+COPY --from=build /kudu/build/latest/bin/kudu ./
 # Add to the binaries to the path.
 ENV PATH=$INSTALL_DIR/bin/:$PATH
 
