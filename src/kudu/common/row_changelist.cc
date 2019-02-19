@@ -223,7 +223,7 @@ Status RowChangeListDecoder::MutateRowAndCaptureChanges(RowBlockRow* dst_row,
     DecodedUpdate dec;
     RETURN_NOT_OK(DecodeNext(&dec));
     int col_idx;
-    const void* value;
+    const void* value = nullptr;
     RETURN_NOT_OK(dec.Validate(*dst_schema, &col_idx, &value));
     // Reinserts don't update keys so they shouldn't include the key columns.
     DCHECK(!dst_schema->is_key_column(col_idx));

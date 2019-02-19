@@ -1126,7 +1126,7 @@ class PosixEnv : public Env {
                                      string* created_filename,
                                      unique_ptr<WritableFile>* result) OVERRIDE {
     TRACE_EVENT1("io", "PosixEnv::NewTempWritableFile", "template", name_template);
-    int fd;
+    int fd = 0;
     string tmp_filename;
     RETURN_NOT_OK(MkTmpFile(name_template, &fd, &tmp_filename));
     RETURN_NOT_OK(InstantiateNewWritableFile(tmp_filename, fd, opts, result));
@@ -1152,7 +1152,7 @@ class PosixEnv : public Env {
   virtual Status NewTempRWFile(const RWFileOptions& opts, const string& name_template,
                                string* created_filename, unique_ptr<RWFile>* res) OVERRIDE {
     TRACE_EVENT1("io", "PosixEnv::NewTempRWFile", "template", name_template);
-    int fd;
+    int fd = 0;
     RETURN_NOT_OK(MkTmpFile(name_template, &fd, created_filename));
     res->reset(new PosixRWFile(*created_filename, fd, opts.sync_on_close));
     return Status::OK();

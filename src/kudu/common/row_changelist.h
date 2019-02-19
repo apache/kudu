@@ -380,7 +380,7 @@ class RowChangeListDecoder {
     ColumnId col_id;
 
     // If true, this update sets the given column to NULL.
-    bool null;
+    bool null = false;
 
     // The "raw" value of the updated column.
     //   - in the case of a fixed length type such as an integer,

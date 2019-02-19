@@ -31,6 +31,7 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
+#include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/callback.h"  // IWYU pragma: keep
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/spinlock.h"
@@ -174,7 +175,7 @@ void FlushCoverageOnExit() {
   static std::once_flag once;
   std::call_once(once, [] {
       static const char msg[] = "Flushing coverage data before crash...\n";
-      write(STDERR_FILENO, msg, arraysize(msg));
+      ignore_result(write(STDERR_FILENO, msg, arraysize(msg)));
       TryFlushCoverage();
     });
   in_call = false;

@@ -1259,7 +1259,11 @@ bool PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
   }
 
   if (mode_copy == LEADER && updated_commit_index != boost::none) {
+  // Suppress false positive about 'updated_commit_index' used when uninitialized.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
     NotifyObserversOfCommitIndexChange(*updated_commit_index);
+#pragma GCC diagnostic pop
   }
 
   return send_more_immediately;

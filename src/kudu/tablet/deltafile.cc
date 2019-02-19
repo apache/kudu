@@ -558,7 +558,7 @@ Status DeltaFileIterator<Type>::PrepareBatch(size_t nrows, int prepare_flags) {
   }
 
   while (!exhausted_) {
-    rowid_t next_block_rowidx;
+    rowid_t next_block_rowidx = 0;
     RETURN_NOT_OK(GetFirstRowIndexInCurrentBlock(&next_block_rowidx));
     VLOG(2) << "Current delta block starting at row " << next_block_rowidx;
 

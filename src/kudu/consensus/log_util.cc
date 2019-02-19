@@ -486,7 +486,7 @@ Status ReadableLogSegment::ParseHeaderMagicAndHeaderLength(const Slice &data,
 }
 
 Status ReadableLogSegment::ReadFooter() {
-  uint32_t footer_size;
+  uint32_t footer_size = 0;
   RETURN_NOT_OK(ReadFooterMagicAndFooterLength(&footer_size));
 
   if (footer_size == 0 || footer_size > kLogSegmentMaxHeaderOrFooterSize) {
