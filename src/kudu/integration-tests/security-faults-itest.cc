@@ -191,7 +191,7 @@ TEST_F(SecurityComponentsFaultsITest, NoKdcOnStart) {
     const Status s = server->Restart();
     ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(),
-                        "kudu-master: process exited with non-zero status 3");
+                        "kudu: process exited with non-zero status 1");
   }
   {
     auto server = cluster_->tablet_server(0);
@@ -199,7 +199,7 @@ TEST_F(SecurityComponentsFaultsITest, NoKdcOnStart) {
     const Status s = server->Restart();
     ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(),
-                        "kudu-tserver: process exited with non-zero status 3");
+                        "kudu: process exited with non-zero status 1");
   }
 }
 

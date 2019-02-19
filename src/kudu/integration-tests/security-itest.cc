@@ -376,9 +376,12 @@ void GetFullBinaryPath(string* binary) {
 TEST_F(SecurityITest, TestWorldReadableKeytab) {
   const string credentials_name = GetTestPath("insecure.keytab");
   NO_FATALS(CreateWorldReadableFile(credentials_name));
-  string binary = "kudu-master";
+  string binary = "kudu";
   NO_FATALS(GetFullBinaryPath(&binary));
-  const vector<string> argv = { binary, Substitute("--keytab_file=$0", credentials_name) };
+  const vector<string> argv = { binary,
+                                "master",
+                                "run",
+                                Substitute("--keytab_file=$0", credentials_name) };
   string stderr;
   Status s = Subprocess::Call(argv, "", nullptr, &stderr);
   ASSERT_STR_CONTAINS(stderr, Substitute(
@@ -389,9 +392,11 @@ TEST_F(SecurityITest, TestWorldReadableKeytab) {
 TEST_F(SecurityITest, TestWorldReadablePrivateKey) {
   const string credentials_name = GetTestPath("insecure.key");
   NO_FATALS(CreateWorldReadableFile(credentials_name));
-  string binary = "kudu-master";
+  string binary = "kudu";
   NO_FATALS(GetFullBinaryPath(&binary));
   const vector<string> argv = { binary,
+                                "master",
+                                "run",
                                 "--unlock_experimental_flags",
                                 Substitute("--rpc_private_key_file=$0", credentials_name),
                                 "--rpc_certificate_file=fake_file",

@@ -107,8 +107,7 @@ DEFINE_bool(perf_record, false,
 namespace kudu {
 namespace cluster {
 
-static const char* const kMasterBinaryName = "kudu-master";
-static const char* const kTabletServerBinaryName = "kudu-tserver";
+static const char* const kKuduBinaryName = "kudu";
 static double kTabletServerRegistrationTimeoutSeconds = 15.0;
 static double kMasterCatalogManagerTimeoutSeconds = 60.0;
 
@@ -410,10 +409,10 @@ void ExternalMiniCluster::DisableMetastoreIntegration() {
 void ExternalMiniCluster::SetDaemonBinPath(string daemon_bin_path) {
   opts_.daemon_bin_path = std::move(daemon_bin_path);
   for (auto& master : masters_) {
-    master->SetExePath(GetBinaryPath(kMasterBinaryName));
+    master->SetExePath(GetBinaryPath(kKuduBinaryName));
   }
   for (auto& ts : tablet_servers_) {
-    ts->SetExePath(GetBinaryPath(kTabletServerBinaryName));
+    ts->SetExePath(GetBinaryPath(kKuduBinaryName));
   }
 }
 
@@ -534,7 +533,7 @@ Status ExternalMiniCluster::StartMasters() {
        std::back_inserter(flags));
 
   // Start the masters.
-  const string& exe = GetBinaryPath(kMasterBinaryName);
+  const string& exe = GetBinaryPath(kKuduBinaryName);
   for (int i = 0; i < num_masters; i++) {
     string daemon_id = Substitute("master-$0", i);
 
@@ -611,7 +610,7 @@ Status ExternalMiniCluster::AddTabletServer() {
   ExternalDaemonOptions opts;
   opts.messenger = messenger_;
   opts.block_manager_type = opts_.block_manager_type;
-  opts.exe = GetBinaryPath(kTabletServerBinaryName);
+  opts.exe = GetBinaryPath(kKuduBinaryName);
   opts.wal_dir = GetWalPath(daemon_id);
   opts.data_dirs = GetDataPaths(daemon_id);
   opts.log_dir = GetLogPath(daemon_id);
@@ -1472,17 +1471,14 @@ Status ExternalMaster::WaitForCatalogManager(WaitMode wait_mode) {
 }
 
 const vector<string>& ExternalMaster::GetCommonFlags() {
-  static vector<string> kFlags;
+  static vector<string> kFlags { "master", "run" };
   if (!UseLargeKeys()) {
-    kFlags = {
-        // See the in-line comment for "--ipki_server_key_size" flag in
-        // ExternalDaemon::StartProcess() method.
-        "--ipki_ca_key_size=768",
-
-        // As for the TSK keys, 512 bits is the minimum since we are using
-        // SHA256 digest for token signing/verification.
-        "--tsk_num_rsa_bits=512",
-    };
+    // See the in-line comment for "--ipki_server_key_size" flag in
+    // ExternalDaemon::StartProcess() method.
+    kFlags.emplace_back("--ipki_ca_key_size=768");
+    // As for the TSK keys, 512 bits is the minimum since we are using
+    // SHA256 digest for token signing/verification.
+    kFlags.emplace_back("--tsk_num_rsa_bits=512");
   }
   return kFlags;
 }
@@ -1503,6 +1499,7 @@ ExternalTabletServer::~ExternalTabletServer() {
 
 Status ExternalTabletServer::Start() {
   vector<string> flags {
+    "tserver", "run",
     Substitute("--rpc_bind_addresses=$0", rpc_bind_address().ToString()),
     Substitute("--local_ip_for_outbound_sockets=$0", rpc_bind_address().host()),
     Substitute("--webserver_interface=$0", rpc_bind_address().host()),
@@ -1519,6 +1516,7 @@ Status ExternalTabletServer::Restart() {
     return Status::IllegalState("Tablet server cannot be restarted. Must call Shutdown() first.");
   }
   vector<string> flags {
+    "tserver", "run",
     Substitute("--rpc_bind_addresses=$0", bound_rpc_.ToString()),
     Substitute("--local_ip_for_outbound_sockets=$0", rpc_bind_address().host()),
     Substitute("--tserver_master_addrs=$0",

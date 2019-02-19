@@ -94,12 +94,7 @@ DEPS_FOR_ALL = \
      # The LLVM symbolizer is necessary for suppressions to work
      "thirdparty/installed/uninstrumented/bin/llvm-symbolizer",
 
-     # Tests that use the external minicluster require these.
-     # TODO: declare these dependencies per-test.
-     "build/latest/bin/kudu-tserver",
-     "build/latest/bin/kudu-master",
-
-     # Tests that require tooling require this.
+     # Tests that require the the external minicluster or tooling require this.
      "build/latest/bin/kudu",
 
      # The HMS tests require the Hadoop, and Hive libraries.
