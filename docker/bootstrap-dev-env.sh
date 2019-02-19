@@ -58,6 +58,7 @@ if [[ -f "/usr/bin/yum" ]]; then
   yum install -y \
     autoconf \
     automake \
+    chrpath \
     cyrus-sasl-devel \
     cyrus-sasl-gssapi \
     cyrus-sasl-plain \
@@ -142,6 +143,7 @@ elif [[ -f "/usr/bin/apt-get" ]]; then
   apt-get install -y --no-install-recommends \
     autoconf \
     automake \
+    chrpath \
     curl \
     flex \
     g++ \

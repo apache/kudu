@@ -21,6 +21,11 @@
 *
 
 # General top level source files.
+!CONTRIBUTING.adoc
+!LICENSE.txt
+!NOTICE.txt
+!README.adoc
+!RELEASING.adoc
 !version.txt
 
 # Docker files.
