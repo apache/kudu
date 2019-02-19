@@ -116,7 +116,7 @@ def check_for_command(command):
   Ensure that the specified command is available on the PATH.
   """
   try:
-    _ = subprocess.check_output(['which', command])
+    _ = check_output(['which', command])
   except subprocess.CalledProcessError as err:
     logging.error("Unable to find %s command", command)
     raise err
