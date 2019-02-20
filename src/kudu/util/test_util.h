@@ -36,7 +36,7 @@
   NO_PENDING_FATALS(); \
 } while (0)
 
-namespace google {
+namespace gflags {
 class FlagSaver;
 } // namespace google
 
@@ -71,7 +71,7 @@ class KuduTest : public ::testing::Test {
 
   // Reset flags on every test. Allocated on the heap so it can be destroyed
   // (and the flags reset) before test_dir_ is deleted.
-  std::unique_ptr<google::FlagSaver> flag_saver_;
+  std::unique_ptr<gflags::FlagSaver> flag_saver_;
 
   std::string test_dir_;
 };

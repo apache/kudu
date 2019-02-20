@@ -54,7 +54,7 @@ static bool ValidateMaxMessageSize(const char* flagname, int64_t value) {
 
   return true;
 }
-static bool dummy = google::RegisterFlagValidator(
+static bool dummy = gflags::RegisterFlagValidator(
     &FLAGS_rpc_max_message_size, &ValidateMaxMessageSize);
 
 namespace kudu {

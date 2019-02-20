@@ -72,7 +72,7 @@ clock::MockNtp* mock_ntp(const scoped_refptr<HybridClock>& clock) {
 }
 
 TEST(MockHybridClockTest, TestMockedSystemClock) {
-  google::FlagSaver saver;
+  gflags::FlagSaver saver;
   FLAGS_time_source = "mock";
   scoped_refptr<HybridClock> clock(new HybridClock());
   clock->Init();
@@ -106,7 +106,7 @@ TEST(MockHybridClockTest, TestMockedSystemClock) {
 //
 // This is a regression test for KUDU-1345.
 TEST(MockHybridClockTest, TestClockDealsWithWrapping) {
-  google::FlagSaver saver;
+  gflags::FlagSaver saver;
   FLAGS_time_source = "mock";
   scoped_refptr<HybridClock> clock(new HybridClock());
   clock->Init();

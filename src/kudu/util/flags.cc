@@ -55,7 +55,7 @@
 #include "kudu/util/url-coding.h"
 #include "kudu/util/version_info.h"
 
-using google::CommandLineFlagInfo;
+using gflags::CommandLineFlagInfo;
 
 using std::cout;
 using std::endl;
@@ -374,10 +374,10 @@ void DumpFlagsXML() {
   cout << "<AllFlags>" << endl;
   cout << strings::Substitute(
       "<program>$0</program>",
-      EscapeForHtmlToString(BaseName(google::ProgramInvocationShortName()))) << endl;
+      EscapeForHtmlToString(BaseName(gflags::ProgramInvocationShortName()))) << endl;
   cout << strings::Substitute(
       "<usage>$0</usage>",
-      EscapeForHtmlToString(google::ProgramUsage())) << endl;
+      EscapeForHtmlToString(gflags::ProgramUsage())) << endl;
 
   for (const CommandLineFlagInfo& flag : flags) {
     cout << DescribeOneFlagInXML(flag) << endl;
@@ -478,10 +478,10 @@ string CheckFlagAndRedact(const CommandLineFlagInfo& flag, EscapeMode mode) {
 
 int ParseCommandLineFlags(int* argc, char*** argv, bool remove_flags) {
   // The logbufsecs default is 30 seconds which is a bit too long.
-  google::SetCommandLineOptionWithMode("logbufsecs", "5",
-                                       google::FlagSettingMode::SET_FLAGS_DEFAULT);
+  gflags::SetCommandLineOptionWithMode("logbufsecs", "5",
+                                       gflags::FlagSettingMode::SET_FLAGS_DEFAULT);
 
-  int ret = google::ParseCommandLineNonHelpFlags(argc, argv, remove_flags);
+  int ret = gflags::ParseCommandLineNonHelpFlags(argc, argv, remove_flags);
   HandleCommonFlags();
   return ret;
 }
@@ -498,7 +498,7 @@ void HandleCommonFlags() {
     exit(0);
   }
 
-  google::HandleCommandLineHelpFlags();
+  gflags::HandleCommandLineHelpFlags();
   CheckFlagsAllowed();
   RunCustomValidators();
 
@@ -511,7 +511,7 @@ void HandleCommonFlags() {
 #ifdef TCMALLOC_ENABLED
   if (FLAGS_heap_profile_path.empty()) {
     FLAGS_heap_profile_path = strings::Substitute(
-        "/tmp/$0.$1", google::ProgramInvocationShortName(), getpid());
+        "/tmp/$0.$1", gflags::ProgramInvocationShortName(), getpid());
   }
 
   if (FLAGS_enable_process_lifetime_heap_profiling) {
@@ -522,7 +522,7 @@ void HandleCommonFlags() {
   // in any less hacky fashion.
   if (!getenv("TCMALLOC_SAMPLE_PARAMETER")) {
     TCM_NAMESPACE::FLAGS_tcmalloc_sample_parameter = FLAGS_heap_sample_every_n_bytes;
-  } else if (!google::GetCommandLineFlagInfoOrDie("heap_sample_every_n_bytes").is_default) {
+  } else if (!gflags::GetCommandLineFlagInfoOrDie("heap_sample_every_n_bytes").is_default) {
     LOG(ERROR) << "Heap sampling configured using both --heap-sample-every-n-bytes and "
                << "TCMALLOC_SAMPLE_PARAMETER. Ignoring command line flag.";
   }

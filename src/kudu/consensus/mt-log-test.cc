@@ -233,7 +233,7 @@ class MultiThreadedLogTest : public LogTestBase {
 TEST_F(MultiThreadedLogTest, TestAppends) {
   // Roll frequently to stress related code paths, unless overridden
   // on the command line.
-  if (google::GetCommandLineFlagInfoOrDie("log_segment_size_mb").is_default) {
+  if (gflags::GetCommandLineFlagInfoOrDie("log_segment_size_mb").is_default) {
     options_.segment_size_mb = 1;
   }
 

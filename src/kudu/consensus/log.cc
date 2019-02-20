@@ -173,7 +173,7 @@ static bool ValidateLogsToRetain(const char* flagname, int value) {
                                     flagname, value);
   return false;
 }
-static bool dummy = google::RegisterFlagValidator(
+static bool dummy = gflags::RegisterFlagValidator(
     &FLAGS_log_min_segments_to_retain, &ValidateLogsToRetain);
 
 namespace kudu {

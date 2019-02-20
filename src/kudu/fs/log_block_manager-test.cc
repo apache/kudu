@@ -1024,7 +1024,7 @@ TEST_F(LogBlockManagerTest, TestFailMultipleTransactionsPerContainer) {
   // should make the container read-only, preventing the remaining transactions
   // from proceeding.
   {
-    google::FlagSaver saver;
+    gflags::FlagSaver saver;
     FLAGS_crash_on_eio = false;
     FLAGS_env_inject_eio = 1.0;
     Status s = block_transactions[0]->CommitCreatedBlocks();

@@ -121,7 +121,7 @@ string FormattedTimestamp() {
 
 string RollingLog::GetLogFileName(int sequence) const {
   return Substitute("$0.$1.$2.$3.$4.$5.$6",
-                    google::ProgramInvocationShortName(),
+                    gflags::ProgramInvocationShortName(),
                     HostnameOrUnknown(),
                     UsernameOrUnknown(),
                     log_name_,
@@ -132,7 +132,7 @@ string RollingLog::GetLogFileName(int sequence) const {
 
 string RollingLog::GetLogFilePattern() const {
   return Substitute("$0.$1.$2.$3.$4.$5.$6",
-                    google::ProgramInvocationShortName(),
+                    gflags::ProgramInvocationShortName(),
                     HostnameOrUnknown(),
                     UsernameOrUnknown(),
                     log_name_,

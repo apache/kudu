@@ -970,7 +970,7 @@ bool ServerNegotiation::IsTrustedConnection(const Sockaddr& addr) {
 
     // If --trusted_subnets is not set explicitly, local subnets of all local network
     // interfaces as well as the default private subnets will be used.
-    if (google::GetCommandLineFlagInfoOrDie("trusted_subnets").is_default) {
+    if (gflags::GetCommandLineFlagInfoOrDie("trusted_subnets").is_default) {
       std::vector<Network> local_networks;
       WARN_NOT_OK(GetLocalNetworks(&local_networks),
                   "Unable to get local networks.");

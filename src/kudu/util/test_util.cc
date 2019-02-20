@@ -87,7 +87,7 @@ bool g_is_gtest = true;
 
 KuduTest::KuduTest()
   : env_(Env::Default()),
-    flag_saver_(new google::FlagSaver()),
+    flag_saver_(new gflags::FlagSaver()),
     test_dir_(GetTestDataDirectory()) {
   std::map<const char*, const char*> flags_for_tests = {
     // Disabling fsync() speeds up tests dramatically, and it's safe to do as no
@@ -109,7 +109,7 @@ KuduTest::KuduTest()
   for (const auto& e : flags_for_tests) {
     // We don't check for errors here, because we have some default flags that
     // only apply to certain tests.
-    google::SetCommandLineOptionWithMode(e.first, e.second, google::SET_FLAGS_DEFAULT);
+    gflags::SetCommandLineOptionWithMode(e.first, e.second, gflags::SET_FLAGS_DEFAULT);
   }
   // If the TEST_TMPDIR variable has been set, then glog will automatically use that
   // as its default log directory. We would prefer that the default log directory
@@ -187,14 +187,14 @@ bool AllowSlowTests() {
 void OverrideFlagForSlowTests(const std::string& flag_name,
                               const std::string& new_value) {
   // Ensure that the flag is valid.
-  google::GetCommandLineFlagInfoOrDie(flag_name.c_str());
+  gflags::GetCommandLineFlagInfoOrDie(flag_name.c_str());
 
   // If we're not running slow tests, don't override it.
   if (!AllowSlowTests()) {
     return;
   }
-  google::SetCommandLineOptionWithMode(flag_name.c_str(), new_value.c_str(),
-                                       google::SET_FLAG_IF_DEFAULT);
+  gflags::SetCommandLineOptionWithMode(flag_name.c_str(), new_value.c_str(),
+                                       gflags::SET_FLAG_IF_DEFAULT);
 }
 
 int SeedRandom() {
@@ -232,7 +232,7 @@ string GetTestDataDirectory() {
     shard_index_infix = Substitute("$0.", shard_index);
   }
   dir += Substitute("/$0.$1$2.$3.$4-$5",
-    StringReplace(google::ProgramInvocationShortName(), "/", "_", true),
+    StringReplace(gflags::ProgramInvocationShortName(), "/", "_", true),
     shard_index_infix,
     StringReplace(test_info->test_case_name(), "/", "_", true),
     StringReplace(test_info->name(), "/", "_", true),

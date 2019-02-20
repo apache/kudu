@@ -23,7 +23,7 @@
 
 #include "kudu/util/status.h"
 
-namespace google {
+namespace gflags {
   struct CommandLineFlagInfo;
 }
 
@@ -39,10 +39,10 @@ extern uint32_t g_parsed_umask;
 // file, the last definition is used.  Returns the index (into argv)
 // of the first non-flag argument.
 //
-// This is a wrapper around google::ParseCommandLineFlags, but integrates
+// This is a wrapper around gflags::ParseCommandLineFlags, but integrates
 // with Kudu flag tags. For example, --helpxml will include the list of
 // tags for each flag. This should be be used instead of
-// google::ParseCommandLineFlags in any user-facing binary.
+// gflags::ParseCommandLineFlags in any user-facing binary.
 //
 // See gflags.h for more information.
 int ParseCommandLineFlags(int* argc, char*** argv, bool remove_flags);
@@ -51,7 +51,7 @@ int ParseCommandLineFlags(int* argc, char*** argv, bool remove_flags);
 // This includes the GFlags common flags such as "-help".
 //
 // Requires that flags have already been parsed using
-// google::ParseCommandLineNonHelpFlags().
+// gflags::ParseCommandLineNonHelpFlags().
 void HandleCommonFlags();
 
 enum class EscapeMode {
@@ -65,7 +65,7 @@ enum class EscapeMode {
 // if EscapeMode is HTML.
 std::string CommandlineFlagsIntoString(EscapeMode mode);
 
-typedef std::unordered_map<std::string, google::CommandLineFlagInfo> GFlagsMap;
+typedef std::unordered_map<std::string, gflags::CommandLineFlagInfo> GFlagsMap;
 
 // Get all the flags different from their defaults. The output is a nicely
 // formatted string with --flag=value pairs per line. Redact any flags that
@@ -83,7 +83,7 @@ enum class TriStateFlag {
 Status ParseTriState(const char* flag_name, const std::string& flag_value,
     TriStateFlag* tri_state);
 
-std::string CheckFlagAndRedact(const google::CommandLineFlagInfo& flag, EscapeMode mode);
+std::string CheckFlagAndRedact(const gflags::CommandLineFlagInfo& flag, EscapeMode mode);
 
 } // namespace kudu
 #endif /* KUDU_UTIL_FLAGS_H */

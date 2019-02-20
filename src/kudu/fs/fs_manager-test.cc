@@ -625,7 +625,7 @@ TEST_F(FsManagerTestBase, TestTmpFilesCleanup) {
   string bm_instance = JoinPathSegments(fs_manager()->GetDataRootDirs()[1],
                                         "block_manager_instance");
   {
-    google::FlagSaver saver;
+    gflags::FlagSaver saver;
     FLAGS_env_inject_lock_failure_globs = bm_instance;
     ReinitFsManagerWithPaths(wal_path, data_paths);
     Status s = fs_manager()->Open();
@@ -920,7 +920,7 @@ TEST_F(FsManagerTestBase, TestAddRemoveDataDirsFuzz) {
     LOG(INFO) << Substitute("$0ing $1", action_was_add ? "Add" : "Remov", fs_root);
     bool update_succeeded;
     {
-      google::FlagSaver saver;
+      gflags::FlagSaver saver;
       FLAGS_crash_on_eio = false;
 
       // This value isn't arbitrary: most attempts fail and only some succeed.

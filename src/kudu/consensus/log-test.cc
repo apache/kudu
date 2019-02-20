@@ -543,7 +543,7 @@ TEST_P(LogTestOptionalCompression, TestGCWithLogRunning) {
   // Logs should be retained for durability even if this puts it above the
   // maximum configured number of segments.
   {
-    google::FlagSaver saver;
+    gflags::FlagSaver saver;
     FLAGS_log_min_segments_to_retain = 1;
     FLAGS_log_max_segments_to_retain = 1;
     ASSERT_OK(log_->GC(retention, &num_gced_segments));
@@ -560,7 +560,7 @@ TEST_P(LogTestOptionalCompression, TestGCWithLogRunning) {
   // However, first, we'll try bumping the min retention threshold and
   // verify that we don't GC any.
   {
-    google::FlagSaver saver;
+    gflags::FlagSaver saver;
     FLAGS_log_min_segments_to_retain = 10;
     ASSERT_OK(log_->GC(retention, &num_gced_segments));
     ASSERT_EQ(0, num_gced_segments);

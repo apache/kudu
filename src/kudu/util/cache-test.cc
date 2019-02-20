@@ -66,7 +66,7 @@ class CacheTest : public KuduTest,
   virtual void SetUp() OVERRIDE {
 
 #if defined(HAVE_LIB_VMEM)
-    if (google::GetCommandLineFlagInfoOrDie("nvm_cache_path").is_default) {
+    if (gflags::GetCommandLineFlagInfoOrDie("nvm_cache_path").is_default) {
       FLAGS_nvm_cache_path = GetTestPath("nvm-cache");
       ASSERT_OK(Env::Default()->CreateDir(FLAGS_nvm_cache_path));
     }

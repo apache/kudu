@@ -987,7 +987,7 @@ TYPED_TEST(BlockManagerTest, TestMetadataOkayDespiteFailure) {
     {
       // Since this test is for failed writes, don't inject faults during reads
       // or while reopening the block manager.
-      google::FlagSaver saver;
+      gflags::FlagSaver saver;
       FLAGS_env_inject_eio = 0;
       for (const auto& id : ids) {
         ASSERT_OK(read_a_block(id));
