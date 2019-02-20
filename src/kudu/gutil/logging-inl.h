@@ -27,8 +27,14 @@
 
 // DFATAL is FATAL in debug mode, ERROR in normal mode
 #ifdef NDEBUG
+#ifdef DFATAL_LEVEL
+#undef DFATAL_LEVEL
+#endif
 #define DFATAL_LEVEL ERROR
 #else
+#ifdef DFATAL_LEVEL
+#undef DFATAL_LEVEL
+#endif
 #define DFATAL_LEVEL FATAL
 #endif
 

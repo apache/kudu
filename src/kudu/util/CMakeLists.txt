@@ -237,10 +237,10 @@ set(UTIL_LIBS
 if(NOT APPLE)
   set(UTIL_LIBS
     ${UTIL_LIBS}
-    breakpad_client
     dl
     rt)
 endif()
+#    breakpad_client
 
 if(HAVE_LIB_VMEM)
   set(UTIL_LIBS

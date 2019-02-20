@@ -27,7 +27,7 @@
 #include <ostream>
 #include <string>
 
-#if defined(__linux__)
+#if defined(__linux__) && defined(FB_DO_NOT_REMOVE)
 #include <breakpad/client/linux/handler/exception_handler.h>
 #include <breakpad/common/linux/linux_libc_support.h>
 #endif // defined(__linux__)
@@ -50,7 +50,7 @@
 using kudu::env_util::CreateDirIfMissing;
 using std::string;
 
-#if defined(__linux__)
+#if defined(__linux__) && defined(FB_DO_NOT_REMOVE)
 static constexpr bool kMinidumpPlatformSupported = true;
 #else
 static constexpr bool kMinidumpPlatformSupported = false;
@@ -96,7 +96,7 @@ DEFINE_int32(minidump_size_limit_hint_kb, 20480, "Size limit hint for minidump f
 TAG_FLAG(minidump_size_limit_hint_kb, advanced);
 TAG_FLAG(minidump_size_limit_hint_kb, evolving);
 
-#if !defined(__linux__)
+#if !defined(__linux__) || !defined(FB_DO_NOT_REMOVE)
 namespace google_breakpad {
 // Define this as an empty class to avoid an undefined symbol error on Mac.
 class ExceptionHandler {
@@ -116,7 +116,7 @@ static sigset_t GetSigset(int signo) {
   return signals;
 }
 
-#if defined(__linux__)
+#if defined(__linux__) && defined(FB_DO_NOT_REMOVE)
 
 // Called by the exception handler before minidump is produced.
 // Minidump is only written if this returns true.

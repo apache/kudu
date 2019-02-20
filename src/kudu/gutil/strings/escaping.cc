@@ -96,7 +96,9 @@ int UnescapeCEscapeSequences(const char* source, char* dest,
     } else {
       switch ( *++p ) {                    // skip past the '\\'
         case '\0':
+#ifdef FB_DO_NOT_REMOVE
           LOG_STRING(ERROR, errors) << "String cannot end with \\";
+#endif
           *d = '\0';
           return d - dest;   // we're done with p
         case 'a':  *d++ = '\a';  break;
@@ -119,19 +121,25 @@ int UnescapeCEscapeSequences(const char* source, char* dest,
           if ( IS_OCTAL_DIGIT(p[1]) )      // safe (and easy) to do this twice
             ch = ch * 8 + *++p - '0';      // now points at last digit
           if (ch > 0xFF)
+#ifdef FB_DO_NOT_REMOVE
             LOG_STRING(ERROR, errors) << "Value of " <<
               "\\" << string(octal_start, p+1-octal_start) <<
               " exceeds 8 bits";
+#endif
           *d++ = ch;
           break;
         }
         case 'x': case 'X': {
           if (!ascii_isxdigit(p[1])) {
             if (p[1] == '\0') {
+#ifdef FB_DO_NOT_REMOVE
               LOG_STRING(ERROR, errors) << "String cannot end with \\x";
+#endif
             } else {
+#ifdef FB_DO_NOT_REMOVE
               LOG_STRING(ERROR, errors) <<
                 "\\x cannot be followed by a non-hex digit: \\" << *p << p[1];
+#endif
             }
             break;
           }
@@ -140,8 +148,10 @@ int UnescapeCEscapeSequences(const char* source, char* dest,
           while (ascii_isxdigit(p[1]))  // arbitrarily many hex digits
             ch = (ch << 4) + hex_digit_to_int(*++p);
           if (ch > 0xFF)
+#ifdef FB_DO_NOT_REMOVE
             LOG_STRING(ERROR, errors) << "Value of " <<
               "\\" << string(hex_start, p+1-hex_start) << " exceeds 8 bits";
+#endif
           *d++ = ch;
           break;
         }
@@ -153,9 +163,11 @@ int UnescapeCEscapeSequences(const char* source, char* dest,
             if (ascii_isxdigit(p[1])) {  // Look one char ahead.
               rune = (rune << 4) + hex_digit_to_int(*++p);  // Advance p.
             } else {
+#ifdef FB_DO_NOT_REMOVE
               LOG_STRING(ERROR, errors)
                 << "\\u must be followed by 4 hex digits: \\"
                 <<  string(hex_start, p+1-hex_start);
+#endif
               break;
             }
           }
@@ -172,18 +184,22 @@ int UnescapeCEscapeSequences(const char* source, char* dest,
               // is within the Unicode limit, but do advance p.
               char32 newrune = (rune << 4) + hex_digit_to_int(*++p);
               if (newrune > 0x10FFFF) {
+#ifdef FB_DO_NOT_REMOVE
                 LOG_STRING(ERROR, errors)
                   << "Value of \\"
                   << string(hex_start, p + 1 - hex_start)
                   << " exceeds Unicode limit (0x10FFFF)";
+#endif
                 break;
               } else {
                 rune = newrune;
               }
             } else {
+#ifdef FB_DO_NOT_REMOVE
               LOG_STRING(ERROR, errors)
                 << "\\U must be followed by 8 hex digits: \\"
                 <<  string(hex_start, p+1-hex_start);
+#endif
               break;
             }
           }
@@ -191,7 +207,10 @@ int UnescapeCEscapeSequences(const char* source, char* dest,
           break;
         }
         default:
+          break;
+#ifdef FB_DO_NOT_REMOVE
           LOG_STRING(ERROR, errors) << "Unknown escape sequence: \\" << *p;
+#endif
       }
       p++;                                 // read past letter we escaped
     }
