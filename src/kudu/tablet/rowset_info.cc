@@ -232,8 +232,12 @@ double ComputeRowsetValue(double width, uint64_t size_bytes) {
 
   // This is an approximation to the expected reduction in rowset count per
   // input rowset. See the compaction policy design doc for more details.
+  // The score is floored at 0 to prevent rowsets that are bigger than the
+  // target size from adding a negative score that discourages height-based
+  // compactions. In extreme circumstances, the overall value could be negative,
+  // which violates a knapsack problem invariant.
   const auto size_score =
-      1 - static_cast<double>(size_bytes) / target_size_bytes;
+      std::max(0.0, 1 - static_cast<double>(size_bytes) / target_size_bytes);
   return width + gamma * size_score;
 }
 

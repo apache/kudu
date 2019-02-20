@@ -598,5 +598,37 @@ TEST_F(KeySpaceCdfTest, TestComputingAverageRowSetHeight) {
             { "B", "D" }, { "F", "I" },
             { "A", "C" }, { "D", "D" }, { "F", "G" }, { "I", "I" } }));
 }
+
+// A regression test for KUDU-2704. If rowsets are larger than the target size
+// but there is fruitful height-based compaction that is within budget, it
+// might not occur because the size-based portion of the rowset's value is
+// negative.
+TEST_F(TestCompactionPolicy, TestKUDU2704) {
+  CompactionSelection picked;
+  double quality = 0.0;
+
+  constexpr auto kNumRowSets = 100;
+  const auto big_rowset_size = FLAGS_budgeted_compaction_target_rowset_size * 2;
+  const auto budget_mb = 2 * big_rowset_size / 1024 / 1024;
+  RowSetVector rowsets;
+  for (auto i = 0; i < kNumRowSets; i++) {
+    rowsets.emplace_back(new MockDiskRowSet(
+        StringPrintf("%010d", i * 2),
+        StringPrintf("%010d", i * 2 + 1),
+        big_rowset_size));
+  }
+  // Add one rowset overlapping the first rowset, so that it decreases average
+  // rowset height to compact this one and the first one, but the average rowset
+  // height doesn't decrease by much.
+  rowsets.emplace_back(new MockDiskRowSet("0000000000",
+                                          "0000000001",
+                                          big_rowset_size));
+  NO_FATALS(RunTestCase(rowsets, budget_mb, &picked, &quality));
+
+  // We should still pick two rowsets because we do not allow the above-target
+  // size of the rowsets to hurt compaction based on average height reduction.
+  ASSERT_EQ(2, picked.size());
+  ASSERT_GT(quality, 0.0);
+}
 } // namespace tablet
 } // namespace kudu
