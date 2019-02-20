@@ -162,9 +162,10 @@ Status Webserver::BuildListenSpec(string* spec) const {
   RETURN_NOT_OK(ParseAddressList(http_address_, 80, &addrs));
 
   vector<string> parts;
+  parts.reserve(addrs.size());
   for (const Sockaddr& addr : addrs) {
-    // Mongoose makes sockets with 's' suffixes accept SSL traffic only
-    parts.push_back(addr.ToString() + (IsSecure() ? "s" : ""));
+    // Mongoose makes sockets with 's' suffixes accept SSL traffic only.
+    parts.emplace_back(addr.ToString() + (IsSecure() ? "s" : ""));
   }
 
   JoinStrings(parts, ",", spec);
@@ -172,25 +173,17 @@ Status Webserver::BuildListenSpec(string* spec) const {
 }
 
 Status Webserver::Start() {
-  LOG(INFO) << "Starting webserver on " << http_address_;
-
   vector<string> options;
-
   if (static_pages_available()) {
-    LOG(INFO) << "Document root: " << opts_.doc_root;
     options.emplace_back("document_root");
     options.push_back(opts_.doc_root);
     options.emplace_back("enable_directory_listing");
     options.emplace_back("no");
-  } else {
-    LOG(INFO)<< "Document root disabled";
   }
 
   if (IsSecure()) {
-    LOG(INFO) << "Webserver: Enabling HTTPS support";
-
-    // Initialize OpenSSL, and prevent Squeasel from also performing global OpenSSL
-    // initialization.
+    // Initialize OpenSSL, and prevent Squeasel from also performing global
+    // OpenSSL initialization.
     security::InitializeOpenSSL();
     options.emplace_back("ssl_global_init");
     options.emplace_back("false");
@@ -208,7 +201,7 @@ Status Webserver::Start() {
                                                             &key_password));
       }
       options.emplace_back("ssl_private_key_password");
-      options.push_back(key_password); // maybe empty if not configured.
+      options.push_back(key_password); // May be empty if not configured.
     }
 
     options.emplace_back("ssl_ciphers");
@@ -223,14 +216,13 @@ Status Webserver::Start() {
   }
 
   if (!opts_.password_file.empty()) {
-    // Mongoose doesn't log anything if it can't stat the password file (but will if it
-    // can't open it, which it tries to do during a request)
+    // Mongoose doesn't log anything if it can't stat the password file (but
+    // will if it can't open it, which it tries to do during a request).
     if (!Env::Default()->FileExists(opts_.password_file)) {
       ostringstream ss;
       ss << "Webserver: Password file does not exist: " << opts_.password_file;
       return Status::InvalidArgument(ss.str());
     }
-    LOG(INFO) << "Webserver: Password file is " << opts_.password_file;
     options.emplace_back("global_auth_file");
     options.push_back(opts_.password_file);
   }
@@ -298,7 +290,8 @@ Status Webserver::Start() {
       std::bind<void>(std::mem_fn(&Webserver::RootHandler),
                       this, std::placeholders::_1, std::placeholders::_2);
 
-  RegisterPathHandler("/", "Home", default_callback, true /* styled */, true /* on_nav_bar */);
+  RegisterPathHandler("/", "Home", default_callback,
+                      /*is_styled=*/true, /*is_on_nav_bar=*/true);
 
   vector<Sockaddr> addrs;
   RETURN_NOT_OK(GetBoundAddresses(&addrs));
@@ -307,10 +300,16 @@ Status Webserver::Start() {
     if (!bound_addresses_str.empty()) {
       bound_addresses_str += ", ";
     }
-    bound_addresses_str += "http://" + addr.ToString() + "/";
+    bound_addresses_str += Substitute("$0$1/",
+                                      IsSecure() ? "https://" : "http://",
+                                      addr.ToString());
   }
 
-  LOG(INFO) << "Webserver started. Bound to: " << bound_addresses_str;
+  LOG(INFO) << Substitute(
+      "Webserver started at $0 using document root $1 and password file $2",
+      bound_addresses_str,
+      static_pages_available() ? opts_.doc_root : "<none>",
+      opts_.password_file.empty() ? "<none>" : opts_.password_file);
   return Status::OK();
 }
 

@@ -82,15 +82,12 @@ static int TabletServerMain(int argc, char** argv) {
 
   TabletServerOptions opts;
   TabletServer server(opts);
-  LOG(INFO) << "Initializing tablet server...";
   CHECK_OK(server.Init());
 
   MAYBE_FAULT(FLAGS_fault_before_start);
 
-  LOG(INFO) << "Starting tablet server...";
   CHECK_OK(server.Start());
 
-  LOG(INFO) << "Tablet server successfully started.";
   while (true) {
     SleepFor(MonoDelta::FromSeconds(60));
   }

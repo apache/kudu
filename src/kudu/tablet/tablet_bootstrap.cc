@@ -436,9 +436,7 @@ class TabletBootstrap {
 };
 
 void TabletBootstrap::SetStatusMessage(const string& status) {
-  LOG(INFO) << "T " << tablet_meta_->tablet_id()
-            << " P " << tablet_meta_->fs_manager()->uuid() << ": "
-            << status;
+  LOG_WITH_PREFIX(INFO) << status;
   if (tablet_replica_) tablet_replica_->SetStatusMessage(status);
 }
 
@@ -566,7 +564,6 @@ Status TabletBootstrap::RunBootstrap(shared_ptr<Tablet>* rebuilt_tablet,
     RETURN_NOT_OK(tablet_meta_->ToSuperBlock(&super_block));
     VLOG_WITH_PREFIX(1) << "Tablet Metadata: " << SecureDebugString(super_block);
   }
-
 
   // Ensure the tablet's data dirs are present and healthy before it is opened.
   DataDirGroupPB data_dir_group;

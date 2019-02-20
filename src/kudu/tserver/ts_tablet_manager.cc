@@ -334,7 +334,7 @@ Status TSTabletManager::Init() {
 
   InitLocalRaftPeerPB();
 
-  vector<scoped_refptr<TabletMetadata> > metas;
+  vector<scoped_refptr<TabletMetadata>> metas;
 
   // First, load all of the tablet metadata. We do this before we start
   // submitting the actual OpenTablet() tasks so that we don't have to compete
@@ -347,16 +347,20 @@ Status TSTabletManager::Init() {
     RETURN_NOT_OK_PREPEND(OpenTabletMeta(tablet_id, &meta),
                           "Failed to open tablet metadata for tablet: " + tablet_id);
     loaded_count++;
-    if (PREDICT_FALSE(meta->tablet_data_state() != TABLET_DATA_READY)) {
+    if (meta->tablet_data_state() != TABLET_DATA_READY) {
       RETURN_NOT_OK(HandleNonReadyTabletOnStartup(meta));
       continue;
     }
     metas.push_back(meta);
   }
-  LOG(INFO) << Substitute("Loaded tablet metadata ($0 live tablets)", metas.size());
+  LOG(INFO) << Substitute("Loaded tablet metadata ($0 total tablets, $1 live tablets)",
+                          loaded_count, metas.size());
 
   // Now submit the "Open" task for each.
-  for (const scoped_refptr<TabletMetadata>& meta : metas) {
+  int registered_count = 0;
+  for (const auto& meta : metas) {
+    KLOG_EVERY_N_SECS(INFO, 1) << Substitute("Registering tablets ($0/$1 complete)",
+                                             registered_count, metas.size());
     scoped_refptr<TransitionInProgressDeleter> deleter;
     {
       std::lock_guard<RWMutex> lock(lock_);
@@ -367,7 +371,9 @@ Status TSTabletManager::Init() {
     RETURN_NOT_OK(CreateAndRegisterTabletReplica(meta, NEW_REPLICA, &replica));
     RETURN_NOT_OK(open_tablet_pool_->SubmitFunc(boost::bind(&TSTabletManager::OpenTablet,
                                                             this, replica, deleter)));
+    registered_count++;
   }
+  LOG(INFO) << Substitute("Registered $0 tablets", registered_count);
 
   {
     std::lock_guard<RWMutex> lock(lock_);
@@ -1004,7 +1010,7 @@ Status TSTabletManager::StartTabletStateTransitionUnlocked(
 
 Status TSTabletManager::OpenTabletMeta(const string& tablet_id,
                                        scoped_refptr<TabletMetadata>* metadata) {
-  LOG(INFO) << LogPrefix(tablet_id) << "Loading tablet metadata";
+  VLOG(1) << LogPrefix(tablet_id) << "Loading tablet metadata";
   TRACE("Loading metadata...");
   scoped_refptr<TabletMetadata> meta;
   RETURN_NOT_OK_PREPEND(TabletMetadata::Load(fs_manager_, tablet_id, &meta),
@@ -1027,7 +1033,7 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletReplica>& replica,
   shared_ptr<Tablet> tablet;
   scoped_refptr<Log> log;
 
-  LOG(INFO) << LogPrefix(tablet_id) << "Bootstrapping tablet";
+  VLOG(1) << LogPrefix(tablet_id) << "Bootstrapping tablet";
   TRACE("Bootstrapping tablet");
 
   scoped_refptr<ConsensusMetadata> cmeta;
@@ -1172,8 +1178,8 @@ void TSTabletManager::RegisterTablet(const std::string& tablet_id,
   }
 
   TabletDataState data_state = replica->tablet_metadata()->tablet_data_state();
-  LOG(INFO) << LogPrefix(tablet_id) << Substitute("Registered tablet (data state: $0)",
-                                                  TabletDataState_Name(data_state));
+  VLOG(1) << LogPrefix(tablet_id) << Substitute("Registered tablet (data state: $0)",
+                                                TabletDataState_Name(data_state));
 }
 
 bool TSTabletManager::LookupTablet(const string& tablet_id,

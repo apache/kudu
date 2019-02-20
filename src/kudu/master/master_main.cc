@@ -77,13 +77,10 @@ static int MasterMain(int argc, char** argv) {
 
   MasterOptions opts;
   Master server(opts);
-  LOG(INFO) << "Initializing master server...";
   CHECK_OK(server.Init());
 
-  LOG(INFO) << "Starting Master server...";
   CHECK_OK(server.Start());
 
-  LOG(INFO) << "Master server successfully started.";
   while (true) {
     SleepFor(MonoDelta::FromSeconds(60));
   }
