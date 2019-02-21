@@ -159,6 +159,18 @@ void InitKrb5Ctx() {
   static std::once_flag once;
   std::call_once(once, [&]() {
       CHECK_EQ(krb5_init_context(&g_krb5_ctx), 0);
+      // Work around the lack of thread safety in krb5_parse_name() by implicitly
+      // initializing g_krb5_ctx->default_realm once. The assumption is that this
+      // function is called once in a single thread environment during initialization.
+      //
+      // TODO(KUDU-2706): Fix unsafe sharing of 'g_krb5_ctx'.
+      // According to Kerberos documentation
+      // (https://github.com/krb5/krb5/blob/master/doc/threads.txt), any use of
+      // krb5_context must be confined to one thread at a time by the application code.
+      // The current way of sharing of 'g_krb5_ctx' between threads is actually unsafe.
+      char* unused_realm;
+      CHECK_EQ(krb5_get_default_realm(g_krb5_ctx, &unused_realm), 0);
+      krb5_free_default_realm(g_krb5_ctx, unused_realm);
     });
 }
 
