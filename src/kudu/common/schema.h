@@ -696,8 +696,6 @@ class Schema {
 
   // Return a new Schema which is the same as this one, but without any column
   // IDs assigned.
-  //
-  // Requires that this schema has column IDs.
   Schema CopyWithoutColumnIds() const;
 
   // Create a new schema containing only the selected columns.

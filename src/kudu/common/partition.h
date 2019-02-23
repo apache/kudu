@@ -136,6 +136,15 @@ class Partition {
 // the methods which format individual partition keys do redact.
 class PartitionSchema {
  public:
+  struct RangeSchema {
+    std::vector<ColumnId> column_ids;
+  };
+
+  struct HashBucketSchema {
+    std::vector<ColumnId> column_ids;
+    int32_t num_buckets;
+    uint32_t seed;
+  };
 
   // Deserializes a protobuf message into a partition schema.
   static Status FromPB(const PartitionSchemaPB& pb,
@@ -234,20 +243,24 @@ class PartitionSchema {
   // contain unredacted row data.
   Status MakeUpperBoundRangePartitionKeyExclusive(KuduPartialRow* row) const;
 
+  // Decodes a range partition key into a partial row, with variable-length
+  // fields stored in the arena.
+  Status DecodeRangeKey(Slice* encode_key,
+                        KuduPartialRow* partial_row,
+                        Arena* arena) const;
+
+  const RangeSchema& range_partition_schema() const {
+    return range_schema_;
+  }
+
+  const std::vector<HashBucketSchema>& hash_partition_schemas() const {
+    return hash_bucket_schemas_;
+  }
+
  private:
   friend class PartitionPruner;
   FRIEND_TEST(PartitionTest, TestIncrementRangePartitionBounds);
   FRIEND_TEST(PartitionTest, TestIncrementRangePartitionStringBounds);
-
-  struct RangeSchema {
-    std::vector<ColumnId> column_ids;
-  };
-
-  struct HashBucketSchema {
-    std::vector<ColumnId> column_ids;
-    int32_t num_buckets;
-    uint32_t seed;
-  };
 
   // Returns a text description of the encoded range key suitable for debug printing.
   std::string RangeKeyDebugString(Slice range_key, const Schema& schema) const;
@@ -317,12 +330,6 @@ class PartitionSchema {
   //
   // This method is useful used for encoding splits and bounds.
   Status EncodeRangeKey(const KuduPartialRow& row, const Schema& schema, std::string* key) const;
-
-  // Decodes a range partition key into a partial row, with variable-length
-  // fields stored in the arena.
-  Status DecodeRangeKey(Slice* encode_key,
-                        KuduPartialRow* partial_row,
-                        Arena* arena) const;
 
   // Decodes the hash bucket component of a partition key into its buckets.
   //

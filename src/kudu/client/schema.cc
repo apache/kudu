@@ -759,7 +759,7 @@ string KuduSchema::ToString() const {
 }
 
 KuduSchema KuduSchema::FromSchema(const Schema& schema) {
-  return KuduSchema(schema);
+  return KuduSchema(schema.CopyWithoutColumnIds());
 }
 
 Schema KuduSchema::ToSchema(const KuduSchema& kudu_schema) {

@@ -61,6 +61,15 @@ void WriteValueToColumn(const client::KuduSchema& schema,
     case client::KuduColumnSchema::BOOL:
       CHECK_OK(row->SetBool(col_idx, value));
       break;
+    case client::KuduColumnSchema::BINARY:
+      CHECK_OK(row->SetBinaryCopy(col_idx, FastHex64ToBuffer(value, buf)));
+      break;
+    case client::KuduColumnSchema::UNIXTIME_MICROS:
+      CHECK_OK(row->SetUnixTimeMicros(col_idx, value));
+      break;
+    case client::KuduColumnSchema::DECIMAL:
+      CHECK_OK(row->SetUnscaledDecimal(col_idx, value));
+      break;
     default:
       LOG(FATAL) << "Unexpected data type: " << type;
   }

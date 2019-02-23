@@ -42,6 +42,7 @@ class Schema;
 
 namespace tools {
 class ReplicaDumper;
+class TableScanner;
 } // namespace tools
 
 namespace client {
@@ -294,6 +295,7 @@ class KUDU_EXPORT KuduScanBatch::RowPtr {
 
  private:
   friend class KuduScanBatch;
+  friend class tools::TableScanner;
   template<typename KeyTypeWrapper> friend struct SliceKeysTestSetup;
   template<typename KeyTypeWrapper> friend struct IntKeysTestSetup;
 

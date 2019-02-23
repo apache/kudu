@@ -24,6 +24,7 @@
 #include <iterator>
 #include <map>
 #include <memory>
+#include <set>
 #include <sstream>
 #include <string>
 #include <tuple>  // IWYU pragma: keep
@@ -47,6 +48,7 @@
 #include "kudu/client/client.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
+#include "kudu/client/value.h"
 #include "kudu/client/write_op.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
@@ -141,6 +143,7 @@ using kudu::cfile::StringDataGenerator;
 using kudu::cfile::WriterOptions;
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
+using kudu::client::KuduColumnStorageAttributes;
 using kudu::client::KuduInsert;
 using kudu::client::KuduScanToken;
 using kudu::client::KuduScanTokenBuilder;
@@ -148,6 +151,8 @@ using kudu::client::KuduSchema;
 using kudu::client::KuduSchemaBuilder;
 using kudu::client::KuduSession;
 using kudu::client::KuduTable;
+using kudu::client::KuduTableCreator;
+using kudu::client::KuduValue;
 using kudu::client::sp::shared_ptr;
 using kudu::cluster::ExternalMiniCluster;
 using kudu::cluster::ExternalMiniClusterOptions;
@@ -188,6 +193,7 @@ using std::map;
 using std::max;
 using std::ostringstream;
 using std::pair;
+using std::set;
 using std::string;
 using std::to_string;
 using std::unique_ptr;
@@ -442,6 +448,146 @@ class ToolTest : public KuduTest {
     }
   }
 
+  enum class TableCopyMode {
+    INSERT_TO_EXIST_TABLE = 0,
+    INSERT_TO_NOT_EXIST_TABLE = 1,
+    UPSERT_TO_EXIST_TABLE = 2,
+    COPY_SCHEMA_ONLY = 3,
+  };
+
+  struct RunCopyTableCheckArgs {
+    string src_table_name;
+    string predicates_json;
+    int64_t min_value;
+    int64_t max_value;
+    string columns;
+    TableCopyMode mode;
+  };
+
+  void RunCopyTableCheck(const RunCopyTableCheckArgs& args) {
+    const string kDstTableName = "kudu.table.copy.to";
+
+    // Prepare command flags, create destination table and write some data if needed.
+    string write_type;
+    string create_table;
+    TestWorkload ww(cluster_.get());
+    ww.set_table_name(kDstTableName);
+    ww.set_num_replicas(1);
+    switch (args.mode) {
+      case TableCopyMode::INSERT_TO_EXIST_TABLE:
+        write_type = "insert";
+        create_table = "false";
+        // Create the dst table.
+        ww.set_num_write_threads(0);
+        ww.Setup();
+        break;
+      case TableCopyMode::INSERT_TO_NOT_EXIST_TABLE:
+        write_type = "insert";
+        create_table = "true";
+        break;
+      case TableCopyMode::UPSERT_TO_EXIST_TABLE:
+        write_type = "upsert";
+        create_table = "false";
+        // Create the dst table and write some data to it.
+        ww.set_write_pattern(TestWorkload::INSERT_SEQUENTIAL_ROWS);
+        ww.set_num_write_threads(1);
+        ww.set_write_batch_size(1);
+        ww.Setup();
+        ww.Start();
+        ASSERT_EVENTUALLY([&]() {
+          ASSERT_GE(ww.rows_inserted(), 100);
+        });
+        ww.StopAndJoin();
+        break;
+      case TableCopyMode::COPY_SCHEMA_ONLY:
+        write_type = "";
+        create_table = "true";
+        break;
+      default:
+        ASSERT_TRUE(false);
+    }
+
+    // Execute copy command.
+    string stdout;
+    NO_FATALS(RunActionStdoutString(
+                Substitute("table copy $0 $1 $2 -dst_table=$3 -predicates=$4 -write_type=$5 "
+                           "-create_table=$6",
+                           cluster_->master()->bound_rpc_addr().ToString(),
+                           args.src_table_name,
+                           cluster_->master()->bound_rpc_addr().ToString(),
+                           kDstTableName,
+                           args.predicates_json,
+                           write_type,
+                           create_table),
+                &stdout));
+
+    // Check total count.
+    int64_t total = max(args.max_value - args.min_value + 1, 0L);
+    if (args.mode == TableCopyMode::COPY_SCHEMA_ONLY) {
+      ASSERT_STR_NOT_CONTAINS(stdout, "Total count ");
+    } else {
+      ASSERT_STR_CONTAINS(stdout, Substitute("Total count $0 ", total));
+    }
+
+    // Check schema equals when destination table is created automatically.
+    if (args.mode == TableCopyMode::INSERT_TO_NOT_EXIST_TABLE ||
+        args.mode == TableCopyMode::COPY_SCHEMA_ONLY) {
+      vector<string> src_schema;
+      NO_FATALS(RunActionStdoutLines(
+        Substitute("table describe $0 $1 -show_attributes=true",
+                   cluster_->master()->bound_rpc_addr().ToString(),
+                   args.src_table_name), &src_schema));
+
+      vector<string> dst_schema;
+      NO_FATALS(RunActionStdoutLines(
+        Substitute("table describe $0 $1 -show_attributes=true",
+                   cluster_->master()->bound_rpc_addr().ToString(),
+                   kDstTableName), &dst_schema));
+
+      // Remove the first lines, which are the different table names.
+      src_schema.erase(src_schema.begin());
+      dst_schema.erase(dst_schema.begin());
+      ASSERT_EQ(src_schema, dst_schema);
+    }
+
+    // Check all values.
+    {
+      vector<string> src_lines;
+      NO_FATALS(RunActionStdoutLines(
+        Substitute("table scan $0 $1 -show_values=true "
+                   "-columns=$2 -predicates=$3 -num_threads=1",
+                   cluster_->master()->bound_rpc_addr().ToString(),
+                   args.src_table_name, args.columns, args.predicates_json), &src_lines));
+
+      vector<string> dst_lines;
+      NO_FATALS(RunActionStdoutLines(
+        Substitute("table scan $0 $1 -show_values=true "
+                   "-columns=$2 -num_threads=1",
+                   cluster_->master()->bound_rpc_addr().ToString(),
+                   kDstTableName, args.columns), &dst_lines));
+
+      if (args.mode == TableCopyMode::COPY_SCHEMA_ONLY) {
+        ASSERT_GT(dst_lines.size(), 1);
+        ASSERT_STR_CONTAINS(*dst_lines.rbegin(), "Total count 0 ");
+      } else {
+        set<string> sorted_dst_lines(dst_lines.begin(), dst_lines.end());
+        for (auto src_line = src_lines.begin(); src_line != src_lines.end();) {
+          if (src_line->find("key") != string::npos) {
+            ASSERT_TRUE(ContainsKey(sorted_dst_lines, *src_line));
+            sorted_dst_lines.erase(*src_line);
+          }
+          src_line = src_lines.erase(src_line);
+        }
+        for (const auto &dst_line : sorted_dst_lines) {
+          ASSERT_STR_NOT_CONTAINS(dst_line, "key");
+        }
+      }
+    }
+
+    // Drop dst table.
+    ww.Cleanup();
+  }
+
  protected:
   void RunLoadgen(int num_tservers = 1,
                   const vector<string>& tool_args = {},
@@ -466,6 +612,248 @@ class ToolTestKerberosParameterized : public ToolTest, public ::testing::WithPar
 };
 INSTANTIATE_TEST_CASE_P(ToolTestKerberosParameterized, ToolTestKerberosParameterized,
                         ::testing::Values(false, true));
+
+enum RunCopyTableCheckArgsType {
+  kTestCopyTableDstTableExist,
+  kTestCopyTableDstTableNotExist,
+  kTestCopyTableUpsert,
+  kTestCopyTableSchemaOnly,
+  kTestCopyTableComplexSchema,
+  kTestCopyTablePredicates
+};
+// Subclass of ToolTest that allows running individual test cases with different parameters to run
+// 'kudu table copy' CLI tool.
+class ToolTestCopyTableParameterized :
+    public ToolTest,
+    public ::testing::WithParamInterface<int> {
+ public:
+  void SetUp() override {
+    test_case_ = GetParam();
+    NO_FATALS(StartExternalMiniCluster());
+
+    // Create the src table and write some data to it.
+    TestWorkload ww(cluster_.get());
+    ww.set_table_name(kTableName);
+    ww.set_num_replicas(1);
+    ww.set_write_pattern(TestWorkload::INSERT_SEQUENTIAL_ROWS);
+    ww.set_num_write_threads(1);
+    // Create a complex schema if needed, or use a default simple schema.
+    if (test_case_ == kTestCopyTableComplexSchema) {
+      KuduSchema schema;
+      ASSERT_OK(CreateComplexSchema(&schema));
+      ww.set_schema(schema);
+    }
+    ww.Setup();
+    ww.Start();
+    ASSERT_EVENTUALLY([&]() {
+      ASSERT_GE(ww.rows_inserted(), 100);
+    });
+    ww.StopAndJoin();
+    total_rows_ = ww.rows_inserted();
+
+    // Insert one more row with a NULL cell if needed.
+    if (test_case_ == kTestCopyTablePredicates) {
+      InsertOneRowWithNullCell();
+    }
+  }
+
+  std::vector<RunCopyTableCheckArgs> GenerateArgs() {
+    RunCopyTableCheckArgs args = { kTableName,
+                                   "",
+                                   1,
+                                   total_rows_,
+                                   kSimpleSchemaColumns,
+                                   TableCopyMode::INSERT_TO_EXIST_TABLE };
+    switch (test_case_) {
+      case kTestCopyTableDstTableExist:
+        return { args };
+      case kTestCopyTableDstTableNotExist:
+        args.mode = TableCopyMode::INSERT_TO_NOT_EXIST_TABLE;
+        return { args };
+      case kTestCopyTableUpsert:
+        args.mode = TableCopyMode::UPSERT_TO_EXIST_TABLE;
+        return { args };
+      case kTestCopyTableSchemaOnly:
+        args.mode = TableCopyMode::COPY_SCHEMA_ONLY;
+        return { args };
+      case kTestCopyTableComplexSchema:
+        args.columns = kComplexSchemaColumns;
+        args.mode = TableCopyMode::INSERT_TO_NOT_EXIST_TABLE;
+        return { args };
+      case kTestCopyTablePredicates: {
+        auto mid = total_rows_ / 2;
+        std::vector<RunCopyTableCheckArgs> multi_args;
+        {
+          auto args_temp = args;
+          multi_args.emplace_back(std::move(args_temp));
+        }
+        {
+          auto args_temp = args;
+          args_temp.max_value = 1;
+          args_temp.predicates_json = R"*(["AND",["=","key",1]])*";
+          multi_args.emplace_back(std::move(args_temp));
+        }
+        {
+          auto args_temp = args;
+          args_temp.min_value = mid + 1;
+          args_temp.predicates_json = Substitute(R"*(["AND",[">","key",$0]])*", mid);
+          multi_args.emplace_back(std::move(args_temp));
+        }
+        {
+          auto args_temp = args;
+          args_temp.min_value = mid;
+          args_temp.predicates_json = Substitute(R"*(["AND",[">=","key",$0]])*", mid);
+          multi_args.emplace_back(std::move(args_temp));
+        }
+        {
+          auto args_temp = args;
+          args_temp.max_value = mid - 1;
+          args_temp.predicates_json = Substitute(R"*(["AND",["<","key",$0]])*", mid);
+          multi_args.emplace_back(std::move(args_temp));
+        }
+        {
+          auto args_temp = args;
+          args_temp.max_value = mid;
+          args_temp.predicates_json = Substitute(R"*(["AND",["<=","key",$0]])*", mid);
+          multi_args.emplace_back(std::move(args_temp));
+        }
+        {
+          auto args_temp = args;
+          args_temp.max_value = 5;
+          args_temp.predicates_json = R"*(["AND",["IN","key",[1,2,3,4,5]]])*";
+          multi_args.emplace_back(std::move(args_temp));
+        }
+        {
+          auto args_temp = args;
+          args_temp.max_value = total_rows_ - 1;
+          args_temp.predicates_json = R"*(["AND",["NOTNULL","string_val"]])*";
+          multi_args.emplace_back(std::move(args_temp));
+        }
+        {
+          auto args_temp = args;
+          args_temp.min_value = total_rows_;
+          args_temp.predicates_json = R"*(["AND",["NULL","string_val"]])*";
+          multi_args.emplace_back(std::move(args_temp));
+        }
+        {
+          auto args_temp = args;
+          args_temp.max_value = 3;
+          args_temp.predicates_json = R"*(["AND",["IN","key",[0,1,2,3]],)*"
+                                      R"*(["<","key",8],[">=","key",1],["NOTNULL","key"],)*"
+                                      R"*(["NOTNULL","string_val"]])*";
+          multi_args.emplace_back(std::move(args_temp));
+        }
+        return multi_args;
+      }
+      default:
+        LOG(FATAL) << "Unknown type " << test_case_;
+    }
+    return {};
+  }
+
+ private:
+  Status CreateComplexSchema(KuduSchema* schema) {
+    shared_ptr<KuduClient> client;
+    RETURN_NOT_OK(cluster_->CreateClient(nullptr, &client));
+    // Build the schema.
+    {
+      KuduSchemaBuilder builder;
+      builder.AddColumn("key_hash0")->Type(client::KuduColumnSchema::INT32)->NotNull();
+      builder.AddColumn("key_hash1")->Type(client::KuduColumnSchema::INT32)->NotNull();
+      builder.AddColumn("key_hash2")->Type(client::KuduColumnSchema::INT32)->NotNull();
+      builder.AddColumn("key_range")->Type(client::KuduColumnSchema::INT32)->NotNull();
+      builder.AddColumn("int8_val")->Type(client::KuduColumnSchema::INT8)
+        ->Compression(KuduColumnStorageAttributes::CompressionType::NO_COMPRESSION)
+        ->Encoding(KuduColumnStorageAttributes::EncodingType::PLAIN_ENCODING);
+      builder.AddColumn("int16_val")->Type(client::KuduColumnSchema::INT16)
+        ->Compression(KuduColumnStorageAttributes::CompressionType::SNAPPY)
+        ->Encoding(KuduColumnStorageAttributes::EncodingType::RLE);
+      builder.AddColumn("int32_val")->Type(client::KuduColumnSchema::INT32)
+        ->Compression(KuduColumnStorageAttributes::CompressionType::LZ4)
+        ->Encoding(KuduColumnStorageAttributes::EncodingType::BIT_SHUFFLE);
+      builder.AddColumn("int64_val")->Type(client::KuduColumnSchema::INT64)
+        ->Compression(KuduColumnStorageAttributes::CompressionType::ZLIB)
+        ->Default(KuduValue::FromInt(123));
+      builder.AddColumn("timestamp_val")->Type(client::KuduColumnSchema::UNIXTIME_MICROS);
+      builder.AddColumn("string_val")->Type(client::KuduColumnSchema::STRING)
+        ->Encoding(KuduColumnStorageAttributes::EncodingType::PREFIX_ENCODING)
+        ->Default(KuduValue::CopyString(Slice("hello")));;
+      builder.AddColumn("bool_val")->Type(client::KuduColumnSchema::BOOL)
+        ->Default(KuduValue::FromBool(false));
+      builder.AddColumn("float_val")->Type(client::KuduColumnSchema::FLOAT);
+      builder.AddColumn("double_val")->Type(client::KuduColumnSchema::DOUBLE)
+        ->Default(KuduValue::FromDouble(123.4));
+      builder.AddColumn("binary_val")->Type(client::KuduColumnSchema::BINARY)
+        ->Encoding(KuduColumnStorageAttributes::EncodingType::DICT_ENCODING);
+      builder.AddColumn("decimal_val")->Type(client::KuduColumnSchema::DECIMAL)
+        ->Precision(30)
+        ->Scale(4);
+      builder.SetPrimaryKey({"key_hash0", "key_hash1", "key_hash2", "key_range"});
+      RETURN_NOT_OK(builder.Build(schema));
+    }
+
+    // Set up partitioning and create the table.
+    {
+      unique_ptr<KuduPartialRow> bound0(schema->NewRow());
+      RETURN_NOT_OK(bound0->SetInt32("key_range", 0));
+      unique_ptr<KuduPartialRow> bound1(schema->NewRow());
+      RETURN_NOT_OK(bound1->SetInt32("key_range", 1));
+      unique_ptr<KuduPartialRow> bound2(schema->NewRow());
+      RETURN_NOT_OK(bound2->SetInt32("key_range", 2));
+      unique_ptr<KuduPartialRow> bound3(schema->NewRow());
+      RETURN_NOT_OK(bound3->SetInt32("key_range", 3));
+      unique_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
+      RETURN_NOT_OK(table_creator->table_name(kTableName)
+                    .schema(schema)
+                    .add_hash_partitions({"key_hash0"}, 2)
+                    .add_hash_partitions({"key_hash1", "key_hash2"}, 3)
+                    .set_range_partition_columns({"key_range"})
+                    .add_range_partition_split(bound0.release())
+                    .add_range_partition_split(bound1.release())
+                    .add_range_partition_split(bound2.release())
+                    .add_range_partition_split(bound3.release())
+                    .num_replicas(1)
+                    .Create());
+    }
+
+    return Status::OK();
+  }
+
+  void InsertOneRowWithNullCell() {
+    shared_ptr<KuduClient> client;
+    ASSERT_OK(cluster_->CreateClient(nullptr, &client));
+    shared_ptr<KuduSession> session = client->NewSession();
+    session->SetTimeoutMillis(20000);
+    ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+    shared_ptr<KuduTable> table;
+    ASSERT_OK(client->OpenTable(kTableName, &table));
+    unique_ptr<KuduInsert> insert(table->NewInsert());
+    ASSERT_OK(insert->mutable_row()->SetInt32("key", ++total_rows_));
+    ASSERT_OK(insert->mutable_row()->SetInt32("int_val", 1));
+    ASSERT_OK(session->Apply(insert.release()));
+    ASSERT_OK(session->Flush());
+  }
+
+  static const char kTableName[];
+  static const char kSimpleSchemaColumns[];
+  static const char kComplexSchemaColumns[];
+  int test_case_ = 0;
+  int64_t total_rows_ = 0;
+};
+const char ToolTestCopyTableParameterized::kTableName[] = "ToolTestCopyTableParameterized";
+const char ToolTestCopyTableParameterized::kSimpleSchemaColumns[] = "key,int_val,string_val";
+const char ToolTestCopyTableParameterized::kComplexSchemaColumns[]
+    = "key_hash0,key_hash1,key_hash2,key_range,int8_val,int16_val,int32_val,int64_val,"
+      "timestamp_val,string_val,bool_val,float_val,double_val,binary_val,decimal_val";
+
+INSTANTIATE_TEST_CASE_P(CopyTableParameterized,
+                        ToolTestCopyTableParameterized,
+                        ::testing::Values(kTestCopyTableDstTableExist,
+                                          kTestCopyTableDstTableNotExist,
+                                          kTestCopyTableUpsert,
+                                          kTestCopyTableSchemaOnly,
+                                          kTestCopyTableComplexSchema,
+                                          kTestCopyTablePredicates));
 
 void ToolTest::StartExternalMiniCluster(ExternalMiniClusterOptions opts) {
   cluster_.reset(new ExternalMiniCluster(std::move(opts)));
@@ -656,6 +1044,7 @@ TEST_F(ToolTest, TestModeHelp) {
         "rename_column.*Rename a column",
         "list.*List tables",
         "scan.*Scan rows from a table",
+        "copy.*Copy table data to another table",
     };
     NO_FATALS(RunTestHelp("table", kTableModeRegexes));
   }
@@ -2348,6 +2737,7 @@ TEST_F(ToolTest, TestMasterList) {
 // (3)rename a column
 // (4)list tables
 // (5)scan a table
+// (6)copy a table
 TEST_F(ToolTest, TestDeleteTable) {
   NO_FATALS(StartExternalMiniCluster());
   shared_ptr<KuduClient> client;
@@ -2670,6 +3060,12 @@ TEST_F(ToolTest, TestScanTableMultiPredicates) {
     }
   }
   ASSERT_LE(lines.size(), mid);
+}
+
+TEST_P(ToolTestCopyTableParameterized, TestCopyTable) {
+  for (const auto& arg : GenerateArgs()) {
+    NO_FATALS(RunCopyTableCheck(arg));
+  }
 }
 
 Status CreateLegacyHmsTable(HmsClient* client,

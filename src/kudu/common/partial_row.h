@@ -52,6 +52,10 @@ namespace tablet {
   template<typename KeyTypeWrapper> struct NumTypeRowOps;   // IWYU pragma: keep
 } // namespace tablet
 
+namespace tools {
+class TableScanner;
+} // namespace tools
+
 /// @endcond
 
 class Schema;
@@ -500,6 +504,7 @@ class KUDU_EXPORT KuduPartialRow {
   friend class PartitionSchema;
   friend class RowOperationsPBDecoder;
   friend class RowOperationsPBEncoder;
+  friend class tools::TableScanner;
   friend class TestScanSpec;
   template<typename KeyTypeWrapper> friend struct client::SliceKeysTestSetup;
   template<typename KeyTypeWrapper> friend struct client::IntKeysTestSetup;

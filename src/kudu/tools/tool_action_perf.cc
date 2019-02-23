@@ -574,7 +574,7 @@ Status CountTableRows(const shared_ptr<KuduClient>& client,
                       const string& table_name, uint64_t* count) {
   TableScanner scanner(client, table_name);
   scanner.SetReadMode(KuduScanner::ReadMode::READ_YOUR_WRITES);
-  RETURN_NOT_OK(scanner.Run());
+  RETURN_NOT_OK(scanner.StartScan());
   if (count != nullptr) {
     *count = scanner.TotalScannedCount();
   }
@@ -695,7 +695,7 @@ Status TableScan(const RunnerContext &context) {
   FLAGS_show_values = false;
   TableScanner scanner(client, table_name);
   scanner.SetOutput(&cout);
-  return scanner.Run();
+  return scanner.StartScan();
 }
 
 } // anonymous namespace

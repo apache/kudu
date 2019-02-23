@@ -144,6 +144,12 @@ Status DumpMemTrackers(const std::string& address, uint16_t default_port);
 // 'patterns' is empty.
 bool MatchesAnyPattern(const std::vector<std::string>& patterns, const std::string& str);
 
+// Creates a Kudu client connected to the cluster whose master addresses are specified by
+// 'master_addresses_arg'
+Status CreateKuduClient(const RunnerContext& context,
+                        const char* master_addresses_arg,
+                        client::sp::shared_ptr<client::KuduClient>* client);
+
 // Creates a Kudu client connected to the cluster whose master addresses are defined by
 // the kMasterAddressesArg argument in 'context'.
 Status CreateKuduClient(const RunnerContext& context,

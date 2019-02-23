@@ -93,12 +93,11 @@ void TestWorkload::set_schema(const client::KuduSchema& schema) {
   CHECK_GT(schema.num_columns(), 0) << "Schema should have at least one column";
   std::vector<int> key_indexes;
   schema.GetPrimaryKeyColumnIndexes(&key_indexes);
-  CHECK_EQ(1, key_indexes.size()) << "Schema should have just one key column";
-  CHECK_EQ(0, key_indexes[0]) << "Schema's key column should be index 0";
+  CHECK_LE(1, key_indexes.size()) << "Schema should have at least one key column";
+  CHECK_EQ(0, key_indexes[0]) << "Schema's first key column should be index 0";
   KuduColumnSchema key = schema.Column(0);
-  CHECK_EQ("key", key.name()) << "Schema column should be named 'key'";
   CHECK_EQ(KuduColumnSchema::INT32, key.type())
-      << "Schema key column should be of type INT32";
+      << "Schema's first key column should be of type INT32";
   schema_ = schema;
 }
 
@@ -341,6 +340,9 @@ void TestWorkload::Start() {
 Status TestWorkload::Cleanup() {
   // Should be run only when workload is inactive.
   CHECK(!should_run_.Load() && threads_.empty());
+  if (!client_) {
+    CHECK_OK(cluster_->CreateClient(&client_builder_, &client_));
+  }
   return client_->DeleteTable(table_name_);
 }
 

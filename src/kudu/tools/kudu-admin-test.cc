@@ -89,7 +89,6 @@ using kudu::client::KuduInsert;
 using kudu::client::KuduSchema;
 using kudu::client::KuduSchemaBuilder;
 using kudu::client::KuduTable;
-using kudu::client::KuduTableAlterer;
 using kudu::client::KuduTableCreator;
 using kudu::client::KuduValue;
 using kudu::client::sp::shared_ptr;

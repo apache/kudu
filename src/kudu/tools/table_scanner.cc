@@ -17,13 +17,17 @@
 
 #include "kudu/tools/table_scanner.h"
 
-#include <stddef.h>
-
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <iostream>
+#include <iterator>
 #include <map>
 #include <memory>
 #include <set>
 
+#include <boost/algorithm/string/predicate.hpp>
 #include <boost/bind.hpp>
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
@@ -36,28 +40,40 @@
 #include "kudu/client/scan_predicate.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/value.h"
+#include "kudu/client/write_op.h"
 #include "kudu/common/column_predicate.h"
+#include "kudu/common/partial_row.h"
+#include "kudu/common/partition.h"
+#include "kudu/common/row.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/bitmap.h"
 #include "kudu/util/jsonreader.h"
+#include "kudu/util/logging.h"
+#include "kudu/util/memory/arena.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/string_case.h"
 
+using kudu::client::KuduClient;
 using kudu::client::KuduColumnSchema;
+using kudu::client::KuduError;
 using kudu::client::KuduPredicate;
 using kudu::client::KuduScanBatch;
 using kudu::client::KuduScanner;
 using kudu::client::KuduScanToken;
 using kudu::client::KuduScanTokenBuilder;
 using kudu::client::KuduSchema;
+using kudu::client::KuduSession;
 using kudu::client::KuduTable;
+using kudu::client::KuduTableCreator;
 using kudu::client::KuduValue;
-using strings::Substitute;
+using kudu::client::KuduWriteOperation;
 using std::endl;
 using std::map;
 using std::ostream;
@@ -66,12 +82,14 @@ using std::set;
 using std::string;
 using std::unique_ptr;
 using std::vector;
+using strings::Substitute;
 
+DEFINE_bool(create_table, true,
+            "Whether to create the destination table if it doesn't exist.");
 DECLARE_string(columns);
 DEFINE_bool(fill_cache, true,
             "Whether to fill block cache when scanning.");
 DECLARE_int32(num_threads);
-
 DEFINE_string(predicates, "",
               "Query predicates on columns. Unlike traditional SQL syntax, "
               "the scan tool's simple query predicates are represented in a "
@@ -94,6 +112,31 @@ DEFINE_string(predicates, "",
 DEFINE_bool(show_values, false,
             "Whether to show values of scanned rows.");
 DECLARE_string(tablets);
+DEFINE_string(write_type, "insert",
+              "How data should be copied to the destination table. Valid values are 'insert', "
+              "'upsert' or the empty string. If the empty string, data will not be copied "
+              "(useful when create_table is 'true').");
+
+static bool ValidateWriteType(const char* flag_name,
+                              const string& flag_value) {
+  const vector<string> allowed_values = { "insert", "upsert", "" };
+  if (std::find_if(allowed_values.begin(), allowed_values.end(),
+                   [&](const string& allowed_value) {
+                     return boost::iequals(allowed_value, flag_value);
+                   }) != allowed_values.end()) {
+    return true;
+  }
+
+  std::ostringstream ss;
+  ss << "'" << flag_value << "': unsupported value for --" << flag_name
+     << " flag; should be one of ";
+  copy(allowed_values.begin(), allowed_values.end(),
+       std::ostream_iterator<string>(ss, " "));
+  LOG(ERROR) << ss.str();
+
+  return false;
+}
+DEFINE_validator(write_type, &ValidateWriteType);
 
 namespace kudu {
 namespace tools {
@@ -158,17 +201,17 @@ KuduPredicate* NewComparisonPredicate(const client::sp::shared_ptr<KuduTable>& t
                                       const rapidjson::Value* value) {
   KuduValue* kudu_value = ParseValue(type, value);
   CHECK(kudu_value != nullptr);
-  client::KuduPredicate::ComparisonOp cop;
+  KuduPredicate::ComparisonOp cop;
   if (predicate_type == "<") {
-    cop = client::KuduPredicate::ComparisonOp::LESS;
+    cop = KuduPredicate::ComparisonOp::LESS;
   } else if (predicate_type == "<=") {
-    cop = client::KuduPredicate::ComparisonOp::LESS_EQUAL;
+    cop = KuduPredicate::ComparisonOp::LESS_EQUAL;
   } else if (predicate_type == "=") {
-    cop = client::KuduPredicate::ComparisonOp::EQUAL;
+    cop = KuduPredicate::ComparisonOp::EQUAL;
   } else if (predicate_type == ">") {
-    cop = client::KuduPredicate::ComparisonOp::GREATER;
+    cop = KuduPredicate::ComparisonOp::GREATER;
   } else if (predicate_type == ">=") {
-    cop = client::KuduPredicate::ComparisonOp::GREATER_EQUAL;
+    cop = KuduPredicate::ComparisonOp::GREATER_EQUAL;
   } else {
     return nullptr;
   }
@@ -188,10 +231,10 @@ KuduPredicate* NewIsNullPredicate(const client::sp::shared_ptr<KuduTable>& table
   }
 }
 
-KuduPredicate* NewInListPredicate(const client::sp::shared_ptr<KuduTable> &table,
+KuduPredicate* NewInListPredicate(const client::sp::shared_ptr<KuduTable>& table,
                                   KuduColumnSchema::DataType type,
-                                  const string &name,
-                                  const JsonReader &reader,
+                                  const string& name,
+                                  const JsonReader& reader,
                                   const rapidjson::Value *object) {
   CHECK(object->IsArray());
   vector<const rapidjson::Value*> values;
@@ -291,13 +334,144 @@ Status AddPredicates(const client::sp::shared_ptr<KuduTable>& table,
   return Status::OK();
 }
 
-void TableScanner::ScannerTask(const vector<KuduScanToken *>& tokens) {
+Status CreateDstTableIfNeeded(const client::sp::shared_ptr<KuduTable>& src_table,
+                              const client::sp::shared_ptr<KuduClient>& dst_client,
+                              const string& dst_table_name) {
+  client::sp::shared_ptr<KuduTable> dst_table;
+  Status s = dst_client->OpenTable(dst_table_name, &dst_table);
+  if (!s.IsNotFound() && !s.ok()) {
+    return s;
+  }
+
+  // Destination table exists.
+  const KuduSchema& src_table_schema = src_table->schema();
+  if (s.ok()) {
+    if (src_table->id() == dst_table->id()) {
+      return Status::AlreadyPresent("Destination table is the same as the source table.");
+    }
+
+    const KuduSchema& dst_table_schema = dst_table->schema();
+    if (!src_table_schema.Equals(dst_table_schema)) {
+      return Status::NotSupported(
+          "Not support different schema of source table and destination table.");
+    }
+
+    return Status::OK();
+  }
+
+  // Destination table does NOT exist.
+  if (!FLAGS_create_table) {
+    return Status::NotFound(Substitute("Table $0 does not exist in the destination cluster.",
+                                       dst_table_name));
+  }
+
+  Schema schema_internal = KuduSchema::ToSchema(src_table_schema);
+  // Convert Schema to KuduSchema will drop internal ColumnIds.
+  KuduSchema dst_table_schema = KuduSchema::FromSchema(schema_internal);
+  const auto& partition_schema = src_table->partition_schema();
+
+  auto convert_column_ids_to_names = [&schema_internal] (const vector<ColumnId>& column_ids) {
+    vector<string> column_names;
+    column_names.reserve(column_ids.size());
+    for (const auto& column_id : column_ids) {
+      column_names.emplace_back(schema_internal.column_by_id(column_id).name());
+    }
+    return column_names;
+  };
+
+  // Table schema and replica number.
+  gscoped_ptr<KuduTableCreator> table_creator(dst_client->NewTableCreator());
+  table_creator->table_name(dst_table_name)
+      .schema(&dst_table_schema)
+      .num_replicas(src_table->num_replicas());
+
+  // Add hash partition schemas.
+  for (const auto& hash_partition_schema : partition_schema.hash_partition_schemas()) {
+    auto hash_columns = convert_column_ids_to_names(hash_partition_schema.column_ids);
+    table_creator->add_hash_partitions(hash_columns,
+                                       hash_partition_schema.num_buckets,
+                                       hash_partition_schema.seed);
+  }
+
+  // Add range partition schema.
+  if (!partition_schema.range_partition_schema().column_ids.empty()) {
+    auto range_columns
+      = convert_column_ids_to_names(partition_schema.range_partition_schema().column_ids);
+    table_creator->set_range_partition_columns(range_columns);
+  }
+
+  // Add range bounds for each range partition.
+  vector<Partition> partitions;
+  RETURN_NOT_OK(src_table->ListPartitions(&partitions));
+  for (const auto& partition : partitions) {
+    // Deduplicate by hash bucket to get a unique entry per range partition.
+    const auto& hash_buckets = partition.hash_buckets();
+    if (!std::all_of(hash_buckets.begin(),
+                     hash_buckets.end(),
+                     [](int32_t bucket) { return bucket == 0; })) {
+      continue;
+    }
+
+    // Partitions are considered metadata, so don't redact them.
+    ScopedDisableRedaction no_redaction;
+
+    Arena arena(256);
+    std::unique_ptr<KuduPartialRow> lower(new KuduPartialRow(&schema_internal));
+    std::unique_ptr<KuduPartialRow> upper(new KuduPartialRow(&schema_internal));
+    Slice range_key_start = partition.range_key_start();
+    Slice range_key_end = partition.range_key_end();
+    RETURN_NOT_OK(partition_schema.DecodeRangeKey(&range_key_start, lower.get(), &arena));
+    RETURN_NOT_OK(partition_schema.DecodeRangeKey(&range_key_end, upper.get(), &arena));
+
+    table_creator->add_range_partition(lower.release(), upper.release());
+  }
+
+  // Create table.
+  RETURN_NOT_OK(table_creator->Create());
+  LOG(INFO) << "Table " << dst_table_name << " created successfully";
+
+  return Status::OK();
+}
+
+void CheckPendingErrors(const client::sp::shared_ptr<KuduSession>& session) {
+  vector<KuduError*> errors;
+  ElementDeleter d(&errors);
+  session->GetPendingErrors(&errors, nullptr);
+  for (const auto& error : errors) {
+    LOG(ERROR) << error->status().ToString();
+  }
+}
+
+Status TableScanner::AddRow(const client::sp::shared_ptr<KuduTable>& table,
+                            const KuduSchema& table_schema,
+                            const KuduScanBatch::RowPtr& src_row,
+                            const client::sp::shared_ptr<KuduSession>& session) {
+  unique_ptr<KuduWriteOperation> write_op;
+  if (FLAGS_write_type == "insert") {
+    write_op.reset(table->NewInsert());
+  } else if (FLAGS_write_type == "upsert") {
+    write_op.reset(table->NewUpsert());
+  } else {
+    LOG(FATAL) << Substitute("invalid write_type: $0", FLAGS_write_type);
+  }
+
+  KuduPartialRow* dst_row = write_op->mutable_row();
+  size_t row_size = ContiguousRowHelper::row_size(*src_row.schema_);
+  memcpy(dst_row->row_data_, src_row.row_data_, row_size);
+  BitmapChangeBits(dst_row->isset_bitmap_, 0, table_schema.num_columns(), true);
+
+  return session->Apply(write_op.release());
+}
+
+void TableScanner::ScanData(const std::vector<kudu::client::KuduScanToken*>& tokens,
+                            const std::function<void(const KuduScanBatch& batch)>& cb) {
   for (auto token : tokens) {
     Stopwatch sw(Stopwatch::THIS_THREAD);
     sw.start();
 
-    KuduScanner* scanner;
-    CHECK_OK(token->IntoKuduScanner(&scanner));
+    KuduScanner* scanner_ptr;
+    CHECK_OK(token->IntoKuduScanner(&scanner_ptr));
+    unique_ptr<KuduScanner> scanner(scanner_ptr);
     CHECK_OK(scanner->Open());
 
     uint64_t count = 0;
@@ -306,14 +480,8 @@ void TableScanner::ScannerTask(const vector<KuduScanToken *>& tokens) {
       CHECK_OK(scanner->NextBatch(&batch));
       count += batch.NumRows();
       total_count_.IncrementBy(batch.NumRows());
-      if (out_ && FLAGS_show_values) {
-        MutexLock l(output_lock_);
-        for (const auto& row : batch) {
-          *out_ << row.ToString() << endl;
-        }
-      }
+      cb(batch);
     }
-    delete scanner;
 
     sw.stop();
     if (out_) {
@@ -324,11 +492,44 @@ void TableScanner::ScannerTask(const vector<KuduScanToken *>& tokens) {
   }
 }
 
+void TableScanner::ScanTask(const vector<KuduScanToken *>& tokens) {
+  ScanData(tokens, [&](const KuduScanBatch& batch) {
+    if (out_ && FLAGS_show_values) {
+      MutexLock l(output_lock_);
+      for (const auto& row : batch) {
+        *out_ << row.ToString() << endl;
+      }
+    }
+  });
+}
+
+void TableScanner::CopyTask(const vector<KuduScanToken*>& tokens) {
+  client::sp::shared_ptr<KuduTable> dst_table;
+  CHECK_OK(dst_client_.get()->OpenTable(*dst_table_name_, &dst_table));
+  const KuduSchema& dst_table_schema = dst_table->schema();
+
+  // One session per thread.
+  client::sp::shared_ptr<KuduSession> session(dst_client_.get()->NewSession());
+  CHECK_OK(session->SetFlushMode(KuduSession::AUTO_FLUSH_BACKGROUND));
+  CHECK_OK(session->SetErrorBufferSpace(1024));
+  session->SetTimeoutMillis(30000);
+
+  ScanData(tokens, [&](const KuduScanBatch& batch) {
+    for (const auto& row : batch) {
+      CHECK_OK(AddRow(dst_table, dst_table_schema, row, session));
+    }
+    CheckPendingErrors(session);
+    // Flush here to make sure all write operations have been sent,
+    // and all strings reference to batch are still valid.
+    CHECK_OK(session->Flush());
+  });
+}
+
 void TableScanner::MonitorTask() {
   MonoTime last_log_time = MonoTime::Now();
   while (thread_pool_->num_threads() > 1) {    // Some other table scan thread is running.
     if (MonoTime::Now() - last_log_time >= MonoDelta::FromSeconds(5)) {
-      LOG(INFO) << "Scanned count: " << total_count_.Load() << endl;
+      LOG(INFO) << "Scanned count: " << total_count_.Load();
       last_log_time = MonoTime::Now();
     }
     SleepFor(MonoDelta::FromMilliseconds(100));
@@ -343,31 +544,46 @@ void TableScanner::SetReadMode(KuduScanner::ReadMode mode) {
   mode_ = mode;
 }
 
-Status TableScanner::Run() {
-  client::sp::shared_ptr<KuduTable> table;
-  RETURN_NOT_OK(client_->OpenTable(table_name_, &table));
+Status TableScanner::StartWork(WorkType type) {
+  client::sp::shared_ptr<KuduTable> src_table;
+  RETURN_NOT_OK(client_->OpenTable(table_name_, &src_table));
 
-  KuduScanTokenBuilder builder(table.get());
+  // Create destination table if needed.
+  if (type == WorkType::kCopy) {
+    RETURN_NOT_OK(CreateDstTableIfNeeded(src_table, *dst_client_, *dst_table_name_));
+    if (FLAGS_write_type.empty()) {
+      // Create table only.
+      return Status::OK();
+    }
+  }
+
+  KuduScanTokenBuilder builder(src_table.get());
   RETURN_NOT_OK(builder.SetCacheBlocks(FLAGS_fill_cache));
   if (mode_) {
     RETURN_NOT_OK(builder.SetReadMode(mode_.get()));
   }
   RETURN_NOT_OK(builder.SetTimeoutMillis(30000));
 
-  vector<string> projected_column_names = Split(FLAGS_columns, ",", strings::SkipEmpty());
-  RETURN_NOT_OK(builder.SetProjectedColumnNames(projected_column_names));
-  RETURN_NOT_OK(AddPredicates(table, builder));
+  // Set projection if needed.
+  if (type == WorkType::kScan) {
+    vector<string> projected_column_names = Split(FLAGS_columns, ",", strings::SkipEmpty());
+    RETURN_NOT_OK(builder.SetProjectedColumnNames(projected_column_names));
+  }
+
+  // Set predicates.
+  RETURN_NOT_OK(AddPredicates(src_table, builder));
 
   vector<KuduScanToken*> tokens;
   ElementDeleter deleter(&tokens);
   RETURN_NOT_OK(builder.Build(&tokens));
 
+  // Set tablet filter.
   const set<string>& tablet_id_filters = Split(FLAGS_tablets, ",", strings::SkipWhitespace());
   map<int, vector<KuduScanToken*>> thread_tokens;
   int i = 0;
   for (auto token : tokens) {
     if (tablet_id_filters.empty() || ContainsKey(tablet_id_filters, token->tablet().id())) {
-      thread_tokens[i++ % FLAGS_num_threads].push_back(token);
+      thread_tokens[i++ % FLAGS_num_threads].emplace_back(token);
     }
   }
 
@@ -379,8 +595,14 @@ Status TableScanner::Run() {
   Stopwatch sw(Stopwatch::THIS_THREAD);
   sw.start();
   for (i = 0; i < FLAGS_num_threads; ++i) {
-    RETURN_NOT_OK(thread_pool_->SubmitFunc(
-        boost::bind(&TableScanner::ScannerTask, this, thread_tokens[i])));
+    if (type == WorkType::kScan) {
+      RETURN_NOT_OK(thread_pool_->SubmitFunc(
+        boost::bind(&TableScanner::ScanTask, this, thread_tokens[i])));
+    } else {
+      CHECK(type == WorkType::kCopy);
+      RETURN_NOT_OK(thread_pool_->SubmitFunc(
+        boost::bind(&TableScanner::CopyTask, this, thread_tokens[i])));
+    }
   }
   RETURN_NOT_OK(thread_pool_->SubmitFunc(boost::bind(&TableScanner::MonitorTask, this)));
   thread_pool_->Wait();
@@ -393,6 +615,17 @@ Status TableScanner::Run() {
   }
 
   return Status::OK();
+}
+
+Status TableScanner::StartScan() {
+  return StartWork(WorkType::kScan);
+}
+
+Status TableScanner::StartCopy() {
+  CHECK(dst_client_);
+  CHECK(dst_table_name_);
+
+  return StartWork(WorkType::kCopy);
 }
 
 } // namespace tools

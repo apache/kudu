@@ -23,6 +23,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
 #include <rapidjson/document.h>
@@ -72,6 +73,9 @@ DEFINE_bool(check_row_existence, false,
             "the tablet. If found, the full row will be printed; if not found, "
             "an error message will be printed and the command will return a "
             "non-zero status.");
+DEFINE_string(dst_table, "",
+              "The name of the destination table the data will be copied to. "
+              "If the empty string, use the same name as the source table.");
 DEFINE_bool(list_tablets, false,
             "Include tablet and replica UUIDs in the output");
 DEFINE_bool(modify_external_catalogs, true,
@@ -134,6 +138,7 @@ const char* const kNewTableNameArg = "new_table_name";
 const char* const kColumnNameArg = "column_name";
 const char* const kNewColumnNameArg = "new_column_name";
 const char* const kKeyArg = "primary_key";
+const char* const kDestMasterAddressesArg = "dest_master_addresses";
 
 Status DeleteTable(const RunnerContext& context) {
   const string& table_name = FindOrDie(context.required_args, kTableNameArg);
@@ -391,7 +396,27 @@ Status ScanTable(const RunnerContext &context) {
   FLAGS_show_values = true;
   TableScanner scanner(client, table_name);
   scanner.SetOutput(&cout);
-  return scanner.Run();
+  return scanner.StartScan();
+}
+
+Status CopyTable(const RunnerContext& context) {
+  client::sp::shared_ptr<KuduClient> src_client;
+  RETURN_NOT_OK(CreateKuduClient(context, &src_client));
+  const string& src_table_name = FindOrDie(context.required_args, kTableNameArg);
+
+  client::sp::shared_ptr<KuduClient> dst_client;
+  if (FindOrDie(context.required_args, kMasterAddressesArg)
+     == FindOrDie(context.required_args, kDestMasterAddressesArg)) {
+    dst_client = src_client;
+  } else {
+    RETURN_NOT_OK(CreateKuduClient(context, kDestMasterAddressesArg, &dst_client));
+  }
+
+  const string& dst_table_name = FLAGS_dst_table.empty() ? src_table_name : FLAGS_dst_table;
+
+  TableScanner scanner(src_client, src_table_name, dst_client, dst_table_name);
+  scanner.SetOutput(&cout);
+  return scanner.StartCopy();
 }
 
 } // anonymous namespace
@@ -470,6 +495,29 @@ unique_ptr<Mode> BuildTableMode() {
       .AddOptionalParameter("tablets")
       .Build();
 
+  unique_ptr<Action> copy_table =
+      ActionBuilder("copy", &CopyTable)
+      .Description("Copy table data to another table")
+      .ExtraDescription("Copy table data to another table; the two tables could be in the same "
+                        "cluster or not. The two tables must have the same table schema, but "
+                        "could have different partition schemas. Alternatively, the tool can "
+                        "create the new table using the same table and partition schema as the "
+                        "source table.")
+      .AddRequiredParameter({ kMasterAddressesArg,
+                              "Comma-separated list of Kudu Master addresses (source) "
+                              "where each address is of form 'hostname:port'" })
+      .AddRequiredParameter({ kTableNameArg, "Name of the source table" })
+      .AddRequiredParameter({ kDestMasterAddressesArg,
+                              "Comma-separated list of Kudu Master addresses (destination) "
+                              "where each address is of form 'hostname:port'" })
+      .AddOptionalParameter("create_table")
+      .AddOptionalParameter("dst_table")
+      .AddOptionalParameter("num_threads")
+      .AddOptionalParameter("predicates")
+      .AddOptionalParameter("tablets")
+      .AddOptionalParameter("write_type")
+      .Build();
+
   return ModeBuilder("table")
       .Description("Operate on Kudu tables")
       .AddAction(std::move(delete_table))
@@ -479,6 +527,7 @@ unique_ptr<Mode> BuildTableMode() {
       .AddAction(std::move(rename_column))
       .AddAction(std::move(rename_table))
       .AddAction(std::move(scan_table))
+      .AddAction(std::move(copy_table))
       .Build();
 }
 

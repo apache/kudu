@@ -476,13 +476,19 @@ bool MatchesAnyPattern(const vector<string>& patterns, const string& str) {
 }
 
 Status CreateKuduClient(const RunnerContext& context,
+                        const char* master_addresses_arg,
                         client::sp::shared_ptr<KuduClient>* client) {
   const string& master_addresses_str = FindOrDie(context.required_args,
-                                                 kMasterAddressesArg);
+                                                 master_addresses_arg);
   vector<string> master_addresses = Split(master_addresses_str, ",");
   return KuduClientBuilder()
-          .master_server_addrs(master_addresses)
-          .Build(client);
+             .master_server_addrs(master_addresses)
+             .Build(client);
+}
+
+Status CreateKuduClient(const RunnerContext& context,
+                        client::sp::shared_ptr<KuduClient>* client) {
+  return CreateKuduClient(context, kMasterAddressesArg, client);
 }
 
 Status PrintServerStatus(const string& address, uint16_t default_port) {

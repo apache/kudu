@@ -345,7 +345,6 @@ Schema Schema::CopyWithColumnIds() const {
 }
 
 Schema Schema::CopyWithoutColumnIds() const {
-  CHECK(has_column_ids());
   return Schema(cols_, num_key_columns_);
 }
 
@@ -430,6 +429,7 @@ string Schema::ToString(ToStringMode mode) const {
   if (cols_.empty()) return "()";
 
   vector<string> pk_strs;
+  pk_strs.reserve(num_key_columns_);
   for (int i = 0; i < num_key_columns_; i++) {
     pk_strs.push_back(cols_[i].name());
   }
