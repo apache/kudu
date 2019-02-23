@@ -71,21 +71,22 @@ DEFINE_int32(experimental_flag_for_ksck_test, 0,
              "unusual flag detection features");
 TAG_FLAG(experimental_flag_for_ksck_test, experimental);
 
-namespace kudu {
-namespace tools {
-
-using client::KuduColumnSchema;
-using client::KuduInsert;
-using client::KuduSchemaBuilder;
-using client::KuduSession;
-using client::KuduTable;
-using client::KuduTableCreator;
-using client::sp::shared_ptr;
-using cluster::InternalMiniCluster;
-using cluster::InternalMiniClusterOptions;
+using kudu::client::KuduColumnSchema;
+using kudu::client::KuduInsert;
+using kudu::client::KuduSchemaBuilder;
+using kudu::client::KuduSession;
+using kudu::client::KuduTable;
+using kudu::client::KuduTableCreator;
+using kudu::client::sp::shared_ptr;
+using kudu::cluster::InternalMiniCluster;
+using kudu::cluster::InternalMiniClusterOptions;
 using std::string;
 using std::unique_ptr;
 using std::vector;
+using strings::Substitute;
+
+namespace kudu {
+namespace tools {
 
 static const char *kTableName = "ksck-test-table";
 
@@ -282,16 +283,16 @@ TEST_F(RemoteKsckTest, TestTabletServerMismatchedUUID) {
 
   string match_string = "Error from $0: Remote error: ID reported by tablet server "
                         "($1) doesn't match the expected ID: $2 (WRONG_SERVER_UUID)";
-  ASSERT_STR_CONTAINS(err_stream_.str(), strings::Substitute(match_string, address.ToString(),
-                                                             new_uuid, old_uuid));
+  ASSERT_STR_CONTAINS(err_stream_.str(), Substitute(match_string, address.ToString(),
+                                                    new_uuid, old_uuid));
   tserver::MiniTabletServer* ts = mini_cluster_->mini_tablet_server(1);
-  ASSERT_STR_CONTAINS(err_stream_.str(), strings::Substitute("$0 | $1 | HEALTHY           | <none>",
-                                                             ts->uuid(),
-                                                             ts->bound_rpc_addr().ToString()));
+  ASSERT_STR_CONTAINS(err_stream_.str(), Substitute("$0 | $1 | HEALTHY           | <none>",
+                                                    ts->uuid(),
+                                                    ts->bound_rpc_addr().ToString()));
   ts = mini_cluster_->mini_tablet_server(2);
-  ASSERT_STR_CONTAINS(err_stream_.str(), strings::Substitute("$0 | $1 | HEALTHY           | <none>",
-                                                             ts->uuid(),
-                                                             ts->bound_rpc_addr().ToString()));
+  ASSERT_STR_CONTAINS(err_stream_.str(), Substitute("$0 | $1 | HEALTHY           | <none>",
+                                                    ts->uuid(),
+                                                    ts->bound_rpc_addr().ToString()));
 }
 
 TEST_F(RemoteKsckTest, TestTableConsistency) {
@@ -515,36 +516,51 @@ TEST_F(RemoteKsckTest, TestClusterWithLocation) {
   const string location_cmd_path = JoinPathSegments(GetTestExecutableDirectory(),
                                                    "testdata/first_argument.sh");
   const string location = "/foo";
-  FLAGS_location_mapping_cmd = strings::Substitute("$0 $1", location_cmd_path, location);
+  FLAGS_location_mapping_cmd = Substitute("$0 $1", location_cmd_path, location);
 
   ASSERT_OK(mini_cluster_->AddTabletServer());
   ASSERT_EQ(4, mini_cluster_->num_tablet_servers());
 
   ASSERT_OK(ksck_->CheckMasterHealth());
   ASSERT_OK(ksck_->CheckMasterUnusualFlags());
-  ASSERT_OK(ksck_->CheckMasterConsensus());
-  ASSERT_OK(ksck_->CheckClusterRunning());
-  ASSERT_OK(ksck_->FetchTableAndTabletInfo());
-  ASSERT_OK(ksck_->FetchInfoFromTabletServers());
+  // In case of TSAN builds and running the test at inferior machines
+  // with lot of concurrent activity, the masters and tablet servers run Raft
+  // re-elections from time to time. Also, establishing and negotiation
+  // a connection takes much longer. To avoid flakiness of this test scenario,
+  // few calls below are wrapped into ASSERT_EVENTUALLY().
+  //
+  // TODO(KUDU-2704): remove ASSERT_EVENTUALLY around CheckMasterConsensus
+  //                  when KUDU-2704 is addressed.
+  ASSERT_EVENTUALLY([&]() {
+    ASSERT_OK(ksck_->CheckMasterConsensus());
+  });
+  ASSERT_EVENTUALLY([&]() {
+    ASSERT_OK(ksck_->CheckClusterRunning());
+  });
+  ASSERT_EVENTUALLY([&]() {
+    ASSERT_OK(ksck_->FetchTableAndTabletInfo());
+  });
+  ASSERT_EVENTUALLY([&]() {
+    ASSERT_OK(ksck_->FetchInfoFromTabletServers());
+  });
 
   ASSERT_OK(ksck_->PrintResults());
-  string err_string = err_stream_.str();
+  const string& err_string = err_stream_.str();
 
   // The existing tablet servers should have location '<none>' displayed.
   for (int i = 0; i < 3; i++) {
     auto *ts = mini_cluster_->mini_tablet_server(i);
-    ASSERT_STR_CONTAINS(err_string, strings::Substitute("$0 | $1 | HEALTHY | <none>",
-                                                               ts->uuid(),
-                                                               ts->bound_rpc_addr().ToString()));
+    ASSERT_STR_CONTAINS(err_string, Substitute("$0 | $1 | HEALTHY | <none>",
+                                               ts->uuid(),
+                                               ts->bound_rpc_addr().ToString()));
   }
 
   // The newly added tablet server should have the assigned location displayed.
   auto *ts = mini_cluster_->mini_tablet_server(3);
-  ASSERT_STR_CONTAINS(err_string, strings::Substitute("$0 | $1 | HEALTHY | $2",
-                                                             ts->uuid(),
-                                                             ts->bound_rpc_addr().ToString(),
-                                                             location));
-
+  ASSERT_STR_CONTAINS(err_string, Substitute("$0 | $1 | HEALTHY | $2",
+                                             ts->uuid(),
+                                             ts->bound_rpc_addr().ToString(),
+                                             location));
   ASSERT_STR_CONTAINS(err_string,
     "Tablet Server Location Summary\n"
     " Location |  Count\n"
