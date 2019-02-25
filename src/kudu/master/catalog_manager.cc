@@ -4592,7 +4592,7 @@ Status CatalogManager::ReplaceTablet(const string& tablet_id, ReplaceTabletRespo
 
 Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
                                          GetTableLocationsResponsePB* resp) {
-  // If start-key is > end-key report an error instead of swap the two
+  // If start-key is > end-key report an error instead of swapping the two
   // since probably there is something wrong app-side.
   if (req->has_partition_key_start() && req->has_partition_key_end()
       && req->partition_key_start() > req->partition_key_end()) {

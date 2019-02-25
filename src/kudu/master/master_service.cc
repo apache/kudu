@@ -47,6 +47,7 @@
 #include "kudu/security/token_signer.h"
 #include "kudu/security/token_verifier.h"
 #include "kudu/server/server_base.h"
+#include "kudu/util/debug/trace_event.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
@@ -399,6 +400,9 @@ void MasterServiceImpl::ListTables(const ListTablesRequestPB* req,
 void MasterServiceImpl::GetTableLocations(const GetTableLocationsRequestPB* req,
                                           GetTableLocationsResponsePB* resp,
                                           rpc::RpcContext* rpc) {
+  TRACE_EVENT1("master", "GetTableLocations",
+               "requestor", rpc->requestor_string());
+
   CatalogManager::ScopedLeaderSharedLock l(server_->catalog_manager());
   if (!l.CheckIsInitializedAndIsLeaderOrRespond(resp, rpc)) {
     return;
