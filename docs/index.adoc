@@ -40,7 +40,7 @@ Kudu's design sets it apart. Some of Kudu's benefits include:
 - Strong but flexible consistency model, allowing you to choose consistency
   requirements on a per-request basis, including the option for strict-serializable consistency.
 - Strong performance for running sequential and random workloads simultaneously.
-- Easy to administer and manage with Cloudera Manager.
+- Easy to administer and manage.
 - High availability. Tablet Servers and Masters use the <<raft>>, which ensures that
   as long as more than half the total number of replicas is available, the tablet is available for
   reads and writes. For instance, if 2 out of 3 replicas or 3 out of 5 replicas are available, the tablet
@@ -262,5 +262,4 @@ RDBMS, and some in files in HDFS. You can access and query all of these sources 
 formats using Impala, without the need to change your legacy systems.
 
 == Next Steps
-- link:quickstart.html[Get Started With Kudu]
 - link:installation.html[Installing Kudu]

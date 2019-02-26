@@ -28,16 +28,8 @@
 :sectlinks:
 :experimental:
 
-You can deploy Kudu on a cluster using packages or you can build Kudu
-from source. To run Kudu without installing anything, use the link:quickstart.html#quickstart_vm[Kudu Quickstart VM].
-
-NOTE: Cloudera Manager users can install and manage Kudu with
-link:http://www.cloudera.com/content/www/en-us/products/cloudera-manager.html[Cloudera Manager],
-instead of following these instructions. For more information, see Cloudera's
-link:http://www.cloudera.com/documentation/enterprise/latest/topics/kudu_install_upgrade_intro.html[Kudu documentation].
-
-.Upgrading Kudu
-To upgrade Kudu from a previous version, see <<upgrade>>.
+The Apache Kudu project only publishes source code releases, to deploy Kudu on a
+cluster follow the steps below to build Kudu from source.
 
 == Prerequisites and Requirements
 .Hardware
@@ -61,7 +53,6 @@ Linux::
     - xfs or ext4 formatted drives.
 macOS::
     - OS X 10.10 Yosemite, OS X 10.11 El Capitan, macOS Sierra, or macOS High Sierra.
-    - Prebuilt macOS packages are not provided.
 Windows::
     - Microsoft Windows is unsupported.
 
@@ -74,175 +65,10 @@ durability levels.
 - JDK 7 or JDK 8 is required to build Kudu, but a JRE is not required at runtime
   except for tests.
 
-[[install_packages]]
-== Install Using Packages
-You can install Kudu using packages managed by the operating system.
-
-[[kudu_package_locations]]
-.Kudu Package Locations
-[cols=">s,<,<",options="header"]
-|===
-| OS  | Repository  | Individual Packages
-| RHEL or CentOS | link:http://archive.cloudera.com/kudu/redhat/6/x86_64/kudu/cloudera-kudu.repo[RHEL 6 or CentOS 6],
-                   link:http://archive.cloudera.com/kudu/redhat/7/x86_64/kudu/cloudera-kudu.repo[RHEL 7 or CentOS 7] |
-                   link:http://archive.cloudera.com/kudu/redhat/6/x86_64/kudu/5/RPMS/x86_64/[RHEL 6 or CentOS 6],
-                   link:http://archive.cloudera.com/kudu/redhat/7/x86_64/kudu/5/RPMS/x86_64/[RHEL 7 or CentOS 7]
-| SLES | link:http://archive.cloudera.com/kudu/sles/12/x86_64/kudu/cloudera-kudu.repo[SLES 12] |
-         link:http://archive.cloudera.com/kudu/sles/12/x86_64/kudu/5/RPMS/x86_64/[SLES 12]
-| Ubuntu | link:http://archive.cloudera.com/kudu/ubuntu/trusty/amd64/kudu/cloudera.list[Trusty],
-           link:http://archive.cloudera.com/kudu/ubuntu/xenial/amd64/kudu/cloudera.list[Xenial] |
-           link:http://archive.cloudera.com/kudu/ubuntu/trusty/amd64/kudu/pool/contrib/k/kudu/[Trusty],
-           link:http://archive.cloudera.com/kudu/ubuntu/xenial/amd64/kudu/pool/contrib/k/kudu/[Xenial]
-| Debian | link:http://archive.cloudera.com/kudu/debian/jessie/amd64/kudu/cloudera.list[Jessie] |
-           link:http://archive.cloudera.com/kudu/debian/jessie/amd64/kudu/pool/contrib/k/kudu/[Jessie]
-|===
-
-=== Install on RHEL or CentOS Hosts
-
-. Download and configure the Kudu repositories for your operating system, or manually
-download individual RPMs, using the appropriate link from <<kudu_package_locations>>.
-
-. If using a Yum repository, use the following commands to install Kudu packages on
-each host, after saving the `cloudera-kudu.repo` file to `/etc/yum.repos.d/`.
-+
-----
-sudo yum install kudu                         # Base Kudu files
-sudo yum install kudu-master                  # Kudu master init.d service script and default configuration
-sudo yum install kudu-tserver                 # Kudu tablet server init.d service script and default configuration
-sudo yum install kudu-client0                 # Kudu C++ client shared library
-sudo yum install kudu-client-devel            # Kudu C++ client SDK
-----
-
-. To manually install the Kudu RPMs, first download them, then use the command
-`sudo rpm -ivh <RPM to install>` to install them.
-
-. Note: the `kudu-master` and `kudu-tserver` packages are only necessary on hosts
-where there is a master or tserver respectively (and completely unnecessary if
-using Cloudera Manager). Each provides configuration files and an init.d script to
-manage the corresponding Kudu process. Once installed, the Kudu process is started
-and stopped automatically when the host starts up and shuts down.
-
-=== Install on SLES Hosts
-
-. Download and configure the Kudu repositories for your operating system, or manually
-download individual RPMs, using the appropriate link from <<kudu_package_locations>>.
-
-. If using a Zypper repository, use the following commands to install Kudu packages on
-each host, after saving the `cloudera-kudu.repo` file to `/etc/zypp/repos.d`.
-+
-----
-sudo zypper install kudu                      # Base Kudu files
-sudo zypper install kudu-master               # Kudu master init.d service script and default configuration
-sudo zypper install kudu-tserver              # Kudu tablet server init.d service script and default configuration
-sudo zypper install kudu-client0              # Kudu C++ client shared library
-sudo zypper install kudu-client-devel         # Kudu C++ client SDK
-----
-
-. To manually install the Kudu RPMs, first download them, then use the command
-`sudo rpm -ivh <RPM to install>` to install them.
-
-. Note: the `kudu-master` and `kudu-tserver` packages are only necessary on hosts
-where there is a master or tserver respectively (and completely unnecessary if
-using Cloudera Manager). Each provides configuration files and an init.d script to
-manage the corresponding Kudu process. Once installed, the Kudu process is started
-and stopped automatically when the host starts up and shuts down.
-
-=== Install on Ubuntu or Debian Hosts
-
-. If using an Ubuntu or Debian repository, use the following commands to install Kudu
-packages on each host after saving the `cloudera.list` file to `/etc/apt/sources.list.d/`.
-+
-----
-sudo apt-get install kudu                     # Base Kudu files
-sudo apt-get install kudu-master              # Service scripts for managing kudu-master
-sudo apt-get install kudu-tserver             # Service scripts for managing kudu-tserver
-sudo apt-get install libkuduclient0           # Kudu C++ client shared library
-sudo apt-get install libkuduclient-dev        # Kudu C++ client SDK
-----
-
-. To manually install the Kudu RPMs, first download them, then use the command
-`sudo rpm -ivh <RPM to install>` to install them.
-
-. Note: the `kudu-master` and `kudu-tserver` packages are only necessary on hosts
-where there is a master or tserver respectively (and completely unnecessary if
-using Cloudera Manager). Each provides configuration files and an init.d script to
-manage the corresponding Kudu process. Once installed, the Kudu process is started
-and stopped automatically when the host starts up and shuts down.
-
-=== Verify the Installation
-
-// tag::verify_install[]
-. Verify that services are running using one of the following methods:
-  - Examine the output of the `ps` command on servers to verify one or both of `kudu-master`
-  or `kudu-tserver` processes is running.
-  - Access the Master or Tablet Server web UI by opening `\http://<_host_name_>:8051/`
-  for masters
-  or `\http://<_host_name_>:8050/` for tablet servers.
-. If Kudu isn't running, have a look at the log files in '/var/log/kudu', and if there's a file
-  ending with '.FATAL' then it means Kudu wasn't able to start.
-  - If the error is 'Error during hole punch test', it might be a problem
-    link:troubleshooting.html#req_hole_punching[with your OS].
-  - If the error is 'Couldn't get the current time', it's a
-    link:troubleshooting.html#ntp[problem with ntp].
-  - If it's something else that doesn't seem obvious or if you've tried the above solutions without
-    luck, you can ask for help on the
-    link:http://kudu.apache.org/community.html[user mailing list].
-
-// end::verify_install[]
-
-[[required_config_without_cm]]
-=== Required Configuration
-
-Additional configuration steps are required on each host before you can start Kudu services.
-
-. The packages create a `kudu-conf` entry in the operating system's alternatives database,
-and they ship the built-in `conf.dist` alternative. To adjust your configuration,
-you can either edit the files in `/etc/kudu/conf/` directly, or create a new alternative
-using the operating system utilities, make sure it is the link pointed to by `/etc/kudu/conf/`,
-and create custom configuration files there. Some parts of the configuration are configured
-in `/etc/default/kudu-master` and `/etc/default/kudu-tserver` files as well. You
-should include or duplicate these configuration options if you create custom configuration files.
-+
-Review the configuration, including the default WAL and data directory locations,
-and adjust them according to your requirements.
-
-// tag::start_stop[]
-. Start Kudu services using the following commands:
-+
-[source,bash]
-----
-$ sudo service kudu-master start
-$ sudo service kudu-tserver start
-----
-
-. To stop Kudu services, use the following commands:
-+
-[source,bash]
-----
-$ sudo service kudu-master stop
-$ sudo service kudu-tserver stop
-----
-// end::start_stop[]
-
-. Configure the Kudu services to start automatically when the server starts, by adding
-them to the default runlevel.
-+
-[source,bash]
-----
-$ sudo chkconfig kudu-master on                # RHEL / CentOS / SLES
-$ sudo chkconfig kudu-tserver on               # RHEL / CentOS / SLES
-
-$ sudo update-rc.d kudu-master defaults        # Debian / Ubuntu
-$ sudo update-rc.d kudu-tserver defaults       # Debian / Ubuntu
-----
-
-. For additional configuration of Kudu services, see link:configuration.html[Configuring
-Kudu].
-
 [[build_from_source]]
 == Build From Source
-If installing Kudu using parcels or packages does not provide the flexibility you
-need, you can build Kudu from source. You can build from source on any supported operating system.
+
+Below are the steps for each supported operating system to build Kudu from  source.
 
 [WARNING]
 .Known Build Issues
@@ -682,9 +508,7 @@ make -j4
 [[build_cpp_client]]
 == Installing the C++ Client Libraries
 
-If you need access to the Kudu client libraries for development,
-install the `kudu-client` and `kudu-client-devel` package for your platform.
-See <<install_packages>>.
+See the Kudu client install section at the bottom of <<build_from_source>> above.
 
 WARNING: Only build against the client libraries and headers (`kudu_client.so` and `client.h`).
 Other libraries and headers are internal to Kudu and have no stability guarantees.
@@ -743,48 +567,6 @@ incompatibilities, upgrade, and downgrade notes that are documented there.
 
 NOTE: Currently rolling upgrades are not supported. Please shut down all Kudu services before
   upgrading the software.
-
-[[upgrade_procedure]]
-=== Upgrade Procedure
-
-. Stop the Kudu master and tablet server services:
-+
-[source,bash]
-----
-$ sudo service kudu-master stop
-$ sudo service kudu-tserver stop
-----
-
-. Upgrade the packages.
- - On RHEL or CentOS hosts:
-+
-[source,bash]
-----
-sudo yum clean all
-sudo yum upgrade kudu
-----
- - On SLES hosts:
-+
-[source,bash]
-----
-sudo zypper clean --all
-sudo zypper update kudu
-----
- - On Ubuntu or Debian hosts:
-+
-[source,bash]
-----
-sudo apt-get update
-sudo apt-get install kudu
-----
-
-. Start the Kudu master and tablet server services:
-+
-[source,bash]
-----
-$ sudo service kudu-master start
-$ sudo service kudu-tserver start
-----
 
 [[next_steps]]
 == Next Steps

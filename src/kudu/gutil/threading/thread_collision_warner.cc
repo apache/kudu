@@ -26,7 +26,7 @@ void DCheckAsserter::warn(int64_t previous_thread_id, int64_t current_thread_id)
 
 #if 0
 // Original source from Chromium -- we didn't import their threading library
-// into Cloudera source as of yet
+// into Kudu source as of yet
 
 static subtle::Atomic32 CurrentThread() {
   const PlatformThreadId current_thread_id = PlatformThread::CurrentId();
