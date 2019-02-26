@@ -45,6 +45,7 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Random;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -56,6 +57,7 @@ import com.stumbleupon.async.Deferred;
 import org.apache.kudu.test.KuduTestHarness;
 import org.apache.kudu.test.KuduTestHarness.TabletServerConfig;
 import org.apache.kudu.util.ClientTestUtil;
+import org.apache.kudu.util.RandomUtils;
 import org.apache.kudu.util.TimestampUtil;
 import org.junit.Before;
 import org.junit.Rule;
@@ -283,8 +285,14 @@ public class TestKuduClient {
     // Wait for longer than the scanner ttl calling keepAlive throughout.
     // Each loop sleeps 25% of the scanner ttl and we loop 10 times to ensure
     // we extend over 2x the scanner ttl.
+    Random random = RandomUtils.getRandom();
     for (int i = 0; i < 10; i++) {
       Thread.sleep(SHORT_SCANNER_TTL_MS / 4);
+      // Force 1/3 of the keepAlive requests to retry up to 3 times.
+      if (i % 3 == 0) {
+        RpcProxy.failNextRpcs(random.nextInt(4),
+            new RecoverableException(Status.ServiceUnavailable("testKeepAlive")));
+      }
       scanner.keepAlive();
     }
 

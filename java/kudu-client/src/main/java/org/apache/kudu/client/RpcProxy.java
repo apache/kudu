@@ -60,6 +60,9 @@ class RpcProxy {
 
   private static final Logger LOG = LoggerFactory.getLogger(RpcProxy.class);
 
+  private static int staticNumFail = 0;
+  private static Exception staticException = null;
+
   /** The reference to the top-level Kudu client object. */
   @Nonnull
   private final AsyncKuduClient client;
@@ -90,6 +93,18 @@ class RpcProxy {
   }
 
   /**
+   * Fails the next numFail RPCs by throwing the passed exception.
+   * @param numFail the number of RPCs to fail
+   * @param exception the exception to throw when failing an rpc
+   */
+  @InterfaceAudience.LimitedPrivate("Test")
+  static void failNextRpcs(int numFail, Exception exception) {
+    Preconditions.checkNotNull(exception);
+    staticNumFail = numFail;
+    staticException = exception;
+  }
+
+  /**
    * Send the specified RPC using the connection to the Kudu server.
    *
    * @param <R> type of the RPC
@@ -101,6 +116,12 @@ class RpcProxy {
                           final Connection connection,
                           final KuduRpc<R> rpc) {
     try {
+      // Throw an exception to enable testing failures. See `failNextRpcs`.
+      if (staticNumFail > 0) {
+        staticNumFail--;
+        LOG.warn("Forcing a failure on sendRpc: " + rpc);
+        throw staticException;
+      }
       if (!rpc.getRequiredFeatures().isEmpty()) {
         // An extra optimization: when the peer's features are already known, check that the server
         // supports feature flags, if those are required.
