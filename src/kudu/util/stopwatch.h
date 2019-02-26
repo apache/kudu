@@ -132,7 +132,19 @@ struct CpuTimes {
   nanosecond_type system;
   int64_t context_switches;
 
+  CpuTimes() {
+    clear();
+  }
+
   void clear() { wall = user = system = context_switches = 0LL; }
+
+  // Add 'other' to this instance in the obvious way.
+  void Add(const CpuTimes& other) {
+    wall += other.wall;
+    user += other.user;
+    system += other.system;
+    context_switches += other.context_switches;
+  }
 
   // Return a string formatted similar to the output of the "time" shell command.
   std::string ToString() const {

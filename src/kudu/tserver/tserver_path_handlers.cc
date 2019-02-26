@@ -64,6 +64,7 @@
 #include "kudu/util/maintenance_manager.pb.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/url-coding.h"
 #include "kudu/util/web_callback_registry.h"
 
@@ -543,6 +544,14 @@ void ScanToJson(const ScanDescriptor& scan, EasyJson* json) {
   json->Set("time_since_start",
             HumanReadableElapsedTime::ToShortString(time_since_start.ToSeconds()));
 
+  const auto& cpu_times = scan.cpu_times;
+  json->Set("wall_secs",
+            HumanReadableElapsedTime::ToShortString(cpu_times.wall_seconds()));
+  json->Set("user_secs",
+            HumanReadableElapsedTime::ToShortString(cpu_times.user_cpu_seconds()));
+  json->Set("sys_secs",
+            HumanReadableElapsedTime::ToShortString(cpu_times.system_cpu_seconds()));
+
   json->Set("duration_title", duration.ToSeconds());
   json->Set("time_since_start_title", time_since_start.ToSeconds());
 
@@ -551,8 +560,16 @@ void ScanToJson(const ScanDescriptor& scan, EasyJson* json) {
 }
 } // anonymous namespace
 
+const char* kLongTimingTitle = "wall time, user cpu time, and system cpu time "
+    "spent processing the scan: the wall time differs from the duration in that "
+    "it counts the amount of time the server spent (or has spent so far) "
+    "processing the scan, whereas the duration measures the amount of time "
+    "the scanner was (or is so far) open, but possibly dormant waiting for the "
+    "client to request to continue the scan.";
+
 void TabletServerPathHandlers::HandleScansPage(const Webserver::WebRequest& /*req*/,
                                                Webserver::WebResponse* resp) {
+  resp->output->Set("timing_title", kLongTimingTitle);
   EasyJson scans = resp->output->Set("scans", EasyJson::kArray);
   vector<ScanDescriptor> descriptors = tserver_->scanner_manager()->ListScans();
 

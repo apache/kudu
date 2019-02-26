@@ -44,6 +44,7 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/thread.h"
 
 DEFINE_int32(scanner_ttl_ms, 60000,
@@ -351,6 +352,11 @@ void Scanner::UpdateAccessTime() {
   last_access_time_ = MonoTime::Now();
 }
 
+void Scanner::AddTimings(const CpuTimes& elapsed) {
+  std::lock_guard<simple_spinlock> l(lock_);
+  cpu_times_.Add(elapsed);
+}
+
 void Scanner::Init(unique_ptr<RowwiseIterator> iter,
                    gscoped_ptr<ScanSpec> spec) {
   std::lock_guard<simple_spinlock> l(lock_);
@@ -414,6 +420,7 @@ ScanDescriptor Scanner::descriptor() const {
     std::lock_guard<simple_spinlock> l(lock_);
     descriptor.last_call_seq_id = call_seq_id_;
     descriptor.last_access_time = last_access_time_;
+    descriptor.cpu_times = cpu_times_;
   }
 
   return descriptor;

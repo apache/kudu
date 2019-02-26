@@ -26,8 +26,9 @@ under the License.
       <th>State</th>
       <th title="pseudo-SQL query description">Query</th>
       <th>Requestor</th>
-      <th title="running time of the scan">Duration</th>
+      <th title="amount of time that the scanner was/has been open on the server">Duration</th>
       <th title="elapsed time since the scan started">Time since start</th>
+      <th title="{{timing_title}}">Timing</th>
       <th>Column Stats</th>
     </tr>
   </thead>
@@ -42,6 +43,7 @@ under the License.
       <td><samp>{{requestor}}</samp></td>
       <td title="{{duration_title}}">{{duration}}</td>
       <td title="{{time_since_start_title}}">{{time_since_start}}</td>
+      <td>real: {{wall_secs}} user: {{user_secs}} sys: {{sys_secs}}</td>
 
       <td>
         <table class="table table-striped">

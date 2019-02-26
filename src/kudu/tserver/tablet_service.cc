@@ -1984,9 +1984,10 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
   // If we early-exit out of this function, automatically unregister
   // the scanner.
   ScopedUnregisterScanner unreg_scanner(server_->scanner_manager(), scanner->id());
+  ScopedAddScannerTiming scanner_timer(scanner.get());
 
   // Create the user's requested projection.
-  // TODO: add test cases for bad projections including 0 columns
+  // TODO(todd): Add test cases for bad projections including 0 columns.
   Schema projection;
   Status s = ColumnPBsToSchema(scan_pb.projected_columns(), &projection);
   if (PREDICT_FALSE(!s.ok())) {
@@ -2167,6 +2168,9 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
   }
 
   scanner->Init(std::move(iter), std::move(orig_spec));
+
+  // Stop the scanner timer because ContinueScanRequest starts its own timer.
+  scanner_timer.Stop();
   unreg_scanner.Cancel();
   *scanner_id = scanner->id();
 
@@ -2175,8 +2179,11 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletReplica* replica,
   size_t batch_size_bytes = GetMaxBatchSizeBytesHint(req);
   if (batch_size_bytes > 0) {
     TRACE("Continuing scan request");
-    // TODO: instead of copying the pb, instead split HandleContinueScanRequest
-    // and call the second half directly
+    // TODO(wdberkeley): Instead of copying the pb, instead split
+    // HandleContinueScanRequest and call the second half directly. Once that's
+    // done, remove the call to ScopedAddScannerTiming::Stop() above (and the
+    // method as it won't be used) and start the timing for continue requests
+    // from the first half that is no longer executed in this codepath.
     ScanRequestPB continue_req(*req);
     continue_req.set_scanner_id(scanner->id());
     RETURN_NOT_OK(HandleContinueScanRequest(&continue_req, rpc_context, result_collector,
@@ -2231,6 +2238,7 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
 
   // If we early-exit out of this function, automatically unregister the scanner.
   ScopedUnregisterScanner unreg_scanner(server_->scanner_manager(), scanner->id());
+  ScopedAddScannerTiming scanner_timer(scanner.get());
 
   VLOG(2) << "Found existing scanner " << scanner->id() << " for request: "
           << SecureShortDebugString(*req);
@@ -2246,7 +2254,6 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
     return Status::InvalidArgument("Invalid call sequence ID in scan request");
   }
   scanner->IncrementCallSeqId();
-  scanner->UpdateAccessTime();
 
   RowwiseIterator* iter = scanner->iter();
 
@@ -2350,7 +2357,6 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
     tablet->metrics()->scanner_bytes_scanned_from_disk->IncrementBy(delta_stats.bytes_read);
   }
 
-  scanner->UpdateAccessTime();
   *has_more_results = !req->close_scanner() && iter->HasNext() &&
       !scanner->has_fulfilled_limit();
   if (*has_more_results) {
