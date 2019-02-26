@@ -233,6 +233,9 @@ class TabletReplicaTest : public KuduTabletTest {
                                      scoped_refptr<ResultTracker>(),
                                      log,
                                      prepare_pool_.get()));
+    // Wait for the replica to be usable.
+    const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+    ASSERT_OK(tablet_replica_->consensus()->WaitUntilLeaderForTests(kTimeout));
   }
 
  protected:
