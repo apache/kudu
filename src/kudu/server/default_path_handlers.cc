@@ -318,7 +318,7 @@ void AddDefaultPathHandlers(Webserver* webserver) {
 
   webserver->RegisterPrerenderedPathHandler("/stacks", "Stacks", StacksHandler,
                                             /*is_styled=*/false,
-                                            /*is_on_nav_bar=*/false);
+                                            /*is_on_nav_bar=*/true);
 
   AddPprofPathHandlers(webserver);
 }
