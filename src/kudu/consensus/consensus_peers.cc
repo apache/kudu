@@ -479,7 +479,7 @@ void Peer::Close() {
     if (closed_) return;
     closed_ = true;
   }
-  LOG_WITH_PREFIX_UNLOCKED(INFO) << "Closing peer: " << peer_pb_.permanent_uuid();
+  VLOG_WITH_PREFIX_UNLOCKED(1) << "Closing peer: " << peer_pb_.permanent_uuid();
 
   queue_->UntrackPeer(peer_pb_.permanent_uuid());
 }

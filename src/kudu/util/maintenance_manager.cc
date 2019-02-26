@@ -236,7 +236,7 @@ void MaintenanceManager::UnregisterOp(MaintenanceOp* op) {
     }
     ops_.erase(iter);
   }
-  LOG_WITH_PREFIX(INFO) << "Unregistered op " << op->name();
+  VLOG_WITH_PREFIX(1) << "Unregistered op " << op->name();
   op->cond_.reset();
   // Remove the op's shared_ptr reference to us. This might 'delete this'.
   op->manager_.reset();
