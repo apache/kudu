@@ -31,6 +31,7 @@
 #include "kudu/common/types.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/bloom_filter.h"
+#include "kudu/util/hash.pb.h"
 #include "kudu/util/int128.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/random.h"
@@ -1446,6 +1447,53 @@ TEST_F(TestColumnPredicate, TestBloomFilterMerge) {
   bfs.clear();
   bfs.emplace_back(bfb4.slice(), bfb4.n_hashes(), MURMUR_HASH_2);
   TestMergeBloomFilterCombinations(ColumnSchema("c", STRING, true), &bfs, binary_keys);
+}
+
+// Test ColumnPredicate operator (in-)equality.
+TEST_F(TestColumnPredicate, TestEquals) {
+  ColumnSchema c1("c1", INT32, true);
+  ASSERT_EQ(ColumnPredicate::None(c1), ColumnPredicate::None(c1));
+
+  ColumnSchema c1a("c1", INT32, true);
+  ASSERT_EQ(ColumnPredicate::None(c1), ColumnPredicate::None(c1a));
+
+  ColumnSchema c2("c2", INT32, true);
+  ASSERT_NE(ColumnPredicate::None(c1), ColumnPredicate::None(c2));
+
+  ColumnSchema c1string("c1", STRING, true);
+  ASSERT_NE(ColumnPredicate::None(c1), ColumnPredicate::None(c1string));
+
+  const int kDefaultOf3 = 3;
+  ColumnSchema c1dflt("c1", INT32, /*is_nullable=*/false, /*read_default=*/&kDefaultOf3);
+  ASSERT_NE(ColumnPredicate::None(c1), ColumnPredicate::None(c1dflt));
+}
+
+using TestColumnPredicateDeathTest = TestColumnPredicate;
+
+// Ensure that ColumnPredicate::Merge(other) requires the 'other' predicate to
+// have the same column name and type as 'this'.
+TEST_F(TestColumnPredicateDeathTest, TestMergeRequiresNameAndType) {
+
+  ColumnSchema c1int32("c1", INT32, true);
+  ColumnSchema c2int32("c2", INT32, true);
+  vector<int32_t> values = { 0, 1, 2, 3 };
+
+  EXPECT_DEATH({
+    // This should crash because the columns have different names.
+    TestMerge(ColumnPredicate::Equality(c1int32, &values[0]),
+              ColumnPredicate::Equality(c2int32, &values[0]),
+              ColumnPredicate::None(c1int32), // unused
+              PredicateType::None);
+  }, "COMPARE_NAME_AND_TYPE");
+
+  ColumnSchema c1int16("c1", INT16, true);
+  EXPECT_DEATH({
+    // This should crash because the columns have different types.
+    TestMerge(ColumnPredicate::Equality(c1int32, &values[0]),
+              ColumnPredicate::Equality(c1int16, &values[0]),
+              ColumnPredicate::None(c1int32), // unused
+              PredicateType::None);
+  }, "COMPARE_NAME_AND_TYPE");
 }
 
 } // namespace kudu

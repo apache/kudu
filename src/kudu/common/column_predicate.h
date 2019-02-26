@@ -17,10 +17,9 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
-
-#include <algorithm>
 #include <ostream>
 #include <string>
 #include <vector>
@@ -32,6 +31,7 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
 #include "kudu/util/bloom_filter.h"
+#include "kudu/util/hash.pb.h"
 #include "kudu/util/slice.h"
 
 namespace kudu {
@@ -232,6 +232,11 @@ class ColumnPredicate {
   //
   // Predicates over different columns are not equal.
   bool operator==(const ColumnPredicate& other) const;
+
+  // Negation of operator==.
+  bool operator!=(const ColumnPredicate& other) const {
+    return !(*this == other);
+  }
 
   // Returns the raw lower bound value if this is a range predicate, or the
   // equality value if this is an equality predicate.

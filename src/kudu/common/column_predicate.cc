@@ -291,7 +291,7 @@ void ColumnPredicate::Simplify() {
 }
 
 void ColumnPredicate::Merge(const ColumnPredicate& other) {
-  CHECK(column_.Equals(other.column_, false));
+  CHECK(column_.Equals(other.column_, ColumnSchema::COMPARE_NAME_AND_TYPE));
   switch (predicate_type_) {
     case PredicateType::None: return;
     case PredicateType::Range: {
@@ -822,7 +822,7 @@ string ColumnPredicate::ToString() const {
 }
 
 bool ColumnPredicate::operator==(const ColumnPredicate& other) const {
-  if (!column_.Equals(other.column_, false)) { return false; }
+  if (!column_.Equals(other.column_, ColumnSchema::COMPARE_NAME_AND_TYPE)) { return false; }
   if (predicate_type_ != other.predicate_type_) {
     return false;
   }

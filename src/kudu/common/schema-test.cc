@@ -303,8 +303,7 @@ TEST_F(TestSchema, TestSchemaEquals) {
   ASSERT_FALSE(schema2.KeyTypeEquals(schema3));
   ASSERT_FALSE(schema3.Equals(schema4));
   ASSERT_TRUE(schema4.Equals(schema4));
-  ASSERT_TRUE(schema3.KeyEquals(schema4,
-              ColumnSchema::COMPARE_NAME | ColumnSchema::COMPARE_TYPE));
+  ASSERT_TRUE(schema3.KeyEquals(schema4, ColumnSchema::COMPARE_NAME_AND_TYPE));
 }
 
 TEST_F(TestSchema, TestReset) {

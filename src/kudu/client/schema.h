@@ -27,6 +27,7 @@
 #include <vector>
 
 #ifdef KUDU_HEADERS_NO_STUBS
+#include <gtest/gtest_prod.h>
 #include "kudu/gutil/port.h"
 #else
 #include "kudu/client/stubs.h"
@@ -247,6 +248,10 @@ class KUDU_EXPORT KuduColumnSchema {
   // KuduTableAlterer::Data needs to be a friend. Friending the parent class
   // is transitive to nested classes. See https://s.apache.org/inner-class-friends
   friend class KuduTableAlterer;
+
+#ifdef KUDU_HEADERS_NO_STUBS
+  FRIEND_TEST(KuduColumnSchemaTest, TestEquals);
+#endif
 
   KuduColumnSchema();
 

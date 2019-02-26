@@ -300,16 +300,17 @@ class ColumnSchema {
   }
 
   // compare types in Equals function
-  enum {
+  enum CompareFlags {
     COMPARE_NAME = 1 << 0,
     COMPARE_TYPE = 1 << 1,
     COMPARE_DEFAULTS = 1 << 2,
 
+    COMPARE_NAME_AND_TYPE = COMPARE_NAME | COMPARE_TYPE,
     COMPARE_ALL = COMPARE_NAME | COMPARE_TYPE | COMPARE_DEFAULTS
   };
 
   bool Equals(const ColumnSchema &other,
-              int flags = COMPARE_ALL) const {
+              CompareFlags flags = COMPARE_ALL) const {
     if (this == &other) return true;
 
     if ((flags & COMPARE_NAME) && this->name_ != other.name_)
@@ -782,8 +783,7 @@ class Schema {
   // Return true if the key projection schemas have exactly the same set of
   // columns and respective types.
   bool KeyEquals(const Schema& other,
-                 int flags
-                    = ColumnSchema::COMPARE_NAME | ColumnSchema::COMPARE_TYPE) const {
+                 ColumnSchema::CompareFlags flags = ColumnSchema::COMPARE_NAME_AND_TYPE) const {
     if (this == &other) return true;
     if (this->num_key_columns_ != other.num_key_columns_) return false;
     for (size_t i = 0; i < this->num_key_columns_; i++) {

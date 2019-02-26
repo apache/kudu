@@ -647,7 +647,7 @@ void KuduColumnSchema::CopyFrom(const KuduColumnSchema& other) {
 bool KuduColumnSchema::Equals(const KuduColumnSchema& other) const {
   return this == &other ||
     col_ == other.col_ ||
-    (col_ != nullptr && col_->Equals(*other.col_, true));
+    (col_ != nullptr && col_->Equals(*other.col_, ColumnSchema::COMPARE_ALL));
 }
 
 const std::string& KuduColumnSchema::name() const {
