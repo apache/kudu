@@ -863,6 +863,12 @@ public final class AsyncKuduScanner {
     }
 
     @Override
+    public byte[] partitionKey() {
+      // This key is used to lookup where the request needs to go
+      return pruner.nextPartitionKey();
+    }
+
+    @Override
     Pair<Void, Object> deserialize(final CallResponse callResponse,
                                    String tsUUID) throws KuduException {
       ScannerKeepAliveResponsePB.Builder builder = ScannerKeepAliveResponsePB.newBuilder();
