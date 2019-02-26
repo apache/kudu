@@ -2160,6 +2160,7 @@ public class AsyncKuduClient implements AutoCloseable {
                        int requestedBatchSize,
                        List<Master.TabletLocationsPB> locations,
                        long ttl) throws KuduException {
+    // TODO(todd): handle "interned" response here
     String tableId = table.getTableId();
     String tableName = table.getName();
 

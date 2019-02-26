@@ -34,12 +34,14 @@
 #include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest_prod.h>
+#include <sparsehash/dense_hash_map>
 
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/tserver/tablet_replica_lookup.h"
 #include "kudu/tserver/tserver.pb.h"
@@ -50,6 +52,8 @@
 #include "kudu/util/random.h"
 #include "kudu/util/rw_mutex.h"
 #include "kudu/util/status.h"
+
+template <class X> struct GoodFastHash;
 
 namespace kudu {
 
@@ -102,7 +106,6 @@ class PlacementPolicy;
 class SysCatalogTable;
 class TSDescriptor;
 class TableInfo;
-
 struct DeferredAssignmentActions;
 
 // The data related to a tablet which is persisted on disk.
@@ -600,10 +603,21 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
                            GetTableLocationsResponsePB* resp,
                            boost::optional<const std::string&> user);
 
+  struct TSInfosDict {
+    std::vector<std::unique_ptr<TSInfoPB>> ts_info_pbs;
+    google::dense_hash_map<StringPiece, int, GoodFastHash<StringPiece>> uuid_to_idx;
+    TSInfosDict() {
+      uuid_to_idx.set_empty_key(StringPiece());
+    }
+  };
+
   // Look up the locations of the given tablet. If 'user' is provided, checks
   // that the user is authorized to get such information. Adds only information
   // on replicas which satisfy the 'filter'. The locations vector is overwritten
   // (not appended to).
+  //
+  // If 'ts_infos_dict' is not null, the returned locations use it as a dictionary
+  // to reference TSInfoPBs instead of making many copies.
   //
   // If the tablet is not found, returns Status::NotFound.
   // If the tablet is not running, returns Status::ServiceUnavailable.
@@ -612,6 +626,7 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   Status GetTabletLocations(const std::string& tablet_id,
                             master::ReplicaTypeFilter filter,
                             TabletLocationsPB* locs_pb,
+                            TSInfosDict* ts_infos_dict,
                             boost::optional<const std::string&> user);
 
   // Replace the given tablet with a new, empty one. The replaced tablet is
@@ -847,13 +862,19 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   scoped_refptr<TabletInfo> CreateTabletInfo(const scoped_refptr<TableInfo>& table,
                                              const PartitionPB& partition);
 
+
   // Builds the TabletLocationsPB for a tablet based on the provided TabletInfo
-  // and the replica type filter specified. Populates locs_pb and returns
-  // Status::OK on success. Returns Status::ServiceUnavailable if tablet is
-  // not running.
+  // and the replica type fiter specified. Populates locs_pb and returns
+  // Status::OK on success.
+  //
+  // If 'ts_infos_dict' is not null, the returned locations use it as a dictionary
+  // to reference TSInfoPBs.
+  //
+  // Returns Status::ServiceUnavailable if tablet is not running.
   Status BuildLocationsForTablet(const scoped_refptr<TabletInfo>& tablet,
                                  master::ReplicaTypeFilter filter,
-                                 TabletLocationsPB* locs_pb);
+                                 TabletLocationsPB* locs_pb,
+                                 TSInfosDict* ts_infos_dict);
 
   // Looks up the table, locks it with the provided lock mode, and, if 'user' is
   // provided, checks that the user is authorized to operate on the table.

@@ -4616,7 +4616,8 @@ void CatalogManager::SendCreateTabletRequest(const scoped_refptr<TabletInfo>& ta
 Status CatalogManager::BuildLocationsForTablet(
     const scoped_refptr<TabletInfo>& tablet,
     ReplicaTypeFilter filter,
-    TabletLocationsPB* locs_pb) {
+    TabletLocationsPB* locs_pb,
+    TSInfosDict* ts_infos_dict) {
   TabletMetadataLock l_tablet(tablet.get(), LockMode::READ);
   if (PREDICT_FALSE(l_tablet.data().is_deleted())) {
     return Status::NotFound("Tablet deleted", l_tablet.data().pb.state_msg());
@@ -4632,8 +4633,6 @@ Status CatalogManager::BuildLocationsForTablet(
   const ConsensusStatePB& cstate = l_tablet.data().pb.consensus_state();
   for (const consensus::RaftPeerPB& peer : cstate.committed_config().peers()) {
     DCHECK(!peer.has_health_report()); // Health report shouldn't be persisted.
-    // TODO(adar): GetConsensusRole() iterates over all of the peers, making this an
-    // O(n^2) loop. If replication counts get high, it should be optimized.
     switch (filter) {
       case VOTER_REPLICA:
         if (!peer.has_member_type() ||
@@ -4655,24 +4654,44 @@ Status CatalogManager::BuildLocationsForTablet(
         }
     }
 
-    TabletLocationsPB_ReplicaPB* replica_pb = locs_pb->add_replicas();
-    replica_pb->set_role(GetConsensusRole(peer.permanent_uuid(), cstate));
+    // Helper function to create a TSInfoPB.
+    auto make_tsinfo_pb = [this, &peer]() {
+      unique_ptr<TSInfoPB> tsinfo_pb(new TSInfoPB());
+      tsinfo_pb->set_permanent_uuid(peer.permanent_uuid());
+      shared_ptr<TSDescriptor> ts_desc;
+      if (master_->ts_manager()->LookupTSByUUID(peer.permanent_uuid(), &ts_desc)) {
+        ServerRegistrationPB reg;
+        ts_desc->GetRegistration(&reg);
+        tsinfo_pb->mutable_rpc_addresses()->Swap(reg.mutable_rpc_addresses());
+        if (ts_desc->location()) tsinfo_pb->set_location(*(ts_desc->location()));
+      } else {
+        // If we've never received a heartbeat from the tserver, we'll fall back
+        // to the last known RPC address in the RaftPeerPB.
+        //
+        // TODO(wdberkeley): We should track these RPC addresses in the master table itself.
+        tsinfo_pb->add_rpc_addresses()->CopyFrom(peer.last_known_addr());
+      }
+      return tsinfo_pb;
+    };
 
-    TSInfoPB* tsinfo_pb = replica_pb->mutable_ts_info();
-    tsinfo_pb->set_permanent_uuid(peer.permanent_uuid());
+    auto role = GetParticipantRole(peer, cstate);
+    if (ts_infos_dict) {
+      int idx = *ComputeIfAbsent(
+          &ts_infos_dict->uuid_to_idx, peer.permanent_uuid(),
+          [&]() -> int {
+            auto pb = make_tsinfo_pb();
+            int idx = ts_infos_dict->ts_info_pbs.size();
+            ts_infos_dict->ts_info_pbs.emplace_back(pb.release());
+            return idx;
+          });
 
-    shared_ptr<TSDescriptor> ts_desc;
-    if (master_->ts_manager()->LookupTSByUUID(peer.permanent_uuid(), &ts_desc)) {
-      ServerRegistrationPB reg;
-      ts_desc->GetRegistration(&reg);
-      tsinfo_pb->mutable_rpc_addresses()->Swap(reg.mutable_rpc_addresses());
-      if (ts_desc->location()) tsinfo_pb->set_location(*(ts_desc->location()));
+      auto* interned_replica_pb = locs_pb->add_interned_replicas();
+      interned_replica_pb->set_ts_info_idx(idx);
+      interned_replica_pb->set_role(role);
     } else {
-      // If we've never received a heartbeat from the tserver, we'll fall back
-      // to the last known RPC address in the RaftPeerPB.
-      //
-      // TODO: We should track these RPC addresses in the master table itself.
-      tsinfo_pb->add_rpc_addresses()->CopyFrom(peer.last_known_addr());
+      TabletLocationsPB_ReplicaPB* replica_pb = locs_pb->add_replicas();
+      replica_pb->set_allocated_ts_info(make_tsinfo_pb().release());
+      replica_pb->set_role(role);
     }
   }
 
@@ -4688,6 +4707,7 @@ Status CatalogManager::BuildLocationsForTablet(
 Status CatalogManager::GetTabletLocations(const string& tablet_id,
                                           ReplicaTypeFilter filter,
                                           TabletLocationsPB* locs_pb,
+                                          TSInfosDict* ts_infos_dict,
                                           optional<const string&> user) {
   leader_lock_.AssertAcquiredForReading();
   RETURN_NOT_OK(CheckOnline());
@@ -4710,7 +4730,7 @@ Status CatalogManager::GetTabletLocations(const string& tablet_id,
         NormalizeTableName(table_lock.data().name()), *user));
   }
 
-  return BuildLocationsForTablet(tablet_info, filter, locs_pb);
+  return BuildLocationsForTablet(tablet_info, filter, locs_pb, ts_infos_dict);
 }
 
 Status CatalogManager::ReplaceTablet(const string& tablet_id, ReplaceTabletResponsePB* resp) {
@@ -4828,9 +4848,12 @@ Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
   vector<scoped_refptr<TabletInfo>> tablets_in_range;
   table->GetTabletsInRange(req, &tablets_in_range);
 
+  TSInfosDict infos_dict;
+
   for (const auto& tablet : tablets_in_range) {
     Status s = BuildLocationsForTablet(
-        tablet, req->replica_type_filter(), resp->add_tablet_locations());
+        tablet, req->replica_type_filter(), resp->add_tablet_locations(),
+        req->intern_ts_infos_in_response() ? &infos_dict : nullptr);
     if (s.ok()) {
       continue;
     }
@@ -4853,6 +4876,9 @@ Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
           << "Unexpected error while building tablet locations: "
           << s.ToString();
     }
+  }
+  for (auto& pb : infos_dict.ts_info_pbs) {
+    resp->mutable_ts_infos()->AddAllocated(pb.release());
   }
   resp->set_ttl_millis(FLAGS_table_locations_ttl_ms);
   return Status::OK();

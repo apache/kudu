@@ -200,7 +200,11 @@ class RegistrationTest : public KuduTest {
           break;  // exiting out of the 'do {...} while (false)' scope
         }
         RETURN_NOT_OK(ls);
-        s = catalog->GetTabletLocations(tablet_id, master::VOTER_REPLICA, &loc, /*user=*/none);
+        s = catalog->GetTabletLocations(tablet_id,
+                                        master::VOTER_REPLICA,
+                                        &loc,
+                                        /*ts_infos_dict=*/nullptr,
+                                        /*user=*/none);
       } while (false);
       if (s.ok() && loc.replicas_size() == expected_count) {
         if (locations) {

@@ -71,6 +71,7 @@ using master::GetTableLocationsRequestPB;
 using master::GetTableLocationsResponsePB;
 using master::MasterServiceProxy;
 using master::TabletLocationsPB;
+using master::TabletLocationsPB_InternedReplicaPB;
 using master::TabletLocationsPB_ReplicaPB;
 using master::TSInfoPB;
 using rpc::BackoffType;
@@ -184,20 +185,40 @@ void RemoteTabletServer::GetHostPorts(vector<HostPort>* host_ports) const {
 ////////////////////////////////////////////////////////////
 
 
-void RemoteTablet::Refresh(const TabletServerMap& tservers,
-                           const google::protobuf::RepeatedPtrField
-                             <TabletLocationsPB_ReplicaPB>& replicas) {
+Status RemoteTablet::Refresh(
+    const TabletServerMap& tservers,
+    const TabletLocationsPB& locs_pb,
+    const google::protobuf::RepeatedPtrField<TSInfoPB>& ts_info_dict) {
+
+  vector<std::pair<string, consensus::RaftPeerPB::Role>> uuid_and_role;
+
+  for (const TabletLocationsPB_ReplicaPB& r : locs_pb.replicas()) {
+    uuid_and_role.emplace_back(r.ts_info().permanent_uuid(), r.role());
+  }
+  for (const TabletLocationsPB_InternedReplicaPB& r : locs_pb.interned_replicas()) {
+    if (r.ts_info_idx() >= ts_info_dict.size()) {
+      return Status::Corruption(Substitute(
+          "invalid response from master: referenced tablet idx $0 but only $1 present",
+          r.ts_info_idx(), ts_info_dict.size()));
+    }
+    const TSInfoPB& ts_info = ts_info_dict.Get(r.ts_info_idx());
+    uuid_and_role.emplace_back(ts_info.permanent_uuid(), r.role());
+  }
+
   // Adopt the data from the successful response.
   std::lock_guard<simple_spinlock> l(lock_);
   replicas_.clear();
-  for (const TabletLocationsPB_ReplicaPB& r : replicas) {
+
+  for (const auto& p : uuid_and_role) {
     RemoteReplica rep;
-    rep.ts = FindOrDie(tservers, r.ts_info().permanent_uuid());
-    rep.role = r.role();
+    rep.ts = FindOrDie(tservers, p.first);
+    rep.role = p.second;
     rep.failed = false;
-    replicas_.push_back(rep);
+    replicas_.emplace_back(rep);
   }
+
   stale_ = false;
+  return Status::OK();
 }
 
 void RemoteTablet::MarkStale() {
@@ -683,6 +704,7 @@ void LookupRpc::SendRpcSlowPath() {
   req_.mutable_table()->set_table_id(table_->id());
   req_.set_partition_key_start(partition_key_);
   req_.set_max_returned_locations(locations_to_fetch());
+  req_.set_intern_ts_infos_in_response(true);
   if (replica_visibility_ == ReplicaController::Visibility::ALL) {
     req_.set_replica_type_filter(master::ANY_REPLICA);
   }
@@ -778,6 +800,18 @@ Status MetaCache::ProcessLookupResponse(const LookupRpc& rpc,
     VLOG(3) << "Caching '" << rpc.table_name() << "' entry " << entry.DebugString(rpc.table());
     InsertOrDie(&tablets_by_key, "", entry);
   } else {
+    // First, update the tserver cache, needed for the Refresh calls below.
+    for (const TabletLocationsPB& tablet : tablet_locations) {
+      for (const TabletLocationsPB_ReplicaPB& replicas : tablet.replicas()) {
+        UpdateTabletServer(replicas.ts_info());
+      }
+    }
+    // In the case of "interned" replicas, the above 'replicas' lists will be empty
+    // and instead we'll need to update from the top-level list of tservers.
+    const auto& ts_infos = rpc.resp().ts_infos();
+    for (const TSInfoPB& ts_info : ts_infos) {
+      UpdateTabletServer(ts_info);
+    }
 
     // The comments below will reference the following diagram:
     //
@@ -832,11 +866,6 @@ Status MetaCache::ProcessLookupResponse(const LookupRpc& rpc,
       // and the entry TTL. If the tablet is unknown, then we need to create a
       // new RemoteTablet for it.
 
-      // First, update the tserver cache, needed for the Refresh calls below.
-      for (const TabletLocationsPB_ReplicaPB& replicas : tablet.replicas()) {
-        UpdateTabletServer(replicas.ts_info());
-      }
-
       const string& tablet_id = tablet.tablet_id();
       scoped_refptr<RemoteTablet> remote = FindPtrOrNull(tablets_by_id_, tablet_id);
       if (remote.get() != nullptr) {
@@ -846,8 +875,9 @@ Status MetaCache::ProcessLookupResponse(const LookupRpc& rpc,
 
         VLOG(3) << "Refreshing tablet " << tablet_id << ": "
                 << pb_util::SecureShortDebugString(tablet);
-        remote->Refresh(ts_cache_, tablet.replicas());
-
+        RETURN_NOT_OK_PREPEND(remote->Refresh(ts_cache_, tablet, ts_infos),
+                              Substitute("failed to refresh locations for tablet $0",
+                                         tablet_id));
         // Update the entry TTL.
         auto& entry = FindOrDie(tablets_by_key, tablet_lower_bound);
         DCHECK(!entry.is_non_covered_range() &&
@@ -864,7 +894,9 @@ Status MetaCache::ProcessLookupResponse(const LookupRpc& rpc,
       Partition partition;
       Partition::FromPB(tablet.partition(), &partition);
       remote = new RemoteTablet(tablet_id, partition);
-      remote->Refresh(ts_cache_, tablet.replicas());
+      RETURN_NOT_OK_PREPEND(remote->Refresh(ts_cache_, tablet, ts_infos),
+                            Substitute("failed to refresh locations for tablet $0",
+                                       tablet_id));
 
       MetaCacheEntry entry(expiration_time, remote);
       VLOG(3) << "Caching '" << rpc.table_name() << "' entry " << entry.DebugString(rpc.table());

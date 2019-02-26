@@ -309,7 +309,9 @@ void MasterServiceImpl::GetTabletLocations(const GetTabletLocationsRequestPB* re
     // TODO(todd): once we have catalog data. ACL checks would also go here, probably.
     TabletLocationsPB* locs_pb = resp->add_tablet_locations();
     Status s = server_->catalog_manager()->GetTabletLocations(
-        tablet_id, req->replica_type_filter(), locs_pb,
+        tablet_id, req->replica_type_filter(),
+        locs_pb,
+        /*ts_infos_dict=*/nullptr,
         make_optional<const string&>(rpc->remote_user().username()));
     if (!s.ok()) {
       resp->mutable_tablet_locations()->RemoveLast();

@@ -53,8 +53,8 @@ class TabletServerServiceProxy;
 } // namespace tserver
 
 namespace master {
-class TabletLocationsPB_ReplicaPB;
 class TSInfoPB;
+class TabletLocationsPB;
 } // namespace master
 
 namespace client {
@@ -201,9 +201,10 @@ class RemoteTablet : public RefCountedThreadSafe<RemoteTablet> {
   }
 
   // Updates this tablet's replica locations.
-  void Refresh(const TabletServerMap& tservers,
-               const google::protobuf::RepeatedPtrField
-                 <master::TabletLocationsPB_ReplicaPB>& replicas);
+  Status Refresh(
+      const TabletServerMap& tservers,
+      const master::TabletLocationsPB& locs_pb,
+      const google::protobuf::RepeatedPtrField<master::TSInfoPB>& ts_info_dict);
 
   // Mark this tablet as stale, indicating that the cached tablet metadata is
   // out of date. Staleness is checked by the MetaCache when

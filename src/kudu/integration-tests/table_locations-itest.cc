@@ -246,6 +246,44 @@ TEST_F(TableLocationsTest, TestGetTableLocations) {
     EXPECT_EQ("a", resp.tablet_locations(0).partition().partition_key_start());
     EXPECT_EQ("aa", resp.tablet_locations(1).partition().partition_key_start());
     EXPECT_EQ("ab", resp.tablet_locations(2).partition().partition_key_start());
+
+    // Check that a UUID was returned for every replica
+    for (const auto& loc : resp.tablet_locations()) {
+      ASSERT_GT(loc.replicas_size(), 0);
+      ASSERT_EQ(0, loc.interned_replicas_size());
+      for (const auto& replica : loc.replicas()) {
+        ASSERT_NE("", replica.ts_info().permanent_uuid());
+      }
+    }
+  }
+
+  { // from "", with TSInfo interning enabled.
+    GetTableLocationsRequestPB req;
+    GetTableLocationsResponsePB resp;
+    RpcController controller;
+    req.mutable_table()->set_table_name(table_name);
+    req.set_partition_key_start("");
+    req.set_max_returned_locations(3);
+    req.set_intern_ts_infos_in_response(true);
+    ASSERT_OK(proxy_->GetTableLocations(req, &resp, &controller));
+    SCOPED_TRACE(SecureDebugString(resp));
+
+    ASSERT_TRUE(!resp.has_error());
+    ASSERT_EQ(3, resp.tablet_locations().size());
+    EXPECT_EQ("a", resp.tablet_locations(0).partition().partition_key_start());
+    EXPECT_EQ("aa", resp.tablet_locations(1).partition().partition_key_start());
+    EXPECT_EQ("ab", resp.tablet_locations(2).partition().partition_key_start());
+    // Check that a UUID was returned for every replica
+    for (const auto& loc : resp.tablet_locations()) {
+      ASSERT_EQ(loc.replicas_size(), 0);
+      ASSERT_GT(loc.interned_replicas_size(), 0);
+      for (const auto& replica : loc.interned_replicas()) {
+        int idx = replica.ts_info_idx();
+        ASSERT_GE(idx, 0);
+        ASSERT_LE(idx, resp.ts_infos_size());
+        ASSERT_NE("", resp.ts_infos(idx).permanent_uuid());
+      }
+    }
   }
 
   { // from "b"
@@ -367,6 +405,7 @@ TEST_F(TableLocationsTest, GetTableLocationsBenchmark) {
           RpcController controller;
           req.mutable_table()->set_table_name(table_name);
           req.set_max_returned_locations(1000);
+          req.set_intern_ts_infos_in_response(true);
           CHECK_OK(proxies[i]->GetTableLocations(req, &resp, &controller));
           CHECK_EQ(resp.tablet_locations_size(), kNumSplits + 1);
         }

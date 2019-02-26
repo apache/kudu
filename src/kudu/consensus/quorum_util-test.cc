@@ -307,6 +307,12 @@ TEST(QuorumUtilTest, TestGetConsensusRole) {
   ASSERT_EQ(NON_PARTICIPANT, GetConsensusRole("D", cstate));
   cstate.set_leader_uuid("D");
   ASSERT_EQ(NON_PARTICIPANT, GetConsensusRole("D", cstate)); // Illegal.
+
+  // Test GetParticipantRole() on the participants in the config.
+  for (const auto& peer : config2.peers()) {
+    ASSERT_EQ(GetParticipantRole(peer, cstate),
+              GetConsensusRole(peer.permanent_uuid(), cstate));
+  }
 }
 
 TEST(QuorumUtilTest, TestIsRaftConfigVoter) {
