@@ -28,11 +28,6 @@
 :sectlinks:
 :experimental:
 
-NOTE: Kudu is easier to configure with link:http://www.cloudera.com/content/www/en-us/products/cloudera-manager.html[Cloudera Manager]
-than in a standalone installation. See Cloudera's
-link:http://www.cloudera.com/documentation/kudu/latest/topics/kudu_installation.html[Kudu documentation]
-for more details about using Kudu with Cloudera Manager.
-
 == Configure Kudu
 
 === Configuration Basics
@@ -146,5 +141,4 @@ link:configuration_reference.html#kudu-tserver_supported[Kudu Tablet Server Conf
 
 
 == Next Steps
-- link:quickstart.html[Get Started With Kudu]
 - link:developing.html[Developing Applications With Kudu]

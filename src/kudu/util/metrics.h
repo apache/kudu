@@ -684,8 +684,7 @@ class MetricRegistry {
 //
 // Prototypes are typically defined as static variables in different compilation
 // units, and their constructors register themselves here. The registry is then
-// used in order to dump metrics metadata to generate a Cloudera Manager MDL
-// file.
+// used in order to dump metrics metadata.
 //
 // This class is thread-safe.
 class MetricPrototypeRegistry {

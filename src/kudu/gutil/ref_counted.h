@@ -268,7 +268,7 @@ class scoped_refptr {
 
   T* get() const { return ptr_; }
 
-// The following is disabled in Cloudera's version of this file since it's
+// The following is disabled in Kudu's version of this file since it's
 // relatively dangerous. Chromium is planning on doing the same in their
 // tree, but hasn't done so yet. See http://code.google.com/p/chromium/issues/detail?id=110610
 #if SCOPED_REFPTR_ALLOW_IMPLICIT_CONVERSION_TO_PTR

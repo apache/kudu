@@ -28,11 +28,6 @@
 :sectlinks:
 :experimental:
 
-NOTE: Kudu is easier to manage with link:http://www.cloudera.com/content/www/en-us/products/cloudera-manager.html[Cloudera Manager]
-than in a standalone installation. See Cloudera's
-link:http://www.cloudera.com/documentation/kudu/latest/topics/kudu_installation.html[Kudu documentation]
-for more details about using Kudu with Cloudera Manager.
-
 == Starting and Stopping Kudu Processes
 
 NOTE: These instructions are relevant only when Kudu is installed using operating system packages
@@ -299,7 +294,7 @@ WARNING: All of the command line steps below should be executed as the Kudu UNIX
 commands assume the Kudu Unix user is `kudu`, which is typical.
 
 WARNING: The workflow presupposes at least basic familiarity with Kudu configuration management. If
-using vendor-specific tools (e.g. Cloudera Manager) the workflow also presupposes familiarity with
+using vendor-specific tools the workflow also presupposes familiarity with
 it and the vendor's instructions should be used instead as details may differ.
 
 ==== Prepare for the migration
@@ -513,7 +508,7 @@ cluster is first shut down. See the <<migrate_to_multi_master,multi-master migra
 more details on deploying with DNS aliases.
 
 WARNING: The workflow presupposes at least basic familiarity with Kudu configuration management. If
-using vendor-specific tools (e.g. Cloudera Manager) the workflow also presupposes familiarity with
+using vendor-specific tools the workflow also presupposes familiarity with
 it and the vendor's instructions should be used instead as details may differ.
 
 WARNING: All of the command line steps below should be executed as the Kudu UNIX user, typically
