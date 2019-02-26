@@ -66,6 +66,7 @@ METRIC_DEFINE_gauge_size(server, active_scanners,
 
 using std::string;
 using std::unique_ptr;
+using std::unordered_map;
 using std::vector;
 using strings::Substitute;
 
@@ -221,31 +222,38 @@ void ScannerManager::ListScanners(std::vector<SharedScanner>* scanners) const {
 }
 
 vector<ScanDescriptor> ScannerManager::ListScans() const {
-  vector<ScanDescriptor> scans;
+  unordered_map<string, ScanDescriptor> scans;
   for (const ScannerMapStripe* stripe : scanner_maps_) {
     shared_lock<RWMutex> l(stripe->lock_);
     for (const auto& se : stripe->scanners_by_id_) {
       if (se.second->IsInitialized()) {
-        scans.emplace_back(se.second->descriptor());
-        scans.back().state = ScanState::kActive;
+        ScanDescriptor desc = se.second->descriptor();
+        desc.state = ScanState::kActive;
+        EmplaceOrDie(&scans, se.first, std::move(desc));
       }
     }
   }
 
   {
     shared_lock<RWMutex> l(completed_scans_lock_);
-    scans.insert(scans.end(), completed_scans_.begin(), completed_scans_.end());
+    // A scanner in 'scans' may have completed between the above loop and here.
+    // As we'd rather have the finalized descriptor of the completed scan,
+    // update over the old descriptor in this case.
+    for (const auto& scan : completed_scans_) {
+      InsertOrUpdate(&scans, scan.scanner_id, scan);
+    }
   }
 
-  // TODO(dan): It's possible for a descriptor to be included twice in the
-  // result set if its scanner is concurrently removed from the scanner map.
+  vector<ScanDescriptor> ret;
+  ret.reserve(scans.size());
+  AppendValuesFromMap(scans, &ret);
 
   // Sort oldest to newest, so that the ordering is consistent across calls.
-  std::sort(scans.begin(), scans.end(), [] (const ScanDescriptor& a, const ScanDescriptor& b) {
+  std::sort(ret.begin(), ret.end(), [] (const ScanDescriptor& a, const ScanDescriptor& b) {
       return a.start_time > b.start_time;
   });
 
-  return scans;
+  return ret;
 }
 
 void ScannerManager::RemoveExpiredScanners() {
