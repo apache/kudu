@@ -572,21 +572,7 @@ void LinkedListTester::DumpInsertHistogram(bool print_flags) {
   }
   cout << "Note: each insert is a batch of " << num_chains_ << " rows." << endl;
   cout << "------------------------------------------------------------" << endl;
-  cout << "Count: " << h->TotalCount() << endl;
-  cout << "Mean: " << h->MeanValue() << endl;
-  cout << "Percentiles:" << endl;
-  cout << "   0%  (min) = " << h->MinValue() << endl;
-  cout << "  25%        = " << h->ValueAtPercentile(25) << endl;
-  cout << "  50%  (med) = " << h->ValueAtPercentile(50) << endl;
-  cout << "  75%        = " << h->ValueAtPercentile(75) << endl;
-  cout << "  95%        = " << h->ValueAtPercentile(95) << endl;
-  cout << "  99%        = " << h->ValueAtPercentile(99) << endl;
-  cout << "  99.9%      = " << h->ValueAtPercentile(99.9) << endl;
-  cout << "  99.99%     = " << h->ValueAtPercentile(99.99) << endl;
-  cout << "  100% (max) = " << h->MaxValue() << endl;
-  if (h->MaxValue() >= h->highest_trackable_value()) {
-    cout << "*NOTE: some values were greater than highest trackable value" << endl;
-  }
+  h->DumpHumanReadable(&std::cout);
 }
 
 // Verify that the given sorted vector does not contain any duplicate entries.

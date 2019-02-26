@@ -106,7 +106,7 @@ ADD_KUDU_TEST(security-itest)
 ADD_KUDU_TEST(security-master-auth-itest)
 ADD_KUDU_TEST(security-unknown-tsk-itest PROCESSORS 4)
 ADD_KUDU_TEST(stop_tablet-itest PROCESSORS 4)
-ADD_KUDU_TEST(table_locations-itest
+ADD_KUDU_TEST(table_locations-itest RUN_SERIAL true
   DATA_FILES ../scripts/first_argument.sh)
 ADD_KUDU_TEST(tablet_copy-itest NUM_SHARDS 6 PROCESSORS 4)
 ADD_KUDU_TEST(tablet_copy_client_session-itest)

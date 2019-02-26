@@ -15,12 +15,16 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <atomic>
 #include <memory>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
+#include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/common/common.pb.h"
@@ -29,13 +33,17 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/mini-cluster/internal_mini_cluster.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/util/hdr_histogram.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/path_util.h"
@@ -57,6 +65,12 @@ using std::unique_ptr;
 using std::vector;
 
 DECLARE_string(location_mapping_cmd);
+DECLARE_int32(max_create_tablets_per_ts);
+METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetTableLocations);
+
+DEFINE_int32(benchmark_runtime_secs, 5, "Number of seconds to run the benchmark");
+DEFINE_int32(benchmark_num_threads, 16, "Number of threads to run the benchmark");
+DEFINE_int32(benchmark_num_tablets, 60, "Number of tablets to create");
 
 namespace kudu {
 namespace master {
@@ -72,6 +86,7 @@ class TableLocationsTest : public KuduTest {
   void SetUp() override {
     KuduTest::SetUp();
 
+    FLAGS_max_create_tablets_per_ts = 1000;
     SetUpConfig();
 
     InternalMiniClusterOptions opts;
@@ -139,6 +154,7 @@ void TableLocationsTest::CheckMasterTableCreation(const string &table_name,
   GetTableLocationsRequestPB req;
   GetTableLocationsResponsePB resp;
   RpcController controller;
+  req.set_max_returned_locations(1000);
   req.mutable_table()->set_table_name(table_name);
 
   for (int i = 1; ; i++) {
@@ -304,6 +320,72 @@ TEST_F(TableLocationsWithTSLocationTest, TestGetTSLocation) {
       ASSERT_EQ("/foo", resp.tablet_locations(0).replicas(i).ts_info().location());
     }
   }
+}
+
+TEST_F(TableLocationsTest, GetTableLocationsBenchmark) {
+  const int kNumSplits = FLAGS_benchmark_num_tablets - 1;
+  const int kNumThreads = FLAGS_benchmark_num_threads;
+  const auto kRuntime = MonoDelta::FromSeconds(FLAGS_benchmark_runtime_secs);
+
+  const string table_name = "test";
+  Schema schema({ ColumnSchema("key", INT32) }, 1);
+  KuduPartialRow row(&schema);
+
+  vector<KuduPartialRow> splits(kNumSplits, row);
+  for (int i = 0; i < kNumSplits; i++) {
+    ASSERT_OK(splits[i].SetInt32(0, i*1000));
+  }
+
+  ASSERT_OK(CreateTable(table_name, schema, splits));
+
+  NO_FATALS(CheckMasterTableCreation(table_name, kNumSplits + 1));
+
+  // Make one proxy per thread, so each thread gets its own messenger and
+  // reactor. If there were only one messenger, then only one reactor thread
+  // would be used for the connection to the master, so this benchmark would
+  // probably be testing the serialization and network code rather than the
+  // master GTL code.
+  vector<unique_ptr<MasterServiceProxy>> proxies;
+  proxies.reserve(kNumThreads);
+  for (int i = 0; i < kNumThreads; i++) {
+    MessengerBuilder bld("Client");
+    bld.set_num_reactors(1);
+    shared_ptr<Messenger> msg;
+    ASSERT_OK(bld.Build(&msg));
+    const auto& addr = cluster_->mini_master()->bound_rpc_addr();
+    proxies.emplace_back(new MasterServiceProxy(std::move(msg), addr, addr.host()));
+  }
+
+  std::atomic<bool> stop { false };
+  vector<std::thread> threads;
+  threads.reserve(kNumThreads);
+  for (int i = 0; i < kNumThreads; i++) {
+    threads.emplace_back([&, i]() {
+        while (!stop) {
+          GetTableLocationsRequestPB req;
+          GetTableLocationsResponsePB resp;
+          RpcController controller;
+          req.mutable_table()->set_table_name(table_name);
+          req.set_max_returned_locations(1000);
+          CHECK_OK(proxies[i]->GetTableLocations(req, &resp, &controller));
+          CHECK_EQ(resp.tablet_locations_size(), kNumSplits + 1);
+        }
+      });
+  }
+
+  SleepFor(kRuntime);
+  stop = true;
+  for (auto& t : threads) {
+    t.join();
+  }
+
+  const auto& ent = cluster_->mini_master()->master()->metric_entity();
+  auto hist = METRIC_handler_latency_kudu_master_MasterService_GetTableLocations
+      .Instantiate(ent);
+
+  cluster_->Shutdown();
+
+  hist->histogram()->DumpHumanReadable(&LOG(INFO));
 }
 
 } // namespace master
