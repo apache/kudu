@@ -114,13 +114,13 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
   // Set the number of live replicas (i.e. running or bootstrapping).
   void set_num_live_replicas(int n) {
     DCHECK_GE(n, 0);
-    std::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard<rw_spinlock> l(lock_);
     num_live_replicas_ = n;
   }
 
   // Return the number of live replicas (i.e running or bootstrapping).
   int num_live_replicas() const {
-    std::lock_guard<simple_spinlock> l(lock_);
+    shared_lock<rw_spinlock> l(lock_);
     return num_live_replicas_;
   }
 
@@ -128,7 +128,7 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
   // since the location could change at any time if the tablet server
   // re-registers.
   boost::optional<std::string> location() const {
-    std::lock_guard<simple_spinlock> l(lock_);
+    shared_lock<rw_spinlock> l(lock_);
     return location_;
   }
 
@@ -153,7 +153,7 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
 
   void DecayRecentReplicaCreationsUnlocked();
 
-  mutable simple_spinlock lock_;
+  mutable rw_spinlock lock_;
 
   const std::string permanent_uuid_;
   int64_t latest_seqno_;
