@@ -38,6 +38,9 @@ class HostPortPB;
 class MaintenanceManager;
 class MonoDelta;
 class ThreadPool;
+namespace master {
+class LocationCache;
+}  // namespace master
 
 namespace security {
 class TokenSigner;
@@ -82,6 +85,8 @@ class Master : public kserver::KuduServer {
   CatalogManager* catalog_manager() { return catalog_manager_.get(); }
 
   const MasterOptions& opts() { return opts_; }
+
+  LocationCache* location_cache() { return location_cache_.get(); }
 
   // Get the RPC and HTTP addresses for this master instance.
   Status GetMasterRegistration(ServerRegistrationPB* registration) const;
@@ -131,7 +136,6 @@ class Master : public kserver::KuduServer {
 
   std::unique_ptr<MasterCertAuthority> cert_authority_;
   std::unique_ptr<security::TokenSigner> token_signer_;
-  gscoped_ptr<TSManager> ts_manager_;
   gscoped_ptr<CatalogManager> catalog_manager_;
   gscoped_ptr<MasterPathHandlers> path_handlers_;
 
@@ -150,6 +154,11 @@ class Master : public kserver::KuduServer {
 
   // The maintenance manager for this master.
   std::shared_ptr<MaintenanceManager> maintenance_manager_;
+
+  // A simplistic cache to track already assigned locations.
+  std::unique_ptr<LocationCache> location_cache_;
+
+  gscoped_ptr<TSManager> ts_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(Master);
 };

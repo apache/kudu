@@ -473,6 +473,11 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
     // Set a command that always fails.
     FLAGS_location_mapping_cmd = "false";
 
+    // Restarting the master to take into account the new setting for the
+    // --location_mapping_cmd flag.
+    mini_master_->Shutdown();
+    ASSERT_OK(mini_master_->Restart());
+
     // Set a new UUID so registration is for the first time.
     auto new_common = common;
     new_common.mutable_ts_instance()->set_permanent_uuid("lmc-fail-ts");
@@ -486,7 +491,7 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
 
     // Registration should fail.
     Status s = proxy_->TSHeartbeat(hb_req, &hb_resp, &rpc);
-    ASSERT_TRUE(s.IsRemoteError());
+    ASSERT_TRUE(s.IsRemoteError()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "failed to run location mapping command");
 
     // Make sure the tablet server isn't returned to clients.
@@ -497,11 +502,7 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
 
     LOG(INFO) << SecureDebugString(list_ts_resp);
     ASSERT_FALSE(list_ts_resp.has_error());
-    ASSERT_EQ(1, list_ts_resp.servers_size());
-    ASSERT_EQ("my-ts-uuid", list_ts_resp.servers(0).instance_id().permanent_uuid());
-
-    // Reset the flag.
-    FLAGS_location_mapping_cmd = "";
+    ASSERT_EQ(0, list_ts_resp.servers_size());
   }
 }
 
@@ -1656,6 +1657,10 @@ TEST_F(MasterTest, TestConnectToMasterAndAssignLocation) {
   const string location = "/foo";
   FLAGS_location_mapping_cmd = Substitute("$0 $1", kLocationCmdPath, location);
   {
+    // Restarting the master to take into account the new setting for the
+    // --location_mapping_cmd flag.
+    mini_master_->Shutdown();
+    ASSERT_OK(mini_master_->Restart());
     ConnectToMasterRequestPB req;
     ConnectToMasterResponsePB resp;
     RpcController rpc;
@@ -1668,6 +1673,10 @@ TEST_F(MasterTest, TestConnectToMasterAndAssignLocation) {
   // location should be assigned.
   FLAGS_location_mapping_cmd = "false";
   {
+    // Restarting the master to take into account the new setting for the
+    // --location_mapping_cmd flag.
+    mini_master_->Shutdown();
+    ASSERT_OK(mini_master_->Restart());
     ConnectToMasterRequestPB req;
     ConnectToMasterResponsePB resp;
     RpcController rpc;
@@ -1680,6 +1689,10 @@ TEST_F(MasterTest, TestConnectToMasterAndAssignLocation) {
   const string new_location = "/bar";
   FLAGS_location_mapping_cmd = Substitute("$0 $1", kLocationCmdPath, new_location);
   {
+    // Restarting the master to take into account the new setting for the
+    // --location_mapping_cmd flag.
+    mini_master_->Shutdown();
+    ASSERT_OK(mini_master_->Restart());
     ConnectToMasterRequestPB req;
     ConnectToMasterResponsePB resp;
     RpcController rpc;

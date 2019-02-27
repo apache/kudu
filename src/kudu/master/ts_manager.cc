@@ -49,7 +49,9 @@ using strings::Substitute;
 namespace kudu {
 namespace master {
 
-TSManager::TSManager(const scoped_refptr<MetricEntity>& metric_entity) {
+TSManager::TSManager(LocationCache* location_cache,
+                     const scoped_refptr<MetricEntity>& metric_entity)
+    : location_cache_(location_cache) {
   METRIC_cluster_replica_skew.InstantiateFunctionGauge(
       metric_entity,
       Bind(&TSManager::ClusterSkew, Unretained(this)))
@@ -93,14 +95,15 @@ Status TSManager::RegisterTS(const NodeInstancePB& instance,
 
   if (!ContainsKey(servers_by_id_, uuid)) {
     shared_ptr<TSDescriptor> new_desc;
-    RETURN_NOT_OK(TSDescriptor::RegisterNew(instance, registration, &new_desc));
+    RETURN_NOT_OK(TSDescriptor::RegisterNew(
+        instance, registration, location_cache_, &new_desc));
     InsertOrDie(&servers_by_id_, uuid, new_desc);
     LOG(INFO) << Substitute("Registered new tserver with Master: $0",
                             new_desc->ToString());
     desc->swap(new_desc);
   } else {
     shared_ptr<TSDescriptor> found(FindOrDie(servers_by_id_, uuid));
-    RETURN_NOT_OK(found->Register(instance, registration));
+    RETURN_NOT_OK(found->Register(instance, registration, location_cache_));
     LOG(INFO) << Substitute("Re-registered known tserver with Master: $0",
                             found->ToString());
     desc->swap(found);

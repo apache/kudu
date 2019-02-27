@@ -511,12 +511,18 @@ TEST_F(RemoteKsckTest, TestLeaderMasterDown) {
 }
 
 TEST_F(RemoteKsckTest, TestClusterWithLocation) {
-  // There is no location assigned for the existing three tablet servers.
-  // With the flag set, the newly added server will be assiged with location '/foo'.
   const string location_cmd_path = JoinPathSegments(GetTestExecutableDirectory(),
                                                    "testdata/first_argument.sh");
   const string location = "/foo";
   FLAGS_location_mapping_cmd = Substitute("$0 $1", location_cmd_path, location);
+
+  // After setting the --location_mapping_cmd flag it's necessary to restart
+  // the masters to pick up the new value.
+  for (auto idx = 0; idx < mini_cluster_->num_masters(); ++idx) {
+    auto* master = mini_cluster_->mini_master(idx);
+    master->Shutdown();
+    ASSERT_OK(master->Start());
+  }
 
   ASSERT_OK(mini_cluster_->AddTabletServer());
   ASSERT_EQ(4, mini_cluster_->num_tablet_servers());
@@ -529,8 +535,8 @@ TEST_F(RemoteKsckTest, TestClusterWithLocation) {
   // a connection takes much longer. To avoid flakiness of this test scenario,
   // few calls below are wrapped into ASSERT_EVENTUALLY().
   //
-  // TODO(KUDU-2704): remove ASSERT_EVENTUALLY around CheckMasterConsensus
-  //                  when KUDU-2704 is addressed.
+  // TODO(KUDU-2709): remove ASSERT_EVENTUALLY around CheckMasterConsensus
+  //                  when KUDU-2709 is addressed.
   ASSERT_EVENTUALLY([&]() {
     ASSERT_OK(ksck_->CheckMasterConsensus());
   });
@@ -547,28 +553,21 @@ TEST_F(RemoteKsckTest, TestClusterWithLocation) {
   ASSERT_OK(ksck_->PrintResults());
   const string& err_string = err_stream_.str();
 
-  // The existing tablet servers should have location '<none>' displayed.
-  for (int i = 0; i < 3; i++) {
-    auto *ts = mini_cluster_->mini_tablet_server(i);
-    ASSERT_STR_CONTAINS(err_string, Substitute("$0 | $1 | HEALTHY | <none>",
+  // With the flag set and masters restarted, all tablet servers are assigned
+  // with location '/foo': both the existing ones and the newly added.
+  for (int idx = 0; idx < mini_cluster_->num_tablet_servers(); ++idx) {
+    auto *ts = mini_cluster_->mini_tablet_server(idx);
+    ASSERT_STR_CONTAINS(err_string, Substitute("$0 | $1 | HEALTHY | $2",
                                                ts->uuid(),
-                                               ts->bound_rpc_addr().ToString()));
+                                               ts->bound_rpc_addr().ToString(),
+                                               location));
   }
-
-  // The newly added tablet server should have the assigned location displayed.
-  auto *ts = mini_cluster_->mini_tablet_server(3);
-  ASSERT_STR_CONTAINS(err_string, Substitute("$0 | $1 | HEALTHY | $2",
-                                             ts->uuid(),
-                                             ts->bound_rpc_addr().ToString(),
-                                             location));
   ASSERT_STR_CONTAINS(err_string,
     "Tablet Server Location Summary\n"
     " Location |  Count\n"
     "----------+---------\n");
   ASSERT_STR_CONTAINS(err_string,
-    " <none>   |       3\n");
-  ASSERT_STR_CONTAINS(err_string,
-    " /foo     |       1\n");
+    " /foo     |       4\n");
 }
 
 } // namespace tools

@@ -37,8 +37,10 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/catalog_manager.h"
+#include "kudu/master/location_cache.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/master_cert_authority.h"
@@ -87,6 +89,7 @@ TAG_FLAG(authz_token_validity_seconds, experimental);
 
 DECLARE_bool(hive_metastore_sasl_enabled);
 DECLARE_string(keytab_file);
+DECLARE_string(location_mapping_cmd);
 
 using std::min;
 using std::shared_ptr;
@@ -124,11 +127,15 @@ GROUP_FLAG_VALIDATOR(hive_metastore_sasl_enabled, ValidateHiveMetastoreSaslEnabl
 Master::Master(const MasterOptions& opts)
   : KuduServer("Master", opts, "kudu.master"),
     state_(kStopped),
-    ts_manager_(new TSManager(metric_entity_)),
     catalog_manager_(new CatalogManager(this)),
     path_handlers_(new MasterPathHandlers(this)),
     opts_(opts),
     registration_initialized_(false) {
+  const auto& location_cmd = FLAGS_location_mapping_cmd;
+  if (!location_cmd.empty()) {
+    location_cache_.reset(new LocationCache(location_cmd, metric_entity_.get()));
+  }
+  ts_manager_.reset(new TSManager(location_cache_.get(), metric_entity_));
 }
 
 Master::~Master() {

@@ -115,6 +115,7 @@
 
 DECLARE_bool(allow_unsafe_replication_factor);
 DECLARE_bool(fail_dns_resolution);
+DECLARE_bool(location_mapping_by_uuid);
 DECLARE_bool(log_inject_latency);
 DECLARE_bool(master_support_connect_to_master_rpc);
 DECLARE_bool(rpc_trace_negotiation);
@@ -141,6 +142,8 @@ DEFINE_int32(test_scan_num_rows, 1000, "Number of rows to insert and scan");
 
 METRIC_DECLARE_counter(block_manager_total_bytes_read);
 METRIC_DECLARE_counter(rpcs_queue_overflow);
+METRIC_DECLARE_counter(location_mapping_cache_hits);
+METRIC_DECLARE_counter(location_mapping_cache_queries);
 METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetMasterRegistration);
 METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetTabletLocations);
 METRIC_DECLARE_histogram(handler_latency_kudu_master_MasterService_GetTableLocations);
@@ -5962,6 +5965,10 @@ TEST_F(ClientTest, WritingRowsWithUnsetNonNullableColumns) {
   }
 }
 
+TEST_F(ClientTest, TestClientLocationNoLocationMappingCmd) {
+  ASSERT_TRUE(client_->location().empty());
+}
+
 // Client test that assigns locations to clients and tablet servers.
 // For now, assigns a uniform location to all clients and tablet servers.
 class ClientWithLocationTest : public ClientTest {
@@ -5972,15 +5979,46 @@ class ClientWithLocationTest : public ClientTest {
     const string location = "/foo";
     FLAGS_location_mapping_cmd = strings::Substitute("$0 $1",
                                                      location_cmd_path, location);
+    FLAGS_location_mapping_by_uuid = true;
   }
 };
 
-TEST_F(ClientTest, TestClientLocationNoLocationMappingCmd) {
-  ASSERT_TRUE(client_->location().empty());
-}
-
 TEST_F(ClientWithLocationTest, TestClientLocation) {
   ASSERT_EQ("/foo", client_->location());
+}
+
+TEST_F(ClientWithLocationTest, LocationCacheMetricsOnClientConnectToCluster) {
+  ASSERT_EQ("/foo", client_->location());
+
+  auto& metric_entity = cluster_->mini_master()->master()->metric_entity();
+  scoped_refptr<Counter> counter_hits(
+      METRIC_location_mapping_cache_hits.Instantiate(metric_entity));
+  const auto hits_before = counter_hits->value();
+  ASSERT_EQ(0, hits_before);
+  scoped_refptr<Counter> counter_queries(
+      METRIC_location_mapping_cache_queries.Instantiate(metric_entity));
+  const auto queries_before = counter_queries->value();
+  // Expecting location assignment queries from all tablet servers and
+  // the client.
+  ASSERT_EQ(cluster_->num_tablet_servers() + 1, queries_before);
+
+  static constexpr int kIterNum = 10;
+  for (auto iter = 0; iter < kIterNum; ++iter) {
+    shared_ptr<KuduClient> client;
+    ASSERT_OK(KuduClientBuilder()
+        .add_master_server_addr(cluster_->mini_master()->bound_rpc_addr().ToString())
+        .Build(&client));
+    ASSERT_EQ("/foo", client->location());
+  }
+
+  // The location mapping cache should be hit every time a client is connecting
+  // from the same host as the former client. Nothing else should be touching
+  // the location assignment logic but ConnectToCluster() requests coming from
+  // the clients instantiated above.
+  const auto queries_after = counter_queries->value();
+  ASSERT_EQ(queries_before + kIterNum, queries_after);
+  const auto hits_after = counter_hits->value();
+  ASSERT_EQ(hits_before + kIterNum, hits_after);
 }
 
 } // namespace client
