@@ -303,6 +303,7 @@ void TableScanner::ScannerTask(const vector<KuduScanToken *>& tokens) {
       count += batch.NumRows();
       total_count_.IncrementBy(batch.NumRows());
       if (FLAGS_show_value) {
+        MutexLock l(output_lock_);
         for (const auto& row : batch) {
           cout << row.ToString() << endl;
         }
@@ -311,8 +312,11 @@ void TableScanner::ScannerTask(const vector<KuduScanToken *>& tokens) {
     delete scanner;
 
     sw.stop();
-    cout << "T " << token->tablet().id() << " scanned count " << count
-        << " cost " << sw.elapsed().wall_seconds() << " seconds" << endl;
+    {
+      MutexLock l(output_lock_);
+      cout << "T " << token->tablet().id() << " scanned count " << count
+           << " cost " << sw.elapsed().wall_seconds() << " seconds" << endl;
+    }
   }
 }
 
