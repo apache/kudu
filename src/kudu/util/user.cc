@@ -18,12 +18,14 @@
 #include "kudu/util/user.h"
 
 #include <pwd.h>
+#include <string.h>
 #include <unistd.h>
 
 #include <cerrno>
 #include <cstdint>
 #include <cstdlib>
 #include <mutex>
+#include <ostream>
 #include <string>
 #include <utility>
 
@@ -40,6 +42,13 @@ namespace kudu {
 namespace {
 
 Status DoGetLoggedInUser(string* user_name) {
+  const char* override_username = getenv("KUDU_USER_NAME");
+  if (override_username && strlen(override_username)) {
+    VLOG(1) << "Overriding logged-in user name to " << override_username;
+    *user_name = override_username;
+    return Status::OK();;
+  }
+
   DCHECK(user_name != nullptr);
 
   struct passwd pwd;
