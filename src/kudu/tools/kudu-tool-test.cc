@@ -413,14 +413,25 @@ class ToolTest : public KuduTest {
                            cluster_->master()->bound_rpc_addr().ToString(),
                            table_name, projection, predicates_json),
                 &lines));
+
+    vector<pair<string, string>> expected_columns;
+    if (columns.empty()) {
+      // If we ran with an empty projection, we'll actually get all the columns.
+      expected_columns = {{ "int32", "key" },
+                          { "int32", "int_val" },
+                          { "string", "string_val" }};
+    } else {
+      expected_columns = columns;
+    }
+
     size_t line_count = 0;
     int64_t value = min_value;
     for (const auto& line : lines) {
       if (line.find('(') != string::npos) {
         // Check matched rows.
         vector<string> kvs;
-        kvs.reserve(columns.size());
-        for (const auto& column : columns) {
+        kvs.reserve(expected_columns.size());
+        for (const auto& column : expected_columns) {
           // Check projected columns.
           kvs.push_back(Substitute("$0 $1=$2",
               column.first, column.second, column.second == "key" ? to_string(value) : ".*"));

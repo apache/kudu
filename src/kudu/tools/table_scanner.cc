@@ -566,8 +566,12 @@ Status TableScanner::StartWork(WorkType type) {
 
   // Set projection if needed.
   if (type == WorkType::kScan) {
-    vector<string> projected_column_names = Split(FLAGS_columns, ",", strings::SkipEmpty());
-    RETURN_NOT_OK(builder.SetProjectedColumnNames(projected_column_names));
+    bool project_all = FLAGS_columns == "*" ||
+                       (FLAGS_show_values && FLAGS_columns.empty());
+    if (!project_all) {
+      vector<string> projected_column_names = Split(FLAGS_columns, ",", strings::SkipEmpty());
+      RETURN_NOT_OK(builder.SetProjectedColumnNames(projected_column_names));
+    }
   }
 
   // Set predicates.
