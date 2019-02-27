@@ -18,7 +18,6 @@
 #include "kudu/master/ts_descriptor.h"
 
 #include <cmath>
-#include <cstdio>
 #include <mutex>
 #include <ostream>
 #include <unordered_set>
@@ -32,17 +31,15 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.proxy.h"
-#include "kudu/gutil/strings/charset.h"
-#include "kudu/gutil/strings/split.h"
-#include "kudu/gutil/strings/strip.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/master/location_cache.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
-#include "kudu/util/subprocess.h"
 #include "kudu/util/trace.h"
 
 DEFINE_int32(tserver_unresponsive_timeout_ms, 60 * 1000,
@@ -75,63 +72,12 @@ using strings::Substitute;
 namespace kudu {
 namespace master {
 
-namespace {
-// Returns if 'location' is a valid location string, i.e. it begins with /
-// and consists of /-separated tokens each of which contains only characters
-// from the set [a-zA-Z0-9_-.].
-bool IsValidLocation(const string& location) {
-  if (location.empty() || location[0] != '/') {
-    return false;
-  }
-  const strings::CharSet charset("abcdefghijklmnopqrstuvwxyz"
-                                 "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-                                 "0123456789"
-                                 "_-./");
-  for (const auto c : location) {
-    if (!charset.Test(c)) {
-      return false;
-    }
-  }
-  return true;
-}
-} // anonymous namespace
-
-Status GetLocationFromLocationMappingCmd(const string& cmd,
-                                         const string& host,
-                                         string* location) {
-  DCHECK(location);
-  vector<string> argv = strings::Split(cmd, " ", strings::SkipEmpty());
-  if (argv.empty()) {
-    return Status::RuntimeError("invalid empty location mapping command");
-  }
-  argv.push_back(host);
-  string stderr, location_temp;
-  Status s = Subprocess::Call(argv, /*stdin=*/"", &location_temp, &stderr);
-  if (!s.ok()) {
-    return Status::RuntimeError(
-        Substitute("failed to run location mapping command: $0", s.ToString()),
-        stderr);
-  }
-  StripWhiteSpace(&location_temp);
-  // Special case an empty location for a better error.
-  if (location_temp.empty()) {
-    return Status::RuntimeError(
-        "location mapping command returned invalid empty location");
-  }
-  if (!IsValidLocation(location_temp)) {
-    return Status::RuntimeError(
-        "location mapping command returned invalid location",
-        location_temp);
-  }
-  *location = std::move(location_temp);
-  return Status::OK();
-}
-
 Status TSDescriptor::RegisterNew(const NodeInstancePB& instance,
                                  const ServerRegistrationPB& registration,
+                                 LocationCache* location_cache,
                                  shared_ptr<TSDescriptor>* desc) {
   shared_ptr<TSDescriptor> ret(TSDescriptor::make_shared(instance.permanent_uuid()));
-  RETURN_NOT_OK(ret->Register(instance, registration));
+  RETURN_NOT_OK(ret->Register(instance, registration, location_cache));
   desc->swap(ret);
   return Status::OK();
 }
@@ -210,7 +156,8 @@ Status TSDescriptor::RegisterUnlocked(const NodeInstancePB& instance,
 }
 
 Status TSDescriptor::Register(const NodeInstancePB& instance,
-                              const ServerRegistrationPB& registration) {
+                              const ServerRegistrationPB& registration,
+                              LocationCache* location_cache) {
   // Do basic registration work under the lock.
   {
     std::lock_guard<simple_spinlock> l(lock_);
@@ -219,8 +166,7 @@ Status TSDescriptor::Register(const NodeInstancePB& instance,
 
   // Resolve the location outside the lock. This involves calling the location
   // mapping script.
-  const string& location_mapping_cmd = FLAGS_location_mapping_cmd;
-  if (!location_mapping_cmd.empty()) {
+  if (PREDICT_TRUE(location_cache != nullptr)) {
     // In some test scenarios the location is assigned per tablet server UUID.
     // That's the case when multiple (or even all) tablet servers have the same
     // IP address for their RPC endpoint.
@@ -228,9 +174,7 @@ Status TSDescriptor::Register(const NodeInstancePB& instance,
         ? permanent_uuid() : registration_->rpc_addresses(0).host();
     TRACE(Substitute("tablet server $0: assigning location", permanent_uuid()));
     string location;
-    Status s = GetLocationFromLocationMappingCmd(location_mapping_cmd,
-                                                 cmd_arg,
-                                                 &location);
+    const auto s = location_cache->GetLocation(cmd_arg, &location);
     TRACE(Substitute(
         "tablet server $0: assigned location '$1'", permanent_uuid(), location));
 

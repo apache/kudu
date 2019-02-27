@@ -35,6 +35,8 @@ class ServerRegistrationPB;
 
 namespace master {
 
+class LocationCache;
+
 // Tracks the servers that the master has heard from, along with their
 // last heartbeat, etc.
 //
@@ -47,7 +49,11 @@ namespace master {
 // This class is thread-safe.
 class TSManager {
  public:
-  explicit TSManager(const scoped_refptr<MetricEntity>& metric_entity);
+  // 'location_cache' is a pointer to location mapping cache to use when
+  // registering tablet servers. The location cache should outlive the
+  // TSManager. 'metric_entity' is used to register metrics used by TSManager.
+  TSManager(LocationCache* location_cache,
+            const scoped_refptr<MetricEntity>& metric_entity);
   virtual ~TSManager();
 
   // Lookup the tablet server descriptor for the given instance identifier.
@@ -91,6 +97,8 @@ class TSManager {
   typedef std::unordered_map<
     std::string, std::shared_ptr<TSDescriptor>> TSDescriptorMap;
   TSDescriptorMap servers_by_id_;
+
+  LocationCache* location_cache_;
 
   DISALLOW_COPY_AND_ASSIGN(TSManager);
 };

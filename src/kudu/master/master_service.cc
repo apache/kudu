@@ -36,6 +36,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/hms/hms_catalog.h"
 #include "kudu/master/catalog_manager.h"
+#include "kudu/master/location_cache.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master_cert_authority.h"
@@ -57,7 +58,6 @@
 DECLARE_bool(hive_metastore_sasl_enabled);
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 DECLARE_string(hive_metastore_uris);
-DECLARE_string(location_mapping_cmd);
 
 DEFINE_int32(master_inject_latency_on_tablet_lookups_ms, 0,
              "Number of milliseconds that the master will sleep before responding to "
@@ -533,12 +533,12 @@ void MasterServiceImpl::ConnectToMaster(const ConnectToMasterRequestPB* /*req*/,
   }
 
   // Assign a location to the client if needed.
-  if (!FLAGS_location_mapping_cmd.empty() &&
+  auto* location_cache = server_->location_cache();
+  if (location_cache != nullptr &&
       PREDICT_TRUE(FLAGS_master_client_location_assignment_enabled)) {
     string location;
-    Status s = GetLocationFromLocationMappingCmd(FLAGS_location_mapping_cmd,
-                                                 rpc->remote_address().host(),
-                                                 &location);
+    const auto s = location_cache->GetLocation(
+        rpc->remote_address().host(), &location);
     if (s.ok()) {
       resp->set_client_location(location);
     } else {

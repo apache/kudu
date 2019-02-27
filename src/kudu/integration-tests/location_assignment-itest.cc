@@ -49,6 +49,8 @@
 DECLARE_int32(num_replicas);
 DECLARE_int32(num_tablet_servers);
 
+METRIC_DECLARE_counter(location_mapping_cache_hits);
+METRIC_DECLARE_counter(location_mapping_cache_queries);
 METRIC_DECLARE_counter(scans_started);
 
 METRIC_DECLARE_entity(tablet);
@@ -223,6 +225,74 @@ TEST_P(TsLocationAssignmentITest, Basic) {
   ASSERT_OK(cluster_->Restart());
   NO_FATALS(CheckLocationInfo());
   NO_FATALS(cluster_->AssertNoCrashes());
+}
+
+// Verify the behavior of the location mapping cache upon tablet server
+// registrations.
+TEST_P(TsLocationAssignmentITest, LocationMappingCacheOnTabletServerRestart) {
+  if (!AllowSlowTests()) {
+    LOG(WARNING) << "test is skipped; set KUDU_ALLOW_SLOW_TESTS=1 to run";
+    return;
+  }
+
+  NO_FATALS(StartCluster());
+  NO_FATALS(CheckLocationInfo());
+  NO_FATALS(cluster_->AssertNoCrashes());
+
+  const auto num_tablet_servers = cluster_->num_tablet_servers();
+
+  int64_t hits_before;
+  ASSERT_OK(itest::GetInt64Metric(
+      cluster_->leader_master()->bound_http_hostport(),
+      &METRIC_ENTITY_server,
+      nullptr,
+      &METRIC_location_mapping_cache_hits,
+      "value",
+      &hits_before));
+  ASSERT_EQ(0, hits_before);
+
+  int64_t queries_before;
+  ASSERT_OK(itest::GetInt64Metric(
+      cluster_->leader_master()->bound_http_hostport(),
+      &METRIC_ENTITY_server,
+      nullptr,
+      &METRIC_location_mapping_cache_queries,
+      "value",
+      &queries_before));
+  ASSERT_EQ(num_tablet_servers, queries_before);
+
+  for (auto idx = 0; idx < num_tablet_servers; ++idx) {
+    auto* ts = cluster_->tablet_server(idx);
+    ts->Shutdown();
+    ASSERT_OK(ts->Restart());
+  }
+
+  NO_FATALS(CheckLocationInfo());
+  NO_FATALS(cluster_->AssertNoCrashes());
+
+  ASSERT_EVENTUALLY([&]() {
+    int64_t hits_after;
+    ASSERT_OK(itest::GetInt64Metric(
+        cluster_->leader_master()->bound_http_hostport(),
+        &METRIC_ENTITY_server,
+        nullptr,
+        &METRIC_location_mapping_cache_hits,
+        "value",
+        &hits_after));
+    ASSERT_EQ(hits_before + num_tablet_servers, hits_after);
+  });
+
+  ASSERT_EVENTUALLY([&]() {
+    int64_t queries_after;
+    ASSERT_OK(itest::GetInt64Metric(
+        cluster_->leader_master()->bound_http_hostport(),
+        &METRIC_ENTITY_server,
+        nullptr,
+        &METRIC_location_mapping_cache_queries,
+        "value",
+        &queries_after));
+    ASSERT_EQ(queries_before + num_tablet_servers, queries_after);
+  });
 }
 
 INSTANTIATE_TEST_CASE_P(, TsLocationAssignmentITest,

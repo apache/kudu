@@ -53,17 +53,7 @@ class TabletServerAdminServiceProxy;
 
 namespace master {
 
-// Resolves 'host', which is the IP address or hostname of a tablet server or
-// client, into a location using the command 'cmd'. The result will be stored
-// in 'location', which must not be null. If there is an error running the
-// command or the output is invalid, an error Status will be returned.
-// TODO(wdberkeley): Refactor into a separate class and implement a caching
-// policy.
-// TODO(wdberkeley): Eventually we may want to get multiple locations at once
-// by giving the script multiple arguments (like Hadoop).
-Status GetLocationFromLocationMappingCmd(const std::string& cmd,
-                                         const std::string& host,
-                                         std::string* location);
+class LocationCache;
 
 // Master-side view of a single tablet server.
 //
@@ -73,6 +63,7 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
  public:
   static Status RegisterNew(const NodeInstancePB& instance,
                             const ServerRegistrationPB& registration,
+                            LocationCache* location_cache,
                             std::shared_ptr<TSDescriptor>* desc);
 
   virtual ~TSDescriptor() = default;
@@ -89,7 +80,8 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
 
   // Register this tablet server.
   Status Register(const NodeInstancePB& instance,
-                  const ServerRegistrationPB& registration);
+                  const ServerRegistrationPB& registration,
+                  LocationCache* location_cache);
 
   const std::string &permanent_uuid() const { return permanent_uuid_; }
   int64_t latest_seqno() const;
