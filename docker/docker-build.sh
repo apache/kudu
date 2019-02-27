@@ -105,10 +105,15 @@ TAG_HASH=${TAG_HASH:=0}
 DOCKER_CACHE_FROM=${DOCKER_CACHE_FROM:=""}
 
 VERSION=$(cat "$ROOT/version.txt")
-VCS_REF=$(git rev-parse --short HEAD)
+VCS_REF=$(git rev-parse --short HEAD || echo "")
 
 # Create the VERSION_TAG.
 if [[ "$VERSION" == *-SNAPSHOT ]]; then
+  if [[ "$VCS_REF" == "" ]]; then
+      echo "ERROR: Snapshot builds need to be built in a Git working directory"
+      exit 1
+  fi
+
   IS_RELEASE_VERSION=0
   VERSION_TAG="$VCS_REF"
 else
