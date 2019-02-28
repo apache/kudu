@@ -35,6 +35,7 @@ ADD_EXPORTABLE_LIBRARY(master_proto
 set(MASTER_SRCS
   catalog_manager.cc
   hms_notification_log_listener.cc
+  location_cache.cc
   master.cc
   master_cert_authority.cc
   master_options.cc
@@ -79,6 +80,7 @@ SET_KUDU_TEST_LINK_LIBS(
 
 ADD_KUDU_TEST(catalog_manager-test)
 ADD_KUDU_TEST(hms_notification_log_listener-test)
+ADD_KUDU_TEST(location_cache-test DATA_FILES ../scripts/first_argument.sh)
 ADD_KUDU_TEST(master-test RESOURCE_LOCK "master-web-port"
                           DATA_FILES ../scripts/first_argument.sh)
 ADD_KUDU_TEST(mini_master-test RESOURCE_LOCK "master-web-port")
