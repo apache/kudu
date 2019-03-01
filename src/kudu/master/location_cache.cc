@@ -32,6 +32,7 @@
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/subprocess.h"
 #include "kudu/util/trace.h"
 
@@ -127,6 +128,7 @@ Status LocationCache::GetLocationFromLocationMappingCmd(const string& cmd,
   }
   argv.push_back(key);
   string stderr, location_temp;
+  SCOPED_LOG_SLOW_EXECUTION(WARNING, 1000, "running location mapping command");
   Status s = Subprocess::Call(argv, /*stdin_in=*/"", &location_temp, &stderr);
   if (!s.ok()) {
     return Status::RuntimeError(
