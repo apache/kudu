@@ -28,6 +28,7 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <rapidjson/document.h>
+#include <rapidjson/error/en.h>
 
 #include "kudu/gutil/callback.h"
 #include "kudu/gutil/macros.h"
@@ -189,7 +190,8 @@ Status ParseMessage(const hive::NotificationEvent& event, Document* message) {
     return Status::NotSupported("unknown message format", event.messageFormat);
   }
   if (message->Parse<0>(event.message.c_str()).HasParseError()) {
-    return Status::Corruption("failed to parse message", message->GetParseError());
+    return Status::Corruption("failed to parse message",
+                              rapidjson::GetParseError_En(message->GetParseError()));
   }
   return Status::OK();
 }

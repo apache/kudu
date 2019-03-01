@@ -21,6 +21,7 @@
 #include <utility>
 
 #include <glog/logging.h>
+#include <rapidjson/error/en.h>
 #include <rapidjson/rapidjson.h>
 
 #include "kudu/gutil/port.h"
@@ -64,7 +65,8 @@ JsonReader::~JsonReader() {
 Status JsonReader::Init() {
   document_.Parse<0>(text_.c_str());
   if (document_.HasParseError()) {
-    return Status::Corruption("JSON text is corrupt", document_.GetParseError());
+    return Status::Corruption("JSON text is corrupt",
+                              rapidjson::GetParseError_En(document_.GetParseError()));
   }
   return Status::OK();
 }

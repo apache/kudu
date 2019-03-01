@@ -258,11 +258,12 @@ fetch_and_patch \
  $LIBEV_SOURCE \
  $LIBEV_PATCHLEVEL
 
-RAPIDJSON_PATCHLEVEL=0
+RAPIDJSON_PATCHLEVEL=1
 fetch_and_patch \
  rapidjson-${RAPIDJSON_VERSION}.zip \
  $RAPIDJSON_SOURCE \
- $RAPIDJSON_PATCHLEVEL
+ $RAPIDJSON_PATCHLEVEL \
+ "patch -p1 < $TP_DIR/patches/rapidjson-fix-signed-unsigned-conversion-error.patch"
 
 SQUEASEL_PATCHLEVEL=0
 fetch_and_patch \

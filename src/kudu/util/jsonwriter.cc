@@ -26,9 +26,11 @@
 #include <google/protobuf/descriptor.h>
 #include <google/protobuf/descriptor.pb.h>
 #include <google/protobuf/message.h>
-#include <rapidjson/writer.h>
+#include <rapidjson/encodings.h>
+// IWYU pragma: no_include <rapidjson/internal/../rapidjson.h>
 #include <rapidjson/prettywriter.h>
-#include <rapidjson/rapidjson.h>
+#include <rapidjson/rapidjson.h>  // IWYU pragma: keep
+#include <rapidjson/writer.h>
 
 #include "kudu/gutil/port.h"
 #include "kudu/util/faststring.h"
@@ -49,10 +51,11 @@ namespace kudu {
 // Since Squeasel exposes a stringstream as its interface, this is needed to avoid overcopying.
 class UTF8StringStreamBuffer {
  public:
+  typedef typename rapidjson::UTF8<>::Ch Ch;
   explicit UTF8StringStreamBuffer(std::ostringstream* out);
   ~UTF8StringStreamBuffer();
-  void Put(rapidjson::UTF8<>::Ch c);
 
+  void Put(Ch c);
   void Flush();
 
  private:
@@ -296,7 +299,7 @@ UTF8StringStreamBuffer::~UTF8StringStreamBuffer() {
   DCHECK_EQ(buf_.size(), 0) << "Forgot to flush!";
 }
 
-void UTF8StringStreamBuffer::Put(rapidjson::UTF8<>::Ch c) {
+void UTF8StringStreamBuffer::Put(Ch c) {
   buf_.push_back(c);
 }
 

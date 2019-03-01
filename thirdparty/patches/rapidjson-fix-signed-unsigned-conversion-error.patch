@@ -1,0 +1,218 @@
+commit 3cc77d5d635c2411f327cc4f262f37abb66ff43c
+Author: Zhihao Yuan <lichray@gmail.com>
+Date:   Wed Jan 18 16:16:07 2017 -0600
+
+    Treat signed-unsigned conversions as errors.
+
+diff --git a/include/rapidjson/encodedstream.h b/include/rapidjson/encodedstream.h
+index 14506838..223601c0 100644
+--- a/include/rapidjson/encodedstream.h
++++ b/include/rapidjson/encodedstream.h
+@@ -200,7 +200,7 @@ private:
+         // xx xx xx xx  UTF-8
+ 
+         if (!hasBOM_) {
+-            unsigned pattern = (c[0] ? 1 : 0) | (c[1] ? 2 : 0) | (c[2] ? 4 : 0) | (c[3] ? 8 : 0);
++            int pattern = (c[0] ? 1 : 0) | (c[1] ? 2 : 0) | (c[2] ? 4 : 0) | (c[3] ? 8 : 0);
+             switch (pattern) {
+             case 0x08: type_ = kUTF32BE; break;
+             case 0x0A: type_ = kUTF16BE; break;
+diff --git a/include/rapidjson/encodings.h b/include/rapidjson/encodings.h
+index baa7c2b1..ed7d44d3 100644
+--- a/include/rapidjson/encodings.h
++++ b/include/rapidjson/encodings.h
+@@ -157,7 +157,7 @@ struct UTF8 {
+         if (type >= 32) {
+             *codepoint = 0;
+         } else {
+-            *codepoint = (0xFF >> type) & static_cast<unsigned char>(c);
++            *codepoint = (0xFFu >> type) & static_cast<unsigned char>(c);
+         }
+         bool result = true;
+         switch (type) {
+@@ -283,7 +283,7 @@ struct UTF16 {
+             RAPIDJSON_ASSERT(codepoint <= 0x10FFFF);
+             unsigned v = codepoint - 0x10000;
+             os.Put(static_cast<typename OutputStream::Ch>((v >> 10) | 0xD800));
+-            os.Put((v & 0x3FF) | 0xDC00);
++            os.Put(static_cast<typename OutputStream::Ch>((v & 0x3FF) | 0xDC00));
+         }
+     }
+ 
+@@ -299,7 +299,7 @@ struct UTF16 {
+             RAPIDJSON_ASSERT(codepoint <= 0x10FFFF);
+             unsigned v = codepoint - 0x10000;
+             PutUnsafe(os, static_cast<typename OutputStream::Ch>((v >> 10) | 0xD800));
+-            PutUnsafe(os, (v & 0x3FF) | 0xDC00);
++            PutUnsafe(os, static_cast<typename OutputStream::Ch>((v & 0x3FF) | 0xDC00));
+         }
+     }
+ 
+diff --git a/include/rapidjson/internal/dtoa.h b/include/rapidjson/internal/dtoa.h
+index 8d6350e6..bf2e9b2e 100644
+--- a/include/rapidjson/internal/dtoa.h
++++ b/include/rapidjson/internal/dtoa.h
+@@ -41,7 +41,7 @@ inline void GrisuRound(char* buffer, int len, uint64_t delta, uint64_t rest, uin
+     }
+ }
+ 
+-inline unsigned CountDecimalDigit32(uint32_t n) {
++inline int CountDecimalDigit32(uint32_t n) {
+     // Simple pure C++ implementation was faster than __builtin_clz version in this situation.
+     if (n < 10) return 1;
+     if (n < 100) return 2;
+@@ -63,7 +63,7 @@ inline void DigitGen(const DiyFp& W, const DiyFp& Mp, uint64_t delta, char* buff
+     const DiyFp wp_w = Mp - W;
+     uint32_t p1 = static_cast<uint32_t>(Mp.f >> -one.e);
+     uint64_t p2 = Mp.f & (one.f - 1);
+-    unsigned kappa = CountDecimalDigit32(p1); // kappa in [0, 9]
++    int kappa = CountDecimalDigit32(p1); // kappa in [0, 9]
+     *len = 0;
+ 
+     while (kappa > 0) {
+@@ -102,8 +102,8 @@ inline void DigitGen(const DiyFp& W, const DiyFp& Mp, uint64_t delta, char* buff
+         kappa--;
+         if (p2 < delta) {
+             *K += kappa;
+-            int index = -static_cast<int>(kappa);
+-            GrisuRound(buffer, *len, delta, p2, one.f, wp_w.f * (index < 9 ? kPow10[-static_cast<int>(kappa)] : 0));
++            int index = -kappa;
++            GrisuRound(buffer, *len, delta, p2, one.f, wp_w.f * (index < 9 ? kPow10[index] : 0));
+             return;
+         }
+     }
+diff --git a/include/rapidjson/internal/ieee754.h b/include/rapidjson/internal/ieee754.h
+index 82bb0b99..c2684ba2 100644
+--- a/include/rapidjson/internal/ieee754.h
++++ b/include/rapidjson/internal/ieee754.h
+@@ -48,13 +48,13 @@ public:
+     int IntegerExponent() const { return (IsNormal() ? Exponent() : kDenormalExponent) - kSignificandSize; }
+     uint64_t ToBias() const { return (u_ & kSignMask) ? ~u_ + 1 : u_ | kSignMask; }
+ 
+-    static unsigned EffectiveSignificandSize(int order) {
++    static int EffectiveSignificandSize(int order) {
+         if (order >= -1021)
+             return 53;
+         else if (order <= -1074)
+             return 0;
+         else
+-            return static_cast<unsigned>(order) + 1074;
++            return order + 1074;
+     }
+ 
+ private:
+diff --git a/include/rapidjson/internal/regex.h b/include/rapidjson/internal/regex.h
+index 936b7144..1369ea26 100644
+--- a/include/rapidjson/internal/regex.h
++++ b/include/rapidjson/internal/regex.h
+@@ -688,8 +688,8 @@ private:
+             bool matched = AddState(l, s.out);
+             return AddState(l, s.out1) || matched;
+         }
+-        else if (!(stateSet_[index >> 5] & (1 << (index & 31)))) {
+-            stateSet_[index >> 5] |= (1 << (index & 31));
++        else if (!(stateSet_[index >> 5] & (1u << (index & 31)))) {
++            stateSet_[index >> 5] |= (1u << (index & 31));
+             *l.template PushUnsafe<SizeType>() = index;
+         }
+         return s.out == kRegexInvalidState; // by using PushUnsafe() above, we can ensure s is not validated due to reallocation.
+diff --git a/include/rapidjson/internal/strtod.h b/include/rapidjson/internal/strtod.h
+index 289c413b..adf49e34 100644
+--- a/include/rapidjson/internal/strtod.h
++++ b/include/rapidjson/internal/strtod.h
+@@ -140,8 +140,8 @@ inline bool StrtodDiyFp(const char* decimals, size_t length, size_t decimalPosit
+         significand++;
+ 
+     size_t remaining = length - i;
+-    const unsigned kUlpShift = 3;
+-    const unsigned kUlp = 1 << kUlpShift;
++    const int kUlpShift = 3;
++    const int kUlp = 1 << kUlpShift;
+     int64_t error = (remaining == 0) ? 0 : kUlp / 2;
+ 
+     DiyFp v(significand, 0);
+@@ -177,17 +177,17 @@ inline bool StrtodDiyFp(const char* decimals, size_t length, size_t decimalPosit
+     v = v.Normalize();
+     error <<= oldExp - v.e;
+ 
+-    const unsigned effectiveSignificandSize = Double::EffectiveSignificandSize(64 + v.e);
+-    unsigned precisionSize = 64 - effectiveSignificandSize;
++    const int effectiveSignificandSize = Double::EffectiveSignificandSize(64 + v.e);
++    int precisionSize = 64 - effectiveSignificandSize;
+     if (precisionSize + kUlpShift >= 64) {
+-        unsigned scaleExp = (precisionSize + kUlpShift) - 63;
++        int scaleExp = (precisionSize + kUlpShift) - 63;
+         v.f >>= scaleExp;
+         v.e += scaleExp; 
+-        error = (error >> scaleExp) + 1 + static_cast<int>(kUlp);
++        error = (error >> scaleExp) + 1 + kUlp;
+         precisionSize -= scaleExp;
+     }
+ 
+-    DiyFp rounded(v.f >> precisionSize, v.e + static_cast<int>(precisionSize));
++    DiyFp rounded(v.f >> precisionSize, v.e + precisionSize);
+     const uint64_t precisionBits = (v.f & ((uint64_t(1) << precisionSize) - 1)) * kUlp;
+     const uint64_t halfWay = (uint64_t(1) << (precisionSize - 1)) * kUlp;
+     if (precisionBits >= halfWay + static_cast<unsigned>(error)) {
+diff --git a/include/rapidjson/istreamwrapper.h b/include/rapidjson/istreamwrapper.h
+index f5fe2897..8639c8c3 100644
+--- a/include/rapidjson/istreamwrapper.h
++++ b/include/rapidjson/istreamwrapper.h
+@@ -54,7 +54,7 @@ public:
+ 
+     Ch Peek() const { 
+         typename StreamType::int_type c = stream_.peek();
+-        return RAPIDJSON_LIKELY(c != StreamType::traits_type::eof()) ? static_cast<Ch>(c) : '\0';
++        return RAPIDJSON_LIKELY(c != StreamType::traits_type::eof()) ? static_cast<Ch>(c) : static_cast<Ch>('\0');
+     }
+ 
+     Ch Take() { 
+diff --git a/include/rapidjson/pointer.h b/include/rapidjson/pointer.h
+index 4d6391f9..bc7acfd0 100644
+--- a/include/rapidjson/pointer.h
++++ b/include/rapidjson/pointer.h
+@@ -274,7 +274,7 @@ public:
+         else {
+             Ch name[21];
+             for (size_t i = 0; i <= length; i++)
+-                name[i] = buffer[i];
++                name[i] = static_cast<Ch>(buffer[i]);
+             Token token = { name, length, index };
+             return Append(token, allocator);
+         }
+@@ -1029,8 +1029,8 @@ private:
+             unsigned char u = static_cast<unsigned char>(c);
+             static const char hexDigits[16] = { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F' };
+             os_.Put('%');
+-            os_.Put(hexDigits[u >> 4]);
+-            os_.Put(hexDigits[u & 15]);
++            os_.Put(static_cast<typename OutputStream::Ch>(hexDigits[u >> 4]));
++            os_.Put(static_cast<typename OutputStream::Ch>(hexDigits[u & 15]));
+         }
+     private:
+         OutputStream& os_;
+diff --git a/include/rapidjson/schema.h b/include/rapidjson/schema.h
+index 4760d1b4..3f81d9bb 100644
+--- a/include/rapidjson/schema.h
++++ b/include/rapidjson/schema.h
+@@ -1263,7 +1263,7 @@ struct TokenHelper {
+         char buffer[21];
+         size_t length = static_cast<size_t>((sizeof(SizeType) == 4 ? u32toa(index, buffer) : u64toa(index, buffer)) - buffer);
+         for (size_t i = 0; i < length; i++)
+-            *documentStack.template Push<Ch>() = buffer[i];
++            *documentStack.template Push<Ch>() = static_cast<Ch>(buffer[i]);
+     }
+ };
+ 
+diff --git a/include/rapidjson/writer.h b/include/rapidjson/writer.h
+index 8f6e174f..874c555c 100644
+--- a/include/rapidjson/writer.h
++++ b/include/rapidjson/writer.h
+@@ -352,7 +352,7 @@ protected:
+         char* end = internal::dtoa(d, buffer, maxDecimalPlaces_);
+         PutReserve(*os_, static_cast<size_t>(end - buffer));
+         for (char* p = buffer; p != end; ++p)
+-            PutUnsafe(*os_, static_cast<typename TargetEncoding::Ch>(*p));
++            PutUnsafe(*os_, static_cast<typename OutputStream::Ch>(*p));
+         return true;
+     }

@@ -43,7 +43,7 @@ TEST(JsonReaderTest, Corrupt) {
   Status s = r.Init();
   ASSERT_TRUE(s.IsCorruption());
   ASSERT_STR_CONTAINS(
-      s.ToString(), "JSON text is corrupt: Text only contains white space(s)");
+      s.ToString(), "JSON text is corrupt: The document is empty.");
 }
 
 TEST(JsonReaderTest, Empty) {
@@ -144,13 +144,6 @@ TEST(JsonReaderTest, LessBasic) {
 }
 
 TEST(JsonReaderTest, SignedAndUnsignedInts) {
-  // The rapidjson code has some improper handling of the min int32 and min
-  // int64 that exposes UB.
-  #if defined(ADDRESS_SANITIZER)
-    LOG(WARNING) << "this test is skipped in ASAN builds";
-    return;
-  #endif
-
   constexpr auto kMaxInt32 = std::numeric_limits<int32_t>::max();
   constexpr auto kMaxInt64 = std::numeric_limits<int64_t>::max();
   constexpr auto kMaxUint32 = std::numeric_limits<uint32_t>::max();

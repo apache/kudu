@@ -70,7 +70,7 @@ class JsonWriter {
 
   // Convert the given protobuf message to JSON.
   // The output respects redaction for 'string' and 'bytes' fields.
-  void Protobuf(const google::protobuf::Message& message);
+  void Protobuf(const google::protobuf::Message& pb);
 
   template<typename T>
   void Value(const T& val);

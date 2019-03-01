@@ -4011,7 +4011,7 @@ TEST_F(ToolTest, TestParseStacks) {
       &stderr);
   ASSERT_TRUE(s.IsRuntimeError());
   ASSERT_STR_MATCHES(stderr, "failed to parse stacks from .*: at line 1: "
-                     "invalid JSON payload.*lacks ending quotation");
+                             "invalid JSON payload.*Missing a closing quotation mark in string");
 }
 
 class Is343ReplicaUtilTest :
