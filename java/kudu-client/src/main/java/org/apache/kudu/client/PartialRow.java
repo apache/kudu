@@ -1515,7 +1515,8 @@ public class PartialRow {
     int offset = lower.getSchema().getColumnOffset(index);
 
     switch (type) {
-      case BOOL: return lower.rowAlloc[offset] + 1 == upper.rowAlloc[offset];
+      case BOOL:
+        return lower.rowAlloc[offset] + 1 == upper.rowAlloc[offset];
       case INT8: {
         byte val = lower.rowAlloc[offset];
         return val != Byte.MAX_VALUE && val + 1 == upper.rowAlloc[offset];

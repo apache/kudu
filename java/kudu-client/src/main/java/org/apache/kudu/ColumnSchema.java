@@ -43,6 +43,7 @@ public class ColumnSchema {
   private final CompressionAlgorithm compressionAlgorithm;
   private final ColumnTypeAttributes typeAttributes;
   private final int typeSize;
+  private final Common.DataType wireType;
 
   /**
    * Specifies the encoding of data for a column on disk.
@@ -100,7 +101,8 @@ public class ColumnSchema {
 
   private ColumnSchema(String name, Type type, boolean key, boolean nullable,
                        Object defaultValue, int desiredBlockSize, Encoding encoding,
-                       CompressionAlgorithm compressionAlgorithm, ColumnTypeAttributes typeAttributes) {
+                       CompressionAlgorithm compressionAlgorithm,
+                       ColumnTypeAttributes typeAttributes, Common.DataType wireType) {
     this.name = name;
     this.type = type;
     this.key = key;
@@ -111,6 +113,7 @@ public class ColumnSchema {
     this.compressionAlgorithm = compressionAlgorithm;
     this.typeAttributes = typeAttributes;
     this.typeSize = type.getSize(typeAttributes);
+    this.wireType = wireType;
   }
 
   /**
@@ -186,6 +189,14 @@ public class ColumnSchema {
   }
 
   /**
+   * Get the column's underlying DataType.
+   */
+  @InterfaceAudience.Private
+  public Common.DataType getWireType() {
+    return wireType;
+  }
+
+  /**
    * The size of this type in bytes on the wire.
    * @return A size
    */
@@ -233,10 +244,11 @@ public class ColumnSchema {
     private boolean key = false;
     private boolean nullable = false;
     private Object defaultValue = null;
-    private int blockSize = 0;
+    private int desiredBlockSize = 0;
     private Encoding encoding = null;
     private CompressionAlgorithm compressionAlgorithm = null;
     private ColumnTypeAttributes typeAttributes = null;
+    private Common.DataType wireType = null;
 
     /**
      * Constructor for the required parameters.
@@ -246,6 +258,23 @@ public class ColumnSchema {
     public ColumnSchemaBuilder(String name, Type type) {
       this.name = name;
       this.type = type;
+    }
+
+    /**
+     * Constructor to copy an existing columnSchema
+     * @param that the columnSchema to copy
+     */
+    public ColumnSchemaBuilder(ColumnSchema that) {
+      this.name = that.name;
+      this.type = that.type;
+      this.key = that.key;
+      this.nullable = that.nullable;
+      this.defaultValue = that.defaultValue;
+      this.desiredBlockSize = that.desiredBlockSize;
+      this.encoding = that.encoding;
+      this.compressionAlgorithm = that.compressionAlgorithm;
+      this.typeAttributes = that.typeAttributes;
+      this.wireType = that.wireType;
     }
 
     /**
@@ -300,12 +329,12 @@ public class ColumnSchema {
      *
      * It's recommended that this not be set any lower than 4096 (4KB) or higher
      * than 1048576 (1MB).
-     * @param blockSize the desired block size, in bytes
+     * @param desiredBlockSize the desired block size, in bytes
      * @return this instance
      * <!-- TODO(KUDU-1107): move the above info to docs -->
      */
-    public ColumnSchemaBuilder desiredBlockSize(int blockSize) {
-      this.blockSize = blockSize;
+    public ColumnSchemaBuilder desiredBlockSize(int desiredBlockSize) {
+      this.desiredBlockSize = desiredBlockSize;
       return this;
     }
 
@@ -340,13 +369,30 @@ public class ColumnSchema {
     }
 
     /**
+     * Allows an alternate {@link Common.DataType} to override the {@link Type}
+     * when serializing the ColumnSchema on the wire.
+     * This is useful for virtual columns specified by their type such as
+     * {@link Common.DataType#IS_DELETED}.
+     */
+    @InterfaceAudience.Private
+    public ColumnSchemaBuilder wireType(Common.DataType wireType) {
+      this.wireType = wireType;
+      return this;
+    }
+
+    /**
      * Builds a {@link ColumnSchema} using the passed parameters.
      * @return a new {@link ColumnSchema}
      */
     public ColumnSchema build() {
+      // Set the wire type if it wasn't explicitly set.
+      if (wireType == null) {
+        this.wireType = type.getDataType(typeAttributes);
+      }
       return new ColumnSchema(name, type,
                               key, nullable, defaultValue,
-                              blockSize, encoding, compressionAlgorithm, typeAttributes);
+                              desiredBlockSize, encoding, compressionAlgorithm,
+                              typeAttributes, wireType);
     }
   }
 }

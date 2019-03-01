@@ -212,6 +212,10 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
           if (message.hasSnapTimestamp()) {
             builder.snapshotTimestampRaw(message.getSnapTimestamp());
           }
+          // Set the diff scan timestamps if they are set.
+          if (message.hasSnapStartTimestamp()) {
+            builder.diffScan(message.getSnapStartTimestamp(), message.getSnapTimestamp());
+          }
           break;
         }
         case READ_LATEST: {
@@ -366,10 +370,14 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
         proto.setPropagatedTimestamp(client.getLastPropagatedTimestamp());
       }
 
-      // If the mode is set to read on snapshot set the snapshot timestamp.
-      if (readMode == AsyncKuduScanner.ReadMode.READ_AT_SNAPSHOT &&
-          htTimestamp != AsyncKuduClient.NO_TIMESTAMP) {
-        proto.setSnapTimestamp(htTimestamp);
+      // If the mode is set to read on snapshot set the snapshot timestamps.
+      if (readMode == AsyncKuduScanner.ReadMode.READ_AT_SNAPSHOT) {
+        if (htTimestamp != AsyncKuduClient.NO_TIMESTAMP) {
+          proto.setSnapTimestamp(htTimestamp);
+        }
+        if (startTimestamp != AsyncKuduClient.NO_TIMESTAMP) {
+          proto.setSnapStartTimestamp(startTimestamp);
+        }
       }
 
       proto.setCacheBlocks(cacheBlocks);

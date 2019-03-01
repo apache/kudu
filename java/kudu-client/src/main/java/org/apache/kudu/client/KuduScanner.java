@@ -206,8 +206,8 @@ public class KuduScanner implements Iterable<RowResult> {
       return new KuduScanner(new AsyncKuduScanner(
           client, table, projectedColumnNames, projectedColumnIndexes, readMode, isFaultTolerant,
           scanRequestTimeout, predicates, limit, cacheBlocks, prefetching, lowerBoundPrimaryKey,
-          upperBoundPrimaryKey, htTimestamp, batchSizeBytes, PartitionPruner.create(this),
-          replicaSelection, keepAlivePeriodMs));
+          upperBoundPrimaryKey, startTimestamp, htTimestamp, batchSizeBytes,
+          PartitionPruner.create(this), replicaSelection, keepAlivePeriodMs));
     }
   }
 }

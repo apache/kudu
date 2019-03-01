@@ -80,6 +80,17 @@ public class TimestampUtil {
   /**
    * Transforms a timestamp into a string, whose formatting and timezone is consistent
    * across Kudu.
+   * @param timestamp the timestamp
+   * @return a string, in the format: YYYY-MM-DDTHH:MM:SS.ssssssZ
+   */
+  public static String timestampToString(Timestamp timestamp) {
+    long micros = timestampToMicros(timestamp);
+    return timestampToString(micros);
+  }
+
+  /**
+   * Transforms a timestamp into a string, whose formatting and timezone is consistent
+   * across Kudu.
    * @param micros the timestamp, in microseconds
    * @return a string, in the format: YYYY-MM-DDTHH:MM:SS.ssssssZ
    */

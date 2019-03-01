@@ -62,10 +62,22 @@ public class DataGenerator {
    * @param row the PartialRow to randomize.
    */
   public void randomizeRow(PartialRow row) {
+    this.randomizeRow(row, true);
+  }
+
+  /**
+   * Randomizes the fields in a given PartialRow.
+   * @param row the PartialRow to randomize.
+   * @param randomizeKeys true if the key columns should be randomized.
+   */
+  public void randomizeRow(PartialRow row, boolean randomizeKeys) {
     Schema schema = row.getSchema();
     List<ColumnSchema> columns = schema.getColumns();
     for (int i = 0; i < columns.size(); i++) {
       ColumnSchema col = columns.get(i);
+      if (col.isKey() && !randomizeKeys) {
+        continue;
+      }
       Type type = col.getType();
       if (col.isNullable() && random.nextFloat() <= nullRate) {
         // Sometimes set nullable columns to null.

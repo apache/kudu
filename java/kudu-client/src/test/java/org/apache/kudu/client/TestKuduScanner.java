@@ -17,34 +17,52 @@
 package org.apache.kudu.client;
 
 import org.apache.kudu.ColumnSchema;
+import org.apache.kudu.Common;
+import org.apache.kudu.Common.DataType;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
+import org.apache.kudu.client.Operation.ChangeType;
 import org.apache.kudu.test.ClientTestUtil;
 import org.apache.kudu.test.KuduTestHarness;
 import org.apache.kudu.test.RandomUtils;
 import org.apache.kudu.util.DataGenerator;
+import org.apache.kudu.util.Pair;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Random;
 import java.util.Set;
 
+import static org.apache.kudu.client.AsyncKuduScanner.DEFAULT_IS_DELETED_COL_NAME;
 import static org.apache.kudu.test.ClientTestUtil.getBasicCreateTableOptions;
+import static org.apache.kudu.test.ClientTestUtil.getBasicSchema;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 
 public class TestKuduScanner {
+  private static final Logger LOG = LoggerFactory.getLogger(TestScannerMultiTablet.class);
+
   private static final String tableName = "TestKuduScanner";
 
-  private static final Schema basicSchema = ClientTestUtil.getBasicSchema();
+  private static final int DIFF_FLUSH_SEC = 1;
 
   private KuduClient client;
+  private Random random;
+  private DataGenerator generator;
 
   @Rule
   public KuduTestHarness harness = new KuduTestHarness();
@@ -52,11 +70,15 @@ public class TestKuduScanner {
   @Before
   public void setUp() {
     client = harness.getClient();
+    random = RandomUtils.getRandom();
+    generator = new DataGenerator.DataGeneratorBuilder()
+        .random(random)
+        .build();
   }
 
   @Test(timeout = 100000)
   public void testIterable() throws Exception {
-    KuduTable table = client.createTable(tableName, basicSchema, getBasicCreateTableOptions());
+    KuduTable table = client.createTable(tableName, getBasicSchema(), getBasicCreateTableOptions());
     DataGenerator generator = new DataGenerator.DataGeneratorBuilder()
         .random(RandomUtils.getRandom())
         .build();
@@ -151,6 +173,235 @@ public class TestKuduScanner {
         Thread.sleep(scannerTtlMs / 2); // Sleep for half the ttl.
         i++;
       }
+    }
+  }
+
+  @Test(timeout = 100000)
+  @KuduTestHarness.TabletServerConfig(flags = { "--flush_threshold_secs=" + DIFF_FLUSH_SEC })
+  public void testDiffScan() throws Exception {
+    Schema schema = new Schema(Arrays.asList(
+        new ColumnSchema.ColumnSchemaBuilder("key", Type.INT32).key(true).build(),
+        // Include a column with the default IS_DELETED column name to test collision handling.
+        new ColumnSchema.ColumnSchemaBuilder(DEFAULT_IS_DELETED_COL_NAME, Type.INT32).build()
+    ));
+
+    KuduTable table = client.createTable(tableName, schema, getBasicCreateTableOptions());
+
+    // Generate some rows before the start time.
+    int beforeBounds = 5;
+    List<Operation> beforeOps = generateMutationOperations(table, random.nextInt(beforeBounds),
+        random.nextInt(beforeBounds), random.nextInt(beforeBounds));
+    Map<Integer, ChangeType> before = applyOperations(beforeOps);
+    LOG.info("Before: {}", before);
+
+    // Set the start timestamp after the initial mutations by getting the propagated timestamp,
+    // and incrementing by 1.
+    long startHT = client.getLastPropagatedTimestamp() + 1;
+    LOG.info("startHT: {}", startHT);
+
+    // Generate row mutations.
+    int mutationBounds = 10;
+    int numInserts = random.nextInt(mutationBounds);
+    int numUpdates = random.nextInt(mutationBounds);
+    int numDeletes = random.nextInt(mutationBounds);
+    List<Operation> operations =
+        generateMutationOperations(table, numInserts, numUpdates, numDeletes);
+    Map<Integer, ChangeType> mutations = applyOperations(operations);
+    LOG.info("Mutations: {}", mutations);
+
+    // Set the end timestamp after the test mutations by getting the propagated timestamp,
+    // and incrementing by 1.
+    long endHT = client.getLastPropagatedTimestamp() + 1;
+    LOG.info("endHT: {}", endHT);
+
+    // Generate Some Rows after the end time.
+    int afterBounds = 5;
+    List<Operation> afterOps = generateMutationOperations(table, random.nextInt(afterBounds),
+        random.nextInt(afterBounds), random.nextInt(afterBounds));
+    Map<Integer, ChangeType> after = applyOperations(afterOps);
+    LOG.info("After: {}", after);
+
+    // Diff scan the time range.
+    // Pass through the scan token API to ensure serialization of tokens works too.
+    List<KuduScanToken> tokens = client.newScanTokenBuilder(table)
+        .diffScan(startHT, endHT)
+        .build();
+    List<RowResult> results = new ArrayList<>();
+    for (KuduScanToken token : tokens) {
+      KuduScanner scanner = KuduScanToken.deserializeIntoScanner(token.serialize(), client);
+
+      // Verify the IS_DELETED column is appended at the end of the projection.
+      Schema projection = scanner.getProjectionSchema();
+      int isDeletedIndex = projection.getIsDeletedIndex();
+      assertEquals(projection.getColumnCount() - 1, isDeletedIndex);
+      // Verify the IS_DELETED column has the correct types.
+      ColumnSchema isDeletedCol = projection.getColumnByIndex(isDeletedIndex);
+      assertEquals(Type.BOOL, isDeletedCol.getType());
+      assertEquals(DataType.IS_DELETED, isDeletedCol.getWireType());
+      // Verify the IS_DELETED column is named to avoid collision.
+      assertEquals(projection.getColumnByIndex(isDeletedIndex),
+          projection.getColumn(DEFAULT_IS_DELETED_COL_NAME + "_"));
+
+      for (RowResult row : scanner) {
+        results.add(row);
+      }
+    }
+    assertEquals(mutations.size(), results.size());
+
+    // Count the results and verify their change type.
+    int resultNumInserts = 0;
+    int resultNumUpdates = 0;
+    int resultNumDeletes = 0;
+    int resultExtra = 0;
+    for (RowResult result : results) {
+      Integer key = result.getInt(0);
+      LOG.info("Processing key {}", key);
+      ChangeType type = mutations.get(key);
+      if (type == ChangeType.INSERT) {
+        assertFalse(result.isDeleted());
+        resultNumInserts++;
+      } else if (type == ChangeType.UPDATE) {
+        assertFalse(result.isDeleted());
+        resultNumUpdates++;
+      } else if (type == ChangeType.DELETE) {
+        assertTrue(result.isDeleted());
+        resultNumDeletes++;
+      } else {
+        // The key was not found in the mutations map. This means that we somehow managed to scan
+        // a row that was never mutated. It's an error and will trigger an assert below.
+        assertNull(type);
+        resultExtra++;
+      }
+    }
+    assertEquals(numInserts, resultNumInserts);
+    assertEquals(numUpdates, resultNumUpdates);
+    assertEquals(numDeletes, resultNumDeletes);
+    assertEquals(0, resultExtra);
+  }
+
+  /**
+   * Applies a list of Operations and returns the final ChangeType for each key.
+   * @param operations the operations to apply.
+   * @return a map of each key and its final ChangeType.
+   */
+  private Map<Integer, ChangeType> applyOperations(List<Operation> operations) throws Exception {
+    Map<Integer, ChangeType> results = new HashMap<>();
+    KuduSession session = client.newSession();
+    // On some runs, wait long enough to flush at the start.
+    if (random.nextBoolean()) {
+      LOG.info("Waiting for a flush at the start of applyOperations");
+      Thread.sleep(DIFF_FLUSH_SEC + 1);
+    }
+
+    // Pick an int as a flush indicator so we flush once on average while applying operations.
+    int flushInt = random.nextInt(operations.size());
+    for (Operation op : operations) {
+      // On some runs, wait long enough to flush while applying operations.
+      if (random.nextInt(operations.size()) == flushInt) {
+        LOG.info("Waiting for a flush in the middle of applyOperations");
+        Thread.sleep(DIFF_FLUSH_SEC + 1);
+      }
+      OperationResponse resp = session.apply(op);
+      if (resp.hasRowError()) {
+        LOG.error("Could not mutate row: " + resp.getRowError().getErrorStatus());
+      }
+      assertFalse(resp.hasRowError());
+      results.put(op.getRow().getInt(0), op.getChangeType());
+    }
+    return results;
+  }
+
+  /**
+   * Generates a list of random mutation operations. Any unique row, identified by
+   * it's key, could have a random number of operations/mutations. However, the
+   * target count of numInserts, numUpdates and numDeletes will always be achieved
+   * if the entire list of operations is processed.
+   *
+   * @param table the table to generate operations for
+   * @param numInserts The number of row mutations to end with an insert
+   * @param numUpdates The number of row mutations to end with an update
+   * @param numDeletes The number of row mutations to end with an delete
+   * @return a list of random mutation operations
+   */
+  private List<Operation> generateMutationOperations(
+      KuduTable table, int numInserts, int numUpdates, int numDeletes) throws Exception {
+
+    List<Operation> results = new ArrayList<>();
+    List<MutationState> unfinished = new ArrayList<>();
+    int minMutationsBound = 5;
+
+    // Generate Operations to initialize all of the row with inserts.
+    List<Pair<ChangeType, Integer>> changeCounts = Arrays.asList(
+        new Pair<>(ChangeType.INSERT, numInserts),
+        new Pair<>(ChangeType.UPDATE, numUpdates),
+        new Pair<>(ChangeType.DELETE, numDeletes));
+    Set<Integer> keys = new HashSet<>();
+    for (Pair<ChangeType, Integer> changeCount : changeCounts) {
+      ChangeType type = changeCount.getFirst();
+      int count = changeCount.getSecond();
+      for (int i = 0; i < count; i++) {
+        // Generate a random insert.
+        Insert insert = table.newInsert();
+        PartialRow row = insert.getRow();
+        generator.randomizeRow(row);
+        int key = row.getInt(0);
+        // Add the insert to the results.
+        results.add(insert);
+        // Initialize the unfinished MutationState.
+        unfinished.add(new MutationState(key, type, random.nextInt(minMutationsBound)));
+      }
+    }
+
+    // Randomly pull from the unfinished list, mutate it and add that operation to the results.
+    // If it has been mutated at least the minimum number of times, remove it from the unfinished
+    // list.
+    while (!unfinished.isEmpty()) {
+      // Get a random row to mutate.
+      int index = random.nextInt(unfinished.size());
+      MutationState state = unfinished.get(index);
+
+      // If the row is done, remove it from unfinished and continue.
+      if (state.numMutations >= state.minMutations && state.currentType == state.endType) {
+        unfinished.remove(index);
+        continue;
+      }
+
+      // Otherwise, generate an operation to mutate the row based on it's current ChangeType.
+      //    insert -> update|delete
+      //    update -> update|delete
+      //    delete -> insert
+      Operation op;
+      if (state.currentType == ChangeType.INSERT || state.currentType == ChangeType.UPDATE) {
+        op = (random.nextBoolean()) ? table.newUpdate() : table.newDelete();
+      } else {
+        // Must be a delete, so we need an insert next.
+        op = table.newInsert();
+      }
+      PartialRow row = table.getSchema().newPartialRow();
+      row.addInt(0, state.key);
+      generator.randomizeRow(row, /* randomizeKeys */ false);
+      op.setRow(row);
+      results.add(op);
+
+      state.currentType = op.getChangeType();
+      state.numMutations++;
+    }
+
+    return results;
+  }
+
+  private static class MutationState {
+    final int key;
+    final ChangeType endType;
+    final int minMutations;
+
+    ChangeType currentType = ChangeType.INSERT;
+    int numMutations = 0;
+
+    MutationState(int key, ChangeType endType, int minMutations) {
+      this.key = key;
+      this.endType = endType;
+      this.minMutations = minMutations;
     }
   }
 }

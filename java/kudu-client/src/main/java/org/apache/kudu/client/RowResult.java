@@ -20,6 +20,7 @@ package org.apache.kudu.client;
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.sql.Timestamp;
+import java.util.Arrays;
 import java.util.BitSet;
 
 import org.apache.kudu.util.TimestampUtil;
@@ -248,10 +249,8 @@ public class RowResult {
   public long getLong(int columnIndex) {
     checkValidColumn(columnIndex);
     checkNull(columnIndex);
-    // Can't check type because this could be a long, string, or Timestamp.
-    return Bytes.getLong(this.rowData.getRawArray(),
-                         this.rowData.getRawOffset() +
-                             getCurrentRowDataOffsetForColumn(columnIndex));
+    checkType(columnIndex, Type.INT64, Type.UNIXTIME_MICROS);
+    return getLongOrOffset(columnIndex);
   }
 
   /**
@@ -366,10 +365,7 @@ public class RowResult {
     checkValidColumn(columnIndex);
     checkNull(columnIndex);
     checkType(columnIndex, Type.UNIXTIME_MICROS);
-    ColumnSchema column = schema.getColumnByIndex(columnIndex);
-    long micros = Bytes.getLong(this.rowData.getRawArray(),
-        this.rowData.getRawOffset() +
-            getCurrentRowDataOffsetForColumn(columnIndex));
+    long micros = getLongOrOffset(columnIndex);
     return TimestampUtil.microsToTimestamp(micros);
   }
 
@@ -405,8 +401,8 @@ public class RowResult {
     checkValidColumn(columnIndex);
     checkNull(columnIndex);
     checkType(columnIndex, Type.STRING);
-    // C++ puts a Slice in rowData which is 16 bytes long for simplity, but we only support ints.
-    long offset = getLong(columnIndex);
+    // C++ puts a Slice in rowData which is 16 bytes long for simplicity, but we only support ints.
+    long offset = getLongOrOffset(columnIndex);
     long length = rowData.getLong(getCurrentRowDataOffsetForColumn(columnIndex) + 8);
     assert offset < Integer.MAX_VALUE;
     assert length < Integer.MAX_VALUE;
@@ -441,7 +437,7 @@ public class RowResult {
     checkNull(columnIndex);
     // C++ puts a Slice in rowData which is 16 bytes long for simplicity,
     // but we only support ints.
-    long offset = getLong(columnIndex);
+    long offset = getLongOrOffset(columnIndex);
     long length = rowData.getLong(getCurrentRowDataOffsetForColumn(columnIndex) + 8);
     assert offset < Integer.MAX_VALUE;
     assert length < Integer.MAX_VALUE;
@@ -483,12 +479,24 @@ public class RowResult {
     checkType(columnIndex, Type.BINARY);
     // C++ puts a Slice in rowData which is 16 bytes long for simplicity,
     // but we only support ints.
-    long offset = getLong(columnIndex);
+    long offset = getLongOrOffset(columnIndex);
     long length = rowData.getLong(getCurrentRowDataOffsetForColumn(columnIndex) + 8);
     assert offset < Integer.MAX_VALUE;
     assert length < Integer.MAX_VALUE;
     return ByteBuffer.wrap(indirectData.getRawArray(), indirectData.getRawOffset() + (int) offset,
         (int) length);
+  }
+
+  /**
+   * Returns the long column value if the column type is INT64 or UNIXTIME_MICROS.
+   * Returns the column's offset into the indirectData if the column type is BINARY or STRING.
+   * @param columnIndex Column index in the schema
+   * @return a long value for the column
+   */
+  long getLongOrOffset(int columnIndex) {
+    return Bytes.getLong(this.rowData.getRawArray(),
+        this.rowData.getRawOffset() +
+            getCurrentRowDataOffsetForColumn(columnIndex));
   }
 
   /**
@@ -589,6 +597,16 @@ public class RowResult {
   }
 
   /**
+   * @return the value of the IS_DELETED virtual column
+   * @throws IllegalStateException if no IS_DELETED virtual column exists
+   */
+  @InterfaceAudience.Private
+  @InterfaceStability.Unstable
+  public boolean isDeleted() {
+    return getBoolean(schema.getIsDeletedIndex());
+  }
+
+  /**
    * Get the type of a column in this result.
    * @param columnName name of the column
    * @return a type
@@ -639,14 +657,17 @@ public class RowResult {
     }
   }
 
-  private void checkType(int columnIndex, Type expectedType) {
+  private void checkType(int columnIndex, Type... types) {
     ColumnSchema columnSchema = schema.getColumnByIndex(columnIndex);
     Type columnType = columnSchema.getType();
-    if (!columnType.equals(expectedType)) {
-      throw new IllegalArgumentException("Column (name: " + columnSchema.getName() +
-          ", index: " + columnIndex + ") is of type " +
-          columnType.getName() + " but was requested as a type " + expectedType.getName());
+    for (Type type : types) {
+      if (columnType.equals(type)) {
+        return;
+      }
     }
+    throw new IllegalArgumentException("Column (name: " + columnSchema.getName() +
+        ", index: " + columnIndex + ") is of type " +
+        columnType.getName() + " but was requested as a type " + Arrays.toString(types));
   }
 
   @Override
@@ -689,7 +710,7 @@ public class RowResult {
             buf.append(getLong(i));
             break;
           case UNIXTIME_MICROS: {
-            buf.append(TimestampUtil.timestampToString(getLong(i)));
+            buf.append(TimestampUtil.timestampToString(getTimestamp(i)));
           } break;
           case STRING:
             buf.append(getString(i));

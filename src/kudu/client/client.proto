@@ -77,9 +77,15 @@ message ScanTokenPB {
   // See common.proto for further information about read modes.
   optional ReadMode read_mode = 10 [default = READ_LATEST];
 
-  // The requested snapshot timestamp. This is only used O
+  // The requested snapshot timestamp. This is only used
   // when the read mode is set to READ_AT_SNAPSHOT.
   optional fixed64 snap_timestamp = 11;
+
+  // The requested snapshot start timestamp. This is only used
+  // when the read mode is set to READ_AT_SNAPSHOT.
+  // Setting this indicates the scan should be a diff scan, the
+  // snap_timestamp will be used as the snapshot end timestamp.
+  optional fixed64 snap_start_timestamp = 19;
 
   // Sent by clients which previously executed CLIENT_PROPAGATED writes.
   // This updates the server's time so that no transaction will be assigned

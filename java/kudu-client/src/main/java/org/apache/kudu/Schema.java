@@ -22,7 +22,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
+import org.apache.kudu.Common.DataType;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 
@@ -66,6 +68,9 @@ public class Schema {
   private final int rowSize;
   private final boolean hasNullableColumns;
 
+  private final int isDeletedIndex;
+  private static final int NO_IS_DELETED_INDEX = -1;
+
   /**
    * Constructs a schema using the specified columns and does some internal accounting
    *
@@ -102,6 +107,7 @@ public class Schema {
     this.columnsById = hasColumnIds ? new HashMap<Integer, Integer>(columnIds.size()) : null;
     int offset = 0;
     boolean hasNulls = false;
+    int isDeletedIndex = NO_IS_DELETED_INDEX;
     // pre-compute a few counts and offsets
     for (int index = 0; index < columns.size(); index++) {
       final ColumnSchema column = columns.get(index);
@@ -126,11 +132,17 @@ public class Schema {
               String.format("Column IDs must be unique: %s", columnIds));
         }
       }
+
+      // If this is the IS_DELETED virtual column, set `hasIsDeleted` and `isDeletedIndex`.
+      if (column.getWireType() == DataType.IS_DELETED) {
+        isDeletedIndex = index;
+      }
     }
 
-    this.hasNullableColumns = hasNulls;
     this.varLengthColumnCount = varLenCnt;
     this.rowSize = getRowSize(this.columnsByIndex);
+    this.hasNullableColumns = hasNulls;
+    this.isDeletedIndex = isDeletedIndex;
   }
 
   /**
@@ -292,5 +304,17 @@ public class Schema {
    */
   public PartialRow newPartialRow() {
     return new PartialRow(this);
+  }
+
+  /**
+   * @return the index of the IS_DELETED virtual column
+   * @throws IllegalStateException if no IS_DELETED virtual column exists
+   */
+  @InterfaceAudience.Private
+  @InterfaceStability.Unstable
+  public int getIsDeletedIndex() {
+    Preconditions.checkState(isDeletedIndex != NO_IS_DELETED_INDEX,
+        "Schema doesn't have an IS_DELETED columns");
+    return isDeletedIndex;
   }
 }

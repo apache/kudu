@@ -44,6 +44,7 @@ import com.google.protobuf.UnsafeByteOperations;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import org.apache.kudu.security.Token;
+import org.apache.kudu.Type;
 import org.apache.kudu.tserver.Tserver.ScannerKeepAliveRequestPB;
 import org.apache.kudu.tserver.Tserver.ScannerKeepAliveResponsePB;
 import org.apache.yetus.audience.InterfaceAudience;
@@ -149,6 +150,11 @@ public final class AsyncKuduScanner {
     }
   }
 
+  // This is private because it is not safe to use this column name as it may be
+  // different in the case of collisions. Instead the `IS_DELETED` column should
+  // be looked up by type.
+  static final String DEFAULT_IS_DELETED_COL_NAME = "is_deleted";
+
   //////////////////////////
   // Initial configurations.
   //////////////////////////
@@ -198,6 +204,8 @@ public final class AsyncKuduScanner {
   private final Common.OrderMode orderMode;
 
   private final boolean isFaultTolerant;
+
+  private final long startTimestamp;
 
   private long htTimestamp;
 
@@ -253,7 +261,8 @@ public final class AsyncKuduScanner {
                    Map<String, KuduPredicate> predicates, long limit,
                    boolean cacheBlocks, boolean prefetching,
                    byte[] startPrimaryKey, byte[] endPrimaryKey,
-                   long htTimestamp, int batchSizeBytes, PartitionPruner pruner,
+                   long startTimestamp, long htTimestamp,
+                   int batchSizeBytes, PartitionPruner pruner,
                    ReplicaSelection replicaSelection, long keepAlivePeriodMs) {
     checkArgument(batchSizeBytes >= 0, "Need non-negative number of bytes, " +
         "got %s", batchSizeBytes);
@@ -286,29 +295,32 @@ public final class AsyncKuduScanner {
     this.prefetching = prefetching;
     this.startPrimaryKey = startPrimaryKey;
     this.endPrimaryKey = endPrimaryKey;
+    this.startTimestamp = startTimestamp;
     this.htTimestamp = htTimestamp;
     this.batchSizeBytes = batchSizeBytes;
     this.lastPrimaryKey = AsyncKuduClient.EMPTY_ARRAY;
 
     // Map the column names to actual columns in the table schema.
     // If the user set this to 'null', we scan all columns.
+    List<ColumnSchema> columns = new ArrayList<ColumnSchema>();
     if (projectedNames != null) {
-      List<ColumnSchema> columns = new ArrayList<ColumnSchema>();
       for (String columnName : projectedNames) {
         ColumnSchema originalColumn = table.getSchema().getColumn(columnName);
         columns.add(getStrippedColumnSchema(originalColumn));
       }
-      this.schema = new Schema(columns);
     } else if (projectedIndexes != null) {
-      List<ColumnSchema> columns = new ArrayList<ColumnSchema>();
       for (Integer columnIndex : projectedIndexes) {
         ColumnSchema originalColumn = table.getSchema().getColumnByIndex(columnIndex);
         columns.add(getStrippedColumnSchema(originalColumn));
       }
-      this.schema = new Schema(columns);
     } else {
-      this.schema = table.getSchema();
+      columns.addAll(table.getSchema().getColumns());
     }
+    // This is a diff scan so add the IS_DELETED column.
+    if (startTimestamp != AsyncKuduClient.NO_TIMESTAMP) {
+      columns.add(generateIsDeletedColumn(table.getSchema()));
+    }
+    this.schema = new Schema(columns);
 
     // If the partition pruner has pruned all partitions, then the scan can be
     // short circuited without contacting any tablet servers.
@@ -330,14 +342,44 @@ public final class AsyncKuduScanner {
   }
 
   /**
-   * Clone the given column schema instance. The new instance will include only the name, type, and
-   * nullability of the passed one.
+   * Generates and returns a ColumnSchema for the virtual IS_DELETED column.
+   * The column name is generated to ensure there is never a collision.
+   *
+   * @param schema the table schema
+   * @return a ColumnSchema for the virtual IS_DELETED column
+   */
+  private static ColumnSchema generateIsDeletedColumn(Schema schema) {
+    String columnName = DEFAULT_IS_DELETED_COL_NAME;
+    boolean collision = true;
+    while (collision) {
+      try {
+        // If getColumnIndex doesn't throw an IllegalArgumentException then
+        // the column already exists and we need to pick an alternate IS_DELETED column name.
+        schema.getColumnIndex(columnName);
+        columnName += "_";
+      } catch (IllegalArgumentException ex) {
+        collision = false;
+      }
+    }
+    return new ColumnSchema.ColumnSchemaBuilder(columnName, Type.BOOL)
+            .wireType(Common.DataType.IS_DELETED)
+            .defaultValue(false)
+            .nullable(false)
+            .key(false)
+            .build();
+  }
+
+  /**
+   * Sets isKey to false on the passed ColumnSchema.
+   * This allows out of order key columns in projections.
+   *
+   * TODO: Remove the need for this by handling server side.
+   *
    * @return a new column schema
    */
   private static ColumnSchema getStrippedColumnSchema(ColumnSchema columnToClone) {
-    return new ColumnSchema.ColumnSchemaBuilder(columnToClone.getName(), columnToClone.getType())
-        .nullable(columnToClone.isNullable())
-        .typeAttributes(columnToClone.getTypeAttributes())
+    return new ColumnSchema.ColumnSchemaBuilder(columnToClone)
+        .key(false)
         .build();
   }
 
@@ -405,6 +447,10 @@ public final class AsyncKuduScanner {
 
   public long getKeepAlivePeriodMs() {
     return keepAlivePeriodMs;
+  }
+
+  long getStartSnaphshotTimestamp() {
+    return this.startTimestamp;
   }
 
   long getSnapshotTimestamp() {
@@ -983,10 +1029,14 @@ public final class AsyncKuduScanner {
           }
           newBuilder.setReadMode(AsyncKuduScanner.this.getReadMode().pbVersion());
 
-          // if the mode is set to read on snapshot sent the snapshot timestamp
-          if (AsyncKuduScanner.this.getReadMode() == ReadMode.READ_AT_SNAPSHOT &&
-              AsyncKuduScanner.this.getSnapshotTimestamp() != AsyncKuduClient.NO_TIMESTAMP) {
-            newBuilder.setSnapTimestamp(AsyncKuduScanner.this.getSnapshotTimestamp());
+          // if the mode is set to read on snapshot set the snapshot timestamps.
+          if (AsyncKuduScanner.this.getReadMode() == ReadMode.READ_AT_SNAPSHOT) {
+            if (AsyncKuduScanner.this.getSnapshotTimestamp() != AsyncKuduClient.NO_TIMESTAMP) {
+              newBuilder.setSnapTimestamp(AsyncKuduScanner.this.getSnapshotTimestamp());
+            }
+            if (AsyncKuduScanner.this.getStartSnaphshotTimestamp() != AsyncKuduClient.NO_TIMESTAMP) {
+              newBuilder.setSnapStartTimestamp(AsyncKuduScanner.this.getStartSnaphshotTimestamp());
+            }
           }
 
           if (isFaultTolerant) {
@@ -1120,8 +1170,8 @@ public final class AsyncKuduScanner {
       return new AsyncKuduScanner(
           client, table, projectedColumnNames, projectedColumnIndexes, readMode, isFaultTolerant,
           scanRequestTimeout, predicates, limit, cacheBlocks, prefetching, lowerBoundPrimaryKey,
-          upperBoundPrimaryKey, htTimestamp, batchSizeBytes, PartitionPruner.create(this),
-          replicaSelection, keepAlivePeriodMs);
+          upperBoundPrimaryKey, startTimestamp, htTimestamp, batchSizeBytes,
+          PartitionPruner.create(this), replicaSelection, keepAlivePeriodMs);
     }
   }
 }

@@ -29,7 +29,6 @@ import com.google.common.primitives.Shorts;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 
-import org.apache.kudu.ColumnTypeAttributes;
 import org.apache.kudu.util.DecimalUtil;
 
 /**
@@ -147,6 +146,7 @@ public enum Type {
         return 8 + 8; // offset then string length
       case BOOL:
       case INT8:
+      case IS_DELETED:
         return 1;
       case INT16:
         return Shorts.BYTES;
@@ -183,6 +183,7 @@ public enum Type {
       case DECIMAL64:
       case DECIMAL128:
         return DECIMAL;
+      case IS_DELETED: return BOOL;
       default:
         throw new IllegalArgumentException("The provided data type doesn't map" +
             " to know any known one: " + type.getDescriptorForType().getFullName());

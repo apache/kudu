@@ -47,6 +47,7 @@ public abstract class AbstractKuduScannerBuilder
   long limit = Long.MAX_VALUE;
   boolean prefetching = false;
   boolean cacheBlocks = true;
+  long startTimestamp = AsyncKuduClient.NO_TIMESTAMP;
   long htTimestamp = AsyncKuduClient.NO_TIMESTAMP;
   byte[] lowerBoundPrimaryKey = AsyncKuduClient.EMPTY_ARRAY;
   byte[] upperBoundPrimaryKey = AsyncKuduClient.EMPTY_ARRAY;
@@ -256,6 +257,25 @@ public abstract class AbstractKuduScannerBuilder
    */
   public S snapshotTimestampMicros(long timestamp) {
     this.htTimestamp = HybridTimeUtil.physicalAndLogicalToHTTimestamp(timestamp, 0);
+    return (S) this;
+  }
+
+  /**
+   * Sets the start timestamp and end timestamp for a diff scan.
+   * The timestamps should be encoded HT timestamps.
+   *
+   * Additionally sets any other scan properties required by diff scans.
+   *
+   * @param startTimestamp a long representing a HybridTime-encoded start timestamp
+   * @param endTimestamp a long representing a HybridTime-encoded end timestamp
+   * @return this instance
+   */
+  @InterfaceAudience.Private
+  public S diffScan(long startTimestamp, long endTimestamp) {
+    this.startTimestamp = startTimestamp;
+    this.htTimestamp = endTimestamp;
+    this.isFaultTolerant = true;
+    this.readMode = AsyncKuduScanner.ReadMode.READ_AT_SNAPSHOT;
     return (S) this;
   }
 
