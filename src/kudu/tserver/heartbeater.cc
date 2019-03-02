@@ -588,10 +588,23 @@ void Heartbeater::Thread::RunThread() {
           << Substitute("Failed to heartbeat to $0 ($1 consecutive failures): $2",
                         master_address_.ToString(), consecutive_failed_heartbeats_, err_msg);
       consecutive_failed_heartbeats_++;
-      // If we encountered a network error (e.g., connection
-      // refused), try reconnecting.
+
+      // Reset master proxy if too many heartbeats failed in a row. The idea
+      // is to do so when HBs have already backed off from the 'fast HB retry'
+      // behavior. This might be useful in situations when NetworkError isn't
+      // going to be received from the remote side any soon, so resetting
+      // the proxy is a viable alternative to try.
+      //
+      // The 'num_failures_to_reset_proxy' is the number of consecutive errors
+      // to happen before the master proxy is reset again.
+      const auto num_failures_to_reset_proxy =
+          FLAGS_heartbeat_max_failures_before_backoff * 10;
+
+      // If we encountered a network error (e.g., connection refused) or
+      // there were too many consecutive errors while sending heartbeats since
+      // the proxy was reset last time, try reconnecting.
       if (s.IsNetworkError() ||
-          consecutive_failed_heartbeats_ >= FLAGS_heartbeat_max_failures_before_backoff) {
+          consecutive_failed_heartbeats_ % num_failures_to_reset_proxy == 0) {
         proxy_.reset();
       }
       string msg;
