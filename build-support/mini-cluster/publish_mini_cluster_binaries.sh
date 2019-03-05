@@ -27,13 +27,12 @@
 #   -a, --action: (default "install")
 #     Either install or deploy. If install, the jars will be
 #     installed into the local Maven repository. If deploy, the jars
-#     will be deployed to the remote Maven repository defined by MVN_REPO_URL.
+#     will be deployed to the remote Maven repository specified by --repo.
 #
 #   -j, --jars: (default "build/mini-cluster")
-#    Defines the Maven repository url to deploy to.
-#     Only used when the --action is deploy.
+#     Specifies the directory where the jars to be published are located.
 #
-#   -r, --repo: (default "https://repository.apache.org/content/repositories/snapshots")
+#   -r, --repo: (default "https://repository.apache.org/service/local/staging/deploy/maven2/")
 #     Defines the Maven repository url to deploy to.
 #     Only used when the --action is deploy.
 #
@@ -48,8 +47,12 @@
 #   --skipPom:
 #     If this flag is passed, the pom is not published.
 #
-# Example:
+# Example to stage binaries for a release:
 #   publish_mini_cluster_binaries.sh -a=deploy -u="foo-user" -p="foo-pass"
+#
+# Example to publish to the snapshot repository:
+#   publish_mini_cluster_binaries.sh -a=deploy -u="foo-user" -p="foo-pass" \
+#     -r=https://repository.apache.org/content/repositories/snapshots
 #
 ################################################################################
 set -e
@@ -61,7 +64,7 @@ VERSION=$(cat ${SOURCE_ROOT}/version.txt)
 # Set the parameter defaults.
 MVN_ACTION="install"
 JAR_PATH="$BUILD_ROOT"
-MVN_REPO_URL="https://repository.apache.org/content/repositories/snapshots"
+MVN_REPO_URL="https://repository.apache.org/service/local/staging/deploy/maven2/"
 PUBLISH_POM=1
 
 # Parse the command line parameters.
@@ -161,7 +164,7 @@ function maven_action() {
     ARGS="$ARGS -DrepositoryId=apache"
     ARGS="$ARGS -Drepo.username=$MVN_USERNAME"
     ARGS="$ARGS -Drepo.password=$MVN_PASSWORD"
-    mvn deploy:deploy-file ${ARGS}
+    mvn gpg:sign-and-deploy-file ${ARGS}
   fi
 }
 
