@@ -289,7 +289,7 @@ clause is not required but helps Impala to optimize queries.
 To run the SQL statement, use the Impala shell and pass the required variables.
 Below is an example:
 
-{% highlight shell %}
+{% highlight bash %}
 impala-shell -i <impalad:port> -f window_data_move.sql
 --var=kudu_table=my_table_kudu
 --var=hdfs_table=my_table_parquet
@@ -320,7 +320,7 @@ AND day = day(time);
 To run the SQL statement, use the Impala shell and pass the required variables.
 Below is an example:
 
-{% highlight shell %}
+{% highlight bash %}
 impala-shell -i <impalad:port> -f window_view_alter.sql
 --var=view_name=my_table_view
 --var=kudu_table=my_table_kudu
@@ -346,7 +346,7 @@ DROP RANGE PARTITION add_months("${var:new_boundary_time}", -1)
 To run the SQL statement, use the Impala shell and pass the required variables.
 Below is an example:
 
-{% highlight shell %}
+{% highlight bash %}
 impala-shell -i <impalad:port> -f window_partition_shift.sql
 --var=kudu_table=my_table_kudu
 --var=new_boundary_time="2018-02-01"
@@ -383,7 +383,7 @@ SELECT * FROM my_table_view;
 
 Move the January data into HDFS:
 
-{% highlight shell %}
+{% highlight bash %}
 impala-shell -i <impalad:port> -f window_data_move.sql
 --var=kudu_table=my_table_kudu
 --var=hdfs_table=my_table_parquet
@@ -400,7 +400,7 @@ SELECT * FROM my_table_view;
 
 Alter the view to shift the time boundary forward to February:
 
-{% highlight shell %}
+{% highlight bash %}
 impala-shell -i <impalad:port> -f window_view_alter.sql
 --var=view_name=my_table_view
 --var=kudu_table=my_table_kudu
@@ -418,7 +418,7 @@ SELECT * FROM my_table_view;
 
 Shift the Kudu partitions forward:
 
-{% highlight shell %}
+{% highlight bash %}
 impala-shell -i <impalad:port> -f window_partition_shift.sql
 --var=kudu_table=my_table_kudu
 --var=new_boundary_time="2018-02-01"
