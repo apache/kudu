@@ -70,3 +70,4 @@ ADD_EXPORTABLE_LIBRARY(gutil
 
 add_kudu_test(strings/string_util-test)
 add_kudu_test(strings/numbers-test)
+add_kudu_test(sysinfo-test)

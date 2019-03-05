@@ -53,5 +53,17 @@ void SleepForMilliseconds(int64_t milliseconds);
 // processor cycles per second of each processor.  Thread-safe.
 extern double CyclesPerSecond(void);
 
+// Parse the maximum CPU index from 'str'. The list is in the format of the CPU lists
+// under /sys/devices/system/cpu/, e.g. /sys/devices/system/cpu/present. Returns the
+// index of the max CPU or -1 if the string could not be parsed.
+// Examples of the format and the expected output include:
+// * "0\n" -> 0
+// * "0-8\n" -> 8
+// * "0-15,32-47\n" -> 47
+// * "2,4-127,128-143\n" -> 143
+// Ref: https://www.kernel.org/doc/Documentation/cputopology.txt
+// Exposed for testing.
+extern int ParseMaxCpuIndex(const char* str);
+
 } // namespace base
 #endif   /* #ifndef _SYSINFO_H_ */
