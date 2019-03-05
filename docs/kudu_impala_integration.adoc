@@ -228,8 +228,13 @@ database is called `default`, and users may create and drop additional databases
 as desired.
 
 When a managed Kudu table is created from within Impala, the corresponding
-Kudu table will be named `my_database::table_name`.
+Kudu table will be named `impala::database_name.table_name`. The prefix is
+always `impala::` and the database name and table name follow, separated by a
+dot.
 
+For example if a table called `foo` is created in database `bar` in Impala and
+it's storeed in Kudu, it will be called `impala::bar.foo` in Kudu and `bar.foo`
+in Impala.
 
 ==== Impala Keywords Not Supported for Kudu Tables
 
