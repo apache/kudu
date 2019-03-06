@@ -92,20 +92,13 @@ public class ITClient {
 
   @Test(timeout = TEST_TIMEOUT_SECONDS)
   public void test() throws Exception {
-
-    UncaughtExceptionHandler uncaughtExceptionHandler = new UncaughtExceptionHandler();
-
-    ArrayList<Thread> threads = new ArrayList<>();
-    Thread chaosThread = new Thread(new ChaosThread());
-    Thread writerThread = new Thread(new WriterThread());
-    Thread scannerThread = new Thread(new ScannerThread());
-
-    threads.add(chaosThread);
-    threads.add(writerThread);
-    threads.add(scannerThread);
+    List<Thread> threads = new ArrayList<>();
+    threads.add(new Thread(new ChaosThread(), "chaos-test-thread"));
+    threads.add(new Thread(new WriterThread(), "writer-test-thread"));
+    threads.add(new Thread(new ScannerThread(), "scanner-test-thread"));
 
     for (Thread thread : threads) {
-      thread.setUncaughtExceptionHandler(uncaughtExceptionHandler);
+      thread.setUncaughtExceptionHandler(new UncaughtExceptionHandler());
       thread.start();
     }
 

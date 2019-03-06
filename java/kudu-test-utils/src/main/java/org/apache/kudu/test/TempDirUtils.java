@@ -86,6 +86,7 @@ public class TempDirUtils {
   private static void registerToRecursivelyDeleteOnShutdown(Path path) {
     final Path absPath = path.toAbsolutePath();
     Runtime.getRuntime().addShutdownHook(new Thread() {
+      @Override
       public void run() {
         File dir = absPath.toFile();
         if (!dir.exists()) return;
