@@ -221,7 +221,7 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
     // Check in-memory state with a downed TS. Scans may try other replicas.
     string tablet = (*tablet_replicas_.begin()).first;
     TServerDetails* leader;
-    EXPECT_OK(GetLeaderReplicaWithRetries(tablet, &leader));
+    ASSERT_OK(GetLeaderReplicaWithRetries(tablet, &leader));
     LOG(INFO) << "Killing TS: " << leader->instance_id.permanent_uuid() << ", leader of tablet: "
         << tablet << " and verifying that we can still read all results";
     ASSERT_OK(ShutdownServerWithUUID(leader->uuid()));
@@ -252,7 +252,7 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
   if (can_kill_ts) {
     string tablet = (*tablet_replicas_.begin()).first;
     TServerDetails* leader;
-    EXPECT_OK(GetLeaderReplicaWithRetries(tablet, &leader));
+    ASSERT_OK(GetLeaderReplicaWithRetries(tablet, &leader));
     LOG(INFO) << "Killing TS: " << leader->instance_id.permanent_uuid() << ", leader of tablet: "
         << tablet << " and verifying that we can still read all results";
     ASSERT_OK(ShutdownServerWithUUID(leader->uuid()));
