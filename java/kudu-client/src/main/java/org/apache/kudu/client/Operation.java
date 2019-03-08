@@ -20,6 +20,7 @@ package org.apache.kudu.client;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.List;
 
 import com.google.common.base.Preconditions;
@@ -345,15 +346,28 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
     }
 
     private void encodeRow(PartialRow row, ChangeType type) {
-      rows.put(type.toEncodedByte());
-      rows.put(Bytes.fromBitSet(row.getColumnsBitSet(), schema.getColumnCount()));
-      if (schema.hasNullableColumns()) {
-        rows.put(Bytes.fromBitSet(row.getNullsBitSet(), schema.getColumnCount()));
+      int columnCount = row.getSchema().getColumnCount();
+      BitSet columnsBitSet = row.getColumnsBitSet();
+      BitSet nullsBitSet = row.getNullsBitSet();
+
+      // If this is a DELETE operation only the key columns should to be set.
+      if (type == ChangeType.DELETE) {
+        columnCount = row.getSchema().getPrimaryKeyColumnCount();
+        // Clear the bits indicating any non-key fields are set.
+        columnsBitSet.clear(schema.getPrimaryKeyColumnCount(), columnsBitSet.size() - 1);
+        nullsBitSet.clear(schema.getPrimaryKeyColumnCount(), nullsBitSet.size() - 1);
       }
-      int colIdx = 0;
+
+      rows.put(type.toEncodedByte());
+      rows.put(Bytes.fromBitSet(columnsBitSet, schema.getColumnCount()));
+      if (schema.hasNullableColumns()) {
+        rows.put(Bytes.fromBitSet(nullsBitSet, schema.getColumnCount()));
+      }
+
       byte[] rowData = row.getRowAlloc();
       int currentRowOffset = 0;
-      for (ColumnSchema col : row.getSchema().getColumns()) {
+      for (int colIdx = 0; colIdx < columnCount; colIdx++) {
+        ColumnSchema col = schema.getColumnByIndex(colIdx);
         // Keys should always be specified, maybe check?
         if (row.isSet(colIdx) && !row.isSetToNull(colIdx)) {
           if (col.getType() == Type.STRING || col.getType() == Type.BINARY) {
@@ -370,7 +384,6 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
           }
         }
         currentRowOffset += col.getTypeSize();
-        colIdx++;
       }
     }
 

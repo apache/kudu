@@ -28,6 +28,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import com.google.common.collect.ImmutableList;
@@ -136,6 +137,32 @@ public class TestKuduSession {
         asyncClient.emptyTabletsCacheForTable(table.getTableId());
       }
     }
+    assertEquals(0, countRowsInScan(client.newScannerBuilder(table).build()));
+  }
+
+  @Test(timeout = 100000)
+  public void testDeleteWithFullRow() throws Exception {
+    KuduTable table = client.createTable(tableName, basicSchema, getBasicCreateTableOptions());
+
+    KuduSession session = client.newSession();
+    session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
+
+    List<PartialRow> rows = new ArrayList<>();
+    for (int i = 0; i < 25; i++) {
+      Insert insert = createInsert(table, i);
+      rows.add(insert.getRow());
+      session.apply(insert);
+    }
+    session.flush();
+
+    for (PartialRow row : rows) {
+      Delete del = table.newDelete();
+      del.setRow(row);
+      session.apply(del);
+    }
+    session.flush();
+
+    assertEquals(0, session.countPendingErrors());
     assertEquals(0, countRowsInScan(client.newScannerBuilder(table).build()));
   }
 
