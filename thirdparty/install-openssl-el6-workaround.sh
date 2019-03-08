@@ -64,7 +64,7 @@ rm -Rf usr etc
 # We have mirrored these in our S3 bucket, but the original sources are in
 # http://vault.centos.org/6.4/os/x86_64/Packages/ .
 for FILENAME in openssl-1.0.0-27.el6.x86_64.rpm openssl-devel-1.0.0-27.el6.x86_64.rpm ; do
-  FULL_URL="${CLOUDFRONT_URL_PREFIX}/${FILENAME}"
+  FULL_URL="${DEPENDENCY_URL}/${FILENAME}"
   if [ -r "$FILENAME" ]; then
     echo $FILENAME already exists. Not re-downloading.
   else
