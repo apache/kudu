@@ -73,7 +73,7 @@ DEFINE_string(predicates, "",
               "the scan tool's simple query predicates are represented in a "
               "simple JSON syntax. Three types of predicates are supported, "
               "including 'Comparison', 'InList' and 'IsNull'.\n"
-              " * The 'Comparison' type support <=, <, ==, > and >=,\n"
+              " * The 'Comparison' type support <=, <, =, > and >=,\n"
               "   which can be represented as '[operator, column_name, value]',""\n"
               R"*(   e.g. '[">=", "col1", "value"]')*""\n"
               " * The 'InList' type can be represented as\n"
