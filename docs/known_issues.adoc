@@ -104,8 +104,6 @@
 
 == Cluster management
 
-* Rack awareness is not supported.
-
 * Multi-datacenter is not supported.
 
 * Rolling restart is not supported.
@@ -141,6 +139,24 @@
 
 * Maximum number of tablets per table for each tablet server is 60,
   post-replication (assuming the default replication factor of 3), at table-creation time.
+
+* When enabled, location awareness in its current implementation doesn't scale
+  with the number of clients connecting to a Kudu cluster simultaneously.
+  If the rate of new clients connecting is kept high (e.g., 100 request/second)
+  for a long period of time or there is a short period of time when a huge
+  number of such requests arrive to Kudu masters simultaneously (e.g. 10000
+  requests arrive within one second), Kudu masters might experience RPC queue
+  overflows and overall slowness. The slowness becomes more prominent with
+  the increasing size of the master process in memory, where the major
+  contributing factor is the total number of tablet replicas ever created in
+  the cluster. Eventually, the issue may manifest as write and scan operations
+  timing out. If that happens, it's recommended to use the following workaround:
+** Disable assignment of locations to clients, adding `--enable_unsafe_flags`
+   and `--master_client_location_assignment_enabled=false` to the list of
+   runtime flags for Kudu masters. This retains the benefits of location
+   awareness for initial placement of tablet replicas and re-replication, but
+   clients will not be able to use location information to choose
+   the closest tablet server for scan operations.
 
 == Replication and Backup Limitations
 
