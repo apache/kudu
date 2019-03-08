@@ -1,0 +1,1142 @@
+---
+title: Using Apache Kudu with Apache Impala
+layout: default
+active_nav: docs
+last_updated: 'Last updated 2019-03-12 04:38:06 UTC'
+---
+<!--
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+
+<div class="container">
+  <div class="row">
+    <div class="col-md-9">
+
+<h1>Using Apache Kudu with Apache Impala</h1>
+      <div id="preamble">
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu has tight integration with Apache Impala, allowing you to use Impala
+to insert, query, update, and delete data from Kudu tablets using Impala&#8217;s SQL
+syntax, as an alternative to using the <a href="installation.html#view_api">Kudu APIs</a>
+to build a custom Kudu application. In addition, you can use JDBC or ODBC to connect
+existing or new applications written in any language, framework, or business intelligence
+tool to your Kudu data, using Impala as the broker.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_requirements"><a class="link" href="#_requirements">Requirements</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>This documentation is specific to the certain versions of Impala. The syntax
+described will work only in the following releases:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>The version of Impala 2.7.0 that ships with CDH 5.10. <code>SELECT VERSION()</code> will
+report <code>impalad version 2.7.0-cdh5.10.0</code>.</p>
+</li>
+<li>
+<p>Apache Impala 2.8.0 releases compiled from source. <code>SELECT VERSION()</code> will
+report <code>impalad version 2.8.0</code>.</p>
+</li>
+</ul>
+</div>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Older versions of Impala 2.7 (including the special <code>IMPALA_KUDU</code> releases
+previously available) have incompatible syntax. Future versions are likely to be
+compatible with this syntax, but we recommend checking that this is the latest
+available documentation corresponding to the appropriate version you have
+installed.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>This documentation does not describe Impala installation procedures. Please
+refer to the Impala documentation and be sure that you are able to run simple
+queries against Impala tables on HDFS before proceeding.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_configuration"><a class="link" href="#_configuration">Configuration</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>No configuration changes are required within Kudu to enable access from Impala.</p>
+</div>
+<div class="paragraph">
+<p>Although not strictly necessary, it is recommended to configure Impala with the
+locations of the Kudu Master servers:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Set the <code>--kudu_master_hosts=&lt;master1&gt;[:port],&lt;master2&gt;[:port],&lt;master3&gt;[:port]</code>
+flag in the Impala service configuration.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>If this flag is not set within the Impala service, it will be necessary to manually
+provide this configuration each time you create a table by specifying the
+<code>kudu_master_addresses</code> property inside a <code>TBLPROPERTIES</code> clause.</p>
+</div>
+<div class="paragraph">
+<p>The rest of this guide assumes that the configuration has been set.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_using_the_impala_shell"><a class="link" href="#_using_the_impala_shell">Using the Impala Shell</a></h2>
+<div class="sectionbody">
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+This is only a small sub-set of Impala Shell functionality. For more details, see the
+<a href="https://impala.apache.org/docs/build/html/topics/impala_impala_shell.html">Impala Shell</a> documentation.
+</td>
+</tr>
+</table>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Start Impala Shell using the <code>impala-shell</code> command. By default, <code>impala-shell</code>
+attempts to connect to the Impala daemon on <code>localhost</code> on port 21000. To connect
+to a different host,, use the <code>-i &lt;host:port&gt;</code> option. To automatically connect to
+a specific Impala database, use the <code>-d &lt;database&gt;</code> option. For instance, if all your
+Kudu tables are in Impala in the database <code>impala_kudu</code>, use <code>-d impala_kudu</code> to use
+this database.</p>
+</li>
+<li>
+<p>To quit the Impala Shell, use the following command: <code>quit;</code></p>
+</li>
+</ul>
+</div>
+<div class="sect2">
+<h3 id="_internal_and_external_impala_tables"><a class="link" href="#_internal_and_external_impala_tables">Internal and External Impala Tables</a></h3>
+<div class="paragraph">
+<p>When creating a new Kudu table using Impala, you can create the table as an internal
+table or an external table.</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">Internal</dt>
+<dd>
+<p>An internal table is managed by Impala, and when you drop it from Impala,
+the data and the table truly are dropped. When you create a new table using Impala,
+it is generally a internal table.</p>
+</dd>
+<dt class="hdlist1">External</dt>
+<dd>
+<p>An external table (created by <code>CREATE EXTERNAL TABLE</code>) is not managed by
+Impala, and dropping such a table does not drop the table from its source location
+(here, Kudu). Instead, it only removes the mapping between Impala and Kudu. This is
+the mode used in the syntax provided by Kudu for mapping an existing table to Impala.</p>
+</dd>
+</dl>
+</div>
+<div class="paragraph">
+<p>See the
+<a href="https://impala.apache.org/docs/build/html/topics/impala_tables.html">Impala documentation</a>
+for more information about internal and external tables.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_querying_an_existing_kudu_table_in_impala"><a class="link" href="#_querying_an_existing_kudu_table_in_impala">Querying an Existing Kudu Table In Impala</a></h3>
+<div class="paragraph">
+<p>Tables created through the Kudu API or other integrations such as Apache Spark
+are not automatically visible in Impala. To query them, you must first create
+an external table within Impala to map the Kudu table into an Impala database:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">CREATE EXTERNAL TABLE my_mapping_table
+STORED AS KUDU
+TBLPROPERTIES (
+  'kudu.table_name' = 'my_kudu_table'
+);</code></pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="kudu_impala_create_table"><a class="link" href="#kudu_impala_create_table">Creating a New Kudu Table From Impala</a></h3>
+<div class="paragraph">
+<p>Creating a new table in Kudu from Impala is similar to mapping an existing Kudu table
+to an Impala table, except that you need to specify the schema and partitioning
+information yourself.</p>
+</div>
+<div class="paragraph">
+<p>Use the following example as a guideline. Impala first creates the table, then creates
+the mapping.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">CREATE TABLE my_first_table
+(
+  id BIGINT,
+  name STRING,
+  PRIMARY KEY(id)
+)
+PARTITION BY HASH PARTITIONS 16
+STORED AS KUDU;</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>In the <code>CREATE TABLE</code> statement, the columns that comprise the primary key must
+be listed first. Additionally, primary key columns are implicitly marked <code>NOT NULL</code>.</p>
+</div>
+<div class="paragraph">
+<p>When creating a new Kudu table, you are required to specify a distribution scheme.
+See <a href="#partitioning_tables">Partitioning Tables</a>. The table creation example above is distributed into
+16 partitions by hashing the <code>id</code> column, for simplicity. See
+<a href="#partitioning_rules_of_thumb">Partitioning Rules of Thumb</a> for guidelines on partitioning.</p>
+</div>
+<div class="paragraph">
+<p>By default, Kudu tables created through Impala use a tablet replication factor of 3.
+To specify the replication factor for a Kudu table, add a <code>TBLPROPERTIES</code> clause
+to the <code>CREATE TABLE</code> statement as shown below where n is the replication factor
+you want to use:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">TBLPROPERTIES ('kudu.num_tablet_replicas' = 'n')</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>A replication factor must be an odd number.</p>
+</div>
+<div class="paragraph">
+<p>Changing the <code>kudu.num_tablet_replicas</code> table property using ALTER TABLE currently
+has no effect.</p>
+</div>
+<div class="sect3">
+<h4 id="_code_create_table_as_select_code"><a class="link" href="#_code_create_table_as_select_code"><code>CREATE TABLE AS SELECT</code></a></h4>
+<div class="paragraph">
+<p>You can create a table by querying any other table or tables in Impala, using a <code>CREATE
+TABLE &#8230;&#8203; AS SELECT</code> statement. The following example imports all rows from an existing table
+<code>old_table</code> into a Kudu table <code>new_table</code>. The names and types of columns in <code>new_table</code>
+will determined from the columns in the result set of the <code>SELECT</code> statement. Note that you must
+additionally specify the primary key and partitioning.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">CREATE TABLE new_table
+PRIMARY KEY (ts, name)
+PARTITION BY HASH(name) PARTITIONS 8
+STORED AS KUDU
+AS SELECT ts, name, value FROM old_table;</code></pre>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_specifying_tablet_partitioning"><a class="link" href="#_specifying_tablet_partitioning">Specifying Tablet Partitioning</a></h4>
+<div class="paragraph">
+<p>Tables are divided into tablets which are each served by one or more tablet
+servers. Ideally, tablets should split a table&#8217;s data relatively equally. Kudu currently
+has no mechanism for automatically (or manually) splitting a pre-existing tablet.
+Until this feature has been implemented, <strong>you must specify your partitioning when
+creating a table</strong>. When designing your table schema, consider primary keys that will allow you to
+split your table into partitions which grow at similar rates. You can designate
+partitions using a <code>PARTITION BY</code> clause when creating a table using Impala:</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+Impala keywords, such as <code>group</code>, are enclosed by back-tick characters when
+they are not used in their keyword sense.
+</td>
+</tr>
+</table>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">CREATE TABLE cust_behavior (
+  _id BIGINT PRIMARY KEY,
+  salary STRING,
+  edu_level INT,
+  usergender STRING,
+  `group` STRING,
+  city STRING,
+  postcode STRING,
+  last_purchase_price FLOAT,
+  last_purchase_date BIGINT,
+  category STRING,
+  sku STRING,
+  rating INT,
+  fulfilled_date BIGINT
+)
+PARTITION BY RANGE (_id)
+(
+    PARTITION VALUES &lt; 1439560049342,
+    PARTITION 1439560049342 &lt;= VALUES &lt; 1439566253755,
+    PARTITION 1439566253755 &lt;= VALUES &lt; 1439572458168,
+    PARTITION 1439572458168 &lt;= VALUES &lt; 1439578662581,
+    PARTITION 1439578662581 &lt;= VALUES &lt; 1439584866994,
+    PARTITION 1439584866994 &lt;= VALUES &lt; 1439591071407,
+    PARTITION 1439591071407 &lt;= VALUES
+)
+STORED AS KUDU;</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>If you have multiple primary key columns, you can specify partition bounds
+using tuple syntax: <code>('va',1), ('ab',2)</code>. The expression must be valid JSON.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_impala_databases_and_kudu"><a class="link" href="#_impala_databases_and_kudu">Impala Databases and Kudu</a></h4>
+<div class="paragraph">
+<p>Every Impala table is contained within a namespace called a <em>database</em>. The default
+database is called <code>default</code>, and users may create and drop additional databases
+as desired.</p>
+</div>
+<div class="paragraph">
+<p>When a managed Kudu table is created from within Impala, the corresponding
+Kudu table will be named <code>my_database::table_name</code>.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_impala_keywords_not_supported_for_kudu_tables"><a class="link" href="#_impala_keywords_not_supported_for_kudu_tables">Impala Keywords Not Supported for Kudu Tables</a></h4>
+<div class="paragraph">
+<p>The following Impala keywords are not supported when creating Kudu tables:
+- <code>PARTITIONED</code>
+- <code>LOCATION</code>
+- <code>ROWFORMAT</code></p>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_optimizing_performance_for_evaluating_sql_predicates"><a class="link" href="#_optimizing_performance_for_evaluating_sql_predicates">Optimizing Performance for Evaluating SQL Predicates</a></h3>
+<div class="paragraph">
+<p>If the <code>WHERE</code> clause of your query includes comparisons with the operators
+<code>=</code>, <code>&lt;=</code>, '\&lt;', '\&gt;', <code>&gt;=</code>, <code>BETWEEN</code>, or <code>IN</code>, Kudu evaluates the condition directly
+and only returns the relevant results. This provides optimum performance, because Kudu
+only returns the relevant results to Impala. For predicates <code>!=</code>, <code>LIKE</code>, or any other
+predicate type supported by Impala, Kudu does not evaluate the predicates directly, but
+returns all results to Impala and relies on Impala to evaluate the remaining predicates and
+filter the results accordingly. This may cause differences in performance, depending
+on the delta of the result set before and after evaluating the <code>WHERE</code> clause.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="partitioning_tables"><a class="link" href="#partitioning_tables">Partitioning Tables</a></h3>
+<div class="paragraph">
+<p>Tables are partitioned into tablets according to a partition schema on the primary
+key columns. Each tablet is served by at least one tablet server. Ideally, a table
+should be split into tablets that are distributed across a number of tablet servers
+to maximize parallel operations. The details of the partitioning schema you use
+will depend entirely on the type of data you store and how you access it. For a full
+discussion of schema design in Kudu, see <a href="schema_design.html">Schema Design</a>.</p>
+</div>
+<div class="paragraph">
+<p>Kudu currently has no mechanism for splitting or merging tablets after the table has
+been created. You must provide a partition schema for your table when you create it.
+When designing your tables, consider using primary keys that will allow you to partition
+your table into tablets which grow at similar rates.</p>
+</div>
+<div class="paragraph">
+<p>You can partition your table using Impala&#8217;s <code>PARTITION BY</code> keyword, which
+supports distribution by <code>RANGE</code> or <code>HASH</code>. The partition scheme can contain zero
+or more <code>HASH</code> definitions, followed by an optional <code>RANGE</code> definition. The <code>RANGE</code>
+definition can refer to one or more primary key columns.
+Examples of <a href="#basic_partitioning">basic</a> and <a href="#advanced_partitioning">advanced</a>
+partitioning are shown below.</p>
+</div>
+<div class="sect3">
+<h4 id="basic_partitioning"><a class="link" href="#basic_partitioning">Basic Partitioning</a></h4>
+<div class="paragraph">
+<div class="title"><code>PARTITION BY RANGE</code></div>
+<p>You can specify range partitions for one or more primary key columns.
+Range partitioning in Kudu allows splitting a table based based on
+specific values or ranges of values of the chosen partition keys. This allows
+you to balance parallelism in writes with scan efficiency.</p>
+</div>
+<div class="paragraph">
+<p>Suppose you have a table that has columns <code>state</code>, <code>name</code>, and <code>purchase_count</code>. The
+following example creates 50 tablets, one per US state.</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+<div class="title">Monotonically Increasing Values</div>
+<div class="paragraph">
+<p>If you partition by range on a column whose values are monotonically increasing,
+the last tablet will grow much larger than the others. Additionally, all data
+being inserted will be written to a single tablet at a time, limiting the scalability
+of data ingest. In that case, consider distributing by <code>HASH</code> instead of, or in
+addition to, <code>RANGE</code>.</p>
+</div>
+</td>
+</tr>
+</table>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">CREATE TABLE customers (
+  state STRING,
+  name STRING,
+  purchase_count int,
+  PRIMARY KEY (state, name)
+)
+PARTITION BY RANGE (state)
+(
+  PARTITION VALUE = 'al',
+  PARTITION VALUE = 'ak',
+  PARTITION VALUE = 'ar',
+  -- ... etc ...
+  PARTITION VALUE = 'wv',
+  PARTITION VALUE = 'wy'
+)
+STORED AS KUDU;</code></pre>
+</div>
+</div>
+<div id="distribute_by_hash" class="paragraph">
+<div class="title"><code>PARTITION BY HASH</code></div>
+<p>Instead of distributing by an explicit range, or in combination with range distribution,
+you can distribute into a specific number of 'buckets' by hash. You specify the primary
+key columns you want to partition by, and the number of buckets you want to use. Rows are
+distributed by hashing the specified key columns. Assuming that the values being
+hashed do not themselves exhibit significant skew, this will serve to distribute
+the data evenly across buckets.</p>
+</div>
+<div class="paragraph">
+<p>You can specify multiple definitions, and you can specify definitions which
+use compound primary keys. However, one column cannot be mentioned in multiple hash
+definitions. Consider two columns, <code>a</code> and <code>b</code>:
+* <span class="icon green"><i class="fa fa-check fa-pro"></i></span> <code>HASH(a)</code>, <code>HASH(b)</code>
+* <span class="icon green"><i class="fa fa-check fa-pro"></i></span> <code>HASH(a,b)</code>
+* <span class="icon red"><i class="fa fa-times fa-pro"></i></span> <code>HASH(a), HASH(a,b)</code></p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+<code>PARTITION BY HASH</code> with no column specified is a shortcut to create the desired
+number of buckets by hashing all primary key columns.
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>Hash partitioning is a reasonable approach if primary key values are evenly
+distributed in their domain and no data skew is apparent, such as timestamps or
+serial IDs.</p>
+</div>
+<div class="paragraph">
+<p>The following example creates 16 tablets by hashing the <code>id</code> and <code>sku</code> columns. This spreads
+writes across all 16 tablets. In this example, a query for a range of <code>sku</code> values
+is likely to need to read all 16 tablets, so this may not be the optimum schema for
+this table. See <a href="#advanced_partitioning">Advanced Partitioning</a> for an extended example.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">CREATE TABLE cust_behavior (
+  id BIGINT,
+  sku STRING,
+  salary STRING,
+  edu_level INT,
+  usergender STRING,
+  `group` STRING,
+  city STRING,
+  postcode STRING,
+  last_purchase_price FLOAT,
+  last_purchase_date BIGINT,
+  category STRING,
+  rating INT,
+  fulfilled_date BIGINT,
+  PRIMARY KEY (id, sku)
+)
+PARTITION BY HASH PARTITIONS 16
+STORED AS KUDU;</code></pre>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="advanced_partitioning"><a class="link" href="#advanced_partitioning">Advanced Partitioning</a></h4>
+<div class="paragraph">
+<p>You can combine <code>HASH</code> and <code>RANGE</code> partitioning to create more complex partition schemas.
+You can specify zero or more <code>HASH</code> definitions, followed by zero or one <code>RANGE</code> definitions.
+Each definition can encompass one or more columns. While enumerating every possible distribution
+schema is out of the scope of this document, a few examples illustrate some of the
+possibilities.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_code_partition_by_hash_code_and_code_range_code"><a class="link" href="#_code_partition_by_hash_code_and_code_range_code"><code>PARTITION BY HASH</code> and <code>RANGE</code></a></h4>
+<div class="paragraph">
+<p>Consider the <a href="#distribute_by_hash">simple hashing</a> example above, If you often query for a range of <code>sku</code>
+values, you can optimize the example by combining hash partitioning with range partitioning.</p>
+</div>
+<div class="paragraph">
+<p>The following example still creates 16 tablets, by first hashing the <code>id</code> column into 4
+buckets, and then applying range partitioning to split each bucket into four tablets,
+based upon the value of the <code>sku</code> string. Writes are spread across at least four tablets
+(and possibly up to 16). When you query for a contiguous range of <code>sku</code> values, you have a
+good chance of only needing to read from a quarter of the tablets to fulfill the query.</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+By default, the entire primary key is hashed when you use <code>PARTITION BY HASH</code>.
+To hash on only part of the primary key, specify it by using syntax like <code>PARTITION
+BY HASH (id, sku)</code>.
+</td>
+</tr>
+</table>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">CREATE TABLE cust_behavior (
+  id BIGINT,
+  sku STRING,
+  salary STRING,
+  edu_level INT,
+  usergender STRING,
+  `group` STRING,
+  city STRING,
+  postcode STRING,
+  last_purchase_price FLOAT,
+  last_purchase_date BIGINT,
+  category STRING,
+  rating INT,
+  fulfilled_date BIGINT,
+  PRIMARY KEY (id, sku)
+)
+PARTITION BY HASH (id) PARTITIONS 4,
+RANGE (sku)
+(
+  PARTITION VALUES &lt; 'g',
+  PARTITION 'g' &lt;= VALUES &lt; 'o',
+  PARTITION 'o' &lt;= VALUES &lt; 'u',
+  PARTITION 'u' &lt;= VALUES
+)
+STORED AS KUDU;</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<div class="title">Multiple <code>PARTITION BY HASH</code> Definitions</div>
+<p>Again expanding the example above, suppose that the query pattern will be unpredictable,
+but you want to ensure that writes are spread across a large number of tablets
+You can achieve maximum distribution across the entire primary key by hashing on
+both primary key columns.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">CREATE TABLE cust_behavior (
+  id BIGINT,
+  sku STRING,
+  salary STRING,
+  edu_level INT,
+  usergender STRING,
+  `group` STRING,
+  city STRING,
+  postcode STRING,
+  last_purchase_price FLOAT,
+  last_purchase_date BIGINT,
+  category STRING,
+  rating INT,
+  fulfilled_date BIGINT,
+  PRIMARY KEY (id, sku)
+)
+PARTITION BY HASH (id) PARTITIONS 4,
+             HASH (sku) PARTITIONS 4
+STORED AS KUDU;</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The example creates 16 partitions. You could also use <code>HASH (id, sku) PARTITIONS 16</code>.
+However, a scan for <code>sku</code> values would almost always impact all 16 partitions, rather
+than possibly being limited to 4.</p>
+</div>
+<div class="paragraph">
+<div class="title">Non-Covering Range Partitions</div>
+<p>Kudu 1.0 and higher supports the use of non-covering range partitions,
+which address scenarios like the following:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Without non-covering range partitions, in the case of time-series data or other
+schemas which need to account for constantly-increasing primary keys, tablets
+serving old data will be relatively fixed in size, while tablets receiving new
+data will grow without bounds.</p>
+</li>
+<li>
+<p>In cases where you want to partition data based on its category, such as sales
+region or product type, without non-covering range partitions you must know all
+of the partitions ahead of time or manually recreate your table if partitions
+need to be added or removed, such as the introduction or elimination of a product
+type.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>See <a href="schema_design.html">Schema Design</a> for the caveats of non-covering partitions.</p>
+</div>
+<div class="paragraph">
+<p>This example creates a tablet per year (5 tablets total), for storing log data.
+The table only accepts data from 2012 to 2016. Keys outside of these
+ranges will be rejected.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">CREATE TABLE sales_by_year (
+  year INT, sale_id INT, amount INT,
+  PRIMARY KEY (sale_id, year)
+)
+PARTITION BY RANGE (year) (
+  PARTITION VALUE = 2012,
+  PARTITION VALUE = 2013,
+  PARTITION VALUE = 2014,
+  PARTITION VALUE = 2015,
+  PARTITION VALUE = 2016
+)
+STORED AS KUDU;</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>When records start coming in for 2017, they will be rejected. At that point, the <code>2017</code>
+range should be added as follows:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">ALTER TABLE sales_by_year ADD RANGE PARTITION VALUE = 2017;</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>In use cases where a rolling window of data retention is required, range partitions
+may also be dropped. For example, if data from 2012 should no longer be retained,
+it may be deleted in bulk:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">ALTER TABLE sales_by_year DROP RANGE PARTITION VALUE = 2012;</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Note that, just like dropping a table, this irrecoverably deletes all data
+stored in the dropped partition.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="partitioning_rules_of_thumb"><a class="link" href="#partitioning_rules_of_thumb">Partitioning Rules of Thumb</a></h4>
+<div class="ulist">
+<ul>
+<li>
+<p>For large tables, such as fact tables, aim for as many tablets as you have
+cores in the cluster.</p>
+</li>
+<li>
+<p>For small tables, such as dimension tables, ensure that each tablet is at
+least 1 GB in size.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>In general, be mindful the number of tablets limits the parallelism of reads,
+in the current implementation. Increasing the number of tablets significantly
+beyond the number of cores is likely to have diminishing returns.</p>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_inserting_data_into_kudu_tables"><a class="link" href="#_inserting_data_into_kudu_tables">Inserting Data Into Kudu Tables</a></h3>
+<div class="paragraph">
+<p>Impala allows you to use standard SQL syntax to insert data into Kudu.</p>
+</div>
+<div class="sect3">
+<h4 id="_inserting_single_values"><a class="link" href="#_inserting_single_values">Inserting Single Values</a></h4>
+<div class="paragraph">
+<p>This example inserts a single row.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">INSERT INTO my_first_table VALUES (99, "sarah");</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This example inserts three rows using a single statement.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">INSERT INTO my_first_table VALUES (1, "john"), (2, "jane"), (3, "jim");</code></pre>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="kudu_impala_insert_bulk"><a class="link" href="#kudu_impala_insert_bulk">Inserting In Bulk</a></h4>
+<div class="paragraph">
+<p>When inserting in bulk, there are at least three common choices. Each may have advantages
+and disadvantages, depending on your data and circumstances.</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">Multiple single <code>INSERT</code> statements</dt>
+<dd>
+<p>This approach has the advantage of being easy to
+understand and implement. This approach is likely to be inefficient because Impala
+has a high query start-up cost compared to Kudu&#8217;s insertion performance. This will
+lead to relatively high latency and poor throughput.</p>
+</dd>
+<dt class="hdlist1">Single <code>INSERT</code> statement with multiple <code>VALUES</code></dt>
+<dd>
+<p>If you include more
+than 1024 <code>VALUES</code> statements, Impala batches them into groups of 1024 (or the value
+of <code>batch_size</code>) before sending the requests to Kudu. This approach may perform
+slightly better than multiple sequential <code>INSERT</code> statements by amortizing the query start-up
+penalties on the Impala side. To set the batch size for the current Impala
+Shell session, use the following syntax: <code>set batch_size=10000;</code></p>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+Increasing the Impala batch size causes Impala to use more memory. You should
+verify the impact on your cluster and tune accordingly.
+</td>
+</tr>
+</table>
+</div>
+</dd>
+<dt class="hdlist1">Batch Insert</dt>
+<dd>
+<p>The approach that usually performs best, from the standpoint of
+both Impala and Kudu, is usually to import the data using a <code>SELECT FROM</code> statement
+in Impala.</p>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>If your data is not already in Impala, one strategy is to
+<a href="https://impala.apache.org/docs/build/html/topics/impala_txtfile.html">import it from a text file</a>,
+such as a TSV or CSV file.</p>
+</li>
+<li>
+<p><a href="#kudu_impala_create_table">Create the Kudu table</a>, being mindful that the columns
+designated as primary keys cannot have null values.</p>
+</li>
+<li>
+<p>Insert values into the Kudu table by querying the table containing the original
+data, as in the following example:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">INSERT INTO my_kudu_table
+  SELECT * FROM legacy_data_import_table;</code></pre>
+</div>
+</div>
+</li>
+</ol>
+</div>
+</dd>
+<dt class="hdlist1">Ingest using the C++ or Java API</dt>
+<dd>
+<p>In many cases, the appropriate ingest path is to
+use the C++ or Java API to insert directly into Kudu tables. Unlike other Impala tables,
+data inserted into Kudu tables via the API becomes available for query in Impala without
+the need for any <code>INVALIDATE METADATA</code> statements or other statements needed for other
+Impala storage types.</p>
+</dd>
+</dl>
+</div>
+</div>
+<div class="sect3">
+<h4 id="insert_ignore"><a class="link" href="#insert_ignore"><code>INSERT</code> and Primary Key Uniqueness Violations</a></h4>
+<div class="paragraph">
+<p>In most relational databases, if you try to insert a row that has already been inserted, the insertion
+will fail because the primary key would be duplicated. See <a href="#impala_insertion_caveat">Failures During <code>INSERT</code>, <code>UPDATE</code>, and <code>DELETE</code> Operations</a>.
+Impala, however, will not fail the query. Instead, it will generate a warning, but continue
+to execute the remainder of the insert statement.</p>
+</div>
+<div class="paragraph">
+<p>If the inserted rows are meant to replace existing rows, <code>UPSERT</code> may be used instead of <code>INSERT</code>.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">INSERT INTO my_first_table VALUES (99, "sarah");
+UPSERT INTO my_first_table VALUES (99, "zoe");
+-- the current value of the row is 'zoe'</code></pre>
+</div>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_updating_a_row"><a class="link" href="#_updating_a_row">Updating a Row</a></h3>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">UPDATE my_first_table SET name="bob" where id = 3;</code></pre>
+</div>
+</div>
+<div class="admonitionblock important">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-important" title="Important"></i>
+</td>
+<td class="content">
+The <code>UPDATE</code> statement only works in Impala when the target table is in
+Kudu.
+</td>
+</tr>
+</table>
+</div>
+<div class="sect3">
+<h4 id="_updating_in_bulk"><a class="link" href="#_updating_in_bulk">Updating In Bulk</a></h4>
+<div class="paragraph">
+<p>You can update in bulk using the same approaches outlined in
+<a href="#kudu_impala_insert_bulk">Inserting In Bulk</a>.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">UPDATE my_first_table SET name="bob" where age &gt; 10;</code></pre>
+</div>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_deleting_a_row"><a class="link" href="#_deleting_a_row">Deleting a Row</a></h3>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">DELETE FROM my_first_table WHERE id &lt; 3;</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>You can also delete using more complex syntax. A comma in the <code>FROM</code> sub-clause is
+one way that Impala specifies a join query. For more information about Impala joins,
+see <a href="https://impala.apache.org/docs/build/html/topics/impala_joins.html" class="bare">https://impala.apache.org/docs/build/html/topics/impala_joins.html</a>.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">DELETE c FROM my_second_table c, stock_symbols s WHERE c.name = s.symbol;</code></pre>
+</div>
+</div>
+<div class="admonitionblock important">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-important" title="Important"></i>
+</td>
+<td class="content">
+The <code>DELETE</code> statement only works in Impala when the target table is in
+Kudu.
+</td>
+</tr>
+</table>
+</div>
+<div class="sect3">
+<h4 id="_deleting_in_bulk"><a class="link" href="#_deleting_in_bulk">Deleting In Bulk</a></h4>
+<div class="paragraph">
+<p>You can delete in bulk using the same approaches outlined in
+<a href="#kudu_impala_insert_bulk">Inserting In Bulk</a>.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">DELETE FROM my_first_table WHERE id &lt; 3;</code></pre>
+</div>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="impala_insertion_caveat"><a class="link" href="#impala_insertion_caveat">Failures During <code>INSERT</code>, <code>UPDATE</code>, and <code>DELETE</code> Operations</a></h3>
+<div class="paragraph">
+<p><code>INSERT</code>, <code>UPDATE</code>, and <code>DELETE</code> statements cannot be considered transactional as
+a whole. If one of these operations fails part of the way through, the keys may
+have already been created (in the case of <code>INSERT</code>) or the records may have already
+been modified or removed by another process (in the case of <code>UPDATE</code> or <code>DELETE</code>).
+You should design your application with this in mind.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_altering_table_properties"><a class="link" href="#_altering_table_properties">Altering Table Properties</a></h3>
+<div class="paragraph">
+<p>You can change Impala&#8217;s metadata relating to a given Kudu table by altering the table&#8217;s
+properties. These properties include the table name, the list of Kudu master addresses,
+and whether the table is managed by Impala (internal) or externally.</p>
+</div>
+<div class="listingblock">
+<div class="title">Rename an Impala Mapping Table</div>
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">ALTER TABLE my_table RENAME TO my_new_table;</code></pre>
+</div>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+Renaming a table using the <code>ALTER TABLE &#8230;&#8203; RENAME</code> statement only renames
+the Impala mapping table, regardless of whether the table is an internal or external
+table. This avoids disruption to other applications that may be accessing the
+underlying Kudu table.
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<div class="title">Rename the underlying Kudu table for an internal table</div>
+<p>In Impala 2.11 and lower, the underlying Kudu table may be renamed by changing
+the <code>kudu.table_name</code> property:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">ALTER TABLE my_internal_table
+SET TBLPROPERTIES('kudu.table_name' = 'new_name')</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<div class="title">Remapping an external table to a different Kudu table</div>
+<p>If another application has renamed a Kudu table under Impala, it is possible to
+re-map an external table to point to a different Kudu table name.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">ALTER TABLE my_external_table_
+SET TBLPROPERTIES('kudu.table_name' = 'some_other_kudu_table')</code></pre>
+</div>
+</div>
+<div class="listingblock">
+<div class="title">Change the Kudu Master Address</div>
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">ALTER TABLE my_table
+SET TBLPROPERTIES('kudu.master_addresses' = 'kudu-new-master.example.com:7051');</code></pre>
+</div>
+</div>
+<div class="listingblock">
+<div class="title">Change an Internally-Managed Table to External</div>
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">ALTER TABLE my_table SET TBLPROPERTIES('EXTERNAL' = 'TRUE');</code></pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_dropping_a_kudu_table_using_impala"><a class="link" href="#_dropping_a_kudu_table_using_impala">Dropping a Kudu Table Using Impala</a></h3>
+<div class="paragraph">
+<p>If the table was created as an internal table in Impala, using <code>CREATE TABLE</code>, the
+standard <code>DROP TABLE</code> syntax drops the underlying Kudu table and all its data. If
+the table was created as an external table, using <code>CREATE EXTERNAL TABLE</code>, the mapping
+between Impala and Kudu is dropped, but the Kudu table is left intact, with all its
+data.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">DROP TABLE my_first_table;</code></pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_what_s_next"><a class="link" href="#_what_s_next">What&#8217;s Next?</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The examples above have only explored a fraction of what you can do with Impala Shell.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Learn about the <a href="http://impala.io">Impala project</a>.</p>
+</li>
+<li>
+<p>Read the <a href="https://impala.apache.org/impala-docs.html">Impala documentation</a>.</p>
+</li>
+<li>
+<p>View the <a href="https://impala.apache.org/docs/build/html/topics/impala_langref.html">Impala SQL reference</a>.</p>
+</li>
+<li>
+<p>Read about Impala internals or learn how to contribute to Impala on the <a href="https://cwiki.apache.org/confluence/display/IMPALA/Impala+Home">Impala Wiki</a>.</p>
+</li>
+<li>
+<p>Read about the native <a href="installation.html#view_api">Kudu APIs</a>.</p>
+</li>
+</ul>
+</div>
+<div class="sect2">
+<h3 id="_known_issues_and_limitations"><a class="link" href="#_known_issues_and_limitations">Known Issues and Limitations</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>Kudu tables with a name containing upper case or non-ascii characters must be
+assigned an alternate name when used as an external table in Impala.</p>
+</li>
+<li>
+<p>Kudu tables with a column name containing upper case or non-ascii characters
+may not be used as an external table in Impala. Columns may be renamed in Kudu
+to work around this issue.</p>
+</li>
+<li>
+<p>When creating a Kudu table, the <code>CREATE TABLE</code> statement must include the
+primary key columns before other columns, in primary key order.</p>
+</li>
+<li>
+<p>Impala can not create Kudu tables with <code>VARCHAR</code> or nested-typed columns.</p>
+</li>
+<li>
+<p>Impala cannot update values in primary key columns.</p>
+</li>
+<li>
+<p><code>!=</code> and <code>LIKE</code> predicates are not pushed to Kudu, and
+instead will be evaluated by the Impala scan node. This may decrease performance
+relative to other types of predicates.</p>
+</li>
+<li>
+<p>Updates, inserts, and deletes via Impala are non-transactional. If a query
+fails part of the way through, its partial effects will not be rolled back.</p>
+</li>
+<li>
+<p>The maximum parallelism of a single query is limited to the number of tablets
+in a table. For good analytic performance, aim for 10 or more tablets per host
+for large tables.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+    </div>
+    <div class="col-md-3">
+
+  <div id="toc" data-spy="affix" data-offset-top="70">
+  <ul>
+
+      <li>
+
+          <a href="index.html">Introducing Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="release_notes.html">Kudu Release Notes</a> 
+      </li> 
+      <li>
+
+          <a href="installation.html">Installation Guide</a> 
+      </li> 
+      <li>
+
+          <a href="configuration.html">Configuring Kudu</a> 
+      </li> 
+      <li>
+<span class="active-toc">Using Impala with Kudu</span>
+            <ul class="sectlevel1">
+<li><a href="#_requirements">Requirements</a></li>
+<li><a href="#_configuration">Configuration</a></li>
+<li><a href="#_using_the_impala_shell">Using the Impala Shell</a>
+<ul class="sectlevel2">
+<li><a href="#_internal_and_external_impala_tables">Internal and External Impala Tables</a></li>
+<li><a href="#_querying_an_existing_kudu_table_in_impala">Querying an Existing Kudu Table In Impala</a></li>
+<li><a href="#kudu_impala_create_table">Creating a New Kudu Table From Impala</a></li>
+<li><a href="#_optimizing_performance_for_evaluating_sql_predicates">Optimizing Performance for Evaluating SQL Predicates</a></li>
+<li><a href="#partitioning_tables">Partitioning Tables</a></li>
+<li><a href="#_inserting_data_into_kudu_tables">Inserting Data Into Kudu Tables</a></li>
+<li><a href="#_updating_a_row">Updating a Row</a></li>
+<li><a href="#_deleting_a_row">Deleting a Row</a></li>
+<li><a href="#impala_insertion_caveat">Failures During <code>INSERT</code>, <code>UPDATE</code>, and <code>DELETE</code> Operations</a></li>
+<li><a href="#_altering_table_properties">Altering Table Properties</a></li>
+<li><a href="#_dropping_a_kudu_table_using_impala">Dropping a Kudu Table Using Impala</a></li>
+</ul>
+</li>
+<li><a href="#_what_s_next">What&#8217;s Next?</a>
+<ul class="sectlevel2">
+<li><a href="#_known_issues_and_limitations">Known Issues and Limitations</a></li>
+</ul>
+</li>
+</ul> 
+      </li> 
+      <li>
+
+          <a href="administration.html">Administering Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="troubleshooting.html">Troubleshooting Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="developing.html">Developing Applications with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="schema_design.html">Kudu Schema Design</a> 
+      </li> 
+      <li>
+
+          <a href="scaling_guide.html">Kudu Scaling Guide</a> 
+      </li> 
+      <li>
+
+          <a href="security.html">Kudu Security</a> 
+      </li> 
+      <li>
+
+          <a href="transaction_semantics.html">Kudu Transaction Semantics</a> 
+      </li> 
+      <li>
+
+          <a href="background_tasks.html">Background Maintenance Tasks</a> 
+      </li> 
+      <li>
+
+          <a href="configuration_reference.html">Kudu Configuration Reference</a> 
+      </li> 
+      <li>
+
+          <a href="command_line_tools_reference.html">Kudu Command Line Tools Reference</a> 
+      </li> 
+      <li>
+
+          <a href="known_issues.html">Known Issues and Limitations</a> 
+      </li> 
+      <li>
+
+          <a href="contributing.html">Contributing to Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="export_control.html">Export Control Notice</a> 
+      </li> 
+  </ul>
+  </div>
+    </div>
+  </div>
+</div>

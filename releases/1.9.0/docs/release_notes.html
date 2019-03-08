@@ -1,0 +1,480 @@
+---
+title: Apache Kudu 1.9.0 Release Notes
+layout: default
+active_nav: docs
+last_updated: 'Last updated 2019-03-12 04:39:56 UTC'
+---
+<!--
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+
+<div class="container">
+  <div class="row">
+    <div class="col-md-9">
+
+<h1>Apache Kudu 1.9.0 Release Notes</h1>
+      <div class="sect1">
+<h2 id="rn_1.9.0_upgrade_notes"><a class="link" href="#rn_1.9.0_upgrade_notes">Upgrade Notes</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Flume 1.8+ requires Java 8 at runtime even though the Kudu Flume integration
+is Java 7 compatible. Flume 1.8 is the default dependency version as of
+Kudu 1.8.0.</p>
+</li>
+<li>
+<p>Hadoop 3.0+ requires Java 8 at runtime even though the Kudu Hadoop integration
+is Java 7 compatible. Hadoop 3.1 is the default dependency version as of
+Kudu 1.8.0.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.9.0_obsoletions"><a class="link" href="#rn_1.9.0_obsoletions">Obsoletions</a></h2>
+<div class="sectionbody">
+
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.9.0_deprecations"><a class="link" href="#rn_1.9.0_deprecations">Deprecations</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Support for Java 7 has been deprecated since Kudu 1.5.0 and may be removed in
+the next major release.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.9.0_new_features"><a class="link" href="#rn_1.9.0_new_features">New features</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Kudu now supports location awareness. When configured, Kudu will make a best
+effort to avoid placing a majority of replicas for a given tablet at the same
+location. The <code>kudu cluster rebalance</code> tool has been updated to act in
+accordance with the placement policy of a location-aware Kudu. The
+<a href="https://kudu.apache.org/releases/1.9.0/docs/administration.html#rack_awareness">administrative
+documentation</a> has been updated to detail the usage of this feature.</p>
+</li>
+<li>
+<p>Docker scripts have been introduced to build and run Kudu on various operating
+systems. See the <code>/docker</code> subdirectory of the source repository for more
+details. An <a href="https://hub.docker.com/r/apache/kudu">official repository</a> has
+been created for Apache Kudu Docker artifacts.</p>
+</li>
+<li>
+<p>Developers integrating with Kudu can now write Java tests that start a Kudu
+mini cluster without having to first locally build and install Kudu. This is
+made possible by the Kudu team providing platform-specific binaries available
+to Gradle or Maven for download and install at test time. More information on
+this feature can be found <a href="developing.html">here</a>. This binary test
+artifact is currently considered to be experimental.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.9.0_improvements"><a class="link" href="#rn_1.9.0_improvements">Optimizations and improvements</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>When creating a table, the master now enforces a restriction on the total
+number of replicas rather than the total number of partitions. If manually
+overriding <code>--max_create_tablets_per_ts</code>, the maximum size of a new table
+has effectively been cut by a factor of its replication factor. Note that
+partitions can still be added after table creation.</p>
+</li>
+<li>
+<p>The compaction policy has been updated to favor reducing the number of
+rowsets. This can lead to faster scans and lower bootup times, particularly
+in the face of a “trickling inserts” workload, where rows are inserted slowly
+in primary key order (see
+<a href="https://issues.apache.org/jira/browse/KUDU-1400">KUDU-1400</a>).</p>
+</li>
+<li>
+<p>A tablet-level metric <code>average_diskrowset_height</code> has been added to indicate
+how much a replica needs to be compacted, as indicated by the average number
+of rowsets per unit of keyspace.</p>
+</li>
+<li>
+<p>Scans which read multiple columns of tables undergoing a heavy <code>UPDATE</code>
+workload are now more CPU efficient. In some cases, scan performance of such
+tables may be several times faster upon upgrading to this release.</p>
+</li>
+<li>
+<p>Kudu-Spark users can now provide the short “kudu” format alias to Spark. This
+enables using <code>.format(“kudu”)</code> in places where you would have needed to
+provide the fully qualified name like <code>.format(“org.apache.kudu.spark.kudu")</code>
+or imported <code>org.apache.kudu.spark.kudu._</code> and used the implicit <code>.kudu</code>
+functions. The
+<a href="https://kudu.apache.org/releases/1.9.0/docs/developing.html#_kudu_integration_with_spark">Spark
+integration documentation</a> has been updated to reflect this improvement.</p>
+</li>
+<li>
+<p>The <code>KuduSink</code> class has been added to the Spark integration as a
+<code>StreamSinkProvider</code>, allowing structured streaming writes into Kudu (see
+<a href="https://issues.apache.org/jira/browse/KUDU-2640">KUDU-2640</a>).</p>
+</li>
+<li>
+<p>The amount of server-side logging has been greatly reduced for Kudu&#8217;s
+consensus implementation and background processes. This logging was determined
+to be not useful and unnecessarily verbose.</p>
+</li>
+<li>
+<p>The web UI now more obviously depicts which columns are a part of the primary
+key (see <a href="https://issues.apache.org/jira/browse/KUDU-2477">KUDU-2477</a>).</p>
+</li>
+<li>
+<p>The <code>kudu table describe</code> tool has been added to support describing table
+attributes, including schema, partitioning, replication factor, column
+encodings, compressions, and default values.</p>
+</li>
+<li>
+<p>The <code>kudu table scan</code> tool has been added to scan rows from a table,
+supporting comparison, in-list, and is-null predicates.</p>
+</li>
+<li>
+<p>The <code>kudu locate_row</code> tool has been added to allow users to determine what
+tablet a given primary key belongs to, and whether a row exists for that
+primary key.</p>
+</li>
+<li>
+<p>The <code>kudu diagnose dump_mem_trackers</code> tool is added to allow users to output
+the contents of the <code>/mem-trackers</code> web UI page in a CSV format.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.9.0_fixed_issues"><a class="link" href="#rn_1.9.0_fixed_issues">Fixed Issues</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>To avoid glitches and undefined behavior, the Kudu Python client now
+detects and reports on conflicting/incorrect initialization of the OpenSSL
+library.</p>
+</li>
+<li>
+<p>Fixed a crash caused by a race between altering tablet schemas and deleting
+tablet replicas (see
+<a href="https://issues.apache.org/jira/browse/KUDU-1678">KUDU-1678</a>).</p>
+</li>
+<li>
+<p>Fixed an issue that would prevent the <code>kudu fs update_dirs</code> tool from
+removing directories in the presence of tablet tombstones (see
+<a href="https://issues.apache.org/jira/browse/KUDU-2680">KUDU-2680</a>).</p>
+</li>
+<li>
+<p>The <code>--cmeta_force_fsync</code> flag may be used to fsync Kudu&#8217;s consensus
+metadata more aggressively. Setting this to <code>true</code> may decrease Kudu&#8217;s
+performance, but improve its durability in the face of power failures and
+forced shutdowns (see
+<a href="https://issues.apache.org/jira/browse/KUDU-2195">KUDU-2195</a>).</p>
+</li>
+<li>
+<p>Fixed an issue that would cause an excessive amount of RPC traffic from Kudu
+masters if the tablet servers were configured with duplicated master addresses
+(see <a href="https://issues.apache.org/jira/browse/KUDU-2684">KUDU-2684</a>).</p>
+</li>
+<li>
+<p>Fixed an issue that would cause the <code>kudu cluster rebalance</code> tool to run
+indefinitely in the case of tables with a replication factor of 2 (see
+<a href="https://issues.apache.org/jira/browse/KUDU-2688">KUDU-2688</a>).</p>
+</li>
+<li>
+<p>Fixed an issue that could lead to a failure to bootstrap tablet replicas
+that were a part of workloads with many alter table operations
+(see <a href="https://issues.apache.org/jira/browse/KUDU-2690">KUDU-2690</a>).</p>
+</li>
+<li>
+<p>Fixed an issue with the Java scanner&#8217;s <code>keepAlive</code> that could lead to a
+permanent hang in the scanner (see
+<a href="https://issues.apache.org/jira/browse/KUDU-2710">KUDU-2710</a>).</p>
+</li>
+<li>
+<p>Fixed an issue that would cause undefined behavior upon connecting to a
+secure cluster concurrently from multiple C++ clients (see
+<a href="https://issues.apache.org/jira/browse/KUDU-2706">KUDU-2706</a>).</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.9.0_wire_compatibility"><a class="link" href="#rn_1.9.0_wire_compatibility">Wire Protocol compatibility</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu 1.9.0 is wire-compatible with previous versions of Kudu:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Kudu 1.9 clients may connect to servers running Kudu 1.0 or later. If the client uses
+features that are not available on the target server, an error will be returned.</p>
+</li>
+<li>
+<p>Rolling upgrade between Kudu 1.8 and Kudu 1.9 servers is believed to be possible
+though has not been sufficiently tested. Users are encouraged to shut down all nodes
+in the cluster, upgrade the software, and then restart the daemons on the new version.</p>
+</li>
+<li>
+<p>Kudu 1.0 clients may connect to servers running Kudu 1.9 with the exception of the
+below-mentioned restrictions regarding secure clusters.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>The authentication features introduced in Kudu 1.3 place the following limitations
+on wire compatibility between Kudu 1.9 and versions earlier than 1.3:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>If a Kudu 1.9 cluster is configured with authentication or encryption set to "required",
+clients older than Kudu 1.3 will be unable to connect.</p>
+</li>
+<li>
+<p>If a Kudu 1.9 cluster is configured with authentication and encryption set to "optional"
+or "disabled", older clients will still be able to connect.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.9.0_incompatible_changes"><a class="link" href="#rn_1.9.0_incompatible_changes">Incompatible Changes in Kudu 1.9.0</a></h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="rn_1.9.0_client_compatibility"><a class="link" href="#rn_1.9.0_client_compatibility">Client Library Compatibility</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>The Kudu 1.9 Java client library is API- and ABI-compatible with Kudu 1.8. Applications
+written against Kudu 1.8 will compile and run against the Kudu 1.9 client library and
+vice-versa.</p>
+</li>
+<li>
+<p>The Kudu 1.9 C++ client is API- and ABI-forward-compatible with Kudu 1.8.
+Applications written and compiled against the Kudu 1.8 client library will run without
+modification against the Kudu 1.9 client library. Applications written and compiled
+against the Kudu 1.9 client library will run without modification against the Kudu 1.8
+client library.</p>
+</li>
+<li>
+<p>The Kudu 1.9 Python client is API-compatible with Kudu 1.8. Applications
+written against Kudu 1.8 will continue to run against the Kudu 1.9 client
+and vice-versa.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.9.0_known_issues"><a class="link" href="#rn_1.9.0_known_issues">Known Issues and Limitations</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Please refer to the <a href="known_issues.html">Known Issues and Limitations</a> section of the
+documentation.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.9.0_contributors"><a class="link" href="#rn_1.9.0_contributors">Contributors</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu 1.9 includes contributions from 24 people, including 5 first-time contributors:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Bankim Bhavsar</p>
+</li>
+<li>
+<p>Mike Parker</p>
+</li>
+<li>
+<p>Mitch Barnett</p>
+</li>
+<li>
+<p>Tim Armstrong</p>
+</li>
+<li>
+<p>Yingchun Lai</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Thank you for your help in making Kudu even better!</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="resources_and_next_steps"><a class="link" href="#resources_and_next_steps">Resources</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p><a href="http://kudu.apache.org">Kudu Website</a></p>
+</li>
+<li>
+<p><a href="http://github.com/apache/kudu">Kudu GitHub Repository</a></p>
+</li>
+<li>
+<p><a href="index.html">Kudu Documentation</a></p>
+</li>
+<li>
+<p><a href="prior_release_notes.html">Release notes for older releases</a></p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_installation_options"><a class="link" href="#_installation_options">Installation Options</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>For full installation details, see <a href="installation.html">Kudu Installation</a>.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_next_steps"><a class="link" href="#_next_steps">Next Steps</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p><a href="installation.html">Installing Kudu</a></p>
+</li>
+<li>
+<p><a href="configuration.html">Configuring Kudu</a></p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+    </div>
+    <div class="col-md-3">
+
+  <div id="toc" data-spy="affix" data-offset-top="70">
+  <ul>
+
+      <li>
+
+          <a href="index.html">Introducing Kudu</a> 
+      </li> 
+      <li>
+<span class="active-toc">Kudu Release Notes</span>
+            <ul class="sectlevel1">
+<li><a href="#rn_1.9.0_upgrade_notes">Upgrade Notes</a></li>
+<li><a href="#rn_1.9.0_obsoletions">Obsoletions</a></li>
+<li><a href="#rn_1.9.0_deprecations">Deprecations</a></li>
+<li><a href="#rn_1.9.0_new_features">New features</a></li>
+<li><a href="#rn_1.9.0_improvements">Optimizations and improvements</a></li>
+<li><a href="#rn_1.9.0_fixed_issues">Fixed Issues</a></li>
+<li><a href="#rn_1.9.0_wire_compatibility">Wire Protocol compatibility</a></li>
+<li><a href="#rn_1.9.0_incompatible_changes">Incompatible Changes in Kudu 1.9.0</a>
+<ul class="sectlevel2">
+<li><a href="#rn_1.9.0_client_compatibility">Client Library Compatibility</a></li>
+</ul>
+</li>
+<li><a href="#rn_1.9.0_known_issues">Known Issues and Limitations</a></li>
+<li><a href="#rn_1.9.0_contributors">Contributors</a></li>
+<li><a href="#resources_and_next_steps">Resources</a></li>
+<li><a href="#_installation_options">Installation Options</a></li>
+<li><a href="#_next_steps">Next Steps</a></li>
+</ul> 
+      </li> 
+      <li>
+
+          <a href="installation.html">Installation Guide</a> 
+      </li> 
+      <li>
+
+          <a href="configuration.html">Configuring Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="kudu_impala_integration.html">Using Impala with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="administration.html">Administering Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="troubleshooting.html">Troubleshooting Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="developing.html">Developing Applications with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="schema_design.html">Kudu Schema Design</a> 
+      </li> 
+      <li>
+
+          <a href="scaling_guide.html">Kudu Scaling Guide</a> 
+      </li> 
+      <li>
+
+          <a href="security.html">Kudu Security</a> 
+      </li> 
+      <li>
+
+          <a href="transaction_semantics.html">Kudu Transaction Semantics</a> 
+      </li> 
+      <li>
+
+          <a href="background_tasks.html">Background Maintenance Tasks</a> 
+      </li> 
+      <li>
+
+          <a href="configuration_reference.html">Kudu Configuration Reference</a> 
+      </li> 
+      <li>
+
+          <a href="command_line_tools_reference.html">Kudu Command Line Tools Reference</a> 
+      </li> 
+      <li>
+
+          <a href="known_issues.html">Known Issues and Limitations</a> 
+      </li> 
+      <li>
+
+          <a href="contributing.html">Contributing to Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="export_control.html">Export Control Notice</a> 
+      </li> 
+  </ul>
+  </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,1050 @@
+---
+title: Contributing to Apache Kudu
+layout: default
+active_nav: docs
+last_updated: 'Last updated 2019-03-12 04:38:06 UTC'
+---
+<!--
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+
+<div class="container">
+  <div class="row">
+    <div class="col-md-9">
+
+<h1>Contributing to Apache Kudu</h1>
+      <div class="sect1">
+<h2 id="_contributing_patches_using_gerrit"><a class="link" href="#_contributing_patches_using_gerrit">Contributing Patches Using Gerrit</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The Kudu team uses Gerrit for code review, rather than Github pull requests. Typically,
+you pull from Github but push to Gerrit, and Gerrit is used to review code and merge
+it into Github.</p>
+</div>
+<div class="paragraph">
+<p>See the <a href="https://www.mediawiki.org/wiki/Gerrit/Tutorial">Gerrit Tutorial</a>
+for an overview of using Gerrit for code review.</p>
+</div>
+<div class="sect2">
+<h3 id="_initial_setup_for_gerrit"><a class="link" href="#_initial_setup_for_gerrit">Initial Setup for Gerrit</a></h3>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Sign in to <a href="https://gerrit.cloudera.org/">Gerrit</a> using your Github username.</p>
+</li>
+<li>
+<p>Go to <a href="https://gerrit.cloudera.org/settings/">Settings</a>. Update your name
+and email address on the <strong>Contact Information</strong> page, and upload a SSH public
+key under <strong>SSH Public Keys</strong> if you would like to use SSH to connect to Gerrit.
+Generate an HTTP password under <strong>HTTP Password</strong> if you would like to use HTTP
+or HTTPS to connect to Gerrit. (Most Kudu developers use the SSH option.)</p>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+If you do not update your name, it will appear as "Anonymous Coward" in
+Gerrit reviews.
+</td>
+</tr>
+</table>
+</div>
+</li>
+<li>
+<p>If you have not done so, clone the main Kudu repository. By default, the main remote
+is called <code>origin</code>. When you fetch or pull, you will do so from <code>origin</code>.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">git clone https://github.com/apache/kudu</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>Change to the new <code>kudu</code> directory.</p>
+</li>
+<li>
+<p>Add a <code>gerrit</code> remote.</p>
+<div class="paragraph">
+<p>If using SSH to connect to Gerrit, use the following command to add the Gerrit
+remote (substitute &lt;username&gt; with your Github username):</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">git remote add gerrit ssh://&lt;username&gt;@gerrit.cloudera.org:29418/kudu</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>If using HTTP or HTTPS to connect to Gerrit, use the following command to add
+the Gerrit remote (http:// also works):</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">git remote add gerrit https://gerrit.cloudera.org/a/kudu</code></pre>
+</div>
+</div>
+<div class="admonitionblock tip">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-tip" title="Tip"></i>
+</td>
+<td class="content">
+<div class="paragraph">
+<p>If you are using Gerrit&#8217;s HTTP or HTTPS endpoints and prefer not to type a
+username and password each time you submit a patch, you can put your login and
+password into a <code>.netrc</code> file located at <code>$HOME/.netrc</code> and Git will use it.
+The password is stored as plaintext and the file format is as follows:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code>machine &lt;hostname&gt;
+  login &lt;username&gt;
+  password &lt;password&gt;</code></pre>
+</div>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</li>
+<li>
+<p>Run the following command to install the Gerrit <code>commit-msg</code> hook:</p>
+<div class="listingblock">
+<div class="content">
+<pre>cd kudu
+gitdir=$(git rev-parse --git-dir)
+curl -LSsf https://gerrit.cloudera.org/tools/hooks/commit-msg -o ${gitdir}/hooks/commit-msg
+chmod +x ${gitdir}/hooks/commit-msg</pre>
+</div>
+</div>
+</li>
+<li>
+<p>Be sure you have set the Kudu repository to use <code>pull --rebase</code> by default. You
+can use the following two commands, assuming you have only ever checked out <code>master</code>
+so far:</p>
+<div class="listingblock">
+<div class="content">
+<pre>git config branch.autosetuprebase always
+git config branch.master.rebase true</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>If for some reason you had already checked out branches other than <code>master</code>, substitute
+<code>master</code> for the other branch names in the second command above.</p>
+</div>
+</li>
+</ol>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_submitting_patches"><a class="link" href="#_submitting_patches">Submitting Patches</a></h3>
+<div class="paragraph">
+<p>To submit a patch, first commit your change (using a descriptive multi-line
+commit message if possible), then push the request to the <code>gerrit</code> remote. For instance, to push a change
+to the <code>master</code> branch:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>git push gerrit HEAD:refs/for/master --no-thin</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>or to push a change to the <code>gh-pages</code> branch (to update the website):</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>git push gerrit HEAD:refs/for/gh-pages --no-thin</pre>
+</div>
+</div>
+<div class="admonitionblock tip">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-tip" title="Tip"></i>
+</td>
+<td class="content">
+While preparing a patch for review, it&#8217;s a good idea to follow
+<a href="https://git-scm.com/book/en/v2/Distributed-Git-Contributing-to-a-Project#_commit_guidelines">generic git commit guidelines and good practices</a>.
+</td>
+</tr>
+</table>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+The <code>--no-thin</code> argument is a workaround to prevent an error in Gerrit. See
+<a href="https://code.google.com/p/gerrit/issues/detail?id=1582" class="bare">https://code.google.com/p/gerrit/issues/detail?id=1582</a>.
+</td>
+</tr>
+</table>
+</div>
+<div class="admonitionblock tip">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-tip" title="Tip"></i>
+</td>
+<td class="content">
+Consider creating Git aliases for the above commands. Gerrit also includes
+a command-line tool called
+<a href="https://www.mediawiki.org/wiki/Gerrit/Tutorial#Installing_git-review">git-review</a>,
+which you may find helpful.
+</td>
+</tr>
+</table>
+</div>
+<div class="admonitionblock tip">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-tip" title="Tip"></i>
+</td>
+<td class="content">
+You can add reviewers automatically for a patch by adding their GitHub
+username or associated email address to the remote branch name following with
+the "r" flag:
+</td>
+</tr>
+</table>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>git push gerrit HEAD:refs/for/master%r=githubuser,r=example@apache.org</pre>
+</div>
+</div>
+<div class="admonitionblock tip">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-tip" title="Tip"></i>
+</td>
+<td class="content">
+To find possible reviewer candidates for your commit, use git blame or git
+log to find out who are involved with the area you&#8217;re touching. It&#8217;s also a
+good idea to add as reviewer whoever is involved with the JIRA you&#8217;re working
+on.
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>Gerrit will add a change ID to your commit message and will create a Gerrit review,
+whose URL will be emitted as part of the push reply. If desired, you can send a message
+to the <code>kudu-dev</code> mailing list, explaining your patch and requesting review.</p>
+</div>
+<div class="paragraph">
+<p>After getting feedback, you can update or amend your commit, (for instance, using
+a command like <code>git commit --amend</code>) while leaving the Change
+ID intact. Push your change to Gerrit again, and this will create a new patch set
+in Gerrit and notify all reviewers about the change.</p>
+</div>
+<div class="paragraph">
+<p>When your code has been reviewed and is ready to be merged into the Kudu code base,
+a Kudu committer will merge it using Gerrit. You can discard your local branch.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_abandoning_a_review"><a class="link" href="#_abandoning_a_review">Abandoning a Review</a></h3>
+<div class="paragraph">
+<p>If your patch is not accepted or you decide to pull it from consideration, you can
+use the Gerrit UI to <strong>Abandon</strong> the patch. It will still show in Gerrit&#8217;s history,
+but will not be listed as a pending review.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_reviewing_patches_in_gerrit"><a class="link" href="#_reviewing_patches_in_gerrit">Reviewing Patches In Gerrit</a></h3>
+<div class="paragraph">
+<p>You can view a unified or side-by-side diff of changes in Gerrit using the web UI.
+To leave a comment, click the relevant line number or highlight the relevant part
+of the line, and type 'c' to bring up a comment box. To submit your comments and/or
+your review status, go up to the top level of the review and click <strong>Reply</strong>. You can
+add additional top-level comments here, and submit them.</p>
+</div>
+<div class="paragraph">
+<p>To check out code from a Gerrit review, click <strong>Download</strong> and paste the relevant Git
+commands into your Git client. You can then update the commit and push to Gerrit to
+submit a patch to the review, even if you were not the original reviewer.</p>
+</div>
+<div class="paragraph">
+<p>Gerrit allows you to vote on a review. A vote of <code>+2</code> from at least one committer
+(besides the submitter) is required before the patch can be merged.</p>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_code_style"><a class="link" href="#_code_style">Code Style</a></h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="_c_code_style"><a class="link" href="#_c_code_style">C++ Code Style</a></h3>
+<div class="paragraph">
+<p>Get familiar with these guidelines so that your contributions can be reviewed and
+integrated quickly and easily.</p>
+</div>
+<div class="paragraph">
+<p>In general, Kudu follows the
+<a href="https://google.github.io/styleguide/cppguide.html">Google C++ Style Guide</a>,
+with the following exceptions:</p>
+</div>
+<div class="sect3">
+<h4 id="_notes_on_c_11"><a class="link" href="#_notes_on_c_11">Notes on C++ 11</a></h4>
+<div class="paragraph">
+<p>Kudu uses C++ 11. Check out this handy guide to C++ 11 move semantics and rvalue
+references: <a href="https://www.chromium.org/rvalue-references" class="bare">https://www.chromium.org/rvalue-references</a></p>
+</div>
+<div class="paragraph">
+<p>We aim to follow most of the same guidelines, such as, where possible, migrating
+away from <code>foo.Pass()</code> in favor of <code>std::move(foo)</code>.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_limitations_on_code_boost_code_use"><a class="link" href="#_limitations_on_code_boost_code_use">Limitations on <code>boost</code> Use</a></h4>
+<div class="paragraph">
+<p><code>boost</code> classes from header-only libraries can be used in cases where a suitable
+replacement does not exist in the Kudu code base. However:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Do not introduce dependencies on <code>boost</code> classes where equivalent functionality
+exists in the standard C++ library or in <code>src/kudu/gutil/</code>. For example, prefer
+<code>strings::Split()</code> from <code>gutil</code> rather than <code>boost::split</code>.</p>
+</li>
+<li>
+<p>Prefer using functionality from  <code>boost</code> rather than re-implementing the same
+functionality, <em>unless</em> using the <code>boost</code> functionality requires excessive use of
+C++ features which are disallowed by our style guidelines. For example,
+<code>boost::spirit</code> is heavily based on template metaprogramming and should not be used.</p>
+</li>
+<li>
+<p>Do not use <code>boost</code> in any public headers for the Kudu C++ client, because
+<code>boost</code> commonly breaks backward compatibility, and passing data between two
+<code>boost</code> versions (one by the user, one by Kudu) causes serious issues.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>When in doubt about introducing a new dependency on any <code>boost</code> functionality,
+it is best to email <code>dev@kudu.apache.org</code> to start a discussion.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_line_length"><a class="link" href="#_line_length">Line length</a></h4>
+<div class="paragraph">
+<p>The Kudu team allows line lengths of 100 characters per line, rather than Google&#8217;s standard of 80. Try to
+keep under 80 where possible, but you can spill over to 100 or so if necessary.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_pointers"><a class="link" href="#_pointers">Pointers</a></h4>
+<div class="paragraph">
+<div class="title">Smart Pointers and Singly-Owned Pointers</div>
+<p>Generally, most objects should have clear "single-owner" semantics.
+Most of the time, singly-owned objects can be wrapped in a <code>unique_ptr&lt;&gt;</code>
+which ensures deletion on scope exit and prevents accidental copying.</p>
+</div>
+<div class="paragraph">
+<p>If an object is singly owned, but referenced from multiple places, such as when
+the pointed-to object is known to be valid at least as long as the pointer itself,
+associate a comment with the constructor which takes and stores the raw pointer,
+as in the following example.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-c++" data-lang="c++">  // 'blah' must remain valid for the lifetime of this class
+  MyClass(const Blah* blah) :
+    blah_(blah) {
+  }</code></pre>
+</div>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+Older parts of the Kudu code base use <code>gscoped_ptr</code> instead of
+<code>unique_ptr</code>. These are hold-overs from before Kudu adopted C++11.
+New code should not use <code>gscoped_ptr</code> except when necessary to interface
+with existing code. Alternatively, consider updating usages as you come
+across them.
+</td>
+</tr>
+</table>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+Using <code>std::auto_ptr</code> is strictly disallowed because of its difficult and
+bug-prone semantics. Besides, <code>std::auto_ptr</code> is declared deprecated
+since C++11.
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<div class="title">Smart Pointers for Multiply-Owned Pointers:</div>
+<p>Although single ownership is ideal, sometimes it is not possible, particularly
+when multiple threads are in play and the lifetimes of the pointers are not
+clearly defined. In these cases, you can use either <code>std::shared_ptr</code> or
+Kudu&#8217;s own <code>scoped_refptr</code> from <em>gutil/ref_counted.hpp</em>. Each of these mechanisms
+relies on reference counting to automatically delete the referent once no more
+pointers remain. The key difference between these two types of pointers is that
+<code>scoped_refptr</code> requires that the object extend a <code>RefCounted</code> base class, and
+stores its reference count inside the object storage itself, while <code>shared_ptr</code>
+maintains a separate reference count on the heap.</p>
+</div>
+<div class="paragraph">
+<p>The pros and cons are:</p>
+</div>
+<div class="ulist none">
+<div class="title"><code>shared_ptr</code></div>
+<ul class="none">
+<li>
+<p><span class="icon green"><i class="fa fa-plus-circle"></i></span> can be used with any type of object, without the
+object deriving from a special base class</p>
+</li>
+<li>
+<p><span class="icon green"><i class="fa fa-plus-circle"></i></span> part of the standard library and familiar to most
+C++ developers</p>
+</li>
+<li>
+<p><span class="icon green"><i class="fa fa-plus-circle"></i></span> supports the <code>weak_ptr</code> use cases:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>a temporary ownership when an object needs to be accessed only if it exists</p>
+</li>
+<li>
+<p>break circular references of <code>shared_ptr</code>, if any exists due to aggregation</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p><span class="icon green"><i class="fa fa-plus-circle"></i></span> you can convert from the
+<code>shared_ptr</code> into the <code>weak_ptr</code> and back</p>
+</li>
+<li>
+<p><span class="icon green"><i class="fa fa-plus-circle"></i></span> if creating an instance with
+<code>std::make_shared&lt;&gt;()</code> only one allocation is made (since C++11;
+a non-binding requirement in the Standard, though)</p>
+</li>
+<li>
+<p><span class="icon red"><i class="fa fa-minus-circle"></i></span> if creating a new object with
+<code>shared_ptr&lt;T&gt; p(new T)</code> requires two allocations (one to create the ref count,
+and one to create the object)</p>
+</li>
+<li>
+<p><span class="icon red"><i class="fa fa-minus-circle"></i></span> the ref count may not be near the object on the heap,
+so extra cache misses may be incurred on access</p>
+</li>
+<li>
+<p><span class="icon red"><i class="fa fa-minus-circle"></i></span> the <code>shared_ptr</code> instance itself requires 16 bytes
+(pointer to the ref count and pointer to the object)</p>
+</li>
+</ul>
+</div>
+<div class="ulist none">
+<div class="title"><code>scoped_refptr</code></div>
+<ul class="none">
+<li>
+<p><span class="icon green"><i class="fa fa-plus-circle fa-pro"></i></span> only requires a single allocation, and ref count
+is on the same cache line as the object</p>
+</li>
+<li>
+<p><span class="icon green"><i class="fa fa-plus-circle fa-pro"></i></span> the pointer only requires 8 bytes (since
+the ref count is within the object)</p>
+</li>
+<li>
+<p><span class="icon green"><i class="fa fa-plus-circle fa-pro"></i></span> you can manually increase or decrease
+reference counts when more control is required</p>
+</li>
+<li>
+<p><span class="icon green"><i class="fa fa-plus-circle fa-pro"></i></span> you can convert from a raw pointer back
+to a <code>scoped_refptr</code> safely without worrying about double freeing</p>
+</li>
+<li>
+<p><span class="icon green"><i class="fa fa-plus-circle fa-pro"></i></span> since we control the implementation, we
+can implement features, such as debug builds that capture the stack trace of every
+referent to help debug leaks.</p>
+</li>
+<li>
+<p><span class="icon red"><i class="fa fa-minus-circle fa-con"></i></span> the referred-to object must inherit
+from <code>RefCounted</code></p>
+</li>
+<li>
+<p><span class="icon red"><i class="fa fa-minus-circle fa-con"></i></span> does not support the <code>weak_ptr</code> use cases</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Since <code>scoped_refptr</code> is generally faster and smaller, try to use it
+rather than <code>shared_ptr</code> in new code. Existing code uses <code>shared_ptr</code>
+in many places. When interfacing with that code, you can continue to use <code>shared_ptr</code>.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_function_binding_and_callbacks"><a class="link" href="#_function_binding_and_callbacks">Function Binding and Callbacks</a></h4>
+<div class="paragraph">
+<p>Existing code uses <code>boost::bind</code> and <code>boost::function</code> to capture and manage
+functors. For new code, use <code>std::bind</code> and <code>std::function</code>, which are
+functionally equivalent.</p>
+</div>
+<div class="paragraph">
+<p>Alternatively, the <code>Bind</code> and <code>Callback</code> classes in <code>gutil</code> may also be used to
+capture functors. See <em>gutil/callback.h</em> for more details and
+<em>util/callback_bind-test.cc</em> for examples. While less full-featured, they
+provide different options from their counterparts by the way of argument
+lifecycle management. The benefits of each are described below:</p>
+</div>
+<div class="ulist none">
+<div class="title"><code>std::bind</code> and <code>std::function</code></div>
+<ul class="none">
+<li>
+<p>natively supports binding <code>shared_ptr</code> and <code>weak_ptr</code> objects, so a bound
+smartpointer argument will increment its count during <code>bind</code>, and decrement it
+when the <code>function</code> leaves scope</p>
+</li>
+<li>
+<p>supports argument placeholders, wrapped function pointers, and function objects</p>
+</li>
+</ul>
+</div>
+<div class="ulist none">
+<div class="title"><code>Bind</code> and <code>Callback</code></div>
+<ul class="none">
+<li>
+<p>natively supports binding <code>RefCounted</code> objects, so a bound argument whose
+class extends <code>RefCounted</code> will increment its count during <code>Bind</code> and decrement
+it when the <code>Callback</code> goes out of scope</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_gflags"><a class="link" href="#_gflags">GFlags</a></h4>
+<div class="paragraph">
+<p>Kudu uses gflags for both command-line and file-based configuration. Use these guidelines
+to add a new gflag. All new gflags must conform to these
+guidelines. Existing non-conformant ones will be made conformant in time.</p>
+</div>
+<div class="paragraph">
+<div class="title">Name</div>
+<p>The gflag&#8217;s name conveys a lot of information, so choose a good name. The name
+will propagate into other systems, such as the
+<a href="configuration_reference.html">Configuration Reference</a>.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>The different parts of a multi-word name should be separated by underscores.
+For example, <code>fs_data_dirs</code>.</p>
+</li>
+<li>
+<p>The name should be prefixed with the context that it affects. For example,
+<code>webserver_num_worker_threads</code> and <code>cfile_default_block_size</code>. Context can be
+difficult to define, so bear in mind that this prefix will be
+used to group similar gflags together. If the gflag affects the entire
+process, it should not be prefixed.</p>
+</li>
+<li>
+<p>If the gflag is for a quantity, the name should be suffixed with the units.
+For example, <code>tablet_copy_idle_timeout_ms</code>.</p>
+</li>
+<li>
+<p>Where possible, use short names. This will save time for those entering
+command line options by hand.</p>
+</li>
+<li>
+<p>The name is part of Kudu&#8217;s compatibility contract, and should not change
+without very good reason.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<div class="title">Default value</div>
+<p>Choosing a default value is generally simple, but like the name, it propagates
+into other systems.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>The default value is part of Kudu&#8217;s compatibility contract, and should not
+change without very good reason.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<div class="title">Description</div>
+<p>The gflag&#8217;s description should supplement the name and provide additional
+context and information. Like the name, the description propagates into other
+systems.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>The description may include multiple sentences. Each should begin with a
+capital letter, end with a period, and begin one space after the previous.</p>
+</li>
+<li>
+<p>The description should NOT include the gflag&#8217;s type or default value; they are
+provided out-of-band.</p>
+</li>
+<li>
+<p>The description should be in the third person. Do not use words like <code>you</code>.</p>
+</li>
+<li>
+<p>A gflag description can be changed freely; it is not expected to remain the
+same across Kudu releases.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<div class="title">Tags</div>
+<p>Kudu&#8217;s gflag tagging mechanism adds machine-readable context to each gflag, for
+use in consuming systems such as documentation or management tools. See the large block
+comment in <em>flag_tags.h</em> for guidelines.</p>
+</div>
+<div class="ulist">
+<div class="title">Miscellaneous</div>
+<ul>
+<li>
+<p>Avoid creating multiple gflags for the same logical parameter. For
+example, many Kudu binaries need to configure a WAL directory. Rather than
+creating <code>foo_wal_dir</code> and <code>bar_wal_dir</code> gflags, better to have a single
+<code>kudu_wal_dir</code> gflag for use universally.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_java_code_style"><a class="link" href="#_java_code_style">Java Code Style</a></h3>
+<div class="sect3">
+<h4 id="_preconditions_vs_assert_in_the_kudu_java_client"><a class="link" href="#_preconditions_vs_assert_in_the_kudu_java_client">Preconditions vs assert in the Kudu Java client</a></h4>
+<div class="paragraph">
+<p>Use <code>assert</code> for verification of the static (i.e. non-runtime) internal
+invariants. Internal means the pre- and post-conditions which are
+completely under control of the code of a class or a function itself and cannot
+be influenced by input parameters and other runtime/dynamic conditions.</p>
+</div>
+<div class="paragraph">
+<p>Use <code>Preconditions</code> for verification of the input parameters and the other
+conditions which are outside of the control of the local code, or conditions
+which are dependent on the state of other objects/components in runtime.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-java" data-lang="java">Object pop() {
+  // Use Preconditions here because the external user of the class should not
+  // call pop() on an empty stack, but the stack itself is internally consistent
+  Preconditions.checkState(curSize &gt; 0, "queue must not be empty");
+  Object toReturn = data[--curSize];
+  // Use an assert here because if we ended up with a negative size counter,
+  // that's an indication of a broken implementation of the stack; i.e. it's
+  // an invariant, not a state check.
+  assert curSize &gt;= 0;
+  return toReturn;
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>However, keep in mind that <code>assert</code> checks are enabled only when the JVM is
+run with <code>-ea</code> option. So, if some dynamic condition is crucial for the
+overall consistency (e.g. a data loss can occur if some dynamic condition is not
+satisfied and the code continues its execution), consider throwing an
+<code>AssertionError</code>:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-java" data-lang="java">if (!isCriticalConditionSatisfied) {
+  throw new AssertionError("cannot continue: data loss is possible otherwise");
+}</code></pre>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_references"><a class="link" href="#_references">References</a></h5>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="https://docs.oracle.com/javase/8/docs/technotes/guides/language/assert.html">Programming With Assertions</a></p>
+</li>
+<li>
+<p><a href="https://github.com/google/guava/wiki/PreconditionsExplained">Guava Preconditions Explained</a></p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_code_cmake_code_style_guide"><a class="link" href="#_code_cmake_code_style_guide"><code>CMake</code> Style Guide</a></h3>
+<div class="paragraph">
+<p><code>CMake</code> allows commands in lower, upper, or mixed case. To keep
+the CMake files consistent, please use the following guidelines:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><strong>built-in commands</strong> in lowercase</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>add_subdirectory(some/path)</pre>
+</div>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><strong>built-in arguments</strong> in uppercase</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>message(STATUS "message goes here")</pre>
+</div>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><strong>custom commands or macros</strong> in uppercase</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>ADD_KUDU_TEST(some-test)</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_testing"><a class="link" href="#_testing">Testing</a></h2>
+<div class="sectionbody">
+<div class="dlist">
+<dl>
+<dt class="hdlist1">All new code should have tests.</dt>
+<dd>
+<p>Add new tests either in existing files, or create new test files as necessary.</p>
+</dd>
+<dt class="hdlist1">All bug fixes should have tests.</dt>
+<dd>
+<p>It&#8217;s OK to fix a bug without adding a
+new test if it&#8217;s triggered by an existing test case. For example, if a
+race shows up when running a multi-threaded system test after 20
+minutes or so, it&#8217;s worth trying to make a more targeted test case to
+trigger the bug. But if that&#8217;s hard to do, the existing system test
+should be enough.</p>
+</dd>
+<dt class="hdlist1">Tests should run quickly (&lt; 1s).</dt>
+<dd>
+<p>If you want to write a time-intensive
+test, make the runtime dependent on <code>KuduTest#AllowSlowTests</code>, which is
+enabled via the <code>KUDU_ALLOW_SLOW_TESTS</code> environment variable and is
+used by Jenkins test execution.</p>
+</dd>
+<dt class="hdlist1">Tests which run a number of iterations of some task should use a <code>gflags</code> command-line argument for the number of iterations.</dt>
+<dd>
+<p>This is handy for writing quick stress tests or performance tests.</p>
+</dd>
+<dt class="hdlist1">Commits which may affect performance should include before/after <code>perf-stat(1)</code> output.</dt>
+<dd>
+<p>This will show performance improvement or non-regression.
+Performance-sensitive code should include some test case which can be used as a
+targeted benchmark.</p>
+</dd>
+</dl>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_documentation"><a class="link" href="#_documentation">Documentation</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>See the
+<a href="https://github.com/apache/kudu/blob/master/docs/design-docs/doc-style-guide.adoc">Documentation Style Guide</a>
+for guidelines about contributing to the official Kudu documentation.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_blog_posts"><a class="link" href="#_blog_posts">Blog posts</a></h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="_writing_a_post_on_the_kudu_blog"><a class="link" href="#_writing_a_post_on_the_kudu_blog">Writing a post on the Kudu blog</a></h3>
+<div class="paragraph">
+<p>If you are using or integrating with Kudu, consider doing a write-up about your
+use case and your integration with Kudu and submitting it to be posted as an
+article on the Kudu blog. People in the community love to read about how Kudu
+is being used around the world.</p>
+</div>
+<div class="paragraph">
+<p>Consider checking with the project developers on the Kudu Slack instance or on
+<a href="mailto:dev@kudu.apache.org">dev@kudu.apache.org</a> if you have any questions about
+the content or the topic of a potential Kudu blog post.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_submitting_a_blog_post_in_google_doc_format"><a class="link" href="#_submitting_a_blog_post_in_google_doc_format">Submitting a blog post in Google Doc format</a></h3>
+<div class="paragraph">
+<p>If you don&#8217;t have the time to learn Markdown or to submit a Gerrit change
+request, but you would still like to submit a post for the Kudu blog, feel free
+to write your post in Google Docs format and share the draft with us publicly
+on <a href="mailto:dev@kudu.apache.org">dev@kudu.apache.org</a>&#8201;&#8212;&#8201;we&#8217;ll be happy to review
+it and post it to the blog for you once it&#8217;s ready to go.</p>
+</div>
+<div class="paragraph">
+<p>If you would like to submit the post directly to Gerrit for review in Markdown
+format (the developers will appreciate it if you do), please read below.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_how_to_format_a_kudu_blog_post"><a class="link" href="#_how_to_format_a_kudu_blog_post">How to format a Kudu blog post</a></h3>
+<div class="paragraph">
+<p>Blog posts live in the <code>gh-pages</code> branch under the <code>_posts</code> directory in
+Markdown format. They&#8217;re automatically rendered by Jekyll so for those familiar
+with Markdown or Jekyll, submitting a blog post should be fairly
+straightforward.</p>
+</div>
+<div class="paragraph">
+<p>Each post is a separate file named in the following format:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>YYYY-MM-DD-title-of-the-post.md</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The <code>YYYY-MM-DD</code> part is the date which will be included in the link as
+<code>/YYYY-MM-DD</code>, then <code>title-of-the-post</code> is used verbatim. The words should be
+separated by dashes and should contain only lowercase letters of the English
+alphabet and numbers. Finally, the <code>.md</code> extension will be replaced with
+<code>.html</code>.</p>
+</div>
+<div class="paragraph">
+<p>The header contains the layout information (which is always "post"), the
+title and the author&#8217;s name.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>---
+layout: post
+title: Example Post
+author: John Doe
+---</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The actual text of the blog post goes below this header, beginning with the
+"lead" which is a short excerpt that shows up in the index. This is separated
+by the <code>&lt;!--more--&gt;</code> string from the rest of the post.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_how_to_check_the_rendering_of_a_blog_post"><a class="link" href="#_how_to_check_the_rendering_of_a_blog_post">How to check the rendering of a blog post</a></h3>
+<div class="paragraph">
+<p>Once you&#8217;ve finished the post, there is a command you can run to make sure it
+looks good called <code>site_tool</code> in the root of the <code>gh-pages</code> branch that can
+start up Jekyll and serve the rendered site locally. To run this, you need Ruby
+and Python to be installed on your machine, and you can start it with the below
+command.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ ./site_tool jekyll serve</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>When starting, it will print the URL where you can reach the site, but it should
+be <a href="http://localhost:4000" class="bare">http://localhost:4000</a>, or to reach the blog directly,
+<a href="http://localhost:4000/blog" class="bare">http://localhost:4000/blog</a></p>
+</div>
+<div class="paragraph">
+<p>You should be able to see the title and lead of your post along with your name
+at the top of this page, and after clicking on the title or the "Read full
+post&#8230;&#8203;", the whole post.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_how_to_submit_a_blog_post"><a class="link" href="#_how_to_submit_a_blog_post">How to submit a blog post</a></h3>
+<div class="paragraph">
+<p>To submit the post, you&#8217;ll need to commit your change and push it to
+<a href="#_contributing_patches_using_gerrit">Gerrit</a> for review. If the post is deemed
+useful for the community and all comments are addressed, a committer can merge
+and publish your post.</p>
+</div>
+<div class="admonitionblock tip">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-tip" title="Tip"></i>
+</td>
+<td class="content">
+<div class="paragraph">
+<p>If you have a GitHub account, you can fork Kudu from
+<a href="https://github.com/apache/kudu" class="bare">https://github.com/apache/kudu</a> and push the change to your fork too. GitHub will
+automatically render it on <a href="https://&lt;yourname&gt;.github.io/blog" class="bare">https://&lt;yourname&gt;.github.io/blog</a> and you can link it
+directly on Gerrit.</p>
+</div>
+<div class="paragraph">
+<p>This way the reviewers can see that the post renders well without having to
+download it, which can speed up the review process.</p>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</div>
+</div>
+</div>
+    </div>
+    <div class="col-md-3">
+
+  <div id="toc" data-spy="affix" data-offset-top="70">
+  <ul>
+
+      <li>
+
+          <a href="index.html">Introducing Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="release_notes.html">Kudu Release Notes</a> 
+      </li> 
+      <li>
+
+          <a href="installation.html">Installation Guide</a> 
+      </li> 
+      <li>
+
+          <a href="configuration.html">Configuring Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="kudu_impala_integration.html">Using Impala with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="administration.html">Administering Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="troubleshooting.html">Troubleshooting Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="developing.html">Developing Applications with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="schema_design.html">Kudu Schema Design</a> 
+      </li> 
+      <li>
+
+          <a href="scaling_guide.html">Kudu Scaling Guide</a> 
+      </li> 
+      <li>
+
+          <a href="security.html">Kudu Security</a> 
+      </li> 
+      <li>
+
+          <a href="transaction_semantics.html">Kudu Transaction Semantics</a> 
+      </li> 
+      <li>
+
+          <a href="background_tasks.html">Background Maintenance Tasks</a> 
+      </li> 
+      <li>
+
+          <a href="configuration_reference.html">Kudu Configuration Reference</a> 
+      </li> 
+      <li>
+
+          <a href="command_line_tools_reference.html">Kudu Command Line Tools Reference</a> 
+      </li> 
+      <li>
+
+          <a href="known_issues.html">Known Issues and Limitations</a> 
+      </li> 
+      <li>
+<span class="active-toc">Contributing to Kudu</span>
+            <ul class="sectlevel1">
+<li><a href="#_contributing_patches_using_gerrit">Contributing Patches Using Gerrit</a>
+<ul class="sectlevel2">
+<li><a href="#_initial_setup_for_gerrit">Initial Setup for Gerrit</a></li>
+<li><a href="#_submitting_patches">Submitting Patches</a></li>
+<li><a href="#_abandoning_a_review">Abandoning a Review</a></li>
+<li><a href="#_reviewing_patches_in_gerrit">Reviewing Patches In Gerrit</a></li>
+</ul>
+</li>
+<li><a href="#_code_style">Code Style</a>
+<ul class="sectlevel2">
+<li><a href="#_c_code_style">C++ Code Style</a>
+<ul class="sectlevel3">
+<li><a href="#_notes_on_c_11">Notes on C++ 11</a></li>
+<li><a href="#_limitations_on_code_boost_code_use">Limitations on <code>boost</code> Use</a></li>
+<li><a href="#_line_length">Line length</a></li>
+<li><a href="#_pointers">Pointers</a></li>
+<li><a href="#_function_binding_and_callbacks">Function Binding and Callbacks</a></li>
+<li><a href="#_gflags">GFlags</a></li>
+</ul>
+</li>
+<li><a href="#_java_code_style">Java Code Style</a>
+<ul class="sectlevel3">
+<li><a href="#_preconditions_vs_assert_in_the_kudu_java_client">Preconditions vs assert in the Kudu Java client</a></li>
+</ul>
+</li>
+<li><a href="#_code_cmake_code_style_guide"><code>CMake</code> Style Guide</a></li>
+</ul>
+</li>
+<li><a href="#_testing">Testing</a></li>
+<li><a href="#_documentation">Documentation</a></li>
+<li><a href="#_blog_posts">Blog posts</a>
+<ul class="sectlevel2">
+<li><a href="#_writing_a_post_on_the_kudu_blog">Writing a post on the Kudu blog</a></li>
+<li><a href="#_submitting_a_blog_post_in_google_doc_format">Submitting a blog post in Google Doc format</a></li>
+<li><a href="#_how_to_format_a_kudu_blog_post">How to format a Kudu blog post</a></li>
+<li><a href="#_how_to_check_the_rendering_of_a_blog_post">How to check the rendering of a blog post</a></li>
+<li><a href="#_how_to_submit_a_blog_post">How to submit a blog post</a></li>
+</ul>
+</li>
+</ul> 
+      </li> 
+      <li>
+
+          <a href="export_control.html">Export Control Notice</a> 
+      </li> 
+  </ul>
+  </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,3691 @@
+---
+title: Apache Kudu Prior Version Release Notes
+layout: default
+active_nav: docs
+last_updated: 'Last updated 2019-03-12 04:38:06 UTC'
+---
+<!--
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+
+<div class="container">
+  <div class="row">
+    <div class="col-md-9">
+
+<h1>Apache Kudu Prior Version Release Notes</h1>
+      <div id="preamble">
+<div class="sectionbody">
+<div class="paragraph">
+<p>This section reproduces the release notes for new features and incompatible
+changes in prior releases of Apache Kudu.</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+The list of known issues and limitations for prior releases are not
+reproduced on this page. Please consult the
+<a href="http://kudu.apache.org/releases/">documentation of the appropriate release</a>
+for a list of known issues and limitations.
+</td>
+</tr>
+</table>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.8.0"><a class="link" href="#rn_1.8.0">Release Notes Specific to 1.8.0</a></h2>
+<div class="sectionbody">
+
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.8.0_upgrade_notes"><a class="link" href="#rn_1.8.0_upgrade_notes">Upgrade Notes</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Upgrading directly from Kudu 1.7.0 is supported and no special upgrade steps are
+required. A rolling upgrade may work, however it has not been tested. When upgrading
+Kudu, it is recommended to first shut down all Kudu processes across the cluster, then
+upgrade the software on all servers, then restart the Kudu processes on all servers in
+the cluster.</p>
+</li>
+<li>
+<p>Kudu Flume Sink released with Kudu 1.8.0 is compiled against Apache Flume 1.8 and might
+not function with earlier versions of Flume. Note that Flume 1.8 requires Java 1.8 or
+higher.</p>
+</li>
+<li>
+<p>Hadoop 3.0+ requires Java 8 at runtime even though the Kudu Hadoop integration is Java 7
+compatible. Hadoop 3.1 is the default dependency version as of Kudu 1.8.0, used by
+certain features in the Java client.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.8.0_obsoletions"><a class="link" href="#rn_1.8.0_obsoletions">Obsoletions</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>The <code>-table_num_buckets</code> configuration option of the <code>kudu perf loadgen</code> tool is now
+removed in favor of <code>-table_num_hash_partitions</code> and <code>-table_num_range_partitions</code>
+(see <a href="https://issues.apache.org/jira/browse/KUDU-1861">KUDU-1861</a>).</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.8.0_deprecations"><a class="link" href="#rn_1.8.0_deprecations">Deprecations</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Support for Java 7 has been deprecated since Kudu 1.5.0 and may be removed in the next
+major release.</p>
+</li>
+<li>
+<p>The <code>producer.skipMissingColumn</code>, <code>producer.skipBadColumnValue</code>, and
+<code>producer.warnUnmatchedRows</code> Kudu Flume sink configuration parameters have been
+deprecated in favor of <code>producer.missingColumnPolicy</code>, <code>producer.badColumnValuePolicy</code>,
+and <code>producer.unmatchedRowPolicy</code> respectively (see
+<a href="https://issues.apache.org/jira/browse/KUDU-1882">KUDU-1882</a>).</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.8.0_new_features"><a class="link" href="#rn_1.8.0_new_features">New features</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Examples showcasing functionality in C++, Java, and Python, previously
+hosted in a separate repository have been added. They can be found in the
+<code><a href="https://github.com/apache/kudu/tree/master/examples">examples/</a></code>
+top-level subdirectory.</p>
+</li>
+<li>
+<p>Added <code>kudu diagnose parse_stacks</code>, a tool to parse sampled stack traces out of a
+diagnostics log (see <a href="https://issues.apache.org/jira/browse/KUDU-2353">KUDU-2353</a>).</p>
+</li>
+<li>
+<p>Added support for <code>IS NULL</code> and <code>IS NOT NULL</code> predicates to the Kudu Python client (see
+<a href="https://issues.apache.org/jira/browse/KUDU-2399">KUDU-2399</a>).</p>
+</li>
+<li>
+<p>Introduced <a href="administration.html#rebalancer_tool">manual data rebalancer</a> into the kudu
+CLI tool. The rebalancer can be used to redistribute table replicas among tablet
+servers. The rebalancer can be run via <code>kudu cluster rebalance</code> sub-command. Using the
+new tool, it&#8217;s possible to rebalance Kudu clusters of version 1.4.0 and newer.</p>
+</li>
+<li>
+<p>Added <code>kudu tserver get_flags</code> and <code>kudu master get_flags</code>, two tools that allow
+superusers to retrieve all the values of command line flags from remote Kudu processes.
+The <code>get_flags</code> tools support filtering the returned flags by tag, and by default will
+return only flags that were explicitly set.</p>
+</li>
+<li>
+<p>Added <code>kudu tablet unsafe_replace_tablet</code>, a tool to replace a tablet with a new one.
+This tool is meant to be used to recover a table when one of its tablets has permanently
+lost all replicas. The data in the tablet that is replaced is lost, so this tool should
+only be used as a last resort (see
+<a href="https://issues.apache.org/jira/browse/KUDU-2290">KUDU-2290</a>).</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.8.0_improvements"><a class="link" href="#rn_1.8.0_improvements">Optimizations and improvements</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>There is a new metric for each tablet replica tracking the number of election failures
+since the last successful election attempt and the time since the last heartbeat from
+the leader (see <a href="https://issues.apache.org/jira/browse/KUDU-2287">KUDU-2287</a>).</p>
+</li>
+<li>
+<p>Kudu now supports building and running on Ubuntu 18.04 (“Bionic Beaver”) (see
+<a href="https://issues.apache.org/jira/browse/KUDU-2427">KUDU-2427</a>).</p>
+</li>
+<li>
+<p>Kudu now supports building and running against OpenSSL 1.1 (see
+<a href="https://issues.apache.org/jira/browse/KUDU-1889">KUDU-1889</a>).</p>
+</li>
+<li>
+<p>Added Kerberos support to the Kudu Flume sink (see
+<a href="https://issues.apache.org/jira/browse/KUDU-2012">KUDU-2012</a>).</p>
+</li>
+<li>
+<p>The Kudu Spark connector now supports Spark Streaming DataFrames (see
+<a href="https://issues.apache.org/jira/browse/KUDU-2539">KUDU-2539</a>).</p>
+</li>
+<li>
+<p>Added <code>-tables</code> filtering argument to <code>kudu table list</code> (see
+<a href="https://issues.apache.org/jira/browse/KUDU-2529">KUDU-2529</a>).</p>
+</li>
+<li>
+<p>Clients now support setting a limit on the number of returned rows in scans (see
+<a href="https://issues.apache.org/jira/browse/KUDU-16">KUDU-16</a>).</p>
+</li>
+<li>
+<p>Added Pandas support to the Python client (see
+<a href="https://issues.apache.org/jira/browse/KUDU-1276">KUDU-1276</a>).</p>
+</li>
+<li>
+<p>Enabled configuration of mutation buffer in the Python client (see
+<a href="https://issues.apache.org/jira/browse/KUDU-2441">KUDU-2441</a>).</p>
+</li>
+<li>
+<p>Added a <code>keepAlive</code> API call to the <code>KuduScanner</code> and <code>AsyncKuduScanner</code> in the Java
+client.  This API can be used to keep the scanners alive on the server when processing
+of messages will take longer than the scanner TTL (see
+<a href="https://issues.apache.org/jira/browse/KUDU-2095">KUDU-2095</a>).</p>
+</li>
+<li>
+<p>The Kudu Spark integration now uses the keepAlive API when reading data. By default it
+will call keepAlive on a scanner with a period of 15 seconds. This will ensure that
+Spark jobs with large batch sizes or slow processing times do not fail with scanner not
+found errors (see <a href="https://issues.apache.org/jira/browse/KUDU-2563">KUDU-2563</a>).</p>
+</li>
+<li>
+<p>Number of reactor threads in the C++ client is now configurable (see
+<a href="https://issues.apache.org/jira/browse/KUDU-2368">KUDU-2368</a>).</p>
+</li>
+<li>
+<p>Added an optimization to reduce CPU consumption when performing hot metadata lookups in
+the C++ client (see <a href="https://issues.apache.org/jira/browse/KUDU-1977">KUDU-1977</a>).</p>
+</li>
+<li>
+<p>Added an optimization to avoid bottlenecks on <code>getpwuid_r()</code> in libnss during a Raft
+leader election storm (see
+<a href="https://issues.apache.org/jira/browse/KUDU-2395">KUDU-2395</a>).</p>
+</li>
+<li>
+<p>Improved rowset tree pruning making scans with open-ended intervals on primary key (see
+<a href="https://issues.apache.org/jira/browse/KUDU-2566">KUDU-2566</a>).</p>
+</li>
+<li>
+<p>The <code>kudu perf loadgen</code> tool now supports generating range-partitioned tables. The
+<code>-table_num_buckets</code> configuration is now removed in favor of
+<code>-table_num_hash_partitions</code> and <code>-table_num_range_partitions</code> (see
+<a href="https://issues.apache.org/jira/browse/KUDU-1861">KUDU-1861</a>).</p>
+</li>
+<li>
+<p>CFile checksum failures will now cause the affected tablet replicas to be failed and
+re-replicated elsewhere (see
+<a href="https://issues.apache.org/jira/browse/KUDU-2469">KUDU-2469</a>).</p>
+</li>
+<li>
+<p>Servers are now able to start up with data directories missing on disk (see
+<a href="https://issues.apache.org/jira/browse/KUDU-2359">KUDU-2359</a>).</p>
+</li>
+<li>
+<p>The <code>kudu perf loadgen</code> tool now creates tables with a period-separated database name,
+for example <code>default.loadgen_auto_abc123</code>. This new behavior does not take effect if the
+<code>--table</code> flag is provided. The database of the table can be changed using a new
+<code>--auto_database</code> flag. This change is made in anticipation of an eventual Kudu/HMS
+integration (see <a href="https://jira.apache.org/jira/browse/KUDU-2191">KUDU-2191</a>).</p>
+</li>
+<li>
+<p>Introduced <code>FAILED_UNRECOVERABLE</code> replica health status. This is to mark replicas which
+are not able to catch up with the leader due to GC-collected segments of WAL and other
+unrecoverable cases like disk failure. With that, the replica management scheme becomes
+hybrid: the system evicts replicas with <code>FAILED_UNRECOVERABLE</code> health status before
+adding a replacement if it anticipates that it can commit the transaction, while in
+other cases it first adds a non-voter replica and removes the failed one only after
+promoting a newly added replica to voter role.</p>
+</li>
+<li>
+<p>Two additional configuration parameters, <code>socketReadTimeoutMs</code>  and <code>scanRequestTimeout</code>
+have been added to the Spark connector to allow better tuning to avoid scan timeouts
+under high load.</p>
+</li>
+<li>
+<p>The <code>kudu table</code> tool now supports two new options to rename tables and columns,
+<code>rename_table</code> and <code>rename_column</code> respectively.</p>
+</li>
+<li>
+<p>Kudu will now wait for the clock to become synchronized at startup, controlled by a new
+flag <code>-ntp_initial_sync_wait_secs</code> (see
+<a href="https://issues.apache.org/jira/browse/KUDU-2242">KUDU-2242</a>).</p>
+</li>
+<li>
+<p>Tablet deletions are now throttled, which will help Kudu clusters remain stable even
+when many tablets are deleted at once. The number of tablets that a tablet server will
+delete at once is controlled by the new flag <code>-num_tablets_to_delete_simultaneously</code>
+(see <a href="https://issues.apache.org/jira/browse/KUDU-2289">KUDU-2289</a>).</p>
+</li>
+<li>
+<p>The <code>kudu cluster ksck</code> tool has been significantly enhanced. It now checks master
+health and consensus status, displays any unsafe or hidden flags set in the cluster, and
+produces a summary of the Kudu versions running on the master and tablet servers. In
+addition, it now supports JSON output, both in pretty-printed and compact form. The
+output format is controlled by the <code>-ksck_format</code> flag.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.8.0_fixed_issues"><a class="link" href="#rn_1.8.0_fixed_issues">Fixed Issues</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>When a tablet server was wiped and recreated with the same RPC address, <code>ksck</code> listed it
+twice, both as healthy, even though only one of them was there. This bug is now fixed by
+verifying the UUID of the server (see
+<a href="https://issues.apache.org/jira/browse/KUDU-2364">KUDU-2364</a>).</p>
+</li>
+<li>
+<p>Fixed an issue preventing Kudu from starting when using Vormetric&#8217;s encrypted filesystem
+(secfs2) on ext4 (see <a href="https://issues.apache.org/jira/browse/KUDU-2406">KUDU-2406</a>).</p>
+</li>
+<li>
+<p>Fixed an issue where Kudu&#8217;s block cache memory tracking (as seen on the <code>/mem-trackers</code>
+web UI page) wasn’t accounting for all of the overhead of the cache itself (see
+<a href="https://issues.apache.org/jira/browse/KUDU-972">KUDU-972</a>).</p>
+</li>
+<li>
+<p>Fixed an issue where the C++ client would fail to reopen an expired scanner; instead,
+the client would retry in a tight loop and eventually timeout (see
+<a href="https://issues.apache.org/jira/browse/KUDU-2414">KUDU-2414</a>).</p>
+</li>
+<li>
+<p>When a tablet is deleted, its write-ahead log recovery directory is also deleted, if it
+exists (see <a href="https://issues.apache.org/jira/browse/KUDU-1038">KUDU-1038</a>).</p>
+</li>
+<li>
+<p>Fixed a tablet server crash when a tablet is scanned with two predicates on its primary
+key and the predicates do not overlap (see
+<a href="https://issues.apache.org/jira/browse/KUDU-2447">KUDU-2447</a>).</p>
+</li>
+<li>
+<p>Fixed an issue where the Kudu MapReduce connector&#8217;s <code>KuduTableInputFormat</code> may exhaust
+its scan too early (see
+<a href="https://issues.apache.org/jira/browse/KUDU-2525">KUDU-2525</a>).</p>
+</li>
+<li>
+<p>Fixed an issue with failed tablet copies that would cause subsequent tablet copies to
+crash the tablet server (see
+<a href="https://issues.apache.org/jira/browse/KUDU-2293">KUDU-2293</a>).</p>
+</li>
+<li>
+<p>Fixed a bug in which incorrect results would be returned in scans following a
+server restart (see
+<a href="https://issues.apache.org/jira/browse/KUDU-2463">KUDU-2463</a>).</p>
+</li>
+<li>
+<p>Fixed a bug causing a tablet server crash when a write batch request from a client
+failed coarse-grained authorization (see
+<a href="https://issues.apache.org/jira/browse/KUDU-2540">KUDU-2540</a>).</p>
+</li>
+<li>
+<p>Fixed use-after-free in case of WAL replay error (see
+<a href="https://issues.apache.org/jira/browse/KUDU-2509">KUDU-2509</a>).</p>
+</li>
+<li>
+<p>Fixed authentication token reacquisition in the C++ client (see
+<a href="https://issues.apache.org/jira/browse/KUDU-2580">KUDU-2580</a>).</p>
+</li>
+<li>
+<p>Fixed a bug where leader logged excessively when the followers fell behind (see
+<a href="https://issues.apache.org/jira/browse/KUDU-2322">KUDU-2322</a>).</p>
+</li>
+<li>
+<p>Fixed reporting of leader health during lifecycle transitions (see
+<a href="https://issues.apache.org/jira/browse/KUDU-2335">KUDU-2335</a>).</p>
+</li>
+<li>
+<p>Fixed moving single-replica tablets (see
+<a href="https://issues.apache.org/jira/browse/KUDU-2443">KUDU-2443</a>).</p>
+</li>
+<li>
+<p>Fixed an error that would cause the kudu CLI tool to unexpectedly exit when the
+connection to the master or tserver was abruptly closed.</p>
+</li>
+<li>
+<p>Fixed a rare issue where system failure could leave unexpected null bytes at the end of
+metadata files, causing Kudu to be unable to restart (see
+<a href="https://issues.apache.org/jira/browse/KUDU-2260">KUDU-2260</a>).</p>
+</li>
+<li>
+<p>Fixed an issue where <code>kudu cluster ksck</code> running a snapshot checksum scan would use a
+single snapshot timestamp for all tablets. This caused the checksum process to fail if
+the checksum process took a long time and the number of tablets was sufficiently large.
+The tool should now be able to checksum tables even if the process takes many hours.
+(see <a href="https://issues.apache.org/jira/browse/KUDU-2179">KUDU-2179</a>).</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.8.0_wire_compatibility"><a class="link" href="#rn_1.8.0_wire_compatibility">Wire Protocol compatibility</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu 1.8.0 is wire-compatible with previous versions of Kudu:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Kudu 1.8 clients may connect to servers running Kudu 1.0 or later. If the client uses
+features that are not available on the target server, an error will be returned.</p>
+</li>
+<li>
+<p>Kudu 1.0 clients may connect to servers running Kudu 1.8 with the exception of the
+below-mentioned restrictions regarding secure clusters.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>The authentication features introduced in Kudu 1.3 place the following limitations on wire
+compatibility between Kudu 1.8 and versions earlier than 1.3:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>If a Kudu 1.8 cluster is configured with authentication or encryption set to "required",
+clients older than Kudu 1.3 will be unable to connect.</p>
+</li>
+<li>
+<p>If a Kudu 1.8 cluster is configured with authentication and encryption set to "optional"
+or "disabled", older clients will still be able to connect.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.8.0_incompatible_changes"><a class="link" href="#rn_1.8.0_incompatible_changes">Incompatible Changes in Kudu 1.8.0</a></h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="rn_1.8.0_client_compatibility"><a class="link" href="#rn_1.8.0_client_compatibility">Client Library Compatibility</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>The Kudu 1.8 Java client library is API- and ABI-compatible with Kudu 1.7. Applications
+written against Kudu 1.7 will compile and run against the Kudu 1.8 client library and
+vice-versa.</p>
+</li>
+<li>
+<p>The Kudu 1.8 C++ client is API- and ABI-forward-compatible with Kudu 1.7.
+Applications written and compiled against the Kudu 1.7 client library will run without
+modification against the Kudu 1.8 client library. Applications written and compiled
+against the Kudu 1.8 client library will run without modification against the Kudu 1.7
+client library.</p>
+</li>
+<li>
+<p>The Kudu 1.8 Python client is API-compatible with Kudu 1.7. Applications written against
+Kudu 1.7 will continue to run against the Kudu 1.8 client and vice-versa.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.8.0_known_issues"><a class="link" href="#rn_1.8.0_known_issues">Known Issues and Limitations</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Please refer to the <a href="known_issues.html">Known Issues and Limitations</a> section of the
+documentation.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.8.0_contributors"><a class="link" href="#rn_1.8.0_contributors">Contributors</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu 1.8 includes contributions from 40 people, including 15 first-time contributors:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Anupama Gupta</p>
+</li>
+<li>
+<p>Attila Piros</p>
+</li>
+<li>
+<p>Brian McDevitt</p>
+</li>
+<li>
+<p>Fengling Wang</p>
+</li>
+<li>
+<p>Ferenc Szabó</p>
+</li>
+<li>
+<p>Greg Solovyev</p>
+</li>
+<li>
+<p>Kiyoshi Mizumaru</p>
+</li>
+<li>
+<p>Shriya Gupta</p>
+</li>
+<li>
+<p>Thomas Tauber-Marshall</p>
+</li>
+<li>
+<p>Tigerquoll</p>
+</li>
+<li>
+<p>Yao Xu</p>
+</li>
+<li>
+<p>ZhangYao</p>
+</li>
+<li>
+<p>helifu</p>
+</li>
+<li>
+<p>jinxing64</p>
+</li>
+<li>
+<p>qqchang2nd</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Thank you for helping to make Kudu even better!</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.7.1"><a class="link" href="#rn_1.7.1">Release Notes Specific to 1.7.1</a></h2>
+<div class="sectionbody">
+
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.7.1_fixed_issues"><a class="link" href="#rn_1.7.1_fixed_issues">Fixed Issues</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Apache Kudu 1.7.1 is a bug-fix release which fixes critical issues in Kudu 1.7.0.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Fixed and issue where a leader replica could report a follower&#8217;s health status
+as FAILED instead of FAILED_UNRECOVERABLE. In configurations where the tablet
+replication factor equals to the total number of tablet servers in the cluster,
+that lead to situations where the tablet could not be automatically recovered
+until a new leader was elected or corresponding tablet servers were restarted.
+(see <a href="https://issues.apache.org/jira/browse/KUDU-2367">KUDU-2367</a>).</p>
+</li>
+<li>
+<p>Fixed an issue where Kudu would fail to start if RLIMIT_NPROC was set to -1.
+(see <a href="https://issues.apache.org/jira/browse/KUDU-2377">KUDU-2377</a>).</p>
+</li>
+<li>
+<p>Fixed an issue where <code>kudu-spark</code> was unable to connect to secure clusters.
+(see <a href="https://issues.apache.org/jira/browse/KUDU-2379">KUDU-2379</a>).</p>
+</li>
+<li>
+<p>Fixed an issue where the <code>kudu-python</code> client would not compile in environments
+where <code>__int128</code> is not supported. This was most commonly el6 environments.
+(see <a href="https://issues.apache.org/jira/browse/KUDU-2412">KUDU-2412</a>).</p>
+</li>
+<li>
+<p>Fixed an issue where unaligned loads of <code>__int128</code> integers could result
+in a crash.
+(see <a href="https://issues.apache.org/jira/browse/KUDU-2378">KUDU-2378</a>).</p>
+</li>
+<li>
+<p>Fixed a bug in <code>PartialRow.setMin</code> that could lead to incorrect partition
+pruning when a <code>decimal</code> column is part of the tables range partition but
+not a part of the query predicate.
+(see <a href="https://issues.apache.org/jira/browse/KUDU-2416">KUDU-2416</a>).</p>
+</li>
+<li>
+<p>Fixed an equality check on <code>decimal</code> column predicates that could result
+in pruning that is too conservative.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.7.0"><a class="link" href="#rn_1.7.0">Release notes specific to 1.7.0</a></h2>
+<div class="sectionbody">
+
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.7.0_upgrade_notes"><a class="link" href="#rn_1.7.0_upgrade_notes">Upgrade Notes</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Upgrading directly from Kudu 1.6.0 is supported and no special upgrade steps
+are required. A rolling upgrade of the server side will <em>not</em> work because
+the default replica management scheme changed, and running masters and tablet
+servers with different replica management schemes is not supported, see
+<a href="#rn_1.7.0_incompatible_changes">Incompatible Changes in Kudu 1.7.0</a> for details. However, mixing client and
+server sides of different versions is not a problem. You can still
+update your clients before your servers or vice versa.
+When upgrading to Kudu 1.7, it is required to first shut down all Kudu processes
+across the cluster, then upgrade the software on all servers, then restart
+the Kudu processes on all servers in the cluster.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.7.0_obsoletions"><a class="link" href="#rn_1.7.0_obsoletions">Obsoletions</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>The <code>tcmalloc_contention_time</code> metric, which previously tracked the amount
+of time spent in memory allocator lock contention, has been removed.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.7.0_deprecations"><a class="link" href="#rn_1.7.0_deprecations">Deprecations</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Support for Java 7 has been deprecated since Kudu 1.5.0 and may be removed in
+the next major release.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.7.0_new_features"><a class="link" href="#rn_1.7.0_new_features">New features</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Kudu now supports the decimal column type. The decimal type is a numeric data type
+with fixed scale and precision suitable for financial and other arithmetic
+calculations where the imprecise representation and rounding behavior of float and
+double make those types impractical. The decimal type is also useful for integers
+larger than int64 and cases with fractional values in a primary key.
+See <a href="schema_design.html#decimal">Decimal Type</a> for more details.</p>
+</li>
+<li>
+<p>The strategy Kudu uses for automatically healing tablets which have lost a
+replica due to server or disk failures has been improved. The new re-replication
+strategy, or replica management scheme, first adds a replacement tablet replica
+before evicting the failed one. With the previous replica management scheme,
+the system first evicts the failed replica and then adds a replacement. The new
+replica management scheme allows for much faster recovery of tablets in
+scenarios where one tablet server goes down and then returns back shortly after
+5 minutes or so. The new scheme also provides substantially better overall
+stability on clusters with frequent server failures.
+(see <a href="https://issues.apache.org/jira/browse/KUDU-1097">KUDU-1097</a>).</p>
+</li>
+<li>
+<p>The <code>kudu fs update_dirs</code> tool now supports removing directories. Unless the
+<code>--force</code> flag is specified, Kudu will not allow the removal of a directory
+across which tablets are configured to spread data. If specified, all tablet
+replicas configured to use that directory will fail upon starting up and be
+replicated elsewhere, provided a majority exists elsewhere.</p>
+</li>
+<li>
+<p>Users can use the new <code>--fs_metadata_dir</code> to specify the directory in which
+to place tablet-specific metadata. It is recommended, although not
+necessary, that this be placed on a high-performance drive with high
+bandwidth and low latency, e.g. a solid-state drive. If not specified,
+metadata will be placed in the directory specified by <code>--fs_wal_dir</code>, or in
+the directory specified by the first entry of <code>--fs_data_dirs</code> if metadata
+already exists there from a pre-Kudu 1.7 deployment. Kudu will not
+automatically move existing metadata based on this configuration.</p>
+</li>
+<li>
+<p>Kudu 1.7 introduces a new scan read mode READ_YOUR_WRITES. Users can specify
+READ_YOUR_WRITES when creating a new scanner in C++, Java and Python clients.
+If this mode is used, the client will perform a read such that it follows all
+previously known writes and reads from this client. Reads in this mode ensure
+read-your-writes and read-your-reads session guarantees, while minimizing
+latency caused by waiting for outstanding write transactions to complete.
+Note that this is still an experimental feature which may be stabilized in
+future releases.</p>
+</li>
+<li>
+<p>The tablet server web UI scans dashboard (/scans) has been improved with
+several new features, including: showing the most recently completed scans,
+a pseudo-SQL scan descriptor that concisely shows the selected columns and
+applied predicates, and more complete and better documented scan statistics.</p>
+</li>
+<li>
+<p>Kudu daemons now expose a web page <code>/stacks</code> which dumps the current stack
+trace of every thread running in the server. This information can be helpful
+when diagnosing performance issues.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_optimizations_and_improvements"><a class="link" href="#_optimizations_and_improvements">Optimizations and improvements</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>By default, each tablet replica will now stripe data blocks across 3 data
+directories instead of all data directories. This decreases the likelihood
+that any given tablet will be affected in the event of a single disk failure.
+No substantial performance impact is expected due to this feature based on
+<a href="https://github.com/apache/kudu/commit/60276c54a221d554287c6645df7df542fe6d6443">performance testing</a>.
+This change only affects new replicas created after upgrading to Kudu 1.7.</p>
+</li>
+<li>
+<p>Kudu servers previously offered the ability to enable a separate metrics log
+which stores periodic snapshots of all metrics available on a server. This
+functionality is now available as part of a more general “diagnostics log”
+which is enabled by default. The diagnostics log includes periodic dumps of
+server metrics as well as collections of thread stack traces. The default
+configuration ensures that no more than 640MB of diagnostics logs are retained,
+and typically the space consumption is significantly less due to compression.
+The format and contents of this log file are documented in the
+<a href="administration.html">Administration guide</a>.</p>
+</li>
+<li>
+<p>The handling of errors in the synchronous Java client has been improved so that,
+when an exception is thrown, the stack trace indicates the correct location
+where the client function was invoked rather than a call stack of an internal
+worker thread. The original call stack from the worker thread is available as
+a “suppressed exception”.</p>
+</li>
+<li>
+<p>The logging of errors in the Java client has been improved to exclude exception
+stack traces for expected scenarios such as failure to connect to a server in a
+cluster. Instead, only a single line informational message will be logged in
+such cases to aid in debugging.</p>
+</li>
+<li>
+<p>The Java client now uses a predefined prioritized list of TLS ciphers when
+establishing an encrypted connection to Kudu servers. This cipher list matches
+the list of ciphers preferred for server-to-server communication and ensures
+that the most efficient and secure ciphers are preferred. When the Kudu client
+is running on Java 8 or newer, this provides a substantial speed-up to read
+and write performance.</p>
+</li>
+<li>
+<p>Reporting for the <code>kudu cluster ksck</code> tool has been updated so tablets and
+tables with on-going tablet copies are shown as "recovering". Additional
+reporting changes have been made to make various common scenarios,
+particularly tablet copies, less alarming.</p>
+</li>
+<li>
+<p>The performance of inserting rows containing many string or binary columns has
+been improved, especially in the case of highly concurrent write workloads.</p>
+</li>
+<li>
+<p>By default, Spark tasks that scan Kudu will now be able to scan non-leader
+replicas. This allows Spark to more easily schedule kudu-spark tasks local to
+the data. Users can disable this behavior by passing 'leader_only' to the
+'kudu.scanLocality' option."</p>
+</li>
+<li>
+<p>The number of OS threads used in the steady state and during bursts of
+activity (such as in Raft leader elections triggered by a node failure) has
+been drastically reduced and should no longer exceed the value of <code>ulimit -u</code>.
+As such, it should no longer be necessary to increase the value of <code>ulimit -u</code>
+(or of /proc/sys/kernel/threads-max) in order to run a Kudu tablet server in
+most cases.
+(see <a href="https://issues.apache.org/jira/browse/KUDU-1913">KUDU-1913</a>).</p>
+</li>
+<li>
+<p>An issue where sparse column predicates could cause excessive data-block reads
+has been fixed. Previously in certain scans with sparsely matching predicates
+on multiple columns, Kudu would read and decode the same data blocks many times.
+The improvement typically results in a 5-10x performance increase for the
+affected scans.
+(see <a href="https://issues.apache.org/jira/browse/KUDU-2231">KUDU-2231</a>).</p>
+</li>
+<li>
+<p>The efficiency and on-disk size of large updated values has been improved.
+This will improve update-heavy workloads which overwrite large (1KiB+) values.
+(see <a href="https://issues.apache.org/jira/browse/KUDU-2253">KUDU-2253</a>).</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.7.0_fixed_issues"><a class="link" href="#rn_1.7.0_fixed_issues">Fixed Issues</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Fixed a scenario where the on-disk data of a tablet server was completely
+erased and and a new tablet server was started on the same host. This issue
+could prevent tablet replicas previously hosted on the server from being
+evicted and re-replicated.
+Tablets now immediately evict replicas that respond with a different server
+UUID than expected.
+(see <a href="https://issues.apache.org/jira/browse/KUDU-1613">KUDU-1613</a>).</p>
+</li>
+<li>
+<p>Fixed a rare race condition when connecting to masters during their
+startup which might cause a client to get a response without a CA certificate
+and/or authentication token. This would cause the client to fail to authenticate
+with other servers in the cluster. The leader master now always sends a CA
+certificate and an authentication token (when applicable) to a Kudu client
+with a successful ConnectToMaster response.
+(see <a href="https://issues.apache.org/jira/browse/KUDU-1927">KUDU-1927</a>).</p>
+</li>
+<li>
+<p>The Kudu Java client now will retry a connection if no master is discovered as a
+leader, and the user has a valid authentication token. This avoids failure
+in recoverable cases when masters are in the process of the very first leader
+election after starting up.
+(see <a href="https://issues.apache.org/jira/browse/KUDU-2262">KUDU-2262</a>).</p>
+</li>
+<li>
+<p>The Java client will now automatically attempt to re-acquire Kerberos
+credentials from the ticket cache when the prior credentials are about to
+expire. This allows client instances to persist longer than the expiration
+time of a single Kerberos ticket so long as some other process renews the
+credentials in the ticket cache. Documentation on interacting with Kerberos
+authentication has been added to the Javadoc for the <code>AsyncKuduClient</code> class.
+(see <a href="https://issues.apache.org/jira/browse/KUDU-2264">KUDU-2264</a>).</p>
+</li>
+<li>
+<p>Follower masters are now able to verify authentication tokens even if they have never
+been a leader. Prior to this fix, if a follower master had never been a leader,
+clients would be unable to authenticate to that master, resulting in spurious
+error messages being logged.
+(see <a href="https://issues.apache.org/jira/browse/KUDU-2265">KUDU-2265</a>).</p>
+</li>
+<li>
+<p>Fixed a tablet server crash when a tablet replica is deleted during a scan.
+(see <a href="https://issues.apache.org/jira/browse/KUDU-2295">KUDU-2295</a>).</p>
+</li>
+<li>
+<p>The evaluation order of predicates in scans with multiple predicates has been
+made deterministic. Due to a bug, this was not necessarily the case previously.
+Predicates are applied in most to least selective order, with ties broken by
+column index. The evaluation order may change in the future, particularly when
+better column statistics are made available internally.
+(see <a href="https://issues.apache.org/jira/browse/KUDU-2312">KUDU-2312</a>).</p>
+</li>
+<li>
+<p>Previously, the <code>kudu tablet change_config move_replica</code> tool required all
+tablet servers in the cluster to be available when performing a move. This
+restriction has been relaxed: only the tablet server that will receive a replica
+of the tablet being moved and the hosts of the tablet&#8217;s existing replicas need to be
+available for the move to occur.
+(see <a href="https://issues.apache.org/jira/browse/KUDU-2331">KUDU-2331</a>).</p>
+</li>
+<li>
+<p>Fixed a bug in the Java client which prevented the client from locating the
+new leader master after a leader failover in the case that the previous leader
+either remained online or restarted quickly. This bug resulted in the client
+timing out operations with errors indicating that there was no leader master.
+(see <a href="https://issues.apache.org/jira/browse/KUDU-2343">KUDU-2343</a>).</p>
+</li>
+<li>
+<p>The Unix process username of the client is now included inside the exported
+security credentials, so that the effective username of clients who import
+credentials and subsequently use unauthenticated (SASL PLAIN) connections
+matches the client who exported the security credentials. For example, this is
+useful to let the Spark executors know which username to use if the Spark
+driver has no authentication token. This change only affects clusters with
+encryption disabled using <code>--rpc-encryption=disabled</code>.
+(see <a href="https://issues.apache.org/jira/browse/KUDU-2259">KUDU-2259</a>).</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.7.0_wire_compatibility"><a class="link" href="#rn_1.7.0_wire_compatibility">Wire Protocol compatibility</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu 1.7.0 is wire-compatible with previous versions of Kudu:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Kudu 1.7 clients may connect to servers running Kudu 1.0 or later. If the client uses
+features that are not available on the target server, an error will be returned.</p>
+</li>
+<li>
+<p>Rolling upgrade between Kudu 1.6 and Kudu 1.7 servers is believed to be possible
+though has not been sufficiently tested. Users are encouraged to shut down all nodes
+in the cluster, upgrade the software, and then restart the daemons on the new version.</p>
+</li>
+<li>
+<p>Kudu 1.0 clients may connect to servers running Kudu 1.7 with the exception of the
+below-mentioned restrictions regarding secure clusters.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>The authentication features introduced in Kudu 1.3 place the following limitations
+on wire compatibility between Kudu 1.7 and versions earlier than 1.3:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>If a Kudu 1.7 cluster is configured with authentication or encryption set to "required",
+clients older than Kudu 1.3 will be unable to connect.</p>
+</li>
+<li>
+<p>If a Kudu 1.7 cluster is configured with authentication and encryption set to "optional"
+or "disabled", older clients will still be able to connect.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.7.0_incompatible_changes"><a class="link" href="#rn_1.7.0_incompatible_changes">Incompatible Changes in Kudu 1.7.0</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>The newly introduced replica management scheme is not compatible with the
+old scheme, so it&#8217;s not possible to run pre-1.7 Kudu masters with
+1.7 Kudu tablet servers or vice versa. This is a server-side
+incompatibility only and it does not affect client compatibility. In other words,
+Kudu clients of prior versions are compatible with upgraded Kudu clusters.</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Kudu masters of 1.7 version will not register Kudu tablet servers of 1.6
+and prior versions.</p>
+</li>
+<li>
+<p>Kudu tablet servers of 1.7 version will not work with Kudu masters of 1.6
+and prior versions.</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>The format of the previously-optional metrics log has changed to include a
+human-readable timestamp on each line. The path of the log file has also
+changed with the word “diagnostics” replacing the word “metrics” in the file
+name. The metrics log has been optimized to only include those metrics which
+have changed in between successive samples, and to not include entity attributes
+such as tablet partition information in the log.
+(see <a href="https://issues.apache.org/jira/browse/KUDU-2297">KUDU-2297</a>).</p>
+</li>
+</ul>
+</div>
+<div class="sect2">
+<h3 id="rn_1.7.0_client_compatibility"><a class="link" href="#rn_1.7.0_client_compatibility">Client Library Compatibility</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>The Kudu 1.7 Java client library is API- and ABI-compatible with Kudu 1.6. Applications
+written against Kudu 1.6 will compile and run against the Kudu 1.7 client library and
+vice-versa.</p>
+</li>
+<li>
+<p>The Kudu 1.7 C++ client is API- and ABI-forward-compatible with Kudu 1.6.
+Applications written and compiled against the Kudu 1.6 client library will run without
+modification against the Kudu 1.7 client library. Applications written and compiled
+against the Kudu 1.7 client library will run without modification against the Kudu 1.6
+client library.</p>
+</li>
+<li>
+<p>The Kudu 1.7 Python client is API-compatible with Kudu 1.6. Applications
+written against Kudu 1.6 will continue to run against the Kudu 1.7 client
+and vice-versa.</p>
+</li>
+<li>
+<p>Kudu 1.7 clients that attempt to create a table with a decimal column on a
+target server running Kudu 1.6 or earlier will receive an error response.
+Similarly Kudu clients running Kudu 1.6 or earlier will result in an error
+when attempting to access any table containing containing a decimal
+column.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.6.0"><a class="link" href="#rn_1.6.0">Release Notes Specific to 1.6.0</a></h2>
+<div class="sectionbody">
+
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.6.0_upgrade_notes"><a class="link" href="#rn_1.6.0_upgrade_notes">Upgrade Notes</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Upgrading directly from Kudu 1.5.0 is supported and no special upgrade steps
+are required. A rolling upgrade may work, however it has not been tested.
+When upgrading Kudu, it is recommended to first shut down all Kudu processes
+across the cluster, then upgrade the software on all servers, then restart
+the Kudu processes on all servers in the cluster.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.6.0_obsoletions"><a class="link" href="#rn_1.6.0_obsoletions">Obsoletions</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Support for Spark 1 (kudu-spark_2.10) has been <strong>removed</strong> in Kudu 1.6.0 and
+now only Spark 2 is supported. Spark 1 support was deprecated in Kudu 1.5.0.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.6.0_deprecations"><a class="link" href="#rn_1.6.0_deprecations">Deprecations</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Support for Java 7 has been deprecated since Kudu 1.5.0 and may be removed in
+the next major release.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.6.0_new_features"><a class="link" href="#rn_1.6.0_new_features">New features</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Tablet servers' tolerance of disk failures is now enabled by default and has
+been extended to handle data directory failures at runtime. In the event of
+a disk failure at runtime, any tablets with data on a failed disk will be
+shut down and restarted on another tablet server. There is a configurable
+tradeoff between a newly added tablet&#8217;s tolerance to disk failures and its
+ability to parallelize reads via the experimental
+<code>--fs_target_data_dirs_per_tablet</code> flag. Tablets that are spread across fewer
+disks are less likely to be affected by a disk failure, at the cost of
+reduced parallelism. By default, tablets are striped across all available
+disks. Note that the first configured data directory and the WAL directory
+cannot currently tolerate disk failures. This will be further improved in
+future Kudu releases.</p>
+</li>
+<li>
+<p>Kudu servers can now adopt new data directories via the new
+<code>kudu fs update_dirs</code> tool. The new directory will be used by new tablet
+replicas only. Note that removing directories is not yet supported
+(see <a href="https://issues.apache.org/jira/browse/KUDU-2202">KUDU-2202</a>).</p>
+</li>
+<li>
+<p>Kudu servers have two new flags to control webui TLS/HTTPS
+settings: <code>--webserver_tls_ciphers</code> and <code>--webserver_tls_min_protocol</code>.
+These flags allow the advertised TLS ciphers and TLS protocol versions to be
+configured. Additionally, the webserver now excludes insecure legacy ciphers
+by default
+(see <a href="https://issues.apache.org/jira/browse/KUDU-2190">KUDU-2190</a>).</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_optimizations_and_improvements_2"><a class="link" href="#_optimizations_and_improvements_2">Optimizations and improvements</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Kudu servers can now tolerate short interruptions in NTP clock
+synchronization. NTP synchronization is still required when any Kudu daemon
+starts up. If NTP synchronization is not available, diagnostic information
+is now logged to help pinpoint the issue
+(see <a href="https://issues.apache.org/jira/browse/KUDU-1578">KUDU-1578</a>).</p>
+</li>
+<li>
+<p>Tablet server startup time has been improved significantly on servers
+containing large numbers of blocks.</p>
+</li>
+<li>
+<p>The log block manager now performs disk data deletion in batches. This
+optimization can significantly reduce the time taken to delete data on a tablet.</p>
+</li>
+<li>
+<p>The usage of sensitive data redaction flag has been slightly changed. By
+setting <code>--redact=log</code> flag, redaction will be disabled in the web UI but
+retained for server logs. Alternatively, <code>--redact=none</code> can be used to
+disable redaction completely.</p>
+</li>
+<li>
+<p>The Spark DataSource integration now can take advantage of scan locality
+for better scan performance, the scan will take place at the closest replica
+instead of going to the leader.</p>
+</li>
+<li>
+<p>Various optimizations were made to reduce the 99th percentile latency of
+writes on the tablet server. This can also improve throughput on certain
+write workloads, particularly on larger clusters.</p>
+</li>
+<li>
+<p>Kudu may now be configured to ignore system-wide auth_to_local mappings
+configured in /etc/krb5.conf by setting the configuration flag
+<code>--use_system_auth_to_local=false</code>
+(see <a href="https://issues.apache.org/jira/browse/KUDU-2198">KUDU-2198</a>).</p>
+</li>
+<li>
+<p>The performance of the compaction scheduler has been improved. In
+previous versions, certain types of time series workloads were found to
+cause compaction scheduling to take tens of seconds. These workloads now
+schedule compactions an order of magnitude more efficiently.</p>
+</li>
+<li>
+<p>The compaction scheduler has been improved to avoid running a compaction
+when the benefit of that compaction is extremely small.</p>
+</li>
+<li>
+<p>Tablet servers now consider the health of all replicas of a tablet before
+deciding to evict one. This can improve stability of the Kudu cluster after
+experiencing multiple simultaneous daemon failures
+(see <a href="https://issues.apache.org/jira/browse/KUDU-2048">KUDU-2048</a>).</p>
+</li>
+<li>
+<p>Several performance improvements have been made to the Kudu master,
+particularly in concurrency of clients opening tables. This should improve
+performance in highly concurrent workloads.</p>
+</li>
+<li>
+<p>The on-disk size metric for a tablet now includes all data and metadata.
+Previously, it excluded WAL segments and consensus metadata
+(see <a href="https://issues.apache.org/jira/browse/KUDU-1755">KUDU-1755</a>).</p>
+</li>
+<li>
+<p>Added verbose mode for the 'kudu cluster ksck' command to enable output
+of detailed information on the cluster&#8217;s metadata, even when no errors are
+detected.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.6.0_fixed_issues"><a class="link" href="#rn_1.6.0_fixed_issues">Fixed Issues</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>HybridTime timestamp propagation now works in the Java client when using scan
+tokens (see <a href="https://issues.apache.org/jira/browse/KUDU-1411">KUDU-1411</a>).</p>
+</li>
+<li>
+<p>Fixed an error message commonly found in tablet server logs indicating that
+operations were being read "from the future"
+(see <a href="https://issues.apache.org/jira/browse/KUDU-1078">KUDU-1078</a>).</p>
+</li>
+<li>
+<p>Tombstoned tablets no longer report metrics
+(see <a href="https://issues.apache.org/jira/browse/KUDU-2044">KUDU-2044</a>).</p>
+</li>
+<li>
+<p>Fixed a bug in the C++ client which could cause tablets to be erroneously
+pruned, or skipped, during certain scans, resulting in fewer results than
+expected being returned from queries. The bug only affected tables whose range
+partition columns are a proper prefix of the primary key
+(see <a href="https://issues.apache.org/jira/browse/KUDU-2173">KUDU-2173</a>).</p>
+</li>
+<li>
+<p>Published Kudu Java artifacts are now fully compatible with JRE 7 and JRE 8.
+There was previously a bug in the release process which made them compatible
+only with JRE 8
+(see <a href="https://issues.apache.org/jira/browse/KUDU-2188">KUDU-2188</a>).</p>
+</li>
+<li>
+<p>Fixed a typo in the list of default TLS ciphers used by Kudu servers. As a
+result, two additional cipher suites are now available:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>ECDHE-RSA-AES128-SHA256 TLSv1.2 Kx=ECDH Au=RSA Enc=AES(128)  Mac=SHA256</p>
+</li>
+<li>
+<p>AES256-GCM-SHA384       TLSv1.2 Kx=RSA  Au=RSA Enc=AESGCM(256) Mac=AEAD</p>
+</li>
+</ul>
+</div>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.6.0_wire_compatibility"><a class="link" href="#rn_1.6.0_wire_compatibility">Wire Protocol compatibility</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu 1.6.0 is wire-compatible with previous versions of Kudu:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Kudu 1.6 clients may connect to servers running Kudu 1.0 or later. If the client uses
+features that are not available on the target server, an error will be returned.</p>
+</li>
+<li>
+<p>Rolling upgrade between Kudu 1.5 and Kudu 1.6 servers is believed to be possible
+though has not been sufficiently tested. Users are encouraged to shut down all nodes
+in the cluster, upgrade the software, and then restart the daemons on the new version.</p>
+</li>
+<li>
+<p>Kudu 1.0 clients may connect to servers running Kudu 1.6 with the exception of the
+below-mentioned restrictions regarding secure clusters.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>The authentication features introduced in Kudu 1.3 place the following limitations
+on wire compatibility between Kudu 1.6 and versions earlier than 1.3:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>If a Kudu 1.6 cluster is configured with authentication or encryption set to "required",
+clients older than Kudu 1.3 will be unable to connect.</p>
+</li>
+<li>
+<p>If a Kudu 1.6 cluster is configured with authentication and encryption set to "optional"
+or "disabled", older clients will still be able to connect.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.6.0_incompatible_changes"><a class="link" href="#rn_1.6.0_incompatible_changes">Incompatible Changes in Kudu 1.6.0</a></h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="rn_1.6.0_client_compatibility"><a class="link" href="#rn_1.6.0_client_compatibility">Client Library Compatibility</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>The Kudu 1.6 Java client library is API- and ABI-compatible with Kudu 1.5. Applications
+written against Kudu 1.5 will compile and run against the Kudu 1.6 client library and
+vice-versa.</p>
+</li>
+<li>
+<p>The Kudu 1.6 C++ client is API- and ABI-forward-compatible with Kudu 1.5.
+Applications written and compiled against the Kudu 1.5 client library will run without
+modification against the Kudu 1.6 client library. Applications written and compiled
+against the Kudu 1.6 client library will run without modification against the Kudu 1.5
+client library.</p>
+</li>
+<li>
+<p>The Kudu 1.6 Python client is API-compatible with Kudu 1.5. Applications
+written against Kudu 1.5 will continue to run against the Kudu 1.6 client
+and vice-versa.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.5.0"><a class="link" href="#rn_1.5.0">Release notes specific to 1.5.0</a></h2>
+<div class="sectionbody">
+
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.5.0_upgrade_notes"><a class="link" href="#rn_1.5.0_upgrade_notes">Upgrade Notes</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Kudu 1.5 now enables the optional ability to compute, store, and verify
+checksums on all pieces of data stored on a server by default. Due to
+storage format changes, downgrading to versions 1.3 or earlier is not
+supported and will result in an error.</p>
+</li>
+<li>
+<p>Spark 2.2+ requires Java 8 at runtime even though Kudu Spark 2.x integration
+is Java 7 compatible. Spark 2.2 is the default dependency version as of
+Kudu 1.5.0.</p>
+</li>
+<li>
+<p>The kudu-spark-tools module has been renamed to kudu-spark2-tools_2.11 in
+order to include the Spark and Scala base versions. This matches the pattern
+used in the kudu-spark module and artifacts.</p>
+</li>
+<li>
+<p>To improve security, world-readable Kerberos keytab files are no longer
+accepted by default. Set <code>--allow_world_readable_credentials=true</code> to override
+this behavior. See
+<a href="https://issues.apache.org/jira/browse/KUDU-1955">KUDU-1955</a> for additional
+details.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.5.0_deprecations"><a class="link" href="#rn_1.5.0_deprecations">Deprecations</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Support for Java 7 is deprecated as of Kudu 1.5.0 and may be removed in the
+next major release.</p>
+</li>
+<li>
+<p>Support for Spark 1 (kudu-spark_2.10) is deprecated as of Kudu 1.5.0 and may
+be removed in the next minor release.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.5.0_new_features"><a class="link" href="#rn_1.5.0_new_features">New features</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Tablet servers are now optionally able to tolerate disk failures at
+startup. This feature is experimental; by default, Kudu will crash if it
+experiences a disk failure. When enabled, tablets with any data on the failed
+disk will not be opened and will be replicated as needed. To enable this, set
+the <code>--crash_on_eio</code> flag to <code>false</code>. Additionally, there is a configurable
+tradeoff between a newly added tablet&#8217;s tolerance to disk failures and its
+parallelization of I/O via the <code>--fs_target_data_dirs_per_tablet</code> flag.
+Tablets that are spread across fewer disks are less likely to be affected by a
+disk failure, at the cost of reduced parallelism. Note that the first
+configured data directory and the WAL directory cannot currently tolerate disk
+failures, and disk failures during run-time are still fatal.</p>
+</li>
+<li>
+<p>Kudu server web UIs have a new configuration dashboard (/config) which
+provides a high level summary of important security configuration values, such
+as whether RPC authentication is required, or web server HTTPS encryption is
+enabled. Other types of configuration will be added in future releases.</p>
+</li>
+<li>
+<p>The <code>kudu</code> command line tool has two new features: <code>kudu tablet change_config
+move_replica</code> and <code>kudu local_replica data_size</code>. The 'tablet change_config
+move_replica' tool moves a tablet replica from one tablet server to another,
+under the condition that the tablet is healthy. An operator can use this tool to
+rebalance tablet replicas between tablet servers. The 'local_replica data size'
+tool summarizes the space usage of a tablet, breaking it down by type of file,
+column, and rowset.</p>
+</li>
+<li>
+<p>kudu-client-tools now supports exporting CSV files and importing
+Apache Parquet files. This feature is unstable and may change APIs and
+functionality in future releases.</p>
+</li>
+<li>
+<p>kudu-spark-tools now supports importing and exporting CSV, Apache Avro and
+Apache Parquet files. This feature is unstable and may change APIs and
+functionality in future releases.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.5.0_optimizations_improvements"><a class="link" href="#rn_1.5.0_optimizations_improvements">Optimizations and improvements</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>The log block manager now performs disk synchronization in batches.
+This optimization can significantly reduce the time taken to copy tablet data
+from one server to another; in one case tablet copy time is reduced by 35%.
+It also improves the general performance of flushes and compactions.</p>
+</li>
+<li>
+<p>A new feature referred to as "tombstoned voting" is added to the Raft
+consensus subsystem to allow tablet replicas in the <code>TABLET_DATA_TOMBSTONED</code>
+state to vote in tablet leader elections. This feature increases Kudu&#8217;s
+stability and availability by improving the likelihood that Kudu will be able
+to self-heal in more edge-case scenarios, such as when tablet copy operations
+fail. See <a href="https://issues.apache.org/jira/browse/KUDU-871">KUDU-871</a> for
+details.</p>
+</li>
+<li>
+<p>The tablet on-disk size metric has been made more accurate. Previously, the
+metric included only REDO deltas; it now counts all deltas. Additionally, the
+metric includes the size of bloomfiles, ad hoc indexes, and the tablet
+superblock. WAL segments and consensus metadata are still not counted. The
+latter is very small compared to the size of data, but the former may be
+significant depending on the workload (this will be resolved in a future
+release).</p>
+</li>
+<li>
+<p>The number of threads used by the Kudu tablet server has been further reduced.
+Previously, each follower tablet replica used a dedicated thread to detect
+leader tablet replica failures, and each leader replica used one dedicated
+thread per follower to send Raft heartbeats to that follower. The work
+performed by these dedicated threads has been reassigned to other threads.
+Other improvements were made to facilitate better thread sharing by tablets.
+For the purpose of capacity planning, expect the Kudu tablet server to create
+one thread for every five "cold" (i.e. those not servicing writes) tablets,
+and an additional three threads for every "hot" tablet. This will be further
+improved upon in future Kudu releases.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.5.0_fixed_issues"><a class="link" href="#rn_1.5.0_fixed_issues">Fixed Issues</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>The Java Kudu client now automatically requests new authentication tokens
+after expiration. As a result, long-lived Java clients are now supported. See
+<a href="https://issues.apache.org/jira/browse/KUDU-2013">KUDU-2013</a> for more
+details.</p>
+</li>
+<li>
+<p>Multiple Kerberos compatibility bugs have been fixed, including support
+for environments with disabled reverse DNS, FreeIPA compatibility, principal
+names including uppercase characters, and hosts without a FQDN.</p>
+</li>
+<li>
+<p>A bug in the binary prefix decoder which could cause a tablet server 'check'
+assertion crash has been fixed. The crash could only be triggered in very
+specific scenarios; see
+<a href="https://issues.apache.org/jira/browse/KUDU-2085">KUDU-2085</a> for additional
+details.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.5.0_wire_compatibility"><a class="link" href="#rn_1.5.0_wire_compatibility">Wire Protocol compatibility</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu 1.5.0 is wire-compatible with previous versions of Kudu:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Kudu 1.5 clients may connect to servers running Kudu 1.0 or later. If the client uses
+features that are not available on the target server, an error will be returned.</p>
+</li>
+<li>
+<p>Rolling upgrade between Kudu 1.4 and Kudu 1.5 servers is believed to be possible
+though has not been sufficiently tested. Users are encouraged to shut down all nodes
+in the cluster, upgrade the software, and then restart the daemons on the new version.</p>
+</li>
+<li>
+<p>Kudu 1.0 clients may connect to servers running Kudu 1.5 with the exception of the
+below-mentioned restrictions regarding secure clusters.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>The authentication features introduced in Kudu 1.3 place the following limitations
+on wire compatibility between Kudu 1.5 and versions earlier than 1.3:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>If a Kudu 1.5 cluster is configured with authentication or encryption set to "required",
+clients older than Kudu 1.3 will be unable to connect.</p>
+</li>
+<li>
+<p>If a Kudu 1.5 cluster is configured with authentication and encryption set to "optional"
+or "disabled", older clients will still be able to connect.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.5.0_incompatible_changes"><a class="link" href="#rn_1.5.0_incompatible_changes">Incompatible Changes in Kudu 1.5.0</a></h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="rn_1.5.0_client_compatibility"><a class="link" href="#rn_1.5.0_client_compatibility">Client Library Compatibility</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>The Kudu 1.5 Java client library is API- and ABI-compatible with Kudu 1.4. Applications
+written against Kudu 1.4 will compile and run against the Kudu 1.5 client library and
+vice-versa, unless one of the following newly added APIs is used:</p>
+</li>
+<li>
+<p>The Kudu 1.5 C++ client is API- and ABI-forward-compatible with Kudu 1.4.
+Applications written and compiled against the Kudu 1.4 client library will run without
+modification against the Kudu 1.5 client library. Applications written and compiled
+against the Kudu 1.5 client library will run without modification against the Kudu 1.4
+client library.</p>
+</li>
+<li>
+<p>The Kudu 1.5 Python client is API-compatible with Kudu 1.4. Applications
+written against Kudu 1.4 will continue to run against the Kudu 1.5 client
+and vice-versa.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.4.0"><a class="link" href="#rn_1.4.0">Release notes specific to 1.4.0</a></h2>
+<div class="sectionbody">
+
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.4.0_upgrade_notes"><a class="link" href="#rn_1.4.0_upgrade_notes">Upgrade Notes</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>The Maintenance Manager now fully uses the threads it&#8217;s given (see the improvements
+described further below), so it&#8217;s now able to generate a lot more IO by flushing and
+compacting more often. Generally, the recommended ratio of MM threads to data
+directories is 1:3; operators of clusters above that ratio should be mindful of
+this when upgrading.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.4.0_new_features"><a class="link" href="#rn_1.4.0_new_features">New features</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>The C++ and Java client libraries now support the ability to alter the
+storage attributes (e.g. encoding and compression) and default value
+of existing columns. Additionally, it is now possible to rename
+a column which is part of a table&#8217;s primary key.</p>
+</li>
+<li>
+<p>The C++ client library now includes an experimental <code>KuduPartitioner</code> API which may
+be used to efficiently map rows to their associated partitions and hosts.
+This may be used to achieve better locality or distribution of writes
+in client applications.</p>
+</li>
+<li>
+<p>The Java client library now supports enabling fault tolerance on scanners.
+Fault tolerant scanners are able to transparently recover from concurrent
+server crashes at the cost of some performance overhead. See the Java
+API documentation for more details on usage.</p>
+</li>
+<li>
+<p>The <code>kudu</code> command line tool now includes a new advanced administrative
+command <code>kudu remote_replica unsafe_change_config</code>. This command may be used
+to force a tablet to perform an unsafe change of its Raft replication
+configuration. This can be used to recover from scenarios such as a loss
+of a majority of replicas, at the risk of losing edits.</p>
+</li>
+<li>
+<p>The <code>kudu</code> command line tool now includes the <code>kudu fs check</code> command
+which performs various offline consistency checks on the local on-disk
+storage of a Kudu Tablet Server or Master. In addition to detecting
+various inconsistencies or corruptions, it can also detect and remove
+data blocks that are no longer referenced by any tablet but were not
+fully removed from disk due to a crash or a bug in prior versions of Kudu.</p>
+</li>
+<li>
+<p>The <code>kudu</code> command line tool can now be used to list the addresses and
+identifiers of the servers in the cluster using either <code>kudu master list</code>
+or <code>kudu tserver list</code>.</p>
+</li>
+<li>
+<p>Kudu 1.4 now includes the optional ability to compute, store, and verify
+checksums on all pieces of data stored on a server. Prior versions only
+performed checksums on certain portions of the stored data. This feature
+is not enabled by default since it makes a backward-incompatible change
+to the on-disk formats and thus prevent downgrades. Kudu 1.5 will enable
+the feature by default.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_optimizations_and_improvements_3"><a class="link" href="#_optimizations_and_improvements_3">Optimizations and improvements</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p><code>kudu cluster ksck</code> now detects and reports new classes of
+inconsistencies and issues. In particular, it is better able to
+detect cases where a configuration change such as a replica eviction
+or addition is pending but is unable to be committed. It also now
+properly detects and reports cases where a tablet has no elected
+leader.</p>
+</li>
+<li>
+<p>The default size for Write Ahead Log (WAL) segments has been reduced
+from 64MB to 8MB. Additionally, in the case that all replicas of a
+tablet are fully up to date and data has been flushed from memory,
+servers will now retain only a single WAL segment rather than
+two. These changes are expected to reduce the average consumption of
+disk space on the configured WAL disk by 16x, as well as improve the
+startup speed of tablet servers by reducing the number and size of
+WAL segments that need to be re-read.</p>
+</li>
+<li>
+<p>The default on-disk storage system used by Kudu servers (Log Block Manager)
+has been improved to compact its metadata and remove dead containers.
+This compaction and garbage collection occurs only at startup. Thus, the
+first startup after upgrade is expected to be longer than usual, and
+subsequent restarts should be shorter.</p>
+</li>
+<li>
+<p>The usability of the Kudu web interfaces has been improved,
+particularly for the case where a server hosts many tablets or a
+table has many partitions. Pages that list tablets now include
+a top-level summary of tablet status and show the complete list
+under a toggleable section.</p>
+</li>
+<li>
+<p>The Maintenance Manager has been improved to improve utilization of the
+configured maintenance threads. Previously, maintenance work would
+only be scheduled a maximum of 4 times per second, but now maintenance
+work will be scheduled immediately whenever any configured thread is
+available. This can improve the throughput of write-heavy workloads.</p>
+</li>
+<li>
+<p>The Maintenance Manager will now aggressively schedule flushes of
+in-memory data when memory consumption crosses 60% of the configured
+process-wide memory limit. The backpressure mechanism which begins
+to throttle client writes has been accordingly adjusted to not begin
+throttling until reaching 80% of the configured limit. These two
+changes together result in improved write throughput, more consistent
+latency, and fewer timeouts due to memory exhaustion.</p>
+</li>
+<li>
+<p>Many performance improvements were made to write performance. Applications
+which send large batches of writes to Kudu should see substantially
+improved throughput in Kudu 1.4.</p>
+</li>
+<li>
+<p>Several improvements were made to reduce the memory consumption of
+Kudu Tablet Servers which hold large volumes of data. The specific
+amount of memory saved varies depending on workload, but the expectation
+is that approximately 350MB of excess peak memory usage has been eliminated
+per TB of data stored.</p>
+</li>
+<li>
+<p>The number of threads used by the Kudu Tablet Server has been reduced.
+Previously, each tablet used a dedicated thread to append to its WAL.
+Those threads now automatically stop running if there is no activity
+on a given tablet for a short period of time.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.4.0_fixed_issues"><a class="link" href="#rn_1.4.0_fixed_issues">Fixed Issues</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-2020">KUDU-2020</a>
+Fixed an issue where re-replication after a failure would proceed
+significantly slower than expected. This bug caused many tablets
+to be unnecessarily copied multiple times before successfully
+being considered re-replicated, resulting in significantly more
+network and IO bandwidth usage than expected. Mean time to recovery
+on clusters with large amounts of data is improved by up to 10x by this
+fix.</p>
+</li>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1982">KUDU-1982</a>
+Fixed an issue where the Java client would call <code>NetworkInterface.getByInetAddress</code>
+very often, causing performance problems particularly on Windows
+where this function can be quite slow.</p>
+</li>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1755">KUDU-1755</a>
+Improved the accuracy of the <code>on_disk_size</code> replica metrics to
+include the size consumed by bloom filters, primary key indexes,
+and superblock metadata, and delta files. Note that, because the size
+metric is now more accurate, the reported values are expected to
+increase after upgrading to Kudu 1.4. This does not indicate that
+replicas are using more space after the upgrade; rather, it is
+now accurately reporting the amount of space that has always been
+used.</p>
+</li>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1192">KUDU-1192</a>
+Kudu servers will now periodically flush their log messages to disk
+even if no <code>WARNING</code>-level messages have been logged. This makes it
+easier to tail the logs to see progress output during normal startup.</p>
+</li>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1999">KUDU-1999</a>
+Fixed the ability to run Spark jobs in "cluster" mode against
+Kudu clusters secured by Kerberos.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.4.0_wire_compatibility"><a class="link" href="#rn_1.4.0_wire_compatibility">Wire Protocol compatibility</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu 1.4.0 is wire-compatible with previous versions of Kudu:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Kudu 1.4 clients may connect to servers running Kudu 1.0 or later. If the client uses
+features that are not available on the target server, an error will be returned.</p>
+</li>
+<li>
+<p>Kudu 1.0 clients may connect to servers running Kudu 1.4 with the exception of the
+below-mentioned restrictions regarding secure clusters.</p>
+</li>
+<li>
+<p>Rolling upgrade between Kudu 1.3 and Kudu 1.4 servers is believed to be possible
+though has not been sufficiently tested. Users are encouraged to shut down all nodes
+in the cluster, upgrade the software, and then restart the daemons on the new version.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>The authentication features introduced in Kudu 1.3 place the following limitations
+on wire compatibility between Kudu 1.4 and versions earlier than 1.3:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>If a Kudu 1.4 cluster is configured with authentication or encryption set to "required",
+clients older than Kudu 1.3 will be unable to connect.</p>
+</li>
+<li>
+<p>If a Kudu 1.4 cluster is configured with authentication and encryption set to "optional"
+or "disabled", older clients will still be able to connect.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.4.0_incompatible_changes"><a class="link" href="#rn_1.4.0_incompatible_changes">Incompatible Changes in Kudu 1.4.0</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Kudu servers, by default, will now only allow unencrypted or unauthenticated connections
+from trusted subnets, which are private networks (127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,
+192.168.0.0/16,169.254.0.0/16) and local subnets of all local network interfaces.
+Unencrypted or unauthenticated connections from publicly routable IPs will be rejected,
+even if encryption and authentication are not configured.</p>
+<div class="paragraph">
+<p>The trusted subnets can be configured using the <code>--trusted_subnets</code> flag, which can be set
+   to IP blocks represented in CIDR notation separated by comma. Set it to '0.0.0.0/0' to
+   allow unauthenticated connections from all remote IP addresses. However, if network access
+   is not otherwise restricted by a firewall, malicious users may be able to gain unauthorized
+   access. This can be mitigated if authentication and encryption are configured to be
+   required.</p>
+</div>
+</li>
+</ul>
+</div>
+<div class="sect2">
+<h3 id="rn_1.4.0_client_compatibility"><a class="link" href="#rn_1.4.0_client_compatibility">Client Library Compatibility</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>The Kudu 1.4 Java client library is API- and ABI-compatible with Kudu 1.3. Applications
+written against Kudu 1.3 will compile and run against the Kudu 1.4 client library and
+vice-versa, unless one of the following newly added APIs is used:</p>
+<div class="ulist">
+<ul>
+<li>
+<p><code>[Async]KuduScannerBuilder.setFaultTolerant(&#8230;&#8203;)</code></p>
+</li>
+<li>
+<p>New methods in <code>AlterTableOptions</code>: <code>removeDefault</code>, <code>changeDefault</code>, <code>changeDesiredBlockSize</code>,
+<code>changeEncoding</code>, <code>changeCompressionAlgorithm</code></p>
+</li>
+<li>
+<p><code>KuduClient.updateLastPropagatedTimestamp</code></p>
+</li>
+<li>
+<p><code>KuduClient.getLastPropagatedTimestamp</code></p>
+</li>
+<li>
+<p>New getters in <code>PartialRow</code>: <code>getBoolean</code>, <code>getByte</code>, <code>getShort</code>, <code>getInt</code>, <code>getLong</code>,
+<code>getFloat</code>, <code>getDouble</code>, <code>getString</code>, <code>getBinaryCopy</code>, <code>getBinary</code>, <code>isNull</code>,
+<code>isSet</code>.</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>The Kudu 1.4 C++ client is API- and ABI-forward-compatible with Kudu 1.3.
+Applications written and compiled against the Kudu 1.3 client library will run without
+modification against the Kudu 1.4 client library. Applications written and compiled
+against the Kudu 1.4 client library will run without modification against the Kudu 1.3
+client library unless they use one of the following new APIs:</p>
+<div class="ulist">
+<ul>
+<li>
+<p><code>KuduPartitionerBuilder</code></p>
+</li>
+<li>
+<p>`KuduPartitioner</p>
+</li>
+<li>
+<p><code>KuduScanner::SetRowFormatFlags</code> (unstable API)</p>
+</li>
+<li>
+<p><code>KuduScanBatch::direct_data</code>, <code>KuduScanBatch::indirect_data</code> (unstable API)</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>The Kudu 1.4 Python client is API-compatible with Kudu 1.3. Applications
+written against Kudu 1.3 will continue to run against the Kudu 1.4 client
+and vice-versa.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.3.0"><a class="link" href="#rn_1.3.0">Release notes specific to 1.3.0</a></h2>
+<div class="sectionbody">
+
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.3.0_new_features"><a class="link" href="#rn_1.3.0_new_features">New features</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Kudu 1.3 adds support for strong authentication based on Kerberos. This optional feature
+allows users to authenticate themselves using Kerberos tickets, and also provides
+mutual authentication of servers using Kerberos credentials stored in keytabs. This
+feature is optional, but recommended for deployments requiring security.</p>
+</li>
+<li>
+<p>Kudu 1.3 adds support for encryption of data on the network using Transport Layer Security
+(TLS). Kudu will now use TLS to encrypt all network traffic between clients and servers as
+well as any internal traffic among servers, with the exception of traffic determined to
+be within a localhost network connection. Encryption is enabled by default whenever it can
+be determined that both the client and server support the feature.</p>
+</li>
+<li>
+<p>Kudu 1.3 adds coarse-grained service-level authorization of access to the cluster.
+The operator may set up lists of permitted users who may act as administrators and
+as clients of the cluster. Combined with the strong authentication feature described
+above, this can enable a secure environment for some use cases. Note that fine-grained
+access control (e.g. table-level or column-level) is not yet supported.</p>
+</li>
+<li>
+<p>Kudu 1.3 adds a background task to tablet servers which removes historical versions of
+data which have fallen behind the configured data retention time. This reduces disk space
+usage in all workloads, but particularly in those with a higher volume of updates or
+upserts.</p>
+</li>
+<li>
+<p>Kudu now incorporates Google Breakpad, a library which writes crash reports in
+the case of a server crash. These reports can be found within the configured log directory,
+and can be useful during bug diagnosis.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_optimizations_and_improvements_4"><a class="link" href="#_optimizations_and_improvements_4">Optimizations and improvements</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Kudu servers will now change the file permissions of data directories and contained
+data files based on a new configuration flag <code>--umask</code>. As a result, after upgrading,
+permissions on disk may be more restrictive than in previous versions. The new default
+configuration improves data security.</p>
+</li>
+<li>
+<p>Kudu&#8217;s web UI will now redact strings which may include sensitive user data. For example,
+the monitoring page which shows in-progress scans no longer includes the scanner predicate
+values. The tracing and RPC diagnostics endpoints no longer include contents of RPCs which
+may include table data.</p>
+</li>
+<li>
+<p>By default, Kudu now reserves 1% of each configured data volume as free space. If a volume
+is seen to have less than 1% of disk space free, Kudu will stop writing to that volume
+to avoid completely filling up the disk.</p>
+</li>
+<li>
+<p>The default encoding for numeric columns (int, float, and double) has been changed
+to <code>BIT_SHUFFLE</code>. The default encoding for binary and string columns has been
+changed to <code>DICT_ENCODING</code>. Dictionary encoding automatically falls back to the old
+default (<code>PLAIN</code>) when cardinality is too high to be effectively encoded.</p>
+<div class="paragraph">
+<p>These new defaults match the default behavior of other storage mechanisms such as
+  Apache Parquet and are likely to perform better out of the box.</p>
+</div>
+</li>
+<li>
+<p>Kudu now uses <code>LZ4</code> compression when writing its Write Ahead Log (WAL). This improves
+write performance and stability for many use cases.</p>
+</li>
+<li>
+<p>Kudu now uses <code>LZ4</code> compression when writing delta files. This can improve both
+read and write performance as well as save substantial disk usage, especially
+for workloads involving a high number of updates or upserts containing compressible
+data.</p>
+</li>
+<li>
+<p>The Kudu API now supports the ability to express <code>IS NULL</code> and <code>IS NOT NULL</code> predicates
+on scanners. The Spark DataSource integration will take advantage of these new
+predicates when possible.</p>
+</li>
+<li>
+<p>Both C++ and Java clients have been optimized to prune partitions more effectively
+when performing scans using the <code>IN (&#8230;&#8203;)</code> predicate.</p>
+</li>
+<li>
+<p>The exception messages produced by the Java client are now truncated to a maximum length
+of 32KB.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.3.0_fixed_issues"><a class="link" href="#rn_1.3.0_fixed_issues">Fixed Issues</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1893">KUDU-1893</a>
+Fixed a critical bug in which wrong results would be returned when evaluating
+predicates applied to columns added using the <code>ALTER TABLE</code> operation.</p>
+</li>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1905">KUDU-1905</a>
+Fixed a crash after inserting a row sharing a primary key with a recently-deleted
+row in tables where the primary key is comprised of all of the columns.</p>
+</li>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1899">KUDU-1899</a>
+Fixed a crash after inserting a row with an empty string as the single-column
+primary key.</p>
+</li>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1904">KUDU-1904</a>
+Fixed a potential crash when performing random reads against a column using RLE
+encoding and containing long runs of NULL values.</p>
+</li>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1853">KUDU-1853</a>
+Fixed an issue where disk space could be leaked on servers which experienced an error
+during the process of copying tablet data from another server.</p>
+</li>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1856">KUDU-1856</a>
+Fixed an issue in which disk space could be leaked by Kudu servers storing data on
+partitions using the XFS file system. Any leaked disk space will be automatically
+recovered upon upgrade.</p>
+</li>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1888">KUDU-1888</a>,
+<a href="https://issues.apache.org/jira/browse/KUDU-1906">KUDU-1906</a>
+Fixed multiple issues in the Java client where operation callbacks would never be
+triggered, causing the client to hang.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.3.0_wire_compatibility"><a class="link" href="#rn_1.3.0_wire_compatibility">Wire Protocol compatibility</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu 1.3.0 is wire-compatible with previous versions of Kudu:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Kudu 1.3 clients may connect to servers running Kudu 1.0. If the client uses features
+that are not available on the target server, an error will be returned.</p>
+</li>
+<li>
+<p>Kudu 1.0 clients may connect to servers running Kudu 1.3 with the exception of the
+below-mentioned restrictions regarding secure clusters.</p>
+</li>
+<li>
+<p>Rolling upgrade between Kudu 1.2 and Kudu 1.3 servers is believed to be possible
+though has not been sufficiently tested. Users are encouraged to shut down all nodes
+in the cluster, upgrade the software, and then restart the daemons on the new version.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>The authentication features newly introduced in Kudu 1.3 place the following limitations
+on wire compatibility with older versions:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>If a Kudu 1.3 cluster is configured with authentication or encryption set to "required",
+older clients will be unable to connect.</p>
+</li>
+<li>
+<p>If a Kudu 1.3 cluster is configured with authentication and encryption set to "optional"
+or "disabled", older clients will still be able to connect.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.3.0_incompatible_changes"><a class="link" href="#rn_1.3.0_incompatible_changes">Incompatible Changes in Kudu 1.3.0</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Due to storage format changes in Kudu 1.3, downgrade from Kudu 1.3 to earlier versions
+is not supported. After upgrading to Kudu 1.3, attempting to restart with an earlier
+version will result in an error.</p>
+</li>
+<li>
+<p>In order to support running MapReduce and Spark jobs on secure clusters, these
+frameworks now connect to the cluster at job submission time to retrieve authentication
+credentials which can later be used by the tasks to be spawned. This means that
+the process submitting jobs to Kudu clusters must have direct access to that cluster.</p>
+</li>
+<li>
+<p>The embedded web servers in Kudu processes now specify the <code>X-Frame-Options: DENY</code> HTTP
+header which prevents embedding Kudu web pages in HTML <code>iframe</code> elements.</p>
+</li>
+</ul>
+</div>
+<div class="sect2">
+<h3 id="rn_1.3.0_client_compatibility"><a class="link" href="#rn_1.3.0_client_compatibility">Client Library Compatibility</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>The Kudu 1.3 Java client library is API- and ABI-compatible with Kudu 1.2. Applications
+written against Kudu 1.2 will compile and run against the Kudu 1.3 client library and
+vice-versa, unless one of the following newly added APIs is used:</p>
+<div class="ulist">
+<ul>
+<li>
+<p><code>[Async]KuduClient.exportAuthenticationCredentials(&#8230;&#8203;)</code> (unstable API)</p>
+</li>
+<li>
+<p><code>[Async]KuduClient.importAuthenticationCredentials(&#8230;&#8203;)</code> (unstable API)</p>
+</li>
+<li>
+<p><code>[Async]KuduClient.getMasterAddressesAsString()</code></p>
+</li>
+<li>
+<p><code>KuduPredicate.newIsNotNullPredicate()</code></p>
+</li>
+<li>
+<p><code>KuduPredicate.newIsNullPredicate()</code></p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>The Kudu 1.3 C++ client is API- and ABI-forward-compatible with Kudu 1.2.
+Applications written and compiled against the Kudu 1.2 client library will run without
+modification against the Kudu 1.3 client library. Applications written and compiled
+against the Kudu 1.3 client library will run without modification against the Kudu 1.2
+client library unless they use one of the following new APIs:</p>
+<div class="ulist">
+<ul>
+<li>
+<p><code>kudu::DisableOpenSSLInitialization()</code></p>
+</li>
+<li>
+<p><code>KuduClientBuilder::import_authentication_credentials(&#8230;&#8203;)</code></p>
+</li>
+<li>
+<p><code>KuduClient::ExportAuthenticationCredentials(&#8230;&#8203;)</code></p>
+</li>
+<li>
+<p><code>KuduClient::NewIsNotNullPredicate(&#8230;&#8203;)</code></p>
+</li>
+<li>
+<p><code>KuduClient::NewIsNullPredicate(&#8230;&#8203;)</code></p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>The Kudu 1.3 Python client is API-compatible with Kudu 1.2. Applications
+written against Kudu 1.2 will continue to run against the Kudu 1.3 client
+and vice-versa.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.2.0"><a class="link" href="#rn_1.2.0">Release notes specific to 1.2.0</a></h2>
+<div class="sectionbody">
+
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.2.0_new_features"><a class="link" href="#rn_1.2.0_new_features">New features</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Kudu clients and servers now redact user data such as cell values
+from log messages, Java exception messages, and <code>Status</code> strings.
+User metadata such as table names, column names, and partition
+bounds are not redacted.</p>
+<div class="paragraph">
+<p>Redaction is enabled by default, but may be disabled by setting the new
+<code>log_redact_user_data</code> flag to <code>false</code>.</p>
+</div>
+</li>
+<li>
+<p>Kudu&#8217;s ability to provide consistency guarantees has been substantially
+improved:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Replicas now correctly track their "safe timestamp". This timestamp
+is the maximum timestamp at which reads are guaranteed to be
+repeatable.</p>
+</li>
+<li>
+<p>A scan created using the <code>SCAN_AT_SNAPSHOT</code> mode will now
+either wait for the requested snapshot to be "safe" at the replica
+being scanned, or be re-routed to a replica where the requested
+snapshot is "safe". This ensures that all such scans are repeatable.</p>
+</li>
+<li>
+<p>Kudu Tablet Servers now properly retain historical data when a row
+with a given primary key is inserted and deleted, followed by the
+insertion of a new row with the same key. Previous versions of Kudu
+would not retain history in such situations. This allows the server
+to return correct results for snapshot scans with a timestamp in the
+past, even in the presence of such "reinsertion" scenarios.</p>
+</li>
+<li>
+<p>The Kudu clients now automatically retain the timestamp of their latest
+successful read or write operation. Scans using the <code>READ_AT_SNAPSHOT</code> mode
+without a client-provided timestamp automatically assign a timestamp
+higher than the timestamp of their most recent write. Writes also propagate
+the timestamp, ensuring that sequences of operations with causal dependencies
+between them are assigned increasing timestamps. Together, these changes
+allow clients to achieve read-your-writes consistency, and also ensure
+that snapshot scans performed by other clients return causally-consistent
+results.</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Kudu servers now automatically limit the number of log files.
+The number of log files retained can be configured using the
+<code>max_log_files</code> flag. By default, 10 log files will be retained
+at each severity level.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_optimizations_and_improvements_5"><a class="link" href="#_optimizations_and_improvements_5">Optimizations and improvements</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>The logging in the Java and C++ clients has been substantially quieted.
+Clients no longer log messages in normal operation unless there
+is some kind of error.</p>
+</li>
+<li>
+<p>The C++ client now includes a <code>KuduSession::SetErrorBufferSpace</code>
+API which can limit the amount of memory used to buffer
+errors from asynchronous operations.</p>
+</li>
+<li>
+<p>The Java client now fetches tablet locations from the Kudu Master
+in batches of 1000, increased from batches of 10 in prior versions.
+This can substantially improve the performance of Spark and Impala
+queries running against Kudu tables with large numbers of tablets.</p>
+</li>
+<li>
+<p>Table metadata lock contention in the Kudu Master was substantially
+reduced. This improves the performance of tablet location lookups on
+large clusters with a high degree of concurrency.</p>
+</li>
+<li>
+<p>Lock contention in the Kudu Tablet Server during high-concurrency
+write workloads was also reduced. This can reduce CPU consumption and
+improve performance when a large number of concurrent clients are writing
+to a smaller number of a servers.</p>
+</li>
+<li>
+<p>Lock contention when writing log messages has been substantially reduced.
+This source of contention could cause high tail latencies on requests,
+and when under high load could contribute to cluster instability
+such as election storms and request timeouts.</p>
+</li>
+<li>
+<p>The <code>BITSHUFFLE</code> column encoding has been optimized to use the <code>AVX2</code>
+instruction set present on processors including Intel&#174; Sandy Bridge
+and later. Scans on <code>BITSHUFFLE</code>-encoded columns are now up to 30% faster.</p>
+</li>
+<li>
+<p>The <code>kudu</code> tool now accepts hyphens as an alternative to underscores
+when specifying actions. For example, <code>kudu local-replica copy-from-remote</code>
+may be used as an alternative to <code>kudu local_replica copy_from_remote</code>.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.2.0_fixed_issues"><a class="link" href="#rn_1.2.0_fixed_issues">Fixed Issues</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1508">KUDU-1508</a>
+Fixed a long-standing issue in which running Kudu on <code>ext4</code> file systems
+could cause file system corruption.</p>
+</li>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1399">KUDU-1399</a>
+Implemented an LRU cache for open files, which prevents running out of
+file descriptors on long-lived Kudu clusters. By default, Kudu will
+limit its file descriptor usage to half of its configured <code>ulimit</code>.</p>
+</li>
+<li>
+<p><a href="http://gerrit.cloudera.org:8080/5192">Gerrit #5192</a>
+Fixed an issue which caused data corruption and crashes in the case that
+a table had a non-composite (single-column) primary key, and that column
+was specified to use <code>DICT_ENCODING</code> or <code>BITSHUFFLE</code> encodings. If a
+table with an affected schema was written in previous versions of Kudu,
+the corruption will not be automatically repaired; users are encouraged
+to re-insert such tables after upgrading to Kudu 1.2 or later.</p>
+</li>
+<li>
+<p><a href="http://gerrit.cloudera.org:8080/5541">Gerrit #5541</a>
+Fixed a bug in the Spark <code>KuduRDD</code> implementation which could cause
+rows in the result set to be silently skipped in some cases.</p>
+</li>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1551">KUDU-1551</a>
+Fixed an issue in which the tablet server would crash on restart in the
+case that it had previously crashed during the process of allocating
+a new WAL segment.</p>
+</li>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1764">KUDU-1764</a>
+Fixed an issue where Kudu servers would leak approximately 16-32MB of disk
+space for every 10GB of data written to disk. After upgrading to Kudu
+1.2 or later, any disk space leaked in previous versions will be
+automatically recovered on startup.</p>
+</li>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1750">KUDU-1750</a>
+Fixed an issue where the API to drop a range partition would drop any
+partition with a matching lower <em>or</em> upper bound, rather than any partition
+with matching lower <em>and</em> upper bound.</p>
+</li>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1766">KUDU-1766</a>
+Fixed an issue in the Java client where equality predicates which compared
+an integer column to its maximum possible value (e.g. <code>Integer.MAX_VALUE</code>)
+would return incorrect results.</p>
+</li>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1780">KUDU-1780</a>
+Fixed the <code>kudu-client</code> Java artifact to properly shade classes in the
+<code>com.google.thirdparty</code> namespace. The lack of proper shading in prior
+releases could cause conflicts with certain versions of Google Guava.</p>
+</li>
+<li>
+<p><a href="http://gerrit.cloudera.org:8080/5327">Gerrit #5327</a>
+Fixed shading issues in the <code>kudu-flume-sink</code> Java artifact. The sink
+now expects that Hadoop dependencies are provided by Flume, and properly
+shades the Kudu client&#8217;s dependencies.</p>
+</li>
+<li>
+<p>Fixed a few issues using the Python client library from Python 3.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.2.0_wire_compatibility"><a class="link" href="#rn_1.2.0_wire_compatibility">Wire Protocol compatibility</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu 1.2.0 is wire-compatible with previous versions of Kudu:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Kudu 1.2 clients may connect to servers running Kudu 1.0. If the client uses features
+that are not available on the target server, an error will be returned.</p>
+</li>
+<li>
+<p>Kudu 1.0 clients may connect to servers running Kudu 1.2 without limitations.</p>
+</li>
+<li>
+<p>Rolling upgrade between Kudu 1.1 and Kudu 1.2 servers is believed to be possible
+though has not been sufficiently tested. Users are encouraged to shut down all nodes
+in the cluster, upgrade the software, and then restart the daemons on the new version.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.2.0_incompatible_changes"><a class="link" href="#rn_1.2.0_incompatible_changes">Incompatible Changes in Kudu 1.2.0</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>The replication factor of tables is now limited to a maximum of 7. In addition,
+it is no longer allowed to create a table with an even replication factor.</p>
+</li>
+<li>
+<p>The <code>GROUP_VARINT</code> encoding is now deprecated. Kudu servers have never supported
+this encoding, and now the client-side constant has been deprecated to match the
+server&#8217;s capabilities.</p>
+</li>
+</ul>
+</div>
+<div class="sect2">
+<h3 id="_new_restrictions_on_data_schemas_and_identifiers"><a class="link" href="#_new_restrictions_on_data_schemas_and_identifiers">New Restrictions on Data, Schemas, and Identifiers</a></h3>
+<div class="paragraph">
+<p>Kudu 1.2.0 introduces several new restrictions on schemas, cell size, and identifiers:</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">Number of Columns</dt>
+<dd>
+<p>By default, Kudu will not permit the creation of tables with
+more than 300 columns. We recommend schema designs that use fewer columns for best
+performance.</p>
+</dd>
+<dt class="hdlist1">Size of Cells</dt>
+<dd>
+<p>No individual cell may be larger than 64KB. The cells making up a
+a composite key are limited to a total of 16KB after the internal composite-key encoding
+done by Kudu. Inserting rows not conforming to these limitations will result in errors
+being returned to the client.</p>
+</dd>
+<dt class="hdlist1">Valid Identifiers</dt>
+<dd>
+<p>Identifiers such as column and table names are now restricted to
+be valid UTF-8 strings. Additionally, a maximum length of 256 characters is enforced.</p>
+</dd>
+</dl>
+</div>
+</div>
+<div class="sect2">
+<h3 id="rn_1.2.0_client_compatibility"><a class="link" href="#rn_1.2.0_client_compatibility">Client Library Compatibility</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>The Kudu 1.2 Java client is API- and ABI-compatible with Kudu 1.1. Applications
+written against Kudu 1.1 will compile and run against the Kudu 1.2 client and
+vice-versa.</p>
+</li>
+<li>
+<p>The Kudu 1.2 C++ client is API- and ABI-forward-compatible with Kudu 1.1.
+Applications written and compiled against the Kudu 1.1 client will run without
+modification against the Kudu 1.2 client. Applications written and compiled
+against the Kudu 1.2 client will run without modification against the Kudu 1.1
+client unless they use one of the following new APIs:</p>
+<div class="ulist">
+<ul>
+<li>
+<p><code>kudu::DisableSaslInitialization()</code></p>
+</li>
+<li>
+<p><code>KuduSession::SetErrorBufferSpace(&#8230;&#8203;)</code></p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>The Kudu 1.2 Python client is API-compatible with Kudu 1.1. Applications
+written against Kudu 1.1 will continue to run against the Kudu 1.2 client
+and vice-versa.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.1.0"><a class="link" href="#rn_1.1.0">Release notes specific to 1.1.0</a></h2>
+<div class="sectionbody">
+
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.1.0_new_features"><a class="link" href="#rn_1.1.0_new_features">New features</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>The Python client has been brought up to feature parity with the Java and C++ clients
+and as such the package version will be brought to 1.1 with this release (from 0.3). A
+list of the highlights can be found below.</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Improved Partial Row semantics</p>
+</li>
+<li>
+<p>Range partition support</p>
+</li>
+<li>
+<p>Scan Token API</p>
+</li>
+<li>
+<p>Enhanced predicate support</p>
+</li>
+<li>
+<p>Support for all Kudu data types (including a mapping of Python&#8217;s <code>datetime.datetime</code> to
+<code>UNIXTIME_MICROS</code>)</p>
+</li>
+<li>
+<p>Alter table support</p>
+</li>
+<li>
+<p>Enabled Read at Snapshot for Scanners</p>
+</li>
+<li>
+<p>Enabled Scanner Replica Selection</p>
+</li>
+<li>
+<p>A few bug fixes for Python 3 in addition to various other improvements.</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>IN LIST predicate pushdown support was added to allow optimized execution of filters which
+match on a set of column values. Support for Spark, Map Reduce and Impala queries utilizing
+IN LIST pushdown is not yet complete.</p>
+</li>
+<li>
+<p>The Java client now features client-side request tracing in order to help troubleshoot timeouts.
+Error messages are now augmented with traces that show which servers were contacted before the
+timeout occurred instead of just the last error. The traces also contain RPCs that were
+required to fulfill the client&#8217;s request, such as contacting the master to discover a tablet&#8217;s
+location. Note that the traces are not available for successful requests and are not
+programmatically queryable.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_optimizations_and_improvements_6"><a class="link" href="#_optimizations_and_improvements_6">Optimizations and improvements</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Kudu now publishes JAR files for Spark 2.0 compiled with Scala 2.11 along with the
+existing Spark 1.6 JAR compiled with Scala 2.10.</p>
+</li>
+<li>
+<p>The Java client now allows configuring scanners to read from the closest replica instead of
+the known leader replica. The default remains the latter. Use the relevant <code>ReplicaSelection</code>
+enum with the scanner&#8217;s builder to change this behavior.</p>
+</li>
+<li>
+<p>Tablet servers use a new policy for retaining write-ahead log (WAL) segments.
+Previously, servers used the 'log_min_segments_to_retain' flag to prioritize
+any flushes which were retaining log segments past the configured value (default 2).
+This policy caused servers to flush in-memory data more frequently than necessary,
+limiting write performance.</p>
+<div class="paragraph">
+<p>The new policy introduces a new flag 'log_target_replay_size_mb' which
+  determines the threshold at which write-ahead log retention will prioritize flushes.
+  The new flag is considered experimental and users should not need to modify
+  its value.</p>
+</div>
+<div class="paragraph">
+<p>The improved policy has been seen to improve write performance in some use cases
+  by a factor of 2x relative to the old policy.</p>
+</div>
+</li>
+<li>
+<p>Kudu&#8217;s implementation of the Raft consensus algorithm has been improved to include
+a "pre-election" phase. This can improve the stability of tablet leader election
+in high-load scenarios, especially if each server hosts a high number of tablets.</p>
+</li>
+<li>
+<p>Tablet server start-up time has been substantially improved in the case that
+the server contains a high number of tombstoned tablet replicas.</p>
+</li>
+</ul>
+</div>
+<div class="sect2">
+<h3 id="_command_line_tools"><a class="link" href="#_command_line_tools">Command line tools</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>The tool <code>kudu tablet leader_step_down</code> has been added to manually force a leader to step down.</p>
+</li>
+<li>
+<p>The tool <code>kudu remote_replica copy</code> has been added to manually copy a replica from
+one running tablet server to another.</p>
+</li>
+<li>
+<p>The tool <code>kudu local_replica delete</code> has been added to delete a replica of a tablet.</p>
+</li>
+<li>
+<p>The <code>kudu test loadgen</code> tool has been added to replace the obsoleted
+<code>insert-generated-rows</code> standalone binary. The new tool is enriched with
+additional functionality and can be used to run load generation tests against
+a Kudu cluster.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_wire_protocol_compatibility"><a class="link" href="#_wire_protocol_compatibility">Wire protocol compatibility</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu 1.1.0 is wire-compatible with previous versions of Kudu:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Kudu 1.1 clients may connect to servers running Kudu 1.0. If the client uses the new
+'IN LIST' predicate type, an error will be returned.</p>
+</li>
+<li>
+<p>Kudu 1.0 clients may connect to servers running Kudu 1.1 without limitations.</p>
+</li>
+<li>
+<p>Rolling upgrade between Kudu 1.0 and Kudu 1.1 servers is believed to be possible
+though has not been sufficiently tested. Users are encouraged to shut down all nodes
+in the cluster, upgrade the software, and then restart the daemons on the new version.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.1.0_incompatible_changes"><a class="link" href="#rn_1.1.0_incompatible_changes">Incompatible changes in Kudu 1.1.0</a></h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="_client_apis_c_java_python"><a class="link" href="#_client_apis_c_java_python">Client APIs (C++/Java/Python)</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>The C++ client no longer requires the
+<a href="https://gcc.gnu.org/onlinedocs/libstdc++/manual/using_dual_abi.html">old gcc5 ABI</a>.
+Which ABI is actually used depends on the compiler configuration. Some new distros
+(e.g. Ubuntu 16.04) will use the new ABI. Your application must use the same ABI as is
+used by the client library; an easy way to guarantee this is to use the same compiler
+to build both.</p>
+</li>
+<li>
+<p>The C++ client&#8217;s <code>KuduSession::CountBufferedOperations()</code> method is
+deprecated. Its behavior is inconsistent unless the session runs in the
+<code>MANUAL_FLUSH</code> mode. Instead, to get number of buffered operations, count
+invocations of the <code>KuduSession::Apply()</code> method since last
+<code>KuduSession::Flush()</code> call or, if using asynchronous flushing, since last
+invocation of the callback passed into <code>KuduSession::FlushAsync()</code>.</p>
+</li>
+<li>
+<p>The Java client&#8217;s <code>OperationResponse.getWriteTimestamp</code> method was renamed to <code>getWriteTimestampRaw</code>
+to emphasize that it doesn&#8217;t return milliseconds, unlike what its Javadoc indicated. The renamed
+method was also hidden from the public APIs and should not be used.</p>
+</li>
+<li>
+<p>The Java client&#8217;s sync API (<code>KuduClient</code>, <code>KuduSession</code>, <code>KuduScanner</code>) used to throw either
+a <code>NonRecoverableException</code> or a <code>TimeoutException</code> for a timeout, and now it&#8217;s only possible for the
+client to throw the former.</p>
+</li>
+<li>
+<p>The Java client&#8217;s handling of errors in <code>KuduSession</code> was modified so that subclasses of
+<code>KuduException</code> are converted into RowErrors instead of being thrown.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.0.1"><a class="link" href="#rn_1.0.1">Release notes specific to 1.0.1</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Apache Kudu 1.0.1 is a bug fix release, with no new features or backwards
+incompatible changes.</p>
+</div>
+<div class="sect2">
+<h3 id="rn_1.0.1_fixed_issues"><a class="link" href="#rn_1.0.1_fixed_issues">Fixed Issues</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1681">KUDU-1681</a> Fixed a bug in
+the tablet server which could cause a crash when the DNS lookup during master
+heartbeat failed.</p>
+</li>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1660">KUDU-1660</a>: Fixed a bug
+which would cause the Kudu master and tablet server to fail to start on single
+CPU systems.</p>
+</li>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1651">KUDU-1652</a>: Fixed a bug
+that would cause the C++ client, tablet server, and Java client to crash or
+throw an exception when attempting to scan a table with a predicate which
+simplifies to <code>IS NOT NULL</code> on a non-nullable column. For instance, setting a
+<code>&#8656; 127</code> predicate on an <code>INT8</code> column could trigger this bug, since the
+predicate only filters null values.</p>
+</li>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1651">KUDU-1651</a>: Fixed a bug
+that would cause the tablet server to crash when evaluating a scan with
+predicates over a dictionary encoded column containing an entire block of null
+values.</p>
+</li>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1623">KUDU-1623</a>: Fixed a bug
+that would cause the tablet server to crash when handling UPSERT operations
+that only set values for the primary key columns.</p>
+</li>
+<li>
+<p><a href="http://gerrit.cloudera.org:8080/4488">Gerrit #4488</a> Fixed a bug in the
+Java client&#8217;s KuduException class which could cause an unexpected
+NullPointerException to be thrown when the exception did not have an
+associated message.</p>
+</li>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1090">KUDU-1090</a> Fixed a bug in
+the memory tracker which could cause a rare crash during tablet server
+startup.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_1.0.0"><a class="link" href="#rn_1.0.0">Release notes specific to 1.0.0</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>After approximately a year of beta releases, Apache Kudu has reached version 1.0.
+This version number signifies that the development team feels that Kudu is stable
+enough for usage in production environments.</p>
+</div>
+<div class="paragraph">
+<p>If you are new to Kudu, check out its list of <a href="index.html">features and benefits</a>.</p>
+</div>
+<div class="sect2">
+<h3 id="rn_1.0.0_new_features"><a class="link" href="#rn_1.0.0_new_features">New features</a></h3>
+<div class="paragraph">
+<p>Kudu 1.0.0 delivers a number of new features, bug fixes, and optimizations.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Removal of multiversion concurrency control (MVCC) history is now supported.
+This is known as tablet history GC. This allows Kudu to reclaim disk space,
+where previously Kudu would keep a full history of all changes made to a
+given table since the beginning of time. Previously, the only way to reclaim
+disk space was to drop a table.</p>
+<div class="paragraph">
+<p>Kudu will still keep historical data, and the amount of history retained is
+  controlled by setting the configuration flag <code>--tablet_history_max_age_sec</code>,
+  which defaults to 15 minutes (expressed in seconds). The timestamp
+  represented by the current time minus <code>tablet_history_max_age_sec</code> is known
+  as the ancient history mark (AHM). When a compaction or flush occurs, Kudu
+  will remove the history of changes made prior to the ancient history mark.
+  This only affects historical data; currently-visible data will not be
+  removed. A specialized maintenance manager background task to remove existing
+  "cold" historical data that is not in a row affected by the normal compaction
+  process will be added in a future release.</p>
+</div>
+</li>
+<li>
+<p>Most of Kudu&#8217;s command line tools have been consolidated under a new
+top-level <code>kudu</code> tool. This reduces the number of large binaries distributed
+with Kudu and also includes much-improved help output.</p>
+</li>
+<li>
+<p>The Kudu Flume Sink now supports processing events containing Avro-encoded
+records, using the new <code>AvroKuduOperationsProducer</code>.</p>
+</li>
+<li>
+<p>Administrative tools including <code>kudu cluster ksck</code> now support running
+against multi-master Kudu clusters.</p>
+</li>
+<li>
+<p>The output of the <code>ksck</code> tool is now colorized and much easier to read.</p>
+</li>
+<li>
+<p>The C++ client API now supports writing data in <code>AUTO_FLUSH_BACKGROUND</code> mode.
+This can provide higher throughput for ingest workloads.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_optimizations_and_improvements_7"><a class="link" href="#_optimizations_and_improvements_7">Optimizations and improvements</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>The performance of comparison predicates on dictionary-encoded columns has
+been substantially optimized. Users are encouraged to use dictionary encoding
+on any string or binary columns with low cardinality, especially if these
+columns will be filtered with predicates.</p>
+</li>
+<li>
+<p>The Java client is now able to prune partitions from scanners based on the
+provided predicates. For example, an equality predicate on a hash-partitioned
+column will now only access those tablets that could possibly contain matching
+data. This is expected to improve performance for the Spark integration as well
+as applications using the Java client API.</p>
+</li>
+<li>
+<p>The performance of compaction selection in the tablet server has been
+substantially improved. This can increase the efficiency of the background
+maintenance threads and improve overall throughput of heavy write workloads.</p>
+</li>
+<li>
+<p>The policy by which the tablet server retains write-ahead log (WAL) files has
+been improved so that it takes into account other replicas of the tablet.
+This should help mitigate the spurious eviction of tablet replicas on machines
+that temporarily lag behind the other replicas.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_wire_protocol_compatibility_2"><a class="link" href="#_wire_protocol_compatibility_2">Wire protocol compatibility</a></h3>
+<div class="paragraph">
+<p>Kudu 1.0.0 maintains client-server wire-compatibility with previous releases.
+Applications using the Kudu client libraries may be upgraded either
+before, at the same time, or after the Kudu servers.</p>
+</div>
+<div class="paragraph">
+<p>Kudu 1.0.0 does <em>not</em> maintain server-server wire compatibility with previous
+releases. Therefore, rolling upgrades between earlier versions of Kudu and
+Kudu 1.0.0 are not supported.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="rn_1.0.0_incompatible_changes"><a class="link" href="#rn_1.0.0_incompatible_changes">Incompatible changes in Kudu 1.0.0</a></h3>
+<div class="sect3">
+<h4 id="_command_line_tools_2"><a class="link" href="#_command_line_tools_2">Command line tools</a></h4>
+<div class="ulist">
+<ul>
+<li>
+<p>The <code>kudu-pbc-dump</code> tool has been removed. The same functionality is now
+implemented as <code>kudu pbc dump</code>.</p>
+</li>
+<li>
+<p>The <code>kudu-ksck</code> tool has been removed. The same functionality is now
+implemented as <code>kudu cluster ksck</code>.</p>
+</li>
+<li>
+<p>The <code>cfile-dump</code> tool has been removed. The same functionality is now
+implemented as <code>kudu fs cfile dump</code>.</p>
+</li>
+<li>
+<p>The <code>log-dump</code> tool has been removed. The same functionality is now
+implemented as <code>kudu wal dump</code> and <code>kudu local_replica dump wals</code>.</p>
+</li>
+<li>
+<p>The <code>kudu-admin</code> tool has been removed. The same functionality is now
+implemented within <code>kudu table</code> and <code>kudu tablet</code>.</p>
+</li>
+<li>
+<p>The <code>kudu-fs_dump</code> tool has been removed. The same functionality is now
+implemented as <code>kudu fs dump</code>.</p>
+</li>
+<li>
+<p>The <code>kudu-ts-cli</code> tool has been removed. The same functionality is now
+implemented within <code>kudu master</code>, <code>kudu remote_replica</code>, and <code>kudu tserver</code>.</p>
+</li>
+<li>
+<p>The <code>kudu-fs_list</code> tool has been removed and some similar useful
+functionality has been moved under 'kudu local_replica'.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_configuration_flags"><a class="link" href="#_configuration_flags">Configuration flags</a></h4>
+<div class="ulist">
+<ul>
+<li>
+<p>Some configuration flags are now marked as 'unsafe' and 'experimental'. Such flags
+are disallowed by default. Users may access these flags by enabling the additional
+flags <code>--unlock_unsafe_flags</code> and <code>--unlock_experimental_flags</code>. Usage of such flags
+is not recommended, as the flags may be removed or modified with no deprecation period
+and without notice in future Kudu releases.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_client_apis_c_java_python_2"><a class="link" href="#_client_apis_c_java_python_2">Client APIs (C++/Java/Python)</a></h4>
+<div class="ulist">
+<ul>
+<li>
+<p>The <code>TIMESTAMP</code> column type has been renamed to <code>UNIXTIME_MICROS</code> in order to
+reduce confusion between Kudu&#8217;s timestamp support and the timestamps supported
+by other systems such as Apache Hive and Apache Impala (incubating). Existing
+tables will automatically be updated to use the new name for the type.</p>
+<div class="paragraph">
+<p>Clients upgrading to the new client libraries must move to the new name for
+  the type.  Clients using old client libraries will continue to operate using
+  the old type name, even when connected to clusters that have been
+  upgraded. Similarly, if clients are upgraded before servers, existing
+  timestamp columns will be available using the new type name.</p>
+</div>
+</li>
+<li>
+<p><code>KuduSession</code> methods in the C++ library are no longer advertised as thread-safe
+to have one set of semantics for both C++ and Java Kudu client libraries.</p>
+</li>
+<li>
+<p>The <code>KuduScanToken::TabletServers</code> method in the C++ library has been removed.
+The same information can now be found in the KuduScanToken::tablet method.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_apache_flume_integration"><a class="link" href="#_apache_flume_integration">Apache Flume Integration</a></h4>
+<div class="ulist">
+<ul>
+<li>
+<p>The <code>KuduEventProducer</code> interface used to process Flume events into Kudu operations
+for the Kudu Flume Sink has changed, and has been renamed <code>KuduOperationsProducer</code>.
+The existing `KuduEventProducer`s have been updated for the new interface, and have
+been renamed similarly.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_0.10.0"><a class="link" href="#rn_0.10.0">Release notes specific to 0.10.0</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu 0.10.0 delivers a number of new features, bug fixes, and optimizations,
+detailed below.</p>
+</div>
+<div class="paragraph">
+<p>Kudu 0.10.0 maintains wire-compatibility with previous releases, meaning
+that applications using the Kudu client libraries may be upgraded either
+before, at the same time, or after the Kudu servers. However, if you begin
+using new features of Kudu 0.10.0 such as manually range-partitioned tables,
+you must first upgrade all clients to this release.</p>
+</div>
+<div class="paragraph">
+<p>This release does not maintain full Java API or ABI compatibility with
+Kudu 0.9.x due to a package rename and some other small changes. See below for details.</p>
+</div>
+<div class="paragraph">
+<p>See also <a href="https://issues.apache.org/jira/issues/?jql=project%20%3D%20KUDU%20AND%20status%20%3D%20Resolved
+%20AND%20fixVersion%20%3D%200.10.0">JIRAs resolved
+for Kudu 0.10.0</a> and <a href="https://github.com/apache/kudu/compare/0.9.1...0.10.0">Git
+changes between 0.9.1 and 0.10.0</a>.</p>
+</div>
+<div class="sect2">
+<h3 id="rn_0.10.0_incompatible_changes"><a class="link" href="#rn_0.10.0_incompatible_changes">Incompatible changes and deprecated APIs in 0.10.0</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="http://gerrit.cloudera.org:8080/3737">Gerrit #3737</a> The Java client has been repackaged
+under <code>org.apache.kudu</code> instead of <code>org.kududb</code>. Import statements for Kudu classes must
+be modified in order to compile against 0.10.0. Wire compatibility is maintained.</p>
+</li>
+<li>
+<p><a href="https://gerrit.cloudera.org/#/c/3055/">Gerrit #3055</a> The Java client&#8217;s
+synchronous API methods now throw <code>KuduException</code> instead of <code>Exception</code>.
+Existing code that catches <code>Exception</code> should still compile, but introspection of an
+exception&#8217;s message may be impacted. This change was made to allow thrown exceptions to be
+queried more easily using <code>KuduException.getStatus</code> and calling one of <code>Status&#8217;s methods.
+For example, an operation that tries to delete a table that doesn&#8217;t exist would return a
+`Status</code> that returns true when queried on <code>isNotFound()</code>.</p>
+</li>
+<li>
+<p>The Java client&#8217;s <code>KuduTable.getTabletsLocations</code> set of methods is now
+deprecated. Additionally, they now take an exclusive end partition key instead
+of an inclusive key. Applications are encouraged to use the scan tokens API
+instead of these methods in the future.</p>
+</li>
+<li>
+<p>The C++ API for specifying split points on range-partitioned tables has been improved
+to make it easier for callers to properly manage the ownership of the provided rows.</p>
+<div class="paragraph">
+<p>The <code>TableCreator::split_rows</code> API took a <code>vector&lt;const KuduPartialRow*&gt;</code>, which
+  made it very difficult for the calling application to do proper error handling with
+  cleanup when setting the fields of the <code>KuduPartialRow</code>. This API has been now been
+  deprecated and replaced by a new method <code>TableCreator::add_range_split</code> which allows
+  easier use of smart pointers for safe memory management.</p>
+</div>
+</li>
+<li>
+<p>The Java client&#8217;s internal buffering has been reworked. Previously, the number of
+buffered write operations was constrained on a per-tablet-server basis. Now, the configured
+maximum buffer size constrains the total number of buffered operations across all
+tablet servers in the cluster. This provides a more consistent bound on the memory
+usage of the client regardless of the size of the cluster to which it is writing.</p>
+<div class="paragraph">
+<p>This change can negatively affect the write performance of Java clients which rely on
+  buffered writes. Consider using the <code>setMutationBufferSpace</code> API to increase a
+  session&#8217;s maximum buffer size if write performance seems to be degraded after upgrading
+  to Kudu 0.10.0.</p>
+</div>
+</li>
+<li>
+<p>The "remote bootstrap" process used to copy a tablet replica from one host to
+another has been renamed to "Tablet Copy". This resulted in the renaming of
+several RPC metrics. Any users previously explicitly fetching or monitoring metrics
+related to Remote Bootstrap should update their scripts to reflect the new names.</p>
+</li>
+<li>
+<p>The SparkSQL datasource for Kudu no longer supports mode <code>Overwrite</code>. Users should
+use the new <code>KuduContext.upsertRows</code> method instead. Additionally, inserts using the
+datasource are now upserts by default. The older behavior can be restored by setting
+the <code>operation</code> parameter to <code>insert</code>.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="rn_0.10.0_new_features"><a class="link" href="#rn_0.10.0_new_features">New features</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>Users may now manually manage the partitioning of a range-partitioned table.
+When a table is created, the user may specify a set of range partitions that
+do not cover the entire available key space. A user may add or drop range
+partitions to existing tables.</p>
+<div class="paragraph">
+<p>This feature can be particularly helpful with time series workloads in which
+  new partitions can be created on an hourly or daily basis. Old partitions
+  may be efficiently dropped if the application does not need to retain historical
+  data past a certain point.</p>
+</div>
+<div class="paragraph">
+<p>This feature is considered experimental for the 0.10 release. More details of
+  the new feature can be found in the accompanying
+  <a href="https://kudu.apache.org/2016/08/23/new-range-partitioning-features.html">blog post</a>.</p>
+</div>
+</li>
+<li>
+<p>Support for running Kudu clusters with multiple masters has been stabilized.
+Users may start a cluster with three or five masters to provide fault tolerance
+despite a failure of one or two masters, respectively.</p>
+<div class="paragraph">
+<p>Note that certain tools (e.g. <code>ksck</code>) are still lacking complete support for
+  multiple masters. These deficiencies will be addressed in a following release.</p>
+</div>
+</li>
+<li>
+<p>Kudu now supports the ability to reserve a certain amount of free disk space
+in each of its configured data directories. If a directory&#8217;s free disk space
+drops to less than the configured minimum, Kudu will stop writing to that
+directory until space becomes available. If no space is available in any
+configured directory, Kudu will abort.</p>
+<div class="paragraph">
+<p>This feature may be configured using the <code>fs_data_dirs_reserved_bytes</code> and
+  <code>fs_wal_dir_reserved_bytes</code> flags.</p>
+</div>
+</li>
+<li>
+<p>The Spark integration&#8217;s <code>KuduContext</code> now supports four new methods for writing to
+Kudu tables: <code>insertRows</code>, <code>upsertRows</code>, <code>updateRows</code>, and <code>deleteRows</code>. These are
+now the preferred way to write to Kudu tables from Spark.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="rn_0.10.0_improvements"><a class="link" href="#rn_0.10.0_improvements">Improvements and optimizations</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1516">KUDU-1516</a> The <code>kudu-ksck</code> tool
+has been improved and now detects problems such as when a tablet does not have
+a majority of replicas on live tablet servers, or if those replicas aren’t in a
+good state. Users who currently depend on the tool to detect inconsistencies may now see
+failures when before they wouldn&#8217;t see any.</p>
+</li>
+<li>
+<p><a href="https://gerrit.cloudera.org:8080/3477">Gerrit #3477</a> The way operations are buffered in
+the Java client has been reworked. Previously, the session&#8217;s buffer size was set per tablet, meaning that a buffer
+size of 1,000 for 10 tablets being written to allowed for 10,000 operations to be buffered at the
+same time. With this change, all the tablets share one buffer, so users might need to set a
+bigger buffer size in order to reach the same level of performance as before.</p>
+</li>
+<li>
+<p><a href="https://gerrit.cloudera.org/#/c/3674/">Gerrit #3674</a> Added LESS and GREATER options for
+column predicates.</p>
+</li>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1444">KUDU-1444</a> added support for passing
+back basic per-scan metrics (e.g cache hit rate) from the server to the C++ client. See the
+<code>KuduScanner::GetResourceMetrics()</code> API for detailed usage. This feature will be supported
+in the Java client API in a future release.</p>
+</li>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1446">KUDU-1446</a> improved the order in
+which the tablet server evaluates predicates, so that predicates on smaller columns
+are evaluated first. This may improve performance on queries which apply predicates
+on multiple columns of different sizes.</p>
+</li>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1398">KUDU-1398</a> improved the storage
+efficiency of Kudu&#8217;s internal primary key indexes. This optimization should decrease space
+usage and improve random access performance, particularly for workloads with lengthy
+primary keys.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="rn_0.10.0_fixed_issues"><a class="link" href="#rn_0.10.0_fixed_issues">Fixed Issues</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="https://gerrit.cloudera.org/#/c/3541/">Gerrit #3541</a> Fixed a problem in the Java client
+whereby an RPC could be dropped when a connection to a tablet server or master was forcefully
+closed on the server-side while RPCs to that server were in the process of being encoded.
+The effect was that the RPC would not be sent, and users of the synchronous API would receive
+a <code>TimeoutException</code>. Several other Java client bugs which could cause similar spurious timeouts
+were also fixed in this release.</p>
+</li>
+<li>
+<p><a href="https://gerrit.cloudera.org/<mark>/c/3724/">Gerrit #3724</a> Fixed a problem in the Java client
+whereby an RPC could be dropped when a socket timeout was fired while that RPC was being sent to
+a tablet server or master. This would manifest itself in the same way
+<a href="https://gerrit.cloudera.org/</mark>/c/3541/">Gerrit #3541</a>.</p>
+</li>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1538">KUDU-1538</a> fixed a bug in which recycled
+block identifiers could cause the tablet server to lose data. Following this bug fix, block
+identifiers will no longer be reused.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="rn_0.10.0_changes"><a class="link" href="#rn_0.10.0_changes">Other noteworthy changes</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>This is the first release of Apache Kudu as a top-level (non-incubating)
+project!</p>
+</li>
+<li>
+<p>The default false positive rate for Bloom filters has been changed
+from 1% to 0.01%. This will increase the space consumption of Bloom
+filters by a factor of two (from approximately 10 bits per row to
+approximately 20 bits per row). This is expected to substantially
+improve the performance of random-write workloads at the cost of an
+incremental increase in disk space usage.</p>
+</li>
+<li>
+<p>The Kudu C++ client library now has Doxygen-based
+<a href="http://kudu.apache.org/cpp-client-api/">API documentation</a>
+available online.</p>
+</li>
+<li>
+<p>Kudu now
+<a href="http://kudu.apache.org/2016/06/17/raft-consensus-single-node.html">
+uses the Raft consensus algorithm even for unreplicated tables</a>.
+This change simplifies code and will also allow administrators to enable
+replication on a previously-unreplicated table. This change is internal and
+should not be visible to users.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_0.9.1"><a class="link" href="#rn_0.9.1">Release notes specific to 0.9.1</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu 0.9.1 delivers incremental bug fixes over Kudu 0.9.0. It is fully compatible with
+Kudu 0.9.0.</p>
+</div>
+<div class="paragraph">
+<p>See also <a href="https://issues.apache.org/jira/issues/?jql=project%20%3D%20KUDU%20AND%20status%20%3D%20Resolved
+%20AND%20fixVersion%20%3D%200.9.1">JIRAs resolved
+for Kudu 0.9.1</a> and <a href="https://github.com/apache/kudu/compare/0.9.0...0.9.1">Git
+changes between 0.9.0 and 0.9.1</a>.</p>
+</div>
+<div class="sect2">
+<h3 id="rn_0.9.1_fixed_issues"><a class="link" href="#rn_0.9.1_fixed_issues">Fixed Issues</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1469">KUDU-1469</a> fixed a bug in
+our Raft consensus implementation that could cause a tablet to stop making progress after a leader
+election.</p>
+</li>
+<li>
+<p><a href="https://gerrit.cloudera.org/#/c/3456/">Gerrit #3456</a> fixed a bug in which
+servers under high load could store metric information in incorrect memory
+locations, causing crashes or data corruption.</p>
+</li>
+<li>
+<p><a href="https://gerrit.cloudera.org/#/c/3457/">Gerrit #3457</a> fixed a bug in which
+errors from the Java client would carry an incorrect error message.</p>
+</li>
+<li>
+<p>Several other small bug fixes were backported to improve stability.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_0.9.0"><a class="link" href="#rn_0.9.0">Release notes specific to 0.9.0</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu 0.9.0 delivers incremental features, improvements, and bug fixes over the previous versions.</p>
+</div>
+<div class="paragraph">
+<p>See also <a href="https://issues.apache.org/jira/issues/?jql=project%20%3D%20KUDU%20AND%20status%20%3D%20Resolved
+%20AND%20fixVersion%20%3D%200.9.0">JIRAs resolved
+for Kudu 0.9.0</a> and <a href="https://github.com/apache/kudu/compare/0.8.0...0.9.0">Git
+changes between 0.8.0 and 0.9.0</a>.</p>
+</div>
+<div class="sect2">
+<h3 id="rn_0.9.0_incompatible_changes"><a class="link" href="#rn_0.9.0_incompatible_changes">Incompatible changes</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>The <code>KuduTableInputFormat</code> command has changed the way in which it handles
+scan predicates, including how it serializes predicates to the job configuration
+object. The new configuration key is <code>kudu.mapreduce.encoded.predicate</code>. Clients
+using the <code>TableInputFormatConfigurator</code> are not affected.</p>
+</li>
+<li>
+<p>The <code>kudu-spark</code> sub-project has been renamed to follow naming conventions for
+Scala. The new name is <code>kudu-spark_2.10</code>.</p>
+</li>
+<li>
+<p>Default table partitioning has been removed. All tables must now be created
+with explicit partitioning. Existing tables are unaffected. See the
+<a href="schema_design.html#no_default_partitioning">schema design guide</a> for more
+details.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="rn_0.9.0_new_features"><a class="link" href="#rn_0.9.0_new_features">New features</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1002">KUDU-1002</a> Added support for
+<code>UPSERT</code> operations, whereby a row is inserted if it does not already exist, but
+updated if it does. Support for <code>UPSERT</code> is included in Java, C++, and Python APIs,
+but not in Impala.</p>
+</li>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1306">KUDU-1306</a> Scan token API
+for creating partition-aware scan descriptors. This API simplifies executing
+parallel scans for clients and query engines.</p>
+</li>
+<li>
+<p><a href="http://gerrit.cloudera.org:8080/#/c/2848/">Gerrit 2848</a> Added a kudu datasource
+for Spark. This datasource uses the Kudu client directly instead of
+using the MapReduce API. Predicate pushdowns for <code>spark-sql</code> and Spark filters are
+included, as well as parallel retrieval for multiple tablets and column projections.
+See an example of <a href="developing.html#_kudu_integration_with_spark">Kudu integration with Spark</a>.</p>
+</li>
+<li>
+<p><a href="http://gerrit.cloudera.org:8080/#/c/2992/">Gerrit 2992</a> Added the ability
+to update and insert from Spark using a Kudu datasource.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="rn_0.9.0_improvements"><a class="link" href="#rn_0.9.0_improvements">Improvements</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1415">KUDU-1415</a> Added statistics in the Java
+client such as the number of bytes written and the number of operations applied.</p>
+</li>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1451">KUDU-1451</a> Improved tablet server restart
+time when the tablet server needs to clean up of a lot previously deleted tablets. Tablets are
+now cleaned up after they are deleted.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="rn_0.9.0_fixed_issues"><a class="link" href="#rn_0.9.0_fixed_issues">Fixed Issues</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-678">KUDU-678</a> Fixed a leak that happened during
+DiskRowSet compactions where tiny blocks were still written to disk even if there were no REDO
+records. With the default block manager, it usually resulted in block containers with thousands
+of tiny blocks.</p>
+</li>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1437">KUDU-1437</a> Fixed a data corruption issue
+that occured after compacting sequences of negative INT32 values in a column that
+was configured with RLE encoding.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="rn_0.9.0_changes"><a class="link" href="#rn_0.9.0_changes">Other noteworthy changes</a></h3>
+<div class="paragraph">
+<p>All Kudu clients have longer default timeout values, as listed below.</p>
+</div>
+<div class="ulist">
+<div class="title">Java</div>
+<ul>
+<li>
+<p>The default operation timeout and the default admin operation timeout
+are now set to 30 seconds instead of 10.</p>
+</li>
+<li>
+<p>The default socket read timeout is now 10 seconds instead of 5.</p>
+</li>
+</ul>
+</div>
+<div class="ulist">
+<div class="title">C++</div>
+<ul>
+<li>
+<p>The default admin timeout is now 30 seconds instead of 10.</p>
+</li>
+<li>
+<p>The default RPC timeout is now 10 seconds instead of 5.</p>
+</li>
+<li>
+<p>The default scan timeout is now 30 seconds instead of 15.</p>
+</li>
+<li>
+<p>Some default settings related to I/O behavior during flushes and compactions have been changed:
+The default for <code>flush_threshold_mb</code> has been increased from 64MB to 1000MB. The default
+<code>cfile_do_on_finish</code> has been changed from <code>close</code> to <code>flush</code>.
+<a href="http://getkudu.io/2016/04/26/ycsb.html">Experiments using YCSB</a> indicate that these
+values will provide better throughput for write-heavy applications on typical server hardware.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_0.8.0"><a class="link" href="#rn_0.8.0">Release notes specific to 0.8.0</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu 0.8.0 delivers incremental features, improvements, and bug fixes over the previous versions.</p>
+</div>
+<div class="paragraph">
+<p>See also <a href="https://issues.apache.org/jira/issues/?jql=project%20%3D%20KUDU%20AND%20status%20%3D%20Resolved
+%20AND%20fixVersion%20%3D%200.8.0">JIRAs resolved
+for Kudu 0.8.0</a> and <a href="https://github.com/apache/kudu/compare/0.7.1...0.8.0">Git
+changes between 0.7.1 and 0.8.0</a>.</p>
+</div>
+<div class="paragraph">
+<p>To upgrade to Kudu 0.8.0, see <a href="installation.html#upgrade">Upgrade from 0.7.1 to 0.8.0</a>.</p>
+</div>
+<div class="sect2">
+<h3 id="rn_0.8.0_incompatible_changes"><a class="link" href="#rn_0.8.0_incompatible_changes">Incompatible changes</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>0.8.0 clients are not fully compatible with servers running Kudu 0.7.1 or lower.
+In particular, scans that specify column predicates will fail. To work around this
+issue, upgrade all Kudu servers before upgrading clients.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="rn_0.8.0_new_features"><a class="link" href="#rn_0.8.0_new_features">New features</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-431">KUDU-431</a> A simple Flume
+sink has been implemented.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="rn_0.8.0_improvements"><a class="link" href="#rn_0.8.0_improvements">Improvements</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-839">KUDU-839</a> Java RowError now uses an enum error code.</p>
+</li>
+<li>
+<p><a href="http://gerrit.cloudera.org:8080/#/c/2138/">Gerrit 2138</a> The handling of
+column predicates has been re-implemented in the server and clients.</p>
+</li>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1379">KUDU-1379</a> Partition pruning
+has been implemented for C++ clients (but not yet for the Java client). This feature
+allows you to avoid reading a tablet if you know it does not serve the row keys you are querying.</p>
+</li>
+<li>
+<p><a href="http://gerrit.cloudera.org:8080/#/c/2641">Gerrit 2641</a> Kudu now uses
+<code>earliest-deadline-first</code> RPC scheduling and rejection. This changes the behavior
+of the RPC service queue to prevent unfairness when processing a backlog of RPC
+threads and to increase the likelihood that an RPC will be processed before it
+can time out.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="rn_0.8.0_fixed_issues"><a class="link" href="#rn_0.8.0_fixed_issues">Fixed Issues</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1337">KUDU-1337</a> Tablets from tables
+that were deleted might be unnecessarily re-bootstrapped when the leader gets the
+notification to delete itself after the replicas do.</p>
+</li>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-969">KUDU-969</a> If a tablet server
+shuts down while compacting a rowset and receiving updates for it, it might immediately
+crash upon restart while bootstrapping that rowset&#8217;s tablet.</p>
+</li>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1354">KUDU-1354</a> Due to a bug in Kudu&#8217;s
+MVCC implementation where row locks were released before the MVCC commit happened,
+flushed data would include out-of-order transactions, triggering a crash on the
+next compaction.</p>
+</li>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1322">KUDU-1322</a> The C++ client
+now retries write operations if the tablet it is trying to reach has already been
+deleted.</p>
+</li>
+<li>
+<p><a href="http://gerrit.cloudera.org:8080/#/c/2571/">Gerrit 2571</a> Due to a bug in the
+Java client, users were unable to close the <code>kudu-spark</code> shell because of
+lingering non-daemon threads.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="rn_0.8.0_changes"><a class="link" href="#rn_0.8.0_changes">Other noteworthy changes</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="http://gerrit.cloudera.org:8080/#/c/2239/">Gerrit 2239</a> The concept of "feature flags"
+was introduced in order to manage compatibility between different
+Kudu versions. One case where this is helpful is if a newer client attempts to use
+a feature unsupported by the currently-running tablet server. Rather than receiving
+a cryptic error, the user gets an error message that is easier to interpret.
+This is an internal change for Kudu system developers and requires no action by
+users of the clients or API.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_0.7.1"><a class="link" href="#rn_0.7.1">Release notes specific to 0.7.1</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu 0.7.1 is a bug fix release for 0.7.0.</p>
+</div>
+<div class="sect2">
+<h3 id="rn_0.7.1_fixed_issues"><a class="link" href="#rn_0.7.1_fixed_issues">Fixed Issues</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1325">KUDU-1325</a> fixes a tablet server crash that could
+occur during table deletion. In some cases, while a table was being deleted, other replicas would
+attempt to re-replicate tablets to servers that had already processed the deletion. This could
+trigger a race condition that caused a crash.</p>
+</li>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1341">KUDU-1341</a> fixes a potential data corruption and
+crash that could happen shortly after tablet server restarts in workloads that repeatedly delete
+and re-insert rows with the same primary key. In most cases, this corruption affected only a single
+replica and could be repaired by re-replicating from another.</p>
+</li>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1343">KUDU-1343</a> fixes a bug in the Java client that
+occurs when a scanner has to scan multiple batches from one tablet and then start scanning from
+another. In particular, this would affect any scans using the Java client that read large numbers
+of rows from multi-tablet tables.</p>
+</li>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1345">KUDU-1345</a> fixes a bug where in some cases the
+hybrid clock could jump backwards, resulting in a crash followed by an inability to
+restart the affected tablet server.</p>
+</li>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1360">KUDU-1360</a> fixes a bug in the kudu-spark module
+which prevented reading rows with <code>NULL</code> values.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_0.7.0"><a class="link" href="#rn_0.7.0">Release notes specific to 0.7.0</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu 0.7.0 is the first release done as part of the Apache Incubator and includes a number
+of changes, new features, improvements, and fixes.</p>
+</div>
+<div class="paragraph">
+<p>See also <a href="https://issues.apache.org/jira/issues/?jql=project%20%3D%20KUDU%20AND%20status%20in%20
+(Resolved)%20AND%20fixVersion%20%3D%200.7.0%20ORDER%20BY%20key%20ASC">JIRAs resolved
+for Kudu 0.7.0</a> and <a href="https://github.com/apache/kudu/compare/branch-0.6.0...branch-0.7.0">Git
+changes between 0.6.0 and 0.7.0</a>.</p>
+</div>
+<div class="paragraph">
+<p>The upgrade instructions can be found at <a href="installation.html#upgrade">Upgrade from 0.6.0 to 0.7.0</a>.</p>
+</div>
+<div class="sect2">
+<h3 id="rn_0.7.0_incompatible_changes"><a class="link" href="#rn_0.7.0_incompatible_changes">Incompatible changes</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>The C++ client includes a new API, <code>KuduScanBatch</code>, which performs better when a
+large number of small rows are returned in a batch. The old API of <code>vector&lt;KuduRowResult&gt;</code>
+is deprecated.</p>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+This change is API-compatible but <strong>not</strong> ABI-compatible.
+</td>
+</tr>
+</table>
+</div>
+</li>
+<li>
+<p>The default replication factor has been changed from 1 to 3. Existing tables will
+continue to use the replication factor they were created with. Applications that create
+tables may not work properly if they assume a replication factor of 1 and fewer than
+3 replicas are available. To use the previous default replication factor, start the
+master with the configuration flag <code>--default_num_replicas=1</code>.</p>
+</li>
+<li>
+<p>The Python client has been completely rewritten, with a focus on improving code
+quality and testing. The read path (scanners) has been improved by adding many of
+the features already supported by the C++ and Java clients. The Python client is no
+longer considered experimental.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="rn_0.7.0_new_features"><a class="link" href="#rn_0.7.0_new_features">New features</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>With the goal of Spark integration in mind, a new <code>kuduRDD</code> API has been added,
+which wraps <code>newAPIHadoopRDD</code> and includes a default source for Spark SQL.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="rn_0.7.0_improvements"><a class="link" href="#rn_0.7.0_improvements">Improvements</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>The Java client includes new methods <code>countPendingErrors()</code> and
+<code>getPendingErrors()</code> on <code>KuduSession</code>. These methods allow you to count and
+retrieve outstanding row errors when configuring sessions with <code>AUTO_FLUSH_BACKGROUND</code>.</p>
+</li>
+<li>
+<p>New server-level metrics allow you to monitor CPU usage and context switching.</p>
+</li>
+<li>
+<p>Kudu now builds on RHEL 7, CentOS 7, and SLES 12. Extra instructions are included
+for SLES 12.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="rn_0.7.0_fixed_issues"><a class="link" href="#rn_0.7.0_fixed_issues">Fixed Issues</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1288">KUDU-1288</a> fixes a severe file descriptor
+leak, which could previously only be resolved by restarting the tablet server.</p>
+</li>
+<li>
+<p><a href="https://issues.apache.org/jira/browse/KUDU-1250">KUDU-1250</a> fixes a hang in the Java
+client when processing an in-flight batch and the previous batch encountered an error.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="rn_0.7.0_changes"><a class="link" href="#rn_0.7.0_changes">Other noteworthy changes</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>The file block manager&#8217;s performance was improved, but it is still not recommended for
+real-world use.</p>
+</li>
+<li>
+<p>The master now attempts to spread tablets more evenly across the cluster during
+table creation. This has no impact on existing tables, but will improve the speed
+at which under-replicated tablets are re-replicated after a tablet server failure.</p>
+</li>
+<li>
+<p>All licensing documents have been modified to adhere to ASF guidelines.</p>
+</li>
+<li>
+<p>Kudu now requires an out-of-tree build directory. Review the build instructions
+for additional information.</p>
+</li>
+<li>
+<p>The <code>C` client library is now explicitly built against the
+link:https://gcc.gnu.org/onlinedocs/libstdc/manual/using_dual_abi.html[old gcc5 ABI].
+If you use gcc5 to build a Kudu application, your application must use the old ABI
+as well. This is typically achieved by defining the `_GLIBCXX_USE_CXX11_ABI</code> macro
+at compile-time when building your application. For more information, see the
+previous link and link:http://developerblog.redhat.com/2015/02/05/gcc5-and-the-c11-abi/.</p>
+</li>
+<li>
+<p>The Python client is no longer considered experimental.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_0.6.0"><a class="link" href="#rn_0.6.0">Release notes specific to 0.6.0</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The 0.6.0 release contains incremental improvements and bug fixes. The most notable
+changes are:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>The Java client&#8217;s CreateTableBuilder and AlterTableBuilder classes have been renamed
+to CreateTableOptions and AlterTableOptions. Their methods now also return <code>this</code> objects,
+allowing them to be used as builders.</p>
+</li>
+<li>
+<p>The Java client&#8217;s AbstractKuduScannerBuilder#maxNumBytes() setter is now called
+batchSizeBytes as is the corresponding property in AsyncKuduScanner. This makes it
+consistent with the C++ client.</p>
+</li>
+<li>
+<p>The "kudu-admin" tool can now list and delete tables via its new subcommands
+"list_tables" and "delete_table &lt;table_name&gt;".</p>
+</li>
+<li>
+<p>OSX is now supported for single-host development. Please consult its specific installation
+instructions in <a href="installation.html#osx_from_source">OS X</a>.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="rn_0.5.0"><a class="link" href="#rn_0.5.0">Release Notes Specific to 0.5.0</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu 0.5.0 was the first public release. As such, no improvements or changes were
+noted in its release notes.</p>
+</div>
+</div>
+</div>
+    </div>
+    <div class="col-md-3">
+
+  <div id="toc" data-spy="affix" data-offset-top="70">
+  <ul>
+
+      <li>
+
+          <a href="index.html">Introducing Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="release_notes.html">Kudu Release Notes</a> 
+      </li> 
+      <li>
+
+          <a href="installation.html">Installation Guide</a> 
+      </li> 
+      <li>
+
+          <a href="configuration.html">Configuring Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="kudu_impala_integration.html">Using Impala with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="administration.html">Administering Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="troubleshooting.html">Troubleshooting Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="developing.html">Developing Applications with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="schema_design.html">Kudu Schema Design</a> 
+      </li> 
+      <li>
+
+          <a href="scaling_guide.html">Kudu Scaling Guide</a> 
+      </li> 
+      <li>
+
+          <a href="security.html">Kudu Security</a> 
+      </li> 
+      <li>
+
+          <a href="transaction_semantics.html">Kudu Transaction Semantics</a> 
+      </li> 
+      <li>
+
+          <a href="background_tasks.html">Background Maintenance Tasks</a> 
+      </li> 
+      <li>
+
+          <a href="configuration_reference.html">Kudu Configuration Reference</a> 
+      </li> 
+      <li>
+
+          <a href="command_line_tools_reference.html">Kudu Command Line Tools Reference</a> 
+      </li> 
+      <li>
+
+          <a href="known_issues.html">Known Issues and Limitations</a> 
+      </li> 
+      <li>
+
+          <a href="contributing.html">Contributing to Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="export_control.html">Export Control Notice</a> 
+      </li> 
+  </ul>
+  </div>
+    </div>
+  </div>
+</div>

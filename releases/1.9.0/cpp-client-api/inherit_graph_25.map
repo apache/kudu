@@ -1,0 +1,7 @@
+<map id="Graphical Class Hierarchy" name="Graphical Class Hierarchy">
+<area shape="rect" id="node1" href="$classkudu_1_1client_1_1KuduWriteOperation.html" title="A single&#45;row write operation to be sent to a Kudu table. " alt="" coords="5,81,233,108"/>
+<area shape="rect" id="node2" href="$classkudu_1_1client_1_1KuduDelete.html" title="A single row delete to be sent to the cluster. " alt="" coords="284,5,460,32"/>
+<area shape="rect" id="node3" href="$classkudu_1_1client_1_1KuduInsert.html" title="A single row insert to be sent to the cluster. " alt="" coords="287,56,457,83"/>
+<area shape="rect" id="node4" href="$classkudu_1_1client_1_1KuduUpdate.html" title="A single row update to be sent to the cluster. " alt="" coords="281,107,463,133"/>
+<area shape="rect" id="node5" href="$classkudu_1_1client_1_1KuduUpsert.html" title="A single row upsert to be sent to the cluster. " alt="" coords="283,157,461,184"/>
+</map>
