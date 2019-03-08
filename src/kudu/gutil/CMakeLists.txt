@@ -70,4 +70,8 @@ ADD_EXPORTABLE_LIBRARY(gutil
 
 add_kudu_test(strings/string_util-test)
 add_kudu_test(strings/numbers-test)
-add_kudu_test(sysinfo-test)
+if (NOT APPLE)
+  # The sysinfo-test consists of scenarios for Linux-specific function
+  # ParseMaxCpuIndex(): that doesn't exist on macOS.
+  add_kudu_test(sysinfo-test)
+endif()
