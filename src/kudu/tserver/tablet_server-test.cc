@@ -2650,6 +2650,32 @@ TEST_F(TabletServerTest, TestOrderedScan_ProjectionWithKeyColumnsOutOfOrder) {
                     R"((string string_val="hello $0", int32 int_val=$1, int32 key=$0))");
 }
 
+TEST_F(TabletServerTest, TestSplitKeyRange) {
+  int kNumRowsets = 10;
+  int kRowsetSize = 10;
+  scoped_refptr<TabletReplica> replica;
+  ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &replica));
+  for (int i = 0; i < kNumRowsets; i++) {
+    InsertTestRowsDirect(kRowsetSize * i, kRowsetSize);
+    ASSERT_OK(replica->tablet()->Flush());
+  }
+
+  {
+    SplitKeyRangeRequestPB req;
+    SplitKeyRangeResponsePB resp;
+    RpcController rpc;
+    req.set_tablet_id(kTabletId);
+    // Request the smallest possible chunk size, expecting we get back a range
+    // for every rowset.
+    req.set_target_chunk_size_bytes(1);
+    ColumnSchemaToPB(ColumnSchema("key", INT32), req.add_columns());
+    ASSERT_OK(proxy_->SplitKeyRange(req, &resp, &rpc));
+    SCOPED_TRACE(SecureDebugString(resp));
+    ASSERT_FALSE(resp.has_error());
+    ASSERT_EQ(kNumRowsets, resp.ranges_size());
+  }
+}
+
 TEST_F(TabletServerTest, TestAlterSchema) {
   AlterSchemaRequestPB req;
   AlterSchemaResponsePB resp;

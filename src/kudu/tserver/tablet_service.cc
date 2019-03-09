@@ -1646,8 +1646,8 @@ void TabletServiceImpl::SplitKeyRange(const SplitKeyRangeRequestPB* req,
 
   vector<ColumnId> column_ids;
   for (const ColumnSchema& column : schema.columns()) {
-    int column_id = tablet_schema.find_column(column.name());
-    if (PREDICT_FALSE(column_id == Schema::kColumnNotFound)) {
+    int column_idx = tablet_schema.find_column(column.name());
+    if (PREDICT_FALSE(column_idx == Schema::kColumnNotFound)) {
       SetupErrorAndRespond(resp->mutable_error(),
                            Status::InvalidArgument(
                                "Invalid SplitKeyRange column name", column.name()),
@@ -1655,7 +1655,7 @@ void TabletServiceImpl::SplitKeyRange(const SplitKeyRangeRequestPB* req,
                            context);
       return;
     }
-    column_ids.emplace_back(column_id);
+    column_ids.emplace_back(tablet_schema.column_id(column_idx));
   }
 
   // Validate the target chunk size are valid
