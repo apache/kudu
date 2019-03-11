@@ -17,25 +17,15 @@
 
 #pragma once
 
-#include <cstdint>
-
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/util/metrics.h"
+#include "kudu/util/cache_metrics.h"
 
 namespace kudu {
 
-struct CacheMetrics {
-  virtual ~CacheMetrics() {
-  }
-  scoped_refptr<Counter> inserts;
-  scoped_refptr<Counter> lookups;
-  scoped_refptr<Counter> evictions;
-  scoped_refptr<Counter> cache_hits;
-  scoped_refptr<Counter> cache_hits_caching;
-  scoped_refptr<Counter> cache_misses;
-  scoped_refptr<Counter> cache_misses_caching;
+class MetricEntity;
 
-  scoped_refptr<AtomicGauge<uint64_t>> cache_usage;
+struct FileCacheMetrics : public CacheMetrics {
+  explicit FileCacheMetrics(const scoped_refptr<MetricEntity>& entity);
 };
 
 } // namespace kudu

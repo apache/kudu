@@ -36,11 +36,12 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/array_view.h"
 #include "kudu/util/cache.h"
+#include "kudu/util/cache_metrics.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/env.h"
+#include "kudu/util/file_cache_metrics.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
-#include "kudu/util/metrics.h"  // IWYU pragma: keep
 #include "kudu/util/monotime.h"
 #include "kudu/util/once.h"
 #include "kudu/util/slice.h"
@@ -461,7 +462,8 @@ FileCache<FileType>::FileCache(const string& cache_name,
       cache_(NewLRUCache(DRAM_CACHE, max_open_files, cache_name)),
       running_(1) {
   if (entity) {
-    cache_->SetMetrics(entity);
+    unique_ptr<FileCacheMetrics> metrics(new FileCacheMetrics(entity));
+    cache_->SetMetrics(std::move(metrics));
   }
   LOG(INFO) << Substitute("Constructed file cache $0 with capacity $1",
                           cache_name, max_open_files);

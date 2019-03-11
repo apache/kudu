@@ -26,14 +26,15 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <libvmem.h>
 
-#include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/atomic_refcount.h"
+#include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/hash/city.h"
@@ -65,14 +66,13 @@ DEFINE_bool(nvm_cache_simulate_allocation_failure, false,
             "for testing.");
 TAG_FLAG(nvm_cache_simulate_allocation_failure, unsafe);
 
+using std::string;
+using std::unique_ptr;
+using std::vector;
 
 namespace kudu {
 
 namespace {
-
-using std::shared_ptr;
-using std::string;
-using std::vector;
 
 typedef simple_spinlock MutexType;
 
@@ -461,7 +461,7 @@ static const int kNumShards = 1 << kNumShardBits;
 
 class ShardedLRUCache : public Cache {
  private:
-  gscoped_ptr<CacheMetrics> metrics_;
+  unique_ptr<CacheMetrics> metrics_;
   vector<NvmLRUCache*> shards_;
   VMEM* vmp_;
 
@@ -518,8 +518,8 @@ class ShardedLRUCache : public Cache {
     return reinterpret_cast<LRUHandle*>(handle)->val_ptr();
   }
 
-  virtual void SetMetrics(const scoped_refptr<MetricEntity>& entity) OVERRIDE {
-    metrics_.reset(new CacheMetrics(entity));
+  virtual void SetMetrics(unique_ptr<CacheMetrics> metrics) OVERRIDE {
+    metrics_ = std::move(metrics);
     for (NvmLRUCache* cache : shards_) {
       cache->SetMetrics(metrics_.get());
     }

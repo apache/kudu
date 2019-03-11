@@ -2,21 +2,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "kudu/util/cache.h"
+
 #include <cassert>
 #include <cstring>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
-#include <glog/logging.h>
 #include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/util/cache.h"
+#include "kudu/util/block_cache_metrics.h"
+#include "kudu/util/cache_metrics.h"
 #include "kudu/util/coding.h"
 #include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
@@ -87,7 +91,8 @@ class CacheTest : public KuduTest,
 
     scoped_refptr<MetricEntity> entity = METRIC_ENTITY_server.Instantiate(
         &metric_registry_, "test");
-    cache_->SetMetrics(entity);
+    std::unique_ptr<BlockCacheMetrics> metrics(new BlockCacheMetrics(entity));
+    cache_->SetMetrics(std::move(metrics));
   }
 
   int Lookup(int key) {

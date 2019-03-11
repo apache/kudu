@@ -24,13 +24,12 @@
 #include <string>
 
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/slice.h"
 
 namespace kudu {
 
 class Cache;
-class MetricEntity;
+struct CacheMetrics;
 
 enum CacheType {
   DRAM_CACHE,
@@ -129,8 +128,8 @@ class Cache {
   // to it have been released.
   virtual void Erase(const Slice& key) = 0;
 
-  // Pass a metric entity in order to start recoding metrics.
-  virtual void SetMetrics(const scoped_refptr<MetricEntity>& metric_entity) = 0;
+  // Set the cache metrics to update corresponding counters accordingly.
+  virtual void SetMetrics(std::unique_ptr<CacheMetrics> metrics) = 0;
 
   // ------------------------------------------------------------
   // Insertion path

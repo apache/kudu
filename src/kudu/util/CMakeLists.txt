@@ -147,10 +147,10 @@ set(UTIL_SRCS
   async_logger.cc
   atomic.cc
   bitmap.cc
+  block_cache_metrics.cc
   bloom_filter.cc
   bitmap.cc
   cache.cc
-  cache_metrics.cc
   coding.cc
   condition_variable.cc
   cow_object.cc
@@ -167,6 +167,7 @@ set(UTIL_SRCS
   faststring.cc
   fault_injection.cc
   file_cache.cc
+  file_cache_metrics.cc
   flags.cc
   flag_tags.cc
   flag_validators.cc

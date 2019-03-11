@@ -11,6 +11,7 @@
 #include <mutex>
 #include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>
@@ -52,6 +53,7 @@ TAG_FLAG(cache_memtracker_approximation_ratio, hidden);
 using std::atomic;
 using std::shared_ptr;
 using std::string;
+using std::unique_ptr;
 using std::vector;
 
 namespace kudu {
@@ -445,7 +447,7 @@ int DetermineShardBits() {
 class ShardedLRUCache : public Cache {
  private:
   shared_ptr<MemTracker> mem_tracker_;
-  gscoped_ptr<CacheMetrics> metrics_;
+  unique_ptr<CacheMetrics> metrics_;
   vector<LRUCache*> shards_;
 
   // Number of bits of hash used to determine the shard.
@@ -488,27 +490,27 @@ class ShardedLRUCache : public Cache {
     STLDeleteElements(&shards_);
   }
 
-  virtual Handle* Insert(PendingHandle* handle,
-                         Cache::EvictionCallback* eviction_callback) OVERRIDE {
+  Handle* Insert(PendingHandle* handle,
+                 Cache::EvictionCallback* eviction_callback) override {
     LRUHandle* h = reinterpret_cast<LRUHandle*>(DCHECK_NOTNULL(handle));
     return shards_[Shard(h->hash)]->Insert(h, eviction_callback);
   }
-  virtual Handle* Lookup(const Slice& key, CacheBehavior caching) OVERRIDE {
+  Handle* Lookup(const Slice& key, CacheBehavior caching) override {
     const uint32_t hash = HashSlice(key);
     return shards_[Shard(hash)]->Lookup(key, hash, caching == EXPECT_IN_CACHE);
   }
-  virtual void Release(Handle* handle) OVERRIDE {
+  void Release(Handle* handle) override {
     LRUHandle* h = reinterpret_cast<LRUHandle*>(handle);
     shards_[Shard(h->hash)]->Release(handle);
   }
-  virtual void Erase(const Slice& key) OVERRIDE {
+  void Erase(const Slice& key) override {
     const uint32_t hash = HashSlice(key);
     shards_[Shard(hash)]->Erase(key, hash);
   }
-  virtual Slice Value(Handle* handle) OVERRIDE {
+  Slice Value(Handle* handle) override {
     return reinterpret_cast<LRUHandle*>(handle)->value();
   }
-  virtual void SetMetrics(const scoped_refptr<MetricEntity>& entity) OVERRIDE {
+  void SetMetrics(std::unique_ptr<CacheMetrics> metrics) override {
     // TODO(KUDU-2165): reuse of the Cache singleton across multiple MiniCluster servers
     // causes TSAN errors. So, we'll ensure that metrics only get attached once, from
     // whichever server starts first. This has the downside that, in test builds, we won't
@@ -518,13 +520,13 @@ class ShardedLRUCache : public Cache {
       CHECK(IsGTest()) << "Metrics should only be set once per Cache singleton";
       return;
     }
-    metrics_.reset(new CacheMetrics(entity));
+    metrics_ = std::move(metrics);
     for (LRUCache* cache : shards_) {
       cache->SetMetrics(metrics_.get());
     }
   }
 
-  virtual PendingHandle* Allocate(Slice key, int val_len, int charge) OVERRIDE {
+  PendingHandle* Allocate(Slice key, int val_len, int charge) override {
     int key_len = key.size();
     DCHECK_GE(key_len, 0);
     DCHECK_GE(val_len, 0);
@@ -543,12 +545,12 @@ class ShardedLRUCache : public Cache {
     return reinterpret_cast<PendingHandle*>(handle);
   }
 
-  virtual void Free(PendingHandle* h) OVERRIDE {
+  void Free(PendingHandle* h) override {
     uint8_t* data = reinterpret_cast<uint8_t*>(h);
     delete [] data;
   }
 
-  virtual uint8_t* MutableValue(PendingHandle* h) OVERRIDE {
+  uint8_t* MutableValue(PendingHandle* h) override {
     return reinterpret_cast<LRUHandle*>(h)->mutable_val_ptr();
   }
 

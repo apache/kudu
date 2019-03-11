@@ -19,6 +19,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <ostream>
 #include <string>
 
@@ -28,7 +29,9 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/block_cache_metrics.h"
 #include "kudu/util/cache.h"
+#include "kudu/util/cache_metrics.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/flag_validators.h"
 #include "kudu/util/process_memory.h"
@@ -147,7 +150,8 @@ void BlockCache::Insert(BlockCache::PendingEntry* entry, BlockCacheHandle* inser
 }
 
 void BlockCache::StartInstrumentation(const scoped_refptr<MetricEntity>& metric_entity) {
-  cache_->SetMetrics(metric_entity);
+  std::unique_ptr<BlockCacheMetrics> metrics(new BlockCacheMetrics(metric_entity));
+  cache_->SetMetrics(std::move(metrics));
 }
 
 } // namespace cfile
