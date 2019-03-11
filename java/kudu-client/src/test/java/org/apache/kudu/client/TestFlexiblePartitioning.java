@@ -95,10 +95,8 @@ public class TestFlexiblePartitioning {
 
   private Set<Row> collectRows(KuduScanner scanner) throws KuduException {
     Set<Row> rows = new HashSet<>();
-    while (scanner.hasMoreRows()) {
-      for (RowResult result : scanner.nextRows()) {
-        rows.add(Row.fromResult(result));
-      }
+    for (RowResult result : scanner) {
+      rows.add(Row.fromResult(result));
     }
     return rows;
   }

@@ -40,6 +40,9 @@ import org.apache.yetus.audience.InterfaceAudience;
 
 /**
  * Little Endian slice of a byte array.
+ *
+ * The slice holds on to a reference of the underlying byte array meaning it
+ * cannot be garbage collected until the Slice itself can be garbage collected.
  */
 @InterfaceAudience.Private
 public final class Slice implements Comparable<Slice> {

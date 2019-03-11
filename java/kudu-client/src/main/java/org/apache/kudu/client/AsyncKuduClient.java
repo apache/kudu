@@ -265,6 +265,7 @@ public class AsyncKuduClient implements AutoCloseable {
   public static final byte[] EMPTY_ARRAY = new byte[0];
   public static final long NO_TIMESTAMP = -1;
   public static final long DEFAULT_OPERATION_TIMEOUT_MS = 30000;
+  public static final long DEFAULT_KEEP_ALIVE_PERIOD_MS = 15000; // 25% of the default scanner ttl.
   private static final long MAX_RPC_ATTEMPTS = 100;
 
   /**

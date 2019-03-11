@@ -205,9 +205,13 @@ public final class AsyncKuduScanner {
 
   private final ReplicaSelection replicaSelection;
 
+  private final long keepAlivePeriodMs;
+
   /////////////////////
   // Runtime variables.
   /////////////////////
+
+  private boolean reuseRowResult = false;
 
   private boolean closed = false;
 
@@ -250,7 +254,7 @@ public final class AsyncKuduScanner {
                    boolean cacheBlocks, boolean prefetching,
                    byte[] startPrimaryKey, byte[] endPrimaryKey,
                    long htTimestamp, int batchSizeBytes, PartitionPruner pruner,
-                   ReplicaSelection replicaSelection) {
+                   ReplicaSelection replicaSelection, long keepAlivePeriodMs) {
     checkArgument(batchSizeBytes >= 0, "Need non-negative number of bytes, " +
         "got %s", batchSizeBytes);
     checkArgument(limit > 0, "Need a strictly positive number for the limit, " +
@@ -315,6 +319,7 @@ public final class AsyncKuduScanner {
     }
 
     this.replicaSelection = replicaSelection;
+    this.keepAlivePeriodMs = keepAlivePeriodMs;
 
     // For READ_YOUR_WRITES scan mode, get the latest observed timestamp
     // and store it. Always use this one as the propagated timestamp for
@@ -398,8 +403,27 @@ public final class AsyncKuduScanner {
     return this.schema;
   }
 
+  public long getKeepAlivePeriodMs() {
+    return keepAlivePeriodMs;
+  }
+
   long getSnapshotTimestamp() {
     return this.htTimestamp;
+  }
+
+  /**
+   * If set to true, the {@link RowResult} object returned by the {@link RowResultIterator}
+   * will be reused with each call to {@link RowResultIterator#next()).
+   * This can be a useful optimization to reduce the number of objects created.
+   *
+   * Note: DO NOT use this if the RowResult is stored between calls to next().
+   * Enabling this optimization means that a call to next() mutates the previously returned
+   * RowResult. Accessing the previously returned RowResult after a call to next(), by storing all
+   * RowResults in a collection and accessing them later for example, will lead to all of the
+   * stored RowResults being mutated as per the data in the last RowResult returned.
+   */
+  public void setReuseRowResult(boolean reuseRowResult) {
+    this.reuseRowResult = reuseRowResult;
   }
 
   /**
@@ -1037,8 +1061,9 @@ public final class AsyncKuduScanner {
             break;
         }
       }
+      // TODO: Find a clean way to plumb in reuseRowResult.
       RowResultIterator iterator = RowResultIterator.makeRowResultIterator(
-          timeoutTracker.getElapsedMillis(), tsUUID, schema, resp.getData(), callResponse);
+          timeoutTracker.getElapsedMillis(), tsUUID, schema, resp.getData(), callResponse, reuseRowResult);
 
       boolean hasMore = resp.getHasMoreResults();
       if (id.length != 0 && scannerId != null && !Bytes.equals(scannerId, id)) {
@@ -1094,9 +1119,9 @@ public final class AsyncKuduScanner {
     public AsyncKuduScanner build() {
       return new AsyncKuduScanner(
           client, table, projectedColumnNames, projectedColumnIndexes, readMode, isFaultTolerant,
-          scanRequestTimeout, predicates, limit, cacheBlocks,
-          prefetching, lowerBoundPrimaryKey, upperBoundPrimaryKey,
-          htTimestamp, batchSizeBytes, PartitionPruner.create(this), replicaSelection);
+          scanRequestTimeout, predicates, limit, cacheBlocks, prefetching, lowerBoundPrimaryKey,
+          upperBoundPrimaryKey, htTimestamp, batchSizeBytes, PartitionPruner.create(this),
+          replicaSelection, keepAlivePeriodMs);
     }
   }
 }

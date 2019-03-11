@@ -184,11 +184,8 @@ public abstract class ClientTestUtil {
       scanBuilder.addPredicate(predicate);
     }
     KuduScanner scanner = scanBuilder.build();
-    while (scanner.hasMoreRows()) {
-      RowResultIterator rows = scanner.nextRows();
-      for (RowResult r : rows) {
-        rowStrings.add(r.rowToString());
-      }
+    for (RowResult r : scanner) {
+      rowStrings.add(r.rowToString());
     }
     Collections.sort(rowStrings);
     return rowStrings;

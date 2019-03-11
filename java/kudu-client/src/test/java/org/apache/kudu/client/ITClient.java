@@ -343,17 +343,9 @@ public class ITClient {
           .build();
 
       List<RowResult> results = new ArrayList<>();
-      while (scanner.hasMoreRows()) {
-        try {
-          RowResultIterator ite = scanner.nextRows();
-          for (RowResult row : ite) {
-            results.add(row);
-          }
-        } catch (KuduException e) {
-          return checkAndReportError("Got error while getting row " + key, e);
-        }
+      for (RowResult row : scanner) {
+        results.add(row);
       }
-
       if (results.isEmpty() || results.size() > 1) {
         reportError("Random get got 0 or many rows " + results.size() + " for key " + key, null);
         return false;

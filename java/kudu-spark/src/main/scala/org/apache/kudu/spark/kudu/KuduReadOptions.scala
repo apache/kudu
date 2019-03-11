@@ -19,7 +19,7 @@ package org.apache.kudu.spark.kudu
 
 import org.apache.yetus.audience.InterfaceAudience
 import org.apache.yetus.audience.InterfaceStability
-
+import org.apache.kudu.client.AsyncKuduClient
 import org.apache.kudu.client.ReplicaSelection
 import org.apache.kudu.spark.kudu.KuduReadOptions._
 
@@ -50,5 +50,5 @@ object KuduReadOptions {
   val defaultBatchSize: Int = 1024 * 1024 * 20 // TODO: Understand/doc this setting?
   val defaultScanLocality: ReplicaSelection = ReplicaSelection.CLOSEST_REPLICA
   val defaultFaultTolerantScanner: Boolean = false
-  val defaultKeepAlivePeriodMs: Long = 15000 // 25% of the default scanner ttl.
+  val defaultKeepAlivePeriodMs: Long = AsyncKuduClient.DEFAULT_KEEP_ALIVE_PERIOD_MS
 }

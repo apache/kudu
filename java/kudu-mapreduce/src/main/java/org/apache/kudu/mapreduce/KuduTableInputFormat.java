@@ -15,16 +15,15 @@
 
 package org.apache.kudu.mapreduce;
 
-import java.io.ByteArrayInputStream;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
-import java.io.InputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import javax.naming.NamingException;
@@ -48,7 +47,6 @@ import org.apache.yetus.audience.InterfaceStability;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.apache.kudu.Common;
 import org.apache.kudu.Schema;
 import org.apache.kudu.client.AsyncKuduClient;
 import org.apache.kudu.client.Bytes;
@@ -59,7 +57,6 @@ import org.apache.kudu.client.KuduScanner;
 import org.apache.kudu.client.KuduTable;
 import org.apache.kudu.client.LocatedTablet;
 import org.apache.kudu.client.RowResult;
-import org.apache.kudu.client.RowResultIterator;
 
 /**
  * <p>
@@ -401,7 +398,7 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
 
     private final NullWritable currentKey = NullWritable.get();
     private RowResult currentValue;
-    private RowResultIterator iterator;
+    private Iterator<RowResult> iterator;
     private KuduScanner scanner;
     private TableSplit split;
     private KuduClient kuduClient;
@@ -418,46 +415,16 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
       LOG.debug("Creating scanner for token: {}",
                 KuduScanToken.stringifySerializedToken(split.getScanToken(), kuduClient));
       scanner = KuduScanToken.deserializeIntoScanner(split.getScanToken(), kuduClient);
-
-      // Calling this now to set iterator.
-      tryRefreshIterator();
+      iterator = scanner.iterator();
     }
 
     @Override
     public boolean nextKeyValue() throws IOException, InterruptedException {
       if (!iterator.hasNext()) {
-        tryRefreshIterator();
-        if (!iterator.hasNext()) {
-          // Means we still have the same iterator, we're done
-          return false;
-        }
+        return false;
       }
       currentValue = iterator.next();
       return true;
-    }
-
-    /**
-     * If the scanner has more rows, get a new iterator else don't do anything.
-     * @throws IOException
-     */
-    private void tryRefreshIterator() throws IOException {
-      if (!scanner.hasMoreRows()) {
-        return;
-      }
-      try {
-        // scanner.nextRows() sometimes returns an empty RowResultIterator, but
-        // scanner.hasMoreRows() returns still true, so we need to continue
-        // iterating on the scanner until scanner.hasMoreRows() returns false.
-        //
-        // TODO (qqzhang) In future, the backend can guarantee that
-        // TabletService.Scan() would not return the empty results, we need to
-        // remove the loop.
-        do {
-          iterator = scanner.nextRows();
-        } while (!iterator.hasNext() && scanner.hasMoreRows());
-      } catch (Exception e) {
-        throw new IOException("Couldn't get scan data", e);
-      }
     }
 
     @Override

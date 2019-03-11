@@ -18,8 +18,8 @@ package org.apache.kudu.backup
 
 import java.util.concurrent.TimeUnit
 
-import org.apache.kudu.Type
 import org.apache.kudu.client.AsyncKuduScanner.ReadMode
+import org.apache.kudu.client.KuduScannerIterator.NextRowsCallback
 import org.apache.kudu.client._
 import org.apache.kudu.spark.kudu.KuduContext
 import org.apache.kudu.util.HybridTimeUtil
@@ -67,6 +67,7 @@ class KuduBackupRDD private[kudu] (
       .batchSizeBytes(options.scanBatchSize)
       .scanRequestTimeout(options.scanRequestTimeoutMs)
       .prefetching(options.scanPrefetching)
+      .keepAlivePeriodMs(options.keepAlivePeriodMs)
       .build()
 
     tokens.asScala.zipWithIndex.map {
@@ -87,7 +88,9 @@ class KuduBackupRDD private[kudu] (
     // TODO: Get deletes and updates for incremental backups.
     val scanner =
       KuduScanToken.deserializeIntoScanner(partition.scanToken, client)
-    new RowIterator(scanner, kuduContext, keepAlivePeriodMs)
+    // We don't store the RowResult so we can enable the reuseRowResult optimization.
+    scanner.setReuseRowResult(true)
+    new RowIterator(scanner, kuduContext)
   }
 
   override def getPreferredLocations(partition: Partition): Seq[String] = {
@@ -106,44 +109,27 @@ private case class KuduBackupPartition(index: Int, scanToken: Array[Byte], locat
  * that takes the job partitions and task context and expects to return an Iterator[Row].
  * This implementation facilitates that.
  */
-private class RowIterator(
-    private val scanner: KuduScanner,
-    val kuduContext: KuduContext,
-    val keepAlivePeriodMs: Long)
+private class RowIterator(private val scanner: KuduScanner, val kuduContext: KuduContext)
     extends Iterator[Row] {
 
-  private var currentIterator: RowResultIterator = RowResultIterator.empty
-  private var lastKeepAliveTimeMs = System.currentTimeMillis()
-
-  /**
-   * Calls the keepAlive API on the current scanner if the keepAlivePeriodMs has passed.
-   */
-  private def KeepKuduScannerAlive(): Unit = {
-    val now = System.currentTimeMillis
-    if (now >= lastKeepAliveTimeMs + keepAlivePeriodMs && !scanner.isClosed) {
-      scanner.keepAlive()
-      lastKeepAliveTimeMs = now
+  private val scannerIterator = scanner.iterator()
+  private val nextRowsCallback = new NextRowsCallback {
+    override def call(numRows: Int): Unit = {
+      if (TaskContext.get().isInterrupted()) {
+        throw new RuntimeException("Kudu task interrupted")
+      }
+      kuduContext.timestampAccumulator.add(kuduContext.syncClient.getLastPropagatedTimestamp)
     }
   }
 
   override def hasNext: Boolean = {
-    while (!currentIterator.hasNext && scanner.hasMoreRows) {
-      if (TaskContext.get().isInterrupted()) {
-        throw new RuntimeException("KuduBackup spark task interrupted")
-      }
-      currentIterator = scanner.nextRows()
-    }
-    // Update timestampAccumulator with the client's last propagated
-    // timestamp on each executor.
-    kuduContext.timestampAccumulator.add(kuduContext.syncClient.getLastPropagatedTimestamp)
-    KeepKuduScannerAlive()
-    currentIterator.hasNext
+    scannerIterator.hasNext(nextRowsCallback)
   }
 
   // TODO: There may be an old KuduRDD implementation where we did some
   // sort of zero copy/object pool pattern for performance (we could use that here).
   override def next(): Row = {
-    val rowResult = currentIterator.next()
+    val rowResult = scannerIterator.next()
     val columnCount = rowResult.getColumnProjection.getColumnCount
     val columns = Array.ofDim[Any](columnCount)
     for (i <- 0 until columnCount) {

@@ -33,7 +33,7 @@ import org.apache.kudu.Type;
 import org.apache.kudu.util.Slice;
 
 /**
- * RowResult represents one row from a scanner. Do not reuse or store the objects.
+ * RowResult represents one row from a scanner.
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
@@ -41,14 +41,15 @@ public class RowResult {
 
   private static final int INDEX_RESET_LOCATION = -1;
 
+  private final Schema schema;
+  private final Slice indirectData;
+  private final int rowSize;
+  private final int[] columnOffsets;
+
+  private Slice rowData;
   private int index = INDEX_RESET_LOCATION;
   private int offset;
   private BitSet nullsBitSet;
-  private final int rowSize;
-  private final int[] columnOffsets;
-  private final Schema schema;
-  private final Slice rowData;
-  private final Slice indirectData;
 
   /**
    * Prepares the row representation using the provided data. Doesn't copy data
@@ -56,16 +57,17 @@ public class RowResult {
    * @param schema Schema used to build the rowData
    * @param rowData The Slice of data returned by the tablet server
    * @param indirectData The full indirect data that contains the strings
+   * @param rowIndex The index of the row in the rowData that this RowResult represents
    */
-  RowResult(Schema schema, Slice rowData, Slice indirectData) {
+  RowResult(Schema schema, Slice rowData, Slice indirectData, int rowIndex) {
     this.schema = schema;
     this.rowData = rowData;
     this.indirectData = indirectData;
+    this.rowSize = this.schema.getRowSize();
     int columnOffsetsSize = schema.getColumnCount();
     if (schema.hasNullableColumns()) {
       columnOffsetsSize++;
     }
-    this.rowSize = this.schema.getRowSize();
     columnOffsets = new int[columnOffsetsSize];
     // Empty projection, usually used for quick row counting.
     if (columnOffsetsSize == 0) {
@@ -81,19 +83,16 @@ public class RowResult {
       columnOffsets[i] = previousSize + currentOffset;
       currentOffset += previousSize;
     }
-  }
-
-  /**
-   * Package-protected, only meant to be used by the RowResultIterator
-   */
-  void advancePointer() {
-    advancePointerTo(this.index + 1);
+    advancePointerTo(rowIndex);
   }
 
   void resetPointer() {
     advancePointerTo(INDEX_RESET_LOCATION);
   }
 
+  /**
+   * Package-protected, only meant to be used by the RowResultIterator
+   */
   void advancePointerTo(int rowIndex) {
     this.index = rowIndex;
     this.offset = this.rowSize * this.index;

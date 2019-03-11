@@ -43,7 +43,7 @@ object KuduBackupOptions {
     AsyncKuduClient.DEFAULT_OPERATION_TIMEOUT_MS // 30 seconds
   val DefaultScanPrefetching
     : Boolean = false // TODO: Add a test per KUDU-1260 and enable by default?
-  val defaultKeepAlivePeriodMs: Long = 15000 // 25% of the default scanner ttl.
+  val defaultKeepAlivePeriodMs: Long = AsyncKuduClient.DEFAULT_KEEP_ALIVE_PERIOD_MS
 
   // TODO: clean up usage output.
   // TODO: timeout configurations.

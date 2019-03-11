@@ -28,7 +28,7 @@ import org.apache.kudu.client.AsyncKuduScanner.ReadMode;
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
-public class KuduScanner {
+public class KuduScanner implements Iterable<RowResult> {
 
   private final AsyncKuduScanner asyncScanner;
 
@@ -42,6 +42,21 @@ public class KuduScanner {
    */
   public boolean hasMoreRows() {
     return asyncScanner.hasMoreRows();
+  }
+
+  /**
+   * If set to true, the {@link RowResult} object returned by the {@link RowResultIterator}
+   * will be reused with each call to {@link RowResultIterator#next()).
+   * This can be a useful optimization to reduce the number of objects created.
+   *
+   * Note: DO NOT use this if the RowResult is stored between calls to next().
+   * Enabling this optimization means that a call to next() mutates the previously returned
+   * RowResult. Accessing the previously returned RowResult after a call to next(), by storing all
+   * RowResults in a collection and accessing them later for example, will lead to all of the
+   * stored RowResults being mutated as per the data in the last RowResult returned.
+   */
+  public void setReuseRowResult(boolean reuseRowResult) {
+    asyncScanner.setReuseRowResult(reuseRowResult);
   }
 
   /**
@@ -164,6 +179,11 @@ public class KuduScanner {
     return asyncScanner.getScanRequestTimeout();
   }
 
+  @Override
+  public KuduScannerIterator iterator() {
+    return new KuduScannerIterator(this, asyncScanner.getKeepAlivePeriodMs());
+  }
+
   /**
    * A Builder class to build {@link KuduScanner}.
    * Use {@link KuduClient#newScannerBuilder} in order to get a builder instance.
@@ -185,9 +205,9 @@ public class KuduScanner {
     public KuduScanner build() {
       return new KuduScanner(new AsyncKuduScanner(
           client, table, projectedColumnNames, projectedColumnIndexes, readMode, isFaultTolerant,
-          scanRequestTimeout, predicates, limit, cacheBlocks,
-          prefetching, lowerBoundPrimaryKey, upperBoundPrimaryKey,
-          htTimestamp, batchSizeBytes, PartitionPruner.create(this), replicaSelection));
+          scanRequestTimeout, predicates, limit, cacheBlocks, prefetching, lowerBoundPrimaryKey,
+          upperBoundPrimaryKey, htTimestamp, batchSizeBytes, PartitionPruner.create(this),
+          replicaSelection, keepAlivePeriodMs));
     }
   }
 }

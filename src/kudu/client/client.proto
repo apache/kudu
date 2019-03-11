@@ -77,7 +77,7 @@ message ScanTokenPB {
   // See common.proto for further information about read modes.
   optional ReadMode read_mode = 10 [default = READ_LATEST];
 
-  // The requested snapshot timestamp. This is only used
+  // The requested snapshot timestamp. This is only used O
   // when the read mode is set to READ_AT_SNAPSHOT.
   optional fixed64 snap_timestamp = 11;
 
@@ -106,6 +106,10 @@ message ScanTokenPB {
   // server can take. If not set, the default value is controlled by the client
   // scanner implementation.
   optional int64 scan_request_timeout_ms = 17;
+
+  // The period, in milliseconds, at which to send keep-alive requests to the tablet
+  // server to ensure this scanner won't time out.
+  optional int64 keep_alive_period_ms = 18;
 }
 
 // All of the data necessary to authenticate to a cluster from a client with

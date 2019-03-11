@@ -261,6 +261,10 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
       builder.scanRequestTimeout(message.getScanRequestTimeoutMs());
     }
 
+    if (message.hasKeepAlivePeriodMs()) {
+      builder.keepAlivePeriodMs(message.getKeepAlivePeriodMs());
+    }
+
     return builder.build();
   }
 
@@ -372,6 +376,7 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
       proto.setFaultTolerant(isFaultTolerant);
       proto.setBatchSizeBytes(batchSizeBytes);
       proto.setScanRequestTimeoutMs(scanRequestTimeout);
+      proto.setKeepAlivePeriodMs(keepAlivePeriodMs);
 
       try {
         PartitionPruner pruner = PartitionPruner.create(this);

@@ -56,6 +56,7 @@ public abstract class AbstractKuduScannerBuilder
   List<Integer> projectedColumnIndexes = null;
   long scanRequestTimeout;
   ReplicaSelection replicaSelection = ReplicaSelection.LEADER_ONLY;
+  long keepAlivePeriodMs = AsyncKuduClient.DEFAULT_KEEP_ALIVE_PERIOD_MS;
 
   AbstractKuduScannerBuilder(AsyncKuduClient client, KuduTable table) {
     this.client = client;
@@ -356,6 +357,18 @@ public abstract class AbstractKuduScannerBuilder
         Bytes.memcmp(partitionKey, upperBoundPartitionKey) < 0) {
       this.upperBoundPartitionKey = partitionKey;
     }
+    return (S) this;
+  }
+
+  /**
+   * Set the period at which to send keep-alive requests to the tablet
+   * server to ensure that this scanner will not time out.
+   *
+   * @param keepAlivePeriodMs the keep alive period in milliseconds
+   * @return this instance
+   */
+  public S keepAlivePeriodMs(long keepAlivePeriodMs) {
+    this.keepAlivePeriodMs = keepAlivePeriodMs;
     return (S) this;
   }
 
