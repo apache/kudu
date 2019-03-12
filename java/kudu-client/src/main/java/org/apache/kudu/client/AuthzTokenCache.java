@@ -153,7 +153,7 @@ public class AuthzTokenCache {
         client.getMasterTable(), tableId, /*name=*/null, client.getTimer(),
         client.getDefaultAdminOperationTimeoutMs(), /*requiresAuthzTokenSupport=*/true);
     retrieveAuthzTokenReq.setParentRpc(parentRpc);
-    retrieveAuthzTokenReq.deadlineTracker.setDeadline(parentRpc.deadlineTracker.getDeadline());
+    retrieveAuthzTokenReq.timeoutTracker.setTimeout(parentRpc.timeoutTracker.getTimeout());
     numRetrievalsSent.incrementAndGet();
     client.sendRpcToTablet(retrieveAuthzTokenReq).addCallback(cb)
                                                  .addErrback(eb);
