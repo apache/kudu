@@ -32,12 +32,12 @@
 == Upgrade Notes
 
 * Flume 1.8+ requires Java 8 at runtime even though the Kudu Flume integration
-  is Java 7 compatible. Flume 1.8 is the default dependency version as of
-  Kudu 1.8.0.
+  is Java 7 compatible. Flume 1.9 is the default dependency version as of
+  Kudu 1.9.0.
 
 * Hadoop 3.0+ requires Java 8 at runtime even though the Kudu Hadoop integration
-  is Java 7 compatible. Hadoop 3.1 is the default dependency version as of
-  Kudu 1.8.0.
+  is Java 7 compatible. Hadoop 3.2 is the default dependency version as of
+  Kudu 1.9.0.
 
 [[rn_1.10.0_obsoletions]]
 == Obsoletions
