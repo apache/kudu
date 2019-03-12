@@ -9,7 +9,7 @@ single_col_extra_classes: releases
 
 ### Latest release
 
-* **[Kudu 1.9.0](1.9.0/)** was released on March 8, 2019. <!-- LATREL: DO NOT REMOVE -->
+* **[Kudu 1.9.0](1.9.0/)** was released on March 12, 2019. <!-- LATREL: DO NOT REMOVE -->
 
 ### Previous releases
 
