@@ -73,6 +73,7 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/escaping.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/numbers.h"
@@ -1725,13 +1726,15 @@ TEST_F(ToolTest, TestLocalReplicaOps) {
   ASSERT_OK(harness.Open());
   LocalTabletWriter writer(harness.tablet().get(), &kSchema);
   KuduPartialRow row(&kSchemaWithIds);
-  for (int i = 0; i< 10; i++) {
-    ASSERT_OK(row.SetInt32(0, i));
-    ASSERT_OK(row.SetInt32(1, i*10));
-    ASSERT_OK(row.SetStringCopy(2, "HelloWorld"));
-    writer.Insert(row);
+  for (int num_rowsets = 0; num_rowsets < 3; num_rowsets++) {
+    for (int i = 0; i < 10; i++) {
+      ASSERT_OK(row.SetInt32(0, num_rowsets * 10 + i));
+      ASSERT_OK(row.SetInt32(1, num_rowsets * 10 * 10 + i));
+      ASSERT_OK(row.SetStringCopy(2, "HelloWorld"));
+      writer.Insert(row);
+    }
+    harness.tablet()->Flush();
   }
-  harness.tablet()->Flush();
   harness.tablet()->Shutdown();
   string fs_paths = "--fs_wal_dir=" + kTestDir + " "
       "--fs_data_dirs=" + kTestDir;
@@ -1785,6 +1788,25 @@ TEST_F(ToolTest, TestLocalReplicaOps) {
     string expected = "Could not find rowset " + SimpleItoa(kRowId) +
         " in tablet id " + kTestTablet;
     ASSERT_STR_CONTAINS(stderr, expected);
+
+    NO_FATALS(RunActionStdoutString(
+        Substitute("local_replica dump rowset --nodump_all_columns "
+                   "--nodump_metadata --nrows=15 $0 $1",
+                   kTestTablet, fs_paths), &stdout));
+
+    SCOPED_TRACE(stdout);
+    ASSERT_STR_CONTAINS(stdout, "Dumping rowset 0");
+    ASSERT_STR_CONTAINS(stdout, "Dumping rowset 1");
+    ASSERT_STR_CONTAINS(stdout, "Dumping rowset 2");
+    ASSERT_STR_NOT_CONTAINS(stdout, "RowSet metadata");
+    for (int row_idx = 0; row_idx < 30; row_idx++) {
+      string row_key = StringPrintf("800000%02x", row_idx);
+      if (row_idx < 15) {
+        ASSERT_STR_CONTAINS(stdout, row_key);
+      } else {
+        ASSERT_STR_NOT_CONTAINS(stdout, row_key);
+      }
+    }
   }
   {
     TabletMetadata* meta = harness.tablet()->metadata();
@@ -1834,22 +1856,38 @@ TEST_F(ToolTest, TestLocalReplicaOps) {
  KuduTableTestId | ffffffffffffffffffffffffffffffff | 0         | BLOOM            | 4.1K
  KuduTableTestId | ffffffffffffffffffffffffffffffff | 0         | PK               | 0B
  KuduTableTestId | ffffffffffffffffffffffffffffffff | 0         | *                | 4.6K
- KuduTableTestId | ffffffffffffffffffffffffffffffff | *         | c10 (key)        | 164B
- KuduTableTestId | ffffffffffffffffffffffffffffffff | *         | c11 (int_val)    | 113B
- KuduTableTestId | ffffffffffffffffffffffffffffffff | *         | c12 (string_val) | 138B
+ KuduTableTestId | ffffffffffffffffffffffffffffffff | 1         | c10 (key)        | 184B
+ KuduTableTestId | ffffffffffffffffffffffffffffffff | 1         | c11 (int_val)    | 129B
+ KuduTableTestId | ffffffffffffffffffffffffffffffff | 1         | c12 (string_val) | 158B
+ KuduTableTestId | ffffffffffffffffffffffffffffffff | 1         | REDO             | 0B
+ KuduTableTestId | ffffffffffffffffffffffffffffffff | 1         | UNDO             | 181B
+ KuduTableTestId | ffffffffffffffffffffffffffffffff | 1         | BLOOM            | 4.1K
+ KuduTableTestId | ffffffffffffffffffffffffffffffff | 1         | PK               | 0B
+ KuduTableTestId | ffffffffffffffffffffffffffffffff | 1         | *                | 4.7K
+ KuduTableTestId | ffffffffffffffffffffffffffffffff | 2         | c10 (key)        | 184B
+ KuduTableTestId | ffffffffffffffffffffffffffffffff | 2         | c11 (int_val)    | 129B
+ KuduTableTestId | ffffffffffffffffffffffffffffffff | 2         | c12 (string_val) | 158B
+ KuduTableTestId | ffffffffffffffffffffffffffffffff | 2         | REDO             | 0B
+ KuduTableTestId | ffffffffffffffffffffffffffffffff | 2         | UNDO             | 181B
+ KuduTableTestId | ffffffffffffffffffffffffffffffff | 2         | BLOOM            | 4.1K
+ KuduTableTestId | ffffffffffffffffffffffffffffffff | 2         | PK               | 0B
+ KuduTableTestId | ffffffffffffffffffffffffffffffff | 2         | *                | 4.7K
+ KuduTableTestId | ffffffffffffffffffffffffffffffff | *         | c10 (key)        | 543B
+ KuduTableTestId | ffffffffffffffffffffffffffffffff | *         | c11 (int_val)    | 364B
+ KuduTableTestId | ffffffffffffffffffffffffffffffff | *         | c12 (string_val) | 472B
  KuduTableTestId | ffffffffffffffffffffffffffffffff | *         | REDO             | 0B
- KuduTableTestId | ffffffffffffffffffffffffffffffff | *         | UNDO             | 169B
- KuduTableTestId | ffffffffffffffffffffffffffffffff | *         | BLOOM            | 4.1K
+ KuduTableTestId | ffffffffffffffffffffffffffffffff | *         | UNDO             | 492B
+ KuduTableTestId | ffffffffffffffffffffffffffffffff | *         | BLOOM            | 12.2K
  KuduTableTestId | ffffffffffffffffffffffffffffffff | *         | PK               | 0B
- KuduTableTestId | ffffffffffffffffffffffffffffffff | *         | *                | 4.6K
- KuduTableTestId | *                                | *         | c10 (key)        | 164B
- KuduTableTestId | *                                | *         | c11 (int_val)    | 113B
- KuduTableTestId | *                                | *         | c12 (string_val) | 138B
+ KuduTableTestId | ffffffffffffffffffffffffffffffff | *         | *                | 14.1K
+ KuduTableTestId | *                                | *         | c10 (key)        | 543B
+ KuduTableTestId | *                                | *         | c11 (int_val)    | 364B
+ KuduTableTestId | *                                | *         | c12 (string_val) | 472B
  KuduTableTestId | *                                | *         | REDO             | 0B
- KuduTableTestId | *                                | *         | UNDO             | 169B
- KuduTableTestId | *                                | *         | BLOOM            | 4.1K
+ KuduTableTestId | *                                | *         | UNDO             | 492B
+ KuduTableTestId | *                                | *         | BLOOM            | 12.2K
  KuduTableTestId | *                                | *         | PK               | 0B
- KuduTableTestId | *                                | *         | *                | 4.6K
+ KuduTableTestId | *                                | *         | *                | 14.1K
 )";
     // Preprocess stdout and our expected table so that we are less
     // sensitive to small variations in encodings, id assignment, etc.
@@ -1891,14 +1929,19 @@ TEST_F(ToolTest, TestLocalReplicaOps) {
 
   // Test 'kudu fs list' rowset group.
   {
-    string stdout;
-    NO_FATALS(RunActionStdoutString(
+    vector<string> stdout;
+    NO_FATALS(RunActionStdoutLines(
           Substitute("fs list $0 --columns=table,tablet-id,rowset-id --format=csv",
                      fs_paths),
           &stdout));
 
     SCOPED_TRACE(stdout);
-    EXPECT_EQ(stdout, "KuduTableTest,ffffffffffffffffffffffffffffffff,0");
+    ASSERT_EQ(3, stdout.size());
+    for (int rowset_idx = 0; rowset_idx < 3; rowset_idx++) {
+      EXPECT_EQ(stdout[rowset_idx],
+                Substitute("KuduTableTest,ffffffffffffffffffffffffffffffff,$0",
+                           rowset_idx));
+    }
   }
   // Test 'kudu fs list' block group.
   {
@@ -1911,12 +1954,19 @@ TEST_F(ToolTest, TestLocalReplicaOps) {
           &stdout));
 
     SCOPED_TRACE(stdout);
-    ASSERT_EQ(5, stdout.size());
-    EXPECT_EQ(stdout[0], Substitute("KuduTableTest,$0,0,column,key", kTestTablet));
-    EXPECT_EQ(stdout[1], Substitute("KuduTableTest,$0,0,column,int_val", kTestTablet));
-    EXPECT_EQ(stdout[2], Substitute("KuduTableTest,$0,0,column,string_val", kTestTablet));
-    EXPECT_EQ(stdout[3], Substitute("KuduTableTest,$0,0,undo,", kTestTablet));
-    EXPECT_EQ(stdout[4], Substitute("KuduTableTest,$0,0,bloom,", kTestTablet));
+    ASSERT_EQ(15, stdout.size());
+    for (int rowset_idx = 0; rowset_idx < 3; rowset_idx++) {
+      EXPECT_EQ(stdout[rowset_idx * 5 + 0],
+                Substitute("KuduTableTest,$0,$1,column,key", kTestTablet, rowset_idx));
+      EXPECT_EQ(stdout[rowset_idx * 5 + 1],
+                Substitute("KuduTableTest,$0,$1,column,int_val", kTestTablet, rowset_idx));
+      EXPECT_EQ(stdout[rowset_idx * 5 + 2],
+                Substitute("KuduTableTest,$0,$1,column,string_val", kTestTablet, rowset_idx));
+      EXPECT_EQ(stdout[rowset_idx * 5 + 3],
+                Substitute("KuduTableTest,$0,$1,undo,", kTestTablet, rowset_idx));
+      EXPECT_EQ(stdout[rowset_idx * 5 + 4],
+                Substitute("KuduTableTest,$0,$1,bloom,", kTestTablet, rowset_idx));
+    }
   }
 
   // Test 'kudu fs list' cfile group.
@@ -1931,17 +1981,24 @@ TEST_F(ToolTest, TestLocalReplicaOps) {
           &stdout));
 
     SCOPED_TRACE(stdout);
-    ASSERT_EQ(5, stdout.size());
-    EXPECT_EQ(stdout[0],
-              Substitute("KuduTableTest,$0,0,column,key,BIT_SHUFFLE,10", kTestTablet));
-    EXPECT_EQ(stdout[1],
-              Substitute("KuduTableTest,$0,0,column,int_val,BIT_SHUFFLE,10", kTestTablet));
-    EXPECT_EQ(stdout[2],
-              Substitute("KuduTableTest,$0,0,column,string_val,DICT_ENCODING,10", kTestTablet));
-    EXPECT_EQ(stdout[3],
-              Substitute("KuduTableTest,$0,0,undo,,PLAIN_ENCODING,10", kTestTablet));
-    EXPECT_EQ(stdout[4],
-              Substitute("KuduTableTest,$0,0,bloom,,PLAIN_ENCODING,0", kTestTablet));
+    ASSERT_EQ(15, stdout.size());
+    for (int rowset_idx = 0; rowset_idx < 3; rowset_idx++) {
+      EXPECT_EQ(stdout[rowset_idx * 5 + 0],
+                Substitute("KuduTableTest,$0,$1,column,key,BIT_SHUFFLE,10",
+                           kTestTablet, rowset_idx));
+      EXPECT_EQ(stdout[rowset_idx * 5 + 1],
+                Substitute("KuduTableTest,$0,$1,column,int_val,BIT_SHUFFLE,10",
+                           kTestTablet, rowset_idx));
+      EXPECT_EQ(stdout[rowset_idx * 5 + 2],
+                Substitute("KuduTableTest,$0,$1,column,string_val,DICT_ENCODING,10",
+                           kTestTablet, rowset_idx));
+      EXPECT_EQ(stdout[rowset_idx * 5 + 3],
+                Substitute("KuduTableTest,$0,$1,undo,,PLAIN_ENCODING,10",
+                           kTestTablet, rowset_idx));
+      EXPECT_EQ(stdout[rowset_idx * 5 + 4],
+                Substitute("KuduTableTest,$0,$1,bloom,,PLAIN_ENCODING,0",
+                           kTestTablet, rowset_idx));
+    }
   }
 }
 
