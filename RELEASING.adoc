@@ -50,8 +50,8 @@ in `master`.
 ----
 
 . Push the branch to public remotes https://github.com/cloudera/kudu.git and
-https://gitbox.apache.org/repos/asf/kudu.git. The following example
-assumes they are called `cloudera` and `apache`.
+  https://gitbox.apache.org/repos/asf/kudu.git. The following example assumes
+  they are called `cloudera` and `apache`.
 +
 ----
   git push cloudera branch-1.x.y
@@ -59,8 +59,8 @@ assumes they are called `cloudera` and `apache`.
 ----
 
 . Create a new branch on Gerrit. Go to
-http://gerrit.cloudera.org:8080/#/admin/projects/kudu,branches and create a new
-branch with the same name and the previously-noted SHA1.
+  http://gerrit.cloudera.org:8080/#/admin/projects/kudu,branches and create a
+  new branch with the same name and the previously-noted SHA1.
 
 . Ask someone with permissions to fix the gerrit.cloudera.org mirroring
   configuration. Cloudera hosts the Gerrit server and a Cloudera employee will
@@ -128,8 +128,9 @@ Apache committer guide for setting up your GPG keys
 
 . Build a source tarball against the RC branch.
 
-. Create a new folder in https://dist.apache.org/repos/dist/dev/kudu/.
-  Copy the artifacts to this folder and commit (it is Subversion).
+. Create a new folder containing the
+  link:https://dist.apache.org/repos/dist/dev/kudu/[dev Subversion (SVN)
+  repository]. Copy the artifacts to this folder and commit.
 +
 ----
   svn co --depth=immediates https://dist.apache.org/repos/dist/dev/kudu/ kudu-dev-release
@@ -149,16 +150,19 @@ Apache committer guide for setting up your GPG keys
   gradle clean uploadArchives -PmavenUsername="<APACHE-LDAP-USERNAME>" -PmavenPassword="<APACHE-LDAP-PASSWORD>"
 ----
 +
-Go to the link:https://repository.apache.org/\#stagingRepositories[staging repository]
-and look for ‘orgapachekudu-####’ in the staging repositories list. You can
-check the ‘content’ tab at the bottom to make sure you have all of the expected
-stuff (client, various integrations, etc). Hit the checkbox next to your new
-staging repo and hit “close”. Enter something similar to “Apache Kudu 1.x.y-RC1”
-into the description box and confirm. Wait a minute or two and hit refresh, and
-your staging repo should now have a URL shown in its summary tab (eg
-`https://repository.apache.org/content/repositories/orgapachekudu-1005`)
+Go to the link:https://repository.apache.org/\#stagingRepositories[staging
+repository] and look for ‘orgapachekudu-####’ in the staging repositories list.
+You can check the ‘content’ tab at the bottom to make sure you have all of the
+expected stuff (client, various integrations, etc). Hit the checkbox next to
+your new staging repo and hit “close”. Enter something similar to “Apache Kudu
+1.x.y-RC1” into the description box and confirm. Wait a minute or two and hit
+refresh, and your staging repo should now have a URL shown in its summary tab
+(eg `https://repository.apache.org/content/repositories/orgapachekudu-1005`)
 
-. Add your PGP key to the KEYS file:
+. Create a new folder containing the
+  link:https://dist.apache.org/repos/dist/release/kudu/[release SVN
+  repository]. For a release to be made official, it must eventually be put in
+  this repository. Add your PGP key to the KEYS file:
 +
 ----
 svn co https://dist.apache.org/repos/dist/release/kudu/ kudu-dist-release
@@ -181,24 +185,24 @@ svn commit -m "Adding my key to the KEYS file"
 . Always send an email with a different subject to indicate the result. For
   link:http://mail-archives.apache.org/mod_mbox/kudu-dev/201606.mbox/%3CCAGpTDNeJdU%2BoUF4ZJneZt%3DCfFHY-HoqKgORwVuWWUMHq5jBNzA%40mail.gmail.com%3E[example].
 
-. After the vote passes, send an email to dev@kudu.apache.org
-  indicating the result.
+. After the vote passes, send an email to dev@kudu.apache.org indicating the
+  result.
 
 == Release
 
-. Create a new folder in https://dist.apache.org/repos/dist/release/kudu/,
-  copy the files from the release candidate’s folder in dist/dev/kudu/, then commit.
+. Create a new folder in the release repository for the new release and copy
+  the files from the dev repository.
 +
 ----
   cd kudu-dist-release
   mkdir 1.x.y
-  cp <path_to_rc_artifacts>/* 1.x.y
+  cp <path_to_kudu-dev-release>/1.x.y-RC1/* 1.x.y
   svn add 1.x.y
   svn commit -m "Adding files for Kudu 1.x.y"
 ----
 
 . In the Kudu git repo, create a signed tag from the RC’s tag, and push it to the
-Apache Git repository:
+  Apache Git repository:
 +
 ----
   git tag -s 1.x.y -m 'Release Apache Kudu 1.x.y' 1.x.y-RC1
@@ -207,7 +211,8 @@ Apache Git repository:
 
 . Release the staged Java artifacts. Select the release candidate staging
   repository in link:https://repository.apache.org/#stagingRepositories[Nexus],
-  and click 'Release'.
+  and click 'Release'. You should shortly be able to see the artifacts in
+  link:https://search.maven.org/search?q=g:org.apache.kudu[Maven Central].
 
 . Release the Python artifacts. You will need to setup an account on link:https://PyPi.org[PyPi.org]
   and ask to be added to the kudu-python PyPi project if you have not done this before.
@@ -235,21 +240,22 @@ Note: You can upload to the test PyPi by adding
   copy the `apidocs`, `cpp-client-api`, and `docs` folders there, copy an `index.md` file from one
   of the other releases and modify it accordingly.
 
-. Commit all these changes.
-
-. Create a new review for all those new and updated files in `gh-pages`.
+. Submit these changes to the `gh-pages` Gerrit branch and get them reviewed.
 
 . Once the review is finished and the commit is pushed, update the website following
   these link:https://github.com/apache/kudu/#deploying-changes-to-the-apache-kudu-web-site[instructions].
 
 . About 24 hours after the first step was completed, send an email to
-  user@kudu.apache.org, dev@kudu.apache.org, and announce@apache.org
-  to announce the release. The email should be similar to
+  user@kudu.apache.org, dev@kudu.apache.org, and announce@apache.org to
+  announce the release. The email should be similar to
   link:https://s.apache.org/pduz[this].
 
-. About another 24 hours later, delete the previous minor version in the branch
-  you released from, from SVN. For example, if you released 1.2.1, delete `1.2.0`.
-  Also delete any release candidates from the dev SVN.
+. About another 24 hours later, clean up the SVN. If releasing a new minor
+  version, delete the oldest minor version branch in the release repo (e.g. if
+  `1.7.1`, `1.8.0`, and `1.9.0` exist and you just released `1.10.0`, delete
+  `1.7.1`). If releasing a maintenance version, delete the previous maintenance
+  branch (e.g. if you released `1.2.1`, delete `1.2.0`). Also delete any
+  release candidates from the dev SVN.
 
 . Update the version number on the branch you released from back to a SNAPSHOT
   for the next patch release, such as `1.6.1-SNAPSHOT` after the `1.6.0` release.
