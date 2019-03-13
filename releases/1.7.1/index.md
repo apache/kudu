@@ -32,11 +32,22 @@ See the [Kudu 1.7.1 Release Notes](docs/release_notes.html).
 
 Downloads of Kudu 1.7.1 are available in the following formats:
 
-* [Kudu 1.7.1 source tarball](https://archive.apache.org/dist/kudu/1.7.1/apache-kudu-1.7.1.tar.gz)
+* [Kudu 1.7.1 source tarball](http://www.apache.org/closer.cgi?filename=kudu/1.7.1/apache-kudu-1.7.1.tar.gz)
   ([SHA-512](https://archive.apache.org/dist/kudu/1.7.1/apache-kudu-1.7.1.tar.gz.sha512),
   [Signature](https://archive.apache.org/dist/kudu/1.7.1/apache-kudu-1.7.1.tar.gz.asc))
 
 You can use the [KEYS file](https://www.apache.org/dist/kudu/KEYS) to verify the included GPG signature.
+
+To verify the integrity of the release, check the following:
+
+* Verify the checksum by downloading the release and the `.sha512` file, and
+  running the following command:
+    * On Linux: `sha512sum -c apache-kudu-1.7.1.tar.gz.sha512`
+    * On MacOS: `shasum -a 512 -c apache-kudu-1.7.1.tar.gz.sha512`
+* Verify the signature by downloading the release and the `.asc` file, and
+  doing the following:
+    * Import the KEYS file to the GPG keychain by running `gpg --import KEYS`
+    * Run `gpg --verify apache-kudu-1.7.1.tar.gz.asc apache-kudu-1.7.1.tar.gz`
 
 Additional links:
 
