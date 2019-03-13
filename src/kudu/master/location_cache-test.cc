@@ -79,6 +79,15 @@ TEST_F(LocationCacheTest, EmptyMappingCommand) {
   NO_FATALS(CheckMetrics(1, 0));
 }
 
+TEST_F(LocationCacheTest, MappingCommandNotFound) {
+  LocationCache cache("./notfound.sh", metric_entity_.get());
+  string location;
+  auto s = cache.GetLocation("na", &location);
+  ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
+  ASSERT_STR_CONTAINS(
+      s.ToString(), "failed to run location mapping command: ");
+}
+
 TEST_F(LocationCacheTest, MappingCommandFailureExitStatus) {
   LocationCache cache("/sbin/nologin", metric_entity_.get());
   string location;
@@ -99,18 +108,28 @@ TEST_F(LocationCacheTest, MappingCommandEmptyOutput) {
   NO_FATALS(CheckMetrics(1, 0));
 }
 
+// Bad cases where the script returns locations with disallowed characters or
+// in the wrong format.
 TEST_F(LocationCacheTest, MappingCommandReturnsInvalidLocation) {
-  const string cmd_path = JoinPathSegments(GetTestExecutableDirectory(),
-                                           "testdata/first_argument.sh");
-  const string location_mapping_cmd = Substitute("$0 invalid.location",
-                                                 cmd_path);
-  LocationCache cache(location_mapping_cmd, metric_entity_.get());
-  string location;
-  auto s = cache.GetLocation("na", &location);
-  ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
-  ASSERT_STR_CONTAINS(
-      s.ToString(), "location mapping command returned invalid location");
-  NO_FATALS(CheckMetrics(1, 0));
+  const vector<string> bad_locations = {
+    "\"\"",           // Empty (doesn't begin with /).
+    "foo",            // Doesn't begin with /.
+    "/foo$",          // Contains the illegal character '$'.
+    "\"/foo /bar\"",  // Contains the illegal character ' '.
+  };
+  for (const auto& l : bad_locations) {
+    SCOPED_TRACE(Substitute("location '$0'", l));
+    const string cmd_path = JoinPathSegments(GetTestExecutableDirectory(),
+                                             "testdata/first_argument.sh");
+    const string location_mapping_cmd = Substitute("$0 $1", cmd_path, l);
+    LocationCache cache(location_mapping_cmd, metric_entity_.get());
+    string location;
+    auto s = cache.GetLocation("na", &location);
+    ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
+    ASSERT_STR_CONTAINS(
+        s.ToString(), "location mapping command returned invalid location");
+  }
+  NO_FATALS(CheckMetrics(bad_locations.size(), 0));
 }
 
 TEST_F(LocationCacheTest, HappyPath) {

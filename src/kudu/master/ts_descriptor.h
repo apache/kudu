@@ -53,8 +53,6 @@ class TabletServerAdminServiceProxy;
 
 namespace master {
 
-class LocationCache;
-
 // Master-side view of a single tablet server.
 //
 // Tracks the last heartbeat, status, instance identifier, location, etc.
@@ -63,7 +61,7 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
  public:
   static Status RegisterNew(const NodeInstancePB& instance,
                             const ServerRegistrationPB& registration,
-                            LocationCache* location_cache,
+                            const boost::optional<std::string>& location,
                             std::shared_ptr<TSDescriptor>* desc);
 
   virtual ~TSDescriptor() = default;
@@ -81,7 +79,7 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
   // Register this tablet server.
   Status Register(const NodeInstancePB& instance,
                   const ServerRegistrationPB& registration,
-                  LocationCache* location_cache);
+                  const boost::optional<std::string>& location);
 
   const std::string &permanent_uuid() const { return permanent_uuid_; }
   int64_t latest_seqno() const;
@@ -142,9 +140,6 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
  private:
   FRIEND_TEST(TestTSDescriptor, TestReplicaCreationsDecay);
   friend class PlacementPolicyTest;
-
-  Status RegisterUnlocked(const NodeInstancePB& instance,
-                          const ServerRegistrationPB& registration);
 
   // Uses DNS to resolve registered hosts to a single Sockaddr.
   // Returns the resolved address as well as the hostname associated with it
