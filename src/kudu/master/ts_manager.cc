@@ -20,18 +20,31 @@
 #include <algorithm>
 #include <limits>
 #include <mutex>
-#include <vector>
 
+#include <boost/optional/optional.hpp>
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 
+#include "kudu/common/common.pb.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/bind_helpers.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/master/location_cache.h"
 #include "kudu/master/ts_descriptor.h"
+#include "kudu/util/flag_tags.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/trace.h"
+
+DEFINE_bool(location_mapping_by_uuid, false,
+            "Whether the location command is given tablet server identifier "
+            "instead of hostname/IP address (for tests only).");
+TAG_FLAG(location_mapping_by_uuid, hidden);
+TAG_FLAG(location_mapping_by_uuid, unsafe);
 
 METRIC_DEFINE_gauge_int32(server, cluster_replica_skew,
                           "Cluster Replica Skew",
@@ -41,9 +54,9 @@ METRIC_DEFINE_gauge_int32(server, cluster_replica_skew,
                           "the number of replicas on the tablet server hosting "
                           "the least replicas.");
 
+using kudu::pb_util::SecureShortDebugString;
 using std::shared_ptr;
 using std::string;
-using std::vector;
 using strings::Substitute;
 
 namespace kudu {
@@ -68,13 +81,13 @@ Status TSManager::LookupTS(const NodeInstancePB& instance,
     FindOrNull(servers_by_id_, instance.permanent_uuid());
   if (!found_ptr) {
     return Status::NotFound("unknown tablet server ID",
-        pb_util::SecureShortDebugString(instance));
+        SecureShortDebugString(instance));
   }
   const shared_ptr<TSDescriptor>& found = *found_ptr;
 
   if (instance.instance_seqno() != found->latest_seqno()) {
     return Status::NotFound("mismatched instance sequence number",
-                            pb_util::SecureShortDebugString(instance));
+                            SecureShortDebugString(instance));
   }
 
   *ts_desc = found;
@@ -90,24 +103,63 @@ bool TSManager::LookupTSByUUID(const string& uuid,
 Status TSManager::RegisterTS(const NodeInstancePB& instance,
                              const ServerRegistrationPB& registration,
                              std::shared_ptr<TSDescriptor>* desc) {
-  std::lock_guard<rw_spinlock> l(lock_);
+  // Pre-condition: registration info should contain at least one RPC end-point.
+  if (registration.rpc_addresses().empty()) {
+    return Status::InvalidArgument(
+        "invalid registration: must have at least one RPC address",
+        SecureShortDebugString(registration));
+  }
+
   const string& uuid = instance.permanent_uuid();
 
-  if (!ContainsKey(servers_by_id_, uuid)) {
-    shared_ptr<TSDescriptor> new_desc;
-    RETURN_NOT_OK(TSDescriptor::RegisterNew(
-        instance, registration, location_cache_, &new_desc));
-    InsertOrDie(&servers_by_id_, uuid, new_desc);
-    LOG(INFO) << Substitute("Registered new tserver with Master: $0",
-                            new_desc->ToString());
-    desc->swap(new_desc);
-  } else {
-    shared_ptr<TSDescriptor> found(FindOrDie(servers_by_id_, uuid));
-    RETURN_NOT_OK(found->Register(instance, registration, location_cache_));
-    LOG(INFO) << Substitute("Re-registered known tserver with Master: $0",
-                            found->ToString());
-    desc->swap(found);
+  // Assign the location for the tablet server outside the lock: assigning
+  // a location involves calling the location mapping script which is relatively
+  // long and expensive operation.
+  boost::optional<string> location;
+  if (PREDICT_TRUE(location_cache_ != nullptr)) {
+    // In some test scenarios the location is assigned per tablet server UUID.
+    // That's the case when multiple (or even all) tablet servers have the same
+    // IP address for their RPC endpoint.
+    const auto& cmd_arg = FLAGS_location_mapping_by_uuid
+        ? uuid : registration.rpc_addresses(0).host();
+    TRACE(Substitute("tablet server $0: assigning location", uuid));
+    string location_str;
+    const auto s = location_cache_->GetLocation(cmd_arg, &location_str);
+    TRACE(Substitute(
+        "tablet server $0: assigned location '$1'", uuid, location_str));
+
+    // If location resolution fails, log the error and return the status.
+    if (!s.ok()) {
+      CHECK(!registration.rpc_addresses().empty());
+      const auto& addr = registration.rpc_addresses(0);
+      KLOG_EVERY_N_SECS(ERROR, 60) << Substitute(
+          "Unable to assign location to tablet server $0: $1",
+          Substitute("$0 ($1:$2)", uuid, addr.host(), addr.port()),
+          s.ToString());
+      return s;
+    }
+    location.emplace(std::move(location_str));
   }
+
+  shared_ptr<TSDescriptor> descriptor;
+  bool new_tserver = false;
+  {
+    std::lock_guard<rw_spinlock> l(lock_);
+    auto* descriptor_ptr = FindOrNull(servers_by_id_, uuid);
+    if (descriptor_ptr) {
+      descriptor = *descriptor_ptr;
+      RETURN_NOT_OK(descriptor->Register(instance, registration, location));
+    } else {
+      RETURN_NOT_OK(TSDescriptor::RegisterNew(
+          instance, registration, location, &descriptor));
+      InsertOrDie(&servers_by_id_, uuid, descriptor);
+      new_tserver = true;
+    }
+  }
+  LOG(INFO) << Substitute("$0 tserver with Master: $1",
+                          new_tserver ? "Registered new" : "Re-registered known",
+                          descriptor->ToString());
+  *desc = std::move(descriptor);
 
   return Status::OK();
 }

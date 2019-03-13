@@ -87,9 +87,16 @@ DEFINE_int64(authz_token_validity_seconds, 60 * 5,
              "validity period expires.");
 TAG_FLAG(authz_token_validity_seconds, experimental);
 
+DEFINE_string(location_mapping_cmd, "",
+              "A Unix command which takes a single argument, the IP address or "
+              "hostname of a tablet server or client, and returns the location "
+              "string for the tablet server. A location string begins with a / "
+              "and consists of /-separated tokens each of which contains only "
+              "characters from the set [a-zA-Z0-9_-.]. If the cluster is not "
+              "using location awareness features this flag should not be set.");
+
 DECLARE_bool(hive_metastore_sasl_enabled);
 DECLARE_string(keytab_file);
-DECLARE_string(location_mapping_cmd);
 
 using std::min;
 using std::shared_ptr;

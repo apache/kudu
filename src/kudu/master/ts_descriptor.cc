@@ -24,6 +24,7 @@
 #include <utility>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -31,36 +32,18 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.proxy.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/master/location_cache.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/util/flag_tags.h"
-#include "kudu/util/logging.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
-#include "kudu/util/trace.h"
 
 DEFINE_int32(tserver_unresponsive_timeout_ms, 60 * 1000,
              "The period of time that a Master can go without receiving a heartbeat from a "
              "tablet server before considering it unresponsive. Unresponsive servers are not "
              "selected when assigning replicas during table creation or re-replication.");
 TAG_FLAG(tserver_unresponsive_timeout_ms, advanced);
-
-DEFINE_string(location_mapping_cmd, "",
-              "A Unix command which takes a single argument, the IP address or "
-              "hostname of a tablet server or client, and returns the location "
-              "string for the tablet server. A location string begins with a / "
-              "and consists of /-separated tokens each of which contains only "
-              "characters from the set [a-zA-Z0-9_-.]. If the cluster is not "
-              "using location awareness features this flag should not be set.");
-
-DEFINE_bool(location_mapping_by_uuid, false,
-            "Whether the location command is given tablet server identifier "
-            "instead of hostname/IP address (for tests only).");
-TAG_FLAG(location_mapping_by_uuid, hidden);
-TAG_FLAG(location_mapping_by_uuid, unsafe);
 
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
@@ -74,10 +57,10 @@ namespace master {
 
 Status TSDescriptor::RegisterNew(const NodeInstancePB& instance,
                                  const ServerRegistrationPB& registration,
-                                 LocationCache* location_cache,
+                                 const boost::optional<std::string>& location,
                                  shared_ptr<TSDescriptor>* desc) {
   shared_ptr<TSDescriptor> ret(TSDescriptor::make_shared(instance.permanent_uuid()));
-  RETURN_NOT_OK(ret->Register(instance, registration, location_cache));
+  RETURN_NOT_OK(ret->Register(instance, registration, location));
   desc->swap(ret);
   return Status::OK();
 }
@@ -112,8 +95,10 @@ static bool HostPortPBsEqual(const google::protobuf::RepeatedPtrField<HostPortPB
   return hostports1 == hostports2;
 }
 
-Status TSDescriptor::RegisterUnlocked(const NodeInstancePB& instance,
-                                      const ServerRegistrationPB& registration) {
+Status TSDescriptor::Register(const NodeInstancePB& instance,
+                              const ServerRegistrationPB& registration,
+                              const boost::optional<std::string>& location) {
+  std::lock_guard<simple_spinlock> l(lock_);
   CHECK_EQ(instance.permanent_uuid(), permanent_uuid_);
 
   // TODO(KUDU-418): we don't currently support changing RPC addresses since the
@@ -145,52 +130,15 @@ Status TSDescriptor::RegisterUnlocked(const NodeInstancePB& instance,
     // It's possible that the TS registered, but our response back to it
     // got lost, so it's trying to register again with the same sequence
     // number. That's fine.
-    LOG(INFO) << "Processing retry of TS registration from " << SecureShortDebugString(instance);
+    LOG(INFO) << "Processing retry of TS registration from "
+              << SecureShortDebugString(instance);
   }
 
   latest_seqno_ = instance.instance_seqno();
   registration_.reset(new ServerRegistrationPB(registration));
   ts_admin_proxy_.reset();
   consensus_proxy_.reset();
-  return Status::OK();
-}
-
-Status TSDescriptor::Register(const NodeInstancePB& instance,
-                              const ServerRegistrationPB& registration,
-                              LocationCache* location_cache) {
-  // Do basic registration work under the lock.
-  {
-    std::lock_guard<simple_spinlock> l(lock_);
-    RETURN_NOT_OK(RegisterUnlocked(instance, registration));
-  }
-
-  // Resolve the location outside the lock. This involves calling the location
-  // mapping script.
-  if (PREDICT_TRUE(location_cache != nullptr)) {
-    // In some test scenarios the location is assigned per tablet server UUID.
-    // That's the case when multiple (or even all) tablet servers have the same
-    // IP address for their RPC endpoint.
-    const auto& cmd_arg = FLAGS_location_mapping_by_uuid
-        ? permanent_uuid() : registration_->rpc_addresses(0).host();
-    TRACE(Substitute("tablet server $0: assigning location", permanent_uuid()));
-    string location;
-    const auto s = location_cache->GetLocation(cmd_arg, &location);
-    TRACE(Substitute(
-        "tablet server $0: assigned location '$1'", permanent_uuid(), location));
-
-    // Assign the location under the lock if location resolution succeeds. If
-    // it fails, log the error.
-    if (s.ok()) {
-      std::lock_guard<simple_spinlock> l(lock_);
-      location_.emplace(std::move(location));
-    } else {
-      KLOG_EVERY_N_SECS(ERROR, 60) << Substitute(
-          "Unable to assign location to tablet server $0: $1",
-          ToString(), s.ToString());
-      return s;
-    }
-  }
-
+  location_ = location;
   return Status::OK();
 }
 
@@ -338,6 +286,7 @@ Status TSDescriptor::GetConsensusProxy(const shared_ptr<rpc::Messenger>& messeng
 
 string TSDescriptor::ToString() const {
   std::lock_guard<simple_spinlock> l(lock_);
+  CHECK(!registration_->rpc_addresses().empty());
   const auto& addr = registration_->rpc_addresses(0);
   return Substitute("$0 ($1:$2)", permanent_uuid_, addr.host(), addr.port());
 }
