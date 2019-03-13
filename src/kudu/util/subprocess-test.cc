@@ -37,6 +37,7 @@
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/barrier.h"
 #include "kudu/util/env.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/path_util.h"
@@ -349,6 +350,51 @@ TEST_F(SubprocessTest, TestSubprocessInterruptionHandling) {
       // Add microseconds delay to make the unit test runs faster and more reliable
       SleepFor(MonoDelta::FromMicroseconds(rand() % 1));
     }
+  }
+}
+
+TEST_F(SubprocessTest, DISABLED_TestSubprocessDeadlockOnLogging) {
+  int kNumLoggingThreads = 8;
+  // Participants are the logging threads and the main test thread.
+  Barrier barrier(kNumLoggingThreads + 1);
+
+  // It should not take too long to run the scenario unless it's deadlocked.
+  alarm(15);
+  SCOPED_CLEANUP({
+    alarm(0);
+  });
+
+  // Adding multiple threads writing logs. Each thread sleeps a bit after each
+  // message to get off from CPU.
+  atomic<bool> stop_logging(false);
+  vector<thread> threads;
+  for (auto i = 0; i < kNumLoggingThreads; ++i) {
+    const auto thread_idx = i;
+    threads.emplace_back([&barrier, &stop_logging, thread_idx] () {
+        barrier.Wait();
+        size_t msg_id = 0;
+        while (!stop_logging) {
+          LOG(INFO) << Substitute("$0: $1", thread_idx, msg_id++);
+          SleepFor(MonoDelta::FromNanoseconds(thread_idx));
+        }
+    });
+  }
+
+  SCOPED_CLEANUP({
+      stop_logging = true;
+      for (auto& thread : threads) {
+        thread.join();
+      }
+  });
+
+  barrier.Wait();
+  // Prior to the patch that fixed the problem, it was enough to have just one
+  // iteration to have the spawned process deadlocked. However, it does not hurt
+  // to run several iterations to give the issue, if any, a greater chance to
+  // manifest itself.
+  for (auto i = 0; i < 32; ++i) {
+    auto s = Subprocess::Call("./nonexistent.file");
+    ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
   }
 }
 
