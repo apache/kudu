@@ -17,16 +17,28 @@
 
 #include "kudu/util/signal.h"
 
-#include <glog/logging.h>
+#include <cerrno>
+
+#include <glog/logging.h> // IWYU pragma: keep
+#include <glog/raw_logging.h>
 
 namespace kudu {
+
+// Using RAW_LOG() and logging directly into stderr instead of using more
+// advanced LOG() to keep all these function as async-signal-safe as possible.
+//
+// NOTE: RAW_LOG() uses vsnprintf(), and it's not async-signal-safe
+//       strictly speaking (in some cases may call malloc(), etc.)
 
 void SetSignalHandler(int signal, SignalHandlerCallback handler) {
   struct sigaction act;
   act.sa_handler = handler;
   sigemptyset(&act.sa_mask);
   act.sa_flags = 0;
-  PCHECK(sigaction(signal, &act, nullptr) == 0);
+  if (sigaction(signal, &act, nullptr) != 0) {
+    int err = errno;
+    RAW_LOG(FATAL, "sigaction() failed: [%d]", err);
+  }
 }
 
 void IgnoreSigPipe() {
@@ -39,9 +51,15 @@ void ResetSigPipeHandlerToDefault() {
 
 // We unblock all signal masks since they are inherited.
 void ResetAllSignalMasksToUnblocked() {
-  sigset_t signals;
-  PCHECK(sigfillset(&signals) == 0);
-  PCHECK(sigprocmask(SIG_UNBLOCK, &signals, nullptr) == 0);
+  sigset_t sigset;
+  if (sigfillset(&sigset) != 0) {
+    int err = errno;
+    RAW_LOG(FATAL, "sigfillset() failed: [%d]", err);
+  }
+  if (sigprocmask(SIG_UNBLOCK, &sigset, nullptr) != 0) {
+    int err = errno;
+    RAW_LOG(FATAL, "sigprocmask() failed: [%d]", err);
+  }
 }
 
 } // namespace kudu

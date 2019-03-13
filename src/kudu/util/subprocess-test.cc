@@ -353,7 +353,9 @@ TEST_F(SubprocessTest, TestSubprocessInterruptionHandling) {
   }
 }
 
-TEST_F(SubprocessTest, DISABLED_TestSubprocessDeadlockOnLogging) {
+// Test to make sure the spawned child process does not deadlock while running
+// the code between fork() and exec().
+TEST_F(SubprocessTest, TestSubprocessDeadlockOnLogging) {
   int kNumLoggingThreads = 8;
   // Participants are the logging threads and the main test thread.
   Barrier barrier(kNumLoggingThreads + 1);
