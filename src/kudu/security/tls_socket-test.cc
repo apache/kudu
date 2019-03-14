@@ -155,18 +155,18 @@ class EchoServer {
         CHECK_OK(sock->SetRecvTimeout(kTimeout));
         unique_ptr<uint8_t[]> buf(new uint8_t[kEchoChunkSize]);
         // An "echo" loop for kEchoChunkSize byte buffers.
-        while (!stop_) {
+        while (!is_stopped_) {
           size_t n;
           Status s = sock->BlockingRecv(buf.get(), kEchoChunkSize, &n, MonoTime::Now() + kTimeout);
           if (!s.ok()) {
-            CHECK(stop_) << "unexpected error reading: " << s.ToString();
+            CHECK(is_stopped_) << "unexpected error reading: " << s.ToString();
           }
 
           LOG(INFO) << "server echoing " << n << " bytes";
           size_t written;
           s = sock->BlockingWrite(buf.get(), n, &written, MonoTime::Now() + kTimeout);
           if (!s.ok()) {
-            CHECK(stop_) << "unexpected error writing: " << s.ToString();
+            CHECK(is_stopped_) << "unexpected error writing: " << s.ToString();
           }
           if (slow_read_) {
             SleepFor(MonoDelta::FromMilliseconds(10));
@@ -185,12 +185,12 @@ class EchoServer {
     return listen_addr_;
   }
 
-  bool stopped() const {
-    return stop_;
+  bool is_stopped() const {
+    return is_stopped_;
   }
 
   void Stop() {
-    stop_ = true;
+    is_stopped_ = true;
   }
   void Join() {
     thread_.join();
@@ -208,38 +208,49 @@ class EchoServer {
   thread thread_;
   pthread_t pthread_;
   CountDownLatch pthread_sync_;
-  std::atomic<bool> stop_ { false };
+  std::atomic<bool> is_stopped_ { false };
 
   bool slow_read_ = false;
 };
 
 void handler(int /* signal */) {}
 
+// Test that errors returned when reading from a TLS socket are reasonable and
+// contain the address of the remote.
 TEST_F(TlsSocketTest, TestRecvFailure) {
-    EchoServer server;
-    server.Start();
-    unique_ptr<Socket> client_sock;
-    NO_FATALS(ConnectClient(server.listen_addr(), &client_sock));
-    unique_ptr<uint8_t[]> buf(new uint8_t[kEchoChunkSize]);
+  EchoServer server;
+  server.Start();
+  unique_ptr<Socket> client_sock;
+  NO_FATALS(ConnectClient(server.listen_addr(), &client_sock));
+  unique_ptr<uint8_t[]> buf(new uint8_t[kEchoChunkSize]);
 
-    SleepFor(MonoDelta::FromMilliseconds(100));
-    server.Stop();
+  // The client writes to the server. This blocks on the server receiving,
+  // so once this completes the server is in its "echo loop".
+  size_t nwritten_unused;
+  ASSERT_OK(client_sock->BlockingWrite(buf.get(),
+                                       kEchoChunkSize,
+                                       &nwritten_unused,
+                                       MonoTime::Now() + kTimeout));
 
-    size_t nwritten;
-    ASSERT_OK(client_sock->BlockingWrite(buf.get(), kEchoChunkSize, &nwritten,
-        MonoTime::Now() + kTimeout));
-    size_t nread;
+  // Stop the server. The client can still Recv once from the server because
+  // the server is trying to echo what was sent by the client.
+  server.Stop();
 
-    ASSERT_OK(client_sock->BlockingRecv(buf.get(), kEchoChunkSize, &nread,
-        MonoTime::Now() + kTimeout));
+  // The first Recv succeeds. This unblocks the server and causes it to exit.
+  size_t nread_unused;
+  ASSERT_OK(client_sock->BlockingRecv(buf.get(),
+                                      kEchoChunkSize,
+                                      &nread_unused,
+                                      MonoTime::Now() + kTimeout));
 
-    Status s = client_sock->BlockingRecv(buf.get(), kEchoChunkSize, &nread,
-        MonoTime::Now() + kTimeout);
-
-    ASSERT_TRUE(!s.ok());
-    ASSERT_TRUE(s.IsNetworkError());
-    ASSERT_STR_MATCHES(s.message().ToString(), "BlockingRecv error: failed to read from "
-                                               "TLS socket \\(remote: 127.0.0.1:[0-9]+\\): ");
+  // The server has closed the connection, so the second Recv will fail.
+  Status s = client_sock->BlockingRecv(buf.get(),
+                                       kEchoChunkSize,
+                                       &nread_unused,
+                                       MonoTime::Now() + kTimeout);
+  ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
+  ASSERT_STR_MATCHES(s.message().ToString(), "BlockingRecv error: failed to read from "
+                                             "TLS socket \\(remote: 127.0.0.1:[0-9]+\\): ");
 }
 
 // Test for failures to handle EINTR during TLS connection
@@ -257,7 +268,7 @@ TEST_F(TlsSocketTest, TestTlsSocketInterrupted) {
 
   // Start a thread to send signals to the server thread.
   thread killer([&]() {
-      while (!server.stopped()) {
+      while (!server.is_stopped()) {
         PCHECK(pthread_kill(server.pthread(), SIGUSR2) == 0);
         SleepFor(MonoDelta::FromMicroseconds(rand() % 10));
       }
