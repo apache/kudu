@@ -55,7 +55,7 @@ Additional links:
 * [Kudu 1.9.0 Java API docs](apidocs/)
 * [Kudu 1.9.0 C++ API docs](cpp-client-api/)
 
-Previous releases:
+Previous releases (ongoing support):
 
 * [Kudu 1.8.0 Release](/releases/1.8.0/)
 * [Kudu 1.7.1 Release](/releases/1.7.1/)

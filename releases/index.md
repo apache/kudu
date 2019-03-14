@@ -11,11 +11,14 @@ single_col_extra_classes: releases
 
 * **[Kudu 1.9.0](1.9.0/)** was released on March 12, 2019. <!-- LATREL: DO NOT REMOVE -->
 
-### Previous releases
+### Previous releases (ongoing support)
 
 * [Kudu 1.8.0](1.8.0/) was released on October 24, 2018. <!-- PREVREL: DO NOT REMOVE -->
 * [Kudu 1.7.1](1.7.1/) was released on June 7, 2018.
-* [Kudu 1.7.0](1.7.0/) was released on March 23, 2018.
+
+### Archived releases
+
+* [Kudu 1.7.0](1.7.0/) was released on March 23, 2018. <!--ARCHREL: DO NOT REMOVE -->
 * [Kudu 1.6.0](1.6.0/) was released on December 07, 2017.
 * [Kudu 1.5.0](1.5.0/) was released on September 8, 2017.
 * [Kudu 1.4.0](1.4.0/) was released on June 13, 2017.
