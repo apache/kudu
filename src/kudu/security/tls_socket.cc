@@ -33,6 +33,9 @@
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
 
+using std::string;
+using strings::Substitute;
+
 namespace kudu {
 namespace security {
 
@@ -114,9 +117,10 @@ Status TlsSocket::Recv(uint8_t *buf, int32_t amt, int32_t *nread) {
   int save_errno = errno;
   if (bytes_read <= 0) {
     Sockaddr remote;
-    Socket::GetPeerAddress(&remote);
-    std::string kErrString = strings::Substitute("failed to read from TLS socket (remote: $0)",
-                                                 remote.ToString());
+    Status s = GetPeerAddress(&remote);
+    const string remote_str = s.ok() ? remote.ToString() : "unknown";
+    string kErrString = Substitute("failed to read from TLS socket (remote: $0)",
+                                   remote_str);
 
     if (bytes_read == 0 && SSL_get_shutdown(ssl_.get()) == SSL_RECEIVED_SHUTDOWN) {
       return Status::NetworkError(kErrString, ErrnoToString(ESHUTDOWN), ESHUTDOWN);
@@ -124,7 +128,7 @@ Status TlsSocket::Recv(uint8_t *buf, int32_t amt, int32_t *nread) {
     auto error_code = SSL_get_error(ssl_.get(), bytes_read);
     if (error_code == SSL_ERROR_WANT_READ) {
       if (save_errno != 0) {
-        return Status::NetworkError("SSL_read error from " + remote.ToString(),
+        return Status::NetworkError("SSL_read error from " + remote_str,
                                     ErrnoToString(save_errno), save_errno);
       }
       // Nothing available to read yet.
