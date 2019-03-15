@@ -72,10 +72,10 @@ namespace kudu {
 struct IteratorStats;
 
 static const int kValColIdx = 0; // Index of 'val' column in these test schemas.
-static const Schema kIntSchema({ ColumnSchema("val", UINT32) },
+static const Schema kIntSchema({ ColumnSchema("val", INT64) },
                                /*key_columns=*/1);
 static const bool kIsDeletedReadDefault = false;
-static const Schema kIntSchemaWithVCol({ ColumnSchema("val", UINT32),
+static const Schema kIntSchemaWithVCol({ ColumnSchema("val", INT64),
                                          ColumnSchema("is_deleted", IS_DELETED,
                                                       /*is_nullable=*/false,
                                                       /*read_default=*/&kIsDeletedReadDefault) },
@@ -85,7 +85,7 @@ static const Schema kIntSchemaWithVCol({ ColumnSchema("val", UINT32),
 // vector.
 class VectorIterator : public ColumnwiseIterator {
  public:
-  VectorIterator(vector<uint32_t> ints, vector<uint8_t> is_deleted, Schema schema)
+  VectorIterator(vector<int64_t> ints, vector<uint8_t> is_deleted, Schema schema)
       : ints_(std::move(ints)),
         is_deleted_(std::move(is_deleted)),
         schema_(std::move(schema)),
@@ -95,7 +95,7 @@ class VectorIterator : public ColumnwiseIterator {
     CHECK_EQ(ints_.size(), is_deleted_.size());
   }
 
-  explicit VectorIterator(const vector<uint32_t>& ints)
+  explicit VectorIterator(const vector<int64_t>& ints)
       : VectorIterator(ints, vector<uint8_t>(ints.size()), kIntSchema) {
   }
 
@@ -144,7 +144,7 @@ class VectorIterator : public ColumnwiseIterator {
     DCHECK_LE(prepared_, ctx->block()->nrows());
 
     switch (ctx->block()->type_info()->physical_type()) {
-      case UINT32:
+      case INT64:
         for (size_t i = 0; i < prepared_; i++) {
           ctx->block()->SetCellValue(i, &(ints_[cur_idx_ + i]));
         }
@@ -184,7 +184,7 @@ class VectorIterator : public ColumnwiseIterator {
   }
 
  private:
-  vector<uint32_t> ints_;
+  vector<int64_t> ints_;
   // We use vector<uint8_t> instead of vector<bool> to represent the IS_DELETED
   // column so we can call ColumnBlock::SetCellValue() in MaterializeColumn(),
   // whose API requires taking an address to a non-temporary for the value.
@@ -225,24 +225,50 @@ TEST(TestMergeIterator, TestMergeEmptyViaSelectionVector) {
   ASSERT_FALSE(merger->HasNext());
 }
 
+// Tests that if we stop using a MergeIterator with several elements remaining,
+// it is cleaned up properly.
+TEST(TestMergeIterator, TestNotConsumedCleanup) {
+  unique_ptr<VectorIterator> vec1(new VectorIterator({ 1 }));
+  unique_ptr<VectorIterator> vec2(new VectorIterator({ 2 }));
+  unique_ptr<VectorIterator> vec3(new VectorIterator({ 3 }));
+
+  vector<unique_ptr<RowwiseIterator>> input;
+  input.emplace_back(NewMaterializingIterator(std::move(vec1)));
+  input.emplace_back(NewMaterializingIterator(std::move(vec2)));
+  input.emplace_back(NewMaterializingIterator(std::move(vec3)));
+  unique_ptr<RowwiseIterator> merger(NewMergeIterator(
+      MergeIteratorOptions(/*include_deleted_rows=*/false), std::move(input)));
+  ASSERT_OK(merger->Init(nullptr));
+
+  ASSERT_TRUE(merger->HasNext());
+  RowBlock dst(&kIntSchema, 1, nullptr);
+  ASSERT_OK(merger->NextBlock(&dst));
+  ASSERT_EQ(1, dst.nrows());
+  ASSERT_TRUE(merger->HasNext());
+
+  // Let the MergeIterator go out of scope with some remaining elements.
+}
+
 class TestIntRangePredicate {
  public:
-  TestIntRangePredicate(uint32_t lower, uint32_t upper, const ColumnSchema& column)
+  TestIntRangePredicate(int64_t lower, int64_t upper, const ColumnSchema& column)
       : lower_(lower),
         upper_(upper),
         pred_(ColumnPredicate::Range(column, &lower_, &upper_)) {
   }
 
-  TestIntRangePredicate(uint32_t lower, uint32_t upper)
+  TestIntRangePredicate(int64_t lower, int64_t upper)
       : TestIntRangePredicate(lower, upper, kIntSchema.column(0)) {
   }
 
-  uint32_t lower_, upper_;
+  int64_t lower_, upper_;
   ColumnPredicate pred_;
 };
 
-void TestMerge(const Schema& schema, const TestIntRangePredicate &predicate,
-               bool overlapping_ranges = true, bool include_deleted_rows = false) {
+void TestMerge(const Schema& schema,
+               const TestIntRangePredicate &predicate,
+               bool overlapping_ranges = true,
+               bool include_deleted_rows = false) {
   struct List {
     explicit List(int num_rows)
         : sv(new SelectionVector(num_rows)) {
@@ -250,26 +276,26 @@ void TestMerge(const Schema& schema, const TestIntRangePredicate &predicate,
       is_deleted.reserve(num_rows);
     }
 
-    vector<uint32_t> ints;
+    vector<int64_t> ints;
     vector<uint8_t> is_deleted;
     unique_ptr<SelectionVector> sv;
   };
 
   vector<List> all_ints;
-  map<uint32_t, bool> expected;
-  unordered_set<uint32_t> seen_live;
+  map<int64_t, bool> expected;
+  unordered_set<int64_t> seen_live;
   Random prng(SeedRandom());
 
-  uint32_t entry = 0;
+  int64_t entry = 0;
   for (int i = 0; i < FLAGS_num_lists; i++) {
     List list(FLAGS_num_rows);
-    unordered_set<uint32_t> seen_this_list;
+    unordered_set<int64_t> seen_this_list;
 
     if (overlapping_ranges) {
       entry = 0;
     }
     for (int j = 0; j < FLAGS_num_rows; j++) {
-      uint32_t potential;
+      int64_t potential;
       bool is_deleted = false;
       // The merge iterator does not support duplicate non-deleted keys.
       while (true) {
@@ -374,9 +400,9 @@ void TestMerge(const Schema& schema, const TestIntRangePredicate &predicate,
 
         for (int i = 0; i < dst.nrows(); i++) {
           ASSERT_NE(expected.end(), expected_iter);
-          uint32_t expected_key = expected_iter->first;
+          int64_t expected_key = expected_iter->first;
           bool expected_is_deleted = expected_iter->second;
-          uint32_t row_key = *schema.ExtractColumnFromRow<UINT32>(dst.row(i), kValColIdx);
+          int64_t row_key = *schema.ExtractColumnFromRow<INT64>(dst.row(i), kValColIdx);
           ASSERT_GE(row_key, predicate.lower_) << "Yielded integer excluded by predicate";
           ASSERT_LT(row_key, predicate.upper_) << "Yielded integer excluded by predicate";
           EXPECT_EQ(expected_key, row_key) << "Yielded out of order at idx " << total_idx;
@@ -403,12 +429,12 @@ void TestMerge(const Schema& schema, const TestIntRangePredicate &predicate,
 }
 
 TEST(TestMergeIterator, TestMerge) {
-  TestIntRangePredicate predicate(0, MathLimits<uint32_t>::kMax);
+  TestIntRangePredicate predicate(0, MathLimits<int64_t>::kMax);
   NO_FATALS(TestMerge(kIntSchema, predicate));
 }
 
 TEST(TestMergeIterator, TestMergeNonOverlapping) {
-  TestIntRangePredicate predicate(0, MathLimits<uint32_t>::kMax);
+  TestIntRangePredicate predicate(0, MathLimits<int64_t>::kMax);
   NO_FATALS(TestMerge(kIntSchema, predicate, /*overlapping_ranges=*/false));
 }
 
@@ -422,12 +448,12 @@ TEST(TestMergeIterator, TestMergePredicate) {
 // This predicate excludes the first half of the rows but accepts the
 // second half.
 TEST(TestMergeIterator, TestMergePredicate2) {
-  TestIntRangePredicate predicate(FLAGS_num_rows / 2, MathLimits<uint32_t>::kMax);
+  TestIntRangePredicate predicate(FLAGS_num_rows / 2, MathLimits<int64_t>::kMax);
   NO_FATALS(TestMerge(kIntSchema, predicate));
 }
 
 TEST(TestMergeIterator, TestDeDupGhostRows) {
-  TestIntRangePredicate match_all_pred(0, MathLimits<uint32_t>::kMax);
+  TestIntRangePredicate match_all_pred(0, MathLimits<int64_t>::kMax);
   NO_FATALS(TestMerge(kIntSchemaWithVCol, match_all_pred,
                       /*overlapping_ranges=*/true,
                       /*include_deleted_rows=*/true));
@@ -441,7 +467,7 @@ TEST(TestMaterializingIterator, TestMaterializingPredicatePushdown) {
   spec.AddPredicate(pred1.pred_);
   LOG(INFO) << "Predicate: " << pred1.pred_.ToString();
 
-  vector<uint32_t> ints(100);
+  vector<int64_t> ints(100);
   for (int i = 0; i < 100; i++) {
     ints[i] = i;
   }
@@ -472,7 +498,7 @@ TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluation) {
   spec.AddPredicate(pred1.pred_);
   LOG(INFO) << "Predicate: " << pred1.pred_.ToString();
 
-  vector<uint32_t> ints(100);
+  vector<int64_t> ints(100);
   for (int i = 0; i < 100; i++) {
     ints[i] = i;
   }

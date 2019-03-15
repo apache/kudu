@@ -30,6 +30,9 @@
 #include <unordered_set>
 #include <utility>
 
+#include <boost/intrusive/list.hpp>
+#include <boost/intrusive/list_hook.hpp>
+
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -96,9 +99,9 @@ void AddIterStats(const RowwiseIterator& iter,
 static const int kMergeRowBuffer = 1000;
 
 // MergeIterState wraps a RowwiseIterator for use by the MergeIterator.
-// Importantly, it also filters out unselected rows from the wrapped RowwiseIterator,
-// such that all returned rows are valid.
-class MergeIterState {
+// Importantly, it also filters out unselected rows from the wrapped
+// RowwiseIterator such that all returned rows are valid.
+class MergeIterState : public boost::intrusive::list_base_hook<> {
  public:
   explicit MergeIterState(unique_ptr<RowwiseIterator> iter) :
       iter_(std::move(iter)),
@@ -155,8 +158,15 @@ class MergeIterState {
     return rows_advanced_ == rows_valid_;
   }
 
+  // Underlying iterator.
   unique_ptr<RowwiseIterator> iter_;
+
+  // Allocates memory for read_block_.
   Arena arena_;
+
+  // Current block of buffered rows from the iterator.
+  //
+  // The memory backing the rows was allocated out of the arena.
   RowBlock read_block_;
 
   // The row currently pointed to by the iterator.
@@ -275,10 +285,10 @@ class MergeIterator : public RowwiseIterator {
   // This is required because we can't create a MergeIterState of an uninitialized iterator.
   vector<unique_ptr<RowwiseIterator>> orig_iters_;
 
-  // See UnionIterator::states_lock_ for details on locking. This follows the same
+  // See UnionIterator::iters_lock_ for details on locking. This follows the same
   // pattern.
   mutable rw_spinlock states_lock_;
-  vector<unique_ptr<MergeIterState>> states_;
+  boost::intrusive::list<MergeIterState> states_; // NOLINT(*)
 
   // Statistics (keyed by projection column index) accumulated so far by any
   // fully-consumed sub-iterators.
@@ -307,7 +317,9 @@ MergeIterator::MergeIterator(MergeIteratorOptions opts,
   CHECK_GT(orig_iters_.size(), 0);
 }
 
-MergeIterator::~MergeIterator() {}
+MergeIterator::~MergeIterator() {
+  states_.clear_and_dispose([](MergeIterState* s) { delete s; });
+}
 
 Status MergeIterator::Init(ScanSpec *spec) {
   CHECK(!initted_);
@@ -323,7 +335,7 @@ Status MergeIterator::Init(ScanSpec *spec) {
   // TODO(adar): establish dominance between iterators and only initialize
   // non-dominated iterators.
   for (auto& s : states_) {
-    RETURN_NOT_OK(s->Init());
+    RETURN_NOT_OK(s.Init());
   }
 
   // Verify that the schemas match in debug builds.
@@ -331,15 +343,15 @@ Status MergeIterator::Init(ScanSpec *spec) {
   // It's important to do the verification after initializing the iterators, as
   // they may not know their own schemas until they've been initialized (in the
   // case of a union of unions).
-  schema_.reset(new Schema(states_.front()->schema()));
+  schema_.reset(new Schema(states_.front().schema()));
   CHECK_GT(schema_->num_key_columns(), 0);
   finished_iter_stats_by_col_.resize(schema_->num_columns());
 #ifndef NDEBUG
   for (const auto& s : states_) {
-    if (!s->schema().Equals(*schema_)) {
+    if (!s.schema().Equals(*schema_)) {
       return Status::InvalidArgument(
           Substitute("Schemas do not match: $0 vs. $1",
-                     schema_->ToString(), s->schema().ToString()));
+                     schema_->ToString(), s.schema().ToString()));
     }
   }
 #endif
@@ -353,11 +365,9 @@ Status MergeIterator::Init(ScanSpec *spec) {
   // Before we copy any rows, clean up any iterators which were empty
   // to start with. Otherwise, HasNext() won't properly return false
   // if we were passed only empty iterators.
-  states_.erase(
-      remove_if(states_.begin(), states_.end(), [] (const unique_ptr<MergeIterState>& iter) {
-        return PREDICT_FALSE(iter->IsFullyExhausted());
-      }),
-      states_.end());
+  states_.remove_and_dispose_if(
+      [](const MergeIterState& s) { return PREDICT_FALSE(s.IsFullyExhausted()); },
+      [](MergeIterState* s) { delete s; });
 
   initted_ = true;
   return Status::OK();
@@ -373,7 +383,8 @@ Status MergeIterator::InitSubIterators(ScanSpec *spec) {
   for (auto& i : orig_iters_) {
     ScanSpec *spec_copy = spec != nullptr ? scan_spec_copies_.Construct(*spec) : nullptr;
     RETURN_NOT_OK(InitAndMaybeWrap(&i, spec_copy));
-    states_.emplace_back(unique_ptr<MergeIterState>(new MergeIterState(std::move(i))));
+    unique_ptr<MergeIterState> state(new MergeIterState(std::move(i)));
+    states_.push_back(*state.release());
   }
   orig_iters_.clear();
 
@@ -404,7 +415,8 @@ void MergeIterator::PrepareBatch(RowBlock* dst) {
   // in the currently queued up blocks.
   size_t available = 0;
   for (const auto& s : states_) {
-    available += s->remaining_in_block();
+    if (available >= dst->row_capacity()) break;
+    available += s.remaining_in_block();
   }
 
   dst->Resize(std::min(dst->row_capacity(), available));
@@ -431,7 +443,7 @@ Status MergeIterator::MaterializeBlock(RowBlock *dst) {
 
     // Typically the number of states_ is not that large, so using a priority
     // queue is not worth it.
-    for (const auto& iter : states_) {
+    for (auto& iter : states_) {
       // To merge in row key order, we need to consume the smallest row at any
       // given time. We locate that row by peeking at the next row in each of
       // the states_ iterators, which includes all possible candidates for the
@@ -440,7 +452,7 @@ Status MergeIterator::MaterializeBlock(RowBlock *dst) {
       if (!smallest.empty()) {
         // If we have a candidate for smallest row, compare it against the
         // smallest row in each iterator.
-        cmp = schema_->Compare(iter->next_row(), smallest[0]->next_row());
+        cmp = schema_->Compare(iter.next_row(), smallest[0]->next_row());
         num_comparisons_++;
       }
       if (smallest.empty() || cmp < 0) {
@@ -448,11 +460,11 @@ Status MergeIterator::MaterializeBlock(RowBlock *dst) {
         // smaller than the previously-smallest, replace the smallest with the
         // new row found.
         smallest.clear();
-        smallest.emplace_back(iter.get());
+        smallest.emplace_back(&iter);
       } else if (!smallest.empty() && cmp == 0) {
         // If we have found a duplicate of the smallest row, at least one must
         // be a ghost row. Collect all duplicates in order to merge them later.
-        smallest.emplace_back(iter.get());
+        smallest.emplace_back(&iter);
       }
     }
 
@@ -499,31 +511,15 @@ Status MergeIterator::MaterializeBlock(RowBlock *dst) {
     RowBlockRow dst_row = dst->row(dst_row_idx++);
     RETURN_NOT_OK(CopyRow(row_to_return_iter->next_row(), &dst_row, dst->arena()));
 
-    // Advance all matching sub-iterators and mark exhausted sub-iterators for
-    // removal.
-    unordered_set<MergeIterState*> exhausted;
+    // Advance all matching sub-iterators and remove any that are exhausted.
     for (MergeIterState* s : smallest) {
       RETURN_NOT_OK(s->Advance());
       if (s->IsFullyExhausted()) {
-        InsertOrDie(&exhausted, s);
-      }
-    }
-
-    // Remove the exhausted sub-iterators.
-    if (!exhausted.empty()) {
-      std::lock_guard<rw_spinlock> l(states_lock_);
-      for (MergeIterState* s : exhausted) {
+        std::lock_guard<rw_spinlock> l(states_lock_);
         s->AddStats(&finished_iter_stats_by_col_);
+        states_.erase_and_dispose(states_.iterator_to(*s),
+                                  [](MergeIterState* s) { delete s; });
       }
-      // TODO(mpercy): Consider making removal O(1) per element to remove by
-      // using a different data structure for 'states_'. The below
-      // erase-remove idiom gives us O(n) removal on a vector for an
-      // arbitrary number of elements to remove at once.
-      states_.erase(std::remove_if(states_.begin(), states_.end(),
-                                   [&exhausted](const unique_ptr<MergeIterState>& state) {
-                                     return ContainsKey(exhausted, state.get());
-                                   }),
-                    states_.end());
     }
   }
 
@@ -552,7 +548,7 @@ void MergeIterator::GetIteratorStats(vector<IteratorStats>* stats) const {
   *stats = finished_iter_stats_by_col_;
 
   for (const auto& s : states_) {
-    s->AddStats(stats);
+    s.AddStats(stats);
   }
 }
 
