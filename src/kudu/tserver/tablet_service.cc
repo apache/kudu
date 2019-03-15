@@ -230,8 +230,15 @@ bool LookupTabletReplicaOrRespond(TabletReplicaLookupIf* tablet_manager,
                                   scoped_refptr<TabletReplica>* replica) {
   Status s = tablet_manager->GetTabletReplica(tablet_id, replica);
   if (PREDICT_FALSE(!s.ok())) {
-    SetupErrorAndRespond(resp->mutable_error(), s,
-                         TabletServerErrorPB::TABLET_NOT_FOUND, context);
+    if (s.IsServiceUnavailable()) {
+      // If the tablet manager isn't initialized, the remote should check again
+      // soon.
+      SetupErrorAndRespond(resp->mutable_error(), s,
+                           TabletServerErrorPB::UNKNOWN_ERROR, context);
+    } else {
+      SetupErrorAndRespond(resp->mutable_error(), s,
+                           TabletServerErrorPB::TABLET_NOT_FOUND, context);
+    }
     return false;
   }
   return true;
