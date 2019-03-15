@@ -19,3 +19,5 @@ Additional links:
 
 * [Kudu 0.5.0 Documentation](docs/)
 * [Kudu 0.5.0 Java API docs](apidocs/)
+
+**Note:** this is not an Apache release.
