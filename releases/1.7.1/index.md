@@ -32,7 +32,7 @@ See the [Kudu 1.7.1 Release Notes](docs/release_notes.html).
 
 Downloads of Kudu 1.7.1 are available in the following formats:
 
-* [Kudu 1.7.1 source tarball](http://www.apache.org/closer.cgi?path=kudu/1.7.1/apache-kudu-1.7.1.tar.gz)
+* [Kudu 1.7.1 source tarball](http://www.apache.org/dyn/closer.cgi?path=kudu/1.7.1/apache-kudu-1.7.1.tar.gz)
   ([SHA-512](https://archive.apache.org/dist/kudu/1.7.1/apache-kudu-1.7.1.tar.gz.sha512),
   [Signature](https://archive.apache.org/dist/kudu/1.7.1/apache-kudu-1.7.1.tar.gz.asc))
 
