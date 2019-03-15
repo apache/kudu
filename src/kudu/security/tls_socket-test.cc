@@ -58,7 +58,7 @@ using std::vector;
 namespace kudu {
 namespace security {
 
-const MonoDelta kTimeout = MonoDelta::FromSeconds(10);
+const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
 
 // Size is big enough to not fit into output socket buffer of default size
 // (controlled by setsockopt() with SO_SNDBUF).
