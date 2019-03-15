@@ -497,38 +497,9 @@ class KUDU_EXPORT KuduClient : public sp::enable_shared_from_this<KuduClient> {
 
   /// Get the highest HybridTime timestamp observed by the client.
   ///
-  /// The latest observed timestamp can be used to start a snapshot scan on a
-  /// table which is guaranteed to contain all data written or previously read
-  /// by this client. See KuduScanner for more details on timestamps.
-  ///
-  /// How to get Read-Your-Writes consistency:
-  /// the code snippet below uses KuduClient::GetLatestObservedTimestamp() along
-  /// with KuduScanner::SetSnapshotRaw() to perform READ_AT_SNAPSHOT scan
-  /// containing the data which has just been written.  Notice extra 1
-  /// added to the timestamp passed to KuduScanner::SetSnapshotRaw():
-  /// @code
-  ///   shared_ptr<KuduClient> client;
-  ///   ... // open/initialize the client
-  ///   shared_ptr<KuduSession> session(client->NewSession());
-  ///   ... // set Kudu session properties
-  ///   shared_ptr<KuduTable> table;
-  ///   ... // open the table
-  ///   unique_ptr<KuduInsert> insert_op(table->NewInsert());
-  ///   ... // populate new insert operation with data
-  ///   RETURN_NOT_OK(session->Apply(insert_op.release()));
-  ///   RETURN_NOT_OK(session->Flush());
-  ///   uint64_t snapshot_timestamp = client->GetLatestObservedTimestamp() + 1;
-  ///   KuduScanner scanner(table.get());
-  ///   RETURN_NOT_OK(scanner.SetSnapshotRaw(snapshot_timestamp));
-  ///   RETURN_NOT_OK(scanner.SetSelection(KuduClient::LEADER_ONLY));
-  ///   RETURN_NOT_OK(scanner.SetReadMode(KuduScanner::READ_AT_SNAPSHOT));
-  ///   RETURN_NOT_OK(scanner.Open());
-  ///   ... // retrieve scanned rows
-  /// @endcode
-  /// There are currently races in which, in rare occasions, Read-Your-Writes
-  /// consistency might not hold even in this case. These are being
-  /// taken care of as part of
-  /// <a href="https://issues.apache.org/jira/browse/KUDU-430">KUDU-430</a>
+  /// This is useful when retrieving timestamp from one client and
+  /// forwarding it to another to enforce external consistency when
+  /// using KuduSession::CLIENT_PROPAGATED external consistency mode.
   ///
   /// @note This method is experimental and will either disappear or
   ///   change in a future release.
@@ -2157,9 +2128,6 @@ class KUDU_EXPORT KuduScanner {
   Status SetSnapshotMicros(uint64_t snapshot_timestamp_micros) WARN_UNUSED_RESULT;
 
   /// Set snapshot timestamp for scans in @c READ_AT_SNAPSHOT mode (raw).
-  ///
-  /// See KuduClient::GetLatestObservedTimestamp() for details on how to
-  /// use this method to achieve Read-Your-Writes behavior.
   ///
   /// @note This method is experimental and will either disappear or
   ///   change in a future release.
