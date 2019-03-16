@@ -70,8 +70,18 @@ namespace cfile {
 namespace {
 
 Cache* CreateCache(int64_t capacity) {
-  auto mem_type = BlockCache::GetConfiguredCacheMemoryTypeOrDie();
-  return NewLRUCache(mem_type, capacity, "block_cache");
+  const auto mem_type = BlockCache::GetConfiguredCacheMemoryTypeOrDie();
+  switch (mem_type) {
+    case Cache::MemoryType::DRAM:
+      return NewCache<Cache::EvictionPolicy::LRU, Cache::MemoryType::DRAM>(
+          capacity, "block_cache");
+    case Cache::MemoryType::NVM:
+      return NewCache<Cache::EvictionPolicy::LRU, Cache::MemoryType::NVM>(
+          capacity, "block_cache");
+    default:
+      LOG(FATAL) << "unsupported LRU cache memory type: " << mem_type;
+      return nullptr;
+  }
 }
 
 // Validates the block cache capacity won't permit the cache to grow large enough

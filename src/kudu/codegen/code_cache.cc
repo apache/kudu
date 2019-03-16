@@ -60,8 +60,8 @@ class CodeCache::EvictionCallback : public Cache::EvictionCallback {
 };
 
 CodeCache::CodeCache(size_t capacity)
-  : cache_(NewLRUCache(Cache::MemoryType::DRAM, capacity, "code_cache")) {
-  eviction_callback_.reset(new EvictionCallback());
+    : cache_(NewCache(capacity, "code_cache")) {
+  eviction_callback_.reset(new EvictionCallback);
 }
 
 CodeCache::~CodeCache() {}

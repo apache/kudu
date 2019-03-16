@@ -64,11 +64,11 @@ namespace {
 
 typedef simple_spinlock MutexType;
 
-// Recency list cache implementation (LRU, etc.)
+// Recency list cache implementations (FIFO, LRU, etc.)
 
 // Recency list handle. An entry is a variable length heap-allocated structure.
 // Entries are kept in a circular doubly linked list ordered by some recency
-// criterion (e.g., access time for LRU policy).
+// criterion (e.g., access time for LRU policy, insertion time for FIFO policy).
 struct RLHandle {
   Cache::EvictionCallback* eviction_callback;
   RLHandle* next_hash;
@@ -188,7 +188,21 @@ class HandleTable {
   }
 };
 
+string ToString(Cache::EvictionPolicy p) {
+  switch (p) {
+    case Cache::EvictionPolicy::FIFO:
+      return "fifo";
+    case Cache::EvictionPolicy::LRU:
+      return "lru";
+    default:
+      LOG(FATAL) << "unexpected cache eviction policy: " << static_cast<int>(p);
+      break;
+  }
+  return "unknown";
+}
+
 // A single shard of sharded cache.
+template<Cache::EvictionPolicy policy>
 class CacheShard {
  public:
   explicit CacheShard(MemTracker* tracker);
@@ -211,6 +225,8 @@ class CacheShard {
  private:
   void RL_Remove(RLHandle* e);
   void RL_Append(RLHandle* e);
+  // Update the recency list after a lookup operation.
+  void RL_UpdateAfterLookup(RLHandle* e);
   // Just reduce the reference count by 1.
   // Return true if last reference
   bool Unref(RLHandle* e);
@@ -264,7 +280,8 @@ class CacheShard {
   CacheMetrics* metrics_;
 };
 
-CacheShard::CacheShard(MemTracker* tracker)
+template<Cache::EvictionPolicy policy>
+CacheShard<policy>::CacheShard(MemTracker* tracker)
     : usage_(0),
       mem_tracker_(tracker),
       metrics_(nullptr) {
@@ -273,7 +290,8 @@ CacheShard::CacheShard(MemTracker* tracker)
   rl_.prev = &rl_;
 }
 
-CacheShard::~CacheShard() {
+template<Cache::EvictionPolicy policy>
+CacheShard<policy>::~CacheShard() {
   for (RLHandle* e = rl_.next; e != &rl_; ) {
     RLHandle* next = e->next;
     DCHECK_EQ(e->refs.load(std::memory_order_relaxed), 1)
@@ -286,12 +304,14 @@ CacheShard::~CacheShard() {
   mem_tracker_->Consume(deferred_consumption_);
 }
 
-bool CacheShard::Unref(RLHandle* e) {
+template<Cache::EvictionPolicy policy>
+bool CacheShard<policy>::Unref(RLHandle* e) {
   DCHECK_GT(e->refs.load(std::memory_order_relaxed), 0);
   return e->refs.fetch_sub(1) == 1;
 }
 
-void CacheShard::FreeEntry(RLHandle* e) {
+template<Cache::EvictionPolicy policy>
+void CacheShard<policy>::FreeEntry(RLHandle* e) {
   DCHECK_EQ(e->refs.load(std::memory_order_relaxed), 0);
   if (e->eviction_callback) {
     e->eviction_callback->EvictedEntry(e->key(), e->value());
@@ -304,7 +324,8 @@ void CacheShard::FreeEntry(RLHandle* e) {
   delete [] e;
 }
 
-void CacheShard::UpdateMemTracker(int64_t delta) {
+template<Cache::EvictionPolicy policy>
+void CacheShard<policy>::UpdateMemTracker(int64_t delta) {
   int64_t old_deferred = deferred_consumption_.fetch_add(delta);
   int64_t new_deferred = old_deferred + delta;
 
@@ -315,7 +336,8 @@ void CacheShard::UpdateMemTracker(int64_t delta) {
   }
 }
 
-void CacheShard::UpdateMetricsLookup(bool was_hit, bool caching) {
+template<Cache::EvictionPolicy policy>
+void CacheShard<policy>::UpdateMetricsLookup(bool was_hit, bool caching) {
   if (PREDICT_TRUE(metrics_)) {
     metrics_->lookups->Increment();
     if (was_hit) {
@@ -334,13 +356,15 @@ void CacheShard::UpdateMetricsLookup(bool was_hit, bool caching) {
   }
 }
 
-void CacheShard::RL_Remove(RLHandle* e) {
+template<Cache::EvictionPolicy policy>
+void CacheShard<policy>::RL_Remove(RLHandle* e) {
   e->next->prev = e->prev;
   e->prev->next = e->next;
   usage_ -= e->charge;
 }
 
-void CacheShard::RL_Append(RLHandle* e) {
+template<Cache::EvictionPolicy policy>
+void CacheShard<policy>::RL_Append(RLHandle* e) {
   // Make "e" newest entry by inserting just before rl_.
   e->next = &rl_;
   e->prev = rl_.prev;
@@ -349,17 +373,27 @@ void CacheShard::RL_Append(RLHandle* e) {
   usage_ += e->charge;
 }
 
-Cache::Handle* CacheShard::Lookup(const Slice& key,
-                                  uint32_t hash,
-                                  bool caching) {
+template<>
+void CacheShard<Cache::EvictionPolicy::FIFO>::RL_UpdateAfterLookup(RLHandle* /* e */) {
+}
+
+template<>
+void CacheShard<Cache::EvictionPolicy::LRU>::RL_UpdateAfterLookup(RLHandle* e) {
+  RL_Remove(e);
+  RL_Append(e);
+}
+
+template<Cache::EvictionPolicy policy>
+Cache::Handle* CacheShard<policy>::Lookup(const Slice& key,
+                                          uint32_t hash,
+                                          bool caching) {
   RLHandle* e;
   {
     std::lock_guard<MutexType> l(mutex_);
     e = table_.Lookup(key, hash);
     if (e != nullptr) {
       e->refs.fetch_add(1, std::memory_order_relaxed);
-      RL_Remove(e);
-      RL_Append(e);
+      RL_UpdateAfterLookup(e);
     }
   }
 
@@ -369,7 +403,8 @@ Cache::Handle* CacheShard::Lookup(const Slice& key,
   return reinterpret_cast<Cache::Handle*>(e);
 }
 
-void CacheShard::Release(Cache::Handle* handle) {
+template<Cache::EvictionPolicy policy>
+void CacheShard<policy>::Release(Cache::Handle* handle) {
   RLHandle* e = reinterpret_cast<RLHandle*>(handle);
   bool last_reference = Unref(e);
   if (last_reference) {
@@ -377,7 +412,8 @@ void CacheShard::Release(Cache::Handle* handle) {
   }
 }
 
-Cache::Handle* CacheShard::Insert(
+template<Cache::EvictionPolicy policy>
+Cache::Handle* CacheShard<policy>::Insert(
     RLHandle* handle,
     Cache::EvictionCallback* eviction_callback) {
   // Set the remaining RLHandle members which were not already allocated during
@@ -428,7 +464,8 @@ Cache::Handle* CacheShard::Insert(
   return reinterpret_cast<Cache::Handle*>(handle);
 }
 
-void CacheShard::Erase(const Slice& key, uint32_t hash) {
+template<Cache::EvictionPolicy policy>
+void CacheShard<policy>::Erase(const Slice& key, uint32_t hash) {
   RLHandle* e;
   bool last_reference = false;
   {
@@ -455,11 +492,12 @@ int DetermineShardBits() {
   return bits;
 }
 
+template<Cache::EvictionPolicy policy>
 class ShardedCache : public Cache {
  private:
   shared_ptr<MemTracker> mem_tracker_;
   unique_ptr<CacheMetrics> metrics_;
-  vector<CacheShard*> shards_;
+  vector<CacheShard<policy>*> shards_;
 
   // Number of bits of hash used to determine the shard.
   const int shard_bits_;
@@ -486,12 +524,13 @@ class ShardedCache : public Cache {
     // 1. We reuse its MemTracker if one already exists, and
     // 2. It is directly parented to the root MemTracker.
     mem_tracker_ = MemTracker::FindOrCreateGlobalTracker(
-        -1, strings::Substitute("$0-sharded_lru_cache", id));
+        -1, strings::Substitute("$0-sharded_$1_cache", id, ToString(policy)));
 
     int num_shards = 1 << shard_bits_;
     const size_t per_shard = (capacity + (num_shards - 1)) / num_shards;
     for (int s = 0; s < num_shards; s++) {
-      unique_ptr<CacheShard> shard(new CacheShard(mem_tracker_.get()));
+      unique_ptr<CacheShard<policy>> shard(
+          new CacheShard<policy>(mem_tracker_.get()));
       shard->SetCapacity(per_shard);
       shards_.push_back(shard.release());
     }
@@ -568,18 +607,25 @@ class ShardedCache : public Cache {
 
 }  // end anonymous namespace
 
-Cache* NewLRUCache(Cache::MemoryType mem_type, size_t capacity, const string& id) {
-  switch (mem_type) {
-    case Cache::MemoryType::DRAM:
-      return new ShardedCache(capacity, id);
-#if defined(HAVE_LIB_VMEM)
-    case Cache::MemoryType::NVM:
-      return NewLRUNvmCache(capacity, id);
-#endif
-    default:
-      LOG(FATAL) << "unsupported memory type for LRU cache: " << mem_type;
-  }
+template<>
+Cache* NewCache<Cache::EvictionPolicy::FIFO,
+                Cache::MemoryType::DRAM>(size_t capacity, const std::string& id) {
+  return new ShardedCache<Cache::EvictionPolicy::FIFO>(capacity, id);
 }
+
+template<>
+Cache* NewCache<Cache::EvictionPolicy::LRU,
+                Cache::MemoryType::DRAM>(size_t capacity, const std::string& id) {
+  return new ShardedCache<Cache::EvictionPolicy::LRU>(capacity, id);
+}
+
+#if defined(HAVE_LIB_VMEM)
+template<>
+Cache* NewCache<Cache::EvictionPolicy::LRU,
+                Cache::MemoryType::NVM>(size_t capacity, const std::string& id) {
+  return NewLRUNvmCache(capacity, id);
+}
+#endif
 
 std::ostream& operator<<(std::ostream& os, Cache::MemoryType mem_type) {
   switch (mem_type) {

@@ -16,6 +16,7 @@
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/block_cache_metrics.h"
 #include "kudu/util/cache_metrics.h"
 #include "kudu/util/coding.h"
@@ -34,10 +35,12 @@ DECLARE_string(nvm_cache_path);
 
 DECLARE_double(cache_memtracker_approximation_ratio);
 
+using std::make_tuple;
 using std::tuple;
 using std::shared_ptr;
 using std::unique_ptr;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 
@@ -52,9 +55,9 @@ static int DecodeInt(const Slice& k) {
   return DecodeFixed32(k.data());
 }
 
-// Cache composition type: some test scenarios assume cache is single-sharded
-// to keep the logic simpler.
-enum class CacheComposition {
+// Cache sharding policy affects the composition of the cache. Some test
+// scenarios assume cache is single-sharded to keep the logic simpler.
+enum class ShardingPolicy {
   MultiShard,
   SingleShard,
 };
@@ -101,7 +104,8 @@ class CacheBaseTest : public KuduTest,
 
  protected:
   void SetupWithParameters(Cache::MemoryType mem_type,
-                           CacheComposition cache_composition) {
+                           Cache::EvictionPolicy eviction_policy,
+                           ShardingPolicy sharding_policy) {
     // Disable approximate tracking of cache memory since we make specific
     // assertions on the MemTracker in this test.
     FLAGS_cache_memtracker_approximation_ratio = 0;
@@ -109,7 +113,7 @@ class CacheBaseTest : public KuduTest,
     // Using single shard makes the logic of scenarios simple for capacity-
     // and eviction-related behavior.
     FLAGS_cache_force_single_shard =
-        (cache_composition == CacheComposition::SingleShard);
+        (sharding_policy == ShardingPolicy::SingleShard);
 
 #if defined(HAVE_LIB_VMEM)
     if (google::GetCommandLineFlagInfoOrDie("nvm_cache_path").is_default) {
@@ -118,8 +122,38 @@ class CacheBaseTest : public KuduTest,
     }
 #endif // #if defined(HAVE_LIB_VMEM)
 
-    cache_.reset(NewLRUCache(mem_type, cache_size(), "cache_test"));
-    MemTracker::FindTracker("cache_test-sharded_lru_cache", &mem_tracker_);
+    switch (eviction_policy) {
+      case Cache::EvictionPolicy::FIFO:
+        if (mem_type != Cache::MemoryType::DRAM) {
+          FAIL() << "FIFO cache can only be of DRAM type";
+        }
+        cache_.reset(NewCache<Cache::EvictionPolicy::FIFO,
+                              Cache::MemoryType::DRAM>(cache_size(),
+                                                       "cache_test"));
+        MemTracker::FindTracker("cache_test-sharded_fifo_cache", &mem_tracker_);
+        break;
+      case Cache::EvictionPolicy::LRU:
+        switch (mem_type) {
+          case Cache::MemoryType::DRAM:
+            cache_.reset(NewCache<Cache::EvictionPolicy::LRU,
+                                  Cache::MemoryType::DRAM>(cache_size(),
+                                                           "cache_test"));
+            break;
+          case Cache::MemoryType::NVM:
+            cache_.reset(NewCache<Cache::EvictionPolicy::LRU,
+                                  Cache::MemoryType::NVM>(cache_size(),
+                                                          "cache_test"));
+            break;
+          default:
+            FAIL() << mem_type << ": unrecognized cache memory type";
+            break;
+        }
+        MemTracker::FindTracker("cache_test-sharded_lru_cache", &mem_tracker_);
+        break;
+      default:
+        FAIL() << "unrecognized cache eviction policy";
+        break;
+    }
 
     // Since nvm cache does not have memtracker due to the use of
     // tcmalloc for this we only check for it in the DRAM case.
@@ -144,7 +178,8 @@ class CacheBaseTest : public KuduTest,
 class CacheTest :
     public CacheBaseTest,
     public ::testing::WithParamInterface<tuple<Cache::MemoryType,
-                                               CacheComposition>> {
+                                               Cache::EvictionPolicy,
+                                               ShardingPolicy>> {
  public:
   CacheTest()
       : CacheBaseTest(14 * 1024 * 1024) {
@@ -153,23 +188,41 @@ class CacheTest :
   void SetUp() override {
     const auto& param = GetParam();
     SetupWithParameters(std::get<0>(param),
-                        std::get<1>(param));
+                        std::get<1>(param),
+                        std::get<2>(param));
   }
 };
 
 #if defined(HAVE_LIB_VMEM)
 INSTANTIATE_TEST_CASE_P(
     CacheTypes, CacheTest,
-    ::testing::Combine(::testing::Values(Cache::MemoryType::DRAM,
-                                         Cache::MemoryType::NVM),
-                       ::testing::Values(CacheComposition::MultiShard,
-                                         CacheComposition::SingleShard)));
+    ::testing::Values(
+        make_tuple(Cache::MemoryType::DRAM,
+                   Cache::EvictionPolicy::FIFO,
+                   ShardingPolicy::MultiShard),
+        make_tuple(Cache::MemoryType::DRAM,
+                   Cache::EvictionPolicy::FIFO,
+                   ShardingPolicy::SingleShard),
+        make_tuple(Cache::MemoryType::DRAM,
+                   Cache::EvictionPolicy::LRU,
+                   ShardingPolicy::MultiShard),
+        make_tuple(Cache::MemoryType::DRAM,
+                   Cache::EvictionPolicy::LRU,
+                   ShardingPolicy::SingleShard),
+        make_tuple(Cache::MemoryType::NVM,
+                   Cache::EvictionPolicy::LRU,
+                   ShardingPolicy::MultiShard),
+        make_tuple(Cache::MemoryType::NVM,
+                   Cache::EvictionPolicy::LRU,
+                   ShardingPolicy::SingleShard)));
 #else
 INSTANTIATE_TEST_CASE_P(
     CacheTypes, CacheTest,
     ::testing::Combine(::testing::Values(Cache::MemoryType::DRAM),
-                       ::testing::Values(CacheComposition::MultiShard,
-                                         CacheComposition::SingleShard)));
+                       ::testing::Values(Cache::EvictionPolicy::FIFO,
+                                         Cache::EvictionPolicy::LRU),
+                       ::testing::Values(ShardingPolicy::MultiShard,
+                                         ShardingPolicy::SingleShard)));
 #endif // #if defined(HAVE_LIB_VMEM) ... #else ...
 
 TEST_P(CacheTest, TrackMemory) {
@@ -276,11 +329,74 @@ TEST_P(CacheTest, HeavyEntries) {
   ASSERT_LE(cached_weight, cache_size() + cache_size() / 10);
 }
 
-// This class is dedicated for scenarios specific for LRUCache.
+// This class is dedicated for scenarios specific for FIFOCache.
+// The scenarios use a single-shard cache for simpler logic.
+class FIFOCacheTest : public CacheBaseTest {
+ public:
+  FIFOCacheTest()
+      : CacheBaseTest(10 * 1024) {
+  }
+
+  void SetUp() override {
+    SetupWithParameters(Cache::MemoryType::DRAM,
+                        Cache::EvictionPolicy::FIFO,
+                        ShardingPolicy::SingleShard);
+  }
+};
+
+// Verify how the eviction behavior of a FIFO cache.
+TEST_F(FIFOCacheTest, EvictionPolicy) {
+  static constexpr int kNumElems = 20;
+  const int size_per_elem = cache_size() / kNumElems;
+  // First data chunk: fill the cache up to the capacity.
+  int idx = 0;
+  do {
+    Insert(idx, idx, size_per_elem);
+    // Keep looking up the very first entry: this is to make sure lookups
+    // do not affect the recency criteria of the eviction policy for FIFO cache.
+    Lookup(0);
+    ++idx;
+  } while (evicted_keys_.empty());
+  ASSERT_GT(idx, 1);
+
+  // Make sure the earliest inserted entry was evicted.
+  ASSERT_EQ(-1, Lookup(0));
+
+  // Verify that the 'empirical' capacity matches the expected capacity
+  // (it's a single-shard cache).
+  const int capacity = idx - 1;
+  ASSERT_EQ(kNumElems, capacity);
+
+  // Second data chunk: add (capacity / 2) more elements.
+  for (int i = 1; i < capacity / 2; ++i) {
+    // Earlier inserted elements should be gone one-by-one as new elements are
+    // inserted, and lookups should not affect the recency criteria of the FIFO
+    // eviction policy.
+    ASSERT_EQ(i, Lookup(i));
+    Insert(capacity + i, capacity + i, size_per_elem);
+    ASSERT_EQ(capacity + i, Lookup(capacity + i));
+    ASSERT_EQ(-1, Lookup(i));
+  }
+  ASSERT_EQ(capacity / 2, evicted_keys_.size());
+
+  // Early inserted elements from the first chunk should be evicted
+  // to accommodate the elements from the second chunk.
+  for (int i = 0; i < capacity / 2; ++i) {
+    SCOPED_TRACE(Substitute("early inserted elements: index $0", i));
+    ASSERT_EQ(-1, Lookup(i));
+  }
+  // The later inserted elements from the first chunk should be still
+  // in the cache.
+  for (int i = capacity / 2; i < capacity; ++i) {
+    SCOPED_TRACE(Substitute("late inserted elements: index $0", i));
+    ASSERT_EQ(i, Lookup(i));
+  }
+}
+
 class LRUCacheTest :
     public CacheBaseTest,
     public ::testing::WithParamInterface<tuple<Cache::MemoryType,
-                                               CacheComposition>> {
+                                               ShardingPolicy>> {
  public:
   LRUCacheTest()
       : CacheBaseTest(14 * 1024 * 1024) {
@@ -289,6 +405,7 @@ class LRUCacheTest :
   void SetUp() override {
     const auto& param = GetParam();
     SetupWithParameters(std::get<0>(param),
+                        Cache::EvictionPolicy::LRU,
                         std::get<1>(param));
   }
 };
@@ -298,14 +415,14 @@ INSTANTIATE_TEST_CASE_P(
     CacheTypes, LRUCacheTest,
     ::testing::Combine(::testing::Values(Cache::MemoryType::DRAM,
                                          Cache::MemoryType::NVM),
-                       ::testing::Values(CacheComposition::MultiShard,
-                                         CacheComposition::SingleShard)));
+                       ::testing::Values(ShardingPolicy::MultiShard,
+                                         ShardingPolicy::SingleShard)));
 #else
 INSTANTIATE_TEST_CASE_P(
     CacheTypes, LRUCacheTest,
     ::testing::Combine(::testing::Values(Cache::MemoryType::DRAM),
-                       ::testing::Values(CacheComposition::MultiShard,
-                                         CacheComposition::SingleShard)));
+                       ::testing::Values(ShardingPolicy::MultiShard,
+                                         ShardingPolicy::SingleShard)));
 #endif // #if defined(HAVE_LIB_VMEM) ... #else ...
 
 TEST_P(LRUCacheTest, EvictionPolicy) {

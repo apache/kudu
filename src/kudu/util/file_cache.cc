@@ -459,7 +459,7 @@ FileCache<FileType>::FileCache(const string& cache_name,
     : env_(env),
       cache_name_(cache_name),
       eviction_cb_(new EvictionCallback<FileType>()),
-      cache_(NewLRUCache(Cache::MemoryType::DRAM, max_open_files, cache_name)),
+      cache_(NewCache(max_open_files, cache_name)),
       running_(1) {
   if (entity) {
     unique_ptr<FileCacheMetrics> metrics(new FileCacheMetrics(entity));

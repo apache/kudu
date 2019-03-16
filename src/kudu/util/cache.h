@@ -12,11 +12,10 @@
 //
 // This is taken from LevelDB and evolved to fit the kudu codebase.
 //
-// TODO: this is pretty lock-heavy. Would be good to sub out something
+// TODO(unknown): this is pretty lock-heavy. Would be good to sub out something
 // a little more concurrent.
 
-#ifndef KUDU_UTIL_CACHE_H_
-#define KUDU_UTIL_CACHE_H_
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
@@ -38,6 +37,17 @@ class Cache {
   enum class MemoryType {
     DRAM,
     NVM,
+  };
+
+  // Supported eviction policies for the cache. Eviction policy determines what
+  // items to evict if the cache is at capacity when trying to accommodate
+  // an extra item.
+  enum class EvictionPolicy {
+    // The earliest added items are evicted (a.k.a. queue).
+    FIFO,
+
+    // The least-recently-used items are evicted.
+    LRU,
   };
 
   // Callback interface which is called when an entry is evicted from the
@@ -208,14 +218,35 @@ class Cache {
   DISALLOW_COPY_AND_ASSIGN(Cache);
 };
 
-// Create a new cache with a fixed size capacity. This implementation
-// of Cache uses a least-recently-used eviction policy.
-Cache* NewLRUCache(Cache::MemoryType mem_type,
-                   size_t capacity,
-                   const std::string& id);
+// A template helper function to instantiate a cache of particular
+// 'eviction_policy' flavor, backed by the given storage 'mem_type',
+// where 'capacity' specifies the capacity of the result cache,
+// and 'id' specifies its identifier.
+template<Cache::EvictionPolicy eviction_policy = Cache::EvictionPolicy::LRU,
+         Cache::MemoryType mem_type = Cache::MemoryType::DRAM>
+Cache* NewCache(size_t capacity, const std::string& id);
 
+// Create a new FIFO cache with a fixed size capacity. This implementation
+// of Cache uses the first-in-first-out eviction policy and stored in DRAM.
+template<>
+Cache* NewCache<Cache::EvictionPolicy::FIFO,
+                Cache::MemoryType::DRAM>(size_t capacity, const std::string& id);
+
+// Create a new LRU cache with a fixed size capacity. This implementation
+// of Cache uses the least-recently-used eviction policy and stored in DRAM.
+template<>
+Cache* NewCache<Cache::EvictionPolicy::LRU,
+                Cache::MemoryType::DRAM>(size_t capacity, const std::string& id);
+
+#if defined(HAVE_LIB_VMEM)
+// Create a new LRU cache with a fixed size capacity. This implementation
+// of Cache uses the least-recently-used eviction policy and stored in NVM.
+template<>
+Cache* NewCache<Cache::EvictionPolicy::LRU,
+                Cache::MemoryType::NVM>(size_t capacity, const std::string& id);
+#endif
+
+// A helper method to output cache memory type into ostream.
 std::ostream& operator<<(std::ostream& os, Cache::MemoryType mem_type);
 
-}  // namespace kudu
-
-#endif
+} // namespace kudu

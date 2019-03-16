@@ -96,8 +96,7 @@ class CacheBench : public KuduTest,
  public:
   void SetUp() override {
     KuduTest::SetUp();
-
-    cache_.reset(NewLRUCache(Cache::MemoryType::DRAM, kCacheCapacity, "test-cache"));
+    cache_.reset(NewCache(kCacheCapacity, "test-cache"));
   }
 
   // Run queries against the cache until '*done' becomes true.
