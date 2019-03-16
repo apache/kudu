@@ -233,12 +233,20 @@ Note: You can upload to the test PyPi by adding
 . Generate the version-specific documentation from that branch following these
   link:https://github.com/apache/kudu/#updating-the-kudu-web-site-documentation[instructions].
 
-. Replace the `apidocs`, `cpp-client-api`, and `docs` folders in the `gh-pages` branch with
-  the new documentation.
+. Update the `index.md` file in the releases folder, add a new folder named
+  after the release version, copy the `apidocs`, `cpp-client-api`, and `docs`
+  folders there, copy an `index.md` file from the previous release and modify it
+  accordingly. Make sure the download page meets the current
+  link:https://www.apache.org/dev/release-download-pages.html[criteria]. Base
+  it off the latest release which has the highest chance to comform the
+  requirements, but double-check the release pages document as the criteria
+  keep changing and the announcement will be rejected if our release page
+  doesn't meet the criteria.
 
-. Update the `index.md` file in the releases folder, add a new folder named after the release version,
-  copy the `apidocs`, `cpp-client-api`, and `docs` folders there, copy an `index.md` file from one
-  of the other releases and modify it accordingly.
+. Replace the `apidocs`, `cpp-client-api`, and `docs` symlinks in the `gh-pages`
+  branch with links to the new documentation. Some of them may be actual
+  directories if they had to be changed since the latest release, in this case
+  remove the directory and link the new documentation instead.
 
 . Submit these changes to the `gh-pages` Gerrit branch and get them reviewed.
 
