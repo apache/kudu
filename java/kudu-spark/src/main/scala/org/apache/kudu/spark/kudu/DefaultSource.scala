@@ -424,6 +424,14 @@ class KuduRelation(
     }
     context.writeRows(data, tableName, operationType, writeOptions)
   }
+
+  /**
+    * Returns the string representation of this KuduRelation
+    * @return Kudu + tableName of the relation
+    */
+  override def toString(): String = {
+    "Kudu " + this.tableName
+  }
 }
 
 private[spark] object KuduRelation {
