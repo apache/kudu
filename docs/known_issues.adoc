@@ -114,6 +114,8 @@
   different locations, it is recommended to measure the bandwidth and latency between servers
   to ensure they fit within the above guidelines.
 
+* All masters must be started at the same time when the cluster is started for the very first time.
+
 == Server management
 
 * Production deployments should configure a least 4 GiB of memory for tablet servers,
