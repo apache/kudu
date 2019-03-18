@@ -112,6 +112,8 @@
 * Multi-data-center/multi-availability-zone configurations with a network latency
   over 100ms and bandwidth under 10 Gbps are not well tested and therefore not recommended.
 
+* All masters must be started at the same time when the cluster is started for the very first time.
+
 == Server management
 
 * Production deployments should configure a least 4GB of memory for tablet servers,
