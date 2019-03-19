@@ -18,7 +18,6 @@
 #include <glog/logging.h>
 
 #include "kudu/gutil/bits.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/hash/city.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
@@ -65,15 +64,16 @@ namespace {
 
 typedef simple_spinlock MutexType;
 
-// LRU cache implementation
+// Recency list cache implementation (LRU, etc.)
 
-// An entry is a variable length heap-allocated structure.  Entries
-// are kept in a circular doubly linked list ordered by access time.
-struct LRUHandle {
+// Recency list handle. An entry is a variable length heap-allocated structure.
+// Entries are kept in a circular doubly linked list ordered by some recency
+// criterion (e.g., access time for LRU policy).
+struct RLHandle {
   Cache::EvictionCallback* eviction_callback;
-  LRUHandle* next_hash;
-  LRUHandle* next;
-  LRUHandle* prev;
+  RLHandle* next_hash;
+  RLHandle* next;
+  RLHandle* prev;
   size_t charge;      // TODO(opt): Only allow uint32_t?
   uint32_t key_length;
   uint32_t val_length;
@@ -94,7 +94,7 @@ struct LRUHandle {
   }
 
   const uint8_t* val_ptr() const {
-    return const_cast<LRUHandle*>(this)->mutable_val_ptr();
+    return const_cast<RLHandle*>(this)->mutable_val_ptr();
   }
 
   Slice value() const {
@@ -112,13 +112,13 @@ class HandleTable {
   HandleTable() : length_(0), elems_(0), list_(nullptr) { Resize(); }
   ~HandleTable() { delete[] list_; }
 
-  LRUHandle* Lookup(const Slice& key, uint32_t hash) {
+  RLHandle* Lookup(const Slice& key, uint32_t hash) {
     return *FindPointer(key, hash);
   }
 
-  LRUHandle* Insert(LRUHandle* h) {
-    LRUHandle** ptr = FindPointer(h->key(), h->hash);
-    LRUHandle* old = *ptr;
+  RLHandle* Insert(RLHandle* h) {
+    RLHandle** ptr = FindPointer(h->key(), h->hash);
+    RLHandle* old = *ptr;
     h->next_hash = (old == nullptr ? nullptr : old->next_hash);
     *ptr = h;
     if (old == nullptr) {
@@ -132,9 +132,9 @@ class HandleTable {
     return old;
   }
 
-  LRUHandle* Remove(const Slice& key, uint32_t hash) {
-    LRUHandle** ptr = FindPointer(key, hash);
-    LRUHandle* result = *ptr;
+  RLHandle* Remove(const Slice& key, uint32_t hash) {
+    RLHandle** ptr = FindPointer(key, hash);
+    RLHandle* result = *ptr;
     if (result != nullptr) {
       *ptr = result->next_hash;
       --elems_;
@@ -147,13 +147,13 @@ class HandleTable {
   // a linked list of cache entries that hash into the bucket.
   uint32_t length_;
   uint32_t elems_;
-  LRUHandle** list_;
+  RLHandle** list_;
 
   // Return a pointer to slot that points to a cache entry that
   // matches key/hash.  If there is no such cache entry, return a
   // pointer to the trailing slot in the corresponding linked list.
-  LRUHandle** FindPointer(const Slice& key, uint32_t hash) {
-    LRUHandle** ptr = &list_[hash & (length_ - 1)];
+  RLHandle** FindPointer(const Slice& key, uint32_t hash) {
+    RLHandle** ptr = &list_[hash & (length_ - 1)];
     while (*ptr != nullptr &&
            ((*ptr)->hash != hash || key != (*ptr)->key())) {
       ptr = &(*ptr)->next_hash;
@@ -166,15 +166,15 @@ class HandleTable {
     while (new_length < elems_ * 1.5) {
       new_length *= 2;
     }
-    auto new_list = new LRUHandle*[new_length];
+    auto new_list = new RLHandle*[new_length];
     memset(new_list, 0, sizeof(new_list[0]) * new_length);
     uint32_t count = 0;
     for (uint32_t i = 0; i < length_; i++) {
-      LRUHandle* h = list_[i];
+      RLHandle* h = list_[i];
       while (h != nullptr) {
-        LRUHandle* next = h->next_hash;
+        RLHandle* next = h->next_hash;
         uint32_t hash = h->hash;
-        LRUHandle** ptr = &new_list[hash & (new_length - 1)];
+        RLHandle** ptr = &new_list[hash & (new_length - 1)];
         h->next_hash = *ptr;
         *ptr = h;
         h = next;
@@ -189,12 +189,12 @@ class HandleTable {
 };
 
 // A single shard of sharded cache.
-class LRUCache {
+class CacheShard {
  public:
-  explicit LRUCache(MemTracker* tracker);
-  ~LRUCache();
+  explicit CacheShard(MemTracker* tracker);
+  ~CacheShard();
 
-  // Separate from constructor so caller can easily make an array of LRUCache
+  // Separate from constructor so caller can easily make an array of CacheShard
   void SetCapacity(size_t capacity) {
     capacity_ = capacity;
     max_deferred_consumption_ = capacity * FLAGS_cache_memtracker_approximation_ratio;
@@ -202,20 +202,21 @@ class LRUCache {
 
   void SetMetrics(CacheMetrics* metrics) { metrics_ = metrics; }
 
-  Cache::Handle* Insert(LRUHandle* handle, Cache::EvictionCallback* eviction_callback);
+  Cache::Handle* Insert(RLHandle* handle, Cache::EvictionCallback* eviction_callback);
   // Like Cache::Lookup, but with an extra "hash" parameter.
   Cache::Handle* Lookup(const Slice& key, uint32_t hash, bool caching);
   void Release(Cache::Handle* handle);
   void Erase(const Slice& key, uint32_t hash);
 
  private:
-  void LRU_Remove(LRUHandle* e);
-  void LRU_Append(LRUHandle* e);
+  void RL_Remove(RLHandle* e);
+  void RL_Append(RLHandle* e);
   // Just reduce the reference count by 1.
   // Return true if last reference
-  bool Unref(LRUHandle* e);
+  bool Unref(RLHandle* e);
   // Call the user's eviction callback, if it exists, and free the entry.
-  void FreeEntry(LRUHandle* e);
+  void FreeEntry(RLHandle* e);
+
 
   // Update the memtracker's consumption by the given amount.
   //
@@ -237,6 +238,9 @@ class LRUCache {
   // Positive delta indicates an increased memory consumption.
   void UpdateMemTracker(int64_t delta);
 
+  // Update the metrics for a lookup operation in the cache.
+  void UpdateMetricsLookup(bool was_hit, bool caching);
+
   // Initialized before use.
   size_t capacity_;
 
@@ -244,9 +248,9 @@ class LRUCache {
   MutexType mutex_;
   size_t usage_;
 
-  // Dummy head of LRU list.
-  // lru.prev is newest entry, lru.next is oldest entry.
-  LRUHandle lru_;
+  // Dummy head of recency list.
+  // rl.prev is newest entry, rl.next is oldest entry.
+  RLHandle rl_;
 
   HandleTable table_;
 
@@ -260,18 +264,18 @@ class LRUCache {
   CacheMetrics* metrics_;
 };
 
-LRUCache::LRUCache(MemTracker* tracker)
- : usage_(0),
-   mem_tracker_(tracker),
-   metrics_(nullptr) {
-  // Make empty circular linked list
-  lru_.next = &lru_;
-  lru_.prev = &lru_;
+CacheShard::CacheShard(MemTracker* tracker)
+    : usage_(0),
+      mem_tracker_(tracker),
+      metrics_(nullptr) {
+  // Make empty circular linked list.
+  rl_.next = &rl_;
+  rl_.prev = &rl_;
 }
 
-LRUCache::~LRUCache() {
-  for (LRUHandle* e = lru_.next; e != &lru_; ) {
-    LRUHandle* next = e->next;
+CacheShard::~CacheShard() {
+  for (RLHandle* e = rl_.next; e != &rl_; ) {
+    RLHandle* next = e->next;
     DCHECK_EQ(e->refs.load(std::memory_order_relaxed), 1)
         << "caller has an unreleased handle";
     if (Unref(e)) {
@@ -282,12 +286,12 @@ LRUCache::~LRUCache() {
   mem_tracker_->Consume(deferred_consumption_);
 }
 
-bool LRUCache::Unref(LRUHandle* e) {
+bool CacheShard::Unref(RLHandle* e) {
   DCHECK_GT(e->refs.load(std::memory_order_relaxed), 0);
   return e->refs.fetch_sub(1) == 1;
 }
 
-void LRUCache::FreeEntry(LRUHandle* e) {
+void CacheShard::FreeEntry(RLHandle* e) {
   DCHECK_EQ(e->refs.load(std::memory_order_relaxed), 0);
   if (e->eviction_callback) {
     e->eviction_callback->EvictedEntry(e->key(), e->value());
@@ -300,7 +304,7 @@ void LRUCache::FreeEntry(LRUHandle* e) {
   delete [] e;
 }
 
-void LRUCache::UpdateMemTracker(int64_t delta) {
+void CacheShard::UpdateMemTracker(int64_t delta) {
   int64_t old_deferred = deferred_consumption_.fetch_add(delta);
   int64_t new_deferred = old_deferred + delta;
 
@@ -311,37 +315,9 @@ void LRUCache::UpdateMemTracker(int64_t delta) {
   }
 }
 
-void LRUCache::LRU_Remove(LRUHandle* e) {
-  e->next->prev = e->prev;
-  e->prev->next = e->next;
-  usage_ -= e->charge;
-}
-
-void LRUCache::LRU_Append(LRUHandle* e) {
-  // Make "e" newest entry by inserting just before lru_
-  e->next = &lru_;
-  e->prev = lru_.prev;
-  e->prev->next = e;
-  e->next->prev = e;
-  usage_ += e->charge;
-}
-
-Cache::Handle* LRUCache::Lookup(const Slice& key, uint32_t hash, bool caching) {
-  LRUHandle* e;
-  {
-    std::lock_guard<MutexType> l(mutex_);
-    e = table_.Lookup(key, hash);
-    if (e != nullptr) {
-      e->refs.fetch_add(1, std::memory_order_relaxed);
-      LRU_Remove(e);
-      LRU_Append(e);
-    }
-  }
-
-  // Do the metrics outside of the lock.
-  if (metrics_) {
+void CacheShard::UpdateMetricsLookup(bool was_hit, bool caching) {
+  if (PREDICT_TRUE(metrics_)) {
     metrics_->lookups->Increment();
-    bool was_hit = (e != nullptr);
     if (was_hit) {
       if (caching) {
         metrics_->cache_hits_caching->Increment();
@@ -356,48 +332,83 @@ Cache::Handle* LRUCache::Lookup(const Slice& key, uint32_t hash, bool caching) {
       }
     }
   }
+}
+
+void CacheShard::RL_Remove(RLHandle* e) {
+  e->next->prev = e->prev;
+  e->prev->next = e->next;
+  usage_ -= e->charge;
+}
+
+void CacheShard::RL_Append(RLHandle* e) {
+  // Make "e" newest entry by inserting just before rl_.
+  e->next = &rl_;
+  e->prev = rl_.prev;
+  e->prev->next = e;
+  e->next->prev = e;
+  usage_ += e->charge;
+}
+
+Cache::Handle* CacheShard::Lookup(const Slice& key,
+                                  uint32_t hash,
+                                  bool caching) {
+  RLHandle* e;
+  {
+    std::lock_guard<MutexType> l(mutex_);
+    e = table_.Lookup(key, hash);
+    if (e != nullptr) {
+      e->refs.fetch_add(1, std::memory_order_relaxed);
+      RL_Remove(e);
+      RL_Append(e);
+    }
+  }
+
+  // Do the metrics outside of the lock.
+  UpdateMetricsLookup(e != nullptr, caching);
 
   return reinterpret_cast<Cache::Handle*>(e);
 }
 
-void LRUCache::Release(Cache::Handle* handle) {
-  LRUHandle* e = reinterpret_cast<LRUHandle*>(handle);
+void CacheShard::Release(Cache::Handle* handle) {
+  RLHandle* e = reinterpret_cast<RLHandle*>(handle);
   bool last_reference = Unref(e);
   if (last_reference) {
     FreeEntry(e);
   }
 }
 
-Cache::Handle* LRUCache::Insert(LRUHandle* e, Cache::EvictionCallback *eviction_callback) {
-
-  // Set the remaining LRUHandle members which were not already allocated during
+Cache::Handle* CacheShard::Insert(
+    RLHandle* handle,
+    Cache::EvictionCallback* eviction_callback) {
+  // Set the remaining RLHandle members which were not already allocated during
   // Allocate().
-  e->eviction_callback = eviction_callback;
-  e->refs.store(2, std::memory_order_relaxed);  // One from LRUCache, one for the returned handle
-  UpdateMemTracker(e->charge);
+  handle->eviction_callback = eviction_callback;
+  // Two refs for the handle: one from CacheShard, one for the returned handle.
+  handle->refs.store(2, std::memory_order_relaxed);
+  UpdateMemTracker(handle->charge);
   if (PREDICT_TRUE(metrics_)) {
-    metrics_->cache_usage->IncrementBy(e->charge);
+    metrics_->cache_usage->IncrementBy(handle->charge);
     metrics_->inserts->Increment();
   }
 
-  LRUHandle* to_remove_head = nullptr;
+  RLHandle* to_remove_head = nullptr;
   {
     std::lock_guard<MutexType> l(mutex_);
 
-    LRU_Append(e);
+    RL_Append(handle);
 
-    LRUHandle* old = table_.Insert(e);
+    RLHandle* old = table_.Insert(handle);
     if (old != nullptr) {
-      LRU_Remove(old);
+      RL_Remove(old);
       if (Unref(old)) {
         old->next = to_remove_head;
         to_remove_head = old;
       }
     }
 
-    while (usage_ > capacity_ && lru_.next != &lru_) {
-      LRUHandle* old = lru_.next;
-      LRU_Remove(old);
+    while (usage_ > capacity_ && rl_.next != &rl_) {
+      RLHandle* old = rl_.next;
+      RL_Remove(old);
       table_.Remove(old->key(), old->hash);
       if (Unref(old)) {
         old->next = to_remove_head;
@@ -409,22 +420,22 @@ Cache::Handle* LRUCache::Insert(LRUHandle* e, Cache::EvictionCallback *eviction_
   // we free the entries here outside of mutex for
   // performance reasons
   while (to_remove_head != nullptr) {
-    LRUHandle* next = to_remove_head->next;
+    RLHandle* next = to_remove_head->next;
     FreeEntry(to_remove_head);
     to_remove_head = next;
   }
 
-  return reinterpret_cast<Cache::Handle*>(e);
+  return reinterpret_cast<Cache::Handle*>(handle);
 }
 
-void LRUCache::Erase(const Slice& key, uint32_t hash) {
-  LRUHandle* e;
+void CacheShard::Erase(const Slice& key, uint32_t hash) {
+  RLHandle* e;
   bool last_reference = false;
   {
     std::lock_guard<MutexType> l(mutex_);
     e = table_.Remove(key, hash);
     if (e != nullptr) {
-      LRU_Remove(e);
+      RL_Remove(e);
       last_reference = Unref(e);
     }
   }
@@ -440,15 +451,15 @@ void LRUCache::Erase(const Slice& key, uint32_t hash) {
 int DetermineShardBits() {
   int bits = PREDICT_FALSE(FLAGS_cache_force_single_shard) ?
       0 : Bits::Log2Ceiling(base::NumCPUs());
-  VLOG(1) << "Will use " << (1 << bits) << " shards for LRU cache.";
+  VLOG(1) << "Will use " << (1 << bits) << " shards for recency list cache.";
   return bits;
 }
 
-class ShardedLRUCache : public Cache {
+class ShardedCache : public Cache {
  private:
   shared_ptr<MemTracker> mem_tracker_;
   unique_ptr<CacheMetrics> metrics_;
-  vector<LRUCache*> shards_;
+  vector<CacheShard*> shards_;
 
   // Number of bits of hash used to determine the shard.
   const int shard_bits_;
@@ -469,8 +480,8 @@ class ShardedLRUCache : public Cache {
   }
 
  public:
-  explicit ShardedLRUCache(size_t capacity, const string& id)
-      : shard_bits_(DetermineShardBits()) {
+  explicit ShardedCache(size_t capacity, const string& id)
+        : shard_bits_(DetermineShardBits()) {
     // A cache is often a singleton, so:
     // 1. We reuse its MemTracker if one already exists, and
     // 2. It is directly parented to the root MemTracker.
@@ -480,19 +491,19 @@ class ShardedLRUCache : public Cache {
     int num_shards = 1 << shard_bits_;
     const size_t per_shard = (capacity + (num_shards - 1)) / num_shards;
     for (int s = 0; s < num_shards; s++) {
-      gscoped_ptr<LRUCache> shard(new LRUCache(mem_tracker_.get()));
+      unique_ptr<CacheShard> shard(new CacheShard(mem_tracker_.get()));
       shard->SetCapacity(per_shard);
       shards_.push_back(shard.release());
     }
   }
 
-  virtual ~ShardedLRUCache() {
+  virtual ~ShardedCache() {
     STLDeleteElements(&shards_);
   }
 
   Handle* Insert(PendingHandle* handle,
                  Cache::EvictionCallback* eviction_callback) override {
-    LRUHandle* h = reinterpret_cast<LRUHandle*>(DCHECK_NOTNULL(handle));
+    RLHandle* h = reinterpret_cast<RLHandle*>(DCHECK_NOTNULL(handle));
     return shards_[Shard(h->hash)]->Insert(h, eviction_callback);
   }
   Handle* Lookup(const Slice& key, CacheBehavior caching) override {
@@ -500,7 +511,7 @@ class ShardedLRUCache : public Cache {
     return shards_[Shard(hash)]->Lookup(key, hash, caching == EXPECT_IN_CACHE);
   }
   void Release(Handle* handle) override {
-    LRUHandle* h = reinterpret_cast<LRUHandle*>(handle);
+    RLHandle* h = reinterpret_cast<RLHandle*>(handle);
     shards_[Shard(h->hash)]->Release(handle);
   }
   void Erase(const Slice& key) override {
@@ -508,7 +519,7 @@ class ShardedLRUCache : public Cache {
     shards_[Shard(hash)]->Erase(key, hash);
   }
   Slice Value(Handle* handle) override {
-    return reinterpret_cast<LRUHandle*>(handle)->value();
+    return reinterpret_cast<RLHandle*>(handle)->value();
   }
   void SetMetrics(std::unique_ptr<CacheMetrics> metrics) override {
     // TODO(KUDU-2165): reuse of the Cache singleton across multiple MiniCluster servers
@@ -521,7 +532,7 @@ class ShardedLRUCache : public Cache {
       return;
     }
     metrics_ = std::move(metrics);
-    for (LRUCache* cache : shards_) {
+    for (auto* cache : shards_) {
       cache->SetMetrics(metrics_.get());
     }
   }
@@ -531,11 +542,11 @@ class ShardedLRUCache : public Cache {
     DCHECK_GE(key_len, 0);
     DCHECK_GE(val_len, 0);
     int key_len_padded = KUDU_ALIGN_UP(key_len, sizeof(void*));
-    uint8_t* buf = new uint8_t[sizeof(LRUHandle)
+    uint8_t* buf = new uint8_t[sizeof(RLHandle)
                                + key_len_padded + val_len // the kv_data VLA data
                                - 1 // (the VLA has a 1-byte placeholder)
                                ];
-    LRUHandle* handle = reinterpret_cast<LRUHandle*>(buf);
+    RLHandle* handle = reinterpret_cast<RLHandle*>(buf);
     handle->key_length = key_len;
     handle->val_length = val_len;
     handle->charge = (charge == kAutomaticCharge) ? kudu_malloc_usable_size(buf) : charge;
@@ -551,24 +562,38 @@ class ShardedLRUCache : public Cache {
   }
 
   uint8_t* MutableValue(PendingHandle* h) override {
-    return reinterpret_cast<LRUHandle*>(h)->mutable_val_ptr();
+    return reinterpret_cast<RLHandle*>(h)->mutable_val_ptr();
   }
-
 };
 
 }  // end anonymous namespace
 
-Cache* NewLRUCache(CacheType type, size_t capacity, const string& id) {
-  switch (type) {
-    case DRAM_CACHE:
-      return new ShardedLRUCache(capacity, id);
+Cache* NewLRUCache(Cache::MemoryType mem_type, size_t capacity, const string& id) {
+  switch (mem_type) {
+    case Cache::MemoryType::DRAM:
+      return new ShardedCache(capacity, id);
 #if defined(HAVE_LIB_VMEM)
-    case NVM_CACHE:
+    case Cache::MemoryType::NVM:
       return NewLRUNvmCache(capacity, id);
 #endif
     default:
-      LOG(FATAL) << "Unsupported LRU cache type: " << type;
+      LOG(FATAL) << "unsupported memory type for LRU cache: " << mem_type;
   }
+}
+
+std::ostream& operator<<(std::ostream& os, Cache::MemoryType mem_type) {
+  switch (mem_type) {
+    case Cache::MemoryType::DRAM:
+      os << "DRAM";
+      break;
+    case Cache::MemoryType::NVM:
+      os << "NVM";
+      break;
+    default:
+      os << "unknown (" << static_cast<int>(mem_type) << ")";
+      break;
+  }
+  return os;
 }
 
 }  // namespace kudu

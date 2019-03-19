@@ -394,10 +394,11 @@ class TestCFile : public CFileTestBase {
 };
 
 // Subclass of TestCFile which is parameterized on the block cache type.
-// Tests that use TEST_P(TestCFileBothCacheTypes, ...) will run twice --
-// once for each cache type (DRAM, NVM).
-class TestCFileBothCacheTypes : public TestCFile,
-                                public ::testing::WithParamInterface<CacheType> {
+// Tests that use TEST_P(TestCFileBothCacheMemoryTypes, ...) will run twice --
+// once for each cache memory type (DRAM, NVM).
+class TestCFileBothCacheMemoryTypes :
+    public TestCFile,
+    public ::testing::WithParamInterface<Cache::MemoryType> {
  public:
   void SetUp() OVERRIDE {
 #if defined(HAVE_LIB_VMEM)
@@ -410,16 +411,17 @@ class TestCFileBothCacheTypes : public TestCFile,
     }
 #endif
     switch (GetParam()) {
-      case DRAM_CACHE:
+      case Cache::MemoryType::DRAM:
         FLAGS_block_cache_type = "DRAM";
         break;
 #if defined(HAVE_LIB_VMEM)
-      case NVM_CACHE:
+      case Cache::MemoryType::NVM:
         FLAGS_block_cache_type = "NVM";
         break;
 #endif
       default:
-        LOG(FATAL) << "Unknown block cache type: '" << GetParam();
+        LOG(FATAL) << "Unknown block cache type: '"
+                   << static_cast<int16_t>(GetParam());
     }
     CFileTestBase::SetUp();
   }
@@ -430,10 +432,12 @@ class TestCFileBothCacheTypes : public TestCFile,
 };
 
 #if defined(__linux__)
-INSTANTIATE_TEST_CASE_P(CacheTypes, TestCFileBothCacheTypes,
-                        ::testing::Values(DRAM_CACHE, NVM_CACHE));
+INSTANTIATE_TEST_CASE_P(CacheMemoryTypes, TestCFileBothCacheMemoryTypes,
+                        ::testing::Values(Cache::MemoryType::DRAM,
+                                          Cache::MemoryType::NVM));
 #else
-INSTANTIATE_TEST_CASE_P(CacheTypes, TestCFileBothCacheTypes, ::testing::Values(DRAM_CACHE));
+INSTANTIATE_TEST_CASE_P(CacheMemoryTypes, TestCFileBothCacheMemoryTypes,
+                        ::testing::Values(Cache::MemoryType::DRAM));
 #endif
 
 template<DataType type>
@@ -453,7 +457,7 @@ void CopyOne(CFileIterator *it,
 // Only run the 100M entry tests in non-debug mode.
 // They take way too long with debugging enabled.
 
-TEST_P(TestCFileBothCacheTypes, TestWrite100MFileInts) {
+TEST_P(TestCFileBothCacheMemoryTypes, TestWrite100MFileInts) {
   BlockId block_id;
   LOG_TIMING(INFO, "writing 100m ints") {
     LOG(INFO) << "Starting writefile";
@@ -471,7 +475,7 @@ TEST_P(TestCFileBothCacheTypes, TestWrite100MFileInts) {
   }
 }
 
-TEST_P(TestCFileBothCacheTypes, TestWrite100MFileNullableInts) {
+TEST_P(TestCFileBothCacheMemoryTypes, TestWrite100MFileNullableInts) {
   BlockId block_id;
   LOG_TIMING(INFO, "writing 100m nullable ints") {
     LOG(INFO) << "Starting writefile";
@@ -489,26 +493,26 @@ TEST_P(TestCFileBothCacheTypes, TestWrite100MFileNullableInts) {
   }
 }
 
-TEST_P(TestCFileBothCacheTypes, TestWrite100MFileStringsPrefixEncoding) {
+TEST_P(TestCFileBothCacheMemoryTypes, TestWrite100MFileStringsPrefixEncoding) {
   TestWrite100MFileStrings(PREFIX_ENCODING);
 }
 
-TEST_P(TestCFileBothCacheTypes, TestWrite100MUniqueStringsDictEncoding) {
+TEST_P(TestCFileBothCacheMemoryTypes, TestWrite100MUniqueStringsDictEncoding) {
   TestWrite100MFileStrings(DICT_ENCODING);
 }
 
-TEST_P(TestCFileBothCacheTypes, TestWrite100MLowCardinalityStringsDictEncoding) {
+TEST_P(TestCFileBothCacheMemoryTypes, TestWrite100MLowCardinalityStringsDictEncoding) {
   TestWriteDictEncodingLowCardinalityStrings(100 * 1e6);
 }
 
-TEST_P(TestCFileBothCacheTypes, TestWrite100MFileStringsPlainEncoding) {
+TEST_P(TestCFileBothCacheMemoryTypes, TestWrite100MFileStringsPlainEncoding) {
   TestWrite100MFileStrings(PLAIN_ENCODING);
 }
 
 #endif
 
 // Write and Read 1 million unique strings with dictionary encoding
-TEST_P(TestCFileBothCacheTypes, TestWrite1MUniqueFileStringsDictEncoding) {
+TEST_P(TestCFileBothCacheMemoryTypes, TestWrite1MUniqueFileStringsDictEncoding) {
   BlockId block_id;
   LOG_TIMING(INFO, "writing 1M unique strings") {
     LOG(INFO) << "Starting writefile";
@@ -527,42 +531,42 @@ TEST_P(TestCFileBothCacheTypes, TestWrite1MUniqueFileStringsDictEncoding) {
 }
 
 // Write and Read 1 million strings, which contains duplicates with dictionary encoding
-TEST_P(TestCFileBothCacheTypes, TestWrite1MLowCardinalityStringsDictEncoding) {
+TEST_P(TestCFileBothCacheMemoryTypes, TestWrite1MLowCardinalityStringsDictEncoding) {
   TestWriteDictEncodingLowCardinalityStrings(1000000);
 }
 
-TEST_P(TestCFileBothCacheTypes, TestReadWriteUInt32) {
+TEST_P(TestCFileBothCacheMemoryTypes, TestReadWriteUInt32) {
   for (auto enc : { PLAIN_ENCODING, RLE }) {
     TestReadWriteFixedSizeTypes<UInt32DataGenerator<false>>(enc);
   }
 }
 
-TEST_P(TestCFileBothCacheTypes, TestReadWriteInt32) {
+TEST_P(TestCFileBothCacheMemoryTypes, TestReadWriteInt32) {
   for (auto enc : { PLAIN_ENCODING, RLE }) {
     TestReadWriteFixedSizeTypes<Int32DataGenerator<false>>(enc);
   }
 }
 
-TEST_P(TestCFileBothCacheTypes, TestReadWriteUInt64) {
+TEST_P(TestCFileBothCacheMemoryTypes, TestReadWriteUInt64) {
   for (auto enc : { PLAIN_ENCODING, RLE, BIT_SHUFFLE }) {
     TestReadWriteFixedSizeTypes<UInt64DataGenerator<false>>(enc);
   }
 }
 
-TEST_P(TestCFileBothCacheTypes, TestReadWriteInt64) {
+TEST_P(TestCFileBothCacheMemoryTypes, TestReadWriteInt64) {
   for (auto enc : { PLAIN_ENCODING, RLE, BIT_SHUFFLE }) {
     TestReadWriteFixedSizeTypes<Int64DataGenerator<false>>(enc);
   }
 }
 
-TEST_P(TestCFileBothCacheTypes, TestReadWriteInt128) {
+TEST_P(TestCFileBothCacheMemoryTypes, TestReadWriteInt128) {
   TestReadWriteFixedSizeTypes<Int128DataGenerator<false>>(PLAIN_ENCODING);
 }
 
-TEST_P(TestCFileBothCacheTypes, TestFixedSizeReadWritePlainEncodingFloat) {
+TEST_P(TestCFileBothCacheMemoryTypes, TestFixedSizeReadWritePlainEncodingFloat) {
   TestReadWriteFixedSizeTypes<FPDataGenerator<FLOAT, false>>(PLAIN_ENCODING);
 }
-TEST_P(TestCFileBothCacheTypes, TestFixedSizeReadWritePlainEncodingDouble) {
+TEST_P(TestCFileBothCacheMemoryTypes, TestFixedSizeReadWritePlainEncodingDouble) {
   TestReadWriteFixedSizeTypes<FPDataGenerator<DOUBLE, false>>(PLAIN_ENCODING);
 }
 
@@ -717,12 +721,12 @@ void TestCFile::TestReadWriteStrings(EncodingType encoding,
 }
 
 
-TEST_P(TestCFileBothCacheTypes, TestReadWriteStringsPrefixEncoding) {
+TEST_P(TestCFileBothCacheMemoryTypes, TestReadWriteStringsPrefixEncoding) {
   TestReadWriteStrings(PREFIX_ENCODING);
 }
 
 // Read/Write test for dictionary encoded blocks
-TEST_P(TestCFileBothCacheTypes, TestReadWriteStringsDictEncoding) {
+TEST_P(TestCFileBothCacheMemoryTypes, TestReadWriteStringsDictEncoding) {
   TestReadWriteStrings(DICT_ENCODING);
 }
 
@@ -732,7 +736,7 @@ TEST_P(TestCFileBothCacheTypes, TestReadWriteStringsDictEncoding) {
 // This test is disabled in TSAN because it's single-threaded anyway
 // and runs extremely slowly with TSAN enabled.
 #ifndef THREAD_SANITIZER
-TEST_P(TestCFileBothCacheTypes, TestReadWriteLargeStrings) {
+TEST_P(TestCFileBothCacheMemoryTypes, TestReadWriteLargeStrings) {
   // Pad the values out to a length of ~65KB.
   // We use this method instead of just a longer sprintf format since
   // this is much more CPU-efficient (speeds up the test).
@@ -750,7 +754,7 @@ TEST_P(TestCFileBothCacheTypes, TestReadWriteLargeStrings) {
 #endif
 
 // Test that metadata entries stored in the cfile are persisted.
-TEST_P(TestCFileBothCacheTypes, TestMetadata) {
+TEST_P(TestCFileBothCacheMemoryTypes, TestMetadata) {
   BlockId block_id;
 
   // Write the file.
@@ -791,7 +795,7 @@ TEST_P(TestCFileBothCacheTypes, TestMetadata) {
   }
 }
 
-TEST_P(TestCFileBothCacheTypes, TestDefaultColumnIter) {
+TEST_P(TestCFileBothCacheMemoryTypes, TestDefaultColumnIter) {
   const int kNumItems = 64;
   uint8_t null_bitmap[BitmapSize(kNumItems)];
   uint32_t data[kNumItems];
@@ -840,14 +844,14 @@ TEST_P(TestCFileBothCacheTypes, TestDefaultColumnIter) {
   }
 }
 
-TEST_P(TestCFileBothCacheTypes, TestAppendRaw) {
+TEST_P(TestCFileBothCacheMemoryTypes, TestAppendRaw) {
   TestReadWriteRawBlocks(NO_COMPRESSION, 1000);
   TestReadWriteRawBlocks(SNAPPY, 1000);
   TestReadWriteRawBlocks(LZ4, 1000);
   TestReadWriteRawBlocks(ZLIB, 1000);
 }
 
-TEST_P(TestCFileBothCacheTypes, TestChecksumFlags) {
+TEST_P(TestCFileBothCacheMemoryTypes, TestChecksumFlags) {
   for (bool write_checksums : {false, true}) {
     for (bool verify_checksums : {false, true}) {
       FLAGS_cfile_write_checksums = write_checksums;
@@ -858,7 +862,7 @@ TEST_P(TestCFileBothCacheTypes, TestChecksumFlags) {
   }
 }
 
-TEST_P(TestCFileBothCacheTypes, TestDataCorruption) {
+TEST_P(TestCFileBothCacheMemoryTypes, TestDataCorruption) {
   FLAGS_cfile_write_checksums = true;
   FLAGS_cfile_verify_checksums = true;
 
@@ -895,7 +899,7 @@ TEST_P(TestCFileBothCacheTypes, TestDataCorruption) {
   }
 }
 
-TEST_P(TestCFileBothCacheTypes, TestNullInts) {
+TEST_P(TestCFileBothCacheMemoryTypes, TestNullInts) {
   UInt32DataGenerator<true> generator;
   TestNullTypes(&generator, PLAIN_ENCODING, NO_COMPRESSION);
   TestNullTypes(&generator, PLAIN_ENCODING, LZ4);
@@ -905,32 +909,32 @@ TEST_P(TestCFileBothCacheTypes, TestNullInts) {
   TestNullTypes(&generator, RLE, LZ4);
 }
 
-TEST_P(TestCFileBothCacheTypes, TestNullFloats) {
+TEST_P(TestCFileBothCacheMemoryTypes, TestNullFloats) {
   FPDataGenerator<FLOAT, true> generator;
   TestNullTypes(&generator, PLAIN_ENCODING, NO_COMPRESSION);
   TestNullTypes(&generator, BIT_SHUFFLE, NO_COMPRESSION);
 }
 
-TEST_P(TestCFileBothCacheTypes, TestNullPrefixStrings) {
+TEST_P(TestCFileBothCacheMemoryTypes, TestNullPrefixStrings) {
   StringDataGenerator<true> generator("hello %zu");
   TestNullTypes(&generator, PLAIN_ENCODING, NO_COMPRESSION);
   TestNullTypes(&generator, PLAIN_ENCODING, LZ4);
 }
 
-TEST_P(TestCFileBothCacheTypes, TestNullPlainStrings) {
+TEST_P(TestCFileBothCacheMemoryTypes, TestNullPlainStrings) {
   StringDataGenerator<true> generator("hello %zu");
   TestNullTypes(&generator, PREFIX_ENCODING, NO_COMPRESSION);
   TestNullTypes(&generator, PREFIX_ENCODING, LZ4);
 }
 
 // Test for dictionary encoding
-TEST_P(TestCFileBothCacheTypes, TestNullDictStrings) {
+TEST_P(TestCFileBothCacheMemoryTypes, TestNullDictStrings) {
   StringDataGenerator<true> generator("hello %zu");
   TestNullTypes(&generator, DICT_ENCODING, NO_COMPRESSION);
   TestNullTypes(&generator, DICT_ENCODING, LZ4);
 }
 
-TEST_P(TestCFileBothCacheTypes, TestReleaseBlock) {
+TEST_P(TestCFileBothCacheMemoryTypes, TestReleaseBlock) {
   unique_ptr<WritableBlock> sink;
   ASSERT_OK(fs_manager_->CreateNewBlock({}, &sink));
   ASSERT_EQ(WritableBlock::CLEAN, sink->state());
@@ -943,7 +947,7 @@ TEST_P(TestCFileBothCacheTypes, TestReleaseBlock) {
   ASSERT_OK(transaction->CommitCreatedBlocks());
 }
 
-TEST_P(TestCFileBothCacheTypes, TestLazyInit) {
+TEST_P(TestCFileBothCacheMemoryTypes, TestLazyInit) {
   // Create a small test file.
   BlockId block_id;
   {
@@ -994,7 +998,7 @@ TEST_P(TestCFileBothCacheTypes, TestLazyInit) {
 // Tests that the block cache keys used by CFileReaders are stable. That is,
 // different reader instances operating on the same block should use the same
 // block cache keys.
-TEST_P(TestCFileBothCacheTypes, TestCacheKeysAreStable) {
+TEST_P(TestCFileBothCacheMemoryTypes, TestCacheKeysAreStable) {
   // Set up block cache instrumentation.
   MetricRegistry registry;
   scoped_refptr<MetricEntity> entity(METRIC_ENTITY_server.Instantiate(&registry, "test_entity"));
@@ -1036,8 +1040,8 @@ TEST_P(TestCFileBothCacheTypes, TestCacheKeysAreStable) {
 
 #if defined(HAVE_LIB_VMEM)
 // Inject failures in nvm allocation and ensure that we can still read a file.
-TEST_P(TestCFileBothCacheTypes, TestNvmAllocationFailure) {
-  if (GetParam() != NVM_CACHE) return;
+TEST_P(TestCFileBothCacheMemoryTypes, TestNvmAllocationFailure) {
+  if (GetParam() != Cache::MemoryType::NVM) return;
   FLAGS_nvm_cache_simulate_allocation_failure = true;
   TestReadWriteFixedSizeTypes<UInt32DataGenerator<false> >(PLAIN_ENCODING);
 }

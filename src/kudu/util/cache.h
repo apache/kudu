@@ -20,6 +20,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <iosfwd>
 #include <memory>
 #include <string>
 
@@ -28,20 +29,17 @@
 
 namespace kudu {
 
-class Cache;
 struct CacheMetrics;
-
-enum CacheType {
-  DRAM_CACHE,
-  NVM_CACHE
-};
-
-// Create a new cache with a fixed size capacity.  This implementation
-// of Cache uses a least-recently-used eviction policy.
-Cache* NewLRUCache(CacheType type, size_t capacity, const std::string& id);
 
 class Cache {
  public:
+
+  // Type of memory backing the cache's storage.
+  enum class MemoryType {
+    DRAM,
+    NVM,
+  };
+
   // Callback interface which is called when an entry is evicted from the
   // cache.
   class EvictionCallback {
@@ -209,6 +207,14 @@ class Cache {
  private:
   DISALLOW_COPY_AND_ASSIGN(Cache);
 };
+
+// Create a new cache with a fixed size capacity. This implementation
+// of Cache uses a least-recently-used eviction policy.
+Cache* NewLRUCache(Cache::MemoryType mem_type,
+                   size_t capacity,
+                   const std::string& id);
+
+std::ostream& operator<<(std::ostream& os, Cache::MemoryType mem_type);
 
 }  // namespace kudu
 

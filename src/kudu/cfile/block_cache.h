@@ -50,7 +50,7 @@ class BlockCache {
  public:
   // Parse the gflag which configures the block cache. FATALs if the flag is
   // invalid.
-  static CacheType GetConfiguredCacheTypeOrDie();
+  static Cache::MemoryType GetConfiguredCacheMemoryTypeOrDie();
 
   // BlockId refers to the unique identifier for a Kudu block, that is, for an
   // entire CFile. This is different than the block cache's notion of a block,

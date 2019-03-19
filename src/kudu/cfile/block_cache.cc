@@ -70,8 +70,8 @@ namespace cfile {
 namespace {
 
 Cache* CreateCache(int64_t capacity) {
-  CacheType t = BlockCache::GetConfiguredCacheTypeOrDie();
-  return NewLRUCache(t, capacity, "block_cache");
+  auto mem_type = BlockCache::GetConfiguredCacheMemoryTypeOrDie();
+  return NewLRUCache(mem_type, capacity, "block_cache");
 }
 
 // Validates the block cache capacity won't permit the cache to grow large enough
@@ -106,13 +106,13 @@ bool ValidateBlockCacheCapacity() {
 
 GROUP_FLAG_VALIDATOR(block_cache_capacity_mb, ValidateBlockCacheCapacity);
 
-CacheType BlockCache::GetConfiguredCacheTypeOrDie() {
+Cache::MemoryType BlockCache::GetConfiguredCacheMemoryTypeOrDie() {
     ToUpperCase(FLAGS_block_cache_type, &FLAGS_block_cache_type);
   if (FLAGS_block_cache_type == "NVM") {
-    return NVM_CACHE;
+    return Cache::MemoryType::NVM;
   }
   if (FLAGS_block_cache_type == "DRAM") {
-    return DRAM_CACHE;
+    return Cache::MemoryType::DRAM;
   }
 
   LOG(FATAL) << "Unknown block cache type: '" << FLAGS_block_cache_type

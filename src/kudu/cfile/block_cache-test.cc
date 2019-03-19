@@ -47,7 +47,7 @@ TEST(TestBlockCache, TestBasics) {
   BlockCache::CacheKey key(id, 1);
 
   std::shared_ptr<MemTracker> mem_tracker;
-  if (BlockCache::GetConfiguredCacheTypeOrDie() == DRAM_CACHE) {
+  if (BlockCache::GetConfiguredCacheMemoryTypeOrDie() == Cache::MemoryType::DRAM) {
     ASSERT_TRUE(MemTracker::FindTracker("block_cache-sharded_lru_cache", &mem_tracker));
   }
 

@@ -4,7 +4,6 @@
 
 #include "kudu/util/cache.h"
 
-#include <cassert>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -16,8 +15,6 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/block_cache_metrics.h"
 #include "kudu/util/cache_metrics.h"
@@ -30,11 +27,17 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-#if defined(__linux__)
+DECLARE_bool(cache_force_single_shard);
+#if defined(HAVE_LIB_VMEM)
 DECLARE_string(nvm_cache_path);
-#endif // defined(__linux__)
+#endif // #if defined(HAVE_LIB_VMEM)
 
 DECLARE_double(cache_memtracker_approximation_ratio);
+
+using std::tuple;
+using std::shared_ptr;
+using std::unique_ptr;
+using std::vector;
 
 namespace kudu {
 
@@ -45,54 +48,32 @@ static std::string EncodeInt(int k) {
   return result.ToString();
 }
 static int DecodeInt(const Slice& k) {
-  assert(k.size() == 4);
+  CHECK_EQ(4, k.size());
   return DecodeFixed32(k.data());
 }
 
-class CacheTest : public KuduTest,
-                  public ::testing::WithParamInterface<CacheType>,
-                  public Cache::EvictionCallback {
- public:
+// Cache composition type: some test scenarios assume cache is single-sharded
+// to keep the logic simpler.
+enum class CacheComposition {
+  MultiShard,
+  SingleShard,
+};
 
-  // Implementation of the EvictionCallback interface
+class CacheBaseTest : public KuduTest,
+                      public Cache::EvictionCallback {
+ public:
+  explicit CacheBaseTest(size_t cache_size)
+      : cache_size_(cache_size) {
+  }
+
+  size_t cache_size() const {
+    return cache_size_;
+  }
+
+  // Implementation of the EvictionCallback interface.
   void EvictedEntry(Slice key, Slice val) override {
     evicted_keys_.push_back(DecodeInt(key));
     evicted_values_.push_back(DecodeInt(val));
-  }
-  std::vector<int> evicted_keys_;
-  std::vector<int> evicted_values_;
-  std::shared_ptr<MemTracker> mem_tracker_;
-  gscoped_ptr<Cache> cache_;
-  MetricRegistry metric_registry_;
-
-  static const int kCacheSize = 14*1024*1024;
-
-  virtual void SetUp() OVERRIDE {
-
-#if defined(HAVE_LIB_VMEM)
-    if (google::GetCommandLineFlagInfoOrDie("nvm_cache_path").is_default) {
-      FLAGS_nvm_cache_path = GetTestPath("nvm-cache");
-      ASSERT_OK(Env::Default()->CreateDir(FLAGS_nvm_cache_path));
-    }
-#endif // defined(HAVE_LIB_VMEM)
-
-    // Disable approximate tracking of cache memory since we make specific
-    // assertions on the MemTracker in this test.
-    FLAGS_cache_memtracker_approximation_ratio = 0;
-
-    cache_.reset(NewLRUCache(GetParam(), kCacheSize, "cache_test"));
-
-    MemTracker::FindTracker("cache_test-sharded_lru_cache", &mem_tracker_);
-    // Since nvm cache does not have memtracker due to the use of
-    // tcmalloc for this we only check for it in the DRAM case.
-    if (GetParam() == DRAM_CACHE) {
-      ASSERT_TRUE(mem_tracker_.get());
-    }
-
-    scoped_refptr<MetricEntity> entity = METRIC_ENTITY_server.Instantiate(
-        &metric_registry_, "test");
-    std::unique_ptr<BlockCacheMetrics> metrics(new BlockCacheMetrics(entity));
-    cache_->SetMetrics(std::move(metrics));
   }
 
   int Lookup(int key) {
@@ -107,7 +88,8 @@ class CacheTest : public KuduTest,
   void Insert(int key, int value, int charge = 1) {
     std::string key_str = EncodeInt(key);
     std::string val_str = EncodeInt(value);
-    Cache::PendingHandle* handle = CHECK_NOTNULL(cache_->Allocate(key_str, val_str.size(), charge));
+    Cache::PendingHandle* handle = CHECK_NOTNULL(
+        cache_->Allocate(key_str, val_str.size(), charge));
     memcpy(cache_->MutableValue(handle), val_str.data(), val_str.size());
 
     cache_->Release(cache_->Insert(handle, this));
@@ -116,13 +98,79 @@ class CacheTest : public KuduTest,
   void Erase(int key) {
     cache_->Erase(EncodeInt(key));
   }
+
+ protected:
+  void SetupWithParameters(Cache::MemoryType mem_type,
+                           CacheComposition cache_composition) {
+    // Disable approximate tracking of cache memory since we make specific
+    // assertions on the MemTracker in this test.
+    FLAGS_cache_memtracker_approximation_ratio = 0;
+
+    // Using single shard makes the logic of scenarios simple for capacity-
+    // and eviction-related behavior.
+    FLAGS_cache_force_single_shard =
+        (cache_composition == CacheComposition::SingleShard);
+
+#if defined(HAVE_LIB_VMEM)
+    if (google::GetCommandLineFlagInfoOrDie("nvm_cache_path").is_default) {
+      FLAGS_nvm_cache_path = GetTestPath("nvm-cache");
+      ASSERT_OK(Env::Default()->CreateDir(FLAGS_nvm_cache_path));
+    }
+#endif // #if defined(HAVE_LIB_VMEM)
+
+    cache_.reset(NewLRUCache(mem_type, cache_size(), "cache_test"));
+    MemTracker::FindTracker("cache_test-sharded_lru_cache", &mem_tracker_);
+
+    // Since nvm cache does not have memtracker due to the use of
+    // tcmalloc for this we only check for it in the DRAM case.
+    if (mem_type == Cache::MemoryType::DRAM) {
+      ASSERT_TRUE(mem_tracker_.get());
+    }
+
+    scoped_refptr<MetricEntity> entity = METRIC_ENTITY_server.Instantiate(
+        &metric_registry_, "test");
+    unique_ptr<BlockCacheMetrics> metrics(new BlockCacheMetrics(entity));
+    cache_->SetMetrics(std::move(metrics));
+  }
+
+  const size_t cache_size_;
+  vector<int> evicted_keys_;
+  vector<int> evicted_values_;
+  shared_ptr<MemTracker> mem_tracker_;
+  unique_ptr<Cache> cache_;
+  MetricRegistry metric_registry_;
 };
 
-#if defined(__linux__)
-INSTANTIATE_TEST_CASE_P(CacheTypes, CacheTest, ::testing::Values(DRAM_CACHE, NVM_CACHE));
+class CacheTest :
+    public CacheBaseTest,
+    public ::testing::WithParamInterface<tuple<Cache::MemoryType,
+                                               CacheComposition>> {
+ public:
+  CacheTest()
+      : CacheBaseTest(14 * 1024 * 1024) {
+  }
+
+  void SetUp() override {
+    const auto& param = GetParam();
+    SetupWithParameters(std::get<0>(param),
+                        std::get<1>(param));
+  }
+};
+
+#if defined(HAVE_LIB_VMEM)
+INSTANTIATE_TEST_CASE_P(
+    CacheTypes, CacheTest,
+    ::testing::Combine(::testing::Values(Cache::MemoryType::DRAM,
+                                         Cache::MemoryType::NVM),
+                       ::testing::Values(CacheComposition::MultiShard,
+                                         CacheComposition::SingleShard)));
 #else
-INSTANTIATE_TEST_CASE_P(CacheTypes, CacheTest, ::testing::Values(DRAM_CACHE));
-#endif // defined(__linux__)
+INSTANTIATE_TEST_CASE_P(
+    CacheTypes, CacheTest,
+    ::testing::Combine(::testing::Values(Cache::MemoryType::DRAM),
+                       ::testing::Values(CacheComposition::MultiShard,
+                                         CacheComposition::SingleShard)));
+#endif // #if defined(HAVE_LIB_VMEM) ... #else ...
 
 TEST_P(CacheTest, TrackMemory) {
   if (mem_tracker_) {
@@ -201,35 +249,15 @@ TEST_P(CacheTest, EntriesArePinned) {
   ASSERT_EQ(102, evicted_values_[1]);
 }
 
-TEST_P(CacheTest, EvictionPolicy) {
-  Insert(100, 101);
-  Insert(200, 201);
-
-  const int kNumElems = 1000;
-  const int kSizePerElem = kCacheSize / kNumElems;
-
-  // Loop adding and looking up new entries, but repeatedly accessing key 101. This
-  // frequently-used entry should not be evicted.
-  for (int i = 0; i < kNumElems + 1000; i++) {
-    Insert(1000+i, 2000+i, kSizePerElem);
-    ASSERT_EQ(2000+i, Lookup(1000+i));
-    ASSERT_EQ(101, Lookup(100));
-  }
-  ASSERT_EQ(101, Lookup(100));
-  // Since '200' wasn't accessed in the loop above, it should have
-  // been evicted.
-  ASSERT_EQ(-1, Lookup(200));
-}
-
+// Add a bunch of light and heavy entries and then count the combined
+// size of items still in the cache, which must be approximately the
+// same as the total capacity.
 TEST_P(CacheTest, HeavyEntries) {
-  // Add a bunch of light and heavy entries and then count the combined
-  // size of items still in the cache, which must be approximately the
-  // same as the total capacity.
-  const int kLight = kCacheSize/1000;
-  const int kHeavy = kCacheSize/100;
+  const int kLight = cache_size() / 1000;
+  const int kHeavy = cache_size() / 100;
   int added = 0;
   int index = 0;
-  while (added < 2*kCacheSize) {
+  while (added < 2 * cache_size()) {
     const int weight = (index & 1) ? kLight : kHeavy;
     Insert(index, 1000+index, weight);
     added += weight;
@@ -245,7 +273,59 @@ TEST_P(CacheTest, HeavyEntries) {
       ASSERT_EQ(1000+i, r);
     }
   }
-  ASSERT_LE(cached_weight, kCacheSize + kCacheSize/10);
+  ASSERT_LE(cached_weight, cache_size() + cache_size() / 10);
+}
+
+// This class is dedicated for scenarios specific for LRUCache.
+class LRUCacheTest :
+    public CacheBaseTest,
+    public ::testing::WithParamInterface<tuple<Cache::MemoryType,
+                                               CacheComposition>> {
+ public:
+  LRUCacheTest()
+      : CacheBaseTest(14 * 1024 * 1024) {
+  }
+
+  void SetUp() override {
+    const auto& param = GetParam();
+    SetupWithParameters(std::get<0>(param),
+                        std::get<1>(param));
+  }
+};
+
+#if defined(HAVE_LIB_VMEM)
+INSTANTIATE_TEST_CASE_P(
+    CacheTypes, LRUCacheTest,
+    ::testing::Combine(::testing::Values(Cache::MemoryType::DRAM,
+                                         Cache::MemoryType::NVM),
+                       ::testing::Values(CacheComposition::MultiShard,
+                                         CacheComposition::SingleShard)));
+#else
+INSTANTIATE_TEST_CASE_P(
+    CacheTypes, LRUCacheTest,
+    ::testing::Combine(::testing::Values(Cache::MemoryType::DRAM),
+                       ::testing::Values(CacheComposition::MultiShard,
+                                         CacheComposition::SingleShard)));
+#endif // #if defined(HAVE_LIB_VMEM) ... #else ...
+
+TEST_P(LRUCacheTest, EvictionPolicy) {
+  static constexpr int kNumElems = 1000;
+  const int size_per_elem = cache_size() / kNumElems;
+
+  Insert(100, 101);
+  Insert(200, 201);
+
+  // Loop adding and looking up new entries, but repeatedly accessing key 101.
+  // This frequently-used entry should not be evicted.
+  for (int i = 0; i < kNumElems + 1000; i++) {
+    Insert(1000+i, 2000+i, size_per_elem);
+    ASSERT_EQ(2000+i, Lookup(1000+i));
+    ASSERT_EQ(101, Lookup(100));
+  }
+  ASSERT_EQ(101, Lookup(100));
+  // Since '200' wasn't accessed in the loop above, it should have
+  // been evicted.
+  ASSERT_EQ(-1, Lookup(200));
 }
 
 }  // namespace kudu
