@@ -15,10 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/common/row_operations.h"
+
 #include <cstdint>
 #include <cstdlib>
-#include <ostream>
 #include <memory>
+#include <ostream>
 #include <string>
 #include <vector>
 
@@ -27,7 +29,6 @@
 
 #include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
-#include "kudu/common/row_operations.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
 #include "kudu/common/wire_protocol.pb.h"
@@ -100,8 +101,13 @@ void RowOperationsTest::CheckDecodeDoesntCrash(const Schema& client_schema,
                                                const RowOperationsPB& pb) {
   arena_.Reset();
   RowOperationsPBDecoder decoder(&pb, &client_schema, &server_schema, &arena_);
+  // Decoding the operations, regardless of the mode, should not result in a
+  // crash.
   vector<DecodedRowOperation> ops;
-  Status s = decoder.DecodeOperations(&ops);
+  Status s = decoder.DecodeOperations<DecoderMode::WRITE_OPS>(&ops);
+  if (!s.ok()) {
+    s = decoder.DecodeOperations<DecoderMode::SPLIT_ROWS>(&ops);
+  }
   if (s.ok() && !ops.empty()) {
     // If we got an OK result, then we should be able to stringify without
     // crashing. This ensures that any indirect data (eg strings) gets
@@ -357,7 +363,7 @@ string TestProjection(RowOperationsPB::Type type,
   Arena arena(1024);
   vector<DecodedRowOperation> ops;
   RowOperationsPBDecoder dec(&pb, client_row.schema(), &server_schema, &arena);
-  Status s = dec.DecodeOperations(&ops);
+  Status s = dec.DecodeOperations<DecoderMode::WRITE_OPS>(&ops);
 
   if (!s.ok()) {
     return "error: " + s.ToString();
@@ -675,7 +681,7 @@ TEST_F(RowOperationsTest, SplitKeyRoundTrip) {
   Schema schema = client_schema.CopyWithColumnIds();
   RowOperationsPBDecoder decoder(&pb, &client_schema, &schema, nullptr);
   vector<DecodedRowOperation> ops;
-  ASSERT_OK(decoder.DecodeOperations(&ops));
+  ASSERT_OK(decoder.DecodeOperations<DecoderMode::SPLIT_ROWS>(&ops));
   ASSERT_EQ(1, ops.size());
 
   const shared_ptr<KuduPartialRow>& row2 = ops[0].split_row;

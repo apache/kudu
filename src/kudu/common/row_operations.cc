@@ -557,14 +557,14 @@ Status RowOperationsPBDecoder::DecodeSplitRow(const ClientServerMapping& mapping
   return Status::OK();
 }
 
+template <DecoderMode mode>
 Status RowOperationsPBDecoder::DecodeOperations(vector<DecodedRowOperation>* ops) {
-  // TODO: there's a bug here, in that if a client passes some column
-  // in its schema that has been deleted on the server, it will fail
-  // even if the client never actually specified any values for it.
-  // For example, a DBA might do a thorough audit that no one is using
-  // some column anymore, and then drop the column, expecting it to be
-  // compatible, but all writes would start failing until clients
-  // refreshed their schema.
+  // TODO(todd): there's a bug here, in that if a client passes some column in
+  // its schema that has been deleted on the server, it will fail even if the
+  // client never actually specified any values for it.  For example, a DBA
+  // might do a thorough audit that no one is using some column anymore, and
+  // then drop the column, expecting it to be compatible, but all writes would
+  // start failing until clients refreshed their schema.
   // See DISABLED_TestProjectUpdatesSubsetOfColumns
   CHECK(!client_schema_->has_column_ids());
   DCHECK(tablet_schema_->has_column_ids());
@@ -586,29 +586,60 @@ Status RowOperationsPBDecoder::DecodeOperations(vector<DecodedRowOperation>* ops
     DecodedRowOperation op;
     op.type = type;
 
-    switch (type) {
-      case RowOperationsPB::UNKNOWN:
-        return Status::NotSupported("Unknown row operation type");
-      case RowOperationsPB::INSERT:
-      case RowOperationsPB::UPSERT:
-        RETURN_NOT_OK(DecodeInsertOrUpsert(prototype_row_storage, mapping, &op));
-        break;
-      case RowOperationsPB::UPDATE:
-      case RowOperationsPB::DELETE:
-        RETURN_NOT_OK(DecodeUpdateOrDelete(mapping, &op));
-        break;
-      case RowOperationsPB::SPLIT_ROW:
-      case RowOperationsPB::RANGE_LOWER_BOUND:
-      case RowOperationsPB::RANGE_UPPER_BOUND:
-      case RowOperationsPB::EXCLUSIVE_RANGE_LOWER_BOUND:
-      case RowOperationsPB::INCLUSIVE_RANGE_UPPER_BOUND:
-        RETURN_NOT_OK(DecodeSplitRow(mapping, &op));
-        break;
-    }
-
+    RETURN_NOT_OK(DecodeOp<mode>(type, prototype_row_storage, mapping, &op));
     ops->push_back(op);
   }
   return Status::OK();
 }
+
+template<>
+Status RowOperationsPBDecoder::DecodeOp<DecoderMode::WRITE_OPS>(
+    RowOperationsPB::Type type, const uint8_t* prototype_row_storage,
+    const ClientServerMapping& mapping, DecodedRowOperation* op) {
+  switch (type) {
+    case RowOperationsPB::UNKNOWN:
+      return Status::NotSupported("Unknown row operation type");
+    case RowOperationsPB::INSERT:
+    case RowOperationsPB::UPSERT:
+      RETURN_NOT_OK(DecodeInsertOrUpsert(prototype_row_storage, mapping, op));
+      break;
+    case RowOperationsPB::UPDATE:
+    case RowOperationsPB::DELETE:
+      RETURN_NOT_OK(DecodeUpdateOrDelete(mapping, op));
+      break;
+    default:
+      return Status::InvalidArgument(Substitute("Invalid write operation type $0",
+                                                RowOperationsPB_Type_Name(type)));
+  }
+  return Status::OK();
+}
+
+template<>
+Status RowOperationsPBDecoder::DecodeOp<DecoderMode::SPLIT_ROWS>(
+    RowOperationsPB::Type type, const uint8_t* /*prototype_row_storage*/,
+    const ClientServerMapping& mapping, DecodedRowOperation* op) {
+  switch (type) {
+    case RowOperationsPB::UNKNOWN:
+      return Status::NotSupported("Unknown row operation type");
+    case RowOperationsPB::SPLIT_ROW:
+    case RowOperationsPB::RANGE_LOWER_BOUND:
+    case RowOperationsPB::RANGE_UPPER_BOUND:
+    case RowOperationsPB::EXCLUSIVE_RANGE_LOWER_BOUND:
+    case RowOperationsPB::INCLUSIVE_RANGE_UPPER_BOUND:
+      RETURN_NOT_OK(DecodeSplitRow(mapping, op));
+      break;
+    default:
+      return Status::InvalidArgument(Substitute("Invalid split row type $0",
+                                                RowOperationsPB_Type_Name(type)));
+  }
+  return Status::OK();
+}
+
+template
+Status RowOperationsPBDecoder::DecodeOperations<DecoderMode::SPLIT_ROWS>(
+    vector<DecodedRowOperation>* ops);
+template
+Status RowOperationsPBDecoder::DecodeOperations<DecoderMode::WRITE_OPS>(
+    vector<DecodedRowOperation>* ops);
 
 } // namespace kudu

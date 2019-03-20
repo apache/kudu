@@ -1424,7 +1424,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   RowOperationsPBDecoder decoder(req.mutable_split_rows_range_bounds(),
                                  &client_schema, &schema, nullptr);
   vector<DecodedRowOperation> ops;
-  RETURN_NOT_OK(decoder.DecodeOperations(&ops));
+  RETURN_NOT_OK(decoder.DecodeOperations<DecoderMode::SPLIT_ROWS>(&ops));
 
   for (int i = 0; i < ops.size(); i++) {
     const DecodedRowOperation& op = ops[i];
@@ -2035,12 +2035,12 @@ Status CatalogManager::ApplyAlterPartitioningSteps(
     if (step.type() == AlterTableRequestPB::ADD_RANGE_PARTITION) {
       RowOperationsPBDecoder decoder(&step.add_range_partition().range_bounds(),
                                      &client_schema, &schema, nullptr);
-      RETURN_NOT_OK(decoder.DecodeOperations(&ops));
+      RETURN_NOT_OK(decoder.DecodeOperations<DecoderMode::SPLIT_ROWS>(&ops));
     } else {
       CHECK_EQ(step.type(), AlterTableRequestPB::DROP_RANGE_PARTITION);
       RowOperationsPBDecoder decoder(&step.drop_range_partition().range_bounds(),
                                      &client_schema, &schema, nullptr);
-      RETURN_NOT_OK(decoder.DecodeOperations(&ops));
+      RETURN_NOT_OK(decoder.DecodeOperations<DecoderMode::SPLIT_ROWS>(&ops));
     }
 
     if (ops.size() != 2) {

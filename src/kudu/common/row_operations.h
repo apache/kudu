@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_COMMON_ROW_OPERATIONS_H
-#define KUDU_COMMON_ROW_OPERATIONS_H
+#pragma once
 
 #include <cstdint>
 #include <memory>
@@ -31,11 +30,10 @@
 namespace kudu {
 
 class Arena;
+class ClientServerMapping;
 class ColumnSchema;
 class KuduPartialRow;
 class Schema;
-
-class ClientServerMapping;
 
 class RowOperationsPBEncoder {
  public:
@@ -73,6 +71,14 @@ struct DecodedRowOperation {
   std::string ToString(const Schema& schema) const;
 };
 
+enum DecoderMode {
+  // Decode range split rows.
+  SPLIT_ROWS,
+
+  // Decode write operations.
+  WRITE_OPS,
+};
+
 class RowOperationsPBDecoder {
  public:
   RowOperationsPBDecoder(const RowOperationsPB* pb,
@@ -81,6 +87,7 @@ class RowOperationsPBDecoder {
                          Arena* dst_arena);
   ~RowOperationsPBDecoder();
 
+  template <DecoderMode mode>
   Status DecodeOperations(std::vector<DecodedRowOperation>* ops);
 
  private:
@@ -106,6 +113,12 @@ class RowOperationsPBDecoder {
   Status DecodeSplitRow(const ClientServerMapping& mapping,
                         DecodedRowOperation* op);
 
+  // Decode the next encoded operation of the given type and properties.
+  // Returns an error if the type isn't allowed by the decoder mode.
+  template <DecoderMode mode>
+  Status DecodeOp(RowOperationsPB::Type type, const uint8_t* prototype_row_storage,
+                  const ClientServerMapping& mapping, DecodedRowOperation* op);
+
   const RowOperationsPB* const pb_;
   const Schema* const client_schema_;
   const Schema* const tablet_schema_;
@@ -115,8 +128,7 @@ class RowOperationsPBDecoder {
   const int tablet_row_size_;
   Slice src_;
 
-
   DISALLOW_COPY_AND_ASSIGN(RowOperationsPBDecoder);
 };
+
 } // namespace kudu
-#endif /* KUDU_COMMON_ROW_OPERATIONS_H */

@@ -253,7 +253,7 @@ Status PrintDecodedWriteRequestPB(const string& indent,
   Arena arena(32 * 1024);
   RowOperationsPBDecoder dec(&write.row_operations(), &request_schema, &tablet_schema, &arena);
   vector<DecodedRowOperation> ops;
-  RETURN_NOT_OK(dec.DecodeOperations(&ops));
+  RETURN_NOT_OK(dec.DecodeOperations<DecoderMode::WRITE_OPS>(&ops));
 
   cout << indent << "Tablet: " << write.tablet_id() << endl;
   cout << indent << "RequestId: "

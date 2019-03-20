@@ -444,7 +444,7 @@ Status Tablet::DecodeWriteOperations(const Schema* client_schema,
                              client_schema,
                              schema(),
                              tx_state->arena());
-  RETURN_NOT_OK(dec.DecodeOperations(&ops));
+  RETURN_NOT_OK(dec.DecodeOperations<DecoderMode::WRITE_OPS>(&ops));
   TRACE_COUNTER_INCREMENT("num_ops", ops.size());
 
   // Important to set the schema before the ops -- we need the

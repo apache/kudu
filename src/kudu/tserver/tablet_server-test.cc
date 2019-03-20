@@ -1086,6 +1086,52 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
   ASSERT_GE(now_after.value(), now_before.value());
 }
 
+// Try sending write requests that do not contain write operations. Make sure
+// we get an error that makes sense.
+TEST_F(TabletServerTest, TestInvalidWriteRequest_WrongOpType) {
+  const vector<RowOperationsPB::Type> wrong_op_types = {
+    RowOperationsPB::SPLIT_ROW,
+    RowOperationsPB::RANGE_LOWER_BOUND,
+    RowOperationsPB::RANGE_UPPER_BOUND,
+    RowOperationsPB::EXCLUSIVE_RANGE_LOWER_BOUND,
+    RowOperationsPB::INCLUSIVE_RANGE_UPPER_BOUND,
+  };
+  const auto send_bad_write = [&] (RowOperationsPB::Type op_type) {
+    WriteRequestPB req;
+    req.set_tablet_id(kTabletId);
+    WriteResponsePB resp;
+    RpcController controller;
+
+    CHECK_OK(SchemaToPB(schema_, req.mutable_schema()));
+    RowOperationsPB* data = req.mutable_row_operations();
+    AddTestRowToPB(op_type, schema_, 1234, 5678, "foo", data);
+    SCOPED_TRACE(SecureDebugString(req));
+    CHECK_OK(proxy_->Write(req, &resp, &controller));
+    return resp;
+  };
+  // Send a bunch of op types that are inappropriate for write requests.
+  for (const auto& op_type : wrong_op_types) {
+    WriteResponsePB resp = send_bad_write(op_type);
+    SCOPED_TRACE(SecureDebugString(resp));
+    ASSERT_TRUE(resp.has_error());
+    ASSERT_EQ(TabletServerErrorPB::MISMATCHED_SCHEMA, resp.error().code());
+    ASSERT_EQ(AppStatusPB::INVALID_ARGUMENT, resp.error().status().code());
+    ASSERT_STR_CONTAINS(resp.error().status().message(),
+                        "Invalid write operation type");
+  }
+  {
+    // Do the same for UNKNOWN, which is an unexpected operation type in all
+    // cases, and thus results in a different error message.
+    WriteResponsePB resp = send_bad_write(RowOperationsPB::UNKNOWN);
+    SCOPED_TRACE(SecureDebugString(resp));
+    ASSERT_TRUE(resp.has_error());
+    ASSERT_EQ(TabletServerErrorPB::MISMATCHED_SCHEMA, resp.error().code());
+    ASSERT_EQ(AppStatusPB::NOT_SUPPORTED, resp.error().status().code());
+    ASSERT_STR_CONTAINS(resp.error().status().message(),
+                        "Unknown row operation type");
+  }
+}
+
 // Test that passing a schema with fields not present in the tablet schema
 // throws an exception.
 TEST_F(TabletServerTest, TestInvalidWriteRequest_BadSchema) {
