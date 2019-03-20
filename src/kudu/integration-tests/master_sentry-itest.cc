@@ -269,6 +269,12 @@ class SentryITestBase : public HmsITestBase {
     // authorized.
     opts.extra_master_flags.emplace_back("--trusted_user_acl=impala");
     opts.extra_master_flags.emplace_back("--user_acl=test-user,impala");
+
+    // Enable/disable caching of authz privileges received from Sentry.
+    opts.extra_master_flags.emplace_back(
+        Substitute("--sentry_privileges_cache_capacity_mb=$0",
+                   IsAuthzPrivilegeCacheEnabled() ? 1 : 0));
+
     StartClusterWithOpts(std::move(opts));
 
     // Create principals 'impala' and 'kudu'. Configure to use the latter.
@@ -324,6 +330,10 @@ class SentryITestBase : public HmsITestBase {
         ASSERT_OK(hms_client_->Stop());
     }
     HmsITestBase::TearDown();
+  }
+
+  virtual bool IsAuthzPrivilegeCacheEnabled() const {
+    return false;
   }
 
  protected:
@@ -467,11 +477,14 @@ TEST_F(MasterSentryTest, DISABLED_TestRenameTablePrivilegeTransfer) {
   NO_FATALS(CheckTable(kDatabaseName, "c", make_optional<const string&>(kAdminUser)));
 }
 
-class TestAuthzTable : public MasterSentryTest,
-                       public ::testing::WithParamInterface<AuthzDescriptor> {};
+class TestAuthzTable :
+    public MasterSentryTest,
+    public ::testing::WithParamInterface<AuthzDescriptor> {
+    // TODO(aserbin): update the test to introduce authz privilege caching
+};
 
 TEST_P(TestAuthzTable, TestAuthorizeTable) {
-  AuthzDescriptor desc = GetParam();
+  const AuthzDescriptor& desc = GetParam();
   const auto table_name = Substitute("$0.$1", desc.database, desc.table_name);
   const auto new_table_name = Substitute("$0.$1", desc.database, desc.new_table_name);
 
@@ -582,7 +595,6 @@ static const AuthzDescriptor kAuthzCombinations[] = {
       ""
     },
 };
-
 INSTANTIATE_TEST_CASE_P(AuthzCombinations,
                         TestAuthzTable,
                         ::testing::ValuesIn(kAuthzCombinations));
@@ -621,10 +633,13 @@ TEST_F(MasterSentryTest, TestMismatchedTable) {
   ASSERT_STR_CONTAINS(s.ToString(), "the table ID refers to a different table");
 }
 
-class AuthzErrorHandlingTest : public SentryITestBase,
-                               public ::testing::WithParamInterface<AuthzFuncs> {};
+class AuthzErrorHandlingTest :
+    public SentryITestBase,
+    public ::testing::WithParamInterface<AuthzFuncs> {
+    // TODO(aserbin): update the test to introduce authz privilege caching
+};
 TEST_P(AuthzErrorHandlingTest, TestNonExistentTable) {
-  AuthzFuncs funcs = GetParam();
+  const AuthzFuncs& funcs = GetParam();
   const auto table_name = Substitute("$0.$1", kDatabaseName, "non_existent");
   const auto new_table_name = Substitute("$0.$1", kDatabaseName, "b");
 
@@ -635,7 +650,8 @@ TEST_P(AuthzErrorHandlingTest, TestNonExistentTable) {
   ASSERT_TRUE(s.IsNotAuthorized());
   ASSERT_STR_CONTAINS(s.ToString(), "unauthorized action");
 
-  // Ensure that operating on a non-existent table while the Sentry is unreachable fails.
+  // Ensure that operating on a non-existent table fails
+  // while Sentry is unreachable.
   ASSERT_OK(StopSentry());
   s = funcs.do_action(this, table_name, new_table_name);
   ASSERT_TRUE(s.IsNetworkError()) << s.ToString();

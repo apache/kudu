@@ -17,10 +17,10 @@
 
 #pragma once
 
+#include <cstddef>
 #include <iosfwd>
 #include <string>
 
-#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
 #include "kudu/util/bitset.h"
 #include "kudu/util/status.h"
@@ -73,7 +73,7 @@ class SentryAuthorizableScope {
   Scope scope_;
 };
 
-static constexpr const char* const kSever = "SERVER";
+static constexpr const char* const kServer = "SERVER";
 static constexpr const char* const kDatabase = "DATABASE";
 static constexpr const char* const kTable = "TABLE";
 static constexpr const char* const kColumn = "COLUMN";

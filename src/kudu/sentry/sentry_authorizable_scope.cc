@@ -18,7 +18,6 @@
 #include "kudu/sentry/sentry_authorizable_scope.h"
 
 #include <cstdint>
-
 #include <ostream>
 #include <string>
 
@@ -36,7 +35,7 @@ namespace sentry {
 const char* ScopeToString(SentryAuthorizableScope::Scope scope) {
   switch (scope) {
     case SentryAuthorizableScope::Scope::UNINITIALIZED: return "UNINITIALIZED";
-    case SentryAuthorizableScope::Scope::SERVER: return kSever;
+    case SentryAuthorizableScope::Scope::SERVER: return kServer;
     case SentryAuthorizableScope::Scope::DATABASE: return kDatabase;
     case SentryAuthorizableScope::Scope::TABLE: return kTable;
     case SentryAuthorizableScope::Scope::COLUMN: return kColumn;
@@ -59,7 +58,7 @@ SentryAuthorizableScope::SentryAuthorizableScope(Scope scope)
 
 Status SentryAuthorizableScope::FromString(const string& str,
                                            SentryAuthorizableScope* scope) {
-  if (boost::iequals(str, kSever)) {
+  if (boost::iequals(str, kServer)) {
     scope->scope_ = Scope::SERVER;
   } else if (boost::iequals(str, kDatabase)) {
     scope->scope_ = Scope::DATABASE;

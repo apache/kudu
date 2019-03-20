@@ -34,10 +34,9 @@ namespace master {
 // Default AuthzProvider which always authorizes any operations.
 class DefaultAuthzProvider : public AuthzProvider {
  public:
-
   Status Start() override WARN_UNUSED_RESULT { return Status::OK(); }
 
-  void Stop() override {};
+  void Stop() override {}
 
   Status AuthorizeCreateTable(const std::string& /*table_name*/,
                               const std::string& /*user*/,
