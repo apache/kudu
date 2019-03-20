@@ -35,9 +35,7 @@ versions += [
     errorprone     : "2.3.1",
     flume          : "1.9.0",
     gradle         : "5.1.1",
-    // We use the android version instead of the jre version
-    // to maintain Java 1.7 compatibility.
-    guava          : "27.0.1-android",
+    guava          : "27.0.1-jre",
     hadoop         : "3.2.0",
     hamcrest       : "1.3",
     hdrhistogram   : "2.1.11",
