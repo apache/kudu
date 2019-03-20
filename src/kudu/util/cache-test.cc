@@ -140,9 +140,13 @@ class CacheBaseTest : public KuduTest,
                                                            "cache_test"));
             break;
           case Cache::MemoryType::NVM:
+#if defined(HAVE_LIB_VMEM)
             cache_.reset(NewCache<Cache::EvictionPolicy::LRU,
                                   Cache::MemoryType::NVM>(cache_size(),
                                                           "cache_test"));
+#else
+            FAIL() << "cache of NVM memory type is not supported";
+#endif // #if defined(HAVE_LIB_VMEM) ... #else ...
             break;
           default:
             FAIL() << mem_type << ": unrecognized cache memory type";
