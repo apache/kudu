@@ -95,7 +95,9 @@ class Cache {
     }
 
     void operator()(Cache::Handle* h) const {
-      c_->Release(h);
+      if (h != nullptr) {
+        c_->Release(h);
+      }
     }
 
    private:

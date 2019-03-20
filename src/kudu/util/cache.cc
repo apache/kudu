@@ -360,6 +360,7 @@ template<Cache::EvictionPolicy policy>
 void CacheShard<policy>::RL_Remove(RLHandle* e) {
   e->next->prev = e->prev;
   e->prev->next = e->next;
+  DCHECK_GE(usage_, e->charge);
   usage_ -= e->charge;
 }
 
@@ -590,6 +591,9 @@ class ShardedCache : public Cache {
     RLHandle* handle = reinterpret_cast<RLHandle*>(h.get());
     handle->key_length = key_len;
     handle->val_length = val_len;
+    // TODO(KUDU-1091): account for the footprint of structures used by Cache's
+    //                  internal housekeeping (RL handles, etc.) in case of
+    //                  non-automatic charge.
     handle->charge = (charge == kAutomaticCharge) ? kudu_malloc_usable_size(h.get())
                                                   : charge;
     handle->hash = HashSlice(key);
