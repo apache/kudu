@@ -140,6 +140,12 @@ target_link_libraries(kudu
   tserver
   ${KUDU_BASE_LIBS}
 )
+option(KUDU_CLIENT_INSTALL "Whether to install the Kudu command line tool" ON)
+if(KUDU_CLIENT_INSTALL)
+  install(TARGETS kudu RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+else()
+  message(STATUS "Skipping install rule for the Kudu command line tool")
+endif()
 
 #######################################
 # kudu_tools_test_util

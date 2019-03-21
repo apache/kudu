@@ -90,10 +90,20 @@ ADD_KUDU_TEST(sentry_authz_provider-test)
 ADD_KUDU_TEST(sys_catalog-test RESOURCE_LOCK "master-web-port")
 ADD_KUDU_TEST(ts_descriptor-test DATA_FILES ../scripts/first_argument.sh)
 
-# Actual master executable
+#########################################
+# kudu-master
+#########################################
+
 add_executable(kudu-master master_main.cc)
 target_link_libraries(kudu-master
   ${SANITIZER_OPTIONS_OVERRIDE}
   ${KRB5_REALM_OVERRIDE}
   master
   ${KUDU_BASE_LIBS})
+
+option(KUDU_MASTER_INSTALL "Whether to install the Kudu Master executable" ON)
+if(KUDU_MASTER_INSTALL)
+  install(TARGETS kudu-master RUNTIME DESTINATION ${CMAKE_INSTALL_SBINDIR})
+else()
+  message(STATUS "Skipping install rule for the Kudu Master executable")
+endif()

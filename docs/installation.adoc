@@ -44,7 +44,8 @@ only tolerate a single failure; two-master deployments cannot tolerate any failu
 
 .Operating System Requirements
 Linux::
-    - RHEL 6, RHEL 7, CentOS 6, CentOS 7, Ubuntu 14.04 (Trusty), Ubuntu 16.04 (Xenial), Debian 8 (Jessie), or SLES 12.
+    - RHEL 6, RHEL 7, CentOS 6, CentOS 7, Ubuntu 14.04 (Trusty), Ubuntu 16.04 (Xenial), Debian 8
+    (Jessie), or SLES 12.
     - A kernel and filesystem that support _hole punching_. Hole punching is the use of the
       `fallocate(2)` system call with the `FALLOC_FL_PUNCH_HOLE` option set. See
       link:troubleshooting.html#req_hole_punching[troubleshooting hole punching] for more
@@ -137,29 +138,51 @@ mkdir -p build/release
 cd build/release
 ../../build-support/enable_devtoolset.sh \
   ../../thirdparty/installed/common/bin/cmake \
-  -DCMAKE_BUILD_TYPE=release \
-  ../..
+  -DCMAKE_BUILD_TYPE=release ../..
 make -j4
 ----
++
+[NOTE]
+====
+If you need to install only a subset of Kudu executables, you can set the following `cmake` flags
+to OFF in order to skip any of the executables.
 
-. Optional: Install Kudu client libraries and headers.
-If you do not specify an installation directory through the `DESTDIR`
-environment variable, `/usr/local/` is the default.
+* KUDU_CLIENT_INSTALL (set to OFF to skip installing `/usr/local/bin/kudu` executable)
+* KUDU_TSERVER_INSTALL (set to OFF to skip installing `/usr/local/sbin/kudu-tserver` executable)
+* KUDU_MASTER_INSTALL (set to OFF to skip installing `/usr/local/sbin/kudu-master` executable)
+
+E.g., use the following variation of `cmake` command if you need to install only Kudu client
+libraries and headers:
+[source,bash]
+----
+../../build-support/enable_devtoolset.sh \
+  ../../thirdparty/installed/common/bin/cmake \
+  -DKUDU_CLIENT_INSTALL=OFF \
+  -DKUDU_MASTER_INSTALL=OFF \
+  -DKUDU_TSERVER_INSTALL=OFF
+  -DCMAKE_BUILD_TYPE=release ../..
+----
+====
+. Optional: install Kudu executables, libraries and headers.
++
+[NOTE]
+====
+Running `sudo make install` installs the following:
+
+* kudu-tserver and kudu-master executables in `/usr/local/sbin`
+* Kudu command line tool in `/usr/local/bin`
+* Kudu client library in `/usr/local/lib64/`
+* Kudu client headers in `/usr/local/include/kudu`
+====
++
+The default installation directory is `/usr/local`. You can customize it through the `DESTDIR`
+environment variable.
 +
 [source,bash]
 ----
 sudo make DESTDIR=/opt/kudu install
 ----
-NOTE: 'make install' does not copy Kudu binaries. You need to manually copy them
-as below:
-* Copy the `kudu-tserver`, `kudu-master`, and `kudu` binaries from within the `bin`
-subdirectory of your Kudu build directory.
-* We typically recommend putting `kudu` in the bin directory (e.g. `/usr/bin`)
-and the server binaries in the sbin directory (e.g. `/usr/sbin`).
-* However, if you use the default installation directory without specifying the
-`DESTDIR` environment variable, `make install` will install files into `/usr/local`,
-so you should copy the Kudu binaries to `/usr/local/bin` and `/usr/local/sbin`
-respectively.
++
 . Optional: Build the documentation. NOTE: This command builds local documentation that
 is not appropriate for uploading to the Kudu website.
 +
@@ -243,25 +266,46 @@ cd build/release
 ../../thirdparty/installed/common/bin/cmake -DCMAKE_BUILD_TYPE=release ../..
 make -j4
 ----
++
+[NOTE]
+====
+If you need to install only a subset of Kudu executables, you can set the following `cmake` flags
+to OFF in order to skip any of the executables.
 
-. Optional: Install Kudu client libraries and headers.
-If you do not specify an installation directory through the `DESTDIR`
-environment variable, `/usr/local/` is the default.
+* KUDU_CLIENT_INSTALL (set to OFF to skip installing `/usr/local/bin/kudu` executable)
+* KUDU_TSERVER_INSTALL (set to OFF to skip installing `/usr/local/sbin/kudu-tserver` executable)
+* KUDU_MASTER_INSTALL (set to OFF to skip installing `/usr/local/sbin/kudu-master` executable)
+
+E.g., use the following variation of `cmake` command if you need to install only Kudu client
+libraries and headers:
+[source,bash]
+----
+  ../../thirdparty/installed/common/bin/cmake \
+  -DKUDU_CLIENT_INSTALL=OFF \
+  -DKUDU_MASTER_INSTALL=OFF \
+  -DKUDU_TSERVER_INSTALL=OFF
+  -DCMAKE_BUILD_TYPE=release ../..
+----
+====
+. Optional: install Kudu executables, libraries and headers.
++
+[NOTE]
+====
+Running `sudo make install` installs the following:
+
+* kudu-tserver and kudu-master executables in `/usr/local/sbin`
+* Kudu command line tool in `/usr/local/bin`
+* Kudu client library in `/usr/local/lib64/`
+* Kudu client headers in `/usr/local/include/kudu`
+====
++
+The default installation directory is `/usr/local`. You can customize it through the `DESTDIR`
+environment variable.
 +
 [source,bash]
 ----
 sudo make DESTDIR=/opt/kudu install
 ----
-NOTE: 'make install' does not copy Kudu binaries. You need to manually copy them
-as below:
-* Copy the `kudu-tserver`, `kudu-master`, and `kudu` binaries from within the `bin`
-subdirectory of your Kudu build directory.
-* We typically recommend putting `kudu` in the bin directory (e.g. `/usr/bin`)
-and the server binaries in the sbin directory (e.g. `/usr/sbin`).
-* However, if you use the default installation directory without specifying the
-`DESTDIR` environment variable, `make install` will install files into `/usr/local`,
-so you should copy the Kudu binaries to `/usr/local/bin` and `/usr/local/sbin`
-respectively.
 
 . Optional: Build the documentation. NOTE: This command builds local documentation that
 is not appropriate for uploading to the Kudu website.
@@ -290,8 +334,7 @@ thirdparty/build-if-necessary.sh
 mkdir -p build/release
 cd build/release
 ../../thirdparty/installed/common/bin/cmake \
-  -DCMAKE_BUILD_TYPE=release \
-  ../..
+  -DCMAKE_BUILD_TYPE=release ../..
 make -j4
 ----
 ====
@@ -332,29 +375,49 @@ except for the `kudu` directory itself.
 mkdir -p build/release
 cd build/release
 ../../thirdparty/installed/common/bin/cmake \
-  -DCMAKE_BUILD_TYPE=release \
-  ../..
+  -DCMAKE_BUILD_TYPE=release ../..
 make -j4
 ----
++
+[NOTE]
+====
+If you need to install only a subset of Kudu executables, you can set the following `cmake` flags
+to OFF in order to skip any of the executables.
 
-. Optional: Install Kudu client libraries and headers.
-If you do not specify an installation directory through the `DESTDIR`
-environment variable, `/usr/local/` is the default.
+* KUDU_CLIENT_INSTALL (set to OFF to skip installing `/usr/local/bin/kudu` executable)
+* KUDU_TSERVER_INSTALL (set to OFF to skip installing `/usr/local/sbin/kudu-tserver` executable)
+* KUDU_MASTER_INSTALL (set to OFF to skip installing `/usr/local/sbin/kudu-master` executable)
+
+E.g., use the following variation of `cmake` command if you need to install only Kudu client
+libraries and headers:
+[source,bash]
+----
+  ../../thirdparty/installed/common/bin/cmake \
+  -DKUDU_CLIENT_INSTALL=OFF \
+  -DKUDU_TSERVER_INSTALL=OFF \
+  -DKUDU_MASTER_INSTALL=OFF
+  -DCMAKE_BUILD_TYPE=release ../..
+----
+====
+. Optional: install Kudu executables, libraries and headers.
++
+[NOTE]
+====
+Running `sudo make install` installs the following:
+
+* kudu-tserver and kudu-master executables in `/usr/local/sbin`
+* Kudu command line tool in `/usr/local/bin`
+* Kudu client library in `/usr/local/lib64/`
+* Kudu client headers in `/usr/local/include/kudu`
+====
++
+The default installation directory is `/usr/local`. You can customize it through the `DESTDIR`
+environment variable.
 +
 [source,bash]
 ----
 sudo make DESTDIR=/opt/kudu install
 ----
-NOTE: 'make install' does not copy Kudu binaries. You need to manually copy them
-as below:
-* Copy the `kudu-tserver`, `kudu-master`, and `kudu` binaries from within the `bin`
-subdirectory of your Kudu build directory.
-* We typically recommend putting `kudu` in the bin directory (e.g. `/usr/bin`)
-and the server binaries in the sbin directory (e.g. `/usr/sbin`).
-* However, if you use the default installation directory without specifying the
-`DESTDIR` environment variable, `make install` will install files into `/usr/local`,
-so you should copy the Kudu binaries to `/usr/local/bin` and `/usr/local/sbin`
-respectively.
 
 .SLES Build Script
 ====
