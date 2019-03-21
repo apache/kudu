@@ -55,7 +55,7 @@ public class TestSecurity {
   private static final int TICKET_LIFETIME_SECS = 10;
   private static final int RENEWABLE_LIFETIME_SECS = 20;
 
-  private final CapturingLogAppender cla = new CapturingLogAppender();
+  private CapturingLogAppender cla;
   private MiniKuduCluster miniCluster;
   private KuduClient client;
 
@@ -91,6 +91,7 @@ public class TestSecurity {
   @Before
   public void setUp() {
     FakeDNS.getInstance().install();
+    cla = new CapturingLogAppender();
   }
 
   @After
