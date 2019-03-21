@@ -429,9 +429,9 @@ class KuduRelation(
   }
 
   /**
-    * Returns the string representation of this KuduRelation
-    * @return Kudu + tableName of the relation
-    */
+   * Returns the string representation of this KuduRelation
+   * @return Kudu + tableName of the relation
+   */
   override def toString(): String = {
     "Kudu " + this.tableName
   }
