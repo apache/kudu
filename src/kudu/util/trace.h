@@ -48,7 +48,7 @@ class Trace;
 //  TRACE("Acquired timestamp $0", timestamp);
 #define TRACE(format, substitutions...) \
   do { \
-    kudu::Trace* _trace = Trace::CurrentTrace(); \
+    kudu::Trace* _trace = kudu::Trace::CurrentTrace(); \
     if (_trace) { \
       _trace->SubstituteAndTrace(__FILE__, __LINE__, (format),  \
         ##substitutions); \
@@ -78,7 +78,7 @@ class Trace;
 // parameters.
 #define TRACE_COUNTER_INCREMENT(counter_name, val) \
   do { \
-    kudu::Trace* _trace = Trace::CurrentTrace(); \
+    kudu::Trace* _trace = kudu::Trace::CurrentTrace(); \
     if (_trace) { \
       _trace->metrics()->Increment(counter_name, val); \
     } \
