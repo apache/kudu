@@ -157,7 +157,8 @@ class TabletServiceImpl : public TabletServerServiceIf {
                               tablet::Tablet* tablet,
                               consensus::TimeManager* time_manager,
                               std::unique_ptr<RowwiseIterator>* iter,
-                              Timestamp* snap_timestamp);
+                              Timestamp* snap_timestamp,
+                              TabletServerErrorPB::Code* error_code);
 
   // Validates the given timestamp is not so far in the future that
   // it exceeds the maximum allowed clock synchronization error time,

@@ -56,8 +56,9 @@ message TabletServerErrorPB {
     // created or has expired.
     SCANNER_EXPIRED = 7;
 
-    // An invalid scan was specified -- e.g the values passed for
-    // predicates were incorrect sizes.
+    // An invalid scan was specified. Examples of invalid scan requests include
+    // invalid or unimplemented combinations of scan options and incorrect
+    // sizes for values passed as predicates.
     INVALID_SCAN_SPEC = 8;
 
     // The provided configuration was not well-formed and/or

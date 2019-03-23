@@ -2471,6 +2471,19 @@ TEST_F(TabletServerTest, TestInvalidScanRequest_BadProjectionTypes) {
                            "NULLABLE found INT32 NULLABLE");
 }
 
+TEST_F(TabletServerTest, TestInvalidScanRequest_UnknownOrderMode) {
+  NO_FATALS(InsertTestRowsDirect(0, 10));
+  ScanRequestPB req;
+  NewScanRequestPB* scan = req.mutable_new_scan_request();
+  scan->set_tablet_id(kTabletId);
+  scan->set_order_mode(OrderMode::UNKNOWN_ORDER_MODE);
+  ASSERT_OK(SchemaToColumnPBs(schema_, scan->mutable_projected_columns()));
+  req.set_call_seq_id(0);
+  NO_FATALS(VerifyScanRequestFailure(req,
+                                     TabletServerErrorPB::INVALID_SCAN_SPEC,
+                                     "Unknown order mode specified"));
+}
+
 // Test that passing a projection with Column IDs throws an exception.
 // Column IDs are assigned to the user request schema on the tablet server
 // based on the latest schema.

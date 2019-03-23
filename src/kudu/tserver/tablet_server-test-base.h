@@ -111,7 +111,14 @@ class TabletServerTestBase : public KuduTest {
   // Verifies that a set of expected rows (key, value) is present in the tablet.
   void VerifyRows(const Schema& schema, const std::vector<KeyValue>& expected);
 
-  // Verifies that a simple scan request fails with the specified error code/message.
+  // Verifies that the given scan request fails with the specified error
+  // code/message.
+  void VerifyScanRequestFailure(const ScanRequestPB& req,
+                                TabletServerErrorPB::Code expected_code,
+                                const char *expected_message);
+
+  // Verifies that a simple scan request with the given projection fails with
+  // the specified error code/message.
   void VerifyScanRequestFailure(const Schema& projection,
                                 TabletServerErrorPB::Code expected_code,
                                 const char *expected_message);

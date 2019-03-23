@@ -433,21 +433,13 @@ void TabletServerTestBase::VerifyRows(const Schema& schema,
   ASSERT_EQ(count, expected.size());
 }
 
-// Verifies that a simple scan request fails with the specified error code/message.
-void TabletServerTestBase::VerifyScanRequestFailure(
-    const Schema& projection,
-    TabletServerErrorPB::Code expected_code,
-    const char *expected_message) {
-  ScanRequestPB req;
+void TabletServerTestBase::VerifyScanRequestFailure(const ScanRequestPB& req,
+                                                    TabletServerErrorPB::Code expected_code,
+                                                    const char *expected_message) {
   ScanResponsePB resp;
   RpcController rpc;
 
-  NewScanRequestPB* scan = req.mutable_new_scan_request();
-  scan->set_tablet_id(kTabletId);
-  ASSERT_OK(SchemaToColumnPBs(projection, scan->mutable_projected_columns()));
-  req.set_call_seq_id(0);
-
-  // Send the call
+  // Send the call.
   {
     SCOPED_TRACE(SecureDebugString(req));
     ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
@@ -456,6 +448,17 @@ void TabletServerTestBase::VerifyScanRequestFailure(
     ASSERT_EQ(expected_code, resp.error().code());
     ASSERT_STR_CONTAINS(resp.error().status().message(), expected_message);
   }
+}
+
+void TabletServerTestBase::VerifyScanRequestFailure(const Schema& projection,
+                                                    TabletServerErrorPB::Code expected_code,
+                                                    const char *expected_message) {
+  ScanRequestPB req;
+  NewScanRequestPB* scan = req.mutable_new_scan_request();
+  scan->set_tablet_id(kTabletId);
+  ASSERT_OK(SchemaToColumnPBs(projection, scan->mutable_projected_columns()));
+  req.set_call_seq_id(0);
+  NO_FATALS(VerifyScanRequestFailure(req, expected_code, expected_message));
 }
 
 Status TabletServerTestBase::FillNewScanRequest(ReadMode read_mode, NewScanRequestPB* scan) const {
