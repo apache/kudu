@@ -156,7 +156,7 @@ Status TabletServerTestBase::WaitForTabletRunning(const char *tablet_id) {
   return tablet_manager->WaitForNoTransitionsForTests(MonoDelta::FromSeconds(10));
 }
 
-void TabletServerTestBase::UpdateTestRowRemote(int64_t row_idx,
+void TabletServerTestBase::UpdateTestRowRemote(int32_t row_idx,
                                                int32_t new_val,
                                                TimeSeries* ts) {
   WriteRequestPB req;
@@ -191,11 +191,11 @@ void TabletServerTestBase::ResetClientProxies() {
 }
 
 // Inserts 'num_rows' test rows directly into the tablet (i.e not via RPC)
-void TabletServerTestBase::InsertTestRowsDirect(int64_t start_row,
-                                                uint64_t num_rows) {
+void TabletServerTestBase::InsertTestRowsDirect(int32_t start_row,
+                                                int32_t num_rows) {
   tablet::LocalTabletWriter writer(tablet_replica_->tablet(), &schema_);
   KuduPartialRow row(&schema_);
-  for (int64_t i = 0; i < num_rows; i++) {
+  for (int32_t i = 0; i < num_rows; i++) {
     BuildTestRow(start_row + i, &row);
     CHECK_OK(writer.Insert(row));
   }
@@ -205,9 +205,9 @@ void TabletServerTestBase::InsertTestRowsDirect(int64_t start_row,
 // Rows are grouped in batches of 'count'/'num_batches' size.
 // Batch size defaults to 1.
 void TabletServerTestBase::InsertTestRowsRemote(
-    int64_t first_row,
-    uint64_t count,
-    uint64_t num_batches,
+    int32_t first_row,
+    int32_t count,
+    int32_t num_batches,
     TabletServerServiceProxy* proxy,
     string tablet_id,
     vector<uint64_t>* write_timestamps_collector,
@@ -231,7 +231,7 @@ void TabletServerTestBase::InsertTestRowsRemote(
 
   ASSERT_OK(SchemaToPB(schema_, req.mutable_schema()));
 
-  uint64_t inserted_since_last_report = 0;
+  int32_t inserted_since_last_report = 0;
   for (int i = 0; i < num_batches; ++i) {
 
     // reset the controller and the request
@@ -239,10 +239,10 @@ void TabletServerTestBase::InsertTestRowsRemote(
     controller.set_timeout(MonoDelta::FromSeconds(FLAGS_rpc_timeout));
     data->Clear();
 
-    uint64_t first_row_in_batch = first_row + (i * count / num_batches);
-    uint64_t last_row_in_batch = first_row_in_batch + count / num_batches;
+    int32_t first_row_in_batch = first_row + (i * count / num_batches);
+    int32_t last_row_in_batch = first_row_in_batch + count / num_batches;
 
-    for (int j = first_row_in_batch; j < last_row_in_batch; j++) {
+    for (int32_t j = first_row_in_batch; j < last_row_in_batch; j++) {
       string str_val = Substitute("original$0", j);
       const char* cstr_val = str_val.c_str();
       if (!string_field_defined) {
@@ -275,8 +275,8 @@ void TabletServerTestBase::InsertTestRowsRemote(
 }
 
 // Delete specified test row range.
-void TabletServerTestBase::DeleteTestRowsRemote(int64_t first_row,
-                                                uint64_t count,
+void TabletServerTestBase::DeleteTestRowsRemote(int32_t first_row,
+                                                int32_t count,
                                                 TabletServerServiceProxy* proxy,
                                                 string tablet_id) {
   if (!proxy) {
@@ -291,7 +291,7 @@ void TabletServerTestBase::DeleteTestRowsRemote(int64_t first_row,
   ASSERT_OK(SchemaToPB(schema_, req.mutable_schema()));
 
   RowOperationsPB* ops = req.mutable_row_operations();
-  for (int64_t rowid = first_row; rowid < first_row + count; rowid++) {
+  for (int32_t rowid = first_row; rowid < first_row + count; rowid++) {
     AddTestKeyToPB(RowOperationsPB::DELETE, schema_, rowid, ops);
   }
 

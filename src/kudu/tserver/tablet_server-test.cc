@@ -2117,7 +2117,7 @@ TEST_F(TabletServerTest, TestScanYourWrites) {
   // Scan with READ_YOUR_WRITES mode and use the previous
   // write response as the propagated timestamp.
   ScanResponsePB resp;
-  int64_t propagated_timestamp = write_timestamps_collector[0];
+  uint64_t propagated_timestamp = write_timestamps_collector[0];
   ScanYourWritesTest(propagated_timestamp, &resp);
 
   // Store the returned snapshot timestamp as the propagated
@@ -2252,20 +2252,20 @@ TEST_F(TabletServerTest, TestNonPositiveLimitsShortCircuit) {
 // Randomized test that runs a few scans with varying limits.
 TEST_F(TabletServerTest, TestRandomizedScanLimits) {
   // Set a relatively small batch size...
-  const int64_t kBatchSizeRows = rand() % 1000;
+  const int kBatchSizeRows = rand() % 1000;
   // ...and decent number of rows, such that we can get a good mix of
   // multiple-batch and single-batch scans.
-  const int64_t kNumRows = rand() % 2000;
+  const int kNumRows = rand() % 2000;
   FLAGS_scanner_batch_size_rows = kBatchSizeRows;
   InsertTestRowsDirect(0, kNumRows);
   LOG(INFO) << Substitute("Rows inserted: $0, batch size: $1", kNumRows, kBatchSizeRows);
 
-  for (int64_t i = 1; i < 100; i++) {
+  for (int i = 1; i < 100; i++) {
     // To broaden a range of coverage, gradiate the max limit that we can set.
-    const int64_t kMaxLimit = kNumRows * static_cast<double>(0.01 * i);
+    const int kMaxLimit = kNumRows * static_cast<double>(0.01 * i);
 
     // Get a random limit, capped by the max, inclusive.
-    const int64_t kLimit = rand() % kMaxLimit + 1;
+    const int kLimit = rand() % kMaxLimit + 1;
     LOG(INFO) << "Scanning with a limit of " << kLimit;
 
     ScanRequestPB req;
@@ -3034,14 +3034,14 @@ TEST_F(TabletServerTest, TestInsertLatencyMicroBenchmark) {
 
   scoped_refptr<Histogram> histogram = METRIC_insert_latency.Instantiate(ts_test_metric_entity_);
 
-  uint64_t warmup = AllowSlowTests() ?
+  int warmup = AllowSlowTests() ?
       FLAGS_single_threaded_insert_latency_bench_warmup_rows : 10;
 
   for (int i = 0; i < warmup; i++) {
     InsertTestRowsRemote(i, 1);
   }
 
-  uint64_t max_rows = AllowSlowTests() ?
+  int max_rows = AllowSlowTests() ?
       FLAGS_single_threaded_insert_latency_bench_insert_rows : 100;
 
   MonoTime start = MonoTime::Now();
@@ -3489,7 +3489,7 @@ TEST_F(TabletServerTest, TestScannerCheckMatchingUser) {
 
   // Now do a checksum scan as the user.
   string checksum_scanner_id;
-  int64_t checksum_val;
+  uint64_t checksum_val;
   {
     ChecksumRequestPB checksum_req;
     ChecksumResponsePB checksum_resp;

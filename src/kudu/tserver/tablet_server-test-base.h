@@ -64,21 +64,21 @@ class TabletServerTestBase : public KuduTest {
 
   Status WaitForTabletRunning(const char *tablet_id);
 
-  void UpdateTestRowRemote(int64_t row_idx,
+  void UpdateTestRowRemote(int32_t row_idx,
                            int32_t new_val,
                            TimeSeries* ts = nullptr);
 
   void ResetClientProxies();
 
   // Inserts 'num_rows' test rows directly into the tablet (i.e not via RPC)
-  void InsertTestRowsDirect(int64_t start_row, uint64_t num_rows);
+  void InsertTestRowsDirect(int32_t start_row, int32_t num_rows);
 
   // Inserts 'num_rows' test rows remotely into the tablet (i.e via RPC)
   // Rows are grouped in batches of 'count'/'num_batches' size.
   // Batch size defaults to 1.
-  void InsertTestRowsRemote(int64_t first_row,
-                            uint64_t count,
-                            uint64_t num_batches = -1,
+  void InsertTestRowsRemote(int32_t first_row,
+                            int32_t count,
+                            int32_t num_batches = -1,
                             TabletServerServiceProxy* proxy = nullptr,
                             std::string tablet_id = kTabletId,
                             std::vector<uint64_t>* write_timestamps_collector = nullptr,
@@ -86,8 +86,8 @@ class TabletServerTestBase : public KuduTest {
                             bool string_field_defined = true);
 
   // Delete specified test row range.
-  void DeleteTestRowsRemote(int64_t first_row,
-                            uint64_t count,
+  void DeleteTestRowsRemote(int32_t first_row,
+                            int32_t count,
                             TabletServerServiceProxy* proxy = nullptr,
                             std::string tablet_id = kTabletId);
 
