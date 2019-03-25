@@ -34,10 +34,14 @@ import org.apache.yetus.audience.InterfaceStability
 class RowConverter(kuduSchema: Schema, schema: StructType, ignoreNull: Boolean) {
 
   private val typeConverter = CatalystTypeConverters.createToScalaConverter(schema)
-  private val indices: Array[(Int, Int)] = schema.fields.zipWithIndex.map({
+  private val indices: Array[(Int, Int)] = schema.fields.zipWithIndex.flatMap {
     case (field, sparkIdx) =>
-      sparkIdx -> kuduSchema.getColumnIndex(field.name)
-  })
+      // Support Spark schemas that have more columns than the Kudu table by
+      // ignoring missing Kudu columns.
+      if (kuduSchema.hasColumn(field.name)) {
+        Some(sparkIdx -> kuduSchema.getColumnIndex(field.name))
+      } else None
+  }
 
   /**
    * Converts a Spark internalRow to a Spark Row.

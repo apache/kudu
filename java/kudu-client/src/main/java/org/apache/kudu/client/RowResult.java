@@ -597,6 +597,15 @@ public class RowResult {
   }
 
   /**
+   * @return true if the RowResult has the IS_DELETED virtual column
+   */
+  @InterfaceAudience.Private
+  @InterfaceStability.Unstable
+  public boolean hasIsDeleted() {
+    return schema.hasIsDeleted();
+  }
+
+  /**
    * @return the value of the IS_DELETED virtual column
    * @throws IllegalStateException if no IS_DELETED virtual column exists
    */

@@ -16,16 +16,7 @@
 // under the License.
 package org.apache.kudu.backup
 
-import java.net.URLEncoder
-import java.nio.charset.StandardCharsets
-import java.nio.file.Path
-import java.nio.file.Paths
-
-import com.google.protobuf.util.JsonFormat
-import org.apache.hadoop.fs.{Path => HPath}
-import org.apache.kudu.backup.Backup.TableMetadataPB
 import org.apache.kudu.spark.kudu.KuduContext
-import org.apache.kudu.spark.kudu.SparkUtil._
 import org.apache.spark.sql.SaveMode
 import org.apache.spark.sql.SparkSession
 import org.apache.yetus.audience.InterfaceAudience
@@ -33,57 +24,71 @@ import org.apache.yetus.audience.InterfaceStability
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
+/**
+ * The main class for a Kudu backup spark job.
+ *
+ * Example Usage:
+ *   spark-submit --class org.apache.kudu.backup.KuduBackup kudu-backup2_2.11-*.jar \
+ *     --kuduMasterAddresses master1-host,master-2-host,master-3-host \
+ *     --rootPath hdfs:///kudu/backup/path \
+ *     my_kudu_table
+ */
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
 object KuduBackup {
   val log: Logger = LoggerFactory.getLogger(getClass)
 
-  def run(options: KuduBackupOptions, session: SparkSession): Unit = {
+  def run(options: BackupOptions, session: SparkSession): Unit = {
+    log.info(s"Backing up to root path: ${options.rootPath}")
     val context =
       new KuduContext(
         options.kuduMasterAddresses,
         session.sparkContext
       )
-    val path = options.path
-    log.info(s"Backing up to path: $path")
-
+    val io = new SessionIO(session, options)
     // TODO: Make parallel so each table isn't process serially?
-    options.tables.foreach { t =>
-      val table = context.syncClient.openTable(t)
-      val tablePath = Paths.get(path).resolve(URLEncoder.encode(t, "UTF-8"))
+    options.tables.foreach { tableName =>
+      var tableOptions = options.copy() // Copy the options so we can modify them for the table.
+      val table = context.syncClient.openTable(tableName)
+      val backupPath = io.backupPath(tableName, tableOptions.toMs)
+      val metadataPath = io.backupMetadataPath(backupPath)
+      log.info(s"Backing up table $tableName to path: $backupPath")
 
-      val rdd = new KuduBackupRDD(table, options, context, session.sparkContext)
+      // Unless we are forcing a full backup or a fromMs was set, find the previous backup and
+      // use the `to_ms` metadata as the `from_ms` time for this backup.
+      if (!tableOptions.forceFull || tableOptions.fromMs != 0) {
+        log.info("No fromMs option set, looking for a previous backup.")
+        val graph = io.readBackupGraph(tableName)
+        if (graph.hasFullBackup) {
+          val base = graph.backupBase
+          log.info(s"Setting fromMs to ${base.metadata.getToMs} from backup in path: ${base.path}")
+          tableOptions = tableOptions.copy(fromMs = base.metadata.getToMs)
+        } else {
+          log.info("No full backup was found. Starting a full backup.")
+          tableOptions = tableOptions.copy(fromMs = 0)
+        }
+      }
+      val rdd = new KuduBackupRDD(table, tableOptions, context, session.sparkContext)
       val df =
-        session.sqlContext.createDataFrame(rdd, sparkSchema(table.getSchema))
-      // TODO: Prefix path with the time? Maybe a backup "name" parameter defaulted to something?
-      // TODO: Take parameter for the SaveMode.
-      val writer = df.write.mode(SaveMode.ErrorIfExists)
-      // TODO: Restrict format option.
-      // TODO: We need to cleanup partial output on failure otherwise.
-      // retries of the entire job will fail because the file already exists.
-      writer.format(options.format).save(tablePath.toString)
+        session.sqlContext
+          .createDataFrame(rdd, io.dataSchema(table.getSchema, options.isIncremental))
 
-      val tableMetadata = TableMetadata.getTableMetadata(table, options)
-      writeTableMetadata(tableMetadata, tablePath, session)
+      // Write the data to the backup path.
+      // The backup path contains the timestampMs and should not already exist.
+      val writer = df.write.mode(SaveMode.ErrorIfExists)
+      writer
+        .format(tableOptions.format)
+        .save(backupPath.toString)
+
+      // Generate and output the new metadata for this table.
+      // The existence of metadata indicates this backup was successful.
+      val tableMetadata = TableMetadata.getTableMetadata(table, tableOptions)
+      io.writeTableMetadata(tableMetadata, metadataPath)
     }
   }
 
-  private def writeTableMetadata(
-      metadata: TableMetadataPB,
-      path: Path,
-      session: SparkSession): Unit = {
-    val conf = session.sparkContext.hadoopConfiguration
-    val hPath = new HPath(path.resolve(TableMetadata.MetadataFileName).toString)
-    val fs = hPath.getFileSystem(conf)
-    val out = fs.create(hPath, /* overwrite= */ false)
-    val json = JsonFormat.printer().print(metadata)
-    out.write(json.getBytes(StandardCharsets.UTF_8))
-    out.flush()
-    out.close()
-  }
-
   def main(args: Array[String]): Unit = {
-    val options = KuduBackupOptions
+    val options = BackupOptions
       .parse(args)
       .getOrElse(throw new IllegalArgumentException("could not parse the arguments"))
 

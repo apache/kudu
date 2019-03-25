@@ -16,80 +16,113 @@
 // under the License.
 package org.apache.kudu.backup
 
-import java.io.InputStreamReader
-import java.net.URLEncoder
-import java.nio.charset.StandardCharsets
-import java.nio.file.Path
-import java.nio.file.Paths
-
-import com.google.common.io.CharStreams
-import com.google.protobuf.util.JsonFormat
-import org.apache.hadoop.fs.{Path => HPath}
-
 import org.apache.kudu.backup.Backup.TableMetadataPB
 import org.apache.kudu.client.AlterTableOptions
+import org.apache.kudu.client.SessionConfiguration.FlushMode
 import org.apache.kudu.spark.kudu.KuduContext
-import org.apache.kudu.spark.kudu.KuduWriteOptions
+import org.apache.kudu.spark.kudu.RowConverter
+import org.apache.parquet.hadoop.ParquetInputFormat
 import org.apache.spark.sql.SparkSession
 import org.apache.yetus.audience.InterfaceAudience
 import org.apache.yetus.audience.InterfaceStability
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
+/**
+ * The main class for a Kudu restore spark job.
+ *
+ * Example Usage:
+ *   spark-submit --class org.apache.kudu.backup.KuduRestore kudu-backup2_2.11-*.jar \
+ *     --kuduMasterAddresses master1-host,master-2-host,master-3-host \
+ *     --rootPath hdfs:///kudu/backup/path \
+ *     my_kudu_table
+ */
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
 object KuduRestore {
   val log: Logger = LoggerFactory.getLogger(getClass)
 
-  def run(options: KuduRestoreOptions, session: SparkSession): Unit = {
+  def run(options: RestoreOptions, session: SparkSession): Unit = {
+    log.info(s"Restoring from path: ${options.rootPath}")
     val context =
-      new KuduContext(options.kuduMasterAddresses, session.sparkContext)
-    val path = options.path
-    log.info(s"Restoring from path: $path")
+      new KuduContext(
+        options.kuduMasterAddresses,
+        session.sparkContext
+      )
+    val io = new SessionIO(session, options)
 
     // TODO: Make parallel so each table isn't processed serially.
-    options.tables.foreach { t =>
-      val tableEncoded = URLEncoder.encode(t, "UTF-8")
-      val tablePath = Paths.get(path).resolve(tableEncoded)
-      val metadataPath = getMetadataPath(tableEncoded, options)
-      val metadata = readTableMetadata(metadataPath, session)
-      val restoreName = s"${metadata.getTableName}${options.tableSuffix}"
-      val table =
-        if (options.createTables) {
-          createTableRangePartitionByRangePartition(restoreName, metadata, context)
-        } else {
-          context.syncClient.openTable(restoreName)
+    options.tables.foreach { tableName =>
+      // TODO: Consider an option to enforce an exact toMS match.
+      val graph = io.readBackupGraph(tableName).filterByTime(options.timestampMs)
+      graph.restorePath.backups.foreach { backup =>
+        log.info(s"Restoring table $tableName from path: ${backup.path}")
+        val isFullRestore = backup.metadata.getFromMs == 0
+        val restoreName = s"${backup.metadata.getTableName}${options.tableSuffix}"
+        // TODO: Store the full metadata to compare/validate for each applied partial.
+
+        // On the full restore we may need to create the table.
+        if (isFullRestore) {
+          if (options.createTables) {
+            log.info(s"Creating restore table $restoreName")
+            createTableRangePartitionByRangePartition(restoreName, backup.metadata, context)
+          }
         }
+        val table = context.syncClient.openTable(restoreName)
+        val restoreSchema = io.dataSchema(table.getSchema)
+        val rowActionCol = restoreSchema.fields.last.name
 
-      // TODO: Restrict format option.
-      val df = session.sqlContext.read
-        .format(metadata.getDataFormat)
-        .load(tablePath.toString)
-      val writeOptions = new KuduWriteOptions(ignoreDuplicateRowErrors = false, ignoreNull = false)
-      // TODO: Use client directly for more control?
-      // (session timeout, consistency mode, flush interval, mutation buffer space)
+        // TODO: Restrict format option.
+        var data = session.sqlContext.read
+          .format(backup.metadata.getDataFormat)
+          .schema(restoreSchema)
+          .load(backup.path.toString)
+          // Default the the row action column with a value of "UPSERT" so that the
+          // rows from a full backup, which don't have a row action, are upserted.
+          .na
+          .fill(RowAction.UPSERT.getValue, Seq(rowActionCol))
 
-      // Upsert so that Spark task retries do not fail.
-      context.upsertRows(df, restoreName, writeOptions)
+        // TODO: Expose more configuration options:
+        //   (session timeout, consistency mode, flush interval, mutation buffer space)
+        data.queryExecution.toRdd.foreachPartition { internalRows =>
+          val table = context.syncClient.openTable(restoreName)
+          val converter = new RowConverter(table.getSchema, restoreSchema, false)
+          val session = context.syncClient.newSession
+          session.setFlushMode(FlushMode.AUTO_FLUSH_BACKGROUND)
+          try {
+            for (internalRow <- internalRows) {
+              // Convert the InternalRows to Rows.
+              // This avoids any corruption as reported in SPARK-26880.
+              val row = converter.toRow(internalRow)
+              // Get the operation type based on the row action column.
+              // This will always be the last column in the row.
+              val rowActionValue = row.getByte(row.length - 1)
+              val rowAction = RowAction.fromValue(rowActionValue)
+              // Generate an operation based on the row action.
+              val operation = rowAction match {
+                case RowAction.UPSERT => table.newUpsert()
+                case RowAction.DELETE => table.newDelete()
+                case _ => throw new IllegalStateException(s"Unsupported RowAction: $rowAction")
+              }
+              // Convert the Spark row to a partial row and set it on the operation.
+              val partialRow = converter.toPartialRow(row)
+              operation.setRow(partialRow)
+              session.apply(operation)
+            }
+          } finally {
+            session.close()
+          }
+          // Fail the task if there are any errors.
+          val errorCount = session.getPendingErrors.getRowErrors.length
+          if (errorCount > 0) {
+            val errors =
+              session.getPendingErrors.getRowErrors.take(5).map(_.getErrorStatus).mkString
+            throw new RuntimeException(
+              s"failed to write $errorCount rows from DataFrame to Kudu; sample errors: $errors")
+          }
+        }
+      }
     }
-  }
-
-  private def getMetadataPath(tableName: String, options: KuduRestoreOptions): Path = {
-    val rootPath =
-      if (options.metadataPath.isEmpty) options.path else options.metadataPath
-    Paths.get(rootPath).resolve(tableName)
-  }
-
-  private def readTableMetadata(path: Path, session: SparkSession): TableMetadataPB = {
-    val conf = session.sparkContext.hadoopConfiguration
-    val hPath = new HPath(path.resolve(TableMetadata.MetadataFileName).toString)
-    val fs = hPath.getFileSystem(conf)
-    val in = new InputStreamReader(fs.open(hPath), StandardCharsets.UTF_8)
-    val json = CharStreams.toString(in)
-    in.close()
-    val builder = TableMetadataPB.newBuilder()
-    JsonFormat.parser().merge(json, builder)
-    builder.build()
   }
 
   // Kudu isn't good at creating a lot of tablets at once, and by default tables may only be created
@@ -121,7 +154,7 @@ object KuduRestore {
   }
 
   def main(args: Array[String]): Unit = {
-    val options = KuduRestoreOptions
+    val options = RestoreOptions
       .parse(args)
       .getOrElse(throw new IllegalArgumentException("could not parse the arguments"))
 

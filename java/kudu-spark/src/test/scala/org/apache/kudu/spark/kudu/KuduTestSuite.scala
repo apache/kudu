@@ -154,10 +154,11 @@ trait KuduTestSuite extends JUnitSuite {
 
   def insertRows(
       targetTable: KuduTable,
-      rowCount: Integer): IndexedSeq[(Int, Int, String, Long)] = {
+      rowCount: Int,
+      startIndex: Int = 0): IndexedSeq[(Int, Int, String, Long)] = {
     val kuduSession = kuduClient.newSession()
 
-    val rows = Range(0, rowCount).map { i =>
+    val rows = Range(startIndex, rowCount + startIndex).map { i =>
       val insert = targetTable.newInsert
       val row = insert.getRow
       row.addInt(0, i)

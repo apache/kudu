@@ -1,19 +1,19 @@
-/*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
 package org.apache.kudu.backup
 
 import java.util.concurrent.TimeUnit
@@ -37,39 +37,46 @@ import scala.collection.JavaConverters._
 @InterfaceStability.Unstable
 class KuduBackupRDD private[kudu] (
     @transient val table: KuduTable,
-    @transient val options: KuduBackupOptions,
+    @transient val options: BackupOptions,
     val kuduContext: KuduContext,
     @transient val sc: SparkContext)
     extends RDD[Row](sc, Nil) {
 
   // Defined here because the options are transient.
-  private val keepAlivePeriodMs = options.keepAlivePeriodMs
+  val incremental: Boolean = options.isIncremental
 
   // TODO: Split large tablets into smaller scan tokens?
   override protected def getPartitions: Array[Partition] = {
     val client = kuduContext.syncClient
 
-    // Set a hybrid time for the scan to ensure application consistency.
-    val timestampMicros = TimeUnit.MILLISECONDS.toMicros(options.timestampMs)
-    val hybridTime =
-      HybridTimeUtil.physicalAndLogicalToHTTimestamp(timestampMicros, 0)
-
-    // Create the scan tokens for each partition.
-    val tokens = client
+    val builder = client
       .newScanTokenBuilder(table)
       .cacheBlocks(false)
-      // TODO: Use fault tolerant scans to get mostly.
-      // ordered results when KUDU-2466 is fixed.
+      // TODO: Use fault tolerant scans to get mostly ordered results when KUDU-2466 is fixed.
       // .setFaultTolerant(true)
       .replicaSelection(ReplicaSelection.CLOSEST_REPLICA)
       .readMode(ReadMode.READ_AT_SNAPSHOT)
-      .snapshotTimestampRaw(hybridTime)
       .batchSizeBytes(options.scanBatchSize)
       .scanRequestTimeout(options.scanRequestTimeoutMs)
       .prefetching(options.scanPrefetching)
       .keepAlivePeriodMs(options.keepAlivePeriodMs)
-      .build()
 
+    // Set a hybrid time for the scan to ensure application consistency.
+    val toMicros = TimeUnit.MILLISECONDS.toMicros(options.toMs)
+    val toHTT =
+      HybridTimeUtil.physicalAndLogicalToHTTimestamp(toMicros, 0)
+
+    if (incremental) {
+      val fromMicros = TimeUnit.MILLISECONDS.toMicros(options.fromMs)
+      val fromHTT =
+        HybridTimeUtil.physicalAndLogicalToHTTimestamp(fromMicros, 0)
+      builder.diffScan(fromHTT, toHTT)
+    } else {
+      builder.snapshotTimestampRaw(toHTT)
+    }
+
+    // Create the scan tokens for each partition.
+    val tokens = builder.build()
     tokens.asScala.zipWithIndex.map {
       case (token, index) =>
         // TODO: Support backups from any replica or followers only.
@@ -85,12 +92,11 @@ class KuduBackupRDD private[kudu] (
   override def compute(part: Partition, taskContext: TaskContext): Iterator[Row] = {
     val client: KuduClient = kuduContext.syncClient
     val partition: KuduBackupPartition = part.asInstanceOf[KuduBackupPartition]
-    // TODO: Get deletes and updates for incremental backups.
     val scanner =
       KuduScanToken.deserializeIntoScanner(partition.scanToken, client)
     // We don't store the RowResult so we can enable the reuseRowResult optimization.
     scanner.setReuseRowResult(true)
-    new RowIterator(scanner, kuduContext)
+    new RowIterator(scanner, kuduContext, incremental)
   }
 
   override def getPreferredLocations(partition: Partition): Seq[String] = {
@@ -109,7 +115,10 @@ private case class KuduBackupPartition(index: Int, scanToken: Array[Byte], locat
  * that takes the job partitions and task context and expects to return an Iterator[Row].
  * This implementation facilitates that.
  */
-private class RowIterator(private val scanner: KuduScanner, val kuduContext: KuduContext)
+private class RowIterator(
+    private val scanner: KuduScanner,
+    val kuduContext: KuduContext,
+    val incremental: Boolean)
     extends Iterator[Row] {
 
   private val scannerIterator = scanner.iterator()
@@ -130,10 +139,24 @@ private class RowIterator(private val scanner: KuduScanner, val kuduContext: Kud
   // sort of zero copy/object pool pattern for performance (we could use that here).
   override def next(): Row = {
     val rowResult = scannerIterator.next()
-    val columnCount = rowResult.getColumnProjection.getColumnCount
-    val columns = Array.ofDim[Any](columnCount)
+    val fieldCount = rowResult.getColumnProjection.getColumnCount
+    // If this is an incremental backup, the last column is the is_deleted column.
+    val columnCount = if (incremental) fieldCount - 1 else fieldCount
+    val columns = Array.ofDim[Any](fieldCount)
     for (i <- 0 until columnCount) {
       columns(i) = rowResult.getObject(i)
+    }
+    // If this is an incremental backup, translate the is_deleted column into
+    // the "change_type" column as the last field.
+    if (incremental) {
+      val rowAction = if (rowResult.isDeleted) {
+        RowAction.DELETE.getValue
+      } else {
+        // If the row is not deleted, we do not know if it was inserted or updated,
+        // so we use upsert.
+        RowAction.UPSERT.getValue
+      }
+      columns(fieldCount - 1) = rowAction
     }
     Row.fromSeq(columns)
   }

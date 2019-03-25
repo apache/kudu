@@ -14,25 +14,21 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-
 package org.apache.kudu.backup
 
 import java.nio.file.Files
+import java.nio.file.Path
 import java.util
 
 import com.google.common.base.Objects
 import org.apache.commons.io.FileUtils
-
 import org.apache.kudu.client.PartitionSchema.HashBucketSchema
 import org.apache.kudu.client._
 import org.apache.kudu.ColumnSchema
 import org.apache.kudu.Schema
-import org.apache.kudu.Type
 import org.apache.kudu.spark.kudu._
 import org.apache.kudu.test.RandomUtils
 import org.apache.kudu.util.DataGenerator.DataGeneratorBuilder
-import org.apache.kudu.util.DataGenerator
-import org.apache.kudu.util.DecimalUtil
 import org.apache.kudu.util.HybridTimeUtil
 import org.apache.kudu.util.SchemaGenerator.SchemaGeneratorBuilder
 import org.junit.Assert._
@@ -40,8 +36,8 @@ import org.junit.Before
 import org.junit.Test
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+
 import scala.collection.JavaConverters._
-import scala.util.Random
 
 class TestKuduBackup extends KuduTestSuite {
   val log: Logger = LoggerFactory.getLogger(getClass)
@@ -57,7 +53,7 @@ class TestKuduBackup extends KuduTestSuite {
   def testSimpleBackupAndRestore() {
     insertRows(table, 100) // Insert data into the default test table.
 
-    backupAndRestore(tableName)
+    backupAndRestore(Seq(tableName))
 
     val rdd =
       kuduContext.kuduRDD(ss.sparkContext, s"$tableName-restore", List("key"))
@@ -68,6 +64,28 @@ class TestKuduBackup extends KuduTestSuite {
     assertEquals(tA.getNumReplicas, tB.getNumReplicas)
     assertTrue(schemasMatch(tA.getSchema, tB.getSchema))
     assertTrue(partitionSchemasMatch(tA.getPartitionSchema, tB.getPartitionSchema))
+  }
+
+  // TODO: Add a thorough randomized test for full and incremental backup/restore.
+  @Test
+  def TestIncrementalBackupAndRestore() {
+    insertRows(table, 100) // Insert data into the default test table.
+
+    val rootDir = Files.createTempDirectory("backup")
+    doBackup(rootDir, Seq(tableName)) // Full backup.
+    insertRows(table, 100, 100) // Insert more data.
+    doBackup(rootDir, Seq(tableName), incremental = true) // Incremental backup.
+    // Delete rows that span the full and incremental backup.
+    Range(50, 150).foreach { i =>
+      deleteRow(i)
+    }
+    doBackup(rootDir, Seq(tableName), incremental = true) // Incremental backup.
+    doRestore(rootDir, Seq(tableName)) // Restore all the backups.
+    FileUtils.deleteDirectory(rootDir.toFile)
+
+    val rdd =
+      kuduContext.kuduRDD(ss.sparkContext, s"$tableName-restore", List("key"))
+    assert(rdd.collect.length == 100)
   }
 
   @Test
@@ -81,7 +99,7 @@ class TestKuduBackup extends KuduTestSuite {
 
     kuduClient.createTable(impalaTableName, simpleSchema, tableOptions)
 
-    backupAndRestore(impalaTableName)
+    backupAndRestore(Seq(impalaTableName))
 
     val rdd = kuduContext
       .kuduRDD(ss.sparkContext, s"$impalaTableName-restore", List("key"))
@@ -95,7 +113,7 @@ class TestKuduBackup extends KuduTestSuite {
     val tableName = table.getName
     loadRandomData(table)
 
-    backupAndRestore(tableName)
+    backupAndRestore(Seq(tableName))
 
     val backupRows = kuduContext.kuduRDD(ss.sparkContext, s"$tableName").collect
     val restoreRows =
@@ -121,7 +139,7 @@ class TestKuduBackup extends KuduTestSuite {
     insertRows(table1, numRows)
     insertRows(table2, numRows)
 
-    backupAndRestore(table1Name, table2Name)
+    backupAndRestore(Seq(table1Name, table2Name))
 
     val rdd1 =
       kuduContext.kuduRDD(ss.sparkContext, s"$table1Name-restore", List("key"))
@@ -166,7 +184,7 @@ class TestKuduBackup extends KuduTestSuite {
     insertRows(table, kNumPartitions)
 
     // Now backup and restore the table.
-    backupAndRestore(tableName)
+    backupAndRestore(Seq(tableName))
   }
 
   @Test
@@ -180,7 +198,7 @@ class TestKuduBackup extends KuduTestSuite {
 
     insertRows(table1, 100)
 
-    backupAndRestore(tableName)
+    backupAndRestore(Seq(tableName))
   }
 
   // TODO: Move to a Schema equals/equivalent method.
@@ -269,9 +287,14 @@ class TestKuduBackup extends KuduTestSuite {
     }
   }
 
-  def backupAndRestore(tableNames: String*): Unit = {
-    val dir = Files.createTempDirectory("backup")
-    val path = dir.toUri.toString
+  def backupAndRestore(tableNames: Seq[String]): Unit = {
+    val rootDir = Files.createTempDirectory("backup")
+    doBackup(rootDir, tableNames)
+    doRestore(rootDir, tableNames)
+    FileUtils.deleteDirectory(rootDir.toFile)
+  }
+
+  def doBackup(rootDir: Path, tableNames: Seq[String], incremental: Boolean = false): Unit = {
     val nowMs = System.currentTimeMillis()
 
     // Log the timestamps to simplify flaky debugging.
@@ -286,14 +309,19 @@ class TestKuduBackup extends KuduTestSuite {
     // granularity. This means if the test runs fast enough that data is inserted with the same
     // millisecond value as nowMs (after truncating the micros) the records inserted in the
     // microseconds after truncation could be unread.
-    val backupOptions =
-      new KuduBackupOptions(tableNames, path, harness.getMasterAddressesAsString, nowMs + 1)
+    val backupOptions = new BackupOptions(
+      tableNames,
+      rootDir.toUri.toString,
+      harness.getMasterAddressesAsString,
+      nowMs + 1,
+      incremental
+    )
     KuduBackup.run(backupOptions, ss)
+  }
 
+  def doRestore(rootDir: Path, tableNames: Seq[String]): Unit = {
     val restoreOptions =
-      new KuduRestoreOptions(tableNames, path, harness.getMasterAddressesAsString)
+      new RestoreOptions(tableNames, rootDir.toUri.toString, harness.getMasterAddressesAsString)
     KuduRestore.run(restoreOptions, ss)
-
-    FileUtils.deleteDirectory(dir.toFile)
   }
 }

@@ -35,6 +35,7 @@ message ColumnTypeAttributesMetadataPB {
 
 // Maps to the ColumnSchema class.
 // The fields are effectively 1 to 1 mappings of those in ColumnSchema.
+// TODO: How do we handle column additions?
 message ColumnMetadataPB {
   string name = 1;
   string type = 2;
@@ -98,18 +99,21 @@ message PartitionMetadataPB {
 // so we can understand and create a table that matches the backed up
 // table on restore.
 message TableMetadataPB {
+  // A version used to handle any future format/layout changes.
+  int32 version = 1;
   // The starting point of a backup. A UNIX timestamp in milliseconds since the epoch.
-  int64 from_ms = 1;
+  // If from_ms is 0, this is a full backup.
+  int64 from_ms = 2;
   // The end point of a backup. A UNIX timestamp in milliseconds since the epoch.
-  int64 to_ms = 2;
+  int64 to_ms = 3;
   // The file format used to store the data.
-  string data_format = 3;
+  string data_format = 4;
   // The name of the table.
-  string table_name = 4;
+  string table_name = 5;
   // The replication factor of this table.
-  int32 num_replicas = 5;
+  int32 num_replicas = 6;
   // The metadata for the table's columns.
-  repeated ColumnMetadataPB columns = 6;
+  repeated ColumnMetadataPB columns = 7;
   // The metadata for the table's partitions.
-  PartitionMetadataPB partitions = 7;
+  PartitionMetadataPB partitions = 8;
 }

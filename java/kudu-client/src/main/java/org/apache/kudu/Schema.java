@@ -198,6 +198,15 @@ public class Schema {
   }
 
   /**
+   * Returns true if the column exists.
+   * @param columnName column to search for
+   * @return true if the column exists
+   */
+  public boolean hasColumn(String columnName) {
+    return this.columnsByName.containsKey(columnName);
+  }
+
+  /**
    * Get the index for the provided column name.
    * @param columnName column to search for
    * @return an index in the schema
@@ -307,14 +316,22 @@ public class Schema {
   }
 
   /**
+   * @return true if the schema has the IS_DELETED virtual column
+   */
+  @InterfaceAudience.Private
+  @InterfaceStability.Unstable
+  public boolean hasIsDeleted() {
+    return isDeletedIndex != NO_IS_DELETED_INDEX;
+  }
+
+  /**
    * @return the index of the IS_DELETED virtual column
    * @throws IllegalStateException if no IS_DELETED virtual column exists
    */
   @InterfaceAudience.Private
   @InterfaceStability.Unstable
   public int getIsDeletedIndex() {
-    Preconditions.checkState(isDeletedIndex != NO_IS_DELETED_INDEX,
-        "Schema doesn't have an IS_DELETED columns");
+    Preconditions.checkState(hasIsDeleted(), "Schema doesn't have an IS_DELETED columns");
     return isDeletedIndex;
   }
 }
