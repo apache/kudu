@@ -34,6 +34,8 @@ There are {{num_tables}} tables.
     <th>Table Id</th>
     <th>State</th>
     <th>State Message</th>
+    <th>Create Time</th>
+    <th>Last Alter Time</th>
   </tr></thead>
   <tbody>
    {{#tables}}
@@ -42,6 +44,8 @@ There are {{num_tables}} tables.
       <td><a href="/table?id={{id}}">{{id}}</a></td>
       <td>{{state}}</td>
       <td>{{message}}</td>
+      <td>{{create time}}</td>
+      <td>{{alter time}}</td>
     </tr>
    {{/tables}}
   </tbody>

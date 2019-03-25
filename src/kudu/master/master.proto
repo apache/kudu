@@ -184,6 +184,11 @@ message SysTablesEntryPB {
   // Debug state for the table.
   optional State state = 6 [ default = UNKNOWN ];
   optional bytes state_msg = 7;
+
+  // The create time of the table, in seconds since the epoch.
+  optional int64 create_timestamp = 10;
+  // The last alter time of the table, in seconds since the epoch.
+  optional int64 alter_timestamp = 11;
 }
 
 // The on-disk entry in the sys.catalog table ("metadata" column) to represent

@@ -50,6 +50,7 @@
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/walltime.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
@@ -198,6 +199,18 @@ void MasterPathHandlers::HandleCatalogManager(const Webserver::WebRequest& req,
     table_json["id"] = EscapeForHtmlToString(table->id());
     table_json["state"] = state;
     table_json["message"] = EscapeForHtmlToString(l.data().pb.state_msg());
+    std::string str_create_time;
+    if (l.data().pb.has_create_timestamp()) {
+      StringAppendStrftime(&str_create_time, "%Y-%m-%d %H:%M:%S %Z",
+          l.data().pb.create_timestamp(), true);
+    }
+    table_json["create time"] = EscapeForHtmlToString(str_create_time);
+    std::string str_alter_time;
+    if (l.data().pb.has_alter_timestamp()) {
+      StringAppendStrftime(&str_alter_time, "%Y-%m-%d %H:%M:%S %Z",
+          l.data().pb.alter_timestamp(), true);
+    }
+    table_json["alter time"] = EscapeForHtmlToString(str_alter_time);
   }
   (*output).Set<int64_t>("num_tables", num_running_tables);
 }

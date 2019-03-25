@@ -53,6 +53,7 @@
 #include <ostream>
 #include <set>
 #include <string>
+#include <time.h>
 #include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
@@ -1737,6 +1738,7 @@ scoped_refptr<TableInfo> CatalogManager::CreateTableInfo(const CreateTableReques
   // whereas the user request PB does not.
   CHECK_OK(SchemaToPB(schema, metadata->mutable_schema()));
   partition_schema.ToPB(metadata->mutable_partition_schema());
+  metadata->set_create_timestamp(time(nullptr));
   return table;
 }
 
@@ -2435,6 +2437,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
         Status::NotFound("the table was deleted", l.data().pb.state_msg()),
         resp, MasterErrorPB::TABLE_NOT_FOUND);
   }
+  l.mutable_data()->pb.set_alter_timestamp(time(nullptr));
 
   string normalized_table_name = NormalizeTableName(l.data().name());
   *resp->mutable_table_id() = table->id();
