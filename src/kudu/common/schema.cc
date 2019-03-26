@@ -115,6 +115,9 @@ Status ColumnSchema::ApplyDelta(const ColumnSchemaDelta& col_delta) {
   if (col_delta.cfile_block_size) {
     attributes_.cfile_block_size = *col_delta.cfile_block_size;
   }
+  if (col_delta.new_comment) {
+    comment_ = col_delta.new_comment;
+  }
   return Status::OK();
 }
 

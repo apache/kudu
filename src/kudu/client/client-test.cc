@@ -127,6 +127,7 @@ DECLARE_int32(leader_failure_exp_backoff_max_delta_ms);
 DECLARE_int32(log_inject_latency_ms_mean);
 DECLARE_int32(log_inject_latency_ms_stddev);
 DECLARE_int32(master_inject_latency_on_tablet_lookups_ms);
+DECLARE_int32(max_column_comment_length);
 DECLARE_int32(max_create_tablets_per_ts);
 DECLARE_int32(raft_heartbeat_interval_ms);
 DECLARE_int32(scanner_batch_size_rows);
@@ -4884,6 +4885,117 @@ TEST_F(ClientTest, TestReadAtSnapshotNoTimestampSet) {
     EXPECT_EQ(ts_ref, ts_post);
   }
   EXPECT_EQ(kTabletsNum * kRowsPerTablet, total_row_count);
+}
+
+TEST_F(ClientTest, TestCreateTableWithValidComment) {
+  const string kTableName = "table_comment";
+  const string kLongComment(FLAGS_max_column_comment_length, 'x');
+
+  // Create a table with comment.
+  {
+    KuduSchema schema;
+    KuduSchemaBuilder schema_builder;
+    schema_builder.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+    schema_builder.AddColumn("val")->Type(KuduColumnSchema::INT32)->Comment(kLongComment);
+    ASSERT_OK(schema_builder.Build(&schema));
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    ASSERT_OK(table_creator->table_name(kTableName)
+      .schema(&schema).num_replicas(1).set_range_partition_columns({ "key" }).Create());
+  }
+
+  // Open the table and verify the comment.
+  {
+    KuduSchema schema;
+    ASSERT_OK(client_->GetTableSchema(kTableName, &schema));
+    ASSERT_EQ(schema.Column(1).name(), "val");
+    ASSERT_EQ(schema.Column(1).comment(), kLongComment);
+  }
+}
+
+TEST_F(ClientTest, TestAlterTableWithValidComment) {
+  const string kTableName = "table_comment";
+  const auto AlterAndVerify = [&] (int i) {
+    // The comment length should be less and equal than FLAGS_max_column_comment_length.
+    string kLongComment(i * 16, 'x');
+
+    // Alter the table with comment.
+    unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    table_alterer->AlterColumn("val")->Comment(kLongComment);
+    ASSERT_OK(table_alterer->Alter());
+
+    // Open the table and verify the comment.
+    KuduSchema schema;
+    ASSERT_OK(client_->GetTableSchema(kTableName, &schema));
+    ASSERT_EQ(schema.Column(1).name(), "val");
+    ASSERT_EQ(schema.Column(1).comment(), kLongComment);
+  };
+
+  // Create a table.
+  {
+    KuduSchema schema;
+    KuduSchemaBuilder schema_builder;
+    schema_builder.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+    schema_builder.AddColumn("val")->Type(KuduColumnSchema::INT32);
+    ASSERT_OK(schema_builder.Build(&schema));
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    ASSERT_OK(table_creator->table_name(kTableName)
+        .schema(&schema).num_replicas(1).set_range_partition_columns({ "key" }).Create());
+  }
+
+  for (int i = 0; i <= 16; ++i) {
+    NO_FATALS(AlterAndVerify(i));
+  }
+}
+
+TEST_F(ClientTest, TestCreateAndAlterTableWithInvalidComment) {
+  const string kTableName = "table_comment";
+  const vector<pair<string, string>> kCases = {
+    {string(FLAGS_max_column_comment_length + 1, 'x'), "longer than maximum permitted length"},
+    {string("foo\0bar", 7), "invalid column comment: identifier must not contain null bytes"},
+    {string("foo\xf0\x28\x8c\xbc", 7), "invalid column comment: invalid UTF8 sequence"}
+  };
+
+  // Create tables with invalid comment.
+  for (const auto& test_case : kCases) {
+    const auto& comment = test_case.first;
+    const auto& substr = test_case.second;
+    SCOPED_TRACE(comment);
+
+    KuduSchema schema;
+    KuduSchemaBuilder schema_builder;
+    schema_builder.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+    schema_builder.AddColumn("val")->Type(KuduColumnSchema::INT32)->Comment(comment);
+    ASSERT_OK(schema_builder.Build(&schema));
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    Status s = table_creator->table_name(kTableName)
+        .schema(&schema).num_replicas(1).set_range_partition_columns({ "key" }).Create();
+    ASSERT_STR_CONTAINS(s.ToString(), substr);
+  }
+
+  // Create a table for later alterer.
+  {
+    KuduSchema schema;
+    KuduSchemaBuilder schema_builder;
+    schema_builder.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+    schema_builder.AddColumn("val")->Type(KuduColumnSchema::INT32);
+    ASSERT_OK(schema_builder.Build(&schema));
+    unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    ASSERT_OK(table_creator->table_name(kTableName)
+        .schema(&schema).num_replicas(1).set_range_partition_columns({ "key" }).Create());
+  }
+
+  // Alter tables with invalid comment.
+  for (const auto& test_case : kCases) {
+    const auto& comment = test_case.first;
+    const auto& substr = test_case.second;
+    SCOPED_TRACE(comment);
+
+    // Alter the table.
+    unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    table_alterer->AlterColumn("val")->Comment(comment);
+    Status s = table_alterer->Alter();
+    ASSERT_STR_CONTAINS(s.ToString(), substr);
+  }
 }
 
 enum IntEncoding {

@@ -289,6 +289,11 @@ KuduColumnSpec* KuduColumnSpec::RenameTo(const std::string& new_name) {
   return this;
 }
 
+KuduColumnSpec* KuduColumnSpec::Comment(const string& comment) {
+  data_->comment = boost::optional<string>(comment);
+  return this;
+}
+
 Status KuduColumnSpec::ToColumnSchema(KuduColumnSchema* col) const {
   // Verify that the user isn't trying to use any methods that
   // don't make sense for CREATE.
@@ -377,7 +382,7 @@ Status KuduColumnSpec::ToColumnSchema(KuduColumnSchema* col) const {
   *col = KuduColumnSchema(data_->name, data_->type, nullable,
                           default_val,
                           KuduColumnStorageAttributes(encoding, compression, block_size),
-                          type_attrs);
+                          type_attrs, data_->comment.get_ptr());
 #pragma GCC diagnostic pop
 
   return Status::OK();
@@ -424,6 +429,7 @@ Status KuduColumnSpec::ToColumnSchemaDelta(ColumnSchemaDelta* col_delta) const {
     col_delta->cfile_block_size = boost::optional<int32_t>(data_->block_size);
   }
 
+  col_delta->new_comment = std::move(data_->comment);
   return Status::OK();
 }
 
@@ -602,7 +608,8 @@ KuduColumnSchema::KuduColumnSchema(const std::string &name,
                                    bool is_nullable,
                                    const void* default_value,
                                    const KuduColumnStorageAttributes& storage_attributes,
-                                   const KuduColumnTypeAttributes& type_attributes) {
+                                   const KuduColumnTypeAttributes& type_attributes,
+                                   const string* comment) {
   ColumnStorageAttributes attr_private;
   attr_private.encoding = ToInternalEncodingType(storage_attributes.encoding());
   attr_private.compression = ToInternalCompressionType(
@@ -613,7 +620,8 @@ KuduColumnSchema::KuduColumnSchema(const std::string &name,
   col_ = new ColumnSchema(name, ToInternalDataType(type, type_attributes),
                           is_nullable,
                           default_value, default_value, attr_private,
-                          type_attr_private);
+                          type_attr_private,
+                          std::move(comment ? boost::optional<string>(*comment) : boost::none));
 }
 
 KuduColumnSchema::KuduColumnSchema(const KuduColumnSchema& other)
@@ -665,6 +673,10 @@ KuduColumnSchema::DataType KuduColumnSchema::type() const {
 KuduColumnTypeAttributes KuduColumnSchema::type_attributes() const {
   ColumnTypeAttributes type_attributes = DCHECK_NOTNULL(col_)->type_attributes();
   return KuduColumnTypeAttributes(type_attributes.precision, type_attributes.scale);
+}
+
+string KuduColumnSchema::comment() const {
+  return DCHECK_NOTNULL(col_)->comment() ? *col_->comment() : "";
 }
 
 ////////////////////////////////////////////////////////////
@@ -728,7 +740,7 @@ KuduColumnSchema KuduSchema::Column(size_t idx) const {
   KuduColumnTypeAttributes type_attrs(col.type_attributes().precision, col.type_attributes().scale);
   return KuduColumnSchema(col.name(), FromInternalDataType(col.type_info()->type()),
                           col.is_nullable(), col.read_default_value(),
-                          attrs, type_attrs);
+                          attrs, type_attrs, col.comment().get_ptr());
 }
 
 KuduPartialRow* KuduSchema::NewRow() const {

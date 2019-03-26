@@ -28,6 +28,7 @@
 
 #ifdef KUDU_HEADERS_NO_STUBS
 #include <gtest/gtest_prod.h>
+
 #include "kudu/gutil/port.h"
 #else
 #include "kudu/client/stubs.h"
@@ -241,6 +242,12 @@ class KUDU_EXPORT KuduColumnSchema {
   /// @return Type attributes of the column schema.
   KuduColumnTypeAttributes type_attributes() const;
 
+  /// @return comment of the column schema.
+  ///
+  /// @note Both columns with no comments and empty comments will return
+  ///   empty strings here.
+  std::string comment() const;
+
  private:
   friend class KuduColumnSpec;
   friend class KuduSchema;
@@ -267,7 +274,9 @@ class KUDU_EXPORT KuduColumnSchema {
       bool is_nullable = false,
       const void* default_value = NULL, //NOLINT(modernize-use-nullptr)
       const KuduColumnStorageAttributes& storage_attributes = KuduColumnStorageAttributes(),
-      const KuduColumnTypeAttributes& type_attributes = KuduColumnTypeAttributes());
+      const KuduColumnTypeAttributes& type_attributes = KuduColumnTypeAttributes(),
+      const std::string* comment = NULL //NOLINT(modernize-use-nullptr)
+      );
 #if defined(__clang__) || \
   (defined(__GNUC__) && (__GNUC__ * 10000 + __GNUC_MINOR__ * 100) >= 40600)
 #pragma GCC diagnostic pop
@@ -431,6 +440,13 @@ class KUDU_EXPORT KuduColumnSpec {
   /// @return Pointer to the modified object.
   KuduColumnSpec* RenameTo(const std::string& new_name);
   ///@}
+
+  /// Set the comment of the column.
+  ///
+  /// @param [in] comment
+  ///   The comment for the column.
+  /// @return Pointer to the modified object.
+  KuduColumnSpec* Comment(const std::string& comment);
 
  private:
   class KUDU_NO_EXPORT Data;

@@ -180,6 +180,10 @@ TAG_FLAG(max_num_columns, unsafe);
 
 DEFINE_int32(max_identifier_length, 256,
              "Maximum length of the name of a column or table.");
+
+DEFINE_int32(max_column_comment_length, 256,
+             "Maximum length of the comment of a column");
+
 // Tag as unsafe because we end up writing schemas in every WAL entry, etc,
 // and having very long column names would enter untested territory and affect
 // performance.
@@ -1297,19 +1301,15 @@ Status CatalogManager::CheckOnline() const {
 
 namespace {
 
-// Validate a table or column name to ensure that it is a valid identifier.
-Status ValidateIdentifier(const string& id) {
-  if (id.empty()) {
-    return Status::InvalidArgument("empty string not a valid identifier");
-  }
-
-  if (id.length() > FLAGS_max_identifier_length) {
+Status ValidateLengthAndUTF8(const string& id, int32_t max_length) {
+  // Id should not exceed the maximum allowed length.
+  if (id.length() > max_length) {
     return Status::InvalidArgument(Substitute(
         "identifier '$0' longer than maximum permitted length $1",
         id, FLAGS_max_identifier_length));
   }
 
-  // Identifiers should be valid UTF8.
+  // Id should be valid UTF8.
   const char* p = id.data();
   int rem = id.size();
   while (rem > 0) {
@@ -1328,6 +1328,25 @@ Status ValidateIdentifier(const string& id) {
   return Status::OK();
 }
 
+// Validate a table or column name to ensure that it is a valid identifier.
+Status ValidateIdentifier(const string& id) {
+  if (id.empty()) {
+    return Status::InvalidArgument("empty string not a valid identifier");
+  }
+
+  return ValidateLengthAndUTF8(id, FLAGS_max_identifier_length);
+}
+
+// Validate a column comment to ensure that it is a valid identifier.
+Status ValidateCommentIdentifier(const boost::optional<string>& id) {
+  // It's safe here because logical OR has left-to-right associativity.
+  if (!id || id->empty()) {
+    return Status::OK();
+  }
+
+  return ValidateLengthAndUTF8(*id, FLAGS_max_column_comment_length);
+}
+
 // Validate the client-provided schema and name.
 Status ValidateClientSchema(const optional<string>& name,
                             const Schema& schema) {
@@ -1337,6 +1356,8 @@ Status ValidateClientSchema(const optional<string>& name,
   for (int i = 0; i < schema.num_columns(); i++) {
     RETURN_NOT_OK_PREPEND(ValidateIdentifier(schema.column(i).name()),
                           "invalid column name");
+    RETURN_NOT_OK_PREPEND(ValidateCommentIdentifier(schema.column(i).comment()),
+                          "invalid column comment");
   }
   if (schema.num_key_columns() <= 0) {
     return Status::InvalidArgument("must specify at least one key column");

@@ -273,9 +273,9 @@ TEST_F(TestSchema, TestColumnSchemaEquals) {
   ASSERT_TRUE(col1.Equals(col2, ColumnSchema::COMPARE_TYPE));
   ASSERT_TRUE(col1.Equals(col3, ColumnSchema::COMPARE_NAME));
   ASSERT_FALSE(col1.Equals(col3, ColumnSchema::COMPARE_TYPE));
-  ASSERT_TRUE(col1.Equals(col3, ColumnSchema::COMPARE_DEFAULTS));
-  ASSERT_FALSE(col3.Equals(col4, ColumnSchema::COMPARE_DEFAULTS));
-  ASSERT_TRUE(col4.Equals(col4, ColumnSchema::COMPARE_DEFAULTS));
+  ASSERT_TRUE(col1.Equals(col3, ColumnSchema::COMPARE_OTHER));
+  ASSERT_FALSE(col3.Equals(col4, ColumnSchema::COMPARE_OTHER));
+  ASSERT_TRUE(col4.Equals(col4, ColumnSchema::COMPARE_OTHER));
 }
 
 TEST_F(TestSchema, TestSchemaEquals) {

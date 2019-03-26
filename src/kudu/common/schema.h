@@ -174,6 +174,8 @@ public:
   boost::optional<EncodingType> encoding;
   boost::optional<CompressionType> compression;
   boost::optional<int32_t> cfile_block_size;
+
+  boost::optional<std::string> new_comment;
 };
 
 // The schema for a given column.
@@ -190,6 +192,7 @@ class ColumnSchema {
   // write_default: default value added to the row if the column value was
   //    not specified on insert.
   //    The value will be copied and released on ColumnSchema destruction.
+  // comment: the comment for the column.
   //
   // Example:
   //   ColumnSchema col_a("a", UINT32)
@@ -202,13 +205,15 @@ class ColumnSchema {
                const void* read_default = nullptr,
                const void* write_default = nullptr,
                ColumnStorageAttributes attributes = ColumnStorageAttributes(),
-               ColumnTypeAttributes type_attributes = ColumnTypeAttributes())
+               ColumnTypeAttributes type_attributes = ColumnTypeAttributes(),
+               boost::optional<std::string> comment = boost::none)
       : name_(std::move(name)),
         type_info_(GetTypeInfo(type)),
         is_nullable_(is_nullable),
         read_default_(read_default ? new Variant(type, read_default) : nullptr),
         attributes_(attributes),
-        type_attributes_(type_attributes) {
+        type_attributes_(type_attributes),
+        comment_(std::move(comment)) {
     if (write_default == read_default) {
       write_default_ = read_default_;
     } else if (write_default != nullptr) {
@@ -247,6 +252,10 @@ class ColumnSchema {
   // Same as above, but only including the attributes information.
   // For example, "AUTO_ENCODING ZLIB 123 123".
   std::string AttrToString() const;
+
+  const boost::optional<std::string>& comment() const {
+    return comment_;
+  }
 
   // Returns true if the column has a read default value
   bool has_read_default() const {
@@ -303,10 +312,10 @@ class ColumnSchema {
   enum CompareFlags {
     COMPARE_NAME = 1 << 0,
     COMPARE_TYPE = 1 << 1,
-    COMPARE_DEFAULTS = 1 << 2,
+    COMPARE_OTHER = 1 << 2,
 
     COMPARE_NAME_AND_TYPE = COMPARE_NAME | COMPARE_TYPE,
-    COMPARE_ALL = COMPARE_NAME | COMPARE_TYPE | COMPARE_DEFAULTS
+    COMPARE_ALL = COMPARE_NAME | COMPARE_TYPE | COMPARE_OTHER
   };
 
   bool Equals(const ColumnSchema &other,
@@ -322,7 +331,7 @@ class ColumnSchema {
     // For Key comparison checking the defaults doesn't make sense,
     // since we don't support them, for server vs user schema this comparison
     // will always fail, since the user does not specify the defaults.
-    if (flags & COMPARE_DEFAULTS) {
+    if (flags & COMPARE_OTHER) {
       if (read_default_ == nullptr && other.read_default_ != nullptr)
         return false;
 
@@ -334,6 +343,19 @@ class ColumnSchema {
 
       if (write_default_ != nullptr && !write_default_->Equals(other.write_default_.get()))
         return false;
+
+      // "no comment" and "empty comment" are the same.
+      if (comment_) {
+        if (other.comment_) {
+          if (*comment_ != *other.comment_) return false;
+        } else {
+          if (!comment_->empty()) return false;
+        }
+      } else {
+        if (other.comment_) {
+          if (!other.comment_->empty()) return false;
+        }
+      }
     }
     return true;
   }
@@ -405,6 +427,7 @@ class ColumnSchema {
   std::shared_ptr<Variant> write_default_;
   ColumnStorageAttributes attributes_;
   ColumnTypeAttributes type_attributes_;
+  boost::optional<std::string> comment_;
 };
 
 // The schema for a set of rows.

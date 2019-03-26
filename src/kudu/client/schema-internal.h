@@ -19,6 +19,8 @@
 
 #include <string>
 
+#include <boost/optional/optional.hpp>
+
 #include "kudu/client/schema.h"
 #include "kudu/client/value.h"
 #include "kudu/common/common.pb.h"
@@ -112,6 +114,8 @@ class KuduColumnSpec::Data {
   // For ALTER
   bool has_rename_to;
   std::string rename_to;
+
+  boost::optional<std::string> comment;
 };
 
 } // namespace client

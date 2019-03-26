@@ -304,7 +304,9 @@ WriteRpc::WriteRpc(const scoped_refptr<Batcher>& batcher,
 
   // Set up schema
   CHECK_OK(SchemaToPB(*schema, req_.mutable_schema(),
-                      SCHEMA_PB_WITHOUT_STORAGE_ATTRIBUTES | SCHEMA_PB_WITHOUT_IDS));
+                      SCHEMA_PB_WITHOUT_STORAGE_ATTRIBUTES |
+                      SCHEMA_PB_WITHOUT_IDS |
+                      SCHEMA_PB_WITHOUT_COMMENT));
 
   // Pick up the authz token for the table.
   FetchCachedAuthzToken();

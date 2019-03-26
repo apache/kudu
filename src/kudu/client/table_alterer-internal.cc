@@ -69,7 +69,9 @@ Status KuduTableAlterer::Data::ToRequest(AlterTableRequestPB* req) {
 
   if (schema_ != nullptr) {
     RETURN_NOT_OK(SchemaToPB(*schema_, req->mutable_schema(),
-                             SCHEMA_PB_WITHOUT_IDS | SCHEMA_PB_WITHOUT_WRITE_DEFAULT));
+                             SCHEMA_PB_WITHOUT_IDS |
+                             SCHEMA_PB_WITHOUT_WRITE_DEFAULT |
+                             SCHEMA_PB_WITHOUT_COMMENT));
   }
 
   for (const Step& s : steps_) {
@@ -105,7 +107,8 @@ Status KuduTableAlterer::Data::ToRequest(AlterTableRequestPB* req) {
             !s.spec->data_->remove_default &&
             !s.spec->data_->has_encoding &&
             !s.spec->data_->has_compression &&
-            !s.spec->data_->has_block_size) {
+            !s.spec->data_->has_block_size &&
+            !s.spec->data_->comment) {
           return Status::InvalidArgument("no alter operation specified",
                                          s.spec->data_->name);
         }
@@ -117,7 +120,8 @@ Status KuduTableAlterer::Data::ToRequest(AlterTableRequestPB* req) {
             !s.spec->data_->remove_default &&
             !s.spec->data_->has_encoding &&
             !s.spec->data_->has_compression &&
-            !s.spec->data_->has_block_size) {
+            !s.spec->data_->has_block_size &&
+            !s.spec->data_->comment) {
           pb_step->set_type(AlterTableRequestPB::RENAME_COLUMN);
           pb_step->mutable_rename_column()->set_old_name(s.spec->data_->name);
           pb_step->mutable_rename_column()->set_new_name(s.spec->data_->rename_to);

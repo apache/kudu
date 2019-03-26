@@ -23,6 +23,7 @@
 #include <cstring>
 #include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
@@ -246,6 +247,9 @@ void ColumnSchemaToPB(const ColumnSchema& col_schema, ColumnSchemaPB *pb, int fl
       pb->set_write_default_value(write_value, col_schema.type_info()->size());
     }
   }
+  if (col_schema.comment() && !(flags & SCHEMA_PB_WITHOUT_COMMENT)) {
+    pb->set_comment(*col_schema.comment());
+  }
 }
 
 ColumnSchema ColumnSchemaFromPB(const ColumnSchemaPB& pb) {
@@ -292,9 +296,15 @@ ColumnSchema ColumnSchemaFromPB(const ColumnSchemaPB& pb) {
   if (pb.has_cfile_block_size()) {
     attributes.cfile_block_size = pb.cfile_block_size();
   }
+
+  boost::optional<string> comment;
+  if (pb.has_comment()) {
+    comment = boost::optional<string>(pb.comment());
+  }
+
   return ColumnSchema(pb.name(), pb.type(), pb.is_nullable(),
                       read_default_ptr, write_default_ptr,
-                      attributes, type_attributes);
+                      attributes, type_attributes, std::move(comment));
 }
 
 void ColumnSchemaDeltaToPB(const ColumnSchemaDelta& col_delta, ColumnSchemaDeltaPB *pb) {
@@ -319,6 +329,9 @@ void ColumnSchemaDeltaToPB(const ColumnSchemaDelta& col_delta, ColumnSchemaDelta
   if (col_delta.cfile_block_size) {
     pb->set_block_size(*col_delta.cfile_block_size);
   }
+  if (col_delta.new_comment) {
+    pb->set_new_comment(*col_delta.new_comment);
+  }
 }
 
 ColumnSchemaDelta ColumnSchemaDeltaFromPB(const ColumnSchemaDeltaPB& pb) {
@@ -340,6 +353,9 @@ ColumnSchemaDelta ColumnSchemaDeltaFromPB(const ColumnSchemaDeltaPB& pb) {
   }
   if (pb.has_block_size()) {
     col_delta.cfile_block_size = boost::optional<int32_t>(pb.block_size());
+  }
+  if (pb.has_new_comment()) {
+    col_delta.new_comment = boost::optional<string>(pb.new_comment());
   }
   return col_delta;
 }

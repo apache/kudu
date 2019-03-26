@@ -92,6 +92,8 @@ enum SchemaPBConversionFlags {
   // protobuf. Used when sending schemas from the client to the master
   // for create/alter table.
   SCHEMA_PB_WITHOUT_WRITE_DEFAULT = 1 << 2,
+
+  SCHEMA_PB_WITHOUT_COMMENT = 1 << 3,
 };
 
 // Convert the specified schema to protobuf.
