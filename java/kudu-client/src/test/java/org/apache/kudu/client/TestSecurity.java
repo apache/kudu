@@ -30,14 +30,14 @@ import java.util.concurrent.TimeUnit;
 import javax.security.auth.Subject;
 
 import org.apache.kudu.client.Client.AuthenticationCredentialsPB;
+import org.apache.kudu.master.Master.ConnectToMasterResponsePB;
+import org.apache.kudu.test.CapturingLogAppender;
+import org.apache.kudu.test.cluster.FakeDNS;
 import org.apache.kudu.test.cluster.MiniKuduCluster;
 import org.apache.kudu.test.cluster.MiniKuduCluster.MiniKuduClusterBuilder;
-import org.apache.kudu.test.junit.RetryRule;
-import org.apache.kudu.master.Master.ConnectToMasterResponsePB;
-import org.apache.kudu.test.cluster.FakeDNS;
 import org.apache.kudu.test.junit.AssertHelpers;
+import org.apache.kudu.test.junit.RetryRule;
 import org.apache.kudu.test.junit.AssertHelpers.BooleanExpression;
-import org.apache.kudu.test.CapturingLogAppender;
 import org.apache.kudu.util.SecurityUtil;
 import org.hamcrest.CoreMatchers;
 import org.junit.After;
@@ -392,6 +392,7 @@ public class TestSecurity {
           "server requires authentication, but " +
           "client Kerberos credentials (TGT) have expired");
     }
+    // Note: this depends on DEBUG-level org.apache.kudu.client logging.
     Assert.assertThat(cla.getAppendedText(), CoreMatchers.containsString(
         "Using caller-provided subject with Kerberos principal test-admin@KRBTEST.COM."));
     Assert.assertThat(cla.getAppendedText(), CoreMatchers.containsString(
@@ -418,8 +419,8 @@ public class TestSecurity {
       // Run for longer than the renewable lifetime - this ensures that we
       // are indeed picking up the new credentials.
       for (Stopwatch sw = Stopwatch.createStarted();
-          sw.elapsed(TimeUnit.SECONDS) < RENEWABLE_LIFETIME_SECS + 5;
-          Thread.sleep(1000)) {
+           sw.elapsed(TimeUnit.SECONDS) < RENEWABLE_LIFETIME_SECS + 5;
+           Thread.sleep(1000)) {
         miniCluster.kinit("test-admin");
 
         // Update the existing subject in-place by copying over the credentials from
@@ -432,6 +433,7 @@ public class TestSecurity {
         checkClientCanReconnect(newClient);
       }
     }
+    // Note: this depends on DEBUG-level org.apache.kudu.client logging.
     Assert.assertThat(cla.getAppendedText(), CoreMatchers.containsString(
         "Using caller-provided subject with Kerberos principal test-admin@KRBTEST.COM."));
   }
