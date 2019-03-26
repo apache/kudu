@@ -22,7 +22,6 @@
 #include <string>
 
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/maintenance_manager.h"
@@ -43,6 +42,8 @@ class TabletOpBase : public MaintenanceOp {
   std::string LogPrefix() const;
 
  protected:
+  const std::string& table_id() const override;
+
   Tablet* const tablet_;
 };
 
@@ -57,15 +58,15 @@ class CompactRowSetsOp : public TabletOpBase {
  public:
   explicit CompactRowSetsOp(Tablet* tablet);
 
-  virtual void UpdateStats(MaintenanceOpStats* stats) OVERRIDE;
+  void UpdateStats(MaintenanceOpStats* stats) override;
 
-  virtual bool Prepare() OVERRIDE;
+  bool Prepare() override;
 
-  virtual void Perform() OVERRIDE;
+  void Perform() override;
 
-  virtual scoped_refptr<Histogram> DurationHistogram() const OVERRIDE;
+  scoped_refptr<Histogram> DurationHistogram() const override;
 
-  virtual scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() const OVERRIDE;
+  scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() const override;
 
  private:
   mutable simple_spinlock lock_;
@@ -83,15 +84,15 @@ class MinorDeltaCompactionOp : public TabletOpBase {
  public:
   explicit MinorDeltaCompactionOp(Tablet* tablet);
 
-  virtual void UpdateStats(MaintenanceOpStats* stats) OVERRIDE;
+  void UpdateStats(MaintenanceOpStats* stats) override;
 
-  virtual bool Prepare() OVERRIDE;
+  bool Prepare() override;
 
-  virtual void Perform() OVERRIDE;
+  void Perform() override;
 
-  virtual scoped_refptr<Histogram> DurationHistogram() const OVERRIDE;
+  scoped_refptr<Histogram> DurationHistogram() const override;
 
-  virtual scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() const OVERRIDE;
+  scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() const override;
 
  private:
   mutable simple_spinlock lock_;
@@ -109,15 +110,15 @@ class MajorDeltaCompactionOp : public TabletOpBase {
  public:
   explicit MajorDeltaCompactionOp(Tablet* tablet);
 
-  virtual void UpdateStats(MaintenanceOpStats* stats) OVERRIDE;
+  void UpdateStats(MaintenanceOpStats* stats) override;
 
-  virtual bool Prepare() OVERRIDE;
+  bool Prepare() override;
 
-  virtual void Perform() OVERRIDE;
+  void Perform() override;
 
-  virtual scoped_refptr<Histogram> DurationHistogram() const OVERRIDE;
+  scoped_refptr<Histogram> DurationHistogram() const override;
 
-  virtual scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() const OVERRIDE;
+  scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() const override;
 
  private:
   mutable simple_spinlock lock_;

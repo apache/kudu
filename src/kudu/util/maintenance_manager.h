@@ -229,6 +229,9 @@ class MaintenanceOp {
     cancel_.Store(true);
   }
 
+ protected:
+  virtual const std::string& table_id() const = 0;
+
  private:
   DISALLOW_COPY_AND_ASSIGN(MaintenanceOp);
 
@@ -302,8 +305,11 @@ class MaintenanceManager : public std::enable_shared_from_this<MaintenanceManage
 
  private:
   FRIEND_TEST(MaintenanceManagerTest, TestLogRetentionPrioritization);
+  FRIEND_TEST(MaintenanceManagerTest, TestOpFactors);
+
   typedef std::map<MaintenanceOp*, MaintenanceOpStats,
           MaintenanceOpComparator> OpMapTy;
+  typedef std::unordered_map<std::string, int32_t> TablePriorities;
 
   // Return true if tests have currently disabled the maintenance
   // manager by way of changing the gflags at runtime.
@@ -311,17 +317,32 @@ class MaintenanceManager : public std::enable_shared_from_this<MaintenanceManage
 
   void RunSchedulerThread();
 
+  bool FindAndLaunchOp(std::unique_lock<Mutex>* guard);
+
   // Find the best op, or null if there is nothing we want to run.
   //
   // Returns the op, as well as a string explanation of why that op was chosen,
   // suitable for logging.
   std::pair<MaintenanceOp*, std::string> FindBestOp();
 
+  double PerfImprovement(double perf_improvement,
+                         const std::string& table_id) const;
+
   void LaunchOp(MaintenanceOp* op);
 
   std::string LogPrefix() const;
 
+  bool HasFreeThreads();
+
+  bool CouldNotLaunchNewOp(bool prev_iter_found_no_work);
+
+  void UpdateTablePriorities();
+
+  void IncreaseOpCount(MaintenanceOp *op);
+  void DecreaseOpCount(MaintenanceOp *op);
+
   const std::string server_uuid_;
+  TablePriorities table_priorities_;
   const int32_t num_threads_;
   OpMapTy ops_; // Registered operations.
   Mutex lock_;
@@ -330,7 +351,7 @@ class MaintenanceManager : public std::enable_shared_from_this<MaintenanceManage
   ConditionVariable cond_;
   bool shutdown_;
   int32_t polling_interval_ms_;
-  uint64_t running_ops_;
+  int32_t running_ops_;
   // Vector used as a circular buffer for recently completed ops. Elements need to be added at
   // the completed_ops_count_ % the vector's size and then the count needs to be incremented.
   std::vector<OpInstance> completed_ops_;

@@ -17,8 +17,9 @@
 
 #include "kudu/util/maintenance_manager.h"
 
+#include <algorithm>
 #include <cinttypes>
-#include <cstddef>
+#include <cmath>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -26,6 +27,7 @@
 #include <string>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include <boost/bind.hpp>
 #include <gflags/gflags.h>
@@ -33,6 +35,8 @@
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/strings/numbers.h"
+#include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/debug/trace_logging.h"
@@ -50,6 +54,8 @@
 
 using std::pair;
 using std::string;
+using std::vector;
+using strings::Split;
 using strings::Substitute;
 
 DEFINE_int32(maintenance_manager_num_threads, 1,
@@ -91,6 +97,29 @@ DEFINE_double(data_gc_prioritization_prob, 0.5,
              "such as delta compaction.");
 TAG_FLAG(data_gc_prioritization_prob, experimental);
 
+DEFINE_string(maintenance_manager_table_priorities, "",
+              "Priorities of tables, semicolon-separated list of table-priority pairs, and each "
+              "table-priority pair is combined by table id, colon and priority level. Priority "
+              "level is ranged in [-FLAGS_max_priority_range, FLAGS_max_priority_range]");
+TAG_FLAG(maintenance_manager_table_priorities, advanced);
+TAG_FLAG(maintenance_manager_table_priorities, experimental);
+TAG_FLAG(maintenance_manager_table_priorities, runtime);
+
+DEFINE_double(maintenance_op_multiplier, 1.1,
+              "Multiplier applied on different priority levels, table maintenance OPs on level N "
+              "has multiplier of FLAGS_maintenance_op_multiplier^N, the last score will be "
+              "multiplied by this multiplier. Note: this multiplier is only take effect on "
+              "compaction OPs");
+TAG_FLAG(maintenance_op_multiplier, advanced);
+TAG_FLAG(maintenance_op_multiplier, experimental);
+TAG_FLAG(maintenance_op_multiplier, runtime);
+
+DEFINE_int32(max_priority_range, 5,
+             "Maximal priority range of OPs.");
+TAG_FLAG(max_priority_range, advanced);
+TAG_FLAG(max_priority_range, experimental);
+TAG_FLAG(max_priority_range, runtime);
+
 namespace kudu {
 
 MaintenanceOpStats::MaintenanceOpStats() {
@@ -107,7 +136,7 @@ void MaintenanceOpStats::Clear() {
   last_modified_ = MonoTime();
 }
 
-MaintenanceOp::MaintenanceOp(std::string name, IOUsage io_usage)
+MaintenanceOp::MaintenanceOp(string name, IOUsage io_usage)
     : name_(std::move(name)),
       running_(0),
       cancel_(false),
@@ -129,10 +158,10 @@ MaintenanceManagerStatusPB_OpInstancePB OpInstance::DumpToPB() const {
   pb.set_thread_id(thread_id);
   pb.set_name(name);
   if (duration.Initialized()) {
-    pb.set_duration_millis(duration.ToMilliseconds());
+    pb.set_duration_millis(static_cast<int32_t>(duration.ToMilliseconds()));
   }
   MonoDelta delta(MonoTime::Now() - start_mono_time);
-  pb.set_millis_since_start(delta.ToMilliseconds());
+  pb.set_millis_since_start(static_cast<int32_t>(delta.ToMilliseconds()));
   return pb;
 }
 
@@ -143,7 +172,7 @@ const MaintenanceManager::Options MaintenanceManager::kDefaultOptions = {
 };
 
 MaintenanceManager::MaintenanceManager(const Options& options,
-                                       std::string server_uuid)
+                                       string server_uuid)
   : server_uuid_(std::move(server_uuid)),
     num_threads_(options.num_threads <= 0 ?
                  FLAGS_maintenance_manager_num_threads : options.num_threads),
@@ -264,8 +293,7 @@ void MaintenanceManager::RunSchedulerThread() {
     //    1) there are no free threads available to perform a maintenance op.
     // or 2) we just tried to schedule an op but found nothing to run.
     // However, if it's time to shut down, we want to do so immediately.
-    while ((running_ops_ >= num_threads_ || prev_iter_found_no_work || disabled_for_tests()) &&
-           !shutdown_) {
+    while (CouldNotLaunchNewOp(prev_iter_found_no_work)) {
       cond_.WaitFor(polling_interval);
       prev_iter_found_no_work = false;
     }
@@ -274,42 +302,46 @@ void MaintenanceManager::RunSchedulerThread() {
       return;
     }
 
-    // Find the best op.
-    auto best_op_and_why = FindBestOp();
-    auto* op = best_op_and_why.first;
-    const auto& note = best_op_and_why.second;
+    // TODO(yingchun): move it to SetFlag, callback once as a gflags setter handler.
+    UpdateTablePriorities();
 
     // If we found no work to do, then we should sleep before trying again to schedule.
     // Otherwise, we can go right into trying to find the next op.
-    prev_iter_found_no_work = (op == nullptr);
-    if (!op) {
-      VLOG_AND_TRACE_WITH_PREFIX("maintenance", 2)
-          << "No maintenance operations look worth doing.";
-      continue;
-    }
-
-    // Prepare the maintenance operation.
-    op->running_++;
-    running_ops_++;
-    guard.unlock();
-    bool ready = op->Prepare();
-    guard.lock();
-    if (!ready) {
-      LOG_WITH_PREFIX(INFO) << "Prepare failed for " << op->name()
-                            << ". Re-running scheduler.";
-      op->running_--;
-      running_ops_--;
-      op->cond_->Signal();
-      continue;
-    }
-
-    LOG_AND_TRACE_WITH_PREFIX("maintenance", INFO)
-        << Substitute("Scheduling $0: $1", op->name(), note);
-    // Run the maintenance operation.
-    Status s = thread_pool_->SubmitFunc(boost::bind(
-        &MaintenanceManager::LaunchOp, this, op));
-    CHECK(s.ok());
+    prev_iter_found_no_work = !FindAndLaunchOp(&guard);
   }
+}
+
+bool MaintenanceManager::FindAndLaunchOp(std::unique_lock<Mutex>* guard) {
+  // Find the best op.
+  auto best_op_and_why = FindBestOp();
+  auto* op = best_op_and_why.first;
+  const auto& note = best_op_and_why.second;
+
+  if (!op) {
+    VLOG_AND_TRACE_WITH_PREFIX("maintenance", 2)
+        << "No maintenance operations look worth doing.";
+    return false;
+  }
+
+  // Prepare the maintenance operation.
+  IncreaseOpCount(op);
+  guard->unlock();
+  bool ready = op->Prepare();
+  guard->lock();
+  if (!ready) {
+    LOG_WITH_PREFIX(INFO) << "Prepare failed for " << op->name()
+                          << ". Re-running scheduler.";
+    DecreaseOpCount(op);
+    op->cond_->Signal();
+    return true;
+  }
+
+  LOG_AND_TRACE_WITH_PREFIX("maintenance", INFO)
+      << Substitute("Scheduling $0: $1", op->name(), note);
+  // Run the maintenance operation.
+  CHECK_OK(thread_pool_->SubmitFunc(boost::bind(&MaintenanceManager::LaunchOp, this, op)));
+
+  return true;
 }
 
 // Finding the best operation goes through four filters:
@@ -335,8 +367,7 @@ void MaintenanceManager::RunSchedulerThread() {
 pair<MaintenanceOp*, string> MaintenanceManager::FindBestOp() {
   TRACE_EVENT0("maintenance", "MaintenanceManager::FindBestOp");
 
-  size_t free_threads = num_threads_ - running_ops_;
-  if (free_threads == 0) {
+  if (!HasFreeThreads()) {
     return {nullptr, "no free threads"};
   }
 
@@ -348,7 +379,7 @@ pair<MaintenanceOp*, string> MaintenanceManager::FindBestOp() {
 
   int64_t most_logs_retained_bytes = 0;
   int64_t most_logs_retained_bytes_ram_anchored = 0;
-  MaintenanceOp* most_logs_retained_bytes_op = nullptr;
+  MaintenanceOp* most_logs_retained_bytes_ram_anchored_op = nullptr;
 
   int64_t most_data_retained_bytes = 0;
   MaintenanceOp* most_data_retained_bytes_op = nullptr;
@@ -367,8 +398,8 @@ pair<MaintenanceOp*, string> MaintenanceManager::FindBestOp() {
     }
 
     const auto logs_retained_bytes = stats.logs_retained_bytes();
-    if (logs_retained_bytes > low_io_most_logs_retained_bytes &&
-        op->io_usage() == MaintenanceOp::LOW_IO_USAGE) {
+    if (op->io_usage() == MaintenanceOp::LOW_IO_USAGE &&
+        logs_retained_bytes > low_io_most_logs_retained_bytes) {
       low_io_most_logs_retained_bytes_op = op;
       low_io_most_logs_retained_bytes = logs_retained_bytes;
       VLOG_AND_TRACE_WITH_PREFIX("maintenance", 2)
@@ -387,7 +418,7 @@ pair<MaintenanceOp*, string> MaintenanceManager::FindBestOp() {
     if (std::make_pair(logs_retained_bytes, ram_anchored) >
         std::make_pair(most_logs_retained_bytes,
                        most_logs_retained_bytes_ram_anchored)) {
-      most_logs_retained_bytes_op = op;
+      most_logs_retained_bytes_ram_anchored_op = op;
       most_logs_retained_bytes = logs_retained_bytes;
       most_logs_retained_bytes_ram_anchored = ram_anchored;
     }
@@ -401,7 +432,7 @@ pair<MaintenanceOp*, string> MaintenanceManager::FindBestOp() {
                         op->name(), data_retained_bytes);
     }
 
-    const auto perf_improvement = stats.perf_improvement();
+    const auto perf_improvement = PerfImprovement(stats.perf_improvement(), op->table_id());
     if ((!best_perf_improvement_op) ||
         (perf_improvement > best_perf_improvement)) {
       best_perf_improvement_op = op;
@@ -420,7 +451,7 @@ pair<MaintenanceOp*, string> MaintenanceManager::FindBestOp() {
   double capacity_pct;
   if (memory_pressure_func_(&capacity_pct)) {
     if (!most_ram_anchored_op) {
-      std::string msg = StringPrintf("System under memory pressure "
+      string msg = StringPrintf("System under memory pressure "
           "(%.2f%% of limit used). However, there are no ops currently "
           "runnable which would free memory.", capacity_pct);
       KLOG_EVERY_N_SECS(WARNING, 5) << msg;
@@ -432,10 +463,13 @@ pair<MaintenanceOp*, string> MaintenanceManager::FindBestOp() {
     return {most_ram_anchored_op, std::move(note)};
   }
 
-  if (most_logs_retained_bytes_op &&
+  // Look at ops that free up more log retention, and also free up more memory.
+  if (most_logs_retained_bytes_ram_anchored_op &&
       most_logs_retained_bytes / 1024 / 1024 >= FLAGS_log_target_replay_size_mb) {
-    string note = Substitute("$0 bytes log retention", most_logs_retained_bytes);
-    return {most_logs_retained_bytes_op, std::move(note)};
+    string note = Substitute("$0 bytes log retention, and flush $1 bytes memory",
+                             most_logs_retained_bytes,
+                             most_logs_retained_bytes_ram_anchored);
+    return {most_logs_retained_bytes_ram_anchored_op, std::move(note)};
   }
 
   // Look at ops that we can run quickly that free up data on disk.
@@ -449,11 +483,22 @@ pair<MaintenanceOp*, string> MaintenanceManager::FindBestOp() {
     VLOG(1) << "Skipping data GC due to prioritizing perf improvement";
   }
 
+  // Look at ops that can improve read/write performance most.
   if (best_perf_improvement_op && best_perf_improvement > 0) {
     string note = StringPrintf("perf score=%.6f", best_perf_improvement);
     return {best_perf_improvement_op, std::move(note)};
   }
   return {nullptr, "no ops with positive improvement"};
+}
+
+double MaintenanceManager::PerfImprovement(double perf_improvement,
+                                           const string& table_id) const {
+  int32_t priority = 0;
+  if (!FindCopy(table_priorities_, table_id, &priority)) {
+    return perf_improvement;
+  }
+
+  return perf_improvement * std::pow(FLAGS_maintenance_op_multiplier, priority);
 }
 
 void MaintenanceManager::LaunchOp(MaintenanceOp* op) {
@@ -481,9 +526,7 @@ void MaintenanceManager::LaunchOp(MaintenanceOp* op) {
     completed_ops_count_++;
 
     op->DurationHistogram()->Increment(op_instance.duration.ToMilliseconds());
-
-    running_ops_--;
-    op->running_--;
+    DecreaseOpCount(op);
     op->cond_->Signal();
     cond_.Signal(); // Wake up scheduler.
   });
@@ -507,9 +550,6 @@ void MaintenanceManager::LaunchOp(MaintenanceOp* op) {
 void MaintenanceManager::GetMaintenanceManagerStatusDump(MaintenanceManagerStatusPB* out_pb) {
   DCHECK(out_pb != nullptr);
   std::lock_guard<Mutex> guard(lock_);
-  auto best_op_and_why = FindBestOp();
-  auto* best_op = best_op_and_why.first;
-
   for (const auto& val : ops_) {
     MaintenanceManagerStatusPB_MaintenanceOpPB* op_pb = out_pb->add_registered_operations();
     MaintenanceOp* op(val.first);
@@ -527,10 +567,6 @@ void MaintenanceManager::GetMaintenanceManagerStatusDump(MaintenanceManagerStatu
       op_pb->set_logs_retained_bytes(0);
       op_pb->set_perf_improvement(0.0);
     }
-
-    if (best_op == op) {
-      out_pb->mutable_best_op()->CopyFrom(*op_pb);
-    }
   }
 
   {
@@ -540,8 +576,9 @@ void MaintenanceManager::GetMaintenanceManagerStatusDump(MaintenanceManagerStatu
     }
   }
 
+  // The latest completed op will be dumped at first.
   for (int n = 1; n <= completed_ops_.size(); n++) {
-    int i = completed_ops_count_ - n;
+    int64_t i = completed_ops_count_ - n;
     if (i < 0) break;
     const auto& completed_op = completed_ops_[i % completed_ops_.size()];
 
@@ -551,8 +588,48 @@ void MaintenanceManager::GetMaintenanceManagerStatusDump(MaintenanceManagerStatu
   }
 }
 
-std::string MaintenanceManager::LogPrefix() const {
+string MaintenanceManager::LogPrefix() const {
   return Substitute("P $0: ", server_uuid_);
+}
+
+bool MaintenanceManager::HasFreeThreads() {
+  return num_threads_ - running_ops_ > 0;
+}
+
+bool MaintenanceManager::CouldNotLaunchNewOp(bool prev_iter_found_no_work) {
+  return (!HasFreeThreads() || prev_iter_found_no_work || disabled_for_tests()) && !shutdown_;
+}
+
+void MaintenanceManager::UpdateTablePriorities() {
+  string table_priorities_str;
+  CHECK(google::GetCommandLineOption("maintenance_manager_table_priorities",
+                                     &table_priorities_str));
+
+  TablePriorities table_priorities;
+  int32_t value;
+  for (auto table_priority_str : Split(table_priorities_str, ";", strings::SkipEmpty())) {
+    vector<string> table_priority = Split(table_priority_str, ":", strings::SkipEmpty());
+    if (safe_strto32_base(table_priority[1].c_str(), &value, 10)) {
+      value = std::max(value, -FLAGS_max_priority_range);
+      value = std::min(value, FLAGS_max_priority_range);
+      table_priorities[table_priority[0]] = value;
+    } else {
+      LOG(WARNING) << "Some error occured when parse flag maintenance_manager_table_priorities: "
+          << table_priorities_str;
+      return;
+    }
+  }
+  table_priorities_.swap(table_priorities);
+}
+
+void MaintenanceManager::IncreaseOpCount(MaintenanceOp *op) {
+  op->running_++;
+  running_ops_++;
+}
+
+void MaintenanceManager::DecreaseOpCount(MaintenanceOp *op) {
+  op->running_--;
+  running_ops_--;
 }
 
 } // namespace kudu

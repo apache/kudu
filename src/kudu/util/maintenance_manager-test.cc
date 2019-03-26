@@ -15,24 +15,28 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/util/maintenance_manager.h"
+
+#include <math.h>
+
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <list>
 #include <memory>
 #include <mutex>
 #include <ostream>
 #include <string>
 #include <utility>
-#include <vector>
 
 #include <boost/bind.hpp> // IWYU pragma: keep
+#include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/maintenance_manager.h"
 #include "kudu/util/maintenance_manager.pb.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
@@ -42,9 +46,9 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
 
+using std::list;
 using std::shared_ptr;
 using std::string;
-using std::vector;
 using strings::Substitute;
 
 METRIC_DEFINE_entity(test);
@@ -57,17 +61,29 @@ METRIC_DEFINE_histogram(test, maintenance_op_duration,
                         kudu::MetricUnit::kSeconds, "", 60000000LU, 2);
 
 DECLARE_int64(log_target_replay_size_mb);
+DECLARE_string(maintenance_manager_table_priorities);
+DECLARE_double(maintenance_op_multiplier);
+DECLARE_int32(max_priority_range);
+
 
 namespace kudu {
 
-static const int kHistorySize = 4;
+static const int kHistorySize = 6;
 static const char kFakeUuid[] = "12345";
 
 class MaintenanceManagerTest : public KuduTest {
  public:
   void SetUp() override {
+    StartManager(2);
+  }
+
+  void TearDown() override {
+    StopManager();
+  }
+
+  void StartManager(int32_t num_threads) {
     MaintenanceManager::Options options;
-    options.num_threads = 2;
+    options.num_threads = num_threads;
     options.polling_interval_ms = 1;
     options.history_size = kHistorySize;
     manager_.reset(new MaintenanceManager(options, kFakeUuid));
@@ -78,7 +94,7 @@ class MaintenanceManagerTest : public KuduTest {
     ASSERT_OK(manager_->Start());
   }
 
-  void TearDown() override {
+  void StopManager() {
     manager_->Shutdown();
   }
 
@@ -95,7 +111,8 @@ TEST_F(MaintenanceManagerTest, TestCreateAndShutdown) {
 class TestMaintenanceOp : public MaintenanceOp {
  public:
   TestMaintenanceOp(const std::string& name,
-                    IOUsage io_usage)
+                    IOUsage io_usage,
+                    std::string table_id = "fake.table_id")
     : MaintenanceOp(name, io_usage),
       ram_anchored_(500),
       logs_retained_bytes_(0),
@@ -105,12 +122,13 @@ class TestMaintenanceOp : public MaintenanceOp {
       maintenance_ops_running_(METRIC_maintenance_ops_running.Instantiate(metric_entity_, 0)),
       remaining_runs_(1),
       prepared_runs_(0),
-      sleep_time_(MonoDelta::FromSeconds(0)) {
+      sleep_time_(MonoDelta::FromSeconds(0)),
+      table_id_(std::move(table_id)) {
   }
 
-  virtual ~TestMaintenanceOp() {}
+  ~TestMaintenanceOp() override = default;
 
-  virtual bool Prepare() OVERRIDE {
+  bool Prepare() override {
     std::lock_guard<Mutex> guard(lock_);
     if (remaining_runs_ == 0) {
       return false;
@@ -121,7 +139,7 @@ class TestMaintenanceOp : public MaintenanceOp {
     return true;
   }
 
-  virtual void Perform() OVERRIDE {
+  void Perform() override {
     {
       std::lock_guard<Mutex> guard(lock_);
       DLOG(INFO) << "Performing op " << name();
@@ -135,7 +153,7 @@ class TestMaintenanceOp : public MaintenanceOp {
     SleepFor(sleep_time_);
   }
 
-  virtual void UpdateStats(MaintenanceOpStats* stats) OVERRIDE {
+  void UpdateStats(MaintenanceOpStats* stats) override {
     std::lock_guard<Mutex> guard(lock_);
     stats->set_runnable(remaining_runs_ > 0);
     stats->set_ram_anchored(ram_anchored_);
@@ -168,12 +186,16 @@ class TestMaintenanceOp : public MaintenanceOp {
     perf_improvement_ = perf_improvement;
   }
 
-  virtual scoped_refptr<Histogram> DurationHistogram() const OVERRIDE {
+  scoped_refptr<Histogram> DurationHistogram() const override {
     return maintenance_op_duration_;
   }
 
-  virtual scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() const OVERRIDE {
+  scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() const override {
     return maintenance_ops_running_;
+  }
+
+  const std::string& table_id() const override {
+    return table_id_;
   }
 
  private:
@@ -195,6 +217,7 @@ class TestMaintenanceOp : public MaintenanceOp {
 
   // The amount of time each op invocation will sleep.
   MonoDelta sleep_time_;
+  std::string table_id_;
 };
 
 // Create an op and wait for it to start running.  Unregister it while it is
@@ -266,7 +289,7 @@ TEST_F(MaintenanceManagerTest, TestMemoryPressure) {
 TEST_F(MaintenanceManagerTest, TestLogRetentionPrioritization) {
   const int64_t kMB = 1024 * 1024;
 
-  manager_->Shutdown();
+  StopManager();
 
   TestMaintenanceOp op1("op1", MaintenanceOp::LOW_IO_USAGE);
   op1.set_ram_anchored(0);
@@ -302,13 +325,13 @@ TEST_F(MaintenanceManagerTest, TestLogRetentionPrioritization) {
   FLAGS_log_target_replay_size_mb = 50;
   op_and_why = manager_->FindBestOp();
   ASSERT_EQ(&op3, op_and_why.first);
-  EXPECT_EQ(op_and_why.second, "104857600 bytes log retention");
+  EXPECT_EQ(op_and_why.second, "104857600 bytes log retention, and flush 200 bytes memory");
 
   manager_->UnregisterOp(&op3);
 
   op_and_why = manager_->FindBestOp();
   ASSERT_EQ(&op2, op_and_why.first);
-  EXPECT_EQ(op_and_why.second, "104857600 bytes log retention");
+  EXPECT_EQ(op_and_why.second, "104857600 bytes log retention, and flush 100 bytes memory");
 
   manager_->UnregisterOp(&op2);
 }
@@ -341,10 +364,11 @@ TEST_F(MaintenanceManagerTest, TestRunningInstances) {
   manager_->GetMaintenanceManagerStatusDump(&status_pb);
   ASSERT_EQ(status_pb.running_operations_size(), 0);
 }
+
 // Test adding operations and make sure that the history of recently completed operations
 // is correct in that it wraps around and doesn't grow.
 TEST_F(MaintenanceManagerTest, TestCompletedOpsHistory) {
-  for (int i = 0; i < 5; i++) {
+  for (int i = 0; i < kHistorySize + 1; i++) {
     string name = Substitute("op$0", i);
     TestMaintenanceOp op(name, MaintenanceOp::HIGH_IO_USAGE);
     op.set_perf_improvement(1);
@@ -358,11 +382,122 @@ TEST_F(MaintenanceManagerTest, TestCompletedOpsHistory) {
 
     MaintenanceManagerStatusPB status_pb;
     manager_->GetMaintenanceManagerStatusDump(&status_pb);
-    // The size should be at most the history_size.
-    ASSERT_GE(kHistorySize, status_pb.completed_operations_size());
+    // The size should equal to the current completed OP size,
+    // and should be at most the kHistorySize.
+    ASSERT_EQ(std::min(kHistorySize, i + 1), status_pb.completed_operations_size());
     // The most recently completed op should always be first, even if we wrap
     // around.
     ASSERT_EQ(name, status_pb.completed_operations(0).name());
+  }
+}
+
+// Test maintenance OP factors.
+// The OPs on different priority levels have different OP score multipliers.
+TEST_F(MaintenanceManagerTest, TestOpFactors) {
+  StopManager();
+
+  ASSERT_GE(FLAGS_max_priority_range, 1);
+  ASSERT_NE("", gflags::SetCommandLineOption(
+      "maintenance_manager_table_priorities",
+      Substitute("table_id_1:$0;table_id_2:$1;table_id_3:$2;table_id_4:$3;table_id_5:$4",
+                 -FLAGS_max_priority_range - 1, -1, 0, 1, FLAGS_max_priority_range + 1).c_str()));
+  TestMaintenanceOp op1("op1", MaintenanceOp::HIGH_IO_USAGE, "table_id_1");
+  TestMaintenanceOp op2("op2", MaintenanceOp::HIGH_IO_USAGE, "table_id_2");
+  TestMaintenanceOp op3("op3", MaintenanceOp::HIGH_IO_USAGE, "table_id_3");
+  TestMaintenanceOp op4("op4", MaintenanceOp::HIGH_IO_USAGE, "table_id_4");
+  TestMaintenanceOp op5("op5", MaintenanceOp::HIGH_IO_USAGE, "table_id_5");
+  TestMaintenanceOp op6("op6", MaintenanceOp::HIGH_IO_USAGE, "table_id_6");
+
+  manager_->UpdateTablePriorities();
+
+  ASSERT_DOUBLE_EQ(pow(FLAGS_maintenance_op_multiplier, -FLAGS_max_priority_range),
+                   manager_->PerfImprovement(1, op1.table_id()));
+  ASSERT_DOUBLE_EQ(pow(FLAGS_maintenance_op_multiplier, -1),
+                   manager_->PerfImprovement(1, op2.table_id()));
+  ASSERT_DOUBLE_EQ(1, manager_->PerfImprovement(1, op3.table_id()));
+  ASSERT_DOUBLE_EQ(FLAGS_maintenance_op_multiplier, manager_->PerfImprovement(1, op4.table_id()));
+  ASSERT_DOUBLE_EQ(pow(FLAGS_maintenance_op_multiplier, FLAGS_max_priority_range),
+                   manager_->PerfImprovement(1, op5.table_id()));
+  ASSERT_DOUBLE_EQ(1, manager_->PerfImprovement(1, op6.table_id()));
+}
+
+// Test priority OP launching.
+TEST_F(MaintenanceManagerTest, TestPriorityOpLaunch) {
+  StopManager();
+  StartManager(1);
+
+  ASSERT_NE("", gflags::SetCommandLineOption(
+      "maintenance_manager_table_priorities",
+      Substitute("table_id_1:$0;table_id_2:$1;table_id_3:$2;table_id_4:$3;table_id_5:$4",
+                 -FLAGS_max_priority_range - 1, -1, 0, 1, FLAGS_max_priority_range + 1).c_str()));
+
+  TestMaintenanceOp op1("op1", MaintenanceOp::HIGH_IO_USAGE, "table_id_1");
+  op1.set_perf_improvement(10);
+  op1.set_remaining_runs(1);
+  op1.set_sleep_time(MonoDelta::FromMilliseconds(1));
+
+  TestMaintenanceOp op2("op2", MaintenanceOp::HIGH_IO_USAGE, "table_id_2");
+  op2.set_perf_improvement(10);
+  op2.set_remaining_runs(1);
+  op2.set_sleep_time(MonoDelta::FromMilliseconds(1));
+
+  TestMaintenanceOp op3("op3", MaintenanceOp::HIGH_IO_USAGE, "table_id_3");
+  op3.set_perf_improvement(10);
+  op3.set_remaining_runs(1);
+  op3.set_sleep_time(MonoDelta::FromMilliseconds(1));
+
+  TestMaintenanceOp op4("op4", MaintenanceOp::HIGH_IO_USAGE, "table_id_4");
+  op4.set_perf_improvement(10);
+  op4.set_remaining_runs(1);
+  op4.set_sleep_time(MonoDelta::FromMilliseconds(1));
+
+  TestMaintenanceOp op5("op5", MaintenanceOp::HIGH_IO_USAGE, "table_id_5");
+  op5.set_perf_improvement(10);
+  op5.set_remaining_runs(1);
+  op5.set_sleep_time(MonoDelta::FromMilliseconds(1));
+
+  TestMaintenanceOp op6("op6", MaintenanceOp::HIGH_IO_USAGE, "table_id_6");
+  op6.set_perf_improvement(12);
+  op6.set_remaining_runs(1);
+  op6.set_sleep_time(MonoDelta::FromMilliseconds(1));
+
+  manager_->RegisterOp(&op1);
+  manager_->RegisterOp(&op2);
+  manager_->RegisterOp(&op3);
+  manager_->RegisterOp(&op4);
+  manager_->RegisterOp(&op5);
+  manager_->RegisterOp(&op6);
+
+  ASSERT_EVENTUALLY([&]() {
+    MaintenanceManagerStatusPB status_pb;
+    manager_->GetMaintenanceManagerStatusDump(&status_pb);
+    ASSERT_EQ(status_pb.completed_operations_size(), 6);
+  });
+
+  // Wait for instances to complete.
+  manager_->UnregisterOp(&op1);
+  manager_->UnregisterOp(&op2);
+  manager_->UnregisterOp(&op3);
+  manager_->UnregisterOp(&op4);
+  manager_->UnregisterOp(&op5);
+  manager_->UnregisterOp(&op6);
+
+  // Check that running instances are removed from collection after completion.
+  MaintenanceManagerStatusPB status_pb;
+  manager_->GetMaintenanceManagerStatusDump(&status_pb);
+  ASSERT_EQ(status_pb.running_operations_size(), 0);
+  ASSERT_EQ(status_pb.completed_operations_size(), 6);
+  // In perf_improvement score ascending order, the latter completed OP will list former.
+  list<string> ordered_ops({"op1",
+                            "op2",
+                            "op3",
+                            "op4",
+                            "op6",
+                            "op5"});
+  ASSERT_EQ(ordered_ops.size(), status_pb.completed_operations().size());
+  for (const auto& instance : status_pb.completed_operations()) {
+    ASSERT_EQ(ordered_ops.front(), instance.name());
+    ordered_ops.pop_front();
   }
 }
 

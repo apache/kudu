@@ -21,7 +21,6 @@
 #include <cstdint>
 #include <string>
 
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/tablet/tablet.h"
@@ -47,86 +46,92 @@ class FlushOpPerfImprovementPolicy {
   FlushOpPerfImprovementPolicy() {}
 };
 
+class TabletReplicaOpBase : public MaintenanceOp {
+ public:
+  explicit TabletReplicaOpBase(std::string name, IOUsage io_usage, TabletReplica* tablet_replica);
+
+ protected:
+  const std::string& table_id() const override;
+
+  TabletReplica *const tablet_replica_;
+};
+
 // Maintenance op for MRS flush. Only one can happen at a time.
-class FlushMRSOp : public MaintenanceOp {
+class FlushMRSOp : public TabletReplicaOpBase {
  public:
   explicit FlushMRSOp(TabletReplica* tablet_replica)
-    : MaintenanceOp(StringPrintf("FlushMRSOp(%s)", tablet_replica->tablet()->tablet_id().c_str()),
-                    MaintenanceOp::HIGH_IO_USAGE),
-      tablet_replica_(tablet_replica) {
+    : TabletReplicaOpBase(StringPrintf("FlushMRSOp(%s)",
+                                       tablet_replica->tablet()->tablet_id().c_str()),
+                          MaintenanceOp::HIGH_IO_USAGE,
+                          tablet_replica) {
     time_since_flush_.start();
   }
 
-  virtual void UpdateStats(MaintenanceOpStats* stats) OVERRIDE;
+  void UpdateStats(MaintenanceOpStats* stats) override;
 
-  virtual bool Prepare() OVERRIDE;
+  bool Prepare() override;
 
-  virtual void Perform() OVERRIDE;
+  void Perform() override;
 
-  virtual scoped_refptr<Histogram> DurationHistogram() const OVERRIDE;
+  scoped_refptr<Histogram> DurationHistogram() const override;
 
-  virtual scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() const OVERRIDE;
+  scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() const override;
 
  private:
   // Lock protecting time_since_flush_.
   mutable simple_spinlock lock_;
   Stopwatch time_since_flush_;
-
-  TabletReplica *const tablet_replica_;
 };
 
 // Maintenance op for DMS flush.
 // Reports stats for all the DMS this tablet contains but only flushes one in Perform().
-class FlushDeltaMemStoresOp : public MaintenanceOp {
+class FlushDeltaMemStoresOp : public TabletReplicaOpBase {
  public:
   explicit FlushDeltaMemStoresOp(TabletReplica* tablet_replica)
-    : MaintenanceOp(StringPrintf("FlushDeltaMemStoresOp(%s)",
-                                 tablet_replica->tablet()->tablet_id().c_str()),
-                    MaintenanceOp::HIGH_IO_USAGE),
-      tablet_replica_(tablet_replica) {
+    : TabletReplicaOpBase(StringPrintf("FlushDeltaMemStoresOp(%s)",
+                                       tablet_replica->tablet()->tablet_id().c_str()),
+                          MaintenanceOp::HIGH_IO_USAGE,
+                          tablet_replica) {
     time_since_flush_.start();
   }
 
-  virtual void UpdateStats(MaintenanceOpStats* stats) OVERRIDE;
+  void UpdateStats(MaintenanceOpStats* stats) override;
 
-  virtual bool Prepare() OVERRIDE {
+  bool Prepare() override {
     return true;
   }
 
-  virtual void Perform() OVERRIDE;
+  void Perform() override;
 
-  virtual scoped_refptr<Histogram> DurationHistogram() const OVERRIDE;
+  scoped_refptr<Histogram> DurationHistogram() const override;
 
-  virtual scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() const OVERRIDE;
+  scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() const override;
 
  private:
   // Lock protecting time_since_flush_
   mutable simple_spinlock lock_;
   Stopwatch time_since_flush_;
-
-  TabletReplica *const tablet_replica_;
 };
 
 // Maintenance task that runs log GC. Reports log retention that represents the amount of data
 // that can be GC'd.
 //
 // Only one LogGC op can run at a time.
-class LogGCOp : public MaintenanceOp {
+class LogGCOp : public TabletReplicaOpBase {
  public:
   explicit LogGCOp(TabletReplica* tablet_replica);
 
-  virtual void UpdateStats(MaintenanceOpStats* stats) OVERRIDE;
+  void UpdateStats(MaintenanceOpStats* stats) override;
 
-  virtual bool Prepare() OVERRIDE;
+  bool Prepare() override;
 
-  virtual void Perform() OVERRIDE;
+  void Perform() override;
 
-  virtual scoped_refptr<Histogram> DurationHistogram() const OVERRIDE;
+  scoped_refptr<Histogram> DurationHistogram() const override;
 
-  virtual scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() const OVERRIDE;
+  scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() const override;
 
  private:
-  TabletReplica *const tablet_replica_;
   scoped_refptr<Histogram> log_gc_duration_;
   scoped_refptr<AtomicGauge<uint32_t> > log_gc_running_;
   mutable Semaphore sem_;

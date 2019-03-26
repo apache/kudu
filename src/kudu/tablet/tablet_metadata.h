@@ -119,7 +119,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
     return partition_;
   }
 
-  std::string table_id() const {
+  const std::string& table_id() const {
     DCHECK_NE(state_, kNotLoadedYet);
     return table_id_;
   }

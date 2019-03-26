@@ -417,6 +417,7 @@ class Tablet {
   // This method is thread-safe.
   void CancelMaintenanceOps();
 
+  const std::string& table_id() const { return metadata_->table_id(); }
   const std::string& tablet_id() const { return metadata_->tablet_id(); }
 
   // Return the metrics for this tablet.

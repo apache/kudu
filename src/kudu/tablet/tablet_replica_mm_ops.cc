@@ -21,11 +21,13 @@
 #include <mutex>
 #include <ostream>
 #include <string>
+#include <utility>
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/tablet_metrics.h"
 #include "kudu/util/flag_tags.h"
@@ -119,6 +121,20 @@ void FlushOpPerfImprovementPolicy::SetPerfImprovementForFlush(MaintenanceOpStats
     }
     stats->set_perf_improvement(perf);
   }
+}
+
+//
+// TabletReplicaOpBase.
+//
+TabletReplicaOpBase::TabletReplicaOpBase(std::string name,
+                                         IOUsage io_usage,
+                                         TabletReplica* tablet_replica)
+    : MaintenanceOp(std::move(name), io_usage),
+      tablet_replica_(tablet_replica) {
+}
+
+const std::string& TabletReplicaOpBase::table_id() const {
+  return tablet_replica_->table_id();
 }
 
 //
@@ -260,9 +276,10 @@ scoped_refptr<AtomicGauge<uint32_t> > FlushDeltaMemStoresOp::RunningGauge() cons
 //
 
 LogGCOp::LogGCOp(TabletReplica* tablet_replica)
-    : MaintenanceOp(StringPrintf("LogGCOp(%s)", tablet_replica->tablet()->tablet_id().c_str()),
-                    MaintenanceOp::LOW_IO_USAGE),
-      tablet_replica_(tablet_replica),
+    : TabletReplicaOpBase(StringPrintf("LogGCOp(%s)",
+                                       tablet_replica->tablet()->tablet_id().c_str()),
+                          MaintenanceOp::LOW_IO_USAGE,
+                          tablet_replica),
       log_gc_duration_(METRIC_log_gc_duration.Instantiate(
                            tablet_replica->tablet()->GetMetricEntity())),
       log_gc_running_(METRIC_log_gc_running.Instantiate(
