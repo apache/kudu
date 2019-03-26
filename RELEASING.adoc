@@ -155,23 +155,54 @@ Apache committer guide for setting up your GPG keys
   svn commit -m "Adding Kudu 1.x.y RC1"
 ----
 
-. Create a Maven staging repository for the RC.
+. Create a Maven staging repository for the release candidate Java artifacts.
 +
 ----
   # Run a gpg-agent if you don't normally
   gpg-agent --daemon
   cd java
-  gradle clean uploadArchives -PmavenUsername="<APACHE-LDAP-USERNAME>" -PmavenPassword="<APACHE-LDAP-PASSWORD>"
+  gradle clean uploadArchives -PmavenUsername='<APACHE-LDAP-USERNAME>' -PmavenPassword='<APACHE-LDAP-PASSWORD>'
+----
+
+. Build and deploy new binary test JARs for the RC on macOS and Linux. Build
+  the Linux JAR on a CentOS 6.6 image, and build the macOS JAR on macOS
+  Yosemite if possible (see
+  link:https://issues.apache.org/jira/browse/KUDU-2724[KUDU-2724] to remove the
+  need to build on an old version of macOS).
++
+----
+  # Build a binary JAR for the local operating system. The resulting JAR
+  # is output into the build/mini-cluster directory.
+  ./build-support/mini-cluster/build_mini_cluster_binaries.sh
+  # Sign and publish all matching kudu-binary artifacts from the
+  # build/mini-cluster directory to the Maven staging repository that hosts
+  # the Java artifacts of the Apache Kudu project (see above).
+  ./build-support/mini-cluster/publish_mini_cluster_binaries.sh -a=deploy -u='<APACHE-LDAP-USERNAME>' -p='<APACHE-LDAP-PASSWORD>'
 ----
 +
+NOTE: If the binary test JAR artifacts are deployed by the same person and from the
+same machine as the Java Maven artifacts, they should appear in the same
+staging repository. Otherwise, they will create a separate Maven staging
+repository, which is not a problem.
++
+TIP: To publish an artifact outside of the `build/mini-cluster` directory, e.g.
+if JAR was built by someone else or for another OS, pass the
+`-j=directory_name` argument to the publishing script to specify the location
+of the JAR file to sign and publish.
+
+. Close the Maven staging repository (or repositories).
++
+The Maven staging repositories used for the Java and the binary test JAR
+artifacts must be closed in order to be accessible to people testing the RC.
 Go to the link:https://repository.apache.org/\#stagingRepositories[staging
 repository] and look for ‘orgapachekudu-####’ in the staging repositories list.
 You can check the ‘content’ tab at the bottom to make sure you have all of the
 expected stuff (client, various integrations, etc). Hit the checkbox next to
-your new staging repo and hit “close”. Enter something similar to “Apache Kudu
-1.x.y-RC1” into the description box and confirm. Wait a minute or two and hit
-refresh, and your staging repo should now have a URL shown in its summary tab
-(eg `https://repository.apache.org/content/repositories/orgapachekudu-1005`)
+your new staging repo(s) and hit “close”. Enter something similar to “Apache
+Kudu 1.x.y-RC1” into the description box and confirm. Wait a minute or two and
+hit refresh, and each closed staging repo should now have a URL shown in its
+summary tab, for example
+`https://repository.apache.org/content/repositories/orgapachekudu-1005`
 
 . Create a new folder containing the
   link:https://dist.apache.org/repos/dist/release/kudu/[release SVN
