@@ -130,6 +130,10 @@ Status MiniHms::Start() {
     // timeout.
     "-Dderby.locks.deadlockTimeout=1";
 
+  // By default, Derby will create its log file in the current working
+  // directory. We want it in data_root_.
+  java_options += Substitute(" -Dderby.stream.error.file=$0/derby.log", data_root_);
+
   if (!krb5_conf_.empty()) {
     java_options += Substitute(" -Djava.security.krb5.conf=$0", krb5_conf_);
   }
