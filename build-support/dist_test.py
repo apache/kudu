@@ -434,6 +434,8 @@ def run_tests(parser, options):
   creates a task list, and submits the tasks to the testing service.
   """
   executions = get_test_executions(options.tests_regex)
+  if not executions:
+    raise Exception("No matching tests found for pattern %s" % options.tests_regex)
   if options.extra_args:
     if options.extra_args[0] == '--':
       del options.extra_args[0]
@@ -490,6 +492,8 @@ def loop_test(parser, options):
   # 'ts_location_assignment-itest'.
   tests_regex = "^" + os.path.basename(options.cmd) + "(\.[0-9]+)?$"
   executions = get_test_executions(tests_regex, options.args)
+  if not executions:
+    raise Exception("No matching tests found for pattern %s" % tests_regex)
   staging = StagingDir.new()
   # The presence of the --gtest_filter flag means the user is interested in a
   # particular subset of tests provided by the binary. In that case it doesn't
