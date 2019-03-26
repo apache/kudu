@@ -25,6 +25,7 @@
 #include <type_traits>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -37,8 +38,9 @@
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/consensus/raft_consensus.h"
-#include "kudu/util/memory/arena.h"
 #include "kudu/gutil/dynamic_annotations.h"
+#include "kudu/gutil/map-util.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/rpc/rpc_header.pb.h"
@@ -52,6 +54,7 @@
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/memory/arena.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/rw_semaphore.h"
@@ -79,6 +82,55 @@ using consensus::WRITE_OP;
 using tserver::TabletServerErrorPB;
 using tserver::WriteRequestPB;
 using tserver::WriteResponsePB;
+
+string WritePrivilegeToString(const WritePrivilegeType& type) {
+  switch (type) {
+    case WritePrivilegeType::INSERT:
+      return "INSERT";
+    case WritePrivilegeType::UPDATE:
+      return "UPDATE";
+    case WritePrivilegeType::DELETE:
+      return "DELETE";
+  }
+  LOG(DFATAL) << "not reachable";
+  return "";
+}
+
+void AddWritePrivilegesForRowOperations(const RowOperationsPB::Type& op_type,
+                                        WritePrivileges* privileges) {
+  switch (op_type) {
+    case RowOperationsPB::INSERT:
+      InsertIfNotPresent(privileges, WritePrivilegeType::INSERT);
+      break;
+    case RowOperationsPB::UPSERT:
+      InsertIfNotPresent(privileges, WritePrivilegeType::INSERT);
+      InsertIfNotPresent(privileges, WritePrivilegeType::UPDATE);
+      break;
+    case RowOperationsPB::UPDATE:
+      InsertIfNotPresent(privileges, WritePrivilegeType::UPDATE);
+      break;
+    case RowOperationsPB::DELETE:
+      InsertIfNotPresent(privileges, WritePrivilegeType::DELETE);
+      break;
+    default:
+      LOG(DFATAL) << "Not a write operation: " << RowOperationsPB_Type_Name(op_type);
+      break;
+  }
+}
+
+Status WriteAuthorizationContext::CheckPrivileges() const {
+  WritePrivileges required_write_privileges;
+  for (const auto& op_type : requested_op_types) {
+    AddWritePrivilegesForRowOperations(op_type, &required_write_privileges);
+  }
+  for (const auto& required_write_privilege : required_write_privileges) {
+    if (!ContainsKey(write_privileges, required_write_privilege)) {
+      return Status::NotAuthorized(Substitute("not authorized to $0",
+          WritePrivilegeToString(required_write_privilege)));
+    }
+  }
+  return Status::OK();
+}
 
 WriteTransaction::WriteTransaction(unique_ptr<WriteTransactionState> state, DriverType type)
   : Transaction(state.get(), type, Transaction::WRITE_TXN),
@@ -117,6 +169,16 @@ Status WriteTransaction::Prepare() {
     // TODO: is MISMATCHED_SCHEMA always right here? probably not.
     state()->completion_callback()->set_error(s, TabletServerErrorPB::MISMATCHED_SCHEMA);
     return s;
+  }
+
+  // Authorize the request if needed.
+  const auto& authz_context = state()->authz_context();
+  if (authz_context) {
+    Status s = authz_context->CheckPrivileges();
+    if (!s.ok()) {
+      state()->completion_callback()->set_error(s, TabletServerErrorPB::NOT_AUTHORIZED);
+      return s;
+    }
   }
 
   // Now acquire row locks and prepare everything for apply
@@ -236,10 +298,12 @@ string WriteTransaction::ToString() const {
 WriteTransactionState::WriteTransactionState(TabletReplica* tablet_replica,
                                              const tserver::WriteRequestPB *request,
                                              const rpc::RequestIdPB* request_id,
-                                             tserver::WriteResponsePB *response)
+                                             tserver::WriteResponsePB *response,
+                                             boost::optional<WriteAuthorizationContext> authz_ctx)
   : TransactionState(tablet_replica),
     request_(DCHECK_NOTNULL(request)),
     response_(response),
+    authz_context_(std::move(authz_ctx)),
     mvcc_tx_(nullptr),
     schema_at_decode_time_(nullptr) {
   external_consistency_mode_ = request_->external_consistency_mode();
@@ -283,7 +347,10 @@ void WriteTransactionState::SetRowOps(vector<DecodedRowOperation> decoded_ops) {
 
   Arena* arena = this->arena();
   for (DecodedRowOperation& op : decoded_ops) {
-    row_ops_.push_back(arena->NewObject<RowOp>(std::move(op)));
+    if (authz_context_) {
+      InsertIfNotPresent(&authz_context_->requested_op_types, op.type);
+    }
+    row_ops_.emplace_back(arena->NewObject<RowOp>(std::move(op)));
   }
 
   // Allocate the ProbeStats objects from the transaction's arena, so

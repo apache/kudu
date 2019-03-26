@@ -37,6 +37,7 @@
 
 #include "kudu/common/common.pb.h"
 #include "kudu/common/encoded_key.h"
+#include "kudu/common/row_operations.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/types.h"
 #include "kudu/common/wire_protocol-test-util.h"
@@ -56,6 +57,7 @@
 #include "kudu/security/token_signer.h"
 #include "kudu/security/token_verifier.h"
 #include "kudu/tablet/tablet_replica.h"
+#include "kudu/tablet/transactions/write_transaction.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server-test-base.h"
 #include "kudu/tserver/tablet_server.h"
@@ -97,6 +99,9 @@ using security::TokenSigningPrivateKeyPB;
 using security::TokenSigningPublicKeyPB;
 using security::TokenVerifier;
 using tablet::TabletReplica;
+using tablet::WritePrivileges;
+using tablet::WritePrivilegeToString;
+using tablet::WritePrivilegeType;
 
 namespace tserver {
 
@@ -187,31 +192,40 @@ Status ChecksumGenerator(const Schema& schema, const SignedTokenPB* token,
 
 } // anonymous namespace
 
-class AuthzTabletServerTest : public TabletServerTestBase,
-                              public testing::WithParamInterface<RequestorFunc> {
+class AuthzTabletServerTestBase : public TabletServerTestBase {
  public:
+  const string kUser = "dan";
   void SetUp() override {
+    FLAGS_tserver_enforce_access_control = true;
     NO_FATALS(TabletServerTestBase::SetUp());
     NO_FATALS(StartTabletServer(/*num_data_dirs=*/1));
+
+    rpc::UserCredentials user;
+    user.set_real_user(kUser);
+    proxy_->set_user_credentials(user);
+
+    TokenSigningPrivateKeyPB tsk = GetTokenSigningPrivateKey(1);
+    shared_ptr<TokenVerifier> verifier(new TokenVerifier());
+    // These tests aren't targeted at testing expiration, so pass in arbitrary
+    // expiration values.
+    signer_.reset(new TokenSigner(3600, 3600, 3600, verifier));
+    ASSERT_OK(signer_->ImportKeys({ tsk }));
+    public_keys = verifier->ExportKeys();
+    ASSERT_OK(mini_server_->server()->mutable_token_verifier()->ImportKeys(public_keys));
   }
+
+ protected:
+  // Signer used to create authz tokens.
+  unique_ptr<TokenSigner> signer_;
+
+  // Initial set of public keys to use to import.
+  vector<TokenSigningPublicKeyPB> public_keys;
 };
 
+class AuthzTabletServerTest : public AuthzTabletServerTestBase,
+                              public testing::WithParamInterface<RequestorFunc> {};
+
 TEST_P(AuthzTabletServerTest, TestInvalidAuthzTokens) {
-  FLAGS_tserver_enforce_access_control = true;
-  rpc::UserCredentials user;
-  const string kUser = "dan";
-  user.set_real_user(kUser);
-  proxy_->set_user_credentials(user);
-
-  TokenSigningPrivateKeyPB tsk = GetTokenSigningPrivateKey(1);
-  shared_ptr<TokenVerifier> verifier(new TokenVerifier());
-  // We're going to manually tamper with the tokens to make them invalid, so
-  // pass in arbitrary expiration values.
-  TokenSigner signer(3600, 3600, 3600, verifier);
-  ASSERT_OK(signer.ImportKeys({ tsk }));
-  vector<TokenSigningPublicKeyPB> public_keys = verifier->ExportKeys();
-  ASSERT_OK(mini_server_->server()->mutable_token_verifier()->ImportKeys(public_keys));
-
   // Set up a privilege that permits everything. Even with these privileges,
   // invalid authz tokens will prevent access.
   TablePrivilegePB privilege;
@@ -227,7 +241,7 @@ TEST_P(AuthzTabletServerTest, TestInvalidAuthzTokens) {
   token_creators.emplace_back([&] {
     LOG(INFO) << "Generating token with a bad signature";
     SignedTokenPB token;
-    CHECK_OK(signer.GenerateAuthzToken(kUser, privilege, &token));
+    CHECK_OK(signer_->GenerateAuthzToken(kUser, privilege, &token));
     string bad_signature = token.signature();
     // Flip the bits in the signature.
     for (int i = 0; i < bad_signature.length(); i++) {
@@ -240,20 +254,20 @@ TEST_P(AuthzTabletServerTest, TestInvalidAuthzTokens) {
   token_creators.emplace_back([&] {
     LOG(INFO) << "Generating token with no signature";
     SignedTokenPB token;
-    CHECK_OK(signer.GenerateAuthzToken(kUser, privilege, &token));
+    CHECK_OK(signer_->GenerateAuthzToken(kUser, privilege, &token));
     token.clear_signature();
     return token;
   });
   token_creators.emplace_back([&] {
     LOG(INFO) << "Generating token for a different user";
     SignedTokenPB token;
-    CHECK_OK(signer.GenerateAuthzToken("bad-dan", privilege, &token));
+    CHECK_OK(signer_->GenerateAuthzToken("bad-dan", privilege, &token));
     return token;
   });
   token_creators.emplace_back([&] {
     LOG(INFO) << "Generating authn token instead of authz token";
     SignedTokenPB token;
-    CHECK_OK(signer.GenerateAuthnToken(kUser, &token));
+    CHECK_OK(signer_->GenerateAuthnToken(kUser, &token));
     return token;
   });
   token_creators.emplace_back([&] {
@@ -296,7 +310,7 @@ TEST_P(AuthzTabletServerTest, TestInvalidAuthzTokens) {
     SignedTokenPB token;
     TablePrivilegePB empty;
     empty.set_table_id(kTableId);
-    ASSERT_OK(signer.GenerateAuthzToken(kUser, empty, &token));
+    ASSERT_OK(signer_->GenerateAuthzToken(kUser, empty, &token));
     RpcController rpc;
     Status s = send_req(schema_, &token, proxy_.get(), &rpc);
     ASSERT_TRUE(s.IsRemoteError()) << s.ToString();
@@ -311,7 +325,7 @@ TEST_P(AuthzTabletServerTest, TestInvalidAuthzTokens) {
     google::FlagSaver saver;
     FLAGS_tserver_inject_invalid_authz_token_ratio = 1.0;
     SignedTokenPB token;
-    ASSERT_OK(signer.GenerateAuthzToken(kUser, privilege, &token));
+    ASSERT_OK(signer_->GenerateAuthzToken(kUser, privilege, &token));
     RpcController rpc;
     Status s = send_req(schema_, &token, proxy_.get(), &rpc);
     NO_FATALS(CheckInvalidAuthzToken(s, rpc));
@@ -320,7 +334,7 @@ TEST_P(AuthzTabletServerTest, TestInvalidAuthzTokens) {
   {
     LOG(INFO) << "Generating healthy request";
     SignedTokenPB token;
-    ASSERT_OK(signer.GenerateAuthzToken(kUser, privilege, &token));
+    ASSERT_OK(signer_->GenerateAuthzToken(kUser, privilege, &token));
     RpcController rpc;
     ASSERT_OK(send_req(schema_, &token, proxy_.get(), &rpc));
     ASSERT_FALSE(rpc.error_response());
@@ -383,7 +397,6 @@ struct ScanDescriptor {
 // Default variable names for the scan-related tests below.
 constexpr char kScanTableId[] = "scan-table-id";
 constexpr char kScanTabletId[] = "scan-tablet-id";
-constexpr char kScanUser[] = "good-guy";
 constexpr char kDummyColumn[] = "not-my-column";
 
 // Mapping of column names to column IDs.
@@ -454,13 +467,26 @@ void MisnamedColumnSchemaToPB(const ColumnSchema& col, ColumnSchemaPB* pb) {
                    col.type_attributes()), pb);
 }
 
-// Utility to select a string at random.
-string SelectStringAtRandom(const unordered_set<string>& s) {
-  Random r(SeedRandom());
-  vector<string> random;
-  r.ReservoirSample(s, 1, set<string>{}, &random);
-  CHECK_EQ(1, random.size());
-  return random[0];
+Random r(SeedRandom());
+
+// Utility to select an element from a container at random.
+template <typename Container, typename T>
+T SelectAtRandom(const Container& c) {
+  CHECK(!c.empty());
+  vector<T> rand_list;
+  r.ReservoirSample(c, 1, set<T>{}, &rand_list);
+  CHECK_EQ(1, rand_list.size());
+  return rand_list[0];
+}
+
+// Returns a randomly-sized randomized list of elements from 'full_set'.
+template <typename T>
+vector<T> RandomFromList(const vector<T>& full_list, int min_to_return) {
+  CHECK_GT(full_list.size(), min_to_return);
+  int num_to_return = min_to_return + rand() % (full_list.size() - min_to_return);
+  vector<T> rand_list;
+  r.ReservoirSample(full_list, num_to_return, set<T>{}, &rand_list);
+  return rand_list;
 }
 
 } // anonymous namespace
@@ -476,17 +502,14 @@ typedef std::function<Status(ScanPrivilegeAuthzTest*,
 
 // Parameterized based on the scan request function and whether or not the scan
 // request should use the primary key.
-class ScanPrivilegeAuthzTest : public TabletServerTestBase,
+class ScanPrivilegeAuthzTest : public AuthzTabletServerTestBase,
                                public ::testing::WithParamInterface<std::tuple<ScanFunc, bool>> {
  public:
   static constexpr int kNumKeys = 5;
   static constexpr int kNumVals = 5;
 
   void SetUp() override {
-    NO_FATALS(TabletServerTestBase::SetUp());
-    NO_FATALS(StartTabletServer(/*num_data_dirs=*/1));
-
-    FLAGS_tserver_enforce_access_control = true;
+    NO_FATALS(AuthzTabletServerTestBase::SetUp());
     SchemaBuilder schema_builder;
     for (int i = 0; i < kNumKeys; i++) {
       const string key = Substitute("key$0", i);
@@ -501,18 +524,6 @@ class ScanPrivilegeAuthzTest : public TabletServerTestBase,
     }
     schema_ = schema_builder.Build();
 
-    rpc::UserCredentials user;
-    user.set_real_user(kScanUser);
-    proxy_->set_user_credentials(user);
-
-    // We're not testing expiration, so pass in arbitrary expiration values.
-    shared_ptr<TokenVerifier> verifier(new TokenVerifier());
-    signer_.reset(new TokenSigner(3600, 3600, 3600, verifier));
-    TokenSigningPrivateKeyPB tsk = GetTokenSigningPrivateKey(1);
-    ASSERT_OK(signer_->ImportKeys({ tsk }));
-    vector<TokenSigningPublicKeyPB> public_keys = verifier->ExportKeys();
-    ASSERT_OK(mini_server_->server()->mutable_token_verifier()->ImportKeys(public_keys));
-
     // Put together a map from column name to ID so we can put together
     // ID-based tokens based on column names.
     for (int i = 0; i < schema_.num_columns(); i++) {
@@ -526,9 +537,9 @@ class ScanPrivilegeAuthzTest : public TabletServerTestBase,
   }
 
   // Returns a signed token for the given scan privileges.
-  Status GenerateAuthzToken(const ScanPrivileges& privilege, SignedTokenPB* authz_token) const {
+  Status GenerateScanAuthzToken(const ScanPrivileges& privilege, SignedTokenPB* authz_token) const {
     TablePrivilegePB privilege_pb = privilege.ToPB(name_to_id_);
-    return signer_->GenerateAuthzToken(kScanUser, std::move(privilege_pb), authz_token);
+    return signer_->GenerateAuthzToken(kUser, std::move(privilege_pb), authz_token);
   }
 
   // Populates fields of a NewScanRequestPB based on the scan descriptor,
@@ -576,7 +587,7 @@ class ScanPrivilegeAuthzTest : public TabletServerTestBase,
     // Determine which column to sabotage if needed.
     boost::optional<string> misnamed_col;
     if (special_col == SpecialColumn::MISNAMED) {
-      misnamed_col = SelectStringAtRandom(scan.projected_cols);
+      misnamed_col = SelectAtRandom<unordered_set<string>, string>(scan.projected_cols);
     }
     for (const auto& col_name : scan.projected_cols) {
       int col_idx = schema_.find_column(col_name);
@@ -594,7 +605,7 @@ class ScanPrivilegeAuthzTest : public TabletServerTestBase,
       ColumnSchemaToPB(ColumnSchema("is_deleted", DataType::IS_DELETED, /*is_nullable=*/false,
                                     /*read_default=*/&default_bool, nullptr), projected_column);
     }
-    CHECK_OK(GenerateAuthzToken(privilege, pb.mutable_authz_token()));
+    CHECK_OK(GenerateScanAuthzToken(privilege, pb.mutable_authz_token()));
     return pb;
   }
 
@@ -617,7 +628,7 @@ class ScanPrivilegeAuthzTest : public TabletServerTestBase,
     // Determine which column to sabotage if needed.
     boost::optional<string> misnamed_col;
     if (special_col == SpecialColumn::MISNAMED) {
-      misnamed_col = SelectStringAtRandom(cols);
+      misnamed_col = SelectAtRandom<unordered_set<string>, string>(cols);
     }
     for (const auto& col_name : cols) {
       int col_idx = client_schema.find_column(col_name);
@@ -672,7 +683,7 @@ class ScanPrivilegeAuthzTest : public TabletServerTestBase,
     SplitKeyRangeResponsePB resp;
     RpcController rpc;
     SplitKeyRangeRequestPB req = GenerateSplitKeyRequest(scan, special_col);
-    RETURN_NOT_OK(GenerateAuthzToken(privilege, req.mutable_authz_token()));
+    RETURN_NOT_OK(GenerateScanAuthzToken(privilege, req.mutable_authz_token()));
     RETURN_NOT_OK(proxy_->SplitKeyRange(req, &resp, &rpc));
     return CheckNoErrors(resp);
   }
@@ -694,11 +705,7 @@ class ScanPrivilegeAuthzTest : public TabletServerTestBase,
   // Returns a randomly selected set of column names, of at least size
   // 'min_returned'.
   unordered_set<string> RandomColumnNames(int min_returned = 0) const {
-    CHECK_LE(min_returned, col_names_.size());
-    int num_cols_to_return = min_returned + rand() % (col_names_.size() - min_returned);
-    vector<string> rand_privileges = col_names_;
-    std::random_shuffle(rand_privileges.begin(), rand_privileges.end());
-    rand_privileges.resize(num_cols_to_return);
+    vector<string> rand_privileges = RandomFromList(col_names_, min_returned);
     unordered_set<string> rand_set(rand_privileges.begin(), rand_privileges.end());
     return rand_set;
   }
@@ -712,9 +719,6 @@ class ScanPrivilegeAuthzTest : public TabletServerTestBase,
   // Mapping from column names to column ID, useful for building tokens (which
   // are ID-based) from client-side info (name-based).
   ColumnNamesToIds name_to_id_;
-
-  // Signer used to create authz tokens.
-  unique_ptr<TokenSigner> signer_;
 };
 
 namespace {
@@ -739,7 +743,7 @@ Status SplitKeyRangeRequestor(ScanPrivilegeAuthzTest* test, const ScanDescriptor
 // Removes a column at random from 'privilege' out of those in 'candidates'.
 // Populates 'removed' with the column name that was removed, and returns
 // whether anything was actually removed.
-bool RemovePrivilege(const unordered_set<string>& candidates,
+bool RemoveScanPrivilege(const unordered_set<string>& candidates,
                      ScanPrivileges* privilege, string* removed) {
   if (candidates.empty()) {
     return false;
@@ -760,7 +764,7 @@ bool RemovePrivilege(const unordered_set<string>& candidates,
 // Removes a column privilege at random from 'privilege'.
 void RemoveColumnPrivilege(ScanPrivileges* privilege) {
   string removed;
-  CHECK(RemovePrivilege(privilege->col_privileges, privilege, &removed));
+  CHECK(RemoveScanPrivilege(privilege->col_privileges, privilege, &removed));
   LOG(INFO) << Substitute("Removed privilege for column $0", removed);
 }
 
@@ -833,14 +837,14 @@ TEST_P(ScanPrivilegeAuthzTest, TestPartialScanPrivilegesRandomized) {
   int unneeded_cols_to_remove = unneeded_cols.empty() ? 0 : rand() % unneeded_cols.size();
   string removed;
   for (int i = 0; i < unneeded_cols_to_remove; i++) {
-    CHECK(RemovePrivilege(unneeded_cols, &privileges, &removed));
+    CHECK(RemoveScanPrivilege(unneeded_cols, &privileges, &removed));
     unneeded_cols.erase(removed);
     SCOPED_TRACE(privileges.ToString());
     SCOPED_TRACE(scan.ToString());
     NO_FATALS(CheckPrivileges(req_func, scan, privileges, ExpectedAuthz::ALLOWED));
   }
   // The moment we remove a required column, we should be denied access.
-  ASSERT_TRUE(RemovePrivilege(required_columns, &privileges, &removed));
+  ASSERT_TRUE(RemoveScanPrivilege(required_columns, &privileges, &removed));
   LOG(INFO) << Substitute("Removed privilege for column $0", removed);
   SCOPED_TRACE(privileges.ToString());
   SCOPED_TRACE(scan.ToString());
@@ -1069,6 +1073,219 @@ INSTANTIATE_TEST_CASE_P(RequestorFuncs, ScanPrivilegeWithVirtualColumnsTest,
             &ChecksumRequestor<DeprecatedField::USE, SpecialColumn::VIRTUAL>,
         })),
         ::testing::Bool()));
+
+namespace {
+
+struct WriteOpDescriptor {
+  // Op type for the write request.
+  RowOperationsPB::Type op_type;
+
+  // Key value.
+  int32_t key;
+
+  // Value to populate the columns with. Ignored if this is a DELETE op.
+  int32_t val;
+};
+
+string WritesToString(const vector<WriteOpDescriptor>& writes) {
+  vector<string> write_strs;
+  for (const auto& write : writes) {
+    write_strs.emplace_back(Substitute("$0 ($1, $2)",
+        RowOperationsPB_Type_Name(write.op_type), write.key, write.val));
+  }
+  return Substitute("Write request: { $0 }", JoinStrings(write_strs, ", "));
+}
+
+string WritePrivilegesToString(const WritePrivileges& privileges) {
+  vector<string> privs;
+  for (const auto& privilege : privileges) {
+    privs.emplace_back(WritePrivilegeToString(privilege));
+  }
+  return Substitute("Privileges: { $0 }", JoinStrings(privs, ", "));
+}
+
+// Returns a randomly selected set of write operation types to be used for
+// sending write requests. Always returns at least one type.
+RowOpTypes RandomOpTypes() {
+  static const vector<RowOperationsPB::Type> write_op_types = {
+    RowOperationsPB::DELETE,
+    RowOperationsPB::INSERT,
+    RowOperationsPB::UPDATE,
+    RowOperationsPB::UPSERT,
+  };
+  RowOpTypes types;
+  types.reset(RandomFromList(write_op_types, /*min_to_return=*/1));
+  return types;
+}
+
+// Returns a randomly selected set of write privileges to be used for
+// generating authz tokens. May be empty.
+WritePrivileges RandomWritePrivileges() {
+  static const vector<WritePrivilegeType> write_privilege_types {
+    WritePrivilegeType::DELETE,
+    WritePrivilegeType::INSERT,
+    WritePrivilegeType::UPDATE,
+  };
+  vector<WritePrivilegeType> rand_types = RandomFromList(write_privilege_types,
+                                                         /*min_to_return=*/0);
+  WritePrivileges privileges;
+  privileges.reset(rand_types);
+  return privileges;
+}
+
+} // anonymous namespace
+
+class WritePrivilegeAuthzTest : public AuthzTabletServerTestBase {
+ public:
+  WriteRequestPB BuildRequest(const vector<WriteOpDescriptor>& write_ops,
+                              const WritePrivileges& privileges) const {
+    WriteRequestPB req;
+    req.set_tablet_id(kTabletId);
+    CHECK_OK(SchemaToPB(schema_, req.mutable_schema()));
+    RowOperationsPB* data = req.mutable_row_operations();
+    for (const auto& write : write_ops) {
+      const auto& op_type = write.op_type;
+      if (op_type == RowOperationsPB::DELETE) {
+        AddTestKeyToPB(op_type, schema_, write.key, data);
+      } else {
+        AddTestRowWithNullableStringToPB(op_type, schema_, write.key, write.val,
+                                         /*string_val=*/nullptr, data);
+      }
+    }
+    CHECK_OK(GenerateWriteAuthzToken(privileges, req.mutable_authz_token()));
+    return req;
+  }
+
+  Status GenerateWriteAuthzToken(const WritePrivileges& privileges,
+                                 SignedTokenPB* authz_token) const {
+    TablePrivilegePB privilege_pb;
+    privilege_pb.set_table_id(kTableId);
+    for (const auto& privilege : privileges) {
+      switch (privilege) {
+        case WritePrivilegeType::DELETE:
+          privilege_pb.set_delete_privilege(true);
+          break;
+        case WritePrivilegeType::INSERT:
+          privilege_pb.set_insert_privilege(true);
+          break;
+        case WritePrivilegeType::UPDATE:
+          privilege_pb.set_update_privilege(true);
+          break;
+      }
+    }
+    return signer_->GenerateAuthzToken(kUser, std::move(privilege_pb), authz_token);
+  }
+
+  Status SendWrite(const vector<WriteOpDescriptor>& write_ops,
+                   const WritePrivileges& privileges) const {
+    WriteRequestPB req = BuildRequest(write_ops, privileges);
+    WriteResponsePB resp;
+    RpcController rpc;
+    RETURN_NOT_OK(proxy_->Write(req, &resp, &rpc));
+    LOG(INFO) << Substitute("Received response: $0", SecureShortDebugString(resp));
+    return CheckNoErrors(resp);
+  }
+
+  // Checks that the write operations need the privileges in
+  // 'required_privileges' by:
+  // 1. generating a random set of privileges,
+  // 2. making sure that a required privilege is missing,
+  // 3. ensuring that the write request with missing privileges is rejected,
+  // 4. adding back all the required privileges, and
+  // 5. validating that the write can then proceed.
+  void CheckWritePrivileges(const vector<WriteOpDescriptor>& write_ops,
+                            const WritePrivileges& required_privileges) {
+    // Generate a random set of privileges, but make sure it is missing a
+    // required privilege.
+    WritePrivileges privileges = RandomWritePrivileges();
+    ASSERT_FALSE(required_privileges.empty());
+    if (!privileges.empty()) {
+      const auto& priv_to_remove = SelectAtRandom<WritePrivileges, WritePrivilegeType>(
+          required_privileges);
+      LOG(INFO) << "Removing write privilege: " << WritePrivilegeToString(priv_to_remove);
+      privileges.erase(priv_to_remove);
+    }
+    SCOPED_TRACE(WritesToString(write_ops));
+    {
+      // With a required privilege missing, the write request should be
+      // rejected.
+      Status s = SendWrite(write_ops, privileges);
+      SCOPED_TRACE(WritePrivilegesToString(privileges));
+      ASSERT_TRUE(s.IsRemoteError()) << s.ToString();
+      ASSERT_STR_CONTAINS(s.ToString(), "not authorized");
+    }
+    // Adding the required privileges should permit our operations.
+    for (const auto& p : required_privileges) {
+      InsertIfNotPresent(&privileges, p);
+    }
+    SCOPED_TRACE(WritePrivilegesToString(privileges));
+    ASSERT_OK(SendWrite(write_ops, privileges));
+  }
+};
+
+// Simple test for individual write operations.
+TEST_F(WritePrivilegeAuthzTest, TestSingleWriteOperations) {
+  {
+    vector<WriteOpDescriptor> batch({
+      { RowOperationsPB::INSERT, /*key=*/0, /*val=*/0 }
+    });
+    NO_FATALS(CheckWritePrivileges(batch, WritePrivileges{ WritePrivilegeType::INSERT }));
+  }
+  {
+    vector<WriteOpDescriptor> batch({
+      { RowOperationsPB::UPDATE, /*key=*/0, /*val=*/1234 }
+    });
+    NO_FATALS(CheckWritePrivileges(batch, WritePrivileges{ WritePrivilegeType::UPDATE }));
+  }
+  {
+    vector<WriteOpDescriptor> batch({
+      { RowOperationsPB::UPSERT, /*key=*/0, /*val=*/3465 }
+    });
+    NO_FATALS(CheckWritePrivileges(batch, WritePrivileges{ WritePrivilegeType::INSERT,
+                                                           WritePrivilegeType::UPDATE }));
+  }
+  {
+    vector<WriteOpDescriptor> batch({
+      { RowOperationsPB::DELETE, /*key=*/0, /*val=*/0 }
+    });
+    NO_FATALS(CheckWritePrivileges(batch, WritePrivileges{ WritePrivilegeType::DELETE }));
+  }
+}
+
+// Like the above test, but sent in a batch.
+TEST_F(WritePrivilegeAuthzTest, TestWritesBatch) {
+  vector<WriteOpDescriptor> batch({
+    { RowOperationsPB::INSERT, /*key=*/0, /*val=*/0 },
+    { RowOperationsPB::UPDATE, /*key=*/0, /*val=*/1234 },
+    { RowOperationsPB::UPSERT, /*key=*/0, /*val=*/3465 },
+    { RowOperationsPB::DELETE, /*key=*/0, /*val=*/0 },
+  });
+  NO_FATALS(CheckWritePrivileges(batch, WritePrivileges{ WritePrivilegeType::INSERT,
+                                                         WritePrivilegeType::UPDATE,
+                                                         WritePrivilegeType::DELETE }));
+}
+
+// Like the above test, but randomized. Note: we only care about authorizing
+// the requests, not checking the results. Hence our lack of care in selecting
+// which keys to send over.
+TEST_F(WritePrivilegeAuthzTest, TestWritesRandomized) {
+  const int kNumOps = 10;
+  const auto op_types = RandomOpTypes();
+  vector<WriteOpDescriptor> batch;
+  WritePrivileges required_privileges;
+  for (int i = 0; i < kNumOps; i++) {
+    const auto op_type = SelectAtRandom<RowOpTypes, RowOperationsPB::Type>(op_types);
+    batch.emplace_back(WriteOpDescriptor({
+      .op_type = op_type,
+      .key = rand(),
+      .val = rand(),
+    }));
+    AddWritePrivilegesForRowOperations(op_type, &required_privileges);
+  }
+  LOG(INFO) << WritesToString(batch);
+  LOG(INFO) << WritePrivilegesToString(required_privileges);
+  NO_FATALS(CheckWritePrivileges(batch, required_privileges));
+}
 
 } // namespace tserver
 } // namespace kudu

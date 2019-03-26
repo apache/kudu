@@ -24,6 +24,7 @@
 #include "kudu/common/row_changelist.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/util/bitset.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 
@@ -34,6 +35,8 @@ class ClientServerMapping;
 class ColumnSchema;
 class KuduPartialRow;
 class Schema;
+
+typedef FixedBitSet<RowOperationsPB::Type, RowOperationsPB_Type_Type_ARRAYSIZE> RowOpTypes;
 
 class RowOperationsPBEncoder {
  public:

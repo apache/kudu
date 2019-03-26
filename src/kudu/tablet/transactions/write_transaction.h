@@ -15,8 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#ifndef KUDU_TABLET_WRITE_TRANSACTION_H_
-#define KUDU_TABLET_WRITE_TRANSACTION_H_
+#pragma once
 
 #include <cstddef>
 #include <memory>
@@ -24,16 +23,19 @@
 #include <string>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 
+#include "kudu/common/row_operations.h"
+#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/transactions/transaction.h"
 #include "kudu/tserver/tserver.pb.h"
+#include "kudu/util/bitset.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
@@ -42,7 +44,6 @@ namespace kudu {
 
 class Schema;
 class rw_semaphore;
-struct DecodedRowOperation;
 
 namespace rpc {
 class RequestIdPB;
@@ -55,6 +56,34 @@ class TabletReplica;
 class TxResultPB;
 struct RowOp;
 struct TabletComponents;
+
+// Privileges required for write operations.
+enum WritePrivilegeType {
+  INSERT,
+  UPDATE,
+  DELETE,
+};
+static constexpr size_t kWritePrivilegeMax = WritePrivilegeType::DELETE + 1;
+std::string WritePrivilegeToString(const WritePrivilegeType& type);
+
+typedef FixedBitSet<WritePrivilegeType, kWritePrivilegeMax> WritePrivileges;
+
+// Adds the required privileges for the given op types to 'privileges'.
+void AddWritePrivilegesForRowOperations(const RowOperationsPB::Type& op_type,
+                                        WritePrivileges* privileges);
+
+struct WriteAuthorizationContext {
+  // Checks that the requested operations can be performed with the given
+  // privileges, returning a NotAuthorized error if not.
+  Status CheckPrivileges() const;
+
+  // Write privileges with which to authorize.
+  WritePrivileges write_privileges;
+
+  // Write operations for a given write request. This is populated while
+  // decoding a write request.
+  RowOpTypes requested_op_types;
+};
 
 // A TransactionState for a batch of inserts/mutates. This class holds and
 // owns most everything related to a transaction, including:
@@ -79,11 +108,16 @@ struct TabletComponents;
 // NOTE: this class isn't thread safe.
 class WriteTransactionState : public TransactionState {
  public:
+  // A write transaction for a given replica and the given request. Optionally
+  // takes 'response' if this write is meant to populate a response (e.g. this
+  // is a leader transaction), and a set of write privileges to check before
+  // performing the ops in a request.
   WriteTransactionState(TabletReplica* tablet_replica,
-                        const tserver::WriteRequestPB *request,
+                        const tserver::WriteRequestPB* request,
                         const rpc::RequestIdPB* request_id,
-                        tserver::WriteResponsePB *response = NULL);
-  virtual ~WriteTransactionState();
+                        tserver::WriteResponsePB* response = nullptr,
+                        boost::optional<WriteAuthorizationContext> authz_ctx = boost::none);
+  ~WriteTransactionState();
 
   // Returns the result of this transaction in its protocol buffers form.
   // The transaction result holds information on exactly which memory stores
@@ -96,14 +130,20 @@ class WriteTransactionState : public TransactionState {
 
   // Returns the original client request for this transaction, if there was
   // one.
-  const tserver::WriteRequestPB *request() const OVERRIDE {
+  const tserver::WriteRequestPB* request() const override {
     return request_;
   }
 
   // Returns the prepared response to the client that will be sent when this
   // transaction is completed, if this transaction was started by a client.
-  tserver::WriteResponsePB *response() const OVERRIDE {
+  tserver::WriteResponsePB* response() const override {
     return response_;
+  }
+
+  // Returns the state associated with authorizing this transaction, or 'none'
+  // if no authorization is necessary.
+  const boost::optional<WriteAuthorizationContext>& authz_context() const {
+    return authz_context_;
   }
 
   // Set the MVCC transaction associated with this Write operation.
@@ -182,7 +222,7 @@ class WriteTransactionState : public TransactionState {
   // transaction.
   void Reset();
 
-  virtual std::string ToString() const OVERRIDE;
+  std::string ToString() const override;
 
  private:
   // Releases all the row locks acquired by this transaction.
@@ -202,7 +242,11 @@ class WriteTransactionState : public TransactionState {
   const tserver::WriteRequestPB* request_;
   tserver::WriteResponsePB* response_;
 
-  // The row operations which are decoded from the request during PREPARE
+  // Encapsulates state required to authorize a write request. If 'none', then
+  // no authorization is required.
+  boost::optional<WriteAuthorizationContext> authz_context_;
+
+  // The row operations which are decoded from the request during Prepare().
   // Protected by superclass's txn_state_lock_.
   std::vector<RowOp*> row_ops_;
 
@@ -232,24 +276,27 @@ class WriteTransactionState : public TransactionState {
 // Executes a write transaction.
 class WriteTransaction : public Transaction {
  public:
-  WriteTransaction(std::unique_ptr<WriteTransactionState> tx_state, consensus::DriverType type);
+  WriteTransaction(std::unique_ptr<WriteTransactionState> state, consensus::DriverType type);
 
-  virtual WriteTransactionState* state() OVERRIDE { return state_.get(); }
-  virtual const WriteTransactionState* state() const OVERRIDE { return state_.get(); }
+  WriteTransactionState* state() override { return state_.get(); }
+  const WriteTransactionState* state() const override { return state_.get(); }
 
-  void NewReplicateMsg(gscoped_ptr<consensus::ReplicateMsg>* replicate_msg) OVERRIDE;
+  void NewReplicateMsg(gscoped_ptr<consensus::ReplicateMsg>* replicate_msg) override;
 
-  // Executes a Prepare for a write transaction
+  // Executes a Prepare for a write transaction.
   //
-  // Decodes the operations in the request PB and acquires row locks for each of the
-  // affected rows. This results in adding 'RowOp' objects for each of the operations
-  // into the WriteTransactionState.
-  virtual Status Prepare() OVERRIDE;
+  // Decodes the operations in the request and acquires row locks for each of
+  // the affected rows. This results in adding 'RowOp' objects for each of the
+  // operations into the WriteTransactionState.
+  //
+  // Returns an error if the request contains an operation that is malformed
+  // or isn't authorized.
+  Status Prepare() override;
 
-  virtual void AbortPrepare() OVERRIDE;
+  void AbortPrepare() override;
 
   // Actually starts the Mvcc transaction and assigns a timestamp to this transaction.
-  virtual Status Start() OVERRIDE;
+  Status Start() override;
 
   // Executes an Apply for a write transaction.
   //
@@ -269,13 +316,13 @@ class WriteTransaction : public Transaction {
   // are placed in the queue (but not necessarily in the same order of the
   // original requests) which is already a requirement of the consensus
   // algorithm.
-  virtual Status Apply(gscoped_ptr<consensus::CommitMsg>* commit_msg) OVERRIDE;
+  Status Apply(gscoped_ptr<consensus::CommitMsg>* commit_msg) override;
 
   // If result == COMMITTED, commits the mvcc transaction and updates
   // the metrics, if result == ABORTED aborts the mvcc transaction.
-  virtual void Finish(TransactionResult result) OVERRIDE;
+  void Finish(TransactionResult result) override;
 
-  virtual std::string ToString() const OVERRIDE;
+  std::string ToString() const override;
 
  private:
   // this transaction's start time
@@ -290,4 +337,3 @@ class WriteTransaction : public Transaction {
 }  // namespace tablet
 }  // namespace kudu
 
-#endif /* KUDU_TABLET_WRITE_TRANSACTION_H_ */

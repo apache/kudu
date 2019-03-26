@@ -89,6 +89,7 @@
 #include "kudu/tserver/tserver_admin.pb.h"
 #include "kudu/tserver/tserver_service.pb.h"
 #include "kudu/util/auto_release_pool.h"
+#include "kudu/util/bitset.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/faststring.h"
@@ -199,6 +200,9 @@ using kudu::tablet::TABLET_DATA_TOMBSTONED;
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletReplica;
 using kudu::tablet::TransactionCompletionCallback;
+using kudu::tablet::WriteAuthorizationContext;
+using kudu::tablet::WritePrivileges;
+using kudu::tablet::WritePrivilegeType;
 using kudu::tablet::WriteTransactionState;
 using std::shared_ptr;
 using std::string;
@@ -513,9 +517,9 @@ static bool CheckScanPrivilegesOrRespond(const NewScanRequestPB& scan_pb, const 
 // Returns false if the table ID of 'privilege' doesn't match 'table_id',
 // responding with an error via 'context' if so. Otherwise, returns true.
 // 'req_type' is used for logging purposes.
-static bool CheckMatchingTableId(const security::TablePrivilegePB& privilege,
-                                 const string& table_id, const string& req_type,
-                                 RpcContext* context) {
+static bool CheckMatchingTableIdOrRespond(const security::TablePrivilegePB& privilege,
+                                          const string& table_id, const string& req_type,
+                                          RpcContext* context) {
   if (privilege.table_id() != table_id) {
     LOG(WARNING) << Substitute("rejecting $0 request from $1: '$2', expected '$3'",
                                req_type, context->requestor_string(),
@@ -638,6 +642,8 @@ class RpcTransactionCompletionCallback : public TransactionCompletionCallback {
 
   virtual void TransactionCompleted() OVERRIDE {
     if (!status_.ok()) {
+      LOG(WARNING) << Substitute("failed transaction from $0: $1",
+                                 context_->requestor_string(), status_.ToString());
       SetupErrorAndRespond(get_error(), status_, code_, context_);
     } else {
       context_->RespondSuccess();
@@ -1068,27 +1074,44 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
   TRACE_EVENT1("tserver", "TabletServiceImpl::Write",
                "tablet_id", req->tablet_id());
   DVLOG(3) << "Received Write RPC: " << SecureDebugString(*req);
-
+  scoped_refptr<TabletReplica> replica;
+  if (!LookupRunningTabletReplicaOrRespond(server_->tablet_manager(), req->tablet_id(), resp,
+                                           context, &replica)) {
+    return;
+  }
+  boost::optional<WriteAuthorizationContext> authz_context;
   if (FLAGS_tserver_enforce_access_control) {
     TokenPB token;
     if (!VerifyAuthzTokenOrRespond(server_->token_verifier(), *req, context, &token)) {
       return;
     }
     const auto& privilege = token.authz().table_privilege();
-    if (!privilege.insert_privilege() &&
-        !privilege.update_privilege() &&
-        !privilege.delete_privilege()) {
+    if (!CheckMatchingTableIdOrRespond(privilege, replica->tablet_metadata()->table_id(),
+                                       "Write", context)) {
+      return;
+    }
+    WritePrivileges privileges;
+    if (privilege.insert_privilege()) {
+      InsertOrDie(&privileges, WritePrivilegeType::INSERT);
+    }
+    if (privilege.update_privilege()) {
+      InsertOrDie(&privileges, WritePrivilegeType::UPDATE);
+    }
+    if (privilege.delete_privilege()) {
+      InsertOrDie(&privileges, WritePrivilegeType::DELETE);
+    }
+    if (privileges.empty()) {
+      // If we know there are no write-related privileges outright, we can
+      // short-circuit further checking and reject the request immediately.
+      // Otherwise, we'll defer the checking to the prepare phase of the
+      // transaction after decoding the operations.
+      LOG(WARNING) << Substitute("rejecting Write request from $0: no write privileges",
+                                 context->requestor_string());
       context->RespondRpcFailure(rpc::ErrorStatusPB::FATAL_UNAUTHORIZED,
           Status::NotAuthorized("not authorized to write"));
       return;
     }
-    // TODO(awong): check the privileges required for the contents of the write
-    // request by parsing out the op types in the request.
-  }
-  scoped_refptr<TabletReplica> replica;
-  if (!LookupRunningTabletReplicaOrRespond(server_->tablet_manager(), req->tablet_id(), resp,
-                                           context, &replica)) {
-    return;
+    authz_context = { privileges, /*requested_op_types=*/{} };
   }
 
   shared_ptr<Tablet> tablet;
@@ -1139,7 +1162,8 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
       replica.get(),
       req,
       context->AreResultsTracked() ? context->request_id() : nullptr,
-      resp));
+      resp,
+      std::move(authz_context)));
 
   // If the client sent us a timestamp, decode it and update the clock so that all future
   // timestamps are greater than the passed timestamp.
@@ -1597,7 +1621,8 @@ void TabletServiceImpl::Scan(const ScanRequestPB* req,
       return;
     }
     const auto& privilege = token.authz().table_privilege();
-    if (!CheckMatchingTableId(privilege, replica->tablet_metadata()->table_id(), "Scan", context)) {
+    if (!CheckMatchingTableIdOrRespond(privilege, replica->tablet_metadata()->table_id(),
+                                       "Scan", context)) {
       return;
     }
     unordered_set<ColumnId> authorized_column_ids;
@@ -1725,8 +1750,8 @@ void TabletServiceImpl::SplitKeyRange(const SplitKeyRangeRequestPB* req,
                                              context, &replica)) {
       return;
     }
-    if (!CheckMatchingTableId(privilege, replica->tablet_metadata()->table_id(),
-                              "SplitKeyRange", context)) {
+    if (!CheckMatchingTableIdOrRespond(privilege, replica->tablet_metadata()->table_id(),
+                                       "SplitKeyRange", context)) {
       return;
     }
     // Split-key requests require:
@@ -1912,8 +1937,8 @@ void TabletServiceImpl::Checksum(const ChecksumRequestPB* req,
       return;
     }
     const auto& privilege = token.authz().table_privilege();
-    if (!CheckMatchingTableId(privilege, replica->tablet_metadata()->table_id(),
-                              "Checksum", context)) {
+    if (!CheckMatchingTableIdOrRespond(privilege, replica->tablet_metadata()->table_id(),
+                                       "Checksum", context)) {
       return;
     }
     unordered_set<ColumnId> authorized_column_ids;
