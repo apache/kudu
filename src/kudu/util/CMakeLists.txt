@@ -149,7 +149,6 @@ set(UTIL_SRCS
   bitmap.cc
   block_cache_metrics.cc
   bloom_filter.cc
-  bitmap.cc
   cache.cc
   coding.cc
   condition_variable.cc
@@ -394,6 +393,7 @@ ADD_KUDU_TEST(async_util-test)
 ADD_KUDU_TEST(atomic-test)
 ADD_KUDU_TEST(bit-util-test)
 ADD_KUDU_TEST(bitmap-test)
+ADD_KUDU_TEST(bitset-test)
 ADD_KUDU_TEST(blocking_queue-test)
 ADD_KUDU_TEST(bloom_filter-test)
 ADD_KUDU_TEST(cache-bench RUN_SERIAL true)
