@@ -538,6 +538,7 @@ TEST_F(RemoteKsckTest, TestClusterWithLocation) {
   // TODO(KUDU-2709): remove ASSERT_EVENTUALLY around CheckMasterConsensus
   //                  when KUDU-2709 is addressed.
   ASSERT_EVENTUALLY([&]() {
+    ASSERT_OK(ksck_->CheckMasterHealth()); // Need to refresh master cstate.
     ASSERT_OK(ksck_->CheckMasterConsensus());
   });
   ASSERT_EVENTUALLY([&]() {
