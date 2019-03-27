@@ -140,7 +140,7 @@ class TRServer(object):
         revision varchar(50),
         build_config varchar(100),
         hostname varchar(255),
-        test_name varchar(100),
+        test_name varchar(200),
         status int,
         log_key char(40),
         INDEX (test_name, timestamp),
