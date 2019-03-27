@@ -23,9 +23,15 @@ import static org.junit.Assert.assertTrue;
 
 import java.util.List;
 
+import org.junit.Rule;
 import org.junit.Test;
 
+import org.apache.kudu.test.junit.RetryRule;
+
 public class TestRpcTraces {
+
+  @Rule
+  public RetryRule retryRule = new RetryRule();
 
   @Test
   public void testLimit() {

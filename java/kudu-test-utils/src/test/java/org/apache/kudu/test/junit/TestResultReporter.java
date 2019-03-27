@@ -16,6 +16,7 @@
 // under the License.
 package org.apache.kudu.test.junit;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
@@ -26,6 +27,7 @@ import org.eclipse.jetty.servlet.ServletContextHandler;
 import org.eclipse.jetty.servlet.ServletHolder;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,10 +51,15 @@ import java.util.Map;
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
-
 /** Unit test for ResultReporter. */
 public class TestResultReporter {
+  private static final Logger LOGGER = LoggerFactory.getLogger(TestResultReporter.class);
+  private static final String BIND_ADDR = "127.0.0.1";
+  private Server server;
+  private MockFlakyTestServlet flakyTestServlet;
+
+  @Rule
+  public RetryRule retryRule = new RetryRule();
 
   /** Record of a specific test run. */
   private static class TestRecord {
@@ -116,11 +123,6 @@ public class TestResultReporter {
       response.setStatus(HttpServletResponse.SC_OK);
     }
   }
-
-  private static final Logger LOGGER = LoggerFactory.getLogger(TestResultReporter.class);
-  private static final String BIND_ADDR = "127.0.0.1";
-  private Server server;
-  private MockFlakyTestServlet flakyTestServlet;
 
   @Before
   public void setup() throws Exception {

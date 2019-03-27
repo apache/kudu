@@ -22,9 +22,15 @@ import static org.junit.Assert.assertTrue;
 
 import java.util.Arrays;
 
+import org.junit.Rule;
 import org.junit.Test;
 
+import org.apache.kudu.test.junit.RetryRule;
+
 public class TestStatus {
+
+  @Rule
+  public RetryRule retryRule = new RetryRule();
 
   @Test
   public void testOKStatus() {

@@ -26,12 +26,17 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import com.google.common.collect.Lists;
 import org.junit.Assert;
+import org.junit.Rule;
 import org.junit.Test;
 
-import com.google.common.collect.Lists;
+import org.apache.kudu.test.junit.RetryRule;
 
 public class TestRequestTracker {
+
+  @Rule
+  public RetryRule retryRule = new RetryRule();
 
   @Test(timeout = 10000)
   public void test() {

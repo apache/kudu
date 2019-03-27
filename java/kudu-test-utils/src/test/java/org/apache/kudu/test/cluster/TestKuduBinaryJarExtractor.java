@@ -17,9 +17,9 @@
 
 package org.apache.kudu.test.cluster;
 
-import org.junit.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -40,13 +40,19 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import org.junit.Rule;
+import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.apache.kudu.test.junit.RetryRule;
 
 public class TestKuduBinaryJarExtractor {
 
   private static final Logger LOG = LoggerFactory.getLogger(TestKuduBinaryJarExtractor.class);
+
+  @Rule
+  public RetryRule retryRule = new RetryRule();
 
   private Path createKuduBinaryJar(final String os) throws IOException, URISyntaxException {
     String baseName = "fake-" + os + "-kudu-binary";

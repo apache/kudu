@@ -25,13 +25,18 @@ import java.util.List;
 
 import com.google.common.collect.Lists;
 import org.junit.Test;
+import org.junit.Rule;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.ColumnTypeAttributes;
 import org.apache.kudu.Type;
 import org.apache.kudu.tserver.Tserver;
+import org.apache.kudu.test.junit.RetryRule;
 
 public class TestColumnRangePredicate {
+
+  @Rule
+  public RetryRule retryRule = new RetryRule();
 
   @Test
   public void testRawLists() {

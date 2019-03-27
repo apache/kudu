@@ -25,10 +25,16 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Random;
 
+import org.junit.Rule;
 import org.junit.Test;
+
+import org.apache.kudu.test.junit.RetryRule;
 
 public class TestByteVec {
   private static final Random RAND = new Random();
+
+  @Rule
+  public RetryRule retryRule = new RetryRule();
 
   private void assertBytesEqual(byte a, byte b) {
     if (a != b) throw new AssertionError(String.format("%s != %s", a, b));

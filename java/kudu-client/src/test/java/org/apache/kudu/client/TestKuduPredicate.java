@@ -31,11 +31,13 @@ import java.util.Arrays;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import org.junit.Assert;
+import org.junit.Rule;
 import org.junit.Test;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Type;
 import org.apache.kudu.util.DecimalUtil;
+import org.apache.kudu.test.junit.RetryRule;
 
 public class TestKuduPredicate {
 
@@ -80,6 +82,9 @@ public class TestKuduPredicate {
       new ColumnSchema.ColumnSchemaBuilder("decimal128", Type.DECIMAL)
           .typeAttributes(DecimalUtil.typeAttributes(DecimalUtil.MAX_DECIMAL128_PRECISION, 2))
           .build();
+
+  @Rule
+  public RetryRule retryRule = new RetryRule();
 
   private static KuduPredicate intRange(int lower, int upper) {
     Preconditions.checkArgument(lower < upper);

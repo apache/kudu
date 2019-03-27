@@ -16,14 +16,20 @@
 // under the License.
 package org.apache.kudu;
 
-import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder;
-import org.apache.kudu.util.DecimalUtil;
-import org.junit.Test;
-
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
 
+import org.junit.Rule;
+import org.junit.Test;
+
+import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder;
+import org.apache.kudu.util.DecimalUtil;
+import org.apache.kudu.test.junit.RetryRule;
+
 public class TestColumnSchema {
+
+  @Rule
+  public RetryRule retryRule = new RetryRule();
 
   @Test
   public void testToString() {

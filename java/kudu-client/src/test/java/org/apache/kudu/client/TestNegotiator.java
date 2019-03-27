@@ -42,6 +42,7 @@ import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.handler.codec.embedder.DecoderEmbedder;
 import org.jboss.netty.handler.ssl.SslHandler;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,6 +56,7 @@ import org.apache.kudu.rpc.RpcHeader.NegotiatePB.SaslMechanism;
 import org.apache.kudu.rpc.RpcHeader.ResponseHeader;
 import org.apache.kudu.rpc.RpcHeader.RpcFeatureFlag;
 import org.apache.kudu.security.Token.SignedTokenPB;
+import org.apache.kudu.test.junit.RetryRule;
 import org.apache.kudu.util.SecurityUtil;
 
 public class TestNegotiator {
@@ -90,6 +92,9 @@ public class TestNegotiator {
       "gO88MKlArCYoyRZqIfkcSXAwwTdGQ+5GQLsY9zS49Rrhk9R7eOmDhaHybdRBDqW1JiCSmzURZAxl" +
       "nrjox4GmC3JJaA==\n" +
       "-----END CERTIFICATE-----";
+
+  @Rule
+  public RetryRule retryRule = new RetryRule();
 
   @Before
   public void setup() {

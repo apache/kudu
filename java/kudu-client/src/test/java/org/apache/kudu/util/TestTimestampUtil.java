@@ -16,15 +16,21 @@
 // under the License.
 package org.apache.kudu.util;
 
-import org.junit.Test;
+import static org.junit.Assert.assertEquals;
 
 import java.sql.Timestamp;
 import java.text.SimpleDateFormat;
 import java.util.TimeZone;
 
-import static org.junit.Assert.assertEquals;
+import org.junit.Rule;
+import org.junit.Test;
+
+import org.apache.kudu.test.junit.RetryRule;
 
 public class TestTimestampUtil {
+
+  @Rule
+  public RetryRule retryRule = new RetryRule();
 
   @Test
   public void testTimestampConversion() throws Exception {

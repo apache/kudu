@@ -25,13 +25,19 @@ import java.net.InetAddress;
 import java.util.Arrays;
 import java.util.List;
 
-import org.apache.kudu.client.HostAndPort;
+import org.junit.Rule;
 import org.junit.Test;
+
+import org.apache.kudu.client.HostAndPort;
+import org.apache.kudu.test.junit.RetryRule;
 
 /**
  * Test for {@link NetUtil}.
  */
 public class TestNetUtil {
+
+  @Rule
+  public RetryRule retryRule = new RetryRule();
 
   /**
    * Tests parsing strings into {@link HostAndPort} objects with and without specifying

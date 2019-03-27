@@ -35,7 +35,10 @@ import org.apache.commons.logging.LogFactory;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
+
+import org.apache.kudu.test.junit.RetryRule;
 
 /**
  * This file was forked from hbase/branches/master@4ce6f48.
@@ -43,6 +46,9 @@ import org.junit.Test;
 public class TestJarFinder {
 
   private static File testDir;
+
+  @Rule
+  public RetryRule retryRule = new RetryRule();
 
   @Before
   public void setUp() throws Exception {

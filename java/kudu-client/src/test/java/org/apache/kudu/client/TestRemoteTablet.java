@@ -28,17 +28,22 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.google.protobuf.ByteString;
-import org.apache.kudu.test.ProtobufUtils;
+import org.junit.Rule;
 import org.junit.Test;
 
 import org.apache.kudu.consensus.Metadata;
 import org.apache.kudu.master.Master;
+import org.apache.kudu.test.ProtobufUtils;
+import org.apache.kudu.test.junit.RetryRule;
 
 public class TestRemoteTablet {
   private static final String kClientLocation = "/fake-client";
   private static final String kLocation = "/fake-noclient";
   private static final String kNoLocation = "";
   private static final String[] kUuids = { "uuid-0", "uuid-1", "uuid-2" };
+
+  @Rule
+  public RetryRule retryRule = new RetryRule();
 
   @Test
   public void testLeaderLastRemovedLast() {

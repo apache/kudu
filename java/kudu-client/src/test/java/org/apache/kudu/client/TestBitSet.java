@@ -22,9 +22,15 @@ import static org.junit.Assert.assertTrue;
 
 import java.util.BitSet;
 
+import org.junit.Rule;
 import org.junit.Test;
 
+import org.apache.kudu.test.junit.RetryRule;
+
 public class TestBitSet {
+
+  @Rule
+  public RetryRule retryRule = new RetryRule();
 
   /**
    * Test out BitSet-related operations

@@ -25,13 +25,15 @@ import static org.junit.Assert.fail;
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
 import com.stumbleupon.async.Callback;
-
-import org.apache.kudu.test.cluster.MiniKuduCluster;
+import org.hamcrest.CoreMatchers;
 import org.junit.Assert;
+import org.junit.Rule;
 import org.junit.Test;
+
 import org.apache.kudu.consensus.Metadata;
 import org.apache.kudu.master.Master.ConnectToMasterResponsePB;
-import org.hamcrest.CoreMatchers;
+import org.apache.kudu.test.cluster.MiniKuduCluster;
+import org.apache.kudu.test.junit.RetryRule;
 
 public class TestConnectToCluster {
 
@@ -39,6 +41,9 @@ public class TestConnectToCluster {
       new HostAndPort("0", 9000),
       new HostAndPort("1", 9000),
       new HostAndPort("2", 9000));
+
+  @Rule
+  public RetryRule retryRule = new RetryRule();
 
   /**
    * Test that the client properly falls back to the old GetMasterRegistration

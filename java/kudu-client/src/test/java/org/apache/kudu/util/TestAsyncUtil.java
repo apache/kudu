@@ -23,10 +23,15 @@ import com.stumbleupon.async.Deferred;
 import org.junit.Rule;
 import org.junit.Test;
 
+import org.apache.kudu.test.junit.RetryRule;
+
 /**
  * Test for {@link AsyncUtil}.
  */
 public class TestAsyncUtil {
+
+  @Rule
+  public RetryRule retryRule = new RetryRule();
 
   @Test(expected = IllegalStateException.class)
   public void testAddCallbacksDeferring() throws Exception {

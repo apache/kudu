@@ -23,6 +23,7 @@ import java.util.ArrayList;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.primitives.Longs;
+import org.junit.Rule;
 import org.junit.Test;
 import org.mockito.Mockito;
 
@@ -31,12 +32,16 @@ import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.WireProtocol.RowOperationsPB;
 import org.apache.kudu.client.Operation.ChangeType;
+import org.apache.kudu.test.junit.RetryRule;
 import org.apache.kudu.tserver.Tserver.WriteRequestPBOrBuilder;
 
 /**
  * Unit tests for Operation
  */
 public class TestOperation {
+
+  @Rule
+  public RetryRule retryRule = new RetryRule();
 
   private Schema createManyStringsSchema() {
     ArrayList<ColumnSchema> columns = new ArrayList<ColumnSchema>(4);

@@ -20,16 +20,21 @@ import static org.junit.Assert.*;
 
 import java.util.List;
 
+import com.google.common.base.Ticker;
+import com.google.common.collect.ImmutableList;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 import org.mockito.Mockito;
 
-import com.google.common.base.Ticker;
-import com.google.common.collect.ImmutableList;
+import org.apache.kudu.test.junit.RetryRule;
 
 public class TestTableLocationsCache {
   private TableLocationsCache cache = new TableLocationsCache();
+
+  @Rule
+  public RetryRule retryRule = new RetryRule();
 
   /**
    * Prevent time from advancing during the test by mocking the time.

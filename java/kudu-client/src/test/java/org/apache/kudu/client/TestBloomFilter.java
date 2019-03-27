@@ -21,14 +21,20 @@ import static org.junit.Assert.assertTrue;
 
 import java.util.Random;
 
-import org.apache.kudu.util.BloomFilter;
+import org.junit.Rule;
 import org.junit.Test;
+
+import org.apache.kudu.util.BloomFilter;
+import org.apache.kudu.test.junit.RetryRule;
 
 public class TestBloomFilter {
 
   private int nBytes = 32 * 1024;
   private long kRandomSeed = System.currentTimeMillis();
   private int nKeys = 2000;
+
+  @Rule
+  public RetryRule retryRule = new RetryRule();
 
   @Test
   public void testNumberOfHashes() {

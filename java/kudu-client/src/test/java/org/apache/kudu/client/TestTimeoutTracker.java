@@ -24,9 +24,15 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import com.google.common.base.Stopwatch;
 import com.google.common.base.Ticker;
+import org.junit.Rule;
 import org.junit.Test;
 
+import org.apache.kudu.test.junit.RetryRule;
+
 public class TestTimeoutTracker {
+
+  @Rule
+  public RetryRule retryRule = new RetryRule();
 
   @Test
   public void testTimeout() {

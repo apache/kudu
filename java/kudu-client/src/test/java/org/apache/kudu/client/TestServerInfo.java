@@ -17,14 +17,20 @@
 package org.apache.kudu.client;
 
 import java.net.InetAddress;
-
-import org.apache.kudu.test.cluster.FakeDNS;
-import org.junit.Assert;
-import org.junit.Test;
-
 import java.net.UnknownHostException;
 
+import org.junit.Assert;
+import org.junit.Rule;
+import org.junit.Test;
+
+import org.apache.kudu.test.cluster.FakeDNS;
+import org.apache.kudu.test.junit.RetryRule;
+
 public class TestServerInfo {
+
+  @Rule
+  public RetryRule retryRule = new RetryRule();
+
   /**
    * Test for KUDU-2103. Checks if the original hostnames is returned if unknown.
    */

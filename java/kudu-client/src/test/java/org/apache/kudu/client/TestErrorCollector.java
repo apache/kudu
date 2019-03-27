@@ -17,9 +17,15 @@
 package org.apache.kudu.client;
 
 import org.junit.Assert;
+import org.junit.Rule;
 import org.junit.Test;
 
+import org.apache.kudu.test.junit.RetryRule;
+
 public class TestErrorCollector {
+
+  @Rule
+  public RetryRule retryRule = new RetryRule();
 
   @Test
   public void testErrorCollector() {
