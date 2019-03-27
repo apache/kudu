@@ -23,6 +23,7 @@ docs/support/doxygen/client_api.footer.in
 examples/README.md
 examples/python/graphite-kudu/setup.cfg
 java/.scalafmt.conf
+java/gradle/gradle-wrapper.properties
 java/kudu-client/src/main/java/org/apache/kudu/client/AsyncKuduClient.java
 java/kudu-client/src/main/java/org/apache/kudu/client/AsyncKuduScanner.java
 java/kudu-client/src/main/java/org/apache/kudu/client/Bytes.java

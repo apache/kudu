@@ -29,13 +29,13 @@ repositories {
 // For more details see: https://docs.gradle.org/current/userguide/plugins.html#plugins_dsl_limitations
 dependencies {
   compile "com.commercehub.gradle.plugin:gradle-avro-plugin:0.16.0"
-  compile "com.github.ben-manes:gradle-versions-plugin:0.20.0"
-  compile "com.github.jengelman.gradle.plugins:shadow:4.0.4"
+  compile "com.github.ben-manes:gradle-versions-plugin:0.21.0"
+  compile "com.github.jengelman.gradle.plugins:shadow:5.0.0"
   compile "com.google.protobuf:protobuf-gradle-plugin:0.8.8"
-  compile "com.netflix.nebula:nebula-clojure-plugin:8.0.0"
-  compile "gradle.plugin.com.github.spotbugs:spotbugs-gradle-plugin:1.6.9"
+  compile "com.netflix.nebula:nebula-clojure-plugin:8.1.1"
+  compile "gradle.plugin.com.github.spotbugs:spotbugs-gradle-plugin:1.7.0"
   compile "io.spring.gradle:propdeps-plugin:0.0.9.RELEASE"
-  compile "net.ltgt.gradle:gradle-errorprone-plugin:0.0.16"
+  compile "net.ltgt.gradle:gradle-errorprone-plugin:0.7.1"
   compile "ru.vyarus:gradle-animalsniffer-plugin:1.5.0"
   compile 'com.google.code.gson:gson:2.8.5'
   compile "cz.alenkacz:gradle-scalafmt:1.7.2"
