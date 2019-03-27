@@ -240,6 +240,7 @@ public class KuduPredicate {
    * @param op the comparison operation
    * @param value the value to compare against
    */
+  @SuppressWarnings("BigDecimalEquals")
   public static KuduPredicate newComparisonPredicate(ColumnSchema column,
                                                      ComparisonOp op,
                                                      BigDecimal value) {
@@ -1152,7 +1153,7 @@ public class KuduPredicate {
     if (this == o) {
       return true;
     }
-    if (o == null || getClass() != o.getClass()) {
+    if (!(o instanceof KuduPredicate)) {
       return false;
     }
     KuduPredicate that = (KuduPredicate) o;

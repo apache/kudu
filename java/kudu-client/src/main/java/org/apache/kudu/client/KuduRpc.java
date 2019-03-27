@@ -38,7 +38,6 @@ import com.google.common.collect.ImmutableList;
 import com.google.protobuf.CodedOutputStream;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.Message;
-import com.google.protobuf.Message.Builder;
 import com.stumbleupon.async.Deferred;
 import org.apache.kudu.security.Token;
 import org.apache.yetus.audience.InterfaceAudience;
@@ -408,7 +407,7 @@ public abstract class KuduRpc<R> {
   }
 
   static void readProtobuf(final Slice slice,
-      final Builder builder) {
+      final Message.Builder builder) {
     final int length = slice.length();
     final byte[] payload = slice.getRawArray();
     final int offset = slice.getRawOffset();

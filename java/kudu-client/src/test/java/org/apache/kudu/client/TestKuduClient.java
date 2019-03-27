@@ -625,9 +625,7 @@ public class TestKuduClient {
     int non_positives[] = { -1, 0 };
     for (int limit : non_positives) {
       try {
-        KuduScanner scanner = client.newScannerBuilder(table)
-                                        .limit(limit)
-                                        .build();
+        client.newScannerBuilder(table).limit(limit).build();
         fail();
       } catch (IllegalArgumentException e) {
         assertTrue(e.getMessage().contains("Need a strictly positive number"));

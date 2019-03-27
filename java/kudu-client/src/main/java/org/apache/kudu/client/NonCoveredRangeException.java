@@ -42,9 +42,8 @@ class NonCoveredRangeException extends NonRecoverableException {
   }
 
   @Override
-  public String toString() {
-    return String.format(
-        "NonCoveredRangeException([%s, %s))",
+  public String getMessage() {
+    return String.format("([%s, %s))",
         nonCoveredRangeStart.length == 0 ? "<start>" : Bytes.hex(nonCoveredRangeStart),
         nonCoveredRangeEnd.length == 0 ? "<end>" : Bytes.hex(nonCoveredRangeEnd));
   }

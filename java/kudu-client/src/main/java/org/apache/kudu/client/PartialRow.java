@@ -1308,6 +1308,7 @@ public class PartialRow {
    * @return {@code true} if the column is successfully incremented, or {@code false} if
    *         it is already the maximum value
    */
+  @SuppressWarnings("BigDecimalEquals")
   boolean incrementColumn(int index) {
     ColumnSchema column = schema.getColumnByIndex(index);
     Type type = column.getType();
@@ -1435,6 +1436,7 @@ public class PartialRow {
    * @param index the column index
    * @return {@code true} if the cell values for the given column are equal
    */
+  @SuppressWarnings("BigDecimalEquals")
   private static boolean isCellEqual(PartialRow a, PartialRow b, int index) {
     // These checks are perhaps overly restrictive, but right now we only use
     // this method for checking fully-set keys.
@@ -1502,6 +1504,7 @@ public class PartialRow {
    * @return {@code true} if the column cell value in the upper row is equal to
    *         the value in the lower row, incremented by one.
    */
+  @SuppressWarnings("BigDecimalEquals")
   private static boolean isCellIncremented(PartialRow lower, PartialRow upper, int index) {
     // These checks are perhaps overly restrictive, but right now we only use
     // this method for checking fully-set keys.

@@ -30,7 +30,6 @@ import org.apache.yetus.audience.InterfaceAudience;
 import org.jboss.netty.util.Timer;
 
 import org.apache.kudu.Schema;
-import org.apache.kudu.master.Master.TableIdentifierPB.Builder;
 import org.apache.kudu.util.Pair;
 
 import java.util.Collection;
@@ -65,7 +64,7 @@ public class GetTableSchemaRequest extends KuduRpc<GetTableSchemaResponse> {
   Message createRequestPB() {
     final GetTableSchemaRequestPB.Builder builder =
         GetTableSchemaRequestPB.newBuilder();
-    Builder identifierBuilder = TableIdentifierPB.newBuilder();
+    TableIdentifierPB.Builder identifierBuilder = TableIdentifierPB.newBuilder();
     if (id != null) {
       identifierBuilder.setTableId(ByteString.copyFromUtf8(id));
     } else {

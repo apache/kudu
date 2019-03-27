@@ -164,7 +164,7 @@ public class TestKuduScanner {
   private void processKeepAliveScanner(KuduScanner scanner, int scannerTtlMs) throws Exception {
     int i = 0;
     // Ensure reading takes longer than the scanner ttl.
-    for (RowResult rowResult : scanner) {
+    for (RowResult unused : scanner) {
       // Sleep for half the ttl for the first few rows. This ensures
       // we are on the same tablet and will go past the ttl without
       // a new scan request. It also ensures a single row doesn't go
@@ -335,7 +335,6 @@ public class TestKuduScanner {
         new Pair<>(ChangeType.INSERT, numInserts),
         new Pair<>(ChangeType.UPDATE, numUpdates),
         new Pair<>(ChangeType.DELETE, numDeletes));
-    Set<Integer> keys = new HashSet<>();
     for (Pair<ChangeType, Integer> changeCount : changeCounts) {
       ChangeType type = changeCount.getFirst();
       int count = changeCount.getSecond();
@@ -372,7 +371,7 @@ public class TestKuduScanner {
       //    delete -> insert
       Operation op;
       if (state.currentType == ChangeType.INSERT || state.currentType == ChangeType.UPDATE) {
-        op = (random.nextBoolean()) ? table.newUpdate() : table.newDelete();
+        op = random.nextBoolean() ? table.newUpdate() : table.newDelete();
       } else {
         // Must be a delete, so we need an insert next.
         op = table.newInsert();

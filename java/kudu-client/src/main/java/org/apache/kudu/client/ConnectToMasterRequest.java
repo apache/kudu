@@ -86,13 +86,13 @@ public class ConnectToMasterRequest extends KuduRpc<ConnectToMasterResponsePB> {
   Pair<ConnectToMasterResponsePB, Object> deserialize(CallResponse callResponse,
                                                        String tsUUID) throws KuduException {
     if (CONNECT_TO_MASTER.equals(method)) {
-      return deserializeNewRpc(callResponse, tsUUID);
+      return deserializeNewRpc(callResponse);
     }
-    return deserializeOldRpc(callResponse, tsUUID);
+    return deserializeOldRpc(callResponse);
   }
 
   private Pair<ConnectToMasterResponsePB, Object> deserializeNewRpc(
-      CallResponse callResponse, String tsUUID) {
+      CallResponse callResponse) {
 
     final ConnectToMasterResponsePB.Builder respBuilder =
         ConnectToMasterResponsePB.newBuilder();
@@ -102,8 +102,8 @@ public class ConnectToMasterRequest extends KuduRpc<ConnectToMasterResponsePB> {
         respBuilder.hasError() ? respBuilder.getError() : null);
   }
 
-  private Pair<ConnectToMasterResponsePB, Object> deserializeOldRpc(CallResponse callResponse,
-      String tsUUID) throws KuduException {
+  private Pair<ConnectToMasterResponsePB, Object> deserializeOldRpc(CallResponse callResponse)
+      throws KuduException {
     final GetMasterRegistrationResponsePB.Builder resp =
         GetMasterRegistrationResponsePB.newBuilder();
     readProtobuf(callResponse.getPBMessage(), resp);

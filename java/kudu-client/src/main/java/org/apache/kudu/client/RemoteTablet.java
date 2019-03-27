@@ -276,7 +276,7 @@ public class RemoteTablet implements Comparable<RemoteTablet> {
     if (this == o) {
       return true;
     }
-    if (o == null || getClass() != o.getClass()) {
+    if (!(o instanceof RemoteTablet)) {
       return false;
     }
 

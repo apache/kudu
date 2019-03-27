@@ -160,7 +160,7 @@ public class Partition implements Comparable<Partition> {
     if (this == o) {
       return true;
     }
-    if (o == null || getClass() != o.getClass()) {
+    if (!(o instanceof Partition)) {
       return false;
     }
     Partition partition = (Partition) o;

@@ -434,7 +434,7 @@ public class TestFlexiblePartitioning {
     @Override
     public boolean equals(Object o) {
       if (this == o) return true;
-      if (o == null || getClass() != o.getClass()) return false;
+      if (!(o instanceof Row)) return false;
       Row row = (Row) o;
       return Objects.equals(a, row.a)
           && Objects.equals(b, row.b)

@@ -249,7 +249,7 @@ public class TestAsyncKuduSession {
     // lookups in flush isn't working properly.
     session.setFlushMode(AsyncKuduSession.FlushMode.AUTO_FLUSH_BACKGROUND);
     session.setFlushInterval(DEFAULT_SLEEP + 1000);
-    Deferred<OperationResponse> d = session.apply(createInsert(0));
+    session.apply(createInsert(0));
     session.flush().join(DEFAULT_SLEEP);
     assertTrue(exists(0));
     // set back to default
@@ -296,7 +296,7 @@ public class TestAsyncKuduSession {
 
     session.setFlushMode(AsyncKuduSession.FlushMode.AUTO_FLUSH_BACKGROUND);
 
-    d = session.apply(createInsert(20));
+    Deferred<OperationResponse> d = session.apply(createInsert(20));
     Thread.sleep(50); // waiting a minimal amount of time to make sure the interval is in effect
     assertFalse(exists(20));
     // Add 10 items, the last one will stay in the buffer

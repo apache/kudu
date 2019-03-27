@@ -382,7 +382,7 @@ public class BloomFilter {
 
   private static int optimalExpectedCount(int nBytes, double fpRate) {
     int nBits = nBytes * 8;
-    return (int) (Math.ceil(-nBits * kNaturalLog2 * kNaturalLog2 / Math.log(fpRate)));
+    return (int) Math.ceil(-nBits * kNaturalLog2 * kNaturalLog2 / Math.log(fpRate));
   }
 
   private static int computeOptimalHashCount(int nBits, int elems) {

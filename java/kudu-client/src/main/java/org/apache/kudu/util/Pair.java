@@ -43,7 +43,7 @@ public class Pair<A, B> {
     if (this == o) {
       return true;
     }
-    if (o == null || getClass() != o.getClass()) {
+    if (!(o instanceof Pair)) {
       return false;
     }
 

@@ -459,7 +459,7 @@ public final class AsyncKuduScanner {
 
   /**
    * If set to true, the {@link RowResult} object returned by the {@link RowResultIterator}
-   * will be reused with each call to {@link RowResultIterator#next()).
+   * will be reused with each call to {@link RowResultIterator#next()}.
    * This can be a useful optimization to reduce the number of objects created.
    *
    * Note: DO NOT use this if the RowResult is stored between calls to next().

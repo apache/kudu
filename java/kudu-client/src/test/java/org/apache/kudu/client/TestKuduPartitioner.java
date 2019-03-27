@@ -38,7 +38,6 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 public class TestKuduPartitioner {
-  private static final Logger LOG = LoggerFactory.getLogger(TestKuduPartitioner.class);
 
   private KuduClient client;
 
@@ -145,7 +144,6 @@ public class TestKuduPartitioner {
 
     KuduTable table = client.createTable(tableName, basicSchema, createOptions);
     Schema schema = table.getSchema();
-    PartitionSchema partitionSchema = table.getPartitionSchema();
     KuduPartitioner part = new KuduPartitioner.KuduPartitionerBuilder(table).build();
 
     try {
@@ -182,9 +180,7 @@ public class TestKuduPartitioner {
     int timeoutMs = 2000;
     long now = System.currentTimeMillis();
     try {
-      KuduPartitioner partitioner = new KuduPartitioner.KuduPartitionerBuilder(table)
-          .buildTimeout(timeoutMs)
-          .build();
+      new KuduPartitioner.KuduPartitionerBuilder(table).buildTimeout(timeoutMs).build();
       fail("No NonRecoverableException was thrown");
     } catch (NonRecoverableException ex) {
       assertTrue(ex.getMessage().startsWith("cannot complete before timeout"));

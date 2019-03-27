@@ -279,7 +279,7 @@ public final class Slice implements Comparable<Slice> {
   public void setShort(int index, int value) {
     Preconditions.checkPositionIndexes(index, index + Shorts.BYTES, this.length);
     index += offset;
-    data[index] = (byte) (value);
+    data[index] = (byte) value;
     data[index + 1] = (byte) (value >>> 8);
   }
 
@@ -293,7 +293,7 @@ public final class Slice implements Comparable<Slice> {
   public void setInt(int index, int value) {
     Preconditions.checkPositionIndexes(index, index + Ints.BYTES, this.length);
     index += offset;
-    data[index] = (byte) (value);
+    data[index] = (byte) value;
     data[index + 1] = (byte) (value >>> 8);
     data[index + 2] = (byte) (value >>> 16);
     data[index + 3] = (byte) (value >>> 24);
@@ -309,7 +309,7 @@ public final class Slice implements Comparable<Slice> {
   public void setLong(int index, long value) {
     Preconditions.checkPositionIndexes(index, index + Longs.BYTES, this.length);
     index += offset;
-    data[index] = (byte) (value);
+    data[index] = (byte) value;
     data[index + 1] = (byte) (value >>> 8);
     data[index + 2] = (byte) (value >>> 16);
     data[index + 3] = (byte) (value >>> 24);
@@ -624,7 +624,7 @@ public final class Slice implements Comparable<Slice> {
       int thisByte = 0xFF & this.data[this.offset + i];
       int thatByte = 0xFF & that.data[that.offset + i];
       if (thisByte != thatByte) {
-        return (thisByte) - (thatByte);
+        return thisByte - thatByte;
       }
     }
     return this.length - that.length;

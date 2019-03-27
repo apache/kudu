@@ -317,7 +317,7 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
       // If the scan is short-circuitable, then return no tokens.
       for (KuduPredicate predicate : predicates.values()) {
         if (predicate.getType() == KuduPredicate.PredicateType.NONE) {
-          return ImmutableList.of();
+          return new ArrayList<>();
         }
       }
 

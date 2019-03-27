@@ -132,7 +132,7 @@ public class TestMultiMasterAuthzTokens {
           int batch = 0;
           while (latch.getCount() > 0) {
             // Send writes without batching.
-            upsertRows(table, AUTO_FLUSH_SYNC, batch * 10, (++batch) * 10);
+            upsertRows(table, AUTO_FLUSH_SYNC, batch * 10, ++batch * 10);
           }
         } catch (Exception e) {
           return e;
@@ -147,7 +147,7 @@ public class TestMultiMasterAuthzTokens {
           int batch = 0;
           while (latch.getCount() > 0) {
             // Also send writes with batching.
-            upsertRows(table, AUTO_FLUSH_BACKGROUND, batch * 10, (++batch) * 10);
+            upsertRows(table, AUTO_FLUSH_BACKGROUND, batch * 10, ++batch * 10);
           }
         } catch (Exception e) {
           return e;

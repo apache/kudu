@@ -372,7 +372,7 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
       if (this == o) {
         return true;
       }
-      if (o == null || getClass() != o.getClass()) {
+      if (!(o instanceof TableSplit)) {
         return false;
       }
 
