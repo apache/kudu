@@ -39,7 +39,7 @@ import org.apache.kudu.test.KuduTestHarness;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
-
+import org.junit.rules.RuleChain;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
@@ -69,11 +69,15 @@ public class RegexpKuduOperationsProducerParseErrorTest {
   private static final String POLICY_WARN = "WARN";
   private static final String POLICY_IGNORE = "IGNORE";
 
-  @Rule
   public KuduTestHarness harness = new KuduTestHarness();
-
-  @Rule
   public ExpectedException thrown = ExpectedException.none();
+
+  // ExpectedException misbehaves when combined with other rules; we use a
+  // RuleChain to beat it into submission.
+  //
+  // See https://stackoverflow.com/q/28846088 for more information.
+  @Rule
+  public RuleChain chain = RuleChain.outerRule(harness).around(thrown);
 
   @Test
   public void testMissingColumnThrowsExceptionDefaultConfig() throws Exception {

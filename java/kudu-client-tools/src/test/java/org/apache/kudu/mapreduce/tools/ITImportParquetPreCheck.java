@@ -43,6 +43,7 @@ import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
+import org.junit.rules.RuleChain;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
@@ -77,11 +78,15 @@ public class ITImportParquetPreCheck {
     schema = new Schema(columns);
   }
 
-  @Rule
   public KuduTestHarness harness = new KuduTestHarness();
-
-  @Rule
   public ExpectedException thrown = ExpectedException.none();
+
+  // ExpectedException misbehaves when combined with other rules; we use a
+  // RuleChain to beat it into submission.
+  //
+  // See https://stackoverflow.com/q/28846088 for more information.
+  @Rule
+  public RuleChain chain = RuleChain.outerRule(harness).around(thrown);
 
   @Before
   public void setUp() throws Exception {

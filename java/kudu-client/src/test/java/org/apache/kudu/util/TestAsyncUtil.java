@@ -22,17 +22,13 @@ import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import org.junit.Rule;
 import org.junit.Test;
-import org.junit.rules.ExpectedException;
 
 /**
  * Test for {@link AsyncUtil}.
  */
 public class TestAsyncUtil {
 
-  @Rule
-  public ExpectedException exception = ExpectedException.none();
-
-  @Test
+  @Test(expected = IllegalStateException.class)
   public void testAddCallbacksDeferring() throws Exception {
     Deferred<String> d = new Deferred<String>();
     TestCallback cb = new TestCallback();
@@ -52,7 +48,6 @@ public class TestAsyncUtil {
     d = new Deferred<String>();
     AsyncUtil.addCallbacksDeferring(d, cb, eb);
     d.callback(new IllegalStateException());
-    exception.expect(IllegalStateException.class);
     d.join();
   }
 
