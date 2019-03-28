@@ -15,10 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <string.h>
-
 #include <atomic>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -120,9 +119,9 @@ class CacheBench : public KuduTest,
       if (h) {
         hits++;
       } else {
-        Cache::PendingHandle* ph = cache_->Allocate(
-            key_slice, /* val_len=*/kEntrySize, /* charge=*/kEntrySize);
-        h = cache_->Insert(ph, nullptr);
+        auto ph(cache_->Allocate(
+            key_slice, /* val_len=*/kEntrySize, /* charge=*/kEntrySize));
+        h = cache_->Insert(std::move(ph), nullptr);
       }
 
       cache_->Release(h);

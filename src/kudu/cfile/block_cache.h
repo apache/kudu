@@ -81,9 +81,13 @@ class BlockCache {
   // cache insertion path.
   class PendingEntry {
    public:
-    PendingEntry() : cache_(nullptr), handle_(nullptr) {}
-    PendingEntry(Cache* cache, Cache::PendingHandle* handle)
-        : cache_(cache), handle_(handle) {
+    PendingEntry()
+        : cache_(nullptr),
+          handle_(Cache::UniquePendingHandle(nullptr,
+                                             Cache::PendingHandleDeleter(nullptr))) {
+    }
+    PendingEntry(Cache* cache, Cache::UniquePendingHandle handle)
+        : cache_(cache), handle_(std::move(handle)) {
     }
     PendingEntry(PendingEntry&& other) noexcept : PendingEntry() {
       *this = std::move(other);
@@ -102,22 +106,22 @@ class BlockCache {
 
     // Return true if this is a valid pending entry.
     bool valid() const {
-      return handle_ != nullptr;
+      return static_cast<bool>(handle_);
     }
 
     // Return the pointer into which the value should be written.
     uint8_t* val_ptr() {
-      return cache_->MutableValue(handle_);
+      return cache_->MutableValue(handle_.get());
     }
 
    private:
     friend class BlockCache;
 
     Cache* cache_;
-    Cache::PendingHandle* handle_;
+    Cache::UniquePendingHandle handle_;
   };
 
-  static BlockCache *GetSingleton() {
+  static BlockCache* GetSingleton() {
     return Singleton<BlockCache>::get();
   }
 
@@ -230,19 +234,14 @@ class BlockCacheHandle {
 inline BlockCache::PendingEntry& BlockCache::PendingEntry::operator=(
     BlockCache::PendingEntry&& other) noexcept {
   reset();
-  cache_ = other.cache_;
-  handle_ = other.handle_;
-  other.cache_ = nullptr;
-  other.handle_ = nullptr;
+  std::swap(cache_, other.cache_);
+  handle_ = std::move(other.handle_);
   return *this;
 }
 
 inline void BlockCache::PendingEntry::reset() {
-  if (cache_ && handle_) {
-    cache_->Free(handle_);
-  }
   cache_ = nullptr;
-  handle_ = nullptr;
+  handle_.reset();
 }
 
 } // namespace cfile

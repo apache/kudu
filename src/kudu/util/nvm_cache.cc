@@ -494,9 +494,9 @@ class ShardedLRUCache : public Cache {
     vmem_delete(vmp_);
   }
 
-  virtual Handle* Insert(PendingHandle* handle,
+  virtual Handle* Insert(UniquePendingHandle handle,
                          Cache::EvictionCallback* eviction_callback) OVERRIDE {
-    LRUHandle* h = reinterpret_cast<LRUHandle*>(DCHECK_NOTNULL(handle));
+    LRUHandle* h = reinterpret_cast<LRUHandle*>(DCHECK_NOTNULL(handle.release()));
     return shards_[Shard(h->hash)]->Insert(h, eviction_callback);
   }
   virtual Handle* Lookup(const Slice& key, CacheBehavior caching) OVERRIDE {
@@ -524,20 +524,21 @@ class ShardedLRUCache : public Cache {
       cache->SetMetrics(metrics_.get());
     }
   }
-  virtual PendingHandle* Allocate(Slice key, int val_len, int charge) OVERRIDE {
+  virtual UniquePendingHandle Allocate(Slice key, int val_len, int charge) OVERRIDE {
     int key_len = key.size();
     DCHECK_GE(key_len, 0);
     DCHECK_GE(val_len, 0);
-    LRUHandle* handle = nullptr;
 
     // Try allocating from each of the shards -- if vmem is tight,
     // this can cause eviction, so we might have better luck in different
     // shards.
     for (NvmLRUCache* cache : shards_) {
-      uint8_t* buf = static_cast<uint8_t*>(cache->AllocateAndRetry(
-          sizeof(LRUHandle) + key_len + val_len));
-      if (buf) {
-        handle = reinterpret_cast<LRUHandle*>(buf);
+      UniquePendingHandle ph(static_cast<PendingHandle*>(
+          cache->AllocateAndRetry(sizeof(LRUHandle) + key_len + val_len)),
+          Cache::PendingHandleDeleter(this));
+      if (ph) {
+        LRUHandle* handle = reinterpret_cast<LRUHandle*>(ph.get());
+        uint8_t* buf = reinterpret_cast<uint8_t*>(ph.get());
         handle->kv_data = &buf[sizeof(LRUHandle)];
         handle->val_length = val_len;
         handle->key_length = key_len;
@@ -545,11 +546,11 @@ class ShardedLRUCache : public Cache {
             vmem_malloc_usable_size(vmp_, buf) : charge;
         handle->hash = HashSlice(key);
         memcpy(handle->kv_data, key.data(), key.size());
-        return reinterpret_cast<PendingHandle*>(handle);
+        return ph;
       }
     }
-    // TODO: increment a metric here on allocation failure.
-    return nullptr;
+    // TODO(unknown): increment a metric here on allocation failure.
+    return UniquePendingHandle(nullptr, Cache::PendingHandleDeleter(this));
   }
 
   virtual void Free(PendingHandle* ph) OVERRIDE {

@@ -522,7 +522,7 @@ class ToolTest : public KuduTest {
                 &stdout));
 
     // Check total count.
-    int64_t total = max(args.max_value - args.min_value + 1, 0L);
+    int64_t total = max<int64_t>(args.max_value - args.min_value + 1, 0);
     if (args.mode == TableCopyMode::COPY_SCHEMA_ONLY) {
       ASSERT_STR_NOT_CONTAINS(stdout, "Total count ");
     } else {

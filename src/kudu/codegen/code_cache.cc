@@ -18,6 +18,8 @@
 #include "kudu/codegen/code_cache.h"
 
 #include <cstring>
+#include <memory>
+#include <utility>
 
 #include <glog/logging.h>
 
@@ -76,16 +78,17 @@ Status CodeCache::AddEntry(const scoped_refptr<JITWrapper>& value) {
 
   // We CHECK_NOTNULL because this is always a DRAM-based cache, and if allocation
   // failed, we'd just crash the process.
-  Cache::PendingHandle* pending = CHECK_NOTNULL(
-      cache_->Allocate(Slice(key), val_len, /*charge = */1));
-  memcpy(cache_->MutableValue(pending), &val, val_len);
+  auto pending(cache_->Allocate(Slice(key), val_len, /*charge = */1));
+  CHECK(pending);
+  memcpy(cache_->MutableValue(pending.get()), &val, val_len);
 
   // Because Cache only accepts void* values, we store just the JITWrapper*
   // and increase its ref count.
   value->AddRef();
 
   // Insert into cache and release the handle (we have a local copy of a refptr).
-  Cache::Handle* inserted = DCHECK_NOTNULL(cache_->Insert(pending, eviction_callback_.get()));
+  Cache::Handle* inserted = DCHECK_NOTNULL(cache_->Insert(
+      std::move(pending), eviction_callback_.get()));
   cache_->Release(inserted);
   return Status::OK();
 }

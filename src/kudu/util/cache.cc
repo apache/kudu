@@ -540,9 +540,9 @@ class ShardedCache : public Cache {
     STLDeleteElements(&shards_);
   }
 
-  Handle* Insert(PendingHandle* handle,
+  Handle* Insert(UniquePendingHandle handle,
                  Cache::EvictionCallback* eviction_callback) override {
-    RLHandle* h = reinterpret_cast<RLHandle*>(DCHECK_NOTNULL(handle));
+    RLHandle* h = reinterpret_cast<RLHandle*>(DCHECK_NOTNULL(handle.release()));
     return shards_[Shard(h->hash)]->Insert(h, eviction_callback);
   }
   Handle* Lookup(const Slice& key, CacheBehavior caching) override {
@@ -576,23 +576,26 @@ class ShardedCache : public Cache {
     }
   }
 
-  PendingHandle* Allocate(Slice key, int val_len, int charge) override {
+  UniquePendingHandle Allocate(Slice key, int val_len, int charge) override {
     int key_len = key.size();
     DCHECK_GE(key_len, 0);
     DCHECK_GE(val_len, 0);
     int key_len_padded = KUDU_ALIGN_UP(key_len, sizeof(void*));
-    uint8_t* buf = new uint8_t[sizeof(RLHandle)
-                               + key_len_padded + val_len // the kv_data VLA data
-                               - 1 // (the VLA has a 1-byte placeholder)
-                               ];
-    RLHandle* handle = reinterpret_cast<RLHandle*>(buf);
+    UniquePendingHandle h(reinterpret_cast<PendingHandle*>(
+        new uint8_t[sizeof(RLHandle)
+                    + key_len_padded + val_len // the kv_data VLA data
+                    - 1 // (the VLA has a 1-byte placeholder)
+                   ]),
+        PendingHandleDeleter(this));
+    RLHandle* handle = reinterpret_cast<RLHandle*>(h.get());
     handle->key_length = key_len;
     handle->val_length = val_len;
-    handle->charge = (charge == kAutomaticCharge) ? kudu_malloc_usable_size(buf) : charge;
+    handle->charge = (charge == kAutomaticCharge) ? kudu_malloc_usable_size(h.get())
+                                                  : charge;
     handle->hash = HashSlice(key);
     memcpy(handle->kv_data, key.data(), key_len);
 
-    return reinterpret_cast<PendingHandle*>(handle);
+    return h;
   }
 
   void Free(PendingHandle* h) override {

@@ -149,7 +149,7 @@ BlockCache::PendingEntry BlockCache::Allocate(const CacheKey& key, size_t block_
 
 bool BlockCache::Lookup(const CacheKey& key, Cache::CacheBehavior behavior,
                         BlockCacheHandle *handle) {
-  Cache::Handle *h = cache_->Lookup(Slice(reinterpret_cast<const uint8_t*>(&key),
+  Cache::Handle* h = cache_->Lookup(Slice(reinterpret_cast<const uint8_t*>(&key),
                                           sizeof(key)), behavior);
   if (h != nullptr) {
     handle->SetHandle(cache_.get(), h);
@@ -158,8 +158,8 @@ bool BlockCache::Lookup(const CacheKey& key, Cache::CacheBehavior behavior,
 }
 
 void BlockCache::Insert(BlockCache::PendingEntry* entry, BlockCacheHandle* inserted) {
-  Cache::Handle *h = cache_->Insert(entry->handle_, /* eviction_callback= */ nullptr);
-  entry->handle_ = nullptr;
+  Cache::Handle* h = cache_->Insert(std::move(entry->handle_),
+                                    /* eviction_callback= */ nullptr);
   inserted->SetHandle(cache_.get(), h);
 }
 

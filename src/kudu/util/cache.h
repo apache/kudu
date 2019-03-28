@@ -103,6 +103,24 @@ class Cache {
   };
   typedef std::unique_ptr<Handle, HandleDeleter> UniqueHandle;
 
+  // Opaque handle to an entry which is being prepared to be added to the cache.
+  struct PendingHandle { };
+
+  class PendingHandleDeleter {
+   public:
+    explicit PendingHandleDeleter(Cache* c)
+        : c_(c) {
+    }
+
+    void operator()(Cache::PendingHandle* h) const {
+      c_->Free(h);
+    }
+
+   private:
+    Cache* c_;
+  };
+  typedef std::unique_ptr<PendingHandle, PendingHandleDeleter> UniquePendingHandle;
+
   // Passing EXPECT_IN_CACHE will increment the hit/miss metrics that track the number of times
   // blocks were requested that the users were hoping to get the block from the cache, along with
   // with the basic metrics.
@@ -150,19 +168,14 @@ class Cache {
   //
   // For example:
   //
-  //   PendingHandle* ph = cache_->Allocate("my entry", value_size, charge);
-  //   if (!ReadDataFromDisk(cache_->MutableValue(ph)).ok()) {
-  //     cache_->Free(ph);
+  //   auto ph(cache_->Allocate("my entry", value_size, charge));
+  //   if (!ReadDataFromDisk(cache_->MutableValue(ph.get())).ok()) {
   //     ... error handling ...
   //     return;
   //   }
-  //   Handle* h = cache_->Insert(ph, my_eviction_callback);
+  //   Handle* h = cache_->Insert(std::move(ph), my_eviction_callback);
   //   ...
   //   cache_->Release(h);
-
-  // Opaque handle to an entry which is being prepared to be added to
-  // the cache.
-  struct PendingHandle { };
 
   // Indicates that the charge of an item in the cache should be calculated
   // based on its memory consumption.
@@ -177,21 +190,23 @@ class Cache {
   // If 'charge' is not 'kAutomaticCharge', then the cache capacity will be charged
   // the explicit amount. This is useful when caching items that are small but need to
   // maintain a bounded count (eg file descriptors) rather than caring about their actual
-  // memory usage.
+  // memory usage. It is also useful when caching items for whom calculating
+  // memory usage is a complex affair (i.e. items containing pointers to
+  // additional heap allocations).
   //
   // Note that this does not mutate the cache itself: lookups will
   // not be able to find the provided key until it is inserted.
   //
-  // It is possible that this will return NULL if the cache is above its capacity
-  // and eviction fails to free up enough space for the requested allocation.
+  // It is possible that this will return a nullptr wrapped in a std::unique_ptr
+  // if the cache is above its capacity and eviction fails to free up enough
+  // space for the requested allocation.
   //
-  // NOTE: the returned memory is not automatically freed by the cache: the
-  // caller must either free it using Free(), or insert it using Insert().
-  virtual PendingHandle* Allocate(Slice key, int val_len, int charge) = 0;
+  // The returned handle owns the allocated memory.
+  virtual UniquePendingHandle Allocate(Slice key, int val_len, int charge) = 0;
 
-  // Default 'charge' should be kAutomaticCharge.
-  // (default arguments on virtual functions are prohibited)
-  PendingHandle* Allocate(Slice key, int val_len) {
+  // Default 'charge' should be kAutomaticCharge
+  // (default arguments on virtual functions are prohibited).
+  UniquePendingHandle Allocate(Slice key, int val_len) {
     return Allocate(key, val_len, kAutomaticCharge);
   }
 
@@ -209,7 +224,8 @@ class Cache {
   //
   // If 'eviction_callback' is non-NULL, then it will be called when the
   // entry is later evicted or when the cache shuts down.
-  virtual Handle* Insert(PendingHandle* pending, EvictionCallback* eviction_callback) = 0;
+  virtual Handle* Insert(UniquePendingHandle pending,
+                         EvictionCallback* eviction_callback) = 0;
 
   // Free 'ptr', which must have been previously allocated using 'Allocate'.
   virtual void Free(PendingHandle* ptr) = 0;
