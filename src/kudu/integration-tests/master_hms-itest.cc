@@ -348,12 +348,12 @@ TEST_F(MasterHmsTest, TestNotificationLogListener) {
 
 
   // Ensure that Kudu can rename a table just after it's been renamed through the HMS.
-  RenameHmsTable("default", "a", "b");
+  ASSERT_OK(RenameHmsTable("default", "a", "b"));
   table_alterer.reset(client_->NewTableAlterer("default.b")->RenameTo("default.c"));
   ASSERT_OK(table_alterer->Alter());
 
   // Ensure that Kudu can drop a table just after it's been renamed through the HMS.
-  RenameHmsTable("default", "c", "a");
+  ASSERT_OK(RenameHmsTable("default", "c", "a"));
   ASSERT_OK(client_->DeleteTable("default.a"));
 
   // Test concurrent drops from the HMS and Kudu.

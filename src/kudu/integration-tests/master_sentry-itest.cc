@@ -109,8 +109,8 @@ class SentryITestBase : public HmsITestBase {
     return Status::OK();
   }
 
- Status GetTableLocationsWithTableId(const string& table_name,
-                                     optional<const string&> table_id) {
+  Status GetTableLocationsWithTableId(const string& table_name,
+                                      optional<const string&> table_id) {
     const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
     std::shared_ptr<MasterServiceProxy> proxy = cluster_->master_proxy();
     UserCredentials user_credentials;
@@ -120,7 +120,7 @@ class SentryITestBase : public HmsITestBase {
     GetTableLocationsResponsePB table_locations;
     return itest::GetTableLocations(proxy, table_name, kTimeout, master::VOTER_REPLICA,
                                     table_id, &table_locations);
- }
+  }
 
   Status GrantCreateTablePrivilege(const string& database_name,
                                    const string& /*table_name*/) {
@@ -324,10 +324,10 @@ class SentryITestBase : public HmsITestBase {
 
   void TearDown() override {
     if (sentry_client_) {
-        ASSERT_OK(sentry_client_->Stop());
+      ASSERT_OK(sentry_client_->Stop());
     }
     if (hms_client_) {
-        ASSERT_OK(hms_client_->Stop());
+      ASSERT_OK(hms_client_->Stop());
     }
     HmsITestBase::TearDown();
   }

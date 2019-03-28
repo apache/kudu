@@ -39,11 +39,13 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
+#include "kudu/integration-tests/external_mini_cluster-itest-base.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/sentry/mini_sentry.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/tserver/tserver.pb.h"
@@ -82,6 +84,7 @@ using kudu::cluster::ExternalMaster;
 using kudu::cluster::ExternalMiniCluster;
 using kudu::cluster::ExternalMiniClusterOptions;
 using kudu::itest::ListTablets;
+using kudu::itest::SentryMode;
 using kudu::master::ListTablesRequestPB;
 using kudu::master::ListTablesResponsePB;
 using kudu::master::ReplaceTabletRequestPB;
@@ -91,6 +94,7 @@ using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
 using kudu::tools::LeaderMasterProxy;
+using std::pair;
 using std::shared_ptr;
 using std::string;
 using std::thread;
@@ -103,8 +107,9 @@ namespace kudu {
 static const MonoDelta kDefaultAdminTimeout = MonoDelta::FromSeconds(300);
 static const MonoDelta kTransientStateBackoff = MonoDelta::FromMilliseconds(50);
 
-class MasterStressTest : public KuduTest,
-                         public ::testing::WithParamInterface<HmsMode> {
+// Parameterized based on HmsMode and whether or not to enable Sentry integration.
+class MasterStressTest : public ExternalMiniClusterITestBase,
+                         public ::testing::WithParamInterface<pair<HmsMode, SentryMode>> {
  public:
   MasterStressTest()
     : done_(1),
@@ -134,7 +139,10 @@ class MasterStressTest : public KuduTest,
     opts.start_process_timeout = MonoDelta::FromSeconds(60);
     opts.rpc_negotiation_timeout = MonoDelta::FromSeconds(30);
 
-    opts.hms_mode = GetParam();
+    opts.hms_mode = std::get<0>(GetParam());
+    bool enable_sentry = (std::get<1>(GetParam()) == SentryMode::ENABLED);
+    opts.enable_sentry = enable_sentry;
+    opts.enable_kerberos = enable_sentry;
     // Tune down the notification log poll period in order to speed up catalog convergence.
     opts.extra_master_flags.emplace_back("--hive_metastore_notification_log_poll_period_seconds=1");
 
@@ -192,6 +200,11 @@ class MasterStressTest : public KuduTest,
     shared_ptr<MasterServiceProxy> m_proxy(
         new MasterServiceProxy(cluster_->messenger(), addr, addr.host()));
     ASSERT_OK(CreateTabletServerMap(m_proxy, cluster_->messenger(), &ts_map_));
+
+    if (enable_sentry) {
+      itest::SetupAdministratorPrivileges(cluster_->kdc(),
+                                          cluster_->sentry()->address());
+    }
   }
 
   void TearDown() override {
@@ -483,9 +496,15 @@ class MasterStressTest : public KuduTest,
   std::unordered_map<string, itest::TServerDetails*> ts_map_;
 };
 
-// Run the test with the HMS integration enabled and disabled.
-INSTANTIATE_TEST_CASE_P(HmsConfigurations, MasterStressTest,
-                        ::testing::Values(HmsMode::NONE, HmsMode::ENABLE_METASTORE_INTEGRATION));
+// Run the test with the HMS/Sentry integration enabled and disabled. Sentry integration
+// should be only enabled when HMS integration is enabled.
+INSTANTIATE_TEST_CASE_P(HmsSentryConfigurations, MasterStressTest, ::testing::ValuesIn(
+    vector<pair<HmsMode, SentryMode>> {
+      { HmsMode::NONE, SentryMode::DISABLED },
+      { HmsMode::ENABLE_METASTORE_INTEGRATION, SentryMode::DISABLED },
+      { HmsMode::ENABLE_METASTORE_INTEGRATION, SentryMode::ENABLED },
+    }
+));
 
 TEST_P(MasterStressTest, Test) {
   OverrideFlagForSlowTests("num_create_table_threads", "10");

@@ -30,24 +30,24 @@ namespace kudu {
 
 class HmsITestBase : public ExternalMiniClusterITestBase {
  public:
-  Status StopHms();
-  Status StartHms();
+  Status StartHms() WARN_UNUSED_RESULT;
+  Status StopHms() WARN_UNUSED_RESULT;
 
   // Creates a database in the HMS catalog.
-  Status CreateDatabase(const std::string& database_name);
+  Status CreateDatabase(const std::string& database_name) WARN_UNUSED_RESULT;
 
   // Creates a table in Kudu.
   Status CreateKuduTable(const std::string& database_name,
-                         const std::string& table_name);
+                         const std::string& table_name) WARN_UNUSED_RESULT;
 
   // Renames a table entry in the HMS catalog.
   Status RenameHmsTable(const std::string& database_name,
                         const std::string& old_table_name,
-                        const std::string& new_table_name);
+                        const std::string& new_table_name) WARN_UNUSED_RESULT;
 
   // Drops all columns from a Kudu HMS table entry.
   Status AlterHmsTableDropColumns(const std::string& database_name,
-                                  const std::string& table_name);
+                                  const std::string& table_name) WARN_UNUSED_RESULT;
 
   // Checks that the Kudu table schema and the HMS table entry in their
   // respective catalogs are synchronized for a particular table. It also

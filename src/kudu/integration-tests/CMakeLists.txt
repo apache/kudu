@@ -56,7 +56,7 @@ SET_KUDU_TEST_LINK_LIBS(itest_util)
 ADD_KUDU_TEST(all_types-itest
   PROCESSORS 4
   NUM_SHARDS 8)
-ADD_KUDU_TEST(alter_table-randomized-test NUM_SHARDS 2 PROCESSORS 4)
+ADD_KUDU_TEST(alter_table-randomized-test NUM_SHARDS 3 PROCESSORS 4)
 ADD_KUDU_TEST(alter_table-test PROCESSORS 3)
 ADD_KUDU_TEST(auth_token_expire-itest)
 ADD_KUDU_TEST(authz_token-itest PROCESSORS 2)
@@ -91,7 +91,7 @@ ADD_KUDU_TEST_DEPENDENCIES(master_migration-itest
   kudu)
 ADD_KUDU_TEST(master_replication-itest)
 ADD_KUDU_TEST(master_sentry-itest RUN_SERIAL true NUM_SHARDS 8 PROCESSORS 4)
-ADD_KUDU_TEST(master-stress-test RUN_SERIAL true)
+ADD_KUDU_TEST(master-stress-test RUN_SERIAL true NUM_SHARDS 3)
 ADD_KUDU_TEST(multidir_cluster-itest)
 ADD_KUDU_TEST(open-readonly-fs-itest PROCESSORS 4)
 ADD_KUDU_TEST(raft_config_change-itest)

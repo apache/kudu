@@ -43,32 +43,33 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
+#include "kudu/sentry/mini_sentry.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/random.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-namespace kudu {
-
-using client::KuduClient;
-using client::KuduColumnSchema;
-using client::KuduColumnStorageAttributes;
-using client::KuduError;
-using client::KuduScanner;
-using client::KuduSchema;
-using client::KuduSchemaBuilder;
-using client::KuduSession;
-using client::KuduTable;
-using client::KuduTableAlterer;
-using client::KuduTableCreator;
-using client::KuduValue;
-using client::KuduWriteOperation;
-using client::sp::shared_ptr;
-using cluster::ExternalMiniCluster;
-using cluster::ExternalMiniClusterOptions;
+using kudu::client::KuduClient;
+using kudu::client::KuduColumnSchema;
+using kudu::client::KuduColumnStorageAttributes;
+using kudu::client::KuduError;
+using kudu::client::KuduScanner;
+using kudu::client::KuduSchema;
+using kudu::client::KuduSchemaBuilder;
+using kudu::client::KuduSession;
+using kudu::client::KuduTable;
+using kudu::client::KuduTableAlterer;
+using kudu::client::KuduTableCreator;
+using kudu::client::KuduValue;
+using kudu::client::KuduWriteOperation;
+using kudu::client::sp::shared_ptr;
+using kudu::cluster::ExternalMiniCluster;
+using kudu::cluster::ExternalMiniClusterOptions;
+using kudu::itest::SentryMode;
 using std::make_pair;
 using std::map;
 using std::pair;
@@ -77,6 +78,8 @@ using std::unique_ptr;
 using std::vector;
 using strings::Substitute;
 using strings::SubstituteAndAppend;
+
+namespace kudu {
 
 const char* kTableName = "default.test_table";
 const int kMaxColumns = 30;
@@ -94,15 +97,19 @@ const vector <KuduColumnStorageAttributes::EncodingType> kInt32Encodings =
 const vector<int32_t> kBlockSizes = {0, 2 * 1024 * 1024,
                                      4 * 1024 * 1024, 8 * 1024 * 1024};
 
+// Parameterized based on HmsMode and whether or not to enable Sentry integration.
 class AlterTableRandomized : public KuduTest,
-                             public ::testing::WithParamInterface<HmsMode> {
+                             public ::testing::WithParamInterface<pair<HmsMode, SentryMode>> {
  public:
   void SetUp() override {
     KuduTest::SetUp();
 
     ExternalMiniClusterOptions opts;
     opts.num_tablet_servers = 3;
-    opts.hms_mode = GetParam();
+    opts.hms_mode = std::get<0>(GetParam());
+    bool enable_sentry = (std::get<1>(GetParam()) == SentryMode::ENABLED);
+    opts.enable_sentry = enable_sentry;
+    opts.enable_kerberos = enable_sentry;
     // This test produces tables with lots of columns. With container preallocation,
     // we end up using quite a bit of disk space. So, we disable it.
     opts.extra_tserver_flags.emplace_back("--log_container_preallocate_bytes=0");
@@ -110,6 +117,10 @@ class AlterTableRandomized : public KuduTest,
     ASSERT_OK(cluster_->Start());
 
     ASSERT_OK(cluster_->CreateClient(nullptr, &client_));
+    if (enable_sentry) {
+      itest::SetupAdministratorPrivileges(cluster_->kdc(),
+                                          cluster_->sentry()->address());
+    }
   }
 
   void TearDown() override {
@@ -140,9 +151,15 @@ class AlterTableRandomized : public KuduTest,
   shared_ptr<KuduClient> client_;
 };
 
-// Run the test with the HMS integration enabled and disabled.
-INSTANTIATE_TEST_CASE_P(HmsConfigurations, AlterTableRandomized,
-                        ::testing::Values(HmsMode::NONE, HmsMode::ENABLE_METASTORE_INTEGRATION));
+// Run the test with the HMS/Sentry integration enabled and disabled. Sentry integration
+// should be only enabled when HMS integration is enabled.
+INSTANTIATE_TEST_CASE_P(HmsSentryConfigurations, AlterTableRandomized, ::testing::ValuesIn(
+    vector<pair<HmsMode, SentryMode>> {
+      { HmsMode::NONE, SentryMode::DISABLED },
+      { HmsMode::ENABLE_METASTORE_INTEGRATION, SentryMode::DISABLED },
+      { HmsMode::ENABLE_METASTORE_INTEGRATION, SentryMode::ENABLED },
+    }
+));
 
 struct RowState {
   // We use this special value to denote NULL values.
