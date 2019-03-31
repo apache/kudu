@@ -95,19 +95,18 @@ Status KuduTableAlterer::Data::ToRequest(AlterTableRequestPB* req) {
       }
       case AlterTableRequestPB::ALTER_COLUMN:
       {
-        if (s.spec->data_->has_type ||
-            s.spec->data_->has_nullable ||
+        if (s.spec->data_->type ||
+            s.spec->data_->nullable ||
             s.spec->data_->primary_key) {
           return Status::NotSupported("unsupported alter operation",
                                       s.spec->data_->name);
         }
-        if (!s.spec->data_->has_rename_to &&
-            !s.spec->data_->has_default &&
+        if (!s.spec->data_->rename_to &&
             !s.spec->data_->default_val &&
             !s.spec->data_->remove_default &&
-            !s.spec->data_->has_encoding &&
-            !s.spec->data_->has_compression &&
-            !s.spec->data_->has_block_size &&
+            !s.spec->data_->encoding &&
+            !s.spec->data_->compression &&
+            !s.spec->data_->block_size &&
             !s.spec->data_->comment) {
           return Status::InvalidArgument("no alter operation specified",
                                          s.spec->data_->name);
@@ -115,16 +114,15 @@ Status KuduTableAlterer::Data::ToRequest(AlterTableRequestPB* req) {
         // If the alter is solely a column rename, fall back to using
         // RENAME_COLUMN, for backwards compatibility.
         // TODO(wdb) Change this when compat can be broken.
-        if (!s.spec->data_->has_default &&
-            !s.spec->data_->default_val &&
+        if (!s.spec->data_->default_val &&
             !s.spec->data_->remove_default &&
-            !s.spec->data_->has_encoding &&
-            !s.spec->data_->has_compression &&
-            !s.spec->data_->has_block_size &&
+            !s.spec->data_->encoding &&
+            !s.spec->data_->compression &&
+            !s.spec->data_->block_size &&
             !s.spec->data_->comment) {
           pb_step->set_type(AlterTableRequestPB::RENAME_COLUMN);
           pb_step->mutable_rename_column()->set_old_name(s.spec->data_->name);
-          pb_step->mutable_rename_column()->set_new_name(s.spec->data_->rename_to);
+          pb_step->mutable_rename_column()->set_new_name(s.spec->data_->rename_to.value());
           break;
         }
         ColumnSchemaDelta col_delta(s.spec->data_->name);

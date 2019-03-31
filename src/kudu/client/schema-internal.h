@@ -60,61 +60,29 @@ class KuduColumnSpec::Data {
  public:
   explicit Data(std::string name)
       : name(std::move(name)),
-        has_type(false),
-        has_precision(false),
-        precision(-1),
-        has_scale(false),
-        scale(-1),
-        has_encoding(false),
-        has_compression(false),
-        has_block_size(false),
-        has_nullable(false),
         primary_key(false),
-        has_default(false),
-        default_val(NULL),
-        remove_default(false),
-        has_rename_to(false) {
+        remove_default(false) {
   }
 
   ~Data() {
-    delete default_val;
+    if (default_val) {
+      delete default_val.value();
+    }
   }
 
   const std::string name;
 
-  bool has_type;
-  KuduColumnSchema::DataType type;
-
-  bool has_precision;
-  int8_t precision;
-
-  bool has_scale;
-  int8_t scale;
-
-  bool has_encoding;
-  KuduColumnStorageAttributes::EncodingType encoding;
-
-  bool has_compression;
-  KuduColumnStorageAttributes::CompressionType compression;
-
-  bool has_block_size;
-  int32_t block_size;
-
-  bool has_nullable;
-  bool nullable;
-
+  boost::optional<KuduColumnSchema::DataType> type;
+  boost::optional<int8_t> precision;
+  boost::optional<int8_t> scale;
+  boost::optional<KuduColumnStorageAttributes::EncodingType> encoding;
+  boost::optional<KuduColumnStorageAttributes::CompressionType> compression;
+  boost::optional<int32_t> block_size;
+  boost::optional<bool> nullable;
   bool primary_key;
-
-  bool has_default;
-  KuduValue* default_val; // Owned.
-
-  // For ALTER
-  bool remove_default;
-
-  // For ALTER
-  bool has_rename_to;
-  std::string rename_to;
-
+  boost::optional<KuduValue*> default_val;  // Owned.
+  bool remove_default;                      // For ALTER
+  boost::optional<std::string> rename_to;   // For ALTER
   boost::optional<std::string> comment;
 };
 
