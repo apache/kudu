@@ -195,6 +195,11 @@ Status ChecksumGenerator(const Schema& schema, const SignedTokenPB* token,
 class AuthzTabletServerTestBase : public TabletServerTestBase {
  public:
   const string kUser = "dan";
+
+  AuthzTabletServerTestBase()
+      : prng_(SeedRandom()) {
+  }
+
   void SetUp() override {
     FLAGS_tserver_enforce_access_control = true;
     NO_FATALS(TabletServerTestBase::SetUp());
@@ -215,11 +220,35 @@ class AuthzTabletServerTestBase : public TabletServerTestBase {
   }
 
  protected:
+
+  // Utility to select an element from a container at random.
+  template <typename Container, typename T>
+  T SelectAtRandom(const Container& c) const {
+    CHECK(!c.empty());
+    vector<T> rand_list;
+    prng_.ReservoirSample(c, 1, set<T>{}, &rand_list);
+    CHECK_EQ(1, rand_list.size());
+    return rand_list[0];
+  }
+
+  // Returns a randomly-sized randomized list of elements from 'full_set'.
+  template <typename T>
+  vector<T> RandomFromList(const vector<T>& full_list, int min_to_return) const {
+    CHECK_GT(full_list.size(), min_to_return);
+    int num_to_return = min_to_return + rand() % (full_list.size() - min_to_return);
+    vector<T> rand_list;
+    prng_.ReservoirSample(full_list, num_to_return, set<T>{}, &rand_list);
+    return rand_list;
+  }
+
   // Signer used to create authz tokens.
   unique_ptr<TokenSigner> signer_;
 
   // Initial set of public keys to use to import.
   vector<TokenSigningPublicKeyPB> public_keys;
+
+  // Generates various random selections in the tests.
+  mutable Random prng_;
 };
 
 class AuthzTabletServerTest : public AuthzTabletServerTestBase,
@@ -465,28 +494,6 @@ void MisnamedColumnSchemaToPB(const ColumnSchema& col, ColumnSchemaPB* pb) {
   ColumnSchemaToPB(ColumnSchema(kDummyColumn, col.type_info()->physical_type(), col.is_nullable(),
                    col.read_default_value(), col.write_default_value(), col.attributes(),
                    col.type_attributes()), pb);
-}
-
-Random r(SeedRandom());
-
-// Utility to select an element from a container at random.
-template <typename Container, typename T>
-T SelectAtRandom(const Container& c) {
-  CHECK(!c.empty());
-  vector<T> rand_list;
-  r.ReservoirSample(c, 1, set<T>{}, &rand_list);
-  CHECK_EQ(1, rand_list.size());
-  return rand_list[0];
-}
-
-// Returns a randomly-sized randomized list of elements from 'full_set'.
-template <typename T>
-vector<T> RandomFromList(const vector<T>& full_list, int min_to_return) {
-  CHECK_GT(full_list.size(), min_to_return);
-  int num_to_return = min_to_return + rand() % (full_list.size() - min_to_return);
-  vector<T> rand_list;
-  r.ReservoirSample(full_list, num_to_return, set<T>{}, &rand_list);
-  return rand_list;
 }
 
 } // anonymous namespace
@@ -1104,35 +1111,6 @@ string WritePrivilegesToString(const WritePrivileges& privileges) {
   return Substitute("Privileges: { $0 }", JoinStrings(privs, ", "));
 }
 
-// Returns a randomly selected set of write operation types to be used for
-// sending write requests. Always returns at least one type.
-RowOpTypes RandomOpTypes() {
-  static const vector<RowOperationsPB::Type> write_op_types = {
-    RowOperationsPB::DELETE,
-    RowOperationsPB::INSERT,
-    RowOperationsPB::UPDATE,
-    RowOperationsPB::UPSERT,
-  };
-  RowOpTypes types;
-  types.reset(RandomFromList(write_op_types, /*min_to_return=*/1));
-  return types;
-}
-
-// Returns a randomly selected set of write privileges to be used for
-// generating authz tokens. May be empty.
-WritePrivileges RandomWritePrivileges() {
-  static const vector<WritePrivilegeType> write_privilege_types {
-    WritePrivilegeType::DELETE,
-    WritePrivilegeType::INSERT,
-    WritePrivilegeType::UPDATE,
-  };
-  vector<WritePrivilegeType> rand_types = RandomFromList(write_privilege_types,
-                                                         /*min_to_return=*/0);
-  WritePrivileges privileges;
-  privileges.reset(rand_types);
-  return privileges;
-}
-
 } // anonymous namespace
 
 class WritePrivilegeAuthzTest : public AuthzTabletServerTestBase {
@@ -1220,6 +1198,35 @@ class WritePrivilegeAuthzTest : public AuthzTabletServerTestBase {
     }
     SCOPED_TRACE(WritePrivilegesToString(privileges));
     ASSERT_OK(SendWrite(write_ops, privileges));
+  }
+
+  // Returns a randomly selected set of write operation types to be used for
+  // sending write requests. Always returns at least one type.
+  RowOpTypes RandomOpTypes() const {
+    static const vector<RowOperationsPB::Type> write_op_types = {
+      RowOperationsPB::DELETE,
+      RowOperationsPB::INSERT,
+      RowOperationsPB::UPDATE,
+      RowOperationsPB::UPSERT,
+    };
+    RowOpTypes types;
+    types.reset(RandomFromList(write_op_types, /*min_to_return=*/1));
+    return types;
+  }
+
+  // Returns a randomly selected set of write privileges to be used for
+  // generating authz tokens. May be empty.
+  WritePrivileges RandomWritePrivileges() const {
+    static const vector<WritePrivilegeType> write_privilege_types {
+      WritePrivilegeType::DELETE,
+      WritePrivilegeType::INSERT,
+      WritePrivilegeType::UPDATE,
+    };
+    vector<WritePrivilegeType> rand_types = RandomFromList(write_privilege_types,
+                                                           /*min_to_return=*/0);
+    WritePrivileges privileges;
+    privileges.reset(rand_types);
+    return privileges;
   }
 };
 
