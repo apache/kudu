@@ -536,3 +536,12 @@ if(NOT NO_TESTS)
     cfile
     kudu_util_compression)
 endif()
+
+#######################################
+# curl_util-test
+#######################################
+ADD_KUDU_TEST(curl_util-test)
+if(NOT NO_TESTS)
+  target_link_libraries(curl_util-test
+    kudu_curl_util)
+endif()

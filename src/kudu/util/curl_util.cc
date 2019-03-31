@@ -37,6 +37,9 @@ inline Status TranslateError(CURLcode code) {
   if (code == CURLE_OK) {
     return Status::OK();
   }
+  if (code == CURLE_OPERATION_TIMEDOUT) {
+    return Status::TimedOut("curl timeout", curl_easy_strerror(code));
+  }
   return Status::NetworkError("curl error", curl_easy_strerror(code));
 }
 
