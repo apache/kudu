@@ -103,7 +103,7 @@ class MergeIterState {
   explicit MergeIterState(unique_ptr<RowwiseIterator> iter) :
       iter_(std::move(iter)),
       arena_(1024),
-      read_block_(iter_->schema(), kMergeRowBuffer, &arena_),
+      read_block_(&iter_->schema(), kMergeRowBuffer, &arena_),
       next_row_idx_(0),
       rows_advanced_(0),
       rows_valid_(0)
@@ -387,7 +387,7 @@ Status MergeIterator::InitSubIterators(ScanSpec *spec) {
 
 Status MergeIterator::NextBlock(RowBlock* dst) {
   CHECK(initted_);
-  DCHECK_SCHEMA_EQ(dst->schema(), schema());
+  DCHECK_SCHEMA_EQ(*dst->schema(), schema());
 
   PrepareBatch(dst);
   RETURN_NOT_OK(MaterializeBlock(dst));
@@ -1015,7 +1015,7 @@ Status PredicateEvaluatingIterator::NextBlock(RowBlock *dst) {
   RETURN_NOT_OK(base_iter_->NextBlock(dst));
 
   for (const auto& predicate : col_predicates_) {
-    int32_t col_idx = dst->schema().find_column(predicate.column().name());
+    int32_t col_idx = dst->schema()->find_column(predicate.column().name());
     if (col_idx == Schema::kColumnNotFound) {
       return Status::InvalidArgument("Unknown column in predicate", predicate.ToString());
     }

@@ -435,7 +435,7 @@ class TabletTestBase : public KuduTabletTest {
     int batch_size = std::max<size_t>(1, std::min<size_t>(expected_row_count / 10,
                                                           4L * 1024 * 1024 / schema_.byte_size()));
     Arena arena(32*1024);
-    RowBlock block(schema_, batch_size, &arena);
+    RowBlock block(&schema_, batch_size, &arena);
 
     bool check_for_dups = true;
     if (expected_row_count > INT_MAX) {

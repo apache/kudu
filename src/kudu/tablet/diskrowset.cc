@@ -184,7 +184,7 @@ Status DiskRowSetWriter::InitAdHocIndexWriter() {
 }
 
 Status DiskRowSetWriter::AppendBlock(const RowBlock &block) {
-  DCHECK_EQ(block.schema().num_columns(), schema_->num_columns());
+  DCHECK_EQ(block.schema()->num_columns(), schema_->num_columns());
   CHECK(!finished_);
 
   // If this is the very first block, encode the first key and save it as metadata

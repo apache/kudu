@@ -504,7 +504,7 @@ TEST_F(TestSchema, TestRowOperations) {
 
   Arena arena(1024);
 
-  RowBuilder rb(schema);
+  RowBuilder rb(&schema);
   rb.AddString(string("row_a_1"));
   rb.AddString(string("row_a_2"));
   rb.AddUint32(3);
@@ -662,9 +662,9 @@ TEST(TestKeyEncoder, BenchmarkSimpleKey) {
   faststring fs;
   Schema schema({ ColumnSchema("col1", STRING) }, 1);
 
-  RowBuilder rb(schema);
+  RowBuilder rb(&schema);
   rb.AddString(Slice("hello world"));
-  ConstContiguousRow row(&rb.schema(), rb.data());
+  ConstContiguousRow row(rb.schema(), rb.data());
 
   LOG_TIMING(INFO, "Encoding") {
     for (int i = 0; i < 10000000; i++) {

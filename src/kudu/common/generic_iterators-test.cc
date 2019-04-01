@@ -364,7 +364,7 @@ void TestMerge(const Schema& schema, const TestIntRangePredicate &predicate,
                            std::move(to_merge)));
       ASSERT_OK(merger->Init(&spec));
 
-      RowBlock dst(schema, 100, nullptr);
+      RowBlock dst(&schema, 100, nullptr);
       size_t total_idx = 0;
       auto expected_iter = expected.cbegin();
       while (merger->HasNext()) {
@@ -452,7 +452,7 @@ TEST(TestMaterializingIterator, TestMaterializingPredicatePushdown) {
   ASSERT_EQ(0, spec.predicates().size()) << "Iterator should have pushed down predicate";
 
   Arena arena(1024);
-  RowBlock dst(kIntSchema, 100, &arena);
+  RowBlock dst(&kIntSchema, 100, &arena);
   ASSERT_OK(materializing->NextBlock(&dst));
   ASSERT_EQ(dst.nrows(), 100);
 
@@ -499,7 +499,7 @@ TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluation) {
     << "Predicate should be evaluated by the outer iterator";
 
   Arena arena(1024);
-  RowBlock dst(kIntSchema, 100, &arena);
+  RowBlock dst(&kIntSchema, 100, &arena);
   ASSERT_OK(outer_iter->NextBlock(&dst));
   ASSERT_EQ(dst.nrows(), 100);
 

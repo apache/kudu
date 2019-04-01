@@ -115,7 +115,7 @@ class MemRowSetCompactionInput : public CompactionInput {
     // Realloc the internal block storage if we don't have enough space to
     // copy the whole leaf node's worth of data into it.
     if (PREDICT_FALSE(!row_block_ || num_in_block > row_block_->nrows())) {
-      row_block_.reset(new RowBlock(iter_->schema(), num_in_block, nullptr));
+      row_block_.reset(new RowBlock(&iter_->schema(), num_in_block, nullptr));
     }
 
     arena_.Reset();
@@ -202,7 +202,7 @@ class DiskRowSetCompactionInput : public CompactionInput {
         redo_delta_iter_(std::move(redo_delta_iter)),
         undo_delta_iter_(std::move(undo_delta_iter)),
         arena_(32 * 1024),
-        block_(base_iter_->schema(), kRowsPerBlock, &arena_),
+        block_(&base_iter_->schema(), kRowsPerBlock, &arena_),
         redo_mutation_block_(kRowsPerBlock, static_cast<Mutation *>(nullptr)),
         undo_mutation_block_(kRowsPerBlock, static_cast<Mutation *>(nullptr)) {}
 
@@ -689,7 +689,7 @@ class MergeCompactionInput : public CompactionInput {
     num_dup_rows_++;
     if (row_idx == 0) {
       duplicated_rows_.push_back(std::unique_ptr<RowBlock>(
-          new RowBlock(*schema_, kDuplicatedRowsPerBlock, static_cast<Arena*>(nullptr))));
+          new RowBlock(schema_, kDuplicatedRowsPerBlock, static_cast<Arena*>(nullptr))));
     }
     return duplicated_rows_.back()->row(row_idx);
   }
@@ -1101,7 +1101,7 @@ Status FlushCompactionInput(CompactionInput* input,
 
   DCHECK(out->schema().has_column_ids());
 
-  RowBlock block(out->schema(), kCompactionOutputBlockNumRows, nullptr);
+  RowBlock block(&out->schema(), kCompactionOutputBlockNumRows, nullptr);
 
   while (input->HasMoreBlocks()) {
     RETURN_NOT_OK(input->PrepareBlock(&rows));

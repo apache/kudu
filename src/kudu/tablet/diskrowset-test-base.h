@@ -114,7 +114,7 @@ class TestRowSet : public KuduRowSetTest {
       CHECK_OK(writer->Open());
 
       char buf[256];
-      RowBuilder rb(schema_);
+      RowBuilder rb(&schema_);
       for (int i = 0; i < n_rows; i++) {
         CHECK_OK(writer->RollIfNecessary());
         rb.Reset();
@@ -179,7 +179,8 @@ class TestRowSet : public KuduRowSetTest {
                    uint32_t row_idx,
                    const RowChangeList &mutation,
                    OperationResultPB* result) {
-    RowBuilder rb(schema_.CreateKeyProjection());
+    Schema proj_key = schema_.CreateKeyProjection();
+    RowBuilder rb(&proj_key);
     BuildRowKey(&rb, row_idx);
     RowSetKeyProbe probe(rb.row());
 
@@ -192,7 +193,8 @@ class TestRowSet : public KuduRowSetTest {
   }
 
   Status CheckRowPresent(const DiskRowSet &rs, uint32_t row_idx, bool *present) {
-    RowBuilder rb(schema_.CreateKeyProjection());
+    Schema proj_key = schema_.CreateKeyProjection();
+    RowBuilder rb(&proj_key);
     BuildRowKey(&rb, row_idx);
     RowSetKeyProbe probe(rb.row());
     ProbeStats stats;
@@ -219,7 +221,7 @@ class TestRowSet : public KuduRowSetTest {
     CHECK_OK(row_iter->Init(nullptr));
     Arena arena(1024);
     int batch_size = 10000;
-    RowBlock dst(proj_val, batch_size, &arena);
+    RowBlock dst(&proj_val, batch_size, &arena);
 
     int i = 0;
     while (row_iter->HasNext()) {
@@ -283,7 +285,7 @@ class TestRowSet : public KuduRowSetTest {
 
     int batch_size = 1000;
     Arena arena(1024);
-    RowBlock dst(schema, batch_size, &arena);
+    RowBlock dst(&schema, batch_size, &arena);
 
     int i = 0;
     int log_interval = expected_rows/20 / batch_size;

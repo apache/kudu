@@ -143,7 +143,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
     LocalTabletWriter writer(this->tablet().get(), &this->client_schema_);
 
     Arena tmp_arena(1024);
-    RowBlock block(schema_, 1, &tmp_arena);
+    RowBlock block(&schema_, 1, &tmp_arena);
     faststring update_buf;
 
     uint64_t updates_since_last_report = 0;
@@ -213,7 +213,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
   // trying to reference already-freed memrowset memory.
   void SlowReaderThread(int /*tid*/) {
     Arena arena(32*1024);
-    RowBlock block(schema_, 1, &arena);
+    RowBlock block(&schema_, 1, &arena);
 
     uint64_t max_rows = this->ClampRowCount(FLAGS_inserts_per_thread * FLAGS_num_insert_threads)
             / FLAGS_num_insert_threads;
@@ -248,7 +248,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
     Arena arena(1024); // unused, just scanning ints
 
     static const int kBufInts = 1024*1024 / 8;
-    RowBlock block(valcol_projection_, kBufInts, &arena);
+    RowBlock block(&valcol_projection_, kBufInts, &arena);
     ColumnBlock column = block.column_block(0);
 
     uint64_t count_since_report = 0;

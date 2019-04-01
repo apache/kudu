@@ -281,7 +281,7 @@ class TestRandomAccess : public KuduTabletTest {
     int n_results = 0;
 
     Arena arena(1024);
-    RowBlock block(schema, 100, &arena);
+    RowBlock block(&schema, 100, &arena);
     while (iter->HasNext()) {
       arena.Reset();
       CHECK_OK(iter->NextBlock(&block));

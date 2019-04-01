@@ -221,7 +221,7 @@ TEST_F(WireProtocolTest, TestBadSchema_DuplicateColumnName) {
 // converted to and from protobuf.
 TEST_F(WireProtocolTest, TestColumnarRowBlockToPB) {
   Arena arena(1024);
-  RowBlock block(schema_, 10, &arena);
+  RowBlock block(&schema_, 10, &arena);
   FillRowBlockWithTestRows(&block);
 
   // Convert to PB.
@@ -258,7 +258,7 @@ TEST_F(WireProtocolTest, TestColumnarRowBlockToPBWithPadding) {
                          ColumnSchema("col2", UNIXTIME_MICROS),
                          ColumnSchema("col3", INT32, true /* nullable */),
                          ColumnSchema("col4", UNIXTIME_MICROS, true /* nullable */)}, 1);
-  RowBlock block(tablet_schema, kNumRows, &arena);
+  RowBlock block(&tablet_schema, kNumRows, &arena);
   block.selection_vector()->SetAllTrue();
 
   for (int i = 0; i < block.nrows(); i++) {
@@ -342,7 +342,7 @@ TEST_F(WireProtocolTest, TestColumnarRowBlockToPBWithPadding) {
 TEST_F(WireProtocolTest, TestColumnarRowBlockToPBBenchmark) {
   Arena arena(1024);
   const int kNumTrials = AllowSlowTests() ? 100 : 10;
-  RowBlock block(schema_, 10000 * kNumTrials, &arena);
+  RowBlock block(&schema_, 10000 * kNumTrials, &arena);
   FillRowBlockWithTestRows(&block);
 
   RowwiseRowBlockPB pb;
@@ -386,7 +386,7 @@ TEST_F(WireProtocolTest, TestInvalidRowBlock) {
 TEST_F(WireProtocolTest, TestBlockWithNoColumns) {
   Schema empty(std::vector<ColumnSchema>(), 0);
   Arena arena(1024);
-  RowBlock block(empty, 1000, &arena);
+  RowBlock block(&empty, 1000, &arena);
   block.selection_vector()->SetAllTrue();
   // Unselect 100 rows
   for (int i = 0; i < 100; i++) {

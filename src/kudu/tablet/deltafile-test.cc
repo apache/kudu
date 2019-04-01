@@ -176,7 +176,7 @@ class TestDeltaFile : public KuduTest {
     ASSERT_OK(s);
     ASSERT_OK(it->Init(nullptr));
 
-    RowBlock block(schema_, 100, &arena_);
+    RowBlock block(&schema_, 100, &arena_);
 
     // Iterate through the faked table, starting with batches that
     // come before all of the updates, and extending a bit further

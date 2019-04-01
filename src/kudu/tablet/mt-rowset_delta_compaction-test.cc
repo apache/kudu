@@ -109,7 +109,7 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
 
   void ReadVerify(DiskRowSet *rs) {
     Arena arena(1024);
-    RowBlock dst(schema_, 1000, &arena);
+    RowBlock dst(&schema_, 1000, &arena);
     RowIteratorOptions opts;
     opts.projection = &schema_;
     unique_ptr<RowwiseIterator> iter;

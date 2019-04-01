@@ -55,6 +55,7 @@ DEFINE_int32(decoder_eval_test_lower, 0, "Lower bound on the predicate [lower, u
 DEFINE_int32(decoder_eval_test_upper, 50, "Upper bound on the predicate [lower, upper)");
 DEFINE_int32(decoder_eval_test_strlen, 10, "Number of strings per cell");
 
+using std::string;
 using std::unique_ptr;
 using strings::Substitute;
 
@@ -136,7 +137,7 @@ public:
   }
 
   void FillTestTablet(size_t nrows, size_t cardinality, size_t strlen, int null_upper) {
-    RowBuilder rb(client_schema_);
+    RowBuilder rb(&client_schema_);
     LocalTabletWriter writer(tablet().get(), &client_schema_);
     KuduPartialRow row(&client_schema_);
     for (int64_t i = 0; i < nrows; i++) {
@@ -163,8 +164,8 @@ public:
     ScanSpec spec;
 
     // Generate the predicate.
-    const std::string lower_string = LeftZeroPadded(lower_val, strlen);
-    const std::string upper_string = LeftZeroPadded(upper_val, strlen);
+    const string lower_string = LeftZeroPadded(lower_val, strlen);
+    const string upper_string = LeftZeroPadded(upper_val, strlen);
     Slice lower(lower_string);
     Slice upper(upper_string);
     auto string_pred = ColumnPredicate::Range(schema_.column(2), &lower, &upper);
@@ -211,7 +212,7 @@ public:
     return (nrows / cardinality) * (upper - lower) + last_chunk_count;
   }
 
-  std::string LeftZeroPadded(size_t n, size_t strlen) {
+  string LeftZeroPadded(size_t n, size_t strlen) {
     // Assumes the string representation of n is under strlen characters.
     return StringPrintf(Substitute("%0$0$1", strlen, PRId64).c_str(), static_cast<int64_t>(n));
   }
@@ -231,12 +232,12 @@ public:
     ScanSpec spec;
 
     // Generate the predicates [0, upper) AND [lower, cardinality).
-    const std::string lower_string_a(LeftZeroPadded(0, strlen));
-    const std::string upper_string_a(LeftZeroPadded(upper, strlen));
+    const string lower_string_a(LeftZeroPadded(0, strlen));
+    const string upper_string_a(LeftZeroPadded(upper, strlen));
     Slice lower_a(lower_string_a);
     Slice upper_a(upper_string_a);
-    const std::string lower_string_b = LeftZeroPadded(lower, strlen);
-    const std::string upper_string_b = LeftZeroPadded(cardinality, strlen);
+    const string lower_string_b = LeftZeroPadded(lower, strlen);
+    const string upper_string_b = LeftZeroPadded(cardinality, strlen);
     Slice lower_b(lower_string_b);
     Slice upper_b(upper_string_b);
 
@@ -260,9 +261,9 @@ public:
     Arena ret_arena(1024);
     size_t expected_count = ExpectedCount(nrows, cardinality, lower, upper);
     Schema schema = iter->schema();
-    RowBlock block(schema, 100, &ret_arena);
+    RowBlock block(&schema, 100, &ret_arena);
     int fetched = 0;
-    std::string column_str_a, column_str_b;
+    string column_str_a, column_str_b;
     while (iter->HasNext()) {
       ASSERT_OK(iter->NextBlock(&block));
       for (size_t i = 0; i < block.nrows(); i++) {

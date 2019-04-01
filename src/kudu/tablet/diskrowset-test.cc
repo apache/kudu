@@ -133,7 +133,8 @@ TEST_F(TestRowSet, TestRowSetRoundTrip) {
 
   // 1. Check a key which comes before all keys in rowset
   {
-    RowBuilder rb(schema_.CreateKeyProjection());
+    Schema pk = schema_.CreateKeyProjection();
+    RowBuilder rb(&pk);
     rb.AddString(Slice("h"));
     RowSetKeyProbe probe(rb.row());
     bool present;
@@ -143,7 +144,8 @@ TEST_F(TestRowSet, TestRowSetRoundTrip) {
 
   // 2. Check a key which comes after all keys in rowset
   {
-    RowBuilder rb(schema_.CreateKeyProjection());
+    Schema pk = schema_.CreateKeyProjection();
+    RowBuilder rb(&pk);
     rb.AddString(Slice("z"));
     RowSetKeyProbe probe(rb.row());
     bool present;
@@ -154,7 +156,8 @@ TEST_F(TestRowSet, TestRowSetRoundTrip) {
   // 3. Check a key which is not present, but comes between present
   // keys
   {
-    RowBuilder rb(schema_.CreateKeyProjection());
+    Schema pk = schema_.CreateKeyProjection();
+    RowBuilder rb(&pk);
     rb.AddString(Slice("hello 00000000000049x"));
     RowSetKeyProbe probe(rb.row());
     bool present;
@@ -165,8 +168,9 @@ TEST_F(TestRowSet, TestRowSetRoundTrip) {
   // 4. Check a key which is present
   {
     char buf[256];
-    RowBuilder rb(schema_.CreateKeyProjection());
     FormatKey(49, buf, sizeof(buf));
+    Schema pk = schema_.CreateKeyProjection();
+    RowBuilder rb(&pk);
     rb.AddString(Slice(buf));
     RowSetKeyProbe probe(rb.row());
     bool present;
@@ -198,7 +202,8 @@ TEST_F(TestRowSet, TestRowSetUpdate) {
   enc.SetToDelete();
 
   Timestamp timestamp(0);
-  RowBuilder rb(schema_.CreateKeyProjection());
+  Schema proj_key = schema_.CreateKeyProjection();
+  RowBuilder rb(&proj_key);
   rb.AddString(Slice("hello 00000000000049x"));
   RowSetKeyProbe probe(rb.row());
 
@@ -224,7 +229,8 @@ TEST_F(TestRowSet, TestErrorDuringUpdate) {
 
   // Get a row that we expect to be in the rowset.
   Timestamp timestamp(0);
-  RowBuilder rb(schema_.CreateKeyProjection());
+  Schema proj_key = schema_.CreateKeyProjection();
+  RowBuilder rb(&proj_key);
   rb.AddString(Slice("hello 000000000000050"));
   RowSetKeyProbe probe(rb.row());
 
@@ -383,7 +389,7 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
 
     ASSERT_OK(drsw.Open());
 
-    RowBuilder rb(schema_);
+    RowBuilder rb(&schema_);
     rb.AddString(key_slice);
     rb.AddUint32(1);
     ASSERT_OK_FAST(WriteRow(rb.data(), &drsw));
@@ -410,7 +416,8 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
       tx.StartApplying();
       update.Reset();
       update.AddColumnUpdate(schema_.column(1), schema_.column_id(1), &i);
-      RowBuilder rb(schema_.CreateKeyProjection());
+      Schema proj_key = schema_.CreateKeyProjection();
+      RowBuilder rb(&proj_key);
       rb.AddString(key_slice);
       RowSetKeyProbe probe(rb.row());
       OperationResultPB result;
@@ -737,7 +744,7 @@ TEST_P(DiffScanRowSetTest, TestFuzz) {
                           BloomFilterSizing::BySizeAndFPRate(32 * 1024, 0.01f));
     ASSERT_OK(drsw.Open());
 
-    RowBuilder rb(schema_);
+    RowBuilder rb(&schema_);
     for (int i = 0; i < 4; i++) {
       rb.Reset();
       rb.AddUint32(i);
@@ -833,7 +840,8 @@ TEST_P(DiffScanRowSetTest, TestFuzz) {
     }
 
     // Build the row key.
-    RowBuilder rb(schema_.CreateKeyProjection());
+    Schema proj_key = schema_.CreateKeyProjection();
+    RowBuilder rb(&proj_key);
     rb.AddUint32(row_idx);
     RowSetKeyProbe probe(rb.row());
 

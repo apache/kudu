@@ -685,7 +685,7 @@ Status LinkedListTester::VerifyLinkedListLocal(const tablet::Tablet* tablet,
   RETURN_NOT_OK_PREPEND(iter->Init(nullptr), "Cannot initialize row iterator");
 
   Arena arena(1024);
-  RowBlock block(projection, 100, &arena);
+  RowBlock block(&projection, 100, &arena);
   while (iter->HasNext()) {
     RETURN_NOT_OK(iter->NextBlock(&block));
     for (int i = 0; i < block.nrows(); i++) {

@@ -145,7 +145,7 @@ TEST_F(TestRowChangeList, TestReinserts) {
 
   {
     // Reinserts include indirect data, so it should be ok to make the RowBuilder a scoped var.
-    RowBuilder rb(schema_);
+    RowBuilder rb(&schema_);
     rb.AddString(Slice("hello"));
     rb.AddString(Slice("world"));
     rb.AddUint32(12345);
@@ -168,9 +168,9 @@ TEST_F(TestRowChangeList, TestReinserts) {
   faststring buf2;
   RowChangeListEncoder reinsert_2_enc(&buf2);
   {
-    RowBlock block(schema_, 1, nullptr);
+    RowBlock block(&schema_, 1, nullptr);
     RowBlockRow dst_row = block.row(0);
-    RowBuilder rb(schema_);
+    RowBuilder rb(&schema_);
     rb.AddString(Slice("hello"));
     rb.AddString(Slice("mundo"));
     rb.AddUint32(54321);

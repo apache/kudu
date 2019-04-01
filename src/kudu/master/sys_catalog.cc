@@ -627,7 +627,7 @@ Status SysCatalogTable::ProcessRows(
   RETURN_NOT_OK(iter->Init(&spec));
 
   Arena arena(32 * 1024);
-  RowBlock block(iter->schema(), 512, &arena);
+  RowBlock block(&iter->schema(), 512, &arena);
   while (iter->HasNext()) {
     RETURN_NOT_OK(iter->NextBlock(&block));
     const size_t nrows = block.nrows();

@@ -110,12 +110,12 @@ bool operator!=(const SelectionVector& a, const SelectionVector& b) {
 //////////////////////////////
 // RowBlock
 //////////////////////////////
-RowBlock::RowBlock(const Schema &schema,
+RowBlock::RowBlock(const Schema* schema,
                    size_t nrows,
                    Arena *arena)
   : schema_(schema),
-    columns_data_(schema.num_columns()),
-    column_null_bitmaps_(schema.num_columns()),
+    columns_data_(schema->num_columns()),
+    column_null_bitmaps_(schema->num_columns()),
     row_capacity_(nrows),
     nrows_(nrows),
     arena_(arena),
@@ -123,8 +123,8 @@ RowBlock::RowBlock(const Schema &schema,
   CHECK_GT(row_capacity_, 0);
 
   size_t bitmap_size = BitmapSize(row_capacity_);
-  for (size_t i = 0; i < schema.num_columns(); ++i) {
-    const ColumnSchema& col_schema = schema.column(i);
+  for (size_t i = 0; i < schema->num_columns(); ++i) {
+    const ColumnSchema& col_schema = schema->column(i);
     size_t col_size = row_capacity_ * col_schema.type_info()->size();
     columns_data_[i] = new uint8_t[col_size];
 
@@ -135,10 +135,10 @@ RowBlock::RowBlock(const Schema &schema,
 }
 
 RowBlock::~RowBlock() {
-  for (uint8_t *column_data : columns_data_) {
+  for (uint8_t* column_data : columns_data_) {
     delete[] column_data;
   }
-  for (uint8_t *bitmap_data : column_null_bitmaps_) {
+  for (uint8_t* bitmap_data : column_null_bitmaps_) {
     delete[] bitmap_data;
   }
 }

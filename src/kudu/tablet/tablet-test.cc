@@ -491,7 +491,7 @@ TYPED_TEST(TestTablet, TestRowIteratorSimple) {
 
   ASSERT_TRUE(iter->HasNext());
 
-  RowBlock block(this->schema_, 100, &this->arena_);
+  RowBlock block(&this->schema_, 100, &this->arena_);
 
   // First call to CopyNextRows should fetch the whole memrowset.
   ASSERT_OK_FAST(iter->NextBlock(&block));
@@ -564,7 +564,7 @@ TYPED_TEST(TestTablet, TestRowIteratorOrdered) {
       // Iterate the tablet collecting rows.
       vector<shared_ptr<faststring> > rows;
       for (int i = 0; i < numBlocks; i++) {
-        RowBlock block(this->schema_, rowsPerBlock, &this->arena_);
+        RowBlock block(&this->schema_, rowsPerBlock, &this->arena_);
         ASSERT_TRUE(iter->HasNext());
         ASSERT_OK(iter->NextBlock(&block));
         ASSERT_EQ(rowsPerBlock, block.nrows()) << "unexpected number of rows returned";
@@ -667,7 +667,7 @@ TYPED_TEST(TestTablet, TestRowIteratorComplex) {
   vector<bool> seen(max_rows, false);
   int seen_count = 0;
 
-  RowBlock block(schema, 100, &this->arena_);
+  RowBlock block(&schema, 100, &this->arena_);
   while (iter->HasNext()) {
     this->arena_.Reset();
     ASSERT_OK(iter->NextBlock(&block));

@@ -94,7 +94,7 @@ class TestCFileSet : public KuduRowSetTest {
 
     ASSERT_OK(rsw.Open());
 
-    RowBuilder rb(schema_);
+    RowBuilder rb(&schema_);
     for (int i = 0; i < nrows; i++) {
       rb.Reset();
       rb.AddInt32(i * 2);
@@ -193,7 +193,7 @@ class TestCFileSet : public KuduRowSetTest {
 
     // Check that the range was respected on all the results.
     Arena arena(1024);
-    RowBlock block(schema_, 100, &arena);
+    RowBlock block(&schema_, 100, &arena);
     while (iter->HasNext()) {
       ASSERT_OK_FAST(iter->NextBlock(&block));
       for (size_t i = 0; i < block.nrows(); i++) {
@@ -227,7 +227,7 @@ class TestCFileSet : public KuduRowSetTest {
     ASSERT_OK(iter->Init(&spec));
     // Check that the range was respected on all the results.
     Arena arena(1024);
-    RowBlock block(schema_, 100, &arena);
+    RowBlock block(&schema_, 100, &arena);
     while (iter->HasNext()) {
       ASSERT_OK_FAST(iter->NextBlock(&block));
       for (size_t i = 0; i < block.nrows(); i++) {
@@ -284,7 +284,7 @@ TEST_F(TestCFileSet, TestPartiallyMaterialize) {
   ASSERT_OK(iter->Init(nullptr));
 
   Arena arena(4096);
-  RowBlock block(schema_, 100, &arena);
+  RowBlock block(&schema_, 100, &arena);
   rowid_t row_idx = 0;
   while (iter->HasNext()) {
     arena.Reset();

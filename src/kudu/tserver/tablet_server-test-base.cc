@@ -102,7 +102,7 @@ void TabletServerTestBase::SetUp() {
   KuduTest::SetUp();
 
   key_schema_ = schema_.CreateKeyProjection();
-  rb_.reset(new RowBuilder(schema_));
+  rb_.reset(new RowBuilder(&schema_));
 
   rpc::MessengerBuilder bld("Client");
   ASSERT_OK(bld.Build(&client_messenger_));
@@ -411,7 +411,7 @@ void TabletServerTestBase::VerifyRows(const Schema& schema,
                    4*1024*1024 / schema.byte_size()));
 
   Arena arena(32*1024);
-  RowBlock block(schema, batch_size, &arena);
+  RowBlock block(&schema, batch_size, &arena);
 
   int count = 0;
   while (iter->HasNext()) {

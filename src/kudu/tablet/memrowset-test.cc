@@ -116,7 +116,7 @@ class TestMemRowSet : public KuduTest {
 
   Status CheckRowPresent(const MemRowSet &mrs,
                          const string &key, bool *present) {
-    RowBuilder rb(key_schema_);
+    RowBuilder rb(&key_schema_);
     rb.AddString(Slice(key));
     RowSetKeyProbe probe(rb.row());
     ProbeStats stats;
@@ -125,7 +125,7 @@ class TestMemRowSet : public KuduTest {
   }
 
   Status InsertRows(MemRowSet *mrs, int num_rows) {
-    RowBuilder rb(schema_);
+    RowBuilder rb(&schema_);
     char keybuf[256];
     for (uint32_t i = 0; i < num_rows; i++) {
       rb.Reset();
@@ -140,7 +140,7 @@ class TestMemRowSet : public KuduTest {
 
   Status InsertRow(MemRowSet *mrs, const string &key, uint32_t val) {
     ScopedTransaction tx(&mvcc_, clock_->Now());
-    RowBuilder rb(schema_);
+    RowBuilder rb(&schema_);
     rb.AddString(key);
     rb.AddUint32(val);
     tx.StartApplying();
@@ -160,7 +160,7 @@ class TestMemRowSet : public KuduTest {
     RowChangeListEncoder update(&mutation_buf_);
     update.AddColumnUpdate(schema_.column(1), schema_.column_id(1), &new_val);
 
-    RowBuilder rb(key_schema_);
+    RowBuilder rb(&key_schema_);
     rb.AddString(Slice(key));
     RowSetKeyProbe probe(rb.row());
     ProbeStats stats;
@@ -183,7 +183,7 @@ class TestMemRowSet : public KuduTest {
     RowChangeListEncoder update(&mutation_buf_);
     update.SetToDelete();
 
-    RowBuilder rb(key_schema_);
+    RowBuilder rb(&key_schema_);
     rb.AddString(Slice(key));
     RowSetKeyProbe probe(rb.row());
     ProbeStats stats;
@@ -203,7 +203,7 @@ class TestMemRowSet : public KuduTest {
     CHECK_OK(iter->Init(nullptr));
 
     Arena arena(1024);
-    RowBlock block(schema_, 100, &arena);
+    RowBlock block(&schema_, 100, &arena);
     int fetched = 0;
     while (iter->HasNext()) {
       CHECK_OK(iter->NextBlock(&block));
@@ -298,7 +298,7 @@ TEST_F(TestMemRowSet, TestInsertAndIterateCompoundKey) {
   ASSERT_OK(MemRowSet::Create(0, compound_key_schema, log_anchor_registry_.get(),
                               MemTracker::GetRootTracker(), &mrs));
 
-  RowBuilder rb(compound_key_schema);
+  RowBuilder rb(&compound_key_schema);
   {
     ScopedTransaction tx(&mvcc_, clock_->Now());
     tx.StartApplying();
@@ -542,7 +542,7 @@ TEST_F(TestMemRowSet, TestInsertionMVCC) {
     {
       ScopedTransaction tx(&mvcc_, clock_->Now());
       tx.StartApplying();
-      RowBuilder rb(schema_);
+      RowBuilder rb(&schema_);
       char keybuf[256];
       rb.Reset();
       snprintf(keybuf, sizeof(keybuf), "tx%d", i);

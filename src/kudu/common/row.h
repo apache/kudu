@@ -429,6 +429,9 @@ class ContiguousRowHelper {
 template<class ContiguousRowType>
 class ContiguousRowCell {
  public:
+  // Constructs a new ContiguousRowCell.
+  //
+  // The 'row' object must outlive this ContiguousRowCell.
   ContiguousRowCell(const ContiguousRowType* row, int idx)
     : row_(row), col_idx_(idx) {
   }
@@ -455,6 +458,9 @@ class ContiguousRow {
  public:
   typedef ContiguousRowCell<ContiguousRow> Cell;
 
+  // Constructs a new ContiguousRow.
+  //
+  // The 'schema' and 'row_data' objects must outlive this ContiguousRow.
   explicit ContiguousRow(const Schema* schema, uint8_t *row_data = NULL)
     : schema_(schema), row_data_(row_data) {
   }
@@ -504,6 +510,9 @@ class ConstContiguousRow {
  public:
   typedef ContiguousRowCell<ConstContiguousRow> Cell;
 
+  // Constructs a new ConstContiguousRow.
+  //
+  // The 'row' object's schema and data must outlive this ConstContiguousRow.
   explicit ConstContiguousRow(const ContiguousRow &row)
     : schema_(row.schema_),
       row_data_(row.row_data_) {
@@ -560,13 +569,16 @@ void ContiguousRowCell<ConstContiguousRow>::set_null(bool null) const;
 
 // Utility class for building rows corresponding to a given schema.
 // This is used only by tests.
-// TODO: move it into a test utility.
+// TODO(todd): move it into a test utility.
 class RowBuilder {
  public:
-  explicit RowBuilder(const Schema& schema)
+  // Constructs a new RowBuilder.
+  //
+  // The 'schema' object must outlive this RowBuilder.
+  explicit RowBuilder(const Schema* schema)
     : schema_(schema),
       arena_(1024),
-      bitmap_size_(ContiguousRowHelper::null_bitmap_size(schema)) {
+      bitmap_size_(ContiguousRowHelper::null_bitmap_size(*schema)) {
     Reset();
   }
 
@@ -579,12 +591,12 @@ class RowBuilder {
   // (eg using CopyRowToArena()).
   void Reset() {
     arena_.Reset();
-    size_t row_size = schema_.byte_size() + bitmap_size_;
+    size_t row_size = schema_->byte_size() + bitmap_size_;
     buf_ = reinterpret_cast<uint8_t *>(arena_.AllocateBytes(row_size));
     CHECK(buf_) << "could not allocate " << row_size << " bytes for row builder";
     col_idx_ = 0;
     byte_idx_ = 0;
-    ContiguousRowHelper::InitNullsBitmap(schema_, buf_, bitmap_size_);
+    ContiguousRowHelper::InitNullsBitmap(*schema_, buf_, bitmap_size_);
   }
 
   void AddString(const Slice &slice) {
@@ -674,8 +686,8 @@ class RowBuilder {
   }
 
   void AddNull() {
-    CHECK(schema_.column(col_idx_).is_nullable());
-    BitmapSet(buf_ + schema_.byte_size(), col_idx_);
+    CHECK(schema_->column(col_idx_).is_nullable());
+    BitmapSet(buf_ + schema_->byte_size(), col_idx_);
     Advance();
   }
 
@@ -691,16 +703,16 @@ class RowBuilder {
   // data is copied, it is not safe to Reset() before also calling
   // CopyRowIndirectDataToArena.
   const Slice data() const {
-    CHECK_EQ(byte_idx_, schema_.byte_size());
+    CHECK_EQ(byte_idx_, schema_->byte_size());
     return Slice(buf_, byte_idx_ + bitmap_size_);
   }
 
-  const Schema& schema() const {
+  const Schema* schema() const {
     return schema_;
   }
 
   ConstContiguousRow row() const {
-    return ConstContiguousRow(&schema_, data());
+    return ConstContiguousRow(schema_, data());
   }
 
  private:
@@ -724,17 +736,17 @@ class RowBuilder {
   }
 
   void CheckNextType(DataType type) {
-    CHECK_EQ(schema_.column(col_idx_).type_info()->type(),
+    CHECK_EQ(schema_->column(col_idx_).type_info()->type(),
              type);
   }
 
   void Advance() {
-    int size = schema_.column(col_idx_).type_info()->size();
+    int size = schema_->column(col_idx_).type_info()->size();
     byte_idx_ += size;
     col_idx_++;
   }
 
-  const Schema schema_;
+  const Schema* schema_;
   Arena arena_;
   uint8_t *buf_;
 

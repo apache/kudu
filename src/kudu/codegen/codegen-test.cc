@@ -86,7 +86,7 @@ class CodegenTest : public KuduTest {
     defaults_ = SchemaBuilder(defaults_).Build(); // add IDs
 
     test_rows_arena_.reset(new Arena(2 * 1024));
-    RowBuilder rb(base_);
+    RowBuilder rb(&base_);
     for (int i = 0; i < kNumTestRows; ++i) {
       rb.AddUint64(i);
       rb.AddInt32(random_.Next32());
@@ -168,14 +168,14 @@ const   Slice kStrWValue = "WWWWW STRING DEFAULT WRITE";
 void CheckRowBlocksEqual(const RowBlock* rb1, const RowBlock* rb2,
                          const string& name1, const string& name2) {
   CHECK_EQ(rb1->nrows(), rb2->nrows());
-  const Schema& schema = rb1->schema();
+  const Schema* schema = rb1->schema();
   for (int i = 0; i < rb1->nrows(); ++i) {
     RowBlockRow row1 = rb1->row(i);
     RowBlockRow row2 = rb2->row(i);
-    CHECK_EQ(schema.Compare(row1, row2), 0)
+    CHECK_EQ(schema->Compare(row1, row2), 0)
       << "Rows unequal (failed at row " << i << "):\n"
-      << "\t(" << name1 << ") = " << schema.DebugRow(row1) << "\n"
-      << "\t(" << name2 << ") = " << schema.DebugRow(row2);
+      << "\t(" << name1 << ") = " << schema->DebugRow(row1) << "\n"
+      << "\t(" << name2 << ") = " << schema->DebugRow(row2);
   }
 }
 
@@ -219,8 +219,8 @@ void CodegenTest::TestProjection(const Schema* proj) {
   CHECK_EQ(with->base_schema(), &base_);
   CHECK_EQ(with->projection(), proj);
 
-  RowBlock rb_with(*proj, kNumTestRows, &projections_arena_);
-  RowBlock rb_without(*proj, kNumTestRows, &projections_arena_);
+  RowBlock rb_with(proj, kNumTestRows, &projections_arena_);
+  RowBlock rb_without(proj, kNumTestRows, &projections_arena_);
 
   projections_arena_.Reset();
   ProjectTestRows<READ>(with.get(), &rb_with);

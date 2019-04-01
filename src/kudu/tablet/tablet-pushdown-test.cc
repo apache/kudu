@@ -74,7 +74,7 @@ class TabletPushdownTest : public KuduTabletTest,
   }
 
   void FillTestTablet() {
-    RowBuilder rb(client_schema_);
+    RowBuilder rb(&client_schema_);
 
     nrows_ = 2100;
     if (AllowSlowTests()) {
@@ -236,7 +236,7 @@ class TabletSparsePushdownTest : public KuduTabletTest {
   void SetUp() override {
     KuduTabletTest::SetUp();
 
-    RowBuilder rb(client_schema_);
+    RowBuilder rb(&client_schema_);
 
     LocalTabletWriter writer(tablet().get(), &client_schema_);
     KuduPartialRow row(&client_schema_);

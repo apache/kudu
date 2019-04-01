@@ -111,7 +111,7 @@ class TestCompaction : public KuduRowSetTest {
   TestCompaction()
     : KuduRowSetTest(CreateSchema()),
       op_id_(consensus::MaximumOpId()),
-      row_builder_(schema_),
+      row_builder_(&schema_),
       arena_(32*1024),
       clock_(clock::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)),
       log_anchor_registry_(new log::LogAnchorRegistry()) {
@@ -160,9 +160,9 @@ class TestCompaction : public KuduRowSetTest {
                               int row_key,
                               int32_t val) {
     BuildRow(row_key, val);
-    if (!mrs->schema().Equals(row_builder_.schema())) {
+    if (!mrs->schema().Equals(*row_builder_.schema())) {
       // The MemRowSet is not projecting the row, so must be done by the caller
-      RowProjector projector(&row_builder_.schema(), &mrs->schema());
+      RowProjector projector(row_builder_.schema(), &mrs->schema());
       uint8_t rowbuf[ContiguousRowHelper::row_size(mrs->schema())];
       ContiguousRow dst_row(&mrs->schema(), rowbuf);
       ASSERT_OK_FAST(projector.Init());
@@ -216,7 +216,8 @@ class TestCompaction : public KuduRowSetTest {
                              nullable_col_id, &new_val);
     }
 
-    RowBuilder rb(schema_.CreateKeyProjection());
+    Schema proj_key = schema_.CreateKeyProjection();
+    RowBuilder rb(&proj_key);
     rb.AddString(Slice(keybuf));
     RowSetKeyProbe probe(rb.row());
     ProbeStats stats;
@@ -253,7 +254,8 @@ class TestCompaction : public KuduRowSetTest {
     RowChangeListEncoder update(&update_buf);
     update.SetToDelete();
 
-    RowBuilder rb(schema_.CreateKeyProjection());
+    Schema proj_key = schema_.CreateKeyProjection();
+    RowBuilder rb(&proj_key);
     rb.AddString(Slice(keybuf));
     RowSetKeyProbe probe(rb.row());
     ProbeStats stats;
@@ -775,7 +777,7 @@ TEST_F(TestCompaction, TestDuplicatedRowsRandomCompaction) {
 
   }
 
-  RowBlock block(schema_, kBaseNumRowSets * kNumRowsPerRowSet, &arena_);
+  RowBlock block(&schema_, kBaseNumRowSets * kNumRowsPerRowSet, &arena_);
   // Go through the expected compaction input rows, flip the last undo into a redo and
   // build the base. This will give us the final version that we'll expect the result
   // of the real compaction to match.

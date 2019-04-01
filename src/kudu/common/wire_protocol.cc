@@ -891,10 +891,10 @@ void SerializeRowBlock(const RowBlock& block,
                        faststring* indirect_data,
                        bool pad_unixtime_micros_to_16_bytes) {
   DCHECK_GT(block.nrows(), 0);
-  const Schema& tablet_schema = block.schema();
+  const Schema* tablet_schema = block.schema();
 
   if (projection_schema == nullptr) {
-    projection_schema = &tablet_schema;
+    projection_schema = tablet_schema;
   }
 
   // Check whether we need to pad or if there are nullable columns, this will dictate whether
@@ -932,7 +932,7 @@ void SerializeRowBlock(const RowBlock& block,
   size_t padding_so_far = 0;
   for (int p_schema_idx = 0; p_schema_idx < projection_schema->num_columns(); p_schema_idx++) {
     const ColumnSchema& col = projection_schema->column(p_schema_idx);
-    t_schema_idx = tablet_schema.find_column(col.name());
+    t_schema_idx = tablet_schema->find_column(col.name());
     DCHECK_NE(t_schema_idx, -1);
 
     size_t column_offset = projection_schema->column_offset(p_schema_idx) + padding_so_far;

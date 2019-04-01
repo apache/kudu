@@ -199,7 +199,7 @@ static inline Status SilentIterateToStringList(RowwiseIterator* iter,
                                                int* fetched) {
   const Schema& schema = iter->schema();
   Arena arena(1024);
-  RowBlock block(schema, 100, &arena);
+  RowBlock block(&schema, 100, &arena);
   *fetched = 0;
   while (iter->HasNext()) {
     RETURN_NOT_OK(iter->NextBlock(&block));
@@ -218,7 +218,7 @@ static inline Status IterateToStringList(RowwiseIterator* iter,
   out->clear();
   Schema schema = iter->schema();
   Arena arena(1024);
-  RowBlock block(schema, 100, &arena);
+  RowBlock block(&schema, 100, &arena);
   int fetched = 0;
   while (iter->HasNext() && fetched < limit) {
     RETURN_NOT_OK(iter->NextBlock(&block));
@@ -331,7 +331,7 @@ static Status WriteRow(const Slice &row_slice, RowSetWriterClass *writer) {
   const Schema &schema = writer->schema();
   DCHECK_EQ(row_slice.size(), schema.byte_size());
 
-  RowBlock block(schema, 1, nullptr);
+  RowBlock block(&schema, 1, nullptr);
   ConstContiguousRow row(&schema, row_slice.data());
   RowBlockRow dst_row = block.row(0);
   RETURN_NOT_OK(CopyRow(row, &dst_row, static_cast<Arena*>(nullptr)));
@@ -672,7 +672,7 @@ void CreateRandomDeltas(const Schema& schema,
     if (is_deleted) {
       // The row is deleted; we must REINSERT it.
       DCHECK(allow_reinserts);
-      RowBuilder rb(schema);
+      RowBuilder rb(&schema);
       for (int i = 0; i < schema.num_columns(); i++) {
         rb.AddUint32(prng->Next());
       }
