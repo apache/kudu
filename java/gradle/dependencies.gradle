@@ -50,6 +50,10 @@ versions += [
     parquet        : "1.10.1",
     pmd            : "5.8.1",
     protobuf       : "3.7.0",
+    // protoc 3.7.0 has a bug where it links against libatomic but there
+    // is not protobuf-java 3.7.1, so we use a seperate version until we
+    // upgrade again.
+    protoc         : "3.7.1",
     scala          : "2.11.12",
     scalatest      : "3.0.7",
     scopt          : "3.7.1",
@@ -101,7 +105,7 @@ libs += [
     parquetHadoop        : "org.apache.parquet:parquet-hadoop:$versions.parquet",
     protobufJava         : "com.google.protobuf:protobuf-java:$versions.protobuf",
     protobufJavaUtil     : "com.google.protobuf:protobuf-java-util:$versions.protobuf",
-    protoc               : "com.google.protobuf:protoc:$versions.protobuf",
+    protoc               : "com.google.protobuf:protoc:$versions.protoc",
     scalaLibrary         : "org.scala-lang:scala-library:$versions.scala",
     scalap               : "org.scala-lang:scalap:$versions.scala",
     scalatest            : "org.scalatest:scalatest_$versions.scalaBase:$versions.scalatest",
