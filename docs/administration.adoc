@@ -1009,7 +1009,7 @@ following steps:
 +
 [source,bash]
 ----
-$ sudo -u kudu kudu fs update_dirs --force --fs_wal_dir=/wals --fs_data_dirs=/data/1,/data/2, /data/3
+$ sudo -u kudu kudu fs update_dirs --force --fs_wal_dir=/wals --fs_data_dirs=/data/1,/data/2,/data/3
 ----
 +
 
