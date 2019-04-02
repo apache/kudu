@@ -596,7 +596,7 @@ KuduColumnSchema::KuduColumnSchema(const string &name,
                           is_nullable,
                           default_value, default_value, attr_private,
                           type_attr_private,
-                          std::move(comment ? boost::optional<string>(*comment) : boost::none));
+                          comment ? boost::optional<string>(*comment) : boost::none);
 }
 
 KuduColumnSchema::KuduColumnSchema(const KuduColumnSchema& other)
