@@ -65,12 +65,22 @@ rm -Rf usr etc
 # http://vault.centos.org/6.4/os/x86_64/Packages/ .
 for FILENAME in openssl-1.0.0-27.el6.x86_64.rpm openssl-devel-1.0.0-27.el6.x86_64.rpm ; do
   FULL_URL="${DEPENDENCY_URL}/${FILENAME}"
-  if [ -r "$FILENAME" ]; then
-    echo $FILENAME already exists. Not re-downloading.
-  else
-    echo "Fetching $FILENAME from $FULL_URL"
-    curl -L -O "${FULL_URL}"
-  fi
+  # Loop in case we encounter an error.
+  for attempt in 1 2 3; do
+    if [ -r "$FILENAME" ]; then
+      echo $FILENAME already exists. Not re-downloading.
+    else
+      echo "Fetching $FILENAME from $FULL_URL"
+      if ! curl --retry 3 -L -O "${FULL_URL}"; then
+        echo "Error downloading $FILENAME"
+        rm -f "$FILENAME"
+
+        # Pause for a bit before looping in case the server throttled us.
+        sleep 5
+        continue
+      fi
+    fi
+  done
 
   echo "Unpacking $FILENAME"
   rpm2cpio $FILENAME | cpio -idm
