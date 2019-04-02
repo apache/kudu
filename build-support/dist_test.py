@@ -70,12 +70,16 @@ GRADLE_FLAGS = os.environ.get('EXTRA_GRADLE_FLAGS', "")
 PATH_TO_REPO = "../"
 
 # Matches the command line listings in 'ctest -V -N'. For example:
-#   262: Test command: /src/kudu/build-support/run-test.sh "/src/kudu/build/debug/bin/jsonwriter-test"
+#  262: Test command: /src/kudu/build-support/run-test.sh "/src/kudu/build/debug/bin/jsonwriter-test"
 TEST_COMMAND_RE = re.compile('Test command: (.+)$')
 
 # Matches the environment variable listings in 'ctest -V -N'. For example:
 #  262:  GTEST_TOTAL_SHARDS=1
 TEST_ENV_RE = re.compile('^\d+:  (\S+)=(.+)')
+
+# Matches test names that have a shard suffix. For example:
+#  master-stress-test.8
+TEST_SHARD_RE = re.compile("\.\d+$")
 
 DEPS_FOR_ALL = \
     ["build-support/stacktrace_addr2line.pl",
@@ -347,6 +351,10 @@ def create_task_json(staging,
 
   If 'replicate_tasks' is higher than one, each .isolate file will be
   submitted multiple times. This can be useful for looping tests.
+
+  The test name is compared with the contents of 'flaky_test_set' to decide
+  how many times the execution service should retry the test on failure.
+  Alternatively, if 'retry_all_tests' is True, all tests will be retried.
   """
   tasks = []
   with file(staging.archive_dump_path(), "r") as isolate_dump:
@@ -356,9 +364,9 @@ def create_task_json(staging,
   # the dumped JSON. Others list it in an 'items' dictionary.
   items = inmap.get('items', inmap)
   for k, v in items.iteritems():
-    # The key is 'foo-test.<shard>'. So, chop off the last component
-    # to get the test name
-    test_name = ".".join(k.split(".")[:-1])
+    # The key may be 'foo-test.<shard>'. So, chop off the last component
+    # to get the test name.
+    test_name = ".".join(k.split(".")[:-1]) if TEST_SHARD_RE.search(k) else k
     max_retries = 0
     if test_name in flaky_test_set or retry_all_tests:
       max_retries = FLAKY_TEST_RETRIES
@@ -426,7 +434,20 @@ def get_flakies():
   path = os.getenv('KUDU_FLAKY_TEST_LIST')
   if not path:
     return set()
-  return set(l.strip() for l in file(path))
+
+  # dist-test can only retry tests on a per-class basis, but
+  # KUDU_FLAKY_TEST_LIST lists Java flakes on a per-method basis.
+  flaky_classes = []
+  with open(path) as f:
+    for l in f:
+      l = l.strip()
+      if '.' in l:
+        # "o.a.k.client.TestKuduClient.testFoo" -> "o.a.k.client.TestKuduClient"
+        flaky_classes.append('.'.join(l.split('.')[:-1]))
+      else:
+        flaky_classes.append(l)
+
+  return set(flaky_classes)
 
 def run_tests(parser, options):
   """
@@ -545,10 +566,11 @@ def run_java_tests(parser, options):
                         cwd=rel_to_abs("java"))
   staging = StagingDir(rel_to_abs("java/build/dist-test"))
   run_isolate(staging)
-  # TODO(ghenke): Add Java tests to the flaky dashboard
-  # KUDU_FLAKY_TEST_LIST doesn't included Java tests.
-  # Instead we will retry all Java tests in case they are flaky.
-  create_task_json(staging, 1, retry_all_tests=True)
+  retry_all = RETRY_ALL_TESTS > 0
+  create_task_json(staging,
+                   flaky_test_set=get_flakies(),
+                   replicate_tasks=1,
+                   retry_all_tests=retry_all)
   submit_tasks(staging, options)
 
 def loop_java_test(parser, options):

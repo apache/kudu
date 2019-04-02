@@ -62,9 +62,6 @@ tasks.withType(Test) {
   systemProperty "java.net.preferIPv4Stack", true
   systemProperty "java.security.egd", "file:/dev/urandom" // Improve RNG generation speed.
 
-  // Set rerunFailingTestsCount for use in BaseKuduTest.java to rerun failing tests.
-  systemProperty "rerunFailingTestsCount", propertyWithDefault("rerunFailingTestsCount", 0)
-
   // Set kuduBinDir to the binaries to use with the MiniKuduCluster.
   systemProperty "kuduBinDir", propertyWithDefault("kuduBinDir", "$project.rootDir/../build/latest/bin")
 
