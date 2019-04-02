@@ -17,6 +17,7 @@
 
 #include <functional>
 #include <memory>
+#include <ostream>
 #include <string>
 #include <unordered_set>
 #include <utility>
@@ -71,6 +72,7 @@ using kudu::master::TabletLocationsPB;
 using kudu::rpc::UserCredentials;
 using kudu::sentry::SentryClient;
 using std::function;
+using std::ostream;
 using std::string;
 using std::unique_ptr;
 using std::unordered_set;
@@ -353,7 +355,12 @@ typedef function<Status(SentryITestBase*, const string&, const string&)> Privile
 struct AuthzFuncs {
   OperatorFunc do_action;
   PrivilegeFunc grant_privileges;
+  string description;
 };
+ostream& operator <<(ostream& out, const AuthzFuncs& d) {
+  out << d.description;
+  return out;
+}
 
 // A description of an authorization process, including the protected resource (table),
 // the operation function, as well as the privilege granting function.
@@ -363,6 +370,10 @@ struct AuthzDescriptor {
   string table_name;
   string new_table_name;
 };
+ostream& operator <<(ostream& out, const AuthzDescriptor& d) {
+  out << d.funcs.description;
+  return out;
+}
 
 // Test basic master authorization enforcement with Sentry and HMS integration
 // enabled.
@@ -479,100 +490,102 @@ TEST_P(TestAuthzTable, TestAuthorizeTable) {
   ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
 }
 
+static const AuthzDescriptor kAuthzCombinations[] = {
+    {
+      {
+        &SentryITestBase::CreateTable,
+        &SentryITestBase::GrantCreateTablePrivilege,
+        "CreateTable",
+      },
+      SentryITestBase::kDatabaseName,
+      "new_table",
+      ""
+    },
+    {
+      {
+        &SentryITestBase::DeleteTable,
+        &SentryITestBase::GrantDropTablePrivilege,
+        "DeleteTable",
+      },
+      SentryITestBase::kDatabaseName,
+      SentryITestBase::kTableName,
+      ""
+    },
+    {
+      {
+        &SentryITestBase::AlterTable,
+        &SentryITestBase::GrantAlterTablePrivilege,
+        "AlterTable",
+      },
+      SentryITestBase::kDatabaseName,
+      SentryITestBase::kTableName,
+      ""
+    },
+    {
+      {
+        &SentryITestBase::RenameTable,
+        &SentryITestBase::GrantRenameTablePrivilege,
+        "RenameTable",
+      },
+      SentryITestBase::kDatabaseName,
+      SentryITestBase::kTableName,
+      "new_table"
+    },
+    {
+      {
+        &SentryITestBase::GetTableSchema,
+        &SentryITestBase::GrantGetMetadataTablePrivilege,
+        "GetTableSchema",
+      },
+      SentryITestBase::kDatabaseName,
+      SentryITestBase::kTableName,
+      ""
+    },
+    {
+      {
+        &SentryITestBase::GetTableLocations,
+        &SentryITestBase::GrantGetMetadataTablePrivilege,
+        "GetTableLocations",
+      },
+      SentryITestBase::kDatabaseName,
+      SentryITestBase::kTableName,
+      ""
+    },
+    {
+      {
+        &SentryITestBase::GetTabletLocations,
+        &SentryITestBase::GrantGetMetadataTablePrivilege,
+        "GetTabletLocations",
+      },
+      SentryITestBase::kDatabaseName,
+      SentryITestBase::kTableName,
+      ""
+    },
+    {
+      {
+        &SentryITestBase::IsCreateTableDone,
+        &SentryITestBase::GrantGetMetadataTablePrivilege,
+        "IsCreateTableDone",
+      },
+      SentryITestBase::kDatabaseName,
+      SentryITestBase::kTableName,
+      ""
+    },
+    {
+      {
+        &SentryITestBase::IsAlterTableDone,
+        &SentryITestBase::GrantGetMetadataTablePrivilege,
+        "IsAlterTableDone",
+      },
+      SentryITestBase::kDatabaseName,
+      SentryITestBase::kTableName,
+      ""
+    },
+};
+
 INSTANTIATE_TEST_CASE_P(AuthzCombinations,
                         TestAuthzTable,
-                        ::testing::Values(
-
-        AuthzDescriptor {
-          AuthzFuncs {
-            &SentryITestBase::CreateTable,
-            &SentryITestBase::GrantCreateTablePrivilege,
-          },
-          SentryITestBase::kDatabaseName,
-          "new_table",
-          "",
-        },
-
-        AuthzDescriptor {
-          AuthzFuncs {
-            &SentryITestBase::DeleteTable,
-            &SentryITestBase::GrantDropTablePrivilege,
-          },
-          SentryITestBase::kDatabaseName,
-          SentryITestBase::kTableName,
-          "",
-        },
-
-        AuthzDescriptor {
-          AuthzFuncs {
-            &SentryITestBase::AlterTable,
-            &SentryITestBase::GrantAlterTablePrivilege,
-          },
-          SentryITestBase::kDatabaseName,
-          SentryITestBase::kTableName,
-          "",
-        },
-
-        AuthzDescriptor{
-          AuthzFuncs {
-            &SentryITestBase::RenameTable,
-            &SentryITestBase::GrantRenameTablePrivilege,
-          },
-          SentryITestBase::kDatabaseName,
-          SentryITestBase::kTableName,
-          "new_table",
-        },
-
-        AuthzDescriptor {
-          AuthzFuncs {
-            &SentryITestBase::GetTableSchema,
-            &SentryITestBase::GrantGetMetadataTablePrivilege,
-          },
-          SentryITestBase::kDatabaseName,
-          SentryITestBase::kTableName,
-          "",
-        },
-
-        AuthzDescriptor {
-          AuthzFuncs {
-            &SentryITestBase::GetTableLocations,
-            &SentryITestBase::GrantGetMetadataTablePrivilege,
-          },
-          SentryITestBase::kDatabaseName,
-          SentryITestBase::kTableName,
-          "",
-        },
-
-        AuthzDescriptor {
-          AuthzFuncs {
-            &SentryITestBase::GetTabletLocations,
-            &SentryITestBase::GrantGetMetadataTablePrivilege,
-          },
-          SentryITestBase::kDatabaseName,
-          SentryITestBase::kTableName,
-          ""
-        },
-
-        AuthzDescriptor {
-          AuthzFuncs {
-            &SentryITestBase::IsCreateTableDone,
-            &SentryITestBase::GrantGetMetadataTablePrivilege,
-          },
-          SentryITestBase::kDatabaseName,
-          SentryITestBase::kTableName,
-          "",
-        },
-
-        AuthzDescriptor {
-          AuthzFuncs {
-            &SentryITestBase::IsAlterTableDone,
-            &SentryITestBase::GrantGetMetadataTablePrivilege,
-          },
-          SentryITestBase::kDatabaseName,
-          SentryITestBase::kTableName,
-          "",
-        }
-));
+                        ::testing::ValuesIn(kAuthzCombinations));
 
 // Test that when the client passes a table identifier with the table name
 // and table ID refer to different tables, the client needs permission on
@@ -639,43 +652,45 @@ TEST_P(AuthzErrorHandlingTest, TestNonExistentTable) {
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
 }
 
+static const AuthzFuncs kAuthzFuncCombinations[] = {
+    {
+      &SentryITestBase::DeleteTable,
+      &SentryITestBase::GrantDropTablePrivilege,
+      "DeleteTable"
+    },
+    {
+      &SentryITestBase::AlterTable,
+      &SentryITestBase::GrantAlterTablePrivilege,
+      "AlterTable"
+    },
+    {
+      &SentryITestBase::RenameTable,
+      &SentryITestBase::GrantRenameTablePrivilege,
+      "RenameTable"
+    },
+    {
+      &SentryITestBase::GetTableSchema,
+      &SentryITestBase::GrantGetMetadataTablePrivilege,
+      "GetTableSchema"
+    },
+    {
+      &SentryITestBase::GetTableLocations,
+      &SentryITestBase::GrantGetMetadataTablePrivilege,
+      "GetTableLocations"
+    },
+    {
+      &SentryITestBase::IsCreateTableDone,
+      &SentryITestBase::GrantGetMetadataTablePrivilege,
+      "IsCreateTableDone"
+    },
+    {
+      &SentryITestBase::IsAlterTableDone,
+      &SentryITestBase::GrantGetMetadataTablePrivilege,
+      "IsAlterTableDone"
+    },
+};
+
 INSTANTIATE_TEST_CASE_P(AuthzFuncCombinations,
                         AuthzErrorHandlingTest,
-                        ::testing::Values(
-
-        AuthzFuncs {
-          &SentryITestBase::DeleteTable,
-          &SentryITestBase::GrantDropTablePrivilege,
-        },
-
-        AuthzFuncs {
-          &SentryITestBase::AlterTable,
-          &SentryITestBase::GrantAlterTablePrivilege,
-        },
-
-        AuthzFuncs {
-          &SentryITestBase::RenameTable,
-          &SentryITestBase::GrantRenameTablePrivilege,
-        },
-
-        AuthzFuncs {
-          &SentryITestBase::GetTableSchema,
-          &SentryITestBase::GrantGetMetadataTablePrivilege,
-        },
-
-        AuthzFuncs {
-          &SentryITestBase::GetTableLocations,
-          &SentryITestBase::GrantGetMetadataTablePrivilege,
-        },
-
-        AuthzFuncs {
-          &SentryITestBase::IsCreateTableDone,
-          &SentryITestBase::GrantGetMetadataTablePrivilege,
-        },
-
-        AuthzFuncs {
-          &SentryITestBase::IsAlterTableDone,
-          &SentryITestBase::GrantGetMetadataTablePrivilege,
-        }
-));
+                        ::testing::ValuesIn(kAuthzFuncCombinations));
 } // namespace kudu
