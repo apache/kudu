@@ -539,7 +539,6 @@ def loop_test(parser, options):
   create_task_json(staging, options.num_instances)
   submit_tasks(staging, options)
 
-
 def add_loop_test_subparser(subparsers):
   p = subparsers.add_parser("loop",
       help="Run many instances of the same test, specified by its full path",
@@ -559,10 +558,16 @@ def add_loop_test_subparser(subparsers):
   p.add_argument("args", nargs=argparse.REMAINDER, help="test arguments")
   p.set_defaults(func=loop_test)
 
+def get_gradle_cmd_line(options):
+  cmd = [rel_to_abs("java/gradlew")]
+  cmd.extend(GRADLE_FLAGS.split())
+  cmd.append("distTest")
+  if options.collect_tmpdir:
+    cmd.append("--collect-tmpdir")
+  return cmd
 
 def run_java_tests(parser, options):
-  subprocess.check_call([rel_to_abs("java/gradlew")] + GRADLE_FLAGS.split() +
-                        ["distTest"],
+  subprocess.check_call(get_gradle_cmd_line(options),
                         cwd=rel_to_abs("java"))
   staging = StagingDir(rel_to_abs("java/build/dist-test"))
   run_isolate(staging)
@@ -579,14 +584,13 @@ def loop_java_test(parser, options):
   """
   if options.num_instances < 1:
     parser.error("--num-instances must be >= 1")
-  subprocess.check_call([rel_to_abs("java/gradlew")] + GRADLE_FLAGS.split() +
-                        ["distTest", "--classes", "**/%s" % options.pattern],
-                        cwd=rel_to_abs("java"))
+  cmd = get_gradle_cmd_line(options)
+  cmd.extend([ "--classes", "**/%s" % options.pattern ])
+  subprocess.check_call(cmd, cwd=rel_to_abs("java"))
   staging = StagingDir(rel_to_abs("java/build/dist-test"))
   run_isolate(staging)
   create_task_json(staging, options.num_instances)
   submit_tasks(staging, options)
-
 
 def add_java_subparser(subparsers):
   p = subparsers.add_parser('java', help='Run java tests via dist-test')
@@ -602,15 +606,12 @@ def add_java_subparser(subparsers):
   loop.add_argument("pattern", help="Pattern matching a Java test class to run")
   loop.set_defaults(func=loop_java_test)
 
-
 def dump_base_deps(parser, options):
   print json.dumps(get_base_deps(create_dependency_extractor()))
-
 
 def add_internal_commands(subparsers):
   p = subparsers.add_parser('internal', help="[Internal commands not for users]")
   p.add_subparsers().add_parser('dump_base_deps').set_defaults(func=dump_base_deps)
-
 
 def main(argv):
   p = argparse.ArgumentParser()
@@ -625,7 +626,6 @@ def main(argv):
   add_internal_commands(sp)
   args = p.parse_args(argv)
   args.func(p, args)
-
 
 if __name__ == "__main__":
   init_logging()

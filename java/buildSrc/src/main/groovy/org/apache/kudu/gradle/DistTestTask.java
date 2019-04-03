@@ -26,6 +26,7 @@ import org.gradle.api.internal.tasks.testing.detection.DefaultTestClassScanner;
 import org.gradle.api.internal.tasks.testing.detection.TestFrameworkDetector;
 import org.gradle.api.logging.Logger;
 import org.gradle.api.logging.Logging;
+import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.InputFiles;
 import org.gradle.api.tasks.OutputDirectory;
 import org.gradle.api.tasks.TaskAction;
@@ -70,6 +71,8 @@ public class DistTestTask extends DefaultTask {
 
   private List<Test> testTasks = Lists.newArrayList();
 
+  private boolean collectTmpDir = false;
+
   /**
    * Called by the build file to add test tasks to be considered for
    * dist-tests.
@@ -85,6 +88,23 @@ public class DistTestTask extends DefaultTask {
       // TODO: this is currently requiring a glob like **/*Foo* instead of just *Foo*
       t.setIncludes(classPattern);
     }
+    return this;
+  }
+
+  /**
+   * Not actually used, but gradle mandates that the @Input annotation be placed
+   * on a getter, and we need @Input so that the task is rerun if the value of
+   * the 'collect-tmpdir' option changes.
+   */
+  @Input
+  public boolean getCollectTmpDir() {
+    return collectTmpDir;
+  }
+
+  @Option(option = "collect-tmpdir",
+          description = "Archives the test's temp directory as an artifact if the test fails.")
+  public DistTestTask setCollectTmpdir() {
+    collectTmpDir = true;
     return this;
   }
 
@@ -176,8 +196,11 @@ public class DistTestTask extends DefaultTask {
 
     // Build up the actual Java command line to run the test.
     ImmutableList.Builder<String> cmd = new ImmutableList.Builder<>();
-    cmd.add(isolateFileDir.relativize(buildSupportDir.resolve("run_dist_test.py")).toString(),
-            "--test-language=java",
+    cmd.add(isolateFileDir.relativize(buildSupportDir.resolve("run_dist_test.py")).toString());
+    if (collectTmpDir) {
+      cmd.add("--collect-tmpdir");
+    }
+    cmd.add("--test-language=java",
             "--",
             "-ea",
             "-cp",

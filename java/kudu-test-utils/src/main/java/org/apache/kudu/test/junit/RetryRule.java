@@ -58,7 +58,7 @@ public class RetryRule implements TestRule {
   private final ResultReporter reporter;
 
   static {
-    // Initialize the flaky test set if it exists. The file wil have one test
+    // Initialize the flaky test set if it exists. The file will have one test
     // name per line.
     String value = System.getenv("KUDU_FLAKY_TEST_LIST");
     if (value != null) {
