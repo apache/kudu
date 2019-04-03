@@ -18,13 +18,16 @@
 #include "kudu/master/sentry_authz_provider.h"
 
 #include <memory>
+#include <ostream>
 #include <string>
 #include <vector>
 
 #include <gflags/gflags_declare.h>
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/sentry_authz_provider-test-base.h"
 #include "kudu/sentry/mini_sentry.h"
@@ -34,6 +37,8 @@
 #include "kudu/sentry/sentry_client.h"
 #include "kudu/sentry/sentry_policy_service_types.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/random.h"
+#include "kudu/util/random_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -45,17 +50,20 @@ DECLARE_string(sentry_service_security_mode);
 DECLARE_string(server_name);
 DECLARE_string(trusted_user_acl);
 
+using sentry::TSentryAuthorizable;
 using sentry::TSentryGrantOption;
 using sentry::TSentryPrivilege;
+using std::string;
 using std::tuple;
 using std::unique_ptr;
-using std::string;
 using std::vector;
 using strings::Substitute;
 
 namespace kudu {
 
+using sentry::AuthorizableScopesSet;
 using sentry::SentryAction;
+using sentry::SentryActionsSet;
 using sentry::SentryTestBase;
 using sentry::SentryAuthorizableScope;
 
@@ -68,6 +76,70 @@ TEST(SentryAuthzProviderStaticTest, TestTrustedUserAcl) {
   ASSERT_TRUE(authz_provider.IsTrustedUser("hive"));
   ASSERT_TRUE(authz_provider.IsTrustedUser("hdfs"));
   ASSERT_FALSE(authz_provider.IsTrustedUser("untrusted"));
+}
+
+// Basic unit test for validations on ill-formed privileges.
+TEST(SentryAuthzProviderStaticTest, TestPrivilegesWellFormed) {
+  const string kDb = "db";
+  const string kTable = "table";
+  TSentryAuthorizable requested_authorizable;
+  requested_authorizable.__set_server(FLAGS_server_name);
+  requested_authorizable.__set_db(kDb);
+  requested_authorizable.__set_table(kTable);
+  TSentryPrivilege real_privilege = GetTablePrivilege(kDb, kTable, "ALL");
+  {
+    // Privilege with a bogus action set.
+    TSentryPrivilege privilege = real_privilege;
+    privilege.__set_action("NotAnAction");
+    ASSERT_FALSE(SentryAuthzProvider::SentryPrivilegeIsWellFormed(
+        privilege, requested_authorizable, /*scope=*/nullptr, /*action=*/nullptr));
+  }
+  {
+    // Privilege with a bogus authorizable scope set.
+    TSentryPrivilege privilege = real_privilege;
+    privilege.__set_privilegeScope("NotAnAuthorizableScope");
+    ASSERT_FALSE(SentryAuthzProvider::SentryPrivilegeIsWellFormed(
+        privilege, requested_authorizable, /*scope=*/nullptr, /*action=*/nullptr));
+  }
+  {
+    // Privilege with a valid, but unexpected scope for the set fields.
+    TSentryPrivilege privilege = real_privilege;
+    privilege.__set_privilegeScope("COLUMN");
+    ASSERT_FALSE(SentryAuthzProvider::SentryPrivilegeIsWellFormed(
+        privilege, requested_authorizable, /*scope=*/nullptr, /*action=*/nullptr));
+  }
+  {
+    // Privilege with a messed up scope field at a higher scope than that
+    // requested.
+    TSentryPrivilege privilege = real_privilege;
+    privilege.__set_dbName("NotTheActualDb");
+    ASSERT_FALSE(SentryAuthzProvider::SentryPrivilegeIsWellFormed(
+        privilege, requested_authorizable, /*scope=*/nullptr, /*action=*/nullptr));
+  }
+  {
+    // Privilege with an field set that isn't meant to be set at its scope.
+    TSentryPrivilege privilege = real_privilege;
+    privilege.__set_columnName("SomeColumn");
+    ASSERT_FALSE(SentryAuthzProvider::SentryPrivilegeIsWellFormed(
+        privilege, requested_authorizable, /*scope=*/nullptr, /*action=*/nullptr));
+  }
+  {
+    // Privilege with a missing field for its scope.
+    TSentryPrivilege privilege = real_privilege;
+    privilege.__isset.tableName = false;
+    ASSERT_FALSE(SentryAuthzProvider::SentryPrivilegeIsWellFormed(
+        privilege, requested_authorizable, /*scope=*/nullptr, /*action=*/nullptr));
+  }
+  {
+    // Finally, the correct table-level privilege.
+    SentryAuthorizableScope::Scope granted_scope;
+    SentryAction::Action granted_action;
+    real_privilege.printTo(LOG(INFO));
+    ASSERT_TRUE(SentryAuthzProvider::SentryPrivilegeIsWellFormed(
+        real_privilege, requested_authorizable, &granted_scope, &granted_action));
+    ASSERT_EQ(SentryAuthorizableScope::TABLE, granted_scope);
+    ASSERT_EQ(SentryAction::ALL, granted_action);
+  }
 }
 
 class SentryAuthzProviderTest : public SentryTestBase {
@@ -98,23 +170,232 @@ class SentryAuthzProviderTest : public SentryTestBase {
     return Status::OK();
   }
 
+  bool KerberosEnabled() const override {
+    return false;
+  }
+
  protected:
   unique_ptr<SentryAuthzProvider> sentry_authz_provider_;
 };
 
-// Tests to ensure SentryAuthzProvider enforces access control on tables as expected.
-// Parameterized by whether Kerberos should be enabled.
-class TestTableAuthorization : public SentryAuthzProviderTest,
-                               public ::testing::WithParamInterface<bool> {
+namespace {
+
+// Indicates different invalid privilege response types to be injected.
+enum class InvalidPrivilege {
+  // No error is injected.
+  NONE,
+
+  // The action string is set to something other than the expected action.
+  INCORRECT_ACTION,
+
+  // The scope string is set to something other than the expected scope.
+  INCORRECT_SCOPE,
+
+  // The 'serverName' field is set to something other than the authorizable's
+  // server name. Why just the server? This guarantees that a request for any
+  // authorizable scope will ignore such invalid privileges. E.g. say we
+  // instead granted an incorrect 'tableName'; assuming the dbName were still
+  // correct, a request at the database scope would correctly _not_ ignore the
+  // privilege. So to ensure that these InvalidPrivileges always yield
+  // privileges that are ignored, we exclusively butcher the 'server' field.
+  INCORRECT_SERVER,
+
+  // One of the scope fields (e.g. serverName, dbName, etc.) is unexpectedly
+  // missing or unexpectedly set. Note: Sentry servers don't allow an empty
+  // 'server' scope; if erasing the 'server' field, we'll instead set it to
+  // something other than the expected server.
+  FLIPPED_FIELD,
+};
+
+const SentryActionsSet kAllActions({
+  SentryAction::ALL,
+  SentryAction::METADATA,
+  SentryAction::SELECT,
+  SentryAction::INSERT,
+  SentryAction::UPDATE,
+  SentryAction::DELETE,
+  SentryAction::ALTER,
+  SentryAction::CREATE,
+  SentryAction::DROP,
+  SentryAction::OWNER,
+});
+
+constexpr const char* kDb = "db";
+constexpr const char* kTable = "table";
+constexpr const char* kColumn = "column";
+
+} // anonymous namespace
+
+class SentryAuthzProviderFilterResponsesTest :
+    public SentryAuthzProviderTest,
+    public ::testing::WithParamInterface<SentryAuthorizableScope::Scope> {
  public:
-  bool KerberosEnabled() const {
-    return GetParam();
+  SentryAuthzProviderFilterResponsesTest()
+      : prng_(SeedRandom()) {}
+
+  void SetUp() override {
+    SentryAuthzProviderTest::SetUp();
+    ASSERT_OK(CreateRoleAndAddToGroups(sentry_client_.get(), kRoleName, kUserGroup));
+    full_authorizable_.server = FLAGS_server_name;
+    full_authorizable_.db = kDb;
+    full_authorizable_.table = kTable;
+    full_authorizable_.column = kColumn;
+  }
+
+  bool KerberosEnabled() const override {
+    return true;
+  }
+
+  // Creates a Sentry privilege for the user based on the given action,
+  // the given scope, and the given authorizable that has all scope fields set.
+  // With all of the scope fields set in the authorizable, and a given scope,
+  // we can return an appropriate privilege for it, with tweaks indicated by
+  // 'invalid_privilege' to make the privilege invalid if desired.
+  TSentryPrivilege CreatePrivilege(const TSentryAuthorizable& full_authorizable,
+                                   const SentryAuthorizableScope& scope, const SentryAction& action,
+                                   InvalidPrivilege invalid_privilege = InvalidPrivilege::NONE) {
+    DCHECK(!full_authorizable.server.empty() && !full_authorizable.db.empty() &&
+          !full_authorizable.table.empty() && !full_authorizable.column.empty());
+    TSentryPrivilege privilege;
+    privilege.__set_action(invalid_privilege == InvalidPrivilege::INCORRECT_ACTION ?
+                           "foobar" : ActionToString(action.action()));
+    privilege.__set_privilegeScope(invalid_privilege == InvalidPrivilege::INCORRECT_SCOPE ?
+                                   "foobar" : ScopeToString(scope.scope()));
+
+    // Select a scope at which we'll mess up the privilege request's field.
+    AuthorizableScopesSet nonempty_fields =
+        SentryAuthzProvider::ExpectedNonEmptyFields(scope.scope());
+    if (invalid_privilege == InvalidPrivilege::FLIPPED_FIELD) {
+      static const AuthorizableScopesSet kMessUpCandidates = {
+        SentryAuthorizableScope::SERVER,
+        SentryAuthorizableScope::DATABASE,
+        SentryAuthorizableScope::TABLE,
+        SentryAuthorizableScope::COLUMN,
+      };
+      SentryAuthorizableScope::Scope field_to_mess_up =
+          SelectRandomElement<AuthorizableScopesSet, SentryAuthorizableScope::Scope, Random>(
+              kMessUpCandidates, &prng_);
+      if (ContainsKey(nonempty_fields, field_to_mess_up)) {
+        // Since Sentry servers don't allow empty 'server' fields in requests,
+        // rather flipping the empty status of the field, inject an incorrect
+        // value for the field.
+        if (field_to_mess_up == SentryAuthorizableScope::SERVER) {
+          invalid_privilege = InvalidPrivilege::INCORRECT_SERVER;
+        } else {
+          nonempty_fields.erase(field_to_mess_up);
+        }
+      } else {
+        InsertOrDie(&nonempty_fields, field_to_mess_up);
+      }
+    }
+
+    // Fill in any fields we may need.
+    for (const auto& field : nonempty_fields) {
+      switch (field) {
+        case SentryAuthorizableScope::SERVER:
+          privilege.__set_serverName(invalid_privilege == InvalidPrivilege::INCORRECT_SERVER ?
+                                     "foobar" : full_authorizable.server);
+          break;
+        case SentryAuthorizableScope::DATABASE:
+          privilege.__set_dbName(full_authorizable.db);
+          break;
+        case SentryAuthorizableScope::TABLE:
+          privilege.__set_tableName(full_authorizable.table);
+          break;
+        case SentryAuthorizableScope::COLUMN:
+          privilege.__set_columnName(full_authorizable.column);
+          break;
+        default:
+          LOG(FATAL) << "not a valid scope field: " << field;
+      }
+    }
+    return privilege;
+  }
+ protected:
+  // Authorizable that has all scope fields set; useful for generating
+  // privilege requests.
+  TSentryAuthorizable full_authorizable_;
+
+ private:
+  mutable Random prng_;
+};
+
+// Attempst to grant privileges for various actions on a single scope of an
+// authorizable, injecting various invalid privileges, and checking that Kudu
+// ignores them.
+TEST_P(SentryAuthzProviderFilterResponsesTest, TestFilterInvalidResponses) {
+  const string& table_ident = Substitute("$0.$1", full_authorizable_.db, full_authorizable_.table);
+  static constexpr InvalidPrivilege kInvalidPrivileges[] = {
+      InvalidPrivilege::INCORRECT_ACTION,
+      InvalidPrivilege::INCORRECT_SCOPE,
+      InvalidPrivilege::INCORRECT_SERVER,
+      InvalidPrivilege::FLIPPED_FIELD,
+  };
+  SentryAuthorizableScope granted_scope(GetParam());
+  for (const auto& action : kAllActions) {
+    for (const auto& ip : kInvalidPrivileges) {
+      TSentryPrivilege privilege = CreatePrivilege(full_authorizable_, granted_scope,
+                                                   SentryAction(action), ip);
+      ASSERT_OK(AlterRoleGrantPrivilege(sentry_client_.get(), kRoleName, privilege));
+    }
+  }
+  for (const auto& requested_scope : { SentryAuthorizableScope::SERVER,
+                                       SentryAuthorizableScope::DATABASE,
+                                       SentryAuthorizableScope::TABLE }) {
+    SentryPrivilegesBranch privileges;
+    ASSERT_OK(sentry_authz_provider_->GetSentryPrivileges(
+        requested_scope, table_ident, kTestUser, &privileges));
+    // Kudu should ignore all of the invalid privileges.
+    ASSERT_TRUE(privileges.privileges.empty());
+  }
+}
+
+// Grants privileges for various actions on a single scope of an authorizable.
+TEST_P(SentryAuthzProviderFilterResponsesTest, TestFilterValidResponses) {
+  const string& table_ident = Substitute("$0.$1", full_authorizable_.db, full_authorizable_.table);
+  SentryAuthorizableScope granted_scope(GetParam());
+  // Send valid requests and verify that we can get it back through the
+  // SentryAuthzProvider.
+  for (const auto& action : kAllActions) {
+    TSentryPrivilege privilege = CreatePrivilege(full_authorizable_, granted_scope,
+                                                 SentryAction(action));
+    ASSERT_OK(AlterRoleGrantPrivilege(sentry_client_.get(), kRoleName, privilege));
+  }
+  for (const auto& requested_scope : { SentryAuthorizableScope::SERVER,
+                                       SentryAuthorizableScope::DATABASE,
+                                       SentryAuthorizableScope::TABLE }) {
+    SentryPrivilegesBranch privileges;
+    ASSERT_OK(sentry_authz_provider_->GetSentryPrivileges(
+        requested_scope, table_ident, kTestUser, &privileges));
+    ASSERT_EQ(1, privileges.privileges.size());
+    const auto& authorizable_privileges = privileges.privileges[0];
+    ASSERT_EQ(GetParam(), authorizable_privileges.scope)
+        << ScopeToString(authorizable_privileges.scope);
+    ASSERT_FALSE(authorizable_privileges.granted_privileges.empty());
+  }
+}
+
+INSTANTIATE_TEST_CASE_P(GrantedScopes, SentryAuthzProviderFilterResponsesTest,
+                        ::testing::Values(SentryAuthorizableScope::SERVER,
+                                          SentryAuthorizableScope::DATABASE,
+                                          SentryAuthorizableScope::TABLE,
+                                          SentryAuthorizableScope::COLUMN));
+
+
+
+// Test to create tables requiring ALL ON DATABASE with the grant option. This
+// is parameterized on the ALL scope and OWNER actions, which behave
+// identically, and whether Kerberos should be enabled.
+class CreateTableAuthorizationTest : public SentryAuthzProviderTest,
+                                     public ::testing::WithParamInterface<
+                                     std::tuple<string, bool>> {
+ public:
+  bool KerberosEnabled() const override {
+    return std::get<1>(GetParam());
   }
 };
 
-INSTANTIATE_TEST_CASE_P(KerberosEnabled, TestTableAuthorization, ::testing::Bool());
-
-TEST_P(TestTableAuthorization, TestAuthorizeCreateTable) {
+TEST_P(CreateTableAuthorizationTest, TestAuthorizeCreateTable) {
   // Don't authorize create table on a non-existent user.
   Status s = sentry_authz_provider_->AuthorizeCreateTable("db.table",
                                                           "non-existent-user",
@@ -141,14 +422,30 @@ TEST_P(TestTableAuthorization, TestAuthorizeCreateTable) {
   // requires the creating user have 'ALL on DATABASE' with grant.
   s = sentry_authz_provider_->AuthorizeCreateTable("db.table", kTestUser, "diff-user");
   ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
-  privilege = GetDatabasePrivilege("db", "ALL");
+
+  const auto& all = std::get<0>(GetParam());
+  privilege = GetDatabasePrivilege("db", all);
   s = sentry_authz_provider_->AuthorizeCreateTable("db.table", kTestUser, "diff-user");
   ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
-  privilege = GetDatabasePrivilege("db", "ALL", TSentryGrantOption::ENABLED);
+  privilege = GetDatabasePrivilege("db", all, TSentryGrantOption::ENABLED);
   ASSERT_OK(AlterRoleGrantPrivilege(sentry_client_.get(), kRoleName, privilege));
   ASSERT_OK(sentry_authz_provider_->AuthorizeCreateTable("db.table", kTestUser, "diff-user"));
 }
 
+INSTANTIATE_TEST_CASE_P(AllOrOwnerWithKerberos, CreateTableAuthorizationTest,
+    ::testing::Combine(::testing::Values("ALL", "OWNER"), ::testing::Bool()));
+
+// Tests to ensure SentryAuthzProvider enforces access control on tables as expected.
+// Parameterized by whether Kerberos should be enabled.
+class TestTableAuthorization : public SentryAuthzProviderTest,
+                               public ::testing::WithParamInterface<bool> {
+ public:
+  bool KerberosEnabled() const override {
+    return GetParam();
+  }
+};
+
+INSTANTIATE_TEST_CASE_P(KerberosEnabled, TestTableAuthorization, ::testing::Bool());
 TEST_P(TestTableAuthorization, TestAuthorizeDropTable) {
   // Don't authorize delete table on a user without required privileges.
   ASSERT_OK(CreateRoleAndAddToGroups(sentry_client_.get(), kRoleName, kUserGroup));

@@ -829,6 +829,19 @@ void AppendValuesFromMap(const MapContainer& map_container,
   }
 }
 
+template <class MapContainer, class ValueContainer>
+void EmplaceValuesFromMap(MapContainer&& map_container,
+                          ValueContainer* value_container) {
+  CHECK(value_container != nullptr);
+  // See AppendKeysFromMap for why this is done.
+  if (value_container->empty()) {
+    value_container->reserve(map_container.size());
+  }
+  for (auto&& entry : map_container) {
+    value_container->emplace_back(std::move(entry.second));
+  }
+}
+
 // A more specialized overload of AppendValuesFromMap to optimize reallocations
 // for the common case in which we're appending values to a vector and hence
 // can (and sometimes should) call reserve() first.
@@ -839,14 +852,7 @@ void AppendValuesFromMap(const MapContainer& map_container,
 template <class MapContainer, class ValueType>
 void AppendValuesFromMap(const MapContainer& map_container,
                          std::vector<ValueType>* value_container) {
-  CHECK(value_container != NULL);
-  // See AppendKeysFromMap for why this is done.
-  if (value_container->empty()) {
-    value_container->reserve(map_container.size());
-  }
-  for (const auto& entry : map_container) {
-    value_container->push_back(entry.second);
-  }
+  EmplaceValuesFromMap(map_container, value_container);
 }
 
 // Compute and insert new value if it's absent from the map. Return a pair with a reference to the

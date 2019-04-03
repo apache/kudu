@@ -20,7 +20,9 @@
 #include <iosfwd>
 #include <string>
 
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
+#include "kudu/util/bitset.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -39,13 +41,14 @@ class SentryAuthorizableScope {
 
   // Note that 'UNINITIALIZED' is not an actual scope but
   // only to represent the uninitialized state.
-  enum class Scope {
+  enum Scope {
     UNINITIALIZED,
     SERVER,
     DATABASE,
     TABLE,
     COLUMN,
   };
+  static const size_t kScopeMaxVal = Scope::COLUMN + 1;
 
   // The default constructor is useful when creating an authorizable scope
   // from string.
@@ -78,6 +81,9 @@ static constexpr const char* const kColumn = "COLUMN";
 const char* ScopeToString(SentryAuthorizableScope::Scope scope);
 
 std::ostream& operator<<(std::ostream& o, SentryAuthorizableScope::Scope scope);
+
+typedef FixedBitSet<SentryAuthorizableScope::Scope, SentryAuthorizableScope::kScopeMaxVal>
+    AuthorizableScopesSet;
 
 } // namespace sentry
 } // namespace kudu

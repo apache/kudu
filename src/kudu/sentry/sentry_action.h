@@ -21,6 +21,7 @@
 #include <string>
 
 #include "kudu/gutil/port.h"
+#include "kudu/util/bitset.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -47,7 +48,7 @@ class SentryAction {
   // only to represent an action in uninitialized state.
   //
   // See org.apache.sentry.core.model.db.HiveActionFactory.
-  enum class Action {
+  enum Action {
     UNINITIALIZED,
     ALL,
     METADATA,
@@ -60,6 +61,7 @@ class SentryAction {
     DROP,
     OWNER,
   };
+  static const size_t kMaxAction = Action::OWNER + 1;
 
   // The default constructor is useful when creating an Action
   // from string.
@@ -101,6 +103,9 @@ static constexpr const char* const kActionOwner = "OWNER";
 const char* ActionToString(SentryAction::Action action);
 
 std::ostream& operator<<(std::ostream& o, SentryAction::Action action);
+
+typedef FixedBitSet<sentry::SentryAction::Action, sentry::SentryAction::kMaxAction>
+    SentryActionsSet;
 
 } // namespace sentry
 } // namespace kudu
