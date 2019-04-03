@@ -36,6 +36,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/util/random.h"
+#include "kudu/util/random_util.h"
 
 using std::multimap;
 using std::numeric_limits;
@@ -280,7 +281,7 @@ shared_ptr<TSDescriptor> PlacementPolicy::SelectReplica(
   // If we've only got one server left, 'two_choices' will actually
   // just contain one element.
   vector<shared_ptr<TSDescriptor>> two_choices;
-  rng_->ReservoirSample(ts_descs, 2, excluded, &two_choices);
+  ReservoirSample(ts_descs, 2, excluded, rng_, &two_choices);
   DCHECK_LE(two_choices.size(), 2);
 
   if (two_choices.size() == 2) {

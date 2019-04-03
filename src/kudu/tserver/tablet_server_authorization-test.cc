@@ -68,6 +68,7 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/random.h"
+#include "kudu/util/random_util.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -220,26 +221,6 @@ class AuthzTabletServerTestBase : public TabletServerTestBase {
   }
 
  protected:
-
-  // Utility to select an element from a container at random.
-  template <typename Container, typename T>
-  T SelectAtRandom(const Container& c) const {
-    CHECK(!c.empty());
-    vector<T> rand_list;
-    prng_.ReservoirSample(c, 1, set<T>{}, &rand_list);
-    CHECK_EQ(1, rand_list.size());
-    return rand_list[0];
-  }
-
-  // Returns a randomly-sized randomized list of elements from 'full_set'.
-  template <typename T>
-  vector<T> RandomFromList(const vector<T>& full_list, int min_to_return) const {
-    CHECK_GT(full_list.size(), min_to_return);
-    int num_to_return = min_to_return + rand() % (full_list.size() - min_to_return);
-    vector<T> rand_list;
-    prng_.ReservoirSample(full_list, num_to_return, set<T>{}, &rand_list);
-    return rand_list;
-  }
 
   // Signer used to create authz tokens.
   unique_ptr<TokenSigner> signer_;
@@ -594,7 +575,8 @@ class ScanPrivilegeAuthzTest : public AuthzTabletServerTestBase,
     // Determine which column to sabotage if needed.
     boost::optional<string> misnamed_col;
     if (special_col == SpecialColumn::MISNAMED) {
-      misnamed_col = SelectAtRandom<unordered_set<string>, string>(scan.projected_cols);
+      misnamed_col = SelectRandomElement<unordered_set<string>, string, Random>(
+          scan.projected_cols, &prng_);
     }
     for (const auto& col_name : scan.projected_cols) {
       int col_idx = schema_.find_column(col_name);
@@ -635,7 +617,7 @@ class ScanPrivilegeAuthzTest : public AuthzTabletServerTestBase,
     // Determine which column to sabotage if needed.
     boost::optional<string> misnamed_col;
     if (special_col == SpecialColumn::MISNAMED) {
-      misnamed_col = SelectAtRandom<unordered_set<string>, string>(cols);
+      misnamed_col = SelectRandomElement<unordered_set<string>, string, Random>(cols, &prng_);
     }
     for (const auto& col_name : cols) {
       int col_idx = client_schema.find_column(col_name);
@@ -712,7 +694,8 @@ class ScanPrivilegeAuthzTest : public AuthzTabletServerTestBase,
   // Returns a randomly selected set of column names, of at least size
   // 'min_returned'.
   unordered_set<string> RandomColumnNames(int min_returned = 0) const {
-    vector<string> rand_privileges = RandomFromList(col_names_, min_returned);
+    vector<string> rand_privileges = SelectRandomSubset<vector<string>, string, Random>(
+        col_names_, min_returned, &prng_);
     unordered_set<string> rand_set(rand_privileges.begin(), rand_privileges.end());
     return rand_set;
   }
@@ -1178,8 +1161,8 @@ class WritePrivilegeAuthzTest : public AuthzTabletServerTestBase {
     WritePrivileges privileges = RandomWritePrivileges();
     ASSERT_FALSE(required_privileges.empty());
     if (!privileges.empty()) {
-      const auto& priv_to_remove = SelectAtRandom<WritePrivileges, WritePrivilegeType>(
-          required_privileges);
+      const auto& priv_to_remove = SelectRandomElement<WritePrivileges, WritePrivilegeType, Random>(
+          required_privileges, &prng_);
       LOG(INFO) << "Removing write privilege: " << WritePrivilegeToString(priv_to_remove);
       privileges.erase(priv_to_remove);
     }
@@ -1210,7 +1193,9 @@ class WritePrivilegeAuthzTest : public AuthzTabletServerTestBase {
       RowOperationsPB::UPSERT,
     };
     RowOpTypes types;
-    types.reset(RandomFromList(write_op_types, /*min_to_return=*/1));
+    types.reset(SelectRandomSubset<
+        vector<RowOperationsPB::Type>, RowOperationsPB::Type, Random>(
+        write_op_types, /*min_to_return=*/1, &prng_));
     return types;
   }
 
@@ -1222,8 +1207,9 @@ class WritePrivilegeAuthzTest : public AuthzTabletServerTestBase {
       WritePrivilegeType::INSERT,
       WritePrivilegeType::UPDATE,
     };
-    vector<WritePrivilegeType> rand_types = RandomFromList(write_privilege_types,
-                                                           /*min_to_return=*/0);
+    vector<WritePrivilegeType> rand_types =
+      SelectRandomSubset<vector<WritePrivilegeType>, WritePrivilegeType, Random>(
+          write_privilege_types, /*min_to_return=*/0, &prng_);
     WritePrivileges privileges;
     privileges.reset(rand_types);
     return privileges;
@@ -1281,7 +1267,8 @@ TEST_F(WritePrivilegeAuthzTest, TestWritesRandomized) {
   vector<WriteOpDescriptor> batch;
   WritePrivileges required_privileges;
   for (int i = 0; i < kNumOps; i++) {
-    const auto op_type = SelectAtRandom<RowOpTypes, RowOperationsPB::Type>(op_types);
+    const auto op_type = SelectRandomElement<RowOpTypes, RowOperationsPB::Type, Random>(
+        op_types, &prng_);
     batch.emplace_back(WriteOpDescriptor({
       .op_type = op_type,
       .key = rand(),

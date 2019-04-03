@@ -111,40 +111,6 @@ class Random {
   double NextDoubleFraction() {
     return Next() / static_cast<double>(random_internal::M + 1.0);
   }
-
-  // Sample 'k' random elements from the collection 'c' into 'result', taking care not to sample any
-  // elements that are already present in 'avoid'.
-  //
-  // In the case that 'c' has fewer than 'k' elements then all elements in 'c' will be selected.
-  //
-  // 'c' should be an iterable STL collection such as a vector, set, or list.
-  // 'avoid' should be an STL-compatible set.
-  //
-  // The results are not stored in a randomized order: the order of results will
-  // match their order in the input collection.
-  template<class Collection, class Set, class T>
-  void ReservoirSample(const Collection& c, int k, const Set& avoid,
-                       std::vector<T>* result) {
-    result->clear();
-    result->reserve(k);
-    int i = 0;
-    for (const T& elem : c) {
-      if (ContainsKey(avoid, elem)) {
-        continue;
-      }
-      i++;
-      // Fill the reservoir if there is available space.
-      if (result->size() < k) {
-        result->push_back(elem);
-        continue;
-      }
-      // Otherwise replace existing elements with decreasing probability.
-      int j = Uniform(i);
-      if (j < k) {
-        (*result)[j] = elem;
-      }
-    }
-  }
 };
 
 // Thread-safe wrapper around Random.
@@ -207,13 +173,6 @@ class ThreadSafeRandom {
   double NextDoubleFraction() {
     std::lock_guard<simple_spinlock> l(lock_);
     return random_.NextDoubleFraction();
-  }
-
-  template<class Collection, class Set, class T>
-  void ReservoirSample(const Collection& c, int k, const Set& avoid,
-                       std::vector<T>* result) {
-    std::lock_guard<simple_spinlock> l(lock_);
-    random_.ReservoirSample(c, k, avoid, result);
   }
 
  private:

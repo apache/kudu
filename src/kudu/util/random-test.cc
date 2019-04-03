@@ -24,6 +24,7 @@
 #include <gtest/gtest.h>
 
 #include "kudu/util/random.h"
+#include "kudu/util/random_util.h"
 #include "kudu/util/test_util.h"
 
 using std::numeric_limits;
@@ -119,7 +120,7 @@ TEST_F(RandomTest, TestReservoirSample) {
   vector<int> counts(population.size());
   unordered_set<int> avoid;
   for (int trial = 0; trial < 1000; trial++) {
-    rng_.ReservoirSample(population, 5, avoid, &results);
+    ReservoirSample(population, 5, avoid, &rng_, &results);
     for (int result : results) {
       counts[result]++;
     }
@@ -139,7 +140,7 @@ TEST_F(RandomTest, TestReservoirSample) {
   avoid.insert(20);
   counts.assign(100, 0);
   for (int trial = 0; trial < 1000; trial++) {
-    rng_.ReservoirSample(population, 5, avoid, &results);
+    ReservoirSample(population, 5, avoid, &rng_, &results);
     for (int result : results) {
       counts[result]++;
     }
@@ -159,11 +160,11 @@ TEST_F(RandomTest, TestReservoirSamplePopulationTooSmall) {
 
   vector<int> results;
   unordered_set<int> avoid;
-  rng_.ReservoirSample(population, 20, avoid, &results);
+  ReservoirSample(population, 20, avoid, &rng_, &results);
   ASSERT_EQ(population.size(), results.size());
   ASSERT_EQ(population, results);
 
-  rng_.ReservoirSample(population, 10, avoid, &results);
+  ReservoirSample(population, 10, avoid, &rng_, &results);
   ASSERT_EQ(population.size(), results.size());
   ASSERT_EQ(population, results);
 }
