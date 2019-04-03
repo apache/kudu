@@ -462,9 +462,6 @@ void TestMerge(const Schema& schema,
       }
       ASSERT_EQ(expected.size(), total_idx);
       ASSERT_EQ(expected.end(), expected_iter);
-
-      LOG(INFO) << "Total number of comparisons performed: "
-                << GetMergeIteratorNumComparisonsForTests(merger);
     }
   }
 }
@@ -547,6 +544,7 @@ TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluation) {
   // Set up a MaterializingIterator with pushdown disabled, so that the
   // PredicateEvaluatingIterator will wrap it and do evaluation.
   unique_ptr<VectorIterator> colwise(new VectorIterator(ints));
+  google::FlagSaver saver;
   FLAGS_materializing_iterator_do_pushdown = false;
   unique_ptr<RowwiseIterator> materializing(
       NewMaterializingIterator(std::move(colwise)));

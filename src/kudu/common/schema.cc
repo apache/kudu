@@ -21,6 +21,7 @@
 #include <unordered_set>
 
 #include "kudu/common/row.h"
+#include "kudu/common/rowblock.h" // IWYU pragma: keep
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/strcat.h"
@@ -461,11 +462,10 @@ string Schema::ToString(ToStringMode mode) const {
                 "\n)");
 }
 
+template <class RowType>
 Status Schema::DecodeRowKey(Slice encoded_key,
-                            uint8_t* buffer,
+                            RowType* row,
                             Arena* arena) const {
-  ContiguousRow row(this, buffer);
-
   for (size_t col_idx = 0; col_idx < num_key_columns(); ++col_idx) {
     const ColumnSchema& col = column(col_idx);
     const KeyEncoder<faststring>& key_encoder = GetKeyEncoder<faststring>(col.type_info());
@@ -473,7 +473,7 @@ Status Schema::DecodeRowKey(Slice encoded_key,
     RETURN_NOT_OK_PREPEND(key_encoder.Decode(&encoded_key,
                                              is_last,
                                              arena,
-                                             row.mutable_cell_ptr(col_idx)),
+                                             row->mutable_cell_ptr(col_idx)),
                           Substitute("Error decoding composite key component '$0'",
                                      col.name()));
   }
@@ -490,11 +490,11 @@ string Schema::DebugEncodedRowKey(Slice encoded_key, StartOrEnd start_or_end) co
 
   Arena arena(256);
   uint8_t* buf = reinterpret_cast<uint8_t*>(arena.AllocateBytes(key_byte_size()));
-  Status s = DecodeRowKey(encoded_key, buf, &arena);
+  ContiguousRow row(this, buf);
+  Status s = DecodeRowKey(encoded_key, &row, &arena);
   if (!s.ok()) {
     return "<invalid key: " + s.ToString() + ">";
   }
-  ConstContiguousRow row(this, buf);
   return DebugRowKey(row);
 }
 
@@ -522,6 +522,10 @@ size_t Schema::memory_footprint_excluding_this() const {
 size_t Schema::memory_footprint_including_this() const {
   return kudu_malloc_usable_size(this) + memory_footprint_excluding_this();
 }
+
+// Explicit specialization for callers outside this compilation unit.
+template
+Status Schema::DecodeRowKey(Slice encoded_key, RowBlockRow* row, Arena* arena) const;
 
 // ============================================================================
 //  Schema Builder

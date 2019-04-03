@@ -68,11 +68,12 @@ Status EncodedKey::DecodeEncodedString(const Schema& schema,
     return Status::RuntimeError("OOM");
   }
 
-  RETURN_NOT_OK(schema.DecodeRowKey(encoded, raw_key_buf, arena));
+  ContiguousRow row(&schema, raw_key_buf);
+  RETURN_NOT_OK(schema.DecodeRowKey(encoded, &row, arena));
 
   vector<const void*> raw_keys(schema.num_key_columns());
   for (int i = 0; i < schema.num_key_columns(); i++) {
-    raw_keys[i] = raw_key_buf + schema.column_offset(i);
+    raw_keys[i] = row.cell_ptr(i);
   }
 
   faststring data_copy;

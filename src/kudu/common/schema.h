@@ -662,12 +662,13 @@ class Schema {
     return DebugRowColumns(row, num_key_columns());
   }
 
-  // Decode the specified encoded key into the given 'buffer', which
+  // Decode the specified encoded key into the given 'row', which
   // must be at least as large as this->key_byte_size().
   //
   // 'arena' is used for allocating indirect strings, but is unused
   // for other datatypes.
-  Status DecodeRowKey(Slice encoded_key, uint8_t* buffer,
+  template<class RowType>
+  Status DecodeRowKey(Slice encoded_key, RowType* row,
                       Arena* arena) const WARN_UNUSED_RESULT;
 
   // Decode and stringify the given contiguous encoded row key in
