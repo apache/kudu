@@ -17,7 +17,6 @@
 #include "kudu/util/metrics.h"
 
 #include <iostream>
-#include <map>
 #include <utility>
 
 #include <gflags/gflags.h>
@@ -211,20 +210,21 @@ Status MetricEntity::WriteAsJson(JsonWriter* writer,
                                  const MetricJsonOptions& opts) const {
   bool select_all = MatchMetricInList(id(), requested_metrics);
 
-  // We want the keys to be in alphabetical order when printing, so we use an ordered map here.
-  typedef std::map<const char*, scoped_refptr<Metric> > OrderedMetricMap;
-  OrderedMetricMap metrics;
+  MetricMap metrics;
   AttributeMap attrs;
   {
     // Snapshot the metrics in this registry (not guaranteed to be a consistent snapshot)
     std::lock_guard<simple_spinlock> l(lock_);
     attrs = attributes_;
-    for (const MetricMap::value_type& val : metric_map_) {
-      const MetricPrototype* prototype = val.first;
-      const scoped_refptr<Metric>& metric = val.second;
+    metrics = metric_map_;
+  }
 
-      if (select_all || MatchMetricInList(prototype->name(), requested_metrics)) {
-        InsertOrDie(&metrics, prototype->name(), metric);
+  if (!select_all) {
+    for (auto metric = metrics.begin(); metric != metrics.end();) {
+      if (!MatchMetricInList(metric->first->name(), requested_metrics)) {
+        metric = metrics.erase(metric);
+      } else {
+        ++metric;
       }
     }
   }
@@ -255,14 +255,14 @@ Status MetricEntity::WriteAsJson(JsonWriter* writer,
 
   writer->String("metrics");
   writer->StartArray();
-  for (OrderedMetricMap::value_type& val : metrics) {
+  for (MetricMap::value_type& val : metrics) {
     const auto& m = val.second;
     if (m->ModifiedInOrAfterEpoch(opts.only_modified_in_or_after_epoch)) {
       if (!opts.include_untouched_metrics && m->IsUntouched()) {
         continue;
       }
       WARN_NOT_OK(m->WriteAsJson(writer, opts),
-                  strings::Substitute("Failed to write $0 as JSON", val.first));
+                  strings::Substitute("Failed to write $0 as JSON", val.first->name()));
     }
   }
   writer->EndArray();
