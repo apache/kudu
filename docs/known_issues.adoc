@@ -104,11 +104,13 @@
 
 == Cluster management
 
-* Rack awareness is not supported.
-
-* Multi-datacenter is not supported.
-
 * Rolling restart is not supported.
+
+* Multi-data-center/multi-availability-zone configurations require at least 3
+  locations to maintain availability.
+
+* Multi-data-center/multi-availability-zone configurations with a network latency
+  over 100ms and bandwidth under 10 Gbps are not well tested and therefore not recommended.
 
 == Server management
 
