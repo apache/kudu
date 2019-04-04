@@ -701,4 +701,49 @@ public class TestKuduTable {
       }
     }
   }
+
+  @Test(timeout = 100000)
+  public void testAlterColumnComment() throws Exception {
+    // Schema with comments.
+    List<ColumnSchema> columns = ImmutableList.of(
+        new ColumnSchema.ColumnSchemaBuilder("key", Type.INT32)
+            .key(true).comment("keytest").build(),
+        new ColumnSchema.ColumnSchemaBuilder("value", Type.STRING)
+            .comment("valuetest").build());
+    // Create a table.
+    KuduTable table = client.createTable(tableName,
+        new Schema(columns), getBasicCreateTableOptions());
+
+    // Verify the comments after creating.
+    assertEquals("wrong key comment", "keytest",
+        table.getSchema().getColumn("key").getComment());
+    assertEquals("wrong value comment", "valuetest",
+        table.getSchema().getColumn("value").getComment());
+
+    // Change the comments.
+    client.alterTable(tableName,
+        new AlterTableOptions().changeComment("key", "keycomment"));
+    client.alterTable(tableName,
+        new AlterTableOptions().changeComment("value", "valuecomment"));
+
+    // Verify the comments after the first change.
+    KuduTable table1 = client.openTable(tableName);
+    assertEquals("wrong key comment post alter",
+        "keycomment", table1.getSchema().getColumn("key").getComment());
+    assertEquals("wrong value comment post alter",
+        "valuecomment", table1.getSchema().getColumn("value").getComment());
+
+    // Delete the comments.
+    client.alterTable(tableName,
+        new AlterTableOptions().changeComment("key", ""));
+    client.alterTable(tableName,
+        new AlterTableOptions().changeComment("value", ""));
+
+    // Verify the comments after the second change.
+    KuduTable table2 = client.openTable(tableName);
+    assertEquals("wrong key comment post alter", "",
+        table2.getSchema().getColumn("key").getComment());
+    assertEquals("wrong value comment post alter", "",
+        table2.getSchema().getColumn("value").getComment());
+  }
 }

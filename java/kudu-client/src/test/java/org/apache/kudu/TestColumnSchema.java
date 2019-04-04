@@ -18,6 +18,7 @@ package org.apache.kudu;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.fail;
 
 import org.junit.Rule;
 import org.junit.Test;
@@ -38,10 +39,12 @@ public class TestColumnSchema {
     ColumnSchema col3 = new ColumnSchemaBuilder("col3", Type.DECIMAL)
         .typeAttributes(DecimalUtil.typeAttributes(5, 2))
         .build();
+    ColumnSchema col4 = new ColumnSchemaBuilder("col4", Type.INT16).comment("test comment").build();
 
     assertEquals("Column name: col1, type: string", col1.toString());
     assertEquals("Column name: col2, type: int64", col2.toString());
     assertEquals("Column name: col3, type: decimal(5, 2)", col3.toString());
+    assertEquals("Column name: col4, type: int16, comment: test comment", col4.toString());
   }
 
   @Test
@@ -84,6 +87,13 @@ public class TestColumnSchema {
         .build();
     assertNotEquals(decCol1, decCol3);
 
+    // Same with comment
+    ColumnSchema commentInt1 = new ColumnSchemaBuilder("col1", Type.INT32).comment("test").build();
+    ColumnSchema commentInt2 = new ColumnSchemaBuilder("col1", Type.INT32).comment("test").build();
+    assertEquals(commentInt1, commentInt2);
 
+    // Different by comment
+    ColumnSchema commentInt3 = new ColumnSchemaBuilder("col1", Type.INT32).comment("Test").build();
+    assertNotEquals(commentInt1, commentInt3);
   }
 }

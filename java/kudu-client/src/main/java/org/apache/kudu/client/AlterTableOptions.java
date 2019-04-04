@@ -17,6 +17,8 @@
 
 package org.apache.kudu.client;
 
+import java.util.EnumSet;
+
 import static org.apache.kudu.ColumnSchema.CompressionAlgorithm;
 import static org.apache.kudu.ColumnSchema.Encoding;
 import static org.apache.kudu.master.Master.AlterTableRequestPB;
@@ -29,6 +31,7 @@ import org.apache.yetus.audience.InterfaceStability;
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Common;
 import org.apache.kudu.Type;
+import org.apache.kudu.client.ProtobufHelper.SchemaPBConversionFlags;
 
 /**
  * This builder must be used to alter a table. At least one change must be specified.
@@ -292,7 +295,8 @@ public class AlterTableOptions {
             .encodeLowerAndUpperBounds(lowerBound, upperBound, lowerBoundType, upperBoundType));
     step.setAddRangePartition(builder);
     if (!pb.hasSchema()) {
-      pb.setSchema(ProtobufHelper.schemaToPb(lowerBound.getSchema()));
+      pb.setSchema(ProtobufHelper.schemaToPb(lowerBound.getSchema(),
+          EnumSet.of(SchemaPBConversionFlags.SCHEMA_PB_WITHOUT_COMMENT)));
     }
     return this;
   }
@@ -351,8 +355,28 @@ public class AlterTableOptions {
                                                                     upperBoundType));
     step.setDropRangePartition(builder);
     if (!pb.hasSchema()) {
-      pb.setSchema(ProtobufHelper.schemaToPb(lowerBound.getSchema()));
+      pb.setSchema(ProtobufHelper.schemaToPb(lowerBound.getSchema(),
+          EnumSet.of(SchemaPBConversionFlags.SCHEMA_PB_WITHOUT_COMMENT)));
     }
+    return this;
+  }
+
+  /**
+   * Change the comment for the column.
+   *
+   * @param name name of the column
+   * @param comment the new comment for the column, an empty comment means
+   *        deleting an existing comment.
+   * @return this instance
+   */
+  public AlterTableOptions changeComment(String name, String comment) {
+    AlterTableRequestPB.Step.Builder step = pb.addAlterSchemaStepsBuilder();
+    step.setType(AlterTableRequestPB.StepType.ALTER_COLUMN);
+    AlterTableRequestPB.AlterColumn.Builder alterBuilder =
+        AlterTableRequestPB.AlterColumn.newBuilder();
+    alterBuilder.setDelta(
+        Common.ColumnSchemaDeltaPB.newBuilder().setName(name).setNewComment(comment));
+    step.setAlterColumn(alterBuilder);
     return this;
   }
 

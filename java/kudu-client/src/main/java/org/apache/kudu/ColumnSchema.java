@@ -44,6 +44,7 @@ public class ColumnSchema {
   private final ColumnTypeAttributes typeAttributes;
   private final int typeSize;
   private final Common.DataType wireType;
+  private final String comment;
 
   /**
    * Specifies the encoding of data for a column on disk.
@@ -102,7 +103,8 @@ public class ColumnSchema {
   private ColumnSchema(String name, Type type, boolean key, boolean nullable,
                        Object defaultValue, int desiredBlockSize, Encoding encoding,
                        CompressionAlgorithm compressionAlgorithm,
-                       ColumnTypeAttributes typeAttributes, Common.DataType wireType) {
+                       ColumnTypeAttributes typeAttributes, Common.DataType wireType,
+                       String comment) {
     this.name = name;
     this.type = type;
     this.key = key;
@@ -114,6 +116,7 @@ public class ColumnSchema {
     this.typeAttributes = typeAttributes;
     this.typeSize = type.getSize(typeAttributes);
     this.wireType = wireType;
+    this.comment = comment;
   }
 
   /**
@@ -204,6 +207,13 @@ public class ColumnSchema {
     return typeSize;
   }
 
+  /**
+   * Return the comment for the column. An empty string means there is no comment.
+   */
+  public String getComment() {
+    return comment;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) return true;
@@ -212,12 +222,13 @@ public class ColumnSchema {
     return Objects.equals(name, that.name) &&
         Objects.equals(type, that.type) &&
         Objects.equals(key, that.key) &&
-        Objects.equals(typeAttributes, that.typeAttributes);
+        Objects.equals(typeAttributes, that.typeAttributes) &&
+        Objects.equals(comment, that.comment);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(name, type, key, typeAttributes);
+    return Objects.hash(name, type, key, typeAttributes, comment);
   }
 
   @Override
@@ -229,6 +240,10 @@ public class ColumnSchema {
     sb.append(type.getName());
     if (typeAttributes != null) {
       sb.append(typeAttributes.toStringForType(type));
+    }
+    if (!comment.isEmpty()) {
+      sb.append(", comment: ");
+      sb.append(comment);
     }
     return sb.toString();
   }
@@ -249,6 +264,7 @@ public class ColumnSchema {
     private CompressionAlgorithm compressionAlgorithm = null;
     private ColumnTypeAttributes typeAttributes = null;
     private Common.DataType wireType = null;
+    private String comment = "";
 
     /**
      * Constructor for the required parameters.
@@ -275,6 +291,7 @@ public class ColumnSchema {
       this.compressionAlgorithm = that.compressionAlgorithm;
       this.typeAttributes = that.typeAttributes;
       this.wireType = that.wireType;
+      this.comment = that.comment;
     }
 
     /**
@@ -381,6 +398,14 @@ public class ColumnSchema {
     }
 
     /**
+     * Set the comment for this column.
+     */
+    public ColumnSchemaBuilder comment(String comment) {
+      this.comment = comment;
+      return this;
+    }
+
+    /**
      * Builds a {@link ColumnSchema} using the passed parameters.
      * @return a new {@link ColumnSchema}
      */
@@ -392,7 +417,7 @@ public class ColumnSchema {
       return new ColumnSchema(name, type,
                               key, nullable, defaultValue,
                               desiredBlockSize, encoding, compressionAlgorithm,
-                              typeAttributes, wireType);
+                              typeAttributes, wireType, comment);
     }
   }
 }

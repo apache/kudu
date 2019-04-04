@@ -23,7 +23,6 @@
 #include <cstring>
 #include <ostream>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
@@ -247,8 +246,8 @@ void ColumnSchemaToPB(const ColumnSchema& col_schema, ColumnSchemaPB *pb, int fl
       pb->set_write_default_value(write_value, col_schema.type_info()->size());
     }
   }
-  if (col_schema.comment() && !(flags & SCHEMA_PB_WITHOUT_COMMENT)) {
-    pb->set_comment(*col_schema.comment());
+  if (!col_schema.comment().empty() && !(flags & SCHEMA_PB_WITHOUT_COMMENT)) {
+    pb->set_comment(col_schema.comment());
   }
 }
 
@@ -297,14 +296,13 @@ ColumnSchema ColumnSchemaFromPB(const ColumnSchemaPB& pb) {
     attributes.cfile_block_size = pb.cfile_block_size();
   }
 
-  boost::optional<string> comment;
-  if (pb.has_comment()) {
-    comment = boost::optional<string>(pb.comment());
-  }
-
+  // According to the URL below, the default value for strings that are optional
+  // in protobuf is the empty string. So, it's safe to use pb.comment() directly
+  // regardless of whether has_comment() is true or false.
+  // https://developers.google.com/protocol-buffers/docs/proto#optional
   return ColumnSchema(pb.name(), pb.type(), pb.is_nullable(),
                       read_default_ptr, write_default_ptr,
-                      attributes, type_attributes, std::move(comment));
+                      attributes, type_attributes, pb.comment());
 }
 
 void ColumnSchemaDeltaToPB(const ColumnSchemaDelta& col_delta, ColumnSchemaDeltaPB *pb) {

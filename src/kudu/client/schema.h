@@ -244,9 +244,8 @@ class KUDU_EXPORT KuduColumnSchema {
 
   /// @return comment of the column schema.
   ///
-  /// @note Both columns with no comments and empty comments will return
-  ///   empty strings here.
-  std::string comment() const;
+  /// @note An empty string will be returned if there is no comment.
+  const std::string& comment() const;
 
  private:
   friend class KuduColumnSpec;
@@ -275,8 +274,7 @@ class KUDU_EXPORT KuduColumnSchema {
       const void* default_value = NULL, //NOLINT(modernize-use-nullptr)
       const KuduColumnStorageAttributes& storage_attributes = KuduColumnStorageAttributes(),
       const KuduColumnTypeAttributes& type_attributes = KuduColumnTypeAttributes(),
-      const std::string* comment = NULL //NOLINT(modernize-use-nullptr)
-      );
+      const std::string& comment = "");
 #if defined(__clang__) || \
   (defined(__GNUC__) && (__GNUC__ * 10000 + __GNUC_MINOR__ * 100) >= 40600)
 #pragma GCC diagnostic pop

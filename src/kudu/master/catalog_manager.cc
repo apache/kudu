@@ -1338,13 +1338,12 @@ Status ValidateIdentifier(const string& id) {
 }
 
 // Validate a column comment to ensure that it is a valid identifier.
-Status ValidateCommentIdentifier(const boost::optional<string>& id) {
-  // It's safe here because logical OR has left-to-right associativity.
-  if (!id || id->empty()) {
+Status ValidateCommentIdentifier(const string& id) {
+  if (id.empty()) {
     return Status::OK();
   }
 
-  return ValidateLengthAndUTF8(*id, FLAGS_max_column_comment_length);
+  return ValidateLengthAndUTF8(id, FLAGS_max_column_comment_length);
 }
 
 // Validate the client-provided schema and name.

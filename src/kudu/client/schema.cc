@@ -368,7 +368,8 @@ Status KuduColumnSpec::ToColumnSchema(KuduColumnSchema* col) const {
   *col = KuduColumnSchema(data_->name, data_->type.value(), nullable,
                           default_val,
                           KuduColumnStorageAttributes(encoding, compression, block_size),
-                          type_attrs, data_->comment.get_ptr());
+                          type_attrs,
+                          data_->comment ? data_->comment.value() : "");
 #pragma GCC diagnostic pop
 
   return Status::OK();
@@ -584,7 +585,7 @@ KuduColumnSchema::KuduColumnSchema(const string &name,
                                    const void* default_value,
                                    const KuduColumnStorageAttributes& storage_attributes,
                                    const KuduColumnTypeAttributes& type_attributes,
-                                   const string* comment) {
+                                   const string& comment) {
   ColumnStorageAttributes attr_private;
   attr_private.encoding = ToInternalEncodingType(storage_attributes.encoding());
   attr_private.compression = ToInternalCompressionType(
@@ -595,8 +596,7 @@ KuduColumnSchema::KuduColumnSchema(const string &name,
   col_ = new ColumnSchema(name, ToInternalDataType(type, type_attributes),
                           is_nullable,
                           default_value, default_value, attr_private,
-                          type_attr_private,
-                          comment ? boost::optional<string>(*comment) : boost::none);
+                          type_attr_private, comment);
 }
 
 KuduColumnSchema::KuduColumnSchema(const KuduColumnSchema& other)
@@ -650,8 +650,8 @@ KuduColumnTypeAttributes KuduColumnSchema::type_attributes() const {
   return KuduColumnTypeAttributes(type_attributes.precision, type_attributes.scale);
 }
 
-string KuduColumnSchema::comment() const {
-  return DCHECK_NOTNULL(col_)->comment() ? *col_->comment() : "";
+const string& KuduColumnSchema::comment() const {
+  return DCHECK_NOTNULL(col_)->comment();
 }
 
 ////////////////////////////////////////////////////////////
@@ -715,7 +715,7 @@ KuduColumnSchema KuduSchema::Column(size_t idx) const {
   KuduColumnTypeAttributes type_attrs(col.type_attributes().precision, col.type_attributes().scale);
   return KuduColumnSchema(col.name(), FromInternalDataType(col.type_info()->type()),
                           col.is_nullable(), col.read_default_value(),
-                          attrs, type_attrs, col.comment().get_ptr());
+                          attrs, type_attrs, col.comment());
 }
 
 KuduPartialRow* KuduSchema::NewRow() const {

@@ -19,8 +19,6 @@
 
 #include <string>
 
-#include <boost/optional/optional.hpp>
-
 #include "kudu/common/common.pb.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/ref_counted.h"
@@ -52,7 +50,7 @@ void SchemaToJson(const Schema& schema, EasyJson* output) {
                                    col.Stringify(col.read_default_value()) : "-";
     col_json["write_default"] = col.has_write_default() ?
                                     col.Stringify(col.write_default_value()) : "-";
-    col_json["comment"] = col.comment() ? *col.comment() : "-";
+    col_json["comment"] = col.comment();
   }
 }
 

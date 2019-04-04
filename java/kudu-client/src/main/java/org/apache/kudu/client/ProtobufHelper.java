@@ -23,6 +23,7 @@ import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 
 import com.google.common.base.Joiner;
@@ -42,24 +43,41 @@ import org.apache.kudu.util.DecimalUtil;
 public class ProtobufHelper {
 
   /**
+   * The flags that are not included while serializing.
+   */
+  public enum SchemaPBConversionFlags {
+    SCHEMA_PB_WITHOUT_COMMENT;
+  }
+
+  /**
    * Utility method to convert a Schema to its wire format.
    * @param schema Schema to convert
    * @return a list of ColumnSchemaPB
    */
   public static List<Common.ColumnSchemaPB> schemaToListPb(Schema schema) {
+    return schemaToListPb(schema, EnumSet.noneOf(SchemaPBConversionFlags.class));
+  }
+
+  public static List<Common.ColumnSchemaPB> schemaToListPb(
+      Schema schema, EnumSet<SchemaPBConversionFlags> flags) {
     ArrayList<Common.ColumnSchemaPB> columns =
         new ArrayList<Common.ColumnSchemaPB>(schema.getColumnCount());
     Common.ColumnSchemaPB.Builder schemaBuilder = Common.ColumnSchemaPB.newBuilder();
     for (ColumnSchema col : schema.getColumns()) {
-      columns.add(columnToPb(schemaBuilder, col));
+      columns.add(columnToPb(schemaBuilder, col, flags));
       schemaBuilder.clear();
     }
     return columns;
   }
 
   public static Common.SchemaPB schemaToPb(Schema schema) {
+    return schemaToPb(schema, EnumSet.noneOf(SchemaPBConversionFlags.class));
+  }
+
+  public static Common.SchemaPB schemaToPb(
+      Schema schema, EnumSet<SchemaPBConversionFlags> flags) {
     Common.SchemaPB.Builder builder = Common.SchemaPB.newBuilder();
-    builder.addAllColumns(schemaToListPb(schema));
+    builder.addAllColumns(schemaToListPb(schema, flags));
     return builder.build();
   }
 
@@ -69,6 +87,11 @@ public class ProtobufHelper {
 
   public static Common.ColumnSchemaPB columnToPb(Common.ColumnSchemaPB.Builder schemaBuilder,
                                                  ColumnSchema column) {
+    return columnToPb(schemaBuilder, column, EnumSet.noneOf(SchemaPBConversionFlags.class));
+  }
+
+  public static Common.ColumnSchemaPB columnToPb(Common.ColumnSchemaPB.Builder schemaBuilder,
+      ColumnSchema column, EnumSet<SchemaPBConversionFlags> flags) {
     schemaBuilder
         .setName(column.getName())
         .setType(column.getWireType())
@@ -89,6 +112,10 @@ public class ProtobufHelper {
     if(column.getTypeAttributes() != null) {
       schemaBuilder.setTypeAttributes(
           columnTypeAttributesToPb(Common.ColumnTypeAttributesPB.newBuilder(), column));
+    }
+    if (!flags.contains(SchemaPBConversionFlags.SCHEMA_PB_WITHOUT_COMMENT) &&
+        !column.getComment().isEmpty()) {
+      schemaBuilder.setComment(column.getComment());
     }
     return schemaBuilder.build();
   }
@@ -123,6 +150,7 @@ public class ProtobufHelper {
                            .compressionAlgorithm(compressionAlgorithm)
                            .desiredBlockSize(desiredBlockSize)
                            .typeAttributes(typeAttributes)
+                           .comment(pb.getComment())
                            .build();
   }
 

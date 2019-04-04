@@ -21,6 +21,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.BitSet;
+import java.util.EnumSet;
 import java.util.List;
 
 import com.google.common.base.Preconditions;
@@ -38,6 +39,7 @@ import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.WireProtocol;
 import org.apache.kudu.WireProtocol.RowOperationsPB;
+import org.apache.kudu.client.ProtobufHelper.SchemaPBConversionFlags;
 import org.apache.kudu.client.Statistics.Statistic;
 import org.apache.kudu.client.Statistics.TabletStatistics;
 import org.apache.kudu.tserver.Tserver;
@@ -279,7 +281,8 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
     }
 
     Tserver.WriteRequestPB.Builder requestBuilder = Tserver.WriteRequestPB.newBuilder();
-    requestBuilder.setSchema(ProtobufHelper.schemaToPb(schema));
+    requestBuilder.setSchema(ProtobufHelper.schemaToPb(schema,
+        EnumSet.of(SchemaPBConversionFlags.SCHEMA_PB_WITHOUT_COMMENT)));
     requestBuilder.setRowOperations(rowOps);
     return requestBuilder;
   }

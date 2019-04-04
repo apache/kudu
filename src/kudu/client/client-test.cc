@@ -4915,19 +4915,33 @@ TEST_F(ClientTest, TestCreateTableWithValidComment) {
 TEST_F(ClientTest, TestAlterTableWithValidComment) {
   const string kTableName = "table_comment";
   const auto AlterAndVerify = [&] (int i) {
-    // The comment length should be less and equal than FLAGS_max_column_comment_length.
-    string kLongComment(i * 16, 'x');
+    {
+      // The comment length should be less and equal than FLAGS_max_column_comment_length.
+      string kLongComment(i * 16, 'x');
 
-    // Alter the table with comment.
-    unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
-    table_alterer->AlterColumn("val")->Comment(kLongComment);
-    ASSERT_OK(table_alterer->Alter());
+      // Alter the table with comment.
+      unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+      table_alterer->AlterColumn("val")->Comment(kLongComment);
+      ASSERT_OK(table_alterer->Alter());
 
-    // Open the table and verify the comment.
-    KuduSchema schema;
-    ASSERT_OK(client_->GetTableSchema(kTableName, &schema));
-    ASSERT_EQ(schema.Column(1).name(), "val");
-    ASSERT_EQ(schema.Column(1).comment(), kLongComment);
+      // Open the table and verify the comment.
+      KuduSchema schema;
+      ASSERT_OK(client_->GetTableSchema(kTableName, &schema));
+      ASSERT_EQ(schema.Column(1).name(), "val");
+      ASSERT_EQ(schema.Column(1).comment(), kLongComment);
+    }
+    {
+      // Delete the comment.
+      unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+      table_alterer->AlterColumn("val")->Comment("");
+      ASSERT_OK(table_alterer->Alter());
+
+      // Open the table and verify the comment.
+      KuduSchema schema;
+      ASSERT_OK(client_->GetTableSchema(kTableName, &schema));
+      ASSERT_EQ(schema.Column(1).name(), "val");
+      ASSERT_EQ(schema.Column(1).comment(), "");
+    }
   };
 
   // Create a table.

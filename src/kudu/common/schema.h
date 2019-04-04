@@ -206,7 +206,7 @@ class ColumnSchema {
                const void* write_default = nullptr,
                ColumnStorageAttributes attributes = ColumnStorageAttributes(),
                ColumnTypeAttributes type_attributes = ColumnTypeAttributes(),
-               boost::optional<std::string> comment = boost::none)
+               std::string comment = "")
       : name_(std::move(name)),
         type_info_(GetTypeInfo(type)),
         is_nullable_(is_nullable),
@@ -253,7 +253,7 @@ class ColumnSchema {
   // For example, "AUTO_ENCODING ZLIB 123 123".
   std::string AttrToString() const;
 
-  const boost::optional<std::string>& comment() const {
+  const std::string& comment() const {
     return comment_;
   }
 
@@ -344,17 +344,8 @@ class ColumnSchema {
       if (write_default_ != nullptr && !write_default_->Equals(other.write_default_.get()))
         return false;
 
-      // "no comment" and "empty comment" are the same.
-      if (comment_) {
-        if (other.comment_) {
-          if (*comment_ != *other.comment_) return false;
-        } else {
-          if (!comment_->empty()) return false;
-        }
-      } else {
-        if (other.comment_) {
-          if (!other.comment_->empty()) return false;
-        }
+      if (comment_ != other.comment_) {
+        return false;
       }
     }
     return true;
@@ -427,7 +418,7 @@ class ColumnSchema {
   std::shared_ptr<Variant> write_default_;
   ColumnStorageAttributes attributes_;
   ColumnTypeAttributes type_attributes_;
-  boost::optional<std::string> comment_;
+  std::string comment_;
 };
 
 // The schema for a set of rows.
