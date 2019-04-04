@@ -43,6 +43,12 @@ class TSentryPrivilege;
 
 namespace kudu {
 
+class SchemaPB;
+
+namespace security {
+class TablePrivilegePB;
+} // namespace security
+
 namespace master {
 
 // Utility struct to facilitate evaluating the privileges of a given
@@ -150,12 +156,17 @@ class SentryAuthzProvider : public AuthzProvider {
   Status AuthorizeGetTableMetadata(const std::string& table_name,
                                    const std::string& user) override WARN_UNUSED_RESULT;
 
+  Status FillTablePrivilegePB(const std::string& table_name,
+                              const std::string& user,
+                              const SchemaPB& schema_pb,
+                              security::TablePrivilegePB* pb) override WARN_UNUSED_RESULT;
+
  private:
-  friend class SentryAuthzProviderFilterResponsesTest;
+  friend class SentryAuthzProviderFilterPrivilegesTest;
   FRIEND_TEST(SentryAuthzProviderStaticTest, TestPrivilegesWellFormed);
   FRIEND_TEST(TestAuthzHierarchy, TestAuthorizableScope);
-  FRIEND_TEST(SentryAuthzProviderFilterResponsesTest, TestFilterInvalidResponses);
-  FRIEND_TEST(SentryAuthzProviderFilterResponsesTest, TestFilterValidResponses);
+  FRIEND_TEST(SentryAuthzProviderFilterPrivilegesScopeTest, TestFilterInvalidResponses);
+  FRIEND_TEST(SentryAuthzProviderFilterPrivilegesScopeTest, TestFilterValidResponses);
 
   // Utility function to determine whether the given privilege is a well-formed
   // possibly Kudu-related privilege describing a descendent or ancestor of the

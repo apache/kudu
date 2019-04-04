@@ -21,17 +21,25 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
+#include <google/protobuf/stubs/port.h>
+#include <google/protobuf/util/message_differencer.h>
 #include <gtest/gtest.h>
 
+#include "kudu/common/common.pb.h"
+#include "kudu/common/schema.h"
+#include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/sentry_authz_provider-test-base.h"
+#include "kudu/security/token.pb.h"
 #include "kudu/sentry/mini_sentry.h"
 #include "kudu/sentry/sentry-test-base.h"
 #include "kudu/sentry/sentry_action.h"
@@ -41,6 +49,7 @@
 #include "kudu/util/hdr_histogram.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/pb_util.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/status.h"
@@ -60,17 +69,22 @@ METRIC_DECLARE_counter(sentry_client_reconnections_succeeded);
 METRIC_DECLARE_counter(sentry_client_reconnections_failed);
 METRIC_DECLARE_histogram(sentry_client_task_execution_time_us);
 
+using kudu::pb_util::SecureDebugString;
+using kudu::security::ColumnPrivilegePB;
+using kudu::security::TablePrivilegePB;
 using kudu::sentry::AuthorizableScopesSet;
 using kudu::sentry::SentryAction;
 using kudu::sentry::SentryActionsSet;
 using kudu::sentry::SentryTestBase;
 using kudu::sentry::SentryAuthorizableScope;
+using google::protobuf::util::MessageDifferencer;
 using sentry::TSentryAuthorizable;
 using sentry::TSentryGrantOption;
 using sentry::TSentryPrivilege;
 using std::string;
-using std::tuple;
 using std::unique_ptr;
+using std::unordered_map;
+using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
@@ -206,6 +220,23 @@ class SentryAuthzProviderTest : public SentryTestBase {
 
 namespace {
 
+const SentryActionsSet kAllActions({
+  SentryAction::ALL,
+  SentryAction::METADATA,
+  SentryAction::SELECT,
+  SentryAction::INSERT,
+  SentryAction::UPDATE,
+  SentryAction::DELETE,
+  SentryAction::ALTER,
+  SentryAction::CREATE,
+  SentryAction::DROP,
+  SentryAction::OWNER,
+});
+
+} // anonymous namespace
+
+namespace {
+
 // Indicates different invalid privilege response types to be injected.
 enum class InvalidPrivilege {
   // No error is injected.
@@ -233,30 +264,15 @@ enum class InvalidPrivilege {
   FLIPPED_FIELD,
 };
 
-const SentryActionsSet kAllActions({
-  SentryAction::ALL,
-  SentryAction::METADATA,
-  SentryAction::SELECT,
-  SentryAction::INSERT,
-  SentryAction::UPDATE,
-  SentryAction::DELETE,
-  SentryAction::ALTER,
-  SentryAction::CREATE,
-  SentryAction::DROP,
-  SentryAction::OWNER,
-});
-
 constexpr const char* kDb = "db";
 constexpr const char* kTable = "table";
 constexpr const char* kColumn = "column";
 
 } // anonymous namespace
 
-class SentryAuthzProviderFilterResponsesTest :
-    public SentryAuthzProviderTest,
-    public ::testing::WithParamInterface<SentryAuthorizableScope::Scope> {
+class SentryAuthzProviderFilterPrivilegesTest : public SentryAuthzProviderTest {
  public:
-  SentryAuthzProviderFilterResponsesTest()
+  SentryAuthzProviderFilterPrivilegesTest()
       : prng_(SeedRandom()) {}
 
   void SetUp() override {
@@ -277,7 +293,7 @@ class SentryAuthzProviderFilterResponsesTest :
                                    const SentryAuthorizableScope& scope, const SentryAction& action,
                                    InvalidPrivilege invalid_privilege = InvalidPrivilege::NONE) {
     DCHECK(!full_authorizable.server.empty() && !full_authorizable.db.empty() &&
-          !full_authorizable.table.empty() && !full_authorizable.column.empty());
+           !full_authorizable.table.empty() && !full_authorizable.column.empty());
     TSentryPrivilege privilege;
     privilege.__set_action(invalid_privilege == InvalidPrivilege::INCORRECT_ACTION ?
                            "foobar" : ActionToString(action.action()));
@@ -342,10 +358,117 @@ class SentryAuthzProviderFilterResponsesTest :
   mutable Random prng_;
 };
 
+TEST_F(SentryAuthzProviderFilterPrivilegesTest, TestTablePrivilegePBParsing) {
+  constexpr int kNumColumns = 10;
+  SchemaBuilder schema_builder;
+  schema_builder.AddKeyColumn("col0", DataType::INT32);
+  vector<string> column_names = { "col0" };
+  for (int i = 1; i < kNumColumns; i++) {
+    const string col = Substitute("col$0", i);
+    schema_builder.AddColumn(ColumnSchema(col, DataType::INT32),
+                             /*is_key=*/false);
+    column_names.emplace_back(col);
+  }
+  SchemaPB schema_pb;
+  ASSERT_OK(SchemaToPB(schema_builder.Build(), &schema_pb));
+  unordered_map<string, ColumnId> col_name_to_id;
+  for (const auto& col_pb : schema_pb.columns()) {
+    EmplaceOrDie(&col_name_to_id, col_pb.name(), ColumnId(col_pb.id()));
+  }
+
+  // First, grant some privileges at the table authorizable scope or higher.
+  Random prng(SeedRandom());
+  vector<SentryAuthorizableScope::Scope> scope_to_grant_that_implies_table =
+      SelectRandomSubset<vector<SentryAuthorizableScope::Scope>,
+          SentryAuthorizableScope::Scope, Random>({ SentryAuthorizableScope::SERVER,
+                                                    SentryAuthorizableScope::DATABASE,
+                                                    SentryAuthorizableScope::TABLE }, 0, &prng);
+  unordered_map<SentryAuthorizableScope::Scope, SentryActionsSet, std::hash<int>>
+      granted_privileges;
+  SentryActionsSet table_privileges;
+  TSentryAuthorizable table_authorizable;
+  table_authorizable.__set_server(FLAGS_server_name);
+  table_authorizable.__set_db(kDb);
+  table_authorizable.__set_table(kTable);
+  table_authorizable.__set_column(column_names[0]);
+  for (const auto& granted_scope : scope_to_grant_that_implies_table) {
+    for (const auto& action : SelectRandomSubset<SentryActionsSet, SentryAction::Action, Random>(
+        kAllActions, 0, &prng)) {
+      // Grant the privilege to the user.
+      TSentryPrivilege table_privilege = CreatePrivilege(table_authorizable,
+          SentryAuthorizableScope(granted_scope), SentryAction(action));
+      ASSERT_OK(AlterRoleGrantPrivilege(sentry_client_.get(), kRoleName, table_privilege));
+
+      // All of the privileges imply the table-level action.
+      InsertIfNotPresent(&table_privileges, action);
+    }
+  }
+
+  // Grant some privileges at the column scope.
+  vector<string> columns_to_grant =
+      SelectRandomSubset<vector<string>, string, Random>(column_names, 0, &prng);
+  unordered_set<ColumnId> scannable_columns;
+  for (const auto& column_name : columns_to_grant) {
+    for (const auto& action : SelectRandomSubset<SentryActionsSet, SentryAction::Action, Random>(
+        kAllActions, 0, &prng)) {
+      // Grant the privilege to the user.
+      TSentryPrivilege column_privilege =
+          GetColumnPrivilege(kDb, kTable, column_name, ActionToString(action));
+      ASSERT_OK(AlterRoleGrantPrivilege(sentry_client_.get(), kRoleName, column_privilege));
+
+      if (SentryAction(action).Implies(SentryAction(SentryAction::SELECT))) {
+        InsertIfNotPresent(&scannable_columns, FindOrDie(col_name_to_id, column_name));
+      }
+    }
+  }
+
+  // Make sure that any implied privileges make their way to the token.
+  const string kTableId = "table-id";
+  TablePrivilegePB expected_pb;
+  expected_pb.set_table_id(kTableId);
+  for (const auto& granted_table_action : table_privileges) {
+    if (SentryAction(granted_table_action).Implies(SentryAction(SentryAction::INSERT))) {
+      expected_pb.set_insert_privilege(true);
+    }
+    if (SentryAction(granted_table_action).Implies(SentryAction(SentryAction::UPDATE))) {
+      expected_pb.set_update_privilege(true);
+    }
+    if (SentryAction(granted_table_action).Implies(SentryAction(SentryAction::DELETE))) {
+      expected_pb.set_delete_privilege(true);
+    }
+    if (SentryAction(granted_table_action).Implies(SentryAction(SentryAction::SELECT))) {
+      expected_pb.set_scan_privilege(true);
+    }
+  }
+
+  // If any of the table-level privileges imply privileges on scan, we
+  // shouldn't expect per-column scan privileges. Otherwise, we should expect
+  // the columns privileges that implied SELECT to have scan privileges.
+  if (!expected_pb.scan_privilege()) {
+    ColumnPrivilegePB scan_col_privilege;
+    scan_col_privilege.set_scan_privilege(true);
+    for (const auto& id : scannable_columns) {
+      InsertIfNotPresent(expected_pb.mutable_column_privileges(), id, scan_col_privilege);
+    }
+  }
+  // Validate the privileges went through.
+  TablePrivilegePB privilege_pb;
+  privilege_pb.set_table_id(kTableId);
+  ASSERT_OK(sentry_authz_provider_->FillTablePrivilegePB(Substitute("$0.$1", kDb, kTable),
+                                                         kTestUser, schema_pb, &privilege_pb));
+  ASSERT_TRUE(MessageDifferencer::Equals(expected_pb, privilege_pb))
+      << Substitute("$0 vs $1", SecureDebugString(expected_pb), SecureDebugString(privilege_pb));
+}
+
+// Parameterized on the scope at which the privilege will be granted.
+class SentryAuthzProviderFilterPrivilegesScopeTest :
+    public SentryAuthzProviderFilterPrivilegesTest,
+    public ::testing::WithParamInterface<SentryAuthorizableScope::Scope> {};
+
 // Attempst to grant privileges for various actions on a single scope of an
 // authorizable, injecting various invalid privileges, and checking that Kudu
 // ignores them.
-TEST_P(SentryAuthzProviderFilterResponsesTest, TestFilterInvalidResponses) {
+TEST_P(SentryAuthzProviderFilterPrivilegesScopeTest, TestFilterInvalidResponses) {
   const string& table_ident = Substitute("$0.$1", full_authorizable_.db, full_authorizable_.table);
   static constexpr InvalidPrivilege kInvalidPrivileges[] = {
       InvalidPrivilege::INCORRECT_ACTION,
@@ -373,7 +496,7 @@ TEST_P(SentryAuthzProviderFilterResponsesTest, TestFilterInvalidResponses) {
 }
 
 // Grants privileges for various actions on a single scope of an authorizable.
-TEST_P(SentryAuthzProviderFilterResponsesTest, TestFilterValidResponses) {
+TEST_P(SentryAuthzProviderFilterPrivilegesScopeTest, TestFilterValidResponses) {
   const string& table_ident = Substitute("$0.$1", full_authorizable_.db, full_authorizable_.table);
   SentryAuthorizableScope granted_scope(GetParam());
   // Send valid requests and verify that we can get it back through the
@@ -397,7 +520,7 @@ TEST_P(SentryAuthzProviderFilterResponsesTest, TestFilterValidResponses) {
   }
 }
 
-INSTANTIATE_TEST_CASE_P(GrantedScopes, SentryAuthzProviderFilterResponsesTest,
+INSTANTIATE_TEST_CASE_P(GrantedScopes, SentryAuthzProviderFilterPrivilegesScopeTest,
                         ::testing::Values(SentryAuthorizableScope::SERVER,
                                           SentryAuthorizableScope::DATABASE,
                                           SentryAuthorizableScope::TABLE,

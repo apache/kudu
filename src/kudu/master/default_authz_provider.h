@@ -19,10 +19,16 @@
 
 #include <string>
 
+#include <glog/logging.h>
+
 #include "kudu/master/authz_provider.h"
+#include "kudu/security/token.pb.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
+
+class SchemaPB;
+
 namespace master {
 
 // Default AuthzProvider which always authorizes any operations.
@@ -52,6 +58,19 @@ class DefaultAuthzProvider : public AuthzProvider {
 
   Status AuthorizeGetTableMetadata(const std::string& /*table_name*/,
                                    const std::string& /*user*/) override WARN_UNUSED_RESULT {
+    return Status::OK();
+  }
+
+  Status FillTablePrivilegePB(const std::string& /*table_name*/,
+                              const std::string& /*user*/,
+                              const SchemaPB& /*schema_pb*/,
+                              security::TablePrivilegePB* pb) override WARN_UNUSED_RESULT {
+    DCHECK(pb);
+    DCHECK(pb->has_table_id());
+    pb->set_delete_privilege(true);
+    pb->set_insert_privilege(true);
+    pb->set_scan_privilege(true);
+    pb->set_update_privilege(true);
     return Status::OK();
   }
 };

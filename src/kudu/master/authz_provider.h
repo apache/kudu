@@ -24,6 +24,13 @@
 #include "kudu/util/status.h"
 
 namespace kudu {
+
+class SchemaPB;
+
+namespace security {
+class TablePrivilegePB;
+} // namespace security
+
 namespace master {
 
 // An interface for handling authorizations on Kudu operations.
@@ -70,6 +77,15 @@ class AuthzProvider {
   // Otherwise, may return other Status error codes depend on actual errors.
   virtual Status AuthorizeGetTableMetadata(const std::string& table_name,
                                            const std::string& user) WARN_UNUSED_RESULT = 0;
+
+  // Populates the privilege fields of 'pb' with the table-specific privileges
+  // for the given user, using 'schema_pb' for metadata (e.g. column IDs). This
+  // does not populate the table ID field of 'pb' -- only the privilege fields;
+  // as such, it is expected that the table ID field is already set.
+  virtual Status FillTablePrivilegePB(const std::string& table_name,
+                                      const std::string& user,
+                                      const SchemaPB& schema_pb,
+                                      security::TablePrivilegePB* pb) WARN_UNUSED_RESULT = 0;
 
   virtual ~AuthzProvider() {}
 
