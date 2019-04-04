@@ -581,7 +581,7 @@ Status RowOperationsPBDecoder::DecodeOperations(vector<DecodedRowOperation>* ops
   SetupPrototypeRow(*tablet_schema_, &prototype_row);
 
   while (HasNext()) {
-    RowOperationsPB::Type type;
+    RowOperationsPB::Type type = RowOperationsPB::UNKNOWN;
     RETURN_NOT_OK(ReadOpType(&type));
     DecodedRowOperation op;
     op.type = type;
