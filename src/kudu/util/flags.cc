@@ -85,14 +85,12 @@ DEFINE_string(heap_profile_path, "", "Output path to store heap profiles. If not
 TAG_FLAG(heap_profile_path, stable);
 TAG_FLAG(heap_profile_path, advanced);
 
-DEFINE_int64(heap_sample_every_n_bytes, 0,
+DEFINE_int64(heap_sample_every_n_bytes, 512 * 1024,
              "Enable heap occupancy sampling. If this flag is set to some positive "
              "value N, a memory allocation will be sampled approximately every N bytes. "
              "Lower values of N incur larger overhead but give more accurate results. "
-             "A value such as 524288 (512KB) is a reasonable choice with relatively "
-             "low overhead.");
+             "A value such as 512KB is a reasonable choice with relatively low overhead.");
 TAG_FLAG(heap_sample_every_n_bytes, advanced);
-TAG_FLAG(heap_sample_every_n_bytes, experimental);
 #endif
 
 DEFINE_bool(disable_core_dumps, false, "Disable core dumps when this process crashes.");
