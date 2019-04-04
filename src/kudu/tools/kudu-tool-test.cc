@@ -551,34 +551,39 @@ class ToolTest : public KuduTest {
     }
 
     // Check all values.
-    {
-      vector<string> src_lines;
-      NO_FATALS(RunActionStdoutLines(
-        Substitute("table scan $0 $1 -show_values=true "
-                   "-columns=$2 -predicates=$3 -num_threads=1",
-                   cluster_->master()->bound_rpc_addr().ToString(),
-                   args.src_table_name, args.columns, args.predicates_json), &src_lines));
+    vector<string> src_lines;
+    NO_FATALS(RunActionStdoutLines(
+      Substitute("table scan $0 $1 -show_values=true "
+                 "-columns=$2 -predicates=$3 -num_threads=1",
+                 cluster_->master()->bound_rpc_addr().ToString(),
+                 args.src_table_name, args.columns, args.predicates_json), &src_lines));
 
-      vector<string> dst_lines;
-      NO_FATALS(RunActionStdoutLines(
-        Substitute("table scan $0 $1 -show_values=true "
-                   "-columns=$2 -num_threads=1",
-                   cluster_->master()->bound_rpc_addr().ToString(),
-                   kDstTableName, args.columns), &dst_lines));
+    vector<string> dst_lines;
+    NO_FATALS(RunActionStdoutLines(
+      Substitute("table scan $0 $1 -show_values=true "
+                 "-columns=$2 -num_threads=1",
+                 cluster_->master()->bound_rpc_addr().ToString(),
+                 kDstTableName, args.columns), &dst_lines));
 
-      if (args.mode == TableCopyMode::COPY_SCHEMA_ONLY) {
-        ASSERT_GT(dst_lines.size(), 1);
-        ASSERT_STR_CONTAINS(*dst_lines.rbegin(), "Total count 0 ");
-      } else {
-        set<string> sorted_dst_lines(dst_lines.begin(), dst_lines.end());
-        for (auto src_line = src_lines.begin(); src_line != src_lines.end();) {
-          if (src_line->find("key") != string::npos) {
-            ASSERT_TRUE(ContainsKey(sorted_dst_lines, *src_line));
-            sorted_dst_lines.erase(*src_line);
-          }
-          src_line = src_lines.erase(src_line);
+    if (args.mode == TableCopyMode::COPY_SCHEMA_ONLY) {
+      ASSERT_GT(dst_lines.size(), 1);
+      ASSERT_STR_CONTAINS(*dst_lines.rbegin(), "Total count 0 ");
+    } else {
+      // Rows scanned from source table can be found in destination table.
+      set<string> sorted_dst_lines(dst_lines.begin(), dst_lines.end());
+      for (auto src_line = src_lines.begin(); src_line != src_lines.end();) {
+        if (src_line->find("key") != string::npos) {
+          ASSERT_TRUE(ContainsKey(sorted_dst_lines, *src_line));
+          sorted_dst_lines.erase(*src_line);
         }
-        for (const auto &dst_line : sorted_dst_lines) {
+        src_line = src_lines.erase(src_line);
+      }
+
+      // Under all modes except UPSERT_TO_EXIST_TABLE, destination table is empty before
+      // copying, that means destination table should have no more rows than source table
+      // after copying.
+      if (args.mode != TableCopyMode::UPSERT_TO_EXIST_TABLE) {
+        for (const auto& dst_line : sorted_dst_lines) {
           ASSERT_STR_NOT_CONTAINS(dst_line, "key");
         }
       }
