@@ -1027,7 +1027,8 @@ TEST_F(ToolTest, TestModeHelp) {
   {
     const vector<string> kPerfRegexes = {
         "loadgen.*Run load generation with optional scan afterwards",
-        "table_scan.*Show row count and scanning time cost of tablets in a table"
+        "table_scan.*Show row count and scanning time cost of tablets in a table",
+        "tablet_scan.*Show row count of a local tablet"
     };
     NO_FATALS(RunTestHelp("perf", kPerfRegexes));
   }
@@ -2202,6 +2203,28 @@ TEST_F(ToolTest, TestPerfTableScan) {
   const string& kTableName = "perf.table_scan";
   NO_FATALS(RunLoadgen(1, { "--keep_auto_table=true", "--run_scan" }, kTableName));
   NO_FATALS(RunScanTableCheck(kTableName, "", 1, 2000, {}, "perf table_scan"));
+}
+
+TEST_F(ToolTest, TestPerfTabletScan) {
+  // Create a table.
+  const string& kTableName = "perf.tablet_scan";
+  NO_FATALS(RunLoadgen(1, { "--keep_auto_table=true" }, kTableName));
+
+  // Get the list of tablets.
+  vector<string> tablet_ids;
+  TServerDetails* ts = ts_map_[cluster_->tablet_server(0)->uuid()];
+  ASSERT_OK(ListRunningTabletIds(ts, MonoDelta::FromSeconds(30), &tablet_ids));
+
+  // Scan the tablets using the local tool.
+  cluster_->Shutdown();
+  for (const string& tid : tablet_ids) {
+    const string args =
+        Substitute("perf tablet_scan $0 --fs_wal_dir=$1 --fs_data_dirs=$2 --num_iters=2",
+                   tid, cluster_->tablet_server(0)->wal_dir(),
+                   JoinStrings(cluster_->tablet_server(0)->data_dirs(), ","));
+    NO_FATALS(RunActionStdoutNone(args));
+    NO_FATALS(RunActionStdoutNone(args + " --ordered_scan"));
+  }
 }
 
 // Test 'kudu remote_replica copy' tool when the destination tablet server is online.
