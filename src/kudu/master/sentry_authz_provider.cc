@@ -17,6 +17,7 @@
 
 #include "kudu/master/sentry_authz_provider.h"
 
+#include <memory>
 #include <ostream>
 #include <type_traits>
 #include <unordered_map>
@@ -31,10 +32,12 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/master/sentry_client_metrics.h"
 #include "kudu/sentry/sentry_action.h"
 #include "kudu/sentry/sentry_client.h"
 #include "kudu/sentry/sentry_policy_service_types.h"
 #include "kudu/thrift/client.h"
+#include "kudu/thrift/ha_client_metrics.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
@@ -181,6 +184,16 @@ bool SentryPrivilegesBranch::Implies(SentryAuthorizableScope::Scope required_sco
     }
   }
   return false;
+}
+
+SentryAuthzProvider::SentryAuthzProvider(
+    scoped_refptr<MetricEntity> metric_entity)
+    : metric_entity_(std::move(metric_entity)) {
+  if (metric_entity_) {
+    std::unique_ptr<SentryClientMetrics> metrics(
+        new SentryClientMetrics(metric_entity_));
+    ha_client_.SetMetrics(std::move(metrics));
+  }
 }
 
 SentryAuthzProvider::~SentryAuthzProvider() {

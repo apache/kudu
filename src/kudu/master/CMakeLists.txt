@@ -45,6 +45,7 @@ set(MASTER_SRCS
   mini_master.cc
   placement_policy.cc
   sentry_authz_provider.cc
+  sentry_client_metrics.cc
   sys_catalog.cc
   ts_descriptor.cc
   ts_manager.cc)

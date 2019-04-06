@@ -17,6 +17,7 @@
 
 #include "kudu/master/sentry_authz_provider.h"
 
+#include <cstdint>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -28,6 +29,7 @@
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/sentry_authz_provider-test-base.h"
 #include "kudu/sentry/mini_sentry.h"
@@ -36,6 +38,8 @@
 #include "kudu/sentry/sentry_authorizable_scope.h"
 #include "kudu/sentry/sentry_client.h"
 #include "kudu/sentry/sentry_policy_service_types.h"
+#include "kudu/util/hdr_histogram.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
@@ -50,6 +54,18 @@ DECLARE_string(sentry_service_security_mode);
 DECLARE_string(server_name);
 DECLARE_string(trusted_user_acl);
 
+METRIC_DECLARE_counter(sentry_client_tasks_successful);
+METRIC_DECLARE_counter(sentry_client_tasks_failed_fatal);
+METRIC_DECLARE_counter(sentry_client_tasks_failed_nonfatal);
+METRIC_DECLARE_counter(sentry_client_reconnections_succeeded);
+METRIC_DECLARE_counter(sentry_client_reconnections_failed);
+METRIC_DECLARE_histogram(sentry_client_task_execution_time_us);
+
+using kudu::sentry::AuthorizableScopesSet;
+using kudu::sentry::SentryAction;
+using kudu::sentry::SentryActionsSet;
+using kudu::sentry::SentryTestBase;
+using kudu::sentry::SentryAuthorizableScope;
 using sentry::TSentryAuthorizable;
 using sentry::TSentryGrantOption;
 using sentry::TSentryPrivilege;
@@ -60,13 +76,6 @@ using std::vector;
 using strings::Substitute;
 
 namespace kudu {
-
-using sentry::AuthorizableScopesSet;
-using sentry::SentryAction;
-using sentry::SentryActionsSet;
-using sentry::SentryTestBase;
-using sentry::SentryAuthorizableScope;
-
 namespace master {
 
 TEST(SentryAuthzProviderStaticTest, TestTrustedUserAcl) {
@@ -151,10 +160,13 @@ class SentryAuthzProviderTest : public SentryTestBase {
   void SetUp() override {
     SentryTestBase::SetUp();
 
+    metric_entity_ = METRIC_ENTITY_server.Instantiate(
+        &metric_registry_, "sentry_auth_provider-test");
+
     // Configure the SentryAuthzProvider flags.
     FLAGS_sentry_service_security_mode = KerberosEnabled() ? "kerberos" : "none";
     FLAGS_sentry_service_rpc_addresses = sentry_->address().ToString();
-    sentry_authz_provider_.reset(new SentryAuthzProvider());
+    sentry_authz_provider_.reset(new SentryAuthzProvider(metric_entity_));
     ASSERT_OK(sentry_authz_provider_->Start());
   }
 
@@ -174,7 +186,23 @@ class SentryAuthzProviderTest : public SentryTestBase {
     return false;
   }
 
+#define GET_GAUGE_READINGS(func_name, counter_name_suffix) \
+  int64_t func_name() { \
+    scoped_refptr<Counter> gauge(metric_entity_->FindOrCreateCounter( \
+        &METRIC_sentry_client_##counter_name_suffix)); \
+    CHECK(gauge); \
+    return gauge->value(); \
+  }
+  GET_GAUGE_READINGS(GetTasksSuccessful, tasks_successful)
+  GET_GAUGE_READINGS(GetTasksFailedFatal, tasks_failed_fatal)
+  GET_GAUGE_READINGS(GetTasksFailedNonFatal, tasks_failed_nonfatal)
+  GET_GAUGE_READINGS(GetReconnectionsSucceeded, reconnections_succeeded)
+  GET_GAUGE_READINGS(GetReconnectionsFailed, reconnections_failed)
+#undef GET_GAUGE_READINGS
+
  protected:
+  MetricRegistry metric_registry_;
+  scoped_refptr<MetricEntity> metric_entity_;
   unique_ptr<SentryAuthzProvider> sentry_authz_provider_;
 };
 
@@ -664,6 +692,92 @@ INSTANTIATE_TEST_CASE_P(AuthzCombinations, TestAuthzHierarchy,
                        ::testing::Values(SentryAuthorizableScope::Scope::SERVER,
                                          SentryAuthorizableScope::Scope::DATABASE,
                                          SentryAuthorizableScope::Scope::TABLE)));
+
+// Test to verify the functionality of metrics in HA Sentry client used in
+// SentryAuthzProvider to communicate with Sentry.
+class TestSentryClientMetrics : public SentryAuthzProviderTest {
+ public:
+  bool KerberosEnabled() const {
+    return false;
+  }
+};
+
+TEST_F(TestSentryClientMetrics, Basic) {
+  ASSERT_EQ(0, GetTasksSuccessful());
+  ASSERT_EQ(0, GetTasksFailedFatal());
+  ASSERT_EQ(0, GetTasksFailedNonFatal());
+  ASSERT_EQ(0, GetReconnectionsSucceeded());
+  ASSERT_EQ(0, GetReconnectionsFailed());
+
+  Status s = sentry_authz_provider_->AuthorizeCreateTable("db.table",
+                                                          kTestUser, kTestUser);
+  // The call should be counted as successful, and the client should connect
+  // to Sentry (counted as reconnect).
+  ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
+  ASSERT_EQ(1, GetTasksSuccessful());
+  ASSERT_EQ(0, GetTasksFailedFatal());
+  ASSERT_EQ(0, GetTasksFailedNonFatal());
+  ASSERT_EQ(1, GetReconnectionsSucceeded());
+  ASSERT_EQ(0, GetReconnectionsFailed());
+
+  // Stop Sentry, and try the same call again. There should be a fatal error
+  // reported, and then there should be failed reconnection attempts.
+  ASSERT_OK(StopSentry());
+  s = sentry_authz_provider_->AuthorizeCreateTable("db.table",
+                                                   kTestUser, kTestUser);
+  ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
+  ASSERT_EQ(1, GetTasksSuccessful());
+  ASSERT_EQ(1, GetTasksFailedFatal());
+  ASSERT_EQ(0, GetTasksFailedNonFatal());
+  ASSERT_LE(1, GetReconnectionsFailed());
+  ASSERT_EQ(1, GetReconnectionsSucceeded());
+
+  ASSERT_OK(StartSentry());
+  s = sentry_authz_provider_->AuthorizeCreateTable("db.table",
+                                                   kTestUser, kTestUser);
+  ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
+  ASSERT_EQ(2, GetTasksSuccessful());
+  ASSERT_EQ(1, GetTasksFailedFatal());
+  ASSERT_EQ(0, GetTasksFailedNonFatal());
+  ASSERT_EQ(2, GetReconnectionsSucceeded());
+
+  // NotAuthorized() from Sentry itself considered as a fatal error.
+  // TODO(KUDU-2769): clarify whether it is a bug in HaClient or Sentry itself?
+  s = sentry_authz_provider_->AuthorizeCreateTable("db.table",
+                                                   "nobody", "nobody");
+  ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
+  ASSERT_EQ(2, GetTasksSuccessful());
+  ASSERT_EQ(2, GetTasksFailedFatal());
+  ASSERT_EQ(0, GetTasksFailedNonFatal());
+  // Once a new fatal error is registered, the client should reconnect.
+  ASSERT_EQ(3, GetReconnectionsSucceeded());
+
+  // Shorten the default timeout parameters: make timeout interval shorter.
+  NO_FATALS(sentry_authz_provider_->Stop());
+  FLAGS_sentry_service_rpc_addresses = sentry_->address().ToString();
+  FLAGS_sentry_service_send_timeout_seconds = 2;
+  FLAGS_sentry_service_recv_timeout_seconds = 2;
+  sentry_authz_provider_.reset(new SentryAuthzProvider(metric_entity_));
+  ASSERT_OK(sentry_authz_provider_->Start());
+
+  ASSERT_OK(CreateRoleAndAddToGroups(sentry_client_.get(), kRoleName, kUserGroup));
+  const auto privilege = GetDatabasePrivilege("db", "create");
+  ASSERT_OK(AlterRoleGrantPrivilege(sentry_client_.get(), kRoleName, privilege));
+
+  // Pause Sentry and try to send an RPC, expecting it to time out.
+  ASSERT_OK(sentry_->Pause());
+  s = sentry_authz_provider_->AuthorizeCreateTable(
+      "db.table", kTestUser, kTestUser);
+  ASSERT_TRUE(s.IsTimedOut());
+  ASSERT_OK(sentry_->Resume());
+
+  scoped_refptr<Histogram> hist(metric_entity_->FindOrCreateHistogram(
+      &METRIC_sentry_client_task_execution_time_us));
+  ASSERT_LT(0, hist->histogram()->MinValue());
+  ASSERT_LT(2000000, hist->histogram()->MaxValue());
+  ASSERT_LE(5, hist->histogram()->TotalCount());
+  ASSERT_LT(2000000, hist->histogram()->TotalSum());
+}
 
 } // namespace master
 } // namespace kudu

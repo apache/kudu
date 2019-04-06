@@ -44,6 +44,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
+#include <ctime>
 #include <functional>
 #include <iterator>
 #include <map>
@@ -53,7 +54,6 @@
 #include <ostream>
 #include <set>
 #include <string>
-#include <time.h>
 #include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
@@ -132,6 +132,7 @@
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/pb_util.h"
@@ -726,7 +727,7 @@ Status CatalogManager::Init(bool is_first_run) {
   RETURN_NOT_OK_PREPEND(sys_catalog_->WaitUntilRunning(),
                         "Failed waiting for the catalog tablet to run");
 
-  authz_provider_.reset(new master::DefaultAuthzProvider());
+  authz_provider_.reset(new DefaultAuthzProvider);
 
   if (hms::HmsCatalog::IsEnabled()) {
     vector<HostPortPB> master_addrs_pb;
@@ -756,7 +757,7 @@ Status CatalogManager::Init(bool is_first_run) {
 
     // Use SentryAuthzProvider when both Sentry and the HMS integration are enabled.
     if (SentryAuthzProvider::IsEnabled()) {
-      authz_provider_.reset(new master::SentryAuthzProvider());
+      authz_provider_.reset(new SentryAuthzProvider(master_->metric_entity()));
     }
   }
 
@@ -4603,7 +4604,7 @@ void CatalogManager::SendCreateTabletRequest(const scoped_refptr<TabletInfo>& ta
 
 Status CatalogManager::BuildLocationsForTablet(
     const scoped_refptr<TabletInfo>& tablet,
-    master::ReplicaTypeFilter filter,
+    ReplicaTypeFilter filter,
     TabletLocationsPB* locs_pb) {
   TabletMetadataLock l_tablet(tablet.get(), LockMode::READ);
   if (PREDICT_FALSE(l_tablet.data().is_deleted())) {
@@ -4674,7 +4675,7 @@ Status CatalogManager::BuildLocationsForTablet(
 }
 
 Status CatalogManager::GetTabletLocations(const string& tablet_id,
-                                          master::ReplicaTypeFilter filter,
+                                          ReplicaTypeFilter filter,
                                           TabletLocationsPB* locs_pb,
                                           optional<const string&> user) {
   leader_lock_.AssertAcquiredForReading();

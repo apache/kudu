@@ -31,6 +31,7 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/thrift/ha_client_metrics.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
@@ -106,6 +107,9 @@ class HaClient {
   // Synchronously executes a task with exclusive access to the thrift service client.
   Status Execute(std::function<Status(Service*)> task) WARN_UNUSED_RESULT;
 
+  // Set metrics to account for various events.
+  void SetMetrics(std::unique_ptr<HaClientMetrics> metrics);
+
  private:
 
   // Reconnects to an instance of the Thrift service, or returns an error if all
@@ -127,6 +131,7 @@ class HaClient {
   Status reconnect_failure_;
   int consecutive_reconnect_failures_;
   int reconnect_idx_;
+  std::unique_ptr<HaClientMetrics> metrics_;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -180,6 +185,7 @@ void HaClient<Service>::Stop() {
 
 template<typename Service>
 Status HaClient<Service>::Execute(std::function<Status(Service*)> task) {
+  const MonoTime start_time(MonoTime::Now());
   Synchronizer synchronizer;
   auto callback = synchronizer.AsStdStatusCallback();
 
@@ -232,7 +238,14 @@ Status HaClient<Service>::Execute(std::function<Status(Service*)> task) {
 
         // Attempt to reconnect.
         Status reconnect_status = Reconnect();
-        if (!reconnect_status.ok()) {
+        if (reconnect_status.ok()) {
+          if (PREDICT_TRUE(metrics_)) {
+            metrics_->reconnections_succeeded->Increment();
+          }
+        } else {
+          if (PREDICT_TRUE(metrics_)) {
+            metrics_->reconnections_failed->Increment();
+          }
           // Reconnect failed; retry with exponential backoff capped at 10s and
           // fail the task. We don't bother with jitter here because only the
           // leader master should be attempting this in any given period per
@@ -253,6 +266,13 @@ Status HaClient<Service>::Execute(std::function<Status(Service*)> task) {
 
       // If the task succeeds, or it's a non-retriable error, return the result.
       if (task_status.ok() || !IsFatalError(task_status)) {
+        if (PREDICT_TRUE(metrics_)) {
+          if (task_status.ok()) {
+            metrics_->tasks_successful->Increment();
+          } else {
+            metrics_->tasks_failed_nonfatal->Increment();
+          }
+        }
         return callback(task_status);
       }
 
@@ -264,6 +284,9 @@ Status HaClient<Service>::Execute(std::function<Status(Service*)> task) {
 
       if (attempt == 0) {
         first_failure = std::move(task_status);
+        if (PREDICT_TRUE(metrics_)) {
+          metrics_->tasks_failed_fatal->Increment();
+        }
       }
 
       WARN_NOT_OK(service_client_.Stop(),
@@ -279,7 +302,17 @@ Status HaClient<Service>::Execute(std::function<Status(Service*)> task) {
     return callback(first_failure);
   }));
 
-  return synchronizer.Wait();
+  const auto s = synchronizer.Wait();
+  if (PREDICT_TRUE(metrics_)) {
+    metrics_->task_execution_time_us->Increment(
+        (MonoTime::Now() - start_time).ToMicroseconds());
+  }
+  return s;
+}
+
+template<typename Service>
+void HaClient<Service>::SetMetrics(std::unique_ptr<HaClientMetrics> metrics) {
+  metrics_ = std::move(metrics);
 }
 
 // Note: Thrift provides a handy TSocketPool class which could be useful in
