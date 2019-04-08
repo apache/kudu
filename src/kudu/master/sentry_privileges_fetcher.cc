@@ -20,6 +20,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <ostream>
 #include <type_traits>
 #include <unordered_map>
@@ -31,6 +32,7 @@
 #include <glog/logging.h>
 
 #include "kudu/common/table_util.h"
+#include "kudu/gutil/callback.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/port.h"
@@ -43,6 +45,7 @@
 #include "kudu/sentry/sentry_policy_service_types.h"
 #include "kudu/thrift/client.h"
 #include "kudu/thrift/ha_client_metrics.h"
+#include "kudu/util/async_util.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/malloc.h"
 #include "kudu/util/monotime.h"
@@ -147,6 +150,7 @@ using sentry::TListSentryPrivilegesResponse;
 using sentry::TSentryAuthorizable;
 using sentry::TSentryGrantOption;
 using sentry::TSentryPrivilege;
+using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
 using std::unordered_map;
@@ -431,24 +435,56 @@ Status SentryPrivilegesFetcher::GetSentryPrivileges(
     return Status::OK();
   }
 
-  TListSentryPrivilegesResponse response;
-  RETURN_NOT_OK(FetchPrivilegesFromSentry(FLAGS_kudu_service_name,
-                                          user, authorizable, &response));
-  SentryPrivilegesBranch result(authorizable, response);
-  if (PREDICT_FALSE(!cache_)) {
-    *privileges = std::move(result);
+  Synchronizer sync;
+  bool is_first_request = false;
+  // The result (i.e. fetched privileges) might be used independently
+  // by multiple threads. The shared ownership approach simplifies passing
+  // the information around.
+  shared_ptr<SentryPrivilegesBranch> fetched_privileges;
+  {
+    std::lock_guard<simple_spinlock> l(pending_requests_lock_);
+    auto& pending_request = LookupOrEmplace(&pending_requests_,
+                                            key, SentryRequestsInfo());
+    // Is the queue of pending requests for the same key empty?
+    // If yes, that's the first request being sent out.
+    is_first_request = pending_request.callbacks.empty();
+    pending_request.callbacks.emplace_back(sync.AsStatusCallback());
+    if (is_first_request) {
+      DCHECK(!pending_request.result);
+      pending_request.result = std::make_shared<SentryPrivilegesBranch>();
+    }
+    fetched_privileges = pending_request.result;
+  }
+  if (!is_first_request) {
+    RETURN_NOT_OK(sync.Wait());
+    *privileges = *fetched_privileges;
     return Status::OK();
   }
 
-  // Put the result into the cache.
-  unique_ptr<SentryPrivilegesBranch> result_ptr(
-      new SentryPrivilegesBranch(result));
-  const auto result_footprint = result_ptr->memory_footprint() + key.capacity();
-  cache_->Put(key, std::move(result_ptr), result_footprint);
-  VLOG(2) << Substitute("cached entry of size $0 bytes for key '$1'",
-                        result_footprint, key);
+  const auto s = FetchPrivilegesFromSentry(FLAGS_kudu_service_name,
+                                           user, authorizable,
+                                           fetched_privileges.get());
+  if (s.ok() && PREDICT_TRUE(cache_)) {
+    // Put the result into the cache. Negative results/errors are not cached.
+    unique_ptr<SentryPrivilegesBranch> result_ptr(
+        new SentryPrivilegesBranch(*fetched_privileges));
+    const auto result_footprint = result_ptr->memory_footprint() + key.capacity();
+    cache_->Put(key, std::move(result_ptr), result_footprint);
+    VLOG(2) << Substitute("cached entry of size $0 bytes for key '$1'",
+                          result_footprint, key);
+  }
 
-  *privileges = std::move(result);
+  SentryRequestsInfo info;
+  {
+    std::lock_guard<simple_spinlock> l(pending_requests_lock_);
+    info = EraseKeyReturnValuePtr(&pending_requests_, key);
+  }
+  CHECK_LE(1, info.callbacks.size());
+  for (auto& cb : info.callbacks) {
+    cb.Run(s);
+  }
+  RETURN_NOT_OK(s);
+  *privileges = *fetched_privileges;
   return Status::OK();
 }
 
@@ -604,15 +640,18 @@ Status SentryPrivilegesFetcher::FetchPrivilegesFromSentry(
     const string& service_name,
     const string& user,
     const TSentryAuthorizable& authorizable,
-    TListSentryPrivilegesResponse* response) {
+    SentryPrivilegesBranch* result) {
   TListSentryPrivilegesRequest request;
   request.__set_requestorUserName(service_name);
   request.__set_principalName(user);
   request.__set_authorizableHierarchy(authorizable);
-  return sentry_client_.Execute(
+  TListSentryPrivilegesResponse response;
+  RETURN_NOT_OK(sentry_client_.Execute(
       [&] (SentryClient* client) {
-        return client->ListPrivilegesByUser(request, response);
-      });
+        return client->ListPrivilegesByUser(request, &response);
+      }));
+  *result = SentryPrivilegesBranch(authorizable, response);
+  return Status::OK();
 }
 
 Status SentryPrivilegesFetcher::ResetCache() {

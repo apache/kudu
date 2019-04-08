@@ -21,6 +21,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -35,8 +36,10 @@
 #include "kudu/sentry/sentry_client.h"
 #include "kudu/thrift/client.h"
 #include "kudu/util/bitset.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
+#include "kudu/util/status_callback.h"
 #include "kudu/util/ttl_cache.h"
 
 namespace sentry {
@@ -196,7 +199,7 @@ class SentryPrivilegesFetcher {
       const std::string& service_name,
       const std::string& user,
       const ::sentry::TSentryAuthorizable& authorizable,
-      ::sentry::TListSentryPrivilegesResponse* response);
+      SentryPrivilegesBranch* result);
 
   // Resets the authz cache. In addition to lifecycle-related methods like
   // Start(), this method is also used by tests: if the authz information
@@ -220,6 +223,16 @@ class SentryPrivilegesFetcher {
   // The TTL cache to store information on privileges received from Sentry.
   typedef TTLCache<std::string, SentryPrivilegesBranch> AuthzInfoCache;
   std::unique_ptr<AuthzInfoCache> cache_;
+
+  // Utility dictionary to keep track of requests sent to Sentry. Access is
+  // guarded by pending_requests_lock_. The key corresponds to the set of
+  // parameters for a request sent to Sentry.
+  struct SentryRequestsInfo {
+    std::vector<StatusCallback> callbacks;
+    std::shared_ptr<SentryPrivilegesBranch> result;
+  };
+  std::unordered_map<std::string, SentryRequestsInfo> pending_requests_;
+  simple_spinlock pending_requests_lock_;
 };
 
 } // namespace master

@@ -17,10 +17,12 @@
 
 #include "kudu/master/sentry_authz_provider.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <ostream>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -38,6 +40,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/sysinfo.h"
 #include "kudu/master/sentry_authz_provider-test-base.h"
 #include "kudu/master/sentry_privileges_fetcher.h"
 #include "kudu/security/token.pb.h"
@@ -47,6 +50,7 @@
 #include "kudu/sentry/sentry_authorizable_scope.h"
 #include "kudu/sentry/sentry_client.h"
 #include "kudu/sentry/sentry_policy_service_types.h"
+#include "kudu/util/barrier.h"
 #include "kudu/util/hdr_histogram.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/net/net_util.h"
@@ -84,6 +88,7 @@ using sentry::TSentryAuthorizable;
 using sentry::TSentryGrantOption;
 using sentry::TSentryPrivilege;
 using std::string;
+using std::thread;
 using std::unique_ptr;
 using std::unordered_map;
 using std::unordered_set;
@@ -937,6 +942,126 @@ TEST_F(TestSentryClientMetrics, Basic) {
   ASSERT_LE(5, hist->histogram()->TotalCount());
   ASSERT_LT(2000000, hist->histogram()->TotalSum());
 }
+
+enum class ThreadsNumPolicy {
+  CloseToCPUsNum,
+  MoreThanCPUsNum,
+};
+
+// Test to ensure concurrent requests to Sentry with the same set of parameters
+// are accumulated by SentryAuthzProvider, so in total there is less RPC
+// requests sent to Sentry than the total number of concurrent requests to
+// the provider (ideally, there should be just single request to Sentry).
+class TestConcurrentRequests :
+    public SentryAuthzProviderTest,
+    public ::testing::WithParamInterface<std::tuple<ThreadsNumPolicy,
+                                                    AuthzCaching>> {
+ public:
+  bool CachingEnabled() const override {
+    return std::get<1>(GetParam()) == AuthzCaching::Enabled;
+  }
+};
+
+// Verify how multiple concurrent requests are handled when Sentry responds
+// with success.
+TEST_P(TestConcurrentRequests, SuccessResponses) {
+  const auto kNumRequestThreads =
+      std::get<0>(GetParam()) == ThreadsNumPolicy::CloseToCPUsNum
+      ? std::min(base::NumCPUs(), 4) : base::NumCPUs() * 3;
+
+  ASSERT_OK(CreateRoleAndAddToGroups());
+  const auto privilege = GetDatabasePrivilege("db", "METADATA");
+  ASSERT_OK(AlterRoleGrantPrivilege(privilege));
+
+  Barrier barrier(kNumRequestThreads);
+
+  vector<thread> threads;
+  vector<Status> thread_status(kNumRequestThreads);
+  for (auto i = 0; i < kNumRequestThreads; ++i) {
+    const auto thread_idx = i;
+    threads.emplace_back([&, thread_idx] () {
+      barrier.Wait();
+      thread_status[thread_idx] = sentry_authz_provider_->
+          AuthorizeGetTableMetadata("db.table", kTestUser);
+    });
+  }
+  for (auto& thread : threads) {
+    thread.join();
+  }
+  for (const auto& s : thread_status) {
+    ASSERT_TRUE(s.ok()) << s.ToString();
+  }
+
+  const auto sentry_rpcs_num = GetTasksSuccessful();
+  // Ideally all requests should result in a single RPC sent to Sentry, but some
+  // scheduling anomalies might occur so even the current threshold of maximum
+  // (kNumRequestThreads / 2) of actual RPC requests to Sentry might be reached
+  // and the assertion below would be triggered. For example, the OS scheduler
+  // might de-schedule the majority of the threads spawned above for a time
+  // greater than it takes to complete an RPC to Sentry, and the de-scheduling
+  // might happen exactly prior the point when the 'earlier-running' thread
+  // added itself into a queue record designed to track concurrent requests.
+  // Essentially, that's about 'freezing' all incoming requests just before the
+  // queueing point, and then awakening them one by one, so no more than one
+  // thread is registered in the queue at any time.
+  //
+  // However, those anomalies are expected to be exceptionally rare. In fact,
+  // (kNumRequestThreads / 2) seems to be a good enough threshold even for TSAN
+  // builds while running the test scenario with --stress_cpu_threads=16.
+  ASSERT_GE(kNumRequestThreads / 2, sentry_rpcs_num);
+
+  // Issue the same request once more. If caching is enabled, there should be
+  // no additional RPCs sent to Sentry.
+  ASSERT_OK(sentry_authz_provider_->AuthorizeGetTableMetadata(
+      "db.table", kTestUser));
+  ASSERT_EQ(CachingEnabled() ? sentry_rpcs_num : sentry_rpcs_num + 1,
+            GetTasksSuccessful());
+}
+
+// Verify how multiple concurrent requests are handled when Sentry responds
+// with errors.
+TEST_P(TestConcurrentRequests, FailureResponses) {
+  const auto kNumRequestThreads =
+      std::get<0>(GetParam()) == ThreadsNumPolicy::CloseToCPUsNum
+      ? std::min(base::NumCPUs(), 4) : base::NumCPUs() * 3;
+
+  Barrier barrier(kNumRequestThreads);
+
+  vector<thread> threads;
+  vector<Status> thread_status(kNumRequestThreads);
+  for (auto i = 0; i < kNumRequestThreads; ++i) {
+    const auto thread_idx = i;
+    threads.emplace_back([&, thread_idx] () {
+      barrier.Wait();
+      thread_status[thread_idx] = sentry_authz_provider_->
+          AuthorizeCreateTable("db.table", "nobody", "nobody");
+    });
+  }
+  for (auto& thread : threads) {
+    thread.join();
+  }
+  for (const auto& s : thread_status) {
+    ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
+  }
+  ASSERT_EQ(0, GetTasksSuccessful());
+  ASSERT_EQ(0, GetTasksFailedNonFatal());
+  const auto sentry_rpcs_num = GetTasksFailedFatal();
+  // See the TestConcurrentRequests.SuccessResponses scenario above for details
+  // on setting the threshold for 'sentry_rpcs_num'.
+  ASSERT_GE(kNumRequestThreads / 2, sentry_rpcs_num);
+
+  // The cache does not store negative responses/errors, so in both caching and
+  // non-caching case there should be one extra RPC sent to Sentry.
+  auto s = sentry_authz_provider_->AuthorizeCreateTable(
+      "db.table", "nobody", "nobody");
+  ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
+  ASSERT_EQ(sentry_rpcs_num + 1, GetTasksFailedFatal());
+}
+INSTANTIATE_TEST_CASE_P(QueueingConcurrentRequests, TestConcurrentRequests,
+    ::testing::Combine(::testing::Values(ThreadsNumPolicy::CloseToCPUsNum,
+                                         ThreadsNumPolicy::MoreThanCPUsNum),
+                       ::testing::Values(AuthzCaching::Disabled,
+                                         AuthzCaching::Enabled)));
 
 } // namespace master
 } // namespace kudu
