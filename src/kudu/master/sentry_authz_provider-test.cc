@@ -664,14 +664,7 @@ INSTANTIATE_TEST_CASE_P(AuthzCombinations, TestAuthzHierarchy,
 
 // Test to verify the functionality of metrics in HA Sentry client used in
 // SentryAuthzProvider to communicate with Sentry.
-class TestSentryClientMetrics : public SentryAuthzProviderTest {
- public:
-  bool KerberosEnabled() const {
-    return false;
-  }
-};
-
-TEST_F(TestSentryClientMetrics, Basic) {
+TEST_F(SentryAuthzProviderTest, TestSentryClientMetrics) {
   ASSERT_EQ(0, GetTasksSuccessful());
   ASSERT_EQ(0, GetTasksFailedFatal());
   ASSERT_EQ(0, GetTasksFailedNonFatal());
