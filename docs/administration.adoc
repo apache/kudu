@@ -797,6 +797,39 @@ INVALIDATE METADATA;
 .. Verify updating the metadata worked by running a simple `SELECT` query on a
 Kudu-backed Impala table.
 
+[[adding_tablet_servers]]
+=== Best Practices When Adding New Tablet Servers
+
+A common workflow when administering a Kudu cluster is adding additional tablet
+server instances, in an effort to increase storage capacity, decrease load or
+utilization on individual hosts, increase compute power, etc.
+
+By default, any newly added tablet servers will not be utilized immediately
+after their addition to the cluster. Instead, newly added tablet servers will
+only be utilized when new tablets are created or when existing tablets need to
+be replicated, which can lead to imbalanced nodes.
+
+To add additional tablet servers to an existing cluster, the
+following steps can be taken to ensure tablets are uniformly distributed
+across the cluster:
+
+1. Ensure that Kudu is installed on the new machines being added to the
+cluster, and that the new instances have been
+link:https://kudu.apache.org/docs/configuration.html#_configuring_tablet_servers[correctly configured]
+to point to the pre-existing cluster. Then, start up the new tablet server instances.
+2. Verify that the new instances check in with the Kudu Master(s)
+successfully. A quick method for veryifying they've successfully checked in
+with the existing Master instances is to view the Kudu Master WebUI,
+specifically the `/tablet-servers` section, and validate that the newly
+added instances are registered, and heartbeating.
+3. Once the tablet server(s) are successfully online and healthy, follow
+the steps to run the
+link:https://kudu.apache.org/docs/administration.html#rebalancer_tool[rebalancing tool]
+which will spread existing tablets to the newly added tablet server
+nodes.
+4. After the balancer has completed, or even during its execution, you can
+check on the health of the cluster using the `ksck` command-line utility.
+
 [[ksck]]
 === Checking Cluster Health with `ksck`
 
