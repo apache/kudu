@@ -106,11 +106,13 @@
 
 * Rolling restart is not supported.
 
-* Multi-data-center/multi-availability-zone configurations require at least 3
-  locations to maintain availability.
+* Recommended maximum point-to-point latency within a Kudu cluster is 20 milliseconds.
 
-* Multi-data-center/multi-availability-zone configurations with a network latency
-  over 100ms and bandwidth under 10 Gbps are not well tested and therefore not recommended.
+* Recommended minimum point-to-point bandwidth within a Kudu cluster is 10 Gbps.
+
+* If you intend to use the location awareness feature to place tablet servers in
+  different locations, it is recommended to measure the bandwidth and latency between servers
+  to ensure they fit within the above guidelines.
 
 == Server management
 
