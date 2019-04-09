@@ -50,7 +50,6 @@
 DECLARE_int32(sentry_service_recv_timeout_seconds);
 DECLARE_int32(sentry_service_send_timeout_seconds);
 DECLARE_string(sentry_service_rpc_addresses);
-DECLARE_string(sentry_service_security_mode);
 DECLARE_string(server_name);
 DECLARE_string(trusted_user_acl);
 
@@ -164,7 +163,6 @@ class SentryAuthzProviderTest : public SentryTestBase {
         &metric_registry_, "sentry_auth_provider-test");
 
     // Configure the SentryAuthzProvider flags.
-    FLAGS_sentry_service_security_mode = KerberosEnabled() ? "kerberos" : "none";
     FLAGS_sentry_service_rpc_addresses = sentry_->address().ToString();
     sentry_authz_provider_.reset(new SentryAuthzProvider(metric_entity_));
     ASSERT_OK(sentry_authz_provider_->Start());
@@ -183,7 +181,7 @@ class SentryAuthzProviderTest : public SentryTestBase {
   }
 
   bool KerberosEnabled() const override {
-    return false;
+    return true;
   }
 
 #define GET_GAUGE_READINGS(func_name, counter_name_suffix) \
@@ -268,10 +266,6 @@ class SentryAuthzProviderFilterResponsesTest :
     full_authorizable_.db = kDb;
     full_authorizable_.table = kTable;
     full_authorizable_.column = kColumn;
-  }
-
-  bool KerberosEnabled() const override {
-    return true;
   }
 
   // Creates a Sentry privilege for the user based on the given action,
@@ -413,15 +407,9 @@ INSTANTIATE_TEST_CASE_P(GrantedScopes, SentryAuthzProviderFilterResponsesTest,
 
 // Test to create tables requiring ALL ON DATABASE with the grant option. This
 // is parameterized on the ALL scope and OWNER actions, which behave
-// identically, and whether Kerberos should be enabled.
+// identically.
 class CreateTableAuthorizationTest : public SentryAuthzProviderTest,
-                                     public ::testing::WithParamInterface<
-                                     std::tuple<string, bool>> {
- public:
-  bool KerberosEnabled() const override {
-    return std::get<1>(GetParam());
-  }
-};
+                                     public ::testing::WithParamInterface<string> {};
 
 TEST_P(CreateTableAuthorizationTest, TestAuthorizeCreateTable) {
   // Don't authorize create table on a non-existent user.
@@ -451,7 +439,7 @@ TEST_P(CreateTableAuthorizationTest, TestAuthorizeCreateTable) {
   s = sentry_authz_provider_->AuthorizeCreateTable("db.table", kTestUser, "diff-user");
   ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
 
-  const auto& all = std::get<0>(GetParam());
+  const auto& all = GetParam();
   privilege = GetDatabasePrivilege("db", all);
   s = sentry_authz_provider_->AuthorizeCreateTable("db.table", kTestUser, "diff-user");
   ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
@@ -460,21 +448,10 @@ TEST_P(CreateTableAuthorizationTest, TestAuthorizeCreateTable) {
   ASSERT_OK(sentry_authz_provider_->AuthorizeCreateTable("db.table", kTestUser, "diff-user"));
 }
 
-INSTANTIATE_TEST_CASE_P(AllOrOwnerWithKerberos, CreateTableAuthorizationTest,
-    ::testing::Combine(::testing::Values("ALL", "OWNER"), ::testing::Bool()));
+INSTANTIATE_TEST_CASE_P(AllOrOwner, CreateTableAuthorizationTest,
+    ::testing::Values("ALL", "OWNER"));
 
-// Tests to ensure SentryAuthzProvider enforces access control on tables as expected.
-// Parameterized by whether Kerberos should be enabled.
-class TestTableAuthorization : public SentryAuthzProviderTest,
-                               public ::testing::WithParamInterface<bool> {
- public:
-  bool KerberosEnabled() const override {
-    return GetParam();
-  }
-};
-
-INSTANTIATE_TEST_CASE_P(KerberosEnabled, TestTableAuthorization, ::testing::Bool());
-TEST_P(TestTableAuthorization, TestAuthorizeDropTable) {
+TEST_F(SentryAuthzProviderTest, TestAuthorizeDropTable) {
   // Don't authorize delete table on a user without required privileges.
   ASSERT_OK(CreateRoleAndAddToGroups(sentry_client_.get(), kRoleName, kUserGroup));
   TSentryPrivilege privilege = GetDatabasePrivilege("db", "SELECT");
@@ -488,7 +465,7 @@ TEST_P(TestTableAuthorization, TestAuthorizeDropTable) {
   ASSERT_OK(sentry_authz_provider_->AuthorizeDropTable("db.table", kTestUser));
 }
 
-TEST_P(TestTableAuthorization, TestAuthorizeAlterTable) {
+TEST_F(SentryAuthzProviderTest, TestAuthorizeAlterTable) {
   // Don't authorize alter table on a user without required privileges.
   ASSERT_OK(CreateRoleAndAddToGroups(sentry_client_.get(), kRoleName, kUserGroup));
   TSentryPrivilege db_privilege = GetDatabasePrivilege("db", "SELECT");
@@ -516,7 +493,7 @@ TEST_P(TestTableAuthorization, TestAuthorizeAlterTable) {
                                                         kTestUser));
 }
 
-TEST_P(TestTableAuthorization, TestAuthorizeGetTableMetadata) {
+TEST_F(SentryAuthzProviderTest, TestAuthorizeGetTableMetadata) {
   // Don't authorize delete table on a user without required privileges.
   ASSERT_OK(CreateRoleAndAddToGroups(sentry_client_.get(), kRoleName, kUserGroup));
   Status s = sentry_authz_provider_->AuthorizeGetTableMetadata("db.table", kTestUser);
@@ -530,11 +507,10 @@ TEST_P(TestTableAuthorization, TestAuthorizeGetTableMetadata) {
 
 // Checks that the SentryAuthzProvider handles reconnecting to Sentry after a connection failure,
 // or service being too busy.
-TEST_P(TestTableAuthorization, TestReconnect) {
+TEST_F(SentryAuthzProviderTest, TestReconnect) {
 
   // Restart SentryAuthzProvider with configured timeout to reduce the run time of this test.
   NO_FATALS(sentry_authz_provider_->Stop());
-  FLAGS_sentry_service_security_mode = KerberosEnabled() ? "kerberos" : "none";
   FLAGS_sentry_service_rpc_addresses = sentry_->address().ToString();
   FLAGS_sentry_service_send_timeout_seconds = AllowSlowTests() ? 5 : 2;
   FLAGS_sentry_service_recv_timeout_seconds = AllowSlowTests() ? 5 : 2;
@@ -583,7 +559,7 @@ TEST_P(TestTableAuthorization, TestReconnect) {
   });
 }
 
-TEST_P(TestTableAuthorization, TestInvalidAction) {
+TEST_F(SentryAuthzProviderTest, TestInvalidAction) {
   ASSERT_OK(CreateRoleAndAddToGroups(sentry_client_.get(), kRoleName, kUserGroup));
   TSentryPrivilege privilege = GetDatabasePrivilege("db", "invalid");
   ASSERT_OK(AlterRoleGrantPrivilege(sentry_client_.get(), kRoleName, privilege));
@@ -592,7 +568,7 @@ TEST_P(TestTableAuthorization, TestInvalidAction) {
   ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
 }
 
-TEST_P(TestTableAuthorization, TestInvalidAuthzScope) {
+TEST_F(SentryAuthzProviderTest, TestInvalidAuthzScope) {
   ASSERT_OK(CreateRoleAndAddToGroups(sentry_client_.get(), kRoleName, kUserGroup));
   TSentryPrivilege privilege = GetDatabasePrivilege("db", "ALL");
   privilege.__set_privilegeScope("invalid");
@@ -604,7 +580,7 @@ TEST_P(TestTableAuthorization, TestInvalidAuthzScope) {
 }
 
 // Ensures Sentry privileges are case insensitive.
-TEST_P(TestTableAuthorization, TestPrivilegeCaseSensitivity) {
+TEST_F(SentryAuthzProviderTest, TestPrivilegeCaseSensitivity) {
   ASSERT_OK(CreateRoleAndAddToGroups(sentry_client_.get(), kRoleName, kUserGroup));
   TSentryPrivilege privilege = GetDatabasePrivilege("db", "create");
   ASSERT_OK(AlterRoleGrantPrivilege(sentry_client_.get(), kRoleName, privilege));
@@ -614,16 +590,10 @@ TEST_P(TestTableAuthorization, TestPrivilegeCaseSensitivity) {
 // Test to ensure the authorization hierarchy rule of SentryAuthzProvider
 // works as expected.
 class TestAuthzHierarchy : public SentryAuthzProviderTest,
-                           public ::testing::WithParamInterface<
-                               tuple<bool, SentryAuthorizableScope::Scope>> {
- public:
-  bool KerberosEnabled() const {
-    return std::get<0>(GetParam());
-  }
-};
+                           public ::testing::WithParamInterface<SentryAuthorizableScope::Scope> {};
 
 TEST_P(TestAuthzHierarchy, TestAuthorizableScope) {
-  SentryAuthorizableScope::Scope scope = std::get<1>(GetParam());
+  SentryAuthorizableScope::Scope scope = GetParam();
   const string action = "ALL";
   const string db = "database";
   const string tbl = "table";
@@ -686,12 +656,11 @@ TEST_P(TestAuthzHierarchy, TestAuthorizableScope) {
 }
 
 INSTANTIATE_TEST_CASE_P(AuthzCombinations, TestAuthzHierarchy,
-    ::testing::Combine(::testing::Bool(),
                        // Scope::COLUMN is excluded since column scope for table
                        // authorizable doesn't make sense.
                        ::testing::Values(SentryAuthorizableScope::Scope::SERVER,
                                          SentryAuthorizableScope::Scope::DATABASE,
-                                         SentryAuthorizableScope::Scope::TABLE)));
+                                         SentryAuthorizableScope::Scope::TABLE));
 
 // Test to verify the functionality of metrics in HA Sentry client used in
 // SentryAuthzProvider to communicate with Sentry.
