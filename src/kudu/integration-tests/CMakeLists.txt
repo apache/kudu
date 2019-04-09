@@ -121,6 +121,7 @@ ADD_KUDU_TEST(token_signer-itest)
 ADD_KUDU_TEST(location_assignment-itest
   DATA_FILES ../scripts/assign-location.py)
 ADD_KUDU_TEST(ts_recovery-itest PROCESSORS 4)
+ADD_KUDU_TEST(ts_sentry-itest NUM_SHARDS 2)
 ADD_KUDU_TEST(ts_tablet_manager-itest)
 ADD_KUDU_TEST(update_scan_delta_compact-test RUN_SERIAL true)
 ADD_KUDU_TEST(webserver-stress-itest RUN_SERIAL true)

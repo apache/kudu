@@ -286,6 +286,7 @@ using kudu::rpc::RpcContext;
 using kudu::security::Cert;
 using kudu::security::DataFormat;
 using kudu::security::PrivateKey;
+using kudu::security::TablePrivilegePB;
 using kudu::security::TokenSigner;
 using kudu::security::TokenSigningPrivateKey;
 using kudu::security::TokenSigningPrivateKeyPB;
@@ -2725,7 +2726,8 @@ Status CatalogManager::IsAlterTableDone(const IsAlterTableDoneRequestPB* req,
 
 Status CatalogManager::GetTableSchema(const GetTableSchemaRequestPB* req,
                                       GetTableSchemaResponsePB* resp,
-                                      optional<const string&> user) {
+                                      optional<const string&> user,
+                                      const TokenSigner* token_signer) {
   leader_lock_.AssertAcquiredForReading();
   RETURN_NOT_OK(CheckOnline());
 
@@ -2742,15 +2744,25 @@ Status CatalogManager::GetTableSchema(const GetTableSchemaRequestPB* req,
                                           &table, &l));
   RETURN_NOT_OK(CheckIfTableDeletedOrNotRunning(&l, resp));
 
-  if (l.data().pb.has_fully_applied_schema()) {
-    // An AlterTable is in progress; fully_applied_schema is the last
-    // schema that has reached every TS.
-    CHECK_EQ(SysTablesEntryPB::ALTERING, l.data().pb.state());
-    resp->mutable_schema()->CopyFrom(l.data().pb.fully_applied_schema());
-  } else {
-    // There's no AlterTable, the regular schema is "fully applied".
-    resp->mutable_schema()->CopyFrom(l.data().pb.schema());
+  // If fully_applied_schema is set, use it, since an alter is in progress.
+  CHECK(!l.data().pb.has_fully_applied_schema() ||
+        (l.data().pb.state() == SysTablesEntryPB::ALTERING));
+  const SchemaPB& schema_pb = l.data().pb.has_fully_applied_schema() ?
+      l.data().pb.fully_applied_schema() : l.data().pb.schema();
+
+  if (token_signer && user) {
+    TablePrivilegePB table_privilege;
+    table_privilege.set_table_id(table->id());
+    RETURN_NOT_OK(
+        SetupError(authz_provider_->FillTablePrivilegePB(l.data().name(), *user, schema_pb,
+                                                         &table_privilege),
+                   resp, MasterErrorPB::UNKNOWN_ERROR));
+    security::SignedTokenPB authz_token;
+    RETURN_NOT_OK(token_signer->GenerateAuthzToken(
+        *user, std::move(table_privilege), &authz_token));
+    *resp->mutable_authz_token() = std::move(authz_token);
   }
+  resp->mutable_schema()->CopyFrom(schema_pb);
   resp->set_num_replicas(l.data().pb.num_replicas());
   resp->set_table_id(table->id());
   resp->mutable_partition_schema()->CopyFrom(l.data().pb.partition_schema());

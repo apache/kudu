@@ -329,6 +329,9 @@ test-admin=admin
 test-user=user
 kudu=admin
 joe-interloper=""
+user0=group0
+user1=group1
+user2=group2
   )";
 
   RETURN_NOT_OK(WriteStringToFile(Env::Default(), kUsers, users_ini_path));

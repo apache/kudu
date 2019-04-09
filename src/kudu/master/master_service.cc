@@ -431,32 +431,13 @@ void MasterServiceImpl::GetTableSchema(const GetTableSchemaRequestPB* req,
   }
 
   Status s = server_->catalog_manager()->GetTableSchema(
-      req, resp, make_optional<const string&>(rpc->remote_user().username()));
+      req, resp, make_optional<const string&>(rpc->remote_user().username()),
+      FLAGS_master_support_authz_tokens ? server_->token_signer() : nullptr);
   CheckRespErrorOrSetUnknown(s, resp);
   if (resp->has_error()) {
     // If there was an application error, respond to the RPC.
     rpc->RespondSuccess();
     return;
-  }
-
-  // TODO(awong): fill this token in with actual privileges from the
-  // appropriate AuthzProvider. For now, assume the user has all privileges
-  // for the table.
-  if (PREDICT_TRUE(FLAGS_master_support_authz_tokens)) {
-    SignedTokenPB authz_token;
-    TablePrivilegePB table_privilege;
-    table_privilege.set_table_id(resp->table_id());
-    table_privilege.set_scan_privilege(true);
-    table_privilege.set_insert_privilege(true);
-    table_privilege.set_update_privilege(true);
-    table_privilege.set_delete_privilege(true);
-    s = server_->token_signer()->GenerateAuthzToken(rpc->remote_user().username(),
-                                                    std::move(table_privilege), &authz_token);
-    if (!s.ok()) {
-      rpc->RespondFailure(s);
-      return;
-    }
-    *resp->mutable_authz_token() = std::move(authz_token);
   }
   rpc->RespondSuccess();
 }

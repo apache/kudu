@@ -50,10 +50,13 @@ T SelectRandomElement(const Container& c, Rand* r) {
 }
 
 // Returns a randomly-selected subset from the container.
+//
+// The results are not stored in a randomized order: the order of results will
+// match their order in the input collection.
 template <typename Container, typename T, typename Rand>
 std::vector<T> SelectRandomSubset(const Container& c, int min_to_return, Rand* r) {
-  CHECK_GT(c.size(), min_to_return);
-  int num_to_return = min_to_return + r->Uniform(c.size() - min_to_return);
+  CHECK_GE(c.size(), min_to_return);
+  int num_to_return = min_to_return + r->Uniform(1 + c.size() - min_to_return);
   std::vector<T> rand_list;
   ReservoirSample(c, num_to_return, std::set<T>{}, r, &rand_list);
   return rand_list;

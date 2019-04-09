@@ -84,6 +84,7 @@ class RpcContext;
 namespace security {
 class Cert;
 class PrivateKey;
+class TokenSigner;
 class TokenSigningPublicKeyPB;
 } // namespace security
 
@@ -576,10 +577,13 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
                           boost::optional<const std::string&> user);
 
   // Get the information about the specified table. If 'user' is provided,
-  // checks that the user is authorized to get such information.
+  // checks that the user is authorized to get such information. If a token
+  // signer is provided (e.g. authz token generation is enabled), an authz
+  // token will be attached to the response.
   Status GetTableSchema(const GetTableSchemaRequestPB* req,
                         GetTableSchemaResponsePB* resp,
-                        boost::optional<const std::string&> user);
+                        boost::optional<const std::string&> user,
+                        const security::TokenSigner* token_signer);
 
   // List all the running tables. If 'user' is provided, checks that the user
   // is authorized to get such information, otherwise, only list the tables that
