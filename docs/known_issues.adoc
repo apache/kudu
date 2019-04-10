@@ -118,8 +118,8 @@
 
 == Server management
 
-* Production deployments should configure a least 4GB of memory for tablet servers,
-  and ideally more than 16GB when approaching the data and tablet <<Scale>> limits.
+* Production deployments should configure a least 4 GiB of memory for tablet servers,
+  and ideally more than 16 GiB when approaching the data and tablet <<Scale>> limits.
 
 * Write ahead logs (WAL) can only be stored on one disk.
 
@@ -140,13 +140,17 @@
 * Recommended maximum number of masters is 3.
 
 * Recommended maximum amount of stored data, post-replication and post-compression,
-  per tablet server is 8TB.
+  per tablet server is 8 TiB.
 
 * The maximum number of tablets per tablet server is 2000, post-replication,
   but we recommend 1000 tablets or fewer per tablet server.
 
 * Maximum number of tablets per table for each tablet server is 60,
   post-replication (assuming the default replication factor of 3), at table-creation time.
+
+* Recommended maximum amount of data per tablet is 50 GiB. Going beyond this can cause
+  issues such a reduced performance, compaction issues, and slow tablet startup times.
+  The recommended target size for tablets is under 10 GiB.
 
 * When enabled, location awareness in its current implementation doesn't scale
   with the number of clients connecting to a Kudu cluster simultaneously.
