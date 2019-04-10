@@ -381,10 +381,11 @@ string Action::BuildHelpXML(const vector<Mode*>& chain) const {
     xml += "<argument>";
     xml += "<kind>optional</kind>";
     xml += Substitute("<name>$0</name>", gflag_info.name);
-    xml += Substitute("<description>$0</description>", gflag_info.description);
+    xml += Substitute("<description>$0</description>",
+                      EscapeForHtmlToString(gflag_info.description));
     xml += Substitute("<type>$0</type>", gflag_info.type);
     xml += Substitute("<default_value>$0</default_value>",
-                      gflag_info.default_value);
+                      EscapeForHtmlToString(gflag_info.default_value));
     xml += "</argument>";
   }
   xml += Substitute("<usage>$0</usage>", EscapeForHtmlToString(usage));
