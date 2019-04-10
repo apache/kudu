@@ -86,15 +86,15 @@ inline bool BitmapFindFirstZero(const uint8_t *bitmap, size_t offset,
 }
 
 // Returns true if the bitmap contains only ones.
-inline bool BitMapIsAllSet(const uint8_t *bitmap, size_t offset, size_t bitmap_size) {
-  DCHECK_LT(offset, bitmap_size);
+inline bool BitmapIsAllSet(const uint8_t *bitmap, size_t offset, size_t bitmap_size) {
+  DCHECK_LE(offset, bitmap_size);
   size_t idx;
   return !BitmapFindFirstZero(bitmap, offset, bitmap_size, &idx);
 }
 
 // Returns true if the bitmap contains only zeros.
 inline bool BitmapIsAllZero(const uint8_t *bitmap, size_t offset, size_t bitmap_size) {
-  DCHECK_LT(offset, bitmap_size);
+  DCHECK_LE(offset, bitmap_size);
   size_t idx;
   return !BitmapFindFirstSet(bitmap, offset, bitmap_size, &idx);
 }
@@ -118,6 +118,14 @@ inline bool BitmapEquals(const uint8_t* bm1, const uint8_t* bm2, size_t bitmap_s
   uint8_t mask = (1 << num_remaining_bits) - 1;
   return (bm1[num_full_bytes] & mask) == (bm2[num_full_bytes] & mask);
 }
+
+// Copies a slice of 'src' to 'dst'. Offsets and sizing are all expected to be
+// bit quantities.
+//
+// Note: 'src' and 'dst' may not overlap.
+void BitmapCopy(uint8_t* dst, size_t dst_offset,
+                const uint8_t* src, size_t src_offset,
+                size_t num_bits);
 
 std::string BitmapToString(const uint8_t *bitmap, size_t num_bits);
 

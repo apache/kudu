@@ -138,17 +138,17 @@ TEST(TestBitMap, TestBulkSetAndTestBits) {
         BitmapChangeBits(bm, 0, total_size, !value);
         BitmapChangeBits(bm, offset, num_bits - offset, value);
 
-        ASSERT_EQ(value, BitMapIsAllSet(bm, offset, num_bits));
+        ASSERT_EQ(value, BitmapIsAllSet(bm, offset, num_bits));
         ASSERT_EQ(!value, BitmapIsAllZero(bm, offset, num_bits));
 
         if (offset > 1) {
           ASSERT_EQ(value, BitmapIsAllZero(bm, 0, offset - 1));
-          ASSERT_EQ(!value, BitMapIsAllSet(bm, 0, offset - 1));
+          ASSERT_EQ(!value, BitmapIsAllSet(bm, 0, offset - 1));
         }
 
         if ((offset + num_bits) < total_size) {
           ASSERT_EQ(value, BitmapIsAllZero(bm, num_bits, total_size));
-          ASSERT_EQ(!value, BitMapIsAllSet(bm, num_bits, total_size));
+          ASSERT_EQ(!value, BitmapIsAllSet(bm, num_bits, total_size));
         }
       }
       num_bits--;
@@ -271,5 +271,84 @@ TEST(TestBitMap, TestEquals) {
   ASSERT_FALSE(BitmapEquals(bm3, bm3 + 1, num_bits - 8)); // off by one byte
   ASSERT_TRUE(BitmapEquals(bm3, bm3 + 3, num_bits - 24)); // off by three bytes
 }
+
+TEST(TestBitMap, TestCopy) {
+  constexpr int kNumBytes = 8;
+  constexpr int kNumBits = kNumBytes * 8;
+  constexpr uint8_t kAllZeroes[kNumBytes] = { 0 };
+
+  {
+    // Byte-aligned copy with no offsets.
+    uint8_t res[kNumBytes];
+    BitmapChangeBits(res, 0, kNumBits, 1);
+
+    BitmapCopy(res, 0, kAllZeroes, 0, kNumBits);
+    ASSERT_TRUE(BitmapIsAllZero(res, 0, kNumBits));
+  }
+  {
+    // Byte-aligned copy with offsets.
+    uint8_t res[kNumBytes];
+    BitmapChangeBits(res, 0, kNumBits, 1);
+
+    ASSERT_TRUE(BitmapIsAllSet(res, 0, kNumBits));
+    constexpr size_t stride = kNumBits / 4;
+    for (int i = 0; i < kNumBits; i += stride) {
+      BitmapCopy(res, i, kAllZeroes, i, stride);
+      // The bits before the copy should reflect the copied data, while the bits
+      // after should reflect the original data.
+      ASSERT_TRUE(BitmapIsAllZero(res, 0, stride + i));
+      ASSERT_TRUE(BitmapIsAllSet(res, stride + i, kNumBits));
+    }
+    ASSERT_TRUE(BitmapIsAllZero(res, 0, kNumBits));
+  }
+  {
+    // Non-byte aligned; overwrite all but the first bit.
+    uint8_t res[kNumBytes];
+    BitmapChangeBits(res, 0, kNumBits, 1);
+
+    BitmapCopy(res, 1, kAllZeroes, 0, kNumBits - 1);
+    ASSERT_TRUE(BitmapTest(res, 0));
+    ASSERT_TRUE(BitmapIsAllZero(res, 1, kNumBits - 1));
+  }
+  {
+    // Non-byte aligned; overwrite all but the last bit.
+    uint8_t res[kNumBytes];
+    BitmapChangeBits(res, 0, kNumBits, 1);
+
+    BitmapCopy(res, 0, kAllZeroes, 1, kNumBits - 1);
+    ASSERT_TRUE(BitmapTest(res, kNumBits - 1));
+    ASSERT_TRUE(BitmapIsAllZero(res, 0, kNumBits - 1));
+  }
+  {
+    // Non-byte aligned; overwrite all but the first and last bits.
+    uint8_t res[kNumBytes];
+    BitmapChangeBits(res, 0, kNumBits, 1);
+
+    BitmapCopy(res, 1, kAllZeroes, 1, kNumBits - 2);
+    ASSERT_TRUE(BitmapTest(res, 0));
+    ASSERT_TRUE(BitmapTest(res, kNumBits - 1));
+    ASSERT_TRUE(BitmapIsAllZero(res, 1, kNumBits - 2));
+  }
+}
+
+#ifndef NDEBUG
+TEST(TestBitMapDeathTest, TestCopyOverlap) {
+  uint8_t bm[2] = { 0 };
+  ASSERT_DEATH({ BitmapCopy(bm, 0, bm, 0, 16); },
+               "Source and destination overlap");
+}
+
+TEST(TestBitMapDeathTest, TestCopyOverlapSrcAfterDst) {
+  uint8_t bm[2] = { 0 };
+  ASSERT_DEATH({ BitmapCopy(bm, 0, bm, 1, 15); },
+               "Source and destination overlap");
+}
+
+TEST(TestBitMapDeathTest, TestCopyOverlapDstAfterSrc) {
+  uint8_t bm[2] = { 0 };
+  ASSERT_DEATH({ BitmapCopy(bm, 1, bm, 0, 15); },
+               "Source and destination overlap");
+}
+#endif
 
 } // namespace kudu

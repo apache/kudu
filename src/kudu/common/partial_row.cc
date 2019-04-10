@@ -795,11 +795,11 @@ string KuduPartialRow::ToEncodedRowKeyOrDie() const {
 //------------------------------------------------------------
 
 bool KuduPartialRow::AllColumnsSet() const {
-  return BitMapIsAllSet(isset_bitmap_, 0, schema_->num_columns());
+  return BitmapIsAllSet(isset_bitmap_, 0, schema_->num_columns());
 }
 
 bool KuduPartialRow::IsKeySet() const {
-  return BitMapIsAllSet(isset_bitmap_, 0, schema_->num_key_columns());
+  return BitmapIsAllSet(isset_bitmap_, 0, schema_->num_key_columns());
 }
 
 

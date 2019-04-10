@@ -24,6 +24,8 @@
 
 #include "kudu/gutil/stringprintf.h"
 
+using std::string;
+
 namespace kudu {
 
 void BitmapChangeBits(uint8_t *bitmap, size_t offset, size_t num_bits, bool value) {
@@ -116,8 +118,39 @@ bool BitmapFindFirst(const uint8_t *bitmap, size_t offset, size_t bitmap_size,
   return false;
 }
 
-std::string BitmapToString(const uint8_t *bitmap, size_t num_bits) {
-  std::string s;
+void BitmapCopy(uint8_t* dst, size_t dst_offset,
+                const uint8_t* src, size_t src_offset,
+                size_t num_bits) {
+  DCHECK_GT(num_bits, 0);
+
+  // Prohibit overlap in debug builds.
+#ifndef NDEBUG
+  const uint8_t* src_start = src + (src_offset >> 3);
+  const uint8_t* src_end = src + ((src_offset + num_bits) >> 3);
+  uint8_t* dst_start = dst + (dst_offset >> 3);
+  uint8_t* dst_end = dst + ((dst_offset + num_bits) >> 3);
+  DCHECK(src_start >= dst_end || dst_start >= src_end)
+      << "Source and destination overlap";
+#endif
+
+  // If the copy is entirely byte-aligned, we can use memcpy.
+  if ((src_offset & 7) == 0 && (dst_offset & 7) == 0 && (num_bits & 7) == 0) {
+    memcpy(dst + (dst_offset >> 3),
+           src + (src_offset >> 3),
+           BitmapSize(num_bits));
+    return;
+  }
+
+  // Otherwise, we fallback to a slower bit-by-bit copy.
+  //
+  // TODO(adar): this can be optimized using word-by-word operations.
+  for (size_t bit_num = 0; bit_num < num_bits; bit_num++) {
+    BitmapChange(dst, dst_offset + bit_num, BitmapTest(src, src_offset + bit_num));
+  }
+}
+
+string BitmapToString(const uint8_t *bitmap, size_t num_bits) {
+  string s;
   size_t index = 0;
   while (index < num_bits) {
     StringAppendF(&s, "%4zu: ", index);
