@@ -545,9 +545,9 @@ SET TBLPROPERTIES
 the migration section for updating HMS.
 +
 . Perform the following preparatory steps for each new master:
-* Choose an unused machine in the cluster. The master generates very little load so it can be
-  colocated with other data services or load-generating processes, though not with another Kudu
-  master from the same configuration.
+* Choose an unused machine in the cluster. The master generates very little load
+  so it can be collocated with other data services or load-generating processes,
+  though not with another Kudu master from the same configuration.
 * Ensure Kudu is installed on the machine, either via system packages (in which case the `kudu` and
   `kudu-master` packages should be installed), or via some other means.
 * Choose and record the directory where the master's data will live.
@@ -719,9 +719,9 @@ WARNING: All of the command line steps below should be executed as the Kudu UNIX
   workflow will refer to this master as the "reference" master.
 
 . Choose an unused machine in the cluster where the new master will live. The master generates very
-  little load so it can be colocated with other data services or load-generating processes, though
-  not with another Kudu master from the same configuration. The rest of this workflow will refer to
-  this master as the "replacement" master.
+  little load so it can be collocated with other data services or load-generating processes, though
+  not with another Kudu master from the same configuration.
+  The rest of this workflow will refer to this master as the "replacement" master.
 
 . Perform the following preparatory steps for the replacement master:
 * Ensure Kudu is installed on the machine, either via system packages (in which case the `kudu` and
@@ -998,28 +998,40 @@ utilization on individual hosts, increase compute power, etc.
 By default, any newly added tablet servers will not be utilized immediately
 after their addition to the cluster. Instead, newly added tablet servers will
 only be utilized when new tablets are created or when existing tablets need to
-be replicated, which can lead to imbalanced nodes.
+be replicated, which can lead to imbalanced nodes. It's recommended to run
+the rebalancer CLI tool just after adding a new tablet server into the cluster,
+as described in the enumerated steps below.
+
+Avoid placing multiple tablet servers on a single node. Doing so
+nullifies the point of increasing the overall storage capacity of a Kudu
+cluster and increases the likelihood of tablet unavailability when a single
+node fails (the latter drawback is not applicable if the cluster is properly
+configured to use the
+link:https://kudu.apache.org/docs/administration.html#rack_awareness[location
+awareness] feature).
 
 To add additional tablet servers to an existing cluster, the
-following steps can be taken to ensure tablets are uniformly distributed
-across the cluster:
+following steps can be taken to ensure tablet replicas are uniformly
+distributed across the cluster:
 
 1. Ensure that Kudu is installed on the new machines being added to the
 cluster, and that the new instances have been
-link:https://kudu.apache.org/docs/configuration.html#_configuring_tablet_servers[correctly configured]
-to point to the pre-existing cluster. Then, start up the new tablet server instances.
+link:https://kudu.apache.org/docs/configuration.html#_configuring_tablet_servers[
+correctly configured] to point to the pre-existing cluster. Then, start up
+the new tablet server instances.
 2. Verify that the new instances check in with the Kudu Master(s)
-successfully. A quick method for veryifying they've successfully checked in
+successfully. A quick method for verifying they've successfully checked in
 with the existing Master instances is to view the Kudu Master WebUI,
 specifically the `/tablet-servers` section, and validate that the newly
 added instances are registered, and heartbeating.
 3. Once the tablet server(s) are successfully online and healthy, follow
 the steps to run the
-link:https://kudu.apache.org/docs/administration.html#rebalancer_tool[rebalancing tool]
-which will spread existing tablets to the newly added tablet server
-nodes.
-4. After the balancer has completed, or even during its execution, you can
-check on the health of the cluster using the `ksck` command-line utility.
+link:https://kudu.apache.org/docs/administration.html#rebalancer_tool[
+rebalancing tool] which will spread existing tablet replicas to the newly added
+tablet servers.
+4. After the rebalancer tool has completed, or even during its execution,
+you can check on the health of the cluster using the `ksck` command-line utility
+(see <<ksck>> for more details).
 
 [[ksck]]
 === Checking Cluster Health with `ksck`
@@ -1596,7 +1608,7 @@ a cluster permanently. Instead, use the following steps:
   server as unavailable. The cluster will otherwise operate fine without the
   tablet server. To completely remove it from the cluster so `ksck` shows the
   cluster as completely healthy, restart the masters. In the case of a single
-  master, this will cause cluster downtime. With multimaster, restart the
+  master, this will cause cluster downtime. With multi-master, restart the
   masters in sequence to avoid cluster downtime.
 
 WARNING: Do not shut down multiple tablet servers at once. To remove multiple
