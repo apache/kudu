@@ -82,7 +82,7 @@ void MiniSentry::SetAddress(const HostPort& address) {
 }
 
 Status MiniSentry::Start() {
-  SCOPED_LOG_SLOW_EXECUTION(WARNING, kSentryStartTimeoutMs / 2, "Starting Sentry");
+  SCOPED_LOG_TIMING(INFO, "Starting Sentry");
   CHECK(!sentry_process_);
 
   VLOG(1) << "Starting Sentry";
@@ -210,6 +210,11 @@ Status MiniSentry::CreateSentryConfigs(const string& tmp_dir) const {
   //    derives OWNER/ALL privileges from object's ownership. 'all' indicates an
   //    object owner has OWNER/ALL privilege on the object, but cannot transfer
   //    owner privileges to another user or role.
+  //
+  // - sentry.store.clean.period.seconds
+  //    The interval to run the "store-cleaner" Sentry's thread. Setting to a
+  //    negative value means Sentry will not run the "store-cleaner" thread
+  //    at all and that allows for faster start-up times of the Sentry service.
   static const string kFileTemplate = R"(
 <configuration>
 
@@ -281,6 +286,11 @@ Status MiniSentry::CreateSentryConfigs(const string& tmp_dir) const {
   <property>
     <name>sentry.db.policy.store.owner.as.privilege</name>
     <value>all</value>
+  </property>
+
+  <property>
+    <name>sentry.store.clean.period.seconds</name>
+    <value>-1</value>
   </property>
 
 </configuration>
