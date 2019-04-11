@@ -41,7 +41,7 @@ using std::string;
 using std::unique_ptr;
 using strings::Substitute;
 
-static constexpr int kSentryStartTimeoutMs = 60000;
+static constexpr int kSentryStartTimeoutMs = 120000;
 
 namespace kudu {
 namespace sentry {
@@ -53,9 +53,9 @@ MiniSentry::~MiniSentry() {
   WARN_NOT_OK(Stop(), "Failed to stop MiniSentry");
 }
 
-void MiniSentry::EnableKerberos(std::string krb5_conf,
-                                std::string service_principal,
-                                std::string keytab_file) {
+void MiniSentry::EnableKerberos(string krb5_conf,
+                                string service_principal,
+                                string keytab_file) {
   CHECK(!sentry_process_);
   CHECK(!krb5_conf.empty());
   CHECK(!service_principal.empty());
@@ -118,7 +118,7 @@ Status MiniSentry::Start() {
         hms_uris_, IsKerberosEnabled());
   }
 
-  map<string, string> env_vars {
+  const map<string, string> env_vars {
       { "JAVA_HOME", java_home },
       { "HADOOP_HOME", hadoop_home },
       { "JAVA_TOOL_OPTIONS", java_options },
