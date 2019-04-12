@@ -40,6 +40,7 @@ ADD_EXPORTABLE_LIBRARY(wire_protocol_proto
   NONLINK_DEPS ${WIRE_PROTOCOL_PROTO_TGTS})
 
 set(COMMON_SRCS
+  columnblock.cc
   column_predicate.cc
   encoded_key.cc
   generic_iterators.cc

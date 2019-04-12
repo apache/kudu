@@ -14,14 +14,21 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_COMMON_COLUMNBLOCK_H
-#define KUDU_COMMON_COLUMNBLOCK_H
 
+#pragma once
+
+#include <cstddef>
+#include <cstdint>
+#include <ostream>
 #include <string>
 
-#include "kudu/common/row.h"
+#include <glog/logging.h>
+
+#include "kudu/common/common.pb.h"
 #include "kudu/common/types.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/strings/fastmem.h"
+#include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/util/bitmap.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/memory/overwrite.h"
@@ -30,6 +37,7 @@
 namespace kudu {
 
 class ColumnBlockCell;
+class SelectionVector;
 
 // A block of data all belonging to a single column.
 // This is simply a view into a buffer - it does not have any associated
@@ -120,6 +128,22 @@ class ColumnBlock {
     }
     return s;
   }
+
+  // Copies a range of cells between two ColumnBlocks.
+  //
+  // The extent of the range is designated by 'src_cell_off' and 'num_cells'. It
+  // is copied to 'dst' at 'dst_cell_off'.
+  //
+  // Note: The inclusion of 'sel_vec' in this function is an admission that
+  // ColumnBlocks are always used via RowBlocks, and a requirement for safe
+  // handling of types with indirect data (i.e. deselected cells are not
+  // relocated because doing so would be unsafe).
+  //
+  // TODO(adar): for columns with indirect data, existing arena allocations
+  // belonging to cells in 'dst' that are overwritten will NOT be deallocated.
+  Status CopyTo(const SelectionVector& sel_vec,
+                ColumnBlock* dst, size_t src_cell_off,
+                size_t dst_cell_off, size_t num_cells) const;
 
  private:
   friend class ColumnBlockCell;
@@ -295,4 +319,3 @@ class ScopedColumnBlock : public ColumnBlock {
 };
 
 } // namespace kudu
-#endif

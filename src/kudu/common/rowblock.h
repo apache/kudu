@@ -31,6 +31,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/util/bitmap.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 
@@ -127,6 +128,27 @@ class SelectionVector {
   }
 
   size_t nrows() const { return n_rows_; }
+
+  // Copies a range of bits between two SelectionVectors.
+  //
+  // The extent of the range is designated by 'src_row_off' and 'num_rows'. It
+  // is copied to 'dst' at 'dst_row_off'.
+  //
+  // Note: 'dst' will be resized if the copy causes it to grow (though this is
+  // just a "logical" resize; no reallocation takes place).
+  void CopyTo(SelectionVector* dst, size_t src_row_off,
+              size_t dst_row_off, size_t num_rows) const {
+    DCHECK_GE(n_rows_, src_row_off + num_rows);
+
+    size_t new_num_rows = dst_row_off + num_rows;
+    if (new_num_rows > dst->nrows()) {
+      // This will crash if 'dst' lacks adequate capacity.
+      dst->Resize(new_num_rows);
+    }
+
+    BitmapCopy(dst->mutable_bitmap(), dst_row_off,
+               bitmap_.get(), src_row_off, num_rows);
+  }
 
  private:
   // The number of allocated bytes in bitmap_
@@ -275,6 +297,35 @@ class RowBlock {
 
   const SelectionVector* selection_vector() const {
     return &sel_vec_;
+  }
+
+  // Copies a range of rows between two RowBlocks.
+  //
+  // The extent of the range is designated by 'src_row_off' and 'num_rows'. It
+  // is copied to 'dst' at 'dst_row_off'.
+  //
+  // Note: 'dst' will be resized if the copy causes it to grow (though this is
+  // just a "logical" resize; no reallocation takes place).
+  Status CopyTo(RowBlock* dst, size_t src_row_off,
+                size_t dst_row_off, size_t num_rows) const {
+    DCHECK_SCHEMA_EQ(*schema_, *dst->schema());
+    DCHECK_GE(nrows_, src_row_off + num_rows);
+
+    size_t new_num_rows = dst_row_off + num_rows;
+    if (new_num_rows > dst->nrows()) {
+      // This will crash if 'dst' lacks adequate capacity.
+      dst->Resize(new_num_rows);
+    }
+
+    for (size_t col_idx = 0; col_idx < schema_->num_columns(); col_idx++) {
+      ColumnBlock src_cb(column_block(col_idx));
+      ColumnBlock dst_cb(dst->column_block(col_idx));
+      RETURN_NOT_OK(src_cb.CopyTo(sel_vec_, &dst_cb,
+                                  src_row_off, dst_row_off, num_rows));
+    }
+
+    sel_vec_.CopyTo(&dst->sel_vec_, src_row_off, dst_row_off, num_rows);
+    return Status::OK();
   }
 
  private:
