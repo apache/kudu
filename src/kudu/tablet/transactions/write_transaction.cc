@@ -149,7 +149,7 @@ void WriteTransaction::NewReplicateMsg(gscoped_ptr<ReplicateMsg>* replicate_msg)
 
 Status WriteTransaction::Prepare() {
   TRACE_EVENT0("txn", "WriteTransaction::Prepare");
-  TRACE("PREPARE: Starting");
+  TRACE("PREPARE: Starting.");
   // Decode everything first so that we give up if something major is wrong.
   Schema client_schema;
   RETURN_NOT_OK_PREPEND(SchemaFromPB(state_->request()->schema(), &client_schema),
@@ -184,7 +184,7 @@ Status WriteTransaction::Prepare() {
   // Now acquire row locks and prepare everything for apply
   RETURN_NOT_OK(tablet->AcquireRowLocks(state()));
 
-  TRACE("PREPARE: finished.");
+  TRACE("PREPARE: Finished.");
   return Status::OK();
 }
 
@@ -207,7 +207,7 @@ Status WriteTransaction::Start() {
 // it seems pointless to return a Status!
 Status WriteTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
   TRACE_EVENT0("txn", "WriteTransaction::Apply");
-  TRACE("APPLY: Starting");
+  TRACE("APPLY: Starting.");
 
   if (PREDICT_FALSE(
           ANNOTATE_UNPROTECTED_READ(FLAGS_tablet_inject_latency_on_apply_write_txn_ms) > 0)) {
@@ -218,6 +218,7 @@ Status WriteTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
 
   Tablet* tablet = state()->tablet_replica()->tablet();
   RETURN_NOT_OK(tablet->ApplyRowOperations(state()));
+  TRACE("APPLY: Finished.");
 
   // Add per-row errors to the result, update metrics.
   int i = 0;
@@ -248,13 +249,13 @@ void WriteTransaction::Finish(TransactionResult result) {
   state()->CommitOrAbort(result);
 
   if (PREDICT_FALSE(result == Transaction::ABORTED)) {
-    TRACE("FINISH: transaction aborted");
+    TRACE("FINISH: Transaction aborted.");
     return;
   }
 
   DCHECK_EQ(result, Transaction::COMMITTED);
 
-  TRACE("FINISH: updating metrics");
+  TRACE("FINISH: Updating metrics.");
 
   TabletMetrics* metrics = state_->tablet_replica()->tablet()->metrics();
   if (metrics) {

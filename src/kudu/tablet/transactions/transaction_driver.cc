@@ -322,6 +322,7 @@ Status TransactionDriver::Prepare() {
                         mutable_state()->consensus_round()->replicate_msg()));
       RETURN_NOT_OK(transaction_->Start());
       VLOG_WITH_PREFIX(4) << "Triggering consensus replication.";
+      TRACE("REPLICATION: Starting.");
       // Trigger consensus replication.
       {
         std::lock_guard<simple_spinlock> lock(lock_);
@@ -434,6 +435,7 @@ void TransactionDriver::ReplicationFinished(const Status& status) {
   }
 
   TRACE_COUNTER_INCREMENT("replication_time_us", replication_duration.ToMicroseconds());
+  TRACE("REPLICATION: Finished.");
 
   // If we have prepared and replicated, we're ready
   // to move ahead and apply this operation.

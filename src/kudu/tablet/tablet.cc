@@ -436,7 +436,7 @@ Status Tablet::DecodeWriteOperations(const Schema* client_schema,
 
   // The Schema needs to be held constant while any transactions are between
   // PREPARE and APPLY stages
-  TRACE("PREPARE: Decoding operations");
+  TRACE("Decoding operations");
   vector<DecodedRowOperation> ops;
 
   // Decode the ops
@@ -458,11 +458,11 @@ Status Tablet::DecodeWriteOperations(const Schema* client_schema,
 Status Tablet::AcquireRowLocks(WriteTransactionState* tx_state) {
   TRACE_EVENT1("tablet", "Tablet::AcquireRowLocks",
                "num_locks", tx_state->row_ops().size());
-  TRACE("PREPARE: Acquiring locks for $0 operations", tx_state->row_ops().size());
+  TRACE("Acquiring locks for $0 operations", tx_state->row_ops().size());
   for (RowOp* op : tx_state->row_ops()) {
     RETURN_NOT_OK(AcquireLockForOp(tx_state, op));
   }
-  TRACE("PREPARE: locks acquired");
+  TRACE("Locks acquired");
   return Status::OK();
 }
 
