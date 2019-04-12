@@ -118,7 +118,9 @@ DEFINE_int32(scanner_max_batch_size_bytes, 8 * 1024 * 1024,
 TAG_FLAG(scanner_max_batch_size_bytes, advanced);
 TAG_FLAG(scanner_max_batch_size_bytes, runtime);
 
-DEFINE_int32(scanner_batch_size_rows, 100,
+// The default value is sized to a power of 2 to improve BitmapCopy performance
+// when copying a RowBlock (in ORDERED scans).
+DEFINE_int32(scanner_batch_size_rows, 128,
              "The number of rows to batch for servicing scan requests.");
 TAG_FLAG(scanner_batch_size_rows, advanced);
 TAG_FLAG(scanner_batch_size_rows, runtime);

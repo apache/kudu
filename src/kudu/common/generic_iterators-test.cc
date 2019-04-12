@@ -405,7 +405,7 @@ void TestMerge(const Schema& schema,
     vector<IterWithBounds> to_merge;
     for (const auto& list : all_ints) {
       unique_ptr<VectorIterator> vec_it(new VectorIterator(list.ints, list.is_deleted, schema));
-      vec_it->set_block_size(10);
+      vec_it->set_block_size(16);
       vec_it->set_selection_vector(list.sv.get());
       unique_ptr<RowwiseIterator> mat_it(NewMaterializingIterator(std::move(vec_it)));
       IterWithBounds mat_iwb;
@@ -431,7 +431,9 @@ void TestMerge(const Schema& schema,
           MergeIteratorOptions(include_deleted_rows), std::move(to_merge)));
       ASSERT_OK(merger->Init(&spec));
 
-      RowBlock dst(&schema, 100, nullptr);
+      // The RowBlock is sized to a power of 2 to improve BitmapCopy performance
+      // when copying another RowBlock into it.
+      RowBlock dst(&schema, 128, nullptr);
       size_t total_idx = 0;
       auto expected_iter = expected.cbegin();
       while (merger->HasNext()) {
@@ -440,6 +442,9 @@ void TestMerge(const Schema& schema,
           "if HasNext() returns true, must return some rows";
 
         for (int i = 0; i < dst.nrows(); i++) {
+          if (!dst.selection_vector()->IsRowSelected(i)) {
+            continue;
+          }
           ASSERT_NE(expected.end(), expected_iter);
           int64_t expected_key = expected_iter->first;
           bool expected_is_deleted = expected_iter->second;

@@ -92,13 +92,14 @@ class SelectionVector {
     BitmapClear(&bitmap_[0], row);
   }
 
-  // Finds the first selected row.
+  // Finds the first selected row beginning at 'row_offset'.
   //
   // Returns true if at least one row is selected and writes its index to 'row';
   // returns false otherwise.
-  bool FindFirstRowSelected(size_t* row) {
+  bool FindFirstRowSelected(size_t row_offset, size_t* row) {
+    DCHECK_LT(row_offset, n_rows_);
     DCHECK(row);
-    return BitmapFindFirstSet(&bitmap_[0], 0, n_rows_, row);
+    return BitmapFindFirstSet(&bitmap_[0], row_offset, n_rows_, row);
   }
 
   uint8_t *mutable_bitmap() {

@@ -99,20 +99,19 @@ void AddIterStats(const RowwiseIterator& iter,
 // MergeIterator
 ////////////////////////////////////////////////////////////
 
+// This is sized to a power of 2 to improve BitmapCopy performance when copying
+// a RowBlock.
+//
 // TODO(todd): this should be sized by # bytes, not # rows.
-static const int kMergeRowBuffer = 1000;
+static const int kMergeRowBuffer = 1024;
 
 // MergeIterState wraps a RowwiseIterator for use by the MergeIterator.
-// Importantly, it also filters out unselected rows from the wrapped
-// RowwiseIterator such that all returned rows are valid.
 class MergeIterState : public boost::intrusive::list_base_hook<> {
  public:
   explicit MergeIterState(IterWithBounds iwb)
       : iwb_(std::move(iwb)),
         arena_(1024),
-        next_row_idx_(0),
-        rows_advanced_(0),
-        rows_valid_(0)
+        next_row_idx_(0)
   {}
 
   // Fetches the next row from the iterator's current block, or the iterator's
@@ -121,7 +120,7 @@ class MergeIterState : public boost::intrusive::list_base_hook<> {
   // Does not advance the iterator.
   const RowBlockRow& next_row() const {
     if (read_block_) {
-      DCHECK_LT(rows_advanced_, rows_valid_);
+      DCHECK_LT(next_row_idx_, read_block_->nrows());
       return next_row_;
     }
     DCHECK(decoded_bounds_);
@@ -146,7 +145,7 @@ class MergeIterState : public boost::intrusive::list_base_hook<> {
   //
   // Decoded bound allocations are done against 'decoded_bounds_arena'.
   Status Init(Arena* decoded_bounds_arena) {
-    CHECK_EQ(0, rows_valid_);
+    DCHECK(!read_block_);
 
     if (iwb_.encoded_bounds) {
       decoded_bounds_.emplace(&schema(), decoded_bounds_arena);
@@ -165,18 +164,24 @@ class MergeIterState : public boost::intrusive::list_base_hook<> {
 
   // Returns true if the underlying iterator is fully exhausted.
   bool IsFullyExhausted() const {
-    return rows_valid_ == 0 && !iwb_.iter->HasNext();
+    return (!read_block_ || read_block_->nrows() == 0) && !iwb_.iter->HasNext();
   }
 
-  // Advance to the next row in the underlying iterator.
+  // Advances to the next row in the underlying iterator.
   //
   // If successful, 'pulled_new_block' is true if this block was exhausted and a
   // new block was pulled from the underlying iterator.
-  Status Advance(bool* pulled_new_block);
+  Status Advance(size_t num_rows, bool* pulled_new_block);
 
-  // Add statistics about the underlying iterator to the given vector.
+  // Adds statistics about the underlying iterator to the given vector.
   void AddStats(vector<IteratorStats>* stats) const {
     AddIterStats(*iwb_.iter, stats);
+  }
+
+  // Returns the number of rows remaining in the current block.
+  size_t remaining_in_block() const {
+    DCHECK(read_block_);
+    return read_block_->nrows() - next_row_idx_;
   }
 
   // Returns the schema from the underlying iterator.
@@ -184,12 +189,18 @@ class MergeIterState : public boost::intrusive::list_base_hook<> {
     return iwb_.iter->schema();
   }
 
-  // Pull the next block from the underlying iterator.
+  // Pulls the next block from the underlying iterator.
   Status PullNextBlock();
+
+  // Copies as many rows as possible from the current block of buffered rows to
+  // 'dst' (starting at 'dst_offset').
+  //
+  // If successful, 'num_rows_copied' will be set to the number of rows copied.
+  Status CopyBlock(RowBlock* dst, size_t dst_offset, size_t* num_rows_copied);
 
   // Returns true if the current block in the underlying iterator is exhausted.
   bool IsBlockExhausted() const {
-    return rows_advanced_ == rows_valid_;
+    return !read_block_ || read_block_->nrows() == next_row_idx_;
   }
 
   string ToString() const {
@@ -233,37 +244,34 @@ class MergeIterState : public boost::intrusive::list_base_hook<> {
   // The last row available in read_block_.
   RowBlockRow last_row_;
 
-  // Row index of next_row_ in read_block_.
+  // The index of the row currently pointed to by the iterator. Guaranteed to be
+  // a selected row.
   size_t next_row_idx_;
-
-  // Number of rows we've advanced past in read_block_.
-  size_t rows_advanced_;
-
-  // Number of valid (selected) rows in read_block_.
-  size_t rows_valid_;
 
   DISALLOW_COPY_AND_ASSIGN(MergeIterState);
 };
 
-Status MergeIterState::Advance(bool* pulled_new_block) {
-  rows_advanced_++;
-  if (IsBlockExhausted()) {
-    arena_.Reset();
-    RETURN_NOT_OK(PullNextBlock());
-    *pulled_new_block = true;
+Status MergeIterState::Advance(size_t num_rows, bool* pulled_new_block) {
+  DCHECK_GE(read_block_->nrows(), next_row_idx_ + num_rows);
+
+  next_row_idx_ += num_rows;
+
+  // If advancing didn't exhaust this block outright, find the next selected row.
+  size_t idx;
+  if (!IsBlockExhausted() &&
+      read_block_->selection_vector()->FindFirstRowSelected(next_row_idx_, &idx)) {
+    next_row_idx_ = idx;
+    next_row_.Reset(read_block_.get(), next_row_idx_);
+    *pulled_new_block = false;
     return Status::OK();
   }
 
-  // Seek to the next selected row.
-  SelectionVector *selection = read_block_->selection_vector();
-  for (++next_row_idx_; next_row_idx_ < read_block_->nrows(); next_row_idx_++) {
-    if (selection->IsRowSelected(next_row_idx_)) {
-      next_row_.Reset(read_block_.get(), next_row_idx_);
-      break;
-    }
-  }
-  DCHECK_NE(next_row_idx_, read_block_->nrows()) << "No selected rows found!";
-  *pulled_new_block = false;
+  // We either exhausted the block outright, or all subsequent rows were
+  // deselected. Either way, we need to pull the next block.
+  next_row_idx_ = read_block_->nrows();
+  arena_.Reset();
+  RETURN_NOT_OK(PullNextBlock());
+  *pulled_new_block = true;
   return Status::OK();
 }
 
@@ -276,26 +284,26 @@ Status MergeIterState::PullNextBlock() {
   }
   while (iwb_.iter->HasNext()) {
     RETURN_NOT_OK(iwb_.iter->NextBlock(read_block_.get()));
-    rows_advanced_ = 0;
-    // Honor the selection vector of the read_block_, since not all rows are necessarily selected.
+
     SelectionVector *selection = read_block_->selection_vector();
     DCHECK_EQ(selection->nrows(), read_block_->nrows());
     DCHECK_LE(selection->CountSelected(), read_block_->nrows());
-    rows_valid_ = selection->CountSelected();
-    VLOG(2) << Substitute("$0/$1 rows selected", rows_valid_, read_block_->nrows());
-    if (rows_valid_ == 0) {
+    size_t rows_valid = selection->CountSelected();
+    VLOG(2) << Substitute("$0/$1 rows selected", rows_valid, read_block_->nrows());
+    if (rows_valid == 0) {
       // Short-circuit: this block is entirely unselected and can be skipped.
       continue;
     }
 
     // Seek next_row_ and last_row_ to the first and last selected rows
     // respectively (which could be identical).
-    //
+
+    CHECK(selection->FindFirstRowSelected(0, &next_row_idx_));
+    next_row_.Reset(read_block_.get(), next_row_idx_);
+
     // We use a signed size_t type to avoid underflowing when finding last_row_.
     //
     // TODO(adar): this can be simplified if there was a BitmapFindLastSet().
-    CHECK(selection->FindFirstRowSelected(&next_row_idx_));
-    next_row_.Reset(read_block_.get(), next_row_idx_);
     for (ssize_t row_idx = read_block_->nrows() - 1; row_idx >= 0; row_idx--) {
       if (selection->IsRowSelected(row_idx)) {
         last_row_.Reset(read_block_.get(), row_idx);
@@ -308,8 +316,25 @@ Status MergeIterState::PullNextBlock() {
   }
 
   // The underlying iterator is fully exhausted.
-  rows_advanced_ = 0;
-  rows_valid_ = 0;
+  next_row_idx_ = 0;
+  read_block_.reset();
+  return Status::OK();
+}
+
+Status MergeIterState::CopyBlock(RowBlock* dst, size_t dst_offset,
+                                 size_t* num_rows_copied) {
+  DCHECK(read_block_);
+  DCHECK(!IsBlockExhausted());
+
+  size_t num_rows_to_copy = std::min(remaining_in_block(),
+                                     dst->nrows() - dst_offset);
+  VLOG(3) << Substitute(
+      "Copying $0 rows from RowBlock (s:$1,o:$2) to RowBlock (s:$3,o:$4): $5",
+      num_rows_to_copy, read_block_->nrows(), next_row_idx_, dst->nrows(),
+      dst_offset, ToString());
+  RETURN_NOT_OK(read_block_->CopyTo(dst, next_row_idx_,
+                                    dst_offset, num_rows_to_copy));
+  *num_rows_copied = num_rows_to_copy;
   return Status::OK();
 }
 
@@ -448,6 +473,13 @@ class MergeIterator : public RowwiseIterator {
   virtual Status NextBlock(RowBlock* dst) OVERRIDE;
 
  private:
+  // Materializes as much of the next block's worth of data into 'dst' at offset
+  // 'dst_row_idx' as possible. Only permitted when there's only one
+  // sub-iterator in the hot heap.
+  //
+  // On success, the selection vector in 'dst' and 'dst_row_idx' are both updated.
+  Status MaterializeBlock(RowBlock* dst, size_t* dst_row_idx);
+
   // Finds the next row and materializes it into 'dst' at offset 'dst_row_idx'.
   //
   // On success, the selection vector in 'dst' and 'dst_row_idx' are both updated.
@@ -457,9 +489,9 @@ class MergeIterator : public RowwiseIterator {
   // iterators if necessary and setting up additional per-iterator bookkeeping.
   Status InitSubIterators(ScanSpec *spec);
 
-  // Advances to the next row in 'state', destroying it and/or updating the
-  // three heaps if necessary.
-  Status AdvanceAndReheap(MergeIterState* state);
+  // Advances 'state' by 'num_rows_to_advance', destroying it and/or updating
+  // the three heaps if necessary.
+  Status AdvanceAndReheap(MergeIterState* state, size_t num_rows_to_advance);
 
   // Moves sub-iterators from cold_ to hot_ if they now overlap with the merge
   // window. Should be called whenever the merge window moves.
@@ -644,9 +676,10 @@ Status MergeIterator::InitSubIterators(ScanSpec *spec) {
   return Status::OK();
 }
 
-Status MergeIterator::AdvanceAndReheap(MergeIterState* state) {
+Status MergeIterator::AdvanceAndReheap(MergeIterState* state,
+                                       size_t num_rows_to_advance) {
   bool pulled_new_block;
-  RETURN_NOT_OK(state->Advance(&pulled_new_block));
+  RETURN_NOT_OK(state->Advance(num_rows_to_advance, &pulled_new_block));
   hot_.pop();
 
   // Note that hotmaxes_ is not yet popped as it's not necessary to do so if the
@@ -736,7 +769,7 @@ void MergeIterator::DestroySubIterator(MergeIterState* state) {
 }
 
 Status MergeIterator::NextBlock(RowBlock* dst) {
-  VLOG(3) << "Called NextBlock on " << ToString();
+  VLOG(3) << "Called NextBlock (" << dst->nrows() << " rows) on " << ToString();
   CHECK(initted_);
   DCHECK_SCHEMA_EQ(*dst->schema(), schema());
 
@@ -751,14 +784,40 @@ Status MergeIterator::NextBlock(RowBlock* dst) {
       DCHECK(states_.empty());
       break;
     }
-    // TODO(adar): When hot_.size() == 1, materialize an entire block.
-    RETURN_NOT_OK(MaterializeOneRow(dst, &dst_row_idx));
+
+    // If there's just one hot sub-iterator, we can copy its entire block
+    // instead of copying row-by-row.
+    //
+    // When N sub-iterators fully overlap, there'll only be one hot sub-iterator
+    // when consuming the very last row. A block copy for this case is more
+    // overhead than just copying out the last row.
+    //
+    // TODO(adar): this can be further optimized by "attaching" data to 'dst'
+    // rather than copying it.
+    if (hot_.size() == 1 && hot_.top()->remaining_in_block() > 1) {
+      RETURN_NOT_OK(MaterializeBlock(dst, &dst_row_idx));
+    } else {
+      RETURN_NOT_OK(MaterializeOneRow(dst, &dst_row_idx));
+    }
   }
 
   if (dst_row_idx < dst->nrows()) {
     dst->Resize(dst_row_idx);
   }
 
+  return Status::OK();
+}
+
+Status MergeIterator::MaterializeBlock(RowBlock* dst, size_t* dst_row_idx) {
+  DCHECK_EQ(1, hot_.size());
+
+  MergeIterState* state = hot_.top();
+  size_t num_rows_copied;
+  RETURN_NOT_OK(state->CopyBlock(dst, *dst_row_idx, &num_rows_copied));
+  RETURN_NOT_OK(AdvanceAndReheap(state, num_rows_copied));
+
+  // CopyBlock() already updated dst's SelectionVector.
+  *dst_row_idx += num_rows_copied;
   return Status::OK();
 }
 
@@ -835,7 +894,7 @@ Status MergeIterator::MaterializeOneRow(RowBlock* dst, size_t* dst_row_idx) {
 
   // Advance all matching sub-iterators and remove any that are exhausted.
   for (auto& s : smallest) {
-    RETURN_NOT_OK(AdvanceAndReheap(s));
+    RETURN_NOT_OK(AdvanceAndReheap(s, /*num_rows_to_advance=*/1));
   }
 
   dst->selection_vector()->SetRowSelected(*dst_row_idx);
