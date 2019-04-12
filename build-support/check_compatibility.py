@@ -20,8 +20,19 @@
 # Script which checks Java API compatibility between two revisions of the
 # Java client.
 #
-# Based on the compatibility checker from the HBase project, but ported to
-# Python for better readability.
+# Compare current commit against the previous commit:
+#   ./build-support/check_compatibility.py HEAD~1..HEAD
+#
+# Compare current commit against a release tag:
+#   ./build-support/check_compatibility.py 1.13.0..HEAD
+#
+# Compare current commit against a release tag:
+#   ./build-support/check_compatibility.py 1.13.0..HEAD
+#
+# Compare two releases:
+#   ./build-support/check_compatibility.py 1.12.0..1.13.0
+#
+# NOTE: You can only compare against releases which support a Gradle build (1.5+)
 
 import logging
 import optparse
@@ -30,15 +41,16 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 
 from kudu_util import check_output, init_logging
 
-JAVA_ACC_GIT_URL = "https://github.com/lvc/japi-compliance-checker.git"
+JAPICMP_VERSION="0.15.1"
+JAPICMP_JAR="japicmp-" + JAPICMP_VERSION + "-jar-with-dependencies.jar"
+JAPICMP_URL="https://repo1.maven.org/maven2/com/github/siom79/japicmp/japicmp/" \
+             + JAPICMP_VERSION + "/" + JAPICMP_JAR
 
-# The annotations for what we consider our public API.
-PUBLIC_ANNOTATIONS = ["InterfaceAudience.LimitedPrivate",
-                      "InterfaceAudience.Public"]
+# Paths are ".../kudu/java/<artifact-name>/build/..."
+ARTIFACT_NAME_PATTERN=re.compile("java/(.*)/build")
 
 # Various relative paths
 PATH_TO_REPO_DIR = "../"
@@ -57,11 +69,6 @@ def get_scratch_dir():
   return os.path.abspath(os.path.join(dirname, PATH_TO_BUILD_DIR))
 
 
-def get_java_acc_dir():
-  """ Return the path where we check out the Java API Compliance Checker. """
-  return os.path.join(get_repo_dir(), "thirdparty/java-acc")
-
-
 def clean_scratch_dir(scratch_dir):
   """ Clean up and re-create the scratch directory. """
   if os.path.exists(scratch_dir):
@@ -71,88 +78,69 @@ def clean_scratch_dir(scratch_dir):
   os.makedirs(scratch_dir)
 
 
-def checkout_java_tree(rev, path):
+def checkout_source_tree(rev, path):
   """ Check out the Java source tree for the given revision into the given path. """
   logging.info("Checking out %s in %s", rev, path)
   os.makedirs(path)
-  # Extract java source
+  # Extract source.
   subprocess.check_call(["bash", '-o', 'pipefail', "-c",
-                         ("git archive --format=tar %s java/ | " +
+                         ("git archive --format=tar %s | " +
                           "tar -C \"%s\" -xf -") % (rev, path)],
                         cwd=get_repo_dir())
-
-  # Extract proto files which the Java build also relies on.
-  # bsdtar doesn't support --wildcards so we need to extract them in two steps.
-  git_tar_cmd = "git archive --format=tar %s src/" % rev
-  proto_filenames_file = tempfile.NamedTemporaryFile()
-  subprocess.check_call(["bash", '-o', 'pipefail', "-c",
-                         git_tar_cmd + " | tar -t | grep -a '\.proto$'"],
-                        cwd=get_repo_dir(), stdout=proto_filenames_file)
-  subprocess.check_call(["bash", '-o', 'pipefail', "-c",
-                          git_tar_cmd + " | " +
-                          ("tar -C \"%s\" -xT %s") % (path, proto_filenames_file.name)],
-                        cwd=get_repo_dir())
-
-  # Symlink thirdparty from the outer build so that protoc is available.
-  # This may break at some point in the future if we switch protobuf versions,
-  # but for now it's faster than rebuilding protobuf in both trees.
-  os.symlink(os.path.join(get_repo_dir(), "thirdparty"),
-             os.path.join(path, "thirdparty"))
-
 
 def get_git_hash(revname):
   """ Convert 'revname' to its SHA-1 hash. """
   return check_output(["git", "rev-parse", revname],
-                      cwd=get_repo_dir()).strip()
+                      cwd=get_repo_dir()).decode('utf-8').strip()
 
 
 def build_tree(path):
   """ Run the Java build within 'path'. """
   java_path = os.path.join(path, "java")
   logging.info("Building in %s...", java_path)
-  subprocess.check_call(["mvn", "-DskipTests", "-Dmaven.javadoc.skip=true",
-                         "package"],
-                        cwd=java_path)
+  subprocess.check_call(["./gradlew", "assemble"], cwd=java_path)
 
 
-def checkout_java_acc(force):
-  """
-  Check out the Java API Compliance Checker. If 'force' is true, will re-download even if the
-  directory exists.
-  """
-  acc_dir = get_java_acc_dir()
-  if os.path.exists(acc_dir):
-    logging.info("Java JAVA_ACC is already downloaded.")
+def get_japicmp_path():
+  """ Return the path where we download the japicmp jar. """
+  return os.path.join(get_repo_dir(), "thirdparty/src/" + JAPICMP_JAR)
+
+
+def download_japicmp(force):
+  """ Download the japicmp jar. """
+  if os.path.exists(get_japicmp_path()):
+    logging.info("japicmp is already downloaded.")
     if not force:
       return
     logging.info("Forcing re-download.")
-    shutil.rmtree(acc_dir)
-  logging.info("Checking out Java JAVA_ACC...")
-  subprocess.check_call(["git", "clone", "--depth=1", JAVA_ACC_GIT_URL, acc_dir])
+    shutil.rmtree(get_japicmp_path())
+  subprocess.check_call(["curl", "--retry", "3", "-L", "-o",
+                         get_japicmp_path(), JAPICMP_URL], cwd=get_repo_dir())
 
 
 def find_client_jars(path):
   """ Return a list of jars within 'path' to be checked for compatibility. """
-  all_jars = set(check_output(["find", path, "-name", "*.jar"]).splitlines())
-
-  # If we see "original-foo.jar", then remove "foo.jar" since that's a post-shading
-  # duplicate.
-  dups = []
-  for j in all_jars:
-    dirname, name = os.path.split(j)
-    m = re.match("original-(.+)", name)
-    if m:
-      dups.append(os.path.join(dirname, m.group(1)))
-  for d in dups:
-    all_jars.remove(d)
-
+  all_jars = set(check_output(["find", path, "-name", "*.jar"]).decode('utf-8').splitlines())
   return [j for j in all_jars if (
-      "-tests" not in j and
+      "-javadoc" not in j and
       "-sources" not in j and
-      "-with-dependencies" not in j)]
+      "-test-sources" not in j and
+      "-tests" not in j and
+      "-unshaded" not in j and
+      "buildSrc" not in j and
+      "gradle-wrapper" not in j and
+      "kudu-backup" not in j and
+      "kudu-hive" not in j and
+      "kudu-jepsen" not in j and
+      "kudu-subprocess" not in j)]
 
 
-def run_java_acc(src_name, src, dst_name, dst):
+def get_artifact_name(jar_path):
+  """ Return the artifact name given a full jar path. """
+  return ARTIFACT_NAME_PATTERN.search(jar_path).group(1)
+
+
+def run_japicmp(src, dst):
   """ Run the compliance checker to compare 'src' and 'dst'. """
   src_jars = find_client_jars(src)
   dst_jars = find_client_jars(dst)
@@ -160,30 +148,53 @@ def run_java_acc(src_name, src, dst_name, dst):
                "and new jars:\n%s",
                "\n".join(src_jars),
                "\n".join(dst_jars))
+  excludes = [
+    # Exclude shaded/relocated packages.
+    "org.apache.kudu.shaded.*",
+    # Exclude inner Protobuf classes since the annotation filter doesn't handle these.
+    "org.apache.kudu.*PB*",
+    # Exclude generated Protobuf code.
+    "@javax.annotation.Generated",
+    # Exclude unstable code.
+    "@org.apache.yetus.audience.InterfaceStability$Unstable",
+    # Exclude private code.
+    "@org.apache.yetus.audience.InterfaceAudience$Private",
+    # Exclude limited private code.
+    "@org.apache.yetus.audience.InterfaceAudience$LimitedPrivate",
+    # Exclude Scala Generated code.
+    "@scala.reflect.ScalaSignature",
+    "*$$anon$*",
+    "*$$anonfun$*"
+  ]
 
-  annotations_path = os.path.join(get_scratch_dir(), "annotations.txt")
-  with open(annotations_path, "w") as f:
-    for ann in PUBLIC_ANNOTATIONS:
-      print(ann, file=f)
+  reports = []
+  for src_jar in src_jars:
+    src_name = get_artifact_name(src_jar)
+    for dst_jar in dst_jars:
+      dst_name = get_artifact_name(dst_jar)
+      if src_name == dst_name:
+          reports.append((src_name, src_jar, dst_jar))
 
-  java_acc_path = os.path.join(get_java_acc_dir(), "japi-compliance-checker.pl")
-
-  out_path = os.path.join(get_scratch_dir(), "report.html")
-  subprocess.check_call(["perl", java_acc_path,
-                         "-l", "Kudu",
-                         "-v1", src_name,
-                         "-v2", dst_name,
-                         "-d1", ",".join(src_jars),
-                         "-d2", ",".join(dst_jars),
-                         "-report-path", out_path,
-                         "-annotations-list", annotations_path])
+  # TODO(ghenke): Add support for --error-on-binary-incompatibility and --error-on-source-incompatibility.
+  # CLI tool documentation: https://siom79.github.io/japicmp/CliTool.html
+  for (name, src_jar, dst_jar) in reports:
+    out_path = os.path.join(get_scratch_dir(), name + "-report.html")
+    subprocess.check_call(["java", "-jar", get_japicmp_path(),
+                           "--old", src_jar,
+                           "--new", dst_jar,
+                           "--include", "org.apache.kudu.*",
+                           "--exclude", ";".join(excludes),
+                           "--html-file", out_path,
+                           "--only-modified",
+                           "--ignore-missing-classes",
+                           "--report-only-filename"
+                           ])
 
 
 def main(argv):
-  parser = optparse.OptionParser(
-      usage="usage: %prog SRC..[DST]")
+  parser = optparse.OptionParser(usage="usage: %prog SRC..[DST]")
   parser.add_option("-f", "--force-download", dest="force_download_deps",
-                    help=("Download dependencies (i.e. Java JAVA_ACC) even if they are " +
+                    help=("Download dependencies (i.e. japicmp) even if they are " +
                           "already present"))
   opts, args = parser.parse_args()
 
@@ -200,25 +211,24 @@ def main(argv):
   logging.info("Source revision: %s", src_rev)
   logging.info("Destination revision: %s", dst_rev)
 
-  # Download deps.
-  checkout_java_acc(opts.force_download_deps)
-
   # Set up the build.
   scratch_dir = get_scratch_dir()
   clean_scratch_dir(scratch_dir)
 
+  # Download japicmp.
+  download_japicmp(opts.force_download_deps)
+
   # Check out the src and dst source trees.
   src_dir = os.path.join(scratch_dir, "src")
   dst_dir = os.path.join(scratch_dir, "dst")
-  checkout_java_tree(src_rev, src_dir)
-  checkout_java_tree(dst_rev, dst_dir)
+  checkout_source_tree(src_rev, src_dir)
+  checkout_source_tree(dst_rev, dst_dir)
 
-  # Run the build in each.
+  # Run the build in each tree.
   build_tree(src_dir)
   build_tree(dst_dir)
 
-  run_java_acc(src_rev, src_dir,
-              dst_rev, dst_dir)
+  run_japicmp(src_dir, dst_dir)
 
 
 if __name__ == "__main__":

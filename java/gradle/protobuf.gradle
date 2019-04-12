@@ -32,6 +32,16 @@ protobuf {
       artifact = libs.protoc
     }
   }
+  generateProtoTasks {
+    all().each { task ->
+      task.builtins {
+        java {
+          // Tell protoc to mark generated java classes with @Generated.
+          option 'annotate_code'
+        }
+      }
+    }
+  }
 }
 
 // Configure Intellij to see the generated classes.
