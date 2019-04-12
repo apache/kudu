@@ -30,6 +30,7 @@ SelectionVector::SelectionVector(size_t row_capacity)
     n_bytes_(bytes_capacity_),
     bitmap_(new uint8_t[n_bytes_]) {
   CHECK_GT(n_bytes_, 0);
+  PadExtraBitsWithZeroes();
 }
 
 void SelectionVector::Resize(size_t n_rows) {
@@ -41,12 +42,7 @@ void SelectionVector::Resize(size_t n_rows) {
   CHECK_LE(new_bytes, bytes_capacity_);
   n_rows_ = n_rows;
   n_bytes_ = new_bytes;
-  // Pad with zeroes up to the next byte in order to give CountSelected()
-  // and AnySelected() the assumption that the size is an even byte
-  size_t bits_in_last_byte = n_rows & 7;
-  if (bits_in_last_byte > 0) {
-    BitmapChangeBits(&bitmap_[0], n_rows_, 8 - bits_in_last_byte, 0);
-  }
+  PadExtraBitsWithZeroes();
 }
 
 void SelectionVector::ClearToSelectAtMost(size_t max_rows) {

@@ -111,15 +111,8 @@ class SelectionVector {
 
   // Set all bits in the bitmap to 1
   void SetAllTrue() {
-    // Initially all rows should be selected.
     memset(&bitmap_[0], 0xff, n_bytes_);
-    // the last byte in the bitmap may have a few extra bits - need to
-    // clear those
-
-    int trailer_bits = 8 - (n_rows_ % 8);
-    if (trailer_bits != 8) {
-      bitmap_[n_bytes_ - 1] >>= trailer_bits;
-    }
+    PadExtraBitsWithZeroes();
   }
 
   // Set all bits in the bitmap to 0
@@ -151,6 +144,24 @@ class SelectionVector {
   }
 
  private:
+
+  // Pads any non-byte-aligned bits at the end of the SelectionVector with zeroes.
+  //
+  // To improve performance, CountSelected() and AnySelected() evaluate the
+  // SelectionVector's bitmap in terms of bytes. As such, they consider all of
+  // the trailing bits, even if the bitmap's bit length is not byte-aligned and
+  // some trailing bits aren't part of the bitmap.
+  //
+  // To address this without sacrificing performance, we need to zero out all
+  // trailing bits at construction time, or after any operation that sets all
+  // bytes in bulk.
+  void PadExtraBitsWithZeroes() {
+    size_t bits_in_last_byte = n_rows_ & 7;
+    if (bits_in_last_byte > 0) {
+      BitmapChangeBits(&bitmap_[0], n_rows_, 8 - bits_in_last_byte, false);
+    }
+  }
+
   // The number of allocated bytes in bitmap_
   size_t bytes_capacity_;
 
