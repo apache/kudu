@@ -61,7 +61,6 @@
 #include "kudu/util/thread.h"
 
 DECLARE_bool(cache_force_single_shard);
-DECLARE_bool(log_block_manager_delete_dead_container);
 DECLARE_double(log_container_excess_space_before_cleanup_fraction);
 DECLARE_double(log_container_live_metadata_before_compact_ratio);
 DECLARE_int64(block_manager_max_open_files);
@@ -142,9 +141,6 @@ class BlockManagerStressTest : public KuduTest {
 
     // Compact block manager metadata aggressively.
     FLAGS_log_container_live_metadata_before_compact_ratio = 0.99;
-
-    // Delete full, dead log block containers at runtime.
-    FLAGS_log_block_manager_delete_dead_container = true;
 
     // Use a single cache shard. Otherwise, the cache can be a little bit "sloppy"
     // depending on the number of CPUs on the system.

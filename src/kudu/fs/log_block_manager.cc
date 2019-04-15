@@ -111,7 +111,7 @@ DEFINE_bool(log_block_manager_test_hole_punching, true,
 TAG_FLAG(log_block_manager_test_hole_punching, advanced);
 TAG_FLAG(log_block_manager_test_hole_punching, unsafe);
 
-DEFINE_bool(log_block_manager_delete_dead_container, false,
+DEFINE_bool(log_block_manager_delete_dead_container, true,
             "When enabled, full and dead log block containers will be deleted "
             "at runtime, which can potentially help improving log block manager "
             "startup time");
