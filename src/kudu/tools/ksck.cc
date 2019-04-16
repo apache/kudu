@@ -43,8 +43,8 @@
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/string_case.h"
-#include "kudu/util/threadpool.h"
 
 #define PUSH_PREPEND_NOT_OK(s, statuses, msg) do { \
   ::kudu::Status _s = (s); \
@@ -55,8 +55,8 @@
 
 DEFINE_bool(checksum_scan, false,
             "Perform a checksum scan on data in the cluster.");
-DEFINE_int32(fetch_replica_info_concurrency, 20,
-             "Number of concurrent tablet servers to fetch replica info from.");
+DEFINE_int32(fetch_info_concurrency, 20,
+             "Number of threads to fetch info concurrently.");
 
 DEFINE_string(ksck_format, "plain_concise",
               "Output format for ksck. Available options are 'plain_concise', "
@@ -154,60 +154,77 @@ std::ostream& operator<<(std::ostream& lhs, KsckFetchState state) {
 Ksck::Ksck(shared_ptr<KsckCluster> cluster, ostream* out)
     : cluster_(std::move(cluster)),
       out_(out == nullptr ? &std::cout : out) {
+  CHECK_OK(ThreadPoolBuilder("Ksck-fetch")
+               .set_max_threads(FLAGS_fetch_info_concurrency)
+               .set_idle_timeout(MonoDelta::FromMilliseconds(10))
+               .Build(&pool_));
 }
 
 Status Ksck::CheckMasterHealth() {
-  int bad_masters = 0;
-  int unauthorized_masters = 0;
+  int num_masters = static_cast<int>(cluster_->masters().size());
+  if (num_masters == 0) {
+    return Status::NotFound("No masters found");
+  }
+
+  AtomicInt<int32_t> bad_masters(0);
+  AtomicInt<int32_t> unauthorized_masters(0);
+
   vector<KsckServerHealthSummary> master_summaries;
-  // There shouldn't be more than 5 masters, so we'll keep it simple and gather
-  // info in sequence instead of spreading it across a threadpool.
+  simple_spinlock master_summaries_lock;
+
   for (const auto& master : cluster_->masters()) {
-    KsckServerHealthSummary sh;
-    Status s = master->FetchInfo().AndThen([&]() {
+    RETURN_NOT_OK(pool_->SubmitFunc([&]() {
+        KsckServerHealthSummary sh;
+        Status s = master->FetchInfo().AndThen([&]() {
           return master->FetchConsensusState();
         });
-    sh.uuid = master->uuid();
-    sh.address = master->address();
-    sh.version = master->version();
-    sh.status = s;
-    if (!s.ok()) {
-      if (IsNotAuthorizedMethodAccess(s)) {
-        sh.health = KsckServerHealth::UNAUTHORIZED;
-        unauthorized_masters++;
-      } else {
-        sh.health = KsckServerHealth::UNAVAILABLE;
-      }
-      bad_masters++;
-    }
-    master_summaries.push_back(std::move(sh));
+        sh.uuid = master->uuid();
+        sh.address = master->address();
+        sh.version = master->version();
+        sh.status = s;
+        if (!s.ok()) {
+          if (IsNotAuthorizedMethodAccess(s)) {
+            sh.health = KsckServerHealth::UNAUTHORIZED;
+            unauthorized_masters.Increment();
+          } else {
+            sh.health = KsckServerHealth::UNAVAILABLE;
+          }
+          bad_masters.Increment();
+        }
 
-    // Fetch the flags information.
-    // Failing to gather flags is only a warning.
-    s = master->FetchUnusualFlags();
-    if (!s.ok()) {
-      results_.warning_messages.push_back(s.CloneAndPrepend(Substitute(
-          "unable to get flag information for master $0 ($1)",
-          master->uuid(),
-          master->address())));
-    }
+        {
+          std::lock_guard<simple_spinlock> lock(master_summaries_lock);
+          master_summaries.push_back(std::move(sh));
+        }
+
+        // Fetch the flags information.
+        // Failing to gather flags is only a warning.
+        s = master->FetchUnusualFlags();
+        if (!s.ok()) {
+          std::lock_guard<simple_spinlock> lock(master_summaries_lock);
+          results_.warning_messages.push_back(s.CloneAndPrepend(Substitute(
+              "unable to get flag information for master $0 ($1)",
+              master->uuid(),
+              master->address())));
+        }
+    }));
   }
-  results_.master_summaries.swap(master_summaries);
+  pool_->Wait();
 
-  int num_masters = cluster_->masters().size();
+  results_.master_summaries.swap(master_summaries);
 
   // Return a NotAuthorized status if any master has auth errors, since this
   // indicates ksck may not be able to gather full and accurate info.
-  if (unauthorized_masters > 0) {
+  if (unauthorized_masters.Load() > 0) {
     return Status::NotAuthorized(
         Substitute("failed to gather info from $0 of $1 "
                    "masters due to lack of admin privileges",
-                   unauthorized_masters, num_masters));
+                   unauthorized_masters.Load(), num_masters));
   }
-  if (bad_masters > 0) {
+  if (bad_masters.Load() > 0) {
     return Status::NetworkError(
         Substitute("failed to gather info from all masters: $0 of $1 had errors",
-                   bad_masters, num_masters));
+                   bad_masters.Load(), num_masters));
   }
   return Status::OK();
 }
@@ -304,17 +321,12 @@ Status Ksck::FetchTableAndTabletInfo() {
 
 Status Ksck::FetchInfoFromTabletServers() {
   VLOG(1) << "Fetching the list of tablet servers";
-  int servers_count = cluster_->tablet_servers().size();
+  int servers_count = static_cast<int>(cluster_->tablet_servers().size());
   VLOG(1) << Substitute("List of $0 tablet servers retrieved", servers_count);
 
   if (servers_count == 0) {
-    return Status::NotFound("No tablet servers found");
+    return Status::OK();
   }
-
-  gscoped_ptr<ThreadPool> pool;
-  RETURN_NOT_OK(ThreadPoolBuilder("ksck-fetch")
-                .set_max_threads(FLAGS_fetch_replica_info_concurrency)
-                .Build(&pool));
 
   AtomicInt<int32_t> bad_servers(0);
   AtomicInt<int32_t> unauthorized_servers(0);
@@ -325,53 +337,51 @@ Status Ksck::FetchInfoFromTabletServers() {
 
   for (const auto& entry : cluster_->tablet_servers()) {
     const auto& ts = entry.second;
-    CHECK_OK(pool->SubmitFunc([&]() {
-          VLOG(1) << "Going to connect to tablet server: " << ts->uuid();
-          KsckServerHealth health;
-          Status s = ts->FetchInfo(&health).AndThen([&ts, &health]() {
-                if (FLAGS_consensus) {
-                  return ts->FetchConsensusState(&health);
-                }
-                return Status::OK();
-              });
-          KsckServerHealthSummary summary;
-          summary.uuid = ts->uuid();
-          summary.address = ts->address();
-          summary.ts_location = ts->location();
-          summary.version = ts->version();
-          summary.status = s;
-          if (!s.ok()) {
-            if (IsNotAuthorizedMethodAccess(s)) {
-              health = KsckServerHealth::UNAUTHORIZED;
-              unauthorized_servers.Increment();
+    RETURN_NOT_OK(pool_->SubmitFunc([&]() {
+        VLOG(1) << "Going to connect to tablet server: " << ts->uuid();
+        KsckServerHealth health;
+        Status s = ts->FetchInfo(&health).AndThen([&ts, &health]() {
+            if (FLAGS_consensus) {
+              return ts->FetchConsensusState(&health);
             }
-            bad_servers.Increment();
+            return Status::OK();
+        });
+        KsckServerHealthSummary summary;
+        summary.uuid = ts->uuid();
+        summary.address = ts->address();
+        summary.ts_location = ts->location();
+        summary.version = ts->version();
+        summary.status = s;
+        if (!s.ok()) {
+          if (IsNotAuthorizedMethodAccess(s)) {
+            health = KsckServerHealth::UNAUTHORIZED;
+            unauthorized_servers.Increment();
           }
-          summary.health = health;
+          bad_servers.Increment();
+        }
+        summary.health = health;
 
-          {
-            std::lock_guard<simple_spinlock> lock(tablet_server_summaries_lock);
-            tablet_server_summaries.push_back(std::move(summary));
-          }
+        {
+          std::lock_guard<simple_spinlock> lock(tablet_server_summaries_lock);
+          tablet_server_summaries.push_back(std::move(summary));
+        }
 
-          // Fetch the flags information.
-          // Failing to gather flags is only a warning.
-          s = ts->FetchUnusualFlags();
-          if (!s.ok()) {
-            results_.warning_messages.push_back(s.CloneAndPrepend(Substitute(
-                    "unable to get flag information for tablet server $0 ($1)",
-                    ts->uuid(),
-                    ts->address())));
-          }
-        }));
+        // Fetch the flags information.
+        // Failing to gather flags is only a warning.
+        s = ts->FetchUnusualFlags();
+        if (!s.ok()) {
+          std::lock_guard<simple_spinlock> lock(tablet_server_summaries_lock);
+          results_.warning_messages.push_back(s.CloneAndPrepend(Substitute(
+              "unable to get flag information for tablet server $0 ($1)",
+              ts->uuid(),
+              ts->address())));
+        }
+    }));
   }
-  pool->Wait();
+  pool_->Wait();
 
   results_.tserver_summaries.swap(tablet_server_summaries);
 
-  if (bad_servers.Load() == 0) {
-    return Status::OK();
-  }
   // Return a NotAuthorized status if any tablet server has auth errors, since
   // this indicates ksck may not be able to gather full and accurate info.
   if (unauthorized_servers.Load() > 0) {
@@ -380,9 +390,12 @@ Status Ksck::FetchInfoFromTabletServers() {
                    "to lack of admin privileges",
                    unauthorized_servers.Load(), servers_count));
   }
-  return Status::NetworkError(
+  if (bad_servers.Load() > 0) {
+    return Status::NetworkError(
       Substitute("failed to gather info for all tablet servers: $0 of $1 had errors",
                  bad_servers.Load(), servers_count));
+  }
+  return Status::OK();
 }
 
 void Ksck::set_print_sections(const std::vector<std::string>& sections) {

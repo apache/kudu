@@ -161,6 +161,8 @@ class RemoteKsckCluster : public KsckCluster {
 
   virtual Status RetrieveTablesList() override;
 
+  virtual Status RetrieveAllTablets() override;
+
   virtual Status RetrieveTabletsList(const std::shared_ptr<KsckTable>& table) override;
 
   std::shared_ptr<rpc::Messenger> messenger() const override {
@@ -169,13 +171,7 @@ class RemoteKsckCluster : public KsckCluster {
 
  private:
   RemoteKsckCluster(std::vector<std::string> master_addresses,
-                    std::shared_ptr<rpc::Messenger> messenger)
-      : master_addresses_(std::move(master_addresses)),
-        messenger_(std::move(messenger)) {
-    for (const std::string& master_addr : master_addresses_) {
-      masters_.emplace_back(new RemoteKsckMaster(master_addr, messenger_));
-    }
-  }
+                    std::shared_ptr<rpc::Messenger> messenger);
 
   const std::vector<std::string> master_addresses_;
   const std::shared_ptr<rpc::Messenger> messenger_;

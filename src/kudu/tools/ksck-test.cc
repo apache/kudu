@@ -200,7 +200,11 @@ class MockKsckCluster : public KsckCluster {
     return Status::OK();
   }
 
-  virtual Status RetrieveTabletsList(const shared_ptr<KsckTable>& table) override {
+  virtual Status RetrieveAllTablets() override {
+    return Status::OK();
+  }
+
+  virtual Status RetrieveTabletsList(const shared_ptr<KsckTable>& /* unused */) override {
     return Status::OK();
   }
 

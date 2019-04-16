@@ -36,6 +36,7 @@
 
 #include "kudu/common/schema.h"
 #include "kudu/consensus/metadata.pb.h"
+#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/server/server_base.pb.h"
@@ -43,10 +44,12 @@
 #include "kudu/tablet/tablet.pb.h"  // IWYU pragma: keep
 #include "kudu/tools/ksck_results.h"
 #include "kudu/util/status.h"
+#include "kudu/util/threadpool.h"
 
 namespace kudu {
 
 class MonoDelta;
+
 namespace rpc {
 class Messenger;
 } // namespace rpc
@@ -407,9 +410,7 @@ class KsckCluster {
     RETURN_NOT_OK(Connect());
     RETURN_NOT_OK(RetrieveTablesList());
     RETURN_NOT_OK(RetrieveTabletServers());
-    for (const std::shared_ptr<KsckTable>& table : tables()) {
-      RETURN_NOT_OK(RetrieveTabletsList(table));
-    }
+    RETURN_NOT_OK(RetrieveAllTablets());
     return Status::OK();
   }
 
@@ -421,6 +422,9 @@ class KsckCluster {
 
   // Fetches the list of tables.
   virtual Status RetrieveTablesList() = 0;
+
+  // Fetches all tablets in the cluster.
+  virtual Status RetrieveAllTablets() = 0;
 
   // Fetches the list of tablets for the given table.
   // The table's tablet list is modified only if this method returns OK.
@@ -449,6 +453,7 @@ class KsckCluster {
   MasterList masters_;
   TSMap tablet_servers_;
   std::vector<std::shared_ptr<KsckTable>> tables_;
+  gscoped_ptr<ThreadPool> pool_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(KsckCluster);
@@ -571,6 +576,7 @@ class Ksck {
                            int table_num_replicas);
 
   const std::shared_ptr<KsckCluster> cluster_;
+  gscoped_ptr<ThreadPool> pool_;
 
   bool check_replica_count_ = true;
   std::vector<std::string> table_filters_;
