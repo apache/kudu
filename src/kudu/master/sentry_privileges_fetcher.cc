@@ -17,8 +17,10 @@
 
 #include "kudu/master/sentry_privileges_fetcher.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <memory>
 #include <mutex>
 #include <ostream>
@@ -51,6 +53,7 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/slice.h"
+#include "kudu/util/test_util_prod.h"
 #include "kudu/util/ttl_cache_metrics.h"
 
 DEFINE_string(sentry_service_rpc_addresses, "",
@@ -210,38 +213,78 @@ Status GetAuthorizable(const string& table_ident,
   return Status::OK();
 }
 
-// A utility class to help with Sentry privilege scoping, generating
-// sequence of keys to lookup corresponding entries in the cache.
-// For example, for user 'U' and authorizable { server:S, db:D, table:T }
-// (in pseudo-form) the sequence of keys is { 'U/S', 'U/S/D', 'U/S/D/T' }.
+// A utility class to help with Sentry privilege scoping, generating sequence
+// of keys to lookup corresponding entries in the cache.
 class AuthzInfoKey {
  public:
+  // The maximum possible number of the elements in the key lookup sequence
+  // returned by the key_sequence() method (see below). Maximum number of keys
+  // to lookup in the cache is 2. See the comment for the GenerateKeySequence()
+  // method below for more details.
+  constexpr static size_t kKeySequenceMaxSize = 2;
+
   AuthzInfoKey(const string& user,
                const ::sentry::TSentryAuthorizable& authorizable);
 
-  const string& GetFlattenedKey() {
-    // The flattened key is the very last element of the key_sequence_.
-    return key_sequence_.back();
+  // Get the key to lookup the corresponding entry in the cache with the scope
+  // of the authorizable widened as specified by the 'scope' parameter.
+  // E.g., if the original scope of the autorizable specified in the constructor
+  // was COLUMN, with the 'scope' set to TABLE the returned key is 'U/S/D/T',
+  // while the key for the authorizable as is would be 'U/S/D/T/C'.
+  const string& GetKey(SentryAuthorizableScope::Scope scope) const;
+
+  // This method returns the sequence of keys to look up in the cache
+  // if retrieving privileges granted to the 'user' on the 'authorizable'
+  // specified in the constructor.
+  const vector<string>& key_sequence() const {
+    return key_sequence_;
   }
 
  private:
-  // Generate the key lookup sequence: a sequence of keys to use while
-  // looking up corresponding entry in the authz cache based on the
-  // hierarchy of scoping for Sentry authorizables.
-  static vector<string> GenerateKeySequence(
+  // Generate the raw key sequence: a sequence of keys for the authz scope
+  // hierarchy, starting from the very top (i.e. SERVER scope) and narrowing
+  // down to the scope of the 'authorizable' specified in the constructor.
+  //
+  // For example, for user 'U' and authorizable { server:S, db:D, table:T }
+  // the raw sequence of keys is { 'U/S', 'U/S/D', 'U/S/D/T' }.
+  static vector<string> GenerateRawKeySequence(
       const string& user, const ::sentry::TSentryAuthorizable& authorizable);
 
+  // Generate the cache key lookup sequence: a sequence of keys to use while
+  // looking up corresponding entry in the authz cache. The maximum
+  // length of the returned sequence is limited by kCacheKeySequenceMaxSize.
+  //
+  // For authorizables of the TABLE scope and narrower, it returns sequence
+  // { 'U/S/D', 'U/S/D/T' }. For authorizables of the DATABASE scope it returns
+  // { 'U/S/D' }. For authorizables of the SERVER scope it returns { 'U/S' }.
+  static vector<string> GenerateKeySequence(const vector<string>& raw_sequence);
+
+  // Convert the Sentry authz scope to an index in the list
+  // { SERVER, DATABASE, TABLE, COLUMN }.
+  static size_t ScopeToRawSequenceIdx(SentryAuthorizableScope::Scope scope);
+
+  const vector<string> raw_key_sequence_;
   const vector<string> key_sequence_;
 };
 
 AuthzInfoKey::AuthzInfoKey(const string& user,
                            const ::sentry::TSentryAuthorizable& authorizable)
-    : key_sequence_(GenerateKeySequence(user, authorizable)) {
-  CHECK(!key_sequence_.empty());
+    : raw_key_sequence_(GenerateRawKeySequence(user, authorizable)),
+      key_sequence_(GenerateKeySequence(raw_key_sequence_)) {
+  DCHECK(!raw_key_sequence_.empty());
+  DCHECK(!key_sequence_.empty());
+  DCHECK_GE(kKeySequenceMaxSize, key_sequence_.size());
 }
 
-// TODO(aserbin): consider other ways of encoding a key for an object
-vector<string> AuthzInfoKey::GenerateKeySequence(
+const string& AuthzInfoKey::GetKey(SentryAuthorizableScope::Scope scope) const {
+  const size_t level = ScopeToRawSequenceIdx(scope);
+  if (level < raw_key_sequence_.size()) {
+    return raw_key_sequence_[level];
+  }
+  return raw_key_sequence_.back();
+}
+
+vector<string> AuthzInfoKey::GenerateRawKeySequence(
     const string& user, const ::sentry::TSentryAuthorizable& authorizable) {
   DCHECK(!user.empty());
   DCHECK(!authorizable.server.empty());
@@ -253,22 +296,64 @@ vector<string> AuthzInfoKey::GenerateKeySequence(
 
   if (!authorizable.__isset.table || authorizable.table.empty()) {
     auto k0 = Substitute("/$0/$1", user, authorizable.server);
-    auto k1 = Substitute("/$0/$1", k0, authorizable.db);
+    auto k1 = Substitute("$0/$1", k0, authorizable.db);
     return { std::move(k0), std::move(k1), };
   }
 
   if (!authorizable.__isset.column || authorizable.column.empty()) {
     auto k0 = Substitute("/$0/$1", user, authorizable.server);
-    auto k1 = Substitute("/$0/$1", k0, authorizable.db);
-    auto k2 = Substitute("/$0/$1", k1, authorizable.table);
+    auto k1 = Substitute("$0/$1", k0, authorizable.db);
+    auto k2 = Substitute("$0/$1", k1, authorizable.table);
     return { std::move(k0), std::move(k1), std::move(k2), };
   }
 
   auto k0 = Substitute("/$0/$1", user, authorizable.server);
-  auto k1 = Substitute("/$0/$1", k0, authorizable.db);
-  auto k2 = Substitute("/$0/$1", k1, authorizable.table);
-  auto k3 = Substitute("/$0/$1", k2, authorizable.column);
+  auto k1 = Substitute("$0/$1", k0, authorizable.db);
+  auto k2 = Substitute("$0/$1", k1, authorizable.table);
+  auto k3 = Substitute("$0/$1", k2, authorizable.column);
   return { std::move(k0), std::move(k1), std::move(k2), std::move(k3), };
+}
+
+vector<string> AuthzInfoKey::GenerateKeySequence(
+    const vector<string>& raw_sequence) {
+  DCHECK(!raw_sequence.empty());
+  vector<string> sequence;
+  const auto idx_db = ScopeToRawSequenceIdx(SentryAuthorizableScope::DATABASE);
+  if (idx_db < raw_sequence.size()) {
+    sequence.emplace_back(raw_sequence[idx_db]);
+  }
+  const auto idx_table = ScopeToRawSequenceIdx(SentryAuthorizableScope::TABLE);
+  if (idx_table < raw_sequence.size()) {
+    sequence.emplace_back(raw_sequence[idx_table]);
+  }
+  if (sequence.empty()) {
+    sequence.emplace_back(raw_sequence.back());
+  }
+  DCHECK_GE(kKeySequenceMaxSize, sequence.size());
+  return sequence;
+}
+
+size_t AuthzInfoKey::ScopeToRawSequenceIdx(SentryAuthorizableScope::Scope scope) {
+  size_t idx = 0;
+  switch (scope) {
+    case SentryAuthorizableScope::Scope::SERVER:
+      idx = 0;
+      break;
+    case SentryAuthorizableScope::Scope::DATABASE:
+      idx = 1;
+      break;
+    case SentryAuthorizableScope::Scope::TABLE:
+      idx = 2;
+      break;
+    case SentryAuthorizableScope::Scope::COLUMN:
+      idx = 3;
+      break;
+    default:
+      LOG(DFATAL) << "unexpected scope: " << static_cast<int16_t>(scope);
+      break;
+  }
+
+  return idx;
 }
 
 // Returns a unique string key for the given authorizable, at the given scope.
@@ -324,6 +409,35 @@ size_t SentryPrivilegesBranch::memory_footprint() const {
   return res;
 }
 
+void SentryPrivilegesBranch::Merge(const SentryPrivilegesBranch& other) {
+  std::copy(other.privileges_.begin(), other.privileges_.end(),
+            std::back_inserter(privileges_));
+}
+
+void SentryPrivilegesBranch::Split(
+    SentryPrivilegesBranch* other_scope_db,
+    SentryPrivilegesBranch* other_scope_table) const {
+  SentryPrivilegesBranch scope_db;
+  SentryPrivilegesBranch scope_table;
+  for (const auto& e : privileges_) {
+    switch (e.scope) {
+      case SentryAuthorizableScope::SERVER:
+      case SentryAuthorizableScope::DATABASE:
+        scope_db.privileges_.emplace_back(e);
+        break;
+      case SentryAuthorizableScope::TABLE:
+      case SentryAuthorizableScope::COLUMN:
+        scope_table.privileges_.emplace_back(e);
+        break;
+      default:
+        LOG(DFATAL) << "not reachable";
+        break;
+    }
+  }
+  *other_scope_db = std::move(scope_db);
+  *other_scope_table = std::move(scope_table);
+}
+
 void SentryPrivilegesBranch::DoInit(
     const ::sentry::TSentryAuthorizable& authorizable,
     const TListSentryPrivilegesResponse& response) {
@@ -336,7 +450,7 @@ void SentryPrivilegesBranch::DoInit(
       if (VLOG_IS_ON(1)) {
         std::ostringstream os;
         privilege_resp.printTo(os);
-        VLOG(1) << Substitute("Ignoring privilege response: $0", os.str());
+        VLOG(1) << Substitute("ignoring privilege response: $0", os.str());
       }
       continue;
     }
@@ -407,39 +521,63 @@ void SentryPrivilegesFetcher::Stop() {
   sentry_client_.Stop();
 }
 
-// TODO(aserbin): change the signature to return a handle that keeps reference
-//                to either cache entry or SentryPrivilegesBranch allocated
-//                on heap, otherwise there is copying from a cache entry to
-//                the output parameter.
 Status SentryPrivilegesFetcher::GetSentryPrivileges(
     SentryAuthorizableScope::Scope requested_scope,
     const string& table_name,
     const string& user,
     SentryPrivilegesBranch* privileges) {
-  // TODO(aserbin): once only requests with scope TABLE are issued,
-  //                uncomment the CHECK_EQ() below.
-  // Don't query Sentry for authz scopes other than 'TABLE'.
-  //CHECK_EQ(SentryAuthorizableScope::TABLE, requested_scope);
-  SentryAuthorizableScope scope(requested_scope);
   TSentryAuthorizable authorizable;
-  RETURN_NOT_OK(GetAuthorizable(table_name, scope.scope(), &authorizable));
+  RETURN_NOT_OK(GetAuthorizable(table_name, requested_scope, &authorizable));
 
-  AuthzInfoKey aggregate_key(user, authorizable);
-  const auto& key = aggregate_key.GetFlattenedKey();
-  typename AuthzInfoCache::EntryHandle handle;
-  if (PREDICT_TRUE(cache_)) {
-    handle = cache_->Get(key);
+  if (PREDICT_FALSE(requested_scope == SentryAuthorizableScope::SERVER &&
+                    !IsGTest())) {
+    // A request for an authorizable of the scope wider than DATABASE is served,
+    // but the response from Sentry is not cached. With current privilege
+    // scheme, SentryPrivilegesFetcher is not expected to request authorizables
+    // of the SERVER scope unless this method is called from test code.
+    LOG(DFATAL) << Substitute(
+        "requesting privileges of the SERVER scope from Sentry "
+        "on authorizable '$0' for user '$1'", table_name, user);
   }
-  if (handle) {
-    *privileges = handle.value();
+
+  // Not expecting requests for authorizables of the scope narrower than TABLE,
+  // even in tests.
+  DCHECK_NE(SentryAuthorizableScope::COLUMN, requested_scope);
+
+  const AuthzInfoKey aggregate_key(user, authorizable);
+  // Do not query Sentry for authz scopes narrower than 'TABLE'.
+  const auto& key = aggregate_key.GetKey(SentryAuthorizableScope::TABLE);
+  const auto& key_seq = aggregate_key.key_sequence();
+  vector<typename AuthzInfoCache::EntryHandle> handles;
+  handles.reserve(AuthzInfoKey::kKeySequenceMaxSize);
+  if (PREDICT_TRUE(cache_)) {
+    for (const auto& e : key_seq) {
+      auto handle = cache_->Get(e);
+      VLOG(3) << Substitute("'$0': '$1' key lookup", key, e);
+      if (!handle) {
+        continue;
+      }
+      VLOG(2) << Substitute("'$0': '$1' key found", key, e);
+      handles.emplace_back(std::move(handle));
+    }
+  }
+  // If the cache contains all the necessary information, repackage the
+  // cached information and return as the result.
+  if (handles.size() == key_seq.size()) {
+    SentryPrivilegesBranch result;
+    for (const auto& e : handles) {
+      DCHECK(e);
+      result.Merge(e.value());
+    }
+    *privileges = std::move(result);
     return Status::OK();
   }
 
   Synchronizer sync;
   bool is_first_request = false;
-  // The result (i.e. fetched privileges) might be used independently
-  // by multiple threads. The shared ownership approach simplifies passing
-  // the information around.
+  // The result (i.e. the retrieved informaton on privileges) might be used
+  // independently by multiple threads. The shared ownership approach simplifies
+  // passing the information around.
   shared_ptr<SentryPrivilegesBranch> fetched_privileges;
   {
     std::lock_guard<simple_spinlock> l(pending_requests_lock_);
@@ -465,13 +603,50 @@ Status SentryPrivilegesFetcher::GetSentryPrivileges(
                                            user, authorizable,
                                            fetched_privileges.get());
   if (s.ok() && PREDICT_TRUE(cache_)) {
-    // Put the result into the cache. Negative results/errors are not cached.
-    unique_ptr<SentryPrivilegesBranch> result_ptr(
-        new SentryPrivilegesBranch(*fetched_privileges));
-    const auto result_footprint = result_ptr->memory_footprint() + key.capacity();
-    cache_->Put(key, std::move(result_ptr), result_footprint);
-    VLOG(2) << Substitute("cached entry of size $0 bytes for key '$1'",
-                          result_footprint, key);
+    // Put the result into the cache. Negative results (i.e. errors) are not
+    // cached. Split the information on privileges into at most two cache
+    // entries, for authorizables of scope:
+    //   * SERVER, DATABASE
+    //   * TABLE, COLUMN
+    //
+    // From this perspective, privileges on a corresponding authorizable of the
+    // DATABASE scope might be cached as a by-product when the original request
+    // comes for an authorizable of the TABLE scope.
+    SentryPrivilegesBranch priv_srv_db;
+    SentryPrivilegesBranch priv_table_column;
+    fetched_privileges->Split(&priv_srv_db, &priv_table_column);
+    if (requested_scope != SentryAuthorizableScope::SERVER) {
+      unique_ptr<SentryPrivilegesBranch> result_ptr(
+          new SentryPrivilegesBranch(std::move(priv_srv_db)));
+      const auto& key = aggregate_key.GetKey(
+          SentryAuthorizableScope::DATABASE);
+      const auto result_footprint = result_ptr->memory_footprint() +
+          key.capacity();
+      cache_->Put(key, std::move(result_ptr), result_footprint);
+      VLOG(2) << Substitute(
+          "added entry of size $0 bytes for key '$1' (server-database scope)",
+          result_footprint, key);
+    }
+    // Don't add table-level records from the response into the cache
+    // if the request to Sentry was of database or higher scope. Due to the
+    // tree-like structure of Sentry's responses, those responses might contain
+    // information on non-Kudu tables which are not relevant in the context of
+    // Kudu's AuthzProvider. Upon detecting a cache miss for a table-scope key,
+    // the fetcher requests information on corresponding table-scope privileges
+    // from Sentry explicitly.
+    if ((requested_scope != SentryAuthorizableScope::SERVER) &&
+        (requested_scope != SentryAuthorizableScope::DATABASE)) {
+      unique_ptr<SentryPrivilegesBranch> result_ptr(
+          new SentryPrivilegesBranch(std::move(priv_table_column)));
+      const auto& key = aggregate_key.GetKey(
+          SentryAuthorizableScope::TABLE);
+      const auto result_footprint = result_ptr->memory_footprint() +
+          key.capacity();
+      cache_->Put(key, std::move(result_ptr), result_footprint);
+      VLOG(2) << Substitute(
+          "added entry of size $0 bytes for key '$1' (table-column scope)",
+          result_footprint, key);
+    }
   }
 
   SentryRequestsInfo info;

@@ -501,7 +501,7 @@ class SentryAuthzProviderFilterPrivilegesScopeTest :
     public SentryAuthzProviderFilterPrivilegesTest,
     public ::testing::WithParamInterface<SentryAuthorizableScope::Scope> {};
 
-// Attempst to grant privileges for various actions on a single scope of an
+// Attempt to grant privileges for various actions on a single scope of an
 // authorizable, injecting various invalid privileges, and checking that Kudu
 // ignores them.
 TEST_P(SentryAuthzProviderFilterPrivilegesScopeTest, TestFilterInvalidResponses) {
@@ -653,12 +653,13 @@ TEST_F(SentryAuthzProviderTest, TestAuthorizeAlterTable) {
 }
 
 TEST_F(SentryAuthzProviderTest, TestAuthorizeGetTableMetadata) {
-  // Don't authorize delete table on a user without required privileges.
+  // Don't authorize getting metadata on a table for a user without required
+  // privileges.
   ASSERT_OK(CreateRoleAndAddToGroups());
   Status s = sentry_authz_provider_->AuthorizeGetTableMetadata("db.table", kTestUser);
   ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
 
-  // Authorize delete table on a user with proper privileges.
+  // Authorize getting metadata on a table for a user with proper privileges.
   TSentryPrivilege privilege = GetDatabasePrivilege("db", "SELECT");
   ASSERT_OK(AlterRoleGrantPrivilege(privilege));
   ASSERT_OK(sentry_authz_provider_->AuthorizeGetTableMetadata("db.table", kTestUser));
@@ -690,6 +691,188 @@ TEST_F(SentryAuthzProviderTest, TestPrivilegeCaseSensitivity) {
   TSentryPrivilege privilege = GetDatabasePrivilege("db", "create");
   ASSERT_OK(AlterRoleGrantPrivilege(privilege));
   ASSERT_OK(sentry_authz_provider_->AuthorizeCreateTable("DB.table", kTestUser, kTestUser));
+}
+
+// Verify the behavior of the SentryAuthzProvider's cache upon fetching
+// privilege information on authorizables of the TABLE scope in
+// 'adjacent branches' of the authz hierarchy.
+TEST_F(SentryAuthzProviderTest, CacheBehaviorScopeHierarchyAdjacentBranches) {
+  ASSERT_OK(CreateRoleAndAddToGroups());
+  ASSERT_OK(AlterRoleGrantPrivilege(GetDatabasePrivilege("db", "METADATA")));
+  ASSERT_OK(AlterRoleGrantPrivilege(GetTablePrivilege("db", "t0", "ALTER")));
+  ASSERT_OK(AlterRoleGrantPrivilege(GetTablePrivilege("db", "t1", "ALTER")));
+
+  // ALTER TABLE, if not renaming the table itself, requires ALTER privilege
+  // on the table, but nothing is required on the database that contains
+  // the table. METADATA requires corresponding privilege on the table, but
+  // nothing is required on the database.
+  ASSERT_EQ(0, GetTasksSuccessful());
+  ASSERT_OK(sentry_authz_provider_->AuthorizeAlterTable(
+      "db.t0", "db.t0", kTestUser));
+  ASSERT_EQ(1, GetTasksSuccessful());
+  ASSERT_OK(sentry_authz_provider_->AuthorizeAlterTable(
+      "db.t1", "db.t1", kTestUser));
+  ASSERT_EQ(2, GetTasksSuccessful());
+  ASSERT_OK(sentry_authz_provider_->AuthorizeGetTableMetadata(
+      "db.other_table", kTestUser));
+  ASSERT_EQ(3, GetTasksSuccessful());
+
+  // Repeat all the requests above: not a single new RPC to Sentry should be
+  // sent since all authz queries must hit the cache: that's about repeating
+  // the same requests.
+  ASSERT_OK(sentry_authz_provider_->AuthorizeAlterTable(
+      "db.t0", "db.t0", kTestUser));
+  ASSERT_OK(sentry_authz_provider_->AuthorizeAlterTable(
+      "db.t1", "db.t1", kTestUser));
+  ASSERT_OK(sentry_authz_provider_->AuthorizeGetTableMetadata(
+      "db.other_table", kTestUser));
+  ASSERT_EQ(3, GetTasksSuccessful());
+
+  // All the requests below should also hit the cache since the information on
+  // the privileges granted on each of the tables in the requests below
+  // is in the cache. In the Sentry's privileges model for Kudu, DROP TABLE
+  // requires privileges on the table itself, but nothing is required on the
+  // database the table belongs to.
+  Status s = sentry_authz_provider_->AuthorizeDropTable("db.t0", kTestUser);
+  ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
+  s = sentry_authz_provider_->AuthorizeDropTable("db.t1", kTestUser);
+  ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
+  s = sentry_authz_provider_->AuthorizeDropTable("db.other_table", kTestUser);
+  ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
+  ASSERT_EQ(3, GetTasksSuccessful());
+
+  // A sanity check: verify no failed requests are registered.
+  ASSERT_EQ(0, GetTasksFailedFatal());
+  ASSERT_EQ(0, GetTasksFailedNonFatal());
+}
+
+// Ensure requests for authorizables of the DATABASE scope hit cache once
+// the information was fetched from Sentry for an authorizable of the TABLE
+// scope in the same hierarchy branch. A bit of context: Sentry sends all
+// available information for the branch up the authz scope hierarchy.
+TEST_F(SentryAuthzProviderTest, CacheBehaviorForDatabaseScope) {
+  ASSERT_OK(CreateRoleAndAddToGroups());
+  ASSERT_OK(AlterRoleGrantPrivilege(GetDatabasePrivilege("db0", "ALTER")));
+  ASSERT_OK(AlterRoleGrantPrivilege(GetDatabasePrivilege("db1", "CREATE")));
+  ASSERT_EQ(0, GetTasksSuccessful());
+
+  // ALTER TABLE, if not renaming the table itself, requires privileges on the
+  // table only.
+  ASSERT_OK(sentry_authz_provider_->AuthorizeAlterTable(
+      "db0.t0", "db0.t0", kTestUser));
+  ASSERT_EQ(1, GetTasksSuccessful());
+
+  // The CREATE privileges is not granted on the 'db0', so the request must
+  // not be authorized.
+  auto s = sentry_authz_provider_->AuthorizeCreateTable(
+      "db0.t1", kTestUser, kTestUser);
+  ASSERT_TRUE(s.IsNotAuthorized());
+  // CREATE TABLE requires privileges on the database only, and those should
+  // have been cached already due to the prior request.
+  ASSERT_EQ(1, GetTasksSuccessful());
+
+  // No new RPCs to Sentry should be issued: the information on privileges
+  // on 'db1' authorizable of the DATABASE scope should be fetched and cached
+  // while fetching the information privileges on 'db1.t0' authorizable of the
+  // TABLE scope.
+  for (int idx = 0; idx < 10; ++idx) {
+    const auto table_name = Substitute("db1.t$0", idx);
+    ASSERT_OK(sentry_authz_provider_->AuthorizeCreateTable(
+        table_name, kTestUser, kTestUser));
+  }
+  // Only a single new RPC should be issued to Sentry: to get information
+  // for "db1" authorizable of the DATABASE scope while authorizing the creation
+  // of table "db1.t0". All other requests must hit the cache.
+  ASSERT_EQ(2, GetTasksSuccessful());
+
+  // Same story for requests for 'db1.t0', ..., 'db1.t19'.
+  for (int idx = 0; idx < 20; ++idx) {
+    const auto table_name = Substitute("db1.t$0", idx);
+    ASSERT_OK(sentry_authz_provider_->AuthorizeCreateTable(
+        table_name, kTestUser, kTestUser));
+  }
+  ASSERT_EQ(2, GetTasksSuccessful());
+
+  // A sanity check: verify no failed requests are registered.
+  ASSERT_EQ(0, GetTasksFailedFatal());
+  ASSERT_EQ(0, GetTasksFailedNonFatal());
+}
+
+// A scenario where a TABLE-scope privilege on a table is granted to a user,
+// but there isn't any DATABASE-scope privilege granted on the database
+// the table belongs to. After authorizing an operation on the table, there
+// should not be another RPC to Sentry issued while authorizing an operation
+// on the database itself.
+TEST_F(SentryAuthzProviderTest, CacheBehaviorHybridLookups) {
+  ASSERT_OK(CreateRoleAndAddToGroups());
+  ASSERT_OK(AlterRoleGrantPrivilege(GetTablePrivilege("db", "t", "ALL")));
+
+  ASSERT_EQ(0, GetTasksSuccessful());
+  // In the Sentry's authz model for Kudu, DROP TABLE requires only privileges
+  // on the table itself.
+  ASSERT_OK(sentry_authz_provider_->AuthorizeDropTable("db.t", kTestUser));
+  ASSERT_EQ(1, GetTasksSuccessful());
+
+  // CREATE TABLE requires privileges only on the database itself. No privileges
+  // are granted on the database, so the request must not be authorized.
+  auto s = sentry_authz_provider_->AuthorizeCreateTable(
+      "db.t", kTestUser, kTestUser);
+  ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
+  // No extra RPC should be sent to Sentry: the information on the privileges
+  // granted on relevant authorizables of the DATABASE scope in corresponding
+  // branch should have been fetched and cached.
+  ASSERT_EQ(1, GetTasksSuccessful());
+
+  // ALTER TABLE, if renaming the table, requires privileges both on the
+  // database and the table. Even if ALL is granted on the table itself, there
+  // isn't any privilege granted on the database, so the request to rename
+  // the table must not be authorized.
+  s = sentry_authz_provider_->AuthorizeAlterTable(
+      "db.t", "db.t_renamed", kTestUser);
+  ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
+  // No extra RPCs are expected in this case.
+  ASSERT_EQ(1, GetTasksSuccessful());
+
+  // A sanity check: verify no failed requests are registered.
+  ASSERT_EQ(0, GetTasksFailedFatal());
+  ASSERT_EQ(0, GetTasksFailedNonFatal());
+}
+
+// Verify that information on TABLE-scope privileges are fetched from Sentry,
+// but not cached when SentryPrivilegeFetcher receives a ListPrivilegesByUser
+// response for a DATABASE-scope authorizable.
+TEST_F(SentryAuthzProviderTest, CacheBehaviorNotCachingTableInfoOnDatabase) {
+  ASSERT_OK(CreateRoleAndAddToGroups());
+  ASSERT_OK(AlterRoleGrantPrivilege(GetDatabasePrivilege("db", "CREATE")));
+  ASSERT_OK(AlterRoleGrantPrivilege(GetTablePrivilege("db", "t0", "ALL")));
+  ASSERT_OK(AlterRoleGrantPrivilege(GetTablePrivilege("db", "t1", "ALTER")));
+
+  ASSERT_EQ(0, GetTasksSuccessful());
+  // In the Sentry's authz model for Kudu, CREATE TABLE requires only privileges
+  // only on the database.
+  ASSERT_OK(sentry_authz_provider_->AuthorizeCreateTable(
+      "db.table", kTestUser, kTestUser));
+  ASSERT_EQ(1, GetTasksSuccessful());
+
+  // ALTER TABLE, if not renaming the table, requires privileges only on the
+  // table itself.
+  ASSERT_OK(sentry_authz_provider_->AuthorizeAlterTable(
+      "db.t0", "db.t0", kTestUser));
+  // Here an RPC request should be sent to Sentry to fetch information on
+  // privileges granted at the table 'db.t0'. That information was fetched
+  // from Sentry upon prior call to AuthorizeCreateTable(), but it was not
+  // cached deliberately: that way the cache avoids storing information on
+  // non-Kudu tables, if any, under an authorizable of the DATABASE scope.
+  ASSERT_EQ(2, GetTasksSuccessful());
+
+  // The same as above stays valid for the 'db.t1' table.
+  ASSERT_OK(sentry_authz_provider_->AuthorizeAlterTable(
+      "db.t1", "db.t1", kTestUser));
+  ASSERT_EQ(3, GetTasksSuccessful());
+
+  // A sanity check: verify no failed requests are registered.
+  ASSERT_EQ(0, GetTasksFailedFatal());
+  ASSERT_EQ(0, GetTasksFailedNonFatal());
 }
 
 // Whether the authz information received from Sentry is cached or not.
@@ -740,7 +923,11 @@ TEST_P(SentryAuthzProviderReconnectionTest, ConnectionFailureOrTooBusy) {
   }
 
   s = sentry_authz_provider_->AuthorizeCreateTable("db.table", kTestUser, "diff-user");
-  EXPECT_TRUE(s.IsNetworkError()) << s.ToString();
+  if (CachingEnabled()) {
+    EXPECT_TRUE(s.IsNotAuthorized()) << s.ToString();
+  } else {
+    EXPECT_TRUE(s.IsNetworkError()) << s.ToString();
+  }
 
   // Start Sentry back up and ensure that the same operations succeed.
   ASSERT_OK(StartSentry());

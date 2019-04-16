@@ -25,7 +25,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest_prod.h>
 
@@ -125,12 +124,20 @@ class SentryPrivilegesBranch {
   // Get estimation on amount of memory used (in bytes) to store this instance.
   size_t memory_footprint() const;
 
+  // Add/merge privileges from other instance of SentryPrivilegesBranch.
+  void Merge(const SentryPrivilegesBranch& other);
+
+  // Output the privileges into branches corresponding to DB-and-higher and
+  // TABLE-and-lower authz scopes.
+  void Split(SentryPrivilegesBranch* other_scope_db,
+             SentryPrivilegesBranch* other_scope_table) const;
+
  private:
   // Utility function.
   void DoInit(const ::sentry::TSentryAuthorizable& authorizable,
               const ::sentry::TListSentryPrivilegesResponse& response);
 
-  // Set of privileges are granted.
+  // Set of granted privileges.
   std::vector<AuthorizablePrivileges> privileges_;
 };
 
@@ -211,11 +218,6 @@ class SentryPrivilegesFetcher {
 
   // Metric entity for registering metric gauges/counters.
   scoped_refptr<MetricEntity> metric_entity_;
-
-  // The authz scope hierarchy level that defines the narrowest authz scope
-  // for requests sent to Sentry. If not set, no broadening of authz privilege
-  // scope is made.
-  boost::optional<sentry::SentryAuthorizableScope> scope_depth_limit_;
 
   // Client instance to communicate with Sentry.
   thrift::HaClient<sentry::SentryClient> sentry_client_;
