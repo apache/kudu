@@ -447,15 +447,13 @@ TEST_F(MasterSentryTest, TestTableOwnership) {
   NO_FATALS(CheckTableDoesNotExist(kDatabaseName, "new_table"));
 }
 
-// TODO(hao): enable the following tests after SENTRY-2471 is fixed.
-TEST_F(MasterSentryTest, DISABLED_TestRenameTablePrivilegeTransfer) {
+// Checks Sentry privileges are synchronized upon table rename in the HMS.
+TEST_F(MasterSentryTest, TestRenameTablePrivilegeTransfer) {
   ASSERT_OK(GrantRenameTablePrivilege(kDatabaseName, kTableName));
   ASSERT_OK(RenameTable(Substitute("$0.$1", kDatabaseName, kTableName),
                         Substitute("$0.$1", kDatabaseName, "b")));
   NO_FATALS(CheckTable(kDatabaseName, "b", make_optional<const string &>(kAdminUser)));
 
-
-  // Checks table rename in the HMS is synchronized with the Sentry privileges.
   unique_ptr<KuduTableAlterer> table_alterer;
   table_alterer.reset(client_->NewTableAlterer(Substitute("$0.$1", kDatabaseName, "b"))
                              ->DropColumn("int16_val"));
@@ -470,11 +468,6 @@ TEST_F(MasterSentryTest, DISABLED_TestRenameTablePrivilegeTransfer) {
     ASSERT_OK(table_alterer->Alter());
   });
   NO_FATALS(CheckTable(kDatabaseName, "b", make_optional<const string&>(kAdminUser)));
-
-  table_alterer.reset(client_->NewTableAlterer(Substitute("$0.$1", kDatabaseName, "b"))
-                             ->RenameTo(Substitute("$0.$1", kDatabaseName, "c")));
-  ASSERT_OK(table_alterer->Alter());
-  NO_FATALS(CheckTable(kDatabaseName, "c", make_optional<const string&>(kAdminUser)));
 }
 
 class TestAuthzTable :

@@ -19,7 +19,7 @@
  */
 
 # DO NOT MODIFY! Copied from
-# https://raw.githubusercontent.com/apache/sentry/2c9a927a9e87cba0e4c0f34fc0b55887c6636927/sentry-service/sentry-service-api/src/main/resources/sentry_policy_service.thrift
+# https://raw.githubusercontent.com/apache/sentry/505b42e81a9d85c4ebe8db3f48ad7a6e824a5db5/sentry-service/sentry-service-api/src/main/resources/sentry_policy_service.thrift
 #
 # With edits:
 #   - Change cpp namespace to 'sentry' to match the Kudu codebase style.
@@ -68,6 +68,15 @@ struct TSentryPrivilege {
 # TODO can this be deleted? it's not adding value to TAlterSentryRoleAddGroupsRequest
 struct TSentryGroup {
 1: required string groupName
+}
+
+struct TIsSentryAdminRequest {
+1: required i32 protocol_version = sentry_common_service.TSENTRY_SERVICE_V2,
+2: required string userName,
+}
+struct TIsSentryAdminResponse {
+1: required sentry_common_service.TSentryResponseStatus status,
+2: required bool isAdmin,
 }
 
 # CREATE ROLE r1
@@ -303,7 +312,7 @@ struct TSentryMappingData {
 struct TSentryExportMappingDataRequest {
 1: required i32 protocol_version = sentry_common_service.TSENTRY_SERVICE_V1,
 2: required string requestorUserName, # user on whose behalf the request is issued
-3: optional string objectPath # for specific auth object
+3: optional set<TSentryAuthorizable> authorizables # for which permission information needs to be exported.
 }
 
 struct TSentryExportMappingDataResponse {
@@ -314,7 +323,7 @@ struct TSentryExportMappingDataResponse {
 struct TSentryImportMappingDataRequest {
 1: required i32 protocol_version = sentry_common_service.TSENTRY_SERVICE_V1,
 2: required string requestorUserName, # user on whose behalf the request is issued
-3: required bool overwriteRole = false, # if overwrite the exist role with the imported privileges, default is false 
+3: required bool overwriteRole = false, # if overwrite the exist role with the imported privileges, default is false
 4: required TSentryMappingData mappingData
 }
 
@@ -400,6 +409,9 @@ struct TSentryPrivilegesResponse {
 
 service SentryPolicyService
 {
+  # Check if the given user is in the Sentry admin group.
+  TIsSentryAdminResponse is_sentry_admin(1:TIsSentryAdminRequest request)
+
   TCreateSentryRoleResponse create_sentry_role(1:TCreateSentryRoleRequest request)
   TDropSentryRoleResponse drop_sentry_role(1:TDropSentryRoleRequest request)
 

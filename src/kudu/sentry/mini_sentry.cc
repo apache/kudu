@@ -215,6 +215,12 @@ Status MiniSentry::CreateSentryConfigs(const string& tmp_dir) const {
   //    The interval to run the "store-cleaner" Sentry's thread. Setting to a
   //    negative value means Sentry will not run the "store-cleaner" thread
   //    at all and that allows for faster start-up times of the Sentry service.
+  //
+  // - hive.sentry.server
+  //    Server namespace the HMS instance belongs to for defining server-level
+  //    privileges in Sentry. Sentry uses it to synchronize privileges upon
+  //    receipt of HMS events (such as table rename). Must match with Kudu
+  //    master's flag 'server_name'.
   static const string kFileTemplate = R"(
 <configuration>
 
@@ -291,6 +297,11 @@ Status MiniSentry::CreateSentryConfigs(const string& tmp_dir) const {
   <property>
     <name>sentry.store.clean.period.seconds</name>
     <value>-1</value>
+  </property>
+
+  <property>
+    <name>hive.sentry.server</name>
+    <value>server1</value>
   </property>
 
 </configuration>
