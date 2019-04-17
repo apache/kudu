@@ -69,8 +69,7 @@ target_link_libraries(master
   server_process
   tablet
   token_proto
-  tserver
-  tserver_service_proto)
+  tserver)
 
 # Tests
 SET_KUDU_TEST_LINK_LIBS(
