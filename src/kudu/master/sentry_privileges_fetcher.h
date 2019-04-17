@@ -159,6 +159,10 @@ class SentryPrivilegesFetcher {
   Status Start();
   void Stop();
 
+  // Resets the authz cache. In addition to lifecycle-related methods like
+  // Start(), this method is also used by SentryAuthzProvider::ResetCache().
+  Status ResetCache();
+
   // Fetches the user's privileges from Sentry for the authorizable specified
   // by the given table and scope. The result privileges might be served
   // from the cache, if caching is enabled and corresponding entry exists
@@ -209,14 +213,6 @@ class SentryPrivilegesFetcher {
       const ::sentry::TSentryAuthorizable& authorizable,
       SentryPrivilegesBranch* result);
 
-  // Resets the authz cache. In addition to lifecycle-related methods like
-  // Start(), this method is also used by tests: if the authz information
-  // has been updated by the test, the cache needs to be invalidated.
-  //
-  // NOTE: this method is not thread-safe and should not be called along with
-  //       concurrent authz requests.
-  Status ResetCache();
-
   // Metric entity for registering metric gauges/counters.
   scoped_refptr<MetricEntity> metric_entity_;
 
@@ -224,8 +220,18 @@ class SentryPrivilegesFetcher {
   thrift::HaClient<sentry::SentryClient> sentry_client_;
 
   // The TTL cache to store information on privileges received from Sentry.
+  // The instance is wrapped into std::shared_ptr to handle operations with
+  // cache items along with concurrent requests to reset the instance.
   typedef TTLCache<std::string, SentryPrivilegesBranch> AuthzInfoCache;
-  std::unique_ptr<AuthzInfoCache> cache_;
+  std::shared_ptr<AuthzInfoCache> cache_;
+
+  // Synchronization primitive to guard access to the cache in the presence
+  // of operations with cache items and concurrent requests to reset the cache.
+  // An alternative would be to use std::atomic_load and std::atomic_exchange,
+  // but:
+  //   * They're higher overhead operations than just using a spinlock.
+  //   * They're not available in all C++11-compatible compilers.
+  rw_spinlock cache_lock_;
 
   // Utility dictionary to keep track of requests sent to Sentry. Access is
   // guarded by pending_requests_lock_. The key corresponds to the set of

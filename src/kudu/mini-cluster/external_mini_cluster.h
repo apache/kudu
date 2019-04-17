@@ -397,8 +397,6 @@ class ExternalMiniCluster : public MiniCluster {
   std::string GetLogPath(const std::string& daemon_id) const;
 
  private:
-  FRIEND_TEST(MasterFailoverTest, TestKillAnyMaster);
-
   Status StartMasters();
 
   Status StartSentry();

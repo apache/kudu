@@ -200,10 +200,10 @@ Status Master::StartAsync() {
   RETURN_NOT_OK(maintenance_manager_->Start());
 
   gscoped_ptr<ServiceIf> impl(new MasterServiceImpl(this));
-  gscoped_ptr<ServiceIf> consensus_service(new ConsensusServiceImpl(
-      this, catalog_manager_.get()));
-  gscoped_ptr<ServiceIf> tablet_copy_service(new TabletCopyServiceImpl(
-      this, catalog_manager_.get()));
+  gscoped_ptr<ServiceIf> consensus_service(
+      new ConsensusServiceImpl(this, catalog_manager_.get()));
+  gscoped_ptr<ServiceIf> tablet_copy_service(
+      new TabletCopyServiceImpl(this, catalog_manager_.get()));
 
   RETURN_NOT_OK(RegisterService(std::move(impl)));
   RETURN_NOT_OK(RegisterService(std::move(consensus_service)));
@@ -216,7 +216,6 @@ Status Master::StartAsync() {
   // Start initializing the catalog manager.
   RETURN_NOT_OK(init_pool_->SubmitClosure(Bind(&Master::InitCatalogManagerTask,
                                                Unretained(this))));
-
   state_ = kRunning;
 
   return Status::OK();
@@ -342,7 +341,7 @@ Status GetMasterEntryForHost(const shared_ptr<rpc::Messenger>& messenger,
 
 } // anonymous namespace
 
-Status Master::ListMasters(std::vector<ServerEntryPB>* masters) const {
+Status Master::ListMasters(vector<ServerEntryPB>* masters) const {
   if (!opts_.IsDistributed()) {
     ServerEntryPB local_entry;
     local_entry.mutable_instance_id()->CopyFrom(catalog_manager_->NodeInstance());
@@ -385,7 +384,7 @@ Status Master::ListMasters(std::vector<ServerEntryPB>* masters) const {
   return Status::OK();
 }
 
-Status Master::GetMasterHostPorts(std::vector<HostPortPB>* hostports) const {
+Status Master::GetMasterHostPorts(vector<HostPortPB>* hostports) const {
   auto consensus = catalog_manager_->master_consensus();
   if (!consensus) {
     return Status::IllegalState("consensus not running");

@@ -20,7 +20,6 @@
 #include <cstdint>
 
 #include "kudu/gutil/macros.h"
-#include "kudu/gutil/port.h"
 #include "kudu/master/master.service.h"
 
 namespace google {
@@ -68,6 +67,8 @@ class PingRequestPB;
 class PingResponsePB;
 class ReplaceTabletRequestPB;
 class ReplaceTabletResponsePB;
+class ResetAuthzCacheRequestPB;
+class ResetAuthzCacheResponsePB;
 class TSHeartbeatRequestPB;
 class TSHeartbeatResponsePB;
 
@@ -158,6 +159,10 @@ class MasterServiceImpl : public MasterServiceIf {
   void ReplaceTablet(const ReplaceTabletRequestPB* req,
                      ReplaceTabletResponsePB* resp,
                      rpc::RpcContext* rpc) override;
+
+  void ResetAuthzCache(const ResetAuthzCacheRequestPB* req,
+                       ResetAuthzCacheResponsePB* resp,
+                       rpc::RpcContext* rpc) override;
 
   bool SupportsFeature(uint32_t feature) const override;
 

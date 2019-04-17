@@ -113,6 +113,10 @@ void SentryAuthzProvider::Stop() {
   fetcher_.Stop();
 }
 
+Status SentryAuthzProvider::ResetCache() {
+  return fetcher_.ResetCache();
+}
+
 bool SentryAuthzProvider::IsEnabled() {
   return !FLAGS_sentry_service_rpc_addresses.empty();
 }

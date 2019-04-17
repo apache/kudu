@@ -56,6 +56,8 @@ class SentryAuthzProvider : public AuthzProvider {
 
   void Stop() override;
 
+  Status ResetCache() override WARN_UNUSED_RESULT;
+
   // Returns true if the SentryAuthzProvider should be enabled.
   static bool IsEnabled();
 

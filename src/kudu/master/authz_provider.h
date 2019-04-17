@@ -46,6 +46,11 @@ class AuthzProvider {
   // Stops the AuthzProvider instance.
   virtual void Stop() = 0;
 
+  // Reset the underlying cache (if any), invalidating all cached entries.
+  // Returns Status::NotSupported() if the provider doesn't support resetting
+  // its cache.
+  virtual Status ResetCache() = 0;
+
   // Checks if the table creation is authorized for the given user.
   // If the table is being created with a different owner than the user,
   // then more strict privilege is required.

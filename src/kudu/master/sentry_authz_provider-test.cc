@@ -1346,9 +1346,9 @@ TEST_P(TestConcurrentRequests, SuccessResponses) {
   // (kNumRequestThreads / 2) of actual RPC requests to Sentry might be reached
   // and the assertion below would be triggered. For example, the OS scheduler
   // might de-schedule the majority of the threads spawned above for a time
-  // greater than it takes to complete an RPC to Sentry, and the de-scheduling
+  // longer than it takes to complete an RPC to Sentry, and that de-scheduling
   // might happen exactly prior the point when the 'earlier-running' thread
-  // added itself into a queue record designed to track concurrent requests.
+  // added itself into a queue designed to track concurrent requests.
   // Essentially, that's about 'freezing' all incoming requests just before the
   // queueing point, and then awakening them one by one, so no more than one
   // thread is registered in the queue at any time.

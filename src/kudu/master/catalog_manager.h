@@ -697,6 +697,10 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
     return hms_catalog_.get();
   }
 
+  master::AuthzProvider* authz_provider() const {
+    return authz_provider_.get();
+  }
+
   // Returns the normalized form of the provided table name.
   //
   // If the HMS integration is configured and the table name is a valid HMS

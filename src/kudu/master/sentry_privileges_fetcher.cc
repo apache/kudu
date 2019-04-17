@@ -23,7 +23,6 @@
 #include <iterator>
 #include <memory>
 #include <mutex>
-#include <ostream>
 #include <type_traits>
 #include <unordered_map>
 #include <vector>
@@ -153,6 +152,7 @@ using sentry::TListSentryPrivilegesResponse;
 using sentry::TSentryAuthorizable;
 using sentry::TSentryGrantOption;
 using sentry::TSentryPrivilege;
+using std::make_shared;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
@@ -447,11 +447,7 @@ void SentryPrivilegesBranch::DoInit(
     SentryAction::Action action;
     if (!SentryPrivilegesFetcher::SentryPrivilegeIsWellFormed(
         privilege_resp, authorizable, &scope, &action)) {
-      if (VLOG_IS_ON(1)) {
-        std::ostringstream os;
-        privilege_resp.printTo(os);
-        VLOG(1) << Substitute("ignoring privilege response: $0", os.str());
-      }
+      VLOG(1) << "ignoring privilege response: " << privilege_resp;
       continue;
     }
     const auto& db = privilege_resp.dbName;
@@ -467,11 +463,9 @@ void SentryPrivilegesBranch::DoInit(
           (privilege_resp.grantOption == TSentryGrantOption::ENABLED);
     }
     if (VLOG_IS_ON(1)) {
-      std::ostringstream os;
-      privilege_resp.printTo(os);
       if (action != SentryAction::ALL && action != SentryAction::OWNER &&
           privilege_resp.grantOption == TSentryGrantOption::ENABLED) {
-        VLOG(1) << "ignoring ENABLED grant option for unexpected action: "
+        VLOG(1) << "ignoring ENABLED grant option for unknown action: "
                 << static_cast<int16_t>(action);
       }
     }
@@ -490,6 +484,11 @@ SentryPrivilegesFetcher::SentryPrivilegesFetcher(
 }
 
 Status SentryPrivilegesFetcher::Start() {
+  // The semantics of SentryAuthzProvider's Start()/Stop() don't guarantee
+  // immutability of the Sentry service's end-point between restarts. So, since
+  // the information in the cache might become irrelevant after restarting
+  // 'sentry_client_' with different Sentry address, it makes sense to clear
+  // the cache of all accumulated entries.
   ResetCache();
 
   vector<HostPort> addresses;
@@ -521,6 +520,29 @@ void SentryPrivilegesFetcher::Stop() {
   sentry_client_.Stop();
 }
 
+Status SentryPrivilegesFetcher::ResetCache() {
+  const auto cache_capacity_bytes =
+      FLAGS_sentry_privileges_cache_capacity_mb * 1024 * 1024;
+  shared_ptr<AuthzInfoCache> new_cache;
+  if (cache_capacity_bytes != 0) {
+    const auto ttl_sec = FLAGS_authz_token_validity_seconds *
+        FLAGS_sentry_privileges_cache_ttl_factor;
+    new_cache = make_shared<AuthzInfoCache>(
+        cache_capacity_bytes, MonoDelta::FromSeconds(ttl_sec));
+    if (metric_entity_) {
+      unique_ptr<SentryPrivilegesCacheMetrics> metrics(
+          new SentryPrivilegesCacheMetrics(metric_entity_));
+      new_cache->SetMetrics(std::move(metrics));
+    }
+  }
+  {
+    std::lock_guard<rw_spinlock> l(cache_lock_);
+    cache_ = new_cache;
+  }
+
+  return Status::OK();
+}
+
 Status SentryPrivilegesFetcher::GetSentryPrivileges(
     SentryAuthorizableScope::Scope requested_scope,
     const string& table_name,
@@ -548,11 +570,22 @@ Status SentryPrivilegesFetcher::GetSentryPrivileges(
   // Do not query Sentry for authz scopes narrower than 'TABLE'.
   const auto& key = aggregate_key.GetKey(SentryAuthorizableScope::TABLE);
   const auto& key_seq = aggregate_key.key_sequence();
+
+  // Copy the shared pointer to the cache. That's necessary because:
+  //   * the cache_ member may be reset by concurrent ResetCache()
+  //   * TTLCache is based on Cache that doesn't allow for outstanding handles
+  //     if the cache itself destructed (in this case, goes out of scope).
+  shared_ptr<AuthzInfoCache> cache;
+  {
+    shared_lock<rw_spinlock> l(cache_lock_);
+    cache = cache_;
+  }
   vector<typename AuthzInfoCache::EntryHandle> handles;
   handles.reserve(AuthzInfoKey::kKeySequenceMaxSize);
-  if (PREDICT_TRUE(cache_)) {
+
+  if (PREDICT_TRUE(cache)) {
     for (const auto& e : key_seq) {
-      auto handle = cache_->Get(e);
+      auto handle = cache->Get(e);
       VLOG(3) << Substitute("'$0': '$1' key lookup", key, e);
       if (!handle) {
         continue;
@@ -589,7 +622,7 @@ Status SentryPrivilegesFetcher::GetSentryPrivileges(
     pending_request.callbacks.emplace_back(sync.AsStatusCallback());
     if (is_first_request) {
       DCHECK(!pending_request.result);
-      pending_request.result = std::make_shared<SentryPrivilegesBranch>();
+      pending_request.result = make_shared<SentryPrivilegesBranch>();
     }
     fetched_privileges = pending_request.result;
   }
@@ -602,7 +635,7 @@ Status SentryPrivilegesFetcher::GetSentryPrivileges(
   const auto s = FetchPrivilegesFromSentry(FLAGS_kudu_service_name,
                                            user, authorizable,
                                            fetched_privileges.get());
-  if (s.ok() && PREDICT_TRUE(cache_)) {
+  if (s.ok() && PREDICT_TRUE(cache)) {
     // Put the result into the cache. Negative results (i.e. errors) are not
     // cached. Split the information on privileges into at most two cache
     // entries, for authorizables of scope:
@@ -622,7 +655,7 @@ Status SentryPrivilegesFetcher::GetSentryPrivileges(
           SentryAuthorizableScope::DATABASE);
       const auto result_footprint = result_ptr->memory_footprint() +
           key.capacity();
-      cache_->Put(key, std::move(result_ptr), result_footprint);
+      cache->Put(key, std::move(result_ptr), result_footprint);
       VLOG(2) << Substitute(
           "added entry of size $0 bytes for key '$1' (server-database scope)",
           result_footprint, key);
@@ -642,7 +675,7 @@ Status SentryPrivilegesFetcher::GetSentryPrivileges(
           SentryAuthorizableScope::TABLE);
       const auto result_footprint = result_ptr->memory_footprint() +
           key.capacity();
-      cache_->Put(key, std::move(result_ptr), result_footprint);
+      cache->Put(key, std::move(result_ptr), result_footprint);
       VLOG(2) << Substitute(
           "added entry of size $0 bytes for key '$1' (table-column scope)",
           result_footprint, key);
@@ -826,25 +859,6 @@ Status SentryPrivilegesFetcher::FetchPrivilegesFromSentry(
         return client->ListPrivilegesByUser(request, &response);
       }));
   *result = SentryPrivilegesBranch(authorizable, response);
-  return Status::OK();
-}
-
-Status SentryPrivilegesFetcher::ResetCache() {
-  const auto cache_capacity_bytes =
-      FLAGS_sentry_privileges_cache_capacity_mb * 1024 * 1024;
-  if (cache_capacity_bytes == 0) {
-    cache_.reset();
-  } else {
-    const auto ttl_sec = FLAGS_authz_token_validity_seconds *
-        FLAGS_sentry_privileges_cache_ttl_factor;
-    cache_.reset(new AuthzInfoCache(cache_capacity_bytes,
-                                    MonoDelta::FromSeconds(ttl_sec)));
-    if (metric_entity_) {
-      unique_ptr<SentryPrivilegesCacheMetrics> metrics(
-          new SentryPrivilegesCacheMetrics(metric_entity_));
-      cache_->SetMetrics(std::move(metrics));
-    }
-  }
   return Status::OK();
 }
 

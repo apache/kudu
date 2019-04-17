@@ -33,8 +33,10 @@
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/replica_management.pb.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/hms/hms_catalog.h"
+#include "kudu/master/authz_provider.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/location_cache.h"
 #include "kudu/master/master.h"
@@ -593,6 +595,17 @@ void MasterServiceImpl::ReplaceTablet(const ReplaceTabletRequestPB* req,
 
   Status s = server_->catalog_manager()->ReplaceTablet(req->tablet_id(), resp);
   CheckRespErrorOrSetUnknown(s, resp);
+  rpc->RespondSuccess();
+}
+
+void MasterServiceImpl::ResetAuthzCache(
+    const ResetAuthzCacheRequestPB* /* req */,
+    ResetAuthzCacheResponsePB* resp,
+    rpc::RpcContext* rpc) {
+  LOG(INFO) << Substitute("request to reset authz privileges cache from $0",
+                          rpc->requestor_string());
+  CheckRespErrorOrSetUnknown(
+      server_->catalog_manager()->authz_provider()->ResetCache(), resp);
   rpc->RespondSuccess();
 }
 
