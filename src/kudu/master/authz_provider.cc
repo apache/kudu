@@ -45,7 +45,7 @@ AuthzProvider::AuthzProvider() {
   std::move(acls.begin(), acls.end(), std::inserter(trusted_users_, trusted_users_.end()));
 }
 
-bool AuthzProvider::IsTrustedUser(const string& user) {
+bool AuthzProvider::IsTrustedUser(const string& user) const {
   return ContainsKey(trusted_users_, user);
 }
 

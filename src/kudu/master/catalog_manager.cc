@@ -697,6 +697,11 @@ CatalogManager::CatalogManager(Master* master)
       leader_ready_term_(-1),
       hms_notification_log_event_id_(-1),
       leader_lock_(RWMutex::Priority::PREFER_WRITING) {
+  if (hms::HmsCatalog::IsEnabled() && SentryAuthzProvider::IsEnabled()) {
+    authz_provider_.reset(new SentryAuthzProvider(master_->metric_entity()));
+  } else {
+    authz_provider_.reset(new DefaultAuthzProvider);
+  }
   CHECK_OK(ThreadPoolBuilder("leader-initialization")
            // Presently, this thread pool must contain only a single thread
            // (to correctly serialize invocations of ElectedAsLeaderCb upon
@@ -727,8 +732,6 @@ Status CatalogManager::Init(bool is_first_run) {
   RETURN_NOT_OK_PREPEND(sys_catalog_->WaitUntilRunning(),
                         "Failed waiting for the catalog tablet to run");
 
-  authz_provider_.reset(new DefaultAuthzProvider);
-
   if (hms::HmsCatalog::IsEnabled()) {
     vector<HostPortPB> master_addrs_pb;
     RETURN_NOT_OK(master_->GetMasterHostPorts(&master_addrs_pb));
@@ -754,11 +757,6 @@ Status CatalogManager::Init(bool is_first_run) {
     hms_notification_log_listener_.reset(new HmsNotificationLogListenerTask(this));
     RETURN_NOT_OK_PREPEND(hms_notification_log_listener_->Init(),
         "failed to initialize Hive Metastore notification log listener task");
-
-    // Use SentryAuthzProvider when both Sentry and the HMS integration are enabled.
-    if (SentryAuthzProvider::IsEnabled()) {
-      authz_provider_.reset(new SentryAuthzProvider(master_->metric_entity()));
-    }
   }
 
   RETURN_NOT_OK_PREPEND(authz_provider_->Start(), "failed to start Authz Provider");

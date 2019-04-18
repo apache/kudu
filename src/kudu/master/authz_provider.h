@@ -38,6 +38,7 @@ class AuthzProvider {
  public:
 
   AuthzProvider();
+  virtual ~AuthzProvider() = default;
 
   // Starts the AuthzProvider instance.
   virtual Status Start() = 0;
@@ -87,11 +88,9 @@ class AuthzProvider {
                                       const SchemaPB& schema_pb,
                                       security::TablePrivilegePB* pb) WARN_UNUSED_RESULT = 0;
 
-  virtual ~AuthzProvider() {}
-
   // Checks if the given user is trusted and thus can be exempted from
   // authorization validation.
-  bool IsTrustedUser(const std::string& user);
+  bool IsTrustedUser(const std::string& user) const;
 
  private:
   std::unordered_set<std::string> trusted_users_;
