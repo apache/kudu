@@ -215,17 +215,7 @@ for ATTEMPT_NUMBER in $(seq 1 $TEST_EXECUTION_ATTEMPTS) ; do
 
   if [ -n "$KUDU_REPORT_TEST_RESULTS" ] && [ "$KUDU_REPORT_TEST_RESULTS" -ne 0 ]; then
     echo Reporting results
-    $SOURCE_ROOT/build-support/report-test.sh "$ABS_TEST_PATH" "$LOGFILE" "$STATUS" &
-
-    # On success, we'll do "best effort" reporting, and disown the subprocess.
-    # On failure, we want to upload the failed test log. So, in that case,
-    # wait for the report-test.sh job to finish, lest we accidentally run
-    # a test retry and upload the wrong log.
-    if [ "$STATUS" -eq "0" ]; then
-      disown
-    else
-      wait
-    fi
+    $SOURCE_ROOT/build-support/report-test.sh "$ABS_TEST_PATH" "$LOGFILE" "$STATUS"
   fi
 
   if [ "$STATUS" -eq "0" ]; then

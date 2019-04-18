@@ -83,6 +83,7 @@ TEST_SHARD_RE = re.compile("\.\d+$")
 
 DEPS_FOR_ALL = \
     ["build-support/stacktrace_addr2line.pl",
+     "build-support/report-test.sh",
      "build-support/run-test.sh",
      "build-support/run_dist_test.py",
      "build-support/java-home-candidates.txt",
@@ -273,6 +274,20 @@ def copy_system_library(lib):
     shutil.copy2(rel_to_abs(lib), dst)
   return dst
 
+def forward_env_var(command_list, var_name, is_required=True):
+  """
+  Extends 'command_list' with the name and value of the environment variable
+  given by 'var_name'.
+
+  Does nothing if the environment variable isn't set or is empty, unless
+  'is_required' is True, in which case an exception is raised.
+  """
+  if not var_name in os.environ or not os.environ.get(var_name):
+    if is_required:
+      raise Exception("required env variable %s is missing" % (var_name,))
+    return
+  command_list.extend(["-e", "%s=%s" % (var_name, os.environ.get(var_name))])
+
 def create_archive_input(staging, execution, dep_extractor,
                          collect_tmpdir=False):
   """
@@ -323,6 +338,15 @@ def create_archive_input(staging, execution, dep_extractor,
       # underlying test timeout are coordinated.
       continue
     command.extend(['-e', '%s=%s' % (k, v)])
+
+  # If test result reporting was requested, forward all relevant environment
+  # variables into the test process so as to enable reporting.
+  if os.environ.get('KUDU_REPORT_TEST_RESULTS', 0):
+    forward_env_var(command, 'KUDU_REPORT_TEST_RESULTS')
+    forward_env_var(command, 'BUILD_CONFIG')
+    forward_env_var(command, 'BUILD_TAG')
+    forward_env_var(command, 'GIT_REVISION')
+    forward_env_var(command, 'TEST_RESULT_SERVER', is_required=False)
 
   if collect_tmpdir:
     command += ["--collect-tmpdir"]
