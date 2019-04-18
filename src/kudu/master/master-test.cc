@@ -52,7 +52,6 @@
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
@@ -117,7 +116,7 @@ namespace master {
 
 class MasterTest : public KuduTest {
  protected:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     KuduTest::SetUp();
 
     // In this test, we create tables to test catalog manager behavior,
@@ -138,7 +137,7 @@ class MasterTest : public KuduTest {
                                         mini_master_->bound_rpc_addr().host()));
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     mini_master_->Shutdown();
     KuduTest::TearDown();
   }
@@ -1064,16 +1063,16 @@ class MasterMetadataVerifier : public TableVisitor,
       dead_table_names_(std::move(dead_table_names)) {
   }
 
-  virtual Status VisitTable(const std::string& table_id,
-                             const SysTablesEntryPB& metadata) OVERRIDE {
+  Status VisitTable(const std::string& table_id,
+                    const SysTablesEntryPB& metadata) override {
      InsertOrDie(&visited_tables_by_id_, table_id,
                  { table_id, metadata.name(), metadata.state() });
      return Status::OK();
    }
 
-  virtual Status VisitTablet(const std::string& table_id,
-                             const std::string& tablet_id,
-                             const SysTabletsEntryPB& metadata) OVERRIDE {
+  Status VisitTablet(const std::string& table_id,
+                     const std::string& tablet_id,
+                     const SysTabletsEntryPB& metadata) override {
     InsertOrDie(&visited_tablets_by_id_, tablet_id,
                 { tablet_id, table_id, metadata.state() });
     return Status::OK();

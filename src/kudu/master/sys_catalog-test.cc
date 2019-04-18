@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/master/sys_catalog.h"
+
 #include <memory>
 #include <string>
 #include <utility>
@@ -26,14 +28,12 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/mini_master.h"
-#include "kudu/master/sys_catalog.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/security/cert.h"
 #include "kudu/security/crypto.h"
@@ -67,7 +67,7 @@ namespace master {
 
 class SysCatalogTest : public KuduTest {
  protected:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     KuduTest::SetUp();
 
     // Start master
@@ -84,7 +84,7 @@ class SysCatalogTest : public KuduTest {
         mini_master_->bound_rpc_addr().host()));
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     mini_master_->Shutdown();
     KuduTest::TearDown();
   }
@@ -101,8 +101,8 @@ class TestTableLoader : public TableVisitor {
     tables.clear();
   }
 
-  virtual Status VisitTable(const string& table_id,
-                            const SysTablesEntryPB& metadata) OVERRIDE {
+  Status VisitTable(const string& table_id,
+                    const SysTablesEntryPB& metadata) override {
     // Setup the table info
     scoped_refptr<TableInfo> table = new TableInfo(table_id);
     TableMetadataLock l(table.get(), LockMode::WRITE);
@@ -224,9 +224,9 @@ class TestTabletLoader : public TabletVisitor {
     tablets.clear();
   }
 
-  virtual Status VisitTablet(const string& /*table_id*/,
-                             const string& tablet_id,
-                             const SysTabletsEntryPB& metadata) OVERRIDE {
+  Status VisitTablet(const string& /*table_id*/,
+                     const string& tablet_id,
+                     const SysTabletsEntryPB& metadata) override {
     // Setup the tablet info
     scoped_refptr<TabletInfo> tablet = new TabletInfo(nullptr, tablet_id);
     TabletMetadataLock l(tablet.get(), LockMode::WRITE);

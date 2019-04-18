@@ -43,7 +43,6 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/map-util.h"
-#include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/ascii_ctype.h"
@@ -512,7 +511,7 @@ class JsonDumper : public TableVisitor, public TabletVisitor {
   }
 
   Status VisitTable(const std::string& table_id,
-                    const SysTablesEntryPB& metadata) OVERRIDE {
+                    const SysTablesEntryPB& metadata) override {
     if (metadata.state() != SysTablesEntryPB::RUNNING) {
       return Status::OK();
     }
@@ -533,7 +532,7 @@ class JsonDumper : public TableVisitor, public TabletVisitor {
 
   Status VisitTablet(const std::string& table_id,
                      const std::string& tablet_id,
-                     const SysTabletsEntryPB& metadata) OVERRIDE {
+                     const SysTabletsEntryPB& metadata) override {
     if (metadata.state() != SysTabletsEntryPB::RUNNING) {
       return Status::OK();
     }
