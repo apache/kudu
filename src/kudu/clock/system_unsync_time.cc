@@ -39,14 +39,14 @@ Status SystemUnsyncTime::Init() {
                << "be accurate. This configuration is not suitable for "
                << "distributed clusters.";
   if (PREDICT_FALSE(FLAGS_inject_unsync_time_errors)) {
-    return Status::ServiceUnavailable("Error reading clock. Clock considered unsynchronized");
+    return Status::ServiceUnavailable("Injected clock unsync error");
   }
   return Status::OK();
 }
 
 Status SystemUnsyncTime::WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) {
   if (PREDICT_FALSE(FLAGS_inject_unsync_time_errors)) {
-    return Status::ServiceUnavailable("Error reading clock. Clock considered unsynchronized");
+    return Status::ServiceUnavailable("Injected clock unsync error");
   }
   *now_usec = GetCurrentTimeMicros();
   *error_usec = 0;

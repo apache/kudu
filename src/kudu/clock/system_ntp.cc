@@ -77,7 +77,10 @@ Status CallAdjTime(timex* tx) {
       return Status::InvalidArgument("Error reading clock. ntp_adjtime() failed",
                                      ErrnoToString(errno));
     case TIME_ERROR:
-      return Status::ServiceUnavailable("Error reading clock. Clock considered unsynchronized");
+      return Status::ServiceUnavailable(
+          PREDICT_FALSE(FLAGS_inject_unsync_time_errors) ?
+          "Injected clock unsync error" :
+          "Error reading clock. Clock considered unsynchronized");
     default:
       // TODO what to do about leap seconds? see KUDU-146
       KLOG_FIRST_N(ERROR, 1) << "Server undergoing leap second. This may cause consistency issues "
