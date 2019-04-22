@@ -74,8 +74,7 @@ public class DistTestTask extends DefaultTask {
   private boolean collectTmpDir = false;
 
   /**
-   * Called by the build file to add test tasks to be considered for
-   * dist-tests.
+   * Called by build.gradle to add test tasks to be considered for dist-tests.
    */
   public void addTestTask(Test t) {
     testTasks.add(t);
@@ -85,7 +84,7 @@ public class DistTestTask extends DefaultTask {
           description = "Sets test class to be included, '*' is supported.")
   public DistTestTask setClassPattern(List<String> classPattern) {
     for (Test t : testTasks) {
-      // TODO: this is currently requiring a glob like **/*Foo* instead of just *Foo*
+      // TODO: this requires a glob like **/*Foo* instead of just *Foo*
       t.setIncludes(classPattern);
     }
     return this;
@@ -110,7 +109,7 @@ public class DistTestTask extends DefaultTask {
 
   @InputFiles
   public FileCollection getInputClasses() {
-    FileCollection fc = getProject().files(); // Create and empty FileCollection.
+    FileCollection fc = getProject().files(); // Create an empty FileCollection.
     for (Test t : testTasks) {
       fc = fc.plus(t.getCandidateClassFiles());
     }

@@ -223,13 +223,6 @@ if [ "$RUN_FLAKY_ONLY" == "1" -o "$KUDU_FLAKY_TEST_ATTEMPTS" -gt 1 ]; then
   fi
 
   if [ "$RUN_FLAKY_ONLY" == "1" ]; then
-    # TODO(adar): we can't yet pass the flaky test list into the dist-test
-    # machinery (in order to control which tests are executed).
-    if [ "$ENABLE_DIST_TEST" == "1" ]; then
-      echo "Distributed testing is incompatible with RUN_FLAKY_ONLY=1"
-      exit 1
-    fi
-
     test_regex=$(perl -e '
       chomp(my @lines = <>);
       print join("|", map { "^" . quotemeta($_) } @lines);
