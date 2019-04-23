@@ -201,3 +201,10 @@ to communicate only the most important known issues.
   or fewer. The maximum allowed number of tablets per server is 2000.
   Consider this limitation when pre-splitting your tables. If you notice slow start-up times,
   you can monitor the number of tablets per server in the web UI.
+
+* Unlike regular scans, fault tolerant scans will allocate all required memory
+  when the scan begins rather than as it progresses. This can be significant for
+  tablets of non-trivial size. Moreover, this memory usage isn't counted towards
+  the tablet server's overall memory limit, raising the likelihood of the tablet
+  server being out-of-memory killed by the kernel. See
+  link:https://issues.apache.org/jira/browse/KUDU-2466[KUDU-2466] for details.
