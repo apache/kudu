@@ -16,8 +16,7 @@
 // under the License.
 package org.apache.kudu.backup
 
-import java.nio.file.Path
-
+import org.apache.hadoop.fs.Path
 import org.apache.kudu.backup.Backup.TableMetadataPB
 import org.apache.yetus.audience.InterfaceAudience
 import org.apache.yetus.audience.InterfaceStability

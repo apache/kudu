@@ -19,14 +19,12 @@ package org.apache.kudu.backup
 import java.io.InputStreamReader
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
-import java.nio.file.Path
-import java.nio.file.Paths
 
 import com.google.common.io.CharStreams
 import com.google.protobuf.util.JsonFormat
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.FileSystem
-import org.apache.hadoop.fs.{Path => HPath}
+import org.apache.hadoop.fs.Path
 import org.apache.kudu.Schema
 import org.apache.kudu.backup.Backup.TableMetadataPB
 import org.apache.kudu.backup.SessionIO._
@@ -40,7 +38,6 @@ import org.apache.yetus.audience.InterfaceStability
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
-import scala.collection.JavaConverters._
 import scala.collection.mutable
 
 /**
@@ -63,7 +60,7 @@ class SessionIO(val session: SparkSession, options: CommonOptions) {
   val log: Logger = LoggerFactory.getLogger(getClass)
 
   val conf: Configuration = session.sparkContext.hadoopConfiguration
-  val rootHPath: HPath = new HPath(options.rootPath)
+  val rootHPath: Path = new Path(options.rootPath)
   val fs: FileSystem = rootHPath.getFileSystem(conf)
 
   /**
@@ -97,21 +94,21 @@ class SessionIO(val session: SparkSession, options: CommonOptions) {
    * @return the path to the table directory.
    */
   def tablePath(tableName: String): Path = {
-    Paths.get(options.rootPath).resolve(URLEncoder.encode(tableName, "UTF-8"))
+    new Path(options.rootPath, URLEncoder.encode(tableName, "UTF-8"))
   }
 
   /**
    * @return the backup path for a table and time.
    */
   def backupPath(tableName: String, timestampMs: Long): Path = {
-    tablePath(tableName).resolve(timestampMs.toString)
+    new Path(tablePath(tableName), timestampMs.toString)
   }
 
   /**
    * @return the path to the metadata file within a backup path.
    */
   def backupMetadataPath(backupPath: Path): Path = {
-    backupPath.resolve(MetadataFileName)
+    new Path(backupPath, MetadataFileName)
   }
 
   /**
@@ -121,8 +118,7 @@ class SessionIO(val session: SparkSession, options: CommonOptions) {
    */
   def writeTableMetadata(tableMetadata: TableMetadataPB, metadataPath: Path): Unit = {
     log.error(s"Writing metadata to $metadataPath")
-    val hPath = new HPath(metadataPath.toString)
-    val out = fs.create(hPath, /* overwrite= */ false)
+    val out = fs.create(metadataPath, /* overwrite= */ false)
     val json = JsonFormat.printer().print(tableMetadata)
     out.write(json.getBytes(StandardCharsets.UTF_8))
     out.flush()
@@ -152,17 +148,17 @@ class SessionIO(val session: SparkSession, options: CommonOptions) {
    */
   // TODO: Also use table-id to find backups.
   private def readTableBackups(tableName: String): Seq[(Path, TableMetadataPB)] = {
-    val hPath = new HPath(tablePath(tableName).toString)
+    val hPath = new Path(tablePath(tableName).toString)
     val results = new mutable.ListBuffer[(Path, TableMetadataPB)]()
     if (fs.exists(hPath)) {
       val iter = fs.listLocatedStatus(hPath)
       while (iter.hasNext) {
         val file = iter.next()
         if (file.isDirectory) {
-          val metadataHPath = new HPath(file.getPath, MetadataFileName)
+          val metadataHPath = new Path(file.getPath, MetadataFileName)
           if (fs.exists(metadataHPath)) {
             val metadata = readTableMetadata(metadataHPath)
-            results += ((Paths.get(file.getPath.toString), metadata))
+            results += ((file.getPath, metadata))
           }
         }
       }
@@ -176,7 +172,7 @@ class SessionIO(val session: SparkSession, options: CommonOptions) {
    * @param metadataPath the path to the metadata file.
    * @return the deserialized table metadata.
    */
-  private def readTableMetadata(metadataPath: HPath): TableMetadataPB = {
+  private def readTableMetadata(metadataPath: Path): TableMetadataPB = {
     val in = new InputStreamReader(fs.open(metadataPath), StandardCharsets.UTF_8)
     val json = CharStreams.toString(in)
     in.close()
