@@ -45,15 +45,13 @@ class KuduBackupRDD private[kudu] (
   // Defined here because the options are transient.
   val incremental: Boolean = options.isIncremental
 
-  // TODO: Split large tablets into smaller scan tokens?
+  // TODO (KUDU-2785): Split large tablets into smaller scan tokens?
   override protected def getPartitions: Array[Partition] = {
     val client = kuduContext.syncClient
 
     val builder = client
       .newScanTokenBuilder(table)
       .cacheBlocks(false)
-      // TODO: Use fault tolerant scans to get mostly ordered results when KUDU-2466 is fixed.
-      // .setFaultTolerant(true)
       .replicaSelection(ReplicaSelection.CLOSEST_REPLICA)
       .readMode(ReadMode.READ_AT_SNAPSHOT)
       .batchSizeBytes(options.scanBatchSize)
@@ -79,15 +77,19 @@ class KuduBackupRDD private[kudu] (
     val tokens = builder.build()
     tokens.asScala.zipWithIndex.map {
       case (token, index) =>
-        // TODO: Support backups from any replica or followers only.
-        // Always run on the leader for data locality.
-        val leaderLocation = token.getTablet.getLeaderReplica.getRpcHost
-        KuduBackupPartition(index, token.serialize(), Array(leaderLocation))
+        // Only list the leader replica as the preferred location if
+        // replica selection policy is leader only, to take advantage
+        // of scan locality.
+        val locations: Array[String] = {
+          if (options.scanLeaderOnly) {
+            Array(token.getTablet.getLeaderReplica.getRpcHost)
+          } else {
+            token.getTablet.getReplicas.asScala.map(_.getRpcHost).toArray
+          }
+        }
+        KuduBackupPartition(index, token.serialize(), locations)
     }.toArray
   }
-
-  // TODO: Do we need a custom spark partitioner for any guarantees?
-  // override val partitioner = None
 
   override def compute(part: Partition, taskContext: TaskContext): Iterator[Row] = {
     val client: KuduClient = kuduContext.syncClient
@@ -135,8 +137,6 @@ private class RowIterator(
     scannerIterator.hasNext(nextRowsCallback)
   }
 
-  // TODO: There may be an old KuduRDD implementation where we did some
-  // sort of zero copy/object pool pattern for performance (we could use that here).
   override def next(): Row = {
     val rowResult = scannerIterator.next()
     val fieldCount = rowResult.getColumnProjection.getColumnCount

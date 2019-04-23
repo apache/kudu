@@ -55,7 +55,7 @@ import scala.collection.mutable
  * In the above path the `/<rootPath>` can be used to distinguish separate backup groups.
  * The `<backup-id>` is currently the `toMs` time for the job.
  *
- * TODO: Should the tableName contain the table id?
+ * TODO (KUDU-2788): Should the tableName contain the table id?
  */
 @InterfaceAudience.Private
 @InterfaceStability.Unstable

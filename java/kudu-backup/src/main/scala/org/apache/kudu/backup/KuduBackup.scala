@@ -26,12 +26,6 @@ import org.slf4j.LoggerFactory
 
 /**
  * The main class for a Kudu backup spark job.
- *
- * Example Usage:
- *   spark-submit --class org.apache.kudu.backup.KuduBackup kudu-backup2_2.11-*.jar \
- *     --kuduMasterAddresses master1-host,master-2-host,master-3-host \
- *     --rootPath hdfs:///kudu/backup/path \
- *     my_kudu_table
  */
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
@@ -46,7 +40,8 @@ object KuduBackup {
         session.sparkContext
       )
     val io = new SessionIO(session, options)
-    // TODO: Make parallel so each table isn't process serially?
+    // TODO (KUDU-2786): Make parallel so each table isn't process serially.
+    // TODO (KUDU-2787): Handle single table failures.
     options.tables.foreach { tableName =>
       var tableOptions = options.copy() // Copy the options so we can modify them for the table.
       val table = context.syncClient.openTable(tableName)

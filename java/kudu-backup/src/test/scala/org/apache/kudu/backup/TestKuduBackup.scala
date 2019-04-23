@@ -68,7 +68,7 @@ class TestKuduBackup extends KuduTestSuite {
     assertTrue(partitionSchemasMatch(tA.getPartitionSchema, tB.getPartitionSchema))
   }
 
-  // TODO: Add a thorough randomized test for full and incremental backup/restore.
+  // TODO (KUDU-2790): Add a thorough randomized test for full and incremental backup/restore.
   @Test
   def TestIncrementalBackupAndRestore() {
     insertRows(table, 100) // Insert data into the default test table.
@@ -225,7 +225,6 @@ class TestKuduBackup extends KuduTestSuite {
     backupAndRestore(Seq(tableName))
   }
 
-  // TODO: Move to a Schema equals/equivalent method.
   def schemasMatch(before: Schema, after: Schema): Boolean = {
     if (before eq after) return true
     if (before.getColumns.size != after.getColumns.size) return false
@@ -234,7 +233,6 @@ class TestKuduBackup extends KuduTestSuite {
     }
   }
 
-  // TODO: Move to a ColumnSchema equals/equivalent method.
   def columnsMatch(before: ColumnSchema, after: ColumnSchema): Boolean = {
     if (before eq after) return true
     Objects.equal(before.getName, after.getName) &&
@@ -260,7 +258,6 @@ class TestKuduBackup extends KuduTestSuite {
     }
   }
 
-  // TODO: Move to a PartitionSchema equals/equivalent method.
   def partitionSchemasMatch(before: PartitionSchema, after: PartitionSchema): Boolean = {
     if (before eq after) return true
     val beforeBuckets = before.getHashBucketSchemas.asScala
@@ -295,7 +292,6 @@ class TestKuduBackup extends KuduTestSuite {
     kuduClient.createTable(name, schema, options)
   }
 
-  // TODO: Add updates and deletes when incremental backups are supported.
   def loadRandomData(table: KuduTable): IndexedSeq[PartialRow] = {
     val kuduSession = kuduClient.newSession()
     val dataGenerator = new DataGeneratorBuilder()

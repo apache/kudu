@@ -166,7 +166,6 @@ case class BackupNode(path: Path, metadata: TableMetadataPB) {
    */
   def weight: Int = {
     // Full backups have a weight of 0 and partial backups have a weight of 1.
-    // TODO: Use the size of a partial backup to contribute to weight.
     if (metadata.getFromMs == 0) 0 else 1
   }
 }

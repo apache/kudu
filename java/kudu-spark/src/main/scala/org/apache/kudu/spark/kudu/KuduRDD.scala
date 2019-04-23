@@ -84,11 +84,12 @@ class KuduRDD private[kudu] (
         // Only list the leader replica as the preferred location if
         // replica selection policy is leader only, to take advantage
         // of scan locality.
-        var locations: Array[String] = null
-        if (options.scanLocality == ReplicaSelection.LEADER_ONLY) {
-          locations = Array(token.getTablet.getLeaderReplica.getRpcHost)
-        } else {
-          locations = token.getTablet.getReplicas.asScala.map(_.getRpcHost).toArray
+        val locations = {
+          if (options.scanLocality == ReplicaSelection.LEADER_ONLY) {
+            Array(token.getTablet.getLeaderReplica.getRpcHost)
+          } else {
+            token.getTablet.getReplicas.asScala.map(_.getRpcHost).toArray
+          }
         }
         new KuduPartition(index, token.serialize(), locations)
     }.toArray

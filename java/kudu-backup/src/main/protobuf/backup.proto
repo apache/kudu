@@ -35,7 +35,7 @@ message ColumnTypeAttributesMetadataPB {
 
 // Maps to the ColumnSchema class.
 // The fields are effectively 1 to 1 mappings of those in ColumnSchema.
-// TODO: How do we handle column additions?
+// TODO (KUDU-2788): How do we handle column additions?
 message ColumnMetadataPB {
   string name = 1;
   string type = 2;

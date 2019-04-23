@@ -21,7 +21,6 @@ import org.apache.kudu.client.AlterTableOptions
 import org.apache.kudu.client.SessionConfiguration.FlushMode
 import org.apache.kudu.spark.kudu.KuduContext
 import org.apache.kudu.spark.kudu.RowConverter
-import org.apache.parquet.hadoop.ParquetInputFormat
 import org.apache.spark.sql.SparkSession
 import org.apache.yetus.audience.InterfaceAudience
 import org.apache.yetus.audience.InterfaceStability
@@ -30,12 +29,6 @@ import org.slf4j.LoggerFactory
 
 /**
  * The main class for a Kudu restore spark job.
- *
- * Example Usage:
- *   spark-submit --class org.apache.kudu.backup.KuduRestore kudu-backup2_2.11-*.jar \
- *     --kuduMasterAddresses master1-host,master-2-host,master-3-host \
- *     --rootPath hdfs:///kudu/backup/path \
- *     my_kudu_table
  */
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
@@ -51,15 +44,16 @@ object KuduRestore {
       )
     val io = new SessionIO(session, options)
 
-    // TODO: Make parallel so each table isn't processed serially.
+    // TODO (KUDU-2786): Make parallel so each table isn't processed serially.
+    // TODO (KUDU-2787): Handle single table failures.
     options.tables.foreach { tableName =>
-      // TODO: Consider an option to enforce an exact toMS match.
       val graph = io.readBackupGraph(tableName).filterByTime(options.timestampMs)
       graph.restorePath.backups.foreach { backup =>
         log.info(s"Restoring table $tableName from path: ${backup.path}")
         val isFullRestore = backup.metadata.getFromMs == 0
         val restoreName = s"${backup.metadata.getTableName}${options.tableSuffix}"
-        // TODO: Store the full metadata to compare/validate for each applied partial.
+
+        // TODO (KUDU-2788): Store the full metadata to compare/validate for each applied partial.
 
         // On the full restore we may need to create the table.
         if (isFullRestore) {
@@ -72,7 +66,6 @@ object KuduRestore {
         val restoreSchema = io.dataSchema(table.getSchema)
         val rowActionCol = restoreSchema.fields.last.name
 
-        // TODO: Restrict format option.
         var data = session.sqlContext.read
           .format(backup.metadata.getDataFormat)
           .schema(restoreSchema)
@@ -82,8 +75,7 @@ object KuduRestore {
           .na
           .fill(RowAction.UPSERT.getValue, Seq(rowActionCol))
 
-        // TODO: Expose more configuration options:
-        //   (session timeout, consistency mode, flush interval, mutation buffer space)
+        // Write the data to Kudu.
         data.queryExecution.toRdd.foreachPartition { internalRows =>
           val table = context.syncClient.openTable(restoreName)
           val converter = new RowConverter(table.getSchema, restoreSchema, false)
