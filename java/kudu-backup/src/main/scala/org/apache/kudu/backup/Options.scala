@@ -39,7 +39,7 @@ case class BackupOptions(
     kuduMasterAddresses: String = InetAddress.getLocalHost.getCanonicalHostName,
     toMs: Long = System.currentTimeMillis(),
     forceFull: Boolean = BackupOptions.DefaultForceFull,
-    fromMs: Long = 0,
+    fromMs: Long = BackupOptions.DefaultFromMS,
     format: String = BackupOptions.DefaultFormat,
     scanBatchSize: Int = BackupOptions.DefaultScanBatchSize,
     scanRequestTimeoutMs: Long = BackupOptions.DefaultScanRequestTimeoutMs,
@@ -47,14 +47,15 @@ case class BackupOptions(
     keepAlivePeriodMs: Long = BackupOptions.DefaultKeepAlivePeriodMs)
     extends CommonOptions {
 
-  // If not forcing a full backup and fromMs is not zero, this is an incremental backup.
+  // If not forcing a full backup and fromMs is not set, this is an incremental backup.
   def isIncremental: Boolean = {
-    !forceFull && fromMs != 0
+    !forceFull && fromMs != BackupOptions.DefaultFromMS
   }
 }
 
 object BackupOptions {
   val DefaultForceFull: Boolean = false
+  val DefaultFromMS: Long = 0
   val DefaultFormat: String = "parquet"
   val DefaultScanBatchSize: Int = 1024 * 1024 * 20 // 20 MiB
   val DefaultScanRequestTimeoutMs: Long =

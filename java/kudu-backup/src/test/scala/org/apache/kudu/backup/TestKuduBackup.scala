@@ -19,6 +19,7 @@ package org.apache.kudu.backup
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util
+import java.util.concurrent.TimeUnit
 
 import com.google.common.base.Objects
 import org.apache.commons.io.FileUtils
@@ -27,6 +28,7 @@ import org.apache.kudu.client._
 import org.apache.kudu.ColumnSchema
 import org.apache.kudu.Schema
 import org.apache.kudu.spark.kudu._
+import org.apache.kudu.test.CapturingLogAppender
 import org.apache.kudu.test.RandomUtils
 import org.apache.kudu.util.DataGenerator.DataGeneratorBuilder
 import org.apache.kudu.util.HybridTimeUtil
@@ -74,18 +76,40 @@ class TestKuduBackup extends KuduTestSuite {
     val rootDir = Files.createTempDirectory("backup")
     doBackup(rootDir, Seq(tableName)) // Full backup.
     insertRows(table, 100, 100) // Insert more data.
-    doBackup(rootDir, Seq(tableName), incremental = true) // Incremental backup.
+    doBackup(rootDir, Seq(tableName)) // Incremental backup.
     // Delete rows that span the full and incremental backup.
     Range(50, 150).foreach { i =>
       deleteRow(i)
     }
-    doBackup(rootDir, Seq(tableName), incremental = true) // Incremental backup.
+    doBackup(rootDir, Seq(tableName)) // Incremental backup.
     doRestore(rootDir, Seq(tableName)) // Restore all the backups.
     FileUtils.deleteDirectory(rootDir.toFile)
 
     val rdd =
       kuduContext.kuduRDD(ss.sparkContext, s"$tableName-restore", List("key"))
     assert(rdd.collect.length == 100)
+  }
+
+  @Test
+  def TestForceIncrementalBackup() {
+    insertRows(table, 100) // Insert data into the default test table.
+    val beforeMs = getPropagatedTimestampMs
+    insertRows(table, 100, 100) // Insert more data.
+
+    val rootDir = Files.createTempDirectory("backup")
+
+    // Capture the logs to validate job internals.
+    val logs = new CapturingLogAppender()
+
+    // Force an incremental backup without a full backup.
+    // It will use a diff scan and won't check the existing dependency graph.
+    val handle = logs.attach()
+    doBackup(rootDir, Seq(tableName), fromMs = beforeMs) // Incremental backup.
+    handle.close()
+
+    assertTrue(Files.isDirectory(rootDir))
+    assertEquals(1, rootDir.toFile.list().length)
+    assertTrue(logs.getAppendedText.contains("fromMs was set"))
   }
 
   @Test
@@ -294,7 +318,10 @@ class TestKuduBackup extends KuduTestSuite {
     FileUtils.deleteDirectory(rootDir.toFile)
   }
 
-  def doBackup(rootDir: Path, tableNames: Seq[String], incremental: Boolean = false): Unit = {
+  def doBackup(
+      rootDir: Path,
+      tableNames: Seq[String],
+      fromMs: Long = BackupOptions.DefaultFromMS): Unit = {
     val nowMs = System.currentTimeMillis()
 
     // Log the timestamps to simplify flaky debugging.
@@ -310,11 +337,11 @@ class TestKuduBackup extends KuduTestSuite {
     // millisecond value as nowMs (after truncating the micros) the records inserted in the
     // microseconds after truncation could be unread.
     val backupOptions = new BackupOptions(
-      tableNames,
-      rootDir.toUri.toString,
-      harness.getMasterAddressesAsString,
-      nowMs + 1,
-      incremental
+      tables = tableNames,
+      rootPath = rootDir.toUri.toString,
+      kuduMasterAddresses = harness.getMasterAddressesAsString,
+      toMs = nowMs + 1,
+      fromMs = fromMs
     )
     KuduBackup.run(backupOptions, ss)
   }
@@ -323,5 +350,12 @@ class TestKuduBackup extends KuduTestSuite {
     val restoreOptions =
       new RestoreOptions(tableNames, rootDir.toUri.toString, harness.getMasterAddressesAsString)
     KuduRestore.run(restoreOptions, ss)
+  }
+
+  private def getPropagatedTimestampMs: Long = {
+    val propagatedTimestamp = harness.getClient.getLastPropagatedTimestamp
+    val physicalTimeMicros =
+      HybridTimeUtil.HTTimestampToPhysicalAndLogical(propagatedTimestamp).head
+    TimeUnit.MILLISECONDS.convert(physicalTimeMicros, TimeUnit.MICROSECONDS)
   }
 }

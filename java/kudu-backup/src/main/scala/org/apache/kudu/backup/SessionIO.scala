@@ -161,7 +161,7 @@ class SessionIO(val session: SparkSession, options: CommonOptions) {
         if (file.isDirectory) {
           val metadataHPath = new HPath(file.getPath, MetadataFileName)
           if (fs.exists(metadataHPath)) {
-            val metadata = readTableMetadata(Paths.get(metadataHPath.toString))
+            val metadata = readTableMetadata(metadataHPath)
             results += ((Paths.get(file.getPath.toString), metadata))
           }
         }
@@ -176,9 +176,8 @@ class SessionIO(val session: SparkSession, options: CommonOptions) {
    * @param metadataPath the path to the metadata file.
    * @return the deserialized table metadata.
    */
-  private def readTableMetadata(metadataPath: Path): TableMetadataPB = {
-    val hPath = new HPath(metadataPath.toString)
-    val in = new InputStreamReader(fs.open(hPath), StandardCharsets.UTF_8)
+  private def readTableMetadata(metadataPath: HPath): TableMetadataPB = {
+    val in = new InputStreamReader(fs.open(metadataPath), StandardCharsets.UTF_8)
     val json = CharStreams.toString(in)
     in.close()
     val builder = TableMetadataPB.newBuilder()
