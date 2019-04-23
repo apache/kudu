@@ -51,6 +51,10 @@ Linux::
       information.
     - ntp.
     - xfs or ext4 formatted drives.
+    - Although not a strict requirement, it's highly recommended to use `nscd`
+      to cache both DNS name resolution and static name resolution. See
+      link:troubleshooting.html#slow_dns_nscd[troubleshooting slow DNS lookups]
+      for more information.
 macOS::
     - OS X 10.10 Yosemite, OS X 10.11 El Capitan, macOS Sierra, or macOS High Sierra.
 Windows::
