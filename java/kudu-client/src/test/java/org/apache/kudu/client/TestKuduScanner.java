@@ -17,12 +17,11 @@
 package org.apache.kudu.client;
 
 import org.apache.kudu.ColumnSchema;
-import org.apache.kudu.Common;
 import org.apache.kudu.Common.DataType;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
 import org.apache.kudu.client.Operation.ChangeType;
-import org.apache.kudu.test.ClientTestUtil;
+import org.apache.kudu.test.CapturingLogAppender;
 import org.apache.kudu.test.KuduTestHarness;
 import org.apache.kudu.test.RandomUtils;
 import org.apache.kudu.util.DataGenerator;
@@ -33,6 +32,7 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.Closeable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -46,6 +46,7 @@ import java.util.Set;
 import static org.apache.kudu.client.AsyncKuduScanner.DEFAULT_IS_DELETED_COL_NAME;
 import static org.apache.kudu.test.ClientTestUtil.getBasicCreateTableOptions;
 import static org.apache.kudu.test.ClientTestUtil.getBasicSchema;
+import static org.apache.kudu.test.ClientTestUtil.loadDefaultTable;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
@@ -174,6 +175,60 @@ public class TestKuduScanner {
         i++;
       }
     }
+  }
+
+  @Test(timeout = 100000)
+  public void testOpenScanWithDroppedPartition() throws Exception {
+    // Create a table with 2 range partitions.
+    Schema basicSchema = getBasicSchema();
+    String tableName = "testOpenScanWithDroppedPartition";
+    PartialRow bottom = basicSchema.newPartialRow();
+    bottom.addInt("key", 0);
+    PartialRow middle = basicSchema.newPartialRow();
+    middle.addInt("key", 1000);
+    PartialRow top = basicSchema.newPartialRow();
+    top.addInt("key", 2000);
+
+    CreateTableOptions createOptions = new CreateTableOptions();
+    createOptions.setRangePartitionColumns(Collections.singletonList("key"));
+    createOptions.addRangePartition(bottom, middle);
+    createOptions.addRangePartition(middle, top);
+    KuduTable table = client.createTable(tableName, basicSchema, createOptions);
+
+    // Load rows into both partitions.
+    int numRows = 1999;
+    loadDefaultTable(client, tableName, numRows);
+
+    // Scan the rows while dropping a partition.
+    KuduScanner scanner = client.newScannerBuilder(table)
+        .batchSizeBytes(100) // Set a small batch size so the first scan doesn't read all the rows.
+        .build();
+
+    int rowsScanned = 0;
+    int batchNum = 0;
+    while (scanner.hasMoreRows()) {
+      if (batchNum == 1) {
+        CapturingLogAppender capture = new CapturingLogAppender();
+        // Drop the partition.
+        try (Closeable unused = capture.attach()) {
+          client.alterTable(tableName,
+              new AlterTableOptions().dropRangePartition(bottom, middle));
+          // Give time for the background drop operations.
+          Thread.sleep(1000);
+        }
+        // Verify the partition was dropped.
+        KuduPartitioner partitioner =
+            new KuduPartitioner.KuduPartitionerBuilder(table).build();
+        assertEquals("The partition was not dropped", 1, partitioner.numPartitions());
+        assertTrue(capture.getAppendedText().contains("Deleting tablet data"));
+        assertTrue(capture.getAppendedText().contains("successfully deleted"));
+      }
+      rowsScanned += scanner.nextRows().getNumRows();
+      batchNum++;
+    }
+
+    assertTrue("All messages were consumed in the first batch", batchNum > 1);
+    assertEquals("Some message were not consumed", numRows, rowsScanned);
   }
 
   @Test(timeout = 100000)
