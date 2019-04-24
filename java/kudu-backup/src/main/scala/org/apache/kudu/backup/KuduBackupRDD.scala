@@ -38,12 +38,10 @@ import scala.collection.JavaConverters._
 class KuduBackupRDD private[kudu] (
     @transient val table: KuduTable,
     @transient val options: BackupOptions,
+    val incremental: Boolean,
     val kuduContext: KuduContext,
     @transient val sc: SparkContext)
     extends RDD[Row](sc, Nil) {
-
-  // Defined here because the options are transient.
-  val incremental: Boolean = options.isIncremental
 
   // TODO (KUDU-2785): Split large tablets into smaller scan tokens?
   override protected def getPartitions: Array[Partition] = {

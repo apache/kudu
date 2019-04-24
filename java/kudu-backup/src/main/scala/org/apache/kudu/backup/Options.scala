@@ -46,13 +46,7 @@ case class BackupOptions(
     scanLeaderOnly: Boolean = BackupOptions.DefaultScanLeaderOnly,
     scanPrefetching: Boolean = BackupOptions.DefaultScanPrefetching,
     keepAlivePeriodMs: Long = BackupOptions.DefaultKeepAlivePeriodMs)
-    extends CommonOptions {
-
-  // If not forcing a full backup and fromMs is not set, this is an incremental backup.
-  def isIncremental: Boolean = {
-    !forceFull && fromMs != BackupOptions.DefaultFromMS
-  }
-}
+    extends CommonOptions
 
 object BackupOptions {
   val DefaultForceFull: Boolean = false

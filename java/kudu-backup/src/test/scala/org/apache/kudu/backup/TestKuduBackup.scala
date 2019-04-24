@@ -76,7 +76,14 @@ class TestKuduBackup extends KuduTestSuite {
     val rootDir = Files.createTempDirectory("backup")
     doBackup(rootDir, Seq(tableName)) // Full backup.
     insertRows(table, 100, 100) // Insert more data.
+
+    val logs = new CapturingLogAppender()
+    val handle = logs.attach()
     doBackup(rootDir, Seq(tableName)) // Incremental backup.
+    handle.close()
+    assertTrue(logs.getAppendedText.contains("Setting fromMs to"))
+    assertTrue(logs.getAppendedText.contains("from backup in path"))
+
     // Delete rows that span the full and incremental backup.
     Range(50, 150).foreach { i =>
       deleteRow(i)
@@ -93,7 +100,7 @@ class TestKuduBackup extends KuduTestSuite {
   @Test
   def TestForceIncrementalBackup() {
     insertRows(table, 100) // Insert data into the default test table.
-    val beforeMs = getPropagatedTimestampMs
+    val beforeMs = System.currentTimeMillis()
     insertRows(table, 100, 100) // Insert more data.
 
     val rootDir = Files.createTempDirectory("backup")
@@ -104,12 +111,13 @@ class TestKuduBackup extends KuduTestSuite {
     // Force an incremental backup without a full backup.
     // It will use a diff scan and won't check the existing dependency graph.
     val handle = logs.attach()
+    log.error("FROM MS is set to: " + beforeMs)
     doBackup(rootDir, Seq(tableName), fromMs = beforeMs) // Incremental backup.
     handle.close()
 
     assertTrue(Files.isDirectory(rootDir))
     assertEquals(1, rootDir.toFile.list().length)
-    assertTrue(logs.getAppendedText.contains("fromMs was set"))
+    assertTrue(logs.getAppendedText.contains("Performing an incremental backup, fromMs was set to"))
   }
 
   @Test

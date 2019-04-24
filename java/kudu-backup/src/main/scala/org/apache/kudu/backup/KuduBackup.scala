@@ -51,10 +51,12 @@ object KuduBackup {
 
       // Unless we are forcing a full backup or a fromMs was set, find the previous backup and
       // use the `to_ms` metadata as the `from_ms` time for this backup.
+      var incremental = false
       if (tableOptions.forceFull) {
         log.info("Performing a full backup, forceFull was set to true")
-      } else if (tableOptions.fromMs == BackupOptions.DefaultFromMS) {
+      } else if (tableOptions.fromMs != BackupOptions.DefaultFromMS) {
         log.info(s"Performing an incremental backup, fromMs was set to ${tableOptions.fromMs}")
+        incremental = true
       } else {
         log.info("Looking for a previous backup, forceFull or fromMs options are not set.")
         val graph = io.readBackupGraph(tableName)
@@ -62,15 +64,16 @@ object KuduBackup {
           val base = graph.backupBase
           log.info(s"Setting fromMs to ${base.metadata.getToMs} from backup in path: ${base.path}")
           tableOptions = tableOptions.copy(fromMs = base.metadata.getToMs)
+          incremental = true
         } else {
           log.info("No previous backup was found. Starting a full backup.")
           tableOptions = tableOptions.copy(forceFull = true)
         }
       }
-      val rdd = new KuduBackupRDD(table, tableOptions, context, session.sparkContext)
+      val rdd = new KuduBackupRDD(table, tableOptions, incremental, context, session.sparkContext)
       val df =
         session.sqlContext
-          .createDataFrame(rdd, io.dataSchema(table.getSchema, tableOptions.isIncremental))
+          .createDataFrame(rdd, io.dataSchema(table.getSchema, incremental))
 
       // Write the data to the backup path.
       // The backup path contains the timestampMs and should not already exist.
