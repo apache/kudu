@@ -111,8 +111,12 @@ class ConsensusPeersTest : public KuduTest {
   }
 
   virtual void TearDown() OVERRIDE {
-    ASSERT_OK(log_->WaitUntilAllFlushed());
-    messenger_->Shutdown();
+    if (log_) {
+      ASSERT_OK(log_->WaitUntilAllFlushed());
+    }
+    if (messenger_) {
+      messenger_->Shutdown();
+    }
     if (raft_pool_) {
       // Make sure to drain any tasks from the pool we're using for our delayable
       // proxy before destructing the queue.
