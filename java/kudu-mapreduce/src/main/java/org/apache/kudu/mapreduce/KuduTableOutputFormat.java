@@ -193,6 +193,10 @@ public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
       } catch (Exception e) {
         throw new IOException("Encountered an error while writing", e);
       }
+
+      if (session.countPendingErrors() > 0) {
+        throw new IOException(session.getPendingErrors().getRowErrors()[0].toString());
+      }
     }
 
     @Override
