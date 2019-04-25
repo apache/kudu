@@ -163,13 +163,12 @@ case class RestoreOptions(
     tables: Seq[String],
     rootPath: String,
     kuduMasterAddresses: String = InetAddress.getLocalHost.getCanonicalHostName,
-    tableSuffix: String = RestoreOptions.DefaultTableSuffix,
+    tableSuffix: String = "",
     createTables: Boolean = RestoreOptions.DefaultCreateTables,
     timestampMs: Long = System.currentTimeMillis()
 ) extends CommonOptions
 
 object RestoreOptions {
-  val DefaultTableSuffix: String = "-restore"
   val DefaultCreateTables: Boolean = true
 
   val ClassName: String = KuduRestore.getClass.getCanonicalName.dropRight(1) // Remove trailing `$`
@@ -196,8 +195,8 @@ object RestoreOptions {
 
       opt[String]("tableSuffix")
         .action((v, o) => o.copy(tableSuffix = v))
-        .text("The suffix to add to the restored table names. Only used when createTables is " +
-          "true. Default: " + DefaultTableSuffix)
+        .text("If set, the suffix to add to the restored table names. Only used when " +
+          "createTables is true.")
         .optional()
 
       opt[Long]("timestampMs")

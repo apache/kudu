@@ -54,7 +54,7 @@ class TestOptions extends KuduTestSuite {
         |  --kuduMasterAddresses <value>
         |                           Comma-separated addresses of Kudu masters. Default: localhost
         |  --createTables <value>   If true, create the tables during restore. Set to false if the target tables already exist. Default: true
-        |  --tableSuffix <value>    The suffix to add to the restored table names. Only used when createTables is true. Default: -restore
+        |  --tableSuffix <value>    If set, the suffix to add to the restored table names. Only used when createTables is true.
         |  --timestampMs <value>    A UNIX timestamp in milliseconds that defines the latest time to use when selecting restore candidates. Default: `System.currentTimeMillis()`
         |  --help                   prints this usage text
         |  <table>...               A list of tables to be restored.""".stripMargin
