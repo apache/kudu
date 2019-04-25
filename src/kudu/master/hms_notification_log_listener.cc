@@ -50,14 +50,12 @@ DEFINE_uint32(hive_metastore_notification_log_poll_period_seconds, 15,
               "the Hive Metastore for catalog updates.");
 TAG_FLAG(hive_metastore_notification_log_poll_period_seconds, advanced);
 TAG_FLAG(hive_metastore_notification_log_poll_period_seconds, runtime);
-TAG_FLAG(hive_metastore_notification_log_poll_period_seconds, experimental);
 
 DEFINE_int32(hive_metastore_notification_log_batch_size, 100,
              "Number of notification log entries which are retrieved from the Hive Metastore "
              "per batch when polling.");
 TAG_FLAG(hive_metastore_notification_log_batch_size, advanced);
 TAG_FLAG(hive_metastore_notification_log_batch_size, runtime);
-TAG_FLAG(hive_metastore_notification_log_batch_size, experimental);
 
 DEFINE_uint32(hive_metastore_notification_log_poll_inject_latency_ms, 0,
               "Inject latency into the inner polling loop of the Hive Metastore"

@@ -60,7 +60,6 @@ DEFINE_string(hive_metastore_uris, "",
               "If not set, the Kudu master will not send Kudu table catalog updates to Hive. The "
               "configured value must match the Hive hive.metastore.uris configuration.");
 DEFINE_validator(hive_metastore_uris, &kudu::hms::HmsCatalog::ValidateUris);
-TAG_FLAG(hive_metastore_uris, experimental);
 
 // Note: the hive_metastore_sasl_enabled and keytab_file combination is validated in master.cc.
 DEFINE_bool(hive_metastore_sasl_enabled, false,
@@ -68,44 +67,37 @@ DEFINE_bool(hive_metastore_sasl_enabled, false,
             "(Kerberos) security. Must match the value of the "
             "hive.metastore.sasl.enabled option in the Hive Metastore configuration. "
             "When enabled, the --keytab_file flag must be provided.");
-TAG_FLAG(hive_metastore_sasl_enabled, experimental);
 
 DEFINE_string(hive_metastore_kerberos_principal, "hive",
               "The service principal of the Hive Metastore server. Must match "
               "the primary (user) portion of hive.metastore.kerberos.principal option "
               "in the Hive Metastore configuration.");
-TAG_FLAG(hive_metastore_kerberos_principal, experimental);
 
 DEFINE_int32(hive_metastore_retry_count, 1,
              "The number of times that HMS operations will retry after "
              "encountering retriable failures, such as network errors.");
 TAG_FLAG(hive_metastore_retry_count, advanced);
-TAG_FLAG(hive_metastore_retry_count, experimental);
 
 DEFINE_int32(hive_metastore_send_timeout_seconds, 60,
              "Configures the socket send timeout, in seconds, for Thrift "
              "connections to the Hive Metastore.");
 TAG_FLAG(hive_metastore_send_timeout_seconds, advanced);
-TAG_FLAG(hive_metastore_send_timeout_seconds, experimental);
 
 DEFINE_int32(hive_metastore_recv_timeout_seconds, 60,
              "Configures the socket receive timeout, in seconds, for Thrift "
              "connections to the Hive Metastore.");
 TAG_FLAG(hive_metastore_recv_timeout_seconds, advanced);
-TAG_FLAG(hive_metastore_recv_timeout_seconds, experimental);
 
 DEFINE_int32(hive_metastore_conn_timeout_seconds, 60,
              "Configures the socket connect timeout, in seconds, for Thrift "
              "connections to the Hive Metastore.");
 TAG_FLAG(hive_metastore_conn_timeout_seconds, advanced);
-TAG_FLAG(hive_metastore_conn_timeout_seconds, experimental);
 
 DEFINE_int32(hive_metastore_max_message_size_bytes, 100 * 1024 * 1024,
              "Maximum size of Hive Metastore objects that can be received by the "
              "HMS client in bytes. Should match the metastore.server.max.message.size "
              "configuration.");
 TAG_FLAG(hive_metastore_max_message_size_bytes, advanced);
-TAG_FLAG(hive_metastore_max_message_size_bytes, experimental);
 
 namespace kudu {
 namespace hms {
