@@ -341,6 +341,10 @@ public class TestKuduScanner {
    */
   private Map<Integer, ChangeType> applyOperations(List<Operation> operations) throws Exception {
     Map<Integer, ChangeType> results = new HashMap<>();
+    // If there are no operations, return early.
+    if (operations.isEmpty()) {
+      return results;
+    }
     KuduSession session = client.newSession();
     // On some runs, wait long enough to flush at the start.
     if (random.nextBoolean()) {
