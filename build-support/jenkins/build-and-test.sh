@@ -65,9 +65,14 @@
 #     option is not mutually exclusive from BUILD_PYTHON. If both options
 #     are set (default), then both will be run.
 #
+#   PIP_FLAGS  Default: ""
+#     Extra flags which are passed to 'pip' when setting up the build
+#     environment for the Python wrapper.
+#
 #   PIP_INSTALL_FLAGS  Default: ""
 #     Extra flags which are passed to 'pip install' when setting up the build
-#     environment for the Python wrapper.
+#     environment for the Python wrapper. Python arguments are
+#     context-dependent so sadly we can't reuse PIP_FLAGS here.
 #
 #   GRADLE_FLAGS       Default: ""
 #     Extra flags which are passed to 'gradle' when running Gradle commands.
@@ -496,13 +501,16 @@ if [ "$BUILD_PYTHON" == "1" ]; then
   # Beginning with pip 10, Python 2.6 is no longer supported. Attempting to
   # upgrade to pip 10 on Python 2.6 yields syntax errors. We don't need any new
   # pip features, so let's pin to the last pip version to support Python 2.6.
+  #
+  # The absence of $PIP_FLAGS is intentional: older versions of pip may not
+  # support the flags that we want to use.
   pip install -i https://pypi.python.org/simple $PIP_INSTALL_FLAGS --upgrade 'pip < 10.0.0b1'
 
   # New versions of pip raise an exception when upgrading old versions of
   # setuptools (such as the one found in el6). The workaround is to upgrade
   # setuptools on its own, outside of requirements.txt, and with the pip version
   # check disabled.
-  pip install --disable-pip-version-check $PIP_INSTALL_FLAGS --upgrade 'setuptools >= 0.8'
+  pip $PIP_FLAGS install --disable-pip-version-check $PIP_INSTALL_FLAGS --upgrade 'setuptools >= 0.8'
 
   # One of our dependencies is pandas, installed below. It depends on numpy, and
   # if we don't install numpy directly, the pandas installation will install the
@@ -513,14 +521,14 @@ if [ "$BUILD_PYTHON" == "1" ]; then
   # so we must pass in the current values of CC and CXX.
   #
   # See https://github.com/numpy/numpy/releases/tag/v1.12.0 for more details.
-  CC=$CLANG CXX=$CLANG++ pip install $PIP_INSTALL_FLAGS 'numpy < 1.12.0'
+  CC=$CLANG CXX=$CLANG++ pip $PIP_FLAGS install $PIP_INSTALL_FLAGS 'numpy < 1.12.0'
 
   # We've got a new pip and new setuptools. We can now install the rest of the
   # Python client's requirements.
   #
   # Installing the Cython dependency may involve some compiler work, so we must
   # pass in the current values of CC and CXX.
-  CC=$CLANG CXX=$CLANG++ pip install $PIP_INSTALL_FLAGS -r requirements.txt
+  CC=$CLANG CXX=$CLANG++ pip $PIP_FLAGS install $PIP_INSTALL_FLAGS -r requirements.txt
 
   # We need to install Pandas manually because although it's not a required
   # package, it is needed to run all of the tests.
@@ -530,7 +538,7 @@ if [ "$BUILD_PYTHON" == "1" ]; then
   #
   # pandas 0.18 dropped support for python 2.6. See https://pandas.pydata.org/pandas-docs/version/0.23.0/whatsnew.html#v0-18-0-march-13-2016
   # for more details.
-  CC=$CLANG CXX=$CLANG++ pip install $PIP_INSTALL_FLAGS 'pandas < 0.18'
+  CC=$CLANG CXX=$CLANG++ pip $PIP_FLAGS install $PIP_INSTALL_FLAGS 'pandas < 0.18'
 
   # Delete old Cython extensions to force them to be rebuilt.
   rm -Rf build kudu_python.egg-info kudu/*.so
@@ -581,6 +589,9 @@ if [ "$BUILD_PYTHON3" == "1" ]; then
   # preventing it from working properly with Python 3.4 as well. Therefore we
   # must pin to a pip version from before 19.0.
   #
+  # The absence of $PIP_FLAGS is intentional: older versions of pip may not
+  # support the flags that we want to use.
+  #
   # 1. https://github.com/pypa/pip/issues/6175
   pip install -i https://pypi.python.org/simple $PIP_INSTALL_FLAGS --upgrade 'pip < 19.0'
 
@@ -588,7 +599,7 @@ if [ "$BUILD_PYTHON3" == "1" ]; then
   # setuptools (such as the one found in el6). The workaround is to upgrade
   # setuptools on its own, outside of requirements.txt, and with the pip version
   # check disabled.
-  pip install --disable-pip-version-check $PIP_INSTALL_FLAGS --upgrade 'setuptools >= 0.8'
+  pip $PIP_FLAGS install --disable-pip-version-check $PIP_INSTALL_FLAGS --upgrade 'setuptools >= 0.8'
 
   # One of our dependencies is pandas, installed below. It depends on numpy, and
   # if we don't install numpy directly, the pandas installation will install the
@@ -600,21 +611,21 @@ if [ "$BUILD_PYTHON3" == "1" ]; then
   # so we must pass in the current values of CC and CXX.
   #
   # See https://github.com/numpy/numpy/releases/tag/v1.16.0rc1 for more details.
-  CC=$CLANG CXX=$CLANG++ pip install $PIP_INSTALL_FLAGS 'numpy < 1.16.0'
+  CC=$CLANG CXX=$CLANG++ pip $PIP_FLAGS install $PIP_INSTALL_FLAGS 'numpy < 1.16.0'
 
   # We've got a new pip and new setuptools. We can now install the rest of the
   # Python client's requirements.
   #
   # Installing the Cython dependency may involve some compiler work, so we must
   # pass in the current values of CC and CXX.
-  CC=$CLANG CXX=$CLANG++ pip install $PIP_INSTALL_FLAGS -r requirements.txt
+  CC=$CLANG CXX=$CLANG++ pip $PIP_FLAGS install $PIP_INSTALL_FLAGS -r requirements.txt
 
   # We need to install Pandas manually because although it's not a required
   # package, it is needed to run all of the tests.
   #
   # Installing pandas may involve some compiler work, so we must pass in the
   # current values of CC and CXX.
-  CC=$CLANG CXX=$CLANG++ pip install $PIP_INSTALL_FLAGS pandas
+  CC=$CLANG CXX=$CLANG++ pip $PIP_FLAGS install $PIP_INSTALL_FLAGS pandas
 
   # Delete old Cython extensions to force them to be rebuilt.
   rm -Rf build kudu_python.egg-info kudu/*.so
