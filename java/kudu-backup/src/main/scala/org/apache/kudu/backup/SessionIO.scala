@@ -133,7 +133,7 @@ class SessionIO(val session: SparkSession, options: CommonOptions) {
    */
   def readBackupGraph(tableName: String): BackupGraph = {
     val backups = readTableBackups(tableName)
-    val graph = new BackupGraph()
+    val graph = new BackupGraph(tableName)
     backups.foreach {
       case (path, metadata) =>
         graph.addBackup(BackupNode(path, metadata))
@@ -172,7 +172,7 @@ class SessionIO(val session: SparkSession, options: CommonOptions) {
    * @param metadataPath the path to the metadata file.
    * @return the deserialized table metadata.
    */
-  private def readTableMetadata(metadataPath: Path): TableMetadataPB = {
+  def readTableMetadata(metadataPath: Path): TableMetadataPB = {
     val in = new InputStreamReader(fs.open(metadataPath), StandardCharsets.UTF_8)
     val json = CharStreams.toString(in)
     in.close()

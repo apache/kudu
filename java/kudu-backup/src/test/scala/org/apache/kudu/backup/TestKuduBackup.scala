@@ -19,7 +19,6 @@ package org.apache.kudu.backup
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util
-import java.util.concurrent.TimeUnit
 
 import com.google.common.base.Objects
 import org.apache.commons.io.FileUtils
@@ -34,6 +33,7 @@ import org.apache.kudu.util.DataGenerator.DataGeneratorBuilder
 import org.apache.kudu.util.HybridTimeUtil
 import org.apache.kudu.util.SchemaGenerator.SchemaGeneratorBuilder
 import org.junit.Assert._
+import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.slf4j.Logger
@@ -45,79 +45,114 @@ class TestKuduBackup extends KuduTestSuite {
   val log: Logger = LoggerFactory.getLogger(getClass)
 
   var random: util.Random = _
+  var rootDir: Path = _
 
   @Before
   def setUp(): Unit = {
     random = RandomUtils.getRandom
+    rootDir = Files.createTempDirectory("backup")
+  }
+
+  @After
+  def tearDown(): Unit = {
+    FileUtils.deleteDirectory(rootDir.toFile)
   }
 
   @Test
   def testSimpleBackupAndRestore() {
-    insertRows(table, 100) // Insert data into the default test table.
+    val rowCount = 100
+    insertRows(table, rowCount) // Insert data into the default test table.
 
-    backupAndRestore(Seq(tableName))
+    // backup and restore.
+    backupAndValidateTable(tableName, rowCount, false)
+    restoreAndValidateTable(tableName, rowCount)
 
-    val rdd =
-      kuduContext.kuduRDD(ss.sparkContext, s"$tableName-restore", List("key"))
-    assert(rdd.collect.length == 100)
-
-    val tA = kuduClient.openTable(tableName)
-    val tB = kuduClient.openTable(s"$tableName-restore")
-    assertEquals(tA.getNumReplicas, tB.getNumReplicas)
-    assertTrue(schemasMatch(tA.getSchema, tB.getSchema))
-    assertTrue(partitionSchemasMatch(tA.getPartitionSchema, tB.getPartitionSchema))
+    // Validate the table schemas match.
+    validateTablesMatch(tableName, s"$tableName-restore")
   }
 
-  // TODO (KUDU-2790): Add a thorough randomized test for full and incremental backup/restore.
   @Test
-  def TestIncrementalBackupAndRestore() {
+  def testSimpleIncrementalBackupAndRestore() {
     insertRows(table, 100) // Insert data into the default test table.
 
-    val rootDir = Files.createTempDirectory("backup")
-    doBackup(rootDir, Seq(tableName)) // Full backup.
+    // Run and validate initial backup.
+    backupAndValidateTable(tableName, 100, false)
+
+    // Insert more rows and validate incremental backup.
     insertRows(table, 100, 100) // Insert more data.
+    backupAndValidateTable(tableName, 100, true)
 
-    val logs = new CapturingLogAppender()
-    val handle = logs.attach()
-    doBackup(rootDir, Seq(tableName)) // Incremental backup.
-    handle.close()
-    assertTrue(logs.getAppendedText.contains("Setting fromMs to"))
-    assertTrue(logs.getAppendedText.contains("from backup in path"))
+    // Delete rows that span the full and incremental backup and validate incremental backup.
+    Range(50, 150).foreach(deleteRow)
+    backupAndValidateTable(tableName, 100, true)
 
-    // Delete rows that span the full and incremental backup.
-    Range(50, 150).foreach { i =>
-      deleteRow(i)
+    // Restore the backups and validate the end result.
+    restoreAndValidateTable(tableName, 100)
+  }
+
+  @Test
+  def testBackupAndRestoreWithNoRows(): Unit = {
+    backupAndValidateTable(tableName, 0, false)
+    backupAndValidateTable(tableName, 0, true)
+    restoreAndValidateTable(tableName, 0)
+    validateTablesMatch(tableName, s"$tableName-restore")
+  }
+
+  @Test
+  def testBackupMissingTable(): Unit = {
+    try {
+      val options = createBackupOptions(Seq("missingTable"))
+      doBackup(options)
+      fail()
+    } catch {
+      case e: KuduException =>
+        assertTrue(e.getMessage.contains("the table does not exist"))
     }
-    doBackup(rootDir, Seq(tableName)) // Incremental backup.
-    doRestore(rootDir, Seq(tableName)) // Restore all the backups.
-    FileUtils.deleteDirectory(rootDir.toFile)
-
-    val rdd =
-      kuduContext.kuduRDD(ss.sparkContext, s"$tableName-restore", List("key"))
-    assert(rdd.collect.length == 100)
   }
 
   @Test
-  def TestForceIncrementalBackup() {
+  def testRestoreWithNoBackup(): Unit = {
+    try {
+      val options = createRestoreOptions(Seq(tableName))
+      doRestore(options)
+      fail()
+    } catch {
+      case e: RuntimeException =>
+        assertEquals(e.getMessage, s"No valid backups found for table: $tableName")
+    }
+  }
+
+  @Test
+  def testForceIncrementalBackup() {
     insertRows(table, 100) // Insert data into the default test table.
-    val beforeMs = System.currentTimeMillis()
+    // Set beforeMs so we can force an incremental at this time.
+    val beforeMs = System.currentTimeMillis() + 1
     insertRows(table, 100, 100) // Insert more data.
-
-    val rootDir = Files.createTempDirectory("backup")
-
-    // Capture the logs to validate job internals.
-    val logs = new CapturingLogAppender()
 
     // Force an incremental backup without a full backup.
     // It will use a diff scan and won't check the existing dependency graph.
-    val handle = logs.attach()
-    log.error("FROM MS is set to: " + beforeMs)
-    doBackup(rootDir, Seq(tableName), fromMs = beforeMs) // Incremental backup.
-    handle.close()
+    val options = createBackupOptions(Seq(tableName), fromMs = beforeMs)
+    val logs = captureLogs { () =>
+      doBackup(options)
+    }
+    assertTrue(logs.contains("Performing an incremental backup, fromMs was set to"))
+    validateBackup(options, 100, true)
+  }
 
-    assertTrue(Files.isDirectory(rootDir))
-    assertEquals(1, rootDir.toFile.list().length)
-    assertTrue(logs.getAppendedText.contains("Performing an incremental backup, fromMs was set to"))
+  @Test
+  def testForceFullBackup() {
+    insertRows(table, 100) // Insert data into the default test table.
+    // Backup the table so the following backup should be an incremental.
+    backupAndValidateTable(tableName, 100)
+    insertRows(table, 100, 100) // Insert more data.
+
+    // Force a full backup. It should contain all the rows.
+    val options = createBackupOptions(Seq(tableName), forceFull = true)
+    val logs = captureLogs { () =>
+      doBackup(options)
+    }
+    assertTrue(logs.contains("Performing a full backup, forceFull was set to true"))
+    validateBackup(options, 200, false)
   }
 
   @Test
@@ -131,32 +166,29 @@ class TestKuduBackup extends KuduTestSuite {
 
     kuduClient.createTable(impalaTableName, simpleSchema, tableOptions)
 
-    backupAndRestore(Seq(impalaTableName))
-
-    val rdd = kuduContext
-      .kuduRDD(ss.sparkContext, s"$impalaTableName-restore", List("key"))
-    // Only verifying the file contents could be read, the contents are expected to be empty.
-    assert(rdd.isEmpty())
+    backupAndValidateTable(tableName, 0)
+    restoreAndValidateTable(tableName, 0)
   }
 
   @Test
   def testRandomBackupAndRestore() {
     val table = createRandomTable()
     val tableName = table.getName
-    loadRandomData(table)
+    val maxRows = 200
+    val rows = loadRandomData(table)
 
-    backupAndRestore(Seq(tableName))
+    // Run a full backup.
+    backupAndValidateTable(tableName, rows.length)
 
-    val backupRows = kuduContext.kuduRDD(ss.sparkContext, s"$tableName").collect
-    val restoreRows =
-      kuduContext.kuduRDD(ss.sparkContext, s"$tableName-restore").collect
-    assertEquals(backupRows.length, restoreRows.length)
+    // Run 1 to 5 incremental backups.
+    val incrementalCount = random.nextInt(5) + 1
+    (0 to incrementalCount).foreach { i =>
+      val incrementalRows = loadRandomData(table, maxRows)
+      backupAndValidateTable(tableName, incrementalRows.length, true)
+    }
 
-    val tA = kuduClient.openTable(tableName)
-    val tB = kuduClient.openTable(s"$tableName-restore")
-    assertEquals(tA.getNumReplicas, tB.getNumReplicas)
-    assertTrue(schemasMatch(tA.getSchema, tB.getSchema))
-    assertTrue(partitionSchemasMatch(tA.getPartitionSchema, tB.getPartitionSchema))
+    doRestore(createRestoreOptions(Seq(tableName)))
+    validateTablesMatch(tableName, s"$tableName-restore")
   }
 
   @Test
@@ -171,7 +203,8 @@ class TestKuduBackup extends KuduTestSuite {
     insertRows(table1, numRows)
     insertRows(table2, numRows)
 
-    backupAndRestore(Seq(table1Name, table2Name))
+    doBackup(createBackupOptions(Seq(table1Name, table2Name)))
+    doRestore(createRestoreOptions(Seq(table1Name, table2Name)))
 
     val rdd1 =
       kuduContext.kuduRDD(ss.sparkContext, s"$table1Name-restore", List("key"))
@@ -216,7 +249,8 @@ class TestKuduBackup extends KuduTestSuite {
     insertRows(table, kNumPartitions)
 
     // Now backup and restore the table.
-    backupAndRestore(Seq(tableName))
+    backupAndValidateTable(tableName, kNumPartitions)
+    restoreAndValidateTable(tableName, kNumPartitions)
   }
 
   @Test
@@ -228,9 +262,147 @@ class TestKuduBackup extends KuduTestSuite {
       .setNumReplicas(1)
     val table1 = kuduClient.createTable(tableName, schema, options)
 
-    insertRows(table1, 100)
+    val rowCount = 100
+    insertRows(table1, rowCount)
 
-    backupAndRestore(Seq(tableName))
+    backupAndValidateTable(tableName, rowCount)
+    restoreAndValidateTable(tableName, rowCount)
+  }
+
+  def createRandomTable(): KuduTable = {
+    val columnCount = random.nextInt(50) + 1 // At least one column.
+    val keyColumnCount = random.nextInt(columnCount) + 1 // At least one key.
+    val schemaGenerator = new SchemaGeneratorBuilder()
+      .random(random)
+      .columnCount(columnCount)
+      .keyColumnCount(keyColumnCount)
+      .build()
+    val schema = schemaGenerator.randomSchema()
+    val options = schemaGenerator.randomCreateTableOptions(schema)
+    options.setNumReplicas(1)
+    val name = s"random-${System.currentTimeMillis()}"
+    kuduClient.createTable(name, schema, options)
+  }
+
+  def loadRandomData(table: KuduTable, maxRows: Int = 200): IndexedSeq[PartialRow] = {
+    val kuduSession = kuduClient.newSession()
+    val dataGenerator = new DataGeneratorBuilder()
+      .random(random)
+      .build()
+    val rowCount = random.nextInt(maxRows)
+    (0 to rowCount).map { i =>
+      val upsert = table.newUpsert()
+      val row = upsert.getRow
+      dataGenerator.randomizeRow(row)
+      kuduSession.apply(upsert)
+      row
+    }
+  }
+
+  /**
+   * A convenience method to create backup options for tests.
+   *
+   * We add one millisecond to our target snapshot time (toMs). This will ensure we read all of
+   * the records in the backup and prevent flaky off-by-one errors. The underlying reason for
+   * adding 1 ms is that we pass the timestamp in millisecond granularity but the snapshot time
+   * has microsecond granularity. This means if the test runs fast enough that data is inserted
+   * with the same millisecond value as nowMs (after truncating the micros) the records inserted
+   * in the microseconds after truncation could be unread.
+   */
+  def createBackupOptions(
+      tableNames: Seq[String],
+      toMs: Long = System.currentTimeMillis() + 1,
+      fromMs: Long = BackupOptions.DefaultFromMS,
+      forceFull: Boolean = false): BackupOptions = {
+    BackupOptions(
+      rootPath = rootDir.toUri.toString,
+      tables = tableNames,
+      kuduMasterAddresses = harness.getMasterAddressesAsString,
+      fromMs = fromMs,
+      toMs = toMs,
+      forceFull = forceFull
+    )
+  }
+
+  /**
+   * A convenience method to create backup options for tests.
+   */
+  def createRestoreOptions(
+      tableNames: Seq[String],
+      tableSuffix: String = "-restore"): RestoreOptions = {
+    RestoreOptions(
+      rootPath = rootDir.toUri.toString,
+      tables = tableNames,
+      kuduMasterAddresses = harness.getMasterAddressesAsString,
+      tableSuffix = tableSuffix
+    )
+  }
+
+  def backupAndValidateTable(
+      tableName: String,
+      expectedRowCount: Long,
+      expectIncremental: Boolean = false) = {
+    val options = createBackupOptions(Seq(tableName))
+    // Run the backup.
+    doBackup(options)
+    validateBackup(options, expectedRowCount, expectIncremental)
+  }
+
+  def doBackup(options: BackupOptions): Unit = {
+    // Log the timestamps to simplify flaky debugging.
+    log.info(s"nowMs: ${System.currentTimeMillis()}")
+    val hts = HybridTimeUtil.HTTimestampToPhysicalAndLogical(kuduClient.getLastPropagatedTimestamp)
+    log.info(s"propagated physicalMicros: ${hts(0)}")
+    log.info(s"propagated logical: ${hts(1)}")
+    KuduBackup.run(options, ss)
+  }
+
+  def validateBackup(
+      options: BackupOptions,
+      expectedRowCount: Long,
+      expectIncremental: Boolean): Unit = {
+    val io = new SessionIO(ss, options)
+    val tableName = options.tables.head
+    val backupPath = io.backupPath(tableName, options.toMs)
+    val metadataPath = io.backupMetadataPath(backupPath)
+    val metadata = io.readTableMetadata(metadataPath)
+
+    // Verify the backup type.
+    if (expectIncremental) {
+      assertNotEquals(metadata.getFromMs, 0)
+    } else {
+      assertEquals(metadata.getFromMs, 0)
+    }
+
+    // Verify the output data.
+    val table = harness.getClient.openTable(tableName)
+    val schema = io.dataSchema(table.getSchema, expectIncremental)
+    val df = ss.sqlContext.read
+      .format(metadata.getDataFormat)
+      .schema(schema)
+      .load(backupPath.toString)
+    assertEquals(expectedRowCount, df.collect.length)
+  }
+
+  def restoreAndValidateTable(tableName: String, expectedRowCount: Long) = {
+    val options = createRestoreOptions(Seq(tableName))
+    doRestore(options)
+
+    // Verify the table data.
+    val rdd = kuduContext.kuduRDD(ss.sparkContext, s"$tableName-restore")
+    assertEquals(rdd.collect.length, expectedRowCount)
+  }
+
+  def doRestore(options: RestoreOptions): Unit = {
+    KuduRestore.run(options, ss)
+  }
+
+  def validateTablesMatch(tableA: String, tableB: String): Unit = {
+    val tA = kuduClient.openTable(tableA)
+    val tB = kuduClient.openTable(tableB)
+    assertEquals(tA.getNumReplicas, tB.getNumReplicas)
+    assertTrue(schemasMatch(tA.getSchema, tB.getSchema))
+    assertTrue(partitionSchemasMatch(tA.getPartitionSchema, tB.getPartitionSchema))
   }
 
   def schemasMatch(before: Schema, after: Schema): Boolean = {
@@ -285,81 +457,17 @@ class TestKuduBackup extends KuduTestSuite {
     Objects.equal(before.getSeed, after.getSeed)
   }
 
-  def createRandomTable(): KuduTable = {
-    val columnCount = random.nextInt(50) + 1 // At least one column.
-    val keyColumnCount = random.nextInt(columnCount) + 1 // At least one key.
-    val schemaGenerator = new SchemaGeneratorBuilder()
-      .random(random)
-      .columnCount(columnCount)
-      .keyColumnCount(keyColumnCount)
-      .build()
-    val schema = schemaGenerator.randomSchema()
-    val options = schemaGenerator.randomCreateTableOptions(schema)
-    options.setNumReplicas(1)
-    val name = s"random-${System.currentTimeMillis()}"
-    kuduClient.createTable(name, schema, options)
-  }
-
-  def loadRandomData(table: KuduTable): IndexedSeq[PartialRow] = {
-    val kuduSession = kuduClient.newSession()
-    val dataGenerator = new DataGeneratorBuilder()
-      .random(random)
-      .build()
-    val rowCount = random.nextInt(200)
-    (0 to rowCount).map { i =>
-      val upsert = table.newUpsert()
-      val row = upsert.getRow
-      dataGenerator.randomizeRow(row)
-      kuduSession.apply(upsert)
-      row
+  /**
+   * Captures the logs while the wrapped function runs and returns them as a String.
+   */
+  def captureLogs(f: () => Unit): String = {
+    val logs = new CapturingLogAppender()
+    val handle = logs.attach()
+    try {
+      f()
+    } finally {
+      handle.close()
     }
-  }
-
-  def backupAndRestore(tableNames: Seq[String]): Unit = {
-    val rootDir = Files.createTempDirectory("backup")
-    doBackup(rootDir, tableNames)
-    doRestore(rootDir, tableNames)
-    FileUtils.deleteDirectory(rootDir.toFile)
-  }
-
-  def doBackup(
-      rootDir: Path,
-      tableNames: Seq[String],
-      fromMs: Long = BackupOptions.DefaultFromMS): Unit = {
-    val nowMs = System.currentTimeMillis()
-
-    // Log the timestamps to simplify flaky debugging.
-    log.info(s"nowMs: ${System.currentTimeMillis()}")
-    val hts = HybridTimeUtil.HTTimestampToPhysicalAndLogical(kuduClient.getLastPropagatedTimestamp)
-    log.info(s"propagated physicalMicros: ${hts(0)}")
-    log.info(s"propagated logical: ${hts(1)}")
-
-    // Add one millisecond to our target snapshot time. This will ensure we read all of the records
-    // in the backup and prevent flaky off-by-one errors. The underlying reason for adding 1 ms is
-    // that we pass the timestamp in millisecond granularity but the snapshot time has microsecond
-    // granularity. This means if the test runs fast enough that data is inserted with the same
-    // millisecond value as nowMs (after truncating the micros) the records inserted in the
-    // microseconds after truncation could be unread.
-    val backupOptions = new BackupOptions(
-      tables = tableNames,
-      rootPath = rootDir.toUri.toString,
-      kuduMasterAddresses = harness.getMasterAddressesAsString,
-      toMs = nowMs + 1,
-      fromMs = fromMs
-    )
-    KuduBackup.run(backupOptions, ss)
-  }
-
-  def doRestore(rootDir: Path, tableNames: Seq[String]): Unit = {
-    val restoreOptions =
-      new RestoreOptions(tableNames, rootDir.toUri.toString, harness.getMasterAddressesAsString)
-    KuduRestore.run(restoreOptions, ss)
-  }
-
-  private def getPropagatedTimestampMs: Long = {
-    val propagatedTimestamp = harness.getClient.getLastPropagatedTimestamp
-    val physicalTimeMicros =
-      HybridTimeUtil.HTTimestampToPhysicalAndLogical(propagatedTimestamp).head
-    TimeUnit.MILLISECONDS.convert(physicalTimeMicros, TimeUnit.MICROSECONDS)
+    logs.getAppendedText
   }
 }

@@ -28,7 +28,7 @@ class TestBackupGraph extends KuduTestSuite {
 
   @Test
   def testSimpleBackupGraph() {
-    val graph = new BackupGraph()
+    val graph = new BackupGraph(table.getName)
     val full = createBackupVertex(table, 0, 1)
     graph.addBackup(full)
 
@@ -52,7 +52,7 @@ class TestBackupGraph extends KuduTestSuite {
 
   @Test
   def testForkingBackupGraph() {
-    val graph = new BackupGraph()
+    val graph = new BackupGraph(table.getName)
     val full = createBackupVertex(table, 0, 1)
     graph.addBackup(full)
     // Duplicate fromMs of 1 creates a fork in the graph.
@@ -81,7 +81,7 @@ class TestBackupGraph extends KuduTestSuite {
 
   @Test
   def testMultiFullBackupGraph() {
-    val graph = new BackupGraph()
+    val graph = new BackupGraph(table.getName)
     val full1 = createBackupVertex(table, 0, 1)
     graph.addBackup(full1)
     val inc1 = createBackupVertex(table, 1, 2)
@@ -110,7 +110,7 @@ class TestBackupGraph extends KuduTestSuite {
 
   @Test
   def testFilterByTime() {
-    val graph = new BackupGraph()
+    val graph = new BackupGraph(table.getName)
     val full1 = createBackupVertex(table, 0, 1)
     graph.addBackup(full1)
     val inc1 = createBackupVertex(table, 1, 2)

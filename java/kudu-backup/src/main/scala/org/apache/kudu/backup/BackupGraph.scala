@@ -28,7 +28,7 @@ import scala.collection.mutable
  */
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
-class BackupGraph {
+class BackupGraph(val tableName: String) {
   // Index of backup.fromMs -> backup for use in chaining backups together.
   private val adjacencyList = mutable.Map[Long, mutable.ListBuffer[BackupNode]]()
 
@@ -76,7 +76,9 @@ class BackupGraph {
    * @return all backup paths in the graph.
    */
   def backupPaths: Seq[BackupPath] = {
-    allPaths(FullBackupFromMs, List()).map(BackupPath)
+    allPaths(FullBackupFromMs, List())
+      .map(BackupPath)
+      .filterNot(_.backups.isEmpty) // Remove empty paths
   }
 
   private def allPaths(fromMs: Long, path: List[BackupNode]): List[List[BackupNode]] = {
@@ -133,6 +135,10 @@ class BackupGraph {
    * @throws IllegalStateException if no full backup exists.
    */
   def restorePath: BackupPath = {
+    if (backupPaths.isEmpty) {
+      throw new RuntimeException(s"No valid backups found for table: $tableName")
+    }
+
     //  1. Pick the path with the most recent backup.
     val maxToMs = backupPaths.maxBy(_.toMs).toMs
     val recentPaths = backupPaths.filter(_.toMs == maxToMs)
@@ -148,7 +154,7 @@ class BackupGraph {
    * @return
    */
   def filterByTime(timeMs: Long): BackupGraph = {
-    val result = new BackupGraph()
+    val result = new BackupGraph(tableName)
     val distinctBackups = adjacencyList.values.flatten.toSet
     distinctBackups.filter(_.metadata.getToMs <= timeMs).foreach(result.addBackup)
     result
