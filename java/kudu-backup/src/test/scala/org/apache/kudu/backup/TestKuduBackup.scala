@@ -126,7 +126,8 @@ class TestKuduBackup extends KuduTestSuite {
   def testForceIncrementalBackup() {
     insertRows(table, 100) // Insert data into the default test table.
     // Set beforeMs so we can force an incremental at this time.
-    val beforeMs = System.currentTimeMillis() + 1
+    val beforeMs = System.currentTimeMillis()
+    Thread.sleep(1) // Ensure the next insert is after beforeMs.
     insertRows(table, 100, 100) // Insert more data.
 
     // Force an incremental backup without a full backup.

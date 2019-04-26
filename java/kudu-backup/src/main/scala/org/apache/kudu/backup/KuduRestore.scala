@@ -48,6 +48,7 @@ object KuduRestore {
     // TODO (KUDU-2787): Handle single table failures.
     options.tables.foreach { tableName =>
       val graph = io.readBackupGraph(tableName).filterByTime(options.timestampMs)
+      val lastMetadata = graph.restorePath.backups.last.metadata
       graph.restorePath.backups.foreach { backup =>
         log.info(s"Restoring table $tableName from path: ${backup.path}")
         val isFullRestore = backup.metadata.getFromMs == 0
@@ -59,16 +60,21 @@ object KuduRestore {
         if (isFullRestore) {
           if (options.createTables) {
             log.info(s"Creating restore table $restoreName")
-            createTableRangePartitionByRangePartition(restoreName, backup.metadata, context)
+            // We use the last schema in the restore path when creating the table to
+            // ensure the table is created in its final state.
+            createTableRangePartitionByRangePartition(restoreName, lastMetadata, context)
           }
         }
+
+        val backupSchema = io.dataSchema(TableMetadata.getKuduSchema(backup.metadata))
+        val rowActionCol = backupSchema.fields.last.name
+
         val table = context.syncClient.openTable(restoreName)
         val restoreSchema = io.dataSchema(table.getSchema)
-        val rowActionCol = restoreSchema.fields.last.name
 
         var data = session.sqlContext.read
           .format(backup.metadata.getDataFormat)
-          .schema(restoreSchema)
+          .schema(backupSchema)
           .load(backup.path.toString)
           // Default the the row action column with a value of "UPSERT" so that the
           // rows from a full backup, which don't have a row action, are upserted.
