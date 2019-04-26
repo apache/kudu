@@ -478,7 +478,7 @@ WHERE PARAM_KEY = 'kudu.master_addresses' AND PARAM_VALUE = 'old-master';
 ----
 INVALIDATE METADATA;
 ----
-+
+
 
 ==== Verify the migration was successful
 
