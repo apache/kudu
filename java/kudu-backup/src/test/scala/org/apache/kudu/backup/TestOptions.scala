@@ -36,8 +36,6 @@ class TestOptions extends KuduTestSuite {
         |  --scanBatchSize <value>  The maximum number of bytes returned by the scanner, on each batch. Default: 20971520
         |  --scanRequestTimeoutMs <value>
         |                           Sets how long in milliseconds each scan request to a server can last. Default: 30000
-        |  --scanLeaderOnly <value>
-        |                           If true scans will only use the leader replica, otherwise scans will take place at the closest replica. Default: false
         |  --keepAlivePeriodMs <value>
         |                           Sets the period at which to send keep-alive requests to the tablet server to ensure that scanners do not time out. Default: 15000
         |  --help                   prints this usage text

@@ -110,16 +110,17 @@ object BackupOptions {
           "Default: " + DefaultScanRequestTimeoutMs)
         .optional()
 
-      opt[Boolean]("scanLeaderOnly")
-        .action((v, o) => o.copy(scanLeaderOnly = v))
-        .text("If true scans will only use the leader replica, otherwise scans will take place " +
-          "at the closest replica. Default: " + DefaultScanLeaderOnly)
-        .optional()
-
       opt[Long]("keepAlivePeriodMs")
         .action((v, o) => o.copy(keepAlivePeriodMs = v))
         .text("Sets the period at which to send keep-alive requests to the tablet server to " +
           "ensure that scanners do not time out. Default: " + DefaultKeepAlivePeriodMs)
+        .optional()
+
+      opt[Boolean]("scanLeaderOnly")
+        .action((v, o) => o.copy(scanLeaderOnly = v))
+        .text("If true scans will only use the leader replica, otherwise scans will take place " +
+          "at the closest replica. Default: " + DefaultScanLeaderOnly)
+        .hidden()
         .optional()
 
       opt[String]("format")
