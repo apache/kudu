@@ -35,6 +35,7 @@
 #include "kudu/hms/mini_hms.h"
 #include "kudu/mini-cluster/external_mini_cluster.h"
 #include "kudu/util/decimal_util.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -73,9 +74,9 @@ Status HmsITestBase::CreateDatabase(const string& database_name) {
 }
 
 Status HmsITestBase::CreateKuduTable(const string& database_name,
-                                     const string& table_name) {
+                                     const string& table_name,
+                                     MonoDelta timeout) {
   // Get coverage of all column types.
-  KuduSchema schema;
   KuduSchemaBuilder b;
   b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
   b.AddColumn("int8_val")->Type(KuduColumnSchema::INT8);
@@ -94,14 +95,19 @@ Status HmsITestBase::CreateKuduTable(const string& database_name,
                               ->Precision(kMaxDecimal64Precision);
   b.AddColumn("decimal128_val")->Type(KuduColumnSchema::DECIMAL)
                                ->Precision(kMaxDecimal128Precision);
-
+  KuduSchema schema;
   RETURN_NOT_OK(b.Build(&schema));
   unique_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
-  return table_creator->table_name(Substitute("$0.$1", database_name, table_name))
-                       .schema(&schema)
-                       .num_replicas(1)
-                       .set_range_partition_columns({ "key" })
-                       .Create();
+  if (timeout.Initialized()) {
+    // If specified, set the timeout for the operation.
+    table_creator->timeout(timeout);
+  }
+  return table_creator->table_name(Substitute("$0.$1",
+                                              database_name, table_name))
+      .schema(&schema)
+      .num_replicas(1)
+      .set_range_partition_columns({ "key" })
+      .Create();
 }
 
 Status HmsITestBase::RenameHmsTable(const string& database_name,

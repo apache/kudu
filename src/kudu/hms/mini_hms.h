@@ -48,8 +48,16 @@ class MiniHms {
 
   // Configures the mini HMS to enable the Sentry plugin, passing the
   // Sentry service's principal to be used in Kerberos environment.
+  //
+  // Parameters 'sentry_client_rpc_retry_num' and
+  // 'sentry_client_rpc_retry_interval_ms' are used to override default settings
+  // of the Sentry client used by HMS plugins. The default values for these two
+  // parameters are set to allow for shorter HMS --> Sentry RPC timeout
+  // (i.e. shorter than with the default Sentry v2.{0,1} client's settings).
   void EnableSentry(const HostPort& sentry_address,
-                    std::string sentry_service_principal);
+                    std::string sentry_service_principal,
+                    int sentry_client_rpc_retry_num = 3,
+                    int sentry_client_rpc_retry_interval_ms = 500);
 
   // Configures the mini HMS to store its data in the provided path. If not set,
   // it uses a test-only temporary directory.
@@ -114,6 +122,8 @@ class MiniHms {
   // Sentry configuration
   std::string sentry_address_;
   std::string sentry_service_principal_;
+  int sentry_client_rpc_retry_num_;
+  int sentry_client_rpc_retry_interval_ms_;
 };
 
 } // namespace hms

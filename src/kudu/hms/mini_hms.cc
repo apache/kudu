@@ -71,12 +71,16 @@ void MiniHms::EnableKerberos(string krb5_conf,
 }
 
 void MiniHms::EnableSentry(const HostPort& sentry_address,
-                           string sentry_service_principal) {
+                           string sentry_service_principal,
+                           int sentry_client_rpc_retry_num,
+                           int sentry_client_rpc_retry_interval_ms) {
   CHECK(!hms_process_);
   DCHECK(!sentry_service_principal.empty());
   VLOG(1) << Substitute("Enabling Sentry, at $0, for HMS", sentry_address.ToString());
   sentry_address_ = sentry_address.ToString();
   sentry_service_principal_ = std::move(sentry_service_principal);
+  sentry_client_rpc_retry_num_ = sentry_client_rpc_retry_num;
+  sentry_client_rpc_retry_interval_ms_ = sentry_client_rpc_retry_interval_ms;
 }
 
 void MiniHms::SetDataRoot(string data_root) {
@@ -366,6 +370,14 @@ Status MiniHms::CreateHiveSite() const {
     // - sentry.metastore.service.users
     //     Set of service users whose access will be excluded from
     //     Sentry authorization checks.
+    //
+    // - sentry.service.client.rpc.retry-total
+    //     Maximum number of attempts that Sentry RPC client does while
+    //     re-trying a remote call to Sentry.
+    //
+    // - sentry.service.client.rpc.retry.interval.msec
+    //     Time interval between attempts of Sentry's client to retry a remote
+    //     call to Sentry.
     static const string kSentryFileTemplate = R"(
 <configuration>
   <property>
@@ -387,12 +399,25 @@ Status MiniHms::CreateHiveSite() const {
     <name>sentry.metastore.service.users</name>
     <value>kudu</value>
   </property>
+
+  <property>
+    <name>sentry.service.client.rpc.retry-total</name>
+    <value>$3</value>
+  </property>
+
+  <property>
+    <name>sentry.service.client.rpc.retry.interval.msec</name>
+    <value>$4</value>
+  </property>
 </configuration>
   )";
-    string sentry_file_contents = Substitute(kSentryFileTemplate,
-                                             sentry_address_,
-                                             sentry_service_principal_,
-                                             "server1");
+    auto sentry_file_contents = Substitute(
+        kSentryFileTemplate,
+        sentry_address_,
+        sentry_service_principal_,
+        "server1",
+        sentry_client_rpc_retry_num_,
+        sentry_client_rpc_retry_interval_ms_);
     RETURN_NOT_OK(WriteStringToFile(Env::Default(),
                                     sentry_file_contents,
                                     JoinPathSegments(data_root_, "hive-sentry-site.xml")));

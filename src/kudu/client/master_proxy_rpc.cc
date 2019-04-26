@@ -202,8 +202,8 @@ bool AsyncLeaderMasterRpc<ReqClass, RespClass>::RetryOrReconnectIfNecessary(
   // negotiation.
 
   // Authorization errors during negotiation generally indicate failure to
-  // authenticate. If that failure was due to an invalid token, try to get a
-  // new one by reconnecting with the master.
+  // authenticate. If that failure was due to an invalid authn token,
+  // try to get a new one by establising a new connection to the master.
   const ErrorStatusPB* err = retrier().controller().error_response();
   if (s.IsNotAuthorized()) {
     if (err && err->has_code() &&

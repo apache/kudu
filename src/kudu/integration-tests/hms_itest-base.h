@@ -22,11 +22,14 @@
 
 #include <boost/optional/optional.hpp>
 
+#include "kudu/gutil/port.h"
 #include "kudu/hms/hms_client.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
+
+class MonoDelta;
 
 class HmsITestBase : public ExternalMiniClusterITestBase {
  public:
@@ -38,7 +41,8 @@ class HmsITestBase : public ExternalMiniClusterITestBase {
 
   // Creates a table in Kudu.
   Status CreateKuduTable(const std::string& database_name,
-                         const std::string& table_name) WARN_UNUSED_RESULT;
+                         const std::string& table_name,
+                         MonoDelta timeout = {}) WARN_UNUSED_RESULT;
 
   // Renames a table entry in the HMS catalog.
   Status RenameHmsTable(const std::string& database_name,

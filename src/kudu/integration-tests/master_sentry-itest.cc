@@ -873,6 +873,116 @@ TEST_F(SentryAuthzProviderCacheITest, ResetAuthzCacheConcurrentAlterTable) {
   }
 }
 
+// This test scenario documents an artifact of the Kudu+HMS+Sentry integration
+// when authz cache is enabled (the cache is enabled by default). In essence,
+// information on the ownership of a table created during a short period of
+// Sentry's unavailability will not ever appear in Sentry. That might be
+// misleading because CreateTable() reports a success to the client. The created
+// table indeed exists and is fully functional otherwise, but the corresponding
+// owner privilege record is absent in Sentry.
+TEST_F(SentryAuthzProviderCacheITest, CreateTables) {
+  constexpr const char* const kGhostTables[] = { "t10", "t11" };
+
+  // Grant CREATE TABLE and METADATA privileges on the database.
+  ASSERT_OK(GrantCreateTablePrivilege({ kDatabaseName }));
+  ASSERT_OK(AlterRoleGrantPrivilege(
+      sentry_client_.get(), kDevRole,
+      GetDatabasePrivilege(kDatabaseName, "METADATA")));
+
+  // Make sure it's possible to create a table in the database. This also
+  // populates the privileges cache with information on the privileges
+  // granted on the database.
+  ASSERT_OK(CreateKuduTable(kDatabaseName, "t0"));
+
+  // An attempt to open a not-yet-existing table will fetch the information
+  // on the granted privileges on the table into the privileges cache.
+  for (const auto& t : kGhostTables) {
+    shared_ptr<KuduTable> kudu_table;
+    const auto s = client_->OpenTable(Substitute("$0.$1", kDatabaseName, t),
+                                      &kudu_table);
+    ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+  }
+
+  ASSERT_OK(StopSentry());
+
+  // CreateTable() with operation timeout longer than HMS --> Sentry
+  // communication timeout successfully completes. After failing to push
+  // the information on the newly created table to Sentry due to the logic
+  // implemented in the SentrySyncHMSNotificationsPostEventListener plugin,
+  // HMS sends success response to Kudu master and Kudu successfully completes
+  // the rest of the steps.
+  ASSERT_OK(CreateKuduTable(kDatabaseName, kGhostTables[0]));
+
+  // In this case, the timeout for the CreateTable RPC is set to be lower than
+  // the HMS --> Sentry communication timeout (see corresponding parameters
+  // of the MiniHms::EnableSentry() method). CreateTable() successfully passes
+  // the authz phase since the information on privileges is cached and no
+  // Sentry RPC calls are attempted. However, since Sentry is down,
+  // CreateTable() takes a long time on the HMS's side and the client's
+  // request times out, while the creation of the table continues in the
+  // background.
+  {
+    const auto s = CreateKuduTable(kDatabaseName, kGhostTables[1],
+                                   MonoDelta::FromSeconds(1));
+    ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
+  }
+
+  // Before starting Sentry, make sure the abandoned request to create the
+  // latter table succeeded even if CreateKuduTable() reported timeout.
+  // This is to make sure HMS stopped trying to push notification
+  // on table creation to Sentry anymore via the metastore plugin
+  // SentrySyncHMSNotificationsPostEventListener.
+  ASSERT_EVENTUALLY([&]{
+    bool exists;
+    ASSERT_OK(client_->TableExists(
+        Substitute("$0.$1", kDatabaseName, kGhostTables[1]), &exists));
+    ASSERT_TRUE(exists);
+  });
+
+  ASSERT_OK(ResetCache());
+
+  // After resetting the cache, it should not be possible to create another
+  // table: authz provider needs to fetch information on privileges directly
+  // from Sentry, but it's still down.
+  {
+    const auto s = CreateKuduTable(kDatabaseName, "t2");
+    ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
+  }
+
+  ASSERT_OK(StartSentry());
+
+  // Try to create the table after starting Sentry back: it should be a success.
+  ASSERT_OK(CreateKuduTable(kDatabaseName, "t2"));
+
+  // Once table has been created, it should be possible to perform DDL operation
+  // on it since the user is the owner of the table.
+  {
+    unique_ptr<KuduTableAlterer> table_alterer(
+        client_->NewTableAlterer(Substitute("$0.$1", kDatabaseName, "t2")));
+    table_alterer->AddColumn("new_int8_columun")->Type(KuduColumnSchema::INT8);
+    ASSERT_OK(table_alterer->Alter());
+  }
+
+  // Try to run DDL against the tables created during Sentry's downtime. These
+  // should not be authorized since Sentry didn't received information on the
+  // ownership of those tables from HMS during their creation and there isn't
+  // any catch up for those events made after Sentry started.
+  for (const auto& t : kGhostTables) {
+    unique_ptr<KuduTableAlterer> table_alterer(
+        client_->NewTableAlterer(Substitute("$0.$1", kDatabaseName, t)));
+    table_alterer->AddColumn("new_int8_columun")->Type(KuduColumnSchema::INT8);
+    auto s = table_alterer->Alter();
+    ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
+
+    // After granting the ALTER TABLE privilege the alteration should be
+    // successful. One caveat: it's necessary to reset the cache since the cache
+    // will not have the new record till the current entry hasn't yet expired.
+    ASSERT_OK(GrantAlterTablePrivilege({ kDatabaseName, t }));
+    ASSERT_OK(ResetCache());
+    ASSERT_OK(table_alterer->Alter());
+  }
+}
+
 // Basic test to verify access control and functionality of
 // the ResetAuthzCache(); integration with Sentry is not enabled.
 class AuthzCacheControlTest : public ExternalMiniClusterITestBase {
