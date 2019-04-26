@@ -290,24 +290,24 @@ vector<string> AuthzInfoKey::GenerateRawKeySequence(
   DCHECK(!authorizable.server.empty());
   if (!authorizable.__isset.db || authorizable.db.empty()) {
     return {
-      Substitute("/$0/$1", user, authorizable.server),
+      Substitute("$0/$1", user, authorizable.server),
     };
   }
 
   if (!authorizable.__isset.table || authorizable.table.empty()) {
-    auto k0 = Substitute("/$0/$1", user, authorizable.server);
+    auto k0 = Substitute("$0/$1", user, authorizable.server);
     auto k1 = Substitute("$0/$1", k0, authorizable.db);
     return { std::move(k0), std::move(k1), };
   }
 
   if (!authorizable.__isset.column || authorizable.column.empty()) {
-    auto k0 = Substitute("/$0/$1", user, authorizable.server);
+    auto k0 = Substitute("$0/$1", user, authorizable.server);
     auto k1 = Substitute("$0/$1", k0, authorizable.db);
     auto k2 = Substitute("$0/$1", k1, authorizable.table);
     return { std::move(k0), std::move(k1), std::move(k2), };
   }
 
-  auto k0 = Substitute("/$0/$1", user, authorizable.server);
+  auto k0 = Substitute("$0/$1", user, authorizable.server);
   auto k1 = Substitute("$0/$1", k0, authorizable.db);
   auto k2 = Substitute("$0/$1", k1, authorizable.table);
   auto k3 = Substitute("$0/$1", k2, authorizable.column);

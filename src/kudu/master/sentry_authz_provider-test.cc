@@ -36,6 +36,7 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
@@ -60,6 +61,7 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+#include "kudu/util/ttl_cache.h"
 
 DECLARE_int32(sentry_service_recv_timeout_seconds);
 DECLARE_int32(sentry_service_send_timeout_seconds);
@@ -74,6 +76,15 @@ METRIC_DECLARE_counter(sentry_client_tasks_failed_nonfatal);
 METRIC_DECLARE_counter(sentry_client_reconnections_succeeded);
 METRIC_DECLARE_counter(sentry_client_reconnections_failed);
 METRIC_DECLARE_histogram(sentry_client_task_execution_time_us);
+
+METRIC_DECLARE_counter(sentry_privileges_cache_evictions);
+METRIC_DECLARE_counter(sentry_privileges_cache_evictions_expired);
+METRIC_DECLARE_counter(sentry_privileges_cache_hits);
+METRIC_DECLARE_counter(sentry_privileges_cache_hits_expired);
+METRIC_DECLARE_counter(sentry_privileges_cache_inserts);
+METRIC_DECLARE_counter(sentry_privileges_cache_lookups);
+METRIC_DECLARE_counter(sentry_privileges_cache_misses);
+METRIC_DECLARE_gauge_uint64(sentry_privileges_cache_memory_usage);
 
 using kudu::pb_util::SecureDebugString;
 using kudu::security::ColumnPrivilegePB;
@@ -242,6 +253,29 @@ class SentryAuthzProviderTest : public SentryTestBase {
   GET_GAUGE_READINGS(GetReconnectionsSucceeded, reconnections_succeeded)
   GET_GAUGE_READINGS(GetReconnectionsFailed, reconnections_failed)
 #undef GET_GAUGE_READINGS
+
+#define GET_GAUGE_READINGS(func_name, counter_name_suffix) \
+  int64_t func_name() { \
+    scoped_refptr<Counter> gauge(metric_entity_->FindOrCreateCounter( \
+        &METRIC_sentry_privileges_##counter_name_suffix)); \
+    CHECK(gauge); \
+    return gauge->value(); \
+  }
+  GET_GAUGE_READINGS(GetCacheEvictions, cache_evictions)
+  GET_GAUGE_READINGS(GetCacheEvictionsExpired, cache_evictions_expired)
+  GET_GAUGE_READINGS(GetCacheHitsExpired, cache_hits_expired)
+  GET_GAUGE_READINGS(GetCacheHits, cache_hits)
+  GET_GAUGE_READINGS(GetCacheInserts, cache_inserts)
+  GET_GAUGE_READINGS(GetCacheLookups, cache_lookups)
+  GET_GAUGE_READINGS(GetCacheMisses, cache_misses)
+#undef GET_GAUGE_READINGS
+
+  int64_t GetCacheUsage() {
+    scoped_refptr<AtomicGauge<uint64>> gauge(metric_entity_->FindOrCreateGauge(
+        &METRIC_sentry_privileges_cache_memory_usage, static_cast<uint64>(0)));
+    CHECK(gauge);
+    return gauge->value();
+  }
 
  protected:
   MetricRegistry metric_registry_;
@@ -704,28 +738,65 @@ TEST_F(SentryAuthzProviderTest, CacheBehaviorScopeHierarchyAdjacentBranches) {
 
   // ALTER TABLE, if not renaming the table itself, requires ALTER privilege
   // on the table, but nothing is required on the database that contains
-  // the table. METADATA requires corresponding privilege on the table, but
-  // nothing is required on the database.
+  // the table.
   ASSERT_EQ(0, GetTasksSuccessful());
   ASSERT_OK(sentry_authz_provider_->AuthorizeAlterTable(
       "db.t0", "db.t0", kTestUser));
   ASSERT_EQ(1, GetTasksSuccessful());
+
+  // The cache was empty. The query was for TABLE scope privileges, so the
+  // cache was examined for both DATABASE and TABLE scope entries, and both
+  // were missing. After fetching information on privileges granted to the user
+  // on table 'db.t0', the information received from Sentry was split and put
+  // into DATABASE and TABLE scope entries.
+  ASSERT_EQ(2, GetCacheLookups());
+  ASSERT_EQ(2, GetCacheMisses());
+  ASSERT_EQ(0, GetCacheHits());
+  ASSERT_EQ(2, GetCacheInserts());
+
   ASSERT_OK(sentry_authz_provider_->AuthorizeAlterTable(
       "db.t1", "db.t1", kTestUser));
+  // Information on the user's privileges granted on 'db.t1' was not present
+  // in the cache: there was an RPC request sent to Sentry.
   ASSERT_EQ(2, GetTasksSuccessful());
+
+  // One more cache miss: TABLE scope entry for 'db.t1' was absent.
+  ASSERT_EQ(3, GetCacheMisses());
+  // One more cache hit: DATABASE scope entry was already present.
+  ASSERT_EQ(1, GetCacheHits());
+  // Updated already existing DATABASE and inserted new TABLE entry.
+  ASSERT_EQ(4, GetCacheInserts());
+
+  // METADATA requires corresponding privilege granted on the table, but nothing
+  // is required on the database.
   ASSERT_OK(sentry_authz_provider_->AuthorizeGetTableMetadata(
       "db.other_table", kTestUser));
   ASSERT_EQ(3, GetTasksSuccessful());
+
+  // One more cache miss: TABLE scope entry for 'db.other_table' was absent.
+  ASSERT_EQ(4, GetCacheMisses());
+  // One more cache hit: DATABASE scope entry was already present.
+  ASSERT_EQ(2, GetCacheHits());
+  // Updated already existing DATABASE and inserted new TABLE entry.
+  ASSERT_EQ(6, GetCacheInserts());
 
   // Repeat all the requests above: not a single new RPC to Sentry should be
   // sent since all authz queries must hit the cache: that's about repeating
   // the same requests.
   ASSERT_OK(sentry_authz_provider_->AuthorizeAlterTable(
       "db.t0", "db.t0", kTestUser));
+  ASSERT_EQ(4, GetCacheHits());
   ASSERT_OK(sentry_authz_provider_->AuthorizeAlterTable(
       "db.t1", "db.t1", kTestUser));
+  ASSERT_EQ(6, GetCacheHits());
   ASSERT_OK(sentry_authz_provider_->AuthorizeGetTableMetadata(
       "db.other_table", kTestUser));
+  ASSERT_EQ(8, GetCacheHits());
+  // No new cache misses.
+  ASSERT_EQ(4, GetCacheMisses());
+  // No additional inserts, of course.
+  ASSERT_EQ(6, GetCacheInserts());
+  // No additional RPC requests to Sentry.
   ASSERT_EQ(3, GetTasksSuccessful());
 
   // All the requests below should also hit the cache since the information on
@@ -735,10 +806,18 @@ TEST_F(SentryAuthzProviderTest, CacheBehaviorScopeHierarchyAdjacentBranches) {
   // database the table belongs to.
   Status s = sentry_authz_provider_->AuthorizeDropTable("db.t0", kTestUser);
   ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
+  ASSERT_EQ(10, GetCacheHits());
   s = sentry_authz_provider_->AuthorizeDropTable("db.t1", kTestUser);
   ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
+  ASSERT_EQ(12, GetCacheHits());
   s = sentry_authz_provider_->AuthorizeDropTable("db.other_table", kTestUser);
   ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
+  ASSERT_EQ(14, GetCacheHits());
+  // No new cache misses.
+  ASSERT_EQ(4, GetCacheMisses());
+  // No additional inserts, of course.
+  ASSERT_EQ(6, GetCacheInserts());
+  // No additional RPC requests to Sentry.
   ASSERT_EQ(3, GetTasksSuccessful());
 
   // A sanity check: verify no failed requests are registered.
@@ -762,6 +841,16 @@ TEST_F(SentryAuthzProviderTest, CacheBehaviorForDatabaseScope) {
       "db0.t0", "db0.t0", kTestUser));
   ASSERT_EQ(1, GetTasksSuccessful());
 
+  // The cache was empty. The query was for TABLE scope privileges, so the
+  // cache was examined for both DATABASE and TABLE scope entries, and both
+  // were missing. After fetching information on privileges granted to the user
+  // on table 'db.t0', the information received from Sentry was split and put
+  // into DATABASE and TABLE scope entries.
+  ASSERT_EQ(2, GetCacheLookups());
+  ASSERT_EQ(2, GetCacheMisses());
+  ASSERT_EQ(0, GetCacheHits());
+  ASSERT_EQ(2, GetCacheInserts());
+
   // The CREATE privileges is not granted on the 'db0', so the request must
   // not be authorized.
   auto s = sentry_authz_provider_->AuthorizeCreateTable(
@@ -770,6 +859,13 @@ TEST_F(SentryAuthzProviderTest, CacheBehaviorForDatabaseScope) {
   // CREATE TABLE requires privileges on the database only, and those should
   // have been cached already due to the prior request.
   ASSERT_EQ(1, GetTasksSuccessful());
+
+  // One more cache lookup of the corresponding DATABASE scope key.
+  ASSERT_EQ(3, GetCacheLookups());
+  // No new cache misses.
+  ASSERT_EQ(2, GetCacheMisses());
+  // Single cache lookup turned to be a cache hit.
+  ASSERT_EQ(1, GetCacheHits());
 
   // No new RPCs to Sentry should be issued: the information on privileges
   // on 'db1' authorizable of the DATABASE scope should be fetched and cached
@@ -785,6 +881,15 @@ TEST_F(SentryAuthzProviderTest, CacheBehaviorForDatabaseScope) {
   // of table "db1.t0". All other requests must hit the cache.
   ASSERT_EQ(2, GetTasksSuccessful());
 
+  // Ten more cache lookups of the corresponding DATABASE scope key: one turned
+  // to be a miss and other nine hits after the information was fetched
+  // from Sentry and inserted into the cache.
+  ASSERT_EQ(13, GetCacheLookups());
+  ASSERT_EQ(3, GetCacheMisses());
+  ASSERT_EQ(10, GetCacheHits());
+  // One more insert: adding an entry for the DATABASE scope key for 'db1'.
+  ASSERT_EQ(3, GetCacheInserts());
+
   // Same story for requests for 'db1.t0', ..., 'db1.t19'.
   for (int idx = 0; idx < 20; ++idx) {
     const auto table_name = Substitute("db1.t$0", idx);
@@ -792,6 +897,11 @@ TEST_F(SentryAuthzProviderTest, CacheBehaviorForDatabaseScope) {
         table_name, kTestUser, kTestUser));
   }
   ASSERT_EQ(2, GetTasksSuccessful());
+
+  // All twenty lookups hit the cache, no new misses.
+  ASSERT_EQ(33, GetCacheLookups());
+  ASSERT_EQ(30, GetCacheHits());
+  ASSERT_EQ(3, GetCacheMisses());
 
   // A sanity check: verify no failed requests are registered.
   ASSERT_EQ(0, GetTasksFailedFatal());
@@ -813,6 +923,16 @@ TEST_F(SentryAuthzProviderTest, CacheBehaviorHybridLookups) {
   ASSERT_OK(sentry_authz_provider_->AuthorizeDropTable("db.t", kTestUser));
   ASSERT_EQ(1, GetTasksSuccessful());
 
+  // The cache was empty. The query was for TABLE scope privileges, so the
+  // cache was examined for both DATABASE and TABLE scope entries, and both
+  // were missing. After fetching information on privileges granted to the user
+  // on table 'db.t', the information received from Sentry was split and put
+  // into DATABASE and TABLE scope entries.
+  ASSERT_EQ(0, GetCacheHits());
+  ASSERT_EQ(2, GetCacheLookups());
+  ASSERT_EQ(2, GetCacheMisses());
+  ASSERT_EQ(2, GetCacheInserts());
+
   // CREATE TABLE requires privileges only on the database itself. No privileges
   // are granted on the database, so the request must not be authorized.
   auto s = sentry_authz_provider_->AuthorizeCreateTable(
@@ -822,6 +942,10 @@ TEST_F(SentryAuthzProviderTest, CacheBehaviorHybridLookups) {
   // granted on relevant authorizables of the DATABASE scope in corresponding
   // branch should have been fetched and cached.
   ASSERT_EQ(1, GetTasksSuccessful());
+  // One more lookup in the cache that turned to a cache hit: it was necessary
+  // to lookup only DATABASE scope entry in the cache.
+  ASSERT_EQ(3, GetCacheLookups());
+  ASSERT_EQ(1, GetCacheHits());
 
   // ALTER TABLE, if renaming the table, requires privileges both on the
   // database and the table. Even if ALL is granted on the table itself, there
@@ -832,6 +956,10 @@ TEST_F(SentryAuthzProviderTest, CacheBehaviorHybridLookups) {
   ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
   // No extra RPCs are expected in this case.
   ASSERT_EQ(1, GetTasksSuccessful());
+  // Three more lookups; three more cache hits: DATABASE and TABLE lookups
+  // are 'db.t'-related, and DATABASE lookup is 'db.t_renamed' related.
+  ASSERT_EQ(6, GetCacheLookups());
+  ASSERT_EQ(4, GetCacheHits());
 
   // A sanity check: verify no failed requests are registered.
   ASSERT_EQ(0, GetTasksFailedFatal());
@@ -841,7 +969,7 @@ TEST_F(SentryAuthzProviderTest, CacheBehaviorHybridLookups) {
 // Verify that information on TABLE-scope privileges are fetched from Sentry,
 // but not cached when SentryPrivilegeFetcher receives a ListPrivilegesByUser
 // response for a DATABASE-scope authorizable.
-TEST_F(SentryAuthzProviderTest, CacheBehaviorNotCachingTableInfoOnDatabase) {
+TEST_F(SentryAuthzProviderTest, CacheBehaviorNotCachingTableInfo) {
   ASSERT_OK(CreateRoleAndAddToGroups());
   ASSERT_OK(AlterRoleGrantPrivilege(GetDatabasePrivilege("db", "CREATE")));
   ASSERT_OK(AlterRoleGrantPrivilege(GetTablePrivilege("db", "t0", "ALL")));
@@ -849,10 +977,33 @@ TEST_F(SentryAuthzProviderTest, CacheBehaviorNotCachingTableInfoOnDatabase) {
 
   ASSERT_EQ(0, GetTasksSuccessful());
   // In the Sentry's authz model for Kudu, CREATE TABLE requires only privileges
-  // only on the database.
+  // on the database.
   ASSERT_OK(sentry_authz_provider_->AuthorizeCreateTable(
       "db.table", kTestUser, kTestUser));
   ASSERT_EQ(1, GetTasksSuccessful());
+  ASSERT_EQ(1, GetCacheInserts());
+  ASSERT_EQ(1, GetCacheLookups());
+  ASSERT_EQ(1, GetCacheMisses());
+
+  // Examine the entry that has just been cached: it should not contain
+  // any information on authorizables of the TABLE scope under the 'db':
+  // the cache chops off everything of the TABLE and narrower scope from
+  // Sentry response before adding corresponding entry into the cache.
+  auto* cache = sentry_authz_provider_->fetcher_.cache_.get();
+  ASSERT_NE(nullptr, cache);
+  {
+    auto handle = cache->Get(
+        Substitute("$0/$1/$2", kTestUser, FLAGS_server_name, "db"));
+    ASSERT_TRUE(handle);
+    ASSERT_EQ(2, GetCacheLookups());
+    ASSERT_EQ(1, GetCacheHits());
+
+    const auto& value = handle.value();
+    for (const auto& privilege : value.privileges()) {
+      ASSERT_NE(SentryAuthorizableScope::TABLE, privilege.scope);
+      ASSERT_NE(SentryAuthorizableScope::COLUMN, privilege.scope);
+    }
+  }
 
   // ALTER TABLE, if not renaming the table, requires privileges only on the
   // table itself.
@@ -864,11 +1015,21 @@ TEST_F(SentryAuthzProviderTest, CacheBehaviorNotCachingTableInfoOnDatabase) {
   // cached deliberately: that way the cache avoids storing information on
   // non-Kudu tables, if any, under an authorizable of the DATABASE scope.
   ASSERT_EQ(2, GetTasksSuccessful());
+  ASSERT_EQ(2, GetCacheMisses());
+  // Two more lookups: one DATABASE scope and another TABLE scope lookup.
+  ASSERT_EQ(4, GetCacheLookups());
+  // Inserted DATABASE and TABLE entries.
+  ASSERT_EQ(3, GetCacheInserts());
 
   // The same as above stays valid for the 'db.t1' table.
   ASSERT_OK(sentry_authz_provider_->AuthorizeAlterTable(
       "db.t1", "db.t1", kTestUser));
   ASSERT_EQ(3, GetTasksSuccessful());
+  ASSERT_EQ(3, GetCacheMisses());
+  // Two more lookups: one DATABASE scope and another TABLE scope lookup.
+  ASSERT_EQ(6, GetCacheLookups());
+  // Updated already existing DATABASE and inserted new TABLE entry.
+  ASSERT_EQ(5, GetCacheInserts());
 
   // A sanity check: verify no failed requests are registered.
   ASSERT_EQ(0, GetTasksFailedFatal());

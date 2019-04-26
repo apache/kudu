@@ -174,6 +174,7 @@ class SentryPrivilegesFetcher {
   friend class SentryAuthzProviderTest;
   friend class SentryPrivilegesBranch;
   FRIEND_TEST(SentryPrivilegesFetcherStaticTest, TestPrivilegesWellFormed);
+  FRIEND_TEST(SentryAuthzProviderTest, CacheBehaviorNotCachingTableInfo);
 
   // Utility function to determine whether the given privilege is a well-formed
   // possibly Kudu-related privilege describing a descendent or ancestor of the

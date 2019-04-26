@@ -92,6 +92,7 @@ class SentryAuthzProvider : public AuthzProvider {
   FRIEND_TEST(TestAuthzHierarchy, TestAuthorizableScope);
   FRIEND_TEST(SentryAuthzProviderFilterPrivilegesScopeTest, TestFilterInvalidResponses);
   FRIEND_TEST(SentryAuthzProviderFilterPrivilegesScopeTest, TestFilterValidResponses);
+  FRIEND_TEST(SentryAuthzProviderTest, CacheBehaviorNotCachingTableInfo);
 
   // Checks if the user can perform an action on the table identifier (in the format
   // <database-name>.<table-name>), based on the given authorizable scope and the
