@@ -61,7 +61,6 @@ DEFINE_string(sentry_service_rpc_addresses, "",
               "enforced in the master, and clients are issued authorization tokens. "
               "Must match the value of the sentry.service.client.server.rpc-addresses "
               "option in the Sentry server configuration.");
-TAG_FLAG(sentry_service_rpc_addresses, experimental);
 
 DEFINE_string(server_name, "server1",
               "Configures which server namespace the Kudu instance belongs to for defining "
@@ -69,50 +68,42 @@ DEFINE_string(server_name, "server1",
               "cluster in case of a multi-cluster setup. Must match the value of the "
               "hive.sentry.server option in the HiveServer2 configuration, and the value "
               "of the --server_name in Impala configuration.");
-TAG_FLAG(server_name, experimental);
 
 DEFINE_string(kudu_service_name, "kudu",
               "The service name of the Kudu server. Must match the service name "
               "used for Kudu server of sentry.service.admin.group option in the "
               "Sentry server configuration.");
-TAG_FLAG(kudu_service_name, experimental);
 
 DEFINE_string(sentry_service_kerberos_principal, "sentry",
               "The service principal of the Sentry server. Must match the primary "
               "(user) portion of sentry.service.server.principal option in the "
               "Sentry server configuration.");
-TAG_FLAG(sentry_service_kerberos_principal, experimental);
 
 DEFINE_string(sentry_service_security_mode, "kerberos",
               "Configures whether Thrift connections to the Sentry server use "
               "SASL (Kerberos) security. Must match the value of the "
               "‘sentry.service.security.mode’ option in the Sentry server "
               "configuration.");
-TAG_FLAG(sentry_service_security_mode, experimental);
 
 DEFINE_int32(sentry_service_retry_count, 1,
              "The number of times that Sentry operations will retry after "
              "encountering retriable failures, such as network errors.");
 TAG_FLAG(sentry_service_retry_count, advanced);
-TAG_FLAG(sentry_service_retry_count, experimental);
 
 DEFINE_int32(sentry_service_send_timeout_seconds, 60,
              "Configures the socket send timeout, in seconds, for Thrift "
              "connections to the Sentry server.");
 TAG_FLAG(sentry_service_send_timeout_seconds, advanced);
-TAG_FLAG(sentry_service_send_timeout_seconds, experimental);
 
 DEFINE_int32(sentry_service_recv_timeout_seconds, 60,
              "Configures the socket receive timeout, in seconds, for Thrift "
              "connections to the Sentry server.");
 TAG_FLAG(sentry_service_recv_timeout_seconds, advanced);
-TAG_FLAG(sentry_service_recv_timeout_seconds, experimental);
 
 DEFINE_int32(sentry_service_conn_timeout_seconds, 60,
              "Configures the socket connect timeout, in seconds, for Thrift "
              "connections to the Sentry server.");
 TAG_FLAG(sentry_service_conn_timeout_seconds, advanced);
-TAG_FLAG(sentry_service_conn_timeout_seconds, experimental);
 
 DEFINE_int32(sentry_service_max_message_size_bytes, 100 * 1024 * 1024,
              "Maximum size of Sentry objects that can be received by the "
@@ -120,7 +111,6 @@ DEFINE_int32(sentry_service_max_message_size_bytes, 100 * 1024 * 1024,
              "sentry.policy.client.thrift.max.message.size option in the "
              "Sentry server configuration.");
 TAG_FLAG(sentry_service_max_message_size_bytes, advanced);
-TAG_FLAG(sentry_service_max_message_size_bytes, experimental);
 
 // TODO(aserbin): provide some reasonable default value for the
 //                --sentry_privileges_cache_capacity_mb flag. Maybe, make it
@@ -137,7 +127,6 @@ DEFINE_uint32(sentry_privileges_cache_ttl_factor, 10,
               "the multiplication of this factor and authz token validity "
               "defines the TTL of entries in the authz cache.");
 TAG_FLAG(sentry_privileges_cache_ttl_factor, advanced);
-TAG_FLAG(sentry_privileges_cache_ttl_factor, experimental);
 
 DECLARE_int64(authz_token_validity_seconds);
 DECLARE_string(kudu_service_name);
