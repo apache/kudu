@@ -74,11 +74,16 @@ using kudu::client::KuduTable;
 using kudu::client::KuduTableAlterer;
 using kudu::client::sp::shared_ptr;
 using kudu::hms::HmsClient;
+using kudu::master::AlterRoleGrantPrivilege;
+using kudu::master::CreateRoleAndAddToGroups;
+using kudu::master::GetDatabasePrivilege;
 using kudu::master::GetTableLocationsResponsePB;
+using kudu::master::GetTablePrivilege;
 using kudu::master::MasterServiceProxy;
 using kudu::master::ResetAuthzCacheRequestPB;
 using kudu::master::ResetAuthzCacheResponsePB;
 using kudu::master::TabletLocationsPB;
+using kudu::master::VOTER_REPLICA;
 using kudu::rpc::RpcController;
 using kudu::rpc::UserCredentials;
 using kudu::sentry::SentryClient;
@@ -95,6 +100,30 @@ using std::vector;
 using strings::Substitute;
 
 namespace kudu {
+
+// Parameters for the operator functor (see below for OperationFunc).
+struct OperationParams {
+  // NOLINTNEXTLINE(google-explicit-constructor)
+  OperationParams(string table_name,
+                  string new_table_name = "")
+      : table_name(std::move(table_name)),
+        new_table_name(std::move(new_table_name)) {
+  }
+  const string table_name;
+  const string new_table_name;
+};
+
+// Parameters for the privilege functor (see below for PrivilegeFunc).
+struct PrivilegeParams {
+  // NOLINTNEXTLINE(google-explicit-constructor)
+  PrivilegeParams(string db_name,
+                  string table_name = "")
+      : db_name(std::move(db_name)),
+        table_name(std::move(table_name)) {
+  }
+  const string db_name;
+  const string table_name;
+};
 
 // Test Master authorization enforcement with Sentry and HMS
 // integration enabled.
@@ -133,133 +162,107 @@ class SentryITestBase : public HmsITestBase {
     proxy->set_user_credentials(user_credentials);
 
     GetTableLocationsResponsePB table_locations;
-    return itest::GetTableLocations(proxy, table_name, kTimeout, master::VOTER_REPLICA,
+    return itest::GetTableLocations(proxy, table_name, kTimeout, VOTER_REPLICA,
                                     table_id, &table_locations);
   }
 
-  Status GrantCreateTablePrivilege(const string& database_name,
-                                   const string& /*table_name*/) {
-    TSentryPrivilege privilege = master::GetDatabasePrivilege(
-        database_name, "CREATE",
-        TSentryGrantOption::DISABLED);
-    return master::AlterRoleGrantPrivilege(sentry_client_.get(), kDevRole, privilege);
+  Status GrantCreateTablePrivilege(const PrivilegeParams& p) {
+    return AlterRoleGrantPrivilege(sentry_client_.get(), kDevRole,
+        GetDatabasePrivilege(p.db_name, "CREATE"));
   }
 
-  Status GrantDropTablePrivilege(const string& database_name,
-                                 const string& table_name) {
-    TSentryPrivilege privilege = master::GetTablePrivilege(
-        database_name, table_name, "DROP",
-        TSentryGrantOption::DISABLED);
-    return master::AlterRoleGrantPrivilege(sentry_client_.get(), kDevRole, privilege);
+  Status GrantDropTablePrivilege(const PrivilegeParams& p) {
+    return AlterRoleGrantPrivilege(sentry_client_.get(), kDevRole,
+        GetTablePrivilege(p.db_name, p.table_name, "DROP"));
   }
 
-  Status GrantAlterTablePrivilege(const string& database_name,
-                                  const string& table_name) {
-    TSentryPrivilege privilege = master::GetTablePrivilege(
-        database_name, table_name, "ALTER",
-        TSentryGrantOption::DISABLED);
-    return master::AlterRoleGrantPrivilege(sentry_client_.get(), kDevRole, privilege);
+  Status GrantAlterTablePrivilege(const PrivilegeParams& p) {
+    return AlterRoleGrantPrivilege(sentry_client_.get(), kDevRole,
+        GetTablePrivilege(p.db_name, p.table_name, "ALTER"));
   }
 
-  Status GrantRenameTablePrivilege(const string& database_name,
-                                   const string& table_name) {
-    TSentryPrivilege privilege = master::GetTablePrivilege(
-        database_name, table_name, "ALL",
-        TSentryGrantOption::DISABLED);
-    RETURN_NOT_OK(master::AlterRoleGrantPrivilege(sentry_client_.get(), kDevRole, privilege));
-    privilege = master::GetDatabasePrivilege(
-        database_name, "CREATE",
-        TSentryGrantOption::DISABLED);
-    return master::AlterRoleGrantPrivilege(sentry_client_.get(), kDevRole, privilege);
+  Status GrantRenameTablePrivilege(const PrivilegeParams& p) {
+    RETURN_NOT_OK(AlterRoleGrantPrivilege(sentry_client_.get(), kDevRole,
+        GetTablePrivilege(p.db_name, p.table_name, "ALL")));
+    return AlterRoleGrantPrivilege(sentry_client_.get(), kDevRole,
+        GetDatabasePrivilege(p.db_name, "CREATE"));
   }
 
-  Status GrantGetMetadataTablePrivilege(const string& database_name,
-                                        const string& table_name) {
-    TSentryPrivilege privilege = master::GetTablePrivilege(
-        database_name, table_name, "METADATA",
-        TSentryGrantOption::DISABLED);
-    return master::AlterRoleGrantPrivilege(sentry_client_.get(), kDevRole, privilege);
+  Status GrantGetMetadataTablePrivilege(const PrivilegeParams& p) {
+    return AlterRoleGrantPrivilege(sentry_client_.get(), kDevRole,
+        GetTablePrivilege(p.db_name, p.table_name, "METADATA"));
   }
 
-  Status CreateTable(const string& table,
-                     const string& /*new_table*/) {
+  Status CreateTable(const OperationParams& p) {
     Slice hms_database;
     Slice hms_table;
-    RETURN_NOT_OK(ParseHiveTableIdentifier(table, &hms_database, &hms_table));
+    RETURN_NOT_OK(ParseHiveTableIdentifier(p.table_name,
+                                           &hms_database, &hms_table));
     return CreateKuduTable(hms_database.ToString(), hms_table.ToString());
   }
 
-  Status IsCreateTableDone(const string& table,
-                           const string& /*new_table*/) {
+  Status IsCreateTableDone(const OperationParams& p) {
     bool in_progress = false;
-    return client_->IsCreateTableInProgress(table, &in_progress);
+    return client_->IsCreateTableInProgress(p.table_name, &in_progress);
   }
 
-  Status DropTable(const string& table,
-                   const string& /*new_table*/) {
-    return client_->DeleteTable(table);
+  Status DropTable(const OperationParams& p) {
+    return client_->DeleteTable(p.table_name);
   }
 
-  Status AlterTable(const string& table,
-                    const string& /*new_table*/) {
-    unique_ptr<KuduTableAlterer> table_alterer;
-    table_alterer.reset(client_->NewTableAlterer(table)
-                               ->DropColumn("int32_val"));
-    return table_alterer->Alter();
+  Status AlterTable(const OperationParams& p) {
+    unique_ptr<KuduTableAlterer> alterer(
+        client_->NewTableAlterer(p.table_name));
+    return alterer->DropColumn("int32_val")->Alter();
   }
 
-  Status IsAlterTableDone(const string& table,
-                          const string& /*new_table*/) {
+  Status IsAlterTableDone(const OperationParams& p) {
     bool in_progress = false;
-    return client_->IsAlterTableInProgress(table, &in_progress);
+    return client_->IsAlterTableInProgress(p.table_name, &in_progress);
   }
 
-  Status RenameTable(const string& table,
-                     const string& new_table) {
-    unique_ptr<KuduTableAlterer> table_alterer;
-    table_alterer.reset(client_->NewTableAlterer(table)
-                               ->RenameTo(new_table));
-    return table_alterer->Alter();
+  Status RenameTable(const OperationParams& p) {
+    unique_ptr<KuduTableAlterer> alterer(
+        client_->NewTableAlterer(p.table_name));
+    return alterer->RenameTo(p.new_table_name)->Alter();
   }
 
-  Status GetTableSchema(const string& table,
-                        const string& /*new_table*/) {
+  Status GetTableSchema(const OperationParams& p) {
     KuduSchema schema;
-    return client_->GetTableSchema(table, &schema);
+    return client_->GetTableSchema(p.table_name, &schema);
   }
 
-  Status GetTableLocations(const string& table,
-                           const string& /*new_table*/) {
-    return GetTableLocationsWithTableId(table, /*table_id=*/none);
+  Status GetTableLocations(const OperationParams& p) {
+    return GetTableLocationsWithTableId(p.table_name, /*table_id=*/none);
   }
 
-  Status GetTabletLocations(const string& table,
-                            const string& /*new_table*/) {
+  Status GetTabletLocations(const OperationParams& p) {
     // Log in as 'test-admin' to get the tablet ID.
     RETURN_NOT_OK(cluster_->kdc()->Kinit(kAdminUser));
     shared_ptr<KuduClient> client;
     RETURN_NOT_OK(cluster_->CreateClient(nullptr, &client));
 
     shared_ptr<KuduTable> kudu_table;
-    RETURN_NOT_OK(client->OpenTable(table, &kudu_table));
+    RETURN_NOT_OK(client->OpenTable(p.table_name, &kudu_table));
     vector<KuduScanToken*> tokens;
     ElementDeleter deleter(&tokens);
     KuduScanTokenBuilder builder(kudu_table.get());
     RETURN_NOT_OK(builder.Build(&tokens));
-    const string tablet_id = tokens[0]->tablet().id();
+    CHECK(!tokens.empty());
+    const string& tablet_id = tokens[0]->tablet().id();
 
     // Log back as 'test-user'.
     RETURN_NOT_OK(cluster_->kdc()->Kinit(kTestUser));
 
-    const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
-    std::shared_ptr<MasterServiceProxy> proxy = cluster_->master_proxy();
+    static const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
+    std::shared_ptr<MasterServiceProxy> proxy(cluster_->master_proxy());
     UserCredentials user_credentials;
     user_credentials.set_real_user(kTestUser);
     proxy->set_user_credentials(user_credentials);
 
     TabletLocationsPB tablet_locations;
     return itest::GetTabletLocations(proxy, tablet_id, kTimeout,
-                                     master::VOTER_REPLICA, &tablet_locations);
+                                     VOTER_REPLICA, &tablet_locations);
   }
 
   void SetUp() override {
@@ -312,14 +315,14 @@ class SentryITestBase : public HmsITestBase {
     // User to Role mapping:
     // 1. user -> developer,
     // 2. admin -> admin.
-    ASSERT_OK(master::CreateRoleAndAddToGroups(sentry_client_.get(), kDevRole, kUserGroup));
-    ASSERT_OK(master::CreateRoleAndAddToGroups(sentry_client_.get(), kAdminRole, kAdminGroup));
+    ASSERT_OK(CreateRoleAndAddToGroups(sentry_client_.get(), kDevRole, kUserGroup));
+    ASSERT_OK(CreateRoleAndAddToGroups(sentry_client_.get(), kAdminRole, kAdminGroup));
 
     // Grant privilege 'ALL' on database 'db' to role admin.
-    TSentryPrivilege privilege = master::GetDatabasePrivilege(
+    TSentryPrivilege privilege = GetDatabasePrivilege(
         kDatabaseName, "ALL",
         TSentryGrantOption::DISABLED);
-    ASSERT_OK(master::AlterRoleGrantPrivilege(sentry_client_.get(),
+    ASSERT_OK(AlterRoleGrantPrivilege(sentry_client_.get(),
                                               kAdminRole, privilege));
 
     // Create database 'db' in HMS and Kudu tables 'table' and 'second_table' which
@@ -366,17 +369,18 @@ const char* const SentryITestBase::kDatabaseName = "db";
 const char* const SentryITestBase::kTableName = "table";
 const char* const SentryITestBase::kSecondTable = "second_table";
 
-// Functor that performs a certain operation (e.g. Create, Rename) on a table given
-// its name and its desired new name (only used for Rename).
-typedef function<Status(SentryITestBase*, const string&, const string&)> OperatorFunc;
+// Functor that performs a certain operation (e.g. Create, Rename) on a table
+// given its name and its desired new name, if necessary (only used for Rename).
+typedef function<Status(SentryITestBase*, const OperationParams&)> OperatorFunc;
 
-// Functor that grants the required permission for an operation (e.g Create, Rename)
-// on a table given the database the table belongs to and the name of the table.
-typedef function<Status(SentryITestBase*, const string&, const string&)> PrivilegeFunc;
+// Functor that grants the required permission for an operation (e.g Create,
+// Rename) on a table given the database the table belongs to and the name of
+// the table, if applicable.
+typedef function<Status(SentryITestBase*, const PrivilegeParams&)> PrivilegeFunc;
 
-// A description of the operation function that describes a particular action on a table
-// a user can perform, as well as the privilege granting function that grants the required
-// permission to the user to able to perform the action.
+// A description of the operation function that describes a particular action
+// on a table a user can perform, as well as the privilege granting function
+// that grants the required permission to the user to perform the action.
 struct AuthzFuncs {
   OperatorFunc do_action;
   PrivilegeFunc grant_privileges;
@@ -435,19 +439,19 @@ TEST_F(MasterSentryTest, TestAuthzListTables) {
 
   // Listing tables only shows the tables which user has proper privileges on.
   tables.clear();
-  ASSERT_OK(GrantGetMetadataTablePrivilege(kDatabaseName, kTableName));
+  ASSERT_OK(GrantGetMetadataTablePrivilege({ kDatabaseName, kTableName }));
   ASSERT_OK(client_->ListTables(&tables));
   ASSERT_EQ(vector<string>({ table_name }), tables);
 
   tables.clear();
-  ASSERT_OK(GrantGetMetadataTablePrivilege(kDatabaseName, kSecondTable));
+  ASSERT_OK(GrantGetMetadataTablePrivilege({ kDatabaseName, kSecondTable }));
   ASSERT_OK(client_->ListTables(&tables));
   unordered_set<string> tables_set(tables.begin(), tables.end());
   ASSERT_EQ(unordered_set<string>({ table_name, sec_table_name }), tables_set);
 }
 
 TEST_F(MasterSentryTest, TestTableOwnership) {
-  ASSERT_OK(GrantCreateTablePrivilege(kDatabaseName, "new_table"));
+  ASSERT_OK(GrantCreateTablePrivilege({ kDatabaseName }));
   ASSERT_OK(CreateKuduTable(kDatabaseName, "new_table"));
   NO_FATALS(CheckTable(kDatabaseName, "new_table",
                        make_optional<const string&>(kTestUser)));
@@ -464,14 +468,15 @@ TEST_F(MasterSentryTest, TestTableOwnership) {
 
 // Checks Sentry privileges are synchronized upon table rename in the HMS.
 TEST_F(MasterSentryTest, TestRenameTablePrivilegeTransfer) {
-  ASSERT_OK(GrantRenameTablePrivilege(kDatabaseName, kTableName));
-  ASSERT_OK(RenameTable(Substitute("$0.$1", kDatabaseName, kTableName),
-                        Substitute("$0.$1", kDatabaseName, "b")));
-  NO_FATALS(CheckTable(kDatabaseName, "b", make_optional<const string &>(kAdminUser)));
+  ASSERT_OK(GrantRenameTablePrivilege({ kDatabaseName, kTableName }));
+  ASSERT_OK(RenameTable({ Substitute("$0.$1", kDatabaseName, kTableName),
+                          Substitute("$0.$1", kDatabaseName, "b") }));
+  NO_FATALS(CheckTable(kDatabaseName, "b",
+                       make_optional<const string&>(kAdminUser)));
 
-  unique_ptr<KuduTableAlterer> table_alterer;
-  table_alterer.reset(client_->NewTableAlterer(Substitute("$0.$1", kDatabaseName, "b"))
-                             ->DropColumn("int16_val"));
+  unique_ptr<KuduTableAlterer> alterer(client_->NewTableAlterer(
+      Substitute("$0.$1", kDatabaseName, "b")));
+  alterer->DropColumn("int16_val");
 
   // Note that unlike table creation, there could be a delay between the table renaming
   // in Kudu and the privilege renaming in Sentry. Because Kudu uses the transactional
@@ -480,7 +485,7 @@ TEST_F(MasterSentryTest, TestRenameTablePrivilegeTransfer) {
   // is a chance that Kudu already finish the table renaming but the privilege renaming
   // hasn't been reflected in the Sentry service.
   ASSERT_EVENTUALLY([&] {
-    ASSERT_OK(table_alterer->Alter());
+    ASSERT_OK(alterer->Alter());
   });
   NO_FATALS(CheckTable(kDatabaseName, "b", make_optional<const string&>(kAdminUser)));
 }
@@ -494,20 +499,23 @@ class TestAuthzTable :
 TEST_P(TestAuthzTable, TestAuthorizeTable) {
   const AuthzDescriptor& desc = GetParam();
   const auto table_name = Substitute("$0.$1", desc.database, desc.table_name);
-  const auto new_table_name = Substitute("$0.$1", desc.database, desc.new_table_name);
+  const auto new_table_name = Substitute("$0.$1",
+                                         desc.database, desc.new_table_name);
+  const OperationParams action_params = { table_name, new_table_name };
+  const PrivilegeParams privilege_params = { desc.database, desc.table_name };
 
   // User 'test-user' attempts to operate on the table without proper privileges.
-  Status s = desc.funcs.do_action(this, table_name, new_table_name);
+  Status s = desc.funcs.do_action(this, action_params);
   ASSERT_TRUE(s.IsNotAuthorized()) << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "unauthorized action");
 
   // User 'test-user' can operate on the table after obtaining proper privileges.
-  ASSERT_OK(desc.funcs.grant_privileges(this, desc.database, desc.table_name));
-  ASSERT_OK(desc.funcs.do_action(this, table_name, new_table_name));
+  ASSERT_OK(desc.funcs.grant_privileges(this, privilege_params));
+  ASSERT_OK(desc.funcs.do_action(this, action_params));
 
   // Ensure that operating on a table while the Sentry is unreachable fails.
   ASSERT_OK(StopSentry());
-  s = desc.funcs.do_action(this, table_name, new_table_name);
+  s = desc.funcs.do_action(this, action_params);
   ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
 }
 
@@ -630,12 +638,12 @@ TEST_F(MasterSentryTest, TestMismatchedTable) {
   ASSERT_TRUE(s.IsNotAuthorized());
   ASSERT_STR_CONTAINS(s.ToString(), "unauthorized action");
 
-  ASSERT_OK(GrantGetMetadataTablePrivilege(kDatabaseName, kTableName));
+  ASSERT_OK(GrantGetMetadataTablePrivilege({ kDatabaseName, kTableName }));
   s = GetTableLocationsWithTableId(table_name_b, table_id_a);
   ASSERT_TRUE(s.IsNotAuthorized());
   ASSERT_STR_CONTAINS(s.ToString(), "unauthorized action");
 
-  ASSERT_OK(GrantGetMetadataTablePrivilege(kDatabaseName, kSecondTable));
+  ASSERT_OK(GrantGetMetadataTablePrivilege({ kDatabaseName, kSecondTable }));
   s = GetTableLocationsWithTableId(table_name_b, table_id_a);
   ASSERT_TRUE(s.IsNotFound());
   ASSERT_STR_CONTAINS(s.ToString(), "the table ID refers to a different table");
@@ -647,21 +655,24 @@ class AuthzErrorHandlingTest :
     // TODO(aserbin): update the test to introduce authz privilege caching
 };
 TEST_P(AuthzErrorHandlingTest, TestNonExistentTable) {
+  static constexpr const char* const kTableName = "non_existent";
   const AuthzFuncs& funcs = GetParam();
-  const auto table_name = Substitute("$0.$1", kDatabaseName, "non_existent");
+  const auto table_name = Substitute("$0.$1", kDatabaseName, kTableName);
   const auto new_table_name = Substitute("$0.$1", kDatabaseName, "b");
+  const OperationParams action_params = { table_name, new_table_name };
+  const PrivilegeParams privilege_params = { kDatabaseName, kTableName };
 
   // Ensure that operating on a non-existent table without proper privileges gives
   // a NOT_AUTHORIZED error, instead of leaking the table existence by giving a
   // TABLE_NOT_FOUND error.
-  Status s = funcs.do_action(this, table_name, new_table_name);
+  Status s = funcs.do_action(this, action_params);
   ASSERT_TRUE(s.IsNotAuthorized());
   ASSERT_STR_CONTAINS(s.ToString(), "unauthorized action");
 
   // Ensure that operating on a non-existent table fails
   // while Sentry is unreachable.
   ASSERT_OK(StopSentry());
-  s = funcs.do_action(this, table_name, new_table_name);
+  s = funcs.do_action(this, action_params);
   ASSERT_TRUE(s.IsNetworkError()) << s.ToString();
 
   // Ensure that operating on a non-existent table with proper privileges gives a
@@ -670,9 +681,9 @@ TEST_P(AuthzErrorHandlingTest, TestNonExistentTable) {
   ASSERT_EVENTUALLY([&] {
     // SentryAuthzProvider throttles reconnections, so it's necessary
     // to wait out the backoff.
-    ASSERT_OK(funcs.grant_privileges(this, kDatabaseName, "non_existent"));
+    ASSERT_OK(funcs.grant_privileges(this, privilege_params));
   });
-  s = funcs.do_action(this, table_name, new_table_name);
+  s = funcs.do_action(this, action_params);
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
 }
 
@@ -754,7 +765,7 @@ class SentryAuthzProviderCacheITest : public SentryITestBase {
 // empties upon successful ResetAuthzCache() RPC.
 TEST_F(SentryAuthzProviderCacheITest, AlterTable) {
   const auto table_name = Substitute("$0.$1", kDatabaseName, kTableName);
-  ASSERT_OK(GrantAlterTablePrivilege(kDatabaseName, kTableName));
+  ASSERT_OK(GrantAlterTablePrivilege({ kDatabaseName, kTableName }));
   {
     unique_ptr<KuduTableAlterer> table_alterer(
         client_->NewTableAlterer(table_name)->DropColumn("int8_val"));
@@ -796,10 +807,10 @@ TEST_F(SentryAuthzProviderCacheITest, ResetAuthzCacheConcurrentAlterTable) {
   constexpr const auto num_threads = 16;
   const auto run_interval = AllowSlowTests() ? MonoDelta::FromSeconds(8)
                                              : MonoDelta::FromSeconds(1);
-  ASSERT_OK(GrantCreateTablePrivilege(kDatabaseName, ""));
+  ASSERT_OK(GrantCreateTablePrivilege({ kDatabaseName }));
   for (auto idx = 0; idx < num_threads; ++idx) {
-    ASSERT_OK(CreateTable(Substitute("$0.$1", kDatabaseName, idx), ""));
-    ASSERT_OK(GrantAlterTablePrivilege(kDatabaseName, Substitute("$0", idx)));
+    ASSERT_OK(CreateTable(Substitute("$0.$1", kDatabaseName, idx)));
+    ASSERT_OK(GrantAlterTablePrivilege({ kDatabaseName, Substitute("$0", idx) }));
   }
 
   vector<Status> threads_task_status(num_threads);
