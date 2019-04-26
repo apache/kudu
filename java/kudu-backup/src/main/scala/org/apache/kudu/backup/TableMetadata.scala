@@ -17,6 +17,7 @@
 package org.apache.kudu.backup
 
 import java.math.BigDecimal
+import java.util
 
 import com.google.protobuf.StringValue
 import org.apache.commons.net.util.Base64
@@ -35,6 +36,7 @@ import org.apache.yetus.audience.InterfaceAudience
 import org.apache.yetus.audience.InterfaceStability
 
 import scala.collection.JavaConverters._
+import scala.collection.mutable
 
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
@@ -44,7 +46,9 @@ object TableMetadata {
   val MetadataVersion = 1
 
   def getTableMetadata(table: KuduTable, options: BackupOptions): TableMetadataPB = {
+    val columnIds = new util.HashMap[String, Integer]()
     val columns = table.getSchema.getColumns.asScala.map { col =>
+      columnIds.put(col.getName, table.getSchema.getColumnId(col.getName))
       val builder = ColumnMetadataPB
         .newBuilder()
         .setName(col.getName)
@@ -54,6 +58,7 @@ object TableMetadata {
         .setEncoding(col.getEncoding.toString)
         .setCompression(col.getCompressionAlgorithm.toString)
         .setBlockSize(col.getDesiredBlockSize)
+        .setComment(col.getComment)
       if (col.getTypeAttributes != null) {
         builder.setTypeAttributes(getTypeAttributesMetadata(col))
       }
@@ -70,7 +75,9 @@ object TableMetadata {
       .setToMs(options.toMs)
       .setDataFormat(options.format)
       .setTableName(table.getName)
+      .setTableId(table.getTableId)
       .addAllColumns(columns.asJava)
+      .putAllColumnIds(columnIds)
       .setNumReplicas(table.getNumReplicas)
       .setPartitions(getPartitionMetadata(table))
       .build()
@@ -174,6 +181,7 @@ object TableMetadata {
         .encoding(Encoding.valueOf(col.getEncoding))
         .compressionAlgorithm(CompressionAlgorithm.valueOf(col.getCompression))
         .desiredBlockSize(col.getBlockSize)
+        .comment(col.getComment)
 
       if (col.hasDefaultValue) {
         val value = valueFromString(col.getDefaultValue.getValue, colType)

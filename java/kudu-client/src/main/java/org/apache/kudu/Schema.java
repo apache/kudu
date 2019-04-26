@@ -60,6 +60,11 @@ public class Schema {
   private final Map<Integer, Integer> columnsById;
 
   /**
+   * Mapping of column name to column ID, or null if the schema does not have assigned column IDs.
+   */
+  private final Map<String, Integer> columnIdByName;
+
+  /**
    * Mapping of column index to backing byte array offset.
    */
   private final int[] columnOffsets;
@@ -105,6 +110,7 @@ public class Schema {
     this.columnOffsets = new int[columns.size()];
     this.columnsByName = new HashMap<>(columns.size());
     this.columnsById = hasColumnIds ? new HashMap<Integer, Integer>(columnIds.size()) : null;
+    this.columnIdByName = hasColumnIds ? new HashMap<String, Integer>(columnIds.size()) : null;
     int offset = 0;
     boolean hasNulls = false;
     int isDeletedIndex = NO_IS_DELETED_INDEX;
@@ -130,6 +136,10 @@ public class Schema {
         if (this.columnsById.put(columnIds.get(index), index) != null) {
           throw new IllegalArgumentException(
               String.format("Column IDs must be unique: %s", columnIds));
+        }
+        if (this.columnIdByName.put(column.getName(), columnIds.get(index)) != null) {
+          throw new IllegalArgumentException(
+              String.format("Column names must be unique: %s", columnIds));
         }
       }
 
@@ -305,6 +315,17 @@ public class Schema {
    */
   public boolean hasColumnIds() {
     return columnsById != null;
+  }
+
+  /**
+   * Get the internal column ID for a column name.
+   * @param columnName column's name
+   * @return the column ID
+   */
+  @InterfaceAudience.Private
+  @InterfaceStability.Unstable
+  public int getColumnId(String columnName) {
+    return columnIdByName.get(columnName);
   }
 
   /**

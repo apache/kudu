@@ -35,7 +35,6 @@ message ColumnTypeAttributesMetadataPB {
 
 // Maps to the ColumnSchema class.
 // The fields are effectively 1 to 1 mappings of those in ColumnSchema.
-// TODO (KUDU-2788): How do we handle column additions?
 message ColumnMetadataPB {
   string name = 1;
   string type = 2;
@@ -48,6 +47,7 @@ message ColumnMetadataPB {
   string encoding = 7;
   string compression = 8;
   int32 block_size = 9;
+  string comment = 10;
 }
 
 // A human readable string representation of a column value for use
@@ -110,10 +110,16 @@ message TableMetadataPB {
   string data_format = 4;
   // The name of the table.
   string table_name = 5;
+  // The internal id of the table.
+  // This is useful for detecting dropped and added tables.
+  string table_id = 6;
   // The replication factor of this table.
-  int32 num_replicas = 6;
+  int32 num_replicas = 7;
   // The metadata for the table's columns.
-  repeated ColumnMetadataPB columns = 7;
+  repeated ColumnMetadataPB columns = 8;
+  // A map of column name to internal column id.
+  // This is useful for detecting dropped and added columns.
+  map<string, int32> column_ids = 9;
   // The metadata for the table's partitions.
-  PartitionMetadataPB partitions = 8;
+  PartitionMetadataPB partitions = 10;
 }

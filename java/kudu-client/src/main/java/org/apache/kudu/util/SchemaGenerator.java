@@ -113,7 +113,8 @@ public class SchemaGenerator {
         .nullable(random.nextBoolean() && !key)
         .compressionAlgorithm(randomCompression())
         .desiredBlockSize(randomBlockSize())
-        .encoding(randomEncoding(type));
+        .encoding(randomEncoding(type))
+        .comment("A " + type.getName() + " column for " + name);
 
     ColumnTypeAttributes typeAttributes = null;
     if (type == Type.DECIMAL) {
