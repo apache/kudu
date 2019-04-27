@@ -1011,13 +1011,21 @@ TEST_F(ToolTest, TestModeHelp) {
   }
   {
     const vector<string> kMasterModeRegexes = {
+        "authz_cache.*Operate on the authz cache of a Kudu Master",
         "dump_memtrackers.*Dump the memtrackers",
         "get_flags.*Get the gflags",
         "set_flag.*Change a gflag value",
         "status.*Get the status",
-        "timestamp.*Get the current timestamp"
+        "timestamp.*Get the current timestamp",
+        "list.*List masters in a Kudu cluster",
     };
     NO_FATALS(RunTestHelp("master", kMasterModeRegexes));
+  }
+  {
+    const vector<string> kMasterAuthzCacheModeRegexes = {
+        "reset.*Reset the privileges cache",
+    };
+    NO_FATALS(RunTestHelp("master authz_cache", kMasterAuthzCacheModeRegexes));
   }
   {
     const vector<string> kPbcModeRegexes = {
