@@ -81,12 +81,8 @@ class CacheBaseTest : public KuduTest,
   }
 
   int Lookup(int key) {
-    Cache::Handle* handle = cache_->Lookup(EncodeInt(key), Cache::EXPECT_IN_CACHE);
-    const int r = (handle == nullptr) ? -1 : DecodeInt(cache_->Value(handle));
-    if (handle != nullptr) {
-      cache_->Release(handle);
-    }
-    return r;
+    auto handle(cache_->Lookup(EncodeInt(key), Cache::EXPECT_IN_CACHE));
+    return handle ? DecodeInt(cache_->Value(handle)) : -1;
   }
 
   void Insert(int key, int value, int charge = 1) {
@@ -94,8 +90,8 @@ class CacheBaseTest : public KuduTest,
     std::string val_str = EncodeInt(value);
     auto handle(cache_->Allocate(key_str, val_str.size(), charge));
     CHECK(handle);
-    memcpy(cache_->MutableValue(handle.get()), val_str.data(), val_str.size());
-    cache_->Release(cache_->Insert(std::move(handle), this));
+    memcpy(cache_->MutableValue(&handle), val_str.data(), val_str.size());
+    cache_->Insert(std::move(handle), this);
   }
 
   void Erase(int key) {
@@ -283,15 +279,15 @@ TEST_P(CacheTest, Erase) {
 
 TEST_P(CacheTest, EntriesArePinned) {
   Insert(100, 101);
-  Cache::Handle* h1 = cache_->Lookup(EncodeInt(100), Cache::EXPECT_IN_CACHE);
+  auto h1 = cache_->Lookup(EncodeInt(100), Cache::EXPECT_IN_CACHE);
   ASSERT_EQ(101, DecodeInt(cache_->Value(h1)));
 
   Insert(100, 102);
-  Cache::Handle* h2 = cache_->Lookup(EncodeInt(100), Cache::EXPECT_IN_CACHE);
+  auto h2 = cache_->Lookup(EncodeInt(100), Cache::EXPECT_IN_CACHE);
   ASSERT_EQ(102, DecodeInt(cache_->Value(h2)));
   ASSERT_EQ(0, evicted_keys_.size());
 
-  cache_->Release(h1);
+  h1.reset();
   ASSERT_EQ(1, evicted_keys_.size());
   ASSERT_EQ(100, evicted_keys_[0]);
   ASSERT_EQ(101, evicted_values_[0]);
@@ -300,7 +296,7 @@ TEST_P(CacheTest, EntriesArePinned) {
   ASSERT_EQ(-1, Lookup(100));
   ASSERT_EQ(1, evicted_keys_.size());
 
-  cache_->Release(h2);
+  h2.reset();
   ASSERT_EQ(2, evicted_keys_.size());
   ASSERT_EQ(100, evicted_keys_[1]);
   ASSERT_EQ(102, evicted_values_[1]);

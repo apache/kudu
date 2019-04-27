@@ -115,17 +115,15 @@ class CacheBench : public KuduTest,
       char key_buf[sizeof(int_key)];
       memcpy(key_buf, &int_key, sizeof(int_key));
       Slice key_slice(key_buf, arraysize(key_buf));
-      Cache::Handle* h = cache_->Lookup(key_slice, Cache::EXPECT_IN_CACHE);
+      auto h(cache_->Lookup(key_slice, Cache::EXPECT_IN_CACHE));
       if (h) {
-        hits++;
+        ++hits;
       } else {
         auto ph(cache_->Allocate(
             key_slice, /* val_len=*/kEntrySize, /* charge=*/kEntrySize));
-        h = cache_->Insert(std::move(ph), nullptr);
+        cache_->Insert(std::move(ph), nullptr);
       }
-
-      cache_->Release(h);
-      lookups++;
+      ++lookups;
     }
     return {hits, lookups};
   }

@@ -73,8 +73,8 @@ class BlockHandle {
         is_data_owner_(true) {
   }
 
-  explicit BlockHandle(BlockCacheHandle *dblk_data)
-    : is_data_owner_(false) {
+  explicit BlockHandle(BlockCacheHandle* dblk_data)
+      : is_data_owner_(false) {
     dblk_data_.swap(dblk_data);
   }
 

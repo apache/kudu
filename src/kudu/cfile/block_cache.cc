@@ -135,32 +135,33 @@ Cache::MemoryType BlockCache::GetConfiguredCacheMemoryTypeOrDie() {
 }
 
 BlockCache::BlockCache()
-  : BlockCache(FLAGS_block_cache_capacity_mb * 1024 * 1024) {
+    : BlockCache(FLAGS_block_cache_capacity_mb * 1024 * 1024) {
 }
 
 BlockCache::BlockCache(size_t capacity)
-  : cache_(CreateCache(capacity)) {
+    : cache_(CreateCache(capacity)) {
 }
 
 BlockCache::PendingEntry BlockCache::Allocate(const CacheKey& key, size_t block_size) {
   Slice key_slice(reinterpret_cast<const uint8_t*>(&key), sizeof(key));
-  return PendingEntry(cache_.get(), cache_->Allocate(key_slice, block_size));
+  return PendingEntry(cache_->Allocate(key_slice, block_size));
 }
 
 bool BlockCache::Lookup(const CacheKey& key, Cache::CacheBehavior behavior,
-                        BlockCacheHandle *handle) {
-  Cache::Handle* h = cache_->Lookup(Slice(reinterpret_cast<const uint8_t*>(&key),
-                                          sizeof(key)), behavior);
-  if (h != nullptr) {
-    handle->SetHandle(cache_.get(), h);
+                        BlockCacheHandle* handle) {
+  auto h(cache_->Lookup(
+      Slice(reinterpret_cast<const uint8_t*>(&key), sizeof(key)), behavior));
+  if (h) {
+    handle->SetHandle(std::move(h));
+    return true;
   }
-  return h != nullptr;
+  return false;
 }
 
 void BlockCache::Insert(BlockCache::PendingEntry* entry, BlockCacheHandle* inserted) {
-  Cache::Handle* h = cache_->Insert(std::move(entry->handle_),
-                                    /* eviction_callback= */ nullptr);
-  inserted->SetHandle(cache_.get(), h);
+  auto h(cache_->Insert(std::move(entry->handle_),
+                        /* eviction_callback= */ nullptr));
+  inserted->SetHandle(std::move(h));
 }
 
 void BlockCache::StartInstrumentation(const scoped_refptr<MetricEntity>& metric_entity) {

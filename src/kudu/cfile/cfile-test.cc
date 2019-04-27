@@ -78,6 +78,7 @@
 
 DECLARE_bool(cfile_write_checksums);
 DECLARE_bool(cfile_verify_checksums);
+DECLARE_string(block_cache_type);
 
 #if defined(__linux__)
 DECLARE_string(nvm_cache_path);
@@ -88,6 +89,12 @@ METRIC_DECLARE_counter(block_cache_hits_caching);
 
 METRIC_DECLARE_entity(server);
 
+
+using kudu::fs::BlockManager;
+using kudu::fs::CountingReadableBlock;
+using kudu::fs::CreateCorruptBlock;
+using kudu::fs::ReadableBlock;
+using kudu::fs::WritableBlock;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
@@ -96,12 +103,6 @@ using strings::Substitute;
 
 namespace kudu {
 namespace cfile {
-
-using fs::BlockManager;
-using fs::CountingReadableBlock;
-using fs::CreateCorruptBlock;
-using fs::ReadableBlock;
-using fs::WritableBlock;
 
 class TestCFile : public CFileTestBase {
  protected:

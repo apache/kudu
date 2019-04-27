@@ -34,7 +34,6 @@ struct CacheMetrics;
 
 class Cache {
  public:
-
   // Type of memory backing the cache's storage.
   enum class MemoryType {
     DRAM,
@@ -57,39 +56,22 @@ class Cache {
   class EvictionCallback {
    public:
     virtual void EvictedEntry(Slice key, Slice value) = 0;
-    virtual ~EvictionCallback() {}
+    virtual ~EvictionCallback() = default;
   };
 
-  Cache() { }
+  Cache() = default;
 
   // Destroys all existing entries by calling the "deleter"
   // function that was passed to the constructor.
   virtual ~Cache();
 
+  // Set the cache metrics to update corresponding counters accordingly.
+  virtual void SetMetrics(std::unique_ptr<CacheMetrics> metrics) = 0;
+
   // Opaque handle to an entry stored in the cache.
   struct Handle { };
 
-  // Custom handle "deleter", primarily intended for use with std::unique_ptr.
-  //
-  // Sample usage:
-  //
-  //   unique_ptr<Cache> cache(NewCache(...));
-  //   ...
-  //   {
-  //     unique_ptr<Cache::Handle, Cache::HandleDeleter> h(
-  //       cache->Lookup(...), Cache::HandleDeleter(cache));
-  //     ...
-  //   } // 'h' is automatically released here
-  //
-  // Or:
-  //
-  //   unique_ptr<Cache> cache(NewCache(...));
-  //   ...
-  //   {
-  //     Cache::UniqueHandle h(cache->Lookup(...), Cache::HandleDeleter(cache));
-  //     ...
-  //   } // 'h' is automatically released here
-  //
+  // Custom deleter: intended for use with std::unique_ptr<Handle>.
   class HandleDeleter {
    public:
     explicit HandleDeleter(Cache* c)
@@ -102,14 +84,22 @@ class Cache {
       }
     }
 
+    Cache* cache() const {
+      return c_;
+    }
+
    private:
     Cache* c_;
   };
+
+  // UniqueHandle -- a wrapper around opaque Handle structure to facilitate
+  // automatic reference counting of cache's handles.
   typedef std::unique_ptr<Handle, HandleDeleter> UniqueHandle;
 
   // Opaque handle to an entry which is being prepared to be added to the cache.
   struct PendingHandle { };
 
+  // Custom deleter: intended for use with std::unique_ptr<PendingHandle>.
   class PendingHandleDeleter {
    public:
     explicit PendingHandleDeleter(Cache* c)
@@ -117,12 +107,21 @@ class Cache {
     }
 
     void operator()(Cache::PendingHandle* h) const {
-      c_->Free(h);
+      if (h != nullptr) {
+        c_->Free(h);
+      }
+    }
+
+    Cache* cache() const {
+      return c_;
     }
 
    private:
     Cache* c_;
   };
+
+  // UniquePendingHandle -- a wrapper around opaque PendingHandle structure
+  // to facilitate automatic reference counting newly allocated cache's handles.
   typedef std::unique_ptr<PendingHandle, PendingHandleDeleter> UniquePendingHandle;
 
   // Passing EXPECT_IN_CACHE will increment the hit/miss metrics that track the number of times
@@ -137,29 +136,37 @@ class Cache {
 
   // If the cache has no mapping for "key", returns NULL.
   //
-  // Else return a handle that corresponds to the mapping.  The caller
-  // must call this->Release(handle) when the returned mapping is no
-  // longer needed.
-  virtual Handle* Lookup(const Slice& key, CacheBehavior caching) = 0;
-
-  // Release a mapping returned by a previous Lookup().
-  // REQUIRES: handle must not have been released yet.
-  // REQUIRES: handle must have been returned by a method on *this.
-  virtual void Release(Handle* handle) = 0;
-
-  // Return the value encapsulated in a handle returned by a
-  // successful Lookup().
-  // REQUIRES: handle must not have been released yet.
-  // REQUIRES: handle must have been returned by a method on *this.
-  virtual Slice Value(Handle* handle) = 0;
+  // Else return a handle that corresponds to the mapping.
+  //
+  // Sample usage:
+  //
+  //   unique_ptr<Cache> cache(NewCache(...));
+  //   ...
+  //   {
+  //     Cache::UniqueHandle h(cache->Lookup(...)));
+  //     ...
+  //   } // 'h' is automatically released here
+  //
+  // Or:
+  //
+  //   unique_ptr<Cache> cache(NewCache(...));
+  //   ...
+  //   {
+  //     auto h(cache->Lookup(...)));
+  //     ...
+  //   } // 'h' is automatically released here
+  //
+  virtual UniqueHandle Lookup(const Slice& key, CacheBehavior caching) = 0;
 
   // If the cache contains entry for key, erase it.  Note that the
   // underlying entry will be kept around until all existing handles
   // to it have been released.
   virtual void Erase(const Slice& key) = 0;
 
-  // Set the cache metrics to update corresponding counters accordingly.
-  virtual void SetMetrics(std::unique_ptr<CacheMetrics> metrics) = 0;
+  // Return the value encapsulated in a raw handle returned by a successful
+  // Lookup().
+  virtual Slice Value(const UniqueHandle& handle) const = 0;
+
 
   // ------------------------------------------------------------
   // Insertion path
@@ -173,13 +180,13 @@ class Cache {
   // For example:
   //
   //   auto ph(cache_->Allocate("my entry", value_size, charge));
-  //   if (!ReadDataFromDisk(cache_->MutableValue(ph.get())).ok()) {
+  //   if (!ReadDataFromDisk(cache_->MutableValue(&ph)).ok()) {
   //     ... error handling ...
   //     return;
   //   }
-  //   Handle* h = cache_->Insert(std::move(ph), my_eviction_callback);
+  //   UniqueHandle h(cache_->Insert(std::move(ph), my_eviction_callback));
   //   ...
-  //   cache_->Release(h);
+  //   // 'h' is automatically released.
 
   // Indicates that the charge of an item in the cache should be calculated
   // based on its memory consumption.
@@ -189,7 +196,7 @@ class Cache {
   //
   // The provided 'key' is copied into the resulting handle object.
   // The allocated handle has enough space such that the value can
-  // be written into cache_->MutableValue(handle).
+  // be written into cache_->MutableValue(&handle).
   //
   // If 'charge' is not 'kAutomaticCharge', then the cache capacity will be charged
   // the explicit amount. This is useful when caching items that are small but need to
@@ -214,25 +221,20 @@ class Cache {
     return Allocate(key, val_len, kAutomaticCharge);
   }
 
-  virtual uint8_t* MutableValue(PendingHandle* handle) = 0;
+  virtual uint8_t* MutableValue(UniquePendingHandle* handle) = 0;
 
   // Commit a prepared entry into the cache.
   //
-  // Returns a handle that corresponds to the mapping.  The caller
-  // must call this->Release(handle) when the returned mapping is no
-  // longer needed. This method always succeeds and returns a non-null
-  // entry, since the space was reserved above.
+  // Returns a handle that corresponds to the mapping. This method always
+  // succeeds and returns a non-null entry, since the space was reserved above.
   //
   // The 'pending' entry passed here should have been allocated using
   // Cache::Allocate() above.
   //
   // If 'eviction_callback' is non-NULL, then it will be called when the
   // entry is later evicted or when the cache shuts down.
-  virtual Handle* Insert(UniquePendingHandle pending,
-                         EvictionCallback* eviction_callback) = 0;
-
-  // Free 'ptr', which must have been previously allocated using 'Allocate'.
-  virtual void Free(PendingHandle* ptr) = 0;
+  virtual UniqueHandle Insert(UniquePendingHandle pending,
+                              EvictionCallback* eviction_callback) = 0;
 
   // Forward declaration to simplify the layout of types/typedefs needed for the
   // Invalidate() method while trying to adhere to the code style guide.
@@ -321,6 +323,15 @@ class Cache {
     const ValidityFunc validity_func;
     const IterationFunc iteration_func;
   };
+
+ protected:
+  // Release a mapping returned by a previous Lookup(), using raw handle.
+  // REQUIRES: handle must not have been released yet.
+  // REQUIRES: handle must have been returned by a method on *this.
+  virtual void Release(Handle* handle) = 0;
+
+  // Free 'ptr', which must have been previously allocated using 'Allocate'.
+  virtual void Free(PendingHandle* ptr) = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(Cache);

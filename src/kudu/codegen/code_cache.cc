@@ -80,30 +80,27 @@ Status CodeCache::AddEntry(const scoped_refptr<JITWrapper>& value) {
   // failed, we'd just crash the process.
   auto pending(cache_->Allocate(Slice(key), val_len, /*charge = */1));
   CHECK(pending);
-  memcpy(cache_->MutableValue(pending.get()), &val, val_len);
+  memcpy(cache_->MutableValue(&pending), &val, val_len);
 
   // Because Cache only accepts void* values, we store just the JITWrapper*
   // and increase its ref count.
   value->AddRef();
 
   // Insert into cache and release the handle (we have a local copy of a refptr).
-  Cache::Handle* inserted = DCHECK_NOTNULL(cache_->Insert(
-      std::move(pending), eviction_callback_.get()));
-  cache_->Release(inserted);
+  auto inserted(cache_->Insert(std::move(pending), eviction_callback_.get()));
+  DCHECK(inserted);
   return Status::OK();
 }
 
 scoped_refptr<JITWrapper> CodeCache::Lookup(const Slice& key) {
   // Look up in Cache after generating key, returning NULL if not found.
-  Cache::Handle* found = cache_->Lookup(key, Cache::EXPECT_IN_CACHE);
-  if (!found) return scoped_refptr<JITWrapper>();
+  auto found(cache_->Lookup(key, Cache::EXPECT_IN_CACHE));
+  if (!found) {
+    return scoped_refptr<JITWrapper>();
+  }
 
   // Retrieve the value
-  scoped_refptr<JITWrapper> value = CacheValueToJITWrapper(cache_->Value(found));
-
-  // No need to hold on to handle after we have our reference-counted object.
-  cache_->Release(found);
-  return value;
+  return CacheValueToJITWrapper(cache_->Value(found));
 }
 
 } // namespace codegen

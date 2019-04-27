@@ -124,10 +124,10 @@ class BaseDescriptor {
     // equivalent to the max number of fds.
     auto pending(cache()->Allocate(filename(), sizeof(file_ptr), 1));
     CHECK(pending);
-    memcpy(cache()->MutableValue(pending.get()), &file_ptr, sizeof(file_ptr));
-    return ScopedOpenedDescriptor<FileType>(this, Cache::UniqueHandle(
-        cache()->Insert(std::move(pending), file_cache_->eviction_cb_.get()),
-        Cache::HandleDeleter(cache())));
+    memcpy(cache()->MutableValue(&pending), &file_ptr, sizeof(file_ptr));
+    return ScopedOpenedDescriptor<FileType>(
+        this, cache()->Insert(std::move(pending),
+                              file_cache_->eviction_cb_.get()));
   }
 
   // Retrieves a pointer to an open file object from the file cache with the
@@ -136,9 +136,8 @@ class BaseDescriptor {
   // Returns a handle to the looked up entry. The handle may or may not contain
   // an open file, depending on whether the cache hit or missed.
   ScopedOpenedDescriptor<FileType> LookupFromCache() const {
-    return ScopedOpenedDescriptor<FileType>(this, Cache::UniqueHandle(
-        cache()->Lookup(filename(), Cache::EXPECT_IN_CACHE),
-        Cache::HandleDeleter(cache())));
+    return ScopedOpenedDescriptor<FileType>(
+        this, cache()->Lookup(filename(), Cache::EXPECT_IN_CACHE));
   }
 
   // Mark this descriptor as to-be-deleted later.
@@ -205,7 +204,7 @@ class ScopedOpenedDescriptor {
 
   FileType* file() const {
     DCHECK(opened());
-    return CacheValueToFileType<FileType>(desc_->cache()->Value(handle_.get()));
+    return CacheValueToFileType<FileType>(desc_->cache()->Value(handle_));
   }
 
  private:

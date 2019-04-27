@@ -162,13 +162,11 @@ class TTLCache {
   // handle, but a cached value won't be destroyed until the handle goes
   // out of scope.
   EntryHandle Get(const K& key) {
-    Cache::UniqueHandle h(cache_->Lookup(key, Cache::EXPECT_IN_CACHE),
-                          Cache::HandleDeleter(cache_.get()));
+    auto h(cache_->Lookup(key, Cache::EXPECT_IN_CACHE));
     if (!h) {
       return EntryHandle();
     }
-    auto* entry_ptr = reinterpret_cast<Entry*>(
-        cache_->Value(h.get()).mutable_data());
+    auto* entry_ptr = reinterpret_cast<Entry*>(cache_->Value(h).mutable_data());
     DCHECK(entry_ptr);
     if (entry_ptr->exp_time < MonoTime::Now()) {
       // If the entry has expired already, return null handle. The underlying
@@ -196,12 +194,11 @@ class TTLCache {
                   int charge = Cache::kAutomaticCharge) {
     auto pending(cache_->Allocate(key, sizeof(Entry), charge));
     CHECK(pending);
-    Entry* entry = reinterpret_cast<Entry*>(cache_->MutableValue(pending.get()));
+    Entry* entry = reinterpret_cast<Entry*>(cache_->MutableValue(&pending));
     entry->val_ptr = val.get();
     entry->exp_time = MonoTime::Now() + entry_ttl_;
     // Insert() evicts already existing entry with the same key, if any.
-    Cache::UniqueHandle h(cache_->Insert(std::move(pending), eviction_cb_.get()),
-                          Cache::HandleDeleter(cache_.get()));
+    auto h(cache_->Insert(std::move(pending), eviction_cb_.get()));
     // The cache takes care of the entry from this point: deallocation of the
     // resources passed via 'val' parameter is performed by the eviction callback.
     return EntryHandle(DCHECK_NOTNULL(val.release()), std::move(h));

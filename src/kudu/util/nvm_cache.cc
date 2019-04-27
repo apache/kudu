@@ -534,14 +534,18 @@ class ShardedLRUCache : public Cache {
     vmem_delete(vmp_);
   }
 
-  virtual Handle* Insert(UniquePendingHandle handle,
-                         Cache::EvictionCallback* eviction_callback) OVERRIDE {
+  virtual UniqueHandle Insert(UniquePendingHandle handle,
+                              Cache::EvictionCallback* eviction_callback) OVERRIDE {
     LRUHandle* h = reinterpret_cast<LRUHandle*>(DCHECK_NOTNULL(handle.release()));
-    return shards_[Shard(h->hash)]->Insert(h, eviction_callback);
+    return UniqueHandle(
+        shards_[Shard(h->hash)]->Insert(h, eviction_callback),
+        Cache::HandleDeleter(this));
   }
-  virtual Handle* Lookup(const Slice& key, CacheBehavior caching) OVERRIDE {
+  virtual UniqueHandle Lookup(const Slice& key, CacheBehavior caching) OVERRIDE {
     const uint32_t hash = HashSlice(key);
-    return shards_[Shard(hash)]->Lookup(key, hash, caching == EXPECT_IN_CACHE);
+    return UniqueHandle(
+        shards_[Shard(hash)]->Lookup(key, hash, caching == EXPECT_IN_CACHE),
+        Cache::HandleDeleter(this));
   }
   virtual void Release(Handle* handle) OVERRIDE {
     LRUHandle* h = reinterpret_cast<LRUHandle*>(handle);
@@ -551,11 +555,11 @@ class ShardedLRUCache : public Cache {
     const uint32_t hash = HashSlice(key);
     shards_[Shard(hash)]->Erase(key, hash);
   }
-  virtual Slice Value(Handle* handle) OVERRIDE {
-    return reinterpret_cast<LRUHandle*>(handle)->value();
+  virtual Slice Value(const UniqueHandle& handle) const OVERRIDE {
+    return reinterpret_cast<const LRUHandle*>(handle.get())->value();
   }
-  virtual uint8_t* MutableValue(PendingHandle* handle) OVERRIDE {
-    return reinterpret_cast<LRUHandle*>(handle)->val_ptr();
+  virtual uint8_t* MutableValue(UniquePendingHandle* handle) OVERRIDE {
+    return reinterpret_cast<LRUHandle*>(handle->get())->val_ptr();
   }
 
   virtual void SetMetrics(unique_ptr<CacheMetrics> metrics) OVERRIDE {
