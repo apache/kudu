@@ -21,11 +21,14 @@ import org.apache.kudu.client.AlterTableOptions
 import org.apache.kudu.client.SessionConfiguration.FlushMode
 import org.apache.kudu.spark.kudu.KuduContext
 import org.apache.kudu.spark.kudu.RowConverter
+import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.SparkSession
 import org.apache.yetus.audience.InterfaceAudience
 import org.apache.yetus.audience.InterfaceStability
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+
+import scala.collection.JavaConverters._
 
 /**
  * The main class for a Kudu restore spark job.
@@ -68,9 +71,7 @@ object KuduRestore {
 
         val backupSchema = io.dataSchema(TableMetadata.getKuduSchema(backup.metadata))
         val rowActionCol = backupSchema.fields.last.name
-
         val table = context.syncClient.openTable(restoreName)
-        val restoreSchema = io.dataSchema(table.getSchema)
 
         var data = session.sqlContext.read
           .format(backup.metadata.getDataFormat)
@@ -80,6 +81,10 @@ object KuduRestore {
           // rows from a full backup, which don't have a row action, are upserted.
           .na
           .fill(RowAction.UPSERT.getValue, Seq(rowActionCol))
+
+        // Adjust for dropped and renamed columns.
+        data = adjustSchema(data, backup.metadata, lastMetadata, rowActionCol)
+        val restoreSchema = data.schema
 
         // Write the data to Kudu.
         data.queryExecution.toRdd.foreachPartition { internalRows =>
@@ -149,6 +154,41 @@ object KuduRestore {
       options.addRangePartition(lower, upper)
       context.syncClient.alterTable(restoreName, options)
     })
+  }
+
+  /**
+   * Returns a modified DataFrame with columns adjusted to match the lastMetadata.
+   */
+  private def adjustSchema(
+      df: DataFrame,
+      currentMetadata: TableMetadataPB,
+      lastMetadata: TableMetadataPB,
+      rowActionCol: String): DataFrame = {
+    log.info("Adjusting columns to handle alterations")
+    val idToName = lastMetadata.getColumnIdsMap.asScala.map(_.swap)
+    // Ignore the rowActionCol, which isn't a real column.
+    val currentColumns = currentMetadata.getColumnIdsMap.asScala.filter(_._1 != rowActionCol)
+    var result = df
+    // First drop all the columns that no longer exist.
+    // This is required to be sure a rename doesn't collide with an old column.
+    currentColumns.foreach {
+      case (colName, id) =>
+        if (!idToName.contains(id)) {
+          // If the last metadata doesn't contain the id, the column is dropped.
+          log.info(s"Dropping the column $colName from backup data")
+          result = result.drop(colName)
+        }
+    }
+    // Then rename all the columns that were renamed in the last metadata.
+    currentColumns.foreach {
+      case (colName, id) =>
+        if (idToName.contains(id) && idToName(id) != colName) {
+          // If the final name doesn't match the current name, the column is renamed.
+          log.info(s"Renamed the column $colName to ${idToName(id)} in backup data")
+          result = result.withColumnRenamed(colName, idToName(id))
+        }
+    }
+    result
   }
 
   def main(args: Array[String]): Unit = {

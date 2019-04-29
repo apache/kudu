@@ -26,6 +26,8 @@ import org.apache.kudu.client.PartitionSchema.HashBucketSchema
 import org.apache.kudu.client._
 import org.apache.kudu.ColumnSchema
 import org.apache.kudu.Schema
+import org.apache.kudu.Type
+import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder
 import org.apache.kudu.spark.kudu._
 import org.apache.kudu.test.CapturingLogAppender
 import org.apache.kudu.test.RandomUtils
@@ -268,6 +270,83 @@ class TestKuduBackup extends KuduTestSuite {
 
     backupAndValidateTable(tableName, rowCount)
     restoreAndValidateTable(tableName, rowCount)
+  }
+
+  @Test
+  def testColumnAlterHandling(): Unit = {
+    // Create a basic table.
+    val tableName = "testColumnAlterHandling"
+    val columns = List(
+      new ColumnSchemaBuilder("key", Type.INT32).key(true).build(),
+      new ColumnSchemaBuilder("col_a", Type.STRING).build(),
+      new ColumnSchemaBuilder("col_b", Type.STRING).build(),
+      new ColumnSchemaBuilder("col_c", Type.STRING).build(),
+      new ColumnSchemaBuilder("col_d", Type.STRING).build()
+    )
+    val schema = new Schema(columns.asJava)
+    val options = new CreateTableOptions()
+      .setRangePartitionColumns(List("key").asJava)
+    var table = kuduClient.createTable(tableName, schema, options)
+    val session = kuduClient.newSession()
+
+    // Insert some rows and take a full backup.
+    Range(0, 10).foreach { i =>
+      val insert = table.newInsert
+      val row = insert.getRow
+      row.addInt("key", i)
+      row.addString("col_a", s"a$i")
+      row.addString("col_b", s"b$i")
+      row.addString("col_c", s"c$i")
+      row.addString("col_d", s"d$i")
+      session.apply(insert)
+    }
+    backupAndValidateTable(tableName, 10, false)
+
+    // Rename col_a to col_1 and add a new col_a to ensure the column id's and defaults
+    // work correctly. Also drop col_d and rename col_c to ensure collisions on renaming
+    // columns don't occur when processing columns from left to right.
+    kuduClient.alterTable(
+      tableName,
+      new AlterTableOptions()
+        .renameColumn("col_a", "col_1")
+        .addColumn(new ColumnSchemaBuilder("col_a", Type.STRING)
+          .defaultValue("default")
+          .build())
+        .dropColumn("col_b")
+        .dropColumn("col_d")
+        .renameColumn("col_c", "col_d")
+    )
+
+    // Insert more rows and take an incremental backup
+    table = kuduClient.openTable(tableName)
+    Range(10, 20).foreach { i =>
+      val insert = table.newInsert
+      val row = insert.getRow
+      row.addInt("key", i)
+      row.addString("col_1", s"a$i")
+      row.addString("col_d", s"c$i")
+      session.apply(insert)
+    }
+    backupAndValidateTable(tableName, 10, true)
+
+    // Restore the table and validate.
+    doRestore(createRestoreOptions(Seq(tableName)))
+
+    val restoreTable = kuduClient.openTable(s"$tableName-restore")
+    val scanner = kuduClient.newScannerBuilder(restoreTable).build()
+    val rows = scanner.asScala.toSeq
+
+    // Validate there are still 20 rows.
+    assertEquals(20, rows.length)
+    // Validate col_b is dropped from all rows.
+    assertTrue(rows.forall(!_.getSchema.hasColumn("col_b")))
+    // Validate the existing and renamed columns have the expected set of values.
+    val expectedSet = Range(0, 20).toSet
+    assertEquals(expectedSet, rows.map(_.getInt("key")).toSet)
+    assertEquals(expectedSet.map(i => s"a$i"), rows.map(_.getString("col_1")).toSet)
+    assertEquals(expectedSet.map(i => s"c$i"), rows.map(_.getString("col_d")).toSet)
+    // Validate the new col_a has all defaults.
+    assertTrue(rows.forall(_.getString("col_a") == "default"))
   }
 
   def createRandomTable(): KuduTable = {
