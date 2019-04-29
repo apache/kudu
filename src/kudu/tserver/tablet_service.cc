@@ -1750,17 +1750,19 @@ void TabletServiceImpl::SplitKeyRange(const SplitKeyRangeRequestPB* req,
   TRACE_EVENT1("tserver", "TabletServiceImpl::SplitKeyRange",
                "tablet_id", req->tablet_id());
   DVLOG(3) << "Received SplitKeyRange RPC: " << SecureDebugString(*req);
-  TokenPB token;
+
+  scoped_refptr<TabletReplica> replica;
+  if (!LookupRunningTabletReplicaOrRespond(server_->tablet_manager(), req->tablet_id(), resp,
+                                           context, &replica)) {
+    return;
+  }
+
   if (FLAGS_tserver_enforce_access_control) {
+    TokenPB token;
     if (!VerifyAuthzTokenOrRespond(server_->token_verifier(), *req, context, &token)) {
       return;
     }
     const auto& privilege = token.authz().table_privilege();
-    scoped_refptr<TabletReplica> replica;
-    if (!LookupRunningTabletReplicaOrRespond(server_->tablet_manager(), req->tablet_id(), resp,
-                                             context, &replica)) {
-      return;
-    }
     if (!CheckMatchingTableIdOrRespond(privilege, replica->tablet_metadata()->table_id(),
                                        "SplitKeyRange", context)) {
       return;
@@ -1813,11 +1815,6 @@ void TabletServiceImpl::SplitKeyRange(const SplitKeyRangeRequestPB* req,
     }
   }
 
-  scoped_refptr<TabletReplica> replica;
-  if (!LookupRunningTabletReplicaOrRespond(server_->tablet_manager(), req->tablet_id(), resp,
-                                           context, &replica)) {
-    return;
-  }
   shared_ptr<Tablet> tablet;
   TabletServerErrorPB::Code error_code;
   Status s = GetTabletRef(replica, &tablet, &error_code);
