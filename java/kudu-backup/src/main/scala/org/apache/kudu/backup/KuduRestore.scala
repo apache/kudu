@@ -18,6 +18,9 @@ package org.apache.kudu.backup
 
 import org.apache.kudu.backup.Backup.TableMetadataPB
 import org.apache.kudu.client.AlterTableOptions
+import org.apache.kudu.client.KuduPartitioner
+import org.apache.kudu.client.NonCoveredRangeException
+import org.apache.kudu.client.Partition
 import org.apache.kudu.client.SessionConfiguration.FlushMode
 import org.apache.kudu.spark.kudu.KuduContext
 import org.apache.kudu.spark.kudu.RowConverter
@@ -54,8 +57,9 @@ object KuduRestore {
       val lastMetadata = graph.restorePath.backups.last.metadata
       graph.restorePath.backups.foreach { backup =>
         log.info(s"Restoring table $tableName from path: ${backup.path}")
-        val isFullRestore = backup.metadata.getFromMs == 0
-        val restoreName = s"${backup.metadata.getTableName}${options.tableSuffix}"
+        val metadata = backup.metadata
+        val isFullRestore = metadata.getFromMs == 0
+        val restoreName = s"${metadata.getTableName}${options.tableSuffix}"
 
         // TODO (KUDU-2788): Store the full metadata to compare/validate for each applied partial.
 
@@ -68,13 +72,12 @@ object KuduRestore {
             createTableRangePartitionByRangePartition(restoreName, lastMetadata, context)
           }
         }
-
-        val backupSchema = io.dataSchema(TableMetadata.getKuduSchema(backup.metadata))
+        val backupSchema = io.dataSchema(TableMetadata.getKuduSchema(metadata))
         val rowActionCol = backupSchema.fields.last.name
         val table = context.syncClient.openTable(restoreName)
 
         var data = session.sqlContext.read
-          .format(backup.metadata.getDataFormat)
+          .format(metadata.getDataFormat)
           .schema(backupSchema)
           .load(backup.path.toString)
           // Default the the row action column with a value of "UPSERT" so that the
@@ -83,32 +86,36 @@ object KuduRestore {
           .fill(RowAction.UPSERT.getValue, Seq(rowActionCol))
 
         // Adjust for dropped and renamed columns.
-        data = adjustSchema(data, backup.metadata, lastMetadata, rowActionCol)
+        data = adjustSchema(data, metadata, lastMetadata, rowActionCol)
         val restoreSchema = data.schema
 
         // Write the data to Kudu.
         data.queryExecution.toRdd.foreachPartition { internalRows =>
           val table = context.syncClient.openTable(restoreName)
           val converter = new RowConverter(table.getSchema, restoreSchema, false)
+          val partitioner = createPartitionFilter(metadata, lastMetadata)
           val session = context.syncClient.newSession
           session.setFlushMode(FlushMode.AUTO_FLUSH_BACKGROUND)
-          try {
-            for (internalRow <- internalRows) {
-              // Convert the InternalRows to Rows.
-              // This avoids any corruption as reported in SPARK-26880.
-              val row = converter.toRow(internalRow)
-              // Get the operation type based on the row action column.
-              // This will always be the last column in the row.
-              val rowActionValue = row.getByte(row.length - 1)
-              val rowAction = RowAction.fromValue(rowActionValue)
-              // Generate an operation based on the row action.
-              val operation = rowAction match {
-                case RowAction.UPSERT => table.newUpsert()
-                case RowAction.DELETE => table.newDelete()
-                case _ => throw new IllegalStateException(s"Unsupported RowAction: $rowAction")
-              }
-              // Convert the Spark row to a partial row and set it on the operation.
-              val partialRow = converter.toPartialRow(row)
+          try for (internalRow <- internalRows) {
+            // Convert the InternalRows to Rows.
+            // This avoids any corruption as reported in SPARK-26880.
+            val row = converter.toRow(internalRow)
+            // Get the operation type based on the row action column.
+            // This will always be the last column in the row.
+            val rowActionValue = row.getByte(row.length - 1)
+            val rowAction = RowAction.fromValue(rowActionValue)
+            // Generate an operation based on the row action.
+            val operation = rowAction match {
+              case RowAction.UPSERT => table.newUpsert()
+              case RowAction.DELETE => table.newDelete()
+              case _ => throw new IllegalStateException(s"Unsupported RowAction: $rowAction")
+            }
+            // Convert the Spark row to a partial row and set it on the operation.
+            val partialRow = converter.toPartialRow(row)
+            // Drop rows that are not covered by the partitioner. This is how we
+            // detect a partition which was dropped between backups and filter
+            // out the rows from that dropped partition.
+            if (partitioner.isCovered(partialRow)) {
               operation.setRow(partialRow)
               session.apply(operation)
             }
@@ -189,6 +196,39 @@ object KuduRestore {
         }
     }
     result
+  }
+
+  /**
+   * Creates a KuduPartitioner that can be used to filter out rows for the current
+   * backup data which no longer apply to partitions in the last metadata.
+   *
+   * In order to do this, tablet metadata are compared in the current metadata to the
+   * last metadata. Tablet IDs that are not in the final metadata are filtered out and
+   * the remaining tablet metadata is used to create a KuduPartitioner. The resulting
+   * KuduPartitioner can then be used to filter out rows that are no longer valid
+   * because those rows will fall into a non-covered range.
+   */
+  private def createPartitionFilter(
+      currentMetadata: TableMetadataPB,
+      lastMetadata: TableMetadataPB): KuduPartitioner = {
+    val lastTablets = lastMetadata.getTabletsMap
+    val validTablets =
+      currentMetadata.getTabletsMap.asScala.flatMap {
+        case (id, pm) =>
+          if (lastTablets.containsKey(id)) {
+            // Create the partition object needed for the KuduPartitioner.
+            val partition = new Partition(
+              pm.getPartitionKeyStart.toByteArray,
+              pm.getPartitionKeyEnd.toByteArray,
+              pm.getHashBucketsList)
+            Some((id, partition))
+          } else {
+            // Ignore tablets that are no longer valid
+            None
+          }
+      }
+    val partitionSchema = TableMetadata.getPartitionSchema(currentMetadata)
+    new KuduPartitioner(partitionSchema, validTablets.asJava)
   }
 
   def main(args: Array[String]): Unit = {

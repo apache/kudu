@@ -23,7 +23,7 @@ import org.apache.yetus.audience.InterfaceAudience;
  * Exception indicating that an operation attempted to access a non-covered range partition.
  */
 @InterfaceAudience.Private
-class NonCoveredRangeException extends NonRecoverableException {
+public class NonCoveredRangeException extends NonRecoverableException {
   private final byte[] nonCoveredRangeStart;
   private final byte[] nonCoveredRangeEnd;
 

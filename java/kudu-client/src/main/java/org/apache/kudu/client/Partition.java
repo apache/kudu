@@ -63,7 +63,7 @@ public class Partition implements Comparable<Partition> {
    * @param partitionKeyEnd the end partition key
    * @param hashBuckets the partition hash buckets
    */
-  Partition(byte[] partitionKeyStart,
+  public Partition(byte[] partitionKeyStart,
             byte[] partitionKeyEnd,
             List<Integer> hashBuckets) {
     this.partitionKeyStart = partitionKeyStart;

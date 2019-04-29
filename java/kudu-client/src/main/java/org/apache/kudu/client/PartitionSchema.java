@@ -56,7 +56,7 @@ public class PartitionSchema {
    * @param hashBucketSchemas the hash bucket schemas
    * @param schema the table schema
    */
-  PartitionSchema(RangeSchema rangeSchema,
+  public PartitionSchema(RangeSchema rangeSchema,
                   List<HashBucketSchema> hashBucketSchemas,
                   Schema schema) {
     this.rangeSchema = rangeSchema;
@@ -105,7 +105,7 @@ public class PartitionSchema {
   public static class RangeSchema {
     private final List<Integer> columns;
 
-    RangeSchema(List<Integer> columns) {
+    public RangeSchema(List<Integer> columns) {
       this.columns = columns;
     }
 
@@ -133,7 +133,7 @@ public class PartitionSchema {
     private int numBuckets;
     private int seed;
 
-    HashBucketSchema(List<Integer> columnIds, int numBuckets, int seed) {
+    public HashBucketSchema(List<Integer> columnIds, int numBuckets, int seed) {
       this.columnIds = columnIds;
       this.numBuckets = numBuckets;
       this.seed = seed;

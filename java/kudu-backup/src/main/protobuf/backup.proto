@@ -90,9 +90,17 @@ message HashPartitionMetadataPB {
 
 // Maps to PartitionSchema class.
 // The fields are effectively 1 to 1 mappings of those in PartitionSchema.
-message PartitionMetadataPB {
+message PartitionSchemaMetadataPB {
   repeated HashPartitionMetadataPB hash_partitions = 1;
   RangePartitionMetadataPB range_partitions = 2;
+}
+
+// Maps to Partition class.
+// The fields are effectively 1 to 1 mappings of those in Partition.
+message PartitionMetadataPB {
+  bytes partition_key_start = 1;
+  bytes partition_key_end = 2;
+  repeated int32 hash_buckets = 3;
 }
 
 // Represents the metadata of a table backup. This metadata is output
@@ -118,8 +126,13 @@ message TableMetadataPB {
   // The metadata for the table's columns.
   repeated ColumnMetadataPB columns = 8;
   // A map of column name to internal column id.
+  // This is validation only and not used when creating the restored table.
   // This is useful for detecting dropped and added columns.
   map<string, int32> column_ids = 9;
-  // The metadata for the table's partitions.
-  PartitionMetadataPB partitions = 10;
+  // The metadata for the table's partition schema.
+  PartitionSchemaMetadataPB partitions = 10;
+  // A map of tablet ID to the partition start key.
+  // This is validation only and not used when creating the restored table.
+  // This is useful for detecting dropped and added partitions.
+  map<string, PartitionMetadataPB> tablets = 11;
 }

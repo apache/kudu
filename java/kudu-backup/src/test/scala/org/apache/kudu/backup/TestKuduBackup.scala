@@ -349,6 +349,68 @@ class TestKuduBackup extends KuduTestSuite {
     assertTrue(rows.forall(_.getString("col_a") == "default"))
   }
 
+  @Test
+  def testPartitionAlterHandling(): Unit = {
+    // Create a basic table with 10 row range partitions covering 10 through 40.
+    val tableName = "testColumnAlterHandling"
+    val ten = createPartitionRow(10)
+    val twenty = createPartitionRow(20)
+    val thirty = createPartitionRow(30)
+    val fourty = createPartitionRow(40)
+    val options = new CreateTableOptions()
+      .setRangePartitionColumns(List("key").asJava)
+      .addRangePartition(ten, twenty)
+      .addRangePartition(twenty, thirty)
+      .addRangePartition(thirty, fourty)
+    var table = kuduClient.createTable(tableName, schema, options)
+
+    // Fill the partitions with rows.
+    insertRows(table, 30, 10)
+
+    // Run a full backup on the table.
+    backupAndValidateTable(tableName, 30, false)
+
+    // Drop partition 10-20, drop and re-add partition 20-30, add partition 0-10 and 40-50.
+    // (drops 20 total rows)
+    val zero = createPartitionRow(0)
+    val fifty = createPartitionRow(50)
+    kuduClient.alterTable(
+      tableName,
+      new AlterTableOptions()
+        .dropRangePartition(ten, twenty)
+        .dropRangePartition(twenty, thirty)
+        .addRangePartition(twenty, thirty)
+        .addRangePartition(zero, ten)
+        .addRangePartition(fourty, fifty)
+    )
+
+    // Add some rows back to the new partitions (adds 15 total rows)
+    insertRows(table, 5, 0)
+    insertRows(table, 5, 20)
+    insertRows(table, 5, 40)
+
+    // Run an incremental backup on the table.
+    backupAndValidateTable(tableName, 15, true)
+
+    // Restore the table and validate.
+    doRestore(createRestoreOptions(Seq(tableName)))
+
+    val restoreTable = kuduClient.openTable(s"$tableName-restore")
+    val scanner = kuduClient.newScannerBuilder(restoreTable).build()
+    val rows = scanner.asScala.toList.map(_.getInt("key")).sorted
+    val expectedKeys =
+      (Range(0, 5) ++ Range(20, 25) ++ Range(30, 40) ++ Range(40, 45)).toList.sorted
+
+    assertEquals(25, rows.length)
+    assertEquals(expectedKeys, rows)
+  }
+
+  def createPartitionRow(value: Int): PartialRow = {
+    val row = schema.newPartialRow()
+    row.addInt("key", value)
+    row
+  }
+
   def createRandomTable(): KuduTable = {
     val columnCount = random.nextInt(50) + 1 // At least one column.
     val keyColumnCount = random.nextInt(columnCount) + 1 // At least one key.

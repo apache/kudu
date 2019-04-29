@@ -19,6 +19,7 @@ package org.apache.kudu.backup
 import java.math.BigDecimal
 import java.util
 
+import com.google.protobuf.ByteString
 import com.google.protobuf.StringValue
 import org.apache.commons.net.util.Base64
 import org.apache.kudu.backup.Backup._
@@ -29,14 +30,17 @@ import org.apache.kudu.ColumnTypeAttributes.ColumnTypeAttributesBuilder
 import org.apache.kudu.client.CreateTableOptions
 import org.apache.kudu.client.KuduTable
 import org.apache.kudu.client.PartialRow
+import org.apache.kudu.client.PartitionSchema
 import org.apache.kudu.ColumnSchema
 import org.apache.kudu.Schema
 import org.apache.kudu.Type
+import org.apache.kudu.client.KuduPartitioner.KuduPartitionerBuilder
+import org.apache.kudu.client.PartitionSchema.HashBucketSchema
+import org.apache.kudu.client.PartitionSchema.RangeSchema
 import org.apache.yetus.audience.InterfaceAudience
 import org.apache.yetus.audience.InterfaceStability
 
 import scala.collection.JavaConverters._
-import scala.collection.mutable
 
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
@@ -68,6 +72,18 @@ object TableMetadata {
       builder.build()
     }
 
+    val partitioner = new KuduPartitionerBuilder(table).build()
+    val tablets = partitioner.getTabletMap.asScala.map {
+      case (id, partition) =>
+        val metadata = PartitionMetadataPB
+          .newBuilder()
+          .setPartitionKeyStart(ByteString.copyFrom(partition.getPartitionKeyStart))
+          .setPartitionKeyEnd(ByteString.copyFrom(partition.getPartitionKeyStart))
+          .addAllHashBuckets(partition.getHashBuckets)
+          .build()
+        (id, metadata)
+    }
+
     TableMetadataPB
       .newBuilder()
       .setVersion(MetadataVersion)
@@ -79,7 +95,8 @@ object TableMetadata {
       .addAllColumns(columns.asJava)
       .putAllColumnIds(columnIds)
       .setNumReplicas(table.getNumReplicas)
-      .setPartitions(getPartitionMetadata(table))
+      .setPartitions(getPartitionSchemaMetadata(table))
+      .putAllTablets(tablets.asJava)
       .build()
   }
 
@@ -92,10 +109,10 @@ object TableMetadata {
       .build()
   }
 
-  private def getPartitionMetadata(table: KuduTable): PartitionMetadataPB = {
+  private def getPartitionSchemaMetadata(table: KuduTable): PartitionSchemaMetadataPB = {
     val hashPartitions = getHashPartitionsMetadata(table)
     val rangePartitions = getRangePartitionMetadata(table)
-    PartitionMetadataPB
+    PartitionSchemaMetadataPB
       .newBuilder()
       .addAllHashPartitions(hashPartitions.asJava)
       .setRangePartitions(rangePartitions)
@@ -199,7 +216,9 @@ object TableMetadata {
       }
       builder.build()
     }
-    new Schema(columns.asJava)
+    val toId = metadata.getColumnIdsMap.asScala
+    val colIds = metadata.getColumnsList.asScala.map(_.getName).map(toId)
+    new Schema(columns.asJava, colIds.asJava)
   }
 
   private def getValue(row: PartialRow, columnName: String, colType: Type): Any = {
@@ -306,5 +325,18 @@ object TableMetadata {
       val upper = getPartialRow(b.getUpperBoundsList.asScala, schema)
       (lower, upper)
     }
+  }
+
+  def getPartitionSchema(metadata: TableMetadataPB): PartitionSchema = {
+    val colNameToId = metadata.getColumnIdsMap.asScala
+    val schema = getKuduSchema(metadata)
+    val rangeIds =
+      metadata.getPartitions.getRangePartitions.getColumnNamesList.asScala.map(colNameToId)
+    val rangeSchema = new RangeSchema(rangeIds.asJava)
+    val hashSchemas = metadata.getPartitions.getHashPartitionsList.asScala.map { hp =>
+      val colIds = hp.getColumnNamesList.asScala.map(colNameToId)
+      new HashBucketSchema(colIds.asJava, hp.getNumBuckets, hp.getSeed)
+    }
+    new PartitionSchema(rangeSchema, hashSchemas.asJava, schema)
   }
 }
