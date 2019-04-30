@@ -62,8 +62,11 @@ tasks.withType(Test) {
   systemProperty "java.net.preferIPv4Stack", true
   systemProperty "java.security.egd", "file:/dev/urandom" // Improve RNG generation speed.
 
-  // Set kuduBinDir to the binaries to use with the MiniKuduCluster.
-  systemProperty "kuduBinDir", propertyWithDefault("kuduBinDir", "$project.rootDir/../build/latest/bin")
+  // Only use the local KuduBinDir if we are not using the kudu-binary jar.
+  if (!propertyExists("useBinJar")) {
+    // Set kuduBinDir to the binaries to use with the MiniKuduCluster.
+    systemProperty "kuduBinDir", propertyWithDefault("kuduBinDir", "$project.rootDir/../build/latest/bin")
+  }
 
   // Set testRandomSeed to override the seed for the PRNG exposed in
   // RandomUtils.java and used by various tests. This is useful when trying to

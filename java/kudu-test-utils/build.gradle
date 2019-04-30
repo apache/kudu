@@ -28,6 +28,13 @@ dependencies {
   compileUnshaded libs.junit
   compileUnshaded libs.slf4jApi
 
+  // Support using any kudu-binary jar for tests via `-PuseBinJar=<version>`.
+  if (propertyExists("useBinJar")) {
+    apply plugin: "com.google.osdetector"
+    def jarVersion = propertyWithDefault("useBinJar", project.version)
+    runtime "org.apache.kudu:kudu-binary:$jarVersion:${osdetector.classifier}"
+  }
+
   // Needed for CapturingLogAppender. Optional otherwise.
   optional libs.log4j
   optional libs.slf4jLog4j12
