@@ -5251,7 +5251,11 @@ TEST_F(ClientTest, TestServerTooBusyRetry) {
 
   // Introduce latency in each scan to increase the likelihood of
   // ERROR_SERVER_TOO_BUSY.
+#ifdef THREAD_SANITIZER
+  FLAGS_scanner_inject_latency_on_each_batch_ms = 100;
+#else
   FLAGS_scanner_inject_latency_on_each_batch_ms = 10;
+#endif
 
   // Reduce the service queue length of each tablet server in order to increase
   // the likelihood of ERROR_SERVER_TOO_BUSY.
