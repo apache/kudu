@@ -232,5 +232,5 @@ HADOOP_SOURCE=$TP_SOURCE_DIR/$HADOOP_NAME
 # maven profile. For example, `mvn clean install -Pdist`. After a successful build,
 # the tarball will be available under sentry-dist/target.
 SENTRY_VERSION=505b42e81a9d85c4ebe8db3f48ad7a6e824a5db5
-SENTRY_NAME=apache-sentry-$SENTRY_VERSION-bin
+SENTRY_NAME=sentry-$SENTRY_VERSION
 SENTRY_SOURCE=$TP_SOURCE_DIR/$SENTRY_NAME
