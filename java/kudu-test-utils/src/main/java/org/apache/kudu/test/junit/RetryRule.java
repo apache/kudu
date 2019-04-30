@@ -17,6 +17,7 @@
 package org.apache.kudu.test.junit;
 
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
 
 import org.apache.kudu.test.CapturingToFileLogAppender;
 import org.apache.yetus.audience.InterfaceAudience;
@@ -162,6 +163,17 @@ public class RetryRule implements TestRule {
       reporter.tryReportResult(humanReadableTestName, result, logFile);
     }
 
+    private boolean wasClockUnsynchronized(File output) {
+      ProcessBuilder pb = new ProcessBuilder(ImmutableList.of(
+          "zgrep", "-q", "Clock considered unsynchronized", output.getPath()));
+      try {
+        Process p = pb.start();
+        return p.waitFor() == 0;
+      } catch (InterruptedException | IOException e) {
+        throw new RuntimeException(e);
+      }
+    }
+
     private void doOneAttemptAndReport(int attempt) throws Throwable {
       try (CapturingToFileLogAppender capturer =
            new CapturingToFileLogAppender(/*useGzip=*/ true)) {
@@ -184,7 +196,15 @@ public class RetryRule implements TestRule {
             LOG.error("{}: failed attempt {}", humanReadableTestName, attempt, t);
           }
           capturer.finish();
-          report(ResultReporter.Result.FAILURE, capturer.getOutputFile());
+
+          // We sometimes have flaky infrastructure where NTP is broken. In that
+          // case do not report the test failure.
+          File output = capturer.getOutputFile();
+          if (wasClockUnsynchronized(output)) {
+            LOG.info("Not reporting test that failed due to NTP issues.");
+          } else {
+            report(ResultReporter.Result.FAILURE, output);
+          }
           throw t;
         }
       }
