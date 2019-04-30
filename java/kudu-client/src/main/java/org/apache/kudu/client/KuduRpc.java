@@ -451,7 +451,7 @@ public abstract class KuduRpc<R> {
   final class RpcTimeoutTask implements TimerTask {
     @Override
     public void run(final Timeout timeout) {
-      Status statusTimedOut = Status.TimedOut("can not complete before timeout: " + KuduRpc.this);
+      Status statusTimedOut = Status.TimedOut("cannot complete before timeout: " + KuduRpc.this);
       KuduRpc.this.errback(new NonRecoverableException(statusTimedOut));
     }
   }

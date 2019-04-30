@@ -39,7 +39,7 @@ public class TestTimeouts {
   public KuduTestHarness harness = new KuduTestHarness();
 
   /**
-   * This test case tries different methods that should all timeout, while relying on the client to
+   * This test case tries different methods that should all time out, while relying on the client to
    * pass down the timeouts to the session and scanner.
    * TODO(aserbin) this test is flaky; add delays on the server side to make it stable
    */
@@ -54,7 +54,11 @@ public class TestTimeouts {
         lowTimeoutsClient.listTabletServers();
         fail("Should have timed out");
       } catch (KuduException ex) {
-        // Expected.
+        // The operation can time out directly, leading to a TimedOut status, or it can time out
+        // while trying to contact each of the masters (e.g. while trying to find the leader master
+        // in the case where there is a master election).
+        Status failureStatus = ex.getStatus();
+        assertTrue(failureStatus.isTimedOut() || failureStatus.isServiceUnavailable());
       }
 
       harness.getClient().createTable(TABLE_NAME, getBasicSchema(), getBasicCreateTableOptions());
@@ -73,7 +77,9 @@ public class TestTimeouts {
         lowTimeoutScanner.nextRows();
         fail("Should have timed out");
       } catch (KuduException ex) {
-        assertTrue(ex.getStatus().isTimedOut());
+        // See the previous catch block.
+        Status failureStatus = ex.getStatus();
+        assertTrue(failureStatus.isTimedOut() || failureStatus.isServiceUnavailable());
       }
     }
   }
