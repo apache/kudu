@@ -33,6 +33,8 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/slice.h"
+#include "kudu/util/status.h"
+#include "kudu/util/thread.h"
 #include "kudu/util/ttl_cache_metrics.h"
 
 namespace kudu {
@@ -111,24 +113,45 @@ class TTLCache {
     Cache::UniqueHandle handle_;
   };
 
-  // Create a new TTL cache with the specified capacity and name. The cache's
-  // metric gauges are attached to the metric entity specified via the 'entity'
-  // parameter if the parameter is non-null.
+  // Create a new TTL cache with the specified capacity and name. All the
+  // entries put into the cache have the same TTL specified by the 'entry_ttl'
+  // parameter. If the 'scrubbing_period' parameter is provided with valid
+  // time interval, the cache starts a periodic scrubbing thread that evicts
+  // expired entries from the cache.
   TTLCache(size_t capacity_bytes,
            MonoDelta entry_ttl,
-           const std::string& cache_name = "")
+           MonoDelta scrubbing_period = {},
+           size_t max_scrubbed_entries_per_pass_num = 0,
+           const std::string& cache_name = "ttl-cache")
       : entry_ttl_(entry_ttl),
+        scrubbing_period_(scrubbing_period),
+        max_scrubbed_entries_per_pass_num_(max_scrubbed_entries_per_pass_num),
         metrics_(nullptr),
         eviction_cb_(new EvictionCallback(this)),
         cache_(NewCache<Cache::EvictionPolicy::FIFO>(capacity_bytes,
-                                                     cache_name)) {
+                                                     cache_name)),
+        scrubbing_thread_running_(0) {
     VLOG(1) << strings::Substitute(
         "constructed TTL cache '$0' with capacity of $1",
         cache_name, capacity_bytes);
+    if (scrubbing_period_.Initialized()) {
+      scrubbing_thread_running_.Reset(1);
+      CHECK_OK(Thread::Create(
+          "cache", strings::Substitute("$0-scrubbing", cache_name),
+          &TTLCache::ScrubExpiredEntries, this, &scrubbing_thread_));
+      VLOG(1) << strings::Substitute(
+          "started scrubbing thread for TTL cache '$0' with period of $1",
+          cache_name, scrubbing_period_.ToString());
+    }
   }
 
   // This class is not intended to be inherited from.
-  ~TTLCache() = default;
+  ~TTLCache() {
+    if (scrubbing_period_.Initialized()) {
+      scrubbing_thread_running_.CountDown();
+      scrubbing_thread_->Join();
+    }
+  }
 
   // Retrieve an entry from the cache. If a non-expired entry exists
   // for the specified key, this method returns corresponding handle.
@@ -232,21 +255,86 @@ class TTLCache {
     DISALLOW_COPY_AND_ASSIGN(EvictionCallback);
   };
 
+  // Periodically search for expired entries in the cache and remove them.
+  // This method is called from a separate thread 'scrubbing_thread_'.
+  void ScrubExpiredEntries() {
+    MonoTime time_now;
+
+    // TODO(aserbin): clarify why making this 'static const' behaves
+    //                incorrectly when compiled with LLVM 6.0.0 at CentOS 6.6
+    //                with devtoolset-3. However, it works as intended when
+    //                compiled with LLVM 6.0.0 at Mac OS X 10.11.6.
+    const Cache::InvalidationControl ctl = {
+      [&time_now](Slice /* key */, Slice value) {
+        DCHECK_EQ(sizeof(Entry), value.size());
+        const auto* entry = reinterpret_cast<const Entry*>(value.data());
+        // The entry expiration time is recorded in the entry's data. An entry
+        // is expired once current time passed the expiration time milestone.
+        return entry->exp_time > time_now;
+      },
+      [this](size_t valid_entry_count, size_t invalid_entry_count) {
+        // The TTL cache arranges its recency list in a FIFO manner: the
+        // oldest entries are in the very beginning of the list. All entries
+        // have the same TTL. All the entries in the recency list past
+        // a non-expired one must be not yet expired as well. So, when
+        // searching for expired entries, it doesn't make sense to continue
+        // iterating over the recency list once a non-expired entry
+        // has been encountered.
+        return valid_entry_count == 0 &&
+            (max_scrubbed_entries_per_pass_num_ == 0 ||
+             invalid_entry_count < max_scrubbed_entries_per_pass_num_);
+      }
+    };
+
+    while (!scrubbing_thread_running_.WaitFor(scrubbing_period_)) {
+      // Capture current time once, so the validity functor wouldn't need
+      // to call MonoTime::Now() for every entry being processed. That also
+      // makes the invalidation logic consistent with the FIFO-ordered
+      // recency list of the underlying cache: once a non-expired entry is
+      // encountered, it's guaranteed all the entries past it are non-expired
+      // as well. With advancing 'now' the latter contract would be broken.
+      time_now = MonoTime::Now();
+
+      const auto count = cache_->Invalidate(ctl);
+      VLOG(2) << strings::Substitute("invalidated $0 expired entries", count);
+    }
+  }
+
   // The validity interval for cached entries (see 'struct Entry' above).
   const MonoDelta entry_ttl_;
+
+  // The interval to run the 'scrubbing_thread_': that's the thread to scrub
+  // the cache of expired entries.
+  const MonoDelta scrubbing_period_;
+
+  // The maximum number of processed entries per one pass of the scrubbing.
+  // The scrubbing of the underlying cache assumes locking access to the cache's
+  // recency list, increasing contention with the concurrent usage of the cache.
+  // Limiting the number of entries to invalidate at once while holding the
+  // lock helps to reduce the contention.
+  const size_t max_scrubbed_entries_per_pass_num_;
 
   // A pointer to metrics specific to the TTL cache represented by this class.
   // The raw pointer is a duplicate of the pointer owned by the underlying FIFO
   // cache (see cache_ below).
   TTLCacheMetrics* metrics_;
 
-  // Invoked whenever a cached entry reaches zero references, i.e. it was
+  // Invoked whenever a cached entry reaches zero reference count, i.e. it was
   // removed from the cache and there aren't any other references
   // floating around.
   std::unique_ptr<Cache::EvictionCallback> eviction_cb_;
 
   // The underlying FIFO cache instance.
   std::unique_ptr<Cache> cache_;
+
+  // A synchronization primitive to communicate on running conditions between
+  // the 'scrubbing_thread_' thread and the main one.
+  CountDownLatch scrubbing_thread_running_;
+
+  // If 'scrubbing_period_' is set to a valid time interval, this thread
+  // periodically calls ScrubExpiredEntries() method until
+  // 'scrubbing_thread_running_' reaches 0.
+  scoped_refptr<Thread> scrubbing_thread_;
 
   DISALLOW_COPY_AND_ASSIGN(TTLCache);
 };

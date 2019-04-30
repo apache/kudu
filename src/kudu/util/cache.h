@@ -239,8 +239,8 @@ class Cache {
   struct InvalidationControl;
 
   // Invalidate cache's entries, effectively evicting non-valid ones from the
-  // cache. The invalidation process iterates over cache's recency list(s),
-  // from the oldest (less relevant) entries to the newest (more relevant) ones.
+  // cache. The invalidation process iterates over the cache's recency list(s),
+  // from best candidate for eviction to the worst.
   //
   // The provided control structure 'ctl' is responsible for the following:
   //   * determine whether an entry is valid or not

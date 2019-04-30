@@ -17,23 +17,29 @@
 
 #include "kudu/util/ttl_cache.h"
 
-#include <stdint.h>
-
+#include <algorithm>
+#include <atomic>
 #include <cstddef>
+#include <cstdint>
+#include <cstdlib>
 #include <memory>
+#include <set>
 #include <string>
-#include <utility>
+#include <thread>
+#include <vector>
 
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/integral_types.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/cache.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -52,8 +58,12 @@ METRIC_DECLARE_counter(test_ttl_cache_lookups);
 METRIC_DECLARE_counter(test_ttl_cache_misses);
 METRIC_DECLARE_gauge_uint64(test_ttl_cache_memory_usage);
 
+using std::atomic;
+using std::set;
 using std::string;
+using std::thread;
 using std::unique_ptr;
+using std::vector;
 using strings::Substitute;
 
 namespace kudu {
@@ -373,7 +383,7 @@ TEST_F(TTLCacheTest, Basic) {
   ASSERT_EQ(cache_capacity + 1, GetCacheUsage());
 }
 
-// Test invalidation of expired entries in the underlying cache.
+// Test the invalidation of expired entries in the underlying cache.
 TEST_F(TTLCacheTest, InvalidationOfExpiredEntries) {
   constexpr size_t cache_capacity = 512;
   const auto entry_ttl = MonoDelta::FromMilliseconds(250);
@@ -420,6 +430,171 @@ TEST_F(TTLCacheTest, InvalidationOfExpiredEntries) {
   ASSERT_EQ(cache_capacity / 2, cache.cache_->Invalidate(ctl));
   ASSERT_EQ(cache_capacity, GetCacheEvictionsExpired());
   ASSERT_EQ(cache_capacity / 2, GetCacheUsage());
+}
+
+// Verify the auto-invalidation of expired entries in TTLCache work as expected:
+// expired entries are removed with the expecting timing and valid entries stay.
+TEST_F(TTLCacheTest, AutoInvalidationOfEntries) {
+  constexpr size_t kCacheCapacity = 128;
+  constexpr size_t kHalfCacheCapacity = kCacheCapacity / 2;
+  const auto kEntryTtl = MonoDelta::FromMilliseconds(256);
+  const auto kScrubInterval = MonoDelta::FromMilliseconds(
+      kEntryTtl.ToMilliseconds() / 8);
+  const auto kEntryTtlThreeQuarters = MonoDelta::FromMilliseconds(
+      kEntryTtl.ToMilliseconds() * 3 / 4);
+
+  TTLTestCache cache(kCacheCapacity, kEntryTtl, kScrubInterval);
+  {
+    unique_ptr<TTLCacheTestMetrics> metrics(
+        new TTLCacheTestMetrics(metric_entity_));
+    cache.SetMetrics(std::move(metrics));
+  }
+
+  // Make sure the scrubber doesn't conflate non-expired entries with expired
+  // ones while scrubbing the cache.
+  for (auto i = 0; i < kHalfCacheCapacity; ++i) {
+    cache.Put(Substitute("1$0", i), unique_ptr<TestValue>(new TestValue(i)), 1);
+  }
+  SleepFor(kEntryTtlThreeQuarters);
+  for (auto i = 0; i < kHalfCacheCapacity; ++i) {
+    cache.Put(Substitute("2$0", i), unique_ptr<TestValue>(new TestValue(i)), 1);
+  }
+  ASSERT_EQ(kCacheCapacity, GetCacheUsage());
+  SleepFor(kEntryTtlThreeQuarters);
+
+  // Apart from the OS scheduler's anomalies, the scrubbing thread should run
+  // at least once at this point. Given the timing of adding the entries into
+  // the cache, half of the entries in the cache should have been invalidated,
+  // while the other half should stay.
+  ASSERT_EQ(kHalfCacheCapacity, GetCacheEvictionsExpired());
+  ASSERT_EQ(kHalfCacheCapacity, GetCacheUsage());
+
+  // Eventually, nothing should be in the cache.
+  ASSERT_EVENTUALLY([&]{
+    ASSERT_EQ(0, GetCacheUsage());
+    ASSERT_EQ(kCacheCapacity, GetCacheEvictionsExpired());
+  });
+}
+
+// Verify the auto-invalidation of expired entries in TTLCache work as
+// expected in the presence of oustanding handles to the entries which
+// are subject to invalidation by the scrubbing thread.
+TEST_F(TTLCacheTest, AutoInvalidationOfEntriesWithOutstandingReferences) {
+  constexpr size_t kCacheCapacity = 512;
+  constexpr size_t kHalfCacheCapacity = kCacheCapacity / 2;
+  const auto kEntryTtl = MonoDelta::FromMilliseconds(50);
+  const auto kScrubInterval = MonoDelta::FromMilliseconds(
+      kEntryTtl.ToMilliseconds() / 2);
+
+  // A TTL cache with auto-scrubbing thread that gets rid of expired entries
+  // with the frequency corresponding to a half of the TTL interval.
+  TTLTestCache cache(kCacheCapacity, kEntryTtl, kScrubInterval);
+  {
+    unique_ptr<TTLCacheTestMetrics> metrics(
+        new TTLCacheTestMetrics(metric_entity_));
+    cache.SetMetrics(std::move(metrics));
+  }
+
+  {
+    const set<string> selected_keys = {
+        "0", "2", "9", "99", "127", "128", "252", "255", };
+    vector<Handle> selected_handles;
+    selected_handles.reserve(selected_keys.size());
+    for (auto i = 0; i < kHalfCacheCapacity; ++i) {
+      const auto key = Substitute("$0", i);
+      auto h = cache.Put(key, unique_ptr<TestValue>(new TestValue), 1);
+      if (ContainsKey(selected_keys, key)) {
+        selected_handles.emplace_back(std::move(h));
+      }
+    }
+    ASSERT_EQ(selected_keys.size(), selected_handles.size());
+
+    // All the entries except for the ones selected should be gone:
+    // the background thread should get rid all the expired entries.
+    // The 'selected_handles' still keep references to the selected entries,
+    // so those should not be deallocated yet.
+    ASSERT_EVENTUALLY([&]{
+      ASSERT_EQ(kHalfCacheCapacity - selected_keys.size(),
+                GetCacheEvictionsExpired());
+      ASSERT_EQ(selected_keys.size(), GetCacheUsage());
+    });
+
+    // However, even if the selected entries are not yet deallocated,
+    // they must have been removed from the cache's lookup table
+    // once the scrubbing thread invalidated them.
+    for (const auto& key : selected_keys) {
+      ASSERT_FALSE(cache.Get(key));
+    }
+  }
+  // Now, once the handles for the selected entries are gone out of scope,
+  // the cache should be empty.
+  ASSERT_EQ(kHalfCacheCapacity, GetCacheEvictionsExpired());
+  ASSERT_EQ(0, GetCacheUsage());
+}
+
+// Verify how the auto-invalidation of expired entries work in the presence
+// of concurrent read access to the entries. Also, verify that the limit on the
+// number of maximum number of processed entries per one run of the scrubbing
+// thread applies as expected.
+TEST_F(TTLCacheTest, AutoInvalidationOfEntriesLimitPerPass) {
+  constexpr size_t kCacheCapacity = 1024;
+  constexpr size_t kScrubMaxEntriesPerPass = 64;
+  const auto kEntryTtl = MonoDelta::FromMilliseconds(100);
+  const auto kScrubInterval = kEntryTtl;
+  const auto kNumRunnerThreads = 64;
+
+  // A TTL cache with auto-scrubbing thread that gets rid of expired entries.
+  // The amount of scrubbed entries per pass is limited.
+  TTLTestCache cache(kCacheCapacity, kEntryTtl,
+                     kScrubInterval, kScrubMaxEntriesPerPass);
+  {
+    unique_ptr<TTLCacheTestMetrics> metrics(
+        new TTLCacheTestMetrics(metric_entity_));
+    cache.SetMetrics(std::move(metrics));
+  }
+
+  atomic<bool> stop(false);
+  vector<thread> threads;
+  SCOPED_CLEANUP({
+    stop = true;
+    for (auto& thread : threads) {
+      thread.join();
+    }
+  });
+
+  for (auto i = 0; i < kNumRunnerThreads; ++i) {
+    threads.emplace_back([&cache, &stop] () {
+      while (!stop) {
+        const auto key = std::to_string(rand() % kCacheCapacity);
+        auto h = cache.Get(key);
+        // Keep the handle around for some time.
+        SleepFor(MonoDelta::FromNanoseconds(rand() % 5));
+      }
+    });
+  }
+
+  const auto start_time = MonoTime::Now();
+  for (auto i = 0; i < kCacheCapacity; ++i) {
+    cache.Put(std::to_string(i), unique_ptr<TestValue>(new TestValue(i)), 1);
+  }
+
+  const auto scrub_interval_ms = kScrubInterval.ToMilliseconds();
+  for (auto i = 0; i < kCacheCapacity / kScrubMaxEntriesPerPass; ++i) {
+    const auto evictions_expired_num = GetCacheEvictionsExpired();
+    const auto duration_ms = (MonoTime::Now() - start_time).ToMilliseconds();
+    const auto runs_num = 1 +
+        (duration_ms + scrub_interval_ms - 1) / scrub_interval_ms;
+    // No more than the specified number of entries should be evicted per one
+    // pass of the scrubbing thread.
+    ASSERT_LE(evictions_expired_num, runs_num * kScrubMaxEntriesPerPass);
+    SleepFor(kScrubInterval);
+  }
+  stop = true;
+
+  ASSERT_EVENTUALLY([&]{
+    ASSERT_EQ(kCacheCapacity, GetCacheEvictionsExpired());
+    ASSERT_EQ(0, GetCacheUsage());
+  });
 }
 
 } // namespace kudu
