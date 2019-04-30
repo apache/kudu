@@ -527,8 +527,6 @@ TEST_F(RemoteKsckTest, TestClusterWithLocation) {
   ASSERT_OK(mini_cluster_->AddTabletServer());
   ASSERT_EQ(4, mini_cluster_->num_tablet_servers());
 
-  ASSERT_OK(ksck_->CheckMasterHealth());
-  ASSERT_OK(ksck_->CheckMasterUnusualFlags());
   // In case of TSAN builds and running the test at inferior machines
   // with lot of concurrent activity, the masters and tablet servers run Raft
   // re-elections from time to time. Also, establishing and negotiation

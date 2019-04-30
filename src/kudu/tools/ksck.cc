@@ -230,6 +230,9 @@ Status Ksck::CheckMasterHealth() {
 }
 
 Status Ksck::CheckMasterConsensus() {
+  // Reset this instance's view of master consensus conflict, in case this
+  // instance is being used to repeatedly check for master consensus conflict.
+  results_.master_consensus_conflict = false;
   if (!FLAGS_consensus) {
     return Status::OK();
   }
