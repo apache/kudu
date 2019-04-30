@@ -24,6 +24,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.annotation.Nullable;
 import javax.annotation.concurrent.GuardedBy;
@@ -56,6 +57,7 @@ import org.apache.kudu.consensus.Metadata;
 public class RemoteTablet implements Comparable<RemoteTablet> {
 
   private static final Logger LOG = LoggerFactory.getLogger(RemoteTablet.class);
+  private static final int randomInt = new Random().nextInt(Integer.MAX_VALUE);
 
   private final String tableId;
   private final String tabletId;
@@ -186,35 +188,40 @@ public class RemoteTablet implements Comparable<RemoteTablet> {
    */
   @Nullable
   ServerInfo getClosestServerInfo(String location) {
-    // TODO(KUDU-2348) this doesn't return a random server, but rather returns
-    // 1. whichever local server's hashcode places it first among local servers,
-    //    if there is a local server, or
-    // 2. whichever server in the same location has a hashcode that places it
-    //    first among servers in the same location, if there is a server in the
+    // This method returns
+    // 1. a randomly picked server among local servers, if there is a local server, or
+    // 2. a randomly picked server in the same location, if there is a server in the
     //    same location, or, finally,
-    // 3. whichever server's hashcode places it last.
-    // That might be the same "random" choice across all clients, which is not
-    // so good. Unfortunately, the client depends on this method returning the
-    // same tablet server given the same state. See
-    // testGetReplicaSelectedServerInfoDeterminism in TestRemoteTablet.java.
+    // 3. a randomly picked server among all tablet servers.
     // TODO(wdberkeley): Eventually, the client might use the hierarchical
     // structure of a location to determine proximity.
     synchronized (tabletServers) {
-      ServerInfo last = null;
-      ServerInfo lastInSameLocation = null;
+      ServerInfo result = null;
+      List<ServerInfo> localServers = new ArrayList();
+      List<ServerInfo> serversInSameLocation = new ArrayList();
+      int randomIndex = randomInt % tabletServers.size();
+      int index = 0;
       for (ServerInfo e : tabletServers.values()) {
-        last = e;
         if (e.isLocal()) {
-          return e;
+          localServers.add(e);
         }
         if (e.inSameLocation(location)) {
-          lastInSameLocation = e;
+          serversInSameLocation.add(e);
         }
+        if (index == randomIndex) {
+          result = e;
+        }
+        index++;
       }
-      if (lastInSameLocation != null) {
-        return lastInSameLocation;
+      if (!localServers.isEmpty()) {
+        randomIndex = randomInt % localServers.size();
+        return localServers.get(randomIndex);
       }
-      return last;
+      if (!serversInSameLocation.isEmpty()) {
+        randomIndex = randomInt % serversInSameLocation.size();
+        return serversInSameLocation.get(randomIndex);
+      }
+      return result;
     }
   }
 
