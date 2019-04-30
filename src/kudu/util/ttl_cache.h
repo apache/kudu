@@ -194,6 +194,7 @@ class TTLCache {
 
  private:
   friend class EvictionCallback;
+  FRIEND_TEST(TTLCacheTest, InvalidationOfExpiredEntries);
 
   // An entry to store in the underlying FIFO cache.
   struct Entry {

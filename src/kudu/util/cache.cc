@@ -60,6 +60,16 @@ namespace kudu {
 Cache::~Cache() {
 }
 
+const Cache::ValidityFunc Cache::kInvalidateAllEntriesFunc = [](
+    Slice /* key */, Slice /* value */) {
+  return false;
+};
+
+const Cache::IterationFunc Cache::kIterateOverAllEntriesFunc = [](
+    size_t /* valid_entries_num */, size_t /* invalid_entries_num */) {
+  return true;
+};
+
 namespace {
 
 typedef simple_spinlock MutexType;
@@ -221,6 +231,7 @@ class CacheShard {
   Cache::Handle* Lookup(const Slice& key, uint32_t hash, bool caching);
   void Release(Cache::Handle* handle);
   void Erase(const Slice& key, uint32_t hash);
+  size_t Invalidate(const Cache::InvalidationControl& ctl);
 
  private:
   void RL_Remove(RLHandle* e);
@@ -484,6 +495,50 @@ void CacheShard<policy>::Erase(const Slice& key, uint32_t hash) {
   }
 }
 
+template<Cache::EvictionPolicy policy>
+size_t CacheShard<policy>::Invalidate(const Cache::InvalidationControl& ctl) {
+  size_t invalid_entry_count = 0;
+  size_t valid_entry_count = 0;
+  RLHandle* to_remove_head = nullptr;
+
+  {
+    std::lock_guard<MutexType> l(mutex_);
+
+    // rl_.next is the oldest (a.k.a. least relevant) entry in the recency list.
+    RLHandle* h = rl_.next;
+    while (h != nullptr && h != &rl_ &&
+           ctl.iteration_func(valid_entry_count, invalid_entry_count)) {
+      if (ctl.validity_func(h->key(), h->value())) {
+        // Continue iterating over the list.
+        h = h->next;
+        ++valid_entry_count;
+        continue;
+      }
+      // Copy the handle slated for removal.
+      RLHandle* h_to_remove = h;
+      // Prepare for next iteration of the cycle.
+      h = h->next;
+
+      RL_Remove(h_to_remove);
+      table_.Remove(h_to_remove->key(), h_to_remove->hash);
+      if (Unref(h_to_remove)) {
+        h_to_remove->next = to_remove_head;
+        to_remove_head = h_to_remove;
+      }
+      ++invalid_entry_count;
+    }
+  }
+  // Once removed from the lookup table and the recency list, the entries
+  // with no references left must be deallocated because Cache::Release()
+  // wont be called for them from elsewhere.
+  while (to_remove_head != nullptr) {
+    RLHandle* next = to_remove_head->next;
+    FreeEntry(to_remove_head);
+    to_remove_head = next;
+  }
+  return invalid_entry_count;
+}
+
 // Determine the number of bits of the hash that should be used to determine
 // the cache shard. This, in turn, determines the number of shards.
 int DetermineShardBits() {
@@ -609,6 +664,14 @@ class ShardedCache : public Cache {
 
   uint8_t* MutableValue(PendingHandle* h) override {
     return reinterpret_cast<RLHandle*>(h)->mutable_val_ptr();
+  }
+
+  size_t Invalidate(const InvalidationControl& ctl) override {
+    size_t invalidated_count = 0;
+    for (auto& shard: shards_) {
+      invalidated_count += shard->Invalidate(ctl);
+    }
+    return invalidated_count;
   }
 };
 

@@ -31,8 +31,10 @@
 #include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/cache.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/ttl_cache_metrics.h"
@@ -369,6 +371,55 @@ TEST_F(TTLCacheTest, Basic) {
   // via the reference kept in the scope.
   NO_FATALS(VerifyEntryValue(put_h, 100));
   ASSERT_EQ(cache_capacity + 1, GetCacheUsage());
+}
+
+// Test invalidation of expired entries in the underlying cache.
+TEST_F(TTLCacheTest, InvalidationOfExpiredEntries) {
+  constexpr size_t cache_capacity = 512;
+  const auto entry_ttl = MonoDelta::FromMilliseconds(250);
+
+  TTLTestCache cache(cache_capacity, entry_ttl);
+  {
+    unique_ptr<TTLCacheTestMetrics> metrics(
+        new TTLCacheTestMetrics(metric_entity_));
+    cache.SetMetrics(std::move(metrics));
+  }
+
+  const Cache::InvalidationControl ctl = {
+    [&](Slice /* key */, Slice value) {
+      CHECK_EQ(sizeof(TTLTestCache::Entry), value.size());
+      const auto* entry = reinterpret_cast<const TTLTestCache::Entry*>(
+          value.data());
+      return (entry->exp_time > MonoTime::Now());
+    },
+    [&](size_t valid_entry_count, size_t /* invalid_entry_count */) {
+      return valid_entry_count == 0;
+    }
+  };
+  ASSERT_EQ(0, cache.cache_->Invalidate(ctl));
+
+  for (auto i = 0; i < cache_capacity / 2; ++i) {
+    cache.Put(Substitute("0$0", i), unique_ptr<TestValue>(new TestValue), 1);
+  }
+  ASSERT_EQ(0, cache.cache_->Invalidate(ctl));
+  ASSERT_EQ(0, GetCacheEvictionsExpired());
+
+  SleepFor(entry_ttl);
+
+  ASSERT_EQ(cache_capacity / 2, cache.cache_->Invalidate(ctl));
+  ASSERT_EQ(cache_capacity / 2, GetCacheEvictionsExpired());
+  ASSERT_EQ(0, GetCacheUsage());
+
+  for (auto i = 0; i < cache_capacity / 2; ++i) {
+    cache.Put(Substitute("1$0", i), unique_ptr<TestValue>(new TestValue), 1);
+  }
+  SleepFor(entry_ttl);
+  for (auto i = 0; i < cache_capacity / 2; ++i) {
+    cache.Put(Substitute("2$0", i), unique_ptr<TestValue>(new TestValue), 1);
+  }
+  ASSERT_EQ(cache_capacity / 2, cache.cache_->Invalidate(ctl));
+  ASSERT_EQ(cache_capacity, GetCacheEvictionsExpired());
+  ASSERT_EQ(cache_capacity / 2, GetCacheUsage());
 }
 
 } // namespace kudu

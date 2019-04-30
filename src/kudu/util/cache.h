@@ -19,9 +19,11 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <iosfwd>
 #include <memory>
 #include <string>
+#include <utility>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/util/slice.h"
@@ -71,7 +73,7 @@ class Cache {
   //
   // Sample usage:
   //
-  //   Cache* cache = NewLRUCache(...);
+  //   unique_ptr<Cache> cache(NewCache(...));
   //   ...
   //   {
   //     unique_ptr<Cache::Handle, Cache::HandleDeleter> h(
@@ -81,7 +83,7 @@ class Cache {
   //
   // Or:
   //
-  //   Cache* cache = NewLRUCache(...);
+  //   unique_ptr<Cache> cache(NewCache(...));
   //   ...
   //   {
   //     Cache::UniqueHandle h(cache->Lookup(...), Cache::HandleDeleter(cache));
@@ -231,6 +233,94 @@ class Cache {
 
   // Free 'ptr', which must have been previously allocated using 'Allocate'.
   virtual void Free(PendingHandle* ptr) = 0;
+
+  // Forward declaration to simplify the layout of types/typedefs needed for the
+  // Invalidate() method while trying to adhere to the code style guide.
+  struct InvalidationControl;
+
+  // Invalidate cache's entries, effectively evicting non-valid ones from the
+  // cache. The invalidation process iterates over cache's recency list(s),
+  // from the oldest (less relevant) entries to the newest (more relevant) ones.
+  //
+  // The provided control structure 'ctl' is responsible for the following:
+  //   * determine whether an entry is valid or not
+  //   * determine how to iterate over the entries in the cache's recency list
+  //
+  // NOTE: The invalidation process might hold a lock while iterating over
+  //       the cache's entries. Using proper IterationFunc might help to reduce
+  //       contention with the concurrent request for the cache's contents.
+  //       See the in-line documentation for IterationFunc for more details.
+  virtual size_t Invalidate(const InvalidationControl& ctl) = 0;
+
+  // Functor to define a criterion on a cache entry's validity. Upon call
+  // of Cache::Invalidate() method, if the functor returns 'false' for the
+  // specified key and value, the cache evicts the entry, otherwise the entry
+  // stays in the cache.
+  typedef std::function<bool(Slice /* key */,
+                             Slice /* value */)>
+      ValidityFunc;
+
+  // Functor to define whether to continue or stop iterating over the cache's
+  // entries based on the number of encountered invalid and valid entries
+  // during the Cache::Invalidate() call. If a cache contains multiple
+  // sub-caches (e.g., shards), those parameters are per sub-cache. For example,
+  // in case of multi-shard cache, when the 'iteration_func' returns 'false',
+  // the invalidation at current shard stops and switches to the next
+  // non-yet-processed shard, if any is present.
+  //
+  // The choice of the signature for the iteration functor is to allow for
+  // effective purging of non-valid (e.g., expired) entries in caches with
+  // the FIFO eviction policy (e.g., TTL caches).
+  //
+  // The first parameter of the functor is useful for short-circuiting
+  // the invalidation process once some valid entries have been encountered.
+  // For example, that's useful in case if the recency list has its entries
+  // ordered in FIFO-like order (e.g., TTL cache with FIFO eviction policy),
+  // so most-likely-invalid entries are in the very beginning of the list.
+  // In the latter case, once a valid (e.g., not yet expired) entry is
+  // encountered, there is no need to iterate any further: all the entries past
+  // the first valid one in the recency list should be valid as well.
+  //
+  // The second parameter is useful when the validity criterion is fuzzy,
+  // but there is a target number of entries to invalidate during each
+  // invocation of the Invalidate() method or there is some logic that reads
+  // the cache's metric(s) once the given number of entries have been evicted:
+  // e.g., compare the result memory footprint of the cache against a threshold
+  // to decide whether to continue invalidation of entries.
+  //
+  // Summing both parameters of the functor is useful when it's necessary to
+  // limit the number of entries processed per one invocation of the
+  // Invalidate() method. It makes sense in cases when a 'lazy' invalidation
+  // process is run by a periodic task along with a significant amount of
+  // concurrent requests to the cache, and the number of entries in the cache
+  // is huge. Given the fact that in most cases it's necessary to guard
+  // the access to the cache's recency list while iterating over it entries,
+  // limiting the number of entries to process at once allows for better control
+  // over the duration of the guarded/locked sections.
+  typedef std::function<bool(size_t /* valid_entries_num */,
+                             size_t /* invalid_entries_num */)>
+      IterationFunc;
+
+  // A helper function for 'validity_func' of the Invalidate() method:
+  // invalidate all entries.
+  static const ValidityFunc kInvalidateAllEntriesFunc;
+
+  // A helper function for 'iteration_func' of the Invalidate() method:
+  // examine all entries.
+  static const IterationFunc kIterateOverAllEntriesFunc;
+
+  // Control structure for the Invalidate() method. Combines the validity
+  // and the iteration functors.
+  struct InvalidationControl {
+    // NOLINTNEXTLINE(google-explicit-constructor)
+    InvalidationControl(ValidityFunc vfunctor = kInvalidateAllEntriesFunc,
+                        IterationFunc ifunctor = kIterateOverAllEntriesFunc)
+        : validity_func(std::move(vfunctor)),
+          iteration_func(std::move(ifunctor)) {
+    }
+    const ValidityFunc validity_func;
+    const IterationFunc iteration_func;
+  };
 
  private:
   DISALLOW_COPY_AND_ASSIGN(Cache);

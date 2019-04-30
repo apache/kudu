@@ -15,6 +15,7 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/block_cache_metrics.h"
@@ -330,6 +331,102 @@ TEST_P(CacheTest, HeavyEntries) {
     }
   }
   ASSERT_LE(cached_weight, cache_size() + cache_size() / 10);
+}
+
+TEST_P(CacheTest, InvalidateAllEntries) {
+  constexpr const int kEntriesNum = 1024;
+  // This scenarios assumes no evictions are done at the cache capacity.
+  ASSERT_LE(kEntriesNum, cache_size());
+
+  // Running invalidation on empty cache should yield no invalidated entries.
+  ASSERT_EQ(0, cache_->Invalidate({}));
+  for (auto i = 0; i < kEntriesNum; ++i) {
+    Insert(i, i);
+  }
+  // Remove a few entries from the cache (sparse pattern of keys).
+  constexpr const int kSparseKeys[] = {1, 100, 101, 500, 501, 512, 999, 1001};
+  for (const auto key : kSparseKeys) {
+    Erase(key);
+  }
+  ASSERT_EQ(ARRAYSIZE(kSparseKeys), evicted_keys_.size());
+
+  // All inserted entries, except for the removed one, should be invalidated.
+  ASSERT_EQ(kEntriesNum - ARRAYSIZE(kSparseKeys), cache_->Invalidate({}));
+  // In the end, no entries should be left in the cache.
+  ASSERT_EQ(kEntriesNum, evicted_keys_.size());
+}
+
+TEST_P(CacheTest, InvalidateNoEntries) {
+  constexpr const int kEntriesNum = 10;
+  // This scenarios assumes no evictions are done at the cache capacity.
+  ASSERT_LE(kEntriesNum, cache_size());
+
+  const Cache::ValidityFunc func = [](Slice /* key */, Slice /* value */) {
+    return true;
+  };
+  // Running invalidation on empty cache should yield no invalidated entries.
+  ASSERT_EQ(0, cache_->Invalidate({ func }));
+
+  for (auto i = 0; i < kEntriesNum; ++i) {
+    Insert(i, i);
+  }
+
+  // No entries should be invalidated since the validity function considers
+  // all entries valid.
+  ASSERT_EQ(0, cache_->Invalidate({ func }));
+  ASSERT_TRUE(evicted_keys_.empty());
+}
+
+TEST_P(CacheTest, InvalidateNoEntriesNoAdvanceIterationFunctor) {
+  constexpr const int kEntriesNum = 256;
+  // This scenarios assumes no evictions are done at the cache capacity.
+  ASSERT_LE(kEntriesNum, cache_size());
+
+  const Cache::InvalidationControl ctl = {
+    Cache::kInvalidateAllEntriesFunc,
+    [](size_t /* valid_entries_count */, size_t /* invalid_entries_count */) {
+      // Never advance over the item list.
+      return false;
+    }
+  };
+
+  // Running invalidation on empty cache should yield no invalidated entries.
+  ASSERT_EQ(0, cache_->Invalidate(ctl));
+
+  for (auto i = 0; i < kEntriesNum; ++i) {
+    Insert(i, i);
+  }
+
+  // No entries should be invalidated since the iteration functor doesn't
+  // advance over the list of entries, even if every entry is declared invalid.
+  ASSERT_EQ(0, cache_->Invalidate(ctl));
+  // In the end, all entries should be in the cache.
+  ASSERT_EQ(0, evicted_keys_.size());
+}
+
+TEST_P(CacheTest, InvalidateOddKeyEntries) {
+  constexpr const int kEntriesNum = 64;
+  // This scenarios assumes no evictions are done at the cache capacity.
+  ASSERT_LE(kEntriesNum, cache_size());
+
+  const Cache::ValidityFunc func = [](Slice key, Slice /* value */) {
+    return DecodeInt(key) % 2 == 0;
+  };
+  // Running invalidation on empty cache should yield no invalidated entries.
+  ASSERT_EQ(0, cache_->Invalidate({ func }));
+
+  for (auto i = 0; i < kEntriesNum; ++i) {
+    Insert(i, i);
+  }
+  ASSERT_EQ(kEntriesNum / 2, cache_->Invalidate({ func }));
+  ASSERT_EQ(kEntriesNum / 2, evicted_keys_.size());
+  for (auto i = 0; i < kEntriesNum; ++i) {
+    if (i % 2 == 0) {
+      ASSERT_EQ(i,  Lookup(i));
+    } else {
+      ASSERT_EQ(-1,  Lookup(i));
+    }
+  }
 }
 
 // This class is dedicated for scenarios specific for FIFOCache.

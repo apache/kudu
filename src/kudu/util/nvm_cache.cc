@@ -208,6 +208,7 @@ class NvmLRUCache {
   Cache::Handle* Lookup(const Slice& key, uint32_t hash, bool caching);
   void Release(Cache::Handle* handle);
   void Erase(const Slice& key, uint32_t hash);
+  size_t Invalidate(const Cache::InvalidationControl& ctl);
   void* AllocateAndRetry(size_t size);
 
  private:
@@ -456,8 +457,47 @@ void NvmLRUCache::Erase(const Slice& key, uint32_t hash) {
     FreeEntry(e);
   }
 }
-static const int kNumShardBits = 4;
-static const int kNumShards = 1 << kNumShardBits;
+
+size_t NvmLRUCache::Invalidate(const Cache::InvalidationControl& ctl) {
+  size_t invalid_entry_count = 0;
+  size_t valid_entry_count = 0;
+  LRUHandle* to_remove_head = nullptr;
+
+  {
+    std::lock_guard<MutexType> l(mutex_);
+
+    // rl_.next is the oldest entry in the recency list.
+    LRUHandle* h = lru_.next;
+    while (h != nullptr && h != &lru_ &&
+           ctl.iteration_func(valid_entry_count, invalid_entry_count)) {
+      if (ctl.validity_func(h->key(), h->value())) {
+        // Continue iterating over the list.
+        h = h->next;
+        ++valid_entry_count;
+        continue;
+      }
+      // Copy the handle slated for removal.
+      LRUHandle* h_to_remove = h;
+      // Prepare for next iteration of the cycle.
+      h = h->next;
+
+      NvmLRU_Remove(h_to_remove);
+      table_.Remove(h_to_remove->key(), h_to_remove->hash);
+      if (Unref(h_to_remove)) {
+        h_to_remove->next = to_remove_head;
+        to_remove_head = h_to_remove;
+      }
+      ++invalid_entry_count;
+    }
+  }
+
+  FreeLRUEntries(to_remove_head);
+
+  return invalid_entry_count;
+}
+
+constexpr const int kNumShardBits = 4;
+constexpr const int kNumShards = 1 << kNumShardBits;
 
 class ShardedLRUCache : public Cache {
  private:
@@ -555,6 +595,14 @@ class ShardedLRUCache : public Cache {
 
   virtual void Free(PendingHandle* ph) OVERRIDE {
     vmem_free(vmp_, ph);
+  }
+
+  size_t Invalidate(const InvalidationControl& ctl) override {
+    size_t invalidated_count = 0;
+    for (auto& shard: shards_) {
+      invalidated_count += shard->Invalidate(ctl);
+    }
+    return invalidated_count;
   }
 };
 
