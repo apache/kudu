@@ -405,6 +405,37 @@ class TestKuduBackup extends KuduTestSuite {
     assertEquals(expectedKeys, rows)
   }
 
+  @Test
+  def testTableAlterHandling(): Unit = {
+    // Create the initial table and load it with data.
+    val tableName = "testTableAlterHandling"
+    var table = kuduClient.createTable(tableName, schema, tableOptions)
+    insertRows(table, 100)
+
+    // Run and validate initial backup.
+    backupAndValidateTable(tableName, 100, false)
+
+    // Rename the table and insert more rows
+    val newTableName = "impala::default.testTableAlterHandling"
+    kuduClient.alterTable(tableName, new AlterTableOptions().renameTable(newTableName))
+    table = kuduClient.openTable(newTableName)
+    insertRows(table, 100, 100)
+
+    // Run and validate an incremental backup.
+    backupAndValidateTable(newTableName, 100, true)
+
+    // Create a new table with the old name.
+    val tableWithOldName = kuduClient.createTable(tableName, schema, tableOptions)
+    insertRows(tableWithOldName, 50)
+
+    // Backup the table with the old name.
+    backupAndValidateTable(tableName, 50, false)
+
+    // Restore the tables and check the row counts.
+    restoreAndValidateTable(newTableName, 200)
+    restoreAndValidateTable(tableName, 50)
+  }
+
   def createPartitionRow(value: Int): PartialRow = {
     val row = schema.newPartialRow()
     row.addInt("key", value)
@@ -505,7 +536,8 @@ class TestKuduBackup extends KuduTestSuite {
       expectIncremental: Boolean): Unit = {
     val io = new SessionIO(ss, options)
     val tableName = options.tables.head
-    val backupPath = io.backupPath(tableName, options.toMs)
+    val table = harness.getClient.openTable(tableName)
+    val backupPath = io.backupPath(table, options.toMs)
     val metadataPath = io.backupMetadataPath(backupPath)
     val metadata = io.readTableMetadata(metadataPath)
 
@@ -517,7 +549,6 @@ class TestKuduBackup extends KuduTestSuite {
     }
 
     // Verify the output data.
-    val table = harness.getClient.openTable(tableName)
     val schema = io.dataSchema(table.getSchema, expectIncremental)
     val df = ss.sqlContext.read
       .format(metadata.getDataFormat)

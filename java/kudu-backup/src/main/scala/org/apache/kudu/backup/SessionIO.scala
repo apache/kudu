@@ -24,10 +24,12 @@ import com.google.common.io.CharStreams
 import com.google.protobuf.util.JsonFormat
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.FileSystem
+import org.apache.hadoop.fs.LocatedFileStatus
 import org.apache.hadoop.fs.Path
 import org.apache.kudu.Schema
 import org.apache.kudu.backup.Backup.TableMetadataPB
 import org.apache.kudu.backup.SessionIO._
+import org.apache.kudu.client.KuduTable
 import org.apache.kudu.spark.kudu.SparkUtil
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.types.ByteType
@@ -45,14 +47,21 @@ import scala.collection.mutable
  * of metadata and data of the backup and restore jobs.
  *
  * The default backup directory structure is:
- * /<rootPath>/<tableName>/<backup-id>/
+ * /<rootPath>/<tableId>-<tableName>/<backup-id>/
  *   .kudu-metadata.json
  *   part-*.parquet
  *
- * In the above path the `/<rootPath>` can be used to distinguish separate backup groups.
- * The `<backup-id>` is currently the `toMs` time for the job.
- *
- * TODO (KUDU-2788): Should the tableName contain the table id?
+ * - rootPath: can be used to distinguish separate backup groups, jobs, or concerns.
+ * - tableId: the unique internal ID of the table being backed up.
+ * - tableName: the name of the table being backed up.
+ * - backup-id: A way to uniquely identify/group the data for a single backup run.
+ *   - Currently the `toMs` time for the job.
+ * - .kudu-metadata.json: Contains all of the metadata to support recreating the table,
+ *   linking backups by time, and handling data format changes.
+ *   - Written last so that failed backups will not have a metadata file and will not be
+ *     considered at restore time or backup linking time.
+ * - part-*.parquet: The data files containing the tables data.
+ *   - Incremental backups contain an additional “RowAction” byte column at the end.
  */
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
@@ -60,13 +69,12 @@ class SessionIO(val session: SparkSession, options: CommonOptions) {
   val log: Logger = LoggerFactory.getLogger(getClass)
 
   val conf: Configuration = session.sparkContext.hadoopConfiguration
-  val rootHPath: Path = new Path(options.rootPath)
-  val fs: FileSystem = rootHPath.getFileSystem(conf)
+  val rootPath: Path = new Path(options.rootPath)
+  val fs: FileSystem = rootPath.getFileSystem(conf)
 
   /**
    * Returns the Spark schema for backup data based on the Kudu Schema.
    * Additionally handles adding the RowAction column for incremental backup/restore.
-   * @return the Spark schema for backup data.
    */
   def dataSchema(schema: Schema, includeRowAction: Boolean = true): StructType = {
     var fields = SparkUtil.sparkSchema(schema).fields
@@ -91,21 +99,23 @@ class SessionIO(val session: SparkSession, options: CommonOptions) {
   }
 
   /**
-   * @return the path to the table directory.
+   * Return the path to the table directory.
    */
-  def tablePath(tableName: String): Path = {
-    new Path(options.rootPath, URLEncoder.encode(tableName, "UTF-8"))
+  def tablePath(table: KuduTable): Path = {
+    val tableName = URLEncoder.encode(table.getName, "UTF-8")
+    val dirName = s"${table.getTableId}-$tableName"
+    new Path(options.rootPath, dirName)
   }
 
   /**
-   * @return the backup path for a table and time.
+   * Return the backup path for a table and time.
    */
-  def backupPath(tableName: String, timestampMs: Long): Path = {
-    new Path(tablePath(tableName), timestampMs.toString)
+  def backupPath(table: KuduTable, timestampMs: Long): Path = {
+    new Path(tablePath(table), timestampMs.toString)
   }
 
   /**
-   * @return the path to the metadata file within a backup path.
+   * Return the path to the metadata file within a backup path.
    */
   def backupMetadataPath(backupPath: Path): Path = {
     new Path(backupPath, MetadataFileName)
@@ -113,11 +123,9 @@ class SessionIO(val session: SparkSession, options: CommonOptions) {
 
   /**
    * Serializes the table metadata to Json and writes it to the metadata path.
-   * @param tableMetadata the metadata to serialize.
-   * @param metadataPath the path to write the metadata file too.
    */
   def writeTableMetadata(tableMetadata: TableMetadataPB, metadataPath: Path): Unit = {
-    log.error(s"Writing metadata to $metadataPath")
+    log.info(s"Writing metadata to $metadataPath")
     val out = fs.create(metadataPath, /* overwrite= */ false)
     val json = JsonFormat.printer().print(tableMetadata)
     out.write(json.getBytes(StandardCharsets.UTF_8))
@@ -126,51 +134,130 @@ class SessionIO(val session: SparkSession, options: CommonOptions) {
   }
 
   /**
-   * Reads an entire backup graph by reading all of the metadata files for the
-   * given table. See [[BackupGraph]] for more details.
-   * @param tableName the table to read a backup graph for.
-   * @return the full backup graph.
+   * Reads all of the backup graphs for a given list of table names and a time filter.
    */
-  def readBackupGraph(tableName: String): BackupGraph = {
-    val backups = readTableBackups(tableName)
-    val graph = new BackupGraph(tableName)
-    backups.foreach {
-      case (path, metadata) =>
-        graph.addBackup(BackupNode(path, metadata))
-    }
-    graph
+  def readBackupGraphsByTableName(
+      tableNames: Seq[String],
+      timeMs: Long = System.currentTimeMillis()): Seq[BackupGraph] = {
+    // We also need to include the metadata from old table names.
+    // To handle this we list all directories, get the IDs for the tableNames,
+    // and then filter the directories by those IDs.
+    val allDirs = listAllTableDirs()
+    val encodedNames = tableNames.map(URLEncoder.encode(_, "UTF-8")).toSet
+    val tableIds =
+      allDirs.flatMap { dir =>
+        val dirName = dir.getName
+        val tableName = tableNameFromDirName(dirName)
+        if (encodedNames.contains(tableName)) {
+          Some(tableIdFromDirName(dirName))
+        } else {
+          None
+        }
+      }.toSet
+    val dirs = allDirs.filter(dir => tableIds.contains(tableIdFromDirName(dir.getName)))
+    buildBackupGraphs(dirs, timeMs)
   }
 
   /**
-   * Reads and returns all of the metadata for a given table.
-   * @param tableName the table to read the metadata for.
-   * @return a sequence of all the paths and metadata.
+   * Reads all of the backup graphs for a given list of table IDs and a time filter.
    */
-  // TODO: Also use table-id to find backups.
-  private def readTableBackups(tableName: String): Seq[(Path, TableMetadataPB)] = {
-    val hPath = new Path(tablePath(tableName).toString)
-    val results = new mutable.ListBuffer[(Path, TableMetadataPB)]()
-    if (fs.exists(hPath)) {
-      val iter = fs.listLocatedStatus(hPath)
+  def readBackupGraphsByTableId(
+      tableIds: Seq[String],
+      timeMs: Long = System.currentTimeMillis()): Seq[BackupGraph] = {
+    val dirs = listTableIdDirs(tableIds)
+    buildBackupGraphs(dirs, timeMs)
+  }
+
+  /**
+   * Builds all of the backup graphs for a given list of directories by reading all of the
+   * metadata files and inserting them into a backup graph for each table id.
+   * See [[BackupGraph]] for more details.
+   */
+  private def buildBackupGraphs(dirs: Seq[Path], timeMs: Long): Seq[BackupGraph] = {
+    // Read all the metadata and filter by timesMs.
+    val metadata = dirs.flatMap(readTableBackups).filter(_._2.getToMs <= timeMs)
+    // Group the metadata by the table ID and create a BackupGraph for each table ID.
+    metadata
+      .groupBy(_._2.getTableId)
+      .map {
+        case (tableId, pm) =>
+          val graph = new BackupGraph(tableId)
+          pm.foreach {
+            case (path, metadata) =>
+              graph.addBackup(BackupNode(path, metadata))
+          }
+          graph
+      }
+      .toList
+  }
+
+  /**
+   * Return all of the table directories.
+   */
+  private def listAllTableDirs(): Seq[Path] = {
+    listMatching(_ => true)
+  }
+
+  /**
+   * Return the table directories for a given list of table IDs.
+   */
+  private def listTableIdDirs(tableIds: Seq[String]): Seq[Path] = {
+    val idSet = tableIds.toSet
+    listMatching { file =>
+      val name = file.getPath.getName
+      file.isDirectory && idSet.contains(tableIdFromDirName(name))
+    }
+  }
+
+  private def tableIdFromDirName(dirName: String): String = {
+    // Split to the left of "-" and keep the first half to get the table ID.
+    dirName.splitAt(dirName.indexOf("-"))._1
+  }
+
+  private def tableNameFromDirName(dirName: String): String = {
+    // Split to the right of "-" and keep the second half to get the table name.
+    dirName.splitAt(dirName.indexOf("-") + 1)._2
+  }
+
+  /**
+   * List all the files in the root directory and return the files that match
+   * according to the passed function.
+   */
+  private def listMatching(fn: LocatedFileStatus => Boolean): Seq[Path] = {
+    val results = new mutable.ListBuffer[Path]()
+    if (fs.exists(rootPath)) {
+      val iter = fs.listLocatedStatus(rootPath)
       while (iter.hasNext) {
         val file = iter.next()
-        if (file.isDirectory) {
-          val metadataHPath = new Path(file.getPath, MetadataFileName)
-          if (fs.exists(metadataHPath)) {
-            val metadata = readTableMetadata(metadataHPath)
-            results += ((file.getPath, metadata))
-          }
+        if (fn(file)) {
+          results += file.getPath
         }
       }
     }
-    log.error(s"Found ${results.size} paths in ${hPath.toString}")
+    results
+  }
+
+  /**
+   * Reads and returns all of the metadata for a given table directory.
+   */
+  private def readTableBackups(tableDir: Path): Seq[(Path, TableMetadataPB)] = {
+    val results = new mutable.ListBuffer[(Path, TableMetadataPB)]()
+    val files = fs.listStatus(tableDir)
+    files.foreach { file =>
+      if (file.isDirectory) {
+        val metadataPath = new Path(file.getPath, MetadataFileName)
+        if (fs.exists(metadataPath)) {
+          val metadata = readTableMetadata(metadataPath)
+          results += ((file.getPath, metadata))
+        }
+      }
+    }
+    log.info(s"Found ${results.size} paths in ${tableDir.toString}")
     results.toList
   }
 
   /**
    * Reads and deserializes the metadata file at the given path.
-   * @param metadataPath the path to the metadata file.
-   * @return the deserialized table metadata.
    */
   def readTableMetadata(metadataPath: Path): TableMetadataPB = {
     val in = new InputStreamReader(fs.open(metadataPath), StandardCharsets.UTF_8)

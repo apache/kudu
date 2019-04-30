@@ -19,7 +19,6 @@ package org.apache.kudu.backup
 import org.apache.kudu.backup.Backup.TableMetadataPB
 import org.apache.kudu.client.AlterTableOptions
 import org.apache.kudu.client.KuduPartitioner
-import org.apache.kudu.client.NonCoveredRangeException
 import org.apache.kudu.client.Partition
 import org.apache.kudu.client.SessionConfiguration.FlushMode
 import org.apache.kudu.spark.kudu.KuduContext
@@ -50,17 +49,26 @@ object KuduRestore {
       )
     val io = new SessionIO(session, options)
 
+    // Read the required backup metadata.
+    val backupGraphs = io.readBackupGraphsByTableName(options.tables, options.timestampMs)
+    // Key the backupMap by the last table name.
+    val backupMap = backupGraphs
+      .groupBy(_.restorePath.tableName)
+      .mapValues(_.maxBy(_.restorePath.toMs))
+
     // TODO (KUDU-2786): Make parallel so each table isn't processed serially.
     // TODO (KUDU-2787): Handle single table failures.
     options.tables.foreach { tableName =>
-      val graph = io.readBackupGraph(tableName).filterByTime(options.timestampMs)
+      if (!backupMap.contains(tableName)) {
+        throw new RuntimeException(s"No valid backups found for table: $tableName")
+      }
+      val graph = backupMap(tableName)
       val lastMetadata = graph.restorePath.backups.last.metadata
+      val restoreName = s"${lastMetadata.getTableName}${options.tableSuffix}"
       graph.restorePath.backups.foreach { backup =>
         log.info(s"Restoring table $tableName from path: ${backup.path}")
         val metadata = backup.metadata
         val isFullRestore = metadata.getFromMs == 0
-        val restoreName = s"${metadata.getTableName}${options.tableSuffix}"
-
         // TODO (KUDU-2788): Store the full metadata to compare/validate for each applied partial.
 
         // On the full restore we may need to create the table.

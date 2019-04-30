@@ -24,6 +24,8 @@ import org.apache.yetus.audience.InterfaceStability
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
+import scala.collection.JavaConverters._
+
 /**
  * The main class for a Kudu backup spark job.
  */
@@ -40,12 +42,35 @@ object KuduBackup {
         session.sparkContext
       )
     val io = new SessionIO(session, options)
+
+    // Read the required backup metadata.
+    val backupGraphs =
+      // Only read the backup metadata if it will be used.
+      if (!options.forceFull || options.fromMs != BackupOptions.DefaultFromMS) {
+        // Convert the input table names to be backed up into table IDs.
+        // This will allow us to link against old backup data by referencing
+        // the static table ID even when the table name changes between backups.
+        val nameToId = context.syncClient.getTablesList.getTableInfosList.asScala
+          .filter(info => options.tables.contains(info.getTableName))
+          .map(info => (info.getTableName, info.getTableId))
+          .toMap
+        val tableIds = options.tables.flatMap(nameToId.get)
+        io.readBackupGraphsByTableId(tableIds)
+      } else {
+        Seq[BackupGraph]()
+      }
+    // Key the backupMap by the table ID.
+    val backupMap = backupGraphs.map { graph =>
+      (graph.tableId, graph)
+    }.toMap
+
     // TODO (KUDU-2786): Make parallel so each table isn't process serially.
     // TODO (KUDU-2787): Handle single table failures.
     options.tables.foreach { tableName =>
       var tableOptions = options.copy() // Copy the options so we can modify them for the table.
       val table = context.syncClient.openTable(tableName)
-      val backupPath = io.backupPath(tableName, tableOptions.toMs)
+      val tableId = table.getTableId
+      val backupPath = io.backupPath(table, tableOptions.toMs)
       val metadataPath = io.backupMetadataPath(backupPath)
       log.info(s"Backing up table $tableName to path: $backupPath")
 
@@ -59,9 +84,8 @@ object KuduBackup {
         incremental = true
       } else {
         log.info("Looking for a previous backup, forceFull or fromMs options are not set.")
-        val graph = io.readBackupGraph(tableName)
-        if (graph.hasFullBackup) {
-          val base = graph.backupBase
+        if (backupMap.contains(tableId) && backupMap(tableId).hasFullBackup) {
+          val base = backupMap(tableId).backupBase
           log.info(s"Setting fromMs to ${base.metadata.getToMs} from backup in path: ${base.path}")
           tableOptions = tableOptions.copy(fromMs = base.metadata.getToMs)
           incremental = true

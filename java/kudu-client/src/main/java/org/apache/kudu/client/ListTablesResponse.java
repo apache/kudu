@@ -17,8 +17,11 @@
 
 package org.apache.kudu.client;
 
+import java.util.ArrayList;
 import java.util.List;
 
+import com.google.common.base.MoreObjects;
+import com.google.common.base.Objects;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 
@@ -26,10 +29,16 @@ import org.apache.yetus.audience.InterfaceStability;
 @InterfaceStability.Evolving
 public class ListTablesResponse extends KuduRpcResponse {
 
+  private final List<TableInfo> tableInfosList;
   private final List<String> tablesList;
 
-  ListTablesResponse(long elapsedMillis, String tsUUID, List<String> tablesList) {
+  ListTablesResponse(long elapsedMillis, String tsUUID, List<TableInfo> tableInfosList) {
     super(elapsedMillis, tsUUID);
+    List<String> tablesList = new ArrayList<>();
+    for (TableInfo info : tableInfosList) {
+      tablesList.add(info.getTableName());
+    }
+    this.tableInfosList = tableInfosList;
     this.tablesList = tablesList;
   }
 
@@ -39,5 +48,59 @@ public class ListTablesResponse extends KuduRpcResponse {
    */
   public List<String> getTablesList() {
     return tablesList;
+  }
+
+  /**
+   * Get the list of tables as specified in the request.
+   * @return a list of TableInfo
+   */
+  public List<TableInfo> getTableInfosList() {
+    return tableInfosList;
+  }
+
+  public static class TableInfo {
+    private final String tableId;
+    private final String tableName;
+
+    TableInfo(String tableId, String tableName) {
+      this.tableId = tableId;
+      this.tableName = tableName;
+    }
+
+    /**
+     * @return the table id
+     */
+    public String getTableId() {
+      return tableId;
+    }
+
+    /**
+     * @return the table name
+     */
+    public String getTableName() {
+      return tableName;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+      if (this == o) return true;
+      if (o == null || getClass() != o.getClass()) return false;
+      TableInfo tableInfo = (TableInfo) o;
+      return Objects.equal(tableId, tableInfo.tableId) &&
+          Objects.equal(tableName, tableInfo.tableName);
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hashCode(tableId, tableName);
+    }
+
+    @Override
+    public String toString() {
+      return MoreObjects.toStringHelper(this)
+          .add("tableId", tableId)
+          .add("tableName", tableName)
+          .toString();
+    }
   }
 }
