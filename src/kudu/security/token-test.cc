@@ -24,7 +24,6 @@
 #include <utility>
 #include <vector>
 
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -44,9 +43,8 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-DECLARE_int32(tsk_num_rsa_bits);
-
 using kudu::pb_util::SecureDebugString;
+using std::make_shared;
 using std::string;
 using std::thread;
 using std::unique_ptr;
@@ -148,14 +146,14 @@ void CheckAndAddNextKey(int iter_num,
   ASSERT_NE(nullptr, key_seq_num);
   int64_t seq_num;
   {
-    std::unique_ptr<TokenSigningPrivateKey> key;
+    unique_ptr<TokenSigningPrivateKey> key;
     ASSERT_OK(signer->CheckNeedKey(&key));
     ASSERT_NE(nullptr, key.get());
     seq_num = key->key_seq_num();
   }
 
   for (int i = 0; i < iter_num; ++i) {
-    std::unique_ptr<TokenSigningPrivateKey> key;
+    unique_ptr<TokenSigningPrivateKey> key;
     ASSERT_OK(signer->CheckNeedKey(&key));
     ASSERT_NE(nullptr, key.get());
     ASSERT_EQ(seq_num, key->key_seq_num());
@@ -303,7 +301,7 @@ TEST_F(TokenTest, TestTokenSignerAddKeyAfterImport) {
   }
 
   {
-    std::unique_ptr<TokenSigningPrivateKey> key;
+    unique_ptr<TokenSigningPrivateKey> key;
     ASSERT_OK(signer.CheckNeedKey(&key));
     ASSERT_NE(nullptr, key.get());
     ASSERT_EQ(kExpiredKeySeqNum + 1, key->key_seq_num());
@@ -336,7 +334,7 @@ TEST_F(TokenTest, TestAddKeyConstraints) {
     // If a signer has not created a TSK yet, it will create a key, and will
     // happily accept the generated key.
     TokenSigner signer(kTokenValiditySeconds, kTokenValiditySeconds, 1);
-    std::unique_ptr<TokenSigningPrivateKey> key;
+    unique_ptr<TokenSigningPrivateKey> key;
     ASSERT_OK(signer.CheckNeedKey(&key));
     ASSERT_NE(nullptr, key.get());
     ASSERT_OK(signer.AddKey(std::move(key)));
@@ -345,7 +343,7 @@ TEST_F(TokenTest, TestAddKeyConstraints) {
     // If the key sequence number added to the signer isn't monotonically
     // increasing, the signer will complain.
     TokenSigner signer(kTokenValiditySeconds, kTokenValiditySeconds, 1);
-    std::unique_ptr<TokenSigningPrivateKey> key;
+    unique_ptr<TokenSigningPrivateKey> key;
     ASSERT_OK(signer.CheckNeedKey(&key));
     ASSERT_NE(nullptr, key.get());
     const int64_t key_seq_num = key->key_seq_num();
@@ -372,7 +370,7 @@ TEST_F(TokenTest, TestAddKeyConstraints) {
 
     // Generated keys thereafter are expected to have higher sequence numbers
     // than the imported expired keys.
-    std::unique_ptr<TokenSigningPrivateKey> key;
+    unique_ptr<TokenSigningPrivateKey> key;
     ASSERT_OK(signer.CheckNeedKey(&key));
     ASSERT_NE(nullptr, key.get());
     const int64_t key_seq_num = key->key_seq_num();
@@ -395,7 +393,7 @@ TEST_F(TokenTest, TestGenerateAuthnTokenNoUserName) {
 
 TEST_F(TokenTest, TestGenerateAuthzToken) {
   // We cannot generate tokens with no username associated with it.
-  std::shared_ptr<TokenVerifier> verifier(new TokenVerifier());
+  auto verifier(make_shared<TokenVerifier>());
   TokenSigner signer(kTokenValiditySeconds, kTokenValiditySeconds, 10, verifier);
   TablePrivilegePB table_privilege;
   SignedTokenPB signed_token_pb;
@@ -433,7 +431,7 @@ TEST_F(TokenTest, TestIsCurrentKeyValid) {
 
   EXPECT_FALSE(signer.IsCurrentKeyValid());
   {
-    std::unique_ptr<TokenSigningPrivateKey> key;
+    unique_ptr<TokenSigningPrivateKey> key;
     ASSERT_OK(signer.CheckNeedKey(&key));
     // No keys are available yet, so should be able to add.
     ASSERT_NE(nullptr, key.get());
@@ -452,7 +450,7 @@ TEST_F(TokenTest, TestIsCurrentKeyValid) {
 TEST_F(TokenTest, TestTokenSignerAddKeys) {
   {
     TokenSigner signer(kTokenValiditySeconds, kTokenValiditySeconds, 10);
-    std::unique_ptr<TokenSigningPrivateKey> key;
+    unique_ptr<TokenSigningPrivateKey> key;
     ASSERT_OK(signer.CheckNeedKey(&key));
     // No keys are available yet, so should be able to add.
     ASSERT_NE(nullptr, key.get());
@@ -467,7 +465,7 @@ TEST_F(TokenTest, TestTokenSignerAddKeys) {
     // Special configuration for TokenSigner: rotation interval is zero,
     // so should be able to add two keys right away.
     TokenSigner signer(kTokenValiditySeconds, kTokenValiditySeconds, 0);
-    std::unique_ptr<TokenSigningPrivateKey> key;
+    unique_ptr<TokenSigningPrivateKey> key;
     ASSERT_OK(signer.CheckNeedKey(&key));
     // No keys are available yet, so should be able to add.
     ASSERT_NE(nullptr, key.get());
@@ -489,7 +487,7 @@ TEST_F(TokenTest, TestTokenSignerAddKeys) {
     // the rotation interval.
     static const int64_t kKeyRotationIntervalSeconds = 8;
     TokenSigner signer(kTokenValiditySeconds, kTokenValiditySeconds, kKeyRotationIntervalSeconds);
-    std::unique_ptr<TokenSigningPrivateKey> key;
+    unique_ptr<TokenSigningPrivateKey> key;
     ASSERT_OK(signer.CheckNeedKey(&key));
     // No keys are available yet, so should be able to add.
     ASSERT_NE(nullptr, key.get());
@@ -529,7 +527,7 @@ TEST_F(TokenTest, TestTokenSignerSignVerifyExport) {
   // Generate and set a new key.
   int64_t signing_key_seq_num;
   {
-    std::unique_ptr<TokenSigningPrivateKey> key;
+    unique_ptr<TokenSigningPrivateKey> key;
     ASSERT_OK(signer.CheckNeedKey(&key));
     ASSERT_NE(nullptr, key.get());
     signing_key_seq_num = key->key_seq_num();
@@ -552,7 +550,7 @@ TEST_F(TokenTest, TestTokenSignerSignVerifyExport) {
   // Set next key and check that we return the right keys.
   int64_t next_signing_key_seq_num;
   {
-    std::unique_ptr<TokenSigningPrivateKey> key;
+    unique_ptr<TokenSigningPrivateKey> key;
     ASSERT_OK(signer.CheckNeedKey(&key));
     ASSERT_NE(nullptr, key.get());
     next_signing_key_seq_num = key->key_seq_num();
@@ -584,7 +582,7 @@ TEST_F(TokenTest, TestExportKeys) {
                      key_rotation_seconds);
   int64_t key_seq_num;
   {
-    std::unique_ptr<TokenSigningPrivateKey> key;
+    unique_ptr<TokenSigningPrivateKey> key;
     ASSERT_OK(signer.CheckNeedKey(&key));
     ASSERT_NE(nullptr, key.get());
     key_seq_num = key->key_seq_num();
@@ -607,7 +605,7 @@ TEST_F(TokenTest, TestExportKeys) {
 TEST_F(TokenTest, TestEndToEnd_Valid) {
   TokenSigner signer(kTokenValiditySeconds, kTokenValiditySeconds, 10);
   {
-    std::unique_ptr<TokenSigningPrivateKey> key;
+    unique_ptr<TokenSigningPrivateKey> key;
     ASSERT_OK(signer.CheckNeedKey(&key));
     ASSERT_NE(nullptr, key.get());
     ASSERT_OK(signer.AddKey(std::move(key)));
@@ -630,7 +628,7 @@ TEST_F(TokenTest, TestEndToEnd_InvalidCases) {
   // Key rotation interval 0 allows adding 2 keys in a row with no delay.
   TokenSigner signer(kTokenValiditySeconds, kTokenValiditySeconds, 0);
   {
-    std::unique_ptr<TokenSigningPrivateKey> key;
+    unique_ptr<TokenSigningPrivateKey> key;
     ASSERT_OK(signer.CheckNeedKey(&key));
     ASSERT_NE(nullptr, key.get());
     ASSERT_OK(signer.AddKey(std::move(key)));
@@ -681,7 +679,7 @@ TEST_F(TokenTest, TestEndToEnd_InvalidCases) {
   // verify, we expect the verifier to complain the key is unknown.
   {
     {
-      std::unique_ptr<TokenSigningPrivateKey> key;
+      unique_ptr<TokenSigningPrivateKey> key;
       ASSERT_OK(signer.CheckNeedKey(&key));
       ASSERT_NE(nullptr, key.get());
       ASSERT_OK(signer.AddKey(std::move(key)));
@@ -759,7 +757,7 @@ TEST_F(TokenTest, TestTokenVerifierImportKeys) {
 TEST_F(TokenTest, TestVaryingTokenValidityIntervals) {
   constexpr int kShortValiditySeconds = 2;
   const int kLongValiditySeconds = kShortValiditySeconds * 3;
-  std::shared_ptr<TokenVerifier> verifier(new TokenVerifier());
+  auto verifier(make_shared<TokenVerifier>());
   TokenSigner signer(kLongValiditySeconds, kShortValiditySeconds, 10, verifier);
   unique_ptr<TokenSigningPrivateKey> key;
   ASSERT_OK(signer.CheckNeedKey(&key));
@@ -803,7 +801,7 @@ TEST_F(TokenTest, TestKeyValidity) {
   const int kShortValiditySeconds = 2;
   const int kLongValiditySeconds = 6;
   const int kKeyRotationSeconds = 5;
-  std::shared_ptr<TokenVerifier> verifier(new TokenVerifier());
+  auto verifier(make_shared<TokenVerifier>());
   TokenSigner signer(kLongValiditySeconds, kShortValiditySeconds, kKeyRotationSeconds, verifier);
   unique_ptr<TokenSigningPrivateKey> key;
   ASSERT_OK(signer.CheckNeedKey(&key));
@@ -843,8 +841,9 @@ TEST_F(TokenTest, TestKeyValidity) {
     const auto result = verifier->VerifyTokenSignature(signed_token, &token_pb);
     const auto expire_secs = token_pb.expire_unix_epoch_seconds();
     ASSERT_EQ(VerificationResult::EXPIRED_TOKEN, result)
-        << Substitute("$0 token expires at $1, currently: $2",
-                      token_type, expire_secs, WallTime_Now());
+        << Substitute("validation result '$0': $1 token expires at $2, now $3",
+                      VerificationResultToString(result), token_type,
+                      expire_secs, WallTime_Now());
   };
 
   // Create a thread that repeatedly signs new authn tokens, returning the
@@ -863,7 +862,6 @@ TEST_F(TokenTest, TestKeyValidity) {
 
   // Do the same for authz tokens.
   threads.emplace_back([&] {
-    SignedTokenPB last_signed_by_first_tsk;
     results[1] = SignUntilRotatePast(&signer,
         [&] (SignedTokenPB* signed_token) {
           return signer.GenerateAuthzToken(kUser, TablePrivilegePB(), signed_token);
