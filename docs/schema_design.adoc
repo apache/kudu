@@ -186,9 +186,10 @@ tablets.
 === Column Compression
 
 Kudu allows per-column compression using the `LZ4`, `Snappy`, or `zlib`
-compression codecs. By default, columns are stored uncompressed. Consider using
-compression if reducing storage space is more important than raw scan
-performance.
+compression codecs. By default, columns that are Bitshuffle-encoded are
+inherently compressed with LZ4 compression. Otherwise, columns are stored
+uncompressed. Consider using compression if reducing storage space is more
+important than raw scan performance.
 
 Every data set will compress differently, but in general LZ4 is the most
 performant codec, while `zlib` will compress to the smallest data sizes.
