@@ -937,4 +937,29 @@ TEST_F(AuthzCacheControlTest, ResetCacheNoSentryIntegration) {
   }
 }
 
+// A test for the ValidateSentryServiceRpcAddresses group flag validator.
+// The only existing test scenario covers only the negative case, while
+// several other Sentry-related (and not) tests provide good coverage
+// for all the positive cases.
+class MasterSentryAndHmsFlagsTest : public KuduTest {
+};
+
+TEST_F(MasterSentryAndHmsFlagsTest, MasterRefuseToStart) {
+  // The code below results in setting the --sentry_service_rpc_addresses flag
+  // to the mini-sentry's RPC address, but leaving the --hive_metastore_uris
+  // flag unset (i.e. its value is an empty string). Such a combination of flag
+  // settings makes it impossible to start Kudu master.
+  cluster::ExternalMiniClusterOptions opts;
+  opts.enable_kerberos = true;
+  opts.enable_sentry = true;
+  opts.hms_mode = HmsMode::NONE;
+
+  cluster::ExternalMiniCluster cluster(std::move(opts));
+  const auto s = cluster.Start();
+  const auto msg = s.ToString();
+  ASSERT_TRUE(s.IsRuntimeError()) << msg;
+  ASSERT_STR_CONTAINS(msg, "failed to start masters: Unable to start Master");
+  ASSERT_STR_CONTAINS(msg, "kudu-master: process exited with non-zero status 1");
+}
+
 } // namespace kudu

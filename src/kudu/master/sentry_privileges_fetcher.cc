@@ -48,6 +48,7 @@
 #include "kudu/thrift/ha_client_metrics.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/flag_validators.h"
 #include "kudu/util/malloc.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
@@ -144,6 +145,7 @@ DEFINE_uint32(sentry_privileges_cache_max_scrubbed_entries_per_pass, 32,
 TAG_FLAG(sentry_privileges_cache_max_scrubbed_entries_per_pass, advanced);
 
 DECLARE_int64(authz_token_validity_seconds);
+DECLARE_string(hive_metastore_uris);
 DECLARE_string(kudu_service_name);
 DECLARE_string(server_name);
 
@@ -179,6 +181,29 @@ static bool ValidateAddresses(const char* flag_name, const string& addresses) {
   return s.ok();
 }
 DEFINE_validator(sentry_service_rpc_addresses, &ValidateAddresses);
+
+// This group flag validator enforces the logical dependency of the Sentry+Kudu
+// fine-grain authz scheme on the integration with HMS catalog.
+//
+// The validator makes it necessary to set the --hive_metastore_uris flag
+// if the --sentry_service_rpc_addresses flag is set.
+//
+// Even if Kudu could successfully fetch information on granted privileges from
+// Sentry to allow or deny commencing DML operations on already existing
+// tables, the information on privileges in Sentry would become inconsistent
+// after DDL operations (e.g., renaming a table).
+bool ValidateSentryServiceRpcAddresses() {
+  if (!FLAGS_sentry_service_rpc_addresses.empty() &&
+      FLAGS_hive_metastore_uris.empty()) {
+    LOG(ERROR) << "Hive Metastore catalog is required (--hive_metastore_uris) "
+                  "to run Kudu with Sentry-backed authorization scheme "
+                  "(--sentry_service_rpc_addresses).";
+    return false;
+  }
+  return true;
+}
+GROUP_FLAG_VALIDATOR(sentry_service_rpc_addresses,
+                     ValidateSentryServiceRpcAddresses);
 
 namespace {
 
