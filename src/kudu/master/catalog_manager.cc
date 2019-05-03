@@ -698,7 +698,7 @@ CatalogManager::CatalogManager(Master* master)
       leader_ready_term_(-1),
       hms_notification_log_event_id_(-1),
       leader_lock_(RWMutex::Priority::PREFER_WRITING) {
-  if (hms::HmsCatalog::IsEnabled() && SentryAuthzProvider::IsEnabled()) {
+  if (SentryAuthzProvider::IsEnabled()) {
     authz_provider_.reset(new SentryAuthzProvider(master_->metric_entity()));
   } else {
     authz_provider_.reset(new DefaultAuthzProvider);
