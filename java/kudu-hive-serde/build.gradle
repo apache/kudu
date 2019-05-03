@@ -1,0 +1,31 @@
+dependencies {
+    compile project(path: ":kudu-client")
+
+    provided libs.hiveExec
+    provided libs.hiveMetastore
+    provided libs.hadoopMRClientCommon
+    provided libs.hadoopCommon
+
+    testCompile libs.junit
+    testCompile libs.hiveExec
+}
+// kudu-hive-serde has no public Javadoc yet
+javadoc {
+    enabled = false
+}
+
+checkstyleMain {
+    enabled = false
+}
+
+checkstyleTest {
+    enabled = false
+}
+
+spotbugsMain {
+    enabled = false
+}
+
+spotbugsTest {
+    enabled = false
+}

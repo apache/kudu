@@ -15,18 +15,19 @@
 // specific language governing permissions and limitations
 // under the License.
 
-// This file contains the configuration of the project hierarchy.
-// Mainly we just define what subprojects are in the build.
+package org.apache.kudu.hive.serde;
 
-rootProject.name = "kudu-parent"
-include "kudu-backup"
-include "kudu-client"
-include "kudu-client-tools"
-include "kudu-flume-sink"
-include "kudu-hive"
-include "kudu-hive-serde"
-include "kudu-jepsen"
-include "kudu-mapreduce"
-include "kudu-spark"
-include "kudu-spark-tools"
-include "kudu-test-utils"
+import java.sql.Timestamp;
+import java.util.concurrent.TimeUnit;
+import org.apache.hadoop.hive.serde2.io.TimestampWritable;
+
+class TimestampConverter {
+
+  static Long toKudu(TimestampWritable hiveTimestamp) {
+    return TimeUnit.MILLISECONDS.toMicros(hiveTimestamp.getTimestamp().getTime());
+  }
+
+  static TimestampWritable toHive(Long kuduTimestamp) {
+    return new TimestampWritable(new Timestamp(TimeUnit.MICROSECONDS.toMillis(kuduTimestamp)));
+  }
+}

@@ -96,6 +96,7 @@ libs += [
     hdrhistogram         : "org.hdrhistogram:HdrHistogram:$versions.hdrhistogram",
     hiveMetastore        : "org.apache.hive:hive-metastore:$versions.hive",
     hiveMetastoreTest    : "org.apache.hive:hive-metastore:$versions.hive:tests",
+    hiveExec             : "org.apache.hive:hive-exec:$versions.hive:core",
     httpClient           : "org.apache.httpcomponents:httpclient:$versions.httpClient",
     httpMime             : "org.apache.httpcomponents:httpmime:$versions.httpClient",
     jepsen               : "jepsen:jepsen:$versions.jepsen",
