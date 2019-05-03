@@ -150,7 +150,6 @@ TAG_FLAG(scanner_inject_service_unavailable_on_continue_scan, unsafe);
 DEFINE_bool(tserver_enforce_access_control, false,
             "If set, the server will apply fine-grained access control rules "
             "to client RPCs.");
-TAG_FLAG(tserver_enforce_access_control, experimental);
 TAG_FLAG(tserver_enforce_access_control, runtime);
 
 DEFINE_double(tserver_inject_invalid_authz_token_ratio, 0.0,
