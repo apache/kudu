@@ -1653,6 +1653,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
       LOG(WARNING) << s.ToString();
       return SetupError(std::move(s), resp, MasterErrorPB::HIVE_METASTORE_ERROR);
     }
+    TRACE("Created new table in HMS catalog");
   }
   // Delete the new HMS entry if we exit early.
   auto abort_hms = MakeScopedCleanup([&] {
