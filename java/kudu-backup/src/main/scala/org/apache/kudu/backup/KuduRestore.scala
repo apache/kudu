@@ -131,12 +131,20 @@ object KuduRestore {
             session.close()
           }
           // Fail the task if there are any errors.
-          val errorCount = session.getPendingErrors.getRowErrors.length
-          if (errorCount > 0) {
-            val errors =
-              session.getPendingErrors.getRowErrors.take(5).map(_.getErrorStatus).mkString
-            throw new RuntimeException(
-              s"failed to write $errorCount rows from DataFrame to Kudu; sample errors: $errors")
+          // It is important to capture all of the errors via getRowErrors and then check
+          // the length because each call to session.getPendingErrors clears the ErrorCollector.
+          val pendingErrors = session.getPendingErrors
+          if (pendingErrors.getRowErrors.nonEmpty) {
+            val errors = pendingErrors.getRowErrors
+            val sample = errors.take(5).map(_.getErrorStatus).mkString
+            if (pendingErrors.isOverflowed) {
+              throw new RuntimeException(
+                s"PendingErrors overflowed. Failed to write at least ${errors.length} rows " +
+                  s"to Kudu; Sample errors: $sample")
+            } else {
+              throw new RuntimeException(
+                s"Failed to write ${errors.length} rows to Kudu; Sample errors: $sample")
+            }
           }
         }
       }

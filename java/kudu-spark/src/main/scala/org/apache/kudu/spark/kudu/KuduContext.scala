@@ -355,12 +355,17 @@ class KuduContext(val kuduMaster: String, sc: SparkContext, val socketReadTimeou
         operation,
         lastPropagatedTimestamp,
         writeOptions)
-      val errorCount = pendingErrors.getRowErrors.length
-      if (errorCount > 0) {
-        val errors =
-          pendingErrors.getRowErrors.take(5).map(_.getErrorStatus).mkString
-        throw new RuntimeException(
-          s"failed to write $errorCount rows from DataFrame to Kudu; sample errors: $errors")
+      if (pendingErrors.getRowErrors.nonEmpty) {
+        val errors = pendingErrors.getRowErrors
+        val sample = errors.take(5).map(_.getErrorStatus).mkString
+        if (pendingErrors.isOverflowed) {
+          throw new RuntimeException(
+            s"PendingErrors overflowed. Failed to write at least ${errors.length} rows " +
+              s"to Kudu; Sample errors: $sample")
+        } else {
+          throw new RuntimeException(
+            s"Failed to write ${errors.length} rows to Kudu; Sample errors: $sample")
+        }
       }
     })
     log.info(s"completed $operation ops: duration histogram: $durationHistogram")
