@@ -18,17 +18,20 @@
 package org.apache.kudu.client;
 
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import com.google.common.base.MoreObjects;
+import com.google.common.collect.Iterables;
 import com.google.protobuf.Message;
 import com.google.protobuf.UnsafeByteOperations;
+import org.apache.kudu.WireProtocol.AppStatusPB.ErrorCode;
 import org.apache.kudu.security.Token;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.jboss.netty.util.Timer;
 
-import org.apache.kudu.WireProtocol;
 import org.apache.kudu.client.Statistics.Statistic;
 import org.apache.kudu.client.Statistics.TabletStatistics;
 import org.apache.kudu.tserver.Tserver;
@@ -59,12 +62,25 @@ class Batch extends KuduRpc<BatchResponse> {
    */
   private long rowOperationsSizeBytes = 0;
 
-  /** See {@link SessionConfiguration#setIgnoreAllDuplicateRows(boolean)} */
-  private final boolean ignoreAllDuplicateRows;
+  private final EnumSet<ErrorCode> ignoredErrors;
 
-  Batch(KuduTable table, LocatedTablet tablet, boolean ignoreAllDuplicateRows) {
+  Batch(KuduTable table, LocatedTablet tablet, boolean ignoreAllDuplicateRows,
+        boolean ignoreAllNotFoundRows) {
     super(table, null, 0);
-    this.ignoreAllDuplicateRows = ignoreAllDuplicateRows;
+    // Build a set of ignored errors.
+    Set<ErrorCode> ignoredErrors = new HashSet<>();
+    if (ignoreAllDuplicateRows) {
+      ignoredErrors.add(ErrorCode.ALREADY_PRESENT);
+    }
+    if (ignoreAllNotFoundRows) {
+      ignoredErrors.add(ErrorCode.NOT_FOUND);
+    }
+    // EnumSet.copyOf doesn't handle an empty set, so handle that case specially.
+    if (ignoredErrors.isEmpty()) {
+      this.ignoredErrors = EnumSet.noneOf(ErrorCode.class);
+    } else {
+      this.ignoredErrors = EnumSet.copyOf(ignoredErrors);
+    }
     this.tablet = tablet;
   }
 
@@ -149,19 +165,16 @@ class Batch extends KuduRpc<BatchResponse> {
     readProtobuf(callResponse.getPBMessage(), builder);
 
     List<Tserver.WriteResponsePB.PerRowErrorPB> errorsPB = builder.getPerRowErrorsList();
-    if (ignoreAllDuplicateRows) {
-      boolean allAlreadyPresent = true;
+    // Create a new list of errors that doesn't contain ignored error codes.
+    if (!ignoredErrors.isEmpty()) {
+      List<Tserver.WriteResponsePB.PerRowErrorPB> filteredErrors = new ArrayList<>();
       for (Tserver.WriteResponsePB.PerRowErrorPB errorPB : errorsPB) {
-        if (errorPB.getError().getCode() != WireProtocol.AppStatusPB.ErrorCode.ALREADY_PRESENT) {
-          allAlreadyPresent = false;
-          break;
+        if (!ignoredErrors.contains(errorPB.getError().getCode())) {
+          filteredErrors.add(errorPB);
         }
       }
-      if (allAlreadyPresent) {
-        errorsPB = Collections.emptyList();
-      }
+      errorsPB = filteredErrors;
     }
-
     BatchResponse response = new BatchResponse(timeoutTracker.getElapsedMillis(),
                                                tsUUID,
                                                builder.getTimestamp(),
@@ -220,7 +233,7 @@ class Batch extends KuduRpc<BatchResponse> {
     return MoreObjects.toStringHelper(this)
                       .add("operations", operations.size())
                       .add("tablet", tablet)
-                      .add("ignoreAllDuplicateRows", ignoreAllDuplicateRows)
+                      .add("ignoredErrors", Iterables.toString(ignoredErrors))
                       .add("rpc", super.toString())
                       .toString();
   }

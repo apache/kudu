@@ -87,9 +87,42 @@ public class TestKuduSession {
     for (int i = 0; i < 10; i++) {
       session.apply(createInsert(table, i));
     }
+    // Test all of the various flush modes to be sure we correctly handle errors in
+    // individual operations and batches.
     for (SessionConfiguration.FlushMode mode : SessionConfiguration.FlushMode.values()) {
       session.setFlushMode(mode);
       for (int i = 0; i < 10; i++) {
+        OperationResponse resp = session.apply(createInsert(table, i));
+        if (mode == SessionConfiguration.FlushMode.AUTO_FLUSH_SYNC) {
+          assertFalse(resp.hasRowError());
+        }
+      }
+      if (mode == SessionConfiguration.FlushMode.MANUAL_FLUSH) {
+        List<OperationResponse> responses = session.flush();
+        for (OperationResponse resp : responses) {
+          assertFalse(resp.hasRowError());
+        }
+      } else if (mode == SessionConfiguration.FlushMode.AUTO_FLUSH_BACKGROUND) {
+        while (session.hasPendingOperations()) {
+          Thread.sleep(100);
+        }
+        assertEquals(0, session.countPendingErrors());
+      }
+    }
+  }
+
+  @Test(timeout = 100000)
+  public void testIgnoreAllNotFoundRows() throws Exception {
+    KuduTable table = client.createTable(tableName, basicSchema, getBasicCreateTableOptions());
+
+    KuduSession session = client.newSession();
+    session.setIgnoreAllNotFoundRows(true);
+    // Test all of the various flush modes to be sure we correctly handle errors in
+    // individual operations and batches.
+    for (SessionConfiguration.FlushMode mode : SessionConfiguration.FlushMode.values()) {
+      session.setFlushMode(mode);
+      for (int i = 0; i < 10; i++) {
+        session.apply(createDelete(table, i));
         OperationResponse resp = session.apply(createInsert(table, i));
         if (mode == SessionConfiguration.FlushMode.AUTO_FLUSH_SYNC) {
           assertFalse(resp.hasRowError());
@@ -414,5 +447,12 @@ public class TestKuduSession {
     }
     row.addBoolean(4, true);
     return upsert;
+  }
+
+  private Delete createDelete(KuduTable table, int key) {
+    Delete delete = table.newDelete();
+    PartialRow row = delete.getRow();
+    row.addInt(0, key);
+    return delete;
   }
 }

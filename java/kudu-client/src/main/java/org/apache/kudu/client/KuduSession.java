@@ -176,6 +176,16 @@ public class KuduSession implements SessionConfiguration {
   }
 
   @Override
+  public boolean isIgnoreAllNotFoundRows() {
+    return session.isIgnoreAllNotFoundRows();
+  }
+
+  @Override
+  public void setIgnoreAllNotFoundRows(boolean ignoreAllNotFoundRows) {
+    session.setIgnoreAllNotFoundRows(ignoreAllNotFoundRows);
+  }
+
+  @Override
   public int countPendingErrors() {
     return session.countPendingErrors();
   }

@@ -29,6 +29,7 @@ import com.google.common.collect.ImmutableList;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
 import com.google.protobuf.UnsafeByteOperations;
+import org.apache.kudu.WireProtocol.AppStatusPB.ErrorCode;
 import org.apache.kudu.security.Token;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
@@ -37,7 +38,6 @@ import org.jboss.netty.util.Timer;
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
 import org.apache.kudu.Type;
-import org.apache.kudu.WireProtocol;
 import org.apache.kudu.WireProtocol.RowOperationsPB;
 import org.apache.kudu.client.ProtobufHelper.SchemaPBConversionFlags;
 import org.apache.kudu.client.Statistics.Statistic;
@@ -94,6 +94,8 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
 
   /** See {@link SessionConfiguration#setIgnoreAllDuplicateRows(boolean)} */
   boolean ignoreAllDuplicateRows = false;
+  /** See {@link SessionConfiguration#setIgnoreAllNotFoundRows(boolean)} */
+  boolean ignoreAllNotFoundRows = false;
 
   /**
    * Package-private constructor. Subclasses need to be instantiated via AsyncKuduSession
@@ -124,6 +126,11 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
   /** See {@link SessionConfiguration#setIgnoreAllDuplicateRows(boolean)} */
   void setIgnoreAllDuplicateRows(boolean ignoreAllDuplicateRows) {
     this.ignoreAllDuplicateRows = ignoreAllDuplicateRows;
+  }
+
+  /** See {@link SessionConfiguration#setIgnoreAllNotFoundRows(boolean)} */
+  void setIgnoreAllNotFoundRows(boolean ignoreAllNotFoundRows) {
+    this.ignoreAllNotFoundRows = ignoreAllNotFoundRows;
   }
 
   /**
@@ -189,8 +196,9 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
     Tserver.WriteResponsePB.PerRowErrorPB error = null;
     if (builder.getPerRowErrorsCount() != 0) {
       error = builder.getPerRowErrors(0);
-      if (ignoreAllDuplicateRows &&
-          error.getError().getCode() == WireProtocol.AppStatusPB.ErrorCode.ALREADY_PRESENT) {
+      ErrorCode errorCode = error.getError().getCode();
+      if ((ignoreAllDuplicateRows && errorCode == ErrorCode.ALREADY_PRESENT) ||
+          (ignoreAllNotFoundRows && errorCode == ErrorCode.NOT_FOUND)) {
         error = null;
       }
     }

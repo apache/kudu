@@ -34,6 +34,8 @@ import org.apache.kudu.test.RandomUtils
 import org.apache.kudu.util.DataGenerator.DataGeneratorBuilder
 import org.apache.kudu.util.HybridTimeUtil
 import org.apache.kudu.util.SchemaGenerator.SchemaGeneratorBuilder
+import org.apache.spark.scheduler.SparkListener
+import org.apache.spark.scheduler.SparkListenerJobEnd
 import org.junit.Assert._
 import org.junit.After
 import org.junit.Before
@@ -434,6 +436,41 @@ class TestKuduBackup extends KuduTestSuite {
     // Restore the tables and check the row counts.
     restoreAndValidateTable(newTableName, 200)
     restoreAndValidateTable(tableName, 50)
+  }
+
+  @Test
+  def testDeleteIgnore(): Unit = {
+    insertRows(table, 100) // Insert data into the default test table.
+
+    // Run and validate initial backup.
+    backupAndValidateTable(tableName, 100, false)
+
+    // Delete the rows and validate incremental backup.
+    Range(0, 100).foreach(deleteRow)
+    backupAndValidateTable(tableName, 100, true)
+
+    // When restoring the table, delete half the rows after each job completes.
+    // This will force delete rows to cause NotFound errors and allow validation
+    // that they are correctly handled.
+    val listener = new SparkListener {
+      override def onJobEnd(jobEnd: SparkListenerJobEnd): Unit = {
+        val client = kuduContext.syncClient
+        val table = client.openTable(s"$tableName-restore")
+        val scanner = kuduContext.syncClient.newScannerBuilder(table).build()
+        val session = client.newSession()
+        scanner.asScala.foreach { rr =>
+          if (rr.getInt("key") % 2 == 0) {
+            val delete = table.newDelete()
+            val row = delete.getRow
+            row.addInt("key", rr.getInt("key"))
+            session.apply(delete)
+          }
+        }
+      }
+    }
+    ss.sparkContext.addSparkListener(listener)
+
+    restoreAndValidateTable(tableName, 0)
   }
 
   def createPartitionRow(value: Int): PartialRow = {

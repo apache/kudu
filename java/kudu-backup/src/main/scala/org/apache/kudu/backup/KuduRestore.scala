@@ -104,6 +104,10 @@ object KuduRestore {
           val partitioner = createPartitionFilter(metadata, lastMetadata)
           val session = context.syncClient.newSession
           session.setFlushMode(FlushMode.AUTO_FLUSH_BACKGROUND)
+          // In the case of task retries we need to ignore NotFound errors for deleted rows.
+          // TODO(KUDU-1563): Implement server side ignore capabilities to improve performance
+          //  and reliability.
+          session.setIgnoreAllNotFoundRows(true)
           try for (internalRow <- internalRows) {
             // Convert the InternalRows to Rows.
             // This avoids any corruption as reported in SPARK-26880.

@@ -179,6 +179,7 @@ public class AsyncKuduSession implements SessionConfiguration {
   private volatile boolean closed = false;
 
   private boolean ignoreAllDuplicateRows = false;
+  private boolean ignoreAllNotFoundRows = false;
 
   /**
    * Package-private constructor meant to be used via AsyncKuduClient
@@ -281,6 +282,16 @@ public class AsyncKuduSession implements SessionConfiguration {
   }
 
   @Override
+  public boolean isIgnoreAllNotFoundRows() {
+    return ignoreAllNotFoundRows;
+  }
+
+  @Override
+  public void setIgnoreAllNotFoundRows(boolean ignoreAllNotFoundRows) {
+    this.ignoreAllNotFoundRows = ignoreAllNotFoundRows;
+  }
+
+  @Override
   public int countPendingErrors() {
     return errorCollector.countErrors();
   }
@@ -377,7 +388,8 @@ public class AsyncKuduSession implements SessionConfiguration {
 
         Batch batch = batches.get(tabletId);
         if (batch == null) {
-          batch = new Batch(operation.getTable(), tablet, ignoreAllDuplicateRows);
+          batch = new Batch(operation.getTable(), tablet, ignoreAllDuplicateRows,
+              ignoreAllNotFoundRows);
           batches.put(tabletId, batch);
         }
         batch.add(operation, currentIndex++);
@@ -548,6 +560,7 @@ public class AsyncKuduSession implements SessionConfiguration {
       }
       operation.setExternalConsistencyMode(this.consistencyMode);
       operation.setIgnoreAllDuplicateRows(ignoreAllDuplicateRows);
+      operation.setIgnoreAllNotFoundRows(ignoreAllNotFoundRows);
 
       // Add a callback to update the propagated timestamp returned from the server.
       Callback<Deferred<OperationResponse>, OperationResponse> cb =
