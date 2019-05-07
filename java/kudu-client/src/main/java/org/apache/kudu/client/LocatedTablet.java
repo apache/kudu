@@ -107,6 +107,8 @@ public class LocatedTablet {
   @InterfaceAudience.Public
   @InterfaceStability.Evolving
   public static class Replica {
+    // TODO(wdberkeley): The ReplicaPB is deprecated server-side, so we ought to redo how this
+    // class stores its information.
     private final ReplicaPB pb;
 
     Replica(ReplicaPB pb) {

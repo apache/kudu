@@ -173,7 +173,8 @@ public class TestAsyncKuduClient {
     try {
       KuduTable badTable = new KuduTable(asyncClient, "Invalid table name",
           "Invalid table ID", null, null, 3);
-      asyncClient.discoverTablets(badTable, null, requestBatchSize, tabletLocations, 1000);
+      asyncClient.discoverTablets(badTable, null, requestBatchSize,
+                                  tabletLocations, new ArrayList<>(), 1000);
       fail("This should have failed quickly");
     } catch (NonRecoverableException ex) {
       assertTrue(ex.getMessage().contains(badHostname));
@@ -205,7 +206,8 @@ public class TestAsyncKuduClient {
         "master", leader.getRpcHost(), leader.getRpcPort(), Metadata.RaftPeerPB.Role.FOLLOWER));
     tabletLocations.add(tabletPb.build());
     try {
-      asyncClient.discoverTablets(table, new byte[0], requestBatchSize, tabletLocations, 1000);
+      asyncClient.discoverTablets(table, new byte[0], requestBatchSize,
+                                  tabletLocations, new ArrayList<>(), 1000);
       fail("discoverTablets should throw an exception if there's no leader");
     } catch (NoLeaderFoundException ex) {
       // Expected.

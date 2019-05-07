@@ -69,11 +69,13 @@ public class RemoteTablet implements Comparable<RemoteTablet> {
   private String leaderUuid;
 
   RemoteTablet(String tableId,
-               Master.TabletLocationsPB tabletLocations,
+               String tabletId,
+               Partition partition,
+               List<Master.TabletLocationsPB.ReplicaPB> replicas,
                List<ServerInfo> serverInfos) {
-    this.tabletId = tabletLocations.getTabletId().toStringUtf8();
+    this.tabletId = tabletId;
     this.tableId = tableId;
-    this.partition = ProtobufHelper.pbToPartition(tabletLocations.getPartition());
+    this.partition = partition;
     this.tabletServers = new HashMap<>(serverInfos.size());
 
     for (ServerInfo serverInfo : serverInfos) {
@@ -81,18 +83,18 @@ public class RemoteTablet implements Comparable<RemoteTablet> {
     }
 
     ImmutableList.Builder<LocatedTablet.Replica> replicasBuilder = new ImmutableList.Builder<>();
-    for (Master.TabletLocationsPB.ReplicaPB replica : tabletLocations.getReplicasList()) {
+    for (Master.TabletLocationsPB.ReplicaPB replica : replicas) {
       String uuid = replica.getTsInfo().getPermanentUuid().toStringUtf8();
       replicasBuilder.add(new LocatedTablet.Replica(replica));
       if (replica.getRole().equals(Metadata.RaftPeerPB.Role.LEADER)) {
-        leaderUuid = uuid;
+        this.leaderUuid = uuid;
       }
     }
 
     if (leaderUuid == null) {
       LOG.warn("No leader provided for tablet {}", getTabletId());
     }
-    replicas.set(replicasBuilder.build());
+    this.replicas.set(replicasBuilder.build());
   }
 
   @Override

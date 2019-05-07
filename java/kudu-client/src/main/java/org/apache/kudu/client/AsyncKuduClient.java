@@ -35,6 +35,7 @@ import java.net.UnknownHostException;
 import java.security.cert.CertificateException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.function.Consumer;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
@@ -75,6 +76,7 @@ import org.apache.kudu.Schema;
 import org.apache.kudu.master.Master;
 import org.apache.kudu.master.Master.GetTableLocationsResponsePB;
 import org.apache.kudu.master.Master.TableIdentifierPB;
+import org.apache.kudu.master.Master.TSInfoPB;
 import org.apache.kudu.util.AsyncUtil;
 import org.apache.kudu.util.NetUtil;
 import org.apache.kudu.util.Pair;
@@ -2112,6 +2114,7 @@ public class AsyncKuduClient implements AutoCloseable {
                           partitionKey,
                           requestedBatchSize,
                           response.getTabletLocationsList(),
+                          response.getTsInfosList(),
                           response.getTtlMillis());
         } catch (KuduException e) {
           return e;
@@ -2146,12 +2149,13 @@ public class AsyncKuduClient implements AutoCloseable {
   }
 
   /**
-   * Makes discovered tablet locations visible in the clients caches.
+   * Makes discovered tablet locations visible in the client's caches.
    * @param table the table which the locations belong to
    * @param requestPartitionKey the partition key of the table locations request
    * @param requestedBatchSize the number of tablet locations requested from the master in the
    *                           original request
    * @param locations the discovered locations
+   * @param tsInfosList a list of ts info that the replicas in 'locations' references by index.
    * @param ttl the ttl of the locations
    */
   @InterfaceAudience.LimitedPrivate("Test")
@@ -2159,8 +2163,8 @@ public class AsyncKuduClient implements AutoCloseable {
                        byte[] requestPartitionKey,
                        int requestedBatchSize,
                        List<Master.TabletLocationsPB> locations,
+                       List<Master.TSInfoPB> tsInfosList,
                        long ttl) throws KuduException {
-    // TODO(todd): handle "interned" response here
     String tableId = table.getTableId();
     String tableName = table.getName();
 
@@ -2179,20 +2183,48 @@ public class AsyncKuduClient implements AutoCloseable {
 
     // Build the list of discovered remote tablet instances. If we have
     // already discovered the tablet, its locations are refreshed.
+    int numTsInfos = tsInfosList.size();
     List<RemoteTablet> tablets = new ArrayList<>(locations.size());
     for (Master.TabletLocationsPB tabletPb : locations) {
 
-      List<UnknownHostException> lookupExceptions = new ArrayList<>(tabletPb.getReplicasCount());
+      List<Exception> lookupExceptions = new ArrayList<>(tabletPb.getReplicasCount());
       List<ServerInfo> servers = new ArrayList<>(tabletPb.getReplicasCount());
-      for (Master.TabletLocationsPB.ReplicaPB replica : tabletPb.getReplicasList()) {
+
+      // Lambda that does the common handling of a ts info.
+      Consumer<Master.TSInfoPB> updateServersAndCollectExceptions = tsInfo -> {
         try {
-          ServerInfo serverInfo = resolveTS(replica.getTsInfo());
+          ServerInfo serverInfo = resolveTS(tsInfo);
           if (serverInfo != null) {
             servers.add(serverInfo);
           }
         } catch (UnknownHostException ex) {
           lookupExceptions.add(ex);
         }
+      };
+
+      // Handle "old-style" non-interned replicas.
+      for (Master.TabletLocationsPB.ReplicaPB replica : tabletPb.getReplicasList()) {
+        updateServersAndCollectExceptions.accept(replica.getTsInfo());
+      }
+
+      // Handle interned replicas. As a shim, we also need to create a list of "old-style" ReplicaPBs
+      // to be stored inside the RemoteTablet.
+      // TODO(wdberkeley): Change this so ReplicaPBs aren't used by the client at all anymore.
+      List<Master.TabletLocationsPB.ReplicaPB> replicas = new ArrayList<>();
+      for (Master.TabletLocationsPB.InternedReplicaPB replica : tabletPb.getInternedReplicasList()) {
+        int tsInfoIdx = replica.getTsInfoIdx();
+        if (tsInfoIdx >= numTsInfos) {
+          lookupExceptions.add(new NonRecoverableException(Status.Corruption(
+              String.format("invalid response from master: referenced tablet idx %d but only %d present",
+                            tsInfoIdx, numTsInfos))));
+          continue;
+        }
+        TSInfoPB tsInfo = tsInfosList.get(tsInfoIdx);
+        updateServersAndCollectExceptions.accept(tsInfo);
+        Master.TabletLocationsPB.ReplicaPB.Builder builder = Master.TabletLocationsPB.ReplicaPB.newBuilder();
+        builder.setRole(replica.getRole());
+        builder.setTsInfo(tsInfo);
+        replicas.add(builder.build());
       }
 
       if (!lookupExceptions.isEmpty() &&
@@ -2202,7 +2234,11 @@ public class AsyncKuduClient implements AutoCloseable {
         throw new NonRecoverableException(statusIOE);
       }
 
-      RemoteTablet rt = new RemoteTablet(tableId, tabletPb, servers);
+      RemoteTablet rt = new RemoteTablet(tableId,
+                                         tabletPb.getTabletId().toStringUtf8(),
+                                         ProtobufHelper.pbToPartition(tabletPb.getPartition()),
+                                         replicas.isEmpty() ? tabletPb.getReplicasList() : replicas,
+                                         servers);
 
       LOG.debug("Learned about tablet {} for table '{}' with partition {}",
                 rt.getTabletId(), tableName, rt.getPartition());

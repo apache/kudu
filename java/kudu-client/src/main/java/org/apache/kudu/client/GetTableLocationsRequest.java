@@ -91,6 +91,7 @@ class GetTableLocationsRequest extends KuduRpc<Master.GetTableLocationsResponseP
       builder.setPartitionKeyEnd(UnsafeByteOperations.unsafeWrap(endKey));
     }
     builder.setMaxReturnedLocations(maxReturnedLocations);
+    builder.setInternTsInfosInResponse(true);
     return builder.build();
   }
 }
