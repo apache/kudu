@@ -28,6 +28,7 @@
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/callback.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -43,7 +44,7 @@ class AsyncUtilTest : public KuduTest {
     // Set up an alarm to fail the test in case of deadlock.
     alarm(30);
   }
-  ~AsyncUtilTest() {
+  virtual ~AsyncUtilTest() {
     // Disable the alarm on test exit.
     alarm(0);
   }
@@ -99,31 +100,72 @@ TEST_F(AsyncUtilTest, TestSynchronizerMultiWait) {
   }
 }
 
-TEST_F(AsyncUtilTest, TestSynchronizerTimedWait) {
-  thread waiter;
-  {
-    Synchronizer sync;
-    auto cb = sync.AsStatusCallback();
-    waiter = thread([cb] {
-        SleepFor(MonoDelta::FromMilliseconds(5));
-        cb.Run(Status::OK());
-    });
-    ASSERT_OK(sync.WaitFor(MonoDelta::FromMilliseconds(1000)));
-  }
-  waiter.join();
+// Flavors of wait that Synchronizer is capable of: WaitFor() or WaitUntil().
+enum class TimedWaitFlavor {
+  WaitFor,
+  WaitUntil,
+};
 
-  {
-    Synchronizer sync;
-    auto cb = sync.AsStatusCallback();
-    waiter = thread([cb] {
-        SleepFor(MonoDelta::FromMilliseconds(1000));
-        cb.Run(Status::OK());
-    });
-    ASSERT_TRUE(sync.WaitFor(MonoDelta::FromMilliseconds(5)).IsTimedOut());
-  }
+class AsyncUtilTimedWaitTest:
+    public AsyncUtilTest,
+    public ::testing::WithParamInterface<TimedWaitFlavor> {
+};
 
-  // Waiting on the thread gives TSAN to check that no thread safety issues
-  // occurred.
-  waiter.join();
+TEST_P(AsyncUtilTimedWaitTest, SynchronizerTimedWaitSuccess) {
+  const auto kWaitInterval = MonoDelta::FromMilliseconds(1000);
+
+  Synchronizer sync;
+  auto cb = sync.AsStatusCallback();
+  auto waiter = thread([cb] {
+    SleepFor(MonoDelta::FromMilliseconds(5));
+    cb.Run(Status::OK());
+  });
+  SCOPED_CLEANUP({
+    waiter.join();
+  });
+  const auto mode = GetParam();
+  switch (mode) {
+    case TimedWaitFlavor::WaitFor:
+      ASSERT_OK(sync.WaitFor(kWaitInterval));
+      break;
+    case TimedWaitFlavor::WaitUntil:
+      ASSERT_OK(sync.WaitUntil(MonoTime::Now() + kWaitInterval));
+      break;
+    default:
+      FAIL() << "unsupported wait mode " << static_cast<int>(mode);
+      break;
+  }
 }
+
+TEST_P(AsyncUtilTimedWaitTest, SynchronizerTimedWaitTimeout) {
+  const auto kWaitInterval = MonoDelta::FromMilliseconds(5);
+
+  Synchronizer sync;
+  auto cb = sync.AsStatusCallback();
+  auto waiter = thread([cb] {
+    SleepFor(MonoDelta::FromMilliseconds(1000));
+    cb.Run(Status::OK());
+  });
+  SCOPED_CLEANUP({
+    waiter.join();
+  });
+  const auto mode = GetParam();
+  switch (mode) {
+    case TimedWaitFlavor::WaitFor:
+      ASSERT_TRUE(sync.WaitFor(kWaitInterval).IsTimedOut());
+      break;
+    case TimedWaitFlavor::WaitUntil:
+      ASSERT_TRUE(sync.WaitUntil(MonoTime::Now() + kWaitInterval).IsTimedOut());
+      break;
+    default:
+      FAIL() << "unsupported wait mode " << static_cast<int>(mode);
+      break;
+  }
+}
+
+INSTANTIATE_TEST_CASE_P(WaitFlavors,
+                        AsyncUtilTimedWaitTest,
+                        ::testing::Values(TimedWaitFlavor::WaitFor,
+                                          TimedWaitFlavor::WaitUntil));
+
 } // namespace kudu

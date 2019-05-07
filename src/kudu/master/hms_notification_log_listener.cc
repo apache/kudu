@@ -118,7 +118,7 @@ Status HmsNotificationLogListenerTask::WaitForCatchUp(const MonoTime& deadline) 
     wake_up_cv_.Signal();
   }
 
-  RETURN_NOT_OK_PREPEND(synchronizer.WaitFor(deadline - MonoTime::Now()),
+  RETURN_NOT_OK_PREPEND(synchronizer.WaitUntil(deadline),
                         "failed to wait for Hive Metastore notification log listener to catch up");
   return Status::OK();
 }

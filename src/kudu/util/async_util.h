@@ -44,7 +44,7 @@ namespace kudu {
 class Synchronizer {
  public:
   Synchronizer()
-    : data_(std::make_shared<Data>()) {
+      : data_(std::make_shared<Data>()) {
   }
 
   void StatusCB(const Status& status) {
@@ -66,6 +66,13 @@ class Synchronizer {
 
   Status WaitFor(const MonoDelta& delta) const {
     if (PREDICT_FALSE(!data_->latch.WaitFor(delta))) {
+      return Status::TimedOut("timed out while waiting for the callback to be called");
+    }
+    return data_->status;
+  }
+
+  Status WaitUntil(const MonoTime& deadline) const {
+    if (PREDICT_FALSE(!data_->latch.WaitUntil(deadline))) {
       return Status::TimedOut("timed out while waiting for the callback to be called");
     }
     return data_->status;
