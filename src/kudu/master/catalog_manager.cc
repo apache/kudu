@@ -1404,12 +1404,6 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   leader_lock_.AssertAcquiredForReading();
   RETURN_NOT_OK(CheckOnline());
 
-  // If the HMS integration is enabled, wait for the notification log listener
-  // to catch up. This reduces the likelihood of attempting to create a table
-  // with a name that conflicts with a table that has just been deleted or
-  // renamed in the HMS.
-  RETURN_NOT_OK(WaitForNotificationLogListenerCatchUp(resp, rpc));
-
   // Copy the request, so we can fill in some defaults.
   CreateTableRequestPB req = *orig_req;
   LOG(INFO) << Substitute("Servicing CreateTable request from $0:\n$1",
@@ -1434,6 +1428,12 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
         authz_provider_->AuthorizeCreateTable(normalized_table_name, user, owner),
         resp, MasterErrorPB::NOT_AUTHORIZED));
   }
+
+  // If the HMS integration is enabled, wait for the notification log listener
+  // to catch up. This reduces the likelihood of attempting to create a table
+  // with a name that conflicts with a table that has just been deleted or
+  // renamed in the HMS.
+  RETURN_NOT_OK(WaitForNotificationLogListenerCatchUp(resp, rpc));
 
   Schema client_schema;
   RETURN_NOT_OK(SchemaFromPB(req.schema(), &client_schema));
