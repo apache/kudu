@@ -33,8 +33,7 @@ import org.apache.kudu.client.CreateTableOptions
 import org.apache.kudu.Schema
 import org.apache.kudu.Type
 import org.apache.kudu.test.RandomUtils
-import org.apache.spark.scheduler.SparkListener
-import org.apache.spark.scheduler.SparkListenerTaskEnd
+import org.apache.kudu.spark.kudu.SparkListenerUtil.withJobTaskCounter
 import org.apache.spark.sql.execution.datasources.LogicalRelation
 import org.junit.Before
 import org.junit.Test
@@ -428,15 +427,6 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
     options.addSplitRow(split)
     val table = kuduClient.createTable(tableName, simpleSchema, options)
 
-    // Add a SparkListener to count the number of tasks that end.
-    var actualNumTasks = 0
-    val listener = new SparkListener {
-      override def onTaskEnd(taskEnd: SparkListenerTaskEnd): Unit = {
-        actualNumTasks += 1
-      }
-    }
-    ss.sparkContext.addSparkListener(listener)
-
     val random = Random.javaRandomToRandom(RandomUtils.getRandom)
     val data = random.shuffle(
       Seq(
@@ -459,10 +449,14 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
     // Capture the rows so we can validate the insert order.
     kuduContext.captureRows = true
 
-    kuduContext.insertRows(
-      dataDF,
-      tableName,
-      new KuduWriteOptions(repartition = true, repartitionSort = repartitionSort))
+    // Count the number of tasks that end.
+    val actualNumTasks = withJobTaskCounter(ss.sparkContext) { _ =>
+      kuduContext.insertRows(
+        dataDF,
+        tableName,
+        new KuduWriteOptions(repartition = true, repartitionSort = repartitionSort))
+    }
+
     // 2 tasks from the parallelize call, and 2 from the repartitioning.
     assertEquals(4, actualNumTasks)
     val rows = kuduContext.rowsAccumulator.value.asScala

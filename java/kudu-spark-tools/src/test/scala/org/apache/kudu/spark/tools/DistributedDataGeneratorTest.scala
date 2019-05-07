@@ -22,9 +22,8 @@ import org.apache.kudu.spark.kudu.KuduTestSuite
 import org.apache.kudu.test.RandomUtils
 import org.apache.kudu.util.DecimalUtil
 import org.apache.kudu.util.SchemaGenerator
+import org.apache.kudu.spark.kudu.SparkListenerUtil.withJobTaskCounter
 import org.apache.spark.rdd.RDD
-import org.apache.spark.scheduler.SparkListener
-import org.apache.spark.scheduler.SparkListenerTaskEnd
 import org.apache.spark.sql.Row
 import org.junit.Test
 import org.junit.Assert.assertEquals
@@ -88,15 +87,6 @@ class DistributedDataGeneratorTest extends KuduTestSuite {
 
   @Test
   def testNumTasks() {
-    // Add a SparkListener to count the number of tasks that end.
-    var actualNumTasks = 0
-    val listener = new SparkListener {
-      override def onTaskEnd(taskEnd: SparkListenerTaskEnd): Unit = {
-        actualNumTasks += 1
-      }
-    }
-    ss.sparkContext.addSparkListener(listener)
-
     val numTasks = 8
     val numRows = 100
     val args = Array(
@@ -104,22 +94,16 @@ class DistributedDataGeneratorTest extends KuduTestSuite {
       s"--num-tasks=$numTasks",
       randomTableName,
       harness.getMasterAddressesAsString)
-    runGeneratorTest(args)
 
+    // count the number of tasks that end.
+    val actualNumTasks = withJobTaskCounter(ss.sparkContext) { _ =>
+      runGeneratorTest(args)
+    }
     assertEquals(numTasks, actualNumTasks)
   }
 
   @Test
   def testNumTasksRepartition(): Unit = {
-    // Add a SparkListener to count the number of tasks that end.
-    var actualNumTasks = 0
-    val listener = new SparkListener {
-      override def onTaskEnd(taskEnd: SparkListenerTaskEnd): Unit = {
-        actualNumTasks += 1
-      }
-    }
-    ss.sparkContext.addSparkListener(listener)
-
     val numTasks = 8
     val numRows = 100
     val args = Array(
@@ -128,7 +112,11 @@ class DistributedDataGeneratorTest extends KuduTestSuite {
       "--repartition=true",
       randomTableName,
       harness.getMasterAddressesAsString)
-    runGeneratorTest(args)
+
+    // count the number of tasks that end.
+    val actualNumTasks = withJobTaskCounter(ss.sparkContext) { _ =>
+      runGeneratorTest(args)
+    }
 
     val table = kuduContext.syncClient.openTable(randomTableName)
     val numPartitions = new KuduPartitioner.KuduPartitionerBuilder(table).build().numPartitions()
