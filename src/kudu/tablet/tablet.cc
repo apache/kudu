@@ -264,7 +264,6 @@ Status Tablet::Open() {
   TRACE_EVENT0("tablet", "Tablet::Open");
   RETURN_IF_STOPPED_OR_CHECK_STATE(kInitialized);
 
-  std::lock_guard<rw_spinlock> lock(component_lock_);
   CHECK(schema()->has_column_ids());
 
   next_mrs_id_ = metadata_->last_durable_mrs_id() + 1;
@@ -291,15 +290,6 @@ Status Tablet::Open() {
 
   shared_ptr<RowSetTree> new_rowset_tree(new RowSetTree());
   CHECK_OK(new_rowset_tree->Reset(rowsets_opened));
-  if (metrics_) {
-    // Compute the initial average height of the rowset tree.
-    double avg_height;
-    RowSetInfo::ComputeCdfAndCollectOrdered(*new_rowset_tree,
-                                            &avg_height,
-                                            nullptr,
-                                            nullptr);
-    metrics_->average_diskrowset_height->set_value(avg_height);
-  }
 
   // Now that the current state is loaded, create the new MemRowSet with the next id.
   shared_ptr<MemRowSet> new_mrs;
@@ -307,7 +297,13 @@ Status Tablet::Open() {
                                   log_anchor_registry_.get(),
                                   mem_trackers_.tablet_tracker,
                                   &new_mrs));
-  components_ = new TabletComponents(new_mrs, new_rowset_tree);
+  {
+    std::lock_guard<rw_spinlock> lock(component_lock_);
+    components_ = new TabletComponents(new_mrs, new_rowset_tree);
+  }
+
+  // Compute the initial average rowset height.
+  UpdateAverageRowsetHeight();
 
   {
     std::lock_guard<simple_spinlock> l(state_lock_);
@@ -1053,10 +1049,10 @@ void Tablet::ModifyRowSetTree(const RowSetTree& old_tree,
   CHECK_OK(new_tree->Reset(post_swap));
 }
 
-void Tablet::AtomicSwapRowSets(const RowSetVector &old_rowsets,
-                               const RowSetVector &new_rowsets) {
+void Tablet::AtomicSwapRowSets(const RowSetVector &to_remove,
+                               const RowSetVector &to_add) {
   std::lock_guard<rw_spinlock> lock(component_lock_);
-  AtomicSwapRowSetsUnlocked(old_rowsets, new_rowsets);
+  AtomicSwapRowSetsUnlocked(to_remove, to_add);
 }
 
 void Tablet::AtomicSwapRowSetsUnlocked(const RowSetVector &to_remove,
@@ -1068,19 +1064,6 @@ void Tablet::AtomicSwapRowSetsUnlocked(const RowSetVector &to_remove,
                    to_remove, to_add, new_tree.get());
 
   components_ = new TabletComponents(components_->memrowset, new_tree);
-
-  // Recompute the average rowset height.
-  // TODO(wdberkeley): We should be able to cache the computation of the CDF
-  // and average height and efficiently recompute it instead of doing it from
-  // scratch.
-  if (metrics_) {
-    double avg_height;
-    RowSetInfo::ComputeCdfAndCollectOrdered(*new_tree,
-                                            &avg_height,
-                                            nullptr,
-                                            nullptr);
-    metrics_->average_diskrowset_height->set_value(avg_height);
-  }
 }
 
 Status Tablet::DoMajorDeltaCompaction(const vector<ColumnId>& col_ids,
@@ -1723,6 +1706,7 @@ Status Tablet::DoMergeCompactionOrFlush(const RowSetsInCompaction &input,
   // Replace the compacted rowsets with the new on-disk rowsets, making them visible now that
   // their metadata was written to disk.
   AtomicSwapRowSets({ inprogress_rowset }, new_disk_rowsets);
+  UpdateAverageRowsetHeight();
 
   const auto rows_written = drsw.rows_written_count();
   const auto drs_written = drsw.drs_written_count();
@@ -1753,7 +1737,26 @@ Status Tablet::HandleEmptyCompactionOrFlush(const RowSetVector& rowsets,
                         "Failed to flush new tablet metadata");
 
   AtomicSwapRowSets(rowsets, RowSetVector());
+  UpdateAverageRowsetHeight();
   return Status::OK();
+}
+
+void Tablet::UpdateAverageRowsetHeight() {
+  if (!metrics_) {
+    return;
+  }
+  // TODO(wdberkeley): We should be able to cache the computation of the CDF
+  // and average height and efficiently recompute it instead of doing it from
+  // scratch.
+  scoped_refptr<TabletComponents> comps;
+  GetComponents(&comps);
+  std::lock_guard<std::mutex> l(compact_select_lock_);
+  double avg_height;
+  RowSetInfo::ComputeCdfAndCollectOrdered(*comps->rowsets,
+                                          &avg_height,
+                                          nullptr,
+                                          nullptr);
+  metrics_->average_diskrowset_height->set_value(avg_height);
 }
 
 Status Tablet::Compact(CompactFlags flags) {

@@ -346,7 +346,6 @@ class Tablet {
   // memrowset in the current implementation.
   Status CountRows(uint64_t *count) const;
 
-
   // Verbosely dump this entire tablet to the logs. This is only
   // really useful when debugging unit tests failures where the tablet
   // has a very small number of rows.
@@ -597,6 +596,10 @@ class Tablet {
   // metadata and flush it.
   Status HandleEmptyCompactionOrFlush(const RowSetVector& rowsets,
                                       int mrs_being_flushed);
+
+  // Updates the average rowset height metric. Acquires the tablet's
+  // compact_select_lock_.
+  void UpdateAverageRowsetHeight();
 
   Status FlushMetadata(const RowSetVector& to_remove,
                        const RowSetMetadataVector& to_add,
