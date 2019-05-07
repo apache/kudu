@@ -134,11 +134,13 @@ DEFINE_double(tablet_throttler_burst_factor, 1.0f,
              "base rate.");
 TAG_FLAG(tablet_throttler_burst_factor, experimental);
 
-DEFINE_int32(tablet_history_max_age_sec, 15 * 60,
-             "Number of seconds to retain tablet history. Reads initiated at a "
-             "snapshot that is older than this age will be rejected. "
-             "To disable history removal, set to -1.");
+DEFINE_int32(tablet_history_max_age_sec, 60 * 60 * 24 * 7,
+             "Number of seconds to retain tablet history, including history "
+             "required to perform diff scans and incremental backups. Reads "
+             "initiated at a snapshot that is older than this age will be "
+             "rejected. To disable history removal, set to -1.");
 TAG_FLAG(tablet_history_max_age_sec, advanced);
+TAG_FLAG(tablet_history_max_age_sec, stable);
 
 DEFINE_int32(max_cell_size_bytes, 64 * 1024,
              "The maximum size of any individual cell in a table. Attempting to store "
