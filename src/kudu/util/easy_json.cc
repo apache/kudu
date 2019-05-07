@@ -26,6 +26,7 @@
 #include <rapidjson/rapidjson.h>
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
+// IWYU pragma: no_include <rapidjson/encodings.h>
 
 using rapidjson::SizeType;
 using rapidjson::Value;
@@ -82,18 +83,17 @@ EasyJson& EasyJson::operator=(T val) {
   *value_ = val;
   return *this;
 }
-template EasyJson& EasyJson::operator=<bool>(bool val);
-template EasyJson& EasyJson::operator=<int32_t>(int32_t val);
-template EasyJson& EasyJson::operator=<int64_t>(int64_t val);
-template EasyJson& EasyJson::operator=<uint32_t>(uint32_t val);
-template EasyJson& EasyJson::operator=<uint64_t>(uint64_t val);
-template EasyJson& EasyJson::operator=<double>(double val);
-template<> EasyJson& EasyJson::operator=<const char*>(const char* val) {
+template EasyJson& EasyJson::operator=(bool val);
+template EasyJson& EasyJson::operator=(int32_t val);
+template EasyJson& EasyJson::operator=(int64_t val);
+template EasyJson& EasyJson::operator=(uint32_t val);
+template EasyJson& EasyJson::operator=(uint64_t val);
+template EasyJson& EasyJson::operator=(double val);
+template<> EasyJson& EasyJson::operator=(const char* val) {
   value_->SetString(val, alloc_->allocator());
   return *this;
 }
-template<> EasyJson& EasyJson::operator=<EasyJson::ComplexTypeInitializer>(
-    EasyJson::ComplexTypeInitializer val) {
+template<> EasyJson& EasyJson::operator=(EasyJson::ComplexTypeInitializer val) {
   if (val == kObject) {
     value_->SetObject();
   } else if (val == kArray) {
@@ -123,16 +123,15 @@ template<typename T>
 EasyJson EasyJson::Set(const string& key, T val) {
   return (Get(key) = val);
 }
-template EasyJson EasyJson::Set<bool>(const string& key, bool val);
-template EasyJson EasyJson::Set<int32_t>(const string& key, int32_t val);
-template EasyJson EasyJson::Set<int64_t>(const string& key, int64_t val);
-template EasyJson EasyJson::Set<uint32_t>(const string& key, uint32_t val);
-template EasyJson EasyJson::Set<uint64_t>(const string& key, uint64_t val);
-template EasyJson EasyJson::Set<double>(const string& key, double val);
-template EasyJson EasyJson::Set<const char*>(const string& key, const char* val);
-template EasyJson EasyJson::Set<EasyJson::ComplexTypeInitializer>(
-    const string& key,
-    EasyJson::ComplexTypeInitializer val);
+template EasyJson EasyJson::Set(const string& key, bool val);
+template EasyJson EasyJson::Set(const string& key, int32_t val);
+template EasyJson EasyJson::Set(const string& key, int64_t val);
+template EasyJson EasyJson::Set(const string& key, uint32_t val);
+template EasyJson EasyJson::Set(const string& key, uint64_t val);
+template EasyJson EasyJson::Set(const string& key, double val);
+template EasyJson EasyJson::Set(const string& key, const char* val);
+template EasyJson EasyJson::Set(const string& key,
+                                EasyJson::ComplexTypeInitializer val);
 
 EasyJson EasyJson::Set(int index, const string& val) {
   return (Get(index) = val);
@@ -141,16 +140,15 @@ template<typename T>
 EasyJson EasyJson::Set(int index, T val) {
   return (Get(index) = val);
 }
-template EasyJson EasyJson::Set<bool>(int index, bool val);
-template EasyJson EasyJson::Set<int32_t>(int index, int32_t val);
-template EasyJson EasyJson::Set<int64_t>(int index, int64_t val);
-template EasyJson EasyJson::Set<uint32_t>(int index, uint32_t val);
-template EasyJson EasyJson::Set<uint64_t>(int index, uint64_t val);
-template EasyJson EasyJson::Set<double>(int index, double val);
-template EasyJson EasyJson::Set<const char*>(int index, const char* val);
-template EasyJson EasyJson::Set<EasyJson::ComplexTypeInitializer>(
-    int index,
-    EasyJson::ComplexTypeInitializer val);
+template EasyJson EasyJson::Set(int index, bool val);
+template EasyJson EasyJson::Set(int index, int32_t val);
+template EasyJson EasyJson::Set(int index, int64_t val);
+template EasyJson EasyJson::Set(int index, uint32_t val);
+template EasyJson EasyJson::Set(int index, uint64_t val);
+template EasyJson EasyJson::Set(int index, double val);
+template EasyJson EasyJson::Set(int index, const char* val);
+template EasyJson EasyJson::Set(int index,
+                                EasyJson::ComplexTypeInitializer val);
 
 EasyJson EasyJson::PushBack(const string& val) {
   if (!value_->IsArray()) {
@@ -168,13 +166,13 @@ EasyJson EasyJson::PushBack(T val) {
   value_->PushBack(val, alloc_->allocator());
   return EasyJson(&(*value_)[value_->Size() - 1], alloc_);
 }
-template EasyJson EasyJson::PushBack<bool>(bool val);
-template EasyJson EasyJson::PushBack<int32_t>(int32_t val);
-template EasyJson EasyJson::PushBack<int64_t>(int64_t val);
-template EasyJson EasyJson::PushBack<uint32_t>(uint32_t val);
-template EasyJson EasyJson::PushBack<uint64_t>(uint64_t val);
-template EasyJson EasyJson::PushBack<double>(double val);
-template<> EasyJson EasyJson::PushBack<const char*>(const char* val) {
+template EasyJson EasyJson::PushBack(bool val);
+template EasyJson EasyJson::PushBack(int32_t val);
+template EasyJson EasyJson::PushBack(int64_t val);
+template EasyJson EasyJson::PushBack(uint32_t val);
+template EasyJson EasyJson::PushBack(uint64_t val);
+template EasyJson EasyJson::PushBack(double val);
+template<> EasyJson EasyJson::PushBack(const char* val) {
   if (!value_->IsArray()) {
     value_->SetArray();
   }
@@ -182,8 +180,7 @@ template<> EasyJson EasyJson::PushBack<const char*>(const char* val) {
   value_->PushBack(push_val, alloc_->allocator());
   return EasyJson(&(*value_)[value_->Size() - 1], alloc_);
 }
-template<> EasyJson EasyJson::PushBack<EasyJson::ComplexTypeInitializer>(
-    EasyJson::ComplexTypeInitializer val) {
+template<> EasyJson EasyJson::PushBack(EasyJson::ComplexTypeInitializer val) {
   if (!value_->IsArray()) {
     value_->SetArray();
   }
