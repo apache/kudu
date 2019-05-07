@@ -51,6 +51,8 @@ class RowSetInfo {
   // rowset tree is set into 'average_height', if it is not nullptr.
   // If one of 'info_by_min_key' and 'info_by_max_key' is nullptr, the other
   // must be.
+  // Requires holding the compact_select_lock_ for the tablet that the
+  // rowsets in 'tree' references.
   static void ComputeCdfAndCollectOrdered(const RowSetTree& tree,
                                           double* average_height,
                                           std::vector<RowSetInfo>* info_by_min_key,
