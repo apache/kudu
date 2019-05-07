@@ -464,6 +464,52 @@ message(STATUS "message goes here")
 ADD_KUDU_TEST(some-test)
 ----
 
+== Third-party dependencies
+
+Like many complex applications, Kudu depends on a number of third-party
+dependencies. Some (such as OpenSSL) are expected to be found on the build
+system itself. However, the vast majority are "vendored" in the `thirdparty/`
+tree. These dependencies are all versioned and pinned. They are also
+source-based; the dependencies are built before the rest of Kudu is built using
+the `build-if-necessary.sh` script.
+
+Third-party dependencies and their versions are defined in `vars.sh`. The source
+code for each dependency is located in a tarball, typically named
+`<dependency>-<version>.tar.gz`. The tarballs are stored in an Amazon S3 bucket
+operated by Cloudera. The bucket is cached in Amazon CloudFront to maximize
+download performance and reliability.
+
+If as part of your contribution you need to add a new third-party dependency,
+here's what you need to do:
+
+. Begin by preparing a source tarball for the new dependency. Ideally it should
+be a vanilla tarball obtained directly from an upstream project, but sometimes
+either its name or the contents need to be massaged to meet Kudu's expectations.
+
+. Add the new dependency to the third-party build. You'll need to modify
+`vars.sh`, `download-thirdparty.sh`, `build-definitions.sh`, and
+`build-thirdparty.sh`.
+
+. On your local machine, extract the source tarball into `thirdparty/src`.
+
+. Test the dependency's build by running `build-thirdparty.sh <dependency>`.
+This should build and install the dependency into `thirdparty/installed`, making
+it available for the Kudu build.
+
+. Test the Kudu build using the new dependency. You will need to pass
+`NO_REBUILD_THIRDPARTY=1` in the environment to prevent the Kudu build from
+rebuilding the `thirdparty/` tree (whereupon it'll fail to download the new
+dependency).
+
+. When everything checks out, contact a Kudu committer who is also a Cloudera
+employee and ask them to upload your source tarball to S3.
+
+. After the tarball has been uploaded, test the entire third-party build
+end-to-end by running `build-if-necessary.sh`.
+
+. Publish your patch to gerrit. With the tarball uploaded, the precommit builds
+should download and build the new dependency successfully.
+
 == Testing
 
 All new code should have tests.::
