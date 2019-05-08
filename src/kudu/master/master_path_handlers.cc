@@ -328,7 +328,12 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
       (*output)["error"] = Substitute("Unable to decode schema: $0", s.ToString());
       return;
     }
-    (*output)["column_count"] = schema.num_columns();
+    // On platforms where !std::is_same<size_t, uint64_t>::value
+    // (e.g., on macOS 'size_t' is a typedef for 'unsigned long',
+    // but 'uint64_t' is a typedef for 'unsigned long long'),
+    // EasyJson does not have appropriate assignment operator defined. Adding
+    // a static_cast<uint64_t> here is a reasonable stopgap for those cases.
+    (*output)["column_count"] = static_cast<uint64_t>(schema.num_columns());
     s = PartitionSchema::FromPB(l.data().pb.partition_schema(), schema, &partition_schema);
     if (!s.ok()) {
       (*output)["error"] =
