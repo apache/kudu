@@ -25,12 +25,8 @@ apply plugin: "ru.vyarus.animalsniffer" // Ensures Java code uses APIs from a pa
 apply plugin: "scalafmt" // Automatically formats Scala code on each build.
 apply plugin: "net.ltgt.errorprone" // Performs static code analysis to look for bugs in Java code.
 
-
 checkstyle {
-  configFile = file("$rootDir/kudu_style.xml")
-  configProperties = [
-      "checkstyle.suppressions.file" : "$rootDir/checkstyle_suppressions.xml"
-  ]
+  configDir = file("$rootProject.projectDir/config/checkstyle")
   ignoreFailures = true
   showViolations = true
 }
