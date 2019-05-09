@@ -230,6 +230,7 @@ set(UTIL_SRCS
   version_info.cc
   version_util.cc
   website_util.cc
+  yamlreader.cc
   zlib.cc
 )
 
@@ -257,6 +258,7 @@ set(UTIL_LIBS
   pb_util_proto
   protobuf
   version_info_proto
+  yaml
   zlib)
 
 if(NOT APPLE)
@@ -293,7 +295,6 @@ set(UTIL_COMPRESSION_SRCS
 set(UTIL_COMPRESSION_LIBS
   kudu_util
   util_compression_proto
-
   glog
   gutil
   lz4
@@ -467,6 +468,7 @@ ADD_KUDU_TEST(ttl_cache-test)
 ADD_KUDU_TEST(url-coding-test)
 ADD_KUDU_TEST(user-test)
 ADD_KUDU_TEST(version_util-test)
+ADD_KUDU_TEST(yamlreader-test)
 
 if (NOT APPLE)
   ADD_KUDU_TEST(minidump-test)

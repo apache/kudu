@@ -430,5 +430,11 @@ fetch_and_patch \
  $SENTRY_SOURCE \
  $SENTRY_PATCHLEVEL
 
+YAML_PATCHLEVEL=0
+fetch_and_patch \
+ $YAML_NAME.tar.gz \
+ $YAML_SOURCE \
+ $YAML_PATCHLEVEL
+
 echo "---------------"
 echo "Thirdparty dependencies downloaded successfully"

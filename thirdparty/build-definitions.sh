@@ -919,3 +919,32 @@ build_bison() {
   make -j$PARALLEL $EXTRA_MAKEFLAGS install
   popd
 }
+
+build_yaml() {
+  YAML_SHARED_BDIR=$TP_BUILD_DIR/$YAML_NAME.shared$MODE_SUFFIX
+  YAML_STATIC_BDIR=$TP_BUILD_DIR/$YAML_NAME.static$MODE_SUFFIX
+  for SHARED in ON OFF; do
+    if [ $SHARED = "ON" ]; then
+      YAML_BDIR=$YAML_SHARED_BDIR
+    else
+      YAML_BDIR=$YAML_STATIC_BDIR
+    fi
+    mkdir -p $YAML_BDIR
+    pushd $YAML_BDIR
+    rm -rf CMakeCache.txt CMakeFiles/
+    CFLAGS="$EXTRA_CFLAGS -fPIC" \
+      CXXFLAGS="$EXTRA_CXXFLAGS -fPIC" \
+      LDFLAGS="$EXTRA_LDFLAGS" \
+      LIBS="$EXTRA_LIBS" \
+      cmake \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DYAML_CPP_BUILD_TESTS=OFF \
+      -DYAML_CPP_BUILD_TOOLS=OFF \
+      -DBUILD_SHARED_LIBS=$SHARED \
+      -DCMAKE_INSTALL_PREFIX=$PREFIX \
+      $EXTRA_CMAKE_FLAGS \
+      $YAML_SOURCE
+    ${NINJA:-make} -j$PARALLEL $EXTRA_MAKEFLAGS install
+    popd
+  done
+}
