@@ -34,5 +34,5 @@ dependencies {
   testCompile libs.commonsIo
   testCompile libs.junit
   testCompile libs.log4j
-  testCompile libs.slf4jLog4j12
+  testCompile libs.log4jSlf4jImpl
 }

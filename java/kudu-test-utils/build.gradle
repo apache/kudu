@@ -37,7 +37,7 @@ dependencies {
 
   // Needed for CapturingLogAppender. Optional otherwise.
   optional libs.log4j
-  optional libs.slf4jLog4j12
+  optional libs.log4jSlf4jImpl
 
   optional libs.jsr305
   optional libs.yetusAnnotations

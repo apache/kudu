@@ -30,7 +30,7 @@ dependencies {
   testCompile libs.hiveMetastoreTest
   testCompile libs.junit
   testCompile libs.log4j
-  testCompile libs.slf4jLog4j12
+  testCompile libs.log4jSlf4jImpl
 }
 
 // kudu-hive has no public Javadoc.

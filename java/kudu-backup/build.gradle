@@ -43,8 +43,8 @@ dependencies {
   testCompile project(path: ":kudu-spark", configuration: "test")
   testCompile libs.junit
   testCompile libs.log4j
+  testCompile libs.log4jSlf4jImpl
   testCompile libs.scalatest
-  testCompile libs.slf4jLog4j12
 }
 
 // Adjust the artifact name to match the maven build.

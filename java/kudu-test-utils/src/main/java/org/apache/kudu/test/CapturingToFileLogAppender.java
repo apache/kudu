@@ -27,12 +27,11 @@ import java.io.Writer;
 import java.util.zip.GZIPOutputStream;
 
 import com.google.common.base.Throwables;
-import org.apache.commons.io.IOUtils;
-import org.apache.log4j.AppenderSkeleton;
-import org.apache.log4j.Layout;
-import org.apache.log4j.Logger;
-import org.apache.log4j.PatternLayout;
-import org.apache.log4j.spi.LoggingEvent;
+import org.apache.logging.log4j.core.LogEvent;
+import org.apache.logging.log4j.core.LoggerContext;
+import org.apache.logging.log4j.core.appender.AbstractAppender;
+import org.apache.logging.log4j.core.config.Property;
+import org.apache.logging.log4j.core.layout.PatternLayout;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.yetus.audience.InterfaceStability;
 
@@ -52,10 +51,11 @@ import static java.nio.charset.StandardCharsets.UTF_8;
  */
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
-public class CapturingToFileLogAppender extends AppenderSkeleton implements AutoCloseable {
+public class CapturingToFileLogAppender extends AbstractAppender implements AutoCloseable {
   // This is the standard layout used in Kudu tests.
-  private static final Layout LAYOUT = new PatternLayout(
-      "%d{HH:mm:ss.SSS} [%p - %t] (%F:%L) %m%n");
+  private static final PatternLayout LAYOUT = PatternLayout.newBuilder()
+      .withPattern("%d{HH:mm:ss.SSS} [%p - %t] (%F:%L) %m%n")
+      .build();
 
   private File outputFile;
   private Writer outputFileWriter;
@@ -69,33 +69,41 @@ public class CapturingToFileLogAppender extends AppenderSkeleton implements Auto
    * @param useGzip whether to gzip-compress messages when appended
    */
   public CapturingToFileLogAppender(boolean useGzip) throws IOException {
+    super("CapturingToFileLogAppender", /* filter */ null, LAYOUT,
+        /* ignoreExceptions */ true, Property.EMPTY_ARRAY);
     outputFile = File.createTempFile("captured_output", ".txt.gz");
-    try {
-      OutputStream os = new FileOutputStream(outputFile.getPath());
-      try {
-        if (useGzip) {
-          os = new GZIPOutputStream(os);
-        }
-
-        // As per the recommendation in OutputStreamWriter's Javadoc, we wrap in a
-        // BufferedWriter to buffer up character conversions.
-        outputFileWriter = new BufferedWriter(new OutputStreamWriter(os, UTF_8));
-      } catch (Throwable t) {
-        IOUtils.closeQuietly(os);
-        throw t;
-      }
+    try (OutputStream os = createOutputStream(useGzip)) {
+      // As per the recommendation in OutputStreamWriter's Javadoc, we wrap in a
+      // BufferedWriter to buffer up character conversions.
+      outputFileWriter = new BufferedWriter(new OutputStreamWriter(os, UTF_8));
     } catch (Throwable t) {
       outputFile.delete();
       throw t;
     }
   }
 
+  private OutputStream createOutputStream(boolean useGzip) throws IOException {
+    OutputStream os = new FileOutputStream(outputFile.getPath());
+    if (useGzip) {
+      try {
+        os = new GZIPOutputStream(os);
+      } catch (IOException ex) {
+        os.close();
+        throw ex;
+      }
+    }
+    return os;
+  }
+
   @Override
   public void close() {
     // Just do the cleanup; we don't care about exceptions/logging.
-
     if (outputFileWriter != null) {
-      IOUtils.closeQuietly(outputFileWriter);
+      try {
+        outputFileWriter.close();
+      } catch (final IOException ioe) {
+        // ignored
+      }
       outputFileWriter = null;
     }
     if (outputFile != null) {
@@ -105,18 +113,12 @@ public class CapturingToFileLogAppender extends AppenderSkeleton implements Auto
   }
 
   @Override
-  public boolean requiresLayout() {
-    return false;
-  }
-
-  @Override
-  protected void append(LoggingEvent event) {
+  public void append(LogEvent event) {
     assert outputFileWriter != null;
     try {
-      outputFileWriter.write(LAYOUT.format(event));
-      if (event.getThrowableInformation() != null) {
-        outputFileWriter.write(Throwables.getStackTraceAsString(
-            event.getThrowableInformation().getThrowable()));
+      outputFileWriter.write(LAYOUT.toSerializable(event));
+      if (event.getThrown() != null) {
+        outputFileWriter.write(Throwables.getStackTraceAsString(event.getThrown()));
         outputFileWriter.write("\n");
       }
     } catch (IOException e) {
@@ -166,11 +168,12 @@ public class CapturingToFileLogAppender extends AppenderSkeleton implements Auto
    * </code>
    */
   public Closeable attach() {
-    Logger.getRootLogger().addAppender(this);
+    LoggerContext.getContext(false).getRootLogger().addAppender(this);
     return new Closeable() {
       @Override
       public void close() throws IOException {
-        Logger.getRootLogger().removeAppender(CapturingToFileLogAppender.this);
+        LoggerContext.getContext(false).getRootLogger()
+            .removeAppender(CapturingToFileLogAppender.this);
       }
     };
   }

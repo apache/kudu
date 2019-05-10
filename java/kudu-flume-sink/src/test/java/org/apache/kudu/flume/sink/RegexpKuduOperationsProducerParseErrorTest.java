@@ -28,6 +28,7 @@ import static org.apache.kudu.flume.sink.RegexpKuduOperationsProducer.WARN_UNMAT
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import java.io.Closeable;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 
@@ -262,9 +263,9 @@ public class RegexpKuduOperationsProducerParseErrorTest {
   private String processEvent(Context additionalContext, String eventBody) throws Exception {
     CapturingLogAppender appender = new CapturingLogAppender();
     RegexpKuduOperationsProducer producer = getProducer(additionalContext);
-    appender.attach();
-    producer.getOperations(EventBuilder.withBody(eventBody.getBytes(Charset.forName("UTF-8"))));
-
+    try (Closeable c = appender.attach()) {
+      producer.getOperations(EventBuilder.withBody(eventBody.getBytes(Charset.forName("UTF-8"))));
+    }
     return appender.getAppendedText();
   }
 

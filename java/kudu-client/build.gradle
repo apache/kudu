@@ -45,8 +45,8 @@ dependencies {
   testCompile libs.hadoopMRClientCore
   testCompile libs.junit
   testCompile libs.log4j
+  testCompile libs.log4jSlf4jImpl
   testCompile libs.mockitoCore
-  testCompile libs.slf4jLog4j12
 }
 
 // Add protobuf files to the proto source set.
