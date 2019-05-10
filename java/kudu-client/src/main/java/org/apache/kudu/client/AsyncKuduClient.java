@@ -2063,7 +2063,8 @@ public class AsyncKuduClient implements AutoCloseable {
    * Remove the tablet server from the RemoteTablet's locations. Right now nothing is removing
    * the tablet itself from the caches.
    */
-  private void invalidateTabletCache(RemoteTablet tablet, ServerInfo info,
+  private void invalidateTabletCache(RemoteTablet tablet,
+                                     ServerInfo info,
                                      String errorMessage) {
     final String uuid = info.getUuid();
     LOG.info("Invalidating location {} for tablet {}: {}",

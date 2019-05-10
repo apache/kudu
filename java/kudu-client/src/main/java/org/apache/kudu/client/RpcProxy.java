@@ -409,11 +409,21 @@ class RpcProxy {
         .build());
 
     RemoteTablet tablet = rpc.getTablet();
-    // Note As of the time of writing (03/11/16), a null tablet doesn't make sense, if we see a null
-    // tablet it's because we didn't set it properly before calling sendRpc().
+    // Note: As of the time of writing (03/11/16), a null tablet doesn't make sense, if we see a
+    // null tablet it's because we didn't set it properly before calling sendRpc().
     if (tablet == null) {  // Can't retry, dunno where this RPC should go.
       rpc.errback(exception);
+      return;
+    }
+    if (exception instanceof InvalidAuthnTokenException) {
+      client.handleInvalidAuthnToken(rpc);
+    } else if (exception instanceof InvalidAuthzTokenException) {
+      client.handleInvalidAuthzToken(rpc, exception);
+    } else if (exception.getStatus().isServiceUnavailable()) {
+      client.handleRetryableError(rpc, exception);
     } else {
+      // If we don't really know anything about the exception, invalidate the location for the
+      // tablet, opening the possibility of retrying on a different server.
       client.handleTabletNotFound(rpc, exception, connection.getServerInfo());
     }
   }
