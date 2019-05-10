@@ -358,6 +358,7 @@ Status Ksck::FetchInfoFromTabletServers() {
           // Failing to gather flags is only a warning.
           s = ts->FetchUnusualFlags();
           if (!s.ok()) {
+            std::lock_guard<simple_spinlock> lock(tablet_server_summaries_lock);
             results_.warning_messages.push_back(s.CloneAndPrepend(Substitute(
                     "unable to get flag information for tablet server $0 ($1)",
                     ts->uuid(),
