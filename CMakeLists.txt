@@ -28,6 +28,7 @@
 # 1. http://llvm.org/releases/3.9.0/docs/ReleaseNotes.html
 cmake_minimum_required(VERSION 3.4.3)
 
+set(ENV{NO_REBUILD_THIRDPARTY} 1)
 # Prevent builds from the top-level source directory. This ensures that build
 # output is well isolated from the source tree.
 #
@@ -90,6 +91,7 @@ set(BUILD_SUPPORT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/build-support)
 set(THIRDPARTY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty)
 set(THIRDPARTY_INSTALL_DIR ${THIRDPARTY_DIR}/installed)
 set(THIRDPARTY_INSTALL_COMMON_DIR ${THIRDPARTY_INSTALL_DIR}/common)
+set(THIRDPARTY_PREINSTALL_COMMON_DIR ${THIRDPARTY_DIR}/preinstalled/common)
 set(THIRDPARTY_INSTALL_UNINSTRUMENTED_DIR ${THIRDPARTY_INSTALL_DIR}/uninstrumented)
 set(THIRDPARTY_INSTALL_TSAN_DIR ${THIRDPARTY_INSTALL_DIR}/tsan)
 
@@ -142,7 +144,7 @@ set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wno-sign-compare")
 set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wno-comment")
 #  -Wno-deprecated: we currently have a number of places using deprecated functions
 #     (mostly our own functions). TODO(todd) remove or individually suppress call sites.
-set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wno-deprecated")
+set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -Wno-deprecated -Wno-deprecated-declarations")
 #  -pthread: enable multithreaded malloc
 set(CXX_COMMON_FLAGS "${CXX_COMMON_FLAGS} -pthread")
 #  -fno-strict-aliasing
@@ -346,8 +348,8 @@ if (${KUDU_USE_XRAY})
 endif()
 
 # For any C code, use the same flags.
-set(CMAKE_C_FLAGS "${CMAKE_CXX_FLAGS}")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+set(CMAKE_C_FLAGS "$ENV{CFLAGS} ${CMAKE_CXX_FLAGS}")
+set(CMAKE_CXX_FLAGS "$ENV{CXXFLAGS} ${CMAKE_CXX_FLAGS} -std=c++11")
 
 # Enable the Clang undefined behavior (UB) sanitizer.
 if (${KUDU_USE_UBSAN})
@@ -996,7 +998,7 @@ find_package(GLog REQUIRED)
 include_directories(SYSTEM ${GLOG_INCLUDE_DIR})
 set(GLOG_DEPS)
 if (NOT APPLE)
-  set(GLOG_DEPS unwind)
+  set(GLOG_DEPS unwind coredumper)
 endif()
 ADD_THIRDPARTY_LIB(glog
   STATIC_LIB "${GLOG_STATIC_LIB}"
@@ -1043,13 +1045,6 @@ ADD_THIRDPARTY_LIB(protoc
   DEPS protobuf)
 find_package(KRPC REQUIRED)
 
-## Thrift
-find_package(Thrift REQUIRED)
-include_directories(SYSTEM ${THRIFT_INCLUDE_DIR})
-ADD_THIRDPARTY_LIB(thrift
-  STATIC_LIB "${THRIFT_STATIC_LIBRARY}"
-  SHARED_LIB "${THRIFT_SHARED_LIBRARY}")
-
 #ifdef FB_DO_NOT_REMOVE
 # The mini-HMS relies on JAVA_HOME being set in order to run the HMS, and
 # JDK 1.7 or later for compiling the Kudu metastore plugin.
@@ -1076,11 +1071,6 @@ ADD_THIRDPARTY_LIB(libev
 find_package(Lz4 REQUIRED)
 include_directories(SYSTEM ${LZ4_INCLUDE_DIR})
 ADD_THIRDPARTY_LIB(lz4 STATIC_LIB "${LZ4_STATIC_LIB}")
-
-## Bitshuffle
-find_package(Bitshuffle REQUIRED)
-include_directories(SYSTEM ${BITSHUFFLE_INCLUDE_DIR})
-ADD_THIRDPARTY_LIB(bitshuffle STATIC_LIB "${BITSHUFFLE_STATIC_LIB}")
 
 ## ZLib
 find_package(Zlib REQUIRED)
@@ -1134,14 +1124,18 @@ include_directories(${KERBEROS_INCLUDE_DIR})
 ADD_THIRDPARTY_LIB(krb5
   SHARED_LIB "${KERBEROS_LIBRARY}")
 
+#[[ We are removing TCMALLOC so as to not collide with
+    fbcode gperftools library
 ## Google PerfTools
 ##
 ## Disabled with TSAN/ASAN as well as with gold+dynamic linking (see
 ## earlier comment).
 if (NOT "${KUDU_USE_ASAN}" AND
     NOT "${KUDU_USE_TSAN}" AND
+    NOT "${KUDU_DISABLE_TCMALLOC}" AND
     NOT ("${KUDU_BUGGY_GOLD}" AND "${KUDU_LINK}" STREQUAL "d"))
   find_package(GPerf REQUIRED)
+  include_directories(SYSTEM ${GOOGLE_PERFTOOLS_INCLUDE_DIR})
   ADD_THIRDPARTY_LIB(tcmalloc
     STATIC_LIB "${TCMALLOC_STATIC_LIB}"
     SHARED_LIB "${TCMALLOC_SHARED_LIB}")
@@ -1152,29 +1146,33 @@ if (NOT "${KUDU_USE_ASAN}" AND
   add_definitions("-DTCMALLOC_ENABLED")
   set(KUDU_TCMALLOC_AVAILABLE 1)
 endif()
+]]
 
-# Required pmem libraries
-if (NOT APPLE)
-find_package(Pmem REQUIRED)
-include_directories(${PMEM_INCLUDE_DIR})
-ADD_THIRDPARTY_LIB(vmem
-  STATIC_LIB "${VMEM_STATIC_LIB}"
-  SHARED_LIB "${VMEM_SHARED_LIB}")
-ADD_THIRDPARTY_LIB(pmem
-  STATIC_LIB "${PMEM_STATIC_LIB}"
-  SHARED_LIB "${PMEM_SHARED_LIB}")
-ADD_THIRDPARTY_LIB(pmemobj
-  STATIC_LIB "${PMEMOBJ_STATIC_LIB}"
-  SHARED_LIB "${PMEMOBJ_SHARED_LIB}")
-endif()
-
-if (EXISTS ${VMEM_SHARED_LIB})
-  set(HAVE_LIB_VMEM 1)
-  add_definitions(-DHAVE_LIB_VMEM=1)
-endif()
+## Required pmem libraries
+#if (NOT APPLE)
+#find_package(Pmem REQUIRED)
+#include_directories(${PMEM_INCLUDE_DIR})
+#ADD_THIRDPARTY_LIB(vmem
+#  STATIC_LIB "${VMEM_STATIC_LIB}"
+#  SHARED_LIB "${VMEM_SHARED_LIB}")
+#ADD_THIRDPARTY_LIB(pmem
+#  STATIC_LIB "${PMEM_STATIC_LIB}"
+#  SHARED_LIB "${PMEM_SHARED_LIB}")
+#ADD_THIRDPARTY_LIB(pmemobj
+#  STATIC_LIB "${PMEMOBJ_STATIC_LIB}"
+#  SHARED_LIB "${PMEMOBJ_SHARED_LIB}")
+#endif()
+#
+#if (EXISTS ${VMEM_SHARED_LIB})
+#  set(HAVE_LIB_VMEM 1)
+#  add_definitions(-DHAVE_LIB_VMEM=1)
+#endif()
 
 ## curl
 ##find_package(CURL REQUIRED)
+
+## rapidjson
+include_directories(SYSTEM ${THIRDPARTY_PREINSTALL_COMMON_DIR}/include)
 
 ## crcutil
 find_package(Crcutil REQUIRED)
@@ -1183,14 +1181,11 @@ ADD_THIRDPARTY_LIB(crcutil
   STATIC_LIB "${CRCUTIL_STATIC_LIB}"
   SHARED_LIB "${CRCUTIL_SHARED_LIB}")
 
-## breakpad
-if (NOT APPLE)
-  find_package(BreakpadClient REQUIRED)
-  include_directories(SYSTEM ${BREAKPAD_CLIENT_INCLUDE_DIR})
-  ADD_THIRDPARTY_LIB(breakpad_client
-    STATIC_LIB "${BREAKPAD_CLIENT_STATIC_LIB}"
-    SHARED_LIB "${BREAKPAD_CLIENT_SHARED_LIB}")
-endif()
+find_package(Coredumper REQUIRED)
+include_directories(SYSTEM ${COREDUMPER_INCLUDE_DIR})
+ADD_THIRDPARTY_LIB(coredumper
+  STATIC_LIB "${COREDUMPER_STATIC_LIB}"
+  SHARED_LIB "${COREDUMPER_SHARED_LIB}")
 
 ## llvm
 # Note that llvm has a unique cmake setup. See kudu/codegen/CMakeLists.txt
@@ -1477,15 +1472,39 @@ add_subdirectory(src/kudu/fs)
 add_subdirectory(src/kudu/gutil)
 #add_subdirectory(src/kudu/hms)
 #add_subdirectory(src/kudu/integration-tests)
-#add_subdirectory(src/kudu/kserver)
+add_subdirectory(src/kudu/kserver)
 #add_subdirectory(src/kudu/master)
 #add_subdirectory(src/kudu/mini-cluster)
 add_subdirectory(src/kudu/rpc)
 add_subdirectory(src/kudu/security)
 #add_subdirectory(src/kudu/sentry)
-#add_subdirectory(src/kudu/server)
+add_subdirectory(src/kudu/server)
 #add_subdirectory(src/kudu/tablet)
 #add_subdirectory(src/kudu/thrift)
 #add_subdirectory(src/kudu/tools)
-#add_subdirectory(src/kudu/tserver)
+add_subdirectory(src/kudu/tserver)
 add_subdirectory(src/kudu/util)
+
+install(DIRECTORY "${CMAKE_SOURCE_DIR}/src/kudu" # source directory
+        DESTINATION "include" # target directory
+        FILES_MATCHING # install only matched files
+        PATTERN "*.h" # select header files
+)
+
+install(DIRECTORY "${CMAKE_BINARY_DIR}/src/kudu" # source directory
+        DESTINATION "include" # target directory
+        FILES_MATCHING # install only matched files
+        PATTERN "*.h" # select header files
+)
+
+install(DIRECTORY "${THIRDPARTY_PREINSTALL_COMMON_DIR}/include/rapidjson" # source directory
+        DESTINATION "include" # target directory
+        FILES_MATCHING # install only matched files
+        PATTERN "*.h" # select header files
+)
+
+install(DIRECTORY "${CMAKE_BINARY_DIR}/lib/" # source directory
+        DESTINATION "lib" # target directory
+        FILES_MATCHING # install only matched files
+        PATTERN "*.a" # select archive libraries
+)

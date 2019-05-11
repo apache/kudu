@@ -1,0 +1,11 @@
+--- ./src/elfcore.c	2008-04-04 07:51:54.000000000 -0700
++++ ../../coredumper-1.2.1/./src/elfcore.c	2019-05-13 11:03:01.761658893 -0700
+@@ -31,6 +31,8 @@
+  * Author: Markus Gutschke, Carl Crous
+  */
+ 
++#define _GNU_SOURCE
++
+ #include "elfcore.h"
+ #if defined DUMPER
+ #ifdef __cplusplus

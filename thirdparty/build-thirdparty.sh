@@ -100,6 +100,7 @@ else
       "hadoop")       F_HADOOP=1 ;;
       "hive")         F_HIVE=1 ;;
       "sentry")       F_SENTRY=1 ;;
+      "coredumper")   F_COREDUMPER=1 ;;
       *)              echo "Unknown module: $arg"; exit 1 ;;
     esac
   done
@@ -213,6 +214,7 @@ MODE_SUFFIX=""
 # Add tools to path
 export PATH=$PREFIX/bin:$PATH
 
+: '
 if [ -n "$F_COMMON" -o -n "$F_CMAKE" ]; then
   build_cmake
 fi
@@ -232,6 +234,7 @@ fi
 if [ -n "$F_COMMON" -o -n "$F_TRACE_VIEWER" ]; then
   build_trace_viewer
 fi
+'
 
 if [ -n "$F_COMMON" -o -n "$F_SPARSEHASH" ]; then
   build_sparsehash
@@ -245,6 +248,7 @@ if [ -n "$F_COMMON" -o -n "$F_BISON" ]; then
   build_bison
 fi
 
+: '
 # Install Hadoop, Hive, and Sentry by symlinking their source directories (which
 # are pre-built) into $PREFIX/opt.
 if [ -n "$F_COMMON" -o -n "$F_HADOOP" ]; then
@@ -261,6 +265,7 @@ if [ -n "$F_COMMON" -o -n "$F_SENTRY" ]; then
   mkdir -p $PREFIX/opt
   ln -nsf $SENTRY_SOURCE $PREFIX/opt/sentry
 fi
+'
 
 ### Build C dependencies without instrumentation
 
@@ -285,35 +290,42 @@ if [ -n "$F_UNINSTRUMENTED" -o -n "$F_LZ4" ]; then
   build_lz4
 fi
 
+: '
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_BITSHUFFLE" ]; then
   build_bitshuffle
 fi
+'
 
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_LIBEV" ]; then
   build_libev
 fi
 
+: '
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_SQUEASEL" ]; then
   build_squeasel
 fi
+'
 
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_CURL" ]; then
   build_curl
 fi
 
+: '
 if [ -n "$OS_LINUX" ] && [ -n "$F_UNINSTRUMENTED" -o -n "$F_NVML" ]; then
   build_nvml
 fi
+'
 
 restore_env
 
 ### Build C++ dependencies without instrumentation
-
+: '
 # Clang is used by all builds so it is part of the 'common' library group even
 # though its LLVM libraries are installed to $PREFIX_DEPS.
 if [ -n "$F_COMMON" -o -n "$F_LLVM" ]; then
   build_llvm normal
 fi
+'
 
 save_env
 
@@ -331,9 +343,11 @@ if [ -n "$F_UNINSTRUMENTED" -o -n "$F_GLOG" ]; then
   build_glog
 fi
 
+: '
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_GPERFTOOLS" ]; then
   build_gperftools
 fi
+'
 
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_GMOCK" ]; then
   build_gmock
@@ -355,6 +369,7 @@ if [ -n "$F_UNINSTRUMENTED" -o -n "$F_BOOST" ]; then
   build_boost normal
 fi
 
+: '
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_MUSTACHE" ]; then
   build_mustache
 fi
@@ -365,6 +380,11 @@ fi
 
 if [ -n "$F_UNINSTRUMENTED" -o -n "$F_THRIFT" ]; then
   build_thrift
+fi
+'
+
+if [ -n "$F_UNINSTRUMENTED" -o -n "$F_COREDUMPER" ]; then
+  build_coredumper
 fi
 
 restore_env
@@ -535,6 +555,7 @@ if [ -n "$F_TSAN" -o -n "$F_BOOST" ]; then
   build_boost tsan
 fi
 
+: '
 if [ -n "$F_TSAN" -o -n "$F_MUSTACHE" ]; then
   build_mustache
 fi
@@ -545,6 +566,11 @@ fi
 
 if [ -n "$F_TSAN" -o -n "$F_THRIFT" ]; then
   build_thrift
+fi
+'
+
+if [ -n "$F_TSAN" -o -n "$F_COREDUMPER" ]; then
+  build_coredumper
 fi
 
 restore_env

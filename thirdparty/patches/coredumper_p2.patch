@@ -1,0 +1,11 @@
+--- ./src/linux_syscall_support_unittest.cc	2008-03-28 15:38:57.000000000 -0700
++++ ../../coredumper-1.2.1/./src/linux_syscall_support_unittest.cc	2019-05-13 10:49:58.535106990 -0700
+@@ -62,7 +62,7 @@
+ #include <asm/posix_types.h>
+ #include <asm/types.h>
+ #include <errno.h>
+-#include <linux/dirent.h>
++#include <dirent.h>
+ #include <linux/types.h>
+ #include <linux/unistd.h>
+ #include <signal.h>

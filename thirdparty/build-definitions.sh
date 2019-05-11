@@ -899,3 +899,19 @@ build_bison() {
   make -j$PARALLEL $EXTRA_MAKEFLAGS install
   popd
 }
+
+build_coredumper() {
+  COREDUMPER_BDIR=$TP_BUILD_DIR/$COREDUMPER_NAME$MODE_SUFFIX
+  mkdir -p $COREDUMPER_BDIR
+  pushd $COREDUMPER_BDIR
+  CFLAGS="$EXTRA_CFLAGS" \
+    CXXFLAGS="$EXTRA_CXXFLAGS" \
+    LDFLAGS="$EXTRA_LDFLAGS" \
+    LIBS="$EXTRA_LIBS" \
+    $COREDUMPER_SOURCE/configure \
+    --with-pic \
+    --prefix=$PREFIX
+  fixup_libtool
+  make -j$PARALLEL $EXTRA_MAKEFLAGS install
+  popd
+}

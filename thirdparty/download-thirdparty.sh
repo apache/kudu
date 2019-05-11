@@ -189,6 +189,7 @@ fetch_and_patch \
  $GFLAGS_SOURCE \
  $GFLAGS_PATCHLEVEL
 
+: '
 GPERFTOOLS_PATCHLEVEL=2
 fetch_and_patch \
  gperftools-${GPERFTOOLS_VERSION}.tar.gz \
@@ -197,6 +198,7 @@ fetch_and_patch \
  "patch -p1 < $TP_DIR/patches/gperftools-Replace-namespace-base-with-namespace-tcmalloc.patch" \
  "patch -p1 < $TP_DIR/patches/gperftools-unbreak-memz.patch" \
  "autoreconf -fvi"
+'
 
 PROTOBUF_PATCHLEVEL=0
 fetch_and_patch \
@@ -227,6 +229,7 @@ needs_patched_cmake() {
   return 0
 }
 
+: '
 CMAKE_PATCHLEVEL=1
 CMAKE_PATCHES=""
 if needs_patched_cmake; then \
@@ -238,6 +241,7 @@ fetch_and_patch \
  $CMAKE_SOURCE \
  $CMAKE_PATCHLEVEL \
  "$CMAKE_PATCHES"
+'
 
 SNAPPY_PATCHLEVEL=0
 fetch_and_patch \
@@ -258,6 +262,7 @@ fetch_and_patch \
  $LIBEV_SOURCE \
  $LIBEV_PATCHLEVEL
 
+: '
 RAPIDJSON_PATCHLEVEL=0
 fetch_and_patch \
  rapidjson-${RAPIDJSON_VERSION}.zip \
@@ -288,6 +293,7 @@ fetch_and_patch \
  gcovr-${GCOVR_VERSION}.tar.gz \
  $GCOVR_SOURCE \
  $GCOVR_PATCHLEVEL
+'
 
 CURL_PATCHLEVEL=0
 fetch_and_patch \
@@ -311,6 +317,7 @@ fetch_and_patch \
  "patch -p1 < $TP_DIR/patches/libunwind-Use-syscall-directly-in-write_validate-to-avoid-ASAN.patch" \
  "patch -p1 < $TP_DIR/patches/libunwind-trace-cache-destructor.patch"
 
+: '
 PYTHON_PATCHLEVEL=0
 fetch_and_patch \
  python-${PYTHON_VERSION}.tar.gz \
@@ -328,6 +335,7 @@ fetch_and_patch \
   "patch -p1 < $TP_DIR/patches/llvm-iwyu-include-picker.patch" \
   "patch -d tools/clang/tools/include-what-you-use -p1 < $TP_DIR/patches/llvm-iwyu-llvm-6-compat.patch" \
   "patch -d projects/compiler-rt -p1 < $TP_DIR/patches/llvm-tsan-disable-trace-switching-after-multithreaded-for.patch"
+'
 
 LZ4_PATCHLEVEL=1
 fetch_and_patch \
@@ -336,6 +344,7 @@ fetch_and_patch \
  $LZ4_PATCHLEVEL \
  "patch -p1 < $TP_DIR/patches/lz4-0001-Fix-cmake-build-to-use-gnu-flags-on-clang.patch"
 
+: '
 BITSHUFFLE_PATCHLEVEL=0
 fetch_and_patch \
  bitshuffle-${BITSHUFFLE_VERSION}.tar.gz \
@@ -353,6 +362,7 @@ fetch_and_patch \
  nvml-${NVML_VERSION}.tar.gz \
  $NVML_SOURCE \
  $NVML_PATCHLEVEL
+'
 
 BOOST_PATCHLEVEL=1
 fetch_and_patch \
@@ -428,6 +438,16 @@ fetch_and_patch \
  $SENTRY_NAME.tar.gz \
  $SENTRY_SOURCE \
  $SENTRY_PATCHLEVEL
+
+COREDUMPER_PATCHLEVEL=3
+fetch_with_url_and_patch \
+ $COREDUMPER_NAME.tar.gz \
+ $COREDUMPER_SOURCE \
+ $COREDUMPER_PATCHLEVEL \
+ https://storage.googleapis.com/google-code-archive-downloads/v2/code.google.com/google-coredumper \
+ "patch -p0 < $TP_DIR/patches/coredumper_p0.patch" \
+ "patch -p0 < $TP_DIR/patches/coredumper_p1.patch" \
+ "patch -p0 < $TP_DIR/patches/coredumper_p2.patch"
 
 echo "---------------"
 echo "Thirdparty dependencies downloaded successfully"

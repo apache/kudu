@@ -104,6 +104,9 @@ message ServerErrorPB {
     // had a sequence number that was below the current config.
     INVALID_CONFIG = 9;
 
+    // The consensus is hosted on this server, but not in RUNNING state.
+    CONSENSUS_NOT_RUNNING = 12;
+
     // This tserver is not the leader of the consensus configuration.
     NOT_THE_LEADER = 15;
 
