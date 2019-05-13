@@ -37,6 +37,3 @@ dependencies {
 javadoc {
   enabled = false
 }
-
-// Skip publishing kudu-hive until it's ready to be supported long-term.
-uploadArchives.enabled = false
