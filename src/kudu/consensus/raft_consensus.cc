@@ -1178,8 +1178,12 @@ Status RaftConsensus::EnforceLogMatchingPropertyMatchesUnlocked(const LeaderRequ
                              ConsensusErrorPB::PRECEDING_ENTRY_DIDNT_MATCH,
                              Status::IllegalState(error_msg));
 
-  LOG_WITH_PREFIX_UNLOCKED(INFO) << "Refusing update from remote peer "
-                        << req.leader_uuid << ": " << error_msg;
+  // Adding a check to eliminate an unnecessary log message in the
+  // scenario where this is the first message from the Leader of a new tablet.
+  if (!OpIdEquals(MakeOpId(1,1), *req.preceding_opid)) {
+    LOG_WITH_PREFIX_UNLOCKED(INFO) << "Refusing update from remote peer "
+                                   << req.leader_uuid << ": " << error_msg;
+  }
 
   // If the terms mismatch we abort down to the index before the leader's preceding,
   // since we know that is the last opid that has a chance of not being overwritten.
