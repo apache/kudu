@@ -572,7 +572,7 @@ class TestKuduBackup extends KuduTestSuite {
       options: BackupOptions,
       expectedRowCount: Long,
       expectIncremental: Boolean): Unit = {
-    val io = new SessionIO(ss, options)
+    val io = new BackupIO(ss.sparkContext.hadoopConfiguration, options.rootPath)
     val tableName = options.tables.head
     val table = harness.getClient.openTable(tableName)
     val backupPath = io.backupPath(table, options.toMs)
@@ -587,7 +587,7 @@ class TestKuduBackup extends KuduTestSuite {
     }
 
     // Verify the output data.
-    val schema = io.dataSchema(table.getSchema, expectIncremental)
+    val schema = BackupUtils.dataSchema(table.getSchema, expectIncremental)
     val df = ss.sqlContext.read
       .format(metadata.getDataFormat)
       .schema(schema)

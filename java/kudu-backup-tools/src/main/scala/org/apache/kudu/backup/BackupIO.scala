@@ -26,15 +26,9 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.FileSystem
 import org.apache.hadoop.fs.LocatedFileStatus
 import org.apache.hadoop.fs.Path
-import org.apache.kudu.Schema
 import org.apache.kudu.backup.Backup.TableMetadataPB
-import org.apache.kudu.backup.SessionIO._
+import org.apache.kudu.backup.BackupIO._
 import org.apache.kudu.client.KuduTable
-import org.apache.kudu.spark.kudu.SparkUtil
-import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.types.ByteType
-import org.apache.spark.sql.types.StructField
-import org.apache.spark.sql.types.StructType
 import org.apache.yetus.audience.InterfaceAudience
 import org.apache.yetus.audience.InterfaceStability
 import org.slf4j.Logger
@@ -65,38 +59,11 @@ import scala.collection.mutable
  */
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
-class SessionIO(val session: SparkSession, options: CommonOptions) {
+class BackupIO(val conf: Configuration, rootPathStr: String) {
   val log: Logger = LoggerFactory.getLogger(getClass)
 
-  val conf: Configuration = session.sparkContext.hadoopConfiguration
-  val rootPath: Path = new Path(options.rootPath)
+  val rootPath: Path = new Path(rootPathStr)
   val fs: FileSystem = rootPath.getFileSystem(conf)
-
-  /**
-   * Returns the Spark schema for backup data based on the Kudu Schema.
-   * Additionally handles adding the RowAction column for incremental backup/restore.
-   */
-  def dataSchema(schema: Schema, includeRowAction: Boolean = true): StructType = {
-    var fields = SparkUtil.sparkSchema(schema).fields
-    if (includeRowAction) {
-      val changeTypeField = generateRowActionColumn(schema)
-      fields = fields ++ Seq(changeTypeField)
-    }
-    StructType(fields)
-  }
-
-  /**
-   * Generates a RowAction column and handles column name collisions.
-   * The column name can vary because it's accessed positionally.
-   */
-  private def generateRowActionColumn(schema: Schema): StructField = {
-    var columnName = "backup_row_action"
-    // If the column already exists and we need to pick an alternate column name.
-    while (schema.hasColumn(columnName)) {
-      columnName += "_"
-    }
-    StructField(columnName, ByteType)
-  }
 
   /**
    * Return the path to the table directory.
@@ -104,7 +71,7 @@ class SessionIO(val session: SparkSession, options: CommonOptions) {
   def tablePath(table: KuduTable): Path = {
     val tableName = URLEncoder.encode(table.getName, "UTF-8")
     val dirName = s"${table.getTableId}-$tableName"
-    new Path(options.rootPath, dirName)
+    new Path(rootPath, dirName)
   }
 
   /**
@@ -269,7 +236,7 @@ class SessionIO(val session: SparkSession, options: CommonOptions) {
   }
 }
 
-object SessionIO {
+object BackupIO {
   // The name of the metadata file within a backup directory.
   val MetadataFileName = ".kudu-metadata.json"
 }

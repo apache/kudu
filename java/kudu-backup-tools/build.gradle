@@ -16,44 +16,51 @@
 // under the License.
 
 apply plugin: "scala"
+apply from: "$rootDir/gradle/protobuf.gradle"
 apply from: "$rootDir/gradle/shadow.gradle"
 
+// Mark this as a tool jar so shadow doesn't exclude any dependencies.
+shadow {
+  isToolJar = true
+}
+
 dependencies {
-  // Note: We don't use the shaded version, so we can control the dependencies.
-  compile(project(path: ":kudu-backup-tools")) {
-    // Ensure we use the hadoop-client provided by Spark to avoid any compatibility issues.
-    exclude group: "org.apache.hadoop", module: "hadoop-common"
-  }
   compile project(path: ":kudu-client", configuration: "shadow")
-  compile project(path: ":kudu-spark", configuration: "shadow")
+  compile libs.protobufJava
+  compile (libs.protobufJavaUtil) {
+    // Make sure wrong Guava version is not pulled in.
+    exclude group: "com.google.guava", module: "guava"
+  }
+  compile libs.hadoopCommon
   compile (libs.scopt)  {
     // Make sure wrong Scala version is not pulled in.
     exclude group: "org.scala-lang", module: "scala-library"
   }
-  // TODO(KUDU-2500): Spark uses reflection which requires the annotations at runtime.
-  compile libs.yetusAnnotations
+  compile libs.scalaLibrary
+  compile libs.slf4jApi
 
-  provided libs.scalaLibrary
-  provided libs.sparkAvro
-  provided libs.sparkCore
-  provided libs.sparkSql
-  provided libs.slf4jApi
+  optional libs.yetusAnnotations
 
   testCompile project(path: ":kudu-test-utils", configuration: "shadow")
-  testCompile project(path: ":kudu-spark", configuration: "test")
   testCompile libs.junit
   testCompile libs.log4j
   testCompile libs.scalatest
   testCompile libs.slf4jLog4j12
 }
 
-// Adjust the artifact name to match the maven build.
-archivesBaseName = "kudu-backup${versions.sparkBase}_${versions.scalaBase}"
+// Add protobuf files to the proto source set.
+sourceSets {
+  main {
+    proto {
+      srcDir "src/main/protobuf"
+    }
+  }
+}
 
-// kudu-backup has no public Javadoc.
+// kudu-backup-tools has no public Javadoc.
 javadoc {
   enabled = false
 }
 
-// Skip publishing kudu-backup until it's ready to be supported long-term.
+// Skip publishing kudu-backup-tools until it's ready to be supported long-term.
 uploadArchives.enabled = false

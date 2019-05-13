@@ -49,7 +49,11 @@ object TableMetadata {
   val MetadataFileName = ".kudu-metadata.json"
   val MetadataVersion = 1
 
-  def getTableMetadata(table: KuduTable, options: BackupOptions): TableMetadataPB = {
+  def getTableMetadata(
+      table: KuduTable,
+      fromMs: Long,
+      toMs: Long,
+      format: String): TableMetadataPB = {
     val columnIds = new util.HashMap[String, Integer]()
     val columns = table.getSchema.getColumns.asScala.map { col =>
       columnIds.put(col.getName, table.getSchema.getColumnId(col.getName))
@@ -87,9 +91,9 @@ object TableMetadata {
     TableMetadataPB
       .newBuilder()
       .setVersion(MetadataVersion)
-      .setFromMs(options.fromMs)
-      .setToMs(options.toMs)
-      .setDataFormat(options.format)
+      .setFromMs(fromMs)
+      .setToMs(toMs)
+      .setDataFormat(format)
       .setTableName(table.getName)
       .setTableId(table.getTableId)
       .addAllColumns(columns.asJava)

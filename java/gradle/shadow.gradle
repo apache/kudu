@@ -41,12 +41,20 @@ configurations.archives.artifacts.removeAll {
   it instanceof ArchivePublishArtifact && it.archiveTask == jar
 }
 
-shadowJar {
-  dependencies {
-    // Our shaded jars always try to pull in the slf4j api from
-    // kudu-client, though we never want it included. Excluding it
-    // here prevents the need to always list it.
-    exclude dependency(libs.slf4jApi)
+// Define an overridable property to indicate tool jars that should
+// include all of their dependencies.
+// We use this below to ensure slf4j is included.
+shadow.ext {
+  isToolJar = false
+}
+if (!shadow.isToolJar) {
+  shadowJar {
+    dependencies {
+      // Our shaded library jars always try to pull in the slf4j api from
+      // kudu-client, though we never want it included. Excluding it
+      // here prevents the need to always list it.
+      exclude dependency(libs.slf4jApi)
+    }
   }
 }
 

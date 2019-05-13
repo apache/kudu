@@ -47,7 +47,7 @@ object KuduRestore {
         options.kuduMasterAddresses,
         session.sparkContext
       )
-    val io = new SessionIO(session, options)
+    val io = new BackupIO(session.sparkContext.hadoopConfiguration, options.rootPath)
 
     // Read the required backup metadata.
     val backupGraphs = io.readBackupGraphsByTableName(options.tables, options.timestampMs)
@@ -80,7 +80,7 @@ object KuduRestore {
             createTableRangePartitionByRangePartition(restoreName, lastMetadata, context)
           }
         }
-        val backupSchema = io.dataSchema(TableMetadata.getKuduSchema(metadata))
+        val backupSchema = BackupUtils.dataSchema(TableMetadata.getKuduSchema(metadata))
         val rowActionCol = backupSchema.fields.last.name
         val table = context.syncClient.openTable(restoreName)
 

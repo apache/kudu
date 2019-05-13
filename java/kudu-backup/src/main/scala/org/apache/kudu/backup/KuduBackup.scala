@@ -41,7 +41,7 @@ object KuduBackup {
         options.kuduMasterAddresses,
         session.sparkContext
       )
-    val io = new SessionIO(session, options)
+    val io = new BackupIO(session.sparkContext.hadoopConfiguration, options.rootPath)
 
     // Read the required backup metadata.
     val backupGraphs =
@@ -97,7 +97,7 @@ object KuduBackup {
       val rdd = new KuduBackupRDD(table, tableOptions, incremental, context, session.sparkContext)
       val df =
         session.sqlContext
-          .createDataFrame(rdd, io.dataSchema(table.getSchema, incremental))
+          .createDataFrame(rdd, BackupUtils.dataSchema(table.getSchema, incremental))
 
       // Write the data to the backup path.
       // The backup path contains the timestampMs and should not already exist.
@@ -108,7 +108,8 @@ object KuduBackup {
 
       // Generate and output the new metadata for this table.
       // The existence of metadata indicates this backup was successful.
-      val tableMetadata = TableMetadata.getTableMetadata(table, tableOptions)
+      val tableMetadata = TableMetadata
+        .getTableMetadata(table, tableOptions.fromMs, tableOptions.toMs, tableOptions.format)
       io.writeTableMetadata(tableMetadata, metadataPath)
     }
   }

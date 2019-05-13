@@ -16,19 +16,40 @@
 // under the License.
 package org.apache.kudu.backup
 
+import com.google.common.collect.ImmutableList
+import org.apache.kudu.client.CreateTableOptions
 import org.apache.kudu.client.KuduTable
-import org.apache.kudu.spark.kudu._
+import org.apache.kudu.test.ClientTestUtil.getBasicSchema
+import org.apache.kudu.test.KuduTestHarness
 import org.junit.Assert._
+import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
-class TestBackupGraph extends KuduTestSuite {
+import scala.annotation.meta.getter
+
+class TestBackupGraph {
   val log: Logger = LoggerFactory.getLogger(getClass)
+
+  var tableName: String = "TestBackupGraph"
+  var table: KuduTable = _
+
+  @(Rule @getter)
+  val harness = new KuduTestHarness
+
+  @Before
+  def setUp(): Unit = {
+    // Create the test table.
+    val builder = new CreateTableOptions().setNumReplicas(3)
+    builder.setRangePartitionColumns(ImmutableList.of("key"))
+    table = harness.getClient.createTable(tableName, getBasicSchema, builder)
+  }
 
   @Test
   def testSimpleBackupGraph() {
-    val graph = new BackupGraph(table.getName)
+    val graph = new BackupGraph(table.getTableId)
     val full = createBackupVertex(table, 0, 1)
     graph.addBackup(full)
 
@@ -52,7 +73,7 @@ class TestBackupGraph extends KuduTestSuite {
 
   @Test
   def testForkingBackupGraph() {
-    val graph = new BackupGraph(table.getName)
+    val graph = new BackupGraph(table.getTableId)
     val full = createBackupVertex(table, 0, 1)
     graph.addBackup(full)
     // Duplicate fromMs of 1 creates a fork in the graph.
@@ -81,7 +102,7 @@ class TestBackupGraph extends KuduTestSuite {
 
   @Test
   def testMultiFullBackupGraph() {
-    val graph = new BackupGraph(table.getName)
+    val graph = new BackupGraph(table.getTableId)
     val full1 = createBackupVertex(table, 0, 1)
     graph.addBackup(full1)
     val inc1 = createBackupVertex(table, 1, 2)
@@ -131,14 +152,7 @@ class TestBackupGraph extends KuduTestSuite {
   }
 
   private def createBackupVertex(table: KuduTable, fromMs: Long, toMs: Long): BackupNode = {
-    val options = new BackupOptions(
-      tables = Seq(table.getName),
-      rootPath = "foo/path",
-      "fooAddresses",
-      fromMs = fromMs,
-      toMs = toMs
-    )
-    val metadata = TableMetadata.getTableMetadata(table, options)
+    val metadata = TableMetadata.getTableMetadata(table, fromMs, toMs, "parquet")
     BackupNode(null, metadata)
   }
 }

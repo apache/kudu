@@ -25,14 +25,6 @@ import scopt.OptionParser
 
 @InterfaceAudience.Private
 @InterfaceStability.Unstable
-trait CommonOptions {
-  val tables: Seq[String]
-  val rootPath: String
-  val kuduMasterAddresses: String
-}
-
-@InterfaceAudience.Private
-@InterfaceStability.Unstable
 case class BackupOptions(
     tables: Seq[String],
     rootPath: String,
@@ -46,7 +38,6 @@ case class BackupOptions(
     scanLeaderOnly: Boolean = BackupOptions.DefaultScanLeaderOnly,
     scanPrefetching: Boolean = BackupOptions.DefaultScanPrefetching,
     keepAlivePeriodMs: Long = BackupOptions.DefaultKeepAlivePeriodMs)
-    extends CommonOptions
 
 object BackupOptions {
   val DefaultForceFull: Boolean = false
@@ -166,8 +157,7 @@ case class RestoreOptions(
     kuduMasterAddresses: String = InetAddress.getLocalHost.getCanonicalHostName,
     tableSuffix: String = "",
     createTables: Boolean = RestoreOptions.DefaultCreateTables,
-    timestampMs: Long = System.currentTimeMillis()
-) extends CommonOptions
+    timestampMs: Long = System.currentTimeMillis())
 
 object RestoreOptions {
   val DefaultCreateTables: Boolean = true
