@@ -46,15 +46,19 @@ import org.apache.hadoop.hive.metastore.events.ListenerEvent;
  * }
  * </pre>
  *
- * The plugin enforces that Kudu table entries in the HMS always
- * contain two properties: a Kudu table ID and the Kudu master addresses. It also
- * enforces that non-Kudu tables do not have these properties. The plugin
- * considers entries to be Kudu tables if they contain the Kudu storage handler.
+ * The plugin enforces that Kudu table entries in the HMS always contain
+ * two properties: a Kudu table ID and the Kudu master addresses. It also
+ * enforces that non-Kudu tables do not have these properties (except cases
+ * when upgrading tables with legacy Kudu storage handler to be Kudu tables
+ * or downgrading from the other way around). The plugin considers entries
+ * to be Kudu tables if they contain the Kudu storage handler.
  *
  * Additionally, the plugin checks that when particular events have an
  * environment containing a Kudu table ID, that event only applies
- * to the specified Kudu table. This provides some amount of concurrency safety,
- * so that the Kudu Master can ensure it is operating on the correct table entry.
+ * to the specified Kudu table. This provides some amount of concurrency
+ * safety, so that the Kudu Master can ensure it is operating on the correct
+ * table entry. Note that such validation does not apply to tables with
+ * legacy Kudu storage handler.
  */
 public class KuduMetastorePlugin extends MetaStoreEventListener {
 
@@ -130,31 +134,41 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
     Table oldTable = tableEvent.getOldTable();
     Table newTable = tableEvent.getNewTable();
 
-    // Allow non-Kudu tables (even the legacy ones) to be altered.
-    if (!isKuduTable(oldTable) && !isLegacyKuduTable(oldTable)) {
-      // But ensure that the alteration isn't introducing Kudu-specific properties.
+    if (isLegacyKuduTable(oldTable)) {
+      if (isKuduTable(newTable)) {
+        // Allow legacy tables to be upgraded to Kudu tables. Validate the upgraded
+        // table entry contains the required Kudu table properties, and that any
+        // potential schema alterations are coming from the Kudu master.
+        checkKuduProperties(newTable);
+        checkOnlyKuduMasterCanAlterSchema(tableEvent, oldTable, newTable);
+        return;
+      }
+      // Allow legacy tables to be altered without introducing Kudu-specific
+      // properties.
       checkNoKuduProperties(newTable);
-      return;
-    }
-
-    // Check the altered table's properties. Kudu tables can be downgraded
-    // to the legacy format.
-    if (!isLegacyKuduTable(newTable)) {
+    } else if (isKuduTable(oldTable)) {
+      if (isLegacyKuduTable(newTable)) {
+        // Allow Kudu tables to be downgraded to legacy tables. Validate the downgraded
+        // table entry does not contain Kudu-specific properties, and that any potential
+        // schema alterations are coming from the Kudu master.
+        checkNoKuduProperties(newTable);
+        checkOnlyKuduMasterCanAlterSchema(tableEvent, oldTable, newTable);
+        return;
+      }
+      // Validate the new table entry contains the required Kudu table properties, and
+      // that any potential schema alterations are coming from the Kudu master.
       checkKuduProperties(newTable);
-    }
-
-    // Check that the non legacy Kudu table ID isn't changing.
-    if (!isLegacyKuduTable(oldTable) && !isLegacyKuduTable(newTable)) {
+      checkOnlyKuduMasterCanAlterSchema(tableEvent, oldTable, newTable);
+      // Check that the Kudu table ID isn't changing.
       String oldTableId = oldTable.getParameters().get(KUDU_TABLE_ID_KEY);
       String newTableId = newTable.getParameters().get(KUDU_TABLE_ID_KEY);
       if (!newTableId.equals(oldTableId)) {
         throw new MetaException("Kudu table ID does not match the existing HMS entry");
       }
-    }
-
-    if (!isKuduMasterAction(tableEvent) &&
-        !oldTable.getSd().getCols().equals(newTable.getSd().getCols())) {
-      throw new MetaException("Kudu table columns may not be altered through Hive");
+    } else {
+      // Allow non-Kudu tables to be altered without introducing Kudu-specific
+      // properties.
+      checkNoKuduProperties(newTable);
     }
   }
 
@@ -219,6 +233,20 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
       throw new MetaException(String.format(
           "non-Kudu table entry must not contain a table ID property (%s)",
           KUDU_TABLE_ID_KEY));
+    }
+  }
+
+  /**
+   * Checks that the table schema can only be altered by an action from the Kudu Master.
+   * @param tableEvent
+   * @param oldTable the table to be altered
+   * @param newTable the new altered table
+   */
+  private void checkOnlyKuduMasterCanAlterSchema(AlterTableEvent tableEvent,
+      Table oldTable, Table newTable) throws MetaException {
+    if (!isKuduMasterAction(tableEvent) &&
+        !oldTable.getSd().getCols().equals(newTable.getSd().getCols())) {
+      throw new MetaException("Kudu table columns may not be altered through Hive");
     }
   }
 

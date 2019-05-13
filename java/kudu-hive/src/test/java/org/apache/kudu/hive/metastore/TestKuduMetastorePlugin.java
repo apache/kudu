@@ -254,6 +254,20 @@ public class TestKuduMetastorePlugin {
       client.alter_table_with_environmentContext(
           table.getDbName(), table.getTableName(), table,
           new EnvironmentContext(ImmutableMap.of(KuduMetastorePlugin.KUDU_MASTER_EVENT, "true")));
+
+      // Check that altering table with Kudu storage handler to legacy format
+      // succeeds.
+      {
+        Table alteredTable = table.deepCopy();
+        alteredTable.getParameters().clear();
+        alteredTable.putToParameters(hive_metastoreConstants.META_TABLE_STORAGE,
+            KuduMetastorePlugin.LEGACY_KUDU_STORAGE_HANDLER);
+        alteredTable.putToParameters(KuduMetastorePlugin.LEGACY_KUDU_TABLE_NAME,
+            "legacy_table");
+        alteredTable.putToParameters(KuduMetastorePlugin.KUDU_MASTER_ADDRS_KEY,
+            "localhost");
+        client.alter_table(table.getDbName(), table.getTableName(), alteredTable);
+      }
     } finally {
       client.dropTable(table.getDbName(), table.getTableName());
     }
@@ -290,7 +304,7 @@ public class TestKuduMetastorePlugin {
       // Check that altering the table succeeds.
       client.alter_table(table.getDbName(), table.getTableName(), table);
 
-      // Check that altering the legacy table with Kudu storage handler
+      // Check that altering the legacy table to use the Kudu storage handler
       // succeeds.
       {
         Table alteredTable = legacyTable.deepCopy();
@@ -303,24 +317,33 @@ public class TestKuduMetastorePlugin {
         client.alter_table(legacyTable.getDbName(), legacyTable.getTableName(),
                            alteredTable);
       }
-
-      // Check that altering table with Kudu storage handler to legacy format
-      // succeeds.
-      {
-        Table alteredTable = table.deepCopy();
-        alteredTable.putToParameters(hive_metastoreConstants.META_TABLE_STORAGE,
-                KuduMetastorePlugin.LEGACY_KUDU_STORAGE_HANDLER);
-        alteredTable.putToParameters(KuduMetastorePlugin.LEGACY_KUDU_TABLE_NAME,
-                "legacy_table");
-        alteredTable.putToParameters(KuduMetastorePlugin.KUDU_MASTER_ADDRS_KEY,
-                "localhost");
-        client.alter_table(table.getDbName(), table.getTableName(),
-                alteredTable);
-      }
-
     } finally {
       client.dropTable(table.getDbName(), table.getTableName());
     }
+  }
+
+  @Test
+  public void testLegacyTableHandler() throws Exception {
+    // Test creating a legacy Kudu table without context succeeds.
+    Table table = newLegacyTable("legacy_table");
+    client.createTable(table);
+
+    // Check that altering legacy table's schema succeeds.
+    {
+      Table alteredTable = table.deepCopy();
+      alteredTable.getSd().addToCols(new FieldSchema("c", "int", ""));
+      client.alter_table(table.getDbName(), table.getTableName(), alteredTable);
+    }
+
+    // Check that renaming legacy table's schema succeeds.
+    final String newTable = "new_table";
+    {
+      Table alteredTable = table.deepCopy();
+      alteredTable.setTableName(newTable);
+      client.alter_table(table.getDbName(), table.getTableName(), alteredTable);
+    }
+    // Test dropping a legacy Kudu table without context succeeds.
+    client.dropTable(table.getDbName(), newTable);
   }
 
   @Test
