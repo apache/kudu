@@ -35,6 +35,7 @@
 #include "kudu/util/errno.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/subprocess.h"
@@ -124,36 +125,26 @@ Status WaitForNtp() {
   }
   LOG(INFO) << Substitute("Waiting up to --ntp_initial_sync_wait_secs=$0 "
                           "seconds for the clock to synchronize", wait_secs);
-  vector<string> cmd;
-  string exe;
-  Status s = FindExecutable("ntp-wait", {"/sbin", "/usr/sbin"}, &exe);
-  if (s.ok()) {
-    // -s is the number of seconds to sleep between retries.
-    // -n is the number of tries before giving up.
-    cmd = {exe, "-s", "1", "-n", std::to_string(wait_secs)};
-  } else {
-    LOG(WARNING) << "Could not find ntp-wait; trying chrony waitsync instead: "
-                 << s.ToString();
-    s = FindExecutable("chronyc", {"/sbin", "/usr/sbin"}, &exe);
-    if (!s.ok()) {
-      LOG(WARNING) << "Could not find chronyc: " << s.ToString();
-      return Status::NotFound("failed to find ntp-wait or chronyc");
+
+  // We previously relied on ntpd/chrony support tools to wait, but that
+  // approach doesn't work in environments where ntpd is unreachable but the
+  // clock is still synchronized (i.e. running inside a Linux container).
+  //
+  // Now we just interrogate the kernel directly.
+  Status s;
+  for (int i = 0; i < wait_secs; i++) {
+    timex timex;
+    s = CallAdjTime(&timex);
+    if (s.ok() || !s.IsServiceUnavailable()) {
+      return s;
     }
-    // Usage: waitsync max-tries max-correction max-skew interval.
-    // max-correction and max-skew parameters as 0 means no checks.
-    // The interval is measured in seconds.
-    cmd = {exe, "waitsync", std::to_string(wait_secs), "0", "0", "1"};
+    SleepFor(MonoDelta::FromSeconds(1));
   }
-  // Unfortunately, neither ntp-wait nor chronyc waitsync print useful messages.
-  // Instead, rely on DumpDiagnostics.
-  s = Subprocess::Call(cmd);
-  if (!s.ok()) {
-    return s.CloneAndPrepend(
-        Substitute("failed to wait for clock sync using command '$0'",
-                   JoinStrings(cmd, " ")));
-  }
-  return Status::OK();
+
+  // Return the last failure.
+  return s.CloneAndPrepend("Timed out waiting for clock sync");
 }
+
 } // anonymous namespace
 
 void SystemNtp::DumpDiagnostics(vector<string>* log) const {
