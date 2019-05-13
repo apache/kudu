@@ -172,6 +172,8 @@ Per-table replica distribution summary:
 }
 
 // Make sure the rebalancer doesn't start if a tablet server is down.
+// The rebalancer starts only when the dead tablet server is in the
+// list of ignored_tservers.
 class RebalanceStartCriteriaTest :
     public AdminCliTest,
     public ::testing::WithParamInterface<Kudu1097> {
@@ -199,19 +201,37 @@ TEST_P(RebalanceStartCriteriaTest, TabletServerIsDown) {
     ts->Shutdown();
   }
 
-  string out;
-  string err;
-  Status s = RunKuduTool({
-    "cluster",
-    "rebalance",
-    cluster_->master()->bound_rpc_addr().ToString()
-  }, &out, &err);
-  ASSERT_TRUE(s.IsRuntimeError()) << ToolRunInfo(s, out, err);
-  const auto err_msg_pattern = Substitute(
-      "Illegal state: tablet server .* \\($0\\): "
-      "unacceptable health status UNAVAILABLE",
-      ts_host_port.ToString());
-  ASSERT_STR_MATCHES(err, err_msg_pattern);
+  // Rebalancer doesn't start if a tablet server is down.
+  {
+    string out;
+    string err;
+    Status s = RunKuduTool({
+      "cluster",
+      "rebalance",
+      cluster_->master()->bound_rpc_addr().ToString()
+    }, &out, &err);
+    ASSERT_TRUE(s.IsRuntimeError()) << ToolRunInfo(s, out, err);
+    const auto err_msg_pattern = Substitute(
+        "Illegal state: tablet server .* \\($0\\): "
+        "unacceptable health status UNAVAILABLE",
+        ts_host_port.ToString());
+    ASSERT_STR_MATCHES(err, err_msg_pattern);
+  }
+
+  // Rebalancer starts when specifying the dead tablet server in 'ignored_tservers'.
+  {
+    string out;
+    string err;
+    Status s = RunKuduTool({
+      "cluster",
+      "rebalance",
+      cluster_->master()->bound_rpc_addr().ToString(),
+      "--ignored_tservers=" + cluster_->tablet_server(0)->uuid()
+    }, &out, &err);
+    ASSERT_TRUE(s.ok()) << ToolRunInfo(s, out, err);
+    ASSERT_STR_CONTAINS(out, "rebalancing is complete: cluster is balanced (moved 0 replicas)")
+        << "stderr: " << err;
+  }
 }
 
 static Status CreateTables(

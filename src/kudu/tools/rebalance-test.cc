@@ -231,6 +231,7 @@ class KsckResultsToClusterBalanceInfoTest : public ::testing::Test {
 // of RF=1 replicas is allowed.
 TEST_F(KsckResultsToClusterBalanceInfoTest, MoveRf1Replicas) {
   const Rebalancer::Config rebalancer_config = {
+    {},     // ignored_tservers
     {},     // master_addresses
     {},     // table_filters
     5,      // max_moves_per_server
@@ -367,6 +368,7 @@ TEST_F(KsckResultsToClusterBalanceInfoTest, MoveRf1Replicas) {
 // RF=1 replicas is disabled.
 TEST_F(KsckResultsToClusterBalanceInfoTest, DoNotMoveRf1Replicas) {
   const Rebalancer::Config rebalancer_config = {
+    {},     // ignored_tservers
     {},     // master_addresses
     {},     // table_filters
     5,      // max_moves_per_server

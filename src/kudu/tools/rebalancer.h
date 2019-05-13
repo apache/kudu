@@ -25,6 +25,7 @@
 #include <set>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
@@ -65,7 +66,9 @@ class Rebalancer {
   struct Config {
     static constexpr double kLoadImbalanceThreshold = 1.0;
 
-    Config(std::vector<std::string> master_addresses = {},
+    // NOLINTNEXTLINE(google-explicit-constructor)
+    Config(std::vector<std::string> ignored_tservers_param = {},
+           std::vector<std::string> master_addresses = {},
            std::vector<std::string> table_filters = {},
            size_t max_moves_per_server = 5,
            size_t max_staleness_interval_sec = 300,
@@ -76,6 +79,12 @@ class Rebalancer {
            bool run_cross_location_rebalancing = true,
            bool run_intra_location_rebalancing = true,
            double load_imbalance_threshold = kLoadImbalanceThreshold);
+
+    // UUIDs of ignored servers. If empty, allow to run the
+    // rebalancing only when all tablet servers in cluster are healthy.
+    // If not empty, allow to run the rebalancing when servers in
+    // ignored_tservers are unhealthy.
+    std::unordered_set<std::string> ignored_tservers;
 
     // Kudu masters' RPC endpoints.
     std::vector<std::string> master_addresses;
@@ -199,6 +208,7 @@ class Rebalancer {
   class BaseRunner : public Runner {
    public:
     BaseRunner(Rebalancer* rebalancer,
+               std::unordered_set<std::string> ignored_tservers,
                size_t max_moves_per_server,
                boost::optional<MonoTime> deadline);
 
@@ -226,6 +236,9 @@ class Rebalancer {
 
     // A pointer to the Rebalancer object.
     Rebalancer* rebalancer_;
+
+    // A set of ignored tablet server UUIDs.
+    const std::unordered_set<std::string> ignored_tservers_;
 
     // Maximum allowed number of move operations per server. For a move
     // operation, a source replica adds +1 at the source server and the target
@@ -261,12 +274,15 @@ class Rebalancer {
   // Runner that leverages RebalancingAlgo interface for rebalancing.
   class AlgoBasedRunner : public BaseRunner {
    public:
+    // The 'ignored_tservers' specifies dead tablet servers that could be
+    // ignored by rebalancer.
     // The 'max_moves_per_server' specifies the maximum number of operations
     // per tablet server (both the source and the destination are counted in).
     // The 'deadline' specifies the deadline for the run, 'boost::none'
     // if no timeout is set. If 'location' is boost::none, rebalance across
     // locations.
     AlgoBasedRunner(Rebalancer* rebalancer,
+                    std::unordered_set<std::string> ignored_tservers,
                     size_t max_moves_per_server,
                     boost::optional<MonoTime> deadline);
 
@@ -326,6 +342,8 @@ class Rebalancer {
 
   class IntraLocationRunner : public AlgoBasedRunner {
    public:
+    // The 'ignored_tservers' specifies dead tablet servers that could be
+    // ignored by rebalancer.
     // The 'max_moves_per_server' specifies the maximum number of operations
     // per tablet server (both the source and the destination are counted in).
     // The 'deadline' specifies the deadline for the run, 'boost::none'
@@ -333,6 +351,7 @@ class Rebalancer {
     // is just one location defined in the whole cluster, the whole cluster will
     // be rebalanced.
     IntraLocationRunner(Rebalancer* rebalancer,
+                        std::unordered_set<std::string> ignored_tservers,
                         size_t max_moves_per_server,
                         boost::optional<MonoTime> deadline,
                         std::string location);
@@ -354,6 +373,8 @@ class Rebalancer {
 
   class CrossLocationRunner : public AlgoBasedRunner {
    public:
+    // The 'ignored_tservers' specifies dead tablet servers that could be
+    // ignored by rebalancer.
     // The 'max_moves_per_server' specifies the maximum number of operations
     // per tablet server (both the source and the destination are counted in).
     // The 'load_imbalance_threshold' specified the threshold for the
@@ -361,6 +382,7 @@ class Rebalancer {
     // The 'deadline' specifies the deadline for the run, 'boost::none'
     // if no timeout is set.
     CrossLocationRunner(Rebalancer* rebalancer,
+                        std::unordered_set<std::string> ignored_tservers,
                         size_t max_moves_per_server,
                         double load_imbalance_threshold,
                         boost::optional<MonoTime> deadline);
@@ -383,6 +405,7 @@ class Rebalancer {
   class PolicyFixer : public BaseRunner {
    public:
     PolicyFixer(Rebalancer* rebalancer,
+                std::unordered_set<std::string> ignored_tservers,
                 size_t max_moves_per_server,
                 boost::optional<MonoTime> deadline);
 
