@@ -433,32 +433,6 @@ public class TestAsyncKuduSession {
     }
     session.flush().join(DEFAULT_SLEEP);
     assertEquals(50, countInRange(101, 151));
-
-    // Test the low watermark.
-    // Before the fix for KUDU-804, a change to the buffer space did not result in a change to the
-    // low watermark causing this test to fail.
-    session.setMutationBufferLowWatermark(0.1f);
-    session.setMutationBufferSpace(10);
-    session.setRandomSeed(12345); // Will make us hit the exception after 6 tries
-    gotException = false;
-    for (int i = 151; i < 171; i++) {
-      try {
-        session.apply(createInsert(i));
-      } catch (PleaseThrottleException ex) {
-        // We're going to hit the exception after filling up the buffer a first time then trying
-        // to insert 6 more rows.
-        assertEquals(167, i);
-        gotException = true;
-        assertTrue(ex.getMessage().contains("watermark"));
-        // Once we hit the exception we wait on the batch to finish flushing and then insert the
-        // rest of the data.
-        ex.getDeferred().join(DEFAULT_SLEEP);
-        session.apply(ex.getFailedRpc());
-      }
-    }
-    session.flush().join(DEFAULT_SLEEP);
-    assertEquals(20, countInRange(151, 171));
-    assertTrue("Expected PleaseThrottleException, but it was never thrown", gotException);
   }
 
   private Insert createInsert(int key) {

@@ -102,6 +102,7 @@ public interface SessionConfiguration {
    *                             the low watermark since it's the same as the high one
    * @throws IllegalArgumentException if the buffer isn't empty or if the watermark isn't between
    * 0 and 1
+   * @deprecated The low watermark no longer has any effect.
    */
   void setMutationBufferLowWatermark(float mutationBufferLowWatermarkPercentage);
 

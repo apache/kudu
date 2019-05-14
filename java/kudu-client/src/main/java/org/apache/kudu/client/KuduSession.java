@@ -126,18 +126,19 @@ public class KuduSession implements SessionConfiguration {
   }
 
   @Override
-  public void setMutationBufferSpace(int size) {
-    session.setMutationBufferSpace(size);
+  public void setMutationBufferSpace(int numOps) {
+    session.setMutationBufferSpace(numOps);
   }
 
   @Override
+  @Deprecated
   public void setMutationBufferLowWatermark(float mutationBufferLowWatermarkPercentage) {
-    session.setMutationBufferLowWatermark(mutationBufferLowWatermarkPercentage);
+    LOG.warn("setMutationBufferLowWatermark is deprecated");
   }
 
   @Override
-  public void setFlushInterval(int interval) {
-    session.setFlushInterval(interval);
+  public void setFlushInterval(int intervalMillis) {
+    session.setFlushInterval(intervalMillis);
   }
 
   @Override
