@@ -61,7 +61,6 @@
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_service.pb.h"
 #include "kudu/tserver/tserver_service.proxy.h"
-#include "kudu/util/atomic.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
@@ -74,26 +73,25 @@ DECLARE_int32(fetch_info_concurrency);
 
 DEFINE_bool(checksum_cache_blocks, false, "Should the checksum scanners cache the read blocks");
 
-namespace kudu {
-namespace tools {
-
-static const std::string kMessengerName = "ksck";
-
-using client::KuduClient;
-using client::KuduClientBuilder;
-using client::KuduReplica;
-using client::KuduScanToken;
-using client::KuduScanTokenBuilder;
-using client::KuduTable;
-using client::KuduTabletServer;
-using client::internal::ReplicaController;
-using rpc::Messenger;
-using rpc::MessengerBuilder;
-using rpc::RpcController;
+using kudu::client::KuduClientBuilder;
+using kudu::client::KuduScanToken;
+using kudu::client::KuduScanTokenBuilder;
+using kudu::client::KuduSchema;
+using kudu::client::KuduTable;
+using kudu::client::KuduTabletServer;
+using kudu::client::internal::ReplicaController;
+using kudu::rpc::Messenger;
+using kudu::rpc::MessengerBuilder;
+using kudu::rpc::RpcController;
 using std::shared_ptr;
 using std::string;
 using std::vector;
 using strings::Substitute;
+
+namespace kudu {
+namespace tools {
+
+static const std::string kMessengerName = "ksck";
 
 namespace {
 MonoDelta GetDefaultTimeout() {
@@ -516,54 +514,52 @@ Status RemoteKsckCluster::RetrieveTablesList() {
   vector<string> table_names;
   RETURN_NOT_OK(client_->ListTables(&table_names));
 
-  int num_tables = static_cast<int>(table_names.size());
-  if (num_tables == 0) {
+  if (table_names.empty()) {
     return Status::OK();
   }
 
-  AtomicInt<int32_t> bad_tables(0);
   vector<shared_ptr<KsckTable>> tables;
+  tables.reserve(table_names.size());
   simple_spinlock tables_lock;
 
   for (const auto& table_name : table_names) {
     RETURN_NOT_OK(pool_->SubmitFunc([&]() {
-        client::sp::shared_ptr<KuduTable> t;
-        Status s = client_->OpenTable(table_name, &t);
-        if (!s.ok()) {
-          bad_tables.Increment();
-          LOG(ERROR) << Substitute("unable to open table $0: $1", table_name, s.ToString());
-          return;
-        }
-        shared_ptr<KsckTable> table(new KsckTable(t->id(),
-                                                  table_name,
-                                                  *t->schema().schema_,
-                                                  t->num_replicas()));
-        {
-          std::lock_guard<simple_spinlock> l(tables_lock);
-          tables.push_back(table);
-        }
+      client::sp::shared_ptr<KuduTable> t;
+      Status s = client_->OpenTable(table_name, &t);
+      if (!s.ok()) {
+        LOG(ERROR) << Substitute("unable to open table $0: $1",
+                                 table_name, s.ToString());
+        return;
+      }
+      shared_ptr<KsckTable> table(new KsckTable(t->id(),
+                                                table_name,
+                                                KuduSchema::ToSchema(t->schema()),
+                                                t->num_replicas()));
+      {
+        std::lock_guard<simple_spinlock> l(tables_lock);
+        tables.emplace_back(std::move(table));
+      }
     }));
   }
   pool_->Wait();
 
   tables_.swap(tables);
 
-  if (bad_tables.Load() > 0) {
+  if (tables_.size() < table_names.size()) {
     return Status::NetworkError(
         Substitute("failed to gather info from all tables: $0 of $1 had errors",
-                   bad_tables.Load(), num_tables));
+                   table_names.size() - tables_.size(), table_names.size()));
   }
 
   return Status::OK();
 }
 
 Status RemoteKsckCluster::RetrieveAllTablets() {
-  int num_tables = static_cast<int>(tables().size());
-  if (num_tables == 0) {
+  if (tables_.empty()) {
     return Status::OK();
   }
 
-  for (const shared_ptr<KsckTable>& table : tables()) {
+  for (const auto& table : tables_) {
     RETURN_NOT_OK(pool_->SubmitFunc(
         std::bind(&KsckCluster::RetrieveTabletsList, this, table)));
   }

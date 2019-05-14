@@ -123,11 +123,12 @@ class KsckTablet {
 // Representation of a table. Composed of tablets.
 class KsckTable {
  public:
-  KsckTable(std::string id, std::string name, const Schema& schema, int num_replicas)
+  KsckTable(std::string id, std::string name, Schema schema, int num_replicas)
       : id_(std::move(id)),
         name_(std::move(name)),
-        schema_(schema),
-        num_replicas_(num_replicas) {}
+        schema_(std::move(schema)),
+        num_replicas_(num_replicas) {
+  }
 
   const std::string& id() const {
     return id_;
@@ -149,7 +150,7 @@ class KsckTable {
     tablets_ = std::move(tablets);
   }
 
-  std::vector<std::shared_ptr<KsckTablet>>& tablets() {
+  const std::vector<std::shared_ptr<KsckTablet>>& tablets() const {
     return tablets_;
   }
 
