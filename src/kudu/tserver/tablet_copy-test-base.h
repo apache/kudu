@@ -57,7 +57,9 @@ class TabletCopyTest : public TabletServerTestBase {
   }
 
   virtual void TearDown() OVERRIDE {
-    ASSERT_OK(tablet_replica_->log_anchor_registry()->Unregister(&anchor_));
+    if (tablet_replica_) {
+      ASSERT_OK(tablet_replica_->log_anchor_registry()->Unregister(&anchor_));
+    }
     NO_FATALS(TabletServerTestBase::TearDown());
   }
 
