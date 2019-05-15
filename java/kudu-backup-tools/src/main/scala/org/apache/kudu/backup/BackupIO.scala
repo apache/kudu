@@ -68,9 +68,9 @@ class BackupIO(val conf: Configuration, rootPathStr: String) {
   /**
    * Return the path to the table directory.
    */
-  def tablePath(table: KuduTable): Path = {
-    val tableName = URLEncoder.encode(table.getName, "UTF-8")
-    val dirName = s"${table.getTableId}-$tableName"
+  def tablePath(tableId: String, tableName: String): Path = {
+    val encodedTableName = URLEncoder.encode(tableName, "UTF-8")
+    val dirName = s"$tableId-$encodedTableName"
     new Path(rootPath, dirName)
   }
 
@@ -78,7 +78,7 @@ class BackupIO(val conf: Configuration, rootPathStr: String) {
    * Return the backup path for a table and time.
    */
   def backupPath(table: KuduTable, timestampMs: Long): Path = {
-    new Path(tablePath(table), timestampMs.toString)
+    new Path(tablePath(table.getTableId, table.getName), timestampMs.toString)
   }
 
   /**
@@ -98,6 +98,13 @@ class BackupIO(val conf: Configuration, rootPathStr: String) {
     out.write(json.getBytes(StandardCharsets.UTF_8))
     out.flush()
     out.close()
+  }
+
+  /**
+   * Reads all of the backup graphs.
+   */
+  def readAllBackupGraphs(): Seq[BackupGraph] = {
+    buildBackupGraphs(listAllTableDirs(), System.currentTimeMillis())
   }
 
   /**

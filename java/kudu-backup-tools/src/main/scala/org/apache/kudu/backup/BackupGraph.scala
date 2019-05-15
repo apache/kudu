@@ -64,6 +64,13 @@ class BackupGraph(val tableId: String) {
   }
 
   /**
+   * @return all the backups in the graph.
+   */
+  def allBackups: Seq[BackupNode] = {
+    adjacencyList.values.flatten.toSeq
+  }
+
+  /**
    * @return the most recent full backup.
    * @throws IllegalStateException if no full backup exists.
    */
