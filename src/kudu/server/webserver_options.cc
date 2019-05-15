@@ -109,6 +109,11 @@ DEFINE_string(webserver_tls_min_protocol, kudu::security::SecurityDefaults::kDef
               "connections. May be one of 'TLSv1', 'TLSv1.1', or 'TLSv1.2'.");
 TAG_FLAG(webserver_tls_min_protocol, advanced);
 
+DEFINE_bool(webserver_require_spnego, false,
+            "Require connections to the web server to authenticate via Kerberos "
+            "using SPNEGO.");
+TAG_FLAG(webserver_require_spnego, evolving);
+
 namespace kudu {
 
 static bool ValidateTlsFlags() {
@@ -151,7 +156,8 @@ WebserverOptions::WebserverOptions()
     password_file(FLAGS_webserver_password_file),
     tls_ciphers(FLAGS_webserver_tls_ciphers),
     tls_min_protocol(FLAGS_webserver_tls_min_protocol),
-    num_worker_threads(FLAGS_webserver_num_worker_threads) {
+    num_worker_threads(FLAGS_webserver_num_worker_threads),
+    require_spnego(FLAGS_webserver_require_spnego) {
 }
 
 } // namespace kudu

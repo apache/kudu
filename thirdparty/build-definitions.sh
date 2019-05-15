@@ -650,8 +650,8 @@ build_mustache() {
 }
 
 build_curl() {
-  # Configure for a very minimal install - basically only HTTP(S), since we only
-  # use this for testing our own HTTP/HTTPS endpoints at this point in time.
+  # Configure for a fairly minimal install - we only use this for testing
+  # so we just need HTTP/HTTPS with GSSAPI support (for SPNEGO testing).
   CURL_BDIR=$TP_BUILD_DIR/$CURL_NAME$MODE_SUFFIX
   mkdir -p $CURL_BDIR
   pushd $CURL_BDIR
@@ -679,7 +679,8 @@ build_curl() {
     --disable-telnet \
     --disable-tftp \
     --without-librtmp \
-    --without-libssh2
+    --without-libssh2 \
+    --with-gssapi
   make -j$PARALLEL $EXTRA_MAKEFLAGS install
   popd
 }

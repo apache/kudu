@@ -17,8 +17,9 @@
 #ifndef KUDU_SERVER_WEBSERVER_OPTIONS_H
 #define KUDU_SERVER_WEBSERVER_OPTIONS_H
 
+#include <cstdint>
+#include <functional>
 #include <string>
-#include <stdint.h>
 
 namespace kudu {
 
@@ -41,6 +42,12 @@ struct WebserverOptions {
   std::string tls_ciphers;
   std::string tls_min_protocol;
   uint32_t num_worker_threads;
+
+  bool require_spnego;
+
+  // When a user has authenticated via SPNEGO, the SPN of that user will be passed to this
+  // callback. This is currently used only for testing.
+  std::function<void(const std::string&)> spnego_post_authn_callback;
 };
 
 } // namespace kudu

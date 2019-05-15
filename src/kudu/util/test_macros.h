@@ -63,6 +63,13 @@
 #define ASSERT_STR_NOT_CONTAINS(str, substr) \
   ASSERT_THAT(str, testing::Not(testing::HasSubstr(substr)))
 
+#define EXPECT_STR_CONTAINS(str, substr) \
+  EXPECT_THAT(str, testing::HasSubstr(substr))
+
+#define EXPECT_STR_NOT_CONTAINS(str, substr) \
+  EXPECT_THAT(str, testing::Not(testing::HasSubstr(substr)))
+
+
 // Substring regular expressions in extended regex (POSIX) syntax.
 #define ASSERT_STR_MATCHES(str, pattern) \
   ASSERT_THAT(str, testing::ContainsRegex(pattern))

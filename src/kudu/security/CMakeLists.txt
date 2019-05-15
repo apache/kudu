@@ -68,6 +68,7 @@ set(SECURITY_SRCS
   cert.cc
   crypto.cc
   kerberos_util.cc
+  gssapi.cc
   init.cc
   openssl_util.cc
   ${PORTED_X509_CHECK_HOST_CC}
@@ -86,6 +87,7 @@ set(SECURITY_LIBS
   kudu_util
   token_proto
 
+  gssapi_krb5
   krb5
   openssl_crypto
   openssl_ssl)

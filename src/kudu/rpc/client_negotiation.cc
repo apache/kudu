@@ -44,6 +44,7 @@
 #include "kudu/rpc/sasl_helper.h"
 #include "kudu/rpc/serialization.h"
 #include "kudu/security/cert.h"
+#include "kudu/security/gssapi.h"
 #include "kudu/security/tls_context.h"
 #include "kudu/security/tls_handshake.h"
 #include "kudu/util/faststring.h"
@@ -789,36 +790,6 @@ int ClientNegotiation::SecretCb(sasl_conn_t* conn, int id, sasl_secret_t** psecr
   return SASL_OK;
 }
 
-namespace {
-// Retrieve the GSSAPI error description for an error code and type.
-string gss_error_description(OM_uint32 code, int type) {
-  string description;
-  OM_uint32 message_context = 0;
-
-  do {
-    if (!description.empty()) {
-      description.append(": ");
-    }
-    OM_uint32 minor = 0;
-    gss_buffer_desc buf;
-    gss_display_status(&minor, code, type, GSS_C_NULL_OID, &message_context, &buf);
-    description.append(static_cast<const char*>(buf.value), buf.length);
-    gss_release_buffer(&minor, &buf);
-  } while (message_context != 0);
-
-  return description;
-}
-
-// Transforms a GSSAPI major and minor error code into a Kudu Status.
-Status check_gss_error(OM_uint32 major, OM_uint32 minor) {
-    if (GSS_ERROR(major)) {
-      return Status::NotAuthorized(gss_error_description(major, GSS_C_GSS_CODE),
-                                   gss_error_description(minor, GSS_C_MECH_CODE));
-    }
-    return Status::OK();
-}
-} // anonymous namespace
-
 Status ClientNegotiation::CheckGSSAPI() {
   OM_uint32 major, minor;
   gss_cred_id_t cred = GSS_C_NO_CREDENTIAL;
@@ -834,7 +805,7 @@ Status ClientNegotiation::CheckGSSAPI() {
                            &cred,
                            nullptr,
                            nullptr);
-  Status s = check_gss_error(major, minor);
+  Status s = gssapi::MajorMinorToStatus(major, minor);
 
   // Inspect the Kerberos credential to determine if it is expired. The lifetime
   // returned from gss_acquire_cred in the RHEL 6 version of krb5 is always 0,
@@ -843,7 +814,7 @@ Status ClientNegotiation::CheckGSSAPI() {
   OM_uint32 lifetime;
   if (s.ok()) {
     major = gss_inquire_cred(&minor, cred, nullptr, &lifetime, nullptr, nullptr);
-    s = check_gss_error(major, minor);
+    s = gssapi::MajorMinorToStatus(major, minor);
   }
 
   // Release the credential even if gss_inquire_cred fails.

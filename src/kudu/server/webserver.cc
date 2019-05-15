@@ -33,11 +33,13 @@
 #include <vector>
 
 #include <boost/algorithm/string.hpp> // IWYU pragma: keep
+#include <boost/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <mustache.h>
 #include <squeasel.h>
 
+#include "kudu/gutil/endian.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
@@ -47,6 +49,7 @@
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/security/gssapi.h"
 #include "kudu/security/openssl_util.h"
 #include "kudu/util/easy_json.h"
 #include "kudu/util/env.h"
@@ -84,33 +87,85 @@ DEFINE_string(webserver_x_frame_options, "DENY",
 TAG_FLAG(webserver_x_frame_options, advanced);
 
 
-namespace {
-  // Last error message from the webserver.
-  string kWebserverLastErrMsg;
+namespace kudu {
 
-  string HttpStatusCodeToString(kudu::HttpStatusCode code) {
-    switch (code) {
-      case kudu::HttpStatusCode::Ok:
-        return "200 OK";
-      case kudu::HttpStatusCode::BadRequest:
-        return "400 Bad Request";
-      case kudu::HttpStatusCode::NotFound:
-        return "404 Not Found";
-      case kudu::HttpStatusCode::LengthRequired:
-        return "411 Length Required";
-      case kudu::HttpStatusCode::RequestEntityTooLarge:
-        return "413 Request Entity Too Large";
-      case kudu::HttpStatusCode::InternalServerError:
-        return "500 Internal Server Error";
-      case kudu::HttpStatusCode::ServiceUnavailable:
-        return "503 Service Unavailable";
-    }
-    LOG(FATAL) << "Unexpected HTTP response code";
+namespace {
+
+// Last error message from the webserver.
+// TODO(todd) global strings are somewhat messy and lint is complaining
+// about this. Clean this up.
+string kWebserverLastErrMsg; // NOLINT(runtime/string)
+
+string HttpStatusCodeToString(kudu::HttpStatusCode code) {
+  switch (code) {
+    case kudu::HttpStatusCode::Ok:
+      return "200 OK";
+    case kudu::HttpStatusCode::BadRequest:
+      return "400 Bad Request";
+    case kudu::HttpStatusCode::NotFound:
+      return "404 Not Found";
+    case kudu::HttpStatusCode::LengthRequired:
+      return "411 Length Required";
+    case kudu::HttpStatusCode::RequestEntityTooLarge:
+      return "413 Request Entity Too Large";
+    case kudu::HttpStatusCode::InternalServerError:
+      return "500 Internal Server Error";
+    case kudu::HttpStatusCode::ServiceUnavailable:
+      return "503 Service Unavailable";
+  }
+  LOG(FATAL) << "Unexpected HTTP response code";
+}
+
+void SendPlainResponse(struct sq_connection* connection,
+                       const string& response_code_line,
+                       const string& content,
+                       const vector<string>& header_lines) {
+  sq_printf(connection, "HTTP/1.1 %s\r\n", response_code_line.c_str());
+  for (const auto& h : header_lines) {
+    sq_printf(connection, "%s\r\n", h.c_str());
+  }
+  sq_printf(connection, "Content-Type: text/plain\r\n");
+  sq_printf(connection, "Content-Length: %zd\r\n\r\n", content.size());
+  sq_printf(connection, "%s", content.c_str());
+}
+
+// Return the address of the remote user from the squeasel request info.
+Sockaddr GetRemoteAddress(const struct sq_request_info* req) {
+  struct sockaddr_in addr;
+  addr.sin_family = AF_INET;
+  addr.sin_port = NetworkByteOrder::FromHost16(req->remote_port);
+  addr.sin_addr.s_addr = NetworkByteOrder::FromHost32(req->remote_ip);
+  return Sockaddr(addr);
+}
+
+
+// Performs a step of SPNEGO authorization by parsing the HTTP Authorization header
+// 'authz_header' and running it through GSSAPI. If authentication fails or the header
+// is invalid, a bad Status will be returned (and the other out-parameters left untouched).
+//
+Status RunSpnegoStep(const char* authz_header, string* resp_header,
+                     string* authn_user) {
+  VLOG(2) << "Handling Authorization header "
+          << (authz_header ? KUDU_REDACT(authz_header) : "<null>");
+
+  string neg_token;
+  if (authz_header && !TryStripPrefixString(authz_header, "Negotiate ", &neg_token)) {
+    return Status::InvalidArgument("bad Negotiate header");
   }
 
-}  // anonymous namespace
+  string resp_token_b64;
+  bool is_complete;
+  RETURN_NOT_OK(gssapi::SpnegoStep(neg_token, &resp_token_b64, &is_complete, authn_user));
 
-namespace kudu {
+  VLOG(2) << "SPNEGO step complete, response token: " << KUDU_REDACT(resp_token_b64);
+
+  if (!resp_token_b64.empty()) {
+    *resp_header = Substitute("WWW-Authenticate: Negotiate $0", resp_token_b64);
+  }
+  return is_complete ? Status::OK() : Status::Incomplete("authn incomplete");
+}
+
+}  // anonymous namespace
 
 Webserver::Webserver(const WebserverOptions& opts)
   : opts_(opts),
@@ -225,6 +280,17 @@ Status Webserver::Start() {
     }
     options.emplace_back("global_auth_file");
     options.push_back(opts_.password_file);
+  }
+
+  if (opts_.require_spnego) {
+    // We assume that security::InitKerberosForServer() has already been called, which
+    // ensures that the keytab path has been propagated into this environment variable
+    // where the GSSAPI calls will pick it up.
+    const char* kt_file = getenv("KRB5_KTNAME");
+    if (!kt_file || !Env::Default()->FileExists(kt_file)) {
+      return Status::InvalidArgument("Unable to configure web server for SPNEGO authentication: "
+                                     "must configure a keytab file for the server");
+    }
   }
 
   options.emplace_back("listening_ports");
@@ -380,6 +446,88 @@ int Webserver::BeginRequestCallbackStatic(struct sq_connection* connection) {
 
 int Webserver::BeginRequestCallback(struct sq_connection* connection,
                                     struct sq_request_info* request_info) {
+  if (opts_.require_spnego) {
+    const char* authz_header = sq_get_header(connection, "Authorization");
+    string resp_header, authn_princ;
+    Status s = RunSpnegoStep(authz_header, &resp_header, &authn_princ);
+    if (s.IsIncomplete()) {
+      SendPlainResponse(connection, "401 Authentication Required",
+                         "Must authenticate with SPNEGO.",
+                         { resp_header });
+      return 1;
+    }
+    if (s.ok() && authn_princ.empty()) {
+      s = Status::RuntimeError("SPNEGO indicated complete, but got empty principal");
+      // Crash in debug builds, but fall through to treating as an error 500 in
+      // release.
+      LOG(DFATAL) << "Got no authenticated principal for SPNEGO-authenticated "
+                  << " connection from "
+                  << GetRemoteAddress(request_info).ToString()
+                  << ": " << s.ToString();
+    }
+    if (!s.ok()) {
+      LOG(WARNING) << "Failed to authenticate request from "
+                   << GetRemoteAddress(request_info).ToString()
+                   << " via SPNEGO: " << s.ToString();
+      const char* http_status = s.IsNotAuthorized() ? "401 Authentication Required" :
+          "500 Internal Server Error";
+
+      SendPlainResponse(connection, http_status, s.ToString(), {});
+      return 1;
+    }
+
+    if (opts_.spnego_post_authn_callback) {
+      opts_.spnego_post_authn_callback(authn_princ);
+    }
+
+    request_info->remote_user = strdup(authn_princ.c_str());
+
+    // NOTE: According to the SPNEGO RFC (https://tools.ietf.org/html/rfc4559) it
+    // is possible that a non-empty token will be returned along with the HTTP 200
+    // response:
+    //
+    //     A status code 200 status response can also carry a "WWW-Authenticate"
+    //     response header containing the final leg of an authentication.  In
+    //     this case, the gssapi-data will be present.  Before using the
+    //     contents of the response, the gssapi-data should be processed by
+    //     gss_init_security_context to determine the state of the security
+    //     context.  If this function indicates success, the response can be
+    //     used by the application.  Otherwise, an appropriate action, based on
+    //     the authentication status, should be taken.
+    //
+    //     For example, the authentication could have failed on the final leg if
+    //     mutual authentication was requested and the server was not able to
+    //     prove its identity.  In this case, the returned results are suspect.
+    //     It is not always possible to mutually authenticate the server before
+    //     the HTTP operation.  POST methods are in this category.
+    //
+    // In fact, from inspecting the MIT krb5 source code, it appears that this
+    // only happens when the client requests mutual authentication by passing
+    // 'GSS_C_MUTUAL_FLAG' when establishing its side of the protocol. In practice,
+    // this seems to be widely unimplemented:
+    //
+    // - curl has some source code to support GSS_C_MUTUAL_FLAG, but in order to
+    //   enable it, you have to modify a FALSE constant to TRUE and recompile curl.
+    //   In fact, it was broken for all of 2015 without anyone noticing (see curl
+    //   commit 73f1096335d468b5be7c3cc99045479c3314f433)
+    //
+    // - Chrome doesn't support mutual auth at all -- see DelegationTypeToFlag(...)
+    //   in src/net/http/http_auth_gssapi_posix.cc.
+    //
+    // In practice, users depend on TLS to authenticate the server, and SPNEGO
+    // is used to authenticate the client.
+    //
+    // Given this, and because actually sending back the token on an OK response
+    // would require significant code restructuring (eg buffering the header until
+    // after the response handler has run) we just ignore any response token, but
+    // log a periodic warning just in case it turns out we're wrong about the above.
+    if (!resp_header.empty()) {
+      KLOG_EVERY_N_SECS(WARNING, 5) << "ignoring SPNEGO token on HTTP 200 response "
+                                    << "for user " << authn_princ << " at host "
+                                    << GetRemoteAddress(request_info).ToString();
+    }
+  }
+
   PathHandler* handler;
   {
     shared_lock<RWMutex> l(lock_);

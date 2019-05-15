@@ -91,6 +91,20 @@ Status EasyCurl::DoRequest(const std::string& url,
         curl_, CURLOPT_SSL_VERIFYPEER, 0)));
   }
 
+  if (use_spnego_) {
+    RETURN_NOT_OK(TranslateError(curl_easy_setopt(
+        curl_, CURLOPT_HTTPAUTH, CURLAUTH_NEGOTIATE)));
+    // It's necessary to pass an empty user/password to trigger the authentication
+    // code paths in curl, even though SPNEGO doesn't use them.
+    RETURN_NOT_OK(TranslateError(curl_easy_setopt(
+        curl_, CURLOPT_USERPWD, ":")));
+  }
+
+  if (verbose_) {
+    RETURN_NOT_OK(TranslateError(curl_easy_setopt(
+        curl_, CURLOPT_VERBOSE, 1)));
+  }
+
   // Add headers if specified.
   struct curl_slist* curl_headers = nullptr;
   auto clean_up_curl_slist = MakeScopedCleanup([&]() {

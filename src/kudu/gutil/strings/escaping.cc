@@ -898,10 +898,10 @@ int Base64UnescapeInternal(const char *src, int szsrc,
       // szsrc claims the string is).
 
       if (!src[0] || !src[1] || !src[2] ||
-          (temp = ((unbase64[src[0]] << 18) |
-                   (unbase64[src[1]] << 12) |
-                   (unbase64[src[2]] << 6) |
-                   (unbase64[src[3]]))) & 0x80000000) {
+          (temp = ((unsigned(unbase64[src[0]]) << 18) |
+                   (unsigned(unbase64[src[1]]) << 12) |
+                   (unsigned(unbase64[src[2]]) << 6) |
+                   (unsigned(unbase64[src[3]])))) & 0x80000000) {
         // Iff any of those four characters was bad (null, illegal,
         // whitespace, padding), then temp's high bit will be set
         // (because unbase64[] is -1 for all bad characters).

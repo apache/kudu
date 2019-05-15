@@ -17,6 +17,8 @@
 
 #include "kudu/server/webserver.h"
 
+#include <cstdlib>
+#include <functional>
 #include <iosfwd>
 #include <memory>
 #include <string>
@@ -30,8 +32,10 @@
 #include "kudu/gutil/integral_types.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/strings/escaping.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
+#include "kudu/security/test/mini_kdc.h"
 #include "kudu/security/test/test_certs.h"
 #include "kudu/security/test/test_pass.h"
 #include "kudu/server/default_path_handlers.h"
@@ -73,6 +77,7 @@ void SetHTPasswdOptions(WebserverOptions* opts) {
   CHECK_OK(security::CreateTestHTPasswd(GetTestDataDirectory(),
                                         &opts->password_file));
 }
+
 } // anonymous namespace
 
 class WebserverTest : public KuduTest {
@@ -90,6 +95,7 @@ class WebserverTest : public KuduTest {
     opts.doc_root = static_dir_;
     if (use_ssl()) SetSslOptions(&opts);
     if (use_htpasswd()) SetHTPasswdOptions(&opts);
+    MaybeSetupSpnego(&opts);
     server_.reset(new Webserver(opts));
 
     AddDefaultPathHandlers(server_.get());
@@ -98,10 +104,13 @@ class WebserverTest : public KuduTest {
     vector<Sockaddr> addrs;
     ASSERT_OK(server_->GetBoundAddresses(&addrs));
     ASSERT_EQ(addrs.size(), 1);
-    addr_ = addrs[0];
+    ASSERT_TRUE(addrs[0].IsWildcard());
+    ASSERT_OK(addr_.ParseString("127.0.0.1", addrs[0].port()));
   }
 
  protected:
+  virtual void MaybeSetupSpnego(WebserverOptions* /*opts*/) {}
+
   // Overridden by subclasses.
   virtual bool use_ssl() const { return false; }
   virtual bool use_htpasswd() const { return false; }
@@ -136,6 +145,142 @@ TEST_F(PasswdWebserverTest, TestPasswdPresent) {
   string auth_url = strings::Substitute("http://$0@$1/", security::kTestAuthString,
                                         addr_.ToString());
   ASSERT_OK(curl_.FetchURL(auth_url, &buf_));
+}
+
+
+class SpnegoWebserverTest : public WebserverTest {
+ protected:
+  void MaybeSetupSpnego(WebserverOptions* opts) override {
+    kdc_.reset(new MiniKdc(MiniKdcOptions{}));
+    ASSERT_OK(kdc_->Start());
+    kdc_->SetKrb5Environment();
+    string kt_path;
+    ASSERT_OK(kdc_->CreateServiceKeytab("HTTP/127.0.0.1", &kt_path));
+    CHECK_ERR(setenv("KRB5_KTNAME", kt_path.c_str(), 1));
+    ASSERT_OK(kdc_->CreateUserPrincipal("alice"));
+
+    opts->require_spnego = true;
+    opts->spnego_post_authn_callback = [&](const string& spn) {
+      last_authenticated_spn_ = spn;
+    };
+  }
+
+  Status DoSpnegoCurl() {
+    EasyCurl c;
+    c.set_use_spnego(true);
+    if (VLOG_IS_ON(1)) {
+      c.set_verbose(true);
+    }
+    return c.FetchURL(strings::Substitute("http://$0/", addr_.ToString()), &buf_);
+  }
+
+  unique_ptr<MiniKdc> kdc_;
+  const char* const kNotAuthn = "<none>";
+  string last_authenticated_spn_ = kNotAuthn;
+
+  // A SPNEGO token manually captured from a client exchange during some prior test run.
+  // This is used as a basis for some fuzz tests.
+  const char* kWellFormedTokenBase64 =
+      "YIICVwYGKwYBBQUCoIICSzCCAkegDTALBgkqhkiG9xIBAgKiggI0BIICMGCCAiwGCSqGSIb3EgECAgEA"
+      "boICGzCCAhegAwIBBaEDAgEOogcDBQAgAAAAo4IBP2GCATswggE3oAMCAQWhDRsLS1JCVEVTVC5DT02i"
+      "HDAaoAMCAQOhEzARGwRIVFRQGwkxMjcuMC4wLjGjggEBMIH+oAMCARGhAwIBA6KB8QSB7pQrIA2cH2l4"
+      "yfHpwhKz2HKYNxoxOw1j++ODByOfN3O/j9/Pp9PwJzQ7hjo5p5nK2OD+2S5YVuS92Ax/LiX8WaYxt9LC"
+      "Hew8TkssFOiDffhag1taEcMG5KksPVxZejs+4NYiLj8dCwow3kShl/fpaLYXFFUgChaM7mVEDfMEIdos"
+      "WB56k/KMJas7kuAkqDy8sEdPpgzbV7tPmkIFecXPKugZFTttkMREe19LcGO2KnOFflLj7s5F4euWzhrG"
+      "v3oZXxDh0G6iyTouSEH+oh/LG97I0umcHrcEit6CjcjVewNhIUaP/Vn2Cu6X0FsF45qkgb4wgbugAwIB"
+      "EaKBswSBsLrv38pBLMZo74lMEWHyOrbwrBG0kHfLHVSnxJJYikOwjAoNUm0/NUJc801TtbQZX/e6nRjS"
+      "4spS2eU1xnPLcVBbtnonkG7xWSDv/Sl/k73oy7rObVWGQAtYkCJdcfWj1mxeojtrOPcKa9ivBiAuKcKl"
+      "EdT2XD6lk161ygu306e7eH8pcuHv+bl9zP42rj85S0c3q0KXRXvsegAFUFk34+AC3fbmKLddEBUoYxms"
+      "f+uj";
+
+};
+
+TEST_F(SpnegoWebserverTest, TestAuthenticated) {
+  ASSERT_OK(kdc_->Kinit("alice"));
+  ASSERT_OK(DoSpnegoCurl());
+  EXPECT_EQ("alice@KRBTEST.COM", last_authenticated_spn_);
+  EXPECT_STR_CONTAINS(buf_.ToString(), "Kudu");
+}
+
+TEST_F(SpnegoWebserverTest, TestUnauthenticatedBadKeytab) {
+  ASSERT_OK(kdc_->Kinit("alice"));
+  // Randomize the server's key in the KDC so that the key in the keytab doesn't match the
+  // one for which the client will get a ticket. This is just an easy way to provoke an
+  // error and make sure that our error handling works.
+  ASSERT_OK(kdc_->RandomizePrincipalKey("HTTP/127.0.0.1"));
+
+  Status s = DoSpnegoCurl();
+  EXPECT_EQ(s.ToString(), "Remote error: HTTP 401");
+  EXPECT_EQ(kNotAuthn, last_authenticated_spn_);
+  EXPECT_STR_CONTAINS(buf_.ToString(), "GSS failure");
+}
+
+TEST_F(SpnegoWebserverTest, TestUnauthenticatedNoClientAuth) {
+  Status curl_status = DoSpnegoCurl();
+  EXPECT_EQ("Remote error: HTTP 401", curl_status.ToString());
+  EXPECT_EQ("Must authenticate with SPNEGO.", buf_.ToString());
+  EXPECT_EQ(kNotAuthn, last_authenticated_spn_);
+}
+
+// Test some malformed authorization headers.
+TEST_F(SpnegoWebserverTest, TestInvalidHeaders) {
+  const string& url = strings::Substitute("http://$0/", addr_.ToString());
+  EasyCurl c;
+  EXPECT_EQ(c.FetchURL(url, &buf_, { "Authorization: blahblah" }).ToString(),
+            "Remote error: HTTP 500");
+  EXPECT_STR_CONTAINS(buf_.ToString(), "bad Negotiate header");
+  EXPECT_EQ(c.FetchURL(url, &buf_, { "Authorization: Negotiate aaa" }).ToString(),
+            "Remote error: HTTP 401");
+  EXPECT_STR_CONTAINS(buf_.ToString(), "Invalid token was supplied");
+}
+
+// Test all single-bit-flips of a well-formed token, to make sure we don't
+// crash.
+//
+// NOTE: the original token is *well-formed* but not *valid* -- i.e. even if unmodified,
+// it would not produce a successful authentication result, since it is a saved constant
+// from some previous run of SPNEGO on a different KDC. This test is primarily concerned
+// with defending against remote buffer overflows during token parsing, etc.
+TEST_F(SpnegoWebserverTest, TestBitFlippedTokens) {
+  const string& url = strings::Substitute("http://$0/", addr_.ToString());
+  EasyCurl c;
+  string token;
+  CHECK(strings::Base64Unescape(kWellFormedTokenBase64, &token));
+
+  for (int i = 0; i < token.size(); i++) {
+    SCOPED_TRACE(i);
+    for (int bit = 0; bit < 8; bit++) {
+      SCOPED_TRACE(bit);
+      token[i] ^= 1 << bit;
+      string b64_token;
+      strings::Base64Escape(token, &b64_token);
+      string header = strings::Substitute("Authorization: Negotiate $0", b64_token);
+      Status s = c.FetchURL(url, &buf_, { header });
+      EXPECT_TRUE(s.IsRemoteError()) << s.ToString();
+      token[i] ^= 1 << bit;
+    }
+  }
+}
+
+// Test all truncations of a well-formed token, to make sure we don't
+// crash.
+//
+// NOTE: see above regarding "well-formed" vs "valid".
+TEST_F(SpnegoWebserverTest, TestTruncatedTokens) {
+  const string& url = strings::Substitute("http://$0/", addr_.ToString());
+  EasyCurl c;
+  string token;
+  CHECK(strings::Base64Unescape(kWellFormedTokenBase64, &token));
+
+  do {
+    token.resize(token.size() - 1);
+    SCOPED_TRACE(token.size());
+    string b64_token;
+    strings::Base64Escape(token, &b64_token);
+    string header = strings::Substitute("Authorization: Negotiate $0", b64_token);
+    Status s = c.FetchURL(url, &buf_, { header });
+    EXPECT_TRUE(s.IsRemoteError()) << s.ToString();
+  } while (!token.empty());
 }
 
 TEST_F(WebserverTest, TestIndexPage) {
@@ -462,6 +607,12 @@ TEST_F(WebserverNegativeTests, BadAdvertisedAddresses) {
 TEST_F(WebserverNegativeTests, BadAdvertisedAddressesZeroPort) {
   ExpectFailedStartup([](WebserverOptions* opts) {
       opts->webserver_advertised_addresses = "localhost:0";
+    });
+}
+
+TEST_F(WebserverNegativeTests, SpnegoWithoutKeytab) {
+  ExpectFailedStartup([](WebserverOptions* opts) {
+      opts->require_spnego = true;
     });
 }
 

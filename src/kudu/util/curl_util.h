@@ -67,6 +67,16 @@ class EasyCurl {
     timeout_ = t;
   }
 
+  void set_use_spnego(bool use_spnego) {
+    use_spnego_ = use_spnego;
+  }
+
+  // Enable verbose mode for curl. This dumps debugging output to stderr, so
+  // is only really useful in the context of tests.
+  void set_verbose(bool v) {
+    verbose_ = v;
+  }
+
  private:
   // Do a request. If 'post_data' is non-NULL, does a POST.
   // Otherwise, does a GET.
@@ -81,6 +91,10 @@ class EasyCurl {
 
   // Whether to return the HTTP headers with the response.
   bool return_headers_ = false;
+
+  bool use_spnego_ = false;
+
+  bool verbose_ = false;
 
   MonoDelta timeout_;
 
