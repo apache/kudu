@@ -111,7 +111,7 @@ ExternalMiniClusterOptions::ExternalMiniClusterOptions()
       hms_mode(HmsMode::NONE),
       enable_sentry(false),
       logtostderr(true),
-      start_process_timeout(MonoDelta::FromSeconds(30)),
+      start_process_timeout(MonoDelta::FromSeconds(60)),
       rpc_negotiation_timeout(MonoDelta::FromSeconds(3)) {
 }
 
@@ -985,7 +985,7 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   if (!success) {
     ignore_result(p->Kill(SIGKILL));
     return Status::TimedOut(
-        Substitute("Timed out after $0s waiting for process ($1) to write info file ($2)",
+        Substitute("Timed out after $0 waiting for process ($1) to write info file ($2)",
                    opts_.start_process_timeout.ToString(), opts_.exe, info_path));
   }
 

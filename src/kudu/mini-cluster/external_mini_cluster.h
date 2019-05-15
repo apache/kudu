@@ -29,7 +29,6 @@
 
 #include <boost/optional/optional.hpp>
 #include <glog/logging.h>
-#include <gtest/gtest_prod.h>
 
 #include "kudu/client/shared_ptr.h"
 #include "kudu/common/common.pb.h"
@@ -168,7 +167,7 @@ struct ExternalMiniClusterOptions {
   // Amount of time that may elapse between the creation of a daemon process
   // and the process writing out its info file.
   //
-  // Default: 30s.
+  // Default: 60s.
   MonoDelta start_process_timeout;
 
   // Parameter for the cluster's RPC messenger: timeout interval after which
