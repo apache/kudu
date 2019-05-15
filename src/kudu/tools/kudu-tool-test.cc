@@ -34,6 +34,7 @@
 #include <utility>
 #include <vector>
 
+#include <boost/algorithm/string/predicate.hpp>
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
@@ -3227,11 +3228,11 @@ Status CreateLegacyHmsTable(HmsClient* client,
 
   table.__set_parameters({
       make_pair(HmsClient::kStorageHandlerKey, HmsClient::kLegacyKuduStorageHandler),
-      make_pair(HmsClient::kLegacyKuduTableNameKey, kudu_table_name),
+      make_pair(HmsClient::kKuduTableNameKey, kudu_table_name),
       make_pair(HmsClient::kKuduMasterAddrsKey, kudu_master_addrs),
   });
 
-  // TODO(Hao): Remove this once HIVE-19253 is fixed.
+  // TODO(HIVE-19253): Used along with table type to indicate an external table.
   if (table_type == HmsClient::kExternalTable) {
     table.parameters[HmsClient::kExternalTableKey] = "TRUE";
   }
@@ -3250,16 +3251,20 @@ Status CreateHmsTable(HmsClient* client,
   table.tableName = table_name;
   table.tableType = table_type;
 
-  table.__set_parameters({
-      make_pair(HmsClient::kStorageHandlerKey, HmsClient::kKuduStorageHandler),
-      make_pair(HmsClient::kKuduTableIdKey, table_id),
-      make_pair(HmsClient::kKuduMasterAddrsKey, master_addresses),
-  });
-
-  // TODO(Hao): Remove this once HIVE-19253 is fixed.
+  // TODO(HIVE-19253): Used along with table type to indicate an external table.
   if (table_type == HmsClient::kExternalTable) {
     table.parameters[HmsClient::kExternalTableKey] = "TRUE";
   }
+
+  // Only set the table id on managed tables.
+  if (table_type == HmsClient::kManagedTable) {
+    table.parameters[HmsClient::kKuduTableIdKey] = table_id;
+  }
+
+  table.parameters[HmsClient::kKuduTableNameKey] =
+      Substitute("$0.$1", database_name, table_name);
+  table.parameters[HmsClient::kKuduMasterAddrsKey] = master_addresses;
+  table.parameters[HmsClient::kStorageHandlerKey] = HmsClient::kKuduStorageHandler;
 
   hive::EnvironmentContext env_ctx;
   env_ctx.__set_properties({ make_pair(HmsClient::kKuduMasterEventKey, "true") });
@@ -3296,12 +3301,22 @@ void ValidateHmsEntries(HmsClient* hms_client,
                         const string& master_addr) {
   hive::Table hms_table;
   ASSERT_OK(hms_client->GetTable(database_name, table_name, &hms_table));
-  shared_ptr<KuduTable> kudu_table;
-  ASSERT_OK(kudu_client->OpenTable(Substitute("$0.$1", database_name, table_name), &kudu_table));
+
   ASSERT_EQ(hms_table.parameters[HmsClient::kStorageHandlerKey], HmsClient::kKuduStorageHandler);
-  ASSERT_EQ(hms_table.parameters[HmsClient::kKuduTableIdKey], kudu_table->id());
   ASSERT_EQ(hms_table.parameters[HmsClient::kKuduMasterAddrsKey], master_addr);
-  ASSERT_TRUE(!ContainsKey(hms_table.parameters, HmsClient::kLegacyKuduTableNameKey));
+
+  if (hms_table.tableType == HmsClient::kManagedTable) {
+    shared_ptr<KuduTable> kudu_table;
+    ASSERT_OK(kudu_client->OpenTable(Substitute("$0.$1", database_name, table_name), &kudu_table));
+    ASSERT_TRUE(boost::iequals(kudu_table->name(),
+                               hms_table.parameters[hms::HmsClient::kKuduTableNameKey]));
+    ASSERT_EQ(kudu_table->id(), hms_table.parameters[HmsClient::kKuduTableIdKey]);
+  }
+
+  if (hms_table.tableType == HmsClient::kExternalTable) {
+    ASSERT_TRUE(ContainsKey(hms_table.parameters, HmsClient::kKuduTableNameKey));
+    ASSERT_FALSE(ContainsKey(hms_table.parameters, HmsClient::kKuduTableIdKey));
+  }
 }
 
 TEST_P(ToolTestKerberosParameterized, TestHmsDowngrade) {
@@ -3422,9 +3437,6 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   ASSERT_OK(hms_catalog.CreateTable(
         "orphan-hms-table-id", "default.orphan_hms_table", kUsername,
         SchemaBuilder().Build()));
-  ASSERT_OK(CreateLegacyHmsTable(&hms_client, "default", "orphan_hms_table_legacy_external",
-        "default.orphan_hms_table_legacy_external",
-        master_addr, HmsClient::kExternalTable, kUsername));
   ASSERT_OK(CreateLegacyHmsTable(&hms_client, "default", "orphan_hms_table_legacy_managed",
         "impala::default.orphan_hms_table_legacy_managed",
         master_addr, HmsClient::kManagedTable, kUsername));
@@ -3432,19 +3444,16 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   // Test case: orphan table in Kudu.
   ASSERT_OK(CreateKuduTable(kudu_client, "default.kudu_orphan"));
 
-  // Test case: legacy external table.
-  shared_ptr<KuduTable> legacy_external;
-  ASSERT_OK(CreateKuduTable(kudu_client, "default.legacy_external"));
-  ASSERT_OK(kudu_client->OpenTable("default.legacy_external", &legacy_external));
-  ASSERT_OK(CreateLegacyHmsTable(&hms_client, "default", "legacy_external",
-        "default.legacy_external", master_addr, HmsClient::kExternalTable, kUsername));
-
   // Test case: legacy managed table.
   shared_ptr<KuduTable> legacy_managed;
   ASSERT_OK(CreateKuduTable(kudu_client, "impala::default.legacy_managed"));
   ASSERT_OK(kudu_client->OpenTable("impala::default.legacy_managed", &legacy_managed));
   ASSERT_OK(CreateLegacyHmsTable(&hms_client, "default", "legacy_managed",
-        "impala::default.legacy_managed", master_addr, HmsClient::kManagedTable, kUsername));
+      "impala::default.legacy_managed", master_addr, HmsClient::kManagedTable, kUsername));
+
+  // Test case: legacy external table (pointed at the legacy managed table).
+  ASSERT_OK(CreateLegacyHmsTable(&hms_client, "default", "legacy_external",
+      "impala::default.legacy_managed", master_addr, HmsClient::kExternalTable, kUsername));
 
   // Test case: legacy managed table with no owner.
   shared_ptr<KuduTable> legacy_no_owner;
@@ -3453,14 +3462,14 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   ASSERT_OK(CreateLegacyHmsTable(&hms_client, "default", "legacy_no_owner",
         "impala::default.legacy_no_owner", master_addr, HmsClient::kManagedTable, boost::none));
 
-  // Test case: legacy external table with a Hive-incompatible name (no database).
-  shared_ptr<KuduTable> legacy_external_hive_incompatible_name;
-  ASSERT_OK(CreateKuduTable(kudu_client, "legacy_external_hive_incompatible_name"));
-  ASSERT_OK(kudu_client->OpenTable("legacy_external_hive_incompatible_name",
-        &legacy_external_hive_incompatible_name));
-  ASSERT_OK(CreateLegacyHmsTable(&hms_client, "default", "legacy_external_hive_incompatible_name",
-        "legacy_external_hive_incompatible_name", master_addr,
-        HmsClient::kExternalTable, kUsername));
+  // Test case: legacy managed table with a Hive-incompatible name (no database).
+  shared_ptr<KuduTable> legacy_hive_incompatible_name;
+  ASSERT_OK(CreateKuduTable(kudu_client, "legacy_hive_incompatible_name"));
+  ASSERT_OK(kudu_client->OpenTable("legacy_hive_incompatible_name",
+        &legacy_hive_incompatible_name));
+  ASSERT_OK(CreateLegacyHmsTable(&hms_client, "default", "legacy_hive_incompatible_name",
+        "legacy_hive_incompatible_name", master_addr,
+        HmsClient::kManagedTable, kUsername));
 
   // Test case: Kudu table in non-default database.
   hive::Database db;
@@ -3483,13 +3492,12 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
     "default.inconsistent_name",
     "default.inconsistent_master_addrs",
     "default.orphan_hms_table",
-    "default.orphan_hms_table_legacy_external",
     "default.orphan_hms_table_legacy_managed",
     "default.kudu_orphan",
-    "default.legacy_external",
     "default.legacy_managed",
     "default.legacy_no_owner",
-    "legacy_external_hive_incompatible_name",
+    "legacy_external",
+    "legacy_hive_incompatible_name",
     "my_db.table",
   };
 
@@ -3531,13 +3539,12 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
         Substitute("hms fix $0 --dryrun --drop_orphan_hms_tables", master_addr)));
   NO_FATALS(check());
 
-  // Drop orphan tables.
+  // Drop orphan hms tables.
   NO_FATALS(RunActionStdoutNone(
         Substitute("hms fix $0 --drop_orphan_hms_tables --nocreate_missing_hms_tables "
                    "--noupgrade_hms_tables --nofix_inconsistent_tables", master_addr)));
   make_consistent({
     "default.orphan_hms_table",
-    "default.orphan_hms_table_legacy_external",
     "default.orphan_hms_table_legacy_managed",
   });
   NO_FATALS(check());
@@ -3555,10 +3562,10 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   NO_FATALS(RunActionStdoutNone(
         Substitute("hms fix $0 --nofix_inconsistent_tables", master_addr)));
   make_consistent({
-    "default.legacy_external",
     "default.legacy_managed",
+    "legacy_external",
     "default.legacy_no_owner",
-    "legacy_external_hive_incompatible_name",
+    "legacy_hive_incompatible_name",
   });
   NO_FATALS(check());
 
@@ -3581,9 +3588,9 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
     "inconsistent_name_hms",
     "inconsistent_master_addrs",
     "kudu_orphan",
-    "legacy_external",
     "legacy_managed",
-    "legacy_external_hive_incompatible_name",
+    "legacy_external",
+    "legacy_hive_incompatible_name",
   }) {
     NO_FATALS(ValidateHmsEntries(&hms_client, kudu_client, "default", table, master_addr));
   }
@@ -3600,8 +3607,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
     "default.inconsistent_name_hms",
     "default.inconsistent_schema",
     "default.kudu_orphan",
-    "default.legacy_external",
-    "default.legacy_external_hive_incompatible_name",
+    "default.legacy_hive_incompatible_name",
     "default.legacy_managed",
     "default.legacy_no_owner",
     "default.uppercase",
@@ -3610,7 +3616,6 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
 
   // Check that table ownership is preserved in upgraded legacy tables.
   for (auto p : vector<pair<string, string>>({
-        make_pair("legacy_external", kUsername),
         make_pair("legacy_managed", kUsername),
         make_pair("legacy_no_owner", ""),
   })) {
@@ -3621,6 +3626,8 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
 }
 
 // Test HMS inconsistencies that must be manually fixed.
+// TODO(ghenke): Add test case for external table using the same name as
+//  an existing Kudu table.
 TEST_P(ToolTestKerberosParameterized, TestCheckAndManualFixHmsMetadata) {
   string kUsername = "alice";
   ExternalMiniClusterOptions opts;
@@ -3657,9 +3664,6 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndManualFixHmsMetadata) {
   ASSERT_OK(hms_catalog.CreateTable(
         duplicate_hms_tables->id(), "default.duplicate_hms_tables_2", kUsername,
         KuduSchema::ToSchema(duplicate_hms_tables->schema())));
-  ASSERT_OK(CreateLegacyHmsTable(&hms_client, "default", "duplicate_hms_tables_3",
-        "default.duplicate_hms_tables",
-        master_addr, HmsClient::kExternalTable, kUsername));
 
   // Test case: Kudu tables Hive-incompatible names.
   ASSERT_OK(CreateKuduTable(kudu_client, "default.hive-incompatible-name"));
@@ -3689,7 +3693,6 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndManualFixHmsMetadata) {
     for (const string& table : vector<string>({
       "duplicate_hms_tables",
       "duplicate_hms_tables_2",
-      "duplicate_hms_tables_3",
       "default.hive-incompatible-name",
       "no_database",
       "non_existent_database.table",
@@ -3716,7 +3719,6 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndManualFixHmsMetadata) {
 
   // Manually drop the duplicate HMS entries.
   ASSERT_OK(hms_catalog.DropTable(duplicate_hms_tables->id(), "default.duplicate_hms_tables_2"));
-  ASSERT_OK(hms_catalog.DropLegacyTable("default.duplicate_hms_tables_3"));
 
   // Rename the incompatible names.
   NO_FATALS(RunActionStdoutNone(Substitute(

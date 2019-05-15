@@ -244,13 +244,13 @@ class HmsCatalogTest : public KuduTest {
     table.__set_parameters({
         make_pair(HmsClient::kStorageHandlerKey,
                   HmsClient::kLegacyKuduStorageHandler),
-        make_pair(HmsClient::kLegacyKuduTableNameKey,
+        make_pair(HmsClient::kKuduTableNameKey,
                   kudu_table_name),
         make_pair(HmsClient::kKuduMasterAddrsKey,
                   kMasterAddrs),
     });
 
-    // TODO(Hao): Remove this once HIVE-19253 is fixed.
+    // TODO(HIVE-19253): Used along with table type to indicate an external table.
     if (table_type == HmsClient::kExternalTable) {
       table.parameters[HmsClient::kExternalTableKey] = "TRUE";
     }

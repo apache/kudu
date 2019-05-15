@@ -44,6 +44,11 @@ class HmsITestBase : public ExternalMiniClusterITestBase {
                          const std::string& table_name,
                          MonoDelta timeout = {}) WARN_UNUSED_RESULT;
 
+  // Creates a table in the HMS catalog.
+  Status CreateHmsTable(const std::string& database_name,
+                        const std::string& table_name,
+                        const std::string& table_type = hms::HmsClient::kManagedTable);
+
   // Renames a table entry in the HMS catalog.
   Status RenameHmsTable(const std::string& database_name,
                         const std::string& old_table_name,

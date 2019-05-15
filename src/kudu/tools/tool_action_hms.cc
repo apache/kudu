@@ -66,10 +66,6 @@ DEFINE_bool(upgrade_hms_tables, true,
 
 namespace kudu {
 
-namespace server {
-class GetFlagsResponsePB_Flag;
-} // namespace server
-
 namespace tools {
 
 using client::KuduClient;
@@ -80,7 +76,6 @@ using client::KuduTableAlterer;
 using client::sp::shared_ptr;
 using hms::HmsCatalog;
 using hms::HmsClient;
-using server::GetFlagsResponsePB_Flag;
 using std::cout;
 using std::endl;
 using std::make_pair;
@@ -166,8 +161,9 @@ bool IsSynced(const string& master_addresses,
               const hive::Table& hms_table) {
   auto schema = KuduSchema::ToSchema(kudu_table.schema());
   hive::Table hms_table_copy(hms_table);
-  Status s = HmsCatalog::PopulateTable(kudu_table.id(), kudu_table.name(), boost::none,
-                                       schema, master_addresses, &hms_table_copy);
+  // TODO(ghenke): Get the owner from Kudu?
+  Status s = HmsCatalog::PopulateTable(kudu_table.id(), kudu_table.name(), hms_table.owner, schema,
+                                       master_addresses, hms_table.tableType, &hms_table_copy);
   return s.ok() && hms_table_copy == hms_table;
 }
 
@@ -200,8 +196,9 @@ Status PrintTables(const string& master_addrs,
       "Kudu master addresses",
       "HMS database",
       "HMS table",
+      "HMS table type",
       Substitute("HMS $0", HmsClient::kStorageHandlerKey),
-      Substitute("HMS $0", HmsClient::kLegacyKuduTableNameKey),
+      Substitute("HMS $0", HmsClient::kKuduTableNameKey),
       Substitute("HMS $0", HmsClient::kKuduTableIdKey),
       Substitute("HMS $0", HmsClient::kKuduMasterAddrsKey),
   });
@@ -219,12 +216,13 @@ Status PrintTables(const string& master_addrs,
       hive::Table& hms_table = *pair.second;
       row.emplace_back(hms_table.dbName);
       row.emplace_back(hms_table.tableName);
+      row.emplace_back(hms_table.tableType);
       row.emplace_back(hms_table.parameters[HmsClient::kStorageHandlerKey]);
-      row.emplace_back(hms_table.parameters[HmsClient::kLegacyKuduTableNameKey]);
+      row.emplace_back(hms_table.parameters[HmsClient::kKuduTableNameKey]);
       row.emplace_back(hms_table.parameters[HmsClient::kKuduTableIdKey]);
       row.emplace_back(hms_table.parameters[HmsClient::kKuduMasterAddrsKey]);
     } else {
-      row.resize(9);
+      row.resize(10);
     }
     table.AddRow(std::move(row));
   }
@@ -298,29 +296,46 @@ Status AnalyzeCatalogs(const string& master_addrs,
 
   // Step 2: retrieve all Kudu table entries in the HMS, filter all orphaned
   // entries which reference non-existent Kudu tables, and group the rest by
-  // table ID.
-  vector<hive::Table> orphan_tables;
-  unordered_map<string, vector<hive::Table>> hms_tables_by_id;
+  // table type and table ID.
+  vector<hive::Table> orphan_hms_tables;
+  unordered_map<string, vector<hive::Table>> managed_hms_tables_by_id;
+  unordered_map<string, vector<hive::Table>> external_hms_tables_by_id;
   {
     vector<hive::Table> hms_tables;
     RETURN_NOT_OK(hms_catalog->GetKuduTables(&hms_tables));
     for (hive::Table& hms_table : hms_tables) {
-      const string& storage_handler = hms_table.parameters[HmsClient::kStorageHandlerKey];
-      if (storage_handler == HmsClient::kKuduStorageHandler) {
-        const string& hms_table_id = hms_table.parameters[HmsClient::kKuduTableIdKey];
-        shared_ptr<KuduTable>* kudu_table = FindOrNull(kudu_tables_by_id, hms_table_id);
+      const string &storage_handler = hms_table.parameters[HmsClient::kStorageHandlerKey];
+      // If this is a legacy table or external table, lookup the Kudu table by name.
+      if (storage_handler == HmsClient::kLegacyKuduStorageHandler ||
+          hms_table.tableType == HmsClient::kExternalTable) {
+        const string& hms_table_name = hms_table.parameters[HmsClient::kKuduTableNameKey];
+        shared_ptr<KuduTable>* kudu_table = FindOrNull(kudu_tables_by_name,
+                                                       hms_table_name);
         if (kudu_table) {
-          hms_tables_by_id[(*kudu_table)->id()].emplace_back(std::move(hms_table));
+          if (hms_table.tableType == HmsClient::kExternalTable) {
+            external_hms_tables_by_id[(*kudu_table)->id()].emplace_back(
+                std::move(hms_table));
+          } else {
+            managed_hms_tables_by_id[(*kudu_table)->id()].emplace_back(
+                std::move(hms_table));
+          }
         } else {
-          orphan_tables.emplace_back(std::move(hms_table));
+          // External tables don't always point at valid Kudu tables.
+          if (hms_table.tableType != HmsClient::kExternalTable) {
+            orphan_hms_tables.emplace_back(std::move(hms_table));
+          }
         }
-      } else if (storage_handler == HmsClient::kLegacyKuduStorageHandler) {
-        const string& hms_table_name = hms_table.parameters[HmsClient::kLegacyKuduTableNameKey];
-        shared_ptr<KuduTable>* kudu_table = FindOrNull(kudu_tables_by_name, hms_table_name);
+      } else if (storage_handler == HmsClient::kKuduStorageHandler) {
+        // TODO(ghenke): Also lookup by name to support tables created when HMS sync is off.
+        // TODO(ghenke): Also lookup by name to support repairing id's out of sync.
+        const string& hms_table_id = hms_table.parameters[HmsClient::kKuduTableIdKey];
+        shared_ptr<KuduTable>* kudu_table = FindOrNull(kudu_tables_by_id,
+                                                       hms_table_id);
         if (kudu_table) {
-          hms_tables_by_id[(*kudu_table)->id()].emplace_back(std::move(hms_table));
+          managed_hms_tables_by_id[(*kudu_table)->id()].emplace_back(
+              std::move(hms_table));
         } else {
-          orphan_tables.emplace_back(std::move(hms_table));
+          orphan_hms_tables.emplace_back(std::move(hms_table));
         }
       }
     }
@@ -335,8 +350,11 @@ Status AnalyzeCatalogs(const string& master_addrs,
   vector<shared_ptr<KuduTable>> invalid_name_tables;
   for (auto& kudu_table_pair : kudu_tables_by_id) {
     shared_ptr<KuduTable> kudu_table = kudu_table_pair.second;
-    vector<hive::Table>* hms_tables = FindOrNull(hms_tables_by_id, kudu_table_pair.first);
-
+    // Check all of the managed HMS tables.
+    vector<hive::Table>* hms_tables = FindOrNull(managed_hms_tables_by_id,
+                                                 kudu_table_pair.first);
+    // If the there are no managed HMS table entries, this table is missing
+    // HMS tables and might have an invalid table name.
     if (!hms_tables) {
       const string& table_name = kudu_table->name();
       string normalized_table_name(table_name.data(), table_name.size());
@@ -346,6 +364,8 @@ Status AnalyzeCatalogs(const string& master_addrs,
       } else {
         missing_tables.emplace_back(std::move(kudu_table));
       }
+    // If there is a single managed HMS table, this table could be unsynced or
+    // using the legacy handler.
     } else if (hms_tables->size() == 1) {
       hive::Table& hms_table = (*hms_tables)[0];
       const string& storage_handler = hms_table.parameters[HmsClient::kStorageHandlerKey];
@@ -355,6 +375,7 @@ Status AnalyzeCatalogs(const string& master_addrs,
       } else if (storage_handler == HmsClient::kLegacyKuduStorageHandler) {
         legacy_tables.emplace_back(make_pair(std::move(kudu_table), std::move(hms_table)));
       }
+    // Otherwise, there are multiple managed HMS tables for a single Kudu table.
     } else {
       for (hive::Table& hms_table : *hms_tables) {
         duplicate_tables.emplace_back(make_pair(kudu_table, std::move(hms_table)));
@@ -362,12 +383,24 @@ Status AnalyzeCatalogs(const string& master_addrs,
     }
   }
 
-  report->orphan_hms_tables.swap(orphan_tables);
+  // Check all of the external HMS tables to see if they are using the legacy handler.
+  for (auto& hms_table_pair : external_hms_tables_by_id) {
+    shared_ptr<KuduTable>* kudu_table = FindOrNull(kudu_tables_by_id, hms_table_pair.first);
+    if (kudu_table) {
+      for (hive::Table &hms_table : hms_table_pair.second) {
+        const string &storage_handler = hms_table.parameters[HmsClient::kStorageHandlerKey];
+        if (storage_handler == HmsClient::kLegacyKuduStorageHandler) {
+          legacy_tables.emplace_back(make_pair(std::move(*kudu_table), std::move(hms_table)));
+        }
+      }
+    }
+  }
+  report->orphan_hms_tables.swap(orphan_hms_tables);
   report->missing_hms_tables.swap(missing_tables);
   report->invalid_name_tables.swap(invalid_name_tables);
+  report->inconsistent_tables.swap(stale_tables);
   report->legacy_hms_tables.swap(legacy_tables);
   report->duplicate_hms_tables.swap(duplicate_tables);
-  report->inconsistent_tables.swap(stale_tables);
   return Status::OK();
 }
 
@@ -407,9 +440,9 @@ Status CheckHmsMetadata(const RunnerContext& context) {
     cout << "Found Kudu table(s) with multiple corresponding Hive Metastore tables:" << endl;
     RETURN_NOT_OK(PrintTables(master_addrs, std::move(tables), cout));
     cout << endl
-         << "Suggestion: using Impala or the Hive Beeline shell, drop the duplicate Hive Metastore "
+         << "Suggestion: using Impala or the Hive Beeline shell, alter one of the duplicate"
          << endl
-         << "tables and consider recreating them as views referencing the base Kudu table."
+         << "Hive Metastore tables to be an external table referencing the base Kudu table."
          << endl
          << endl;
   }
@@ -574,7 +607,8 @@ Status FixHmsMetadata(const RunnerContext& context) {
               hms_table_name));
       }
 
-      if (kudu_table.name() != hms_table_name) {
+      if (hms_table.tableType == HmsClient::kManagedTable &&
+          kudu_table.name() != hms_table_name) {
         if (FLAGS_dryrun) {
           LOG(INFO) << "[dryrun] Renaming Kudu table " << TableIdent(kudu_table)
                     << " to " << hms_table_name;
@@ -704,6 +738,7 @@ Status Precheck(const RunnerContext& context) {
   return Status::IllegalState("found tables in Kudu with case-conflicting names");
 }
 
+// TODO(ghenke): Add dump tool that prints the Kudu HMS entries.
 unique_ptr<Mode> BuildHmsMode() {
   const string kHmsUrisDesc =
     "Address of the Hive Metastore instance(s). If not set, the configuration "

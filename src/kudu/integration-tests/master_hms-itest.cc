@@ -108,10 +108,7 @@ TEST_F(MasterHmsTest, TestCreateTable) {
   ASSERT_OK(CreateDatabase(hms_database_name));
 
   // Create a table entry with the name.
-  hive::Table hms_table;
-  hms_table.dbName = hms_database_name;
-  hms_table.tableName = hms_table_name;
-  ASSERT_OK(hms_client_->CreateTable(hms_table));
+  ASSERT_OK(CreateHmsTable(hms_database_name, hms_table_name));
 
   // Attempt to create a Kudu table with the same name.
   s = CreateKuduTable(hms_database_name, hms_table_name);
@@ -127,6 +124,13 @@ TEST_F(MasterHmsTest, TestCreateTable) {
   ASSERT_OK(hms_client_->DropTable(hms_database_name, hms_table_name));
   ASSERT_OK(CreateKuduTable(hms_database_name, hms_table_name));
   NO_FATALS(CheckTable(hms_database_name, hms_table_name, /*user=*/none));
+
+  // Create an external table in the HMS and validate it's not created Kudu side.
+  const char* external_table_name = "externalTable";
+  ASSERT_OK(CreateHmsTable(hms_database_name, external_table_name, HmsClient::kExternalTable));
+  shared_ptr<KuduTable> table;
+  s = client_->OpenTable(Substitute("$0.$1", hms_database_name, external_table_name), &table);
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
 
   // Shutdown the HMS and try to create a table.
   ASSERT_OK(StopHms());
@@ -150,10 +154,7 @@ TEST_F(MasterHmsTest, TestRenameTable) {
   NO_FATALS(CheckTable("db", "a", /*user=*/none));
 
   // Create a non-Kudu ('external') HMS table entry.
-  hive::Table external_table;
-  external_table.dbName = "db";
-  external_table.tableName = "b";
-  ASSERT_OK(hms_client_->CreateTable(external_table));
+  ASSERT_OK(CreateHmsTable("db", "b", HmsClient::kExternalTable));
 
   // Attempt to rename the Kudu table to the same name.
   unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer("db.a"));
@@ -211,6 +212,9 @@ TEST_F(MasterHmsTest, TestRenameTable) {
   ASSERT_OK(hms_client_->GetTableNames("db", &tables));
   std::sort(tables.begin(), tables.end());
   ASSERT_EQ(tables, vector<string>({ "b", "d" })) << tables;
+
+  // Rename the external table through the HMS and ensure Kudu allows it.
+  ASSERT_OK(RenameHmsTable("db", "b", "e"));
 
   // Regression test for HIVE-19569
   // If HIVE-19569 is in effect the rename across databases will result in DROP
@@ -319,6 +323,10 @@ TEST_F(MasterHmsTest, TestDeleteTable) {
   s = client_->OpenTable(Substitute("$0.$1", "default", "d"), &table);
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   ASSERT_OK(hms_client_->GetTable("default", "d", &hms_table_d));
+
+  // Create and drop a non-Kudu ('external') HMS table entry and ensure Kudu allows it.
+  ASSERT_OK(CreateHmsTable("default", "externalTable", HmsClient::kExternalTable));
+  ASSERT_OK(hms_client_->DropTable("default", "externalTable"));
 }
 
 TEST_F(MasterHmsTest, TestNotificationLogListener) {

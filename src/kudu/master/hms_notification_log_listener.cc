@@ -333,10 +333,19 @@ Status HmsNotificationLogListenerTask::HandleAlterTableEvent(const hive::Notific
   hive::Table before_table;
   RETURN_NOT_OK(DeserializeTable(event, message, "tableObjBeforeJson", &before_table));
 
+  if (before_table.tableType != hms::HmsClient::kManagedTable) {
+    // Not a managed table; skip it.
+    VLOG(2) << Substitute("Ignoring alter event for table $0 of type $1",
+                          before_table.tableName, before_table.tableType);
+    return Status::OK();
+  }
+
   const string* storage_handler =
       FindOrNull(before_table.parameters, hms::HmsClient::kStorageHandlerKey);
   if (!storage_handler || *storage_handler != hms::HmsClient::kKuduStorageHandler) {
     // Not a Kudu table; skip it.
+    VLOG(2) << Substitute("Ignoring alter event for non-Kudu table $0",
+                          before_table.tableName);
     return Status::OK();
   }
 
@@ -384,9 +393,17 @@ Status HmsNotificationLogListenerTask::HandleDropTableEvent(const hive::Notifica
   hive::Table table;
   RETURN_NOT_OK(DeserializeTable(event, message, "tableObjJson", &table));
 
+  if (table.tableType != hms::HmsClient::kManagedTable) {
+    // Not a managed table; skip it.
+    VLOG(2) << Substitute("Ignoring drop event for table $0 of type $1",
+                          table.tableName, table.tableType);
+    return Status::OK();
+  }
+
   const string* storage_handler = FindOrNull(table.parameters, hms::HmsClient::kStorageHandlerKey);
   if (!storage_handler || *storage_handler != hms::HmsClient::kKuduStorageHandler) {
     // Not a Kudu table; skip it.
+    VLOG(2) << Substitute("Ignoring drop event for non-Kudu table $0", table.tableName);
     return Status::OK();
   }
 

@@ -64,7 +64,9 @@ class HmsCatalog {
   Status CreateTable(const std::string& id,
                      const std::string& name,
                      boost::optional<const std::string&> owner,
-                     const Schema& schema) WARN_UNUSED_RESULT;
+                     const Schema& schema,
+                     const std::string& table_type = hms::HmsClient::kManagedTable)
+                     WARN_UNUSED_RESULT;
 
   // Drops a table entry from the HMS.
   //
@@ -141,6 +143,7 @@ class HmsCatalog {
                               const boost::optional<const std::string&>& owner,
                               const Schema& schema,
                               const std::string& master_addresses,
+                              const std::string& table_type,
                               hive::Table* table) WARN_UNUSED_RESULT;
 
   // Validates and canonicalizes the provided table name according to HMS rules.
