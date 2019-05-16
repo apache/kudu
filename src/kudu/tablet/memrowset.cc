@@ -579,8 +579,11 @@ Status MemRowSet::Iterator::ApplyMutationsToProjectedRow(
        mut != nullptr;
        mut = mut->acquire_next()) {
     if (!opts_.snap_to_include.IsCommitted(mut->timestamp_)) {
-      // This mutation is too new; it should be omitted.
-      continue;
+      // This mutation is too new and should be omitted.
+      //
+      // All subsequent mutations are also too new because their timestamps are
+      // guaranteed to be equal to or greater than this mutation's timestamp.
+      break;
     }
 
     // If the mutation is too old, we still need to apply it (so that the column
