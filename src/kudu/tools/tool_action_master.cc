@@ -263,10 +263,8 @@ Status ResetAuthzCacheAtMaster(const string& master_address) {
 }
 
 Status ResetAuthzCache(const RunnerContext& context) {
-  const string& master_addresses_str =
-      FindOrDie(context.required_args, kMasterAddressesArg);
-  const vector<string>& master_addresses =
-      strings::Split(master_addresses_str, ",");
+  vector<string> master_addresses;
+  RETURN_NOT_OK(ParseMasterAddresses(context, &master_addresses));
 
   if (!FLAGS_force) {
     // Make sure the list of master addresses specified for the command

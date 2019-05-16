@@ -818,10 +818,7 @@ unique_ptr<Mode> BuildPerfMode() {
           "an existing or auto-created table as fast as possible. "
           "If requested, also scan the inserted rows to check whether the "
           "actual count of inserted rows matches the expected one.")
-      .AddRequiredParameter({ kMasterAddressesArg,
-          "Comma-separated list of master addresses to run against. "
-          "Addresses are in 'hostname:port' form where port may be omitted "
-          "if a master server listens at the default port." })
+      .AddRequiredParameter({ kMasterAddressesArg, kMasterAddressesArgDesc })
       .AddOptionalParameter("auto_database")
       .AddOptionalParameter("buffer_flush_watermark_pct")
       .AddOptionalParameter("buffer_size_bytes")

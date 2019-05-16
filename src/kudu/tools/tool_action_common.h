@@ -68,6 +68,8 @@ struct RunnerContext;
 // Constants for parameters and descriptions.
 extern const char* const kMasterAddressesArg;
 extern const char* const kMasterAddressesArgDesc;
+extern const char* const kDestMasterAddressesArg;
+extern const char* const kDestMasterAddressesArgDesc;
 extern const char* const kTableNameArg;
 extern const char* const kTabletIdArg;
 extern const char* const kTabletIdArgDesc;
@@ -150,10 +152,45 @@ Status CreateKuduClient(const RunnerContext& context,
                         const char* master_addresses_arg,
                         client::sp::shared_ptr<client::KuduClient>* client);
 
-// Creates a Kudu client connected to the cluster whose master addresses are defined by
+// Creates a Kudu client connected to the cluster whose master addresses are specified by
 // the kMasterAddressesArg argument in 'context'.
 Status CreateKuduClient(const RunnerContext& context,
                         client::sp::shared_ptr<client::KuduClient>* client);
+
+// Parses 'master_addresses_arg' from 'context' into 'master_addresses_str', a
+// comma-separated string of host/port pairs.
+//
+// If 'master_addresses_arg' starts with a '@' it is interpreted as a cluster name and
+// resolved against a config file in ${KUDU_CONFIG}/kudurc with content like:
+//
+// clusters_info:
+//   cluster1:
+//     master_addresses: ip1:port1,ip2:port2,ip3:port3
+//   cluster2:
+//     master_addresses: ip4:port4
+Status ParseMasterAddressesStr(
+    const RunnerContext& context,
+    const char* master_addresses_arg,
+    std::string* master_addresses_str);
+
+// Like above, but parse Kudu master addresses into a string according to the
+// kMasterAddressesArg argument in 'context'.
+Status ParseMasterAddressesStr(
+    const RunnerContext& context,
+    std::string* master_addresses_str);
+
+// Like above, but parse Kudu master addresses into a string vector according to the
+// 'master_addresses_arg' argument in 'context'.
+Status ParseMasterAddresses(
+    const RunnerContext& context,
+    const char* master_addresses_arg,
+    std::vector<std::string>* master_addresses);
+
+// Like above, but parse Kudu master addresses into a string vector according to the
+// kMasterAddressesArg argument in 'context'.
+Status ParseMasterAddresses(
+    const RunnerContext& context,
+    std::vector<std::string>* master_addresses);
 
 // A table of data to present to the user.
 //

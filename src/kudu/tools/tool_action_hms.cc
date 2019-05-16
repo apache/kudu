@@ -102,7 +102,8 @@ Status Init(const RunnerContext& context,
             shared_ptr<KuduClient>* kudu_client,
             unique_ptr<HmsCatalog>* hms_catalog,
             string* master_addrs) {
-  const string& master_addrs_flag = FindOrDie(context.required_args, kMasterAddressesArg);
+  string master_addrs_flag;
+  RETURN_NOT_OK(ParseMasterAddressesStr(context, &master_addrs_flag));
 
   // Create a Kudu Client.
   RETURN_NOT_OK(KuduClientBuilder()
@@ -681,7 +682,8 @@ Status FixHmsMetadata(const RunnerContext& context) {
 }
 
 Status Precheck(const RunnerContext& context) {
-  const string& master_addrs = FindOrDie(context.required_args, kMasterAddressesArg);
+  string master_addrs;
+  RETURN_NOT_OK(ParseMasterAddressesStr(context, &master_addrs));
   shared_ptr<KuduClient> client;
   RETURN_NOT_OK(KuduClientBuilder()
       .default_rpc_timeout(MonoDelta::FromMilliseconds(FLAGS_timeout_ms))

@@ -15,17 +15,17 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <stdlib.h>
 #include <sys/stat.h>
 
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
-#include <cstdlib>
+#include <fstream>
 #include <iterator>
 #include <map>
 #include <memory>
 #include <set>
-#include <sstream>
 #include <string>
 #include <tuple>  // IWYU pragma: keep
 #include <type_traits>
@@ -124,6 +124,7 @@
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/random.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/subprocess.h"
@@ -606,6 +607,25 @@ class ToolTest : public KuduTest {
     ww.Cleanup();
   }
 
+  // Write YAML content to file ${KUDU_CONFIG}/kudurc.
+  void PrepareConfigFile(const string& content) {
+    string fname = GetTestPath("kudurc");
+    unique_ptr<WritableFile> writable_file;
+    ASSERT_OK(env_->NewWritableFile(fname, &writable_file));
+    ASSERT_OK(writable_file->Append(Slice(content)));
+    ASSERT_OK(writable_file->Close());
+  }
+
+  void CheckCorruptClusterInfoConfigFile(const string& content,
+                                         const string& expect_err) {
+    const string kClusterName = "external_mini_cluster";
+    NO_FATALS(PrepareConfigFile(content));
+    string stderr;
+    Status s = RunActionStderrString(Substitute("master list @$0", kClusterName), &stderr);
+    ASSERT_TRUE(s.IsRuntimeError());
+    ASSERT_STR_CONTAINS(stderr, expect_err);
+  }
+
  protected:
   void RunLoadgen(int num_tservers = 1,
                   const vector<string>& tool_args = {},
@@ -677,7 +697,7 @@ class ToolTestCopyTableParameterized :
     }
   }
 
-  std::vector<RunCopyTableCheckArgs> GenerateArgs() {
+  vector<RunCopyTableCheckArgs> GenerateArgs() {
     RunCopyTableCheckArgs args = { kTableName,
                                    "",
                                    1,
@@ -702,7 +722,7 @@ class ToolTestCopyTableParameterized :
         return { args };
       case kTestCopyTablePredicates: {
         auto mid = total_rows_ / 2;
-        std::vector<RunCopyTableCheckArgs> multi_args;
+        vector<RunCopyTableCheckArgs> multi_args;
         {
           auto args_temp = args;
           multi_args.emplace_back(std::move(args_temp));
@@ -879,7 +899,7 @@ void ToolTest::StartExternalMiniCluster(ExternalMiniClusterOptions opts) {
   cluster_.reset(new ExternalMiniCluster(std::move(opts)));
   ASSERT_OK(cluster_->Start());
   inspect_.reset(new MiniClusterFsInspector(cluster_.get()));
-  ASSERT_OK(CreateTabletServerMap(cluster_->master_proxy(),
+  ASSERT_OK(CreateTabletServerMap(cluster_->master_proxy(0),
                                   cluster_->messenger(), &ts_map_));
 }
 
@@ -4624,6 +4644,111 @@ TEST_F(ToolTest, TestParseStacks) {
   ASSERT_TRUE(s.IsRuntimeError());
   ASSERT_STR_MATCHES(stderr, "failed to parse stacks from .*: at line 1: "
                              "invalid JSON payload.*Missing a closing quotation mark in string");
+}
+
+TEST_F(ToolTest, ClusterNameResolverEnvNotSet) {
+  const string kClusterName = "external_mini_cluster";
+  CHECK_ERR(unsetenv("KUDU_CONFIG"));
+  string stderr;
+  Status s = RunActionStderrString(
+        Substitute("master list @$0", kClusterName),
+        &stderr);
+  ASSERT_TRUE(s.IsRuntimeError());
+  ASSERT_STR_CONTAINS(
+      stderr, "Not found: ${KUDU_CONFIG} is missing");
+}
+
+TEST_F(ToolTest, ClusterNameResolverFileNotExist) {
+  const string kClusterName = "external_mini_cluster";
+  CHECK_ERR(setenv("KUDU_CONFIG", GetTestDataDirectory().c_str(), 1));
+  SCOPED_CLEANUP({
+    CHECK_ERR(unsetenv("KUDU_CONFIG"));
+  });
+
+  string stderr;
+  Status s = RunActionStderrString(
+        Substitute("master list @$0", kClusterName),
+        &stderr);
+  ASSERT_TRUE(s.IsRuntimeError());
+  ASSERT_STR_CONTAINS(
+      stderr, Substitute("Not found: configuration file $0/kudurc was not found",
+              GetTestDataDirectory()));
+}
+
+TEST_F(ToolTest, ClusterNameResolverFileCorrupt) {
+  ExternalMiniClusterOptions opts;
+  opts.num_masters = 3;
+  NO_FATALS(StartExternalMiniCluster(std::move(opts)));
+  auto master_addrs_str = HostPort::ToCommaSeparatedString(cluster_->master_rpc_addrs());
+
+  // Prepare ${KUDU_CONFIG}.
+  const string kClusterName = "external_mini_cluster";
+  CHECK_ERR(setenv("KUDU_CONFIG", GetTestDataDirectory().c_str(), 1));
+  SCOPED_CLEANUP({
+    CHECK_ERR(unsetenv("KUDU_CONFIG"));
+  });
+
+  // Missing 'clusters_info' section.
+  NO_FATALS(CheckCorruptClusterInfoConfigFile(
+              Substitute(R"*($0:)*""\n"
+                         R"*(  master_addresses: $1)*", kClusterName, master_addrs_str),
+              Substitute("Not found: parse field clusters_info error: invalid node; ")));
+
+  // Missing specified cluster name.
+  NO_FATALS(CheckCorruptClusterInfoConfigFile(
+              Substitute(R"*(clusters_info:)*""\n"
+                         R"*(  $0some_suffix:)*""\n"
+                         R"*(    master_addresses: $1)*", kClusterName, master_addrs_str),
+              Substitute("Not found: parse field $0 error: invalid node; ",
+                         kClusterName)));
+
+  // Missing 'master_addresses' section.
+  NO_FATALS(CheckCorruptClusterInfoConfigFile(
+              Substitute(R"*(clusters_info:)*""\n"
+                         R"*(  $0:)*""\n"
+                         R"*(    master_addresses_some_suffix: $1)*", kClusterName, master_addrs_str),
+              Substitute("Not found: parse field master_addresses error: invalid node; ")));
+
+  // Invalid 'master_addresses' value.
+  NO_FATALS(CheckCorruptClusterInfoConfigFile(
+              Substitute(R"*(clusters_info:)*""\n"
+                         R"*(  $0:)*""\n"
+                         R"*(    master_addresses: bad,masters,addresses)*", kClusterName),
+              Substitute("Network error: Could not connect to the cluster: unable to resolve "
+                         "address for bad: Name or service not known")));
+}
+
+TEST_F(ToolTest, ClusterNameResolverNormal) {
+  ExternalMiniClusterOptions opts;
+  opts.num_masters = 3;
+  NO_FATALS(StartExternalMiniCluster(std::move(opts)));
+  auto master_addrs_str = HostPort::ToCommaSeparatedString(cluster_->master_rpc_addrs());
+
+  // Prepare ${KUDU_CONFIG}.
+  const string kClusterName = "external_mini_cluster";
+  CHECK_ERR(setenv("KUDU_CONFIG", GetTestDataDirectory().c_str(), 1));
+  SCOPED_CLEANUP({
+    CHECK_ERR(unsetenv("KUDU_CONFIG"));
+  });
+
+  string content = Substitute(
+      R"*(# some header comments)*""\n"
+      R"*(clusters_info:)*""\n"
+      R"*(  $0:  # some section comments)*""\n"
+      R"*(    master_addresses: $1  # some key comments)*", kClusterName, master_addrs_str);
+
+  NO_FATALS(PrepareConfigFile(content));
+
+  // Verify output of the two methods.
+  string out1;
+  NO_FATALS(RunActionStdoutString(
+        Substitute("master list $0 --columns=uuid,rpc-addresses", master_addrs_str),
+        &out1));
+  string out2;
+  NO_FATALS(RunActionStdoutString(
+        Substitute("master list @$0 --columns=uuid,rpc-addresses", kClusterName),
+        &out2));
+  ASSERT_EQ(out1, out2);
 }
 
 class Is343ReplicaUtilTest :

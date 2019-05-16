@@ -17,11 +17,11 @@
 
 #include "kudu/tools/tool_action_common.h"
 
+#include <stdlib.h>
 #include <unistd.h>
 
 #include <algorithm>
 #include <cerrno>
-#include <cstddef>
 #include <iomanip>
 #include <iostream>
 #include <iterator>
@@ -36,6 +36,8 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <google/protobuf/util/json_util.h>
+// IWYU pragma: no_include <yaml-cpp/node/impl.h>
+// IWYU pragma: no_include <yaml-cpp/node/node.h>
 
 #include "kudu/client/client-internal.h"  // IWYU pragma: keep
 #include "kudu/client/client.h"
@@ -73,6 +75,7 @@
 #include "kudu/tserver/tserver_admin.proxy.h"   // IWYU pragma: keep
 #include "kudu/tserver/tserver_service.proxy.h" // IWYU pragma: keep
 #include "kudu/util/async_util.h"
+#include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/jsonwriter.h"
 #include "kudu/util/mem_tracker.pb.h"
@@ -80,8 +83,10 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
+#include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
+#include "kudu/util/yamlreader.h"
 
 DEFINE_bool(force, false, "If true, allows the set_flag command to set a flag "
             "which is not explicitly marked as runtime-settable. Such flag "
@@ -184,8 +189,13 @@ namespace kudu {
 namespace tools {
 
 const char* const kMasterAddressesArg = "master_addresses";
-const char* const kMasterAddressesArgDesc = "Comma-separated list of Kudu "
-    "Master addresses where each address is of form 'hostname:port'";
+const char* const kMasterAddressesArgDesc = "Either comma-separated list of Kudu "
+    "master addresses where each address is of form 'hostname:port', or a cluster name if it has "
+    "been configured in ${KUDU_CONFIG}/kudurc";
+const char* const kDestMasterAddressesArg = "dest_master_addresses";
+const char* const kDestMasterAddressesArgDesc = "Either comma-separated list of destination Kudu "
+    "master addresses where each address is of form 'hostname:port', or a cluster name if it has "
+    "been configured in ${KUDU_CONFIG}/kudurc";
 const char* const kTableNameArg = "table_name";
 const char* const kTabletIdArg = "tablet_id";
 const char* const kTabletIdArgDesc = "Tablet Identifier";
@@ -293,6 +303,19 @@ Status PrintDecoded(const LogEntryPB& entry, const Schema& tablet_schema) {
   return Status::OK();
 }
 
+// A valid 'cluster name' is beginning with a special character '@'.
+// '@' is a character which has no special significance in shells and
+// it's an invalid character in hostname list, so we can use it to
+// distinguish cluster name from master addresses.
+bool GetClusterName(const string& master_addresses_str, string* cluster_name) {
+  CHECK(cluster_name);
+  if (HasPrefixString(master_addresses_str, "@")) {
+    *cluster_name = master_addresses_str.substr(1);  // Trim the first '@'.
+    return true;
+  }
+  return false;
+}
+
 } // anonymous namespace
 
 template<class ProxyClass>
@@ -386,11 +409,11 @@ Status PrintSegment(const scoped_refptr<ReadableLogSegment>& segment) {
   return Status::OK();
 }
 
-Status GetServerFlags(const std::string& address,
+Status GetServerFlags(const string& address,
                       uint16_t default_port,
                       bool all_flags,
-                      const std::string& flag_tags,
-                      std::vector<server::GetFlagsResponsePB_Flag>* flags) {
+                      const string& flag_tags,
+                      vector<server::GetFlagsResponsePB_Flag>* flags) {
   unique_ptr<GenericServiceProxy> proxy;
   RETURN_NOT_OK(BuildProxy(address, default_port, &proxy));
 
@@ -472,9 +495,8 @@ bool MatchesAnyPattern(const vector<string>& patterns, const string& str) {
 Status CreateKuduClient(const RunnerContext& context,
                         const char* master_addresses_arg,
                         client::sp::shared_ptr<KuduClient>* client) {
-  const string& master_addresses_str = FindOrDie(context.required_args,
-                                                 master_addresses_arg);
-  vector<string> master_addresses = Split(master_addresses_str, ",");
+  vector<string> master_addresses;
+  RETURN_NOT_OK(ParseMasterAddresses(context, master_addresses_arg, &master_addresses));
   return KuduClientBuilder()
              .master_server_addrs(master_addresses)
              .Build(client);
@@ -483,6 +505,61 @@ Status CreateKuduClient(const RunnerContext& context,
 Status CreateKuduClient(const RunnerContext& context,
                         client::sp::shared_ptr<KuduClient>* client) {
   return CreateKuduClient(context, kMasterAddressesArg, client);
+}
+
+Status ParseMasterAddressesStr(const RunnerContext& context,
+                               const char* master_addresses_arg,
+                               string* master_addresses_str) {
+  CHECK(master_addresses_str);
+  *master_addresses_str = FindOrDie(context.required_args, master_addresses_arg);
+  string cluster_name;
+  if (!GetClusterName(*master_addresses_str, &cluster_name)) {
+    // Treat it as master addresses.
+    return Status::OK();
+  }
+
+  // Try to resolve cluster name.
+  char* kudu_config_path = getenv("KUDU_CONFIG");
+  if (!kudu_config_path) {
+    return Status::NotFound("${KUDU_CONFIG} is missing");
+  }
+  auto config_file = JoinPathSegments(kudu_config_path, "kudurc");
+  if (!Env::Default()->FileExists(config_file)) {
+    return Status::NotFound(Substitute("configuration file $0 was not found", config_file));
+  }
+  YamlReader reader(config_file);
+  RETURN_NOT_OK(reader.Init());
+  YAML::Node clusters_info;
+  RETURN_NOT_OK(YamlReader::ExtractMap(reader.node(), "clusters_info", &clusters_info));
+  YAML::Node cluster_info;
+  RETURN_NOT_OK(YamlReader::ExtractMap(&clusters_info, cluster_name, &cluster_info));
+  RETURN_NOT_OK(YamlReader::ExtractScalar(&cluster_info, "master_addresses",
+                                          master_addresses_str));
+  return Status::OK();
+}
+
+Status ParseMasterAddressesStr(
+    const RunnerContext& context,
+    string* master_addresses_str) {
+  CHECK(master_addresses_str);
+  return ParseMasterAddressesStr(context, kMasterAddressesArg, master_addresses_str);
+}
+
+Status ParseMasterAddresses(const RunnerContext& context,
+                            const char* master_addresses_arg,
+                            vector<string>* master_addresses) {
+  CHECK(master_addresses);
+  string master_addresses_str;
+  RETURN_NOT_OK(ParseMasterAddressesStr(context, master_addresses_arg, &master_addresses_str));
+  *master_addresses = strings::Split(master_addresses_str, ",");
+  return Status::OK();
+}
+
+Status ParseMasterAddresses(
+    const RunnerContext& context,
+    vector<string>* master_addresses) {
+  CHECK(master_addresses);
+  return ParseMasterAddresses(context, kMasterAddressesArg, master_addresses);
 }
 
 Status PrintServerStatus(const string& address, uint16_t default_port) {
@@ -660,12 +737,12 @@ void PrintTable(const vector<vector<string>>& columns, const string& separator, 
 
 } // anonymous namespace
 
-DataTable::DataTable(std::vector<string> col_names)
+DataTable::DataTable(vector<string> col_names)
     : column_names_(std::move(col_names)),
       columns_(column_names_.size()) {
 }
 
-void DataTable::AddRow(std::vector<string> row) {
+void DataTable::AddRow(vector<string> row) {
   CHECK_EQ(row.size(), columns_.size());
   int i = 0;
   for (auto& v : row) {
@@ -710,8 +787,9 @@ Status LeaderMasterProxy::Init(const vector<string>& master_addrs, const MonoDel
 }
 
 Status LeaderMasterProxy::Init(const RunnerContext& context) {
-  const string& master_addrs = FindOrDie(context.required_args, kMasterAddressesArg);
-  return Init(strings::Split(master_addrs, ","), MonoDelta::FromMilliseconds(FLAGS_timeout_ms));
+  vector<string> master_addresses;
+  RETURN_NOT_OK(ParseMasterAddresses(context, &master_addresses));
+  return Init(master_addresses, MonoDelta::FromMilliseconds(FLAGS_timeout_ms));
 }
 
 template<typename Req, typename Resp>

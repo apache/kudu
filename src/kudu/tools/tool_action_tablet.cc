@@ -106,9 +106,6 @@ Status WaitForCleanKsck(const vector<string>& master_addresses,
 }
 
 Status ChangeConfig(const RunnerContext& context, ChangeConfigType cc_type) {
-  const string& master_addresses_str = FindOrDie(context.required_args,
-                                                 kMasterAddressesArg);
-  vector<string> master_addresses = Split(master_addresses_str, ",");
   const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
   const string& replica_uuid = FindOrDie(context.required_args, kTsUuidArg);
   boost::optional<RaftPeerPB::MemberType> member_type;
@@ -123,6 +120,8 @@ Status ChangeConfig(const RunnerContext& context, ChangeConfigType cc_type) {
     member_type = member_type_val;
   }
 
+  vector<string> master_addresses;
+  RETURN_NOT_OK(ParseMasterAddresses(context, &master_addresses));
   return DoChangeConfig(master_addresses, tablet_id, replica_uuid, member_type, cc_type);
 }
 
@@ -139,9 +138,9 @@ Status RemoveReplica(const RunnerContext& context) {
 }
 
 Status LeaderStepDown(const RunnerContext& context) {
-  const string& master_addresses_str = FindOrDie(context.required_args,
-                                                 kMasterAddressesArg);
-  vector<string> master_addresses = Split(master_addresses_str, ",");
+  vector<string> master_addresses;
+  RETURN_NOT_OK(ParseMasterAddresses(context, &master_addresses));
+
   const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
   const LeaderStepDownMode mode = FLAGS_abrupt ? LeaderStepDownMode::ABRUPT :
                                                  LeaderStepDownMode::GRACEFUL;
@@ -213,8 +212,8 @@ Status WaitForMoveToComplete(const vector<string>& master_addresses,
 }
 
 Status MoveReplica(const RunnerContext& context) {
-  const vector<string> master_addresses = Split(
-        FindOrDie(context.required_args, kMasterAddressesArg), ",");
+  vector<string> master_addresses;
+  RETURN_NOT_OK(ParseMasterAddresses(context, &master_addresses));
   const string& tablet_id = FindOrDie(context.required_args, kTabletIdArg);
   const string& from_ts_uuid = FindOrDie(context.required_args, kFromTsUuidArg);
   const string& to_ts_uuid = FindOrDie(context.required_args, kToTsUuidArg);
