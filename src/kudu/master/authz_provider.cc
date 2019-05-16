@@ -32,7 +32,7 @@
 DEFINE_string(trusted_user_acl, "",
     "Comma-separated list of trusted users who may access the cluster "
     "without being authorized against fine-grained permissions.");
-TAG_FLAG(trusted_user_acl, experimental);
+TAG_FLAG(trusted_user_acl, sensitive);
 
 using std::string;
 using std::vector;
