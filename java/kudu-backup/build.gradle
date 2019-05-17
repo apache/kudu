@@ -54,6 +54,3 @@ archivesBaseName = "kudu-backup${versions.sparkBase}_${versions.scalaBase}"
 javadoc {
   enabled = false
 }
-
-// Skip publishing kudu-backup until it's ready to be supported long-term.
-uploadArchives.enabled = false

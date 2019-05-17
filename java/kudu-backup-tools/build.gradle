@@ -61,6 +61,3 @@ sourceSets {
 javadoc {
   enabled = false
 }
-
-// Skip publishing kudu-backup-tools until it's ready to be supported long-term.
-uploadArchives.enabled = false
