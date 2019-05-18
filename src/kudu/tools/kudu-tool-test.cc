@@ -608,7 +608,9 @@ class ToolTest : public KuduTest {
  protected:
   void RunLoadgen(int num_tservers = 1,
                   const vector<string>& tool_args = {},
-                  const string& table_name = "");
+                  const string& table_name = "",
+                  string* tool_stdout = nullptr,
+                  string* tool_stderr = nullptr);
   void StartExternalMiniCluster(ExternalMiniClusterOptions opts = {});
   void StartMiniCluster(InternalMiniClusterOptions opts = {});
   unique_ptr<ExternalMiniCluster> cluster_;
@@ -2025,7 +2027,9 @@ TEST_F(ToolTest, TestLocalReplicaOps) {
 // and then run 'kudu perf loadgen ...' utility against it.
 void ToolTest::RunLoadgen(int num_tservers,
                           const vector<string>& tool_args,
-                          const string& table_name) {
+                          const string& table_name,
+                          string* tool_stdout,
+                          string* tool_stderr) {
   ExternalMiniClusterOptions opts;
   opts.num_tablet_servers = num_tservers;
   NO_FATALS(StartExternalMiniCluster(std::move(opts)));
@@ -2075,12 +2079,46 @@ void ToolTest::RunLoadgen(int num_tservers,
     args.push_back(Substitute("-table_name=$0", table_name));
   }
   copy(tool_args.begin(), tool_args.end(), back_inserter(args));
-  ASSERT_OK(RunKuduTool(args));
+  ASSERT_OK(RunKuduTool(args, tool_stdout, tool_stderr));
 }
 
 // Run the loadgen benchmark with all optional parameters set to defaults.
 TEST_F(ToolTest, TestLoadgenDefaultParameters) {
   NO_FATALS(RunLoadgen());
+}
+
+// Verify it's possible to run loadgen to create a table, no records inserted.
+// Also verify that --num_rows_per_thread=0 in case of existing table
+// results in no rows inserted.
+TEST_F(ToolTest, TestLoadgenZeroRowsPerThread) {
+  // Run the tool with zer rows per thread against an existing table.
+  // The existing table should get no rows inserted.
+  {
+    string out;
+    NO_FATALS(RunLoadgen(1, { "--num_rows_per_thread=0", "--run_scan" },
+                         "an_empty_test_table", &out));
+    ASSERT_STR_MATCHES(out, "expected rows: 0");
+    ASSERT_STR_MATCHES(out, "actual rows  : 0");
+  }
+
+  // Request to run with zero rows per thread and with various numbers
+  // of generator threads. The latter parameter in such a configuration is
+  // irrelevant, and the result table should be empty anyways.
+  for (auto num_threads : { 1, 2, 10, 100 }) {
+    SCOPED_TRACE(Substitute("num_threads=$0", num_threads));
+    const vector<string> args = {
+      "perf",
+      "loadgen",
+      cluster_->master()->bound_rpc_addr().ToString(),
+      Substitute("--num_threads=$0", num_threads),
+      "--num_rows_per_thread=0",
+      "--run_scan",
+    };
+    string out;
+    ASSERT_OK(RunKuduTool(args, &out));
+    ASSERT_STR_MATCHES(out, "expected rows: 0");
+    ASSERT_STR_MATCHES(out, "actual rows  : 0");
+  }
 }
 
 // Run the loadgen benchmark in AUTO_FLUSH_BACKGROUND mode, sequential values.
@@ -2277,14 +2315,14 @@ TEST_F(ToolTest, TestNonRandomWorkloadLoadgen) {
 
 TEST_F(ToolTest, TestPerfTableScan) {
   const string& kTableName = "perf.table_scan";
-  NO_FATALS(RunLoadgen(1, { "--keep_auto_table=true", "--run_scan" }, kTableName));
+  NO_FATALS(RunLoadgen(1, { "--run_scan" }, kTableName));
   NO_FATALS(RunScanTableCheck(kTableName, "", 1, 2000, {}, "perf table_scan"));
 }
 
 TEST_F(ToolTest, TestPerfTabletScan) {
   // Create a table.
   const string& kTableName = "perf.tablet_scan";
-  NO_FATALS(RunLoadgen(1, { "--keep_auto_table=true" }, kTableName));
+  NO_FATALS(RunLoadgen(1, {}, kTableName));
 
   // Get the list of tablets.
   vector<string> tablet_ids;

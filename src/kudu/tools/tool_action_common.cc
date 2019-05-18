@@ -119,61 +119,50 @@ DEFINE_string(tables, "", "Tables to include (comma-separated list of table name
 DEFINE_string(memtracker_output, "table",
               "One of 'json', 'json_compact' or 'table'. Table output flattens "
               "the memtracker hierarchy.");
+
 DEFINE_int32(num_threads, 2,
              "Number of threads to run. Each thread runs its own "
              "KuduSession.");
+static bool ValidateNumThreads(const char* flag_name, int32_t flag_value) {
+  if (flag_value <= 0) {
+    LOG(ERROR) << strings::Substitute("'$0' flag should have a positive value",
+                                      flag_name);
+    return false;
+  }
+  return true;
+}
+DEFINE_validator(num_threads, &ValidateNumThreads);
 
-namespace boost {
-template <typename Signature>
-class function;
-} // namespace boost
-
-namespace kudu {
-
-namespace master {
-class ListMastersRequestPB;
-class ListMastersResponsePB;
-class ListTabletServersRequestPB;
-class ListTabletServersResponsePB;
-class ReplaceTabletRequestPB;
-class ReplaceTabletResponsePB;
-} // namespace master
-
-namespace tools {
-
-using client::internal::AsyncLeaderMasterRpc;
-using client::KuduClient;
-using client::KuduClientBuilder;
-using consensus::ConsensusServiceProxy; // NOLINT
-using consensus::ReplicateMsg;
-using log::LogEntryPB;
-using log::LogEntryReader;
-using log::ReadableLogSegment;
-using master::ListMastersRequestPB;
-using master::ListMastersResponsePB;
-using master::ListTabletServersRequestPB;
-using master::ListTabletServersResponsePB;
-using master::MasterServiceProxy;
-using master::ReplaceTabletRequestPB;
-using master::ReplaceTabletResponsePB;
-using pb_util::SecureDebugString;
-using pb_util::SecureShortDebugString;
-using rpc::BackoffType;
-using rpc::Messenger;
-using rpc::MessengerBuilder;
-using rpc::RequestIdPB;
-using rpc::ResponseCallback;
-using rpc::RpcController;
-using server::GenericServiceProxy;
-using server::GetFlagsRequestPB;
-using server::GetFlagsResponsePB;
-using server::GetStatusRequestPB;
-using server::GetStatusResponsePB;
-using server::ServerClockRequestPB;
-using server::ServerClockResponsePB;
-using server::ServerStatusPB;
-using server::SetFlagRequestPB;
-using server::SetFlagResponsePB;
+using kudu::client::KuduClient;
+using kudu::client::KuduClientBuilder;
+using kudu::client::internal::AsyncLeaderMasterRpc;
+using kudu::consensus::ConsensusServiceProxy; // NOLINT
+using kudu::consensus::ReplicateMsg;
+using kudu::log::LogEntryPB;
+using kudu::log::LogEntryReader;
+using kudu::log::ReadableLogSegment;
+using kudu::master::MasterServiceProxy;
+using kudu::pb_util::SecureDebugString;
+using kudu::pb_util::SecureShortDebugString;
+using kudu::rpc::BackoffType;
+using kudu::rpc::Messenger;
+using kudu::rpc::MessengerBuilder;
+using kudu::rpc::RequestIdPB;
+using kudu::rpc::ResponseCallback;
+using kudu::rpc::RpcController;
+using kudu::server::GenericServiceProxy;
+using kudu::server::GetFlagsRequestPB;
+using kudu::server::GetFlagsResponsePB;
+using kudu::server::GetStatusRequestPB;
+using kudu::server::GetStatusResponsePB;
+using kudu::server::ServerClockRequestPB;
+using kudu::server::ServerClockResponsePB;
+using kudu::server::ServerStatusPB;
+using kudu::server::SetFlagRequestPB;
+using kudu::server::SetFlagResponsePB;
+using kudu::tserver::TabletServerAdminServiceProxy; // NOLINT
+using kudu::tserver::TabletServerServiceProxy; // NOLINT
+using kudu::tserver::WriteRequestPB;
 using std::cout;
 using std::endl;
 using std::ostream;
@@ -185,9 +174,14 @@ using std::unique_ptr;
 using std::vector;
 using strings::Split;
 using strings::Substitute;
-using tserver::TabletServerAdminServiceProxy; // NOLINT
-using tserver::TabletServerServiceProxy; // NOLINT
-using tserver::WriteRequestPB;
+
+namespace boost {
+template <typename Signature>
+class function;
+} // namespace boost
+
+namespace kudu {
+namespace tools {
 
 const char* const kMasterAddressesArg = "master_addresses";
 const char* const kMasterAddressesArgDesc = "Comma-separated list of Kudu "
@@ -738,32 +732,35 @@ Status LeaderMasterProxy::SyncRpc(const Req& req,
 
 // Explicit specializations for callers outside this compilation unit.
 template
-Status LeaderMasterProxy::SyncRpc(const ListTabletServersRequestPB& req,
-                                  ListTabletServersResponsePB* resp,
-                                  string func_name,
-                                  const boost::function<void(MasterServiceProxy*,
-                                                             const ListTabletServersRequestPB&,
-                                                             ListTabletServersResponsePB*,
-                                                             RpcController*,
-                                                             const ResponseCallback&)>& func);
+Status LeaderMasterProxy::SyncRpc(
+    const master::ListTabletServersRequestPB& req,
+    master::ListTabletServersResponsePB* resp,
+    string func_name,
+    const boost::function<void(MasterServiceProxy*,
+                               const master::ListTabletServersRequestPB&,
+                               master::ListTabletServersResponsePB*,
+                               RpcController*,
+                               const ResponseCallback&)>& func);
 template
-Status LeaderMasterProxy::SyncRpc(const ListMastersRequestPB& req,
-                                  ListMastersResponsePB* resp,
-                                  string func_name,
-                                  const boost::function<void(MasterServiceProxy*,
-                                                             const ListMastersRequestPB&,
-                                                             ListMastersResponsePB*,
-                                                             RpcController*,
-                                                             const ResponseCallback&)>& func);
+Status LeaderMasterProxy::SyncRpc(
+    const master::ListMastersRequestPB& req,
+    master::ListMastersResponsePB* resp,
+    string func_name,
+    const boost::function<void(MasterServiceProxy*,
+                               const master::ListMastersRequestPB&,
+                               master::ListMastersResponsePB*,
+                               RpcController*,
+                               const ResponseCallback&)>& func);
 template
-Status LeaderMasterProxy::SyncRpc(const ReplaceTabletRequestPB& req,
-                                  ReplaceTabletResponsePB* resp,
-                                  string func_name,
-                                  const boost::function<void(MasterServiceProxy*,
-                                                             const ReplaceTabletRequestPB&,
-                                                             ReplaceTabletResponsePB*,
-                                                             RpcController*,
-                                                             const ResponseCallback&)>& func);
+Status LeaderMasterProxy::SyncRpc(
+    const master::ReplaceTabletRequestPB& req,
+    master::ReplaceTabletResponsePB* resp,
+    string func_name,
+    const boost::function<void(MasterServiceProxy*,
+                               const master::ReplaceTabletRequestPB&,
+                               master::ReplaceTabletResponsePB*,
+                               RpcController*,
+                               const ResponseCallback&)>& func);
 
 const int ControlShellProtocol::kMaxMessageBytes = 1024 * 1024;
 
