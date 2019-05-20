@@ -1019,14 +1019,16 @@ void TabletServiceAdminImpl::CreateTablet(const CreateTabletRequestPB* req,
             << partition_schema.PartitionDebugString(partition, schema);
   VLOG(1) << "Full request: " << SecureDebugString(*req);
 
-  s = server_->tablet_manager()->CreateNewTablet(req->table_id(),
-                                                 req->tablet_id(),
-                                                 partition,
-                                                 req->table_name(),
-                                                 schema,
-                                                 partition_schema,
-                                                 req->config(),
-                                                 nullptr);
+  s = server_->tablet_manager()->CreateNewTablet(
+      req->table_id(),
+      req->tablet_id(),
+      partition,
+      req->table_name(),
+      schema,
+      partition_schema,
+      req->config(),
+      req->has_extra_config() ? boost::make_optional(req->extra_config()) : boost::none,
+      nullptr);
   if (PREDICT_FALSE(!s.ok())) {
     TabletServerErrorPB::Code code;
     if (s.IsAlreadyPresent()) {

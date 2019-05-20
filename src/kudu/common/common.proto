@@ -438,3 +438,11 @@ message KeyRangePB {
   // Number of bytes in chunk.
   required uint64 size_bytes_estimates = 3;
 }
+
+message TableExtraConfigPB {
+  // Number of seconds to retain history for tablets in this table,
+  // including history required to perform diff scans and incremental
+  // backups. Reads initiated at a snapshot that is older than this
+  // age will be rejected. Equivalent to --tablet_history_max_age_sec.
+  optional int32 history_max_age_sec = 1;
+}

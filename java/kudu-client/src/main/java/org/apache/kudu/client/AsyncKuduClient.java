@@ -369,7 +369,7 @@ public class AsyncKuduClient implements AutoCloseable {
     this.channelFactory = b.createChannelFactory();
     this.masterAddresses = b.masterAddresses;
     this.masterTable = new KuduTable(this, MASTER_TABLE_NAME_PLACEHOLDER,
-        MASTER_TABLE_NAME_PLACEHOLDER, null, null, 1);
+        MASTER_TABLE_NAME_PLACEHOLDER, null, null, 1, null);
     this.defaultOperationTimeoutMs = b.defaultOperationTimeoutMs;
     this.defaultAdminOperationTimeoutMs = b.defaultAdminOperationTimeoutMs;
     this.statisticsDisabled = b.statisticsDisabled;
@@ -796,7 +796,8 @@ public class AsyncKuduClient implements AutoCloseable {
             resp.getTableId(),
             resp.getSchema(),
             resp.getPartitionSchema(),
-            resp.getNumReplicas());
+            resp.getNumReplicas(),
+            resp.getExtraConfig());
       }
     });
   }

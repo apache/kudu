@@ -144,9 +144,13 @@ class KuduTabletTest : public KuduTest {
     return harness_->fs_manager();
   }
 
-  void AlterSchema(const Schema& schema) {
+  void AlterSchema(const Schema& schema,
+                   boost::optional<TableExtraConfigPB> extra_config = boost::none) {
     tserver::AlterSchemaRequestPB req;
     req.set_schema_version(tablet()->metadata()->schema_version() + 1);
+    if (extra_config) {
+      *(req.mutable_new_extra_config()) = *extra_config;
+    }
 
     AlterSchemaTransactionState tx_state(nullptr, &req, nullptr);
     ASSERT_OK(tablet()->CreatePreparedAlterSchema(&tx_state, &schema));

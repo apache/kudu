@@ -253,6 +253,7 @@ Status SysCatalogTable::CreateNew(FsManager *fs_manager) {
                                                   tablet::TABLET_DATA_READY,
                                                   /*tombstone_last_logged_opid=*/ boost::none,
                                                   /*supports_live_row_count=*/ true,
+                                                  /*extra_config=*/ boost::none,
                                                   &metadata));
 
   RaftConfigPB config;

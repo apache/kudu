@@ -65,6 +65,7 @@ class PartitionPB;
 class PartitionSchema;
 class Schema;
 class ThreadPool;
+class TableExtraConfigPB;
 struct ColumnId;
 
 // Working around FRIEND_TEST() ugliness.
@@ -854,7 +855,8 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
   // "dirty" state field.
   scoped_refptr<TableInfo> CreateTableInfo(const CreateTableRequestPB& req,
                                            const Schema& schema,
-                                           const PartitionSchema& partition_schema);
+                                           const PartitionSchema& partition_schema,
+                                           TableExtraConfigPB extra_config_pb);
 
   // Helper for creating the initial TabletInfo state.
   // Leaves the tablet "write locked" with the new info in the

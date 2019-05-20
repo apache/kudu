@@ -26,6 +26,7 @@
 #include <boost/optional/optional.hpp>
 #include <gflags/gflags.h>
 
+#include "kudu/common/common.pb.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/opid.pb.h"
@@ -91,6 +92,7 @@ Status TabletMetadata::CreateNew(FsManager* fs_manager,
                                  const TabletDataState& initial_tablet_data_state,
                                  boost::optional<OpId> tombstone_last_logged_opid,
                                  bool supports_live_row_count,
+                                 boost::optional<TableExtraConfigPB> extra_config,
                                  scoped_refptr<TabletMetadata>* metadata) {
 
   // Verify that no existing tablet exists with the same ID.
@@ -112,7 +114,8 @@ Status TabletMetadata::CreateNew(FsManager* fs_manager,
                                                        partition,
                                                        initial_tablet_data_state,
                                                        std::move(tombstone_last_logged_opid),
-                                                       supports_live_row_count));
+                                                       supports_live_row_count,
+                                                       std::move(extra_config)));
   RETURN_NOT_OK(ret->Flush());
   dir_group_cleanup.cancel();
 
@@ -138,6 +141,7 @@ Status TabletMetadata::LoadOrCreate(FsManager* fs_manager,
                                     const Partition& partition,
                                     const TabletDataState& initial_tablet_data_state,
                                     boost::optional<OpId> tombstone_last_logged_opid,
+                                    boost::optional<TableExtraConfigPB> extra_config,
                                     scoped_refptr<TabletMetadata>* metadata) {
   Status s = Load(fs_manager, tablet_id, metadata);
   if (s.ok()) {
@@ -153,6 +157,7 @@ Status TabletMetadata::LoadOrCreate(FsManager* fs_manager,
                      partition_schema, partition, initial_tablet_data_state,
                      std::move(tombstone_last_logged_opid),
                      /*supports_live_row_count=*/ true,
+                     std::move(extra_config),
                      metadata);
   }
   return s;
@@ -271,7 +276,8 @@ TabletMetadata::TabletMetadata(FsManager* fs_manager, string tablet_id,
                                Partition partition,
                                const TabletDataState& tablet_data_state,
                                boost::optional<OpId> tombstone_last_logged_opid,
-                               bool supports_live_row_count)
+                               bool supports_live_row_count,
+                               boost::optional<TableExtraConfigPB> extra_config)
     : state_(kNotWrittenYet),
       tablet_id_(std::move(tablet_id)),
       table_id_(std::move(table_id)),
@@ -285,6 +291,7 @@ TabletMetadata::TabletMetadata(FsManager* fs_manager, string tablet_id,
       partition_schema_(std::move(partition_schema)),
       tablet_data_state_(tablet_data_state),
       tombstone_last_logged_opid_(std::move(tombstone_last_logged_opid)),
+      extra_config_(std::move(extra_config)),
       num_flush_pins_(0),
       needs_flush_(false),
       flush_count_for_tests_(0),
@@ -450,6 +457,12 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
       tombstone_last_logged_opid_ = superblock.tombstone_last_logged_opid();
     } else {
       tombstone_last_logged_opid_ = boost::none;
+    }
+
+    if (superblock.has_extra_config()) {
+      extra_config_ = superblock.extra_config();
+    } else {
+      extra_config_ = boost::none;
     }
   }
 
@@ -689,6 +702,10 @@ Status TabletMetadata::ToSuperBlockUnlocked(TabletSuperBlockPB* super_block,
 
   pb.set_supports_live_row_count(supports_live_row_count_);
 
+  if (extra_config_) {
+    *pb.mutable_extra_config() = *extra_config_;
+  }
+
   super_block->Swap(&pb);
   return Status::OK();
 }
@@ -772,6 +789,16 @@ string TabletMetadata::LogPrefix() const {
 TabletDataState TabletMetadata::tablet_data_state() const {
   std::lock_guard<LockType> l(data_lock_);
   return tablet_data_state_;
+}
+
+void TabletMetadata::SetExtraConfig(TableExtraConfigPB extra_config) {
+  std::lock_guard<LockType> l(data_lock_);
+  extra_config_ = std::move(extra_config);
+}
+
+boost::optional<TableExtraConfigPB> TabletMetadata::extra_config() const {
+  std::lock_guard<LockType> l(data_lock_);
+  return extra_config_;
 }
 
 } // namespace tablet

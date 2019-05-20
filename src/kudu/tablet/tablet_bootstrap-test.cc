@@ -127,6 +127,7 @@ class BootstrapTest : public LogTestBase {
                                                partition.second,
                                                TABLET_DATA_READY,
                                                /*tombstone_last_logged_opid=*/ boost::none,
+                                               /*extra_config=*/ boost::none,
                                                meta));
     (*meta)->SetLastDurableMrsIdForTests(mrs_id);
     if ((*meta)->GetRowSetForTests(0) != nullptr) {

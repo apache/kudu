@@ -1678,6 +1678,7 @@ TEST_F(ToolTest, TestLocalReplicaDumpDataDirs) {
       tablet::TABLET_DATA_READY,
       /*tombstone_last_logged_opid=*/ boost::none,
       /*supports_live_row_count=*/ true,
+      /*extra_config=*/ boost::none,
       &meta));
   string stdout;
   NO_FATALS(RunActionStdoutString(Substitute("local_replica dump data_dirs $0 "
@@ -1713,6 +1714,7 @@ TEST_F(ToolTest, TestLocalReplicaDumpMeta) {
                   tablet::TABLET_DATA_READY,
                   /*tombstone_last_logged_opid=*/ boost::none,
                   /*supports_live_row_count=*/ true,
+                  /*extra_config=*/ boost::none,
                   &meta);
   string stdout;
   NO_FATALS(RunActionStdoutString(Substitute("local_replica dump meta $0 "

@@ -1263,6 +1263,9 @@ Status Tablet::AlterSchema(AlterSchemaTransactionState* tx_state) {
       metric_entity_->SetAttribute("table_name", tx_state->new_table_name());
     }
   }
+  if (tx_state->has_new_extra_config()) {
+    metadata_->SetExtraConfig(tx_state->new_extra_config());
+  }
 
   // If the current schema and the new one are equal, there is nothing to do.
   if (same_schema) {

@@ -99,7 +99,8 @@ public class GetTableSchemaRequest extends KuduRpc<GetTableSchemaResponse> {
         respBuilder.getTableName(),
         respBuilder.getNumReplicas(),
         ProtobufHelper.pbToPartitionSchema(respBuilder.getPartitionSchema(), schema),
-        respBuilder.hasAuthzToken() ? respBuilder.getAuthzToken() : null);
+        respBuilder.hasAuthzToken() ? respBuilder.getAuthzToken() : null,
+        respBuilder.getExtraConfigsMap());
     return new Pair<GetTableSchemaResponse, Object>(
         response, respBuilder.hasError() ? respBuilder.getError() : null);
   }

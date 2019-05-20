@@ -22,6 +22,8 @@ import org.apache.yetus.audience.InterfaceAudience;
 import org.apache.kudu.security.Token.SignedTokenPB;
 import org.apache.kudu.Schema;
 
+import java.util.Map;
+
 @InterfaceAudience.Private
 public class GetTableSchemaResponse extends KuduRpcResponse {
 
@@ -31,6 +33,7 @@ public class GetTableSchemaResponse extends KuduRpcResponse {
   private final String tableName;
   private final int numReplicas;
   private final SignedTokenPB authzToken;
+  private final Map<String, String> extraConfig;
 
   /**
    * @param elapsedMillis Time in milliseconds since RPC creation to now
@@ -41,6 +44,7 @@ public class GetTableSchemaResponse extends KuduRpcResponse {
    * @param numReplicas the table's replication factor
    * @param partitionSchema the table's partition schema
    * @param authzToken an authorization token for use with this table
+   * @param extraConfig the table's extra configuration properties
    */
   GetTableSchemaResponse(long elapsedMillis,
                          String tsUUID,
@@ -49,7 +53,8 @@ public class GetTableSchemaResponse extends KuduRpcResponse {
                          String tableName,
                          int numReplicas,
                          PartitionSchema partitionSchema,
-                         SignedTokenPB authzToken) {
+                         SignedTokenPB authzToken,
+                         Map<String, String> extraConfig) {
     super(elapsedMillis, tsUUID);
     this.schema = schema;
     this.partitionSchema = partitionSchema;
@@ -57,6 +62,7 @@ public class GetTableSchemaResponse extends KuduRpcResponse {
     this.tableName = tableName;
     this.numReplicas = numReplicas;
     this.authzToken = authzToken;
+    this.extraConfig = extraConfig;
   }
 
   /**
@@ -105,5 +111,13 @@ public class GetTableSchemaResponse extends KuduRpcResponse {
    */
   public SignedTokenPB getAuthzToken() {
     return authzToken;
+  }
+
+  /**
+   * Get the table's extra configuration properties.
+   * @return the table's extra configuration properties
+   */
+  public Map<String, String> getExtraConfig() {
+    return extraConfig;
   }
 }

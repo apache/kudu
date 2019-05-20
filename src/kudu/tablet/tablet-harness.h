@@ -101,6 +101,7 @@ class TabletHarness {
                                                partition.second,
                                                TABLET_DATA_READY,
                                                /*tombstone_last_logged_opid=*/ boost::none,
+                                               /*extra_config=*/ boost::none,
                                                &metadata));
     if (options_.enable_metrics) {
       metrics_registry_.reset(new MetricRegistry());

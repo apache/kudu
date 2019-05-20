@@ -47,6 +47,8 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
 import java.util.Random;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
@@ -182,6 +184,26 @@ public class TestKuduClient {
       assertThat(nre.toString(), containsString(
           "number of columns 1001 is greater than the permitted maximum"));
     }
+  }
+
+  /**
+   * Test creating and deleting a table with extra-configs through a KuduClient.
+   */
+  @Test(timeout = 100000)
+  public void testCreateDeleteTableWitExtraConfigs() throws Exception {
+    // Check that we can create a table.
+    Map<String, String> extraConfigs = new HashMap<>();
+    extraConfigs.put("kudu.table.history_max_age_sec", "7200");
+
+    client.createTable(
+        TABLE_NAME,
+        basicSchema,
+        getBasicCreateTableOptions().setExtraConfigs(extraConfigs));
+
+    KuduTable table = client.openTable(TABLE_NAME);
+    extraConfigs = table.getExtraConfig();
+    assertTrue(extraConfigs.containsKey("kudu.table.history_max_age_sec"));
+    assertEquals("7200", extraConfigs.get("kudu.table.history_max_age_sec"));
   }
 
   /*

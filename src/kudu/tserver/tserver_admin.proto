@@ -37,6 +37,7 @@ message AlterSchemaRequestPB {
 
   required uint32 schema_version = 3;
   optional string new_table_name = 4;
+  optional TableExtraConfigPB new_extra_config = 6;
 }
 
 message AlterSchemaResponsePB {
@@ -68,6 +69,9 @@ message CreateTabletRequestPB {
 
   // Initial consensus configuration for the tablet.
   required consensus.RaftConfigPB config = 7;
+
+  // The table's extra-config.
+  optional TableExtraConfigPB extra_config = 11;
 }
 
 message CreateTabletResponsePB {

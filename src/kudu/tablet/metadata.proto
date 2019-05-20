@@ -139,6 +139,9 @@ message TabletSuperBlockPB {
   // may be inaccurate and should be ignored. It's only supported for the newly
   // created ones, not for the ancient ones.
   optional bool supports_live_row_count = 16;
+
+  // The table's extra-config.
+  optional TableExtraConfigPB extra_config = 17;
 }
 
 // Tablet states represent stages of a TabletReplica's object lifecycle and are

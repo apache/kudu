@@ -19,6 +19,7 @@ package org.apache.kudu.client;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import com.google.common.base.Predicates;
 import com.google.common.collect.Iterators;
@@ -48,6 +49,7 @@ public class KuduTable {
   private final String name;
   private final String tableId;
   private final int numReplicas;
+  private final Map<String, String> extraConfig;
 
   /**
    * Package-private constructor, use {@link KuduClient#openTable(String)} to get an instance.
@@ -57,15 +59,18 @@ public class KuduTable {
    * @param schema this table's schema
    * @param partitionSchema this table's partition schema
    * @param numReplicas this table's replication factor
+   * @param extraConfig this table's extra configuration properties
    */
   KuduTable(AsyncKuduClient client, String name, String tableId,
-            Schema schema, PartitionSchema partitionSchema, int numReplicas) {
+            Schema schema, PartitionSchema partitionSchema, int numReplicas,
+            Map<String, String> extraConfig) {
     this.schema = schema;
     this.partitionSchema = partitionSchema;
     this.client = client;
     this.name = name;
     this.tableId = tableId;
     this.numReplicas = numReplicas;
+    this.extraConfig = extraConfig;
   }
 
   /**
@@ -111,6 +116,14 @@ public class KuduTable {
    */
   public int getNumReplicas() {
     return numReplicas;
+  }
+
+  /**
+   * Get this table's extra configuration properties.
+   * @return this table's extra configuration properties
+   */
+  public Map<String, String> getExtraConfig() {
+    return extraConfig;
   }
 
   /**

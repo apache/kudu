@@ -48,6 +48,10 @@ class optional;
 }
 
 namespace kudu {
+class TableExtraConfigPB;
+}  // namespace kudu
+
+namespace kudu {
 
 class FsManager;
 class NodeInstancePB;
@@ -120,6 +124,7 @@ class TSTabletManager : public tserver::TabletReplicaLookupIf {
                          const Schema& schema,
                          const PartitionSchema& partition_schema,
                          consensus::RaftConfigPB config,
+                         boost::optional<TableExtraConfigPB> extra_config,
                          scoped_refptr<tablet::TabletReplica>* replica);
 
   // Delete the specified tablet asynchronously with callback 'cb'.

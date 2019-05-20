@@ -18,6 +18,7 @@
 package org.apache.kudu.client;
 
 import java.util.EnumSet;
+import java.util.Map;
 
 import static org.apache.kudu.ColumnSchema.CompressionAlgorithm;
 import static org.apache.kudu.ColumnSchema.Encoding;
@@ -377,6 +378,20 @@ public class AlterTableOptions {
     alterBuilder.setDelta(
         Common.ColumnSchemaDeltaPB.newBuilder().setName(name).setNewComment(comment));
     step.setAlterColumn(alterBuilder);
+    return this;
+  }
+
+  /**
+   * Change the table's extra configuration properties.
+   * These configuration properties will be merged into existing configuration properties.
+   *
+   * If the value of the kv pair is empty, the property will be unset.
+   *
+   * @param extraConfig the table's extra configuration properties
+   * @return this instance
+   */
+  public AlterTableOptions alterExtraConfigs(Map<String, String> extraConfig) {
+    pb.putAllNewExtraConfigs(extraConfig);
     return this;
   }
 

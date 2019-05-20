@@ -66,6 +66,7 @@
 #include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
+#include <google/protobuf/stubs/common.h>
 
 #include "kudu/cfile/type_encodings.h"
 #include "kudu/common/common.pb.h"
@@ -269,6 +270,7 @@ using base::subtle::NoBarrier_Load;
 using boost::make_optional;
 using boost::none;
 using boost::optional;
+using google::protobuf::Map;
 using kudu::cfile::TypeEncodingInfo;
 using kudu::consensus::ConsensusServiceProxy;
 using kudu::consensus::ConsensusStatePB;
@@ -1581,6 +1583,10 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
         num_live_tservers);
   }
 
+  // Verify the table's extra configuration properties.
+  TableExtraConfigPB extra_config_pb;
+  RETURN_NOT_OK(ExtraConfigPBFromPBMap(req.extra_configs(), &extra_config_pb));
+
   scoped_refptr<TableInfo> table;
   {
     std::lock_guard<LockType> l(lock_);
@@ -1615,7 +1621,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
 
   // d. Create the in-memory representation of the new table and its tablets.
   //    It's not yet in any global maps; that will happen in step g below.
-  table = CreateTableInfo(req, schema, partition_schema);
+  table = CreateTableInfo(req, schema, partition_schema, std::move(extra_config_pb));
   vector<scoped_refptr<TabletInfo>> tablets;
   auto abort_mutations = MakeScopedCleanup([&table, &tablets]() {
     table->mutable_metadata()->AbortMutation();
@@ -1744,9 +1750,11 @@ Status CatalogManager::IsCreateTableDone(const IsCreateTableDoneRequestPB* req,
   return Status::OK();
 }
 
-scoped_refptr<TableInfo> CatalogManager::CreateTableInfo(const CreateTableRequestPB& req,
-                                                         const Schema& schema,
-                                                         const PartitionSchema& partition_schema) {
+scoped_refptr<TableInfo> CatalogManager::CreateTableInfo(
+    const CreateTableRequestPB& req,
+    const Schema& schema,
+    const PartitionSchema& partition_schema,
+    TableExtraConfigPB extra_config_pb) {
   DCHECK(schema.has_column_ids());
   scoped_refptr<TableInfo> table = new TableInfo(GenerateId());
   table->mutable_metadata()->StartMutation();
@@ -1761,6 +1769,7 @@ scoped_refptr<TableInfo> CatalogManager::CreateTableInfo(const CreateTableReques
   CHECK_OK(SchemaToPB(schema, metadata->mutable_schema()));
   partition_schema.ToPB(metadata->mutable_partition_schema());
   metadata->set_create_timestamp(time(nullptr));
+  (*metadata->mutable_extra_config()) = std::move(extra_config_pb);
   return table;
 }
 
@@ -2549,10 +2558,25 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
           resp, MasterErrorPB::UNKNOWN_ERROR));
   }
 
+  // 6. Alter table's extra configuration properties.
+  if (!req.new_extra_configs().empty()) {
+    TRACE("Apply alter extra-config");
+    Map<string, string> new_extra_configs;
+    RETURN_NOT_OK(ExtraConfigPBToPBMap(l.data().pb.extra_config(),
+                                       &new_extra_configs));
+    // Merge table's extra configuration properties.
+    for (auto config : req.new_extra_configs()) {
+      new_extra_configs[config.first] = config.second;
+    }
+    RETURN_NOT_OK(ExtraConfigPBFromPBMap(new_extra_configs,
+                                         l.mutable_data()->pb.mutable_extra_config()));
+  }
+
   // Set to true if columns are altered, added or dropped.
   bool has_schema_changes = !alter_schema_steps.empty();
   // Set to true if there are schema changes, or the table is renamed.
-  bool has_metadata_changes = has_schema_changes || req.has_new_table_name();
+  bool has_metadata_changes =
+      has_schema_changes || req.has_new_table_name() || !req.new_extra_configs().empty();
   // Set to true if there are partitioning changes.
   bool has_partitioning_changes = !alter_partitioning_steps.empty();
   // Set to true if metadata changes need to be applied to existing tablets.
@@ -2564,7 +2588,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
     return Status::OK();
   }
 
-  // 6. Serialize the schema and increment the version number.
+  // 7. Serialize the schema and increment the version number.
   if (has_metadata_changes_for_existing_tablets && !l.data().pb.has_fully_applied_schema()) {
     l.mutable_data()->pb.mutable_fully_applied_schema()->CopyFrom(l.data().pb.schema());
   }
@@ -2585,7 +2609,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
                                            LocalTimeAsString()));
   }
 
-  // 7. Update sys-catalog with the new table schema and tablets to add/drop.
+  // 8. Update sys-catalog with the new table schema and tablets to add/drop.
   TRACE("Updating metadata on disk");
   string deletion_msg = "Partition dropped at " + LocalTimeAsString();
   SysCatalogTable::Actions actions;
@@ -2615,7 +2639,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB& req,
     return s;
   }
 
-  // 8. Commit the in-memory state.
+  // 9. Commit the in-memory state.
   {
     TRACE("Committing alterations to in-memory state");
 
@@ -2769,6 +2793,7 @@ Status CatalogManager::GetTableSchema(const GetTableSchemaRequestPB* req,
   resp->set_table_id(table->id());
   resp->mutable_partition_schema()->CopyFrom(l.data().pb.partition_schema());
   resp->set_table_name(l.data().pb.name());
+  RETURN_NOT_OK(ExtraConfigPBToPBMap(l.data().pb.extra_config(), resp->mutable_extra_configs()));
 
   return Status::OK();
 }
@@ -3271,6 +3296,8 @@ class AsyncCreateReplica : public RetrySpecificTSRpcTask {
         table_lock.data().pb.partition_schema());
     req_.mutable_config()->CopyFrom(
         tablet_lock.data().pb.consensus_state().committed_config());
+    req_.mutable_extra_config()->CopyFrom(
+        table_lock.data().pb.extra_config());
   }
 
   string type_name() const override { return "Create Tablet"; }
@@ -3469,6 +3496,7 @@ class AsyncAlterTable : public RetryingTSRpcTask {
     req.set_new_table_name(l.data().pb.name());
     req.set_schema_version(l.data().pb.version());
     req.mutable_schema()->CopyFrom(l.data().pb.schema());
+    req.mutable_new_extra_config()->CopyFrom(l.data().pb.extra_config());
 
     l.Unlock();
 

@@ -23,10 +23,13 @@
 #include <cstring>
 #include <ostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
 #include <glog/logging.h>
+#include <google/protobuf/map.h>
+#include <google/protobuf/stubs/common.h>
 
 #include "kudu/common/column_predicate.h"
 #include "kudu/common/columnblock.h"
@@ -40,6 +43,7 @@
 #include "kudu/gutil/fixedarray.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/fastmem.h"
+#include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/bitmap.h"
@@ -53,9 +57,11 @@
 #include "kudu/util/safe_math.h"
 #include "kudu/util/slice.h"
 
+using google::protobuf::Map;
 using google::protobuf::RepeatedPtrField;
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
+using std::map;
 using std::string;
 using std::vector;
 using strings::Substitute;
@@ -644,6 +650,45 @@ Status ColumnPredicateFromPB(const Schema& schema,
     };
     default: return Status::InvalidArgument("Unknown predicate type for column", col.name());
   }
+  return Status::OK();
+}
+
+const char kTableHistoryMaxAgeSec[] = "kudu.table.history_max_age_sec";
+Status ExtraConfigPBToMap(const TableExtraConfigPB& pb, map<string, string>* configs) {
+  Map<string, string> tmp;
+  RETURN_NOT_OK(ExtraConfigPBToPBMap(pb, &tmp));
+  map<string, string> result(tmp.begin(), tmp.end());
+  *configs = std::move(result);
+  return Status::OK();
+}
+
+Status ExtraConfigPBFromPBMap(const Map<string, string>& configs, TableExtraConfigPB* pb) {
+  TableExtraConfigPB result;
+  for (const auto& config : configs) {
+    const string& name = config.first;
+    const string& value = config.second;
+    if (name == kTableHistoryMaxAgeSec) {
+      if (!value.empty()) {
+        int32_t history_max_age_sec;
+        if (!safe_strto32(value, &history_max_age_sec)) {
+          return Status::InvalidArgument(Substitute("Unable to parse $0", name), value);
+        }
+        result.set_history_max_age_sec(history_max_age_sec);
+      }
+    } else {
+      LOG(WARNING) << "Unknown extra configuration property: " << name;
+    }
+  }
+  *pb = std::move(result);
+  return Status::OK();
+}
+
+Status ExtraConfigPBToPBMap(const TableExtraConfigPB& pb, Map<string, string>* configs) {
+  Map<string, string> result;
+  if (pb.has_history_max_age_sec()) {
+    result[kTableHistoryMaxAgeSec] = std::to_string(pb.history_max_age_sec());
+  }
+  *configs = std::move(result);
   return Status::OK();
 }
 

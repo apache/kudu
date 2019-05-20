@@ -28,6 +28,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
@@ -478,5 +480,45 @@ public class TestAlterTable {
           "No range partition found for drop range partition step"));
     }
     assertEquals(100, countRowsInTable(table));
+  }
+
+  @Test
+  public void testAlterExtraConfigs() throws Exception {
+    KuduTable table = createTable(ImmutableList.<Pair<Integer,Integer>>of());
+    insertRows(table, 0, 100);
+    assertEquals(100, countRowsInTable(table));
+
+    // 1. Check for expected defaults.
+    table = client.openTable(tableName);
+    Map<String, String> extraConfigs = table.getExtraConfig();
+    assertFalse(extraConfigs.containsKey("kudu.table.history_max_age_sec"));
+
+    // 2. Alter history max age second to 3600
+    Map<String, String> alterExtraConfigs = new HashMap<>();
+    alterExtraConfigs.put("kudu.table.history_max_age_sec", "3600");
+    client.alterTable(tableName, new AlterTableOptions().alterExtraConfigs(alterExtraConfigs));
+
+    table = client.openTable(tableName);
+    extraConfigs = table.getExtraConfig();
+    assertTrue(extraConfigs.containsKey("kudu.table.history_max_age_sec"));
+    assertEquals("3600", extraConfigs.get("kudu.table.history_max_age_sec"));
+
+    // 3. Alter history max age second to 7200
+    alterExtraConfigs = new HashMap<>();
+    alterExtraConfigs.put("kudu.table.history_max_age_sec", "7200");
+    client.alterTable(tableName, new AlterTableOptions().alterExtraConfigs(alterExtraConfigs));
+
+    table = client.openTable(tableName);
+    extraConfigs = table.getExtraConfig();
+    assertTrue(extraConfigs.containsKey("kudu.table.history_max_age_sec"));
+    assertEquals("7200", extraConfigs.get("kudu.table.history_max_age_sec"));
+
+    // 4. Reset history max age second to default
+    alterExtraConfigs = new HashMap<>();
+    alterExtraConfigs.put("kudu.table.history_max_age_sec", "");
+    client.alterTable(tableName, new AlterTableOptions().alterExtraConfigs(alterExtraConfigs));
+
+    table = client.openTable(tableName);
+    assertTrue(table.getExtraConfig().isEmpty());
   }
 }

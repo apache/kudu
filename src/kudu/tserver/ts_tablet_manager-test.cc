@@ -23,6 +23,7 @@
 #include <utility>
 #include <vector>
 
+#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -36,8 +37,9 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/master/master.pb.h"
-#include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet-harness.h"
+#include "kudu/tablet/tablet.h"
+#include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_replica.h"
 #include "kudu/tserver/heartbeater.h"
 #include "kudu/tserver/mini_tablet_server.h"
@@ -71,9 +73,6 @@ using master::TabletReportPB;
 using pb_util::SecureShortDebugString;
 using tablet::TabletReplica;
 
-static const char* const kTabletId = "ffffffffffffffffffffffffffffffff";
-
-
 class TsTabletManagerTest : public KuduTest {
  public:
   TsTabletManagerTest()
@@ -100,6 +99,7 @@ class TsTabletManagerTest : public KuduTest {
 
   Status CreateNewTablet(const std::string& tablet_id,
                          const Schema& schema,
+                         boost::optional<TableExtraConfigPB> extra_config,
                          scoped_refptr<tablet::TabletReplica>* out_tablet_replica) {
     Schema full_schema = SchemaBuilder(schema).Build();
     std::pair<PartitionSchema, Partition> partition = tablet::CreateDefaultPartition(full_schema);
@@ -109,6 +109,7 @@ class TsTabletManagerTest : public KuduTest {
                                                    tablet_id,
                                                    full_schema, partition.first,
                                                    config_,
+                                                   std::move(extra_config),
                                                    &tablet_replica));
     if (out_tablet_replica) {
       (*out_tablet_replica) = tablet_replica;
@@ -147,11 +148,24 @@ class TsTabletManagerTest : public KuduTest {
 };
 
 TEST_F(TsTabletManagerTest, TestCreateTablet) {
+  string tablet1 = "0fffffffffffffffffffffffffffffff";
+  string tablet2 = "1fffffffffffffffffffffffffffffff";
+  scoped_refptr<TabletReplica> replica1;
+  scoped_refptr<TabletReplica> replica2;
+  TableExtraConfigPB extra_config;
+  extra_config.set_history_max_age_sec(7200);
+
   // Create a new tablet.
-  scoped_refptr<TabletReplica> replica;
-  ASSERT_OK(CreateNewTablet(kTabletId, schema_, &replica));
-  ASSERT_EQ(kTabletId, replica->tablet()->tablet_id());
-  replica.reset();
+  ASSERT_OK(CreateNewTablet(tablet1, schema_, boost::none, &replica1));
+  // Create a new tablet with extra config.
+  ASSERT_OK(CreateNewTablet(tablet2, schema_, extra_config, &replica2));
+  ASSERT_EQ(tablet1, replica1->tablet()->tablet_id());
+  ASSERT_EQ(tablet2, replica2->tablet()->tablet_id());
+  ASSERT_EQ(boost::none, replica1->tablet()->metadata()->extra_config());
+  ASSERT_NE(boost::none, replica2->tablet()->metadata()->extra_config());
+  ASSERT_EQ(7200, replica2->tablet()->metadata()->extra_config()->history_max_age_sec());
+  replica1.reset();
+  replica2.reset();
 
   // Re-load the tablet manager from the filesystem.
   LOG(INFO) << "Shutting down tablet manager";
@@ -164,8 +178,13 @@ TEST_F(TsTabletManagerTest, TestCreateTablet) {
   tablet_manager_ = mini_server_->server()->tablet_manager();
 
   // Ensure that the tablet got re-loaded and re-opened off disk.
-  ASSERT_TRUE(tablet_manager_->LookupTablet(kTabletId, &replica));
-  ASSERT_EQ(kTabletId, replica->tablet()->tablet_id());
+  ASSERT_TRUE(tablet_manager_->LookupTablet(tablet1, &replica1));
+  ASSERT_TRUE(tablet_manager_->LookupTablet(tablet2, &replica2));
+  ASSERT_EQ(tablet1, replica1->tablet()->tablet_id());
+  ASSERT_EQ(tablet2, replica2->tablet()->tablet_id());
+  ASSERT_EQ(boost::none, replica1->tablet()->metadata()->extra_config());
+  ASSERT_NE(boost::none, replica2->tablet()->metadata()->extra_config());
+  ASSERT_EQ(7200, replica2->tablet()->metadata()->extra_config()->history_max_age_sec());
 }
 
 static void AssertMonotonicReportSeqno(int64_t* report_seqno,
@@ -219,7 +238,7 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
   MarkTabletReportAcknowledged(report);
 
   // Create a tablet and do another incremental report - should include the tablet.
-  ASSERT_OK(CreateNewTablet("tablet-1", schema_, nullptr));
+  ASSERT_OK(CreateNewTablet("tablet-1", schema_, boost::none, nullptr));
   int updated_tablets = 0;
   while (updated_tablets != 1) {
     GenerateIncrementalTabletReport(&report);
@@ -247,7 +266,7 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
   MarkTabletReportAcknowledged(report);
 
   // Create a second tablet, and ensure the incremental report shows it.
-  ASSERT_OK(CreateNewTablet("tablet-2", schema_, nullptr));
+  ASSERT_OK(CreateNewTablet("tablet-2", schema_, boost::none, nullptr));
 
   // Wait up to 10 seconds to get a tablet report from tablet-2.
   // TabletReplica does not mark tablets dirty until after it commits the

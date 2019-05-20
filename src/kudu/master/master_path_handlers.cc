@@ -282,6 +282,7 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
 
   Schema schema;
   PartitionSchema partition_schema;
+  map<string, string> extra_configs;
   vector<scoped_refptr<TabletInfo>> tablets;
   {
     TableMetadataLock l(table.get(), LockMode::READ);
@@ -338,6 +339,12 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
     if (!s.ok()) {
       (*output)["error"] =
           Substitute("Unable to decode partition schema: $0", s.ToString());
+      return;
+    }
+    s = ExtraConfigPBToMap(l.data().pb.extra_config(), &extra_configs);
+    if (!s.ok()) {
+      (*output)["error"] =
+          Substitute("Unable to decode extra configuration properties: $0", s.ToString());
       return;
     }
     table->GetAllTablets(&tablets);
@@ -418,6 +425,10 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
   }
 
   (*output)["partition_schema"] = partition_schema.DisplayString(schema, range_partitions);
+
+  string str_extra_configs;
+  JoinMapKeysAndValues(extra_configs, " : ", "\n", &str_extra_configs);
+  (*output)["extra_config"] = str_extra_configs;
 
   EasyJson summary_json = output->Set("tablets_summary", EasyJson::kArray);
   for (const auto& entry : summary_states) {

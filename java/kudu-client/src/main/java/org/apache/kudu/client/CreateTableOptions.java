@@ -18,6 +18,7 @@
 package org.apache.kudu.client;
 
 import java.util.List;
+import java.util.Map;
 
 import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
@@ -187,6 +188,19 @@ public class CreateTableOptions {
    */
   public CreateTableOptions setNumReplicas(int numReplicas) {
     pb.setNumReplicas(numReplicas);
+    return this;
+  }
+
+  /**
+   * Sets the table's extra configuration properties.
+   *
+   * If the value of the kv pair is empty, the property will be ignored.
+   *
+   * @param extraConfig the table's extra configuration properties
+   * @return this instance
+   */
+  public CreateTableOptions setExtraConfigs(Map<String, String> extraConfig) {
+    pb.putAllExtraConfigs(extraConfig);
     return this;
   }
 

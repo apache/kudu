@@ -33,6 +33,7 @@
 #include <glog/logging.h>
 
 #include "kudu/clock/clock.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/consensus/consensus.pb.h"
@@ -405,6 +406,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
                                         const Schema& schema,
                                         const PartitionSchema& partition_schema,
                                         RaftConfigPB config,
+                                        boost::optional<TableExtraConfigPB> extra_config,
                                         scoped_refptr<TabletReplica>* replica) {
   CHECK_EQ(state(), MANAGER_RUNNING);
   CHECK(IsRaftConfigMember(server_->instance_pb().permanent_uuid(), config));
@@ -443,6 +445,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
                               TABLET_DATA_READY,
                               boost::none,
                               /*supports_live_row_count=*/ true,
+                              std::move(extra_config),
                               &meta),
     "Couldn't create tablet metadata");
 

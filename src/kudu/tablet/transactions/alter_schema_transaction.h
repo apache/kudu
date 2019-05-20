@@ -71,6 +71,14 @@ class AlterSchemaTransactionState : public TransactionState {
     return request_->has_new_table_name();
   }
 
+  TableExtraConfigPB new_extra_config() const {
+    return request_->new_extra_config();
+  }
+
+  bool has_new_extra_config() const {
+    return request_->has_new_extra_config();
+  }
+
   uint32_t schema_version() const {
     return request_->schema_version();
   }

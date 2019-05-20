@@ -20,6 +20,7 @@
 #define KUDU_COMMON_WIRE_PROTOCOL_H
 
 #include <cstdint>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -33,6 +34,7 @@ class optional;
 namespace google {
 namespace protobuf {
 template <typename Element> class RepeatedPtrField;
+template <typename Key, typename T> class Map;
 }
 }
 
@@ -58,6 +60,7 @@ class RowwiseRowBlockPB;
 class SchemaPB;
 class ServerEntryPB;
 class ServerRegistrationPB;
+class TableExtraConfigPB;
 
 // Convert the given C++ Status object into the equivalent Protobuf.
 void StatusToPB(const Status& status, AppStatusPB* pb);
@@ -138,6 +141,18 @@ Status ColumnPredicateFromPB(const Schema& schema,
                              Arena* arena,
                              const ColumnPredicatePB& pb,
                              boost::optional<ColumnPredicate>* predicate);
+
+// Convert a extra configuration properties protobuf to map.
+Status ExtraConfigPBToMap(const TableExtraConfigPB& pb,
+                          std::map<std::string, std::string>* configs);
+
+// Convert the table's extra configuration protobuf::map to protobuf.
+Status ExtraConfigPBFromPBMap(const google::protobuf::Map<std::string, std::string>& configs,
+                              TableExtraConfigPB* pb);
+
+// Convert a extra configuration properties protobuf to protobuf::map.
+Status ExtraConfigPBToPBMap(const TableExtraConfigPB& pb,
+                            google::protobuf::Map<std::string, std::string>* configs);
 
 // Encode the given row block into the provided protobuf and data buffers.
 //

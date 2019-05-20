@@ -15,24 +15,28 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/tablet/tablet_metadata.h"
+
 #include <cstdint>
 #include <memory>
 #include <ostream>
 #include <string>
 
+#include <boost/optional/optional.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/common/common.pb.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet-harness.h"
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet.h"
-#include "kudu/tablet/tablet_metadata.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -69,38 +73,75 @@ void TestTabletMetadata::BuildPartialRow(int key, int intval, const char* strval
 
 // Test that loading & storing the superblock results in an equivalent file.
 TEST_F(TestTabletMetadata, TestLoadFromSuperBlock) {
+  TabletMetadata* meta = harness_->tablet()->metadata();
+
   // Write some data to the tablet and flush.
   gscoped_ptr<KuduPartialRow> row;
   BuildPartialRow(0, 0, "foo", &row);
-  writer_->Insert(*row);
+  ASSERT_OK(writer_->Insert(*row));
   ASSERT_OK(harness_->tablet()->Flush());
 
   // Create one more rowset. Write and flush.
   BuildPartialRow(1, 1, "bar", &row);
-  writer_->Insert(*row);
+  ASSERT_OK(writer_->Insert(*row));
   ASSERT_OK(harness_->tablet()->Flush());
+
+  // Dump the superblock to a PB. Save the PB to the side.
+  TabletSuperBlockPB superblock_pb_0;
+  ASSERT_OK(meta->ToSuperBlock(&superblock_pb_0));
+
+  // Alter table's extra configuration properties.
+  TableExtraConfigPB extra_config;
+  extra_config.set_history_max_age_sec(7200);
+  NO_FATALS(AlterSchema(*harness_->tablet()->schema(), boost::make_optional(extra_config)));
 
   // Shut down the tablet.
   harness_->tablet()->Shutdown();
-
-  TabletMetadata* meta = harness_->tablet()->metadata();
 
   // Dump the superblock to a PB. Save the PB to the side.
   TabletSuperBlockPB superblock_pb_1;
   ASSERT_OK(meta->ToSuperBlock(&superblock_pb_1));
 
-  // Load the superblock PB back into the TabletMetadata.
-  ASSERT_OK(meta->ReplaceSuperBlock(superblock_pb_1));
+  // Check for AlterSchema.
+  ASSERT_FALSE(superblock_pb_0.has_extra_config());
+  ASSERT_TRUE(superblock_pb_1.has_extra_config());
+  ASSERT_TRUE(superblock_pb_1.extra_config().has_history_max_age_sec());
+  ASSERT_EQ(7200, superblock_pb_1.extra_config().history_max_age_sec());
 
-  // Dump the tablet metadata to a superblock PB again, and save it.
-  TabletSuperBlockPB superblock_pb_2;
-  ASSERT_OK(meta->ToSuperBlock(&superblock_pb_2));
+  // Test TabletMetadata::ReplaceSuperBlock
+  {
+    // Load the superblock PB back into the TabletMetadata.
+    ASSERT_OK(meta->ReplaceSuperBlock(superblock_pb_1));
 
-  // Compare the 2 dumped superblock PBs.
-  ASSERT_EQ(superblock_pb_1.SerializeAsString(),
-            superblock_pb_2.SerializeAsString())
-    << pb_util::SecureDebugString(superblock_pb_1)
-    << pb_util::SecureDebugString(superblock_pb_2);
+    // Dump the tablet metadata to a superblock PB again, and save it.
+    TabletSuperBlockPB superblock_pb_2;
+    ASSERT_OK(meta->ToSuperBlock(&superblock_pb_2));
+
+    // Compare the 2 dumped superblock PBs.
+    ASSERT_EQ(superblock_pb_1.SerializeAsString(),
+              superblock_pb_2.SerializeAsString())
+                  << pb_util::SecureDebugString(superblock_pb_1)
+                  << pb_util::SecureDebugString(superblock_pb_2);
+  }
+
+  // Test TabletMetadata::Load
+  {
+    // Load the TabletMetadata from disk.
+    scoped_refptr<TabletMetadata> new_meta;
+    ASSERT_OK(TabletMetadata::Load(harness_->fs_manager(),
+                                   harness_->tablet()->tablet_id(),
+                                   &new_meta));
+
+    // Dump the tablet metadata to a superblock PB again, and save it.
+    TabletSuperBlockPB superblock_pb_2;
+    ASSERT_OK(new_meta->ToSuperBlock(&superblock_pb_2));
+
+    // Compare the 2 dumped superblock PBs.
+    ASSERT_EQ(superblock_pb_1.SerializeAsString(),
+              superblock_pb_2.SerializeAsString())
+                  << pb_util::SecureDebugString(superblock_pb_1)
+                  << pb_util::SecureDebugString(superblock_pb_2);
+  }
 
   LOG(INFO) << "Superblocks match:\n"
             << pb_util::SecureDebugString(superblock_pb_1);
@@ -141,7 +182,6 @@ TEST_F(TestTabletMetadata, TestOnDiskSize) {
   ASSERT_OK(meta->ToSuperBlock(&superblock_pb));
   ASSERT_GE(final_size, superblock_pb.ByteSize());
 }
-
 
 } // namespace tablet
 } // namespace kudu
