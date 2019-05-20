@@ -34,10 +34,14 @@
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
 #include "kudu/common/common.pb.h"
+#include "kudu/common/table_util.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
+#include "kudu/hms/hive_metastore_types.h"
+#include "kudu/hms/hms_client.h"
+#include "kudu/hms/mini_hms.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
 #include "kudu/master/master.pb.h"
@@ -47,6 +51,7 @@
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/sentry/mini_sentry.h"
 #include "kudu/tablet/tablet.pb.h"
+#include "kudu/thrift/client.h"
 #include "kudu/tools/tool_action_common.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/atomic.h"
@@ -57,6 +62,7 @@
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/oid_generator.h"
 #include "kudu/util/random.h"
+#include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -78,11 +84,13 @@ using kudu::client::KuduClientBuilder;
 using kudu::client::KuduColumnSchema;
 using kudu::client::KuduSchema;
 using kudu::client::KuduSchemaBuilder;
+using kudu::client::KuduTable;
 using kudu::client::KuduTableAlterer;
 using kudu::client::KuduTableCreator;
 using kudu::cluster::ExternalMaster;
 using kudu::cluster::ExternalMiniCluster;
 using kudu::cluster::ExternalMiniClusterOptions;
+using kudu::hms::HmsClient;
 using kudu::itest::ListTablets;
 using kudu::itest::SentryMode;
 using kudu::master::ListTablesRequestPB;
@@ -205,6 +213,13 @@ class MasterStressTest : public ExternalMiniClusterITestBase,
       itest::SetupAdministratorPrivileges(cluster_->kdc(),
                                           cluster_->sentry()->address());
     }
+    if (std::get<0>(GetParam()) == HmsMode::ENABLE_METASTORE_INTEGRATION) {
+      thrift::ClientOptions hms_opts;
+      hms_opts.enable_kerberos = enable_sentry;
+      hms_opts.service_principal = "hive";
+      hms_client_.reset(new HmsClient(cluster_->hms()->address(), hms_opts));
+      ASSERT_OK(hms_client_->Start());
+    }
   }
 
   void TearDown() override {
@@ -257,6 +272,26 @@ class MasterStressTest : public ExternalMiniClusterITestBase,
         //
         // TODO(KUDU-1358): remove this special case once table creation
         // following leader restart is robust.
+        continue;
+      }
+      // Because of HIVE-21759, it's possible that during a master leadership
+      // change, the rollback from an old leader will race with the create
+      // table from the new leader. In such cases, the create may fail, and the
+      // underlying Kudu table should not be created.
+      if (hms_client_ && s.IsRemoteError() &&
+          MatchPattern(s.ToString(), "*FileNotFoundException*")) {
+        // Check that the table was not created in Kudu.
+        client::sp::shared_ptr<KuduTable> table;
+        s = client_->OpenTable(to_create, &table);
+        CHECK(s.IsNotFound()) << s.ToString();
+
+        // Check that the table was not created in the HMS.
+        Slice db;
+        Slice table_name;
+        CHECK_OK(ParseHiveTableIdentifier(to_create, &db, &table_name));
+        hive::Table hms_table;
+        Status s = hms_client_->GetTable(db.ToString(), table_name.ToString(), &hms_table);
+        CHECK(s.IsNotFound()) << s.ToString();
         continue;
       }
       CHECK_OK(s);
@@ -489,6 +524,9 @@ class MasterStressTest : public ExternalMiniClusterITestBase,
   ObjectIdGenerator oid_generator_;
   unique_ptr<ExternalMiniCluster> cluster_;
   client::sp::shared_ptr<KuduClient> client_;
+
+  // HMS client to used to check on metadata if the HMS integration is enabled.
+  unique_ptr<HmsClient> hms_client_;
 
   // Used to ListTablets in the ReplaceTablet thread.
   // This member is not protected by a lock but it is
