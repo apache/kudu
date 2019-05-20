@@ -4560,6 +4560,47 @@ TEST_F(ToolTest, TestGetFlags) {
   }
 }
 
+// This is a synthetic test to provide coverage for regressions of KUDU-2819.
+TEST_F(ToolTest, TabletServersWithUnusualFlags) {
+  // Run many tablet servers: it helps in detection of races, if any.
+#if defined(THREAD_SANITIZER)
+  // In case of TSAN builds, it takes too long to wait for the start up of too
+  // many tablet servers.
+  static constexpr int kNumTabletServers = 32;
+#else
+  // Run as many tablet servers in external minicluster as possible.
+  static constexpr int kNumTabletServers = 62;
+#endif
+  ExternalMiniClusterOptions opts;
+  opts.num_tablet_servers = kNumTabletServers;
+  NO_FATALS(StartExternalMiniCluster(std::move(opts)));
+
+  // Leave only one tablet server running, shutdown all others.
+  for (size_t i = 1; i < kNumTabletServers; ++i) {
+    cluster_->tablet_server(i)->Shutdown();
+  }
+
+  // The 'cluster ksck' tool should report on unavailable tablet servers.
+  const string& master_addr = cluster_->master()->bound_rpc_addr().ToString();
+  {
+    string err;
+    Status s = RunActionStderrString(
+        Substitute("cluster ksck $0", master_addr), &err);
+    ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
+    ASSERT_STR_CONTAINS(err, "Runtime error: ksck discovered errors");
+  }
+
+  // The 'cluster rebalance' tool should bail and report an error due to
+  // unavailability of tablet servers in the cluster.
+  {
+    string err;
+    Status s = RunActionStderrString(
+        Substitute("cluster rebalance $0", master_addr), &err);
+    ASSERT_TRUE(s.IsRuntimeError()) << s.ToString();
+    ASSERT_STR_CONTAINS(err, "unacceptable health status UNAVAILABLE");
+  }
+}
+
 TEST_F(ToolTest, TestParseStacks) {
   const string kDataPath = JoinPathSegments(GetTestExecutableDirectory(),
                                             "testdata/sample-diagnostics-log.txt");
