@@ -40,6 +40,7 @@
 #include "kudu/common/rowblock.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/timestamp.h"
+#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
@@ -1427,6 +1428,88 @@ TEST_F(TestTabletStringKey, TestSplitKeyRangeWithMinimumValueRowSet) {
     tablet->SplitKeyRange(nullptr, nullptr, col_ids, 3000, &range);
     AssertChunks(result, range);
   }
+}
+
+TYPED_TEST(TestTablet, TestDiffScanUnobservableOperations) {
+  LocalTabletWriter writer(this->tablet().get(), &this->client_schema());
+  vector<LocalTabletWriter::Op> ops;
+
+  // Row 0: INSERT -> DELETE.
+
+  KuduPartialRow insert_row0(&this->client_schema());
+  this->setup_.BuildRow(&insert_row0, 0);
+  ops.emplace_back(RowOperationsPB::INSERT, &insert_row0);
+
+  KuduPartialRow delete_row0(&this->client_schema());
+  this->setup_.BuildRowKey(&delete_row0, 0);
+  ops.emplace_back(RowOperationsPB::DELETE, &delete_row0);
+
+  // Row 1: INSERT -> UPDATE -> DELETE.
+
+  KuduPartialRow insert_row1(&this->client_schema());
+  this->setup_.BuildRow(&insert_row1, 1);
+  ops.emplace_back(RowOperationsPB::INSERT, &insert_row1);
+
+  KuduPartialRow update_row1(&this->client_schema());
+  this->setup_.BuildRowKey(&update_row1, 1);
+  int col_idx = this->client_schema().num_key_columns() == 1 ? 2 : 3;
+  ASSERT_OK(update_row1.SetInt32(col_idx, 10));
+  ops.emplace_back(RowOperationsPB::UPDATE, &update_row1);
+
+  KuduPartialRow delete_row1(&this->client_schema());
+  this->setup_.BuildRowKey(&delete_row1, 1);
+  ops.emplace_back(RowOperationsPB::DELETE, &delete_row1);
+
+  // Row 2: INSERT -> DELETE -> REINSERT -> DELETE.
+
+  KuduPartialRow insert_row2(&this->client_schema());
+  this->setup_.BuildRow(&insert_row2, 2);
+  ops.emplace_back(RowOperationsPB::INSERT, &insert_row2);
+
+  KuduPartialRow first_delete_row2(&this->client_schema());
+  this->setup_.BuildRowKey(&first_delete_row2, 2);
+  ops.emplace_back(RowOperationsPB::DELETE, &first_delete_row2);
+
+  KuduPartialRow reinsert_row2(&this->client_schema());
+  this->setup_.BuildRow(&reinsert_row2, 2);
+  ops.emplace_back(RowOperationsPB::INSERT, &reinsert_row2);
+
+  KuduPartialRow second_delete_row2(&this->client_schema());
+  this->setup_.BuildRowKey(&second_delete_row2, 2);
+  ops.emplace_back(RowOperationsPB::DELETE, &second_delete_row2);
+
+  // Write all operations to the tablet as part of the same batch. This means
+  // that they will all be assigned the same timestamp.
+  ASSERT_OK(writer.WriteBatch(ops));
+
+  // Performs a diff scan, expecting an empty result set because all three rows
+  // are deleted at all times.
+  auto diff_scan_no_rows = [&]() {
+    // Create a projection with an IS_DELETED virtual column.
+    vector<ColumnSchema> col_schemas(this->client_schema().columns());
+    bool read_default = false;
+    col_schemas.emplace_back("is_deleted", IS_DELETED, /*is_nullable=*/ false,
+                             &read_default);
+    Schema projection(col_schemas, this->client_schema().num_key_columns());
+
+    // Do the diff scan.
+    RowIteratorOptions opts;
+    opts.projection = &projection;
+    opts.snap_to_exclude = MvccSnapshot(Timestamp(1));
+    opts.snap_to_include = MvccSnapshot(Timestamp(2));
+    opts.include_deleted_rows = true;
+    unique_ptr<RowwiseIterator> iter;
+    ASSERT_OK(this->tablet()->NewRowIterator(std::move(opts), &iter));
+    ASSERT_OK(iter->Init(nullptr));
+    vector<string> lines;
+    ASSERT_OK(IterateToStringList(iter.get(), &lines));
+
+    // Test the results.
+    SCOPED_TRACE(JoinStrings(lines, "\n"));
+    ASSERT_TRUE(lines.empty());
+  };
+
+  NO_FATALS(diff_scan_no_rows());
 }
 
 } // namespace tablet

@@ -727,7 +727,7 @@ TEST_P(ParameterizedTestMemRowSet, TestScanSnapToExclude) {
   }
 
   {
-    NO_FATALS(DumpAndCheck(snaps[0], snaps[3], deleted_v, true)); // INSERT, UPDATE, DELETE
+    NO_FATALS(DumpAndCheck(snaps[0], snaps[3], boost::none)); // INSERT, UPDATE, DELETE
     NO_FATALS(DumpAndCheck(snaps[1], snaps[4], 2)); // UPDATE, DELETE, REINSERT
   }
 

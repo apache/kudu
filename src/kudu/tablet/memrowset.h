@@ -566,7 +566,8 @@ class MemRowSet::Iterator : public RowwiseIterator {
   Status FetchRows(RowBlock* dst, size_t* fetched);
 
   // Walks the mutations in 'mutation_head', applying relevant ones to 'dst_row'
-  // (performing any allocations out of 'dst_arena').
+  // (performing any allocations out of 'dst_arena'). 'insert_excluded' is true
+  // if the row's original insertion took place outside the iterator's time range.
   //
   // On success, 'apply_status' summarizes the application process.
   enum ApplyStatus {
@@ -580,10 +581,16 @@ class MemRowSet::Iterator : public RowwiseIterator {
     // At least one mutation was applied to the row, and the row's final state
     // was deleted (i.e. the last mutation was a DELETE).
     APPLIED_AND_DELETED,
+
+    // Some mutations were applied, but the sequence of applied mutations was
+    // such that clients should never see this row in their output (i.e. the row
+    // was inserted and deleted in the same timestamp).
+    APPLIED_AND_UNOBSERVABLE,
   };
   Status ApplyMutationsToProjectedRow(const Mutation* mutation_head,
                                       RowBlockRow* dst_row,
                                       Arena* dst_arena,
+                                      bool insert_excluded,
                                       ApplyStatus* apply_status);
 
   const std::shared_ptr<const MemRowSet> memrowset_;

@@ -531,9 +531,10 @@ Status MemRowSet::Iterator::FetchRows(RowBlock* dst, size_t* fetched) {
       Mutation* redo_head = reinterpret_cast<Mutation*>(
           base::subtle::Acquire_Load(reinterpret_cast<AtomicWord*>(&row.header_->redo_head)));
       RETURN_NOT_OK(ApplyMutationsToProjectedRow(
-          redo_head, &dst_row, dst->arena(), &apply_status));
+          redo_head, &dst_row, dst->arena(), insert_excluded, &apply_status));
       unset_in_sel_vector = (apply_status == APPLIED_AND_DELETED && !opts_.include_deleted_rows) ||
-                            (apply_status == NONE_APPLIED && insert_excluded);
+                            (apply_status == NONE_APPLIED && insert_excluded) ||
+                            (apply_status == APPLIED_AND_UNOBSERVABLE);
     } else {
       // The insertion is too new; the entire row should be omitted.
       unset_in_sel_vector = true;
@@ -563,7 +564,7 @@ Status MemRowSet::Iterator::FetchRows(RowBlock* dst, size_t* fetched) {
 
 Status MemRowSet::Iterator::ApplyMutationsToProjectedRow(
     const Mutation* mutation_head, RowBlockRow* dst_row, Arena* dst_arena,
-    ApplyStatus* apply_status) {
+    bool insert_excluded, ApplyStatus* apply_status) {
   ApplyStatus local_apply_status = NONE_APPLIED;
 
   // Fast short-circuit the likely case of a row which was inserted and never
@@ -573,7 +574,23 @@ Status MemRowSet::Iterator::ApplyMutationsToProjectedRow(
     return Status::OK();
   }
 
-  bool is_deleted = false;
+  // In order to find unobservable rows, we need to track row liveness at the
+  // start and end of the time range. If a row was dead at both ends, its
+  // lifespan must have been a subset of the time range and it should be
+  // excluded from the results.
+  //
+  // Finding 'is_deleted_end' is relatively straight-forward: we use each
+  // relevant mutation to drive a liveness state machine, and after we're done
+  // applying, 'is_deleted_end' is just the final value of that state machine.
+  //
+  // Finding 'is_deleted_start' is trickier. If the insertion was inside the
+  // time range, we know the value is true because the row was dead prior to the
+  // insertion and the insertion happened after the start of the time range.
+  // However, if the insertion was excluded from the time range, the value is
+  // going to be whatever the value of the liveness state machine was at the
+  // start of the time range.
+  bool is_deleted_start = !insert_excluded;
+  bool is_deleted_end = false;
 
   for (const Mutation *mut = mutation_head;
        mut != nullptr;
@@ -591,6 +608,12 @@ Status MemRowSet::Iterator::ApplyMutationsToProjectedRow(
     // count towards the overall "application status".
     if (!opts_.snap_to_exclude ||
         !opts_.snap_to_exclude->IsCommitted(mut->timestamp_)) {
+
+      // This is the first mutation within the time range, so we may use it to
+      // initialize 'is_deleted_start'.
+      if (local_apply_status == NONE_APPLIED && insert_excluded) {
+        is_deleted_start = is_deleted_end;
+      }
       local_apply_status = APPLIED_AND_PRESENT;
     }
 
@@ -600,11 +623,11 @@ Status MemRowSet::Iterator::ApplyMutationsToProjectedRow(
     RowChangeListDecoder decoder(mut->changelist());
     RETURN_NOT_OK(decoder.Init());
     if (decoder.is_delete()) {
-      decoder.TwiddleDeleteStatus(&is_deleted);
+      decoder.TwiddleDeleteStatus(&is_deleted_end);
     } else {
       DCHECK(decoder.is_update() || decoder.is_reinsert());
       if (decoder.is_reinsert()) {
-        decoder.TwiddleDeleteStatus(&is_deleted);
+        decoder.TwiddleDeleteStatus(&is_deleted_end);
       }
 
       // TODO(todd): this is slow, since it makes multiple passes through the rowchangelist.
@@ -620,9 +643,17 @@ Status MemRowSet::Iterator::ApplyMutationsToProjectedRow(
     }
   }
 
-  // If the most recent mutation seen for the row was a DELETE, then set the selection
-  // vector bit to 0, so it doesn't show up in the results.
-  if (is_deleted && local_apply_status == APPLIED_AND_PRESENT) {
+  if (opts_.snap_to_exclude && is_deleted_start && is_deleted_end) {
+    // The row's lifespan was a subset of the time range. It can't be observed,
+    // so it should definitely not show up in the results.
+    //
+    // Note: we condition on 'snap_to_exclude' because although insert_excluded
+    // is false on some closed time range scans, it's also false in all open
+    // time range scans, and we don't want this heuristic to fire in the latter case.
+    local_apply_status = APPLIED_AND_UNOBSERVABLE;
+  } else if (is_deleted_end && local_apply_status == APPLIED_AND_PRESENT) {
+    // The row was selected and deleted. It may be omitted from the results,
+    // depending on whether the results should include deleted rows or not.
     local_apply_status = APPLIED_AND_DELETED;
   }
 
