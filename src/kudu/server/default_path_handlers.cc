@@ -323,41 +323,43 @@ void AddDefaultPathHandlers(Webserver* webserver) {
   AddPprofPathHandlers(webserver);
 }
 
+static bool ParseBool(const Webserver::ArgumentMap& args, const string& key) {
+  string arg = FindWithDefault(args, key, "false");
+  return ParseLeadingBoolValue(arg.c_str(), false);
+}
+
+static vector<string> ParseArray(const Webserver::ArgumentMap& args, const string& key) {
+  vector<string> value;
+  const string* arg = FindOrNull(args, key);
+  if (arg != nullptr) {
+    SplitStringUsing(*arg, ",", &value);
+  }
+  return value;
+}
 
 static void WriteMetricsAsJson(const MetricRegistry* const metrics,
                                const Webserver::WebRequest& req,
                                Webserver::PrerenderedWebResponse* resp) {
-  ostringstream* output = resp->output;
-  const string* requested_metrics_param = FindOrNull(req.parsed_args, "metrics");
-  vector<string> requested_metrics;
   MetricJsonOptions opts;
+  opts.include_raw_histograms = ParseBool(req.parsed_args, "include_raw_histograms");
+  opts.include_schema_info = ParseBool(req.parsed_args, "include_schema");
+  opts.entity_types = ParseArray(req.parsed_args, "types");
+  opts.entity_ids =  ParseArray(req.parsed_args, "ids");
+  opts.entity_attrs = ParseArray(req.parsed_args, "attributes");
+  opts.entity_metrics = ParseArray(req.parsed_args, "metrics");
 
-  {
-    string arg = FindWithDefault(req.parsed_args, "include_raw_histograms", "false");
-    opts.include_raw_histograms = ParseLeadingBoolValue(arg.c_str(), false);
-  }
-  {
-    string arg = FindWithDefault(req.parsed_args, "include_schema", "false");
-    opts.include_schema_info = ParseLeadingBoolValue(arg.c_str(), false);
-  }
-  JsonWriter::Mode json_mode;
-  {
-    string arg = FindWithDefault(req.parsed_args, "compact", "false");
-    json_mode = ParseLeadingBoolValue(arg.c_str(), false) ?
+  JsonWriter::Mode json_mode = ParseBool(req.parsed_args, "compact") ?
       JsonWriter::COMPACT : JsonWriter::PRETTY;
-  }
 
-  JsonWriter writer(output, json_mode);
-
-  if (requested_metrics_param != nullptr) {
-    SplitStringUsing(*requested_metrics_param, ",", &requested_metrics);
+  // The number of entity_attrs should always be even because
+  // each pair represents a key and a value.
+  if (opts.entity_attrs.size() % 2 != 0) {
+    resp->status_code = HttpStatusCode::BadRequest;
+    WARN_NOT_OK(Status::InvalidArgument(""), "The parameter of 'attributes' is wrong");
   } else {
-    // Default to including all metrics.
-    requested_metrics.emplace_back("*");
+    JsonWriter writer(resp->output, json_mode);
+    WARN_NOT_OK(metrics->WriteAsJson(&writer, opts), "Couldn't write JSON metrics over HTTP");
   }
-
-  WARN_NOT_OK(metrics->WriteAsJson(&writer, requested_metrics, opts),
-              "Couldn't write JSON metrics over HTTP");
 }
 
 void RegisterMetricsJsonHandler(Webserver* webserver, const MetricRegistry* const metrics) {

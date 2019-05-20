@@ -15,9 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/util/metrics.h"
+
 #include <cstdint>
 #include <ostream>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -34,8 +37,9 @@
 #include "kudu/util/hdr_histogram.h"
 #include "kudu/util/jsonreader.h"
 #include "kudu/util/jsonwriter.h"
-#include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/oid_generator.h"
+#include "kudu/util/random.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -184,7 +188,7 @@ TEST_F(MetricsTest, JsonPrintTest) {
   // Generate the JSON.
   std::ostringstream out;
   JsonWriter writer(&out, JsonWriter::PRETTY);
-  ASSERT_OK(entity_->WriteAsJson(&writer, { "*" }, MetricJsonOptions()));
+  ASSERT_OK(entity_->WriteAsJson(&writer, MetricJsonOptions()));
 
   // Now parse it back out.
   JsonReader reader(out.str());
@@ -207,19 +211,31 @@ TEST_F(MetricsTest, JsonPrintTest) {
   ASSERT_EQ("attr_val", attr_value);
 
   // Verify that metric filtering matches on substrings.
-  out.str("");
-  ASSERT_OK(entity_->WriteAsJson(&writer, { "test count" }, MetricJsonOptions()));
-  ASSERT_STR_CONTAINS(METRIC_test_counter.name(), out.str());
+  {
+    out.str("");
+    MetricJsonOptions opts;
+    opts.entity_metrics.emplace_back("test count");
+    ASSERT_OK(entity_->WriteAsJson(&writer, opts));
+    ASSERT_STR_CONTAINS(METRIC_test_counter.name(), out.str());
+  }
 
   // Verify that, if we filter for a metric that isn't in this entity, we get no result.
-  out.str("");
-  ASSERT_OK(entity_->WriteAsJson(&writer, { "not_a_matching_metric" }, MetricJsonOptions()));
-  ASSERT_EQ("", out.str());
+  {
+    out.str("");
+    MetricJsonOptions opts;
+    opts.entity_metrics.emplace_back("not_a_matching_metric");
+    ASSERT_OK(entity_->WriteAsJson(&writer, opts));
+    ASSERT_EQ("", out.str());
+  }
 
   // Verify that filtering is case-insensitive.
-  out.str("");
-  ASSERT_OK(entity_->WriteAsJson(&writer, { "mY teST coUNteR" }, MetricJsonOptions()));
-  ASSERT_STR_CONTAINS(METRIC_test_counter.name(), out.str());
+  {
+    out.str("");
+    MetricJsonOptions opts;
+    opts.entity_metrics.emplace_back("mY teST coUNteR");
+    ASSERT_OK(entity_->WriteAsJson(&writer, opts));
+    ASSERT_STR_CONTAINS(METRIC_test_counter.name(), out.str());
+  }
 }
 
 // Test that metrics are retired when they are no longer referenced.
@@ -333,7 +349,7 @@ TEST_F(MetricsTest, TestDumpOnlyChanged) {
     opts.only_modified_in_or_after_epoch = since_epoch;
     std::ostringstream out;
     JsonWriter writer(&out, JsonWriter::COMPACT);
-    CHECK_OK(entity_->WriteAsJson(&writer, { "*" }, opts));
+    CHECK_OK(entity_->WriteAsJson(&writer, opts));
     return out.str();
   };
 
@@ -375,7 +391,7 @@ TEST_F(MetricsTest, TestDontDumpUntouched) {
   opts.include_untouched_metrics = false;
   std::ostringstream out;
   JsonWriter writer(&out, JsonWriter::COMPACT);
-  CHECK_OK(entity_->WriteAsJson(&writer, { "*" }, opts));
+  CHECK_OK(entity_->WriteAsJson(&writer, opts));
   // Untouched counters and histograms should not be included.
   ASSERT_STR_NOT_CONTAINS(out.str(), "test_counter");
   ASSERT_STR_NOT_CONTAINS(out.str(), "test_hist");
@@ -383,6 +399,146 @@ TEST_F(MetricsTest, TestDontDumpUntouched) {
   // track whether they have been touched.
   ASSERT_STR_CONTAINS(out.str(), "test_func_gauge");
   ASSERT_STR_CONTAINS(out.str(), "test_gauge");
+}
+
+TEST_F(MetricsTest, TestFilter) {
+  const int32_t kNum = 4;
+  vector<string> id_uuids;
+  const string attr1 = "attr1";
+  const string attr2 = "attr2";
+  vector<string> attr1_uuids;
+  vector<string> attr2_uuids;
+
+  // 1.Generate metrics.
+  ObjectIdGenerator oid;
+  for (int i = 0; i < kNum; ++i) {
+    string id_uuid = oid.Next();
+    string attr1_uuid = oid.Next();
+    string attr2_uuid = oid.Next();
+
+    MetricEntity::AttributeMap attrs;
+    attrs[attr1] = attr1_uuid;
+    attrs[attr2] = attr2_uuid;
+    scoped_refptr<MetricEntity> entity =
+        METRIC_ENTITY_test_entity.Instantiate(&registry_, id_uuid, attrs);
+    scoped_refptr<Counter> metric1 = METRIC_test_counter.Instantiate(entity);
+    scoped_refptr<AtomicGauge<uint64_t>> metric2 = METRIC_test_gauge.Instantiate(entity, 0);
+
+    id_uuids.emplace_back(id_uuid);
+    attr1_uuids.emplace_back(attr1_uuid);
+    attr2_uuids.emplace_back(attr2_uuid);
+  }
+
+  // 2.Check the filter.
+  Random rand(SeedRandom());
+  const string not_exist_string = "not_exist_string";
+
+  // 2.1 Filter the 'type'.
+  {
+    {
+      std::ostringstream out;
+      MetricJsonOptions opts;
+      opts.entity_types = { not_exist_string };
+      JsonWriter w(&out, JsonWriter::PRETTY);
+      ASSERT_OK(registry_.WriteAsJson(&w, opts));
+      ASSERT_EQ("[]", out.str());
+    }
+    {
+      const string entity_type = "test_entity";
+      std::ostringstream out;
+      MetricJsonOptions opts;
+      opts.entity_types = { entity_type };
+      JsonWriter w(&out, JsonWriter::PRETTY);
+      ASSERT_OK(registry_.WriteAsJson(&w, opts));
+      rapidjson::Document d;
+      d.Parse<0>(out.str().c_str());
+      ASSERT_EQ(kNum + 1, d.Size());
+      ASSERT_EQ(entity_type, d[rand.Next() % kNum]["type"].GetString());
+    }
+  }
+  // 2.2 Filter the 'id'.
+  {
+    {
+      std::ostringstream out;
+      MetricJsonOptions opts;
+      opts.entity_ids = { not_exist_string };
+      JsonWriter w(&out, JsonWriter::PRETTY);
+      ASSERT_OK(registry_.WriteAsJson(&w, opts));
+      ASSERT_EQ("[]", out.str());
+    }
+    {
+      const string& entity_id = id_uuids[rand.Next() % kNum];
+      std::ostringstream out;
+      MetricJsonOptions opts;
+      opts.entity_ids = { entity_id };
+      JsonWriter w(&out, JsonWriter::PRETTY);
+      ASSERT_OK(registry_.WriteAsJson(&w, opts));
+      rapidjson::Document d;
+      d.Parse<0>(out.str().c_str());
+      ASSERT_EQ(1, d.Size());
+      ASSERT_EQ(entity_id, d[0]["id"].GetString());
+    }
+  }
+  // 2.3 Filter the 'attributes'.
+  {
+    {
+      std::ostringstream out;
+      MetricJsonOptions opts;
+      opts.entity_attrs = { attr1, not_exist_string };
+      JsonWriter w(&out, JsonWriter::PRETTY);
+      ASSERT_OK(registry_.WriteAsJson(&w, opts));
+      ASSERT_EQ("[]", out.str());
+    }
+    {
+      int i = rand.Next() % kNum;
+      const string& attr1_uuid = attr1_uuids[i];
+      const string& attr2_uuid = attr2_uuids[i];
+      std::ostringstream out;
+      MetricJsonOptions opts;
+      opts.entity_attrs = { attr1, attr1_uuid };
+      JsonWriter w(&out, JsonWriter::PRETTY);
+      ASSERT_OK(registry_.WriteAsJson(&w, opts));
+      rapidjson::Document d;
+      d.Parse<0>(out.str().c_str());
+      ASSERT_EQ(1, d.Size());
+      ASSERT_EQ(attr1_uuid, d[0]["attributes"]["attr1"].GetString());
+      ASSERT_EQ(attr2_uuid, d[0]["attributes"]["attr2"].GetString());
+    }
+  }
+  // 2.4 Filter the 'metrics'.
+  {
+    {
+      std::ostringstream out;
+      MetricJsonOptions opts;
+      opts.entity_metrics = { not_exist_string };
+      JsonWriter w(&out, JsonWriter::PRETTY);
+      ASSERT_OK(registry_.WriteAsJson(&w, opts));
+      ASSERT_EQ("[]", out.str());
+    }
+    {
+      const string entity_metric1 = "test_counter";
+      const string entity_metric2 = "test_gauge";
+      std::ostringstream out;
+      MetricJsonOptions opts;
+      opts.entity_metrics = { entity_metric1 };
+      JsonWriter w(&out, JsonWriter::PRETTY);
+      ASSERT_OK(registry_.WriteAsJson(&w, opts));
+      ASSERT_STR_CONTAINS(out.str(), entity_metric1);
+      ASSERT_STR_NOT_CONTAINS(out.str(), entity_metric2);
+      rapidjson::Document d;
+      d.Parse<0>(out.str().c_str());
+      ASSERT_EQ(kNum, d.Size());
+    }
+  }
+  // 2.5 Default filter condition.
+  {
+    std::ostringstream out;
+    JsonWriter w(&out, JsonWriter::PRETTY);
+    ASSERT_OK(registry_.WriteAsJson(&w, MetricJsonOptions()));
+    rapidjson::Document d;
+    d.Parse<0>(out.str().c_str());
+    ASSERT_EQ(kNum + 1, d.Size());
+  }
 }
 
 } // namespace kudu

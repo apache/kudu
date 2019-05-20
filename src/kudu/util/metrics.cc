@@ -184,18 +184,15 @@ scoped_refptr<Metric> MetricEntity::FindOrNull(const MetricPrototype& prototype)
 
 namespace {
 
-bool MatchMetricInList(const string& metric_name,
-                       const vector<string>& match_params) {
-  string metric_name_uc;
-  ToUpperCase(metric_name, &metric_name_uc);
+bool MatchNameInList(const string& name, const vector<string>& names) {
+  string name_uc;
+  ToUpperCase(name, &name_uc);
 
-  for (const string& param : match_params) {
-    // Handle wildcard.
-    if (param == "*") return true;
+  for (const string& e : names) {
     // The parameter is a case-insensitive substring match of the metric name.
-    string param_uc;
-    ToUpperCase(param, &param_uc);
-    if (metric_name_uc.find(param_uc) != std::string::npos) {
+    string e_uc;
+    ToUpperCase(e, &e_uc);
+    if (name_uc.find(e_uc) != string::npos) {
       return true;
     }
   }
@@ -204,11 +201,15 @@ bool MatchMetricInList(const string& metric_name,
 
 } // anonymous namespace
 
-
-Status MetricEntity::WriteAsJson(JsonWriter* writer,
-                                 const vector<string>& requested_metrics,
-                                 const MetricJsonOptions& opts) const {
-  bool select_all = MatchMetricInList(id(), requested_metrics);
+Status MetricEntity::WriteAsJson(JsonWriter* writer, const MetricJsonOptions& opts) const {
+  // Filter the 'type'.
+  if (!opts.entity_types.empty() && !MatchNameInList(prototype_->name(), opts.entity_types)) {
+    return Status::OK();
+  }
+  // Filter the 'id'.
+  if (!opts.entity_ids.empty() && !MatchNameInList(id_, opts.entity_ids)) {
+    return Status::OK();
+  }
 
   MetricMap metrics;
   AttributeMap attrs;
@@ -219,20 +220,38 @@ Status MetricEntity::WriteAsJson(JsonWriter* writer,
     metrics = metric_map_;
   }
 
-  if (!select_all) {
+  // Filter the 'attributes'.
+  if (!opts.entity_attrs.empty()) {
+    bool match_attrs = false;
+    DCHECK(opts.entity_attrs.size() % 2 == 0);
+    for (int i = 0; i < opts.entity_attrs.size(); i += 2) {
+      // The attr_key can't be found or the attr_val can't be matched.
+      AttributeMap::const_iterator it = attrs.find(opts.entity_attrs[i]);
+      if (it == attrs.end() || !MatchNameInList(it->second, { opts.entity_attrs[i+1] })) {
+        continue;
+      }
+      match_attrs = true;
+      break;
+    }
+    // None of them match.
+    if (!match_attrs) {
+      return Status::OK();
+    }
+  }
+
+  // Filter the 'metrics'.
+  if (!opts.entity_metrics.empty()) {
     for (auto metric = metrics.begin(); metric != metrics.end();) {
-      if (!MatchMetricInList(metric->first->name(), requested_metrics)) {
+      if (!MatchNameInList(metric->first->name(), opts.entity_metrics)) {
         metric = metrics.erase(metric);
       } else {
         ++metric;
       }
     }
-  }
-
-  // If we had a filter, and we didn't either match this entity or any metrics inside
-  // it, don't print the entity at all.
-  if (!requested_metrics.empty() && !select_all && metrics.empty()) {
-    return Status::OK();
+    // None of them match.
+    if (metrics.empty()) {
+      return Status::OK();
+    }
   }
 
   writer->StartObject();
@@ -262,7 +281,7 @@ Status MetricEntity::WriteAsJson(JsonWriter* writer,
         continue;
       }
       WARN_NOT_OK(m->WriteAsJson(writer, opts),
-                  strings::Substitute("Failed to write $0 as JSON", val.first->name()));
+        strings::Substitute("Failed to write $0 as JSON", val.first->name()));
     }
   }
   writer->EndArray();
@@ -342,9 +361,7 @@ MetricRegistry::MetricRegistry() {
 MetricRegistry::~MetricRegistry() {
 }
 
-Status MetricRegistry::WriteAsJson(JsonWriter* writer,
-                                   const vector<string>& requested_metrics,
-                                   const MetricJsonOptions& opts) const {
+Status MetricRegistry::WriteAsJson(JsonWriter* writer, const MetricJsonOptions& opts) const {
   EntityMap entities;
   {
     std::lock_guard<simple_spinlock> l(lock_);
@@ -353,7 +370,7 @@ Status MetricRegistry::WriteAsJson(JsonWriter* writer,
 
   writer->StartArray();
   for (const auto& e : entities) {
-    WARN_NOT_OK(e.second->WriteAsJson(writer, requested_metrics, opts),
+    WARN_NOT_OK(e.second->WriteAsJson(writer, opts),
                 Substitute("Failed to write entity $0 as JSON", e.second->id()));
   }
   writer->EndArray();

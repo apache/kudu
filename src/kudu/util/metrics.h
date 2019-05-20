@@ -409,7 +409,10 @@ class MetricType {
 struct MetricJsonOptions {
   MetricJsonOptions() :
     include_raw_histograms(false),
-    include_schema_info(false) {
+    include_schema_info(false),
+    only_modified_in_or_after_epoch(0),
+    include_untouched_metrics(true),
+    include_entity_attributes(true) {
   }
 
   // Include the raw histogram values and counts in the JSON output.
@@ -428,16 +431,32 @@ struct MetricJsonOptions {
   // Metric::current_epoch() and incremented using Metric::IncrementEpoch().
   //
   // Note that this is an inclusive bound.
-  int64_t only_modified_in_or_after_epoch = 0;
+  int64_t only_modified_in_or_after_epoch;
 
   // Whether to include metrics which have had no data recorded and thus have
   // a value of 0. Note that some metrics with the value 0 may still be included:
   // notably, gauges may be non-zero and then reset to zero, so seeing that
   // they are currently zero does not indicate they are "untouched".
-  bool include_untouched_metrics = true;
+  bool include_untouched_metrics;
 
   // Whether to include the attributes of each entity.
-  bool include_entity_attributes = true;
+  bool include_entity_attributes;
+
+  // A set of substrings to filter entity against, where empty matches all.
+  //
+  // entity type.
+  std::vector<std::string> entity_types;
+  // entity id.
+  std::vector<std::string> entity_ids;
+  // entity attributes.
+  //
+  // Note that the use of attribute filters is a little bit different. The
+  // number of entries should always be even because each pair represents a
+  // key and a value. For example: attributes=k1,v1,k1,v2,k2,v3, that means
+  // the attribute object is matched when one of these filters is satisfied.
+  std::vector<std::string> entity_attrs;
+  // entity metrics.
+  std::vector<std::string> entity_metrics;
 };
 
 class MetricEntityPrototype {
@@ -490,9 +509,7 @@ class MetricEntity : public RefCountedThreadSafe<MetricEntity> {
   const std::string& id() const { return id_; }
 
   // See MetricRegistry::WriteAsJson()
-  Status WriteAsJson(JsonWriter* writer,
-                     const std::vector<std::string>& requested_metrics,
-                     const MetricJsonOptions& opts) const;
+  Status WriteAsJson(JsonWriter* writer, const MetricJsonOptions& opts) const;
 
   const MetricMap& UnsafeMetricsMapForTests() const { return metric_map_; }
 
@@ -647,17 +664,9 @@ class MetricRegistry {
 
   // Writes metrics in this registry to 'writer'.
   //
-  // 'requested_metrics' is a set of substrings to match metric names against,
-  // where '*' matches all metrics.
-  //
-  // The string matching can either match an entity ID or a metric name.
-  // If it matches an entity ID, then all metrics for that entity will be printed.
-  //
   // See the MetricJsonOptions struct definition above for options changing the
   // output of this function.
-  Status WriteAsJson(JsonWriter* writer,
-                     const std::vector<std::string>& requested_metrics,
-                     const MetricJsonOptions& opts) const;
+  Status WriteAsJson(JsonWriter* writer, const MetricJsonOptions& opts) const;
 
   // For each registered entity, retires orphaned metrics. If an entity has no more
   // metrics and there are no external references, entities are removed as well.

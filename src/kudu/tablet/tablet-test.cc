@@ -1107,14 +1107,14 @@ TYPED_TEST(TestTablet, TestMetricsInit) {
   {
     std::ostringstream out;
     JsonWriter writer(&out, JsonWriter::PRETTY);
-    ASSERT_OK(registry->WriteAsJson(&writer, { "*" }, MetricJsonOptions()));
+    ASSERT_OK(registry->WriteAsJson(&writer, MetricJsonOptions()));
   }
   // Open tablet, should still work
   this->harness()->Open();
   {
     std::ostringstream out;
     JsonWriter writer(&out, JsonWriter::PRETTY);
-    ASSERT_OK(registry->WriteAsJson(&writer, { "*" }, MetricJsonOptions()));
+    ASSERT_OK(registry->WriteAsJson(&writer, MetricJsonOptions()));
   }
 }
 
