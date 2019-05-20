@@ -15,39 +15,24 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# - Find Required PMEM libraries (libvmem, libpmem, libpmemobj)
+# - Find required numa libraries
 # This module defines
-#  PMEM_INCLUDE_DIR, directory containing headers
-#  XXX_STATIC_LIBS, path to *.a
-#  XXX_SHARED_LIBS, path to *.so shared library
-#  PMEM_FOUND, whether PMEM libraries have been found
+#  NUMA_INCLUDE_DIR, directory containing headers
+#  NUMA_STATIC_LIB, path to *.a
+#  NUMA_SHARED_LIB, path to *.so shared library
 
-find_path(PMEM_INCLUDE_DIR libpmem.h
+find_path(NUMA_INCLUDE_DIR numa.h
+  NO_CMAKE_SYSTEM_PATH
+NO_SYSTEM_ENVIRONMENT_PATH)
+find_library(NUMA_SHARED_LIB numa
   NO_CMAKE_SYSTEM_PATH
   NO_SYSTEM_ENVIRONMENT_PATH)
-find_library(VMEM_SHARED_LIB vmem
-  NO_CMAKE_SYSTEM_PATH
-  NO_SYSTEM_ENVIRONMENT_PATH)
-find_library(VMEM_STATIC_LIB libvmem.a
-  NO_CMAKE_SYSTEM_PATH
-  NO_SYSTEM_ENVIRONMENT_PATH)
-find_library(PMEM_SHARED_LIB pmem
-  NO_CMAKE_SYSTEM_PATH
-  NO_SYSTEM_ENVIRONMENT_PATH)
-find_library(PMEM_STATIC_LIB libpmem.a
-  NO_CMAKE_SYSTEM_PATH
-  NO_SYSTEM_ENVIRONMENT_PATH)
-find_library(PMEMOBJ_SHARED_LIB pmemobj
-  NO_CMAKE_SYSTEM_PATH
-  NO_SYSTEM_ENVIRONMENT_PATH)
-find_library(PMEMOBJ_STATIC_LIB libpmemobj.a
+find_library(NUMA_STATIC_LIB libnuma.a
   NO_CMAKE_SYSTEM_PATH
   NO_SYSTEM_ENVIRONMENT_PATH)
 
 include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args(PMEM REQUIRED_VARS
-  VMEM_SHARED_LIB VMEM_STATIC_LIB
-  PMEM_SHARED_LIB PMEM_STATIC_LIB
-  PMEMOBJ_SHARED_LIB PMEMOBJ_STATIC_LIB
-  PMEM_INCLUDE_DIR
+find_package_handle_standard_args(NUMA REQUIRED_VARS
+  NUMA_SHARED_LIB NUMA_STATIC_LIB
+  NUMA_INCLUDE_DIR
 )

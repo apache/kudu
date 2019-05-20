@@ -357,7 +357,7 @@ template<>
 Cache* NewCache<Cache::EvictionPolicy::LRU,
                 Cache::MemoryType::DRAM>(size_t capacity, const std::string& id);
 
-#if defined(HAVE_LIB_VMEM)
+#if defined(HAVE_LIB_MEMKIND)
 // Create a new LRU cache with a fixed size capacity. This implementation
 // of Cache uses the least-recently-used eviction policy and stored in NVM.
 template<>

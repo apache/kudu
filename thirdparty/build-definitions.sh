@@ -747,36 +747,70 @@ build_trace_viewer() {
   cp -a $TRACE_VIEWER_SOURCE/tracing.* $TP_DIR/../www/
 }
 
-build_nvml() {
-  NVML_BDIR=$TP_BUILD_DIR/$NVML_NAME$MODE_SUFFIX
-  mkdir -p $NVML_BDIR
-  pushd $NVML_BDIR
+build_numactl() {
+  local BUILD_TYPE=$1
+
+  NUMACTL_BDIR=$TP_BUILD_DIR/$NUMACTL_NAME$MODE_SUFFIX
+  mkdir -p $NUMACTL_BDIR
+  pushd $NUMACTL_BDIR
+
+  # Setting -fsanitize=thread only in CFLAGS does not work for compiling numactl,
+  # We also need to set it in LDFLAGS.
+  case $BUILD_TYPE in
+    "normal")
+      ;;
+    "tsan")
+      SANITIZER_THREAD_OPTION="-fsanitize=thread -L$PREFIX/lib -Wl,-rpath=$PREFIX/lib"
+      ;;
+    *)
+      echo "Unknown build type: $BUILD_TYPE"
+      exit 1
+      ;;
+  esac
+
+  CFLAGS="$EXTRA_CFLAGS" \
+    LDFLAGS="$EXTRA_LDFLAGS $SANITIZER_THREAD_OPTION" \
+    CPPFLAGS="$EXTRA_CPPFLAGS" \
+    LIBS="$EXTRA_LIBS" \
+  $NUMACTL_SOURCE/configure --prefix=$PREFIX
+
+  make -j$PARALLEL $EXTRA_MAKEFLAGS install
+  popd
+}
+
+build_memkind() {
+  MEMKIND_BDIR=$TP_BUILD_DIR/$MEMKIND_NAME$MODE_SUFFIX
+  mkdir -p $MEMKIND_BDIR
+  pushd $MEMKIND_BDIR
 
   # It doesn't appear possible to isolate source and build directories, so just
   # prepopulate the latter using the former.
-  rsync -av --delete $NVML_SOURCE/ .
-  cd src/
+  rsync -av --delete $MEMKIND_SOURCE/ .
 
-  # The embedded jemalloc build doesn't pick up the EXTRA_CFLAGS environment
-  # variable, so we have to stick our flags into this config file.
-  if ! grep -q -e "$EXTRA_CFLAGS" jemalloc/jemalloc.cfg ; then
-    perl -p -i -e "s,(EXTRA_CFLAGS=\"),\$1$EXTRA_CFLAGS ," jemalloc/jemalloc.cfg
-  fi
-  for LIB in libvmem libpmem libpmemobj; do
-    # Disable -Werror; it prevents jemalloc from building via clang.
-    #
-    # Add PREFIX/lib to the rpath; libpmemobj depends on libpmem at runtime.
-    EXTRA_CFLAGS="$EXTRA_CFLAGS -Wno-error" \
-      EXTRA_LDFLAGS="$EXTRA_LDFLAGS -Wl,-rpath,$PREFIX/lib" \
-      make -j$PARALLEL $EXTRA_MAKEFLAGS DEBUG=0 $LIB
+  # We separate the build steps from build.sh in memkind source code
+  # since we need to avoid building the tests code with thread sanitizer
+  export JE_PREFIX=jemk_
 
-    # NVML doesn't allow configuring PREFIX -- it always installs into
-    # DESTDIR/usr/lib. Additionally, the 'install' target builds all of
-    # the NVML libraries, even though we only need the three libraries above.
-    # So, we manually install the built artifacts.
-    cp -a $NVML_BDIR/src/include/$LIB.h $PREFIX/include
-    cp -a $NVML_BDIR/src/nondebug/$LIB.{so*,a} $PREFIX/lib
-  done
+  # jemalloc is built in memkind and need to be compiled firstly. Here we disable c++
+  # integration to prevent new and delete operator implementations from exported in kudu client
+  $MEMKIND_BDIR/build_jemalloc.sh --disable-cxx --prefix=$PREFIX
+
+  $MEMKIND_BDIR/autogen.sh
+  CFLAGS="$EXTRA_CFLAGS -O2" \
+    CPPFLAGS="$EXTRA_CPPFLAGS -I$PREFIX/include" \
+    LDFLAGS="$EXTRA_LDFLAGS -L$PREFIX/lib -Wl,-rpath=$PREFIX/lib" \
+    LIBS="$EXTRA_LIBS" \
+    $MEMKIND_BDIR/configure --prefix=$PREFIX
+
+  # Building unit tests and memkind examples in memkind with clang will prevent some
+  # header files from being included which will lead to failures. So we do a minimal
+  # installation here.
+  make -j$PARALLEL $EXTRA_MAKEFLAGS static_lib install-exec install-data
+  # install jemalloc header files
+  cd $MEMKIND_BDIR/jemalloc/obj && make -j$PARALLEL $EXTRA_MAKEFLAGS install_include
+
+  unset JE_PREFIX
+
   popd
 }
 

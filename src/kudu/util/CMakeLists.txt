@@ -239,7 +239,7 @@ set(UTIL_SRCS
 # optimized regardless of the default optimization options.
 set_source_files_properties(memory/overwrite.cc PROPERTIES COMPILE_FLAGS "-O3")
 
-if(HAVE_LIB_VMEM)
+if(HAVE_LIB_MEMKIND)
   set(UTIL_SRCS
     ${UTIL_SRCS}
     nvm_cache.cc)
@@ -269,10 +269,10 @@ if(NOT APPLE)
     rt)
 endif()
 
-if(HAVE_LIB_VMEM)
+if(HAVE_LIB_MEMKIND)
   set(UTIL_LIBS
     ${UTIL_LIBS}
-    vmem)
+    memkind)
 endif()
 
 # We use MallocExtension, but not in the exported version of the library.
@@ -340,9 +340,9 @@ target_link_libraries(kudu_test_util
   gmock
   kudu_util)
 
-if(HAVE_LIB_VMEM)
+if(HAVE_LIB_MEMKIND)
   target_link_libraries(kudu_test_util
-    vmem)
+    memkind)
 endif()
 
 #######################################

@@ -1139,24 +1139,28 @@ if (NOT "${KUDU_USE_ASAN}" AND
   set(KUDU_TCMALLOC_AVAILABLE 1)
 endif()
 
-# Required pmem libraries
+# Required memkind libraries
 if (NOT APPLE)
-find_package(Pmem REQUIRED)
-include_directories(${PMEM_INCLUDE_DIR})
-ADD_THIRDPARTY_LIB(vmem
-  STATIC_LIB "${VMEM_STATIC_LIB}"
-  SHARED_LIB "${VMEM_SHARED_LIB}")
-ADD_THIRDPARTY_LIB(pmem
-  STATIC_LIB "${PMEM_STATIC_LIB}"
-  SHARED_LIB "${PMEM_SHARED_LIB}")
-ADD_THIRDPARTY_LIB(pmemobj
-  STATIC_LIB "${PMEMOBJ_STATIC_LIB}"
-  SHARED_LIB "${PMEMOBJ_SHARED_LIB}")
+  find_package(Memkind REQUIRED)
+  include_directories(${MEMKIND_INCLUDE_DIR})
+  ADD_THIRDPARTY_LIB(memkind
+    STATIC_LIB "${MEMKIND_STATIC_LIB}"
+    SHARED_LIB "${MEMKIND_SHARED_LIB}"
+    DEPS numa)
 endif()
 
-if (EXISTS ${VMEM_SHARED_LIB})
-  set(HAVE_LIB_VMEM 1)
-  add_definitions(-DHAVE_LIB_VMEM=1)
+if (EXISTS ${MEMKIND_SHARED_LIB})
+  set(HAVE_LIB_MEMKIND 1)
+  add_definitions(-DHAVE_LIB_MEMKIND=1)
+endif()
+
+## libnuma
+if (NOT APPLE)
+  find_package(Numa REQUIRED)
+  include_directories(${NUMA_INCLUDE_DIR})
+  ADD_THIRDPARTY_LIB(numa
+    STATIC_LIB "${NUMA_STATIC_LIB}"
+    SHARED_LIB "${NUMA_SHARED_LIB}")
 endif()
 
 ## curl

@@ -697,7 +697,7 @@ Cache* NewCache<Cache::EvictionPolicy::LRU,
   return new ShardedCache<Cache::EvictionPolicy::LRU>(capacity, id);
 }
 
-#if defined(HAVE_LIB_VMEM)
+#if defined(HAVE_LIB_MEMKIND)
 template<>
 Cache* NewCache<Cache::EvictionPolicy::LRU,
                 Cache::MemoryType::NVM>(size_t capacity, const std::string& id) {

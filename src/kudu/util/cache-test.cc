@@ -30,9 +30,9 @@
 #include "kudu/util/test_util.h"
 
 DECLARE_bool(cache_force_single_shard);
-#if defined(HAVE_LIB_VMEM)
+#if defined(HAVE_LIB_MEMKIND)
 DECLARE_string(nvm_cache_path);
-#endif // #if defined(HAVE_LIB_VMEM)
+#endif // #if defined(HAVE_LIB_MEMKIND)
 
 DECLARE_double(cache_memtracker_approximation_ratio);
 
@@ -111,12 +111,12 @@ class CacheBaseTest : public KuduTest,
     FLAGS_cache_force_single_shard =
         (sharding_policy == ShardingPolicy::SingleShard);
 
-#if defined(HAVE_LIB_VMEM)
+#if defined(HAVE_LIB_MEMKIND)
     if (google::GetCommandLineFlagInfoOrDie("nvm_cache_path").is_default) {
       FLAGS_nvm_cache_path = GetTestPath("nvm-cache");
       ASSERT_OK(Env::Default()->CreateDir(FLAGS_nvm_cache_path));
     }
-#endif // #if defined(HAVE_LIB_VMEM)
+#endif // #if defined(HAVE_LIB_MEMKIND)
 
     switch (eviction_policy) {
       case Cache::EvictionPolicy::FIFO:
@@ -136,13 +136,13 @@ class CacheBaseTest : public KuduTest,
                                                            "cache_test"));
             break;
           case Cache::MemoryType::NVM:
-#if defined(HAVE_LIB_VMEM)
+#if defined(HAVE_LIB_MEMKIND)
             cache_.reset(NewCache<Cache::EvictionPolicy::LRU,
                                   Cache::MemoryType::NVM>(cache_size(),
                                                           "cache_test"));
 #else
             FAIL() << "cache of NVM memory type is not supported";
-#endif // #if defined(HAVE_LIB_VMEM) ... #else ...
+#endif // #if defined(HAVE_LIB_MEMKIND) ... #else ...
             break;
           default:
             FAIL() << mem_type << ": unrecognized cache memory type";
@@ -182,7 +182,7 @@ class CacheTest :
                                                ShardingPolicy>> {
  public:
   CacheTest()
-      : CacheBaseTest(14 * 1024 * 1024) {
+      : CacheBaseTest(16 * 1024 * 1024) {
   }
 
   void SetUp() override {
@@ -193,7 +193,7 @@ class CacheTest :
   }
 };
 
-#if defined(HAVE_LIB_VMEM)
+#if defined(HAVE_LIB_MEMKIND)
 INSTANTIATE_TEST_CASE_P(
     CacheTypes, CacheTest,
     ::testing::Values(
@@ -223,7 +223,7 @@ INSTANTIATE_TEST_CASE_P(
                                          Cache::EvictionPolicy::LRU),
                        ::testing::Values(ShardingPolicy::MultiShard,
                                          ShardingPolicy::SingleShard)));
-#endif // #if defined(HAVE_LIB_VMEM) ... #else ...
+#endif // #if defined(HAVE_LIB_MEMKIND) ... #else ...
 
 TEST_P(CacheTest, TrackMemory) {
   if (mem_tracker_) {
@@ -495,7 +495,7 @@ class LRUCacheTest :
                                                ShardingPolicy>> {
  public:
   LRUCacheTest()
-      : CacheBaseTest(14 * 1024 * 1024) {
+      : CacheBaseTest(16 * 1024 * 1024) {
   }
 
   void SetUp() override {
@@ -506,7 +506,7 @@ class LRUCacheTest :
   }
 };
 
-#if defined(HAVE_LIB_VMEM)
+#if defined(HAVE_LIB_MEMKIND)
 INSTANTIATE_TEST_CASE_P(
     CacheTypes, LRUCacheTest,
     ::testing::Combine(::testing::Values(Cache::MemoryType::DRAM,
@@ -519,7 +519,7 @@ INSTANTIATE_TEST_CASE_P(
     ::testing::Combine(::testing::Values(Cache::MemoryType::DRAM),
                        ::testing::Values(ShardingPolicy::MultiShard,
                                          ShardingPolicy::SingleShard)));
-#endif // #if defined(HAVE_LIB_VMEM) ... #else ...
+#endif // #if defined(HAVE_LIB_MEMKIND) ... #else ...
 
 TEST_P(LRUCacheTest, EvictionPolicy) {
   static constexpr int kNumElems = 1000;
