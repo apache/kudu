@@ -78,7 +78,8 @@ Status HmsITestBase::CreateKuduTable(const string& database_name,
                                      MonoDelta timeout) {
   // Get coverage of all column types.
   KuduSchemaBuilder b;
-  b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+  b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()
+                    ->PrimaryKey()->Comment("The Primary Key");
   b.AddColumn("int8_val")->Type(KuduColumnSchema::INT8);
   b.AddColumn("int16_val")->Type(KuduColumnSchema::INT16);
   b.AddColumn("int32_val")->Type(KuduColumnSchema::INT32);
@@ -159,6 +160,7 @@ void HmsITestBase::CheckTable(const string& database_name,
   ASSERT_EQ(schema.num_columns(), hms_table.sd.cols.size());
   for (int idx = 0; idx < schema.num_columns(); idx++) {
     ASSERT_EQ(schema.Column(idx).name(), hms_table.sd.cols[idx].name);
+    ASSERT_EQ(schema.Column(idx).comment(), hms_table.sd.cols[idx].comment);
   }
   ASSERT_EQ(table->id(), hms_table.parameters[hms::HmsClient::kKuduTableIdKey]);
   ASSERT_EQ(HostPort::ToCommaSeparatedString(cluster_->master_rpc_addrs()),

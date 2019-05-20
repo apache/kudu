@@ -313,6 +313,7 @@ hive::FieldSchema column_to_field(const ColumnSchema& column) {
   hive::FieldSchema field;
   field.name = column.name();
   field.type = column_to_field_type(column);
+  field.comment = column.comment();
   return field;
 }
 

@@ -25,6 +25,7 @@
 #include <gtest/gtest.h>
 
 #include "kudu/client/client.h"
+#include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
 #include "kudu/common/common.pb.h"
 #include "kudu/common/table_util.h"
@@ -238,6 +239,13 @@ TEST_F(MasterHmsTest, TestAlterTable) {
   // Drop a column in Kudu. This should correct the entire set of columns in the HMS.
   unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer("default.a"));
   ASSERT_OK(table_alterer->DropColumn("int8_val")->Alter());
+  NO_FATALS(CheckTable("default", "a", /*user=*/ none));
+
+  // Alter a column comment in Kudu. This should be reflected in the HMS.
+  unique_ptr<KuduTableAlterer> comment_alterer(client_->NewTableAlterer("default.a"));
+  comment_alterer->AlterColumn("key")->Comment("");
+  comment_alterer->AlterColumn("int16_val")->Comment("A new comment");
+  ASSERT_OK(comment_alterer->Alter());
   NO_FATALS(CheckTable("default", "a", /*user=*/ none));
 
   // Shutdown the HMS and try to alter the table.
