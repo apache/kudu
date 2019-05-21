@@ -853,7 +853,7 @@ public class AsyncKuduClient implements AutoCloseable {
    * after opening the table.
    *
    * @param name table to open
-   * @return a KuduTable if the table exists, else a MasterErrorException
+   * @return a deferred KuduTable
    */
   public Deferred<KuduTable> openTable(String name) {
     checkIsClosed();
@@ -1824,7 +1824,7 @@ public class AsyncKuduClient implements AutoCloseable {
    * @param deadline deadline in milliseconds for this method to finish
    * @return a list of the tablets in the table, which can be queried for metadata about
    *         each tablet
-   * @throws Exception MasterErrorException if the table doesn't exist
+   * @throws Exception if anything went wrong
    */
   List<LocatedTablet> syncLocateTable(KuduTable table,
                                       byte[] startPartitionKey,
