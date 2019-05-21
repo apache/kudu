@@ -145,7 +145,7 @@ def run_rat(tarball_path):
     return
 
   # TODO: Cache and call the jar from the maven repo?
-  rat_url = "http://central.maven.org/maven2/org/apache/rat/apache-rat/0.12/apache-rat-0.12.jar"
+  rat_url = "https://search.maven.org/remotecontent?filepath=org/apache/rat/apache-rat/0.13/apache-rat-0.13.jar"
 
   tmpdir_path = tempfile.mkdtemp()
   rat_report_result = ''
