@@ -41,7 +41,7 @@
 set -eux
 
 for ARTIFACT in llvm cfe compiler-rt libcxx libcxxabi lld clang-tools-extra; do
-  wget http://releases.llvm.org/$VERSION/$ARTIFACT-$VERSION.src.tar.xz
+  wget https://releases.llvm.org/$VERSION/$ARTIFACT-$VERSION.src.tar.xz
   tar xf $ARTIFACT-$VERSION.src.tar.xz
   rm $ARTIFACT-$VERSION.src.tar.xz
 done

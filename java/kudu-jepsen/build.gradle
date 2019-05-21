@@ -27,7 +27,7 @@ if (!project.hasProperty("jepsen")) {
 }
 
 repositories {
-  maven { url "http://clojars.org/repo/" }
+  maven { url "https://clojars.org/repo/" }
 }
 
 dependencies {

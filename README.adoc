@@ -18,7 +18,8 @@
 
 == Building and installing Kudu
 
-Follow the steps in the http://getkudu.io/docs/installation.html#_build_from_source[documentation]
+Follow the steps in the
+https://kudu.apache.org/docs/installation.html#build_from_source[documentation]
 to build and install Kudu from source
 
 === Building Kudu out of tree
@@ -141,7 +142,7 @@ $ ctest -R failing-test
 to run just the failed test.
 
 NOTE: For more information on AddressSanitizer, please see the
-http://clang.llvm.org/docs/AddressSanitizer.html[ASAN web page].
+https://clang.llvm.org/docs/AddressSanitizer.html[ASAN web page].
 
 === Running tests with the clang Undefined Behavior Sanitizer (UBSAN) enabled
 
@@ -182,7 +183,7 @@ $ ctest -j8
 
 TSAN may truncate a few lines of the stack trace when reporting where the error
 is. This can be bewildering. It's documented for TSANv1 here:
-http://code.google.com/p/data-race-test/wiki/ThreadSanitizerAlgorithm
+https://code.google.com/p/data-race-test/wiki/ThreadSanitizerAlgorithm
 It is not mentioned in the documentation for TSANv2, but has been observed.
 In order to find out what is _really_ happening, set a breakpoint on the TSAN
 report in GDB using the following incantation:
@@ -294,7 +295,7 @@ This will invoke `docs/support/scripts/make_docs.sh`, which requires
 `asciidoctor` to process the doc sources and produce the HTML documentation,
 emitted to _build/docs_. This script requires `ruby` and `gem` to be installed
 on the system path, and will attempt to install `asciidoctor` and other related
-dependencies into `$HOME/.gems` using http://bundler.io/[bundler].
+dependencies into `$HOME/.gems` using https://bundler.io/[bundler].
 
 === Updating the Kudu web site documentation
 
@@ -435,7 +436,7 @@ once via a target and once via the raw source file. To fix this, simply delete t
 on writing code, though it may affect your ability to build from within Eclipse.
 
 1. https://cmake.org/pipermail/cmake-developers/2011-November/014153.html
-2. http://public.kitware.com/Bug/view.php?id=15102
+2. https://public.kitware.com/Bug/view.php?id=15102
 
 == Export Control Notice
 
