@@ -58,8 +58,11 @@ import org.apache.hadoop.hive.metastore.events.ListenerEvent;
  * environment containing a Kudu table ID, that event only applies
  * to the specified Kudu table. This provides some amount of concurrency
  * safety, so that the Kudu Master can ensure it is operating on the correct
- * table entry. Note that such validation does not apply to tables with
- * legacy Kudu storage handler.
+ * table entry.
+ *
+ * Note that such validation does not apply to tables with legacy Kudu
+ * storage handler and will be skipped if system env KUDU_SKIP_HMS_PLUGIN_VALIDATION
+ * is set to non-zero.
  */
 public class KuduMetastorePlugin extends MetaStoreEventListener {
 
@@ -76,6 +79,9 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
   @VisibleForTesting
   static final String KUDU_MASTER_EVENT = "kudu.master_event";
 
+  // System env to track if the HMS plugin validation should be skipped.
+  static final String SKIP_VALIDATION_ENV = "KUDU_SKIP_HMS_PLUGIN_VALIDATION";
+
   public KuduMetastorePlugin(Configuration config) {
     super(config);
   }
@@ -83,6 +89,11 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
   @Override
   public void onCreateTable(CreateTableEvent tableEvent) throws MetaException {
     super.onCreateTable(tableEvent);
+
+    if (skipsValidation()) {
+      return;
+    }
+
     Table table = tableEvent.getTable();
 
     // Only validate managed tables.
@@ -116,6 +127,10 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
       return;
     }
 
+    if (skipsValidation()) {
+      return;
+    }
+
     EnvironmentContext environmentContext = tableEvent.getEnvironmentContext();
     String targetTableId = environmentContext == null ? null :
         environmentContext.getProperties().get(KUDU_TABLE_ID_KEY);
@@ -142,6 +157,10 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
   @Override
   public void onAlterTable(AlterTableEvent tableEvent) throws MetaException {
     super.onAlterTable(tableEvent);
+
+    if (skipsValidation()) {
+      return;
+    }
 
     Table oldTable = tableEvent.getOldTable();
     Table newTable = tableEvent.getNewTable();
@@ -294,5 +313,17 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
     }
 
     return Boolean.parseBoolean(properties.get(KUDU_MASTER_EVENT));
+  }
+
+  /**
+   * Returns true if the system env is set to skip validation.
+   */
+  private static boolean skipsValidation() {
+    String skipValidation = System.getenv(SKIP_VALIDATION_ENV);
+    if (skipValidation == null || skipValidation.isEmpty() ||
+        Integer.parseInt(skipValidation) == 0) {
+      return false;
+    }
+    return true;
   }
 }
