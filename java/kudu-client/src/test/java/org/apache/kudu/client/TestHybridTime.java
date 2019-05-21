@@ -31,6 +31,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Ordering;
 import org.apache.kudu.test.cluster.MiniKuduCluster.MiniKuduClusterBuilder;
 import org.apache.kudu.test.KuduTestHarness;
 import org.junit.Before;
@@ -43,8 +44,8 @@ import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Schema;
 
 /**
- * This only tests client propagation since it's the only thing that is client-specific.
- * All the work for commit wait is done and tested on the server-side.
+ * Tests client propagated timestamps. All the work for commit wait is done and tested on the
+ * server-side, so it is not tested here.
  */
 public class TestHybridTime {
   private static final Logger LOG = LoggerFactory.getLogger(TestHybridTime.class);
@@ -57,12 +58,8 @@ public class TestHybridTime {
   private static KuduTable table;
   private KuduClient client;
 
-  private static final MiniKuduClusterBuilder clusterBuilder = KuduTestHarness.getBaseClusterBuilder()
-      // Before starting the cluster, disable automatic safe time advancement in the
-      // absence of writes. This test does snapshot reads in the present and expects
-      // certain timestamps to be assigned to the scans. If safe time was allowed
-      // to move automatically the scans might not be assigned the expected timestamps.
-      .addTabletServerFlag("--safe_time_advancement_without_writes=false");
+  private static final MiniKuduClusterBuilder clusterBuilder =
+      KuduTestHarness.getBaseClusterBuilder();
 
   @Rule
   public KuduTestHarness harness = new KuduTestHarness(clusterBuilder);
@@ -70,15 +67,15 @@ public class TestHybridTime {
   @Before
   public void setUp() throws Exception {
     client = harness.getClient();
-    // Using multiple tablets doesn't work with the current way this test works since we could
-    // jump from one TS to another which changes the logical clock.
+    // Use one tablet because multiple tablets don't work: we could jump from one tablet to another
+    // which could change the logical clock.
     CreateTableOptions builder =
         new CreateTableOptions().setRangePartitionColumns(ImmutableList.of("key"));
     table = client.createTable(TABLE_NAME, schema, builder);
   }
 
   private static Schema getSchema() {
-    ArrayList<ColumnSchema> columns = new ArrayList<ColumnSchema>(1);
+    ArrayList<ColumnSchema> columns = new ArrayList<>(1);
     columns.add(new ColumnSchema.ColumnSchemaBuilder("key", STRING)
         .key(true)
         .build());
@@ -86,91 +83,71 @@ public class TestHybridTime {
   }
 
   /**
-   * We write three rows. We increment the timestamp we get back from the first write
-   * by some amount. The remaining writes should force an update to the server's clock and
-   * only increment the logical values.
+   * Write three rows. Increment the timestamp we get back from the first write to put it in the
+   * future. The remaining writes should force an update to the server's clock and only increment
+   * the logical value. Check that the client propagates the timestamp correctly by scanning
+   * back the appropriate rows at the appropriate snapshots.
    *
    * @throws Exception
    */
   @Test(timeout = 100000)
   public void test() throws Exception {
     KuduSession session = client.newSession();
+    session.setExternalConsistencyMode(CLIENT_PROPAGATED);
 
     // Test timestamp propagation with AUTO_FLUSH_SYNC flush mode.
     session.setFlushMode(KuduSession.FlushMode.AUTO_FLUSH_SYNC);
-    session.setExternalConsistencyMode(CLIENT_PROPAGATED);
-    long[] clockValues;
-    long previousLogicalValue = 0;
-    long previousPhysicalValue = 0;
+    List<Long> logicalValues = new ArrayList<>();
 
-    String[] keys = new String[] {"1", "2", "3"};
+    // Perform one write so we receive a timestamp from the server and can use it to propagate a
+    // modified timestamp back to the server. Following writes should force the servers to update
+    // their clocks to this value and increment the logical component of the timestamp.
+    insertRow(session, "0");
+    assertTrue(client.hasLastPropagatedTimestamp());
+    long[] clockValues = HTTimestampToPhysicalAndLogical(client.getLastPropagatedTimestamp());
+    assertEquals(clockValues[1], 0);
+    long futureTs = clockValues[0] + 5000000;
+    client.updateLastPropagatedTimestamp(clockTimestampToHTTimestamp(futureTs,
+                                                                     TimeUnit.MICROSECONDS));
+
+    String[] keys = new String[] {"1", "2", "3", "11", "22", "33"};
     for (int i = 0; i < keys.length; i++) {
-      Insert insert = table.newInsert();
-      PartialRow row = insert.getRow();
-      row.addString(schema.getColumnByIndex(0).getName(), keys[i]);
-      OperationResponse response = session.apply(insert);
-      assertTrue(client.hasLastPropagatedTimestamp());
-      assertEquals(client.getLastPropagatedTimestamp(),
-                   response.getWriteTimestampRaw());
-      clockValues = HTTimestampToPhysicalAndLogical(client.getLastPropagatedTimestamp());
-      LOG.debug("Clock value after write[" + i + "]: " + new Date(clockValues[0] / 1000).toString()
-        + " Logical value: " + clockValues[1]);
-      // on the very first write we update the clock into the future
-      // so that remaining writes only update logical values
-      if (i == 0) {
-        assertEquals(clockValues[1], 0);
-        long toUpdateTs = clockValues[0] + 5000000;
-        previousPhysicalValue = toUpdateTs;
-        // After the first write we fake-update the clock into the future. Following writes
-        // should force the servers to update their clocks to this value.
-        client.updateLastPropagatedTimestamp(
-          clockTimestampToHTTimestamp(toUpdateTs, TimeUnit.MICROSECONDS));
-      } else {
-        assertEquals(clockValues[0], previousPhysicalValue);
-        assertTrue(clockValues[1] > previousLogicalValue);
-        previousLogicalValue = clockValues[1];
+      if (i == keys.length / 2) {
+        // Switch flush mode to test timestamp propagation with MANUAL_FLUSH.
+        session.setFlushMode(AsyncKuduSession.FlushMode.MANUAL_FLUSH);
       }
-    }
-
-    // Test timestamp propagation with MANUAL_FLUSH flush mode.
-    session.setFlushMode(AsyncKuduSession.FlushMode.MANUAL_FLUSH);
-    keys = new String[] {"11", "22", "33"};
-    for (int i = 0; i < keys.length; i++) {
-      Insert insert = table.newInsert();
-      PartialRow row = insert.getRow();
-      row.addString(schema.getColumnByIndex(0).getName(), keys[i]);
-      session.apply(insert);
-      List<OperationResponse> responses = session.flush();
-      assertEquals("Response was not of the expected size: " + responses.size(),
-        1, responses.size());
-
-      OperationResponse response = responses.get(0);
+      insertRow(session, keys[i]);
       assertTrue(client.hasLastPropagatedTimestamp());
-      assertEquals(client.getLastPropagatedTimestamp(),
-                   response.getWriteTimestampRaw());
       clockValues = HTTimestampToPhysicalAndLogical(client.getLastPropagatedTimestamp());
-      LOG.debug("Clock value after write[" + i + "]: " + new Date(clockValues[0] / 1000).toString()
-        + " Logical value: " + clockValues[1]);
-      assertEquals(clockValues[0], previousPhysicalValue);
-      assertTrue(clockValues[1] > previousLogicalValue);
-      previousLogicalValue = clockValues[1];
+      LOG.debug("Clock value after write[%d]: %s Logical value: %d",
+                i, new Date(clockValues[0] / 1000).toString(), clockValues[1]);
+      assertEquals(clockValues[0], futureTs);
+      logicalValues.add(clockValues[1]);
+      assertTrue(Ordering.natural().isOrdered(logicalValues));
     }
 
-    // Scan all rows with READ_LATEST (the default) we should get 6 rows back
-    assertEquals(6, countRowsInScan(client.newScannerBuilder(table).build()));
+    // Scan all rows with READ_LATEST (the default), which should retrieve all rows.
+    assertEquals(1 + keys.length, countRowsInScan(client.newScannerBuilder(table).build()));
 
-    // Now scan at multiple instances with READ_AT_SNAPSHOT we should get different
-    // counts depending on the scan timestamp.
-    long snapTime = physicalAndLogicalToHTTimestamp(previousPhysicalValue, 0);
-    assertEquals(1, scanAtSnapshot(snapTime));
-    snapTime = physicalAndLogicalToHTTimestamp(previousPhysicalValue, 5);
-    assertEquals(4, scanAtSnapshot(snapTime));
-    // Our last snap time needs to one one into the future w.r.t. the last write's timestamp
-    // for us to be able to get all rows, but the snap timestamp can't be bigger than the prop.
-    // timestamp so we increase both.
+    // Now scan at multiple snapshots with READ_AT_SNAPSHOT. The logical timestamp from the 'i'th
+    // row (counted from 0) combined with the latest physical timestamp should observe 'i + 1' rows.
+    for (int i = 0; i < logicalValues.size(); i++) {
+      long logicalValue = logicalValues.get(i);
+      long snapshotTime = physicalAndLogicalToHTTimestamp(futureTs, logicalValues.get(i));
+      int expected = i + 1;
+      assertEquals(
+          String.format("wrong number of rows for write %d at logical timestamp %d", i, logicalValue),
+          expected,
+          scanAtSnapshot(snapshotTime));
+    }
+
+    // The last snapshots needs to be one into the future w.r.t. the last write's timestamp
+    // to get all rows, but the snapshot timestamp can't be bigger than the propagated
+    // timestamp. Ergo increase the propagated timestamp first.
+    long latestLogicalValue = logicalValues.get(logicalValues.size() - 1);
     client.updateLastPropagatedTimestamp(client.getLastPropagatedTimestamp() + 1);
-    snapTime = physicalAndLogicalToHTTimestamp(previousPhysicalValue, previousLogicalValue + 1);
-    assertEquals(6, scanAtSnapshot(snapTime));
+    long snapshotTime = physicalAndLogicalToHTTimestamp(futureTs, latestLogicalValue + 1);
+    assertEquals(1 + keys.length, scanAtSnapshot(snapshotTime));
   }
 
   private int scanAtSnapshot(long time) throws Exception {
@@ -178,5 +155,13 @@ public class TestHybridTime {
         .snapshotTimestampRaw(time)
         .readMode(AsyncKuduScanner.ReadMode.READ_AT_SNAPSHOT);
     return countRowsInScan(builder.build());
+  }
+
+  private void insertRow(KuduSession session, String key) throws KuduException {
+    Insert insert = table.newInsert();
+    PartialRow row = insert.getRow();
+    row.addString(0, key);
+    session.apply(insert);
+    session.flush();
   }
 }
