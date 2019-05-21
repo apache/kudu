@@ -28,7 +28,7 @@ TP_BUILD_DIR="$TP_DIR/build"
 # This URL corresponds to the CloudFront Distribution for the S3
 # bucket cloudera-thirdparty-libs which is directly accessible at
 # http://cloudera-thirdparty-libs.s3.amazonaws.com/
-CLOUDFRONT_URL_PREFIX=http://d3dr9sfxru4sde.cloudfront.net
+CLOUDFRONT_URL_PREFIX=https://d3dr9sfxru4sde.cloudfront.net
 
 # Third party dependency downloading URL, default to the CloudFront
 # Distribution URL.
