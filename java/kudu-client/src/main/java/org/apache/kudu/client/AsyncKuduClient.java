@@ -832,18 +832,27 @@ public class AsyncKuduClient implements AutoCloseable {
     if (name == null) {
       throw new IllegalArgumentException("The table name cannot be null");
     }
-    return getTablesList().addCallbackDeferring(new Callback<Deferred<Boolean>,
-        ListTablesResponse>() {
+
+    Callback<Deferred<Boolean>, KuduTable> cb = new Callback<Deferred<Boolean>, KuduTable>() {
       @Override
-      public Deferred<Boolean> call(ListTablesResponse listTablesResponse) throws Exception {
-        for (String tableName : listTablesResponse.getTablesList()) {
-          if (name.equals(tableName)) {
-            return Deferred.fromResult(true);
+      public Deferred<Boolean> call(KuduTable table) throws Exception {
+        return Deferred.fromResult(true);
+      }
+    };
+    Callback<Deferred<Boolean>, Exception> eb = new Callback<Deferred<Boolean>, Exception>() {
+      @Override
+      public Deferred<Boolean> call(Exception e) throws Exception {
+        if (e instanceof NonRecoverableException) {
+          Status status = ((NonRecoverableException) e).getStatus();
+          if (status.isNotFound()) {
+            return Deferred.fromResult(false);
           }
         }
-        return Deferred.fromResult(false);
+        return Deferred.fromError(e);
       }
-    });
+    };
+
+    return AsyncUtil.addCallbacksDeferring(getTableSchema(name, null, null), cb, eb);
   }
 
   /**
