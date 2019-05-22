@@ -70,7 +70,7 @@ object KuduBackup {
       var tableOptions = options.copy() // Copy the options so we can modify them for the table.
       val table = context.syncClient.openTable(tableName)
       val tableId = table.getTableId
-      val backupPath = io.backupPath(table, tableOptions.toMs)
+      val backupPath = io.backupPath(table.getTableId, table.getName, tableOptions.toMs)
       val metadataPath = io.backupMetadataPath(backupPath)
       log.info(s"Backing up table $tableName to path: $backupPath")
 

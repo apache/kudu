@@ -77,8 +77,8 @@ class BackupIO(val conf: Configuration, rootPathStr: String) {
   /**
    * Return the backup path for a table and time.
    */
-  def backupPath(table: KuduTable, timestampMs: Long): Path = {
-    new Path(tablePath(table.getTableId, table.getName), timestampMs.toString)
+  def backupPath(tableId: String, tableName: String, timestampMs: Long): Path = {
+    new Path(tablePath(tableId, tableName), timestampMs.toString)
   }
 
   /**
@@ -98,6 +98,13 @@ class BackupIO(val conf: Configuration, rootPathStr: String) {
     out.write(json.getBytes(StandardCharsets.UTF_8))
     out.flush()
     out.close()
+  }
+
+  /**
+   * Deletes the backup.
+   */
+  def deleteBackup(metadata: TableMetadataPB): Unit = {
+    fs.delete(backupPath(metadata.getTableId, metadata.getTableName, metadata.getToMs), true)
   }
 
   /**

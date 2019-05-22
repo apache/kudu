@@ -23,7 +23,6 @@ import java.nio.file.Path
 import java.text.SimpleDateFormat
 
 import org.apache.commons.io.FileUtils
-import org.apache.hadoop.fs.{Path => HPath}
 import org.apache.hadoop.conf.Configuration
 import org.junit.After
 import org.junit.Assert._
@@ -31,9 +30,6 @@ import org.junit.Before
 import org.junit.Test
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-
-import org.apache.kudu.backup.Backup.TableMetadataPB
-import org.apache.kudu.backup.TableMetadata.MetadataVersion
 
 class TestKuduBackupCLI {
   val log: Logger = LoggerFactory.getLogger(getClass)
@@ -50,27 +46,6 @@ class TestKuduBackupCLI {
     FileUtils.deleteDirectory(rootDir.toFile)
   }
 
-  // Create dummy table metadata and write it to the test directory.
-  private def createTableMetadata(
-      io: BackupIO,
-      tableName: String,
-      fromMs: Long,
-      toMs: Long): Unit = {
-    // Create dummy table metadata with just enough information to be used to create a BackupGraph.
-    val tableId = s"id_$tableName"
-    val metadata = TableMetadataPB
-      .newBuilder()
-      .setVersion(MetadataVersion)
-      .setFromMs(fromMs)
-      .setToMs(toMs)
-      .setTableName(tableName)
-      .setTableId(tableId)
-      .build()
-    val backupPath = new HPath(io.tablePath(tableId, tableName), s"$toMs")
-    val metadataPath = io.backupMetadataPath(backupPath)
-    io.writeTableMetadata(metadata, metadataPath)
-  }
-
   // Helper to write a standard collection of backup metadata useful for a few tests.
   private def createStandardTableMetadata(io: BackupIO): Unit = {
     Seq(
@@ -84,7 +59,7 @@ class TestKuduBackupCLI {
       ("pizza", 400, 600)
     ).foreach {
       case (tableName: String, fromMs: Int, toMs: Int) =>
-        createTableMetadata(io, tableName, fromMs, toMs)
+        TestUtils.createTableMetadata(io, tableName, fromMs, toMs)
     }
   }
 

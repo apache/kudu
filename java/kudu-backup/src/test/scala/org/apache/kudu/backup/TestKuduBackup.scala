@@ -575,7 +575,7 @@ class TestKuduBackup extends KuduTestSuite {
     val io = new BackupIO(ss.sparkContext.hadoopConfiguration, options.rootPath)
     val tableName = options.tables.head
     val table = harness.getClient.openTable(tableName)
-    val backupPath = io.backupPath(table, options.toMs)
+    val backupPath = io.backupPath(table.getTableId, table.getName, options.toMs)
     val metadataPath = io.backupMetadataPath(backupPath)
     val metadata = io.readTableMetadata(metadataPath)
 
