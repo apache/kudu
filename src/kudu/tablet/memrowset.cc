@@ -66,25 +66,18 @@ using strings::Substitute;
 static const int kInitialArenaSize = 16;
 
 bool MRSRow::IsGhost() const {
-  bool is_ghost = false;
-  for (const Mutation *mut = header_->redo_head;
-       mut != nullptr;
-       mut = mut->next()) {
-    RowChangeListDecoder decoder(mut->changelist());
-    Status s = decoder.Init();
-    if (!PREDICT_TRUE(s.ok())) {
-      LOG(FATAL) << "Failed to decode: " << mut->changelist().ToString(*schema())
-                  << " (" << s.ToString() << ")";
-    }
-    if (decoder.is_delete()) {
-      DCHECK(!is_ghost);
-      is_ghost = true;
-    } else if (decoder.is_reinsert()) {
-      DCHECK(is_ghost);
-      is_ghost = false;
-    }
+  const Mutation *mut_tail = header_->redo_tail;
+  if (mut_tail == nullptr) {
+    return false;
   }
-  return is_ghost;
+  RowChangeListDecoder decoder(mut_tail->changelist());
+  Status s = decoder.Init();
+  if (!PREDICT_TRUE(s.ok())) {
+    LOG(FATAL) << Substitute("Failed to decode: $0 ($1)",
+                             mut_tail->changelist().ToString(*schema()),
+                             s.ToString());
+  }
+  return decoder.is_delete();
 }
 
 namespace {
@@ -185,6 +178,7 @@ Status MemRowSet::Insert(Timestamp timestamp,
     DEFINE_MRSROW_ON_STACK(this, mrsrow, mrsrow_slice);
     mrsrow.header_->insertion_timestamp = timestamp;
     mrsrow.header_->redo_head = nullptr;
+    mrsrow.header_->redo_tail = nullptr;
     RETURN_NOT_OK(mrsrow.CopyRow(row, arena_.get()));
 
     CHECK(mutation.Insert(mrsrow_slice))
@@ -213,7 +207,7 @@ Status MemRowSet::Reinsert(Timestamp timestamp, const ConstContiguousRow& row, M
   // This function has "release" semantics which ensures that the memory writes
   // for the mutation are fully published before any concurrent reader sees
   // the appended mutation.
-  mut->AppendToListAtomic(&ms_row->header_->redo_head);
+  mut->AppendToListAtomic(&ms_row->header_->redo_head, &ms_row->header_->redo_tail);
   return Status::OK();
 }
 
@@ -247,7 +241,7 @@ Status MemRowSet::MutateRow(Timestamp timestamp,
     // This function has "release" semantics which ensures that the memory writes
     // for the mutation are fully published before any concurrent reader sees
     // the appended mutation.
-    mut->AppendToListAtomic(&row.header_->redo_head);
+    mut->AppendToListAtomic(&row.header_->redo_head, &row.header_->redo_tail);
 
     MemStoreTargetPB* target = result->add_mutated_stores();
     target->set_mrs_id(id_);

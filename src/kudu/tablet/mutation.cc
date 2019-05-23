@@ -51,19 +51,18 @@ std::string Mutation::StringifyMutationList(const Schema &schema, const Mutation
   return ret;
 }
 
-void Mutation::AppendToListAtomic(Mutation **list) {
+void Mutation::AppendToListAtomic(Mutation** redo_head, Mutation** redo_tail) {
   next_ = nullptr;
-  if (*list == nullptr) {
-    Release_Store(reinterpret_cast<AtomicWord*>(list),
+  if (*redo_tail == nullptr) {
+    Release_Store(reinterpret_cast<AtomicWord*>(redo_head),
+                  reinterpret_cast<AtomicWord>(this));
+    Release_Store(reinterpret_cast<AtomicWord*>(redo_tail),
                   reinterpret_cast<AtomicWord>(this));
   } else {
-    // Find tail and append.
-    Mutation *tail = *list;
-    while (tail->next_ != nullptr) {
-      tail = tail->next_;
-    }
-    Release_Store(reinterpret_cast<AtomicWord*>(&tail->next_),
+    Release_Store(reinterpret_cast<AtomicWord*>(&(*redo_tail)->next_),
                   reinterpret_cast<AtomicWord>(this));
+    Release_Store(reinterpret_cast<AtomicWord*>(redo_tail),
+                  reinterpret_cast<AtomicWord>((*redo_tail)->next_));
   }
 }
 

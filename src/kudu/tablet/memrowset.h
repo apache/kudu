@@ -146,12 +146,6 @@ class MRSRow {
 
   // Return true if this row is a "ghost" -- i.e its most recent mutation is
   // a deletion.
-  //
-  // NOTE: this call is O(n) in the number of mutations, since it has to walk
-  // the linked list all the way to the end, checking if each mutation is a
-  // DELETE or REINSERT. We expect the list is usually short (low-update use
-  // cases) but if this becomes a bottleneck, we could cache the 'ghost' status
-  // as a bit inside the row header.
   bool IsGhost() const;
 
  private:
@@ -167,14 +161,15 @@ class MRSRow {
   }
 
   struct Header {
-    // Timestamp for the transaction which inserted this row. If a scanner with an
-    // older snapshot sees this row, it will be ignored.
-    Timestamp insertion_timestamp;
+      // Timestamp for the transaction which inserted this row. If a scanner with an
+      // older snapshot sees this row, it will be ignored.
+      Timestamp insertion_timestamp;
 
-    // Pointer to the first mutation which has been applied to this row. Each
-    // mutation is an instance of the Mutation class, making up a singly-linked
-    // list for any mutations applied to the row.
-    Mutation* redo_head;
+      // Pointers to the first and last mutations that have been applied to this row.
+      // Together they comprise a singly-linked list of all of the row's mutations,
+      // with the head and tail used for efficient iteration and insertion respectively.
+      Mutation* redo_head;
+      Mutation* redo_tail;
   };
 
   Header *header_;
