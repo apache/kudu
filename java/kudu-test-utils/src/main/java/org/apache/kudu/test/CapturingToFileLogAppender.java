@@ -24,6 +24,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
+import java.util.Random;
 import java.util.zip.GZIPOutputStream;
 
 import com.google.common.base.Throwables;
@@ -69,17 +70,33 @@ public class CapturingToFileLogAppender extends AbstractAppender implements Auto
    * @param useGzip whether to gzip-compress messages when appended
    */
   public CapturingToFileLogAppender(boolean useGzip) throws IOException {
-    super("CapturingToFileLogAppender", /* filter */ null, LAYOUT,
-        /* ignoreExceptions */ true, Property.EMPTY_ARRAY);
+    // Appender name must be unique so that attaching/detaching works correctly
+    // when multiple capturing appenders are used recursively.
+    super(String.format("CapturingToFileLogAppender-%d", new Random().nextInt()),
+          /* filter */ null, LAYOUT, /* ignoreExceptions */ true, Property.EMPTY_ARRAY);
+
     outputFile = File.createTempFile("captured_output", ".txt.gz");
-    try (OutputStream os = createOutputStream(useGzip)) {
-      // As per the recommendation in OutputStreamWriter's Javadoc, we wrap in a
-      // BufferedWriter to buffer up character conversions.
-      outputFileWriter = new BufferedWriter(new OutputStreamWriter(os, UTF_8));
+    try {
+      OutputStream os = createOutputStream(useGzip);
+      try {
+        // As per the recommendation in OutputStreamWriter's Javadoc, we wrap in
+        // a BufferedWriter to buffer up character conversions.
+        outputFileWriter = new BufferedWriter(new OutputStreamWriter(os, UTF_8));
+      } catch (Throwable t) {
+        os.close();
+      }
     } catch (Throwable t) {
       outputFile.delete();
       throw t;
     }
+
+    // If we don't call start(), we get an ugly log error:
+    //
+    // ERROR Attempted to append to non-started appender CapturingToFileLogAppender
+    //
+    // It doesn't throw anything so there's no reason to include it in the above
+    // try/catch monstrosity.
+    start();
   }
 
   private OutputStream createOutputStream(boolean useGzip) throws IOException {

@@ -18,6 +18,7 @@ package org.apache.kudu.test;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.util.Random;
 
 import com.google.common.base.Throwables;
 import org.apache.logging.log4j.core.LogEvent;
@@ -44,8 +45,15 @@ public class CapturingLogAppender extends AbstractAppender {
   private StringBuilder appended = new StringBuilder();
 
   public CapturingLogAppender() {
-    super("CapturingLogAppender", /* filter */ null, LAYOUT,
-        /* ignoreExceptions */ true, Property.EMPTY_ARRAY);
+    // Appender name must be unique so that attaching/detaching works correctly
+    // when multiple capturing appenders are used recursively.
+    super(String.format("CapturingToFileLogAppender-%d", new Random().nextInt()),
+          /* filter */ null, LAYOUT, /* ignoreExceptions */ true, Property.EMPTY_ARRAY);
+
+    // If we don't call start(), we get an ugly log error:
+    //
+    // ERROR Attempted to append to non-started appender CapturingToFileLogAppender
+    start();
   }
 
   @Override
