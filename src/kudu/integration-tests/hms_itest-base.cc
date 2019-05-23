@@ -114,7 +114,8 @@ Status HmsITestBase::CreateKuduTable(const string& database_name,
 
 Status HmsITestBase::CreateHmsTable(const string& database_name,
                                     const string& table_name,
-                                    const string& table_type) {
+                                    const string& table_type,
+                                    boost::optional<const string&> kudu_table_name) {
   hive::Table hms_table;
   hms_table.dbName = database_name;
   hms_table.tableName = table_name;
@@ -122,6 +123,12 @@ Status HmsITestBase::CreateHmsTable(const string& database_name,
   // TODO(HIVE-19253): Used along with table type to indicate an external table.
   if (table_type == HmsClient::kExternalTable) {
     hms_table.parameters[HmsClient::kExternalTableKey] = "TRUE";
+  }
+  if (kudu_table_name) {
+    hms_table.parameters[HmsClient::kKuduTableNameKey] = *kudu_table_name;
+  } else {
+    hms_table.parameters[HmsClient::kKuduTableNameKey] =
+        Substitute("$0.$1", database_name, table_name);
   }
   return hms_client_->CreateTable(hms_table);
 }

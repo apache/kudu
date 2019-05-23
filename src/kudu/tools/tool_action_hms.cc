@@ -304,39 +304,34 @@ Status AnalyzeCatalogs(const string& master_addrs,
     vector<hive::Table> hms_tables;
     RETURN_NOT_OK(hms_catalog->GetKuduTables(&hms_tables));
     for (hive::Table& hms_table : hms_tables) {
-      const string &storage_handler = hms_table.parameters[HmsClient::kStorageHandlerKey];
-      // If this is a legacy table or external table, lookup the Kudu table by name.
-      if (storage_handler == HmsClient::kLegacyKuduStorageHandler ||
-          hms_table.tableType == HmsClient::kExternalTable) {
-        const string& hms_table_name = hms_table.parameters[HmsClient::kKuduTableNameKey];
-        shared_ptr<KuduTable>* kudu_table = FindOrNull(kudu_tables_by_name,
-                                                       hms_table_name);
-        if (kudu_table) {
-          if (hms_table.tableType == HmsClient::kExternalTable) {
-            external_hms_tables_by_id[(*kudu_table)->id()].emplace_back(
-                std::move(hms_table));
-          } else {
-            managed_hms_tables_by_id[(*kudu_table)->id()].emplace_back(
-                std::move(hms_table));
-          }
-        } else {
-          // External tables don't always point at valid Kudu tables.
-          if (hms_table.tableType != HmsClient::kExternalTable) {
-            orphan_hms_tables.emplace_back(std::move(hms_table));
-          }
-        }
-      } else if (storage_handler == HmsClient::kKuduStorageHandler) {
+      // If this is a non-legacy, managed table, we expect a table ID to exist
+      // in the HMS entry; look up the Kudu table by ID. Otherwise, look it up
+      // by table name.
+      shared_ptr<KuduTable>* kudu_table;
+      const string& storage_handler = hms_table.parameters[HmsClient::kStorageHandlerKey];
+      if (storage_handler == HmsClient::kKuduStorageHandler &&
+          hms_table.tableType == HmsClient::kManagedTable) {
         // TODO(ghenke): Also lookup by name to support tables created when HMS sync is off.
         // TODO(ghenke): Also lookup by name to support repairing id's out of sync.
         const string& hms_table_id = hms_table.parameters[HmsClient::kKuduTableIdKey];
-        shared_ptr<KuduTable>* kudu_table = FindOrNull(kudu_tables_by_id,
-                                                       hms_table_id);
-        if (kudu_table) {
+        kudu_table = FindOrNull(kudu_tables_by_id, hms_table_id);
+      } else {
+        const string& hms_table_name = hms_table.parameters[HmsClient::kKuduTableNameKey];
+        kudu_table = FindOrNull(kudu_tables_by_name, hms_table_name);
+      }
+
+      if (kudu_table) {
+        if (hms_table.tableType == HmsClient::kExternalTable) {
+          external_hms_tables_by_id[(*kudu_table)->id()].emplace_back(
+              std::move(hms_table));
+        } else if (hms_table.tableType == HmsClient::kManagedTable) {
           managed_hms_tables_by_id[(*kudu_table)->id()].emplace_back(
               std::move(hms_table));
-        } else {
-          orphan_hms_tables.emplace_back(std::move(hms_table));
         }
+      } else if (hms_table.tableType == HmsClient::kManagedTable) {
+        // Note: we only consider managed HMS table entries "orphans" because
+        // external tables don't always point at valid Kudu tables.
+        orphan_hms_tables.emplace_back(std::move(hms_table));
       }
     }
   }

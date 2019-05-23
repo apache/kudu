@@ -16,6 +16,7 @@
 // under the License.
 
 #include <algorithm>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -387,6 +388,37 @@ TEST_F(MasterHmsTest, TestNotificationLogListener) {
   s = hms_client_->DropTable("default", "a");
   ASSERT_TRUE(s.IsNotFound()) << s.ToString();
   NO_FATALS(CheckTableDoesNotExist("default", "a"));
+}
+
+TEST_F(MasterHmsTest, TestIgnoreExternalTables) {
+  // Set up a managed table, and a couple of external tables to point at it.
+  ASSERT_OK(CreateKuduTable("default", "managed"));
+  const string kManagedTableName = "default.managed";
+  ASSERT_OK(CreateHmsTable("default", "ext1", HmsClient::kExternalTable, kManagedTableName));
+  ASSERT_OK(CreateHmsTable("default", "ext2", HmsClient::kExternalTable, kManagedTableName));
+
+  // Drop a table in the HMS and check that it didn't affect the underlying
+  // Kudu table.
+  ASSERT_OK(hms_client_->DropTable("default", "ext1"));
+  shared_ptr<KuduTable> table;
+  ASSERT_OK(client_->OpenTable(kManagedTableName, &table));
+
+  // Do the same, but rename the HMS table.
+  hive::Table ext;
+  ASSERT_OK(hms_client_->GetTable("default", "ext2", &ext));
+  ext.tableName = "ext3";
+  ASSERT_OK(hms_client_->AlterTable("default", "ext2", ext));
+  ASSERT_OK(client_->OpenTable(kManagedTableName, &table));
+  Status s = hms_client_->GetTable("default", "ext2", &ext);
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+
+  // Alter the table in Kudu, the external tables in the HMS will not be
+  // altered.
+  unique_ptr<KuduTableAlterer> table_alterer(
+      client_->NewTableAlterer(kManagedTableName)->RenameTo("default.other"));
+  ASSERT_OK(table_alterer->Alter());
+  ASSERT_OK(hms_client_->GetTable("default", "ext3", &ext));
+  ASSERT_EQ(kManagedTableName, ext.parameters[HmsClient::kKuduTableNameKey]);
 }
 
 TEST_F(MasterHmsTest, TestUppercaseIdentifiers) {

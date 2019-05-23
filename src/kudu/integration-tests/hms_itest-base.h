@@ -45,9 +45,12 @@ class HmsITestBase : public ExternalMiniClusterITestBase {
                          MonoDelta timeout = {}) WARN_UNUSED_RESULT;
 
   // Creates a table in the HMS catalog.
+  // If supplied, 'kudu_table_name' will be used for the 'kudu.table_name'
+  // field of the HMS entry.
   Status CreateHmsTable(const std::string& database_name,
                         const std::string& table_name,
-                        const std::string& table_type = hms::HmsClient::kManagedTable);
+                        const std::string& table_type = hms::HmsClient::kManagedTable,
+                        boost::optional<const std::string&> kudu_table_name = boost::none);
 
   // Renames a table entry in the HMS catalog.
   Status RenameHmsTable(const std::string& database_name,
