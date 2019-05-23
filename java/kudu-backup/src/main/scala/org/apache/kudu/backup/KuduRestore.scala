@@ -29,8 +29,10 @@ import org.apache.yetus.audience.InterfaceAudience
 import org.apache.yetus.audience.InterfaceStability
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-
 import scala.collection.JavaConverters._
+import scala.util.Failure
+import scala.util.Success
+import scala.util.Try
 
 /**
  * The main class for a Kudu restore spark job.
@@ -40,7 +42,109 @@ import scala.collection.JavaConverters._
 object KuduRestore {
   val log: Logger = LoggerFactory.getLogger(getClass)
 
-  def run(options: RestoreOptions, session: SparkSession): Unit = {
+  private def doRestore(
+      tableName: String,
+      context: KuduContext,
+      session: SparkSession,
+      io: BackupIO,
+      options: RestoreOptions,
+      backupMap: Map[String, BackupGraph]): Unit = {
+    if (!backupMap.contains(tableName)) {
+      throw new RuntimeException(s"No valid backups found for table: $tableName")
+    }
+    val graph = backupMap(tableName)
+    val lastMetadata = graph.restorePath.backups.last.metadata
+    val restoreName = s"${lastMetadata.getTableName}${options.tableSuffix}"
+    graph.restorePath.backups.foreach { backup =>
+      log.info(s"Restoring table $tableName from path: ${backup.path}")
+      val metadata = backup.metadata
+      val isFullRestore = metadata.getFromMs == 0
+      // TODO (KUDU-2788): Store the full metadata to compare/validate for each applied partial.
+
+      // On the full restore we may need to create the table.
+      if (isFullRestore) {
+        if (options.createTables) {
+          log.info(s"Creating restore table $restoreName")
+          // We use the last schema in the restore path when creating the table to
+          // ensure the table is created in its final state.
+          createTableRangePartitionByRangePartition(restoreName, lastMetadata, context)
+        }
+      }
+      val backupSchema = BackupUtils.dataSchema(TableMetadata.getKuduSchema(metadata))
+      val rowActionCol = backupSchema.fields.last.name
+      val table = context.syncClient.openTable(restoreName)
+
+      var data = session.sqlContext.read
+        .format(metadata.getDataFormat)
+        .schema(backupSchema)
+        .load(backup.path.toString)
+        // Default the the row action column with a value of "UPSERT" so that the
+        // rows from a full backup, which don't have a row action, are upserted.
+        .na
+        .fill(RowAction.UPSERT.getValue, Seq(rowActionCol))
+
+      // Adjust for dropped and renamed columns.
+      data = adjustSchema(data, metadata, lastMetadata, rowActionCol)
+      val restoreSchema = data.schema
+
+      // Write the data to Kudu.
+      data.queryExecution.toRdd.foreachPartition { internalRows =>
+        val table = context.syncClient.openTable(restoreName)
+        val converter = new RowConverter(table.getSchema, restoreSchema, false)
+        val partitioner = createPartitionFilter(metadata, lastMetadata)
+        val session = context.syncClient.newSession
+        session.setFlushMode(FlushMode.AUTO_FLUSH_BACKGROUND)
+        // In the case of task retries we need to ignore NotFound errors for deleted rows.
+        // TODO(KUDU-1563): Implement server side ignore capabilities to improve performance
+        //  and reliability.
+        session.setIgnoreAllNotFoundRows(true)
+        try for (internalRow <- internalRows) {
+          // Convert the InternalRows to Rows.
+          // This avoids any corruption as reported in SPARK-26880.
+          val row = converter.toRow(internalRow)
+          // Get the operation type based on the row action column.
+          // This will always be the last column in the row.
+          val rowActionValue = row.getByte(row.length - 1)
+          val rowAction = RowAction.fromValue(rowActionValue)
+          // Generate an operation based on the row action.
+          val operation = rowAction match {
+            case RowAction.UPSERT => table.newUpsert()
+            case RowAction.DELETE => table.newDelete()
+            case _ => throw new IllegalStateException(s"Unsupported RowAction: $rowAction")
+          }
+          // Convert the Spark row to a partial row and set it on the operation.
+          val partialRow = converter.toPartialRow(row)
+          // Drop rows that are not covered by the partitioner. This is how we
+          // detect a partition which was dropped between backups and filter
+          // out the rows from that dropped partition.
+          if (partitioner.isCovered(partialRow)) {
+            operation.setRow(partialRow)
+            session.apply(operation)
+          }
+        } finally {
+          session.close()
+        }
+        // Fail the task if there are any errors.
+        // It is important to capture all of the errors via getRowErrors and then check
+        // the length because each call to session.getPendingErrors clears the ErrorCollector.
+        val pendingErrors = session.getPendingErrors
+        if (pendingErrors.getRowErrors.nonEmpty) {
+          val errors = pendingErrors.getRowErrors
+          val sample = errors.take(5).map(_.getErrorStatus).mkString
+          if (pendingErrors.isOverflowed) {
+            throw new RuntimeException(
+              s"PendingErrors overflowed. Failed to write at least ${errors.length} rows " +
+                s"to Kudu; Sample errors: $sample")
+          } else {
+            throw new RuntimeException(
+              s"Failed to write ${errors.length} rows to Kudu; Sample errors: $sample")
+          }
+        }
+      }
+    }
+  }
+
+  def run(options: RestoreOptions, session: SparkSession): Int = {
     log.info(s"Restoring from path: ${options.rootPath}")
     val context =
       new KuduContext(
@@ -57,102 +161,33 @@ object KuduRestore {
       .mapValues(_.maxBy(_.restorePath.toMs))
 
     // TODO (KUDU-2786): Make parallel so each table isn't processed serially.
-    // TODO (KUDU-2787): Handle single table failures.
-    options.tables.foreach { tableName =>
-      if (!backupMap.contains(tableName)) {
-        throw new RuntimeException(s"No valid backups found for table: $tableName")
+    // TODO (KUDU-2832): If the job fails to restore a table it may still create the table, which
+    //  will cause subsequent restores to fail unless the table is deleted or the restore suffix is
+    //  changed. We ought to try to clean up the mess when a failure happens.
+    val restoreResults = options.tables.map { tableName =>
+      val restoreResult =
+        Try(doRestore(tableName: String, context, session, io, options, backupMap))
+      restoreResult match {
+        case Success(()) =>
+          log.info(s"Successfully restored table $tableName")
+        case Failure(ex) =>
+          if (options.failOnFirstError)
+            throw ex
+          else
+            log.error(s"Failed to restore table $tableName", ex)
       }
-      val graph = backupMap(tableName)
-      val lastMetadata = graph.restorePath.backups.last.metadata
-      val restoreName = s"${lastMetadata.getTableName}${options.tableSuffix}"
-      graph.restorePath.backups.foreach { backup =>
-        log.info(s"Restoring table $tableName from path: ${backup.path}")
-        val metadata = backup.metadata
-        val isFullRestore = metadata.getFromMs == 0
-        // TODO (KUDU-2788): Store the full metadata to compare/validate for each applied partial.
-
-        // On the full restore we may need to create the table.
-        if (isFullRestore) {
-          if (options.createTables) {
-            log.info(s"Creating restore table $restoreName")
-            // We use the last schema in the restore path when creating the table to
-            // ensure the table is created in its final state.
-            createTableRangePartitionByRangePartition(restoreName, lastMetadata, context)
-          }
-        }
-        val backupSchema = BackupUtils.dataSchema(TableMetadata.getKuduSchema(metadata))
-        val rowActionCol = backupSchema.fields.last.name
-        val table = context.syncClient.openTable(restoreName)
-
-        var data = session.sqlContext.read
-          .format(metadata.getDataFormat)
-          .schema(backupSchema)
-          .load(backup.path.toString)
-          // Default the the row action column with a value of "UPSERT" so that the
-          // rows from a full backup, which don't have a row action, are upserted.
-          .na
-          .fill(RowAction.UPSERT.getValue, Seq(rowActionCol))
-
-        // Adjust for dropped and renamed columns.
-        data = adjustSchema(data, metadata, lastMetadata, rowActionCol)
-        val restoreSchema = data.schema
-
-        // Write the data to Kudu.
-        data.queryExecution.toRdd.foreachPartition { internalRows =>
-          val table = context.syncClient.openTable(restoreName)
-          val converter = new RowConverter(table.getSchema, restoreSchema, false)
-          val partitioner = createPartitionFilter(metadata, lastMetadata)
-          val session = context.syncClient.newSession
-          session.setFlushMode(FlushMode.AUTO_FLUSH_BACKGROUND)
-          // In the case of task retries we need to ignore NotFound errors for deleted rows.
-          // TODO(KUDU-1563): Implement server side ignore capabilities to improve performance
-          //  and reliability.
-          session.setIgnoreAllNotFoundRows(true)
-          try for (internalRow <- internalRows) {
-            // Convert the InternalRows to Rows.
-            // This avoids any corruption as reported in SPARK-26880.
-            val row = converter.toRow(internalRow)
-            // Get the operation type based on the row action column.
-            // This will always be the last column in the row.
-            val rowActionValue = row.getByte(row.length - 1)
-            val rowAction = RowAction.fromValue(rowActionValue)
-            // Generate an operation based on the row action.
-            val operation = rowAction match {
-              case RowAction.UPSERT => table.newUpsert()
-              case RowAction.DELETE => table.newDelete()
-              case _ => throw new IllegalStateException(s"Unsupported RowAction: $rowAction")
-            }
-            // Convert the Spark row to a partial row and set it on the operation.
-            val partialRow = converter.toPartialRow(row)
-            // Drop rows that are not covered by the partitioner. This is how we
-            // detect a partition which was dropped between backups and filter
-            // out the rows from that dropped partition.
-            if (partitioner.isCovered(partialRow)) {
-              operation.setRow(partialRow)
-              session.apply(operation)
-            }
-          } finally {
-            session.close()
-          }
-          // Fail the task if there are any errors.
-          // It is important to capture all of the errors via getRowErrors and then check
-          // the length because each call to session.getPendingErrors clears the ErrorCollector.
-          val pendingErrors = session.getPendingErrors
-          if (pendingErrors.getRowErrors.nonEmpty) {
-            val errors = pendingErrors.getRowErrors
-            val sample = errors.take(5).map(_.getErrorStatus).mkString
-            if (pendingErrors.isOverflowed) {
-              throw new RuntimeException(
-                s"PendingErrors overflowed. Failed to write at least ${errors.length} rows " +
-                  s"to Kudu; Sample errors: $sample")
-            } else {
-              throw new RuntimeException(
-                s"Failed to write ${errors.length} rows to Kudu; Sample errors: $sample")
-            }
-          }
-        }
-      }
+      (tableName, restoreResult)
     }
+
+    restoreResults.filter(_._2.isFailure).foreach {
+      case (tableName, ex) =>
+        log.error(
+          s"Failed to restore table $tableName: Look back in the logs for the full exception. Error: ${ex.toString}")
+    }
+    if (restoreResults.exists(_._2.isFailure))
+      1
+    else
+      0
   }
 
   // Kudu isn't good at creating a lot of tablets at once, and by default tables may only be created
@@ -261,6 +296,6 @@ object KuduRestore {
       .appName("Kudu Table Restore")
       .getOrCreate()
 
-    run(options, session)
+    System.exit(run(options, session))
   }
 }

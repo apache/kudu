@@ -165,10 +165,12 @@ case class RestoreOptions(
     kuduMasterAddresses: String = InetAddress.getLocalHost.getCanonicalHostName,
     tableSuffix: String = "",
     createTables: Boolean = RestoreOptions.DefaultCreateTables,
-    timestampMs: Long = System.currentTimeMillis())
+    timestampMs: Long = System.currentTimeMillis(),
+    failOnFirstError: Boolean = RestoreOptions.DefaultFailOnFirstError)
 
 object RestoreOptions {
   val DefaultCreateTables: Boolean = true
+  val DefaultFailOnFirstError = false
 
   val ClassName: String = KuduRestore.getClass.getCanonicalName.dropRight(1) // Remove trailing `$`
   val ProgramName: String = "spark-submit --class " + ClassName + " [spark-options] " +
@@ -202,6 +204,12 @@ object RestoreOptions {
         .action((v, o) => o.copy(timestampMs = v))
         .text("A UNIX timestamp in milliseconds that defines the latest time to use when " +
           "selecting restore candidates. Default: `System.currentTimeMillis()`")
+        .optional()
+
+      opt[Unit]("failOnFirstError")
+        .action((v, o) => o.copy(failOnFirstError = true))
+        .text("Whether to fail the restore job as soon as a single table restore fails. " +
+          "Default: " + DefaultFailOnFirstError)
         .optional()
 
       help("help").text("prints this usage text")
