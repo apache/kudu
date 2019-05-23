@@ -104,14 +104,48 @@ class TestKuduBackup extends KuduTestSuite {
 
   @Test
   def testBackupMissingTable(): Unit = {
+    // Check that a backup of a missing table fails fast with an exception if the
+    // fail-on-first-error option is set.
     try {
-      val options = createBackupOptions(Seq("missingTable"))
-      doBackup(options)
+      val failFastOptions = createBackupOptions(Seq("missingTable")).copy(failOnFirstError = true)
+      runBackup(failFastOptions)
       fail()
     } catch {
-      case e: KuduException =>
-        assertTrue(e.getMessage.contains("the table does not exist"))
+      case e: KuduException => assertTrue(e.getMessage.contains("the table does not exist"))
     }
+
+    // Check that a backup of a missing table does not fail fast or throw an exception with the
+    // default setting to not fail on individual table errors. The failure is indicated by the
+    // return value.
+    val options = createBackupOptions(Seq("missingTable"))
+    assertEquals(1, runBackup(options))
+  }
+
+  @Test
+  def testFailedTableDoesNotFailOtherTables() {
+    insertRows(table, 100) // Insert data into the default test table.
+
+    // Run a fail-fast backup. It should fail because the first table doesn't exist.
+    // There's no guarantee about the order backups run in, so the table that does exist may or may
+    // not have been backed up.
+    val failFastOptions =
+      createBackupOptions(Seq("missingTable", tableName)).copy(failOnFirstError = true)
+    try {
+      KuduBackup.run(failFastOptions, ss)
+      fail()
+    } catch {
+      case e: KuduException => assertTrue(e.getMessage.contains("the table does not exist"))
+    }
+
+    // Run a backup with the default setting to not fail on table errors. It should back up the
+    // table that does exist, it should not throw an exception, and it should return 1 to indicate
+    // some error. The logs should contain a message about the missing table.
+    val options = createBackupOptions(Seq("missingTable", tableName))
+    captureLogs(() => assertEquals(1, KuduBackup.run(options, ss)))
+      .contains("the table does not exist")
+
+    // Restore the backup of the non-failed table and validate the end result.
+    restoreAndValidateTable(tableName, 100)
   }
 
   @Test
@@ -139,9 +173,9 @@ class TestKuduBackup extends KuduTestSuite {
     // It will use a diff scan and won't check the existing dependency graph.
     val options = createBackupOptions(Seq(tableName), fromMs = beforeMs)
     val logs = captureLogs { () =>
-      doBackup(options)
+      assertEquals(0, runBackup(options))
     }
-    assertTrue(logs.contains("Performing an incremental backup, fromMs was set to"))
+    assertTrue(logs.contains("Performing an incremental backup: fromMs was set to"))
     validateBackup(options, 100, true)
   }
 
@@ -155,9 +189,9 @@ class TestKuduBackup extends KuduTestSuite {
     // Force a full backup. It should contain all the rows.
     val options = createBackupOptions(Seq(tableName), forceFull = true)
     val logs = captureLogs { () =>
-      doBackup(options)
+      assertEquals(0, runBackup(options))
     }
-    assertTrue(logs.contains("Performing a full backup, forceFull was set to true"))
+    assertTrue(logs.contains("Performing a full backup: forceFull was set to true"))
     validateBackup(options, 200, false)
   }
 
@@ -209,7 +243,7 @@ class TestKuduBackup extends KuduTestSuite {
     insertRows(table1, numRows)
     insertRows(table2, numRows)
 
-    doBackup(createBackupOptions(Seq(table1Name, table2Name)))
+    assertEquals(0, runBackup(createBackupOptions(Seq(table1Name, table2Name))))
     doRestore(createRestoreOptions(Seq(table1Name, table2Name)))
 
     val rdd1 =
@@ -555,11 +589,11 @@ class TestKuduBackup extends KuduTestSuite {
       expectIncremental: Boolean = false) = {
     val options = createBackupOptions(Seq(tableName))
     // Run the backup.
-    doBackup(options)
+    assertEquals(0, runBackup(options))
     validateBackup(options, expectedRowCount, expectIncremental)
   }
 
-  def doBackup(options: BackupOptions): Unit = {
+  def runBackup(options: BackupOptions): Int = {
     // Log the timestamps to simplify flaky debugging.
     log.info(s"nowMs: ${System.currentTimeMillis()}")
     val hts = HybridTimeUtil.HTTimestampToPhysicalAndLogical(kuduClient.getLastPropagatedTimestamp)

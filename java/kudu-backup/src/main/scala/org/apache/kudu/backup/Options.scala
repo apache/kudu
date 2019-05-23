@@ -37,7 +37,8 @@ case class BackupOptions(
     scanRequestTimeoutMs: Long = BackupOptions.DefaultScanRequestTimeoutMs,
     scanLeaderOnly: Boolean = BackupOptions.DefaultScanLeaderOnly,
     scanPrefetching: Boolean = BackupOptions.DefaultScanPrefetching,
-    keepAlivePeriodMs: Long = BackupOptions.DefaultKeepAlivePeriodMs)
+    keepAlivePeriodMs: Long = BackupOptions.DefaultKeepAlivePeriodMs,
+    failOnFirstError: Boolean = BackupOptions.DefaultFailOnFirstError)
 
 object BackupOptions {
   val DefaultForceFull: Boolean = false
@@ -50,6 +51,7 @@ object BackupOptions {
   // TODO (KUDU-1260): Add a test and enable by default?
   val DefaultScanPrefetching: Boolean = false
   val DefaultKeepAlivePeriodMs: Long = AsyncKuduClient.DEFAULT_KEEP_ALIVE_PERIOD_MS
+  val DefaultFailOnFirstError: Boolean = false
 
   // We use the program name to make the help output show a the spark invocation required.
   val ClassName: String = KuduBackup.getClass.getCanonicalName.dropRight(1) // Remove trailing `$`
@@ -125,6 +127,12 @@ object BackupOptions {
         .text("An experimental flag to enable pre-fetching data. " +
           "Default: " + DefaultScanPrefetching)
         .hidden()
+        .optional()
+
+      opt[Unit]("failOnFirstError")
+        .action((_, o) => o.copy(failOnFirstError = true))
+        .text("Whether to fail the backup job as soon as a single table backup fails. " +
+          "Default: " + DefaultFailOnFirstError)
         .optional()
 
       help("help").text("prints this usage text")

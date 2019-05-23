@@ -25,6 +25,9 @@ import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
 import scala.collection.JavaConverters._
+import scala.util.Failure
+import scala.util.Success
+import scala.util.Try
 
 /**
  * The main class for a Kudu backup spark job.
@@ -34,7 +37,60 @@ import scala.collection.JavaConverters._
 object KuduBackup {
   val log: Logger = LoggerFactory.getLogger(getClass)
 
-  def run(options: BackupOptions, session: SparkSession): Unit = {
+  private def doBackup(
+      tableName: String,
+      context: KuduContext,
+      session: SparkSession,
+      io: BackupIO,
+      options: BackupOptions,
+      backupMap: Map[String, BackupGraph]): Unit = {
+    var tableOptions = options.copy() // Copy the options so we can modify them for the table.
+    val table = context.syncClient.openTable(tableName)
+    val tableId = table.getTableId
+    val backupPath = io.backupPath(tableId, tableName, tableOptions.toMs)
+    val metadataPath = io.backupMetadataPath(backupPath)
+    log.info(s"Backing up table $tableName to path: $backupPath")
+
+    // Unless we are forcing a full backup or a fromMs was set, find the previous backup and
+    // use the `to_ms` metadata as the `from_ms` time for this backup.
+    var incremental = false
+    if (tableOptions.forceFull) {
+      log.info("Performing a full backup: forceFull was set to true")
+    } else if (tableOptions.fromMs != BackupOptions.DefaultFromMS) {
+      log.info(s"Performing an incremental backup: fromMs was set to ${tableOptions.fromMs}")
+      incremental = true
+    } else {
+      log.info("Looking for a previous backup: forceFull and fromMs options are not set.")
+      if (backupMap.contains(tableId) && backupMap(tableId).hasFullBackup) {
+        val base = backupMap(tableId).backupBase
+        log.info(s"Setting fromMs to ${base.metadata.getToMs} from backup in path: ${base.path}")
+        tableOptions = tableOptions.copy(fromMs = base.metadata.getToMs)
+        incremental = true
+      } else {
+        log.info("No previous backup was found. Starting a full backup.")
+        tableOptions = tableOptions.copy(forceFull = true)
+      }
+    }
+    val rdd = new KuduBackupRDD(table, tableOptions, incremental, context, session.sparkContext)
+    val df =
+      session.sqlContext
+        .createDataFrame(rdd, BackupUtils.dataSchema(table.getSchema, incremental))
+
+    // Write the data to the backup path.
+    // The backup path contains the timestampMs and should not already exist.
+    val writer = df.write.mode(SaveMode.ErrorIfExists)
+    writer
+      .format(tableOptions.format)
+      .save(backupPath.toString)
+
+    // Generate and output the new metadata for this table.
+    // The existence of metadata indicates this backup was successful.
+    val tableMetadata = TableMetadata
+      .getTableMetadata(table, tableOptions.fromMs, tableOptions.toMs, tableOptions.format)
+    io.writeTableMetadata(tableMetadata, metadataPath)
+  }
+
+  def run(options: BackupOptions, session: SparkSession): Int = {
     log.info(s"Backing up to root path: ${options.rootPath}")
     val context =
       new KuduContext(
@@ -64,54 +120,29 @@ object KuduBackup {
       (graph.tableId, graph)
     }.toMap
 
-    // TODO (KUDU-2786): Make parallel so each table isn't process serially.
-    // TODO (KUDU-2787): Handle single table failures.
-    options.tables.foreach { tableName =>
-      var tableOptions = options.copy() // Copy the options so we can modify them for the table.
-      val table = context.syncClient.openTable(tableName)
-      val tableId = table.getTableId
-      val backupPath = io.backupPath(table.getTableId, table.getName, tableOptions.toMs)
-      val metadataPath = io.backupMetadataPath(backupPath)
-      log.info(s"Backing up table $tableName to path: $backupPath")
-
-      // Unless we are forcing a full backup or a fromMs was set, find the previous backup and
-      // use the `to_ms` metadata as the `from_ms` time for this backup.
-      var incremental = false
-      if (tableOptions.forceFull) {
-        log.info("Performing a full backup, forceFull was set to true")
-      } else if (tableOptions.fromMs != BackupOptions.DefaultFromMS) {
-        log.info(s"Performing an incremental backup, fromMs was set to ${tableOptions.fromMs}")
-        incremental = true
-      } else {
-        log.info("Looking for a previous backup, forceFull or fromMs options are not set.")
-        if (backupMap.contains(tableId) && backupMap(tableId).hasFullBackup) {
-          val base = backupMap(tableId).backupBase
-          log.info(s"Setting fromMs to ${base.metadata.getToMs} from backup in path: ${base.path}")
-          tableOptions = tableOptions.copy(fromMs = base.metadata.getToMs)
-          incremental = true
-        } else {
-          log.info("No previous backup was found. Starting a full backup.")
-          tableOptions = tableOptions.copy(forceFull = true)
-        }
+    // TODO (KUDU-2786): Make parallel so each table isn't processed serially.
+    val backupResults = options.tables.map { tableName =>
+      val backupResult = Try(doBackup(tableName, context, session, io, options, backupMap))
+      backupResult match {
+        case Success(()) =>
+          log.info(s"Successfully backed up up table $tableName")
+        case Failure(ex) =>
+          if (options.failOnFirstError)
+            throw ex
+          else
+            log.error(s"Failed to back up table $tableName", ex)
       }
-      val rdd = new KuduBackupRDD(table, tableOptions, incremental, context, session.sparkContext)
-      val df =
-        session.sqlContext
-          .createDataFrame(rdd, BackupUtils.dataSchema(table.getSchema, incremental))
-
-      // Write the data to the backup path.
-      // The backup path contains the timestampMs and should not already exist.
-      val writer = df.write.mode(SaveMode.ErrorIfExists)
-      writer
-        .format(tableOptions.format)
-        .save(backupPath.toString)
-
-      // Generate and output the new metadata for this table.
-      // The existence of metadata indicates this backup was successful.
-      val tableMetadata = TableMetadata
-        .getTableMetadata(table, tableOptions.fromMs, tableOptions.toMs, tableOptions.format)
-      io.writeTableMetadata(tableMetadata, metadataPath)
+      (tableName, backupResult)
     }
+    backupResults.filter(_._2.isFailure).foreach {
+      case (tableName, ex) =>
+        log.error(
+          s"Failed to back up table $tableName: Look back in the logs for the full exception. Error: ${ex.toString}")
+    }
+    if (backupResults.exists(_._2.isFailure))
+      1
+    else
+      0
   }
 
   def main(args: Array[String]): Unit = {
@@ -124,6 +155,6 @@ object KuduBackup {
       .appName("Kudu Table Backup")
       .getOrCreate()
 
-    run(options, session)
+    System.exit(run(options, session))
   }
 }
