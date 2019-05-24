@@ -96,9 +96,8 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
 
     Table table = tableEvent.getTable();
 
-    // Only validate managed tables.
-    // Kudu only synchronizes managed tables.
-    if (!table.getTableType().equals(TableType.MANAGED_TABLE.name())) {
+    // Only validate managed tables. Kudu only synchronizes managed tables.
+    if (!TableType.MANAGED_TABLE.name().equals(table.getTableType())) {
       return;
     }
 
@@ -121,13 +120,12 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
     super.onDropTable(tableEvent);
     Table table = tableEvent.getTable();
 
-    // Only validate managed tables.
-    // Kudu only synchronizes managed tables.
-    if (!table.getTableType().equals(TableType.MANAGED_TABLE.name())) {
+    if (skipsValidation()) {
       return;
     }
 
-    if (skipsValidation()) {
+    // Only validate managed tables. Kudu only synchronizes managed tables.
+    if (!TableType.MANAGED_TABLE.name().equals(table.getTableType())) {
       return;
     }
 
@@ -172,13 +170,15 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
     // Note: This doesn't prevent altering the table type for legacy tables
     // because they should continue to work as they always have primarily for
     // migration purposes.
-    if (isKuduTable(oldTable) && !oldTable.getTableType().equals(newTable.getTableType())) {
+    String oldTableType = oldTable.getTableType();
+    if (isKuduTable(oldTable) &&
+        oldTableType != null && !oldTableType.equals(newTable.getTableType())) {
       throw new MetaException("Kudu table type may not be altered");
     }
 
     // Only validate managed tables.
     // Kudu only synchronizes managed tables.
-    if (!oldTable.getTableType().equals(TableType.MANAGED_TABLE.name())) {
+    if (!TableType.MANAGED_TABLE.name().equals(oldTableType)) {
       return;
     }
 
