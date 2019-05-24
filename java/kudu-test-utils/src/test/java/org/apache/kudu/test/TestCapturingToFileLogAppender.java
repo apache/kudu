@@ -136,6 +136,6 @@ public class TestCapturingToFileLogAppender {
       assertNotNull(captured);
       assertTrue(captured.contains("java.lang.Exception: " + MAGIC_STRING));
     }
-    assertFalse(outputFile.exists());    
+    assertFalse(outputFile.exists());
   }
 }
