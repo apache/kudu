@@ -84,7 +84,7 @@ public class ListTablesResponse extends KuduRpcResponse {
     @Override
     public boolean equals(Object o) {
       if (this == o) return true;
-      if (o == null || getClass() != o.getClass()) return false;
+      if (!(o instanceof TableInfo)) return false;
       TableInfo tableInfo = (TableInfo) o;
       return Objects.equal(tableId, tableInfo.tableId) &&
           Objects.equal(tableName, tableInfo.tableName);

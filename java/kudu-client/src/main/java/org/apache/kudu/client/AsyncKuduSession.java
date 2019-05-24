@@ -35,7 +35,6 @@ import javax.annotation.concurrent.NotThreadSafe;
 import com.google.common.base.MoreObjects;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Range;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import org.apache.kudu.client.AsyncKuduClient.LookupType;
@@ -115,7 +114,6 @@ import org.apache.kudu.util.Slice;
 public class AsyncKuduSession implements SessionConfiguration {
 
   public static final Logger LOG = LoggerFactory.getLogger(AsyncKuduSession.class);
-  private static final Range<Float> PERCENTAGE_RANGE = Range.closed(0.0f, 1.0f);
 
   private final AsyncKuduClient client;
   private final Random randomizer = new Random();
