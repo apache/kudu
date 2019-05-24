@@ -30,6 +30,8 @@ import org.apache.yetus.audience.InterfaceStability
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import scala.collection.JavaConverters._
+import scala.collection.parallel.ForkJoinTaskSupport
+import scala.concurrent.forkjoin.ForkJoinPool
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
@@ -155,29 +157,35 @@ object KuduRestore {
 
     // Read the required backup metadata.
     val backupGraphs = io.readBackupGraphsByTableName(options.tables, options.timestampMs)
+
     // Key the backupMap by the last table name.
     val backupMap = backupGraphs
       .groupBy(_.restorePath.tableName)
       .mapValues(_.maxBy(_.restorePath.toMs))
 
-    // TODO (KUDU-2786): Make parallel so each table isn't processed serially.
+    // Parallelize the processing. Managing resources of parallel restore jobs is very complex, so
+    // only the simplest possible thing is attempted. Kudu trusts Spark to manage resources.
     // TODO (KUDU-2832): If the job fails to restore a table it may still create the table, which
     //  will cause subsequent restores to fail unless the table is deleted or the restore suffix is
     //  changed. We ought to try to clean up the mess when a failure happens.
-    val restoreResults = options.tables.map { tableName =>
+    val parallelTables = options.tables.par
+    val pool = new ForkJoinPool(options.numParallelRestores) // Need a clean-up reference.
+    parallelTables.tasksupport = new ForkJoinTaskSupport(pool)
+    val restoreResults = parallelTables.map { tableName =>
       val restoreResult =
-        Try(doRestore(tableName: String, context, session, io, options, backupMap))
+        Try(doRestore(tableName, context, session, io, options, backupMap))
       restoreResult match {
         case Success(()) =>
           log.info(s"Successfully restored table $tableName")
         case Failure(ex) =>
-          if (options.failOnFirstError)
+          if (options.numParallelRestores == 1 && options.failOnFirstError)
             throw ex
           else
             log.error(s"Failed to restore table $tableName", ex)
       }
       (tableName, restoreResult)
     }
+    pool.shutdown()
 
     restoreResults.filter(_._2.isFailure).foreach {
       case (tableName, ex) =>

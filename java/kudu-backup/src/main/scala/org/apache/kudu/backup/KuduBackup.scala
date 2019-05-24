@@ -16,6 +16,8 @@
 // under the License.
 package org.apache.kudu.backup
 
+import scala.concurrent.forkjoin.ForkJoinPool
+
 import org.apache.kudu.spark.kudu.KuduContext
 import org.apache.spark.sql.SaveMode
 import org.apache.spark.sql.SparkSession
@@ -23,8 +25,8 @@ import org.apache.yetus.audience.InterfaceAudience
 import org.apache.yetus.audience.InterfaceStability
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-
 import scala.collection.JavaConverters._
+import scala.collection.parallel.ForkJoinTaskSupport
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
@@ -120,20 +122,26 @@ object KuduBackup {
       (graph.tableId, graph)
     }.toMap
 
-    // TODO (KUDU-2786): Make parallel so each table isn't processed serially.
-    val backupResults = options.tables.map { tableName =>
+    // Parallelize the processing. Managing resources of parallel backup jobs is very complex, so
+    // only the simplest possible thing is attempted. Kudu trusts Spark to manage resources.
+    val parallelTables = options.tables.par
+    val pool = new ForkJoinPool(options.numParallelBackups) // Need a clean-up reference.
+    parallelTables.tasksupport = new ForkJoinTaskSupport(pool)
+    val backupResults = parallelTables.map { tableName =>
       val backupResult = Try(doBackup(tableName, context, session, io, options, backupMap))
       backupResult match {
         case Success(()) =>
           log.info(s"Successfully backed up up table $tableName")
         case Failure(ex) =>
-          if (options.failOnFirstError)
+          if (options.numParallelBackups == 1 && options.failOnFirstError)
             throw ex
           else
             log.error(s"Failed to back up table $tableName", ex)
       }
       (tableName, backupResult)
     }
+    pool.shutdown()
+
     backupResults.filter(_._2.isFailure).foreach {
       case (tableName, ex) =>
         log.error(

@@ -264,13 +264,30 @@ class TestKuduBackup extends KuduTestSuite {
     assertEquals(0, runBackup(createBackupOptions(Seq(table1Name, table2Name))))
     assertEquals(0, runRestore(createRestoreOptions(Seq(table1Name, table2Name))))
 
-    val rdd1 =
-      kuduContext.kuduRDD(ss.sparkContext, s"$table1Name-restore", List("key"))
+    val rdd1 = kuduContext.kuduRDD(ss.sparkContext, s"$table1Name-restore", List("key"))
     assertResult(numRows)(rdd1.count())
 
-    val rdd2 =
-      kuduContext.kuduRDD(ss.sparkContext, s"$table2Name-restore", List("key"))
+    val rdd2 = kuduContext.kuduRDD(ss.sparkContext, s"$table2Name-restore", List("key"))
     assertResult(numRows)(rdd2.count())
+  }
+
+  @Test
+  def testParallelBackupAndRestore() {
+    val numRows = 1
+    val tableNames = Range(0, 10).map { i =>
+      val tableName = s"table$i"
+      val table = kuduClient.createTable(tableName, schema, tableOptions)
+      insertRows(table, numRows)
+      tableName
+    }
+
+    assertEquals(0, runBackup(createBackupOptions(tableNames).copy(numParallelBackups = 3)))
+    assertEquals(0, runRestore(createRestoreOptions(tableNames).copy(numParallelRestores = 4)))
+
+    tableNames.map { tableName =>
+      val rdd = kuduContext.kuduRDD(ss.sparkContext, s"$tableName-restore", List("key"))
+      assertResult(numRows)(rdd.count())
+    }
   }
 
   @Test
