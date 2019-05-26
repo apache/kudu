@@ -304,12 +304,11 @@ fetch_and_patch \
  $CRCUTIL_PATCHLEVEL \
  "patch -p0 < $TP_DIR/patches/crcutil-fix-libtoolize-on-osx.patch"
 
-LIBUNWIND_PATCHLEVEL=2
+LIBUNWIND_PATCHLEVEL=1
 fetch_and_patch \
  libunwind-${LIBUNWIND_VERSION}.tar.gz \
  $LIBUNWIND_SOURCE \
  $LIBUNWIND_PATCHLEVEL \
- "patch -p1 < $TP_DIR/patches/libunwind-Use-syscall-directly-in-write_validate-to-avoid-ASAN.patch" \
  "patch -p1 < $TP_DIR/patches/libunwind-trace-cache-destructor.patch"
 
 PYTHON_PATCHLEVEL=0
