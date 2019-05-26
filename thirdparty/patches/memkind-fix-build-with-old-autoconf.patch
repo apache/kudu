@@ -1,0 +1,32 @@
+commit c8dbc9f
+Author: Adar Dembo <adar@cloudera.com>
+Date:   Sun May 26 14:20:51 2019 -0700
+
+    configure.ac: fixes for autoconf 2.63
+
+diff --git a/configure.ac b/configure.ac
+index 64c3200..ec5dbb1 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -25,10 +25,10 @@
+ #                                               -*- Autoconf -*-
+ # Process this file with autoconf to produce a configure script.
+ 
+-AC_PREREQ([2.64])
++AC_PREREQ([2.63])
+ AC_INIT([memkind],m4_esyscmd([tr -d '\n' < VERSION]))
+ 
+-AC_CONFIG_MACRO_DIRS([m4])
++AC_CONFIG_MACRO_DIR([m4])
+ AC_CONFIG_HEADERS([config.h])
+ AC_CONFIG_SRCDIR([memkind.spec.mk])
+ 
+@@ -36,7 +36,7 @@ AM_INIT_AUTOMAKE([-Wall -Werror foreign 1.11 silent-rules subdir-objects paralle
+ AM_SILENT_RULES([yes])
+ 
+ # Checks for programs and libraries.
+-AM_PROG_AR
++m4_ifdef([AM_PROG_AR], [AM_PROG_AR])
+ AC_PROG_CXX
+ AC_PROG_CC
+ AC_OPENMP

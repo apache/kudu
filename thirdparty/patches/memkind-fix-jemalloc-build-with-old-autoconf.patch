@@ -1,0 +1,36 @@
+commit 608c2eb
+Author: Adar Dembo <adar@cloudera.com>
+Date:   Sun May 26 14:00:50 2019 -0700
+
+    jemalloc: unroll dlsym checking logic in configure.ac
+    
+    The nested calls here cause autoconf 2.63 to generate a broken script[1].
+    The upstream jemalloc response has been to require autoconf 2.68, but that
+    means we can't build jemalloc (and thus memkind) on el6.6. As a workaround,
+    we can simply unroll these nested calls.
+    
+    1. https://github.com/jemalloc/jemalloc/issues/912
+
+diff --git a/jemalloc/configure.ac b/jemalloc/configure.ac
+index 5bd5442..cbc1e5d 100644
+--- a/jemalloc/configure.ac
++++ b/jemalloc/configure.ac
+@@ -1454,10 +1454,14 @@ if test "x$abi" != "xpecoff" ; then
+   have_pthread="1"
+   dnl Check if we have dlsym support.
+   have_dlsym="1"
+-  AC_CHECK_HEADERS([dlfcn.h],
+-    AC_CHECK_FUNC([dlsym], [],
+-      [AC_CHECK_LIB([dl], [dlsym], [LIBS="$LIBS -ldl"], [have_dlsym="0"])]),
+-    [have_dlsym="0"])
++  AC_CHECK_HEADERS([dlfcn.h], , [have_dlsym="0"])
++  check_dlsym_in_libdl="0"
++  if test "x$have_dlsym" = "x1" ; then
++    AC_CHECK_FUNC([dlsym], [], [check_dlsym_in_libdl="1"])
++  fi
++  if test "x$check_dlsym_in_libdl" = "x1" ; then
++    AC_CHECK_LIB([dl], [dlsym], [LIBS="$LIBS -ldl"], [have_dlsym="0"])
++  fi
+   if test "x$have_dlsym" = "x1" ; then
+     AC_DEFINE([JEMALLOC_HAVE_DLSYM], [ ])
+   fi

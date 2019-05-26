@@ -354,11 +354,14 @@ fetch_and_patch \
  $NUMACTL_SOURCE \
  $NUMACTL_PATCHLEVEL
 
-MEMKIND_PATCHLEVEL=0
+MEMKIND_PATCHLEVEL=3
 fetch_and_patch \
  memkind-${MEMKIND_VERSION}.tar.gz \
  $MEMKIND_SOURCE \
- $MEMKIND_PATCHLEVEL
+ $MEMKIND_PATCHLEVEL \
+ "patch -p1 < $TP_DIR/patches/memkind-fix-jemalloc-build-with-old-autoconf.patch" \
+ "patch -p1 < $TP_DIR/patches/memkind-fix-build-with-old-autoconf.patch" \
+ "patch -p1 < $TP_DIR/patches/memkind-fix-build-with-old-glibc.patch"
 
 BOOST_PATCHLEVEL=1
 fetch_and_patch \
