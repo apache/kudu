@@ -535,9 +535,8 @@ class ShardedLRUCache : public Cache {
 
  public:
   explicit ShardedLRUCache(size_t capacity, const string& /*id*/, memkind* vmp)
-        : vmp_(vmp),
-          shard_bits_(DetermineShardBits()) {
-
+      : shard_bits_(DetermineShardBits()),
+        vmp_(vmp) {
     int num_shards = 1 << shard_bits_;
     const size_t per_shard = (capacity + (num_shards - 1)) / num_shards;
     for (int s = 0; s < num_shards; s++) {
