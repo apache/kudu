@@ -71,9 +71,6 @@
 
 === Other usage limitations
 
-* Kudu is primarily designed for analytic use cases. You are likely to encounter issues if
-  a single row contains multiple kilobytes of data.
-
 * Secondary indexes are not supported.
 
 * Multi-row transactions are not supported.
