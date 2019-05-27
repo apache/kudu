@@ -317,7 +317,7 @@ fetch_and_patch \
  $PYTHON_SOURCE \
  $PYTHON_PATCHLEVEL
 
-LLVM_PATCHLEVEL=2
+LLVM_PATCHLEVEL=3
 fetch_and_patch \
  llvm-${LLVM_VERSION}-iwyu-${IWYU_VERSION}.src.tar.gz \
  $LLVM_SOURCE \
@@ -327,7 +327,8 @@ fetch_and_patch \
   "patch -p1 < $TP_DIR/patches/llvm-iwyu-nocurses.patch" \
   "patch -p1 < $TP_DIR/patches/llvm-iwyu-include-picker.patch" \
   "patch -d tools/clang/tools/include-what-you-use -p1 < $TP_DIR/patches/llvm-iwyu-llvm-6-compat.patch" \
-  "patch -d projects/compiler-rt -p1 < $TP_DIR/patches/llvm-tsan-disable-trace-switching-after-multithreaded-for.patch"
+  "patch -d projects/compiler-rt -p1 < $TP_DIR/patches/llvm-tsan-disable-trace-switching-after-multithreaded-for.patch" \
+  "patch -d projects -p1 < $TP_DIR/patches/llvm-ustat-removal.patch"
 
 LZ4_PATCHLEVEL=1
 fetch_and_patch \
