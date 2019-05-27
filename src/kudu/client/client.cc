@@ -491,16 +491,14 @@ Status KuduClient::ListTables(vector<string>* tables,
 }
 
 Status KuduClient::TableExists(const string& table_name, bool* exists) {
-  vector<string> tables;
-  RETURN_NOT_OK(ListTables(&tables, table_name));
-  for (const string& table : tables) {
-    if (table == table_name) {
-      *exists = true;
-      return Status::OK();
-    }
+  auto s = GetTableSchema(table_name, nullptr);
+  if (s.ok()) {
+    *exists = true;
+  } else if (s.IsNotFound()) {
+    *exists = false;
+    s = Status::OK();
   }
-  *exists = false;
-  return Status::OK();
+  return s;
 }
 
 Status KuduClient::OpenTable(const string& table_name,
