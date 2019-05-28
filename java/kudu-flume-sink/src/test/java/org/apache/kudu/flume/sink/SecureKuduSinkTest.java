@@ -25,6 +25,8 @@ import static org.apache.kudu.util.SecurityUtil.KUDU_TICKETCACHE_PROPERTY;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -49,8 +51,8 @@ import org.apache.kudu.test.cluster.MiniKuduCluster.MiniKuduClusterBuilder;
 
 public class SecureKuduSinkTest {
   private static final Logger LOG = LoggerFactory.getLogger(SecureKuduSinkTest.class);
-  private static final int TICKET_LIFETIME_SECONDS = 10;
-  private static final int RENEWABLE_LIFETIME_SECONDS = 30;
+  private static final int TICKET_LIFETIME_SECONDS = 20;
+  private static final int RENEWABLE_LIFETIME_SECONDS = 35;
 
   private static final MiniKuduClusterBuilder clusterBuilder = KuduTestHarness.getBaseClusterBuilder()
       .kdcTicketLifetime(TICKET_LIFETIME_SECONDS + "s")
@@ -68,6 +70,7 @@ public class SecureKuduSinkTest {
 
   @Test
   public void testEventsWithShortTickets() throws Exception {
+    Instant start = Instant.now();
     LOG.info("Creating new table...");
     ArrayList<ColumnSchema> columns = new ArrayList<>(1);
     columns.add(new ColumnSchema.ColumnSchemaBuilder("payload", Type.BINARY).key(true).build());
@@ -88,7 +91,10 @@ public class SecureKuduSinkTest {
     processEvents(sink, 0, eventCount / 2);
 
     LOG.info("Waiting for tickets to expire");
-    TimeUnit.SECONDS.sleep(RENEWABLE_LIFETIME_SECONDS * 2);
+    Duration elapsedSoFar = Duration.between(Instant.now(), start);
+    TimeUnit.MILLISECONDS.sleep(1000 * (RENEWABLE_LIFETIME_SECONDS + 1) - elapsedSoFar.toMillis());
+    // At this point, the ticket will have been outstanding for at least
+    // (RENEWABLE_LIFETIME_SECONDS + 1) seconds-- so the sink will need to reacquire a ticket.
 
     LOG.info("Testing events after ticket renewal.");
     processEvents(sink, eventCount / 2, eventCount);
