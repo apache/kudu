@@ -57,7 +57,7 @@ struct WithOverflowCheck<Type, false> {
 
 } // namespace safe_math_internal
 
-// Add 'a' and 'b', and set *overflowed to true if overflow occured.
+// Add 'a' and 'b', and set *overflowed to true if overflow occurred.
 template<typename Type>
 inline Type AddWithOverflowCheck(Type a, Type b, bool *overflowed) {
   // Pick the right specialization based on whether Type is signed.

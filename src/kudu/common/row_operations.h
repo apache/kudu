@@ -16,6 +16,8 @@
 // under the License.
 #pragma once
 
+#include <cstddef>
+
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -94,11 +96,18 @@ class RowOperationsPBDecoder {
   Status DecodeOperations(std::vector<DecodedRowOperation>* ops);
 
  private:
+  enum class CheckCellSize {
+    kNotCheckCellSize = 0,
+    kCheckCellSize = 1,
+  };
+
   Status ReadOpType(RowOperationsPB::Type* type);
   Status ReadIssetBitmap(const uint8_t** bitmap);
   Status ReadNullBitmap(const uint8_t** null_bm);
-  Status GetColumnSlice(const ColumnSchema& col, Slice* slice);
-  Status ReadColumn(const ColumnSchema& col, uint8_t* dst);
+  Status GetColumnSlice(const ColumnSchema& col,
+                        CheckCellSize check_cell_size, Slice* slice);
+  Status ReadColumn(const ColumnSchema& col,
+                    CheckCellSize check_cell_size, uint8_t* dst);
   bool HasNext() const;
 
   Status DecodeInsertOrUpsert(const uint8_t* prototype_row_storage,
@@ -128,7 +137,7 @@ class RowOperationsPBDecoder {
   Arena* const dst_arena_;
 
   const int bm_size_;
-  const int tablet_row_size_;
+  const size_t tablet_row_size_;
   Slice src_;
 
   DISALLOW_COPY_AND_ASSIGN(RowOperationsPBDecoder);

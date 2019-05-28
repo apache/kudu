@@ -21,6 +21,7 @@
 #include <ostream>
 #include <string>
 
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 
 #include "kudu/common/common.pb.h"
@@ -33,6 +34,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/bitmap.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/safe_math.h"
@@ -41,6 +43,12 @@
 using std::string;
 using std::vector;
 using strings::Substitute;
+
+DEFINE_int32(max_cell_size_bytes, 64 * 1024,
+             "The maximum size of any individual cell in a table. Attempting to store "
+             "string or binary columns with a size greater than this will result "
+             "in errors.");
+TAG_FLAG(max_cell_size_bytes, unsafe);
 
 namespace kudu {
 
@@ -191,8 +199,10 @@ Status RowOperationsPBDecoder::ReadNullBitmap(const uint8_t** null_bm) {
   return Status::OK();
 }
 
-Status RowOperationsPBDecoder::GetColumnSlice(const ColumnSchema& col, Slice* slice) {
-  int size = col.type_info()->size();
+Status RowOperationsPBDecoder::GetColumnSlice(const ColumnSchema& col,
+                                              CheckCellSize check_cell_size,
+                                              Slice* slice) {
+  size_t size = col.type_info()->size();
   if (PREDICT_FALSE(src_.size() < size)) {
     return Status::Corruption("Not enough data for column", col.ToString());
   }
@@ -200,12 +210,20 @@ Status RowOperationsPBDecoder::GetColumnSlice(const ColumnSchema& col, Slice* sl
   if (col.type_info()->physical_type() == BINARY) {
     // The Slice in the protobuf has a pointer relative to the indirect data,
     // not a real pointer. Need to fix that.
-    const Slice* ptr_slice = reinterpret_cast<const Slice*>(src_.data());
-    size_t offset_in_indirect = reinterpret_cast<uintptr_t>(ptr_slice->data());
+    auto ptr_slice = reinterpret_cast<const Slice*>(src_.data());
+    auto offset_in_indirect = reinterpret_cast<uintptr_t>(ptr_slice->data());
     bool overflowed = false;
     size_t max_offset = AddWithOverflowCheck(offset_in_indirect, ptr_slice->size(), &overflowed);
     if (PREDICT_FALSE(overflowed || max_offset > pb_->indirect_data().size())) {
       return Status::Corruption("Bad indirect slice");
+    }
+
+    // Check that no individual cell is larger than the specified max.
+    if (PREDICT_FALSE(check_cell_size == CheckCellSize::kCheckCellSize &&
+      ptr_slice->size() > FLAGS_max_cell_size_bytes)) {
+      return Status::InvalidArgument(Substitute(
+          "value too large for column '$0' ($1 bytes, maximum is $2 bytes)",
+          col.name(), ptr_slice->size(), FLAGS_max_cell_size_bytes));
     }
 
     *slice = Slice(&pb_->indirect_data()[offset_in_indirect], ptr_slice->size());
@@ -216,9 +234,11 @@ Status RowOperationsPBDecoder::GetColumnSlice(const ColumnSchema& col, Slice* sl
   return Status::OK();
 }
 
-Status RowOperationsPBDecoder::ReadColumn(const ColumnSchema& col, uint8_t* dst) {
+Status RowOperationsPBDecoder::ReadColumn(const ColumnSchema& col,
+                                          CheckCellSize check_cell_size,
+                                          uint8_t* dst) {
   Slice slice;
-  RETURN_NOT_OK(GetColumnSlice(col, &slice));
+  RETURN_NOT_OK(GetColumnSlice(col, check_cell_size, &slice));
   if (col.type_info()->physical_type() == BINARY) {
     memcpy(dst, &slice, col.type_info()->size());
   } else {
@@ -271,7 +291,7 @@ class ClientServerMapping {
     DCHECK_EQ(client_to_tablet_.size(), client_col_idx);
     DCHECK_LT(tablet_col_idx, saw_tablet_col_.size());
     client_to_tablet_.push_back(tablet_col_idx);
-    saw_tablet_col_[tablet_col_idx] = 1;
+    saw_tablet_col_[tablet_col_idx] = true;
     return Status::OK();
   }
 
@@ -288,12 +308,12 @@ class ClientServerMapping {
   }
 
   // Translate from a client schema index to the tablet schema index
-  int client_to_tablet_idx(int client_idx) const {
+  size_t client_to_tablet_idx(size_t client_idx) const {
     DCHECK_LT(client_idx, client_to_tablet_.size());
     return client_to_tablet_[client_idx];
   }
 
-  int num_mapped() const {
+  size_t num_mapped() const {
     return client_to_tablet_.size();
   }
 
@@ -301,7 +321,7 @@ class ClientServerMapping {
   // server side schema are found in the client-side schema. If not,
   // returns an InvalidArgument.
   Status CheckAllRequiredColumnsPresent() {
-    for (int tablet_col_idx = 0;
+    for (size_t tablet_col_idx = 0;
          tablet_col_idx < tablet_schema_->num_columns();
          tablet_col_idx++) {
       const ColumnSchema& col = tablet_schema_->column(tablet_col_idx);
@@ -320,7 +340,7 @@ class ClientServerMapping {
  private:
   const Schema* const client_schema_;
   const Schema* const tablet_schema_;
-  vector<int> client_to_tablet_;
+  vector<size_t> client_to_tablet_;
   vector<bool> saw_tablet_col_;
   DISALLOW_COPY_AND_ASSIGN(ClientServerMapping);
 };
@@ -339,9 +359,9 @@ Status RowOperationsPBDecoder::DecodeInsertOrUpsert(const uint8_t* prototype_row
   }
 
   // Allocate a row with the tablet's layout.
-  uint8_t* tablet_row_storage = reinterpret_cast<uint8_t*>(
+  auto tablet_row_storage = reinterpret_cast<uint8_t*>(
       dst_arena_->AllocateBytesAligned(tablet_row_size_, 8));
-  uint8_t* tablet_isset_bitmap = reinterpret_cast<uint8_t*>(
+  auto tablet_isset_bitmap = reinterpret_cast<uint8_t*>(
       dst_arena_->AllocateBytes(BitmapSize(tablet_schema_->num_columns())));
   if (PREDICT_FALSE(!tablet_row_storage || !tablet_isset_bitmap)) {
     return Status::RuntimeError("Out of memory");
@@ -357,12 +377,13 @@ Status RowOperationsPBDecoder::DecodeInsertOrUpsert(const uint8_t* prototype_row
 
   // Now handle each of the columns passed by the user, replacing the defaults
   // from the prototype.
-  for (int client_col_idx = 0; client_col_idx < client_schema_->num_columns(); client_col_idx++) {
+  for (size_t client_col_idx = 0;
+       client_col_idx < client_schema_->num_columns();
+       client_col_idx++) {
     // Look up the corresponding column from the tablet. We use the server-side
     // ColumnSchema object since it has the most up-to-date default, nullability,
     // etc.
-    int tablet_col_idx = mapping.client_to_tablet_idx(client_col_idx);
-    DCHECK_GE(tablet_col_idx, 0);
+    size_t tablet_col_idx = mapping.client_to_tablet_idx(client_col_idx);
     const ColumnSchema& col = tablet_schema_->column(tablet_col_idx);
 
     bool isset = BitmapTest(client_isset_map, client_col_idx);
@@ -378,7 +399,8 @@ Status RowOperationsPBDecoder::DecodeInsertOrUpsert(const uint8_t* prototype_row
       }
       // Copy the value if it's not null
       if (!client_set_to_null) {
-        RETURN_NOT_OK(ReadColumn(col, tablet_row.mutable_cell_ptr(tablet_col_idx)));
+        RETURN_NOT_OK(ReadColumn(col, CheckCellSize::kCheckCellSize,
+                                 tablet_row.mutable_cell_ptr(tablet_col_idx)));
       }
     } else {
       // If the client didn't provide a value, then the column must either be nullable or
@@ -400,7 +422,7 @@ Status RowOperationsPBDecoder::DecodeInsertOrUpsert(const uint8_t* prototype_row
 
 Status RowOperationsPBDecoder::DecodeUpdateOrDelete(const ClientServerMapping& mapping,
                                                     DecodedRowOperation* op) {
-  int rowkey_size = tablet_schema_->key_byte_size();
+  size_t rowkey_size = tablet_schema_->key_byte_size();
 
   const uint8_t* client_isset_map = nullptr;
   const uint8_t* client_null_map = nullptr;
@@ -412,7 +434,7 @@ Status RowOperationsPBDecoder::DecodeUpdateOrDelete(const ClientServerMapping& m
   }
 
   // Allocate space for the row key.
-  uint8_t* rowkey_storage = reinterpret_cast<uint8_t*>(
+  auto rowkey_storage = reinterpret_cast<uint8_t*>(
     dst_arena_->AllocateBytesAligned(rowkey_size, 8));
   if (PREDICT_FALSE(!rowkey_storage)) {
     return Status::RuntimeError("Out of memory");
@@ -424,14 +446,14 @@ Status RowOperationsPBDecoder::DecodeUpdateOrDelete(const ClientServerMapping& m
   ContiguousRow rowkey(tablet_schema_, rowkey_storage);
 
   // First process the key columns.
-  int client_col_idx = 0;
+  size_t client_col_idx = 0;
   for (; client_col_idx < client_schema_->num_key_columns(); client_col_idx++) {
     // Look up the corresponding column from the tablet. We use the server-side
     // ColumnSchema object since it has the most up-to-date default, nullability,
     // etc.
     DCHECK_EQ(mapping.client_to_tablet_idx(client_col_idx),
               client_col_idx) << "key columns should match";
-    int tablet_col_idx = client_col_idx;
+    size_t tablet_col_idx = client_col_idx;
 
     const ColumnSchema& col = tablet_schema_->column(tablet_col_idx);
     if (PREDICT_FALSE(!BitmapTest(client_isset_map, client_col_idx))) {
@@ -446,7 +468,8 @@ Status RowOperationsPBDecoder::DecodeUpdateOrDelete(const ClientServerMapping& m
                                      col.ToString());
     }
 
-    RETURN_NOT_OK(ReadColumn(col, rowkey.mutable_cell_ptr(tablet_col_idx)));
+    RETURN_NOT_OK(ReadColumn(col, CheckCellSize::kNotCheckCellSize,
+                             rowkey.mutable_cell_ptr(tablet_col_idx)));
   }
   op->row_data = rowkey_storage;
 
@@ -460,8 +483,7 @@ Status RowOperationsPBDecoder::DecodeUpdateOrDelete(const ClientServerMapping& m
 
     // Now process the rest of columns as updates.
     for (; client_col_idx < client_schema_->num_columns(); client_col_idx++) {
-      int tablet_col_idx = mapping.client_to_tablet_idx(client_col_idx);
-      DCHECK_GE(tablet_col_idx, 0);
+      size_t tablet_col_idx = mapping.client_to_tablet_idx(client_col_idx);
       const ColumnSchema& col = tablet_schema_->column(tablet_col_idx);
 
       if (BitmapTest(client_isset_map, client_col_idx)) {
@@ -470,7 +492,7 @@ Status RowOperationsPBDecoder::DecodeUpdateOrDelete(const ClientServerMapping& m
         uint8_t scratch[kLargestTypeSize];
         uint8_t* val_to_add;
         if (!client_set_to_null) {
-          RETURN_NOT_OK(ReadColumn(col, scratch));
+          RETURN_NOT_OK(ReadColumn(col, CheckCellSize::kCheckCellSize, scratch));
           val_to_add = scratch;
         } else {
 
@@ -491,7 +513,7 @@ Status RowOperationsPBDecoder::DecodeUpdateOrDelete(const ClientServerMapping& m
     }
 
     // Copy the row-changelist to the arena.
-    uint8_t* rcl_in_arena = reinterpret_cast<uint8_t*>(
+    auto rcl_in_arena = reinterpret_cast<uint8_t*>(
       dst_arena_->AllocateBytesAligned(buf.size(), 8));
     if (PREDICT_FALSE(rcl_in_arena == nullptr)) {
       return Status::RuntimeError("Out of memory allocating RCL");
@@ -503,8 +525,7 @@ Status RowOperationsPBDecoder::DecodeUpdateOrDelete(const ClientServerMapping& m
     // Ensure that no other columns are set.
     for (; client_col_idx < client_schema_->num_columns(); client_col_idx++) {
       if (BitmapTest(client_isset_map, client_col_idx)) {
-        int tablet_col_idx = mapping.client_to_tablet_idx(client_col_idx);
-        DCHECK_GE(tablet_col_idx, 0);
+        size_t tablet_col_idx = mapping.client_to_tablet_idx(client_col_idx);
         const ColumnSchema& col = tablet_schema_->column(tablet_col_idx);
 
         return Status::InvalidArgument("DELETE should not have a value for column",
@@ -533,25 +554,26 @@ Status RowOperationsPBDecoder::DecodeSplitRow(const ClientServerMapping& mapping
   }
 
   // Now handle each of the columns passed by the user.
-  for (int client_col_idx = 0; client_col_idx < client_schema_->num_columns(); client_col_idx++) {
+  for (size_t client_col_idx = 0;
+       client_col_idx < client_schema_->num_columns();
+       client_col_idx++) {
     // Look up the corresponding column from the tablet. We use the server-side
     // ColumnSchema object since it has the most up-to-date default, nullability,
     // etc.
-    int tablet_col_idx = mapping.client_to_tablet_idx(client_col_idx);
-    DCHECK_GE(tablet_col_idx, 0);
+    size_t tablet_col_idx = mapping.client_to_tablet_idx(client_col_idx);
     const ColumnSchema& col = tablet_schema_->column(tablet_col_idx);
 
     if (BitmapTest(client_isset_map, client_col_idx)) {
       // If the client provided a value for this column, copy it.
       Slice column_slice;
-      RETURN_NOT_OK(GetColumnSlice(col, &column_slice));
+      RETURN_NOT_OK(GetColumnSlice(col, CheckCellSize::kNotCheckCellSize, &column_slice));
       const uint8_t* data;
       if (col.type_info()->physical_type() == BINARY) {
         data = reinterpret_cast<const uint8_t*>(&column_slice);
       } else {
         data = column_slice.data();
       }
-      RETURN_NOT_OK(op->split_row->Set(tablet_col_idx, data));
+      RETURN_NOT_OK(op->split_row->Set(static_cast<int32_t >(tablet_col_idx), data));
     }
   }
   return Status::OK();
