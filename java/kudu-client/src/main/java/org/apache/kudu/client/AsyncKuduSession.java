@@ -441,10 +441,10 @@ public class AsyncKuduSession implements SessionConfiguration {
    * @return the operation responses
    */
   private Deferred<List<OperationResponse>> doFlush(Buffer buffer) {
-    LOG.debug("flushing buffer: {}", buffer);
     if (buffer == null || buffer.getOperations().isEmpty()) {
       return Deferred.fromResult(ImmutableList.of());
     }
+    LOG.debug("flushing buffer: {}", buffer);
 
     Deferred<List<BatchResponse>> batchResponses = new Deferred<>();
     Callback<Void, Object> tabletLookupCB = new TabletLookupCB(buffer, batchResponses);
