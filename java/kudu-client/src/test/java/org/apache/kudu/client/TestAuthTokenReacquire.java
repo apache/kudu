@@ -125,14 +125,34 @@ public class TestAuthTokenReacquire {
             assertTrue(tableList.getTablesList().isEmpty());
             dropConnectionsAndExpireTokens();
 
-            client.createTable(tableName, basicSchema, getBasicCreateTableOptions());
+            try {
+              client.createTable(tableName, basicSchema, getBasicCreateTableOptions());
+            } catch (KuduException ex) {
+              // Swallow "table already exists" exceptions. This might happen if the thread sends
+              // a CreateTable request, the master receives it, but the connection is dropped by
+              // another thread before the client receives a success response, and then the client
+              // retries.
+              // TODO(KUDU-1537): Remove this workaround when table creation is exactly-once.
+              Status exStatus = ex.getStatus();
+              if (!exStatus.isAlreadyPresent() && !exStatus.isServiceUnavailable()) {
+                throw ex;
+              }
+            }
             dropConnectionsAndExpireTokens();
 
             KuduTable table = client.openTable(tableName);
             assertEquals(basicSchema.getColumnCount(), table.getSchema().getColumnCount());
             dropConnectionsAndExpireTokens();
 
-            client.deleteTable(tableName);
+            try {
+              client.deleteTable(tableName);
+            } catch (KuduException ex) {
+              // See the above comment about table creation. The same idea applies to table deletion.
+              // TODO(KUDU-1537): Remove this workaround when table deletion is exactly-once.
+              if (!ex.getStatus().isNotFound()) {
+                throw ex;
+              }
+            }
             assertFalse(client.tableExists(tableName));
           } catch (Throwable e) {
             //noinspection ThrowableResultOfMethodCallIgnored
