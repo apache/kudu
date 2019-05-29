@@ -208,28 +208,37 @@ GROUP_FLAG_VALIDATOR(sentry_service_rpc_addresses,
 
 namespace {
 
-// Returns an authorizable based on the table identifier (in the format
-// <database-name>.<table-name>) and the given scope.
-Status GetAuthorizable(const string& table_ident,
+// Fetching privileges from Sentry gets more expensive the broader the scope of
+// the authorizable is, since the API used in a fetch returns all ancestors and
+// all descendents of an authorizable in its hierarchy tree.
+//
+// Even if requesting privileges at a relatively broad scope, e.g. DATABASE,
+// fill in the authorizable to request a narrower scope, since the broader
+// privileges (i.e. the ancestors) will be returned from Sentry anyway.
+void NarrowAuthzScopeForFetch(const string& db, const string& table,
+                              TSentryAuthorizable* authorizable) {
+  if (authorizable->db.empty()) {
+    authorizable->__set_db(db);
+  }
+  if (authorizable->table.empty()) {
+    authorizable->__set_table(table);
+  }
+}
+
+// Returns an authorizable based on the given database and table name and the
+// given scope.
+Status GetAuthorizable(const string& db, const string& table,
                        SentryAuthorizableScope::Scope scope,
                        TSentryAuthorizable* authorizable) {
-  Slice database;
-  Slice table;
   // We should only ever request privileges from Sentry for authorizables of
   // scope equal to or higher than 'TABLE'.
   DCHECK_NE(scope, SentryAuthorizableScope::Scope::COLUMN);
   switch (scope) {
     case SentryAuthorizableScope::Scope::TABLE:
-      RETURN_NOT_OK(ParseHiveTableIdentifier(table_ident, &database, &table));
-      DCHECK(!table.empty());
-      authorizable->__set_table(table.ToString());
+      authorizable->__set_table(table);
       FALLTHROUGH_INTENDED;
     case SentryAuthorizableScope::Scope::DATABASE:
-      if (database.empty() && table.empty()) {
-        RETURN_NOT_OK(ParseHiveTableIdentifier(table_ident, &database, &table));
-      }
-      DCHECK(!database.empty());
-      authorizable->__set_db(database.ToString());
+      authorizable->__set_db(db);
       FALLTHROUGH_INTENDED;
     case SentryAuthorizableScope::Scope::SERVER:
       authorizable->__set_server(FLAGS_server_name);
@@ -585,11 +594,19 @@ Status SentryPrivilegesFetcher::ResetCache() {
 
 Status SentryPrivilegesFetcher::GetSentryPrivileges(
     SentryAuthorizableScope::Scope requested_scope,
-    const string& table_name,
+    const string& table_ident,
     const string& user,
     SentryPrivilegesBranch* privileges) {
+  Slice db_slice;
+  Slice table_slice;
+  RETURN_NOT_OK(ParseHiveTableIdentifier(table_ident, &db_slice, &table_slice));
+  DCHECK(!table_slice.empty());
+  DCHECK(!db_slice.empty());
+  const string table = table_slice.ToString();
+  const string db = db_slice.ToString();
+
   TSentryAuthorizable authorizable;
-  RETURN_NOT_OK(GetAuthorizable(table_name, requested_scope, &authorizable));
+  RETURN_NOT_OK(GetAuthorizable(db, table, requested_scope, &authorizable));
 
   if (PREDICT_FALSE(requested_scope == SentryAuthorizableScope::SERVER &&
                     !IsGTest())) {
@@ -599,7 +616,7 @@ Status SentryPrivilegesFetcher::GetSentryPrivileges(
     // of the SERVER scope unless this method is called from test code.
     LOG(DFATAL) << Substitute(
         "requesting privileges of the SERVER scope from Sentry "
-        "on authorizable '$0' for user '$1'", table_name, user);
+        "on authorizable '$0' for user '$1'", table_ident, user);
   }
 
   // Not expecting requests for authorizables of the scope narrower than TABLE,
@@ -673,6 +690,7 @@ Status SentryPrivilegesFetcher::GetSentryPrivileges(
     return Status::OK();
   }
 
+  NarrowAuthzScopeForFetch(db, table, &authorizable);
   TRACE("Fetching privileges from Sentry");
   const auto s = FetchPrivilegesFromSentry(FLAGS_kudu_service_name,
                                            user, authorizable,

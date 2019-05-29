@@ -27,6 +27,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include <gflags/gflags.h>
 #include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 #include <google/protobuf/stubs/port.h>
@@ -52,16 +53,23 @@
 #include "kudu/sentry/sentry_client.h"
 #include "kudu/sentry/sentry_policy_service_types.h"
 #include "kudu/util/barrier.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/hdr_histogram.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/status.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/ttl_cache.h"
+
+DEFINE_int32(num_table_privileges, 100,
+    "Number of table privileges to use in testing");
+TAG_FLAG(num_table_privileges, hidden);
 
 DECLARE_int32(sentry_service_recv_timeout_seconds);
 DECLARE_int32(sentry_service_send_timeout_seconds);
@@ -338,6 +346,31 @@ constexpr const char* kTable = "table";
 constexpr const char* kColumn = "column";
 
 } // anonymous namespace
+
+// Benchmark to test the time it takes to evaluate privileges when requesting
+// privileges for braod authorization scopes (e.g. SERVER, DATABASE).
+TEST_F(SentryAuthzProviderTest, BroadAuthzScopeBenchmark) {
+  const char* kLongDb = "DbWithLongName";
+  const char* kLongTable = "TableWithLongName";
+  ASSERT_OK(CreateRoleAndAddToGroups());
+
+  // Create a database with a bunch tables in it.
+  int kNumTables = FLAGS_num_table_privileges;
+  for (int i = 0; i < kNumTables; i++) {
+    KLOG_EVERY_N_SECS(INFO, 3) << Substitute("num tables granted: $0", i);
+    ASSERT_OK(AlterRoleGrantPrivilege(
+        GetTablePrivilege(kLongDb, Substitute("$0_$1", kLongTable, i), "OWNER")));
+  }
+
+  // Time how long it takes to get the database privileges via authorizing a
+  // create table request.
+  Status s;
+  LOG_TIMING(INFO, "Getting database privileges") {
+    s = sentry_authz_provider_->AuthorizeCreateTable(
+        Substitute("$0.$1_$2", kLongDb, kLongTable, 0) , kTestUser, kTestUser);
+  }
+  ASSERT_TRUE(s.IsNotAuthorized());
+}
 
 class SentryAuthzProviderFilterPrivilegesTest : public SentryAuthzProviderTest {
  public:

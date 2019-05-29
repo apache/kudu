@@ -169,7 +169,7 @@ class SentryPrivilegesFetcher {
   // in the cache.
   Status GetSentryPrivileges(
       sentry::SentryAuthorizableScope::Scope requested_scope,
-      const std::string& table_name,
+      const std::string& table_ident,
       const std::string& user,
       SentryPrivilegesBranch* privileges);
 
