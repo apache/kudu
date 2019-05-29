@@ -628,16 +628,11 @@ will refuse to start when misconfigured in this way.
 [[heap_sampling]]
 === Heap Sampling
 
-For advanced debugging of memory usage, administrators may enable heap sampling on Kudu daemons.
+For advanced debugging of memory usage, released builds of Kudu enable Heap Sampling by default.
 This allows Kudu developers to associate memory usage with the specific lines of code and data
 structures responsible. When reporting a bug related to memory usage or an apparent memory leak,
 heap profiling can give quantitative data to pinpoint the issue.
 
-WARNING: Heap sampling is an advanced troubleshooting technique and may cause performance
-degradation or instability of the Kudu service. Currently it is not recommended to enable this
-in a production environment unless specifically requested by the Kudu development team.
-
-To enable heap sampling on a Kudu daemon, pass the flag `--heap-sample-every-n-bytes=524588`.
 If heap sampling is enabled, the current sampled heap occupancy can be retrieved over HTTP
 by visiting `http://tablet-server.example.com:8050/pprof/heap` or
 `http://master.example.com:8051/pprof/heap`. The output is a machine-readable dump of the
