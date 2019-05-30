@@ -191,19 +191,21 @@ Status HostPort::ResolveAddresses(vector<Sockaddr>* addresses) const {
   LOG_SLOW_EXECUTION(WARNING, 200, op_description) {
     RETURN_NOT_OK(GetAddrInfo(host_, hints, op_description, &result));
   }
+  vector<Sockaddr> result_addresses;
   for (const addrinfo* ai = result.get(); ai != nullptr; ai = ai->ai_next) {
-    CHECK_EQ(ai->ai_family, AF_INET);
-    struct sockaddr_in* addr = reinterpret_cast<struct sockaddr_in*>(ai->ai_addr);
+    CHECK_EQ(AF_INET, ai->ai_family);
+    sockaddr_in* addr = reinterpret_cast<sockaddr_in*>(ai->ai_addr);
     addr->sin_port = htons(port_);
     Sockaddr sockaddr(*addr);
-    if (addresses) {
-      addresses->push_back(sockaddr);
-    }
-    VLOG(2) << "Resolved address " << sockaddr.ToString()
-            << " for host/port " << ToString();
+    VLOG(2) << Substitute("resolved address $0 for host/port $1",
+                          sockaddr.ToString(), ToString());
+    result_addresses.emplace_back(sockaddr);
   }
   if (PREDICT_FALSE(FLAGS_fail_dns_resolution)) {
     return Status::NetworkError("injected DNS resolution failure");
+  }
+  if (addresses) {
+    *addresses = std::move(result_addresses);
   }
   return Status::OK();
 }

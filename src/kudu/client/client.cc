@@ -94,14 +94,12 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/logging_callback.h"
 #include "kudu/util/monotime.h"
-#include "kudu/util/net/dns_resolver.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/oid_generator.h"
 #include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/version_info.h"
 
 using kudu::master::AlterTableRequestPB;
-using kudu::master::AlterTableRequestPB_Step;
 using kudu::master::AlterTableResponsePB;
 using kudu::master::CreateTableRequestPB;
 using kudu::master::CreateTableResponsePB;
@@ -369,7 +367,6 @@ Status KuduClientBuilder::Build(shared_ptr<KuduClient>* client) {
                         "Could not connect to the cluster");
 
   c->data_->meta_cache_.reset(new MetaCache(c.get(), data_->replica_visibility_));
-  c->data_->dns_resolver_.reset(new DnsResolver);
 
   // Init local host names used for locality decisions.
   RETURN_NOT_OK_PREPEND(c->data_->InitLocalHostNames(),

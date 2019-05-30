@@ -32,6 +32,7 @@
 
 #include <boost/bind.hpp> // IWYU pragma: keep
 #include <boost/function.hpp>
+#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/client/authz_token_cache.h"
@@ -66,6 +67,10 @@
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/thread_restrictions.h"
+
+DECLARE_int32(dns_resolver_max_threads_num);
+DECLARE_uint32(dns_resolver_cache_capacity_mb);
+DECLARE_uint32(dns_resolver_cache_ttl_sec);
 
 using std::pair;
 using std::set;
@@ -152,8 +157,13 @@ Status RetryFunc(const MonoTime& deadline,
 }
 
 KuduClient::Data::Data()
-    : hive_metastore_sasl_enabled_(false),
-      latest_observed_timestamp_(KuduClient::kNoTimestamp) {}
+    : dns_resolver_(new DnsResolver(
+          FLAGS_dns_resolver_max_threads_num,
+          FLAGS_dns_resolver_cache_capacity_mb * 1024 * 1024,
+          MonoDelta::FromSeconds(FLAGS_dns_resolver_cache_ttl_sec))),
+      hive_metastore_sasl_enabled_(false),
+      latest_observed_timestamp_(KuduClient::kNoTimestamp) {
+}
 
 KuduClient::Data::~Data() {
   // Workaround for KUDU-956: the user may close a KuduClient while a flush
@@ -595,8 +605,9 @@ void KuduClient::Data::ConnectToClusterAsync(KuduClient* client,
     }
     if (addrs.size() > 1) {
       KLOG_EVERY_N_SECS(WARNING, 1)
-          << "Specified master server address '" << master_server_addr << "' "
-          << "resolved to multiple IPs. Using " << addrs[0].ToString();
+          << Substitute("Specified master server address '$0' resolved to "
+                        "multiple IPs. Using $1",
+                        master_server_addr, addrs[0].ToString());
     }
     master_addrs_with_names.emplace_back(addrs[0], hp.host());
   }

@@ -136,9 +136,9 @@ void RemoteTabletServer::InitProxy(KuduClient* client, const StatusCallback& cb)
   }
 
   auto addrs = new vector<Sockaddr>();
-  client->data_->dns_resolver_->ResolveAddresses(
-    hp, addrs, Bind(&RemoteTabletServer::DnsResolutionFinished,
-                    Unretained(this), hp, addrs, client, cb));
+  client->data_->dns_resolver_->ResolveAddressesAsync(
+      hp, addrs, Bind(&RemoteTabletServer::DnsResolutionFinished,
+                      Unretained(this), hp, addrs, client, cb));
 }
 
 void RemoteTabletServer::Update(const master::TSInfoPB& pb) {

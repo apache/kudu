@@ -30,7 +30,6 @@
 
 #include "kudu/client/authz_token_cache.h"
 #include "kudu/client/client.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/master/master.pb.h"
@@ -242,8 +241,8 @@ class KuduClient::Data {
   // The request tracker for this client.
   scoped_refptr<rpc::RequestTracker> request_tracker_;
 
+  std::unique_ptr<DnsResolver> dns_resolver_;
   std::shared_ptr<rpc::Messenger> messenger_;
-  gscoped_ptr<DnsResolver> dns_resolver_;
   scoped_refptr<internal::MetaCache> meta_cache_;
 
   // Authorization tokens stored for each table, indexed by table ID. Note that
