@@ -632,7 +632,9 @@ class ShardedLRUCache : public Cache {
 
 } // end anonymous namespace
 
-Cache* NewLRUNvmCache(size_t capacity, const std::string& id) {
+template<>
+Cache* NewCache<Cache::EvictionPolicy::LRU,
+                Cache::MemoryType::NVM>(size_t capacity, const std::string& id) {
   // memkind_create_pmem() will fail if the capacity is too small, but with
   // an inscrutable error. So, we'll check ourselves.
   CHECK_GE(capacity, MEMKIND_PMEM_MIN_SIZE)

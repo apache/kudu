@@ -45,7 +45,8 @@ add_library(cfile
   index_btree.cc
   type_encodings.cc)
 
-target_link_libraries(cfile
+
+set(CFILE_LIBS
   kudu_common
   kudu_fs
   kudu_util
@@ -53,6 +54,14 @@ target_link_libraries(cfile
   gutil
   cfile_proto
   bitshuffle)
+
+if(HAVE_LIB_MEMKIND)
+  set(CFILE_LIBS
+    ${CFILE_LIBS}
+    nvm_cache)
+endif()
+
+target_link_libraries(cfile ${CFILE_LIBS})
 
 # Tests
 SET_KUDU_TEST_LINK_LIBS(cfile)

@@ -239,12 +239,6 @@ set(UTIL_SRCS
 # optimized regardless of the default optimization options.
 set_source_files_properties(memory/overwrite.cc PROPERTIES COMPILE_FLAGS "-O3")
 
-if(HAVE_LIB_MEMKIND)
-  set(UTIL_SRCS
-    ${UTIL_SRCS}
-    nvm_cache.cc)
-endif()
-
 set(UTIL_LIBS
   crcutil
   gflags
@@ -269,12 +263,6 @@ if(NOT APPLE)
     rt)
 endif()
 
-if(HAVE_LIB_MEMKIND)
-  set(UTIL_LIBS
-    ${UTIL_LIBS}
-    memkind)
-endif()
-
 # We use MallocExtension, but not in the exported version of the library.
 set(EXPORTED_UTIL_LIBS ${UTIL_LIBS})
 if(${KUDU_TCMALLOC_AVAILABLE})
@@ -286,6 +274,31 @@ ADD_EXPORTABLE_LIBRARY(kudu_util
   DEPS ${UTIL_LIBS}
   NONLINK_DEPS gen_version_info
   EXPORTED_DEPS ${EXPORTED_UTIL_LIBS})
+
+#######################################
+# nvm_cache
+#######################################
+
+if(HAVE_LIB_MEMKIND)
+  set(NVM_CACHE_SRCS
+    nvm_cache.cc)
+
+  set(NVM_CACHE_LIBS
+    gflags
+    glog
+    gutil
+    memkind)
+
+  if(NOT APPLE)
+    set(NVM_CACHE_LIBS
+      ${NVM_CACHE_LIBS}
+      dl
+      rt)
+  endif()
+
+  add_library(nvm_cache ${NVM_CACHE_SRCS})
+  target_link_libraries(nvm_cache ${NVM_CACHE_LIBS})
+endif()
 
 #######################################
 # kudu_util_compression
@@ -342,7 +355,7 @@ target_link_libraries(kudu_test_util
 
 if(HAVE_LIB_MEMKIND)
   target_link_libraries(kudu_test_util
-    memkind)
+    nvm_cache)
 endif()
 
 #######################################

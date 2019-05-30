@@ -35,10 +35,6 @@
 #include "kudu/util/slice.h"
 #include "kudu/util/test_util_prod.h"
 
-#if !defined(__APPLE__)
-#include "kudu/util/nvm_cache.h"
-#endif
-
 // Useful in tests that require accurate cache capacity accounting.
 DEFINE_bool(cache_force_single_shard, false,
             "Override all cache implementations to use just one shard");
@@ -696,14 +692,6 @@ Cache* NewCache<Cache::EvictionPolicy::LRU,
                 Cache::MemoryType::DRAM>(size_t capacity, const std::string& id) {
   return new ShardedCache<Cache::EvictionPolicy::LRU>(capacity, id);
 }
-
-#if defined(HAVE_LIB_MEMKIND)
-template<>
-Cache* NewCache<Cache::EvictionPolicy::LRU,
-                Cache::MemoryType::NVM>(size_t capacity, const std::string& id) {
-  return NewLRUNvmCache(capacity, id);
-}
-#endif
 
 std::ostream& operator<<(std::ostream& os, Cache::MemoryType mem_type) {
   switch (mem_type) {
