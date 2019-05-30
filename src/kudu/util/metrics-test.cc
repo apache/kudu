@@ -45,6 +45,7 @@
 #include "kudu/util/test_util.h"
 
 using std::string;
+using std::unordered_map;
 using std::unordered_set;
 using std::vector;
 
@@ -183,6 +184,8 @@ TEST_F(MetricsTest, SimpleHistogramTest) {
 TEST_F(MetricsTest, JsonPrintTest) {
   scoped_refptr<Counter> test_counter = METRIC_test_counter.Instantiate(entity_);
   test_counter->Increment();
+  scoped_refptr<AtomicGauge<uint64_t>> test_gauge = METRIC_test_gauge.Instantiate(entity_, 0);
+  test_gauge->IncrementBy(2);
   entity_->SetAttribute("test_attr", "attr_val");
 
   // Generate the JSON.
@@ -196,13 +199,23 @@ TEST_F(MetricsTest, JsonPrintTest) {
 
   vector<const rapidjson::Value*> metrics;
   ASSERT_OK(reader.ExtractObjectArray(reader.root(), "metrics", &metrics));
-  ASSERT_EQ(1, metrics.size());
+  ASSERT_EQ(2, metrics.size());
+
+  // Mapping metric_name-->metric_value
+  unordered_map<string, int64_t> metric_map;
   string metric_name;
-  ASSERT_OK(reader.ExtractString(metrics[0], "name", &metric_name));
-  ASSERT_EQ("test_counter", metric_name);
   int64_t metric_value;
+  ASSERT_OK(reader.ExtractString(metrics[0], "name", &metric_name));
   ASSERT_OK(reader.ExtractInt64(metrics[0], "value", &metric_value));
-  ASSERT_EQ(1L, metric_value);
+  InsertOrDie(&metric_map, metric_name, metric_value);
+  ASSERT_OK(reader.ExtractString(metrics[1], "name", &metric_name));
+  ASSERT_OK(reader.ExtractInt64(metrics[1], "value", &metric_value));
+  InsertOrDie(&metric_map, metric_name, metric_value);
+
+  ASSERT_TRUE(ContainsKey(metric_map, "test_counter"));
+  ASSERT_EQ(1L, metric_map["test_counter"]);
+  ASSERT_TRUE(ContainsKey(metric_map, "test_gauge"));
+  ASSERT_EQ(2L, metric_map["test_gauge"]);
 
   const rapidjson::Value* attributes;
   ASSERT_OK(reader.ExtractObject(reader.root(), "attributes", &attributes));
@@ -213,28 +226,33 @@ TEST_F(MetricsTest, JsonPrintTest) {
   // Verify that metric filtering matches on substrings.
   {
     out.str("");
+    JsonWriter writer(&out, JsonWriter::PRETTY);
     MetricJsonOptions opts;
-    opts.entity_metrics.emplace_back("test count");
+    opts.entity_metrics.emplace_back("test_count");
     ASSERT_OK(entity_->WriteAsJson(&writer, opts));
-    ASSERT_STR_CONTAINS(METRIC_test_counter.name(), out.str());
+    ASSERT_STR_CONTAINS(out.str(), METRIC_test_counter.name());
+    ASSERT_STR_NOT_CONTAINS(out.str(), METRIC_test_gauge.name());
   }
 
   // Verify that, if we filter for a metric that isn't in this entity, we get no result.
   {
     out.str("");
+    JsonWriter writer(&out, JsonWriter::PRETTY);
     MetricJsonOptions opts;
     opts.entity_metrics.emplace_back("not_a_matching_metric");
     ASSERT_OK(entity_->WriteAsJson(&writer, opts));
-    ASSERT_EQ("", out.str());
+    ASSERT_EQ(out.str(), "");
   }
 
   // Verify that filtering is case-insensitive.
   {
     out.str("");
+    JsonWriter writer(&out, JsonWriter::PRETTY);
     MetricJsonOptions opts;
-    opts.entity_metrics.emplace_back("mY teST coUNteR");
+    opts.entity_metrics.emplace_back("teST_coUNteR");
     ASSERT_OK(entity_->WriteAsJson(&writer, opts));
-    ASSERT_STR_CONTAINS(METRIC_test_counter.name(), out.str());
+    ASSERT_STR_CONTAINS(out.str(), METRIC_test_counter.name());
+    ASSERT_STR_NOT_CONTAINS(out.str(), METRIC_test_gauge.name());
   }
 }
 
