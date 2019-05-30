@@ -52,10 +52,11 @@ class DistributedDataGeneratorTest extends KuduTestSuite {
       "--type=random",
       randomTableName,
       harness.getMasterAddressesAsString)
-    val rdd = runGeneratorTest(args)
-    val collisions = ss.sparkContext.longAccumulator("row_collisions").value
-    // Collisions could cause the number of row to be less than the number set.
-    assertEquals(numRows - collisions, rdd.collect.length)
+    val (metrics, rdd) = runGeneratorTest(args)
+    val (rowsWritten, collisions) = (metrics.rowsWritten.value, metrics.collisions.value)
+    // Collisions may cause the number of rows written to be less than the number generated.
+    assertEquals(rowsWritten, rdd.collect.length.toLong)
+    assertEquals(numRows, rowsWritten + collisions)
   }
 
   @Test
@@ -67,8 +68,11 @@ class DistributedDataGeneratorTest extends KuduTestSuite {
       "--type=sequential",
       randomTableName,
       harness.getMasterAddressesAsString)
-    val rdd = runGeneratorTest(args)
+    val (metrics, rdd) = runGeneratorTest(args)
+    val (rowsWritten, collisions) = (metrics.rowsWritten.value, metrics.collisions.value)
+    assertEquals(numRows.toLong, rowsWritten)
     assertEquals(numRows, rdd.collect.length)
+    assertEquals(0L, collisions)
   }
 
   @Test
@@ -81,8 +85,11 @@ class DistributedDataGeneratorTest extends KuduTestSuite {
       "--repartition=true",
       randomTableName,
       harness.getMasterAddressesAsString)
-    val rdd = runGeneratorTest(args)
+    val (metrics, rdd) = runGeneratorTest(args)
+    val (rowsWritten, collisions) = (metrics.rowsWritten.value, metrics.collisions.value)
+    assertEquals(numRows.toLong, rowsWritten)
     assertEquals(numRows, rdd.collect.length)
+    assertEquals(0L, collisions)
   }
 
   @Test
@@ -127,11 +134,11 @@ class DistributedDataGeneratorTest extends KuduTestSuite {
     assertEquals(numTasks + numPartitions, actualNumTasks)
   }
 
-  def runGeneratorTest(args: Array[String]): RDD[Row] = {
+  def runGeneratorTest(args: Array[String]): (GeneratorMetrics, RDD[Row]) = {
     val schema = generator.randomSchema()
     val options = generator.randomCreateTableOptions(schema)
     kuduClient.createTable(randomTableName, schema, options)
-    DistributedDataGenerator.testMain(args, ss)
-    kuduContext.kuduRDD(ss.sparkContext, randomTableName)
+    val metrics = DistributedDataGenerator.testMain(args, ss)
+    (metrics, kuduContext.kuduRDD(ss.sparkContext, randomTableName))
   }
 }

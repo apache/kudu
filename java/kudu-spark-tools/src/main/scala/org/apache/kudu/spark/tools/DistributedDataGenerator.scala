@@ -55,7 +55,7 @@ object GeneratorMetrics {
 object DistributedDataGenerator {
   val log: Logger = LoggerFactory.getLogger(getClass)
 
-  def run(options: DistributedDataGeneratorOptions, ss: SparkSession): Unit = {
+  def run(options: DistributedDataGeneratorOptions, ss: SparkSession): GeneratorMetrics = {
     log.info(s"Running a DistributedDataGenerator with options: $options")
     val sc = ss.sparkContext
     val context = new KuduContext(options.masterAddresses, sc)
@@ -131,8 +131,7 @@ object DistributedDataGenerator {
       session.close()
     }
 
-    log.info(s"Rows written: ${metrics.rowsWritten.value}")
-    log.info(s"Collisions: ${metrics.collisions.value}")
+    metrics
   }
 
   /**
@@ -140,7 +139,7 @@ object DistributedDataGenerator {
    * so tests must create and manage their own.
    */
   @InterfaceAudience.LimitedPrivate(Array("Test"))
-  def testMain(args: Array[String], ss: SparkSession): Unit = {
+  def testMain(args: Array[String], ss: SparkSession): GeneratorMetrics = {
     DistributedDataGeneratorOptions.parse(args) match {
       case None => throw new IllegalArgumentException("Could not parse arguments")
       case Some(config) => run(config, ss)
@@ -150,7 +149,9 @@ object DistributedDataGenerator {
   def main(args: Array[String]): Unit = {
     val conf = new SparkConf().setAppName("DistributedDataGenerator")
     val ss = SparkSession.builder().config(conf).getOrCreate()
-    testMain(args, ss)
+    val metrics = testMain(args, ss)
+    log.info(s"Rows written: ${metrics.rowsWritten.value}")
+    log.info(s"Collisions: ${metrics.collisions.value}")
   }
 }
 
