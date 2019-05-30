@@ -215,6 +215,7 @@ void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
     }
     Status s = server_->ts_manager()->RegisterTS(req->common().ts_instance(),
                                                  req->registration(),
+                                                 server_->dns_resolver(),
                                                  &ts_desc);
     if (!s.ok()) {
       LOG(WARNING) << Substitute("Unable to register tserver ($0): $1",

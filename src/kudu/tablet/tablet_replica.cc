@@ -164,7 +164,8 @@ Status TabletReplica::Start(const ConsensusBootstrapInfo& bootstrap_info,
                             shared_ptr<Messenger> messenger,
                             scoped_refptr<ResultTracker> result_tracker,
                             scoped_refptr<Log> log,
-                            ThreadPool* prepare_pool) {
+                            ThreadPool* prepare_pool,
+                            DnsResolver* resolver) {
   DCHECK(tablet) << "A TabletReplica must be provided with a Tablet";
   DCHECK(log) << "A TabletReplica must be provided with a Log";
 
@@ -210,7 +211,7 @@ Status TabletReplica::Start(const ConsensusBootstrapInfo& bootstrap_info,
       VLOG(2) << "T " << tablet_id() << " P " << consensus_->peer_uuid() << ": Peer starting";
       VLOG(2) << "RaftConfig before starting: " << SecureDebugString(consensus_->CommittedConfig());
 
-      peer_proxy_factory.reset(new RpcPeerProxyFactory(messenger_));
+      peer_proxy_factory.reset(new RpcPeerProxyFactory(messenger_, resolver));
       time_manager.reset(new TimeManager(clock_, tablet_->mvcc_manager()->GetCleanTimestamp()));
     }
 

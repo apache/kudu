@@ -38,6 +38,7 @@
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/tserver/tserver_path_handlers.h"
 #include "kudu/util/maintenance_manager.h"
+#include "kudu/util/net/dns_resolver.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
 
@@ -47,21 +48,6 @@ using kudu::fs::ErrorHandlerType;
 using kudu::rpc::ServiceIf;
 
 namespace kudu {
-
-namespace {
-
-Status ValidateMasterAddressResolution(const UnorderedHostPortSet& master_addrs) {
-  for (const HostPort& addr : master_addrs) {
-    RETURN_NOT_OK_PREPEND(addr.ResolveAddresses(nullptr),
-                          strings::Substitute(
-                          "Couldn't resolve master service address '$0'",
-                          addr.ToString()));
-  }
-  return Status::OK();
-}
-
-} // anonymous namespace
-
 namespace tserver {
 
 TabletServer::TabletServer(const TabletServerOptions& opts)
@@ -105,15 +91,19 @@ Status TabletServer::Init() {
   // We don't validate that we can connect at this point -- it should
   // be allowed to start the TS and the master in whichever order --
   // our heartbeat thread will loop until successfully connecting.
-  RETURN_NOT_OK(ValidateMasterAddressResolution(master_addrs));
+  for (const auto& addr : master_addrs) {
+    RETURN_NOT_OK_PREPEND(dns_resolver()->ResolveAddresses(addr, nullptr),
+        strings::Substitute("couldn't resolve master service address '$0'",
+                            addr.ToString()));
+  }
 
   RETURN_NOT_OK(KuduServer::Init());
   if (web_server_) {
     RETURN_NOT_OK(path_handlers_->Register(web_server_.get()));
   }
 
-  maintenance_manager_.reset(new MaintenanceManager(
-      MaintenanceManager::kDefaultOptions, fs_manager_->uuid()));
+  maintenance_manager_ = std::make_shared<MaintenanceManager>(
+      MaintenanceManager::kDefaultOptions, fs_manager_->uuid());
 
   heartbeater_.reset(new Heartbeater(std::move(master_addrs), this));
 

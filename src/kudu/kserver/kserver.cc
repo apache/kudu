@@ -55,13 +55,11 @@ static bool ValidateThreadPoolThreadLimit(const char* /*flagname*/, int32_t valu
 }
 DEFINE_validator(server_thread_pool_max_thread_count, &ValidateThreadPoolThreadLimit);
 
+using kudu::server::ServerBaseOptions;
 using std::string;
 using strings::Substitute;
 
 namespace kudu {
-
-using server::ServerBaseOptions;
-
 namespace kserver {
 
 METRIC_DEFINE_histogram(server, op_apply_queue_length, "Operation Apply Queue Length",

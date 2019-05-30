@@ -19,7 +19,6 @@
 
 #include <memory>
 #include <string>
-#include <vector>
 
 #include <boost/optional/optional.hpp>
 #include <glog/logging.h>
@@ -27,13 +26,12 @@
 
 #include "kudu/common/common.pb.h"
 #include "kudu/common/wire_protocol.pb.h"
-#include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/net/dns_resolver.h"
 #include "kudu/util/test_macros.h"
 
 using std::shared_ptr;
 using std::string;
-using std::vector;
-using strings::Substitute;
+using std::unique_ptr;
 
 namespace kudu {
 namespace master {
@@ -69,8 +67,10 @@ TEST(TSDescriptorTest, TestRegistration) {
   NodeInstancePB instance;
   ServerRegistrationPB registration;
   SetupBasicRegistrationInfo(uuid, &instance, &registration);
+  unique_ptr<DnsResolver> dns_resolver(new DnsResolver);
   shared_ptr<TSDescriptor> desc;
-  ASSERT_OK(TSDescriptor::RegisterNew(instance, registration, {}, &desc));
+  ASSERT_OK(TSDescriptor::RegisterNew(
+      instance, registration, {}, dns_resolver.get(), &desc));
 
   // Spot check some fields and the ToString value.
   ASSERT_EQ(uuid, desc->permanent_uuid());
@@ -87,8 +87,10 @@ TEST(TSDescriptorTest, TestLocationCmd) {
   NodeInstancePB instance;
   ServerRegistrationPB registration;
   SetupBasicRegistrationInfo(uuid, &instance, &registration);
+  unique_ptr<DnsResolver> dns_resolver(new DnsResolver);
   shared_ptr<TSDescriptor> desc;
-  ASSERT_OK(TSDescriptor::RegisterNew(instance, registration, location, &desc));
+  ASSERT_OK(TSDescriptor::RegisterNew(
+      instance, registration, location, dns_resolver.get(), &desc));
   ASSERT_EQ(location, desc->location());
 }
 } // namespace master

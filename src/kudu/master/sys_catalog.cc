@@ -304,10 +304,10 @@ Status SysCatalogTable::CreateDistributedConfig(const MasterOptions& options,
       LOG(INFO) << SecureShortDebugString(peer)
                 << " has no permanent_uuid. Determining permanent_uuid...";
       RaftPeerPB new_peer = peer;
-      RETURN_NOT_OK_PREPEND(consensus::SetPermanentUuidForRemotePeer(master_->messenger(),
-                                                                     &new_peer),
-                            Substitute("Unable to resolve UUID for peer $0",
-                                       SecureShortDebugString(peer)));
+      RETURN_NOT_OK_PREPEND(consensus::SetPermanentUuidForRemotePeer(
+          master_->messenger(), master_->dns_resolver(), &new_peer),
+          Substitute("Unable to resolve UUID for peer $0",
+                     SecureShortDebugString(peer)));
       resolved_config.add_peers()->CopyFrom(new_peer);
     }
   }
@@ -396,7 +396,8 @@ Status SysCatalogTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>&
                                                master_->messenger(),
                                                scoped_refptr<rpc::ResultTracker>(),
                                                log,
-                                               master_->tablet_prepare_pool()),
+                                               master_->tablet_prepare_pool(),
+                                               master_->dns_resolver()),
                         "Failed to Start() TabletReplica");
 
   tablet_replica_->RegisterMaintenanceOps(master_->maintenance_manager());

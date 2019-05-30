@@ -38,6 +38,7 @@
 #include "kudu/util/status.h"
 
 namespace kudu {
+class DnsResolver;
 class ThreadPoolToken;
 
 namespace rpc {
@@ -278,12 +279,12 @@ class RpcPeerProxy : public PeerProxy {
 // PeerProxyFactory implementation that generates RPCPeerProxies
 class RpcPeerProxyFactory : public PeerProxyFactory {
  public:
-  explicit RpcPeerProxyFactory(std::shared_ptr<rpc::Messenger> messenger);
+  RpcPeerProxyFactory(std::shared_ptr<rpc::Messenger> messenger,
+                      DnsResolver* dns_resolver);
+  ~RpcPeerProxyFactory() = default;
 
   Status NewProxy(const RaftPeerPB& peer_pb,
                   gscoped_ptr<PeerProxy>* proxy) override;
-
-  ~RpcPeerProxyFactory();
 
   const std::shared_ptr<rpc::Messenger>& messenger() const override {
     return messenger_;
@@ -291,13 +292,16 @@ class RpcPeerProxyFactory : public PeerProxyFactory {
 
  private:
   std::shared_ptr<rpc::Messenger> messenger_;
+  DnsResolver* dns_resolver_;
 };
 
 // Query the consensus service at last known host/port that is
 // specified in 'remote_peer' and set the 'permanent_uuid' field based
 // on the response.
-Status SetPermanentUuidForRemotePeer(const std::shared_ptr<rpc::Messenger>& messenger,
-                                     RaftPeerPB* remote_peer);
+Status SetPermanentUuidForRemotePeer(
+    const std::shared_ptr<rpc::Messenger>& messenger,
+    DnsResolver* resolver,
+    RaftPeerPB* remote_peer);
 
 }  // namespace consensus
 }  // namespace kudu

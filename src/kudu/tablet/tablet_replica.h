@@ -47,6 +47,7 @@
 #include "kudu/util/status.h"
 
 namespace kudu {
+class DnsResolver;
 class MaintenanceManager;
 class MaintenanceOp;
 class MonoDelta;
@@ -108,7 +109,8 @@ class TabletReplica : public RefCountedThreadSafe<TabletReplica>,
                std::shared_ptr<rpc::Messenger> messenger,
                scoped_refptr<rpc::ResultTracker> result_tracker,
                scoped_refptr<log::Log> log,
-               ThreadPool* prepare_pool);
+               ThreadPool* prepare_pool,
+               DnsResolver* resolver);
 
   // Synchronously transition this replica to STOPPED state from any other
   // state. This also stops RaftConsensus. If a Stop() operation is already in

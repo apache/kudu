@@ -59,6 +59,7 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/mutex.h"
+#include "kudu/util/net/dns_resolver.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
@@ -116,30 +117,7 @@ using strings::Substitute;
 
 namespace kudu {
 
-namespace rpc {
-class Messenger;
-}
-
 namespace tserver {
-
-namespace {
-
-// Creates a proxy to 'hostport'.
-Status MasterServiceProxyForHostPort(const HostPort& hostport,
-                                     const shared_ptr<rpc::Messenger>& messenger,
-                                     gscoped_ptr<MasterServiceProxy>* proxy) {
-  vector<Sockaddr> addrs;
-  RETURN_NOT_OK(hostport.ResolveAddresses(&addrs));
-  if (addrs.size() > 1) {
-    LOG(WARNING) << "Master address '" << hostport.ToString() << "' "
-                 << "resolves to " << addrs.size() << " different addresses. Using "
-                 << addrs[0].ToString();
-  }
-  proxy->reset(new MasterServiceProxy(messenger, addrs[0], hostport.host()));
-  return Status::OK();
-}
-
-} // anonymous namespace
 
 // Most of the actual logic of the heartbeater is inside this inner class,
 // to avoid having too many dependencies from the header itself.
@@ -170,6 +148,8 @@ class Heartbeater::Thread {
   Status SetupRegistration(ServerRegistrationPB* reg);
   void SetupCommonField(master::TSToMasterCommonPB* common);
   bool IsCurrentThread() const;
+  // Creates a proxy to 'hostport'.
+  Status MasterServiceProxyForHostPort(gscoped_ptr<MasterServiceProxy>* proxy);
 
   // The host and port of the master that this thread will heartbeat to.
   //
@@ -333,8 +313,7 @@ Heartbeater::Thread::Thread(HostPort master_address, TabletServer* server)
 
 Status Heartbeater::Thread::ConnectToMaster() {
   gscoped_ptr<MasterServiceProxy> new_proxy;
-  RETURN_NOT_OK(MasterServiceProxyForHostPort(master_address_, server_->messenger(), &new_proxy));
-
+  RETURN_NOT_OK(MasterServiceProxyForHostPort(&new_proxy));
   // Ping the master to verify that it's alive.
   master::PingRequestPB req;
   master::PingResponsePB resp;
@@ -725,6 +704,22 @@ void Heartbeater::Thread::GenerateFullTabletReport(TabletReportPB* report) {
   report->set_sequence_number(next_report_seq_.fetch_add(1));
   report->set_is_incremental(false);
   server_->tablet_manager()->PopulateFullTabletReport(report);
+}
+
+Status Heartbeater::Thread::MasterServiceProxyForHostPort(
+    gscoped_ptr<MasterServiceProxy>* proxy) {
+  vector<Sockaddr> addrs;
+  RETURN_NOT_OK(server_->dns_resolver()->ResolveAddresses(master_address_,
+                                                          &addrs));
+  CHECK(!addrs.empty());
+  if (addrs.size() > 1) {
+    LOG(WARNING) << Substitute(
+        "Master address '$0' resolves to $1 different addresses. Using $2",
+        master_address_.ToString(), addrs.size(), addrs[0].ToString());
+  }
+  proxy->reset(new MasterServiceProxy(
+      server_->messenger(), addrs[0], master_address_.host()));
+  return Status::OK();
 }
 
 } // namespace tserver

@@ -50,6 +50,7 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/dns_resolver.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
@@ -536,15 +537,17 @@ string RpcPeerProxy::PeerName() const {
 
 namespace {
 
-Status CreateConsensusServiceProxyForHost(const shared_ptr<Messenger>& messenger,
-                                          const HostPort& hostport,
-                                          gscoped_ptr<ConsensusServiceProxy>* new_proxy) {
+Status CreateConsensusServiceProxyForHost(
+    const HostPort& hostport,
+    const shared_ptr<Messenger>& messenger,
+    DnsResolver* dns_resolver,
+    gscoped_ptr<ConsensusServiceProxy>* new_proxy) {
   vector<Sockaddr> addrs;
-  RETURN_NOT_OK(hostport.ResolveAddresses(&addrs));
+  RETURN_NOT_OK(dns_resolver->ResolveAddresses(hostport, &addrs));
   if (addrs.size() > 1) {
-    LOG(WARNING)<< "Peer address '" << hostport.ToString() << "' "
-    << "resolves to " << addrs.size() << " different addresses. Using "
-    << addrs[0].ToString();
+    LOG(WARNING) << Substitute(
+        "Peer address '$0' resolves to $1 different addresses. "
+        "Using $2", hostport.ToString(), addrs.size(), addrs[0].ToString());
   }
   new_proxy->reset(new ConsensusServiceProxy(messenger, addrs[0], hostport.host()));
   return Status::OK();
@@ -552,28 +555,33 @@ Status CreateConsensusServiceProxyForHost(const shared_ptr<Messenger>& messenger
 
 } // anonymous namespace
 
-RpcPeerProxyFactory::RpcPeerProxyFactory(shared_ptr<Messenger> messenger)
-    : messenger_(std::move(messenger)) {}
+RpcPeerProxyFactory::RpcPeerProxyFactory(shared_ptr<Messenger> messenger,
+                                         DnsResolver* dns_resolver)
+    : messenger_(std::move(messenger)),
+      dns_resolver_(dns_resolver) {
+}
 
 Status RpcPeerProxyFactory::NewProxy(const RaftPeerPB& peer_pb,
                                      gscoped_ptr<PeerProxy>* proxy) {
   gscoped_ptr<HostPort> hostport(new HostPort);
   RETURN_NOT_OK(HostPortFromPB(peer_pb.last_known_addr(), hostport.get()));
   gscoped_ptr<ConsensusServiceProxy> new_proxy;
-  RETURN_NOT_OK(CreateConsensusServiceProxyForHost(messenger_, *hostport, &new_proxy));
+  RETURN_NOT_OK(CreateConsensusServiceProxyForHost(
+      *hostport, messenger_, dns_resolver_, &new_proxy));
   proxy->reset(new RpcPeerProxy(std::move(hostport), std::move(new_proxy)));
   return Status::OK();
 }
 
-RpcPeerProxyFactory::~RpcPeerProxyFactory() {}
-
-Status SetPermanentUuidForRemotePeer(const shared_ptr<Messenger>& messenger,
-                                     RaftPeerPB* remote_peer) {
+Status SetPermanentUuidForRemotePeer(
+    const shared_ptr<rpc::Messenger>& messenger,
+    DnsResolver* resolver,
+    RaftPeerPB* remote_peer) {
   DCHECK(!remote_peer->has_permanent_uuid());
   HostPort hostport;
   RETURN_NOT_OK(HostPortFromPB(remote_peer->last_known_addr(), &hostport));
   gscoped_ptr<ConsensusServiceProxy> proxy;
-  RETURN_NOT_OK(CreateConsensusServiceProxyForHost(messenger, hostport, &proxy));
+  RETURN_NOT_OK(CreateConsensusServiceProxyForHost(
+      hostport, messenger, resolver, &proxy));
   GetNodeInstanceRequestPB req;
   GetNodeInstanceResponsePB resp;
   rpc::RpcController controller;

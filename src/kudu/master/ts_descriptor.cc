@@ -35,6 +35,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/net/dns_resolver.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
@@ -58,10 +59,12 @@ namespace master {
 Status TSDescriptor::RegisterNew(const NodeInstancePB& instance,
                                  const ServerRegistrationPB& registration,
                                  const boost::optional<std::string>& location,
+                                 DnsResolver* dns_resolver,
                                  shared_ptr<TSDescriptor>* desc) {
   shared_ptr<TSDescriptor> ret(TSDescriptor::make_shared(instance.permanent_uuid()));
-  RETURN_NOT_OK(ret->Register(instance, registration, location));
-  desc->swap(ret);
+  RETURN_NOT_OK(ret->Register(
+      instance, registration, location, dns_resolver));
+  *desc = std::move(ret);
   return Status::OK();
 }
 
@@ -97,7 +100,8 @@ static bool HostPortPBsEqual(const google::protobuf::RepeatedPtrField<HostPortPB
 
 Status TSDescriptor::Register(const NodeInstancePB& instance,
                               const ServerRegistrationPB& registration,
-                              const boost::optional<std::string>& location) {
+                              const boost::optional<std::string>& location,
+                              DnsResolver* dns_resolver) {
   std::lock_guard<rw_spinlock> l(lock_);
   CHECK_EQ(instance.permanent_uuid(), permanent_uuid_);
 
@@ -138,6 +142,7 @@ Status TSDescriptor::Register(const NodeInstancePB& instance,
   registration_.reset(new ServerRegistrationPB(registration));
   ts_admin_proxy_.reset();
   consensus_proxy_.reset();
+  dns_resolver_ = dns_resolver;
   location_ = location;
   return Status::OK();
 }
@@ -217,7 +222,7 @@ Status TSDescriptor::ResolveSockaddr(Sockaddr* addr, string* host) const {
   HostPort last_hostport;
   vector<Sockaddr> addrs;
   for (const HostPort& hostport : hostports) {
-    RETURN_NOT_OK(hostport.ResolveAddresses(&addrs));
+    RETURN_NOT_OK(dns_resolver_->ResolveAddresses(hostport, &addrs));
     if (!addrs.empty()) {
       last_hostport = hostport;
       break;

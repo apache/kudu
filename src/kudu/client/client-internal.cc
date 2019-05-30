@@ -415,8 +415,9 @@ Status KuduClient::Data::InitLocalHostNames() {
   }
 
   vector<Sockaddr> addresses;
-  RETURN_NOT_OK_PREPEND(HostPort(hostname, 0).ResolveAddresses(&addresses),
-                        Substitute("Could not resolve local host name '$0'", hostname));
+  RETURN_NOT_OK_PREPEND(dns_resolver_->ResolveAddresses(HostPort(hostname, 0),
+                                                        &addresses),
+      Substitute("Could not resolve local host name '$0'", hostname));
 
   for (const Sockaddr& addr : addresses) {
     // Similar to above, ignore local or wildcard addresses.
@@ -592,7 +593,7 @@ void KuduClient::Data::ConnectToClusterAsync(KuduClient* client,
     Status s = hp.ParseString(master_server_addr, master::Master::kDefaultPort);
     if (s.ok()) {
       // TODO(todd): Do address resolution asynchronously as well.
-      s = hp.ResolveAddresses(&addrs);
+      s = dns_resolver_->ResolveAddresses(hp, &addrs);
     }
     if (!s.ok()) {
       cb.Run(s);

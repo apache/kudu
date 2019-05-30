@@ -74,6 +74,7 @@
 #include "kudu/util/env_util.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/dns_resolver.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
@@ -654,7 +655,9 @@ TEST_F(RaftConsensusITest, TestGetPermanentUuid) {
   std::shared_ptr<rpc::Messenger> messenger;
   ASSERT_OK(builder.Build(&messenger));
 
-  ASSERT_OK(consensus::SetPermanentUuidForRemotePeer(messenger, &peer));
+  auto resolver = std::make_shared<DnsResolver>();
+  ASSERT_OK(consensus::SetPermanentUuidForRemotePeer(
+      messenger, resolver.get(), &peer));
   ASSERT_EQ(expected_uuid, peer.permanent_uuid());
 }
 

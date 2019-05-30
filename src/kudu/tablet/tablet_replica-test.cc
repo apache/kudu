@@ -71,6 +71,7 @@
 #include "kudu/util/maintenance_manager.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/dns_resolver.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -81,34 +82,34 @@ METRIC_DECLARE_entity(tablet);
 
 DECLARE_int32(flush_threshold_mb);
 
+using kudu::consensus::CommitMsg;
+using kudu::consensus::ConsensusBootstrapInfo;
+using kudu::consensus::ConsensusMetadata;
+using kudu::consensus::ConsensusMetadataManager;
+using kudu::consensus::OpId;
+using kudu::consensus::RECEIVED_OPID;
+using kudu::consensus::RaftConfigPB;
+using kudu::consensus::RaftConsensus;
+using kudu::consensus::RaftPeerPB;
+using kudu::log::Log;
+using kudu::log::LogOptions;
+using kudu::pb_util::SecureDebugString;
+using kudu::pb_util::SecureShortDebugString;
+using kudu::rpc::Messenger;
+using kudu::rpc::ResultTracker;
+using kudu::tserver::AlterSchemaRequestPB;
+using kudu::tserver::AlterSchemaResponsePB;
+using kudu::tserver::WriteRequestPB;
+using kudu::tserver::WriteResponsePB;
+using std::shared_ptr;
+using std::string;
+using std::unique_ptr;
+
 namespace kudu {
 
 class MemTracker;
 
 namespace tablet {
-
-using consensus::CommitMsg;
-using consensus::ConsensusBootstrapInfo;
-using consensus::ConsensusMetadata;
-using consensus::ConsensusMetadataManager;
-using consensus::OpId;
-using consensus::RECEIVED_OPID;
-using consensus::RaftConfigPB;
-using consensus::RaftConsensus;
-using consensus::RaftPeerPB;
-using log::Log;
-using log::LogOptions;
-using pb_util::SecureDebugString;
-using pb_util::SecureShortDebugString;
-using rpc::Messenger;
-using rpc::ResultTracker;
-using std::shared_ptr;
-using std::string;
-using std::unique_ptr;
-using tserver::AlterSchemaRequestPB;
-using tserver::AlterSchemaResponsePB;
-using tserver::WriteRequestPB;
-using tserver::WriteResponsePB;
 
 static Schema GetTestSchema() {
   return Schema({ ColumnSchema("key", INT32) }, 1);
@@ -117,9 +118,10 @@ static Schema GetTestSchema() {
 class TabletReplicaTest : public KuduTabletTest {
  public:
   TabletReplicaTest()
-    : KuduTabletTest(GetTestSchema()),
-      insert_counter_(0),
-      delete_counter_(0) {
+      : KuduTabletTest(GetTestSchema()),
+        insert_counter_(0),
+        delete_counter_(0),
+        dns_resolver_(new DnsResolver) {
   }
 
   void SetUpReplica(bool new_replica = true) {
@@ -184,7 +186,8 @@ class TabletReplicaTest : public KuduTabletTest {
                                   messenger_,
                                   scoped_refptr<ResultTracker>(),
                                   log,
-                                  prepare_pool_.get());
+                                  prepare_pool_.get(),
+                                  dns_resolver_.get());
   }
 
   Status StartReplicaAndWaitUntilLeader(const ConsensusBootstrapInfo& info) {
@@ -232,7 +235,8 @@ class TabletReplicaTest : public KuduTabletTest {
                                      messenger_,
                                      scoped_refptr<ResultTracker>(),
                                      log,
-                                     prepare_pool_.get()));
+                                     prepare_pool_.get(),
+                                     dns_resolver_.get()));
     // Wait for the replica to be usable.
     const MonoDelta kTimeout = MonoDelta::FromSeconds(30);
     ASSERT_OK(tablet_replica_->consensus()->WaitUntilLeaderForTests(kTimeout));
@@ -383,6 +387,7 @@ class TabletReplicaTest : public KuduTabletTest {
   gscoped_ptr<ThreadPool> prepare_pool_;
   gscoped_ptr<ThreadPool> apply_pool_;
   gscoped_ptr<ThreadPool> raft_pool_;
+  unique_ptr<DnsResolver> dns_resolver_;
 
   scoped_refptr<ConsensusMetadataManager> cmeta_manager_;
 

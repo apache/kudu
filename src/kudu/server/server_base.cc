@@ -74,6 +74,7 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/minidump.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/dns_resolver.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
@@ -206,6 +207,9 @@ DEFINE_int32(rpc_default_keepalive_time_ms, 65000,
 TAG_FLAG(rpc_default_keepalive_time_ms, advanced);
 
 DECLARE_bool(use_hybrid_clock);
+DECLARE_int32(dns_resolver_max_threads_num);
+DECLARE_uint32(dns_resolver_cache_capacity_mb);
+DECLARE_uint32(dns_resolver_cache_ttl_sec);
 
 using kudu::security::RpcAuthentication;
 using kudu::security::RpcEncryption;
@@ -355,6 +359,10 @@ ServerBase::ServerBase(string name, const ServerBaseOptions& options,
       result_tracker_(new rpc::ResultTracker(shared_ptr<MemTracker>(
           MemTracker::CreateTracker(-1, "result-tracker", mem_tracker_)))),
       is_first_run_(false),
+      dns_resolver_(new DnsResolver(
+          FLAGS_dns_resolver_max_threads_num,
+          FLAGS_dns_resolver_cache_capacity_mb * 1024 * 1024,
+          MonoDelta::FromSeconds(FLAGS_dns_resolver_cache_ttl_sec))),
       options_(options),
       stop_background_threads_latch_(1) {
   FsManagerOpts fs_opts;

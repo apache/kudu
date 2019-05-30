@@ -1086,7 +1086,8 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletReplica>& replica,
                        server_->messenger(),
                        server_->result_tracker(),
                        log,
-                       server_->tablet_prepare_pool());
+                       server_->tablet_prepare_pool(),
+                       server_->dns_resolver());
     if (!s.ok()) {
       LOG(ERROR) << LogPrefix(tablet_id) << "Tablet failed to start: "
                  << s.ToString();

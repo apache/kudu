@@ -102,6 +102,7 @@ bool TSManager::LookupTSByUUID(const string& uuid,
 
 Status TSManager::RegisterTS(const NodeInstancePB& instance,
                              const ServerRegistrationPB& registration,
+                             DnsResolver* dns_resolver,
                              std::shared_ptr<TSDescriptor>* desc) {
   // Pre-condition: registration info should contain at least one RPC end-point.
   if (registration.rpc_addresses().empty()) {
@@ -148,10 +149,11 @@ Status TSManager::RegisterTS(const NodeInstancePB& instance,
     auto* descriptor_ptr = FindOrNull(servers_by_id_, uuid);
     if (descriptor_ptr) {
       descriptor = *descriptor_ptr;
-      RETURN_NOT_OK(descriptor->Register(instance, registration, location));
+      RETURN_NOT_OK(descriptor->Register(
+          instance, registration, location, dns_resolver));
     } else {
       RETURN_NOT_OK(TSDescriptor::RegisterNew(
-          instance, registration, location, &descriptor));
+          instance, registration, location, dns_resolver, &descriptor));
       InsertOrDie(&servers_by_id_, uuid, descriptor);
       new_tserver = true;
     }

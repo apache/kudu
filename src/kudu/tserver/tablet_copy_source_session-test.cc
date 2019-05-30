@@ -66,6 +66,7 @@
 #include "kudu/util/faststring.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/dns_resolver.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/slice.h"
@@ -109,8 +110,9 @@ using tablet::WriteTransactionState;
 class TabletCopyTest : public KuduTabletTest {
  public:
   TabletCopyTest()
-    : KuduTabletTest(Schema({ ColumnSchema("key", STRING),
-                              ColumnSchema("val", INT32) }, 1)) {
+      : KuduTabletTest(Schema({ ColumnSchema("key", STRING),
+                                ColumnSchema("val", INT32) }, 1)),
+        dns_resolver_(new DnsResolver) {
     CHECK_OK(ThreadPoolBuilder("prepare").Build(&prepare_pool_));
     CHECK_OK(ThreadPoolBuilder("apply").Build(&apply_pool_));
     CHECK_OK(ThreadPoolBuilder("raft").Build(&raft_pool_));
@@ -177,7 +179,8 @@ class TabletCopyTest : public KuduTabletTest {
                                      messenger,
                                      scoped_refptr<rpc::ResultTracker>(),
                                      log,
-                                     prepare_pool_.get()));
+                                     prepare_pool_.get(),
+                                     dns_resolver_.get()));
     ASSERT_OK(tablet_replica_->WaitUntilConsensusRunning(MonoDelta::FromSeconds(10)));
     ASSERT_OK(tablet_replica_->consensus()->WaitUntilLeaderForTests(MonoDelta::FromSeconds(10)));
   }
@@ -258,6 +261,7 @@ class TabletCopyTest : public KuduTabletTest {
   gscoped_ptr<ThreadPool> prepare_pool_;
   gscoped_ptr<ThreadPool> apply_pool_;
   gscoped_ptr<ThreadPool> raft_pool_;
+  unique_ptr<DnsResolver> dns_resolver_;
   scoped_refptr<TabletReplica> tablet_replica_;
   scoped_refptr<TabletCopySourceSession> session_;
 };

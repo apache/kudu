@@ -30,6 +30,7 @@
 
 namespace kudu {
 
+class DnsResolver;
 class NodeInstancePB;
 class ServerRegistrationPB;
 
@@ -74,6 +75,7 @@ class TSManager {
   // If successful, *desc reset to the registered descriptor.
   Status RegisterTS(const NodeInstancePB& instance,
                     const ServerRegistrationPB& registration,
+                    DnsResolver* dns_resolver,
                     std::shared_ptr<TSDescriptor>* desc);
 
   // Return all of the currently registered TS descriptors into the provided

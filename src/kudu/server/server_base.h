@@ -14,8 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#ifndef KUDU_SERVER_SERVER_BASE_H
-#define KUDU_SERVER_SERVER_BASE_H
+#pragma once
 
 #include <cstdint>
 #include <memory>
@@ -32,6 +31,7 @@
 
 namespace kudu {
 
+class DnsResolver;
 class FsManager;
 class MemTracker;
 class MetricEntity;
@@ -103,6 +103,8 @@ class ServerBase {
 
   // Returns this server's clock.
   clock::Clock* clock() { return clock_.get(); }
+
+  DnsResolver* dns_resolver() { return dns_resolver_.get(); }
 
   // Return a PB describing the status of the server (version info, bound ports, etc)
   Status GetStatusPB(ServerStatusPB* status) const;
@@ -193,6 +195,7 @@ class ServerBase {
 
   // The ACL of users who may act as part of the Kudu service.
   security::SimpleAcl service_acl_;
+
  private:
   Status InitAcls();
   void GenerateInstanceID();
@@ -209,6 +212,9 @@ class ServerBase {
   Status StartExcessLogFileDeleterThread();
   void ExcessLogFileDeleterThread();
 
+  // Utility object for DNS name resolutions.
+  std::unique_ptr<DnsResolver> dns_resolver_;
+
   ServerBaseOptions options_;
 
   std::unique_ptr<DiagnosticsLog> diag_log_;
@@ -222,4 +228,3 @@ class ServerBase {
 
 } // namespace server
 } // namespace kudu
-#endif /* KUDU_SERVER_SERVER_BASE_H */

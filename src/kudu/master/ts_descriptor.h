@@ -37,6 +37,7 @@
 
 namespace kudu {
 
+class DnsResolver;
 class Sockaddr;
 
 namespace consensus {
@@ -62,6 +63,7 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
   static Status RegisterNew(const NodeInstancePB& instance,
                             const ServerRegistrationPB& registration,
                             const boost::optional<std::string>& location,
+                            DnsResolver* dns_resolver,
                             std::shared_ptr<TSDescriptor>* desc);
 
   virtual ~TSDescriptor() = default;
@@ -79,7 +81,8 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
   // Register this tablet server.
   Status Register(const NodeInstancePB& instance,
                   const ServerRegistrationPB& registration,
-                  const boost::optional<std::string>& location);
+                  const boost::optional<std::string>& location,
+                  DnsResolver* dns_resolver);
 
   const std::string &permanent_uuid() const { return permanent_uuid_; }
   int64_t latest_seqno() const;
@@ -171,6 +174,7 @@ class TSDescriptor : public enable_make_shared<TSDescriptor> {
 
   std::shared_ptr<tserver::TabletServerAdminServiceProxy> ts_admin_proxy_;
   std::shared_ptr<consensus::ConsensusServiceProxy> consensus_proxy_;
+  DnsResolver* dns_resolver_;
 
   DISALLOW_COPY_AND_ASSIGN(TSDescriptor);
 };

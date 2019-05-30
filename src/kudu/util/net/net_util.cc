@@ -83,7 +83,7 @@ namespace {
 
 using AddrInfo = unique_ptr<addrinfo, function<void(addrinfo*)>>;
 
-// An utility wrapper around getaddrinfo() call to convert the return code
+// A utility wrapper around getaddrinfo() call to convert the return code
 // of the libc library function into Status.
 Status GetAddrInfo(const string& hostname,
                    const addrinfo& hints,
