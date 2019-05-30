@@ -105,8 +105,8 @@ using rpc::ResultTracker;
 using std::shared_ptr;
 using std::string;
 using std::unique_ptr;
-using tserver::AlterSchemaRequestPB;;
-using tserver::AlterSchemaResponsePB;;
+using tserver::AlterSchemaRequestPB;
+using tserver::AlterSchemaResponsePB;
 using tserver::WriteRequestPB;
 using tserver::WriteResponsePB;
 

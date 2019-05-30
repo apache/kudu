@@ -46,7 +46,7 @@ Status DoGetLoggedInUser(string* user_name) {
   if (override_username && strlen(override_username)) {
     VLOG(1) << "Overriding logged-in user name to " << override_username;
     *user_name = override_username;
-    return Status::OK();;
+    return Status::OK();
   }
 
   DCHECK(user_name != nullptr);

@@ -136,12 +136,12 @@ struct FlagTags {
 // This also validates that 'tag' is a valid flag as defined in the FlagTags
 // enum above.
 #define TAG_FLAG(flag_name, tag) \
-  COMPILE_ASSERT(sizeof(decltype(FLAGS_##flag_name)), flag_does_not_exist); \
-  COMPILE_ASSERT(sizeof(::kudu::FlagTags::tag), invalid_tag);   \
-  namespace {                                                     \
+  namespace { \
     ::kudu::flag_tags_internal::FlagTagger t_##flag_name##_##tag( \
-        AS_STRING(flag_name), AS_STRING(tag));                    \
-  }
+        AS_STRING(flag_name), AS_STRING(tag)); \
+  } \
+  COMPILE_ASSERT(sizeof(decltype(FLAGS_##flag_name)), flag_does_not_exist); \
+  COMPILE_ASSERT(sizeof(::kudu::FlagTags::tag), invalid_tag)
 
 // Fetch the list of flags associated with the given flag.
 //

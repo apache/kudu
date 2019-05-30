@@ -192,7 +192,7 @@ bool KsckChecksumManager::HasOpenTsSlotsUnlocked() const {
       return true;
     }
   }
-  return false;;
+  return false;
 }
 
 string KsckChecksumManager::OpenTsSlotSummaryString() const {

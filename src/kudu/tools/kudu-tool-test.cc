@@ -817,7 +817,7 @@ class ToolTestCopyTableParameterized :
       builder.AddColumn("timestamp_val")->Type(client::KuduColumnSchema::UNIXTIME_MICROS);
       builder.AddColumn("string_val")->Type(client::KuduColumnSchema::STRING)
         ->Encoding(KuduColumnStorageAttributes::EncodingType::PREFIX_ENCODING)
-        ->Default(KuduValue::CopyString(Slice("hello")));;
+        ->Default(KuduValue::CopyString(Slice("hello")));
       builder.AddColumn("bool_val")->Type(client::KuduColumnSchema::BOOL)
         ->Default(KuduValue::FromBool(false));
       builder.AddColumn("float_val")->Type(client::KuduColumnSchema::FLOAT);

@@ -94,7 +94,7 @@ class StopTabletITest : public MiniClusterITestBase,
   void StopTablet(const string& tablet_id, int tserver_num = 0) {
     scoped_refptr<TabletReplica> replica;
     MiniTabletServer* ts = cluster_->mini_tablet_server(tserver_num);
-    LOG(INFO) << Substitute("Stopping T $0 P $1", tablet_id, ts->uuid());;
+    LOG(INFO) << Substitute("Stopping T $0 P $1", tablet_id, ts->uuid());
     ASSERT_OK(ts->server()->tablet_manager()->GetTabletReplica(tablet_id, &replica));
     replica->tablet()->Stop();
 

@@ -78,7 +78,7 @@ TEST(ClientUnitTest, TestSchemaBuilder_KeyNotFirstColumn) {
   KuduSchema s;
   KuduSchemaBuilder b;
   b.AddColumn("key")->Type(KuduColumnSchema::INT32);
-  b.AddColumn("x")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();;
+  b.AddColumn("x")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
   b.AddColumn("x")->Type(KuduColumnSchema::INT32);
   ASSERT_EQ("Invalid argument: primary key column must be the first column",
             b.Build(&s).ToString());

@@ -565,7 +565,7 @@ void TraceEvent::Initialize(
     unsigned char flags) {
   timestamp_ = timestamp;
   thread_timestamp_ = thread_timestamp;
-  duration_ = -1;;
+  duration_ = -1;
   id_ = id;
   category_group_enabled_ = category_group_enabled;
   name_ = name;
@@ -639,7 +639,7 @@ void TraceEvent::Initialize(
 void TraceEvent::Reset() {
   // Only reset fields that won't be initialized in Initialize(), or that may
   // hold references to other objects.
-  duration_ = -1;;
+  duration_ = -1;
   parameter_copy_storage_ = nullptr;
   for (int i = 0; i < kTraceMaxNumArgs && arg_names_[i]; ++i)
     convertable_values_[i] = nullptr;

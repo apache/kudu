@@ -1749,7 +1749,7 @@ TEST_F(AdminCliTest, TestDescribeTable) {
     builder.AddColumn("timestamp_val")->Type(KuduColumnSchema::UNIXTIME_MICROS);
     builder.AddColumn("string_val")->Type(KuduColumnSchema::STRING)
       ->Encoding(KuduColumnStorageAttributes::EncodingType::PREFIX_ENCODING)
-      ->Default(KuduValue::CopyString(Slice("hello")));;
+      ->Default(KuduValue::CopyString(Slice("hello")));
     builder.AddColumn("bool_val")->Type(KuduColumnSchema::BOOL)
       ->Default(KuduValue::FromBool(false));
     builder.AddColumn("float_val")->Type(KuduColumnSchema::FLOAT);

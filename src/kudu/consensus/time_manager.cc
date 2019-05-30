@@ -146,7 +146,7 @@ void TimeManager::AdvanceSafeTimeWithMessage(const ReplicateMsg& message) {
 
 void TimeManager::AdvanceSafeTime(Timestamp safe_time) {
   Lock l(lock_);
-  CHECK_EQ(mode_, NON_LEADER) << "Cannot advance safe time by timestamp in leader mode.";;
+  CHECK_EQ(mode_, NON_LEADER) << "Cannot advance safe time by timestamp in leader mode.";
   AdvanceSafeTimeAndWakeUpWaitersUnlocked(safe_time);
 }
 

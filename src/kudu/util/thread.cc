@@ -131,7 +131,7 @@ static uint64_t GetCpuSTime() {
 static uint64_t GetVoluntaryContextSwitches() {
   rusage ru;
   CHECK_ERR(getrusage(RUSAGE_SELF, &ru));
-  return ru.ru_nvcsw;;
+  return ru.ru_nvcsw;
 }
 
 static uint64_t GetInVoluntaryContextSwitches() {

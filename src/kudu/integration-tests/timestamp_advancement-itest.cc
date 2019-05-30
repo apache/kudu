@@ -118,7 +118,7 @@ class TimestampAdvancementITest : public MiniClusterITestBase {
     NO_FATALS(StartCluster(3));
 
     // Write some rows to the cluster.
-    TestWorkload write(cluster_.get());;
+    TestWorkload write(cluster_.get());
 
     // Set a low batch size so we have finer-grained control over flushing of
     // the WAL. Too large, and the WAL may end up flushing in the background.

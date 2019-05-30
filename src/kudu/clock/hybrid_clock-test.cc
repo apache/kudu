@@ -271,7 +271,7 @@ TEST_F(HybridClockTest, TestIsAfter) {
 // into the future.
 void StresserThread(HybridClock* clock, AtomicBool* stop) {
   Random rng(GetRandomSeed32());
-  Timestamp prev(0);;
+  Timestamp prev(0);
   while (!stop->Load()) {
     Timestamp t = clock->Now();
     CHECK_GT(t.value(), prev.value());

@@ -150,7 +150,7 @@ bool ConsensusMetadata::has_pending_config() const {
 
 const RaftConfigPB& ConsensusMetadata::PendingConfig() const {
   DFAKE_SCOPED_RECURSIVE_LOCK(fake_lock_);
-  return GetConfig(PENDING_CONFIG);;
+  return GetConfig(PENDING_CONFIG);
 }
 
 void ConsensusMetadata::clear_pending_config() {

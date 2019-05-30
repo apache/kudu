@@ -252,9 +252,9 @@ class enum_limits<ENUM_TYPE> { \
   static const ENUM_TYPE min_enumerator = ENUM_MIN; \
   static const ENUM_TYPE max_enumerator = ENUM_MAX; \
   static const bool is_specialized = true; \
-  COMPILE_ASSERT(ENUM_MIN >= INT_MIN, enumerator_too_negative_for_int); \
-  COMPILE_ASSERT(ENUM_MAX <= INT_MAX, enumerator_too_positive_for_int); \
-};
+  COMPILE_ASSERT((ENUM_MIN) >= INT_MIN, enumerator_too_negative_for_int); \
+  COMPILE_ASSERT((ENUM_MAX) <= INT_MAX, enumerator_too_positive_for_int); \
+}
 
 // The loose enum test/cast is actually the more complicated one,
 // because of the problem of finding the bounds.

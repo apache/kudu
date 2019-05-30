@@ -494,7 +494,7 @@ string GetBindIpForDaemon(int index, BindMode bind_mode) {
     case BindMode::LOOPBACK:
       return kLoopbackIpAddr;
     default:
-      LOG(FATAL) << "unknown bind mode";;
+      LOG(FATAL) << "unknown bind mode";
   }
 }
 

@@ -143,14 +143,14 @@ Status MiniClusterFsInspector::CheckNoDataOnTS(int ts_idx) {
   if (CountFilesInDir(JoinPathSegments(wal_root, FsManager::kConsensusMetadataDirName)) > 0) {
     return Status::IllegalState("consensus metadata still exists", wal_root);
   }
-  return Status::OK();;
+  return Status::OK();
 }
 
 Status MiniClusterFsInspector::CheckNoData() {
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
     RETURN_NOT_OK(CheckNoDataOnTS(i));
   }
-  return Status::OK();;
+  return Status::OK();
 }
 
 string MiniClusterFsInspector::GetTabletSuperBlockPathOnTS(int ts_idx,

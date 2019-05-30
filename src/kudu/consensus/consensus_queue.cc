@@ -1344,7 +1344,7 @@ void PeerMessageQueue::DumpToHtml(std::ostream& out) const {
 
   std::lock_guard<simple_spinlock> lock(queue_lock_);
   out << "<h3>Watermarks</h3>" << endl;
-  out << "<table>" << endl;;
+  out << "<table>" << endl;
   out << "  <tr><th>Peer</th><th>Watermark</th></tr>" << endl;
   for (const PeersMap::value_type& entry : peers_map_) {
     out << Substitute("  <tr><td>$0</td><td>$1</td></tr>",
