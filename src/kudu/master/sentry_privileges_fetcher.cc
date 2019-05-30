@@ -54,6 +54,7 @@
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/test_util_prod.h"
+#include "kudu/util/trace.h"
 #include "kudu/util/ttl_cache_metrics.h"
 
 DEFINE_string(sentry_service_rpc_addresses, "",
@@ -666,11 +667,13 @@ Status SentryPrivilegesFetcher::GetSentryPrivileges(
     fetched_privileges = pending_request.result;
   }
   if (!is_first_request) {
+    TRACE("Waiting for in-flight request to Sentry");
     RETURN_NOT_OK(sync.Wait());
     *privileges = *fetched_privileges;
     return Status::OK();
   }
 
+  TRACE("Fetching privileges from Sentry");
   const auto s = FetchPrivilegesFromSentry(FLAGS_kudu_service_name,
                                            user, authorizable,
                                            fetched_privileges.get());

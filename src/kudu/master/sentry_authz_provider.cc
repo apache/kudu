@@ -30,6 +30,7 @@
 #include "kudu/security/token.pb.h"
 #include "kudu/sentry/sentry_action.h"
 #include "kudu/sentry/sentry_authorizable_scope.h"
+#include "kudu/util/trace.h"
 
 DECLARE_string(sentry_service_rpc_addresses);
 
@@ -73,6 +74,7 @@ bool IsActionAllowed(SentryAction::Action required_action,
   // privileges with lower scope will also be returned in the response. This contradicts
   // rule (1) mentioned above. Therefore, we need to validate privilege scope, in addition
   // to action and grant option. Otherwise, privilege escalation can happen.
+  TRACE("Evaluating privileges");
   SentryAction action(required_action);
   SentryAuthorizableScope scope(required_scope);
   const auto& privileges = privileges_branch.privileges();
