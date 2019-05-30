@@ -143,8 +143,7 @@ public class TestSecurity {
    */
   @Test
   public void testImportExportAuthenticationCredentials() throws Exception {
-    startCluster(ImmutableSet.of(Option.SHORT_TOKENS_AND_TICKETS,
-        Option.START_TSERVERS));
+    startCluster(ImmutableSet.of(Option.START_TSERVERS));
     byte[] authnData = client.exportAuthenticationCredentials();
     assertNotNull(authnData);
     String oldTicketCache = System.getProperty(SecurityUtil.KUDU_TICKETCACHE_PROPERTY);
