@@ -950,6 +950,7 @@ TEST_F(ToolTest, TestTopLevelHelp) {
       "cluster.*Kudu cluster",
       "diagnose.*Diagnostic tools.*",
       "fs.*Kudu filesystem",
+      "hms.*Hive Metastores",
       "local_replica.*tablet replicas",
       "master.*Kudu Master",
       "pbc.*protobuf container",
@@ -968,6 +969,18 @@ TEST_F(ToolTest, TestTopLevelHelp) {
 }
 
 TEST_F(ToolTest, TestModeHelp) {
+  {
+    const vector<string> kFsModeRegexes = {
+        "check.*Check metadata consistency",
+        "downgrade.*Downgrade the metadata",
+        "fix.*Fix automatically-repairable metadata",
+        "list.*List the Kudu table HMS entries",
+        "precheck.*Check that the Kudu cluster is prepared",
+    };
+    NO_FATALS(RunTestHelp("hms", kFsModeRegexes));
+    NO_FATALS(RunTestHelp("hms not_a_mode", kFsModeRegexes,
+                          Status::InvalidArgument("unknown command 'not_a_mode'")));
+  }
   {
     const vector<string> kFsModeRegexes = {
         "check.*Kudu filesystem for inconsistencies",
@@ -3947,6 +3960,68 @@ TEST_F(ToolTest, TestHmsPrecheck) {
       "foo.bar3",
       "fuzz",
   }), tables);
+}
+
+TEST_F(ToolTest, TestHmsList) {
+  ExternalMiniClusterOptions opts;
+  opts.hms_mode = HmsMode::ENABLE_HIVE_METASTORE;
+  opts.enable_kerberos = EnableKerberos();
+  NO_FATALS(StartExternalMiniCluster(std::move(opts)));
+
+  string master_addr = cluster_->master()->bound_rpc_addr().ToString();
+  thrift::ClientOptions hms_opts;
+  hms_opts.enable_kerberos = EnableKerberos();
+  hms_opts.service_principal = "hive";
+  HmsClient hms_client(cluster_->hms()->address(), hms_opts);
+  ASSERT_OK(hms_client.Start());
+  ASSERT_TRUE(hms_client.IsConnected());
+
+  FLAGS_hive_metastore_uris = cluster_->hms()->uris();
+  FLAGS_hive_metastore_sasl_enabled = EnableKerberos();
+  HmsCatalog hms_catalog(master_addr);
+  ASSERT_OK(hms_catalog.Start());
+
+  shared_ptr<KuduClient> kudu_client;
+  ASSERT_OK(cluster_->CreateClient(nullptr, &kudu_client));
+
+  // Create a simple Kudu table so we can use the schema.
+  shared_ptr<KuduTable> simple_table;
+  ASSERT_OK(CreateKuduTable(kudu_client, "default.simple"));
+  ASSERT_OK(kudu_client->OpenTable("default.simple", &simple_table));
+
+  string kUsername = "alice";
+  ASSERT_OK(hms_catalog.CreateTable(
+      "1", "default.table1", kUsername, KuduSchema::ToSchema(simple_table->schema()),
+          hms::HmsClient::kManagedTable));
+  ASSERT_OK(hms_catalog.CreateTable(
+      "2", "default.table2", boost::none, KuduSchema::ToSchema(simple_table->schema()),
+      hms::HmsClient::kExternalTable));
+
+  // Test the output when HMS integration is disabled.
+  string err;
+  RunActionStderrString(Substitute("hms list $0", master_addr), &err);
+  ASSERT_STR_CONTAINS(err,
+      "Configuration error: the Kudu leader master is not configured with "
+      "the Hive Metastore integration");
+
+  // Enable the HMS integration.
+  cluster_->ShutdownNodes(cluster::ClusterNodes::MASTERS_ONLY);
+  cluster_->EnableMetastoreIntegration();
+  ASSERT_OK(cluster_->Restart());
+
+  // Run the list tool with the defaults. atabase,table,type,$0
+  string out;
+  RunActionStdoutString(Substitute("hms list $0", master_addr), &out);
+  ASSERT_STR_CONTAINS(out,
+      "default  | table1 | MANAGED_TABLE  | default.table1");
+  ASSERT_STR_CONTAINS(out,
+      "default  | table2 | EXTERNAL_TABLE | default.table2");
+
+  // Run the list tool filtering columns and using a different format.
+  RunActionStdoutString(Substitute("hms list --columns table,owner,kudu.table_id, --format=csv $0",
+                                   master_addr), &out);
+  ASSERT_STR_CONTAINS(out, "table1,alice,1");
+  ASSERT_STR_CONTAINS(out, "table2,,");
 }
 
 // This test is parameterized on the serialization mode and Kerberos.
