@@ -111,7 +111,7 @@ ExternalMiniClusterOptions::ExternalMiniClusterOptions()
       hms_mode(HmsMode::NONE),
       enable_sentry(false),
       logtostderr(true),
-      start_process_timeout(MonoDelta::FromSeconds(60)),
+      start_process_timeout(MonoDelta::FromSeconds(70)),
       rpc_negotiation_timeout(MonoDelta::FromSeconds(3)) {
 }
 

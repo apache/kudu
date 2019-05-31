@@ -167,7 +167,7 @@ struct ExternalMiniClusterOptions {
   // Amount of time that may elapse between the creation of a daemon process
   // and the process writing out its info file.
   //
-  // Default: 60s.
+  // Default: 70s (just a bit more than --ntp_initial_wait_secs).
   MonoDelta start_process_timeout;
 
   // Parameter for the cluster's RPC messenger: timeout interval after which
