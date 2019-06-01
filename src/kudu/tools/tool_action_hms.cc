@@ -394,14 +394,18 @@ Status AnalyzeCatalogs(const string& master_addrs,
       // by table name.
       shared_ptr<KuduTable>* kudu_table;
       const string& storage_handler = hms_table.parameters[HmsClient::kStorageHandlerKey];
+      const string& hms_table_id = hms_table.parameters[HmsClient::kKuduTableIdKey];
+      const string& hms_table_name = hms_table.parameters[HmsClient::kKuduTableNameKey];
       if (storage_handler == HmsClient::kKuduStorageHandler &&
           hms_table.tableType == HmsClient::kManagedTable) {
-        // TODO(ghenke): Also lookup by name to support tables created when HMS sync is off.
-        // TODO(ghenke): Also lookup by name to support repairing id's out of sync.
-        const string& hms_table_id = hms_table.parameters[HmsClient::kKuduTableIdKey];
         kudu_table = FindOrNull(kudu_tables_by_id, hms_table_id);
+        // If there is no kudu table that matches the id, or the id doesn't exist,
+        // lookup the table by name. This handles manged tables created when HMS
+        // sync was off or tables with IDs out of sync.
+        if (!kudu_table) {
+          kudu_table = FindOrNull(kudu_tables_by_name, hms_table_name);
+        }
       } else {
-        const string& hms_table_name = hms_table.parameters[HmsClient::kKuduTableNameKey];
         kudu_table = FindOrNull(kudu_tables_by_name, hms_table_name);
       }
 
@@ -752,7 +756,9 @@ Status FixHmsMetadata(const RunnerContext& context) {
       } else {
         auto schema = KuduSchema::ToSchema(kudu_table.schema());
         RETURN_NOT_OK_PREPEND(
-            hms_catalog->AlterTable(kudu_table.id(), hms_table_name, hms_table_name, schema),
+            // Disable table ID checking to support fixing tables with unsynchronized IDs.
+            hms_catalog->AlterTable(kudu_table.id(), hms_table_name, hms_table_name, schema,
+                /* check_id */ false),
             Substitute("failed to refresh HMS table metadata for Kudu table $0",
               TableIdent(kudu_table)));
       }

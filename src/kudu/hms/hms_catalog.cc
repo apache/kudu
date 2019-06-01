@@ -240,7 +240,8 @@ Status HmsCatalog::GetKuduTables(vector<hive::Table>* kudu_tables) {
 Status HmsCatalog::AlterTable(const string& id,
                               const string& name,
                               const string& new_name,
-                              const Schema& schema) {
+                              const Schema& schema,
+                              const bool& check_id) {
   Slice hms_database;
   Slice hms_table;
   RETURN_NOT_OK(ParseHiveTableIdentifier(name, &hms_database, &hms_table));
@@ -266,7 +267,7 @@ Status HmsCatalog::AlterTable(const string& id,
 
       // Check that the HMS entry belongs to the table being altered.
       if (table.parameters[HmsClient::kStorageHandlerKey] != HmsClient::kKuduStorageHandler ||
-          table.parameters[HmsClient::kKuduTableIdKey] != id) {
+          (check_id && table.parameters[HmsClient::kKuduTableIdKey] != id)) {
         // The original table isn't a Kudu table, or isn't the same Kudu table.
         return Status::NotFound("the HMS entry for the table being "
                                 "altered belongs to another table");
@@ -276,7 +277,7 @@ Status HmsCatalog::AlterTable(const string& id,
       RETURN_NOT_OK(PopulateTable(id, new_name, table.owner, schema, master_addresses_,
           table.tableType, &table));
       return client->AlterTable(hms_database.ToString(), hms_table.ToString(),
-                                table, EnvironmentContext());
+                                table, EnvironmentContext(check_id));
   });
 }
 
@@ -430,9 +431,12 @@ bool HmsCatalog::IsEnabled() {
   return !FLAGS_hive_metastore_uris.empty();
 }
 
-hive::EnvironmentContext HmsCatalog::EnvironmentContext() {
+hive::EnvironmentContext HmsCatalog::EnvironmentContext(const bool& check_id) {
   hive::EnvironmentContext env_ctx;
-  env_ctx.__set_properties({ std::make_pair(hms::HmsClient::kKuduMasterEventKey, "true") });
+  env_ctx.__set_properties({
+    std::make_pair(hms::HmsClient::kKuduMasterEventKey, "true"),
+    std::make_pair(hms::HmsClient::kKuduCheckIdKey, check_id ? "true" : "false"),
+  });
   return env_ctx;
 }
 

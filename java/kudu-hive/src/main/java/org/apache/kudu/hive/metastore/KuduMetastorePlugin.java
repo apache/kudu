@@ -78,6 +78,8 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
   static final String KUDU_MASTER_ADDRS_KEY = "kudu.master_addresses";
   @VisibleForTesting
   static final String KUDU_MASTER_EVENT = "kudu.master_event";
+  @VisibleForTesting
+  static final String KUDU_CHECK_ID_KEY = "kudu.check_id";
 
   // System env to track if the HMS plugin validation should be skipped.
   static final String SKIP_VALIDATION_ENV = "KUDU_SKIP_HMS_PLUGIN_VALIDATION";
@@ -208,10 +210,13 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
       checkKuduProperties(newTable);
       checkOnlyKuduMasterCanAlterSchema(tableEvent, oldTable, newTable);
       // Check that the Kudu table ID isn't changing.
-      String oldTableId = oldTable.getParameters().get(KUDU_TABLE_ID_KEY);
-      String newTableId = newTable.getParameters().get(KUDU_TABLE_ID_KEY);
-      if (!newTableId.equals(oldTableId)) {
-        throw new MetaException("Kudu table ID does not match the existing HMS entry");
+
+      if (checkTableID(tableEvent)) {
+        String oldTableId = oldTable.getParameters().get(KUDU_TABLE_ID_KEY);
+        String newTableId = newTable.getParameters().get(KUDU_TABLE_ID_KEY);
+        if (!newTableId.equals(oldTableId)) {
+          throw new MetaException("Kudu table ID does not match the existing HMS entry");
+        }
       }
     } else {
       // Allow non-Kudu tables to be altered without introducing Kudu-specific
@@ -312,7 +317,33 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
       return false;
     }
 
+    if (!properties.containsKey(KUDU_MASTER_EVENT)) {
+      return false;
+    }
+
     return Boolean.parseBoolean(properties.get(KUDU_MASTER_EVENT));
+  }
+
+  /**
+   * Returns true if the table ID should be verified on an event.
+   * Defaults to true.
+   */
+  private boolean checkTableID(ListenerEvent event) {
+    EnvironmentContext environmentContext = event.getEnvironmentContext();
+    if (environmentContext == null) {
+      return true;
+    }
+
+    Map<String, String> properties = environmentContext.getProperties();
+    if (properties == null) {
+      return true;
+    }
+
+    if (!properties.containsKey(KUDU_CHECK_ID_KEY)) {
+      return true;
+    }
+
+    return Boolean.parseBoolean(properties.get(KUDU_CHECK_ID_KEY));
   }
 
   /**

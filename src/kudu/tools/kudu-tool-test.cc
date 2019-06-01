@@ -3467,6 +3467,14 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
         inconsistent_master_addrs->id(), inconsistent_master_addrs->name(), kUsername,
         KuduSchema::ToSchema(inconsistent_master_addrs->schema())));
 
+  // Test case: bad table id.
+  shared_ptr<KuduTable> bad_id;
+  ASSERT_OK(CreateKuduTable(kudu_client, "default.bad_id"));
+  ASSERT_OK(kudu_client->OpenTable("default.bad_id", &bad_id));
+  ASSERT_OK(hms_catalog.CreateTable(
+      "not_a_table_id", "default.bad_id", kUsername,
+      KuduSchema::ToSchema(bad_id->schema())));
+
   // Test cases: orphan tables in the HMS.
   ASSERT_OK(hms_catalog.CreateTable(
         "orphan-hms-table-id", "default.orphan_hms_table", kUsername,
@@ -3525,6 +3533,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
     "default.inconsistent_schema",
     "default.inconsistent_name",
     "default.inconsistent_master_addrs",
+    "default.bad_id",
     "default.orphan_hms_table",
     "default.orphan_hms_table_legacy_managed",
     "default.kudu_orphan",
@@ -3610,6 +3619,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
     "default.inconsistent_schema",
     "default.inconsistent_name",
     "default.inconsistent_master_addrs",
+    "default.bad_id",
   });
   NO_FATALS(check());
 
@@ -3621,6 +3631,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
     "inconsistent_schema",
     "inconsistent_name_hms",
     "inconsistent_master_addrs",
+    "bad_id",
     "kudu_orphan",
     "legacy_managed",
     "legacy_external",
@@ -3636,6 +3647,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   kudu_client->ListTables(&kudu_tables);
   std::sort(kudu_tables.begin(), kudu_tables.end());
   ASSERT_EQ(vector<string>({
+    "default.bad_id",
     "default.control",
     "default.inconsistent_master_addrs",
     "default.inconsistent_name_hms",

@@ -236,6 +236,16 @@ public class TestKuduMetastorePlugin {
         assertTrue(e.getMessage().contains("Kudu table ID does not match the existing HMS entry"));
       }
 
+      // Check that altering the Kudu table with a different table ID while
+      // setting kudu.check_id to false succeeds.
+      EnvironmentContext noCheckIdCtx = new EnvironmentContext(
+          ImmutableMap.of(KuduMetastorePlugin.KUDU_CHECK_ID_KEY, "false"));
+      client.alter_table_with_environmentContext(table.getDbName(), table.getTableName(),
+          newTable(table.getTableName()), noCheckIdCtx);
+      // Alter back for more testing below.
+      client.alter_table_with_environmentContext(table.getDbName(), table.getTableName(), table,
+          noCheckIdCtx);
+
       // Try to alter the Kudu table with no storage handler.
       try {
         Table alteredTable = table.deepCopy();
