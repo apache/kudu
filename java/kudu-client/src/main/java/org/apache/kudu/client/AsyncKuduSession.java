@@ -307,9 +307,9 @@ public class AsyncKuduSession implements SessionConfiguration {
    * @param buffer the buffer to return to the inactive queue.
    */
   private void queueBuffer(Buffer buffer) {
+    inactiveBuffers.add(buffer);
     buffer.callbackFlushNotification();
     Deferred<Void> localFlushNotification = flushNotification.getAndSet(new Deferred<Void>());
-    inactiveBuffers.add(buffer);
     localFlushNotification.callback(null);
   }
 
