@@ -183,6 +183,21 @@ Status SentryAuthzProvider::AuthorizeGetTableMetadata(const string& table_name,
                    table_name, user);
 }
 
+Status SentryAuthzProvider::AuthorizeListTables(const string& user,
+                                                unordered_set<string>* table_names,
+                                                bool* checked_table_names) {
+  unordered_set<string> authorized_tables;
+  for (auto table_name : *table_names) {
+    Status s = AuthorizeGetTableMetadata(table_name, user);
+    if (s.ok()) {
+      EmplaceOrDie(&authorized_tables, std::move(table_name));
+    }
+  }
+  *table_names = authorized_tables;
+  *checked_table_names = true;
+  return Status::OK();
+}
+
 Status SentryAuthzProvider::FillTablePrivilegePB(const string& table_name,
                                                  const string& user,
                                                  const SchemaPB& schema_pb,

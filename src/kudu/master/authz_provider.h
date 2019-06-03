@@ -84,6 +84,17 @@ class AuthzProvider {
   virtual Status AuthorizeGetTableMetadata(const std::string& table_name,
                                            const std::string& user) WARN_UNUSED_RESULT = 0;
 
+  // Filters the given table names, removing any the user is not authorized to
+  // see.
+  //
+  // Sets 'checked_table_names' if the AuthzProvider actually checked
+  // privileges for the table (rather than just passing through). This may be
+  // useful, e.g. to indicate that the caller needs to verify the table names
+  // have not changed during authorization.
+  virtual Status AuthorizeListTables(const std::string& user,
+                                     std::unordered_set<std::string>* table_names,
+                                     bool* checked_table_names) WARN_UNUSED_RESULT = 0;
+
   // Populates the privilege fields of 'pb' with the table-specific privileges
   // for the given user, using 'schema_pb' for metadata (e.g. column IDs). This
   // does not populate the table ID field of 'pb' -- only the privilege fields;

@@ -18,6 +18,7 @@
 #pragma once
 
 #include <string>
+#include <unordered_set>
 
 #include <gtest/gtest_prod.h>
 
@@ -83,6 +84,10 @@ class SentryAuthzProvider : public AuthzProvider {
 
   Status AuthorizeGetTableMetadata(const std::string& table_name,
                                    const std::string& user) override WARN_UNUSED_RESULT;
+
+  Status AuthorizeListTables(const std::string& user,
+                             std::unordered_set<std::string>* table_names,
+                             bool* checked_table_names) override WARN_UNUSED_RESULT;
 
   Status FillTablePrivilegePB(const std::string& table_name,
                               const std::string& user,

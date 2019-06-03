@@ -18,9 +18,11 @@
 #pragma once
 
 #include <string>
+#include <unordered_set>
 
 #include <glog/logging.h>
 
+#include "kudu/gutil/port.h"
 #include "kudu/master/authz_provider.h"
 #include "kudu/security/token.pb.h"
 #include "kudu/util/status.h"
@@ -61,6 +63,13 @@ class DefaultAuthzProvider : public AuthzProvider {
 
   Status AuthorizeGetTableMetadata(const std::string& /*table_name*/,
                                    const std::string& /*user*/) override WARN_UNUSED_RESULT {
+    return Status::OK();
+  }
+
+  Status AuthorizeListTables(const std::string& /*user*/,
+                             std::unordered_set<std::string>* /*table_names*/,
+                             bool* checked_table_names) override WARN_UNUSED_RESULT {
+    *checked_table_names = false;
     return Status::OK();
   }
 

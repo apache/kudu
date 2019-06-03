@@ -589,9 +589,8 @@ class CatalogManager : public tserver::TabletReplicaLookupIf {
                         boost::optional<const std::string&> user,
                         const security::TokenSigner* token_signer);
 
-  // List all the running tables. If 'user' is provided, checks that the user
-  // is authorized to get such information, otherwise, only list the tables that
-  // the user has permission on.
+  // Lists all the running tables. If 'user' is provided, only lists those that
+  // the given user is authorized to see.
   Status ListTables(const ListTablesRequestPB* req,
                     ListTablesResponsePB* resp,
                     boost::optional<const std::string&> user);

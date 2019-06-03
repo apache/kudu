@@ -261,6 +261,12 @@ DEFINE_bool(catalog_manager_evict_excess_replicas, true,
 TAG_FLAG(catalog_manager_evict_excess_replicas, hidden);
 TAG_FLAG(catalog_manager_evict_excess_replicas, runtime);
 
+DEFINE_int32(catalog_manager_inject_latency_list_authz_ms, 0,
+             "Injects a sleep in milliseconds while authorizing a ListTables "
+             "request. This is a test-only flag.");
+TAG_FLAG(catalog_manager_inject_latency_list_authz_ms, hidden);
+TAG_FLAG(catalog_manager_inject_latency_list_authz_ms, unsafe);
+
 DECLARE_bool(raft_prepare_replacement_before_eviction);
 DECLARE_bool(raft_attempt_to_replace_replica_without_majority);
 DECLARE_int64(tsk_rotation_seconds);
@@ -2811,34 +2817,57 @@ Status CatalogManager::ListTables(const ListTablesRequestPB* req,
       tables_info.emplace_back(entry.second);
     }
   }
-
+  unordered_map<string, scoped_refptr<TableInfo>> table_info_by_name;
+  unordered_set<string> table_names;
   for (const auto& table_info : tables_info) {
     TableMetadataLock ltm(table_info.get(), LockMode::READ);
     if (!ltm.data().is_running()) continue; // implies !is_deleted() too
 
-    const string table_name = ltm.data().name();
+    const string& table_name = ltm.data().name();
     if (req->has_name_filter()) {
       size_t found = table_name.find(req->name_filter());
       if (found == string::npos) {
         continue;
       }
     }
-
-    // TODO(hao): need to improve the performance before enabling authz by default
-    // for cases there are a lot of tables.
-    if (user) {
-      Status s = authz_provider_->AuthorizeGetTableMetadata(NormalizeTableName(table_name),
-                                                            *user);
-      if (!s.ok()) {
-        continue;
-      }
-    }
-
-    ListTablesResponsePB::TableInfo* table = resp->add_tables();
-    table->set_id(table_info->id());
-    table->set_name(ltm.data().name());
+    InsertOrUpdate(&table_info_by_name, table_name, table_info);
+    EmplaceIfNotPresent(&table_names, table_name);
   }
 
+  MAYBE_INJECT_FIXED_LATENCY(FLAGS_catalog_manager_inject_latency_list_authz_ms);
+  bool checked_table_names = false;
+  if (user) {
+    RETURN_NOT_OK(authz_provider_->AuthorizeListTables(
+        *user, &table_names, &checked_table_names));
+  }
+
+  // If we checked privileges, do another pass over the tables to filter out
+  // any that may have been altered while authorizing.
+  if (checked_table_names) {
+    for (const auto& table_name : table_names) {
+      const auto& table_info = FindOrDie(table_info_by_name, table_name);
+      TableMetadataLock ltm(table_info.get(), LockMode::READ);
+      if (!ltm.data().is_running()) continue;
+
+      // If we have a different table name than expected, there was a table
+      // rename and we shouldn't show the table.
+      if (table_name != ltm.data().name()) {
+        continue;
+      }
+      ListTablesResponsePB::TableInfo* table = resp->add_tables();
+      table->set_id(table_info->id());
+      table->set_name(table_name);
+    }
+  } else {
+    // Otherwise, pass all tables through.
+    for (const auto& name_and_table_info : table_info_by_name) {
+      const auto& table_name = name_and_table_info.first;
+      const auto& table_info = name_and_table_info.second;
+      ListTablesResponsePB::TableInfo* table = resp->add_tables();
+      table->set_id(table_info->id());
+      table->set_name(table_name);
+    }
+  }
   return Status::OK();
 }
 

@@ -450,6 +450,31 @@ TEST_F(MasterSentryTest, TestAuthzListTables) {
   ASSERT_EQ(unordered_set<string>({ table_name, sec_table_name }), tables_set);
 }
 
+// When authorizing ListTables, if there is a concurrent rename, we may not end
+// up showing the table.
+TEST_F(MasterSentryTest, TestAuthzListTablesConcurrentRename) {
+  ASSERT_OK(cluster_->SetFlag(cluster_->master(),
+      "catalog_manager_inject_latency_list_authz_ms", "3000"));;
+  const auto table_name = Substitute("$0.$1", kDatabaseName, kTableName);
+  const auto sec_table_name = Substitute("$0.$1", kDatabaseName, kSecondTable);
+  ASSERT_OK(GrantGetMetadataTablePrivilege({ kDatabaseName, kTableName }));
+  ASSERT_OK(GrantRenameTablePrivilege({ kDatabaseName, kTableName }));
+
+  // List the tables while injecting latency.
+  vector<string> tables;
+  thread t([&] {
+    ASSERT_OK(client_->ListTables(&tables));
+  });
+
+  // While that's happening, rename one of the tables.
+  ASSERT_OK(RenameTable({ table_name, Substitute("$0.$1", kDatabaseName, "b") }));
+  NO_FATALS(t.join());
+
+  // We shouldn't see the renamed table.
+  ASSERT_EQ(1, tables.size());
+  ASSERT_EQ(sec_table_name, tables[0]);
+}
+
 TEST_F(MasterSentryTest, TestTableOwnership) {
   ASSERT_OK(GrantCreateTablePrivilege({ kDatabaseName }));
   ASSERT_OK(CreateKuduTable(kDatabaseName, "new_table"));
