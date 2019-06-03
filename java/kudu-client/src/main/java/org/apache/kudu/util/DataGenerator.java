@@ -82,35 +82,37 @@ public class DataGenerator {
       if (col.isNullable() && random.nextFloat() <= nullRate) {
         // Sometimes set nullable columns to null.
         row.setNull(i);
-      } else if(col.getDefaultValue() != null && !col.isKey() && random.nextFloat() <= defaultRate) {
+        continue;
+      }
+      if (col.getDefaultValue() != null && !col.isKey() && random.nextFloat() <= defaultRate) {
         // Sometimes use the column default value.
-      } else {
-        switch (type) {
-          // TODO(ghenke): Support range bound configuration.
-          case BOOL:
-            row.addBoolean(i, random.nextBoolean()); break;
-          case INT8:
-            row.addByte(i, (byte) random.nextInt()); break;
-          case INT16:
-            row.addShort(i, (short) random.nextInt()); break;
-          case INT32:
-            row.addInt(i, random.nextInt()); break;
-          case INT64:
-          case UNIXTIME_MICROS:
-            row.addLong(i, random.nextLong()); break;
-          case FLOAT:
-            row.addFloat(i, random.nextFloat()); break;
-          case DOUBLE:
-            row.addDouble(i, random.nextDouble()); break;
-          case DECIMAL:
-            row.addDecimal(i, randomDecimal(col.getTypeAttributes(), random)); break;
-          case STRING:
-            row.addString(i, randomString(stringLength, random)); break;
-          case BINARY:
-            row.addBinary(i, randomBinary(binaryLength, random)); break;
-          default:
-            throw new UnsupportedOperationException("Unsupported type " + type);
-        }
+        continue;
+      }
+      switch (type) {
+        // TODO(ghenke): Support range bound configuration.
+        case BOOL:
+          row.addBoolean(i, random.nextBoolean()); break;
+        case INT8:
+          row.addByte(i, (byte) random.nextInt()); break;
+        case INT16:
+          row.addShort(i, (short) random.nextInt()); break;
+        case INT32:
+          row.addInt(i, random.nextInt()); break;
+        case INT64:
+        case UNIXTIME_MICROS:
+          row.addLong(i, random.nextLong()); break;
+        case FLOAT:
+          row.addFloat(i, random.nextFloat()); break;
+        case DOUBLE:
+          row.addDouble(i, random.nextDouble()); break;
+        case DECIMAL:
+          row.addDecimal(i, randomDecimal(col.getTypeAttributes(), random)); break;
+        case STRING:
+          row.addString(i, randomString(stringLength, random)); break;
+        case BINARY:
+          row.addBinary(i, randomBinary(binaryLength, random)); break;
+        default:
+          throw new UnsupportedOperationException("Unsupported type " + type);
       }
     }
   }
