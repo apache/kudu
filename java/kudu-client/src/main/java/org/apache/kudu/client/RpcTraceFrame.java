@@ -17,9 +17,13 @@
 
 package org.apache.kudu.client;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import com.google.common.base.MoreObjects;
+import com.google.common.collect.Table;
+import com.google.common.collect.TreeBasedTable;
 import org.apache.yetus.audience.InterfaceAudience;
 
 /**
@@ -140,6 +144,119 @@ class RpcTraceFrame {
       trace.getAction().appendToStringBuilder(trace, sb);
 
       if (i < traces.size() - 1) {
+        sb.append(", ");
+      }
+    }
+    return sb.toString();
+  }
+
+  /**
+   * Returns a String wih the trace summary in the following format:
+   *
+   *  Trace Summary(trace-duration ms): Sent(n), Received(n), Delayed(n), MasterRefresh(n), AuthRefresh(n), Truncated: ?
+   *   Sent: (server-uuid, [ rpc-method, count ], ...), ...
+   *   Received: (server-uuid, [ rpc-status, count ], ...), ...
+   *   Delayed: (server-uuid, [ rpc-method, count ], ...), ...
+   */
+  public static String getHumanReadableSummaryStringForTraces(List<RpcTraceFrame> traces) {
+    if (traces.isEmpty()) {
+      return "No traces";
+    }
+
+    RpcTraceFrame firstTrace = traces.get(0);
+    long baseTimestamp = firstTrace.getTimestampMs();
+
+    // Table with Server UUID as the row, RPC Method as the column,
+    // and count as the value for each send trace.
+    Table<String, String, Long> sentTable = TreeBasedTable.create();
+    long sentCount = 0;
+    // Table with Server UUID as the row, RPC Status as the column,
+    // and count as the value for each receive trace.
+    Table<String, String, Long> receivedTable = TreeBasedTable.create();
+    long receivedCount = 0;
+    // Table with Server UUID as the row, RPC Method as the column,
+    // and count as the value for each delay trace.
+    Table<String, String, Long> delayedTable = TreeBasedTable.create();
+    long delayedCount = 0;
+    long masterRefreshCount = 0;
+    long authRefreshCount = 0;
+    boolean truncated = false;
+    long maxTime = 0;
+
+    for (RpcTraceFrame trace : traces) {
+      String uuid = trace.getServer() == null ? "UNKNOWN" : trace.getServer().getUuid();
+      String method = trace.getRpcMethod() == null ? "UNKNOWN" : trace.getRpcMethod();
+      String status = trace.getStatus() == null ? "UNKNOWN" : trace.getStatus().getCodeName();
+      switch (trace.getAction()) {
+        case SEND_TO_SERVER: {
+          long count = sentTable.contains(uuid, method) ? sentTable.get(uuid, method) : 0L;
+          sentTable.put(uuid, method, count + 1);
+          sentCount++;
+          break;
+        }
+        case RECEIVE_FROM_SERVER: {
+          long count = receivedTable.contains(uuid, status) ? receivedTable.get(uuid, status) : 0L;
+          receivedTable.put(uuid, status, count + 1);
+          receivedCount++;
+          break;
+        }
+        case SLEEP_THEN_RETRY: {
+          long count = delayedTable.contains(uuid, method) ? delayedTable.get(uuid, method) : 0L;
+          delayedTable.put(uuid, method, count + 1);
+          delayedCount++;
+          break;
+        }
+        case QUERY_MASTER:
+          masterRefreshCount++;
+          break;
+        case GET_NEW_AUTHENTICATION_TOKEN_THEN_RETRY:
+          authRefreshCount++;
+          break;
+        case TRACE_TRUNCATED:
+          truncated = true;
+          break;
+      }
+      maxTime = Long.max(maxTime, trace.getTimestampMs() - baseTimestamp);
+    }
+
+    StringBuilder sb = new StringBuilder();
+    sb.append(String.format("Trace Summary(%s ms): Sent(%s), Received(%s), Delayed(%s), " +
+        "MasterRefresh(%s), AuthRefresh(%s), Truncated: %s",
+        maxTime, sentCount, receivedCount, delayedCount, masterRefreshCount, authRefreshCount,
+        truncated));
+    if (!sentTable.isEmpty()) {
+      sb.append(String.format("\n Sent: %s", tableToString(sentTable)));
+    }
+    if (!receivedTable.isEmpty()) {
+      sb.append(String.format("\n Received: %s", tableToString(receivedTable)));
+    }
+    if (!delayedTable.isEmpty()) {
+      sb.append(String.format("\n Delayed: %s", tableToString(delayedTable)));
+    }
+    return sb.toString();
+  }
+
+  /**
+   * Returns a string representation of the table in the format of:
+   *  (row, [ column, value ], ...), ..."
+   */
+  private static String tableToString(Table<String, String, Long> table) {
+    StringBuilder sb = new StringBuilder();
+    List<String> rowKeys = new ArrayList<>(table.rowKeySet());
+    for (int i = 0; i < rowKeys.size(); i++) {
+      String rowKey = rowKeys.get(i);
+      sb.append("(").append(rowKey).append(", ");
+      List<Map.Entry<String, Long>> columns = new ArrayList<>(table.row(rowKey).entrySet());
+      for (int j = 0; j < columns.size(); j++) {
+        Map.Entry<String, Long> column = columns.get(j);
+        sb.append(String.format("[ %s, %s ]", column.getKey(), column.getValue()));
+        if (j < columns.size() - 1) {
+          sb.append(", ");
+        }
+      }
+
+      sb.append(")");
+      if (i < rowKeys.size() - 1) {
         sb.append(", ");
       }
     }

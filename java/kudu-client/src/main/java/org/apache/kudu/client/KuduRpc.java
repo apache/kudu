@@ -396,11 +396,13 @@ public abstract class KuduRpc<R> {
     }
     buf.append(", attempt=").append(attempt);
     buf.append(", ").append(timeoutTracker);
-    buf.append(", ").append(RpcTraceFrame.getHumanReadableStringForTraces(traces));
     // Cheating a bit, we're not actually logging but we'll augment the information provided by
     // this method if DEBUG is enabled.
     if (LOG.isDebugEnabled()) {
+      buf.append(", ").append(RpcTraceFrame.getHumanReadableStringForTraces(traces));
       buf.append(", deferred=").append(deferred);
+    } else {
+      buf.append(", ").append(RpcTraceFrame.getHumanReadableSummaryStringForTraces(traces));
     }
     buf.append(')');
     return buf.toString();
