@@ -242,10 +242,13 @@ public class TestKuduScanner {
 
     KuduTable table = client.createTable(tableName, schema, getBasicCreateTableOptions());
 
-    // Generate some rows before the start time.
+    // Generate some rows before the start time. Ensure there's at least one insert.
     int beforeBounds = 5;
-    List<Operation> beforeOps = generateMutationOperations(table, random.nextInt(beforeBounds),
-        random.nextInt(beforeBounds), random.nextInt(beforeBounds));
+    int numInserts = RandomUtils.nextIntInRange(random, 1, beforeBounds);
+    int numUpdates = random.nextInt(beforeBounds);
+    int numDeletes = random.nextInt(beforeBounds);
+    List<Operation> beforeOps =
+        generateMutationOperations(table, numInserts, numUpdates, numDeletes);
     Map<Integer, ChangeType> before = applyOperations(beforeOps);
     LOG.info("Before: {}", before);
 
@@ -254,13 +257,13 @@ public class TestKuduScanner {
     long startHT = client.getLastPropagatedTimestamp() + 1;
     LOG.info("startHT: {}", startHT);
 
-    // Generate row mutations.
+    // Generate row mutations. The mutations performed here are what should be seen by the diff scan.
     int mutationBounds = 10;
-    int numInserts = random.nextInt(mutationBounds);
-    int numUpdates = random.nextInt(mutationBounds);
-    int numDeletes = random.nextInt(mutationBounds);
+    int expectedNumInserts = random.nextInt(mutationBounds);
+    int expectedNumUpdates = random.nextInt(mutationBounds);
+    int expectedNumDeletes = random.nextInt(mutationBounds);
     List<Operation> operations =
-        generateMutationOperations(table, numInserts, numUpdates, numDeletes);
+        generateMutationOperations(table, expectedNumInserts, expectedNumUpdates, expectedNumDeletes);
     Map<Integer, ChangeType> mutations = applyOperations(operations);
     LOG.info("Mutations: {}", mutations);
 
@@ -269,10 +272,13 @@ public class TestKuduScanner {
     long endHT = client.getLastPropagatedTimestamp() + 1;
     LOG.info("endHT: {}", endHT);
 
-    // Generate Some Rows after the end time.
+    // Generate some rows after the end time.
     int afterBounds = 5;
-    List<Operation> afterOps = generateMutationOperations(table, random.nextInt(afterBounds),
-        random.nextInt(afterBounds), random.nextInt(afterBounds));
+    numInserts = random.nextInt(afterBounds);
+    numUpdates = random.nextInt(afterBounds);
+    numDeletes = random.nextInt(afterBounds);
+    List<Operation> afterOps =
+        generateMutationOperations(table, numInserts, numUpdates, numDeletes);
     Map<Integer, ChangeType> after = applyOperations(afterOps);
     LOG.info("After: {}", after);
 
@@ -328,9 +334,9 @@ public class TestKuduScanner {
         resultExtra++;
       }
     }
-    assertEquals(numInserts, resultNumInserts);
-    assertEquals(numUpdates, resultNumUpdates);
-    assertEquals(numDeletes, resultNumDeletes);
+    assertEquals(expectedNumInserts, resultNumInserts);
+    assertEquals(expectedNumUpdates, resultNumUpdates);
+    assertEquals(expectedNumDeletes, resultNumDeletes);
     assertEquals(0, resultExtra);
   }
 
