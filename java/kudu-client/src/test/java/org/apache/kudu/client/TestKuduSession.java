@@ -395,7 +395,7 @@ public class TestKuduSession {
   }
 
   @Test(timeout = 10000)
-  public void testInsertAutoFlushBackgrounNonCoveredRange() throws Exception {
+  public void testInsertAutoFlushBackgroundNonCoveredRange() throws Exception {
     CreateTableOptions createOptions = getBasicTableOptionsWithNonCoveredRange();
     createOptions.setNumReplicas(1);
     client.createTable(tableName, basicSchema, createOptions);
@@ -421,7 +421,7 @@ public class TestKuduSession {
     for (int key = 90; key < 110; key++) {
       session.apply(createBasicSchemaInsert(table, key));
     }
-    session.flush();
+    session.flush().join(5000);
 
     errors = session.getPendingErrors();
     assertEquals(10, errors.getRowErrors().length);
