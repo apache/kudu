@@ -233,16 +233,20 @@ class TestKuduBackup extends KuduTestSuite {
     val table = createRandomTable()
     val tableName = table.getName
     val maxRows = 200
-    val rows = loadRandomData(table)
+    loadRandomData(table)
 
-    // Run a full backup.
-    backupAndValidateTable(tableName, rows.length)
+    // Run a full backup. Note that, here and below, we do not validate the backups against the
+    // generated rows. There may be duplicates in the generated rows. Instead, the restored table is
+    // checked against the original table, which is less exhaustive but still a good test.
+    val options = createBackupOptions(Seq(tableName))
+    assertEquals(0, runBackup(options))
 
     // Run 1 to 5 incremental backups.
     val incrementalCount = random.nextInt(5) + 1
     (0 to incrementalCount).foreach { i =>
-      val incrementalRows = loadRandomData(table, maxRows)
-      backupAndValidateTable(tableName, incrementalRows.length, true)
+      loadRandomData(table, maxRows)
+      val incOptions = createBackupOptions(Seq(tableName))
+      assertEquals(0, runBackup(incOptions))
     }
 
     assertEquals(0, runRestore(createRestoreOptions(Seq(tableName))))
