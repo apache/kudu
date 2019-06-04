@@ -37,6 +37,7 @@ target_link_libraries(server_base_proto
 #########################################
 
 set(SERVER_PROCESS_SRCS
+  diagnostics_log.cc
   rpc_server.cc
   server_base.cc
   server_base_options.cc

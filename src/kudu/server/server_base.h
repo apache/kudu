@@ -225,8 +225,8 @@ class ServerBase {
 
   ServerBaseOptions options_;
 
-#ifdef FB_DO_NOT_REMOVE
   std::unique_ptr<DiagnosticsLog> diag_log_;
+#ifdef FB_DO_NOT_REMOVE
   scoped_refptr<Thread> excess_log_deleter_thread_;
 #endif
   CountDownLatch stop_background_threads_latch_;

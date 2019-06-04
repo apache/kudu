@@ -1,0 +1,102 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+#pragma once
+
+#include <cstdint>
+#include <memory>
+#include <string>
+
+#include <boost/optional/optional.hpp>
+
+#include "kudu/gutil/macros.h"
+#include "kudu/gutil/ref_counted.h"
+#include "kudu/util/condition_variable.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/mutex.h"
+
+namespace kudu {
+
+class MetricRegistry;
+class RollingLog;
+class Thread;
+class Status;
+
+namespace server {
+
+class DiagnosticsLog {
+ public:
+  DiagnosticsLog(std::string log_dir, MetricRegistry* metric_registry);
+  ~DiagnosticsLog();
+
+  void SetMetricsLogInterval(MonoDelta interval);
+
+  Status Start();
+  void Stop();
+
+#ifdef FB_DO_NOT_REMOVE
+  // Dump the stacks of the whole process immediately.
+  //
+  // NOTE: the actual stack-dumping is asynchronously performed on another thread. Thus,
+  // this is suitable for running in a performance-sensitive context.
+  void DumpStacksNow(std::string reason);
+#endif
+
+ private:
+  class SymbolSet;
+
+  enum class WakeupType {
+    METRICS,
+    STACKS
+  };
+
+  void RunThread();
+  Status LogMetrics();
+#ifdef FB_DO_NOT_REMOVE
+  Status LogStacks(const std::string& reason);
+#endif
+
+  MonoTime ComputeNextWakeup(DiagnosticsLog::WakeupType type) const;
+
+  const std::string log_dir_;
+  const MetricRegistry* metric_registry_;
+
+  scoped_refptr<Thread> thread_;
+  std::unique_ptr<RollingLog> log_;
+
+  Mutex lock_;
+  ConditionVariable wake_;
+  bool stop_ = false;
+
+#ifdef FB_DO_NOT_REMOVE
+  // If a stack dump is triggered externally, holds the reason why.
+  // Otherwise, unset.
+  // Protected by 'lock_'.
+  boost::optional<std::string> dump_stacks_now_reason_;
+#endif
+
+  MonoDelta metrics_log_interval_;
+
+  int64_t metrics_epoch_ = 0;
+
+  // Out-of-line this internal data to keep the header smaller.
+  std::unique_ptr<SymbolSet> symbols_;
+
+  DISALLOW_COPY_AND_ASSIGN(DiagnosticsLog);
+};
+
+} // namespace server
+} // namespace kudu
