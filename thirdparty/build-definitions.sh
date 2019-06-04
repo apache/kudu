@@ -805,7 +805,8 @@ build_memkind() {
   # Building unit tests and memkind examples in memkind with clang will prevent some
   # header files from being included which will lead to failures. So we do a minimal
   # installation here.
-  make -j$PARALLEL $EXTRA_MAKEFLAGS static_lib install-exec install-data
+  make -j$PARALLEL $EXTRA_MAKEFLAGS static_lib
+  make -j$PARALLEL $EXTRA_MAKEFLAGS install-exec install-data
   # install jemalloc header files
   cd $MEMKIND_BDIR/jemalloc/obj && make -j$PARALLEL $EXTRA_MAKEFLAGS install_include
 
