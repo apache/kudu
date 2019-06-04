@@ -280,6 +280,7 @@ using kudu::consensus::RaftConsensus;
 using kudu::consensus::RaftPeerPB;
 using kudu::consensus::StartTabletCopyRequestPB;
 using kudu::consensus::kMinimumTerm;
+using kudu::hms::HmsClientVerifyKuduSyncConfig;
 using kudu::pb_util::SecureDebugString;
 using kudu::pb_util::SecureShortDebugString;
 using kudu::rpc::RpcContext;
@@ -752,7 +753,7 @@ Status CatalogManager::Init(bool is_first_run) {
     std::lock_guard<RWMutex> leader_lock_guard(leader_lock_);
 
     hms_catalog_.reset(new hms::HmsCatalog(std::move(master_addresses)));
-    RETURN_NOT_OK_PREPEND(hms_catalog_->Start(),
+    RETURN_NOT_OK_PREPEND(hms_catalog_->Start(HmsClientVerifyKuduSyncConfig::VERIFY),
                           "failed to start Hive Metastore catalog");
 
     hms_notification_log_listener_.reset(new HmsNotificationLogListenerTask(this));

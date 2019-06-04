@@ -59,6 +59,9 @@ class MiniHms {
                     int sentry_client_rpc_retry_num = 3,
                     int sentry_client_rpc_retry_interval_ms = 500);
 
+  // Configures the mini HMS to enable or disable the Kudu plugin.
+  void EnableKuduPlugin(bool enable);
+
   // Configures the mini HMS to store its data in the provided path. If not set,
   // it uses a test-only temporary directory.
   void SetDataRoot(std::string data_root);
@@ -124,6 +127,9 @@ class MiniHms {
   std::string sentry_service_principal_;
   int sentry_client_rpc_retry_num_;
   int sentry_client_rpc_retry_interval_ms_;
+
+  // Whether to enable the Kudu listener plugin.
+  bool enable_kudu_plugin_ = true;
 };
 
 } // namespace hms

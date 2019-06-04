@@ -25,7 +25,6 @@
 #include <vector>
 
 #include <gflags/gflags.h>
-#include <gflags/gflags_declare.h>
 #include <glog/logging.h>
 
 #include "kudu/cfile/block_cache.h"
@@ -56,7 +55,6 @@
 #include "kudu/tserver/tablet_copy_service.h"
 #include "kudu/tserver/tablet_service.h"
 #include "kudu/util/flag_tags.h"
-#include "kudu/util/flag_validators.h"
 #include "kudu/util/maintenance_manager.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
@@ -95,8 +93,6 @@ DEFINE_string(location_mapping_cmd, "",
               "characters from the set [a-zA-Z0-9_-.]. If the cluster is not "
               "using location awareness features this flag should not be set.");
 
-DECLARE_bool(hive_metastore_sasl_enabled);
-DECLARE_string(keytab_file);
 
 using std::min;
 using std::shared_ptr;
@@ -112,24 +108,6 @@ using strings::Substitute;
 
 namespace kudu {
 namespace master {
-
-namespace {
-// Validates that if the HMS is configured with SASL enabled, the server has a
-// keytab available. This is located in master.cc because the HMS module (where
-// --hive_metastore_sasl_enabled is defined) doesn't link to the server module
-// (where --keytab_file is defined), and vice-versa. The master module is the
-// first module which links to both.
-bool ValidateHiveMetastoreSaslEnabled() {
-  if (FLAGS_hive_metastore_sasl_enabled && FLAGS_keytab_file.empty()) {
-    LOG(ERROR) << "When the Hive Metastore has SASL enabled "
-                  "(--hive_metastore_sasl_enabled), Kudu must be configured with "
-                  "a keytab (--keytab_file).";
-    return false;
-  }
-  return true;
-}
-GROUP_FLAG_VALIDATOR(hive_metastore_sasl_enabled, ValidateHiveMetastoreSaslEnabled);
-} // anonymous namespace
 
 Master::Master(const MasterOptions& opts)
   : KuduServer("Master", opts, "kudu.master"),

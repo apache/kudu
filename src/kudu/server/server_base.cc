@@ -130,7 +130,6 @@ TAG_FLAG(principal, experimental);
 // See KUDU-1884.
 TAG_FLAG(principal, unsafe);
 
-
 DEFINE_string(keytab_file, "",
               "Path to the Kerberos Keytab file for this server. Specifying a "
               "keytab file will cause the server to kinit, and enable Kerberos "

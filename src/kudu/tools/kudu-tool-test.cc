@@ -3402,7 +3402,7 @@ TEST_P(ToolTestKerberosParameterized, TestHmsDowngrade) {
 TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   string kUsername = "alice";
   ExternalMiniClusterOptions opts;
-  opts.hms_mode = HmsMode::ENABLE_HIVE_METASTORE;
+  opts.hms_mode = HmsMode::DISABLE_HIVE_METASTORE;
   opts.enable_kerberos = EnableKerberos();
   NO_FATALS(StartExternalMiniCluster(std::move(opts)));
 
@@ -3410,6 +3410,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   thrift::ClientOptions hms_opts;
   hms_opts.enable_kerberos = EnableKerberos();
   hms_opts.service_principal = "hive";
+  hms_opts.verify_service_config = false;
   HmsClient hms_client(cluster_->hms()->address(), hms_opts);
   ASSERT_OK(hms_client.Start());
   ASSERT_TRUE(hms_client.IsConnected());
@@ -3521,11 +3522,6 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   ASSERT_OK(hms_client.CreateDatabase(db));
   ASSERT_OK(CreateKuduTable(kudu_client, "my_db.table"));
 
-  // Enable the HMS integration.
-  cluster_->ShutdownNodes(cluster::ClusterNodes::MASTERS_ONLY);
-  cluster_->EnableMetastoreIntegration();
-  ASSERT_OK(cluster_->Restart());
-
   unordered_set<string> consistent_tables = {
     "default.control",
   };
@@ -3554,12 +3550,16 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
     consistent_tables.insert(tables.begin(), tables.end());
   };
 
+  const string hms_flags = Substitute("-hive_metastore_uris=$0 -hive_metastore_sasl_enabled=$1",
+                                      FLAGS_hive_metastore_uris, FLAGS_hive_metastore_sasl_enabled);
+
   // Run the HMS check tool and verify that the consistent tables are not
   // reported, and the inconsistent tables are reported.
   auto check = [&] () {
     string out;
     string err;
-    Status s = RunActionStdoutStderrString(Substitute("hms check $0", master_addr), &out, &err);
+    Status s = RunActionStdoutStderrString(Substitute("hms check $0 $1", master_addr, hms_flags),
+                                           &out, &err);
     SCOPED_TRACE(strings::CUnescapeOrDie(out));
     if (inconsistent_tables.empty()) {
       ASSERT_OK(s);
@@ -3581,13 +3581,14 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
 
   // 'hms fix --dryrun should not change the output of 'hms check'.
   NO_FATALS(RunActionStdoutNone(
-        Substitute("hms fix $0 --dryrun --drop_orphan_hms_tables", master_addr)));
+        Substitute("hms fix $0 --dryrun --drop_orphan_hms_tables $1", master_addr, hms_flags)));
   NO_FATALS(check());
 
   // Drop orphan hms tables.
   NO_FATALS(RunActionStdoutNone(
         Substitute("hms fix $0 --drop_orphan_hms_tables --nocreate_missing_hms_tables "
-                   "--noupgrade_hms_tables --nofix_inconsistent_tables", master_addr)));
+                   "--noupgrade_hms_tables --nofix_inconsistent_tables $1",
+                   master_addr, hms_flags)));
   make_consistent({
     "default.orphan_hms_table",
     "default.orphan_hms_table_legacy_managed",
@@ -3596,7 +3597,8 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
 
   // Create missing hms tables.
   NO_FATALS(RunActionStdoutNone(
-        Substitute("hms fix $0 --noupgrade_hms_tables --nofix_inconsistent_tables", master_addr)));
+        Substitute("hms fix $0 --noupgrade_hms_tables --nofix_inconsistent_tables $1",
+                   master_addr, hms_flags)));
   make_consistent({
     "default.kudu_orphan",
     "my_db.table",
@@ -3605,7 +3607,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
 
   // Upgrade legacy HMS tables.
   NO_FATALS(RunActionStdoutNone(
-        Substitute("hms fix $0 --nofix_inconsistent_tables", master_addr)));
+        Substitute("hms fix $0 --nofix_inconsistent_tables $1", master_addr, hms_flags)));
   make_consistent({
     "default.legacy_managed",
     "legacy_external",
@@ -3615,7 +3617,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
   NO_FATALS(check());
 
   // Refresh stale HMS tables.
-  NO_FATALS(RunActionStdoutNone(Substitute("hms fix $0", master_addr)));
+  NO_FATALS(RunActionStdoutNone(Substitute("hms fix $0 $1", master_addr, hms_flags)));
   make_consistent({
     "default.UPPERCASE",
     "default.inconsistent_schema",
@@ -3679,7 +3681,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndAutomaticFixHmsMetadata) {
 TEST_P(ToolTestKerberosParameterized, TestCheckAndManualFixHmsMetadata) {
   string kUsername = "alice";
   ExternalMiniClusterOptions opts;
-  opts.hms_mode = HmsMode::ENABLE_HIVE_METASTORE;
+  opts.hms_mode = HmsMode::DISABLE_HIVE_METASTORE;
   opts.enable_kerberos = EnableKerberos();
   NO_FATALS(StartExternalMiniCluster(std::move(opts)));
 
@@ -3687,6 +3689,7 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndManualFixHmsMetadata) {
   thrift::ClientOptions hms_opts;
   hms_opts.enable_kerberos = EnableKerberos();
   hms_opts.service_principal = "hive";
+  hms_opts.verify_service_config = false;
   HmsClient hms_client(cluster_->hms()->address(), hms_opts);
   ASSERT_OK(hms_client.Start());
   ASSERT_TRUE(hms_client.IsConnected());
@@ -3727,16 +3730,15 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndManualFixHmsMetadata) {
   ASSERT_OK(CreateKuduTable(kudu_client, "impala::default.conflicting_legacy_table"));
   ASSERT_OK(CreateKuduTable(kudu_client, "default.conflicting_legacy_table"));
 
-  // Enable the HMS integration.
-  cluster_->ShutdownNodes(cluster::ClusterNodes::MASTERS_ONLY);
-  cluster_->EnableMetastoreIntegration();
-  ASSERT_OK(cluster_->Restart());
+  const string hms_flags = Substitute("-hive_metastore_uris=$0 -hive_metastore_sasl_enabled=$1",
+                                      FLAGS_hive_metastore_uris, FLAGS_hive_metastore_sasl_enabled);
 
   // Run the HMS check tool and verify that the inconsistent tables are reported.
   auto check = [&] () {
     string out;
     string err;
-    Status s = RunActionStdoutStderrString(Substitute("hms check $0", master_addr), &out, &err);
+    Status s = RunActionStdoutStderrString(Substitute("hms check $0 $1", master_addr, hms_flags),
+                                           &out, &err);
     SCOPED_TRACE(strings::CUnescapeOrDie(out));
     for (const string& table : vector<string>({
       "duplicate_hms_tables",
@@ -3757,7 +3759,8 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndManualFixHmsMetadata) {
   {
     string out;
     string err;
-    Status s = RunActionStdoutStderrString(Substitute("hms fix $0", master_addr), &out, &err);
+    Status s = RunActionStdoutStderrString(Substitute("hms fix $0 $1", master_addr, hms_flags),
+                                           &out, &err);
     SCOPED_TRACE(strings::CUnescapeOrDie(out));
     ASSERT_FALSE(s.ok());
   }
@@ -3783,14 +3786,14 @@ TEST_P(ToolTestKerberosParameterized, TestCheckAndManualFixHmsMetadata) {
 
   // Rename the conflicting table.
   NO_FATALS(RunActionStdoutNone(Substitute(
-          "table rename-table --nomodify-external-catalogs $0 "
-          "default.conflicting_legacy_table default.non_conflicting_legacy_table", master_addr)));
+            "table rename-table --nomodify-external-catalogs $0 "
+            "default.conflicting_legacy_table default.non_conflicting_legacy_table", master_addr)));
 
   // Run the automatic fixer to create missing HMS table entries.
-  NO_FATALS(RunActionStdoutNone(Substitute("hms fix $0", master_addr)));
+  NO_FATALS(RunActionStdoutNone(Substitute("hms fix $0 $1", master_addr, hms_flags)));
 
   // Check should now be clean.
-  NO_FATALS(RunActionStdoutNone(Substitute("hms check $0", master_addr)));
+  NO_FATALS(RunActionStdoutNone(Substitute("hms check $0 $1", master_addr, hms_flags)));
 
   // Ensure the tables are available.
   vector<string> kudu_tables;

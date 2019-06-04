@@ -252,10 +252,15 @@ Status ExternalMiniCluster::Start() {
   }
 
   // Start the HMS.
-  if (opts_.hms_mode == HmsMode::ENABLE_HIVE_METASTORE ||
+  if (opts_.hms_mode == HmsMode::DISABLE_HIVE_METASTORE ||
+      opts_.hms_mode == HmsMode::ENABLE_HIVE_METASTORE ||
       opts_.hms_mode == HmsMode::ENABLE_METASTORE_INTEGRATION) {
     hms_.reset(new hms::MiniHms());
     hms_->SetDataRoot(opts_.cluster_root);
+
+    if (opts_.hms_mode == HmsMode::DISABLE_HIVE_METASTORE) {
+      hms_->EnableKuduPlugin(false);
+    }
 
     if (opts_.enable_kerberos) {
       string spn = Substitute("hive/$0", hms_->address().host());

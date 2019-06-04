@@ -37,6 +37,11 @@ class Schema;
 
 namespace hms {
 
+enum HmsClientVerifyKuduSyncConfig {
+  DONT_VERIFY,
+  VERIFY,
+};
+
 // A high-level API above the HMS which handles converting to and from
 // Kudu-specific types, retries, reconnections, HA, error handling, and
 // concurrent requests.
@@ -49,7 +54,7 @@ class HmsCatalog {
   ~HmsCatalog();
 
   // Starts the HmsCatalog instance.
-  Status Start();
+  Status Start(HmsClientVerifyKuduSyncConfig verify_service_config = DONT_VERIFY);
 
   // Stops the HmsCatalog instance.
   void Stop();

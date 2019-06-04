@@ -190,6 +190,7 @@ class HmsClient {
   static Status DeserializeJsonTable(Slice json, hive::Table* table) WARN_UNUSED_RESULT;
 
  private:
+  bool verify_kudu_sync_config_;
   hive::ThriftHiveMetastoreClient client_;
 };
 } // namespace hms

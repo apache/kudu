@@ -126,7 +126,8 @@ const int kSlowExecutionWarningThresholdMs = 1000;
 const char* const HmsClient::kServiceName = "Hive Metastore";
 
 HmsClient::HmsClient(const HostPort& address, const ClientOptions& options)
-      : client_(hive::ThriftHiveMetastoreClient(CreateClientProtocol(address, options))) {
+      : verify_kudu_sync_config_(options.verify_service_config),
+        client_(hive::ThriftHiveMetastoreClient(CreateClientProtocol(address, options))) {
 }
 
 HmsClient::~HmsClient() {
@@ -137,6 +138,10 @@ Status HmsClient::Start() {
   SCOPED_LOG_SLOW_EXECUTION(WARNING, kSlowExecutionWarningThresholdMs, "starting HMS client");
   HMS_RET_NOT_OK(client_.getOutputProtocol()->getTransport()->open(),
                  "failed to open Hive Metastore connection");
+
+  if (!verify_kudu_sync_config_) {
+    return Status::OK();
+  }
 
   // Immediately after connecting to the HMS, check that it is configured with
   // the required event listeners.

@@ -83,6 +83,10 @@ void MiniHms::EnableSentry(const HostPort& sentry_address,
   sentry_client_rpc_retry_interval_ms_ = sentry_client_rpc_retry_interval_ms;
 }
 
+void MiniHms::EnableKuduPlugin(bool enable) {
+  enable_kudu_plugin_ = enable;
+}
+
 void MiniHms::SetDataRoot(string data_root) {
   CHECK(!hms_process_);
   data_root_ = std::move(data_root);
@@ -208,6 +212,9 @@ bool MiniHms::IsAuthorizationEnabled() const {
 
 Status MiniHms::CreateHiveSite() const {
 
+  const string listeners = Substitute("org.apache.hive.hcatalog.listener.DbNotificationListener$0",
+      enable_kudu_plugin_ ? ",org.apache.kudu.hive.metastore.KuduMetastorePlugin" : "");
+
   // - datanucleus.schema.autoCreateAll
   // - hive.metastore.schema.verification
   //     Allow Hive to startup and run without first running the schemaTool.
@@ -237,8 +244,7 @@ Status MiniHms::CreateHiveSite() const {
   <property>
     <name>hive.metastore.transactional.event.listeners</name>
     <value>
-      org.apache.hive.hcatalog.listener.DbNotificationListener,
-      org.apache.kudu.hive.metastore.KuduMetastorePlugin
+      $0
     </value>
   </property>
 
@@ -254,37 +260,37 @@ Status MiniHms::CreateHiveSite() const {
 
   <property>
     <name>hive.metastore.warehouse.dir</name>
-    <value>file://$1/warehouse/</value>
+    <value>file://$2/warehouse/</value>
   </property>
 
   <property>
     <name>javax.jdo.option.ConnectionURL</name>
-    <value>jdbc:derby:$1/metadb;create=true</value>
+    <value>jdbc:derby:$2/metadb;create=true</value>
   </property>
 
   <property>
     <name>hive.metastore.event.db.listener.timetolive</name>
-    <value>$0s</value>
+    <value>$1s</value>
   </property>
 
   <property>
     <name>hive.metastore.sasl.enabled</name>
-    <value>$2</value>
-  </property>
-
-  <property>
-    <name>hive.metastore.kerberos.keytab.file</name>
     <value>$3</value>
   </property>
 
   <property>
-    <name>hive.metastore.kerberos.principal</name>
+    <name>hive.metastore.kerberos.keytab.file</name>
     <value>$4</value>
   </property>
 
   <property>
-    <name>hadoop.rpc.protection</name>
+    <name>hive.metastore.kerberos.principal</name>
     <value>$5</value>
+  </property>
+
+  <property>
+    <name>hadoop.rpc.protection</name>
+    <value>$6</value>
   </property>
 
   <property>
@@ -302,7 +308,7 @@ Status MiniHms::CreateHiveSite() const {
     <value>true</value>
   </property>
 
-  $6
+  $7
 
 </configuration>
   )";
@@ -354,6 +360,7 @@ Status MiniHms::CreateHiveSite() const {
   }
 
   string hive_file_contents = Substitute(kHiveFileTemplate,
+                                         listeners,
                                          notification_log_ttl_.ToSeconds(),
                                          data_root_,
                                          IsKerberosEnabled(),

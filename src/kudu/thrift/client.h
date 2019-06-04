@@ -76,6 +76,10 @@ struct ClientOptions {
   // Number of times an RPC is retried by the HA client after encountering
   // retriable failures, such as network failures.
   int32_t retry_count = 1;
+
+  // Whether the client should, upon connecting, verify the Thrift service
+  // configuration is correct.
+  bool verify_service_config = false;
 };
 
 std::shared_ptr<apache::thrift::protocol::TProtocol> CreateClientProtocol(

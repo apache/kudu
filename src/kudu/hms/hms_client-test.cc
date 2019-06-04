@@ -397,6 +397,10 @@ TEST_F(HmsClientTest, TestHmsConnect) {
   options.send_timeout = MonoDelta::FromMilliseconds(100);
   options.conn_timeout = MonoDelta::FromMilliseconds(100);
 
+  // This test will attempt to connect and transfer data upon starting the
+  // client.
+  options.verify_service_config = true;
+
   auto start_client = [&options] (Sockaddr addr) -> Status {
     HmsClient client(HostPort(addr), options);
     return client.Start();

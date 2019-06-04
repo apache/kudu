@@ -110,7 +110,7 @@ HmsCatalog::~HmsCatalog() {
   Stop();
 }
 
-Status HmsCatalog::Start() {
+Status HmsCatalog::Start(HmsClientVerifyKuduSyncConfig verify_service_config) {
   vector<HostPort> addresses;
   RETURN_NOT_OK(ParseUris(FLAGS_hive_metastore_uris, &addresses));
 
@@ -122,6 +122,7 @@ Status HmsCatalog::Start() {
   options.service_principal = FLAGS_hive_metastore_kerberos_principal;
   options.max_buf_size = FLAGS_hive_metastore_max_message_size_bytes;
   options.retry_count = FLAGS_hive_metastore_retry_count;
+  options.verify_service_config = verify_service_config == VERIFY;
 
   return ha_client_.Start(std::move(addresses), std::move(options));
 }

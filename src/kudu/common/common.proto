@@ -70,9 +70,21 @@ enum EncodingType {
   BIT_SHUFFLE = 6;
 }
 
+// Enums that specify the HMS-related configurations for a Kudu mini-cluster.
 enum HmsMode {
+  // No HMS will be started.
   NONE = 0;
+
+  // The HMS will be started, but will not be configured to use the Kudu
+  // plugin.
+  DISABLE_HIVE_METASTORE = 3;
+
+  // The HMS will be started and configured to use the Kudu plugin, but the
+  // Kudu mini-cluster will not be configured to synchronize with it.
   ENABLE_HIVE_METASTORE = 1;
+
+  // The HMS will be started and configured to use the Kudu plugin, and the
+  // Kudu mini-cluster will be configured to synchronize with it.
   ENABLE_METASTORE_INTEGRATION = 2;
 };
 
