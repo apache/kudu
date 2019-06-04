@@ -482,9 +482,6 @@ class Rebalancer {
   Status GetClusterRawInfo(const boost::optional<std::string>& location,
                            ClusterRawInfo* raw_info);
 
-  Status GetNextMoves(Runner* runner,
-                      std::vector<ReplicaMove>* replica_moves);
-
   // Reset ksck-related fields and run ksck against the cluster.
   Status RefreshKsckResults();
 

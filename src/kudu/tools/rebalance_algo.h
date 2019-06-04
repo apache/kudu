@@ -226,7 +226,7 @@ class TwoDimensionalGreedyAlgo : public RebalancingAlgo {
 //
 // ******* Some Examples *******
 //
-// Tablet T of replication factor 5, and locations L_0, ..., L_4. Consider
+// Table T of replication factor 5, and locations L_0, ..., L_4. Consider
 // the following tablet servers disposition:
 //
 //   ts_num(L_0): 2
