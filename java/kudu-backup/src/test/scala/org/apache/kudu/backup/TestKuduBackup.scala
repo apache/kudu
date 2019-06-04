@@ -28,6 +28,7 @@ import org.apache.kudu.ColumnSchema
 import org.apache.kudu.Schema
 import org.apache.kudu.Type
 import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder
+import org.apache.kudu.spark.kudu.SparkListenerUtil.withJobDescriptionCollector
 import org.apache.kudu.spark.kudu._
 import org.apache.kudu.test.CapturingLogAppender
 import org.apache.kudu.test.RandomUtils
@@ -92,6 +93,34 @@ class TestKuduBackup extends KuduTestSuite {
 
     // Restore the backups and validate the end result.
     restoreAndValidateTable(tableName, 100)
+  }
+
+  @Test
+  def testBackupAndRestoreJobNames() {
+    val rowCount = 100
+    insertRows(table, rowCount) // Insert data into the default test table.
+
+    // Backup the table and verify the job description.
+    val fullDesc = withJobDescriptionCollector(ss.sparkContext) { () =>
+      runBackup(createBackupOptions(Seq(table.getName)))
+    }
+    assertEquals(1, fullDesc.size)
+    assertEquals("Kudu Backup(full): test", fullDesc.head)
+
+    // Backup again and verify the job description.
+    val incDesc = withJobDescriptionCollector(ss.sparkContext) { () =>
+      runBackup(createBackupOptions(Seq(table.getName)))
+    }
+    assertEquals(1, incDesc.size)
+    assertEquals("Kudu Backup(incremental): test", incDesc.head)
+
+    // Restore the table and verify the job descriptions.
+    val restoreDesc = withJobDescriptionCollector(ss.sparkContext) { () =>
+      runRestore(createRestoreOptions(Seq(table.getName)))
+    }
+    assertEquals(2, restoreDesc.size)
+    assertTrue(restoreDesc.contains("Kudu Restore(1/2): test"))
+    assertTrue(restoreDesc.contains("Kudu Restore(2/2): test"))
   }
 
   @Test

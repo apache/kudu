@@ -55,9 +55,14 @@ object KuduRestore {
       throw new RuntimeException(s"No valid backups found for table: $tableName")
     }
     val graph = backupMap(tableName)
-    val lastMetadata = graph.restorePath.backups.last.metadata
+    val restorePath = graph.restorePath
+    val lastMetadata = restorePath.backups.last.metadata
     val restoreName = s"${lastMetadata.getTableName}${options.tableSuffix}"
-    graph.restorePath.backups.foreach { backup =>
+    val numJobs = restorePath.backups.size
+    var currentJob = 1
+    restorePath.backups.foreach { backup =>
+      session.sparkContext.setJobDescription(s"Kudu Restore($currentJob/$numJobs): $tableName")
+
       log.info(s"Restoring table $tableName from path: ${backup.path}")
       val metadata = backup.metadata
       val isFullRestore = metadata.getFromMs == 0
@@ -143,10 +148,15 @@ object KuduRestore {
           }
         }
       }
+      currentJob += 1
     }
   }
 
   def run(options: RestoreOptions, session: SparkSession): Int = {
+    // Set the job group for all the spark restore jobs.
+    // Note: The job description will be overridden by each Kudu table job.
+    session.sparkContext.setJobGroup(s"Kudu Restore @ ${options.timestampMs}", "Kudu Restore")
+
     log.info(s"Restoring from path: ${options.rootPath}")
     val context =
       new KuduContext(

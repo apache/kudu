@@ -451,7 +451,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
     kuduContext.captureRows = true
 
     // Count the number of tasks that end.
-    val actualNumTasks = withJobTaskCounter(ss.sparkContext) { _ =>
+    val actualNumTasks = withJobTaskCounter(ss.sparkContext) { () =>
       kuduContext.insertRows(
         dataDF,
         tableName,
@@ -1039,7 +1039,7 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
       "kudu.splitSizeBytes" -> "1024")
 
     // count the number of tasks that end.
-    val actualNumTasks = withJobTaskCounter(ss.sparkContext) { _ =>
+    val actualNumTasks = withJobTaskCounter(ss.sparkContext) { () =>
       val t = "scanWithKeyRangeTest"
       sqlContext.read.options(kuduOptions).format("kudu").load.createOrReplaceTempView(t)
       val results = sqlContext.sql(s"SELECT * FROM $t").collectAsList()

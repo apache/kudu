@@ -103,7 +103,7 @@ class DistributedDataGeneratorTest extends KuduTestSuite {
       harness.getMasterAddressesAsString)
 
     // count the number of tasks that end.
-    val actualNumTasks = withJobTaskCounter(ss.sparkContext) { _ =>
+    val actualNumTasks = withJobTaskCounter(ss.sparkContext) { () =>
       runGeneratorTest(args)
     }
     assertEquals(numTasks, actualNumTasks)
@@ -121,7 +121,7 @@ class DistributedDataGeneratorTest extends KuduTestSuite {
       harness.getMasterAddressesAsString)
 
     // count the number of tasks that end.
-    val actualNumTasks = withJobTaskCounter(ss.sparkContext) { _ =>
+    val actualNumTasks = withJobTaskCounter(ss.sparkContext) { () =>
       runGeneratorTest(args)
     }
 

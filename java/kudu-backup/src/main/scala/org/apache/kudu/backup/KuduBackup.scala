@@ -73,6 +73,10 @@ object KuduBackup {
         tableOptions = tableOptions.copy(forceFull = true)
       }
     }
+
+    val jobTypeStr = if (incremental) "incremental" else "full"
+    session.sparkContext.setJobDescription(s"Kudu Backup($jobTypeStr): $tableName")
+
     val rdd = new KuduBackupRDD(table, tableOptions, incremental, context, session.sparkContext)
     val df =
       session.sqlContext
@@ -93,6 +97,10 @@ object KuduBackup {
   }
 
   def run(options: BackupOptions, session: SparkSession): Int = {
+    // Set the job group for all the spark backup jobs.
+    // Note: The job description will be overridden by each Kudu table job.
+    session.sparkContext.setJobGroup(s"Kudu Backup @ ${options.toMs}", "Kudu Backup")
+
     log.info(s"Backing up to root path: ${options.rootPath}")
     val context =
       new KuduContext(

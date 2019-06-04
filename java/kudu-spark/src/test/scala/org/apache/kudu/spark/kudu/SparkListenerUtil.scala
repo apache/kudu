@@ -21,23 +21,45 @@ import org.apache.kudu.test.junit.AssertHelpers.BooleanExpression
 import org.apache.spark.SparkContext
 import org.apache.spark.scheduler.SparkListener
 import org.apache.spark.scheduler.SparkListenerJobEnd
+import org.apache.spark.scheduler.SparkListenerJobStart
 import org.apache.spark.scheduler.SparkListenerTaskEnd
+
+import scala.collection.mutable.ListBuffer
 
 object SparkListenerUtil {
 
-  // TODO: Use org.apache.spark.TestUtils.withListener if it becomes public test API
-  def withJobTaskCounter(sc: SparkContext)(body: Any => Unit): Int = {
+  def withJobTaskCounter(sc: SparkContext)(body: () => Unit): Int = {
     // Add a SparkListener to count the number of tasks that end.
     var numTasks = 0
-    var jobDone = false
     val listener: SparkListener = new SparkListener {
       override def onTaskEnd(taskEnd: SparkListenerTaskEnd): Unit = {
         numTasks += 1
       }
-      override def onJobEnd(jobEnd: SparkListenerJobEnd): Unit = {
-        jobDone = true
+    }
+    withListener(sc, listener)(body)
+    numTasks
+  }
+
+  def withJobDescriptionCollector(sc: SparkContext)(body: () => Unit): List[String] = {
+    // Add a SparkListener to collect the job descriptions.
+    val jobDescriptions = new ListBuffer[String]()
+    val listener: SparkListener = new SparkListener {
+      override def onJobStart(jobStart: SparkListenerJobStart): Unit = {
+        // TODO: Use SparkContext.SPARK_JOB_DESCRIPTION when public.
+        val description = jobStart.properties.getProperty("spark.job.description")
+        if (description != null) {
+          jobDescriptions += description
+        }
       }
     }
+    withListener(sc, listener)(body)
+    jobDescriptions.toList
+  }
+
+  // TODO: Use org.apache.spark.TestUtils.withListener if it becomes public test API
+  def withListener[L <: SparkListener](sc: SparkContext, listener: L)(body: () => Unit): Unit = {
+    val jobDoneListener = new JobDoneListener
+    sc.addSparkListener(jobDoneListener)
     sc.addSparkListener(listener)
     try {
       body()
@@ -46,10 +68,19 @@ object SparkListenerUtil {
       // private API, we use the jobEnd event to know that all of the taskEnd events
       // must have been processed.
       AssertHelpers.assertEventuallyTrue("Spark job did not complete", new BooleanExpression {
-        override def get(): Boolean = jobDone
+        override def get(): Boolean = jobDoneListener.isDone
       }, 5000)
       sc.removeSparkListener(listener)
+      sc.removeSparkListener(jobDoneListener)
     }
-    numTasks
+  }
+
+  private class JobDoneListener extends SparkListener {
+    var jobDone = false
+
+    override def onJobEnd(jobEnd: SparkListenerJobEnd): Unit = {
+      jobDone = true
+    }
+    def isDone = jobDone
   }
 }
