@@ -57,6 +57,10 @@ class KuduBackupRDD private[kudu] (
       .prefetching(options.scanPrefetching)
       .keepAlivePeriodMs(options.keepAlivePeriodMs)
 
+    options.splitSizeBytes.foreach { size =>
+      builder.setSplitSizeBytes(size)
+    }
+
     // Set a hybrid time for the scan to ensure application consistency.
     val toMicros = TimeUnit.MILLISECONDS.toMicros(options.toMs)
     val toHTT =

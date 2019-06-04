@@ -29,8 +29,10 @@ import org.apache.kudu.Schema
 import org.apache.kudu.Type
 import org.apache.kudu.ColumnSchema.ColumnSchemaBuilder
 import org.apache.kudu.spark.kudu.SparkListenerUtil.withJobDescriptionCollector
+import org.apache.kudu.spark.kudu.SparkListenerUtil.withJobTaskCounter
 import org.apache.kudu.spark.kudu._
 import org.apache.kudu.test.CapturingLogAppender
+import org.apache.kudu.test.KuduTestHarness.TabletServerConfig
 import org.apache.kudu.test.RandomUtils
 import org.apache.kudu.util.DataGenerator.DataGeneratorBuilder
 import org.apache.kudu.util.HybridTimeUtil
@@ -321,6 +323,38 @@ class TestKuduBackup extends KuduTestSuite {
       val rdd = kuduContext.kuduRDD(ss.sparkContext, s"$tableName-restore", List("key"))
       assertResult(numRows)(rdd.count())
     }
+  }
+
+  @TabletServerConfig(
+    flags = Array(
+      "--flush_threshold_mb=1",
+      "--flush_threshold_secs=1",
+      // Disable rowset compact to prevent DRSs being merged because they are too small.
+      "--enable_rowset_compaction=false"
+    ))
+  @Test
+  def testBackupWithSplitSizeBytes() {
+    // Create a table with a single partition.
+    val tableName = "split-size-table"
+    val options = new CreateTableOptions().setRangePartitionColumns(List("key").asJava)
+    val table = kuduClient.createTable(tableName, schema, options)
+
+    // Insert enough data into the test table so we can split it.
+    val rowCount = 1000
+    upsertRowsWithRowDataSize(table, rowCount, 32 * 1024)
+
+    // Wait for mrs flushed.
+    Thread.sleep(5 * 1000)
+
+    // Run a backup job with custom splitSizeBytes and count the tasks.
+    val backupOptions = createBackupOptions(Seq(tableName)).copy(splitSizeBytes = Some(1024))
+    val actualNumTasks = withJobTaskCounter(ss.sparkContext) { () =>
+      assertEquals(0, runBackup(backupOptions))
+    }
+    validateBackup(backupOptions, rowCount, false)
+
+    // Verify there were more tasks than there are partitions.
+    assertTrue(actualNumTasks > 1)
   }
 
   @Test

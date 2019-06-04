@@ -39,7 +39,8 @@ case class BackupOptions(
     scanPrefetching: Boolean = BackupOptions.DefaultScanPrefetching,
     keepAlivePeriodMs: Long = BackupOptions.DefaultKeepAlivePeriodMs,
     failOnFirstError: Boolean = BackupOptions.DefaultFailOnFirstError,
-    numParallelBackups: Int = BackupOptions.DefaultNumParallelBackups)
+    numParallelBackups: Int = BackupOptions.DefaultNumParallelBackups,
+    splitSizeBytes: Option[Long] = None)
 
 object BackupOptions {
   val DefaultForceFull: Boolean = false
@@ -54,6 +55,7 @@ object BackupOptions {
   val DefaultKeepAlivePeriodMs: Long = AsyncKuduClient.DEFAULT_KEEP_ALIVE_PERIOD_MS
   val DefaultFailOnFirstError: Boolean = false
   val DefaultNumParallelBackups = 1
+  val DefaultSplitSizeBytes: Option[Long] = None
 
   // We use the program name to make the help output show a the spark invocation required.
   val ClassName: String = KuduBackup.getClass.getCanonicalName.dropRight(1) // Remove trailing `$`
@@ -143,6 +145,15 @@ object BackupOptions {
           "The number of tables to back up in parallel. Backup leaves it to Spark to manage " +
             "the resources of parallel jobs. Overrides --failOnFirstError. This option is " +
             "experimental. Default: " + DefaultNumParallelBackups)
+        .hidden()
+        .optional()
+
+      opt[Long]("splitSizeBytes")
+        .action((v, o) => o.copy(splitSizeBytes = Some(v)))
+        .text(
+          "Sets the target number of bytes per spark task. If set, tablet's primary key range " +
+            "will be split to generate uniform task sizes instead of the default of 1 task per " +
+            "tablet. This option is experimental.")
         .hidden()
         .optional()
 
