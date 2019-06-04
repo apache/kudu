@@ -158,37 +158,29 @@ Status DeltaMemStore::CheckRowDeleted(rowid_t row_idx,
                                       const IOContext* /*io_context*/,
                                       bool *deleted) const {
   *deleted = false;
-
-  DeltaKey key(row_idx, Timestamp(0));
+  DeltaKey key(row_idx, Timestamp(Timestamp::kMax));
   faststring buf;
   key.EncodeTo(&buf);
   Slice key_slice(buf);
 
   bool exact;
 
-  // TODO(unknown): can we avoid the allocation here?
   gscoped_ptr<DMSTreeIter> iter(tree_.NewIterator());
-  if (!iter->SeekAtOrAfter(key_slice, &exact)) {
+  if (!iter->SeekAtOrBefore(key_slice, &exact)) {
     return Status::OK();
   }
 
-  while (iter->IsValid()) {
-    // Iterate forward until reaching an entry with a larger row idx.
-    Slice key_slice, v;
-    iter->GetCurrentEntry(&key_slice, &v);
-    RETURN_NOT_OK(key.DecodeFrom(&key_slice));
-    DCHECK_GE(key.row_idx(), row_idx);
-    if (key.row_idx() != row_idx) break;
+  DCHECK(!exact);
 
-    RowChangeList val(v);
-    // Mutation is for the target row, check deletion status.
-    RowChangeListDecoder decoder((RowChangeList(v)));
-    decoder.InitNoSafetyChecks();
-    decoder.TwiddleDeleteStatus(deleted);
-
-    iter->Next();
+  Slice current_key_slice, v;
+  iter->GetCurrentEntry(&current_key_slice, &v);
+  RETURN_NOT_OK(key.DecodeFrom(&current_key_slice));
+  if (key.row_idx() != row_idx) {
+    return Status::OK();
   }
-
+  RowChangeListDecoder decoder((RowChangeList(v)));
+  decoder.InitNoSafetyChecks();
+  *deleted = decoder.is_delete();
   return Status::OK();
 }
 

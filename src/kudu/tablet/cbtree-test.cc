@@ -28,6 +28,7 @@
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/concurrent_btree.h"
 #include "kudu/util/barrier.h"
 #include "kudu/util/debug/sanitizer_scopes.h"
@@ -43,6 +44,7 @@ using std::string;
 using std::thread;
 using std::unordered_set;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 namespace tablet {
@@ -783,6 +785,76 @@ TEST_F(TestCBTree, TestScanPerformance) {
         ASSERT_EQ(count, n_keys);
       }
     }
+  }
+}
+
+// Test the seek AT_OR_BEFORE mode.
+TEST_F(TestCBTree, TestIteratorSeekAtOrBefore) {
+  int key_num = 1000;
+  CBTree<SmallFanoutTraits> t;
+
+  // Insert entry in CBTree with key1000 key1002 key1004 ... key2000.
+  // Key1001 key1003 key1005 ... key1999 are omitted.
+  for (int i = 500; i <= key_num; ++i) {
+    string key = Substitute("key$0", i * 2);
+    ASSERT_TRUE(t.Insert(Slice(key), Slice("val")));
+  }
+
+  // Seek to existing key should successfully reach key
+  // and set exact = true;
+  for (int i = 500; i <= key_num; ++i) {
+    string key = Substitute("key$0", i * 2);
+    gscoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter(t.NewIterator());
+    bool exact;
+    ASSERT_TRUE(iter->SeekAtOrBefore(Slice(key), &exact));
+    ASSERT_TRUE(exact);
+
+    ASSERT_TRUE(iter->IsValid());
+    Slice k, v;
+    iter->GetCurrentEntry(&k, &v);
+    ASSERT_EQ(key, k.ToString());
+  }
+
+  // Seek to before first key should fail.
+  {
+    gscoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter(t.NewIterator());
+
+    bool exact;
+    ASSERT_FALSE(iter->SeekAtOrBefore(Slice("key0000"), &exact));
+    ASSERT_FALSE(exact);
+    ASSERT_FALSE(iter->IsValid());
+  }
+
+  // Seek to non-existent key in current CBTree key range should
+  // successfully reach the first entry with key < given key
+  // and set exact = false.
+  for (int i = 500; i <= key_num - 1; ++i) {
+    string key = Substitute("key$0", i * 2 + 1);
+    string expect_key = Substitute("key$0", i * 2);
+    gscoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter(t.NewIterator());
+    bool exact;
+    ASSERT_TRUE(iter->SeekAtOrBefore(Slice(key), &exact));
+    ASSERT_FALSE(exact);
+
+    ASSERT_TRUE(iter->IsValid());
+    Slice k, v;
+    iter->GetCurrentEntry(&k, &v);
+    ASSERT_EQ(expect_key, k.ToString());
+  }
+
+  // Seek to after last key should successfully reach last key
+  // and set exact = false;
+  {
+    gscoped_ptr<CBTreeIterator<SmallFanoutTraits> > iter(t.NewIterator());
+
+    bool exact;
+    ASSERT_TRUE(iter->SeekAtOrBefore(Slice("key2001"), &exact));
+    ASSERT_FALSE(exact);
+
+    ASSERT_TRUE(iter->IsValid());
+    Slice k, v;
+    iter->GetCurrentEntry(&k, &v);
+    ASSERT_EQ("key2000", k.ToString());
   }
 }
 

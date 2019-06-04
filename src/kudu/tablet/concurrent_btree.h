@@ -1616,7 +1616,13 @@ class CBTreeIterator {
 
   bool SeekAtOrAfter(const Slice &key, bool *exact) {
     SeekToLeaf(key);
-    SeekInLeaf(key, exact);
+    SeekInLeaf(key, exact, AT_OR_AFTER);
+    return IsValid();
+  }
+
+  bool SeekAtOrBefore(const Slice &key, bool *exact) {
+    SeekToLeaf(key);
+    SeekInLeaf(key, exact, AT_OR_BEFORE);
     return IsValid();
   }
 
@@ -1699,6 +1705,14 @@ class CBTreeIterator {
  private:
   friend class CBTree<Traits>;
 
+  // Control the mode in SeekInLeaf.
+  // AT_OR_BEFORE will seek the first idx with key <= given key.
+  // AT_OR_AFTER will seek the first idx with key >= given key.
+  enum SeekMode {
+      AT_OR_BEFORE,
+      AT_OR_AFTER
+  };
+
   CBTreeIterator(const CBTree<Traits> *tree,
                  bool tree_frozen) :
     tree_(tree),
@@ -1709,16 +1723,38 @@ class CBTreeIterator {
     leaf_to_scan_(&leaf_copy_)
   {}
 
-  bool SeekInLeaf(const Slice &key, bool *exact) {
+  bool SeekInLeaf(const Slice &key, bool *exact, SeekMode mode) {
     DCHECK(seeked_);
-    idx_in_leaf_ = leaf_to_scan_->Find(key, exact);
-    if (idx_in_leaf_ == leaf_to_scan_->num_entries()) {
-      // not found in leaf, seek to start of next leaf if it exists.
-      return SeekNextLeaf();
+    int idx = leaf_to_scan_->Find(key, exact);
+    if (mode == AT_OR_BEFORE) {
+      // If do not contain key equal to the given key, the result should be idx - 1;
+      // If contain the key(exact == true), the result should be idx.
+      // There are two corner case:
+      // 1. If all records in all leftnode > key will get idx = 0.
+      // 2. If all records in all leftnode < key will get idx idx = num_entries.
+      //
+      // The accuracy of this mode depends on the fact that we didn't optimize the
+      // internal nodes with "smallest separator" key. After optimize this function
+      // needs refactoring.
+      if (*exact) {
+        idx_in_leaf_ = idx;
+        return true;
+      }
+      if (leaf_to_scan_->num_entries() == 0 || idx == 0) {
+        seeked_ = false;
+        return false;
+      }
+      idx_in_leaf_ = idx - 1;
+    } else {
+      DCHECK_EQ(mode, AT_OR_AFTER);
+      idx_in_leaf_ = idx;
+      if (idx_in_leaf_ == leaf_to_scan_->num_entries()) {
+        // not found in leaf, seek to start of next leaf if it exists.
+        return SeekNextLeaf();
+      }
     }
     return true;
   }
-
 
   void SeekToLeaf(const Slice &key) {
     debug::ScopedTSANIgnoreReadsAndWrites ignore_tsan;
