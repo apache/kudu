@@ -1029,10 +1029,16 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
   @TabletServerConfig(
     flags = Array(
       "--flush_threshold_mb=1",
-      "--flush_threshold_secs=1"
+      "--flush_threshold_secs=1",
+      // Disable rowset compact to prevent DRSs being merged because they are too small.
+      "--enable_rowset_compaction=false"
     ))
   def testScanWithKeyRange() {
     upsertRowsWithRowDataSize(table, rowCount * 100, 32 * 1024)
+
+    // Wait for mrs flushed
+    Thread.sleep(5 * 1000)
+
     kuduOptions = Map(
       "kudu.table" -> tableName,
       "kudu.master" -> harness.getMasterAddressesAsString,
@@ -1045,6 +1051,6 @@ class DefaultSourceTest extends KuduTestSuite with Matchers {
       val results = sqlContext.sql(s"SELECT * FROM $t").collectAsList()
       assertEquals(rowCount * 100, results.size())
     }
-    assert(actualNumTasks >= 2)
+    assert(actualNumTasks > 2)
   }
 }

@@ -41,14 +41,16 @@ public class TestSplitKeyRange {
   @Test
   @TabletServerConfig(flags = {
       "--flush_threshold_mb=1",
-      "--flush_threshold_secs=1"
+      "--flush_threshold_secs=1",
+      // Disable rowset compact to prevent DRSs being merged because they are too small.
+      "--enable_rowset_compaction=false"
   })
   public void testSplitKeyRange() throws Exception {
     final KuduTable table = createTableWithOneThousandRows(
         harness.getAsyncClient(), TABLE_NAME, 32 * 1024, DEFAULT_SLEEP);
 
     // Wait for mrs flushed
-    Thread.sleep(10 * 1000);
+    Thread.sleep(5 * 1000);
 
     Schema schema = table.getSchema();
 
@@ -158,7 +160,7 @@ public class TestSplitKeyRange {
         table, primaryKeyStart, primaryKeyEnd, null, null,
         AsyncKuduClient.FETCH_TABLETS_PER_RANGE_LOOKUP,
         1024, DEFAULT_SLEEP).join();
-    assertTrue(keyRanges.size() >= 4);
+    assertTrue(keyRanges.size() > 4);
     for (KeyRange keyRange : keyRanges) {
       int startKey = KeyEncoder.decodePrimaryKey(schema, keyRange.getPrimaryKeyStart()).getInt(0);
       int endKey = KeyEncoder.decodePrimaryKey(schema, keyRange.getPrimaryKeyEnd()).getInt(0);
