@@ -80,6 +80,10 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
   static final String KUDU_MASTER_EVENT = "kudu.master_event";
   @VisibleForTesting
   static final String KUDU_CHECK_ID_KEY = "kudu.check_id";
+  // The key should keep in sync with the one used in
+  // org.apache.hadoop.hive.metastore.MetaStoreUtils.isExternalTable().
+  @VisibleForTesting
+  static final String EXTERNAL_TABLE_KEY= "EXTERNAL";
 
   // System env to track if the HMS plugin validation should be skipped.
   static final String SKIP_VALIDATION_ENV = "KUDU_SKIP_HMS_PLUGIN_VALIDATION";
@@ -165,16 +169,18 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
     Table oldTable = tableEvent.getOldTable();
     Table newTable = tableEvent.getNewTable();
 
-    // Prevent altering the table type (managed/external) of Kudu tables.
-    // This can cause orphaned tables and the Sentry integration depends on
-    // having a managed table for each Kudu table to prevent security issues
-    // due to overlapping names with Kudu tables and tables in the HMS.
+    // Prevent altering the table type (managed/external) of Kudu tables (or via
+    // altering table property 'EXTERNAL'). This can cause orphaned tables and
+    // the Sentry integration depends on having a managed table for each Kudu
+    // table to prevent security issues due to overlapping names with Kudu tables
+    // and tables in the HMS.
     // Note: This doesn't prevent altering the table type for legacy tables
     // because they should continue to work as they always have primarily for
     // migration purposes.
     String oldTableType = oldTable.getTableType();
     if (isKuduTable(oldTable) &&
-        oldTableType != null && !oldTableType.equals(newTable.getTableType())) {
+        ((oldTableType != null && !oldTableType.equals(newTable.getTableType())) ||
+         (isExternalTable(oldTable) != isExternalTable(newTable)))) {
       throw new MetaException("Kudu table type may not be altered");
     }
 
@@ -246,6 +252,21 @@ public class KuduMetastorePlugin extends MetaStoreEventListener {
   private boolean isLegacyKuduTable(Table table) {
     return LEGACY_KUDU_STORAGE_HANDLER.equals(table.getParameters()
         .get(hive_metastoreConstants.META_TABLE_STORAGE));
+  }
+
+  /**
+   * Checks whether the table is an external table.
+   *
+   * @param table the table to check
+   * @return {@code true} if the table is an external table,
+   *         otherwise {@code false}
+   */
+  private boolean isExternalTable(Table table) {
+    String isExternal = table.getParameters().get(EXTERNAL_TABLE_KEY);
+    if (isExternal == null) {
+      return false;
+    }
+    return Boolean.parseBoolean(isExternal);
   }
 
   /**

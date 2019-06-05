@@ -268,6 +268,24 @@ public class TestKuduMetastorePlugin {
             "Kudu table type may not be altered"));
       }
 
+      // Alter the Kudu table to a different type by setting the table property fails.
+      try {
+        Table alteredTable = table.deepCopy();
+        alteredTable.putToParameters(KuduMetastorePlugin.EXTERNAL_TABLE_KEY, "true");
+        client.alter_table(table.getDbName(), table.getTableName(), alteredTable);
+        fail();
+      } catch (TException e) {
+        assertTrue(e.getMessage().contains(
+           "Kudu table type may not be altered"));
+      }
+
+      // Alter the Kudu table to the same type by setting the table property works.
+      {
+        Table alteredTable = table.deepCopy();
+        alteredTable.putToParameters(KuduMetastorePlugin.EXTERNAL_TABLE_KEY, "false");
+        client.alter_table(table.getDbName(), table.getTableName(), alteredTable);
+      }
+
       // Check that altering the table succeeds.
       client.alter_table(table.getDbName(), table.getTableName(), table);
 
