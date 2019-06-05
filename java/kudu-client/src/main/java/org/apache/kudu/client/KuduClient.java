@@ -231,6 +231,18 @@ public class KuduClient implements AutoCloseable {
   }
 
   /**
+   * Open the table with the given id.
+   *
+   * @param id the id of the table to open
+   * @return a KuduTable if the table exists
+   * @throws KuduException if anything went wrong
+   */
+  KuduTable openTableById(final String id) throws KuduException {
+    Deferred<KuduTable> d = asyncClient.openTableById(id);
+    return joinAndHandleException(d);
+  }
+
+  /**
    * Open the table with the given name.
    *
    * New range partitions created by other clients will immediately be available

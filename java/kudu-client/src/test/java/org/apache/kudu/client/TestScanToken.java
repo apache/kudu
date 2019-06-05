@@ -31,10 +31,13 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.List;
 
+import static org.apache.kudu.test.ClientTestUtil.countRowsInScan;
 import static org.apache.kudu.test.ClientTestUtil.countScanTokenRows;
 import static org.apache.kudu.test.ClientTestUtil.createDefaultTable;
 import static org.apache.kudu.test.ClientTestUtil.createManyStringsSchema;
+import static org.apache.kudu.test.ClientTestUtil.getBasicSchema;
 import static org.apache.kudu.test.ClientTestUtil.loadDefaultTable;
+import static org.apache.kudu.test.ClientTestUtil.scanTableToStrings;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -95,7 +98,7 @@ public class TestScanToken {
 
       KuduScanToken.KuduScanTokenBuilder tokenBuilder = client.newScanTokenBuilder(table);
       tokenBuilder.batchSizeBytes(0);
-      tokenBuilder.setProjectedColumnIndexes(ImmutableList.<Integer>of());
+      tokenBuilder.setProjectedColumnIndexes(ImmutableList.of());
       List<KuduScanToken> tokens = tokenBuilder.build();
       assertEquals(16, tokens.size());
 
@@ -165,7 +168,7 @@ public class TestScanToken {
     session.flush();
 
     KuduScanToken.KuduScanTokenBuilder tokenBuilder = client.newScanTokenBuilder(table);
-    tokenBuilder.setProjectedColumnIndexes(ImmutableList.<Integer>of());
+    tokenBuilder.setProjectedColumnIndexes(ImmutableList.of());
     List<KuduScanToken> tokens = tokenBuilder.build();
     assertEquals(6, tokens.size());
     assertEquals('f' - 'a' + 'z' - 'h',
@@ -190,7 +193,7 @@ public class TestScanToken {
         new ColumnSchema.ColumnSchemaBuilder("a", Type.INT64).nullable(false).key(false).build()
     ));
     CreateTableOptions createOptions = new CreateTableOptions();
-    createOptions.setRangePartitionColumns(ImmutableList.<String>of());
+    createOptions.setRangePartitionColumns(ImmutableList.of());
     createOptions.setNumReplicas(1);
     client.createTable(testTableName, schema, createOptions);
 
@@ -245,6 +248,30 @@ public class TestScanToken {
                                                           .nullable(false)
                                                           .defaultValue(0L).build()));
     token.intoScanner(client);
+  }
+
+  /**
+   * Tests that it is possible to rehydrate a scan token after a table rename.
+   */
+  @Test
+  public void testScanTokensWithTableRename() throws Exception {
+    Schema schema = getBasicSchema();
+    CreateTableOptions createOptions = new CreateTableOptions();
+    createOptions.setRangePartitionColumns(ImmutableList.of());
+    createOptions.setNumReplicas(1);
+    KuduTable table = client.createTable(testTableName, schema, createOptions);
+
+    KuduScanToken.KuduScanTokenBuilder tokenBuilder = client.newScanTokenBuilder(table);
+    List<KuduScanToken> tokens = tokenBuilder.build();
+    assertEquals(1, tokens.size());
+    KuduScanToken token = tokens.get(0);
+
+    // Rename the table.
+    client.alterTable(
+        testTableName,
+        new AlterTableOptions().renameTable(testTableName + "-renamed"));
+
+    assertEquals(0, countRowsInScan(token.intoScanner(client)));
   }
 
   /** Test that scanRequestTimeout makes it from the scan token to the underlying Scanner class. */

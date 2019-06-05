@@ -43,7 +43,10 @@ message ScanTokenPB {
   // The feature set used by this scan token.
   repeated Feature feature_flags = 1;
 
-  // The table to scan.
+  // The table to scan. To remain backwards compatible, clients should set
+  // both the table name and the table id, but should prefer to use the id
+  // when rehydrating the scanner because the id cannot change.
+  optional string table_id = 20;
   optional string table_name = 2;
 
   // Which columns to select.

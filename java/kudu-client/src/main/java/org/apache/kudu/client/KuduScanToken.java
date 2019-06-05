@@ -125,10 +125,15 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
    */
   public static String stringifySerializedToken(byte[] buf, KuduClient client) throws IOException {
     ScanTokenPB token = ScanTokenPB.parseFrom(CodedInputStream.newInstance(buf));
-    KuduTable table = client.openTable(token.getTableName());
+    KuduTable table = token.hasTableId() ? client.openTableById(token.getTableId()) :
+                                           client.openTable(token.getTableName());
 
     MoreObjects.ToStringHelper helper = MoreObjects.toStringHelper("ScanToken")
-                                                   .add("table", token.getTableName());
+                                                   .add("table-name", token.getTableName());
+
+    if (token.hasTableId()) {
+      helper.add("table-id", token.getTableId());
+    }
 
     if (token.hasLowerBoundPrimaryKey() && !token.getLowerBoundPrimaryKey().isEmpty()) {
       helper.add("lower-bound-primary-key",
@@ -160,7 +165,8 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
         !message.getFeatureFlagsList().contains(ScanTokenPB.Feature.Unknown),
         "Scan token requires an unsupported feature. This Kudu client must be updated.");
 
-    KuduTable table = client.openTable(message.getTableName());
+    KuduTable table = message.hasTableId() ? client.openTableById(message.getTableId()) :
+                                             client.openTable(message.getTableName());
     KuduScanner.KuduScannerBuilder builder = client.newScannerBuilder(table);
 
     List<Integer> columns = new ArrayList<>(message.getProjectedColumnsCount());
@@ -274,7 +280,11 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
 
   @Override
   public int compareTo(KuduScanToken other) {
-    if (!message.getTableName().equals(other.message.getTableName())) {
+    if (message.hasTableId() && other.message.hasTableId()) {
+      if (!message.getTableId().equals(other.message.getTableId())) {
+        throw new IllegalArgumentException("Scan tokens from different tables may not be compared");
+      }
+    } else if (!message.getTableName().equals(other.message.getTableName())) {
       throw new IllegalArgumentException("Scan tokens from different tables may not be compared");
     }
 
@@ -340,6 +350,7 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
 
       Client.ScanTokenPB.Builder proto = Client.ScanTokenPB.newBuilder();
 
+      proto.setTableId(table.getTableId());
       proto.setTableName(table.getName());
 
       // Map the column names or indices to actual columns in the table schema.

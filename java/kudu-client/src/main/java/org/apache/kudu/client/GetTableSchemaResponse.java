@@ -28,6 +28,7 @@ public class GetTableSchemaResponse extends KuduRpcResponse {
   private final Schema schema;
   private final PartitionSchema partitionSchema;
   private final String tableId;
+  private final String tableName;
   private final int numReplicas;
   private final SignedTokenPB authzToken;
 
@@ -36,6 +37,7 @@ public class GetTableSchemaResponse extends KuduRpcResponse {
    * @param tsUUID the UUID of the tablet server that sent the response
    * @param schema the table's schema
    * @param tableId the UUID of the table in the response
+   * @param tableName the name of the table in the response
    * @param numReplicas the table's replication factor
    * @param partitionSchema the table's partition schema
    * @param authzToken an authorization token for use with this table
@@ -44,6 +46,7 @@ public class GetTableSchemaResponse extends KuduRpcResponse {
                          String tsUUID,
                          Schema schema,
                          String tableId,
+                         String tableName,
                          int numReplicas,
                          PartitionSchema partitionSchema,
                          SignedTokenPB authzToken) {
@@ -51,6 +54,7 @@ public class GetTableSchemaResponse extends KuduRpcResponse {
     this.schema = schema;
     this.partitionSchema = partitionSchema;
     this.tableId = tableId;
+    this.tableName = tableName;
     this.numReplicas = numReplicas;
     this.authzToken = authzToken;
   }
@@ -77,6 +81,14 @@ public class GetTableSchemaResponse extends KuduRpcResponse {
    */
   public String getTableId() {
     return tableId;
+  }
+
+  /**
+   * Get the table's name.
+   * @return the table's name
+   */
+  public String getTableName() {
+    return tableName;
   }
 
   /**
