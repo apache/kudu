@@ -453,17 +453,61 @@ bool KuduClient::Data::FetchCachedAuthzToken(const string& table_id, SignedToken
   return authz_token_cache_.Fetch(table_id, token);
 }
 
+Status KuduClient::Data::OpenTable(KuduClient* client,
+                                   const TableIdentifierPB& table_identifier,
+                                   client::sp::shared_ptr<KuduTable>* table) {
+  KuduSchema schema;
+  string table_id;
+  string table_name;
+  int num_replicas;
+  PartitionSchema partition_schema;
+  MonoTime deadline = MonoTime::Now() + default_admin_operation_timeout_;
+  RETURN_NOT_OK(GetTableSchema(client,
+                               deadline,
+                               table_identifier,
+                               &schema,
+                               &partition_schema,
+                               &table_id,
+                               &table_name,
+                               &num_replicas));
+
+  // When the table name is specified, use the caller-provided table name.
+  // This reduces surprises, e.g., when the HMS integration is on and table
+  // names are case-insensitive.
+  string effective_table_name = table_identifier.has_table_name() ?
+      table_identifier.table_name() :
+      table_name;
+
+  // TODO(wdberkeley): In the future, probably will look up the table in some
+  //                   map to reuse KuduTable instances.
+  table->reset(new KuduTable(client->shared_from_this(),
+                             effective_table_name, table_id, num_replicas,
+                             schema, partition_schema));
+
+  // When opening a table, clear the existing cached non-covered range entries.
+  // This avoids surprises where a new table instance won't be able to see the
+  // current range partitions of a table for up to the ttl.
+  meta_cache_->ClearNonCoveredRangeEntries(table_id);
+
+  return Status::OK();
+}
+
 Status KuduClient::Data::GetTableSchema(KuduClient* client,
-                                        const string& table_name,
                                         const MonoTime& deadline,
+                                        const TableIdentifierPB& table,
                                         KuduSchema* schema,
                                         PartitionSchema* partition_schema,
-                                        string* table_id,
+                                        std::string* table_id,
+                                        std::string* table_name,
                                         int* num_replicas) {
   GetTableSchemaRequestPB req;
   GetTableSchemaResponsePB resp;
 
-  req.mutable_table()->set_table_name(table_name);
+  if (table.has_table_id()) {
+    req.mutable_table()->set_table_id(table.table_id());
+  } else {
+    req.mutable_table()->set_table_name(table.table_name());
+  }
   Synchronizer sync;
   AsyncLeaderMasterRpc<GetTableSchemaRequestPB, GetTableSchemaResponsePB> rpc(
       deadline, client, BackoffType::EXPONENTIAL, req, &resp,
@@ -485,6 +529,9 @@ Status KuduClient::Data::GetTableSchema(KuduClient* client,
   }
   if (partition_schema) {
     *partition_schema = std::move(new_partition_schema);
+  }
+  if (table_name) {
+    *table_name = resp.table_name();
   }
   if (table_id) {
     *table_id = resp.table_id();

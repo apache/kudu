@@ -139,12 +139,21 @@ class KuduClient::Data {
                                    master::TableIdentifierPB table,
                                    const MonoTime& deadline);
 
+  // Open the table identified by 'table_identifier'.
+  Status OpenTable(KuduClient* client,
+                   const master::TableIdentifierPB& table_identifier,
+                   client::sp::shared_ptr<KuduTable>* table);
+
+  // Retrieve table information about the table identified by 'table_id_or_name'.
+  // 'table_id_or_name' should contain a table id or name as 'identifier_type'
+  // is ID or NAME, respectively.
   Status GetTableSchema(KuduClient* client,
-                        const std::string& table_name,
                         const MonoTime& deadline,
+                        const master::TableIdentifierPB& table,
                         KuduSchema* schema,
                         PartitionSchema* partition_schema,
                         std::string* table_id,
+                        std::string* table_name,
                         int* num_replicas);
 
   Status InitLocalHostNames();

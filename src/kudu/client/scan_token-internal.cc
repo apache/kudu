@@ -48,6 +48,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/master/master.pb.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
@@ -60,6 +61,9 @@ using std::vector;
 using strings::Substitute;
 
 namespace kudu {
+
+using master::TableIdentifierPB;
+
 namespace client {
 
 using internal::MetaCache;
@@ -103,8 +107,17 @@ Status KuduScanToken::Data::PBIntoScanner(KuduClient* client,
     }
   }
 
+  TableIdentifierPB table_identifier;
+  if (message.has_table_id()) {
+    table_identifier.set_table_id(message.table_id());
+  }
+  if (message.has_table_name()) {
+    table_identifier.set_table_name(message.table_name());
+  }
   sp::shared_ptr<KuduTable> table;
-  RETURN_NOT_OK(client->OpenTable(message.table_name(), &table));
+  RETURN_NOT_OK(client->data_->OpenTable(client,
+                                         table_identifier,
+                                         &table));
   Schema* schema = table->schema().schema_;
 
   unique_ptr<KuduScanner> scan_builder(new KuduScanner(table.get()));
@@ -230,6 +243,7 @@ Status KuduScanTokenBuilder::Data::Build(vector<KuduScanToken*>* tokens) {
 
   ScanTokenPB pb;
 
+  pb.set_table_id(table->id());
   pb.set_table_name(table->name());
   RETURN_NOT_OK(SchemaToColumnPBs(*configuration_.projection(), pb.mutable_projected_columns(),
                                   SCHEMA_PB_WITHOUT_STORAGE_ATTRIBUTES | SCHEMA_PB_WITHOUT_IDS));

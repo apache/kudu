@@ -16,6 +16,7 @@
 // under the License.
 
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -27,6 +28,7 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "kudu/client/client-test-util.h"
 #include "kudu/client/client.h"
 #include "kudu/client/client.pb.h"
 #include "kudu/client/scan_batch.h"
@@ -636,6 +638,52 @@ TEST_F(ScanTokenTest, TestConcurrentAlterTable) {
   ASSERT_OK(token->IntoKuduScanner(&scanner_ptr));
   delete scanner_ptr;
 }
+
+// Tests the results of creating scan tokens, renaming the table being
+// scanned, and then executing the scan tokens.
+TEST_F(ScanTokenTest, TestConcurrentRenameTable) {
+  const char* kTableName = "scan-token-rename";
+  // Create schema
+  KuduSchema schema;
+  {
+    KuduSchemaBuilder builder;
+    builder.AddColumn("key")->NotNull()->Type(KuduColumnSchema::INT64)->PrimaryKey();
+    builder.AddColumn("a")->NotNull()->Type(KuduColumnSchema::INT64);
+    ASSERT_OK(builder.Build(&schema));
+  }
+
+  // Create table
+  shared_ptr<KuduTable> table;
+  {
+    unique_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
+    ASSERT_OK(table_creator->table_name(kTableName)
+                            .schema(&schema)
+                            .set_range_partition_columns({})
+                            .num_replicas(1)
+                            .Create());
+    ASSERT_OK(client_->OpenTable(kTableName, &table));
+  }
+
+  vector<KuduScanToken*> tokens;
+  ASSERT_OK(KuduScanTokenBuilder(table.get()).Build(&tokens));
+  ASSERT_EQ(1, tokens.size());
+  unique_ptr<KuduScanToken> token(tokens[0]);
+
+  // Rename the table.
+  {
+    unique_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    table_alterer->RenameTo("scan-token-rename-renamed");
+    ASSERT_OK(table_alterer->Alter());
+  }
+
+  KuduScanner* scanner_ptr;
+  ASSERT_OK(token->IntoKuduScanner(&scanner_ptr));
+  size_t row_count;
+  ASSERT_OK(CountRowsWithRetries(scanner_ptr, &row_count));
+  ASSERT_EQ(0, row_count);
+  delete scanner_ptr;
+}
+
 
 } // namespace client
 } // namespace kudu
