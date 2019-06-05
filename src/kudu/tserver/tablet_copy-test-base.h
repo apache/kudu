@@ -110,7 +110,7 @@ class TabletCopyTest : public TabletServerTestBase {
 
   // Generate the test data for the tablet and do the flushing we assume will be
   // done in the unit tests for tablet copy.
-  void GenerateTestData() {
+  virtual void GenerateTestData() {
     const int kIncr = 50;
     LOG_TIMING(INFO, "Loading test data") {
       for (int row_id = 0; row_id < kNumLogRolls * kIncr; row_id += kIncr) {

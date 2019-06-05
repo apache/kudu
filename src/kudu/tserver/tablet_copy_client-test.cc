@@ -14,7 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#include "kudu/tserver/tablet_copy-test-base.h"
+#include "kudu/tserver/tablet_copy_client.h"
 
 #include <cstdint>
 #include <limits>
@@ -53,8 +53,8 @@
 #include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_replica.h"
+#include "kudu/tserver/tablet_copy-test-base.h"
 #include "kudu/tserver/tablet_copy.pb.h"
-#include "kudu/tserver/tablet_copy_client.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
@@ -63,9 +63,11 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/path_util.h"
+#include "kudu/util/random.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
+#include "kudu/util/test_util.h"
 
 using std::shared_ptr;
 using std::string;
@@ -142,6 +144,14 @@ class TabletCopyClientTest : public TabletCopyTest {
 
  protected:
   Status CompareFileContents(const string& path1, const string& path2);
+
+  // Injection of 'supports_live_row_count' modifiers through polymorphic characteristic.
+  virtual void GenerateTestData() {
+    Random rand(SeedRandom());
+    NO_FATALS(tablet_replica_->tablet_metadata()->
+        set_supports_live_row_count_for_tests(rand.Next() % 2));
+    NO_FATALS(TabletCopyTest::GenerateTestData());
+  }
 
   MetricRegistry metric_registry_;
   scoped_refptr<MetricEntity> metric_entity_;
@@ -399,6 +409,12 @@ TEST_F(TabletCopyClientTest, TestFailedDiskStopsClient) {
   // The copy thread should stop and the copy client should return an error.
   copy_thread.join();
   ASSERT_TRUE(s.IsIOError());
+}
+
+TEST_F(TabletCopyClientTest, TestSupportsLiveRowCount) {
+  ASSERT_OK(StartCopy());
+  ASSERT_EQ(meta_->supports_live_row_count(),
+      tablet_replica_->tablet_metadata()->supports_live_row_count());
 }
 
 enum DownloadBlocks {

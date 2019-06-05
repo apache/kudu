@@ -442,6 +442,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
                               partition,
                               TABLET_DATA_READY,
                               boost::none,
+                              /*supports_live_row_count=*/ true,
                               &meta),
     "Couldn't create tablet metadata");
 

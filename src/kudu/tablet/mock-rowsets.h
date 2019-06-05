@@ -70,6 +70,10 @@ class MockRowSet : public RowSet {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }
+  virtual Status CountLiveRows(int64_t* /*count*/) const OVERRIDE {
+    LOG(FATAL) << "Unimplemented";
+    return Status::OK();
+  }
   virtual std::string ToString() const OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return "";

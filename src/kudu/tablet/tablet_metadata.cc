@@ -90,6 +90,7 @@ Status TabletMetadata::CreateNew(FsManager* fs_manager,
                                  const Partition& partition,
                                  const TabletDataState& initial_tablet_data_state,
                                  boost::optional<OpId> tombstone_last_logged_opid,
+                                 bool supports_live_row_count,
                                  scoped_refptr<TabletMetadata>* metadata) {
 
   // Verify that no existing tablet exists with the same ID.
@@ -110,7 +111,8 @@ Status TabletMetadata::CreateNew(FsManager* fs_manager,
                                                        partition_schema,
                                                        partition,
                                                        initial_tablet_data_state,
-                                                       std::move(tombstone_last_logged_opid)));
+                                                       std::move(tombstone_last_logged_opid),
+                                                       supports_live_row_count));
   RETURN_NOT_OK(ret->Flush());
   dir_group_cleanup.cancel();
 
@@ -149,7 +151,9 @@ Status TabletMetadata::LoadOrCreate(FsManager* fs_manager,
   if (s.IsNotFound()) {
     return CreateNew(fs_manager, tablet_id, table_name, table_id, schema,
                      partition_schema, partition, initial_tablet_data_state,
-                     std::move(tombstone_last_logged_opid), metadata);
+                     std::move(tombstone_last_logged_opid),
+                     /*supports_live_row_count=*/ true,
+                     metadata);
   }
   return s;
 }
@@ -266,7 +270,8 @@ TabletMetadata::TabletMetadata(FsManager* fs_manager, string tablet_id,
                                const Schema& schema, PartitionSchema partition_schema,
                                Partition partition,
                                const TabletDataState& tablet_data_state,
-                               boost::optional<OpId> tombstone_last_logged_opid)
+                               boost::optional<OpId> tombstone_last_logged_opid,
+                               bool supports_live_row_count)
     : state_(kNotWrittenYet),
       tablet_id_(std::move(tablet_id)),
       table_id_(std::move(table_id)),
@@ -283,7 +288,8 @@ TabletMetadata::TabletMetadata(FsManager* fs_manager, string tablet_id,
       num_flush_pins_(0),
       needs_flush_(false),
       flush_count_for_tests_(0),
-      pre_flush_callback_(Bind(DoNothingStatusClosure)) {
+      pre_flush_callback_(Bind(DoNothingStatusClosure)),
+      supports_live_row_count_(supports_live_row_count) {
   CHECK(schema_->has_column_ids());
   CHECK_GT(schema_->num_key_columns(), 0);
 }
@@ -302,7 +308,8 @@ TabletMetadata::TabletMetadata(FsManager* fs_manager, string tablet_id)
       num_flush_pins_(0),
       needs_flush_(false),
       flush_count_for_tests_(0),
-      pre_flush_callback_(Bind(DoNothingStatusClosure)) {}
+      pre_flush_callback_(Bind(DoNothingStatusClosure)),
+      supports_live_row_count_(false) {}
 
 Status TabletMetadata::LoadFromDisk() {
   TRACE_EVENT1("tablet", "TabletMetadata::LoadFromDisk",
@@ -385,6 +392,9 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
     }
 
     tablet_data_state_ = superblock.tablet_data_state();
+
+    // This field should be parsed before parsing RowSetDataPB.
+    supports_live_row_count_ = superblock.supports_live_row_count();
 
     rowsets_.clear();
     for (const RowSetDataPB& rowset_pb : superblock.rowsets()) {
@@ -676,6 +686,8 @@ Status TabletMetadata::ToSuperBlockUnlocked(TabletSuperBlockPB* super_block,
   if (fs_manager_->dd_manager()->GetDataDirGroupPB(tablet_id_, &group_pb).ok()) {
     pb.mutable_data_dir_group()->Swap(&group_pb);
   }
+
+  pb.set_supports_live_row_count(supports_live_row_count_);
 
   super_block->Swap(&pb);
   return Status::OK();

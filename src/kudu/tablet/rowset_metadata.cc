@@ -118,6 +118,11 @@ void RowSetMetadata::LoadFromPB(const RowSetDataPB& pb) {
   for (const DeltaDataPB& undo_delta_pb : pb.undo_deltas()) {
     undo_delta_blocks_.push_back(BlockId::FromPB(undo_delta_pb.block()));
   }
+
+  // Load live row count.
+  if (tablet_metadata_->supports_live_row_count()) {
+    live_row_count_ = pb.live_row_count();
+  }
 }
 
 void RowSetMetadata::ToProtobuf(RowSetDataPB *pb) {
@@ -162,6 +167,11 @@ void RowSetMetadata::ToProtobuf(RowSetDataPB *pb) {
   if (has_encoded_keys_unlocked()) {
     pb->set_min_encoded_key(*min_encoded_key_);
     pb->set_max_encoded_key(*max_encoded_key_);
+  }
+
+  // Write the live row count.
+  if (tablet_metadata_->supports_live_row_count()) {
+    pb->set_live_row_count(live_row_count_);
   }
 }
 
@@ -266,6 +276,20 @@ void RowSetMetadata::CommitUpdate(const RowSetMetadataUpdate& update,
   }
 
   blocks_by_col_id_.shrink_to_fit();
+}
+
+void RowSetMetadata::IncrementLiveRows(int64_t row_count) {
+  if (tablet_metadata_->supports_live_row_count() && row_count != 0) {
+    std::lock_guard<LockType> l(lock_);
+    live_row_count_ += row_count;
+    DCHECK_GE(live_row_count_, 0);
+  }
+}
+
+int64_t RowSetMetadata::live_row_count() const {
+  std::lock_guard<LockType> l(lock_);
+  DCHECK_GE(live_row_count_, 0);
+  return live_row_count_;
 }
 
 vector<BlockId> RowSetMetadata::GetAllBlocks() {

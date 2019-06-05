@@ -336,7 +336,7 @@ static Status WriteRow(const Slice &row_slice, RowSetWriterClass *writer) {
   RowBlockRow dst_row = block.row(0);
   RETURN_NOT_OK(CopyRow(row, &dst_row, static_cast<Arena*>(nullptr)));
 
-  return writer->AppendBlock(block);
+  return writer->AppendBlock(block, 1);
 }
 
 // Tracks encoded deltas and provides a DeltaIterator-like interface for

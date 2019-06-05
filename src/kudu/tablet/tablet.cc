@@ -1908,6 +1908,25 @@ Status Tablet::CountRows(uint64_t *count) const {
   return Status::OK();
 }
 
+Status Tablet::CountLiveRows(int64_t* count) const {
+  if (!metadata_->supports_live_row_count()) {
+    return Status::NotSupported("This tablet doesn't support live row counting");
+  }
+
+  scoped_refptr<TabletComponents> comps;
+  GetComponents(&comps);
+
+  int64_t ret = 0;
+  int64_t tmp = 0;
+  RETURN_NOT_OK(comps->memrowset->CountLiveRows(&ret));
+  for (const shared_ptr<RowSet>& rowset : comps->rowsets->all_rowsets()) {
+    RETURN_NOT_OK(rowset->CountLiveRows(&tmp));
+    ret += tmp;
+  }
+  *count = ret;
+  return Status::OK();
+}
+
 size_t Tablet::MemRowSetSize() const {
   scoped_refptr<TabletComponents> comps;
   GetComponents(&comps);

@@ -40,6 +40,7 @@
 #include "kudu/tablet/concurrent_btree.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/tablet/rowset_metadata.h"
+#include "kudu/util/atomic.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/monotime.h"
@@ -254,6 +255,12 @@ class MemRowSet : public RowSet,
     return Status::OK();
   }
 
+  virtual Status CountLiveRows(int64_t* count) const override {
+    *count = live_row_count_.Load();
+    DCHECK_GE(*count, 0);
+    return Status::OK();
+  }
+
   virtual Status GetBounds(std::string *min_encoded_key,
                            std::string *max_encoded_key) const override;
 
@@ -450,6 +457,9 @@ class MemRowSet : public RowSet,
   // Flag indicating whether the rowset has been removed from a rowset tree,
   // and thus should not be scheduled for further compactions.
   std::atomic<bool> has_been_compacted_;
+
+  // Number of live rows in this MRS.
+  AtomicInt<int64_t> live_row_count_;
 
   DISALLOW_COPY_AND_ASSIGN(MemRowSet);
 };

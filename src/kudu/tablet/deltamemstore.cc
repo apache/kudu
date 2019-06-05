@@ -80,7 +80,8 @@ DeltaMemStore::DeltaMemStore(int64_t id,
     tree_(arena_),
     anchorer_(log_anchor_registry,
               Substitute("Rowset-$0/DeltaMemStore-$1", rs_id_, id_)),
-    disambiguator_sequence_number_(0) {
+    disambiguator_sequence_number_(0),
+    deleted_row_count_(0) {
 }
 
 Status DeltaMemStore::Init(const IOContext* /*io_context*/) {
@@ -117,6 +118,10 @@ Status DeltaMemStore::Update(Timestamp timestamp,
   }
 
   anchorer_.AnchorIfMinimum(op_id.index());
+
+  if (update.is_delete()) {
+    deleted_row_count_.Increment();
+  }
 
   return Status::OK();
 }
@@ -189,6 +194,12 @@ Status DeltaMemStore::CheckRowDeleted(rowid_t row_idx,
 
 void DeltaMemStore::DebugPrint() const {
   tree_.DebugPrint();
+}
+
+int64_t DeltaMemStore::deleted_row_count() const {
+  int64_t count = deleted_row_count_.Load();
+  DCHECK_GE(count, 0);
+  return count;
 }
 
 ////////////////////////////////////////////////////////////

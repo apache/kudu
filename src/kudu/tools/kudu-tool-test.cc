@@ -1677,6 +1677,7 @@ TEST_F(ToolTest, TestLocalReplicaDumpDataDirs) {
       kSchemaWithIds, partition.first, partition.second,
       tablet::TABLET_DATA_READY,
       /*tombstone_last_logged_opid=*/ boost::none,
+      /*supports_live_row_count=*/ true,
       &meta));
   string stdout;
   NO_FATALS(RunActionStdoutString(Substitute("local_replica dump data_dirs $0 "
@@ -1711,6 +1712,7 @@ TEST_F(ToolTest, TestLocalReplicaDumpMeta) {
                   kSchemaWithIds, partition.first, partition.second,
                   tablet::TABLET_DATA_READY,
                   /*tombstone_last_logged_opid=*/ boost::none,
+                  /*supports_live_row_count=*/ true,
                   &meta);
   string stdout;
   NO_FATALS(RunActionStdoutString(Substitute("local_replica dump meta $0 "

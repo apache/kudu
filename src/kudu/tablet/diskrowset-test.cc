@@ -511,15 +511,18 @@ TEST_F(TestRowSet, TestRollingDiskRowSetWriter) {
   RollingDiskRowSetWriter writer(tablet()->metadata(), schema_,
                                  BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f),
                                  64 * 1024); // roll every 64KB
-  DoWriteTestRowSet(10000, &writer);
+  DoWriteTestRowSet(FLAGS_roundtrip_num_rows, &writer);
 
   // Should have rolled 4 times.
   vector<shared_ptr<RowSetMetadata> > metas;
   writer.GetWrittenRowSetMetadata(&metas);
   EXPECT_EQ(4, metas.size());
+  int64_t count = 0;
   for (const shared_ptr<RowSetMetadata>& meta : metas) {
     ASSERT_TRUE(meta->HasDataForColumnIdForTests(schema_.column_id(0)));
+    count += meta->live_row_count();
   }
+  ASSERT_EQ(FLAGS_roundtrip_num_rows, count);
 }
 
 TEST_F(TestRowSet, TestMakeDeltaIteratorMergerUnlocked) {

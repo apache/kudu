@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/tablet/compaction.h"
+
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
@@ -52,7 +54,6 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/tablet/compaction.h"
 #include "kudu/tablet/diskrowset.h"
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/memrowset.h"
@@ -232,10 +233,13 @@ class TestCompaction : public KuduRowSetTest {
   }
 
   void DeleteRows(RowSet* rowset, int n_rows) {
-    faststring update_buf;
+    DeleteRows(rowset, n_rows, 0);
+  }
+
+  void DeleteRows(RowSet* rowset, int n_rows, int delta) {
     for (uint32_t i = 0; i < n_rows; i++) {
       SCOPED_TRACE(i);
-      DeleteRow(rowset, i * 10);
+      DeleteRow(rowset, i * 10 + delta);
     }
   }
 
@@ -614,7 +618,7 @@ TEST_F(TestCompaction, TestDuplicatedGhostRowsMerging) {
   shared_ptr<DiskRowSet> rs3;
   {
     shared_ptr<MemRowSet> mrs;
-    ASSERT_OK(MemRowSet::Create(1, schema_, log_anchor_registry_.get(),
+    ASSERT_OK(MemRowSet::Create(2, schema_, log_anchor_registry_.get(),
                                 mem_trackers_.tablet_tracker, &mrs));
     InsertRows(mrs.get(), 10, 0);
     UpdateRows(mrs.get(), 10, 0, 2);
@@ -1181,6 +1185,74 @@ TEST_F(TestCompaction, TestEmptyFlushDoesntLeakBlocks) {
   std::sort(after_block_ids.begin(), after_block_ids.end(), BlockIdCompare());
 
   ASSERT_EQ(after_block_ids, before_block_ids);
+}
+
+TEST_F(TestCompaction, TestCountLiveRowsOfMemRowSetFlush) {
+  shared_ptr<MemRowSet> mrs;
+  ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+                              mem_trackers_.tablet_tracker, &mrs));
+  NO_FATALS(InsertRows(mrs.get(), 100, 0));
+  NO_FATALS(UpdateRows(mrs.get(), 80, 0, 1));
+  NO_FATALS(DeleteRows(mrs.get(), 50));
+  NO_FATALS(InsertRows(mrs.get(), 10, 0));
+  int64_t count = 0;
+  ASSERT_OK(mrs->CountLiveRows(&count));
+  ASSERT_EQ(100 - 50 + 10, count);
+
+  shared_ptr<DiskRowSet> rs;
+  NO_FATALS(FlushMRSAndReopenNoRoll(*mrs, schema_, &rs));
+  ASSERT_OK(rs->CountLiveRows(&count));
+  ASSERT_EQ(100 - 50 + 10, count);
+}
+
+TEST_F(TestCompaction, TestCountLiveRowsOfDiskRowSetsCompact) {
+  shared_ptr<DiskRowSet> rs1;
+  {
+    shared_ptr<MemRowSet> mrs;
+    ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+                                mem_trackers_.tablet_tracker, &mrs));
+    NO_FATALS(InsertRows(mrs.get(), 100, 0));
+    NO_FATALS(UpdateRows(mrs.get(), 80, 0, 1));
+    NO_FATALS(DeleteRows(mrs.get(), 50, 0));
+    NO_FATALS(InsertRows(mrs.get(), 10, 0));
+    NO_FATALS(FlushMRSAndReopenNoRoll(*mrs, schema_, &rs1));
+  }
+  shared_ptr<DiskRowSet> rs2;
+  {
+    shared_ptr<MemRowSet> mrs;
+    ASSERT_OK(MemRowSet::Create(1, schema_, log_anchor_registry_.get(),
+                                mem_trackers_.tablet_tracker, &mrs));
+    NO_FATALS(InsertRows(mrs.get(), 100, 1));
+    NO_FATALS(UpdateRows(mrs.get(), 80, 1, 1));
+    NO_FATALS(DeleteRows(mrs.get(), 50, 1));
+    NO_FATALS(InsertRows(mrs.get(), 10, 1));
+    NO_FATALS(FlushMRSAndReopenNoRoll(*mrs, schema_, &rs2));
+  }
+  shared_ptr<DiskRowSet> rs3;
+  {
+    shared_ptr<MemRowSet> mrs;
+    ASSERT_OK(MemRowSet::Create(2, schema_, log_anchor_registry_.get(),
+                                mem_trackers_.tablet_tracker, &mrs));
+    NO_FATALS(InsertRows(mrs.get(), 100, 2));
+    NO_FATALS(UpdateRows(mrs.get(), 80, 2, 2));
+    NO_FATALS(DeleteRows(mrs.get(), 50, 2));
+    NO_FATALS(InsertRows(mrs.get(), 10, 2));
+    NO_FATALS(FlushMRSAndReopenNoRoll(*mrs, schema_, &rs3));
+  }
+
+  shared_ptr<DiskRowSet> result;
+  vector<shared_ptr<DiskRowSet>> all_rss;
+  all_rss.emplace_back(std::move(rs3));
+  all_rss.emplace_back(std::move(rs1));
+  all_rss.emplace_back(std::move(rs2));
+
+  SeedRandom();
+  std::random_shuffle(all_rss.begin(), all_rss.end());
+  NO_FATALS(CompactAndReopenNoRoll(all_rss, schema_, &result));
+
+  int64_t count = 0;
+  ASSERT_OK(result->CountLiveRows(&count));
+  ASSERT_EQ((100 - 50 + 10) * 3, count);
 }
 
 } // namespace tablet

@@ -183,7 +183,7 @@ Status DiskRowSetWriter::InitAdHocIndexWriter() {
 
 }
 
-Status DiskRowSetWriter::AppendBlock(const RowBlock &block) {
+Status DiskRowSetWriter::AppendBlock(const RowBlock &block, int live_row_count) {
   DCHECK_EQ(block.schema()->num_columns(), schema_->num_columns());
   CHECK(!finished_);
 
@@ -200,6 +200,9 @@ Status DiskRowSetWriter::AppendBlock(const RowBlock &block) {
 
   // Write the batch to each of the columns
   RETURN_NOT_OK(col_writer_->AppendBlock(block));
+
+  // Increase the live row count if necessary.
+  rowset_metadata_->IncrementLiveRows(live_row_count);
 
 #ifndef NDEBUG
     faststring prev_key;
@@ -383,9 +386,9 @@ Status RollingDiskRowSetWriter::RollIfNecessary() {
   return Status::OK();
 }
 
-Status RollingDiskRowSetWriter::AppendBlock(const RowBlock &block) {
+Status RollingDiskRowSetWriter::AppendBlock(const RowBlock &block, int live_row_count) {
   DCHECK_EQ(state_, kStarted);
-  RETURN_NOT_OK(cur_writer_->AppendBlock(block));
+  RETURN_NOT_OK(cur_writer_->AppendBlock(block, live_row_count));
 
   written_count_ += block.nrows();
 
@@ -470,7 +473,6 @@ Status RollingDiskRowSetWriter::FinishCurrentWriter() {
     }
 
     written_size_ += cur_writer_->written_size();
-
     written_drs_metas_.push_back(cur_drs_metadata_);
   }
 
@@ -479,7 +481,6 @@ Status RollingDiskRowSetWriter::FinishCurrentWriter() {
   cur_redo_writer_.reset(nullptr);
 
   cur_drs_metadata_.reset();
-
   return Status::OK();
 }
 
@@ -750,6 +751,12 @@ Status DiskRowSet::CountRows(const IOContext* io_context, rowid_t *count) const 
     RETURN_NOT_OK(base_data_->CountRows(io_context, count));
     num_rows_.store(*count);
   }
+  return Status::OK();
+}
+
+Status DiskRowSet::CountLiveRows(int64_t* count) const {
+  *count = rowset_metadata_->live_row_count() - delta_tracker_->CountDeletedRows();
+  DCHECK_GE(*count, 0);
   return Status::OK();
 }
 

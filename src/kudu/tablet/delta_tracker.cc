@@ -95,7 +95,8 @@ DeltaTracker::DeltaTracker(shared_ptr<RowSetMetadata> rowset_metadata,
       read_only_(false),
       log_anchor_registry_(log_anchor_registry),
       mem_trackers_(std::move(mem_trackers)),
-      dms_empty_(true) {}
+      dms_empty_(true),
+      deleted_row_count_(0) {}
 
 Status DeltaTracker::OpenDeltaReaders(const vector<BlockId>& blocks,
                                       const IOContext* io_context,
@@ -717,6 +718,9 @@ Status DeltaTracker::FlushDMS(DeltaMemStore* dms,
                                             dfr));
   VLOG_WITH_PREFIX(1) << "Opened new delta block " << block_id.ToString() << " for read";
 
+  // Merge the deleted row count of the old DMS to the RowSetMetadata if necessary.
+  rowset_metadata_->IncrementLiveRows(-deleted_row_count_);
+
   RETURN_NOT_OK(rowset_metadata_->CommitRedoDeltaDataBlock(dms->id(), block_id));
   if (flush_type == FLUSH_METADATA) {
     RETURN_NOT_OK_PREPEND(rowset_metadata_->Flush(),
@@ -758,6 +762,7 @@ Status DeltaTracker::Flush(const IOContext* io_context, MetadataFlushType flush_
       return Status::OK();
     }
 
+    deleted_row_count_ = old_dms->deleted_row_count();
     redo_delta_stores_.push_back(old_dms);
   }
 
@@ -789,6 +794,7 @@ Status DeltaTracker::Flush(const IOContext* io_context, MetadataFlushType flush_
     CHECK_EQ(redo_delta_stores_[idx], old_dms)
         << "Another thread modified the delta store list during flush";
     redo_delta_stores_[idx] = dfr;
+    deleted_row_count_ = 0;
   }
 
   return Status::OK();
@@ -860,6 +866,12 @@ Status DeltaTracker::InitAllDeltaStoresForTests(WhichStores stores) {
     }
   }
   return Status::OK();
+}
+
+int64_t DeltaTracker::CountDeletedRows() const {
+  shared_lock<rw_spinlock> lock(component_lock_);
+  DCHECK_GE(deleted_row_count_, 0);
+  return deleted_row_count_ + dms_->deleted_row_count();
 }
 
 string DeltaTracker::LogPrefix() const {

@@ -91,13 +91,18 @@ template<class SETUP>
 class TestTablet : public TabletTestBase<SETUP> {
   typedef SETUP Type;
 
- public:
+public:
   // Verify that iteration doesn't fail
   void CheckCanIterate() {
     vector<string> out_rows;
     ASSERT_OK(this->IterateToStringList(&out_rows));
   }
 
+  void CheckLiveRowsCount(int64_t expect) {
+    int64_t count = 0;
+    ASSERT_OK(this->tablet()->CountLiveRows(&count));
+    ASSERT_EQ(expect, count);
+  }
 };
 TYPED_TEST_CASE(TestTablet, TabletTestHelperTypes);
 
@@ -111,6 +116,7 @@ TYPED_TEST(TestTablet, TestFlush) {
   ASSERT_EQ(0, this->tablet()->OnDiskDataSize());
   ASSERT_GT(this->tablet()->OnDiskSize(), 0);
   ASSERT_EQ(this->tablet()->metadata()->on_disk_size(), this->tablet()->OnDiskSize());
+  NO_FATALS(this->CheckLiveRowsCount(max_rows));
 
   // Flush it.
   ASSERT_OK(this->tablet()->Flush());
@@ -120,6 +126,7 @@ TYPED_TEST(TestTablet, TestFlush) {
   // on-disk data size due to per-diskrowset metadata and tablet metadata.
   ASSERT_GT(this->tablet()->OnDiskDataSize(), 0);
   ASSERT_GT(this->tablet()->OnDiskSize(), this->tablet()->OnDiskDataSize());
+  NO_FATALS(this->CheckLiveRowsCount(max_rows));
 
   // Make sure the files were created as expected.
   RowSetMetadata* rowset_meta = tablet_meta->GetRowSetForTests(0);
@@ -210,6 +217,7 @@ TYPED_TEST(TestTablet, TestInsertsAndMutationsAreUndoneWithMVCCAfterFlush) {
   // now flush and the compact everything
   ASSERT_OK(this->tablet()->Flush());
   ASSERT_OK(this->tablet()->Compact(Tablet::FORCE_COMPACT_ALL));
+  NO_FATALS(this->CheckLiveRowsCount(4));
 
   // Now verify that with undos and redos we get the same thing.
   VerifySnapshotsHaveSameResult(this->tablet().get(), this->client_schema_,
@@ -244,6 +252,8 @@ TYPED_TEST(TestTablet, TestGhostRowsOnDiskRowSets) {
 
   // Should still be able to update, since the row is live.
   ASSERT_OK(this->UpdateTestRow(&writer, 0, 1));
+
+  NO_FATALS(this->CheckLiveRowsCount(1));
 }
 
 // Test that inserting a row which already exists causes an AlreadyPresent
@@ -259,15 +269,18 @@ TYPED_TEST(TestTablet, TestInsertDuplicateKey) {
   ASSERT_STR_CONTAINS(s.ToString(), "key already present");
 
   ASSERT_EQ(1, this->TabletCount());
+  NO_FATALS(this->CheckLiveRowsCount(1));
 
   // Flush, and make sure that inserting duplicate still fails
   ASSERT_OK(this->tablet()->Flush());
 
   ASSERT_EQ(1, this->TabletCount());
+  NO_FATALS(this->CheckLiveRowsCount(1));
 
   s = this->InsertTestRow(&writer, 12345, 0);
   ASSERT_STR_CONTAINS(s.ToString(), "key already present");
   ASSERT_EQ(1, this->TabletCount());
+  NO_FATALS(this->CheckLiveRowsCount(1));
 }
 
 // Tests that we are able to handle reinserts properly.
@@ -330,7 +343,7 @@ TYPED_TEST(TestTablet, TestReinserts) {
   ASSERT_STR_CONTAINS((*expected_rows[3])[0], "int32 key_idx=1, int32 val=1)");
   ASSERT_EQ(expected_rows[4]->size(), 0) << "Got the wrong result from snap: "
                                          << snaps[4].ToString();
-
+  NO_FATALS(this->CheckLiveRowsCount(0));
   STLDeleteElements(&expected_rows);
 }
 
@@ -372,6 +385,7 @@ TYPED_TEST(TestTablet, TestDeleteWithFlushAndCompact) {
   ASSERT_EQ(0L, writer.last_op_result().mutated_stores(0).dms_id());
   ASSERT_OK(this->IterateToStringList(&rows));
   ASSERT_EQ(0, rows.size());
+  NO_FATALS(this->CheckLiveRowsCount(0));
 
   // We now have an INSERT in the MemRowSet and the
   // deleted row in the DiskRowSet. The new version
@@ -392,6 +406,7 @@ TYPED_TEST(TestTablet, TestDeleteWithFlushAndCompact) {
   ASSERT_OK(this->IterateToStringList(&rows));
   ASSERT_EQ(1, rows.size());
   EXPECT_EQ(this->setup_.FormatDebugRow(0, 2, false), rows[0]);
+  NO_FATALS(this->CheckLiveRowsCount(1));
 }
 
 // Test flushes dealing with REINSERT mutations in the MemRowSet.
@@ -708,6 +723,7 @@ TYPED_TEST(TestTablet, TestInsertsPersist) {
 
   this->InsertTestRows(0, max_rows, 0);
   ASSERT_EQ(max_rows, this->TabletCount());
+  NO_FATALS(this->CheckLiveRowsCount(max_rows));
 
   // Get current timestamp.
   Timestamp t = this->tablet()->clock()->Now();
@@ -716,17 +732,19 @@ TYPED_TEST(TestTablet, TestInsertsPersist) {
   ASSERT_OK(this->tablet()->Flush());
 
   ASSERT_EQ(max_rows, this->TabletCount());
+  NO_FATALS(this->CheckLiveRowsCount(max_rows));
 
   // Close and re-open tablet.
-  // TODO: Should we be reopening the tablet in a different way to persist the
+  // TODO(unknown): Should we be reopening the tablet in a different way to persist the
   // clock / timestamps?
   this->TabletReOpen();
 
   // Ensure that rows exist
   ASSERT_EQ(max_rows, this->TabletCount());
+  NO_FATALS(this->CheckLiveRowsCount(max_rows));
   this->VerifyTestRowsWithTimestampAndVerifier(0, max_rows, t, boost::none);
 
-  // TODO: add some more data, re-flush
+  // TODO(unknown): add some more data, re-flush
 }
 
 TYPED_TEST(TestTablet, TestUpsert) {
@@ -754,6 +772,7 @@ TYPED_TEST(TestTablet, TestUpsert) {
   EXPECT_EQ(2, upserts_as_updates->value());
   ASSERT_OK(this->IterateToStringList(&rows));
   EXPECT_EQ(vector<string>{ this->setup_.FormatDebugRow(0, 1002, false) }, rows);
+  NO_FATALS(this->CheckLiveRowsCount(1));
 }
 
 
@@ -866,6 +885,7 @@ TYPED_TEST(TestTablet, TestCompaction) {
     // Compaction does not swap the memrowsets so we should still get 3
     ASSERT_EQ(3, this->tablet()->CurrentMrsIdForTests());
     ASSERT_EQ(n_rows * 3, this->TabletCount());
+    NO_FATALS(this->CheckLiveRowsCount(n_rows * 3));
 
     const RowSetMetadata *rowset_meta = this->tablet()->metadata()->GetRowSetForTests(3);
     ASSERT_TRUE(rowset_meta != nullptr);

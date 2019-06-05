@@ -669,5 +669,27 @@ TEST_F(TestDeltaMemStore, TestFuzz) {
       /*test_filter_column_ids_and_collect_deltas=*/false));
 }
 
+TEST_F(TestDeltaMemStore, TestDeletedRowCount) {
+  const int kNumUpdates = 10000;
+
+  faststring buf;
+  RowChangeListEncoder update(&buf);
+  for (rowid_t row_idx = 0; row_idx < kNumUpdates; row_idx++) {
+    // UPDATE.
+    uint32_t new_val = row_idx;
+    update.Reset();
+    update.AddColumnUpdate(schema_.column(kIntColumn), schema_.column_id(kIntColumn), &new_val);
+    ASSERT_OK(dms_->Update(Timestamp(row_idx), row_idx, RowChangeList(buf), op_id_));
+
+    // DELETE.
+    if (row_idx % 2 == 0) {
+      update.Reset();
+      update.SetToDelete();
+      ASSERT_OK(dms_->Update(Timestamp(row_idx + 1), row_idx, RowChangeList(buf), op_id_));
+    }
+  }
+  ASSERT_EQ(kNumUpdates / 2, dms_->deleted_row_count());
+}
+
 } // namespace tablet
 } // namespace kudu

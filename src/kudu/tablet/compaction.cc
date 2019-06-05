@@ -1107,6 +1107,7 @@ Status FlushCompactionInput(CompactionInput* input,
     RETURN_NOT_OK(input->PrepareBlock(&rows));
 
     int n = 0;
+    int live_row_count = 0;
     for (int i = 0; i < rows.size(); i++) {
       CompactionInputRow* input_row = &rows[i];
       RETURN_NOT_OK(out->RollIfNecessary());
@@ -1162,19 +1163,25 @@ Status FlushCompactionInput(CompactionInput* input,
         out->AppendRedoDeltas(dst_row.row_index(), new_redos_head, &index_in_current_drs);
       }
 
+      // If the REDO is empty, it should not be a DELETE.
+      if (new_redos_head == nullptr) {
+        live_row_count++;
+      }
+
       DVLOG(4) << "Output Row: " << dst_row.schema()->DebugRow(dst_row)
                << "; RowId: " << index_in_current_drs;
 
       n++;
       if (n == block.nrows()) {
-        RETURN_NOT_OK(out->AppendBlock(block));
+        RETURN_NOT_OK(out->AppendBlock(block, live_row_count));
+        live_row_count = 0;
         n = 0;
       }
     }
 
     if (n > 0) {
       block.Resize(n);
-      RETURN_NOT_OK(out->AppendBlock(block));
+      RETURN_NOT_OK(out->AppendBlock(block, live_row_count));
       block.Resize(block.row_capacity());
     }
 

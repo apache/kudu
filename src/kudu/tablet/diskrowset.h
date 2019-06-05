@@ -100,7 +100,8 @@ class DiskRowSetWriter {
   // The block is written to all column writers as well as the bloom filter,
   // if configured.
   // Rows must be appended in ascending order.
-  Status AppendBlock(const RowBlock &block);
+  // 'live_row_count' means the number of live rows in this input block.
+  Status AppendBlock(const RowBlock &block, int live_row_count = 0);
 
   // Closes the CFiles and their underlying writable blocks.
   // If no rows were written, returns Status::Aborted().
@@ -180,7 +181,8 @@ class RollingDiskRowSetWriter {
   // you must append deltas using the APIs below *before* appending the block
   // of rows that they correspond to. This ensures that the output delta files
   // and data files are aligned.
-  Status AppendBlock(const RowBlock &block);
+  // 'live_row_count' means the number of live rows in this input block.
+  Status AppendBlock(const RowBlock &block, int live_row_count = 0);
 
   // Appends a sequence of REDO deltas for the same row to the current
   // redo delta file. 'row_idx_in_next_block' is the positional index after
@@ -366,6 +368,9 @@ class DiskRowSet : public RowSet {
   // Gets the number of rows in this rowset, checking 'num_rows_' first. If not
   // yet set, consults the base data and stores the result in 'num_rows_'.
   Status CountRows(const fs::IOContext* io_context, rowid_t *count) const final override;
+
+  // Count the number of live rows in this DRS.
+  virtual Status CountLiveRows(int64_t* count) const override;
 
   // See RowSet::GetBounds(...)
   virtual Status GetBounds(std::string* min_encoded_key,

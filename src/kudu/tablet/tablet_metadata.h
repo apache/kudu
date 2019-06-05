@@ -81,6 +81,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
                           const Partition& partition,
                           const TabletDataState& initial_tablet_data_state,
                           boost::optional<consensus::OpId> tombstone_last_logged_opid,
+                          bool supports_live_row_count,
                           scoped_refptr<TabletMetadata>* metadata);
 
   // Load existing metadata from disk.
@@ -263,6 +264,15 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
     return flush_count_for_tests_;
   }
 
+  // For testing only.
+  void set_supports_live_row_count_for_tests(bool supports_live_row_count) {
+    supports_live_row_count_ = supports_live_row_count;
+  }
+
+  bool supports_live_row_count() const {
+    return supports_live_row_count_;
+  }
+
  private:
   friend class RefCountedThreadSafe<TabletMetadata>;
   friend class MetadataTest;
@@ -279,7 +289,8 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
                  const Schema& schema, PartitionSchema partition_schema,
                  Partition partition,
                  const TabletDataState& tablet_data_state,
-                 boost::optional<consensus::OpId> tombstone_last_logged_opid);
+                 boost::optional<consensus::OpId> tombstone_last_logged_opid,
+                 bool supports_live_row_count);
 
   // Constructor for loading an existing tablet.
   TabletMetadata(FsManager* fs_manager, std::string tablet_id);
@@ -386,6 +397,9 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // The on-disk size of the tablet metadata, as of the last successful
   // call to Flush() or LoadFromDisk().
   std::atomic<int64_t> on_disk_size_;
+
+  // The tablet supports live row counting if true.
+  bool supports_live_row_count_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletMetadata);
 };

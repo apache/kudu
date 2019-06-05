@@ -817,5 +817,36 @@ TEST_F(TestMemRowSet, TestMemRowSetUpdatePerformance) {
   }
 }
 
+TEST_F(TestMemRowSet, TestCountLiveRows) {
+  shared_ptr<MemRowSet> mrs;
+  ASSERT_OK(MemRowSet::Create(0, schema_, log_anchor_registry_.get(),
+                              MemTracker::GetRootTracker(), &mrs));
+
+  const auto CheckLiveRowsCount = [&](int64_t expect) {
+    int64_t count = 0;
+    ASSERT_OK(mrs->CountLiveRows(&count));
+    ASSERT_EQ(expect, count);
+  };
+
+  NO_FATALS(CheckLiveRowsCount(0));
+  ASSERT_OK(GenerateTestData(mrs.get()));
+  NO_FATALS(CheckLiveRowsCount(4));
+
+  ASSERT_OK(InsertRow(mrs.get(), "liverow 0", 0));
+  NO_FATALS(CheckLiveRowsCount(5));
+  ASSERT_OK(InsertRow(mrs.get(), "liverow 1", 0));
+  NO_FATALS(CheckLiveRowsCount(6));
+
+  OperationResultPB result;
+  ASSERT_OK(DeleteRow(mrs.get(), "liverow 0", &result));
+  NO_FATALS(CheckLiveRowsCount(5));
+
+  ASSERT_OK(InsertRow(mrs.get(), "liverow 0", 0));
+  NO_FATALS(CheckLiveRowsCount(6));
+
+  ASSERT_OK(UpdateRow(mrs.get(), "liverow 0", 1, &result));
+  NO_FATALS(CheckLiveRowsCount(6));
+}
+
 } // namespace tablet
 } // namespace kudu

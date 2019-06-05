@@ -224,6 +224,15 @@ class RowSetMetadata {
 
   std::vector<BlockId> GetAllBlocks();
 
+  // Increase the row count.
+  // Note:
+  //   1) A positive number means plus the live rows,
+  //   2) A negative number means minus the deleted rows.
+  void IncrementLiveRows(int64_t row_count);
+
+  // Returns the number of live rows in this metadata.
+  int64_t live_row_count() const;
+
  private:
   friend class TabletMetadata;
 
@@ -232,7 +241,8 @@ class RowSetMetadata {
   explicit RowSetMetadata(TabletMetadata *tablet_metadata)
     : tablet_metadata_(tablet_metadata),
       initted_(false),
-      last_durable_redo_dms_id_(kNoDurableMemStore) {
+      last_durable_redo_dms_id_(kNoDurableMemStore),
+      live_row_count_(0) {
   }
 
   RowSetMetadata(TabletMetadata *tablet_metadata,
@@ -240,7 +250,8 @@ class RowSetMetadata {
     : tablet_metadata_(DCHECK_NOTNULL(tablet_metadata)),
       initted_(true),
       id_(id),
-      last_durable_redo_dms_id_(kNoDurableMemStore) {
+      last_durable_redo_dms_id_(kNoDurableMemStore),
+      live_row_count_(0) {
   }
 
   Status InitFromPB(const RowSetDataPB& pb);
@@ -265,6 +276,9 @@ class RowSetMetadata {
   std::vector<BlockId> undo_delta_blocks_;
 
   int64_t last_durable_redo_dms_id_;
+
+  // Number of live rows on disk, excluding those in [MRS/DMS].
+  int64_t live_row_count_;
 
   DISALLOW_COPY_AND_ASSIGN(RowSetMetadata);
 };

@@ -116,7 +116,8 @@ MemRowSet::MemRowSet(int64_t id,
     debug_insert_count_(0),
     debug_update_count_(0),
     anchorer_(log_anchor_registry, Substitute("MemRowSet-$0", id_)),
-    has_been_compacted_(false) {
+    has_been_compacted_(false),
+    live_row_count_(0) {
   CHECK(schema.has_column_ids());
   ANNOTATE_BENIGN_RACE(&debug_insert_count_, "insert count isnt accurate");
   ANNOTATE_BENIGN_RACE(&debug_update_count_, "update count isnt accurate");
@@ -189,6 +190,7 @@ Status MemRowSet::Insert(Timestamp timestamp,
   anchorer_.AnchorIfMinimum(op_id.index());
 
   debug_insert_count_++;
+  live_row_count_.Increment();
   return Status::OK();
 }
 
@@ -208,6 +210,8 @@ Status MemRowSet::Reinsert(Timestamp timestamp, const ConstContiguousRow& row, M
   // for the mutation are fully published before any concurrent reader sees
   // the appended mutation.
   mut->AppendToListAtomic(&ms_row->header_->redo_head, &ms_row->header_->redo_tail);
+
+  live_row_count_.Increment();
   return Status::OK();
 }
 
@@ -251,6 +255,9 @@ Status MemRowSet::MutateRow(Timestamp timestamp,
 
   anchorer_.AnchorIfMinimum(op_id.index());
   debug_update_count_++;
+  if (delta.is_delete()) {
+    live_row_count_.IncrementBy(-1);
+  }
   return Status::OK();
 }
 

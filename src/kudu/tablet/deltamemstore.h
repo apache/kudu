@@ -147,6 +147,9 @@ class DeltaMemStore : public DeltaStore,
     return delta_stats_;
   }
 
+  // Returns the number of deleted rows in this DMS.
+  int64_t deleted_row_count() const;
+
  private:
   friend class DMSIterator;
 
@@ -180,6 +183,9 @@ class DeltaMemStore : public DeltaStore,
   // the earlier ones. This atomic integer serves to provide such a sequence
   // number, and is only used in the case that such a collision occurs.
   AtomicInt<Atomic32> disambiguator_sequence_number_;
+
+  // Number of deleted rows in this DMS.
+  AtomicInt<int64_t> deleted_row_count_;
 
   DISALLOW_COPY_AND_ASSIGN(DeltaMemStore);
 };

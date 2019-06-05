@@ -230,6 +230,15 @@ Status DuplicatingRowSet::CountRows(const IOContext* io_context, rowid_t *count)
   return Status::OK();
 }
 
+Status DuplicatingRowSet::CountLiveRows(int64_t* count) const {
+  for (const shared_ptr<RowSet>& rs : old_rowsets_) {
+    int64_t tmp = 0;
+    RETURN_NOT_OK(rs->CountLiveRows(&tmp));
+    *count += tmp;
+  }
+  return Status::OK();
+}
+
 Status DuplicatingRowSet::GetBounds(string* min_encoded_key,
                                     string* max_encoded_key) const {
   // The range out of the output rowset always spans the full range

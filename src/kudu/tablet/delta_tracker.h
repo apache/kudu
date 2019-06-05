@@ -266,6 +266,10 @@ class DeltaTracker {
   // Init() all of the specified delta stores. For tests only.
   Status InitAllDeltaStoresForTests(WhichStores stores);
 
+  // Count the number of deleted rows in the current DMS as well as
+  // in a flushing DMS (if one exists)
+  int64_t CountDeletedRows() const;
+
  private:
   FRIEND_TEST(TestRowSet, TestRowSetUpdate);
   FRIEND_TEST(TestRowSet, TestDMSFlush);
@@ -362,6 +366,11 @@ class DeltaTracker {
   //
   // TODO(perf): this needs to be more fine grained
   mutable Mutex compact_flush_lock_;
+
+  // Number of deleted rows for a DMS that is currently being flushed.
+  // When the flush completes, this is merged into the RowSetMetadata
+  // and reset.
+  int64_t deleted_row_count_;
 
   DISALLOW_COPY_AND_ASSIGN(DeltaTracker);
 };

@@ -47,6 +47,9 @@ message RowSetDataPB {
   optional BlockIdPB adhoc_index_block = 7;
   optional bytes min_encoded_key = 8;
   optional bytes max_encoded_key = 9;
+
+  // Number of live rows that have been persisted.
+  optional int64 live_row_count = 10;
 }
 
 // State flags indicating whether the tablet is in the middle of being copied
@@ -131,6 +134,11 @@ message TabletSuperBlockPB {
   // from a version of Kudu before 1.5.0. In this case, a new group will be
   // created spanning all data directories.
   optional DataDirGroupPB data_dir_group = 15;
+
+  // Whether the tablet supports counting live row. If false, 'live_row_count'
+  // may be inaccurate and should be ignored. It's only supported for the newly
+  // created ones, not for the ancient ones.
+  optional bool supports_live_row_count = 16;
 }
 
 // Tablet states represent stages of a TabletReplica's object lifecycle and are
