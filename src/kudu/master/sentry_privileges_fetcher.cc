@@ -562,7 +562,7 @@ void SentryPrivilegesFetcher::Stop() {
 Status SentryPrivilegesFetcher::ResetCache() {
   const auto cache_capacity_bytes =
       FLAGS_sentry_privileges_cache_capacity_mb * 1024 * 1024;
-  shared_ptr<AuthzInfoCache> new_cache;
+  shared_ptr<PrivilegeCache> new_cache;
   if (cache_capacity_bytes != 0) {
     const auto cache_entry_ttl = MonoDelta::FromSeconds(
         FLAGS_authz_token_validity_seconds *
@@ -574,7 +574,7 @@ Status SentryPrivilegesFetcher::ResetCache() {
           FLAGS_sentry_privileges_cache_scrubbing_period_sec));
     }
 
-    new_cache = make_shared<AuthzInfoCache>(
+    new_cache = make_shared<PrivilegeCache>(
         cache_capacity_bytes, cache_entry_ttl, cache_scrubbing_period,
         FLAGS_sentry_privileges_cache_max_scrubbed_entries_per_pass,
         "sentry-privileges-ttl-cache");
@@ -596,6 +596,7 @@ Status SentryPrivilegesFetcher::GetSentryPrivileges(
     SentryAuthorizableScope::Scope requested_scope,
     const string& table_ident,
     const string& user,
+    SentryCaching caching,
     SentryPrivilegesBranch* privileges) {
   Slice db_slice;
   Slice table_slice;
@@ -604,6 +605,8 @@ Status SentryPrivilegesFetcher::GetSentryPrivileges(
   DCHECK(!db_slice.empty());
   const string table = table_slice.ToString();
   const string db = db_slice.ToString();
+
+  // 1. Put together the requested authorizable.
 
   TSentryAuthorizable authorizable;
   RETURN_NOT_OK(GetAuthorizable(db, table, requested_scope, &authorizable));
@@ -623,37 +626,39 @@ Status SentryPrivilegesFetcher::GetSentryPrivileges(
   // even in tests.
   DCHECK_NE(SentryAuthorizableScope::COLUMN, requested_scope);
 
-  const AuthzInfoKey aggregate_key(user, authorizable);
+  const AuthzInfoKey requested_info(user, authorizable);
   // Do not query Sentry for authz scopes narrower than 'TABLE'.
-  const auto& key = aggregate_key.GetKey(SentryAuthorizableScope::TABLE);
-  const auto& key_seq = aggregate_key.key_sequence();
+  const auto& requested_key = requested_info.GetKey(SentryAuthorizableScope::TABLE);
+  const auto& requested_key_seq = requested_info.key_sequence();
+
+  // 2. Check the cache to see if it contains the requested privileges.
 
   // Copy the shared pointer to the cache. That's necessary because:
   //   * the cache_ member may be reset by concurrent ResetCache()
   //   * TTLCache is based on Cache that doesn't allow for outstanding handles
   //     if the cache itself destructed (in this case, goes out of scope).
-  shared_ptr<AuthzInfoCache> cache;
+  shared_ptr<PrivilegeCache> cache;
   {
     shared_lock<rw_spinlock> l(cache_lock_);
     cache = cache_;
   }
-  vector<typename AuthzInfoCache::EntryHandle> handles;
+  vector<typename PrivilegeCache::EntryHandle> handles;
   handles.reserve(AuthzInfoKey::kKeySequenceMaxSize);
 
   if (PREDICT_TRUE(cache)) {
-    for (const auto& e : key_seq) {
+    for (const auto& e : requested_key_seq) {
       auto handle = cache->Get(e);
-      VLOG(3) << Substitute("'$0': '$1' key lookup", key, e);
+      VLOG(3) << Substitute("'$0': '$1' key lookup", requested_key, e);
       if (!handle) {
         continue;
       }
-      VLOG(2) << Substitute("'$0': '$1' key found", key, e);
+      VLOG(2) << Substitute("'$0': '$1' key found", requested_key, e);
       handles.emplace_back(std::move(handle));
     }
   }
   // If the cache contains all the necessary information, repackage the
   // cached information and return as the result.
-  if (handles.size() == key_seq.size()) {
+  if (handles.size() == requested_key_seq.size()) {
     SentryPrivilegesBranch result;
     for (const auto& e : handles) {
       DCHECK(e);
@@ -662,6 +667,15 @@ Status SentryPrivilegesFetcher::GetSentryPrivileges(
     *privileges = std::move(result);
     return Status::OK();
   }
+
+  // 3. The required privileges do not exist in the cache. Fetch them from
+  // Sentry.
+
+  // Narrow the scope of the authorizable to limit the number of privileges
+  // sent back from Sentry to be relevant to the provided table.
+  NarrowAuthzScopeForFetch(db, table, &authorizable);
+  const AuthzInfoKey full_authz_info(user, authorizable);
+  const string& full_key = full_authz_info.GetKey(SentryAuthorizableScope::TABLE);
 
   Synchronizer sync;
   bool is_first_request = false;
@@ -672,7 +686,7 @@ Status SentryPrivilegesFetcher::GetSentryPrivileges(
   {
     std::lock_guard<simple_spinlock> l(pending_requests_lock_);
     auto& pending_request = LookupOrEmplace(&pending_requests_,
-                                            key, SentryRequestsInfo());
+                                            full_key, SentryRequestsInfo());
     // Is the queue of pending requests for the same key empty?
     // If yes, that's the first request being sent out.
     is_first_request = pending_request.callbacks.empty();
@@ -690,11 +704,12 @@ Status SentryPrivilegesFetcher::GetSentryPrivileges(
     return Status::OK();
   }
 
-  NarrowAuthzScopeForFetch(db, table, &authorizable);
   TRACE("Fetching privileges from Sentry");
   const auto s = FetchPrivilegesFromSentry(FLAGS_kudu_service_name,
                                            user, authorizable,
                                            fetched_privileges.get());
+
+  // 4. Cache the privileges from Sentry.
   if (s.ok() && PREDICT_TRUE(cache)) {
     // Put the result into the cache. Negative results (i.e. errors) are not
     // cached. Split the information on privileges into at most two cache
@@ -709,43 +724,36 @@ Status SentryPrivilegesFetcher::GetSentryPrivileges(
     SentryPrivilegesBranch priv_table_column;
     fetched_privileges->Split(&priv_srv_db, &priv_table_column);
     if (requested_scope != SentryAuthorizableScope::SERVER) {
-      unique_ptr<SentryPrivilegesBranch> result_ptr(
-          new SentryPrivilegesBranch(std::move(priv_srv_db)));
-      const auto& key = aggregate_key.GetKey(
-          SentryAuthorizableScope::DATABASE);
-      const auto result_footprint = result_ptr->memory_footprint() +
-          key.capacity();
-      cache->Put(key, std::move(result_ptr), result_footprint);
-      VLOG(2) << Substitute(
-          "added entry of size $0 bytes for key '$1' (server-database scope)",
-          result_footprint, key);
-    }
-    // Don't add table-level records from the response into the cache
-    // if the request to Sentry was of database or higher scope. Due to the
-    // tree-like structure of Sentry's responses, those responses might contain
-    // information on non-Kudu tables which are not relevant in the context of
-    // Kudu's AuthzProvider. Upon detecting a cache miss for a table-scope key,
-    // the fetcher requests information on corresponding table-scope privileges
-    // from Sentry explicitly.
-    if ((requested_scope != SentryAuthorizableScope::SERVER) &&
-        (requested_scope != SentryAuthorizableScope::DATABASE)) {
-      unique_ptr<SentryPrivilegesBranch> result_ptr(
-          new SentryPrivilegesBranch(std::move(priv_table_column)));
-      const auto& key = aggregate_key.GetKey(
-          SentryAuthorizableScope::TABLE);
-      const auto result_footprint = result_ptr->memory_footprint() +
-          key.capacity();
-      cache->Put(key, std::move(result_ptr), result_footprint);
-      VLOG(2) << Substitute(
-          "added entry of size $0 bytes for key '$1' (table-column scope)",
-          result_footprint, key);
+      {
+        unique_ptr<SentryPrivilegesBranch> result_ptr(
+            new SentryPrivilegesBranch(std::move(priv_srv_db)));
+        const auto& db_key = full_authz_info.GetKey(SentryAuthorizableScope::DATABASE);
+        const auto result_footprint =
+            result_ptr->memory_footprint() + db_key.capacity();
+        cache->Put(db_key, std::move(result_ptr), result_footprint);
+        VLOG(2) << Substitute(
+            "added entry of size $0 bytes for key '$1' (server-database scope)",
+            result_footprint, db_key);
+      }
+      if (caching == ALL) {
+        unique_ptr<SentryPrivilegesBranch> result_ptr(
+            new SentryPrivilegesBranch(std::move(priv_table_column)));
+        const auto& table_key = full_authz_info.GetKey(SentryAuthorizableScope::TABLE);
+        const auto result_footprint =
+            result_ptr->memory_footprint() + table_key.capacity();
+        cache->Put(table_key, std::move(result_ptr), result_footprint);
+        VLOG(2) << Substitute(
+            "added entry of size $0 bytes for key '$1' (table-column scope)",
+            result_footprint, table_key);
+      }
     }
   }
 
+  // 5. Run any pending callbacks and return.
   SentryRequestsInfo info;
   {
     std::lock_guard<simple_spinlock> l(pending_requests_lock_);
-    info = EraseKeyReturnValuePtr(&pending_requests_, key);
+    info = EraseKeyReturnValuePtr(&pending_requests_, full_key);
   }
   CHECK_LE(1, info.callbacks.size());
   for (auto& cb : info.callbacks) {

@@ -50,6 +50,11 @@ class TSentryPrivilege;
 namespace kudu {
 namespace master {
 
+enum SentryCaching {
+  ALL,
+  SERVER_AND_DB_ONLY,
+};
+
 // Utility struct to facilitate evaluating the privileges of a given
 // authorizable. This is preferred to using Sentry's Thrift responses directly,
 // since useful information has already been parsed to generate this struct
@@ -167,10 +172,15 @@ class SentryPrivilegesFetcher {
   // by the given table and scope. The result privileges might be served
   // from the cache, if caching is enabled and corresponding entry exists
   // in the cache.
+  //
+  // If 'caching' is SERVER_AND_DB_ONLY and the SentryPrivilegesFetcher is
+  // configured to cache privileges, it will not cache privileges equal to or
+  // below the 'TABLE' scope.
   Status GetSentryPrivileges(
       sentry::SentryAuthorizableScope::Scope requested_scope,
       const std::string& table_ident,
       const std::string& user,
+      SentryCaching caching,
       SentryPrivilegesBranch* privileges);
 
  private:
@@ -222,8 +232,8 @@ class SentryPrivilegesFetcher {
   // The TTL cache to store information on privileges received from Sentry.
   // The instance is wrapped into std::shared_ptr to handle operations with
   // cache items along with concurrent requests to reset the instance.
-  typedef TTLCache<std::string, SentryPrivilegesBranch> AuthzInfoCache;
-  std::shared_ptr<AuthzInfoCache> cache_;
+  typedef TTLCache<std::string, SentryPrivilegesBranch> PrivilegeCache;
+  std::shared_ptr<PrivilegeCache> cache_;
 
   // Synchronization primitive to guard access to the cache in the presence
   // of operations with cache items and concurrent requests to reset the cache.

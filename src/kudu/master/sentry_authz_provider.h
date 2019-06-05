@@ -41,6 +41,13 @@ class TablePrivilegePB;
 
 namespace master {
 
+// Enum indicating whether a grant option is required to perform a specific
+// action.
+enum SentryGrantRequired {
+  NOT_REQUIRED,
+  REQUIRED,
+};
+
 // An implementation of AuthzProvider that connects to the Sentry service
 // for authorization metadata and allows or denies the actions performed by
 // users based on the metadata.
@@ -109,11 +116,16 @@ class SentryAuthzProvider : public AuthzProvider {
   // If the operation is not authorized, returns Status::NotAuthorized().
   // Note that the authorization process is case insensitive for the
   // authorizables.
+  //
+  // If 'caching' is SERVER_AND_DB_ONLY and the underlying
+  // SentryPrivilegesFetcher is configured to cache privileges, it will not
+  // cache privileges equal to or below the 'TABLE' scope.
   Status Authorize(sentry::SentryAuthorizableScope::Scope scope,
                    sentry::SentryAction::Action action,
                    const std::string& table_ident,
                    const std::string& user,
-                   bool require_grant_option = false);
+                   SentryGrantRequired require_grant_option = NOT_REQUIRED,
+                   SentryCaching caching = ALL);
 
   // An instance of utility class that provides interface to search for
   // required privileges through the information received from Sentry.

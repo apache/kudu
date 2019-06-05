@@ -52,7 +52,7 @@ namespace {
 // with GRANT ALL option, if any required ('requires_all_with_grant').
 bool IsActionAllowed(SentryAction::Action required_action,
                      SentryAuthorizableScope::Scope required_scope,
-                     bool requires_all_with_grant,
+                     SentryGrantRequired requires_all_with_grant,
                      const SentryPrivilegesBranch& privileges_branch) {
   // In general, a privilege implies another when:
   // 1. the authorizable from the former implies the authorizable from the latter
@@ -81,7 +81,7 @@ bool IsActionAllowed(SentryAction::Action required_action,
   for (const auto& privilege : privileges) {
     // A grant option cannot imply the other if the latter is set but the
     // former is not.
-    if (requires_all_with_grant && !privilege.all_with_grant) {
+    if (requires_all_with_grant == REQUIRED && !privilege.all_with_grant) {
       continue;
     }
     // Both privilege scope and action need to imply the other.
@@ -132,16 +132,20 @@ Status SentryAuthzProvider::AuthorizeCreateTable(const string& table_name,
   //
   // Otherwise, table creation requires 'CREATE ON DATABASE' privilege.
   SentryAction::Action action;
-  bool grant_option;
+  SentryGrantRequired grant_option;
   if (user == owner) {
     action = SentryAction::Action::CREATE;
-    grant_option = false;
+    grant_option = NOT_REQUIRED;
   } else {
     action = SentryAction::Action::ALL;
-    grant_option = true;
+    grant_option = REQUIRED;
   }
+  // Note: in our request to Sentry, we shouldn't cache table- or column-level
+  // privileges for the table, since Sentry may automatically grant privileges
+  // upon creation of new tables that caching might miss.
   return Authorize(SentryAuthorizableScope::Scope::DATABASE, action,
-                   table_name, user, grant_option);
+                   table_name, user, grant_option,
+                   SentryCaching::SERVER_AND_DB_ONLY);
 }
 
 Status SentryAuthzProvider::AuthorizeDropTable(const string& table_name,
@@ -170,9 +174,13 @@ Status SentryAuthzProvider::AuthorizeAlterTable(const string& old_table,
   RETURN_NOT_OK(Authorize(SentryAuthorizableScope::Scope::TABLE,
                           SentryAction::Action::ALL,
                           old_table, user));
+  // Note: in our request to Sentry, we shouldn't cache table- or column-level
+  // privileges for the table, since Sentry may automatically alter privileges
+  // upon altering tables that caching might miss.
   return Authorize(SentryAuthorizableScope::Scope::DATABASE,
-                   SentryAction::Action::CREATE,
-                   new_table, user);
+                   SentryAction::Action::CREATE, new_table, user,
+                   SentryGrantRequired::NOT_REQUIRED,
+                   SentryCaching::SERVER_AND_DB_ONLY);
 }
 
 Status SentryAuthzProvider::AuthorizeGetTableMetadata(const string& table_name,
@@ -220,7 +228,8 @@ Status SentryAuthzProvider::FillTablePrivilegePB(const string& table_name,
   // be different upon subsequent calls to this function.
   SentryPrivilegesBranch privileges_branch;
   RETURN_NOT_OK(fetcher_.GetSentryPrivileges(
-      SentryAuthorizableScope::TABLE, table_name, user, &privileges_branch));
+      SentryAuthorizableScope::TABLE, table_name, user,
+      SentryCaching::ALL, &privileges_branch));
   unordered_set<string> scannable_col_names;
   static const SentryAuthorizableScope kTableScope(SentryAuthorizableScope::TABLE);
   for (const auto& privilege : privileges_branch.privileges()) {
@@ -273,13 +282,15 @@ Status SentryAuthzProvider::Authorize(SentryAuthorizableScope::Scope scope,
                                       SentryAction::Action action,
                                       const string& table_ident,
                                       const string& user,
-                                      bool require_grant_option) {
+                                      SentryGrantRequired require_grant_option,
+                                      SentryCaching caching) {
   if (AuthzProvider::IsTrustedUser(user)) {
     return Status::OK();
   }
 
   SentryPrivilegesBranch privileges;
-  RETURN_NOT_OK(fetcher_.GetSentryPrivileges(scope, table_ident, user, &privileges));
+  RETURN_NOT_OK(fetcher_.GetSentryPrivileges(scope, table_ident, user,
+      caching, &privileges));
   if (IsActionAllowed(action, scope, require_grant_option, privileges)) {
     return Status::OK();
   }

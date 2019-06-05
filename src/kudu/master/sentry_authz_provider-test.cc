@@ -592,7 +592,8 @@ TEST_P(SentryAuthzProviderFilterPrivilegesScopeTest, TestFilterInvalidResponses)
                                        SentryAuthorizableScope::TABLE }) {
     SentryPrivilegesBranch privileges_info;
     ASSERT_OK(sentry_authz_provider_->fetcher_.GetSentryPrivileges(
-        requested_scope, table_ident, kTestUser, &privileges_info));
+        requested_scope, table_ident, kTestUser,
+        SentryCaching::ALL, &privileges_info));
     // Kudu should ignore all of the invalid privileges.
     ASSERT_TRUE(privileges_info.privileges().empty());
   }
@@ -614,7 +615,8 @@ TEST_P(SentryAuthzProviderFilterPrivilegesScopeTest, TestFilterValidResponses) {
                                        SentryAuthorizableScope::TABLE }) {
     SentryPrivilegesBranch privileges_info;
     ASSERT_OK(sentry_authz_provider_->fetcher_.GetSentryPrivileges(
-        requested_scope, table_ident, kTestUser, &privileges_info));
+        requested_scope, table_ident, kTestUser,
+        SentryCaching::ALL, &privileges_info));
     ASSERT_EQ(1, privileges_info.privileges().size());
     const auto& authorizable_privileges = *privileges_info.privileges().cbegin();
     ASSERT_EQ(GetParam(), authorizable_privileges.scope)
@@ -858,11 +860,11 @@ TEST_F(SentryAuthzProviderTest, CacheBehaviorScopeHierarchyAdjacentBranches) {
   ASSERT_EQ(0, GetTasksFailedNonFatal());
 }
 
-// Ensure requests for authorizables of the DATABASE scope hit cache once
+// Ensure requests to authorize CreateTables and AlterTables hit cache once
 // the information was fetched from Sentry for an authorizable of the TABLE
 // scope in the same hierarchy branch. A bit of context: Sentry sends all
 // available information for the branch up the authz scope hierarchy.
-TEST_F(SentryAuthzProviderTest, CacheBehaviorForDatabaseScope) {
+TEST_F(SentryAuthzProviderTest, CacheBehaviorForCreateAndAlter) {
   ASSERT_OK(CreateRoleAndAddToGroups());
   ASSERT_OK(AlterRoleGrantPrivilege(GetDatabasePrivilege("db0", "ALTER")));
   ASSERT_OK(AlterRoleGrantPrivilege(GetDatabasePrivilege("db1", "CREATE")));
@@ -1001,7 +1003,7 @@ TEST_F(SentryAuthzProviderTest, CacheBehaviorHybridLookups) {
 
 // Verify that information on TABLE-scope privileges are fetched from Sentry,
 // but not cached when SentryPrivilegeFetcher receives a ListPrivilegesByUser
-// response for a DATABASE-scope authorizable.
+// response for a DATABASE-scope authorizable for CreateTables or AlterTables.
 TEST_F(SentryAuthzProviderTest, CacheBehaviorNotCachingTableInfo) {
   ASSERT_OK(CreateRoleAndAddToGroups());
   ASSERT_OK(AlterRoleGrantPrivilege(GetDatabasePrivilege("db", "CREATE")));
