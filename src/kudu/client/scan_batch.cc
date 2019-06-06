@@ -122,6 +122,14 @@ bool KuduScanBatch::RowPtr::IsNull(const Slice& col_name) const {
   return IsNull(col_idx);
 }
 
+Status KuduScanBatch::RowPtr::IsDeleted(bool* val) const {
+  int col_idx = schema_->first_is_deleted_virtual_column_idx();
+  if (col_idx == Schema::kColumnNotFound) {
+    return Status::NotFound("IS_DELETED virtual column not found");
+  }
+  return Get<TypeTraits<IS_DELETED> >(col_idx, val);
+}
+
 Status KuduScanBatch::RowPtr::GetBool(const Slice& col_name, bool* val) const {
   return Get<TypeTraits<BOOL> >(col_name, val);
 }

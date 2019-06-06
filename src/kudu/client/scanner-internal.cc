@@ -395,6 +395,9 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
       break;
     case KuduScanner::READ_AT_SNAPSHOT:
       scan->set_read_mode(kudu::READ_AT_SNAPSHOT);
+      if (configuration_.has_start_timestamp()) {
+        scan->set_snap_start_timestamp(configuration_.start_timestamp());
+      }
       if (configuration_.has_snapshot_timestamp()) {
         scan->set_snap_timestamp(configuration_.snapshot_timestamp());
       }

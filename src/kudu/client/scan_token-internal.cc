@@ -180,7 +180,10 @@ Status KuduScanToken::Data::PBIntoScanner(KuduClient* client,
     RETURN_NOT_OK(scan_builder->SetFaultTolerant());
   }
 
-  if (message.has_snap_timestamp()) {
+  if (message.has_snap_start_timestamp() && message.has_snap_timestamp()) {
+    RETURN_NOT_OK(scan_builder->SetDiffScan(message.snap_start_timestamp(),
+                                            message.snap_timestamp()));
+  } else if (message.has_snap_timestamp()) {
     RETURN_NOT_OK(scan_builder->SetSnapshotRaw(message.snap_timestamp()));
   }
 
@@ -261,6 +264,9 @@ Status KuduScanTokenBuilder::Data::Build(vector<KuduScanToken*>* tokens) {
       break;
     case KuduScanner::READ_AT_SNAPSHOT:
       pb.set_read_mode(kudu::READ_AT_SNAPSHOT);
+      if (configuration_.has_start_timestamp()) {
+        pb.set_snap_start_timestamp(configuration_.start_timestamp());
+      }
       if (configuration_.has_snapshot_timestamp()) {
         pb.set_snap_timestamp(configuration_.snapshot_timestamp());
       }

@@ -36,6 +36,7 @@
 namespace kudu {
 
 class ColumnPredicate;
+class ColumnSchema;
 class KuduPartialRow;
 class Schema;
 
@@ -82,23 +83,26 @@ class ScanConfiguration {
 
   Status SetFaultTolerant(bool fault_tolerant) WARN_UNUSED_RESULT;
 
-  // Sets the timestamp the scan must be executed at, in microseconds
-  // since the Unix epoch. Requires READ_AT_SNAPSHOT scan mode.
   void SetSnapshotMicros(uint64_t snapshot_timestamp_micros);
 
-  // Sets a previously encoded timestamp as a snapshot timestamp.
-  // Requires READ_AT_SNAPSHOT scan mode.
   void SetSnapshotRaw(uint64_t snapshot_timestamp);
 
   // Set the lower bound of scan's propagation timestamp.
   // It is only used in READ_YOUR_WRITES scan mode.
   void SetScanLowerBoundTimestampRaw(uint64_t propagation_timestamp);
 
+  Status SetDiffScan(uint64_t start_timestamp, uint64_t end_timestamp);
+
   void SetTimeoutMillis(int millis);
 
   Status SetRowFormatFlags(uint64_t flags);
 
   Status SetLimit(int64_t limit);
+
+  // Adds an IS_DELETED virtual column to the projection.
+  //
+  // Can only be used with diff scans.
+  Status AddIsDeletedColumn();
 
   void OptimizeScanSpec();
 
@@ -145,6 +149,15 @@ class ScanConfiguration {
     return is_fault_tolerant_;
   }
 
+  bool has_start_timestamp() const {
+    return start_timestamp_ != kNoTimestamp;
+  }
+
+  uint64_t start_timestamp() const {
+    CHECK(has_start_timestamp());
+    return start_timestamp_;
+  }
+
   bool has_snapshot_timestamp() const {
     return snapshot_timestamp_ != kNoTimestamp;
   }
@@ -180,6 +193,10 @@ class ScanConfiguration {
 
   static const uint64_t kNoTimestamp;
   static const int kHtTimestampBitsToShift;
+  static const char* kDefaultIsDeletedColName;
+
+  // Set projection_ and client_projection_ using a schema constructed from 'cols'.
+  Status CreateProjection(const std::vector<ColumnSchema>& cols);
 
   // Non-owned, non-null table.
   KuduTable* table_;
@@ -201,6 +218,10 @@ class ScanConfiguration {
 
   bool is_fault_tolerant_;
 
+  // Start and end timestamps in a diff scan.
+  //
+  // If just a regular snapshot scan, start_timestamp_ is ignored.
+  uint64_t start_timestamp_;
   uint64_t snapshot_timestamp_;
 
   uint64_t lower_bound_propagation_timestamp_;

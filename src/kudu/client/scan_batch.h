@@ -172,6 +172,14 @@ class KUDU_EXPORT KuduScanBatch::RowPtr {
   /// @return @c true iff the specified column of the row has @c NULL value.
   bool IsNull(int col_idx) const;
 
+  /// Get the value of the IS_DELETED virtual column.
+  ///
+  /// @param [out] val
+  ///   Placeholder for the result value.
+  /// @return Operation result status. Return a bad Status if there is no
+  ///   IS_DELETED virtual column in the schema.
+  Status IsDeleted(bool* val) const WARN_UNUSED_RESULT KUDU_NO_EXPORT;
+
   /// @name Getters for integral type columns by column name.
   ///
   /// @param [in] col_name

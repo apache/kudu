@@ -17,6 +17,7 @@
 
 #include "kudu/client/scan_configuration.h"
 
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <utility>
@@ -26,6 +27,7 @@
 #include "kudu/client/scan_predicate-internal.h"
 #include "kudu/client/scan_predicate.h"
 #include "kudu/common/column_predicate.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/encoded_key.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/schema.h"
@@ -41,6 +43,7 @@ namespace client {
 
 const uint64_t ScanConfiguration::kNoTimestamp = KuduClient::kNoTimestamp;
 const int ScanConfiguration::kHtTimestampBitsToShift = 12;
+const char* ScanConfiguration::kDefaultIsDeletedColName = "is_deleted";
 
 ScanConfiguration::ScanConfiguration(KuduTable* table)
     : table_(table),
@@ -51,6 +54,7 @@ ScanConfiguration::ScanConfiguration(KuduTable* table)
       selection_(KuduClient::CLOSEST_REPLICA),
       read_mode_(KuduScanner::READ_LATEST),
       is_fault_tolerant_(false),
+      start_timestamp_(kNoTimestamp),
       snapshot_timestamp_(kNoTimestamp),
       lower_bound_propagation_timestamp_(kNoTimestamp),
       timeout_(MonoDelta::FromMilliseconds(KuduScanner::kScanTimeoutMillis)),
@@ -84,12 +88,7 @@ Status ScanConfiguration::SetProjectedColumnIndexes(const vector<int>& col_index
     }
     cols.push_back(table_schema->column(col_index));
   }
-
-  unique_ptr<Schema> s(new Schema());
-  RETURN_NOT_OK(s->Reset(cols, 0));
-  projection_ = pool_.Add(s.release());
-  client_projection_ = KuduSchema::FromSchema(*projection_);
-  return Status::OK();
+  return CreateProjection(cols);
 }
 
 Status ScanConfiguration::AddConjunctPredicate(KuduPredicate* pred) {
@@ -181,6 +180,21 @@ void ScanConfiguration::SetSnapshotRaw(uint64_t snapshot_timestamp) {
   snapshot_timestamp_ = snapshot_timestamp;
 }
 
+Status ScanConfiguration::SetDiffScan(uint64_t start_timestamp, uint64_t end_timestamp) {
+  if (start_timestamp == kNoTimestamp) {
+    return Status::IllegalState("Start timestamp must be set bigger than 0");
+  }
+  if (start_timestamp > end_timestamp) {
+    return Status::IllegalState("Start timestamp must be less than or equal to "
+                                "end timestamp");
+  }
+  RETURN_NOT_OK(SetFaultTolerant(true));
+  RETURN_NOT_OK(SetReadMode(KuduScanner::READ_AT_SNAPSHOT));
+  start_timestamp_ = start_timestamp;
+  snapshot_timestamp_ = end_timestamp;
+  return Status::OK();
+}
+
 void ScanConfiguration::SetScanLowerBoundTimestampRaw(uint64_t propagation_timestamp) {
   lower_bound_propagation_timestamp_ = propagation_timestamp;
 }
@@ -202,11 +216,47 @@ Status ScanConfiguration::SetLimit(int64_t limit) {
   return Status::OK();
 }
 
+Status ScanConfiguration::AddIsDeletedColumn() {
+  CHECK(has_start_timestamp());
+  CHECK(has_snapshot_timestamp());
+
+  // Convert the current projection back into ColumnSchemas.
+  vector<ColumnSchema> cols;
+  cols.reserve(projection_->num_columns() + 1);
+  for (size_t i = 0; i < projection_->num_columns(); i++) {
+    cols.emplace_back(projection_->column(i));
+  }
+
+  // Generate a unique name for the IS_DELETED virtual column.
+  string col_name = kDefaultIsDeletedColName;
+  while (table_->schema().schema_->find_column(col_name) != Schema::kColumnNotFound) {
+    col_name += "_";
+  }
+
+  // Add the IS_DELETED virtual column to the list of projected columns.
+  bool read_default = false;
+  ColumnSchema is_deleted(col_name,
+                          IS_DELETED,
+                          /*is_nullable=*/false,
+                          &read_default);
+  cols.emplace_back(std::move(is_deleted));
+
+  return CreateProjection(cols);
+}
+
 void ScanConfiguration::OptimizeScanSpec() {
   spec_.OptimizeScan(*table_->schema().schema_,
                      &arena_,
                      &pool_,
                      /* remove_pushed_predicates */ false);
+}
+
+Status ScanConfiguration::CreateProjection(const vector<ColumnSchema>& cols) {
+  unique_ptr<Schema> s(new Schema());
+  RETURN_NOT_OK(s->Reset(cols, 0));
+  projection_ = pool_.Add(s.release());
+  client_projection_ = KuduSchema::FromSchema(*projection_);
+  return Status::OK();
 }
 
 } // namespace client
