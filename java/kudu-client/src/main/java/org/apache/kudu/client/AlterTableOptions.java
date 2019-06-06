@@ -297,7 +297,8 @@ public class AlterTableOptions {
     step.setAddRangePartition(builder);
     if (!pb.hasSchema()) {
       pb.setSchema(ProtobufHelper.schemaToPb(lowerBound.getSchema(),
-          EnumSet.of(SchemaPBConversionFlags.SCHEMA_PB_WITHOUT_COMMENT)));
+          EnumSet.of(SchemaPBConversionFlags.SCHEMA_PB_WITHOUT_COMMENT,
+                     SchemaPBConversionFlags.SCHEMA_PB_WITHOUT_ID)));
     }
     return this;
   }
@@ -357,7 +358,8 @@ public class AlterTableOptions {
     step.setDropRangePartition(builder);
     if (!pb.hasSchema()) {
       pb.setSchema(ProtobufHelper.schemaToPb(lowerBound.getSchema(),
-          EnumSet.of(SchemaPBConversionFlags.SCHEMA_PB_WITHOUT_COMMENT)));
+          EnumSet.of(SchemaPBConversionFlags.SCHEMA_PB_WITHOUT_COMMENT,
+                     SchemaPBConversionFlags.SCHEMA_PB_WITHOUT_ID)));
     }
     return this;
   }
