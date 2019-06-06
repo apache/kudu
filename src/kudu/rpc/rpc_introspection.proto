@@ -73,7 +73,7 @@ message SocketStatsPB {
   optional uint64 receive_queue_bytes = 12;
 
   // Calculated sender throughput.
-  optional int32 send_bytes_per_sec = 13;
+  optional int64 send_bytes_per_sec = 13;
 };
 
 // Debugging information about a currently-open RPC connection.
