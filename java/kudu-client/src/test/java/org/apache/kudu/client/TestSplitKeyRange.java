@@ -167,7 +167,7 @@ public class TestSplitKeyRange {
       assertTrue(200 <= startKey);
       assertTrue(startKey <= endKey);
       assertTrue(800 >= endKey);
-      assertTrue(0 < keyRange.getDataSizeBytes());
+      assertTrue(0 <= keyRange.getDataSizeBytes());
     }
   }
 }
