@@ -54,6 +54,7 @@
 #include "kudu/util/path_util.h"
 #include "kudu/util/promise.h"
 #include "kudu/util/random.h"
+#include "kudu/util/scoped_cleanup.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -61,6 +62,7 @@
 
 DECLARE_int32(heartbeat_interval_ms);
 DECLARE_int32(safe_time_max_lag_ms);
+DECLARE_int32(scanner_max_wait_ms);
 DECLARE_int32(tablet_history_max_age_sec);
 DECLARE_int32(timestamp_update_period_ms);
 DECLARE_int32(wait_before_setting_snapshot_timestamp_ms);
@@ -157,15 +159,19 @@ class RemoteKsckTest : public KuduTest {
                              Promise<Status>* promise) {
     shared_ptr<KuduTable> table;
     Status status;
+    SCOPED_CLEANUP({
+      promise->Set(status);
+      started_writing->CountDown(1);
+    });
     status = client_->OpenTable(kTableName, &table);
     if (!status.ok()) {
-      promise->Set(status);
+      return;
     }
     shared_ptr<KuduSession> session(client_->NewSession());
     session->SetTimeoutMillis(10000);
     status = session->SetFlushMode(KuduSession::MANUAL_FLUSH);
     if (!status.ok()) {
-      promise->Set(status);
+      return;
     }
 
     for (uint64_t i = 0; continue_writing.Load(); i++) {
@@ -173,11 +179,11 @@ class RemoteKsckTest : public KuduTest {
       GenerateDataForRow(table->schema(), i, &random_, insert->mutable_row());
       status = session->Apply(insert.release());
       if (!status.ok()) {
-        promise->Set(status);
+        return;
       }
       status = session->Flush();
       if (!status.ok()) {
-        promise->Set(status);
+        return;
       }
       // Wait for the first 100 writes so that it's very likely all replicas have committed a
       // message in each tablet; otherwise, safe time might not have been updated on all replicas
@@ -186,7 +192,6 @@ class RemoteKsckTest : public KuduTest {
         started_writing->CountDown(1);
       }
     }
-    promise->Set(Status::OK());
   }
 
  protected:
@@ -368,25 +373,40 @@ TEST_F(RemoteKsckTest, TestChecksumSnapshot) {
   Promise<Status> promise;
   scoped_refptr<Thread> writer_thread;
 
+  // Allow the checksum scan to wait for longer in case it takes a while for the
+  // writer thread to advance safe time.
+  FLAGS_scanner_max_wait_ms = 10000;
+
   Thread::Create("RemoteKsckTest", "TestChecksumSnapshot",
                  &RemoteKsckTest::GenerateRowWritesLoop, this,
                  &started_writing, boost::cref(continue_writing), &promise,
                  &writer_thread);
-  CHECK(started_writing.WaitFor(MonoDelta::FromSeconds(30)));
+  {
+    SCOPED_CLEANUP({
+      continue_writing.Store(false);
+      writer_thread->Join();
+    });
+    started_writing.Wait();
 
-  uint64_t ts = client_->GetLatestObservedTimestamp();
-  ASSERT_OK(ksck_->CheckMasterHealth());
-  ASSERT_OK(ksck_->CheckMasterUnusualFlags());
-  ASSERT_OK(ksck_->CheckMasterConsensus());
-  ASSERT_OK(ksck_->CheckClusterRunning());
-  ASSERT_OK(ksck_->FetchTableAndTabletInfo());
-  ASSERT_OK(ksck_->FetchInfoFromTabletServers());
-  ASSERT_OK(ksck_->ChecksumData(KsckChecksumOptions(MonoDelta::FromSeconds(10),
-                                                    MonoDelta::FromSeconds(10),
-                                                    16, true, ts)));
-  continue_writing.Store(false);
+    // The writer thread may have errored out before actually writing anything;
+    // check for this before proceeding with the test.
+    const auto* s = promise.WaitFor(MonoDelta::FromSeconds(0));
+    if (s) {
+      ASSERT_OK(*s);
+    }
+
+    uint64_t ts = client_->GetLatestObservedTimestamp();
+    ASSERT_OK(ksck_->CheckMasterHealth());
+    ASSERT_OK(ksck_->CheckMasterUnusualFlags());
+    ASSERT_OK(ksck_->CheckMasterConsensus());
+    ASSERT_OK(ksck_->CheckClusterRunning());
+    ASSERT_OK(ksck_->FetchTableAndTabletInfo());
+    ASSERT_OK(ksck_->FetchInfoFromTabletServers());
+    ASSERT_OK(ksck_->ChecksumData(KsckChecksumOptions(MonoDelta::FromSeconds(10),
+                                                      MonoDelta::FromSeconds(10),
+                                                      16, true, ts)));
+  }
   ASSERT_OK(promise.Get());
-  writer_thread->Join();
 }
 
 // Test that followers & leader wait until safe time to respond to a snapshot
@@ -397,25 +417,40 @@ TEST_F(RemoteKsckTest, TestChecksumSnapshotCurrentTimestamp) {
   Promise<Status> promise;
   scoped_refptr<Thread> writer_thread;
 
+  // Allow the checksum scan to wait for longer in case it takes a while for the
+  // writer thread to advance safe time.
+  FLAGS_scanner_max_wait_ms = 10000;
+
   Thread::Create("RemoteKsckTest", "TestChecksumSnapshotCurrentTimestamp",
                  &RemoteKsckTest::GenerateRowWritesLoop, this,
                  &started_writing, boost::cref(continue_writing), &promise,
                  &writer_thread);
-  CHECK(started_writing.WaitFor(MonoDelta::FromSeconds(30)));
+  {
+    SCOPED_CLEANUP({
+      continue_writing.Store(false);
+      writer_thread->Join();
+    });
+    started_writing.Wait();
 
-  ASSERT_OK(ksck_->CheckMasterHealth());
-  ASSERT_OK(ksck_->CheckMasterUnusualFlags());
-  ASSERT_OK(ksck_->CheckMasterConsensus());
-  ASSERT_OK(ksck_->CheckClusterRunning());
-  ASSERT_OK(ksck_->FetchTableAndTabletInfo());
-  ASSERT_OK(ksck_->FetchInfoFromTabletServers());
-  ASSERT_OK(ksck_->ChecksumData(KsckChecksumOptions(MonoDelta::FromSeconds(10),
-                                                    MonoDelta::FromSeconds(10),
-                                                    16, true,
-                                                    KsckChecksumOptions::kCurrentTimestamp)));
-  continue_writing.Store(false);
+    // The writer thread may have errored out before actually writing anything;
+    // check for this before proceeding with the test.
+    const auto* s = promise.WaitFor(MonoDelta::FromSeconds(0));
+    if (s) {
+      ASSERT_OK(*s);
+    }
+
+    ASSERT_OK(ksck_->CheckMasterHealth());
+    ASSERT_OK(ksck_->CheckMasterUnusualFlags());
+    ASSERT_OK(ksck_->CheckMasterConsensus());
+    ASSERT_OK(ksck_->CheckClusterRunning());
+    ASSERT_OK(ksck_->FetchTableAndTabletInfo());
+    ASSERT_OK(ksck_->FetchInfoFromTabletServers());
+    ASSERT_OK(ksck_->ChecksumData(KsckChecksumOptions(MonoDelta::FromSeconds(10),
+                                                      MonoDelta::FromSeconds(10),
+                                                      16, true,
+                                                      KsckChecksumOptions::kCurrentTimestamp)));
+  }
   ASSERT_OK(promise.Get());
-  writer_thread->Join();
 }
 
 // Regression test for KUDU-2179: If the checksum process takes long enough that
