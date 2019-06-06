@@ -27,6 +27,7 @@ import org.apache.kudu.test.RandomUtils;
 import org.apache.kudu.util.DataGenerator;
 import org.apache.kudu.util.Pair;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.slf4j.Logger;
@@ -233,6 +234,7 @@ public class TestKuduScanner {
 
   @Test(timeout = 100000)
   @KuduTestHarness.TabletServerConfig(flags = { "--flush_threshold_secs=" + DIFF_FLUSH_SEC })
+  @Ignore
   public void testDiffScan() throws Exception {
     Schema schema = new Schema(Arrays.asList(
         new ColumnSchema.ColumnSchemaBuilder("key", Type.INT32).key(true).build(),
