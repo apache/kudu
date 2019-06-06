@@ -17,6 +17,7 @@
 
 package org.apache.kudu.client;
 
+import static org.apache.kudu.test.ClientTestUtil.getPartialRowWithAllTypes;
 import static org.apache.kudu.test.ClientTestUtil.getSchemaWithAllTypes;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
@@ -93,6 +94,35 @@ public class TestPartialRow {
     assertEquals(BigDecimal.valueOf(12345, 3), partialRow.getObject("decimal"));
   }
 
+  @Test
+  public void testAddObject() {
+    Schema schema = getSchemaWithAllTypes();
+    // Ensure we aren't missing any types
+    assertEquals(13, schema.getColumnCount());
+
+    PartialRow row = schema.newPartialRow();
+    row.addObject("int8", (byte) 42);
+    row.addObject("int16", (short) 43);
+    row.addObject("int32", 44);
+    row.addObject("int64", 45L);
+    row.addObject("timestamp", new Timestamp(1234567890));
+    row.addObject("bool", true);
+    row.addObject("float", 52.35F);
+    row.addObject("double", 53.35);
+    row.addObject("string", "fun with ütf\0");
+    row.addObject("binary-array", new byte[] { 0, 1, 2, 3, 4 });
+    ByteBuffer binaryBuffer = ByteBuffer.wrap(new byte[] { 5, 6, 7, 8, 9 });
+    row.addObject("binary-bytebuffer", binaryBuffer);
+    row.addObject("null", null);
+    row.addObject("decimal", BigDecimal.valueOf(12345, 3));
+
+    PartialRow expected = getPartialRowWithAllTypes();
+    for (ColumnSchema col : schema.getColumns()) {
+      assertEquals(callGetByName(expected, col.getName(), col.getType()),
+          callGetByName(row, col.getName(), col.getType()));
+    }
+  }
+
   @Test(expected = IllegalArgumentException.class)
   public void testGetNullColumn() {
     PartialRow partialRow = getPartialRowWithAllTypes();
@@ -154,6 +184,10 @@ public class TestPartialRow {
     PartialRow partialRow = getPartialRowWithAllTypes();
     for (ColumnSchema columnSchema : partialRow.getSchema().getColumns()) {
       try {
+        // Skip the null column because `isNull` is not type specific.
+        if ("null".equals(columnSchema.getName())) {
+          continue;
+        }
         callGetByName(partialRow, columnSchema.getName(), getShiftedType(columnSchema.getType()));
         fail("Expected IllegalArgumentException for type: " + columnSchema.getType());
       } catch (IllegalArgumentException ex) {
@@ -400,29 +434,6 @@ public class TestPartialRow {
     return partialRow.getSchema().getColumnIndex(columnName);
   }
 
-  private PartialRow getPartialRowWithAllTypes() {
-    Schema schema = getSchemaWithAllTypes();
-    // Ensure we aren't missing any types
-    assertEquals(13, schema.getColumnCount());
-
-    PartialRow row = schema.newPartialRow();
-    row.addByte("int8", (byte) 42);
-    row.addShort("int16", (short) 43);
-    row.addInt("int32", 44);
-    row.addLong("int64", 45);
-    row.addTimestamp("timestamp", new Timestamp(1234567890));
-    row.addBoolean("bool", true);
-    row.addFloat("float", 52.35F);
-    row.addDouble("double", 53.35);
-    row.addString("string", "fun with ütf\0");
-    row.addBinary("binary-array", new byte[] { 0, 1, 2, 3, 4 });
-    ByteBuffer binaryBuffer = ByteBuffer.wrap(new byte[] { 5, 6, 7, 8, 9 });
-    row.addBinary("binary-bytebuffer", binaryBuffer);
-    row.setNull("null");
-    row.addDecimal("decimal", BigDecimal.valueOf(12345, 3));
-    return row;
-  }
-
   // Shift the type one position to force the wrong type for all types.
   private Type getShiftedType(Type type) {
     int shiftedPosition = (type.ordinal() + 1) % Type.values().length;
@@ -430,6 +441,9 @@ public class TestPartialRow {
   }
 
   private Object callGetByName(PartialRow partialRow, String columnName, Type type) {
+    if (partialRow.isNull(columnName)) {
+      return null;
+    }
     switch (type) {
       case INT8: return partialRow.getByte(columnName);
       case INT16: return partialRow.getShort(columnName);
@@ -448,6 +462,9 @@ public class TestPartialRow {
   }
 
   private Object callGetByIndex(PartialRow partialRow, int columnIndex, Type type) {
+    if (partialRow.isNull(columnIndex)) {
+      return null;
+    }
     switch (type) {
       case INT8: return partialRow.getByte(columnIndex);
       case INT16: return partialRow.getShort(columnIndex);

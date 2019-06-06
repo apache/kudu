@@ -50,10 +50,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.nio.ByteBuffer;
+import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.junit.Assert.assertEquals;
 
 /**
  * Utilities useful for cluster testing.
@@ -211,6 +216,29 @@ public abstract class ClientTestUtil {
                 .typeAttributes(DecimalUtil.typeAttributes(5, 3)).build());
 
     return new Schema(columns);
+  }
+
+  public static PartialRow getPartialRowWithAllTypes() {
+    Schema schema = getSchemaWithAllTypes();
+    // Ensure we aren't missing any types
+    assertEquals(13, schema.getColumnCount());
+
+    PartialRow row = schema.newPartialRow();
+    row.addByte("int8", (byte) 42);
+    row.addShort("int16", (short) 43);
+    row.addInt("int32", 44);
+    row.addLong("int64", 45);
+    row.addTimestamp("timestamp", new Timestamp(1234567890));
+    row.addBoolean("bool", true);
+    row.addFloat("float", 52.35F);
+    row.addDouble("double", 53.35);
+    row.addString("string", "fun with ütf\0");
+    row.addBinary("binary-array", new byte[] { 0, 1, 2, 3, 4 });
+    ByteBuffer binaryBuffer = ByteBuffer.wrap(new byte[] { 5, 6, 7, 8, 9 });
+    row.addBinary("binary-bytebuffer", binaryBuffer);
+    row.setNull("null");
+    row.addDecimal("decimal", BigDecimal.valueOf(12345, 3));
+    return row;
   }
 
   public static CreateTableOptions getAllTypesCreateTableOptions() {

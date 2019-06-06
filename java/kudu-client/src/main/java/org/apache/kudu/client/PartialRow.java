@@ -917,6 +917,101 @@ public class PartialRow {
   }
 
   /**
+   * Add the specified column's value as an Object.
+   *
+   * This method is useful when you don't care about autoboxing
+   * and your existing type handling logic is based on Java types.
+   *
+   * The accepted Object type is based on the column's {@link Type}:
+   *  Type.BOOL -> java.lang.Boolean
+   *  Type.INT8 -> java.lang.Byte
+   *  Type.INT16 -> java.lang.Short
+   *  Type.INT32 -> java.lang.Integer
+   *  Type.INT64 -> java.lang.Long
+   *  Type.UNIXTIME_MICROS -> java.sql.Timestamp or java.lang.Long
+   *  Type.FLOAT -> java.lang.Float
+   *  Type.DOUBLE -> java.lang.Double
+   *  Type.STRING -> java.lang.String
+   *  Type.BINARY -> byte[] or java.lang.ByteBuffer
+   *  Type.DECIMAL -> java.math.BigDecimal
+   *
+   * @param columnName name of the column in the schema
+   * @param val the value to add as an Object
+   * @throws IllegalStateException if the row was already applied
+   * @throws IndexOutOfBoundsException if the column doesn't exist
+   */
+  public void addObject(String columnName, Object val) {
+    addObject(this.schema.getColumnIndex(columnName), val);
+  }
+
+  /**
+   * Add the specified column's value as an Object.
+   *
+   * This method is useful when you don't care about autoboxing
+   * and your existing type handling logic is based on Java types.
+   *
+   * The accepted Object type is based on the column's {@link Type}:
+   *  Type.BOOL -> java.lang.Boolean
+   *  Type.INT8 -> java.lang.Byte
+   *  Type.INT16 -> java.lang.Short
+   *  Type.INT32 -> java.lang.Integer
+   *  Type.INT64 -> java.lang.Long
+   *  Type.UNIXTIME_MICROS -> java.sql.Timestamp or java.lang.Long
+   *  Type.FLOAT -> java.lang.Float
+   *  Type.DOUBLE -> java.lang.Double
+   *  Type.STRING -> java.lang.String
+   *  Type.BINARY -> byte[] or java.lang.ByteBuffer
+   *  Type.DECIMAL -> java.math.BigDecimal
+   *
+   * @param columnIndex column index in the schema
+   * @param val the value to add as an Object
+   * @throws IllegalStateException if the row was already applied
+   * @throws IndexOutOfBoundsException if the column doesn't exist
+   */
+  public void addObject(int columnIndex, Object val) {
+    checkNotFrozen();
+    ColumnSchema col = schema.getColumnByIndex(columnIndex);
+    checkColumnExists(col);
+    try {
+      if (val == null) {
+        setNull(columnIndex);
+        return;
+      }
+      switch (col.getType()) {
+        case BOOL: addBoolean(columnIndex, (Boolean) val); break;
+        case INT8: addByte(columnIndex, (Byte) val); break;
+        case INT16: addShort(columnIndex, (Short) val); break;
+        case INT32: addInt(columnIndex, (Integer) val); break;
+        case INT64: addLong(columnIndex, (Long) val); break;
+        case UNIXTIME_MICROS:
+          if (val instanceof Timestamp) {
+            addTimestamp(columnIndex, (Timestamp) val);
+          } else {
+            addLong(columnIndex, (Long) val);
+          }
+          break;
+        case FLOAT: addFloat(columnIndex, (Float) val); break;
+        case DOUBLE: addDouble(columnIndex, (Double) val); break;
+        case STRING: addString(columnIndex, (String) val); break;
+        case BINARY:
+          if (val instanceof byte[]) {
+            addBinary(columnIndex, (byte[]) val);
+          } else {
+            addBinary(columnIndex, (ByteBuffer) val);
+          }
+          break;
+        case DECIMAL: addDecimal(columnIndex, (BigDecimal) val); break;
+        default:
+          throw new IllegalArgumentException("Unsupported column type: " + col.getType());
+      }
+    } catch (ClassCastException e) {
+      throw new IllegalArgumentException(
+          "Value type does not match column type " + col.getType() +
+              " for column " + col.getName());
+    }
+  }
+
+  /**
    * Get the specified column's value as an Object.
    *
    * This method is useful when you don't care about autoboxing
