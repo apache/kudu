@@ -42,6 +42,10 @@ struct ExpectedKeyValueRow {
     return key == other.key && val == other.val;
   }
 
+  bool operator!=(const ExpectedKeyValueRow& other) const {
+    return !(*this == other);
+  }
+
   std::string ToString() const {
     std::string ret = strings::Substitute("{$0,", key);
     if (val == boost::none) {
