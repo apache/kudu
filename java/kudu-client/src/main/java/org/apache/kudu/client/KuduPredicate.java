@@ -22,6 +22,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigInteger;
 import java.math.BigDecimal;
+import java.nio.ByteBuffer;
 import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -476,6 +477,60 @@ public class KuduPredicate {
         return new KuduPredicate(PredicateType.RANGE, column, null, value);
       default:
         throw new RuntimeException("unknown comparison op");
+    }
+  }
+
+  /**
+   * Creates a new comparison predicate on a column.
+   *
+   * This method is useful when you don't care about autoboxing
+   * and your existing type handling logic is based on Java types.
+   *
+   * The accepted Object type is based on the column's {@link Type}:
+   *  Type.BOOL -> java.lang.Boolean
+   *  Type.INT8 -> java.lang.Byte
+   *  Type.INT16 -> java.lang.Short
+   *  Type.INT32 -> java.lang.Integer
+   *  Type.INT64 -> java.lang.Long
+   *  Type.UNIXTIME_MICROS -> java.sql.Timestamp or java.lang.Long
+   *  Type.FLOAT -> java.lang.Float
+   *  Type.DOUBLE -> java.lang.Double
+   *  Type.STRING -> java.lang.String
+   *  Type.BINARY -> byte[]
+   *  Type.DECIMAL -> java.math.BigDecimal
+   *
+   * @param column column the column schema
+   * @param op the comparison operation
+   * @param value the value to compare against
+   */
+  public static KuduPredicate newComparisonPredicate(ColumnSchema column,
+                                                     ComparisonOp op,
+                                                     Object value) {
+    if (value instanceof Boolean) {
+      return newComparisonPredicate(column, op, (boolean) value);
+    } else if (value instanceof Byte) {
+      return newComparisonPredicate(column, op, (byte) value);
+    } else if (value instanceof Short) {
+      return newComparisonPredicate(column, op, (short) value);
+    } else if (value instanceof Integer) {
+      return newComparisonPredicate(column, op, (int) value);
+    } else if (value instanceof Long) {
+      return newComparisonPredicate(column, op, (long) value);
+    } else if (value instanceof Timestamp) {
+      return newComparisonPredicate(column, op, (Timestamp) value);
+    } else if (value instanceof Float) {
+      return newComparisonPredicate(column, op, (float) value);
+    } else if (value instanceof Double) {
+      return newComparisonPredicate(column, op, (double) value);
+    } else if (value instanceof BigDecimal) {
+      return newComparisonPredicate(column, op, (BigDecimal) value);
+    } else if (value instanceof String) {
+      return newComparisonPredicate(column, op, (String) value);
+    } else if (value instanceof byte[]) {
+      return newComparisonPredicate(column, op, (byte[]) value);
+    } else {
+      throw new IllegalArgumentException(String.format("illegal type for %s predicate: %s",
+              op, value.getClass().getName()));
     }
   }
 

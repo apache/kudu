@@ -1096,6 +1096,39 @@ public class TestKuduPredicate {
   }
 
   @Test
+  public void testCreateWithObject() {
+    Assert.assertEquals(
+        KuduPredicate.newComparisonPredicate(byteCol, EQUAL, (Object) (byte) 10),
+        KuduPredicate.newComparisonPredicate(byteCol, EQUAL, (byte) 10));
+    Assert.assertEquals(
+        KuduPredicate.newComparisonPredicate(shortCol, EQUAL, (Object) (short) 10),
+        KuduPredicate.newComparisonPredicate(shortCol, EQUAL, 10));
+    Assert.assertEquals(
+        KuduPredicate.newComparisonPredicate(intCol, EQUAL, (Object) 10),
+        KuduPredicate.newComparisonPredicate(intCol, EQUAL, 10));
+    Assert.assertEquals(
+        KuduPredicate.newComparisonPredicate(longCol, EQUAL, (Object) 10L),
+        KuduPredicate.newComparisonPredicate(longCol, EQUAL, 10L));
+    Assert.assertEquals(
+        KuduPredicate.newComparisonPredicate(floatCol, EQUAL, (Object) 12.345f),
+        KuduPredicate.newComparisonPredicate(floatCol, EQUAL, 12.345f));
+    Assert.assertEquals(
+        KuduPredicate.newComparisonPredicate(doubleCol, EQUAL, (Object) 12.345),
+        KuduPredicate.newComparisonPredicate(doubleCol, EQUAL, 12.345));
+    Assert.assertEquals(
+        KuduPredicate.newComparisonPredicate(decimal32Col, EQUAL,
+            (Object) BigDecimal.valueOf(12345,2)),
+        KuduPredicate.newComparisonPredicate(decimal32Col, EQUAL,
+            BigDecimal.valueOf(12345,2)));
+    Assert.assertEquals(
+        KuduPredicate.newComparisonPredicate(stringCol, EQUAL, (Object) "a"),
+        KuduPredicate.newComparisonPredicate(stringCol, EQUAL, "a"));
+    Assert.assertEquals(
+        KuduPredicate.newComparisonPredicate(binaryCol, EQUAL, (Object) new byte[] { (byte) 10 }),
+        KuduPredicate.newComparisonPredicate(binaryCol, EQUAL, new byte[] { (byte) 10 }));
+  }
+
+  @Test
   public void testToString() {
     Assert.assertEquals("`bool` = true",
                         KuduPredicate.newComparisonPredicate(boolCol, EQUAL, true).toString());

@@ -17,9 +17,7 @@
 
 package org.apache.kudu.spark.kudu
 
-import java.math.BigDecimal
 import java.net.InetAddress
-import java.sql.Timestamp
 
 import scala.collection.JavaConverters._
 import scala.util.Try
@@ -357,31 +355,7 @@ class KuduRelation(
       column: String,
       operator: ComparisonOp,
       value: Any): KuduPredicate = {
-    val columnSchema = table.getSchema.getColumn(column)
-    value match {
-      case value: Boolean =>
-        KuduPredicate.newComparisonPredicate(columnSchema, operator, value)
-      case value: Byte =>
-        KuduPredicate.newComparisonPredicate(columnSchema, operator, value)
-      case value: Short =>
-        KuduPredicate.newComparisonPredicate(columnSchema, operator, value)
-      case value: Int =>
-        KuduPredicate.newComparisonPredicate(columnSchema, operator, value)
-      case value: Long =>
-        KuduPredicate.newComparisonPredicate(columnSchema, operator, value)
-      case value: Timestamp =>
-        KuduPredicate.newComparisonPredicate(columnSchema, operator, value)
-      case value: Float =>
-        KuduPredicate.newComparisonPredicate(columnSchema, operator, value)
-      case value: Double =>
-        KuduPredicate.newComparisonPredicate(columnSchema, operator, value)
-      case value: String =>
-        KuduPredicate.newComparisonPredicate(columnSchema, operator, value)
-      case value: Array[Byte] =>
-        KuduPredicate.newComparisonPredicate(columnSchema, operator, value)
-      case value: BigDecimal =>
-        KuduPredicate.newComparisonPredicate(columnSchema, operator, value)
-    }
+    KuduPredicate.newComparisonPredicate(table.getSchema.getColumn(column), operator, value)
   }
 
   /**
