@@ -195,8 +195,7 @@ Status HmsCatalog::DowngradeToLegacyImpalaTable(const string& name) {
   return ha_client_.Execute([&] (HmsClient* client) {
     hive::Table table;
     RETURN_NOT_OK(client->GetTable(hms_database.ToString(), hms_table.ToString(), &table));
-    if (table.parameters[HmsClient::kStorageHandlerKey] !=
-        HmsClient::kKuduStorageHandler) {
+    if (!hms::HmsClient::IsKuduTable(table)) {
       return Status::IllegalState("non-Kudu table cannot be downgraded");
     }
     // Downgrade the storage handler.
@@ -267,7 +266,7 @@ Status HmsCatalog::AlterTable(const string& id,
       RETURN_NOT_OK(client->GetTable(hms_database.ToString(), hms_table.ToString(), &table));
 
       // Check that the HMS entry belongs to the table being altered.
-      if (table.parameters[HmsClient::kStorageHandlerKey] != HmsClient::kKuduStorageHandler ||
+      if (!hms::HmsClient::IsKuduTable(table) ||
           (check_id && table.parameters[HmsClient::kKuduTableIdKey] != id)) {
         // The original table isn't a Kudu table, or isn't the same Kudu table.
         return Status::NotFound("the HMS entry for the table being "

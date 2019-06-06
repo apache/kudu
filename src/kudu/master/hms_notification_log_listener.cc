@@ -342,7 +342,8 @@ Status HmsNotificationLogListenerTask::HandleAlterTableEvent(const hive::Notific
 
   const string* storage_handler =
       FindOrNull(before_table.parameters, hms::HmsClient::kStorageHandlerKey);
-  if (!storage_handler || *storage_handler != hms::HmsClient::kKuduStorageHandler) {
+
+  if (!hms::HmsClient::IsKuduTable(before_table)) {
     // Not a Kudu table; skip it.
     VLOG(2) << Substitute("Ignoring alter event for non-Kudu table $0",
                           before_table.tableName);
@@ -400,8 +401,7 @@ Status HmsNotificationLogListenerTask::HandleDropTableEvent(const hive::Notifica
     return Status::OK();
   }
 
-  const string* storage_handler = FindOrNull(table.parameters, hms::HmsClient::kStorageHandlerKey);
-  if (!storage_handler || *storage_handler != hms::HmsClient::kKuduStorageHandler) {
+  if (!hms::HmsClient::IsKuduTable(table)) {
     // Not a Kudu table; skip it.
     VLOG(2) << Substitute("Ignoring drop event for non-Kudu table $0", table.tableName);
     return Status::OK();

@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <exception>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -32,6 +33,7 @@
 #include <thrift/transport/TTransport.h>
 #include <thrift/transport/TTransportException.h>
 
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -100,7 +102,9 @@ const char* const HmsClient::kKuduTableNameKey = "kudu.table_name";
 const char* const HmsClient::kKuduMasterAddrsKey = "kudu.master_addresses";
 const char* const HmsClient::kKuduMasterEventKey = "kudu.master_event";
 const char* const HmsClient::kKuduCheckIdKey = "kudu.check_id";
-const char* const HmsClient::kKuduStorageHandler = "org.apache.kudu.hive.KuduStorageHandler";
+const char* const HmsClient::kKuduStorageHandler =
+    "org.apache.hadoop.hive.kudu.KuduStorageHandler";
+const char* const HmsClient::kOldKuduStorageHandler = "org.apache.kudu.hive.KuduStorageHandler";
 
 const char* const HmsClient::kTransactionalEventListeners =
   "hive.metastore.transactional.event.listeners";
@@ -374,6 +378,19 @@ Status HmsClient::DeserializeJsonTable(Slice json, hive::Table* table)  {
   TJSONProtocol protocol(membuffer);
   HMS_RET_NOT_OK(table->read(&protocol), "failed to deserialize JSON table");
   return Status::OK();
+}
+
+bool HmsClient::IsKuduTable(const hive::Table& table) {
+  const string* storage_handler =
+      FindOrNull(table.parameters, hms::HmsClient::kStorageHandlerKey);
+  if (!storage_handler) {
+    return false;
+  }
+
+  // TODO(ghenke): Remove special kOldKuduStorageHandler handling after Impala integration
+  //  of the adjusted kKuduStorageHandler.
+  return *storage_handler == hms::HmsClient::kKuduStorageHandler ||
+         *storage_handler == hms::HmsClient::kOldKuduStorageHandler;
 }
 
 } // namespace hms

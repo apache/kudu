@@ -66,6 +66,8 @@ class HmsClient {
   static const char* const kKuduCheckIdKey;
   static const char* const kStorageHandlerKey;
   static const char* const kKuduStorageHandler;
+  // TODO(ghenke): Remove this after Impala integration of the adjusted kKuduStorageHandler.
+  static const char* const kOldKuduStorageHandler;
   static const char* const kHiveFilterFieldParams;
 
   static const char* const kTransactionalEventListeners;
@@ -179,6 +181,9 @@ class HmsClient {
   Status GetPartitions(const std::string& database_name,
                        const std::string& table_name,
                        std::vector<hive::Partition>* partitions) WARN_UNUSED_RESULT;
+
+  // Returns true if the HMS table is a Kudu table.
+  static bool IsKuduTable(const hive::Table& table) WARN_UNUSED_RESULT;
 
   // Deserializes a JSON encoded table.
   //
