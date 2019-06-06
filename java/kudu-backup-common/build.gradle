@@ -16,27 +16,18 @@
 // under the License.
 
 apply plugin: "scala"
-apply from: "$rootDir/gradle/shadow.gradle"
-
-// Mark this as a tool jar so shadow doesn't exclude any dependencies when shading.
-shadow {
-  isToolJar = true
-}
+apply from: "$rootDir/gradle/protobuf.gradle"
 
 dependencies {
-  compile project(path: ":kudu-backup-common")
   compile project(path: ":kudu-client", configuration: "shadow")
-  compile libs.hadoopCommon
-  compile (libs.scopt)  {
-    // Make sure wrong Scala version is not pulled in.
-    exclude group: "org.scala-lang", module: "scala-library"
+  compile libs.protobufJava
+  compile (libs.protobufJavaUtil) {
+    // Make sure wrong Guava version is not pulled in.
+    exclude group: "com.google.guava", module: "guava"
   }
+  compile libs.hadoopCommon
   compile libs.scalaLibrary
-
-  // Include the logging implementation given this is a standalone command line tool.
   compile libs.slf4jApi
-  compile libs.log4j
-  compile libs.log4jSlf4jImpl
 
   optional libs.yetusAnnotations
 
@@ -45,7 +36,20 @@ dependencies {
   testCompile libs.scalatest
 }
 
-// kudu-backup-tools has no public Javadoc.
+// Add protobuf files to the proto source set.
+sourceSets {
+  main {
+    proto {
+      srcDir "src/main/protobuf"
+    }
+  }
+}
+
+// kudu-backup-common has no public Javadoc.
 javadoc {
   enabled = false
 }
+
+// Skip publishing kudu-backup-common artifact because it will always be shaded into
+// kudu-backup and kudu-backup-tools.
+uploadArchives.enabled = false

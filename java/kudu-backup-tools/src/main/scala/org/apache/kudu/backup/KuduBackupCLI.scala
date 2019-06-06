@@ -19,18 +19,26 @@ package org.apache.kudu.backup
 import java.text.SimpleDateFormat
 
 import org.apache.hadoop.conf.Configuration
+import org.apache.yetus.audience.InterfaceAudience
+import org.apache.yetus.audience.InterfaceStability
 import scopt.OptionParser
 
 // The possible backup CLI tool actions.
+@InterfaceAudience.Private
+@InterfaceStability.Unstable
 object Action extends Enumeration {
   val LIST_LATEST, LIST_RESTORE_SEQUENCE, LIST_ALL = Value
 }
 
 // The possible backup CLI print formats.
+@InterfaceAudience.Private
+@InterfaceStability.Unstable
 object Format extends Enumeration {
   val PRETTY, TSV, CSV = Value
 }
 
+@InterfaceAudience.Private
+@InterfaceStability.Unstable
 case class BackupCLIOptions(
     action: Action.Value,
     format: Format.Value,
@@ -85,6 +93,8 @@ object BackupCLIOptions {
   }
 }
 
+@InterfaceAudience.Private
+@InterfaceStability.Unstable
 object KuduBackupCLI {
 
   // The header for all tables printed by the tool.

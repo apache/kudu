@@ -171,6 +171,8 @@ class BackupGraph(val tableId: String) {
 /**
  * Node class to represent nodes in the backup graph.
  */
+@InterfaceAudience.Private
+@InterfaceStability.Unstable
 case class BackupNode(path: Path, metadata: TableMetadataPB) {
 
   /**
@@ -185,6 +187,8 @@ case class BackupNode(path: Path, metadata: TableMetadataPB) {
 /**
  * A backup path is a full backup with a series of incremental backups.
  */
+@InterfaceAudience.Private
+@InterfaceStability.Unstable
 case class BackupPath(backups: Seq[BackupNode]) {
 
   def fullBackup: BackupNode = backups.head

@@ -22,9 +22,12 @@ import java.time.Instant
 
 import org.apache.hadoop.conf.Configuration
 import scopt.OptionParser
-
 import org.apache.kudu.backup.Backup.TableMetadataPB
+import org.apache.yetus.audience.InterfaceAudience
+import org.apache.yetus.audience.InterfaceStability
 
+@InterfaceAudience.Private
+@InterfaceStability.Unstable
 case class BackupCleanerOptions(
     tables: Seq[String],
     rootPath: String,

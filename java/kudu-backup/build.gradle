@@ -20,7 +20,7 @@ apply from: "$rootDir/gradle/shadow.gradle"
 
 dependencies {
   // Note: We don't use the shaded version, so we can control the dependencies.
-  compile(project(path: ":kudu-backup-tools")) {
+  compile(project(path: ":kudu-backup-common")) {
     // Ensure we use the hadoop-client provided by Spark to avoid any compatibility issues.
     exclude group: "org.apache.hadoop", module: "hadoop-common"
   }

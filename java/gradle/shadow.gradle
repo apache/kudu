@@ -41,23 +41,6 @@ configurations.archives.artifacts.removeAll {
   it instanceof ArchivePublishArtifact && it.archiveTask == jar
 }
 
-// Define an overridable property to indicate tool jars that should
-// include all of their dependencies.
-// We use this below to ensure slf4j is included.
-shadow.ext {
-  isToolJar = false
-}
-if (!shadow.isToolJar) {
-  shadowJar {
-    dependencies {
-      // Our shaded library jars always try to pull in the slf4j api from
-      // kudu-client, though we never want it included. Excluding it
-      // here prevents the need to always list it.
-      exclude dependency(libs.slf4jApi)
-    }
-  }
-}
-
 // Ensure we always relocate these shaded dependencies to the same
 // location across all modules.
 shadowJar {
@@ -84,9 +67,27 @@ configurations.create("compileUnshaded")
 configurations.shadow.extendsFrom(configurations.compileUnshaded)
 configurations.compile.extendsFrom(configurations.compileUnshaded)
 
+// Define an overridable property to indicate tool jars that should
+// include all of their dependencies.
+// We use this below to ensure slf4j is included.
+shadow.ext {
+  isToolJar = false
+}
+
 // We use afterEvaluate to add additional configuration once all the definitions
 // in the projects build script have been applied
 afterEvaluate {
+  if (!shadow.isToolJar) {
+    shadowJar {
+      dependencies {
+        // Our shaded library jars always try to pull in the slf4j api from
+        // kudu-client, though we never want it included. Excluding it
+        // here prevents the need to always list it.
+        exclude dependency(libs.slf4jApi)
+      }
+    }
+  }
+  
   // Ensure compileUnshaded dependencies are included in the pom.
   [install, uploadArchives].each { task ->
     task.repositories.each {
