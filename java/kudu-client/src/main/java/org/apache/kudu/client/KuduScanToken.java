@@ -19,11 +19,11 @@ package org.apache.kudu.client;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 
 import com.google.common.base.MoreObjects;
 import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
 import com.google.protobuf.CodedInputStream;
 import com.google.protobuf.CodedOutputStream;
 import com.google.protobuf.UnsafeByteOperations;
@@ -32,7 +32,9 @@ import org.apache.yetus.audience.InterfaceStability;
 
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Common;
+import org.apache.kudu.Schema;
 import org.apache.kudu.client.Client.ScanTokenPB;
+import org.apache.kudu.client.ProtobufHelper.SchemaPBConversionFlags;
 import org.apache.kudu.util.Pair;
 
 /**
@@ -159,6 +161,29 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
     return helper.toString();
   }
 
+  private static List<Integer> computeProjectedColumnIndexesForScanner(ScanTokenPB message,
+                                                                       Schema schema) {
+    List<Integer> columns = new ArrayList<>(message.getProjectedColumnsCount());
+    for (Common.ColumnSchemaPB colSchemaFromPb : message.getProjectedColumnsList()) {
+      int colIdx = colSchemaFromPb.hasId() && schema.hasColumnIds() ?
+          schema.getColumnIndex(colSchemaFromPb.getId()) :
+          schema.getColumnIndex(colSchemaFromPb.getName());
+      ColumnSchema colSchema = schema.getColumnByIndex(colIdx);
+      if (colSchemaFromPb.getType() != colSchema.getType().getDataType(colSchema.getTypeAttributes())) {
+        throw new IllegalStateException(String.format(
+            "invalid type %s for column '%s' in scan token, expected: %s",
+            colSchemaFromPb.getType().name(), colSchemaFromPb.getName(), colSchema.getType().name()));
+      }
+      if (colSchemaFromPb.getIsNullable() != colSchema.isNullable()) {
+        throw new IllegalStateException(String.format(
+            "invalid nullability for column '%s' in scan token, expected: %s",
+            colSchemaFromPb.getName(), colSchema.isNullable() ? "NULLABLE" : "NOT NULL"));
+      }
+      columns.add(colIdx);
+    }
+    return columns;
+  }
+
   private static KuduScanner pbIntoScanner(ScanTokenPB message,
                                            KuduClient client) throws KuduException {
     Preconditions.checkArgument(
@@ -169,25 +194,9 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
                                              client.openTable(message.getTableName());
     KuduScanner.KuduScannerBuilder builder = client.newScannerBuilder(table);
 
-    List<Integer> columns = new ArrayList<>(message.getProjectedColumnsCount());
-    for (Common.ColumnSchemaPB column : message.getProjectedColumnsList()) {
-      int columnIdx = table.getSchema().getColumnIndex(column.getName());
-      ColumnSchema schema = table.getSchema().getColumnByIndex(columnIdx);
-      if (column.getType() != schema.getType().getDataType(schema.getTypeAttributes())) {
-        throw new IllegalStateException(String.format(
-            "invalid type %s for column '%s' in scan token, expected: %s",
-            column.getType().name(), column.getName(), schema.getType().name()));
-      }
-      if (column.getIsNullable() != schema.isNullable()) {
-        throw new IllegalStateException(String.format(
-            "invalid nullability for column '%s' in scan token, expected: %s",
-            column.getName(), column.getIsNullable() ? "NULLABLE" : "NOT NULL"));
 
-      }
-
-      columns.add(columnIdx);
-    }
-    builder.setProjectedColumnIndexes(columns);
+    builder.setProjectedColumnIndexes(
+        computeProjectedColumnIndexesForScanner(message, table.getSchema()));
 
     for (Common.ColumnPredicatePB pred : message.getColumnPredicatesList()) {
       builder.addPredicate(KuduPredicate.fromPB(table.getSchema(), pred));
@@ -355,21 +364,32 @@ public class KuduScanToken implements Comparable<KuduScanToken> {
 
       // Map the column names or indices to actual columns in the table schema.
       // If the user did not set either projection, then scan all columns.
+      Schema schema = table.getSchema();
       if (projectedColumnNames != null) {
         for (String columnName : projectedColumnNames) {
-          ColumnSchema columnSchema = table.getSchema().getColumn(columnName);
+          ColumnSchema columnSchema = schema.getColumn(columnName);
           Preconditions.checkArgument(columnSchema != null, "unknown column i%s", columnName);
-          ProtobufHelper.columnToPb(proto.addProjectedColumnsBuilder(), columnSchema);
+          ProtobufHelper.columnToPb(proto.addProjectedColumnsBuilder(),
+                                    schema.hasColumnIds() ? schema.getColumnId(columnName) : -1,
+                                    columnSchema);
         }
       } else if (projectedColumnIndexes != null) {
         for (int columnIdx : projectedColumnIndexes) {
-          ColumnSchema columnSchema = table.getSchema().getColumnByIndex(columnIdx);
+          ColumnSchema columnSchema = schema.getColumnByIndex(columnIdx);
           Preconditions.checkArgument(columnSchema != null, "unknown column index %s", columnIdx);
-          ProtobufHelper.columnToPb(proto.addProjectedColumnsBuilder(), columnSchema);
+          ProtobufHelper.columnToPb(proto.addProjectedColumnsBuilder(),
+                                    schema.hasColumnIds() ?
+                                        schema.getColumnId(columnSchema.getName()) :
+                                        -1,
+                                    columnSchema);
         }
       } else {
-        for (ColumnSchema column : table.getSchema().getColumns()) {
-          ProtobufHelper.columnToPb(proto.addProjectedColumnsBuilder(), column);
+        for (ColumnSchema column : schema.getColumns()) {
+          ProtobufHelper.columnToPb(proto.addProjectedColumnsBuilder(),
+                                    schema.hasColumnIds() ?
+                                        schema.getColumnId(column.getName()) :
+                                        -1,
+                                    column);
         }
       }
 

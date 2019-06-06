@@ -290,7 +290,8 @@ public abstract class Operation extends KuduRpc<OperationResponse> {
 
     Tserver.WriteRequestPB.Builder requestBuilder = Tserver.WriteRequestPB.newBuilder();
     requestBuilder.setSchema(ProtobufHelper.schemaToPb(schema,
-        EnumSet.of(SchemaPBConversionFlags.SCHEMA_PB_WITHOUT_COMMENT)));
+        EnumSet.of(SchemaPBConversionFlags.SCHEMA_PB_WITHOUT_COMMENT,
+                   SchemaPBConversionFlags.SCHEMA_PB_WITHOUT_ID)));
     requestBuilder.setRowOperations(rowOps);
     return requestBuilder;
   }

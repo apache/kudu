@@ -18,6 +18,7 @@
 package org.apache.kudu.client;
 
 import java.util.Collection;
+import java.util.EnumSet;
 import java.util.List;
 
 import com.google.protobuf.Message;
@@ -25,6 +26,7 @@ import org.apache.yetus.audience.InterfaceAudience;
 import org.jboss.netty.util.Timer;
 
 import org.apache.kudu.Schema;
+import org.apache.kudu.client.ProtobufHelper.SchemaPBConversionFlags;
 import org.apache.kudu.master.Master;
 import org.apache.kudu.util.Pair;
 
@@ -57,7 +59,9 @@ class CreateTableRequest extends KuduRpc<CreateTableResponse> {
   @Override
   Message createRequestPB() {
     this.builder.setName(this.name);
-    this.builder.setSchema(ProtobufHelper.schemaToPb(this.schema));
+    this.builder.setSchema(
+        ProtobufHelper.schemaToPb(this.schema,
+                                  EnumSet.of(SchemaPBConversionFlags.SCHEMA_PB_WITHOUT_ID)));
     return this.builder.build();
   }
 
