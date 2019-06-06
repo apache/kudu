@@ -135,7 +135,8 @@ class MemRowSetCompactionInput : public CompactionInput {
       // Handle the rare case where a row was inserted and deleted in the same operation.
       // This row can never be observed and should not be compacted/flushed. This saves
       // us some trouble later on on compactions.
-      // See: MergeCompactionInput::CompareAndMergeDuplicatedRows().
+      //
+      // See CompareDuplicatedRows().
       if (PREDICT_FALSE(input_row.redo_head != nullptr &&
           input_row.redo_head->timestamp() == insertion_timestamp)) {
         // Get the latest mutation.
@@ -1222,7 +1223,6 @@ Status ReupdateMissedDeltas(const IOContext* io_context,
   // updates. So, this can be made much faster.
   vector<CompactionInputRow> rows;
   const Schema* schema = &input->schema();
-  const Schema key_schema(input->schema().CreateKeyProjection());
 
   rowid_t output_row_offset = 0;
   while (input->HasMoreBlocks()) {

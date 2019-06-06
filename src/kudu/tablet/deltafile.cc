@@ -681,8 +681,8 @@ Status DeltaFileIterator<Type>::ApplyDeletes(SelectionVector* sel_vec) {
 }
 
 template<DeltaType Type>
-Status DeltaFileIterator<Type>::SelectUpdates(SelectionVector* sel_vec) {
-  return preparer_.SelectUpdates(sel_vec);
+Status DeltaFileIterator<Type>::SelectDeltas(SelectedDeltas* deltas) {
+  return preparer_.SelectDeltas(deltas);
 }
 
 template<DeltaType Type>

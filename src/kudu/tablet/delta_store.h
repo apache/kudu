@@ -21,14 +21,18 @@
 #include <cstdint>
 #include <deque>
 #include <memory>
+#include <ostream>
 #include <string>
 #include <vector>
 
 #include <boost/optional/optional.hpp>
+#include <glog/logging.h>
 
 #include "kudu/common/row_changelist.h"
 #include "kudu/common/rowid.h"
+#include "kudu/common/timestamp.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
 #include "kudu/tablet/delta_key.h"
 #include "kudu/tablet/rowset.h"
 #include "kudu/util/slice.h"
@@ -53,6 +57,118 @@ class DeltaFileWriter;
 class DeltaIterator;
 class DeltaStats;
 class Mutation;
+
+// Tracks deltas that have been selected by PreparedDeltas::SelectDeltas.
+//
+// May track deltas belonging to a single delta store, or to multiple stores
+// whose SelectedDeltas have been merged together.
+class SelectedDeltas {
+ public:
+  SelectedDeltas() = default;
+
+  // Equivalent to calling:
+  //
+  //   SelectedDeltas sd;
+  //   sd.Reset(nrows);
+  explicit SelectedDeltas(size_t nrows);
+
+  // Converts the selected deltas into a simpler SelectionVector.
+  void ToSelectionVector(SelectionVector* sel_vec) const;
+
+  // Returns a textual representation suitable for debugging.
+  std::string ToString() const;
+
+ private:
+  template<class Traits>
+  friend class DeltaPreparer;
+
+  // Mutation that has met the 'select' criteria in a delta store.
+  struct Delta {
+    // Key fields.
+
+    // The delta's timestamp.
+    Timestamp ts;
+
+    // Whether this delta was an UNDO or a REDO.
+    DeltaType dtype;
+
+    // It's possible for multiple UNDOs or REDOs in the same delta store to
+    // share a common timestamp. To ensure a total ordering, this additional key
+    // field reflects the logical ordering of such deltas.
+    //
+    // For example, consider the sequence of REDOs:
+    // D1: @tx10 UPDATE key=1
+    // D2: @tx10 DELETE key=1
+    //
+    // D1 and D2 are identical as far as 'ts' and 'dtype' are concerned, so D1's
+    // disambiguator must be less than that of D2.
+    int64_t disambiguator;
+
+    // Non-key fields.
+
+    // Identifier of the delta store that provided this delta. It must:
+    // 1. Be unique for the owning rowset, but needn't be more unique than that.
+    // 2. Remain unique for the lifetime of this delta scan.
+    int64_t delta_store_id;
+
+    // Whether this delta was an UPDATE, DELETE, or REINSERT.
+    RowChangeList::ChangeType ctype;
+  };
+
+  // Tracks the oldest and newest deltas for a given row.
+  //
+  // When there's only one delta, 'oldest' and 'newest' are equal and
+  // 'same_delta' is true. Otherwise, oldest is guaranteed to be less than
+  // newest as per the rules defined in DeltaLessThanFunctor.
+  //
+  // Most of the time "oldest" and "newest" is determined purely by timestamp,
+  // but some deltas can share timestamps, in which case additional rules are
+  // used to maintain a total ordering.
+  struct DeltaPair {
+    Delta oldest;
+    Delta newest;
+    bool same_delta;
+  };
+
+  // Comparator that establishes a total ordering amongst Deltas for the same row.
+  struct DeltaLessThanFunctor {
+    bool operator() (const Delta& a, const Delta& b) const {
+      // Most of the time, deltas are ordered using timestamp.
+      if (PREDICT_TRUE(a.ts != b.ts)) {
+        return a.ts < b.ts;
+      }
+
+      // If the timestamps match, we can order by observing that UNDO < REDO, an
+      // invariant that is preserved inside of a rowset.
+      if (a.dtype != b.dtype) {
+        return a.dtype == UNDO;
+      }
+
+      // The timestamps and delta types match. It should only be possible to get
+      // here if we're comparing deltas from within the same store, in which
+      // case the disambiguators must not match.
+      CHECK_EQ(a.delta_store_id, b.delta_store_id);
+      if (a.disambiguator != b.disambiguator) {
+        return a.disambiguator < b.disambiguator;
+      }
+      LOG(FATAL) << "Could not differentiate between two deltas";
+    }
+  };
+
+  // Merges two SelectedDeltas together on a row-by-row basis.
+  void MergeFrom(const SelectedDeltas& other);
+
+  // Considers a new delta, possibly adding it to 'rows_'.
+  void ProcessDelta(rowid_t row_idx, Delta new_delta);
+
+  // Clears out 'rows_' and makes it suitable for handling 'nrows'.
+  void Reset(size_t nrows);
+
+  // All tracked deltas, indexed by row ordinal.
+  //
+  // If an element is boost::none, there are no deltas for that row.
+  std::vector<boost::optional<DeltaPair>> rows_;
+};
 
 // Interface for the pieces of the system that track deltas/updates.
 // This is implemented by DeltaMemStore and by DeltaFileReader.
@@ -155,13 +271,11 @@ class PreparedDeltas {
   // Deltas must have been prepared with the flag PREPARE_FOR_APPLY.
   virtual Status ApplyDeletes(SelectionVector* sel_vec) = 0;
 
-  // Updates the given selection vector to reflect the snapshotted updates.
-  //
-  // Rows which have been updated or deleted in the associated MVCC snapshot are
-  // set to 1 in the selection vector so that they show up in the output.
+  // Modifies the given SelectedDeltas to include rows with relevant deltas from
+  // the current prepared batch.
   //
   // Deltas must have been prepared with the flag PREPARE_FOR_SELECT.
-  virtual Status SelectUpdates(SelectionVector* sel_vec) = 0;
+  virtual Status SelectDeltas(SelectedDeltas* deltas) = 0;
 
   // Collects the mutations associated with each row in the current prepared batch.
   //
@@ -282,7 +396,7 @@ struct DeltaFilePreparerTraits {
 // is responsible for loading encoded deltas from a backing store, passing them
 // to the DeltaPreparer to be transformed, and later, calling the DeltaPreparer
 // to serve the deltas.
-template <class Traits>
+template<class Traits>
 class DeltaPreparer : public PreparedDeltas {
  public:
   explicit DeltaPreparer(RowIteratorOptions opts);
@@ -320,7 +434,7 @@ class DeltaPreparer : public PreparedDeltas {
 
   Status ApplyDeletes(SelectionVector* sel_vec) override;
 
-  Status SelectUpdates(SelectionVector* sel_vec) override;
+  Status SelectDeltas(SelectedDeltas* deltas) override;
 
   Status CollectMutations(std::vector<Mutation*>* dst, Arena* arena) override;
 
@@ -335,6 +449,10 @@ class DeltaPreparer : public PreparedDeltas {
   const RowIteratorOptions& opts() const { return opts_; }
 
  private:
+  // If 'decoder' is not yet initialized, initializes it in accordance with the
+  // preparer's traits.
+  static Status InitDecoderIfNecessary(RowChangeListDecoder* decoder);
+
   // Checks whether we are done processing a row's deltas. If so, attempts to
   // convert the row's latest deletion state into a saved deletion or
   // reinsertion. By deferring this work to when a row is finished, we avoid
@@ -401,7 +519,11 @@ class DeltaPreparer : public PreparedDeltas {
 
   // State when prepared_for_ & PREPARED_FOR_SELECT
   // ------------------------------------------------------------
-  std::unique_ptr<SelectionVector> selected_;
+  SelectedDeltas selected_;
+
+  // The number of deltas selected so far by this DeltaPreparer. Used to build
+  // disambiguators (see SelectedDeltas::Delta). Never reset.
+  int64_t deltas_selected_;
 
   DISALLOW_COPY_AND_ASSIGN(DeltaPreparer);
 };

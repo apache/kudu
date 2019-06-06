@@ -354,8 +354,8 @@ class MirroredDeltas {
   using ComparatorType = typename std::conditional<T::kTag == REDO,
                                                    std::less<Timestamp>,
                                                    std::greater<Timestamp>>::type;
-  using MirroredDeltaMap = std::map<rowid_t,
-                                    std::map<Timestamp, faststring, ComparatorType>>;
+  using MirroredDeltaTimestampMap = std::map<Timestamp, faststring, ComparatorType>;
+  using MirroredDeltaMap = std::map<rowid_t, MirroredDeltaTimestampMap>;
 
   explicit MirroredDeltas(const Schema* schema)
       : schema_(schema),
@@ -499,17 +499,53 @@ class MirroredDeltas {
   //
   // Deltas not relevant to 'lower_ts' or 'upper_ts' are skipped. The set of
   // rows considered is determined by 'start_row_idx' and the number of rows in 'sel_vec'.
-  void SelectUpdates(Timestamp lower_ts, Timestamp upper_ts,
+  void SelectDeltas(Timestamp lower_ts, Timestamp upper_ts,
                      rowid_t start_row_idx, SelectionVector* sel_vec) {
     for (int i = 0; i < sel_vec->nrows(); i++) {
+      boost::optional<const typename MirroredDeltaTimestampMap::mapped_type&> first;
+      boost::optional<const typename MirroredDeltaTimestampMap::mapped_type&> last;
       for (const auto& e : all_deltas_[start_row_idx + i]) {
         if (!IsDeltaRelevantForSelect(lower_ts, upper_ts, e.first)) {
           // Must keep iterating; short-circuit out of the select criteria is
           // complex and not worth using in test code.
           continue;
         }
+        if (!first.is_initialized()) {
+          first = e.second;
+        }
+        last = e.second;
+      }
+
+      // No relevant deltas.
+      if (!first) {
+        continue;
+      }
+
+      // One relevant delta.
+      if (first == last) {
         sel_vec->SetRowSelected(i);
-        break;
+        continue;
+      }
+
+      // At least two relevant deltas.
+      bool first_liveness;
+      {
+        RowChangeList changes(*first);
+        RowChangeListDecoder decoder(changes);
+        decoder.InitNoSafetyChecks();
+        first_liveness = !decoder.is_reinsert();
+      }
+      bool last_liveness;
+      {
+        RowChangeList changes(*last);
+        RowChangeListDecoder decoder(changes);
+        decoder.InitNoSafetyChecks();
+        last_liveness = !decoder.is_delete();
+      }
+      if (!first_liveness && !last_liveness) {
+        sel_vec->SetRowUnselected(i);
+      } else {
+        sel_vec->SetRowSelected(i);
       }
     }
   }
@@ -936,7 +972,7 @@ void RunDeltaFuzzTest(const DeltaStore& store,
       }
       ASSERT_OK(iter->PrepareBatch(batch_size, prepare_flags));
 
-      // Test SelectUpdates: the selection vector begins all false and a row is
+      // Test SelectDeltas: the selection vector begins all false and a row is
       // set if there is at least one relevant update for it.
       //
       // Note: we retain 'actual_selected' for use as a possible filter in the
@@ -946,9 +982,13 @@ void RunDeltaFuzzTest(const DeltaStore& store,
         SelectionVector expected_selected(batch_size);
         expected_selected.SetAllFalse();
         actual_selected.SetAllFalse();
-        mirror->SelectUpdates(*lower_ts, upper_ts, start_row_idx, &expected_selected);
-        ASSERT_OK(iter->SelectUpdates(&actual_selected));
-        ASSERT_EQ(expected_selected, actual_selected);
+        mirror->SelectDeltas(*lower_ts, upper_ts, start_row_idx, &expected_selected);
+        SelectedDeltas deltas(batch_size);
+        ASSERT_OK(iter->SelectDeltas(&deltas));
+        deltas.ToSelectionVector(&actual_selected);
+        ASSERT_EQ(expected_selected, actual_selected)
+            << "Expected selvec: " << expected_selected.ToString()
+            << "\nActual selvec: " << actual_selected.ToString();
       }
 
       // Test ApplyDeletes: the selection vector is all true and a row is unset
@@ -963,7 +1003,9 @@ void RunDeltaFuzzTest(const DeltaStore& store,
         actual_deleted.SetAllTrue();
         ASSERT_OK(mirror->ApplyDeletes(upper_ts, start_row_idx, &expected_deleted));
         ASSERT_OK(iter->ApplyDeletes(&actual_deleted));
-        ASSERT_EQ(expected_deleted, actual_deleted);
+        ASSERT_EQ(expected_deleted, actual_deleted)
+            << "Expected selvec: " << expected_deleted.ToString()
+            << "\nActual selvec: " << actual_deleted.ToString();
       }
 
       // Test ApplyUpdates: all relevant updates are applied to the column block.

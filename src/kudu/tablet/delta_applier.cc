@@ -116,8 +116,10 @@ Status DeltaApplier::InitializeSelectionVector(SelectionVector *sel_vec) {
   //
   // See delta_relevancy.h for more details.
   if (opts_.snap_to_exclude) {
-    sel_vec->SetAllFalse();
-    RETURN_NOT_OK(delta_iter_->SelectUpdates(sel_vec));
+    SelectedDeltas deltas(sel_vec->nrows());
+    RETURN_NOT_OK(delta_iter_->SelectDeltas(&deltas));
+    VLOG(4) << "Final deltas:\n" << deltas.ToString();
+    deltas.ToSelectionVector(sel_vec);
   } else {
     RETURN_NOT_OK(base_iter_->InitializeSelectionVector(sel_vec));
   }

@@ -289,8 +289,8 @@ Status DMSIterator::ApplyDeletes(SelectionVector* sel_vec) {
   return preparer_.ApplyDeletes(sel_vec);
 }
 
-Status DMSIterator::SelectUpdates(SelectionVector* sel_vec) {
-  return preparer_.SelectUpdates(sel_vec);
+Status DMSIterator::SelectDeltas(SelectedDeltas* deltas) {
+  return preparer_.SelectDeltas(deltas);
 }
 
 Status DMSIterator::CollectMutations(vector<Mutation*>*dst, Arena* arena) {

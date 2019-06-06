@@ -20,6 +20,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <string>
 #include <vector>
 
 #include <glog/logging.h>
@@ -142,6 +143,10 @@ class SelectionVector {
 
     BitmapCopy(dst->mutable_bitmap(), dst_row_off,
                bitmap_.get(), src_row_off, num_rows);
+  }
+
+  std::string ToString() const {
+    return BitmapToString(&bitmap_[0], n_rows_);
   }
 
  private:

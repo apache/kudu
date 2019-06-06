@@ -106,6 +106,21 @@ string RowChangeList::ToString(const Schema &schema) const {
   return ret;
 }
 
+const char* RowChangeList::ChangeType_Name(RowChangeList::ChangeType t) {
+  switch (t) {
+    case kUninitialized:
+      return "UNINITIALIZED";
+    case kUpdate:
+      return "UPDATE";
+    case kDelete:
+      return "DELETE";
+    case kReinsert:
+      return "REINSERT";
+    default:
+      return "UNKNOWN";
+  }
+}
+
 void RowChangeListEncoder::AddColumnUpdate(const ColumnSchema& col_schema,
                                            int col_id,
                                            const void* cell_ptr) {
@@ -151,6 +166,7 @@ void RowChangeListEncoder::EncodeColumnMutationRaw(int col_id, bool is_null, Sli
 }
 
 Status RowChangeListDecoder::Init() {
+  DCHECK_EQ(type_, RowChangeList::kUninitialized) << "Already called Init()";
   if (PREDICT_FALSE(remaining_.empty())) {
     return Status::Corruption("empty changelist - expected type");
   }

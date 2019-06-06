@@ -79,9 +79,9 @@ Status DeltaIteratorMerger::ApplyDeletes(SelectionVector* sel_vec) {
   return Status::OK();
 }
 
-Status DeltaIteratorMerger::SelectUpdates(SelectionVector* sel_vec) {
+Status DeltaIteratorMerger::SelectDeltas(SelectedDeltas* deltas) {
   for (const unique_ptr<DeltaIterator>& iter : iters_) {
-    RETURN_NOT_OK(iter->SelectUpdates(sel_vec));
+    RETURN_NOT_OK(iter->SelectDeltas(deltas));
   }
   return Status::OK();
 }

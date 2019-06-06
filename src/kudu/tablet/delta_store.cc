@@ -34,6 +34,7 @@
 #include "kudu/common/types.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/delta_relevancy.h"
@@ -63,13 +64,121 @@ string DeltaKeyAndUpdate::Stringify(DeltaType type, const Schema& schema, bool p
                                                  key.timestamp().ToString()))));
 }
 
+SelectedDeltas::SelectedDeltas(size_t nrows) {
+  Reset(nrows);
+}
+
+void SelectedDeltas::MergeFrom(const SelectedDeltas& other) {
+  DCHECK_EQ(rows_.size(), other.rows_.size());
+
+  for (rowid_t idx = 0; idx < rows_.size(); idx++) {
+    const auto& src = other.rows_[idx];
+    if (!src) {
+      continue;
+    }
+    if (src->same_delta) {
+      ProcessDelta(idx, src->oldest);
+    } else {
+      ProcessDelta(idx, src->oldest);
+      ProcessDelta(idx, src->newest);
+    }
+  }
+}
+
+void SelectedDeltas::ToSelectionVector(SelectionVector* sel_vec) const {
+  DCHECK_EQ(rows_.size(), sel_vec->nrows());
+
+  for (rowid_t idx = 0; idx < rows_.size(); idx++) {
+    const auto& row = rows_[idx];
+
+    if (!row) {
+      // There were no relevant deltas for this row.
+      sel_vec->SetRowUnselected(idx);
+      continue;
+    }
+
+    if (row->same_delta) {
+      // There was exactly one relevant delta; the row must be selected.
+      sel_vec->SetRowSelected(idx);
+      continue;
+    }
+
+    // There was more than one relevant delta.
+    //
+    // Before we mark the row as selected, we must first determine whether the
+    // row was dead at the beginning and end of the time range: such rows should
+    // be deselected. We've captured the oldest and newest deltas; the table
+    // below indicates whether, for a given type of delta, the row is live or
+    // dead at that endpoint.
+    //
+    // delta type    | oldest | newest
+    // --------------+--------+-------
+    // REDO DELETE   | L      | D
+    // REDO REINSERT | D      | L
+    // UNDO DELETE   | D      | L
+    // UNDO REINSERT | L      | D
+    const auto& oldest = row->oldest;
+    const auto& newest = row->newest;
+    if (((oldest.dtype == REDO && oldest.ctype == RowChangeList::kReinsert) ||
+         (oldest.dtype == UNDO && oldest.ctype == RowChangeList::kDelete)) &&
+        ((newest.dtype == REDO && newest.ctype == RowChangeList::kDelete) ||
+         (newest.dtype == UNDO && newest.ctype == RowChangeList::kReinsert))) {
+      sel_vec->SetRowUnselected(idx);
+    } else {
+      sel_vec->SetRowSelected(idx);
+    }
+  }
+}
+
+void SelectedDeltas::ProcessDelta(rowid_t row_idx, Delta new_delta) {
+  DCHECK_LT(row_idx, rows_.size());
+  auto& existing = rows_[row_idx];
+
+  if (!existing) {
+    existing = DeltaPair();
+    existing->same_delta = true;
+    existing->oldest = new_delta;
+    existing->newest = new_delta;
+    return;
+  }
+
+  existing->oldest = std::min(existing->oldest, new_delta, DeltaLessThanFunctor());
+  existing->newest = std::max(existing->newest, new_delta, DeltaLessThanFunctor());
+  existing->same_delta = false;
+}
+
+string SelectedDeltas::ToString() const {
+  rowid_t idx = 0;
+  return JoinMapped(rows_, [&idx](const boost::optional<DeltaPair>& dp) {
+      if (!dp) {
+        return Substitute("$0: UNSELECTED", idx++);
+      }
+      return Substitute("$0: @tx$1 $2 dis=$3 ($4) @tx$5 $6 dis=$7 ($8)$9", idx++,
+                        dp->oldest.ts.ToString(),
+                        DeltaType_Name(dp->oldest.dtype),
+                        dp->oldest.disambiguator,
+                        RowChangeList::ChangeType_Name(dp->oldest.ctype),
+                        dp->newest.ts.ToString(),
+                        DeltaType_Name(dp->newest.dtype),
+                        dp->newest.disambiguator,
+                        RowChangeList::ChangeType_Name(dp->newest.ctype),
+                        dp->same_delta ? " (same delta)" : "");
+    }, "\n");
+}
+
+void SelectedDeltas::Reset(size_t nrows) {
+  rows_.clear();
+  rows_.resize(nrows);
+}
+
 template<class Traits>
 DeltaPreparer<Traits>::DeltaPreparer(RowIteratorOptions opts)
     : opts_(std::move(opts)),
       cur_prepared_idx_(0),
       prev_prepared_idx_(0),
       prepared_flags_(DeltaIterator::PREPARE_NONE),
-      deletion_state_(UNKNOWN) {
+      deletion_state_(UNKNOWN),
+      deltas_selected_(0) {
 }
 
 template<class Traits>
@@ -85,12 +194,7 @@ void DeltaPreparer<Traits>::Start(size_t nrows, int prepare_flags) {
 
   if (prepare_flags & DeltaIterator::PREPARE_FOR_SELECT) {
     DCHECK(opts_.snap_to_exclude);
-
-    // Ensure we have a selection vector at least 'nrows' long.
-    if (!selected_ || selected_->nrows() < nrows) {
-      selected_.reset(new SelectionVector(nrows));
-    }
-    selected_->SetAllFalse();
+    selected_.Reset(nrows);
   }
   prepared_flags_ = prepare_flags;
   if (updates_by_col_.empty()) {
@@ -138,13 +242,32 @@ Status DeltaPreparer<Traits>::AddDelta(const DeltaKey& key, Slice val, bool* fin
   // to be finished, but that short-circuit can only be used if we're not also
   // handling a preparation with a different criteria.
 
+  RowChangeListDecoder decoder((RowChangeList(val)));
+
   if (prepared_flags_ & DeltaIterator::PREPARE_FOR_SELECT) {
     bool finished_row_for_select;
     if (IsDeltaRelevantForSelect<Traits::kType>(*opts_.snap_to_exclude,
                                                 opts_.snap_to_include,
                                                 key.timestamp(),
                                                 &finished_row_for_select)) {
-      selected_->SetRowSelected(key.row_idx() - cur_prepared_idx_);
+      RETURN_NOT_OK(InitDecoderIfNecessary(&decoder));
+
+      // The logical ordering of UNDOs is the opposite of their counting order.
+      int64_t disambiguator = Traits::kType == REDO ?
+                              deltas_selected_ : -deltas_selected_;
+
+      // We use the address of the DeltaPreparer itself as a "delta store" ID.
+      // That's safe because it is globally unique and remains so for the
+      // duration of the scan, which outlives this delta.
+      SelectedDeltas::Delta new_delta = { key.timestamp(),
+                                          Traits::kType,
+                                          disambiguator,
+                                          reinterpret_cast<int64_t>(this),
+                                          decoder.get_type() };
+
+      selected_.ProcessDelta(key.row_idx() - cur_prepared_idx_, new_delta);
+      deltas_selected_++;
+      VLOG(4) << "Selected deltas after AddDelta:\n" << selected_.ToString();
     }
 
     if (finished_row_for_select &&
@@ -164,16 +287,7 @@ Status DeltaPreparer<Traits>::AddDelta(const DeltaKey& key, Slice val, bool* fin
 
   if (prepared_flags_ & DeltaIterator::PREPARE_FOR_APPLY &&
       relevant_for_apply_or_collect) {
-    RowChangeListDecoder decoder((RowChangeList(val)));
-    if (Traits::kInitializeDecodersWithSafetyChecks) {
-      RETURN_NOT_OK(decoder.Init());
-    } else {
-      decoder.InitNoSafetyChecks();
-    }
-    if (!Traits::kAllowReinserts && decoder.is_reinsert()) {
-      LOG(DFATAL) << "Attempted to reinsert but not supported" << GetStackTrace();
-      return Status::InvalidArgument("Reinserts are not supported");
-    }
+    RETURN_NOT_OK(InitDecoderIfNecessary(&decoder));
     UpdateDeletionState(decoder.get_type());
     if (!decoder.is_delete()) {
       while (decoder.HasNext()) {
@@ -297,17 +411,13 @@ Status DeltaPreparer<Traits>::ApplyDeletes(SelectionVector* sel_vec) {
 }
 
 template<class Traits>
-Status DeltaPreparer<Traits>::SelectUpdates(SelectionVector* sel_vec) {
+Status DeltaPreparer<Traits>::SelectDeltas(SelectedDeltas* deltas) {
   DCHECK(prepared_flags_ & DeltaIterator::PREPARE_FOR_SELECT);
-  DCHECK_LE(cur_prepared_idx_ - prev_prepared_idx_, sel_vec->nrows());
-
-  // SelectUpdates() is additive: it should never exclude rows, only include them.
-  for (rowid_t idx = 0; idx < sel_vec->nrows(); idx++) {
-    if (selected_->IsRowSelected(idx)) {
-      sel_vec->SetRowSelected(idx);
-    }
-  }
-
+  DCHECK_LE(cur_prepared_idx_ - prev_prepared_idx_, deltas->rows_.size());
+  VLOG(4) << "Selected deltas before SelectDeltas:\n" << selected_.ToString();
+  VLOG(4) << "Pre-merge deltas:\n" << deltas->ToString();
+  deltas->MergeFrom(selected_);
+  VLOG(4) << "Post-merge deltas:\n" << deltas->ToString();
   return Status::OK();
 }
 
@@ -372,12 +482,29 @@ bool DeltaPreparer<Traits>::MayHaveDeltas() const {
   if (!reinserted_.empty()) {
     return true;
   }
-  for (auto& col : updates_by_col_) {
+  for (const auto& col : updates_by_col_) {
     if (!col.empty()) {
       return true;
     }
   }
   return false;
+}
+
+template<class Traits>
+Status DeltaPreparer<Traits>::InitDecoderIfNecessary(RowChangeListDecoder* decoder) {
+  if (decoder->IsInitialized()) {
+    return Status::OK();
+  }
+  if (Traits::kInitializeDecodersWithSafetyChecks) {
+    RETURN_NOT_OK(decoder->Init());
+  } else {
+    decoder->InitNoSafetyChecks();
+  }
+  if (!Traits::kAllowReinserts && decoder->is_reinsert()) {
+    LOG(DFATAL) << "Attempted to reinsert but not supported" << GetStackTrace();
+    return Status::InvalidArgument("Reinserts are not supported");
+  }
+  return Status::OK();
 }
 
 template<class Traits>

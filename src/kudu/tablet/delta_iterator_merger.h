@@ -67,7 +67,7 @@ class DeltaIteratorMerger : public DeltaIterator {
 
   Status ApplyDeletes(SelectionVector* sel_vec) override;
 
-  Status SelectUpdates(SelectionVector* sel_vec) override;
+  Status SelectDeltas(SelectedDeltas* deltas) override;
 
   Status CollectMutations(std::vector<Mutation*>* dst, Arena* arena) override;
 

@@ -1510,6 +1510,9 @@ TYPED_TEST(TestTablet, TestDiffScanUnobservableOperations) {
   };
 
   NO_FATALS(diff_scan_no_rows());
+
+  ASSERT_OK(this->tablet()->Flush());
+  NO_FATALS(diff_scan_no_rows());
 }
 
 } // namespace tablet
