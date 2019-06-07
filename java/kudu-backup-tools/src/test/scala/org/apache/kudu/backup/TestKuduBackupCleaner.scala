@@ -35,16 +35,16 @@ import org.slf4j.LoggerFactory
 class TestKuduBackupCleaner {
   val log: Logger = LoggerFactory.getLogger(getClass)
 
-  var rootDir: Path = _
+  var rootPath: Path = _
 
   @Before
   def setUp(): Unit = {
-    rootDir = Files.createTempDirectory("backupcli")
+    rootPath = Files.createTempDirectory("backupcli")
   }
 
   @After
   def tearDown(): Unit = {
-    FileUtils.deleteDirectory(rootDir.toFile)
+    FileUtils.deleteDirectory(rootPath.toFile)
   }
 
   // Return the epoch time in milliseconds that is 'secsBefore' seconds before 'current'.
@@ -54,7 +54,7 @@ class TestKuduBackupCleaner {
 
   @Test
   def testBackupCleaner(): Unit = {
-    val io = new BackupIO(new Configuration(), rootDir.toUri.toString)
+    val io = new BackupIO(new Configuration(), rootPath.toUri.toString)
     val expirationAge = Duration.of(15, ChronoUnit.SECONDS)
     val now = Instant.now
     val tableName = "taco"
@@ -74,13 +74,7 @@ class TestKuduBackupCleaner {
     createPath(pathA)
 
     // Nothing should be cleaned up because all backups are on the restore path.
-    val options =
-      BackupCleanerOptions(
-        Seq(),
-        rootDir.toUri.toString,
-        expirationAge,
-        dryRun = false,
-        verbose = true)
+    val options = createOptions(rootPath, expirationAge, verbose = true)
     assertEquals(0, KuduBackupCleaner.run(options))
 
     val backupExists = (secsAgo: Long) => {
@@ -104,12 +98,7 @@ class TestKuduBackupCleaner {
 
     // Running the cleaner should delete path A and the forked backup, but first do a dry run and
     // make sure nothing gets deleted.
-    val dryRunOptions = BackupCleanerOptions(
-      Seq(),
-      rootDir.toUri.toString,
-      expirationAge,
-      dryRun = true,
-      verbose = false)
+    val dryRunOptions = createOptions(rootPath, expirationAge, dryRun = true)
     assertEquals(0, KuduBackupCleaner.run(dryRunOptions))
 
     assertTrue(pathA.forall(backupExists(_)))
@@ -131,5 +120,20 @@ class TestKuduBackupCleaner {
     assertTrue(pathA.forall(!backupExists(_)))
     assertTrue(pathB.forall(backupExists(_)))
     assertTrue(pathC.forall(backupExists(_)))
+  }
+
+  def createOptions(
+      rootPath: Path,
+      expirationAge: Duration,
+      tables: Seq[String] = Seq(),
+      dryRun: Boolean = false,
+      verbose: Boolean = false): BackupCLIOptions = {
+    new BackupCLIOptions(
+      rootPath.toUri.toString,
+      Mode.CLEAN,
+      tables = tables,
+      expirationAge = expirationAge,
+      dryRun = dryRun,
+      verbose = verbose)
   }
 }

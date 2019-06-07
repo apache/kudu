@@ -16,79 +16,24 @@
 // under the License.
 package org.apache.kudu.backup
 
-import java.time.temporal.ChronoUnit
-import java.time.Duration
 import java.time.Instant
 
+import com.google.common.base.Preconditions
 import org.apache.hadoop.conf.Configuration
-import scopt.OptionParser
 import org.apache.kudu.backup.Backup.TableMetadataPB
-import org.apache.yetus.audience.InterfaceAudience
-import org.apache.yetus.audience.InterfaceStability
-
-@InterfaceAudience.Private
-@InterfaceStability.Unstable
-case class BackupCleanerOptions(
-    tables: Seq[String],
-    rootPath: String,
-    expirationAge: Duration,
-    dryRun: Boolean,
-    verbose: Boolean)
-
-object BackupCleanerOptions {
-  val DefaultExpirationAge: Duration = Duration.of(30, ChronoUnit.DAYS)
-
-  val ProgramName: String =
-    KuduBackupCleaner.getClass.getCanonicalName.dropRight(1) // Remove trailing `$`
-
-  val parser: OptionParser[BackupCleanerOptions] =
-    new OptionParser[BackupCleanerOptions](ProgramName) {
-      opt[String]("rootPath")
-        .action((v, o) => o.copy(rootPath = v))
-        .text("The root path to search for backups. Accepts any Hadoop compatible path.")
-        .required()
-
-      opt[String]("expirationAgeDays")
-        .action((v, o) => o.copy(expirationAge = Duration.of(v.toLong, ChronoUnit.DAYS)))
-        .text("The age at which old backups should be expired. Backups that are part of the current restore path are never expired.")
-        .optional()
-
-      opt[Boolean]("dryRun")
-        .action((v, o) => o.copy(dryRun = v))
-        .text(
-          "Report on what backups will be deleted, but don't delete anything. Overrides --verbose.")
-        .optional()
-
-      opt[Boolean]("verbose")
-        .action((v, o) => o.copy(verbose = v))
-        .text("Report on what backups are deleted.")
-        .optional()
-
-      arg[String]("<table>...")
-        .unbounded()
-        .action((v, o) => o.copy(tables = o.tables :+ v))
-        .text("A list of tables whose backups should be garbage-collected. Specifying no tables includes all tables.")
-        .optional()
-
-      help("help").text("Prints this usage text")
-    }
-
-  def parse(args: Seq[String]): Option[BackupCleanerOptions] = {
-    parser.parse(
-      args,
-      BackupCleanerOptions(Seq(), null, DefaultExpirationAge, dryRun = false, verbose = false))
-  }
-}
 
 object KuduBackupCleaner {
 
   private def backupToShortString(metadata: TableMetadataPB): String = {
-    s"name: ${metadata.getTableName}, id: ${metadata.getTableId}, fromMs: ${metadata.getFromMs}, toMs: ${metadata.getToMs}"
+    s"name: ${metadata.getTableName}, id: ${metadata.getTableId}, fromMs: ${metadata.getFromMs}, " +
+      s"toMs: ${metadata.getToMs}"
   }
 
   // Run the cleanup tool with the given options. Like a command, returns 0 if successful, or
   // a nonzero error code.
-  def run(options: BackupCleanerOptions): Int = {
+  def run(options: BackupCLIOptions): Int = {
+    Preconditions.checkArgument(options.mode == Mode.CLEAN)
+
     // Delete the metadata for all backups that satisfy the following three conditions:
     // 1. The table name matches the provided names (does not apply if no names were specified).
     // 2. The backup is part of a path whose latest backup is older than the expiration age.
@@ -130,8 +75,8 @@ object KuduBackupCleaner {
                 if (options.verbose) {
                   println(s"Delete backup ${backupToShortString(backup.metadata)}")
                 }
-                // TODO(wdberkeley): Make this crash-consistent by handling backup directories with no
-                //  metadata.
+                // TODO(wdberkeley): Make this crash-consistent by handling backup directories
+                //  with no metadata.
                 io.deleteBackup(backup.metadata)
               }
             })
@@ -140,12 +85,5 @@ object KuduBackupCleaner {
     }
 
     0
-  }
-
-  def main(args: Array[String]): Unit = {
-    val options = BackupCleanerOptions
-      .parse(args)
-      .getOrElse(throw new IllegalArgumentException("could not parse the arguments"))
-    System.exit(run(options))
   }
 }

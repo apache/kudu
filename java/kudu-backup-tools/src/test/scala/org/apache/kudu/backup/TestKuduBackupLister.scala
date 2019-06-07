@@ -24,26 +24,26 @@ import java.text.SimpleDateFormat
 
 import org.apache.commons.io.FileUtils
 import org.apache.hadoop.conf.Configuration
-import org.junit.After
 import org.junit.Assert._
+import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
-class TestKuduBackupCLI {
+class TestKuduBackupLister {
   val log: Logger = LoggerFactory.getLogger(getClass)
 
-  var rootDir: Path = _
+  var rootPath: Path = _
 
   @Before
   def setUp(): Unit = {
-    rootDir = Files.createTempDirectory("backupcli")
+    rootPath = Files.createTempDirectory("backupcli")
   }
 
   @After
   def tearDown(): Unit = {
-    FileUtils.deleteDirectory(rootDir.toFile)
+    FileUtils.deleteDirectory(rootPath.toFile)
   }
 
   // Helper to write a standard collection of backup metadata useful for a few tests.
@@ -71,17 +71,16 @@ class TestKuduBackupCLI {
 
   @Test
   def testListAllBackups(): Unit = {
-    val io = new BackupIO(new Configuration(), rootDir.toUri.toString)
+    val io = new BackupIO(new Configuration(), rootPath.toUri.toString)
     createStandardTableMetadata(io)
 
-    val options =
-      BackupCLIOptions(Action.LIST_ALL, Format.CSV, Seq(), rootDir.toUri.toString)
+    val options = createOptions(rootPath, ListType.ALL)
     val stdout = new ByteArrayOutputStream
     Console.withOut(new PrintStream(stdout)) {
       assertEquals(0, KuduBackupCLI.run(options))
     }
 
-    val headerString = KuduBackupCLI.HEADER.mkString(",")
+    val headerString = KuduBackupLister.HEADER.mkString(",")
     val expected = Seq(
       headerString,
       s"pizza,id_pizza,${endTime(200)},0,200,full",
@@ -98,17 +97,16 @@ class TestKuduBackupCLI {
 
   @Test
   def testListLatestBackups(): Unit = {
-    val io = new BackupIO(new Configuration(), rootDir.toUri.toString)
+    val io = new BackupIO(new Configuration(), rootPath.toUri.toString)
     createStandardTableMetadata(io)
 
-    val options =
-      BackupCLIOptions(Action.LIST_LATEST, Format.CSV, Seq(), rootDir.toUri.toString)
+    val options = createOptions(rootPath, ListType.LATEST)
     val stdout = new ByteArrayOutputStream
     Console.withOut(new PrintStream(stdout)) {
       assertEquals(0, KuduBackupCLI.run(options))
     }
 
-    val headerString = KuduBackupCLI.HEADER.mkString(",")
+    val headerString = KuduBackupLister.HEADER.mkString(",")
     val expected = Seq(
       headerString,
       s"pizza,id_pizza,${endTime(600)},400,600,incremental",
@@ -119,17 +117,16 @@ class TestKuduBackupCLI {
 
   @Test
   def testListRestorePath(): Unit = {
-    val io = new BackupIO(new Configuration(), rootDir.toUri.toString)
+    val io = new BackupIO(new Configuration(), rootPath.toUri.toString)
     createStandardTableMetadata(io)
 
-    val options =
-      BackupCLIOptions(Action.LIST_RESTORE_SEQUENCE, Format.CSV, Seq(), rootDir.toUri.toString)
+    val options = createOptions(rootPath, ListType.RESTORE_SEQUENCE)
     val stdout = new ByteArrayOutputStream
     Console.withOut(new PrintStream(stdout)) {
       assertEquals(0, KuduBackupCLI.run(options))
     }
 
-    val headerString = KuduBackupCLI.HEADER.mkString(",")
+    val headerString = KuduBackupLister.HEADER.mkString(",")
     val expected = Seq(
       headerString,
       s"pizza,id_pizza,${endTime(200)},0,200,full",
@@ -145,17 +142,16 @@ class TestKuduBackupCLI {
 
   @Test
   def testTableFilter(): Unit = {
-    val io = new BackupIO(new Configuration(), rootDir.toUri.toString)
+    val io = new BackupIO(new Configuration(), rootPath.toUri.toString)
     createStandardTableMetadata(io)
 
-    val options =
-      BackupCLIOptions(Action.LIST_ALL, Format.CSV, Seq("taco"), rootDir.toUri.toString)
+    val options = createOptions(rootPath, ListType.ALL, Seq("taco"))
     val stdout = new ByteArrayOutputStream
     Console.withOut(new PrintStream(stdout)) {
       assertEquals(0, KuduBackupCLI.run(options))
     }
 
-    val headerString = KuduBackupCLI.HEADER.mkString(",")
+    val headerString = KuduBackupLister.HEADER.mkString(",")
     val expected = Seq(
       headerString,
       s"taco,id_taco,${endTime(100)},0,100,full",
@@ -167,11 +163,10 @@ class TestKuduBackupCLI {
 
   @Test
   def testMissingTable(): Unit = {
-    val io = new BackupIO(new Configuration(), rootDir.toUri.toString)
+    val io = new BackupIO(new Configuration(), rootPath.toUri.toString)
     createStandardTableMetadata(io)
 
-    val options =
-      BackupCLIOptions(Action.LIST_ALL, Format.CSV, Seq("pizza", "nope"), rootDir.toUri.toString)
+    val options = createOptions(rootPath, ListType.ALL, Seq("pizza", "nope"))
     val stdout = new ByteArrayOutputStream
     val stderr = new ByteArrayOutputStream
     Console.withOut(new PrintStream(stdout)) {
@@ -180,7 +175,7 @@ class TestKuduBackupCLI {
       }
     }
 
-    val headerString = KuduBackupCLI.HEADER.mkString(",")
+    val headerString = KuduBackupLister.HEADER.mkString(",")
     val expected = Seq(
       headerString,
       s"pizza,id_pizza,${endTime(200)},0,200,full",
@@ -190,5 +185,18 @@ class TestKuduBackupCLI {
     assertEquals(expected, stdout.toString.trim)
 
     assertEquals("No backups were found for 1 table(s):\nnope", stderr.toString.trim)
+  }
+
+  def createOptions(
+      rootPath: Path,
+      listType: ListType.Value,
+      tables: Seq[String] = Seq(),
+      format: Format.Value = Format.CSV): BackupCLIOptions = {
+    new BackupCLIOptions(
+      rootPath.toUri.toString,
+      Mode.LIST,
+      tables = tables,
+      listType = listType,
+      format = format)
   }
 }

@@ -23,6 +23,14 @@ shadow {
   isToolJar = true
 }
 
+
+// Add the main class to the manifest so the jar can be run via `java -jar`
+jar {
+  manifest {
+    attributes 'Main-Class': 'org.apache.kudu.backup.KuduBackupCLI'
+  }
+}
+
 dependencies {
   compile project(path: ":kudu-backup-common")
   compile project(path: ":kudu-client", configuration: "shadow")
